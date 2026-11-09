@@ -846,12 +846,14 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     forgotten: 0,
   }
   let cleanupFailed = archiveRetention.failed || runLeftovers.failed
-  cleanupFailed ||= await sweepSessionContext({
-    enabled: selectedProject === null,
-    dryRun: dry,
-    database: dry ? db() : writableDb(),
-    presentation: options.presentation,
-  })
+  cleanupFailed = [
+    cleanupFailed,
+    await sweepSessionContext({
+      enabled: selectedProject === null,
+      dryRun: dry,
+      presentation: options.presentation,
+    }),
+  ].includes(true)
   cleanupFailed ||= sweepIdleMainStacks({
     database: db(),
     projects: sweepProjects,

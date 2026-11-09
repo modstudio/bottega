@@ -2,6 +2,7 @@
 /** Expires context items after their session owner has been gone for the shared owner window. */
 
 import type { Database } from 'bun:sqlite'
+import { db, writableDb } from '../database/db.ts'
 import {
   dropSessionContextItemForLifecycle,
   sessionContextHolders,
@@ -28,15 +29,16 @@ function sessionActivity(database: Database, session: string, fallback: string) 
 export async function sweepSessionContext(input: {
   enabled: boolean
   dryRun: boolean
-  database: Database
+  database?: Database
   presentation: CleanupPresentation
 }): Promise<boolean> {
   if (!input.enabled) return false
+  const database = input.database ?? (input.dryRun ? db() : writableDb())
   let failed = false
-  for (const holder of sessionContextHolders(input.database)) {
+  for (const holder of sessionContextHolders(database)) {
     const gone = shouldDropSweptSessionContext({
       ownerSessionId: holder.session,
-      ...sessionActivity(input.database, holder.session, holder.updatedAt),
+      ...sessionActivity(database, holder.session, holder.updatedAt),
       now: Date.now(),
       windowMs: UNJUDGED_OWNER_WINDOW_MS,
     })

@@ -311,6 +311,7 @@ export const cleanupBoundarySpecs = [
     file: 'orchestrator/src/cleanup/cleanup-sweep-context.ts',
     allowed: [
       'bun:sqlite',
+      '../database/db.ts',
       '../doc/context-service.ts',
       './cleanup.ts',
       './cleanup-sweep-decisions.ts',
