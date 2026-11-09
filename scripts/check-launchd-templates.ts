@@ -2,7 +2,11 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { MAINTENANCE_SCHEDULE_PLACEHOLDERS } from '../orchestrator/src/setup/setup-schedule-policy.ts'
+import {
+  MAINTENANCE_SCHEDULE_PLACEHOLDERS,
+  SYSTEMD_UNIT_SUFFIXES,
+  SYSTEMD_UNITS,
+} from '../orchestrator/src/setup/setup-schedule-policy.ts'
 import { minutesOfDay } from '../orchestrator/src/spare/spare-decisions.ts'
 import { startBoundedSync } from '../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
@@ -31,6 +35,21 @@ const templateDirectories = [
 ] as const
 
 const systemdTemplateDirectory = 'ops/systemd'
+const mappedSystemdUnits = new Set(Object.values(SYSTEMD_UNITS).flat())
+
+export function systemdTemplateMappingErrors(names: readonly string[]): string[] {
+  const diskUnits = names.filter((name) =>
+    SYSTEMD_UNIT_SUFFIXES.some((suffix) => name.endsWith(suffix)),
+  )
+  return [
+    ...diskUnits
+      .filter((name) => !mappedSystemdUnits.has(name))
+      .map((name) => `${systemdTemplateDirectory}/${name}: systemd unit is not in SYSTEMD_UNITS`),
+    ...[...mappedSystemdUnits]
+      .filter((name) => !diskUnits.includes(name))
+      .map((name) => `${systemdTemplateDirectory}/${name}: mapped systemd unit file is missing`),
+  ]
+}
 
 const stateHomeExemptions = new Map<string, string>([
   [
@@ -216,7 +235,7 @@ function discoverTemplates(): TemplateFact[] {
       .map((name) => ({ concern, installer, name: join(directory, name) })),
   )
   const systemdTemplates = readdirSync(join(repositoryRoot, systemdTemplateDirectory))
-    .filter((name) => ['.service', '.timer', '.path'].some((suffix) => name.endsWith(suffix)))
+    .filter((name) => SYSTEMD_UNIT_SUFFIXES.some((suffix) => name.endsWith(suffix)))
     .map((name) => ({
       concern: join(repositoryRoot, 'ops'),
       installer: 'orchestrator/src/setup/setup-systemd-schedules.ts',
@@ -339,6 +358,9 @@ function main(): void {
     for (const fact of templates) {
       errors = errors.concat(checkTemplate({ fact, plutil, renderedDirectory }))
     }
+    errors = errors.concat(
+      systemdTemplateMappingErrors(readdirSync(join(repositoryRoot, systemdTemplateDirectory))),
+    )
     errors = errors.concat(checkStateHomeExemptions(templates.map((template) => template.name)))
   } finally {
     rmSync(renderedDirectory, { recursive: true, force: true })

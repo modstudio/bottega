@@ -11,6 +11,7 @@ import {
 } from './setup-engine.ts'
 import type { HarnessName, LegacyMcpServerName, McpServer } from './setup-mcp.ts'
 import type { McpConfigMigration } from './setup-mcp-config.ts'
+import { schedulePlatformSupported } from './setup-schedule-policy.ts'
 import { INFERRED_RECIPE_PATH } from './setup-toolchain.ts'
 
 export type SetupAnswers = Record<string, string>
@@ -195,7 +196,8 @@ function selectedMachineLevel(plan: SetupPlan, answers: SetupAnswers): MachineLe
 
 function plannedScheduleActions(plan: SetupPlan, selectedLevel: MachineLevel): SetupAction[] {
   const machine = plan.facts?.machine
-  return (machine?.os?.platform === 'darwin' || machine?.os?.platform === 'linux') &&
+  return machine?.os?.platform !== undefined &&
+    schedulePlatformSupported(machine.os.platform) &&
     machine.installationKind === 'distribution' &&
     selectedLevel === 'full' &&
     (machine.schedules ?? []).some(

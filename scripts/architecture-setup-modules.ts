@@ -134,7 +134,12 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
   {
     name: 'setup-engine-boundary',
     file: 'orchestrator/src/setup/setup-engine.ts',
-    allowed: ['../../../shared/brand.ts', './setup-mcp.ts', './setup-toolchain.ts'],
+    allowed: [
+      '../../../shared/brand.ts',
+      './setup-mcp.ts',
+      './setup-schedule-policy.ts',
+      './setup-toolchain.ts',
+    ],
     typeOnlyAllowed: [
       '../../../shared/machine-config.ts',
       '../project/projects.ts',
@@ -149,7 +154,12 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
   {
     name: 'setup-planner-boundary',
     file: 'orchestrator/src/setup/setup-planner.ts',
-    allowed: ['../../../shared/machine-config.ts', './setup-engine.ts', './setup-toolchain.ts'],
+    allowed: [
+      '../../../shared/machine-config.ts',
+      './setup-engine.ts',
+      './setup-schedule-policy.ts',
+      './setup-toolchain.ts',
+    ],
     typeOnlyAllowed: [
       '../project/projects.ts',
       './setup-facts.ts',
@@ -169,7 +179,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       './setup-mcp-config.ts',
       './setup-legacy-path.ts',
       './setup-planner.ts',
-      './setup-schedules.ts',
+      './setup-schedule-runtime.ts',
     ],
     typeOnlyAllowed: ['../../../shared/machine-config.ts', './setup-environment.ts'],
     reason:
@@ -181,7 +191,6 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     allowed: [
       'node:fs',
       'node:fs/promises',
-      'node:os',
       'node:path',
       '../../../shared/embedded-assets.ts',
       '../../../shared/install-root.ts',
@@ -189,12 +198,25 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       '../../../shared/state-directory.ts',
       './launchd-owners.ts',
       './setup-schedule-policy.ts',
-      './setup-systemd-schedules.ts',
       '../../../shared/bounded-process.ts',
     ],
     typeOnlyAllowed: [],
     reason:
-      'Keep maintenance schedule rendering and launchctl application independent of setup policy and presentation.',
+      'Keep launchd schedule rendering and launchctl application independent of platform routing and presentation.',
+  },
+  {
+    name: 'setup-schedule-runtime-boundary',
+    file: 'orchestrator/src/setup/setup-schedule-runtime.ts',
+    allowed: [
+      'node:os',
+      '../../../shared/state-directory.ts',
+      './setup-schedule-policy.ts',
+      './setup-schedules.ts',
+      './setup-systemd-schedules.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep host-platform schedule adapter selection separate from launchd and systemd implementation details.',
   },
   {
     name: 'setup-schedule-policy-boundary',
@@ -224,7 +246,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     ],
     typeOnlyAllowed: [],
     reason:
-      'Keep systemd user-unit observation and application independent of setup policy and presentation.',
+      'Keep systemd user-unit observation, Linux login facts, and application independent of platform routing and presentation.',
   },
   {
     name: 'setup-repository-toolchain-boundary',

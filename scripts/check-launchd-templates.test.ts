@@ -2,13 +2,17 @@ import { describe, expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { MAINTENANCE_SCHEDULE_PLACEHOLDERS } from '../orchestrator/src/setup/setup-schedule-policy.ts'
+import {
+  MAINTENANCE_SCHEDULE_PLACEHOLDERS,
+  SYSTEMD_UNIT_SUFFIXES,
+} from '../orchestrator/src/setup/setup-schedule-policy.ts'
 import {
   clockParts,
   installerPlaceholders,
   installerRenderRules,
   launchdFieldTypeViolations,
   missingInstallRules,
+  systemdTemplateMappingErrors,
   templatePlaceholders,
 } from './check-launchd-templates.ts'
 
@@ -77,7 +81,7 @@ describe('the checked-in templates', () => {
       const names = readdirSync(join(repositoryRoot, directory)).filter((name) =>
         installer
           ? name.endsWith('.plist.template')
-          : ['.service', '.timer', '.path'].some((suffix) => name.endsWith(suffix)),
+          : SYSTEMD_UNIT_SUFFIXES.some((suffix) => name.endsWith(suffix)),
       )
       expect(names.length).toBeGreaterThan(0)
       for (const name of names) {
@@ -92,6 +96,27 @@ describe('the checked-in templates', () => {
         ).toEqual([])
       }
     }
+  })
+})
+
+describe('systemdTemplateMappingErrors', () => {
+  const mappedNames = [
+    'orch-sweep.service',
+    'orch-sweep.timer',
+    'orch-record-sync.service',
+    'orch-record-sync.timer',
+    'orch-record-sync.path',
+  ]
+
+  test('accepts exactly the mapped units', () => {
+    expect(systemdTemplateMappingErrors(mappedNames)).toEqual([])
+  })
+
+  test('reports unowned and missing unit files', () => {
+    expect(systemdTemplateMappingErrors([...mappedNames.slice(1), 'stray.timer'])).toEqual([
+      'ops/systemd/stray.timer: systemd unit is not in SYSTEMD_UNITS',
+      'ops/systemd/orch-sweep.service: mapped systemd unit file is missing',
+    ])
   })
 })
 

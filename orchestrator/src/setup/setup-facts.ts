@@ -27,7 +27,7 @@ import {
   gatherScheduleLingerFact,
   gatherScheduleSetupFacts,
   gatherScheduleUserFact,
-} from './setup-schedules.ts'
+} from './setup-schedule-runtime.ts'
 
 const COMMAND_TIMEOUT_MS = 3_000
 

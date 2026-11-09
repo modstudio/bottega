@@ -4,16 +4,11 @@ import { startBoundedSync } from '../../../shared/bounded-process.ts'
 
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { homedir, userInfo } from 'node:os'
 import { dirname, join } from 'node:path'
 import { readInstallAsset } from '../../../shared/embedded-assets.ts'
 import { installationIdentity } from '../../../shared/install-root.ts'
 import { gatherLaunchAgentSkipFacts } from '../../../shared/launch-agent-skip.ts'
-import {
-  recordSyncQueueDirectory,
-  resolveStateRoot,
-  STATE_HOME_ENV,
-} from '../../../shared/state-directory.ts'
+import { recordSyncQueueDirectory, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import { plistStandardOutPath } from './launchd-owners.ts'
 import {
   MAINTENANCE_SCHEDULE_LABELS,
@@ -24,30 +19,16 @@ import {
   type ScheduleRenderValues,
   type ScheduleSetupFact,
 } from './setup-schedule-policy.ts'
-import {
-  applySystemdMaintenanceSchedules,
-  gatherSystemdScheduleSetupFacts,
-  systemdLingerEnabled,
-} from './setup-systemd-schedules.ts'
 
 const templatePath = (label: MaintenanceScheduleLabel): string =>
   `ops/launchd/${label}.plist.template`
 
-function scheduleValues(): ScheduleRenderValues {
-  return {
-    bottegaBin: process.execPath,
-    home: homedir(),
-    stateHomeEnvironment: STATE_HOME_ENV,
-    stateHome: resolveStateRoot(process.env),
-  }
-}
-
-function renderedSchedule(label: MaintenanceScheduleLabel): string {
+function renderedSchedule(label: MaintenanceScheduleLabel, values: ScheduleRenderValues): string {
   const identity = installationIdentity(import.meta.dir, {})
   const relative = templatePath(label)
   return renderMaintenanceSchedule(
     readInstallAsset(relative, join(identity.root, relative)),
-    scheduleValues(),
+    values,
   )
 }
 
@@ -63,15 +44,12 @@ function launchctlLoaded(launchctl: string, uid: number, label: string): boolean
 }
 
 /** Gather the two facts the pure setup planner needs for each release-owned schedule. */
-export function gatherScheduleSetupFacts(): ScheduleSetupFact[] {
-  if (process.platform === 'linux') return gatherSystemdScheduleSetupFacts(scheduleValues())
-  if (process.platform !== 'darwin') return []
+export function gatherLaunchdScheduleSetupFacts(values: ScheduleRenderValues): ScheduleSetupFact[] {
   const launchctl = launchctlPath()
   const uid = process.getuid?.()
-  const values = scheduleValues()
   return MAINTENANCE_SCHEDULE_LABELS.map((label) => {
     const target = join(values.home, 'Library', 'LaunchAgents', `${label}.plist`)
-    const expected = renderedSchedule(label)
+    const expected = renderedSchedule(label, values)
     const installed = existsSync(target)
     return {
       label,
@@ -105,15 +83,15 @@ async function bootstrapWithRetry(launchctl: string, uid: number, target: string
 }
 
 /** Install the release-owned schedules through launchctl, preserving per-label skip rulings. */
-export async function applyMaintenanceSchedules(): Promise<ScheduleApplyResult[]> {
-  if (process.platform === 'linux') return applySystemdMaintenanceSchedules(scheduleValues())
+export async function applyLaunchdMaintenanceSchedules(
+  values: ScheduleRenderValues,
+): Promise<ScheduleApplyResult[]> {
   const launchctl = launchctlPath()
   const uid = process.getuid?.()
   if (!launchctl || uid === undefined) throw new Error('launchctl is unavailable')
-  const values = scheduleValues()
   const agents = join(values.home, 'Library', 'LaunchAgents')
   await mkdir(agents, { recursive: true })
-  await mkdir(recordSyncQueueDirectory(process.env), { recursive: true })
+  await mkdir(recordSyncQueueDirectory({ [STATE_HOME_ENV]: values.stateHome }), { recursive: true })
   const skipFacts = gatherLaunchAgentSkipFacts()
   const results: ScheduleApplyResult[] = []
   for (const item of maintenanceSchedulePlan(skipFacts)) {
@@ -121,18 +99,9 @@ export async function applyMaintenanceSchedules(): Promise<ScheduleApplyResult[]
       results.push({ label: item.label, status: 'skipped', reason: item.skipReason })
       continue
     }
-    results.push(await applyMaintenanceSchedule(item.label, launchctl, uid, agents))
+    results.push(await applyMaintenanceSchedule(item.label, launchctl, uid, agents, values))
   }
   return results
-}
-
-/** Whether Linux login linger keeps user timers alive after logout. */
-export function gatherScheduleLingerFact(): boolean | null {
-  return process.platform === 'linux' ? systemdLingerEnabled() : null
-}
-
-export function gatherScheduleUserFact(): string | null {
-  return process.platform === 'linux' ? userInfo().username : null
 }
 
 async function applyMaintenanceSchedule(
@@ -140,8 +109,9 @@ async function applyMaintenanceSchedule(
   launchctl: string,
   uid: number,
   agents: string,
+  values: ScheduleRenderValues,
 ): Promise<ScheduleApplyResult> {
-  const rendered = renderedSchedule(label)
+  const rendered = renderedSchedule(label, values)
   const target = join(agents, `${label}.plist`)
   const logPath = plistStandardOutPath(rendered)
   if (!logPath) throw new Error(`${label} template has no StandardOutPath`)

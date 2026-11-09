@@ -18,16 +18,9 @@ import {
   type ScheduleApplyResult,
   type ScheduleRenderValues,
   type ScheduleSetupFact,
+  SYSTEMD_UNITS,
+  systemdActivationUnits,
 } from './setup-schedule-policy.ts'
-
-const SYSTEMD_UNITS: Record<MaintenanceScheduleLabel, readonly string[]> = {
-  'com.user.orch-sweep': ['orch-sweep.service', 'orch-sweep.timer'],
-  'com.user.orch-record-sync': [
-    'orch-record-sync.service',
-    'orch-record-sync.timer',
-    'orch-record-sync.path',
-  ],
-}
 
 function systemdUnitDirectory(values: ScheduleRenderValues): string {
   const configHome = process.env.XDG_CONFIG_HOME || join(values.home, '.config')
@@ -76,9 +69,7 @@ export function gatherSystemdScheduleSetupFacts(values: ScheduleRenderValues): S
       const target = join(directory, name)
       return existsSync(target) && readFileSync(target, 'utf8') === content
     })
-    const activationUnits = expected
-      .map(({ name }) => name)
-      .filter((name) => name.endsWith('.timer') || name.endsWith('.path'))
+    const activationUnits = systemdActivationUnits(label)
     return {
       label,
       installed,
@@ -89,7 +80,7 @@ export function gatherSystemdScheduleSetupFacts(values: ScheduleRenderValues): S
 }
 
 /** Read login linger; null means loginctl could not report it. */
-export function systemdLingerEnabled(): boolean | null {
+export function gatherScheduleLingerFact(): boolean | null {
   const loginctl = Bun.which('loginctl')
   if (!loginctl) return null
   const result = startBoundedSync([loginctl, 'show-user', userInfo().username, '-p', 'Linger'], {
@@ -100,6 +91,10 @@ export function systemdLingerEnabled(): boolean | null {
   if (value === 'Linger=yes') return true
   if (value === 'Linger=no') return false
   return null
+}
+
+export function gatherScheduleUserFact(): string {
+  return userInfo().username
 }
 
 function requireSystemdUserManager(): string {
@@ -116,9 +111,6 @@ function runSystemctl(systemctl: string, args: string[]): void {
   const detail = `${result.stdout.toString()}${result.stderr.toString()}`.trim()
   throw new Error(`systemctl --user ${args.join(' ')} failed${detail ? `: ${detail}` : ''}`)
 }
-
-const activationUnitNames = (units: readonly { name: string }[]): string[] =>
-  units.map(({ name }) => name).filter((name) => name.endsWith('.timer') || name.endsWith('.path'))
 
 async function writeChangedUnits(
   directory: string,
@@ -164,7 +156,7 @@ export async function applySystemdMaintenanceSchedules(
     }
     const units = renderedUnits(item.label, values)
     const changedNames = await writeChangedUnits(directory, units)
-    const activationUnits = activationUnitNames(units)
+    const activationUnits = systemdActivationUnits(item.label)
     pending.push({
       label: item.label,
       activationUnits,

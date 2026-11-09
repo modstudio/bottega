@@ -18,7 +18,10 @@ import {
   type ScheduleApplyResult,
   type ScheduleSetupFact,
 } from '../setup/setup-schedule-policy.ts'
-import { applyMaintenanceSchedules, gatherScheduleSetupFacts } from '../setup/setup-schedules.ts'
+import {
+  applyMaintenanceSchedules,
+  gatherScheduleSetupFacts,
+} from '../setup/setup-schedule-runtime.ts'
 import {
   installedDefinitionObservations,
   installerRemedy,

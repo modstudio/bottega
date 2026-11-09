@@ -12,6 +12,7 @@ import {
   maintenanceSchedulePlan,
   renderMaintenanceSchedule,
   requiredMaintenanceLabels,
+  SYSTEMD_UNITS,
 } from './setup-schedule-policy.ts'
 
 const skipFacts = {
@@ -90,7 +91,7 @@ test('systemd schedule units render every placeholder and preserve intervals and
     stateHome: `/home/operator/.local/state/${PLATFORM_SLUG}`,
   }
   const queue = recordSyncQueueDirectory({ [STATE_HOME_ENV]: values.stateHome })
-  const expectations = new Map([
+  const expectations = new Map<string, string[]>([
     ['orch-sweep.service', ['machine sweep', 'Nice=10', 'IOSchedulingClass=idle']],
     ['orch-sweep.timer', ['OnStartupSec=120', 'OnUnitActiveSec=7200']],
     ['orch-record-sync.service', ['record push', 'record publish']],
@@ -98,9 +99,20 @@ test('systemd schedule units render every placeholder and preserve intervals and
     ['orch-record-sync.path', [`DirectoryNotEmpty=${queue}`]],
   ])
 
-  for (const [name, fragments] of expectations) {
-    const rendered = renderMaintenanceSchedule(readFileSync(join(directory, name), 'utf8'), values)
-    expect(rendered.match(/__[A-Z0-9_]+__/g)).toBeNull()
-    for (const fragment of fragments) expect(rendered).toContain(fragment)
+  expect(SYSTEMD_UNITS['com.user.orch-sweep']).toEqual(['orch-sweep.service', 'orch-sweep.timer'])
+  expect(SYSTEMD_UNITS['com.user.orch-record-sync']).toEqual([
+    'orch-record-sync.service',
+    'orch-record-sync.timer',
+    'orch-record-sync.path',
+  ])
+  for (const units of Object.values(SYSTEMD_UNITS)) {
+    for (const name of units) {
+      const rendered = renderMaintenanceSchedule(
+        readFileSync(join(directory, name), 'utf8'),
+        values,
+      )
+      expect(rendered.match(/__[A-Z0-9_]+__/g)).toBeNull()
+      for (const fragment of expectations.get(name) ?? []) expect(rendered).toContain(fragment)
+    }
   }
 })

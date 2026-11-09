@@ -17,6 +17,7 @@ import {
   sameMcpRegistration,
 } from './setup-mcp.ts'
 import type { McpConfigMigration } from './setup-mcp-config.ts'
+import { schedulePlatformSupported } from './setup-schedule-policy.ts'
 import { INFERRED_RECIPE_PATH, inferredRecipeContent, proposedGate } from './setup-toolchain.ts'
 
 export type SetupQuestion = {
@@ -351,14 +352,21 @@ function machineNotices(machine: SetupFacts): SetupNotice[] {
       blocking: true,
     })
   if (machine.installationKind === 'distribution' && machine.os?.platform === 'linux') {
-    if (machine.scheduleLinger === false) {
+    const schedulesRequired =
+      (machine.schedules ?? []).some(({ installed }) => installed) ||
+      machine.machineLevel === 'full' ||
+      machine.machineLevel === null
+    if (machine.scheduleLinger === false && schedulesRequired) {
       notices.push({
         message: 'systemd user timers stop at logout because linger is off',
         fix: `loginctl enable-linger ${machine.scheduleUser ?? '<user>'}`,
         blocking: false,
       })
     }
-  } else if (machine.installationKind === 'distribution' && machine.os?.platform !== 'darwin') {
+  } else if (
+    machine.installationKind === 'distribution' &&
+    (machine.os?.platform === undefined || !schedulePlatformSupported(machine.os.platform))
+  ) {
     notices.push({
       message: `scheduled sweep and record sync are unsupported on ${machine.os?.platform ?? 'this platform'}`,
       fix: null,

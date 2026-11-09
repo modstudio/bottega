@@ -201,7 +201,7 @@ test('plans release schedules for full Darwin and Linux distributions when defin
 })
 
 test('warns about Linux timer logout only when linger is off', () => {
-  const noticesFor = (scheduleLinger: boolean | null) =>
+  const noticesFor = (scheduleLinger: boolean | null, overrides: Partial<typeof machine> = {}) =>
     proposeSetup(
       {
         ...machine,
@@ -209,6 +209,7 @@ test('warns about Linux timer logout only when linger is off', () => {
         os: { platform: 'linux', arch: 'x64', wsl: false },
         scheduleLinger,
         scheduleUser: 'operator',
+        ...overrides,
       },
       [],
       [],
@@ -222,6 +223,24 @@ test('warns about Linux timer logout only when linger is off', () => {
   })
   expect(noticesFor(true).some(({ message }) => message.includes('linger'))).toBe(false)
   expect(noticesFor(null).some(({ message }) => message.includes('linger'))).toBe(false)
+  expect(
+    noticesFor(false, { machineLevel: 'record', schedules: [] }).some(({ message }) =>
+      message.includes('linger'),
+    ),
+  ).toBe(false)
+  expect(
+    noticesFor(false, {
+      machineLevel: 'record',
+      schedules: [
+        {
+          label: 'com.user.orch-sweep',
+          installed: true,
+          loaded: true,
+          definitionMatches: true,
+        },
+      ],
+    }).some(({ message }) => message.includes('linger')),
+  ).toBe(true)
 })
 
 test('shows unsupported schedules on other distribution platforms', () => {

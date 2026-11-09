@@ -20,6 +20,28 @@ export const MAINTENANCE_SCHEDULE_LABELS = [
 
 export type MaintenanceScheduleLabel = (typeof MAINTENANCE_SCHEDULE_LABELS)[number]
 
+export const SYSTEMD_UNIT_SUFFIXES = ['.service', '.timer', '.path'] as const
+
+export const SYSTEMD_UNITS: Record<MaintenanceScheduleLabel, readonly string[]> = {
+  'com.user.orch-sweep': ['orch-sweep.service', 'orch-sweep.timer'],
+  'com.user.orch-record-sync': [
+    'orch-record-sync.service',
+    'orch-record-sync.timer',
+    'orch-record-sync.path',
+  ],
+}
+
+export function systemdActivationUnits(label: MaintenanceScheduleLabel): string[] {
+  const activationSuffixes = SYSTEMD_UNIT_SUFFIXES.slice(1)
+  return SYSTEMD_UNITS[label].filter((name) =>
+    activationSuffixes.some((suffix) => name.endsWith(suffix)),
+  )
+}
+
+export function schedulePlatformSupported(platform: NodeJS.Platform): boolean {
+  return platform === 'darwin' || platform === 'linux'
+}
+
 const maintenanceScheduleLabels = new Set<string>(MAINTENANCE_SCHEDULE_LABELS)
 
 export function isMaintenanceScheduleLabel(label: string): label is MaintenanceScheduleLabel {
@@ -40,14 +62,26 @@ export type ScheduleRenderValues = {
   stateHome: string
 }
 
-export const MAINTENANCE_SCHEDULE_PLACEHOLDERS = [
-  '__BOTTEGA_BIN__',
-  '__HOME__',
-  '__STATE_HOME_ENV__',
-  '__STATE_HOME__',
-  '__RECORD_SYNC_QUEUE__',
-  '__RECORD_SYNC_MARKER__',
-] as const
+const maintenanceSchedulePlaceholderBuilders = {
+  __BOTTEGA_BIN__: (values: ScheduleRenderValues) => values.bottegaBin,
+  __HOME__: (values: ScheduleRenderValues) => values.home,
+  __STATE_HOME_ENV__: (values: ScheduleRenderValues) => values.stateHomeEnvironment,
+  __STATE_HOME__: (values: ScheduleRenderValues) => values.stateHome,
+  __RECORD_SYNC_QUEUE__: (values: ScheduleRenderValues) =>
+    recordSyncQueueDirectory({ [STATE_HOME_ENV]: values.stateHome }),
+  __RECORD_SYNC_MARKER__: () => RECORD_SYNC_PENDING_MARKER,
+}
+
+export const MAINTENANCE_SCHEDULE_PLACEHOLDERS = Object.keys(maintenanceSchedulePlaceholderBuilders)
+
+function maintenanceSchedulePlaceholderValues(values: ScheduleRenderValues) {
+  return Object.fromEntries(
+    Object.entries(maintenanceSchedulePlaceholderBuilders).map(([placeholder, build]) => [
+      placeholder,
+      build(values),
+    ]),
+  )
+}
 
 export type ScheduleApplyResult = {
   label: MaintenanceScheduleLabel
@@ -83,13 +117,5 @@ export function requiredMaintenanceLabels(
 
 /** Replace the complete placeholder vocabulary shared by maintenance definitions. */
 export function renderMaintenanceSchedule(template: string, values: ScheduleRenderValues): string {
-  const recordSyncQueue = recordSyncQueueDirectory({ [STATE_HOME_ENV]: values.stateHome })
-  return renderLaunchAgentTemplate(template, {
-    __BOTTEGA_BIN__: values.bottegaBin,
-    __HOME__: values.home,
-    __STATE_HOME_ENV__: values.stateHomeEnvironment,
-    __STATE_HOME__: values.stateHome,
-    __RECORD_SYNC_QUEUE__: recordSyncQueue,
-    __RECORD_SYNC_MARKER__: RECORD_SYNC_PENDING_MARKER,
-  })
+  return renderLaunchAgentTemplate(template, maintenanceSchedulePlaceholderValues(values))
 }
