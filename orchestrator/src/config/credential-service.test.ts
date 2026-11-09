@@ -265,7 +265,7 @@ test('service resolution opens the selected payer row once and honors a shared p
     }),
     whoami: async () => ({
       user: { id: userId },
-      activeSpaceId: 'another-space',
+      activeSpaceId: address.destinationSpaceId,
       memberships: [
         { space_id: address.destinationSpaceId, slug: address.spaceName, permission: 'write' },
       ],

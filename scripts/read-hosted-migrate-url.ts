@@ -17,9 +17,10 @@ try {
     name,
   )
 } catch (error) {
+  const cause = error instanceof Error ? error.message : String(error)
   console.error(
     secretResolutionFailure(error) ??
-      `credential postgres/owner/url could not be resolved\ncleared by: ${PLATFORM_SLUG} record doctor`,
+      `credential postgres/owner/url could not be resolved: ${cause}\ncleared by: ${PLATFORM_SLUG} record doctor`,
   )
   process.exit(2)
 }
