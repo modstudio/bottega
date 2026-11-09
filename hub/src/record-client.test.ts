@@ -113,7 +113,7 @@ describe('record client', () => {
 
     const secrets = await client.configSecrets()
 
-    expect(urls).toEqual(['https://api.example.test/v1/config/secrets?environment=default'])
+    expect(urls).toEqual(['https://api.example.test/v1/config/secrets'])
     expect(secrets).toEqual([
       {
         key: 'openrouter/api-key#live@local',

@@ -821,11 +821,9 @@ function recordConfigClient(options: RecordClientOptions) {
         },
       ),
     configSecrets: () =>
-      request(
-        options,
-        query('/v1/config/secrets', { environment: DEFAULT_CONFIG_ENVIRONMENT }),
-        z.object({ items: z.array(configSecretSchema) }),
-      ).then(({ items }) => items),
+      request(options, '/v1/config/secrets', z.object({ items: z.array(configSecretSchema) })).then(
+        ({ items }) => items,
+      ),
     credentialPreferences: () =>
       request(
         options,

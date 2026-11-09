@@ -80,3 +80,20 @@ test('maps a space-wide preference to all projects and its payer and binding', (
     },
   ])
 })
+
+test('keeps the same credential identity bound to two projects as distinct rows', () => {
+  const projectBound = { ...typedSecret, projectId: projects[0]!.id }
+  const missingProjectBound = {
+    ...typedSecret,
+    projectId: '01990000-0000-7000-8000-000000000099',
+  }
+
+  const split = splitSecretRows([projectBound, missingProjectBound])
+  const display = credentialDisplayRows(split.credentials, projects)
+
+  expect(split.credentials).toHaveLength(2)
+  expect(display.map(({ projectId, boundTo }) => ({ projectId, boundTo }))).toEqual([
+    { projectId: projects[0]!.id, boundTo: PLATFORM_SLUG },
+    { projectId: missingProjectBound.projectId, boundTo: 'Unknown project' },
+  ])
+})

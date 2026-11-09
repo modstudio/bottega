@@ -58,8 +58,12 @@ export function splitSecretRows(rows: SecretRow[]): {
   return { credentials, legacy }
 }
 
-function projectName(projectId: string | null, projects: HostedProjectRow[]): string {
-  if (projectId === null) return 'This space'
+function projectName(
+  projectId: string | null,
+  projects: HostedProjectRow[],
+  nullProjectLabel: string,
+): string {
+  if (projectId === null) return nullProjectLabel
   return projects.find((project) => project.id === projectId)?.name ?? 'Unknown project'
 }
 
@@ -70,7 +74,7 @@ export function credentialDisplayRows(
   return rows.map((row) => ({
     ...row,
     credential: credentialIdentityPath(row.provider, row.name, row.type),
-    boundTo: projectName(row.projectId, projects),
+    boundTo: projectName(row.projectId, projects, 'This space'),
     payer: row.scope === 'user' ? 'You' : 'Shared',
   }))
 }
@@ -82,10 +86,7 @@ export function preferenceDisplayRows(
   return rows.map((row) => ({
     ...row,
     credential: credentialIdentityPath(row.provider, row.name, row.type),
-    project:
-      row.projectId === null
-        ? 'All projects'
-        : (projects.find((project) => project.id === row.projectId)?.name ?? 'Unknown project'),
+    project: projectName(row.projectId, projects, 'All projects'),
     paysWith: `${PAYER_LABEL[row.payer]}, ${row.binding} credential`,
   }))
 }
@@ -119,7 +120,12 @@ const preferenceColumns: CollectionColumn<PreferenceDisplayRow>[] = [
   { id: 'mode', label: 'Mode', phone: 'aside', render: (row) => row.mode },
   { id: 'project', label: 'Project', phone: 'line', render: (row) => row.project },
   { id: 'payer', label: 'Pays with', phone: 'line', render: (row) => row.paysWith },
-  { id: 'changed', label: 'Last changed', phone: 'more', render: () => null },
+  {
+    id: 'changed',
+    label: 'Last changed',
+    phone: 'more',
+    render: (row) => relativeTime(row.updatedAt),
+  },
 ]
 
 const legacyColumns: CollectionColumn<SecretRow>[] = [
@@ -172,7 +178,7 @@ function CredentialsCollection({
       count={rows.length}
       columns={credentialColumns}
       rows={rows}
-      getKey={(row) => `${row.scope}:${row.key}`}
+      getKey={(row) => `${row.scope}:${row.projectId ?? 'space'}:${row.environment}:${row.key}`}
       onOpen={() => undefined}
       empty={{
         title: 'No credentials in this space.',
@@ -190,11 +196,15 @@ function PreferencesCollection({
   projectsPending,
   projectsError,
   onClear,
+  clearPending,
+  clearError,
 }: ProjectDependentProps & {
   preferences: CredentialPreference[] | undefined
   preferencesPending: boolean
   preferencesError: { message: string } | null
   onClear: (row: CredentialPreference) => void
+  clearPending: boolean
+  clearError: { message: string } | null
 }) {
   if (preferencesPending || projectsPending)
     return <EmptyState title="Loading payer preferences..." />
@@ -202,25 +212,37 @@ function PreferencesCollection({
   if (error) return <ErrorState title="Could not load payer preferences" message={error.message} />
   const rows = preferenceDisplayRows(preferences ?? [], projects ?? [])
   return (
-    <Collection
-      title="Payer preferences"
-      count={rows.length}
-      columns={preferenceColumns}
-      rows={rows}
-      getKey={(row) =>
-        `${row.projectId ?? 'space'}:${row.credential}:${row.mode}:${row.environment}`
-      }
-      onOpen={() => undefined}
-      rowActions={(row) => (
-        <Button size="sm" variant="secondary" onClick={() => onClear(row)}>
-          Clear
-        </Button>
-      )}
-      empty={{
-        title: 'No payer preferences in this space.',
-        hint: `Choose one with ${CREDENTIAL_COMMAND} prefer.`,
-      }}
-    />
+    <>
+      <Collection
+        title="Payer preferences"
+        count={rows.length}
+        columns={preferenceColumns}
+        rows={rows}
+        getKey={(row) =>
+          `${row.projectId ?? 'space'}:${row.credential}:${row.mode}:${row.environment}`
+        }
+        onOpen={() => undefined}
+        rowActions={(row) => (
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={clearPending}
+            onClick={() => onClear(row)}
+          >
+            Clear
+          </Button>
+        )}
+        empty={{
+          title: 'No payer preferences in this space.',
+          hint: `Choose one with ${CREDENTIAL_COMMAND} prefer.`,
+        }}
+      />
+      {clearError ? (
+        <p data-tone="error" className="mb-3 text-status-text">
+          {clearError.message}
+        </p>
+      ) : null}
+    </>
   )
 }
 
@@ -242,7 +264,7 @@ function LegacyKeysCollection({
       count={rows.length}
       columns={legacyColumns}
       rows={rows}
-      getKey={(secret) => `${secret.scope}:${secret.key}`}
+      getKey={(secret) => `${secret.scope}:${secret.environment}:${secret.key}`}
       onOpen={() => undefined}
       empty={{
         title: 'No legacy keys in this space.',
@@ -286,6 +308,8 @@ function SecretsPage() {
         preferencesPending={preferences.isPending}
         preferencesError={preferences.error}
         onClear={(row) => clearPreference.mutate(row)}
+        clearPending={clearPreference.isPending}
+        clearError={clearPreference.error}
         {...projectProps}
       />
       <LegacyKeysCollection
