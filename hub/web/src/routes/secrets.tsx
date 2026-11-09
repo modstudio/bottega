@@ -1,4 +1,5 @@
 import { isHostedMode } from '@bottega/hub-data/hub-mode'
+import { Badge } from '@bottega/hub-ui/badge'
 import { Callout } from '@bottega/hub-ui/callout'
 import { Collection, type CollectionColumn } from '@bottega/hub-ui/collection'
 import { EmptyState } from '@bottega/hub-ui/empty-state'
@@ -6,7 +7,15 @@ import { ErrorState } from '@bottega/hub-ui/error-state'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { relativeTime } from '@bottega/hub-util/format'
 import { createFileRoute, Navigate, useNavigate, useParams } from '@tanstack/react-router'
-import { type CredentialDisplayRow, useCredentialRows } from '@/routes/-credential-rows'
+import { Fragment, useMemo, useState } from 'react'
+import {
+  type CredentialDisplayRow,
+  type CredentialPart,
+  credentialRowMatches,
+  orderedUsages,
+  usageLabel,
+  useCredentialRows,
+} from '@/routes/-credential-rows'
 import { useDetailPanel } from '@/routes/-detail-panel'
 import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 
@@ -14,22 +23,49 @@ export const Route = createFileRoute('/secrets')({ component: SecretsRoute })
 
 const CREDENTIAL_COMMAND = `${PLATFORM_SLUG} credential`
 
-function usedByText(row: CredentialDisplayRow) {
-  return row.usages.length
-    ? row.usages
-        .map((usage) =>
-          usage.reason === 'default-order' ? usage.name : `${usage.name} (preferred)`,
-        )
-        .join(', ')
-    : '—'
+function UsedBy({ row }: { row: CredentialDisplayRow }) {
+  if (!row.usages.length) return '—'
+  const ordered = orderedUsages(row.usages)
+  const [first, ...rest] = ordered
+  if (first?.projectId !== null) return ordered.map(usageLabel).join(', ')
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      <Badge>{usageLabel(first)}</Badge>
+      {rest.length ? <span>{rest.map(usageLabel).join(', ')}</span> : null}
+    </span>
+  )
+}
+
+function CredentialName({ parts }: { parts: CredentialPart[] }) {
+  return parts.map((part) => (
+    <Fragment key={part.role}>
+      {part.role !== 'provider' ? (
+        <span aria-hidden className="px-1 text-text-muted">
+          ·
+        </span>
+      ) : null}
+      {part.value}
+    </Fragment>
+  ))
 }
 
 const credentialColumns: CollectionColumn<CredentialDisplayRow>[] = [
-  { id: 'credential', label: 'Credential', phone: 'title', render: (row) => row.credential },
+  {
+    id: 'credential',
+    label: 'Credential',
+    phone: 'title',
+    render: (row) => <CredentialName parts={row.credentialParts} />,
+  },
   { id: 'mode', label: 'Mode', phone: 'aside', render: (row) => row.mode },
   { id: 'binding', label: 'Bound to', phone: 'line', render: (row) => row.boundTo },
   { id: 'owner', label: 'Owner', phone: 'line', render: (row) => row.owner },
-  { id: 'used-by', label: 'Used by', phone: 'line', grow: true, render: usedByText },
+  {
+    id: 'used-by',
+    label: 'Used by',
+    phone: 'line',
+    grow: true,
+    render: (row) => <UsedBy row={row} />,
+  },
   {
     id: 'hint',
     label: 'Hint',
@@ -61,6 +97,11 @@ function SecretsPage() {
   const panel = useDetailPanel()
   const selectedKey = useParams({ strict: false }).credentialKey
   const credentials = useCredentialRows()
+  const [search, setSearch] = useState('')
+  const rows = useMemo(
+    () => credentials.rows.filter((row) => credentialRowMatches(row, search)),
+    [credentials.rows, search],
+  )
   return (
     <section>
       <PageHeader
@@ -78,11 +119,16 @@ function SecretsPage() {
         <>
           <Collection
             title="Credentials"
-            count={credentials.rows.length}
+            count={rows.length}
+            search={{
+              query: search,
+              onQueryChange: setSearch,
+              placeholder: 'Search credentials',
+            }}
             panel={panel}
             selectedKey={selectedKey}
             columns={credentialColumns}
-            rows={credentials.rows}
+            rows={rows}
             getKey={(row) => row.key}
             onOpen={(row) =>
               void navigate({
@@ -92,8 +138,12 @@ function SecretsPage() {
               })
             }
             empty={{
-              title: 'No credentials in this space.',
-              hint: `Set one with ${CREDENTIAL_COMMAND} set.`,
+              title: search.trim()
+                ? 'No credentials match this search.'
+                : 'No credentials in this space.',
+              hint: search.trim()
+                ? 'Clear the search to see every credential.'
+                : `Set one with ${CREDENTIAL_COMMAND} set.`,
             }}
           />
           {credentials.untypedCount > 0 ? (

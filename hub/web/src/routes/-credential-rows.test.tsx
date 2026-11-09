@@ -1,7 +1,11 @@
 import { expect, test } from 'bun:test'
 import type { HostedProjectRow, RecordConfigSecretsResponse } from '@bottega/hub-data/client'
 import type { CredentialPreference } from '../../../../shared/credential.ts'
-import { credentialDisplayRows, typedCredentialRows } from './-credential-rows.tsx'
+import {
+  credentialDisplayRows,
+  credentialRowMatches,
+  typedCredentialRows,
+} from './-credential-rows.tsx'
 
 const spaceId = '01990000-0000-7000-8000-000000000010'
 const updatedAt = '2026-11-05T12:00:00.000Z'
@@ -140,6 +144,35 @@ test('a project preference selects its copy or becomes missing while default ord
     'A:default-order',
   ])
   expect(missing[1]).toMatchObject({ missing: true, usages: [], preferences: [sharedPreference] })
+})
+
+test('a retired project uses no copy', () => {
+  const withRetired = [projects[0]!, { ...projects[2]!, retiredAt: updatedAt }]
+  const rows = credentialDisplayRows(
+    typedCredentialRows([secret('space', null)]),
+    [],
+    withRetired,
+    spaceId,
+  )
+  expect(rows[0]!.usages.map((usage) => usage.name)).toEqual(['A', 'Space default'])
+})
+
+test('search matches a project the copy is used by', () => {
+  const named = projects.map((project, index) => ({
+    ...project,
+    name: ['Atlas', 'Beacon', 'Comet'][index]!,
+  }))
+  const rows = credentialDisplayRows(typedCredentialRows(copies), [], named, spaceId)
+  const matched = rows.filter((row) => credentialRowMatches(row, 'COMET'))
+  expect(matched.map((row) => row.usages.map((usage) => usage.name))).toEqual([
+    ['Comet', 'Space default'],
+  ])
+  const preferred = credentialDisplayRows(typedCredentialRows(copies), [preference], named, spaceId)
+  const count = (query: string) =>
+    preferred.filter((row) => credentialRowMatches(row, query)).length
+  expect(count('openrouter · api-key')).toBe(3)
+  expect(count('(preferred)')).toBe(1)
+  expect(count('local')).toBe(0)
 })
 
 test('a preference with no stored slot produces a missing row with no usage', () => {
