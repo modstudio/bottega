@@ -19,6 +19,7 @@ import {
   completeCredentialFields,
   credentialIdentityPath,
 } from '../../../../shared/credential.ts'
+import { credentialPayerFromScope } from '../../../../shared/credential-resolution.ts'
 
 export const Route = createFileRoute('/secrets')({ component: SecretsRoute })
 
@@ -75,7 +76,7 @@ export function credentialDisplayRows(
     ...row,
     credential: credentialIdentityPath(row.provider, row.name, row.type),
     boundTo: projectName(row.projectId, projects, 'This space'),
-    payer: row.scope === 'user' ? 'You' : 'Shared',
+    payer: PAYER_LABEL[credentialPayerFromScope(row.scope)],
   }))
 }
 
@@ -150,9 +151,7 @@ function SecretsRoute() {
 }
 
 type ProjectDependentProps = {
-  projects: HostedProjectRow[] | undefined
-  projectsPending: boolean
-  projectsError: { message: string } | null
+  projects: HostedProjectRow[]
 }
 
 function CredentialsCollection({
@@ -160,18 +159,16 @@ function CredentialsCollection({
   secretsPending,
   secretsError,
   projects,
-  projectsPending,
-  projectsError,
 }: ProjectDependentProps & {
   secrets: SecretRow[] | undefined
   secretsPending: boolean
   secretsError: { message: string } | null
 }) {
-  if (secretsPending || projectsPending) return <EmptyState title="Loading credentials..." />
-  const error = secretsError ?? projectsError
-  if (error) return <ErrorState title="Could not load credentials" message={error.message} />
+  if (secretsPending) return <EmptyState title="Loading credentials..." />
+  if (secretsError)
+    return <ErrorState title="Could not load credentials" message={secretsError.message} />
   const split = splitSecretRows(secrets ?? [])
-  const rows = credentialDisplayRows(split.credentials, projects ?? [])
+  const rows = credentialDisplayRows(split.credentials, projects)
   return (
     <Collection
       title="Credentials"
@@ -193,8 +190,6 @@ function PreferencesCollection({
   preferencesPending,
   preferencesError,
   projects,
-  projectsPending,
-  projectsError,
   onClear,
   clearPending,
   clearError,
@@ -206,11 +201,12 @@ function PreferencesCollection({
   clearPending: boolean
   clearError: { message: string } | null
 }) {
-  if (preferencesPending || projectsPending)
-    return <EmptyState title="Loading payer preferences..." />
-  const error = preferencesError ?? projectsError
-  if (error) return <ErrorState title="Could not load payer preferences" message={error.message} />
-  const rows = preferenceDisplayRows(preferences ?? [], projects ?? [])
+  if (preferencesPending) return <EmptyState title="Loading payer preferences..." />
+  if (preferencesError)
+    return (
+      <ErrorState title="Could not load payer preferences" message={preferencesError.message} />
+    )
+  const rows = preferenceDisplayRows(preferences ?? [], projects)
   return (
     <>
       <Collection
@@ -286,17 +282,18 @@ function SecretsPage() {
         }),
     }),
   )
-  const projectProps = {
-    projects: projects.data,
-    projectsPending: projects.isPending,
-    projectsError: projects.error,
-  }
+  const projectProps = { projects: projects.data ?? [] }
   return (
     <section>
       <PageHeader
         title="Secrets"
         about={`Set and delete values with ${CREDENTIAL_COMMAND} set and ${CREDENTIAL_COMMAND} delete, and choose a payer with ${CREDENTIAL_COMMAND} prefer. Values never reach this page.`}
       />
+      {projects.error ? (
+        <p data-tone="error" className="mb-3 text-status-text">
+          <strong>Could not load project names:</strong> {projects.error.message}
+        </p>
+      ) : null}
       <CredentialsCollection
         secrets={secrets.data}
         secretsPending={secrets.isPending}

@@ -6,6 +6,7 @@ import {
   CREDENTIAL_ENVIRONMENTS,
   CREDENTIAL_MODES,
   CREDENTIAL_PAYERS,
+  CREDENTIAL_SLUG_PATTERN,
 } from '../../shared/credential.ts'
 import {
   DOC_KINDS,
@@ -455,7 +456,7 @@ const configEntrySchema = z.object({
   rowVersion: z.number().int().positive(),
   updatedAt: z.string().datetime({ offset: true }),
 })
-/** The config environment every hub screen reads and writes. */
+/** The environment the hub config entry screens read and write. */
 const DEFAULT_CONFIG_ENVIRONMENT = 'default'
 /** A sealed secret's metadata; the listing carries no value and no envelope. */
 const configSecretSchema = z.object({
@@ -470,24 +471,18 @@ const configSecretSchema = z.object({
   mode: z.enum(CREDENTIAL_MODES).nullable(),
   updatedAt: z.string().datetime({ offset: true }),
 })
-const credentialPreferenceSchema = z.object({
+export const credentialPreferenceIdentitySchema = z.object({
   projectId: z.string().uuid().nullable(),
-  provider: z.string(),
-  name: z.string().nullable(),
-  type: z.string(),
+  provider: z.string().regex(CREDENTIAL_SLUG_PATTERN),
+  name: z.string().regex(CREDENTIAL_SLUG_PATTERN).nullable(),
+  type: z.string().regex(CREDENTIAL_SLUG_PATTERN),
   mode: z.enum(CREDENTIAL_MODES),
   environment: z.enum(CREDENTIAL_ENVIRONMENTS),
+})
+const credentialPreferenceSchema = credentialPreferenceIdentitySchema.extend({
   payer: z.enum(CREDENTIAL_PAYERS),
   binding: z.enum(CREDENTIAL_BINDINGS),
   updatedAt: z.string().datetime({ offset: true }),
-})
-const credentialPreferenceIdentitySchema = credentialPreferenceSchema.pick({
-  projectId: true,
-  provider: true,
-  name: true,
-  type: true,
-  mode: true,
-  environment: true,
 })
 const settingsPermissionResultSchema = z.object({
   revision: z.string().uuid(),
@@ -820,6 +815,7 @@ function recordConfigClient(options: RecordClientOptions) {
           body: JSON.stringify({ ...input, environment: DEFAULT_CONFIG_ENVIRONMENT }),
         },
       ),
+    // The listing spans every environment because typed credentials live under local.
     configSecrets: () =>
       request(options, '/v1/config/secrets', z.object({ items: z.array(configSecretSchema) })).then(
         ({ items }) => items,

@@ -23,7 +23,7 @@ export const hubModuleSpecs = [
     allowed: [
       '@trpc/server',
       'zod',
-      '../../../../shared/credential.ts',
+      '../../record-client.ts',
       '../context.ts',
       './record-inputs.ts',
       './record-router-client.ts',
