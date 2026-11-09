@@ -111,6 +111,9 @@
     "orchestrator/src/run/run-agent-capacity.ts": 1
   },
   "commandCases": {
+    "shared/record-remedies.ts#recordUnreachableRefusal": {
+      "test": "shared/record-remedies.test.ts: hosted-record unreachable refusal names the origin, outcome, and doctor remedy"
+    },
     "orchestrator/src/config/credential-service.ts#projectRecordIdentityRefusal": {
       "test": "orchestrator/src/config/credential-service.test.ts: project credential address refuses missing record identity with project push remedy"
     },

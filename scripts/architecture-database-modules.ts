@@ -9,6 +9,10 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const databaseModules: ArchitectureModule[] = [
+  module('orchestrator/src/database/hosted-table-guard.ts', [
+    'bun:sqlite',
+    '../../../shared/hosted-tables.ts',
+  ]),
   module('orchestrator/src/database/session-identity.ts', [
     'bun:sqlite',
     'node:fs',
@@ -181,11 +185,13 @@ export const databaseModules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/runtime/store-hooks.ts', [
     '../database/db.ts',
+    '../database/hosted-table-guard.ts',
     '../evidence/evidence-query.ts',
     '../lens/lens-seeds.ts',
     '../review/review-round-backfill.ts',
     '../run/run-liveness.ts',
     '../run/shared-git-config-run.ts',
+    '../record/record-write-authority.ts',
     '../workflow/workflow-seeds.ts',
   ]),
 ]

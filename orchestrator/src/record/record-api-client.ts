@@ -10,15 +10,11 @@ import type {
   DocStatus,
 } from '../../../shared/docs.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
-import {
-  RECORD_ACTIVE_SPACE_REMEDY,
-  recordUnreachableRefusal,
-} from '../../../shared/record-remedies.ts'
+import { recordUnreachableRefusal } from '../../../shared/record-remedies.ts'
 import type { TableStorageMeasurement } from '../../../shared/storage-lifecycle.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
-import { MISSING_HOSTED_REVISION_REMEDY, RECORD_WRITE_REMEDY } from '../doc/doc-write-allowed.ts'
 import type { VerdictInput } from '../verdict/verdict-payload.ts'
 import { recordBoardRootClient } from './record-api-client-board.ts'
 import {
@@ -27,6 +23,12 @@ import {
 } from './record-api-client-board-stream.ts'
 import { type RecordChangesClient, recordChangesClient } from './record-api-client-changes.ts'
 import { recordConfigAccessClient } from './record-api-client-config-access.ts'
+import {
+  recordApiUnreachable as classifyRecordApiUnreachable,
+  recordApiError,
+  recordAuthRefusal,
+  recordAuthToken,
+} from './record-api-client-error.ts'
 import { type RecordLensClient, recordLensClient } from './record-api-client-lens.ts'
 import { type RecordMachineClient, recordMachineClient } from './record-api-client-machine.ts'
 import { recordModerationClient } from './record-api-client-moderation.ts'
@@ -51,14 +53,9 @@ import {
   subjectMutationBody,
 } from './record-api-client-paths.ts'
 import { type RecordPortClient, recordPortClient } from './record-api-client-port.ts'
-import {
-  RecordApiRequestError,
-  responseCode,
-  responseMessage,
-  responseRecord,
-} from './record-api-client-response.ts'
-import { parseProjectSpaceConflictResponse } from './record-project-space-contract.ts'
+import { RecordApiRequestError, responseRecord } from './record-api-client-response.ts'
 
+export { recordAuthRefusal, recordAuthToken } from './record-api-client-error.ts'
 export { RecordApiRequestError } from './record-api-client-response.ts'
 
 import { forgetRecordSessionToken } from '../../../shared/record-session.ts'
@@ -106,7 +103,6 @@ import type {
   PublicRecordDocTreeItem,
   RecordDocSearchMatch,
 } from './record-public-docs.ts'
-import { revisionConflictBodySchema } from './record-revision-conflict.ts'
 import { storedRecordToken, storedRecordTokenAsync } from './record-session.ts'
 import type { SnapshotKind } from './record-snapshots.ts'
 import type { RecordSubject } from './record-subjects.ts'
@@ -466,76 +462,11 @@ function injectSlot(): InjectSlot {
 const injectedClient = (): RecordApiClient | null => injectSlot().current
 export const recordApiClientInjected = (): boolean => injectedClient() !== null
 
-const recordApiStatus = (status: number) => `record API ${status}`
-
-function recordApiUnreachable(error: unknown, origin = recordApiBaseUrl()): Error {
-  const detail = error instanceof Error ? error.message : String(error)
-  return new RecordApiRequestError(recordUnreachableRefusal(origin, detail), 'unreachable')
-}
+const recordApiUnreachable = (error: unknown, origin = recordApiBaseUrl()) =>
+  classifyRecordApiUnreachable(error, origin)
 
 export const recordIdentityResponse = (body: unknown) =>
   parseRecordIdentityResponse(body, (message) => recordApiUnreachable(new Error(message)))
-
-function recordApiServerError(message: string, status: number): RecordApiRequestError {
-  const fallback = recordApiStatus(status)
-  const statusMessage = message === fallback ? message : `${fallback}: ${message}`
-  return new RecordApiRequestError(`${statusMessage}\n${RECORD_WRITE_REMEDY}`, 'server', status)
-}
-
-function recordApiError(body: unknown, status: number, headers: Headers = new Headers()): Error {
-  if (status === 401) return recordAuthRefusal(status, body, headers)
-  const projectSpaceConflict = parseProjectSpaceConflictResponse(body, status)
-  if (projectSpaceConflict) return projectSpaceConflict
-  const revisionConflict = revisionConflictBodySchema.safeParse(body)
-  if (status === 409 && revisionConflict.success)
-    return new RecordApiRequestError(
-      revisionConflict.data.error,
-      'conflict',
-      status,
-      revisionConflict.data.code,
-      false,
-      revisionConflict.data.currentRevision,
-    )
-  const message = responseMessage(body, recordApiStatus(status))
-  if (status === 429) return new RecordApiRequestError(message, 'refused', status)
-  if (message === RECORD_ACTIVE_SPACE_REMEDY)
-    return new RecordApiRequestError(message, 'refused', status)
-  if (message.includes(MISSING_HOSTED_REVISION_REMEDY))
-    return new RecordApiRequestError(message, 'refused', status)
-  if (status >= 400 && status < 500) return new RecordApiRequestError(message, 'refused', status)
-  return recordApiServerError(message, status)
-}
-
-export function recordAuthToken(headers: Headers, body: unknown): string | null {
-  const fromHeader = headers.get('set-auth-token')?.trim()
-  if (fromHeader) return fromHeader
-  const token = responseRecord(body).token
-  return typeof token === 'string' && token.trim() ? token : null
-}
-
-export function recordAuthRefusal(status: number, body: unknown, headers: Headers): Error {
-  if (status === 401)
-    return new RecordApiRequestError(
-      `record credentials were refused; ${RECORD_SIGN_IN_REMEDY}`,
-      'refused',
-    )
-  if (status === 429) {
-    const interval = headers.get('retry-after') ?? headers.get('x-ratelimit-reset') ?? 'later'
-    return new RecordApiRequestError(
-      `record sign-in is rate limited; retry after ${interval}`,
-      'refused',
-    )
-  }
-  const message = responseMessage(body, recordApiStatus(status))
-  if (status >= 400 && status < 500) {
-    const code = responseCode(body)
-    const existingAccount = code
-      ? code === 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL' || code === 'USER_ALREADY_EXISTS'
-      : message.startsWith('User already exists')
-    return new RecordApiRequestError(message, 'refused', status, code, existingAccount)
-  }
-  return recordApiServerError(message, status)
-}
 
 async function recordEmailAuthRequest(
   path: '/api/auth/sign-in/email' | '/api/auth/sign-up/email',

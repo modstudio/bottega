@@ -919,8 +919,10 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/runtime/store-hooks.ts',
     [
       '../database/db.ts',
+      '../database/hosted-table-guard.ts',
       '../evidence/evidence-query.ts',
       '../review/review-round-backfill.ts',
+      '../record/record-write-authority.ts',
       '../run/run-liveness.ts',
       '../run/shared-git-config-run.ts',
       '../workflow/workflow-seeds.ts',

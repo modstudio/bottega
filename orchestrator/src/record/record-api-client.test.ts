@@ -136,7 +136,7 @@ describe('record HTTP authentication responses', () => {
         memberships: [],
       }),
     ).toThrow(
-      `the hosted record at https://api.bottega.run could not be reached (record API returned an invalid identity); nothing was written\ncleared by:`,
+      `the hosted record at https://api.${PLATFORM_SLUG}.run could not be reached (record API returned an invalid identity); nothing was written\ncleared by:`,
     )
   })
 

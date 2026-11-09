@@ -2,7 +2,7 @@
 /** Owns the shared server/client wire shape for optimistic hosted-write conflicts. */
 import { z } from 'zod'
 
-export const REVISION_CONFLICT_CODE = 'revision-conflict' as const
+const REVISION_CONFLICT_CODE = 'revision-conflict' as const
 
 export const revisionConflictBodySchema = z.object({
   error: z.string().min(1),

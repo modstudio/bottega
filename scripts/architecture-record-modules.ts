@@ -164,6 +164,15 @@ export const recordModules: RecordModule[] = [
     './record-board-contract.ts',
   ]),
   module('orchestrator/src/record/record-api-client-response.ts', []),
+  module('orchestrator/src/record/record-revision-conflict.ts', ['zod']),
+  module('orchestrator/src/record/record-api-client-error.ts', [
+    '../../../shared/record-remedies.ts',
+    '../doc/doc-write-allowed.ts',
+    './record-api-client-response.ts',
+    './record-auth.ts',
+    './record-project-space-contract.ts',
+    './record-revision-conflict.ts',
+  ]),
   module('orchestrator/src/record/record-api-client-config-access.ts', [
     './record-api-client-paths.ts',
   ]),
@@ -267,6 +276,7 @@ export const recordModules: RecordModule[] = [
     './record-cursor.ts',
     './record-workflow-contract.ts',
     './record-pool.ts',
+    './record-revision-conflict.ts',
   ]),
   module('orchestrator/src/record/record-workflow-contract.ts', [
     'zod',
@@ -279,6 +289,7 @@ export const recordModules: RecordModule[] = [
     './record-cursor.ts',
     './record-workflow-contract.ts',
     './record-task-flow.ts',
+    './record-revision-conflict.ts',
   ]),
   module('orchestrator/src/record/record-api-client-workflow.ts', [
     './record-api-client-paths.ts',
@@ -655,6 +666,7 @@ export const recordModules: RecordModule[] = [
     './record-docs.ts',
     './record-projects.ts',
     './record-project-space-contract.ts',
+    './record-revision-conflict.ts',
     './record-trial-space-contract.ts',
     './record-verdicts.ts',
   ]),
@@ -700,6 +712,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-doc-errors.ts', [
     '../../../shared/refusal.ts',
     '../doc/doc-write-allowed.ts',
+    './record-revision-conflict.ts',
   ]),
   module('orchestrator/src/record/record-doc-order.ts', [
     'bun',

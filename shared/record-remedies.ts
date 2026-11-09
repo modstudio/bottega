@@ -1,5 +1,5 @@
 import { PLATFORM_SLUG } from './brand.ts'
-import type { RefusalRemedy } from './refusal.ts'
+import { type RefusalRemedy, refusal, renderRefusal } from './refusal.ts'
 
 export function recordSignInRemedy(email: string): Extract<RefusalRemedy, { kind: 'command' }> {
   return {
@@ -13,9 +13,11 @@ export const RECORD_ACTIVE_SPACE_REMEDY = `record session has no active space; r
 export const RUN_RETRY_REMEDY = `${PLATFORM_SLUG} run retry <run>`
 
 export function recordUnreachableRefusal(origin: string, detail: string): string {
-  return (
-    `the hosted record at ${origin} could not be reached (${detail}); nothing was written\n` +
-    `cleared by: ${PLATFORM_SLUG} record doctor`
+  return renderRefusal(
+    refusal(
+      `the hosted record at ${origin} could not be reached (${detail}); nothing was written`,
+      { kind: 'command', argv: [PLATFORM_SLUG, 'record', 'doctor'] },
+    ),
   )
 }
 
