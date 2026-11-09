@@ -102,15 +102,19 @@ const project = {
 }
 const identity = { provider: address.provider, name: address.name, type: address.type }
 
-function metadataRow(projectId: string | null, name: string | null = address.name) {
+function metadataRow(
+  projectId: string | null,
+  name: string | null = address.name,
+  type: string = address.type,
+) {
   return {
-    key: `row-${projectId ?? 'space'}-${name ?? 'unnamed'}`,
+    key: `row-${projectId ?? 'space'}-${name ?? 'unnamed'}-${type}`,
     scope: 'user' as const,
     projectId,
     environment: address.environment,
     provider: address.provider,
     name,
-    type: address.type,
+    type,
     hint: '4 characters',
     mode: address.mode,
     dekId: '01990000-0000-7000-8000-000000000004',
@@ -394,4 +398,20 @@ test('credential presence rejects a row with a different name', async () => {
   expect(
     await projectHasCredential(project, identity, metadataClient([metadataRow(null, 'other')])),
   ).toBe(false)
+})
+
+test('operator presence matches the named identity rather than the project default', async () => {
+  const named = { provider: address.provider, name: 'metrics', type: 'token' }
+  const defaultRow = metadataRow(address.projectId)
+  expect(await projectHasCredential(project, named, metadataClient([defaultRow]))).toBe(false)
+  expect(
+    await projectHasCredential(
+      project,
+      named,
+      metadataClient([defaultRow, metadataRow(address.projectId, 'metrics', 'token')]),
+    ),
+  ).toBe(true)
+  expect(
+    await resolveProjectOperatorCredential(project, named, metadataClient([defaultRow])),
+  ).toBeUndefined()
 })
