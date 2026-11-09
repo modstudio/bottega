@@ -194,7 +194,9 @@ export async function setCredential(
           type: address.type,
           hint: credentialHint(plaintext),
           mode: address.mode,
-          ...(address.account ? { reachSpaceIds: address.reachSpaceIds ?? null } : {}),
+          ...(address.account && address.reachSpaceIds !== undefined
+            ? { reachSpaceIds: address.reachSpaceIds }
+            : {}),
         },
         createDataKey: false,
         expectedRowVersion,
