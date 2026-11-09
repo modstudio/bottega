@@ -46,6 +46,7 @@ const storedTrackerTask = {
   last_seen: '2026-09-02T10:00:00.000Z',
   updated_at: '2026-09-01T10:00:00.000Z',
   assignee: null,
+  retired_reason: null,
 }
 
 const cacheTrackerTask = (task: TrackerTask, at = new Date().toISOString()) =>

@@ -563,6 +563,7 @@ describe('local task tracker', () => {
       first_seen: '',
       last_seen: '',
       next_document_number: 1,
+      retired_reason: null,
     }))
 
     expect(duplicateCandidates(tasks, 'alpha beta gamma delta')).toEqual([
