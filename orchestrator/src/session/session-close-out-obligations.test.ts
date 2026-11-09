@@ -1,11 +1,36 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  classifyLandedTask,
   landedTaskIdentities,
   sessionCloseOutObligations,
 } from './session-close-out-obligations.ts'
 
 describe('session close-out obligations', () => {
+  test('landed task status and acknowledgement decide its close-out obligation', () => {
+    expect(
+      classifyLandedTask({
+        verified: true,
+        open: true,
+        openAfterLandingAcknowledged: false,
+      }),
+    ).toBe('residue')
+    expect(
+      classifyLandedTask({
+        verified: true,
+        open: true,
+        openAfterLandingAcknowledged: true,
+      }),
+    ).toBe('accepted')
+    expect(
+      classifyLandedTask({
+        verified: true,
+        open: false,
+        openAfterLandingAcknowledged: false,
+      }),
+    ).toBe('none')
+  })
+
   test('pending score roots name the run, agent, job, label, and score remedy', () => {
     expect(
       sessionCloseOutObligations({
@@ -106,6 +131,7 @@ describe('session close-out obligations', () => {
           {
             project: 'alpha',
             taskKey: 'DEV-1',
+            openAfterLandingAcknowledged: false,
             observation: {
               raw: 'done',
               category: 'done',
@@ -117,6 +143,7 @@ describe('session close-out obligations', () => {
           {
             project: 'alpha',
             taskKey: 'DEV-2',
+            openAfterLandingAcknowledged: false,
             observation: {
               raw: 'cancelled',
               category: 'cancelled',
@@ -128,6 +155,7 @@ describe('session close-out obligations', () => {
           {
             project: 'alpha',
             taskKey: 'DEV-3',
+            openAfterLandingAcknowledged: false,
             observation: {
               raw: 'active',
               category: 'active',
@@ -139,12 +167,25 @@ describe('session close-out obligations', () => {
           {
             project: 'alpha',
             taskKey: 'DEV-4',
+            openAfterLandingAcknowledged: false,
             observation: {
               category: null,
               raw: null,
               lastSeen: null,
               verified: false,
               detail: 'unverified (missing status category)',
+            },
+          },
+          {
+            project: 'alpha',
+            taskKey: 'DEV-5',
+            openAfterLandingAcknowledged: true,
+            observation: {
+              raw: 'active',
+              category: 'active',
+              lastSeen: null,
+              verified: true,
+              detail: 'in progress',
             },
           },
         ],
@@ -154,7 +195,10 @@ describe('session close-out obligations', () => {
         item: 'landed task alpha:DEV-3',
         reason: 'task is active',
         evidence: 'in progress',
-        remedy: `${PLATFORM_SLUG} task set DEV-3 --project alpha --status done`,
+        remedy:
+          `${PLATFORM_SLUG} task set DEV-3 --project alpha --status done, or ` +
+          `${PLATFORM_SLUG} agent context set --task DEV-3 --kind ruling ` +
+          '--id open-after-landing --source session-close-out "keep open after landing"',
       },
       {
         item: 'landed task alpha:DEV-4',

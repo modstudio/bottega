@@ -82,6 +82,13 @@ export type SessionContextAction = 'drop' | 'refuse' | 'keep'
 
 export type SessionCursorDisposition = 'parked' | 'open'
 
+export type UnreadableProjectDisposition = 'error' | 'warning'
+
+/** An unreadable project blocks only while this session still owns work close-out must settle. */
+export function classifyUnreadableProject(ownsCloseOutWork: boolean): UnreadableProjectDisposition {
+  return ownsCloseOutWork ? 'error' : 'warning'
+}
+
 /** Classify whether a workflow cursor leaves work for close-out or a successor. */
 export function classifySessionCursor(input: {
   state: string

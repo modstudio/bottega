@@ -343,6 +343,51 @@ test('sweep dry-run lists absent and kept claims without changing either row', (
   )
 })
 
+test('an absent ref guard stays claimed while its reader tree is present', () => {
+  const runId = addRun({ agent: 'codex', job: 'review', status: 'ok' })
+  const project = `ref-guard-reader-${runId}`
+  const repository = `/repo/${project}`
+  const tree = `/trees/${runId}`
+  const guard = `${repository}/.git/orch-guards/${runId}`
+  const projectId = newRecordId()
+  upsertProject({ recordId: projectId, name: project, path: repository })
+  db()
+    .query('UPDATE run SET repo=?,project_record_id=?,worktree=? WHERE record_id=?')
+    .run(project, projectId, tree, runId)
+  const guardClaimId = newRecordId()
+  const insert = db().query(
+    `INSERT INTO resource_claim
+     (record_id,root_run_record_id,run_record_id,project_record_id,kind,allocation_key,state,claimed_at)
+     VALUES (?,?,?,?,?,?,'claimed',?)`,
+  )
+  insert.run(newRecordId(), runId, runId, projectId, 'worktree', tree, nowIso())
+  insert.run(guardClaimId, runId, runId, projectId, 'ref_guard', guard, nowIso())
+  const lines: string[] = []
+
+  reconcileAbsentClaims({
+    dryRun: false,
+    claimIds: [guardClaimId],
+    presentation: linePresentation(lines),
+    trust: { succeeded: true, headings: [] },
+    database: db(),
+    observers: {
+      path: (path) => ({ outcome: path === tree ? 'present' : 'absent' }),
+      leaseState: () => 'missing',
+      pidAlive: () => false,
+    },
+    synchronize: (_row, reconcile) => reconcile(),
+  })
+
+  expect(
+    (
+      db().query('SELECT state FROM resource_claim WHERE record_id=?').get(guardClaimId) as {
+        state: string
+      }
+    ).state,
+  ).toBe('claimed')
+  expect(lines).toEqual([])
+})
+
 test('reconciling an absent worktree leaves its dependent port claimed', () => {
   const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const project = `claim-cascade-${runId}`

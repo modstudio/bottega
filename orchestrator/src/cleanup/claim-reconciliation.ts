@@ -16,6 +16,7 @@ import { decideAbsentClaim } from './cleanup-sweep-decisions.ts'
 
 const RECONCILED_KINDS = [
   'branch',
+  'ref_guard',
   'retained_ref',
   'worktree',
   'sandbox_dir',
@@ -89,17 +90,18 @@ function claimedRows(
       `SELECT claim.record_id,claim.number,claim.root_run_record_id,claim.run_record_id,claim.project_record_id,claim.kind,claim.allocation_key,
               project.name project_name,project.path project_path,root.repo run_repo,
               root.cwd run_cwd,root.launch_cwd,root.worktree recorded_worktree,
-              CASE WHEN claim.kind='worktree' THEN claim.allocation_key ELSE
+              CASE WHEN claim.kind='worktree' THEN claim.allocation_key ELSE COALESCE(
                 (SELECT tree.allocation_key FROM resource_claim tree
                  WHERE tree.root_run_record_id=claim.root_run_record_id AND tree.kind='worktree'
                  ORDER BY CASE WHEN tree.run_record_id=claim.run_record_id THEN 0 ELSE 1 END,
-                          tree.claimed_at DESC,tree.record_id DESC LIMIT 1)
+                          tree.claimed_at DESC,tree.record_id DESC LIMIT 1),
+                root.worktree)
               END worktree_path
        FROM resource_claim claim
        JOIN run root ON root.record_id=claim.root_run_record_id
        LEFT JOIN project ON project.record_id=claim.project_record_id
        WHERE claim.state='claimed'
-         AND claim.kind IN ('branch','retained_ref','worktree','sandbox_dir','trust_entry')
+         AND claim.kind IN ('branch','ref_guard','retained_ref','worktree','sandbox_dir','trust_entry')
          AND (? IS NULL OR project.name=?)
        ORDER BY claim.claimed_at,claim.record_id`,
     )
@@ -156,6 +158,8 @@ function resourceObservation(
   repositoryState: 'known' | 'unknown-present' | 'unknown-absent',
   observers: ClaimReconciliationObservers,
 ): { probe: 'present' | 'absent' | 'failed'; detail: string } {
+  const treeHold = refGuardTreeHold(row, observers)
+  if (treeHold) return treeHold
   if (
     repositoryState === 'unknown-absent' &&
     (row.kind === 'branch' || row.kind === 'retained_ref')
@@ -172,18 +176,37 @@ function resourceObservation(
           detail: `observed absent ref ${row.allocation_key} in ${repositoryPath}`,
         }
   }
-  if (row.kind === 'trust_entry') {
-    if (!observers.trust.succeeded) return { probe: 'failed', detail: observers.trust.detail }
-    return observers.trust.headings.includes(row.allocation_key)
-      ? { probe: 'present', detail: 'trust heading is present' }
-      : { probe: 'absent', detail: `observed absent trust heading ${row.allocation_key}` }
-  }
+  if (row.kind === 'trust_entry') return trustObservation(row, observers.trust)
   const observation = observers.path(row.allocation_key)
   if (observation.outcome === 'failed')
     return { probe: 'failed', detail: observation.detail ?? 'path observation failed' }
   return observation.outcome === 'present'
     ? { probe: 'present', detail: 'path is present' }
     : { probe: 'absent', detail: `observed absent path ${row.allocation_key}` }
+}
+
+function refGuardTreeHold(
+  row: ClaimedRow,
+  observers: ClaimReconciliationObservers,
+): { probe: 'present' | 'failed'; detail: string } | null {
+  if (row.kind !== 'ref_guard' || !row.worktree_path) return null
+  const tree = observers.path(row.worktree_path)
+  if (tree.outcome === 'failed') {
+    return { probe: 'failed', detail: tree.detail ?? 'worktree observation failed' }
+  }
+  return tree.outcome === 'present'
+    ? { probe: 'present', detail: `worktree is still present at ${row.worktree_path}` }
+    : null
+}
+
+function trustObservation(
+  row: ClaimedRow,
+  trust: GrokTrustObservation,
+): { probe: 'present' | 'absent' | 'failed'; detail: string } {
+  if (!trust.succeeded) return { probe: 'failed', detail: trust.detail }
+  return trust.headings.includes(row.allocation_key)
+    ? { probe: 'present', detail: 'trust heading is present' }
+    : { probe: 'absent', detail: `observed absent trust heading ${row.allocation_key}` }
 }
 
 function conversationFacts(

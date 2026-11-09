@@ -271,7 +271,7 @@ test("a turn's guard or retained ref makes its terminal root planned", async () 
   )
 })
 
-test('an unreadable project reports an error and conservatively plans its root', async () => {
+test('an unreadable project warns when the session owns no work that remains there', async () => {
   const project = `missing-session-close-out-${newRecordId()}`
   const repo = join(dir, project)
   const projectId = registerProject(project, repo)
@@ -283,6 +283,7 @@ test('an unreadable project reports an error and conservatively plans its root',
     taskRecordId: 'fixture-task',
     projectRecordId: null,
   })
+  score(root, 'full', 'right', 'faithful')
   attachRunToProject(root, projectId, project)
   spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
     if (command[0] === 'ps' || command[0] === 'lsof') return spawnResult()
@@ -292,14 +293,68 @@ test('an unreadable project reports an error and conservatively plans its root',
   const report = await closeOutSession({ session: 'owner', dryRun: true })
 
   expect(report.mechanical).toEqual([`would close run ${root}`])
-  expect(report.errors).toEqual([
+  expect(report.errors).toEqual([])
+  expect(report.warnings).toEqual([
     {
       item: `project ${project}`,
       detail: `run resource state could not be read: git common directory could not be read at ${repo}`,
-      retry: `${PLATFORM_SLUG} machine doctor`,
+      cleanup:
+        `repair the registered checkout, or remove its stale register entry with ` +
+        `${PLATFORM_SLUG} project remove ${project}`,
     },
   ])
-  expect(report.verdict.clean).toBe(false)
+  expect(report.verdict.clean).toBe(true)
+  expect(formatSessionCloseOut(report)).toContain(`warning: project ${project}`)
+})
+
+test('close-out settles an absent ref guard once for an absent terminal tree', async () => {
+  const project = `absent-ref-guard-close-out-${newRecordId()}`
+  const repo = join(dir, project)
+  cleanupPaths.push(repo)
+  mkdirSync(join(repo, '.git'), { recursive: true })
+  const projectId = registerProject(project, repo)
+  const root = addRun({ agent: 'codex', job: 'implement', status: 'ok', session: 'owner' })
+  score(root, 'full', 'right', 'faithful')
+  attachRunToProject(root, projectId, project)
+  const missingTree = join(repo, '.claude', 'worktrees', 'missing')
+  const missingGuard = join(repo, '.git', 'orch-guards', root)
+  db().query('UPDATE run SET worktree=? WHERE record_id=?').run(missingTree, root)
+  const claimRecordId = newRecordId()
+  db()
+    .query(
+      `INSERT INTO resource_claim
+       (record_id,root_run_record_id,run_record_id,project_record_id,kind,allocation_key,state,claimed_at)
+       VALUES (?, ?, ?, ?, 'ref_guard', ?, 'claimed', '2026-10-20T00:00:00.000Z')`,
+    )
+    .run(claimRecordId, root, root, projectId, missingGuard)
+  spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
+    if (command.includes('--git-common-dir')) return spawnResult('.git\n')
+    if (command.includes('for-each-ref')) return spawnResult()
+    if (command[0] === 'ps' || command[0] === 'lsof') return spawnResult()
+    return spawnResult()
+  }) as typeof Bun.spawnSync)
+
+  const first = await closeOutSession({ session: 'owner' })
+  const settled = db()
+    .query('SELECT state,settled_detail FROM resource_claim WHERE record_id=?')
+    .get(claimRecordId) as { state: string; settled_detail: string }
+  const second = await closeOutSession({ session: 'owner', dryRun: true })
+
+  expect(first.mechanical).toContain(
+    `reconcile claims ${
+      (
+        db().query('SELECT number FROM resource_claim WHERE record_id=?').get(claimRecordId) as {
+          number: number
+        }
+      ).number
+    }`,
+  )
+  expect(settled).toEqual({
+    state: 'absent',
+    settled_detail: `observed absent path ${missingGuard}`,
+  })
+  expect(second.mechanical).not.toContain(`would close run ${root}`)
+  expect(second.mechanical.some((line) => line.startsWith('would reconcile claims'))).toBe(false)
 })
 
 test('an absent tree that owes recorded teardown makes its terminal root planned', async () => {

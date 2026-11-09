@@ -3,6 +3,7 @@ import {
   classifySessionCloseOut,
   classifySessionContextItem,
   classifySessionCursor,
+  classifyUnreadableProject,
   plannedTreeOwnerMatches,
   type ResumeHandoffRootFacts,
   resumeHandoffRootIsOwed,
@@ -41,6 +42,11 @@ const handoffFacts = (overrides: Partial<ResumeHandoffRootFacts> = {}): ResumeHa
 })
 
 describe('session close-out decisions', () => {
+  test('an unreadable project blocks only while the session owns close-out work there', () => {
+    expect(classifyUnreadableProject(true)).toBe('error')
+    expect(classifyUnreadableProject(false)).toBe('warning')
+  })
+
   test('context items drop or refuse by kind and resume keeps every kind', () => {
     expect(
       ['pointer', 'position', 'fact', 'next-action'].map((kind) =>
