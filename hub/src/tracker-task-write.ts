@@ -18,10 +18,10 @@ import {
   showTask,
   type TaskChanges,
   type TaskComment,
-  type TaskRow,
 } from './task.ts'
 import type { Attribution } from './task-attribution.ts'
 import type { TaskScope } from './task-identity.ts'
+import type { TaskRow } from './task-row.ts'
 import type { HostedTaskWriteOptions } from './task-write-destination.ts'
 import { type TrackerConnectionDependencies, withTrackerConnection } from './tracker-connection.ts'
 
@@ -117,7 +117,11 @@ async function writeExternalStatus(
     updatedAt: null,
     assignee: task.assignee,
   }
-  ;(dependencies.observe ?? observeTrackerTask)(observed)
+  ;(dependencies.observe ?? observeTrackerTask)(
+    observed,
+    undefined,
+    project.settings.keyPrefixes ?? [],
+  )
   if (result.refusal) throw new Error(result.refusal)
   return showTask(task.key, { recordId: task.record_id }).task
 }

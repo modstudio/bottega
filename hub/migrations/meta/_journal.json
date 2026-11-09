@@ -337,6 +337,13 @@
       "when": 1793570996000,
       "tag": "0047_drop_git_tasks",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1793657396000,
+      "tag": "0048_task_retired_reason",
+      "breakpoints": true
     }
   ]
 }

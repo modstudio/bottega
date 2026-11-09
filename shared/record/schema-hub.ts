@@ -45,6 +45,7 @@ export const hubTask = pgTable.withRLS(
     title: text(),
     status: text(),
     statusCategory: text('status_category'),
+    retiredReason: text('retired_reason'),
     parentKey: text('parent_key'),
     parentId: uuid('parent_id').references((): AnyPgColumn => hubTask.id, {
       onDelete: 'set null',

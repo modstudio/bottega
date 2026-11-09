@@ -1,0 +1,1 @@
+ALTER TABLE "hub_task" ADD COLUMN "retired_reason" text;

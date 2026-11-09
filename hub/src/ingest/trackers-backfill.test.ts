@@ -35,28 +35,41 @@ test('tracker backfill never queues or overwrites a local row with a missing upd
             capabilities: { tools: {} },
             serverInfo: { name: 'fixture', version: '1' },
           }
-        : {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  'status' in (message.params?.arguments ?? {})
-                    ? { tasks: [], last_page: 1 }
-                    : {
-                        tasks: [
-                          {
-                            id: 'tracker-alpha-991',
-                            short_id: taskKey,
-                            summary: 'Stale local title',
-                            status: 'completed',
-                            status_category: 'done',
-                          },
-                        ],
-                      },
-                ),
-              },
-            ],
-          }
+        : message.method === 'tools/list'
+          ? {
+              tools: [
+                {
+                  name: 'list-tasks-tool',
+                  inputSchema: { type: 'object', properties: { team_id: {}, status: {} } },
+                },
+                {
+                  name: 'get-task-tool',
+                  inputSchema: { type: 'object', properties: { id: {} } },
+                },
+              ],
+            }
+          : {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    'status' in (message.params?.arguments ?? {})
+                      ? { tasks: [], last_page: 1 }
+                      : {
+                          tasks: [
+                            {
+                              id: 'tracker-alpha-991',
+                              short_id: taskKey,
+                              summary: 'Stale local title',
+                              status: 'completed',
+                              status_category: 'done',
+                            },
+                          ],
+                        },
+                  ),
+                },
+              ],
+            }
     return Response.json({ jsonrpc: '2.0', id: message.id, result })
   }) as typeof fetch
   resetFixtureStore()
@@ -179,6 +192,121 @@ test('tracker backfill never queues or overwrites a local row with a missing upd
     ])
   } finally {
     await database.close()
+    globalThis.fetch = originalFetch
+    if (originalUrl === undefined) delete process.env.FIXTURE_NO_CREDENTIALS_MCP_URL
+    else process.env.FIXTURE_NO_CREDENTIALS_MCP_URL = originalUrl
+    if (originalToken === undefined) delete process.env.FIXTURE_NO_CREDENTIALS_MCP_TOKEN
+    else process.env.FIXTURE_NO_CREDENTIALS_MCP_TOKEN = originalToken
+  }
+})
+
+test('collect retires cached out-of-scope rows before any vanished-key lookup', async () => {
+  const originalFetch = globalThis.fetch
+  const originalUrl = process.env.FIXTURE_NO_CREDENTIALS_MCP_URL
+  const originalToken = process.env.FIXTURE_NO_CREDENTIALS_MCP_TOKEN
+  process.env.FIXTURE_NO_CREDENTIALS_MCP_URL = 'https://tracker.invalid/mcp'
+  process.env.FIXTURE_NO_CREDENTIALS_MCP_TOKEN = 'fixture'
+  const lookedUp: string[] = []
+  globalThis.fetch = (async (_input, init) => {
+    if (init?.method === 'DELETE') return new Response(null)
+    const message = JSON.parse(String(init?.body)) as {
+      id?: number
+      method: string
+      params?: { name?: string; arguments?: Record<string, unknown> }
+    }
+    if (message.method === 'server/discover') return new Response('not found', { status: 404 })
+    if (message.method === 'notifications/initialized') return new Response(null)
+    let result: Record<string, unknown>
+    if (message.method === 'initialize') {
+      result = {
+        protocolVersion: '2025-11-25',
+        capabilities: { tools: {} },
+        serverInfo: { name: 'fixture', version: '1' },
+      }
+    } else if (message.method === 'tools/list') {
+      result = {
+        tools: [
+          {
+            name: 'list-tasks-tool',
+            inputSchema: { type: 'object', properties: { team_id: {}, search: {} } },
+          },
+          { name: 'get-task-tool', inputSchema: { type: 'object', properties: { id: {} } } },
+        ],
+      }
+    } else {
+      const args = message.params?.arguments ?? {}
+      if (typeof args.id === 'string') lookedUp.push(args.id)
+      if (typeof args.search === 'string') lookedUp.push(args.search)
+      result = {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ tasks: [], last_page: 1 }),
+          },
+        ],
+      }
+    }
+    return Response.json({ jsonrpc: '2.0', id: message.id, result })
+  }) as typeof fetch
+  resetFixtureStore()
+  const firstSeen = '2026-11-08T12:00:00.000Z'
+  try {
+    writeTransaction((conn) => {
+      const insert = conn.query(
+        `INSERT INTO task
+         (record_id,external_id,key,project,title,status,status_category,source,first_seen,last_seen,updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      )
+      insert.run(
+        '01990000-0000-7000-8000-000000001301',
+        'tracker-ops-1',
+        'OPS-1',
+        'alpha',
+        'Out of scope',
+        'started',
+        'active',
+        'mcp',
+        firstSeen,
+        firstSeen,
+        firstSeen,
+      )
+      insert.run(
+        '01990000-0000-7000-8000-000000001302',
+        'tracker-alp-1',
+        'ALP-1',
+        'alpha',
+        'In scope done',
+        'completed',
+        'done',
+        'mcp',
+        firstSeen,
+        firstSeen,
+        firstSeen,
+      )
+    })
+
+    const results = await ingestTrackers()
+    expect(results.find((result) => result.project === 'alpha')).toMatchObject({ retired: 1 })
+    expect(
+      db()
+        .query<{ status: string; status_category: string; retired_reason: string | null }, []>(
+          `SELECT status,status_category,retired_reason FROM task WHERE key='OPS-1'`,
+        )
+        .get(),
+    ).toEqual({
+      status: 'started',
+      status_category: 'dropped',
+      retired_reason: "out of scope: key prefix OPS is not among alpha's declared key prefixes ALP",
+    })
+    expect(
+      db()
+        .query<{ status: string; status_category: string; retired_reason: string | null }, []>(
+          `SELECT status,status_category,retired_reason FROM task WHERE key='ALP-1'`,
+        )
+        .get(),
+    ).toEqual({ status: 'completed', status_category: 'done', retired_reason: null })
+    expect(lookedUp).not.toContain('OPS-1')
+  } finally {
     globalThis.fetch = originalFetch
     if (originalUrl === undefined) delete process.env.FIXTURE_NO_CREDENTIALS_MCP_URL
     else process.env.FIXTURE_NO_CREDENTIALS_MCP_URL = originalUrl

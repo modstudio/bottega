@@ -258,7 +258,9 @@ describe('fresh tracker task read', () => {
   })
 
   test('records one first-observed category change and the following collect records none', async () => {
-    expect(observeTrackerTask({ ...task, status: 'Open', category: 'open' }).event).toBeNull()
+    expect(
+      observeTrackerTask({ ...task, status: 'Open', category: 'open' }, undefined, []).event,
+    ).toBeNull()
 
     await refreshTrackerTask('FIX-1', undefined, {
       ...dependencies(async () => task),
@@ -285,7 +287,7 @@ describe('fresh tracker task read', () => {
         .get()?.count,
     ).toBe(1)
     expect(
-      writeTrackerCache([task], '2026-10-05T00:00:00.000Z').filter(
+      writeTrackerCache([task], '2026-10-05T00:00:00.000Z', []).filter(
         ({ observation }) => observation.event,
       ),
     ).toHaveLength(0)
@@ -296,7 +298,7 @@ describe('fresh tracker task read', () => {
   })
 
   test('an unchanged fresh task leaves no queued status event', async () => {
-    observeTrackerTask(task)
+    observeTrackerTask(task, undefined, [])
 
     await refreshTrackerTask('FIX-1', undefined, {
       ...dependencies(async () => task),
@@ -315,7 +317,7 @@ describe('fresh tracker task read', () => {
   })
 
   test('an unchanged fresh task records no category event', async () => {
-    expect(observeTrackerTask(task).event).toBeNull()
+    expect(observeTrackerTask(task, undefined, []).event).toBeNull()
 
     await refreshTrackerTask('FIX-1', undefined, {
       ...dependencies(async () => task),

@@ -470,7 +470,7 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
   ),
   ...exempt(
     'hub/src/task.ts',
-    ['0dda1efcbf461147', '32b55c85ffad064b', '7760d25a5c81f210'],
+    ['0dda1efcbf461147', '7760d25a5c81f210'],
     'transition helper runs only while migration task_new exists',
   ),
   ...exempt(
