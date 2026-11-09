@@ -8,6 +8,7 @@ import {
   installerRenderRules,
   launchdFieldTypeViolations,
   missingInstallRules,
+  systemdTemplateMappingErrors,
   templatePlaceholders,
 } from './check-launchd-templates.ts'
 
@@ -88,6 +89,27 @@ describe('the checked-in templates', () => {
         ).toEqual([])
       }
     }
+  })
+})
+
+describe('systemdTemplateMappingErrors', () => {
+  const mappedNames = [
+    'orch-sweep.service',
+    'orch-sweep.timer',
+    'orch-record-sync.service',
+    'orch-record-sync.timer',
+    'orch-record-sync.path',
+  ]
+
+  test('accepts exactly the mapped units', () => {
+    expect(systemdTemplateMappingErrors(mappedNames)).toEqual([])
+  })
+
+  test('reports unowned and missing unit files', () => {
+    expect(systemdTemplateMappingErrors([...mappedNames.slice(1), 'stray.timer'])).toEqual([
+      'ops/systemd/stray.timer: systemd unit is not in SYSTEMD_UNITS',
+      'ops/systemd/orch-sweep.service: mapped systemd unit file is missing',
+    ])
   })
 })
 

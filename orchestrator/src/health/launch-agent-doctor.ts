@@ -38,7 +38,7 @@ import {
   installationPlistOwners,
   isCheckoutOnlyLaunchAgentInstaller,
 } from '../setup/launchd-owners.ts'
-import { isMaintenanceScheduleLabel } from '../setup/setup-schedules.ts'
+import { isMaintenanceScheduleLabel } from '../setup/setup-schedule-policy.ts'
 import { minutesOfDay } from '../spare/spare-decisions.ts'
 
 export type LaunchAgentLoadObservation =

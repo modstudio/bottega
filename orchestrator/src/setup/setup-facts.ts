@@ -22,7 +22,12 @@ import {
   type SetupCommandRunner,
   stableMcpServers,
 } from './setup-mcp.ts'
-import { gatherScheduleSetupFacts, type ScheduleSetupFact } from './setup-schedules.ts'
+import type { ScheduleSetupFact } from './setup-schedule-policy.ts'
+import {
+  gatherScheduleLingerFact,
+  gatherScheduleSetupFacts,
+  gatherScheduleUserFact,
+} from './setup-schedule-runtime.ts'
 
 const COMMAND_TIMEOUT_MS = 3_000
 
@@ -38,6 +43,8 @@ export type SetupFactsCapture = {
   globalUse?: 'on' | 'off' | null
   installationKind?: InstallationKind | null
   schedules?: ScheduleSetupFact[]
+  scheduleLinger?: boolean | null
+  scheduleUser?: string | null
   recordApiUrl: string
   recordApiConfigured: boolean
   platform: NodeJS.Platform
@@ -64,6 +71,8 @@ export type SetupFacts = {
   globalUse: 'on' | 'off' | null
   installationKind: InstallationKind | null
   schedules: ScheduleSetupFact[]
+  scheduleLinger: boolean | null
+  scheduleUser: string | null
   recordApiUrl: string
   recordApiConfigured: boolean
   os: { platform: NodeJS.Platform; arch: NodeJS.Architecture; wsl: boolean }
@@ -89,6 +98,8 @@ export function classifySetupFacts(capture: SetupFactsCapture): SetupFacts {
     globalUse: capture.globalUse ?? null,
     installationKind: capture.installationKind ?? null,
     schedules: capture.schedules ?? [],
+    scheduleLinger: capture.scheduleLinger ?? null,
+    scheduleUser: capture.scheduleUser ?? null,
     recordApiUrl: capture.recordApiUrl,
     recordApiConfigured: capture.recordApiConfigured,
     os: {
@@ -216,6 +227,8 @@ export async function gatherSetupFacts(
     globalUse: readSetupGlobalUse(),
     installationKind,
     schedules: installationKind === 'distribution' ? gatherScheduleSetupFacts() : [],
+    scheduleLinger: installationKind === 'distribution' ? gatherScheduleLingerFact() : null,
+    scheduleUser: installationKind === 'distribution' ? gatherScheduleUserFact() : null,
     recordApiUrl: resolveRecordApiUrl(),
     recordApiConfigured: recordApiConfigured(),
     platform: process.platform,
