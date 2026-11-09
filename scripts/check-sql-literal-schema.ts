@@ -35,6 +35,7 @@ import {
   POOL_SUCCESSFUL_RUN_SAMPLES_SQL,
 } from '../orchestrator/src/route/routing-pool-evidence.ts'
 import {
+  LIVE_RUN_STATUS_SQL,
   RECORD_REACHABLE_RUN_STATUS_SQL,
   TERMINAL_RUN_STATUS_SQL,
 } from '../orchestrator/src/run/run-status.ts'
@@ -143,6 +144,10 @@ const GLOBAL_SUBSTITUTIONS: Readonly<Record<string, GlobalSubstitution>> = {
   },
   TERMINAL_RUN_STATUS_SQL: {
     values: [TERMINAL_RUN_STATUS_SQL],
+    declaredIn: 'orchestrator/src/run/run-status.ts',
+  },
+  LIVE_RUN_STATUS_SQL: {
+    values: [LIVE_RUN_STATUS_SQL],
     declaredIn: 'orchestrator/src/run/run-status.ts',
   },
   RECORD_REACHABLE_RUN_STATUS_SQL: {

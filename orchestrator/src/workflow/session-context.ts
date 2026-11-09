@@ -25,7 +25,7 @@ import { showResolvedStepCatalogue } from './step-catalogue.ts'
 
 const AUTONOMY_SETTER = `${PLATFORM_SLUG} machine config set`
 
-type ArchitectSessionContext =
+export type ArchitectSessionContext =
   | { registered: false }
   | {
       registered: true
@@ -186,7 +186,7 @@ type SessionContextDependencies = {
   now?: () => Date
 }
 
-async function architectSessionContext(
+export async function architectSessionContext(
   cwd: string,
   dependencies: SessionContextDependencies = {},
 ): Promise<ArchitectSessionContext> {

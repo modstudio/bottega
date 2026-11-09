@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """SessionStart and Stop hook: report open workflow cursors, never blocking.
 
-Compact and resume remind the agent of this session's open cursors. Clear
-labels open cursors in the project, which another session may be driving. Stop
+Clear labels open cursors in the project, which another session may be driving. Stop
 names this session's open cursors to the operator. The reminder never emits a
 blocking decision: an awaiting-ruling cursor is a legitimate stop, and a
 blocking Stop hook loops.
@@ -137,15 +136,7 @@ def stop_message(rows):
 def handle_session_start(payload):
     source = payload.get("source")
     if source in ("compact", "resume"):
-        session = payload_text(payload, "session_id")
-        cwd = payload_text(payload, "cwd")
-        if not session:
-            emit_unknown("SessionStart", "payload session_id is missing")
-            return
-        if not cwd:
-            emit_unknown("SessionStart", "payload cwd is missing")
-            return
-        rows, why = query_cursors(cwd, session=session)
+        return
     elif source == "clear":
         cwd = payload_text(payload, "cwd")
         if not cwd:

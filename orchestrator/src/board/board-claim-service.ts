@@ -453,18 +453,31 @@ export function listClaims(
   return { claims }
 }
 
+/** Every subject a session holds by a live claim, across every project. */
+export function liveClaimsOfSession(
+  session: string,
+  clock = Date.now(),
+  database = db(),
+): ClaimView[] {
+  const rows = database
+    .query(
+      `SELECT ${CLAIM_COLUMNS} FROM board_claim WHERE holder_session=? AND closed_at IS NULL ORDER BY project,subject_kind,subject_value`,
+    )
+    .all(session) as ClaimRow[]
+  return rows
+    .filter((row) => rowLive(row, clock, database))
+    .map((row) => view(row, clock, database))
+}
+
 /** The task keys a session holds by a live claim, in every project. */
 export function liveTaskClaimsOfSession(
   session: string,
   clock = Date.now(),
   database = db(),
 ): string[] {
-  const rows = database
-    .query(
-      `SELECT ${CLAIM_COLUMNS} FROM board_claim WHERE holder_session=? AND subject_kind='task' AND closed_at IS NULL ORDER BY subject_value`,
-    )
-    .all(session) as ClaimRow[]
-  return rows.filter((row) => rowLive(row, clock, database)).map((row) => row.subject_value)
+  return liveClaimsOfSession(session, clock, database)
+    .filter((claim) => claim.subject.kind === 'task')
+    .map((claim) => claim.subject.value)
 }
 
 export function releaseTaskClaims(

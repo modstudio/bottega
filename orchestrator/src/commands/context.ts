@@ -1,6 +1,7 @@
 // concern: cli
 /** Registers architect session resolution and stored context item verbs. */
 import type { Command } from 'commander'
+import { contextBrief, renderContextBrief } from '../doc/context-brief.ts'
 import { dropContextItem, getContext, setContextItem } from '../doc/context-service.ts'
 import { CONTEXT_ITEM_KINDS } from '../doc/doc-context-write.ts'
 import { sessionContextCommand } from '../workflow/session-context.ts'
@@ -27,6 +28,15 @@ export function register(program: Command): void {
       if (options.json) return log(JSON.stringify(result))
       for (const item of result.items) log(`${item.id}  ${item.kind}  ${item.revision}`)
       for (const kind of result.missingRequired) log(`warning: missing required kind ${kind}`)
+    })
+  context
+    .command('brief')
+    .description('show the compact working context for an architect session')
+    .requiredOption('--session <id>', 'select architect session')
+    .option('--json', 'write JSON')
+    .action(async (options) => {
+      const result = await contextBrief(options.session)
+      log(options.json ? JSON.stringify(result) : renderContextBrief(result))
     })
   holderOptions(context.command('set').description('create or revise one context item'))
     .requiredOption('--kind <kind>', `one of ${CONTEXT_ITEM_KINDS.join(', ')}`)

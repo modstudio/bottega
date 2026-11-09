@@ -437,6 +437,49 @@ class WorkerSessionSkip(unittest.TestCase):
         self.assertEqual(stdout.getvalue(), "")
 
 
+class CompactContextBrief(unittest.TestCase):
+    def completed(self, stdout="", returncode=0):
+        return SimpleNamespace(returncode=returncode, stdout=stdout, stderr="")
+
+    def test_accepts_a_complete_block(self):
+        block = (
+            "Context (session session-1) · full: bottega agent context show --task DEV-1844\n"
+            "DEV-1844 Architect context\n"
+            "  next: implement\n"
+            "  open: none\n"
+            "In flight: none\n"
+            "Waiting: 0 board requests (bottega board read) · 0 questions · "
+            "0 filed issues (bottega workflow fix-defect --waiting) · "
+            "0 resume briefs (bottega doc resumes)\n"
+            "Autonomy: plan review · ship trunk"
+        )
+        self.assertEqual(
+            session_brief._context_brief_slice(self.completed(block), "session-1"), block
+        )
+
+    def test_failure_and_timeout_fail_open_with_one_named_remedy_line(self):
+        expected = (
+            "Context brief unavailable; run "
+            "bottega agent context brief --session session-1."
+        )
+        self.assertEqual(
+            session_brief._context_brief_slice(
+                self.completed(returncode=1), "session-1"
+            ),
+            expected,
+        )
+        self.assertEqual(
+            session_brief._context_brief_slice(
+                self.completed(returncode=-1), "session-1"
+            ),
+            expected,
+        )
+        self.assertEqual(
+            session_brief._context_brief_slice(self.completed(""), "session-1"),
+            expected,
+        )
+
+
 class MonitorDelivery(unittest.TestCase):
     def notice(self, notice_id="board:7"):
         return {

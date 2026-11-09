@@ -10,13 +10,15 @@ export type HubTaskReference = {
   key: string
   record_id: string
   project: string
+  title?: string | null
+  parent_key?: string | null
   source?: string | null
   status_category?: string | null
 }
 export type HubTaskReader = (project: string) => Promise<HubTaskReference[]>
 export type HubTaskKeyMap = ReadonlyMap<string, readonly HubTaskReference[]>
 
-const projectTaskKey = (project: string, key: string) => `${project}\0${key}`
+export const projectTaskKey = (project: string, key: string) => `${project}\0${key}`
 
 export function taskKeyMap(tasks: readonly HubTaskReference[]): HubTaskKeyMap {
   const result = new Map<string, HubTaskReference[]>()
@@ -59,6 +61,12 @@ function taskReference(row: unknown): HubTaskReference {
   const source = (row as HubTaskReference).source
   if (source !== undefined && source !== null && typeof source !== 'string')
     throw new Error('response contained an invalid task source')
+  const title = (row as HubTaskReference).title
+  if (title !== undefined && title !== null && typeof title !== 'string')
+    throw new Error('response contained an invalid task title')
+  const parent = (row as HubTaskReference).parent_key
+  if (parent !== undefined && parent !== null && typeof parent !== 'string')
+    throw new Error('response contained an invalid task parent key')
   return row as HubTaskReference
 }
 
