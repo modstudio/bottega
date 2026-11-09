@@ -218,16 +218,15 @@ export function useCredentialRows() {
   const whoami = useQuery(trpc.record.whoami.queryOptions())
   const pending =
     secrets.isPending || preferences.isPending || projects.isPending || whoami.isPending
-  const failed = [
-    ['credentials', secrets.error],
-    ['preferences', preferences.error],
-    ['projects', projects.error],
-    ['identity', whoami.error],
-  ] as const
-  const failure = failed.find((entry) => entry[1] !== null)
-  const error: CredentialRowsError | null = failure
-    ? { source: failure[0], message: failure[1].message }
-    : null
+  const error: CredentialRowsError | null = secrets.error
+    ? { source: 'credentials', message: secrets.error.message }
+    : preferences.error
+      ? { source: 'preferences', message: preferences.error.message }
+      : projects.error
+        ? { source: 'projects', message: projects.error.message }
+        : whoami.error
+          ? { source: 'identity', message: whoami.error.message }
+          : null
   const projectsData = projects.data ?? []
   const split = splitSecretRows(secrets.data ?? [])
   const spaceId = whoami.data?.activeSpaceId ?? projectsData[0]?.spaceId ?? ''
