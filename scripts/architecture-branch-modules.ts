@@ -1,5 +1,19 @@
 export const branchModuleSpecs = [
   {
+    file: 'orchestrator/src/branch/branch-landing-records.ts',
+    allowed: ['bun:sqlite', '../database/db.ts', './branch-state.ts'],
+  },
+  {
+    file: 'orchestrator/src/branch/task-status-observation.ts',
+    allowed: [
+      '../../../shared/bounded-process.ts',
+      '../../../shared/brand.ts',
+      '../../../shared/self-spawn.ts',
+      '../../../shared/trackers.ts',
+      '../workflow/workflow-task-reference.ts',
+    ],
+  },
+  {
     file: 'orchestrator/src/branch/branches.ts',
     allowed: [
       '../../../shared/brand.ts',
