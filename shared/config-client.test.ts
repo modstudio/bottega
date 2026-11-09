@@ -1,5 +1,10 @@
 import { expect, test } from 'bun:test'
-import { type ConfigCallObservation, ConfigClientError, configClient } from './config-client.ts'
+import {
+  type ConfigCallObservation,
+  type ConfigClient,
+  ConfigClientError,
+  configClient,
+} from './config-client.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from './config-directory.ts'
 
 test('missing URL or session is a typed not-configured error', () => {
@@ -104,19 +109,97 @@ test('response diagnostics remove URL credentials, queries, and fragments', asyn
     expect(errors.join('\n')).not.toContain(secret)
 })
 
-test('config secret and data-key reads route to a requested project space', async () => {
+test('every space-scoped config client call sends its destination header', async () => {
+  const authorization = [
+    'createMachineKeyClaimChallenge',
+    'claimMachineKey',
+    'revokeMachineKey',
+  ] as const satisfies readonly (keyof ConfigClient)[]
+  const values = [
+    'listEntries',
+    'getEntry',
+    'putEntry',
+    'deleteEntry',
+    'listSecrets',
+    'getSecret',
+    'putSecret',
+    'deleteSecret',
+  ] as const satisfies readonly (keyof ConfigClient)[]
+  const preferences = [
+    'listCredentialPreferences',
+    'putCredentialPreference',
+    'deleteCredentialPreference',
+  ] as const satisfies readonly (keyof ConfigClient)[]
+  const keys = [
+    'currentDataKey',
+    'listDataKeys',
+    'getDataKey',
+    'createDataKey',
+    'addWraps',
+    'retireDataKey',
+    'listMachineKeys',
+    'registerMachineKey',
+  ] as const satisfies readonly (keyof ConfigClient)[]
+  // whoami is the only exemption because identity is not scoped to one space.
+  const exempt = ['whoami'] as const satisfies readonly (keyof ConfigClient)[]
   const headers: string[] = []
   const client = configClient(
     { BOTTEGA_RECORD_API_URL: 'https://record.test' },
     async (_input, init) => {
       headers.push(new Headers(init?.headers).get('x-record-space') ?? '')
-      return Response.json({ items: [] })
+      return Response.json({ items: [], wraps: [] })
     },
     'test',
   )
-  await client.listSecrets('default', { destinationSpaceId: 'space-project' })
-  await client.listDataKeys({ destinationSpaceId: 'space-project' })
-  expect(headers).toEqual(['space-project', 'space-project'])
+  const destination = { destinationSpaceId: 'space-destination' }
+  const entry = {
+    scope: 'user' as const,
+    environment: 'default',
+    value: 'value',
+    expectedRowVersion: null,
+  }
+  const deleteInput = { scope: 'user' as const, environment: 'default', expectedRowVersion: 1 }
+  const preference = {
+    projectId: null,
+    provider: 'provider',
+    name: null,
+    type: 'api-key',
+    mode: 'default' as const,
+    environment: 'local' as const,
+    payer: 'personal' as const,
+    binding: 'space' as const,
+  }
+  await Promise.all([
+    client.createMachineKeyClaimChallenge('key', destination),
+    client.claimMachineKey('key', 'challenge', 'nonce', destination),
+    client.revokeMachineKey('key', destination),
+    client.listEntries('default', destination),
+    client.getEntry('key', 'user', 'default', destination),
+    client.putEntry('key', entry, destination),
+    client.deleteEntry('key', deleteInput, destination),
+    client.listSecrets('default', destination),
+    client.getSecret('key', 'user', 'default', destination),
+    client.putSecret('key', { ...entry, dekId: 'dek', envelope: 'envelope', ...destination }),
+    client.deleteSecret('key', { ...deleteInput, ...destination }),
+    client.listCredentialPreferences(destination),
+    client.putCredentialPreference({ ...preference, ...destination }),
+    client.deleteCredentialPreference({ ...preference, ...destination }),
+    client.currentDataKey('key', destination),
+    client.listDataKeys(destination),
+    client.getDataKey('dek', 'key', destination),
+    client.createDataKey({ dekId: 'dek', version: 1, wraps: [] }, destination),
+    client.addWraps('dek', [], destination),
+    client.retireDataKey('dek', destination),
+    client.listMachineKeys(destination),
+    client.registerMachineKey('key', 'public', 'label', destination),
+  ])
+  expect(Object.keys(client).sort()).toEqual(
+    [...authorization, ...values, ...preferences, ...keys, ...exempt].sort(),
+  )
+  expect(headers).toHaveLength(
+    authorization.length + values.length + preferences.length + keys.length,
+  )
+  expect(headers.every((header) => header === destination.destinationSpaceId)).toBe(true)
 })
 
 test('a throwing outcome recorder does not fail the hosted config call', async () => {

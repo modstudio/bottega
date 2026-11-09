@@ -27,6 +27,7 @@ import {
   setConfigEntry,
   setSecret,
 } from '../config/config-service.ts'
+import { machineRegister, machineTrustInSpace } from '../config/named-space-config.ts'
 import { parseSecretRunArgs, runNamedSecrets } from '../config/secret-run.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
 import { subscriptionMonthlyUsdKey } from '../run/run-subscription-cost.ts'
@@ -180,8 +181,17 @@ function registerMachineCommands(config: Command): void {
       log(`${shown.keyId}\t${shown.publicKey}`)
     })
   machine
+    .command('register')
+    .description('register this machine encryption identity in a record space')
+    .option('--space <slug>', 'register in this record space instead of the active space')
+    .option('--label <label>', 'label stored for this machine identity')
+    .action(async (options) => {
+      for (const line of await machineRegister(options.space, options.label)) log(line)
+    })
+  machine
     .command('trust <keyId> <publicKey>')
     .description('trust a machine public key for sealed configuration')
+    .option('--space <slug>', 'trust in this record space instead of the active space')
     .option('--label <label>', 'label stored for the trusted machine')
     .option('--yes', 'trust the machine without interactive confirmation')
     .action(async (keyId, publicKey, options) => {
@@ -196,7 +206,9 @@ function registerMachineCommands(config: Command): void {
         if (answer.trim() !== keyId)
           throw new Error('machine trust confirmation did not match the key id')
       }
-      await machineTrust(keyId, publicKey, label)
+      if (options.space)
+        await machineTrustInSpace(keyId, publicKey, label, options.space, undefined)
+      else await machineTrust(keyId, publicKey, label)
       log(keyId)
     })
   machine
