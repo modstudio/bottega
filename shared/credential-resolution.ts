@@ -1,24 +1,14 @@
 // concern: credential-decision
-/** Pure credential identity, presentation, hint, and payer-resolution rules. */
+/** Pure payer-resolution rules and the refusal shape for a credential that must be set. */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_SLUG } from './brand.ts'
 import type {
-  CredentialBinding,
   CredentialEnvironment,
   CredentialIdentity,
   CredentialMode,
   CredentialPayer,
   CredentialPreferencePayload,
-} from '../../../shared/credential.ts'
-import { CREDENTIAL_BINDINGS, CREDENTIAL_PAYERS } from '../../../shared/credential.ts'
-
-const CREDENTIAL_HINT_MIN_LENGTH = 20
-
-export type {
-  CredentialEnvironment,
-  CredentialMode,
-  CredentialPayer,
-} from '../../../shared/credential.ts'
+} from './credential.ts'
 
 export type CredentialCandidate = CredentialIdentity & {
   spaceId: string
@@ -33,46 +23,17 @@ export type CredentialResolution<Candidate extends CredentialCandidate = Credent
     }
   | { kind: 'refused'; refusal: string }
 
-export function credentialHint(value: string): string {
-  return value.length >= CREDENTIAL_HINT_MIN_LENGTH
-    ? `${value.slice(0, 4)}…${value.slice(-4)}`
-    : `${value.length} characters`
-}
-
-export function credentialDisplayName(
-  provider: string,
-  name: string | null,
-  type: string,
-  mode: CredentialMode,
-  environment: CredentialEnvironment,
-): string {
-  return `${[provider, name, type].filter((part) => part !== null).join('/')} (mode ${mode}, env ${environment})`
-}
-
 function matchesSlot(
   credential: CredentialCandidate,
   preference: CredentialPreferencePayload,
-  projectId: string,
+  projectId: string | null,
 ): boolean {
   return (
     credential.payer === preference.payer &&
     (preference.binding === 'project'
-      ? credential.projectId === projectId
+      ? projectId !== null && credential.projectId === projectId
       : credential.projectId === null)
   )
-}
-
-export function credentialSlot(payer: CredentialPayer, projectId: string | null): string {
-  return `${payer}@${projectId ? 'project' : 'space'}`
-}
-
-export function parseCredentialSlot(
-  value: string,
-): { payer: CredentialPayer; binding: CredentialBinding } | null {
-  for (const payer of CREDENTIAL_PAYERS)
-    for (const binding of CREDENTIAL_BINDINGS)
-      if (value === `${payer}@${binding}`) return { payer, binding }
-  return null
 }
 
 export function credentialPayerFromScope(scope: 'user' | 'space'): CredentialPayer {
@@ -114,8 +75,9 @@ export function credentialSetRefusalText(
 
 export function resolveCredential<Candidate extends CredentialCandidate>(input: {
   spaceId: string
-  projectId: string
-  projectName: string
+  projectId: string | null
+  projectName?: string
+  spaceName?: string
   provider: string
   name: string | null
   type: string
@@ -132,7 +94,9 @@ export function resolveCredential<Candidate extends CredentialCandidate>(input: 
       row.type === input.type &&
       row.mode === input.mode &&
       row.environment === input.environment &&
-      (row.projectId === input.projectId || row.projectId === null),
+      (input.projectId === null
+        ? row.projectId === null
+        : row.projectId === input.projectId || row.projectId === null),
   )
   const preferences = input.preferences.filter(
     (row) =>
@@ -143,7 +107,9 @@ export function resolveCredential<Candidate extends CredentialCandidate>(input: 
       row.environment === input.environment,
   )
   const preference =
-    preferences.find((row) => row.projectId === input.projectId) ??
+    (input.projectId === null
+      ? undefined
+      : preferences.find((row) => row.projectId === input.projectId)) ??
     preferences.find((row) => row.projectId === null)
   if (preference) {
     const preferred = candidates.find((row) => matchesSlot(row, preference, input.projectId))
@@ -151,15 +117,24 @@ export function resolveCredential<Candidate extends CredentialCandidate>(input: 
       return {
         kind: 'resolved',
         credential: preferred,
-        reason: preference.projectId ? 'project-preference' : 'space-preference',
+        reason:
+          input.projectId !== null && preference.projectId
+            ? 'project-preference'
+            : 'space-preference',
       }
   }
-  const order: readonly [CredentialPayer, string | null][] = [
-    ['personal', input.projectId],
-    ['personal', null],
-    ['shared', input.projectId],
-    ['shared', null],
-  ]
+  const order: readonly [CredentialPayer, string | null][] =
+    input.projectId === null
+      ? [
+          ['personal', null],
+          ['shared', null],
+        ]
+      : [
+          ['personal', input.projectId],
+          ['personal', null],
+          ['shared', input.projectId],
+          ['shared', null],
+        ]
   for (const [payer, projectId] of order) {
     const credential = candidates.find((row) => row.payer === payer && row.projectId === projectId)
     if (credential) return { kind: 'resolved', credential, reason: 'default-order' }

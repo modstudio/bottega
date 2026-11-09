@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { askTypedQuestionClient, askTypedQuestionsClient } from './client.ts'
+import { ConfigClientError } from '../config-client.ts'
+import {
+  askTypedQuestionClient,
+  askTypedQuestionsClient,
+  resolveTypesafeCredential,
+} from './client.ts'
 import type { ChoiceQuestion, NoulQuestion, ScoreQuestion } from './registry.ts'
 
 const FIXTURE_QUESTION = {
@@ -11,10 +16,110 @@ const FIXTURE_QUESTION = {
 } as const satisfies NoulQuestion
 
 const resolve = async () => ({ TYPESAFE_KEY: 'fixture-secret' })
+const missingCredential = async () => ({ kind: 'missing' }) as const
+
+test('TypeSafe credential adapter maps an unconfigured record session to missing', async () => {
+  const result = await resolveTypesafeCredential(async () => {
+    throw new ConfigClientError('not-configured', '/v1/config')
+  })
+  expect(result).toEqual({ kind: 'missing' })
+})
+
+test('TypeSafe credential adapter leaves other config failures as key_resolution', async () => {
+  let legacyReads = 0
+  const result = await askTypedQuestionClient(FIXTURE_QUESTION, 'state', {
+    resolveCredential: () =>
+      resolveTypesafeCredential(async () => {
+        throw new ConfigClientError('unreachable', '/v1/config/secrets')
+      }),
+    resolve: async () => {
+      legacyReads += 1
+      return { TYPESAFE_KEY: 'legacy-secret' }
+    },
+    fetch: async () => {
+      throw new Error('request must not be sent')
+    },
+  })
+  expect(result).toMatchObject({ kind: 'error', error: 'key_resolution' })
+  expect(legacyReads).toBe(0)
+})
+
+test('typed credential wins over a present legacy key', async () => {
+  let authorization: string | null = null
+  const result = await askTypedQuestionClient(FIXTURE_QUESTION, 'state', {
+    resolveCredential: async () => ({ kind: 'resolved', value: 'typed-secret' }),
+    resolve: async () => {
+      throw new Error('legacy key must not be read')
+    },
+    fetch: async (_url, init) => {
+      authorization = new Headers(init.headers).get('Authorization')
+      return Response.json({
+        answers: { spec_unsettled: { noul: 0.7 } },
+        model: 'jev-served',
+        usage: { input_tokens: 1 },
+      })
+    },
+  })
+  expect(result.kind).toBe('answer')
+  expect(String(authorization)).toBe('Bearer typed-secret')
+})
+
+test('missing typed credential falls back to the legacy key', async () => {
+  let legacyReads = 0
+  let authorization: string | null = null
+  const result = await askTypedQuestionClient(FIXTURE_QUESTION, 'state', {
+    resolveCredential: missingCredential,
+    resolve: async () => {
+      legacyReads += 1
+      return { TYPESAFE_KEY: 'legacy-secret' }
+    },
+    fetch: async (_url, init) => {
+      authorization = new Headers(init.headers).get('Authorization')
+      return Response.json({
+        answers: { spec_unsettled: { noul: 0.7 } },
+        model: 'jev-served',
+        usage: { input_tokens: 1 },
+      })
+    },
+  })
+  expect(result.kind).toBe('answer')
+  expect(legacyReads).toBe(1)
+  expect(String(authorization)).toBe('Bearer legacy-secret')
+})
+
+test('credential resolution failure returns key_resolution without reading the legacy key', async () => {
+  let legacyReads = 0
+  const result = await askTypedQuestionClient(FIXTURE_QUESTION, 'state', {
+    resolveCredential: async () => {
+      throw new Error('membership refused')
+    },
+    resolve: async () => {
+      legacyReads += 1
+      return { TYPESAFE_KEY: 'legacy-secret' }
+    },
+    fetch: async () => {
+      throw new Error('request must not be sent')
+    },
+  })
+  expect(result).toMatchObject({ kind: 'error', error: 'key_resolution' })
+  expect(legacyReads).toBe(0)
+})
+
+test('missing typed and legacy credentials returns missing-key', async () => {
+  const result = await askTypedQuestionClient(FIXTURE_QUESTION, 'state', {
+    resolveCredential: missingCredential,
+    resolve: async () => ({ TYPESAFE_KEY: undefined }),
+    fetch: async () => {
+      throw new Error('request must not be sent')
+    },
+  })
+  expect(result).toEqual({ kind: 'missing-key' })
+})
 
 test('sends the declared noul question and parses its probability', async () => {
   let request: { url: string; init: RequestInit } | null = null
   const result = await askTypedQuestionClient(FIXTURE_QUESTION, 'choose one', {
+    resolveCredential: missingCredential,
     resolve,
     fetch: async (url, init) => {
       request = { url, init }
@@ -63,6 +168,7 @@ test('sends criteria and parses a choice answer', async () => {
     question,
     { text: 'portable evidence' },
     {
+      resolveCredential: missingCredential,
       resolve,
       fetch: async (_url, init) => {
         sent = JSON.parse(String(init.body))
@@ -107,6 +213,7 @@ describe('backoff response', () => {
     let calls = 0
     const delays: number[] = []
     const result = await askTypedQuestionClient(FIXTURE_QUESTION, 'state', {
+      resolveCredential: missingCredential,
       resolve,
       fetch: async () => {
         calls += 1
@@ -132,6 +239,7 @@ describe('backoff response', () => {
   test('exhaustion returns the last retryable status', async () => {
     const statuses = [408, 529, 503]
     const result = await askTypedQuestionClient(FIXTURE_QUESTION, 'state', {
+      resolveCredential: missingCredential,
       resolve,
       fetch: async () => new Response('', { status: statuses.shift()! }),
       sleep: async () => {},
@@ -144,6 +252,7 @@ describe('backoff response', () => {
   test('does not retry a non-retryable status', async () => {
     let calls = 0
     const result = await askTypedQuestionClient(FIXTURE_QUESTION, 'state', {
+      resolveCredential: missingCredential,
       resolve,
       fetch: async () => {
         calls += 1
@@ -169,6 +278,7 @@ test('sends score levels and parses a score answer', async () => {
   }
   let sent: { questions: { level: { criteria: string[] } } } | undefined
   const result = await askTypedQuestionClient(question, 'state', {
+    resolveCredential: missingCredential,
     resolve,
     fetch: async (_url, init) => {
       sent = JSON.parse(String(init.body)) as typeof sent
@@ -198,6 +308,7 @@ test('batches every id, retries once, and drops only an unparsable answer', asyn
     [FIXTURE_QUESTION, other],
     { shared: true },
     {
+      resolveCredential: missingCredential,
       resolve,
       fetch: async (_url, init) => {
         calls += 1

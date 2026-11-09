@@ -2,12 +2,21 @@ import { hostedApiFetch } from '../bounded-fetch.ts'
 // concern: typed-question-client
 /** Calls the TypeSafe typed-question API without exposing its credential. */
 
+import { ConfigClientError } from '../config-client.ts'
+import { resolveActiveSpaceCredentialValue } from '../credential-value.ts'
 import { readEnvValuesWithHosted } from '../env-source.ts'
 import type { TypedQuestion } from './registry.ts'
 
 const TYPED_QUESTION_TIMEOUT_MS = 5_000
 const TYPESAFE_ENDPOINT = 'https://api.typesafe.ai/v1/systemone'
 const TYPESAFE_KEY = 'TYPESAFE_KEY'
+const TYPESAFE_CREDENTIAL = {
+  provider: 'typesafe',
+  name: null,
+  type: 'api-key',
+  mode: 'default',
+  environment: 'local',
+} as const
 const JEV_MODEL = 'jev-1.14.0'
 
 type NoulAnswer = { noul: number }
@@ -58,6 +67,7 @@ export type TypedQuestionsClientResult =
   | { kind: 'error'; error: string; latencyMs: number }
 
 export type TypedQuestionClientDependencies = {
+  resolveCredential(): Promise<{ kind: 'resolved'; value: string } | { kind: 'missing' }>
   resolve: typeof readEnvValuesWithHosted
   fetch(input: string, init: RequestInit): Promise<Response>
   sleep?(ms: number): Promise<void>
@@ -65,10 +75,28 @@ export type TypedQuestionClientDependencies = {
 }
 
 const clientDependencies: TypedQuestionClientDependencies = {
+  resolveCredential: () => resolveTypesafeCredential(resolveActiveSpaceCredentialValue),
   resolve: readEnvValuesWithHosted,
   fetch: (input, init) => hostedApiFetch(input, init),
   sleep: (ms) => Bun.sleep(ms),
   random: Math.random,
+}
+
+type ActiveSpaceCredentialResolver = typeof resolveActiveSpaceCredentialValue
+
+export async function resolveTypesafeCredential(
+  resolveActiveSpace: ActiveSpaceCredentialResolver,
+): Promise<{ kind: 'resolved'; value: string } | { kind: 'missing' }> {
+  try {
+    const result = await resolveActiveSpace(TYPESAFE_CREDENTIAL)
+    return result.kind === 'refused'
+      ? { kind: 'missing' as const }
+      : { kind: 'resolved' as const, value: result.value }
+  } catch (error) {
+    if (error instanceof ConfigClientError && error.reason === 'not-configured')
+      return { kind: 'missing' }
+    throw error
+  }
 }
 
 function finiteProbability(value: unknown): value is number {
@@ -176,6 +204,10 @@ async function resolveKey(
   dependencies: TypedQuestionClientDependencies,
 ): Promise<{ kind: 'key'; value: string } | { kind: 'missing-key' } | { kind: 'error' }> {
   try {
+    const credential = await dependencies.resolveCredential()
+    if (credential.kind === 'resolved') return { kind: 'key', value: credential.value }
+    // Temporary: the legacy TYPESAFE_KEY answers only while no typed credential exists,
+    // and goes when the legacy key is migrated onto the credential.
     const key = (await dependencies.resolve([TYPESAFE_KEY]))[TYPESAFE_KEY]
     return key ? { kind: 'key', value: key } : { kind: 'missing-key' }
   } catch {

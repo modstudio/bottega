@@ -17,7 +17,11 @@ function fixture(input: {
     rows,
     dependencies: {
       ask: (question: TypedQuestion, state: string | Record<string, unknown>) =>
-        askTypedQuestionClient(question, state, { resolve, fetch }),
+        askTypedQuestionClient(question, state, {
+          resolveCredential: async () => ({ kind: 'missing' }),
+          resolve,
+          fetch,
+        }),
       record: (row: TypedQuestionAnswerRow) => {
         rows.push(row)
       },

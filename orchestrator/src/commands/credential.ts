@@ -12,6 +12,7 @@ import {
   type CredentialEnvironment,
   type CredentialMode,
 } from '../../../shared/credential.ts'
+import { credentialPayerFromScope } from '../../../shared/credential-resolution.ts'
 import { recordSpaceMembershipRefusal } from '../../../shared/record-remedies.ts'
 import {
   parseRecordSpaceMemberships,
@@ -19,10 +20,9 @@ import {
 } from '../../../shared/record-space-membership.ts'
 import {
   credentialDisplayName,
-  credentialPayerFromScope,
   credentialSlot,
   parseCredentialSlot,
-} from '../config/credential.ts'
+} from '../config/credential-presentation.ts'
 import {
   type CredentialAddress,
   deleteCredential,

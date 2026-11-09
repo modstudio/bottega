@@ -1,19 +1,15 @@
 // concern: hosted-secret-row
 /** Owns opening one hosted secret row for this machine in the active or a destination space. */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type {
-  ConfigClient,
-  ConfigDestination,
-  ConfigSecret,
-} from '../../../shared/config-client.ts'
+import { PLATFORM_SLUG } from './brand.ts'
+import type { ConfigClient, ConfigDestination, ConfigSecret } from './config-client.ts'
 import {
   destinationHostedIdentity,
   hostedIdentity,
   openHostedSecret,
-} from '../../../shared/hosted-secret-opening.ts'
-import { machineKeyInfo, readMachineKey } from '../../../shared/machine-key-store.ts'
-import { readTrustList } from '../../../shared/trust-list.ts'
+} from './hosted-secret-opening.ts'
+import { machineKeyInfo, readMachineKey } from './machine-key-store.ts'
+import { readTrustList } from './trust-list.ts'
 
 export function localMachine() {
   const pair = readMachineKey()

@@ -1,11 +1,5 @@
 import { expect, test } from 'bun:test'
-import {
-  type CredentialCandidate,
-  credentialDisplayName,
-  credentialHint,
-  parseCredentialSlot,
-  resolveCredential,
-} from './credential.ts'
+import { type CredentialCandidate, resolveCredential } from './credential-resolution.ts'
 
 const base = {
   spaceId: 'space-a',
@@ -97,6 +91,44 @@ test('a space preference wins over the default order', () => {
   ).toMatchObject({ kind: 'resolved', credential: rows[1], reason: 'space-preference' })
 })
 
+test('space resolution uses personal before shared', () => {
+  const rows = [candidate('shared', null), candidate('personal', null)]
+  expect(
+    resolveCredential({
+      ...base,
+      projectId: null,
+      spaceName: 'alpha-space',
+      candidates: rows,
+      preferences: [],
+    }),
+  ).toMatchObject({ kind: 'resolved', credential: rows[1], reason: 'default-order' })
+})
+
+test('a space preference wins during space resolution', () => {
+  const rows = [candidate('personal', null), candidate('shared', null)]
+  expect(
+    resolveCredential({
+      ...base,
+      projectId: null,
+      spaceName: 'alpha-space',
+      candidates: rows,
+      preferences: [{ ...base, projectId: null, payer: 'shared', binding: 'space' }],
+    }),
+  ).toMatchObject({ kind: 'resolved', credential: rows[1], reason: 'space-preference' })
+})
+
+test('space resolution excludes project-bound credentials', () => {
+  expect(
+    resolveCredential({
+      ...base,
+      projectId: null,
+      spaceName: 'alpha-space',
+      candidates: [candidate('personal', base.projectId)],
+      preferences: [],
+    }),
+  ).toMatchObject({ kind: 'refused' })
+})
+
 test('a project slot preference beats the default payer order', () => {
   const rows = [
     candidate('shared', base.projectId),
@@ -110,11 +142,6 @@ test('a project slot preference beats the default payer order', () => {
       preferences: [{ ...base, projectId: base.projectId, payer: 'shared', binding: 'project' }],
     }),
   ).toMatchObject({ kind: 'resolved', credential: rows[0], reason: 'project-preference' })
-})
-
-test('credential slots use the shared payer and binding grammar', () => {
-  expect(parseCredentialSlot('shared@project')).toEqual({ payer: 'shared', binding: 'project' })
-  expect(parseCredentialSlot('shared@other')).toBeNull()
 })
 
 test("another space's credential is never selected", () => {
@@ -144,12 +171,4 @@ test('resolver never crosses credential names', () => {
   expect(
     resolveCredential({ ...base, name: 'backup', candidates: [named], preferences: [] }),
   ).toMatchObject({ kind: 'resolved', credential: named })
-})
-
-test('hints mask only long values and display names show mode and environment', () => {
-  expect(credentialHint('12345678901234567890')).toBe('1234…7890')
-  expect(credentialHint('short')).toBe('5 characters')
-  expect(credentialDisplayName('openrouter', null, 'api-key', 'test', 'local')).toBe(
-    'openrouter/api-key (mode test, env local)',
-  )
 })
