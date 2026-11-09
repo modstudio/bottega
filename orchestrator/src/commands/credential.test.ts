@@ -58,3 +58,18 @@ test('credential resolve parses options after its name and preserves argv after 
     revealToEnv: 'KEY',
   })
 })
+
+test('account commands expose reach while prefer names account only as a slot', () => {
+  const program = new Command()
+  registerCredentialCommands(program)
+  const credential = program.commands.find((command) => command.name() === 'credential')!
+  const command = (name: string) =>
+    credential.commands.find((candidate) => candidate.name() === name)!
+  expect(command('set').options.map((option) => option.long)).toContain('--account')
+  expect(command('set').options.map((option) => option.long)).toContain('--reach')
+  expect(command('reach').options.map((option) => option.long)).toContain('--spaces')
+  expect(command('prefer').options.map((option) => option.long)).not.toContain('--account')
+  expect(command('prefer').options.find((option) => option.long === '--use')?.description).toContain(
+    'personal@account',
+  )
+})

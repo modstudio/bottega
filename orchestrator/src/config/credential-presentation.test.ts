@@ -8,6 +8,10 @@ import {
 test('credential slots use the shared payer and binding grammar', () => {
   expect(parseCredentialSlot('shared@project')).toEqual({ payer: 'shared', binding: 'project' })
   expect(parseCredentialSlot('shared@other')).toBeNull()
+  expect(parseCredentialSlot('personal@account')).toEqual({
+    payer: 'personal',
+    binding: 'account',
+  })
 })
 
 test('hints mask only long values and display names show mode and environment', () => {

@@ -58,6 +58,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'credential help',
   'credential list',
   'credential prefer',
+  'credential reach',
   'credential resolve',
   'credential set',
   'dashboard',

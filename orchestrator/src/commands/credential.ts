@@ -24,8 +24,8 @@ import {
   parseCredentialSlot,
 } from '../config/credential-presentation.ts'
 import {
-  type CredentialAddress,
   accountCredentialBinding,
+  type CredentialAddress,
   deleteCredential,
   listCredentials,
   projectCredentialAddress,
@@ -96,7 +96,11 @@ type CredentialBindingAddress = Omit<
 >
 
 async function bindingAddress(options: BindingOptions): Promise<CredentialBindingAddress> {
-  if ([options.project !== undefined, options.space !== undefined, options.account === true].filter(Boolean).length > 1)
+  if (
+    [options.project !== undefined, options.space !== undefined, options.account === true].filter(
+      Boolean,
+    ).length > 1
+  )
     throw new Error('--account, --project, and --space are mutually exclusive')
   const client = configClient()
   const project = options.project ? projectByName(options.project) : null
@@ -148,11 +152,7 @@ async function address(name: string, options: BindingOptions): Promise<Credentia
   }
 }
 
-function addBindingOptions(
-  command: Command,
-  includeShared = true,
-  includeAccount = true,
-): Command {
+function addBindingOptions(command: Command, includeShared = true, includeAccount = true): Command {
   command.option('--project <name>', 'bind to a registered project')
   command.option('--space <slug>', 'bind to a record space')
   if (includeAccount) command.option('--account', 'bind to the caller account')
@@ -171,7 +171,10 @@ async function parsedReach(value: string): Promise<string[] | null> {
   for (const slug of slugs) {
     const membership = recordSpaceMembership(slug, memberships)
     if (!membership) {
-      const valid = memberships.map((item) => item.slug).sort().join(', ')
+      const valid = memberships
+        .map((item) => item.slug)
+        .sort()
+        .join(', ')
       throw new Error(`unknown reach space ${slug}; choose one of: ${valid || '(none)'}`)
     }
     if (!ids.includes(membership.spaceId)) ids.push(membership.spaceId)
@@ -180,9 +183,14 @@ async function parsedReach(value: string): Promise<string[] | null> {
 }
 
 function validateAccountOptions(options: BindingOptions): void {
-  if ([options.project !== undefined, options.space !== undefined, options.account === true].filter(Boolean).length > 1)
+  if (
+    [options.project !== undefined, options.space !== undefined, options.account === true].filter(
+      Boolean,
+    ).length > 1
+  )
     throw new Error('--account, --project, and --space are mutually exclusive')
-  if (options.account && options.shared) throw new Error('--account and --shared are mutually exclusive')
+  if (options.account && options.shared)
+    throw new Error('--account and --shared are mutually exclusive')
   if (options.reach !== undefined && !options.account) throw new Error('--reach requires --account')
 }
 
@@ -211,6 +219,16 @@ async function resolveAction(
   )
 }
 
+function registerReachCommand(credential: Command): void {
+  addBindingOptions(credential.command('reach <provider/type>'), false)
+    .description('change an account credential reach')
+    .requiredOption('--spaces <spaces>', 'all or comma-separated space slugs')
+    .action(async (name, options: BindingOptions) => {
+      if (!options.account) throw new Error('reach requires --account')
+      await reachCredential(await address(name, options), await parsedReach(options.spaces!))
+    })
+}
+
 export function registerCredentialCommands(program: Command): void {
   const credential = program.command('credential').description('manage typed provider credentials')
   addBindingOptions(credential.command('set <provider/type>'), true)
@@ -236,6 +254,14 @@ export function registerCredentialCommands(program: Command): void {
       const target = await bindingAddress(options)
       const selectedMode = options.mode ? mode(options.mode) : undefined
       const selectedEnvironment = options.env ? environment(options.env) : undefined
+      const reachSlugs = options.account
+        ? new Map(
+            parseRecordSpaceMemberships((await configClient().whoami()).memberships).map((item) => [
+              item.spaceId,
+              item.slug,
+            ]),
+          )
+        : null
       for (const row of await listCredentials(target.destinationSpaceId, {
         mode: selectedMode,
         environment: selectedEnvironment,
@@ -243,7 +269,7 @@ export function registerCredentialCommands(program: Command): void {
         account: options.account,
       })) {
         const reach = options.account
-          ? `\t${row.reachSpaceIds == null ? 'all' : row.reachSpaceIds.join(',')}`
+          ? `\t${row.reachSpaceIds == null ? 'all' : row.reachSpaceIds.map((id) => reachSlugs?.get(id) ?? id).join(',')}`
           : ''
         log(
           `${credentialDisplayName(row.provider, row.name, row.type, row.mode, row.environment)}\t${credentialSlot(credentialPayerFromScope(row.scope), row.projectId ?? null, Boolean(options.account))}\t${row.hint}${reach}`,
@@ -281,13 +307,7 @@ export function registerCredentialCommands(program: Command): void {
         ...slot,
       })
     })
-  addBindingOptions(credential.command('reach <provider/type>'), false)
-    .description('change an account credential reach')
-    .requiredOption('--spaces <spaces>', 'all or comma-separated space slugs')
-    .action(async (name, options: BindingOptions) => {
-      if (!options.account) throw new Error('reach requires --account')
-      await reachCredential(await address(name, options), await parsedReach(options.spaces!))
-    })
+  registerReachCommand(credential)
   credential
     .command('resolve <provider/type> [argv...]')
     .requiredOption('--project <name>', 'resolve for a registered project')

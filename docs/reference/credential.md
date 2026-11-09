@@ -9,6 +9,7 @@ manage typed provider credentials
 - [bottega credential help](#bottega-credential-help)
 - [bottega credential list](#bottega-credential-list)
 - [bottega credential prefer](#bottega-credential-prefer)
+- [bottega credential reach](#bottega-credential-reach)
 - [bottega credential resolve](#bottega-credential-resolve)
 - [bottega credential set](#bottega-credential-set)
 
@@ -24,12 +25,13 @@ manage typed provider credentials
 - [bottega credential help](./credential.md#bottega-credential-help)
 - [bottega credential list](./credential.md#bottega-credential-list)
 - [bottega credential prefer](./credential.md#bottega-credential-prefer)
+- [bottega credential reach](./credential.md#bottega-credential-reach)
 - [bottega credential resolve](./credential.md#bottega-credential-resolve)
 - [bottega credential set](./credential.md#bottega-credential-set)
 
 ## bottega credential delete
 
-**Synopsis:** `bottega credential delete <provider/type> [--project <name>] [--space <slug>] [--shared] [--mode <mode>] [--env <environment>]`
+**Synopsis:** `bottega credential delete <provider/type> [--project <name>] [--space <slug>] [--account] [--shared] [--mode <mode>] [--env <environment>]`
 
 delete a credential
 
@@ -37,6 +39,7 @@ delete a credential
 
 - `--project <name>`: bind to a registered project
 - `--space <slug>`: bind to a record space
+- `--account`: bind to the caller account
 - `--shared`: use the shared payer instead of personal
 - `--mode <mode>`: live or test or default
 - `--env <environment>`: local
@@ -57,7 +60,7 @@ display help for command
 
 ## bottega credential list
 
-**Synopsis:** `bottega credential list [--project <name>] [--space <slug>] [--mode <mode>] [--env <environment>]`
+**Synopsis:** `bottega credential list [--project <name>] [--space <slug>] [--account] [--mode <mode>] [--env <environment>]`
 
 list credential metadata and masked hints
 
@@ -65,6 +68,7 @@ list credential metadata and masked hints
 
 - `--project <name>`: bind to a registered project
 - `--space <slug>`: bind to a record space
+- `--account`: bind to the caller account
 - `--mode <mode>`: live or test or default
 - `--env <environment>`: local
 
@@ -84,8 +88,27 @@ set or clear a payer preference
 - `--space <slug>`: bind to a record space
 - `--mode <mode>`: live or test or default
 - `--env <environment>`: local
-- `--use <slot>`: personal@project or personal@space or shared@project or shared@space
+- `--use <slot>`: personal@project or personal@space or personal@account or shared@project or shared@space or shared@account
 - `--clear`: clear the preference
+
+### Related
+
+- [bottega credential](./credential.md#bottega-credential)
+
+## bottega credential reach
+
+**Synopsis:** `bottega credential reach <provider/type> [--project <name>] [--space <slug>] [--account] [--mode <mode>] [--env <environment>] [--spaces <spaces>]`
+
+change an account credential reach
+
+### Options
+
+- `--project <name>`: bind to a registered project
+- `--space <slug>`: bind to a record space
+- `--account`: bind to the caller account
+- `--mode <mode>`: live or test or default
+- `--env <environment>`: local
+- `--spaces <spaces>`: all or comma-separated space slugs
 
 ### Related
 
@@ -107,7 +130,7 @@ Options are documented by `--help`.
 
 ## bottega credential set
 
-**Synopsis:** `bottega credential set <provider/type> [--project <name>] [--space <slug>] [--shared] [--mode <mode>] [--env <environment>]`
+**Synopsis:** `bottega credential set <provider/type> [--project <name>] [--space <slug>] [--account] [--shared] [--mode <mode>] [--env <environment>] [--reach <spaces>]`
 
 set a credential from standard input
 
@@ -115,9 +138,11 @@ set a credential from standard input
 
 - `--project <name>`: bind to a registered project
 - `--space <slug>`: bind to a record space
+- `--account`: bind to the caller account
 - `--shared`: use the shared payer instead of personal
 - `--mode <mode>`: live or test or default
 - `--env <environment>`: local
+- `--reach <spaces>`: all or comma-separated space slugs
 
 ### Related
 

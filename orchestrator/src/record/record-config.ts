@@ -15,7 +15,7 @@ import {
   sealClaimChallenge,
 } from '../../../shared/secret-envelope.ts'
 import { assertConfigAccessRemovalSafe } from './record-config-access-removal.ts'
-import { ConfigServiceError } from './record-config-error.ts'
+import { ConfigServiceError, isUniqueViolation } from './record-config-error.ts'
 import { recordPool } from './record-pool.ts'
 
 export const CONFIG_SCOPES = ['user', 'space'] as const
@@ -194,17 +194,6 @@ function notFound(kind: 'entry' | 'secret'): never {
 function applyOccupancy(kind: 'entry' | 'secret', occupancy: Occupancy): void {
   if (occupancy.action === 'not-found') notFound(kind)
   if (occupancy.action === 'conflict') conflict(kind, occupancy.currentRowVersion)
-}
-
-function isUniqueViolation(error: unknown, constraint: string): boolean {
-  if (!error || typeof error !== 'object') return false
-  const postgres = error as { code?: unknown; constraint?: unknown; constraint_name?: unknown }
-  const message = error instanceof Error ? error.message : ''
-  const named =
-    postgres.constraint === constraint ||
-    postgres.constraint_name === constraint ||
-    message.includes(`"${constraint}"`)
-  return named && (postgres.code === '23505' || message.includes('duplicate key value'))
 }
 
 class ConcurrentConfigCreate extends Error {}
@@ -421,11 +410,10 @@ export async function putConfigSecret(
     reachSpaceIds?: string[] | null
   },
 ): Promise<ConfigSecretMetadata> {
-  if (
-    input.reachSpaceIds !== undefined &&
-    input.reachSpaceIds !== null &&
+  const invalidReach =
+    input.reachSpaceIds != null &&
     (input.scope !== 'user' || input.projectId != null || input.spaceId !== input.personalSpaceId)
-  )
+  if (invalidReach)
     throw new ConfigServiceError(
       `credential reach is only valid for a user credential in the personal space; use \`${PLATFORM_SLUG} credential set ${input.key.split('#')[0]} --account --reach all\``,
       422,
@@ -472,7 +460,7 @@ export async function putConfigSecret(
           VALUES
             (${newRecordId()}::uuid, ${input.spaceId}::uuid, ${scopedUser(input, input.scope)}::uuid,
              ${input.projectId ?? null}::uuid, ${input.key}, ${input.provider ?? null},
-             ${input.name ?? null}, ${input.type ?? null}, ${input.mode ?? null}, ${input.environment}, ${input.hint ?? null}, ${input.reachSpaceIds ?? null}::uuid[],
+             ${input.name ?? null}, ${input.type ?? null}, ${input.mode ?? null}, ${input.environment}, ${input.hint ?? null}, ${input.reachSpaceIds === null || input.reachSpaceIds === undefined ? null : tx.array(input.reachSpaceIds, 'uuid')},
              ${input.dekId}::uuid, 1, ${input.envelope}, now())
           RETURNING id, key, environment, user_id, project_id, provider, name, type, hint, mode, reach_space_ids,
             dek_id, row_version, updated_at
@@ -491,7 +479,7 @@ export async function putConfigSecret(
       SET dek_id=${input.dekId}::uuid, envelope=${input.envelope},
           project_id=${input.projectId ?? null}::uuid, provider=${input.provider ?? null},
           name=${input.name ?? null}, type=${input.type ?? null}, hint=${input.hint ?? null}, mode=${input.mode ?? null},
-          reach_space_ids=${input.reachSpaceIds ?? null}::uuid[],
+          reach_space_ids=${input.reachSpaceIds === null || input.reachSpaceIds === undefined ? null : tx.array(input.reachSpaceIds, 'uuid')},
           row_version=row_version + 1, updated_at=now()
       WHERE id=${String(occupancy.existing.id)}::uuid
       RETURNING id, key, environment, user_id, project_id, provider, name, type, hint, mode, reach_space_ids,
@@ -504,44 +492,6 @@ export async function putConfigSecret(
     const current = await getConfigSecret(input)
     conflict('secret', current?.rowVersion ?? 1)
   }
-}
-
-export async function updateConfigSecretReach(
-  input: ConfigTenant & {
-    key: string
-    environment: string
-    scope: 'user'
-    expectedRowVersion: number
-    reachSpaceIds: string[] | null
-  },
-): Promise<ConfigSecretMetadata> {
-  if (input.spaceId !== input.personalSpaceId)
-    throw new ConfigServiceError(
-      `credential reach is only valid in the personal space; use \`${PLATFORM_SLUG} credential reach ${input.key.split('#')[0]} --account --spaces all\``,
-      422,
-    )
-  return tenant(input, async (tx) => {
-    const existing = await scopedRow(
-      tx,
-      'config_secret',
-      input,
-      input.key,
-      input.environment,
-      input.scope,
-      true,
-      null,
-    )
-    const occupancy = configOccupancy({ existing, expectedRowVersion: input.expectedRowVersion })
-    applyOccupancy('secret', occupancy)
-    if (occupancy.action !== 'update') throw new Error('unreachable config secret reach action')
-    const rows = await tx`
-      UPDATE config_secret SET reach_space_ids=${input.reachSpaceIds}::uuid[], updated_at=now()
-      WHERE id=${String(occupancy.existing.id)}::uuid
-      RETURNING id, key, environment, user_id, project_id, provider, name, type, hint, mode,
-        reach_space_ids, dek_id, row_version, updated_at
-    `
-    return secretMetadata(rows[0] as Record<string, unknown>)
-  })
 }
 
 export async function deleteConfigSecret(

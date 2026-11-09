@@ -60,15 +60,6 @@ export type RecordConfigRouteDeps = {
       reachSpaceIds?: string[] | null
     },
   ): Promise<ConfigSecretMetadata>
-  updateConfigSecretReach(
-    input: Tenant & {
-      key: string
-      environment: string
-      scope: 'user'
-      expectedRowVersion: number
-      reachSpaceIds: string[] | null
-    },
-  ): Promise<ConfigSecretMetadata>
   deleteConfigSecret(
     input: Tenant & {
       key: string

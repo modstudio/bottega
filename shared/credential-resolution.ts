@@ -88,42 +88,65 @@ export function credentialSetRefusalText(
   return `credential ${name} (mode ${target.mode}, env ${target.environment}) is ${condition} for ${binding}; ${action} \`${PLATFORM_SLUG} credential set ${name}${bindOption}${payerOption}${modeOption}${environmentOption}\``
 }
 
-export function resolveCredential<Candidate extends CredentialCandidate>(input: {
+type CredentialRequest = {
   userId: string
   personalSpaceId: string | null
   spaceId: string
   projectId: string | null
-  projectName?: string
-  spaceName?: string
   provider: string
   name: string | null
   type: string
   mode: CredentialMode
   environment: CredentialEnvironment
-  candidates: readonly Candidate[]
-  preferences: readonly CredentialPreferencePayload[]
-}): CredentialResolution<Candidate> {
-  const candidates = input.candidates.filter((row) => {
-    const accountMatches =
-      row.account !== undefined &&
-      row.payer === 'personal' &&
-      row.projectId === null &&
-      row.spaceId === input.personalSpaceId &&
-      row.account.ownerUserId === input.userId &&
-      (row.account.reachSpaceIds === null || row.account.reachSpaceIds.includes(input.spaceId))
-    const destinationMatches = row.account === undefined && row.spaceId === input.spaceId
-    return (
-      (accountMatches || destinationMatches) &&
-      row.provider === input.provider &&
-      row.name === input.name &&
-      row.type === input.type &&
-      row.mode === input.mode &&
-      row.environment === input.environment &&
-      (input.projectId === null
-        ? row.projectId === null
-        : row.projectId === input.projectId || row.projectId === null)
-    )
-  })
+}
+
+function candidateMatchesRequest(row: CredentialCandidate, input: CredentialRequest): boolean {
+  const accountMatches =
+    row.account !== undefined &&
+    row.payer === 'personal' &&
+    row.projectId === null &&
+    row.spaceId === input.personalSpaceId &&
+    row.account.ownerUserId === input.userId &&
+    (row.account.reachSpaceIds === null || row.account.reachSpaceIds.includes(input.spaceId))
+  const destinationMatches = row.account === undefined && row.spaceId === input.spaceId
+  const projectMatches =
+    input.projectId === null
+      ? row.projectId === null
+      : row.projectId === input.projectId || row.projectId === null
+  return (
+    (accountMatches || destinationMatches) &&
+    projectMatches &&
+    row.provider === input.provider &&
+    row.name === input.name &&
+    row.type === input.type &&
+    row.mode === input.mode &&
+    row.environment === input.environment
+  )
+}
+
+function preferredReason(
+  credential: CredentialCandidate,
+  projectId: string | null,
+  preference: CredentialPreferencePayload,
+): 'account' | 'project-preference' | 'space-preference' {
+  if (credential.account !== undefined) return 'account'
+  return projectId !== null && preference.projectId ? 'project-preference' : 'space-preference'
+}
+
+export function resolveCredential<Candidate extends CredentialCandidate>(
+  input: CredentialRequest & {
+    projectName?: string
+    spaceName?: string
+    provider: string
+    name: string | null
+    type: string
+    mode: CredentialMode
+    environment: CredentialEnvironment
+    candidates: readonly Candidate[]
+    preferences: readonly CredentialPreferencePayload[]
+  },
+): CredentialResolution<Candidate> {
+  const candidates = input.candidates.filter((row) => candidateMatchesRequest(row, input))
   const preferences = input.preferences.filter(
     (row) =>
       row.provider === input.provider &&
@@ -145,12 +168,7 @@ export function resolveCredential<Candidate extends CredentialCandidate>(input: 
       return {
         kind: 'resolved',
         credential: preferred,
-        reason:
-          preferred.account !== undefined
-            ? 'account'
-            : input.projectId !== null && preference.projectId
-            ? 'project-preference'
-            : 'space-preference',
+        reason: preferredReason(preferred, input.projectId, preference),
       }
   }
   const order: readonly [CredentialPayer, string | null, boolean][] =
@@ -170,7 +188,9 @@ export function resolveCredential<Candidate extends CredentialCandidate>(input: 
   for (const [payer, projectId, account] of order) {
     const credential = candidates.find(
       (row) =>
-        row.payer === payer && row.projectId === projectId && (row.account !== undefined) === account,
+        row.payer === payer &&
+        row.projectId === projectId &&
+        (row.account !== undefined) === account,
     )
     if (credential)
       return { kind: 'resolved', credential, reason: account ? 'account' : 'default-order' }

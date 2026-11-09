@@ -39,10 +39,3 @@ export const configSecretPutBody = z
     },
     { message: 'credential metadata must be complete and projectId requires credential metadata' },
   )
-
-export const configSecretReachBody = z.object({
-  environment: z.string().min(1),
-  scope: z.literal('user'),
-  expectedRowVersion: z.number().int().positive(),
-  reachSpaceIds: z.array(idSchema).nullable(),
-})

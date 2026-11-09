@@ -221,20 +221,6 @@ function configValueClient(request: Request, query: Query) {
         destinationSpaceId: input.destinationSpaceId,
         body: JSON.stringify(input),
       }),
-    updateSecretReach: (
-      key: string,
-      input: {
-        scope: ConfigScope
-        environment: string
-        expectedRowVersion: number
-        reachSpaceIds: string[] | null
-      } & ConfigDestination,
-    ) =>
-      request<ConfigSecret>(`/v1/config/secrets/${encodeURIComponent(key)}/reach`, {
-        method: 'PATCH',
-        destinationSpaceId: input.destinationSpaceId,
-        body: JSON.stringify(input),
-      }),
   }
 }
 

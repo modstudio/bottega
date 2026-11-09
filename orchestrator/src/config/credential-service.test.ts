@@ -16,6 +16,7 @@ import {
 import { pinTrustedMachine } from '../../../shared/trust-list.ts'
 import {
   type CredentialAddress,
+  accountCredentialBinding,
   deleteCredential,
   operatorProjectCredentialAddress,
   projectCredentialAddress,
@@ -57,6 +58,26 @@ test('project credential address refuses missing record identity with project pu
   await expect(
     projectCredentialAddress({ name: 'starship', recordId: null, settings: {} }, 'openrouter'),
   ).rejects.toThrow(`${PLATFORM_SLUG} project push`)
+})
+
+test('account credential binding selects the caller personal space', async () => {
+  expect(
+    await accountCredentialBinding({
+      whoami: async () => ({
+        user: { id: 'user-a' },
+        activeSpaceId: 'space-a',
+        personalSpaceId: 'personal-space-a',
+        memberships: [
+          { space_id: 'personal-space-a', slug: 'personal', permission: 'write' },
+        ],
+      }),
+    } as ConfigClient),
+  ).toEqual({
+    projectId: null,
+    projectName: undefined,
+    spaceName: 'personal',
+    destinationSpaceId: 'personal-space-a',
+  })
 })
 
 let root: string
@@ -180,6 +201,21 @@ test('set credential gives the project access remedy for every missing wrap outc
   }
 })
 
+test('set account credential gives the personal-space registration remedy', async () => {
+  const client = {
+    currentDataKey: async () => {
+      throw new ConfigClientError('response', '/v1/config/data-keys/current', 404)
+    },
+  } as unknown as ConfigClient
+  await expect(
+    setCredential(
+      { ...address, account: true, projectId: null, projectName: undefined },
+      'secret',
+      client,
+    ),
+  ).rejects.toThrow('machine config machine register --space studio')
+})
+
 test('set credential refuses a blank value with the credential remedy before writing', async () => {
   const putSecret = mock(async () => ({}))
   const client = { putSecret } as unknown as ConfigClient
@@ -234,8 +270,19 @@ test('set credential writes a project-bound row with its metadata and hint', asy
   } as unknown as ConfigClient
 
   await setCredential(address, 'abcd-credential-value-wxyz', client)
+  await setCredential(
+    {
+      ...address,
+      account: true,
+      projectId: null,
+      projectName: undefined,
+      reachSpaceIds: ['01990000-0000-7000-8000-000000000005'],
+    },
+    'abcd-account-value-wxyz',
+    client,
+  )
 
-  expect(putSecret).toHaveBeenCalledTimes(1)
+  expect(putSecret).toHaveBeenCalledTimes(2)
   expect(putSecret.mock.calls[0]?.[0]).toBe('openrouter/api-key#default@local')
   expect(putSecret.mock.calls[0]?.[1]).toMatchObject({
     destinationSpaceId: address.destinationSpaceId,
@@ -245,6 +292,11 @@ test('set credential writes a project-bound row with its metadata and hint', asy
     type: address.type,
     mode: address.mode,
     environment: address.environment,
+    hint: 'abcd…wxyz',
+  })
+  expect(putSecret.mock.calls[1]?.[1]).toMatchObject({
+    projectId: null,
+    reachSpaceIds: ['01990000-0000-7000-8000-000000000005'],
     hint: 'abcd…wxyz',
   })
 })

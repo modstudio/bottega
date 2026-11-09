@@ -21,6 +21,7 @@ import {
 import {
   type CredentialResolutionAddress,
   listCredentials as listHostedCredentials,
+  openHostedCredentialRowValue,
   resolveHostedCredential,
   resolveHostedCredentialValue,
 } from '../../../shared/credential-value.ts'
@@ -212,25 +213,15 @@ export async function reachCredential(
 ) {
   if (!address.account) throw new Error('credential reach requires --account')
   const key = credentialIdentityKey(address)
-  try {
-    const existing = await client.getSecret(
-      key,
-      'user',
-      address.environment,
-      destination(address),
-    )
-    return await client.updateSecretReach(key, {
-      ...destination(address),
-      scope: 'user',
-      environment: address.environment,
-      expectedRowVersion: existing.rowVersion,
-      reachSpaceIds,
-    })
-  } catch (error) {
-    if (error instanceof ConfigClientError && error.status === 404)
-      throw missingCredentialRefusal(address)
-    throw error
-  }
+  const row = (
+    await listHostedCredentials(address.destinationSpaceId, client, [address.environment])
+  ).find(
+    (candidate) =>
+      candidate.key === key && candidate.scope === 'user' && candidate.projectId == null,
+  )
+  if (!row) throw missingCredentialRefusal(address)
+  const value = await openHostedCredentialRowValue(row, address.destinationSpaceId, client)
+  return setCredential({ ...address, reachSpaceIds }, value, client)
 }
 
 export async function listCredentials(
