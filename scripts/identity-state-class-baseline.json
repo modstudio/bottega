@@ -7,6 +7,7 @@
     "hub.task_document",
     "hub.task_status_event",
     "orchestrator.question",
+    "orchestrator.question_mutation_audit",
     "orchestrator.task_flow",
     "orchestrator.workflow_cursor"
   ],
