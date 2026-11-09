@@ -5,7 +5,7 @@ import type { Command } from 'commander'
 import { gatherLaunchAgentSkipFacts } from '../../../shared/launch-agent-skip.ts'
 import { type MachineLevel, readMachineValue } from '../../../shared/machine-config.ts'
 import { refreshLaunchAgents } from '../health/launch-agent-refresh.ts'
-import { requiredMaintenanceLabels } from '../setup/setup-schedules.ts'
+import { requiredMaintenanceLabels } from '../setup/setup-schedule-policy.ts'
 
 export function registerLaunchAgentRefreshCommand(
   program: Command,

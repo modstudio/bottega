@@ -28,7 +28,7 @@ export const runModuleSpecs = [
       '../../../shared/state-directory.ts',
       '../spare/spare-decisions.ts',
       '../setup/launchd-owners.ts',
-      '../setup/setup-schedules.ts',
+      '../setup/setup-schedule-policy.ts',
       '../../../shared/bounded-process.ts',
     ],
   },

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Bottega machine sweep periodically
+
+[Timer]
+OnStartupSec=120
+OnUnitActiveSec=7200
+Unit=orch-sweep.service
+
+[Install]
+WantedBy=timers.target

@@ -156,12 +156,12 @@ test('recommends the install level from signed-in harness facts unless a setting
   ).toBe('record')
 })
 
-test('plans release schedules only for a full Darwin distribution with a missing or changed agent', () => {
+test('plans release schedules for full Darwin and Linux distributions when definitions need work', () => {
   const schedule = {
     label: 'com.user.orch-sweep' as const,
     installed: true,
     loaded: true,
-    plistMatches: true,
+    definitionMatches: true,
   }
   const actionsFor = (overrides: Partial<SetupFacts>) => {
     const plan = proposeSetup(
@@ -180,15 +180,97 @@ test('plans release schedules only for a full Darwin distribution with a missing
   }
 
   expect(actionsFor({ schedules: [{ ...schedule, loaded: false }] })).toContain('install-schedules')
-  expect(actionsFor({ schedules: [{ ...schedule, plistMatches: false }] })).toContain(
+  expect(actionsFor({ schedules: [{ ...schedule, installed: false }] })).toContain(
+    'install-schedules',
+  )
+  expect(actionsFor({ schedules: [{ ...schedule, definitionMatches: false }] })).toContain(
     'install-schedules',
   )
   expect(actionsFor({})).not.toContain('install-schedules')
+  expect(
+    actionsFor({
+      os: { platform: 'linux', arch: 'x64', wsl: false },
+      schedules: [{ ...schedule, loaded: false }],
+    }),
+  ).toContain('install-schedules')
+  expect(
+    actionsFor({
+      os: { platform: 'linux', arch: 'x64', wsl: false },
+      schedules: [{ ...schedule, installed: false }],
+    }),
+  ).toContain('install-schedules')
+  expect(
+    actionsFor({
+      os: { platform: 'linux', arch: 'x64', wsl: false },
+      schedules: [{ ...schedule, definitionMatches: false }],
+    }),
+  ).toContain('install-schedules')
   expect(actionsFor({ os: { platform: 'linux', arch: 'x64', wsl: false } })).not.toContain(
     'install-schedules',
   )
   expect(actionsFor({ installationKind: 'checkout' })).not.toContain('install-schedules')
   expect(actionsFor({ machineLevel: 'record' })).not.toContain('install-schedules')
+})
+
+test('warns about Linux timer logout only when linger is off', () => {
+  const noticesFor = (scheduleLinger: boolean | null, overrides: Partial<typeof machine> = {}) =>
+    proposeSetup(
+      {
+        ...machine,
+        installationKind: 'distribution',
+        os: { platform: 'linux', arch: 'x64', wsl: false },
+        scheduleLinger,
+        scheduleUser: 'operator',
+        ...overrides,
+      },
+      [],
+      [],
+      [],
+    ).notices
+
+  expect(noticesFor(false)).toContainEqual({
+    message: 'systemd user timers stop at logout because linger is off',
+    fix: 'loginctl enable-linger operator',
+    blocking: false,
+  })
+  expect(noticesFor(true).some(({ message }) => message.includes('linger'))).toBe(false)
+  expect(noticesFor(null).some(({ message }) => message.includes('linger'))).toBe(false)
+  expect(
+    noticesFor(false, { machineLevel: 'record', schedules: [] }).some(({ message }) =>
+      message.includes('linger'),
+    ),
+  ).toBe(false)
+  expect(
+    noticesFor(false, {
+      machineLevel: 'record',
+      schedules: [
+        {
+          label: 'com.user.orch-sweep',
+          installed: true,
+          loaded: true,
+          definitionMatches: true,
+        },
+      ],
+    }).some(({ message }) => message.includes('linger')),
+  ).toBe(true)
+})
+
+test('shows unsupported schedules on other distribution platforms', () => {
+  const plan = proposeSetup(
+    {
+      ...machine,
+      installationKind: 'distribution',
+      os: { platform: 'freebsd', arch: 'x64', wsl: false },
+    },
+    [],
+    [],
+    [],
+  )
+  expect(plan.notices).toContainEqual({
+    message: 'scheduled sweep and record sync are unsupported on freebsd',
+    fix: null,
+    blocking: false,
+  })
 })
 
 test('record plan skips the worker MCP server and still registers the main server', () => {

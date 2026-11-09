@@ -22,7 +22,7 @@ import {
 } from './setup-mcp.ts'
 import { migrateMcpConfigText } from './setup-mcp-config.ts'
 import { type SetupAction, setupActionLine, setupActionPrerequisiteKinds } from './setup-planner.ts'
-import { applyMaintenanceSchedules } from './setup-schedules.ts'
+import { applyMaintenanceSchedules } from './setup-schedule-runtime.ts'
 
 type AddAction = Extract<SetupAction, { kind: 'add' }>
 type SetAction = Extract<SetupAction, { kind: 'set' }>

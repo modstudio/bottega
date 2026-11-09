@@ -134,7 +134,12 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
   {
     name: 'setup-engine-boundary',
     file: 'orchestrator/src/setup/setup-engine.ts',
-    allowed: ['../../../shared/brand.ts', './setup-mcp.ts', './setup-toolchain.ts'],
+    allowed: [
+      '../../../shared/brand.ts',
+      './setup-mcp.ts',
+      './setup-schedule-policy.ts',
+      './setup-toolchain.ts',
+    ],
     typeOnlyAllowed: [
       '../../../shared/machine-config.ts',
       '../project/projects.ts',
@@ -149,7 +154,12 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
   {
     name: 'setup-planner-boundary',
     file: 'orchestrator/src/setup/setup-planner.ts',
-    allowed: ['../../../shared/machine-config.ts', './setup-engine.ts', './setup-toolchain.ts'],
+    allowed: [
+      '../../../shared/machine-config.ts',
+      './setup-engine.ts',
+      './setup-schedule-policy.ts',
+      './setup-toolchain.ts',
+    ],
     typeOnlyAllowed: [
       '../project/projects.ts',
       './setup-facts.ts',
@@ -169,7 +179,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       './setup-mcp-config.ts',
       './setup-legacy-path.ts',
       './setup-planner.ts',
-      './setup-schedules.ts',
+      './setup-schedule-runtime.ts',
     ],
     typeOnlyAllowed: ['../../../shared/machine-config.ts', './setup-environment.ts'],
     reason:
@@ -181,20 +191,62 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     allowed: [
       'node:fs',
       'node:fs/promises',
-      'node:os',
       'node:path',
       '../../../shared/embedded-assets.ts',
       '../../../shared/install-root.ts',
-      '../../../shared/launch-agent-render.ts',
       '../../../shared/launch-agent-skip.ts',
-      '../../../shared/machine-config.ts',
       '../../../shared/state-directory.ts',
       './launchd-owners.ts',
+      './setup-schedule-policy.ts',
       '../../../shared/bounded-process.ts',
     ],
     typeOnlyAllowed: [],
     reason:
-      'Keep maintenance schedule rendering and launchctl application independent of setup policy and presentation.',
+      'Keep launchd schedule rendering and launchctl application independent of platform routing and presentation.',
+  },
+  {
+    name: 'setup-schedule-runtime-boundary',
+    file: 'orchestrator/src/setup/setup-schedule-runtime.ts',
+    allowed: [
+      'node:os',
+      '../../../shared/state-directory.ts',
+      './setup-schedule-policy.ts',
+      './setup-schedules.ts',
+      './setup-systemd-schedules.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep host-platform schedule adapter selection separate from launchd and systemd implementation details.',
+  },
+  {
+    name: 'setup-schedule-policy-boundary',
+    file: 'orchestrator/src/setup/setup-schedule-policy.ts',
+    allowed: [
+      '../../../shared/launch-agent-render.ts',
+      '../../../shared/launch-agent-skip.ts',
+      '../../../shared/state-directory.ts',
+    ],
+    typeOnlyAllowed: ['../../../shared/machine-config.ts'],
+    reason: 'Keep maintenance schedule identities, rendering, and setup-level rulings pure.',
+  },
+  {
+    name: 'setup-systemd-schedules-boundary',
+    file: 'orchestrator/src/setup/setup-systemd-schedules.ts',
+    allowed: [
+      'node:fs',
+      'node:fs/promises',
+      'node:os',
+      'node:path',
+      '../../../shared/bounded-process.ts',
+      '../../../shared/embedded-assets.ts',
+      '../../../shared/install-root.ts',
+      '../../../shared/launch-agent-skip.ts',
+      '../../../shared/state-directory.ts',
+      './setup-schedule-policy.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep systemd user-unit observation, Linux login facts, and application independent of platform routing and presentation.',
   },
   {
     name: 'setup-repository-toolchain-boundary',

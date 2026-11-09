@@ -3,6 +3,10 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { commentParserAssets } from '../orchestrator/src/check/check-comment-parser-assets.ts'
 import { LAUNCHD_TEMPLATE_OWNERS } from '../orchestrator/src/setup/launchd-owners.ts'
+import {
+  SYSTEMD_TEMPLATE_DIRECTORY,
+  SYSTEMD_UNIT_SUFFIXES,
+} from '../orchestrator/src/setup/setup-schedule-policy.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { REF_GUARD_RUNTIME_ASSET, registerEmbeddedAssets } from '../shared/embedded-assets.ts'
 import { BINARY_TARGETS, type BinaryTarget } from '../shared/release-artifacts.ts'
@@ -69,7 +73,7 @@ async function migrationAssetPaths(): Promise<string[]> {
   return paths.sort()
 }
 
-async function launchdAssetPaths(): Promise<string[]> {
+async function scheduleTemplateAssetPaths(): Promise<string[]> {
   const paths: string[] = []
   for (const owner of LAUNCHD_TEMPLATE_OWNERS) {
     const root = `${owner.concern}/${owner.directory}`
@@ -77,6 +81,11 @@ async function launchdAssetPaths(): Promise<string[]> {
       ...(await embeddedAssetPaths(root)).filter((path) => path.endsWith('.plist.template')),
     )
   }
+  paths.push(
+    ...(await embeddedAssetPaths(SYSTEMD_TEMPLATE_DIRECTORY)).filter((path) =>
+      SYSTEMD_UNIT_SUFFIXES.some((suffix) => path.endsWith(suffix)),
+    ),
+  )
   return paths.sort()
 }
 
@@ -140,7 +149,7 @@ export async function buildBinary(
       generatedAssetModule(
         [
           ...(await migrationAssetPaths()),
-          ...(await launchdAssetPaths()),
+          ...(await scheduleTemplateAssetPaths()),
           REF_GUARD_RUNTIME_ASSET.packagePath,
         ],
         [

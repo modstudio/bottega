@@ -172,7 +172,7 @@ test('distribution refresh installs a required missing maintenance definition', 
           label: 'com.user.orch-record-sync',
           installed: applied,
           loaded: applied,
-          plistMatches: applied,
+          definitionMatches: applied,
         },
       ],
       runCheckoutInstaller: () => {
@@ -207,7 +207,7 @@ test('distribution refresh rejects when a required definition stays missing afte
             label: 'com.user.orch-record-sync',
             installed: false,
             loaded: false,
-            plistMatches: false,
+            definitionMatches: false,
           },
         ],
         runCheckoutInstaller: () => {
@@ -243,7 +243,7 @@ test('distribution refresh verifies maintenance drift with setup facts after app
           label: 'com.user.orch-record-sync',
           installed: true,
           loaded: true,
-          plistMatches: ++factsRead > 1,
+          definitionMatches: ++factsRead > 1,
         },
       ],
       applyMaintenance: async () => {
@@ -274,7 +274,7 @@ test('distribution refresh logs a skipped maintenance label without reporting dr
           label: 'com.user.orch-record-sync',
           installed: true,
           loaded: true,
-          plistMatches: false,
+          definitionMatches: false,
         },
       ],
       applyMaintenance: async () => [
