@@ -26,6 +26,14 @@ export async function sessionCloseOutObligationItems(
   ownedRuns: readonly SessionOwnedRun[],
   taskReader: HubTaskReader = readHubTasks,
 ): Promise<SessionProcessLine[]> {
+  const taskReads = new Map<string, ReturnType<HubTaskReader>>()
+  const cachedTaskReader: HubTaskReader = (project) => {
+    const existing = taskReads.get(project)
+    if (existing) return existing
+    const reading = taskReader(project)
+    taskReads.set(project, reading)
+    return reading
+  }
   const ownedRunRecordIds = ownedRuns.map((run) => run.recordId)
   const identities = landedTaskIdentities({
     session,
@@ -38,10 +46,14 @@ export async function sessionCloseOutObligationItems(
       ]),
     ),
   })
-  const landedTasks = await observeLandedTasks(identities, taskReader)
+  const landedTasks = await observeLandedTasks(identities, cachedTaskReader)
   const landedWithContext = await Promise.all(
     landedTasks.map(async (task) => {
-      const contextTask = await resolveHubTaskReference(task.project, task.taskKey, taskReader)
+      const contextTask = await resolveHubTaskReference(
+        task.project,
+        task.taskKey,
+        cachedTaskReader,
+      )
       return { ...task, contextTask }
     }),
   )
