@@ -13,8 +13,8 @@ import {
   type CredentialPart,
   credentialRowMatches,
   orderedUsages,
-  useCredentialRows,
   usageLabel,
+  useCredentialRows,
 } from '@/routes/-credential-rows'
 import { useDetailPanel } from '@/routes/-detail-panel'
 import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
