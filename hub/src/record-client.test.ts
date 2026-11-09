@@ -125,6 +125,7 @@ describe('record client', () => {
         type: 'api-key',
         hint: 'sk-o...test',
         mode: 'live',
+        reachSpaceIds: null,
         updatedAt: '2026-11-05T12:00:00.000Z',
       },
     ])

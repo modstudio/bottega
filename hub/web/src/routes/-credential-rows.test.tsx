@@ -37,6 +37,7 @@ function secret(
     type: 'api-key',
     hint: 'sk-o...test',
     mode: 'live',
+    reachSpaceIds: null,
     updatedAt,
   }
 }

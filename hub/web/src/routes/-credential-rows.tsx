@@ -56,7 +56,7 @@ export function typedCredentialRows(rows: SecretRow[]): TypedCredentialRow[] {
 
 export type CredentialPart = { role: 'provider' | 'name' | 'type'; value: string }
 
-function credentialParts(identity: {
+export function credentialParts(identity: {
   provider: string
   name: string | null
   type: string
