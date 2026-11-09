@@ -49,7 +49,7 @@ describe('task text prompt section', () => {
           comments: ['First ruling', 'Second ruling'],
         },
         key: 'DEV-1',
-        project: 'bottega',
+        project: 'fixture',
         getTool: 'get-task-tool',
         hub: true,
       }),
@@ -62,7 +62,7 @@ describe('task text prompt section', () => {
     const section = taskTextSection({
       task: { available: false, reason: 'server unavailable' },
       key: 'DEV-2',
-      project: 'bottega',
+      project: 'fixture',
       getTool: 'get-task-tool',
       hub: true,
     })

@@ -32,6 +32,7 @@ export const mcpBoundarySpecs: ImportBoundary[] = [
       '../mcp/mcp-probe.ts',
       '../mcp/mcp-tool-list.ts',
       '../project/projects.ts',
+      '../workflow/workflow-task-reference.ts',
       './task-cli-read.ts',
       './task-key-admission.ts',
     ],

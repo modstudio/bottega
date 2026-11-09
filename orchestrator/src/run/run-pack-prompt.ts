@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { REVIEW_SEVERITY_INSTRUCTION } from '../contract/contract.ts'
 import type { TaskTextRead } from '../dispatch/task-key-lookup.ts'
 import { resolveLens } from '../lens/lenses.ts'
@@ -33,7 +34,7 @@ export function taskTextSection(input: {
     .join('\n\n')
   if (Buffer.byteLength(full) <= TASK_TEXT_MAX_BYTES) return full
   const remedy = input.hub
-    ? `bottega task show ${input.key} --project ${input.project}`
+    ? `${PLATFORM_SLUG} task show ${input.key} --project ${input.project}`
     : input.getTool
   const suffix = `\n\nTask text was truncated; read the full task with ${remedy}.`
   return `${fitUtf8(full, TASK_TEXT_MAX_BYTES - Buffer.byteLength(suffix))}${suffix}`

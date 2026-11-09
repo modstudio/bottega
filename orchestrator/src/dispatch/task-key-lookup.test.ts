@@ -40,7 +40,7 @@ describe('built-in task-key lookup output', () => {
   })
 })
 
-test('reads non-hub task text and resolves its project-scoped mirror record', async () => {
+test('reads external task text and resolves its project-scoped mirror record', async () => {
   const project = {
     recordId: 'project-id',
     name: 'remote-project',

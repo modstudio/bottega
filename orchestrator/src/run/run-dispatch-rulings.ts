@@ -1,8 +1,10 @@
 // concern: run dispatch rulings
 /** Resolves and renders the task rulings inherited by a dispatched run. */
 
+import { attributedLaunchKey } from '../review/review-target.ts'
 import { inheritedRunLinks } from './run-claim-inheritance.ts'
 import { admitNewRunReference } from './run-task-reference.ts'
+import { initialRunTaskText } from './run-task-text.ts'
 import { renderTaskRulings } from './task-rulings.ts'
 import { taskRulingsForDispatch } from './task-rulings-store.ts'
 
@@ -30,12 +32,23 @@ export async function prepareRunDispatchRulings(input: {
   parentRunRecordId: string | null
   projectName: string | null
   projectRecordId: string | null
-  key: string | null
+  key: string | null | undefined
   repoJob: boolean
   callerCwd: string
   launchCwd?: string
   probe: boolean
-}): Promise<{ section: string; questionIds: string[]; links: DispatchLinks | null }> {
+  writesJob?: boolean
+}): Promise<{
+  section: string
+  questionIds: string[]
+  links: DispatchLinks | null
+  taskText: string
+}> {
+  const key = attributedLaunchKey({
+    writesJob: Boolean(input.writesJob),
+    key: input.key ?? undefined,
+    cwd: input.callerCwd,
+  })
   const inherited =
     input.workspaceSource === 'retained' ? inheritedRunLinks(input.parentRunRecordId!) : null
   const links = inherited
@@ -44,7 +57,7 @@ export async function prepareRunDispatchRulings(input: {
       ? await admitNewRunReference({
           projectName: input.projectName,
           projectRecordId: input.projectRecordId,
-          key: input.key,
+          key,
           cwd: input.repoJob ? null : input.callerCwd,
           launchCwd: input.launchCwd ?? input.callerCwd,
           probe: input.probe,
@@ -57,5 +70,11 @@ export async function prepareRunDispatchRulings(input: {
       taskRecordId: links?.taskRecordId ?? null,
     }),
     links,
+    taskText: await initialRunTaskText([
+      input.firstTurn,
+      Boolean(input.writesJob),
+      key ?? undefined,
+      input.projectName,
+    ]),
   }
 }

@@ -3,7 +3,6 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { namesMissingTask } from '../../../shared/task-missing.ts'
-import type { ToolCaller } from '../../../shared/tracker-list-scope.ts'
 import { trackerSourceFor } from '../../../shared/trackers.ts'
 import { resolveProjectMcpCommand } from '../mcp/mcp-command.ts'
 import { McpHeadersHelperError, resolveMcpHeaders } from '../mcp/mcp-headers-helper.ts'
@@ -76,7 +75,7 @@ async function readHubTaskText(project: Project, key: string): Promise<TaskTextR
 }
 
 type RemoteCaller = {
-  caller: ToolCaller
+  caller: { callTool(name: string, args: Record<string, unknown>): Promise<unknown> }
   credentialConfig: () => McpServerConfig
 }
 
@@ -118,11 +117,14 @@ function remoteTrackerCaller(project: Project): RemoteCaller | null {
 export async function readTaskText(
   project: Project,
   key: string,
-  dependencies: { toolCaller?: ToolCaller; hubTaskReader?: HubTaskReader } = {},
+  dependencies: {
+    toolCaller?: { callTool(name: string, args: Record<string, unknown>): Promise<unknown> }
+    hubTaskReader?: HubTaskReader
+  } = {},
 ): Promise<TaskTextRead> {
   if (project.settings.tracker?.protocol === 'hub') return readHubTaskText(project, key)
   const source = trackerSourceFor(project)
-  if (!source) {
+  if (!source?.readText) {
     return {
       available: false,
       reason: `tracker protocol ${project.settings.tracker?.protocol ?? '(missing)'} has no task text adapter`,

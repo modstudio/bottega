@@ -119,7 +119,7 @@ export async function readCursorTaskText(
   }
   const commentEnvelope = commentReply as { success?: unknown; data?: unknown }
   if (commentEnvelope.success !== true || !Array.isArray(commentEnvelope.data)) {
-    throw new TrackerTaskTextUnverifiable('cursor-mcp', key)
+    throw new TrackerLookupUnverifiable('cursor-mcp', key)
   }
   return {
     externalId: task.id,

@@ -300,7 +300,7 @@ export type TrackerSource = {
    * that cannot report any.
    */
   readCommentIds?: (m: ToolCaller, key: string) => Promise<string[] | null>
-  readText: (m: ToolCaller, key: string) => Promise<TrackerTaskText | null>
+  readText?: (m: ToolCaller, key: string) => Promise<TrackerTaskText | null>
 }
 
 type TrackerStatusWriteResult = {

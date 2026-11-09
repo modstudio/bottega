@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { basename } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { resolveTrackerAgentActions } from '../../../shared/tracker-actions.ts'
 import { requireAgent } from '../agent/agent-registry.ts'
 import { minimumCliVersionRefusal } from '../agent/agents.ts'
 import { effectiveEndpointApiKeyForRun } from '../agent/endpoint-api-key.ts'
@@ -29,7 +28,6 @@ import {
   recordMigrationDispatchRefusal,
 } from '../database/migration-drain.ts'
 import { preflight } from '../dispatch/dispatch-preflight.ts'
-import { readTaskText } from '../dispatch/task-key-lookup.ts'
 import type { StreamEvent } from '../events.ts'
 import { type classify, notify } from '../failure/failure.ts'
 import { job } from '../jobs/jobs.ts'
@@ -42,13 +40,7 @@ import {
 import { namesSeenAt, probeMcpServer, storedMcpProbe } from '../mcp/mcp-probe.ts'
 import type { OutcomeStatus } from '../outcome.ts'
 import type { RunResourceObserver } from '../process-resource-sampler.ts'
-import {
-  projectAt,
-  projectByName,
-  projectForTaskKey,
-  projects,
-  stackAt,
-} from '../project/projects.ts'
+import { projectAt, projectByName, stackAt } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { startedByUserIdForRun } from '../record/record-attribution.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
@@ -57,11 +49,7 @@ import {
   reviewCalibration as calibrateReview,
   calibrationLine,
 } from '../review/review-calibration.ts'
-import {
-  attributedLaunchKey,
-  implicitReviewClaim,
-  resolveReviewTarget,
-} from '../review/review-target.ts'
+import { implicitReviewClaim, resolveReviewTarget } from '../review/review-target.ts'
 import { pick } from '../route/route.ts'
 import { runningRunCountForHarness } from '../route/running-runs.ts'
 import { type CodexMcpCatalogue, codexMcpSetupHeader } from '../sandbox/codex-mcp-scope.ts'
@@ -116,7 +104,6 @@ import {
   checksReviewedCommit,
   initialDispatchPrompt,
   operatorKnowledgeSection,
-  taskTextSection,
 } from './run-pack-prompt.ts'
 import { carriedRefusalFailure, refuseUnstartedRun } from './run-prelaunch-refusal.ts'
 import {
@@ -331,48 +318,19 @@ export async function run(opts: RunOptions): Promise<RunResult> {
       })
     }
   }
-  const dispatchKey = attributedLaunchKey({ writesJob, key: opts.key, cwd: callerCwd })
   const dispatchRulings = await prepareRunDispatchRulings({
     firstTurn: resume.isFirstTurn,
     workspaceSource: resume.workspaceSource,
     parentRunRecordId: opts.resume?.parent ?? null,
     projectName: runProjectName,
     projectRecordId: runProjectId,
-    key: dispatchKey,
+    key: opts.key,
     repoJob,
     callerCwd,
     launchCwd: opts.launchCwd,
     probe: Boolean(opts.probe),
+    writesJob,
   })
-  let taskText = ''
-  if (resume.isFirstTurn && writesJob && opts.key) {
-    const taskProject = runProjectName
-      ? projectByName(runProjectName)
-      : projectForTaskKey(opts.key, projects())
-    if (taskProject) {
-      const protocol = taskProject.settings.tracker?.protocol
-      const read = await readTaskText(taskProject, opts.key)
-      const getTool = protocol
-        ? (resolveTrackerAgentActions(protocol, taskProject.settings.tracker?.actions).get ??
-          'tracker get tool')
-        : 'tracker get tool'
-      taskText = taskTextSection({
-        task: read,
-        key: opts.key,
-        project: taskProject.name,
-        getTool,
-        hub: protocol === 'hub',
-      })
-    } else {
-      taskText = taskTextSection({
-        task: { available: false, reason: 'the task project could not be resolved' },
-        key: opts.key,
-        project: runProjectName ?? '(unknown)',
-        getTool: 'tracker get tool',
-        hub: false,
-      })
-    }
-  }
   let prompt =
     opts.resume?.kind === 'continue'
       ? packedResumePrompt(opts.job, originalPrompt, opts.resume.parent)
@@ -386,7 +344,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
           infrastructure: infra,
           operatorKnowledge: operatorKnowledgeSection(pack ?? null),
           taskRulings: dispatchRulings.section,
-          taskText,
+          taskText: dispatchRulings.taskText,
           spec: originalPrompt,
         })
   prompt = bindReviewInstructions({
