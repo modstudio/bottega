@@ -64,3 +64,10 @@ test('config secret writes require complete credential metadata', () => {
     }).success,
   ).toBe(true)
 })
+
+test('config secret writes preserve absent reach separately from explicit all reach', () => {
+  const absent = configSecretPutBody.parse(base)
+  const all = configSecretPutBody.parse({ ...base, reachSpaceIds: null })
+  expect(Object.hasOwn(absent, 'reachSpaceIds')).toBe(false)
+  expect(all.reachSpaceIds).toBeNull()
+})

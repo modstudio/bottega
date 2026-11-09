@@ -299,65 +299,6 @@ test('set credential writes a project-bound row with its metadata and hint', asy
   })
 })
 
-test('setting an existing account credential without reach preserves its narrowed reach', async () => {
-  const keyId = await machineKeyId(pair.publicKey)
-  await pinTrustedMachine(keyId, pair.publicKey, 'current')
-  writeHostedConfigIdentity({
-    spaceId: address.destinationSpaceId,
-    userId: '01990000-0000-7000-8000-000000000003',
-  })
-  const dekId = '01990000-0000-7000-8000-000000000004'
-  const dek = generateDataKey()
-  const wrapped = await wrapDataKey({
-    dek,
-    wrapContext: { spaceId: address.destinationSpaceId, dekId, dekVersion: 1 },
-    senderPrivateKey: pair.privateKey,
-    senderPublicKey: pair.publicKey,
-    recipientPublicKey: pair.publicKey,
-  })
-  const encode = (value: Uint8Array) => Buffer.from(value).toString('base64url')
-  const narrowedReach = ['01990000-0000-7000-8000-000000000005']
-  const putSecret = mock(async (_key: string, input: object) => input)
-  const client = {
-    currentDataKey: async () => ({
-      id: dekId,
-      version: 1,
-      createdAt: '2026-01-01T00:00:00.000Z',
-      retiredAt: null,
-      wraps: [
-        {
-          recipientKeyId: keyId,
-          senderKeyId: keyId,
-          enc: encode(wrapped.enc),
-          ciphertext: encode(wrapped.ciphertext),
-        },
-      ],
-    }),
-    getSecret: async () => ({
-      ...metadataRow(null),
-      reachSpaceIds: narrowedReach,
-      envelope: 'unused-by-set',
-    }),
-    whoami: async () => ({
-      user: { id: '01990000-0000-7000-8000-000000000003' },
-      activeSpaceId: address.destinationSpaceId,
-    }),
-    putSecret,
-  } as unknown as ConfigClient
-
-  await setCredential(
-    { ...address, account: true, projectId: null, projectName: undefined },
-    'rotated-account-value',
-    client,
-  )
-
-  expect(putSecret).toHaveBeenCalledTimes(1)
-  expect(putSecret.mock.calls[0]?.[1]).toMatchObject({
-    projectId: null,
-    reachSpaceIds: narrowedReach,
-  })
-})
-
 test('delete credential explains how to recreate an absent project credential', async () => {
   const client = {
     getSecret: async () => {

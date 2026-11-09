@@ -530,12 +530,6 @@ export async function setSecret(
   const who = await identity(client)
   const spaceId = destination.destinationSpaceId ?? who.spaceId
   const rowVersion = (existing?.rowVersion ?? 0) + 1
-  const metadata =
-    options.metadata &&
-    !Object.hasOwn(options.metadata, 'reachSpaceIds') &&
-    existing?.reachSpaceIds !== undefined
-      ? { ...options.metadata, reachSpaceIds: existing.reachSpaceIds ?? null }
-      : options.metadata
   const envelope = sealValue({
     dek,
     plaintext: new TextEncoder().encode(value),
@@ -555,7 +549,7 @@ export async function setSecret(
     dekId: dataKey.id,
     envelope: encoded(envelope),
     expectedRowVersion: existing?.rowVersion ?? null,
-    ...(metadata ?? {}),
+    ...(options.metadata ?? {}),
   })
 }
 

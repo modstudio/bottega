@@ -32,6 +32,10 @@ export type CredentialResolutionAddress = {
 
 export type CredentialRow = ConfigSecret & CompleteCredentialFields
 
+export function isAccountCredentialRow(row: Pick<ConfigSecret, 'scope' | 'projectId'>): boolean {
+  return row.scope === 'user' && row.projectId == null
+}
+
 export async function listCredentials(
   spaceId: string,
   client: ConfigClient,
@@ -62,7 +66,7 @@ export async function resolveHostedCredential(
         : await listCredentials(personalSpaceId, client)
   const destinationCandidates =
     personalSpaceId === address.destinationSpaceId
-      ? destinationRows.filter((row) => row.scope !== 'user' || row.projectId != null)
+      ? destinationRows.filter((row) => !isAccountCredentialRow(row))
       : destinationRows
   const preferences = await client.listCredentialPreferences({
     destinationSpaceId: address.destinationSpaceId,
@@ -79,23 +83,21 @@ export async function resolveHostedCredential(
       mode: row.mode,
       environment: row.environment,
     })),
-    ...accountRows
-      .filter((row) => row.scope === 'user' && row.projectId == null)
-      .map((row) => ({
-        row,
-        spaceId: personalSpaceId!,
-        projectId: row.projectId ?? null,
-        payer: credentialPayerFromScope(row.scope),
-        provider: row.provider,
-        name: row.name,
-        type: row.type,
-        mode: row.mode,
-        environment: row.environment,
-        account: {
-          ownerUserId: who.user.id,
-          reachSpaceIds: row.reachSpaceIds ?? null,
-        },
-      })),
+    ...accountRows.filter(isAccountCredentialRow).map((row) => ({
+      row,
+      spaceId: personalSpaceId!,
+      projectId: row.projectId ?? null,
+      payer: credentialPayerFromScope(row.scope),
+      provider: row.provider,
+      name: row.name,
+      type: row.type,
+      mode: row.mode,
+      environment: row.environment,
+      account: {
+        ownerUserId: who.user.id,
+        reachSpaceIds: row.reachSpaceIds ?? null,
+      },
+    })),
   ]
   const result = resolveCredential({
     userId: who.user.id,

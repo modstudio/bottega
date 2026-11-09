@@ -479,7 +479,10 @@ export async function putConfigSecret(
       SET dek_id=${input.dekId}::uuid, envelope=${input.envelope},
           project_id=${input.projectId ?? null}::uuid, provider=${input.provider ?? null},
           name=${input.name ?? null}, type=${input.type ?? null}, hint=${input.hint ?? null}, mode=${input.mode ?? null},
-          reach_space_ids=${input.reachSpaceIds === null || input.reachSpaceIds === undefined ? null : tx.array(input.reachSpaceIds, 'uuid')},
+          reach_space_ids=CASE
+            WHEN ${input.reachSpaceIds === undefined} THEN reach_space_ids
+            ELSE ${input.reachSpaceIds === null ? null : tx.array(input.reachSpaceIds, 'uuid')}
+          END,
           row_version=row_version + 1, updated_at=now()
       WHERE id=${String(occupancy.existing.id)}::uuid
       RETURNING id, key, environment, user_id, project_id, provider, name, type, hint, mode, reach_space_ids,

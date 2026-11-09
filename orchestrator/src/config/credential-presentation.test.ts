@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import {
+  CREDENTIAL_SLOTS,
   credentialDisplayName,
   credentialHint,
   parseCredentialSlot,
@@ -8,6 +9,8 @@ import {
 test('credential slots use the shared payer and binding grammar', () => {
   expect(parseCredentialSlot('shared@project')).toEqual({ payer: 'shared', binding: 'project' })
   expect(parseCredentialSlot('shared@other')).toBeNull()
+  expect(parseCredentialSlot('shared@account')).toBeNull()
+  expect(CREDENTIAL_SLOTS).not.toContain('shared@account')
   expect(parseCredentialSlot('personal@account')).toEqual({
     payer: 'personal',
     binding: 'account',

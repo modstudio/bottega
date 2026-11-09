@@ -20,6 +20,7 @@ import {
 } from '../../../shared/credential-resolution.ts'
 import {
   type CredentialResolutionAddress,
+  isAccountCredentialRow,
   listCredentials as listHostedCredentials,
   openHostedCredentialRowValue,
   resolveHostedCredential,
@@ -219,10 +220,7 @@ export async function reachCredential(
   const key = credentialIdentityKey(address)
   const row = (
     await listHostedCredentials(address.destinationSpaceId, client, [address.environment])
-  ).find(
-    (candidate) =>
-      candidate.key === key && candidate.scope === 'user' && candidate.projectId == null,
-  )
+  ).find((candidate) => candidate.key === key && isAccountCredentialRow(candidate))
   if (!row) throw missingCredentialRefusal(address)
   const value = await openHostedCredentialRowValue(row, address.destinationSpaceId, client)
   return setCredential({ ...address, reachSpaceIds }, value, client, row.rowVersion)
@@ -243,7 +241,7 @@ export async function listCredentials(
     (row) =>
       (filters.mode === undefined || row.mode === filters.mode) &&
       (filters.projectId === undefined || row.projectId === filters.projectId) &&
-      (!filters.account || (row.scope === 'user' && row.projectId == null)),
+      (!filters.account || isAccountCredentialRow(row)),
   )
 }
 

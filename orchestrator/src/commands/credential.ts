@@ -4,10 +4,8 @@
 import type { Command } from 'commander'
 import { configClient } from '../../../shared/config-client.ts'
 import {
-  CREDENTIAL_BINDINGS,
   CREDENTIAL_ENVIRONMENTS,
   CREDENTIAL_MODES,
-  CREDENTIAL_PAYERS,
   CREDENTIAL_SLUG_PATTERN,
   type CredentialEnvironment,
   type CredentialMode,
@@ -19,6 +17,7 @@ import {
   recordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
 import {
+  CREDENTIAL_SLOTS,
   credentialDisplayName,
   credentialSlot,
   parseCredentialSlot,
@@ -50,12 +49,6 @@ type BindingOptions = {
   reach?: string
   spaces?: string
 }
-const credentialSlots = CREDENTIAL_BINDINGS.flatMap((binding) =>
-  binding === 'account'
-    ? ['personal@account']
-    : CREDENTIAL_PAYERS.map((payer) => `${payer}@${binding}`),
-)
-
 function identityName(value: string): { provider: string; name: string | null; type: string } {
   const parts = value.split('/')
   if (parts.length !== 2 && parts.length !== 3)
@@ -185,12 +178,6 @@ async function parsedReach(value: string): Promise<string[] | null> {
 }
 
 function validateAccountOptions(options: BindingOptions): void {
-  if (
-    [options.project !== undefined, options.space !== undefined, options.account === true].filter(
-      Boolean,
-    ).length > 1
-  )
-    throw new Error('--account, --project, and --space are mutually exclusive')
   if (options.account && options.shared)
     throw new Error('--account and --shared are mutually exclusive')
   if (options.reach !== undefined && !options.account) throw new Error('--reach requires --account')
@@ -281,7 +268,7 @@ export function registerCredentialCommands(program: Command): void {
     })
   addBindingOptions(credential.command('prefer <provider/type>'), false, false)
     .description('set or clear a payer preference')
-    .option('--use <slot>', credentialSlots.join(' or '))
+    .option('--use <slot>', CREDENTIAL_SLOTS.join(' or '))
     .option('--clear', 'clear the preference')
     .action(async (name, options: BindingOptions & { use?: string; clear?: boolean }) => {
       if (Boolean(options.project) === Boolean(options.space))
@@ -304,7 +291,7 @@ export function registerCredentialCommands(program: Command): void {
         return
       }
       const slot = parseCredentialSlot(options.use!)
-      if (!slot) throw new Error(`--use must be ${credentialSlots.join(', ')}`)
+      if (!slot) throw new Error(`--use must be ${CREDENTIAL_SLOTS.join(', ')}`)
       await client.putCredentialPreference({
         ...input,
         ...slot,
