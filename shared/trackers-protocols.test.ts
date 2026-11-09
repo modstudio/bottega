@@ -3,11 +3,11 @@ import { PLATFORM_SLUG } from './brand.ts'
 import { resolveTrackerAgentActions, trackerWireAction } from './tracker-actions.ts'
 import { createTrackerTask, trackerCreatedTaskKey } from './tracker-create.ts'
 import type { ToolCaller } from './tracker-list-scope.ts'
+import { TrackerLookupUnverifiable } from './tracker-task-text.ts'
 import {
   categoryForTrackerRead,
   MAX_PAGES,
   resolveTrackerWriteState,
-  TrackerLookupUnverifiable,
   type TrackerProject,
   trackerSourceFor,
   WORKSPACE_LOOKUP_PAGE_SIZE,

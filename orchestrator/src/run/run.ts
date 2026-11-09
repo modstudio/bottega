@@ -49,11 +49,7 @@ import {
   reviewCalibration as calibrateReview,
   calibrationLine,
 } from '../review/review-calibration.ts'
-import {
-  attributedLaunchKey,
-  implicitReviewClaim,
-  resolveReviewTarget,
-} from '../review/review-target.ts'
+import * as rt from '../review/review-target.ts'
 import { pick } from '../route/route.ts'
 import { runningRunCountForHarness } from '../route/running-runs.ts'
 import { type CodexMcpCatalogue, codexMcpSetupHeader } from '../sandbox/codex-mcp-scope.ts'
@@ -168,7 +164,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     runProjectName = opts.repo ?? repoOf(callerCwd)
   const reviewTarget =
     opts.resolvedReviewTarget ??
-    resolveReviewTarget(opts.job, callerCwd, opts.review, opts.carry, opts.key)
+    rt.resolveReviewTarget(opts.job, callerCwd, opts.review, opts.carry, opts.key)
   const seed = preflight(
     opts.job,
     callerCwd,
@@ -183,7 +179,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     runProjectName ?? undefined,
     reviewTarget !== null,
   )
-  const implicitReview = implicitReviewClaim(callerCwd, !!reviewTarget, !!requestedJob.findings)
+  const implicitReview = rt.implicitReviewClaim(callerCwd, !!reviewTarget, !!requestedJob.findings)
   const coverageBase = reviewTarget?.base ?? implicitReview.coverageBase
   // Programmatic callers also refuse a bad ref before a run row or worktree exists.
   if (opts.base) {
@@ -322,18 +318,18 @@ export async function run(opts: RunOptions): Promise<RunResult> {
       })
     }
   }
-  const dispatchKey = attributedLaunchKey({ writesJob, key: opts.key, cwd: callerCwd })
   const dispatchRulings = await prepareRunDispatchRulings({
     firstTurn: resume.isFirstTurn,
     workspaceSource: resume.workspaceSource,
     parentRunRecordId: opts.resume?.parent ?? null,
     projectName: runProjectName,
     projectRecordId: runProjectId,
-    key: dispatchKey,
+    key: rt.attributedLaunchKey({ writesJob, key: opts.key, cwd: callerCwd }),
     repoJob,
     callerCwd,
     launchCwd: opts.launchCwd,
     probe: Boolean(opts.probe),
+    writesJob,
   })
   let prompt =
     opts.resume?.kind === 'continue'
@@ -348,6 +344,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
           infrastructure: infra,
           operatorKnowledge: operatorKnowledgeSection(pack ?? null),
           taskRulings: dispatchRulings.section,
+          taskText: dispatchRulings.taskText,
           spec: originalPrompt,
         })
   prompt = bindReviewInstructions({

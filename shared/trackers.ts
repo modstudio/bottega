@@ -13,6 +13,16 @@ import {
   cursorStatusPayload,
   workspaceStatusPayload,
 } from './tracker-status-payload.ts'
+import {
+  arrayTaskForKey,
+  cursorTaskNotFound,
+  readArrayTaskText,
+  readCursorTaskText,
+  readWorkspaceTaskText,
+  TrackerLookupUnverifiable,
+  type TrackerTaskText,
+} from './tracker-task-text.ts'
+
 export type StatusCategory = 'open' | 'active' | 'review' | 'done' | 'dropped'
 export const TASK_STATUSES = ['open', 'active', 'review', 'done', 'dropped'] as const
 const UPDATED_SINCE_PROTOCOLS: ReadonlySet<TrackerProtocol> = new Set([
@@ -291,6 +301,7 @@ export type TrackerSource = {
    * that cannot report any.
    */
   readCommentIds?: (m: ToolCaller, key: string) => Promise<string[] | null>
+  readText?: (m: ToolCaller, key: string) => Promise<TrackerTaskText | null>
 }
 
 type TrackerStatusWriteResult = {
@@ -304,13 +315,6 @@ export type TrackerFetchResult = {
   tasks: TrackerTask[]
   complete: boolean
   deletedKeys: string[]
-}
-
-export class TrackerLookupUnverifiable extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'TrackerLookupUnverifiable'
-  }
 }
 
 /**
@@ -535,7 +539,9 @@ async function lookupWorkspaceTask(
     })
     if (!r || typeof r !== 'object' || !Array.isArray((r as { tasks?: unknown }).tasks)) {
       throw new TrackerLookupUnverifiable(
-        `workspace-mcp lookup for ${key} returned an unexpected response`,
+        'workspace-mcp',
+        key,
+        `lookup for ${key} returned an unexpected response`,
       )
     }
     const pageResult = r as { tasks: WorkspaceTask[]; last_page?: number }
@@ -544,13 +550,17 @@ async function lookupWorkspaceTask(
     if (!pageResult.last_page || page >= pageResult.last_page) return null
     if (page === WORKSPACE_LOOKUP_MAX_PAGES) {
       throw new TrackerLookupUnverifiable(
-        `workspace-mcp lookup for ${key} reached the paging bound of ${WORKSPACE_LOOKUP_MAX_PAGES} before the last page`,
+        'workspace-mcp',
+        key,
+        `lookup for ${key} reached the paging bound of ${WORKSPACE_LOOKUP_MAX_PAGES} before the last page`,
       )
     }
   }
 
   throw new TrackerLookupUnverifiable(
-    `workspace-mcp lookup for ${key} reached the paging bound of ${WORKSPACE_LOOKUP_MAX_PAGES} before the last page`,
+    'workspace-mcp',
+    key,
+    `lookup for ${key} reached the paging bound of ${WORKSPACE_LOOKUP_MAX_PAGES} before the last page`,
   )
 }
 
@@ -706,6 +716,7 @@ function workspaceSource(
     async lookup(m, key) {
       return lookupWorkspaceTask(m, key, project, states, assignees, getAction, searchAction)
     },
+    readText: (m, key) => readWorkspaceTaskText(m, key, getAction),
     // The search page a lookup reads carries no comments; the descriptor's get
     // tool answers one task with its `comments[].id`.
     async readCommentIds(m, key) {
@@ -771,18 +782,7 @@ async function lookupCursorTask(
   try {
     response = await m.callTool(getAction, { taskKey: key })
   } catch (cause) {
-    const structuredContent =
-      cause instanceof Error && cause.name === 'McpToolCallError' && 'structuredContent' in cause
-        ? cause.structuredContent
-        : undefined
-    if (
-      structuredContent &&
-      typeof structuredContent === 'object' &&
-      (structuredContent as { success?: unknown }).success === false &&
-      (structuredContent as { code?: unknown }).code === 'NOT_FOUND'
-    ) {
-      return null
-    }
+    if (cursorTaskNotFound(cause)) return null
     throw cause
   }
   const r = response as {
@@ -792,7 +792,9 @@ async function lookupCursorTask(
   const task = r.data
   if (r.success !== true || !task?.humanKey) {
     throw new TrackerLookupUnverifiable(
-      `cursor-mcp lookup for ${key} returned an unexpected response`,
+      'cursor-mcp',
+      key,
+      `lookup for ${key} returned an unexpected response`,
     )
   }
   return {
@@ -824,6 +826,8 @@ function cursorMcpSource(
   const searchAction = actions?.search ?? trackerWireAction('cursor-mcp', 'search')
   const getAction = actions?.get ?? trackerWireAction('cursor-mcp', 'get')
   const statusAction = actions?.status ?? trackerWireAction('cursor-mcp', 'status')
+  const listCommentsAction =
+    actions?.['list-comments'] ?? trackerWireAction('cursor-mcp', 'list-comments')
   return {
     project,
     env,
@@ -904,6 +908,7 @@ function cursorMcpSource(
     async lookup(m, key) {
       return lookupCursorTask(m, key, project, states, getAction)
     },
+    readText: (m, key) => readCursorTaskText(m, key, getAction, listCommentsAction),
   }
 }
 
@@ -975,19 +980,20 @@ function arrayMcpSource(
       const r = await m.callTool(getAction, { search: key })
       if (!Array.isArray(r)) {
         throw new TrackerLookupUnverifiable(
-          `array-mcp lookup for ${key} returned an unexpected response`,
+          'array-mcp',
+          key,
+          `lookup for ${key} returned an unexpected response`,
         )
       }
-      const hit = (
-        r as {
-          id?: string
-          key?: string
-          title?: string
-          status?: string
-          updatedAt?: string
-          assigneeName?: string | null
-        }[]
-      ).find((t) => t.key?.toUpperCase() === key)
+      const rows = r as {
+        id?: string
+        key?: string
+        title?: string
+        status?: string
+        updatedAt?: string
+        assigneeName?: string | null
+      }[]
+      const hit = arrayTaskForKey(rows, key)
       if (!hit) return null
       return {
         externalId: hit.id ?? null,
@@ -1000,6 +1006,7 @@ function arrayMcpSource(
         assignee: hit.assigneeName?.trim() || null,
       }
     },
+    readText: (m, key) => readArrayTaskText(m, key, getAction),
   }
 }
 

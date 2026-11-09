@@ -3,9 +3,8 @@
 
 import { projectForTaskKey, projects } from '../project/projects.ts'
 import {
+  bestEffortTaskReference,
   type HubTaskReader,
-  type HubTaskReference,
-  resolveHubTaskReference,
   taskKeyMap,
 } from '../workflow/workflow-task-reference.ts'
 import { deriveNewRunLinks } from './run-task-linking.ts'
@@ -21,18 +20,6 @@ function assertRunHasTaskOrProject(input: {
 }): void {
   if (!input.probe && !input.taskRecordId && !input.projectRecordId) {
     throw new Error(RUN_REFERENCE_REFUSAL)
-  }
-}
-
-async function bestEffortTaskReference(
-  project: string | null,
-  key: string,
-  reader?: HubTaskReader,
-): Promise<HubTaskReference | null> {
-  try {
-    return await resolveHubTaskReference(project, key, reader)
-  } catch {
-    return null
   }
 }
 

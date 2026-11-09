@@ -201,8 +201,15 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-dispatch-rulings.ts', [
     './run-claim-inheritance.ts',
     './run-task-reference.ts',
+    './run-task-text.ts',
     './task-rulings-store.ts',
     './task-rulings.ts',
+  ]),
+  module('orchestrator/src/run/run-task-text.ts', [
+    '../../../shared/tracker-actions.ts',
+    '../dispatch/task-key-lookup.ts',
+    '../project/projects.ts',
+    './run-pack-prompt.ts',
   ]),
   module('orchestrator/src/run/run-startup-failure.ts', [
     '../database/db.ts',

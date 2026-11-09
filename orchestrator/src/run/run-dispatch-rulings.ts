@@ -3,10 +3,12 @@
 
 import { inheritedRunLinks } from './run-claim-inheritance.ts'
 import { admitNewRunReference } from './run-task-reference.ts'
+import { initialRunTaskText } from './run-task-text.ts'
 import { renderTaskRulings } from './task-rulings.ts'
 import { taskRulingsForDispatch } from './task-rulings-store.ts'
 
 type DispatchLinks = { taskRecordId: string | null; projectRecordId: string | null }
+type TaskTextReader = NonNullable<Parameters<typeof initialRunTaskText>[1]>['readTaskText']
 
 function runDispatchRulingsSection(input: {
   resume: boolean
@@ -24,18 +26,30 @@ function runDispatchRulingsSection(input: {
   }
 }
 
-export async function prepareRunDispatchRulings(input: {
-  firstTurn: boolean
-  workspaceSource: 'new' | 'retained'
-  parentRunRecordId: string | null
-  projectName: string | null
-  projectRecordId: string | null
-  key: string | null
-  repoJob: boolean
-  callerCwd: string
-  launchCwd?: string
-  probe: boolean
-}): Promise<{ section: string; questionIds: string[]; links: DispatchLinks | null }> {
+export async function prepareRunDispatchRulings(
+  input: {
+    firstTurn: boolean
+    workspaceSource: 'new' | 'retained'
+    parentRunRecordId: string | null
+    projectName: string | null
+    projectRecordId: string | null
+    key: string | null
+    repoJob: boolean
+    callerCwd: string
+    launchCwd?: string
+    probe: boolean
+    writesJob?: boolean
+  },
+  dependencies: {
+    taskTextReader?: TaskTextReader
+  } = {},
+): Promise<{
+  section: string
+  questionIds: string[]
+  links: DispatchLinks | null
+  taskText: string
+}> {
+  const key = input.key
   const inherited =
     input.workspaceSource === 'retained' ? inheritedRunLinks(input.parentRunRecordId!) : null
   const links = inherited
@@ -44,7 +58,7 @@ export async function prepareRunDispatchRulings(input: {
       ? await admitNewRunReference({
           projectName: input.projectName,
           projectRecordId: input.projectRecordId,
-          key: input.key,
+          key,
           cwd: input.repoJob ? null : input.callerCwd,
           launchCwd: input.launchCwd ?? input.callerCwd,
           probe: input.probe,
@@ -57,5 +71,14 @@ export async function prepareRunDispatchRulings(input: {
       taskRecordId: links?.taskRecordId ?? null,
     }),
     links,
+    taskText: await initialRunTaskText(
+      {
+        firstTurn: input.firstTurn,
+        writesJob: Boolean(input.writesJob),
+        key: key ?? undefined,
+        projectName: input.projectName,
+      },
+      { readTaskText: dependencies.taskTextReader },
+    ),
   }
 }

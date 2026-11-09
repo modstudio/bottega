@@ -7,12 +7,16 @@ const TRACKER_ACTIONS = [
   'update',
   'status',
   'comment',
+  'list-comments',
   'document',
 ] as const
 export type TrackerAction = (typeof TRACKER_ACTIONS)[number]
 export const TRACKER_PROTOCOLS = ['workspace-mcp', 'cursor-mcp', 'array-mcp', 'hub'] as const
 export type TrackerProtocol = (typeof TRACKER_PROTOCOLS)[number]
 type TrackerActionName = { agent: string; wire?: string | null }
+
+export const isTrackerProtocol = (protocol: unknown): protocol is TrackerProtocol =>
+  TRACKER_PROTOCOLS.some((candidate) => candidate === protocol)
 
 /** The names agents and hub use for each protocol capability. */
 const trackerProtocolActions: Record<
@@ -35,6 +39,7 @@ const trackerProtocolActions: Record<
     update: { agent: 'task_update', wire: 'task.update' },
     status: { agent: 'task_update', wire: 'task.update' },
     comment: { agent: 'comment_add', wire: 'comment.add' },
+    'list-comments': { agent: 'comment_list', wire: 'comment.list' },
   },
   'array-mcp': {
     search: { agent: 'task_list' },

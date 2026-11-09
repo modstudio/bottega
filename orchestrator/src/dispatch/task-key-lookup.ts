@@ -14,6 +14,7 @@ import {
 } from '../mcp/mcp-probe.ts'
 import { callMcpTool } from '../mcp/mcp-tool-list.ts'
 import type { Project } from '../project/projects.ts'
+import { type HubTaskReader, resolveHubTaskReference } from '../workflow/workflow-task-reference.ts'
 import { readTaskThroughCli } from './task-cli-read.ts'
 import type { TaskKeyLookupResult } from './task-key-admission.ts'
 
@@ -27,25 +28,19 @@ const processEnvironment = (): Record<string, string> =>
     ),
   )
 
-export type LensTaskRead =
+export type TaskTextRead =
   | {
       available: true
-      recordId: string
+      recordId: string | null
       key: string
       title: string
       body: string
       comments: string[]
+      mirrorUnread?: string
     }
   | { available: false; reason: string }
 
-/** Read the task text through the CLI capability declared by the project register. */
-export async function readLensTask(project: Project, key: string): Promise<LensTaskRead> {
-  if (project.settings.tracker?.protocol !== 'hub') {
-    return {
-      available: false,
-      reason: `${project.settings.tracker?.protocol ?? '(missing)'} tracker has no CLI task read`,
-    }
-  }
+async function readHubTaskText(project: Project, key: string): Promise<TaskTextRead> {
   try {
     const result = await readTaskThroughCli(project, key)
     if (result.exitCode !== 0) {
@@ -77,6 +72,103 @@ export async function readLensTask(project: Project, key: string): Promise<LensT
     }
   } catch (cause) {
     return { available: false, reason: errorText(cause) }
+  }
+}
+
+type RemoteCaller = {
+  caller: { callTool(name: string, args: Record<string, unknown>): Promise<unknown> }
+  credentialConfig: () => McpServerConfig
+}
+
+function remoteTrackerCaller(project: Project): RemoteCaller | null {
+  const server = project.settings.mcpServer ?? project.name
+  const config = readMcpConfig(project.path)[server]
+  if (!config) return null
+  let credentials = config
+  return {
+    credentialConfig: () => credentials,
+    caller: {
+      callTool: async (name, args) => {
+        const environment = processEnvironment()
+        const headers = config.url
+          ? await resolveMcpHeaders(config, project.path, environment)
+          : config.headers
+        credentials = { ...config, headers }
+        return callMcpTool(
+          {
+            command: config.command
+              ? resolveProjectMcpCommand(config.command, project.path)
+              : undefined,
+            args: config.args,
+            cwd: project.path,
+            url: config.url,
+            headers,
+            env: config.env,
+          },
+          environment,
+          name,
+          args,
+        )
+      },
+    },
+  }
+}
+
+/** Read task text through the tracker declared by the project register. */
+export async function readTaskText(
+  project: Project,
+  key: string,
+  dependencies: {
+    toolCaller?: { callTool(name: string, args: Record<string, unknown>): Promise<unknown> }
+    hubTaskReader?: HubTaskReader
+    withRecordId?: boolean
+  } = {},
+): Promise<TaskTextRead> {
+  if (project.settings.tracker?.protocol === 'hub') return readHubTaskText(project, key)
+  let remote: RemoteCaller | null = null
+  try {
+    const source = trackerSourceFor(project)
+    if (!source?.readText) {
+      return {
+        available: false,
+        reason: `tracker protocol ${project.settings.tracker?.protocol ?? '(missing)'} has no task text adapter`,
+      }
+    }
+    remote = dependencies.toolCaller ? null : remoteTrackerCaller(project)
+    if (!dependencies.toolCaller && !remote) {
+      const server = project.settings.mcpServer ?? project.name
+      return {
+        available: false,
+        reason: `MCP server ${server} is not configured in ${project.path}/.mcp.json`,
+      }
+    }
+    const task = await source.readText(dependencies.toolCaller ?? remote!.caller, key)
+    if (!task) return { available: false, reason: `tracker has no task ${key}` }
+    let mirror = null
+    let mirrorUnread: string | undefined
+    if (dependencies.withRecordId) {
+      try {
+        mirror = await resolveHubTaskReference(project.name, key, dependencies.hubTaskReader)
+      } catch (cause) {
+        mirrorUnread = errorText(cause)
+      }
+    }
+    return {
+      available: true,
+      recordId: mirror?.record_id ?? null,
+      key: task.key,
+      title: task.title,
+      body: task.body,
+      comments: task.comments,
+      ...(mirrorUnread ? { mirrorUnread } : {}),
+    }
+  } catch (cause) {
+    return {
+      available: false,
+      reason: remote
+        ? trackerLookupFailureCondition(cause, remote.credentialConfig())
+        : `tracker lookup failed: ${errorText(cause)}`,
+    }
   }
 }
 
@@ -119,48 +211,21 @@ async function lookupRemoteTask(project: Project, key: string): Promise<TaskKeyL
       condition: `tracker protocol ${project.settings.tracker?.protocol ?? '(missing)'} has no task lookup adapter`,
     }
   }
-  const server = project.settings.mcpServer ?? project.name
-  const config = readMcpConfig(project.path)[server]
-  if (!config) {
+  const remote = remoteTrackerCaller(project)
+  if (!remote) {
+    const server = project.settings.mcpServer ?? project.name
     return {
       state: 'unreachable',
       condition: `MCP server ${server} is not configured in ${project.path}/.mcp.json`,
     }
   }
-  let credentialConfig = config
   try {
-    const task = await source.lookup(
-      {
-        callTool: async (name, args) => {
-          const environment = processEnvironment()
-          const headers = config.url
-            ? await resolveMcpHeaders(config, project.path, environment)
-            : config.headers
-          credentialConfig = { ...config, headers }
-          return callMcpTool(
-            {
-              command: config.command
-                ? resolveProjectMcpCommand(config.command, project.path)
-                : undefined,
-              args: config.args,
-              cwd: project.path,
-              url: config.url,
-              headers,
-              env: config.env,
-            },
-            environment,
-            name,
-            args,
-          )
-        },
-      },
-      key,
-    )
+    const task = await source.lookup(remote.caller, key)
     return task ? { state: 'found' } : { state: 'not-found' }
   } catch (cause) {
     return {
       state: 'unreachable',
-      condition: trackerLookupFailureCondition(cause, credentialConfig),
+      condition: trackerLookupFailureCondition(cause, remote.credentialConfig()),
     }
   }
 }
