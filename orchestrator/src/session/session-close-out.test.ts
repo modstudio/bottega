@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
-import { addRun, dir } from '../../test/fixtures/store.ts'
+import { addRun, dir, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { encodeContextItem } from '../doc/context-item-codec.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from '../doc/context-write-adapter.ts'
@@ -134,6 +134,8 @@ test("a turn's guard or retained ref makes its terminal root planned", async () 
     parent: retainedRoot,
     turn: 2,
   })
+  score(guardRoot, 'full', 'right', 'faithful')
+  score(retainedRoot, 'full', 'right', 'faithful')
   for (const runId of [guardRoot, guardTurn, retainedRoot, retainedTurn])
     attachRunToProject(runId, projectId, project)
   mkdirSync(join(repo, '.git', 'orch-guards', guardTurn), { recursive: true })

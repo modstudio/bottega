@@ -236,9 +236,9 @@ export function newestTurnOutputPath(database: Database, rootId: string): string
   return row?.output_path ?? null
 }
 
-export function pendingForSession(sid: string | null) {
+export function pendingForSession(sid: string | null, database: Database = db()) {
   if (!sid) return []
-  return db()
+  return database
     .query(
       `SELECT r.record_id, r.agent, r.job, r.repo, r.status, r.failure_kind,
             COALESCE(r.label, r.prompt_head) AS prompt_head,

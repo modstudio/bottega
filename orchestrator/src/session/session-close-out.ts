@@ -13,6 +13,7 @@ import { closeOutRun } from '../close/close-out.ts'
 import { annotateHeldLandingInFlight } from '../close/close-out-in-flight.ts'
 import { type HeldTreeJson, heldTreeFromError, heldTreeJson } from '../close/close-out-report.ts'
 import { sessionId as callingSessionId, db, writableDb } from '../database/db.ts'
+import { pendingForSession } from '../evidence/evidence-query.ts'
 import { gitResult, repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
 import { projectAt, projectByName, resolvedWorktreeTool } from '../project/projects.ts'
 import { currentOrphanProcesses } from '../resources/process-inventory.ts'
@@ -34,6 +35,10 @@ import {
   sessionCloseOutVerdict,
   sessionOwnedRunIds,
 } from './session-close-out-decision.ts'
+import {
+  landedTaskIdentities,
+  sessionCloseOutObligations,
+} from './session-close-out-obligations.ts'
 import type { SessionErrorLine, SessionProcessLine } from './session-close-out-report.ts'
 import {
   closeOutSessionContext,
@@ -686,6 +691,24 @@ function appendCursorProcessItems(report: SessionCloseOutReport, cursors: readon
     })
 }
 
+function appendObligationProcessItems(
+  report: SessionCloseOutReport,
+  database: Database,
+  session: string,
+  branches: readonly SessionOwnedBranch[],
+): void {
+  const landedTasks = landedTaskIdentities(branches).map((task) => ({
+    ...task,
+    observation: observeTaskStatus(task.taskKey, task.project),
+  }))
+  report.process.push(
+    ...sessionCloseOutObligations({
+      pendingScores: pendingForSession(session, database),
+      landedTasks,
+    }),
+  )
+}
+
 function appendArgumentProcesses(
   report: SessionCloseOutReport,
   inventory: ReturnType<typeof gather>,
@@ -773,6 +796,7 @@ export async function closeOutSession(
   appendObservationErrors(report, final.observationErrors)
   appendClassifiedProcessItems(report, final)
   appendCursorProcessItems(report, final.cursors)
+  appendObligationProcessItems(report, database, session, final.branches)
   appendArgumentProcesses(report, final)
   const plannedRunRoots = new Set(
     dryRun
