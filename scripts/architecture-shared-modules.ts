@@ -17,6 +17,7 @@ export const sharedModules: ArchitectureModule[] = [
     './credential-resolution.ts',
     './hosted-secret-row.ts',
     './record-remedies.ts',
+    './record-space-membership.ts',
   ]),
   module('shared/record-timestamp.ts', []),
   module('shared/session-liveness.ts', []),

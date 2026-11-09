@@ -5,24 +5,22 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   ConfigClientError,
   type ConfigDestination,
-  type ConfigSecret,
   configClient,
 } from '../../../shared/config-client.ts'
 import {
-  type CompleteCredentialFields,
   CREDENTIAL_ENVIRONMENTS,
   type CredentialEnvironment,
   type CredentialMode,
   type CredentialPayer,
-  completeCredentialFields,
   credentialIdentityKey,
 } from '../../../shared/credential.ts'
 import {
-  credentialHint,
   credentialScopeFromPayer,
   credentialSetRefusalText,
 } from '../../../shared/credential-resolution.ts'
 import {
+  type CredentialResolutionAddress,
+  listCredentials as listHostedCredentials,
   resolveHostedCredential,
   resolveHostedCredentialValue,
 } from '../../../shared/credential-value.ts'
@@ -40,18 +38,9 @@ import { sealedValueIsEmpty, stripTrailingNewline } from '../../../shared/sealed
 import type { Project } from '../project/projects.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { deleteSecret, setSecret } from './config-service.ts'
-export type CredentialAddress = {
-  provider: string
-  name: string | null
-  type: string
-  mode: CredentialMode
-  environment: CredentialEnvironment
-  payer: CredentialPayer
-  projectId: string | null
-  projectName?: string
-  spaceName: string
-  destinationSpaceId: string
-}
+import { credentialHint } from './credential-presentation.ts'
+
+export type CredentialAddress = CredentialResolutionAddress & { payer: CredentialPayer }
 export type ProjectCredentialTarget = Pick<Project, 'name' | 'settings'> & {
   recordId: string | null
 }
@@ -175,8 +164,6 @@ export async function setCredential(
   }
 }
 
-type CredentialRow = ConfigSecret & CompleteCredentialFields
-
 export async function listCredentials(
   spaceId: string,
   filters: {
@@ -185,21 +172,20 @@ export async function listCredentials(
     projectId?: string
   } = {},
   client = configClient(),
-): Promise<CredentialRow[]> {
-  const target = { destinationSpaceId: spaceId }
+) {
   const environments = filters.environment ? [filters.environment] : CREDENTIAL_ENVIRONMENTS
-  const rows = await Promise.all(environments.map((env) => client.listSecrets(env, target)))
-  return rows
-    .flat()
-    .flatMap((row) => {
-      const fields = completeCredentialFields(row)
-      return fields ? [{ ...row, ...fields }] : []
-    })
-    .filter(
-      (row) =>
-        (filters.mode === undefined || row.mode === filters.mode) &&
-        (filters.projectId === undefined || row.projectId === filters.projectId),
-    )
+  return (await listHostedCredentials(spaceId, client, environments)).filter(
+    (row) =>
+      (filters.mode === undefined || row.mode === filters.mode) &&
+      (filters.projectId === undefined || row.projectId === filters.projectId),
+  )
+}
+
+function requireProjectCredentialAddress(
+  address: CredentialAddress,
+): asserts address is CredentialAddress & { projectId: string; projectName: string } {
+  if (!address.projectId || !address.projectName)
+    throw new Error('credential value resolution requires a project binding')
 }
 
 export async function deleteCredential(address: CredentialAddress, client = configClient()) {
@@ -221,8 +207,7 @@ export async function resolveProjectCredential(
   address: CredentialAddress,
   client = configClient(),
 ) {
-  if (!address.projectId || !address.projectName)
-    throw new Error('credential value resolution requires a project binding')
+  requireProjectCredentialAddress(address)
   const result = await resolveHostedCredential(address, client)
   if (result.kind === 'refused') throw new Error(result.refusal)
   return result
@@ -230,8 +215,7 @@ export async function resolveProjectCredential(
 
 /** Resolve and open one project credential; plaintext exists only in the returned memory value. */
 export async function resolveCredentialValue(address: CredentialAddress, client = configClient()) {
-  if (!address.projectId || !address.projectName)
-    throw new Error('credential value resolution requires a project binding')
+  requireProjectCredentialAddress(address)
   const result = await resolveHostedCredentialValue(address, client)
   if (result.kind === 'refused') throw new Error(result.refusal)
   return result

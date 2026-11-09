@@ -18,7 +18,7 @@ function fixture(input: {
     dependencies: {
       ask: (question: TypedQuestion, state: string | Record<string, unknown>) =>
         askTypedQuestionClient(question, state, {
-          resolveCredential: async () => ({ kind: 'refused', refusal: 'missing' }),
+          resolveCredential: async () => ({ kind: 'missing' }),
           resolve,
           fetch,
         }),

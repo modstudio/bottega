@@ -11,7 +11,7 @@ const FIXTURE_QUESTION = {
 } as const satisfies NoulQuestion
 
 const resolve = async () => ({ TYPESAFE_KEY: 'fixture-secret' })
-const missingCredential = async () => ({ kind: 'refused', refusal: 'missing' }) as const
+const missingCredential = async () => ({ kind: 'missing' }) as const
 
 test('typed credential wins over a present legacy key', async () => {
   let authorization: string | null = null

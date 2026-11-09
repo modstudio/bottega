@@ -1,11 +1,5 @@
 import { expect, test } from 'bun:test'
-import {
-  type CredentialCandidate,
-  credentialDisplayName,
-  credentialHint,
-  parseCredentialSlot,
-  resolveCredential,
-} from './credential-resolution.ts'
+import { type CredentialCandidate, resolveCredential } from './credential-resolution.ts'
 
 const base = {
   spaceId: 'space-a',
@@ -150,11 +144,6 @@ test('a project slot preference beats the default payer order', () => {
   ).toMatchObject({ kind: 'resolved', credential: rows[0], reason: 'project-preference' })
 })
 
-test('credential slots use the shared payer and binding grammar', () => {
-  expect(parseCredentialSlot('shared@project')).toEqual({ payer: 'shared', binding: 'project' })
-  expect(parseCredentialSlot('shared@other')).toBeNull()
-})
-
 test("another space's credential is never selected", () => {
   const result = resolveCredential({
     ...base,
@@ -182,12 +171,4 @@ test('resolver never crosses credential names', () => {
   expect(
     resolveCredential({ ...base, name: 'backup', candidates: [named], preferences: [] }),
   ).toMatchObject({ kind: 'resolved', credential: named })
-})
-
-test('hints mask only long values and display names show mode and environment', () => {
-  expect(credentialHint('12345678901234567890')).toBe('1234…7890')
-  expect(credentialHint('short')).toBe('5 characters')
-  expect(credentialDisplayName('openrouter', null, 'api-key', 'test', 'local')).toBe(
-    'openrouter/api-key (mode test, env local)',
-  )
 })

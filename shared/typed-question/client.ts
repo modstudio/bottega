@@ -66,9 +66,7 @@ export type TypedQuestionsClientResult =
   | { kind: 'error'; error: string; latencyMs: number }
 
 export type TypedQuestionClientDependencies = {
-  resolveCredential(): Promise<
-    { kind: 'resolved'; value: string } | { kind: 'refused'; refusal: string }
-  >
+  resolveCredential(): Promise<{ kind: 'resolved'; value: string } | { kind: 'missing' }>
   resolve: typeof readEnvValuesWithHosted
   fetch(input: string, init: RequestInit): Promise<Response>
   sleep?(ms: number): Promise<void>
@@ -76,7 +74,12 @@ export type TypedQuestionClientDependencies = {
 }
 
 const clientDependencies: TypedQuestionClientDependencies = {
-  resolveCredential: () => resolveActiveSpaceCredentialValue(TYPESAFE_CREDENTIAL),
+  resolveCredential: async () => {
+    const result = await resolveActiveSpaceCredentialValue(TYPESAFE_CREDENTIAL)
+    return result.kind === 'refused'
+      ? { kind: 'missing' as const }
+      : { kind: 'resolved' as const, value: result.value }
+  },
   resolve: readEnvValuesWithHosted,
   fetch: (input, init) => hostedApiFetch(input, init),
   sleep: (ms) => Bun.sleep(ms),

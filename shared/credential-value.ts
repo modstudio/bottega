@@ -11,7 +11,8 @@ import {
 } from './credential.ts'
 import { credentialPayerFromScope, resolveCredential } from './credential-resolution.ts'
 import { openHostedSecretRow } from './hosted-secret-row.ts'
-import { RECORD_ACTIVE_SPACE_REMEDY } from './record-remedies.ts'
+import { RECORD_ACTIVE_SPACE_REMEDY, recordSpaceMembershipRefusal } from './record-remedies.ts'
+import { parseRecordSpaceMemberships, recordSpaceMembership } from './record-space-membership.ts'
 
 export type CredentialResolutionAddress = {
   provider: string
@@ -25,12 +26,16 @@ export type CredentialResolutionAddress = {
   destinationSpaceId: string
 }
 
-type CredentialRow = ConfigSecret & CompleteCredentialFields
+export type CredentialRow = ConfigSecret & CompleteCredentialFields
 
-async function listCredentials(spaceId: string, client: ConfigClient): Promise<CredentialRow[]> {
+export async function listCredentials(
+  spaceId: string,
+  client: ConfigClient,
+  environments: readonly CredentialEnvironment[] = CREDENTIAL_ENVIRONMENTS,
+): Promise<CredentialRow[]> {
   const destination = { destinationSpaceId: spaceId }
   const rows = await Promise.all(
-    CREDENTIAL_ENVIRONMENTS.map((environment) => client.listSecrets(environment, destination)),
+    environments.map((environment) => client.listSecrets(environment, destination)),
   )
   return rows.flat().flatMap((row) => {
     const fields = completeCredentialFields(row)
@@ -99,12 +104,16 @@ export async function resolveActiveSpaceCredentialValue(
 ) {
   const who = await client.whoami()
   if (!who.activeSpaceId) throw new Error(RECORD_ACTIVE_SPACE_REMEDY)
-  const membership = who.memberships.find((row) => row.space_id === who.activeSpaceId)
+  const membership = recordSpaceMembership(
+    who.activeSpaceId,
+    parseRecordSpaceMemberships(who.memberships),
+  )
+  if (!membership) throw new Error(recordSpaceMembershipRefusal(who.activeSpaceId))
   return resolveHostedCredentialValue(
     {
       ...identity,
       projectId: null,
-      spaceName: membership?.slug ?? who.activeSpaceId,
+      spaceName: membership.slug,
       destinationSpaceId: who.activeSpaceId,
     },
     client,

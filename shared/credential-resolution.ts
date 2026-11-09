@@ -3,16 +3,12 @@
 
 import { PLATFORM_SLUG } from './brand.ts'
 import type {
-  CredentialBinding,
   CredentialEnvironment,
   CredentialIdentity,
   CredentialMode,
   CredentialPayer,
   CredentialPreferencePayload,
 } from './credential.ts'
-import { CREDENTIAL_BINDINGS, CREDENTIAL_PAYERS } from './credential.ts'
-
-const CREDENTIAL_HINT_MIN_LENGTH = 20
 
 export type CredentialCandidate = CredentialIdentity & {
   spaceId: string
@@ -27,22 +23,6 @@ export type CredentialResolution<Candidate extends CredentialCandidate = Credent
     }
   | { kind: 'refused'; refusal: string }
 
-export function credentialHint(value: string): string {
-  return value.length >= CREDENTIAL_HINT_MIN_LENGTH
-    ? `${value.slice(0, 4)}…${value.slice(-4)}`
-    : `${value.length} characters`
-}
-
-export function credentialDisplayName(
-  provider: string,
-  name: string | null,
-  type: string,
-  mode: CredentialMode,
-  environment: CredentialEnvironment,
-): string {
-  return `${[provider, name, type].filter((part) => part !== null).join('/')} (mode ${mode}, env ${environment})`
-}
-
 function matchesSlot(
   credential: CredentialCandidate,
   preference: CredentialPreferencePayload,
@@ -56,19 +36,6 @@ function matchesSlot(
   )
 }
 
-export function credentialSlot(payer: CredentialPayer, projectId: string | null): string {
-  return `${payer}@${projectId ? 'project' : 'space'}`
-}
-
-export function parseCredentialSlot(
-  value: string,
-): { payer: CredentialPayer; binding: CredentialBinding } | null {
-  for (const payer of CREDENTIAL_PAYERS)
-    for (const binding of CREDENTIAL_BINDINGS)
-      if (value === `${payer}@${binding}`) return { payer, binding }
-  return null
-}
-
 export function credentialPayerFromScope(scope: 'user' | 'space'): CredentialPayer {
   return scope === 'user' ? 'personal' : 'shared'
 }
@@ -77,6 +44,7 @@ export function credentialScopeFromPayer(payer: CredentialPayer): 'user' | 'spac
   return payer === 'personal' ? 'user' : 'space'
 }
 
+/** Where a credential set is aimed; a project binding wins over its space. */
 export type CredentialSetTarget = {
   provider: string
   name: string | null
@@ -88,6 +56,7 @@ export type CredentialSetTarget = {
   spaceName?: string
 }
 
+/** One refusal shape for every credential that must be set: names the binding and the exact set command. */
 export function credentialSetRefusalText(
   target: CredentialSetTarget,
   condition: string,

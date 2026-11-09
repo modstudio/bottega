@@ -82,7 +82,9 @@ export const settingsModules: SettingsModule[] = [
     '../project/projects.ts',
     '../record/record-project-destination-client.ts',
     './config-service.ts',
+    './credential-presentation.ts',
   ]),
+  module('orchestrator/src/config/credential-presentation.ts', ['../../../shared/credential.ts']),
   module('orchestrator/src/commands/credential.ts', [
     'commander',
     '../../../shared/config-client.ts',
@@ -91,6 +93,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/record-remedies.ts',
     '../../../shared/record-space-membership.ts',
     '../config/credential-service.ts',
+    '../config/credential-presentation.ts',
     '../config/secret-run.ts',
     '../project/projects.ts',
     '../record/record-project-destination.ts',
