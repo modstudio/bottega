@@ -129,13 +129,13 @@ describe('session close-out obligations', () => {
         item: 'landed task alpha:DEV-3',
         reason: 'task is active',
         evidence: 'in progress',
-        remedy: `${PLATFORM_SLUG} task set DEV-3 --status done`,
+        remedy: `${PLATFORM_SLUG} task set DEV-3 --project alpha --status done`,
       },
       {
         item: 'landed task alpha:DEV-4',
         reason: 'task status could not be verified',
         evidence: 'unverified (missing status category)',
-        remedy: `${PLATFORM_SLUG} task set DEV-4 --status done`,
+        remedy: `${PLATFORM_SLUG} task set DEV-4 --project alpha --status done`,
       },
     ])
   })

@@ -76,7 +76,7 @@ function landedTaskItem(task: LandedTaskObservation): SessionProcessLine | null 
       ? `task is ${task.observation.category}`
       : 'task status could not be verified',
     evidence: task.observation.detail,
-    remedy: `${PLATFORM_SLUG} task set ${task.taskKey} --status done`,
+    remedy: `${PLATFORM_SLUG} task set ${task.taskKey} --project ${task.project} --status done`,
   }
 }
 
