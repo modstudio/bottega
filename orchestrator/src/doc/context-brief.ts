@@ -11,7 +11,13 @@ import { questionOpenSql } from '../run/question-open.ts'
 import { LIVE_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { architectSessionContext } from '../workflow/session-context.ts'
 import { listWorkflowCursors } from '../workflow/workflow-cursor-list.ts'
-import { type HubTaskReference, readHubTasks } from '../workflow/workflow-task-reference.ts'
+import {
+  type HubTaskReference,
+  projectTaskKey,
+  readHubTasks,
+  taskKeyMap,
+  taskReferenceForProjectKey,
+} from '../workflow/workflow-task-reference.ts'
 import { storedItems, taskProfile } from './context-write-adapter.ts'
 import type { ContextItem, ContextItemKind } from './doc-context-write.ts'
 import { listOpenResumes } from './docs.ts'
@@ -121,27 +127,26 @@ export function holderSequence(
   tasks: readonly HubTaskReference[],
 ): ContextBriefHolderReference[] {
   const holders: ContextBriefHolderReference[] = [{ key: session, title: '', kind: 'session' }]
-  const scopedKey = (project: string, key: string) => `${project}\0${key}`
-  const byKey = new Map(tasks.map((task) => [scopedKey(task.project, task.key), task]))
+  const index = taskKeyMap(tasks)
   const emitted = new Set<string>()
   const add = (task: HubTaskReference, projectTasks: readonly HubTaskReference[]) => {
-    const key = task.key
-    if (emitted.has(key)) return
-    emitted.add(key)
+    const identity = projectTaskKey(task.project, task.key)
+    if (emitted.has(identity)) return
+    emitted.add(identity)
     holders.push({
-      key,
+      key: task.key,
       title: task.title ?? '',
-      kind: taskProfile(key, projectTasks),
+      kind: taskProfile(task.key, projectTasks),
     })
   }
   for (const { key, project } of working) {
-    const task = byKey.get(scopedKey(project, key))
+    const task = taskReferenceForProjectKey(index, project, key)
     if (!task) continue
     const projectTasks = tasks.filter((row) => row.project === project)
     add(task, projectTasks)
     let parent = task.parent_key ?? null
     while (parent) {
-      const parentTask = byKey.get(scopedKey(project, parent))
+      const parentTask = taskReferenceForProjectKey(index, project, parent)
       if (!parentTask) break
       add(parentTask, projectTasks)
       parent = parentTask.parent_key ?? null

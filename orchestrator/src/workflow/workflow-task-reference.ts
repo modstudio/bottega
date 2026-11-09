@@ -18,7 +18,7 @@ export type HubTaskReference = {
 export type HubTaskReader = (project: string) => Promise<HubTaskReference[]>
 export type HubTaskKeyMap = ReadonlyMap<string, readonly HubTaskReference[]>
 
-const projectTaskKey = (project: string, key: string) => `${project}\0${key}`
+export const projectTaskKey = (project: string, key: string) => `${project}\0${key}`
 
 export function taskKeyMap(tasks: readonly HubTaskReference[]): HubTaskKeyMap {
   const result = new Map<string, HubTaskReference[]>()

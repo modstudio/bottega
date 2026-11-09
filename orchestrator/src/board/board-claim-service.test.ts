@@ -6,6 +6,8 @@ import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { db } from '../database/db.ts'
 import {
   listClaims,
+  liveClaimsOfSession,
+  liveTaskClaimsOfSession,
   releaseClaim,
   releaseTaskClaims,
   renewClaim,
@@ -36,6 +38,54 @@ function presence(session: string, task: string | null, clock: number) {
 const env = (session: string) => ({ CLAUDE_CODE_SESSION_ID: session })
 const claimNoticesFor = (session: string, clock: number) => claimNotices(false, env(session), clock)
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+test('session claim readers return its live claims across projects and preserve subjects', () => {
+  fixtureProject()
+  const clock = Date.now()
+  db()
+    .query(
+      `INSERT INTO project(record_id,name,path,settings)
+       VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'claims-other','/tmp/claims-other','{}')`,
+    )
+    .run()
+  const insert = db().query(
+    `INSERT INTO board_claim
+     (record_id,project,subject_kind,subject_value,holder_kind,holder_session,duration_ms,taken_at,renewed_at,lapses_at,closed_at,close_reason)
+     VALUES (?,?,?,?, 'architect',?,3600000,?,?,?,?,?)`,
+  )
+  const seed = (
+    project: string,
+    kind: string,
+    value: string,
+    holder: string,
+    closedAt: string | null = null,
+  ) =>
+    insert.run(
+      newRecordId(),
+      project,
+      kind,
+      value,
+      holder,
+      new Date(clock - 1_000).toISOString(),
+      new Date(clock - 1_000).toISOString(),
+      new Date(clock + 3_600_000).toISOString(),
+      closedAt,
+      closedAt ? 'released' : null,
+    )
+  seed('claims', 'task', 'DEV-1', 'holder')
+  seed('claims-other', 'resource', 'gpu', 'holder')
+  seed('claims', 'task', 'DEV-2', 'holder', new Date(clock - 500).toISOString())
+  seed('claims-other', 'path', 'src/**', 'other')
+
+  expect(liveClaimsOfSession('holder', clock)).toEqual([
+    expect.objectContaining({ project: 'claims', subject: { kind: 'task', value: 'DEV-1' } }),
+    expect.objectContaining({
+      project: 'claims-other',
+      subject: { kind: 'resource', value: 'gpu' },
+    }),
+  ])
+  expect(liveTaskClaimsOfSession('holder', clock)).toEqual(['DEV-1'])
+})
 
 test('a created claim carries a version-7 record id', () => {
   const { cwd } = fixtureProject()

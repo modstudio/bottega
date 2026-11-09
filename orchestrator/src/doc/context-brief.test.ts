@@ -25,14 +25,23 @@ test('renders the compact context layout line by line and keeps only item first 
         key: 'DEV-1844/2',
         title: 'Build the brief',
         kind: 'task',
-        items: [item('task:DEV-1844/2', 'next', 'next-action', 'implement the renderer')],
+        items: [
+          item('task:DEV-1844/2', 'next', 'next-action', 'implement the renderer'),
+          item('task:DEV-1844/2', 'pointer', 'pointer', 'design section 4\nignore this line'),
+        ],
       },
       {
         key: 'DEV-1844',
         title: 'Architect context',
         kind: 'epic',
         items: [
-          item('task:DEV-1844', 'approved', 'ruling', 'Approved as proposed\nwith detail', 'q5282'),
+          item(
+            'task:DEV-1844',
+            'approved',
+            'ruling',
+            'Approved as proposed\r\nwith detail',
+            'q5282',
+          ),
         ],
       },
     ],
@@ -53,6 +62,7 @@ test('renders the compact context layout line by line and keeps only item first 
     '  open: none',
     'DEV-1844/2 Build the brief',
     '  next: implement the renderer',
+    '  pointer: design section 4',
     '  open: none',
     'DEV-1844 Architect context',
     '  ruling q5282: "Approved as proposed"',
@@ -76,6 +86,8 @@ test('orders the session, each project-scoped working task, and its epic by task
     task('DEV-1844', PLATFORM_SLUG, 'Architect context'),
     task('APP-7', 'other', 'Other project task'),
     task('DEV-2000', PLATFORM_SLUG, 'Parentless childless task'),
+    task('SHARED-1', PLATFORM_SLUG, 'Platform shared key'),
+    task('SHARED-1', 'other', 'Other shared key'),
   ]
 
   expect(
@@ -85,6 +97,8 @@ test('orders the session, each project-scoped working task, and its epic by task
         { key: 'DEV-1844/2', project: PLATFORM_SLUG },
         { key: 'APP-7', project: 'other' },
         { key: 'DEV-2000', project: PLATFORM_SLUG },
+        { key: 'SHARED-1', project: PLATFORM_SLUG },
+        { key: 'SHARED-1', project: 'other' },
       ],
       tasks,
     ),
@@ -94,5 +108,7 @@ test('orders the session, each project-scoped working task, and its epic by task
     { key: 'DEV-1844', title: 'Architect context', kind: 'epic' },
     { key: 'APP-7', title: 'Other project task', kind: 'task' },
     { key: 'DEV-2000', title: 'Parentless childless task', kind: 'task' },
+    { key: 'SHARED-1', title: 'Platform shared key', kind: 'task' },
+    { key: 'SHARED-1', title: 'Other shared key', kind: 'task' },
   ])
 })
