@@ -8,6 +8,8 @@ import {
 import { DEFAULT_IDLE_CAP_MS } from '../../shared/interval.ts'
 import { sendOperatorNotification } from '../../shared/operator-notification.ts'
 import { refusal, renderRefusal } from '../../shared/refusal.ts'
+import { FAST_MS, SLOW_MS } from './collect-cadence.ts'
+import { type WatchTick, watchCycleDecision } from './collect-watch-schedule.ts'
 import { db, hostedDeliveryRefusal, nowIso, writeTransaction } from './db.ts'
 import {
   type HostedChangeLegReport,
@@ -65,9 +67,8 @@ import { WRITE_HOLD_LOG_MS } from './write-hold.ts'
  * second; the trackers are four remote round trips and take seconds, so they
  * run rarely. Git is cheap but only changes on commit, so it rides with them.
  */
-const FAST_MS = 20_000
 export const WATCH_LIVE_MS = 3 * FAST_MS
-export const SLOW_MS = 5 * 60_000
+
 const WATCH_ALIVE_KEY = 'collect.watch.alive'
 
 export type WatcherAlive = {
@@ -1028,6 +1029,22 @@ function watchOutboxSchedule(
   )
 }
 
+function initialWatchWork(
+  deliveryOffReason: string | null,
+  outboxSchedule: HostedOutboxDrainSchedule<HostedOutboxReport> | null,
+): NonNullable<WatchDependencies['initial']> {
+  return async (leaseGuard) => {
+    leaseGuard.assertHeld()
+    await deliverOperatorNotifications()
+    leaseGuard.assertHeld('operator notifications')
+    await deliverOperatorWaitingEmailsWhenAllowed(deliveryOffReason)
+    leaseGuard.assertHeld('operator waiting emails')
+    const fastResults = await collectFast({}, leaseGuard)
+    const slowResults = await collectSlow(true, leaseGuard, outboxSchedule ?? undefined)
+    return [...fastResults, ...slowResults]
+  }
+}
+
 export function watch(
   holder: string,
   onError = (e: Error) => console.error(`hub: ${e.message}`),
@@ -1036,22 +1053,21 @@ export function watch(
   const outboxSchedule = watchOutboxSchedule(dependencies)
   const deliveryOffReason = hostedDeliveryRefusal()
   let busy = false
+  let slowOwed = false
   let stopping = false
   let reportedDeliveryOff = false
-  const runCycle =
-    (
-      work: (
-        guard: LeaseGuard,
-        outboxSchedule: HostedOutboxDrainSchedule<HostedOutboxReport> | null,
-      ) => Promise<CollectCycleResult>,
-      heartbeat = false,
-    ) =>
-    async () => {
-      if (stopping) return
-      if (busy) return refreshWatcherAliveIfHeld(heartbeat, holder, onError)
-      if (!acquireLease(holder)) return
-      busy = true
-      if (heartbeat) attemptWatcherAliveWrite(() => writeWatcherAlive(holder), onError)
+  let dispatch = (_tick: WatchTick) => {}
+  const startCycle = (
+    work: (
+      guard: LeaseGuard,
+      outboxSchedule: HostedOutboxDrainSchedule<HostedOutboxReport> | null,
+    ) => Promise<CollectCycleResult>,
+    heartbeat = false,
+  ) => {
+    if (stopping || busy || !acquireLease(holder)) return false
+    busy = true
+    if (heartbeat) attemptWatcherAliveWrite(() => writeWatcherAlive(holder), onError)
+    void (async () => {
       // A failed collect must not stop the loop or take the server down: the
       // stored data is still the last good reading, which is the point of having
       // stored it.
@@ -1068,54 +1084,53 @@ export function watch(
         onError(e as Error)
       } finally {
         busy = false
+        dispatch(null)
       }
-    }
+    })()
+    return true
+  }
 
-  const fast = runCycle(
+  const fast =
     dependencies.fast ??
-      (async (leaseGuard) => {
-        leaseGuard.assertHeld()
-        await deliverOperatorNotifications()
-        leaseGuard.assertHeld('operator notifications')
-        await deliverOperatorWaitingEmailsWhenAllowed(deliveryOffReason)
-        leaseGuard.assertHeld('operator waiting emails')
-        const results = await collectFast({}, leaseGuard)
-        if (outboxSchedule) {
-          const result = await collectFastHostedOutbox(
-            outboxSchedule,
-            { pending: dependencies.pendingOutbox },
-            leaseGuard,
-          )
-          if (result && (!result.ok || !result.hostedOutbox?.deliveryOffReason))
-            console.log(formatCollectLeg(result))
-          if (result) results.push(result)
-        }
-        return results
-      }),
-    true,
-  )
-  const slow = runCycle(
-    dependencies.slow ??
-      ((leaseGuard) => collectSlow(true, leaseGuard, outboxSchedule ?? undefined)),
-  )
-  // The old pair of fire-and-forget calls made `slow` observe `busy` from
-  // `fast` and skip the initial tracker pass. Keep both initial legs under the
-  // same guard so scheduling starts with a real observation.
-  const initial =
-    dependencies.initial ??
     (async (leaseGuard) => {
       leaseGuard.assertHeld()
       await deliverOperatorNotifications()
       leaseGuard.assertHeld('operator notifications')
       await deliverOperatorWaitingEmailsWhenAllowed(deliveryOffReason)
       leaseGuard.assertHeld('operator waiting emails')
-      const fastResults = await collectFast({}, leaseGuard)
-      const slowResults = await collectSlow(true, leaseGuard, outboxSchedule ?? undefined)
-      return [...fastResults, ...slowResults]
+      const results = await collectFast({}, leaseGuard)
+      if (outboxSchedule) {
+        const result = await collectFastHostedOutbox(
+          outboxSchedule,
+          { pending: dependencies.pendingOutbox },
+          leaseGuard,
+        )
+        if (result && (!result.ok || !result.hostedOutbox?.deliveryOffReason))
+          console.log(formatCollectLeg(result))
+        if (result) results.push(result)
+      }
+      return results
     })
-  void runCycle(initial, true)()
-  const a = setInterval(() => void fast(), FAST_MS)
-  const b = setInterval(() => void slow(), SLOW_MS)
+  const slow =
+    dependencies.slow ??
+    ((leaseGuard) => collectSlow(true, leaseGuard, outboxSchedule ?? undefined))
+  // The old pair of fire-and-forget calls made `slow` observe `busy` from
+  // `fast` and skip the initial tracker pass. Keep both initial legs under the
+  // same guard so scheduling starts with a real observation.
+  const initial = dependencies.initial ?? initialWatchWork(deliveryOffReason, outboxSchedule)
+  dispatch = (tick) => {
+    const decision = watchCycleDecision({ busy, slowOwed, tick, stopping })
+    slowOwed = decision.slowOwed
+    if (!decision.run) {
+      if (busy && tick === 'fast') refreshWatcherAliveIfHeld(true, holder, onError)
+      return
+    }
+    const started = startCycle(decision.run === 'fast' ? fast : slow, decision.run === 'fast')
+    if (!started && decision.run === 'slow') slowOwed = true
+  }
+  startCycle(initial, true)
+  const a = setInterval(() => dispatch('fast'), FAST_MS)
+  const b = setInterval(() => dispatch('slow'), SLOW_MS)
 
   const stop = async () => {
     stopping = true

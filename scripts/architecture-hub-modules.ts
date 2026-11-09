@@ -134,6 +134,9 @@ export const hubModuleSpecs = [
   },
   { file: 'hub/src/outbox-lifecycle.ts', allowed: [] },
   { file: 'hub/src/outbox-fast-cycle.ts', allowed: [] },
+  { file: 'hub/src/collect-cadence.ts', allowed: [] },
+  { file: 'hub/src/collect-watch-schedule.ts', allowed: [] },
+  { file: 'hub/src/collect-slow-health.ts', allowed: ['./collect-cadence.ts'] },
   { file: 'hub/src/write-hold.ts', allowed: [] },
   {
     file: 'hub/src/hosted-local-apply.ts',

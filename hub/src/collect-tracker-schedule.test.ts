@@ -3,11 +3,11 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   formatCollectLeg,
   oneShotTrackerSelection,
-  SLOW_MS,
   TrackerPollSchedule,
   WATCH_LIVE_MS,
   watcherLive,
 } from './collect.ts'
+import { SLOW_MS } from './collect-cadence.ts'
 import type { TrackerResult } from './ingest/trackers.ts'
 
 describe('tracker poll schedule', () => {
