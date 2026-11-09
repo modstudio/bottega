@@ -90,13 +90,17 @@ type CredentialBindingAddress = Omit<
   'provider' | 'name' | 'type' | 'mode' | 'environment' | 'payer'
 >
 
-async function bindingAddress(options: BindingOptions): Promise<CredentialBindingAddress> {
+export function validateBindingExclusivity(options: BindingOptions): void {
   if (
     [options.project !== undefined, options.space !== undefined, options.account === true].filter(
       Boolean,
     ).length > 1
   )
     throw new Error('--account, --project, and --space are mutually exclusive')
+}
+
+async function bindingAddress(options: BindingOptions): Promise<CredentialBindingAddress> {
+  validateBindingExclusivity(options)
   const client = configClient()
   const project = options.project ? projectByName(options.project) : null
   if (options.project && !project) throw new Error(`no project ${options.project}`)
@@ -124,6 +128,7 @@ async function bindingAddress(options: BindingOptions): Promise<CredentialBindin
 }
 
 async function address(name: string, options: BindingOptions): Promise<CredentialAddress> {
+  validateBindingExclusivity(options)
   const identity = identityName(name)
   if (options.project) {
     const project = projectByName(options.project)

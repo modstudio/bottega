@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { registerCredentialCommands } from './credential.ts'
+import { registerCredentialCommands, validateBindingExclusivity } from './credential.ts'
 
 type ParsedResolve = {
   name: string
@@ -74,4 +74,18 @@ test('account commands expose reach while prefer names account only as a slot', 
   )?.description
   expect(useDescription).toContain('personal@account')
   expect(useDescription).not.toContain('shared@account')
+})
+
+test('credential writes refuse conflicting binding options before resolving an address', () => {
+  for (const verb of ['set', 'delete', 'reach']) {
+    for (const options of [
+      { project: 'project-one', account: true },
+      { project: 'project-one', space: 'space-one' },
+    ]) {
+      expect(
+        () => validateBindingExclusivity(options),
+        `${verb} ${JSON.stringify(options)}`,
+      ).toThrow('--account, --project, and --space are mutually exclusive')
+    }
+  }
 })
