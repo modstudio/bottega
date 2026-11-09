@@ -26,6 +26,7 @@ const DEGRADED_COLLECTION_GRAPH = [
   '../../../shared/tracker-actions.ts',
   '../../../shared/tracker-list-scope.ts',
   '../../../shared/tracker-status-payload.ts',
+  '../../../shared/tracker-task-text.ts',
   '../../../shared/trackers.ts',
   '../artifact-paths.ts',
   '../ask/worker-question.ts',
