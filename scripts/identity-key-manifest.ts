@@ -535,6 +535,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'workflow_event.session_id',
     'workflow_obligation.session_id',
     'outbox_quarantine_audit.actor_session',
+    'outbox.actor_session',
     'outbox_redaction_audit.actor_session',
     'question_mutation_audit.actor_session',
     'review_finding_amendment.actor_session',

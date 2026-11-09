@@ -1,9 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import {
-  closeOutSessionOutbox,
-  readSessionOutboxResidue,
-} from './session-close-out-outbox.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { closeOutSessionOutbox, readSessionOutboxResidue } from './session-close-out-outbox.ts'
 
 test('close-out outbox count ignores another session and unattributed rows', () => {
   const database = new Database(':memory:')
@@ -49,14 +47,13 @@ test('dry-run reports this session residue without pushing', async () => {
         item: '1 pending outbox write(s)',
         reason: 'this session has local writes that have not reached the hosted record',
         evidence: 'orch:1',
-        remedy: 'bottega record push',
+        remedy: `${PLATFORM_SLUG} record push`,
       },
       {
         item: '1 quarantined outbox write(s)',
         reason: 'this session has hosted writes quarantined after delivery failed',
         evidence: 'orch:2',
-        remedy:
-          'inspect with bottega record outbox; retry each row with bottega record outbox retry orch:<row-id>',
+        remedy: `inspect with ${PLATFORM_SLUG} record outbox; retry each row with ${PLATFORM_SLUG} record outbox retry orch:<row-id>`,
       },
     ],
     errors: [],

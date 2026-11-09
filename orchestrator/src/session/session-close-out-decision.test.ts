@@ -8,10 +8,10 @@ import {
   plannedTreeOwnerMatches,
   type ResumeHandoffRootFacts,
   resumeHandoffRootIsOwed,
-  sessionOutboxResidue,
   type SessionOwnershipFacts,
   sessionCloseOutRecommendation,
   sessionCloseOutVerdict,
+  sessionOutboxResidue,
   sessionOwnedRunIds,
   sessionOwnership,
 } from './session-close-out-decision.ts'

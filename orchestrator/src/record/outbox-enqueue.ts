@@ -9,7 +9,7 @@ import {
   recordSyncQueueDirectory,
   type StateEnvironment,
 } from '../../../shared/state-directory.ts'
-import { sessionId } from '../database/db.ts'
+import { sessionId } from '../database/session-identity.ts'
 import { afterWriteCommit } from '../database/write-commit-effects.ts'
 import { stringifyOutboxPayload } from './outbox-sanitize.ts'
 
