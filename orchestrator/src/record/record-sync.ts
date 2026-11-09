@@ -58,6 +58,13 @@ export type {
   RecordSyncResult,
 } from './record-sync-types.ts'
 
+/** Whether this environment names a hosted record endpoint for synchronization. */
+export function recordSyncConfigured(
+  environment: Record<string, string | undefined> = process.env,
+): boolean {
+  return recordApiConfigured(environment)
+}
+
 export function outboxOrder(kind: string, id: number): readonly [phase: number, id: number] {
   if (kind === 'run') return [0, id]
   if (kind === 'landing_review_carry' || kind === 'landing_triage_snapshot') return [3, id]
@@ -641,7 +648,7 @@ async function pullAfterSync(
 }
 
 export async function syncRecord(options: RecordSyncOptions = {}): Promise<RecordSyncResult> {
-  const configured = recordApiConfigured(process.env) || Boolean(options.client)
+  const configured = recordSyncConfigured(process.env) || Boolean(options.client)
   const requestedIdentity = options.identity ?? { id: machineId(), ...machineNames() }
   const identity = {
     ...requestedIdentity,

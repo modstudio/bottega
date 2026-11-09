@@ -84,6 +84,28 @@ export type SessionCursorDisposition = 'parked' | 'open'
 
 export type UnreadableProjectDisposition = 'error' | 'warning'
 
+export type SessionOutboxRow = {
+  id: number
+  quarantinedAt: string | null
+}
+
+export type SessionOutboxResidue =
+  | { configured: true; pendingIds: number[]; quarantinedIds: number[] }
+  | { configured: false; undeliveredIds: number[] }
+
+/** Split configured outbox residue, or classify undelivered rows as unpushable. */
+export function sessionOutboxResidue(
+  configured: boolean,
+  rows: readonly SessionOutboxRow[],
+): SessionOutboxResidue {
+  if (!configured) return { configured: false, undeliveredIds: rows.map((row) => row.id) }
+  return {
+    configured: true,
+    pendingIds: rows.filter((row) => row.quarantinedAt === null).map((row) => row.id),
+    quarantinedIds: rows.filter((row) => row.quarantinedAt !== null).map((row) => row.id),
+  }
+}
+
 /** An unreadable project blocks only while this session still owns work close-out must settle. */
 export function classifyUnreadableProject(ownsCloseOutWork: boolean): UnreadableProjectDisposition {
   return ownsCloseOutWork ? 'error' : 'warning'

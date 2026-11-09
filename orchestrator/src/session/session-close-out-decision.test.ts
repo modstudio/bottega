@@ -11,6 +11,7 @@ import {
   type SessionOwnershipFacts,
   sessionCloseOutRecommendation,
   sessionCloseOutVerdict,
+  sessionOutboxResidue,
   sessionOwnedRunIds,
   sessionOwnership,
 } from './session-close-out-decision.ts'
@@ -43,6 +44,24 @@ const handoffFacts = (overrides: Partial<ResumeHandoffRootFacts> = {}): ResumeHa
 })
 
 describe('session close-out decisions', () => {
+  test('configured outbox rows split into pending and quarantined residue', () => {
+    expect(
+      sessionOutboxResidue(true, [
+        { id: 1, quarantinedAt: null },
+        { id: 2, quarantinedAt: '2026-11-09T10:00:00.000Z' },
+      ]),
+    ).toEqual({ configured: true, pendingIds: [1], quarantinedIds: [2] })
+  })
+
+  test('unconfigured outbox rows do not become blocking residue', () => {
+    expect(
+      sessionOutboxResidue(false, [
+        { id: 1, quarantinedAt: null },
+        { id: 2, quarantinedAt: '2026-11-09T10:00:00.000Z' },
+      ]),
+    ).toEqual({ configured: false, undeliveredIds: [1, 2] })
+  })
+
   test('an unreadable project blocks only while the session owns close-out work there', () => {
     expect(classifyUnreadableProject(true)).toBe('error')
     expect(classifyUnreadableProject(false)).toBe('warning')

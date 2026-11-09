@@ -193,6 +193,18 @@ export const cleanupBoundarySpecs = [
     reason: 'Keep resume handoff selection as the adapter over canonical close-out facts.',
   },
   {
+    name: 'session-close-out-outbox-boundary',
+    file: 'orchestrator/src/session/session-close-out-outbox.ts',
+    allowed: [
+      'bun:sqlite',
+      '../../../shared/brand.ts',
+      '../record/record-sync.ts',
+      './session-close-out-decision.ts',
+    ],
+    typeOnlyAllowed: ['./session-close-out-report.ts'],
+    reason: 'Keep hosted evidence delivery and residue reads behind the close-out outbox adapter.',
+  },
+  {
     name: 'session-close-out-boundary',
     file: 'orchestrator/src/session/session-close-out.ts',
     allowed: [
@@ -220,6 +232,7 @@ export const cleanupBoundarySpecs = [
       '../worktree/worktree-remove.ts',
       './session-close-out-decision.ts',
       './session-close-out-obligation-adapter.ts',
+      './session-close-out-outbox.ts',
       './session-close-out-resource-release-adapter.ts',
       './session-close-out-resource-release.ts',
       './session-context-lifecycle.ts',
