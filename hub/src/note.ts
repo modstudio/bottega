@@ -52,9 +52,9 @@ import {
   attachLocalTaskEvidenceInTransaction,
   createLocalTaskInTransaction,
   duplicateCandidates,
-  type TaskRow,
 } from './task.ts'
 import { applyHostedTask, applyHostedTaskComment } from './task-cache.ts'
+import type { TaskRow } from './task-row.ts'
 import { taskCreationDestination } from './tracker-new.ts'
 
 export type NoteAnchor = NoteAnchorWire
@@ -480,6 +480,7 @@ function noteCandidates(text: string, project?: string): NoteCandidate[] {
         first_seen: note.created_at,
         last_seen: note.last_seen_at,
         next_document_number: 1,
+        retired_reason: null,
       }),
     ),
     text,

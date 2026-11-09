@@ -40,9 +40,9 @@ test('tracker-only task migration deletes git status history and preserves track
       ('mcp-event','DEV-2','mcp-task','2026-01-01','open');
   `)
 
-  expect(applyMigrations(database, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual([
+  expect(applyMigrations(database, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toContain(
     migrationTag,
-  ])
+  )
   expect(database.query('SELECT record_id FROM task ORDER BY record_id').all()).toEqual([
     { record_id: 'mcp-task' },
   ])
@@ -54,9 +54,9 @@ test('tracker-only task migration deletes git status history and preserves track
 
 test('tracker-only task migration restores late task relinking triggers', () => {
   const database = migratedBeforeDrop()
-  expect(applyMigrations(database, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual([
+  expect(applyMigrations(database, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toContain(
     migrationTag,
-  ])
+  )
   database.exec(`
     INSERT INTO interval
       (record_id,task_key,project_record_id,source,start_at,end_at,ref)

@@ -34,6 +34,7 @@ import {
   sessionCloseOutVerdict,
   sessionOwnedRunIds,
 } from './session-close-out-decision.ts'
+import { sessionCloseOutObligationItems } from './session-close-out-obligation-adapter.ts'
 import type { SessionErrorLine, SessionProcessLine } from './session-close-out-report.ts'
 import {
   closeOutSessionContext,
@@ -773,6 +774,7 @@ export async function closeOutSession(
   appendObservationErrors(report, final.observationErrors)
   appendClassifiedProcessItems(report, final)
   appendCursorProcessItems(report, final.cursors)
+  report.process.push(...(await sessionCloseOutObligationItems(database, session, final.runs)))
   appendArgumentProcesses(report, final)
   const plannedRunRoots = new Set(
     dryRun

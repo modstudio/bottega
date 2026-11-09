@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
-import { addRun, dir } from '../../test/fixtures/store.ts'
+import { addRun, dir, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { encodeContextItem } from '../doc/context-item-codec.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from '../doc/context-write-adapter.ts'
@@ -81,6 +81,16 @@ test('dry run reports context drops and refusals while resume keeps every item',
   expect(resume.recommendation).toBe('brief')
 })
 
+test('dry run reports an owned unscored run as process residue', async () => {
+  const session = newRecordId()
+  const run = addRun({ agent: 'codex', job: 'implement', status: 'ok', session })
+
+  const report = await closeOutSession({ session, dryRun: true })
+
+  expect(report.process).toContainEqual(expect.objectContaining({ item: `unscored run ${run}` }))
+  expect(report.verdict.clean).toBe(false)
+})
+
 test('close-out refuses to drop a context item whose revision is unavailable', async () => {
   const session = newRecordId()
   const prior = process.env.CLAUDE_CODE_SESSION_ID
@@ -134,6 +144,8 @@ test("a turn's guard or retained ref makes its terminal root planned", async () 
     parent: retainedRoot,
     turn: 2,
   })
+  score(guardRoot, 'full', 'right', 'faithful')
+  score(retainedRoot, 'full', 'right', 'faithful')
   for (const runId of [guardRoot, guardTurn, retainedRoot, retainedTurn])
     attachRunToProject(runId, projectId, project)
   mkdirSync(join(repo, '.git', 'orch-guards', guardTurn), { recursive: true })

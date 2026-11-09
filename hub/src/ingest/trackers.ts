@@ -58,7 +58,7 @@ async function resolveCached(
 }
 
 type TrackerRegistration =
-  | { project: Project; source: TrackerSource; error?: never }
+  | { project: Project; prefixes: readonly string[]; source: TrackerSource; error?: never }
   | { project: Project; source?: never; error: string }
 
 /** Keep invalid tracker declarations as failures instead of filtering them away. */
@@ -68,7 +68,12 @@ export function trackerRegistrations(rows: ReturnType<typeof projects>): Tracker
     if (!project.settings.tracker) continue
     try {
       const source = trackerSourceFor(project, resolveCached)
-      if (source) registrations.push({ project: project.name, source })
+      if (source)
+        registrations.push({
+          project: project.name,
+          prefixes: project.settings.keyPrefixes ?? [],
+          source,
+        })
     } catch (cause) {
       registrations.push({
         project: project.name,
@@ -85,6 +90,7 @@ export type TrackerResult = {
   changed: number
   mode?: TrackerReadMode
   deleted?: number
+  retired?: number
   /** Whether any tracker-owned row differed from the last successful read. */
   activity?: boolean
   skipped?: string
@@ -214,6 +220,7 @@ type ExistingTask = {
   last_seen: string
   updated_at: string | null
   assignee: string | null
+  retired_reason: string | null
 }
 
 const TRACKER_LABEL_COLLISION = 'tracker label collision'
@@ -234,7 +241,8 @@ function differs(t: TrackerTask, old: ExistingTask | undefined, effectiveKey = t
     old.status !== t.status ||
     old.status_category !== t.category ||
     old.assignee !== t.assignee ||
-    (t.updatedAt !== null && old.updated_at !== t.updatedAt)
+    (t.updatedAt !== null && old.updated_at !== t.updatedAt) ||
+    old.retired_reason != null
   )
 }
 
@@ -283,7 +291,7 @@ export function trackerObservationTimes(
 }
 
 const TRACKER_IDENTITY_COLUMNS =
-  'record_id,next_document_number,key,source,external_id,project,title,status,status_category,opened_at,closed_at,first_seen,last_seen,updated_at,assignee'
+  'record_id,next_document_number,key,source,external_id,project,title,status,status_category,opened_at,closed_at,first_seen,last_seen,updated_at,assignee,retired_reason'
 
 function trackerIdentityRow(conn: Database, t: TrackerTask): TrackerIdentityRow | null {
   let row = t.externalId
@@ -372,7 +380,7 @@ function updateTrackerTask(
     .query(
       `UPDATE task SET external_id=COALESCE(?,external_id), key=?, title=?, status=?,
          status_category=?, opened_at=?, updated_at=?, assignee=?, closed_at=?,
-         source='mcp', last_seen=? WHERE record_id=?`,
+         source='mcp', last_seen=?, retired_reason=NULL WHERE record_id=?`,
     )
     .run(
       t.externalId,
@@ -516,7 +524,14 @@ function observeTrackerTaskOn(
   }
 }
 
-export function observeTrackerTask(task: TrackerTask, at = nowIso()): TrackerTaskObservation {
+export function observeTrackerTask(
+  task: TrackerTask,
+  at = nowIso(),
+  prefixes: readonly string[],
+): TrackerTaskObservation {
+  if (!trackerKeyInScope(task.key, prefixes)) {
+    return { at, taskRecordId: null, taskKey: task.key, event: null }
+  }
   return writeTransaction((conn) => {
     const {
       times: _times,
@@ -532,6 +547,7 @@ export async function fetchTrackerTasks(
   client: ToolCaller,
   mode: TrackerReadMode,
   since: string | null,
+  prefixes: readonly string[],
 ): Promise<TrackerFetchResult> {
   const fetched = await source.fetch(
     client,
@@ -548,6 +564,7 @@ export async function fetchTrackerTasks(
     )
     .all(source.project)
     .filter((row) => !seen.has(row.key))
+    .filter((row) => trackerKeyInScope(row.key, prefixes))
   for (const { key } of vanished.slice(0, 200)) {
     try {
       const task = source.lookup ? await lookupTrackerTask(source, client, key) : null
@@ -580,14 +597,67 @@ type TrackerCacheObservation = {
 export function writeTrackerCache(
   tasks: Iterable<TrackerTask>,
   at: string,
+  prefixes: readonly string[],
 ): TrackerCacheObservation[] {
   const observations: TrackerCacheObservation[] = []
   writeTransaction((conn) => {
     for (const task of tasks) {
+      if (!trackerKeyInScope(task.key, prefixes)) continue
       observations.push({ task, observation: observeTrackerTaskOn(conn, task, at) })
     }
   })
   return observations
+}
+
+/** The prefix used by the register to scope a tracker key. */
+export function trackerKeyPrefix(key: string): string {
+  return key.split('-', 1)[0]!
+}
+
+/** Whether the register admits a tracker key for this project. */
+export function trackerKeyInScope(key: string, prefixes: readonly string[]): boolean {
+  if (!prefixes.length) return true
+  const prefix = trackerKeyPrefix(key).toLowerCase()
+  return prefixes.some((declared) => declared.toLowerCase() === prefix)
+}
+
+function scopedTrackerTasks(tasks: TrackerTask[], prefixes: readonly string[]) {
+  return new Map(
+    tasks.filter((task) => trackerKeyInScope(task.key, prefixes)).map((task) => [task.key, task]),
+  )
+}
+
+/** Retire tracker rows the register no longer assigns to this project. */
+export function retireOutOfScopeTrackerTasks(
+  project: Project,
+  prefixes: readonly string[],
+  at: string,
+): number {
+  if (!prefixes.length) return 0
+  return writeTransaction((conn) => {
+    const rows = conn
+      .query<{ record_id: string; key: string }, [string]>(
+        `SELECT record_id,key FROM task
+         WHERE project=? AND source='mcp' AND retired_reason IS NULL`,
+      )
+      .all(project)
+    const update = conn.query(
+      `UPDATE task SET status_category='dropped', closed_at=COALESCE(closed_at,?),
+       retired_reason=? WHERE record_id=? AND retired_reason IS NULL`,
+    )
+    let retired = 0
+    for (const row of rows) {
+      if (trackerKeyInScope(row.key, prefixes)) continue
+      const prefix = trackerKeyPrefix(row.key)
+      const reason =
+        `out of scope: key prefix ${prefix} is not among ${project}'s declared key prefixes ` +
+        prefixes.join(', ')
+      if (update.run(at, reason, row.record_id).changes === 0) continue
+      queueHostedChange(conn, HOSTED_TASK_TABLE, row.record_id, 'upsert', at)
+      retired++
+    }
+    return retired
+  })
 }
 
 /** Reconcile tracker-reported deletions without deleting the local cache row. */
@@ -595,6 +665,7 @@ export function dropDeletedTrackerTasks(
   project: Project,
   keys: Iterable<string>,
   at: string,
+  prefixes: readonly string[],
 ): { dropped: number; activity: boolean; changed: number } {
   let dropped = 0
   let changed = 0
@@ -607,6 +678,7 @@ export function dropDeletedTrackerTasks(
       'UPDATE task SET opened_at=?, closed_at=? WHERE record_id=?',
     )
     for (const key of new Set(keys)) {
+      if (!trackerKeyInScope(key, prefixes)) continue
       const row = read.get(project, key)
       // A tombstone repeats while it stays inside the since overlap; one drop is the event.
       if (!row || row.status_category === 'dropped') continue
@@ -637,11 +709,13 @@ async function backfillTrackerTasks(
   client: Mcp,
   missing: { task_key: string; project: string }[],
   at: string,
+  prefixes: readonly string[],
 ): Promise<{ filled: number; activity: boolean }> {
   let filled = 0
   let activity = false
   if (!source.lookup) return { filled, activity }
   for (const { task_key } of missing.filter((row) => row.project === source.project)) {
+    if (!trackerKeyInScope(task_key, prefixes)) continue
     try {
       const task = await lookupTrackerTask(source, client, task_key)
       if (!task) continue
@@ -722,9 +796,7 @@ export async function ingestTrackers(
   const d = db()
   const at = nowIso()
   const registrations = trackerRegistrations(projects())
-  const trackers = only
-    ? registrations.filter((tracker) => only.has(tracker.project))
-    : registrations
+  const trackers = registrations.filter((tracker) => !only || only.has(tracker.project))
 
   const missing = recentIntervalsNeedingTracker(d)
 
@@ -778,16 +850,17 @@ export async function ingestTrackers(
             await m.initialize()
             const startedAt = nowIso()
             const read = storedTrackerReadMode(s, startedAt)
-            const fetched = await fetchTrackerTasks(s, m, read.mode, read.since)
-            const tasks = fetched.tasks
+            const prefixes = tracker.prefixes
+            const fetched = await fetchTrackerTasks(s, m, read.mode, read.since, prefixes)
 
             // One row per key. A key can arrive twice in a pass - once from the sync
             // and once from the vanished lookup - and writing both compares the second
             // against a `before` that the first already superseded, recording a
             // transition that did not happen. Last wins: the lookup is the fresher read.
-            const unique = new Map(tasks.map((t) => [t.key, t]))
-            const observations = writeTrackerCache(unique.values(), at)
-            const deletions = dropDeletedTrackerTasks(s.project, fetched.deletedKeys, at)
+            const unique = scopedTrackerTasks(fetched.tasks, prefixes)
+            const observations = writeTrackerCache(unique.values(), at, prefixes)
+            const retired = retireOutOfScopeTrackerTasks(s.project, prefixes, at)
+            const deletions = dropDeletedTrackerTasks(s.project, fetched.deletedKeys, at, prefixes)
             let activity =
               deletions.activity || observations.some(({ observation }) => observation.changed)
             const changed =
@@ -796,7 +869,7 @@ export async function ingestTrackers(
             // Use the connection which already proved reachable for the handful of
             // closed tasks recent work names. A failed full sync is not immediately
             // retried here: that doubled traffic precisely when a server was down.
-            const backfill = await backfillTrackerTasks(s, m, missing, at)
+            const backfill = await backfillTrackerTasks(s, m, missing, at, prefixes)
             activity ||= backfill.activity
             recordTrackerReadState(s.project, read.mode, startedAt, fetched.complete)
             return {
@@ -807,6 +880,7 @@ export async function ingestTrackers(
                 activity,
                 mode: read.mode,
                 deleted: deletions.dropped,
+                retired,
               },
               filled: backfill.filled,
             }

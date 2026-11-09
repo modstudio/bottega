@@ -222,6 +222,7 @@ describe('project.list', () => {
         tracker: {
           protocol: 'workspace-mcp',
           envPrefix: 'FIXTURE_NO_CREDENTIALS',
+          team: 'fixture-team',
           openStatuses: ['started'],
           states: { started: 'active', completed: 'done' },
         },

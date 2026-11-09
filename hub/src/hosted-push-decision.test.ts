@@ -77,6 +77,16 @@ test('task field decisions ignore incoming time for duplicates and never move ti
   expect(decideTaskUpsert(task, { ...task, title: 'other' }, [])).toEqual({ kind: 'duplicate' })
 })
 
+test('legacy task replacement leaves a stored retirement reason while explicit null clears it', () => {
+  const stored = { ...task, retired_reason: 'out of scope' }
+  const { retired_reason: _retiredReason, ...legacy } = task
+  expect(decideTaskUpsert(stored, legacy, null)).toEqual({ kind: 'duplicate' })
+  expect(decideTaskUpsert(stored, { ...task, retired_reason: null }, null)).toEqual({
+    kind: 'replace',
+    row: { ...task, retired_reason: null },
+  })
+})
+
 test('document field decisions are duplicate by listed fields and reject tombstones', () => {
   const document: PushedDocument = {
     id: Bun.randomUUIDv7(),

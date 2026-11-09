@@ -61,8 +61,8 @@ const trackerTask = (key: string, category: 'open' | 'active') => ({
 })
 
 function queueTransition(key: string, at: string) {
-  observeTrackerTask(trackerTask(key, 'open'), at)
-  const event = observeTrackerTask(trackerTask(key, 'active'), at).event!.recordId
+  observeTrackerTask(trackerTask(key, 'open'), at, [])
+  const event = observeTrackerTask(trackerTask(key, 'active'), at, []).event!.recordId
   writeTransaction((conn) =>
     conn.query(`DELETE FROM hosted_outbox WHERE table_name='hub_task'`).run(),
   )
@@ -155,14 +155,15 @@ describe('hosted outbox', () => {
     expect(listHostedOutbox()).toHaveLength(0)
   })
   test('a tracker task queues only when its machine row changes', () => {
-    observeTrackerTask(trackerTask('FIX-0', 'open'), '2026-10-11T11:00:00.000Z')
+    observeTrackerTask(trackerTask('FIX-0', 'open'), '2026-10-11T11:00:00.000Z', [])
     expect(listHostedOutbox().map((entry) => entry.table_name)).toEqual([HOSTED_TASK_TABLE])
     writeTransaction((conn) => conn.exec(`DELETE FROM hosted_outbox`))
-    observeTrackerTask(trackerTask('FIX-0', 'open'), '2026-10-11T11:01:00.000Z')
+    observeTrackerTask(trackerTask('FIX-0', 'open'), '2026-10-11T11:01:00.000Z', [])
     expect(listHostedOutbox()).toHaveLength(0)
     observeTrackerTask(
       { ...trackerTask('FIX-0', 'open'), title: 'changed' },
       '2026-10-11T11:02:00.000Z',
+      [],
     )
     expect(listHostedOutbox().map((entry) => entry.table_name)).toEqual([HOSTED_TASK_TABLE])
   })
@@ -171,13 +172,13 @@ describe('hosted outbox', () => {
     const committed = queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
     expect(listHostedOutbox().map((entry) => entry.row_id)).toEqual([committed])
 
-    observeTrackerTask(trackerTask('FIX-2', 'open'), '2026-10-11T12:01:00.000Z')
+    observeTrackerTask(trackerTask('FIX-2', 'open'), '2026-10-11T12:01:00.000Z', [])
     writeTransaction((conn) =>
       conn.exec(`CREATE TEMP TRIGGER refuse_outbox BEFORE INSERT ON hosted_outbox
         BEGIN SELECT RAISE(ABORT,'refuse outbox'); END`),
     )
     expect(() =>
-      observeTrackerTask(trackerTask('FIX-2', 'active'), '2026-10-11T12:02:00.000Z'),
+      observeTrackerTask(trackerTask('FIX-2', 'active'), '2026-10-11T12:02:00.000Z', []),
     ).toThrow('refuse outbox')
     expect(
       db()
@@ -647,8 +648,8 @@ describe('hosted outbox', () => {
   })
 
   test('orders a parent task before its task children and status event', async () => {
-    observeTrackerTask(trackerTask('FIX-10', 'open'), '2026-10-11T12:00:00.000Z')
-    observeTrackerTask(trackerTask('FIX-11', 'open'), '2026-10-11T12:01:00.000Z')
+    observeTrackerTask(trackerTask('FIX-10', 'open'), '2026-10-11T12:00:00.000Z', [])
+    observeTrackerTask(trackerTask('FIX-11', 'open'), '2026-10-11T12:01:00.000Z', [])
     const parentId = db()
       .query<{ record_id: string }, []>(`SELECT record_id FROM task WHERE key='FIX-10'`)
       .get()!.record_id
@@ -678,7 +679,7 @@ describe('hosted outbox', () => {
       queueHostedChange(conn, 'hub_task_comment', commentId, 'upsert')
       queueHostedChange(conn, 'hub_task_document', documentId, 'upsert')
     })
-    observeTrackerTask(trackerTask('FIX-11', 'active'), '2026-10-11T12:02:00.000Z')
+    observeTrackerTask(trackerTask('FIX-11', 'active'), '2026-10-11T12:02:00.000Z', [])
     const sent: HostedPushChange[] = []
     await drainHostedOutbox({
       identity: async () => identity,
@@ -705,7 +706,7 @@ describe('hosted outbox', () => {
   })
 
   test('adopts the hosted task id in the transaction that completes its entry', async () => {
-    observeTrackerTask(trackerTask('FIX-20', 'open'), '2026-10-11T12:00:00.000Z')
+    observeTrackerTask(trackerTask('FIX-20', 'open'), '2026-10-11T12:00:00.000Z', [])
     const oldId = listHostedOutbox()[0]!.row_id
     const adoptedId = '01990000-0000-7000-8000-000000000020'
     const report = await drainHostedOutbox({

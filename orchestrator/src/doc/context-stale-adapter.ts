@@ -23,6 +23,7 @@ export async function staleContextForSession(
   session: string,
   database: Database = db(),
   taskReader: HubTaskReader = readHubTasks,
+  now: string = new Date().toISOString(),
 ) {
   const work: ContextWorkEvent[] = []
   const add = ({ key, at }: KeyAt) => {
@@ -72,5 +73,5 @@ export async function staleContextForSession(
     const task = taskReferenceForProjectKey(tasks, project, holder)
     return task ? [{ holder, statusCategory: task.status_category ?? null }] : []
   })
-  return staleContextHolders(work, revisions, taskStatuses)
+  return staleContextHolders({ work, revisions, now, taskStatuses })
 }

@@ -11,9 +11,12 @@ import {
   finishTrackerResults,
   ingestTrackers,
   recordTrackerReadState,
+  retireOutOfScopeTrackerTasks,
   storedTrackerReadMode,
   type TrackerTask,
   trackerCredentials,
+  trackerKeyInScope,
+  trackerKeyPrefix,
   trackerLegError,
   trackerObservationTimes,
   trackerProjectsReadSince,
@@ -44,10 +47,11 @@ const storedTrackerTask = {
   last_seen: '2026-09-02T10:00:00.000Z',
   updated_at: '2026-09-01T10:00:00.000Z',
   assignee: null,
+  retired_reason: null,
 }
 
 const cacheTrackerTask = (task: TrackerTask, at = new Date().toISOString()) =>
-  writeTrackerCache([task], at)
+  writeTrackerCache([task], at, [])
 
 describe('tracker observation times', () => {
   const at = '2026-09-03T10:00:00.000Z'
@@ -143,6 +147,19 @@ describe('tracker observation times', () => {
   })
 })
 
+describe('tracker key scope', () => {
+  test('matches declared prefixes case-insensitively and admits every key without declarations', () => {
+    expect(trackerKeyInScope('ALP-1', ['ALP'])).toBe(true)
+    expect(trackerKeyInScope('alp-1', ['ALP'])).toBe(true)
+    expect(trackerKeyInScope('BET-1', ['ALP'])).toBe(false)
+    expect(trackerKeyPrefix('ALP-1')).toBe('ALP')
+    expect(trackerKeyPrefix('ALP')).toBe('ALP')
+    expect(trackerKeyInScope('ALP', ['ALP'])).toBe(true)
+    expect(trackerKeyInScope('ALP', ['STAR'])).toBe(false)
+    expect(trackerKeyInScope('anything', [])).toBe(true)
+  })
+})
+
 const recordApiUrl = process.env.BOTTEGA_RECORD_API_URL
 const keyStore = process.env.BOTTEGA_KEYSTORE
 beforeAll(() => {
@@ -177,11 +194,17 @@ describe('tracker register', () => {
       lookups++
       return null
     }
-    await fetchTrackerTasks(incremental, { callTool: async () => ({}) }, 'incremental', 'cursor')
+    await fetchTrackerTasks(
+      incremental,
+      { callTool: async () => ({}) },
+      'incremental',
+      'cursor',
+      [],
+    )
     expect(lookups).toBe(0)
 
     const full = { ...incremental, supportsUpdatedSince: false }
-    await fetchTrackerTasks(full, { callTool: async () => ({}) }, 'full', null)
+    await fetchTrackerTasks(full, { callTool: async () => ({}) }, 'full', null, [])
     expect(lookups).toBe(1)
   })
 
@@ -203,8 +226,54 @@ describe('tracker register', () => {
       return null
     }
 
-    await fetchTrackerTasks(full, { callTool: async () => ({}) }, 'full', null)
+    await fetchTrackerTasks(full, { callTool: async () => ({}) }, 'full', null, [])
     expect(lookups).toBe(0)
+  })
+
+  test('full collection neither looks up nor writes out-of-scope tasks', async () => {
+    const project = 'scope-guard'
+    const at = '2026-11-09T10:00:00.000Z'
+    const open = { ...trackerTask, externalId: 'guard-open', key: 'OPS-1', project }
+    const retired = { ...trackerTask, externalId: 'guard-retired', key: 'OPS-2', project }
+    cacheTrackerTask(open, at)
+    cacheTrackerTask(retired, at)
+    expect(retireOutOfScopeTrackerTasks(project, ['SCG'], at)).toBe(2)
+    let lookups = 0
+    const full = source(
+      false,
+      async () => ({ tasks: [retired], complete: true, deletedKeys: [] }),
+      project,
+    )
+    full.lookup = async () => {
+      lookups++
+      return open
+    }
+
+    const fetched = await fetchTrackerTasks(full, { callTool: async () => ({}) }, 'full', null, [
+      'SCG',
+    ])
+    expect(writeTrackerCache(fetched.tasks, '2026-11-09T11:00:00.000Z', ['SCG'])).toHaveLength(0)
+    expect(lookups).toBe(0)
+    expect(
+      db()
+        .query<{ key: string; status_category: string; retired_reason: string }, [string]>(
+          'SELECT key,status_category,retired_reason FROM task WHERE project=? ORDER BY key',
+        )
+        .all(project),
+    ).toEqual([
+      {
+        key: 'OPS-1',
+        status_category: 'dropped',
+        retired_reason:
+          "out of scope: key prefix OPS is not among scope-guard's declared key prefixes SCG",
+      },
+      {
+        key: 'OPS-2',
+        status_category: 'dropped',
+        retired_reason:
+          "out of scope: key prefix OPS is not among scope-guard's declared key prefixes SCG",
+      },
+    ])
   })
 
   test.each(['incremental', 'full'] as const)(
@@ -222,10 +291,11 @@ describe('tracker register', () => {
         { callTool: async () => ({}) },
         mode,
         mode === 'incremental' ? '2026-11-06T09:55:00.000Z' : null,
+        [],
       )
       const at = '2026-11-06T10:00:00.000Z'
 
-      expect(dropDeletedTrackerTasks(project, fetched.deletedKeys, at).dropped).toBe(1)
+      expect(dropDeletedTrackerTasks(project, fetched.deletedKeys, at, []).dropped).toBe(1)
       expect(
         db()
           .query<{ status: string; status_category: string; closed_at: string }, [string, string]>(
@@ -287,10 +357,10 @@ describe('tracker register', () => {
       .get(project, 'DEL-DONE')?.closed_at
     const first = '2026-11-06T10:00:00.000Z'
 
-    expect(dropDeletedTrackerTasks(project, ['DEL-OPEN', 'DEL-DONE'], first).dropped).toBe(2)
-    expect(dropDeletedTrackerTasks(project, ['DEL-OPEN'], '2026-11-06T10:05:00.000Z').dropped).toBe(
-      0,
-    )
+    expect(dropDeletedTrackerTasks(project, ['DEL-OPEN', 'DEL-DONE'], first, []).dropped).toBe(2)
+    expect(
+      dropDeletedTrackerTasks(project, ['DEL-OPEN'], '2026-11-06T10:05:00.000Z', []).dropped,
+    ).toBe(0)
     const rows = db()
       .query<{ key: string; closed_at: string }, [string]>(
         'SELECT key,closed_at FROM task WHERE project=? ORDER BY key',
@@ -446,6 +516,105 @@ describe('tracker register', () => {
       label: 'none',
       error: null,
     })
+  })
+})
+
+describe('out-of-scope tracker retirement', () => {
+  test('retires once without status history, queues hosted state, and restores in scope', () => {
+    const project = 'retirement'
+    const openedAt = '2026-11-01T09:00:00.000Z'
+    const at = '2026-11-09T10:00:00.000Z'
+    const outOfScope = {
+      ...trackerTask,
+      externalId: 'retire-ops-1',
+      key: 'OPS-1',
+      project,
+      status: 'in progress',
+      updatedAt: openedAt,
+    }
+    const inScope = { ...trackerTask, externalId: 'retire-ret-1', key: 'RET-1', project }
+    cacheTrackerTask(outOfScope, openedAt)
+    cacheTrackerTask(inScope, openedAt)
+    writeTransaction((conn) =>
+      conn
+        .query(
+          `INSERT INTO task
+           (record_id,key,project,title,status,status_category,source,first_seen,last_seen)
+           VALUES ('retire-local','OPS-2',?,'Local','open','open','local',?,?)`,
+        )
+        .run(project, openedAt, openedAt),
+    )
+
+    expect(retireOutOfScopeTrackerTasks(project, ['RET', 'ALT'], at)).toBe(1)
+    expect(
+      db()
+        .query<
+          {
+            status: string
+            status_category: string
+            opened_at: string
+            closed_at: string
+            retired_reason: string
+          },
+          [string, string]
+        >(
+          `SELECT status,status_category,opened_at,closed_at,retired_reason
+           FROM task WHERE project=? AND key=?`,
+        )
+        .get(project, 'OPS-1'),
+    ).toEqual({
+      status: 'in progress',
+      status_category: 'dropped',
+      opened_at: openedAt,
+      closed_at: at,
+      retired_reason:
+        "out of scope: key prefix OPS is not among retirement's declared key prefixes RET, ALT",
+    })
+    expect(
+      db()
+        .query<{ count: number }, [string]>(
+          `SELECT count(*) count FROM task_status_event e
+           JOIN task t ON t.record_id=e.task_record_id WHERE t.project=?`,
+        )
+        .get(project)?.count,
+    ).toBe(0)
+    expect(
+      db()
+        .query<{ row_id: string; operation: string }, [string]>(
+          `SELECT row_id,operation FROM hosted_outbox
+           WHERE table_name='hub_task' AND row_id=(SELECT record_id FROM task WHERE project=? AND key='OPS-1')`,
+        )
+        .all(project),
+    ).toHaveLength(1)
+    expect(retireOutOfScopeTrackerTasks(project, ['RET', 'ALT'], at)).toBe(0)
+    expect(
+      db()
+        .query<{ count: number }, [string]>(
+          `SELECT count(*) count FROM hosted_outbox
+           WHERE table_name='hub_task' AND row_id=(SELECT record_id FROM task WHERE project=? AND key='OPS-1')`,
+        )
+        .get(project)?.count,
+    ).toBe(1)
+    expect(
+      db()
+        .query<{ status_category: string; retired_reason: string | null }, [string]>(
+          `SELECT status_category,retired_reason FROM task
+           WHERE project=? AND key IN ('RET-1','OPS-2') ORDER BY key`,
+        )
+        .all(project),
+    ).toEqual([
+      { status_category: 'open', retired_reason: null },
+      { status_category: 'active', retired_reason: null },
+    ])
+
+    expect(writeTrackerCache([outOfScope], '2026-11-09T12:00:00.000Z', ['OPS'])).toHaveLength(1)
+    expect(
+      db()
+        .query<{ status_category: string; retired_reason: string | null }, [string, string]>(
+          'SELECT status_category,retired_reason FROM task WHERE project=? AND key=?',
+        )
+        .get(project, 'OPS-1'),
+    ).toEqual({ status_category: 'active', retired_reason: null })
   })
 })
 
@@ -636,13 +805,13 @@ describe('tracker assignees', () => {
     cacheTrackerTask({ ...task, externalId: 'collision-holder', key: 'COL-NEW' })
 
     const renamed = { ...task, externalId: 'collision-target', key: 'COL-NEW' }
-    const first = writeTrackerCache([renamed], '2026-09-23T10:00:00.000Z')[0]!
+    const first = writeTrackerCache([renamed], '2026-09-23T10:00:00.000Z', [])[0]!
     const afterFirst = db()
       .query<{ opened_at: string; updated_at: string }, []>(
         `SELECT opened_at,updated_at FROM task WHERE external_id='collision-target'`,
       )
       .get()
-    const second = writeTrackerCache([renamed], '2026-09-24T10:00:00.000Z')[0]!
+    const second = writeTrackerCache([renamed], '2026-09-24T10:00:00.000Z', [])[0]!
     expect(error).toHaveBeenCalledTimes(2)
     expect(db().query(`SELECT key FROM task WHERE external_id='collision-target'`).get()).toEqual({
       key: 'COL-OLD',

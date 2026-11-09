@@ -163,6 +163,7 @@ async function showTaskCommand(key: string, options: TaskOptions): Promise<void>
     return
   }
   printTaskRow(shown.task)
+  if (shown.task.retired_reason) console.log(`retired: ${shown.task.retired_reason}`)
   if (shown.task.parent_key) console.log(`parent: ${shown.task.parent_key}`)
   if (shown.task.body) console.log(`\n${shown.task.body}`)
   if (shown.documents.length) {

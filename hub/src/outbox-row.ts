@@ -16,8 +16,8 @@ import {
   type PushedNote,
   type PushedNoteAcknowledgement,
 } from './push-contract.ts'
-import type { TaskRow } from './task.ts'
 import { hostedTaskFromTaskRow } from './task-hosted-row.ts'
+import type { TaskRow } from './task-row.ts'
 
 type OutboxPointer = {
   table_name: string

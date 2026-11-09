@@ -128,6 +128,10 @@ export const hubModuleSpecs = [
   },
   { file: 'hub/src/task-push-plan.ts', allowed: ['../../shared/brand.ts', './push-contract.ts'] },
   { file: 'hub/src/push-contract.ts', allowed: ['../../shared/task-source.ts'] },
+  {
+    file: 'hub/src/task-row.ts',
+    allowed: ['../../shared/task-source.ts', '../../shared/trackers.ts'],
+  },
   { file: 'hub/src/outbox-lifecycle.ts', allowed: [] },
   { file: 'hub/src/outbox-fast-cycle.ts', allowed: [] },
   { file: 'hub/src/write-hold.ts', allowed: [] },
