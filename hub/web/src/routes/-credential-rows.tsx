@@ -38,24 +38,19 @@ export type CredentialDisplayRow = {
   preferences: CredentialPreference[]
 }
 
-export const OWNER_LABEL: Record<SecretRow['scope'], string> = {
+const OWNER_LABEL: Record<SecretRow['scope'], string> = {
   user: 'You',
   space: 'This space',
 }
 const PAYER_LABEL = { personal: 'You', shared: 'Shared' } as const
 
-export function splitSecretRows(rows: SecretRow[]): {
-  credentials: TypedCredentialRow[]
-  legacy: SecretRow[]
-} {
+export function typedCredentialRows(rows: SecretRow[]): TypedCredentialRow[] {
   const credentials: TypedCredentialRow[] = []
-  const legacy: SecretRow[] = []
   for (const row of rows) {
     const fields = completeCredentialFields(row)
     if (fields) credentials.push({ ...row, ...fields })
-    else legacy.push(row)
   }
-  return { credentials, legacy }
+  return credentials
 }
 
 function projectName(projectId: string | null, projects: HostedProjectRow[], nullLabel: string) {
@@ -231,19 +226,16 @@ export function useCredentialRows() {
           ? { source: 'identity', message: whoami.error.message }
           : null
   const projectsData = projects.data ?? []
-  const split = splitSecretRows(secrets.data ?? [])
+  const credentials = typedCredentialRows(secrets.data ?? [])
   const spaceId = whoami.data?.activeSpaceId ?? projectsData[0]?.spaceId ?? ''
   return {
     rows:
       pending || error
         ? []
-        : credentialDisplayRows(split.credentials, preferences.data ?? [], projectsData, spaceId),
-    legacy: split.legacy,
+        : credentialDisplayRows(credentials, preferences.data ?? [], projectsData, spaceId),
     projects: projectsData,
     spaceId,
     pending,
     error,
-    secretsPending: secrets.isPending,
-    secretsError: secrets.error,
   }
 }

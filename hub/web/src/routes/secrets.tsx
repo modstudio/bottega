@@ -5,12 +5,7 @@ import { ErrorState } from '@bottega/hub-ui/error-state'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { relativeTime } from '@bottega/hub-util/format'
 import { createFileRoute, Navigate, useNavigate, useParams } from '@tanstack/react-router'
-import {
-  type CredentialDisplayRow,
-  OWNER_LABEL,
-  type SecretRow,
-  useCredentialRows,
-} from '@/routes/-credential-rows'
+import { type CredentialDisplayRow, useCredentialRows } from '@/routes/-credential-rows'
 import { useDetailPanel } from '@/routes/-detail-panel'
 import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 
@@ -55,47 +50,9 @@ const credentialColumns: CollectionColumn<CredentialDisplayRow>[] = [
   },
 ]
 
-const legacyColumns: CollectionColumn<SecretRow>[] = [
-  { id: 'name', label: 'Name', phone: 'title', render: (row) => row.key },
-  { id: 'owner', label: 'Belongs to', phone: 'aside', render: (row) => OWNER_LABEL[row.scope] },
-  {
-    id: 'changed',
-    label: 'Last changed',
-    phone: 'line',
-    render: (row) => relativeTime(row.updatedAt),
-  },
-]
-
 function SecretsRoute() {
   if (!isHostedMode()) return <Navigate to="/" />
   return <SecretsPage />
-}
-
-function LegacyKeysCollection({
-  rows,
-  pending,
-  error,
-}: {
-  rows: SecretRow[]
-  pending: boolean
-  error: { message: string } | null
-}) {
-  if (pending) return <EmptyState title="Loading legacy keys..." />
-  if (error) return <ErrorState title="Could not load legacy keys" message={error.message} />
-  return (
-    <Collection
-      title="Legacy keys"
-      count={rows.length}
-      columns={legacyColumns}
-      rows={rows}
-      getKey={(row) => `${row.scope}:${row.environment}:${row.key}`}
-      onOpen={() => undefined}
-      empty={{
-        title: 'No legacy keys in this space.',
-        hint: `Set one with ${PLATFORM_SLUG} machine config secret set.`,
-      }}
-    />
-  )
 }
 
 function SecretsPage() {
@@ -138,11 +95,6 @@ function SecretsPage() {
           }}
         />
       ) : null}
-      <LegacyKeysCollection
-        rows={credentials.legacy}
-        pending={credentials.secretsPending}
-        error={credentials.secretsError}
-      />
     </section>
   )
 }
