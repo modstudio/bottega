@@ -126,6 +126,7 @@ export const cleanupBoundarySpecs = [
       'bun:sqlite',
       '../branch/branch-landing-records.ts',
       '../branch/task-status-observation.ts',
+      '../doc/context-service.ts',
       '../evidence/evidence-query.ts',
       '../project/projects.ts',
       './session-close-out-decision.ts',

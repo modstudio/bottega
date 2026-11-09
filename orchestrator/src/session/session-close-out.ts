@@ -26,7 +26,9 @@ import { hasAbsentTreeTeardownPlanWithRegisteredRemoveCommand } from '../worktre
 import {
   classifySessionCloseOut,
   classifySessionCursor,
+  classifyUnreadableProject,
   isLiveSessionRun,
+  ownsUnreadableProjectWork,
   plannedSessionRunRoots,
   plannedTreeOwnerMatches,
   type SessionHeldRunResources,
@@ -39,7 +41,11 @@ import {
   sessionOwnedRunIds,
 } from './session-close-out-decision.ts'
 import { sessionCloseOutObligationItems } from './session-close-out-obligation-adapter.ts'
-import type { SessionErrorLine, SessionProcessLine } from './session-close-out-report.ts'
+import type {
+  SessionErrorLine,
+  SessionProcessLine,
+  SessionWarningLine,
+} from './session-close-out-report.ts'
 import {
   sessionResourceReleaseDryRunLines,
   sessionResourceReleaseTargets,
@@ -54,6 +60,7 @@ export const SESSION_CLOSE_OUT_RESIDUE_EXIT_CODE = 1
 
 type OwnedClaim = {
   record_id: string
+  root_run_record_id: string
   number: number
   kind: string
   allocation_key: string
@@ -65,6 +72,7 @@ type OpenCursor = {
   record_id: string
   number: number
   workflow_slug: string
+  project: string
   state: string
   open_question_record_id: string | null
 }
@@ -99,6 +107,7 @@ export type SessionCloseOutReport = {
   kept: string[]
   parked: string[]
   process: SessionProcessLine[]
+  warnings: SessionWarningLine[]
   errors: SessionErrorLine[]
   heldTrees: HeldTreeJson[]
   verdict: { clean: boolean; residue: number }
@@ -176,7 +185,7 @@ function ownedClaims(database: Database, roots: readonly string[]): OwnedClaim[]
   const placeholders = roots.map(() => '?').join(',')
   return database
     .query(
-      `SELECT record_id,number,kind,allocation_key,state FROM resource_claim
+      `SELECT record_id,root_run_record_id,number,kind,allocation_key,state FROM resource_claim
         WHERE root_run_record_id IN (${placeholders}) AND state='claimed'
         ORDER BY claimed_at,record_id`,
     )
@@ -210,7 +219,7 @@ function incompleteReviews(database: Database, session: string): IncompleteRevie
 function openCursors(database: Database, session: string): OpenCursor[] {
   return database
     .query(
-      `SELECT record_id,number,workflow_slug,state,
+      `SELECT record_id,number,project,workflow_slug,state,
         (SELECT q.record_id FROM question q
           WHERE q.workflow_cursor_record_id=workflow_cursor.record_id
             AND ${questionOpenSql('q')} LIMIT 1) open_question_record_id
@@ -284,7 +293,10 @@ export function branchFacts(runs: readonly SessionOwnedRun[], dryRun: boolean) {
   return { branches, evidence }
 }
 
-type ResourceObservationError = SessionCloseOutReport['errors'][number]
+type ResourceObservationError = SessionCloseOutReport['errors'][number] & {
+  project: string
+  failureKind: 'unregistered' | 'unreadable'
+}
 type ProjectRootResources = {
   rootRecordId: string
   memberRecordIds: string[]
@@ -304,6 +316,8 @@ function resolveRootResources(
     return {
       resources: null,
       error: {
+        project,
+        failureKind: 'unregistered',
         item: `project ${project}`,
         detail: 'run resource state could not be read: project is not registered',
         retry: `${PLATFORM_SLUG} machine doctor`,
@@ -326,6 +340,8 @@ function resolveRootResources(
     return {
       resources: null,
       error: {
+        project,
+        failureKind: 'unreadable',
         item: `project ${project}`,
         detail: `run resource state could not be read: ${cause instanceof Error ? cause.message : String(cause)}`,
         retry: `${PLATFORM_SLUG} machine doctor`,
@@ -408,6 +424,8 @@ function observeRepositoryGroup(
       teardownRoots: [],
       unknownRoots: projectRoots.map((item) => item.rootRecordId),
       errors: [...new Set(projectRoots.map((item) => item.project))].map((project) => ({
+        project,
+        failureKind: 'unreadable' as const,
         item: `project ${project}`,
         detail,
         retry: `${PLATFORM_SLUG} machine doctor`,
@@ -506,6 +524,7 @@ function gather(database: Database, session: string, dryRun: boolean) {
     landings,
     reviews,
     cursors,
+    heldRunResources: held.resources,
     observationErrors: held.errors,
     ...branchInventory,
     classification: classifySessionCloseOut(facts),
@@ -745,17 +764,46 @@ function appendArgumentProcesses(
     })
 }
 
-function appendObservationErrors(
+function appendObservationFailures(
   report: SessionCloseOutReport,
+  inventory: ReturnType<typeof gather>,
   errors: readonly ResourceObservationError[],
 ): void {
   for (const error of errors) {
+    const project = error.project
     if (
-      !report.errors.some(
+      classifyUnreadableProject(
+        ownsUnreadableProjectWork({
+          project,
+          runs: inventory.runs,
+          branches: inventory.branches,
+          heldRunResources: inventory.heldRunResources,
+          cursors: inventory.cursors,
+        }),
+      ) === 'error'
+    ) {
+      if (
+        !report.errors.some(
+          (candidate) => candidate.item === error.item && candidate.detail === error.detail,
+        )
+      )
+        report.errors.push({ item: error.item, detail: error.detail, retry: error.retry })
+      continue
+    }
+    if (
+      !report.warnings.some(
         (candidate) => candidate.item === error.item && candidate.detail === error.detail,
       )
     )
-      report.errors.push(error)
+      report.warnings.push({
+        item: error.item,
+        detail: error.detail,
+        cleanup:
+          error.failureKind === 'unregistered'
+            ? `register the checkout with ${PLATFORM_SLUG} project add <path> --name ${project}`
+            : `repair the registered checkout, or remove its stale register entry with ` +
+              `${PLATFORM_SLUG} project remove ${project}`,
+      })
   }
 }
 
@@ -822,7 +870,8 @@ export async function closeOutSession(
     kept: context.kept,
     parked: [],
     process: context.process,
-    errors: [...initial.observationErrors, ...context.errors],
+    warnings: [],
+    errors: [...context.errors],
     heldTrees: [],
     verdict: { clean: false, residue: 0 },
     recommendation: 'brief',
@@ -832,7 +881,7 @@ export async function closeOutSession(
     dryRun || initial.classification.mechanical.length === 0
       ? initial
       : gather(database, session, false)
-  appendObservationErrors(report, final.observationErrors)
+  appendObservationFailures(report, final, final.observationErrors)
   appendClassifiedProcessItems(report, final)
   appendCursorProcessItems(report, final.cursors)
   report.process.push(...(await sessionCloseOutObligationItems(database, session, final.runs)))
@@ -881,6 +930,8 @@ export function formatSessionCloseOut(report: SessionCloseOutReport): string {
     lines.push(
       `remains: ${item.item}: ${item.reason}; evidence: ${item.evidence}; remedy: ${item.remedy}`,
     )
+  for (const warning of report.warnings)
+    lines.push(`warning: ${warning.item}: ${warning.detail}; cleanup: ${warning.cleanup}`)
   for (const error of report.errors)
     lines.push(`error: ${error.item}: ${error.detail}; retry: ${error.retry}`)
   if (report.dryRun && report.mechanical.length > 0) {

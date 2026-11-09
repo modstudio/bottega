@@ -3,3 +3,4 @@
 
 export type SessionProcessLine = { item: string; reason: string; evidence: string; remedy: string }
 export type SessionErrorLine = { item: string; detail: string; retry: string }
+export type SessionWarningLine = { item: string; detail: string; cleanup: string }

@@ -4,11 +4,13 @@
 import type { Database } from 'bun:sqlite'
 import { readBranchLandingTaskRows } from '../branch/branch-landing-records.ts'
 import { observeLandedTasks } from '../branch/task-status-observation.ts'
+import { taskContextItems } from '../doc/context-service.ts'
 import { pendingForSession } from '../evidence/evidence-query.ts'
 import { projects } from '../project/projects.ts'
 import type { SessionOwnedRun } from './session-close-out-decision.ts'
 import {
   landedTaskIdentities,
+  OPEN_AFTER_LANDING_CONTEXT_ID,
   sessionCloseOutObligations,
 } from './session-close-out-obligations.ts'
 import type { SessionProcessLine } from './session-close-out-report.ts'
@@ -30,8 +32,15 @@ export async function sessionCloseOutObligationItems(
       ]),
     ),
   })
+  const landedTasks = await observeLandedTasks(identities)
   return sessionCloseOutObligations({
     pendingScores: pendingForSession(session, database),
-    landedTasks: await observeLandedTasks(identities),
+    acknowledgementDate: new Date().toISOString().slice(0, 'YYYY-MM-DD'.length),
+    landedTasks: landedTasks.map((task) => ({
+      ...task,
+      openAfterLandingAcknowledged: taskContextItems(task.taskKey, database).some(
+        (item) => item.id === OPEN_AFTER_LANDING_CONTEXT_ID && item.kind === 'ruling',
+      ),
+    })),
   })
 }

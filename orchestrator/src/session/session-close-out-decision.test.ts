@@ -3,6 +3,8 @@ import {
   classifySessionCloseOut,
   classifySessionContextItem,
   classifySessionCursor,
+  classifyUnreadableProject,
+  ownsUnreadableProjectWork,
   plannedTreeOwnerMatches,
   type ResumeHandoffRootFacts,
   resumeHandoffRootIsOwed,
@@ -41,6 +43,52 @@ const handoffFacts = (overrides: Partial<ResumeHandoffRootFacts> = {}): ResumeHa
 })
 
 describe('session close-out decisions', () => {
+  test('an unreadable project blocks only while the session owns close-out work there', () => {
+    expect(classifyUnreadableProject(true)).toBe('error')
+    expect(classifyUnreadableProject(false)).toBe('warning')
+  })
+
+  test('unreadable project ownership recognizes each close-out hold', () => {
+    const run = {
+      recordId: 'root',
+      rootRecordId: 'root',
+      sessionId: 'owner',
+      number: 1,
+      status: 'ok',
+      architectTree: false,
+      worktree: null,
+      project: 'p',
+      taskKey: 'DEV-1',
+      mintedBranch: null,
+      dirty: false,
+    }
+    const held = handoffFacts().heldRunResources!
+    const ownership = (overrides: Record<string, unknown> = {}) =>
+      ownsUnreadableProjectWork({
+        project: 'p',
+        runs: [run],
+        branches: [],
+        heldRunResources: [{ ...held, rootRecordId: 'root' }],
+        cursors: [],
+        ...overrides,
+      })
+
+    expect(ownership({ runs: [{ ...run, status: 'running' }] }), 'live run').toBe(true)
+    expect(
+      ownership({ heldRunResources: [{ ...held, rootRecordId: 'root', worktree: true }] }),
+      'present tree',
+    ).toBe(true)
+    expect(
+      ownership({ heldRunResources: [{ ...held, rootRecordId: 'root', claim: true }] }),
+      'unsettled claim',
+    ).toBe(true)
+    expect(ownership({ runs: [{ ...run, mintedBranch: 'open' }] }), 'unproved minted branch').toBe(
+      true,
+    )
+    expect(ownership({ cursors: [{ project: 'p' }] }), 'open cursor').toBe(true)
+    expect(ownership(), 'nothing held').toBe(false)
+  })
+
   test('context items drop or refuse by kind and resume keeps every kind', () => {
     expect(
       ['pointer', 'position', 'fact', 'next-action'].map((kind) =>
