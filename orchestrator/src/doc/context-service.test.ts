@@ -6,7 +6,7 @@ import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import type { SecretScanner } from '../secret-scan/secret-scan.ts'
 import { encodeContextItem } from './context-item-codec.ts'
-import { getContext, setContextItem } from './context-service.ts'
+import { dropContextItem, getContext, setContextItem } from './context-service.ts'
 import {
   CONTEXT_FACTS_PORTS_KEY,
   type ContextFactsPorts,
@@ -88,6 +88,34 @@ describe('context document integration', () => {
       `could not read task data for project pull-failure: tracker unavailable; retry: ${PLATFORM_SLUG} task show FAIL-1 --project pull-failure --fresh --json`,
     )
     expect(listDocs({ scope: 'context' })).toEqual([])
+  })
+
+  test('a stale agent context drop names the drop verb on the holder it resolved', async () => {
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'drop-fixture',
+      path: '/tmp/drop-fixture',
+      settings: { keyPrefixes: ['DROP'] },
+    })
+    const dropTask = { key: 'DROP-1', record_id: newRecordId(), project: 'drop-fixture' }
+    globals[CONTEXT_FACTS_PORTS_KEY] = {
+      tasks: async (project) => (project === 'drop-fixture' ? [dropTask] : []),
+      task: async () => null,
+      pointer: async () => null,
+    }
+    const written = await setContextItem({
+      task: dropTask.key,
+      id: 'fact-1',
+      kind: 'fact',
+      source: 'run:1',
+      body: 'A measured fact.',
+    })
+    await expect(
+      dropContextItem({ task: dropTask.key, id: 'fact-1', expectedRevision: 'stale-revision' }),
+    ).rejects.toThrow(
+      `${PLATFORM_SLUG} agent context drop --task ${dropTask.key} --id fact-1 --expected-revision ${written.revision}`,
+    )
+    expect(getDoc('context', `task:${dropTask.record_id}`, 'fact-1')).not.toBeNull()
   })
 
   test('uses per-item compare-and-set and names the stale item and revision', async () => {
