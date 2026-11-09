@@ -119,6 +119,10 @@ export function cacheHostedTaskFlow(
           },
           'hosted-record',
         )
+      else
+        database
+          .query('UPDATE workflow_cursor SET task_flow_record_id=? WHERE record_id=?')
+          .run(flow.id, stage.id)
       database
         .query('UPDATE task_flow SET open_stage_cursor_record_id=? WHERE record_id=?')
         .run(stage.id, flow.id)

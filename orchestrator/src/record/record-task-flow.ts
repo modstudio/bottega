@@ -50,7 +50,7 @@ export async function readRecordTaskFlow(
       WHERE s.space_id=${input.spaceId}::uuid AND s.flow_record_id=${row.id}::uuid
         AND (${row.open_stage_record_id ?? null}::uuid IS NULL OR s.id<>${row.open_stage_record_id ?? null}::uuid)
       ORDER BY s.updated_at`
-    const stages = stageRows.map((stageRow) => ({
+    const stages = stageRows.map((stageRow: Record<string, unknown>) => ({
       id: String(stageRow.id),
       flowRecordId: String(stageRow.flow_record_id),
       workflow: String(stageRow.workflow),
