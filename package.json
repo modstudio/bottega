@@ -28,6 +28,7 @@
     "test:affected": "scripts/affected-tests.ts",
     "probe:bounded-calls": "bun scripts/probe-bounded-calls.ts",
     "audit:hot-store": "bun scripts/audit-hot-store-statements.ts",
+    "report:state-classes": "bun scripts/check-identity-inventory.ts --report-state-classes",
     "release:binary": "bun scripts/build-binary.ts",
     "release:artifacts": "bun scripts/build-release-artifacts.ts",
     "release:install-proof": "bun scripts/smoke-release-install.ts",

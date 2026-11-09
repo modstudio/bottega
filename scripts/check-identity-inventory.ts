@@ -3,7 +3,6 @@ import { Database } from 'bun:sqlite'
 import { fileURLToPath } from 'node:url'
 import { applyMigrations as applyHubMigrations } from '../hub/src/migrations.ts'
 import * as noteClient from '../hub/src/note-client.ts'
-import { PUSHABLE_HUB_CHANGE_TABLES } from '../hub/src/push-contract.ts'
 import { createRecordClient } from '../hub/src/record-client.ts'
 import * as reportClient from '../hub/src/report-client.ts'
 import { hubTableLifecycles } from '../hub/src/storage-lifecycle.ts'
@@ -34,26 +33,29 @@ import {
 } from './identity-inventory.ts'
 import baseline from './identity-key-baseline.json'
 import { KEY_MANIFESTS } from './identity-key-manifest.ts'
-import { stateClassRefusals } from './identity-state-class-check.ts'
+import stateClassBaseline from './identity-state-class-baseline.json'
+import {
+  type StateClassBaseline,
+  stateClassBaselineRefusals,
+  stateClassRefusals,
+} from './identity-state-class-check.ts'
+import {
+  OUTBOX_KIND_SOURCES,
+  PUSHABLE_HUB_TABLES,
+  STATE_CLASS_OUTBOX_TABLES,
+} from './identity-state-class-facts.ts'
+import { HOSTED_WRITE_PATHS, hostedWritePathReport } from './identity-state-class-report.ts'
 import { STATE_CLASSES } from './identity-state-classes.ts'
 import { repositoryLifecycleSymbol, storageLifecycleRefusals } from './storage-lifecycle-check.ts'
 
 type Baseline = Record<'orchestrator' | 'hub' | 'hosted', string[]>
-
-function baseBaseline(base: string): Baseline | null {
+function baseFile<T>(base: string, path: string): T | null {
   const root = fileURLToPath(new URL('..', import.meta.url))
   const result = startBoundedSync(
-    [
-      'git',
-      '-C',
-      root,
-      '--no-optional-locks',
-      'show',
-      `${base}:scripts/identity-key-baseline.json`,
-    ],
+    ['git', '-C', root, '--no-optional-locks', 'show', `${base}:${path}`],
     { budget: 'git-plumbing', env: inspectionGitEnv() },
   )
-  if (result.exitCode === 0) return JSON.parse(result.stdout.toString()) as Baseline
+  if (result.exitCode === 0) return JSON.parse(result.stdout.toString()) as T
   const missing = startBoundedSync(
     ['git', '-C', root, '--no-optional-locks', 'cat-file', '-e', `${base}^{commit}`],
     { budget: 'git-plumbing', env: inspectionGitEnv() },
@@ -61,42 +63,6 @@ function baseBaseline(base: string): Baseline | null {
   if (missing.exitCode === 0) return null
   throw new Error(`identity inventory could not resolve base commit ${base}`)
 }
-
-type OutboxSource = { source: string; reason: string }
-const OUTBOX_KIND_SOURCES: Readonly<Record<keyof typeof OUTBOX_PAYLOAD_CONTRACTS, OutboxSource>> = {
-  run: { source: 'run', reason: 'enqueued from run' },
-  score: { source: 'score', reason: 'enqueued from score' },
-  question: { source: 'question', reason: 'enqueued from question' },
-  task_flow: { source: 'task_flow', reason: 'enqueued from task_flow' },
-  task_flow_stage: { source: 'workflow_cursor', reason: 'enqueued from workflow_cursor' },
-  review: { source: 'review', reason: 'enqueued from review' },
-  review_lens: { source: 'review_lens', reason: 'enqueued from review_lens' },
-  review_finding: { source: 'review_finding', reason: 'enqueued from review_finding' },
-  review_read: { source: 'review_read', reason: 'enqueued from review_read' },
-  release: {
-    source: 'release_ledger',
-    reason: 'release is enqueued from release_ledger by release/release-outbox.ts',
-  },
-  landing: { source: 'landing', reason: 'enqueued from landing' },
-  landing_override: { source: 'landing_override', reason: 'enqueued from landing_override' },
-  landing_review_carry: {
-    source: 'landing_review_carry',
-    reason: 'enqueued from landing_review_carry',
-  },
-  landing_triage_snapshot: {
-    source: 'landing_triage_snapshot',
-    reason: 'enqueued from landing_triage_snapshot',
-  },
-  pull_request_ci: { source: 'pull_request_ci', reason: 'enqueued from pull_request_ci' },
-  contention: { source: 'contention', reason: 'enqueued from contention' },
-  test_flake: { source: 'test_flake', reason: 'enqueued from test_flake' },
-  branch_disposal: { source: 'branch_disposal', reason: 'enqueued from branch_disposal' },
-}
-
-const PUSHABLE_HUB_TABLES = PUSHABLE_HUB_CHANGE_TABLES.map((hosted) => ({
-  hosted,
-  local: hosted.replace(/^hub_/, ''),
-}))
 
 function runtimeSyncedSourceRefusals(): string[] {
   const syncSources = new Set(
@@ -113,7 +79,7 @@ function runtimeSyncedSourceRefusals(): string[] {
       return syncSources.has(mapping.source)
         ? []
         : [
-            `orchestrator.recordApiClient.sync: outbox kind ${kind} source ${mapping.source} is not declared; remedy: add the source table (${mapping.reason})`,
+            `orchestrator.recordApiClient.sync: outbox kind ${kind} source ${mapping.source} is not declared; remedy: add the source table${mapping.reason ? ` (${mapping.reason})` : ''}`,
           ]
     }),
     ...PUSHABLE_HUB_TABLES.flatMap(({ hosted, local }) => {
@@ -124,6 +90,15 @@ function runtimeSyncedSourceRefusals(): string[] {
           ]
     }),
   ].sort()
+}
+
+function baselineStateClassRefusals(previous: StateClassBaseline | null): string[] {
+  return stateClassBaselineRefusals(
+    stateClassBaseline,
+    previous,
+    STATE_CLASSES,
+    STATE_CLASS_OUTBOX_TABLES,
+  )
 }
 
 // These client methods are only enumerated and never called, so the stub value is never read.
@@ -170,10 +145,30 @@ const methodInventory = () => [
   ...SNAPSHOT_KINDS.map((kind) => `orchestrator.snapshot.${kind}`),
 ]
 
+function printStateClassReport(json: boolean): void {
+  const report = hostedWritePathReport(STATE_CLASSES, STATE_CLASS_OUTBOX_TABLES)
+  if (json) {
+    console.log(JSON.stringify(report, null, 2))
+    return
+  }
+  for (const path of HOSTED_WRITE_PATHS) {
+    console.log(`${path}: ${report.counts[path]}`)
+    for (const table of report.paths[path]) console.log(`  ${table}`)
+  }
+}
+
 async function main(): Promise<void> {
+  if (Bun.argv.includes('--report-state-classes')) {
+    printStateClassReport(Bun.argv.includes('--json'))
+    return
+  }
   const base = Bun.argv.find((argument) => argument.startsWith('--base='))?.slice(7)
   if (!base) throw new Error('usage: check-identity-inventory.ts --base=<commit>')
-  const previousBaseline = baseBaseline(base)
+  const previousBaseline = baseFile<Baseline>(base, 'scripts/identity-key-baseline.json')
+  const previousStateClassBaseline = baseFile<StateClassBaseline>(
+    base,
+    'scripts/identity-state-class-baseline.json',
+  )
   const orchestrator = new Database(':memory:')
   const hub = new Database(':memory:')
   try {
@@ -199,9 +194,12 @@ async function main(): Promise<void> {
         hub: hubTables.map((table) => table.name),
       },
       declarations: STATE_CLASSES,
-      outboxSources: Object.values(OUTBOX_KIND_SOURCES).map(({ source }) => source),
+      outboxKindSources: OUTBOX_KIND_SOURCES,
+      outboxTables: STATE_CLASS_OUTBOX_TABLES,
       pushableHubTables: PUSHABLE_HUB_TABLES,
       hostedTables: hostedTableInventory.map((table) => table.name),
+      allowedHostedOutbox: stateClassBaseline.hostedOutbox,
+      allowedHostedCaches: stateClassBaseline.hostedCaches,
     })
     const lifecycleRefusals = await storageLifecycleRefusals(
       {
@@ -224,6 +222,7 @@ async function main(): Promise<void> {
     const refusals = [
       ...syncedRefusals,
       ...runtimeSyncedSourceRefusals(),
+      ...baselineStateClassRefusals(previousStateClassBaseline),
       ...classRefusals,
       ...lifecycleRefusals,
     ]

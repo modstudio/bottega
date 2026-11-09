@@ -23,22 +23,20 @@ data because architect attention is the scarce resource.
 
 ## Design from the multi-space hosted platform
 
-Design starts from the hosted, multi-space platform. Hosted is the record;
-the local store is a working set. Local keeps pending writes, machine-only
-state, and the window its hot paths read; everything else is fetched from the
-record. A local-only install keeps everything locally and offers the features
-that fit. All work, from space down to run, is portable between machines;
-machine-only is state another machine would never care about. A table whose
-hosted home is unbuilt is hosted-first and names the task that builds it. The
-seam is doc-store record `design-machine-hosted-seam`.
+Design starts from the hosted, multi-space platform; on a hosted install the
+record is the truth. A hosted table is written straight to the record and kept
+nowhere locally; a write that cannot reach it stops with a remedy, never queued.
+A synced table records what happened here, written locally and pushed on a
+schedule. A machine table is state no other machine would care about. A
+local-only install keeps every table locally. A hosted table without a built
+home names the task that builds it.
 
 Every table declares a lifecycle: what it is, where its authoritative copy
-lives, how long each copy is kept, and what removes it. Nothing is kept because
-nobody decided. Each local table also declares `hosted-first`, `evidence` or
-`machine-only` in `scripts/identity-state-classes.ts`, a machine-only one
-naming Shmuel Barkin's ruling. The lifecycle classes are in doc-store record
-`design-data-lifecycle`; `scripts/check-identity-inventory.ts` enforces both
-declarations.
+lives, how long each copy is kept, and what removes it. Each local table also
+declares `hosted`, `synced` or `machine` in
+`scripts/identity-state-classes.ts`, a machine one naming Shmuel Barkin's ruling;
+`scripts/check-identity-inventory.ts` enforces both. Doc-store records
+`design-machine-hosted-seam` and `design-data-lifecycle` hold the detail.
 
 ## Delegation costs nothing in judgment
 

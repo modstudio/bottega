@@ -1,0 +1,21 @@
+{
+  "hostedOutbox": [
+    "hub.note",
+    "hub.note_acknowledgement",
+    "hub.task",
+    "hub.task_comment",
+    "hub.task_document",
+    "hub.task_status_event",
+    "orchestrator.question",
+    "orchestrator.question_mutation_audit",
+    "orchestrator.task_flow",
+    "orchestrator.workflow_cursor"
+  ],
+  "hostedCaches": [
+    "hub.question",
+    "hub.send",
+    "orchestrator.hosted_board_message_cache",
+    "orchestrator.hosted_board_message_tag_cache",
+    "orchestrator.hosted_board_receipt_cache"
+  ]
+}
