@@ -14,6 +14,10 @@ import {
 } from './record-cursor.ts'
 import { RecordTaskFlowError } from './record-task-flow.ts'
 import {
+  TASK_FLOW_STAGE_LIST_REMEDY,
+  taskFlowStageListQuerySchema,
+} from './record-task-flow-contract.ts'
+import {
   type TaskFlowIntent,
   type TaskFlowIntentBody,
   taskFlowIntentSchemas,
@@ -34,6 +38,9 @@ type Environment = { Variables: { identity: RecordIdentity; destinationSpaceId?:
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
 export type RecordWorkflowRouteDeps = {
   readTaskFlow?(input: Tenant & { taskKey?: string; flowRecordId?: string }): Promise<unknown>
+  listTaskFlowStages?(
+    input: Tenant & z.infer<typeof taskFlowStageListQuerySchema>,
+  ): Promise<unknown>
   writeTaskFlow?<K extends TaskFlowIntent>(
     intent: K,
     input: Tenant & TaskFlowIntentBody<K>,
@@ -51,7 +58,6 @@ type Ports = {
   noSpace(context: Context<Environment>): Response
 }
 const limit = z.coerce.number().int().min(1).max(100).default(20)
-
 function registerTaskFlowWriteRoute<K extends TaskFlowIntent>(
   app: Hono<Environment>,
   deps: RecordWorkflowRouteDeps,
@@ -119,6 +125,34 @@ function registerTaskFlowWriteRoutes(
   for (const register of Object.values(routes)) register()
 }
 
+function registerTaskFlowListRoute(
+  app: Hono<Environment>,
+  deps: RecordWorkflowRouteDeps,
+  ports: Ports,
+): void {
+  app.get('/v1/task-flow/stages', async (context) => {
+    if (!deps.listTaskFlowStages)
+      return context.json({ error: 'hosted task-flow stage list is unavailable' }, 503)
+    const active = ports.scope(context)
+    if (!active) return ports.noSpace(context)
+    const states = context.req.queries('state') ?? []
+    const query = taskFlowStageListQuerySchema.safeParse({
+      projectId: context.req.query('projectId'),
+      number: context.req.query('number'),
+      sessionId: context.req.query('sessionId'),
+      states: states.length ? states : undefined,
+      taskKey: context.req.query('taskKey'),
+      limit: context.req.query('limit'),
+    })
+    if (!query.success)
+      return context.json(
+        { error: 'invalid task-flow stage list query', remedy: TASK_FLOW_STAGE_LIST_REMEDY },
+        400,
+      )
+    return context.json(await deps.listTaskFlowStages({ ...active, ...query.data }))
+  })
+}
+
 export function registerRecordWorkflowRoutes(
   app: Hono<Environment>,
   deps: RecordWorkflowRouteDeps,
@@ -151,6 +185,7 @@ export function registerRecordWorkflowRoutes(
       throw error
     }
   })
+  registerTaskFlowListRoute(app, deps, ports)
   registerTaskFlowWriteRoutes(app, deps, ports)
   app.get('/v1/workflow-catalogue/:table', async (context) => {
     const active = ports.scope(context)
