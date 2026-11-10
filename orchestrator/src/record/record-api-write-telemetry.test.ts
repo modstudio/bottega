@@ -30,11 +30,7 @@ test('reports destination-less writes by patterned route and client cause', asyn
     (
       await app.request('/v1/board/messages', {
         method: 'PUT',
-        headers: {
-          'content-type': 'application/json',
-          'user-agent': cause,
-          'x-record-space': 'space-a',
-        },
+        headers: { 'content-type': 'application/json', 'user-agent': cause },
         body: JSON.stringify({
           id,
           kind: 'notice',
@@ -102,6 +98,7 @@ test('reports destination-less writes by patterned route and client cause', asyn
   const report = (await response.json()) as NoDestinationWriteReport
   expect(new Date(report.processStartedAt).toISOString()).toBe(report.processStartedAt)
   expect(report.counts.filter((row) => row.cause === cause)).toEqual([
+    { spaceId: 'space-a', route: '/v1/board/messages', cause, occurrences: 1 },
     { spaceId: 'space-a', route: '/v1/runs/:id/void', cause, occurrences: 1 },
     { spaceId: 'space-a', route: '/v1/moderation/hide', cause, occurrences: 1 },
     { spaceId: 'space-a', route: '/v1/sync', cause, occurrences: 1 },
