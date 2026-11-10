@@ -461,8 +461,9 @@ realPostgres('RLS proof against real Postgres', () => {
        VALUES ('${membershipId}','${authSpaceB}','${authUserA}','owner','write',now());`,
     )
     recordSession.setToken(tokenA)
+    let invitationId = ''
     try {
-      const invitationId = await inviteToRecordSpace(
+      invitationId = await inviteToRecordSpace(
         'cross-space-invite@example.test',
         'member',
         authSpaceB,
@@ -476,6 +477,8 @@ realPostgres('RLS proof against real Postgres', () => {
       expect(persistedSpace).toBe(authSpaceB)
       expect(persistedSpace).not.toBe(authSpaceA)
     } finally {
+      if (invitationId)
+        succeeds('postgres', 'postgres', `DELETE FROM invitation WHERE id='${invitationId}';`)
       succeeds('postgres', 'postgres', `DELETE FROM membership WHERE id='${membershipId}';`)
     }
   })
