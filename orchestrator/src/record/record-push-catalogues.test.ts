@@ -312,7 +312,9 @@ test('dry run logs its local plan without calling hosted methods', async () => {
     ),
   )
   expect(logs).toContainEqual(
-    expect.stringContaining('port doctrine has no named space; assign it a record space, then retry'),
+    expect.stringContaining(
+      'port doctrine has no named space; assign it a record space, then retry',
+    ),
   )
 })
 

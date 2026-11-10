@@ -769,6 +769,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../../../shared/docs.ts',
       '../../../shared/record/schema.ts',
       '../../../shared/record-space-membership.ts',
+      '../../../shared/record-write-space.ts',
       '../../../shared/record-remedies.ts',
       '../../../shared/record-api-url.ts',
       '../database/db.ts',

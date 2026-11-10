@@ -57,6 +57,7 @@ import type {
 import {
   MachineNameRefusal,
   recordSyncAuthorizationDecision,
+  recordSyncClaimSpaceIds,
   recordSyncReferenceRefusal as referenceRefusal,
 } from './record-sync-decision.ts'
 import * as evidenceLookup from './record-sync-evidence-lookup.ts'
@@ -996,23 +997,22 @@ export async function syncHostedRecord(input: {
   const postgres = input.postgres ?? recordPool(input.url)
   const personalSpaceId = input.identity.personalSpaceId
   if (!personalSpaceId) throw new Error('record session has no personal space')
-  const destinationSpaceIds = [
-    ...new Set(
-      input.request.rows
-        .map((row) => row.spaceHint)
-        .filter(
-          (spaceId): spaceId is string =>
-            spaceId !== null &&
-            recordSyncAuthorizationDecision(input.identity, spaceId).status === 'allowed',
-        ),
-    ),
-  ]
+  const destinationSpaceIds = recordSyncClaimSpaceIds(
+    input.identity,
+    input.request.rows.map((row) => row.spaceHint),
+  )
   let machineNameRefusal: string | undefined
   try {
-    await upsertHostedMachine(postgres, input.request.machine.seenAt, input.request.machine, {
-      userId: input.identity.user.id,
-      spaceId: personalSpaceId,
-    }, destinationSpaceIds)
+    await upsertHostedMachine(
+      postgres,
+      input.request.machine.seenAt,
+      input.request.machine,
+      {
+        userId: input.identity.user.id,
+        spaceId: personalSpaceId,
+      },
+      destinationSpaceIds,
+    )
   } catch (error) {
     if (error instanceof MachineNameRefusal) machineNameRefusal = error.message
     else throw error

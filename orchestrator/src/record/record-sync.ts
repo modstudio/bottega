@@ -5,10 +5,8 @@ import { hostname } from 'node:os'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { storedMachineNames, writeMachineNames } from '../../../shared/machine-config.ts'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
+import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { recordWriteSpace } from '../../../shared/record-write-space.ts'
-import {
-  parseRecordSpaceMemberships,
-} from '../../../shared/record-space-membership.ts'
 import { db, nowIso } from '../database/db.ts'
 import { backfillReleaseRecords } from '../release/release-outbox.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
@@ -562,7 +560,9 @@ async function ensureBatchBuiltIns(
   rows: readonly RecordSyncRequestRow[],
 ): Promise<void> {
   if (!client.ensureSpaceBuiltIns) return
-  const spaces = new Set(rows.map((row) => row.spaceHint).filter((space): space is string => !!space))
+  const spaces = new Set(
+    rows.map((row) => row.spaceHint).filter((space): space is string => !!space),
+  )
   for (const spaceId of spaces) {
     if (builtInsEnsured(local, spaceId)) continue
     await client.ensureSpaceBuiltIns({ destinationSpaceId: spaceId })
@@ -668,6 +668,20 @@ async function pullAfterSync(
   }
 }
 
+function syncBackfill(
+  local: Database,
+  identityId: string,
+): NonNullable<RecordSyncResult['backfill']> {
+  return {
+    ...backfillRunRecords(local, identityId),
+    scores: backfillScoreRecords(local, identityId),
+    reviews: backfillReviewRecords(local),
+    landingEvidence: backfillLandingEvidenceRecords(local),
+    questions: backfillQuestionRecords(local),
+    releases: backfillReleaseRecords(local),
+  }
+}
+
 export async function syncRecord(options: RecordSyncOptions = {}): Promise<RecordSyncResult> {
   const configured = recordSyncConfigured(process.env) || Boolean(options.client)
   const requestedIdentity = options.identity ?? { id: machineId(), ...machineNames() }
@@ -676,16 +690,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     name: requestedIdentity.name ?? defaultShortName(hostname()),
   }
   const local = options.local ?? (configured || options.backfill ? db() : undefined)
-  const backfill = options.backfill
-    ? {
-        ...backfillRunRecords(local!, identity.id),
-        scores: backfillScoreRecords(local!, identity.id),
-        reviews: backfillReviewRecords(local!),
-        landingEvidence: backfillLandingEvidenceRecords(local!),
-        questions: backfillQuestionRecords(local!),
-        releases: backfillReleaseRecords(local!),
-      }
-    : undefined
+  const backfill = options.backfill ? syncBackfill(local!, identity.id) : undefined
   if (!configured) {
     return {
       pushed: 0,

@@ -34,5 +34,7 @@ test('an empty sync destination set updates the user-owned machine without makin
   )
 
   expect(remote.transactionSpaceIds).toEqual([PERSONAL_SPACE_ID])
-  expect(remote.statements.filter((statement) => statement.includes('machine_name_claim'))).toEqual([])
+  expect(remote.statements.filter((statement) => statement.includes('machine_name_claim'))).toEqual(
+    [],
+  )
 })

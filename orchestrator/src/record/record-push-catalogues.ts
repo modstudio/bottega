@@ -505,17 +505,11 @@ function addPortSkip(r: Record<string, unknown>, context: PortPlanContext): void
   })
 }
 
-function portPlan(
-  local: Database,
-  routes: ProjectRoutes,
-  skipped: Plan['skipped'],
-) {
+function portPlan(local: Database, routes: ProjectRoutes, skipped: Plan['skipped']) {
   const plans = new Map<string, RecordPortImportInput>(),
     now = iso()
   for (const row of local
-    .query<{ record_id: string }, []>(
-      'SELECT record_id FROM port_doctrine WHERE space_id IS NULL',
-    )
+    .query<{ record_id: string }, []>('SELECT record_id FROM port_doctrine WHERE space_id IS NULL')
     .all()) {
     skipped.push({
       kind: 'port_doctrine',

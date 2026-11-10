@@ -40,6 +40,21 @@ export function recordSyncAuthorizationDecision(
   }
 }
 
+export function recordSyncClaimSpaceIds(
+  identity: RecordIdentity,
+  spaceHints: readonly (string | null)[],
+): string[] {
+  return [
+    ...new Set(
+      spaceHints.filter(
+        (spaceId): spaceId is string =>
+          spaceId !== null &&
+          recordSyncAuthorizationDecision(identity, spaceId).status === 'allowed',
+      ),
+    ),
+  ]
+}
+
 export type RecordSyncMachineOwnershipDecision =
   | { status: 'allowed' }
   | { status: 'refused'; reason: string }
