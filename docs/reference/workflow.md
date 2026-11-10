@@ -167,12 +167,13 @@ fork the step catalogue into a new draft version
 
 ## bottega workflow catalogue promote
 
-**Synopsis:** `bottega workflow catalogue promote <version> [--reason <value>] [--author <value>] [--json]`
+**Synopsis:** `bottega workflow catalogue promote <version> [--space <slug>] [--reason <value>] [--author <value>] [--json]`
 
 promote a draft step catalogue version to production
 
 ### Options
 
+- `--space <slug>`: write to this record space
 - `--reason <value>`: record why this change is being made
 - `--author <value>`: record who is making this change
 - `--json`: print JSON output
@@ -183,12 +184,13 @@ promote a draft step catalogue version to production
 
 ## bottega workflow catalogue retire
 
-**Synopsis:** `bottega workflow catalogue retire <version> [--reason <value>] [--author <value>] [--json]`
+**Synopsis:** `bottega workflow catalogue retire <version> [--space <slug>] [--reason <value>] [--author <value>] [--json]`
 
 retire a step catalogue version
 
 ### Options
 
+- `--space <slug>`: write to this record space
 - `--reason <value>`: record why this change is being made
 - `--author <value>`: record who is making this change
 - `--json`: print JSON output
@@ -199,12 +201,13 @@ retire a step catalogue version
 
 ## bottega workflow catalogue set
 
-**Synopsis:** `bottega workflow catalogue set [--file <value>] [--reason <value>] [--author <value>] [--json]`
+**Synopsis:** `bottega workflow catalogue set [--space <slug>] [--file <value>] [--reason <value>] [--author <value>] [--json]`
 
 create a draft step catalogue from a JSON file
 
 ### Options
 
+- `--space <slug>`: write to this record space
 - `--file <value>`: read the catalogue definition from this file
 - `--reason <value>`: record why this change is being made
 - `--author <value>`: record who is making this change
@@ -336,12 +339,13 @@ dispatch filed defect issues or list those waiting
 
 ## bottega workflow fork
 
-**Synopsis:** `bottega workflow fork <workflow> [--from <value>] [--reason <value>] [--author <value>] [--json]`
+**Synopsis:** `bottega workflow fork <workflow> [--space <slug>] [--from <value>] [--reason <value>] [--author <value>] [--json]`
 
 fork a workflow into a new draft version
 
 ### Options
 
+- `--space <slug>`: write to this record space
 - `--from <value>`: fork from this version
 - `--reason <value>`: record why this change is being made
 - `--author <value>`: record who is making this change
@@ -447,12 +451,13 @@ Options are documented by `--help`.
 
 ## bottega workflow promote
 
-**Synopsis:** `bottega workflow promote <workflow> <version> [--reason <value>] [--author <value>] [--json]`
+**Synopsis:** `bottega workflow promote <workflow> <version> [--space <slug>] [--reason <value>] [--author <value>] [--json]`
 
 promote a draft workflow version to production
 
 ### Options
 
+- `--space <slug>`: write to this record space
 - `--reason <value>`: record why this change is being made
 - `--author <value>`: record who is making this change
 - `--json`: print JSON output
@@ -493,12 +498,13 @@ check every production workflow can render
 
 ## bottega workflow retire
 
-**Synopsis:** `bottega workflow retire <workflow> <version> [--reason <value>] [--author <value>] [--json]`
+**Synopsis:** `bottega workflow retire <workflow> <version> [--space <slug>] [--reason <value>] [--author <value>] [--json]`
 
 retire a workflow version
 
 ### Options
 
+- `--space <slug>`: write to this record space
 - `--reason <value>`: record why this change is being made
 - `--author <value>`: record who is making this change
 - `--json`: print JSON output
@@ -529,12 +535,13 @@ apply a ruling to a waiting workflow cursor
 
 ## bottega workflow set
 
-**Synopsis:** `bottega workflow set <workflow> [--file <value>] [--reason <value>] [--author <value>] [--json]`
+**Synopsis:** `bottega workflow set <workflow> [--space <slug>] [--file <value>] [--reason <value>] [--author <value>] [--json]`
 
 create a draft workflow version from a JSON file
 
 ### Options
 
+- `--space <slug>`: write to this record space
 - `--file <value>`: read the workflow definition from this file
 - `--reason <value>`: record why this change is being made
 - `--author <value>`: record who is making this change
