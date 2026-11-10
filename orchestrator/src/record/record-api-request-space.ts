@@ -10,16 +10,29 @@ import {
   recordSpaceRequestDecision,
 } from '../../../shared/record-space-request.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import { destinationlessWrite } from './record-no-destination-write-decision.ts'
 import { noDestinationWriteCounter } from './record-no-destination-write-counter.ts'
+import { destinationlessWrite } from './record-no-destination-write-decision.ts'
 
 type ApiEnvironment = {
-  Variables: { identity: RecordIdentity; destinationSpaceId?: string }
+  Variables: {
+    identity: RecordIdentity
+    destinationSpaceId?: string
+    destinationlessWriteGuarded?: true
+    destinationlessWriteRecorded?: true
+  }
 }
 
 /** Install destination authorization on project-owned record operations. */
 export function registerRecordRequestSpace(app: Hono<ApiEnvironment>): void {
+  app.use('/v1/*', async (context, next) => {
+    try {
+      await next()
+    } finally {
+      if (context.get('destinationlessWriteGuarded')) recordDestinationlessWrite(context)
+    }
+  })
   const requestedSpace = async (context: Context<ApiEnvironment>, next: Next) => {
+    context.set('destinationlessWriteGuarded', true)
     if (context.req.method === 'GET' && context.req.path === '/v1/docs/search') return next()
     const requested = context.req.header('x-record-space') ?? null
     const memberships = parseRecordSpaceMemberships(context.get('identity').memberships)
@@ -47,11 +60,7 @@ export function registerRecordRequestSpace(app: Hono<ApiEnvironment>): void {
     }
     if (requested !== null && decision.spaceId !== null)
       context.set('destinationSpaceId', decision.spaceId)
-    try {
-      await next()
-    } finally {
-      recordDestinationlessWrite(context)
-    }
+    await next()
   }
   app.get('/v1/health/no-destination-writes', (context) =>
     context.json(
@@ -93,6 +102,8 @@ export function recordDestinationlessWrite(context: Context<ApiEnvironment>): vo
     userAgent: context.req.header('user-agent'),
   })
   if (!decision) return
+  if (context.get('destinationlessWriteRecorded')) return
+  context.set('destinationlessWriteRecorded', true)
   try {
     noDestinationWriteCounter({ record: decision })
   } catch (error) {

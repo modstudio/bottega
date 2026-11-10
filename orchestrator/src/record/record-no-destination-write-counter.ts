@@ -5,7 +5,7 @@ import type { NoDestinationWrite } from './record-no-destination-write-decision.
 
 export type NoDestinationWriteReport = {
   processStartedAt: string
-  counts: Array<NoDestinationWrite & { occurrences: number }>
+  counts: ReadonlyArray<NoDestinationWrite & { occurrences: number }>
 }
 
 const processStartedAt = new Date().toISOString()
@@ -13,7 +13,7 @@ const counts = new Map<string, NoDestinationWrite & { occurrences: number }>()
 
 export function noDestinationWriteCounter(
   input: { record: NoDestinationWrite } | { read: readonly string[] },
-): NoDestinationWriteReport | void {
+): NoDestinationWriteReport | undefined {
   if ('read' in input) {
     const spaces = new Set(input.read)
     return {

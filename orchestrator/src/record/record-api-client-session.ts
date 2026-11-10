@@ -8,7 +8,7 @@ import type { NoDestinationWriteReport } from './record-no-destination-write-cou
 import type { RecordSyncRequest, RecordSyncResponse } from './record-sync-contract.ts'
 
 export type RecordSessionClient = {
-  noDestinationWrites(): Promise<NoDestinationWriteReport>
+  noDestinationWrites?(): Promise<NoDestinationWriteReport>
   whoami(): Promise<RecordIdentity>
   sync?(input: RecordSyncRequest): Promise<RecordSyncResponse>
 }
@@ -54,8 +54,6 @@ export function recordIdentityResponse(
   )
     throw invalid('record API returned an invalid identity')
   return {
-    noDestinationWrites: () =>
-      request('/v1/health/no-destination-writes', { schema: noDestinationWriteResponse }),
     user: user as RecordIdentity['user'],
     activeSpaceId: value.activeSpaceId,
     personalSpaceId: value.personalSpaceId,
@@ -68,6 +66,8 @@ export function recordSessionClient(
   identitySchema: (body: unknown) => RecordIdentity,
 ): RecordSessionClient {
   return {
+    noDestinationWrites: () =>
+      request('/v1/health/no-destination-writes', { schema: noDestinationWriteResponse }),
     whoami: () => request('/v1/whoami', { schema: identitySchema }),
     sync: (input) => request('/v1/sync', { method: 'POST', body: JSON.stringify(input) }),
   }

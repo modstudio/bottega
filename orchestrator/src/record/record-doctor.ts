@@ -39,6 +39,7 @@ import { machineId } from './machine-identity.ts'
 import { quarantinedOutboxRows } from './outbox-quarantine.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
 import { recordAttributionFailure } from './record-attribution.ts'
+import type { NoDestinationWriteReport } from './record-no-destination-write-counter.ts'
 import { recordPool } from './record-pool.ts'
 import { effectiveProjectSpace } from './record-project-destination.ts'
 import { storedRecordToken } from './record-session.ts'
@@ -75,9 +76,7 @@ export type RecordDoctorFacts = {
   operatorConnectionPresent: boolean
   operatorChecks?: readonly RecordDoctorCheck[]
   agentCredentialChecks?: readonly RecordDoctorCheck[]
-  noDestinationWrites?: Awaited<
-    ReturnType<ReturnType<typeof recordApiClient>['noDestinationWrites']>
-  >
+  noDestinationWrites?: NoDestinationWriteReport
   noDestinationWritesFailure?: string
 }
 
@@ -436,9 +435,11 @@ type CustomerFacts = Omit<RecordDoctorFacts, 'operatorConnectionPresent' | 'oper
 }
 
 async function destinationlessWriteFacts(client: ReturnType<typeof recordApiClient>): Promise<{
-  noDestinationWrites?: Awaited<ReturnType<typeof client.noDestinationWrites>>
+  noDestinationWrites?: NoDestinationWriteReport
   noDestinationWritesFailure?: string
 }> {
+  if (!client.noDestinationWrites)
+    return { noDestinationWritesFailure: 'hosted client does not expose destination-less writes' }
   try {
     return { noDestinationWrites: await client.noDestinationWrites() }
   } catch (error) {

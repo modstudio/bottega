@@ -5,8 +5,8 @@ import { bodyLimit } from 'hono/body-limit'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
-import type { RecordIdentity } from './record-auth.ts'
 import { recordDestinationlessWrite } from './record-api-request-space.ts'
+import type { RecordIdentity } from './record-auth.ts'
 import {
   RECORD_SYNC_BATCH_SIZE,
   RECORD_SYNC_MAX_PAYLOAD_BYTES,
