@@ -66,4 +66,17 @@ describe('hosted destination-less write recording', () => {
       record: { spaceId: 'space-a', route: '/v1/tasks', cause: expect.any(String) },
     })
   })
+
+  test('a counter that throws does not fail the request', async () => {
+    const counter = (() => {
+      throw new Error('counter failed')
+    }) as never
+    const request = new Request('https://hub.example.test/v1/tasks', {
+      method: 'POST',
+      headers: { authorization: 'Bearer token' },
+    })
+    expect(
+      (await taskSpaceIdentity(request, 'https://api.test', identityFetch, true, { counter })).kind,
+    ).toBe('authenticated')
+  })
 })

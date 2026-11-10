@@ -131,13 +131,17 @@ export async function taskSpaceIdentity(
     pathname: new URL(request.url).pathname,
   })
   if (measurement.counted) {
-    ;(dependencies.counter ?? noDestinationWriteCounter)({
-      record: {
-        spaceId: identity.activeSpaceId,
-        route: measurement.route,
-        cause: noDestinationWriteCause(request.headers.get('user-agent')),
-      },
-    })
+    try {
+      ;(dependencies.counter ?? noDestinationWriteCounter)({
+        record: {
+          spaceId: identity.activeSpaceId,
+          route: measurement.route,
+          cause: noDestinationWriteCause(request.headers.get('user-agent')),
+        },
+      })
+    } catch (error) {
+      console.error('record-write no-destination recording failed', error)
+    }
   }
   return {
     kind: 'authenticated',
