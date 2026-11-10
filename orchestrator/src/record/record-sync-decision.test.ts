@@ -54,9 +54,9 @@ test('sync authorization derives user and fallback space only from the session i
 test('sync destination telemetry detects only rows without a space hint', () => {
   expect(recordSyncHasDestinationlessRows([])).toBe(false)
   expect(recordSyncHasDestinationlessRows([{ spaceHint: 'space-a' }])).toBe(false)
-  expect(
-    recordSyncHasDestinationlessRows([{ spaceHint: 'space-a' }, { spaceHint: null }]),
-  ).toBe(true)
+  expect(recordSyncHasDestinationlessRows([{ spaceHint: 'space-a' }, { spaceHint: null }])).toBe(
+    true,
+  )
 })
 
 test('sync machine ownership permits registration and the owner but refuses another user', () => {

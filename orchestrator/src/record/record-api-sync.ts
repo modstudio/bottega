@@ -17,8 +17,8 @@ import {
   type RecordSyncResponse,
 } from './record-sync-contract.ts'
 import {
-  recordSyncHasDestinationlessRows,
   RecordSyncRequestRefusal,
+  recordSyncHasDestinationlessRows,
 } from './record-sync-decision.ts'
 
 type SyncEnvironment = RecordWriteTelemetryEnvironment

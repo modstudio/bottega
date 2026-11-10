@@ -55,10 +55,11 @@ import type {
   RecordSyncRowResult,
 } from './record-sync-contract.ts'
 import {
+  RecordSyncRequestRefusal,
   recordSyncAuthorizationDecision,
   recordSyncClaimSpaceIds,
+  recordSyncNoPersonalSpaceRefusal,
   recordSyncReferenceRefusal as referenceRefusal,
-  RecordSyncRequestRefusal,
 } from './record-sync-decision.ts'
 import * as evidenceLookup from './record-sync-evidence-lookup.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
@@ -996,11 +997,7 @@ export async function syncHostedRecord(input: {
 }): Promise<RecordSyncResponse> {
   const postgres = input.postgres ?? recordPool(input.url)
   const personalSpaceId = input.identity.personalSpaceId
-  if (!personalSpaceId) {
-    throw new RecordSyncRequestRefusal(
-      `record session has no personal space; run \`${PLATFORM_SLUG} record sign-in\` to restore the personal space`,
-    )
-  }
+  if (!personalSpaceId) throw new RecordSyncRequestRefusal(recordSyncNoPersonalSpaceRefusal)
   const destinationSpaceIds = recordSyncClaimSpaceIds(
     input.identity,
     input.request.rows.map((row) => row.spaceHint),

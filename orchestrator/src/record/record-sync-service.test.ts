@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
-import { syncHostedRecord } from './record-sync-service.ts'
 import { RecordSyncRequestRefusal } from './record-sync-decision.ts'
+import { syncHostedRecord } from './record-sync-service.ts'
 
 const actorUrl = process.env.BOTTEGA_RECORD_URL
 const adminUrl = process.env.BOTTEGA_TEST_POSTGRES_URL

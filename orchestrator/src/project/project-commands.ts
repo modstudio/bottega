@@ -10,8 +10,8 @@ import { db, tryWriteContention, writeTransaction } from '../database/db.ts'
 import { listLenses, selectProjectProfile } from '../lens/lenses.ts'
 import { credentialLinesFromRead } from '../mcp/mcp-credential-literal.ts'
 import { readMcpConfigResult } from '../mcp/mcp-probe.ts'
-import { rememberProjectSpace } from '../project-space-cache.ts'
 import { effectiveProjectSpace } from '../project-space.ts'
+import { rememberProjectSpace } from '../project-space-cache.ts'
 import {
   pullRecordCataloguesForSpace,
   RecordCataloguePullError,

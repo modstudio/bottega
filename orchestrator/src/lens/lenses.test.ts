@@ -5,8 +5,8 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db, sessionId } from '../database/db.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { projectByName, upsertProject } from '../project/projects.ts'
-import { rememberProjectSpace } from '../project-space-cache.ts'
 import { rememberActiveRecordSpace } from '../project-space.ts'
+import { rememberProjectSpace } from '../project-space-cache.ts'
 import { BUILT_IN_LENS_SLOTS } from './lens-built-ins.ts'
 import {
   chooseLensProfile,

@@ -9,8 +9,8 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { db, writableDb } from '../database/db.ts'
-import { rememberProjectSpace } from '../project-space-cache.ts'
 import { effectiveProjectSpace, rememberActiveRecordSpace } from '../project-space.ts'
+import { rememberProjectSpace } from '../project-space-cache.ts'
 import { readRecordInstallBinding } from '../record/install-binding.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
 import { applyLensCatalogueRow } from '../record/record-cache-lens.ts'

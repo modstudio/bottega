@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { projects, upsertProject } from '../project/projects.ts'
-import { rememberProjectSpace } from '../project-space-cache.ts'
 import { rememberActiveRecordSpace } from '../project-space.ts'
+import { rememberProjectSpace } from '../project-space-cache.ts'
 import { applyPortCatalogueRow } from '../record/record-cache-port.ts'
 import {
   addDoctrineRuleLocal,

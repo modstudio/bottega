@@ -84,4 +84,6 @@ export function recordSyncReferenceRefusal(reference: { kind: string; id: string
 
 export class RecordSyncRequestRefusal extends Error {}
 
+export const recordSyncNoPersonalSpaceRefusal = `record session has no personal space; run \`${PLATFORM_SLUG} record sign-in\` to restore the personal space`
+
 export class MachineNameRefusal extends RecordSyncRequestRefusal {}
