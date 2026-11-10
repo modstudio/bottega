@@ -1,7 +1,7 @@
 // concern: record-api-client
 /** Builds hosted board root-message requests. */
 
-import type { RecordClientRequest } from './record-api-client-paths.ts'
+import type { RecordClientRequest, RecordRequestDestination } from './record-api-client-paths.ts'
 import type {
   HostedBoardChanges,
   HostedBoardMessage,
@@ -13,13 +13,16 @@ import type {
 } from './record-board-contract.ts'
 
 type BoardRootClient = {
-  listBoardChanges(query: {
-    after?: string
-    limit?: number
-    machineId?: string | null
-    presence?: HostedBoardPresenceInput[]
-    signal?: AbortSignal
-  }): Promise<HostedBoardChanges>
+  listBoardChanges(
+    query: {
+      after?: string
+      limit?: number
+      machineId?: string | null
+      presence?: HostedBoardPresenceInput[]
+      signal?: AbortSignal
+    },
+    destination?: RecordRequestDestination,
+  ): Promise<HostedBoardChanges>
   listBoardMessages(
     query?: HostedBoardOverviewFilters,
     signal?: AbortSignal,
@@ -34,7 +37,7 @@ type BoardRootClient = {
 
 export function recordBoardRootClient(request: RecordClientRequest): BoardRootClient {
   return {
-    listBoardChanges: (query) => {
+    listBoardChanges: (query, destination) => {
       const search = new URLSearchParams()
       if (query.after) search.set('after', query.after)
       if (query.limit) search.set('limit', String(query.limit))
@@ -43,6 +46,7 @@ export function recordBoardRootClient(request: RecordClientRequest): BoardRootCl
       const suffix = search.toString()
       return request(`/v1/board/changes${suffix ? `?${suffix}` : ''}`, {
         signal: query.signal,
+        ...destination,
       })
     },
     listBoardMessages: (query = {}, signal) => {

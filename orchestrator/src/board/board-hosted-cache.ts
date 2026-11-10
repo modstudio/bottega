@@ -3,8 +3,12 @@
 
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
+import { recordWriteSpace } from '../../../shared/record-write-space.ts'
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
+import { declaredRecordSpace } from '../project/declared-record-space.ts'
+import { projectAt, projects } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   type RecordApiClient,
@@ -307,6 +311,7 @@ async function fetchHostedPages(
   now: () => number,
   tally: { applied: number },
   presenceAt: number,
+  bindPresenceSpace: boolean,
 ): Promise<boolean> {
   let after = meta(database, BOARD_REFRESH_CURSOR_KEY) ?? '0'
   const liveSince = new Date(presenceAt - SESSION_LIVE_MS).toISOString()
@@ -317,10 +322,12 @@ async function fetchHostedPages(
        FROM presence WHERE last_seen>=? AND project_record_id IS NOT NULL`,
     )
     .all(liveSince) as import('../record/record-board-contract.ts').HostedBoardPresenceInput[]
+  const destination =
+    bindPresenceSpace && presence.length > 0 ? await boardPresenceDestination(client) : undefined
   while (now() < deadline) {
     const query = { after, limit: BOARD_CHANGES_PAGE_LIMIT, machineId: machineId(), presence }
     const page = await withinHostedBoardRefreshBudget(
-      (signal) => client.listBoardChanges({ ...query, signal }),
+      (signal) => client.listBoardChanges({ ...query, signal }, destination),
       deadline - now(),
     )
     if (establishCacheOwner(database, page.userId)) {
@@ -335,6 +342,26 @@ async function fetchHostedPages(
   }
   await flushReceipts(client, database, deadline, now)
   return false
+}
+
+export async function boardPresenceDestination(
+  client: RecordApiClient,
+  cwd: string = process.cwd(),
+) {
+  const identity = await client.whoami()
+  const registered = [...projects(), ...projects({ retired: true })]
+  const decision = recordWriteSpace(
+    { kind: 'session', checkoutProject: projectAt(cwd)?.name ?? null },
+    {
+      declaredSpaces: Object.fromEntries(
+        registered.map((project) => [project.name, declaredRecordSpace(project.settings)]),
+      ),
+      personalSpaceId: identity.personalSpaceId,
+      memberships: parseRecordSpaceMemberships(identity.memberships),
+    },
+  )
+  if ('refused' in decision) throw new RecordApiRequestError(decision.remedy, 'refused', 409)
+  return { destinationSpaceId: decision.spaceId }
 }
 
 export async function refreshHostedBoard(input: RefreshInput): Promise<HostedBoardRefresh> {
@@ -357,6 +384,7 @@ export async function refreshHostedBoard(input: RefreshInput): Promise<HostedBoa
       now,
       tally,
       startedAt,
+      input.client === undefined,
     )
     recordRefresh(database, now(), 'success')
     return { status: caughtUp ? 'success' : 'incomplete', applied: tally.applied }

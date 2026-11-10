@@ -276,6 +276,149 @@ test('board routes bind every membership space, not only the active space', asyn
   expect(captured[0]).toEqual(['space-a', 'space-b'])
 })
 
+test('a personal active space does not narrow project-addressed posts or task claims', async () => {
+  const personalActive = { ...identity, activeSpaceId: identity.personalSpaceId }
+  const calls: { kind: string; project: string; spaceIds: string[] }[] = []
+  const app = appWith(personalActive, {
+    postBoardMessage: async (input: { id: string; project: string; spaceIds: string[] }) => {
+      calls.push({ kind: 'post', project: input.project, spaceIds: input.spaceIds })
+      return { id: input.id }
+    },
+    takeBoardClaim: async (input: { project: string; spaceIds: string[] }) => {
+      calls.push({ kind: 'claim', project: input.project, spaceIds: input.spaceIds })
+      return { id: newRecordId(), action: 'taken' }
+    },
+  })
+  const post = await app.request('/v1/board/messages', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      id: newRecordId(),
+      kind: 'notice',
+      audience: 'architects',
+      title: 'Project notice',
+      body: 'Visible to the project.',
+      expiresAt,
+      authorSession: 'first-session',
+      authorHarness: 'claude',
+      project: 'bottega',
+    }),
+  })
+  const claim = await app.request('/v1/board/claims', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      id: newRecordId(),
+      project: 'bottega',
+      projectId: newRecordId(),
+      subject: 'task:DEV-2241',
+      holderSession: 'first-session',
+      durationMs: 60_000,
+    }),
+  })
+  expect([post.status, claim.status]).toEqual([200, 200])
+  expect(calls).toEqual([
+    { kind: 'post', project: 'bottega', spaceIds: ['space-a', 'space-b'] },
+    { kind: 'claim', project: 'bottega', spaceIds: ['space-a', 'space-b'] },
+  ])
+})
+
+test('board post, reply, claim, and read work without an active space', async () => {
+  const noActiveSpace = { ...identity, activeSpaceId: null }
+  const bound: Array<{ route: string; spaceId: string; spaceIds: string[] }> = []
+  const capture = (route: string, input: { spaceId: string; spaceIds: string[] }) => {
+    bound.push({ route, spaceId: input.spaceId, spaceIds: input.spaceIds })
+  }
+  const app = appWith(noActiveSpace, {
+    postBoardMessage: async (input: { id: string; spaceId: string; spaceIds: string[] }) => {
+      capture('post', input)
+      return { id: input.id }
+    },
+    replyBoardMessage: async (input: { id: string; spaceId: string; spaceIds: string[] }) => {
+      capture('reply', input)
+      return { id: input.id }
+    },
+    takeBoardClaim: async (input: { spaceId: string; spaceIds: string[] }) => {
+      capture('claim', input)
+      return { id: newRecordId(), action: 'taken' }
+    },
+    listBoardMessages: async (input: { spaceId: string; spaceIds: string[] }) => {
+      capture('read', input)
+      return { messages: [], truncated: false }
+    },
+  })
+  const rootId = newRecordId()
+  const responses = await Promise.all([
+    app.request('/v1/board/messages', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        id: newRecordId(),
+        kind: 'notice',
+        audience: 'architects',
+        title: 'No active space',
+        body: 'The project still addresses this message.',
+        expiresAt,
+        authorSession: 'session-a',
+        project: 'bottega',
+      }),
+    }),
+    app.request(`/v1/board/messages/${rootId}/replies`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: newRecordId(), body: 'Reply', authorSession: 'session-a' }),
+    }),
+    app.request('/v1/board/claims', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        id: newRecordId(),
+        project: 'bottega',
+        projectId: newRecordId(),
+        subject: 'task:DEV-2241',
+        holderSession: 'session-a',
+      }),
+    }),
+    app.request('/v1/board/messages'),
+  ])
+  expect(responses.map((response) => response.status)).toEqual([200, 200, 200, 200])
+  expect(bound.sort((left, right) => left.route.localeCompare(right.route))).toEqual(
+    ['post', 'reply', 'claim', 'read']
+      .map((route) => ({
+        route,
+        spaceId: 'space-a',
+        spaceIds: ['space-a', 'space-b'],
+      }))
+      .sort((left, right) => left.route.localeCompare(right.route)),
+  )
+})
+
+test('board presence binds a named member space and refuses a non-member space', async () => {
+  const spaces: string[] = []
+  const app = appWith(
+    { ...identity, activeSpaceId: identity.personalSpaceId },
+    {
+      listBoardChanges: async (input: { spaceId: string }) => {
+        spaces.push(input.spaceId)
+        return { userId: identity.user.id, items: [], highestRevision: null }
+      },
+    },
+  )
+  const present = await app.request('/v1/board/changes?after=0', {
+    headers: { 'x-record-space': 'space-b' },
+  })
+  expect(present.status).toBe(200)
+  expect(spaces).toEqual(['space-b'])
+  const refused = await app.request('/v1/board/changes?after=0', {
+    headers: { 'x-record-space': 'space-foreign' },
+  })
+  expect(refused.status).toBe(403)
+  expect(await refused.json()).toEqual({
+    error: 'signed-in user is not a member of record space space-foreign',
+    remedy: expect.stringContaining('an invitation from a member of that space is needed'),
+  })
+})
+
 test('board changes query refuses a non-integer after cursor', async () => {
   const app = appWith(identity)
   const response = await app.request('/v1/board/changes?after=abc')

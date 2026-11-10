@@ -222,19 +222,24 @@ export type RecordBoardDeps = {
   ): Promise<{ released: number }>
 }
 
-function boardTenant(recordUrl: string, identity: RecordIdentity): BoardTenant | null {
-  if (!identity.activeSpaceId) return null
+function boardTenant(
+  recordUrl: string,
+  identity: RecordIdentity,
+  destinationSpaceId?: string,
+): BoardTenant | null {
+  const spaceId = destinationSpaceId ?? identity.activeSpaceId ?? identity.memberships[0]?.space_id
+  if (!spaceId) return null
   return {
     url: recordUrl,
     userId: identity.user.id,
-    spaceId: identity.activeSpaceId,
+    spaceId: String(spaceId),
     spaceIds: identity.memberships.map((row) => String(row.space_id)),
   }
 }
 
 function boardRequestTenant(context: BoardRouteContext, recordUrl: string): BoardTenant | null {
   recordDestinationlessWrite(context)
-  return boardTenant(recordUrl, context.get('identity'))
+  return boardTenant(recordUrl, context.get('identity'), context.get('destinationSpaceId'))
 }
 
 function registerBoardStreamRoute(

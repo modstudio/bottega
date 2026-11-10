@@ -669,8 +669,13 @@ describe('record API client test safety', () => {
     const previousUrl = process.env.BOTTEGA_RECORD_API_URL
     process.env.NODE_ENV = 'development'
     process.env.BOTTEGA_RECORD_API_URL = 'https://api.example.test'
-    const calls: Array<{ url: string; method: string; body: unknown; signal: AbortSignal | null }> =
-      []
+    const calls: Array<{
+      url: string
+      method: string
+      body: unknown
+      signal: AbortSignal | null
+      destination: string | null
+    }> = []
     const originalFetch = globalThis.fetch
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = input instanceof Request ? input : new Request(input, init)
@@ -680,6 +685,7 @@ describe('record API client test safety', () => {
         method: request.method,
         body: body ? JSON.parse(body) : null,
         signal: request.signal,
+        destination: request.headers.get('x-record-space'),
       })
       return Response.json({ error: 'nope' }, { status: 409 })
     }) as typeof fetch
@@ -697,6 +703,12 @@ describe('record API client test safety', () => {
             ownTitlePrefix: 'Hosted pressure: %_',
           },
           boardSignal,
+        ),
+      ).rejects.toThrow(/nope/)
+      await expect(
+        client.listBoardChanges(
+          { after: '0', presence: [], signal: boardSignal },
+          { destinationSpaceId: 'project-space' },
         ),
       ).rejects.toThrow(/nope/)
       await expect(client.getBoardThread(id)).rejects.toThrow(/nope/)
@@ -725,22 +737,27 @@ describe('record API client test safety', () => {
         method: 'GET',
       })
       expect(calls[1]).toMatchObject({
+        url: 'https://api.example.test/v1/board/changes?after=0',
+        method: 'GET',
+        destination: 'project-space',
+      })
+      expect(calls[2]).toMatchObject({
         url: `https://api.example.test/v1/board/threads/${id}`,
         method: 'GET',
       })
-      expect(calls[2]).toMatchObject({
+      expect(calls[3]).toMatchObject({
         url: `https://api.example.test/v1/board/messages/${id}/status`,
         method: 'GET',
       })
-      expect(calls[3]).toMatchObject({
+      expect(calls[4]).toMatchObject({
         url: 'https://api.example.test/v1/board/messages',
         method: 'PUT',
         body: { id, kind: 'notice', audience: 'operator', title: 'T', body: 'B' },
       })
-      const posted = calls[3]?.body as Record<string, unknown>
+      const posted = calls[4]?.body as Record<string, unknown>
       expect(posted).not.toHaveProperty('recipientUserIds')
       expect(posted).not.toHaveProperty('claimId')
-      expect(calls[4]).toMatchObject({
+      expect(calls[5]).toMatchObject({
         url: `https://api.example.test/v1/board/messages/${id}/replies`,
         method: 'POST',
         body: { body: 'Directed reply', audience: 'session:in-reach' },

@@ -420,13 +420,16 @@ export type RecordApiClient = ProjectIdentityClient &
       input: HostedBoardReceiptInput,
       signal?: AbortSignal,
     ): Promise<HostedBoardReceipt>
-    listBoardChanges(query: {
-      after?: string
-      limit?: number
-      machineId?: string | null
-      presence?: import('./record-board-contract.ts').HostedBoardPresenceInput[]
-      signal?: AbortSignal
-    }): Promise<HostedBoardChanges>
+    listBoardChanges(
+      query: {
+        after?: string
+        limit?: number
+        machineId?: string | null
+        presence?: import('./record-board-contract.ts').HostedBoardPresenceInput[]
+        signal?: AbortSignal
+      },
+      destination?: RecordRequestDestination,
+    ): Promise<HostedBoardChanges>
     takeBoardSuccessor(input: HostedBoardSuccessorInput): Promise<HostedBoardSuccessorResult>
     takeBoardClaim(
       input: HostedBoardTakeClaimInput,
