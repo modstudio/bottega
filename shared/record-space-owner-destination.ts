@@ -37,13 +37,14 @@ export async function resolveRecordSpaceOwnerDestination(
   flags: RecordSpaceOwnerFlags,
   accepts: readonly RecordSpaceOtherOwner[],
   loadMemberships: () => Promise<readonly RecordSpaceMembership[]>,
-): Promise<Exclude<RecordSpaceOwnerDestination, { kind: 'refused' }>> {
+): Promise<{ spaceId: string; slug: string }> {
   if (!flags.space) {
     const beforeLoad = recordSpaceOwnerDestination(verb, flags, accepts, [])
     if (beforeLoad.kind === 'refused') throw new Error(beforeLoad.remedy)
-    if (beforeLoad.kind === 'other-owner') return beforeLoad
+    if (beforeLoad.kind === 'other-owner') throw new Error(`${verb} owner was not resolved`)
   }
   const destination = recordSpaceOwnerDestination(verb, flags, accepts, await loadMemberships())
   if (destination.kind === 'refused') throw new Error(destination.remedy)
-  return destination
+  if (destination.kind === 'other-owner') throw new Error(`${verb} owner was not resolved`)
+  return { spaceId: destination.spaceId, slug: destination.slug }
 }

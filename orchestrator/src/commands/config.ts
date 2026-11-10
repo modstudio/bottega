@@ -254,7 +254,6 @@ async function selectedMachineSpace(
     [],
     async () => parseRecordSpaceMemberships((await client.whoami()).memberships),
   )
-  if (destination.kind !== 'space') throw new Error('machine space owner was not resolved')
   return destination
 }
 

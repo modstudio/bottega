@@ -79,6 +79,6 @@ describe('resolveRecordSpaceOwnerDestination', () => {
         [],
         async () => memberships,
       ),
-    ).resolves.toEqual({ kind: 'space', spaceId: 'space-id', slug: 'member-space' })
+    ).resolves.toEqual({ spaceId: 'space-id', slug: 'member-space' })
   })
 })

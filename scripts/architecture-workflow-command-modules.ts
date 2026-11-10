@@ -18,10 +18,9 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     '../../../shared/record-id.ts',
   ]),
   module('orchestrator/src/workflow/workflow-write-space.ts', [
-    '../../../shared/record-space-membership.ts',
     '../../../shared/record-space-owner-destination.ts',
     '../cli/args.ts',
-    '../record/record-api-client.ts',
+    '../record/record-space.ts',
   ]),
   module('orchestrator/src/workflow/task-flow-decision.ts', []),
   module('orchestrator/src/workflow/task-flow-read-through.ts', [

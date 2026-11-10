@@ -368,7 +368,6 @@ async function recordSpaceWriteDestination(
     [],
     async () => (await recordMemberships()).memberships,
   )
-  if (destination.kind !== 'space') throw new Error('record space owner was not resolved')
   return destination.spaceId
 }
 

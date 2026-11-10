@@ -2,7 +2,6 @@
 /** Owns lens registry command decisions. Must not know CLI grammar. */
 import { readFileSync } from 'node:fs'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
-import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import {
   type RecordSpaceOtherOwner,
   resolveRecordSpaceOwnerDestination,
@@ -10,7 +9,7 @@ import {
 import { flagValue } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import { type Project, projectAt, projectByName } from '../project/projects.ts'
-import { recordApiClient } from '../record/record-api-client.ts'
+import { recordMemberships } from '../record/record-space.ts'
 import { listLenses, listProfiles, setLens, setProfile, showLens, showProfile } from './lenses.ts'
 
 type LensPresentation = { log(value: string): void }
@@ -169,8 +168,7 @@ async function explicitSpaceDestination(
     verb,
     { space: requested },
     accepts,
-    async () => parseRecordSpaceMemberships((await recordApiClient().whoami()).memberships),
+    async () => (await recordMemberships()).memberships,
   )
-  if (destination.kind !== 'space') throw new Error('lens space owner was not resolved')
   return destination.spaceId
 }

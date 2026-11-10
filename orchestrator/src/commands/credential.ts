@@ -113,7 +113,6 @@ async function selectedCredentialWriteSpace(
     ['project', 'account'],
     loadMemberships,
   )
-  if (destination.kind !== 'space') throw new Error('credential owner was not resolved')
   return {
     projectId: null,
     projectName: undefined,
