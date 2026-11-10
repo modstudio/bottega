@@ -16,7 +16,7 @@ test('architecture violation ratchet reports a new violation', () => {
 
 test('architecture violation ratchet reports fixed baseline entries', () => {
   const fixedBaseline = architectureViolationRatchet([]).fixedBaseline
-  expect(fixedBaseline).toEqual(architectureViolationBaseline)
+  expect(fixedBaseline).toEqual([...architectureViolationBaseline])
   expect(fixedBaseline.length).toBeGreaterThan(0)
 })
 
