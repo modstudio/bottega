@@ -4,6 +4,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
+import type { RecordApiClient } from '../record/record-api-client.ts'
 import { refreshHostedBoard } from './board-hosted-cache.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
 import { boardPresenceDestination, boardWriteDestination } from './board-write-destination.ts'
@@ -136,11 +137,11 @@ test('refresh sends only the checkout projects presence and none outside a proje
   const client = {
     ...createMemoryRecordApiClient(),
     listBoardChanges: async (
-      query: { presence: { session: string }[] },
-      destination?: { destinationSpaceId?: string },
+      query: Parameters<RecordApiClient['listBoardChanges']>[0],
+      destination?: Parameters<RecordApiClient['listBoardChanges']>[1],
     ) => {
       sent = destination?.destinationSpaceId
-      sentPresence.push(query.presence.map((row) => row.session))
+      sentPresence.push((query.presence ?? []).map((row) => row.session))
       return { userId: 'user-a', items: [], highestRevision: null }
     },
   }

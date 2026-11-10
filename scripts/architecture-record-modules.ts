@@ -485,14 +485,6 @@ export const recordModules: RecordModule[] = [
     './record-auth.ts',
     './record-project-destination.ts',
   ]),
-  module('orchestrator/src/record/record-write-destination.ts', [
-    '../../../shared/record-space-membership.ts',
-    '../../../shared/record-write-space.ts',
-    '../project/declared-record-space.ts',
-    '../project/projects.ts',
-    './record-api-client.ts',
-    './record-api-client-paths.ts',
-  ]),
   module('orchestrator/src/record/record-cache-ownership.ts', ['../doc/doc-write-allowed.ts']),
   module('orchestrator/src/record/record-doc-lifecycle.ts', [
     'bun',

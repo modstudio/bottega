@@ -3,6 +3,7 @@
 
 import type { Hono } from 'hono'
 import { registerRecordBoardRoutes } from './record-api-board.ts'
+import { boardNoSpace } from './record-api-board-refusal.ts'
 import { registerRecordConfigAccessRoutes } from './record-api-config-access-routes.ts'
 import { registerRecordDocCountsRoute } from './record-api-doc-counts.ts'
 import { registerRecordDocOrderRoute } from './record-api-doc-order.ts'
@@ -44,9 +45,7 @@ type Ports = Parameters<typeof registerRecordProjectRoutes>[2] &
   Parameters<typeof registerRecordModerationRoutes>[2] &
   Parameters<typeof registerRecordOutsideIntakeRoutes>[2] &
   Parameters<typeof registerRecordDocOrderRoute>[2] &
-  Parameters<typeof registerRecordDocCountsRoute>[2] & {
-    boardNoSpace: Parameters<typeof registerRecordBoardRoutes>[2]['noSpace']
-  }
+  Parameters<typeof registerRecordDocCountsRoute>[2]
 
 export function registerRecordWriteRoutes(
   app: Hono<ApiEnvironment>,
@@ -55,7 +54,7 @@ export function registerRecordWriteRoutes(
 ): void {
   registerRecordProjectRoutes(app, deps, ports)
   registerRecordSettingsRoutes(app, deps, ports)
-  registerRecordBoardRoutes(app, deps, { ...ports, noSpace: ports.boardNoSpace })
+  registerRecordBoardRoutes(app, deps, { ...ports, noSpace: boardNoSpace })
   registerRecordMachineKeyClaimRoutes(app, deps, ports)
   registerRecordConfigAccessRoutes(app, deps, ports)
   registerRecordMemberPermissionRoutes(app, deps, ports)
