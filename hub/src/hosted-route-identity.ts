@@ -1,3 +1,4 @@
+import { NO_DESTINATION_WRITE_CAUSE_LENGTH } from '../../shared/record-no-destination-write-contract.ts'
 import { noDestinationWriteCounter } from '../../shared/record-no-destination-write-counter.ts'
 import {
   hostedRequestSafetyStatement,
@@ -8,10 +9,7 @@ import {
   type RecordSpaceMembership,
 } from '../../shared/record-space-membership.ts'
 import { recordSpaceRequestDecision } from '../../shared/record-space-request.ts'
-import {
-  HOSTED_NO_DESTINATION_CAUSE_LENGTH,
-  hostedNoDestinationWriteDecision,
-} from './hosted-no-destination-write-decision.ts'
+import { hostedNoDestinationWriteDecision } from './hosted-no-destination-write-decision.ts'
 
 type RecordIdentity = {
   userId: string
@@ -129,7 +127,7 @@ export async function taskSpaceIdentity(
           route: measurement.route,
           cause: (request.headers.get('user-agent')?.trim() || 'unknown').slice(
             0,
-            HOSTED_NO_DESTINATION_CAUSE_LENGTH,
+            NO_DESTINATION_WRITE_CAUSE_LENGTH,
           ),
         },
       })

@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { destinationlessWrite, MAX_CAUSE_LENGTH } from './record-no-destination-write-decision.ts'
+import { NO_DESTINATION_WRITE_CAUSE_LENGTH } from '../../../shared/record-no-destination-write-contract.ts'
+import { destinationlessWrite } from './record-no-destination-write-decision.ts'
 
 const input = {
   method: 'POST',
@@ -24,9 +25,9 @@ test('does not record reads or writes with a destination', () => {
 })
 
 test('bounds and normalizes the client cause', () => {
-  const longCause = 'a'.repeat(MAX_CAUSE_LENGTH + 1)
+  const longCause = 'a'.repeat(NO_DESTINATION_WRITE_CAUSE_LENGTH + 1)
   expect(destinationlessWrite({ ...input, userAgent: longCause })?.cause).toBe(
-    'a'.repeat(MAX_CAUSE_LENGTH),
+    'a'.repeat(NO_DESTINATION_WRITE_CAUSE_LENGTH),
   )
   expect(destinationlessWrite({ ...input, userAgent: '   ' })?.cause).toBe('unknown')
 })

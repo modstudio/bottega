@@ -19,6 +19,7 @@ import {
   NO_DESTINATION_WRITES_ROUTE,
   type NoDestinationWriteReport,
   type NoDestinationWriteReportRow,
+  parseNoDestinationWriteReport,
 } from '../../../shared/record-no-destination-write-contract.ts'
 import {
   RECORD_ACTIVE_SPACE_REMEDY,
@@ -117,40 +118,43 @@ function destinationlessWriteDetail(
   ].join('\n')
 }
 
-function destinationlessWriteCheck(facts: RecordDoctorFacts): RecordDoctorCheck {
-  return facts.noDestinationWrites
+function destinationlessCheck(
+  name: string,
+  report: NoDestinationWriteReport | undefined,
+  failure: string | undefined,
+  fallback: string,
+): RecordDoctorCheck {
+  return report
     ? {
-        name: 'destination-less hosted writes',
+        name,
         status: 'pass',
-        detail: destinationlessWriteDetail(facts.noDestinationWrites),
+        detail: destinationlessWriteDetail(report),
         section: 'customer',
       }
     : {
-        name: 'destination-less hosted writes',
+        name,
         status: 'fail',
-        detail:
-          facts.noDestinationWritesFailure ??
-          `hosted route ${NO_DESTINATION_WRITES_ROUTE} was not measured; ${API_REACHABILITY_REMEDY}`,
+        detail: failure ?? fallback,
         section: 'customer',
       }
 }
 
+function destinationlessWriteCheck(facts: RecordDoctorFacts): RecordDoctorCheck {
+  return destinationlessCheck(
+    'destination-less hosted writes',
+    facts.noDestinationWrites,
+    facts.noDestinationWritesFailure,
+    `hosted route ${NO_DESTINATION_WRITES_ROUTE} was not measured; ${API_REACHABILITY_REMEDY}`,
+  )
+}
+
 function hostedHubDestinationlessWriteCheck(facts: RecordDoctorFacts): RecordDoctorCheck {
-  return facts.hubNoDestinationWrites
-    ? {
-        name: 'destination-less hosted hub writes',
-        status: 'pass',
-        detail: destinationlessWriteDetail(facts.hubNoDestinationWrites),
-        section: 'customer',
-      }
-    : {
-        name: 'destination-less hosted hub writes',
-        status: 'fail',
-        detail:
-          facts.hubNoDestinationWritesFailure ??
-          `hosted hub route ${NO_DESTINATION_WRITES_ROUTE} was not measured; ${HOSTED_APP_REACHABILITY_REMEDY}`,
-        section: 'customer',
-      }
+  return destinationlessCheck(
+    'destination-less hosted hub writes',
+    facts.hubNoDestinationWrites,
+    facts.hubNoDestinationWritesFailure,
+    `hosted hub route ${NO_DESTINATION_WRITES_ROUTE} was not measured; ${HOSTED_APP_REACHABILITY_REMEDY}`,
+  )
 }
 
 function attributionFailureCheck(failure: string | null): RecordDoctorCheck {
@@ -477,28 +481,6 @@ async function destinationlessWriteFacts(client: ReturnType<typeof recordApiClie
   }
 }
 
-function parseNoDestinationWriteReport(value: unknown): NoDestinationWriteReport {
-  if (!value || typeof value !== 'object' || Array.isArray(value))
-    throw new Error('hosted hub returned invalid destination-less write counts')
-  const report = value as Record<string, unknown>
-  if (typeof report.processStartedAt !== 'string' || !Array.isArray(report.counts))
-    throw new Error('hosted hub returned invalid destination-less write counts')
-  const counts = report.counts.map((input) => {
-    if (!input || typeof input !== 'object' || Array.isArray(input))
-      throw new Error('hosted hub returned invalid destination-less write counts')
-    const row = input as Record<string, unknown>
-    if (
-      typeof row.spaceId !== 'string' ||
-      typeof row.route !== 'string' ||
-      typeof row.cause !== 'string' ||
-      !Number.isInteger(row.occurrences)
-    )
-      throw new Error('hosted hub returned invalid destination-less write counts')
-    return row as NoDestinationWriteReportRow
-  })
-  return { processStartedAt: report.processStartedAt, counts }
-}
-
 export async function hostedHubDestinationlessWriteFacts(input: {
   hostedUrl?: string
   token: string
@@ -520,7 +502,9 @@ export async function hostedHubDestinationlessWriteFacts(input: {
       return {
         hubNoDestinationWritesFailure: `hosted hub route ${NO_DESTINATION_WRITES_ROUTE} returned ${response.status}; ${HOSTED_APP_REACHABILITY_REMEDY}`,
       }
-    return { hubNoDestinationWrites: parseNoDestinationWriteReport(await response.json()) }
+    return {
+      hubNoDestinationWrites: parseNoDestinationWriteReport(await response.json(), 'hosted hub'),
+    }
   } catch (error) {
     return {
       hubNoDestinationWritesFailure: `hosted hub route ${NO_DESTINATION_WRITES_ROUTE} failed: ${error instanceof Error ? error.message : String(error)}; ${HOSTED_APP_REACHABILITY_REMEDY}`,

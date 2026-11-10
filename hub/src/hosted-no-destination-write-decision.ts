@@ -3,7 +3,6 @@
 
 import { recordRequestNature } from '../../shared/record-space-request.ts'
 
-export const HOSTED_NO_DESTINATION_CAUSE_LENGTH = 200
 const UNLISTED_HOSTED_WRITE_ROUTE = '(unlisted)'
 
 const hostedWriteRoutes = [

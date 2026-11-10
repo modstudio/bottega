@@ -215,6 +215,24 @@ describe('hosted destination-less write report', () => {
     expect(response.status).toBe(401)
   })
 
+  test('refuses a requested space outside the caller memberships with JSON guidance', async () => {
+    const response = await hostedRequestHandler(config, {
+      noDestinationWrites: { fetch: identityFetch },
+    })(
+      new Request('https://hub.example.test/v1/health/no-destination-writes', {
+        headers: {
+          authorization: 'Bearer token',
+          'x-record-space': 'space-c',
+        },
+      }),
+    )
+    expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({
+      error: "record space 'space-c' is not among the caller's memberships",
+      remedy: `Run \`${PLATFORM_SLUG} record space list\` and choose a space where the caller is a member.`,
+    })
+  })
+
   test('reports only spaces in the authenticated caller memberships', async () => {
     const reads: string[][] = []
     const response = await hostedRequestHandler(config, {
