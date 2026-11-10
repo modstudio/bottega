@@ -5,7 +5,6 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { recordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
-import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { flagValue } from '../cli/args.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 
@@ -25,8 +24,12 @@ export const obligationUuid = (value: string | undefined): string | undefined =>
   return value.toLowerCase()
 }
 
-export async function workflowWriteSpace(verb: string, argv: string[]): Promise<string> {
-  if (!recordApiConfigured()) return ''
+export async function workflowWriteSpace(
+  verb: string,
+  argv: string[],
+  hostedConfigured: boolean,
+): Promise<string> {
+  if (!hostedConfigured) return ''
   const requested = flagValue(argv, 'space')
   if (!requested) {
     const missing = recordSpaceOwnerDestination(verb, { space: requested }, [])

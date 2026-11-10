@@ -182,7 +182,7 @@ export async function promoteWorkflowCommand(argv: string[], print: WorkflowPrin
       flagValue(argv, 'author'),
       undefined,
       undefined,
-      await workflowWriteSpace('workflow promote', argv),
+      await workflowWriteSpace('workflow promote', argv, recordApiConfigured()),
     ),
   )
 }
@@ -195,7 +195,7 @@ export async function retireWorkflowCommand(argv: string[], print: WorkflowPrint
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
       undefined,
-      await workflowWriteSpace('workflow retire', argv),
+      await workflowWriteSpace('workflow retire', argv, recordApiConfigured()),
     ),
   )
 }
@@ -208,7 +208,7 @@ export async function forkWorkflowCommand(argv: string[], print: WorkflowPrint):
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
       undefined,
-      await workflowWriteSpace('workflow fork', argv),
+      await workflowWriteSpace('workflow fork', argv, recordApiConfigured()),
     ),
   )
 }
@@ -540,7 +540,7 @@ export async function setWorkflowCommand(argv: string[], print: WorkflowPrint): 
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
       undefined,
-      await workflowWriteSpace('workflow set', argv),
+      await workflowWriteSpace('workflow set', argv, recordApiConfigured()),
     ),
   )
 }
@@ -802,7 +802,7 @@ export async function setCatalogueCommand(argv: string[], print: WorkflowPrint):
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
       undefined,
-      await workflowWriteSpace('workflow catalogue set', argv),
+      await workflowWriteSpace('workflow catalogue set', argv, recordApiConfigured()),
     ),
   )
 }
@@ -815,7 +815,7 @@ export async function promoteCatalogueCommand(argv: string[], print: WorkflowPri
       flagValue(argv, 'author'),
       undefined,
       undefined,
-      await workflowWriteSpace('workflow catalogue promote', argv),
+      await workflowWriteSpace('workflow catalogue promote', argv, recordApiConfigured()),
     ),
   )
 }
@@ -827,7 +827,7 @@ export async function retireCatalogueCommand(argv: string[], print: WorkflowPrin
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
       undefined,
-      await workflowWriteSpace('workflow catalogue retire', argv),
+      await workflowWriteSpace('workflow catalogue retire', argv, recordApiConfigured()),
     ),
   )
 }

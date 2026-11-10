@@ -18,7 +18,7 @@ test('a local-only workflow write needs no space and makes no hosted call', asyn
   })
 
   try {
-    expect(await workflowWriteSpace('workflow set', ['workflow', 'set'])).toBe('')
+    expect(await workflowWriteSpace('workflow set', ['workflow', 'set'], false)).toBe('')
     expect(whoamiCalls).toBe(0)
   } finally {
     if (previousRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL

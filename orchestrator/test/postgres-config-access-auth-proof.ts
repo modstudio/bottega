@@ -197,7 +197,8 @@ export function registerConfigAccessSpaceCreationProof(input: {
     const auth = testRecordAuth(input.actorUrl(), input.authUrl())
     const previous = await auth.api.getSession({ headers })
     const previousSpaceId = previous?.session.activeOrganizationId
-    if (!previousSpaceId) throw new Error('config access destination proof user has no active space')
+    if (!previousSpaceId)
+      throw new Error('config access destination proof user has no active space')
     try {
       input.succeeds(`
         INSERT INTO space (id,name,slug,created_at) VALUES
