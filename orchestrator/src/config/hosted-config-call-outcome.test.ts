@@ -21,8 +21,6 @@ test('hosted config client records call outcomes', async () => {
   await new Promise((resolve) => setTimeout(resolve, 0))
 
   expect(
-    database
-      .query('SELECT route_class,http_status FROM hosted_call_outcome ORDER BY rowid')
-      .all(),
+    database.query('SELECT route_class,http_status FROM hosted_call_outcome ORDER BY rowid').all(),
   ).toEqual([{ route_class: 'config-identity', http_status: 200 }])
 })

@@ -3,7 +3,7 @@
 import { createInterface } from 'node:readline/promises'
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { type ConfigClient, type ConfigScope } from '../../../shared/config-client.ts'
+import type { ConfigClient, ConfigScope } from '../../../shared/config-client.ts'
 import { isDelegationKey } from '../../../shared/delegation-mode.ts'
 import { listMachineEntries } from '../../../shared/machine-config.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'

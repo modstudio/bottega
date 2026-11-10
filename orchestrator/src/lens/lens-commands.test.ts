@@ -1,8 +1,8 @@
 import { expect, spyOn, test } from 'bun:test'
-import { Command } from 'commander'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
