@@ -6,6 +6,10 @@ import { z } from 'zod'
 import { type ProseGateField, proseGate } from '../../../shared/prose/prose-gate.ts'
 import { parseReplyAudienceOption } from '../board/board-reply-audience.ts'
 import { hostedProseOptions } from './record-api-prose.ts'
+import {
+  type RecordWriteTelemetryEnvironment,
+  recordDestinationlessWrite,
+} from './record-api-write-telemetry.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
   BOARD_CHANGES_PAGE_LIMIT,
@@ -39,13 +43,7 @@ import {
 } from './record-board-stream.ts'
 import { type BoardTenant, hostedBoardStoreRefusal } from './record-board-tx.ts'
 
-type ApiEnvironment = {
-  Variables: {
-    identity: RecordIdentity
-    destinationSpaceId?: string
-    destinationlessWriteRecorded?: true
-  }
-}
+type ApiEnvironment = RecordWriteTelemetryEnvironment
 type BoardRouteContext = Context<ApiEnvironment>
 
 const idSchema = z.string().uuid()
@@ -240,6 +238,7 @@ function boardTenant(
 }
 
 function boardRequestTenant(context: BoardRouteContext, recordUrl: string): BoardTenant | null {
+  recordDestinationlessWrite(context)
   return boardTenant(recordUrl, context.get('identity'), context.get('destinationSpaceId'))
 }
 

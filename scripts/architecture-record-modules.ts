@@ -988,6 +988,7 @@ export const recordModules: RecordModule[] = [
     'zod',
     '../board/board-reply-audience.ts',
     './record-auth.ts',
+    './record-api-write-telemetry.ts',
     './record-api-prose.ts',
     './record-board-stream.ts',
     './record-board-contract.ts',
