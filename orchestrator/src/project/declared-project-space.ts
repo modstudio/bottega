@@ -2,6 +2,7 @@
 /** Decides whether a registered project declares its record space. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { declaredRecordSpace } from '../record/record-project-destination.ts'
 import type { Project } from './projects.ts'
 
 export function declaredProjectSpaceRemedy(project: string): string {
@@ -11,8 +12,8 @@ export function declaredProjectSpaceRemedy(project: string): string {
 export function declaredProjectSpace(
   project: Pick<Project, 'name' | 'settings'>,
 ): { space: string } | { refused: string } {
-  const space = project.settings.space
-  return typeof space === 'string' && space.trim()
+  const space = declaredRecordSpace(project.settings)
+  return space
     ? { space }
     : {
         refused: `project ${project.name} has no declared record space; run \`${declaredProjectSpaceRemedy(project.name)}\``,

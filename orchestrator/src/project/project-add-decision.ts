@@ -14,6 +14,7 @@ import {
 } from '../record/record-project-columns.ts'
 import { retiredHostedProjectMessage } from './project-retired-hosted.ts'
 import { type ProjectSettings, stableSettingsJson } from './project-settings.ts'
+import { PROJECT_SPACE_INPUTS_MUST_MATCH } from './project-space-refusals.ts'
 
 export type AddHostedProject = RecordProject
 
@@ -174,7 +175,7 @@ export function decideProjectAdd(input: {
     return {
       decision: {
         kind: 'refuse',
-        reason: '--space and settings.space must name the same record space',
+        reason: PROJECT_SPACE_INPUTS_MUST_MATCH,
       },
     }
   }

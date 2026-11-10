@@ -10,8 +10,12 @@ import {
   requireHostedRecord,
   throwIfRecordRefused,
 } from '../record/record-write-authority.ts'
-import { declaredProjectSpaceRemedy } from './declared-project-space.ts'
-import { decideProjectSpaceFill, type FillSpaceDecision } from './project-fill-space-decision.ts'
+import {
+  decideProjectSpaceFill,
+  type FillSpaceDecision,
+  hostedProjectSpaceSlugs,
+  projectSpaceFillRemedy,
+} from './project-fill-space-decision.ts'
 import { projects } from './projects.ts'
 
 export type ProjectSpaceFillRow = {
@@ -47,15 +51,14 @@ export async function planProjectSpaceFill(): Promise<ProjectSpaceFillRow[]> {
       memberships,
       hostedSpaceIds,
     })
-    const hostedSpaces = [...new Set(hostedSpaceIds)]
-      .map((spaceId) => memberships.find((membership) => membership.spaceId === spaceId)!.slug)
-      .sort()
+    const hostedSpaces = hostedProjectSpaceSlugs(memberships, hostedSpaceIds)
+    const declaredSpace = project.settings.space ?? null
     return {
       project: project.name,
-      declaredSpace: project.settings.space ?? null,
+      declaredSpace,
       hostedSpaces,
       decision,
-      remedy: declaredProjectSpaceRemedy(project.name),
+      remedy: projectSpaceFillRemedy(project.name, declaredSpace, decision),
     }
   })
 }

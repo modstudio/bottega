@@ -19,6 +19,7 @@ import { migrateCreate } from '../worktree/worktree-template.ts'
 import { declaredProjectSpace } from './declared-project-space.ts'
 import { projectAddDecision } from './project-add-record.ts'
 import { type ProjectSpaceFillRow, planProjectSpaceFill } from './project-fill-space.ts'
+import { spaceFillNeedsRuling } from './project-fill-space-decision.ts'
 import { hostedProjectDestination, refuseHostedProjectSpaceChange } from './project-hosted-write.ts'
 import { fillProjectRecordIds } from './project-record-identity.ts'
 import { formatProjectRelink, relinkProjectByName } from './project-relink.ts'
@@ -114,7 +115,6 @@ const enabledLensIds = (spaceId: string | null): string[] =>
 
 function listedProjectJson(project: Project) {
   const { recordId, retiredAt, ...rest } = project
-  const declared = declaredProjectSpace(project)
   return {
     ...rest,
     visibility: project.settings.visibility ?? null,
@@ -122,13 +122,18 @@ function listedProjectJson(project: Project) {
     repository: isProjectRepository(project),
     ...(retiredAt ? { retired_at: retiredAt } : {}),
     lifecycle_form: projectLifecycleForm(project),
-    problems: [
-      ...validateProjectSettings(project.settings, 'strip', project.path),
-      ...('refused' in declared && !project.retiredAt ? [declared.refused] : []),
-    ],
+    problems: projectProblems(project),
     commit_hooks_skipped: true,
     gate: typeof project.settings.gate === 'string' ? project.settings.gate : null,
   }
+}
+
+function projectProblems(project: Project): string[] {
+  const declared = declaredProjectSpace(project)
+  return [
+    ...validateProjectSettings(project.settings, 'strip', project.path),
+    ...('refused' in declared && !project.retiredAt ? [declared.refused] : []),
+  ]
 }
 
 function emptyProjectListMessage(retired: boolean): string {
@@ -151,12 +156,7 @@ function printProjectRows(all: Project[], presentation: ProjectPresentation): vo
     )
     const keys = Object.keys(p.settings)
     if (keys.length) presentation.log(`${' '.repeat(14)} settings: ${keys.join(', ')}`)
-    const declared = declaredProjectSpace(p)
-    const problems = [
-      ...validateProjectSettings(p.settings, 'strip', p.path),
-      ...('refused' in declared && !p.retiredAt ? [declared.refused] : []),
-    ]
-    for (const problem of problems) {
+    for (const problem of projectProblems(p)) {
       presentation.log(`${p.name}: ${problem}`)
     }
     // Reported, not enforced: a half-configured project should say so and
@@ -769,7 +769,7 @@ function printProjectSpaceFillRow(
         : row.decision.kind === 'mismatch'
           ? ` declared=${row.decision.declared} hosted=${row.decision.spaces.join(', ') || '(none)'}`
           : ''
-  const needsRuling = row.decision.kind !== 'ok' && row.decision.kind !== 'fill'
+  const needsRuling = spaceFillNeedsRuling(row.decision)
   const remedy = needsRuling ? `; remedy: ${row.remedy}` : ''
   presentation.log(
     `${row.project}: ${row.decision.kind}${detail}; declared ${declared}; hosted ${hosted}${remedy}`,
@@ -804,12 +804,7 @@ async function fillProjectSpacesCommand(
   } else {
     for (const row of rows) printProjectSpaceFillRow(row, applied.has(row.project), presentation)
   }
-  if (
-    apply &&
-    rows.some(({ decision }) =>
-      ['several-spaces', 'no-hosted-row', 'mismatch'].includes(decision.kind),
-    )
-  ) {
+  if (apply && rows.some(({ decision }) => spaceFillNeedsRuling(decision))) {
     presentation.exitCode?.(1)
   }
 }

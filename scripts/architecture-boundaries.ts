@@ -674,6 +674,7 @@ export const importBoundaries: ImportBoundary[] = [
       './declared-project-space.ts',
       './project-add-record.ts',
       './project-fill-space.ts',
+      './project-fill-space-decision.ts',
       './project-hosted-write.ts',
       './project-record-identity.ts',
       './project-relink.ts',

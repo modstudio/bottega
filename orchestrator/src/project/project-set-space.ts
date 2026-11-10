@@ -2,6 +2,7 @@
 /** Normalizes project set's two space inputs before the register write path. */
 
 import { parseSettingsPatch } from './project-settings-patch.ts'
+import { PROJECT_SPACE_INPUTS_MUST_MATCH } from './project-space-refusals.ts'
 
 export async function projectSetSettingsPatch(
   settingsJson: string | undefined,
@@ -13,7 +14,7 @@ export async function projectSetSettingsPatch(
   if (supplied && Object.hasOwn(supplied, 'space')) {
     const suppliedSpace = supplied.space
     if (typeof suppliedSpace !== 'string' || !suppliedSpace.trim()) {
-      throw new Error('--space and settings.space must name the same record space')
+      throw new Error(PROJECT_SPACE_INPUTS_MUST_MATCH)
     }
     const [selectedId, suppliedId] = await Promise.all([
       resolveSpaceId(selectedSpace),
@@ -21,7 +22,7 @@ export async function projectSetSettingsPatch(
     ])
     const same =
       selectedId && suppliedId ? selectedId === suppliedId : selectedSpace === suppliedSpace
-    if (!same) throw new Error('--space and settings.space must name the same record space')
+    if (!same) throw new Error(PROJECT_SPACE_INPUTS_MUST_MATCH)
   }
   return { ...supplied, space: selectedSpace }
 }

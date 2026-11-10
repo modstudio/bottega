@@ -8,6 +8,12 @@ test('returns a declared project space', () => {
   })
 })
 
+test('returns a trimmed declared project space', () => {
+  expect(declaredProjectSpace({ name: 'fixture', settings: { space: '  team  ' } })).toEqual({
+    space: 'team',
+  })
+})
+
 test('refuses a missing project space with the register remedy', () => {
   expect(declaredProjectSpace({ name: 'fixture', settings: {} })).toEqual({
     refused: `project fixture has no declared record space; run \`${PLATFORM_SLUG} project set fixture --space <slug>\``,

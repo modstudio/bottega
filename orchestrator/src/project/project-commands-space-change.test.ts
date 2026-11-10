@@ -243,6 +243,38 @@ test('project fill-space reads matching hosted rows from each member space', asy
   })
 })
 
+test('project fill-space default ports keep dry runs read-only and apply the fill', async () => {
+  const name = 'fill-default-ports'
+  upsertProject({ recordId: newRecordId(), name, path: `/w/${name}` })
+  const hosted = {
+    id: newRecordId(),
+    name,
+    spaceId: 'space-next',
+    spaceName: 'Next Team',
+    keyPrefixes: [],
+    stack: null,
+    managedContext: false,
+    landingBranch: null,
+    color: null,
+    colorDark: null,
+    canon: true,
+    settings: {},
+    retiredAt: null,
+  }
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    whoami: async () => identity,
+    listProjects: async (destination) =>
+      destination?.destinationSpaceId === 'space-next' ? [hosted] : [],
+  })
+
+  await runProject(['project', 'fill-space'], {})
+  expect(projectByName(name)?.settings.space).toBeUndefined()
+
+  await runProject(['project', 'fill-space'], { apply: true })
+  expect(projectByName(name)?.settings.space).toBe('next-team')
+})
+
 test('fill-absent refuses a hosted row elsewhere before writing hosted or local settings', async () => {
   upsertProject({ recordId: newRecordId(), name: 'fill-space-move', path: '/w/fill-space-move' })
   let writes = 0
