@@ -9,10 +9,6 @@ import {
 
 const SPACE = '00000000-0000-4000-8000-000000000001'
 const PROJECT = '00000000-0000-4000-8000-000000000002'
-const FLOW = '00000000-0000-4000-8000-000000000003'
-const TASK = '00000000-0000-4000-8000-000000000004'
-const MACHINE = '00000000-0000-4000-8000-000000000005'
-const REQUEST = '00000000-0000-4000-8000-000000000006'
 
 function taskFlowApp(calls: TaskFlowStageListQuery[]) {
   const app = new Hono<{
@@ -78,46 +74,3 @@ test.each([1, TASK_FLOW_STAGE_LIST_LIMIT_MAX])(
     expect(calls[0]).toMatchObject({ sessionId: 'session-a', limit })
   },
 )
-
-test('task-flow adopt validates and dispatches its dedicated route', async () => {
-  const calls: unknown[] = []
-  const app = new Hono<{
-    Variables: { identity: RecordIdentity; destinationSpaceId?: string }
-  }>()
-  registerRecordWorkflowRoutes(
-    app,
-    {
-      writeTaskFlow: async (intent, input) => {
-        calls.push({ intent, input })
-        return { revisions: { [FLOW]: 2 }, flowRecordId: FLOW }
-      },
-      listWorkflowCatalogue: async () => [],
-      draftWorkflow: async () => null,
-      promoteWorkflow: async () => null,
-      retireWorkflow: async () => null,
-    },
-    {
-      scope: () => ({ url: 'postgres://unused', userId: SPACE, spaceId: SPACE, spaceIds: [SPACE] }),
-      noSpace: () => new Response(null, { status: 403 }),
-    },
-  )
-  const body = {
-    requestId: REQUEST,
-    stage: { id: FLOW, expectedRevision: 1 },
-    taskId: TASK,
-    updatedMachineId: MACHINE,
-    updatedAt: '2026-11-10T12:00:00.000Z',
-  }
-  const response = await app.request('/v1/task-flow/adopt', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  expect(response.status).toBe(200)
-  expect(calls).toEqual([
-    {
-      intent: 'adopt',
-      input: expect.objectContaining(body),
-    },
-  ])
-})

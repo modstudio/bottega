@@ -47,8 +47,9 @@ const stageInsert = z.object({
   updatedAt: stamp,
 })
 
+const revisionReference = z.object({ id, expectedRevision: revision })
 const mutation = <T extends z.ZodRawShape>(values: z.ZodObject<T>) =>
-  z.object({ id, expectedRevision: revision, values })
+  revisionReference.extend({ values })
 
 const flowComposeValues = z.object({
   state: z.enum(['open', 'done', 'dropped']).optional(),
@@ -195,8 +196,9 @@ const taskFlowAbandonSchema = z.object({
 })
 const taskFlowAdoptSchema = z.object({
   ...base,
-  stage: z.object({ id, expectedRevision: revision }),
+  stage: revisionReference,
   taskId: id,
+  state: z.enum(['open', 'done', 'dropped']).optional(),
   updatedMachineId: id,
   updatedAt: stamp,
 })
