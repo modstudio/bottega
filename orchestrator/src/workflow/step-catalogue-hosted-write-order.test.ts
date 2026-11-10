@@ -15,6 +15,7 @@ import {
 import { sharedPromotionTargetSpaces } from './workflow-shared-promotion-store.ts'
 
 const SPACE = '01990000-0000-7000-8000-000000000223'
+const ACTIVE_SPACE = '01990000-0000-7000-8000-000000000225'
 const setStepCatalogue = (definition: unknown, reason: string) =>
   setStepCatalogueService(definition, reason, undefined, undefined, SPACE)
 const promoteStepCatalogue = (
@@ -27,8 +28,8 @@ const promoteStepCatalogue = (
 const at = '2026-10-18T12:00:00.000Z'
 const whoami = async () => ({
   user: { id: newRecordId() },
-  activeSpaceId: SPACE,
-  personalSpaceId: SPACE,
+  activeSpaceId: ACTIVE_SPACE,
+  personalSpaceId: ACTIVE_SPACE,
   memberships: [],
 })
 
@@ -157,7 +158,7 @@ test('hosted catalogue promotion selects the project space instead of the active
     version: 1,
     changedSpaces: [projectSpace],
   })
-  expect(destinations).not.toContain(SPACE)
+  expect(destinations).not.toContain(ACTIVE_SPACE)
   expect(new Set(destinations)).toEqual(new Set([projectSpace]))
 })
 
@@ -179,7 +180,8 @@ test('hosted catalogue set and promote are inert on failure and adopt hosted ids
       .get(),
     ownerId = newRecordId(),
     versionId = newRecordId(),
-    setEventId = newRecordId()
+    setEventId = newRecordId(),
+    writeDestinations: (string | undefined)[] = []
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
@@ -233,7 +235,8 @@ test('hosted catalogue set and promote are inert on failure and adopt hosted ids
         }
       return { items: [], nextCursor: null }
     },
-    async draftWorkflow() {
+    async draftWorkflow(_input, destination) {
+      writeDestinations.push(destination?.destinationSpaceId)
       return {
         identity: {
           id: ownerId,
@@ -328,7 +331,8 @@ test('hosted catalogue set and promote are inert on failure and adopt hosted ids
         }
       return { items: [], nextCursor: null }
     },
-    async promoteWorkflow() {
+    async promoteWorkflow(_input, destination) {
+      writeDestinations.push(destination?.destinationSpaceId)
       return {
         identity: {
           id: ownerId,
@@ -375,6 +379,17 @@ test('hosted catalogue set and promote are inert on failure and adopt hosted ids
     overrideSpaces: [],
     pinnedSpaces: [],
   })
+  expect(writeDestinations).toEqual([SPACE, SPACE])
+  expect(
+    local
+      .query(
+        `SELECT
+        (SELECT COUNT(*) FROM step_catalogue WHERE space_id=?1) identities,
+        (SELECT COUNT(*) FROM step_catalogue_version WHERE space_id=?1) versions,
+        (SELECT COUNT(*) FROM step_catalogue_event WHERE space_id=?1) events`,
+      )
+      .get(ACTIVE_SPACE),
+  ).toEqual({ identities: 0, versions: 0, events: 0 })
   expect(local.query('SELECT record_id FROM step_catalogue WHERE space_id=?').get(SPACE)).toEqual({
     record_id: ownerId,
   })
