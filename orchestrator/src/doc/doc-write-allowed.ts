@@ -248,11 +248,10 @@ export type DocRevisionDecision =
 
 export class DocRevisionWriteConflictError extends Error {
   readonly code = 'revision-conflict'
-  constructor(
-    message: string,
-    readonly currentRevision: string | null,
-  ) {
+  readonly currentRevision: string | null
+  constructor(message: string, currentRevision: string | null) {
     super(message)
+    this.currentRevision = currentRevision
   }
 }
 
