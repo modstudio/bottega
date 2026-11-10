@@ -4,8 +4,8 @@ import type { Database } from 'bun:sqlite'
 
 export function workflowHostedSpace(
   d: Database,
-  project?: string,
-  destinationSpaceId?: string,
+  project: string | undefined,
+  destinationSpaceId: string | undefined,
   projectSpace: (d: Database, project: string) => string | null,
 ): string {
   const spaceId = project ? projectSpace(d, project) : destinationSpaceId

@@ -109,7 +109,7 @@ test('credential set refuses a missing owner before any hosted call', async () =
   globalThis.fetch = (async () => {
     hostedCalls += 1
     throw new Error('credential owner refusal reached the hosted record')
-  }) as typeof fetch
+  }) as unknown as typeof fetch
   const program = new Command().exitOverride()
   registerCredentialCommands(program)
   try {
