@@ -1,7 +1,10 @@
 import { beforeEach, expect, test } from 'bun:test'
+import { declareFixtureProjectSpace } from '../test/fixture-project-space.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { writeTransaction } from './db.ts'
 import { pushNotes } from './note-push.ts'
+
+declareFixtureProjectSpace('workshop', 'workshop')
 
 beforeEach(resetFixtureStore)
 

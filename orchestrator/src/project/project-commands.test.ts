@@ -652,13 +652,9 @@ test('project set reports the stored autonomy ship-to key', async () => {
       settings: JSON.stringify({ autonomy: { shipTo: 'trunk' } }),
     }),
   ).toBe('updated settings-autonomy\n               added autonomy.ship-to')
-  const updated = projectByName('settings-autonomy')!
-  upsertProject({
-    ...updated,
-    settings: { autonomy: updated.settings.autonomy },
-  })
   expect(projectByName('settings-autonomy')?.settings).toEqual({
     autonomy: { preset: 'manual', 'ship-to': 'trunk' },
+    space: 'space-a',
   })
 })
 

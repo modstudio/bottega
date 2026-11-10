@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { declareFixtureProjectSpace } from '../test/fixture-project-space.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { persistInstallBinding } from './install-binding.ts'
@@ -32,7 +33,9 @@ import { projects } from './projects.ts'
 import { createLocalTaskInTransaction, showTask } from './task.ts'
 
 const scratch = mkdtempSync(join(tmpdir(), 'hub-note-'))
+const workshop = () => projects().find((project) => project.name === 'workshop')!
 beforeAll(resetFixtureStore)
+declareFixtureProjectSpace('workshop', 'workshop')
 afterAll(resetFixtureStore)
 afterAll(() => rmSync(scratch, { recursive: true, force: true }))
 
@@ -373,7 +376,6 @@ describe('suggestion notes', () => {
 
   describe('local-authoritative note writes', () => {
     const previousHostedUrl = process.env.BOTTEGA_HOSTED_URL
-    const workshop = () => projects().find((project) => project.name === 'workshop')!
     beforeAll(() => {
       delete process.env.BOTTEGA_HOSTED_URL
     })
