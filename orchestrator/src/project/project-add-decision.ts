@@ -12,10 +12,6 @@ import {
   PROJECT_SETTING_COLUMNS,
   PROJECT_SETTINGS_NOT_IMPORTED,
 } from '../record/record-project-columns.ts'
-import {
-  noActiveRecordSpaceRefusal,
-  projectRecordDestination,
-} from '../record/record-project-destination.ts'
 import { retiredHostedProjectMessage } from './project-retired-hosted.ts'
 import { type ProjectSettings, stableSettingsJson } from './project-settings.ts'
 
@@ -117,28 +113,20 @@ function decideHostedAdoption(input: {
 
 function decideMint(
   input: {
-    name: string
     requestedSettings: ProjectSettings
     memberships: readonly RecordSpaceMembership[]
-    activeSpaceId: string | null
   },
   selectedMembership: RecordSpaceMembership | undefined,
   declaredMembership: RecordSpaceMembership | undefined,
 ): ProjectAddDecisionResult {
   const declaredSpace = selectedMembership?.spaceId ?? declaredMembership?.spaceId ?? null
-  if (!declaredSpace && !input.activeSpaceId) {
-    return { decision: { kind: 'refuse', reason: noActiveRecordSpaceRefusal() } }
-  }
-  const destination = projectRecordDestination(
-    input.name,
-    declaredSpace,
-    input.activeSpaceId ?? '',
-    input.memberships,
-  )
-  if ('refused' in destination) {
-    throw new Error(
-      `resolved project destination unexpectedly refused ${destination.declaredSpace}`,
-    )
+  if (!declaredSpace) {
+    return {
+      decision: {
+        kind: 'refuse',
+        reason: 'project add requires a record space; retry with --space <id-or-slug>',
+      },
+    }
   }
   return {
     decision: {
@@ -148,8 +136,8 @@ function decideMint(
         : input.requestedSettings,
     },
     targetSpace: {
-      id: destination.spaceId,
-      label: spaceLabel(destination.spaceId, input.memberships, destination.spaceId),
+      id: declaredSpace,
+      label: spaceLabel(declaredSpace, input.memberships, declaredSpace),
     },
   }
 }

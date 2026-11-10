@@ -16,14 +16,16 @@ import {
   RecordCataloguePullError,
 } from '../record/record-cache-catalogues.ts'
 import { migrateCreate } from '../worktree/worktree-template.ts'
+import { declaredProjectSpace } from './declared-project-space.ts'
 import { projectAddDecision } from './project-add-record.ts'
+import { type ProjectSpaceFillRow, planProjectSpaceFill } from './project-fill-space.ts'
 import { hostedProjectDestination, refuseHostedProjectSpaceChange } from './project-hosted-write.ts'
 import { fillProjectRecordIds } from './project-record-identity.ts'
 import { formatProjectRelink, relinkProjectByName } from './project-relink.ts'
 import { persistLocalProjectSet } from './project-rename.ts'
+import { projectSetSettingsPatch } from './project-set-space.ts'
 import {
   mergeProjectSettings,
-  parseSettingsPatch,
   type SettingsPatchEffect,
   settingsPatchEffect,
 } from './project-settings-patch.ts'
@@ -56,7 +58,11 @@ type ProjectFlags = {
   has(name: string): boolean
   flag(name: string): string | undefined
 }
-type ProjectPresentation = { log(...values: unknown[]): void; cwd(): string }
+type ProjectPresentation = {
+  log(...values: unknown[]): void
+  cwd(): string
+  exitCode?(code: number): void
+}
 
 async function relinkProjectCommand(
   name: string | undefined,
@@ -108,6 +114,7 @@ const enabledLensIds = (spaceId: string | null): string[] =>
 
 function listedProjectJson(project: Project) {
   const { recordId, retiredAt, ...rest } = project
+  const declared = declaredProjectSpace(project)
   return {
     ...rest,
     visibility: project.settings.visibility ?? null,
@@ -115,7 +122,10 @@ function listedProjectJson(project: Project) {
     repository: isProjectRepository(project),
     ...(retiredAt ? { retired_at: retiredAt } : {}),
     lifecycle_form: projectLifecycleForm(project),
-    problems: validateProjectSettings(project.settings, 'strip', project.path),
+    problems: [
+      ...validateProjectSettings(project.settings, 'strip', project.path),
+      ...('refused' in declared && !project.retiredAt ? [declared.refused] : []),
+    ],
     commit_hooks_skipped: true,
     gate: typeof project.settings.gate === 'string' ? project.settings.gate : null,
   }
@@ -141,7 +151,12 @@ function printProjectRows(all: Project[], presentation: ProjectPresentation): vo
     )
     const keys = Object.keys(p.settings)
     if (keys.length) presentation.log(`${' '.repeat(14)} settings: ${keys.join(', ')}`)
-    for (const problem of validateProjectSettings(p.settings, 'strip', p.path)) {
+    const declared = declaredProjectSpace(p)
+    const problems = [
+      ...validateProjectSettings(p.settings, 'strip', p.path),
+      ...('refused' in declared && !p.retiredAt ? [declared.refused] : []),
+    ]
+    for (const problem of problems) {
       presentation.log(`${p.name}: ${problem}`)
     }
     // Reported, not enforced: a half-configured project should say so and
@@ -567,11 +582,11 @@ function incompleteWorktreeProblems(candidate: Parameters<typeof worktreeWarning
   )
 }
 
-function patchedProjectSettings(project: Project, json: string | undefined) {
-  if (json === undefined) {
-    return { settings: project.settings, patch: undefined, before: null }
-  }
-  const patch = parseSettingsPatch(json)
+function patchedProjectSettings(
+  project: Project,
+  patch: Record<string, unknown> | undefined,
+) {
+  if (patch === undefined) return { settings: project.settings, patch, before: null }
   return {
     settings: mergeProjectSettings(project.settings, patch) as Project['settings'],
     patch,
@@ -651,15 +666,20 @@ async function setProjectCommand(
   const name = argv[2]
   if (!name)
     throw new Error(
-      `${PLATFORM_SLUG} project set <name> [--stack X] [--path P] [--canon|--no-canon] [--settings JSON] [--json]`,
+      `${PLATFORM_SLUG} project set <name> [--stack X] [--space <id-or-slug>] [--path P] [--canon|--no-canon] [--settings JSON] [--json]`,
     )
   const project = projectByName(name)
   if (!project) throw new Error(`no project "${name}"`)
+  const settingsPatch = await projectSetSettingsPatch(
+    flags.flag('settings'),
+    flags.flag('space'),
+    async (space) =>
+      (await hostedProjectDestination(name, { space }))?.destinationSpaceId ?? null,
+  )
   const {
     settings,
-    patch: settingsPatch,
     before: settingsBefore,
-  } = patchedProjectSettings(project, flags.flag('settings'))
+  } = patchedProjectSettings(project, settingsPatch)
   const nextName = flags.flag('name') ?? name
   const candidate = {
     recordId: project.recordId,
@@ -715,6 +735,64 @@ async function setProjectCommand(
   }
 }
 
+function printProjectSpaceFillRow(
+  row: ProjectSpaceFillRow,
+  applied: boolean,
+  presentation: ProjectPresentation,
+): void {
+  const hosted = row.hostedSpaces.length ? row.hostedSpaces.join(', ') : '(none)'
+  const declared = row.declaredSpace ?? '(none)'
+  const detail =
+    row.decision.kind === 'fill'
+      ? ` ${row.decision.space}${applied ? ' applied' : ''}`
+      : row.decision.kind === 'several-spaces'
+        ? ` ${row.decision.spaces.join(', ')}`
+        : row.decision.kind === 'mismatch'
+          ? ` declared=${row.decision.declared} hosted=${row.decision.spaces.join(', ') || '(none)'}`
+          : ''
+  presentation.log(
+    `${row.project}: ${row.decision.kind}${detail}; declared ${declared}; hosted ${hosted}; remedy: ${row.remedy}`,
+  )
+}
+
+async function fillProjectSpacesCommand(
+  flags: ProjectFlags,
+  presentation: ProjectPresentation,
+  dependencies: {
+    plan: typeof planProjectSpaceFill
+    fill: typeof fillAbsentProjectSettings
+  },
+): Promise<void> {
+  const rows = await dependencies.plan()
+  const apply = flags.has('apply')
+  const applied = new Set<string>()
+  if (apply) {
+    for (const row of rows) {
+      if (row.decision.kind !== 'fill') continue
+      await dependencies.fill({
+        name: row.project,
+        fill: { settings: { space: row.decision.space } },
+      })
+      applied.add(row.project)
+    }
+  }
+  if (flags.has('json')) {
+    presentation.log(
+      JSON.stringify(rows.map((row) => ({ ...row, applied: applied.has(row.project) }))),
+    )
+  } else {
+    for (const row of rows) printProjectSpaceFillRow(row, applied.has(row.project), presentation)
+  }
+  if (
+    apply &&
+    rows.some(({ decision }) =>
+      ['several-spaces', 'no-hosted-row', 'mismatch'].includes(decision.kind),
+    )
+  ) {
+    presentation.exitCode?.(1)
+  }
+}
+
 async function retireProjectCommand(
   argv: string[],
   flags: ProjectFlags,
@@ -763,6 +841,8 @@ export async function projectCommand(
   presentation: ProjectPresentation,
   dependencies: {
     requireSpaceMembership(space: string): Promise<unknown>
+    planProjectSpaceFill?: typeof planProjectSpaceFill
+    fillProjectSpace?: typeof fillAbsentProjectSettings
   },
 ): Promise<void> {
   const { has } = flags
@@ -779,6 +859,14 @@ export async function projectCommand(
 
   if (sub === 'set') {
     await setProjectCommand(argv, flags, presentation)
+    return
+  }
+
+  if (sub === 'fill-space') {
+    await fillProjectSpacesCommand(flags, presentation, {
+      plan: dependencies.planProjectSpaceFill ?? planProjectSpaceFill,
+      fill: dependencies.fillProjectSpace ?? fillAbsentProjectSettings,
+    })
     return
   }
 
@@ -852,6 +940,6 @@ export async function projectCommand(
   }
 
   throw new Error(
-    `unknown: ${PLATFORM_SLUG} project ${sub}. Try list | add | set | remove | retire | push | fill-record-ids`,
+    `unknown: ${PLATFORM_SLUG} project ${sub}. Try list | add | set | fill-space | remove | retire | push | fill-record-ids`,
   )
 }
