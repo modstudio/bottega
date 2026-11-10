@@ -4,6 +4,7 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import type { ModerationHideReason } from '../../../shared/moderation-hide-reason.ts'
+import { recordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
 import { openReadOnlyDatabase } from '../database/db.ts'
 import {
   appliedRecordMigrationCount,
@@ -31,7 +32,7 @@ import {
   deleteTrialSpace,
   grantRecordSpaceConfigAccess,
   hideRecordSpaceRow,
-  inviteToActiveRecordSpace,
+  inviteToRecordSpace,
   listRecordSpaceConfigAccess,
   listRecordSpaceHiddenRows,
   listRecordSpaceOutsideBlocks,
@@ -189,17 +190,25 @@ export async function recordSpaceAccessListCommand(presentation: Presentation): 
 
 export async function recordSpaceAccessGrantCommand(
   email: string,
+  space: string | undefined,
   presentation: Presentation,
 ): Promise<void> {
-  await grantRecordSpaceConfigAccess(email)
+  await grantRecordSpaceConfigAccess(
+    email,
+    await recordSpaceWriteDestination('record space access grant', space),
+  )
   presentation.log(`granted config access to ${email}`)
 }
 
 export async function recordSpaceAccessWithdrawCommand(
   email: string,
+  space: string | undefined,
   presentation: Presentation,
 ): Promise<void> {
-  const result = await withdrawRecordSpaceConfigAccess(email)
+  const result = await withdrawRecordSpaceConfigAccess(
+    email,
+    await recordSpaceWriteDestination('record space access withdraw', space),
+  )
   for (const keyId of result.revokedMachineKeyIds) presentation.log(`revoked machine\t${keyId}`)
   for (const key of result.readableSecretKeys) presentation.log(`replace development key\t${key}`)
   presentation.log(
@@ -338,10 +347,34 @@ export async function recordSpaceSwitchCommand(
 export async function recordSpaceInviteCommand(
   email: string,
   role: string,
+  space: string | undefined,
   presentation: Presentation,
 ): Promise<void> {
-  const id = await inviteToActiveRecordSpace(email, recordSpaceRole(role))
+  const id = await inviteToRecordSpace(
+    email,
+    recordSpaceRole(role),
+    await recordSpaceWriteDestination('record space invite', space),
+  )
   presentation.log(id)
+}
+
+async function recordSpaceWriteDestination(
+  verb: string,
+  requested: string | undefined,
+): Promise<string> {
+  if (!requested) {
+    const missing = recordSpaceOwnerDestination(verb, { space: requested }, [])
+    if (missing.kind === 'refused') throw new Error(missing.remedy)
+  }
+  const identity = await recordMemberships()
+  const destination = recordSpaceOwnerDestination(
+    verb,
+    { space: requested },
+    identity.memberships,
+  )
+  if (destination.kind === 'refused') throw new Error(destination.remedy)
+  if (destination.kind !== 'space') throw new Error('record space owner was not resolved')
+  return destination.spaceId
 }
 
 export async function recordSpaceInvitationsCommand(presentation: Presentation): Promise<void> {

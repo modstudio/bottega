@@ -59,6 +59,7 @@ export function registerRecordRequestSpace(app: Hono<ApiEnvironment>): void {
     '/v1/settings/permission',
     '/v1/settings/auto-mode',
     '/v1/config',
+    '/v1/config-access',
     '/v1/runs',
     '/v1/board/messages',
     '/v1/board/changes',

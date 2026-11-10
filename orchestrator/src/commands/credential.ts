@@ -112,6 +112,14 @@ async function bindingAddress(
   if (options.project && !project) throw new Error(`no project ${options.project}`)
   if (project) return projectCredentialBinding(project, client)
   if (options.account) return accountCredentialBinding(client)
+  if (writeVerb && !options.space) {
+    const destination = recordSpaceOwnerDestination(
+      writeVerb,
+      { space: options.space, project: options.project, account: options.account },
+      [],
+    )
+    if (destination.kind === 'refused') throw new Error(destination.remedy)
+  }
   const who = await client.whoami()
   const memberships = parseRecordSpaceMemberships(who.memberships)
   if (writeVerb) {

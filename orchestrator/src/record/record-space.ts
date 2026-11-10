@@ -80,16 +80,18 @@ export async function listRecordSpaceConfigAccess(
 
 export async function grantRecordSpaceConfigAccess(
   email: string,
+  destinationSpaceId: string,
   client: Pick<RecordApiClient, 'grantConfigAccess'> = recordApiClient(),
 ): Promise<void> {
-  await client.grantConfigAccess(email)
+  await client.grantConfigAccess(email, destinationSpaceId)
 }
 
 export async function withdrawRecordSpaceConfigAccess(
   email: string,
+  destinationSpaceId: string,
   client: Pick<RecordApiClient, 'withdrawConfigAccess'> = recordApiClient(),
 ) {
-  return client.withdrawConfigAccess(email)
+  return client.withdrawConfigAccess(email, destinationSpaceId)
 }
 
 export async function showRecordSpaceOutsideIntake(
@@ -315,21 +317,16 @@ export async function deleteTrialSpace(
   return client.deleteTrialSpace(slug)
 }
 
-export async function inviteToActiveRecordSpace(
+export async function inviteToRecordSpace(
   email: string,
   role: RecordSpaceRole,
-  client: Pick<RecordApiClient, 'whoami' | 'inviteMember'> = recordApiClient(),
+  destinationSpaceId: string,
+  client: Pick<RecordApiClient, 'inviteMember'> = recordApiClient(),
 ): Promise<string> {
-  const identity = await client.whoami()
-  if (!identity.activeSpaceId) {
-    throw new Error(
-      `record session has no active space; run \`${PLATFORM_SLUG} record space switch <slug>\``,
-    )
-  }
   const invitation = await client.inviteMember({
     email,
     role,
-    organizationId: identity.activeSpaceId,
+    organizationId: destinationSpaceId,
   })
   return invitation.id
 }

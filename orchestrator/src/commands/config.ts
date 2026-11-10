@@ -246,6 +246,10 @@ async function selectedMachineSpace(
   requested: string | undefined,
   client: ConfigClient,
 ): Promise<{ spaceId: string; slug: string }> {
+  if (!requested) {
+    const missing = recordSpaceOwnerDestination(verb, { space: requested }, [])
+    if (missing.kind === 'refused') throw new Error(missing.remedy)
+  }
   const identity = await client.whoami()
   const destination = recordSpaceOwnerDestination(
     verb,

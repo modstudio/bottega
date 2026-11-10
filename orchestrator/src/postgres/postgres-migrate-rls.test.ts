@@ -51,7 +51,7 @@ import { signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
 import { diagnoseRecord, recordDoctorExitCode } from '../record/record-doctor.ts'
 import {
   acceptRecordInvitation,
-  inviteToActiveRecordSpace,
+  inviteToRecordSpace,
   pendingRecordInvitations,
   recordMemberships,
   switchRecordSpace,
@@ -271,9 +271,10 @@ realPostgres('RLS proof against real Postgres', () => {
     )
 
     recordSession.setToken(tokenA)
-    pendingInvitation = await inviteToActiveRecordSpace(
+    pendingInvitation = await inviteToRecordSpace(
       SIGN_UP_AUTH.emailB,
       'member',
+      authSpaceA,
       invitationClient,
     )
     succeeds(
@@ -430,7 +431,7 @@ realPostgres('RLS proof against real Postgres', () => {
     await setActiveRecordSpaceForSession(actorUrl!, bearerHeaders(repairToken), authSpaceA)
     recordSession.setToken(repairToken)
     await expect(
-      inviteToActiveRecordSpace('nobody@example.test', 'member', invitationClient),
+      inviteToRecordSpace('nobody@example.test', 'member', authSpaceA, invitationClient),
     ).rejects.toThrow('not allowed to invite users')
   })
 
@@ -444,18 +445,19 @@ realPostgres('RLS proof against real Postgres', () => {
     )
     recordSession.setToken(repairToken)
     await expect(
-      inviteToActiveRecordSpace('admin-sent@example.test', 'member', invitationClient),
+      inviteToRecordSpace('admin-sent@example.test', 'member', authSpaceA, invitationClient),
     ).resolves.toBeString()
     await expect(
-      inviteToActiveRecordSpace('admin-owner@example.test', 'owner', invitationClient),
+      inviteToRecordSpace('admin-owner@example.test', 'owner', authSpaceA, invitationClient),
     ).rejects.toThrow('not allowed to invite a user with this role')
   })
 
   test('an owner does not list invitations they sent into their active space', async () => {
     recordSession.setToken(tokenA)
-    const invited = await inviteToActiveRecordSpace(
+    const invited = await inviteToRecordSpace(
       'owner-sent@example.test',
       'member',
+      authSpaceA,
       invitationClient,
     )
     expect((await pendingRecordInvitations()).map((row) => row.id)).not.toContain(invited)
@@ -520,7 +522,9 @@ realPostgres('RLS proof against real Postgres', () => {
        VALUES ('${newRecordId()}','${authSpaceA}','${email}','${authUserA}',
          'member','pending',now() - interval '1 day',now());`,
     )
-    await expect(inviteToActiveRecordSpace(email, 'member', invitationClient)).resolves.toBeString()
+    await expect(
+      inviteToRecordSpace(email, 'member', authSpaceA, invitationClient),
+    ).resolves.toBeString()
   })
 
   test('invitees see only their invitations and acceptance joins and switches space', async () => {
