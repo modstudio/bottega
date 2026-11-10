@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from './brand.ts'
-import { recordSpaceOwnerDestination } from './record-space-owner-destination.ts'
+import {
+  recordSpaceOwnerDestination,
+  resolveRecordSpaceOwnerDestination,
+} from './record-space-owner-destination.ts'
 
 const memberships = [{ spaceId: 'space-id', slug: 'member-space', permission: 'write' }]
 
@@ -44,5 +47,29 @@ describe('recordSpaceOwnerDestination', () => {
       kind: 'other-owner',
       owner,
     })
+  })
+})
+
+describe('resolveRecordSpaceOwnerDestination', () => {
+  test('refuses a missing owner before loading memberships', async () => {
+    let loads = 0
+    await expect(
+      resolveRecordSpaceOwnerDestination('workflow set', {}, [], async () => {
+        loads += 1
+        return memberships
+      }),
+    ).rejects.toThrow('--space <slug>')
+    expect(loads).toBe(0)
+  })
+
+  test('resolves a member slug after loading memberships', async () => {
+    await expect(
+      resolveRecordSpaceOwnerDestination(
+        'workflow set',
+        { space: 'member-space' },
+        [],
+        async () => memberships,
+      ),
+    ).resolves.toEqual({ kind: 'space', spaceId: 'space-id', slug: 'member-space' })
   })
 })

@@ -8,7 +8,7 @@ import { isDelegationKey } from '../../../shared/delegation-mode.ts'
 import { readHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { listMachineEntries } from '../../../shared/machine-config.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
-import { recordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
+import { resolveRecordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
 import {
   isShipToConfigKey,
   SHIP_TO_CONFIG_KEY,
@@ -250,17 +250,12 @@ async function selectedMachineSpace(
   requested: string | undefined,
   client: ConfigClient,
 ): Promise<{ spaceId: string; slug: string }> {
-  if (!requested) {
-    const missing = recordSpaceOwnerDestination(verb, { space: requested }, [])
-    if (missing.kind === 'refused') throw new Error(missing.remedy)
-  }
-  const identity = await client.whoami()
-  const destination = recordSpaceOwnerDestination(
+  const destination = await resolveRecordSpaceOwnerDestination(
     verb,
     { space: requested },
-    parseRecordSpaceMemberships(identity.memberships),
+    [],
+    async () => parseRecordSpaceMemberships((await client.whoami()).memberships),
   )
-  if (destination.kind === 'refused') throw new Error(destination.remedy)
   if (destination.kind !== 'space') throw new Error('machine space owner was not resolved')
   return destination
 }

@@ -4,7 +4,7 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import type { ModerationHideReason } from '../../../shared/moderation-hide-reason.ts'
-import { recordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
+import { resolveRecordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
 import { openReadOnlyDatabase } from '../database/db.ts'
 import {
   appliedRecordMigrationCount,
@@ -362,13 +362,12 @@ async function recordSpaceWriteDestination(
   verb: string,
   requested: string | undefined,
 ): Promise<string> {
-  if (!requested) {
-    const missing = recordSpaceOwnerDestination(verb, { space: requested }, [])
-    if (missing.kind === 'refused') throw new Error(missing.remedy)
-  }
-  const identity = await recordMemberships()
-  const destination = recordSpaceOwnerDestination(verb, { space: requested }, identity.memberships)
-  if (destination.kind === 'refused') throw new Error(destination.remedy)
+  const destination = await resolveRecordSpaceOwnerDestination(
+    verb,
+    { space: requested },
+    [],
+    async () => (await recordMemberships()).memberships,
+  )
   if (destination.kind !== 'space') throw new Error('record space owner was not resolved')
   return destination.spaceId
 }

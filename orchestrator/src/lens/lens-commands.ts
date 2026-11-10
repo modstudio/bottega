@@ -3,7 +3,10 @@
 import { readFileSync } from 'node:fs'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
-import { recordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
+import {
+  type RecordSpaceOtherOwner,
+  resolveRecordSpaceOwnerDestination,
+} from '../../../shared/record-space-owner-destination.ts'
 import { flagValue } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import { type Project, projectAt, projectByName } from '../project/projects.ts'
@@ -84,7 +87,7 @@ export async function setLensCommand(argv: string[], emit: Emit): Promise<void> 
         requiresExecution: booleanFlag(argv, 'requires-execution'),
         reason,
       },
-      await explicitSpaceDestination('lens set', flag('space')),
+      await explicitSpaceDestination('lens set', flag('space'), []),
     ),
   )
 }
@@ -149,7 +152,9 @@ export async function setProfileCommand(
         enabled: enabled(argv),
         reason,
       },
-      project ? undefined : await explicitSpaceDestination('lens profile set', flag('space')),
+      project
+        ? undefined
+        : await explicitSpaceDestination('lens profile set', flag('space'), ['project']),
     ),
   )
 }
@@ -157,19 +162,15 @@ export async function setProfileCommand(
 async function explicitSpaceDestination(
   verb: string,
   requested: string | undefined,
+  accepts: readonly RecordSpaceOtherOwner[],
 ): Promise<string> {
   if (!recordApiConfigured()) return ''
-  if (!requested) {
-    const missing = recordSpaceOwnerDestination(verb, { space: requested }, [])
-    if (missing.kind === 'refused') throw new Error(missing.remedy)
-  }
-  const identity = await recordApiClient().whoami()
-  const destination = recordSpaceOwnerDestination(
+  const destination = await resolveRecordSpaceOwnerDestination(
     verb,
     { space: requested },
-    parseRecordSpaceMemberships(identity.memberships),
+    accepts,
+    async () => parseRecordSpaceMemberships((await recordApiClient().whoami()).memberships),
   )
-  if (destination.kind === 'refused') throw new Error(destination.remedy)
   if (destination.kind !== 'space') throw new Error('lens space owner was not resolved')
   return destination.spaceId
 }
