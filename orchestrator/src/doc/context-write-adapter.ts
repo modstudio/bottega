@@ -115,18 +115,26 @@ export async function resolveContextTask(
   return resolveOrPullHubTaskReference(project.name, key, ports.tasks, ports.task)
 }
 
-/** Resolve the stable task identity used in a context subject; a project whose tasks cannot be read is skipped. */
+type ContextTaskByRecordId = { task: ContextTask | null; unreadable: string[] }
+
+/** Resolve the stable task identity used in a context subject, naming every project whose tasks could not be read. */
 export async function resolveContextTaskByRecordId(
   recordId: string,
   database: Database = db(),
   ports: ContextFactsPorts = defaultContextFactsPorts(),
-): Promise<ContextTask | null> {
+): Promise<ContextTaskByRecordId> {
   const readTasks = bestEffortProjectTaskReader(ports)
+  const unreadable: string[] = []
   for (const project of projects(undefined, database)) {
-    const match = (await readTasks(project.name))?.find((task) => task.record_id === recordId)
-    if (match) return match
+    const tasks = await readTasks(project.name)
+    if (!tasks) {
+      unreadable.push(project.name)
+      continue
+    }
+    const match = tasks.find((task) => task.record_id === recordId)
+    if (match) return { task: match, unreadable }
   }
-  return null
+  return { task: null, unreadable }
 }
 
 export function taskProfile(key: string, tasks: readonly ContextTask[]): ContextProfile {

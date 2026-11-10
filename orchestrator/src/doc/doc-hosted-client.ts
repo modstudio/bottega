@@ -78,10 +78,12 @@ async function docOwner(
     return { kind: 'session', checkoutProject: projectAt(process.cwd())?.name ?? null }
   }
   if (subject?.startsWith('task:')) {
-    const task = await resolveContextTaskByRecordId(subject.slice('task:'.length))
+    const { task, unreadable } = await resolveContextTaskByRecordId(subject.slice('task:'.length))
     if (task) return { kind: 'task', projectName: task.project }
     throw new RecordApiRequestError(
-      `task context owner could not be resolved; retry with \`${PLATFORM_SLUG} agent context set --task <KEY>\``,
+      unreadable.length > 0
+        ? `task context owner could not be resolved because the tasks of ${unreadable.join(', ')} could not be read; run \`${PLATFORM_SLUG} record doctor\`, then retry`
+        : `task context owner could not be resolved; retry with \`${PLATFORM_SLUG} agent context set --task <KEY>\``,
       'refused',
       409,
     )

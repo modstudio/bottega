@@ -8,6 +8,7 @@ import {
   RULINGS_CONFIG_KEY,
   RULINGS_VALUES,
 } from '../../../../shared/autonomy.ts'
+import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 import { parseRecordSpaceMemberships } from '../../../../shared/record-space-membership.ts'
 import { recordWriteSpace } from '../../../../shared/record-write-space.ts'
 import { summarizeSettings } from '../../../../shared/settings-summary.ts'
@@ -214,6 +215,11 @@ async function settingsRow(
   const subject = 'user' in address ? '' : address.project
   const identity = await client.whoami()
   const registered = await client.projects()
+  if (!('user' in address) && !registered.some((project) => project.name === address.project))
+    throw new TRPCError({
+      code: 'NOT_FOUND',
+      message: `project ${address.project} is not in the hosted record; run \`${PLATFORM_SLUG} project push\``,
+    })
   const owner =
     'user' in address
       ? ({ kind: 'personal' } as const)

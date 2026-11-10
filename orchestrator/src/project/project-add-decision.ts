@@ -7,7 +7,6 @@ import {
   type RecordSpaceMembership,
   recordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
-import { recordWriteSpace } from '../../../shared/record-write-space.ts'
 import {
   hostedProjectColumns,
   PROJECT_SETTING_COLUMNS,
@@ -164,18 +163,9 @@ export function decideProjectAdd(input: {
       },
     }
   }
-  const declaredDecision = recordWriteSpace(
-    { kind: 'project', name: input.name },
-    {
-      declaredSpaces: { [input.name]: input.requestedSettings.space },
-      personalSpaceId: null,
-      memberships: input.memberships,
-    },
-  )
-  const declaredMembership =
-    'spaceId' in declaredDecision
-      ? input.memberships.find((membership) => membership.spaceId === declaredDecision.spaceId)
-      : undefined
+  const declaredMembership = input.requestedSettings.space
+    ? recordSpaceMembership(input.requestedSettings.space, input.memberships)
+    : undefined
   if (
     selectedMembership &&
     input.requestedSettings.space &&
