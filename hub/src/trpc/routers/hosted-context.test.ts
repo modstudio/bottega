@@ -57,7 +57,10 @@ function fakeClient(overrides: Partial<RecordClient> = {}, activeSpaceId = perso
       user: { id: userId },
       activeSpaceId,
       personalSpaceId,
-      memberships: [],
+      memberships: [
+        { space_id: personalSpaceId, slug: 'personal', permission: 'write' },
+        { space_id: organizationSpaceId, slug: 'organization', permission: 'write' },
+      ],
     })),
     projects: mock(async () => [
       {
@@ -139,7 +142,9 @@ function fakeClient(overrides: Partial<RecordClient> = {}, activeSpaceId = perso
 }
 
 function caller(client: RecordClient) {
-  return createHostedContextRouter(() => client).createCaller({})
+  return createHostedContextRouter(() => client, () => [
+    { name: 'alpha', path: '/alpha', settings: { space: 'personal' } } as never,
+  ]).createCaller({})
 }
 
 describe('hosted context router', () => {

@@ -5,6 +5,7 @@ import { normalizeDocAudiences } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
+import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { tolerantDelete } from '../database/tolerant-delete.ts'
 import { encodeStoredDocAudiences } from '../doc/doc-audiences-codec.ts'
@@ -28,10 +29,9 @@ import { pullWorkflowCatalogue } from './record-cache-workflow.ts'
 import { decodeRecordCursor, encodeRecordCursor, type RecordCursor } from './record-cursor.ts'
 import { recordDocList } from './record-doc-list-shape.ts'
 import {
-  declaredRecordSpace,
-  noActiveRecordSpaceRefusal,
   projectRecordDestination,
 } from './record-project-destination.ts'
+import { declaredRecordSpace } from '../project/declared-record-space.ts'
 import { pullRoutingPool, type RoutingPoolPullResult } from './record-routing-pool.ts'
 import { rememberSignedInRecordUser } from './record-session.ts'
 
@@ -57,7 +57,6 @@ function recordCacheSpaces(
     const destination = projectRecordDestination(
       project.name,
       declaredRecordSpace(project.settings),
-      identity.activeSpaceId,
       memberships,
     )
     if ('refused' in destination) {
@@ -218,7 +217,7 @@ async function pullRecordCacheKeysets(
   if (!hasMeta) return emptyRecordCachePullResult()
   const client = recordApiClient()
   const identity = suppliedIdentity ?? (await client.whoami())
-  if (!identity.activeSpaceId) throw new Error(noActiveRecordSpaceRefusal())
+  if (!identity.activeSpaceId) throw new Error(RECORD_ACTIVE_SPACE_REMEDY)
   rememberSignedInRecordUser(identity.user, local)
   rememberActiveRecordSpace(local, identity.activeSpaceId)
   let cache = recordCacheSpaces(identity, local)

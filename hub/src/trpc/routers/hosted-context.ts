@@ -8,7 +8,8 @@ import {
   RULINGS_CONFIG_KEY,
   RULINGS_VALUES,
 } from '../../../../shared/autonomy.ts'
-import { resolvePersonalItemSpace } from '../../../../shared/personal-item-space.ts'
+import { parseRecordSpaceMemberships } from '../../../../shared/record-space-membership.ts'
+import { recordWriteSpace } from '../../../../shared/record-write-space.ts'
 import { summarizeSettings } from '../../../../shared/settings-summary.ts'
 import {
   readStoredShipTo,
@@ -25,6 +26,7 @@ import {
   requiredRecordApiUrl,
 } from '../../record-client.ts'
 import type { Context } from '../context.ts'
+import { projects } from '../../projects.ts'
 
 const t = initTRPC.context<Context>().create()
 const slug = z.string().trim().min(1, 'Slug is required')
@@ -35,6 +37,7 @@ const project = z.string().min(1)
 const target = z.union([z.object({ user: z.literal(true) }), z.object({ project })])
 
 type ClientFactory = (context: Context) => RecordClient
+type ProjectSpaceFactory = typeof projects
 
 function defaultClient(context: Context): RecordClient {
   return createRecordClient({
@@ -43,11 +46,15 @@ function defaultClient(context: Context): RecordClient {
   })
 }
 
-async function allDocs(client: RecordClient, input: { scope: string; subject?: string }) {
+async function allDocs(
+  client: RecordClient,
+  input: { scope: string; subject?: string },
+  destinationSpaceId?: string,
+) {
   const rows: RecordDoc[] = []
   let cursor: string | undefined
   do {
-    const page = await client.docs({ ...input, limit: 100, cursor })
+    const page = await client.docs({ ...input, limit: 100, cursor }, destinationSpaceId)
     rows.push(...page.items)
     cursor = page.nextCursor ?? undefined
   } while (cursor)
@@ -56,17 +63,12 @@ async function allDocs(client: RecordClient, input: { scope: string; subject?: s
 
 async function personalSpace(client: RecordClient): Promise<{ userId: string; spaceId: string }> {
   const identity = await client.whoami()
-  const spaceId = resolvePersonalItemSpace(
-    {
-      userId: identity.user.id,
-      activeSpaceId: identity.activeSpaceId,
-      personalSpaceId: identity.personalSpaceId,
-    },
-    { kind: 'document', scope: 'canon', subject: null, ownerUserId: identity.user.id },
+  const decision = recordWriteSpace(
+    { kind: 'personal' },
+    { declaredSpaces: {}, personalSpaceId: identity.personalSpaceId, memberships: [] },
   )
-  if (!spaceId)
-    throw new TRPCError({ code: 'CONFLICT', message: 'personal space is not provisioned' })
-  return { userId: identity.user.id, spaceId }
+  if ('refused' in decision) throw new TRPCError({ code: 'CONFLICT', message: decision.remedy })
+  return { userId: identity.user.id, spaceId: decision.spaceId }
 }
 
 async function allPersonalDocs(client: RecordClient, input: { scope: string; subject?: string }) {
@@ -210,28 +212,25 @@ function parseStoredSettings(body: string): OwnedSettings {
 async function settingsRow(
   client: RecordClient,
   address: z.infer<typeof target>,
+  registeredProjects: ProjectSpaceFactory,
 ): Promise<{ row: RecordDoc; destination: string | undefined }> {
   const subject = 'user' in address ? '' : address.project
   const identity = await client.whoami()
-  const destination = resolvePersonalItemSpace(
+  const registered = registeredProjects()
+  const owner = 'user' in address
+    ? ({ kind: 'personal' } as const)
+    : ({ kind: 'project', name: address.project } as const)
+  const decision = recordWriteSpace(
+    owner,
     {
-      userId: identity.user.id,
-      activeSpaceId: identity.activeSpaceId,
+      declaredSpaces: Object.fromEntries(registered.map((project) => [project.name, project.settings.space])),
       personalSpaceId: identity.personalSpaceId,
-    },
-    {
-      kind: 'document',
-      scope: 'settings',
-      subject: 'user' in address ? null : address.project,
-      ownerUserId: 'user' in address ? identity.user.id : null,
+      memberships: parseRecordSpaceMemberships(identity.memberships),
     },
   )
-  if ('user' in address && !destination)
-    throw new TRPCError({ code: 'CONFLICT', message: 'personal space is not provisioned' })
-  const rows =
-    'user' in address && destination
-      ? (await client.docs({ scope: 'settings', subject, limit: 100 }, destination)).items
-      : await allDocs(client, { scope: 'settings', subject })
+  if ('refused' in decision) throw new TRPCError({ code: 'CONFLICT', message: decision.remedy })
+  const destination = decision.spaceId
+  const rows = await allDocs(client, { scope: 'settings', subject }, destination)
   const row = rows.find((candidate) =>
     'user' in address
       ? candidate.subject === null &&
@@ -242,11 +241,15 @@ async function settingsRow(
         candidate.slug === 'settings',
   )
   if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'settings doc not found' })
-  return { row, destination: 'user' in address ? (destination ?? undefined) : undefined }
+  return { row, destination }
 }
 
-async function hostedSettingsGet(client: RecordClient, input: z.infer<typeof target>) {
-  const { row, destination } = await settingsRow(client, input)
+async function hostedSettingsGet(
+  client: RecordClient,
+  input: z.infer<typeof target>,
+  registeredProjects: ProjectSpaceFactory,
+) {
+  const { row, destination } = await settingsRow(client, input, registeredProjects)
   return {
     mode: 'hosted' as const,
     target:
@@ -274,7 +277,10 @@ function putUserEntry(
   })
 }
 
-export function createHostedContextRouter(clientFor: ClientFactory = defaultClient) {
+export function createHostedContextRouter(
+  clientFor: ClientFactory = defaultClient,
+  registeredProjects: ProjectSpaceFactory = projects,
+) {
   return t.router({
     projects: t.procedure.query(async ({ ctx }) =>
       (await clientFor(ctx).projects()).map((project) => ({
@@ -423,7 +429,7 @@ export function createHostedContextRouter(clientFor: ClientFactory = defaultClie
     settings: t.router({
       get: t.procedure
         .input(target)
-        .query(({ ctx, input }) => hostedSettingsGet(clientFor(ctx), input)),
+        .query(({ ctx, input }) => hostedSettingsGet(clientFor(ctx), input, registeredProjects)),
       permission: t.procedure
         .input(
           z.object({

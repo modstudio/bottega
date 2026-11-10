@@ -1,42 +1,26 @@
 // concern: record-project-destination
 /** Resolves a registered project's hosted-record destination without consulting hosted state. */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type RecordSpaceMembership,
-  recordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
-import type { ProjectSettings, StoredProjectSettings } from '../project/project-settings.ts'
+import { recordWriteSpace } from '../../../shared/record-write-space.ts'
 
 export type ProjectRecordDestination =
   | { project: string; spaceId: string }
-  | { project: string; declaredSpace: string; refused: 'declared-space-not-member' }
+  | { project: string; declaredSpace: string | null; refused: 'undeclared-project' | 'declared-space-not-member'; remedy: string }
 
-export function declaredRecordSpace(
-  settings: ProjectSettings | StoredProjectSettings | undefined,
-): string | null {
-  const value = settings?.space
-  return typeof value === 'string' && value.trim() ? value.trim() : null
-}
-
-export function effectiveProjectSpace(declared: string | null, activeSpaceId: string): string {
-  return declared ?? activeSpaceId
-}
-
-/** Resolve a register declaration to a stable id, preserving active-space fallback. */
+/** Resolve a register declaration to a stable id without consulting the active space. */
 export function projectRecordDestination(
   project: string,
   declaredSpace: string | null,
-  activeSpaceId: string,
   memberships: readonly RecordSpaceMembership[],
 ): ProjectRecordDestination {
-  if (!declaredSpace) return { project, spaceId: effectiveProjectSpace(null, activeSpaceId) }
-  const membership = recordSpaceMembership(declaredSpace, memberships)
-  return membership
-    ? { project, spaceId: membership.spaceId }
-    : { project, declaredSpace, refused: 'declared-space-not-member' }
-}
-
-export function noActiveRecordSpaceRefusal(): string {
-  return `record session has no active space; run \`${PLATFORM_SLUG} record space switch <slug>\``
+  const decision = recordWriteSpace(
+    { kind: 'project', name: project },
+    { declaredSpaces: { [project]: declaredSpace }, personalSpaceId: null, memberships },
+  )
+  return 'spaceId' in decision
+    ? { project, spaceId: decision.spaceId }
+    : { project, declaredSpace, refused: decision.refused as 'undeclared-project' | 'declared-space-not-member', remedy: decision.remedy }
 }

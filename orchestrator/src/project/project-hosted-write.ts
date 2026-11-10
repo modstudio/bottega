@@ -6,7 +6,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { recordSpaceMembershipRefusal } from '../../../shared/record-remedies.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
-import { declaredRecordSpace } from '../record/record-project-destination.ts'
+import { declaredRecordSpace } from './declared-record-space.ts'
 import {
   projectDestinationFromIdentity,
   requireProjectRecordDestination,

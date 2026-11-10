@@ -2,7 +2,7 @@
 /** Decides whether a registered project declares its record space. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { declaredRecordSpace } from '../record/record-project-destination.ts'
+import { declaredRecordSpace } from './declared-record-space.ts'
 import type { Project } from './projects.ts'
 
 export function declaredProjectSpaceRemedy(project: string): string {

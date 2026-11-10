@@ -404,7 +404,11 @@ async function setDocWithOp(
         identity,
       }),
     hosted: async () => {
-      const client = await hostedDocClient(input.scope, input.subject)
+      const client = await hostedDocClient(
+        input.scope,
+        input.subject,
+        input.contextTask ? { kind: 'task', projectName: input.contextTask.project } : undefined,
+      )
       const hostedInput: Parameters<typeof client.upsertDoc>[0] = {
         scope: input.scope,
         subject: input.subject,

@@ -4,6 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { replicatedRecordId } from '../../../shared/record-id.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
+import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import { db } from '../database/db.ts'
 import {
   LOCAL_PIN_VERSION_SQL,
@@ -20,10 +21,9 @@ import { pullRecordCache } from './record-cache.ts'
 import type { RecordLensImportInput } from './record-lens-contract.ts'
 import type { RecordPortImportInput } from './record-port-contract.ts'
 import {
-  declaredRecordSpace,
-  noActiveRecordSpaceRefusal,
   projectRecordDestination,
 } from './record-project-destination.ts'
+import { declaredRecordSpace } from '../project/declared-record-space.ts'
 import { syncRecord } from './record-sync.ts'
 import type { RecordWorkflowImportInput } from './record-workflow-contract.ts'
 
@@ -78,7 +78,6 @@ function currentProjectRoutes(
       const destination = projectRecordDestination(
         project.name,
         declaredRecordSpace(project.settings),
-        activeSpaceId,
         memberships,
       )
       return [project.name, 'refused' in destination ? null : destination.spaceId]
@@ -647,7 +646,7 @@ export async function pushCataloguesCommand(
   const local = dependencies.local ?? db()
   const localActive = activeRecordSpace(local)
   if (options.dryRun) {
-    if (!localActive) throw new Error(noActiveRecordSpaceRefusal())
+    if (!localActive) throw new Error(RECORD_ACTIVE_SPACE_REMEDY)
     const plan = planCataloguePush(local, localActive, cachedProjectRoutes(local))
     logPlan(plan, presentation, 'dry run ')
     for (const skip of plan.skipped)
@@ -657,7 +656,7 @@ export async function pushCataloguesCommand(
   const client = dependencies.client ?? recordApiClient()
   const identity = await client.whoami(),
     active = identity.activeSpaceId ?? localActive
-  if (!active) throw new Error(noActiveRecordSpaceRefusal())
+  if (!active) throw new Error(RECORD_ACTIVE_SPACE_REMEDY)
   const plan = planCataloguePush(local, active, currentProjectRoutes(local, identity, active))
   logPlan(plan, presentation)
   for (const skip of plan.skipped)

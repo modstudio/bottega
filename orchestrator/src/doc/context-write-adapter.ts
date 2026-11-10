@@ -29,7 +29,7 @@ import { listDocsStore } from './doc-read-store.ts'
 import { isScratchLocation } from './doc-resume-write.ts'
 import { isValidContextHolderSubject, taskContextHolder } from './doc-subjects.ts'
 
-type ContextTask = HubTaskReference
+export type ContextTask = HubTaskReference
 export type ContextFactsPorts = {
   tasks: HubTaskReader
   task: HubTaskPuller
@@ -113,6 +113,19 @@ export async function resolveContextTask(
     )
   }
   return resolveOrPullHubTaskReference(project.name, key, ports.tasks, ports.task)
+}
+
+/** Resolve the stable task identity used in a context subject through the same task reader. */
+export async function resolveContextTaskByRecordId(
+  recordId: string,
+  database: Database = db(),
+  ports: ContextFactsPorts = defaultContextFactsPorts(),
+): Promise<ContextTask | null> {
+  for (const project of projects(undefined, database)) {
+    const match = (await ports.tasks(project.name)).find((task) => task.record_id === recordId)
+    if (match) return match
+  }
+  return null
 }
 
 export function taskProfile(key: string, tasks: readonly ContextTask[]): ContextProfile {

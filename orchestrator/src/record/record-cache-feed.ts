@@ -39,7 +39,7 @@ import {
   type RecordPortRow,
   type RecordPortTable,
 } from './record-port-contract.ts'
-import { noActiveRecordSpaceRefusal } from './record-project-destination.ts'
+import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import type { RecordRoutingEvidence } from './record-routing-evidence-contract.ts'
 import {
   deleteRoutingPoolRow,
@@ -598,7 +598,7 @@ async function prepareFeedIdentity(
     stopped.purgeWarning = 'record spaces could not be confirmed; remembered spaces were not purged'
     return { stopped }
   }
-  if (!identity.activeSpaceId) throw new Error(noActiveRecordSpaceRefusal())
+  if (!identity.activeSpaceId) throw new Error(RECORD_ACTIVE_SPACE_REMEDY)
   const purgeWarning =
     !memberships.length && remembered.length
       ? 'record spaces could not be confirmed; remembered spaces were not purged'

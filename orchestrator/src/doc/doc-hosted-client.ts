@@ -1,15 +1,17 @@
 // concern: doc-hosted-client
 /** Binds project-addressed hosted document operations to the register's destination. */
 
-import { isPersonalItem, resolvePersonalItemSpace } from '../../../shared/personal-item-space.ts'
-import { projectRowByName } from '../project/projects.ts'
+import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
+import { recordWriteSpace, type RecordWriteOwner } from '../../../shared/record-write-space.ts'
+import { declaredRecordSpace } from '../project/declared-record-space.ts'
+import { projectAt, projectRowByName, projects } from '../project/projects.ts'
 import {
   type RecordApiClient,
   RecordApiRequestError,
   recordApiClient,
 } from '../record/record-api-client.ts'
-import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { docWriteProjectName } from './doc-write-allowed.ts'
+import { resolveContextTaskByRecordId } from './context-write-adapter.ts'
 
 type HostedDocClient = Pick<
   RecordApiClient,
@@ -30,34 +32,23 @@ type HostedDocClient = Pick<
 export async function hostedDocClient(
   scope: string,
   subject: string | null,
+  suppliedOwner?: RecordWriteOwner,
 ): Promise<HostedDocClient> {
   const client = recordApiClient()
   const projectName = docWriteProjectName(scope, subject)
   const projectId = projectName ? (projectRowByName(projectName)?.recordId ?? null) : null
-  const destination = projectName
-    ? {
-        destinationSpaceId: await requireProjectRecordDestination(
-          projectName,
-          projectRowByName(projectName)?.settings,
-          client,
-        ),
-      }
-    : await (async () => {
-        const identity = await client.whoami()
-        const target = { kind: 'document', scope, subject, ownerUserId: identity.user.id } as const
-        const spaceId = resolvePersonalItemSpace(
-          {
-            userId: identity.user.id,
-            activeSpaceId: identity.activeSpaceId,
-            personalSpaceId: identity.personalSpaceId,
-          },
-          target,
-        )
-        if (!spaceId && isPersonalItem(identity.user.id, target)) {
-          throw new RecordApiRequestError('personal space is not provisioned', 'refused', 409)
-        }
-        return spaceId ? { destinationSpaceId: spaceId } : undefined
-      })()
+  const owner = suppliedOwner ?? (await docOwner(scope, subject, projectName))
+  const identity = await client.whoami()
+  const registered = [...projects(), ...projects({ retired: true })]
+  const decision = recordWriteSpace(owner, {
+    declaredSpaces: Object.fromEntries(
+      registered.map((project) => [project.name, declaredRecordSpace(project.settings)]),
+    ),
+    personalSpaceId: identity.personalSpaceId,
+    memberships: parseRecordSpaceMemberships(identity.memberships),
+  })
+  if ('refused' in decision) throw new RecordApiRequestError(decision.remedy, 'refused', 409)
+  const destination = { destinationSpaceId: decision.spaceId }
   return {
     listDocs: (query) => client.listDocs(query, destination),
     getDoc: (id) => client.getDoc(id, destination),
@@ -73,4 +64,26 @@ export async function hostedDocClient(
     applySettingsPermission: (input) => client.applySettingsPermission(input, destination),
     applySettingsAutoMode: (input) => client.applySettingsAutoMode(input, destination),
   }
+}
+
+async function docOwner(
+  scope: string,
+  subject: string | null,
+  projectName: string | null,
+): Promise<RecordWriteOwner | null> {
+  if (projectName) return { kind: 'project', name: projectName }
+  if (scope !== 'context') return { kind: 'personal' }
+  if (subject?.startsWith('session:')) {
+    return { kind: 'session', checkoutProject: projectAt(process.cwd())?.name ?? null }
+  }
+  if (subject?.startsWith('task:')) {
+    const task = await resolveContextTaskByRecordId(subject.slice('task:'.length))
+    if (task) return { kind: 'task', projectName: task.project }
+    throw new RecordApiRequestError(
+      'task context owner could not be resolved; retry with `bottega agent context set --task <KEY>`',
+      'refused',
+      409,
+    )
+  }
+  return null
 }

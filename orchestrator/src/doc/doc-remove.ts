@@ -56,7 +56,11 @@ export async function removeStoredDoc(
   return applyRecordWriteAuthority({
     local: () => executeLocalDocRemove({ scope, subject, owner, slug, doc, identity, ...context }),
     hosted: async () => {
-      const client = await hostedDocClient(doc.scope, doc.subject)
+      const client = await hostedDocClient(
+        doc.scope,
+        doc.subject,
+        context.contextTask ? { kind: 'task', projectName: context.contextTask.project } : undefined,
+      )
       let recordId = doc.record_id
       let hostedExpected = context.expectedRevision
       if (!recordId) {

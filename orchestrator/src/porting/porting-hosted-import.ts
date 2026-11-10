@@ -9,7 +9,7 @@ import { projects } from '../project/projects.ts'
 import { activeRecordSpace, effectiveProjectSpace } from '../project-space.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import type { RecordPortImportInput } from '../record/record-port-contract.ts'
-import { noActiveRecordSpaceRefusal } from '../record/record-project-destination.ts'
+import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import { normalizePortBaselineScannedAt } from './porting-date.ts'
 import { type ImportPlan, ImportRefusalError } from './porting-import-contract.ts'
 
@@ -199,7 +199,7 @@ export async function applyHostedPortImport(
   const client = recordApiClient()
   const identity = await client.whoami()
   const active = identity.activeSpaceId ?? activeRecordSpace(local)
-  if (!active) throw new Error(noActiveRecordSpaceRefusal())
+  if (!active) throw new Error(RECORD_ACTIVE_SPACE_REMEDY)
   if (!client.importPortCatalogue)
     throw new Error(
       'record API does not support port imports; deploy the matching record API, then retry',
