@@ -433,20 +433,25 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         ),
       ).rejects.toMatchObject({ condition: `task_flow_stage.id=${stageId}` })
 
+      const moveAsUser = (statement: string) =>
+        input.admin(`SELECT user_id::text AS actor_user_id FROM membership
+          WHERE space_id='${input.spaceId()}' ORDER BY created_at LIMIT 1 \\gset
+          SET app.user_id=:'actor_user_id';
+          ${statement}`)
       expect(
         Number(
-          input.admin(
+          moveAsUser(
             `SELECT sum(row_count) FROM record_move_project_space('${input.spaceId()}','${PROJECT}','${otherSpace.id}',NULL)
              WHERE table_name IN ('workflow_obligation','workflow_step_text','workflow_text_copy');`,
           ),
         ),
       ).toBe(5)
       const moveTotal = Number(
-        input.admin(
+        moveAsUser(
           `SELECT sum(row_count) FROM record_move_project_space('${input.spaceId()}','${PROJECT}','${otherSpace.id}',NULL);`,
         ),
       )
-      input.admin(
+      moveAsUser(
         `SELECT sum(row_count) FROM record_move_project_space('${input.spaceId()}','${PROJECT}','${otherSpace.id}',${moveTotal});`,
       )
       expect(input.admin(`SELECT space_id FROM task_flow_stage WHERE id='${stageId}';`)).toBe(

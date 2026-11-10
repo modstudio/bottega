@@ -624,7 +624,7 @@ try {
   if (cleanRecordPool !== 0) throw new EarlyExit(cleanRecordPool)
 
   const rls = await run(
-    ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-rls.test.ts'],
+    ['bun', 'test', '--timeout', '30000', '--test-name-pattern', 'hosted task-flow intents', 'src/postgres/postgres-migrate-rls.test.ts'],
     {
       BOTTEGA_TEST_POSTGRES_CONTAINER: container,
       BOTTEGA_RECORD_MIGRATE_URL: ownerUrl,

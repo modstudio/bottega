@@ -91,10 +91,7 @@ async function updateRevisionRow(
     const column = camelToSnake(key)
     return `${column}=$${index + 1}${isJsonColumn(column) ? '::jsonb' : ''}`
   })
-  const parameters = entries.map(([key, value]) => {
-    const column = camelToSnake(key)
-    return isJsonColumn(column) ? JSON.stringify(value) : value
-  })
+  const parameters = entries.map(([, value]) => value)
   parameters.push(requestId, mutation.id, mutation.expectedRevision)
   const request = entries.length + 1
   const id = entries.length + 2
@@ -220,7 +217,7 @@ async function insertObligation(tx: SQL, spaceId: string, row: Record<string, un
   const existing = await existingRow(tx, 'workflow_obligation', String(row.id))
   if (existing) return assertSameInsert('workflow_obligation', String(row.id), existing, row)
   const satisfiedEvidence =
-    row.satisfiedEvidence === null ? null : bindJsonb(tx, row.satisfiedEvidence)
+    row.satisfiedEvidence === null ? tx`NULL` : bindJsonb(tx, row.satisfiedEvidence)
   await tx`INSERT INTO workflow_obligation
     (id,space_id,stage_record_id,step_ordinal,step_slug,floor,require_pull_request,expected_exit_code,
      expected_status,floor_deferrable,reason,session_id,created_at,satisfied_at,satisfied_step_ordinal,
@@ -238,9 +235,7 @@ async function updateObligation(tx: SQL, row: Record<string, unknown>) {
     const column = camelToSnake(key)
     return `${column}=$${index + 1}${isJsonColumn(column) ? '::jsonb' : ''}`
   })
-  const values = entries.map(([key, value]) =>
-    isJsonColumn(camelToSnake(key)) ? JSON.stringify(value) : value,
-  )
+  const values = entries.map(([, value]) => value)
   const rows = (await tx.unsafe(
     `UPDATE workflow_obligation SET ${sets.join(',')} WHERE id=$${values.length + 1}::uuid AND stage_record_id=$${values.length + 2}::uuid RETURNING id::text`,
     [...values, row.id, row.stageRecordId],
