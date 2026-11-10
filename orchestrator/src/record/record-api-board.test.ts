@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { SQL } from 'bun'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
 import { recordApi } from './record-api.ts'
@@ -301,7 +302,7 @@ test('a personal active space does not narrow project-addressed posts or task cl
       expiresAt,
       authorSession: 'first-session',
       authorHarness: 'claude',
-      project: 'bottega',
+      project: PLATFORM_SLUG,
     }),
   })
   const claim = await app.request('/v1/board/claims', {
@@ -309,7 +310,7 @@ test('a personal active space does not narrow project-addressed posts or task cl
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       id: newRecordId(),
-      project: 'bottega',
+      project: PLATFORM_SLUG,
       projectId: newRecordId(),
       subject: 'task:DEV-2241',
       holderSession: 'first-session',
@@ -318,8 +319,8 @@ test('a personal active space does not narrow project-addressed posts or task cl
   })
   expect([post.status, claim.status]).toEqual([200, 200])
   expect(calls).toEqual([
-    { kind: 'post', project: 'bottega', spaceIds: ['space-a', 'space-b'] },
-    { kind: 'claim', project: 'bottega', spaceIds: ['space-a', 'space-b'] },
+    { kind: 'post', project: PLATFORM_SLUG, spaceIds: ['space-a', 'space-b'] },
+    { kind: 'claim', project: PLATFORM_SLUG, spaceIds: ['space-a', 'space-b'] },
   ])
 })
 
@@ -360,7 +361,7 @@ test('board post, reply, claim, and read work without an active space', async ()
         body: 'The project still addresses this message.',
         expiresAt,
         authorSession: 'session-a',
-        project: 'bottega',
+        project: PLATFORM_SLUG,
       }),
     }),
     app.request(`/v1/board/messages/${rootId}/replies`, {
@@ -373,7 +374,7 @@ test('board post, reply, claim, and read work without an active space', async ()
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         id: newRecordId(),
-        project: 'bottega',
+        project: PLATFORM_SLUG,
         projectId: newRecordId(),
         subject: 'task:DEV-2241',
         holderSession: 'session-a',

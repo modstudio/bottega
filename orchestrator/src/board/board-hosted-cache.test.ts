@@ -13,7 +13,6 @@ import {
   BOARD_REFRESH_CURSOR_KEY,
   BOARD_REFRESH_OUTCOME_KEY,
   BOARD_VERIFICATION_WARNING_MAX_CHARS,
-  boardPresenceDestination,
   cachedAudienceAtPosting,
   cachedMessageAddressed,
   claimCachedHosted,
@@ -284,44 +283,6 @@ test('architects all reaches the authors sessions in two projects with one ackno
       .query('SELECT message_id,acknowledged_at FROM hosted_board_receipt_cache WHERE message_id=?')
       .all(notice.id),
   ).toEqual([{ message_id: notice.id, acknowledged_at: '2026-10-05T12:05:00.000Z' }])
-})
-
-test('presence names the checkout project space or the personal space outside a project', async () => {
-  const database = db()
-  const projectId = fixtureProjectRecordId(database)
-  database
-    .query('UPDATE project SET path=?,settings=? WHERE record_id=?')
-    .run(process.cwd(), JSON.stringify({ space: 'project-space' }), projectId)
-  const client = {
-    ...createMemoryRecordApiClient(),
-    whoami: async () => ({
-      user: { id: userId, email: 'architect@example.test' },
-      activeSpaceId: 'personal-space',
-      personalSpaceId: 'personal-space',
-      memberships: [
-        {
-          space_id: 'personal-space',
-          name: 'Personal',
-          slug: 'personal',
-          role: 'owner',
-          permission: 'write',
-        },
-        {
-          space_id: 'project-space',
-          name: 'Project',
-          slug: 'project',
-          role: 'member',
-          permission: 'write',
-        },
-      ],
-    }),
-  }
-  expect(await boardPresenceDestination(client, process.cwd())).toEqual({
-    destinationSpaceId: 'project-space',
-  })
-  expect(await boardPresenceDestination(client, '/outside/registered/projects')).toEqual({
-    destinationSpaceId: 'personal-space',
-  })
 })
 
 test('reader routing covers local audiences, context, hosted run ids, nobody here, and reply participants', async () => {

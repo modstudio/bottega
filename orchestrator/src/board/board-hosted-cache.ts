@@ -3,12 +3,8 @@
 
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
-import { recordWriteSpace } from '../../../shared/record-write-space.ts'
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
-import { declaredRecordSpace } from '../project/declared-record-space.ts'
-import { projectAt, projects } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   type RecordApiClient,
@@ -20,6 +16,7 @@ import {
   type HostedBoardChanges,
   type HostedBoardMessage,
 } from '../record/record-board-contract.ts'
+import { boardPresenceDestination } from './board-hosted-presence-destination.ts'
 import { cacheHostedBoardReceipt } from './board-hosted-receipt-cache.ts'
 import { BUDGET_SPENT, withinHostedBoardRefreshBudget } from './board-hosted-refresh-budget.ts'
 import { takeHostedReportReplySuccessor } from './board-hosted-successor.ts'
@@ -55,8 +52,8 @@ const BOARD_REFRESH_USER_KEY = 'board_hosted_signed_in_user'
 export const BOARD_CACHE_OWNER_KEY = 'board_hosted_cache_owner'
 const BOARD_VERIFIED_AT_KEY = 'board_hosted_verified_at'
 const BOARD_MONITOR_UNVERIFIED_ANNOUNCED_KEY = 'board_hosted_monitor_unverified_announced'
-export const BOARD_RECEIPT_WRITE_BUDGET_MS = 250
-export const BOARD_READ_REFRESH_BUDGET_MS = 500
+export const BOARD_RECEIPT_WRITE_BUDGET_MS = 250,
+  BOARD_READ_REFRESH_BUDGET_MS = 500
 export const BOARD_VERIFICATION_WARNING_MAX_CHARS = 500
 
 export type HostedCacheNotice = {
@@ -117,9 +114,8 @@ function cachedRevision(database: Database, id: string): string | null {
   )
 }
 
-function incomingIsStale(cached: string | null, incoming: string): boolean {
-  return cached !== null && BigInt(incoming) < BigInt(cached)
-}
+const incomingIsStale = (cached: string | null, incoming: string) =>
+  cached !== null && BigInt(incoming) < BigInt(cached)
 
 export function queueHostedBoardAcknowledgement(
   messageId: string,
@@ -342,26 +338,6 @@ async function fetchHostedPages(
   }
   await flushReceipts(client, database, deadline, now)
   return false
-}
-
-export async function boardPresenceDestination(
-  client: RecordApiClient,
-  cwd: string = process.cwd(),
-) {
-  const identity = await client.whoami()
-  const registered = [...projects(), ...projects({ retired: true })]
-  const decision = recordWriteSpace(
-    { kind: 'session', checkoutProject: projectAt(cwd)?.name ?? null },
-    {
-      declaredSpaces: Object.fromEntries(
-        registered.map((project) => [project.name, declaredRecordSpace(project.settings)]),
-      ),
-      personalSpaceId: identity.personalSpaceId,
-      memberships: parseRecordSpaceMemberships(identity.memberships),
-    },
-  )
-  if ('refused' in decision) throw new RecordApiRequestError(decision.remedy, 'refused', 409)
-  return { destinationSpaceId: decision.spaceId }
 }
 
 export async function refreshHostedBoard(input: RefreshInput): Promise<HostedBoardRefresh> {
