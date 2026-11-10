@@ -562,6 +562,7 @@ describe('orch MCP', () => {
     await client.connect(clientTransport)
     const previousRecordUrl = process.env.BOTTEGA_RECORD_API_URL
     const flowId = newRecordId()
+    const adoptedFlowId = newRecordId()
     const call = async (name: string, toolArgs: Record<string, unknown>) => {
       const result = await client.callTool({ name, arguments: toolArgs })
       if (result.isError)
@@ -646,8 +647,35 @@ describe('orch MCP', () => {
       installRecordApiClient({
         ...createMemoryRecordApiClient(),
         readTaskFlow: async () => hosted,
+        advanceTaskFlow: async (input) => ({
+          revisions: {
+            [input.stage.id]: input.stage.expectedRevision + 1,
+            ...(input.flow ? { [input.flow.id]: input.flow.expectedRevision + 1 } : {}),
+          },
+        }),
+        awaitTaskFlowRuling: async (input) => ({
+          revisions: { [input.stage.id]: input.stage.expectedRevision + 1 },
+        }),
+        updateTaskFlowStage: async (input) => ({
+          revisions: Object.fromEntries(
+            input.stages.map((stage) => [stage.id, stage.expectedRevision + 1]),
+          ),
+        }),
+        adoptTaskFlow: async (input) => ({
+          flowRecordId: adoptedFlowId,
+          revisions: { [adoptedFlowId]: 1, [input.stage.id]: input.stage.expectedRevision + 1 },
+        }),
+        attachTaskFlowText: async () => ({ revisions: {} }),
+        abandonTaskFlow: async (input) => ({
+          revisions: {
+            [input.stage.id]: input.stage.expectedRevision + 1,
+            ...(input.flow ? { [input.flow.id]: input.flow.expectedRevision + 1 } : {}),
+          },
+        }),
+        deleteTaskFlowText: async () => ({ revisions: {} }),
       })
       process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
+      rememberProjectSpace(db(), project, newRecordId())
       const advanced = await call('next_workflow_step', {
         ...common,
         cursor: first.id,
@@ -655,9 +683,6 @@ describe('orch MCP', () => {
         run: evidenceRunNumber,
       })
       expect(advanced).toContain('Took over this workflow stage from Remote MCP machine.')
-      if (previousRecordUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
-      else process.env.BOTTEGA_RECORD_API_URL = previousRecordUrl
-      installRecordApiClient(createMemoryRecordApiClient())
       await call('await_workflow_ruling', {
         ...common,
         args: args('DEV-1082-MCP-B'),

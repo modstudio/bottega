@@ -123,6 +123,38 @@ function installHosted(flow: HostedTaskFlow): void {
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     readTaskFlow: async () => flow,
+    composeTaskFlow: async (input) => {
+      const stageId = input.stageInsert?.id
+      const revisions = Object.fromEntries([
+        ...(input.flowInsert ? [[input.flowInsert.id, 1] as const] : []),
+        ...(input.flowChange
+          ? [[input.flowChange.id, input.flowChange.expectedRevision + 1] as const]
+          : []),
+        ...(stageId ? [[stageId, 1] as const] : []),
+      ])
+      return {
+        stage: stageId ? { id: stageId, number: (flow.stage?.number ?? 1) + 1 } : null,
+        revisions,
+      }
+    },
+    adoptTaskFlow: async (input) => ({
+      flowRecordId: flow.flow.id,
+      revisions: {
+        [flow.flow.id]: flow.flow.revision,
+        [input.stage.id]: input.stage.expectedRevision + 1,
+      },
+    }),
+    updateTaskFlowStage: async (input) => ({
+      revisions: Object.fromEntries(
+        input.stages.map((stage) => [stage.id, stage.expectedRevision + 1]),
+      ),
+    }),
+    advanceTaskFlow: async (input) => ({
+      revisions: {
+        [input.stage.id]: input.stage.expectedRevision + 1,
+        ...(input.flow ? { [input.flow.id]: input.flow.expectedRevision + 1 } : {}),
+      },
+    }),
   })
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
 }
@@ -575,7 +607,7 @@ test.each([
       selectedRow,
       ids.database,
     )
-    resolveLinkedWorkflowCursorMode(
+    await resolveLinkedWorkflowCursorMode(
       workflow,
       'read-through-fixture',
       'default',
@@ -595,7 +627,7 @@ test.each([
       ids.database
         .query('SELECT ordinal,revision FROM workflow_cursor WHERE record_id=?')
         .get(stageId),
-    ).toEqual({ ordinal: 1, revision: 4 })
+    ).toEqual({ ordinal: 1, revision: 5 })
 
     const result = await selectAndNextWorkflowStep(
       workflow,

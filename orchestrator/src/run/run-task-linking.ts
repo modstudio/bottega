@@ -96,11 +96,15 @@ const LOCAL_TASK_LINKS = {
     linkedSql: `SELECT c.task_record_id,p.name project FROM workflow_cursor c
       JOIN project p ON p.record_id=c.project_record_id WHERE c.task_record_id IS NOT NULL`,
     write: (database, update, taskFlowClient) =>
-      linkWorkflowTaskLabel(database, {
-        project: update.project,
-        workflowKey: update.taskKey,
-        taskRecordId: update.taskId,
-      }, taskFlowClient),
+      linkWorkflowTaskLabel(
+        database,
+        {
+          project: update.project,
+          workflowKey: update.taskKey,
+          taskRecordId: update.taskId,
+        },
+        taskFlowClient,
+      ),
   },
   question: {
     pendingSql: `SELECT q.record_id id,q.workflow_key task_key,p.name project
@@ -499,7 +503,8 @@ export async function linkRunTasks(
         }
       }
       for (const update of pendingUpdates) {
-        if (update.table !== 'workflow_cursor') LOCAL_TASK_LINKS[update.table].write(database, update)
+        if (update.table !== 'workflow_cursor')
+          LOCAL_TASK_LINKS[update.table].write(database, update)
       }
     }, database)
   }

@@ -179,24 +179,30 @@ describe('hosted run task linking', () => {
     db().query('UPDATE run SET launch_key=? WHERE record_id=?').run('FAIL-1', runId)
     db().exec('PRAGMA foreign_keys=OFF')
     try {
-      db().query(
-        `INSERT INTO workflow_cursor
+      db()
+        .query(
+          `INSERT INTO workflow_cursor
           (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,
            workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,total_steps,created_at,updated_at)
          VALUES ('cursor-hosted-failure',992,'hosted-link-failure',?,'flow','default','FAIL-1','',
                  'workflow-version','catalogue-version','{}',0,'step','running','[]',1,'t','t')`,
-      ).run(projectId)
-      db().query(
-        `INSERT INTO question
+        )
+        .run(projectId)
+      db()
+        .query(
+          `INSERT INTO question
           (record_id,number,workflow_cursor_record_id,workflow_key,asked_at,question,asked_via)
          VALUES ('question-hosted-failure',992,'cursor-hosted-failure','FAIL-1','t','question','live')`,
-      ).run()
-      db().query(
-        `INSERT INTO presence
+        )
+        .run()
+      db()
+        .query(
+          `INSERT INTO presence
           (session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
          VALUES ('hosted-failure-session','claude','architect','machine','hosted-link-failure',?,
                  '/work/hosted-link-failure','FAIL-1','t')`,
-      ).run(projectId)
+        )
+        .run(projectId)
     } finally {
       db().exec('PRAGMA foreign_keys=ON')
     }
@@ -222,12 +228,14 @@ describe('hosted run task linking', () => {
       task_record_id: null,
     })
     expect(
-      db().query(
-        `SELECT
+      db()
+        .query(
+          `SELECT
           (SELECT task_record_id FROM workflow_cursor WHERE record_id='cursor-hosted-failure') cursor_task,
           (SELECT workflow_task_record_id FROM question WHERE record_id='question-hosted-failure') question_task,
           (SELECT current_task_record_id FROM presence WHERE session_id='hosted-failure-session') presence_task`,
-      ).get(),
+        )
+        .get(),
     ).toEqual({ cursor_task: null, question_task: null, presence_task: null })
   })
 })

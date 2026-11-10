@@ -826,6 +826,11 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
       databaseB.exec('PRAGMA foreign_keys=ON')
 
       setMachineValue('machine.id', machineA)
+      await syncRecord({
+        local: databaseA,
+        identity: { id: machineA, name: 'Machine A' },
+        projectSpaces: { [PROJECT]: input.spaceId() },
+      })
       const opened = await composeWorkflowWithCursor(
         WORKFLOW,
         PROJECT,
@@ -846,15 +851,6 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
              ON cursor.record_id=flow.open_stage_cursor_record_id`)
         .get()!
 
-      input.signIn()
-      expect(
-        await syncRecord({
-          local: databaseA,
-          identity: { id: machineA, name: 'Machine A' },
-          projectSpaces: { [PROJECT]: input.spaceId() },
-        }),
-      ).toMatchObject({ pushed: 2, failed: 0, pending: 0 })
-
       // Machine B is the same user's second machine: takeover is cross-machine for one user, and a
       // flow belongs to its user within the space, so another member's push is refused by design.
       input.signIn()
@@ -874,11 +870,16 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
 
       await readThroughTaskFlow(databaseB, { taskKey: TASK_KEY, taskRecordId: taskId })
       setMachineValue('machine.id', machineB)
+      await syncRecord({
+        local: databaseB,
+        identity: { id: machineB, name: 'Machine B' },
+        projectSpaces: { [PROJECT]: input.spaceId() },
+      })
       // The built-in diagnose step has a recorded-artifact floor; this proof exercises takeover.
       databaseB
         .query("UPDATE workflow_cursor SET enforcement='note-only' WHERE record_id=?")
         .run(localIds.stage_id)
-      const advanced = nextWorkflowStep(
+      const advanced = await nextWorkflowStep(
         WORKFLOW,
         PROJECT,
         'default',
@@ -895,13 +896,6 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         testPorts,
       )
       expect(advanced).toStartWith('Took over this workflow stage from Machine A.')
-      expect(
-        await syncRecord({
-          local: databaseB,
-          identity: { id: machineB, name: 'Machine B' },
-          projectSpaces: { [PROJECT]: input.spaceId() },
-        }),
-      ).toMatchObject({ pushed: 2, failed: 0, pending: 0 })
 
       const hostedStage = () =>
         input.admin(
@@ -910,22 +904,6 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         )
       const afterTakeover = hostedStage()
       expect(afterTakeover).toBe(`${byTask.stage!.revision + 1}|${machineA}|${machineB}`)
-      databaseB
-        .query(
-          `UPDATE outbox SET synced_at=NULL WHERE id=(
-             SELECT id FROM outbox WHERE kind='task_flow_stage' AND row_id=? ORDER BY id DESC LIMIT 1
-           )`,
-        )
-        .run(localIds.stage_id)
-      expect(
-        await syncRecord({
-          local: databaseB,
-          identity: { id: machineB, name: 'Machine B' },
-          projectSpaces: { [PROJECT]: input.spaceId() },
-        }),
-      ).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
-      expect(hostedStage()).toBe(afterTakeover)
-
       input.signIn()
       expect(await client.readTaskFlow!({ taskKey: TASK_KEY })).toMatchObject({
         stage: {
@@ -936,7 +914,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         },
       })
 
-      abandonCursor(
+      await abandonCursor(
         WORKFLOW,
         PROJECT,
         'default',
@@ -955,13 +933,6 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
           'SELECT revision FROM workflow_cursor WHERE record_id=?',
         )
         .get(localIds.stage_id)!.revision
-      expect(
-        await syncRecord({
-          local: databaseB,
-          identity: { id: machineB, name: 'Machine B' },
-          projectSpaces: { [PROJECT]: input.spaceId() },
-        }),
-      ).toMatchObject({ pushed: 2, failed: 0, pending: 0 })
       input.signIn()
       const afterClose = await client.readTaskFlow!({ taskKey: TASK_KEY })
       expect(afterClose.stage).toBeNull()
