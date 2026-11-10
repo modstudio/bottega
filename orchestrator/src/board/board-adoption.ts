@@ -33,6 +33,7 @@ import {
   recipients,
   rowIsLive,
 } from './board-store.ts'
+import { type BoardDestinationResolver, boardWriteDestination } from './board-write-destination.ts'
 
 type LedgerRow = {
   local_kind: LocalKind
@@ -273,6 +274,7 @@ async function uploadMessage(
   hostedRoots: Map<string, string>,
   client: RecordApiClient,
   database: Database,
+  destinationResolver: BoardDestinationResolver,
 ): Promise<string> {
   const authorRunId = row.author_run_record_id
   if (candidate.kind === 'reply') {
@@ -281,17 +283,21 @@ async function uploadMessage(
     if (!hostedRoot) throw new Error(`local reply ${row.number} has no uploaded root ${rootId}`)
     const project = row.author_project ?? undefined
     const projectId = project ? (projectRowByName(project, database)?.recordId ?? null) : null
-    const uploaded = await client.replyBoardMessage(hostedRoot, {
-      id: hostedId,
-      body: row.body,
-      ...(row.audience === null ? {} : { audience: parseReplyAudienceOption(row.audience) }),
-      authorSession: row.author_session,
-      authorHarness: row.author_harness,
-      authorMachineId: machineId(),
-      authorRunId,
-      project,
-      projectId,
-    })
+    const uploaded = await client.replyBoardMessage(
+      hostedRoot,
+      {
+        id: hostedId,
+        body: row.body,
+        ...(row.audience === null ? {} : { audience: parseReplyAudienceOption(row.audience) }),
+        authorSession: row.author_session,
+        authorHarness: row.author_harness,
+        authorMachineId: machineId(),
+        authorRunId,
+        project,
+        projectId,
+      },
+      await destinationResolver(client, project),
+    )
     return uploaded.id
   }
   if (candidate.kind === 'claim')
@@ -302,26 +308,30 @@ async function uploadMessage(
     row.thread_root_record_id ? roots.get(row.thread_root_record_id) : undefined,
   )
   const projectId = project ? (projectRowByName(project, database)?.recordId ?? null) : null
-  const uploaded = await client.postBoardMessage({
-    id: hostedId,
-    kind: candidate.kind,
-    purpose: row.purpose ?? (candidate.kind === 'question' ? 'request' : 'information'),
-    audience: row.audience!,
-    title: row.title!,
-    body: row.body,
-    ackRequired: row.ack_required === 1,
-    ackDeadline: row.ack_deadline,
-    expiresAt: row.expires_at!,
-    task: tags.find((tag) => tag.kind === 'task')?.value,
-    paths: tags.filter((tag) => tag.kind === 'path').map((tag) => tag.value),
-    topics: tags.filter((tag) => tag.kind === 'topic').map((tag) => tag.value),
-    authorSession: row.author_session,
-    authorHarness: row.author_harness,
-    authorMachineId: machineId(),
-    authorRunId,
-    project,
-    projectId,
-  })
+  const uploaded = await client.postBoardMessage(
+    {
+      id: hostedId,
+      kind: candidate.kind,
+      purpose: row.purpose ?? (candidate.kind === 'question' ? 'request' : 'information'),
+      audience: row.audience!,
+      title: row.title!,
+      body: row.body,
+      ackRequired: row.ack_required === 1,
+      ackDeadline: row.ack_deadline,
+      expiresAt: row.expires_at!,
+      task: tags.find((tag) => tag.kind === 'task')?.value,
+      paths: tags.filter((tag) => tag.kind === 'path').map((tag) => tag.value),
+      topics: tags.filter((tag) => tag.kind === 'topic').map((tag) => tag.value),
+      authorSession: row.author_session,
+      authorHarness: row.author_harness,
+      authorMachineId: machineId(),
+      authorRunId,
+      project,
+      projectId,
+    },
+    undefined,
+    await destinationResolver(client, project),
+  )
   return uploaded.id
 }
 
@@ -331,19 +341,24 @@ async function uploadReceipts(
   client: RecordApiClient,
   database: Database,
   clock: number,
+  destinationResolver: BoardDestinationResolver,
 ): Promise<number> {
   let skipped = 0
   const receipts = pendingReceiptsForMessage(messageId, database, clock)
   for (const receipt of receipts) {
     try {
-      await client.putBoardReceipt({
-        messageId: hostedId,
-        readerSession: receipt.reader_session,
-        readerRunRecordId: receipt.reader_run_record_id,
-        audienceAtPosting: receipt.audience_at_posting === 1,
-        delivered: Boolean(receipt.delivered_at),
-        acknowledged: Boolean(receipt.acknowledged_at),
-      })
+      await client.putBoardReceipt(
+        {
+          messageId: hostedId,
+          readerSession: receipt.reader_session,
+          readerRunRecordId: receipt.reader_run_record_id,
+          audienceAtPosting: receipt.audience_at_posting === 1,
+          delivered: Boolean(receipt.delivered_at),
+          acknowledged: Boolean(receipt.acknowledged_at),
+        },
+        undefined,
+        await destinationResolver(client),
+      )
       recordReceiptUpload(
         hostedId,
         receipt.reader_session,
@@ -454,19 +469,23 @@ async function uploadClaim(
   clock: () => number,
   client: RecordApiClient,
   database: Database,
+  destinationResolver: BoardDestinationResolver,
 ): Promise<string | null> {
   const remaining = Date.parse(row.lapses_at) - clock()
   if (remaining <= 0) return null
-  const uploaded = await client.takeBoardClaim({
-    id: hostedId,
-    project: row.project,
-    projectId: projectRowByName(row.project, database)!.recordId,
-    subject: `${row.subject_kind}:${row.subject_value}`,
-    durationMs: remaining,
-    runId: row.run_record_id,
-    note: row.note ?? undefined,
-    holderSession: row.holder_session,
-  })
+  const uploaded = await client.takeBoardClaim(
+    {
+      id: hostedId,
+      project: row.project,
+      projectId: projectRowByName(row.project, database)!.recordId,
+      subject: `${row.subject_kind}:${row.subject_value}`,
+      durationMs: remaining,
+      runId: row.run_record_id,
+      note: row.note ?? undefined,
+      holderSession: row.holder_session,
+    },
+    await destinationResolver(client, row.project),
+  )
   return uploaded.id
 }
 
@@ -483,6 +502,7 @@ type UploadContext = {
   at: string
   skippedReceipts: number
   dropped: Set<string>
+  destinationResolver: BoardDestinationResolver
 }
 
 function stoppedAtRateCap(context: UploadContext): BoardAdoptionResult {
@@ -534,6 +554,7 @@ async function uploadOneMessage(
       context.hostedRoots,
       context.client,
       context.database,
+      context.destinationResolver,
     ),
   )
 }
@@ -551,6 +572,7 @@ async function uploadMessages(context: UploadContext): Promise<BoardAdoptionResu
         context.client,
         context.database,
         context.clock(),
+        context.destinationResolver,
       )
   }
   return null
@@ -567,6 +589,7 @@ async function uploadOneClaim(
       context.clock,
       context.client,
       context.database,
+      context.destinationResolver,
     ),
   )
 }
@@ -655,6 +678,7 @@ export async function adoptHostedBoard(
     clock?: () => number
     database?: Database
     client?: RecordApiClient
+    destinationResolver?: BoardDestinationResolver
   } = {},
 ): Promise<BoardAdoptionResult> {
   const database = input.database ?? writableDb()
@@ -712,6 +736,7 @@ export async function adoptHostedBoard(
     at,
     skippedReceipts: 0,
     dropped: new Set(),
+    destinationResolver: input.destinationResolver ?? boardWriteDestination,
   }
   const stopped = await uploadMessages(uploadContext)
   if (stopped) return stopped

@@ -12,6 +12,10 @@ import {
 } from '../board/board-hosted-refresh-budget.ts'
 import { hostedBoardPostInput } from '../board/board-operations.ts'
 import { boardActor } from '../board/board-store.ts'
+import {
+  type BoardDestinationResolver,
+  boardWriteDestination,
+} from '../board/board-write-destination.ts'
 import { resolveOperatorCredential } from '../config/operator-credential.ts'
 import { db, writeTransaction } from '../database/db.ts'
 import { type RecordApiClient, recordApiClient } from '../record/record-api-client.ts'
@@ -60,10 +64,11 @@ type Dependencies = {
   >
   env?: Record<string, string | undefined>
   cwd?: string
+  destinationResolver?: BoardDestinationResolver
 }
 export type HostedPressureAnnouncementDependencies = Pick<
   Dependencies,
-  'boardClient' | 'env' | 'cwd'
+  'boardClient' | 'env' | 'cwd' | 'destinationResolver'
 >
 type CacheRow = {
   checked_at: string
@@ -218,29 +223,31 @@ export async function announceHostedPressureActions(
       signal,
     )
     const actions = decide(overview.messages)
+    const destinationResolver = dependencies.destinationResolver ?? boardWriteDestination
     for (const action of actions) {
       if (action.kind === 'withdraw') {
+        const destination = await destinationResolver(client as RecordApiClient)
         await client.withdrawBoardMessage(
           action.id,
           { authorSession: boardActor(env).session },
           signal,
+          destination,
         )
         continue
       }
-      await client.postBoardMessage(
-        hostedBoardPostInput(
-          'notice',
-          {
-            audience: 'architects:all',
-            purpose: 'request',
-            title: action.notice.title,
-            body: action.notice.body,
-            expiresMs: action.notice.expiresMs,
-          },
-          { env, clock, cwd: dependencies.cwd },
-        ),
-        signal,
+      const input = hostedBoardPostInput(
+        'notice',
+        {
+          audience: 'architects:all',
+          purpose: 'request',
+          title: action.notice.title,
+          body: action.notice.body,
+          expiresMs: action.notice.expiresMs,
+        },
+        { env, clock, cwd: dependencies.cwd },
       )
+      const destination = await destinationResolver(client as RecordApiClient, input.project)
+      await client.postBoardMessage(input, signal, destination)
     }
   }, HOSTED_PRESSURE_ANNOUNCE_BUDGET_MS)
 }

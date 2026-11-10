@@ -97,7 +97,7 @@ function machine(projectId: string, session: string, lastSeen = Date.now()): Dat
   const database = migratedTestDatabase()
   database
     .query('INSERT INTO project(record_id,name,path,settings) VALUES (?,?,?,?)')
-    .run(projectId, projectName, `/tmp/${projectId}`, '{}')
+    .run(projectId, projectName, process.cwd(), '{}')
   database
     .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
     .run(BOARD_HOSTED_ADOPTED_KEY, '1')
@@ -140,11 +140,14 @@ function addPresence(
 }
 
 async function refresh(database: Database, client: ReturnType<typeof createMemoryRecordApiClient>) {
+  const project = database.query('SELECT path FROM project LIMIT 1').get() as { path: string }
   await refreshHostedBoard({
     budgetMs: 1_000,
     env: { BOTTEGA_RECORD_API_URL: 'memory' },
     database,
     client,
+    cwd: project.path,
+    presenceDestinationResolver: async () => ({ destinationSpaceId: 'project-space' }),
   })
 }
 

@@ -5,6 +5,7 @@ import type { Database } from 'bun:sqlite'
 import type { RecordApiClient } from '../record/record-api-client.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
 import { cacheHostedBoardReceipt } from './board-hosted-receipt-cache.ts'
+import { boardWriteDestination } from './board-write-destination.ts'
 
 export async function takeHostedReportReplySuccessor(input: {
   message: HostedBoardMessage
@@ -14,10 +15,10 @@ export async function takeHostedReportReplySuccessor(input: {
   readerRunRecordId: string | null
   client: RecordApiClient
 }): Promise<boolean> {
-  const result = await input.client.takeBoardSuccessor({
-    messageId: input.message.id,
-    candidateSession: input.reader,
-  })
+  const result = await input.client.takeBoardSuccessor(
+    { messageId: input.message.id, candidateSession: input.reader },
+    await boardWriteDestination(input.client),
+  )
   if (result.holder !== input.reader) {
     if (result.holder !== null)
       cacheHostedBoardReceipt(

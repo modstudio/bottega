@@ -60,6 +60,11 @@ export function registerRecordRequestSpace(app: Hono<ApiEnvironment>): void {
     '/v1/settings/auto-mode',
     '/v1/config',
     '/v1/runs',
+    '/v1/board/messages',
+    '/v1/board/changes',
+    '/v1/board/successor',
+    '/v1/board/receipts',
+    '/v1/board/claims',
     '/v1/snapshots',
   ] as const
   for (const prefix of prefixes) {

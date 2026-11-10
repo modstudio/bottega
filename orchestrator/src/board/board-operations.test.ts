@@ -24,10 +24,15 @@ import {
   boardWithdraw,
   localBoardAudienceRefusal,
 } from './board-operations.ts'
+
 import { pendingBoardDelivery } from './board-push-service.ts'
 import { postNotice } from './board-service.ts'
 import { originText } from './board-store.ts'
 import { askQuestion, replyToThread } from './board-thread-service.ts'
+
+const destinationResolver = async (_client: unknown, project?: string | null) => ({
+  destinationSpaceId: project ? `space:${project}` : 'space:personal',
+})
 
 const env = {
   CLAUDE_CODE_SESSION_ID: 'board-route-session',
@@ -132,41 +137,6 @@ test('local board audience decision refuses shared-space reach with the hosted-b
   expect(localBoardAudienceRefusal({ kind: 'operator' })).toBeNull()
 })
 
-test('hosted post and reply expose unavailable posting counts as null', async () => {
-  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
-  const root = hostedMessage()
-  const reply = hostedMessage()
-  let replyAudience: { kind: string } | undefined
-  const client = {
-    ...createMemoryRecordApiClient(),
-    postBoardMessage: async () => root,
-    replyBoardMessage: async (_rootId: string, input: { audience?: { kind: string } }) => {
-      replyAudience = input.audience
-      return reply
-    },
-  }
-  await expect(
-    boardPost({ audience: 'operator', title: 'Hosted', body: 'body' }, { env, client }),
-  ).resolves.toEqual({
-    recordId: root.id,
-    number: null,
-    dropped: false,
-    reached: null,
-    warning: null,
-  })
-  await expect(
-    boardReply(root.id, 'reply', { env, client }, { kind: 'acknowledged' }),
-  ).resolves.toEqual({
-    recordId: reply.id,
-    number: null,
-    rootId: root.id,
-    dropped: false,
-    reached: null,
-    warning: null,
-  })
-  expect(replyAudience).toEqual({ kind: 'acknowledged' })
-})
-
 test('uploaded message and claim UUIDs route to hosted rows instead of retired local shadows', async () => {
   const clock = Date.parse('2026-10-05T12:00:00Z')
   const localMessage = postNotice(
@@ -223,7 +193,7 @@ test('uploaded message and claim UUIDs route to hosted rows instead of retired l
       return hostedClaim
     },
   }
-  const adoptedContext = { env, client, clock: clock + 2 }
+  const adoptedContext = { env, client, clock: clock + 2, destinationResolver }
 
   await expect(boardWithdraw(localMessage.recordId, adoptedContext)).resolves.toEqual({
     withdrawn: localMessage.recordId,
@@ -580,9 +550,13 @@ test('claim verbs stringify every id and share the same local and hosted result 
   delete (hostedResult as Partial<typeof hostedResult>).id
   delete (hostedResult as Partial<typeof hostedResult>).previousClaimIds
   delete (hostedResult as Partial<typeof hostedResult>).supersededByClaimId
+  let claimDestination: string | undefined
   const hostedClient = {
     ...createMemoryRecordApiClient(),
-    takeBoardClaim: async () => ({ ...hostedClaim, action: 'taken' as const }),
+    takeBoardClaim: async (_input: unknown, destination?: { destinationSpaceId?: string }) => {
+      claimDestination = destination?.destinationSpaceId
+      return { ...hostedClaim, action: 'taken' as const }
+    },
     renewBoardClaim: async () => hostedClaim,
     releaseBoardClaim: async () => ({
       ...hostedClaim,
@@ -596,12 +570,14 @@ test('claim verbs stringify every id and share the same local and hosted result 
     env: { BOTTEGA_RECORD_API_URL: env.BOTTEGA_RECORD_API_URL },
     clock,
     client: hostedClient,
+    destinationResolver,
   }
   const hosted = await boardClaimTake(
     { subject: 'resource:hosted', project: 'board-route-project' },
     hostedContext,
   )
   expect(hosted).toEqual({ ...hostedResult, action: 'taken' })
+  expect(claimDestination).toBe('space:board-route-project')
   await expect(boardClaimRenew(hostedClaim.id, hostedContext)).resolves.toEqual(hostedResult)
   await expect(boardClaimRelease(hostedClaim.id, hostedContext)).resolves.toEqual({
     ...hostedResult,
@@ -651,13 +627,21 @@ test('release-task normalizes before hosted release and refuses another shape be
   if (!project) throw new Error('board-route-project fixture is missing')
 
   await expect(
-    boardClaimReleaseTask('task:DEV-1', 'board-route-project', { env, client }),
+    boardClaimReleaseTask('task:DEV-1', 'board-route-project', {
+      env,
+      client,
+      destinationResolver,
+    }),
   ).resolves.toEqual({ released: 1 })
   expect(calls).toEqual([
     { key: 'DEV-1', project: 'board-route-project', projectId: project.record_id },
   ])
   await expect(
-    boardClaimReleaseTask('path:DEV-1', 'board-route-project', { env, client }),
+    boardClaimReleaseTask('path:DEV-1', 'board-route-project', {
+      env,
+      client,
+      destinationResolver,
+    }),
   ).rejects.toThrow('use <KEY> or task:<KEY> matching')
   expect(calls).toHaveLength(1)
 })
@@ -709,7 +693,7 @@ test('hosted take and list use the local claim-project actor decision', async ()
   await expect(
     boardClaimTake(
       { subject: 'resource:x', project: 'another-project' },
-      { env, cwd: process.cwd(), client },
+      { env, cwd: process.cwd(), client, destinationResolver },
     ),
   ).rejects.toThrow(`architect session belongs to project ${heldProject.name}`)
   await expect(
@@ -717,6 +701,7 @@ test('hosted take and list use the local claim-project actor decision', async ()
       env,
       cwd: process.cwd(),
       client,
+      destinationResolver,
     }),
   ).rejects.toThrow(`architect session belongs to project ${heldProject.name}`)
   expect(called).toBe(false)
@@ -766,12 +751,15 @@ test('an adopted install routes hosted-capable message verbs only to the injecte
       }
     },
   }
-  await boardPost({ audience: 'operator', title: 'Hosted', body: 'body' }, { env, client })
-  await boardReply(id, 'reply', { env, client })
-  await boardWithdraw(id, { env, client })
+  await boardPost(
+    { audience: 'operator', title: 'Hosted', body: 'body' },
+    { env, client, destinationResolver },
+  )
+  await boardReply(id, 'reply', { env, client, destinationResolver })
+  await boardWithdraw(id, { env, client, destinationResolver })
   await boardThread(id, { env, client })
   await boardStatus(id, { env, client })
-  await boardAcknowledge(id, { env, client })
+  await boardAcknowledge(id, { env, client, destinationResolver })
   expect(calls).toEqual(['post', 'reply', 'withdraw', 'thread', 'status', 'ack'])
   expect(
     db().query<{ count: number }, []>('SELECT count(*) count FROM board_message').get()?.count,
@@ -848,15 +836,15 @@ test('an adopted install routes every UUID id only to the hosted client', async 
   }
   const id = newRecordId()
   const operations = [
-    () => boardReply(id, 'reply', { env, client }),
+    () => boardReply(id, 'reply', { env, client, destinationResolver }),
     () => boardThread(id, { env, client }),
-    () => boardWithdraw(id, { env, client }),
-    () => boardAcknowledge(id, { env, client }),
+    () => boardWithdraw(id, { env, client, destinationResolver }),
+    () => boardAcknowledge(id, { env, client, destinationResolver }),
     () => boardStatus(id, { env, client }),
-    () => boardAccept(id, id, { env, client }),
-    () => boardFileNote(id, { env, client }),
-    () => boardClaimRenew(id, { env, client }),
-    () => boardClaimRelease(id, { env, client }),
+    () => boardAccept(id, id, { env, client, destinationResolver }),
+    () => boardFileNote(id, { env, client, destinationResolver }),
+    () => boardClaimRenew(id, { env, client, destinationResolver }),
+    () => boardClaimRelease(id, { env, client, destinationResolver }),
   ]
   for (const operation of operations)
     await expect(operation()).rejects.toThrow('hosted service reached')

@@ -2,15 +2,14 @@
 /** Binds project-addressed hosted document operations to the register's destination. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
-import { type RecordWriteOwner, recordWriteSpace } from '../../../shared/record-write-space.ts'
-import { declaredRecordSpace } from '../project/declared-record-space.ts'
-import { projectAt, projectRowByName, projects } from '../project/projects.ts'
+import type { RecordWriteOwner } from '../../../shared/record-write-space.ts'
+import { projectAt, projectRowByName } from '../project/projects.ts'
 import {
   type RecordApiClient,
   RecordApiRequestError,
   recordApiClient,
 } from '../record/record-api-client.ts'
+import { recordWriteDestination } from '../record/record-write-destination.ts'
 import { resolveContextTaskByRecordId } from './context-write-adapter.ts'
 import { docWriteProjectName } from './doc-write-allowed.ts'
 
@@ -39,17 +38,7 @@ export async function hostedDocClient(
   const projectName = docWriteProjectName(scope, subject)
   const projectId = projectName ? (projectRowByName(projectName)?.recordId ?? null) : null
   const owner = suppliedOwner ?? (await docOwner(scope, subject, projectName))
-  const identity = await client.whoami()
-  const registered = [...projects(), ...projects({ retired: true })]
-  const decision = recordWriteSpace(owner, {
-    declaredSpaces: Object.fromEntries(
-      registered.map((project) => [project.name, declaredRecordSpace(project.settings)]),
-    ),
-    personalSpaceId: identity.personalSpaceId,
-    memberships: parseRecordSpaceMemberships(identity.memberships),
-  })
-  if ('refused' in decision) throw new RecordApiRequestError(decision.remedy, 'refused', 409)
-  const destination = { destinationSpaceId: decision.spaceId }
+  const destination = await recordWriteDestination(client, owner)
   return {
     listDocs: (query) => client.listDocs(query, destination),
     getDoc: (id) => client.getDoc(id, destination),

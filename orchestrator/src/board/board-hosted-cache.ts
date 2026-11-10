@@ -16,6 +16,9 @@ import {
   type HostedBoardChanges,
   type HostedBoardMessage,
 } from '../record/record-board-contract.ts'
+import type { HostedCacheNotice } from './board-hosted-cache-contract.ts'
+import { hostedBoardRevisionIsStale } from './board-hosted-cache-revision.ts'
+import { hostedBoardPresence } from './board-hosted-presence.ts'
 import { cacheHostedBoardReceipt } from './board-hosted-receipt-cache.ts'
 import { BUDGET_SPENT, withinHostedBoardRefreshBudget } from './board-hosted-refresh-budget.ts'
 import { takeHostedReportReplySuccessor } from './board-hosted-successor.ts'
@@ -43,6 +46,14 @@ import {
   renderBoardReply,
   renderBoardReplyDelivery,
 } from './board-thread-render.ts'
+import {
+  type BoardDestinationResolver,
+  type BoardPresenceDestinationResolver,
+  boardPresenceDestination,
+  boardWriteDestination,
+} from './board-write-destination.ts'
+
+export type { HostedCacheNotice } from './board-hosted-cache-contract.ts'
 
 export const BOARD_REFRESH_CURSOR_KEY = 'board_hosted_change_cursor'
 const BOARD_REFRESH_AT_KEY = 'board_hosted_refresh_at'
@@ -55,26 +66,15 @@ export const BOARD_RECEIPT_WRITE_BUDGET_MS = 250
 export const BOARD_READ_REFRESH_BUDGET_MS = 500
 export const BOARD_VERIFICATION_WARNING_MAX_CHARS = 500
 
-export type HostedCacheNotice = {
-  id: string
-  text: string
-  oneLine: string
-  ackRequired: boolean
-  ackDeadline: string | null
-  createdAt: string
-  expiresAt: string | null
-  purpose: import('../../../shared/board-purpose.ts').BoardPurpose
-  reportReplySuccessor?: boolean
-  successorHeld?: boolean
-  threadTitle?: string
-}
-
 type RefreshInput = {
   budgetMs: number
   env?: Record<string, string | undefined>
   client?: RecordApiClient
   database?: Database
   now?: () => number
+  cwd?: string
+  destinationResolver?: BoardDestinationResolver
+  presenceDestinationResolver?: BoardPresenceDestinationResolver
 }
 
 export type HostedBoardRefresh = {
@@ -101,20 +101,6 @@ function recordRefresh(database: Database, at: number, outcome: string): void {
     setMeta(database, BOARD_REFRESH_OUTCOME_KEY, outcome)
     if (outcome === 'success') setMeta(database, BOARD_VERIFIED_AT_KEY, new Date(at).toISOString())
   }, database)
-}
-
-function cachedRevision(database: Database, id: string): string | null {
-  return (
-    (
-      database.query('SELECT revision FROM hosted_board_message_cache WHERE id=?').get(id) as {
-        revision: string
-      } | null
-    )?.revision ?? null
-  )
-}
-
-function incomingIsStale(cached: string | null, incoming: string): boolean {
-  return cached !== null && BigInt(incoming) < BigInt(cached)
 }
 
 export function queueHostedBoardAcknowledgement(
@@ -165,7 +151,15 @@ function replacePage(database: Database, page: HostedBoardChanges): number {
     let applied = 0
     for (const change of page.items) {
       const message = change.message
-      if (incomingIsStale(cachedRevision(database, message.id), message.revision)) continue
+      const cached =
+        (
+          database
+            .query('SELECT revision FROM hosted_board_message_cache WHERE id=?')
+            .get(message.id) as {
+            revision: string
+          } | null
+        )?.revision ?? null
+      if (hostedBoardRevisionIsStale(cached, message.revision)) continue
       putMessage.run(
         message.id,
         message.kind,
@@ -233,6 +227,7 @@ async function flushReceipts(
   database: Database,
   deadline: number,
   now: () => number,
+  destinationResolver: BoardDestinationResolver,
 ): Promise<void> {
   const rows = database
     .query(
@@ -248,6 +243,7 @@ async function flushReceipts(
     delivered_at: string | null
     acknowledged_at: string | null
   }[]
+  const destination = rows.length > 0 ? await destinationResolver(client) : undefined
   for (const row of rows) {
     try {
       await withinHostedBoardRefreshBudget(
@@ -262,6 +258,7 @@ async function flushReceipts(
               acknowledged: row.acknowledged_at !== null,
             },
             signal,
+            destination,
           ),
         deadline - now(),
       )
@@ -307,20 +304,18 @@ async function fetchHostedPages(
   now: () => number,
   tally: { applied: number },
   presenceAt: number,
+  cwd: string,
+  destinationResolver: BoardDestinationResolver,
+  presenceDestinationResolver: BoardPresenceDestinationResolver,
 ): Promise<boolean> {
   let after = meta(database, BOARD_REFRESH_CURSOR_KEY) ?? '0'
-  const liveSince = new Date(presenceAt - SESSION_LIVE_MS).toISOString()
-  const presence = database
-    .query(
-      `SELECT session_id AS session,project_record_id AS projectId,role,
-              COALESCE(first_seen,last_seen) AS firstSeen,last_seen AS lastSeen
-       FROM presence WHERE last_seen>=? AND project_record_id IS NOT NULL`,
-    )
-    .all(liveSince) as import('../record/record-board-contract.ts').HostedBoardPresenceInput[]
+  const presence = hostedBoardPresence(database, cwd, presenceAt)
+  const destination =
+    presence.length > 0 ? await presenceDestinationResolver(client, cwd) : undefined
   while (now() < deadline) {
     const query = { after, limit: BOARD_CHANGES_PAGE_LIMIT, machineId: machineId(), presence }
     const page = await withinHostedBoardRefreshBudget(
-      (signal) => client.listBoardChanges({ ...query, signal }),
+      (signal) => client.listBoardChanges({ ...query, signal }, destination),
       deadline - now(),
     )
     if (establishCacheOwner(database, page.userId)) {
@@ -330,10 +325,10 @@ async function fetchHostedPages(
     tally.applied += replacePage(database, page)
     if (page.highestRevision !== null) after = page.highestRevision
     if (page.items.length >= BOARD_CHANGES_PAGE_LIMIT) continue
-    await flushReceipts(client, database, deadline, now)
+    await flushReceipts(client, database, deadline, now, destinationResolver)
     return true
   }
-  await flushReceipts(client, database, deadline, now)
+  await flushReceipts(client, database, deadline, now, destinationResolver)
   return false
 }
 
@@ -357,6 +352,9 @@ export async function refreshHostedBoard(input: RefreshInput): Promise<HostedBoa
       now,
       tally,
       startedAt,
+      input.cwd ?? process.cwd(),
+      input.destinationResolver ?? boardWriteDestination,
+      input.presenceDestinationResolver ?? boardPresenceDestination,
     )
     recordRefresh(database, now(), 'success')
     return { status: caughtUp ? 'success' : 'incomplete', applied: tally.applied }
@@ -990,12 +988,14 @@ export async function syncCachedHostedReceipt(
     database?: Database
     deadline?: number
     readerRunRecordId?: string | null
+    destinationResolver?: BoardDestinationResolver
   } = {},
 ): Promise<void> {
   const database = input.database ?? writableDb()
   const client = input.client ?? recordApiClient()
   const deadline = input.deadline ?? Date.now() + BOARD_RECEIPT_WRITE_BUDGET_MS
   try {
+    const destination = await (input.destinationResolver ?? boardWriteDestination)(client)
     await withinHostedBoardRefreshBudget(
       (signal) =>
         client.putBoardReceipt(
@@ -1007,6 +1007,7 @@ export async function syncCachedHostedReceipt(
             delivered: true,
           },
           signal,
+          destination,
         ),
       deadline - Date.now(),
     )

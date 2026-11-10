@@ -191,6 +191,7 @@ export function registerBoardApiProofs(input: {
     userId: () => userA,
     project: ADOPTION_PROJECT,
     projectId: IDS.adoptionProject,
+    spaceId: () => spaceA,
     expiresAt,
     caseSession,
     succeeds: input.succeeds,

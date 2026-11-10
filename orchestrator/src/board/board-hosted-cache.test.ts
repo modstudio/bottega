@@ -238,6 +238,53 @@ test('routing narrows own-user audiences and withholds questions from worker cha
   ).toBe(false)
 })
 
+test('architects all reaches the authors sessions in two projects with one acknowledgement', () => {
+  const database = db()
+  database
+    .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
+    .run('board_hosted_signed_in_user', userId)
+  database
+    .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
+    .run(BOARD_CACHE_OWNER_KEY, userId)
+  insertArchitect(
+    'first-project-session',
+    '2026-10-05T11:00:00.000Z',
+    createdAt,
+    null,
+    'cache-project',
+  )
+  insertArchitect(
+    'second-project-session',
+    '2026-10-05T11:00:00.000Z',
+    createdAt,
+    null,
+    'other-project',
+  )
+  const notice = message({ audience: 'architects:all', ackRequired: true })
+  database
+    .query(
+      'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
+    )
+    .run(notice.id, notice.kind, null, notice.revision, JSON.stringify(notice))
+  const clock = Date.parse(createdAt)
+  expect(
+    ['first-project-session', 'second-project-session'].map((reader) =>
+      cachedMessageAddressed({ message: notice, tags: [] }, reader, clock, database),
+    ),
+  ).toEqual([true, true])
+  queueHostedBoardAcknowledgement(
+    notice.id,
+    'first-project-session',
+    true,
+    '2026-10-05T12:05:00.000Z',
+  )
+  expect(
+    database
+      .query('SELECT message_id,acknowledged_at FROM hosted_board_receipt_cache WHERE message_id=?')
+      .all(notice.id),
+  ).toEqual([{ message_id: notice.id, acknowledged_at: '2026-10-05T12:05:00.000Z' }])
+})
+
 test('reader routing covers local audiences, context, hosted run ids, nobody here, and reply participants', async () => {
   const database = db()
   const projectRecordId = fixtureProjectRecordId(database)
