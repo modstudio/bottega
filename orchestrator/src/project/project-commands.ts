@@ -769,8 +769,10 @@ function printProjectSpaceFillRow(
         : row.decision.kind === 'mismatch'
           ? ` declared=${row.decision.declared} hosted=${row.decision.spaces.join(', ') || '(none)'}`
           : ''
+  const needsRuling = row.decision.kind !== 'ok' && row.decision.kind !== 'fill'
+  const remedy = needsRuling ? `; remedy: ${row.remedy}` : ''
   presentation.log(
-    `${row.project}: ${row.decision.kind}${detail}; declared ${declared}; hosted ${hosted}; remedy: ${row.remedy}`,
+    `${row.project}: ${row.decision.kind}${detail}; declared ${declared}; hosted ${hosted}${remedy}`,
   )
 }
 

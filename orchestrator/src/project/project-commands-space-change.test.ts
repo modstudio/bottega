@@ -203,7 +203,7 @@ test('project fill-space --apply writes only fills and exits nonzero for rulings
   expect(writes).toEqual(['fill-this'])
   expect(exits).toEqual([1])
   expect(output).toEqual([
-    `fill-this: fill next-team applied; declared (none); hosted next-team; remedy: ${PLATFORM_SLUG} project set fill-this --space <slug>`,
+    `fill-this: fill next-team applied; declared (none); hosted next-team`,
     `rule-this: no-hosted-row; declared (none); hosted (none); remedy: ${PLATFORM_SLUG} project set rule-this --space <slug>`,
   ])
 })
