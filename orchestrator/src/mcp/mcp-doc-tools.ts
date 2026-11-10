@@ -19,6 +19,7 @@ import { dropContextItem, getContext, setContextItem } from '../doc/context-serv
 import { CONTEXT_ITEM_KINDS } from '../doc/doc-context-write.ts'
 import { resolveDocRevisionIdentifier } from '../doc/doc-revision-identifier.ts'
 import { type SelectedDocWriteTree, withDocWriteTreeRemedy } from '../doc/doc-write-tree.ts'
+import { DocRevisionWriteConflictError } from '../doc/doc-write-allowed.ts'
 import {
   getDoc,
   getDocForAudience,
@@ -33,6 +34,7 @@ import {
 } from '../doc/docs.ts'
 import { registerMcpDocConsumeTool } from './mcp-doc-consume-tool.ts'
 import { decideMcpDocWrite } from './mcp-doc-write.ts'
+import { RecordApiRequestError } from '../record/record-api-client.ts'
 
 const text = (value: unknown) => ({
   content: [
@@ -49,14 +51,15 @@ const audiencesSchema = z
   .transform(normalizeDocAudiences)
 
 function rethrowMcpDocWriteError(error: unknown): never {
-  const message = error instanceof Error ? error.message : String(error)
-  const currentRevision = message.match(/current revision ([^;,\s]+)/)?.[1]
-  if (
-    !currentRevision ||
-    !message.includes(`re-read the doc, then re-apply the edit with ${PLATFORM_SLUG} doc set`)
-  ) {
-    throw error
-  }
+  const conflict =
+    error instanceof RecordApiRequestError && error.code === 'revision-conflict'
+      ? error
+      : error instanceof DocRevisionWriteConflictError
+        ? error
+        : null
+  if (!conflict || conflict.currentRevision === null) throw error
+  const message = conflict.message
+  const currentRevision = conflict.currentRevision
 
   const withoutCliRemedy = message.replace(
     new RegExp(

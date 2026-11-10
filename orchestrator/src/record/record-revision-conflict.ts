@@ -7,14 +7,17 @@ const REVISION_CONFLICT_CODE = 'revision-conflict' as const
 export const revisionConflictBodySchema = z.object({
   error: z.string().min(1),
   code: z.literal(REVISION_CONFLICT_CODE),
-  currentRevision: z.string(),
+  currentRevision: z.string().nullable(),
 })
 
 export type RevisionConflictBody = z.infer<typeof revisionConflictBodySchema>
 
-export function revisionConflictBody(currentRevision: string): RevisionConflictBody {
+export function revisionConflictBody(
+  error: string,
+  currentRevision: string | null,
+): RevisionConflictBody {
   return {
-    error: `hosted revision conflict; current revision is ${currentRevision}; re-read, then retry`,
+    error,
     code: REVISION_CONFLICT_CODE,
     currentRevision,
   }
@@ -22,11 +25,10 @@ export function revisionConflictBody(currentRevision: string): RevisionConflictB
 
 export class RecordRevisionConflictError extends Error {
   readonly status = 409
-  readonly currentRevision: string
+  readonly currentRevision: string | null
 
-  constructor(currentRevision: string) {
-    const body = revisionConflictBody(currentRevision)
-    super(body.error)
+  constructor(message: string, currentRevision: string | null) {
+    super(message)
     this.currentRevision = currentRevision
   }
 }

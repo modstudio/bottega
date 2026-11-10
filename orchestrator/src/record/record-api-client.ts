@@ -10,7 +10,7 @@ import type {
   DocStatus,
 } from '../../../shared/docs.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
-import { recordUnreachableRefusal } from '../../../shared/record-remedies.ts'
+import { RECORD_SIGN_IN_REMEDY, recordUnreachableRefusal } from '../../../shared/record-remedies.ts'
 import type { TableStorageMeasurement } from '../../../shared/storage-lifecycle.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
@@ -71,7 +71,7 @@ import {
 import type { RecordSettingsClient } from './record-api-client-settings.ts'
 import { boardStreamHeaders, recordTransport } from './record-api-client-transport.ts'
 import { type RecordWorkflowClient, recordWorkflowClient } from './record-api-client-workflow.ts'
-import { bearerHeaders, RECORD_SIGN_IN_REMEDY } from './record-auth.ts'
+import { bearerHeaders } from './record-auth.ts'
 import {
   type HostedBoardAcceptInput,
   type HostedBoardChanges,

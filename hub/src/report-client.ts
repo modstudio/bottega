@@ -1,8 +1,10 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { jsonBody } from '../../shared/http-json.ts'
-import { recordUnreachableRefusal } from '../../shared/record-remedies.ts'
-import { sendWithStoredRecordSessionToken } from '../../shared/record-session.ts'
-import { type HostedRequestSafety, hostedRefusalError } from './hosted-refusal.ts'
+import {
+  type HostedRequestSafety,
+  hostedRefusalError,
+  sendHostedSessionRequest,
+} from './hosted-refusal.ts'
 import type {
   HostedReportSubscription,
   HostedSend,
@@ -31,30 +33,16 @@ async function request<T>(
   const baseUrl = options.baseUrl ?? resolveHostedUrl()
   if (!baseUrl) throw new Error(`hosted hub is not configured. ${REMEDY}`)
   if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
-  const send = async (token: string | null) => {
-    if (!token)
-      throw new Error(
-        `record session is absent. Run \`${PLATFORM_SLUG} record sign-in\`, then \`${PLATFORM_SLUG} record doctor\`.`,
-      )
-    try {
-      return await (options.fetch ?? fetch)(`${baseUrl.replace(/\/$/, '')}${path}`, {
-        method,
-        headers: {
-          authorization: `Bearer ${token}`,
-          'content-type': 'application/json',
-        },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      })
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error)
-      throw new Error(recordUnreachableRefusal(baseUrl, detail, safety))
-    }
-  }
-  const response =
-    options.token === undefined
-      ? await sendWithStoredRecordSessionToken(send)
-      : await send(options.token)
   const url = `${baseUrl.replace(/\/$/, '')}${path}`
+  const response = await sendHostedSessionRequest({
+    origin: baseUrl,
+    url,
+    method,
+    body,
+    token: options.token,
+    safety,
+    fetch: options.fetch ?? fetch,
+  })
   const bodyResult = await jsonBody(response, url)
   if (!bodyResult.ok)
     throw hostedRefusalError({

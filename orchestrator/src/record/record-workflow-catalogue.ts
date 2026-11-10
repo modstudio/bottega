@@ -277,7 +277,10 @@ async function transition(
       const current = rows.find((row) => row.status === 'production')
       const currentN = current ? number(current.n) : null
       if (currentN !== input.expectedProductionVersion)
-        throw new RecordRevisionConflictError(String(currentN ?? 'none'))
+        throw new RecordRevisionConflictError(
+          `workflow version conflict: expected ${input.expectedProductionVersion ?? 'none'}, current ${currentN ?? 'none'}; re-read the workflow catalogue, then retry with expectedProductionVersion ${currentN ?? 'null'}`,
+          currentN === null ? null : String(currentN),
+        )
       const target = rows.find((row) => number(row.n) === input.n)
       if (!target)
         throw new RecordWorkflowError(`hosted ${input.kind} has no version ${input.n}`, 404)

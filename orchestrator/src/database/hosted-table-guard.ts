@@ -4,7 +4,6 @@ import type { Database } from 'bun:sqlite'
 import { HOSTED_TABLES_WITHOUT_LOCAL_ACCESS } from '../../../shared/hosted-tables.ts'
 
 const guardedMethods = new Set(['query', 'prepare', 'run', 'exec'])
-const unguardedHandles = new WeakMap<Database, Database>()
 
 export function guardHostedTables(
   database: Database,
@@ -41,13 +40,8 @@ export function guardHostedTables(
       }
     },
   }) as Database
-  unguardedHandles.set(guarded, database)
   return guarded
 }
-
-/** Migrations and later verify-then-delete maintenance intentionally use the unwrapped handle. */
-export const hostedTableGuardBypass = (database: Database): Database =>
-  unguardedHandles.get(database) ?? database
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')

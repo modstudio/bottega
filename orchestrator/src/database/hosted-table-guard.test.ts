@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { shouldGuardHostedTables } from '../runtime/store-hooks.ts'
-import { guardHostedTables, hostedTableGuardBypass } from './hosted-table-guard.ts'
+import { guardHostedTables } from './hosted-table-guard.ts'
 
 test('hosted install guard refuses listed SQL and allows other tables', () => {
   const database = new Database(':memory:')
@@ -12,17 +12,6 @@ test('hosted install guard refuses listed SQL and allows other tables', () => {
       'hosted_row is held by the hosted record on this install; read or write it through the record API',
     )
     expect(guarded.query('SELECT * FROM local_row').all()).toEqual([])
-  } finally {
-    database.close()
-  }
-})
-
-test('the maintenance bypass unwraps a guarded handle', () => {
-  const database = new Database(':memory:')
-  database.exec('CREATE TABLE hosted_row (id TEXT)')
-  try {
-    const guarded = guardHostedTables(database, ['hosted_row'])
-    expect(hostedTableGuardBypass(guarded).query('SELECT * FROM hosted_row').all()).toEqual([])
   } finally {
     database.close()
   }

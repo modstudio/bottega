@@ -169,7 +169,6 @@ export const recordModules: RecordModule[] = [
     '../../../shared/record-remedies.ts',
     '../doc/doc-write-allowed.ts',
     './record-api-client-response.ts',
-    './record-auth.ts',
     './record-project-space-contract.ts',
     './record-revision-conflict.ts',
   ]),

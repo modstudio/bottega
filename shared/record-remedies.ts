@@ -14,22 +14,25 @@ export const RUN_RETRY_REMEDY = `${PLATFORM_SLUG} run retry <run>`
 
 export type HostedRequestSafety = 'probe' | 'idempotent' | 'non-idempotent'
 
+export function hostedRequestSafetyStatement(outcome: HostedRequestSafety): string {
+  if (outcome === 'probe') return 'nothing was written'
+  if (outcome === 'idempotent') return 'safe to retry'
+  return 'the write may have been applied; check before retrying'
+}
+
 export function recordUnreachableRefusal(
   origin: string,
   detail: string,
   outcome: HostedRequestSafety,
 ): string {
-  const writeOutcome =
-    outcome === 'probe'
-      ? 'nothing was written'
-      : outcome === 'idempotent'
-        ? 'safe to retry'
-        : 'the write may have been applied; check before retrying'
   return renderRefusal(
-    refusal(`the hosted record at ${origin} could not be reached (${detail}); ${writeOutcome}`, {
-      kind: 'command',
-      argv: [PLATFORM_SLUG, 'record', 'doctor'],
-    }),
+    refusal(
+      `the hosted record at ${origin} could not be reached (${detail}); ${hostedRequestSafetyStatement(outcome)}`,
+      {
+        kind: 'command',
+        argv: [PLATFORM_SLUG, 'record', 'doctor'],
+      },
+    ),
   )
 }
 

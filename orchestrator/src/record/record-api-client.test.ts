@@ -285,6 +285,29 @@ describe('revision conflict response', () => {
   })
 })
 
+test('transport failures report the request write outcome', async () => {
+  const previousEnv = process.env.NODE_ENV
+  const previousUrl = process.env.BOTTEGA_RECORD_API_URL
+  process.env.NODE_ENV = 'development'
+  process.env.BOTTEGA_RECORD_API_URL = 'https://api.example.test'
+  const authentication = { token: () => 'token', tokenAsync: async () => 'token' }
+  const failed = (async () => {
+    throw new Error('connection dropped')
+  }) as unknown as typeof fetch
+  try {
+    await expect(
+      recordApiRequest('/v1/docs', { method: 'POST' }, authentication, failed),
+    ).rejects.toThrow('the write may have been applied; check before retrying')
+    await expect(recordApiRequest('/v1/docs', {}, authentication, failed)).rejects.toThrow(
+      'nothing was written',
+    )
+  } finally {
+    process.env.NODE_ENV = previousEnv
+    if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = previousUrl
+  }
+})
+
 describe('record API session refresh', () => {
   beforeEach(() => forgetRecordSessionToken())
   afterEach(() => forgetRecordSessionToken())

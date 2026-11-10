@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { chmodSync, existsSync, mkdtempSync, rmSync, statSync } from 'node:fs'
+import {
+  appendFileSync,
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { PLATFORM_NAME } from './brand.ts'
@@ -13,9 +21,11 @@ import {
   writeRecordSessionToken,
 } from './record-session.ts'
 import {
+  ensureRecordSessionDirectory,
   recordSessionDirectory,
   recordSessionPath,
   recordSessionProbePath,
+  recordSessionStampPath,
   STATE_HOME_ENV,
 } from './state-directory.ts'
 
@@ -48,6 +58,9 @@ afterEach(restoreEnvironment)
 
 describe('record session keychain', () => {
   beforeEach(() => {
+    const root = mkdtempSync(join(tmpdir(), 'record-session-keychain-'))
+    roots.push(root)
+    process.env[STATE_HOME_ENV] = root
     delete process.env.BOTTEGA_KEYSTORE
     platformHolder[PLATFORM_KEY] = 'darwin'
   })
@@ -253,6 +266,32 @@ describe('file-backed record session', () => {
     writeRecordSessionToken('first-token', unusedRunner)
     expect(readRecordSessionToken()).toBe('first-token')
     rmSync(recordSessionPath(process.env))
+    expect(readRecordSessionToken()).toBe('first-token')
+  })
+
+  test('an external write and stamp makes a memoized absence visible', () => {
+    expect(readRecordSessionToken()).toBeNull()
+    ensureRecordSessionDirectory(process.env)
+    writeFileSync(recordSessionPath(process.env), 'external-token', { mode: 0o600 })
+    writeFileSync(recordSessionStampPath(process.env), 'external-stamp', { mode: 0o600 })
+
+    expect(readRecordSessionToken()).toBe('external-token')
+  })
+
+  test('an external write and stamp replaces a memoized token', () => {
+    writeRecordSessionToken('first-token', unusedRunner)
+    expect(readRecordSessionToken()).toBe('first-token')
+    writeFileSync(recordSessionPath(process.env), 'second-token', { mode: 0o600 })
+    appendFileSync(recordSessionStampPath(process.env), '-changed')
+
+    expect(readRecordSessionToken()).toBe('second-token')
+  })
+
+  test('without a stamp change the memoized token is reused', () => {
+    writeRecordSessionToken('first-token', unusedRunner)
+    expect(readRecordSessionToken()).toBe('first-token')
+    writeFileSync(recordSessionPath(process.env), 'unobserved-token', { mode: 0o600 })
+
     expect(readRecordSessionToken()).toBe('first-token')
   })
 

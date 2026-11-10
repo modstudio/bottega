@@ -49,7 +49,7 @@ export function registerRecordWorkflowRoutes(
 ): void {
   const failure = (context: Context<Environment>, error: unknown) =>
     error instanceof RecordRevisionConflictError
-      ? context.json(revisionConflictBody(error.currentRevision), 409)
+      ? context.json(revisionConflictBody(error.message, error.currentRevision), 409)
       : error instanceof RecordWorkflowError
         ? context.json({ error: error.message }, error.status as 404 | 409 | 422)
         : (() => {

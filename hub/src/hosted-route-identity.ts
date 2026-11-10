@@ -1,4 +1,7 @@
-import { RECORD_SIGN_IN_REMEDY } from '../../shared/record-remedies.ts'
+import {
+  hostedRequestSafetyStatement,
+  RECORD_SIGN_IN_REMEDY,
+} from '../../shared/record-remedies.ts'
 import {
   parseRecordSpaceMemberships,
   type RecordSpaceMembership,
@@ -57,7 +60,7 @@ export function identityRefusalResponse(
   return Response.json(
     {
       error: `record API unavailable (${identity.cause})`,
-      remedy: 'nothing was written; retry',
+      remedy: `${hostedRequestSafetyStatement('probe')}; retry`,
     },
     { status: 503 },
   )

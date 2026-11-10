@@ -9,7 +9,11 @@ import { nextEntityNumber } from '../database/entity-number.ts'
 import { decodeStoredDocAudiences, encodeStoredDocAudiences } from './doc-audiences-codec.ts'
 import type { DocRevision, DocRevisionMetadata } from './doc-read-store.ts'
 import { validateHistoricDocAddress } from './doc-subjects.ts'
-import { type DocRevisionOp, decideDocRevisionWrite } from './doc-write-allowed.ts'
+import {
+  type DocRevisionOp,
+  DocRevisionWriteConflictError,
+  decideDocRevisionWrite,
+} from './doc-write-allowed.ts'
 
 type RevisionDoc = {
   record_id: string
@@ -86,7 +90,11 @@ export function assertLocalRevisionWrite(
   })
   if (!decision.allow) {
     const message = renderRefusal(decision.refusal)
-    throw new Error(input.scope === 'context' ? `context item ${input.slug}: ${message}` : message)
+    const surfaced = input.scope === 'context' ? `context item ${input.slug}: ${message}` : message
+    if (decision.reason !== 'missing-hosted-revision') {
+      throw new DocRevisionWriteConflictError(surfaced, current)
+    }
+    throw new Error(surfaced)
   }
 }
 

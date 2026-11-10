@@ -274,8 +274,8 @@ export const docModules: DocModule[] = [
     './doc-write-allowed.ts',
   ]),
   module('orchestrator/src/doc/doc-owner.ts', [
+    '../../../shared/record-remedies.ts',
     '../record/record-attribution.ts',
-    '../record/record-auth.ts',
     '../record/machine-identity.ts',
     '../record/record-write-authority.ts',
   ]),

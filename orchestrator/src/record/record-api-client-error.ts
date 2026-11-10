@@ -3,6 +3,7 @@
 import {
   type HostedRequestSafety,
   RECORD_ACTIVE_SPACE_REMEDY,
+  RECORD_SIGN_IN_REMEDY,
   recordUnreachableRefusal,
 } from '../../../shared/record-remedies.ts'
 import { MISSING_HOSTED_REVISION_REMEDY, RECORD_WRITE_REMEDY } from '../doc/doc-write-allowed.ts'
@@ -12,7 +13,6 @@ import {
   responseMessage,
   responseRecord,
 } from './record-api-client-response.ts'
-import { RECORD_SIGN_IN_REMEDY } from './record-auth.ts'
 import { parseProjectSpaceConflictResponse } from './record-project-space-contract.ts'
 import { revisionConflictBodySchema } from './record-revision-conflict.ts'
 

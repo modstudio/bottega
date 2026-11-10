@@ -132,7 +132,9 @@ test('an explicit create against an existing document returns the typed 409 reme
 
   expect(response.status).toBe(409)
   expect(await response.json()).toEqual({
-    error: `hosted revision conflict; current revision is ${created.revisionId}; re-read, then retry`,
+    error:
+      `refusing create for project/${PLATFORM_NAME}/existing: the row already exists at revision ${created.revisionId}\n` +
+      `cleared by: read the doc, then write it with bottega doc set existing --scope project --subject ${PLATFORM_NAME} --expect ${created.revisionId}`,
     code: 'revision-conflict',
     currentRevision: created.revisionId,
   })

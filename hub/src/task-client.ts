@@ -1,14 +1,16 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { jsonBody } from '../../shared/http-json.ts'
-import { recordUnreachableRefusal } from '../../shared/record-remedies.ts'
-import { sendWithStoredRecordSessionToken } from '../../shared/record-session.ts'
 import type { RecordSpaceMembership } from '../../shared/record-space-membership.ts'
 import type {
   HostedChangeRow,
   HostedRecordChange,
   HostedRecordChangeResult,
 } from './hosted-record-change-wire.ts'
-import { type HostedRequestSafety, hostedRefusalError } from './hosted-refusal.ts'
+import {
+  type HostedRequestSafety,
+  hostedRefusalError,
+  sendHostedSessionRequest,
+} from './hosted-refusal.ts'
 import type { HostedTaskPresencePair } from './hosted-task-prune.ts'
 import type { HostedComment, HostedDocument, HostedTask } from './hosted-tasks.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
@@ -129,35 +131,17 @@ async function responseObject(
 ): Promise<{ response: Response; value: Record<string, unknown> }> {
   const baseUrl = assertHostedTaskWriteConfigured(options)
   if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
-  const send = async (token: string | null) => {
-    if (!token)
-      throw new Error(
-        `record session is absent. Run \`${PLATFORM_SLUG} record sign-in\`, then \`${PLATFORM_SLUG} record doctor\`.`,
-      )
-    try {
-      return await hostedFetch(
-        `${baseUrl.replace(/\/$/, '')}${path}`,
-        {
-          method,
-          headers: {
-            authorization: `Bearer ${token}`,
-            'content-type': 'application/json',
-            ...(options.recordSpace ? { 'x-record-space': options.recordSpace } : {}),
-          },
-          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        },
-        options,
-      )
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error)
-      throw new Error(recordUnreachableRefusal(baseUrl, detail, safety))
-    }
-  }
-  const response =
-    options.token === undefined
-      ? await sendWithStoredRecordSessionToken(send)
-      : await send(options.token)
   const url = `${baseUrl.replace(/\/$/, '')}${path}`
+  const response = await sendHostedSessionRequest({
+    origin: baseUrl,
+    url,
+    method,
+    body,
+    token: options.token,
+    recordSpace: options.recordSpace,
+    safety,
+    fetch: (input, init) => hostedFetch(input, init, options),
+  })
   const bodyResult = await jsonBody(response, url)
   const value = bodyResult.ok ? bodyResult.value : null
   if (!bodyResult.ok || !value || typeof value !== 'object' || Array.isArray(value))
@@ -442,34 +426,16 @@ export async function hostedPushChanges(
   const baseUrl = assertHostedTaskWriteConfigured(options)
   if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
   const url = `${baseUrl.replace(/\/$/, '')}/v1/changes`
-  const send = async (token: string | null) => {
-    if (!token)
-      throw new Error(
-        `record session is absent. Run \`${PLATFORM_SLUG} record sign-in\`, then \`${PLATFORM_SLUG} record doctor\`.`,
-      )
-    try {
-      return await hostedFetch(
-        url,
-        {
-          method: 'POST',
-          headers: {
-            authorization: `Bearer ${token}`,
-            'content-type': 'application/json',
-            ...(options.recordSpace ? { 'x-record-space': options.recordSpace } : {}),
-          },
-          body: JSON.stringify(body),
-        },
-        options,
-      )
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error)
-      throw new Error(recordUnreachableRefusal(baseUrl, detail, 'idempotent'))
-    }
-  }
-  const response =
-    options.token === undefined
-      ? await sendWithStoredRecordSessionToken(send)
-      : await send(options.token)
+  const response = await sendHostedSessionRequest({
+    origin: baseUrl,
+    url,
+    method: 'POST',
+    body,
+    token: options.token,
+    recordSpace: options.recordSpace,
+    safety: 'idempotent',
+    fetch: (input, init) => hostedFetch(input, init, options),
+  })
   const result = await jsonBody(response, url)
   if (!result.ok || !Array.isArray(result.value))
     throw hostedRefusalError({
@@ -532,32 +498,14 @@ async function taskIdentityResponse(
   const baseUrl = assertHostedTaskWriteConfigured(options)
   if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
   const url = `${baseUrl.replace(/\/$/, '')}/v1/tasks/identity`
-  const send = async (token: string | null) => {
-    if (!token)
-      throw new Error(
-        `record session is absent. Run \`${PLATFORM_SLUG} record sign-in\`, then \`${PLATFORM_SLUG} record doctor\`.`,
-      )
-    try {
-      return await hostedFetch(
-        url,
-        {
-          method: 'GET',
-          headers: {
-            authorization: `Bearer ${token}`,
-            'content-type': 'application/json',
-          },
-        },
-        options,
-      )
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error)
-      throw new Error(recordUnreachableRefusal(baseUrl, detail, 'probe'))
-    }
-  }
-  const response =
-    options.token === undefined
-      ? await sendWithStoredRecordSessionToken(send)
-      : await send(options.token)
+  const response = await sendHostedSessionRequest({
+    origin: baseUrl,
+    url,
+    method: 'GET',
+    token: options.token,
+    safety: 'probe',
+    fetch: (input, init) => hostedFetch(input, init, options),
+  })
   return { response, url }
 }
 

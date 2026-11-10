@@ -37,11 +37,11 @@ export function assertRevisionWrite(
     slug: input.slug,
   })
   if (!decision.allow) {
-    const missingHostedRevision =
-      !input.isCreate &&
-      input.current === null &&
-      (input.scope === 'canon' || input.op === 'create')
-    if (missingHostedRevision) throw new RecordDocError(renderRefusal(decision.refusal), 409)
-    throw new RecordRevisionConflictError(String(input.current ?? '(no current revision)'))
+    const message = renderRefusal(decision.refusal)
+    if (decision.reason === 'missing-hosted-revision') throw new RecordDocError(message, 409)
+    throw new RecordRevisionConflictError(
+      message,
+      input.current == null ? null : String(input.current),
+    )
   }
 }

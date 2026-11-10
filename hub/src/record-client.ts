@@ -1,5 +1,6 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
+import { hostedRequestSafetyStatement } from '../../shared/record-remedies.ts'
 import { BOARD_PURPOSES } from '../../shared/board-purpose.ts'
 import {
   CREDENTIAL_BINDINGS,
@@ -597,14 +598,12 @@ async function request<T>(
   const fetchImpl = options.fetch ?? globalThis.fetch
   const signal = init.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal
   const startedAt = Date.now()
-  const retryStatement =
-    !init.method || init.method.toUpperCase() === 'GET'
-      ? 'nothing was written; retry'
-      : 'the write may have been applied; check before retrying'
+  const safety = !init.method || init.method.toUpperCase() === 'GET' ? 'probe' : 'non-idempotent'
+  const retryStatement = hostedRequestSafetyStatement(safety)
   const timeoutError = () =>
     new TRPCError({
       code: 'TIMEOUT',
-      message: `the hosted record API did not answer ${path} within ${Date.now() - startedAt} ms; ${retryStatement}, and if it stalls again check the hosted API health and report the path`,
+      message: `the hosted record API did not answer ${path} within ${Date.now() - startedAt} ms; ${retryStatement}; retry, and if it stalls again check the hosted API health and report the path`,
     })
   let timeout: ReturnType<typeof setTimeout> | undefined
   const expired = new Promise<never>((_, reject) => {

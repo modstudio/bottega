@@ -318,6 +318,7 @@ describe('decideDocRevisionWrite', () => {
       }),
     ).toEqual({
       allow: false,
+      reason: 'stale-revision',
       refusal: {
         condition: 'refusing canon update at current revision revision-2',
         remedy: {
@@ -347,6 +348,7 @@ describe('decideDocRevisionWrite', () => {
       }),
     ).toEqual({
       allow: false,
+      reason: 'stale-revision',
       refusal: {
         condition: 'refusing settings update at current revision revision-2',
         remedy: {

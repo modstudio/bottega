@@ -59,7 +59,8 @@ import {
   registerRecordWorkflowRoutes,
 } from './record-api-workflow.ts'
 import { registerRecordWriteRoutes } from './record-api-write-routes.ts'
-import { RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
+import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
+import type { RecordIdentity } from './record-auth.ts'
 import type { RecordCanonImportInput, RecordCanonImportResult } from './record-canon-import.ts'
 import type { ConfigTenant } from './record-config.ts'
 import { CONFIG_SCOPES } from './record-config.ts'

@@ -38,7 +38,6 @@ import {
   linkedWorktreeMigrationAllowed,
   missingDatabaseMessage,
 } from './database-location.ts'
-import { hostedTableGuardBypass } from './hosted-table-guard.ts'
 import { carryMachineIdentity } from './machine-identity-store.ts'
 import {
   decideInFlightMigration,
@@ -999,7 +998,7 @@ export async function withDatabaseForMigrationStep<T>(
   action: (database: Database) => Promise<T>,
 ): Promise<T> {
   refuseStoreMigrationFromRestrictedCaller()
-  const database = hostedTableGuardBypass(openOwnedWritableDatabase(DB_PATH, { create: false }))
+  const database = openOwnedWritableDatabase(DB_PATH, { create: false })
   try {
     database.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
     keepJournalSidecars(database)
@@ -1012,7 +1011,7 @@ export async function withDatabaseForMigrationStep<T>(
 /** Give a synchronous migration adapter a handle while the store is intentionally mid-journal. */
 export function withSynchronousDatabaseForMigrationStep<T>(action: (database: Database) => T): T {
   refuseStoreMigrationFromRestrictedCaller()
-  const database = hostedTableGuardBypass(openOwnedWritableDatabase(DB_PATH, { create: false }))
+  const database = openOwnedWritableDatabase(DB_PATH, { create: false })
   try {
     database.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
     keepJournalSidecars(database)

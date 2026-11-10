@@ -3,7 +3,7 @@
 
 import { machineId } from '../record/machine-identity.ts'
 import { signedInRecordUserId } from '../record/record-attribution.ts'
-import { RECORD_SIGN_IN_REMEDY } from '../record/record-auth.ts'
+import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import {
   currentRecordWriteDecision,
   throwIfRecordRefused,
