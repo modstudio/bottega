@@ -12,6 +12,12 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 })
 
 export const recordBindingModules: RecordModule[] = [
+  module('orchestrator/src/record/record-run-write-destination.ts', [
+    '../database/db.ts',
+    './record-api-client.ts',
+    './record-api-client-paths.ts',
+    './record-write-destination.ts',
+  ]),
   module('orchestrator/src/record/record-write-destination.ts', [
     '../../../shared/record-space-membership.ts',
     '../../../shared/record-write-space.ts',

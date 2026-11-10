@@ -6,8 +6,8 @@ import { jobsPayload } from '../jobs/job-commands.ts'
 import { state } from '../state/serve.ts'
 import { machineId } from './machine-identity.ts'
 import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
-import { recordWriteDestination } from './record-write-destination.ts'
 import { SNAPSHOT_KINDS, type SnapshotKind } from './record-snapshots.ts'
+import { recordWriteDestination } from './record-write-destination.ts'
 
 export async function buildSnapshotPayload(kind: SnapshotKind): Promise<unknown> {
   switch (kind) {

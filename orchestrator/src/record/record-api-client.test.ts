@@ -162,10 +162,8 @@ describe('record HTTP authentication responses', () => {
 
 test('a generic client refusal retains the server remedy', () => {
   expect(
-    recordApiError(
-      { error: 'the write names no space', remedy: 'retry with --space <slug>' },
-      409,
-    ).message,
+    recordApiError({ error: 'the write names no space', remedy: 'retry with --space <slug>' }, 409)
+      .message,
   ).toBe('the write names no space\nretry with --space <slug>')
 })
 

@@ -16,10 +16,10 @@ import {
   storedShipToLevel,
 } from '../../../shared/ship-to.ts'
 import {
+  configHome,
   deleteEntry,
   deleteMachineEntry,
   deleteSecret,
-  configHome,
   getConfigEntry,
   listEntries,
   listSecrets,
@@ -107,8 +107,6 @@ function registerConfigGet(config: Command): void {
       for (const line of configReadPresentation(result, Boolean(options.json))) log(line)
     })
 }
-
-const scope = (options: { space?: string }): ConfigScope => (options.space ? 'space' : 'user')
 
 export async function configWriteTarget(
   verb: string,

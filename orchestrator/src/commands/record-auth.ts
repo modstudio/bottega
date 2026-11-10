@@ -392,7 +392,7 @@ function registerSpaceIntakeCommands(space: Command): void {
     )
   intake
     .command('set')
-    .description('set the active space outside intake project (owner only)')
+    .description('set a record space outside intake project (owner only)')
     .argument('<project>')
     .requiredOption('--space <slug>', 'record space whose outside intake changes')
     .action((project, options) =>
@@ -402,7 +402,7 @@ function registerSpaceIntakeCommands(space: Command): void {
     )
   intake
     .command('pause')
-    .description('pause outside writes to the active space (owner only)')
+    .description('pause outside writes to a record space (owner only)')
     .requiredOption('--space <slug>', 'record space whose outside intake changes')
     .option('--hours <n>', 'whole hours to pause', parseOutsideHours, OUTSIDE_PAUSE_DEFAULT_HOURS)
     .action((options) =>
@@ -412,7 +412,7 @@ function registerSpaceIntakeCommands(space: Command): void {
     )
   intake
     .command('resume')
-    .description('resume outside writes to the active space (owner only)')
+    .description('resume outside writes to a record space (owner only)')
     .requiredOption('--space <slug>', 'record space whose outside intake changes')
     .action((options) =>
       hostedCommand(`${PLATFORM_SLUG} record space intake resume`, () =>
@@ -430,7 +430,7 @@ function registerSpaceIntakeCommands(space: Command): void {
     )
   intake
     .command('block')
-    .description('block an outside author from the active space (owner only)')
+    .description('block an outside author from a record space (owner only)')
     .requiredOption('--space <slug>', 'record space whose outside block changes')
     .option('--message <id>', 'identify the author by a board message')
     .option('--note <label>', 'identify the author by a project#number note')
@@ -454,7 +454,7 @@ function registerSpaceIntakeCommands(space: Command): void {
     })
   intake
     .command('unblock')
-    .description('remove an outside-author block from the active space (owner only)')
+    .description('remove an outside-author block from a record space (owner only)')
     .argument('<user-id>')
     .requiredOption('--space <slug>', 'record space whose outside block changes')
     .action((userId, options) =>

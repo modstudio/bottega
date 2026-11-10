@@ -144,13 +144,13 @@ manage scoped configuration values
 
 ## bottega machine config delete
 
-**Synopsis:** `bottega machine config delete <key> [--space] [--machine] [--expect <rowVersion>]`
+**Synopsis:** `bottega machine config delete <key> [--space <slug>] [--machine] [--expect <rowVersion>]`
 
 delete one configuration value
 
 ### Options
 
-- `--space`: delete the value from the active space scope
+- `--space <slug>`: delete the value from this record space
 - `--machine`: delete the value from machine configuration
 - `--expect <rowVersion>`: row version required before deleting
 
@@ -310,13 +310,13 @@ manage sealed configuration values
 
 ## bottega machine config secret delete
 
-**Synopsis:** `bottega machine config secret delete <key> [--space]`
+**Synopsis:** `bottega machine config secret delete <key> [--space <slug>]`
 
 delete one sealed configuration value
 
 ### Options
 
-- `--space`: delete the value from the active space scope
+- `--space <slug>`: delete the value from this record space
 
 ### Related
 
@@ -354,13 +354,13 @@ run a command with named secrets resolved
 
 ## bottega machine config secret set
 
-**Synopsis:** `bottega machine config secret set <key> [--space]`
+**Synopsis:** `bottega machine config secret set <key> [--space <slug>]`
 
 set a sealed value from standard input
 
 ### Options
 
-- `--space`: write the value in the active space scope
+- `--space <slug>`: write the value in this record space
 
 ### Related
 
@@ -368,13 +368,13 @@ set a sealed value from standard input
 
 ## bottega machine config set
 
-**Synopsis:** `bottega machine config set <key> <value> [--space] [--machine] [--expect <rowVersion>] [--json]`
+**Synopsis:** `bottega machine config set <key> <value> [--space <slug>] [--machine] [--expect <rowVersion>] [--json]`
 
 set one configuration value; subscription.<harness>.monthly_usd is a user-scope monthly price in USD
 
 ### Options
 
-- `--space`: write the value in the active space scope
+- `--space <slug>`: write the value in this record space
 - `--machine`: write the value in machine configuration
 - `--expect <rowVersion>`: row version required before writing
 - `--json`: write the resulting configuration row as JSON

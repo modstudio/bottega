@@ -9,10 +9,10 @@ import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { setConfigEntry } from '../config/config-service.ts'
 import {
   assertConfigWriteAllowed,
-  configWriteTarget,
   configListPresentation,
   configReadPresentation,
   configSetPresentation,
+  configWriteTarget,
 } from './config.ts'
 
 const row = {

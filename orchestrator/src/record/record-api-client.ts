@@ -50,7 +50,6 @@ import {
   type RecordIdentityAndSpaceMethod,
   type RecordProjectSubjectMethod,
   type RecordRequestDestination,
-  type RecordRunMethod,
   type RecordSnapshotAndPublicDocMethod,
   subjectMutationBody,
 } from './record-api-client-paths.ts'
@@ -105,12 +104,12 @@ import type {
   PublicRecordDocTreeItem,
   RecordDocSearchMatch,
 } from './record-public-docs.ts'
+import { recordRunWriteDestination } from './record-run-write-destination.ts'
 import { storedRecordToken, storedRecordTokenAsync } from './record-session.ts'
 import type { SnapshotKind } from './record-snapshots.ts'
 import type { RecordSubject } from './record-subjects.ts'
 import { trialSpaceDeleteTransport } from './record-trial-space-contract.ts'
 import { currentRecordWriteDecision } from './record-write-authority.ts'
-import { recordRunWriteDestination } from './record-run-write-destination.ts'
 
 export type RecordDocUpsertInput = {
   scope: string

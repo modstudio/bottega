@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { recordHostedCallOutcome } from '../hosted-call-outcome.ts'
 import { recordTransport } from './record-api-client-transport.ts'
@@ -44,7 +45,7 @@ test('record transport stores HTTP and transport-error outcomes for its route cl
       { route_class: 'record-docs', http_status: 200, transport_error: null },
       { route_class: 'record-docs', http_status: null, transport_error: 'other' },
     ])
-    expect(userAgents).toEqual(['bottega/0.5.6', 'bottega/0.5.6'])
+    expect(userAgents).toEqual([`${PLATFORM_SLUG}/0.5.6`, `${PLATFORM_SLUG}/0.5.6`])
   } finally {
     database.close()
   }
