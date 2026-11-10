@@ -808,7 +808,9 @@ describe('importWorkflowTree', () => {
       },
     })
 
-    await expect(importWorkflowTree(tree, 'partial report', 'worker', d)).rejects.toThrow(
+    await expect(
+      importWorkflowTree(tree, 'partial report', 'worker', d, undefined, undefined, HOSTED_SPACE),
+    ).rejects.toThrow(
       [
         'hosted workflow import stopped: second draft failed',
         'written drafts: catalogue draft 2',

@@ -953,9 +953,20 @@ export function importStepCatalogue(
   d: Database = writableDb(),
   project?: string,
   onHostedWrite?: (n: number) => void,
+  destinationSpaceId?: string,
 ) {
   assertCatalogueWriteAllowed('import step catalogue')
-  return catalogueDraft('import', definition, undefined, reason, author, d, project, onHostedWrite)
+  return catalogueDraft(
+    'import',
+    definition,
+    undefined,
+    reason,
+    author,
+    d,
+    project,
+    onHostedWrite,
+    destinationSpaceId,
+  )
 }
 
 const importStepCatalogueLocal = (

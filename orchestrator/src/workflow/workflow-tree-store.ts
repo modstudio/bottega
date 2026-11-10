@@ -575,6 +575,7 @@ async function writeHostedImport(
   author: string | undefined,
   database: Database,
   project: string | undefined,
+  destinationSpaceId: string | undefined,
 ): Promise<WorkflowTreeImportResult> {
   const pending = [
     ...(plan.catalogueChanged ? ['catalogue'] : []),
@@ -597,6 +598,7 @@ async function writeHostedImport(
           written.push(`catalogue draft ${n}`)
           pending.shift()
         },
+        destinationSpaceId,
       ).catch((error) => {
         if (hostedN !== undefined)
           throw hostedCacheApplyFailure(error, `catalogue draft ${hostedN}`, written, pending)
@@ -619,6 +621,7 @@ async function writeHostedImport(
           written.push(`workflow ${slug} draft ${n}`)
           pending.shift()
         },
+        destinationSpaceId,
       ).catch((error) => {
         if (hostedN !== undefined)
           throw hostedCacheApplyFailure(
@@ -677,6 +680,7 @@ export function importWorkflowTree(
   d?: Database,
   project?: string,
   branchChangedPaths?: ReadonlySet<string>,
+  destinationSpaceId?: string,
 ): WorkflowTreeImportResult | Promise<WorkflowTreeImportResult> {
   if (!reason?.trim()) throw new Error('reason is required')
   const database = d ?? writableDb()
@@ -702,7 +706,7 @@ export function importWorkflowTree(
     const authority = currentRecordWriteDecision(database)
     throwIfRecordRefused(authority)
     if (authority.verdict === 'hosted')
-      return writeHostedImport(plan, reason, author, database, project)
+      return writeHostedImport(plan, reason, author, database, project, destinationSpaceId)
     return writeLocalImport(plan, reason, author, database)
   }, database)
 }
