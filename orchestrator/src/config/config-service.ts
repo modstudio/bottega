@@ -8,7 +8,6 @@ import {
   type ConfigDestination,
   type ConfigScope,
   type ConfigSecret,
-  configClient,
   type DataKey,
 } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
@@ -76,11 +75,8 @@ import {
   openDataKey,
   wrapsForRecipients,
 } from './data-key-access.ts'
-import { recordConfigCallOutcome } from './hosted-config-call-outcome.ts'
+import { hostedConfigClient } from './hosted-config-call-outcome.ts'
 import { machineTrustRefusal } from './machine-trust-refusal.ts'
-
-const hostedConfigClient = (env: ConfigEnvironment = process.env): ConfigClient =>
-  configClient(env, fetch, undefined, undefined, recordConfigCallOutcome)
 
 export type RotationPlan = { reseal: ConfigSecret[]; retireDekIds: string[] }
 

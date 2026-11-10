@@ -5,7 +5,6 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type ConfigClient,
   type ConfigDestination,
-  configClient,
 } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { readHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
@@ -23,7 +22,7 @@ import {
   openDataKey,
   wrapsForRecipients,
 } from './data-key-access.ts'
-import { recordConfigCallOutcome } from './hosted-config-call-outcome.ts'
+import { hostedConfigClient } from './hosted-config-call-outcome.ts'
 import { machineTrustRefusal } from './machine-trust-refusal.ts'
 
 type NamedSpace = {
@@ -82,7 +81,7 @@ function trustRemedy(space: NamedSpace, keyId: string, publicKey: string): Error
 export async function machineRegister(
   selectedSpace: { spaceId: string; slug: string },
   label = hostname(),
-  client = configClient(process.env, fetch, undefined, undefined, recordConfigCallOutcome),
+  client = hostedConfigClient(),
   env: ConfigEnvironment = process.env,
 ): Promise<string[]> {
   const pair = readMachineKey(env)
@@ -139,7 +138,7 @@ export async function machineTrustInSpace(
   publicKey: string,
   label: string,
   selectedSpace: { spaceId: string; slug: string },
-  client = configClient(process.env, fetch, undefined, undefined, recordConfigCallOutcome),
+  client = hostedConfigClient(),
   env: ConfigEnvironment = process.env,
 ): Promise<void> {
   const publicBytes = bytes(publicKey)

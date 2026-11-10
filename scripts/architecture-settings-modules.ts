@@ -139,6 +139,7 @@ export const settingsModules: SettingsModule[] = [
   ]),
   module('orchestrator/src/config/hosted-config-call-outcome.ts', [
     '../../../shared/config-client.ts',
+    '../../../shared/config-directory.ts',
     '../hosted-call-outcome.ts',
   ]),
   module('orchestrator/src/commands/config.ts', [
@@ -153,6 +154,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/record-space-owner-destination.ts',
     '../../../shared/ship-to.ts',
     '../config/config-service.ts',
+    '../config/hosted-config-call-outcome.ts',
     '../config/named-space-config.ts',
     '../config/secret-run.ts',
     '../run/run-process.ts',

@@ -3,7 +3,7 @@
 import { createInterface } from 'node:readline/promises'
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { type ConfigClient, type ConfigScope, configClient } from '../../../shared/config-client.ts'
+import { type ConfigClient, type ConfigScope } from '../../../shared/config-client.ts'
 import { isDelegationKey } from '../../../shared/delegation-mode.ts'
 import { readHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { listMachineEntries } from '../../../shared/machine-config.ts'
@@ -30,6 +30,7 @@ import {
   setConfigEntry,
   setSecret,
 } from '../config/config-service.ts'
+import { hostedConfigClient } from '../config/hosted-config-call-outcome.ts'
 import { machineRegister, machineTrustInSpace } from '../config/named-space-config.ts'
 import { parseSecretRunArgs, runNamedSecrets } from '../config/secret-run.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
@@ -168,7 +169,7 @@ function registerMachineCommands(config: Command): void {
     .option('--short-name <name>', 'short machine name')
     .option('--display-name <name>', 'display machine name')
     .action(async (options) => {
-      const client = configClient()
+      const client = hostedConfigClient()
       const selected = await selectedMachineSpace(
         'machine config machine init',
         options.space,
@@ -197,7 +198,7 @@ function registerMachineCommands(config: Command): void {
     .option('--space <slug>', 'register in this record space')
     .option('--label <label>', 'label stored for this machine identity')
     .action(async (options) => {
-      const client = configClient()
+      const client = hostedConfigClient()
       const selected = await selectedMachineSpace(
         'machine config machine register',
         options.space,
@@ -223,7 +224,7 @@ function registerMachineCommands(config: Command): void {
         if (answer.trim() !== keyId)
           throw new Error('machine trust confirmation did not match the key id')
       }
-      const client = configClient()
+      const client = hostedConfigClient()
       const selected = await selectedMachineSpace(
         'machine config machine trust',
         options.space,
