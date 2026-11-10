@@ -321,7 +321,7 @@ async function fetchHostedPages(
 ): Promise<boolean> {
   let after = meta(database, BOARD_REFRESH_CURSOR_KEY) ?? '0'
   const liveSince = new Date(presenceAt - SESSION_LIVE_MS).toISOString()
-  const checkoutProject = projectAt(cwd)
+  const checkoutProject = projectAt(cwd, database)
   const presence = checkoutProject
     ? (database
         .query(
