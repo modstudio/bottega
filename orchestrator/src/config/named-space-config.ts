@@ -32,6 +32,7 @@ import {
   wrapsForRecipients,
 } from './data-key-access.ts'
 import { recordConfigCallOutcome } from './hosted-config-call-outcome.ts'
+import { machineTrustRefusal } from './machine-trust-refusal.ts'
 
 type NamedSpace = {
   destination: ConfigDestination
@@ -162,8 +163,8 @@ export async function machineTrustInSpace(
   const space = await namedSpace(requestedSpace, client, env)
   const remote = await client.listMachineKeys(space.destination)
   const registered = remote.find((item) => item.keyId === keyId)
-  if (!registered || registered.revokedAt)
-    throw new Error(`machine key ${keyId} is not registered and active in this space`)
+  const refusal = machineTrustRefusal(keyId, registered)
+  if (refusal) throw new Error(refusal)
   await pinTrustedMachine(keyId, publicBytes, label, env)
   const pair = readMachineKey(env)
   if (!pair)
