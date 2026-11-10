@@ -126,15 +126,14 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
        VALUES ('${deniedProjectId}','${deniedSpaceId}','${deniedProjectName}',now());`,
     )
     const id = newRecordId()
-    const local = localOutbox(
-      runPayload({
-        id,
-        machineId: input.machineId,
-        projectName: deniedProjectName,
-        projectId: deniedProjectId,
-        spaceId: input.writeSpaceId,
-      }),
-    )
+    const payload = runPayload({
+      id,
+      machineId: input.machineId,
+      projectName: deniedProjectName,
+      projectId: deniedProjectId,
+      spaceId: input.writeSpaceId,
+    })
+    const local = localOutbox(payload)
     try {
       const result = await timedHostedRequest(
         {
@@ -150,8 +149,29 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
             }),
           ),
       )
-      expect(result).toMatchObject({ pushed: 0, failed: 1, pending: 0 })
-      expect(result.quarantined[0]?.error).toContain('not a member')
+      expect(result).toMatchObject({ pushed: 0, failed: 0, pending: 1, quarantined: [] })
+      expect(result.routingHeld?.[0]?.reason).toContain('not a member')
+      const response = await timedHostedRequest(
+        {
+          test: 'hosted sync refuses a space outside the bearer memberships without writing',
+          operation: 'sync',
+        },
+        () =>
+          withoutDirectRecordCredentials(() =>
+            recordApiClient().sync!({
+              machine: {
+                id: input.machineId,
+                name: 'proof-machine',
+                seenAt: '2026-10-13T01:00:00.000Z',
+              },
+              rows: [
+                { id: 1, kind: 'run', payload: JSON.stringify(payload), spaceHint: deniedSpaceId },
+              ],
+            }),
+          ),
+      )
+      expect(response.results[0]).toMatchObject({ id: 1, status: 'quarantined' })
+      expect(JSON.stringify(response.results[0])).toContain('not a member')
       expect(input.admin(`SELECT count(*) FROM run WHERE id='${id}';`)).toBe('0')
     } finally {
       local.close()
@@ -197,7 +217,11 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
         },
         () =>
           withoutDirectRecordCredentials(() =>
-            syncRecord({ local, identity: { id: input.machineId, name: 'proof-machine' } }),
+            syncRecord({
+              local,
+              identity: { id: input.machineId, name: 'proof-machine' },
+              projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
+            }),
           ),
       )
       expect(result).toMatchObject({ pushed: 0, failed: 2, pending: 0 })

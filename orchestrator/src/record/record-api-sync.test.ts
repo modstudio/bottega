@@ -83,7 +83,7 @@ test('sync returns request refusals as client errors', async () => {
 })
 
 test('sync accepts named rows without an active space', async () => {
-  const noActiveSpace = { ...identity, activeSpaceId: null }
+  const noActiveSpace: typeof identity = { ...identity, activeSpaceId: null }
   const syncRecord = mock(async (input: { request: { rows: Array<{ id: number }> } }) => ({
     results: input.request.rows.map((row) => ({ id: row.id, status: 'synced' as const })),
   }))
