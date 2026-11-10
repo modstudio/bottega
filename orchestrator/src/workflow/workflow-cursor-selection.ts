@@ -275,7 +275,12 @@ function selectKeyedTaskStage(
            AND workflow_slug=? AND mode_slug=? AND task_record_id=?
            AND instance_id='' ORDER BY number DESC LIMIT 1`,
       )
-      .get(identity.project, identity.workflow, identity.mode, taskRecordId) as SelectableCursorRow | null
+      .get(
+        identity.project,
+        identity.workflow,
+        identity.mode,
+        taskRecordId,
+      ) as SelectableCursorRow | null
     if (fallback && fallback.state !== 'done' && fallback.state !== 'abandoned') {
       attachTaskFlowStage(selected.flowRecordId, fallback.record_id, d)
       fallback.task_flow_record_id = selected.flowRecordId
