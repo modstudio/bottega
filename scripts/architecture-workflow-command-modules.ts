@@ -13,9 +13,11 @@ const module = (file: string, allowed: string[]): WorkflowCommandModule => ({
 
 export const workflowCommandModules: WorkflowCommandModule[] = [
   module('orchestrator/src/workflow/workflow-hosted-space.ts', ['bun:sqlite']),
-  module('orchestrator/src/workflow/workflow-write-space.ts', [
+  module('orchestrator/src/workflow/workflow-command-arguments.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-write-space.ts', [
     '../../../shared/record-space-membership.ts',
     '../../../shared/record-space-owner-destination.ts',
     '../cli/args.ts',
@@ -86,6 +88,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     '../cli/args.ts',
     '../project/projects.ts',
     './step-catalogue.ts',
+    './workflow-command-arguments.ts',
     './workflow-commands.ts',
   ]),
 ]

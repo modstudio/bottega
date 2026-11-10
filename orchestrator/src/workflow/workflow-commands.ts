@@ -16,6 +16,7 @@ import { resolveReviewBase } from '../review/review-target.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { resolveBase } from '../worktree/worktree-caller.ts'
 import { parseAutonomy } from './autonomy.ts'
+import { obligationUuid, positive } from './workflow-command-arguments.ts'
 import { resolveProbeArtifact } from './probe-identifier.ts'
 import {
   promoteStepCatalogue,
@@ -91,7 +92,7 @@ import {
   productionWorkflowTree,
   promoteMatchingWorkflowTreeDrafts,
 } from './workflow-tree-store.ts'
-import { obligationUuid, positive, workflowWriteSpace } from './workflow-write-space.ts'
+import { workflowWriteSpace } from './workflow-write-space.ts'
 import {
   composeWorkflow,
   forkWorkflow,

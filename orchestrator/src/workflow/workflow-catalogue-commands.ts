@@ -4,14 +4,8 @@ import { resolve } from 'node:path'
 import { flagValue } from '../cli/args.ts'
 import { projectAt } from '../project/projects.ts'
 import { forkStepCatalogue } from './step-catalogue.ts'
+import { positive } from './workflow-command-arguments.ts'
 import type { WorkflowCommandOptions, WorkflowPrint } from './workflow-commands.ts'
-
-const positive = (value: string | undefined, label: string): number | undefined => {
-  if (value === undefined) return undefined
-  const n = Number(value)
-  if (!Number.isInteger(n) || n < 1) throw new Error(`${label} must be a positive integer`)
-  return n
-}
 
 export async function forkCatalogueCommand(
   argv: string[],
