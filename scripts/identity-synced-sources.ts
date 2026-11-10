@@ -112,6 +112,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     ],
     [
       'abandonTaskFlow',
+      'adoptTaskFlow',
       'advanceTaskFlow',
       'attachTaskFlowText',
       'awaitTaskFlowRuling',
@@ -133,6 +134,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     ],
     [
       'abandonTaskFlow',
+      'adoptTaskFlow',
       'advanceTaskFlow',
       'attachTaskFlowText',
       'awaitTaskFlowRuling',

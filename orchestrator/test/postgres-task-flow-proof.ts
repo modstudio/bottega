@@ -67,11 +67,14 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
     const flowId = newRecordId()
     const stageId = newRecordId()
     const taskId = newRecordId()
+    const existingAdoptTaskId = newRecordId()
+    const newAdoptTaskId = newRecordId()
     const otherProjectId = newRecordId()
     const otherProjectTaskId = newRecordId()
     const otherProjectFlowId = newRecordId()
     const otherProjectStageId = newRecordId()
     const machineId = newRecordId()
+    const adoptMachineId = newRecordId()
     const composeRequestId = newRecordId()
     const advanceRequestId = newRecordId()
     const obligationId = newRecordId()
@@ -87,12 +90,20 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
       input.admin(`
         INSERT INTO machine(id,user_id,name,registered_at,last_seen)
         VALUES ('${machineId}',(SELECT user_id FROM membership WHERE space_id='${input.spaceId()}' LIMIT 1),
-          'direct-task-flow-proof',now(),now());
+          'direct-task-flow-proof',now(),now()),
+          ('${adoptMachineId}',(SELECT user_id FROM membership WHERE space_id='${input.spaceId()}' LIMIT 1),
+          'adopt-task-flow-proof',now(),now());
         INSERT INTO hub_task
           (id,space_id,project_name,project_id,key,project,title,status,status_category,source,
            first_seen,last_seen,created_at,updated_at)
         VALUES ('${taskId}','${input.spaceId()}','${PROJECT}','${input.projectId()}',
           '${DIRECT_TASK_KEY}','${PROJECT}','direct task-flow proof','active','active','local',
+          now(),now(),now(),now()),
+          ('${existingAdoptTaskId}','${input.spaceId()}','${PROJECT}','${input.projectId()}',
+          'AA-2235','${PROJECT}','existing adopt flow proof','active','active','local',
+          now(),now(),now(),now()),
+          ('${newAdoptTaskId}','${input.spaceId()}','${PROJECT}','${input.projectId()}',
+          'AA-2236','${PROJECT}','new adopt flow proof','active','active','local',
           now(),now(),now(),now());
         INSERT INTO project(id,space_id,name,created_at)
         VALUES ('${otherProjectId}','${input.spaceId()}','other-task-flow-project',now());
@@ -294,6 +305,207 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
       expect(
         (await client.listTaskFlowStages!({ taskKey: DIRECT_TASK_KEY }, directSpace)).items,
       ).toHaveLength(6)
+
+      const existingTargetFlowId = newRecordId()
+      expect(
+        await client.composeTaskFlow!(
+          {
+            requestId: newRecordId(),
+            flowInsert: {
+              ...flow,
+              id: existingTargetFlowId,
+              taskId: existingAdoptTaskId,
+              openStageRecordId: null,
+            },
+          },
+          directSpace,
+        ),
+      ).toEqual({ revisions: { [existingTargetFlowId]: 1 }, stage: null })
+
+      const tasklessFlowId = newRecordId()
+      const tasklessStageId = newRecordId()
+      const tasklessRequestId = newRecordId()
+      const adoptedAt = new Date(Date.now() + 2_000).toISOString()
+      const tasklessFlow = {
+        ...flow,
+        id: tasklessFlowId,
+        taskId: null,
+        openStageRecordId: tasklessStageId,
+      }
+      const tasklessStage = {
+        ...stage,
+        id: tasklessStageId,
+        flowRecordId: tasklessFlowId,
+        workflowKey: 'taskless-proof',
+        sessionId: 'taskless-proof-session',
+      }
+      expect(
+        await client.composeTaskFlow!(
+          {
+            requestId: newRecordId(),
+            flowInsert: tasklessFlow,
+            stageInsert: tasklessStage,
+          },
+          directSpace,
+        ),
+      ).toMatchObject({ revisions: { [tasklessFlowId]: 1, [tasklessStageId]: 1 } })
+      expect(
+        (await client.readTaskFlow!({ flowRecordId: tasklessFlowId }, directSpace)).flow,
+      ).toMatchObject({ taskId: null, taskKey: null })
+      expect(
+        (await client.listTaskFlowStages!({ sessionId: 'taskless-proof-session' }, directSpace))
+          .items[0],
+      ).toMatchObject({ flow: { id: tasklessFlowId, taskId: null, taskKey: null } })
+      const adopt = {
+        requestId: tasklessRequestId,
+        stage: { id: tasklessStageId, expectedRevision: 1 },
+        taskId: existingAdoptTaskId,
+        state: 'done' as const,
+        updatedMachineId: adoptMachineId,
+        updatedAt: adoptedAt,
+      }
+      expect(await client.adoptTaskFlow!(adopt, directSpace)).toEqual({
+        revisions: {
+          [tasklessFlowId]: 2,
+          [existingTargetFlowId]: 2,
+          [tasklessStageId]: 2,
+        },
+        flowRecordId: existingTargetFlowId,
+      })
+      expect(await client.adoptTaskFlow!(adopt, directSpace)).toEqual({
+        revisions: { [existingTargetFlowId]: 2, [tasklessStageId]: 2 },
+        flowRecordId: existingTargetFlowId,
+      })
+      expect(
+        await client.adoptTaskFlow!(
+          {
+            ...adopt,
+            requestId: newRecordId(),
+            stage: { ...adopt.stage, expectedRevision: 2 },
+          },
+          directSpace,
+        ),
+      ).toEqual({
+        revisions: { [existingTargetFlowId]: 2, [tasklessStageId]: 2 },
+        flowRecordId: existingTargetFlowId,
+      })
+      await expect(
+        client.adoptTaskFlow!(
+          {
+            ...adopt,
+            requestId: newRecordId(),
+            stage: { ...adopt.stage, expectedRevision: 2 },
+            taskId: newAdoptTaskId,
+          },
+          directSpace,
+        ),
+      ).rejects.toMatchObject({
+        reason: 'already-exists',
+        condition: `task_flow.id=${existingTargetFlowId}`,
+      })
+      expect(
+        (await client.readTaskFlow!({ flowRecordId: existingTargetFlowId }, directSpace)).flow,
+      ).toMatchObject({ taskId: existingAdoptTaskId, taskKey: 'AA-2235', state: 'done' })
+      expect(
+        (await client.readTaskFlow!({ flowRecordId: existingTargetFlowId }, directSpace)).stage,
+      ).toMatchObject({
+        id: tasklessStageId,
+        lastAdvancedMachineId: adoptMachineId,
+        updatedAt: adoptedAt,
+      })
+
+      const blockedSourceFlowId = newRecordId()
+      const blockedSourceStageId = newRecordId()
+      await client.composeTaskFlow!(
+        {
+          requestId: newRecordId(),
+          flowInsert: {
+            ...tasklessFlow,
+            id: blockedSourceFlowId,
+            openStageRecordId: blockedSourceStageId,
+          },
+          stageInsert: {
+            ...tasklessStage,
+            id: blockedSourceStageId,
+            flowRecordId: blockedSourceFlowId,
+            workflowKey: 'blocked-adopt-proof',
+            sessionId: 'blocked-adopt-proof-session',
+          },
+        },
+        directSpace,
+      )
+      const beforeBlockedAdopt = {
+        source: await client.readTaskFlow!({ flowRecordId: blockedSourceFlowId }, directSpace),
+        target: await client.readTaskFlow!({ flowRecordId: existingTargetFlowId }, directSpace),
+      }
+      await expect(
+        client.adoptTaskFlow!(
+          {
+            requestId: newRecordId(),
+            stage: { id: blockedSourceStageId, expectedRevision: 1 },
+            taskId: existingAdoptTaskId,
+            updatedMachineId: adoptMachineId,
+            updatedAt: new Date(Date.now() + 3_000).toISOString(),
+          },
+          directSpace,
+        ),
+      ).rejects.toMatchObject({
+        reason: 'already-exists',
+        condition: `task_flow.id=${existingTargetFlowId}`,
+      })
+      expect({
+        source: await client.readTaskFlow!({ flowRecordId: blockedSourceFlowId }, directSpace),
+        target: await client.readTaskFlow!({ flowRecordId: existingTargetFlowId }, directSpace),
+      }).toEqual(beforeBlockedAdopt)
+
+      const newFlowId = newRecordId()
+      const newStageId = newRecordId()
+      await client.composeTaskFlow!(
+        {
+          requestId: newRecordId(),
+          flowInsert: { ...tasklessFlow, id: newFlowId, openStageRecordId: newStageId },
+          stageInsert: {
+            ...tasklessStage,
+            id: newStageId,
+            flowRecordId: newFlowId,
+            workflowKey: 'taskless-new-flow-proof',
+            sessionId: 'taskless-new-flow-proof-session',
+          },
+        },
+        directSpace,
+      )
+      expect(
+        await client.adoptTaskFlow!(
+          {
+            requestId: newRecordId(),
+            stage: { id: newStageId, expectedRevision: 1 },
+            taskId: newAdoptTaskId,
+            updatedMachineId: machineId,
+            updatedAt: at,
+          },
+          directSpace,
+        ),
+      ).toEqual({
+        revisions: { [newFlowId]: 2, [newStageId]: 2 },
+        flowRecordId: newFlowId,
+      })
+      await expect(
+        client.composeTaskFlow!(
+          {
+            requestId: newRecordId(),
+            flowInsert: {
+              ...flow,
+              id: newRecordId(),
+              taskId: newAdoptTaskId,
+              openStageRecordId: null,
+            },
+          },
+          directSpace,
+        ),
+      ).rejects.toMatchObject({
+        reason: 'already-exists',
+        condition: 'constraint=task_flow_space_task_unique',
+      })
 
       const advance = {
         requestId: advanceRequestId,

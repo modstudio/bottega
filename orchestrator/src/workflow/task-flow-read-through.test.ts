@@ -133,7 +133,7 @@ async function cacheHostedTaskFlow(
   flow: HostedTaskFlow,
 ): Promise<void> {
   installHosted(flow)
-  await readThroughTaskFlow(database, { taskKey, taskRecordId: flow.flow.taskId })
+  await readThroughTaskFlow(database, { taskKey, taskRecordId: flow.flow.taskId! })
 }
 
 test('hosted newer than local refreshes the cached stage', async () => {
@@ -335,7 +335,7 @@ test('a listed hosted stage with no local row is not inserted', async () => {
       ids.database,
       'DEV-2098',
       hosted(ids, {
-        taskId: open.flow.taskId,
+        taskId: open.flow.taskId!,
         flowId: open.flow.id,
         stage: false,
         otherStages: [otherStage],

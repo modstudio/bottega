@@ -27,6 +27,7 @@ type Mutation = { id: string; expectedRevision: number; values: Record<string, u
 type RevisionRow = { revision: number | string; last_request_id: string | null }
 type ComposeBody = TaskFlowIntentBody<'compose'>
 type StageUpdateBody = TaskFlowIntentBody<'stage-update'>
+type AdoptBody = TaskFlowIntentBody<'adopt'>
 type StageMutationBody =
   | TaskFlowIntentBody<'advance'>
   | TaskFlowIntentBody<'await-ruling'>
@@ -355,14 +356,25 @@ async function applyCompose(
   return { revisions, stage }
 }
 
-async function lockParentFlowForStage(tx: SQL, stageId: string): Promise<void> {
+type AdoptFlowRow = {
+  id: string
+  task_id: string | null
+  open_stage_record_id: string | null
+  revision: number | string
+  last_request_id: string | null
+}
+
+async function lockParentFlowForStage(tx: SQL, stageId: string): Promise<AdoptFlowRow> {
   const rows = (await tx.unsafe(
-    `SELECT flow.id::text FROM task_flow flow
+    `SELECT flow.id::text,flow.task_id::text,flow.open_stage_record_id::text,
+            flow.revision,flow.last_request_id::text
+     FROM task_flow flow
      JOIN task_flow_stage stage ON stage.flow_record_id=flow.id
      WHERE stage.id=$1::uuid FOR UPDATE OF flow`,
     [stageId],
-  )) as Array<{ id: string }>
+  )) as AdoptFlowRow[]
   if (!rows[0]) conflict('task_flow_stage', stageId, null)
+  return rows[0]
 }
 
 function assertStageChild(stageId: string, row: { id: string; stageRecordId: string }): void {
@@ -417,6 +429,151 @@ async function applyStageUpdates(tx: SQL, body: StageUpdateBody) {
   return { revisions }
 }
 
+async function adoptTargetFlow(
+  tx: SQL,
+  spaceId: string,
+  taskId: string,
+): Promise<AdoptFlowRow | undefined> {
+  const rows = (await tx.unsafe(
+    `SELECT id::text,task_id::text,open_stage_record_id::text,revision,last_request_id::text
+     FROM task_flow WHERE space_id=$1::uuid AND task_id=$2::uuid
+     FOR UPDATE`,
+    [spaceId, taskId],
+  )) as AdoptFlowRow[]
+  return rows[0]
+}
+
+async function moveAdoptedStage(
+  tx: SQL,
+  body: AdoptBody,
+  source: AdoptFlowRow,
+  target: AdoptFlowRow,
+) {
+  if (target.open_stage_record_id !== null && target.open_stage_record_id !== body.stage.id)
+    refusal(
+      'the task flow already has another open stage; close or abandon it before adopting this stage',
+      `task_flow.id=${target.id}`,
+      'already-exists',
+      String(target.revision),
+    )
+  const sourceRevision = await updateRevisionRow(
+    tx,
+    'task_flow',
+    {
+      id: source.id,
+      expectedRevision: Number(source.revision),
+      values: {
+        state: 'dropped',
+        openStageRecordId: null,
+        updatedMachineId: body.updatedMachineId,
+        updatedAt: body.updatedAt,
+      },
+    },
+    body.requestId,
+  )
+  const targetRevision = await updateRevisionRow(
+    tx,
+    'task_flow',
+    {
+      id: target.id,
+      expectedRevision: Number(target.revision),
+      values: {
+        ...(body.state === undefined ? {} : { state: body.state }),
+        openStageRecordId: body.stage.id,
+        updatedMachineId: body.updatedMachineId,
+        updatedAt: body.updatedAt,
+      },
+    },
+    body.requestId,
+  )
+  const stageRevision = await updateRevisionRow(
+    tx,
+    'task_flow_stage',
+    {
+      ...body.stage,
+      values: {
+        flowRecordId: target.id,
+        lastAdvancedMachineId: body.updatedMachineId,
+        updatedAt: body.updatedAt,
+      },
+    },
+    body.requestId,
+  )
+  return {
+    revisions: {
+      [source.id]: sourceRevision,
+      [target.id]: targetRevision,
+      [body.stage.id]: stageRevision,
+    },
+    flowRecordId: target.id,
+  }
+}
+
+async function adoptStageInPlace(tx: SQL, body: AdoptBody, source: AdoptFlowRow) {
+  const sourceRevision = await updateRevisionRow(
+    tx,
+    'task_flow',
+    {
+      id: source.id,
+      expectedRevision: Number(source.revision),
+      values: {
+        taskId: body.taskId,
+        ...(body.state === undefined ? {} : { state: body.state }),
+        openStageRecordId: body.stage.id,
+        updatedMachineId: body.updatedMachineId,
+        updatedAt: body.updatedAt,
+      },
+    },
+    body.requestId,
+  )
+  const stageRevision = await updateRevisionRow(
+    tx,
+    'task_flow_stage',
+    {
+      ...body.stage,
+      values: {
+        lastAdvancedMachineId: body.updatedMachineId,
+        updatedAt: body.updatedAt,
+      },
+    },
+    body.requestId,
+  )
+  return {
+    revisions: {
+      [source.id]: sourceRevision,
+      [body.stage.id]: stageRevision,
+    },
+    flowRecordId: source.id,
+  }
+}
+
+async function applyAdopt(tx: SQL, spaceId: string, body: AdoptBody) {
+  const source = await lockParentFlowForStage(tx, body.stage.id)
+  if (source.task_id !== null && source.task_id !== body.taskId)
+    conflict('task_flow', source.id, Number(source.revision), 'already-exists')
+  const target = await adoptTargetFlow(tx, spaceId, body.taskId)
+  const stageDecision = await revisionDecision(
+    tx,
+    'task_flow_stage',
+    { ...body.stage, values: {} },
+    body.requestId,
+  )
+  if (stageDecision === 'retry' || source.task_id === body.taskId) {
+    const flow = target ?? source
+    return {
+      revisions: {
+        [body.stage.id]:
+          stageDecision === 'retry' ? body.stage.expectedRevision + 1 : body.stage.expectedRevision,
+        [flow.id]: Number(flow.revision),
+      },
+      flowRecordId: flow.id,
+    }
+  }
+  return target && target.id !== source.id
+    ? moveAdoptedStage(tx, body, source, target)
+    : adoptStageInPlace(tx, body, source)
+}
+
 type Applier<K extends TaskFlowIntent> = (
   tx: SQL,
   input: Tenant & TaskFlowIntentBody<K>,
@@ -428,6 +585,7 @@ const intentAppliers: { [K in TaskFlowIntent]: Applier<K> } = {
   advance: (tx, input) => applyStageMutation(tx, input, input),
   'await-ruling': (tx, input) => applyStageMutation(tx, input, input),
   abandon: (tx, input) => applyStageMutation(tx, input, input),
+  adopt: (tx, input) => applyAdopt(tx, input.spaceId, input),
   'attach-text': async (tx, input) => {
     for (const row of input.rows) {
       await lockParentFlowForStage(tx, row.stageRecordId)
