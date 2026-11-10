@@ -259,16 +259,17 @@ export async function machineTrust(
   keyId: string,
   publicKey: string,
   label: string,
-  selectedSpaceId: string,
+  selected: { spaceId: string; slug: string },
   client = hostedConfigClient(),
 ) {
+  const selectedSpaceId = selected.spaceId
   const destination = { destinationSpaceId: selectedSpaceId }
   const publicBytes = bytes(publicKey)
   if ((await machineKeyId(publicBytes)) !== keyId)
     throw new Error('machine key id does not match public key')
   const remote = await unpinServerRevoked(client, destination)
   const registered = remote.find((item) => item.keyId === keyId)
-  const refusal = machineTrustRefusal(keyId, registered, '<slug>')
+  const refusal = machineTrustRefusal(keyId, registered, selected.slug)
   if (refusal) throw new Error(refusal)
   await pinTrustedMachine(keyId, publicBytes, label)
   const machine = await localMachine()

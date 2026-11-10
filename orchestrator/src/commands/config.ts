@@ -230,7 +230,7 @@ function registerMachineCommands(config: Command): void {
         client,
       )
       if (readHostedConfigIdentity()?.spaceId === selected.spaceId)
-        await machineTrust(keyId, publicKey, label, selected.spaceId, client)
+        await machineTrust(keyId, publicKey, label, selected, client)
       else await machineTrustInSpace(keyId, publicKey, label, selected, client)
       log(keyId)
     })

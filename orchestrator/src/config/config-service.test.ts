@@ -547,7 +547,7 @@ test('machine trust after a newer revocation rotates once and does not duplicate
     fixture.recipientKeyId,
     fixture.recipientPublicKey,
     'recipient',
-    fixture.spaceId,
+    { spaceId: fixture.spaceId, slug: 'fixture' },
     fixture.client,
   )
   expect(fixture.created).toHaveLength(1)
@@ -564,7 +564,7 @@ test('machine trust rotation keeps a selected-space user secret bound to its use
     fixture.recipientKeyId,
     fixture.recipientPublicKey,
     'recipient',
-    fixture.spaceId,
+    { spaceId: fixture.spaceId, slug: 'fixture' },
     fixture.client,
   )
   const row = fixture.secrets()[0]!
