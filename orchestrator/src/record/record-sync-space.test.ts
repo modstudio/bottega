@@ -62,6 +62,49 @@ test('project-owned evidence uses its declared space while the active space is p
   local.close()
 })
 
+test('machine-wide contention goes to the personal space while another space is active', async () => {
+  const local = migratedTestDatabase()
+  local
+    .query('INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,?,?,?,?,?)')
+    .run(
+      newRecordId(),
+      1,
+      'contention',
+      'contention-1',
+      JSON.stringify({ id: 'contention-1', resourceKind: 'store', resourceKey: 'orchestrator' }),
+      STAMP,
+    )
+  const personal = '01990000-0000-7000-8000-000000000020'
+  const team = '01990000-0000-7000-8000-000000000021'
+  const hints: Array<string | null> = []
+
+  expect(
+    await syncRecord({
+      local,
+      identity: { id: '01990000-0000-7000-8000-000000000022', name: 'test-machine' },
+      client: {
+        whoami: async () => ({
+          user: { id: '01990000-0000-7000-8000-000000000023' },
+          activeSpaceId: team,
+          personalSpaceId: personal,
+          memberships: [
+            { space_id: personal, slug: 'personal', permission: 'write' },
+            { space_id: team, slug: 'team', permission: 'write' },
+          ],
+        }),
+        sync: async (request) => {
+          hints.push(...request.rows.map((row) => row.spaceHint))
+          return {
+            results: request.rows.map((row) => ({ id: row.id, status: 'synced' as const })),
+          }
+        },
+      },
+    }),
+  ).toMatchObject({ pushed: 1, pending: 0 })
+  expect(hints).toEqual([personal])
+  local.close()
+})
+
 test('declared project spaces override the active space while an unset project stays pending', async () => {
   const local = localOutbox(2, 'declared')
   const second = JSON.parse(
