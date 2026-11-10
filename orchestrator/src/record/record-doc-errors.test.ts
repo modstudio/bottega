@@ -1,9 +1,6 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import {
-  DocRevisionConflictError,
-  revisionConflictBody,
-} from '../doc/doc-revision-conflict.ts'
+import { DocRevisionConflictError, revisionConflictBody } from '../doc/doc-revision-conflict.ts'
 import { assertRevisionWrite } from './record-doc-errors.ts'
 
 const address = { scope: 'canon', subject: null, slug: 'revision-test' }
@@ -38,7 +35,8 @@ test('an already-existing row returns its specific remedy as a typed conflict', 
       `cleared by: read the doc, then write it with ${PLATFORM_SLUG} doc set revision-test --scope canon --expect revision-2`,
     code: 'revision-conflict',
     reason: 'already-exists',
-    condition: 'refusing create for canon/_/revision-test: the row already exists at revision revision-2',
+    condition:
+      'refusing create for canon/_/revision-test: the row already exists at revision revision-2',
     currentRevision: 'revision-2',
   })
 })

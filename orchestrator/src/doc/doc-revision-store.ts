@@ -8,12 +8,9 @@ import { db, sessionId } from '../database/db.ts'
 import { nextEntityNumber } from '../database/entity-number.ts'
 import { decodeStoredDocAudiences, encodeStoredDocAudiences } from './doc-audiences-codec.ts'
 import type { DocRevision, DocRevisionMetadata } from './doc-read-store.ts'
-import { validateHistoricDocAddress } from './doc-subjects.ts'
-import {
-  type DocRevisionOp,
-  decideDocRevisionWrite,
-} from './doc-write-allowed.ts'
 import { DocRevisionConflictError } from './doc-revision-conflict.ts'
+import { validateHistoricDocAddress } from './doc-subjects.ts'
+import { type DocRevisionOp, decideDocRevisionWrite } from './doc-write-allowed.ts'
 
 type RevisionDoc = {
   record_id: string

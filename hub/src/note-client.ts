@@ -2,10 +2,7 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { jsonBody } from '../../shared/http-json.ts'
 import type { NoteAnchorWire } from '../../shared/note-anchor.ts'
 import type { HostedAcknowledgement, HostedNote, PromoteNoteInput } from './hosted-notes.ts'
-import {
-  type HostedRequestSafety,
-  hostedRefusalError,
-} from './hosted-refusal.ts'
+import { type HostedRequestSafety, hostedRefusalError } from './hosted-refusal.ts'
 import { sendHostedSessionRequest } from './hosted-session-send.ts'
 import type { HostedComment, HostedTask } from './hosted-tasks.ts'
 import { resolveHostedUrl } from './hosted-url.ts'

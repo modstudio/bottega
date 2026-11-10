@@ -2,6 +2,7 @@
 /** Maps hosted-service refusals to their HTTP status without hiding unexpected failures. */
 
 import type { Context } from 'hono'
+import { DocRevisionConflictError, revisionConflictBody } from '../doc/doc-revision-conflict.ts'
 import { RecordBoardError } from './record-board-contract.ts'
 import { ConfigServiceError } from './record-config-error.ts'
 import { RecordDocError } from './record-docs.ts'
@@ -10,7 +11,6 @@ import {
   RecordProjectSpaceConflictError,
 } from './record-project-space-contract.ts'
 import { RecordProjectError } from './record-projects.ts'
-import { DocRevisionConflictError, revisionConflictBody } from '../doc/doc-revision-conflict.ts'
 import { TrialSpaceDeleteError } from './record-trial-space-contract.ts'
 import { RecordVerdictError } from './record-verdicts.ts'
 

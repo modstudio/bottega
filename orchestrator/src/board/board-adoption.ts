@@ -625,7 +625,7 @@ function handleUploadError(
   context: UploadContext,
 ): 'continue' | 'rate' {
   const disposition = uploadErrorDisposition(
-    error instanceof RecordApiRequestError ? error.kind : 'unexpected',
+    error instanceof RecordApiRequestError && error.kind !== 'conflict' ? error.kind : 'unexpected',
     error instanceof Error ? error.message : String(error),
   )
   if (disposition === 'rate') return 'rate'

@@ -6,8 +6,8 @@ import {
   RECORD_SIGN_IN_REMEDY,
   recordUnreachableRefusal,
 } from '../../../shared/record-remedies.ts'
-import { RECORD_WRITE_REMEDY } from '../doc/doc-write-allowed.ts'
 import { revisionConflictBodySchema } from '../doc/doc-revision-conflict.ts'
+import { RECORD_WRITE_REMEDY } from '../doc/doc-write-allowed.ts'
 import {
   RecordApiRequestError,
   responseCode,

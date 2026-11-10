@@ -48,4 +48,3 @@ export function hostedRefusalError(refusal: HostedRefusal): Error {
     .map((value) => value.replace(/[.\s]+$/, ''))
   return new Error(`hosted hub refused the request (${status}): ${detail}. ${remedies.join('. ')}`)
 }
-

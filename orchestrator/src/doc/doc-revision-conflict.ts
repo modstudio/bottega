@@ -23,14 +23,20 @@ export type RevisionConflictBody = z.infer<typeof revisionConflictBodySchema>
 
 export class DocRevisionConflictError extends Error {
   readonly status = 409
+  readonly condition: string
+  readonly reason: RevisionConflictReason
+  readonly currentRevision: string | null
 
   constructor(
     message: string,
-    readonly condition: string,
-    readonly reason: RevisionConflictReason,
-    readonly currentRevision: string | null,
+    condition: string,
+    reason: RevisionConflictReason,
+    currentRevision: string | null,
   ) {
     super(message)
+    this.condition = condition
+    this.reason = reason
+    this.currentRevision = currentRevision
   }
 }
 

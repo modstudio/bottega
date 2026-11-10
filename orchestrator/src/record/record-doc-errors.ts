@@ -1,12 +1,12 @@
 // concern: record-doc-errors
 /** Turns pure document-write decisions into hosted-service errors. */
 import { renderRefusal } from '../../../shared/refusal.ts'
+import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
 import {
   type DocRevisionOp,
   type DocRevisionWriteInput,
   decideDocRevisionWrite,
 } from '../doc/doc-write-allowed.ts'
-import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
 
 export class RecordDocError extends Error {
   status: 400 | 404 | 409 | 422

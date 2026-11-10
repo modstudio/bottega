@@ -16,11 +16,8 @@ import type { CanonLintInputCollector } from '../canon/canon-files.ts'
 import { db } from '../database/db.ts'
 import { dropContextItem, getContext, setContextItem } from '../doc/context-service.ts'
 import { CONTEXT_ITEM_KINDS } from '../doc/doc-context-write.ts'
+import { DocRevisionConflictError, REVISION_CONFLICT_CODE } from '../doc/doc-revision-conflict.ts'
 import { resolveDocRevisionIdentifier } from '../doc/doc-revision-identifier.ts'
-import {
-  DocRevisionConflictError,
-  REVISION_CONFLICT_CODE,
-} from '../doc/doc-revision-conflict.ts'
 import { type SelectedDocWriteTree, withDocWriteTreeRemedy } from '../doc/doc-write-tree.ts'
 import {
   getDoc,

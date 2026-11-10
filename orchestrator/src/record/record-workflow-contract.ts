@@ -1,8 +1,8 @@
 // concern: record-workflow-contract
 /** Pure transport contract for the hosted workflow catalogue. */
 import { z } from 'zod'
-import { recordCatalogueImportResultSchema } from './record-catalogue-contract.ts'
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
+import { recordCatalogueImportResultSchema } from './record-catalogue-contract.ts'
 
 export const RECORD_WORKFLOW_TABLES = [
   'step_catalogue',

@@ -2,6 +2,8 @@
 /** Exposes validated tenant-bound workflow catalogue routes. */
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
+import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
+import { renderRecordApiRefusal } from './record-api-errors.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
   decodeRecordCursor,
@@ -10,8 +12,6 @@ import {
   type RecordListCursorRow,
   recordCursorOf,
 } from './record-cursor.ts'
-import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
-import { renderRecordApiRefusal } from './record-api-errors.ts'
 import { RecordTaskFlowError } from './record-task-flow.ts'
 import {
   type RecordWorkflowDraftInput,
@@ -51,10 +51,10 @@ export function registerRecordWorkflowRoutes(
   const failure = (context: Context<Environment>, error: unknown) => {
     if (error instanceof DocRevisionConflictError) return renderRecordApiRefusal(context, error)!
     return error instanceof RecordWorkflowError
-        ? context.json({ error: error.message }, error.status as 404 | 409 | 422)
-        : (() => {
-            throw error
-          })()
+      ? context.json({ error: error.message }, error.status as 404 | 409 | 422)
+      : (() => {
+          throw error
+        })()
   }
   app.get('/v1/task-flow', async (context) => {
     if (!deps.readTaskFlow)

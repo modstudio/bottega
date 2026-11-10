@@ -652,7 +652,10 @@ export function recordInvitationListResponse(body: unknown): HostedRecordInvitat
       'expiresAt',
     ] as const) {
       if (typeof value[field] !== 'string')
-        throw recordApiUnreachable(new Error('record API returned an invalid invitation list'), 'probe')
+        throw recordApiUnreachable(
+          new Error('record API returned an invalid invitation list'),
+          'probe',
+        )
     }
     const expiresAt = new Date(value.expiresAt as string)
     if (Number.isNaN(expiresAt.getTime()))

@@ -6,10 +6,7 @@ import type {
   HostedRecordChange,
   HostedRecordChangeResult,
 } from './hosted-record-change-wire.ts'
-import {
-  type HostedRequestSafety,
-  hostedRefusalError,
-} from './hosted-refusal.ts'
+import { type HostedRequestSafety, hostedRefusalError } from './hosted-refusal.ts'
 import { sendHostedSessionRequest } from './hosted-session-send.ts'
 import type { HostedTaskPresencePair } from './hosted-task-prune.ts'
 import type { HostedComment, HostedDocument, HostedTask } from './hosted-tasks.ts'
