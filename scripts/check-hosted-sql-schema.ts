@@ -18,7 +18,7 @@ const migrationsFolder = join(root, 'shared', 'record', 'migrations')
 const HOSTED_SQL_EXEMPTIONS: readonly HostedSqlExemption[] = [
   {
     file: 'orchestrator/test/postgres-task-flow-proof.ts',
-    fingerprint: 'c911c7cb35e55c6e',
+    fingerprint: '729ae44d70b5d5a8',
     reason:
       'project-move proof interpolates the dry-run total immediately returned by record_move_project_space',
   },
