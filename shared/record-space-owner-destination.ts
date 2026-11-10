@@ -17,16 +17,13 @@ export type RecordSpaceOwnerDestination =
 export function recordSpaceOwnerDestination(
   verb: string,
   flags: RecordSpaceOwnerFlags,
+  accepts: readonly RecordSpaceOtherOwner[],
   memberships: readonly RecordSpaceMembership[],
 ): RecordSpaceOwnerDestination {
   if (flags.project) return { kind: 'other-owner', owner: 'project' }
   if (flags.account) return { kind: 'other-owner', owner: 'account' }
-  const alternatives = [
-    ...(Object.hasOwn(flags, 'project') ? (['project'] as const) : []),
-    ...(Object.hasOwn(flags, 'account') ? (['account'] as const) : []),
-  ]
   if (!flags.space) {
-    return { kind: 'refused', remedy: recordSpaceOwnerRequiredRemedy(verb, alternatives) }
+    return { kind: 'refused', remedy: recordSpaceOwnerRequiredRemedy(verb, accepts) }
   }
   const membership = recordSpaceMembership(flags.space, memberships)
   return membership
@@ -41,21 +38,12 @@ export async function resolveRecordSpaceOwnerDestination(
   accepts: readonly RecordSpaceOtherOwner[],
   loadMemberships: () => Promise<readonly RecordSpaceMembership[]>,
 ): Promise<Exclude<RecordSpaceOwnerDestination, { kind: 'refused' }>> {
-  const acceptedFlags = {
-    ...flags,
-    ...(accepts.includes('project') && !Object.hasOwn(flags, 'project')
-      ? { project: undefined }
-      : {}),
-    ...(accepts.includes('account') && !Object.hasOwn(flags, 'account')
-      ? { account: false }
-      : {}),
-  }
   if (!flags.space) {
-    const beforeLoad = recordSpaceOwnerDestination(verb, acceptedFlags, [])
+    const beforeLoad = recordSpaceOwnerDestination(verb, flags, accepts, [])
     if (beforeLoad.kind === 'refused') throw new Error(beforeLoad.remedy)
     if (beforeLoad.kind === 'other-owner') return beforeLoad
   }
-  const destination = recordSpaceOwnerDestination(verb, acceptedFlags, await loadMemberships())
+  const destination = recordSpaceOwnerDestination(verb, flags, accepts, await loadMemberships())
   if (destination.kind === 'refused') throw new Error(destination.remedy)
   return destination
 }

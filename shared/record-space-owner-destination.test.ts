@@ -13,6 +13,7 @@ describe('recordSpaceOwnerDestination', () => {
       recordSpaceOwnerDestination(
         'credential set',
         { project: undefined, account: false },
+        ['project', 'account'],
         memberships,
       ),
     ).toEqual({
@@ -23,14 +24,16 @@ describe('recordSpaceOwnerDestination', () => {
   })
 
   test('refuses an unknown or non-member slug with the membership remedy', () => {
-    expect(recordSpaceOwnerDestination('lens set', { space: 'outside' }, memberships)).toEqual({
+    expect(recordSpaceOwnerDestination('lens set', { space: 'outside' }, [], memberships)).toEqual({
       kind: 'refused',
       remedy: `the signed-in user is not a member of record space outside; an invitation from a member of that space is needed; list invitations with \`${PLATFORM_SLUG} record space invitations\`, then accept one with \`${PLATFORM_SLUG} record space accept <invitation-id>\``,
     })
   })
 
   test('returns the selected member space', () => {
-    expect(recordSpaceOwnerDestination('lens set', { space: 'member-space' }, memberships)).toEqual(
+    expect(
+      recordSpaceOwnerDestination('lens set', { space: 'member-space' }, [], memberships),
+    ).toEqual(
       {
         kind: 'space',
         spaceId: 'space-id',
@@ -43,7 +46,7 @@ describe('recordSpaceOwnerDestination', () => {
     [{ project: 'fixture' }, 'project'],
     [{ account: true }, 'account'],
   ] as const)('leaves %s ownership to its adapter', (flags, owner) => {
-    expect(recordSpaceOwnerDestination('credential set', flags, memberships)).toEqual({
+    expect(recordSpaceOwnerDestination('credential set', flags, [], memberships)).toEqual({
       kind: 'other-owner',
       owner,
     })
@@ -60,6 +63,14 @@ describe('resolveRecordSpaceOwnerDestination', () => {
       }),
     ).rejects.toThrow('--space <slug>')
     expect(loads).toBe(0)
+  })
+
+  test('lens profile set names project as an accepted owner', async () => {
+    await expect(
+      resolveRecordSpaceOwnerDestination('lens profile set', {}, ['project'], async () =>
+        Promise.resolve(memberships),
+      ),
+    ).rejects.toThrow('--space <slug>, or --project <name>')
   })
 
   test('resolves a member slug after loading memberships', async () => {
