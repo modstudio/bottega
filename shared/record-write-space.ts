@@ -1,5 +1,8 @@
-import { PLATFORM_SLUG } from './brand.ts'
-import { recordSpaceMembershipRefusal, undeclaredProjectSpaceRefusal } from './record-remedies.ts'
+import {
+  RECORD_PERSONAL_SPACE_REMEDY,
+  recordSpaceMembershipRefusal,
+  undeclaredProjectSpaceRefusal,
+} from './record-remedies.ts'
 import { type RecordSpaceMembership, recordSpaceMembership } from './record-space-membership.ts'
 
 export type RecordWriteOwner =
@@ -50,7 +53,7 @@ export function recordWriteSpace(
     ? { spaceId: facts.personalSpaceId }
     : {
         refused: 'personal-space-not-provisioned',
-        remedy: `run \`${PLATFORM_SLUG} record sign-in\` to restore the personal space`,
+        remedy: RECORD_PERSONAL_SPACE_REMEDY,
       }
 }
 

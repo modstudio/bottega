@@ -1,7 +1,10 @@
 // concern: record-sync-decision
 /** Pure authorization decisions for hosted evidence sync. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { recordSpaceMembershipRefusal } from '../../../shared/record-remedies.ts'
+import {
+  RECORD_PERSONAL_SPACE_REMEDY,
+  recordSpaceMembershipRefusal,
+} from '../../../shared/record-remedies.ts'
 import {
   parseRecordSpaceMemberships,
   recordSpaceMembership,
@@ -84,6 +87,6 @@ export function recordSyncReferenceRefusal(reference: { kind: string; id: string
 
 export class RecordSyncRequestRefusal extends Error {}
 
-export const recordSyncNoPersonalSpaceRefusal = `record session has no personal space; run \`${PLATFORM_SLUG} record sign-in\` to restore the personal space`
+export const recordSyncNoPersonalSpaceRefusal = `record session has no personal space; ${RECORD_PERSONAL_SPACE_REMEDY}`
 
 export class MachineNameRefusal extends RecordSyncRequestRefusal {}

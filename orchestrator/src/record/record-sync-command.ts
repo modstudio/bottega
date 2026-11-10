@@ -34,7 +34,7 @@ function heldOutboxLines(
   return rows.map((row) => `held ${row.rows}\t${row.kind}\t${row.reason}`)
 }
 
-export function routingHeldOutboxLines(
+function routingHeldOutboxLines(
   rows: NonNullable<Awaited<ReturnType<typeof syncRecord>>['routingHeld']>,
 ): string[] {
   return rows.map((row) => `held orch:${row.id}\t${row.kind}\t${row.reason}`)

@@ -9,17 +9,33 @@ import {
   quarantinedOutboxLines,
   quarantinedParentHeldLines,
   readOnlyDeferredLines,
-  routingHeldOutboxLines,
   routingPoolLine,
   syncCommand,
 } from './record-sync-command.ts'
 
-test('sync presentation names each row held by destination routing', () => {
-  expect(
-    routingHeldOutboxLines([
-      { id: 17, kind: 'run', reason: 'project example has no declared record space' },
-    ]),
-  ).toEqual(['held orch:17\trun\tproject example has no declared record space'])
+test('sync reports each row held by destination routing', async () => {
+  const output: string[] = []
+  await syncCommand(
+    { backfill: false },
+    { log: (line) => output.push(line) },
+    {
+      sync: async () =>
+        ({
+          configured: true,
+          pushed: 0,
+          failed: 0,
+          pending: 1,
+          quarantined: [],
+          blocked: [],
+          routingHeld: [
+            { id: 17, kind: 'run', reason: 'project example has no declared record space' },
+          ],
+        }) as never,
+      boardAdoption: { database: db(), hostedConfigured: () => false, signedIn: () => false },
+    },
+  )
+
+  expect(output).toContain('held orch:17\trun\tproject example has no declared record space')
 })
 
 test('sync adopts a zero-candidate local board with the configured record client', async () => {
