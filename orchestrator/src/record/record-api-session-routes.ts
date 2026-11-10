@@ -19,7 +19,6 @@ type ApiEnvironment = {
   Variables: {
     identity: RecordIdentity
     destinationSpaceId?: string
-    destinationlessWriteRecorded?: true
   }
 }
 export type RecordSessionRouteDeps = RecordMachineRouteDeps &

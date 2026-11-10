@@ -20,7 +20,6 @@ type ApiEnvironment = {
   Variables: {
     identity: RecordIdentity
     destinationSpaceId?: string
-    destinationlessWriteRecorded?: true
   }
 }
 type Deps = Parameters<typeof registerRecordProjectRoutes>[1] & {
