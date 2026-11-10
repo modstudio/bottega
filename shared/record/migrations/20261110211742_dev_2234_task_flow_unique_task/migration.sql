@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "task_flow_space_task_unique" ON "task_flow" ("space_id","task_id") WHERE "task_id" IS NOT NULL;

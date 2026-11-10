@@ -2,10 +2,11 @@
 /** Renders the board-specific refusal when no personal destination can be bound. */
 
 import type { Context } from 'hono'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-
-const remedy = `run \`${PLATFORM_SLUG} record sign-in\` to restore the personal space`
+import { RECORD_PERSONAL_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 
 export function boardNoSpace(context: Context): Response {
-  return context.json({ error: 'record session has no personal space', remedy }, 409)
+  return context.json(
+    { error: 'record session has no personal space', remedy: RECORD_PERSONAL_SPACE_REMEDY },
+    409,
+  )
 }

@@ -19,6 +19,7 @@ export type BlockedOutboxRow = {
   reason?: string
 }
 export type HeldRecordSyncRows = { kind: string; rows: number; reason: string }
+export type RoutingHeldOutboxRow = { id: number; kind: string; reason: string }
 export type QuarantinedParentHold = {
   id: number
   kind: string
@@ -43,6 +44,7 @@ export type RecordSyncResult = {
   blocked: BlockedOutboxRow[]
   machineNameRefusal?: string
   held?: HeldRecordSyncRows[]
+  routingHeld?: RoutingHeldOutboxRow[]
   quarantinedParentHolds?: QuarantinedParentHold[]
   readOnlyDeferred?: { spaceId: string; rows: number }[]
   backfill?: RunRecordBackfillResult & {

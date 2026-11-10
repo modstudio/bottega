@@ -21,7 +21,7 @@ import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fi
 import { db } from '../database/db.ts'
 import { missingIssueReportFields } from '../issue/issue-report-fields.ts'
 import { type Project, removeProject, upsertProject } from '../project/projects.ts'
-import { rememberProjectSpace } from '../project-space.ts'
+import { rememberProjectSpace } from '../project-space-cache.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
 import type { HostedTaskFlow } from '../record/record-task-flow-contract.ts'
 import { productionStepCatalogue } from '../workflow/step-catalogue.ts'

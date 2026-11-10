@@ -7,7 +7,7 @@ import {
 import { db } from '../database/db.ts'
 import { resolveLens } from '../lens/lenses.ts'
 import { upsertProject } from '../project/projects.ts'
-import { rememberProjectSpace } from '../project-space.ts'
+import { rememberProjectSpace } from '../project-space-cache.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { applyLensCatalogueRow, pullLensCatalogue } from './record-cache-lens.ts'
 import { encodeRecordCursor } from './record-cursor.ts'

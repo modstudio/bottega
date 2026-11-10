@@ -88,8 +88,8 @@ const hostedTaskFlowStageSchema = hostedTaskFlowStageSummarySchema.extend({
 const hostedTaskFlowSummarySchema = z.object({
   id: z.string().uuid(),
   projectId: z.string().uuid(),
-  taskId: z.string().uuid(),
-  taskKey: z.string(),
+  taskId: z.string().uuid().nullable(),
+  taskKey: z.string().nullable(),
   state: z.enum(['open', 'done', 'dropped']),
   openStageRecordId: nullableId,
   openStageCount: z.number().int().nonnegative(),

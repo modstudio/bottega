@@ -28,7 +28,7 @@ import { run as runRecord } from '../../../shared/record/schema-run.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { nullableRecordDate, recordDate } from '../../../shared/record-timestamp.ts'
 import { refuseHostedUnvoid, VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
-import { upsertHostedMachine } from './machine-name-record.ts'
+import { syncHostedMachine } from './machine-name-record.ts'
 import { OutboxRowError, outboxErrorDetail, outboxFailureDisposition } from './outbox-failure.ts'
 import { HostedApiUpgradeRequiredError } from './outbox-held-contract.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
@@ -55,8 +55,10 @@ import type {
   RecordSyncRowResult,
 } from './record-sync-contract.ts'
 import {
-  MachineNameRefusal,
+  RecordSyncRequestRefusal,
   recordSyncAuthorizationDecision,
+  recordSyncClaimSpaceIds,
+  recordSyncNoPersonalSpaceRefusal,
   recordSyncReferenceRefusal as referenceRefusal,
 } from './record-sync-decision.ts'
 import * as evidenceLookup from './record-sync-evidence-lookup.ts'
@@ -994,18 +996,19 @@ export async function syncHostedRecord(input: {
   postgres?: SQL
 }): Promise<RecordSyncResponse> {
   const postgres = input.postgres ?? recordPool(input.url)
-  const activeSpaceId = input.identity.activeSpaceId
-  if (!activeSpaceId) throw new Error('record session has no active space')
-  let machineNameRefusal: string | undefined
-  try {
-    await upsertHostedMachine(postgres, input.request.machine.seenAt, input.request.machine, {
-      userId: input.identity.user.id,
-      spaceId: activeSpaceId,
-    })
-  } catch (error) {
-    if (error instanceof MachineNameRefusal) machineNameRefusal = error.message
-    else throw error
-  }
+  const personalSpaceId = input.identity.personalSpaceId
+  if (!personalSpaceId) throw new RecordSyncRequestRefusal(recordSyncNoPersonalSpaceRefusal)
+  const destinationSpaceIds = recordSyncClaimSpaceIds(
+    input.identity,
+    input.request.rows.map((row) => row.spaceHint),
+  )
+  const machineNameRefusal = await syncHostedMachine(
+    postgres,
+    input.request.machine.seenAt,
+    input.request.machine,
+    { userId: input.identity.user.id, spaceId: personalSpaceId },
+    destinationSpaceIds,
+  )
   const results: RecordSyncRowResult[] = []
   const projectIds: ProjectResolutionCache = new Map()
   for (const row of input.request.rows) {

@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
@@ -329,7 +330,7 @@ test('a personal document client refuses when no personal space is provisioned',
     }),
   })
   await expect(hostedDocClient('canon', null)).rejects.toMatchObject({
-    message: 'personal space is not provisioned',
+    message: `run \`${PLATFORM_SLUG} record sign-in\` to restore the personal space`,
     status: 409,
   })
 })

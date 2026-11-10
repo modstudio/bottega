@@ -1,0 +1,1 @@
+ALTER TABLE "task_flow" ALTER COLUMN "task_id" DROP NOT NULL;

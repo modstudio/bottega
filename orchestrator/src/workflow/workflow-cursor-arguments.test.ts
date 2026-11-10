@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
-import { rememberProjectSpace } from '../project-space.ts'
+import { rememberProjectSpace } from '../project-space-cache.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
 import { applyCursorArguments } from './workflow-cursor-arguments.ts'
 import { seedWorkflows } from './workflow-seeds.ts'

@@ -1,7 +1,10 @@
 // concern: record-sync-decision
 /** Pure authorization decisions for hosted evidence sync. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { recordSpaceMembershipRefusal } from '../../../shared/record-remedies.ts'
+import {
+  RECORD_PERSONAL_SPACE_REMEDY,
+  recordSpaceMembershipRefusal,
+} from '../../../shared/record-remedies.ts'
 import {
   parseRecordSpaceMemberships,
   recordSpaceMembership,
@@ -40,6 +43,24 @@ export function recordSyncAuthorizationDecision(
   }
 }
 
+export function recordSyncClaimSpaceIds(
+  identity: RecordIdentity,
+  spaceHints: readonly (string | null)[],
+): string[] {
+  const destinations = new Set<string>()
+  for (const hint of spaceHints) {
+    const decision = recordSyncAuthorizationDecision(identity, hint)
+    if (decision.status === 'allowed') destinations.add(decision.principal.spaceId)
+  }
+  return [...destinations]
+}
+
+export function recordSyncHasDestinationlessRows(
+  rows: readonly { spaceHint: string | null }[],
+): boolean {
+  return rows.some((row) => row.spaceHint === null)
+}
+
 export type RecordSyncMachineOwnershipDecision =
   | { status: 'allowed' }
   | { status: 'refused'; reason: string }
@@ -65,5 +86,7 @@ export function recordSyncReferenceRefusal(reference: { kind: string; id: string
 }
 
 export class RecordSyncRequestRefusal extends Error {}
+
+export const recordSyncNoPersonalSpaceRefusal = `record session has no personal space; ${RECORD_PERSONAL_SPACE_REMEDY}`
 
 export class MachineNameRefusal extends RecordSyncRequestRefusal {}

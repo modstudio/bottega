@@ -1,4 +1,8 @@
-import { recordSpaceMembershipRefusal, undeclaredProjectSpaceRefusal } from './record-remedies.ts'
+import {
+  RECORD_PERSONAL_SPACE_REMEDY,
+  recordSpaceMembershipRefusal,
+  undeclaredProjectSpaceRefusal,
+} from './record-remedies.ts'
 import { type RecordSpaceMembership, recordSpaceMembership } from './record-space-membership.ts'
 
 export type RecordWriteOwner =
@@ -47,7 +51,10 @@ export function recordWriteSpace(
   }
   return facts.personalSpaceId
     ? { spaceId: facts.personalSpaceId }
-    : { refused: 'personal-space-not-provisioned', remedy: 'personal space is not provisioned' }
+    : {
+        refused: 'personal-space-not-provisioned',
+        remedy: RECORD_PERSONAL_SPACE_REMEDY,
+      }
 }
 
 /** The project arm of the decision, typed so project adapters see only project refusals. */

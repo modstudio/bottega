@@ -102,8 +102,8 @@ function toHostedFlow(row: Record<string, unknown>): HostedTaskFlow['flow'] {
   return {
     id: String(row.id),
     projectId: String(row.project_id),
-    taskId: String(row.task_id),
-    taskKey: String(row.task_key),
+    taskId: row.task_id == null ? null : String(row.task_id),
+    taskKey: row.task_key == null ? null : String(row.task_key),
     state: String(row.state) as HostedTaskFlow['flow']['state'],
     openStageRecordId: row.open_stage_record_id == null ? null : String(row.open_stage_record_id),
     openStageCount: Number(row.open_stage_count),
@@ -198,7 +198,7 @@ export async function readRecordTaskFlow(
       `SELECT ${FLOW_SELECT},${STAGE_SELECT},
               coalesce(m.display_name,m.short_name,m.name) holder_display_name
        FROM task_flow f
-       JOIN hub_task t ON t.id=f.task_id AND t.space_id=f.space_id
+       LEFT JOIN hub_task t ON t.id=f.task_id AND t.space_id=f.space_id
        LEFT JOIN task_flow_stage s ON s.id=f.open_stage_record_id AND s.space_id=f.space_id
        ${STAGE_JOINS}
        LEFT JOIN machine m ON m.id=s.last_advanced_machine_id
@@ -269,7 +269,7 @@ export async function listRecordTaskFlowStages(
       `SELECT ${STAGE_SELECT},${FLOW_SELECT}
        FROM task_flow_stage s
        JOIN task_flow f ON f.id=s.flow_record_id AND f.space_id=s.space_id
-       JOIN hub_task t ON t.id=f.task_id AND t.space_id=f.space_id
+       LEFT JOIN hub_task t ON t.id=f.task_id AND t.space_id=f.space_id
        ${STAGE_JOINS}
        WHERE ${clauses.join(' AND ')}
        ORDER BY sp.name,s.number NULLS LAST,s.id

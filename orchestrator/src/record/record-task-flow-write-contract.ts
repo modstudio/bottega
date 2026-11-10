@@ -11,7 +11,7 @@ const nullableText = z.string().nullable()
 const flowInsert = z.object({
   id,
   projectId: id,
-  taskId: id,
+  taskId: nullableId,
   state: z.enum(['open', 'done', 'dropped']),
   openStageRecordId: nullableId,
   openingMachineId: id,
@@ -47,8 +47,9 @@ const stageInsert = z.object({
   updatedAt: stamp,
 })
 
+const revisionReference = z.object({ id, expectedRevision: revision })
 const mutation = <T extends z.ZodRawShape>(values: z.ZodObject<T>) =>
-  z.object({ id, expectedRevision: revision, values })
+  revisionReference.extend({ values })
 
 const flowComposeValues = z.object({
   state: z.enum(['open', 'done', 'dropped']).optional(),
@@ -193,6 +194,14 @@ const taskFlowAbandonSchema = z.object({
   obligationUpdates: z.array(obligationUpdate).default([]),
   deleteTextIds: z.array(id).default([]),
 })
+const taskFlowAdoptSchema = z.object({
+  ...base,
+  stage: revisionReference,
+  taskId: id,
+  state: z.enum(['open', 'done', 'dropped']).optional(),
+  updatedMachineId: id,
+  updatedAt: stamp,
+})
 const taskFlowAttachTextSchema = z.object({ ...base, rows: z.array(textInsert).min(1) })
 const taskFlowDeleteTextSchema = z.object({
   ...base,
@@ -207,6 +216,7 @@ export const taskFlowIntentSchemas = {
   advance: taskFlowAdvanceSchema,
   'await-ruling': taskFlowAwaitRulingSchema,
   abandon: taskFlowAbandonSchema,
+  adopt: taskFlowAdoptSchema,
   'attach-text': taskFlowAttachTextSchema,
   'delete-text': taskFlowDeleteTextSchema,
   'copy-text': taskFlowCopyTextSchema,
@@ -225,6 +235,10 @@ export const taskFlowComposeResultSchema = taskFlowWriteResultSchema.extend({
   stage: z.object({ id, number: z.number().int().positive() }).nullable(),
 })
 export type TaskFlowComposeResult = z.infer<typeof taskFlowComposeResultSchema>
+export const taskFlowAdoptResultSchema = taskFlowWriteResultSchema.extend({ flowRecordId: id })
+export type TaskFlowAdoptResult = z.infer<typeof taskFlowAdoptResultSchema>
 export type TaskFlowIntentResult<K extends TaskFlowIntent> = K extends 'compose'
   ? TaskFlowComposeResult
-  : TaskFlowWriteResult
+  : K extends 'adopt'
+    ? TaskFlowAdoptResult
+    : TaskFlowWriteResult
