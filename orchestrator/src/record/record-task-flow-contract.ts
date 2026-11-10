@@ -44,7 +44,7 @@ const textCopy = z.object({
   copiedAt: z.string(),
 })
 
-export const hostedTaskFlowStageSummarySchema = z.object({
+const hostedTaskFlowStageSummarySchema = z.object({
   id: z.string().uuid(),
   flowRecordId: z.string().uuid(),
   projectId: z.string().uuid().nullable(),
@@ -76,13 +76,13 @@ export const hostedTaskFlowStageSummarySchema = z.object({
   updatedAt: z.string(),
 })
 
-export const hostedTaskFlowStageSchema = hostedTaskFlowStageSummarySchema.extend({
+const hostedTaskFlowStageSchema = hostedTaskFlowStageSummarySchema.extend({
   obligations: z.array(obligation).optional(),
   stepTexts: z.array(stepText).optional(),
   textCopies: z.array(textCopy).optional(),
 })
 
-export const hostedTaskFlowSummarySchema = z.object({
+const hostedTaskFlowSummarySchema = z.object({
   id: z.string().uuid(),
   projectId: z.string().uuid(),
   taskId: z.string().uuid(),

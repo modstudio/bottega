@@ -121,19 +121,55 @@ export const recordTaskFlowClient = (request: Request): RecordTaskFlowClient => 
     })
   },
   composeTaskFlow: (input, destination) =>
-    write(request, 'compose', input, (body) => taskFlowComposeResultSchema.parse(body), destination),
+    write(
+      request,
+      'compose',
+      input,
+      (body) => taskFlowComposeResultSchema.parse(body),
+      destination,
+    ),
   updateTaskFlowStage: (input, destination) =>
-    write(request, 'stage-update', input, (body) => taskFlowWriteResultSchema.parse(body), destination),
+    write(
+      request,
+      'stage-update',
+      input,
+      (body) => taskFlowWriteResultSchema.parse(body),
+      destination,
+    ),
   advanceTaskFlow: (input, destination) =>
     write(request, 'advance', input, (body) => taskFlowWriteResultSchema.parse(body), destination),
   awaitTaskFlowRuling: (input, destination) =>
-    write(request, 'await-ruling', input, (body) => taskFlowWriteResultSchema.parse(body), destination),
+    write(
+      request,
+      'await-ruling',
+      input,
+      (body) => taskFlowWriteResultSchema.parse(body),
+      destination,
+    ),
   abandonTaskFlow: (input, destination) =>
     write(request, 'abandon', input, (body) => taskFlowWriteResultSchema.parse(body), destination),
   attachTaskFlowText: (input, destination) =>
-    write(request, 'attach-text', input, (body) => taskFlowWriteResultSchema.parse(body), destination),
+    write(
+      request,
+      'attach-text',
+      input,
+      (body) => taskFlowWriteResultSchema.parse(body),
+      destination,
+    ),
   deleteTaskFlowText: (input, destination) =>
-    write(request, 'delete-text', input, (body) => taskFlowWriteResultSchema.parse(body), destination),
+    write(
+      request,
+      'delete-text',
+      input,
+      (body) => taskFlowWriteResultSchema.parse(body),
+      destination,
+    ),
   copyTaskFlowText: (input, destination) =>
-    write(request, 'copy-text', input, (body) => taskFlowWriteResultSchema.parse(body), destination),
+    write(
+      request,
+      'copy-text',
+      input,
+      (body) => taskFlowWriteResultSchema.parse(body),
+      destination,
+    ),
 })

@@ -326,7 +326,11 @@ function postgresSqlState(error: unknown): string | null {
   return null
 }
 
-async function applyCompose(tx: SQL, input: Tenant, body: ComposeBody): Promise<TaskFlowComposeResult> {
+async function applyCompose(
+  tx: SQL,
+  input: Tenant,
+  body: ComposeBody,
+): Promise<TaskFlowComposeResult> {
   const revisions: Record<string, number> = {}
   if (body.stageInsert)
     await tx`SELECT pg_advisory_xact_lock(hashtextextended(${body.stageInsert.projectId},0))`
@@ -455,10 +459,11 @@ export async function writeRecordTaskFlow<K extends TaskFlowIntent>(
   input: Tenant & TaskFlowIntentBody<K>,
 ): Promise<TaskFlowIntentResult<K>> {
   try {
-    return await recordPool(input.url).begin(async (tx) => {
+    const result = await recordPool(input.url).begin(async (tx) => {
       await bindTenant(tx, input)
-      return intentAppliers[intent](tx, input) as Promise<TaskFlowIntentResult<K>>
+      return intentAppliers[intent](tx, input)
     })
+    return result as TaskFlowIntentResult<K>
   } catch (error) {
     const slot = isUniqueViolation(error, 'task_flow_stage_open_slot_unique')
     const number = isUniqueViolation(error, 'task_flow_stage_project_number_unique')

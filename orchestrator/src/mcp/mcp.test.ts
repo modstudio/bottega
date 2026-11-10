@@ -602,8 +602,10 @@ describe('orch MCP', () => {
             .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
             .get(project)!.record_id,
           taskId,
+          taskKey: 'DEV-1082-MCP-A',
           state: 'open',
           openStageRecordId: firstRow.record_id,
+          openStageCount: 1,
           openingMachineId: remoteMachine,
           updatedMachineId: remoteMachine,
           revision: 3,
@@ -613,10 +615,17 @@ describe('orch MCP', () => {
         stage: {
           id: firstRow.record_id,
           flowRecordId: flowId,
+          projectId: db()
+            .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
+            .get(project)!.record_id,
+          projectName: project,
+          number: first.id,
           workflow: 'fix-defect',
           mode: 'default',
           workflowVersionId: firstRow.workflow_version_record_id,
+          workflowVersionNumber: 1,
           catalogueVersionId: firstRow.catalogue_version_record_id,
+          catalogueVersionNumber: 1,
           arguments: args('DEV-1082-MCP-A'),
           activeOrdinal: 1,
           activeSlug: remoteStep,

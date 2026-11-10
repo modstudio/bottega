@@ -87,6 +87,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'listScores',
     'listSnapshots',
     'listWorkflowCatalogue',
+    'listTaskFlowStages',
     'noDestinationWrites',
     'listOutsideBlocks',
     'listHidden',
@@ -98,7 +99,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'showOutsideIntake',
     'whoami',
   ]),
-  ...readEntries('orchestrator', 'recordWorkflowClient', ['readTaskFlow']),
+  ...readEntries('orchestrator', 'recordWorkflowClient', ['listTaskFlowStages', 'readTaskFlow']),
   ...writeEntries(
     'orchestrator',
     'recordWorkflowClient',
