@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { DB_PATH, db } from '../database/db.ts'
+import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import {
   checkHostedPressureCached,
   HOSTED_METRICS_INTERVAL_MS,
@@ -166,8 +167,14 @@ test('a query-stage observation budget failure is recorded as a budget failure',
 
 test('a failed onset post preserves the state and records the announcement error', async () => {
   let postInput: { audience?: string; purpose?: string; expiresAt?: string } | undefined
+  let resolvedProject: string | null | undefined
+  let sentDestination: string | undefined
   let stateDuringPost: string | undefined
   const database = db()
+  const projectId = fixtureProjectRecordId(database)
+  database
+    .query('UPDATE project SET name=?,path=?,settings=? WHERE record_id=?')
+    .run('pressure-project', process.cwd(), JSON.stringify({ space: 'pressure-space' }), projectId)
   const result = await checkHostedPressureCached({
     database,
     clock: base,
@@ -181,11 +188,15 @@ test('a failed onset post preserves the state and records the announcement error
       return Response.json({ status: 'success', data: { result: [{ value: [base, value] }] } })
     }) as unknown as typeof fetch,
     resolveToken: async () => 'token',
-    destinationResolver: async () => ({ destinationSpaceId: 'space-personal' }),
+    destinationResolver: async (_client, project) => {
+      resolvedProject = project
+      return { destinationSpaceId: 'pressure-space' }
+    },
     boardClient: {
       listBoardMessages: async () => ({ messages: [], truncated: false }),
-      postBoardMessage: async (input) => {
+      postBoardMessage: async (input, _signal, destination) => {
         postInput = input
+        sentDestination = destination?.destinationSpaceId
         stateDuringPost = (
           database.query('SELECT state FROM hosted_pressure_cache WHERE singleton=1').get() as {
             state: string
@@ -200,6 +211,10 @@ test('a failed onset post preserves the state and records the announcement error
   })
   expect(result.state.status).toBe('pressure')
   expect(postInput).toMatchObject({ audience: 'architects:all', purpose: 'request' })
+  expect({ resolvedProject, sentDestination }).toEqual({
+    resolvedProject: 'pressure-project',
+    sentDestination: 'pressure-space',
+  })
   expect(JSON.parse(stateDuringPost!)).toEqual(result.state)
   const row = database
     .query('SELECT state,last_error FROM hosted_pressure_cache WHERE singleton=1')

@@ -18,7 +18,6 @@ import {
   RecordApiRequestError,
   recordApiClient,
 } from '../record/record-api-client.ts'
-import type { RecordRequestDestination } from '../record/record-api-client-paths.ts'
 import type {
   HostedBoardClaim,
   HostedBoardMessage,
@@ -46,7 +45,7 @@ import {
 } from './board-claim-service.ts'
 import { markBoardDeliveriesDelivered } from './board-delivery.ts'
 import { cachedAudienceAtPosting, queueHostedBoardAcknowledgement } from './board-hosted-cache.ts'
-import { boardWriteDestination } from './board-hosted-presence-destination.ts'
+import { type BoardDestinationResolver, boardWriteDestination } from './board-write-destination.ts'
 import { cacheHostedBoardReceipt } from './board-hosted-receipt-cache.ts'
 import {
   resolveBoardClaimIdentifier,
@@ -95,10 +94,7 @@ type Context = {
   client?: RecordApiClient
   isKnownCommit?: IsKnownCommit
   answerNoteFiler?: AnswerNoteFiler
-  destinationResolver?: (
-    client: RecordApiClient,
-    project?: string | null,
-  ) => Promise<RecordRequestDestination>
+  destinationResolver?: BoardDestinationResolver
 }
 
 export type BoardPostResult = {

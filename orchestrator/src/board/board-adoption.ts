@@ -21,7 +21,7 @@ import {
   uploadErrorDisposition,
 } from './board-adoption-policy.ts'
 import { claimIsLive } from './board-claim-policy.ts'
-import { boardWriteDestination } from './board-hosted-presence-destination.ts'
+import { type BoardDestinationResolver, boardWriteDestination } from './board-write-destination.ts'
 import { BOARD_HOSTED_ADOPTED_KEY, boardHasAdoptedHosted } from './board-mode.ts'
 import { OPERATOR_READER, parseAudience } from './board-policy.ts'
 import { parseReplyAudienceOption } from './board-reply-audience.ts'
@@ -95,7 +95,6 @@ type ClaimRow = {
 }
 
 type CandidateRow = MessageRow | ClaimRow
-type BoardDestinationResolver = typeof boardWriteDestination
 const candidateKey = (candidate: Candidate) => `${candidate.kind}:${candidate.recordId}`
 
 function candidateRows(

@@ -3,6 +3,7 @@
 
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type ProseGateField, proseGate } from '../../../shared/prose/prose-gate.ts'
 import { parseReplyAudienceOption } from '../board/board-reply-audience.ts'
 import { hostedProseOptions } from './record-api-prose.ts'
@@ -45,6 +46,15 @@ import { type BoardTenant, hostedBoardStoreRefusal } from './record-board-tx.ts'
 
 type ApiEnvironment = RecordWriteTelemetryEnvironment
 type BoardRouteContext = Context<ApiEnvironment>
+
+const boardNoSpace = (context: BoardRouteContext) =>
+  context.json(
+    {
+      error: 'record session has no personal space',
+      remedy: `run \`${PLATFORM_SLUG} record sign-in\` to restore the personal space`,
+    },
+    409,
+  )
 
 const idSchema = z.string().uuid()
 const isoSchema = z.string().datetime({ offset: true })
@@ -371,14 +381,15 @@ export function registerRecordBoardRoutes(
     recordUrl: string
     readSession(headers: Headers): Promise<RecordIdentity | null>
   } & RecordBoardDeps,
-  helpers: {
+  sharedHelpers: {
     noSpace(context: Context<ApiEnvironment>): Response
     writeError(context: Context<ApiEnvironment>, error: unknown): Response | Promise<Response>
   },
 ): void {
+  const helpers = { ...sharedHelpers, noSpace: boardNoSpace }
   const tenantOf = (context: Context<ApiEnvironment>) => boardRequestTenant(context, deps.recordUrl)
   const writeError = (context: Context<ApiEnvironment>, error: unknown) =>
-    helpers.writeError(context, hostedBoardStoreRefusal(error) ?? error)
+    sharedHelpers.writeError(context, hostedBoardStoreRefusal(error) ?? error)
 
   registerBoardStreamRoute(app, deps)
   registerBoardCoordinationRoutes(app, deps, helpers, tenantOf, writeError)

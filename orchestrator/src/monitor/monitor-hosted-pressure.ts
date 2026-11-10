@@ -6,7 +6,10 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { FLY_METRICS_OPERATOR_CREDENTIAL } from '../../../shared/operator-credentials.ts'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { boardWriteDestination } from '../board/board-hosted-presence-destination.ts'
+import {
+  type BoardDestinationResolver,
+  boardWriteDestination,
+} from '../board/board-write-destination.ts'
 import {
   BUDGET_SPENT,
   withinHostedBoardRefreshBudget,
@@ -61,7 +64,7 @@ type Dependencies = {
   >
   env?: Record<string, string | undefined>
   cwd?: string
-  destinationResolver?: typeof boardWriteDestination
+  destinationResolver?: BoardDestinationResolver
 }
 export type HostedPressureAnnouncementDependencies = Pick<
   Dependencies,
@@ -220,14 +223,10 @@ export async function announceHostedPressureActions(
       signal,
     )
     const actions = decide(overview.messages)
-    const destination =
-      actions.length > 0
-        ? await (dependencies.destinationResolver ?? boardWriteDestination)(
-            client as RecordApiClient,
-          )
-        : undefined
+    const destinationResolver = dependencies.destinationResolver ?? boardWriteDestination
     for (const action of actions) {
       if (action.kind === 'withdraw') {
+        const destination = await destinationResolver(client as RecordApiClient)
         await client.withdrawBoardMessage(
           action.id,
           { authorSession: boardActor(env).session },
@@ -236,21 +235,19 @@ export async function announceHostedPressureActions(
         )
         continue
       }
-      await client.postBoardMessage(
-        hostedBoardPostInput(
-          'notice',
-          {
-            audience: 'architects:all',
-            purpose: 'request',
-            title: action.notice.title,
-            body: action.notice.body,
-            expiresMs: action.notice.expiresMs,
-          },
-          { env, clock, cwd: dependencies.cwd },
-        ),
-        signal,
-        destination,
+      const input = hostedBoardPostInput(
+        'notice',
+        {
+          audience: 'architects:all',
+          purpose: 'request',
+          title: action.notice.title,
+          body: action.notice.body,
+          expiresMs: action.notice.expiresMs,
+        },
+        { env, clock, cwd: dependencies.cwd },
       )
+      const destination = await destinationResolver(client as RecordApiClient, input.project)
+      await client.postBoardMessage(input, signal, destination)
     }
   }, HOSTED_PRESSURE_ANNOUNCE_BUDGET_MS)
 }

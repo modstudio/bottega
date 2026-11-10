@@ -4,7 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import type { RecordApiClient } from '../record/record-api-client.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
-import { boardWriteDestination } from './board-hosted-presence-destination.ts'
+import { boardWriteDestination } from './board-write-destination.ts'
 import { cacheHostedBoardReceipt } from './board-hosted-receipt-cache.ts'
 
 export async function takeHostedReportReplySuccessor(input: {

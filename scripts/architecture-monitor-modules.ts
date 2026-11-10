@@ -113,7 +113,7 @@ export const monitorModules: MonitorModule[] = [
     '../../../shared/record-id.ts',
     '../../../shared/record-api-url.ts',
     '../board/board-hosted-refresh-budget.ts',
-    '../board/board-hosted-presence-destination.ts',
+    '../board/board-write-destination.ts',
     '../board/board-operations.ts',
     '../board/board-store.ts',
     '../config/operator-credential.ts',

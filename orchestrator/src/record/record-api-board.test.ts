@@ -391,6 +391,16 @@ test('board post, reply, claim, and read work without an active space', async ()
   ])
 })
 
+test('a board route without a destination or personal space names the board refusal', async () => {
+  const app = appWith({ ...identity, activeSpaceId: null, personalSpaceId: null })
+  const response = await app.request('/v1/board/messages')
+  expect(response.status).toBe(409)
+  expect(await response.json()).toEqual({
+    error: 'record session has no personal space',
+    remedy: `run \`${PLATFORM_SLUG} record sign-in\` to restore the personal space`,
+  })
+})
+
 test('board presence binds a named member space and refuses a non-member space', async () => {
   const spaces: string[] = []
   const app = appWith(
