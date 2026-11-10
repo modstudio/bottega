@@ -412,7 +412,7 @@ describe('ruling outcomes and bounded re-entry', () => {
       )
 
     const failed = recordExec(1)
-    await expect(await close(failed)).rejects.toThrow(
+    await expect(close(failed)).rejects.toThrow(
       `command-exit floor expects exit code 0, but evidence exec:${failed} command \`${PLATFORM_SLUG} pr create\` exited 1; close with the outcome configured for exit code 1, or record a command that exits 0 with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass the new exec id`,
     )
     expect(await close(recordExec(0))).toContain('is finished: 1 steps closed')

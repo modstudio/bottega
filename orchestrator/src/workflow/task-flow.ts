@@ -254,6 +254,23 @@ function openStage(flow: TaskFlowRow, d: Database): (OpenTaskStage & { recordId:
     .get(flow.open_stage_cursor_record_id)
 }
 
+export function refuseTaskFlowStageConflict(
+  input: { taskRecordId: string; taskKey: string; cursor?: number; workflow: string; mode: string },
+  d: Database,
+): void {
+  const flow = d
+    .query<TaskFlowRow, [string]>(
+      'SELECT record_id,open_stage_cursor_record_id FROM task_flow WHERE task_record_id=?',
+    )
+    .get(input.taskRecordId)
+  if (!flow) return
+  const decision = decideTaskStageSelection(openStage(flow, d), input)
+  if (decision.action === 'refuse')
+    throw new Error(
+      `task ${input.taskKey} already has open stage cursor ${decision.stage.cursor} ${decision.stage.workflow} ${decision.stage.mode}; finish it with ${PLATFORM_SLUG} workflow next ${decision.stage.workflow} --cursor ${decision.stage.cursor}, or drop it with ${PLATFORM_SLUG} workflow abandon ${decision.stage.workflow} --cursor ${decision.stage.cursor}`,
+    )
+}
+
 export function selectTaskFlowStage(
   input: {
     project: string
@@ -266,6 +283,7 @@ export function selectTaskFlowStage(
   },
   d: Database,
 ): { flowRecordId: string; cursorRecordId: string | null } {
+  refuseTaskFlowStageConflict(input, d)
   const flow = projectTaskFlow(input.project, input.taskRecordId, input.statusCategory, d)
   const stage = openStage(flow, d)
   const decision = decideTaskStageSelection(stage, input)

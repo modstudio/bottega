@@ -124,7 +124,7 @@ describe('workflow cursor adapter', () => {
       d.query<{ record_id: string }, []>('SELECT record_id FROM workflow_cursor').get()?.record_id,
     ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
     await getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d, {})
-    closeStep('flow', 'fixture', 'default', args, 'rebased', context, d)
+    await closeStep('flow', 'fixture', 'default', args, 'rebased', context, d)
     const recomposed = await composeWorkflowWithCursor(
       'flow',
       'fixture',
@@ -244,7 +244,7 @@ describe('workflow cursor adapter', () => {
       {},
     )
     for (const step of composition.steps)
-      closeStep('flow', 'fixture', 'default', args, `closed ${step.slug}`, context, d)
+      await closeStep('flow', 'fixture', 'default', args, `closed ${step.slug}`, context, d)
 
     const recomposed = await composeWorkflowWithCursor(
       'flow',
@@ -1023,7 +1023,7 @@ describe('workflow cursor adapter', () => {
     )
     d.query('UPDATE workflow_cursor SET autonomy=NULL').run()
     await getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d, {})
-    closeStep('flow', 'fixture', 'default', args, 'rebased', context, d)
+    await closeStep('flow', 'fixture', 'default', args, 'rebased', context, d)
     const row = d.query('SELECT closed FROM workflow_cursor').get() as {
       closed: string
     }

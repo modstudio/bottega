@@ -256,12 +256,25 @@ function selectKeyedTaskStage(
     )
     .get(taskRecordId)
   if (selected?.open_stage_cursor_record_id) {
-      const row = d
-        .query(`SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor WHERE record_id=?`)
-        .get(selected.open_stage_cursor_record_id) as SelectableCursorRow
+    const row = d
+      .query(`SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor WHERE record_id=?`)
+      .get(selected.open_stage_cursor_record_id) as SelectableCursorRow
+    if (
+      row.workflow_slug === identity.workflow &&
+      row.mode_slug === identity.mode &&
+      row.workflow_key === identity.key
+    )
       return validateIdentity(row, identity)
   }
-  return null
+  const fallback = d
+    .query(
+      `SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor
+       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+         AND workflow_slug=? AND mode_slug=? AND task_record_id=?
+         AND instance_id='' ORDER BY number DESC LIMIT 1`,
+    )
+    .get(identity.project, identity.workflow, identity.mode, taskRecordId) as SelectableCursorRow | null
+  return fallback ? validateIdentity(fallback, identity) : null
 }
 
 export function selectWorkflowCursor(

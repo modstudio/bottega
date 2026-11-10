@@ -20,6 +20,7 @@ import {
   attachInsertedTaskFlowStage,
   cacheAdoptedTaskFlow,
   insertWorkflowCursorRow,
+  refuseTaskFlowStageConflict,
   stampWorkflowCursorMachine,
 } from './task-flow.ts'
 import { decideWorkflowTakeover, taskFlowState, workflowTakeoverNotice } from './task-flow-decision.ts'
@@ -50,6 +51,7 @@ import {
 import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
 import {
   findWorkflowCursor,
+  LISTED_CURSOR_COLUMNS,
   type SelectableCursorRow,
   selectUntouchedKeylessWorkflowCursor,
   selectWorkflowCursorForClose,
@@ -199,6 +201,16 @@ async function insertCursor(
         )
         .get(context.taskRecordId)
     : null
+  if (context.taskRecordId && key)
+    refuseTaskFlowStageConflict(
+      {
+        taskRecordId: context.taskRecordId,
+        taskKey: key,
+        workflow: composition.workflow.slug,
+        mode: composition.mode!.slug,
+      },
+      d,
+    )
   const flowRecordId = existingFlow?.record_id ?? newRecordId()
   const machine = machineId()
   const owner = context.session ?? machine
@@ -369,6 +381,11 @@ async function insertCursor(
       return d.query('SELECT number id,* FROM workflow_cursor WHERE record_id=?').get(stored) as CursorRow
     }, d)
   }
+  const hostedCursorRecordId = hosted?.stage?.id ?? cursorRecordId
+  const hostedFlowRecordId = existingFlow?.record_id ??
+    (hosted
+      ? Object.keys(hosted.revisions).find((recordId) => recordId !== hostedCursorRecordId)
+      : undefined) ?? flowRecordId
   return writeTransaction(() => {
     if (existingFlow) {
       const current = d
@@ -381,8 +398,9 @@ async function insertCursor(
       d,
       {
         ...rowInput,
+        recordId: hostedCursorRecordId,
         number: hosted?.stage?.number,
-        revision: hosted?.revisions[cursorRecordId] ?? 1,
+        revision: hosted?.revisions[hostedCursorRecordId] ?? 1,
       },
       'local-identity',
     )
@@ -393,9 +411,9 @@ async function insertCursor(
             project: composition.project,
             taskRecordId: context.taskRecordId,
             cursorRecordId: storedRecordId,
-            flowRecordId,
-            flowRevision: hosted.revisions[flowRecordId]!,
-            stageRevision: hosted.revisions[cursorRecordId]!,
+            flowRecordId: hostedFlowRecordId,
+            flowRevision: hosted.revisions[hostedFlowRecordId]!,
+            stageRevision: hosted.revisions[hostedCursorRecordId]!,
             statusCategory: context.taskStatusCategory,
             at,
           },
@@ -749,11 +767,10 @@ function applyFloorDecision(
   finishing: boolean,
   d: Database,
   requireRuling = false,
+  selfRulingId?: number,
 ): FloorDecision {
   const args = JSON.parse(row.args) as Record<string, string>
-  return decideFloorSatisfaction({
-    floors,
-    evidence: gatherValidatedEvidence({
+  const validated = gatherValidatedEvidence({
       cursorId: row.record_id,
       identity: {
         project: row.project,
@@ -774,7 +791,19 @@ function applyFloorDecision(
       evidence,
       ports,
       d,
-    }),
+    })
+  if (selfRulingId !== undefined)
+    validated.ruling = {
+      id: selfRulingId,
+      answered: true,
+      answeredByOperator: false,
+      boundToCursor: true,
+      boundToStep: true,
+      answeredAt: nowIso(),
+    }
+  return decideFloorSatisfaction({
+    floors,
+    evidence: validated,
     enforcement: row.enforcement ?? 'note-only',
     finishing,
     openObligations: openWorkflowObligations(row.record_id, d),
@@ -880,6 +909,7 @@ function closeFloorsForStep(
   )
   const floors = decideCloseFloors(currentStep, outcome, advance.requireRuling)
   let selfRulingPlan: Parameters<typeof recordWorkflowSelfRuling>[0] | undefined
+  let selfRulingQuestionNumber: number | undefined
   let floorEvidence = evidence
   if (selfRuling) {
     if (evidence.ruling !== undefined) throw new Error('--self-ruling and --ruling are mutually exclusive')
@@ -891,8 +921,10 @@ function closeFloorsForStep(
       row.step_slug,
     )
     if (refusal) throw new Error(refusal)
-    const nextQuestion = d.query<{ n: number }, []>('SELECT COALESCE(MAX(number),0)+1 n FROM question').get()!.n
-    floorEvidence = { ...evidence, ruling: nextQuestion }
+    selfRulingQuestionNumber = d
+      .query<{ n: number }, []>('SELECT COALESCE(MAX(number),0)+1 n FROM question')
+      .get()!.n
+    floorEvidence = evidence
     selfRulingPlan = {
       cursorId: row.record_id, workflowKey: row.workflow_key,
       workflowTaskRecordId: row.task_record_id, stepOrdinal: row.ordinal + 1,
@@ -909,6 +941,7 @@ function closeFloorsForStep(
       advance.ordinal === null,
       d,
       advance.requireRuling,
+      selfRulingQuestionNumber,
     ),
     advance.requireRuling,
     currentStep,
@@ -1055,6 +1088,7 @@ async function nextWorkflowStepImpl(
   row.args = resolvedArguments.encoded
   row.closed = resolvedArguments.closed
   refuseKeylessStepClose(row, evidence.task, d, live)
+  const workflowKeyBeforeAdoption = row.workflow_key
   await adoptWorkflowTask(
     row,
     evidence.task,
@@ -1063,9 +1097,11 @@ async function nextWorkflowStepImpl(
     context.taskFlowClient,
     context.taskStatusCategory,
   )
-  if (evidence.task?.trim()) {
+  if (row.workflow_key !== workflowKeyBeforeAdoption) {
     row = d
-      .query<CursorRow, [string]>('SELECT * FROM workflow_cursor WHERE record_id=?')
+      .query<CursorRow, [string]>(
+        `SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor WHERE record_id=?`,
+      )
       .get(row.record_id)!
   }
   const composition = cursorComposition(row, d, live)
@@ -1114,11 +1150,16 @@ export async function nextWorkflowStep(
   outcome?: string,
   live?: LiveCursorAutonomy,
 ): Promise<string> {
-  return withReplayedFloorEvidenceAsync(ports, (replayPorts) =>
-    withLinkedWorkflowTask(project, context, d, () => {
-      const row = reselectCursor(selected, args, context, d)
-      adoptLinkedTask(row, args, context)
-      return nextWorkflowStepImpl(
+  await linkResolvedWorkflowTask(project, context, d)
+  reselectCursor(selected, args, context, d)
+  return withReplayedFloorEvidenceAsync(ports, (replayPorts) => {
+    const row = d
+      .query<CursorRow, [string]>(
+        `SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor WHERE record_id=?`,
+      )
+      .get(selected.record_id)!
+    adoptLinkedTask(row, args, context)
+    return nextWorkflowStepImpl(
         row,
         args,
         note,
@@ -1130,8 +1171,7 @@ export async function nextWorkflowStep(
         outcome,
         live,
       )
-    }),
-  )
+  })
 }
 
 async function abandonSelectedWorkflowCursor(
