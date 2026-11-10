@@ -101,6 +101,48 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
   ...readEntries('orchestrator', 'recordWorkflowClient', ['readTaskFlow']),
   ...writeEntries(
     'orchestrator',
+    'recordWorkflowClient',
+    [
+      'task_flow',
+      'workflow_cursor',
+      'workflow_obligation',
+      'workflow_step_text',
+      'workflow_text_copy',
+    ],
+    [
+      'abandonTaskFlow',
+      'advanceTaskFlow',
+      'attachTaskFlowText',
+      'awaitTaskFlowRuling',
+      'composeTaskFlow',
+      'copyTaskFlowText',
+      'deleteTaskFlowText',
+      'updateTaskFlowStage',
+    ],
+  ),
+  ...writeEntries(
+    'orchestrator',
+    'recordApiClient',
+    [
+      'task_flow',
+      'workflow_cursor',
+      'workflow_obligation',
+      'workflow_step_text',
+      'workflow_text_copy',
+    ],
+    [
+      'abandonTaskFlow',
+      'advanceTaskFlow',
+      'attachTaskFlowText',
+      'awaitTaskFlowRuling',
+      'composeTaskFlow',
+      'copyTaskFlowText',
+      'deleteTaskFlowText',
+      'updateTaskFlowStage',
+    ],
+  ),
+  ...writeEntries(
+    'orchestrator',
     'recordApiClient',
     [],
     [

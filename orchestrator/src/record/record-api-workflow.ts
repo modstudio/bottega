@@ -14,6 +14,11 @@ import {
 } from './record-cursor.ts'
 import { RecordTaskFlowError } from './record-task-flow.ts'
 import {
+  type TaskFlowIntent,
+  type TaskFlowIntentBody,
+  taskFlowIntentSchemas,
+} from './record-task-flow-write-contract.ts'
+import {
   type RecordWorkflowDraftInput,
   RecordWorkflowError,
   type RecordWorkflowImportInput,
@@ -29,6 +34,10 @@ type Environment = { Variables: { identity: RecordIdentity; destinationSpaceId?:
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
 export type RecordWorkflowRouteDeps = {
   readTaskFlow?(input: Tenant & { taskKey?: string; flowRecordId?: string }): Promise<unknown>
+  writeTaskFlow?<K extends TaskFlowIntent>(
+    intent: K,
+    input: Tenant & TaskFlowIntentBody<K>,
+  ): Promise<unknown>
   listWorkflowCatalogue(
     input: Tenant & { table: RecordWorkflowTable; limit: number; cursor: RecordCursor | null },
   ): Promise<(Record<string, unknown> & RecordListCursorRow)[]>
@@ -42,6 +51,73 @@ type Ports = {
   noSpace(context: Context<Environment>): Response
 }
 const limit = z.coerce.number().int().min(1).max(100).default(20)
+
+function registerTaskFlowWriteRoute<K extends TaskFlowIntent>(
+  app: Hono<Environment>,
+  deps: RecordWorkflowRouteDeps,
+  ports: Ports,
+  intent: K,
+  validate: (
+    body: unknown,
+  ) => { success: true; data: TaskFlowIntentBody<K> } | { success: false; error: unknown },
+): void {
+  app.post(`/v1/task-flow/${intent}`, async (context) => {
+    if (!deps.writeTaskFlow)
+      return context.json({ error: 'hosted task flow write is unavailable' }, 503)
+    const active = ports.scope(context)
+    if (!active) return ports.noSpace(context)
+    const body = validate(await context.req.json().catch(() => null))
+    if (!body.success) return context.json({ error: `invalid task-flow ${intent} request` }, 400)
+    try {
+      return context.json(await deps.writeTaskFlow(intent, { ...active, ...body.data }))
+    } catch (error) {
+      if (error instanceof DocRevisionConflictError) return renderRecordApiRefusal(context, error)!
+      throw error
+    }
+  })
+}
+
+function registerTaskFlowWriteRoutes(
+  app: Hono<Environment>,
+  deps: RecordWorkflowRouteDeps,
+  ports: Ports,
+): void {
+  const routes: { [K in TaskFlowIntent]: () => void } = {
+    compose: () =>
+      registerTaskFlowWriteRoute(app, deps, ports, 'compose', (body) =>
+        taskFlowIntentSchemas.compose.safeParse(body),
+      ),
+    'stage-update': () =>
+      registerTaskFlowWriteRoute(app, deps, ports, 'stage-update', (body) =>
+        taskFlowIntentSchemas['stage-update'].safeParse(body),
+      ),
+    advance: () =>
+      registerTaskFlowWriteRoute(app, deps, ports, 'advance', (body) =>
+        taskFlowIntentSchemas.advance.safeParse(body),
+      ),
+    'await-ruling': () =>
+      registerTaskFlowWriteRoute(app, deps, ports, 'await-ruling', (body) =>
+        taskFlowIntentSchemas['await-ruling'].safeParse(body),
+      ),
+    abandon: () =>
+      registerTaskFlowWriteRoute(app, deps, ports, 'abandon', (body) =>
+        taskFlowIntentSchemas.abandon.safeParse(body),
+      ),
+    'attach-text': () =>
+      registerTaskFlowWriteRoute(app, deps, ports, 'attach-text', (body) =>
+        taskFlowIntentSchemas['attach-text'].safeParse(body),
+      ),
+    'delete-text': () =>
+      registerTaskFlowWriteRoute(app, deps, ports, 'delete-text', (body) =>
+        taskFlowIntentSchemas['delete-text'].safeParse(body),
+      ),
+    'copy-text': () =>
+      registerTaskFlowWriteRoute(app, deps, ports, 'copy-text', (body) =>
+        taskFlowIntentSchemas['copy-text'].safeParse(body),
+      ),
+  }
+  for (const register of Object.values(routes)) register()
+}
 
 export function registerRecordWorkflowRoutes(
   app: Hono<Environment>,
@@ -75,6 +151,7 @@ export function registerRecordWorkflowRoutes(
       throw error
     }
   })
+  registerTaskFlowWriteRoutes(app, deps, ports)
   app.get('/v1/workflow-catalogue/:table', async (context) => {
     const active = ports.scope(context)
     if (!active) return ports.noSpace(context)

@@ -36,6 +36,7 @@ type Input = {
 const PROJECT = 'auth-a-project'
 const WORKFLOW = 'fix-defect'
 const TASK_KEY = 'AA-2098'
+const DIRECT_TASK_KEY = 'AA-2234'
 
 function proofDatabase(projectId: string, spaceId: string): Database {
   const database = migratedTestDatabase()
@@ -62,6 +63,420 @@ function proofDatabase(projectId: string, spaceId: string): Database {
 }
 
 export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
+  test('hosted task-flow intents conflict, retry idempotently, and remain space isolated', async () => {
+    const flowId = newRecordId()
+    const stageId = newRecordId()
+    const taskId = newRecordId()
+    const machineId = newRecordId()
+    const composeRequestId = newRecordId()
+    const advanceRequestId = newRecordId()
+    const obligationId = newRecordId()
+    const textId = newRecordId()
+    const copyId = newRecordId()
+    const advanceTextId = newRecordId()
+    const advanceCopyId = newRecordId()
+    const moveTextId = newRecordId()
+    const moveCopyId = newRecordId()
+    const at = new Date().toISOString()
+    const auth = testRecordAuth(input.urls().actor, input.urls().auth)
+    try {
+      input.admin(`
+        INSERT INTO machine(id,user_id,name,registered_at,last_seen)
+        VALUES ('${machineId}',(SELECT user_id FROM membership WHERE space_id='${input.spaceId()}' LIMIT 1),
+          'direct-task-flow-proof',now(),now());
+        INSERT INTO hub_task
+          (id,space_id,project_name,project_id,key,project,title,status,status_category,source,
+           first_seen,last_seen,created_at,updated_at)
+        VALUES ('${taskId}','${input.spaceId()}','${PROJECT}','${input.projectId()}',
+          '${DIRECT_TASK_KEY}','${PROJECT}','direct task-flow proof','active','active','local',
+          now(),now(),now(),now());
+      `)
+      input.signIn()
+      const client = recordApiClient()
+      const directSpace = { destinationSpaceId: input.spaceId() }
+      await client.ensureSpaceBuiltIns!({ destinationSpaceId: input.spaceId() })
+      const workflowVersionId = input.admin(
+        `SELECT version.id FROM workflow_version version JOIN workflow ON workflow.id=version.workflow_id
+         WHERE workflow.space_id='${input.spaceId()}' AND workflow.slug='${WORKFLOW}' ORDER BY version.n DESC LIMIT 1;`,
+      )
+      const catalogueVersionId = input.admin(
+        `SELECT version.id FROM step_catalogue_version version JOIN step_catalogue catalogue ON catalogue.id=version.catalogue_id
+         WHERE catalogue.space_id='${input.spaceId()}' AND catalogue.slug='shared' ORDER BY version.n DESC LIMIT 1;`,
+      )
+      const flow = {
+        id: flowId,
+        projectId: input.projectId(),
+        taskId,
+        state: 'open' as const,
+        openStageRecordId: stageId,
+        openingMachineId: machineId,
+        updatedMachineId: machineId,
+        createdAt: at,
+        updatedAt: at,
+      }
+      const stage = {
+        id: stageId,
+        flowRecordId: flowId,
+        projectId: input.projectId(),
+        workflow: WORKFLOW,
+        mode: 'default',
+        workflowKey: DIRECT_TASK_KEY,
+        instanceId: '',
+        sessionId: 'direct-client-a',
+        workflowVersionId,
+        catalogueVersionId,
+        arguments: { key: DIRECT_TASK_KEY, mode: 'proof' },
+        activeOrdinal: 0,
+        activeSlug: 'diagnose',
+        state: 'running' as const,
+        closedStepNotes: [],
+        question: null,
+        autonomy: null,
+        enforcement: 'note-only',
+        totalSteps: 3,
+        openedMachineId: machineId,
+        takenOverFromMachineId: null,
+        lastAdvancedMachineId: machineId,
+        createdAt: at,
+        updatedAt: at,
+      }
+      expect(
+        await client.composeTaskFlow!(
+          {
+            requestId: composeRequestId,
+            flowInsert: flow,
+            stageInsert: stage,
+          },
+          directSpace,
+        ),
+      ).toEqual({ revisions: { [flowId]: 1, [stageId]: 1 } })
+
+      const composed = await client.readTaskFlow!({ flowRecordId: flowId }, directSpace)
+      expect(composed.stage).toMatchObject({
+        number: 1,
+        workflowKey: DIRECT_TASK_KEY,
+        instanceId: '',
+        sessionId: 'direct-client-a',
+        question: null,
+        autonomy: null,
+        enforcement: 'note-only',
+      })
+      expect(
+        await client.composeTaskFlow!(
+          {
+            requestId: newRecordId(),
+            stageInsert: stage,
+          },
+          directSpace,
+        ),
+      ).toEqual({ revisions: { [stageId]: 1 } })
+
+      await expect(
+        client.composeTaskFlow!(
+          {
+            requestId: newRecordId(),
+            stageInsert: { ...stage, id: newRecordId() },
+          },
+          directSpace,
+        ),
+      ).rejects.toMatchObject({
+        reason: 'already-exists',
+        condition: 'task_flow_stage.(project_id,workflow,mode,workflow_key,instance_id)',
+        message: 'another open stage holds that slot and must be closed or abandoned first',
+      })
+
+      const secondStageId = newRecordId()
+      expect(
+        await client.composeTaskFlow!(
+          {
+            requestId: newRecordId(),
+            stageInsert: { ...stage, id: secondStageId, workflowKey: `${DIRECT_TASK_KEY}-second` },
+          },
+          directSpace,
+        ),
+      ).toEqual({ revisions: { [secondStageId]: 1 } })
+      const withSecondStage = await client.readTaskFlow!({ flowRecordId: flowId }, directSpace)
+      expect(withSecondStage.otherStages).toContainEqual(
+        expect.objectContaining({ id: secondStageId, number: 2 }),
+      )
+
+      const advance = {
+        requestId: advanceRequestId,
+        stage: {
+          id: stageId,
+          expectedRevision: 1,
+          values: {
+            activeOrdinal: 1,
+            activeSlug: 'implement',
+            updatedAt: new Date(Date.now() + 1_000).toISOString(),
+          },
+        },
+        obligationInserts: [
+          {
+            id: obligationId,
+            stageRecordId: stageId,
+            stepOrdinal: 1,
+            stepSlug: 'implement',
+            floor: 'tests',
+            requirePullRequest: false,
+            expectedExitCode: 0,
+            expectedStatus: 'pass',
+            floorDeferrable: false,
+            reason: 'prove obligation mutation',
+            sessionId: 'direct-client-a',
+            createdAt: at,
+            satisfiedAt: null,
+            satisfiedStepOrdinal: null,
+            satisfiedStepSlug: null,
+            satisfiedEvidence: null,
+            abandonedAt: null,
+            abandonedReason: null,
+            operatorRuling: false,
+          },
+        ],
+        obligationUpdates: [
+          {
+            id: obligationId,
+            stageRecordId: stageId,
+            satisfiedAt: at,
+            satisfiedStepOrdinal: 1,
+            satisfiedStepSlug: 'implement',
+            satisfiedEvidence: [{ kind: 'test', status: 'pass' }],
+          },
+        ],
+      }
+      expect(await client.advanceTaskFlow!(advance, directSpace)).toEqual({
+        revisions: { [stageId]: 2 },
+      })
+      expect(await client.advanceTaskFlow!(advance, directSpace)).toEqual({
+        revisions: { [stageId]: 2 },
+      })
+      expect(
+        (await client.readTaskFlow!({ flowRecordId: flowId }, directSpace)).stage?.obligations,
+      ).toContainEqual(
+        expect.objectContaining({
+          id: obligationId,
+          satisfiedStepSlug: 'implement',
+          satisfiedEvidence: [{ kind: 'test', status: 'pass' }],
+        }),
+      )
+      expect(
+        await client.attachTaskFlowText!(
+          {
+            requestId: newRecordId(),
+            rows: [
+              {
+                id: textId,
+                stageRecordId: stageId,
+                stepOrdinal: 1,
+                stepSlug: 'implement',
+                body: 'project-move depth proof',
+                createdAt: at,
+              },
+            ],
+          },
+          directSpace,
+        ),
+      ).toEqual({ revisions: {} })
+      expect(
+        await client.copyTaskFlowText!(
+          {
+            requestId: newRecordId(),
+            row: {
+              id: copyId,
+              workflowTextRecordId: textId,
+              stageRecordId: stageId,
+              taskDocumentReference: 'DEV-2234',
+              copiedAt: at,
+            },
+          },
+          directSpace,
+        ),
+      ).toEqual({ revisions: {} })
+      expect(
+        await client.copyTaskFlowText!(
+          {
+            requestId: newRecordId(),
+            row: {
+              id: newRecordId(),
+              workflowTextRecordId: textId,
+              stageRecordId: stageId,
+              taskDocumentReference: 'DEV-2234-repeated',
+              copiedAt: at,
+            },
+          },
+          directSpace,
+        ),
+      ).toEqual({ revisions: {} })
+      expect(
+        Number(
+          input.admin(
+            `SELECT count(*) FROM workflow_text_copy WHERE workflow_text_record_id='${textId}';`,
+          ),
+        ),
+      ).toBe(1)
+      expect(
+        await client.deleteTaskFlowText!(
+          {
+            requestId: newRecordId(),
+            stageRecordId: stageId,
+            ids: [textId],
+          },
+          directSpace,
+        ),
+      ).toEqual({ revisions: {} })
+      expect(input.admin(`SELECT count(*) FROM workflow_step_text WHERE id='${textId}';`)).toBe('0')
+      expect(input.admin(`SELECT count(*) FROM workflow_text_copy WHERE id='${copyId}';`)).toBe('1')
+
+      expect(
+        await client.attachTaskFlowText!(
+          {
+            requestId: newRecordId(),
+            rows: [
+              {
+                id: advanceTextId,
+                stageRecordId: stageId,
+                stepOrdinal: 1,
+                stepSlug: 'implement',
+                body: 'advance deletion proof',
+                createdAt: at,
+              },
+              {
+                id: moveTextId,
+                stageRecordId: stageId,
+                stepOrdinal: 1,
+                stepSlug: 'implement',
+                body: 'project-move depth proof',
+                createdAt: at,
+              },
+            ],
+          },
+          directSpace,
+        ),
+      ).toEqual({ revisions: {} })
+      for (const [id, workflowTextRecordId] of [
+        [advanceCopyId, advanceTextId],
+        [moveCopyId, moveTextId],
+      ] as const)
+        expect(
+          await client.copyTaskFlowText!(
+            {
+              requestId: newRecordId(),
+              row: {
+                id,
+                workflowTextRecordId,
+                stageRecordId: stageId,
+                taskDocumentReference: 'DEV-2234',
+                copiedAt: at,
+              },
+            },
+            directSpace,
+          ),
+        ).toEqual({ revisions: {} })
+      await expect(
+        client.advanceTaskFlow!({ ...advance, requestId: newRecordId() }, directSpace),
+      ).rejects.toMatchObject({ condition: `task_flow_stage.id=${stageId}`, currentRevision: '2' })
+      expect(
+        await client.advanceTaskFlow!(
+          {
+            requestId: newRecordId(),
+            stage: {
+              id: stageId,
+              expectedRevision: 2,
+              values: { updatedAt: new Date(Date.now() + 2_000).toISOString() },
+            },
+            deleteTextIds: [advanceTextId],
+          },
+          directSpace,
+        ),
+      ).toEqual({ revisions: { [stageId]: 3 } })
+      expect(
+        input.admin(`SELECT count(*) FROM workflow_step_text WHERE id='${advanceTextId}';`),
+      ).toBe('0')
+      expect(
+        input.admin(`SELECT count(*) FROM workflow_text_copy WHERE id='${advanceCopyId}';`),
+      ).toBe('1')
+
+      expect(
+        await client.composeTaskFlow!({ requestId: newRecordId(), flowInsert: flow }, directSpace),
+      ).toEqual({
+        revisions: { [flowId]: 1 },
+      })
+      await expect(
+        client.composeTaskFlow!(
+          {
+            requestId: newRecordId(),
+            flowInsert: { ...flow, state: 'done' },
+          },
+          directSpace,
+        ),
+      ).rejects.toMatchObject({ condition: `task_flow.id=${flowId}` })
+
+      const otherSpace = await auth.api.createOrganization({
+        headers: bearerHeaders(input.token()),
+        body: {
+          name: 'Direct Task Flow Isolation Proof',
+          slug: `direct-task-flow-isolation-${taskId.slice(-8)}`,
+          keepCurrentActiveOrganization: true,
+        },
+      })
+      await expect(
+        client.advanceTaskFlow!(
+          {
+            ...advance,
+            requestId: newRecordId(),
+            stage: { ...advance.stage, expectedRevision: 3 },
+          },
+          { destinationSpaceId: otherSpace.id },
+        ),
+      ).rejects.toMatchObject({ condition: `task_flow_stage.id=${stageId}` })
+
+      const actorUserId = input.admin(
+        `SELECT user_id::text FROM membership
+         WHERE space_id='${input.spaceId()}' ORDER BY created_at LIMIT 1;`,
+      )
+      expect(
+        Number(
+          input.admin(
+            `SET app.user_id='${actorUserId}';
+             SELECT sum(row_count) FROM record_move_project_space('${input.spaceId()}','${PROJECT}','${otherSpace.id}',NULL)
+             WHERE table_name IN ('workflow_obligation','workflow_step_text','workflow_text_copy');`,
+          ),
+        ),
+      ).toBe(5)
+      const moveTotal = Number(
+        input.admin(
+          `SET app.user_id='${actorUserId}';
+           SELECT sum(row_count) FROM record_move_project_space('${input.spaceId()}','${PROJECT}','${otherSpace.id}',NULL);`,
+        ),
+      )
+      input.admin(
+        `SET app.user_id='${actorUserId}';
+         SELECT sum(row_count) FROM record_move_project_space('${input.spaceId()}','${PROJECT}','${otherSpace.id}',${moveTotal});`,
+      )
+      expect(input.admin(`SELECT space_id FROM task_flow_stage WHERE id='${stageId}';`)).toBe(
+        otherSpace.id,
+      )
+      expect(
+        input.admin(`SELECT space_id FROM workflow_obligation WHERE id='${obligationId}';`),
+      ).toBe(otherSpace.id)
+      expect(input.admin(`SELECT space_id FROM workflow_step_text WHERE id='${moveTextId}';`)).toBe(
+        otherSpace.id,
+      )
+      expect(input.admin(`SELECT space_id FROM workflow_text_copy WHERE id='${copyId}';`)).toBe(
+        otherSpace.id,
+      )
+      expect(
+        input.admin(`SELECT space_id FROM workflow_text_copy WHERE id='${advanceCopyId}';`),
+      ).toBe(otherSpace.id)
+      expect(input.admin(`SELECT space_id FROM workflow_text_copy WHERE id='${moveCopyId}';`)).toBe(
+        otherSpace.id,
+      )
+    } finally {
+      await auth.close()
+    }
+  })
+
   test('hosted task-flow read-through advances across machines and remains space isolated', async () => {
     const machineA = newRecordId()
     const machineB = newRecordId()

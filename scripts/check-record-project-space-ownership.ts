@@ -9,7 +9,24 @@ const failure = (message: string): never => {
   throw new Error(`DEV-1214 ${message}`)
 }
 
+export function assertParentOwnershipReachability(
+  entries: readonly ProjectSpaceOwnership[] = RECORD_PROJECT_SPACE_OWNERSHIP,
+): void {
+  const byTable = new Map(entries.map((entry) => [entry.table, entry]))
+  const reachesProject = (table: string, visiting: Set<string>): boolean => {
+    const entry = byTable.get(table)
+    if (!entry || entry.kind === 'space' || visiting.has(table)) return false
+    if (entry.kind === 'project') return true
+    const next = new Set(visiting).add(table)
+    return entry.parents.every((parent) => reachesProject(parent.table, next))
+  }
+  for (const entry of entries)
+    if (entry.kind === 'parent' && !reachesProject(entry.table, new Set()))
+      failure(`project-space parent cannot reach a project owner: ${entry.table}`)
+}
+
 function assertSpaceTables(spaceTables: string[]): void {
+  assertParentOwnershipReachability()
   const declared = RECORD_PROJECT_SPACE_OWNERSHIP.map((entry) => entry.table).sort()
   if (new Set(declared).size !== declared.length)
     failure('project-space ownership declaration contains duplicate tables')

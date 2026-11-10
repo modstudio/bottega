@@ -1,6 +1,10 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { DocRevisionConflictError, revisionConflictBody } from '../doc/doc-revision-conflict.ts'
+import {
+  DocRevisionConflictError,
+  revisionConflictBody,
+  revisionConflictErrorFromRecordApiError,
+} from '../doc/doc-revision-conflict.ts'
 import { assertRevisionWrite } from './record-doc-errors.ts'
 
 const address = { scope: 'canon', subject: null, slug: 'revision-test' }
@@ -72,4 +76,21 @@ test('a conflict without a current revision does not tell the caller to retry', 
     currentRevision: null,
   })
   expect(error.message).not.toContain('retry')
+})
+
+test('the record API conflict fields reconstruct the typed conflict', () => {
+  const error = revisionConflictErrorFromRecordApiError({
+    message: 'stage changed',
+    condition: 'task_flow_stage.id=stage-id',
+    reason: 'stale-revision',
+    currentRevision: '2',
+  })
+  expect(error).toBeInstanceOf(DocRevisionConflictError)
+  expect(revisionConflictBody(error)).toEqual({
+    error: 'stage changed',
+    code: 'revision-conflict',
+    reason: 'stale-revision',
+    condition: 'task_flow_stage.id=stage-id',
+    currentRevision: '2',
+  })
 })

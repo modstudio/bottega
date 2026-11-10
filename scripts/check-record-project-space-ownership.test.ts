@@ -2,7 +2,10 @@ import { expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { assertProjectSpaceFunctionDeclaration } from './check-record-project-space-ownership.ts'
+import {
+  assertParentOwnershipReachability,
+  assertProjectSpaceFunctionDeclaration,
+} from './check-record-project-space-ownership.ts'
 
 const MOVE_FUNCTION_MARKER = 'CREATE OR REPLACE FUNCTION record_move_project_space'
 
@@ -66,4 +69,13 @@ test('project-space declaration gate rejects a removed task-key traversal edge',
 
 test('project-space declaration gate accepts the checked migration declaration', () => {
   expect(() => assertProjectSpaceFunctionDeclaration(migration)).not.toThrow()
+})
+
+test('project-space declaration gate rejects a parent chain that cannot reach a project owner', () => {
+  expect(() =>
+    assertParentOwnershipReachability([
+      { table: 'root', kind: 'project', ownerColumns: ['project_id'] },
+      { table: 'child', kind: 'parent', parents: [{ table: 'missing', column: 'root_id' }] },
+    ]),
+  ).toThrow(/cannot reach a project owner: child/)
 })
