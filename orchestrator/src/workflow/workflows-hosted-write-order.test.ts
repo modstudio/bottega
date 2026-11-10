@@ -24,6 +24,7 @@ import {
 } from './workflows.ts'
 
 const SPACE = '01990000-0000-7000-8000-000000000222'
+const ACTIVE_SPACE = '01990000-0000-7000-8000-000000000333'
 const setWorkflow = (slug: string, definition: unknown, reason: string) =>
   setWorkflowService(slug, definition, reason, undefined, undefined, SPACE)
 const promoteWorkflow = (slug: string, n: number, reason: string) =>
@@ -31,8 +32,8 @@ const promoteWorkflow = (slug: string, n: number, reason: string) =>
 const at = '2026-10-18T12:00:00.000Z'
 const whoami = async () => ({
   user: { id: newRecordId() },
-  activeSpaceId: SPACE,
-  personalSpaceId: SPACE,
+  activeSpaceId: ACTIVE_SPACE,
+  personalSpaceId: ACTIVE_SPACE,
   memberships: [],
 })
 function installHostedCatalogue(): (table: string) => Record<string, unknown>[] {
@@ -131,7 +132,8 @@ test('hosted set failure is inert and success adopts identity, version, and even
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     whoami,
-    async draftWorkflow() {
+    async draftWorkflow(_input, destination) {
+      expect(destination).toEqual({ destinationSpaceId: SPACE })
       return {
         identity: {
           id: ownerId,
@@ -181,6 +183,9 @@ test('hosted set failure is inert and success adopts identity, version, and even
   })
   expect(db().query('SELECT record_id FROM workflow_event WHERE space_id=?').get(SPACE)).toEqual({
     record_id: eventId,
+  })
+  expect(db().query('SELECT COUNT(*) AS n FROM workflow WHERE space_id=?').get(ACTIVE_SPACE)).toEqual({
+    n: 0,
   })
 })
 

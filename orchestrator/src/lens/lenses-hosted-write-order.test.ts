@@ -159,6 +159,7 @@ test('hosted profile failure is inert and success adopts hosted identities and v
 
 test('hosted selection failure is inert and success adopts hosted identities and versions', async () => {
   installHostedCorrectness()
+  const activeSpaceId = '01990000-0000-7000-8000-000000000099'
   const projectId = newRecordId()
   upsertProject({
     recordId: projectId,
@@ -171,7 +172,7 @@ test('hosted selection failure is inert and success adopts hosted identities and
     ...createMemoryRecordApiClient(),
     whoami: async () => ({
       user: { id: 'user-a' },
-      activeSpaceId: HOSTED_SPACE,
+      activeSpaceId,
       personalSpaceId: 'space-a',
       memberships: [{ space_id: HOSTED_SPACE, slug: 'hosted', permission: 'write' }],
     }),
@@ -202,11 +203,13 @@ test('hosted selection failure is inert and success adopts hosted identities and
     ...createMemoryRecordApiClient(),
     whoami: async () => ({
       user: { id: 'user-a' },
-      activeSpaceId: HOSTED_SPACE,
+      activeSpaceId,
       personalSpaceId: 'space-a',
       memberships: [{ space_id: HOSTED_SPACE, slug: 'hosted', permission: 'write' }],
     }),
-    selectProjectLensProfile: async () => ({
+    selectProjectLensProfile: async (_input, destination) => {
+      expect(destination).toEqual({ destinationSpaceId: HOSTED_SPACE })
+      return {
       selection: {
         id: selectionId,
         spaceId: HOSTED_SPACE,
@@ -230,7 +233,8 @@ test('hosted selection failure is inert and success adopts hosted identities and
         sessionId: null,
         at: new Date().toISOString(),
       },
-    }),
+      }
+    },
   })
   try {
     await selectProjectProfile(input)
@@ -244,6 +248,9 @@ test('hosted selection failure is inert and success adopts hosted identities and
         .query('SELECT record_id FROM project_lens_profile_revision WHERE space_id=?')
         .get(HOSTED_SPACE),
     ).toEqual({ record_id: revisionId })
+    expect(
+      db().query('SELECT COUNT(*) AS n FROM project_lens_profile WHERE space_id=?').get(activeSpaceId),
+    ).toEqual({ n: 0 })
   } finally {
     delete process.env.BOTTEGA_RECORD_API_URL
     installRecordApiClient(createMemoryRecordApiClient())
