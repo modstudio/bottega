@@ -87,7 +87,7 @@ async function hostedIdentity(ctx: Context) {
   }
 }
 
-async function hostedWriteIdentity(ctx: Context) {
+async function hostedWriteIdentity(ctx: Context, spaceId: string) {
   const client = recordClient(ctx)
   const who = await client.whoami()
   if (!who.activeSpaceId)
@@ -96,7 +96,7 @@ async function hostedWriteIdentity(ctx: Context) {
       message: 'record session has no active space',
     })
   const memberships = parseRecordSpaceMemberships(who.memberships)
-  const access = recordSpaceAccessDecision('write', who.activeSpaceId, memberships)
+  const access = recordSpaceAccessDecision('write', spaceId, memberships)
   if (!access.allowed)
     throw new TRPCError({
       code: 'FORBIDDEN',
@@ -106,9 +106,8 @@ async function hostedWriteIdentity(ctx: Context) {
   return {
     identity: {
       userId: who.user.id,
-      spaceId: who.activeSpaceId,
-      spaceIds:
-        who.activeSpaceId === who.personalSpaceId ? membershipSpaceIds : [who.activeSpaceId],
+      spaceId,
+      spaceIds: spaceId === who.personalSpaceId ? membershipSpaceIds : [spaceId],
     },
   }
 }
@@ -268,18 +267,28 @@ const recordCoreRouter = t.router({
         note: z.string().nullable(),
       }),
     )
-    .mutation(({ ctx, input }) =>
-      recordClient(ctx).score(input.id, {
-        delivery: input.delivery,
-        quality: input.quality,
-        fidelity: input.fidelity,
-        note: input.note,
-        scoredAt: new Date().toISOString(),
-      }),
-    ),
+    .mutation(async ({ ctx, input }) => {
+      const client = recordClient(ctx)
+      const run = await client.run(input.id)
+      return client.score(
+        input.id,
+        {
+          delivery: input.delivery,
+          quality: input.quality,
+          fidelity: input.fidelity,
+          note: input.note,
+          scoredAt: new Date().toISOString(),
+        },
+        run.spaceId,
+      )
+    }),
   void: t.procedure
     .input(z.object({ id: uuid, reason: z.string().min(1) }))
-    .mutation(({ ctx, input }) => recordClient(ctx).void(input.id, { reason: input.reason })),
+    .mutation(async ({ ctx, input }) => {
+      const client = recordClient(ctx)
+      const run = await client.run(input.id)
+      return client.void(input.id, { reason: input.reason }, run.spaceId)
+    }),
   reviews: t.procedure
     .input(z.object({ limit, cursor: z.string().optional() }))
     .query(({ ctx, input }) => recordClient(ctx).reviews(input)),
@@ -533,39 +542,42 @@ const recordCoreRouter = t.router({
   createReportSubscription: t.procedure
     .input(
       subscriptionCadenceInput.extend({
+        spaceId: uuid,
         scope: subscriptionScope,
         recipientUserIds: z.array(uuid),
         recipientEmails: z.array(email),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { identity } = await hostedWriteIdentity(ctx)
-      return createHostedReportSubscription(recordDatabase(ctx), identity, input)
+      const { spaceId, ...subscription } = input
+      const { identity } = await hostedWriteIdentity(ctx, spaceId)
+      return createHostedReportSubscription(recordDatabase(ctx), identity, subscription)
     }),
   updateReportSubscription: t.procedure
     .input(
       subscriptionCadenceInput.extend({
         id: uuid,
+        spaceId: uuid,
         scope: subscriptionScope,
         recipientUserIds: z.array(uuid),
         recipientEmails: z.array(email),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { identity } = await hostedWriteIdentity(ctx)
-      const { id, ...update } = input
+      const { spaceId, id, ...update } = input
+      const { identity } = await hostedWriteIdentity(ctx, spaceId)
       return updateHostedReportSubscription(recordDatabase(ctx), identity, id, update)
     }),
   removeReportSubscription: t.procedure
-    .input(z.object({ id: uuid }).strict())
+    .input(z.object({ id: uuid, spaceId: uuid }).strict())
     .mutation(async ({ ctx, input }) => {
-      const { identity } = await hostedWriteIdentity(ctx)
+      const { identity } = await hostedWriteIdentity(ctx, input.spaceId)
       return unsubscribeHostedReportSubscription(recordDatabase(ctx), identity, input.id)
     }),
   sendReportSubscriptionTest: t.procedure
-    .input(z.object({ id: uuid }).strict())
+    .input(z.object({ id: uuid, spaceId: uuid }).strict())
     .mutation(async ({ ctx, input }) => {
-      const { identity } = await hostedWriteIdentity(ctx)
+      const { identity } = await hostedWriteIdentity(ctx, input.spaceId)
       return sendHostedReportSubscriptionTest(recordDatabase(ctx), identity, input.id)
     }),
   task: t.procedure

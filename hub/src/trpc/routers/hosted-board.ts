@@ -26,6 +26,10 @@ import type { Context } from '../context.ts'
 import { recordClient } from './record-router-client.ts'
 
 const t = initTRPC.context<Context>().create()
+const spaceId = z.string().uuid()
+const boardReplyInput = BoardReplyInputSchema.extend({ spaceId })
+const boardAcceptInput = BoardAcceptInputSchema.extend({ spaceId })
+const boardIdInput = BoardIdInputSchema.extend({ spaceId })
 
 type HostedBoardClient = Pick<
   RecordClient,
@@ -36,7 +40,8 @@ type HostedBoardClient = Pick<
   | 'boardReply'
   | 'boardAccept'
   | 'boardWithdraw'
->
+> &
+  Partial<Pick<RecordClient, 'projects' | 'whoami'>>
 type HostedBoardDeps = {
   clientFor: (context: Context) => HostedBoardClient
   clock: () => number
@@ -110,28 +115,45 @@ export function createHostedBoardRouter(
     ),
     post: t.procedure.input(BoardPostInputSchema).mutation(({ ctx, input }) =>
       call(async () => {
+        const client = deps.clientFor(ctx)
+        const destination = input.project
+          ? (await client.projects?.())?.find((project) => project.name === input.project)?.spaceId
+          : (await client.whoami?.())?.personalSpaceId
+        if (!destination)
+          throw new Error(
+            input.project
+              ? `record project ${input.project} has no declared space`
+              : 'record user has no personal space',
+          )
         const id = deps.newId()
         const now = deps.clock()
         const purpose = defaultBoardPurpose(input.purpose, Boolean(input.ackRequired))
-        const message = await deps.clientFor(ctx).boardPost({
-          id,
-          kind: 'notice',
-          purpose,
-          audience: input.audience,
-          title: input.title,
-          body: input.body,
-          expiresAt: absoluteBoardTime(now, input.expires, boardDefaultExpiryMs(purpose)),
-          ...(input.ackRequired
-            ? {
-                ackRequired: true,
-                ackDeadline: absoluteBoardTime(now, input.deadline, BOARD_DEFAULT_ACK_DEADLINE_MS),
-              }
-            : {}),
-          ...(input.task ? { task: input.task } : {}),
-          ...(input.paths ? { paths: input.paths } : {}),
-          ...(input.topics ? { topics: input.topics } : {}),
-          ...(input.project ? { project: input.project } : {}),
-        })
+        const message = await client.boardPost(
+          {
+            id,
+            kind: 'notice',
+            purpose,
+            audience: input.audience,
+            title: input.title,
+            body: input.body,
+            expiresAt: absoluteBoardTime(now, input.expires, boardDefaultExpiryMs(purpose)),
+            ...(input.ackRequired
+              ? {
+                  ackRequired: true,
+                  ackDeadline: absoluteBoardTime(
+                    now,
+                    input.deadline,
+                    BOARD_DEFAULT_ACK_DEADLINE_MS,
+                  ),
+                }
+              : {}),
+            ...(input.task ? { task: input.task } : {}),
+            ...(input.paths ? { paths: input.paths } : {}),
+            ...(input.topics ? { topics: input.topics } : {}),
+            ...(input.project ? { project: input.project } : {}),
+          },
+          destination,
+        )
         return BoardPostResultSchema.parse({
           id: message.id,
           dropped: message.id !== id,
@@ -140,12 +162,16 @@ export function createHostedBoardRouter(
         })
       }),
     ),
-    reply: t.procedure.input(BoardReplyInputSchema).mutation(({ ctx, input }) =>
+    reply: t.procedure.input(boardReplyInput).mutation(({ ctx, input }) =>
       call(async () => {
-        const message = await deps.clientFor(ctx).boardReply(input.id, {
-          id: deps.newId(),
-          body: input.body,
-        })
+        const message = await deps.clientFor(ctx).boardReply(
+          input.id,
+          {
+            id: deps.newId(),
+            body: input.body,
+          },
+          input.spaceId,
+        )
         return BoardReplyResultSchema.parse({
           id: message.id,
           rootId: message.threadRootId,
@@ -155,9 +181,11 @@ export function createHostedBoardRouter(
         })
       }),
     ),
-    accept: t.procedure.input(BoardAcceptInputSchema).mutation(({ ctx, input }) =>
+    accept: t.procedure.input(boardAcceptInput).mutation(({ ctx, input }) =>
       call(async () => {
-        const thread = await deps.clientFor(ctx).boardAccept(input.questionId, input.replyId)
+        const thread = await deps
+          .clientFor(ctx)
+          .boardAccept(input.questionId, input.replyId, input.spaceId)
         return BoardAcceptResultSchema.parse({
           accepted: input.replyId,
           questionId: input.questionId,
@@ -167,9 +195,9 @@ export function createHostedBoardRouter(
         })
       }),
     ),
-    withdraw: t.procedure.input(BoardIdInputSchema).mutation(({ ctx, input }) =>
+    withdraw: t.procedure.input(boardIdInput).mutation(({ ctx, input }) =>
       call(async () => {
-        const message = await deps.clientFor(ctx).boardWithdraw(input.id)
+        const message = await deps.clientFor(ctx).boardWithdraw(input.id, input.spaceId)
         return BoardWithdrawResultSchema.parse({ withdrawn: message.id })
       }),
     ),

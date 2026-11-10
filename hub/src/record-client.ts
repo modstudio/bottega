@@ -1,6 +1,6 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
-import { BOARD_PURPOSES } from '../../shared/board-purpose.ts'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   CREDENTIAL_BINDINGS,
   CREDENTIAL_ENVIRONMENTS,
@@ -30,11 +30,8 @@ import { RecordProjectsSchema } from '../../shared/record-project-contract.ts'
 import { hostedRequestSafetyStatement } from '../../shared/record-remedies.ts'
 import type { RunDetailReviewLens } from '../../shared/review-presentation.ts'
 import { SubjectOutputSchema } from '../../shared/subjects.ts'
-import {
-  BoardListResultSchema,
-  BoardStatusResultSchema,
-  BoardThreadResultSchema,
-} from './board-contract.ts'
+import packageMetadata from '../../package.json' with { type: 'json' }
+import { recordBoardClient } from './record-board-client.ts'
 import {
   ArticleDocFieldsSchema,
   DocSchema,
@@ -57,7 +54,7 @@ export type RecordFetch = (input: string, init?: RequestInit) => Promise<Respons
 
 const RECORD_REQUEST_DEADLINE_MS = 30_000
 
-type RecordClientOptions = {
+export type RecordClientOptions = {
   baseUrl: string
   headers: RecordAuthHeaders
   fetch?: RecordFetch
@@ -504,53 +501,6 @@ const settingsAutoModeResultSchema = z.object({
   }),
 })
 
-const boardRootSchema = BoardThreadResultSchema.shape.root
-const hostedBoardMessageSchema = boardRootSchema.omit({ text: true }).extend({
-  kind: z.string(),
-  body: z.string(),
-  origin: boardRootSchema.shape.origin.unwrap(),
-  senderTags: boardRootSchema.shape.senderTags.unwrap(),
-  createdAt: z.string(),
-  revision: z.string(),
-  scopeProjectIds: z.array(z.string()),
-  recipientUserIds: z.array(z.string()),
-  authorUserId: z.string(),
-  ackRequired: z.boolean(),
-})
-const hostedBoardThreadSchema = z.object({
-  root: hostedBoardMessageSchema,
-  replies: BoardThreadResultSchema.shape.replies,
-})
-const hostedBoardStatusSchema = z.object({
-  message: hostedBoardMessageSchema,
-  receipts: z.array(
-    BoardStatusResultSchema.shape.receipts.element.extend({ readerUserId: z.string() }),
-  ),
-})
-const hostedBoardListSchema = z.object({
-  messages: BoardListResultSchema.shape.messages.refine(
-    (messages) => messages.every((message) => message.store === 'hosted'),
-    'hosted board messages must use the hosted store',
-  ),
-  truncated: z.boolean(),
-})
-const hostedBoardPostInputSchema = z.object({
-  id: z.string().uuid(),
-  kind: z.literal('notice'),
-  purpose: z.enum(BOARD_PURPOSES).optional(),
-  audience: z.string(),
-  title: z.string(),
-  body: z.string(),
-  expiresAt: z.string().datetime({ offset: true }),
-  ackRequired: z.boolean().optional(),
-  ackDeadline: z.string().datetime({ offset: true }).nullable().optional(),
-  task: z.string().optional(),
-  paths: z.array(z.string()).optional(),
-  topics: z.array(z.string()).optional(),
-  project: z.string().optional(),
-})
-const hostedBoardReplyInputSchema = z.object({ id: z.string().uuid(), body: z.string() })
-
 export type RecordDoc = z.infer<typeof docSchema>
 export type RecordConfigEntry = z.infer<typeof configEntrySchema>
 
@@ -584,7 +534,7 @@ function query(path: string, params: Record<string, string | number | undefined>
   return encoded ? `${path}?${encoded}` : path
 }
 
-async function request<T>(
+export async function request<T>(
   options: RecordClientOptions,
   path: string,
   schema: z.ZodType<T>,
@@ -595,6 +545,7 @@ async function request<T>(
   const headers = new Headers(init.headers)
   if (options.headers.cookie) headers.set('Cookie', options.headers.cookie)
   if (options.headers.authorization) headers.set('Authorization', options.headers.authorization)
+  headers.set('user-agent', `${PLATFORM_SLUG}/${packageMetadata.version}`)
   const url = `${options.baseUrl.replace(/\/$/, '')}${path}`
   const fetchImpl = options.fetch ?? globalThis.fetch
   const signal = init.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal
@@ -833,14 +784,17 @@ function recordConfigClient(options: RecordClientOptions) {
         z.object({ items: z.array(credentialPreferenceSchema) }),
         spaceDestination(spaceId),
       ).then(({ items }) => items),
-    clearCredentialPreference: (input: z.input<typeof credentialPreferenceIdentitySchema>) =>
+    clearCredentialPreference: (
+      input: z.input<typeof credentialPreferenceIdentitySchema>,
+      spaceId: string,
+    ) =>
       request(
         options,
         '/v1/config/credential-preferences',
         z.object({ deleted: z.literal(true) }),
         {
           method: 'DELETE',
-          headers: { 'content-type': 'application/json' },
+          headers: { 'content-type': 'application/json', 'x-record-space': spaceId },
           body: JSON.stringify(credentialPreferenceIdentitySchema.parse(input)),
         },
       ),
@@ -850,22 +804,26 @@ function recordConfigClient(options: RecordClientOptions) {
 function recordConfigAccessClient(options: RecordClientOptions) {
   return {
     configAccess: () => request(options, '/v1/config-access', configAccessListSchema),
-    grantConfigAccess: (email: string) =>
+    grantConfigAccess: (email: string, spaceId: string) =>
       request(options, '/v1/config-access/grant', configAccessGrantSchema, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'x-record-space': spaceId },
         body: JSON.stringify({ email }),
       }),
-    setMemberPermission: (email: string, permission: z.infer<typeof memberPermission>) =>
+    setMemberPermission: (
+      email: string,
+      permission: z.infer<typeof memberPermission>,
+      spaceId: string,
+    ) =>
       request(options, '/v1/members/permission', memberPermissionSchema, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'x-record-space': spaceId },
         body: JSON.stringify({ email, permission }),
       }),
-    withdrawConfigAccess: (email: string) =>
+    withdrawConfigAccess: (email: string, spaceId: string) =>
       request(options, '/v1/config-access/withdraw', configAccessWithdrawSchema, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'x-record-space': spaceId },
         body: JSON.stringify({ email }),
       }),
   }
@@ -947,16 +905,16 @@ export function createRecordClient(options: RecordClientOptions) {
         runWindowSchema,
       ),
     run: (id: string) => request(options, `/v1/runs/${id}`, recordRunDetailSchema),
-    score: (id: string, input: z.input<typeof scoreInputSchema>) =>
+    score: (id: string, input: z.input<typeof scoreInputSchema>, spaceId: string) =>
       request(options, `/v1/runs/${id}/score`, verdictResponseSchema, {
         method: 'PUT',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'x-record-space': spaceId },
         body: JSON.stringify(scoreInputSchema.parse(input)),
       }),
-    void: (id: string, input: z.input<typeof voidInputSchema>) =>
+    void: (id: string, input: z.input<typeof voidInputSchema>, spaceId: string) =>
       request(options, `/v1/runs/${id}/void`, verdictResponseSchema, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'x-record-space': spaceId },
         body: JSON.stringify(voidInputSchema.parse(input)),
       }),
     reviews: (input: RecordReviewListInput = {}) =>
@@ -979,63 +937,7 @@ export function createRecordClient(options: RecordClientOptions) {
     latestReleases: (projectId: string) =>
       request(options, query('/v1/releases/latest', { projectId }), latestReleaseListSchema),
     snapshots: () => request(options, '/v1/snapshots', snapshotsSchema),
-    boardList: (input: { kind?: 'notice' | 'question'; open?: boolean; includeEnded?: boolean }) =>
-      request(
-        options,
-        query('/v1/board/messages', {
-          kind: input.kind,
-          open: input.open ? 'true' : undefined,
-          includeEnded: input.includeEnded ? 'true' : undefined,
-        }),
-        hostedBoardListSchema,
-      ),
-    boardThread: (id: string) =>
-      request(options, `/v1/board/threads/${encodeURIComponent(id)}`, hostedBoardThreadSchema),
-    boardStatus: (id: string) =>
-      request(
-        options,
-        `/v1/board/messages/${encodeURIComponent(id)}/status`,
-        hostedBoardStatusSchema,
-      ),
-    boardPost: (input: z.input<typeof hostedBoardPostInputSchema>) =>
-      request(options, '/v1/board/messages', hostedBoardMessageSchema, {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(hostedBoardPostInputSchema.parse(input)),
-      }),
-    boardReply: (rootId: string, input: z.input<typeof hostedBoardReplyInputSchema>) =>
-      request(
-        options,
-        `/v1/board/messages/${encodeURIComponent(rootId)}/replies`,
-        hostedBoardMessageSchema,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(hostedBoardReplyInputSchema.parse(input)),
-        },
-      ),
-    boardAccept: (questionId: string, replyId: string) =>
-      request(
-        options,
-        `/v1/board/messages/${encodeURIComponent(questionId)}/accept`,
-        hostedBoardThreadSchema,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ replyId }),
-        },
-      ),
-    boardWithdraw: (id: string) =>
-      request(
-        options,
-        `/v1/board/messages/${encodeURIComponent(id)}/withdraw`,
-        hostedBoardMessageSchema,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({}),
-        },
-      ),
+    ...recordBoardClient(options, request),
     docSearch: (input: RecordDocSearchInput) => recordDocSearch(options, input),
     subjects: (input: { project: string; includeRetired?: boolean }, destinationSpaceId: string) =>
       recordSubjects(options, input, destinationSpaceId),

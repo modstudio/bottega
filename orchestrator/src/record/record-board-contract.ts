@@ -49,6 +49,7 @@ type HostedBoardTag = HostedBoardSenderTag & { origin: 'sender' | 'inferred' }
 
 export type HostedBoardMessage = {
   id: string
+  spaceId?: string
   kind: string
   purpose?: BoardPurpose | null
   threadRootId: string | null

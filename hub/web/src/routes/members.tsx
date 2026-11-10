@@ -201,6 +201,7 @@ function MembersPage() {
     queryFn: activeOrganizationMember,
   })
   const configAccess = useQuery(trpc.record.configAccess.queryOptions())
+  const whoami = useQuery(trpc.record.whoami.queryOptions())
   const refresh = async () => {
     await Promise.all([
       members.refetch(),
@@ -209,9 +210,9 @@ function MembersPage() {
       caller.refetch(),
     ])
   }
-  if (members.isPending || invitations.isPending || caller.isPending)
+  if (members.isPending || invitations.isPending || caller.isPending || whoami.isPending)
     return <EmptyState title="Loading members..." />
-  const loadError = members.error || invitations.error || caller.error
+  const loadError = members.error || invitations.error || caller.error || whoami.error
   if (loadError) return <ErrorState title="Could not load members" message={loadError.message} />
   const memberRows = members.data?.members ?? []
   const accessRows = configAccess.isPending
@@ -255,6 +256,7 @@ function MembersPage() {
         callerRole={callerRole}
         callerEmail={caller.data?.user.email}
         onChanged={refresh}
+        spaceId={whoami.data?.activeSpaceId ?? ''}
         actions={invite}
       />
       <InvitationTable
@@ -273,12 +275,14 @@ function MemberTable({
   callerEmail,
   onChanged,
   actions,
+  spaceId,
 }: {
   rows: MemberAccessRow[]
   callerRole?: OrganizationRole
   callerEmail?: string
   onChanged: () => Promise<void>
   actions?: React.ReactNode
+  spaceId: string
 }) {
   const [removeConfirm, setRemoveConfirm] = useState<string | null>(null)
   const [withdrawTarget, setWithdrawTarget] = useState<MemberAccessRow | null>(null)
@@ -316,7 +320,9 @@ function MemberTable({
       void act(member.id, () => changeRole.mutateAsync({ id: member.id, role }))
     },
     (member, permission) => {
-      void act(member.id, () => setPermission.mutateAsync({ email: member.user.email, permission }))
+      void act(member.id, () =>
+        setPermission.mutateAsync({ email: member.user.email, permission, spaceId }),
+      )
     },
   )
   return (
@@ -338,7 +344,7 @@ function MemberTable({
             removeConfirm={removeConfirm === member.id}
             error={errors[member.id]}
             onGrant={() =>
-              void act(member.id, () => grant.mutateAsync({ email: member.user.email }))
+              void act(member.id, () => grant.mutateAsync({ email: member.user.email, spaceId }))
             }
             onWithdraw={() => setWithdrawTarget(member)}
             onRemove={() =>
@@ -372,7 +378,9 @@ function MemberTable({
                 if (!withdrawTarget) return
                 const member = withdrawTarget
                 setWithdrawTarget(null)
-                void act(member.id, () => withdraw.mutateAsync({ email: member.user.email }))
+                void act(member.id, () =>
+                  withdraw.mutateAsync({ email: member.user.email, spaceId }),
+                )
               }}
             >
               Withdraw

@@ -9,8 +9,8 @@ const t = initTRPC.context<Context>().create()
 
 export const recordMemberPermissionRouter = t.router({
   setMemberPermission: t.procedure
-    .input(z.object({ email, permission: memberPermission }))
+    .input(z.object({ email, permission: memberPermission, spaceId: z.string().uuid() }))
     .mutation(({ ctx, input }) =>
-      recordClient(ctx).setMemberPermission(input.email, input.permission),
+      recordClient(ctx).setMemberPermission(input.email, input.permission, input.spaceId),
     ),
 })

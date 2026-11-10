@@ -22,9 +22,15 @@ const mintedReplyId = '01990000-0000-7000-8000-000000000014'
 const replyId = '01990000-0000-7000-8000-000000000015'
 const noteId = '01990000-0000-7000-8000-000000000016'
 const now = Date.parse('2026-10-06T12:00:00.000Z')
+const spaceId = '01990000-0000-7000-8000-000000000001'
+const destinationClient = {
+  projects: async () => [{ name: 'workshop', spaceId }],
+  whoami: async () => ({ personalSpaceId: spaceId }),
+}
 
 const root = {
   id: rootId,
+  spaceId,
   kind: 'question',
   threadRootId: null,
   title: 'Question',
@@ -81,6 +87,9 @@ test('hosted board procedures map record responses to the shared browser contrac
   const calls: Array<{ operation: string; input: unknown }> = []
   const ids = [mintedPostId, mintedReplyId, mintedPostId]
   const client = {
+    ...destinationClient,
+    projects: async () => [{ name: 'workshop', spaceId }],
+    whoami: async () => ({ personalSpaceId: spaceId }),
     boardList: async (input: unknown) => {
       calls.push({ operation: 'list', input })
       return { messages: [overview], truncated: true }
@@ -136,9 +145,9 @@ test('hosted board procedures map record responses to the shared browser contrac
     deadline: '10m',
     expires: '6h',
   })
-  const replied = await caller.reply({ id: rootId, body: 'Answer' })
-  const accepted = await caller.accept({ questionId: rootId, replyId })
-  const withdrawn = await caller.withdraw({ id: rootId })
+  const replied = await caller.reply({ id: rootId, body: 'Answer', spaceId })
+  const accepted = await caller.accept({ questionId: rootId, replyId, spaceId })
+  const withdrawn = await caller.withdraw({ id: rootId, spaceId })
 
   expect(BoardListResultSchema.parse(listed).warning).toBe('Only the newest messages are listed.')
   expect(BoardThreadResultSchema.parse(thread).root.text).toBeNull()
@@ -203,6 +212,9 @@ test('board contract accepts UUID note references and refuses numeric note ids',
 test('hosted board post applies the shared default durations', async () => {
   let posted: Record<string, unknown> | undefined
   const client = {
+    ...destinationClient,
+    projects: async () => [{ name: 'workshop', spaceId }],
+    whoami: async () => ({ personalSpaceId: spaceId }),
     boardList: async () => ({ messages: [], truncated: false }),
     boardThread: async () => ({ root, replies: [] }),
     boardStatus: async () => ({ message: root, receipts: [] }),
@@ -235,6 +247,7 @@ test('hosted board post applies the shared default durations', async () => {
 test('hosted board defaults an acknowledgement-required post to request', async () => {
   let posted: Record<string, unknown> | undefined
   const client = {
+    ...destinationClient,
     boardList: async () => ({ messages: [], truncated: false }),
     boardThread: async () => ({ root, replies: [] }),
     boardStatus: async () => ({ message: root, receipts: [] }),
@@ -263,6 +276,7 @@ test('hosted board defaults an acknowledgement-required post to request', async 
 
 test('hosted board reports an incompatible shared response as an internal error', async () => {
   const client = {
+    ...destinationClient,
     boardList: async () => ({ messages: [], truncated: false }),
     boardThread: async () => ({ root: { ...root, title: 42 }, replies: [] }) as never,
     boardStatus: async () => ({ message: root, receipts: [] }),
@@ -286,6 +300,7 @@ test('hosted board reports an incompatible shared response as an internal error'
 
 test('hosted board keeps an invalid duration as a bad request', async () => {
   const client = {
+    ...destinationClient,
     boardList: async () => ({ messages: [], truncated: false }),
     boardThread: async () => ({ root, replies: [] }),
     boardStatus: async () => ({ message: root, receipts: [] }),
@@ -309,6 +324,7 @@ test.each(['4000000d', '99999980d'])(
   'hosted board rejects a duration outside the record timestamp range: %s',
   async (expires) => {
     const client = {
+      ...destinationClient,
       boardList: async () => ({ messages: [], truncated: false }),
       boardThread: async () => ({ root, replies: [] }),
       boardStatus: async () => ({ message: root, receipts: [] }),

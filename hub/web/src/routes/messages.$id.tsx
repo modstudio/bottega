@@ -271,10 +271,14 @@ function LocalMessageDetail() {
         canAccept={canManage}
         onReplyBody={setReplyBody}
         onReply={() =>
-          runAction('reply', (onError) => reply.mutate({ id, body: replyBody }, { onError }))
+          runAction('reply', (onError) =>
+            reply.mutate({ id, body: replyBody, spaceId: root.spaceId }, { onError }),
+          )
         }
         onAccept={(replyId) =>
-          runAction('accept', (onError) => accept.mutate({ questionId: id, replyId }, { onError }))
+          runAction('accept', (onError) =>
+            accept.mutate({ questionId: id, replyId, spaceId: root.spaceId }, { onError }),
+          )
         }
       />
       <AcceptedNoteWarning root={root} />
@@ -295,7 +299,9 @@ function LocalMessageDetail() {
               variant="danger"
               disabled={withdraw.isPending}
               onClick={() =>
-                runAction('withdraw', (onError) => withdraw.mutate({ id }, { onError }))
+                runAction('withdraw', (onError) =>
+                  withdraw.mutate({ id, spaceId: root.spaceId }, { onError }),
+                )
               }
             >
               {withdraw.isPending ? 'Withdrawing...' : 'Withdraw'}

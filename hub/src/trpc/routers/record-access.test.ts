@@ -212,6 +212,7 @@ const mutations = [
     name: 'create report subscription',
     call: (api: ReturnType<typeof caller>) =>
       api.createReportSubscription({
+        spaceId,
         cadence: 'daily',
         hour: 9,
         zone: 'UTC',
@@ -226,6 +227,7 @@ const mutations = [
     call: (api: ReturnType<typeof caller>) =>
       api.updateReportSubscription({
         id: subscriptionId,
+        spaceId,
         cadence: 'daily',
         hour: 9,
         zone: 'UTC',
@@ -237,12 +239,13 @@ const mutations = [
   },
   {
     name: 'remove report subscription',
-    call: (api: ReturnType<typeof caller>) => api.removeReportSubscription({ id: subscriptionId }),
+    call: (api: ReturnType<typeof caller>) =>
+      api.removeReportSubscription({ id: subscriptionId, spaceId }),
   },
   {
     name: 'send report subscription test',
     call: (api: ReturnType<typeof caller>) =>
-      api.sendReportSubscriptionTest({ id: subscriptionId }),
+      api.sendReportSubscriptionTest({ id: subscriptionId, spaceId }),
   },
 ]
 

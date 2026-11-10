@@ -16,6 +16,7 @@ const boardRootId = '01990000-0000-7000-8000-000000000011'
 const boardReplyId = '01990000-0000-7000-8000-000000000012'
 const boardMessage = {
   id: boardRootId,
+  spaceId: '01990000-0000-7000-8000-000000000001',
   kind: 'notice',
   threadRootId: null,
   title: 'Hosted notice',
@@ -167,7 +168,7 @@ describe('record client', () => {
       environment: 'local' as const,
     }
 
-    await client.clearCredentialPreference(identity)
+    await client.clearCredentialPreference(identity, whoamiBody.activeSpaceId)
 
     expect(requests).toEqual([
       {
@@ -443,18 +444,25 @@ describe('record client', () => {
     await client.boardList({ kind: 'notice', open: true, includeEnded: true })
     await client.boardThread(boardRootId)
     await client.boardStatus(boardRootId)
-    await client.boardPost({
-      id: boardRootId,
-      kind: 'notice',
-      audience: 'architects',
-      title: 'Hosted notice',
-      body: 'Body',
-      expiresAt: '2026-10-07T12:00:00.000Z',
-      project: 'workshop',
-    })
-    await client.boardReply(boardRootId, { id: boardReplyId, body: 'Reply' })
-    await client.boardAccept(boardRootId, boardReplyId)
-    await client.boardWithdraw(boardRootId)
+    await client.boardPost(
+      {
+        id: boardRootId,
+        kind: 'notice',
+        audience: 'architects',
+        title: 'Hosted notice',
+        body: 'Body',
+        expiresAt: '2026-10-07T12:00:00.000Z',
+        project: 'workshop',
+      },
+      whoamiBody.activeSpaceId,
+    )
+    await client.boardReply(
+      boardRootId,
+      { id: boardReplyId, body: 'Reply' },
+      whoamiBody.activeSpaceId,
+    )
+    await client.boardAccept(boardRootId, boardReplyId, whoamiBody.activeSpaceId)
+    await client.boardWithdraw(boardRootId, whoamiBody.activeSpaceId)
 
     expect(requests.map(({ url, method, body }) => ({ url, method, body }))).toEqual([
       {
@@ -572,14 +580,18 @@ describe('record client', () => {
       return jsonResponse({ ok: true })
     }
     const client = clientWith(fetch)
-    await client.score(runId, {
-      delivery: 'full',
-      quality: 'right',
-      fidelity: 'faithful',
-      note: null,
-      scoredAt: '2026-09-22T12:00:00.000Z',
-    })
-    await client.void(runId, { reason: 'not evidence' })
+    await client.score(
+      runId,
+      {
+        delivery: 'full',
+        quality: 'right',
+        fidelity: 'faithful',
+        note: null,
+        scoredAt: '2026-09-22T12:00:00.000Z',
+      },
+      whoamiBody.activeSpaceId,
+    )
+    await client.void(runId, { reason: 'not evidence' }, whoamiBody.activeSpaceId)
     expect(requests).toEqual([
       {
         url: `https://api.example.test/v1/runs/${runId}/score`,
@@ -765,19 +777,24 @@ describe('record client', () => {
   test('maps permission and rate refusals without hiding their messages', async () => {
     const forbidden: RecordFetch = async () => jsonResponse({ error: 'not the author' }, 403)
     const limited: RecordFetch = async () => jsonResponse({ error: 'post rate cap reached' }, 429)
-    await expect(clientWith(forbidden).boardWithdraw(boardRootId)).rejects.toMatchObject({
+    await expect(
+      clientWith(forbidden).boardWithdraw(boardRootId, whoamiBody.activeSpaceId),
+    ).rejects.toMatchObject({
       code: 'FORBIDDEN',
       message: 'not the author',
     })
     await expect(
-      clientWith(limited).boardPost({
-        id: boardRootId,
-        kind: 'notice',
-        audience: 'architects',
-        title: 'Title',
-        body: 'Body',
-        expiresAt: '2026-10-07T12:00:00.000Z',
-      }),
+      clientWith(limited).boardPost(
+        {
+          id: boardRootId,
+          kind: 'notice',
+          audience: 'architects',
+          title: 'Title',
+          body: 'Body',
+          expiresAt: '2026-10-07T12:00:00.000Z',
+        },
+        whoamiBody.activeSpaceId,
+      ),
     ).rejects.toMatchObject({ code: 'TOO_MANY_REQUESTS', message: 'post rate cap reached' })
   })
 

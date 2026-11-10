@@ -425,8 +425,8 @@ function SubscriptionDialog({
       recipientUserIds: draft.recipientUserIds,
       recipientEmails: draft.recipientEmails,
     }
-    if (row) return update.mutate({ id: row.id, ...input })
-    create.mutate(input)
+    if (row) return update.mutate({ id: row.id, spaceId, ...input })
+    create.mutate({ spaceId, ...input })
   }
   const pending = create.isPending || update.isPending || remove.isPending || sendTest.isPending
   const failure = create.error ?? update.error ?? remove.error
@@ -445,7 +445,9 @@ function SubscriptionDialog({
                   variant="danger"
                   disabled={pending}
                   onClick={() =>
-                    confirmingDelete ? remove.mutate({ id: row.id }) : setConfirmingDelete(true)
+                    confirmingDelete
+                      ? remove.mutate({ id: row.id, spaceId })
+                      : setConfirmingDelete(true)
                   }
                 >
                   {confirmingDelete ? 'Confirm delete' : 'Delete'}
@@ -455,7 +457,7 @@ function SubscriptionDialog({
                   disabled={pending}
                   onClick={() => {
                     setTestMessage('')
-                    sendTest.mutate({ id: row.id })
+                    sendTest.mutate({ id: row.id, spaceId })
                   }}
                 >
                   Send test
