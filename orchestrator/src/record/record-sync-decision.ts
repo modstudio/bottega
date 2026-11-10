@@ -44,15 +44,12 @@ export function recordSyncClaimSpaceIds(
   identity: RecordIdentity,
   spaceHints: readonly (string | null)[],
 ): string[] {
-  return [
-    ...new Set(
-      spaceHints.filter(
-        (spaceId): spaceId is string =>
-          spaceId !== null &&
-          recordSyncAuthorizationDecision(identity, spaceId).status === 'allowed',
-      ),
-    ),
-  ]
+  const destinations = new Set<string>()
+  for (const hint of spaceHints) {
+    const decision = recordSyncAuthorizationDecision(identity, hint)
+    if (decision.status === 'allowed') destinations.add(decision.principal.spaceId)
+  }
+  return [...destinations]
 }
 
 export type RecordSyncMachineOwnershipDecision =
