@@ -210,29 +210,29 @@ test('hosted selection failure is inert and success adopts hosted identities and
     selectProjectLensProfile: async (_input, destination) => {
       expect(destination).toEqual({ destinationSpaceId: HOSTED_SPACE })
       return {
-      selection: {
-        id: selectionId,
-        spaceId: HOSTED_SPACE,
-        projectId,
-        lensId: newRecordId(),
-        axis: 'framework' as const,
-        profileName: 'default',
-        selectedVersion: null,
-        selectedVersionId: null,
-        selectionVersion: 1,
-        updatedAt: new Date().toISOString(),
-      },
-      revision: {
-        id: revisionId,
-        spaceId: HOSTED_SPACE,
-        selectionId,
-        priorProfileName: null,
-        priorSelectedVersion: null,
-        priorSelectedVersionId: null,
-        reason: input.reason,
-        sessionId: null,
-        at: new Date().toISOString(),
-      },
+        selection: {
+          id: selectionId,
+          spaceId: HOSTED_SPACE,
+          projectId,
+          lensId: newRecordId(),
+          axis: 'framework' as const,
+          profileName: 'default',
+          selectedVersion: null,
+          selectedVersionId: null,
+          selectionVersion: 1,
+          updatedAt: new Date().toISOString(),
+        },
+        revision: {
+          id: revisionId,
+          spaceId: HOSTED_SPACE,
+          selectionId,
+          priorProfileName: null,
+          priorSelectedVersion: null,
+          priorSelectedVersionId: null,
+          reason: input.reason,
+          sessionId: null,
+          at: new Date().toISOString(),
+        },
       }
     },
   })
@@ -249,7 +249,9 @@ test('hosted selection failure is inert and success adopts hosted identities and
         .get(HOSTED_SPACE),
     ).toEqual({ record_id: revisionId })
     expect(
-      db().query('SELECT COUNT(*) AS n FROM project_lens_profile WHERE space_id=?').get(activeSpaceId),
+      db()
+        .query('SELECT COUNT(*) AS n FROM project_lens_profile WHERE space_id=?')
+        .get(activeSpaceId),
     ).toEqual({ n: 0 })
   } finally {
     delete process.env.BOTTEGA_RECORD_API_URL

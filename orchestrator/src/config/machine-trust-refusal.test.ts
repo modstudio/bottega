@@ -5,9 +5,7 @@ import { machineTrustRefusal } from './machine-trust-refusal.ts'
 const keyId = 'machine-key-id'
 
 test('revoked machine registration keeps every repair in the named space', () => {
-  expect(
-    machineTrustRefusal(keyId, { revokedAt: '2026-11-10T00:00:00.000Z' }, 'named-space'),
-  ).toBe(
+  expect(machineTrustRefusal(keyId, { revokedAt: '2026-11-10T00:00:00.000Z' }, 'named-space')).toBe(
     `machine key ${keyId} was revoked in this space and cannot be trusted again\ncleared by: on that machine run \`${PLATFORM_SLUG} machine config machine init --space named-space\` to make a new key, then \`${PLATFORM_SLUG} machine config machine register --space named-space\`, and trust the new key with \`${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey> --space named-space\``,
   )
 })

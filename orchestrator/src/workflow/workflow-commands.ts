@@ -16,7 +16,6 @@ import { resolveReviewBase } from '../review/review-target.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { resolveBase } from '../worktree/worktree-caller.ts'
 import { parseAutonomy } from './autonomy.ts'
-import { obligationUuid, positive } from './workflow-command-arguments.ts'
 import { resolveProbeArtifact } from './probe-identifier.ts'
 import {
   promoteStepCatalogue,
@@ -25,6 +24,7 @@ import {
   setStepCatalogue,
   showResolvedStepCatalogue,
 } from './step-catalogue.ts'
+import { obligationUuid, positive } from './workflow-command-arguments.ts'
 import type { CommitCountPort } from './workflow-compose-branch.ts'
 import {
   awaitWorkflowRuling,

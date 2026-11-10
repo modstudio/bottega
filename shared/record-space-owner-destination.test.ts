@@ -33,13 +33,11 @@ describe('recordSpaceOwnerDestination', () => {
   test('returns the selected member space', () => {
     expect(
       recordSpaceOwnerDestination('lens set', { space: 'member-space' }, [], memberships),
-    ).toEqual(
-      {
-        kind: 'space',
-        spaceId: 'space-id',
-        slug: 'member-space',
-      },
-    )
+    ).toEqual({
+      kind: 'space',
+      spaceId: 'space-id',
+      slug: 'member-space',
+    })
   })
 
   test.each([

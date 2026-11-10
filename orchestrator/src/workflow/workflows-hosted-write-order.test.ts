@@ -184,7 +184,9 @@ test('hosted set failure is inert and success adopts identity, version, and even
   expect(db().query('SELECT record_id FROM workflow_event WHERE space_id=?').get(SPACE)).toEqual({
     record_id: eventId,
   })
-  expect(db().query('SELECT COUNT(*) AS n FROM workflow WHERE space_id=?').get(ACTIVE_SPACE)).toEqual({
+  expect(
+    db().query('SELECT COUNT(*) AS n FROM workflow WHERE space_id=?').get(ACTIVE_SPACE),
+  ).toEqual({
     n: 0,
   })
 })

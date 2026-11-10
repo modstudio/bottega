@@ -6,8 +6,8 @@ import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
-import { workflowWriteSpace } from './workflow-write-space.ts'
 import { setWorkflowCommand } from './workflow-commands.ts'
+import { workflowWriteSpace } from './workflow-write-space.ts'
 
 test('a local-only workflow write needs no space and makes no hosted call', async () => {
   let whoamiCalls = 0

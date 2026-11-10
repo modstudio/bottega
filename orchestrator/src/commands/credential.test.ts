@@ -1,10 +1,13 @@
 import { expect, test } from 'bun:test'
-import { Command } from 'commander'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { forgetRecordSessionToken, writeRecordSessionToken } from '../../../shared/record-session.ts'
+import {
+  forgetRecordSessionToken,
+  writeRecordSessionToken,
+} from '../../../shared/record-session.ts'
 import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import { registerCredentialCommands, validateBindingExclusivity } from './credential.ts'
 

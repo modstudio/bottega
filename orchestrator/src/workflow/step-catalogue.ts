@@ -34,8 +34,8 @@ import {
   isFloorKind,
   mayCloseOnAgentSelfRuling,
 } from './workflow-floor.ts'
-import { workflowReadSpaceFor } from './workflow-read-space.ts'
 import { workflowHostedSpace } from './workflow-hosted-space.ts'
+import { workflowReadSpaceFor } from './workflow-read-space.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
 import { workflowPromotionReport } from './workflow-shared-promotion.ts'
 import {
@@ -699,12 +699,7 @@ export const retireStepCatalogue = (
     local: () => lifecycle.retire(CATALOGUE, n, reason, author, d),
     hosted: async () => {
       if (!reason?.trim()) throw new Error('reason is required')
-      const spaceId = workflowHostedSpace(
-          d,
-          undefined,
-          destinationSpaceId,
-          effectiveProjectSpace,
-        ),
+      const spaceId = workflowHostedSpace(d, undefined, destinationSpaceId, effectiveProjectSpace),
         current = d
           .query<{ n: number }, [string]>(
             `SELECT v.n FROM step_catalogue_version v JOIN step_catalogue c ON c.record_id=v.catalogue_record_id WHERE c.slug='shared' AND c.space_id=? AND v.status='production' AND v.superseded_at IS NULL`,
