@@ -8,7 +8,6 @@ import { isDelegationKey } from '../../../shared/delegation-mode.ts'
 import { listMachineEntries } from '../../../shared/machine-config.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { resolveRecordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
-import { recordWriteSpace } from '../../../shared/record-write-space.ts'
 import {
   isShipToConfigKey,
   SHIP_TO_CONFIG_KEY,
@@ -127,12 +126,14 @@ export async function configWriteTarget(
       destination: { destinationSpaceId: destination.spaceId },
     }
   }
-  const decision = recordWriteSpace(
-    { kind: 'personal' },
-    { declaredSpaces: {}, personalSpaceId: who.personalSpaceId, memberships },
+  if (!who.personalSpaceId) throw new Error('personal space is not provisioned')
+  const destination = await resolveRecordSpaceOwnerDestination(
+    verb,
+    { space: who.personalSpaceId },
+    [],
+    async () => memberships,
   )
-  if ('refused' in decision) throw new Error(decision.remedy)
-  return { scope: 'user', destination: { destinationSpaceId: decision.spaceId } }
+  return { scope: 'user', destination: { destinationSpaceId: destination.spaceId } }
 }
 function expectedRowVersion(value: string | undefined): number | null | undefined {
   if (value === undefined) return undefined

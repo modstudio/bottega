@@ -55,7 +55,7 @@ import {
 } from './record-api-client-paths.ts'
 import { type RecordPortClient, recordPortClient } from './record-api-client-port.ts'
 import { RecordApiRequestError, responseRecord } from './record-api-client-response.ts'
-import { recordRunClient } from './record-api-client-run.ts'
+import { type RecordRunDestinationDecision, recordRunClient } from './record-api-client-run.ts'
 
 export { recordAuthRefusal, recordAuthToken } from './record-api-client-error.ts'
 export { RecordApiRequestError } from './record-api-client-response.ts'
@@ -104,7 +104,6 @@ import type {
   PublicRecordDocTreeItem,
   RecordDocSearchMatch,
 } from './record-public-docs.ts'
-import { recordRunWriteDestination } from './record-run-write-destination.ts'
 import { storedRecordToken, storedRecordTokenAsync } from './record-session.ts'
 import type { SnapshotKind } from './record-snapshots.ts'
 import type { RecordSubject } from './record-subjects.ts'
@@ -262,7 +261,7 @@ export type RecordApiClient = ProjectIdentityClient &
     putSnapshot(
       kind: SnapshotKind,
       input: { machineId: string; payload: unknown },
-      destination: RecordRequestDestination,
+      destination: RecordRunDestinationDecision,
     ): Promise<{ takenAt: string }>
     listSnapshots(): Promise<{
       items: Array<{
@@ -384,9 +383,21 @@ export type RecordApiClient = ProjectIdentityClient &
       input: { project: string; projectId?: string | null; id: string },
       destination?: RecordRequestDestination,
     ): Promise<RecordSubject>
-    putScore(runId: string, input: VerdictInput): Promise<void>
-    voidRun(runId: string, input: { reason: string }): Promise<void>
-    unvoidRun(runId: string, input: { note: string }): Promise<void>
+    putScore(
+      runId: string,
+      input: VerdictInput,
+      destination: RecordRunDestinationDecision,
+    ): Promise<void>
+    voidRun(
+      runId: string,
+      input: { reason: string },
+      destination: RecordRunDestinationDecision,
+    ): Promise<void>
+    unvoidRun(
+      runId: string,
+      input: { note: string },
+      destination: RecordRequestDestination,
+    ): Promise<void>
     listScores(query: {
       updatedSince?: string
       limit?: number
@@ -760,10 +771,7 @@ export function recordApiClient(request = recordApiRequest): RecordApiClient {
     ...recordBoardClient(request),
     ...recordApiBoardWatchClient(),
   } as RecordApiClient
-  Object.assign(
-    client,
-    recordRunClient(request, (runId) => recordRunWriteDestination(client, runId)),
-  )
+  Object.assign(client, recordRunClient(request))
   return client
 }
 

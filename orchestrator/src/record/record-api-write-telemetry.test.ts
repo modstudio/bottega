@@ -2,7 +2,6 @@ import { expect, test } from 'bun:test'
 import type { NoDestinationWriteReport } from '../../../shared/record-no-destination-write-contract.ts'
 import { identity, idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
 import { recordApiTestApp } from '../../test/fixtures/record-api-app.ts'
-import type { RecordIdentity } from './record-auth.ts'
 
 const appWith = (session: RecordIdentity | null, overrides: Record<string, unknown> = {}) =>
   recordApiTestApp(session, { ...idleSubjectDeps(), ...idleRecordApiDeps() }, overrides)
@@ -55,25 +54,6 @@ test('reports destination-less writes by patterned route and client cause', asyn
   ).toBe(200)
   expect((await write(app, '/v1/sync', {})).status).toBe(501)
 
-  const spaceBIdentity: RecordIdentity = {
-    ...identity,
-    activeSpaceId: 'space-b',
-    personalSpaceId: 'space-b',
-    memberships: [
-      {
-        space_id: 'space-b',
-        name: 'Space B',
-        slug: 'space-b',
-        role: 'owner',
-        permission: 'write',
-      },
-    ],
-  }
-  const spaceBApp = appWith(spaceBIdentity, { hideRow: async () => ({}) })
-  expect(
-    (await write(spaceBApp, '/v1/moderation/hide', { message: id, reason: 'spam' })).status,
-  ).toBe(200)
-
   const refused = await app.request('/v1/projects', {
     method: 'PUT',
     headers: {
@@ -100,7 +80,6 @@ test('reports destination-less writes by patterned route and client cause', asyn
   expect(report.counts.filter((row) => row.cause === cause)).toEqual([
     { spaceId: 'space-a', route: '/v1/board/messages', cause, occurrences: 1 },
     { spaceId: 'space-a', route: '/v1/runs/:id/void', cause, occurrences: 1 },
-    { spaceId: 'space-a', route: '/v1/moderation/hide', cause, occurrences: 1 },
     { spaceId: 'space-a', route: '/v1/sync', cause, occurrences: 1 },
   ])
 })

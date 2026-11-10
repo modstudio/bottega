@@ -155,24 +155,12 @@ export const recordModules: RecordModule[] = [
     '../../shared/record-id.ts',
     './database/db.ts',
   ]),
-  module('orchestrator/src/record/record-api-client-transport.ts', [
-    '../../../shared/bounded-fetch.ts',
-    '../../../shared/brand.ts',
-    '../../../shared/hosted-call-observation.ts',
-    '../../../shared/install-root.ts',
-    '../hosted-call-outcome.ts',
-    './record-auth.ts',
-  ]),
   module('orchestrator/src/record/record-api-client-board.ts', [
     './record-api-client-board-stream.ts',
     './record-api-client-paths.ts',
     './record-board-contract.ts',
   ]),
   module('orchestrator/src/record/record-api-client-response.ts', []),
-  module('orchestrator/src/record/record-api-client-run.ts', [
-    '../verdict/verdict-payload.ts',
-    './record-api-client-paths.ts',
-  ]),
   module('orchestrator/src/record/record-api-client-error.ts', [
     '../../../shared/record-remedies.ts',
     '../doc/doc-revision-conflict.ts',

@@ -18,7 +18,7 @@ test('space administration and run writes carry their resolved destinations', as
   const intake = recordOutsideIntakeClient(request)
   const blocks = recordOutsideBlockClient(request)
   const moderation = recordModerationClient(request)
-  const runs = recordRunClient(request, async () => ({ destinationSpaceId: 'project-space' }))
+  const runs = recordRunClient(request)
 
   await intake.setOutsideIntake('fixture', destination)
   await intake.pauseOutsideIntake(2, destination)
@@ -27,9 +27,16 @@ test('space administration and run writes carry their resolved destinations', as
   await blocks.unblockOutsideAuthor('user-a', destination)
   await moderation.hideRow({ message: 'message-a', reason: 'spam' }, destination)
   await moderation.unhideRow({ message: 'message-a' }, destination)
-  await runs.putScore('run-a', { delivery: 'full' } as never)
-  await runs.voidRun('run-a', { reason: 'duplicate' })
-  await runs.unvoidRun('run-a', { note: 'restored' })
+  const projectDestination = { spaceId: 'project-space' }
+  await runs.putScore('run-a', { delivery: 'full' } as never, projectDestination)
+  await runs.voidRun('run-a', { reason: 'duplicate' }, projectDestination)
+  await runs.unvoidRun('run-a', { note: 'restored' }, projectDestination)
+  await expect(
+    runs.putScore('run-b', { delivery: 'full' } as never, {
+      refused: 'undeclared-project',
+      remedy: 'project fixture has no declared record space',
+    }),
+  ).rejects.toThrow('project fixture has no declared record space')
 
   expect(calls).toEqual([
     { path: '/v1/outside-intake', destination },
