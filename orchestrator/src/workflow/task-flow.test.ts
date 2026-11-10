@@ -56,7 +56,7 @@ function installKeylessTaskFlowWorkflow(d: ReturnType<typeof cursorDatabase>, sl
   promoteWorkflowLocal(slug, draft.n, 'publish task-flow adoption fixture', 'test', d)
 }
 
-test('cursor commands attach, refuse overlap, finish, re-enter, and abandon task stages', () => {
+test('cursor commands attach, refuse overlap, finish, re-enter, and abandon task stages', async () => {
   const d = cursorDatabase()
   const args = { key: 'DEV-FLOW' }
   const context = {
@@ -69,7 +69,7 @@ test('cursor commands attach, refuse overlap, finish, re-enter, and abandon task
   installTaskFlowLifecycleWorkflow(d, plan)
   installTaskFlowLifecycleWorkflow(d, ship)
 
-  const opened = composeWorkflowWithCursor(plan, 'fixture', 'default', args, context, d, {}, {})
+  const opened = await composeWorkflowWithCursor(plan, 'fixture', 'default', args, context, d, {}, {})
   const planCursor = opened.cursor!.id
   const pointers = (cursorNumber: number) =>
     d
@@ -91,15 +91,15 @@ test('cursor commands attach, refuse overlap, finish, re-enter, and abandon task
     openStage: planPointers.cursorId,
     cursorFlow: planPointers.flowId,
   })
-  expect(() =>
+  await expect(
     composeWorkflowWithCursor(ship, 'fixture', 'default', args, context, d, {}, {}),
-  ).toThrow(`task DEV-FLOW already has open stage cursor ${planCursor} ${plan} default`)
+  ).rejects.toThrow(`task DEV-FLOW already has open stage cursor ${planCursor} ${plan} default`)
 
   d.query("UPDATE workflow_cursor SET enforcement='note-only' WHERE number=?").run(planCursor)
   nextWorkflowStep(plan, 'fixture', 'default', args, 'plan finished', context, d, {}, testPorts)
   expect(pointers(planCursor).openStage).toBeNull()
 
-  const reentered = composeWorkflowWithCursor(ship, 'fixture', 'default', args, context, d, {}, {})
+  const reentered = await composeWorkflowWithCursor(ship, 'fixture', 'default', args, context, d, {}, {})
   const shipCursor = reentered.cursor!.id
   const shipPointers = pointers(shipCursor)
   expect(reentered.cursor?.opened).toBe(true)
@@ -108,13 +108,13 @@ test('cursor commands attach, refuse overlap, finish, re-enter, and abandon task
     cursorFlow: shipPointers.flowId,
   })
 
-  abandonCursor(ship, 'fixture', 'default', args, 'stage no longer needed', context, d)
+  await abandonCursor(ship, 'fixture', 'default', args, 'stage no longer needed', context, d)
   expect(d.query('SELECT open_stage_cursor_record_id openStage FROM task_flow').get()).toEqual({
     openStage: null,
   })
 })
 
-test('keyed compose and advance enqueue both stage and flow while task-less compose enqueues neither', () => {
+test('keyed compose and advance enqueue both stage and flow while task-less compose enqueues neither', async () => {
   const d = cursorDatabase()
   const workflow = 'task-flow-outbox'
   installTaskFlowLifecycleWorkflow(d, workflow, ['score', 'complete'])
@@ -125,7 +125,7 @@ test('keyed compose and advance enqueue both stage and flow while task-less comp
     taskStatusCategory: 'active',
   }
 
-  const opened = composeWorkflowWithCursor(workflow, 'fixture', 'default', args, context, d, {}, {})
+  const opened = await composeWorkflowWithCursor(workflow, 'fixture', 'default', args, context, d, {}, {})
   const cursor = opened.cursor!.id
   expect(
     d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%' ORDER BY kind").all(),
@@ -191,7 +191,7 @@ test('keyed compose and advance enqueue both stage and flow while task-less comp
   d.query("DELETE FROM outbox WHERE kind LIKE 'task_flow%'").run()
   const tasklessWorkflow = 'task-flow-taskless'
   installTaskFlowLifecycleWorkflow(d, tasklessWorkflow)
-  composeWorkflowWithCursor(
+  await composeWorkflowWithCursor(
     tasklessWorkflow,
     'fixture',
     'default',
@@ -214,8 +214,8 @@ test('answering a keyed stage ruling republishes its running state and revision'
     taskStatusCategory: 'active',
   }
   installTaskFlowLifecycleWorkflow(d, workflow)
-  composeWorkflowWithCursor(workflow, 'fixture', 'default', args, context, d, {}, {})
-  awaitWorkflowRuling(workflow, 'fixture', 'default', args, 'Proceed?', context, d, () => {})
+  await composeWorkflowWithCursor(workflow, 'fixture', 'default', args, context, d, {}, {})
+  await awaitWorkflowRuling(workflow, 'fixture', 'default', args, 'Proceed?', context, d, () => {})
 
   await ruleWorkflow(workflow, 'fixture', 'default', args, 'Proceed.', true, 'mcp', context, d)
 
@@ -229,11 +229,11 @@ test('answering a keyed stage ruling republishes its running state and revision'
   expect(JSON.parse(row.payload)).toMatchObject({ state: 'running', revision: row.revision })
 })
 
-test('task adoption attaches a flow so a later advance publishes the stage', () => {
+test('task adoption attaches a flow so a later advance publishes the stage', async () => {
   const d = cursorDatabase()
   const workflow = 'task-flow-adoption-outbox'
   installKeylessTaskFlowWorkflow(d, workflow)
-  const opened = composeWorkflowWithCursor(
+  const opened = await composeWorkflowWithCursor(
     workflow,
     'fixture',
     'default',
@@ -287,7 +287,7 @@ test('task adoption attaches a flow so a later advance publishes the stage', () 
   expect(JSON.parse(row.payload).flowRecordId).toBe(row.task_flow_record_id)
 })
 
-test('task adoption refuses when that task already has another open stage', () => {
+test('task adoption refuses when that task already has another open stage', async () => {
   const d = cursorDatabase()
   installTaskFlowLifecycleWorkflow(d, 'task-flow-existing-stage')
   installKeylessTaskFlowWorkflow(d, 'task-flow-adoption-conflict')
@@ -295,7 +295,7 @@ test('task adoption refuses when that task already has another open stage', () =
     session: 'task-flow-adoption-conflict',
     taskRecordId: 'task-DEV-ADOPT-CONFLICT',
   }
-  composeWorkflowWithCursor(
+  await composeWorkflowWithCursor(
     'task-flow-existing-stage',
     'fixture',
     'default',
@@ -305,7 +305,7 @@ test('task adoption refuses when that task already has another open stage', () =
     {},
     {},
   )
-  const keyless = composeWorkflowWithCursor(
+  const keyless = await composeWorkflowWithCursor(
     'task-flow-adoption-conflict',
     'fixture',
     'default',
@@ -364,7 +364,7 @@ function expectPendingStageState(
   expect(JSON.parse(row.payload)).toMatchObject({ state, revision: row.revision })
 }
 
-test('finishing a keyed stage enqueues the cleared task flow at its local revision', () => {
+test('finishing a keyed stage enqueues the cleared task flow at its local revision', async () => {
   const d = cursorDatabase()
   const workflow = 'task-flow-finish-outbox'
   const args = { key: 'DEV-FINISH-OUTBOX' }
@@ -375,7 +375,7 @@ test('finishing a keyed stage enqueues the cleared task flow at its local revisi
   }
   installTaskFlowLifecycleWorkflow(d, workflow)
 
-  const opened = composeWorkflowWithCursor(workflow, 'fixture', 'default', args, context, d, {}, {})
+  const opened = await composeWorkflowWithCursor(workflow, 'fixture', 'default', args, context, d, {}, {})
   d.query("UPDATE workflow_cursor SET enforcement='note-only' WHERE number=?").run(
     opened.cursor!.id,
   )
@@ -385,7 +385,7 @@ test('finishing a keyed stage enqueues the cleared task flow at its local revisi
   expectPendingStageState(d, 'done')
 })
 
-test('abandoning a keyed stage enqueues the cleared task flow at its local revision', () => {
+test('abandoning a keyed stage enqueues the cleared task flow at its local revision', async () => {
   const d = cursorDatabase()
   const workflow = 'task-flow-abandon-outbox'
   const args = { key: 'DEV-ABANDON-OUTBOX' }
@@ -396,14 +396,14 @@ test('abandoning a keyed stage enqueues the cleared task flow at its local revis
   }
   installTaskFlowLifecycleWorkflow(d, workflow)
 
-  composeWorkflowWithCursor(workflow, 'fixture', 'default', args, context, d, {}, {})
-  abandonCursor(workflow, 'fixture', 'default', args, 'abandon', context, d)
+  await composeWorkflowWithCursor(workflow, 'fixture', 'default', args, context, d, {}, {})
+  await abandonCursor(workflow, 'fixture', 'default', args, 'abandon', context, d)
 
   expectPendingFlowOutboxCleared(d)
   expectPendingStageState(d, 'abandoned')
 })
 
-test('one task flow refuses a second open stage and retains re-entry history', () => {
+test('one task flow refuses a second open stage and retains re-entry history', async () => {
   const d = migratedTestDatabase()
   try {
     const projectId = newRecordId()
@@ -500,7 +500,7 @@ test('one task flow refuses a second open stage and retains re-entry history', (
   }
 })
 
-test('an unknown task status preserves the projected flow state', () => {
+test('an unknown task status preserves the projected flow state', async () => {
   const d = migratedTestDatabase()
   try {
     d.query(
@@ -528,7 +528,7 @@ test('an unknown task status preserves the projected flow state', () => {
   }
 })
 
-test('keyed selection adopts an open cursor left without a flow by the backfill', () => {
+test('keyed selection adopts an open cursor left without a flow by the backfill', async () => {
   const d = migratedTestDatabase()
   try {
     const projectId = newRecordId()
@@ -576,7 +576,7 @@ test('keyed selection adopts an open cursor left without a flow by the backfill'
   }
 })
 
-test('unreachable takeover refuses without changing takeover or revision', () => {
+test('unreachable takeover refuses without changing takeover or revision', async () => {
   const d = cursorDatabase()
   const workflow = 'task-flow-unreachable-takeover'
   const args = { key: 'DEV-UNREACHABLE' }
@@ -586,7 +586,7 @@ test('unreachable takeover refuses without changing takeover or revision', () =>
     taskStatusCategory: 'active',
   }
   installTaskFlowLifecycleWorkflow(d, workflow, ['score', 'complete'])
-  const opened = composeWorkflowWithCursor(
+  const opened = await composeWorkflowWithCursor(
     workflow,
     'fixture',
     'default',
@@ -628,7 +628,7 @@ test('unreachable takeover refuses without changing takeover or revision', () =>
   ).toEqual(before)
 })
 
-test('takeover without a keyed record read refuses with the --key remedy', () => {
+test('takeover without a keyed record read refuses with the --key remedy', async () => {
   const d = cursorDatabase()
   const workflow = 'task-flow-not-attempted-takeover'
   const args = { key: 'DEV-NOT-ATTEMPTED' }
@@ -638,7 +638,7 @@ test('takeover without a keyed record read refuses with the --key remedy', () =>
     taskStatusCategory: 'active',
   }
   installTaskFlowLifecycleWorkflow(d, workflow, ['score', 'complete'])
-  const opened = composeWorkflowWithCursor(workflow, 'fixture', 'default', args, context, d, {}, {})
+  const opened = await composeWorkflowWithCursor(workflow, 'fixture', 'default', args, context, d, {}, {})
   const holder = newRecordId()
   d.query('UPDATE workflow_cursor SET last_advanced_machine_id=? WHERE number=?').run(
     holder,
@@ -652,7 +652,7 @@ test('takeover without a keyed record read refuses with the --key remedy', () =>
   )
 })
 
-test('a takeover refused for a missing close note leaves the cursor untouched', () => {
+test('a takeover refused for a missing close note leaves the cursor untouched', async () => {
   const d = cursorDatabase()
   const workflow = 'task-flow-takeover-missing-note'
   const args = { key: 'DEV-MISSING-NOTE' }
@@ -662,7 +662,7 @@ test('a takeover refused for a missing close note leaves the cursor untouched', 
     taskStatusCategory: 'active',
   }
   installTaskFlowLifecycleWorkflow(d, workflow, ['score', 'complete'])
-  const opened = composeWorkflowWithCursor(
+  const opened = await composeWorkflowWithCursor(
     workflow,
     'fixture',
     'default',

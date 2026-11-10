@@ -515,7 +515,7 @@ function registerAwaitWorkflowRulingTool(server: McpServer, ports: DocsMcpPorts)
         ports.hubTaskReader,
       )
       return text(
-        awaitWorkflowRuling(
+        await awaitWorkflowRuling(
           slug,
           project,
           effectiveMode,

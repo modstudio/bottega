@@ -5,7 +5,7 @@ import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database
 import { notifyWaitingItem } from '../operator/operator-waiting.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
 import { machineId } from '../record/machine-identity.ts'
-import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
+import { taskFlowRequestId, type TaskFlowIntentInput } from '../record/record-task-flow-write-contract.ts'
 import { writeHostedTaskFlow } from '../record/record-task-flow-write-client.ts'
 import {
   answerWorkflowQuestion,
@@ -19,7 +19,6 @@ import {
   attachInsertedTaskFlowStage,
   cacheAdoptedTaskFlow,
   insertWorkflowCursorRow,
-  recordTaskFlowCursorMutation,
   stampWorkflowCursorMachine,
 } from './task-flow.ts'
 import { decideWorkflowTakeover, taskFlowState, workflowTakeoverNotice } from './task-flow-decision.ts'
@@ -39,7 +38,6 @@ import { cursorName, formatCursorOpened, formatCursorResumed } from './workflow-
 import {
   abandonWorkflowCursor,
   closeOpenWorkflowQuestion,
-  finishWorkflowCursor,
 } from './workflow-cursor-mutation.ts'
 import {
   refuseInvalidServe,
@@ -99,7 +97,11 @@ import {
 } from './workflow-self-ruling-mutation.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { linkResolvedWorkflowTask, withLinkedWorkflowTask } from './workflow-task-linking.ts'
-import { deleteWorkflowText, withWorkflowTextFacts } from './workflow-text.ts'
+import {
+  deleteWorkflowTextLocally,
+  workflowTextDeletionIds,
+  withWorkflowTextFacts,
+} from './workflow-text.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
 type CursorRow = WorkflowCloseCursor
@@ -378,8 +380,47 @@ export async function composeWorkflowWithCursor(
         )
       : null
     const start = decideCursorStart(existing?.state ?? null)
-    if (existing && start === 'reuse') applyCursorArguments(existing, args, d, true)
-    const row = await insertCursor(composition, context, d, autonomy, commitCount)
+    let row: CursorRow
+    if (existing && start === 'reuse') {
+      const resolved = resolveCursorArguments(existing, args, d, true)
+      const hosted = await writeHostedTaskFlow(
+        'stage-update',
+        {
+          requestId: taskFlowRequestId('stage-update', [existing.record_id, String(existing.revision)]),
+          stages: [
+            {
+              id: existing.record_id,
+              expectedRevision: existing.revision,
+              values: {
+                arguments: resolved.args,
+                closedStepNotes: JSON.parse(resolved.closed) as unknown[],
+                sessionId: context.session ?? existing.session_id,
+                updatedAt: resolved.updatedAt,
+              },
+            },
+          ],
+        },
+        context.taskFlowClient,
+      )
+      writeTransaction(() => {
+        const current = d
+          .query<{ revision: number }, [string]>('SELECT revision FROM workflow_cursor WHERE record_id=?')
+          .get(existing.record_id)
+        if (!current || current.revision !== existing.revision)
+          throw new Error(`workflow cursor ${existing.id} changed while composing; rerun the command`)
+        d.query(
+          'UPDATE workflow_cursor SET args=?,closed=?,session_id=COALESCE(?,session_id),updated_at=?,revision=? WHERE record_id=?',
+        ).run(
+          resolved.encoded,
+          resolved.closed,
+          context.session ?? null,
+          resolved.updatedAt,
+          hosted?.revisions[existing.record_id] ?? existing.revision + 1,
+          existing.record_id,
+        )
+      }, d)
+      row = d.query('SELECT number id,* FROM workflow_cursor WHERE record_id=?').get(existing.record_id) as CursorRow
+    } else row = await insertCursor(composition, context, d, autonomy, commitCount)
     return {
       ...cursorComposition(row, d, live),
       cursor: {
@@ -506,13 +547,56 @@ async function getWorkflowStepWithCursorImpl(
   if (decision.action !== 'serve') throw new Error('invalid serve transition')
   if (!row) row = await insertCursor(composition, context, d, autonomy, commitCount)
   if (decision.move || decision.resume) {
-    if (row.state === 'awaiting-ruling')
-      closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', nowIso(), d)
-    d.query(
-      `UPDATE workflow_cursor SET ordinal=?,step_slug=?,state='running',question=NULL,
-       session_id=COALESCE(?,session_id),updated_at=? WHERE record_id=?`,
-    ).run(decision.ordinal, decision.slug, context.session ?? null, nowIso(), row.record_id)
-    recordTaskFlowCursorMutation(row.record_id, d)
+    const at = nowIso()
+    const hosted = await writeHostedTaskFlow(
+      'stage-update',
+      {
+        requestId: taskFlowRequestId('stage-update', [row.record_id, String(row.revision)]),
+        stages: [
+          {
+            id: row.record_id,
+            expectedRevision: row.revision,
+            values: {
+              activeOrdinal: decision.ordinal,
+              activeSlug: decision.slug,
+              state: 'running',
+              question: null,
+              sessionId: context.session ?? row.session_id,
+              lastAdvancedMachineId: machineId(),
+              updatedAt: at,
+            },
+          },
+        ],
+      },
+      context.taskFlowClient,
+    )
+    writeTransaction(() => {
+      const current = d
+        .query<{ revision: number }, [string]>('SELECT revision FROM workflow_cursor WHERE record_id=?')
+        .get(row.record_id)
+      if (!current || current.revision !== row.revision)
+        throw new Error(`workflow cursor ${row.id} changed while its step was served; rerun the command`)
+      if (row.state === 'awaiting-ruling')
+        closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, d)
+      d.query(
+        `UPDATE workflow_cursor SET ordinal=?,step_slug=?,state='running',question=NULL,
+         session_id=COALESCE(?,session_id),updated_at=?,opened_machine_id=COALESCE(opened_machine_id,?),
+         last_advanced_machine_id=?,revision=? WHERE record_id=?`,
+      ).run(
+        decision.ordinal,
+        decision.slug,
+        context.session ?? null,
+        at,
+        machineId(),
+        machineId(),
+        hosted?.revisions[row.record_id] ?? row.revision + 1,
+        row.record_id,
+      )
+      row.revision = hosted?.revisions[row.record_id] ?? row.revision + 1
+      row.ordinal = decision.ordinal
+      row.step_slug = decision.slug
+      row.state = 'running'
+    }, d)
   }
   const served = withWorkflowTextFacts(
     getWorkflowStep(
@@ -634,54 +718,37 @@ function persistFloorClose(
   decision: Extract<FloorDecision, { action: 'allow' }>,
   floors: Floor[],
   at: string,
-  d: Database,
-): Pick<ClosedStep, 'evidence' | 'deferred' | 'satisfied'> {
+): Pick<ClosedStep, 'evidence' | 'deferred' | 'satisfied'> & {
+  obligationInsert?: Record<string, unknown>
+  obligationUpdate?: Record<string, unknown>
+} {
   let deferred: ClosedStep['deferred']
+  let obligationInsert: Record<string, unknown> | undefined
   if (decision.defer) {
     const floor = floors.find((item) => item.kind === decision.defer?.floor)
-    const inserted = d
-      .query<{ id: string }, (string | number | null)[]>(
-        `INSERT INTO workflow_obligation
-          (record_id,cursor_record_id,step_ordinal,step_slug,floor,require_pull_request,operator_ruling,
-           expected_exit_code,expected_status,floor_deferrable,reason,session_id,created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id id`,
-      )
-      .get(
-        newRecordId(),
-        row.record_id,
-        row.ordinal + 1,
-        row.step_slug,
-        decision.defer.floor,
-        floor?.requirePullRequest ? 1 : 0,
-        floor?.operatorRuling ? 1 : 0,
-        floor?.expectedExitCode ?? DEFAULT_EXPECTED_EXIT_CODE,
-        floor?.expectedStatus ?? DEFAULT_EXPECTED_STATUS,
-        floor?.deferrable ? 1 : 0,
-        decision.defer.reason,
-        row.session_id,
-        at,
-      )
-    if (!inserted) throw new Error('obligation was not recorded')
-    deferred = { id: inserted.id, floor: decision.defer.floor, reason: decision.defer.reason }
-  }
-  if (decision.satisfyId) {
-    d.query(
-      `UPDATE workflow_obligation
-          SET satisfied_at=?,satisfied_step_ordinal=?,satisfied_step_slug=?,satisfied_evidence=?
-        WHERE record_id=? AND cursor_record_id=? AND satisfied_at IS NULL`,
-    ).run(
-      at,
-      row.ordinal + 1,
-      row.step_slug,
-      JSON.stringify(decision.refs),
-      decision.satisfyId,
-      row.record_id,
-    )
+    const id = newRecordId()
+    deferred = { id, floor: decision.defer.floor, reason: decision.defer.reason }
+    obligationInsert = {
+      id, stageRecordId: row.record_id, stepOrdinal: row.ordinal + 1, stepSlug: row.step_slug,
+      floor: decision.defer.floor, requirePullRequest: Boolean(floor?.requirePullRequest),
+      expectedExitCode: floor?.expectedExitCode ?? DEFAULT_EXPECTED_EXIT_CODE,
+      expectedStatus: floor?.expectedStatus ?? DEFAULT_EXPECTED_STATUS,
+      floorDeferrable: Boolean(floor?.deferrable), reason: decision.defer.reason,
+      sessionId: row.session_id, createdAt: at, satisfiedAt: null, satisfiedStepOrdinal: null,
+      satisfiedStepSlug: null, satisfiedEvidence: null, abandonedAt: null, abandonedReason: null,
+      operatorRuling: Boolean(floor?.operatorRuling),
+    }
   }
   return {
     ...(decision.refs.length ? { evidence: decision.refs } : {}),
     ...(deferred ? { deferred } : {}),
     ...(decision.satisfyId ? { satisfied: decision.satisfyId } : {}),
+    ...(obligationInsert ? { obligationInsert } : {}),
+    ...(decision.satisfyId ? { obligationUpdate: {
+      id: decision.satisfyId, stageRecordId: row.record_id, satisfiedAt: at,
+      satisfiedStepOrdinal: row.ordinal + 1, satisfiedStepSlug: row.step_slug,
+      satisfiedEvidence: decision.refs,
+    } } : {}),
   }
 }
 
@@ -696,9 +763,10 @@ function appendWorkflowClose(
   skipped: ReturnType<typeof decideConditionalAdvance>['skipped'],
   reentered: ReturnType<typeof decideConditionalAdvance>['reentered'],
   at: string,
-  d: Database,
-): void {
+): { obligationInsert?: Record<string, unknown>; obligationUpdate?: Record<string, unknown> } {
   const review = composition.steps[row.ordinal]?.resolvedAutonomy.value === 'review'
+  const floorPersistence = persistFloorClose(row, floor, floors, at)
+  const { obligationInsert, obligationUpdate, ...trailFields } = floorPersistence
   closed.push({
     n: row.ordinal + 1,
     slug: row.step_slug,
@@ -707,7 +775,7 @@ function appendWorkflowClose(
     ...(outcome ? { outcome } : {}),
     ...(reentered ? { reentered } : {}),
     ...(review ? { review: true as const } : {}),
-    ...persistFloorClose(row, floor, floors, at, d),
+    ...trailFields,
   })
   for (const skippedStep of skipped) {
     const condition = skippedStep.step.when!
@@ -719,6 +787,7 @@ function appendWorkflowClose(
       skipped: condition,
     })
   }
+  return { obligationInsert, obligationUpdate }
 }
 
 function closeFloorsForStep(
@@ -771,7 +840,7 @@ function closeFloorsForStep(
   return { closed, advance, floors, floor }
 }
 
-function persistWorkflowAdvance(
+async function persistWorkflowAdvance(
   row: CursorRow,
   composition: ReturnType<typeof composeWorkflow>,
   closed: CursorTrailEntry[],
@@ -783,11 +852,9 @@ function persistWorkflowAdvance(
   context: WorkflowCursorContext,
   d: Database,
   takeoverFromMachineId: string | null,
-): void {
+): Promise<void> {
   const at = nowIso()
-  if (row.state === 'awaiting-ruling')
-    closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, d)
-  appendWorkflowClose(
+  const obligationPlan = appendWorkflowClose(
     row,
     composition,
     closed,
@@ -798,32 +865,74 @@ function persistWorkflowAdvance(
     advance.skipped,
     advance.reentered,
     at,
-    d,
   )
-  if (takeoverFromMachineId)
-    d.query('UPDATE workflow_cursor SET taken_over_from_machine_id=? WHERE record_id=?').run(
-      takeoverFromMachineId,
-      row.record_id,
+  const finishing = advance.ordinal === null
+  const next = finishing ? null : composition.steps[advance.ordinal as number]!
+  const deleteTextIds = finishing || composition.steps[row.ordinal]!.needs.includes('workflow-text')
+    ? workflowTextDeletionIds(row.record_id, Boolean(row.task_record_id), d)
+    : []
+  const flow = finishing && row.task_flow_record_id
+    ? d.query<{ record_id: string; revision: number }, [string]>(
+        'SELECT record_id,revision FROM task_flow WHERE record_id=?',
+      ).get(row.task_flow_record_id)
+    : null
+  const parts = [{ id: row.record_id, revision: row.revision }, ...(flow ? [{ id: flow.record_id, revision: flow.revision }] : [])]
+    .sort((a, b) => a.id.localeCompare(b.id)).flatMap(({ id, revision }) => [id, String(revision)])
+  const obligationInserts: NonNullable<TaskFlowIntentInput<'advance'>['obligationInserts']> = obligationPlan.obligationInsert
+    ? [obligationPlan.obligationInsert] as NonNullable<TaskFlowIntentInput<'advance'>['obligationInserts']>
+    : []
+  const obligationUpdates: NonNullable<TaskFlowIntentInput<'advance'>['obligationUpdates']> = obligationPlan.obligationUpdate
+    ? [obligationPlan.obligationUpdate] as NonNullable<TaskFlowIntentInput<'advance'>['obligationUpdates']>
+    : []
+  const hosted = await writeHostedTaskFlow(
+    'advance',
+    {
+      requestId: taskFlowRequestId('advance', parts),
+      stage: { id: row.record_id, expectedRevision: row.revision, values: {
+        arguments: JSON.parse(row.args) as Record<string, string>,
+        activeOrdinal: next ? advance.ordinal! : row.ordinal,
+        activeSlug: next?.slug ?? row.step_slug,
+        state: finishing ? 'done' : 'running', closedStepNotes: closed, question: null,
+        sessionId: context.session ?? row.session_id, takenOverFromMachineId: takeoverFromMachineId,
+        lastAdvancedMachineId: machineId(), updatedAt: at,
+      } },
+      ...(flow ? { flow: { id: flow.record_id, expectedRevision: flow.revision, values: {
+        openStageRecordId: null, updatedMachineId: machineId(), updatedAt: at,
+      } } } : {}),
+      obligationInserts, obligationUpdates, deleteTextIds,
+    },
+    context.taskFlowClient,
+  )
+  writeTransaction(() => {
+    const current = d.query<{ revision: number }, [string]>('SELECT revision FROM workflow_cursor WHERE record_id=?').get(row.record_id)
+    if (!current || current.revision !== row.revision) throw new Error(`workflow cursor ${row.id} changed while it advanced; rerun the command`)
+    if (row.state === 'awaiting-ruling') closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, d)
+    for (const insert of obligationInserts) d.query(`INSERT INTO workflow_obligation
+      (record_id,cursor_record_id,step_ordinal,step_slug,floor,require_pull_request,operator_ruling,
+       expected_exit_code,expected_status,floor_deferrable,reason,session_id,created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      insert.id, insert.stageRecordId, insert.stepOrdinal, insert.stepSlug, insert.floor,
+      insert.requirePullRequest ? 1 : 0, insert.operatorRuling ? 1 : 0, insert.expectedExitCode,
+      insert.expectedStatus, insert.floorDeferrable ? 1 : 0, insert.reason, insert.sessionId, insert.createdAt,
     )
-  if (advance.ordinal === null || composition.steps[row.ordinal]!.needs.includes('workflow-text'))
-    deleteWorkflowText(row.record_id, Boolean(row.task_record_id), d)
-  if (advance.ordinal === null) {
-    finishWorkflowCursor(row, closed, context, at, d)
-    return
-  }
-  const next = composition.steps[advance.ordinal]!
-  d.query(
-    `UPDATE workflow_cursor SET ordinal=?,step_slug=?,state='running',closed=?,question=NULL,
-     session_id=COALESCE(?,session_id),updated_at=? WHERE record_id=?`,
-  ).run(
-    advance.ordinal,
-    next.slug,
-    JSON.stringify(closed),
-    context.session ?? null,
-    at,
-    row.record_id,
-  )
-  recordTaskFlowCursorMutation(row.record_id, d)
+    for (const update of obligationUpdates) d.query(`UPDATE workflow_obligation SET
+      satisfied_at=?,satisfied_step_ordinal=?,satisfied_step_slug=?,satisfied_evidence=?
+      WHERE record_id=? AND cursor_record_id=? AND satisfied_at IS NULL`).run(
+      update.satisfiedAt ?? null, update.satisfiedStepOrdinal ?? null, update.satisfiedStepSlug ?? null,
+      JSON.stringify(update.satisfiedEvidence ?? null), update.id, update.stageRecordId,
+    )
+    deleteWorkflowTextLocally(deleteTextIds, d)
+    d.query(`UPDATE workflow_cursor SET args=?,ordinal=?,step_slug=?,state=?,closed=?,question=NULL,
+      session_id=COALESCE(?,session_id),updated_at=?,taken_over_from_machine_id=COALESCE(?,taken_over_from_machine_id),
+      opened_machine_id=COALESCE(opened_machine_id,?),last_advanced_machine_id=?,revision=? WHERE record_id=?`).run(
+      row.args, next ? advance.ordinal! : row.ordinal, next?.slug ?? row.step_slug, finishing ? 'done' : 'running',
+      JSON.stringify(closed), context.session ?? null, at, takeoverFromMachineId, machineId(), machineId(),
+      hosted?.revisions[row.record_id] ?? row.revision + 1, row.record_id,
+    )
+    if (flow) d.query(`UPDATE task_flow SET open_stage_cursor_record_id=NULL,updated_at=?,updated_machine_id=?,revision=? WHERE record_id=?`).run(
+      at, machineId(), hosted?.revisions[flow.record_id] ?? flow.revision + 1, flow.record_id,
+    )
+  }, d)
 }
 
 async function nextWorkflowStepImpl(
@@ -864,7 +973,9 @@ async function nextWorkflowStepImpl(
     }
   }
   refuseTerminalCursor(row)
-  applyCursorArguments(row, args, d)
+  const resolvedArguments = resolveCursorArguments(row, args, d)
+  row.args = resolvedArguments.encoded
+  row.closed = resolvedArguments.closed
   refuseKeylessStepClose(row, evidence.task, d, live)
   await adoptWorkflowTask(
     row,
@@ -878,7 +989,7 @@ async function nextWorkflowStepImpl(
   const step = composition.steps[row.ordinal]!
   refuseMissingCloseNote(note, step.n, step.slug)
   const close = closeFloorsForStep(row, composition, evidence, ports, selfRuling, outcome, d)
-  persistWorkflowAdvance(
+  await persistWorkflowAdvance(
     row,
     composition,
     close.closed,

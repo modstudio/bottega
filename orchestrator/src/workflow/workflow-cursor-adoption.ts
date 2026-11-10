@@ -1,7 +1,7 @@
 // concern: workflow cursor task adoption
 /** Atomically adopts a task key and republishes every cursor-bound question. */
 import type { Database } from 'bun:sqlite'
-import { nowIso } from '../database/db.ts'
+import { nowIso, writeTransaction } from '../database/db.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
@@ -115,14 +115,15 @@ export async function adoptWorkflowTask(
       )
       stageRevision = updated?.revisions[row.record_id] ?? stageRevision
     }
-    const current = d
-      .query<{ revision: number }, [string]>('SELECT revision FROM workflow_cursor WHERE record_id=?')
-      .get(row.record_id)
-    if (!current || current.revision !== row.revision)
-      throw new Error(`workflow cursor ${row.id} changed while adopting ${key}; rerun the command`)
-    assignWorkflowTaskKey(row, key, adoptedTaskId, d)
-    if (adopted)
-      cacheAdoptedTaskFlow(
+    writeTransaction(() => {
+      const current = d
+        .query<{ revision: number }, [string]>('SELECT revision FROM workflow_cursor WHERE record_id=?')
+        .get(row.record_id)
+      if (!current || current.revision !== row.revision)
+        throw new Error(`workflow cursor ${row.id} changed while adopting ${key}; rerun the command`)
+      assignWorkflowTaskKey(row, key, adoptedTaskId, d)
+      if (adopted)
+        cacheAdoptedTaskFlow(
         {
           project: row.project,
           taskRecordId: adoptedTaskId,
@@ -135,11 +136,11 @@ export async function adoptWorkflowTask(
         },
         d,
       )
-    else {
-    const flow = selectTaskFlowStage(
+      else {
+        const flow = selectTaskFlowStage(
       {
         project: row.project,
-        taskRecordId: row.task_record_id,
+        taskRecordId: adoptedTaskId,
         taskKey: key,
         cursor: row.id,
         workflow: row.workflow_slug,
@@ -147,8 +148,9 @@ export async function adoptWorkflowTask(
       },
       d,
     )
-    attachTaskFlowStage(flow.flowRecordId, row.record_id, d)
-    }
+        attachTaskFlowStage(flow.flowRecordId, row.record_id, d)
+      }
+    }, d)
     return
   }
   assignWorkflowTaskKey(row, key, null, d)

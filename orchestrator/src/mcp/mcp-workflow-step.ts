@@ -64,7 +64,7 @@ async function workflowStep(
     step: effectiveMode ? undefined : stepSlug,
   })
   const result = effectiveMode
-    ? getWorkflowStepWithCursor(
+    ? await getWorkflowStepWithCursor(
         slug,
         project,
         stepSlug,

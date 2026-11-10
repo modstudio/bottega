@@ -826,7 +826,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
       databaseB.exec('PRAGMA foreign_keys=ON')
 
       setMachineValue('machine.id', machineA)
-      const opened = composeWorkflowWithCursor(
+      const opened = await composeWorkflowWithCursor(
         WORKFLOW,
         PROJECT,
         'default',

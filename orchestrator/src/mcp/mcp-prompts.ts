@@ -223,7 +223,7 @@ export function registerWorkflowPrompts(server: McpServer, hubTaskReader?: HubTa
             [
               ...reread,
               renderWorkflowComposition(
-                composeWorkflowWithCursor(
+                await composeWorkflowWithCursor(
                   prompt.name,
                   projectName,
                   mode,

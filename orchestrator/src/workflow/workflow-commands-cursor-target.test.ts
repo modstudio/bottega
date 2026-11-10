@@ -22,7 +22,7 @@ import {
 let priorSession: string | undefined
 const previousRecordUrl = process.env.BOTTEGA_RECORD_API_URL
 
-beforeEach(() => {
+beforeEach(async () => {
   priorSession = process.env.CLAUDE_CODE_SESSION_ID
   process.env.CLAUDE_CODE_SESSION_ID = 'workflow-command-positionals'
 })
@@ -163,7 +163,7 @@ test('cursor verbs parse every documented positional form before flags', async (
   const steps = [currentStep, nextStep]
   registerFixtureProject(project)
   publishCursorWorkflow(slug, [{ slug: 'default', title: 'Default', default: true, steps }])
-  const opened = composeWorkflowWithCursor(
+  const opened = await composeWorkflowWithCursor(
     slug,
     project,
     'default',

@@ -94,7 +94,7 @@ const database = testDatabaseFixture((d) => {
 })
 
 function open(d: Database): number {
-  return getWorkflowStepWithCursor(
+  return await getWorkflowStepWithCursor(
     'text-fixture',
     'fixture',
     'text-source',
@@ -107,7 +107,7 @@ function open(d: Database): number {
 }
 
 const abandon = (d: Database, cursor: number, reason: string) =>
-  abandonCursor('text-fixture', 'fixture', 'default', {}, reason, context, d, cursor)
+  await abandonCursor('text-fixture', 'fixture', 'default', {}, reason, context, d, cursor)
 
 const rowCount = (d: Database, cursor: number) =>
   (
@@ -120,7 +120,7 @@ const rowCount = (d: Database, cursor: number) =>
   ).count
 
 describe('workflow text decisions', () => {
-  test('linked deletion selects only copied rows while unlinked deletion selects every row', () => {
+  test('linked deletion selects only copied rows while unlinked deletion selects every row', async () => {
     const cases = [
       { linked: false, copied: [], expected: ['one', 'two'] },
       { linked: true, copied: [], expected: [] },
@@ -137,7 +137,7 @@ describe('workflow text decisions', () => {
       ).toEqual(entry.expected)
   })
 
-  test('attach permission names both measured byte bounds and ownership', () => {
+  test('attach permission names both measured byte bounds and ownership', async () => {
     expect(
       decideWorkflowTextAttach({
         state: 'running',
@@ -180,7 +180,7 @@ describe('workflow text decisions', () => {
     })
   })
 
-  test('an attached-text reference is bound to its cursor and exact step', () => {
+  test('an attached-text reference is bound to its cursor and exact step', async () => {
     const attachment = {
       id: 'attachment-9',
       cursorId: 'cursor-3',
@@ -214,7 +214,7 @@ describe('workflow text decisions', () => {
     ).toBe(false)
   })
 
-  test('facts carry all text only for the declared cursor-local need, ordered by step and id', () => {
+  test('facts carry all text only for the declared cursor-local need, ordered by step and id', async () => {
     const rows = [
       {
         id: 'attachment-4',

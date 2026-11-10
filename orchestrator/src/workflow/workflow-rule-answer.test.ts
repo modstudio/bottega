@@ -9,7 +9,7 @@ import { awaitWorkflowRuling, composeWorkflowWithCursor, ruleWorkflow } from './
 import { args, context, database } from './workflow-cursor-test.fixture.ts'
 import { decideWorkflowRuleAnswer } from './workflow-rule-answer.ts'
 
-test('operator-ruling steps refuse agent answers', () => {
+test('operator-ruling steps refuse agent answers', async () => {
   const refusal = decideWorkflowRuleAnswer({
     fromOperator: false,
     operatorRuling: true,
@@ -53,8 +53,8 @@ test('a refused agent answer leaves an operator-ruling question open', async () 
     d,
   )
   promoteStepCatalogueLocal(draft.n, 'operator-ruling fixture', 'test', d)
-  composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
-  awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Proceed?', context, d, () => {})
+  await composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
+  await awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Proceed?', context, d, () => {})
 
   await expect(
     ruleWorkflow('flow', 'fixture', 'default', args, 'Proceed.', false, 'cli', context, d),
@@ -74,8 +74,8 @@ test('a refused agent answer leaves an operator-ruling question open', async () 
 
 test('a missing pinned step reports the cursor and step slug', async () => {
   const d = database()
-  composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
-  awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Proceed?', context, d, () => {})
+  await composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
+  await awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Proceed?', context, d, () => {})
   const pinned = d
     .query<{ record_id: string; definition: string }, []>(
       `SELECT v.record_id,v.definition FROM workflow_cursor c
@@ -101,8 +101,8 @@ test('a missing pinned step reports the cursor and step slug', async () => {
 test('ruleWorkflow refuses misspelled ruling text without recording it', async () => {
   const d = database()
   const misspelling = ['me', 'ida'].join('')
-  composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
-  awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Proceed?', context, d, () => {})
+  await composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
+  await awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Proceed?', context, d, () => {})
   await expect(
     ruleWorkflow(
       'flow',

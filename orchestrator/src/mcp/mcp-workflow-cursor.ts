@@ -34,7 +34,7 @@ export async function resolveMcpLinkedWorkflowCursor(
   return {
     context,
     selectedRow,
-    effectiveMode: resolveLinkedWorkflowCursorMode(
+    effectiveMode: await resolveLinkedWorkflowCursorMode(
       slug,
       project,
       requested,

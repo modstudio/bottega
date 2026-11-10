@@ -6,8 +6,10 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
+import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
+import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
+import { writeHostedTaskFlow } from '../record/record-task-flow-write-client.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
 import { abandonSelectedWorkflowCursorForClose, nextWorkflowStep } from './workflow-cursor.ts'
 import { cursorName } from './workflow-cursor-format.ts'
@@ -107,7 +109,19 @@ function uncopiedRows(cursorId: string, database: Database): CopyRow[] {
     .map((row) => ({ id: row.record_id, stepSlug: row.step_slug, body: row.body }))
 }
 
-function recordCopy(cursorId: string, textId: string, reference: string, database: Database): void {
+async function recordCopy(
+  cursorId: string,
+  textId: string,
+  reference: string,
+  database: Database,
+  client?: RecordTaskFlowClient,
+): Promise<void> {
+  const copiedAt = nowIso()
+  const id = taskFlowRequestId('copy-text', [cursorId, textId, reference])
+  await writeHostedTaskFlow('copy-text', {
+    requestId: taskFlowRequestId('copy-text', [id]),
+    row: { id, workflowTextRecordId: textId, stageRecordId: cursorId, taskDocumentReference: reference, copiedAt },
+  }, client)
   writeTransaction(() => {
     database
       .query(
@@ -115,7 +129,7 @@ function recordCopy(cursorId: string, textId: string, reference: string, databas
          (record_id,workflow_text_record_id,cursor_record_id,task_document_reference,copied_at)
          VALUES (?,?,?,?,?)`,
       )
-      .run(newRecordId(), textId, cursorId, reference, nowIso())
+      .run(id, textId, cursorId, reference, copiedAt)
   }, database)
 }
 
@@ -143,6 +157,7 @@ export async function copyWorkflowTextForCursor(
   database: Database = db(),
   taskReader: HubTaskReader = readHubTasks,
   documents: WorkflowTextDocumentPorts = productionWorkflowTextDocumentPorts,
+  client?: RecordTaskFlowClient,
 ): Promise<WorkflowTextCopyResult> {
   const rows = uncopiedRows(cursor.recordId, database)
   if (!cursor.taskRecordId || rows.length === 0)
@@ -167,7 +182,7 @@ export async function copyWorkflowTextForCursor(
         const reference =
           found?.reference ??
           (await documents.create(task.key, cursor.project, `${token} ${row.stepSlug}`, row.body))
-        recordCopy(cursor.recordId, row.id, reference, database)
+        await recordCopy(cursor.recordId, row.id, reference, database, client)
         copied.push({ id: row.id, documentReference: reference, reused: Boolean(found) })
         if (!found) existing.push({ reference, title: `${token} ${row.stepSlug}` })
       } catch (error) {
@@ -178,7 +193,7 @@ export async function copyWorkflowTextForCursor(
       }
     }
     if (cursor.state === 'done' || cursor.state === 'abandoned')
-      writeTransaction(() => deleteWorkflowText(cursor.recordId, true, database), database)
+      await deleteWorkflowText(cursor.recordId, true, database, client)
     return { cursor: cursor.number, copied, uncopied, unsupported: null }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
@@ -257,10 +272,11 @@ export async function closeCursorWithTextCopy(
     database,
     taskReader,
     documents,
+    input.context.taskFlowClient,
   )
   const result =
     input.action === 'next'
-      ? nextWorkflowStep(
+      ? await nextWorkflowStep(
           row,
           row.project,
           input.args,
@@ -273,7 +289,7 @@ export async function closeCursorWithTextCopy(
           input.outcome,
           input.live,
         )
-      : abandonSelectedWorkflowCursorForClose(
+      : await abandonSelectedWorkflowCursorForClose(
           row,
           input.reason!.trim(),
           input.context,

@@ -141,11 +141,11 @@ function closeChoice(d: Database, slug: string, outcome?: string): string {
 }
 
 function open(d: Database, slug: string): void {
-  composeWorkflowWithCursor(slug, 'fixture', 'default', args, context, d, {}, {})
+  await composeWorkflowWithCursor(slug, 'fixture', 'default', args, context, d, {}, {})
 }
 
 describe('conditional workflow cursor advance', () => {
-  test('a step declaring outcomes refuses a close without one', () => {
+  test('a step declaring outcomes refuses a close without one', async () => {
     const d = database()
     installConditionalFixture(d, 'conditional-required', ['score'])
     open(d, 'conditional-required')
@@ -154,7 +154,7 @@ describe('conditional workflow cursor advance', () => {
     )
   })
 
-  test('an unmet condition records a skip and serves the next eligible step', () => {
+  test('an unmet condition records a skip and serves the next eligible step', async () => {
     const d = database()
     installConditionalFixture(d, 'conditional-skip', ['score'])
     open(d, 'conditional-skip')
@@ -175,7 +175,7 @@ describe('conditional workflow cursor advance', () => {
       }),
     ])
     expect(
-      getWorkflowStepWithCursor(
+      await getWorkflowStepWithCursor(
         'conditional-skip',
         'fixture',
         'score',
@@ -188,7 +188,7 @@ describe('conditional workflow cursor advance', () => {
     ).toBe('complete')
   })
 
-  test('a met condition serves the conditional step', () => {
+  test('a met condition serves the conditional step', async () => {
     const d = database()
     installConditionalFixture(d, 'conditional-met', ['score'])
     open(d, 'conditional-met')
@@ -199,7 +199,7 @@ describe('conditional workflow cursor advance', () => {
     })
   })
 
-  test('a chain of two unmet conditions skips both', () => {
+  test('a chain of two unmet conditions skips both', async () => {
     const d = database()
     installConditionalFixture(d, 'conditional-chain', ['score', 'ship-triage'])
     open(d, 'conditional-chain')
@@ -215,7 +215,7 @@ describe('conditional workflow cursor advance', () => {
     ).toHaveLength(2)
   })
 
-  test('skipping conditional steps off the end finishes the cursor', () => {
+  test('skipping conditional steps off the end finishes the cursor', async () => {
     const d = database()
     installConditionalFixture(d, 'conditional-end', ['score'], [])
     open(d, 'conditional-end')
@@ -381,7 +381,7 @@ function insertGradedReview(d: Database): string {
 }
 
 describe('ruling outcomes and bounded re-entry', () => {
-  test('a mixed command-exit step refuses a failed exec and closes on a successful exec', () => {
+  test('a mixed command-exit step refuses a failed exec and closes on a successful exec', async () => {
     const d = database()
     installFlowFixture(
       d,
@@ -418,7 +418,7 @@ describe('ruling outcomes and bounded re-entry', () => {
     expect(close(recordExec(0))).toContain('is finished: 1 steps closed')
   })
 
-  test('a command-exit step applies the exit code declared for the chosen outcome', () => {
+  test('a command-exit step applies the exit code declared for the chosen outcome', async () => {
     const install = (d: Database, slug: string) => {
       installFlowFixture(
         d,
@@ -480,7 +480,7 @@ describe('ruling outcomes and bounded re-entry', () => {
     }
   })
 
-  test('a ruling outcome refuses without a ruling and closes with one', () => {
+  test('a ruling outcome refuses without a ruling and closes with one', async () => {
     const d = database()
     installFlowFixture(
       d,
@@ -499,7 +499,7 @@ describe('ruling outcomes and bounded re-entry', () => {
     expect(closeStep(d, 'ruling-outcome', 'fix', boundRuling(d))).toContain('flow-done body.')
   })
 
-  test('a non-ruling outcome closes on ordinary floors', () => {
+  test('a non-ruling outcome closes on ordinary floors', async () => {
     const d = database()
     installFlowFixture(
       d,
@@ -517,7 +517,7 @@ describe('ruling outcomes and bounded re-entry', () => {
     expect(closeStep(d, 'ordinary-outcome', 'clear')).toContain('flow-done body.')
   })
 
-  test('the first re-entry moves back, records pass 2, and a clean outcome advances', () => {
+  test('the first re-entry moves back, records pass 2, and a clean outcome advances', async () => {
     const d = database()
     installFlowFixture(
       d,
@@ -560,7 +560,7 @@ describe('ruling outcomes and bounded re-entry', () => {
     })
   })
 
-  test('a second re-entry without a ruling is refused and with a ruling re-enters', () => {
+  test('a second re-entry without a ruling is refused and with a ruling re-enters', async () => {
     const d = database()
     installFlowFixture(
       d,

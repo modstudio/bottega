@@ -10,7 +10,7 @@ import { closeStep, context, database } from './workflow-cursor-test.fixture.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
 describe('workflow cursor arguments', () => {
-  test('next persists a rebound argument and renders it in the following step', () => {
+  test('next persists a rebound argument and renders it in the following step', async () => {
     const d = database()
     const currentCatalogue = productionStepCatalogue(d).definition
     const catalogueDraft = setStepCatalogueLocal(
@@ -56,7 +56,7 @@ describe('workflow cursor arguments', () => {
       d,
     )
     promoteWorkflowLocal('rebind-fixture', draft.n, 'test fixture', 'test', d)
-    composeWorkflowWithCursor(
+    await composeWorkflowWithCursor(
       'rebind-fixture',
       'fixture',
       'default',
@@ -94,7 +94,7 @@ describe('workflow cursor arguments', () => {
     ])
   })
 
-  test('late cursor arguments merge into empty slots and conflicting values refuse', () => {
+  test('late cursor arguments merge into empty slots and conflicting values refuse', async () => {
     const none = new Set<string>()
     expect(decideCursorArguments({ key: 'DEV-822' }, { branch: 'DEV-822-work' }, none)).toEqual({
       action: 'merge',

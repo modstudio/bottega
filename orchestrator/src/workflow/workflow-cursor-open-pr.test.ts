@@ -49,9 +49,9 @@ function database(): Database {
   return d
 }
 
-test('open-pr does not advance from a review-lens run artifact', () => {
+test('open-pr does not advance from a review-lens run artifact', async () => {
   const d = database()
-  const composition = composeWorkflowWithCursor(
+  const composition = await composeWorkflowWithCursor(
     'flow',
     'fixture',
     'default',

@@ -4,7 +4,6 @@ import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
 import { db, sessionId, writeTransaction } from '../database/db.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
-import { selectTaskFlowStage } from './task-flow.ts'
 import { readThroughTaskFlow, type TaskFlowReadStatus } from './task-flow-read-through.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { workflowTaskBindingCommand } from './workflow-cursor-format.ts'
@@ -249,28 +248,19 @@ function selectKeyedTaskStage(
 ): SelectableCursorRow | null {
   const handled = cursor === undefined ? null : selectByHandle(cursor, identity, d)
   if (!taskRecordId) return handled
-  return writeTransaction(() => {
-    const selected = selectTaskFlowStage(
-      {
-        project: identity.project,
-        taskRecordId,
-        taskKey: identity.key,
-        statusCategory: taskStatusCategory,
-        workflow: identity.workflow,
-        mode: identity.mode,
-        ...(cursor === undefined ? {} : { cursor }),
-      },
-      d,
+  if (handled) return handled
+  const selected = d
+    .query<{ open_stage_cursor_record_id: string | null }, [string]>(
+      'SELECT open_stage_cursor_record_id FROM task_flow WHERE task_record_id=?',
     )
-    if (handled) return handled
-    if (selected.cursorRecordId) {
+    .get(taskRecordId)
+  if (selected?.open_stage_cursor_record_id) {
       const row = d
         .query(`SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor WHERE record_id=?`)
-        .get(selected.cursorRecordId) as SelectableCursorRow
+        .get(selected.open_stage_cursor_record_id) as SelectableCursorRow
       return validateIdentity(row, identity)
-    }
-    return null
-  }, d)
+  }
+  return null
 }
 
 export function selectWorkflowCursor(

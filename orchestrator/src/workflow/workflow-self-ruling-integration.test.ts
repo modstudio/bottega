@@ -65,7 +65,7 @@ function resolution(d: Database): AutonomyResolution {
 }
 
 function openAtRuling(d: Database): void {
-  composeWorkflowWithCursor(
+  await composeWorkflowWithCursor(
     'flow',
     'fixture',
     'default',
@@ -122,7 +122,7 @@ function selfRule(d: Database, question?: string): string {
   )
 }
 
-test('self-ruling records the answered question and closes the step atomically', () => {
+test('self-ruling records the answered question and closes the step atomically', async () => {
   const d = database()
   openAtRuling(d)
   const result = selfRule(d)
@@ -203,7 +203,7 @@ test('misspelled self-ruling is refused before recording or advancing', async ()
   expect(d.query('SELECT count(*) count FROM question').get()).toEqual({ count: 0 })
 })
 
-test('a close failure rolls back the self-ruling question and audit', () => {
+test('a close failure rolls back the self-ruling question and audit', async () => {
   const d = database()
   openAtRuling(d)
   d.exec(`CREATE TRIGGER fail_self_ruling_close BEFORE UPDATE ON workflow_cursor
@@ -220,7 +220,7 @@ test('a close failure rolls back the self-ruling question and audit', () => {
   expect(d.query('SELECT count(*) count FROM question_mutation_audit').get()).toEqual({ count: 0 })
 })
 
-test('self-ruling refuses ask autonomy without changing the cursor or questions', () => {
+test('self-ruling refuses ask autonomy without changing the cursor or questions', async () => {
   const d = database()
   const automatic = resolution(d)
   const resolved = {
@@ -230,7 +230,7 @@ test('self-ruling refuses ask autonomy without changing the cursor or questions'
       'ship-triage': { value: 'ask' as const, scope: 'test' },
     },
   }
-  composeWorkflowWithCursor(
+  await composeWorkflowWithCursor(
     'flow',
     'fixture',
     'default',
@@ -282,7 +282,7 @@ test('a resolved live ask setting tightens a real cursor and refuses its self-ru
   )
 
   expect(
-    getWorkflowStepWithCursor('flow', 'fixture', 'ship-triage', args, 'default', context, d, live)
+    await getWorkflowStepWithCursor('flow', 'fixture', 'ship-triage', args, 'default', context, d, live)
       .resolvedAutonomy,
   ).toEqual({ value: 'ask', scope: 'project' })
   expect(() =>
@@ -304,9 +304,9 @@ test('a resolved live ask setting tightens a real cursor and refuses its self-ru
   ).toThrow(/resolved autonomy is ask.*workflow await.*workflow rule/)
 })
 
-test('self-ruling refuses a non-ruling step without changing the cursor or questions', () => {
+test('self-ruling refuses a non-ruling step without changing the cursor or questions', async () => {
   const d = database()
-  composeWorkflowWithCursor(
+  await composeWorkflowWithCursor(
     'flow',
     'fixture',
     'default',
@@ -326,7 +326,7 @@ test('self-ruling refuses a non-ruling step without changing the cursor or quest
   })
 })
 
-test("self-ruling refuses a person's-ruling floor without changing durable state", () => {
+test("self-ruling refuses a person's-ruling floor without changing durable state", async () => {
   const d = database()
   const current = productionStepCatalogue(d).definition
   const catalogue = setStepCatalogueLocal(

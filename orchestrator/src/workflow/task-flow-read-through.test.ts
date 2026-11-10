@@ -235,7 +235,7 @@ test('a hosted close at the tied flow revision is applied and not re-attached', 
         .get(flowId),
     ).toEqual({ open_stage_cursor_record_id: null, revision: 31 })
 
-    const composed = composeWorkflowWithCursor(
+    const composed = await composeWorkflowWithCursor(
       workflow,
       'read-through-fixture',
       'default',
@@ -352,7 +352,7 @@ test('a listed hosted stage with no local row is not inserted', async () => {
   }
 })
 
-test('hosted task-flow parsing round-trips other stages', () => {
+test('hosted task-flow parsing round-trips other stages', async () => {
   const ids = fixture()
   try {
     const open = hosted(ids, {})
@@ -597,7 +597,7 @@ test.each([
         .get(stageId),
     ).toEqual({ ordinal: 1, revision: 4 })
 
-    const result = selectAndNextWorkflowStep(
+    const result = await selectAndNextWorkflowStep(
       workflow,
       'read-through-fixture',
       'default',
