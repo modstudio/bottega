@@ -452,6 +452,34 @@ realPostgres('RLS proof against real Postgres', () => {
     ).rejects.toThrow('not allowed to invite a user with this role')
   })
 
+  test('an owner may invite into a requested space that is not active', async () => {
+    const membershipId = newRecordId()
+    succeeds(
+      'postgres',
+      'postgres',
+      `INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+       VALUES ('${membershipId}','${authSpaceB}','${authUserA}','owner','write',now());`,
+    )
+    recordSession.setToken(tokenA)
+    try {
+      const invitationId = await inviteToRecordSpace(
+        'cross-space-invite@example.test',
+        'member',
+        authSpaceB,
+        invitationClient,
+      )
+      const persistedSpace = succeeds(
+        'postgres',
+        'postgres',
+        `SELECT space_id FROM invitation WHERE id='${invitationId}';`,
+      )
+      expect(persistedSpace).toBe(authSpaceB)
+      expect(persistedSpace).not.toBe(authSpaceA)
+    } finally {
+      succeeds('postgres', 'postgres', `DELETE FROM membership WHERE id='${membershipId}';`)
+    }
+  })
+
   test('an owner does not list invitations they sent into their active space', async () => {
     recordSession.setToken(tokenA)
     const invited = await inviteToRecordSpace(
