@@ -66,7 +66,13 @@ export function registerRecordRequestSpace(app: Hono<ApiEnvironment>): void {
   app.use('/v1/settings/auto-mode', requestedSpace)
   app.use('/v1/config/*', requestedSpace)
   app.use('/v1/runs/*', requestedSpace)
+  app.use('/v1/board/messages', requestedSpace)
+  app.use('/v1/board/messages/*', requestedSpace)
   app.use('/v1/board/changes', requestedSpace)
+  app.use('/v1/board/successor', requestedSpace)
+  app.use('/v1/board/receipts', requestedSpace)
+  app.use('/v1/board/claims', requestedSpace)
+  app.use('/v1/board/claims/*', requestedSpace)
   app.use('/v1/snapshots', requestedSpace)
   app.use('/v1/snapshots/*', requestedSpace)
 }

@@ -27,11 +27,16 @@ type BoardRootClient = {
     query?: HostedBoardOverviewFilters,
     signal?: AbortSignal,
   ): Promise<HostedBoardOverview>
-  postBoardMessage(input: HostedBoardPostInput, signal?: AbortSignal): Promise<HostedBoardMessage>
+  postBoardMessage(
+    input: HostedBoardPostInput,
+    signal?: AbortSignal,
+    destination?: RecordRequestDestination,
+  ): Promise<HostedBoardMessage>
   withdrawBoardMessage(
     id: string,
     input?: HostedBoardSessionInput,
     signal?: AbortSignal,
+    destination?: RecordRequestDestination,
   ): Promise<HostedBoardMessage>
 }
 
@@ -58,13 +63,19 @@ export function recordBoardRootClient(request: RecordClientRequest): BoardRootCl
       const suffix = search.toString()
       return request(`/v1/board/messages${suffix ? `?${suffix}` : ''}`, { signal })
     },
-    postBoardMessage: (input, signal) =>
-      request('/v1/board/messages', { method: 'PUT', body: JSON.stringify(input), signal }),
-    withdrawBoardMessage: (id, input, signal) =>
+    postBoardMessage: (input, signal, destination) =>
+      request('/v1/board/messages', {
+        method: 'PUT',
+        body: JSON.stringify(input),
+        signal,
+        ...destination,
+      }),
+    withdrawBoardMessage: (id, input, signal, destination) =>
       request(`/v1/board/messages/${id}/withdraw`, {
         method: 'POST',
         body: JSON.stringify(input ?? {}),
         signal,
+        ...destination,
       }),
   }
 }

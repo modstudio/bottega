@@ -157,7 +157,7 @@ test('board post accepts every purpose, defaults a missing purpose, and refuses 
   const post = (purpose?: string, ackRequired = false) =>
     app.request('/v1/board/messages', {
       method: 'PUT',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
       body: JSON.stringify({
         id: newRecordId(),
         kind: 'notice',
@@ -292,7 +292,7 @@ test('a personal active space does not narrow project-addressed posts or task cl
   })
   const post = await app.request('/v1/board/messages', {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-record-space': 'space-b' },
     body: JSON.stringify({
       id: newRecordId(),
       kind: 'notice',
@@ -307,7 +307,7 @@ test('a personal active space does not narrow project-addressed posts or task cl
   })
   const claim = await app.request('/v1/board/claims', {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-record-space': 'space-b' },
     body: JSON.stringify({
       id: newRecordId(),
       project: PLATFORM_SLUG,
@@ -352,7 +352,7 @@ test('board post, reply, claim, and read work without an active space', async ()
   const responses = await Promise.all([
     app.request('/v1/board/messages', {
       method: 'PUT',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
       body: JSON.stringify({
         id: newRecordId(),
         kind: 'notice',
@@ -366,12 +366,12 @@ test('board post, reply, claim, and read work without an active space', async ()
     }),
     app.request(`/v1/board/messages/${rootId}/replies`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
       body: JSON.stringify({ id: newRecordId(), body: 'Reply', authorSession: 'session-a' }),
     }),
     app.request('/v1/board/claims', {
       method: 'PUT',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
       body: JSON.stringify({
         id: newRecordId(),
         project: PLATFORM_SLUG,
@@ -383,15 +383,12 @@ test('board post, reply, claim, and read work without an active space', async ()
     app.request('/v1/board/messages'),
   ])
   expect(responses.map((response) => response.status)).toEqual([200, 200, 200, 200])
-  expect(bound.sort((left, right) => left.route.localeCompare(right.route))).toEqual(
-    ['post', 'reply', 'claim', 'read']
-      .map((route) => ({
-        route,
-        spaceId: 'space-a',
-        spaceIds: ['space-a', 'space-b'],
-      }))
-      .sort((left, right) => left.route.localeCompare(right.route)),
-  )
+  expect(bound.sort((left, right) => left.route.localeCompare(right.route))).toEqual([
+    { route: 'claim', spaceId: 'space-a', spaceIds: ['space-a', 'space-b'] },
+    { route: 'post', spaceId: 'space-a', spaceIds: ['space-a', 'space-b'] },
+    { route: 'read', spaceId: 'space-personal', spaceIds: ['space-a', 'space-b'] },
+    { route: 'reply', spaceId: 'space-a', spaceIds: ['space-a', 'space-b'] },
+  ])
 })
 
 test('board presence binds a named member space and refuses a non-member space', async () => {
@@ -415,6 +412,16 @@ test('board presence binds a named member space and refuses a non-member space',
   })
   expect(refused.status).toBe(403)
   expect(await refused.json()).toEqual({
+    error: 'signed-in user is not a member of record space space-foreign',
+    remedy: expect.stringContaining('an invitation from a member of that space is needed'),
+  })
+  const refusedWrite = await app.request('/v1/board/messages', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', 'x-record-space': 'space-foreign' },
+    body: JSON.stringify({}),
+  })
+  expect(refusedWrite.status).toBe(403)
+  expect(await refusedWrite.json()).toEqual({
     error: 'signed-in user is not a member of record space space-foreign',
     remedy: expect.stringContaining('an invitation from a member of that space is needed'),
   })

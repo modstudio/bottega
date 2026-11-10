@@ -18,6 +18,7 @@ import {
   RecordApiRequestError,
   recordApiClient,
 } from '../record/record-api-client.ts'
+import type { RecordRequestDestination } from '../record/record-api-client-paths.ts'
 import type {
   HostedBoardClaim,
   HostedBoardMessage,
@@ -45,6 +46,7 @@ import {
 } from './board-claim-service.ts'
 import { markBoardDeliveriesDelivered } from './board-delivery.ts'
 import { cachedAudienceAtPosting, queueHostedBoardAcknowledgement } from './board-hosted-cache.ts'
+import { boardWriteDestination } from './board-hosted-presence-destination.ts'
 import { cacheHostedBoardReceipt } from './board-hosted-receipt-cache.ts'
 import {
   resolveBoardClaimIdentifier,
@@ -93,6 +95,10 @@ type Context = {
   client?: RecordApiClient
   isKnownCommit?: IsKnownCommit
   answerNoteFiler?: AnswerNoteFiler
+  destinationResolver?: (
+    client: RecordApiClient,
+    project?: string | null,
+  ) => Promise<RecordRequestDestination>
 }
 
 export type BoardPostResult = {
@@ -192,6 +198,7 @@ function context(input: Context = {}) {
     client: input.client,
     isKnownCommit: input.isKnownCommit,
     answerNoteFiler: input.answerNoteFiler ?? fileAcceptedAnswerNote,
+    destinationResolver: input.destinationResolver ?? boardWriteDestination,
   }
 }
 
@@ -212,6 +219,10 @@ function preparePostText(input: PostNoticeInput, c: ReturnType<typeof context>):
 
 function hostedClient(c: ReturnType<typeof context>): RecordApiClient {
   return c.client ?? recordApiClient()
+}
+
+function writeDestination(c: ReturnType<typeof context>, project?: string | null) {
+  return c.destinationResolver(hostedClient(c), project)
 }
 
 function locality(audience: string) {
@@ -495,7 +506,12 @@ export async function boardPost(input: PostNoticeInput, inputContext?: Context) 
   }
   const audienceRefusal = architectsPostingRefusal(audience, projectAt(c.cwd)?.name)
   if (audienceRefusal) throw new Error(audienceRefusal)
-  const row = await hostedClient(c).postBoardMessage(hostedBoardPostInput('notice', input, c))
+  const post = hostedBoardPostInput('notice', input, c)
+  const row = await hostedClient(c).postBoardMessage(
+    post,
+    undefined,
+    await writeDestination(c, post.project),
+  )
   return {
     recordId: row.id,
     number: null,
@@ -523,7 +539,12 @@ export async function boardAsk(
   }
   const audienceRefusal = architectsPostingRefusal(audience, projectAt(c.cwd)?.name)
   if (audienceRefusal) throw new Error(audienceRefusal)
-  const row = await hostedClient(c).postBoardMessage(hostedBoardPostInput('question', input, c))
+  const post = hostedBoardPostInput('question', input, c)
+  const row = await hostedClient(c).postBoardMessage(
+    post,
+    undefined,
+    await writeDestination(c, post.project),
+  )
   return {
     recordId: row.id,
     number: null,
@@ -556,7 +577,8 @@ export async function boardReply(
     } satisfies BoardReplyResult
   }
   const actor = authorFacts(c.env)
-  const row = await hostedClient(c).replyBoardMessage(resolved.recordId, {
+  const project = projectAt(c.cwd)
+  const reply = {
     id: newRecordId(),
     body,
     ...(audience === null ? {} : { audience }),
@@ -564,9 +586,14 @@ export async function boardReply(
     authorHarness: actor.harness,
     authorMachineId: actor.machine,
     authorRunId: actor.runId,
-    project: projectAt(c.cwd)?.name,
-    projectId: projectAt(c.cwd)?.recordId ?? null,
-  })
+    project: project?.name,
+    projectId: project?.recordId ?? null,
+  }
+  const row = await hostedClient(c).replyBoardMessage(
+    resolved.recordId,
+    reply,
+    await writeDestination(c, reply.project),
+  )
   return {
     recordId: row.id,
     number: null,
@@ -609,7 +636,12 @@ async function fileHostedNote(
   c: ReturnType<typeof context>,
 ) {
   const client = hostedClient(c)
-  await client.takeBoardFilingLease(questionId, { authorSession: boardActor(c.env).session })
+  const destination = await writeDestination(c)
+  await client.takeBoardFilingLease(
+    questionId,
+    { authorSession: boardActor(c.env).session },
+    destination,
+  )
   const reply = thread.replies.find((row) => row.id === thread.root.acceptedReplyId)
   if (!reply) throw new Error(`board question ${questionId} accepted reply is unavailable`)
   try {
@@ -627,10 +659,14 @@ async function fileHostedNote(
     )
     if (typeof filed.noteRecordId !== 'string' || typeof filed.noteLabel !== 'string')
       throw new Error('filed note has no identity')
-    await client.completeBoardFilingLease(questionId, {
-      noteId: filed.noteRecordId,
-      authorSession: boardActor(c.env).session,
-    })
+    await client.completeBoardFilingLease(
+      questionId,
+      {
+        noteId: filed.noteRecordId,
+        authorSession: boardActor(c.env).session,
+      },
+      destination,
+    )
     return {
       noteRecordId: filed.noteRecordId,
       noteLabel: filed.noteLabel,
@@ -640,10 +676,14 @@ async function fileHostedNote(
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     const preparedDetail = prepareBoardText(detail, ownBoardTextCheckout(c.cwd), c.isKnownCommit)
-    await client.failBoardFilingLease(questionId, {
-      error: preparedDetail,
-      authorSession: boardActor(c.env).session,
-    })
+    await client.failBoardFilingLease(
+      questionId,
+      {
+        error: preparedDetail,
+        authorSession: boardActor(c.env).session,
+      },
+      destination,
+    )
     return {
       noteRecordId: null,
       noteLabel: null,
@@ -677,10 +717,11 @@ export async function boardAccept(questionId: string, replyId: string, inputCont
       questionId: String(value.questionId),
     }
   }
-  const thread = await hostedClient(c).acceptBoardAnswer(question.recordId, {
-    replyId: reply.recordId,
-    authorSession: boardActor(c.env).session,
-  })
+  const thread = await hostedClient(c).acceptBoardAnswer(
+    question.recordId,
+    { replyId: reply.recordId, authorSession: boardActor(c.env).session },
+    await writeDestination(c),
+  )
   return { accepted: replyId, questionId, ...(await fileHostedNote(questionId, thread, c)) }
 }
 
@@ -715,9 +756,12 @@ export async function boardWithdraw(id: string, inputContext?: Context) {
   const resolved = resolveBoardMessageIdentifier(db(), id, c.env)
   if (resolved.source === 'local') withdrawNotice(resolved.recordId, c.env, c.clock)
   else
-    await hostedClient(c).withdrawBoardMessage(resolved.recordId, {
-      authorSession: boardActor(c.env).session,
-    })
+    await hostedClient(c).withdrawBoardMessage(
+      resolved.recordId,
+      { authorSession: boardActor(c.env).session },
+      undefined,
+      await writeDestination(c),
+    )
   return { withdrawn: id }
 }
 
@@ -730,12 +774,16 @@ export async function boardAcknowledge(id: string, inputContext?: Context) {
     // An acknowledged receipt never escalates; uncached legacy rows safely use true.
     const audienceAtPosting = cachedAudienceAtPosting(resolved.recordId, session) ?? true
     try {
-      const receipt = await hostedClient(c).putBoardReceipt({
-        messageId: resolved.recordId,
-        readerSession: session,
-        audienceAtPosting,
-        acknowledged: true,
-      })
+      const receipt = await hostedClient(c).putBoardReceipt(
+        {
+          messageId: resolved.recordId,
+          readerSession: session,
+          audienceAtPosting,
+          acknowledged: true,
+        },
+        undefined,
+        await writeDestination(c),
+      )
       cacheHostedBoardReceipt(receipt)
     } catch (error) {
       if (
@@ -809,7 +857,7 @@ export async function boardClaimTake(input: TakeClaimInput, inputContext?: Conte
     throw new Error(
       'hosted claim take does not support --force; release the conflicting claim or wait for its lease',
     )
-  const row = await hostedClient(c).takeBoardClaim({
+  const claim = {
     id: newRecordId(),
     project,
     projectId: targetProject!.recordId,
@@ -818,7 +866,8 @@ export async function boardClaimTake(input: TakeClaimInput, inputContext?: Conte
     runId: hostedClaimRunId(input.runId, c.env),
     note: input.note,
     holderSession: boardActor(c.env).session,
-  })
+  }
+  const row = await hostedClient(c).takeBoardClaim(claim, await writeDestination(c, claim.project))
   return { ...claimResult(row), action: row.action }
 }
 
@@ -828,9 +877,11 @@ export async function boardClaimRenew(id: string, inputContext?: Context) {
   return resolved.source === 'local'
     ? claimResult(renewClaim(resolved.recordId, c.env, c.clock))
     : claimResult(
-        await hostedClient(c).renewBoardClaim(resolved.recordId, {
-          holderSession: boardActor(c.env).session,
-        }),
+        await hostedClient(c).renewBoardClaim(
+          resolved.recordId,
+          { holderSession: boardActor(c.env).session },
+          await writeDestination(c),
+        ),
       )
 }
 export async function boardClaimRelease(id: string, inputContext?: Context) {
@@ -839,9 +890,11 @@ export async function boardClaimRelease(id: string, inputContext?: Context) {
   return resolved.source === 'local'
     ? claimResult(releaseClaim(resolved.recordId, c.env, c.clock))
     : claimResult(
-        await hostedClient(c).releaseBoardClaim(resolved.recordId, {
-          holderSession: boardActor(c.env).session,
-        }),
+        await hostedClient(c).releaseBoardClaim(
+          resolved.recordId,
+          { holderSession: boardActor(c.env).session },
+          await writeDestination(c),
+        ),
       )
 }
 export async function boardClaimList(
@@ -872,9 +925,8 @@ export async function boardClaimReleaseTask(key: string, project: string, inputC
   )
   return boardMode('shared', c.env) === 'local'
     ? releaseTaskClaims(normalizedKey, project, c.env, c.clock)
-    : hostedClient(c).releaseBoardTaskClaims({
-        key: normalizedKey,
-        project,
-        projectId: targetProject.recordId,
-      })
+    : hostedClient(c).releaseBoardTaskClaims(
+        { key: normalizedKey, project, projectId: targetProject.recordId },
+        await writeDestination(c, project),
+      )
 }

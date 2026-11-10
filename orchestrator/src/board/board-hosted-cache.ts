@@ -16,7 +16,10 @@ import {
   type HostedBoardChanges,
   type HostedBoardMessage,
 } from '../record/record-board-contract.ts'
-import { boardPresenceDestination } from './board-hosted-presence-destination.ts'
+import {
+  boardPresenceDestination,
+  boardWriteDestination,
+} from './board-hosted-presence-destination.ts'
 import { cacheHostedBoardReceipt } from './board-hosted-receipt-cache.ts'
 import { BUDGET_SPENT, withinHostedBoardRefreshBudget } from './board-hosted-refresh-budget.ts'
 import { takeHostedReportReplySuccessor } from './board-hosted-successor.ts'
@@ -52,8 +55,8 @@ const BOARD_REFRESH_USER_KEY = 'board_hosted_signed_in_user'
 export const BOARD_CACHE_OWNER_KEY = 'board_hosted_cache_owner'
 const BOARD_VERIFIED_AT_KEY = 'board_hosted_verified_at'
 const BOARD_MONITOR_UNVERIFIED_ANNOUNCED_KEY = 'board_hosted_monitor_unverified_announced'
-export const BOARD_RECEIPT_WRITE_BUDGET_MS = 250,
-  BOARD_READ_REFRESH_BUDGET_MS = 500
+export const BOARD_RECEIPT_WRITE_BUDGET_MS = 250
+export const BOARD_READ_REFRESH_BUDGET_MS = 500
 export const BOARD_VERIFICATION_WARNING_MAX_CHARS = 500
 
 export type HostedCacheNotice = {
@@ -76,6 +79,7 @@ type RefreshInput = {
   client?: RecordApiClient
   database?: Database
   now?: () => number
+  presenceDestination?: typeof boardPresenceDestination
 }
 
 export type HostedBoardRefresh = {
@@ -114,8 +118,9 @@ function cachedRevision(database: Database, id: string): string | null {
   )
 }
 
-const incomingIsStale = (cached: string | null, incoming: string) =>
-  cached !== null && BigInt(incoming) < BigInt(cached)
+function incomingIsStale(cached: string | null, incoming: string): boolean {
+  return cached !== null && BigInt(incoming) < BigInt(cached)
+}
 
 export function queueHostedBoardAcknowledgement(
   messageId: string,
@@ -248,6 +253,7 @@ async function flushReceipts(
     delivered_at: string | null
     acknowledged_at: string | null
   }[]
+  const destination = rows.length > 0 ? await boardWriteDestination(client) : undefined
   for (const row of rows) {
     try {
       await withinHostedBoardRefreshBudget(
@@ -262,6 +268,7 @@ async function flushReceipts(
               acknowledged: row.acknowledged_at !== null,
             },
             signal,
+            destination,
           ),
         deadline - now(),
       )
@@ -307,7 +314,7 @@ async function fetchHostedPages(
   now: () => number,
   tally: { applied: number },
   presenceAt: number,
-  bindPresenceSpace: boolean,
+  presenceDestination: typeof boardPresenceDestination,
 ): Promise<boolean> {
   let after = meta(database, BOARD_REFRESH_CURSOR_KEY) ?? '0'
   const liveSince = new Date(presenceAt - SESSION_LIVE_MS).toISOString()
@@ -318,8 +325,7 @@ async function fetchHostedPages(
        FROM presence WHERE last_seen>=? AND project_record_id IS NOT NULL`,
     )
     .all(liveSince) as import('../record/record-board-contract.ts').HostedBoardPresenceInput[]
-  const destination =
-    bindPresenceSpace && presence.length > 0 ? await boardPresenceDestination(client) : undefined
+  const destination = presence.length > 0 ? await presenceDestination(client) : undefined
   while (now() < deadline) {
     const query = { after, limit: BOARD_CHANGES_PAGE_LIMIT, machineId: machineId(), presence }
     const page = await withinHostedBoardRefreshBudget(
@@ -360,7 +366,7 @@ export async function refreshHostedBoard(input: RefreshInput): Promise<HostedBoa
       now,
       tally,
       startedAt,
-      input.client === undefined,
+      input.presenceDestination ?? boardPresenceDestination,
     )
     recordRefresh(database, now(), 'success')
     return { status: caughtUp ? 'success' : 'incomplete', applied: tally.applied }
@@ -1000,6 +1006,7 @@ export async function syncCachedHostedReceipt(
   const client = input.client ?? recordApiClient()
   const deadline = input.deadline ?? Date.now() + BOARD_RECEIPT_WRITE_BUDGET_MS
   try {
+    const destination = await boardWriteDestination(client)
     await withinHostedBoardRefreshBudget(
       (signal) =>
         client.putBoardReceipt(
@@ -1011,6 +1018,7 @@ export async function syncCachedHostedReceipt(
             delivered: true,
           },
           signal,
+          destination,
         ),
       deadline - Date.now(),
     )

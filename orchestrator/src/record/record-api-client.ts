@@ -400,25 +400,48 @@ export type RecordApiClient = ProjectIdentityClient &
       query?: HostedBoardOverviewFilters,
       signal?: AbortSignal,
     ): Promise<HostedBoardOverview>
-    postBoardMessage(input: HostedBoardPostInput, signal?: AbortSignal): Promise<HostedBoardMessage>
-    replyBoardMessage(rootId: string, input: HostedBoardReplyInput): Promise<HostedBoardMessage>
+    postBoardMessage(
+      input: HostedBoardPostInput,
+      signal?: AbortSignal,
+      destination?: RecordRequestDestination,
+    ): Promise<HostedBoardMessage>
+    replyBoardMessage(
+      rootId: string,
+      input: HostedBoardReplyInput,
+      destination?: RecordRequestDestination,
+    ): Promise<HostedBoardMessage>
     withdrawBoardMessage(
       id: string,
       input?: HostedBoardSessionInput,
       signal?: AbortSignal,
+      destination?: RecordRequestDestination,
     ): Promise<HostedBoardMessage>
-    acceptBoardAnswer(id: string, input: HostedBoardAcceptInput): Promise<HostedBoardThread>
-    takeBoardFilingLease(id: string, input?: HostedBoardSessionInput): Promise<HostedBoardMessage>
+    acceptBoardAnswer(
+      id: string,
+      input: HostedBoardAcceptInput,
+      destination?: RecordRequestDestination,
+    ): Promise<HostedBoardThread>
+    takeBoardFilingLease(
+      id: string,
+      input?: HostedBoardSessionInput,
+      destination?: RecordRequestDestination,
+    ): Promise<HostedBoardMessage>
     completeBoardFilingLease(
       id: string,
       input: HostedBoardFilingCompleteInput,
+      destination?: RecordRequestDestination,
     ): Promise<HostedBoardMessage>
-    failBoardFilingLease(id: string, input: HostedBoardFilingFailInput): Promise<HostedBoardMessage>
+    failBoardFilingLease(
+      id: string,
+      input: HostedBoardFilingFailInput,
+      destination?: RecordRequestDestination,
+    ): Promise<HostedBoardMessage>
     getBoardThread(id: string): Promise<HostedBoardThread>
     getBoardStatus(id: string): Promise<HostedBoardStatus>
     putBoardReceipt(
       input: HostedBoardReceiptInput,
       signal?: AbortSignal,
+      destination?: RecordRequestDestination,
     ): Promise<HostedBoardReceipt>
     listBoardChanges(
       query: {
@@ -430,27 +453,36 @@ export type RecordApiClient = ProjectIdentityClient &
       },
       destination?: RecordRequestDestination,
     ): Promise<HostedBoardChanges>
-    takeBoardSuccessor(input: HostedBoardSuccessorInput): Promise<HostedBoardSuccessorResult>
+    takeBoardSuccessor(
+      input: HostedBoardSuccessorInput,
+      destination?: RecordRequestDestination,
+    ): Promise<HostedBoardSuccessorResult>
     takeBoardClaim(
       input: HostedBoardTakeClaimInput,
+      destination?: RecordRequestDestination,
     ): Promise<HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }>
     renewBoardClaim(
       id: string,
       input?: { holderSession?: string | null },
+      destination?: RecordRequestDestination,
     ): Promise<HostedBoardClaim>
     releaseBoardClaim(
       id: string,
       input?: { holderSession?: string | null },
+      destination?: RecordRequestDestination,
     ): Promise<HostedBoardClaim>
     listBoardClaims(
       project: string,
       projectId?: string | null,
     ): Promise<{ claims: HostedBoardClaim[] }>
-    releaseBoardTaskClaims(input: {
-      project: string
-      projectId?: string | null
-      key: string
-    }): Promise<{ released: number }>
+    releaseBoardTaskClaims(
+      input: {
+        project: string
+        projectId?: string | null
+        key: string
+      },
+      destination?: RecordRequestDestination,
+    ): Promise<{ released: number }>
     openBoardStream(signal?: AbortSignal): Promise<RecordBoardStreamOpen>
   }
 
@@ -894,45 +926,60 @@ const recordBoardClient = (
   request = recordApiRequest,
 ): Pick<RecordApiClient, RecordBoardMethod> => ({
   ...recordBoardRootClient(request),
-  replyBoardMessage: (rootId, input) =>
+  replyBoardMessage: (rootId, input, destination) =>
     request(`/v1/board/messages/${rootId}/replies`, {
       method: 'POST',
       body: hostedBoardReplyBody(input),
+      ...destination,
     }),
-  acceptBoardAnswer: (id, input) =>
-    request(`/v1/board/messages/${id}/accept`, { method: 'POST', body: JSON.stringify(input) }),
-  takeBoardFilingLease: (id, input) =>
+  acceptBoardAnswer: (id, input, destination) =>
+    request(`/v1/board/messages/${id}/accept`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+      ...destination,
+    }),
+  takeBoardFilingLease: (id, input, destination) =>
     request(`/v1/board/messages/${id}/filing-lease`, {
       method: 'POST',
       body: JSON.stringify(input ?? {}),
+      ...destination,
     }),
-  completeBoardFilingLease: (id, input) =>
+  completeBoardFilingLease: (id, input, destination) =>
     request(`/v1/board/messages/${id}/filing-lease/complete`, {
       method: 'POST',
       body: JSON.stringify(input),
+      ...destination,
     }),
-  failBoardFilingLease: (id, input) =>
+  failBoardFilingLease: (id, input, destination) =>
     request(`/v1/board/messages/${id}/filing-lease/fail`, {
       method: 'POST',
       body: JSON.stringify(input),
+      ...destination,
     }),
   getBoardThread: (id) => request(`/v1/board/threads/${id}`),
   getBoardStatus: (id) => request(`/v1/board/messages/${id}/status`),
-  putBoardReceipt: (input, signal) =>
-    request('/v1/board/receipts', { method: 'PUT', body: JSON.stringify(input), signal }),
-  takeBoardSuccessor: (input) =>
-    request('/v1/board/successor', { method: 'PUT', body: JSON.stringify(input) }),
-  takeBoardClaim: (input) =>
-    request('/v1/board/claims', { method: 'PUT', body: JSON.stringify(input) }),
-  renewBoardClaim: (id, input) =>
+  putBoardReceipt: (input, signal, destination) =>
+    request('/v1/board/receipts', {
+      method: 'PUT',
+      body: JSON.stringify(input),
+      signal,
+      ...destination,
+    }),
+  takeBoardSuccessor: (input, destination) =>
+    request('/v1/board/successor', { method: 'PUT', body: JSON.stringify(input), ...destination }),
+  takeBoardClaim: (input, destination) =>
+    request('/v1/board/claims', { method: 'PUT', body: JSON.stringify(input), ...destination }),
+  renewBoardClaim: (id, input, destination) =>
     request(`/v1/board/claims/${id}/renew`, {
       method: 'POST',
       body: JSON.stringify(input ?? {}),
+      ...destination,
     }),
-  releaseBoardClaim: (id, input) =>
+  releaseBoardClaim: (id, input, destination) =>
     request(`/v1/board/claims/${id}/release`, {
       method: 'POST',
       body: JSON.stringify(input ?? {}),
+      ...destination,
     }),
   listBoardClaims: (project, projectId) => request(boardClaimListPath(project, projectId)),
 })
@@ -975,10 +1022,11 @@ function recordIdentityAndSpaceClient(
 
 function recordApiBoardWatchClient(): Pick<RecordApiClient, RecordBoardWatchMethod> {
   return {
-    releaseBoardTaskClaims: (input) =>
+    releaseBoardTaskClaims: (input, destination) =>
       recordApiRequest('/v1/board/claims/release-task', {
         method: 'POST',
         body: JSON.stringify(input),
+        ...destination,
       }),
     openBoardStream: (signal) => fetchBoardStream(signal),
   }

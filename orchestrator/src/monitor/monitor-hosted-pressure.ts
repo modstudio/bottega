@@ -6,6 +6,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { FLY_METRICS_OPERATOR_CREDENTIAL } from '../../../shared/operator-credentials.ts'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { boardWriteDestination } from '../board/board-hosted-presence-destination.ts'
 import {
   BUDGET_SPENT,
   withinHostedBoardRefreshBudget,
@@ -218,12 +219,14 @@ export async function announceHostedPressureActions(
       signal,
     )
     const actions = decide(overview.messages)
+    const destination = actions.length > 0 ? await boardWriteDestination(client) : undefined
     for (const action of actions) {
       if (action.kind === 'withdraw') {
         await client.withdrawBoardMessage(
           action.id,
           { authorSession: boardActor(env).session },
           signal,
+          destination,
         )
         continue
       }
@@ -240,6 +243,7 @@ export async function announceHostedPressureActions(
           { env, clock, cwd: dependencies.cwd },
         ),
         signal,
+        destination,
       )
     }
   }, HOSTED_PRESSURE_ANNOUNCE_BUDGET_MS)
