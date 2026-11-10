@@ -25,9 +25,7 @@ export const taskFlow = pgTable.withRLS(
     projectId: uuid('project_id')
       .notNull()
       .references(() => project.id),
-    taskId: uuid('task_id')
-      .notNull()
-      .references(() => hubTask.id),
+    taskId: uuid('task_id').references(() => hubTask.id),
     state: text().notNull(),
     openStageRecordId: uuid('open_stage_record_id'),
     openingMachineId: uuid('opening_machine_id')
@@ -43,6 +41,9 @@ export const taskFlow = pgTable.withRLS(
   },
   (table) => [
     index('task_flow_task_id_idx').on(table.taskId),
+    uniqueIndex('task_flow_space_task_unique')
+      .on(table.spaceId, table.taskId)
+      .where(sql`${table.taskId} IS NOT NULL`),
     index('task_flow_project_id_idx').on(table.projectId),
     index('task_flow_open_stage_record_id_idx').on(table.openStageRecordId),
     ...tenantPolicies('task_flow', table.spaceId),
