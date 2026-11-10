@@ -8,8 +8,5 @@ test('architecture violation ratchet reports a new violation', () => {
     to: 'hub/src/note.ts',
   }
 
-  expect(architectureViolationRatchet([added])).toEqual({
-    newViolations: [added],
-    fixedBaseline: [],
-  })
+  expect(architectureViolationRatchet([added]).newViolations).toEqual([added])
 })

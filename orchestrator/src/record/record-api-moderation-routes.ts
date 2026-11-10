@@ -2,7 +2,6 @@
 /** Owns owner-only moderation hide HTTP validation. */
 
 import type { Context, Hono } from 'hono'
-import { resolvePersonalItemSpace } from '../../../shared/personal-item-space.ts'
 import {
   isModerationHideReason,
   MODERATION_HIDE_REASONS,
@@ -14,8 +13,6 @@ import { parseRecordRowTarget, type RecordRowTarget } from './record-row-target.
 
 type ApiEnvironment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
-
-void resolvePersonalItemSpace
 
 export function registerRecordModerationRoutes(
   app: Hono<ApiEnvironment>,

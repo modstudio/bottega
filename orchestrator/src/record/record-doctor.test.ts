@@ -101,12 +101,17 @@ describe('record doctor decisions', () => {
   })
 
   test('an unreachable destination-less write route fails doctor', () => {
+    const failure =
+      'hosted route /v1/health/no-destination-writes failed: connection refused; check BOTTEGA_RECORD_API_URL and make the hosted record API reachable, then retry'
     const checks = decideRecordDoctorChecks({
       ...healthyFacts,
       noDestinationWrites: undefined,
-      noDestinationWritesFailure: 'hosted destination-less write counts could not be reached',
+      noDestinationWritesFailure: failure,
     })
     expect(recordDoctorExitCode(checks)).toBe(1)
+    expect(checks.find((check) => check.name === 'destination-less hosted writes')?.detail).toBe(
+      failure,
+    )
   })
 
   test('an accepted session with no memberships fails the active-space check', () => {
