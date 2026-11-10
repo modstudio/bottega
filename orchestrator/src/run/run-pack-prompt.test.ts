@@ -121,20 +121,23 @@ describe('review instructions', () => {
 
   test('a known lens question appears once in the bound reviewer prompt', async () => {
     const question = 'Does this exact question appear once?'
-    await setLens({
-      id: 'question-once',
-      title: 'Question once',
-      question,
-      excludes: 'Other questions.',
-      slots: JSON.stringify({
-        type: 'object',
-        properties: { looks_for: { type: 'string' } },
-        additionalProperties: false,
-      }),
-      enabled: true,
-      requiresExecution: false,
-      reason: 'prompt fixture',
-    })
+    await setLens(
+      {
+        id: 'question-once',
+        title: 'Question once',
+        question,
+        excludes: 'Other questions.',
+        slots: JSON.stringify({
+          type: 'object',
+          properties: { looks_for: { type: 'string' } },
+          additionalProperties: false,
+        }),
+        enabled: true,
+        requiresExecution: false,
+        reason: 'prompt fixture',
+      },
+      '',
+    )
     await setProfile({
       lensId: 'question-once',
       axis: 'framework',

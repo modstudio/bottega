@@ -6,7 +6,6 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type ContextMomentWrite, contextMomentWrite } from '../../../shared/context-moment.ts'
 import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
-import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
@@ -25,6 +24,7 @@ import {
   setStepCatalogue,
   showResolvedStepCatalogue,
 } from './step-catalogue.ts'
+import { obligationUuid, positive } from './workflow-command-arguments.ts'
 import type { CommitCountPort } from './workflow-compose-branch.ts'
 import {
   awaitWorkflowRuling,
@@ -92,6 +92,7 @@ import {
   productionWorkflowTree,
   promoteMatchingWorkflowTreeDrafts,
 } from './workflow-tree-store.ts'
+import { workflowWriteSpace } from './workflow-write-space.ts'
 import {
   composeWorkflow,
   forkWorkflow,
@@ -126,21 +127,6 @@ type ProbePrintRecord =
   | Pick<ProbeRecord, 'id' | 'withheld'>
   | Pick<ProbeRecord, 'id' | 'withheld' | 'exitCode' | 'outputTail'>
 export type CommandOutcome = { exitCode: number; errorLine?: string }
-const positive = (value: string | undefined, label: string): number | undefined => {
-  if (value === undefined) return undefined
-  const n = Number(value)
-  if (!Number.isInteger(n) || n < 1) throw new Error(`${label} must be a positive integer`)
-  return n
-}
-const obligationUuid = (value: string | undefined): string | undefined => {
-  if (value === undefined) return undefined
-  if (!hasRecordIdShape(value))
-    throw new Error(
-      `--satisfies must be an obligation UUID from ${PLATFORM_SLUG} workflow cursors --json`,
-    )
-  return value.toLowerCase()
-}
-
 export function workflowPrint(json: boolean, presentation: WorkflowPresentation): WorkflowPrint {
   return (value, line) =>
     presentation.log(json ? JSON.stringify(value) : (line ?? JSON.stringify(value, null, 2)))
@@ -195,6 +181,9 @@ export async function promoteWorkflowCommand(argv: string[], print: WorkflowPrin
       positive(argv[3], 'version')!,
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
+      undefined,
+      undefined,
+      await workflowWriteSpace('workflow promote', argv, recordApiConfigured()),
     ),
   )
 }
@@ -206,6 +195,8 @@ export async function retireWorkflowCommand(argv: string[], print: WorkflowPrint
       positive(argv[3], 'version')!,
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
+      undefined,
+      await workflowWriteSpace('workflow retire', argv, recordApiConfigured()),
     ),
   )
 }
@@ -217,6 +208,8 @@ export async function forkWorkflowCommand(argv: string[], print: WorkflowPrint):
       positive(flagValue(argv, 'from'), '--from'),
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
+      undefined,
+      await workflowWriteSpace('workflow fork', argv, recordApiConfigured()),
     ),
   )
 }
@@ -547,6 +540,8 @@ export async function setWorkflowCommand(argv: string[], print: WorkflowPrint): 
       JSON.parse(readFileSync(file, 'utf8')),
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
+      undefined,
+      await workflowWriteSpace('workflow set', argv, recordApiConfigured()),
     ),
   )
 }
@@ -807,6 +802,8 @@ export async function setCatalogueCommand(argv: string[], print: WorkflowPrint):
       JSON.parse(readFileSync(file, 'utf8')),
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
+      undefined,
+      await workflowWriteSpace('workflow catalogue set', argv, recordApiConfigured()),
     ),
   )
 }
@@ -817,6 +814,9 @@ export async function promoteCatalogueCommand(argv: string[], print: WorkflowPri
       positive(argv[2], 'version')!,
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
+      undefined,
+      undefined,
+      await workflowWriteSpace('workflow catalogue promote', argv, recordApiConfigured()),
     ),
   )
 }
@@ -827,6 +827,8 @@ export async function retireCatalogueCommand(argv: string[], print: WorkflowPrin
       positive(argv[2], 'version')!,
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
+      undefined,
+      await workflowWriteSpace('workflow catalogue retire', argv, recordApiConfigured()),
     ),
   )
 }

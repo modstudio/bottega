@@ -245,12 +245,18 @@ function registerSpaceCommands(record: Command): void {
     )
   space
     .command('invite')
-    .description('invite an email address to the active space')
+    .description('invite an email address to a record space')
     .requiredOption('--email <email>', 'email address to invite')
+    .option('--space <slug>', 'record space to invite into')
     .option('--role <role>', 'member, admin, or owner', 'member')
     .action((options) =>
       hostedCommand(`${PLATFORM_SLUG} record space invite`, () =>
-        recordSpaceInviteCommand(String(options.email), String(options.role), presentation),
+        recordSpaceInviteCommand(
+          String(options.email),
+          String(options.role),
+          options.space,
+          presentation,
+        ),
       ),
     )
   space
@@ -466,18 +472,20 @@ function registerSpaceAccessCommands(space: Command): void {
     .command('grant')
     .description('grant config access to a member')
     .argument('<email>')
-    .action((email) =>
+    .option('--space <slug>', 'record space whose config access changes')
+    .action((email, options) =>
       hostedCommand(`${PLATFORM_SLUG} record space access grant`, () =>
-        recordSpaceAccessGrantCommand(String(email), presentation),
+        recordSpaceAccessGrantCommand(String(email), options.space, presentation),
       ),
     )
   access
     .command('withdraw')
     .description('withdraw config access from a member')
     .argument('<email>')
-    .action((email) =>
+    .option('--space <slug>', 'record space whose config access changes')
+    .action((email, options) =>
       hostedCommand(`${PLATFORM_SLUG} record space access withdraw`, () =>
-        recordSpaceAccessWithdrawCommand(String(email), presentation),
+        recordSpaceAccessWithdrawCommand(String(email), options.space, presentation),
       ),
     )
 }

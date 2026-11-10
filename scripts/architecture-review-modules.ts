@@ -10,6 +10,16 @@ const module = (file: string, allowed: string[]): ReviewModule => ({
 })
 
 export const reviewModules: ReviewModule[] = [
+  module('orchestrator/src/lens/lens-commands.ts', [
+    'node:fs',
+    '../../../shared/record-api-url.ts',
+    '../../../shared/record-space-owner-destination.ts',
+    '../cli/args.ts',
+    '../database/db.ts',
+    '../project/projects.ts',
+    '../record/record-space.ts',
+    './lenses.ts',
+  ]),
   module('orchestrator/src/review/review-calibration.ts', [
     '../database/db.ts',
     '../route/evidence-model.ts',

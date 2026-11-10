@@ -468,9 +468,13 @@ manage hosted config access
 
 ## bottega record space access grant
 
-**Synopsis:** `bottega record space access grant <email>`
+**Synopsis:** `bottega record space access grant <email> [--space <slug>]`
 
 grant config access to a member
+
+### Options
+
+- `--space <slug>`: record space whose config access changes
 
 ### Related
 
@@ -498,9 +502,13 @@ list members and config access
 
 ## bottega record space access withdraw
 
-**Synopsis:** `bottega record space access withdraw <email>`
+**Synopsis:** `bottega record space access withdraw <email> [--space <slug>]`
 
 withdraw config access from a member
+
+### Options
+
+- `--space <slug>`: record space whose config access changes
 
 ### Related
 
@@ -690,13 +698,14 @@ list invitations available to the signed-in account
 
 ## bottega record space invite
 
-**Synopsis:** `bottega record space invite [--email <email>] [--role <role>]`
+**Synopsis:** `bottega record space invite [--email <email>] [--space <slug>] [--role <role>]`
 
-invite an email address to the active space
+invite an email address to a record space
 
 ### Options
 
 - `--email <email>`: email address to invite
+- `--space <slug>`: record space to invite into
 - `--role <role>`: member, admin, or owner (default: member)
 
 ### Related
