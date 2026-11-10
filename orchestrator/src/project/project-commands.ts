@@ -16,14 +16,17 @@ import {
   RecordCataloguePullError,
 } from '../record/record-cache-catalogues.ts'
 import { migrateCreate } from '../worktree/worktree-template.ts'
+import { declaredProjectSpace } from './declared-project-space.ts'
 import { projectAddDecision } from './project-add-record.ts'
+import { type ProjectSpaceFillRow, planProjectSpaceFill } from './project-fill-space.ts'
+import { spaceFillNeedsRuling } from './project-fill-space-decision.ts'
 import { hostedProjectDestination, refuseHostedProjectSpaceChange } from './project-hosted-write.ts'
 import { fillProjectRecordIds } from './project-record-identity.ts'
 import { formatProjectRelink, relinkProjectByName } from './project-relink.ts'
 import { persistLocalProjectSet } from './project-rename.ts'
+import { projectSetSettingsPatch } from './project-set-space.ts'
 import {
   mergeProjectSettings,
-  parseSettingsPatch,
   type SettingsPatchEffect,
   settingsPatchEffect,
 } from './project-settings-patch.ts'
@@ -56,7 +59,11 @@ type ProjectFlags = {
   has(name: string): boolean
   flag(name: string): string | undefined
 }
-type ProjectPresentation = { log(...values: unknown[]): void; cwd(): string }
+type ProjectPresentation = {
+  log(...values: unknown[]): void
+  cwd(): string
+  exitCode?(code: number): void
+}
 
 async function relinkProjectCommand(
   name: string | undefined,
@@ -115,10 +122,18 @@ function listedProjectJson(project: Project) {
     repository: isProjectRepository(project),
     ...(retiredAt ? { retired_at: retiredAt } : {}),
     lifecycle_form: projectLifecycleForm(project),
-    problems: validateProjectSettings(project.settings, 'strip', project.path),
+    problems: projectProblems(project),
     commit_hooks_skipped: true,
     gate: typeof project.settings.gate === 'string' ? project.settings.gate : null,
   }
+}
+
+function projectProblems(project: Project): string[] {
+  const declared = declaredProjectSpace(project)
+  return [
+    ...validateProjectSettings(project.settings, 'strip', project.path),
+    ...('refused' in declared && !project.retiredAt ? [declared.refused] : []),
+  ]
 }
 
 function emptyProjectListMessage(retired: boolean): string {
@@ -141,7 +156,7 @@ function printProjectRows(all: Project[], presentation: ProjectPresentation): vo
     )
     const keys = Object.keys(p.settings)
     if (keys.length) presentation.log(`${' '.repeat(14)} settings: ${keys.join(', ')}`)
-    for (const problem of validateProjectSettings(p.settings, 'strip', p.path)) {
+    for (const problem of projectProblems(p)) {
       presentation.log(`${p.name}: ${problem}`)
     }
     // Reported, not enforced: a half-configured project should say so and
@@ -567,11 +582,8 @@ function incompleteWorktreeProblems(candidate: Parameters<typeof worktreeWarning
   )
 }
 
-function patchedProjectSettings(project: Project, json: string | undefined) {
-  if (json === undefined) {
-    return { settings: project.settings, patch: undefined, before: null }
-  }
-  const patch = parseSettingsPatch(json)
+function patchedProjectSettings(project: Project, patch: Record<string, unknown> | undefined) {
+  if (patch === undefined) return { settings: project.settings, patch, before: null }
   return {
     settings: mergeProjectSettings(project.settings, patch) as Project['settings'],
     patch,
@@ -643,36 +655,30 @@ async function persistSetProject(
   })
 }
 
-async function setProjectCommand(
-  argv: string[],
+function projectSetCandidate(
+  project: Project,
+  currentName: string,
   flags: ProjectFlags,
-  presentation: ProjectPresentation,
-): Promise<void> {
-  const name = argv[2]
-  if (!name)
-    throw new Error(
-      `${PLATFORM_SLUG} project set <name> [--stack X] [--path P] [--canon|--no-canon] [--settings JSON] [--json]`,
-    )
-  const project = projectByName(name)
-  if (!project) throw new Error(`no project "${name}"`)
-  const {
-    settings,
-    patch: settingsPatch,
-    before: settingsBefore,
-  } = patchedProjectSettings(project, flags.flag('settings'))
-  const nextName = flags.flag('name') ?? name
-  const candidate = {
+  settings: Project['settings'],
+): Project {
+  return {
     recordId: project.recordId,
-    name: nextName,
+    name: flags.flag('name') ?? currentName,
     path: flags.flag('path') ?? project.path,
     stack: flags.flag('stack') ?? project.stack,
     canon: flags.has('no-canon') ? false : flags.has('canon') ? true : project.canon,
     retiredAt: project.retiredAt,
     settings,
   }
-  const lensSpaceId = effectiveProjectSpace(db(), name)
-  // The patch's own keys are refused strictly; the row it merges into is read
-  // in strip mode, so a key a newer binary wrote survives the update.
+}
+
+function validateProjectSetCandidate(
+  project: Project,
+  candidate: Project,
+  settingsPatch: Record<string, unknown> | undefined,
+  flags: ProjectFlags,
+): void {
+  const lensSpaceId = effectiveProjectSpace(db(), project.name)
   const malformed = validateRegisterWrite({
     merged: candidate.settings,
     supplied: settingsPatch,
@@ -680,9 +686,9 @@ async function setProjectCommand(
     context: {
       validateKeyPrefixes:
         writesKeyPrefixes(settingsPatch) ||
-        (nextName !== name && candidate.settings.keyPrefixes !== undefined),
-      currentProjectName: name,
-      projectNameAfterWrite: nextName,
+        (candidate.name !== project.name && candidate.settings.keyPrefixes !== undefined),
+      currentProjectName: project.name,
+      projectNameAfterWrite: candidate.name,
       register: projects(),
       enabledLensIds: enabledLensIds(lensSpaceId),
       enabledLensSpaceId: lensSpaceId,
@@ -693,25 +699,113 @@ async function setProjectCommand(
   if (incomplete.length && !flags.has('allow-incomplete')) throw new Error(incomplete.join('\n'))
   assertRegisterBranches(candidate)
   verifyWrittenVisibility(settingsPatch, candidate)
+}
+
+function presentProjectSet(
+  project: Project,
+  settingsBefore: Record<string, unknown> | null,
+  flags: ProjectFlags,
+  presentation: ProjectPresentation,
+): void {
+  if (flags.has('json')) {
+    presentation.log(JSON.stringify(listedProjectJson(project)))
+    return
+  }
+  presentation.log(`updated ${project.name}`)
+  printSettingsEffect(persistedSettingsEffect(settingsBefore, project), presentation)
+  for (const warning of worktreeWarnings(project)) {
+    presentation.log(`${' '.repeat(14)} ! ${warning}`)
+  }
+  for (const line of credentialLinesFromRead(project.name, readMcpConfigResult(project.path))) {
+    presentation.log(`${' '.repeat(14)} ! ${line}`)
+  }
+}
+
+async function setProjectCommand(
+  argv: string[],
+  flags: ProjectFlags,
+  presentation: ProjectPresentation,
+): Promise<void> {
+  const name = argv[2]
+  if (!name)
+    throw new Error(
+      `${PLATFORM_SLUG} project set <name> [--stack X] [--space <id-or-slug>] [--path P] [--canon|--no-canon] [--settings JSON] [--json]`,
+    )
+  const project = projectByName(name)
+  if (!project) throw new Error(`no project "${name}"`)
+  const settingsPatch = await projectSetSettingsPatch(
+    flags.flag('settings'),
+    flags.flag('space'),
+    async (space) => (await hostedProjectDestination(name, { space }))?.destinationSpaceId ?? null,
+  )
+  const { settings, before: settingsBefore } = patchedProjectSettings(project, settingsPatch)
+  const candidate = projectSetCandidate(project, name, flags, settings)
+  validateProjectSetCandidate(project, candidate, settingsPatch, flags)
   const previousTrunk = typeof project.settings.trunk === 'string' ? project.settings.trunk : null
   const destination = await hostedProjectDestination(candidate.name, candidate.settings)
   await refuseHostedProjectSpaceChange(project, candidate.settings, destination)
-  await persistSetProject(name, nextName, previousTrunk, candidate, destination?.destinationSpaceId)
-  const persistedProject = projectByName(nextName)!
+  await persistSetProject(
+    name,
+    candidate.name,
+    previousTrunk,
+    candidate,
+    destination?.destinationSpaceId,
+  )
+  presentProjectSet(projectByName(candidate.name)!, settingsBefore, flags, presentation)
+}
+
+function printProjectSpaceFillRow(
+  row: ProjectSpaceFillRow,
+  applied: boolean,
+  presentation: ProjectPresentation,
+): void {
+  const hosted = row.hostedSpaces.length ? row.hostedSpaces.join(', ') : '(none)'
+  const declared = row.declaredSpace ?? '(none)'
+  const detail =
+    row.decision.kind === 'fill'
+      ? ` ${row.decision.space}${applied ? ' applied' : ''}`
+      : row.decision.kind === 'several-spaces'
+        ? ` ${row.decision.spaces.join(', ')}`
+        : row.decision.kind === 'mismatch'
+          ? ` declared=${row.decision.declared} hosted=${row.decision.spaces.join(', ') || '(none)'}`
+          : ''
+  const needsRuling = spaceFillNeedsRuling(row.decision)
+  const remedy = needsRuling ? `; remedy: ${row.remedy}` : ''
+  presentation.log(
+    `${row.project}: ${row.decision.kind}${detail}; declared ${declared}; hosted ${hosted}${remedy}`,
+  )
+}
+
+async function fillProjectSpacesCommand(
+  flags: ProjectFlags,
+  presentation: ProjectPresentation,
+  dependencies: {
+    plan: typeof planProjectSpaceFill
+    fill: typeof fillAbsentProjectSettings
+  },
+): Promise<void> {
+  const rows = await dependencies.plan()
+  const apply = flags.has('apply')
+  const applied = new Set<string>()
+  if (apply) {
+    for (const row of rows) {
+      if (row.decision.kind !== 'fill') continue
+      await dependencies.fill({
+        name: row.project,
+        fill: { settings: { space: row.decision.space } },
+      })
+      applied.add(row.project)
+    }
+  }
   if (flags.has('json')) {
-    presentation.log(JSON.stringify(listedProjectJson(persistedProject)))
-    return
+    presentation.log(
+      JSON.stringify(rows.map((row) => ({ ...row, applied: applied.has(row.project) }))),
+    )
+  } else {
+    for (const row of rows) printProjectSpaceFillRow(row, applied.has(row.project), presentation)
   }
-  presentation.log(`updated ${nextName}`)
-  printSettingsEffect(persistedSettingsEffect(settingsBefore, persistedProject), presentation)
-  for (const warning of worktreeWarnings(persistedProject)) {
-    presentation.log(`${' '.repeat(14)} ! ${warning}`)
-  }
-  for (const line of credentialLinesFromRead(
-    persistedProject.name,
-    readMcpConfigResult(persistedProject.path),
-  )) {
-    presentation.log(`${' '.repeat(14)} ! ${line}`)
+  if (apply && rows.some(({ decision }) => spaceFillNeedsRuling(decision))) {
+    presentation.exitCode?.(1)
   }
 }
 
@@ -756,41 +850,44 @@ async function pushProjectsCommand(
   )
 }
 
+type ProjectCommandDependencies = {
+  requireSpaceMembership(space: string): Promise<unknown>
+  planProjectSpaceFill?: typeof planProjectSpaceFill
+  fillProjectSpace?: typeof fillAbsentProjectSettings
+}
+
+async function dispatchPrimaryProjectCommand(
+  sub: string,
+  argv: string[],
+  flags: ProjectFlags,
+  presentation: ProjectPresentation,
+  dependencies: ProjectCommandDependencies,
+): Promise<boolean> {
+  if (sub === 'list') listProjectsCommand(flags, presentation)
+  else if (sub === 'add')
+    await addProjectCommand(argv, flags, presentation, dependencies.requireSpaceMembership)
+  else if (sub === 'set') await setProjectCommand(argv, flags, presentation)
+  else if (sub === 'fill-space')
+    await fillProjectSpacesCommand(flags, presentation, {
+      plan: dependencies.planProjectSpaceFill ?? planProjectSpaceFill,
+      fill: dependencies.fillProjectSpace ?? fillAbsentProjectSettings,
+    })
+  else if (sub === 'relink') await relinkProjectCommand(argv[2], presentation)
+  else if (sub === 'select-profile') await selectProfileCommand(argv, flags, presentation)
+  else return false
+  return true
+}
+
 export async function projectCommand(
   sub: string,
   argv: string[],
   flags: ProjectFlags,
   presentation: ProjectPresentation,
-  dependencies: {
-    requireSpaceMembership(space: string): Promise<unknown>
-  },
+  dependencies: ProjectCommandDependencies,
 ): Promise<void> {
   const { has } = flags
 
-  if (sub === 'list') {
-    listProjectsCommand(flags, presentation)
-    return
-  }
-
-  if (sub === 'add') {
-    await addProjectCommand(argv, flags, presentation, dependencies.requireSpaceMembership)
-    return
-  }
-
-  if (sub === 'set') {
-    await setProjectCommand(argv, flags, presentation)
-    return
-  }
-
-  if (sub === 'relink') {
-    await relinkProjectCommand(argv[2], presentation)
-    return
-  }
-
-  if (sub === 'select-profile') {
-    await selectProfileCommand(argv, flags, presentation)
-    return
-  }
+  if (await dispatchPrimaryProjectCommand(sub, argv, flags, presentation, dependencies)) return
 
   if (sub === 'migrate-create') {
     const name = argv[2]
@@ -852,6 +949,6 @@ export async function projectCommand(
   }
 
   throw new Error(
-    `unknown: ${PLATFORM_SLUG} project ${sub}. Try list | add | set | remove | retire | push | fill-record-ids`,
+    `unknown: ${PLATFORM_SLUG} project ${sub}. Try list | add | set | fill-space | remove | retire | push | fill-record-ids`,
   )
 }

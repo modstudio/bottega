@@ -54,10 +54,19 @@ test('registration stores the hosted project identity', async () => {
   const hostedId = newRecordId()
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'space-a',
+      personalSpaceId: 'space-a',
+      memberships: [{ space_id: 'space-a', slug: 'space-a', permission: 'write' }],
+    }),
     upsertProject: async (input) => ({ id: hostedId, name: input.name }),
   })
   const path = mkdtempSync(join(tmpdir(), 'orch-project-identity-'))
-  await runProject(['project', 'add', path], { name: 'identity-registration' })
+  await runProject(['project', 'add', path], {
+    name: 'identity-registration',
+    space: 'space-a',
+  })
   expect(projectByName('identity-registration')?.recordId).toBe(hostedId)
 })
 
@@ -65,6 +74,12 @@ test('project add and set JSON use the published contract and carry record_id', 
   const addId = newRecordId()
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'space-a',
+      personalSpaceId: 'space-a',
+      memberships: [{ space_id: 'space-a', slug: 'space-a', permission: 'write' }],
+    }),
     upsertProject: async (input) => ({
       id: input.name === 'identity-json-add' ? addId : input.id!,
       name: input.name,
@@ -73,7 +88,11 @@ test('project add and set JSON use the published contract and carry record_id', 
   const path = mkdtempSync(join(tmpdir(), 'orch-project-json-'))
   const added = OrchProjectSchema.parse(
     JSON.parse(
-      await runProject(['project', 'add', path], { name: 'identity-json-add', json: true }),
+      await runProject(['project', 'add', path], {
+        name: 'identity-json-add',
+        space: 'space-a',
+        json: true,
+      }),
     ),
   )
   expect(added.record_id).toBe(addId)

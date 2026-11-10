@@ -7,6 +7,7 @@ the project register
 - [bottega project](#bottega-project)
 - [bottega project add](#bottega-project-add)
 - [bottega project fill-record-ids](#bottega-project-fill-record-ids)
+- [bottega project fill-space](#bottega-project-fill-space)
 - [bottega project list](#bottega-project-list)
 - [bottega project migrate-create](#bottega-project-migrate-create)
 - [bottega project push](#bottega-project-push)
@@ -26,6 +27,7 @@ the project register
 
 - [bottega project add](./project.md#bottega-project-add)
 - [bottega project fill-record-ids](./project.md#bottega-project-fill-record-ids)
+- [bottega project fill-space](./project.md#bottega-project-fill-space)
 - [bottega project list](./project.md#bottega-project-list)
 - [bottega project migrate-create](./project.md#bottega-project-migrate-create)
 - [bottega project push](./project.md#bottega-project-push)
@@ -63,6 +65,21 @@ fill missing hosted project identities
 
 ### Options
 
+- `--json`: print JSON output
+
+### Related
+
+- [bottega project](./project.md#bottega-project)
+
+## bottega project fill-space
+
+**Synopsis:** `bottega project fill-space [--apply] [--json]`
+
+classify or fill missing project space declarations
+
+### Options
+
+- `--apply`: apply the proposed migration
 - `--json`: print JSON output
 
 ### Related
@@ -167,7 +184,7 @@ select a project routing profile
 
 ## bottega project set
 
-**Synopsis:** `bottega project set [name] [--name <value>] [--stack <value>] [--settings <value>] [--path <value>] [--canon] [--no-canon] [--allow-incomplete] [--json]`
+**Synopsis:** `bottega project set [name] [--name <value>] [--stack <value>] [--space <value>] [--settings <value>] [--path <value>] [--canon] [--no-canon] [--allow-incomplete] [--json]`
 
 update a registered project
 
@@ -175,6 +192,7 @@ update a registered project
 
 - `--name <value>`: set the project or profile name
 - `--stack <value>`: set the project stack
+- `--space <value>`: select a record space by id or slug
 - `--settings <value>`: apply a JSON Merge Patch: objects merge; arrays and values replace; null removes a key; omitted keys are kept
 - `--path <value>`: set the project checkout path
 - `--canon`: enable canon for the project
