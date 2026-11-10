@@ -359,7 +359,7 @@ async function rotateDataKey(
         plaintext,
         valueContext: {
           spaceId: selectedSpaceId ?? who!.spaceId,
-          userId: row.scope === 'user' ? who.userId : null,
+          userId: row.scope === 'user' ? (who?.userId ?? null) : null,
           keyName: row.key,
           environment: row.environment,
           dekId: current.id,
