@@ -234,7 +234,7 @@ list review lens profiles
 
 ## bottega review lens profile set
 
-**Synopsis:** `bottega review lens profile set <lens> [--axis <value>] [--name <value>] [--body <value>] [--body-file <value>] [--enabled <value>] [--project <value>] [--reason <value>] [--json]`
+**Synopsis:** `bottega review lens profile set <lens> [--axis <value>] [--name <value>] [--body <value>] [--body-file <value>] [--enabled <value>] [--project <value>] [--space <slug>] [--reason <value>] [--json]`
 
 create a review lens profile version
 
@@ -246,6 +246,7 @@ create a review lens profile version
 - `--body-file <value>`: read the profile body from this file
 - `--enabled <value>`: enable or disable the profile
 - `--project <value>`: use the project space catalogue
+- `--space <slug>`: write to this record space
 - `--reason <value>`: record why this change is being made
 - `--json`: print JSON output
 
@@ -272,12 +273,13 @@ show a review lens profile
 
 ## bottega review lens set
 
-**Synopsis:** `bottega review lens set <lens> [--title <value>] [--question <value>] [--excludes <value>] [--slots <value>] [--slots-file <value>] [--enabled <value>] [--requires-execution <value>] [--reason <value>] [--json]`
+**Synopsis:** `bottega review lens set <lens> [--space <slug>] [--title <value>] [--question <value>] [--excludes <value>] [--slots <value>] [--slots-file <value>] [--enabled <value>] [--requires-execution <value>] [--reason <value>] [--json]`
 
 create a review lens version
 
 ### Options
 
+- `--space <slug>`: write to this record space
 - `--title <value>`: set the lens title
 - `--question <value>`: set the question the lens answers
 - `--excludes <value>`: set what the lens excludes

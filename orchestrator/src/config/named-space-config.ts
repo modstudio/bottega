@@ -2,24 +2,12 @@
 /** Registers and trusts machine keys in one hosted space without changing the active space. */
 import { hostname } from 'node:os'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import {
-  type ConfigClient,
-  type ConfigDestination,
-  configClient,
-} from '../../../shared/config-client.ts'
+import type { ConfigClient, ConfigDestination } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { readHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import { readMachineKey } from '../../../shared/machine-key-store.ts'
-import {
-  pinnedUserMismatchRemedy,
-  RECORD_ACTIVE_SPACE_REMEDY,
-  recordSpaceMembershipRefusal,
-} from '../../../shared/record-remedies.ts'
-import {
-  parseRecordSpaceMemberships,
-  recordSpaceMembership,
-} from '../../../shared/record-space-membership.ts'
+import { pinnedUserMismatchRemedy } from '../../../shared/record-remedies.ts'
 import { generateDataKey } from '../../../shared/secret-envelope.ts'
 import { pinTrustedMachine, readTrustList } from '../../../shared/trust-list.ts'
 import {
@@ -31,7 +19,7 @@ import {
   openDataKey,
   wrapsForRecipients,
 } from './data-key-access.ts'
-import { recordConfigCallOutcome } from './hosted-config-call-outcome.ts'
+import { hostedConfigClient } from './hosted-config-call-outcome.ts'
 import { machineTrustRefusal } from './machine-trust-refusal.ts'
 
 type NamedSpace = {
@@ -41,7 +29,7 @@ type NamedSpace = {
 }
 
 async function namedSpace(
-  requested: string | undefined,
+  selected: { spaceId: string; slug: string },
   client: ConfigClient,
   env: ConfigEnvironment,
 ): Promise<NamedSpace> {
@@ -49,17 +37,10 @@ async function namedSpace(
   const pinned = readHostedConfigIdentity(env)
   if (pinned && current.user.id !== pinned.userId)
     throw new Error(pinnedUserMismatchRemedy(pinned.userId))
-  const selected = requested ?? current.activeSpaceId
-  if (!selected) throw new Error(RECORD_ACTIVE_SPACE_REMEDY)
-  const membership = recordSpaceMembership(
-    selected,
-    parseRecordSpaceMemberships(current.memberships),
-  )
-  if (!membership) throw new Error(recordSpaceMembershipRefusal(selected))
   return {
-    destination: { destinationSpaceId: membership.spaceId },
-    slug: membership.slug,
-    spaceId: membership.spaceId,
+    destination: { destinationSpaceId: selected.spaceId },
+    slug: selected.slug,
+    spaceId: selected.spaceId,
   }
 }
 
@@ -95,19 +76,19 @@ function trustRemedy(space: NamedSpace, keyId: string, publicKey: string): Error
 }
 
 export async function machineRegister(
-  requestedSpace?: string,
+  selectedSpace: { spaceId: string; slug: string },
   label = hostname(),
-  client = configClient(process.env, fetch, undefined, undefined, recordConfigCallOutcome),
+  client = hostedConfigClient(),
   env: ConfigEnvironment = process.env,
 ): Promise<string[]> {
   const pair = readMachineKey(env)
   if (!pair)
     throw new Error(
-      `machine key is not initialized; run \`${PLATFORM_SLUG} machine config machine init\``,
+      `machine key is not initialized; run \`${PLATFORM_SLUG} machine config machine init --space ${selectedSpace.slug}\``,
     )
   const keyId = await machineKeyId(pair.publicKey)
   const publicKey = encoded(pair.publicKey)
-  const space = await namedSpace(requestedSpace, client, env)
+  const space = await namedSpace(selectedSpace, client, env)
   const existing = (await client.listMachineKeys(space.destination)).find(
     (item) => item.keyId === keyId,
   )
@@ -153,14 +134,14 @@ export async function machineTrustInSpace(
   keyId: string,
   publicKey: string,
   label: string,
-  requestedSpace: string,
-  client = configClient(process.env, fetch, undefined, undefined, recordConfigCallOutcome),
+  selectedSpace: { spaceId: string; slug: string },
+  client = hostedConfigClient(),
   env: ConfigEnvironment = process.env,
 ): Promise<void> {
   const publicBytes = bytes(publicKey)
   if ((await machineKeyId(publicBytes)) !== keyId)
     throw new Error('machine key id does not match public key')
-  const space = await namedSpace(requestedSpace, client, env)
+  const space = await namedSpace(selectedSpace, client, env)
   const remote = await client.listMachineKeys(space.destination)
   const registered = remote.find((item) => item.keyId === keyId)
   const refusal = machineTrustRefusal(keyId, registered, space.slug)
@@ -169,7 +150,7 @@ export async function machineTrustInSpace(
   const pair = readMachineKey(env)
   if (!pair)
     throw new Error(
-      `machine key is not initialized; run \`${PLATFORM_SLUG} machine config machine init\``,
+      `machine key is not initialized; run \`${PLATFORM_SLUG} machine config machine init --space ${selectedSpace.slug}\``,
     )
   const localKeyId = await machineKeyId(pair.publicKey)
   try {

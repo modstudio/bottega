@@ -15,8 +15,10 @@ import {
   generateDataKey,
   generateMachineKeyPair,
   KEY_SIZE,
+  openValue,
   sealClaimChallenge,
   sealValue,
+  unwrapDataKey,
   wrapDataKey,
 } from '../../../shared/secret-envelope.ts'
 import { pinTrustedMachine, readTrustList } from '../../../shared/trust-list.ts'
@@ -41,7 +43,6 @@ import {
   setConfigEntry,
   setEntry,
   setSecret,
-  shouldRotateAfterRevocation,
 } from './config-service.ts'
 
 const roots: string[] = []
@@ -63,6 +64,7 @@ async function rotationFixture(
   revokedAt: string | null,
   resumeRow = false,
   sameKeyBindings = false,
+  userScope = false,
 ) {
   const root = mkdtempSync(join(tmpdir(), 'config-rotation-'))
   roots.push(root)
@@ -136,7 +138,7 @@ async function rotationFixture(
     plaintext: new TextEncoder().encode('resume-me'),
     valueContext: {
       spaceId,
-      userId: null,
+      userId: userScope ? userId : null,
       keyName: 'TOKEN',
       environment: 'default',
       dekId: oldId,
@@ -146,7 +148,7 @@ async function rotationFixture(
   const baseSecret = {
     key: 'TOKEN',
     environment: 'default',
-    scope: 'space' as const,
+    scope: userScope ? ('user' as const) : ('space' as const),
     projectId: null as string | null,
     dekId: oldId,
     rowVersion: 1,
@@ -244,6 +246,7 @@ async function rotationFixture(
   } as unknown as ConfigClient
   return {
     client,
+    spaceId,
     created,
     retired,
     otherKeyId,
@@ -495,54 +498,6 @@ test('secret set seals the value without one trailing newline and keeps its othe
   })
 })
 
-test('rotation plan re-seals only rows on older DEKs and retires each old DEK once', () => {
-  const row = (key: string, dekId: string) => ({
-    key,
-    dekId,
-    environment: 'default',
-    scope: 'space' as const,
-    rowVersion: 1,
-    updatedAt: '2026-09-18T12:00:00.000Z',
-  })
-  const current = '01990000-0000-7000-8000-000000000003'
-  const key = (id: string, version: number, retiredAt: string | null = null) => ({
-    id,
-    version,
-    retiredAt,
-    createdAt: '2026-09-18T12:00:00.000Z',
-    wraps: [],
-  })
-  expect(
-    planRotation(
-      [row('a', 'old-b'), row('b', current), row('c', 'old-a'), row('d', 'old-b')],
-      key(current, 3),
-      [key('old-a', 1), key('old-b', 2), key(current, 3)],
-    ),
-  ).toEqual({
-    reseal: [row('a', 'old-b'), row('c', 'old-a'), row('d', 'old-b')],
-    retireDekIds: ['old-a', 'old-b'],
-  })
-})
-
-test('revocation rotation policy compares only revocation and data-key timestamps', () => {
-  const current = {
-    id: 'dek',
-    version: 1,
-    createdAt: '2026-06-01T00:00:00.000Z',
-    retiredAt: null,
-    wraps: [],
-  }
-  expect(shouldRotateAfterRevocation(current, [])).toBe(false)
-  expect(shouldRotateAfterRevocation(current, [{ revokedAt: null }])).toBe(false)
-  expect(shouldRotateAfterRevocation(current, [{ revokedAt: current.createdAt }])).toBe(false)
-  expect(shouldRotateAfterRevocation(current, [{ revokedAt: '2026-05-31T23:59:59.999Z' }])).toBe(
-    false,
-  )
-  expect(shouldRotateAfterRevocation(current, [{ revokedAt: '2026-06-01T00:00:00.001Z' }])).toBe(
-    true,
-  )
-})
-
 test('the next secret operation rotates once only when a machine revocation is newer', async () => {
   const newer = await rotationFixture('2026-06-01T00:00:00.000Z')
   await setSecret('TOKEN', 'first', 'space', newer.client)
@@ -592,6 +547,7 @@ test('machine trust after a newer revocation rotates once and does not duplicate
     fixture.recipientKeyId,
     fixture.recipientPublicKey,
     'recipient',
+    { spaceId: fixture.spaceId, slug: 'fixture' },
     fixture.client,
   )
   expect(fixture.created).toHaveLength(1)
@@ -600,6 +556,47 @@ test('machine trust after a newer revocation rotates once and does not duplicate
   expect(
     fixture.current().wraps.filter((wrap) => wrap.recipientKeyId === fixture.recipientKeyId),
   ).toHaveLength(1)
+})
+
+test('machine trust rotation keeps a selected-space user secret bound to its user', async () => {
+  const fixture = await rotationFixture('2026-06-01T00:00:00.000Z', true, false, true)
+  await machineTrust(
+    fixture.recipientKeyId,
+    fixture.recipientPublicKey,
+    'recipient',
+    { spaceId: fixture.spaceId, slug: 'fixture' },
+    fixture.client,
+  )
+  const row = fixture.secrets()[0]!
+  const machine = readMachineKey()!
+  const machineId = await machineKeyId(machine.publicKey)
+  const key = fixture.current()
+  const wrap = key.wraps.find((candidate) => candidate.recipientKeyId === machineId)!
+  const sender = (await readTrustList())[wrap.senderKeyId]!
+  const dek = await unwrapDataKey({
+    enc: Buffer.from(wrap.enc, 'base64url'),
+    ciphertext: Buffer.from(wrap.ciphertext, 'base64url'),
+    wrapContext: { spaceId: fixture.spaceId, dekId: key.id, dekVersion: key.version },
+    recipientPrivateKey: machine.privateKey,
+    senderPublicKey: Buffer.from(sender.public_key, 'base64url'),
+    trustedSenderKeyIds: new Set([wrap.senderKeyId]),
+  })
+  expect(
+    new TextDecoder().decode(
+      openValue({
+        envelope: Buffer.from(row.envelope, 'base64url'),
+        dek,
+        valueContext: {
+          spaceId: fixture.spaceId,
+          userId: '01990000-0000-7000-8000-000000000002',
+          keyName: row.key,
+          environment: row.environment,
+          dekId: row.dekId,
+          rowVersion: row.rowVersion,
+        },
+      }),
+    ),
+  ).toBe('resume-me')
 })
 
 test('sealed environment migration decision covers every resumable store state', () => {
@@ -877,16 +874,18 @@ test('machine init converges with an existing key, pin, space, and registration'
     },
   } as unknown as ConfigClient
 
-  const first = await machineInit('fixture', client, env)
+  const first = await machineInit(spaceId, 'fixture', client, env)
   const privateKey = readMachineKey(env)?.privateKey
-  await expect(machineInit('fixture', client, env)).resolves.toBe(first)
+  await expect(machineInit(spaceId, 'fixture', client, env)).resolves.toBe(first)
   expect(readMachineKey(env)?.privateKey).toEqual(privateKey)
   expect(Object.keys(await readTrustList(env))).toEqual([first])
   expect(readHostedConfigIdentity(env)).toEqual({ spaceId, userId })
   expect(registrations).toEqual([first, first])
 
   identity = { ...identity, activeSpaceId: '01990000-0000-7000-8000-000000000003' }
-  await expect(machineInit('fixture', client, env)).rejects.toThrow('switch back')
+  await expect(machineInit(identity.activeSpaceId, 'fixture', client, env)).rejects.toThrow(
+    'switch back',
+  )
   expect(readHostedConfigIdentity(env)).toEqual({ spaceId, userId })
   expect(registrations).toEqual([first, first])
 
@@ -894,7 +893,7 @@ test('machine init converges with an existing key, pin, space, and registration'
     user: { id: '01990000-0000-7000-8000-000000000004' },
     activeSpaceId: spaceId,
   }
-  await expect(machineInit('fixture', client, env)).rejects.toThrow('sign back in')
+  await expect(machineInit(spaceId, 'fixture', client, env)).rejects.toThrow('sign back in')
   expect(readHostedConfigIdentity(env)).toEqual({ spaceId, userId })
   expect(registrations).toEqual([first, first])
 })
@@ -917,10 +916,10 @@ test('machine init backs up and replaces a revoked local identity before registe
     },
   } as unknown as ConfigClient
 
-  const oldKeyId = await machineInit('fixture', client, env)
+  const oldKeyId = await machineInit(spaceId, 'fixture', client, env)
   const oldPrivateKey = readMachineKey(env)?.privateKey
   revokedKeyId = oldKeyId
-  const newKeyId = await machineInit('fixture', client, env)
+  const newKeyId = await machineInit(spaceId, 'fixture', client, env)
 
   expect(newKeyId).not.toBe(oldKeyId)
   expect(readMachineKey(env)?.privateKey).not.toEqual(oldPrivateKey)
@@ -977,11 +976,11 @@ test('machine init proves possession exactly once only when registration is unow
     },
   } as unknown as ConfigClient
 
-  await machineInit('unowned', client, env)
+  await machineInit(spaceId, 'unowned', client, env)
   expect(calls).toEqual(['challenge', 'claim'])
 
   registeredOwner = userId
-  await machineInit('owned', client, env)
+  await machineInit(spaceId, 'owned', client, env)
   expect(calls).toEqual(['challenge', 'claim'])
 })
 

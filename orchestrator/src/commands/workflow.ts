@@ -63,6 +63,8 @@ const reasonOption = (command: Command) =>
   command.option('--reason <value>', 'record why this change is being made')
 const authorOption = (command: Command) =>
   command.option('--author <value>', 'record who is making this change')
+const spaceOption = (command: Command) =>
+  command.option('--space <slug>', 'write to this record space')
 const workflowArgv = (verb: string, args: string[], options: OptionValues) =>
   productArgv('workflow', [verb, ...args], options)
 type WorkflowRegistration = {
@@ -124,6 +126,7 @@ function registerWorkflowDefinitions({
         workflow
           .command('set <workflow>')
           .description('create a draft workflow version from a JSON file')
+          .option('--space <slug>', 'write to this record space')
           .option('--file <value>', 'read the workflow definition from this file'),
       ),
     ),
@@ -146,7 +149,12 @@ function registerWorkflowVersions({
   ] as const) {
     jsonOption(
       authorOption(
-        reasonOption(workflow.command(`${verb} <workflow> <version>`).description(description)),
+        reasonOption(
+          workflow
+            .command(`${verb} <workflow> <version>`)
+            .description(description)
+            .option('--space <slug>', 'write to this record space'),
+        ),
       ),
     )
       .allowExcessArguments(false)
@@ -161,6 +169,7 @@ function registerWorkflowVersions({
         workflow
           .command('fork <workflow>')
           .description('fork a workflow into a new draft version')
+          .option('--space <slug>', 'write to this record space')
           .option('--from <value>', 'fork from this version'),
       ),
     ),
@@ -563,10 +572,9 @@ function registerWorkflowCatalogue({
   jsonOption(
     authorOption(
       reasonOption(
-        catalogue
-          .command('set')
-          .description('create a draft step catalogue from a JSON file')
-          .option('--file <value>', 'read the catalogue definition from this file'),
+        spaceOption(
+          catalogue.command('set').description('create a draft step catalogue from a JSON file'),
+        ).option('--file <value>', 'read the catalogue definition from this file'),
       ),
     ),
   )
@@ -579,7 +587,9 @@ function registerWorkflowCatalogue({
     ['retire', 'retire a step catalogue version', retireCatalogueCommand],
   ] as const) {
     jsonOption(
-      authorOption(reasonOption(catalogue.command(`${verb} <version>`).description(description))),
+      authorOption(
+        reasonOption(spaceOption(catalogue.command(`${verb} <version>`).description(description))),
+      ),
     )
       .allowExcessArguments(false)
       .action((version, options) =>

@@ -37,7 +37,7 @@ export function recordUnreachableRefusal(
 }
 
 export const machineNotTrustedRemedy = (spaceId: string) =>
-  `this machine is not trusted in record space ${spaceId}; from a machine trusted there, run \`${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey>\``
+  `this machine is not trusted in record space ${spaceId}; from a machine trusted there, run \`${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey> --space ${spaceId}\``
 
 export const configAccessRemedy = (space?: string) =>
   `signed-in user lacks config access${space ? ` in record space ${space}` : ''}; a space owner or admin grants it with \`${PLATFORM_SLUG} record space access grant <email>\``
@@ -57,6 +57,19 @@ export function recordSpaceMembershipRefusal(space: string): string {
     `\`${PLATFORM_SLUG} record space invitations\`, then accept one with ` +
     `\`${PLATFORM_SLUG} record space accept <invitation-id>\``
   )
+}
+
+export function recordSpaceOwnerRequiredRemedy(
+  verb: string,
+  alternatives: readonly ('project' | 'account')[] = [],
+): string {
+  const flags = [
+    '--space <slug>',
+    ...alternatives.map((alternative) =>
+      alternative === 'project' ? '--project <name>' : '--account',
+    ),
+  ]
+  return `${verb} writes to a record space and names none; pass ${flags.join(', or ')}`
 }
 
 export const pinnedSpaceMismatchRemedy = (pinned: string) =>

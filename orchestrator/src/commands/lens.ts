@@ -45,6 +45,7 @@ export function registerLensCommands(
       lens
         .command('set <lens>')
         .description('create a review lens version')
+        .option('--space <slug>', 'write to this record space')
         .option('--title <value>', 'set the lens title')
         .option('--question <value>', 'set the question the lens answers')
         .option('--excludes <value>', 'set what the lens excludes')
@@ -110,7 +111,8 @@ function registerProfileCommands(lens: Command, presentation: { log(value: strin
         .option('--body <value>', 'supply the profile body inline')
         .option('--body-file <value>', 'read the profile body from this file')
         .option('--enabled <value>', 'enable or disable the profile')
-        .option('--project <value>', 'use the project space catalogue'),
+        .option('--project <value>', 'use the project space catalogue')
+        .option('--space <slug>', 'write to this record space'),
     ),
   )
     .allowExcessArguments(false)
