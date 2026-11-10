@@ -60,6 +60,11 @@ import {
   registerRecordWorkflowRoutes,
 } from './record-api-workflow.ts'
 import { registerRecordWriteRoutes } from './record-api-write-routes.ts'
+import {
+  type RecordWriteTelemetryEnvironment,
+  recordDestinationlessWrite,
+  registerRecordWriteTelemetry,
+} from './record-api-write-telemetry.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import type { RecordCanonImportInput, RecordCanonImportResult } from './record-canon-import.ts'
 import type { ConfigTenant } from './record-config.ts'
@@ -97,7 +102,7 @@ import type { RecordScore } from './record-verdicts.ts'
 
 export const SNAPSHOT_MAX_BYTES = 1024 * 1024
 
-type ApiEnvironment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
+type ApiEnvironment = RecordWriteTelemetryEnvironment
 type Tenant = Omit<ConfigTenant, 'spaceIds'> & { spaceIds: string[] }
 type Deps = RecordSubjectRouteDeps &
   RecordReleaseRouteDeps &
@@ -268,6 +273,22 @@ const personalListTarget = (
     ? docTarget(scope, subject, userId)
     : null
 
+function registerRecordIdentityMiddleware(app: Hono<ApiEnvironment>, deps: Deps): void {
+  app.use('/v1/*', async (context, next) => {
+    const identity = await deps.readSession(context.req.raw.headers)
+    if (!identity)
+      return context.json(
+        {
+          error: 'record authentication required',
+          remedy: RECORD_SIGN_IN_REMEDY,
+        },
+        401,
+      )
+    context.set('identity', identity)
+    await next()
+  })
+}
+
 export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   const app = new Hono<ApiEnvironment>()
   app.onError((error, context) => {
@@ -283,19 +304,9 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     readVersion: () => builtCommitResponse(deps.readCommit()),
   })
   registerPublicDocRoutes(app, deps)
-  app.use('/v1/*', async (context, next) => {
-    const identity = await deps.readSession(context.req.raw.headers)
-    if (!identity)
-      return context.json(
-        {
-          error: 'record authentication required',
-          remedy: RECORD_SIGN_IN_REMEDY,
-        },
-        401,
-      )
-    context.set('identity', identity)
-    await next()
-  })
+  registerRecordIdentityMiddleware(app, deps)
+  // The report route must follow the identity middleware that authenticates it.
+  registerRecordWriteTelemetry(app)
   registerRecordIdentityRoutes(app, deps)
   registerRecordSessionRoutes(app, deps)
   registerRecordRequestSpace(app)
@@ -314,8 +325,8 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     }
   })
   const scope = (context: Context<ApiEnvironment>): Tenant | null => {
-    const identity = context.get('identity') as RecordIdentity
-    return requestTenant(identity, context.get('destinationSpaceId'), deps.recordUrl)
+    recordDestinationlessWrite(context)
+    return requestTenant(context.get('identity'), context.get('destinationSpaceId'), deps.recordUrl)
   }
   const { docScope, docIdScope } = recordDocumentScopes({ scope, readDoc: deps.readDoc })
   registerSignedDocSearchRoute(app, deps, { scope, noSpace })

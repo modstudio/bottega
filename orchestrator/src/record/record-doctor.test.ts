@@ -42,6 +42,7 @@ describe('record doctor decisions', () => {
       live: 0,
     },
     quarantinedOutboxRows: [],
+    noDestinationWrites: { processStartedAt: '2026-11-09T00:00:00.000Z', counts: [] },
     operatorConnectionPresent: false,
   } as const
 
@@ -76,9 +77,41 @@ describe('record doctor decisions', () => {
       'local outbox pending rows',
       'local runs the record does not reflect',
       'local outbox quarantined rows',
+      'destination-less hosted writes',
     ])
     expect(JSON.stringify(checks)).not.toContain('BOTTEGA_RECORD_URL')
     expect(JSON.stringify(checks)).not.toContain('BETTER_AUTH_SECRET')
+  })
+
+  test('destination-less writes are grouped by route and cause without failing doctor', () => {
+    const checks = decideRecordDoctorChecks({
+      ...healthyFacts,
+      noDestinationWrites: {
+        processStartedAt: '2026-11-09T00:00:00.000Z',
+        counts: [
+          { spaceId: 'space-1', route: '/v1/docs', cause: 'cli/1', occurrences: 2 },
+          { spaceId: 'space-2', route: '/v1/docs', cause: 'cli/1', occurrences: 3 },
+        ],
+      },
+    })
+    expect(recordDoctorExitCode(checks)).toBe(0)
+    expect(checks.find((check) => check.name === 'destination-less hosted writes')?.detail).toBe(
+      '5 since 2026-11-09T00:00:00.000Z\n5  /v1/docs  cli/1',
+    )
+  })
+
+  test('an unreachable destination-less write route fails doctor', () => {
+    const failure =
+      'hosted route /v1/health/no-destination-writes failed: connection refused; check BOTTEGA_RECORD_API_URL and make the hosted record API reachable, then retry'
+    const checks = decideRecordDoctorChecks({
+      ...healthyFacts,
+      noDestinationWrites: undefined,
+      noDestinationWritesFailure: failure,
+    })
+    expect(recordDoctorExitCode(checks)).toBe(1)
+    expect(checks.find((check) => check.name === 'destination-less hosted writes')?.detail).toBe(
+      failure,
+    )
   })
 
   test('an accepted session with no memberships fails the active-space check', () => {

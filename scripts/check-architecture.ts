@@ -221,6 +221,11 @@ const ratchet = architectureViolationRatchet(
 )
 
 if (ratchet.newViolations.length || ratchet.fixedBaseline.length) {
+  for (const edge of ratchet.newViolations) {
+    console.error(
+      `check-architecture: new violation outside the baseline; remove the import: ${edge.rule} ${edge.from} -> ${edge.to}`,
+    )
+  }
   for (const edge of ratchet.fixedBaseline) {
     console.error(
       `check-architecture: baselined violation is fixed; remove it from the baseline: ${edge.rule} ${edge.from} -> ${edge.to}`,

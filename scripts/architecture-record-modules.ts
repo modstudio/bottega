@@ -239,6 +239,7 @@ export const recordModules: RecordModule[] = [
     './record-api-client-paths.ts',
     './record-api-client-response.ts',
     './record-auth.ts',
+    './record-no-destination-write-contract.ts',
     './record-sync-contract.ts',
   ]),
   module('orchestrator/src/record/record-email-verification-client.ts', ['./record-api-client.ts']),
@@ -458,6 +459,24 @@ export const recordModules: RecordModule[] = [
     './record-auth.ts',
     './record-project-destination.ts',
   ]),
+  module('orchestrator/src/record/record-api-write-telemetry.ts', [
+    'hono',
+    '../../../shared/record-space-membership.ts',
+    './record-auth.ts',
+    './record-no-destination-write-contract.ts',
+    './record-no-destination-write-counter.ts',
+    './record-no-destination-write-decision.ts',
+  ]),
+  module('orchestrator/src/record/record-no-destination-write-contract.ts', [
+    './record-no-destination-write-decision.ts',
+  ]),
+  module('orchestrator/src/record/record-no-destination-write-decision.ts', [
+    '../../../shared/record-space-request.ts',
+  ]),
+  module('orchestrator/src/record/record-no-destination-write-counter.ts', [
+    './record-no-destination-write-contract.ts',
+    './record-no-destination-write-decision.ts',
+  ]),
   module('orchestrator/src/record/record-project-destination.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-space-membership.ts',
@@ -615,6 +634,7 @@ export const recordModules: RecordModule[] = [
     './machine-identity.ts',
     './outbox-quarantine.ts',
     './record-api-client.ts',
+    './record-no-destination-write-contract.ts',
     './record-attribution.ts',
     './record-project-destination.ts',
     './record-session.ts',
@@ -972,6 +992,7 @@ export const recordModules: RecordModule[] = [
     'zod',
     '../board/board-reply-audience.ts',
     './record-auth.ts',
+    './record-api-write-telemetry.ts',
     './record-api-prose.ts',
     './record-board-stream.ts',
     './record-board-contract.ts',

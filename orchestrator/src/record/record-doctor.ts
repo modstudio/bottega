@@ -39,6 +39,11 @@ import { machineId } from './machine-identity.ts'
 import { quarantinedOutboxRows } from './outbox-quarantine.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
 import { recordAttributionFailure } from './record-attribution.ts'
+import {
+  NO_DESTINATION_WRITES_ROUTE,
+  type NoDestinationWriteReport,
+  type NoDestinationWriteReportRow,
+} from './record-no-destination-write-contract.ts'
 import { recordPool } from './record-pool.ts'
 import { effectiveProjectSpace } from './record-project-destination.ts'
 import { storedRecordToken } from './record-session.ts'
@@ -75,14 +80,55 @@ export type RecordDoctorFacts = {
   operatorConnectionPresent: boolean
   operatorChecks?: readonly RecordDoctorCheck[]
   agentCredentialChecks?: readonly RecordDoctorCheck[]
+  noDestinationWrites?: NoDestinationWriteReport
+  noDestinationWritesFailure?: string
 }
 
 const API_CONFIGURATION_REMEDY = `run \`${PLATFORM_SLUG} record use <address>\``
 const API_REACHABILITY_REMEDY =
   'check BOTTEGA_RECORD_API_URL and make the hosted record API reachable, then retry'
-
 export function recordDoctorExitCode(checks: readonly RecordDoctorCheck[]): 0 | 1 {
   return checks.some((check) => check.status === 'fail') ? 1 : 0
+}
+
+function destinationlessWriteDetail(
+  report: NonNullable<RecordDoctorFacts['noDestinationWrites']>,
+): string {
+  const grouped = new Map<string, Omit<NoDestinationWriteReportRow, 'spaceId'>>()
+  for (const row of report.counts) {
+    const key = JSON.stringify([row.route, row.cause])
+    const existing = grouped.get(key)
+    grouped.set(key, {
+      route: row.route,
+      cause: row.cause,
+      occurrences: (existing?.occurrences ?? 0) + row.occurrences,
+    })
+  }
+  const rows = [...grouped.values()].sort(
+    (left, right) => left.route.localeCompare(right.route) || left.cause.localeCompare(right.cause),
+  )
+  return [
+    `${rows.reduce((sum, row) => sum + row.occurrences, 0)} since ${report.processStartedAt}`,
+    ...rows.map((row) => `${row.occurrences}  ${row.route}  ${row.cause}`),
+  ].join('\n')
+}
+
+function destinationlessWriteCheck(facts: RecordDoctorFacts): RecordDoctorCheck {
+  return facts.noDestinationWrites
+    ? {
+        name: 'destination-less hosted writes',
+        status: 'pass',
+        detail: destinationlessWriteDetail(facts.noDestinationWrites),
+        section: 'customer',
+      }
+    : {
+        name: 'destination-less hosted writes',
+        status: 'fail',
+        detail:
+          facts.noDestinationWritesFailure ??
+          `hosted route ${NO_DESTINATION_WRITES_ROUTE} was not measured; ${API_REACHABILITY_REMEDY}`,
+        section: 'customer',
+      }
 }
 
 function attributionFailureCheck(failure: string | null): RecordDoctorCheck {
@@ -249,6 +295,8 @@ export function decideRecordDoctorChecks(facts: RecordDoctorFacts): RecordDoctor
 
   checks.push(...(facts.agentCredentialChecks ?? []))
 
+  checks.push(destinationlessWriteCheck(facts))
+
   if (facts.operatorConnectionPresent)
     checks.push(
       ...(facts.operatorChecks ?? []).map((check) => ({
@@ -389,6 +437,23 @@ type CustomerFacts = Omit<RecordDoctorFacts, 'operatorConnectionPresent' | 'oper
   userId: string | null
 }
 
+async function destinationlessWriteFacts(client: ReturnType<typeof recordApiClient>): Promise<{
+  noDestinationWrites?: NoDestinationWriteReport
+  noDestinationWritesFailure?: string
+}> {
+  if (!client.noDestinationWrites)
+    return {
+      noDestinationWritesFailure: `hosted client does not expose ${NO_DESTINATION_WRITES_ROUTE}`,
+    }
+  try {
+    return { noDestinationWrites: await client.noDestinationWrites() }
+  } catch (error) {
+    return {
+      noDestinationWritesFailure: `hosted route ${NO_DESTINATION_WRITES_ROUTE} failed: ${error instanceof Error ? error.message : String(error)}`,
+    }
+  }
+}
+
 async function customerFacts(
   projects: Array<{ name: string; space: string | null }>,
   database: Database,
@@ -401,25 +466,31 @@ async function customerFacts(
   let apiFailure: string | undefined
   let sessionFailure: string | undefined
   let identity: Awaited<ReturnType<ReturnType<typeof recordApiClient>['whoami']>> | null = null
+  let measurement: Awaited<ReturnType<typeof destinationlessWriteFacts>> = {}
   if (!apiConfigured) {
     apiFailure = API_CONFIGURATION_REMEDY
     sessionFailure = RECORD_SIGN_IN_REMEDY
+    measurement = { noDestinationWritesFailure: API_CONFIGURATION_REMEDY }
   } else if (!token) {
     apiFailure = `reachability requires a stored session; ${RECORD_SIGN_IN_REMEDY}`
     sessionFailure = RECORD_SIGN_IN_REMEDY
+    measurement = { noDestinationWritesFailure: apiFailure }
   } else {
     try {
       identity = await recordApiClient().whoami()
       apiReachable = true
       sessionAccepted = true
+      measurement = await destinationlessWriteFacts(recordApiClient())
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
       if (error instanceof RecordApiRequestError && error.kind === 'refused') {
         apiReachable = true
-        sessionFailure = detail
+        sessionFailure = `${detail}; ${RECORD_SIGN_IN_REMEDY}`
+        measurement = { noDestinationWritesFailure: sessionFailure }
       } else {
         apiFailure = `${detail}; ${API_REACHABILITY_REMEDY}`
         sessionFailure = RECORD_SIGN_IN_REMEDY
+        measurement = { noDestinationWritesFailure: apiFailure }
       }
     }
   }
@@ -434,6 +505,7 @@ async function customerFacts(
     activeSpaceId: identity?.activeSpaceId ?? null,
     memberships: parseRecordSpaceMemberships(identity?.memberships),
     projects,
+    ...measurement,
     pendingOutboxRows: pendingOutboxCount(database),
     runRecordBackfill: inspectRunRecordBackfill(database),
     quarantinedOutboxRows: quarantinedOutboxRows(database).map((row) => ({

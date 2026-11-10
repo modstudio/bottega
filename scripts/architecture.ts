@@ -798,8 +798,32 @@ function runtimeBoundaryRules() {
   ]
 }
 
+const activeSpaceResolverRule: ArchitectureRule = {
+  name: 'no-active-space-resolver-import',
+  severity: 'error',
+  comment:
+    'Production orchestrator and hub modules may not newly import active-space fallback modules; DEV-2244 replaces them with the owner-routed destination decision.',
+  from: {
+    path: '^(?:orchestrator|hub)/',
+    pathNot: ['(?:\\.test|\\.fixture)\\.ts$|^orchestrator/test/'],
+  },
+  to: {
+    path: [
+      'shared/personal-item-space.ts',
+      'orchestrator/src/project-space.ts',
+      'orchestrator/src/record/record-project-destination.ts',
+      'hub/src/task-project-space.ts',
+    ]
+      .map(exactArchitecturePath)
+      .join('|'),
+  },
+}
+
+const architectureCycleFiles = [
+  ...new Set(allowedCycles.flatMap(({ cycle }) => cycle.slice(0, -1))),
+]
+
 export function architectureRules() {
-  const cycleFiles = [...new Set(allowedCycles.flatMap(({ cycle }) => cycle.slice(0, -1)))]
   const forbidden: ArchitectureRule[] = [
     concernIsolationRule(concerns.roots),
     cliCompositionRule(concerns.roots, cliConcernEntries, exactArchitecturePath),
@@ -870,6 +894,7 @@ export function architectureRules() {
       from: { path: '^orchestrator/src/(?:program\\.ts|commands/)' },
       to: { path: exactArchitecturePath('orchestrator/src/run/run.ts') },
     },
+    activeSpaceResolverRule,
     {
       name: 'import-record-api-server-transitive-boundary',
       severity: 'error',
@@ -912,7 +937,7 @@ export function architectureRules() {
       severity: 'error',
       from: {
         path: '^orchestrator/src/',
-        pathNot: cycleFiles.map(exactArchitecturePath),
+        pathNot: architectureCycleFiles.map(exactArchitecturePath),
       },
       to: { path: '^orchestrator/src/', circular: true },
     },

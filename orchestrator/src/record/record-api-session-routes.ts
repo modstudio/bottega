@@ -15,7 +15,12 @@ import { type RecordSyncRouteDeps, registerRecordSyncRoute } from './record-api-
 import { registerRecordTrialSpaceRoutes } from './record-api-trial-space-routes.ts'
 import type { RecordIdentity } from './record-auth.ts'
 
-type ApiEnvironment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
+type ApiEnvironment = {
+  Variables: {
+    identity: RecordIdentity
+    destinationSpaceId?: string
+  }
+}
 export type RecordSessionRouteDeps = RecordMachineRouteDeps &
   RecordInvitationRouteDeps &
   RecordSyncRouteDeps &

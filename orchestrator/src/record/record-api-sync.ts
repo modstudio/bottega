@@ -5,6 +5,10 @@ import { bodyLimit } from 'hono/body-limit'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
+import {
+  type RecordWriteTelemetryEnvironment,
+  recordDestinationlessWrite,
+} from './record-api-write-telemetry.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
   RECORD_SYNC_BATCH_SIZE,
@@ -15,7 +19,7 @@ import {
 } from './record-sync-contract.ts'
 import { RecordSyncRequestRefusal } from './record-sync-decision.ts'
 
-type SyncEnvironment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
+type SyncEnvironment = RecordWriteTelemetryEnvironment
 
 export type RecordSyncRouteDeps = {
   recordUrl: string
@@ -71,6 +75,7 @@ export function registerRecordSyncRoute(
         ),
     }),
     async (context) => {
+      recordDestinationlessWrite(context)
       if (!deps.syncRecord)
         return context.json({ error: 'record sync is not available in this server' }, 501)
       const identity = context.get('identity')
