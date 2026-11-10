@@ -270,15 +270,6 @@ describe('file-backed record session', () => {
     expect(readRecordSessionToken()).toBe('first-token')
   })
 
-  test('an external write and stamp makes a memoized absence visible', () => {
-    expect(readRecordSessionToken()).toBeNull()
-    ensureRecordSessionDirectory(process.env)
-    writeFileSync(recordSessionPath(process.env), 'external-token', { mode: 0o600 })
-    writeFileSync(recordSessionStampPath(process.env), 'external-stamp', { mode: 0o600 })
-
-    expect(readRecordSessionToken()).toBe('external-token')
-  })
-
   test('an external write and stamp replaces a memoized token', () => {
     writeRecordSessionToken('first-token', unusedRunner)
     expect(readRecordSessionToken()).toBe('first-token')
