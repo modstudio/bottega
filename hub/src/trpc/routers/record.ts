@@ -37,7 +37,7 @@ import { runListInput } from '../../run-list-input.ts'
 import { selectSnapshot } from '../../snapshot-selection.ts'
 import type { Context } from '../context.ts'
 import { recordConfigAccessRouter } from './record-config-access.ts'
-import { email } from './record-inputs.ts'
+import { email, spaceId } from './record-inputs.ts'
 import { recordMemberPermissionRouter } from './record-member-permission.ts'
 import { recordClient } from './record-router-client.ts'
 
@@ -158,7 +158,7 @@ function optionalSnapshot<
 const recordCoreRouter = t.router({
   whoami: t.procedure.query(({ ctx }) => recordClient(ctx).whoami()),
   setActiveSpace: t.procedure
-    .input(z.object({ spaceId: uuid }))
+    .input(z.object({ spaceId }))
     .mutation(({ ctx, input }) => recordClient(ctx).setActiveSpace(input.spaceId)),
   runsView: t.procedure.input(runListInput).query(async ({ ctx, input }) => {
     const now = Date.now()
@@ -331,7 +331,7 @@ const recordCoreRouter = t.router({
   subjects: t.procedure
     .input(
       z.object({
-        spaceId: uuid,
+        spaceId,
         project: z.string().trim().min(1),
         includeRetired: z.boolean().optional(),
       }),
@@ -343,7 +343,7 @@ const recordCoreRouter = t.router({
   saveDoc: t.procedure
     .input(
       z.object({
-        spaceId: uuid,
+        spaceId,
         scope: z.string().min(1),
         subject: z.string().nullable(),
         slug: z.string().min(1),
@@ -378,7 +378,7 @@ const recordCoreRouter = t.router({
   reorderDocs: t.procedure
     .input(
       z.object({
-        spaceId: uuid,
+        spaceId,
         scope: z.string().min(1),
         subject: z.string().nullable(),
         parentId: uuid.nullable(),
@@ -393,7 +393,7 @@ const recordCoreRouter = t.router({
     .input(
       z.object({
         id: uuid,
-        spaceId: uuid,
+        spaceId,
         reason: z.string().trim().min(1, 'Reason is required'),
         expectedRevision: uuid,
       }),
@@ -537,7 +537,7 @@ const recordCoreRouter = t.router({
   createReportSubscription: t.procedure
     .input(
       subscriptionCadenceInput.extend({
-        spaceId: uuid,
+        spaceId,
         scope: subscriptionScope,
         recipientUserIds: z.array(uuid),
         recipientEmails: z.array(email),
@@ -552,7 +552,7 @@ const recordCoreRouter = t.router({
     .input(
       subscriptionCadenceInput.extend({
         id: uuid,
-        spaceId: uuid,
+        spaceId,
         scope: subscriptionScope,
         recipientUserIds: z.array(uuid),
         recipientEmails: z.array(email),
@@ -564,19 +564,19 @@ const recordCoreRouter = t.router({
       return updateHostedReportSubscription(recordDatabase(ctx), identity, id, update)
     }),
   removeReportSubscription: t.procedure
-    .input(z.object({ id: uuid, spaceId: uuid }).strict())
+    .input(z.object({ id: uuid, spaceId }).strict())
     .mutation(async ({ ctx, input }) => {
       const { identity } = await hostedWriteIdentity(ctx, input.spaceId)
       return unsubscribeHostedReportSubscription(recordDatabase(ctx), identity, input.id)
     }),
   sendReportSubscriptionTest: t.procedure
-    .input(z.object({ id: uuid, spaceId: uuid }).strict())
+    .input(z.object({ id: uuid, spaceId }).strict())
     .mutation(async ({ ctx, input }) => {
       const { identity } = await hostedWriteIdentity(ctx, input.spaceId)
       return sendHostedReportSubscriptionTest(recordDatabase(ctx), identity, input.id)
     }),
   task: t.procedure
-    .input(z.object({ key: z.string().min(1).max(64), spaceId: uuid.optional() }))
+    .input(z.object({ key: z.string().min(1).max(64), spaceId: spaceId.optional() }))
     .query(async ({ ctx, input }) => {
       const { identity } = await hostedIdentity(ctx)
       const detail = await hostedTaskDetail(

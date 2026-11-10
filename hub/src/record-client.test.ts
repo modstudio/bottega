@@ -150,16 +150,27 @@ describe('record client', () => {
     expect(spaces).toEqual([spaceId, spaceId, spaceId])
   })
 
-  test('clears a credential preference by identity', async () => {
-    const requests: Array<{ url: string; method: string | undefined; body: string | null }> = []
+  test('administers config and member access in the requested space', async () => {
+    const requests: Array<{
+      url: string
+      method: string | undefined
+      body: string | null
+      spaceId: string | null
+    }> = []
     const client = clientWith(async (url, init) => {
       requests.push({
         url: String(url),
         method: init?.method,
         body: typeof init?.body === 'string' ? init.body : null,
+        spaceId: new Headers(init?.headers).get('x-record-space'),
       })
+      if (String(url).endsWith('/grant')) return jsonResponse({ granted: true })
+      if (String(url).endsWith('/withdraw'))
+        return jsonResponse({ revokedMachineKeyIds: [], readableSecretKeys: [] })
+      if (String(url).endsWith('/permission')) return jsonResponse({ permission: 'read' })
       return jsonResponse({ deleted: true })
     })
+    const administeredSpaceId = '01990000-0000-7000-8000-000000000099'
     const identity = {
       projectId: '01990000-0000-7000-8000-000000000013',
       provider: 'openrouter',
@@ -169,13 +180,35 @@ describe('record client', () => {
       environment: 'local' as const,
     }
 
-    await client.clearCredentialPreference(identity, whoamiBody.activeSpaceId)
+    await client.clearCredentialPreference(identity, administeredSpaceId)
+    await client.grantConfigAccess('member@example.test', administeredSpaceId)
+    await client.withdrawConfigAccess('member@example.test', administeredSpaceId)
+    await client.setMemberPermission('member@example.test', 'read', administeredSpaceId)
 
     expect(requests).toEqual([
       {
         url: 'https://api.example.test/v1/config/credential-preferences',
         method: 'DELETE',
         body: JSON.stringify(identity),
+        spaceId: administeredSpaceId,
+      },
+      {
+        url: 'https://api.example.test/v1/config-access/grant',
+        method: 'POST',
+        body: JSON.stringify({ email: 'member@example.test' }),
+        spaceId: administeredSpaceId,
+      },
+      {
+        url: 'https://api.example.test/v1/config-access/withdraw',
+        method: 'POST',
+        body: JSON.stringify({ email: 'member@example.test' }),
+        spaceId: administeredSpaceId,
+      },
+      {
+        url: 'https://api.example.test/v1/members/permission',
+        method: 'POST',
+        body: JSON.stringify({ email: 'member@example.test', permission: 'read' }),
+        spaceId: administeredSpaceId,
       },
     ])
   })

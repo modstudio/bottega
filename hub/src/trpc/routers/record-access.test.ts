@@ -7,6 +7,9 @@ const spaceId = '01990000-0000-7000-8000-000000000001'
 const userId = '01990000-0000-7000-8000-000000000002'
 const subscriptionId = '01990000-0000-7000-8000-000000000003'
 const revisionId = '01990000-0000-7000-8000-000000000004'
+const runId = '01990000-0000-7000-8000-000000000005'
+const runSpaceId = '01990000-0000-7000-8000-000000000006'
+const activeSpaceId = '01990000-0000-7000-8000-000000000007'
 const originalFetch = globalThis.fetch
 const originalRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
 const originalRecordDatabaseUrl = process.env.BOTTEGA_RECORD_DATABASE_URL
@@ -60,6 +63,58 @@ test('record procedures build their client from the configured record address', 
   } finally {
     clear()
   }
+})
+
+test('score and void bind their writes to the run space', async () => {
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  const writeSpaces: Array<string | null> = []
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const path = new URL(String(input)).pathname
+    if (path === '/v1/whoami')
+      return Response.json({
+        user: { id: userId },
+        activeSpaceId,
+        personalSpaceId: null,
+        memberships: [{ space_id: activeSpaceId, slug: 'active', permission: 'write' }],
+      })
+    if (path === `/v1/runs/${runId}`)
+      return Response.json({
+        id: runId,
+        spaceId: runSpaceId,
+        spaceName: 'Run space',
+        projectName: 'workshop',
+        machineId: '01990000-0000-7000-8000-000000000008',
+        startedAt: '2026-11-10T12:00:00.000Z',
+        finishedAt: null,
+        agent: 'codex',
+        job: 'implement',
+        status: 'ok',
+        latencyMs: null,
+        promptHead: 'Build it',
+        promptBytes: 8,
+        taskKey: 'DEV-2252',
+        failureKind: null,
+        vendorTokens: null,
+        vendorCostUsd: null,
+        label: null,
+        lens: null,
+        parentRunId: null,
+        turn: 0,
+        evidenceExcluded: null,
+        probe: false,
+        score: null,
+        error: null,
+        reviews: [],
+      })
+    writeSpaces.push(new Headers(init?.headers).get('x-record-space'))
+    return Response.json({ ok: true })
+  }) as typeof fetch
+  const api = recordRouter.createCaller({ authorization: 'Bearer token' })
+
+  await api.score({ id: runId, delivery: 'full', quality: 'right', fidelity: null, note: null })
+  await api.void({ id: runId, reason: 'not evidence' })
+
+  expect(writeSpaces).toEqual([runSpaceId, runSpaceId])
 })
 
 test('hosted document mutations bind the destination, authenticated author, and revision', async () => {

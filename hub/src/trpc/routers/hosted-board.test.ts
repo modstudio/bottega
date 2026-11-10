@@ -256,13 +256,15 @@ test('board contract accepts UUID note references and refuses numeric note ids',
 
 test('hosted board post applies the shared default durations', async () => {
   let posted: Record<string, unknown> | undefined
+  let destination: string | undefined
   const client = {
     ...destinationClient,
     boardList: async () => ({ messages: [], truncated: false }),
     boardThread: async () => ({ root, replies: [] }),
     boardStatus: async () => ({ message: root, receipts: [] }),
-    boardPost: async (input: Record<string, unknown>) => {
+    boardPost: async (input: Record<string, unknown>, spaceId: string) => {
       posted = input
+      destination = spaceId
       return { ...root, id: mintedPostId, kind: 'notice' }
     },
     boardReply: async () => ({ ...root, id: replyId, threadRootId: rootId }),
@@ -285,6 +287,7 @@ test('hosted board post applies the shared default durations', async () => {
     expiresAt: new Date(now + BOARD_REQUEST_DEFAULT_EXPIRY_MS).toISOString(),
     ackDeadline: new Date(now + BOARD_DEFAULT_ACK_DEADLINE_MS).toISOString(),
   })
+  expect(destination).toBe(personalSpaceId)
 })
 
 test('hosted board defaults an acknowledgement-required post to request', async () => {

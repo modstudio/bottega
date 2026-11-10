@@ -11,3 +11,8 @@ export type RecordClientOptions = {
   fetch?: RecordFetch
   requestDeadlineMs?: number
 }
+
+export const recordWriteDestinationHeaders = (spaceId: string) => ({
+  'content-type': 'application/json',
+  'x-record-space': spaceId,
+})

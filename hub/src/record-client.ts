@@ -40,7 +40,7 @@ import {
 } from './doc-contract.ts'
 import { recordBigintSchema } from './record-bigint.ts'
 import { recordBoardClient } from './record-board-client.ts'
-import type { RecordClientOptions } from './record-client-options.ts'
+import { type RecordClientOptions, recordWriteDestinationHeaders } from './record-client-options.ts'
 
 export function requiredRecordApiUrl(): string {
   return resolveRecordApiUrl()
@@ -781,7 +781,7 @@ function recordConfigClient(options: RecordClientOptions) {
         z.object({ deleted: z.literal(true) }),
         {
           method: 'DELETE',
-          headers: { 'content-type': 'application/json', 'x-record-space': spaceId },
+          headers: recordWriteDestinationHeaders(spaceId),
           body: JSON.stringify(credentialPreferenceIdentitySchema.parse(input)),
         },
       ),
@@ -794,7 +794,7 @@ function recordConfigAccessClient(options: RecordClientOptions) {
     grantConfigAccess: (email: string, spaceId: string) =>
       request(options, '/v1/config-access/grant', configAccessGrantSchema, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-record-space': spaceId },
+        headers: recordWriteDestinationHeaders(spaceId),
         body: JSON.stringify({ email }),
       }),
     setMemberPermission: (
@@ -804,13 +804,13 @@ function recordConfigAccessClient(options: RecordClientOptions) {
     ) =>
       request(options, '/v1/members/permission', memberPermissionSchema, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-record-space': spaceId },
+        headers: recordWriteDestinationHeaders(spaceId),
         body: JSON.stringify({ email, permission }),
       }),
     withdrawConfigAccess: (email: string, spaceId: string) =>
       request(options, '/v1/config-access/withdraw', configAccessWithdrawSchema, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-record-space': spaceId },
+        headers: recordWriteDestinationHeaders(spaceId),
         body: JSON.stringify({ email }),
       }),
   }
@@ -895,13 +895,13 @@ export function createRecordClient(options: RecordClientOptions) {
     score: (id: string, input: z.input<typeof scoreInputSchema>, spaceId: string) =>
       request(options, `/v1/runs/${id}/score`, verdictResponseSchema, {
         method: 'PUT',
-        headers: { 'content-type': 'application/json', 'x-record-space': spaceId },
+        headers: recordWriteDestinationHeaders(spaceId),
         body: JSON.stringify(scoreInputSchema.parse(input)),
       }),
     void: (id: string, input: z.input<typeof voidInputSchema>, spaceId: string) =>
       request(options, `/v1/runs/${id}/void`, verdictResponseSchema, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-record-space': spaceId },
+        headers: recordWriteDestinationHeaders(spaceId),
         body: JSON.stringify(voidInputSchema.parse(input)),
       }),
     reviews: (input: RecordReviewListInput = {}) =>

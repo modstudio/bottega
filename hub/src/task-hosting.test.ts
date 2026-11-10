@@ -29,6 +29,57 @@ import { closeThenPrune } from './task-close.ts'
 const applyHostedTaskChanges = (changes: Parameters<typeof applyHostedTaskRows>[1]) =>
   writeTransaction((conn) => applyHostedTaskRows(conn, changes))
 
+type BulkTaskRoute = 'presence' | 'delete'
+
+function callBulkTaskRoute(
+  route: BulkTaskRoute,
+  requestedSpace: string | null,
+  onWrite: (spaceId: string) => void,
+) {
+  const headers = new Headers({ authorization: 'Bearer test', 'content-type': 'application/json' })
+  if (requestedSpace !== null) headers.set('x-record-space', requestedSpace)
+  const fetch = async () =>
+    Response.json({
+      user: { id: 'user-1' },
+      activeSpaceId: 'space-a',
+      memberships: [
+        { space_id: 'space-a', slug: 'active', permission: 'write' },
+        { space_id: 'space-b', slug: 'declared', permission: 'write' },
+      ],
+    })
+  if (route === 'presence')
+    return taskApi(
+      new Request('https://hub.example.test/v1/tasks/presence', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ pairs: [] }),
+      }),
+      hostedRouteTestConfig,
+      {
+        fetch,
+        presence: async (_url, identity) => {
+          onWrite(identity.spaceId)
+          return { present: [], refused: [] }
+        },
+      },
+    )
+  return taskApi(
+    new Request('https://hub.example.test/v1/tasks', {
+      method: 'DELETE',
+      headers,
+      body: JSON.stringify({ ids: [], confirmation: 0 }),
+    }),
+    hostedRouteTestConfig,
+    {
+      fetch,
+      deleteTasks: async (_url, identity) => {
+        onWrite(identity.spaceId)
+        return { tasks: 0, comments: 0, documents: 0, statusEvents: 0 }
+      },
+    },
+  )
+}
+
 beforeAll(resetFixtureStore)
 
 describe('hosted-only task safety', () => {
@@ -135,6 +186,39 @@ describe('hosted-only task safety', () => {
     )
     expect(boundSpace).toBe('space-a')
   })
+
+  for (const route of ['presence', 'delete'] as const) {
+    test(`${route} honors a requested member space`, async () => {
+      let boundSpace = ''
+      const response = await callBulkTaskRoute(route, 'declared', (spaceId) => {
+        boundSpace = spaceId
+      })
+      expect(response?.status).toBe(200)
+      expect(boundSpace).toBe('space-b')
+    })
+
+    test(`${route} refuses a requested non-member space before dispatch`, async () => {
+      let writes = 0
+      const response = await callBulkTaskRoute(route, 'missing', () => {
+        writes++
+      })
+      expect(response?.status).toBe(403)
+      expect(await response?.json()).toEqual({
+        error: "record space 'missing' is not among the caller's memberships",
+        remedy: `Run \`${PLATFORM_SLUG} record space list\` and choose a space where the caller is a member.`,
+      })
+      expect(writes).toBe(0)
+    })
+
+    test(`${route} without a requested space keeps the active space`, async () => {
+      let boundSpace = ''
+      const response = await callBulkTaskRoute(route, null, (spaceId) => {
+        boundSpace = spaceId
+      })
+      expect(response?.status).toBe(200)
+      expect(boundSpace).toBe('space-a')
+    })
+  }
 
   test('a non-member requested space on the changes route reaches no list service', async () => {
     let reads = 0

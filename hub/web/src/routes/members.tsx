@@ -65,6 +65,7 @@ function memberColumns(
   canEditMember: (member: OrganizationMember) => boolean,
   changeRole: (member: OrganizationMember, role: OrganizationRole) => void,
   changePermission: (member: MemberAccessRow, permission: MemberPermission) => void,
+  memberWriteRefusal?: string,
 ): CollectionColumn<MemberAccessRow>[] {
   return [
     {
@@ -113,7 +114,11 @@ function memberColumns(
             label={`Permission for ${member.user.name}`}
             size="sm"
             value={member.permission}
-            options={permissionOptions}
+            options={permissionOptions.map((option) => ({
+              ...option,
+              disabled: Boolean(memberWriteRefusal),
+            }))}
+            hint={memberWriteRefusal}
             onChange={(permission) => changePermission(member, permission as MemberPermission)}
           />
         ) : (
@@ -134,6 +139,7 @@ function MemberRowActions({
   callerRole,
   callerEmail,
   canEdit,
+  memberWritesDisabled,
   removeConfirm,
   error,
   onGrant,
@@ -144,6 +150,7 @@ function MemberRowActions({
   callerRole?: OrganizationRole
   callerEmail?: string
   canEdit: boolean
+  memberWritesDisabled: boolean
   removeConfirm: boolean
   error?: string
   onGrant: () => void
@@ -160,12 +167,12 @@ function MemberRowActions({
   return (
     <div className="grid gap-2">
       {canGrant ? (
-        <Button size="sm" onClick={onGrant}>
+        <Button size="sm" disabled={memberWritesDisabled} onClick={onGrant}>
           Grant config access
         </Button>
       ) : null}
       {canWithdraw ? (
-        <Button size="sm" onClick={onWithdraw}>
+        <Button size="sm" disabled={memberWritesDisabled} onClick={onWithdraw}>
           Withdraw config access
         </Button>
       ) : null}
@@ -230,6 +237,9 @@ function MembersPage() {
   )
   const callerRole = caller.data?.role
   const canManage = callerRole === 'owner' || callerRole === 'admin'
+  const memberWriteRefusal = whoami.data?.activeSpaceId
+    ? undefined
+    : 'record session has no active space; choose a space to administer its members'
   const invite = canManage ? (
     <InviteForm
       callerRole={callerRole}
@@ -256,7 +266,8 @@ function MembersPage() {
         callerRole={callerRole}
         callerEmail={caller.data?.user.email}
         onChanged={refresh}
-        spaceId={whoami.data?.activeSpaceId ?? ''}
+        spaceId={whoami.data?.activeSpaceId ?? null}
+        memberWriteRefusal={memberWriteRefusal}
         actions={invite}
       />
       <InvitationTable
@@ -276,13 +287,15 @@ function MemberTable({
   onChanged,
   actions,
   spaceId,
+  memberWriteRefusal,
 }: {
   rows: MemberAccessRow[]
   callerRole?: OrganizationRole
   callerEmail?: string
   onChanged: () => Promise<void>
   actions?: React.ReactNode
-  spaceId: string
+  spaceId: string | null
+  memberWriteRefusal?: string
 }) {
   const [removeConfirm, setRemoveConfirm] = useState<string | null>(null)
   const [withdrawTarget, setWithdrawTarget] = useState<MemberAccessRow | null>(null)
@@ -313,20 +326,30 @@ function MemberTable({
       }))
     }
   }
+  const actInSpace = (id: string, operation: (destination: string) => Promise<unknown>) => {
+    if (!spaceId) {
+      setErrors((current) => ({ ...current, [id]: memberWriteRefusal ?? '' }))
+      return
+    }
+    void act(id, () => operation(spaceId))
+  }
   const columns = memberColumns(
     callerRole,
     canEditMember,
     (member, role) => void act(member.id, () => changeRole.mutateAsync({ id: member.id, role })),
     (member, permission) =>
-      void act(member.id, () =>
-        setPermission.mutateAsync({ email: member.user.email, permission, spaceId }),
+      actInSpace(member.id, (destination) =>
+        setPermission.mutateAsync({ email: member.user.email, permission, spaceId: destination }),
       ),
+    memberWriteRefusal,
   )
   const withdrawAccess = () => {
     if (!withdrawTarget) return
     const member = withdrawTarget
     setWithdrawTarget(null)
-    void act(member.id, () => withdraw.mutateAsync({ email: member.user.email, spaceId }))
+    actInSpace(member.id, (destination) =>
+      withdraw.mutateAsync({ email: member.user.email, spaceId: destination }),
+    )
   }
   return (
     <>
@@ -344,10 +367,13 @@ function MemberTable({
             callerRole={callerRole}
             callerEmail={callerEmail}
             canEdit={canEditMember(member)}
+            memberWritesDisabled={Boolean(memberWriteRefusal)}
             removeConfirm={removeConfirm === member.id}
-            error={errors[member.id]}
+            error={errors[member.id] || memberWriteRefusal}
             onGrant={() =>
-              void act(member.id, () => grant.mutateAsync({ email: member.user.email, spaceId }))
+              actInSpace(member.id, (destination) =>
+                grant.mutateAsync({ email: member.user.email, spaceId: destination }),
+              )
             }
             onWithdraw={() => setWithdrawTarget(member)}
             onRemove={() =>

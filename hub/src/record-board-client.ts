@@ -5,7 +5,7 @@ import {
   BoardStatusResultSchema,
   BoardThreadResultSchema,
 } from './board-contract.ts'
-import type { RecordClientOptions } from './record-client-options.ts'
+import { type RecordClientOptions, recordWriteDestinationHeaders } from './record-client-options.ts'
 
 type BoardClientOptions = RecordClientOptions
 type BoardRequest = <T>(
@@ -62,11 +62,6 @@ const postSchema = z.object({
   project: z.string().optional(),
 })
 const replySchema = z.object({ id: z.string().uuid(), body: z.string() })
-const destinationHeaders = (spaceId: string) => ({
-  'content-type': 'application/json',
-  'x-record-space': spaceId,
-})
-
 export function recordBoardClient(options: BoardClientOptions, request: BoardRequest) {
   return {
     boardList: (input: {
@@ -88,13 +83,13 @@ export function recordBoardClient(options: BoardClientOptions, request: BoardReq
     boardPost: (input: z.input<typeof postSchema>, spaceId: string) =>
       request(options, '/v1/board/messages', messageSchema, {
         method: 'PUT',
-        headers: destinationHeaders(spaceId),
+        headers: recordWriteDestinationHeaders(spaceId),
         body: JSON.stringify(postSchema.parse(input)),
       }),
     boardReply: (rootId: string, input: z.input<typeof replySchema>, spaceId: string) =>
       request(options, `/v1/board/messages/${encodeURIComponent(rootId)}/replies`, messageSchema, {
         method: 'POST',
-        headers: destinationHeaders(spaceId),
+        headers: recordWriteDestinationHeaders(spaceId),
         body: JSON.stringify(replySchema.parse(input)),
       }),
     boardAccept: (questionId: string, replyId: string, spaceId: string) =>
@@ -104,14 +99,14 @@ export function recordBoardClient(options: BoardClientOptions, request: BoardReq
         threadSchema,
         {
           method: 'POST',
-          headers: destinationHeaders(spaceId),
+          headers: recordWriteDestinationHeaders(spaceId),
           body: JSON.stringify({ replyId }),
         },
       ),
     boardWithdraw: (id: string, spaceId: string) =>
       request(options, `/v1/board/messages/${encodeURIComponent(id)}/withdraw`, messageSchema, {
         method: 'POST',
-        headers: destinationHeaders(spaceId),
+        headers: recordWriteDestinationHeaders(spaceId),
         body: JSON.stringify({}),
       }),
   }
