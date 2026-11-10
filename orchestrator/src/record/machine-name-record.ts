@@ -121,6 +121,21 @@ export async function upsertHostedMachine(
   }
 }
 
+export async function syncHostedMachine(
+  postgres: SQL,
+  seenAt: string,
+  identity: { id: string; shortName?: string; displayName?: string; name?: string },
+  principal: RecordPrincipal,
+  claimSpaceIds: readonly string[],
+): Promise<string | undefined> {
+  try {
+    await upsertHostedMachine(postgres, seenAt, identity, principal, claimSpaceIds)
+  } catch (error) {
+    if (error instanceof MachineNameRefusal) return error.message
+    throw error
+  }
+}
+
 export async function renameHostedMachine(input: {
   url: string
   identity: RecordIdentity

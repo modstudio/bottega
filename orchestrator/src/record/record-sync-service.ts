@@ -28,7 +28,7 @@ import { run as runRecord } from '../../../shared/record/schema-run.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { nullableRecordDate, recordDate } from '../../../shared/record-timestamp.ts'
 import { refuseHostedUnvoid, VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
-import { upsertHostedMachine } from './machine-name-record.ts'
+import { syncHostedMachine } from './machine-name-record.ts'
 import { OutboxRowError, outboxErrorDetail, outboxFailureDisposition } from './outbox-failure.ts'
 import { HostedApiUpgradeRequiredError } from './outbox-held-contract.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
@@ -55,7 +55,6 @@ import type {
   RecordSyncRowResult,
 } from './record-sync-contract.ts'
 import {
-  MachineNameRefusal,
   recordSyncAuthorizationDecision,
   recordSyncClaimSpaceIds,
   recordSyncReferenceRefusal as referenceRefusal,
@@ -1001,22 +1000,13 @@ export async function syncHostedRecord(input: {
     input.identity,
     input.request.rows.map((row) => row.spaceHint),
   )
-  let machineNameRefusal: string | undefined
-  try {
-    await upsertHostedMachine(
-      postgres,
-      input.request.machine.seenAt,
-      input.request.machine,
-      {
-        userId: input.identity.user.id,
-        spaceId: personalSpaceId,
-      },
-      destinationSpaceIds,
-    )
-  } catch (error) {
-    if (error instanceof MachineNameRefusal) machineNameRefusal = error.message
-    else throw error
-  }
+  const machineNameRefusal = await syncHostedMachine(
+    postgres,
+    input.request.machine.seenAt,
+    input.request.machine,
+    { userId: input.identity.user.id, spaceId: personalSpaceId },
+    destinationSpaceIds,
+  )
   const results: RecordSyncRowResult[] = []
   const projectIds: ProjectResolutionCache = new Map()
   for (const row of input.request.rows) {
