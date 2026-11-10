@@ -3,7 +3,8 @@
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
 import { db, sessionId, writeTransaction } from '../database/db.ts'
-import { attachTaskFlowStage, selectTaskFlowStage } from './task-flow.ts'
+import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
+import { selectTaskFlowStage } from './task-flow.ts'
 import { readThroughTaskFlow, type TaskFlowReadStatus } from './task-flow-read-through.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { workflowTaskBindingCommand } from './workflow-cursor-format.ts'
@@ -31,6 +32,7 @@ export type WorkflowCursorContext = {
   adoptionTaskRecordId?: string | null
   taskStatusCategory?: string | null
   taskFlowRead?: TaskFlowReadStatus
+  taskFlowClient?: RecordTaskFlowClient
 }
 
 const MCP_INSTANCE = randomUUID()
@@ -267,25 +269,7 @@ function selectKeyedTaskStage(
         .get(selected.cursorRecordId) as SelectableCursorRow
       return validateIdentity(row, identity)
     }
-    // Adopt an open keyed cursor that the 0198 backfill deliberately left without a flow.
-    const fallback = d
-      .query(
-        `SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor
-         WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-           AND workflow_slug=? AND mode_slug=? AND task_record_id=?
-           AND instance_id='' ORDER BY number DESC LIMIT 1`,
-      )
-      .get(
-        identity.project,
-        identity.workflow,
-        identity.mode,
-        taskRecordId,
-      ) as SelectableCursorRow | null
-    if (fallback && fallback.state !== 'done' && fallback.state !== 'abandoned') {
-      attachTaskFlowStage(selected.flowRecordId, fallback.record_id, d)
-      fallback.task_flow_record_id = selected.flowRecordId
-    }
-    return fallback
+    return null
   }, d)
 }
 

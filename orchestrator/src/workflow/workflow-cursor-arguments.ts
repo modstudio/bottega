@@ -124,6 +124,33 @@ export function applyCursorArguments(
   d: Database,
   composing = false,
 ): Record<string, string> {
+  const resolved = resolveCursorArguments(row, supplied, d, composing)
+  if (resolved.closed !== row.closed) {
+    d.query('UPDATE workflow_cursor SET args=?,closed=?,updated_at=? WHERE record_id=?').run(
+      resolved.encoded,
+      resolved.closed,
+      resolved.updatedAt,
+      row.record_id,
+    )
+    row.args = resolved.encoded
+    row.closed = resolved.closed
+  } else if (resolved.encoded !== row.args) {
+    d.query('UPDATE workflow_cursor SET args=?,updated_at=? WHERE record_id=?').run(
+      resolved.encoded,
+      resolved.updatedAt,
+      row.record_id,
+    )
+    row.args = resolved.encoded
+  }
+  return resolved.args
+}
+
+export function resolveCursorArguments(
+  row: ArgumentCursor,
+  supplied: Record<string, string>,
+  d: Database,
+  composing = false,
+): { args: Record<string, string>; encoded: string; closed: string; updatedAt: string } {
   const stored = JSON.parse(row.args) as Record<string, string>
   const definition = row.workflow_version_record_id
     ? showPinnedWorkflow(row.workflow_version_record_id, d).definition
@@ -153,8 +180,9 @@ export function applyCursorArguments(
     )
   }
   const encoded = JSON.stringify(decision.args)
+  const at = nowIso()
+  let closed = row.closed
   if (decision.rebindings.length) {
-    const at = nowIso()
     const trail = JSON.parse(row.closed) as CursorTrailEntry[]
     trail.push(
       ...decision.rebindings.map(
@@ -167,21 +195,7 @@ export function applyCursorArguments(
         }),
       ),
     )
-    d.query('UPDATE workflow_cursor SET args=?,closed=?,updated_at=? WHERE record_id=?').run(
-      encoded,
-      JSON.stringify(trail),
-      at,
-      row.record_id,
-    )
-    row.args = encoded
-    row.closed = JSON.stringify(trail)
-  } else if (encoded !== row.args) {
-    d.query('UPDATE workflow_cursor SET args=?,updated_at=? WHERE record_id=?').run(
-      encoded,
-      nowIso(),
-      row.record_id,
-    )
-    row.args = encoded
+    closed = JSON.stringify(trail)
   }
-  return decision.args
+  return { args: decision.args, encoded, closed, updatedAt: at }
 }

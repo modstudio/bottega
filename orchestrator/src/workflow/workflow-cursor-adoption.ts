@@ -2,9 +2,14 @@
 /** Atomically adopts a task key and republishes every cursor-bound question. */
 import type { Database } from 'bun:sqlite'
 import { nowIso } from '../database/db.ts'
+import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
+import { machineId } from '../record/machine-identity.ts'
+import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
+import { writeHostedTaskFlow } from '../record/record-task-flow-write-client.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import {
   attachTaskFlowStage,
+  cacheAdoptedTaskFlow,
   selectTaskFlowStage,
   vacateRetiredWorkflowKeySlot,
 } from './task-flow.ts'
@@ -18,6 +23,7 @@ type AdoptionCursor = {
   workflow_key: string
   task_record_id: string | null
   args: string
+  revision: number
 }
 
 function assignWorkflowTaskKey(
@@ -47,12 +53,14 @@ function assignWorkflowTaskKey(
   }
 }
 
-export function adoptWorkflowTask(
+export async function adoptWorkflowTask(
   row: AdoptionCursor,
   suppliedTask: string | undefined,
   taskRecordId: string | null | undefined,
   d: Database,
-): void {
+  client?: RecordTaskFlowClient,
+  statusCategory?: string | null,
+): Promise<void> {
   const key = suppliedTask?.trim()
   if (!key) return
   if (row.workflow_key) {
@@ -74,8 +82,60 @@ export function adoptWorkflowTask(
     throw new Error(
       `cursor ${row.id} cannot adopt ${key}; open cursor ${conflict.id} already holds it`,
     )
-  assignWorkflowTaskKey(row, key, taskRecordId ?? null, d)
-  if (row.task_record_id) {
+  const adoptedTaskId = taskRecordId ?? null
+  if (adoptedTaskId) {
+    const at = nowIso()
+    const adopted = await writeHostedTaskFlow(
+      'adopt',
+      {
+        requestId: taskFlowRequestId('adopt', [row.record_id, String(row.revision)]),
+        stage: { id: row.record_id, expectedRevision: row.revision },
+        taskId: adoptedTaskId,
+        updatedMachineId: machineId(),
+        updatedAt: at,
+      },
+      client,
+    )
+    let stageRevision = adopted?.revisions[row.record_id] ?? row.revision
+    if (adopted) {
+      const adoptedArgs = { ...(JSON.parse(row.args) as Record<string, string>), key }
+      const updated = await writeHostedTaskFlow(
+        'stage-update',
+        {
+          requestId: taskFlowRequestId('stage-update', [row.record_id, String(stageRevision)]),
+          stages: [
+            {
+              id: row.record_id,
+              expectedRevision: stageRevision,
+              values: { workflowKey: key, arguments: adoptedArgs, updatedAt: at },
+            },
+          ],
+        },
+        client,
+      )
+      stageRevision = updated?.revisions[row.record_id] ?? stageRevision
+    }
+    const current = d
+      .query<{ revision: number }, [string]>('SELECT revision FROM workflow_cursor WHERE record_id=?')
+      .get(row.record_id)
+    if (!current || current.revision !== row.revision)
+      throw new Error(`workflow cursor ${row.id} changed while adopting ${key}; rerun the command`)
+    assignWorkflowTaskKey(row, key, adoptedTaskId, d)
+    if (adopted)
+      cacheAdoptedTaskFlow(
+        {
+          project: row.project,
+          taskRecordId: adoptedTaskId,
+          cursorRecordId: row.record_id,
+          flowRecordId: adopted.flowRecordId,
+          flowRevision: adopted.revisions[adopted.flowRecordId]!,
+          stageRevision,
+          statusCategory,
+          at,
+        },
+        d,
+      )
+    else {
     const flow = selectTaskFlowStage(
       {
         project: row.project,
@@ -88,5 +148,8 @@ export function adoptWorkflowTask(
       d,
     )
     attachTaskFlowStage(flow.flowRecordId, row.record_id, d)
+    }
+    return
   }
+  assignWorkflowTaskKey(row, key, null, d)
 }
