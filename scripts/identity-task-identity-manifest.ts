@@ -27,4 +27,8 @@ export const HOSTED_TASK_IDENTITY_INTEGER_COLUMNS = [
   'task_flow_stage.number',
   'task_flow_stage.total_steps',
   'task_flow_stage.revision',
+  'workflow_obligation.expected_exit_code',
+  'workflow_obligation.satisfied_step_ordinal',
+  'workflow_obligation.step_ordinal',
+  'workflow_step_text.step_ordinal',
 ] as const

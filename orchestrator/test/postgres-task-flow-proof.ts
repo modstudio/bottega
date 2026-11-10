@@ -36,6 +36,7 @@ type Input = {
 const PROJECT = 'auth-a-project'
 const WORKFLOW = 'fix-defect'
 const TASK_KEY = 'AA-2098'
+const DIRECT_TASK_KEY = 'AA-2234'
 
 function proofDatabase(projectId: string): Database {
   const database = migratedTestDatabase()
@@ -61,6 +62,139 @@ function proofDatabase(projectId: string): Database {
 }
 
 export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
+  test('hosted task-flow intents conflict, retry idempotently, and remain space isolated', async () => {
+    const flowId = newRecordId()
+    const stageId = newRecordId()
+    const taskId = newRecordId()
+    const machineId = newRecordId()
+    const composeRequestId = newRecordId()
+    const advanceRequestId = newRecordId()
+    const at = new Date().toISOString()
+    const auth = testRecordAuth(input.urls().actor, input.urls().auth)
+    try {
+      input.admin(`
+        INSERT INTO machine(id,user_id,name,registered_at,last_seen)
+        VALUES ('${machineId}',(SELECT user_id FROM membership WHERE space_id='${input.spaceId()}' LIMIT 1),
+          'direct-task-flow-proof',now(),now());
+        INSERT INTO hub_task
+          (id,space_id,project_name,project_id,key,project,title,status,status_category,source,
+           first_seen,last_seen,created_at,updated_at)
+        VALUES ('${taskId}','${input.spaceId()}','${PROJECT}','${input.projectId()}',
+          '${DIRECT_TASK_KEY}','${PROJECT}','direct task-flow proof','active','active','local',
+          now(),now(),now(),now());
+      `)
+      input.signIn()
+      const client = recordApiClient()
+      await client.ensureSpaceBuiltIns!({ destinationSpaceId: input.spaceId() })
+      const workflowVersionId = input.admin(
+        `SELECT version.id FROM workflow_version version JOIN workflow ON workflow.id=version.workflow_id
+         WHERE workflow.space_id='${input.spaceId()}' AND workflow.slug='${WORKFLOW}' ORDER BY version.n DESC LIMIT 1;`,
+      )
+      const catalogueVersionId = input.admin(
+        `SELECT version.id FROM step_catalogue_version version JOIN step_catalogue catalogue ON catalogue.id=version.catalogue_id
+         WHERE catalogue.space_id='${input.spaceId()}' AND catalogue.slug='shared' ORDER BY version.n DESC LIMIT 1;`,
+      )
+      const flow = {
+        id: flowId,
+        projectId: input.projectId(),
+        taskId,
+        state: 'open' as const,
+        openStageRecordId: stageId,
+        openingMachineId: machineId,
+        updatedMachineId: machineId,
+        createdAt: at,
+        updatedAt: at,
+      }
+      const stage = {
+        id: stageId,
+        flowRecordId: flowId,
+        projectId: input.projectId(),
+        workflow: WORKFLOW,
+        mode: 'default',
+        workflowKey: DIRECT_TASK_KEY,
+        instanceId: '',
+        sessionId: 'direct-client-a',
+        workflowVersionId,
+        catalogueVersionId,
+        arguments: { key: DIRECT_TASK_KEY },
+        activeOrdinal: 0,
+        activeSlug: 'diagnose',
+        state: 'running' as const,
+        closedStepNotes: [],
+        question: null,
+        autonomy: null,
+        enforcement: 'note-only',
+        totalSteps: 3,
+        openedMachineId: machineId,
+        takenOverFromMachineId: null,
+        lastAdvancedMachineId: machineId,
+        createdAt: at,
+        updatedAt: at,
+      }
+      expect(
+        await client.composeTaskFlow!({
+          requestId: composeRequestId,
+          flowInsert: flow,
+          stageInsert: stage,
+        }),
+      ).toEqual({ revisions: { [flowId]: 1, [stageId]: 1 } })
+
+      const advance = {
+        requestId: advanceRequestId,
+        stage: {
+          id: stageId,
+          expectedRevision: 1,
+          values: {
+            activeOrdinal: 1,
+            activeSlug: 'implement',
+            updatedAt: new Date(Date.now() + 1_000).toISOString(),
+          },
+        },
+      }
+      expect(await client.advanceTaskFlow!(advance)).toEqual({ revisions: { [stageId]: 2 } })
+      expect(await client.advanceTaskFlow!(advance)).toEqual({ revisions: { [stageId]: 2 } })
+      await expect(
+        client.advanceTaskFlow!({ ...advance, requestId: newRecordId() }),
+      ).rejects.toMatchObject({ condition: `task_flow_stage.id=${stageId}`, currentRevision: '2' })
+
+      expect(await client.composeTaskFlow!({ requestId: newRecordId(), flowInsert: flow })).toEqual(
+        {
+          revisions: { [flowId]: 1 },
+        },
+      )
+      await expect(
+        client.composeTaskFlow!({
+          requestId: newRecordId(),
+          flowInsert: { ...flow, state: 'done' },
+        }),
+      ).rejects.toMatchObject({ condition: `task_flow.id=${flowId}` })
+
+      const otherSpace = await auth.api.createOrganization({
+        headers: bearerHeaders(input.token()),
+        body: {
+          name: 'Direct Task Flow Isolation Proof',
+          slug: `direct-task-flow-isolation-${taskId.slice(-8)}`,
+          keepCurrentActiveOrganization: true,
+        },
+      })
+      await expect(
+        client.readTaskFlow!({ flowRecordId: flowId }, { destinationSpaceId: otherSpace.id }),
+      ).rejects.toThrow('hosted task flow was not found')
+      await expect(
+        client.advanceTaskFlow!(
+          {
+            ...advance,
+            requestId: newRecordId(),
+            stage: { ...advance.stage, expectedRevision: 2 },
+          },
+          { destinationSpaceId: otherSpace.id },
+        ),
+      ).rejects.toMatchObject({ condition: `task_flow_stage.id=${stageId}` })
+    } finally {
+      await auth.close()
+    }
+  })
+
   test('hosted task-flow read-through advances across machines and remains space isolated', async () => {
     const machineA = newRecordId()
     const machineB = newRecordId()

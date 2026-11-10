@@ -1,7 +1,6 @@
 ALTER TABLE workflow_obligation ADD CONSTRAINT "workflow_obligation_satisfied_evidence_not_json_string_check" CHECK (jsonb_typeof("satisfied_evidence") <> 'string') NOT VALID;
 --> statement-breakpoint
-ALTER TABLE workflow_obligation
-  VALIDATE CONSTRAINT "workflow_obligation_satisfied_evidence_not_json_string_check";
+ALTER TABLE "workflow_obligation" VALIDATE CONSTRAINT "workflow_obligation_satisfied_evidence_not_json_string_check";
 --> statement-breakpoint
 ALTER TABLE workflow_obligation NO FORCE ROW LEVEL SECURITY;
 --> statement-breakpoint
