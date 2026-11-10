@@ -137,13 +137,17 @@ const copyInsert = z.object({
 })
 
 const base = { requestId: id }
-const taskFlowComposeSchema = z.object({
-  ...base,
-  flowInsert: flowInsert.optional(),
-  flowChange: mutation(flowComposeValues).optional(),
-  stageInsert: stageInsert.optional(),
-  stageChanges: z.array(mutation(stageComposeValues)).default([]),
-})
+const taskFlowComposeSchema = z
+  .object({
+    ...base,
+    flowInsert: flowInsert.optional(),
+    flowChange: mutation(flowComposeValues).optional(),
+    stageInsert: stageInsert.optional(),
+    stageChanges: z.array(mutation(stageComposeValues)).default([]),
+  })
+  .refine(({ flowInsert, flowChange, stageInsert, stageChanges }) =>
+    Boolean(flowInsert || flowChange || stageInsert || stageChanges.length),
+  )
 const taskFlowStageUpdateSchema = z.object({
   ...base,
   stages: z.array(mutation(stageUpdateValues)).min(1),
@@ -160,33 +164,41 @@ const taskFlowAdvanceSchema = z.object({
 const taskFlowAwaitRulingSchema = z.object({
   ...base,
   stage: mutation(
-    stageUpdateValues.pick({
-      arguments: true,
-      closedStepNotes: true,
-      state: true,
-      question: true,
-      sessionId: true,
-      updatedAt: true,
-    }),
+    stageUpdateValues
+      .pick({
+        arguments: true,
+        closedStepNotes: true,
+        state: true,
+        question: true,
+        sessionId: true,
+        updatedAt: true,
+      })
+      .extend({ state: z.literal('awaiting-ruling'), question: z.string() }),
   ),
 })
 const taskFlowAbandonSchema = z.object({
   ...base,
   stage: mutation(
-    stageUpdateValues.pick({
-      state: true,
-      closedStepNotes: true,
-      question: true,
-      sessionId: true,
-      updatedAt: true,
-    }),
+    stageUpdateValues
+      .pick({
+        state: true,
+        closedStepNotes: true,
+        question: true,
+        sessionId: true,
+        updatedAt: true,
+      })
+      .extend({ state: z.literal('abandoned') }),
   ),
   flow: mutation(flowCloseValues).optional(),
   obligationUpdates: z.array(obligationUpdate).default([]),
   deleteTextIds: z.array(id).default([]),
 })
 const taskFlowAttachTextSchema = z.object({ ...base, rows: z.array(textInsert).min(1) })
-const taskFlowDeleteTextSchema = z.object({ ...base, ids: z.array(id).min(1) })
+const taskFlowDeleteTextSchema = z.object({
+  ...base,
+  stageRecordId: id,
+  ids: z.array(id).min(1),
+})
 const taskFlowCopyTextSchema = z.object({ ...base, row: copyInsert })
 
 export const taskFlowIntentSchemas = {

@@ -52,29 +52,41 @@ type Ports = {
 }
 const limit = z.coerce.number().int().min(1).max(100).default(20)
 
+function registerTaskFlowWriteRoute<K extends TaskFlowIntent>(
+  app: Hono<Environment>,
+  deps: RecordWorkflowRouteDeps,
+  ports: Ports,
+  intent: K,
+): void {
+  app.post(`/v1/task-flow/${intent}`, async (context) => {
+    if (!deps.writeTaskFlow)
+      return context.json({ error: 'hosted task flow write is unavailable' }, 503)
+    const active = ports.scope(context)
+    if (!active) return ports.noSpace(context)
+    const body = taskFlowIntentSchemas[intent].safeParse(await context.req.json().catch(() => null))
+    if (!body.success) return context.json({ error: `invalid task-flow ${intent} request` }, 400)
+    try {
+      return context.json(await deps.writeTaskFlow(intent, { ...active, ...body.data }))
+    } catch (error) {
+      if (error instanceof DocRevisionConflictError) return renderRecordApiRefusal(context, error)!
+      throw error
+    }
+  })
+}
+
 function registerTaskFlowWriteRoutes(
   app: Hono<Environment>,
   deps: RecordWorkflowRouteDeps,
   ports: Ports,
 ): void {
-  for (const intent of Object.keys(taskFlowIntentSchemas) as TaskFlowIntent[])
-    app.post(`/v1/task-flow/${intent}`, async (context) => {
-      if (!deps.writeTaskFlow)
-        return context.json({ error: 'hosted task flow write is unavailable' }, 503)
-      const active = ports.scope(context)
-      if (!active) return ports.noSpace(context)
-      const body = taskFlowIntentSchemas[intent].safeParse(
-        await context.req.json().catch(() => null),
-      )
-      if (!body.success) return context.json({ error: `invalid task-flow ${intent} request` }, 400)
-      try {
-        return context.json(await deps.writeTaskFlow(intent, { ...active, ...body.data } as never))
-      } catch (error) {
-        if (error instanceof DocRevisionConflictError)
-          return renderRecordApiRefusal(context, error)!
-        throw error
-      }
-    })
+  registerTaskFlowWriteRoute(app, deps, ports, 'compose')
+  registerTaskFlowWriteRoute(app, deps, ports, 'stage-update')
+  registerTaskFlowWriteRoute(app, deps, ports, 'advance')
+  registerTaskFlowWriteRoute(app, deps, ports, 'await-ruling')
+  registerTaskFlowWriteRoute(app, deps, ports, 'abandon')
+  registerTaskFlowWriteRoute(app, deps, ports, 'attach-text')
+  registerTaskFlowWriteRoute(app, deps, ports, 'delete-text')
+  registerTaskFlowWriteRoute(app, deps, ports, 'copy-text')
 }
 
 export function registerRecordWorkflowRoutes(

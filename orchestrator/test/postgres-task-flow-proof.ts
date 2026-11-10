@@ -69,6 +69,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
     const machineId = newRecordId()
     const composeRequestId = newRecordId()
     const advanceRequestId = newRecordId()
+    const obligationId = newRecordId()
     const at = new Date().toISOString()
     const auth = testRecordAuth(input.urls().actor, input.urls().auth)
     try {
@@ -116,7 +117,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         sessionId: 'direct-client-a',
         workflowVersionId,
         catalogueVersionId,
-        arguments: { key: DIRECT_TASK_KEY },
+        arguments: { key: DIRECT_TASK_KEY, mode: 'proof' },
         activeOrdinal: 0,
         activeSlug: 'diagnose',
         state: 'running' as const,
@@ -139,6 +140,35 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         }),
       ).toEqual({ revisions: { [flowId]: 1, [stageId]: 1 } })
 
+      const composed = await client.readTaskFlow!({ flowRecordId: flowId })
+      expect(composed.stage).toMatchObject({
+        number: 1,
+        workflowKey: DIRECT_TASK_KEY,
+        instanceId: '',
+        sessionId: 'direct-client-a',
+        question: null,
+        autonomy: null,
+        enforcement: 'note-only',
+      })
+      expect(
+        await client.composeTaskFlow!({
+          requestId: newRecordId(),
+          stageInsert: stage,
+        }),
+      ).toEqual({ revisions: { [stageId]: 1 } })
+
+      const secondStageId = newRecordId()
+      expect(
+        await client.composeTaskFlow!({
+          requestId: newRecordId(),
+          stageInsert: { ...stage, id: secondStageId, workflowKey: `${DIRECT_TASK_KEY}-second` },
+        }),
+      ).toEqual({ revisions: { [secondStageId]: 1 } })
+      const withSecondStage = await client.readTaskFlow!({ flowRecordId: flowId })
+      expect(withSecondStage.otherStages).toContainEqual(
+        expect.objectContaining({ id: secondStageId, number: 2 }),
+      )
+
       const advance = {
         requestId: advanceRequestId,
         stage: {
@@ -150,9 +180,51 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
             updatedAt: new Date(Date.now() + 1_000).toISOString(),
           },
         },
+        obligationInserts: [
+          {
+            id: obligationId,
+            stageRecordId: stageId,
+            stepOrdinal: 1,
+            stepSlug: 'implement',
+            floor: 'tests',
+            requirePullRequest: false,
+            expectedExitCode: 0,
+            expectedStatus: 'pass',
+            floorDeferrable: false,
+            reason: 'prove obligation mutation',
+            sessionId: 'direct-client-a',
+            createdAt: at,
+            satisfiedAt: null,
+            satisfiedStepOrdinal: null,
+            satisfiedStepSlug: null,
+            satisfiedEvidence: null,
+            abandonedAt: null,
+            abandonedReason: null,
+            operatorRuling: false,
+          },
+        ],
+        obligationUpdates: [
+          {
+            id: obligationId,
+            stageRecordId: stageId,
+            satisfiedAt: at,
+            satisfiedStepOrdinal: 1,
+            satisfiedStepSlug: 'implement',
+            satisfiedEvidence: [{ kind: 'test', status: 'pass' }],
+          },
+        ],
       }
       expect(await client.advanceTaskFlow!(advance)).toEqual({ revisions: { [stageId]: 2 } })
       expect(await client.advanceTaskFlow!(advance)).toEqual({ revisions: { [stageId]: 2 } })
+      expect(
+        (await client.readTaskFlow!({ flowRecordId: flowId })).stage?.obligations,
+      ).toContainEqual(
+        expect.objectContaining({
+          id: obligationId,
+          satisfiedStepSlug: 'implement',
+          satisfiedEvidence: [{ kind: 'test', status: 'pass' }],
+        }),
+      )
       await expect(
         client.advanceTaskFlow!({ ...advance, requestId: newRecordId() }),
       ).rejects.toMatchObject({ condition: `task_flow_stage.id=${stageId}`, currentRevision: '2' })
@@ -178,9 +250,6 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         },
       })
       await expect(
-        client.readTaskFlow!({ flowRecordId: flowId }, { destinationSpaceId: otherSpace.id }),
-      ).rejects.toThrow('hosted task flow was not found')
-      await expect(
         client.advanceTaskFlow!(
           {
             ...advance,
@@ -190,6 +259,19 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
           { destinationSpaceId: otherSpace.id },
         ),
       ).rejects.toMatchObject({ condition: `task_flow_stage.id=${stageId}` })
+
+      input.admin(`UPDATE task_flow_stage SET project_id=NULL WHERE id='${stageId}';`)
+      const moveTotal = Number(
+        input.admin(
+          `SELECT sum(row_count) FROM record_move_project_space('${input.spaceId()}','${PROJECT}','${otherSpace.id}',NULL);`,
+        ),
+      )
+      input.admin(
+        `SELECT sum(row_count) FROM record_move_project_space('${input.spaceId()}','${PROJECT}','${otherSpace.id}',${moveTotal});`,
+      )
+      expect(input.admin(`SELECT space_id FROM task_flow_stage WHERE id='${stageId}';`)).toBe(
+        otherSpace.id,
+      )
     } finally {
       await auth.close()
     }

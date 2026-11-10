@@ -12,9 +12,9 @@ DO $migration$
 DECLARE
   definition text;
   previous_classification text := $anchor$('task_flow','project'),('task_flow_stage','parent'),('test_flake','project')$anchor$;
-  replacement_classification text := $anchor$('task_flow','project'),('task_flow_stage','project'),('test_flake','project'),('workflow_obligation','parent'),('workflow_step_text','parent'),('workflow_text_copy','parent')$anchor$;
+  replacement_classification text := $anchor$('task_flow','project'),('task_flow_stage','parent'),('test_flake','project'),('workflow_obligation','parent'),('workflow_step_text','parent'),('workflow_text_copy','parent')$anchor$;
   previous_ownership text := $anchor$('task_flow_stage',NULL,'task_flow','flow_record_id','task_flow.flow_record_id')$anchor$;
-  replacement_ownership text := $anchor$('task_flow_stage','project_id',NULL,NULL,'project_id'),
+  replacement_ownership text := $anchor$('task_flow_stage',NULL,'task_flow','flow_record_id','task_flow.flow_record_id'),
     ('workflow_obligation',NULL,'task_flow_stage','stage_record_id','task_flow_stage.stage_record_id'),
     ('workflow_step_text',NULL,'task_flow_stage','stage_record_id','task_flow_stage.stage_record_id'),
     ('workflow_text_copy',NULL,'task_flow_stage','stage_record_id','task_flow_stage.stage_record_id')$anchor$;

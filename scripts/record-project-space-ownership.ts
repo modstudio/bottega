@@ -254,8 +254,8 @@ export const RECORD_PROJECT_SPACE_OWNERSHIP = [
   { table: 'task_flow', kind: 'project', ownerColumns: ['project_id'] },
   {
     table: 'task_flow_stage',
-    kind: 'project',
-    ownerColumns: ['project_id'],
+    kind: 'parent',
+    parents: [{ table: 'task_flow', column: 'flow_record_id' }],
   },
   {
     table: 'workflow_obligation',
@@ -290,4 +290,5 @@ export const NON_OWNING_PROJECT_REFERENCES = [
   { table: 'hub_report_subscription_project', column: 'project_id' },
   { table: 'port_pair', column: 'source_project_id' },
   { table: 'port_ref_source', column: 'source_project_id' },
+  { table: 'task_flow_stage', column: 'project_id' },
 ] as const
