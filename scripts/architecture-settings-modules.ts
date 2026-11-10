@@ -66,6 +66,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/trust-list.ts',
     './hosted-config-call-outcome.ts',
     './data-key-access.ts',
+    './machine-trust-refusal.ts',
     '../../../shared/hosted-secret-row.ts',
     '../record/machine-name-command.ts',
     '../record/machine-name.ts',
@@ -74,6 +75,10 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/config-client.ts',
     '../../../shared/secret-envelope.ts',
     '../../../shared/trust-list.ts',
+  ]),
+  module('orchestrator/src/config/machine-trust-refusal.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/refusal.ts',
   ]),
   module('orchestrator/src/config/named-space-config.ts', [
     'node:os',
@@ -89,6 +94,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/trust-list.ts',
     './data-key-access.ts',
     './hosted-config-call-outcome.ts',
+    './machine-trust-refusal.ts',
   ]),
   module('orchestrator/src/config/credential-service.ts', [
     '../../../shared/brand.ts',

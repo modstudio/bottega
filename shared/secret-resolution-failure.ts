@@ -2,6 +2,7 @@ import { PLATFORM_SLUG } from './brand.ts'
 import { ConfigClientError, type ConfigClientErrorReason } from './config-client.ts'
 import { HostedSecretError } from './hosted-secrets.ts'
 import { RECORD_SIGN_IN_REMEDY } from './record-remedies.ts'
+import { refusal, renderRefusal } from './refusal.ts'
 
 type SecretResolutionFailureOptions = {
   exhaustedRetryCommand?: string
@@ -21,6 +22,8 @@ type HostedFailureCause = {
   reason?: ConfigClientErrorReason
   code?: string | number
 }
+
+type RecordConfigRefusal = { error?: string; remedy?: string }
 
 export type SecretResolutionFailureClassification =
   | { kind: 'hosted-failure'; cause?: HostedFailureCause }
@@ -110,6 +113,40 @@ function configClientRemedy(
   return '\ncleared by: restore hosted secret access, then retry'
 }
 
+function displayableConfigRefusal(
+  error: ConfigClientError,
+  classification: Extract<SecretResolutionFailureClassification, { kind: 'config-client' }>,
+  options: SecretResolutionFailureOptions,
+): RecordConfigRefusal | null {
+  if (
+    options.exhaustedRetryCommand ||
+    error.reason !== 'response' ||
+    error.status === undefined ||
+    error.status < 400 ||
+    error.status > 499 ||
+    isTransientSecretResolutionFailure(classification) ||
+    (!error.error && !error.remedy)
+  )
+    return null
+  return {
+    ...(error.error ? { error: error.error } : {}),
+    ...(error.remedy ? { remedy: error.remedy } : {}),
+  }
+}
+
+function renderConfigClientFailure(
+  fallbackCondition: string,
+  classification: Extract<SecretResolutionFailureClassification, { kind: 'config-client' }>,
+  recordRefusal: RecordConfigRefusal | null,
+  options: SecretResolutionFailureOptions,
+  conditionPrefix = '',
+): string {
+  const condition = `${conditionPrefix}${recordRefusal?.error ?? fallbackCondition}`
+  return recordRefusal?.remedy
+    ? renderRefusal(refusal(condition, { kind: 'edit', text: recordRefusal.remedy }))
+    : `${condition}${configClientRemedy(classification, options)}`
+}
+
 /** Classify a sealed-store read failure without repeating sensitive exception details. */
 export function secretResolutionFailure(
   error: unknown,
@@ -117,15 +154,22 @@ export function secretResolutionFailure(
 ): string | null {
   const classification = classifySecretResolutionFailure(error)
   if (error instanceof ConfigClientError && classification?.kind === 'config-client') {
-    const condition =
+    const recordRefusal = displayableConfigRefusal(error, classification, options)
+    const fallbackCondition =
       error.reason === 'unreachable'
         ? 'hosted secret service is unreachable'
         : 'hosted secret service refused the request'
-    return `${condition}${configClientRemedy(classification, options)}`
+    return renderConfigClientFailure(fallbackCondition, classification, recordRefusal, options)
   }
   if (!(error instanceof HostedSecretError)) return null
   const causeSummary = hostedFailureCauseSummary(classification)
-  const condition = `hosted secret ${error.secretName} could not be opened: ${error.reason}${causeSummary}`
+  const recordRefusal =
+    classification?.kind === 'config-client' && error.cause instanceof ConfigClientError
+      ? displayableConfigRefusal(error.cause, classification, options)
+      : null
+  const conditionPrefix = `hosted secret ${error.secretName} could not be opened: `
+  const fallbackCondition = `${error.reason}${causeSummary}`
+  const condition = `${conditionPrefix}${fallbackCondition}`
   switch (error.reason) {
     case 'machine-key-missing':
       return `${condition}\ncleared by: ${PLATFORM_SLUG} machine config machine init`
@@ -137,7 +181,13 @@ export function secretResolutionFailure(
       return `${condition}\ncleared by: repair the sealed value from a trusted machine, then retry`
     case 'hosted-failure':
       if (classification?.kind === 'config-client')
-        return `${condition}${configClientRemedy(classification, options)}`
+        return renderConfigClientFailure(
+          fallbackCondition,
+          classification,
+          recordRefusal,
+          options,
+          conditionPrefix,
+        )
       return `${condition}\ncleared by: ${options.exhaustedRetryCommand ?? `${PLATFORM_SLUG} record doctor`}`
   }
 }
