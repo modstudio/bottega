@@ -47,25 +47,23 @@ export function registerRecordRequestSpace(app: Hono<ApiEnvironment>): void {
       context.set('destinationSpaceId', decision.spaceId)
     await next()
   }
-  app.use('/v1/projects', requestedSpace)
-  app.use('/v1/projects/*', requestedSpace)
-  app.use('/v1/releases', requestedSpace)
-  app.use('/v1/releases/*', requestedSpace)
-  app.use('/v1/docs', requestedSpace)
-  app.use('/v1/docs/*', requestedSpace)
-  app.use('/v1/subjects', requestedSpace)
-  app.use('/v1/subjects/*', requestedSpace)
-  app.use('/v1/lens-catalogue', requestedSpace)
-  app.use('/v1/lens-catalogue/*', requestedSpace)
-  app.use('/v1/workflow-catalogue', requestedSpace)
-  app.use('/v1/workflow-catalogue/*', requestedSpace)
-  app.use('/v1/task-flow', requestedSpace)
-  app.use('/v1/port-catalogue', requestedSpace)
-  app.use('/v1/port-catalogue/*', requestedSpace)
-  app.use('/v1/settings/permission', requestedSpace)
-  app.use('/v1/settings/auto-mode', requestedSpace)
-  app.use('/v1/config/*', requestedSpace)
-  app.use('/v1/runs/*', requestedSpace)
-  app.use('/v1/snapshots', requestedSpace)
-  app.use('/v1/snapshots/*', requestedSpace)
+  const prefixes = [
+    '/v1/projects',
+    '/v1/releases',
+    '/v1/docs',
+    '/v1/subjects',
+    '/v1/lens-catalogue',
+    '/v1/workflow-catalogue',
+    '/v1/task-flow',
+    '/v1/port-catalogue',
+    '/v1/settings/permission',
+    '/v1/settings/auto-mode',
+    '/v1/config',
+    '/v1/runs',
+    '/v1/snapshots',
+  ] as const
+  for (const prefix of prefixes) {
+    app.use(prefix, requestedSpace)
+    app.use(`${prefix}/*`, requestedSpace)
+  }
 }

@@ -446,6 +446,12 @@ const DISPLAY_LABELS: readonly DisplayLabel[] = [
     reason: 'display label for the referenced task in hub',
   },
   {
+    store: 'hosted',
+    column: 'task_flow_stage.workflow_key',
+    sibling: 'task_flow_stage.flow_record_id',
+    reason: 'display label for the task owned by the referenced flow',
+  },
+  {
     store: 'orchestrator',
     column: 'question.workflow_key',
     sibling: 'question.workflow_task_record_id',
@@ -493,6 +499,9 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
   ...TELEMETRY_IDENTITY.externalIdentifiers,
   ...BOARD_READER_EXTERNAL_IDENTIFIERS,
   ...TYPED_QUESTION_IDENTITY.externalIdentifiers,
+  ...manifest('hosted', 'workflow instance discriminator, not a row reference', [
+    'task_flow_stage.instance_id',
+  ]),
   ...manifest(
     'orchestrator',
     'name of the contended resource (a lock, checkout path, capacity pool or vendor; a project lock records the project name), a label nothing resolves to a row',
@@ -605,11 +614,16 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'lens_revision.session_id',
     'project_lens_profile_revision.session_id',
     'step_catalogue_event.session_id',
+    'task_flow_stage.session_id',
+    'workflow_obligation.session_id',
     'workflow_event.session_id',
   ]),
   ...manifest('hosted', 'identifier issued by the orchestrator run system', [
     'hub_task_comment.run_id',
     'hub_task_status_event.run_id',
+  ]),
+  ...manifest('hosted', 'identifier issued by an external subsystem', [
+    'workflow_text_copy.task_document_reference',
   ]),
   ...manifest('hosted', 'identifier issued by GitHub Actions', ['pull_request_ci.workflow_run_id']),
   ...manifest('hosted', "identifier issued by Git's patch-id system", [

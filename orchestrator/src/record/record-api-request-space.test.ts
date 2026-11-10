@@ -78,6 +78,57 @@ test('release routes authorize and bind a requested space', async () => {
   expect(destinations).toEqual(['space-b', 'space-b'])
 })
 
+test('task-flow write routes authorize and bind a requested space', async () => {
+  const destinations: Array<string | undefined> = []
+  const app = new Hono<ApiEnvironment>()
+  app.use('/v1/*', async (context, next) => {
+    context.set('identity', {
+      ...identity,
+      memberships: [
+        identity.memberships[0]!,
+        {
+          space_id: 'space-write',
+          name: 'Write Space',
+          slug: 'space-write',
+          role: 'member',
+          permission: 'write',
+        },
+        {
+          space_id: 'space-read',
+          name: 'Read Space',
+          slug: 'space-read',
+          role: 'member',
+          permission: 'read',
+        },
+      ],
+    })
+    return next()
+  })
+  registerRecordRequestSpace(app)
+  app.post('/v1/task-flow/compose', (context) => {
+    destinations.push(context.get('destinationSpaceId'))
+    return context.json({ ok: true })
+  })
+
+  const allowed = await app.request('/v1/task-flow/compose', {
+    method: 'POST',
+    headers: { 'x-record-space': 'space-write' },
+  })
+  expect(allowed.status).toBe(200)
+  expect(destinations).toEqual(['space-write'])
+
+  const refused = await app.request('/v1/task-flow/compose', {
+    method: 'POST',
+    headers: { 'x-record-space': 'space-read' },
+  })
+  expect(refused.status).toBe(403)
+  expect(await refused.json()).toEqual({
+    error: 'record space space-read membership is read-only',
+    remedy: 'A space owner or admin can change the membership permission.',
+  })
+  expect(destinations).toEqual(['space-write'])
+})
+
 test('read-only members are refused before remaining tenant write routes run', async () => {
   // Production break watched: register request-space authorization only for projects and docs.
   const writes: string[] = []
