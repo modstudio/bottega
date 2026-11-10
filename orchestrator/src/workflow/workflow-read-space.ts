@@ -6,6 +6,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   RECORD_ACTIVE_SPACE_REMEDY,
   recordSpaceMembershipRefusal,
+  undeclaredProjectSpaceRefusal,
 } from '../../../shared/record-remedies.ts'
 import { declaredRecordSpace } from '../project/declared-record-space.ts'
 import { projectRowByName } from '../project/projects.ts'
@@ -31,7 +32,9 @@ export function workflowReadSpaceFor(local: Database, project: string | null): s
     missingProjectRouteRefusal: missingProjectRoute,
     rejectedProjectRouteRefusal: declaredSpace
       ? recordSpaceMembershipRefusal(declaredSpace)
-      : missingProjectRoute,
+      : project
+        ? undeclaredProjectSpaceRefusal(project)
+        : '',
   })
   if ('refused' in decision) throw new Error(decision.refused)
   return decision.spaceId

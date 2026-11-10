@@ -1,4 +1,5 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { undeclaredProjectSpaceRefusal } from '../../shared/record-remedies.ts'
 import type { NoteClientOptions } from './note-client.ts'
 import { projects } from './projects.ts'
 import { hostedTaskIdentity } from './task-client.ts'
@@ -14,6 +15,8 @@ export async function noteDestinationOptions(
       throw new Error(
         `project '${project}' is not registered; run \`${PLATFORM_SLUG} project list\``,
       )
+    if (destination.refused === 'undeclared-project')
+      throw new Error(undeclaredProjectSpaceRefusal(project))
     throw new Error(
       `project '${project}' declares a record space the signed-in user is not a member of; run \`${PLATFORM_SLUG} record space list\``,
     )

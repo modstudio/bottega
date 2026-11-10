@@ -1,5 +1,8 @@
 import type { RecordSpaceMembership } from '../../shared/record-space-membership.ts'
-import { recordWriteSpace } from '../../shared/record-write-space.ts'
+import {
+  type ProjectWriteSpaceRefusal,
+  projectWriteSpace,
+} from '../../shared/record-write-space.ts'
 import { declaredProjectSpace } from './hosted-write-mode.ts'
 
 export type RegisteredTaskSpace = {
@@ -14,7 +17,7 @@ export type TaskProjectDestination =
   | { project: string; destinationSpaceId: string }
   | {
       project: string
-      refused: 'unregistered-project' | 'undeclared-project' | 'declared-space-not-member'
+      refused: 'unregistered-project' | ProjectWriteSpaceRefusal
     }
 export type ProjectRowsRefusal<T> = {
   reason: Extract<TaskProjectDestination, { refused: string }>['refused']
@@ -42,20 +45,13 @@ export function taskProjectDestination(
 ): TaskProjectDestination {
   const project = registered.find((candidate) => candidate.name === projectName)
   if (!project) return { project: projectName, refused: 'unregistered-project' }
-  const decision = recordWriteSpace(
-    { kind: 'task', projectName },
-    {
-      declaredSpaces: { [projectName]: declaredProjectSpace(project.settings.space) },
-      personalSpaceId: null,
-      memberships: identity.memberships,
-    },
-  )
+  const decision = projectWriteSpace(projectName, {
+    declaredSpaces: { [projectName]: declaredProjectSpace(project.settings.space) },
+    memberships: identity.memberships,
+  })
   return 'spaceId' in decision
     ? { project: projectName, destinationSpaceId: decision.spaceId }
-    : {
-        project: projectName,
-        refused: decision.refused as 'undeclared-project' | 'declared-space-not-member',
-      }
+    : { project: projectName, refused: decision.refused }
 }
 
 /** Partition project-attributed rows by destination without letting one refusal block another. */

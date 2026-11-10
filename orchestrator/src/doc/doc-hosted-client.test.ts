@@ -1,11 +1,20 @@
-import { expect, test } from 'bun:test'
+import { afterEach, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { retireProject, upsertProject } from '../project/projects.ts'
+import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from './context-write-adapter.ts'
 import { hostedDocClient } from './doc-hosted-client.ts'
+
+const globals = globalThis as typeof globalThis & {
+  [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts
+}
+
+afterEach(() => {
+  delete globals[CONTEXT_FACTS_PORTS_KEY]
+})
 
 test('a project-addressed document client binds every call to the declared space', async () => {
   upsertProject({
@@ -222,6 +231,57 @@ test('task context binds to its project while the personal space is active', asy
   })
   await client.getDoc('doc')
   expect(destination).toBe('context-space')
+})
+
+test('a task context subject derives its project space, skipping a project whose tasks cannot be read', async () => {
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'unreadable-project',
+    path: '/repo/unreadable-project',
+    settings: { space: 'unreadable-team' },
+  })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'derived-project',
+    path: '/repo/derived-project',
+    settings: { space: 'derived-team' },
+  })
+  const recordId = newRecordId()
+  globals[CONTEXT_FACTS_PORTS_KEY] = {
+    tasks: async (project) => {
+      if (project === 'unreadable-project') throw new Error('task list failed')
+      return project === 'derived-project'
+        ? [{ key: 'DER-1', record_id: recordId, project: 'derived-project' }]
+        : []
+    },
+    task: async () => null,
+    pointer: async () => null,
+  }
+  let destination: string | undefined
+  const memory = createMemoryRecordApiClient()
+  installRecordApiClient({
+    ...memory,
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'personal-space',
+      personalSpaceId: 'personal-space',
+      memberships: [
+        { space_id: 'personal-space', slug: 'personal', permission: 'write' },
+        { space_id: 'derived-space', slug: 'derived-team', permission: 'write' },
+      ],
+    }),
+    getDoc: async (_id, requestDestination) => {
+      destination = requestDestination?.destinationSpaceId
+      return {}
+    },
+  })
+  const client = await hostedDocClient('context', `task:${recordId}`)
+  await client.getDoc('doc')
+  expect(destination).toBe('derived-space')
+  await expect(hostedDocClient('context', `task:${newRecordId()}`)).rejects.toMatchObject({
+    status: 409,
+    message: expect.stringContaining('agent context set --task <KEY>'),
+  })
 })
 
 test('a personal document client refuses when no personal space is provisioned', async () => {

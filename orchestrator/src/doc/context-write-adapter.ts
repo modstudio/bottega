@@ -115,14 +115,15 @@ export async function resolveContextTask(
   return resolveOrPullHubTaskReference(project.name, key, ports.tasks, ports.task)
 }
 
-/** Resolve the stable task identity used in a context subject through the same task reader. */
+/** Resolve the stable task identity used in a context subject; a project whose tasks cannot be read is skipped. */
 export async function resolveContextTaskByRecordId(
   recordId: string,
   database: Database = db(),
   ports: ContextFactsPorts = defaultContextFactsPorts(),
 ): Promise<ContextTask | null> {
+  const readTasks = bestEffortProjectTaskReader(ports)
   for (const project of projects(undefined, database)) {
-    const match = (await ports.tasks(project.name)).find((task) => task.record_id === recordId)
+    const match = (await readTasks(project.name))?.find((task) => task.record_id === recordId)
     if (match) return match
   }
   return null

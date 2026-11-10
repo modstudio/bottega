@@ -24,8 +24,9 @@ describe('project record destination', () => {
   test('names a declaration outside the signed-in memberships', () => {
     expect(projectRecordDestination('blocked', 'outside', memberships)).toMatchObject({
       project: 'blocked',
-      declaredSpace: 'outside',
       refused: 'declared-space-not-member',
     })
+    const refusal = projectRecordDestination('blocked', 'outside', memberships)
+    expect('remedy' in refusal && refusal.remedy).toContain('record space invitations')
   })
 })
