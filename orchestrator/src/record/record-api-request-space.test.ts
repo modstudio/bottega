@@ -258,6 +258,7 @@ test('remaining tenant write routes judge and bind the requested destination spa
     '/v1/runs/run-id/void',
     '/v1/runs/run-id/unvoid',
     '/v1/snapshots/state',
+    '/v1/members/permission',
   ]) {
     app.all(path, (context) => {
       destinations.push(context.get('destinationSpaceId'))
@@ -271,6 +272,7 @@ test('remaining tenant write routes judge and bind the requested destination spa
     ['/v1/runs/run-id/void', 'POST'],
     ['/v1/runs/run-id/unvoid', 'POST'],
     ['/v1/snapshots/state', 'PUT'],
+    ['/v1/members/permission', 'POST'],
   ] as const) {
     const response = await app.request(path, {
       method,
@@ -278,7 +280,7 @@ test('remaining tenant write routes judge and bind the requested destination spa
     })
     expect(response.status).toBe(200)
   }
-  expect(destinations).toEqual(Array.from({ length: 5 }, () => 'space-b'))
+  expect(destinations).toEqual(Array.from({ length: 6 }, () => 'space-b'))
 })
 
 test('catalogue routes authorize and bind their requested space before services run', async () => {
