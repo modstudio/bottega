@@ -39,7 +39,8 @@ const STAGE_SELECT = `
 const FLOW_SELECT = `
   f.id,f.project_id,f.task_id,t.key task_key,f.state,f.open_stage_record_id,
   (SELECT count(*)::integer FROM task_flow_stage open_stage
-   WHERE open_stage.flow_record_id=f.id AND open_stage.state NOT IN ('done','abandoned')) open_stage_count,
+   WHERE open_stage.flow_record_id=f.id AND open_stage.space_id=f.space_id
+     AND open_stage.state NOT IN ('done','abandoned')) open_stage_count,
   f.opening_machine_id,f.updated_machine_id,f.revision,f.created_at,f.updated_at`
 
 const STAGE_JOINS = `
@@ -60,9 +61,13 @@ function toHostedStageSummary(row: Record<string, unknown>): HostedStageSummary 
     instanceId: row.stage_instance_id == null ? null : String(row.stage_instance_id),
     sessionId: row.stage_session_id == null ? null : String(row.stage_session_id),
     workflowVersionId: String(row.stage_workflow_version_id),
-    workflowVersionNumber: Number(row.stage_workflow_version_number),
+    workflowVersionNumber:
+      row.stage_workflow_version_number == null ? null : Number(row.stage_workflow_version_number),
     catalogueVersionId: String(row.stage_catalogue_version_id),
-    catalogueVersionNumber: Number(row.stage_catalogue_version_number),
+    catalogueVersionNumber:
+      row.stage_catalogue_version_number == null
+        ? null
+        : Number(row.stage_catalogue_version_number),
     arguments: row.stage_arguments as Record<string, string>,
     activeOrdinal: Number(row.stage_active_ordinal),
     activeSlug: String(row.stage_active_slug),

@@ -286,6 +286,9 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         (await client.listTaskFlowStages!({ sessionId: 'direct-client-a' }, directSpace)).items,
       ).toHaveLength(6)
       expect(
+        await client.listTaskFlowStages!({ sessionId: 'direct-client-a', limit: 1 }, directSpace),
+      ).toMatchObject({ items: [expect.any(Object)], truncated: true })
+      expect(
         (await client.listTaskFlowStages!({ states: ['running'] }, directSpace)).items,
       ).toHaveLength(7)
       expect(

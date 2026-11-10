@@ -2,7 +2,10 @@ import { expect, test } from 'bun:test'
 import { Hono } from 'hono'
 import { registerRecordWorkflowRoutes } from './record-api-workflow.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import type { TaskFlowStageListQuery } from './record-task-flow-contract.ts'
+import {
+  TASK_FLOW_STAGE_LIST_LIMIT_MAX,
+  type TaskFlowStageListQuery,
+} from './record-task-flow-contract.ts'
 
 const SPACE = '00000000-0000-4000-8000-000000000001'
 const PROJECT = '00000000-0000-4000-8000-000000000002'
@@ -60,11 +63,14 @@ test.each(['', '?number=2', '?taskKey=DEV-2234&limit=0', '?taskKey=DEV-2234&limi
   },
 )
 
-test.each([1, 1_000])('task-flow stage list accepts limit bound %s', async (limit) => {
-  const calls: TaskFlowStageListQuery[] = []
-  const response = await taskFlowApp(calls).request(
-    `/v1/task-flow/stages?sessionId=session-a&limit=${limit}`,
-  )
-  expect(response.status).toBe(200)
-  expect(calls[0]).toMatchObject({ sessionId: 'session-a', limit })
-})
+test.each([1, TASK_FLOW_STAGE_LIST_LIMIT_MAX])(
+  'task-flow stage list accepts limit bound %s',
+  async (limit) => {
+    const calls: TaskFlowStageListQuery[] = []
+    const response = await taskFlowApp(calls).request(
+      `/v1/task-flow/stages?sessionId=session-a&limit=${limit}`,
+    )
+    expect(response.status).toBe(200)
+    expect(calls[0]).toMatchObject({ sessionId: 'session-a', limit })
+  },
+)

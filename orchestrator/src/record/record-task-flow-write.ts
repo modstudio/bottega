@@ -15,7 +15,6 @@ import type {
   TaskFlowIntent,
   TaskFlowIntentBody,
   TaskFlowIntentResult,
-  TaskFlowWriteResult,
 } from './record-task-flow-write-contract.ts'
 import {
   decideRevisionPreflight,
@@ -421,7 +420,7 @@ async function applyStageUpdates(tx: SQL, body: StageUpdateBody) {
 type Applier<K extends TaskFlowIntent> = (
   tx: SQL,
   input: Tenant & TaskFlowIntentBody<K>,
-) => Promise<TaskFlowWriteResult>
+) => Promise<TaskFlowIntentResult<K>>
 
 const intentAppliers: { [K in TaskFlowIntent]: Applier<K> } = {
   compose: (tx, input) => applyCompose(tx, input, input),
@@ -451,16 +450,22 @@ const intentAppliers: { [K in TaskFlowIntent]: Applier<K> } = {
   },
 }
 
+async function withTaskFlowTenant<T>(
+  input: Tenant,
+  apply: (tx: SQL) => Promise<T>,
+): Promise<T> {
+  return await recordPool(input.url).begin(async (tx) => {
+    await bindTenant(tx, input)
+    return apply(tx)
+  })
+}
+
 export async function writeRecordTaskFlow<K extends TaskFlowIntent>(
   intent: K,
   input: Tenant & TaskFlowIntentBody<K>,
 ): Promise<TaskFlowIntentResult<K>> {
   try {
-    const result = await recordPool(input.url).begin(async (tx) => {
-      await bindTenant(tx, input)
-      return intentAppliers[intent](tx, input)
-    })
-    return result as TaskFlowIntentResult<K>
+    return await withTaskFlowTenant(input, (tx) => intentAppliers[intent](tx, input))
   } catch (error) {
     const slot = isUniqueViolation(error, 'task_flow_stage_open_slot_unique')
     const number = isUniqueViolation(error, 'task_flow_stage_project_number_unique')

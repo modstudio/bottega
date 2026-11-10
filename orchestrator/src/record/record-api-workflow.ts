@@ -13,7 +13,10 @@ import {
   recordCursorOf,
 } from './record-cursor.ts'
 import { RecordTaskFlowError } from './record-task-flow.ts'
-import { taskFlowStageListQuerySchema } from './record-task-flow-contract.ts'
+import {
+  TASK_FLOW_STAGE_LIST_REMEDY,
+  taskFlowStageListQuerySchema,
+} from './record-task-flow-contract.ts'
 import {
   type TaskFlowIntent,
   type TaskFlowIntentBody,
@@ -55,9 +58,6 @@ type Ports = {
   noSpace(context: Context<Environment>): Response
 }
 const limit = z.coerce.number().int().min(1).max(100).default(20)
-const TASK_FLOW_STAGE_LIST_REMEDY =
-  'Pass projectId, projectId with number, sessionId, one or more state values, or taskKey; limit must be from 1 through 1000.'
-
 function registerTaskFlowWriteRoute<K extends TaskFlowIntent>(
   app: Hono<Environment>,
   deps: RecordWorkflowRouteDeps,

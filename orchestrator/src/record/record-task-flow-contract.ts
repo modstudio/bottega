@@ -3,9 +3,12 @@
 import { z } from 'zod'
 
 export const RECORD_TASK_FLOW_NOT_FOUND_MESSAGE = 'hosted task flow was not found'
+export const TASK_FLOW_STAGE_LIST_LIMIT_MAX = 1_000
+export const TASK_FLOW_STAGE_LIST_REMEDY = `Pass projectId, projectId with number, sessionId, one or more state values, or taskKey; limit must be from 1 through ${TASK_FLOW_STAGE_LIST_LIMIT_MAX}.`
 
 const nullableId = z.string().uuid().nullable()
 const machine = z.object({ id: z.string().uuid(), displayName: z.string().min(1) })
+const stageState = z.enum(['running', 'awaiting-ruling', 'done', 'abandoned'])
 
 const obligation = z.object({
   id: z.string().uuid(),
@@ -56,13 +59,13 @@ const hostedTaskFlowStageSummarySchema = z.object({
   instanceId: z.string().nullable().optional(),
   sessionId: z.string().nullable().optional(),
   workflowVersionId: z.string().uuid(),
-  workflowVersionNumber: z.number().int().positive(),
+  workflowVersionNumber: z.number().int().positive().nullable(),
   catalogueVersionId: z.string().uuid(),
-  catalogueVersionNumber: z.number().int().positive(),
+  catalogueVersionNumber: z.number().int().positive().nullable(),
   arguments: z.record(z.string(), z.string()),
   activeOrdinal: z.number().int().nonnegative(),
   activeSlug: z.string(),
-  state: z.enum(['running', 'awaiting-ruling', 'done', 'abandoned']),
+  state: stageState,
   closedStepNotes: z.array(z.unknown()),
   question: z.string().nullable().optional(),
   autonomy: z.string().nullable().optional(),
@@ -113,7 +116,6 @@ export const hostedTaskFlowStageListSchema = z.object({
 })
 export type HostedTaskFlowStageList = z.infer<typeof hostedTaskFlowStageListSchema>
 
-const stageState = z.enum(['running', 'awaiting-ruling', 'done', 'abandoned'])
 export const taskFlowStageListQuerySchema = z
   .object({
     projectId: z.string().uuid().optional(),
@@ -121,7 +123,7 @@ export const taskFlowStageListQuerySchema = z
     sessionId: z.string().min(1).optional(),
     states: z.array(stageState).min(1).optional(),
     taskKey: z.string().min(1).optional(),
-    limit: z.coerce.number().int().min(1).max(1_000).default(200),
+    limit: z.coerce.number().int().min(1).max(TASK_FLOW_STAGE_LIST_LIMIT_MAX).default(200),
   })
   .superRefine((value, context) => {
     if (value.number !== undefined && value.projectId === undefined)
