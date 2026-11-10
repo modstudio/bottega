@@ -1,9 +1,6 @@
 // concern: hosted task-flow write contract
 /** Declares the validated wire shapes for hosted task-flow command intents. */
 import { z } from 'zod'
-import { v5 as uuidv5 } from 'uuid'
-
-export const TASK_FLOW_REQUEST_NAMESPACE = '41437bd5-95cf-5c85-b91b-6345d433dcc4'
 
 const id = z.string().uuid()
 const stamp = z.string().datetime()
@@ -243,7 +240,3 @@ export type TaskFlowIntentResult<K extends TaskFlowIntent> = K extends 'compose'
   : K extends 'adopt'
     ? TaskFlowAdoptResult
     : TaskFlowWriteResult
-
-export function taskFlowRequestId(intent: TaskFlowIntent, parts: readonly string[]): string {
-  return uuidv5([intent, ...parts].join('\n'), TASK_FLOW_REQUEST_NAMESPACE)
-}

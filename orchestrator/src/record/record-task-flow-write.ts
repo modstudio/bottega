@@ -418,34 +418,44 @@ async function applyStageUpdates(tx: SQL, body: StageUpdateBody) {
   return { revisions }
 }
 
-async function applyAdopt(tx: SQL, body: AdoptBody) {
-  const stageLocations = (await tx.unsafe(
+type AdoptFlowRow = {
+  id: string
+  task_id: string | null
+  open_stage_record_id?: string | null
+  revision: number | string
+  last_request_id?: string | null
+}
+
+async function adoptSourceFlow(tx: SQL, stageId: string): Promise<AdoptFlowRow> {
+  const locations = (await tx.unsafe(
     'SELECT flow_record_id::text FROM task_flow_stage WHERE id=$1::uuid',
-    [body.stage.id],
+    [stageId],
   )) as Array<{ flow_record_id: string }>
-  if (!stageLocations[0]) conflict('task_flow_stage', body.stage.id, null)
-  const sourceRows = (await tx.unsafe(
+  if (!locations[0]) conflict('task_flow_stage', stageId, null)
+  const rows = (await tx.unsafe(
     `SELECT id::text,task_id::text,revision,last_request_id::text
      FROM task_flow WHERE id=$1::uuid FOR UPDATE`,
-    [stageLocations[0].flow_record_id],
-  )) as Array<{
-    id: string
-    task_id: string | null
-    revision: number | string
-    last_request_id: string | null
-  }>
-  const source = sourceRows[0]
-  if (!source) conflict('task_flow', stageLocations[0].flow_record_id, null)
-  if (source.task_id !== null && source.task_id !== body.taskId)
-    conflict('task_flow', source.id, Number(source.revision), 'already-exists')
+    [locations[0].flow_record_id],
+  )) as AdoptFlowRow[]
+  if (!rows[0]) conflict('task_flow', locations[0].flow_record_id, null)
+  return rows[0]
+}
 
-  const targetRows = (await tx.unsafe(
-    `SELECT id::text,open_stage_record_id::text,revision
+async function adoptTargetFlow(tx: SQL, taskId: string): Promise<AdoptFlowRow | undefined> {
+  const rows = (await tx.unsafe(
+    `SELECT id::text,task_id::text,open_stage_record_id::text,revision
      FROM task_flow WHERE space_id=current_setting('app.space_id')::uuid AND task_id=$1::uuid
      FOR UPDATE`,
-    [body.taskId],
-  )) as Array<{ id: string; open_stage_record_id: string | null; revision: number | string }>
-  const target = targetRows[0]
+    [taskId],
+  )) as AdoptFlowRow[]
+  return rows[0]
+}
+
+async function applyAdopt(tx: SQL, body: AdoptBody) {
+  const source = await adoptSourceFlow(tx, body.stage.id)
+  if (source.task_id !== null && source.task_id !== body.taskId)
+    conflict('task_flow', source.id, Number(source.revision), 'already-exists')
+  const target = await adoptTargetFlow(tx, body.taskId)
   const stageRows = (await tx.unsafe(
     `SELECT revision,last_request_id::text FROM task_flow_stage WHERE id=$1::uuid FOR UPDATE`,
     [body.stage.id],
