@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "df8abf46-93a0-485a-8320-a24e303c879f",
+  "id": "d3de97d6-2f82-4a64-a526-ff21fe50cada",
   "prevIds": [
     "4b5e0679-57c0-4437-83fc-e41c41cceaf2"
   ],
@@ -19822,23 +19822,6 @@
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "name": "workflow_text_copy_space_id_space_id_fkey",
-      "entityType": "fks",
-      "schema": "public",
-      "table": "workflow_text_copy"
-    },
-    {
-      "nameExplicit": false,
-      "columns": [
-        "workflow_text_record_id"
-      ],
-      "schemaTo": "public",
-      "tableTo": "workflow_step_text",
-      "columnsTo": [
-        "id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "NO ACTION",
-      "name": "workflow_text_copy_507jlrQqeEPC_fkey",
       "entityType": "fks",
       "schema": "public",
       "table": "workflow_text_copy"

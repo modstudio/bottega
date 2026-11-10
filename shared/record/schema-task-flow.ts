@@ -158,9 +158,7 @@ export const workflowTextCopy = pgTable.withRLS(
   {
     id: uuid().primaryKey(),
     spaceId: spaceIdentity(),
-    workflowTextRecordId: uuid('workflow_text_record_id')
-      .notNull()
-      .references(() => workflowStepText.id),
+    workflowTextRecordId: uuid('workflow_text_record_id').notNull(),
     stageRecordId: uuid('stage_record_id')
       .notNull()
       .references(() => taskFlowStage.id, { onDelete: 'cascade' }),

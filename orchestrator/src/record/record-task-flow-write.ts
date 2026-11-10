@@ -278,7 +278,49 @@ async function insertCopy(tx: SQL, spaceId: string, row: Record<string, unknown>
   await tx`INSERT INTO workflow_text_copy
     (id,space_id,workflow_text_record_id,stage_record_id,task_document_reference,copied_at)
     VALUES (${row.id}::uuid,${spaceId}::uuid,${row.workflowTextRecordId}::uuid,${row.stageRecordId}::uuid,
-      ${row.taskDocumentReference},${row.copiedAt}::timestamptz)`
+      ${row.taskDocumentReference},${row.copiedAt}::timestamptz)
+    ON CONFLICT (workflow_text_record_id) DO NOTHING`
+}
+
+function postgresErrorChain(error: unknown): unknown[] {
+  const chain: unknown[] = []
+  const seen = new Set<unknown>()
+  let current: unknown = error
+  while (current !== null && typeof current === 'object' && !seen.has(current)) {
+    seen.add(current)
+    chain.push(current)
+    current = 'cause' in current ? current.cause : null
+  }
+  return chain
+}
+
+function postgresConstraint(error: unknown): string | null {
+  for (const item of postgresErrorChain(error)) {
+    const candidate = item as { constraint?: unknown; constraint_name?: unknown }
+    for (const value of [candidate.constraint, candidate.constraint_name])
+      if (typeof value === 'string' && value) return value
+  }
+  return null
+}
+
+function postgresBlockedRow(error: unknown): string {
+  for (const item of postgresErrorChain(error)) {
+    const candidate = item as { detail?: unknown }
+    if (typeof candidate.detail === 'string' && candidate.detail) return candidate.detail
+  }
+  return error instanceof Error ? error.message : String(error)
+}
+
+function postgresSqlState(error: unknown): string | null {
+  for (const item of postgresErrorChain(error)) {
+    const candidate = item as { code?: unknown; errno?: unknown }
+    for (const value of [candidate.errno, candidate.code]) {
+      if (typeof value !== 'string' && typeof value !== 'number') continue
+      const normalized = String(value).toUpperCase()
+      if (/^[0-9A-Z]{5}$/.test(normalized)) return normalized
+    }
+  }
+  return null
 }
 
 async function applyCompose(tx: SQL, input: Tenant, body: ComposeBody) {
@@ -416,14 +458,25 @@ export async function writeRecordTaskFlow<K extends TaskFlowIntent>(
   } catch (error) {
     const slot = isUniqueViolation(error, 'task_flow_stage_open_slot_unique')
     const number = isUniqueViolation(error, 'task_flow_stage_project_number_unique')
-    if (!slot && !number) throw error
-    throw new DocRevisionConflictError(
-      'another open stage holds that slot and must be closed or abandoned first',
-      slot
-        ? 'task_flow_stage.(project_id,workflow,mode,workflow_key,instance_id)'
-        : 'task_flow_stage.(project_id,number)',
-      'already-exists',
-      null,
-    )
+    if (slot || number)
+      throw new DocRevisionConflictError(
+        'another open stage holds that slot and must be closed or abandoned first',
+        slot
+          ? 'task_flow_stage.(project_id,workflow,mode,workflow_key,instance_id)'
+          : 'task_flow_stage.(project_id,number)',
+        'already-exists',
+        null,
+      )
+    const state = postgresSqlState(error)
+    if (state === '23505' || state === '23503') {
+      const constraint = postgresConstraint(error) ?? '<unknown>'
+      throw new DocRevisionConflictError(
+        `${postgresBlockedRow(error)} blocked the task-flow write`,
+        `constraint=${constraint}`,
+        state === '23505' ? 'already-exists' : 'stale-revision',
+        null,
+      )
+    }
+    throw error
   }
 }

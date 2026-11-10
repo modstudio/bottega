@@ -1,9 +1,8 @@
 // concern: hosted task-flow client
 
 import {
-  DocRevisionConflictError,
   REVISION_CONFLICT_CODE,
-  type RevisionConflictReason,
+  revisionConflictErrorFromRecordApiError,
 } from '../doc/doc-revision-conflict.ts'
 import type { RecordRequestDestination } from './record-api-client-paths.ts'
 import { RecordApiRequestError } from './record-api-client-response.ts'
@@ -19,6 +18,8 @@ type Request = <T>(
   path: string,
   init?: RequestInit & { schema?: (body: unknown) => T; destinationSpaceId?: string },
 ) => Promise<T>
+const TASK_FLOW_WRITE_REFUSAL =
+  'record API predates task-flow writes; release hosted-api, then retry'
 export type RecordTaskFlowClient = {
   readTaskFlow?(
     selector: { taskKey?: string; flowRecordId?: string },
@@ -72,12 +73,14 @@ async function write<K extends TaskFlowIntent>(
     })
   } catch (error) {
     if (error instanceof RecordApiRequestError && error.code === REVISION_CONFLICT_CODE)
-      throw new DocRevisionConflictError(
-        error.message,
-        error.condition,
-        error.reason as RevisionConflictReason,
-        error.currentRevision,
-      )
+      throw revisionConflictErrorFromRecordApiError(error)
+    if (
+      error &&
+      typeof error === 'object' &&
+      'status' in error &&
+      (error.status === 404 || error.status === 405)
+    )
+      throw new Error(TASK_FLOW_WRITE_REFUSAL)
     throw error
   }
 }

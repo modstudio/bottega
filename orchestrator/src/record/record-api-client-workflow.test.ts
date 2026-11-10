@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { recordTaskFlowClient } from './record-api-client-task-flow.ts'
 import { recordWorkflowClient } from './record-api-client-workflow.ts'
 import type { RecordWorkflowImportInput } from './record-workflow-contract.ts'
 
@@ -29,4 +30,17 @@ test.each([404, 405])('workflow import refuses an old record API response %s', a
   await expect(client.importWorkflowCatalogue!(input)).rejects.toThrow(
     'record API predates reconciled workflow import; release hosted-api, then retry',
   )
+})
+
+test.each([404, 405])('task-flow write refuses an old record API response %s', async (status) => {
+  const client = recordTaskFlowClient(async () => {
+    throw { status }
+  })
+  await expect(
+    client.deleteTaskFlowText!({
+      requestId: '00000000-0000-4000-8000-000000000001',
+      stageRecordId: '00000000-0000-4000-8000-000000000002',
+      ids: ['00000000-0000-4000-8000-000000000003'],
+    }),
+  ).rejects.toThrow('record API predates task-flow writes; release hosted-api, then retry')
 })

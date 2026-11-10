@@ -49,3 +49,17 @@ export function revisionConflictBody(error: DocRevisionConflictError): RevisionC
     currentRevision: error.currentRevision,
   }
 }
+
+export function revisionConflictErrorFromRecordApiError(fields: {
+  message: string
+  condition: string
+  reason: unknown
+  currentRevision: string | null
+}): DocRevisionConflictError {
+  return new DocRevisionConflictError(
+    fields.message,
+    fields.condition,
+    revisionConflictBodySchema.shape.reason.parse(fields.reason),
+    fields.currentRevision,
+  )
+}

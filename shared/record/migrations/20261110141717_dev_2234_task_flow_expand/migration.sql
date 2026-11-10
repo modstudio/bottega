@@ -65,7 +65,6 @@ ALTER TABLE "workflow_obligation" ADD CONSTRAINT "workflow_obligation_stage_reco
 ALTER TABLE "workflow_step_text" ADD CONSTRAINT "workflow_step_text_space_id_space_id_fkey" FOREIGN KEY ("space_id") REFERENCES "space"("id");--> statement-breakpoint
 ALTER TABLE "workflow_step_text" ADD CONSTRAINT "workflow_step_text_stage_record_id_task_flow_stage_id_fkey" FOREIGN KEY ("stage_record_id") REFERENCES "task_flow_stage"("id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "workflow_text_copy" ADD CONSTRAINT "workflow_text_copy_space_id_space_id_fkey" FOREIGN KEY ("space_id") REFERENCES "space"("id");--> statement-breakpoint
-ALTER TABLE "workflow_text_copy" ADD CONSTRAINT "workflow_text_copy_507jlrQqeEPC_fkey" FOREIGN KEY ("workflow_text_record_id") REFERENCES "workflow_step_text"("id");--> statement-breakpoint
 ALTER TABLE "workflow_text_copy" ADD CONSTRAINT "workflow_text_copy_stage_record_id_task_flow_stage_id_fkey" FOREIGN KEY ("stage_record_id") REFERENCES "task_flow_stage"("id") ON DELETE CASCADE;--> statement-breakpoint
 CREATE POLICY "workflow_obligation_space_select" ON "workflow_obligation" AS PERMISSIVE FOR SELECT TO public USING ("workflow_obligation"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid OR "workflow_obligation"."space_id" = ANY(
     string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]
