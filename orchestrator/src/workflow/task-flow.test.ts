@@ -6,12 +6,10 @@ import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import {
   attachTaskFlowStage,
   closeTaskFlowStage,
-  recordTaskFlowCursorMutation,
   selectTaskFlowStage,
   vacateRetiredWorkflowKeySlot,
 } from './task-flow.ts'
 import { awaitWorkflowRuling, composeWorkflowWithCursor, ruleWorkflow } from './workflow-cursor.ts'
-import { selectWorkflowCursor } from './workflow-cursor-selection.ts'
 import {
   abandonCursor,
   database as cursorDatabase,
@@ -96,7 +94,7 @@ test('cursor commands attach, refuse overlap, finish, re-enter, and abandon task
   ).rejects.toThrow(`task DEV-FLOW already has open stage cursor ${planCursor} ${plan} default`)
 
   d.query("UPDATE workflow_cursor SET enforcement='note-only' WHERE number=?").run(planCursor)
-  nextWorkflowStep(plan, 'fixture', 'default', args, 'plan finished', context, d, {}, testPorts)
+  await nextWorkflowStep(plan, 'fixture', 'default', args, 'plan finished', context, d, {}, testPorts)
   expect(pointers(planCursor).openStage).toBeNull()
 
   const reentered = await composeWorkflowWithCursor(ship, 'fixture', 'default', args, context, d, {}, {})
@@ -114,7 +112,7 @@ test('cursor commands attach, refuse overlap, finish, re-enter, and abandon task
   })
 })
 
-test('keyed compose and advance enqueue both stage and flow while task-less compose enqueues neither', async () => {
+test('task-flow mutations never enqueue flow or stage rows', async () => {
   const d = cursorDatabase()
   const workflow = 'task-flow-outbox'
   installTaskFlowLifecycleWorkflow(d, workflow, ['score', 'complete'])
@@ -127,66 +125,12 @@ test('keyed compose and advance enqueue both stage and flow while task-less comp
 
   const opened = await composeWorkflowWithCursor(workflow, 'fixture', 'default', args, context, d, {}, {})
   const cursor = opened.cursor!.id
-  expect(
-    d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%' ORDER BY kind").all(),
-  ).toEqual([{ kind: 'task_flow' }, { kind: 'task_flow_stage' }])
+  expect(d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%'").all()).toEqual([])
 
   d.query("DELETE FROM outbox WHERE kind LIKE 'task_flow%'").run()
   d.query("UPDATE workflow_cursor SET enforcement='note-only' WHERE number=?").run(cursor)
-  nextWorkflowStep(workflow, 'fixture', 'default', args, 'advance', context, d, {}, testPorts)
-  expect(
-    d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%' ORDER BY kind").all(),
-  ).toEqual([{ kind: 'task_flow' }, { kind: 'task_flow_stage' }])
-  d.query("DELETE FROM outbox WHERE kind LIKE 'task_flow%'").run()
-  const cursorRecordId = d
-    .query<{ record_id: string }, [number]>('SELECT record_id FROM workflow_cursor WHERE number=?')
-    .get(cursor)!.record_id
-  recordTaskFlowCursorMutation(cursorRecordId, d)
-  expect(d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%' ORDER BY id").all()).toEqual(
-    [{ kind: 'task_flow' }, { kind: 'task_flow_stage' }],
-  )
-  const stage = d
-    .query<{ payload: string; args: string; closed: string }, []>(
-      `SELECT outbox.payload,cursor.args,cursor.closed FROM outbox
-       JOIN workflow_cursor cursor ON cursor.record_id=outbox.row_id
-       WHERE outbox.kind='task_flow_stage'`,
-    )
-    .get()!
-  const cursorRow = d
-    .query<
-      {
-        record_id: string
-        task_flow_record_id: string
-        workflow_slug: string
-        mode_slug: string
-        ordinal: number
-        step_slug: string
-        state: string
-        opened_machine_id: string
-        last_advanced_machine_id: string
-        revision: number
-      },
-      []
-    >(
-      `SELECT record_id,task_flow_record_id,workflow_slug,mode_slug,ordinal,step_slug,state,
-              opened_machine_id,last_advanced_machine_id,revision
-       FROM workflow_cursor`,
-    )
-    .get()!
-  expect(JSON.parse(stage.payload)).toMatchObject({
-    id: cursorRow.record_id,
-    flowRecordId: cursorRow.task_flow_record_id,
-    workflow: cursorRow.workflow_slug,
-    mode: cursorRow.mode_slug,
-    arguments: JSON.parse(stage.args),
-    activeOrdinal: cursorRow.ordinal,
-    activeSlug: cursorRow.step_slug,
-    state: cursorRow.state,
-    closedStepNotes: JSON.parse(stage.closed),
-    openedMachineId: cursorRow.opened_machine_id,
-    lastAdvancedMachineId: cursorRow.last_advanced_machine_id,
-    revision: cursorRow.revision,
-  })
+  await nextWorkflowStep(workflow, 'fixture', 'default', args, 'advance', context, d, {}, testPorts)
+  expect(d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%'").all()).toEqual([])
 
   d.query("DELETE FROM outbox WHERE kind LIKE 'task_flow%'").run()
   const tasklessWorkflow = 'task-flow-taskless'
@@ -204,7 +148,7 @@ test('keyed compose and advance enqueue both stage and flow while task-less comp
   expect(d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%'").all()).toEqual([])
 })
 
-test('answering a keyed stage ruling republishes its running state and revision', async () => {
+test('answering a keyed stage ruling writes no task-flow outbox row', async () => {
   const d = cursorDatabase()
   const workflow = 'task-flow-ruling-outbox'
   const args = { key: 'DEV-RULING-OUTBOX' }
@@ -219,17 +163,10 @@ test('answering a keyed stage ruling republishes its running state and revision'
 
   await ruleWorkflow(workflow, 'fixture', 'default', args, 'Proceed.', true, 'mcp', context, d)
 
-  const row = d
-    .query<{ payload: string; revision: number }, []>(
-      `SELECT outbox.payload,cursor.revision FROM outbox
-       JOIN workflow_cursor cursor ON cursor.record_id=outbox.row_id
-       WHERE outbox.kind='task_flow_stage'`,
-    )
-    .get()!
-  expect(JSON.parse(row.payload)).toMatchObject({ state: 'running', revision: row.revision })
+  expect(d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%'").all()).toEqual([])
 })
 
-test('task adoption attaches a flow so a later advance publishes the stage', async () => {
+test('task adoption attaches a local flow and later advance writes no outbox row', async () => {
   const d = cursorDatabase()
   const workflow = 'task-flow-adoption-outbox'
   installKeylessTaskFlowWorkflow(d, workflow)
@@ -250,7 +187,7 @@ test('task adoption attaches a flow so a later advance publishes the stage', asy
     session: 'task-flow-adoption-outbox',
     taskRecordId: 'task-DEV-ADOPT-FLOW',
   }
-  nextWorkflowStep(
+  await nextWorkflowStep(
     workflow,
     'fixture',
     'default',
@@ -264,7 +201,7 @@ test('task adoption attaches a flow so a later advance publishes the stage', asy
   )
   d.query("DELETE FROM outbox WHERE kind LIKE 'task_flow%'").run()
 
-  nextWorkflowStep(
+  await nextWorkflowStep(
     workflow,
     'fixture',
     'default',
@@ -277,14 +214,10 @@ test('task adoption attaches a flow so a later advance publishes the stage', asy
     opened.cursor!.id,
   )
 
-  const row = d
-    .query<{ payload: string; task_flow_record_id: string }, []>(
-      `SELECT outbox.payload,cursor.task_flow_record_id FROM outbox
-       JOIN workflow_cursor cursor ON cursor.record_id=outbox.row_id
-       WHERE outbox.kind='task_flow_stage'`,
-    )
-    .get()!
-  expect(JSON.parse(row.payload).flowRecordId).toBe(row.task_flow_record_id)
+  expect(
+    d.query('SELECT task_flow_record_id FROM workflow_cursor WHERE number=?').get(opened.cursor!.id),
+  ).toEqual({ task_flow_record_id: expect.any(String) })
+  expect(d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%'").all()).toEqual([])
 })
 
 test('task adoption refuses when that task already has another open stage', async () => {
@@ -317,7 +250,7 @@ test('task adoption refuses when that task already has another open stage', asyn
   )
   d.query("UPDATE workflow_cursor SET enforcement='note-only'").run()
 
-  expect(() =>
+  await expect(
     nextWorkflowStep(
       'task-flow-adoption-conflict',
       'fixture',
@@ -330,41 +263,10 @@ test('task adoption refuses when that task already has another open stage', asyn
       testPorts,
       keyless.cursor!.id,
     ),
-  ).toThrow('task DEV-ADOPT-CONFLICT already has open stage cursor')
+  ).rejects.toThrow('task DEV-ADOPT-CONFLICT already has open stage cursor')
 })
 
-function expectPendingFlowOutboxCleared(d: ReturnType<typeof cursorDatabase>): void {
-  const rows = d
-    .query<{ payload: string; revision: number }, []>(
-      `SELECT outbox.payload,flow.revision FROM outbox
-       JOIN task_flow flow ON flow.record_id=outbox.row_id
-       WHERE outbox.kind='task_flow' AND outbox.synced_at IS NULL
-         AND outbox.quarantined_at IS NULL AND outbox.retired_at IS NULL`,
-    )
-    .all()
-  expect(rows).toHaveLength(1)
-  expect(JSON.parse(rows[0]!.payload)).toMatchObject({
-    openStageRecordId: null,
-    revision: rows[0]!.revision,
-  })
-}
-
-function expectPendingStageState(
-  d: ReturnType<typeof cursorDatabase>,
-  state: 'done' | 'abandoned',
-): void {
-  const row = d
-    .query<{ payload: string; revision: number }, []>(
-      `SELECT outbox.payload,cursor.revision FROM outbox
-       JOIN workflow_cursor cursor ON cursor.record_id=outbox.row_id
-       WHERE outbox.kind='task_flow_stage' AND outbox.synced_at IS NULL
-         AND outbox.quarantined_at IS NULL AND outbox.retired_at IS NULL`,
-    )
-    .get()!
-  expect(JSON.parse(row.payload)).toMatchObject({ state, revision: row.revision })
-}
-
-test('finishing a keyed stage enqueues the cleared task flow at its local revision', async () => {
+test('finishing a keyed stage clears the local flow without enqueueing', async () => {
   const d = cursorDatabase()
   const workflow = 'task-flow-finish-outbox'
   const args = { key: 'DEV-FINISH-OUTBOX' }
@@ -379,13 +281,15 @@ test('finishing a keyed stage enqueues the cleared task flow at its local revisi
   d.query("UPDATE workflow_cursor SET enforcement='note-only' WHERE number=?").run(
     opened.cursor!.id,
   )
-  nextWorkflowStep(workflow, 'fixture', 'default', args, 'finish', context, d, {}, testPorts)
+  await nextWorkflowStep(workflow, 'fixture', 'default', args, 'finish', context, d, {}, testPorts)
 
-  expectPendingFlowOutboxCleared(d)
-  expectPendingStageState(d, 'done')
+  expect(d.query('SELECT open_stage_cursor_record_id FROM task_flow').get()).toEqual({
+    open_stage_cursor_record_id: null,
+  })
+  expect(d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%'").all()).toEqual([])
 })
 
-test('abandoning a keyed stage enqueues the cleared task flow at its local revision', async () => {
+test('abandoning a keyed stage clears the local flow without enqueueing', async () => {
   const d = cursorDatabase()
   const workflow = 'task-flow-abandon-outbox'
   const args = { key: 'DEV-ABANDON-OUTBOX' }
@@ -399,8 +303,10 @@ test('abandoning a keyed stage enqueues the cleared task flow at its local revis
   await composeWorkflowWithCursor(workflow, 'fixture', 'default', args, context, d, {}, {})
   await abandonCursor(workflow, 'fixture', 'default', args, 'abandon', context, d)
 
-  expectPendingFlowOutboxCleared(d)
-  expectPendingStageState(d, 'abandoned')
+  expect(d.query('SELECT open_stage_cursor_record_id FROM task_flow').get()).toEqual({
+    open_stage_cursor_record_id: null,
+  })
+  expect(d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%'").all()).toEqual([])
 })
 
 test('one task flow refuses a second open stage and retains re-entry history', async () => {
@@ -465,12 +371,10 @@ test('one task flow refuses a second open stage and retains re-entry history', a
       flowRecordId: flow.flowRecordId,
       cursorRecordId: null,
     })
-    const reentry = d
-      .query<{ payload: string }, [string]>(
-        "SELECT payload FROM outbox WHERE kind='task_flow' AND row_id=?",
-      )
-      .get(flow.flowRecordId)!
-    expect(JSON.parse(reentry.payload)).toMatchObject({
+    expect(
+      d.query('SELECT opening_machine_id openingMachineId,revision FROM task_flow WHERE record_id=?')
+        .get(flow.flowRecordId),
+    ).toEqual({
       revision: beforeReentry.revision + 1,
       openingMachineId: beforeReentry.openingMachineId,
     })
@@ -523,54 +427,6 @@ test('an unknown task status preserves the projected flow state', async () => {
         state: 'done',
       },
     )
-  } finally {
-    d.close()
-  }
-})
-
-test('keyed selection adopts an open cursor left without a flow by the backfill', async () => {
-  const d = migratedTestDatabase()
-  try {
-    const projectId = newRecordId()
-    d.query(
-      `INSERT INTO project(record_id,name,path,canon,settings)
-       VALUES (?,'fixture','/fixture',0,'{"trunk":"main"}')`,
-    ).run(projectId)
-    const cursorRecordId = newRecordId()
-    d.query(
-      `INSERT INTO workflow_cursor
-        (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,
-         task_record_id,task_flow_record_id,instance_id,session_id,workflow_version_record_id,
-         catalogue_version_record_id,args,autonomy,ordinal,step_slug,state,closed,question,
-         total_steps,created_at,updated_at,enforcement)
-       VALUES (?,1,'fixture',?,'plan-task','default','DEV-1','task-1',NULL,'',NULL,?,?,'{}',
-               '{}',0,'start','running','[]',NULL,1,'2026-11-01','2026-11-01','floors')`,
-    ).run(cursorRecordId, projectId, workflowVersionRecordId(d), catalogueVersionRecordId(d))
-
-    const selected = selectWorkflowCursor(
-      { project: 'fixture', workflow: 'plan-task', mode: 'default', key: 'DEV-1' },
-      undefined,
-      null,
-      d,
-      'task-1',
-      'active',
-    )!
-    const flow = d
-      .query('SELECT record_id,open_stage_cursor_record_id FROM task_flow WHERE task_record_id=?')
-      .get('task-1') as { record_id: string; open_stage_cursor_record_id: string | null }
-
-    expect(selected.task_flow_record_id).toBe(flow.record_id)
-    expect(flow.open_stage_cursor_record_id).toBe(cursorRecordId)
-    expect(() =>
-      selectWorkflowCursor(
-        { project: 'fixture', workflow: 'ship-task', mode: 'default', key: 'DEV-1' },
-        undefined,
-        null,
-        d,
-        'task-1',
-        'active',
-      ),
-    ).toThrow('task DEV-1 already has open stage cursor 1 plan-task default')
   } finally {
     d.close()
   }

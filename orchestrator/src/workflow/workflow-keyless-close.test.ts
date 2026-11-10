@@ -145,8 +145,8 @@ test('a workflow without a key argument adopts --task and renders and closes its
   )
   expect(served.body).toContain(KEYLESS_TRACKER_ACTION_KEY)
 
-  expect(() =>
-    nextWorkflowStep(
+  await expect(
+nextWorkflowStep(
       'keyless-binding',
       'fixture',
       'default',
@@ -158,12 +158,12 @@ test('a workflow without a key argument adopts --task and renders and closes its
       testPorts,
       cursor,
     ),
-  ).toThrow(`--cursor ${cursor} --task <KEY>`)
+  ).rejects.toThrow(`--cursor ${cursor} --task <KEY>`)
   expect(
     d.query('SELECT ordinal,workflow_key FROM workflow_cursor WHERE number=?').get(cursor),
   ).toEqual({ ordinal: 0, workflow_key: '' })
 
-  const advanced = nextWorkflowStep(
+  const advanced = await nextWorkflowStep(
     'keyless-binding',
     'fixture',
     'default',
@@ -178,7 +178,7 @@ test('a workflow without a key argument adopts --task and renders and closes its
   expect(advanced).toContain('DEV-822')
   expect(advanced).not.toContain(`task show ${KEYLESS_TRACKER_ACTION_KEY}`)
   expect(
-    nextWorkflowStep(
+    await nextWorkflowStep(
       'keyless-binding',
       'fixture',
       'default',
@@ -251,7 +251,7 @@ test('a prose KEY marker without a key-bound tracker action closes keylessly', a
   )
 
   expect(
-    nextWorkflowStep(
+    await nextWorkflowStep(
       'prose-key-marker',
       'fixture',
       'default',
@@ -337,8 +337,8 @@ test('operator-ruling cursor refusals name the bound question remedy', async () 
        RETURNING number`,
     )
     .get(newRecordId(), cursorRecord.record_id)!
-  expect(() =>
-    nextWorkflowStep(
+  await expect(
+nextWorkflowStep(
       'operator-signoff',
       'fixture',
       'default',
@@ -350,15 +350,15 @@ test('operator-ruling cursor refusals name the bound question remedy', async () 
       testPorts,
       answeredCursor,
     ),
-  ).toThrow(`--ruling ${question.number}`)
+  ).rejects.toThrow(`--ruling ${question.number}`)
 
   d.query(
     `UPDATE question
         SET overturned_at='2026-11-01T00:00:02.000Z',replacement='Obtain security approval instead.'
       WHERE number=?`,
   ).run(question.number)
-  expect(() =>
-    nextWorkflowStep(
+  await expect(
+nextWorkflowStep(
       'operator-signoff',
       'fixture',
       'default',
@@ -370,7 +370,7 @@ test('operator-ruling cursor refusals name the bound question remedy', async () 
       testPorts,
       answeredCursor,
     ),
-  ).toThrow('workflow await')
+  ).rejects.toThrow('workflow await')
 
   const emptyContext = { session: 'operator-signoff-empty' }
   const empty = await composeWorkflowWithCursor(
@@ -383,8 +383,8 @@ test('operator-ruling cursor refusals name the bound question remedy', async () 
     {},
     {},
   )
-  expect(() =>
-    nextWorkflowStep(
+  await expect(
+nextWorkflowStep(
       'operator-signoff',
       'fixture',
       'default',
@@ -396,7 +396,7 @@ test('operator-ruling cursor refusals name the bound question remedy', async () 
       testPorts,
       empty.cursor!.id,
     ),
-  ).toThrow('workflow await')
+  ).rejects.toThrow('workflow await')
 })
 
 test('next refuses an undeclared argument before storing it and a correct next still renders', async () => {
@@ -476,8 +476,8 @@ test('next refuses an undeclared argument before storing it and a correct next s
     .query<{ args: string }, [number]>('SELECT args FROM workflow_cursor WHERE number=?')
     .get(cursor)!
 
-  expect(() =>
-    nextWorkflowStep(
+  await expect(
+nextWorkflowStep(
       'unknown-next-argument',
       'fixture',
       'default',
@@ -489,7 +489,7 @@ test('next refuses an undeclared argument before storing it and a correct next s
       testPorts,
       cursor,
     ),
-  ).toThrow(
+  ).rejects.toThrow(
     `workflow next cursor ${cursor}: workflow "unknown-next-argument" has no argument "typo"; declared arguments: key`,
   )
   expect(
@@ -498,7 +498,7 @@ test('next refuses an undeclared argument before storing it and a correct next s
       .get(cursor),
   ).toEqual(before)
   expect(
-    nextWorkflowStep(
+    await nextWorkflowStep(
       'unknown-next-argument',
       'fixture',
       'default',

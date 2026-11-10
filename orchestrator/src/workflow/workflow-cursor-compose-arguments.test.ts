@@ -83,7 +83,7 @@ test('compose protects an open branch while worktree compose and branch next sti
     worktree: '/tmp/reopened',
   }
   expect(
-    nextWorkflowStep(
+    await nextWorkflowStep(
       slug,
       'fixture',
       'default',

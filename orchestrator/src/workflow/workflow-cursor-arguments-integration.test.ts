@@ -67,7 +67,7 @@ describe('workflow cursor arguments', () => {
       {},
     )
 
-    const next = closeStep(
+    const next = await closeStep(
       'rebind-fixture',
       'fixture',
       'default',

@@ -338,6 +338,3 @@ export function closeTaskFlowStage(cursorRecordId: string, d: Database): void {
   stampTaskFlowMachine(flow.record_id, d)
 }
 
-export function recordTaskFlowCursorMutation(cursorRecordId: string, d: Database): void {
-  stampWorkflowCursorMachine(cursorRecordId, 1, d)
-}

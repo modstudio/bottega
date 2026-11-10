@@ -111,7 +111,7 @@ test('two keyless runs in one session have distinct handles and advance independ
     ),
   ).rejects.toThrow(`--mode default --cursor ${first.cursor}`)
   d.query("UPDATE workflow_cursor SET enforcement='note-only'").run()
-  nextWorkflowStep(
+  await nextWorkflowStep(
     'keyless-runs',
     'fixture',
     'default',
@@ -129,9 +129,9 @@ test('two keyless runs in one session have distinct handles and advance independ
   expect(d.query('SELECT ordinal FROM workflow_cursor WHERE number=?').get(second.cursor)).toEqual({
     ordinal: 0,
   })
-  expect(() =>
-    nextWorkflowStep('keyless-runs', 'fixture', 'default', {}, 'ambiguous', context, d, {}, ports),
-  ).toThrow(
+  await expect(
+nextWorkflowStep('keyless-runs', 'fixture', 'default', {}, 'ambiguous', context, d, {}, ports),
+  ).rejects.toThrow(
     `more than one open keyless workflow cursor matches; pass a cursor handle:\n` +
       `cursor ${first.cursor}, unassigned, keyless-runs default, step 2 complete\n` +
       `cursor ${second.cursor}, unassigned, keyless-runs default, step 1 score`,
@@ -167,7 +167,7 @@ test('step 1 reuses one untouched composed keyless cursor but opens after it adv
   })
 
   d.query("UPDATE workflow_cursor SET enforcement='note-only'").run()
-  nextWorkflowStep(
+  await nextWorkflowStep(
     'compose-then-step',
     'fixture',
     'default',
@@ -198,7 +198,7 @@ test('step 1 reuses one untouched composed keyless cursor but opens after it adv
 test('step 1 ignores two advanced keyless cursors and opens a third', async () => {
   const d = database()
   installKeylessWorkflow(d, 'advanced-keyless-runs')
-  const first = await composeWorkflowWithCursor(
+  const first = (await composeWorkflowWithCursor(
     'advanced-keyless-runs',
     'fixture',
     'default',
@@ -207,8 +207,8 @@ test('step 1 ignores two advanced keyless cursors and opens a third', async () =
     d,
     {},
     {},
-  ).cursor!.id
-  const second = await composeWorkflowWithCursor(
+  )).cursor!.id
+  const second = (await composeWorkflowWithCursor(
     'advanced-keyless-runs',
     'fixture',
     'default',
@@ -217,10 +217,10 @@ test('step 1 ignores two advanced keyless cursors and opens a third', async () =
     d,
     {},
     {},
-  ).cursor!.id
+  )).cursor!.id
   d.query("UPDATE workflow_cursor SET enforcement='note-only'").run()
   for (const cursor of [first, second])
-    nextWorkflowStep(
+    await nextWorkflowStep(
       'advanced-keyless-runs',
       'fixture',
       'default',
@@ -252,7 +252,7 @@ test('step 1 ignores two advanced keyless cursors and opens a third', async () =
 test('step 1 reuses the untouched cursor when another keyless cursor is advanced', async () => {
   const d = database()
   installKeylessWorkflow(d, 'mixed-keyless-runs')
-  const advanced = await composeWorkflowWithCursor(
+  const advanced = (await composeWorkflowWithCursor(
     'mixed-keyless-runs',
     'fixture',
     'default',
@@ -261,8 +261,8 @@ test('step 1 reuses the untouched cursor when another keyless cursor is advanced
     d,
     {},
     {},
-  ).cursor!.id
-  const untouched = await composeWorkflowWithCursor(
+  )).cursor!.id
+  const untouched = (await composeWorkflowWithCursor(
     'mixed-keyless-runs',
     'fixture',
     'default',
@@ -271,9 +271,9 @@ test('step 1 reuses the untouched cursor when another keyless cursor is advanced
     d,
     {},
     {},
-  ).cursor!.id
+  )).cursor!.id
   d.query("UPDATE workflow_cursor SET enforcement='note-only'").run()
-  nextWorkflowStep(
+  await nextWorkflowStep(
     'mixed-keyless-runs',
     'fixture',
     'default',
@@ -305,7 +305,7 @@ test('step 1 reuses the untouched cursor when another keyless cursor is advanced
 test('step 1 reuses a cursor whose trail contains only an argument rebound', async () => {
   const d = database()
   installKeylessWorkflow(d, 'rebound-keyless-run')
-  const opened = await composeWorkflowWithCursor(
+  const opened = (await composeWorkflowWithCursor(
     'rebound-keyless-run',
     'fixture',
     'default',
@@ -314,7 +314,7 @@ test('step 1 reuses a cursor whose trail contains only an argument rebound', asy
     d,
     {},
     {},
-  ).cursor!.id
+  )).cursor!.id
   d.query('UPDATE workflow_cursor SET closed=? WHERE number=?').run(
     JSON.stringify([
       {
@@ -347,7 +347,7 @@ test('step 1 reuses a cursor whose trail contains only an argument rebound', asy
 test('step 1 refuses when two untouched keyless cursors match', async () => {
   const d = database()
   installKeylessWorkflow(d, 'untouched-keyless-runs')
-  const first = await composeWorkflowWithCursor(
+  const first = (await composeWorkflowWithCursor(
     'untouched-keyless-runs',
     'fixture',
     'default',
@@ -356,8 +356,8 @@ test('step 1 refuses when two untouched keyless cursors match', async () => {
     d,
     {},
     {},
-  ).cursor!.id
-  const second = await composeWorkflowWithCursor(
+  )).cursor!.id
+  const second = (await composeWorkflowWithCursor(
     'untouched-keyless-runs',
     'fixture',
     'default',
@@ -366,7 +366,7 @@ test('step 1 refuses when two untouched keyless cursors match', async () => {
     d,
     {},
     {},
-  ).cursor!.id
+  )).cursor!.id
 
   await expect(
     getWorkflowStepWithCursor(
@@ -440,7 +440,7 @@ test('a handle validates supplied identity and serves the active step for an ear
     {},
   )
   d.query("UPDATE workflow_cursor SET enforcement='note-only' WHERE number=?").run(opened.cursor)
-  nextWorkflowStep(
+  await nextWorkflowStep(
     'flow',
     'fixture',
     'default',
@@ -505,7 +505,7 @@ test('closing with task adopts a key once and rekeys cursor questions', async ()
     opened.cursor,
   )
   d.query("UPDATE workflow_cursor SET enforcement='note-only' WHERE number=?").run(opened.cursor)
-  nextWorkflowStep(
+  await nextWorkflowStep(
     'adopt-key',
     'fixture',
     'default',
@@ -545,7 +545,7 @@ test('closing with task adopts a key once and rekeys cursor questions', async ()
   const keyedArgs = { key: 'DEV-1082' }
   const adoptedContext = { ...context, taskRecordId: 'task-DEV-1082' }
   expect(
-    await getWorkflowStepWithCursor(
+    (await getWorkflowStepWithCursor(
       'adopt-key',
       'fixture',
       'complete',
@@ -554,10 +554,10 @@ test('closing with task adopts a key once and rekeys cursor questions', async ()
       adoptedContext,
       d,
       {},
-    ).cursor,
+    )).cursor,
   ).toBe(opened.cursor)
   expect(
-    await composeWorkflowWithCursor(
+    (await composeWorkflowWithCursor(
       'adopt-key',
       'fixture',
       'default',
@@ -566,10 +566,10 @@ test('closing with task adopts a key once and rekeys cursor questions', async ()
       d,
       {},
       {},
-    ).cursor?.id,
+    )).cursor?.id,
   ).toBe(opened.cursor)
   expect(
-    await awaitWorkflowRuling(
+    (await awaitWorkflowRuling(
       'adopt-key',
       'fixture',
       'default',
@@ -578,10 +578,10 @@ test('closing with task adopts a key once and rekeys cursor questions', async ()
       adoptedContext,
       d,
       () => {},
-    ).id,
+    )).id,
   ).toBe(opened.cursor)
-  expect(() =>
-    nextWorkflowStep(
+  await expect(
+nextWorkflowStep(
       'adopt-key',
       'fixture',
       'default',
@@ -593,8 +593,8 @@ test('closing with task adopts a key once and rekeys cursor questions', async ()
       ports,
       opened.cursor,
     ),
-  ).toThrow(`cursor ${opened.cursor} is already assigned to DEV-1082`)
-  nextWorkflowStep(
+  ).rejects.toThrow(`cursor ${opened.cursor} is already assigned to DEV-1082`)
+  await nextWorkflowStep(
     'adopt-key',
     'fixture',
     'default',
@@ -634,8 +634,8 @@ test('adoption refuses a key held by another open cursor', async () => {
     {},
   )
   d.query("UPDATE workflow_cursor SET enforcement='note-only'").run()
-  expect(() =>
-    nextWorkflowStep(
+  await expect(
+nextWorkflowStep(
       'adopt-conflict',
       'fixture',
       'default',
@@ -647,7 +647,7 @@ test('adoption refuses a key held by another open cursor', async () => {
       ports,
       keyless.cursor,
     ),
-  ).toThrow(
+  ).rejects.toThrow(
     `cursor ${keyless.cursor} cannot adopt DEV-1082; open cursor ${keyed.cursor} already holds it`,
   )
 })

@@ -64,7 +64,7 @@ function resolution(d: Database): AutonomyResolution {
   }
 }
 
-function openAtRuling(d: Database): void {
+async function openAtRuling(d: Database): Promise<void> {
   await composeWorkflowWithCursor(
     'flow',
     'fixture',
@@ -76,7 +76,7 @@ function openAtRuling(d: Database): void {
     { resolution: resolution(d) },
   )
   for (const note of ['rebase', 'lens', 'score']) {
-    nextWorkflowStep(
+    await nextWorkflowStep(
       'flow',
       'fixture',
       'default',
@@ -101,7 +101,7 @@ function installProbe(d: Database): number {
   ).number
 }
 
-function selfRule(d: Database, question?: string): string {
+function selfRule(d: Database, question?: string): Promise<string> {
   return nextWorkflowStep(
     'flow',
     'fixture',
@@ -124,8 +124,8 @@ function selfRule(d: Database, question?: string): string {
 
 test('self-ruling records the answered question and closes the step atomically', async () => {
   const d = database()
-  openAtRuling(d)
-  const result = selfRule(d)
+  await openAtRuling(d)
+  const result = await selfRule(d)
   expect(result).toContain('Complete the review.')
   expect(result).toContain('Self-ruling: Proceed.\nBasis: specification line 4')
   expect(d.query('SELECT ordinal,step_slug,state FROM workflow_cursor').get()).toEqual({
@@ -174,7 +174,7 @@ test('self-ruling records the answered question and closes the step atomically',
 
 test('misspelled self-ruling is refused before recording or advancing', async () => {
   const d = database()
-  openAtRuling(d)
+  await openAtRuling(d)
   const cursorBefore = d.query('SELECT ordinal,step_slug,state FROM workflow_cursor').get()
   const misspelling = ['me', 'ida'].join('')
   await expect(
@@ -205,11 +205,11 @@ test('misspelled self-ruling is refused before recording or advancing', async ()
 
 test('a close failure rolls back the self-ruling question and audit', async () => {
   const d = database()
-  openAtRuling(d)
+  await openAtRuling(d)
   d.exec(`CREATE TRIGGER fail_self_ruling_close BEFORE UPDATE ON workflow_cursor
     WHEN OLD.step_slug='ship-triage' AND NEW.step_slug='complete'
     BEGIN SELECT RAISE(ABORT, 'injected close failure'); END`)
-  expect(() => selfRule(d)).toThrow('injected close failure')
+  await expect(selfRule(d)).rejects.toThrow('injected close failure')
   expect(d.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({
     ordinal: 3,
     step_slug: 'ship-triage',
@@ -241,7 +241,7 @@ test('self-ruling refuses ask autonomy without changing the cursor or questions'
     { resolution: resolved },
   )
   for (const note of ['rebase', 'lens', 'score']) {
-    nextWorkflowStep(
+    await nextWorkflowStep(
       'flow',
       'fixture',
       'default',
@@ -253,7 +253,7 @@ test('self-ruling refuses ask autonomy without changing the cursor or questions'
       ports,
     )
   }
-  expect(() => selfRule(d)).toThrow(/resolved autonomy is ask.*workflow await.*workflow rule/)
+  await expect(selfRule(d)).rejects.toThrow(/resolved autonomy is ask.*workflow await.*workflow rule/)
   expect(d.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({
     ordinal: 3,
     step_slug: 'ship-triage',
@@ -265,7 +265,7 @@ test('self-ruling refuses ask autonomy without changing the cursor or questions'
 
 test('a resolved live ask setting tightens a real cursor and refuses its self-ruling', async () => {
   const d = database()
-  openAtRuling(d)
+  await openAtRuling(d)
   d.query('UPDATE project SET settings=? WHERE name=?').run(
     JSON.stringify({
       gate: 'bun run check',
@@ -282,10 +282,20 @@ test('a resolved live ask setting tightens a real cursor and refuses its self-ru
   )
 
   expect(
-    await getWorkflowStepWithCursor('flow', 'fixture', 'ship-triage', args, 'default', context, d, live)
-      .resolvedAutonomy,
+    (
+      await getWorkflowStepWithCursor(
+        'flow',
+        'fixture',
+        'ship-triage',
+        args,
+        'default',
+        context,
+        d,
+        live,
+      )
+    ).resolvedAutonomy,
   ).toEqual({ value: 'ask', scope: 'project' })
-  expect(() =>
+  await expect(
     nextWorkflowStep(
       'flow',
       'fixture',
@@ -301,7 +311,7 @@ test('a resolved live ask setting tightens a real cursor and refuses its self-ru
       undefined,
       live,
     ),
-  ).toThrow(/resolved autonomy is ask.*workflow await.*workflow rule/)
+  ).rejects.toThrow(/resolved autonomy is ask.*workflow await.*workflow rule/)
 })
 
 test('self-ruling refuses a non-ruling step without changing the cursor or questions', async () => {
@@ -317,7 +327,7 @@ test('self-ruling refuses a non-ruling step without changing the cursor or quest
     { resolution: resolution(d) },
   )
   const cursorBefore = d.query('SELECT ordinal,step_slug,state FROM workflow_cursor').get()
-  expect(() => selfRule(d)).toThrow(
+  await expect(selfRule(d)).rejects.toThrow(
     `self-ruling is refused because step 1 rebase has no ruling floor; close it with ${flagForFloor('command-exit')}`,
   )
   expect(d.query('SELECT ordinal,step_slug,state FROM workflow_cursor').get()).toEqual(cursorBefore)
@@ -341,8 +351,8 @@ test("self-ruling refuses a person's-ruling floor without changing durable state
     d,
   )
   promoteStepCatalogueLocal(catalogue.n, "publish person's-ruling fixture", 'test', d)
-  openAtRuling(d)
-  expect(() => selfRule(d)).toThrow(/requires a ruling recorded with --from-operator/)
+  await openAtRuling(d)
+  await expect(selfRule(d)).rejects.toThrow(/requires a ruling recorded with --from-operator/)
   expect(d.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({
     ordinal: 3,
     step_slug: 'ship-triage',

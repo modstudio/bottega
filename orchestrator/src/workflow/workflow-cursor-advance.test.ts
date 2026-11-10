@@ -117,7 +117,7 @@ function installConditionalFixture(
   promoteWorkflowLocal(slug, draft.n, 'publish', 'test', d)
 }
 
-function closeChoice(d: Database, slug: string, outcome?: string): string {
+async function closeChoice(d: Database, slug: string, outcome?: string): Promise<string> {
   const probe = d
     .query<{ number: number }, [string]>(
       `INSERT INTO probe (record_id,number,command,cwd,head_commit,exit_code,output_tail,created_at)
@@ -140,7 +140,7 @@ function closeChoice(d: Database, slug: string, outcome?: string): string {
   )
 }
 
-function open(d: Database, slug: string): void {
+async function open(d: Database, slug: string): Promise<void> {
   await composeWorkflowWithCursor(slug, 'fixture', 'default', args, context, d, {}, {})
 }
 
@@ -148,8 +148,8 @@ describe('conditional workflow cursor advance', () => {
   test('a step declaring outcomes refuses a close without one', async () => {
     const d = database()
     installConditionalFixture(d, 'conditional-required', ['score'])
-    open(d, 'conditional-required')
-    expect(() => closeChoice(d, 'conditional-required')).toThrow(
+    await open(d, 'conditional-required')
+    await expect(closeChoice(d, 'conditional-required')).rejects.toThrow(
       'requires --outcome <slug>; allowed values: needed, clear',
     )
   })
@@ -157,8 +157,8 @@ describe('conditional workflow cursor advance', () => {
   test('an unmet condition records a skip and serves the next eligible step', async () => {
     const d = database()
     installConditionalFixture(d, 'conditional-skip', ['score'])
-    open(d, 'conditional-skip')
-    expect(closeChoice(d, 'conditional-skip', 'clear')).toContain(
+    await open(d, 'conditional-skip')
+    expect(await closeChoice(d, 'conditional-skip', 'clear')).toContain(
       'Flow so far: flow-choice=clear, score=skipped',
     )
     const row = d.query('SELECT ordinal,step_slug,closed FROM workflow_cursor').get() as {
@@ -175,7 +175,7 @@ describe('conditional workflow cursor advance', () => {
       }),
     ])
     expect(
-      await getWorkflowStepWithCursor(
+      (await getWorkflowStepWithCursor(
         'conditional-skip',
         'fixture',
         'score',
@@ -184,15 +184,15 @@ describe('conditional workflow cursor advance', () => {
         context,
         d,
         {},
-      ).slug,
+      )).slug,
     ).toBe('complete')
   })
 
   test('a met condition serves the conditional step', async () => {
     const d = database()
     installConditionalFixture(d, 'conditional-met', ['score'])
-    open(d, 'conditional-met')
-    expect(closeChoice(d, 'conditional-met', 'needed')).toContain('Score every lens.')
+    await open(d, 'conditional-met')
+    expect(await closeChoice(d, 'conditional-met', 'needed')).toContain('Score every lens.')
     expect(d.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({
       ordinal: 1,
       step_slug: 'score',
@@ -202,8 +202,8 @@ describe('conditional workflow cursor advance', () => {
   test('a chain of two unmet conditions skips both', async () => {
     const d = database()
     installConditionalFixture(d, 'conditional-chain', ['score', 'ship-triage'])
-    open(d, 'conditional-chain')
-    closeChoice(d, 'conditional-chain', 'clear')
+    await open(d, 'conditional-chain')
+    await closeChoice(d, 'conditional-chain', 'clear')
     const row = d.query('SELECT ordinal,step_slug,closed FROM workflow_cursor').get() as {
       ordinal: number
       step_slug: string
@@ -218,8 +218,8 @@ describe('conditional workflow cursor advance', () => {
   test('skipping conditional steps off the end finishes the cursor', async () => {
     const d = database()
     installConditionalFixture(d, 'conditional-end', ['score'], [])
-    open(d, 'conditional-end')
-    expect(closeChoice(d, 'conditional-end', 'clear')).toContain('is finished: 2 steps closed')
+    await open(d, 'conditional-end')
+    expect(await closeChoice(d, 'conditional-end', 'clear')).toContain('is finished: 2 steps closed')
     expect(d.query('SELECT state FROM workflow_cursor').get()).toEqual({
       state: 'done',
     })
@@ -267,13 +267,13 @@ function installFlowFixture(
   promoteWorkflowLocal(slug, draft.n, 'publish', 'test', d)
 }
 
-function closeStep(
+async function closeStep(
   d: Database,
   slug: string,
   outcome: string | undefined,
   ruling?: number,
   extra: { review?: string } = {},
-): string {
+): Promise<string> {
   const probe = d
     .query<{ number: number }, [string]>(
       `INSERT INTO probe (record_id,number,command,cwd,head_commit,exit_code,output_tail,created_at)
@@ -389,7 +389,7 @@ describe('ruling outcomes and bounded re-entry', () => {
       [flowStep('command', { floor: ['command-exit', 'recorded-artifact'] })],
       ['command'],
     )
-    open(d, 'command-close')
+    await open(d, 'command-close')
     const recordExec = (exitCode: number) =>
       d
         .query<{ number: number }, (string | number)[]>(
@@ -398,7 +398,7 @@ describe('ruling outcomes and bounded re-entry', () => {
            VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM probe),?,'/tmp','abc',?,'','flow-session','9999-01-01','exec') RETURNING number`,
         )
         .get(newRecordId(), JSON.stringify([PLATFORM_SLUG, 'pr', 'create']), exitCode)!.number
-    const close = (id: number) =>
+    const close = async (id: number) =>
       nextWorkflowStep(
         'command-close',
         'fixture',
@@ -412,14 +412,14 @@ describe('ruling outcomes and bounded re-entry', () => {
       )
 
     const failed = recordExec(1)
-    expect(() => close(failed)).toThrow(
+    await expect(await close(failed)).rejects.toThrow(
       `command-exit floor expects exit code 0, but evidence exec:${failed} command \`${PLATFORM_SLUG} pr create\` exited 1; close with the outcome configured for exit code 1, or record a command that exits 0 with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass the new exec id`,
     )
-    expect(close(recordExec(0))).toContain('is finished: 1 steps closed')
+    expect(await close(recordExec(0))).toContain('is finished: 1 steps closed')
   })
 
   test('a command-exit step applies the exit code declared for the chosen outcome', async () => {
-    const install = (d: Database, slug: string) => {
+    const install = async (d: Database, slug: string) => {
       installFlowFixture(
         d,
         slug,
@@ -432,7 +432,7 @@ describe('ruling outcomes and bounded re-entry', () => {
         ],
         ['merge-pr'],
       )
-      open(d, slug)
+      await open(d, slug)
     }
     const recordExec = (d: Database, exitCode: number) =>
       d
@@ -442,7 +442,7 @@ describe('ruling outcomes and bounded re-entry', () => {
            VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM probe),?,'/tmp','abc',?,'','flow-session','9999-01-01','exec') RETURNING number`,
         )
         .get(newRecordId(), JSON.stringify([PLATFORM_SLUG, 'pr', 'merge']), exitCode)!.number
-    const close = (d: Database, slug: string, id: number, outcome: string) =>
+    const close = async (d: Database, slug: string, id: number, outcome: string) =>
       nextWorkflowStep(
         slug,
         'fixture',
@@ -459,22 +459,22 @@ describe('ruling outcomes and bounded re-entry', () => {
       )
 
     const residue = database()
-    install(residue, 'merge-residue')
+    await install(residue, 'merge-residue')
     const exit20 = recordExec(residue, 20)
-    expect(() => close(residue, 'merge-residue', exit20, 'merged')).toThrow(
+    await expect(close(residue, 'merge-residue', exit20, 'merged')).rejects.toThrow(
       `command-exit floor expects exit code 0, but evidence exec:${exit20}`,
     )
-    expect(close(residue, 'merge-residue', exit20, 'merged-with-residue')).toContain(
+    expect(await close(residue, 'merge-residue', exit20, 'merged-with-residue')).toContain(
       'is finished: 1 steps closed',
     )
 
     for (const outcome of ['merged', 'merged-with-residue']) {
       const failed = database()
       const slug = `merge-failed-${outcome}`
-      install(failed, slug)
+      await install(failed, slug)
       const exit1 = recordExec(failed, 1)
       const expected = outcome === 'merged' ? 0 : 20
-      expect(() => close(failed, slug, exit1, outcome)).toThrow(
+      await expect(close(failed, slug, exit1, outcome)).rejects.toThrow(
         `command-exit floor expects exit code ${expected}, but evidence exec:${exit1}`,
       )
     }
@@ -494,9 +494,9 @@ describe('ruling outcomes and bounded re-entry', () => {
       ],
       ['flow-triage', 'flow-done'],
     )
-    open(d, 'ruling-outcome')
-    expect(() => closeStep(d, 'ruling-outcome', 'fix')).toThrow(/floor ruling is unmet/)
-    expect(closeStep(d, 'ruling-outcome', 'fix', boundRuling(d))).toContain('flow-done body.')
+    await open(d, 'ruling-outcome')
+    await expect(closeStep(d, 'ruling-outcome', 'fix')).rejects.toThrow(/floor ruling is unmet/)
+    expect(await closeStep(d, 'ruling-outcome', 'fix', boundRuling(d))).toContain('flow-done body.')
   })
 
   test('a non-ruling outcome closes on ordinary floors', async () => {
@@ -513,8 +513,8 @@ describe('ruling outcomes and bounded re-entry', () => {
       ],
       ['flow-triage', 'flow-done'],
     )
-    open(d, 'ordinary-outcome')
-    expect(closeStep(d, 'ordinary-outcome', 'clear')).toContain('flow-done body.')
+    await open(d, 'ordinary-outcome')
+    expect(await closeStep(d, 'ordinary-outcome', 'clear')).toContain('flow-done body.')
   })
 
   test('the first re-entry moves back, records pass 2, and a clean outcome advances', async () => {
@@ -532,9 +532,9 @@ describe('ruling outcomes and bounded re-entry', () => {
       ],
       ['flow-start', 'flow-apply', 'flow-done'],
     )
-    open(d, 'reentry-once')
-    closeStep(d, 'reentry-once', undefined)
-    const first = closeStep(d, 'reentry-once', 'changed')
+    await open(d, 'reentry-once')
+    await closeStep(d, 'reentry-once', undefined)
+    const first = await closeStep(d, 'reentry-once', 'changed')
     expect(first).toContain('Flow so far: Pass 2')
     expect(d.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({
       ordinal: 0,
@@ -552,8 +552,8 @@ describe('ruling outcomes and bounded re-entry', () => {
       outcome: 'changed',
       reentered: { to: 'flow-start', pass: 2 },
     })
-    closeStep(d, 'reentry-once', undefined)
-    expect(closeStep(d, 'reentry-once', 'clean')).toContain('flow-done body.')
+    await closeStep(d, 'reentry-once', undefined)
+    expect(await closeStep(d, 'reentry-once', 'clean')).toContain('flow-done body.')
     expect(d.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({
       ordinal: 2,
       step_slug: 'flow-done',
@@ -575,33 +575,33 @@ describe('ruling outcomes and bounded re-entry', () => {
       ],
       ['flow-start', 'flow-apply', 'flow-done'],
     )
-    open(d, 'reentry-bound')
-    closeStep(d, 'reentry-bound', undefined)
-    closeStep(d, 'reentry-bound', 'changed')
-    closeStep(d, 'reentry-bound', undefined)
-    expect(() => closeStep(d, 'reentry-bound', 'changed')).toThrow(
+    await open(d, 'reentry-bound')
+    await closeStep(d, 'reentry-bound', undefined)
+    await closeStep(d, 'reentry-bound', 'changed')
+    await closeStep(d, 'reentry-bound', undefined)
+    await expect(closeStep(d, 'reentry-bound', 'changed')).rejects.toThrow(
       /automatic re-entry bound is reached/,
     )
-    expect(() => closeStep(d, 'reentry-bound', 'changed')).toThrow(/workflow await/)
-    expect(() => closeStep(d, 'reentry-bound', 'changed')).toThrow(/non-re-entering outcome/)
-    expect(() =>
-      closeStep(d, 'reentry-bound', 'changed', undefined, {
+    await expect(closeStep(d, 'reentry-bound', 'changed')).rejects.toThrow(/workflow await/)
+    await expect(closeStep(d, 'reentry-bound', 'changed')).rejects.toThrow(/non-re-entering outcome/)
+    await expect(
+closeStep(d, 'reentry-bound', 'changed', undefined, {
         review: insertGradedReview(d),
       }),
-    ).toThrow(/automatic re-entry bound is reached/)
+    ).rejects.toThrow(/automatic re-entry bound is reached/)
     setLastReentryAt(d, '2026-01-01T00:00:00.000Z')
     const rulingN = boundRuling(d, '2026-01-01T00:00:01.000Z')
-    const second = closeStep(d, 'reentry-bound', 'changed', rulingN)
+    const second = await closeStep(d, 'reentry-bound', 'changed', rulingN)
     expect(second).toContain('Flow so far: Pass 3')
     expect(d.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({
       ordinal: 0,
       step_slug: 'flow-start',
     })
-    closeStep(d, 'reentry-bound', undefined)
-    expect(() => closeStep(d, 'reentry-bound', 'changed', rulingN)).toThrow(
+    await closeStep(d, 'reentry-bound', undefined)
+    await expect(closeStep(d, 'reentry-bound', 'changed', rulingN)).rejects.toThrow(
       /automatic re-entry bound is reached/,
     )
-    const third = closeStep(d, 'reentry-bound', 'changed', boundRuling(d))
+    const third = await closeStep(d, 'reentry-bound', 'changed', boundRuling(d))
     expect(third).toContain('Flow so far: Pass 4')
     expect(d.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({
       ordinal: 0,

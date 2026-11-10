@@ -91,7 +91,7 @@ function replaceCursorAutonomy(
   d.query('UPDATE workflow_cursor SET autonomy=?').run(JSON.stringify(stored))
 }
 
-function composeShipToFlow(d: Database) {
+async function composeShipToFlow(d: Database) {
   const composed = composeWorkflow('flow', 'fixture', 'default', args, d)
   return await composeWorkflowWithCursor(
     'flow',
@@ -232,7 +232,7 @@ describe('workflow cursor stored autonomy', () => {
   test('step fetch refuses an abandoned cursor without composing its old autonomy', async () => {
     const d = database()
     installShipToFlow(d)
-    composeShipToFlow(d)
+    await composeShipToFlow(d)
     await abandonCursor('flow', 'fixture', 'default', args, 'operator stopped', context, d)
     replaceCursorAutonomy(d, (stored) => {
       delete stored.shipTo
@@ -246,7 +246,7 @@ describe('workflow cursor stored autonomy', () => {
   test('an active cursor needing ship-to refuses a snapshot with no level', async () => {
     const d = database()
     installShipToFlow(d)
-    const opened = composeShipToFlow(d)
+    const opened = await composeShipToFlow(d)
     replaceCursorAutonomy(d, (stored) => {
       delete stored.shipTo
     })
@@ -266,7 +266,7 @@ describe('workflow cursor stored autonomy', () => {
     })
 
     expect(
-      await getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d, {}).slug,
+      (await getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d, {})).slug,
     ).toBe('rebase')
   })
 })

@@ -88,7 +88,7 @@ import {
   type WorkflowEvidenceInput,
 } from './workflow-floor-evidence.ts'
 import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
-import { withReplayedFloorEvidence } from './workflow-floor-evidence-replay.ts'
+import { withReplayedFloorEvidenceAsync } from './workflow-floor-evidence-replay.ts'
 import { refuseKeylessStepClose } from './workflow-keyless-close.ts'
 import { openWorkflowObligations } from './workflow-obligation-floor.ts'
 import { decideWorkflowRuleAnswer, pinnedWorkflowRuleStep } from './workflow-rule-answer.ts'
@@ -1063,6 +1063,11 @@ async function nextWorkflowStepImpl(
     context.taskFlowClient,
     context.taskStatusCategory,
   )
+  if (evidence.task?.trim()) {
+    row = d
+      .query<CursorRow, [string]>('SELECT * FROM workflow_cursor WHERE record_id=?')
+      .get(row.record_id)!
+  }
   const composition = cursorComposition(row, d, live)
   const step = composition.steps[row.ordinal]!
   refuseMissingCloseNote(note, step.n, step.slug)
@@ -1109,7 +1114,7 @@ export async function nextWorkflowStep(
   outcome?: string,
   live?: LiveCursorAutonomy,
 ): Promise<string> {
-  return withReplayedFloorEvidence(ports, (replayPorts) =>
+  return withReplayedFloorEvidenceAsync(ports, (replayPorts) =>
     withLinkedWorkflowTask(project, context, d, () => {
       const row = reselectCursor(selected, args, context, d)
       adoptLinkedTask(row, args, context)

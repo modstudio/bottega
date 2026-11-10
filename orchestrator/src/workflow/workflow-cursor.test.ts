@@ -78,7 +78,7 @@ describe('workflow cursor adapter', () => {
     promoteWorkflowLocal('policy-fixture', current.n, 'test fixture', 'test', d)
 
     expect(
-      closeStep(
+      await closeStep(
         'policy-fixture',
         'fixture',
         'default',
@@ -326,7 +326,7 @@ describe('workflow cursor adapter', () => {
       getWorkflowStepWithCursor('flow', 'fixture', 'score', args, 'default', context, d, {}),
   ).rejects.toThrow(/at step 1 rebase.*workflow next flow/)
 
-    expect(closeStep('flow', 'fixture', 'default', args, 'rebased', context, d)).toContain(
+    expect(await closeStep('flow', 'fixture', 'default', args, 'rebased', context, d)).toContain(
       'serves step 3 score',
     )
     expect(d.query('SELECT ordinal,step_slug,closed FROM workflow_cursor').get()).toMatchObject({
@@ -372,7 +372,7 @@ describe('workflow cursor adapter', () => {
     )
     let output = ''
     for (const step of composition.steps) {
-      output = closeStep('flow', 'fixture', 'default', args, `closed ${step.slug}`, context, d)
+      output = await closeStep('flow', 'fixture', 'default', args, `closed ${step.slug}`, context, d)
     }
     expect(output).toBe(
       `Workflow flow for DEV-822 is finished: ${composition.steps.length} steps closed.`,
@@ -420,7 +420,7 @@ describe('workflow cursor adapter', () => {
     let output = ''
 
     for (const step of composition.steps)
-      output = closeStep(
+      output = await closeStep(
         'keyless-fixture',
         'fixture',
         'agent',
@@ -545,7 +545,7 @@ describe('workflow cursor adapter', () => {
   test('a relayed operator ruling preserves the cursor owner and their attach authority', async () => {
     const d = database()
     const ownerContext = { ...context, session: 'session-a' }
-    const cursor = prepareOperatorRulingCursor(d, ownerContext.session)
+    const cursor = await prepareOperatorRulingCursor(d, ownerContext.session)
 
     await relayOperatorRuling(d, 'session-b')
 
@@ -566,7 +566,7 @@ describe('workflow cursor adapter', () => {
   test('a relayed operator ruling assigns an ownerless cursor to the ruling session', async () => {
     const d = database()
     const relayingContext = { ...context, session: 'session-b' }
-    const cursor = prepareOperatorRulingCursor(d, null)
+    const cursor = await prepareOperatorRulingCursor(d, null)
 
     await relayOperatorRuling(d, relayingContext.session)
 
@@ -678,13 +678,15 @@ describe('workflow cursor adapter', () => {
     expect(JSON.parse(row.closed)).toMatchObject([
       { n: 1, slug: 'rebase', note: 'abandoned: operator stopped' },
     ])
-    expect(() => closeStep('flow', 'fixture', 'default', args, 'continue', context, d)).toThrow(
+    await expect(closeStep('flow', 'fixture', 'default', args, 'continue', context, d)).rejects.toThrow(
       'workflow flow for DEV-822 is abandoned',
     )
     await expect(
       awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Question?', context, d, () => {}),
   ).rejects.toThrow('workflow flow for DEV-822 is abandoned')
-    expect(() => await abandonCursor('flow', 'fixture', 'default', args, 'again', context, d)).toThrow(
+    await expect(
+      abandonCursor('flow', 'fixture', 'default', args, 'again', context, d),
+    ).rejects.toThrow(
       'workflow flow for DEV-822 is abandoned',
     )
   })
@@ -756,12 +758,16 @@ describe('workflow cursor adapter', () => {
       {},
       {},
     )
-    expect(() => await abandonCursor('flow', 'fixture', 'default', args, '   ', context, d)).toThrow(
+    await expect(
+      abandonCursor('flow', 'fixture', 'default', args, '   ', context, d),
+    ).rejects.toThrow(
       '--reason is required',
     )
     for (const step of composition.steps)
-      closeStep('flow', 'fixture', 'default', args, `closed ${step.slug}`, context, d)
-    expect(() => await abandonCursor('flow', 'fixture', 'default', args, 'too late', context, d)).toThrow(
+      await closeStep('flow', 'fixture', 'default', args, `closed ${step.slug}`, context, d)
+    await expect(
+      abandonCursor('flow', 'fixture', 'default', args, 'too late', context, d),
+    ).rejects.toThrow(
       'workflow flow for DEV-822 is done',
     )
   })
@@ -770,7 +776,7 @@ describe('workflow cursor adapter', () => {
     const d = database()
     await composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
     await getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d, {})
-    closeStep('flow', 'fixture', 'default', args, 'rebased', context, d)
+    await closeStep('flow', 'fixture', 'default', args, 'rebased', context, d)
     const currentCatalogue = productionStepCatalogue(d).definition
     const catalogueDraft = setStepCatalogueLocal(
       {
@@ -798,7 +804,7 @@ describe('workflow cursor adapter', () => {
     promoteWorkflowLocal('flow', draft.n, 'publish', 'test', d)
 
     expect(
-      await getWorkflowStepWithCursor('flow', 'fixture', '2', args, 'default', context, d, {}).slug,
+      (await getWorkflowStepWithCursor('flow', 'fixture', '2', args, 'default', context, d, {})).slug,
     ).toBe('lens')
 
     const recomposed = await composeWorkflowWithCursor(
@@ -815,7 +821,7 @@ describe('workflow cursor adapter', () => {
     expect(recomposed.arguments.worktree).toBe('/tmp/other')
     expect(recomposed.steps.map((step) => step.slug).slice(0, 2)).toEqual(['rebase', 'lens'])
     expect(d.query('SELECT count(*) count FROM workflow_cursor').get()).toEqual({ count: 1 })
-    expect(closeStep('flow', 'fixture', 'default', args, 'lensed', context, d)).toContain(
+    expect(await closeStep('flow', 'fixture', 'default', args, 'lensed', context, d)).toContain(
       'serves step 4',
     )
   })
@@ -824,7 +830,7 @@ describe('workflow cursor adapter', () => {
     const d = database()
     await composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
     await getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d, {})
-    closeStep('flow', 'fixture', 'default', args, 'rebased', context, d)
+    await closeStep('flow', 'fixture', 'default', args, 'rebased', context, d)
     const recomposed = await composeWorkflowWithCursor(
       'flow',
       'fixture',
@@ -906,7 +912,7 @@ describe('workflow cursor adapter', () => {
     )
     let message = ''
     for (const step of composition.steps) {
-      message = closeStep('flow', 'fixture', 'default', args, `closed ${step.slug}`, context, d)
+      message = await closeStep('flow', 'fixture', 'default', args, `closed ${step.slug}`, context, d)
     }
     expect(message).toContain('For your review: 1. rebase — closed rebase')
   })
@@ -914,9 +920,9 @@ describe('workflow cursor adapter', () => {
   test('floors enforcement refuses a note-only close and names the flag', async () => {
     const d = database()
     await composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
-    expect(() =>
+    await expect(
       nextWorkflowStep('flow', 'fixture', 'default', args, 'rebased', context, d),
-    ).toThrow(/floor command-exit is unmet; pass --gate/)
+    ).rejects.toThrow(/floor command-exit is unmet; pass --gate/)
   })
 
   test('next gathers each external floor fact once outside the write transaction', async () => {
@@ -924,7 +930,7 @@ describe('workflow cursor adapter', () => {
     await composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
     const evidence = installEvidence(d, 'fixture', 'flow', 'default', args, context)
     const calls: Array<{ port: string; inTransaction: boolean }> = []
-    const output = nextWorkflowStep(
+    const output = await nextWorkflowStep(
       'flow',
       'fixture',
       'default',
@@ -992,7 +998,7 @@ describe('workflow cursor adapter', () => {
     const d = database()
     await composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
     d.query("UPDATE workflow_cursor SET enforcement='note-only'").run()
-    expect(nextWorkflowStep('flow', 'fixture', 'default', args, 'rebased', context, d)).toContain(
+    expect(await nextWorkflowStep('flow', 'fixture', 'default', args, 'rebased', context, d)).toContain(
       'serves step 3 score',
     )
   })

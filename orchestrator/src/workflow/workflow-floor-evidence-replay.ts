@@ -133,3 +133,29 @@ export function withReplayedFloorEvidence<T>(
   }
   throw new Error('floor evidence replay stopped without a result')
 }
+
+export async function withReplayedFloorEvidenceAsync<T>(
+  ports: FloorEvidencePorts,
+  transaction: (ports: FloorEvidencePorts) => Promise<T>,
+): Promise<T> {
+  const memo = new Map<string, RecordedCall>()
+  for (let round = 1; round <= MAX_FLOOR_EVIDENCE_REPLAY_ROUNDS; round += 1) {
+    try {
+      return await transaction(replayingPorts(ports, memo))
+    } catch (error) {
+      if (!(error instanceof FloorEvidencePortMiss)) throw error
+      if (round === MAX_FLOOR_EVIDENCE_REPLAY_ROUNDS) {
+        throw new Error(
+          `floor evidence replay exhausted after ${MAX_FLOOR_EVIDENCE_REPLAY_ROUNDS} rounds; ` +
+            `still missing ${String(error.call.port)}(${error.call.args.map(String).join(', ')})`,
+        )
+      }
+      try {
+        memo.set(callKey(error.call.port, error.call.args), { ok: true, value: error.call.run() })
+      } catch (portError) {
+        memo.set(callKey(error.call.port, error.call.args), { ok: false, error: portError })
+      }
+    }
+  }
+  throw new Error('floor evidence replay stopped without a result')
+}
