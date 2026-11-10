@@ -1,3 +1,4 @@
+import { noDestinationWriteCounter } from '../../shared/record-no-destination-write-counter.ts'
 import {
   hostedRequestSafetyStatement,
   RECORD_SIGN_IN_REMEDY,
@@ -7,6 +8,10 @@ import {
   type RecordSpaceMembership,
 } from '../../shared/record-space-membership.ts'
 import { recordSpaceRequestDecision } from '../../shared/record-space-request.ts'
+import {
+  HOSTED_NO_DESTINATION_CAUSE_LENGTH,
+  hostedNoDestinationWriteDecision,
+} from './hosted-no-destination-write-decision.ts'
 
 type RecordIdentity = {
   userId: string
@@ -83,6 +88,9 @@ export async function taskSpaceIdentity(
   base: string,
   fetchImpl: typeof fetch,
   honorRequestedSpace: boolean,
+  dependencies: {
+    counter?: typeof noDestinationWriteCounter
+  } = {},
 ): Promise<TaskSpaceIdentity> {
   const authorization = request.headers.get('authorization')
   if (!authorization) return { kind: 'unauthenticated' }
@@ -106,6 +114,33 @@ export async function taskSpaceIdentity(
     identity.memberships,
   )
   if (!decision.allowed) return { kind: 'refused-space', refusedSpace: decision.requestedSpace }
+  const measurement = hostedNoDestinationWriteDecision({
+    method: request.method,
+    requestedSpacePresent: request.headers.has('x-record-space'),
+    routeHonorsRequestedSpace: honorRequestedSpace,
+    identityOutcome: 'authenticated',
+    pathname: new URL(request.url).pathname,
+  })
+  if (measurement.counted) {
+    try {
+      ;(dependencies.counter ?? noDestinationWriteCounter)({
+        record: {
+          spaceId: identity.activeSpaceId,
+          route: measurement.route,
+          cause: (request.headers.get('user-agent')?.trim() || 'unknown').slice(
+            0,
+            HOSTED_NO_DESTINATION_CAUSE_LENGTH,
+          ),
+        },
+      })
+    } catch (error) {
+      queueMicrotask(() => {
+        try {
+          console.error('record-write no-destination recording failed', error)
+        } catch {}
+      })
+    }
+  }
   return {
     kind: 'authenticated',
     userId: identity.userId,

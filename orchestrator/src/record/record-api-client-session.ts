@@ -1,13 +1,13 @@
 // concern: record-api-client-session
 /** Builds hosted session identity and evidence-sync requests. */
 
-import type { RecordClientRequest } from './record-api-client-paths.ts'
-import { responseRecord } from './record-api-client-response.ts'
-import type { RecordIdentity } from './record-auth.ts'
 import {
   NO_DESTINATION_WRITES_ROUTE,
   type NoDestinationWriteReport,
-} from './record-no-destination-write-contract.ts'
+} from '../../../shared/record-no-destination-write-contract.ts'
+import type { RecordClientRequest } from './record-api-client-paths.ts'
+import { responseRecord } from './record-api-client-response.ts'
+import type { RecordIdentity } from './record-auth.ts'
 import type { RecordSyncRequest, RecordSyncResponse } from './record-sync-contract.ts'
 
 export type RecordSessionClient = {

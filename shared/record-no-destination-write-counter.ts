@@ -2,10 +2,10 @@
 /** Keeps process-local destination-less write measurements and emits best-effort evidence logs. */
 
 import type {
+  NoDestinationWrite,
   NoDestinationWriteReport,
   NoDestinationWriteReportRow,
 } from './record-no-destination-write-contract.ts'
-import type { NoDestinationWrite } from './record-no-destination-write-decision.ts'
 
 const processStartedAt = new Date().toISOString()
 const counts = new Map<string, NoDestinationWriteReportRow>()

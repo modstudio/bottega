@@ -2,10 +2,10 @@
 /** Records destination-less hosted writes and serves their authenticated health report. */
 
 import type { Context, Hono } from 'hono'
+import { NO_DESTINATION_WRITES_ROUTE } from '../../../shared/record-no-destination-write-contract.ts'
+import { noDestinationWriteCounter } from '../../../shared/record-no-destination-write-counter.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import { NO_DESTINATION_WRITES_ROUTE } from './record-no-destination-write-contract.ts'
-import { noDestinationWriteCounter } from './record-no-destination-write-counter.ts'
 import { destinationlessWrite } from './record-no-destination-write-decision.ts'
 
 export type RecordWriteTelemetryEnvironment = {

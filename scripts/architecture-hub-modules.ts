@@ -149,9 +149,24 @@ export const hubModuleSpecs = [
   {
     file: 'hub/src/hosted-route-identity.ts',
     allowed: [
+      '../../shared/record-no-destination-write-counter.ts',
       '../../shared/record-remedies.ts',
       '../../shared/record-space-membership.ts',
       '../../shared/record-space-request.ts',
+      './hosted-no-destination-write-decision.ts',
+    ],
+  },
+  {
+    file: 'hub/src/hosted-no-destination-write-decision.ts',
+    allowed: ['../../shared/record-space-request.ts'],
+  },
+  {
+    file: 'hub/src/hosted-no-destination-write-api.ts',
+    allowed: [
+      '../../shared/record-no-destination-write-contract.ts',
+      '../../shared/record-no-destination-write-counter.ts',
+      './hosted-route-config.ts',
+      './hosted-route-identity.ts',
     ],
   },
   {

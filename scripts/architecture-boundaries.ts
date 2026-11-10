@@ -525,6 +525,7 @@ export const importBoundaries: ImportBoundary[] = [
       './app-static.ts',
       './change-api.ts',
       './hosted-health.ts',
+      './hosted-no-destination-write-api.ts',
       './hosted-route-config.ts',
       './hosted-version.ts',
       './note-api.ts',
