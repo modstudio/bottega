@@ -10,7 +10,7 @@ const hostedWriteRoutes = [
   ['POST', /^\/v1\/tasks\/[^/]+\/documents$/, '/v1/tasks/:key/documents'],
   ['POST', /^\/v1\/notes$/, '/v1/notes'],
   ['POST', /^\/v1\/notes\/outside$/, '/v1/notes/outside'],
-  ['POST', /^\/v1\/notes\/[^/]+\/promote$/, '/v1/notes/:id/promote'],
+  ['POST', /^\/v1\/notes\/[0-9a-f-]{36}\/promote$/i, '/v1/notes/:id/promote'],
   ['POST', /^\/v1\/notes\/reap$/, '/v1/notes/reap'],
   ['PUT', /^\/v1\/notes\/mirror$/, '/v1/notes/mirror'],
   ['POST', /^\/v1\/changes$/, '/v1/changes'],

@@ -1,6 +1,7 @@
 // concern: hosted-no-destination-write-api
 /** Authenticates and serves the process-local hosted hub destination-less write report. */
 
+import { hostedApiFetch } from '../../shared/bounded-fetch.ts'
 import { NO_DESTINATION_WRITES_ROUTE } from '../../shared/record-no-destination-write-contract.ts'
 import { noDestinationWriteCounter } from '../../shared/record-no-destination-write-counter.ts'
 import type { HostedRouteConfig } from './hosted-route-config.ts'
@@ -26,7 +27,7 @@ export async function hostedNoDestinationWriteApi(
   const identity = await taskSpaceIdentity(
     request,
     config.recordApiUrl,
-    dependencies.fetch ?? fetch,
+    dependencies.fetch ?? hostedApiFetch,
     true,
   )
   const refusal = identityRefusal(identity)

@@ -165,6 +165,7 @@ export const hubModuleSpecs = [
   {
     file: 'hub/src/hosted-no-destination-write-api.ts',
     allowed: [
+      '../../shared/bounded-fetch.ts',
       '../../shared/record-no-destination-write-contract.ts',
       '../../shared/record-no-destination-write-counter.ts',
       './hosted-route-config.ts',
