@@ -126,14 +126,15 @@ export const architectureViolationBaseline: readonly ArchitectureViolationBaseli
   },
   {
     rule: 'no-active-space-resolver-import',
-    from: 'orchestrator/src/project/project-commands.ts',
-    to: 'orchestrator/src/project-space.ts',
-    reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
+    from: 'orchestrator/src/project/declared-project-space.ts',
+    to: 'orchestrator/src/record/record-project-destination.ts',
+    reason:
+      'reads only declaredRecordSpace; leaves the baseline when DEV-2244 splits the declared-space read from the fallback',
   },
   {
     rule: 'no-active-space-resolver-import',
-    from: 'orchestrator/src/project/project-add-decision.ts',
-    to: 'orchestrator/src/record/record-project-destination.ts',
+    from: 'orchestrator/src/project/project-commands.ts',
+    to: 'orchestrator/src/project-space.ts',
     reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
   },
   {
