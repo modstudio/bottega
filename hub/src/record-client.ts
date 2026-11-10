@@ -1,5 +1,6 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
+import packageMetadata from '../../package.json' with { type: 'json' }
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   CREDENTIAL_BINDINGS,
@@ -30,8 +31,6 @@ import { RecordProjectsSchema } from '../../shared/record-project-contract.ts'
 import { hostedRequestSafetyStatement } from '../../shared/record-remedies.ts'
 import type { RunDetailReviewLens } from '../../shared/review-presentation.ts'
 import { SubjectOutputSchema } from '../../shared/subjects.ts'
-import packageMetadata from '../../package.json' with { type: 'json' }
-import { recordBoardClient } from './record-board-client.ts'
 import {
   ArticleDocFieldsSchema,
   DocSchema,
@@ -40,6 +39,7 @@ import {
   DocTreeSchema,
 } from './doc-contract.ts'
 import { recordBigintSchema } from './record-bigint.ts'
+import { recordBoardClient } from './record-board-client.ts'
 
 type RecordAuthHeaders = {
   cookie?: string
@@ -534,7 +534,7 @@ function query(path: string, params: Record<string, string | number | undefined>
   return encoded ? `${path}?${encoded}` : path
 }
 
-export async function request<T>(
+async function request<T>(
   options: RecordClientOptions,
   path: string,
   schema: z.ZodType<T>,

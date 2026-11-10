@@ -79,6 +79,54 @@ async function call<T>(operation: () => Promise<T>): Promise<T> {
   }
 }
 
+function boardPostProcedure(deps: HostedBoardDeps) {
+  return t.procedure.input(BoardPostInputSchema).mutation(({ ctx, input }) =>
+    call(async () => {
+      const client = deps.clientFor(ctx)
+      const destination = input.project
+        ? (await client.projects?.())?.find((project) => project.name === input.project)?.spaceId
+        : (await client.whoami?.())?.personalSpaceId
+      if (!destination)
+        throw new Error(
+          input.project
+            ? `record project ${input.project} has no declared space`
+            : 'record user has no personal space',
+        )
+      const id = deps.newId()
+      const now = deps.clock()
+      const purpose = defaultBoardPurpose(input.purpose, Boolean(input.ackRequired))
+      const message = await client.boardPost(
+        {
+          id,
+          kind: 'notice',
+          purpose,
+          audience: input.audience,
+          title: input.title,
+          body: input.body,
+          expiresAt: absoluteBoardTime(now, input.expires, boardDefaultExpiryMs(purpose)),
+          ...(input.ackRequired
+            ? {
+                ackRequired: true,
+                ackDeadline: absoluteBoardTime(now, input.deadline, BOARD_DEFAULT_ACK_DEADLINE_MS),
+              }
+            : {}),
+          ...(input.task ? { task: input.task } : {}),
+          ...(input.paths ? { paths: input.paths } : {}),
+          ...(input.topics ? { topics: input.topics } : {}),
+          ...(input.project ? { project: input.project } : {}),
+        },
+        destination,
+      )
+      return BoardPostResultSchema.parse({
+        id: message.id,
+        dropped: message.id !== id,
+        reached: null,
+        warning: null,
+      })
+    }),
+  )
+}
+
 export function createHostedBoardRouter(
   deps: HostedBoardDeps = { clientFor: recordClient, clock: Date.now, newId: newRecordId },
 ) {
@@ -113,55 +161,7 @@ export function createHostedBoardRouter(
         })
       }),
     ),
-    post: t.procedure.input(BoardPostInputSchema).mutation(({ ctx, input }) =>
-      call(async () => {
-        const client = deps.clientFor(ctx)
-        const destination = input.project
-          ? (await client.projects?.())?.find((project) => project.name === input.project)?.spaceId
-          : (await client.whoami?.())?.personalSpaceId
-        if (!destination)
-          throw new Error(
-            input.project
-              ? `record project ${input.project} has no declared space`
-              : 'record user has no personal space',
-          )
-        const id = deps.newId()
-        const now = deps.clock()
-        const purpose = defaultBoardPurpose(input.purpose, Boolean(input.ackRequired))
-        const message = await client.boardPost(
-          {
-            id,
-            kind: 'notice',
-            purpose,
-            audience: input.audience,
-            title: input.title,
-            body: input.body,
-            expiresAt: absoluteBoardTime(now, input.expires, boardDefaultExpiryMs(purpose)),
-            ...(input.ackRequired
-              ? {
-                  ackRequired: true,
-                  ackDeadline: absoluteBoardTime(
-                    now,
-                    input.deadline,
-                    BOARD_DEFAULT_ACK_DEADLINE_MS,
-                  ),
-                }
-              : {}),
-            ...(input.task ? { task: input.task } : {}),
-            ...(input.paths ? { paths: input.paths } : {}),
-            ...(input.topics ? { topics: input.topics } : {}),
-            ...(input.project ? { project: input.project } : {}),
-          },
-          destination,
-        )
-        return BoardPostResultSchema.parse({
-          id: message.id,
-          dropped: message.id !== id,
-          reached: null,
-          warning: null,
-        })
-      }),
-    ),
+    post: boardPostProcedure(deps),
     reply: t.procedure.input(boardReplyInput).mutation(({ ctx, input }) =>
       call(async () => {
         const message = await deps.clientFor(ctx).boardReply(

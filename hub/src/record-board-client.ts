@@ -33,7 +33,10 @@ const messageSchema = boardRootSchema.omit({ text: true }).extend({
   authorUserId: z.string(),
   ackRequired: z.boolean(),
 })
-const threadSchema = z.object({ root: messageSchema, replies: BoardThreadResultSchema.shape.replies })
+const threadSchema = z.object({
+  root: messageSchema,
+  replies: BoardThreadResultSchema.shape.replies,
+})
 const statusSchema = z.object({
   message: messageSchema,
   receipts: z.array(
@@ -70,7 +73,11 @@ const destinationHeaders = (spaceId: string) => ({
 
 export function recordBoardClient(options: BoardClientOptions, request: Request) {
   return {
-    boardList: (input: { kind?: 'notice' | 'question'; open?: boolean; includeEnded?: boolean }) => {
+    boardList: (input: {
+      kind?: 'notice' | 'question'
+      open?: boolean
+      includeEnded?: boolean
+    }) => {
       const query = new URLSearchParams()
       if (input.kind) query.set('kind', input.kind)
       if (input.open) query.set('open', 'true')
@@ -95,11 +102,16 @@ export function recordBoardClient(options: BoardClientOptions, request: Request)
         body: JSON.stringify(replySchema.parse(input)),
       }),
     boardAccept: (questionId: string, replyId: string, spaceId: string) =>
-      request(options, `/v1/board/messages/${encodeURIComponent(questionId)}/accept`, threadSchema, {
-        method: 'POST',
-        headers: destinationHeaders(spaceId),
-        body: JSON.stringify({ replyId }),
-      }),
+      request(
+        options,
+        `/v1/board/messages/${encodeURIComponent(questionId)}/accept`,
+        threadSchema,
+        {
+          method: 'POST',
+          headers: destinationHeaders(spaceId),
+          body: JSON.stringify({ replyId }),
+        },
+      ),
     boardWithdraw: (id: string, spaceId: string) =>
       request(options, `/v1/board/messages/${encodeURIComponent(id)}/withdraw`, messageSchema, {
         method: 'POST',

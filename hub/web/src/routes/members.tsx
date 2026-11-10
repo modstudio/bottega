@@ -316,15 +316,18 @@ function MemberTable({
   const columns = memberColumns(
     callerRole,
     canEditMember,
-    (member, role) => {
-      void act(member.id, () => changeRole.mutateAsync({ id: member.id, role }))
-    },
-    (member, permission) => {
+    (member, role) => void act(member.id, () => changeRole.mutateAsync({ id: member.id, role })),
+    (member, permission) =>
       void act(member.id, () =>
         setPermission.mutateAsync({ email: member.user.email, permission, spaceId }),
-      )
-    },
+      ),
   )
+  const withdrawAccess = () => {
+    if (!withdrawTarget) return
+    const member = withdrawTarget
+    setWithdrawTarget(null)
+    void act(member.id, () => withdraw.mutateAsync({ email: member.user.email, spaceId }))
+  }
   return (
     <>
       <Collection
@@ -371,18 +374,7 @@ function MemberTable({
             <Button variant="secondary" onClick={() => setWithdrawTarget(null)}>
               Cancel
             </Button>
-            <Button
-              variant="danger"
-              disabled={withdraw.isPending}
-              onClick={() => {
-                if (!withdrawTarget) return
-                const member = withdrawTarget
-                setWithdrawTarget(null)
-                void act(member.id, () =>
-                  withdraw.mutateAsync({ email: member.user.email, spaceId }),
-                )
-              }}
-            >
+            <Button variant="danger" disabled={withdraw.isPending} onClick={withdrawAccess}>
               Withdraw
             </Button>
           </>
