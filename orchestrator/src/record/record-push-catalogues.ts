@@ -3,7 +3,6 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { replicatedRecordId } from '../../../shared/record-id.ts'
-import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { db } from '../database/db.ts'
 import {
@@ -14,7 +13,7 @@ import {
 import { normalizePortBaselineScannedAt } from '../porting/porting-date.ts'
 import { declaredRecordSpace } from '../project/declared-record-space.ts'
 import { projects } from '../project/projects.ts'
-import { activeRecordSpace, cachedProjectSpaces } from '../project-space.ts'
+import { cachedProjectSpaces } from '../project-space.ts'
 import type { RecordApiClient } from './record-api-client.ts'
 import { recordApiClient } from './record-api-client.ts'
 import type { RecordIdentity } from './record-auth.ts'
@@ -508,31 +507,22 @@ function addPortSkip(r: Record<string, unknown>, context: PortPlanContext): void
 
 function portPlan(
   local: Database,
-  activeSpaceId: string,
   routes: ProjectRoutes,
   skipped: Plan['skipped'],
 ) {
   const plans = new Map<string, RecordPortImportInput>(),
-    active = emptyPort(),
     now = iso()
-  active.port_doctrine = (
-    local
-      .query(
-        'SELECT record_id,number,title,body,created_at,retired_at,version FROM port_doctrine WHERE space_id IS NULL',
-      )
-      .all() as Record<string, unknown>[]
-  ).map((r) => ({
-    id: String(r.record_id),
-    spaceId: activeSpaceId,
-    number: Number(r.number),
-    title: String(r.title),
-    body: String(r.body),
-    createdAt: String(r.created_at),
-    retiredAt: r.retired_at == null ? null : String(r.retired_at),
-    version: Number(r.version),
-    updatedAt: String(r.created_at),
-  }))
-  if (active.port_doctrine.length) plans.set(activeSpaceId, active)
+  for (const row of local
+    .query<{ record_id: string }, []>(
+      'SELECT record_id FROM port_doctrine WHERE space_id IS NULL',
+    )
+    .all()) {
+    skipped.push({
+      kind: 'port_doctrine',
+      id: row.record_id,
+      reason: 'port doctrine has no named space; assign it a record space, then retry',
+    })
+  }
   const pairSpace = new Map<string, string>(),
     refSpace = new Map<string, string>()
   const context: PortPlanContext = {
@@ -589,7 +579,7 @@ function portPlan(
   return plans
 }
 
-function planCataloguePush(local: Database, activeSpaceId: string, routes: ProjectRoutes): Plan {
+function planCataloguePush(local: Database, routes: ProjectRoutes): Plan {
   const skipped: Plan['skipped'] = [],
     routed = routedProjects(local, routes)
   return {
@@ -597,7 +587,7 @@ function planCataloguePush(local: Database, activeSpaceId: string, routes: Proje
     workflow: new Map(
       [...routed.keys()].map((spaceId) => [spaceId, workflowSpacePlan(local, spaceId)]),
     ),
-    ports: portPlan(local, activeSpaceId, routes, skipped),
+    ports: portPlan(local, routes, skipped),
     skipped,
   }
 }
@@ -641,20 +631,16 @@ export async function pushCataloguesCommand(
   } = {},
 ): Promise<void> {
   const local = dependencies.local ?? db()
-  const localActive = activeRecordSpace(local)
   if (options.dryRun) {
-    if (!localActive) throw new Error(RECORD_ACTIVE_SPACE_REMEDY)
-    const plan = planCataloguePush(local, localActive, cachedProjectRoutes(local))
+    const plan = planCataloguePush(local, cachedProjectRoutes(local))
     logPlan(plan, presentation, 'dry run ')
     for (const skip of plan.skipped)
       presentation.log(`skipped ${skip.kind} ${skip.id}: ${skip.reason}`)
     return
   }
   const client = dependencies.client ?? recordApiClient()
-  const identity = await client.whoami(),
-    active = identity.activeSpaceId ?? localActive
-  if (!active) throw new Error(RECORD_ACTIVE_SPACE_REMEDY)
-  const plan = planCataloguePush(local, active, currentProjectRoutes(local, identity))
+  const identity = await client.whoami()
+  const plan = planCataloguePush(local, currentProjectRoutes(local, identity))
   logPlan(plan, presentation)
   for (const skip of plan.skipped)
     presentation.log(`skipped ${skip.kind} ${skip.id}: ${skip.reason}`)
@@ -690,5 +676,5 @@ export async function pushCataloguesCommand(
       sync: NonNullable<RecordApiClient['sync']>
     },
   })
-  if (dependencies.client) await pullRecordCache(local)
+  if (dependencies.client && identity.activeSpaceId) await pullRecordCache(local)
 }

@@ -289,8 +289,12 @@ test('dry run logs its local plan without calling hosted methods', async () => {
     path: `/tmp/dry-run-${projectId}`,
     settings: {},
   })
-  rememberActiveRecordSpace(local, spaceId)
   rememberProjectSpace(local, `dry-run-${projectId}`, spaceId)
+  local
+    .query(
+      'INSERT INTO port_doctrine (number,title,body,created_at,record_id,space_id) VALUES (9999,?,?,?,?,NULL)',
+    )
+    .run('Unrouted', 'Unrouted doctrine fixture.', '2026-11-10T12:00:00.000Z', newRecordId())
   const logs: string[] = []
   const throwingClient = new Proxy({} as RecordApiClient, {
     get: (_target, property) => {
@@ -307,6 +311,43 @@ test('dry run logs its local plan without calling hosted methods', async () => {
       new RegExp(`^dry run space ${spaceId} — lens: \\d+; workflow: \\d+; port: \\d+$`),
     ),
   )
+  expect(logs).toContainEqual(
+    expect.stringContaining('port doctrine has no named space; assign it a record space, then retry'),
+  )
+})
+
+test('real push routes project catalogues without an active space', async () => {
+  const local = db()
+  const projectId = newRecordId()
+  const projectName = `no-active-${projectId}`
+  upsertProject({
+    recordId: projectId,
+    name: projectName,
+    path: `/tmp/${projectName}`,
+    settings: { space: 'active' },
+  })
+  let imported = false
+  const client = fakeCatalogueClient(undefined, (_input, destination) => {
+    expect(destination).toBe(spaceId)
+    imported = true
+  })
+  client.whoami = async () => ({
+    user: { id: newRecordId() },
+    activeSpaceId: null,
+    personalSpaceId: spaceId,
+    memberships: [
+      {
+        space_id: spaceId,
+        slug: 'active',
+        name: 'Active',
+        role: 'owner',
+        permission: 'write',
+      },
+    ],
+  })
+
+  await pushCataloguesCommand({ dryRun: false }, { log: () => undefined }, { local, client })
+  expect(imported).toBeTrue()
 })
 
 test('a bound store with no local lens or port rows reports nothing to push without importing', async () => {
