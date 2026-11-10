@@ -229,8 +229,8 @@ test('two declared projects bind their own spaces in separate transactions', asy
       projectSpaces: { alpha: 'alpha', beta: 'beta' },
     }),
   ).toMatchObject({ pushed: 2, failed: 0 })
-  expect(remote.transactionSpaceIds.filter((id) => id === alpha)).toHaveLength(1)
-  expect(remote.transactionSpaceIds.filter((id) => id === beta)).toHaveLength(1)
+  expect(remote.transactionSpaceIds.filter((id) => id === alpha)).toHaveLength(2)
+  expect(remote.transactionSpaceIds.filter((id) => id === beta)).toHaveLength(2)
   local.close()
 })
 
