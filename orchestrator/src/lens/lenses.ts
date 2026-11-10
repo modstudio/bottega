@@ -279,7 +279,7 @@ export function showLens(
     })),
   }
 }
-export async function setLens(input: SetLensInput) {
+export async function setLens(input: SetLensInput, destinationSpaceId: string) {
   writableDb()
   validateLensInput(input)
   const d = db()
@@ -337,11 +337,9 @@ export async function setLens(input: SetLensInput) {
     local: () => writeLocal(null),
     hosted: async () => {
       const client = recordApiClient()
-      const identity = await client.whoami()
-      if (!identity.activeSpaceId) throw new Error('record session has no active space')
       const prior = d
         .query(`SELECT ${LENS_COLUMNS} FROM lens WHERE id=? AND space_id IS ?`)
-        .get(input.id, identity.activeSpaceId) as CoreRow | null
+        .get(input.id, destinationSpaceId) as CoreRow | null
       const result = await client.upsertLens(
         {
           key: input.id,
@@ -355,7 +353,7 @@ export async function setLens(input: SetLensInput) {
           reason: input.reason,
           sessionId: sessionId(),
         },
-        { destinationSpaceId: identity.activeSpaceId },
+        { destinationSpaceId },
       )
       return writeLocal(result.lens.spaceId, result)
     },
@@ -444,7 +442,7 @@ function profileRevisionNumbers(database: Database, profileId: string): number[]
     .map((revision) => revision.version)
 }
 
-export async function setProfile(input: SetProfileInput) {
+export async function setProfile(input: SetProfileInput, selectedSpaceId?: string) {
   writableDb()
   const axis = validateProfileInput(input)
   const d = db()
@@ -502,11 +500,10 @@ export async function setProfile(input: SetProfileInput) {
     local: () => writeLocal(project ? lensProfileSpace(project.name, d) : null),
     hosted: async () => {
       const client = recordApiClient()
-      const identity = await client.whoami()
-      if (!identity.activeSpaceId) throw new Error('record session has no active space')
       const destinationSpaceId = project
         ? await requireProjectRecordDestination(project.name, project.settings, client)
-        : identity.activeSpaceId
+        : selectedSpaceId
+      if (!destinationSpaceId) throw new Error('lens profile write has no record space')
       const core = d
         .query(`SELECT ${LENS_COLUMNS} FROM lens WHERE id=? AND space_id IS ?`)
         .get(input.lensId, destinationSpaceId) as CoreRow | null

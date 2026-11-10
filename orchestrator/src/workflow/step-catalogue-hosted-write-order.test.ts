@@ -9,12 +9,29 @@ import { rememberProjectSpace } from '../project-space.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
 import {
   productionStepCatalogue,
-  promoteStepCatalogue,
-  setStepCatalogue,
+  promoteStepCatalogue as promoteStepCatalogueService,
+  setStepCatalogue as setStepCatalogueService,
 } from './step-catalogue.ts'
 import { sharedPromotionTargetSpaces } from './workflow-shared-promotion-store.ts'
 
 const SPACE = '01990000-0000-7000-8000-000000000223'
+const setStepCatalogue = (definition: unknown, reason: string) =>
+  setStepCatalogueService(definition, reason, undefined, undefined, SPACE)
+const promoteStepCatalogue = (
+  n: number,
+  reason: string,
+  author?: string,
+  database?: ReturnType<typeof db>,
+  project?: string,
+) =>
+  promoteStepCatalogueService(
+    n,
+    reason,
+    author,
+    database,
+    project,
+    project ? undefined : SPACE,
+  )
 const at = '2026-10-18T12:00:00.000Z'
 const whoami = async () => ({
   user: { id: newRecordId() },

@@ -13,11 +13,14 @@ import {
   listProfiles,
   resolveLens,
   selectProjectProfile,
-  setLens,
+  setLens as setLensService,
   setProfile,
   showLens,
   showProfile,
 } from './lenses.ts'
+
+const setLens = (input: Parameters<typeof setLensService>[0]) =>
+  setLensService(input, '01990000-0000-7000-8000-000000000099')
 
 describe('lens catalogue', () => {
   test('inspection defaults to the active hosted record space', () => {

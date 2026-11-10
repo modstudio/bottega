@@ -7,11 +7,14 @@ import { type ContextMomentWrite, contextMomentWrite } from '../../../shared/con
 import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
+import { recordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
+import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { contentTree, reviewChangedPaths } from '../git/git-environment.ts'
 import { type Project, projectAt, projects } from '../project/projects.ts'
+import { recordApiClient } from '../record/record-api-client.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveReviewBase } from '../review/review-target.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
@@ -195,6 +198,8 @@ export async function promoteWorkflowCommand(argv: string[], print: WorkflowPrin
       positive(argv[3], 'version')!,
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
+      undefined,
+      await workflowWriteSpace('workflow promote', argv),
     ),
   )
 }
@@ -206,6 +211,8 @@ export async function retireWorkflowCommand(argv: string[], print: WorkflowPrint
       positive(argv[3], 'version')!,
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
+      undefined,
+      await workflowWriteSpace('workflow retire', argv),
     ),
   )
 }
@@ -217,6 +224,8 @@ export async function forkWorkflowCommand(argv: string[], print: WorkflowPrint):
       positive(flagValue(argv, 'from'), '--from'),
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
+      undefined,
+      await workflowWriteSpace('workflow fork', argv),
     ),
   )
 }
@@ -547,6 +556,8 @@ export async function setWorkflowCommand(argv: string[], print: WorkflowPrint): 
       JSON.parse(readFileSync(file, 'utf8')),
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
+      undefined,
+      await workflowWriteSpace('workflow set', argv),
     ),
   )
 }
@@ -807,6 +818,8 @@ export async function setCatalogueCommand(argv: string[], print: WorkflowPrint):
       JSON.parse(readFileSync(file, 'utf8')),
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
+      undefined,
+      await workflowWriteSpace('workflow catalogue set', argv),
     ),
   )
 }
@@ -817,6 +830,9 @@ export async function promoteCatalogueCommand(argv: string[], print: WorkflowPri
       positive(argv[2], 'version')!,
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
+      undefined,
+      undefined,
+      await workflowWriteSpace('workflow catalogue promote', argv),
     ),
   )
 }
@@ -827,8 +843,27 @@ export async function retireCatalogueCommand(argv: string[], print: WorkflowPrin
       positive(argv[2], 'version')!,
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
+      undefined,
+      await workflowWriteSpace('workflow catalogue retire', argv),
     ),
   )
+}
+
+async function workflowWriteSpace(verb: string, argv: string[]): Promise<string> {
+  const requested = flagValue(argv, 'space')
+  if (!requested) {
+    const missing = recordSpaceOwnerDestination(verb, { space: requested }, [])
+    if (missing.kind === 'refused') throw new Error(missing.remedy)
+  }
+  const identity = await recordApiClient().whoami()
+  const destination = recordSpaceOwnerDestination(
+    verb,
+    { space: requested },
+    parseRecordSpaceMemberships(identity.memberships),
+  )
+  if (destination.kind === 'refused') throw new Error(destination.remedy)
+  if (destination.kind !== 'space') throw new Error('workflow space owner was not resolved')
+  return destination.spaceId
 }
 
 export function catalogueVersionsCommand(

@@ -16,14 +16,18 @@ import { BUILT_IN_WORKFLOW_AUTHOR } from './workflow-built-ins.ts'
 import {
   importWorkflow,
   productionWorkflows,
-  promoteWorkflow,
+  promoteWorkflow as promoteWorkflowService,
   promoteWorkflowLocal,
-  setWorkflow,
+  setWorkflow as setWorkflowService,
   setWorkflowLocal,
   type WorkflowDefinition,
 } from './workflows.ts'
 
 const SPACE = '01990000-0000-7000-8000-000000000222'
+const setWorkflow = (slug: string, definition: unknown, reason: string) =>
+  setWorkflowService(slug, definition, reason, undefined, undefined, SPACE)
+const promoteWorkflow = (slug: string, n: number, reason: string) =>
+  promoteWorkflowService(slug, n, reason, undefined, undefined, undefined, SPACE)
 const at = '2026-10-18T12:00:00.000Z'
 const whoami = async () => ({
   user: { id: newRecordId() },
@@ -91,7 +95,17 @@ test('hosted import validates a workflow against a same-import catalogue', async
   })
 
   await expect(
-    importWorkflow('same-import-flow', definition, 'same import', 'test', local, knownCatalogue),
+    importWorkflow(
+      'same-import-flow',
+      definition,
+      'same import',
+      'test',
+      local,
+      knownCatalogue,
+      undefined,
+      undefined,
+      SPACE,
+    ),
   ).rejects.toThrow('reached hosted draft')
 })
 

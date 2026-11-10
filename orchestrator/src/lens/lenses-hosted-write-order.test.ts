@@ -8,9 +8,19 @@ import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { rememberActiveRecordSpace } from '../project-space.ts'
 import { rememberHostedRecord } from '../record/install-binding-write.ts'
-import { selectProjectProfile, setLens, setProfile, showLens, showProfile } from './lenses.ts'
+import {
+  selectProjectProfile,
+  setLens as setLensService,
+  setProfile as setProfileService,
+  showLens,
+  showProfile,
+} from './lenses.ts'
 
 const HOSTED_SPACE = '01990000-0000-7000-8000-000000000002'
+const setLens = (input: Parameters<typeof setLensService>[0]) =>
+  setLensService(input, HOSTED_SPACE)
+const setProfile = (input: Parameters<typeof setProfileService>[0]) =>
+  setProfileService(input, input.project ? undefined : HOSTED_SPACE)
 
 function installHostedCorrectness(): void {
   const local = db()

@@ -124,6 +124,7 @@ function registerWorkflowDefinitions({
         workflow
           .command('set <workflow>')
           .description('create a draft workflow version from a JSON file')
+          .option('--space <slug>', 'write to this record space')
           .option('--file <value>', 'read the workflow definition from this file'),
       ),
     ),
@@ -146,7 +147,12 @@ function registerWorkflowVersions({
   ] as const) {
     jsonOption(
       authorOption(
-        reasonOption(workflow.command(`${verb} <workflow> <version>`).description(description)),
+        reasonOption(
+          workflow
+            .command(`${verb} <workflow> <version>`)
+            .description(description)
+            .option('--space <slug>', 'write to this record space'),
+        ),
       ),
     )
       .allowExcessArguments(false)
@@ -161,6 +167,7 @@ function registerWorkflowVersions({
         workflow
           .command('fork <workflow>')
           .description('fork a workflow into a new draft version')
+          .option('--space <slug>', 'write to this record space')
           .option('--from <value>', 'fork from this version'),
       ),
     ),
@@ -566,6 +573,7 @@ function registerWorkflowCatalogue({
         catalogue
           .command('set')
           .description('create a draft step catalogue from a JSON file')
+          .option('--space <slug>', 'write to this record space')
           .option('--file <value>', 'read the catalogue definition from this file'),
       ),
     ),
@@ -579,7 +587,14 @@ function registerWorkflowCatalogue({
     ['retire', 'retire a step catalogue version', retireCatalogueCommand],
   ] as const) {
     jsonOption(
-      authorOption(reasonOption(catalogue.command(`${verb} <version>`).description(description))),
+      authorOption(
+        reasonOption(
+          catalogue
+            .command(`${verb} <version>`)
+            .description(description)
+            .option('--space <slug>', 'write to this record space'),
+        ),
+      ),
     )
       .allowExcessArguments(false)
       .action((version, options) =>
