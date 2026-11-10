@@ -1,7 +1,7 @@
 export type ArchitectureViolationEdge = { rule: string; from: string; to: string }
 type ArchitectureViolationBaseline = ArchitectureViolationEdge & { reason: string }
 
-const architectureViolationBaseline: readonly ArchitectureViolationBaseline[] = [
+export const architectureViolationBaseline: readonly ArchitectureViolationBaseline[] = [
   {
     rule: 'no-active-space-resolver-import',
     from: 'orchestrator/src/workflow/workflows.ts',

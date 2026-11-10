@@ -168,6 +168,17 @@ describe('record API', () => {
       postBoardMessage: async () => ({ id }),
       hideRow: async () => ({}),
     })
+    const write = (
+      target: typeof app,
+      path: string,
+      body: unknown,
+      headers: Record<string, string> = {},
+    ) =>
+      target.request(path, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'user-agent': cause, ...headers },
+        body: JSON.stringify(body),
+      })
     expect(
       (
         await app.request('/v1/board/messages', {
@@ -184,27 +195,37 @@ describe('record API', () => {
         })
       ).status,
     ).toBe(200)
+    expect((await write(app, `/v1/runs/${id}/void`, { reason: 'measurement' })).status).toBe(200)
     expect(
       (
-        await app.request(`/v1/runs/${id}/void`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'user-agent': cause },
-          body: JSON.stringify({ reason: 'measurement' }),
-        })
-      ).status,
-    ).toBe(200)
-    expect(
-      (
-        await app.request('/v1/moderation/hide', {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'user-agent': cause,
+        await write(
+          app,
+          '/v1/moderation/hide',
+          { message: id, reason: 'spam' },
+          {
             'x-record-space': 'space-a',
           },
-          body: JSON.stringify({ message: id, reason: 'spam' }),
-        })
+        )
       ).status,
+    ).toBe(200)
+    expect((await write(app, '/v1/sync', {})).status).toBe(501)
+    const spaceBIdentity: RecordIdentity = {
+      ...identity,
+      activeSpaceId: 'space-b',
+      personalSpaceId: 'space-b',
+      memberships: [
+        {
+          space_id: 'space-b',
+          name: 'Space B',
+          slug: 'space-b',
+          role: 'owner',
+          permission: 'write',
+        },
+      ],
+    }
+    const spaceBApp = appWith(spaceBIdentity, { hideRow: async () => ({}) })
+    expect(
+      (await write(spaceBApp, '/v1/moderation/hide', { message: id, reason: 'spam' })).status,
     ).toBe(200)
     const refused = await app.request('/v1/projects', {
       method: 'PUT',
@@ -223,6 +244,7 @@ describe('record API', () => {
       }),
     })
     expect(refused.status).toBe(403)
+    expect((await appWith(null).request('/v1/health/no-destination-writes')).status).toBe(401)
     const response = await app.request('/v1/health/no-destination-writes')
     expect(response.status).toBe(200)
     const report = (await response.json()) as NoDestinationWriteReport
@@ -231,6 +253,7 @@ describe('record API', () => {
       { spaceId: 'space-a', route: '/v1/board/messages', cause, occurrences: 1 },
       { spaceId: 'space-a', route: '/v1/runs/:id/void', cause, occurrences: 1 },
       { spaceId: 'space-a', route: '/v1/moderation/hide', cause, occurrences: 1 },
+      { spaceId: 'space-a', route: '/v1/sync', cause, occurrences: 1 },
     ])
   })
 

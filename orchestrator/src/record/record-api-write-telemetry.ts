@@ -2,7 +2,9 @@
 /** Records destination-less hosted writes and serves their authenticated health report. */
 
 import type { Context, Hono } from 'hono'
+import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { NO_DESTINATION_WRITES_ROUTE } from './record-no-destination-write-contract.ts'
 import { noDestinationWriteCounter } from './record-no-destination-write-counter.ts'
 import { destinationlessWrite } from './record-no-destination-write-decision.ts'
 
@@ -17,10 +19,12 @@ export type RecordWriteTelemetryEnvironment = {
 export type RecordWriteTelemetryContext = Context<RecordWriteTelemetryEnvironment>
 
 export function registerRecordWriteTelemetry(app: Hono<RecordWriteTelemetryEnvironment>): void {
-  app.get('/v1/health/no-destination-writes', (context) =>
+  app.get(NO_DESTINATION_WRITES_ROUTE, (context) =>
     context.json(
       noDestinationWriteCounter({
-        read: context.get('identity').memberships.map((row) => String(row.space_id)),
+        read: parseRecordSpaceMemberships(context.get('identity').memberships).map(
+          (membership) => membership.spaceId,
+        ),
       }),
     ),
   )

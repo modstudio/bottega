@@ -39,9 +39,10 @@ import { machineId } from './machine-identity.ts'
 import { quarantinedOutboxRows } from './outbox-quarantine.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
 import { recordAttributionFailure } from './record-attribution.ts'
-import type {
-  NoDestinationWriteReport,
-  NoDestinationWriteReportRow,
+import {
+  NO_DESTINATION_WRITES_ROUTE,
+  type NoDestinationWriteReport,
+  type NoDestinationWriteReportRow,
 } from './record-no-destination-write-contract.ts'
 import { recordPool } from './record-pool.ts'
 import { effectiveProjectSpace } from './record-project-destination.ts'
@@ -86,8 +87,6 @@ export type RecordDoctorFacts = {
 const API_CONFIGURATION_REMEDY = `run \`${PLATFORM_SLUG} record use <address>\``
 const API_REACHABILITY_REMEDY =
   'check BOTTEGA_RECORD_API_URL and make the hosted record API reachable, then retry'
-const NO_DESTINATION_WRITES_ROUTE = '/v1/health/no-destination-writes'
-
 export function recordDoctorExitCode(checks: readonly RecordDoctorCheck[]): 0 | 1 {
   return checks.some((check) => check.status === 'fail') ? 1 : 0
 }

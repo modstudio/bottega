@@ -1,7 +1,9 @@
 // concern: record-no-destination-write-decision
 /** Purely decides whether a hosted request is a write that fell back to the active space. */
 
-const MAX_CAUSE_LENGTH = 200
+import { recordRequestNature } from '../../../shared/record-space-request.ts'
+
+export const MAX_CAUSE_LENGTH = 200
 
 export type NoDestinationWrite = { spaceId: string; route: string; cause: string }
 
@@ -12,7 +14,7 @@ export function destinationlessWrite(input: {
   route: string
   userAgent?: string | null
 }): NoDestinationWrite | null {
-  if (input.method === 'GET' || input.method === 'HEAD') return null
+  if (recordRequestNature(input.method) === 'read') return null
   if (input.destinationSpaceId !== undefined || !input.activeSpaceId) return null
   return {
     spaceId: input.activeSpaceId,

@@ -60,6 +60,7 @@ import {
 } from './record-api-workflow.ts'
 import { registerRecordWriteRoutes } from './record-api-write-routes.ts'
 import {
+  type RecordWriteTelemetryEnvironment,
   recordDestinationlessWrite,
   registerRecordWriteTelemetry,
 } from './record-api-write-telemetry.ts'
@@ -100,13 +101,7 @@ import type { RecordScore } from './record-verdicts.ts'
 
 export const SNAPSHOT_MAX_BYTES = 1024 * 1024
 
-type ApiEnvironment = {
-  Variables: {
-    identity: RecordIdentity
-    destinationSpaceId?: string
-    destinationlessWriteRecorded?: true
-  }
-}
+type ApiEnvironment = RecordWriteTelemetryEnvironment
 type Tenant = Omit<ConfigTenant, 'spaceIds'> & { spaceIds: string[] }
 type Deps = RecordSubjectRouteDeps &
   RecordReleaseRouteDeps &
@@ -291,7 +286,6 @@ function registerRecordIdentityMiddleware(app: Hono<ApiEnvironment>, deps: Deps)
     context.set('identity', identity)
     await next()
   })
-  registerRecordWriteTelemetry(app)
 }
 
 export function recordApi(deps: Deps): Hono<ApiEnvironment> {
@@ -310,6 +304,8 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   })
   registerPublicDocRoutes(app, deps)
   registerRecordIdentityMiddleware(app, deps)
+  // The report route must follow the identity middleware that authenticates it.
+  registerRecordWriteTelemetry(app)
   registerRecordIdentityRoutes(app, deps)
   registerRecordSessionRoutes(app, deps)
   registerRecordRequestSpace(app)
@@ -329,8 +325,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   })
   const scope = (context: Context<ApiEnvironment>): Tenant | null => {
     recordDestinationlessWrite(context)
-    const identity = context.get('identity') as RecordIdentity
-    return requestTenant(identity, context.get('destinationSpaceId'), deps.recordUrl)
+    return requestTenant(context.get('identity'), context.get('destinationSpaceId'), deps.recordUrl)
   }
   const { docScope, docIdScope } = recordDocumentScopes({ scope, readDoc: deps.readDoc })
   registerSignedDocSearchRoute(app, deps, { scope, noSpace })

@@ -4,7 +4,10 @@
 import type { RecordClientRequest } from './record-api-client-paths.ts'
 import { responseRecord } from './record-api-client-response.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import type { NoDestinationWriteReport } from './record-no-destination-write-contract.ts'
+import {
+  NO_DESTINATION_WRITES_ROUTE,
+  type NoDestinationWriteReport,
+} from './record-no-destination-write-contract.ts'
 import type { RecordSyncRequest, RecordSyncResponse } from './record-sync-contract.ts'
 
 export type RecordSessionClient = {
@@ -67,7 +70,7 @@ export function recordSessionClient(
 ): RecordSessionClient {
   return {
     noDestinationWrites: () =>
-      request('/v1/health/no-destination-writes', { schema: noDestinationWriteResponse }),
+      request(NO_DESTINATION_WRITES_ROUTE, { schema: noDestinationWriteResponse }),
     whoami: () => request('/v1/whoami', { schema: identitySchema }),
     sync: (input) => request('/v1/sync', { method: 'POST', body: JSON.stringify(input) }),
   }

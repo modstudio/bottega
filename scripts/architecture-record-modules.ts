@@ -451,14 +451,18 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-api-write-telemetry.ts', [
     'hono',
+    '../../../shared/record-space-membership.ts',
     './record-auth.ts',
+    './record-no-destination-write-contract.ts',
     './record-no-destination-write-counter.ts',
     './record-no-destination-write-decision.ts',
   ]),
   module('orchestrator/src/record/record-no-destination-write-contract.ts', [
     './record-no-destination-write-decision.ts',
   ]),
-  module('orchestrator/src/record/record-no-destination-write-decision.ts', []),
+  module('orchestrator/src/record/record-no-destination-write-decision.ts', [
+    '../../../shared/record-space-request.ts',
+  ]),
   module('orchestrator/src/record/record-no-destination-write-counter.ts', [
     './record-no-destination-write-contract.ts',
     './record-no-destination-write-decision.ts',
