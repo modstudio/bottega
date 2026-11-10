@@ -21,8 +21,10 @@ import { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } from '../canon/pack-budget.t
 import { refuseSettingsBody } from '../settings/settings.ts'
 import { type DocGenerator, REFERENCE_GENERATOR } from './doc-generator.ts'
 import { docLintRefusal, introducedDocFindings, type LintableDoc, lintDoc } from './doc-lint.ts'
+import type { DocRevisionRefusalReason } from './doc-revision-conflict.ts'
 
 export { refuseSettingsBody }
+export { DocRevisionConflictError } from './doc-revision-conflict.ts'
 
 export const RECORD_WRITE_REMEDY = `cleared by: ${PLATFORM_SLUG} record doctor`
 export const MISSING_HOSTED_REVISION_REMEDY =
@@ -241,19 +243,9 @@ export function refuseSettingsAddress(
   )
 }
 
-type DocRevisionRefusalReason = 'missing-hosted-revision' | 'stale-revision' | 'already-exists'
 export type DocRevisionDecision =
   | { allow: true }
   | { allow: false; refusal: Refusal; reason: DocRevisionRefusalReason }
-
-export class DocRevisionWriteConflictError extends Error {
-  readonly code = 'revision-conflict'
-  readonly currentRevision: string | null
-  constructor(message: string, currentRevision: string | null) {
-    super(message)
-    this.currentRevision = currentRevision
-  }
-}
 
 type RevisionAddress = { scope: string; subject: string | null; slug: string }
 

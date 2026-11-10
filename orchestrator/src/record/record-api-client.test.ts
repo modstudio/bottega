@@ -267,6 +267,8 @@ describe('revision conflict response', () => {
           {
             error: 'current revision is revision-b; re-read, then retry',
             code: 'revision-conflict',
+            reason: 'stale-revision',
+            condition: 'current revision is revision-b',
             currentRevision: 'revision-b',
           },
           { status: 409 },
@@ -278,7 +280,13 @@ describe('revision conflict response', () => {
     await expect(
       recordApiRequest('/v1/docs/example', {}, authentication, (async () =>
         Response.json(
-          { error: 'cleared by: repair the document revision state, then retry the write' },
+          {
+            error: 'cleared by: repair the document revision state, then retry the write',
+            code: 'revision-conflict',
+            reason: 'missing-hosted-revision',
+            condition: "this row's latest revision is missing",
+            currentRevision: null,
+          },
           { status: 409 },
         )) as unknown as typeof fetch),
     ).rejects.toMatchObject({ kind: 'refused', currentRevision: null, status: 409 })
@@ -300,6 +308,19 @@ test('transport failures report the request write outcome', async () => {
     ).rejects.toThrow('the write may have been applied; check before retrying')
     await expect(recordApiRequest('/v1/docs', {}, authentication, failed)).rejects.toThrow(
       'nothing was written',
+    )
+    const malformed = recordApiClient((path, init) =>
+      recordApiRequest(
+        path,
+        init,
+        authentication,
+        (async () => new Response('{', { status: 200 })) as unknown as typeof fetch,
+      ),
+    )
+    await expect(
+      malformed.importDoc({ doc: { scope: 'project', subject: PLATFORM_SLUG }, revisions: [] } as never),
+    ).rejects.toThrow(
+      'the write may have been applied; check before retrying',
     )
   } finally {
     process.env.NODE_ENV = previousEnv

@@ -7,6 +7,8 @@ export class RecordApiRequestError extends Error {
   readonly code: string | null
   readonly existingAccount: boolean
   readonly currentRevision: string | null
+  readonly reason: string | null
+  readonly condition: string
 
   constructor(
     message: string,
@@ -15,6 +17,8 @@ export class RecordApiRequestError extends Error {
     code: string | null = null,
     existingAccount = false,
     currentRevision: string | null = null,
+    reason: string | null = null,
+    condition = message,
   ) {
     super(message)
     this.kind = kind
@@ -22,6 +26,8 @@ export class RecordApiRequestError extends Error {
     this.code = code
     this.existingAccount = existingAccount
     this.currentRevision = currentRevision
+    this.reason = reason
+    this.condition = condition
   }
 }
 

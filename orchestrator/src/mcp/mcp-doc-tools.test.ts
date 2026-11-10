@@ -3,9 +3,10 @@ import { Client } from '@modelcontextprotocol/client'
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
+import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
 import { getDoc } from '../doc/docs.ts'
 import { projectByName, upsertProject } from '../project/projects.ts'
-import { registerDocTools } from './mcp-doc-tools.ts'
+import { registerDocTools, rethrowMcpDocWriteError } from './mcp-doc-tools.ts'
 
 const project = 'mcp-canon-write'
 const slug = '.agents/rules/mcp-canon-write.md'
@@ -22,6 +23,25 @@ function smallCanonTree() {
 }
 
 const collectCanonLintInput = () => canonFacts
+
+test.each([
+  [
+    'stale-revision',
+    'refusing stale document update',
+    'refusing stale document update; pass expected_revision current; re-read with get_doc and re-apply the edit',
+  ],
+  [
+    'already-exists',
+    'refusing create because the row exists',
+    'refusing create because the row exists; read it with get_doc, then pass expected_revision current to overwrite it',
+  ],
+] as const)('MCP renders the %s conflict from typed fields', (reason, condition, expected) => {
+  expect(() =>
+    rethrowMcpDocWriteError(
+      new DocRevisionConflictError('CLI message and remedy', condition, reason, 'current'),
+    ),
+  ).toThrow(expected)
+})
 
 async function withDocClient(run: (client: Client) => Promise<void>): Promise<void> {
   const server = new McpServer({ name: 'orch-doc-test', version: '1.0.0' })

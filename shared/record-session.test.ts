@@ -3,6 +3,7 @@ import {
   appendFileSync,
   chmodSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   rmSync,
   statSync,
@@ -285,6 +286,36 @@ describe('file-backed record session', () => {
     appendFileSync(recordSessionStampPath(process.env), '-changed')
 
     expect(readRecordSessionToken()).toBe('second-token')
+  })
+
+  test('an external stamp rewrite with the same length invalidates the memo', () => {
+    writeRecordSessionToken('first-token', unusedRunner)
+    expect(readRecordSessionToken()).toBe('first-token')
+    writeFileSync(recordSessionPath(process.env), 'second-token', { mode: 0o600 })
+    const stampPath = recordSessionStampPath(process.env)
+    const length = statSync(stampPath).size
+    writeFileSync(stampPath, 'x'.repeat(length), { mode: 0o600 })
+
+    expect(readRecordSessionToken()).toBe('second-token')
+  })
+
+  test('an unreadable stamp keeps the memo and does not throw', () => {
+    writeRecordSessionToken('first-token', unusedRunner)
+    expect(readRecordSessionToken()).toBe('first-token')
+    writeFileSync(recordSessionPath(process.env), 'unobserved-token', { mode: 0o600 })
+    const stampPath = recordSessionStampPath(process.env)
+    rmSync(stampPath)
+    mkdirSync(stampPath)
+
+    expect(readRecordSessionToken()).toBe('first-token')
+  })
+
+  test('a null read is not latched without a stamp change', () => {
+    expect(readRecordSessionToken()).toBeNull()
+    ensureRecordSessionDirectory(process.env)
+    writeFileSync(recordSessionPath(process.env), 'appeared-token', { mode: 0o600 })
+
+    expect(readRecordSessionToken()).toBe('appeared-token')
   })
 
   test('without a stamp change the memoized token is reused', () => {

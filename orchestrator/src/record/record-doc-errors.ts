@@ -6,7 +6,7 @@ import {
   type DocRevisionWriteInput,
   decideDocRevisionWrite,
 } from '../doc/doc-write-allowed.ts'
-import { RecordRevisionConflictError } from './record-revision-conflict.ts'
+import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
 
 export class RecordDocError extends Error {
   status: 400 | 404 | 409 | 422
@@ -38,9 +38,10 @@ export function assertRevisionWrite(
   })
   if (!decision.allow) {
     const message = renderRefusal(decision.refusal)
-    if (decision.reason === 'missing-hosted-revision') throw new RecordDocError(message, 409)
-    throw new RecordRevisionConflictError(
+    throw new DocRevisionConflictError(
       message,
+      decision.refusal.condition,
+      decision.reason,
       input.current == null ? null : String(input.current),
     )
   }

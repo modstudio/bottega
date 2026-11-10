@@ -6,7 +6,8 @@ import {
   RECORD_SIGN_IN_REMEDY,
   recordUnreachableRefusal,
 } from '../../../shared/record-remedies.ts'
-import { MISSING_HOSTED_REVISION_REMEDY, RECORD_WRITE_REMEDY } from '../doc/doc-write-allowed.ts'
+import { RECORD_WRITE_REMEDY } from '../doc/doc-write-allowed.ts'
+import { revisionConflictBodySchema } from '../doc/doc-revision-conflict.ts'
 import {
   RecordApiRequestError,
   responseCode,
@@ -14,14 +15,13 @@ import {
   responseRecord,
 } from './record-api-client-response.ts'
 import { parseProjectSpaceConflictResponse } from './record-project-space-contract.ts'
-import { revisionConflictBodySchema } from './record-revision-conflict.ts'
 
 const recordApiStatus = (status: number) => `record API ${status}`
 
 export function recordApiUnreachable(
   error: unknown,
   origin: string,
-  outcome: HostedRequestSafety = 'probe',
+  outcome: HostedRequestSafety,
 ): RecordApiRequestError {
   const detail = error instanceof Error ? error.message : String(error)
   return new RecordApiRequestError(recordUnreachableRefusal(origin, detail, outcome), 'unreachable')
@@ -42,7 +42,11 @@ export function recordApiError(
   const projectSpaceConflict = parseProjectSpaceConflictResponse(body, status)
   if (projectSpaceConflict) return projectSpaceConflict
   const revisionConflict = revisionConflictBodySchema.safeParse(body)
-  if (status === 409 && revisionConflict.success)
+  if (
+    status === 409 &&
+    revisionConflict.success &&
+    revisionConflict.data.reason !== 'missing-hosted-revision'
+  )
     return new RecordApiRequestError(
       revisionConflict.data.error,
       'conflict',
@@ -50,12 +54,18 @@ export function recordApiError(
       revisionConflict.data.code,
       false,
       revisionConflict.data.currentRevision,
+      revisionConflict.data.reason,
+      revisionConflict.data.condition,
     )
   const message = responseMessage(body, recordApiStatus(status))
   if (status === 429) return new RecordApiRequestError(message, 'refused', status)
   if (message === RECORD_ACTIVE_SPACE_REMEDY)
     return new RecordApiRequestError(message, 'refused', status)
-  if (message.includes(MISSING_HOSTED_REVISION_REMEDY))
+  if (
+    status === 409 &&
+    revisionConflict.success &&
+    revisionConflict.data.reason === 'missing-hosted-revision'
+  )
     return new RecordApiRequestError(message, 'refused', status)
   if (status >= 400 && status < 500) return new RecordApiRequestError(message, 'refused', status)
   return recordApiServerError(message, status)

@@ -21,7 +21,7 @@ import { SNAPSHOT_KINDS } from '../orchestrator/src/record/record-snapshots.ts'
 import { startBoundedSync } from '../shared/bounded-process.ts'
 import { configClient } from '../shared/config-client.ts'
 import { inspectionGitEnv } from '../shared/git.ts'
-import { HOSTED_TABLES_WITHOUT_LOCAL_ACCESS } from '../shared/hosted-tables.ts'
+import { HOSTED_TABLES_WITHOUT_LOCAL_ACCESS } from '../orchestrator/src/database/hosted-table-guard.ts'
 import { hostedTableLifecycles } from '../shared/record/storage-lifecycle.ts'
 import { enumerateClientMethods } from './identity-client-enumeration.ts'
 import {

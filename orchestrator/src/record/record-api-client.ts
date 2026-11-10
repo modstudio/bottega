@@ -10,7 +10,11 @@ import type {
   DocStatus,
 } from '../../../shared/docs.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
-import { RECORD_SIGN_IN_REMEDY, recordUnreachableRefusal } from '../../../shared/record-remedies.ts'
+import {
+  type HostedRequestSafety,
+  RECORD_SIGN_IN_REMEDY,
+  recordUnreachableRefusal,
+} from '../../../shared/record-remedies.ts'
 import type { TableStorageMeasurement } from '../../../shared/storage-lifecycle.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
@@ -462,11 +466,14 @@ function injectSlot(): InjectSlot {
 const injectedClient = (): RecordApiClient | null => injectSlot().current
 export const recordApiClientInjected = (): boolean => injectedClient() !== null
 
-const recordApiUnreachable = (error: unknown, origin = recordApiBaseUrl()) =>
-  classifyRecordApiUnreachable(error, origin)
+const recordApiUnreachable = (
+  error: unknown,
+  outcome: HostedRequestSafety,
+  origin = recordApiBaseUrl(),
+) => classifyRecordApiUnreachable(error, origin, outcome)
 
 export const recordIdentityResponse = (body: unknown) =>
-  parseRecordIdentityResponse(body, (message) => recordApiUnreachable(new Error(message)))
+  parseRecordIdentityResponse(body, (message) => recordApiUnreachable(new Error(message), 'probe'))
 
 async function recordEmailAuthRequest(
   path: '/api/auth/sign-in/email' | '/api/auth/sign-up/email',
@@ -586,7 +593,7 @@ async function publicRequest<T>(path: string): Promise<T> {
       headers: new Headers(),
     })
   } catch (error) {
-    throw recordApiUnreachable(error)
+    throw recordApiUnreachable(error, 'probe')
   }
   const body = await response.json().catch(() => null)
   if (!response.ok) throw recordApiError(body, response.status)
@@ -596,7 +603,7 @@ async function publicRequest<T>(path: string): Promise<T> {
 function ids(body: unknown): RecordDocWriteResponse<{ id: string; revisionId: string }> {
   const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
   if (typeof record.id !== 'string' || typeof record.revisionId !== 'string') {
-    throw recordApiUnreachable(new Error('record API returned an invalid body'))
+    throw recordApiUnreachable(new Error('record API returned an invalid body'), 'non-idempotent')
   }
   return {
     id: record.id,
@@ -612,7 +619,7 @@ function importIds(body: unknown): RecordDocImportResult {
     !Array.isArray(record.revisionIds) ||
     record.revisionIds.some((value) => typeof value !== 'string')
   ) {
-    throw recordApiUnreachable(new Error('record API returned an invalid body'))
+    throw recordApiUnreachable(new Error('record API returned an invalid body'), 'non-idempotent')
   }
   return {
     id: record.id,
@@ -624,13 +631,16 @@ function importIds(body: unknown): RecordDocImportResult {
 function organizationResponse(body: unknown): { id: string; slug: string } {
   const value = responseRecord(body)
   if (typeof value.id !== 'string' || typeof value.slug !== 'string')
-    throw recordApiUnreachable(new Error('record API returned an invalid organization'))
+    throw recordApiUnreachable(
+      new Error('record API returned an invalid organization'),
+      'non-idempotent',
+    )
   return { id: value.id, slug: value.slug }
 }
 
 export function recordInvitationListResponse(body: unknown): HostedRecordInvitation[] {
   if (!Array.isArray(body))
-    throw recordApiUnreachable(new Error('record API returned an invalid invitation list'))
+    throw recordApiUnreachable(new Error('record API returned an invalid invitation list'), 'probe')
   return body.map((row) => {
     const value = responseRecord(row)
     for (const field of [
@@ -642,11 +652,11 @@ export function recordInvitationListResponse(body: unknown): HostedRecordInvitat
       'expiresAt',
     ] as const) {
       if (typeof value[field] !== 'string')
-        throw recordApiUnreachable(new Error('record API returned an invalid invitation list'))
+        throw recordApiUnreachable(new Error('record API returned an invalid invitation list'), 'probe')
     }
     const expiresAt = new Date(value.expiresAt as string)
     if (Number.isNaN(expiresAt.getTime()))
-      throw recordApiUnreachable(new Error('record API returned an invalid invitation'))
+      throw recordApiUnreachable(new Error('record API returned an invalid invitation'), 'probe')
     return value as HostedRecordInvitation
   })
 }
@@ -657,7 +667,10 @@ function acceptedInvitationResponse(
   const value = responseRecord(body)
   const invitation = responseRecord(value.invitation)
   if (typeof invitation.organizationId !== 'string')
-    throw recordApiUnreachable(new Error('record API returned an invalid accepted invitation'))
+    throw recordApiUnreachable(
+      new Error('record API returned an invalid accepted invitation'),
+      'non-idempotent',
+    )
   return { invitation: { organizationId: invitation.organizationId } }
 }
 

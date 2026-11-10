@@ -505,7 +505,11 @@ function stoppedAtRateCap(context: UploadContext): BoardAdoptionResult {
 }
 
 function unexpectedHostedRefusal(candidate: Candidate, error: unknown): Error | null {
-  if (!(error instanceof RecordApiRequestError) || error.kind !== 'refused') return null
+  if (
+    !(error instanceof RecordApiRequestError) ||
+    (error.kind !== 'refused' && error.kind !== 'conflict')
+  )
+    return null
   const remedy =
     candidate.kind === 'claim'
       ? `release local claim ${candidate.recordId}`
@@ -621,7 +625,7 @@ function handleUploadError(
   context: UploadContext,
 ): 'continue' | 'rate' {
   const disposition = uploadErrorDisposition(
-    error instanceof RecordApiRequestError && error.kind !== 'conflict' ? error.kind : 'unexpected',
+    error instanceof RecordApiRequestError ? error.kind : 'unexpected',
     error instanceof Error ? error.message : String(error),
   )
   if (disposition === 'rate') return 'rate'

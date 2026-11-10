@@ -5,8 +5,8 @@ import type { HostedAcknowledgement, HostedNote, PromoteNoteInput } from './host
 import {
   type HostedRequestSafety,
   hostedRefusalError,
-  sendHostedSessionRequest,
 } from './hosted-refusal.ts'
+import { sendHostedSessionRequest } from './hosted-session-send.ts'
 import type { HostedComment, HostedTask } from './hosted-tasks.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import { MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'

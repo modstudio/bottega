@@ -1,7 +1,12 @@
 // concern: hosted-table-guard
 /** Refuses local SQL access to hosted-only tables while preserving an explicit maintenance bypass. */
 import type { Database } from 'bun:sqlite'
-import { HOSTED_TABLES_WITHOUT_LOCAL_ACCESS } from '../../../shared/hosted-tables.ts'
+
+/**
+ * A table joins this list only when identity-state-classes declares it hosted and production code
+ * no longer reads or writes its local copy.
+ */
+export const HOSTED_TABLES_WITHOUT_LOCAL_ACCESS = [] as const
 
 const guardedMethods = new Set(['query', 'prepare', 'run', 'exec'])
 

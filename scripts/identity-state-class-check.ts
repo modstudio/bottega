@@ -223,7 +223,7 @@ export function stateClassRefusals(input: StateClassInput): string[] {
     return rows.length === 1 && rows[0]?.class === 'hosted'
       ? []
       : [
-          `${table}: hosted-table guard entry is not a declared hosted orchestrator table; remedy: edit shared/hosted-tables.ts`,
+          `${table}: hosted-table guard entry is not a declared hosted orchestrator table; remedy: edit orchestrator/src/database/hosted-table-guard.ts`,
         ]
   })
   return [

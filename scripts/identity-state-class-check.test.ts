@@ -86,7 +86,7 @@ describe('stateClassRefusals', () => {
         },
       ),
     ).toContain(
-      'local_row: hosted-table guard entry is not a declared hosted orchestrator table; remedy: edit shared/hosted-tables.ts',
+      'local_row: hosted-table guard entry is not a declared hosted orchestrator table; remedy: edit orchestrator/src/database/hosted-table-guard.ts',
     )
   })
 

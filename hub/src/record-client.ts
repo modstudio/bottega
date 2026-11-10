@@ -599,11 +599,14 @@ async function request<T>(
   const signal = init.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal
   const startedAt = Date.now()
   const safety = !init.method || init.method.toUpperCase() === 'GET' ? 'probe' : 'non-idempotent'
-  const retryStatement = hostedRequestSafetyStatement(safety)
+  const retryStatement =
+    safety === 'probe'
+      ? `${hostedRequestSafetyStatement(safety)}; retry, and if it stalls again`
+      : `${hostedRequestSafetyStatement(safety)}, and if it stalls again`
   const timeoutError = () =>
     new TRPCError({
       code: 'TIMEOUT',
-      message: `the hosted record API did not answer ${path} within ${Date.now() - startedAt} ms; ${retryStatement}; retry, and if it stalls again check the hosted API health and report the path`,
+      message: `the hosted record API did not answer ${path} within ${Date.now() - startedAt} ms; ${retryStatement} check the hosted API health and report the path`,
     })
   let timeout: ReturnType<typeof setTimeout> | undefined
   const expired = new Promise<never>((_, reject) => {

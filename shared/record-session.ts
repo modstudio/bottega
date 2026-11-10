@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { chmodSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_NAME } from './brand.ts'
 import { readOwnerOnlySecretFile } from './file-backed-secret-paths.ts'
@@ -29,7 +29,8 @@ const ACCOUNT = 'record'
 const PROBE_ACCOUNT = 'record-probe'
 const FILE_REMEDY = `set ${KEYSTORE_ENV}=file to keep the record session and the machine key in owner-only files`
 let memoizedToken: string | null | undefined
-type SessionStamp = { exists: false } | { exists: true; mtimeMs: number; size: number }
+const UNREADABLE_STAMP = Symbol('unreadable-record-session-stamp')
+type SessionStamp = string | null | typeof UNREADABLE_STAMP
 let memoizedStamp: SessionStamp | undefined
 let pendingToken: Promise<string | null> | null = null
 let tokenGeneration = 0
@@ -44,18 +45,17 @@ function readFileToken(): string | null {
 
 function readSessionStamp(): SessionStamp {
   try {
-    const stamp = statSync(recordSessionStampPath(process.env))
-    return { exists: true, mtimeMs: stamp.mtimeMs, size: stamp.size }
+    return readFileSync(recordSessionStampPath(process.env), 'utf8')
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { exists: false }
-    throw error
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    return UNREADABLE_STAMP
   }
 }
 
 function sameSessionStamp(left: SessionStamp | undefined, right: SessionStamp): boolean {
-  if (!left) return false
-  if (!left.exists || !right.exists) return left.exists === right.exists
-  return left.mtimeMs === right.mtimeMs && left.size === right.size
+  if (left === undefined) return false
+  if (right === UNREADABLE_STAMP) return true
+  return left === right
 }
 
 function touchRecordSessionStamp(): void {
@@ -85,11 +85,14 @@ export function readRecordSessionToken(runner?: SecurityRunner): string | null {
       : withKeychainRemedy(() => readKeychainItem(SERVICE, ACCOUNT, runner))
   const stamp = readSessionStamp()
   if (memoizedToken !== undefined && sameSessionStamp(memoizedStamp, stamp)) return memoizedToken
-  memoizedToken = useFile()
+  const token = useFile()
     ? readFileToken()
     : withKeychainRemedy(() => readKeychainItem(SERVICE, ACCOUNT, runner))
-  memoizedStamp = stamp
-  return memoizedToken
+  if (token !== null) {
+    memoizedToken = token
+    memoizedStamp = stamp
+  }
+  return token
 }
 
 export async function readRecordSessionTokenAsync(
@@ -101,9 +104,12 @@ export async function readRecordSessionTokenAsync(
   if (memoizedToken !== undefined && sameSessionStamp(memoizedStamp, stamp)) return memoizedToken
   if (pendingToken) return raceCallerSignal(pendingToken, signal)
   if (useFile()) {
-    memoizedToken = readFileToken()
-    memoizedStamp = stamp
-    return memoizedToken
+    const token = readFileToken()
+    if (token !== null) {
+      memoizedToken = token
+      memoizedStamp = stamp
+    }
+    return token
   }
   const generation = tokenGeneration
   const read = readKeychainItemAsync(SERVICE, ACCOUNT, undefined, runner)
@@ -112,7 +118,7 @@ export async function readRecordSessionTokenAsync(
       throw keychainFailureWithFileRemedy(error)
     })
     .then((token) => {
-      if (generation === tokenGeneration) {
+      if (generation === tokenGeneration && token !== null) {
         memoizedToken = token
         memoizedStamp = stamp
       }

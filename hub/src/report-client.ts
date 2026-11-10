@@ -3,8 +3,8 @@ import { jsonBody } from '../../shared/http-json.ts'
 import {
   type HostedRequestSafety,
   hostedRefusalError,
-  sendHostedSessionRequest,
 } from './hosted-refusal.ts'
+import { sendHostedSessionRequest } from './hosted-session-send.ts'
 import type {
   HostedReportSubscription,
   HostedSend,

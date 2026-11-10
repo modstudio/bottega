@@ -9,8 +9,8 @@ import type {
 import {
   type HostedRequestSafety,
   hostedRefusalError,
-  sendHostedSessionRequest,
 } from './hosted-refusal.ts'
+import { sendHostedSessionRequest } from './hosted-session-send.ts'
 import type { HostedTaskPresencePair } from './hosted-task-prune.ts'
 import type { HostedComment, HostedDocument, HostedTask } from './hosted-tasks.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
