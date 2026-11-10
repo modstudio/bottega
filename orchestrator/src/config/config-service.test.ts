@@ -15,8 +15,10 @@ import {
   generateDataKey,
   generateMachineKeyPair,
   KEY_SIZE,
+  openValue,
   sealClaimChallenge,
   sealValue,
+  unwrapDataKey,
   wrapDataKey,
 } from '../../../shared/secret-envelope.ts'
 import { pinTrustedMachine, readTrustList } from '../../../shared/trust-list.ts'
@@ -63,6 +65,7 @@ async function rotationFixture(
   revokedAt: string | null,
   resumeRow = false,
   sameKeyBindings = false,
+  userScope = false,
 ) {
   const root = mkdtempSync(join(tmpdir(), 'config-rotation-'))
   roots.push(root)
@@ -136,7 +139,7 @@ async function rotationFixture(
     plaintext: new TextEncoder().encode('resume-me'),
     valueContext: {
       spaceId,
-      userId: null,
+      userId: userScope ? userId : null,
       keyName: 'TOKEN',
       environment: 'default',
       dekId: oldId,
@@ -146,7 +149,7 @@ async function rotationFixture(
   const baseSecret = {
     key: 'TOKEN',
     environment: 'default',
-    scope: 'space' as const,
+    scope: userScope ? ('user' as const) : ('space' as const),
     projectId: null as string | null,
     dekId: oldId,
     rowVersion: 1,
@@ -602,6 +605,47 @@ test('machine trust after a newer revocation rotates once and does not duplicate
   expect(
     fixture.current().wraps.filter((wrap) => wrap.recipientKeyId === fixture.recipientKeyId),
   ).toHaveLength(1)
+})
+
+test('machine trust rotation keeps a selected-space user secret bound to its user', async () => {
+  const fixture = await rotationFixture('2026-06-01T00:00:00.000Z', true, false, true)
+  await machineTrust(
+    fixture.recipientKeyId,
+    fixture.recipientPublicKey,
+    'recipient',
+    fixture.spaceId,
+    fixture.client,
+  )
+  const row = fixture.secrets()[0]!
+  const machine = readMachineKey()!
+  const machineId = await machineKeyId(machine.publicKey)
+  const key = fixture.current()
+  const wrap = key.wraps.find((candidate) => candidate.recipientKeyId === machineId)!
+  const sender = (await readTrustList())[wrap.senderKeyId]!
+  const dek = await unwrapDataKey({
+    enc: Buffer.from(wrap.enc, 'base64url'),
+    ciphertext: Buffer.from(wrap.ciphertext, 'base64url'),
+    wrapContext: { spaceId: fixture.spaceId, dekId: key.id, dekVersion: key.version },
+    recipientPrivateKey: machine.privateKey,
+    senderPublicKey: Buffer.from(sender.public_key, 'base64url'),
+    trustedSenderKeyIds: new Set([wrap.senderKeyId]),
+  })
+  expect(
+    new TextDecoder().decode(
+      openValue({
+        envelope: Buffer.from(row.envelope, 'base64url'),
+        dek,
+        valueContext: {
+          spaceId: fixture.spaceId,
+          userId: '01990000-0000-7000-8000-000000000002',
+          keyName: row.key,
+          environment: row.environment,
+          dekId: row.dekId,
+          rowVersion: row.rowVersion,
+        },
+      }),
+    ),
+  ).toBe('resume-me')
 })
 
 test('sealed environment migration decision covers every resumable store state', () => {

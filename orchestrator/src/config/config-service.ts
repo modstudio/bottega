@@ -346,7 +346,7 @@ async function rotateDataKey(
   const plan = planRotation(rows, current, await client.listDataKeys(destination))
   const completed: string[] = []
   try {
-    const who = selectedSpaceId ? null : await identity(client)
+    const who = await identity(client)
     for (const row of plan.reseal) {
       const plaintext = await openHostedSecretRow(
         client,
@@ -358,8 +358,8 @@ async function rotateDataKey(
         dek,
         plaintext,
         valueContext: {
-          spaceId: selectedSpaceId ?? who!.spaceId,
-          userId: row.scope === 'user' ? (who?.userId ?? null) : null,
+          spaceId: selectedSpaceId ?? who.spaceId,
+          userId: row.scope === 'user' ? who.userId : null,
           keyName: row.key,
           environment: row.environment,
           dekId: current.id,
