@@ -119,16 +119,19 @@ test('task-flow apply is idempotent and rejects older revisions', async () => {
         id uuid PRIMARY KEY, space_id uuid NOT NULL, project_id uuid NOT NULL,
         task_id uuid NOT NULL, state text NOT NULL, open_stage_record_id uuid,
         opening_machine_id uuid NOT NULL, updated_machine_id uuid NOT NULL,
-        revision integer NOT NULL, created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL
+        revision integer NOT NULL, last_request_id uuid,
+        created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL
       );
       CREATE TABLE task_flow_stage (
         id uuid PRIMARY KEY, space_id uuid NOT NULL, flow_record_id uuid NOT NULL,
+        project_id uuid, number integer, workflow_key text, instance_id text, session_id text,
         workflow text NOT NULL, mode text NOT NULL, workflow_version_id uuid NOT NULL,
         catalogue_version_id uuid NOT NULL, arguments jsonb NOT NULL,
         active_ordinal integer NOT NULL, active_slug text NOT NULL, state text NOT NULL,
-        closed_step_notes jsonb NOT NULL, total_steps integer NOT NULL,
+        closed_step_notes jsonb NOT NULL, question text, autonomy text, enforcement text,
+        total_steps integer NOT NULL,
         opened_machine_id uuid NOT NULL, taken_over_from_machine_id uuid,
-        last_advanced_machine_id uuid NOT NULL, revision integer NOT NULL,
+        last_advanced_machine_id uuid NOT NULL, revision integer NOT NULL, last_request_id uuid,
         created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL
       );
     `)

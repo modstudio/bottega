@@ -22,12 +22,14 @@ type IntentBody = {
   stageInsert?: Record<string, unknown>
   stageChanges?: Mutation[]
   stage?: Mutation
+  stages?: Mutation[]
   flow?: Mutation
   obligationInserts?: Record<string, unknown>[]
   obligationUpdates?: Record<string, unknown>[]
   rows?: Record<string, unknown>[]
   ids?: string[]
   row?: Record<string, unknown>
+  deleteTextIds?: string[]
 }
 
 const columnNames: Record<string, string> = {
@@ -52,7 +54,7 @@ function conflict(
   id: string,
   currentRevision: number | null,
   reason = 'stale-revision',
-) {
+): never {
   throw new DocRevisionConflictError(
     `${table} ${id} does not satisfy the requested write precondition`,
     `${table}.id=${id}`,
@@ -108,6 +110,33 @@ async function updateRevisionRow(
   )) as Array<{ revision: number | string }>
   if (!rows[0]) conflict(table, mutation.id, null)
   return Number(rows[0]!.revision)
+}
+
+async function preflightMutations(
+  tx: SQL,
+  mutations: Array<{ table: 'task_flow' | 'task_flow_stage'; mutation: Mutation }>,
+  requestId: string,
+): Promise<'write' | 'retry'> {
+  const decisions: Array<{
+    table: 'task_flow' | 'task_flow_stage'
+    mutation: Mutation
+    decision: 'write' | 'retry'
+  }> = []
+  for (const { table, mutation } of mutations)
+    decisions.push({
+      table,
+      mutation,
+      decision: await revisionDecision(tx, table, mutation, requestId),
+    })
+  if (decisions.every(({ decision }) => decision === 'retry')) return 'retry'
+  const partialRetry = decisions.find(({ decision }) => decision === 'retry')
+  if (partialRetry)
+    conflict(
+      partialRetry.table,
+      partialRetry.mutation.id,
+      partialRetry.mutation.expectedRevision + 1,
+    )
+  return 'write'
 }
 
 const comparable = (value: unknown): unknown => {
@@ -283,11 +312,38 @@ async function applyCompose(tx: SQL, input: Tenant, body: IntentBody) {
 async function applyStageMutation(tx: SQL, input: Tenant, body: IntentBody) {
   const revisions: Record<string, number> = {}
   const stage = body.stage!
+  const mutations = [
+    { table: 'task_flow_stage' as const, mutation: stage },
+    ...(body.flow ? [{ table: 'task_flow' as const, mutation: body.flow }] : []),
+  ]
+  if ((await preflightMutations(tx, mutations, body.requestId)) === 'retry') {
+    for (const { mutation } of mutations) revisions[mutation.id] = mutation.expectedRevision + 1
+    return { revisions }
+  }
   revisions[stage.id] = await updateRevisionRow(tx, 'task_flow_stage', stage, body.requestId)
   if (body.flow)
     revisions[body.flow.id] = await updateRevisionRow(tx, 'task_flow', body.flow, body.requestId)
   for (const row of body.obligationInserts ?? []) await insertObligation(tx, input.spaceId, row)
   for (const row of body.obligationUpdates ?? []) await updateObligation(tx, row)
+  if (body.deleteTextIds?.length)
+    await tx`DELETE FROM workflow_step_text WHERE id IN ${tx(body.deleteTextIds)} AND space_id=${input.spaceId}::uuid`
+  return { revisions }
+}
+
+async function applyStageUpdates(tx: SQL, body: IntentBody) {
+  const revisions: Record<string, number> = {}
+  const mutations = [
+    ...(body.stages ?? []).map((mutation) => ({ table: 'task_flow_stage' as const, mutation })),
+    ...(body.flow ? [{ table: 'task_flow' as const, mutation: body.flow }] : []),
+  ]
+  if ((await preflightMutations(tx, mutations, body.requestId)) === 'retry') {
+    for (const { mutation } of mutations) revisions[mutation.id] = mutation.expectedRevision + 1
+    return { revisions }
+  }
+  for (const stage of body.stages ?? [])
+    revisions[stage.id] = await updateRevisionRow(tx, 'task_flow_stage', stage, body.requestId)
+  if (body.flow)
+    revisions[body.flow.id] = await updateRevisionRow(tx, 'task_flow', body.flow, body.requestId)
   return { revisions }
 }
 
@@ -298,7 +354,8 @@ async function applyIntent<K extends TaskFlowIntent>(
 ): Promise<TaskFlowWriteResult> {
   const body = input as Tenant & IntentBody
   if (intent === 'compose') return applyCompose(tx, input, body)
-  if (['stage-update', 'advance', 'await-ruling', 'abandon'].includes(intent))
+  if (intent === 'stage-update') return applyStageUpdates(tx, body)
+  if (['advance', 'await-ruling', 'abandon'].includes(intent))
     return applyStageMutation(tx, input, body)
   if (intent === 'attach-text')
     for (const row of body.rows ?? []) await insertText(tx, input.spaceId, row)

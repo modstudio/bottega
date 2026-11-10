@@ -34,7 +34,7 @@ type Environment = { Variables: { identity: RecordIdentity; destinationSpaceId?:
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
 export type RecordWorkflowRouteDeps = {
   readTaskFlow?(input: Tenant & { taskKey?: string; flowRecordId?: string }): Promise<unknown>
-  writeTaskFlow<K extends TaskFlowIntent>(
+  writeTaskFlow?<K extends TaskFlowIntent>(
     intent: K,
     input: Tenant & TaskFlowIntentInput<K>,
   ): Promise<unknown>
@@ -59,6 +59,8 @@ function registerTaskFlowWriteRoutes(
 ): void {
   for (const intent of Object.keys(taskFlowIntentSchemas) as TaskFlowIntent[])
     app.post(`/v1/task-flow/${intent}`, async (context) => {
+      if (!deps.writeTaskFlow)
+        return context.json({ error: 'hosted task flow write is unavailable' }, 503)
       const active = ports.scope(context)
       if (!active) return ports.noSpace(context)
       const body = taskFlowIntentSchemas[intent].safeParse(

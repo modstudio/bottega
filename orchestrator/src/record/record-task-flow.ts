@@ -117,9 +117,15 @@ function withChildren(
 ): HostedStage {
   return {
     ...stage,
-    obligations: children.obligations.filter((row) => row.stageRecordId === stage.id),
-    stepTexts: children.stepTexts.filter((row) => row.stageRecordId === stage.id),
-    textCopies: children.textCopies.filter((row) => row.stageRecordId === stage.id),
+    obligations: children.obligations.filter(
+      (row: { stageRecordId: string }) => row.stageRecordId === stage.id,
+    ),
+    stepTexts: children.stepTexts.filter(
+      (row: { stageRecordId: string }) => row.stageRecordId === stage.id,
+    ),
+    textCopies: children.textCopies.filter(
+      (row: { stageRecordId: string }) => row.stageRecordId === stage.id,
+    ),
   }
 }
 

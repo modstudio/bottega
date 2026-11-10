@@ -2,11 +2,11 @@ ALTER TABLE workflow_obligation ADD CONSTRAINT "workflow_obligation_satisfied_ev
 --> statement-breakpoint
 ALTER TABLE "workflow_obligation" VALIDATE CONSTRAINT "workflow_obligation_satisfied_evidence_not_json_string_check";
 --> statement-breakpoint
-ALTER TABLE workflow_obligation NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE "workflow_obligation" NO FORCE ROW LEVEL SECURITY;
 --> statement-breakpoint
-ALTER TABLE workflow_step_text NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE "workflow_step_text" NO FORCE ROW LEVEL SECURITY;
 --> statement-breakpoint
-ALTER TABLE workflow_text_copy NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE "workflow_text_copy" NO FORCE ROW LEVEL SECURITY;
 --> statement-breakpoint
 DO $migration$
 DECLARE
@@ -30,8 +30,8 @@ BEGIN
 END
 $migration$;
 --> statement-breakpoint
-ALTER TABLE workflow_obligation FORCE ROW LEVEL SECURITY;
+ALTER TABLE "workflow_obligation" FORCE ROW LEVEL SECURITY;
 --> statement-breakpoint
-ALTER TABLE workflow_step_text FORCE ROW LEVEL SECURITY;
+ALTER TABLE "workflow_step_text" FORCE ROW LEVEL SECURITY;
 --> statement-breakpoint
-ALTER TABLE workflow_text_copy FORCE ROW LEVEL SECURITY;
+ALTER TABLE "workflow_text_copy" FORCE ROW LEVEL SECURITY;

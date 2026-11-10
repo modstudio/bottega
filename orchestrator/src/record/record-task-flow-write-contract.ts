@@ -146,7 +146,7 @@ const taskFlowComposeSchema = z.object({
 })
 const taskFlowStageUpdateSchema = z.object({
   ...base,
-  stage: mutation(stageUpdateValues),
+  stages: z.array(mutation(stageUpdateValues)).min(1),
   flow: mutation(flowComposeValues).optional(),
 })
 const taskFlowAdvanceSchema = z.object({
@@ -155,6 +155,7 @@ const taskFlowAdvanceSchema = z.object({
   flow: mutation(flowCloseValues).optional(),
   obligationInserts: z.array(obligationInsert).default([]),
   obligationUpdates: z.array(obligationUpdate).default([]),
+  deleteTextIds: z.array(id).default([]),
 })
 const taskFlowAwaitRulingSchema = z.object({
   ...base,
@@ -182,6 +183,7 @@ const taskFlowAbandonSchema = z.object({
   ),
   flow: mutation(flowCloseValues).optional(),
   obligationUpdates: z.array(obligationUpdate).default([]),
+  deleteTextIds: z.array(id).default([]),
 })
 const taskFlowAttachTextSchema = z.object({ ...base, rows: z.array(textInsert).min(1) })
 const taskFlowDeleteTextSchema = z.object({ ...base, ids: z.array(id).min(1) })
@@ -199,7 +201,7 @@ export const taskFlowIntentSchemas = {
 } as const
 
 export type TaskFlowIntent = keyof typeof taskFlowIntentSchemas
-export type TaskFlowIntentInput<K extends TaskFlowIntent> = z.infer<
+export type TaskFlowIntentInput<K extends TaskFlowIntent> = z.input<
   (typeof taskFlowIntentSchemas)[K]
 >
 export const taskFlowWriteResultSchema = z.object({ revisions: z.record(id, revision) })
