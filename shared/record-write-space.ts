@@ -16,7 +16,7 @@ export type RecordWriteSpaceFacts = {
 
 export type ProjectWriteSpaceRefusal = 'undeclared-project' | 'declared-space-not-member'
 
-export type RecordWriteSpaceRefusal =
+type RecordWriteSpaceRefusal =
   | ProjectWriteSpaceRefusal
   | 'no-owner'
   | 'personal-space-not-provisioned'

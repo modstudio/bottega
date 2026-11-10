@@ -25,15 +25,15 @@ export const projectModules: ProjectModule[] = [
   ]),
   module('orchestrator/src/project/project-settings-patch.ts', []),
   module('orchestrator/src/project/declared-project-space.ts', [
-    '../../../shared/brand.ts',
+    '../../../shared/record-remedies.ts',
     './declared-record-space.ts',
     './projects.ts',
   ]),
   module('orchestrator/src/project/declared-record-space.ts', ['./project-settings.ts']),
   module('orchestrator/src/project/project-fill-space-decision.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/record-remedies.ts',
     '../../../shared/record-space-membership.ts',
-    './declared-project-space.ts',
   ]),
   module('orchestrator/src/project/project-fill-space.ts', [
     '../../../shared/brand.ts',
