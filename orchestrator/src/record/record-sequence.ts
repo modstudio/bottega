@@ -1,7 +1,7 @@
 // concern: hosted record sequences
 /** Allocates one project-scoped hosted record sequence number under a row lock. */
 import type { SQL } from 'bun'
-import { newRecordId } from '../record-id.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 
 export async function allocateRecordSequence(
   tx: SQL,

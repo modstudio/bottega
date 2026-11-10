@@ -70,6 +70,8 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
     const composeRequestId = newRecordId()
     const advanceRequestId = newRecordId()
     const obligationId = newRecordId()
+    const textId = newRecordId()
+    const copyId = newRecordId()
     const at = new Date().toISOString()
     const auth = testRecordAuth(input.urls().actor, input.urls().auth)
     try {
@@ -157,6 +159,17 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         }),
       ).toEqual({ revisions: { [stageId]: 1 } })
 
+      await expect(
+        client.composeTaskFlow!({
+          requestId: newRecordId(),
+          stageInsert: { ...stage, id: newRecordId() },
+        }),
+      ).rejects.toMatchObject({
+        reason: 'already-exists',
+        condition: 'task_flow_stage.(project_id,workflow,mode,workflow_key,instance_id)',
+        message: 'another open stage holds that slot and must be closed or abandoned first',
+      })
+
       const secondStageId = newRecordId()
       expect(
         await client.composeTaskFlow!({
@@ -225,6 +238,33 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
           satisfiedEvidence: [{ kind: 'test', status: 'pass' }],
         }),
       )
+      expect(
+        await client.attachTaskFlowText!({
+          requestId: newRecordId(),
+          rows: [
+            {
+              id: textId,
+              stageRecordId: stageId,
+              stepOrdinal: 1,
+              stepSlug: 'implement',
+              body: 'project-move depth proof',
+              createdAt: at,
+            },
+          ],
+        }),
+      ).toEqual({ revisions: {} })
+      expect(
+        await client.copyTaskFlowText!({
+          requestId: newRecordId(),
+          row: {
+            id: copyId,
+            workflowTextRecordId: textId,
+            stageRecordId: stageId,
+            taskDocumentReference: 'DEV-2234',
+            copiedAt: at,
+          },
+        }),
+      ).toEqual({ revisions: {} })
       await expect(
         client.advanceTaskFlow!({ ...advance, requestId: newRecordId() }),
       ).rejects.toMatchObject({ condition: `task_flow_stage.id=${stageId}`, currentRevision: '2' })
@@ -261,6 +301,14 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
       ).rejects.toMatchObject({ condition: `task_flow_stage.id=${stageId}` })
 
       input.admin(`UPDATE task_flow_stage SET project_id=NULL WHERE id='${stageId}';`)
+      expect(
+        Number(
+          input.admin(
+            `SELECT sum(row_count) FROM record_move_project_space('${input.spaceId()}','${PROJECT}','${otherSpace.id}',NULL)
+             WHERE table_name IN ('workflow_obligation','workflow_step_text','workflow_text_copy');`,
+          ),
+        ),
+      ).toBe(3)
       const moveTotal = Number(
         input.admin(
           `SELECT sum(row_count) FROM record_move_project_space('${input.spaceId()}','${PROJECT}','${otherSpace.id}',NULL);`,
@@ -270,6 +318,15 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         `SELECT sum(row_count) FROM record_move_project_space('${input.spaceId()}','${PROJECT}','${otherSpace.id}',${moveTotal});`,
       )
       expect(input.admin(`SELECT space_id FROM task_flow_stage WHERE id='${stageId}';`)).toBe(
+        otherSpace.id,
+      )
+      expect(
+        input.admin(`SELECT space_id FROM workflow_obligation WHERE id='${obligationId}';`),
+      ).toBe(otherSpace.id)
+      expect(input.admin(`SELECT space_id FROM workflow_step_text WHERE id='${textId}';`)).toBe(
+        otherSpace.id,
+      )
+      expect(input.admin(`SELECT space_id FROM workflow_text_copy WHERE id='${copyId}';`)).toBe(
         otherSpace.id,
       )
     } finally {

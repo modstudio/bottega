@@ -15,7 +15,7 @@ import {
 import { RecordTaskFlowError } from './record-task-flow.ts'
 import {
   type TaskFlowIntent,
-  type TaskFlowIntentInput,
+  type TaskFlowIntentBody,
   taskFlowIntentSchemas,
 } from './record-task-flow-write-contract.ts'
 import {
@@ -36,7 +36,7 @@ export type RecordWorkflowRouteDeps = {
   readTaskFlow?(input: Tenant & { taskKey?: string; flowRecordId?: string }): Promise<unknown>
   writeTaskFlow?<K extends TaskFlowIntent>(
     intent: K,
-    input: Tenant & TaskFlowIntentInput<K>,
+    input: Tenant & TaskFlowIntentBody<K>,
   ): Promise<unknown>
   listWorkflowCatalogue(
     input: Tenant & { table: RecordWorkflowTable; limit: number; cursor: RecordCursor | null },
@@ -59,7 +59,7 @@ function registerTaskFlowWriteRoute<K extends TaskFlowIntent>(
   intent: K,
   validate: (
     body: unknown,
-  ) => { success: true; data: TaskFlowIntentInput<K> } | { success: false; error: unknown },
+  ) => { success: true; data: TaskFlowIntentBody<K> } | { success: false; error: unknown },
 ): void {
   app.post(`/v1/task-flow/${intent}`, async (context) => {
     if (!deps.writeTaskFlow)
@@ -82,30 +82,41 @@ function registerTaskFlowWriteRoutes(
   deps: RecordWorkflowRouteDeps,
   ports: Ports,
 ): void {
-  registerTaskFlowWriteRoute(app, deps, ports, 'compose', (body) =>
-    taskFlowIntentSchemas.compose.safeParse(body),
-  )
-  registerTaskFlowWriteRoute(app, deps, ports, 'stage-update', (body) =>
-    taskFlowIntentSchemas['stage-update'].safeParse(body),
-  )
-  registerTaskFlowWriteRoute(app, deps, ports, 'advance', (body) =>
-    taskFlowIntentSchemas.advance.safeParse(body),
-  )
-  registerTaskFlowWriteRoute(app, deps, ports, 'await-ruling', (body) =>
-    taskFlowIntentSchemas['await-ruling'].safeParse(body),
-  )
-  registerTaskFlowWriteRoute(app, deps, ports, 'abandon', (body) =>
-    taskFlowIntentSchemas.abandon.safeParse(body),
-  )
-  registerTaskFlowWriteRoute(app, deps, ports, 'attach-text', (body) =>
-    taskFlowIntentSchemas['attach-text'].safeParse(body),
-  )
-  registerTaskFlowWriteRoute(app, deps, ports, 'delete-text', (body) =>
-    taskFlowIntentSchemas['delete-text'].safeParse(body),
-  )
-  registerTaskFlowWriteRoute(app, deps, ports, 'copy-text', (body) =>
-    taskFlowIntentSchemas['copy-text'].safeParse(body),
-  )
+  const routes: { [K in TaskFlowIntent]: () => void } = {
+    compose: () =>
+      registerTaskFlowWriteRoute(app, deps, ports, 'compose', (body) =>
+        taskFlowIntentSchemas.compose.safeParse(body),
+      ),
+    'stage-update': () =>
+      registerTaskFlowWriteRoute(app, deps, ports, 'stage-update', (body) =>
+        taskFlowIntentSchemas['stage-update'].safeParse(body),
+      ),
+    advance: () =>
+      registerTaskFlowWriteRoute(app, deps, ports, 'advance', (body) =>
+        taskFlowIntentSchemas.advance.safeParse(body),
+      ),
+    'await-ruling': () =>
+      registerTaskFlowWriteRoute(app, deps, ports, 'await-ruling', (body) =>
+        taskFlowIntentSchemas['await-ruling'].safeParse(body),
+      ),
+    abandon: () =>
+      registerTaskFlowWriteRoute(app, deps, ports, 'abandon', (body) =>
+        taskFlowIntentSchemas.abandon.safeParse(body),
+      ),
+    'attach-text': () =>
+      registerTaskFlowWriteRoute(app, deps, ports, 'attach-text', (body) =>
+        taskFlowIntentSchemas['attach-text'].safeParse(body),
+      ),
+    'delete-text': () =>
+      registerTaskFlowWriteRoute(app, deps, ports, 'delete-text', (body) =>
+        taskFlowIntentSchemas['delete-text'].safeParse(body),
+      ),
+    'copy-text': () =>
+      registerTaskFlowWriteRoute(app, deps, ports, 'copy-text', (body) =>
+        taskFlowIntentSchemas['copy-text'].safeParse(body),
+      ),
+  }
+  for (const register of Object.values(routes)) register()
 }
 
 export function registerRecordWorkflowRoutes(

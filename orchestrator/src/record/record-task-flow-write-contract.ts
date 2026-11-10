@@ -216,5 +216,8 @@ export type TaskFlowIntent = keyof typeof taskFlowIntentSchemas
 export type TaskFlowIntentInput<K extends TaskFlowIntent> = z.input<
   (typeof taskFlowIntentSchemas)[K]
 >
+export type TaskFlowIntentBody<K extends TaskFlowIntent> = z.output<
+  (typeof taskFlowIntentSchemas)[K]
+>
 export const taskFlowWriteResultSchema = z.object({ revisions: z.record(id, revision) })
 export type TaskFlowWriteResult = z.infer<typeof taskFlowWriteResultSchema>

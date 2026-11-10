@@ -4,16 +4,16 @@
  */
 import type { SQL } from 'bun'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
-import { allocateRecordSequence } from '../../../shared/record/record-sequence.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
+import { isUniqueViolation } from './record-config-error.ts'
 import { recordPool } from './record-pool.ts'
+import { allocateRecordSequence } from './record-sequence.ts'
 import type {
   TaskFlowIntent,
-  TaskFlowIntentInput,
+  TaskFlowIntentBody,
   TaskFlowWriteResult,
 } from './record-task-flow-write-contract.ts'
-import { taskFlowIntentSchemas } from './record-task-flow-write-contract.ts'
 import {
   decideRevisionPreflight,
   decideRevisionWrite,
@@ -23,46 +23,38 @@ import {
 type Tenant = { url: string } & TenantPrincipal
 type Mutation = { id: string; expectedRevision: number; values: Record<string, unknown> }
 type RevisionRow = { revision: number | string; last_request_id: string | null }
-type ComposeBody = TaskFlowIntentInput<'compose'>
-type StageUpdateBody = TaskFlowIntentInput<'stage-update'>
+type ComposeBody = TaskFlowIntentBody<'compose'>
+type StageUpdateBody = TaskFlowIntentBody<'stage-update'>
 type StageMutationBody =
-  | TaskFlowIntentInput<'advance'>
-  | TaskFlowIntentInput<'await-ruling'>
-  | TaskFlowIntentInput<'abandon'>
+  | TaskFlowIntentBody<'advance'>
+  | TaskFlowIntentBody<'await-ruling'>
+  | TaskFlowIntentBody<'abandon'>
 
-const columnNames: Record<string, string> = {
-  flowRecordId: 'flow_record_id',
-  workflowKey: 'workflow_key',
-  instanceId: 'instance_id',
-  sessionId: 'session_id',
-  activeOrdinal: 'active_ordinal',
-  activeSlug: 'active_slug',
-  closedStepNotes: 'closed_step_notes',
-  takenOverFromMachineId: 'taken_over_from_machine_id',
-  lastAdvancedMachineId: 'last_advanced_machine_id',
-  openStageRecordId: 'open_stage_record_id',
-  openingMachineId: 'opening_machine_id',
-  updatedMachineId: 'updated_machine_id',
-  updatedAt: 'updated_at',
-  satisfiedEvidence: 'satisfied_evidence',
-}
 const jsonColumns = new Set(['arguments', 'closed_step_notes', 'satisfied_evidence'])
-const camelToSnake = (key: string) =>
-  columnNames[key] ?? key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
+const camelToSnake = (key: string) => key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
 const isJsonColumn = (column: string) => jsonColumns.has(column)
 
 function conflict(
   table: string,
   id: string,
   currentRevision: number | null,
-  reason = 'stale-revision',
+  reason: 'stale-revision' | 'already-exists' = 'stale-revision',
 ): never {
-  throw new DocRevisionConflictError(
+  return refusal(
     `${table} ${id} does not satisfy the requested write precondition`,
     `${table}.id=${id}`,
-    reason as 'stale-revision' | 'already-exists',
+    reason,
     currentRevision == null ? null : String(currentRevision),
   )
+}
+
+function refusal(
+  message: string,
+  condition: string,
+  reason: 'stale-revision' | 'already-exists',
+  currentRevision: string | null = null,
+): never {
+  throw new DocRevisionConflictError(message, condition, reason, currentRevision)
 }
 
 async function revisionDecision(
@@ -195,8 +187,14 @@ async function insertStage(
     (await tx`SELECT project_id::text FROM task_flow WHERE id=${row.flowRecordId}::uuid FOR UPDATE`) as Array<{
       project_id: string
     }>
-  if (!flow[0] || flow[0].project_id !== row.projectId)
-    conflict('task_flow_stage', String(row.id), null, 'already-exists')
+  if (!flow[0])
+    refusal('parent flow not found', `task_flow.id=${String(row.flowRecordId)}`, 'stale-revision')
+  if (flow[0].project_id !== row.projectId)
+    refusal(
+      `parent flow project ${flow[0].project_id} does not match stage project ${String(row.projectId)}`,
+      `task_flow.id=${String(row.flowRecordId)}`,
+      'stale-revision',
+    )
   const existing = await existingRow(tx, 'task_flow_stage', String(row.id))
   if (existing) {
     assertSameInsert('task_flow_stage', String(row.id), existing, row)
@@ -259,8 +257,11 @@ async function deleteTexts(
     WHERE id IN ${tx(ids)} AND space_id=${spaceId}::uuid AND stage_record_id=${stageRecordId}::uuid
     RETURNING id::text`) as Array<{ id: string }>
   const returned = new Set(rows.map(({ id }) => id))
-  const missing = ids.find((id) => !returned.has(id))
-  if (missing) conflict('workflow_step_text', missing, null)
+  const missing = ids.filter((id) => !returned.has(id))
+  if (!missing.length) return
+  const mismatched = (await tx`SELECT id::text FROM workflow_step_text
+    WHERE id IN ${tx(missing)} AND space_id=${spaceId}::uuid FOR UPDATE`) as Array<{ id: string }>
+  if (mismatched[0]) conflict('workflow_step_text', mismatched[0].id, null)
 }
 
 async function insertText(tx: SQL, spaceId: string, row: Record<string, unknown>) {
@@ -370,50 +371,59 @@ async function applyStageUpdates(tx: SQL, body: StageUpdateBody) {
   return { revisions }
 }
 
-async function applyIntent<K extends TaskFlowIntent>(
+type Applier<K extends TaskFlowIntent> = (
   tx: SQL,
-  input: Tenant & TaskFlowIntentInput<K>,
-  intent: K,
-): Promise<TaskFlowWriteResult> {
-  if (intent === 'compose')
-    return applyCompose(tx, input, taskFlowIntentSchemas.compose.parse(input))
-  if (intent === 'stage-update')
-    return applyStageUpdates(tx, taskFlowIntentSchemas['stage-update'].parse(input))
-  if (intent === 'advance')
-    return applyStageMutation(tx, input, taskFlowIntentSchemas.advance.parse(input))
-  if (intent === 'await-ruling')
-    return applyStageMutation(tx, input, taskFlowIntentSchemas['await-ruling'].parse(input))
-  if (intent === 'abandon')
-    return applyStageMutation(tx, input, taskFlowIntentSchemas.abandon.parse(input))
-  if (intent === 'attach-text') {
-    const body = taskFlowIntentSchemas['attach-text'].parse(input)
-    for (const row of body.rows) {
+  input: Tenant & TaskFlowIntentBody<K>,
+) => Promise<TaskFlowWriteResult>
+
+const intentAppliers: { [K in TaskFlowIntent]: Applier<K> } = {
+  compose: (tx, input) => applyCompose(tx, input, input),
+  'stage-update': (tx, input) => applyStageUpdates(tx, input),
+  advance: (tx, input) => applyStageMutation(tx, input, input),
+  'await-ruling': (tx, input) => applyStageMutation(tx, input, input),
+  abandon: (tx, input) => applyStageMutation(tx, input, input),
+  'attach-text': async (tx, input) => {
+    for (const row of input.rows) {
       await lockParentFlowForStage(tx, row.stageRecordId)
       await tx`SELECT id FROM task_flow_stage WHERE id=${row.stageRecordId}::uuid FOR UPDATE`
     }
-    for (const row of body.rows) await insertText(tx, input.spaceId, row)
-  }
-  if (intent === 'delete-text') {
-    const body = taskFlowIntentSchemas['delete-text'].parse(input)
-    await lockParentFlowForStage(tx, body.stageRecordId)
-    await tx`SELECT id FROM task_flow_stage WHERE id=${body.stageRecordId}::uuid FOR UPDATE`
-    await deleteTexts(tx, input.spaceId, body.stageRecordId, body.ids)
-  }
-  if (intent === 'copy-text') {
-    const body = taskFlowIntentSchemas['copy-text'].parse(input)
-    await lockParentFlowForStage(tx, body.row.stageRecordId)
-    await tx`SELECT id FROM task_flow_stage WHERE id=${body.row.stageRecordId}::uuid FOR UPDATE`
-    await insertCopy(tx, input.spaceId, body.row)
-  }
-  return { revisions: {} }
+    for (const row of input.rows) await insertText(tx, input.spaceId, row)
+    return { revisions: {} }
+  },
+  'delete-text': async (tx, input) => {
+    await lockParentFlowForStage(tx, input.stageRecordId)
+    await tx`SELECT id FROM task_flow_stage WHERE id=${input.stageRecordId}::uuid FOR UPDATE`
+    await deleteTexts(tx, input.spaceId, input.stageRecordId, input.ids)
+    return { revisions: {} }
+  },
+  'copy-text': async (tx, input) => {
+    await lockParentFlowForStage(tx, input.row.stageRecordId)
+    await tx`SELECT id FROM task_flow_stage WHERE id=${input.row.stageRecordId}::uuid FOR UPDATE`
+    await insertCopy(tx, input.spaceId, input.row)
+    return { revisions: {} }
+  },
 }
 
 export async function writeRecordTaskFlow<K extends TaskFlowIntent>(
   intent: K,
-  input: Tenant & TaskFlowIntentInput<K>,
+  input: Tenant & TaskFlowIntentBody<K>,
 ): Promise<TaskFlowWriteResult> {
-  return recordPool(input.url).begin(async (tx) => {
-    await bindTenant(tx, input)
-    return applyIntent(tx, input, intent)
-  })
+  try {
+    return await recordPool(input.url).begin(async (tx) => {
+      await bindTenant(tx, input)
+      return intentAppliers[intent](tx, input)
+    })
+  } catch (error) {
+    const slot = isUniqueViolation(error, 'task_flow_stage_open_slot_unique')
+    const number = isUniqueViolation(error, 'task_flow_stage_project_number_unique')
+    if (!slot && !number) throw error
+    throw new DocRevisionConflictError(
+      'another open stage holds that slot and must be closed or abandoned first',
+      slot
+        ? 'task_flow_stage.(project_id,workflow,mode,workflow_key,instance_id)'
+        : 'task_flow_stage.(project_id,number)',
+      'already-exists',
+      null,
+    )
+  }
 }
