@@ -62,6 +62,8 @@ export function registerRecordRequestSpace(app: Hono<ApiEnvironment>): void {
       context.set('destinationSpaceId', decision.spaceId)
     await next()
   }
+  const requestedRootSpace = (root: string) => (context: Context<ApiEnvironment>, next: Next) =>
+    context.req.path === root ? requestedSpace(context, next) : next()
   app.get('/v1/health/no-destination-writes', (context) =>
     context.json(
       noDestinationWriteCounter({
@@ -69,26 +71,26 @@ export function registerRecordRequestSpace(app: Hono<ApiEnvironment>): void {
       }),
     ),
   )
-  app.use('/v1/projects', requestedSpace)
+  app.use('/v1/projects', requestedRootSpace('/v1/projects'))
   app.use('/v1/projects/*', requestedSpace)
-  app.use('/v1/releases', requestedSpace)
+  app.use('/v1/releases', requestedRootSpace('/v1/releases'))
   app.use('/v1/releases/*', requestedSpace)
-  app.use('/v1/docs', requestedSpace)
+  app.use('/v1/docs', requestedRootSpace('/v1/docs'))
   app.use('/v1/docs/*', requestedSpace)
-  app.use('/v1/subjects', requestedSpace)
+  app.use('/v1/subjects', requestedRootSpace('/v1/subjects'))
   app.use('/v1/subjects/*', requestedSpace)
-  app.use('/v1/lens-catalogue', requestedSpace)
+  app.use('/v1/lens-catalogue', requestedRootSpace('/v1/lens-catalogue'))
   app.use('/v1/lens-catalogue/*', requestedSpace)
-  app.use('/v1/workflow-catalogue', requestedSpace)
+  app.use('/v1/workflow-catalogue', requestedRootSpace('/v1/workflow-catalogue'))
   app.use('/v1/workflow-catalogue/*', requestedSpace)
   app.use('/v1/task-flow', requestedSpace)
-  app.use('/v1/port-catalogue', requestedSpace)
+  app.use('/v1/port-catalogue', requestedRootSpace('/v1/port-catalogue'))
   app.use('/v1/port-catalogue/*', requestedSpace)
   app.use('/v1/settings/permission', requestedSpace)
   app.use('/v1/settings/auto-mode', requestedSpace)
   app.use('/v1/config/*', requestedSpace)
   app.use('/v1/runs/*', requestedSpace)
-  app.use('/v1/snapshots', requestedSpace)
+  app.use('/v1/snapshots', requestedRootSpace('/v1/snapshots'))
   app.use('/v1/snapshots/*', requestedSpace)
 }
 
