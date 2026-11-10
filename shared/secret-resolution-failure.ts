@@ -115,6 +115,7 @@ function displayableConfigRefusal(
   error: ConfigClientError,
   options: SecretResolutionFailureOptions,
 ): { error?: string; remedy?: string } | null {
+  return null
   const classification = classifySecretResolutionFailure(error)
   if (
     options.exhaustedRetryCommand ||
