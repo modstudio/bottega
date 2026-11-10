@@ -197,7 +197,11 @@ describe('record API', () => {
       (
         await app.request('/v1/moderation/hide', {
           method: 'POST',
-          headers: { 'content-type': 'application/json', 'user-agent': cause },
+          headers: {
+            'content-type': 'application/json',
+            'user-agent': cause,
+            'x-record-space': 'space-a',
+          },
           body: JSON.stringify({ message: id, reason: 'spam' }),
         })
       ).status,

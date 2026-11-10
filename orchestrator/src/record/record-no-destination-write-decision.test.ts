@@ -20,6 +20,5 @@ test('records a patterned write route with no destination', () => {
 test('does not record reads or writes with a destination', () => {
   expect(destinationlessWrite({ ...input, method: 'GET' })).toBeNull()
   expect(destinationlessWrite({ ...input, method: 'HEAD' })).toBeNull()
-  expect(destinationlessWrite({ ...input, destinationRequested: true })).toBeNull()
   expect(destinationlessWrite({ ...input, destinationSpaceId: 'space-b' })).toBeNull()
 })

@@ -30,7 +30,6 @@ export function recordDestinationlessWrite(context: RecordWriteTelemetryContext)
   const identity = context.get('identity')
   const decision = destinationlessWrite({
     method: context.req.method,
-    destinationRequested: context.req.header('x-record-space') !== undefined,
     destinationSpaceId: context.get('destinationSpaceId'),
     activeSpaceId: identity.activeSpaceId,
     route: context.req.routePath,
