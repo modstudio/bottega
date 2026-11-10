@@ -57,13 +57,16 @@ function registerTaskFlowWriteRoute<K extends TaskFlowIntent>(
   deps: RecordWorkflowRouteDeps,
   ports: Ports,
   intent: K,
+  validate: (
+    body: unknown,
+  ) => { success: true; data: TaskFlowIntentInput<K> } | { success: false; error: unknown },
 ): void {
   app.post(`/v1/task-flow/${intent}`, async (context) => {
     if (!deps.writeTaskFlow)
       return context.json({ error: 'hosted task flow write is unavailable' }, 503)
     const active = ports.scope(context)
     if (!active) return ports.noSpace(context)
-    const body = taskFlowIntentSchemas[intent].safeParse(await context.req.json().catch(() => null))
+    const body = validate(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: `invalid task-flow ${intent} request` }, 400)
     try {
       return context.json(await deps.writeTaskFlow(intent, { ...active, ...body.data }))
@@ -79,14 +82,30 @@ function registerTaskFlowWriteRoutes(
   deps: RecordWorkflowRouteDeps,
   ports: Ports,
 ): void {
-  registerTaskFlowWriteRoute(app, deps, ports, 'compose')
-  registerTaskFlowWriteRoute(app, deps, ports, 'stage-update')
-  registerTaskFlowWriteRoute(app, deps, ports, 'advance')
-  registerTaskFlowWriteRoute(app, deps, ports, 'await-ruling')
-  registerTaskFlowWriteRoute(app, deps, ports, 'abandon')
-  registerTaskFlowWriteRoute(app, deps, ports, 'attach-text')
-  registerTaskFlowWriteRoute(app, deps, ports, 'delete-text')
-  registerTaskFlowWriteRoute(app, deps, ports, 'copy-text')
+  registerTaskFlowWriteRoute(app, deps, ports, 'compose', (body) =>
+    taskFlowIntentSchemas.compose.safeParse(body),
+  )
+  registerTaskFlowWriteRoute(app, deps, ports, 'stage-update', (body) =>
+    taskFlowIntentSchemas['stage-update'].safeParse(body),
+  )
+  registerTaskFlowWriteRoute(app, deps, ports, 'advance', (body) =>
+    taskFlowIntentSchemas.advance.safeParse(body),
+  )
+  registerTaskFlowWriteRoute(app, deps, ports, 'await-ruling', (body) =>
+    taskFlowIntentSchemas['await-ruling'].safeParse(body),
+  )
+  registerTaskFlowWriteRoute(app, deps, ports, 'abandon', (body) =>
+    taskFlowIntentSchemas.abandon.safeParse(body),
+  )
+  registerTaskFlowWriteRoute(app, deps, ports, 'attach-text', (body) =>
+    taskFlowIntentSchemas['attach-text'].safeParse(body),
+  )
+  registerTaskFlowWriteRoute(app, deps, ports, 'delete-text', (body) =>
+    taskFlowIntentSchemas['delete-text'].safeParse(body),
+  )
+  registerTaskFlowWriteRoute(app, deps, ports, 'copy-text', (body) =>
+    taskFlowIntentSchemas['copy-text'].safeParse(body),
+  )
 }
 
 export function registerRecordWorkflowRoutes(

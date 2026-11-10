@@ -325,17 +325,17 @@ function assertStageChild(stageId: string, row: { id: string; stageRecordId: str
 async function applyStageMutation(tx: SQL, input: Tenant, body: StageMutationBody) {
   const revisions: Record<string, number> = {}
   const stage = body.stage
-  if (!body.flow) await lockParentFlowForStage(tx, stage.id)
+  const flow = 'flow' in body ? body.flow : undefined
+  if (!flow) await lockParentFlowForStage(tx, stage.id)
   const mutations = [
-    ...(body.flow ? [{ table: 'task_flow' as const, mutation: body.flow }] : []),
+    ...(flow ? [{ table: 'task_flow' as const, mutation: flow }] : []),
     { table: 'task_flow_stage' as const, mutation: stage },
   ]
   if ((await preflightMutations(tx, mutations, body.requestId)) === 'retry') {
     for (const { mutation } of mutations) revisions[mutation.id] = mutation.expectedRevision + 1
     return { revisions }
   }
-  if (body.flow)
-    revisions[body.flow.id] = await updateRevisionRow(tx, 'task_flow', body.flow, body.requestId)
+  if (flow) revisions[flow.id] = await updateRevisionRow(tx, 'task_flow', flow, body.requestId)
   revisions[stage.id] = await updateRevisionRow(tx, 'task_flow_stage', stage, body.requestId)
   if ('obligationInserts' in body)
     for (const row of body.obligationInserts ?? []) {
