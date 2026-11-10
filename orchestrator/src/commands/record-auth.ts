@@ -348,19 +348,26 @@ function registerSpaceModerationCommands(space: Command): void {
     .command('hide')
     .description('hide a board message or note; shared-space notices cannot be hidden (owner only)')
     .argument('<message-id|project#number>')
+    .requiredOption('--space <slug>', 'record space containing the row')
     .requiredOption('--reason <reason>', 'moderation reason', moderationReason)
     .action((value, options) =>
       hostedCommand(`${PLATFORM_SLUG} record space hide`, () =>
-        recordSpaceHideCommand(moderationTarget(String(value)), options.reason, presentation),
+        recordSpaceHideCommand(
+          moderationTarget(String(value)),
+          options.reason,
+          options.space,
+          presentation,
+        ),
       ),
     )
   space
     .command('unhide')
     .description('unhide a board message or note (owner only)')
     .argument('<message-id|project#number>')
-    .action((value) =>
+    .requiredOption('--space <slug>', 'record space containing the row')
+    .action((value, options) =>
       hostedCommand(`${PLATFORM_SLUG} record space unhide`, () =>
-        recordSpaceUnhideCommand(moderationTarget(String(value)), presentation),
+        recordSpaceUnhideCommand(moderationTarget(String(value)), options.space, presentation),
       ),
     )
   space
@@ -387,26 +394,29 @@ function registerSpaceIntakeCommands(space: Command): void {
     .command('set')
     .description('set the active space outside intake project (owner only)')
     .argument('<project>')
-    .action((project) =>
+    .requiredOption('--space <slug>', 'record space whose outside intake changes')
+    .action((project, options) =>
       hostedCommand(`${PLATFORM_SLUG} record space intake set`, () =>
-        recordSpaceIntakeSetCommand(String(project), presentation),
+        recordSpaceIntakeSetCommand(String(project), options.space, presentation),
       ),
     )
   intake
     .command('pause')
     .description('pause outside writes to the active space (owner only)')
+    .requiredOption('--space <slug>', 'record space whose outside intake changes')
     .option('--hours <n>', 'whole hours to pause', parseOutsideHours, OUTSIDE_PAUSE_DEFAULT_HOURS)
     .action((options) =>
       hostedCommand(`${PLATFORM_SLUG} record space intake pause`, () =>
-        recordSpaceIntakePauseCommand(Number(options.hours), presentation),
+        recordSpaceIntakePauseCommand(Number(options.hours), options.space, presentation),
       ),
     )
   intake
     .command('resume')
     .description('resume outside writes to the active space (owner only)')
-    .action(() =>
+    .requiredOption('--space <slug>', 'record space whose outside intake changes')
+    .action((options) =>
       hostedCommand(`${PLATFORM_SLUG} record space intake resume`, () =>
-        recordSpaceIntakeResumeCommand(presentation),
+        recordSpaceIntakeResumeCommand(options.space, presentation),
       ),
     )
   intake
@@ -421,6 +431,7 @@ function registerSpaceIntakeCommands(space: Command): void {
   intake
     .command('block')
     .description('block an outside author from the active space (owner only)')
+    .requiredOption('--space <slug>', 'record space whose outside block changes')
     .option('--message <id>', 'identify the author by a board message')
     .option('--note <label>', 'identify the author by a project#number note')
     .option('--hours <n>', 'whole hours before the block ends', parseOutsideHours)
@@ -436,6 +447,7 @@ function registerSpaceIntakeCommands(space: Command): void {
             ...(note === undefined ? {} : { note }),
             ...(options.hours === undefined ? {} : { hours: Number(options.hours) }),
           },
+          options.space,
           presentation,
         ),
       )
@@ -444,9 +456,10 @@ function registerSpaceIntakeCommands(space: Command): void {
     .command('unblock')
     .description('remove an outside-author block from the active space (owner only)')
     .argument('<user-id>')
-    .action((userId) =>
+    .requiredOption('--space <slug>', 'record space whose outside block changes')
+    .action((userId, options) =>
       hostedCommand(`${PLATFORM_SLUG} record space intake unblock`, () =>
-        recordSpaceIntakeUnblockCommand(String(userId), presentation),
+        recordSpaceIntakeUnblockCommand(String(userId), options.space, presentation),
       ),
     )
 }

@@ -6,6 +6,7 @@ import { jobsPayload } from '../jobs/job-commands.ts'
 import { state } from '../state/serve.ts'
 import { machineId } from './machine-identity.ts'
 import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
+import { recordWriteDestination } from './record-write-destination.ts'
 import { SNAPSHOT_KINDS, type SnapshotKind } from './record-snapshots.ts'
 
 export async function buildSnapshotPayload(kind: SnapshotKind): Promise<unknown> {
@@ -59,13 +60,14 @@ export async function publishSnapshotsCommand(
   const client = deps.client ?? recordApiClient()
   const identity = deps.identity ?? machineId()
   const build = deps.build ?? buildSnapshotPayload
+  const destination = await recordWriteDestination(client, { kind: 'personal' })
   let failed = false
   for (const kind of SNAPSHOT_KINDS) {
     let bytes = 0
     try {
       const payload = await build(kind)
       bytes = Buffer.byteLength(JSON.stringify(payload))
-      await client.putSnapshot(kind, { machineId: identity, payload })
+      await client.putSnapshot(kind, { machineId: identity, payload }, destination)
       presentation.log(`${kind}\t${bytes}\tpublished`)
     } catch (error) {
       failed = true

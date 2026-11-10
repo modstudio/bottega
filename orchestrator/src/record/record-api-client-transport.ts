@@ -2,7 +2,9 @@
 /** Owns the recorded transport choke point for record API HTTP calls. */
 
 import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { scheduleHostedCallObservation } from '../../../shared/hosted-call-observation.ts'
+import { runningInstallationIdentity } from '../../../shared/install-root.ts'
 import {
   classifyHostedTransportError,
   type HostedCallOutcomeRecorder,
@@ -54,7 +56,11 @@ export async function recordTransport(
 ): Promise<Response> {
   const startedAt = performance.now()
   try {
-    const response = await transport(`${baseUrl}${path}`, init)
+    const headers = new Headers(init.headers)
+    const identity = runningInstallationIdentity(import.meta.dir, process.env)
+    const version = identity.kind === 'distribution' ? identity.manifest.version : identity.version
+    headers.set('user-agent', `${PLATFORM_SLUG}/${version}`)
+    const response = await transport(`${baseUrl}${path}`, { ...init, headers })
     scheduleHostedCallObservation(recorder, {
       observedAt: new Date().toISOString(),
       routeClass: recordHostedRouteClass(path),

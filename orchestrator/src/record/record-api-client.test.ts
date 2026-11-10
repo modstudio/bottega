@@ -27,6 +27,7 @@ import {
   recordInvitationListResponse,
 } from './record-api-client.ts'
 import { classifyBoardStreamResponse } from './record-api-client-board-stream.ts'
+import { recordApiError } from './record-api-client-error.ts'
 import { RecordProjectSpaceConflictError } from './record-project-space-contract.ts'
 
 describe('record HTTP authentication responses', () => {
@@ -54,7 +55,10 @@ describe('record HTTP authentication responses', () => {
       })
       expect(requests[0]).toEqual({
         url: 'https://api.example.test/api/auth/sign-in/email',
-        headers: new Headers({ 'content-type': 'application/json' }),
+        headers: new Headers({
+          'content-type': 'application/json',
+          'user-agent': `${PLATFORM_SLUG}/0.5.6`,
+        }),
         body: { email: 'a@example.test', password: 'secret' },
       })
       expect(requests[0]?.headers.has('origin')).toBe(false)
@@ -154,6 +158,15 @@ describe('record HTTP authentication responses', () => {
       'invalid invitation list',
     )
   })
+})
+
+test('a generic client refusal retains the server remedy', () => {
+  expect(
+    recordApiError(
+      { error: 'the write names no space', remedy: 'retry with --space <slug>' },
+      409,
+    ).message,
+  ).toBe('the write names no space\nretry with --space <slug>')
 })
 
 test('the record API base URL resolves from configured files', () => {

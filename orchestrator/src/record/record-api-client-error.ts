@@ -12,6 +12,7 @@ import {
   RecordApiRequestError,
   responseCode,
   responseMessage,
+  responseRemedy,
   responseRecord,
 } from './record-api-client-response.ts'
 import { parseProjectSpaceConflictResponse } from './record-project-space-contract.ts'
@@ -57,7 +58,9 @@ export function recordApiError(
       revisionConflict.data.reason,
       revisionConflict.data.condition,
     )
-  const message = responseMessage(body, recordApiStatus(status))
+  const response = responseMessage(body, recordApiStatus(status))
+  const remedy = responseRemedy(body)
+  const message = status >= 400 && status < 500 && remedy ? `${response}\n${remedy}` : response
   if (status === 429) return new RecordApiRequestError(message, 'refused', status)
   if (message === RECORD_ACTIVE_SPACE_REMEDY)
     return new RecordApiRequestError(message, 'refused', status)

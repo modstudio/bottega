@@ -67,6 +67,9 @@ export function registerRecordRequestSpace(app: Hono<ApiEnvironment>): void {
     '/v1/board/receipts',
     '/v1/board/claims',
     '/v1/snapshots',
+    '/v1/outside-intake',
+    '/v1/outside-blocks',
+    '/v1/moderation',
   ] as const
   for (const prefix of prefixes) {
     app.use(prefix, requestedSpace)

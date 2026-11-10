@@ -16,7 +16,9 @@ test('record transport stores HTTP and transport-error outcomes for its route cl
     recorded += 1
     if (recorded === 2) finish()
   }
-  const transport = (async () => {
+  const userAgents: Array<string | null> = []
+  const transport = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    userAgents.push(new Headers(init?.headers).get('user-agent'))
     calls += 1
     if (calls === 1) return new Response('{}', { status: 200 })
     throw new Error('fixture transport failure')
@@ -42,6 +44,7 @@ test('record transport stores HTTP and transport-error outcomes for its route cl
       { route_class: 'record-docs', http_status: 200, transport_error: null },
       { route_class: 'record-docs', http_status: null, transport_error: 'other' },
     ])
+    expect(userAgents).toEqual(['bottega/0.5.6', 'bottega/0.5.6'])
   } finally {
     database.close()
   }
