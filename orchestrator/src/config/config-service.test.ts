@@ -244,6 +244,7 @@ async function rotationFixture(
   } as unknown as ConfigClient
   return {
     client,
+    spaceId,
     created,
     retired,
     otherKeyId,
@@ -592,6 +593,7 @@ test('machine trust after a newer revocation rotates once and does not duplicate
     fixture.recipientKeyId,
     fixture.recipientPublicKey,
     'recipient',
+    fixture.spaceId,
     fixture.client,
   )
   expect(fixture.created).toHaveLength(1)
@@ -877,16 +879,18 @@ test('machine init converges with an existing key, pin, space, and registration'
     },
   } as unknown as ConfigClient
 
-  const first = await machineInit('fixture', client, env)
+  const first = await machineInit(spaceId, 'fixture', client, env)
   const privateKey = readMachineKey(env)?.privateKey
-  await expect(machineInit('fixture', client, env)).resolves.toBe(first)
+  await expect(machineInit(spaceId, 'fixture', client, env)).resolves.toBe(first)
   expect(readMachineKey(env)?.privateKey).toEqual(privateKey)
   expect(Object.keys(await readTrustList(env))).toEqual([first])
   expect(readHostedConfigIdentity(env)).toEqual({ spaceId, userId })
   expect(registrations).toEqual([first, first])
 
   identity = { ...identity, activeSpaceId: '01990000-0000-7000-8000-000000000003' }
-  await expect(machineInit('fixture', client, env)).rejects.toThrow('switch back')
+  await expect(
+    machineInit(identity.activeSpaceId, 'fixture', client, env),
+  ).rejects.toThrow('switch back')
   expect(readHostedConfigIdentity(env)).toEqual({ spaceId, userId })
   expect(registrations).toEqual([first, first])
 
@@ -894,7 +898,7 @@ test('machine init converges with an existing key, pin, space, and registration'
     user: { id: '01990000-0000-7000-8000-000000000004' },
     activeSpaceId: spaceId,
   }
-  await expect(machineInit('fixture', client, env)).rejects.toThrow('sign back in')
+  await expect(machineInit(spaceId, 'fixture', client, env)).rejects.toThrow('sign back in')
   expect(readHostedConfigIdentity(env)).toEqual({ spaceId, userId })
   expect(registrations).toEqual([first, first])
 })
@@ -917,10 +921,10 @@ test('machine init backs up and replaces a revoked local identity before registe
     },
   } as unknown as ConfigClient
 
-  const oldKeyId = await machineInit('fixture', client, env)
+  const oldKeyId = await machineInit(spaceId, 'fixture', client, env)
   const oldPrivateKey = readMachineKey(env)?.privateKey
   revokedKeyId = oldKeyId
-  const newKeyId = await machineInit('fixture', client, env)
+  const newKeyId = await machineInit(spaceId, 'fixture', client, env)
 
   expect(newKeyId).not.toBe(oldKeyId)
   expect(readMachineKey(env)?.privateKey).not.toEqual(oldPrivateKey)
@@ -977,11 +981,11 @@ test('machine init proves possession exactly once only when registration is unow
     },
   } as unknown as ConfigClient
 
-  await machineInit('unowned', client, env)
+  await machineInit(spaceId, 'unowned', client, env)
   expect(calls).toEqual(['challenge', 'claim'])
 
   registeredOwner = userId
-  await machineInit('owned', client, env)
+  await machineInit(spaceId, 'owned', client, env)
   expect(calls).toEqual(['challenge', 'claim'])
 })
 

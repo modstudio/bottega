@@ -25,6 +25,8 @@ const namedSpaceId = '01990000-0000-7000-8000-000000000101'
 const activeSpaceId = '01990000-0000-7000-8000-000000000102'
 const userId = '01990000-0000-7000-8000-000000000103'
 const pinnedUserId = userId
+const namedSpace = { spaceId: namedSpaceId, slug: 'named' }
+const activeSpace = { spaceId: activeSpaceId, slug: 'active' }
 const roots: string[] = []
 
 afterEach(() => {
@@ -147,7 +149,7 @@ test('named-space registration claims an unowned key with the named space identi
     },
   } as unknown as ConfigClient
 
-  await expect(machineRegister('named', 'fixture', client, env)).resolves.toEqual([
+  await expect(machineRegister(namedSpace, 'fixture', client, env)).resolves.toEqual([
     'registered',
     'claimed',
     'data key opened',
@@ -189,7 +191,7 @@ test('named-space registration creates the first data key with named-space seali
     },
   } as unknown as ConfigClient
 
-  await expect(machineRegister('named', 'fixture', client, env)).resolves.toEqual([
+  await expect(machineRegister(namedSpace, 'fixture', client, env)).resolves.toEqual([
     'already registered',
     'data key created',
   ])
@@ -222,7 +224,7 @@ test('named-space registration refuses a current data key without this machine w
     currentDataKey: async () => ({ wraps: [] }),
   } as unknown as ConfigClient
 
-  await expect(machineRegister('named', 'fixture', client, env)).rejects.toThrow(
+  await expect(machineRegister(namedSpace, 'fixture', client, env)).rejects.toThrow(
     `machine config machine trust ${keyId} ${publicKey} --space named`,
   )
 })
@@ -259,7 +261,7 @@ test('trust in a named space routes every call and posts a wrap sealed for that 
     targetKeyId,
     Buffer.from(target.publicKey).toString('base64url'),
     'target',
-    'named',
+    namedSpace,
     client,
     env,
   )
@@ -304,7 +306,7 @@ test('trust in a named space refuses when the space has no data key', async () =
       targetKeyId,
       Buffer.from(target.publicKey).toString('base64url'),
       'target',
-      'named',
+      namedSpace,
       client,
       env,
     ),
@@ -314,7 +316,7 @@ test('trust in a named space refuses when the space has no data key', async () =
   expect(addWrapsCalls).toBe(0)
 })
 
-test('registration without --space uses the active destination and leaves pinned identity unchanged', async () => {
+test('registration uses the explicitly selected active destination and leaves pinned identity unchanged', async () => {
   const { env, identity, keyId, pair } = await fixture()
   const originalPin = readHostedConfigIdentity(env)
   const current = await wrappedDataKey(activeSpaceId, keyId, pair)
@@ -340,7 +342,7 @@ test('registration without --space uses the active destination and leaves pinned
     },
   } as unknown as ConfigClient
 
-  await expect(machineRegister(undefined, 'fixture', client, env)).resolves.toEqual([
+  await expect(machineRegister(activeSpace, 'fixture', client, env)).resolves.toEqual([
     'already registered',
     'data key opened',
   ])
@@ -371,7 +373,7 @@ test("registration refuses when the data key wrap's sender is not trusted", asyn
     }),
   } as unknown as ConfigClient
 
-  await expect(machineRegister('named', 'fixture', client, env)).rejects.toThrow(
+  await expect(machineRegister(namedSpace, 'fixture', client, env)).rejects.toThrow(
     `data key dek-untrusted in record space named was wrapped by untrusted-sender, which this machine does not trust; pin it with \`${PLATFORM_SLUG} machine config machine trust untrusted-sender <publicKey> --space named\` using that machine's public key from \`${PLATFORM_SLUG} machine config machine show\``,
   )
 })

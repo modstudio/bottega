@@ -113,8 +113,11 @@ async function identity(client: ConfigClient) {
   return hostedIdentity(client)
 }
 
-async function unpinServerRevoked(client: ConfigClient) {
-  const remote = await client.listMachineKeys()
+async function unpinServerRevoked(
+  client: ConfigClient,
+  destination: ConfigDestination = {},
+) {
+  const remote = await client.listMachineKeys(destination)
   for (const key of remote) if (key.revokedAt) await unpinTrustedMachine(key.keyId)
   return remote
 }
@@ -138,12 +141,13 @@ async function wrapsFor(
   version: number,
   trust: TrustList,
   client: ConfigClient,
+  destinationSpaceId?: string,
 ) {
   const machine = await localMachine()
-  const who = await identity(client)
+  const spaceId = destinationSpaceId ?? (await identity(client)).spaceId
   return wrapsForRecipients(
     dek,
-    { spaceId: who.spaceId, dekId, dekVersion: version },
+    { spaceId, dekId, dekVersion: version },
     machine,
     trust,
     Object.keys(trust),
@@ -192,6 +196,7 @@ async function currentOrCreate(
 }
 
 export async function machineInit(
+  selectedSpaceId: string,
   label = hostname(),
   client = hostedConfigClient(),
   env: ConfigEnvironment = process.env,
@@ -199,17 +204,19 @@ export async function machineInit(
 ): Promise<string> {
   const pinned = readHostedConfigIdentity(env)
   const current = await client.whoami()
-  if (!current.activeSpaceId) throw new Error(RECORD_ACTIVE_SPACE_REMEDY)
   if (pinned) {
-    if (current.activeSpaceId !== pinned.spaceId)
+    if (selectedSpaceId !== pinned.spaceId)
       throw new Error(pinnedSpaceMismatchRemedy(pinned.spaceId))
     if (current.user.id !== pinned.userId) throw new Error(pinnedUserMismatchRemedy(pinned.userId))
   }
   const existing = readMachineKey(env)
   let pair = existing ?? (await generateMachineKeyPair())
   let keyId = await machineKeyId(pair.publicKey)
+  const destination = { destinationSpaceId: selectedSpaceId }
   if (existing) {
-    const registered = (await client.listMachineKeys()).find((key) => key.keyId === keyId)
+    const registered = (await client.listMachineKeys(destination)).find(
+      (key) => key.keyId === keyId,
+    )
     if (registered?.revokedAt) {
       const replacement = await generateMachineKeyPair()
       replaceRevokedMachineKey(keyId, replacement, env)
@@ -220,9 +227,15 @@ export async function machineInit(
   } else writeMachineKey(pair, env)
   await pinTrustedMachine(keyId, pair.publicKey, label, env)
   if (!pinned)
-    writeHostedConfigIdentity({ spaceId: current.activeSpaceId, userId: current.user.id }, env)
-  const registered = await client.registerMachineKey(keyId, encoded(pair.publicKey), label)
-  if (registered.userId === null) await claimMachineKey(pair, keyId, current.activeSpaceId, client)
+    writeHostedConfigIdentity({ spaceId: selectedSpaceId, userId: current.user.id }, env)
+  const registered = await client.registerMachineKey(
+    keyId,
+    encoded(pair.publicKey),
+    label,
+    destination,
+  )
+  if (registered.userId === null)
+    await claimMachineKey(pair, keyId, selectedSpaceId, client, destination)
   if (names) await claimCurrentMachineNames(names)
   return keyId
 }
@@ -250,12 +263,14 @@ export async function machineTrust(
   keyId: string,
   publicKey: string,
   label: string,
+  selectedSpaceId: string,
   client = hostedConfigClient(),
 ) {
+  const destination = { destinationSpaceId: selectedSpaceId }
   const publicBytes = bytes(publicKey)
   if ((await machineKeyId(publicBytes)) !== keyId)
     throw new Error('machine key id does not match public key')
-  const remote = await unpinServerRevoked(client)
+  const remote = await unpinServerRevoked(client, destination)
   const registered = remote.find((item) => item.keyId === keyId)
   const refusal = machineTrustRefusal(keyId, registered)
   if (refusal) throw new Error(refusal)
@@ -266,29 +281,39 @@ export async function machineTrust(
   const recipient = trust[keyId]
   if (!sender || !recipient) throw new Error('machine is absent from the trust list after pinning')
   try {
-    const before = await client.currentDataKey(machine.keyId)
+    const before = await client.currentDataKey(machine.keyId, destination)
     const {
       key: current,
       dek,
       rotated,
-    } = await rotateAfterLatestRevocation(client, machine, before, remote)
+    } = await rotateAfterLatestRevocation(
+      client,
+      machine,
+      before,
+      remote,
+      selectedSpaceId,
+      destination,
+    )
     if (rotated) return
-    const who = await identity(client)
     const wrapped = await wrapDataKey({
       dek,
-      wrapContext: { spaceId: who.spaceId, dekId: current.id, dekVersion: current.version },
+      wrapContext: { spaceId: selectedSpaceId, dekId: current.id, dekVersion: current.version },
       senderPrivateKey: machine.privateKey,
       senderPublicKey: bytes(sender.public_key),
       recipientPublicKey: bytes(recipient.public_key),
     })
-    await client.addWraps(current.id, [
-      {
-        recipientKeyId: keyId,
-        senderKeyId: machine.keyId,
-        enc: encoded(wrapped.enc),
-        ciphertext: encoded(wrapped.ciphertext),
-      },
-    ])
+    await client.addWraps(
+      current.id,
+      [
+        {
+          recipientKeyId: keyId,
+          senderKeyId: machine.keyId,
+          enc: encoded(wrapped.enc),
+          ciphertext: encoded(wrapped.ciphertext),
+        },
+      ],
+      destination,
+    )
   } catch (error) {
     if (!isNotFound(error)) throw error
   }
@@ -300,6 +325,8 @@ async function rotateDataKey(
   currentBefore: DataKey,
   trust: TrustList,
   rotate: boolean,
+  selectedSpaceId?: string,
+  destination: ConfigDestination = {},
 ): Promise<{ key: DataKey; dek: Uint8Array; completed: string[]; rotated: boolean }> {
   let current = currentBefore
   let dek: Uint8Array
@@ -307,32 +334,35 @@ async function rotateDataKey(
     dek = generateDataKey()
     const dekId = crypto.randomUUID()
     const version = current.version + 1
-    await client.createDataKey({
-      dekId,
-      version,
-      wraps: await wrapsFor(dek, dekId, version, trust, client),
-    })
-    current = await client.getDataKey(dekId, machine.keyId)
+    await client.createDataKey(
+      {
+        dekId,
+        version,
+        wraps: await wrapsFor(dek, dekId, version, trust, client, selectedSpaceId),
+      },
+      destination,
+    )
+    current = await client.getDataKey(dekId, machine.keyId, destination)
   } else {
-    dek = await unwrap(client, current, machine, trust)
+    dek = await unwrap(client, current, machine, trust, selectedSpaceId)
   }
-  const rows = await client.listSecrets(null)
-  const plan = planRotation(rows, current, await client.listDataKeys())
+  const rows = await client.listSecrets(null, destination)
+  const plan = planRotation(rows, current, await client.listDataKeys(destination))
   const completed: string[] = []
   try {
-    const who = await identity(client)
+    const who = selectedSpaceId ? null : await identity(client)
     for (const row of plan.reseal) {
       const plaintext = await openHostedSecretRow(
         client,
         row,
-        { projectId: row.projectId ?? null },
+        { ...destination, projectId: row.projectId ?? null },
         machine,
       )
       const envelope = sealValue({
         dek,
         plaintext,
         valueContext: {
-          spaceId: who.spaceId,
+          spaceId: selectedSpaceId ?? who!.spaceId,
           userId: row.scope === 'user' ? who.userId : null,
           keyName: row.key,
           environment: row.environment,
@@ -341,6 +371,7 @@ async function rotateDataKey(
         },
       })
       await client.putSecret(row.key, {
+        ...destination,
         scope: row.scope,
         environment: row.environment,
         projectId: row.projectId ?? null,
@@ -355,7 +386,7 @@ async function rotateDataKey(
       })
       completed.push(`${row.scope}:${row.environment}:${row.key}`)
     }
-    for (const oldId of plan.retireDekIds) await client.retireDataKey(oldId)
+    for (const oldId of plan.retireDekIds) await client.retireDataKey(oldId, destination)
     return { key: current, dek, completed, rotated: rotate }
   } catch (error) {
     throw new Error(
@@ -369,6 +400,8 @@ async function rotateAfterLatestRevocation(
   machine: Awaited<ReturnType<typeof localMachine>>,
   current: DataKey,
   remote: readonly { revokedAt: string | null }[],
+  selectedSpaceId?: string,
+  destination: ConfigDestination = {},
 ) {
   return rotateDataKey(
     client,
@@ -376,6 +409,8 @@ async function rotateAfterLatestRevocation(
     current,
     await readTrustList(),
     shouldRotateAfterRevocation(current, remote),
+    selectedSpaceId,
+    destination,
   )
 }
 

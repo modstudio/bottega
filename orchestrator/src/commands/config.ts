@@ -3,9 +3,12 @@
 import { createInterface } from 'node:readline/promises'
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { ConfigScope } from '../../../shared/config-client.ts'
+import { type ConfigClient, type ConfigScope, configClient } from '../../../shared/config-client.ts'
+import { readHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { isDelegationKey } from '../../../shared/delegation-mode.ts'
 import { listMachineEntries } from '../../../shared/machine-config.ts'
+import { recordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
+import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import {
   isShipToConfigKey,
   SHIP_TO_CONFIG_KEY,
@@ -160,19 +163,23 @@ function registerMachineCommands(config: Command): void {
   machine
     .command('init')
     .description('create this machine encryption identity')
+    .option('--space <slug>', 'initialize for this record space')
     .option('--label <label>', 'label stored for this machine identity')
     .option('--short-name <name>', 'short machine name')
     .option('--display-name <name>', 'display machine name')
-    .action(async (options) =>
+    .action(async (options) => {
+      const client = configClient()
+      const selected = await selectedMachineSpace('machine config machine init', options.space, client)
       log(
         await machineInit(
+          selected.spaceId,
           options.label,
-          undefined,
+          client,
           process.env,
           await requestedMachineNames(options),
         ),
-      ),
-    )
+      )
+    })
   machine
     .command('show')
     .description('show this machine public encryption identity')
@@ -183,15 +190,21 @@ function registerMachineCommands(config: Command): void {
   machine
     .command('register')
     .description('register this machine encryption identity in a record space')
-    .option('--space <slug>', 'register in this record space instead of the active space')
+    .option('--space <slug>', 'register in this record space')
     .option('--label <label>', 'label stored for this machine identity')
     .action(async (options) => {
-      for (const line of await machineRegister(options.space, options.label)) log(line)
+      const client = configClient()
+      const selected = await selectedMachineSpace(
+        'machine config machine register',
+        options.space,
+        client,
+      )
+      for (const line of await machineRegister(selected, options.label, client)) log(line)
     })
   machine
     .command('trust <keyId> <publicKey>')
     .description('trust a machine public key for sealed configuration')
-    .option('--space <slug>', 'trust in this record space instead of the active space')
+    .option('--space <slug>', 'trust in this record space')
     .option('--label <label>', 'label stored for the trusted machine')
     .option('--yes', 'trust the machine without interactive confirmation')
     .action(async (keyId, publicKey, options) => {
@@ -206,9 +219,15 @@ function registerMachineCommands(config: Command): void {
         if (answer.trim() !== keyId)
           throw new Error('machine trust confirmation did not match the key id')
       }
-      if (options.space)
-        await machineTrustInSpace(keyId, publicKey, label, options.space, undefined)
-      else await machineTrust(keyId, publicKey, label)
+      const client = configClient()
+      const selected = await selectedMachineSpace(
+        'machine config machine trust',
+        options.space,
+        client,
+      )
+      if (readHostedConfigIdentity()?.spaceId === selected.spaceId)
+        await machineTrust(keyId, publicKey, label, selected.spaceId, client)
+      else await machineTrustInSpace(keyId, publicKey, label, selected, client)
       log(keyId)
     })
   machine
@@ -220,6 +239,22 @@ function registerMachineCommands(config: Command): void {
         `revoked ${keyId}; re-sealed ${rows.length} row(s)${rows.length ? `: ${rows.join(', ')}` : ''}`,
       )
     })
+}
+
+async function selectedMachineSpace(
+  verb: string,
+  requested: string | undefined,
+  client: ConfigClient,
+): Promise<{ spaceId: string; slug: string }> {
+  const identity = await client.whoami()
+  const destination = recordSpaceOwnerDestination(
+    verb,
+    { space: requested },
+    parseRecordSpaceMemberships(identity.memberships),
+  )
+  if (destination.kind === 'refused') throw new Error(destination.remedy)
+  if (destination.kind !== 'space') throw new Error('machine space owner was not resolved')
+  return destination
 }
 
 /** Read the piped value, refuse a blank one, and seal the rest in the requested scope. */
