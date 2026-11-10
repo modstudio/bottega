@@ -42,8 +42,6 @@ import { recordBigintSchema } from './record-bigint.ts'
 import { recordBoardClient } from './record-board-client.ts'
 import type { RecordClientOptions } from './record-client-options.ts'
 
-export type { RecordFetch } from './record-client-options.ts'
-
 export function requiredRecordApiUrl(): string {
   return resolveRecordApiUrl()
 }

@@ -3,7 +3,8 @@ import { TRPCError } from '@trpc/server'
 import { getTableColumns } from 'drizzle-orm'
 import type { z } from 'zod'
 import { run } from '../../shared/record/schema-run.ts'
-import { createRecordClient, type RecordFetch, recordRunDetailSchema } from './record-client.ts'
+import { createRecordClient, recordRunDetailSchema } from './record-client.ts'
+import type { RecordFetch } from './record-client-options.ts'
 
 const whoamiBody = {
   user: { id: 'user-a', email: 'a@example.test' },

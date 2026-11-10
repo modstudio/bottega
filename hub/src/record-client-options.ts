@@ -1,4 +1,4 @@
-export type RecordAuthHeaders = {
+type RecordAuthHeaders = {
   cookie?: string
   authorization?: string
 }
