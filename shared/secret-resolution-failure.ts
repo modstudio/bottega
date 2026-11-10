@@ -115,13 +115,14 @@ function displayableConfigRefusal(
   error: ConfigClientError,
   options: SecretResolutionFailureOptions,
 ): { error?: string; remedy?: string } | null {
+  const classification = classifySecretResolutionFailure(error)
   if (
     options.exhaustedRetryCommand ||
     error.reason !== 'response' ||
     error.status === undefined ||
     error.status < 400 ||
     error.status > 499 ||
-    error.status === 429 ||
+    isTransientSecretResolutionFailure(classification) ||
     (!error.error && !error.remedy)
   )
     return null
@@ -129,6 +130,17 @@ function displayableConfigRefusal(
     ...(error.error ? { error: error.error } : {}),
     ...(error.remedy ? { remedy: error.remedy } : {}),
   }
+}
+
+function renderConfigClientFailure(
+  condition: string,
+  classification: Extract<SecretResolutionFailureClassification, { kind: 'config-client' }>,
+  recordRefusal: { remedy?: string } | null,
+  options: SecretResolutionFailureOptions,
+): string {
+  return recordRefusal?.remedy
+    ? renderRefusal(refusal(condition, { kind: 'edit', text: recordRefusal.remedy }))
+    : `${condition}${configClientRemedy(classification, options)}`
 }
 
 /** Classify a sealed-store read failure without repeating sensitive exception details. */
@@ -144,9 +156,7 @@ export function secretResolutionFailure(
       (error.reason === 'unreachable'
         ? 'hosted secret service is unreachable'
         : 'hosted secret service refused the request')
-    return recordRefusal?.remedy
-      ? renderRefusal(refusal(condition, { kind: 'edit', text: recordRefusal.remedy }))
-      : `${condition}${configClientRemedy(classification, options)}`
+    return renderConfigClientFailure(condition, classification, recordRefusal, options)
   }
   if (!(error instanceof HostedSecretError)) return null
   const causeSummary = hostedFailureCauseSummary(classification)
@@ -166,9 +176,7 @@ export function secretResolutionFailure(
       return `${condition}\ncleared by: repair the sealed value from a trusted machine, then retry`
     case 'hosted-failure':
       if (classification?.kind === 'config-client')
-        return recordRefusal?.remedy
-          ? renderRefusal(refusal(condition, { kind: 'edit', text: recordRefusal.remedy }))
-          : `${condition}${configClientRemedy(classification, options)}`
+        return renderConfigClientFailure(condition, classification, recordRefusal, options)
       return `${condition}\ncleared by: ${options.exhaustedRetryCommand ?? `${PLATFORM_SLUG} record doctor`}`
   }
 }

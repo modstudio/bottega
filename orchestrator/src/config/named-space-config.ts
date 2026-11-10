@@ -163,7 +163,7 @@ export async function machineTrustInSpace(
   const space = await namedSpace(requestedSpace, client, env)
   const remote = await client.listMachineKeys(space.destination)
   const registered = remote.find((item) => item.keyId === keyId)
-  const refusal = machineTrustRefusal(keyId, registered)
+  const refusal = machineTrustRefusal(keyId, registered, space.slug)
   if (refusal) throw new Error(refusal)
   await pinTrustedMachine(keyId, publicBytes, label, env)
   const pair = readMachineKey(env)

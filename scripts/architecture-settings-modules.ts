@@ -76,7 +76,10 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/secret-envelope.ts',
     '../../../shared/trust-list.ts',
   ]),
-  module('orchestrator/src/config/machine-trust-refusal.ts', ['../../../shared/brand.ts']),
+  module('orchestrator/src/config/machine-trust-refusal.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/refusal.ts',
+  ]),
   module('orchestrator/src/config/named-space-config.ts', [
     'node:os',
     '../../../shared/brand.ts',
