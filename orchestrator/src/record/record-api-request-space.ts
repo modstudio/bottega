@@ -10,6 +10,8 @@ import {
   recordSpaceRequestDecision,
 } from '../../../shared/record-space-request.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { destinationlessWrite } from './record-no-destination-write-decision.ts'
+import { noDestinationWriteCounter } from './record-no-destination-write-counter.ts'
 
 type ApiEnvironment = {
   Variables: { identity: RecordIdentity; destinationSpaceId?: string }
@@ -45,8 +47,19 @@ export function registerRecordRequestSpace(app: Hono<ApiEnvironment>): void {
     }
     if (requested !== null && decision.spaceId !== null)
       context.set('destinationSpaceId', decision.spaceId)
-    await next()
+    try {
+      await next()
+    } finally {
+      recordDestinationlessWrite(context)
+    }
   }
+  app.get('/v1/health/no-destination-writes', (context) =>
+    context.json(
+      noDestinationWriteCounter({
+        read: context.get('identity').memberships.map((row) => String(row.space_id)),
+      }),
+    ),
+  )
   app.use('/v1/projects', requestedSpace)
   app.use('/v1/projects/*', requestedSpace)
   app.use('/v1/releases', requestedSpace)
@@ -68,4 +81,25 @@ export function registerRecordRequestSpace(app: Hono<ApiEnvironment>): void {
   app.use('/v1/runs/*', requestedSpace)
   app.use('/v1/snapshots', requestedSpace)
   app.use('/v1/snapshots/*', requestedSpace)
+}
+
+export function recordDestinationlessWrite(context: Context<ApiEnvironment>): void {
+  const identity = context.get('identity')
+  const decision = destinationlessWrite({
+    method: context.req.method,
+    destinationSpaceId: context.get('destinationSpaceId'),
+    activeSpaceId: identity.activeSpaceId,
+    route: context.req.routePath,
+    userAgent: context.req.header('user-agent'),
+  })
+  if (!decision) return
+  try {
+    noDestinationWriteCounter({ record: decision })
+  } catch (error) {
+    queueMicrotask(() => {
+      try {
+        console.error('record-write no-destination recording failed', error)
+      } catch {}
+    })
+  }
 }

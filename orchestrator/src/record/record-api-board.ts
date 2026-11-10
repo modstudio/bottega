@@ -7,6 +7,7 @@ import { type ProseGateField, proseGate } from '../../../shared/prose/prose-gate
 import { parseReplyAudienceOption } from '../board/board-reply-audience.ts'
 import { hostedProseOptions } from './record-api-prose.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { recordDestinationlessWrite } from './record-api-request-space.ts'
 import {
   BOARD_CHANGES_PAGE_LIMIT,
   BOARD_PURPOSES,
@@ -228,6 +229,11 @@ function boardTenant(recordUrl: string, identity: RecordIdentity): BoardTenant |
   }
 }
 
+function boardRequestTenant(context: BoardRouteContext, recordUrl: string): BoardTenant | null {
+  recordDestinationlessWrite(context)
+  return boardTenant(recordUrl, context.get('identity'))
+}
+
 function registerBoardStreamRoute(
   app: Hono<ApiEnvironment>,
   deps: {
@@ -362,8 +368,7 @@ export function registerRecordBoardRoutes(
     writeError(context: Context<ApiEnvironment>, error: unknown): Response | Promise<Response>
   },
 ): void {
-  const tenantOf = (context: Context<ApiEnvironment>) =>
-    boardTenant(deps.recordUrl, context.get('identity'))
+  const tenantOf = (context: Context<ApiEnvironment>) => boardRequestTenant(context, deps.recordUrl)
   const writeError = (context: Context<ApiEnvironment>, error: unknown) =>
     helpers.writeError(context, hostedBoardStoreRefusal(error) ?? error)
 

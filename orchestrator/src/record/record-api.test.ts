@@ -161,6 +161,35 @@ describe('record API', () => {
     expect(calls[1]).toEqual({ spaceId: 'space-a', spaceIds: ['space-a', 'space-b'] })
   })
 
+  test('reports destination-less writes by patterned route and client cause', async () => {
+    const app = appWith(identity)
+    await app.request('/v1/projects', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', 'user-agent': 'measurement-test/1' },
+      body: JSON.stringify({
+        name: 'measurement',
+        path: '/repo/measurement',
+        stack: null,
+        canon: false,
+        settings: {},
+        retiredAt: null,
+      }),
+    })
+    const response = await app.request('/v1/health/no-destination-writes')
+    expect(response.status).toBe(200)
+    const report = (await response.json()) as {
+      processStartedAt: string
+      counts: Array<{ spaceId: string; route: string; cause: string; occurrences: number }>
+    }
+    expect(new Date(report.processStartedAt).toISOString()).toBe(report.processStartedAt)
+    expect(report.counts).toContainEqual({
+      spaceId: 'space-a',
+      route: '/v1/projects',
+      cause: 'measurement-test/1',
+      occurrences: 1,
+    })
+  })
+
   test('a non-member project destination returns 403 before the service', async () => {
     let calls = 0
     const app = appWith(identity, {

@@ -87,6 +87,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'listScores',
     'listSnapshots',
     'listWorkflowCatalogue',
+    'noDestinationWrites',
     'listOutsideBlocks',
     'listHidden',
     'openBoardStream',

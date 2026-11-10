@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { recordDestinationlessWrite } from './record-api-request-space.ts'
 import {
   RECORD_SYNC_BATCH_SIZE,
   RECORD_SYNC_MAX_PAYLOAD_BYTES,
@@ -71,6 +72,7 @@ export function registerRecordSyncRoute(
         ),
     }),
     async (context) => {
+      recordDestinationlessWrite(context)
       if (!deps.syncRecord)
         return context.json({ error: 'record sync is not available in this server' }, 501)
       const identity = context.get('identity')

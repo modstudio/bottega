@@ -75,6 +75,10 @@ export type RecordDoctorFacts = {
   operatorConnectionPresent: boolean
   operatorChecks?: readonly RecordDoctorCheck[]
   agentCredentialChecks?: readonly RecordDoctorCheck[]
+  noDestinationWrites?: Awaited<
+    ReturnType<ReturnType<typeof recordApiClient>['noDestinationWrites']>
+  >
+  noDestinationWritesFailure?: string
 }
 
 const API_CONFIGURATION_REMEDY = `run \`${PLATFORM_SLUG} record use <address>\``
@@ -83,6 +87,46 @@ const API_REACHABILITY_REMEDY =
 
 export function recordDoctorExitCode(checks: readonly RecordDoctorCheck[]): 0 | 1 {
   return checks.some((check) => check.status === 'fail') ? 1 : 0
+}
+
+function destinationlessWriteDetail(
+  report: NonNullable<RecordDoctorFacts['noDestinationWrites']>,
+): string {
+  const grouped = new Map<string, { route: string; cause: string; occurrences: number }>()
+  for (const row of report.counts) {
+    const key = JSON.stringify([row.route, row.cause])
+    const existing = grouped.get(key)
+    grouped.set(key, {
+      route: row.route,
+      cause: row.cause,
+      occurrences: (existing?.occurrences ?? 0) + row.occurrences,
+    })
+  }
+  const rows = [...grouped.values()].sort(
+    (left, right) => left.route.localeCompare(right.route) || left.cause.localeCompare(right.cause),
+  )
+  return [
+    `${rows.reduce((sum, row) => sum + row.occurrences, 0)} since ${report.processStartedAt}`,
+    ...rows.map((row) => `${row.occurrences}  ${row.route}  ${row.cause}`),
+  ].join('\n')
+}
+
+function destinationlessWriteCheck(facts: RecordDoctorFacts): RecordDoctorCheck {
+  return facts.noDestinationWrites
+    ? {
+        name: 'destination-less hosted writes',
+        status: 'pass',
+        detail: destinationlessWriteDetail(facts.noDestinationWrites),
+        section: 'customer',
+      }
+    : {
+        name: 'destination-less hosted writes',
+        status: 'fail',
+        detail:
+          facts.noDestinationWritesFailure ??
+          'hosted destination-less write counts could not be reached',
+        section: 'customer',
+      }
 }
 
 function attributionFailureCheck(failure: string | null): RecordDoctorCheck {
@@ -249,6 +293,8 @@ export function decideRecordDoctorChecks(facts: RecordDoctorFacts): RecordDoctor
 
   checks.push(...(facts.agentCredentialChecks ?? []))
 
+  checks.push(destinationlessWriteCheck(facts))
+
   if (facts.operatorConnectionPresent)
     checks.push(
       ...(facts.operatorChecks ?? []).map((check) => ({
@@ -389,6 +435,19 @@ type CustomerFacts = Omit<RecordDoctorFacts, 'operatorConnectionPresent' | 'oper
   userId: string | null
 }
 
+async function destinationlessWriteFacts(client: ReturnType<typeof recordApiClient>): Promise<{
+  noDestinationWrites?: Awaited<ReturnType<typeof client.noDestinationWrites>>
+  noDestinationWritesFailure?: string
+}> {
+  try {
+    return { noDestinationWrites: await client.noDestinationWrites() }
+  } catch (error) {
+    return {
+      noDestinationWritesFailure: `hosted destination-less write counts could not be reached: ${error instanceof Error ? error.message : String(error)}`,
+    }
+  }
+}
+
 async function customerFacts(
   projects: Array<{ name: string; space: string | null }>,
   database: Database,
@@ -401,6 +460,7 @@ async function customerFacts(
   let apiFailure: string | undefined
   let sessionFailure: string | undefined
   let identity: Awaited<ReturnType<ReturnType<typeof recordApiClient>['whoami']>> | null = null
+  let measurement: Awaited<ReturnType<typeof destinationlessWriteFacts>> = {}
   if (!apiConfigured) {
     apiFailure = API_CONFIGURATION_REMEDY
     sessionFailure = RECORD_SIGN_IN_REMEDY
@@ -412,6 +472,7 @@ async function customerFacts(
       identity = await recordApiClient().whoami()
       apiReachable = true
       sessionAccepted = true
+      measurement = await destinationlessWriteFacts(recordApiClient())
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
       if (error instanceof RecordApiRequestError && error.kind === 'refused') {
@@ -434,6 +495,7 @@ async function customerFacts(
     activeSpaceId: identity?.activeSpaceId ?? null,
     memberships: parseRecordSpaceMemberships(identity?.memberships),
     projects,
+    ...measurement,
     pendingOutboxRows: pendingOutboxCount(database),
     runRecordBackfill: inspectRunRecordBackfill(database),
     quarantinedOutboxRows: quarantinedOutboxRows(database).map((row) => ({

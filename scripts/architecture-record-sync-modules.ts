@@ -59,6 +59,7 @@ export const recordSyncModules: RecordSyncModule[] = [
     'hono/body-limit',
     'zod',
     './record-auth.ts',
+    './record-api-request-space.ts',
     './record-sync-contract.ts',
     './record-sync-branch-disposal.ts',
     './record-sync-decision.ts',

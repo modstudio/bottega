@@ -871,6 +871,26 @@ export function architectureRules() {
       to: { path: exactArchitecturePath('orchestrator/src/run/run.ts') },
     },
     {
+      name: 'hosted-write-imports-no-active-space-resolver',
+      severity: 'error',
+      comment:
+        'Hosted write paths must receive an explicit destination and may not resolve one from active space.',
+      from: {
+        path: '^(?:orchestrator|hub)/',
+        pathNot: '(?:\\.test|\\.fixture)\\.ts$|^orchestrator/test/',
+      },
+      to: {
+        path: [
+          'shared/personal-item-space.ts',
+          'orchestrator/src/project-space.ts',
+          'orchestrator/src/record/record-project-destination.ts',
+          'hub/src/task-project-space.ts',
+        ]
+          .map(exactArchitecturePath)
+          .join('|'),
+      },
+    },
+    {
       name: 'import-record-api-server-transitive-boundary',
       severity: 'error',
       comment: 'Enforce the record-api-server concern boundary.',

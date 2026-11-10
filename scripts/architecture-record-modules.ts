@@ -232,6 +232,7 @@ export const recordModules: RecordModule[] = [
     './record-api-client-paths.ts',
     './record-api-client-response.ts',
     './record-auth.ts',
+    './record-no-destination-write-counter.ts',
     './record-sync-contract.ts',
   ]),
   module('orchestrator/src/record/record-email-verification-client.ts', ['./record-api-client.ts']),
@@ -447,6 +448,12 @@ export const recordModules: RecordModule[] = [
     '../../../shared/record-space-request.ts',
     './record-auth.ts',
     './record-project-destination.ts',
+    './record-no-destination-write-decision.ts',
+    './record-no-destination-write-counter.ts',
+  ]),
+  module('orchestrator/src/record/record-no-destination-write-decision.ts', []),
+  module('orchestrator/src/record/record-no-destination-write-counter.ts', [
+    './record-no-destination-write-decision.ts',
   ]),
   module('orchestrator/src/record/record-project-destination.ts', [
     '../../../shared/brand.ts',
@@ -960,6 +967,7 @@ export const recordModules: RecordModule[] = [
     'zod',
     '../board/board-reply-audience.ts',
     './record-auth.ts',
+    './record-api-request-space.ts',
     './record-api-prose.ts',
     './record-board-stream.ts',
     './record-board-contract.ts',
