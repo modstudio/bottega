@@ -123,6 +123,11 @@ export function recordSessionPath(env: StateEnvironment): string {
   return join(recordSessionDirectory(env), 'session')
 }
 
+/** Shared change stamp for both keychain-backed and file-backed record sessions. */
+export function recordSessionStampPath(env: StateEnvironment): string {
+  return join(recordSessionDirectory(env), 'session.stamp')
+}
+
 /** Disposable file used to prove the file-backed record-session store is writable. */
 export function recordSessionProbePath(env: StateEnvironment): string {
   return join(recordSessionDirectory(env), '.session-probe')

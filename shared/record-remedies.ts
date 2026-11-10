@@ -1,5 +1,5 @@
 import { PLATFORM_SLUG } from './brand.ts'
-import type { RefusalRemedy } from './refusal.ts'
+import { type RefusalRemedy, refusal, renderRefusal } from './refusal.ts'
 
 export function recordSignInRemedy(email: string): Extract<RefusalRemedy, { kind: 'command' }> {
   return {
@@ -11,6 +11,30 @@ export function recordSignInRemedy(email: string): Extract<RefusalRemedy, { kind
 export const RECORD_SIGN_IN_REMEDY = `record session is missing or expired; run \`${recordSignInRemedy('<email>').argv.join(' ')}\``
 export const RECORD_ACTIVE_SPACE_REMEDY = `record session has no active space; run \`${PLATFORM_SLUG} record space switch <slug>\``
 export const RUN_RETRY_REMEDY = `${PLATFORM_SLUG} run retry <run>`
+
+export type HostedRequestSafety = 'probe' | 'idempotent' | 'non-idempotent'
+
+export function hostedRequestSafetyStatement(outcome: HostedRequestSafety): string {
+  if (outcome === 'probe') return 'nothing was written'
+  if (outcome === 'idempotent') return 'safe to retry'
+  return 'the write may have been applied; check before retrying'
+}
+
+export function recordUnreachableRefusal(
+  origin: string,
+  detail: string,
+  outcome: HostedRequestSafety,
+): string {
+  return renderRefusal(
+    refusal(
+      `the hosted record at ${origin} could not be reached (${detail}); ${hostedRequestSafetyStatement(outcome)}`,
+      {
+        kind: 'command',
+        argv: [PLATFORM_SLUG, 'record', 'doctor'],
+      },
+    ),
+  )
+}
 
 export const machineNotTrustedRemedy = (spaceId: string) =>
   `this machine is not trusted in record space ${spaceId}; from a machine trusted there, run \`${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey>\``

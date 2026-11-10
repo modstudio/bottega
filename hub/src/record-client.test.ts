@@ -198,6 +198,7 @@ describe('record client', () => {
     expect(error.code).toBe('TIMEOUT')
     expect(error.message).toContain('/v1/runs/window')
     expect(error.message).toContain('nothing was written')
+    expect(error.message).toContain('nothing was written; retry, and if it stalls again')
     expect(requestSignal?.aborted).toBe(true)
   })
 
@@ -233,6 +234,7 @@ describe('record client', () => {
     expect(error).toBeInstanceOf(TRPCError)
     expect(error.code).toBe('TIMEOUT')
     expect(error.message).toContain('the write may have been applied')
+    expect(error.message).not.toContain('check before retrying; retry')
   })
 
   test('invalid headers do not leave an armed deadline rejection', async () => {

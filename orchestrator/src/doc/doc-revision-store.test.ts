@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import type { SecurityRunner } from '../../../shared/keychain.ts'
+import { forgetRecordSessionToken } from '../../../shared/record-session.ts'
 import { db } from '../database/db.ts'
 import { RECORD_SESSION_KEY } from '../record/record-auth.ts'
 import { rememberSignedInRecordUser } from '../record/record-session.ts'
@@ -13,6 +14,7 @@ const securityHolder = globalThis as typeof globalThis & {
 
 afterEach(() => {
   delete securityHolder[SECURITY_RUNNER_KEY]
+  forgetRecordSessionToken()
 })
 
 describe('document revision author', () => {

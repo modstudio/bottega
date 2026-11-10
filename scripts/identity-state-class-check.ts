@@ -10,6 +10,7 @@ type StateClassInput = {
   hostedTables: readonly string[]
   allowedHostedOutbox: readonly string[]
   allowedHostedCaches: readonly string[]
+  hostedWithoutLocalAccess: readonly string[]
 }
 
 export type StateClassBaseline = {
@@ -217,6 +218,14 @@ export function stateClassRefusals(input: StateClassInput): string[] {
           `state-directory.${row.path}: machine declaration needs a non-empty reason and ruling; remedy: ${remedy}`,
         ]
   })
+  const hostedWithoutLocalAccessRefusals = input.hostedWithoutLocalAccess.flatMap((table) => {
+    const rows = declared.get(`orchestrator.${table}`) ?? []
+    return rows.length === 1 && rows[0]?.class === 'hosted'
+      ? []
+      : [
+          `${table}: hosted-table guard entry is not a declared hosted orchestrator table; remedy: edit orchestrator/src/database/hosted-table-guard.ts`,
+        ]
+  })
   return [
     ...coverageRefusals(existing, declared),
     ...[...declared].flatMap(([key, rows]) =>
@@ -234,5 +243,6 @@ export function stateClassRefusals(input: StateClassInput): string[] {
     ...pushableRefusals(input.pushableHubTables, declared),
     ...outboxTableRefusals(input.outboxKindSources, orchestratorTables),
     ...stateFileRefusals,
+    ...hostedWithoutLocalAccessRefusals,
   ].sort()
 }

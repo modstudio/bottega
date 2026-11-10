@@ -25,6 +25,7 @@ export const privateDocImports = [
 ] as const
 
 export const docModules: DocModule[] = [
+  module('orchestrator/src/doc/doc-revision-conflict.ts', ['zod', './doc-write-allowed.ts']),
   module('orchestrator/src/doc/doc-context-write.ts', [
     '../../../shared/brand.ts',
     '../workflow/workflow-task-reference.ts',
@@ -274,8 +275,8 @@ export const docModules: DocModule[] = [
     './doc-write-allowed.ts',
   ]),
   module('orchestrator/src/doc/doc-owner.ts', [
+    '../../../shared/record-remedies.ts',
     '../record/record-attribution.ts',
-    '../record/record-auth.ts',
     '../record/machine-identity.ts',
     '../record/record-write-authority.ts',
   ]),

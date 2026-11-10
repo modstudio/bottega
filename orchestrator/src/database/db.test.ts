@@ -180,6 +180,24 @@ test('a writable open refuses when no hooks are registered', () => {
   }
 })
 
+test('the access hook is applied once when the process handle opens', () => {
+  closeDatabaseForFixture()
+  let entered = 0
+  const restore = registerOpenHooks({
+    access: (database) => {
+      entered += 1
+      return database
+    },
+  })
+  try {
+    expect(db()).toBe(db())
+    expect(entered).toBe(1)
+  } finally {
+    restore()
+    closeDatabaseForFixture()
+  }
+})
+
 test('a read-only command neither enters writable-open hooks nor permits a write', () => {
   closeDatabaseForFixture()
   let entered = 0

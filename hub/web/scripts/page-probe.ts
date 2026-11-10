@@ -313,7 +313,7 @@ try {
       const origin = new URL(configured).origin
       const token = await readRecordSessionTokenAsync()
       if (!token) {
-        throw new Error(`record session is absent; run ${PLATFORM_SLUG} record sign-in`)
+        throw new Error(`no record session; run ${PLATFORM_SLUG} record sign-in`)
       }
       const context = await browser.newContext()
       // The bearer goes only to the hosted hub and the record API it calls, never to a third party.

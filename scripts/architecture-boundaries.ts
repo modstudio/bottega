@@ -352,6 +352,7 @@ export const importBoundaries: ImportBoundary[] = [
       './doc-audiences-codec.ts',
       './doc-read-store.ts',
       './doc-subjects.ts',
+      './doc-revision-conflict.ts',
       './doc-write-allowed.ts',
     ],
     'Keep local revision ordering and compare-and-set facts independent of hosted transport and CLI.',
@@ -923,8 +924,10 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/runtime/store-hooks.ts',
     [
       '../database/db.ts',
+      '../database/hosted-table-guard.ts',
       '../evidence/evidence-query.ts',
       '../review/review-round-backfill.ts',
+      '../record/record-write-authority.ts',
       '../run/run-liveness.ts',
       '../run/shared-git-config-run.ts',
       '../workflow/workflow-seeds.ts',

@@ -33,8 +33,6 @@ import { keepOwnerWrite } from './record-member-permission.ts'
 import { RECORD_POOL_IDLE_TIMEOUT_SECONDS, recordPool } from './record-pool.ts'
 import { isTrialSpaceMetadata } from './record-trial-space.ts'
 
-export { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
-
 export const RECORD_SESSION_KEY = 'record_session'
 export const RECORD_SIGN_UP_INVITATION_REQUIRED = `Record sign-up is by invitation only; ask a record space owner to run \`${PLATFORM_SLUG} record space invite --email <email>\`.`
 

@@ -1,7 +1,10 @@
 // concern: record-session
 /** Owns access to the locally stored record session. Must not know run phases. */
 import type { Database } from 'bun:sqlite'
-import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
+import {
+  RECORD_ACTIVE_SPACE_REMEDY,
+  RECORD_SIGN_IN_REMEDY,
+} from '../../../shared/record-remedies.ts'
 import {
   readRecordSessionToken,
   readRecordSessionTokenAsync,
@@ -14,7 +17,6 @@ import {
   bearerHeaders,
   noSpaceBuiltIns,
   RECORD_SESSION_KEY,
-  RECORD_SIGN_IN_REMEDY,
   recordAuth,
 } from './record-auth.ts'
 import { recordPool } from './record-pool.ts'

@@ -7,6 +7,7 @@ import { createRecordClient } from '../hub/src/record-client.ts'
 import * as reportClient from '../hub/src/report-client.ts'
 import { hubTableLifecycles } from '../hub/src/storage-lifecycle.ts'
 import * as taskClient from '../hub/src/task-client.ts'
+import { HOSTED_TABLES_WITHOUT_LOCAL_ACCESS } from '../orchestrator/src/database/hosted-table-guard.ts'
 import { applyMigrations as applyOrchestratorMigrations } from '../orchestrator/src/database/migrations.ts'
 import { orchestratorTableLifecycles } from '../orchestrator/src/database/storage-lifecycle.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from '../orchestrator/src/record/outbox-payload-contracts.ts'
@@ -200,6 +201,7 @@ async function main(): Promise<void> {
       hostedTables: hostedTableInventory.map((table) => table.name),
       allowedHostedOutbox: stateClassBaseline.hostedOutbox,
       allowedHostedCaches: stateClassBaseline.hostedCaches,
+      hostedWithoutLocalAccess: HOSTED_TABLES_WITHOUT_LOCAL_ACCESS,
     })
     const lifecycleRefusals = await storageLifecycleRefusals(
       {

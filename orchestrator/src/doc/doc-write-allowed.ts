@@ -244,7 +244,13 @@ export function refuseSettingsAddress(
   )
 }
 
-export type DocRevisionDecision = { allow: true } | { allow: false; refusal: Refusal }
+export type DocRevisionRefusalReason =
+  | 'missing-hosted-revision'
+  | 'stale-revision'
+  | 'already-exists'
+export type DocRevisionDecision =
+  | { allow: true }
+  | { allow: false; refusal: Refusal; reason: DocRevisionRefusalReason }
 
 type RevisionAddress = { scope: string; subject: string | null; slug: string }
 
@@ -277,6 +283,7 @@ export function decideDocRevisionWrite(input: DocRevisionWriteInput): DocRevisio
   ) {
     return {
       allow: false,
+      reason: 'missing-hosted-revision',
       refusal: refusal(
         `refusing ${input.scope} write for ${address}: this row's latest revision is missing, so its revision cannot be checked`,
         {
@@ -289,6 +296,7 @@ export function decideDocRevisionWrite(input: DocRevisionWriteInput): DocRevisio
   if (input.op === 'create' && !input.isCreate) {
     return {
       allow: false,
+      reason: 'already-exists',
       refusal: refusal(
         `refusing create for ${address}: the row already exists at revision ${input.current}`,
         { kind: 'edit', text: revisionRemedy(input, input.current!, 'create') },
@@ -311,6 +319,7 @@ export function decideDocRevisionWrite(input: DocRevisionWriteInput): DocRevisio
   if (!input.isCreate && input.expected === undefined) {
     return {
       allow: false,
+      reason: 'stale-revision',
       refusal: refusal(`refusing ${input.scope} update at current revision ${current}`, {
         kind: 'edit',
         text: remedy,
@@ -320,6 +329,7 @@ export function decideDocRevisionWrite(input: DocRevisionWriteInput): DocRevisio
   if (input.expected !== input.current) {
     return {
       allow: false,
+      reason: 'stale-revision',
       refusal: refusal(
         `refusing stale document update: expected revision ${input.expected}, current revision ${current}`,
         { kind: 'edit', text: remedy },

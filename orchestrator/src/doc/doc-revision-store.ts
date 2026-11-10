@@ -8,6 +8,7 @@ import { db, sessionId } from '../database/db.ts'
 import { nextEntityNumber } from '../database/entity-number.ts'
 import { decodeStoredDocAudiences, encodeStoredDocAudiences } from './doc-audiences-codec.ts'
 import type { DocRevision, DocRevisionMetadata } from './doc-read-store.ts'
+import { DocRevisionConflictError } from './doc-revision-conflict.ts'
 import { validateHistoricDocAddress } from './doc-subjects.ts'
 import {
   type ContextDropTarget,
@@ -99,7 +100,16 @@ export function assertLocalRevisionWrite(
   })
   if (!decision.allow) {
     const message = renderRefusal(decision.refusal)
-    throw new Error(input.scope === 'context' ? `context item ${input.slug}: ${message}` : message)
+    const surfaced = input.scope === 'context' ? `context item ${input.slug}: ${message}` : message
+    if (decision.reason !== 'missing-hosted-revision') {
+      throw new DocRevisionConflictError(
+        surfaced,
+        decision.refusal.condition,
+        decision.reason,
+        current,
+      )
+    }
+    throw new Error(surfaced)
   }
 }
 

@@ -135,6 +135,10 @@ test('an explicit create against an existing document returns the typed 409 reme
     error:
       `refusing create for project/${PLATFORM_NAME}/existing: the row already exists at revision ${created.revisionId}\n` +
       `cleared by: read the doc, then write it with ${PLATFORM_SLUG} doc set existing --scope project --subject ${PLATFORM_NAME} --expect ${created.revisionId}`,
+    code: 'revision-conflict',
+    reason: 'already-exists',
+    condition: `refusing create for project/${PLATFORM_NAME}/existing: the row already exists at revision ${created.revisionId}`,
+    currentRevision: created.revisionId,
   })
 })
 
