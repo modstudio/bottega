@@ -28,6 +28,7 @@ import {
 } from './note.ts'
 import { listOutsideProjectNotes } from './note-outside.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
+import { projects } from './projects.ts'
 import { createLocalTaskInTransaction, showTask } from './task.ts'
 
 const scratch = mkdtempSync(join(tmpdir(), 'hub-note-'))
@@ -46,11 +47,15 @@ const hosted = {
       return Response.json({
         userId: 'user-1',
         activeSpaceId: 'space-a',
-        memberships: [],
+        memberships: [
+          { spaceId: 'space-a', slug: 'workshop', permission: 'write' },
+          { spaceId: 'space-gamma', slug: 'declared-gamma-space', permission: 'write' },
+        ],
         capabilities: {
           projectNoteCounters: true,
           noteTriageStaleness: true,
           spacePush: true,
+          targetSpaceNotes: true,
           spacePushTables: ['hub_note', 'hub_note_acknowledgement'],
         },
       })
@@ -368,11 +373,14 @@ describe('suggestion notes', () => {
 
   describe('local-authoritative note writes', () => {
     const previousHostedUrl = process.env.BOTTEGA_HOSTED_URL
+    const workshop = () => projects().find((project) => project.name === 'workshop')!
     beforeAll(() => {
       delete process.env.BOTTEGA_HOSTED_URL
     })
     beforeEach(resetFixtureStore)
+    beforeEach(() => void delete workshop().settings.space)
     afterAll(() => {
+      workshop().settings.space = 'workshop'
       if (previousHostedUrl === undefined) delete process.env.BOTTEGA_HOSTED_URL
       else process.env.BOTTEGA_HOSTED_URL = previousHostedUrl
     })
@@ -835,10 +843,10 @@ describe('suggestion notes', () => {
         forceNew: true,
       })
     ).note
-    const alpha = (
+    const gamma = (
       await fileNote({
-        text: `alpha ${token} record`,
-        cwd: '/fixtures/repos/alpha',
+        text: `gamma ${token} record`,
+        cwd: '/fixtures/repos/gamma',
         forceNew: true,
       })
     ).note
@@ -846,7 +854,7 @@ describe('suggestion notes', () => {
       (row) => row.record_id,
     )
     expect(matched).toContain(workshop.record_id)
-    expect(matched).toContain(alpha.record_id)
+    expect(matched).toContain(gamma.record_id)
     expect(
       listNotes({ text: token.toUpperCase(), stale: false }).map((row) => row.record_id),
     ).toContain(workshop.record_id)

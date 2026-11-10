@@ -87,7 +87,7 @@ export async function hostedProjectDestination(
   if (authority.verdict === 'local-authoritative') return undefined
   const identity = await recordApiClient().whoami()
   const decision = projectDestinationFromIdentity(project, settings, identity)
-  if ('refused' in decision) throw new Error(recordSpaceMembershipRefusal(decision.declaredSpace))
+  if ('refused' in decision) throw new Error(decision.remedy)
   return {
     destinationSpaceId: decision.spaceId,
     memberships: parseRecordSpaceMemberships(identity.memberships),

@@ -55,6 +55,14 @@ test('foreign task selection shares push space rules and reports own-space prese
 
   expect(selected).toEqual([
     {
+      id: 'id-DEF-1',
+      key: 'DEF-1',
+      project: 'defaulted',
+      source: 'mcp',
+      present_elsewhere: null,
+      target_space_id: null,
+    },
+    {
       id: 'id-OTHER-1',
       key: 'OTHER-1',
       project: 'other',
@@ -95,7 +103,7 @@ test('foreign task selection shares push space rules and reports own-space prese
       [{ space_id: 'space-other', key: 'OTHER-1' }],
       { onlyPresentElsewhere: true },
     ),
-  ).toEqual([selected[0]!])
+  ).toEqual([selected[1]!])
 })
 
 test('foreign prune uses the strict hosted confirmation policy', () => {

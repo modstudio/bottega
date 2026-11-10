@@ -44,6 +44,7 @@ test('note push sends each space only that space projects notes', async () => {
         activeSpaceId: 'space-a',
         memberships: [
           { spaceId: 'space-a', slug: 'active' },
+          { spaceId: 'space-a', slug: 'workshop' },
           { spaceId: 'space-gamma', slug: 'declared-gamma-space' },
         ],
         capabilities: { projectNoteCounters: true, targetSpaceNotes: true },
@@ -130,7 +131,7 @@ test('note push matches when a note hidden by a space owner is skipped', async (
       return Response.json({
         userId: 'user-1',
         activeSpaceId: 'space-a',
-        memberships: [{ spaceId: 'space-a', slug: 'active' }],
+        memberships: [{ spaceId: 'space-a', slug: 'workshop' }],
         capabilities: { projectNoteCounters: true, targetSpaceNotes: true },
       })
     if (url.pathname === '/v1/notes/counts')
