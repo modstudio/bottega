@@ -418,22 +418,21 @@ describe('record doctor decisions', () => {
 describe('hosted hub destination-less write facts', () => {
   test('reports an unset hosted URL with a remedy', async () => {
     expect(await hostedHubDestinationlessWriteFacts({ token: 'token' })).toEqual({
-      hubNoDestinationWritesFailure:
-        'BOTTEGA_HOSTED_URL is not set; run `bottega record use <address>`',
+      hubNoDestinationWritesFailure: `BOTTEGA_HOSTED_URL is not set; run \`${PLATFORM_SLUG} record use <address>\``,
     })
   })
 
   test('reads zero counts with the record session bearer', async () => {
-    let authorization: string | null = null
+    const authorizations: Array<string | null> = []
     const result = await hostedHubDestinationlessWriteFacts({
       hostedUrl: 'https://hub.example.test/',
       token: 'secret-token',
-      fetchImpl: (async (_url, init) => {
-        authorization = new Headers(init?.headers).get('authorization')
+      fetchImpl: (async (_url: string | URL | Request, init?: RequestInit) => {
+        authorizations.push(new Headers(init?.headers as HeadersInit).get('authorization'))
         return Response.json({ processStartedAt: '2026-11-10T00:00:00.000Z', counts: [] })
-      }) as typeof fetch,
+      }) as unknown as typeof fetch,
     })
-    expect(authorization).toBe('Bearer secret-token')
+    expect(authorizations).toEqual(['Bearer secret-token'])
     expect(result.hubNoDestinationWrites?.counts).toEqual([])
   })
 
@@ -443,7 +442,7 @@ describe('hosted hub destination-less write facts', () => {
       token: 'token',
       fetchImpl: (async () => {
         throw new Error('connection refused')
-      }) as typeof fetch,
+      }) as unknown as typeof fetch,
     })
     expect(unreachable.hubNoDestinationWritesFailure).toContain('connection refused')
     expect(unreachable.hubNoDestinationWritesFailure).toContain('check BOTTEGA_HOSTED_URL')
@@ -451,7 +450,7 @@ describe('hosted hub destination-less write facts', () => {
     const nonSuccess = await hostedHubDestinationlessWriteFacts({
       hostedUrl: 'https://hub.example.test',
       token: 'token',
-      fetchImpl: (async () => new Response('no', { status: 503 })) as typeof fetch,
+      fetchImpl: (async () => new Response('no', { status: 503 })) as unknown as typeof fetch,
     })
     expect(nonSuccess.hubNoDestinationWritesFailure).toContain('returned 503')
     expect(nonSuccess.hubNoDestinationWritesFailure).toContain('check BOTTEGA_HOSTED_URL')

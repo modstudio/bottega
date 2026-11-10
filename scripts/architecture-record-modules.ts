@@ -468,6 +468,7 @@ export const recordModules: RecordModule[] = [
     './record-no-destination-write-decision.ts',
   ]),
   module('orchestrator/src/record/record-no-destination-write-decision.ts', [
+    '../../../shared/record-no-destination-write-contract.ts',
     '../../../shared/record-space-request.ts',
   ]),
   module('orchestrator/src/record/record-project-destination.ts', [

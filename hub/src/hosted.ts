@@ -71,6 +71,18 @@ export function hostedServerConfig(environment: ServerEnvironment = process.env)
   return { port, hostname: '0.0.0.0', recordApiUrl, recordDatabaseUrl }
 }
 
+async function hostedDiagnosticResponse(
+  request: Request,
+  config: HostedRouteConfig,
+  dependencies: HostedRouteDependencies,
+): Promise<Response | null> {
+  const health = hostedHealthResponse(request)
+  if (health) return health
+  const version = hostedVersionResponse(request, readBuiltCommit())
+  if (version) return version
+  return hostedNoDestinationWriteApi(request, config, dependencies.noDestinationWrites)
+}
+
 export function hostedRequestHandler(
   config: HostedRouteConfig,
   dependencies: HostedRouteDependencies = {},
@@ -78,16 +90,8 @@ export function hostedRequestHandler(
   const dist = join(resolveInstallRoot(import.meta.dir, process.env), 'hub/web/dist')
   return async (req: Request): Promise<Response> => {
     const url = new URL(req.url)
-    const health = hostedHealthResponse(req)
-    if (health) return health
-    const version = hostedVersionResponse(req, readBuiltCommit())
-    if (version) return version
-    const noDestinationWrites = await hostedNoDestinationWriteApi(
-      req,
-      config,
-      dependencies.noDestinationWrites,
-    )
-    if (noDestinationWrites) return noDestinationWrites
+    const diagnostic = await hostedDiagnosticResponse(req, config, dependencies)
+    if (diagnostic) return diagnostic
     const changes = await changeApi(req, config, dependencies.changes)
     if (changes) return changes
     const tasks = await taskApi(req, config, dependencies.tasks)

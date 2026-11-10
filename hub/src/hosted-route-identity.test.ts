@@ -35,7 +35,7 @@ describe('hosted destination-less write recording', () => {
       user: { id: 'user-a', name: 'A' },
       activeSpaceId: 'space-a',
       memberships: [{ space_id: 'space-a', slug: 'active', permission: 'write' }],
-    })) as typeof fetch
+    })) as unknown as typeof fetch
 
   test('records headerless writes but not writes whose requested space is honored', async () => {
     const records: unknown[] = []

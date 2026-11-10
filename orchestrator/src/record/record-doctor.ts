@@ -89,7 +89,7 @@ export type RecordDoctorFacts = {
 const API_CONFIGURATION_REMEDY = `run \`${PLATFORM_SLUG} record use <address>\``
 const API_REACHABILITY_REMEDY =
   'check BOTTEGA_RECORD_API_URL and make the hosted record API reachable, then retry'
-const HUB_REACHABILITY_REMEDY =
+const HOSTED_APP_REACHABILITY_REMEDY =
   'check BOTTEGA_HOSTED_URL and make the hosted hub reachable, then retry'
 export function recordDoctorExitCode(checks: readonly RecordDoctorCheck[]): 0 | 1 {
   return checks.some((check) => check.status === 'fail') ? 1 : 0
@@ -148,7 +148,7 @@ function hostedHubDestinationlessWriteCheck(facts: RecordDoctorFacts): RecordDoc
         status: 'fail',
         detail:
           facts.hubNoDestinationWritesFailure ??
-          `hosted hub route ${NO_DESTINATION_WRITES_ROUTE} was not measured; ${HUB_REACHABILITY_REMEDY}`,
+          `hosted hub route ${NO_DESTINATION_WRITES_ROUTE} was not measured; ${HOSTED_APP_REACHABILITY_REMEDY}`,
         section: 'customer',
       }
 }
@@ -518,12 +518,12 @@ export async function hostedHubDestinationlessWriteFacts(input: {
     )
     if (!response.ok)
       return {
-        hubNoDestinationWritesFailure: `hosted hub route ${NO_DESTINATION_WRITES_ROUTE} returned ${response.status}; ${HUB_REACHABILITY_REMEDY}`,
+        hubNoDestinationWritesFailure: `hosted hub route ${NO_DESTINATION_WRITES_ROUTE} returned ${response.status}; ${HOSTED_APP_REACHABILITY_REMEDY}`,
       }
     return { hubNoDestinationWrites: parseNoDestinationWriteReport(await response.json()) }
   } catch (error) {
     return {
-      hubNoDestinationWritesFailure: `hosted hub route ${NO_DESTINATION_WRITES_ROUTE} failed: ${error instanceof Error ? error.message : String(error)}; ${HUB_REACHABILITY_REMEDY}`,
+      hubNoDestinationWritesFailure: `hosted hub route ${NO_DESTINATION_WRITES_ROUTE} failed: ${error instanceof Error ? error.message : String(error)}; ${HOSTED_APP_REACHABILITY_REMEDY}`,
     }
   }
 }

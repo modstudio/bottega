@@ -4,7 +4,7 @@
 import { recordRequestNature } from '../../shared/record-space-request.ts'
 
 export const HOSTED_NO_DESTINATION_CAUSE_LENGTH = 200
-export const UNLISTED_HOSTED_WRITE_ROUTE = '(unlisted)'
+const UNLISTED_HOSTED_WRITE_ROUTE = '(unlisted)'
 
 const hostedWriteRoutes = [
   ['POST', /^\/v1\/tasks$/, '/v1/tasks'],
