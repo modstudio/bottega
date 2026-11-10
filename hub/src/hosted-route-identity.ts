@@ -1,4 +1,5 @@
-import { NO_DESTINATION_WRITE_CAUSE_LENGTH } from '../../shared/record-no-destination-write-contract.ts'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { noDestinationWriteCause } from '../../shared/record-no-destination-write-contract.ts'
 import { noDestinationWriteCounter } from '../../shared/record-no-destination-write-counter.ts'
 import {
   hostedRequestSafetyStatement,
@@ -75,6 +76,16 @@ export function identityRefusal(identity: TaskSpaceIdentity): Response | null {
   return null
 }
 
+export function refusedSpaceResponse(space: string): Response {
+  return Response.json(
+    {
+      error: `record space '${space}' is not among the caller's memberships`,
+      remedy: `Run \`${PLATFORM_SLUG} record space list\` and choose a space where the caller is a member.`,
+    },
+    { status: 403 },
+  )
+}
+
 export function assertAuthenticatedIdentity(
   identity: TaskSpaceIdentity,
 ): asserts identity is Extract<TaskSpaceIdentity, { kind: 'authenticated' }> {
@@ -120,24 +131,13 @@ export async function taskSpaceIdentity(
     pathname: new URL(request.url).pathname,
   })
   if (measurement.counted) {
-    try {
-      ;(dependencies.counter ?? noDestinationWriteCounter)({
-        record: {
-          spaceId: identity.activeSpaceId,
-          route: measurement.route,
-          cause: (request.headers.get('user-agent')?.trim() || 'unknown').slice(
-            0,
-            NO_DESTINATION_WRITE_CAUSE_LENGTH,
-          ),
-        },
-      })
-    } catch (error) {
-      queueMicrotask(() => {
-        try {
-          console.error('record-write no-destination recording failed', error)
-        } catch {}
-      })
-    }
+    ;(dependencies.counter ?? noDestinationWriteCounter)({
+      record: {
+        spaceId: identity.activeSpaceId,
+        route: measurement.route,
+        cause: noDestinationWriteCause(request.headers.get('user-agent')),
+      },
+    })
   }
   return {
     kind: 'authenticated',

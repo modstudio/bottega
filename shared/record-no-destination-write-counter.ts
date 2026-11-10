@@ -20,16 +20,26 @@ export function noDestinationWriteCounter(
       counts: [...counts.values()].filter((row) => spaces.has(row.spaceId)),
     }
   }
-  const row = input.record
-  const key = JSON.stringify([row.spaceId, row.route, row.cause])
-  const existing = counts.get(key)
-  counts.set(
-    key,
-    existing ? { ...existing, occurrences: existing.occurrences + 1 } : { ...row, occurrences: 1 },
-  )
-  queueMicrotask(() => {
-    try {
-      console.info('record-write no-destination', JSON.stringify(row))
-    } catch {}
-  })
+  try {
+    const row = input.record
+    const key = JSON.stringify([row.spaceId, row.route, row.cause])
+    const existing = counts.get(key)
+    counts.set(
+      key,
+      existing
+        ? { ...existing, occurrences: existing.occurrences + 1 }
+        : { ...row, occurrences: 1 },
+    )
+    queueMicrotask(() => {
+      try {
+        console.info('record-write no-destination', JSON.stringify(row))
+      } catch {}
+    })
+  } catch (error) {
+    queueMicrotask(() => {
+      try {
+        console.error('record-write no-destination recording failed', error)
+      } catch {}
+    })
+  }
 }

@@ -41,13 +41,5 @@ export function recordDestinationlessWrite(context: RecordWriteTelemetryContext)
   })
   if (!decision || context.get('destinationlessWriteRecorded')) return
   context.set('destinationlessWriteRecorded', true)
-  try {
-    noDestinationWriteCounter({ record: decision })
-  } catch (error) {
-    queueMicrotask(() => {
-      try {
-        console.error('record-write no-destination recording failed', error)
-      } catch {}
-    })
-  }
+  noDestinationWriteCounter({ record: decision })
 }

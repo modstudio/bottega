@@ -45,6 +45,7 @@ import { machineId } from './machine-identity.ts'
 import { quarantinedOutboxRows } from './outbox-quarantine.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
 import { recordAttributionFailure } from './record-attribution.ts'
+import { bearerHeaders } from './record-auth.ts'
 import { recordPool } from './record-pool.ts'
 import { effectiveProjectSpace } from './record-project-destination.ts'
 import { storedRecordToken } from './record-session.ts'
@@ -496,11 +497,11 @@ export async function hostedHubDestinationlessWriteFacts(input: {
   try {
     const response = await (input.fetchImpl ?? fetch)(
       `${input.hostedUrl.replace(/\/$/, '')}${NO_DESTINATION_WRITES_ROUTE}`,
-      { headers: { authorization: `Bearer ${input.token}` } },
+      { headers: bearerHeaders(input.token) },
     )
     if (!response.ok)
       return {
-        hubNoDestinationWritesFailure: `hosted hub route ${NO_DESTINATION_WRITES_ROUTE} returned ${response.status}; ${HOSTED_APP_REACHABILITY_REMEDY}`,
+        hubNoDestinationWritesFailure: `hosted hub route ${NO_DESTINATION_WRITES_ROUTE} returned ${response.status}; ${response.status === 401 ? RECORD_SIGN_IN_REMEDY : HOSTED_APP_REACHABILITY_REMEDY}`,
       }
     return {
       hubNoDestinationWrites: parseNoDestinationWriteReport(await response.json(), 'hosted hub'),

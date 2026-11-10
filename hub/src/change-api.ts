@@ -18,6 +18,7 @@ import type { HostedRouteConfig } from './hosted-route-config.ts'
 import {
   assertAuthenticatedIdentity,
   identityRefusal,
+  refusedSpaceResponse,
   taskSpaceIdentity,
 } from './hosted-route-identity.ts'
 import { parseIdentitySetRequest } from './identity-set-contract.ts'
@@ -139,16 +140,6 @@ function refusedSpace(
   who: Awaited<ReturnType<typeof taskSpaceIdentity>>,
 ): who is { kind: 'refused-space'; refusedSpace: string } {
   return who.kind === 'refused-space'
-}
-
-function refusedSpaceResponse(space: string) {
-  return json(
-    {
-      error: `record space '${space}' is not among the caller's memberships`,
-      remedy: `Run \`${PLATFORM_SLUG} record space list\` and choose a space where the caller is a member.`,
-    },
-    403,
-  )
 }
 
 async function identitySetResponse(

@@ -66,22 +66,4 @@ describe('hosted destination-less write recording', () => {
       record: { spaceId: 'space-a', route: '/v1/tasks', cause: expect.any(String) },
     })
   })
-
-  test('a throwing counter does not fail identity resolution', async () => {
-    const result = await taskSpaceIdentity(
-      new Request('https://hub.example.test/v1/tasks', {
-        method: 'POST',
-        headers: { authorization: 'Bearer token' },
-      }),
-      'https://api.test',
-      identityFetch,
-      true,
-      {
-        counter: (() => {
-          throw new Error('counter failed')
-        }) as never,
-      },
-    )
-    expect(result.kind).toBe('authenticated')
-  })
 })

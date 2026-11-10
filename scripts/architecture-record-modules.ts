@@ -629,6 +629,7 @@ export const recordModules: RecordModule[] = [
     './machine-identity.ts',
     './outbox-quarantine.ts',
     './record-api-client.ts',
+    './record-auth.ts',
     './record-attribution.ts',
     './record-project-destination.ts',
     './record-session.ts',

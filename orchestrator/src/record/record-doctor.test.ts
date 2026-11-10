@@ -4,6 +4,7 @@ import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { ConfigClientError } from '../../../shared/config-client.ts'
 import { HostedSecretError } from '../../../shared/hosted-secrets.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { seedWorkflows } from '../workflow/workflow-seeds.ts'
@@ -454,6 +455,16 @@ describe('hosted hub destination-less write facts', () => {
     })
     expect(nonSuccess.hubNoDestinationWritesFailure).toContain('returned 503')
     expect(nonSuccess.hubNoDestinationWritesFailure).toContain('check BOTTEGA_HOSTED_URL')
+  })
+
+  test('reports a 401 with the record sign-in remedy', async () => {
+    const result = await hostedHubDestinationlessWriteFacts({
+      hostedUrl: 'https://hub.example.test',
+      token: 'token',
+      fetchImpl: (async () => new Response('no', { status: 401 })) as unknown as typeof fetch,
+    })
+    expect(result.hubNoDestinationWritesFailure).toContain('returned 401')
+    expect(result.hubNoDestinationWritesFailure).toContain(RECORD_SIGN_IN_REMEDY)
   })
 })
 

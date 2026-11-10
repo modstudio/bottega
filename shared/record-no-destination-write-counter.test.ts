@@ -17,3 +17,11 @@ test('counts by space, route and cause and filters reports by space', () => {
     expect.objectContaining({ spaceId: 'space-b', cause }),
   )
 })
+
+test('a recording failure does not escape the counter', () => {
+  expect(() =>
+    noDestinationWriteCounter({
+      record: { spaceId: 'space-a', route: '/a', cause: 1n },
+    } as never),
+  ).not.toThrow()
+})

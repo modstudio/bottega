@@ -4,6 +4,10 @@
 export const NO_DESTINATION_WRITES_ROUTE = '/v1/health/no-destination-writes'
 export const NO_DESTINATION_WRITE_CAUSE_LENGTH = 200
 
+export function noDestinationWriteCause(userAgent: string | null | undefined): string {
+  return (userAgent?.trim() || 'unknown').slice(0, NO_DESTINATION_WRITE_CAUSE_LENGTH)
+}
+
 export type NoDestinationWrite = { spaceId: string; route: string; cause: string }
 
 export type NoDestinationWriteReportRow = NoDestinationWrite & { occurrences: number }
