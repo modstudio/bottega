@@ -15,7 +15,8 @@ import {
   setLedgerRefLocal,
 } from '../porting/porting.ts'
 import { upsertProject } from '../project/projects.ts'
-import { rememberActiveRecordSpace, rememberProjectSpace } from '../project-space.ts'
+import { rememberProjectSpace } from '../project-space-cache.ts'
+import { rememberActiveRecordSpace } from '../project-space.ts'
 import { productionWorkflowTree } from '../workflow/workflow-tree-store.ts'
 import type { RecordApiClient, RecordRequestDestination } from './record-api-client.ts'
 import type { RecordLensImportInput, RecordLensTable } from './record-lens-contract.ts'

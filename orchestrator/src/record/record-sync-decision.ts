@@ -52,6 +52,12 @@ export function recordSyncClaimSpaceIds(
   return [...destinations]
 }
 
+export function recordSyncHasDestinationlessRows(
+  rows: readonly { spaceHint: string | null }[],
+): boolean {
+  return rows.some((row) => row.spaceHint === null)
+}
+
 export type RecordSyncMachineOwnershipDecision =
   | { status: 'allowed' }
   | { status: 'refused'; reason: string }

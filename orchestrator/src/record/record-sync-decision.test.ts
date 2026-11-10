@@ -4,6 +4,7 @@ import type { RecordIdentity } from './record-auth.ts'
 import {
   recordSyncAuthorizationDecision,
   recordSyncClaimSpaceIds,
+  recordSyncHasDestinationlessRows,
   recordSyncMachineOwnershipDecision,
 } from './record-sync-decision.ts'
 
@@ -48,6 +49,14 @@ test('sync authorization derives user and fallback space only from the session i
     status: 'refused',
     reason: expect.stringContaining('not a member'),
   })
+})
+
+test('sync destination telemetry detects only rows without a space hint', () => {
+  expect(recordSyncHasDestinationlessRows([])).toBe(false)
+  expect(recordSyncHasDestinationlessRows([{ spaceHint: 'space-a' }])).toBe(false)
+  expect(
+    recordSyncHasDestinationlessRows([{ spaceHint: 'space-a' }, { spaceHint: null }]),
+  ).toBe(true)
 })
 
 test('sync machine ownership permits registration and the owner but refuses another user', () => {

@@ -16,7 +16,10 @@ import {
   type RecordSyncRequest,
   type RecordSyncResponse,
 } from './record-sync-contract.ts'
-import { RecordSyncRequestRefusal } from './record-sync-decision.ts'
+import {
+  recordSyncHasDestinationlessRows,
+  RecordSyncRequestRefusal,
+} from './record-sync-decision.ts'
 
 type SyncEnvironment = RecordWriteTelemetryEnvironment
 
@@ -97,7 +100,7 @@ export function registerRecordSyncRoute(
           oversized ? 413 : 400,
         )
       }
-      if (body.data.rows.some((row) => row.spaceHint === null)) {
+      if (recordSyncHasDestinationlessRows(body.data.rows)) {
         recordDestinationlessWrite(context)
       }
       try {

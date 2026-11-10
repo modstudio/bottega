@@ -13,6 +13,7 @@ import {
 import { normalizePortBaselineScannedAt } from '../porting/porting-date.ts'
 import { declaredRecordSpace } from '../project/declared-record-space.ts'
 import { projects } from '../project/projects.ts'
+import { cachedProjectSpaces } from '../project-space-cache.ts'
 import type { RecordApiClient } from './record-api-client.ts'
 import { recordApiClient } from './record-api-client.ts'
 import type { RecordIdentity } from './record-auth.ts'
@@ -53,15 +54,7 @@ function replicatedCurrentProfileVersionId(spaceId: string, value: unknown): str
 }
 
 function cachedProjectRoutes(local: Database): Map<string, string | null> {
-  const stored = local
-    .query<{ value: string }, []>("SELECT value FROM schema_meta WHERE key='record_project_spaces'")
-    .get()?.value
-  let cache: Record<string, string | null> = {}
-  try {
-    if (stored) cache = JSON.parse(stored) as Record<string, string | null>
-  } catch {
-    // A malformed cache has no usable dry-run routes.
-  }
+  const cache = cachedProjectSpaces(local)
   const registered = local.query('SELECT name FROM project').all() as { name: string }[]
   return new Map(
     registered.flatMap((project) => {

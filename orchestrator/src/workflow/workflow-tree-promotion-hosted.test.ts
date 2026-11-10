@@ -6,7 +6,8 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
-import { rememberActiveRecordSpace, rememberProjectSpace } from '../project-space.ts'
+import { rememberProjectSpace } from '../project-space-cache.ts'
+import { rememberActiveRecordSpace } from '../project-space.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
 import { seedWorkflows } from './workflow-seeds.ts'

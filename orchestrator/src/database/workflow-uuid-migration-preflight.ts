@@ -1,7 +1,8 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { replicatedRecordId } from '../../../shared/record-id.ts'
-import { activeRecordSpace, cachedProjectSpaces } from '../project-space.ts'
+import { cachedProjectSpaces } from '../project-space-cache.ts'
+import { activeRecordSpace } from '../project-space.ts'
 import { readRecordInstallBinding } from '../record/install-binding.ts'
 
 function composingSpaces(d: Database): string[] {

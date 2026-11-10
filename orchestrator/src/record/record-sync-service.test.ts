@@ -3,6 +3,7 @@ import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { syncHostedRecord } from './record-sync-service.ts'
+import { RecordSyncRequestRefusal } from './record-sync-decision.ts'
 
 const actorUrl = process.env.BOTTEGA_RECORD_URL
 const adminUrl = process.env.BOTTEGA_TEST_POSTGRES_URL
@@ -46,6 +47,28 @@ const QUESTION_PROJECT_ID = '01990000-0000-7000-8000-000000001906'
 const QUESTION_MACHINE_ID = '01990000-0000-7000-8000-000000001907'
 const QUESTION_ID = '01990000-0000-7000-8000-000000001908'
 const STAMP = '2026-10-26T06:00:00.000Z'
+
+test('a sync session without a personal space is refused with the sign-in remedy', async () => {
+  const sync = syncHostedRecord({
+    url: 'postgres://record.test/record',
+    postgres: {} as SQL,
+    identity: {
+      user: { id: USER_ID },
+      activeSpaceId: SPACE_ID,
+      personalSpaceId: null,
+      memberships: [],
+    },
+    request: {
+      machine: { id: MACHINE_ID, name: 'fixture', seenAt: STAMP },
+      rows: [],
+    },
+  })
+
+  await expect(sync).rejects.toBeInstanceOf(RecordSyncRequestRefusal)
+  await expect(sync).rejects.toThrow(
+    `record session has no personal space; run \`${PLATFORM_SLUG} record sign-in\` to restore the personal space`,
+  )
+})
 
 function runPayload(id: string, taskId: string | null) {
   const payload = Object.fromEntries(

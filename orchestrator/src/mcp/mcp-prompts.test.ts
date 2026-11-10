@@ -4,7 +4,8 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { removeProject, upsertProject } from '../project/projects.ts'
-import { rememberActiveRecordSpace, rememberProjectSpace } from '../project-space.ts'
+import { rememberProjectSpace } from '../project-space-cache.ts'
+import { rememberActiveRecordSpace } from '../project-space.ts'
 import {
   promoteWorkflowLocal,
   setWorkflowLocal,

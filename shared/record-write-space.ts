@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from './brand.ts'
 import { recordSpaceMembershipRefusal, undeclaredProjectSpaceRefusal } from './record-remedies.ts'
 import { type RecordSpaceMembership, recordSpaceMembership } from './record-space-membership.ts'
 
@@ -47,7 +48,10 @@ export function recordWriteSpace(
   }
   return facts.personalSpaceId
     ? { spaceId: facts.personalSpaceId }
-    : { refused: 'personal-space-not-provisioned', remedy: 'personal space is not provisioned' }
+    : {
+        refused: 'personal-space-not-provisioned',
+        remedy: `run \`${PLATFORM_SLUG} record sign-in\` to restore the personal space`,
+      }
 }
 
 /** The project arm of the decision, typed so project adapters see only project refusals. */

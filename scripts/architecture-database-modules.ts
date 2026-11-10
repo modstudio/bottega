@@ -130,6 +130,7 @@ export const databaseModules: ArchitectureModule[] = [
     'bun:sqlite',
     '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
+    '../project-space-cache.ts',
     '../project-space.ts',
     '../record/install-binding.ts',
   ]),
