@@ -420,6 +420,7 @@ describe('record client', () => {
       body: unknown
       cookie: string | null
       authorization: string | null
+      spaceId: string | null
     }> = []
     const fetch: RecordFetch = async (url, init) => {
       const headers = new Headers(init?.headers)
@@ -429,6 +430,7 @@ describe('record client', () => {
         body: init?.body ? JSON.parse(String(init.body)) : null,
         cookie: headers.get('Cookie'),
         authorization: headers.get('Authorization'),
+        spaceId: headers.get('x-record-space'),
       })
       if (url.includes('/status')) return jsonResponse({ message: boardMessage, receipts: [] })
       if (url.includes('/threads/')) return jsonResponse({ root: boardMessage, replies: [] })
@@ -514,6 +516,12 @@ describe('record client', () => {
         ({ cookie, authorization }) => cookie === 'sid=abc' && authorization === 'Bearer tok',
       ),
     ).toBe(true)
+    expect(requests.slice(3).map(({ spaceId }) => spaceId)).toEqual([
+      whoamiBody.activeSpaceId,
+      whoamiBody.activeSpaceId,
+      whoamiBody.activeSpaceId,
+      whoamiBody.activeSpaceId,
+    ])
   })
 
   test('sets the active space through the authenticated record API', async () => {
@@ -570,12 +578,20 @@ describe('record client', () => {
 
   test('scores and voids hosted runs without sending a scorer identity', async () => {
     const runId = '01990000-0000-7000-8000-000000000001'
-    const requests: { url: string; method: string; body: Record<string, unknown> }[] = []
+    const runSpaceId = '01990000-0000-7000-8000-000000000099'
+    const requests: {
+      url: string
+      method: string
+      body: Record<string, unknown>
+      spaceId: string | null
+    }[] = []
     const fetch: RecordFetch = async (url, init) => {
+      const headers = new Headers(init?.headers)
       requests.push({
         url,
         method: init?.method ?? '',
         body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+        spaceId: headers.get('x-record-space'),
       })
       return jsonResponse({ ok: true })
     }
@@ -589,13 +605,14 @@ describe('record client', () => {
         note: null,
         scoredAt: '2026-09-22T12:00:00.000Z',
       },
-      whoamiBody.activeSpaceId,
+      runSpaceId,
     )
-    await client.void(runId, { reason: 'not evidence' }, whoamiBody.activeSpaceId)
+    await client.void(runId, { reason: 'not evidence' }, runSpaceId)
     expect(requests).toEqual([
       {
         url: `https://api.example.test/v1/runs/${runId}/score`,
         method: 'PUT',
+        spaceId: runSpaceId,
         body: {
           delivery: 'full',
           quality: 'right',
@@ -607,6 +624,7 @@ describe('record client', () => {
       {
         url: `https://api.example.test/v1/runs/${runId}/void`,
         method: 'POST',
+        spaceId: runSpaceId,
         body: { reason: 'not evidence' },
       },
     ])

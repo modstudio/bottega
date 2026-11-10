@@ -19,18 +19,27 @@ afterEach(() => {
   else process.env.BOTTEGA_RECORD_DATABASE_URL = originalRecordDatabaseUrl
 })
 
-function caller(permission: 'read' | 'write') {
+function caller(permission: 'read' | 'write', activeSpaceId: string | null = spaceId) {
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   delete process.env.BOTTEGA_RECORD_DATABASE_URL
   globalThis.fetch = (async () =>
     Response.json({
       user: { id: userId },
-      activeSpaceId: spaceId,
+      activeSpaceId,
       personalSpaceId: null,
       memberships: [{ space_id: spaceId, slug: 'acme', permission }],
     })) as unknown as typeof fetch
   return recordRouter.createCaller({ authorization: 'Bearer token' })
 }
+
+test('an explicit write destination does not require an active session space', async () => {
+  await expect(
+    caller('write', null).removeReportSubscription({ id: subscriptionId, spaceId }),
+  ).rejects.toMatchObject({
+    code: 'INTERNAL_SERVER_ERROR',
+    message: 'BOTTEGA_RECORD_DATABASE_URL is required',
+  })
+})
 
 test('record procedures build their client from the configured record address', async () => {
   const clear = configureRecordApiUrl()

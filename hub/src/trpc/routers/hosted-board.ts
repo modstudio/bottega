@@ -23,10 +23,10 @@ import {
 } from '../../board-contract.ts'
 import type { RecordClient } from '../../record-client.ts'
 import type { Context } from '../context.ts'
+import { spaceId } from './record-inputs.ts'
 import { recordClient } from './record-router-client.ts'
 
 const t = initTRPC.context<Context>().create()
-const spaceId = z.string().uuid()
 const boardReplyInput = BoardReplyInputSchema.extend({ spaceId })
 const boardAcceptInput = BoardAcceptInputSchema.extend({ spaceId })
 const boardIdInput = BoardIdInputSchema.extend({ spaceId })
@@ -40,10 +40,9 @@ type HostedBoardClient = Pick<
   | 'boardReply'
   | 'boardAccept'
   | 'boardWithdraw'
-> & {
-  projects?: () => Promise<Array<{ name: string; spaceId: string }>>
-  whoami?: () => Promise<{ personalSpaceId: string | null }>
-}
+  | 'projects'
+  | 'whoami'
+>
 type HostedBoardDeps = {
   clientFor: (context: Context) => HostedBoardClient
   clock: () => number
@@ -59,6 +58,37 @@ function absoluteBoardTime(clock: number, duration: string | undefined, defaultM
     throw new Error(`invalid duration ${value}; use a positive value such as 30m or 1d`)
   }
   return date.toISOString()
+}
+
+type BoardPostDestination = { spaceId: string } | { refused: string; remedy: string }
+
+export function boardPostDestination(input: {
+  project?: string
+  projects: Array<{ name: string; spaceId: string }>
+  personalSpaceId: string | null
+}): BoardPostDestination {
+  if (!input.project) {
+    return input.personalSpaceId
+      ? { spaceId: input.personalSpaceId }
+      : {
+          refused: 'record user has no personal space',
+          remedy: 'provision a personal space, then retry the board post',
+        }
+  }
+  const matches = input.projects.filter((project) => project.name === input.project)
+  if (matches.length === 0)
+    return {
+      refused: `record project ${input.project} has no declared space`,
+      remedy: 'register the project in a record space, then retry the board post',
+    }
+  if (matches.length > 1) {
+    const spaces = [...new Set(matches.map((project) => project.spaceId))].sort()
+    return {
+      refused: `record project ${input.project} is ambiguous across spaces ${spaces.join(', ')}`,
+      remedy: 'use a project name that identifies one record space, then retry the board post',
+    }
+  }
+  return { spaceId: matches[0]!.spaceId }
 }
 
 async function call<T>(operation: () => Promise<T>): Promise<T> {
@@ -85,15 +115,12 @@ function boardPostProcedure(deps: HostedBoardDeps) {
   return t.procedure.input(BoardPostInputSchema).mutation(({ ctx, input }) =>
     call(async () => {
       const client = deps.clientFor(ctx)
-      const destination = input.project
-        ? (await client.projects?.())?.find((project) => project.name === input.project)?.spaceId
-        : (await client.whoami?.())?.personalSpaceId
-      if (!destination)
-        throw new Error(
-          input.project
-            ? `record project ${input.project} has no declared space`
-            : 'record user has no personal space',
-        )
+      const destination = boardPostDestination({
+        project: input.project,
+        projects: input.project ? await client.projects() : [],
+        personalSpaceId: input.project ? null : (await client.whoami()).personalSpaceId,
+      })
+      if ('refused' in destination) throw new Error(`${destination.refused}\n${destination.remedy}`)
       const id = deps.newId()
       const now = deps.clock()
       const purpose = defaultBoardPurpose(input.purpose, Boolean(input.ackRequired))
@@ -117,7 +144,7 @@ function boardPostProcedure(deps: HostedBoardDeps) {
           ...(input.topics ? { topics: input.topics } : {}),
           ...(input.project ? { project: input.project } : {}),
         },
-        destination,
+        destination.spaceId,
       )
       return BoardPostResultSchema.parse({
         id: message.id,

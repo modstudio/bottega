@@ -90,11 +90,6 @@ async function hostedIdentity(ctx: Context) {
 async function hostedWriteIdentity(ctx: Context, spaceId: string) {
   const client = recordClient(ctx)
   const who = await client.whoami()
-  if (!who.activeSpaceId)
-    throw new TRPCError({
-      code: 'PRECONDITION_FAILED',
-      message: 'record session has no active space',
-    })
   const memberships = parseRecordSpaceMemberships(who.memberships)
   const access = recordSpaceAccessDecision('write', spaceId, memberships)
   if (!access.allowed)

@@ -5,14 +5,10 @@ import {
   BoardStatusResultSchema,
   BoardThreadResultSchema,
 } from './board-contract.ts'
+import type { RecordClientOptions } from './record-client-options.ts'
 
-type BoardClientOptions = {
-  baseUrl: string
-  headers: { cookie?: string; authorization?: string }
-  fetch?: (input: string, init?: RequestInit) => Promise<Response>
-  requestDeadlineMs?: number
-}
-type Request = <T>(
+type BoardClientOptions = RecordClientOptions
+type BoardRequest = <T>(
   options: BoardClientOptions,
   path: string,
   schema: z.ZodType<T>,
@@ -71,7 +67,7 @@ const destinationHeaders = (spaceId: string) => ({
   'x-record-space': spaceId,
 })
 
-export function recordBoardClient(options: BoardClientOptions, request: Request) {
+export function recordBoardClient(options: BoardClientOptions, request: BoardRequest) {
   return {
     boardList: (input: {
       kind?: 'notice' | 'question'

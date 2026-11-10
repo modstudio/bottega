@@ -40,26 +40,15 @@ import {
 } from './doc-contract.ts'
 import { recordBigintSchema } from './record-bigint.ts'
 import { recordBoardClient } from './record-board-client.ts'
+import type { RecordClientOptions } from './record-client-options.ts'
 
-type RecordAuthHeaders = {
-  cookie?: string
-  authorization?: string
-}
+export type { RecordFetch } from './record-client-options.ts'
 
 export function requiredRecordApiUrl(): string {
   return resolveRecordApiUrl()
 }
 
-export type RecordFetch = (input: string, init?: RequestInit) => Promise<Response>
-
 const RECORD_REQUEST_DEADLINE_MS = 30_000
-
-export type RecordClientOptions = {
-  baseUrl: string
-  headers: RecordAuthHeaders
-  fetch?: RecordFetch
-  requestDeadlineMs?: number
-}
 
 const scoreSchema = z
   .object({

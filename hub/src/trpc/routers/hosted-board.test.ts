@@ -13,7 +13,7 @@ import {
   BoardWithdrawResultSchema,
 } from '../../board-contract.ts'
 import type { RecordClient } from '../../record-client.ts'
-import { createHostedBoardRouter } from './hosted-board.ts'
+import { boardPostDestination, createHostedBoardRouter } from './hosted-board.ts'
 
 const rootId = '01990000-0000-7000-8000-000000000011'
 const mintedPostId = '01990000-0000-7000-8000-000000000012'
@@ -22,15 +22,22 @@ const mintedReplyId = '01990000-0000-7000-8000-000000000014'
 const replyId = '01990000-0000-7000-8000-000000000015'
 const noteId = '01990000-0000-7000-8000-000000000016'
 const now = Date.parse('2026-10-06T12:00:00.000Z')
-const spaceId = '01990000-0000-7000-8000-000000000001'
-const destinationClient = {
-  projects: async () => [{ name: 'workshop', spaceId }],
-  whoami: async () => ({ personalSpaceId: spaceId }),
+const threadSpaceId = '01990000-0000-7000-8000-000000000001'
+const projectSpaceId = '01990000-0000-7000-8000-000000000002'
+const personalSpaceId = '01990000-0000-7000-8000-000000000003'
+const activeSpaceId = '01990000-0000-7000-8000-000000000004'
+const destinationClient: Pick<RecordClient, 'projects' | 'whoami'> = {
+  projects: async () =>
+    [{ name: 'workshop', spaceId: projectSpaceId }] as Awaited<
+      ReturnType<RecordClient['projects']>
+    >,
+  whoami: async () =>
+    ({ personalSpaceId, activeSpaceId }) as Awaited<ReturnType<RecordClient['whoami']>>,
 }
 
 const root = {
   id: rootId,
-  spaceId,
+  spaceId: threadSpaceId,
   kind: 'question',
   threadRootId: null,
   title: 'Question',
@@ -83,13 +90,11 @@ const overview = {
   acceptedReplyId: null,
 }
 
-test('hosted board procedures map record responses to the shared browser contract', async () => {
+test('hosted board procedures map responses and send each write to its resource space', async () => {
   const calls: Array<{ operation: string; input: unknown }> = []
   const ids = [mintedPostId, mintedReplyId, mintedPostId]
   const client = {
     ...destinationClient,
-    projects: async () => [{ name: 'workshop', spaceId }],
-    whoami: async () => ({ personalSpaceId: spaceId }),
     boardList: async (input: unknown) => {
       calls.push({ operation: 'list', input })
       return { messages: [overview], truncated: true }
@@ -102,16 +107,16 @@ test('hosted board procedures map record responses to the shared browser contrac
       calls.push({ operation: 'status', input: id })
       return { message: root, receipts: [] }
     },
-    boardPost: async (input: Parameters<RecordClient['boardPost']>[0]) => {
-      calls.push({ operation: 'post', input })
+    boardPost: async (input: Parameters<RecordClient['boardPost']>[0], destination: string) => {
+      calls.push({ operation: 'post', input: { ...input, destination } })
       return { ...root, id: servicePostId, kind: 'notice', title: input.title }
     },
-    boardReply: async (id: string, input: { id: string; body: string }) => {
-      calls.push({ operation: 'reply', input: { rootId: id, ...input } })
+    boardReply: async (id: string, input: { id: string; body: string }, destination: string) => {
+      calls.push({ operation: 'reply', input: { rootId: id, ...input, destination } })
       return { ...root, id: replyId, threadRootId: id, title: null, body: input.body }
     },
-    boardAccept: async (questionId: string, acceptedReplyId: string) => {
-      calls.push({ operation: 'accept', input: { questionId, acceptedReplyId } })
+    boardAccept: async (questionId: string, acceptedReplyId: string, destination: string) => {
+      calls.push({ operation: 'accept', input: { questionId, acceptedReplyId, destination } })
       return {
         root: {
           ...root,
@@ -121,8 +126,8 @@ test('hosted board procedures map record responses to the shared browser contrac
         replies: [reply],
       }
     },
-    boardWithdraw: async (id: string) => {
-      calls.push({ operation: 'withdraw', input: id })
+    boardWithdraw: async (id: string, destination: string) => {
+      calls.push({ operation: 'withdraw', input: { id, destination } })
       return { ...root, id, withdrawnAt: '2026-10-06T13:00:00.000Z', state: 'withdrawn' }
     },
   }
@@ -145,9 +150,13 @@ test('hosted board procedures map record responses to the shared browser contrac
     deadline: '10m',
     expires: '6h',
   })
-  const replied = await caller.reply({ id: rootId, body: 'Answer', spaceId })
-  const accepted = await caller.accept({ questionId: rootId, replyId, spaceId })
-  const withdrawn = await caller.withdraw({ id: rootId, spaceId })
+  const replied = await caller.reply({ id: rootId, body: 'Answer', spaceId: threadSpaceId })
+  const accepted = await caller.accept({
+    questionId: rootId,
+    replyId,
+    spaceId: threadSpaceId,
+  })
+  const withdrawn = await caller.withdraw({ id: rootId, spaceId: threadSpaceId })
 
   expect(BoardListResultSchema.parse(listed).warning).toBe('Only the newest messages are listed.')
   expect(BoardThreadResultSchema.parse(thread).root.text).toBeNull()
@@ -176,6 +185,42 @@ test('hosted board procedures map record responses to the shared browser contrac
     rootId,
     id: mintedReplyId,
     body: 'Answer',
+  })
+  expect(
+    calls
+      .filter((call) => ['post', 'reply', 'accept', 'withdraw'].includes(call.operation))
+      .map((call) => (call.input as { destination: string }).destination),
+  ).toEqual([projectSpaceId, threadSpaceId, threadSpaceId, threadSpaceId])
+})
+
+test('board post destination selects one owner and refuses missing or ambiguous owners', () => {
+  expect(boardPostDestination({ project: undefined, projects: [], personalSpaceId })).toEqual({
+    spaceId: personalSpaceId,
+  })
+  expect(
+    boardPostDestination({ project: undefined, projects: [], personalSpaceId: null }),
+  ).toMatchObject({
+    refused: 'record user has no personal space',
+    remedy: expect.any(String),
+  })
+  expect(boardPostDestination({ project: 'missing', projects: [], personalSpaceId })).toMatchObject(
+    {
+      refused: 'record project missing has no declared space',
+      remedy: expect.any(String),
+    },
+  )
+  expect(
+    boardPostDestination({
+      project: 'workshop',
+      projects: [
+        { name: 'workshop', spaceId: projectSpaceId },
+        { name: 'workshop', spaceId: threadSpaceId },
+      ],
+      personalSpaceId,
+    }),
+  ).toEqual({
+    refused: `record project workshop is ambiguous across spaces ${threadSpaceId}, ${projectSpaceId}`,
+    remedy: 'use a project name that identifies one record space, then retry the board post',
   })
 })
 
@@ -213,8 +258,6 @@ test('hosted board post applies the shared default durations', async () => {
   let posted: Record<string, unknown> | undefined
   const client = {
     ...destinationClient,
-    projects: async () => [{ name: 'workshop', spaceId }],
-    whoami: async () => ({ personalSpaceId: spaceId }),
     boardList: async () => ({ messages: [], truncated: false }),
     boardThread: async () => ({ root, replies: [] }),
     boardStatus: async () => ({ message: root, receipts: [] }),

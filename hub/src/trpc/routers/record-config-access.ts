@@ -3,11 +3,10 @@ import { z } from 'zod'
 import { hostedResolvedKeys } from '../../hosted-resolved-keys.ts'
 import { credentialPreferenceIdentitySchema } from '../../record-client.ts'
 import type { Context } from '../context.ts'
-import { email } from './record-inputs.ts'
+import { email, spaceId } from './record-inputs.ts'
 import { recordClient } from './record-router-client.ts'
 
 const t = initTRPC.context<Context>().create()
-const spaceId = z.string().uuid()
 const emailInput = z.object({ email, spaceId })
 
 export const recordConfigAccessRouter = t.router({

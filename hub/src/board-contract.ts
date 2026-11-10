@@ -11,7 +11,6 @@ export const BoardIdSchema = z
 const NoteIdSchema = z.string().refine(hasRecordIdShape, 'note id must be a UUID')
 export const BoardIdInputSchema = z.object({
   id: BoardIdSchema,
-  spaceId: z.string().uuid().optional(),
 })
 export const BoardListInputSchema = z.object({
   kind: z.enum(['notice', 'question']).optional(),
@@ -34,12 +33,10 @@ export const BoardPostInputSchema = z.object({
 export const BoardReplyInputSchema = z.object({
   id: BoardIdSchema,
   body: z.string().trim().min(1),
-  spaceId: z.string().uuid().optional(),
 })
 export const BoardAcceptInputSchema = z.object({
   questionId: BoardIdSchema,
   replyId: BoardIdSchema,
-  spaceId: z.string().uuid().optional(),
 })
 const BoardOriginSchema = z.object({
   kind: z.string(),
