@@ -95,6 +95,7 @@ type ClaimRow = {
 }
 
 type CandidateRow = MessageRow | ClaimRow
+type BoardDestinationResolver = typeof boardWriteDestination
 const candidateKey = (candidate: Candidate) => `${candidate.kind}:${candidate.recordId}`
 
 function candidateRows(
@@ -274,6 +275,7 @@ async function uploadMessage(
   hostedRoots: Map<string, string>,
   client: RecordApiClient,
   database: Database,
+  destinationResolver: BoardDestinationResolver,
 ): Promise<string> {
   const authorRunId = row.author_run_record_id
   if (candidate.kind === 'reply') {
@@ -295,7 +297,7 @@ async function uploadMessage(
         project,
         projectId,
       },
-      await boardWriteDestination(client, project),
+      await destinationResolver(client, project),
     )
     return uploaded.id
   }
@@ -329,7 +331,7 @@ async function uploadMessage(
       projectId,
     },
     undefined,
-    await boardWriteDestination(client, project),
+    await destinationResolver(client, project),
   )
   return uploaded.id
 }
@@ -340,6 +342,7 @@ async function uploadReceipts(
   client: RecordApiClient,
   database: Database,
   clock: number,
+  destinationResolver: BoardDestinationResolver,
 ): Promise<number> {
   let skipped = 0
   const receipts = pendingReceiptsForMessage(messageId, database, clock)
@@ -355,7 +358,7 @@ async function uploadReceipts(
           acknowledged: Boolean(receipt.acknowledged_at),
         },
         undefined,
-        await boardWriteDestination(client),
+        await destinationResolver(client),
       )
       recordReceiptUpload(
         hostedId,
@@ -467,6 +470,7 @@ async function uploadClaim(
   clock: () => number,
   client: RecordApiClient,
   database: Database,
+  destinationResolver: BoardDestinationResolver,
 ): Promise<string | null> {
   const remaining = Date.parse(row.lapses_at) - clock()
   if (remaining <= 0) return null
@@ -481,7 +485,7 @@ async function uploadClaim(
       note: row.note ?? undefined,
       holderSession: row.holder_session,
     },
-    await boardWriteDestination(client, row.project),
+    await destinationResolver(client, row.project),
   )
   return uploaded.id
 }
@@ -499,6 +503,7 @@ type UploadContext = {
   at: string
   skippedReceipts: number
   dropped: Set<string>
+  destinationResolver: BoardDestinationResolver
 }
 
 function stoppedAtRateCap(context: UploadContext): BoardAdoptionResult {
@@ -550,6 +555,7 @@ async function uploadOneMessage(
       context.hostedRoots,
       context.client,
       context.database,
+      context.destinationResolver,
     ),
   )
 }
@@ -567,6 +573,7 @@ async function uploadMessages(context: UploadContext): Promise<BoardAdoptionResu
         context.client,
         context.database,
         context.clock(),
+        context.destinationResolver,
       )
   }
   return null
@@ -583,6 +590,7 @@ async function uploadOneClaim(
       context.clock,
       context.client,
       context.database,
+      context.destinationResolver,
     ),
   )
 }
@@ -671,6 +679,7 @@ export async function adoptHostedBoard(
     clock?: () => number
     database?: Database
     client?: RecordApiClient
+    destinationResolver?: BoardDestinationResolver
   } = {},
 ): Promise<BoardAdoptionResult> {
   const database = input.database ?? writableDb()
@@ -728,6 +737,7 @@ export async function adoptHostedBoard(
     at,
     skippedReceipts: 0,
     dropped: new Set(),
+    destinationResolver: input.destinationResolver ?? boardWriteDestination,
   }
   const stopped = await uploadMessages(uploadContext)
   if (stopped) return stopped

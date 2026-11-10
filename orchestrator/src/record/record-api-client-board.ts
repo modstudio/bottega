@@ -52,7 +52,7 @@ type BoardRootClient = {
   ): Promise<HostedBoardMessage>
 }
 
-export function recordBoardRootClient(request: RecordClientRequest): BoardRootClient {
+function recordBoardRootClient(request: RecordClientRequest): BoardRootClient {
   return {
     listBoardChanges: (query, destination) => {
       const search = new URLSearchParams()

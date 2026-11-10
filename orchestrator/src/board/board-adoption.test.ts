@@ -11,7 +11,7 @@ import { type RecordApiClient, RecordApiRequestError } from '../record/record-ap
 import { CLAIM_CONFLICT } from '../record/record-board-claims.ts'
 import type { HostedBoardMessage, HostedBoardReceipt } from '../record/record-board-contract.ts'
 import { RATE_LIMITED } from '../record/record-board-messages.ts'
-import { adoptHostedBoard } from './board-adoption.ts'
+import { adoptHostedBoard as adoptHostedBoardWithDestinations } from './board-adoption.ts'
 import {
   mayMarkBoardHostedAdopted,
   selectBoardAdoptionCandidates,
@@ -25,6 +25,14 @@ import { askQuestion, replyToThread } from './board-thread-service.ts'
 
 const NOW = Date.parse('2026-10-05T12:00:00.000Z')
 const ENV = { CLAUDE_CODE_SESSION_ID: 'reader', BOTTEGA_RECORD_API_URL: 'https://record.test' }
+
+const adoptHostedBoard = (input: Parameters<typeof adoptHostedBoardWithDestinations>[0]) =>
+  adoptHostedBoardWithDestinations({
+    ...input,
+    destinationResolver: async (_client, project) => ({
+      destinationSpaceId: project ? `space:${project}` : 'space:personal',
+    }),
+  })
 
 function presence(session = 'reader', lastSeen = NOW) {
   db()

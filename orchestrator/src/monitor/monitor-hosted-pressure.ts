@@ -222,7 +222,9 @@ export async function announceHostedPressureActions(
     const actions = decide(overview.messages)
     const destination =
       actions.length > 0
-        ? await (dependencies.destinationResolver ?? boardWriteDestination)(client as RecordApiClient)
+        ? await (dependencies.destinationResolver ?? boardWriteDestination)(
+            client as RecordApiClient,
+          )
         : undefined
     for (const action of actions) {
       if (action.kind === 'withdraw') {
