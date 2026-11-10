@@ -600,10 +600,8 @@ async function request<T>(
   const signal = init.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal
   const startedAt = Date.now()
   const safety = !init.method || init.method.toUpperCase() === 'GET' ? 'probe' : 'non-idempotent'
-  const retryStatement =
-    safety === 'probe'
-      ? `${hostedRequestSafetyStatement(safety)}; retry, and if it stalls again`
-      : `${hostedRequestSafetyStatement(safety)}, and if it stalls again`
+  const retry = safety === 'probe' ? '; retry,' : ','
+  const retryStatement = `${hostedRequestSafetyStatement(safety)}${retry} and if it stalls again`
   const timeoutError = () =>
     new TRPCError({
       code: 'TIMEOUT',

@@ -47,6 +47,7 @@ export function memoryRecordSession(): {
     token: () => stored,
     setToken: (value) => {
       stored = value
+      forgetRecordSessionToken()
     },
   }
 }
