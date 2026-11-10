@@ -133,7 +133,7 @@ test('actual serialized requests stay within budget and retain UTF-8 row order',
     .query<{ quarantine_reason: string }, []>('SELECT quarantine_reason FROM outbox WHERE id=1')
     .get()!.quarantine_reason
   const serializedBytes = new TextEncoder().encode(
-    JSON.stringify({ id: 1, kind: 'run', payload: payloads[0], spaceHint: null }),
+    JSON.stringify({ id: 1, kind: 'run', payload: payloads[0], spaceHint: SPACE_ID }),
   ).byteLength
   expect(reason).toContain(`serialized row is ${serializedBytes} bytes`)
   expect(reason).toContain(`${RECORD_SYNC_CLIENT_MAX_REQUEST_BYTES} byte client request budget`)

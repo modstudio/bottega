@@ -52,6 +52,7 @@ const options = (local: Database, remote: ReturnType<typeof fakePostgres>) => ({
       permission: 'write',
     },
   ],
+  projectSpaces: { 'run-fixture': 'active' },
   client: {
     whoami: async () => ({
       user: { id: '01990000-0000-7000-8000-000000000002' },
