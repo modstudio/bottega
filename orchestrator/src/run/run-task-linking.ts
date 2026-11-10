@@ -5,6 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { type Project, projectForTaskKey, projects } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
+import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { linkWorkflowTaskLabel } from '../workflow/workflow-task-linking.ts'
 import {
   type HubTaskKeyMap,
@@ -80,7 +81,11 @@ type LocalTaskLinkRow = { id: string; task_key: string; project: string }
 type LocalTaskLinkConfig = {
   pendingSql: string
   linkedSql: string
-  write(database: Database, update: PendingLocalTaskLink): void | Promise<unknown>
+  write(
+    database: Database,
+    update: PendingLocalTaskLink,
+    taskFlowClient?: RecordTaskFlowClient,
+  ): void | Promise<unknown>
 }
 
 const LOCAL_TASK_LINKS = {
@@ -90,13 +95,12 @@ const LOCAL_TASK_LINKS = {
       WHERE c.task_record_id IS NULL AND c.workflow_key<>''`,
     linkedSql: `SELECT c.task_record_id,p.name project FROM workflow_cursor c
       JOIN project p ON p.record_id=c.project_record_id WHERE c.task_record_id IS NOT NULL`,
-    write: (database, update) => {
+    write: (database, update, taskFlowClient) =>
       linkWorkflowTaskLabel(database, {
         project: update.project,
         workflowKey: update.taskKey,
         taskRecordId: update.taskId,
-      })
-    },
+      }, taskFlowClient),
   },
   question: {
     pendingSql: `SELECT q.record_id id,q.workflow_key task_key,p.name project
@@ -423,6 +427,7 @@ export async function linkRunTasks(
     database?: Database
     registeredProjects?: readonly Project[]
     hubReader?: HubTaskReader
+    taskFlowClient?: RecordTaskFlowClient
   } = {},
 ): Promise<RunTaskLinkReport> {
   const database = dependencies.database ?? (options.dryRun ? db() : writableDb())
@@ -456,7 +461,8 @@ export async function linkRunTasks(
   const pendingUpdates = deriveLocalTaskLinks(database, taskIndex, report)
   if (!options.dryRun) {
     for (const update of pendingUpdates) {
-      if (update.table === 'workflow_cursor') await writeLocalTaskLink(database, update)
+      if (update.table === 'workflow_cursor')
+        await writeLocalTaskLink(database, update, dependencies.taskFlowClient)
     }
     writeTransaction(() => {
       const update = database.query(
@@ -530,8 +536,12 @@ function localTaskLinkRows(database: Database, table: LocalTaskLinkTable): Local
   return database.query<LocalTaskLinkRow, []>(LOCAL_TASK_LINKS[table].pendingSql).all()
 }
 
-async function writeLocalTaskLink(database: Database, update: PendingLocalTaskLink): Promise<void> {
-  await LOCAL_TASK_LINKS[update.table].write(database, update)
+async function writeLocalTaskLink(
+  database: Database,
+  update: PendingLocalTaskLink,
+  taskFlowClient?: RecordTaskFlowClient,
+): Promise<void> {
+  await LOCAL_TASK_LINKS[update.table].write(database, update, taskFlowClient)
 }
 
 function invalidRunTaskReferenceCount(database: Database, tasks: HubTaskKeyMap): number {

@@ -1,10 +1,11 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addProject } from '../../test/fixtures/offline-branch-landing.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import type { Project } from '../project/projects.ts'
+import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { type HubTaskReference, taskKeyMap } from '../workflow/workflow-task-reference.ts'
 import { deriveRunLinks, linkRunTasks, type RunLinkFacts } from './run-task-linking.ts'
 
@@ -155,6 +156,79 @@ describe('run link derivation', () => {
         registered,
       )[0],
     ).not.toHaveProperty('task_record_id')
+  })
+})
+
+describe('hosted run task linking', () => {
+  const hostedUrl = 'https://record.example.test'
+  let priorHostedUrl: string | undefined
+
+  beforeEach(() => {
+    priorHostedUrl = process.env.BOTTEGA_RECORD_API_URL
+    process.env.BOTTEGA_RECORD_API_URL = hostedUrl
+  })
+
+  afterEach(() => {
+    if (priorHostedUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = priorHostedUrl
+  })
+
+  test('an adoption failure leaves run and other local task links unwritten', async () => {
+    const projectId = addProject('hosted-link-failure', '/work/hosted-link-failure')
+    const runId = addRun({ agent: 'codex', job: 'implement', projectRecordId: projectId })
+    db().query('UPDATE run SET launch_key=? WHERE record_id=?').run('FAIL-1', runId)
+    db().exec('PRAGMA foreign_keys=OFF')
+    try {
+      db().query(
+        `INSERT INTO workflow_cursor
+          (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,
+           workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,total_steps,created_at,updated_at)
+         VALUES ('cursor-hosted-failure',992,'hosted-link-failure',?,'flow','default','FAIL-1','',
+                 'workflow-version','catalogue-version','{}',0,'step','running','[]',1,'t','t')`,
+      ).run(projectId)
+      db().query(
+        `INSERT INTO question
+          (record_id,number,workflow_cursor_record_id,workflow_key,asked_at,question,asked_via)
+         VALUES ('question-hosted-failure',992,'cursor-hosted-failure','FAIL-1','t','question','live')`,
+      ).run()
+      db().query(
+        `INSERT INTO presence
+          (session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
+         VALUES ('hosted-failure-session','claude','architect','machine','hosted-link-failure',?,
+                 '/work/hosted-link-failure','FAIL-1','t')`,
+      ).run(projectId)
+    } finally {
+      db().exec('PRAGMA foreign_keys=ON')
+    }
+    const taskFlowClient: RecordTaskFlowClient = {
+      adoptTaskFlow: async () => {
+        throw new Error('hosted adoption failed')
+      },
+    }
+
+    await expect(
+      linkRunTasks(
+        { dryRun: false },
+        {
+          hubReader: async () => [
+            { key: 'FAIL-1', record_id: 'task-hosted-failure', project: 'hosted-link-failure' },
+          ],
+          taskFlowClient,
+        },
+      ),
+    ).rejects.toThrow('hosted adoption failed')
+
+    expect(db().query('SELECT task_record_id FROM run WHERE record_id=?').get(runId)).toEqual({
+      task_record_id: null,
+    })
+    expect(
+      db().query(
+        `SELECT
+          (SELECT task_record_id FROM workflow_cursor WHERE record_id='cursor-hosted-failure') cursor_task,
+          (SELECT workflow_task_record_id FROM question WHERE record_id='question-hosted-failure') question_task,
+          (SELECT current_task_record_id FROM presence WHERE session_id='hosted-failure-session') presence_task`,
+      ).get(),
+    ).toEqual({ cursor_task: null, question_task: null, presence_task: null })
   })
 })
 
