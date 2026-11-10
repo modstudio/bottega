@@ -1,7 +1,7 @@
 // concern: hosted task-flow writes
 /** Applies tenant-bound workflow command intents with optimistic revisions and request idempotency.
- * Compose locks the project stage-number advisory key first. Every intent then locks task_flow,
- * task_flow_stage, and child rows in that order.
+ * Every intent locks task_flow first, task_flow_stage second, and child rows last. Compose takes
+ * the seq row lock after the task_flow row lock, inside insertStage.
  */
 import type { SQL } from 'bun'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
@@ -9,6 +9,7 @@ import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
 import { isUniqueViolation } from './record-config-error.ts'
 import { recordPool } from './record-pool.ts'
+import { allocateRecordSequence } from './record-sequence.ts'
 import type {
   TaskFlowComposeResult,
   TaskFlowIntent,
@@ -201,9 +202,7 @@ async function insertStage(
       conflict('task_flow_stage', String(row.id), Number(existing.revision), 'already-exists')
     return { revision: Number(existing.revision), number: Number(existing.number) }
   }
-  const next = (await tx`SELECT coalesce(max(number),0)+1 AS number FROM task_flow_stage
-    WHERE project_id=${row.projectId}::uuid`) as Array<{ number: number | string }>
-  const number = Number(next[0]!.number)
+  const number = await allocateRecordSequence(tx, spaceId, String(row.projectId), 'task_flow_stage')
   await tx`INSERT INTO task_flow_stage
     (id,space_id,flow_record_id,project_id,number,workflow,mode,workflow_key,instance_id,session_id,
      workflow_version_id,catalogue_version_id,arguments,active_ordinal,active_slug,state,closed_step_notes,
@@ -332,8 +331,6 @@ async function applyCompose(
   body: ComposeBody,
 ): Promise<TaskFlowComposeResult> {
   const revisions: Record<string, number> = {}
-  if (body.stageInsert)
-    await tx`SELECT pg_advisory_xact_lock(hashtextextended(${body.stageInsert.projectId},0))`
   if (body.flowInsert)
     revisions[String(body.flowInsert.id)] = await insertFlow(
       tx,
