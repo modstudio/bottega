@@ -1,12 +1,20 @@
 import { expect, spyOn, test } from 'bun:test'
 import { Command } from 'commander'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
 import { run } from '../cli/program.ts'
 import { registerLensCommands } from '../commands/lens.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { rememberProjectSpace } from '../project-space.ts'
+import { setProfileCommand } from './lens-commands.ts'
 
 const slots = JSON.stringify({
   type: 'object',
@@ -119,4 +127,48 @@ test('profile show reads the named project space', async () => {
     name: 'project-show',
     space_id: space,
   })
+})
+
+test('profile set refuses a missing owner before any hosted call', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'lens-profile-owner-edge-'))
+  let hostedCalls = 0
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    async whoami() {
+      hostedCalls += 1
+      throw new Error('lens profile owner refusal reached the hosted record')
+    },
+  })
+  try {
+    await expect(
+      setProfileCommand(
+        [
+          'lens',
+          'profile',
+          'set',
+          'correctness',
+          '--axis',
+          'framework',
+          '--name',
+          'owner-edge',
+          '--body',
+          '{"framework_guidance":"Fixture.","commands":"bun test"}',
+          '--enabled',
+          'true',
+          '--reason',
+          'owner edge test',
+        ],
+        () => {},
+        root,
+      ),
+    ).rejects.toThrow(
+      'lens profile set writes to a record space and names none; pass --space <slug>, or --project <name>',
+    )
+    expect(hostedCalls).toBe(0)
+  } finally {
+    delete process.env.BOTTEGA_RECORD_API_URL
+    installRecordApiClient(null)
+    rmSync(root, { recursive: true, force: true })
+  }
 })

@@ -63,14 +63,6 @@ describe('resolveRecordSpaceOwnerDestination', () => {
     expect(loads).toBe(0)
   })
 
-  test('lens profile set names project as an accepted owner', async () => {
-    await expect(
-      resolveRecordSpaceOwnerDestination('lens profile set', {}, ['project'], async () =>
-        Promise.resolve(memberships),
-      ),
-    ).rejects.toThrow('--space <slug>, or --project <name>')
-  })
-
   test('resolves a member slug after loading memberships', async () => {
     await expect(
       resolveRecordSpaceOwnerDestination(
