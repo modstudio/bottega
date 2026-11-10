@@ -7,15 +7,15 @@ import { FLY_METRICS_OPERATOR_CREDENTIAL } from '../../../shared/operator-creden
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
-  type BoardDestinationResolver,
-  boardWriteDestination,
-} from '../board/board-write-destination.ts'
-import {
   BUDGET_SPENT,
   withinHostedBoardRefreshBudget,
 } from '../board/board-hosted-refresh-budget.ts'
 import { hostedBoardPostInput } from '../board/board-operations.ts'
 import { boardActor } from '../board/board-store.ts'
+import {
+  type BoardDestinationResolver,
+  boardWriteDestination,
+} from '../board/board-write-destination.ts'
 import { resolveOperatorCredential } from '../config/operator-credential.ts'
 import { db, writeTransaction } from '../database/db.ts'
 import { type RecordApiClient, recordApiClient } from '../record/record-api-client.ts'

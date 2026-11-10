@@ -5,8 +5,8 @@ import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { refreshHostedBoard } from './board-hosted-cache.ts'
-import { boardPresenceDestination, boardWriteDestination } from './board-write-destination.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
+import { boardPresenceDestination, boardWriteDestination } from './board-write-destination.ts'
 
 test('presence names the checkout project space or the personal space outside a project', async () => {
   const projectId = fixtureProjectRecordId(db())

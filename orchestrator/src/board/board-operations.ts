@@ -45,7 +45,6 @@ import {
 } from './board-claim-service.ts'
 import { markBoardDeliveriesDelivered } from './board-delivery.ts'
 import { cachedAudienceAtPosting, queueHostedBoardAcknowledgement } from './board-hosted-cache.ts'
-import { type BoardDestinationResolver, boardWriteDestination } from './board-write-destination.ts'
 import { cacheHostedBoardReceipt } from './board-hosted-receipt-cache.ts'
 import {
   resolveBoardClaimIdentifier,
@@ -85,6 +84,7 @@ import {
   readThread,
   replyToThread,
 } from './board-thread-service.ts'
+import { type BoardDestinationResolver, boardWriteDestination } from './board-write-destination.ts'
 
 type Environment = Record<string, string | undefined>
 type Context = {

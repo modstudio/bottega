@@ -44,7 +44,9 @@ type Ports = Parameters<typeof registerRecordProjectRoutes>[2] &
   Parameters<typeof registerRecordModerationRoutes>[2] &
   Parameters<typeof registerRecordOutsideIntakeRoutes>[2] &
   Parameters<typeof registerRecordDocOrderRoute>[2] &
-  Parameters<typeof registerRecordDocCountsRoute>[2]
+  Parameters<typeof registerRecordDocCountsRoute>[2] & {
+    boardNoSpace: Parameters<typeof registerRecordBoardRoutes>[2]['noSpace']
+  }
 
 export function registerRecordWriteRoutes(
   app: Hono<ApiEnvironment>,
@@ -53,7 +55,7 @@ export function registerRecordWriteRoutes(
 ): void {
   registerRecordProjectRoutes(app, deps, ports)
   registerRecordSettingsRoutes(app, deps, ports)
-  registerRecordBoardRoutes(app, deps, ports)
+  registerRecordBoardRoutes(app, deps, { ...ports, noSpace: ports.boardNoSpace })
   registerRecordMachineKeyClaimRoutes(app, deps, ports)
   registerRecordConfigAccessRoutes(app, deps, ports)
   registerRecordMemberPermissionRoutes(app, deps, ports)

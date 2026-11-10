@@ -21,7 +21,6 @@ import {
   uploadErrorDisposition,
 } from './board-adoption-policy.ts'
 import { claimIsLive } from './board-claim-policy.ts'
-import { type BoardDestinationResolver, boardWriteDestination } from './board-write-destination.ts'
 import { BOARD_HOSTED_ADOPTED_KEY, boardHasAdoptedHosted } from './board-mode.ts'
 import { OPERATOR_READER, parseAudience } from './board-policy.ts'
 import { parseReplyAudienceOption } from './board-reply-audience.ts'
@@ -34,6 +33,7 @@ import {
   recipients,
   rowIsLive,
 } from './board-store.ts'
+import { type BoardDestinationResolver, boardWriteDestination } from './board-write-destination.ts'
 
 type LedgerRow = {
   local_kind: LocalKind

@@ -244,6 +244,12 @@ const activeSpaceRemedy = `run \`${PLATFORM_SLUG} record space switch <slug>\` t
 
 const noSpace = (context: Context<ApiEnvironment>) =>
   context.json({ error: 'record session has no active space', remedy: activeSpaceRemedy }, 409)
+const boardPersonalSpaceRemedy = `run \`${PLATFORM_SLUG} record sign-in\` to restore the personal space`
+const boardNoSpace = (context: Context<ApiEnvironment>) =>
+  context.json(
+    { error: 'record session has no personal space', remedy: boardPersonalSpaceRemedy },
+    409,
+  )
 const catalogueRoutes = [
   registerRecordLensRoutes,
   registerRecordPortRoutes,
@@ -420,7 +426,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (refusal) return refusal
     throw error
   }
-  registerRecordWriteRoutes(app, deps, { scope, docScope, noSpace, writeError })
+  registerRecordWriteRoutes(app, deps, { scope, docScope, noSpace, boardNoSpace, writeError })
   for (const register of catalogueRoutes) register(app, deps, { scope, noSpace })
 
   app.get('/v1/config/entries', async (context) => {

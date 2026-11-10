@@ -5,7 +5,6 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
-import { projectAt } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   type RecordApiClient,
@@ -17,13 +16,9 @@ import {
   type HostedBoardChanges,
   type HostedBoardMessage,
 } from '../record/record-board-contract.ts'
+import type { HostedCacheNotice } from './board-hosted-cache-contract.ts'
 import { hostedBoardRevisionIsStale } from './board-hosted-cache-revision.ts'
-import {
-  type BoardDestinationResolver,
-  type BoardPresenceDestinationResolver,
-  boardPresenceDestination,
-  boardWriteDestination,
-} from './board-write-destination.ts'
+import { hostedBoardPresence } from './board-hosted-presence.ts'
 import { cacheHostedBoardReceipt } from './board-hosted-receipt-cache.ts'
 import { BUDGET_SPENT, withinHostedBoardRefreshBudget } from './board-hosted-refresh-budget.ts'
 import { takeHostedReportReplySuccessor } from './board-hosted-successor.ts'
@@ -51,6 +46,14 @@ import {
   renderBoardReply,
   renderBoardReplyDelivery,
 } from './board-thread-render.ts'
+import {
+  type BoardDestinationResolver,
+  type BoardPresenceDestinationResolver,
+  boardPresenceDestination,
+  boardWriteDestination,
+} from './board-write-destination.ts'
+
+export type { HostedCacheNotice } from './board-hosted-cache-contract.ts'
 
 export const BOARD_REFRESH_CURSOR_KEY = 'board_hosted_change_cursor'
 const BOARD_REFRESH_AT_KEY = 'board_hosted_refresh_at'
@@ -62,20 +65,6 @@ const BOARD_MONITOR_UNVERIFIED_ANNOUNCED_KEY = 'board_hosted_monitor_unverified_
 export const BOARD_RECEIPT_WRITE_BUDGET_MS = 250
 export const BOARD_READ_REFRESH_BUDGET_MS = 500
 export const BOARD_VERIFICATION_WARNING_MAX_CHARS = 500
-
-export type HostedCacheNotice = {
-  id: string
-  text: string
-  oneLine: string
-  ackRequired: boolean
-  ackDeadline: string | null
-  createdAt: string
-  expiresAt: string | null
-  purpose: import('../../../shared/board-purpose.ts').BoardPurpose
-  reportReplySuccessor?: boolean
-  successorHeld?: boolean
-  threadTitle?: string
-}
 
 type RefreshInput = {
   budgetMs: number
@@ -320,20 +309,7 @@ async function fetchHostedPages(
   presenceDestinationResolver: BoardPresenceDestinationResolver,
 ): Promise<boolean> {
   let after = meta(database, BOARD_REFRESH_CURSOR_KEY) ?? '0'
-  const liveSince = new Date(presenceAt - SESSION_LIVE_MS).toISOString()
-  const checkoutProject = projectAt(cwd, database)
-  const presence = checkoutProject
-    ? (database
-        .query(
-          `SELECT session_id AS session,project_record_id AS projectId,role,
-              COALESCE(first_seen,last_seen) AS firstSeen,last_seen AS lastSeen
-           FROM presence WHERE last_seen>=? AND project_record_id=?`,
-        )
-        .all(
-          liveSince,
-          checkoutProject.recordId,
-        ) as import('../record/record-board-contract.ts').HostedBoardPresenceInput[])
-    : []
+  const presence = hostedBoardPresence(database, cwd, presenceAt)
   const destination =
     presence.length > 0 ? await presenceDestinationResolver(client, cwd) : undefined
   while (now() < deadline) {
