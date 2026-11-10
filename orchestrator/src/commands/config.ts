@@ -5,7 +5,6 @@ import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type ConfigClient, type ConfigScope } from '../../../shared/config-client.ts'
 import { isDelegationKey } from '../../../shared/delegation-mode.ts'
-import { readHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { listMachineEntries } from '../../../shared/machine-config.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { resolveRecordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
@@ -25,13 +24,13 @@ import {
   machineInit,
   machineRevoke,
   machineShow,
-  machineTrust,
   sealSecretDecision,
   setConfigEntry,
   setSecret,
 } from '../config/config-service.ts'
 import { hostedConfigClient } from '../config/hosted-config-call-outcome.ts'
-import { machineRegister, machineTrustInSpace } from '../config/named-space-config.ts'
+import { trustMachine } from '../config/machine-trust.ts'
+import { machineRegister } from '../config/named-space-config.ts'
 import { parseSecretRunArgs, runNamedSecrets } from '../config/secret-run.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
 import { subscriptionMonthlyUsdKey } from '../run/run-subscription-cost.ts'
@@ -230,9 +229,7 @@ function registerMachineCommands(config: Command): void {
         options.space,
         client,
       )
-      if (readHostedConfigIdentity()?.spaceId === selected.spaceId)
-        await machineTrust(keyId, publicKey, label, selected, client)
-      else await machineTrustInSpace(keyId, publicKey, label, selected, client)
+      await trustMachine(keyId, publicKey, label, selected, client)
       log(keyId)
     })
   machine
