@@ -40,8 +40,10 @@ type HostedBoardClient = Pick<
   | 'boardReply'
   | 'boardAccept'
   | 'boardWithdraw'
-> &
-  Partial<Pick<RecordClient, 'projects' | 'whoami'>>
+> & {
+  projects?: () => Promise<Array<{ name: string; spaceId: string }>>
+  whoami?: () => Promise<{ personalSpaceId: string | null }>
+}
 type HostedBoardDeps = {
   clientFor: (context: Context) => HostedBoardClient
   clock: () => number
