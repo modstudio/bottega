@@ -18,7 +18,7 @@ let registered = false
 const reapStaleRuns = (database: Parameters<typeof reapStale>[0]) =>
   reapStale(database, terminalSharedGitConfigForRecordedRun)
 
-export function shouldGuardHostedTables(
+function shouldGuardHostedTables(
   verdict: 'hosted' | 'local-authoritative' | 'refused',
   tables: readonly string[],
 ): boolean {

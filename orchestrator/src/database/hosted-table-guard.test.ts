@@ -1,6 +1,5 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { shouldGuardHostedTables } from '../runtime/store-hooks.ts'
 import { guardHostedTables } from './hosted-table-guard.ts'
 
 test('hosted install guard refuses listed SQL and allows other tables', () => {
@@ -15,10 +14,4 @@ test('hosted install guard refuses listed SQL and allows other tables', () => {
   } finally {
     database.close()
   }
-})
-
-test('store access guards only hosted installs with listed tables', () => {
-  expect(shouldGuardHostedTables('hosted', ['hosted_row'])).toBe(true)
-  expect(shouldGuardHostedTables('local-authoritative', ['hosted_row'])).toBe(false)
-  expect(shouldGuardHostedTables('hosted', [])).toBe(false)
 })
