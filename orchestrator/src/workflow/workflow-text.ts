@@ -1,7 +1,7 @@
 // concern: workflows
 /** Owns cursor-local text attachments and the pure decisions governing their lifetime. */
 import type { Database } from 'bun:sqlite'
-import { nowIso, writableDb, writeTransaction } from '../database/db.ts'
+import { writableDb, writeTransaction } from '../database/db.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { writeHostedTaskFlow } from '../record/record-task-flow-write-client.ts'
@@ -138,6 +138,7 @@ type AttachCursorRow = {
   step_slug: string
   state: CursorState
   revision: number
+  updated_at: string
 }
 
 function attachSelectedWorkflowText(
@@ -148,6 +149,20 @@ function attachSelectedWorkflowText(
   createdAt: string,
   d: Database,
 ): string {
+  const existing = d
+    .query<{ cursor_record_id: string; step_ordinal: number; step_slug: string; body: string }, [string]>(
+      'SELECT cursor_record_id,step_ordinal,step_slug,body FROM workflow_step_text WHERE record_id=?',
+    )
+    .get(recordId)
+  if (existing) {
+    if (
+      existing.cursor_record_id !== row.record_id ||
+      existing.step_ordinal !== row.ordinal + 1 ||
+      existing.step_slug !== row.step_slug ||
+      existing.body !== body
+    ) throw new Error(`workflow text ${recordId} already exists with different values`)
+    return workflowTextAttachmentToken(recordId)
+  }
   const attachmentBytes = Buffer.byteLength(body, 'utf8')
   const cursorBytes = workflowTextRows(row.record_id, d).reduce(
     (total, attachment) => total + Buffer.byteLength(attachment.body, 'utf8'),
@@ -184,7 +199,7 @@ async function attachWorkflowTextByHandleUnchecked(
     row.step_slug,
     body,
   ])
-  const createdAt = nowIso()
+  const createdAt = row.updated_at
   await writeHostedTaskFlow(
     'attach-text',
     {
@@ -231,7 +246,7 @@ async function attachWorkflowTextUnchecked(
     row.step_slug,
     body,
   ])
-  const createdAt = nowIso()
+  const createdAt = row.updated_at
   await writeHostedTaskFlow(
     'attach-text',
     {

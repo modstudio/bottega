@@ -1,9 +1,10 @@
 import type { Database } from 'bun:sqlite'
-import { randomUUID } from 'node:crypto'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { notifyWaitingItem } from '../operator/operator-waiting.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
+import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
+import { recordApiClient } from '../record/record-api-client.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { taskFlowRequestId, type TaskFlowIntentInput } from '../record/record-task-flow-write-contract.ts'
 import { writeHostedTaskFlow } from '../record/record-task-flow-write-client.ts'
@@ -92,9 +93,10 @@ import { refuseKeylessStepClose } from './workflow-keyless-close.ts'
 import { openWorkflowObligations } from './workflow-obligation-floor.ts'
 import { decideWorkflowRuleAnswer, pinnedWorkflowRuleStep } from './workflow-rule-answer.ts'
 import {
-  bindCloseSelfRuling,
+  recordWorkflowSelfRuling,
   type WorkflowSelfRulingInput,
 } from './workflow-self-ruling-mutation.ts'
+import { selfRulingRefusal } from './workflow-self-ruling.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { linkResolvedWorkflowTask, withLinkedWorkflowTask } from './workflow-task-linking.ts'
 import {
@@ -174,6 +176,7 @@ async function insertCursor(
   d: Database,
   autonomy?: AutonomyResolution,
   commitCount: CommitCountPort = readCommitsPastLanding,
+  keylessSiblingRetry = false,
 ): Promise<CursorRow> {
   const refusal = workflowComposeBranchRefusal({
     workflow: composition.workflow.slug,
@@ -185,7 +188,6 @@ async function insertCursor(
   if (refusal) throw new Error(refusal)
   const cursorRecordId = newRecordId()
   const key = keyOf(composition.arguments)
-  const instance = key ? '' : randomUUID()
   const at = nowIso()
   const projectRecordId = d
     .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
@@ -199,6 +201,20 @@ async function insertCursor(
     : null
   const flowRecordId = existingFlow?.record_id ?? newRecordId()
   const machine = machineId()
+  const owner = context.session ?? machine
+  const keylessOrdinal = key
+    ? null
+    : d.query<{ n: number }, [string, string, string, string | null, string | null, string]>(
+        `SELECT COUNT(*)+1 n FROM workflow_cursor
+         WHERE project_record_id=? AND workflow_slug=? AND mode_slug=? AND workflow_key=''
+           AND (session_id=? OR (? IS NULL AND session_id IS NULL AND opened_machine_id=?))`,
+      ).get(projectRecordId, composition.workflow.slug, composition.mode!.slug, context.session ?? null, context.session ?? null, machine)!.n
+  const instance = key
+    ? ''
+    : taskFlowRequestId('compose', [
+        'keyless-instance', owner, projectRecordId, composition.workflow.slug,
+        composition.mode!.slug, String(keylessOrdinal),
+      ])
   const autonomyJson = storedCursorAutonomyJson(autonomy, {
     steps: Object.fromEntries(composition.steps.map((step) => [step.slug, step.resolvedAutonomy])),
     rulings: composition.rulings,
@@ -240,7 +256,9 @@ async function insertCursor(
       lastAdvancedMachineId: machine,
       revision: 1,
     } as const
-  const hosted = await writeHostedTaskFlow(
+  let hosted
+  try {
+    hosted = await writeHostedTaskFlow(
     'compose',
     {
       requestId: taskFlowRequestId('compose', [
@@ -298,8 +316,59 @@ async function insertCursor(
         updatedAt: at,
       },
     },
-    context.taskFlowClient,
-  )
+      context.taskFlowClient,
+    )
+  } catch (error) {
+    if (!(error instanceof DocRevisionConflictError) || error.reason !== 'already-exists') throw error
+    const client = context.taskFlowClient ?? recordApiClient()
+    const listed = await client.listTaskFlowStages!({
+      projectId: projectRecordId,
+      states: ['running', 'awaiting-ruling'],
+      ...(key ? { taskKey: key } : { sessionId: context.session ?? undefined }),
+    })
+    const replay = listed.items.find(({ stage }) =>
+      stage.workflow === composition.workflow.slug &&
+      stage.mode === composition.mode!.slug &&
+      (stage.workflowKey ?? '') === key &&
+      (stage.instanceId ?? '') === instance,
+    )
+    if (!replay)
+      throw new Error(`${error.message}; close or abandon the stage holding this workflow slot, then retry`)
+    const { stage, flow } = replay
+    const alreadyCached = d
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM workflow_cursor WHERE record_id=?')
+      .get(stage.id)
+    if (alreadyCached) {
+      if (key || keylessSiblingRetry) throw error
+      return insertCursor(composition, context, d, autonomy, commitCount, true)
+    }
+    return writeTransaction(() => {
+      const stored = insertWorkflowCursorRow(d, {
+        ...rowInput,
+        recordId: stage.id,
+        number: stage.number ?? undefined,
+        taskRecordId: flow.taskId,
+        taskFlowRecordId: flow.taskId ? flow.id : null,
+        instanceId: stage.instanceId ?? instance,
+        sessionId: stage.sessionId ?? null,
+        args: JSON.stringify(stage.arguments),
+        ordinal: stage.activeOrdinal,
+        stepSlug: stage.activeSlug,
+        state: stage.state,
+        closed: JSON.stringify(stage.closedStepNotes),
+        question: stage.question ?? null,
+        createdAt: stage.createdAt,
+        updatedAt: stage.updatedAt,
+        revision: stage.revision,
+      }, 'hosted-record')
+      if (flow.taskId) cacheAdoptedTaskFlow({
+        project: composition.project, taskRecordId: flow.taskId, cursorRecordId: stored,
+        flowRecordId: flow.id, flowRevision: flow.revision, stageRevision: stage.revision,
+        statusCategory: context.taskStatusCategory, at: stage.updatedAt,
+      }, d)
+      return d.query('SELECT number id,* FROM workflow_cursor WHERE record_id=?').get(stored) as CursorRow
+    }, d)
+  }
   return writeTransaction(() => {
     if (existingFlow) {
       const current = d
@@ -810,25 +879,32 @@ function closeFloorsForStep(
     outcome,
   )
   const floors = decideCloseFloors(currentStep, outcome, advance.requireRuling)
+  let selfRulingPlan: Parameters<typeof recordWorkflowSelfRuling>[0] | undefined
+  let floorEvidence = evidence
+  if (selfRuling) {
+    if (evidence.ruling !== undefined) throw new Error('--self-ruling and --ruling are mutually exclusive')
+    const refusal = selfRulingRefusal(
+      currentStep.resolvedAutonomy.value,
+      floors,
+      selfRuling.basis.trim(),
+      row.ordinal + 1,
+      row.step_slug,
+    )
+    if (refusal) throw new Error(refusal)
+    const nextQuestion = d.query<{ n: number }, []>('SELECT COALESCE(MAX(number),0)+1 n FROM question').get()!.n
+    floorEvidence = { ...evidence, ruling: nextQuestion }
+    selfRulingPlan = {
+      cursorId: row.record_id, workflowKey: row.workflow_key,
+      workflowTaskRecordId: row.task_record_id, stepOrdinal: row.ordinal + 1,
+      stepSlug: row.step_slug, stepTitle: currentStep.title,
+      resolvedAutonomy: currentStep.resolvedAutonomy.value, floors, selfRuling,
+    }
+  }
   const floor = allowedCloseFloor(
     applyFloorDecision(
       row,
       floors,
-      bindCloseSelfRuling(
-        {
-          cursorId: row.record_id,
-          workflowKey: row.workflow_key,
-          workflowTaskRecordId: row.task_record_id,
-          stepOrdinal: row.ordinal + 1,
-          stepSlug: row.step_slug,
-          stepTitle: currentStep.title,
-          resolvedAutonomy: currentStep.resolvedAutonomy.value,
-          floors,
-          selfRuling,
-          evidence,
-        },
-        d,
-      ),
+      floorEvidence,
       ports,
       advance.ordinal === null,
       d,
@@ -837,7 +913,7 @@ function closeFloorsForStep(
     advance.requireRuling,
     currentStep,
   )
-  return { closed, advance, floors, floor }
+  return { closed, advance, floors, floor, selfRulingPlan }
 }
 
 async function persistWorkflowAdvance(
@@ -852,6 +928,7 @@ async function persistWorkflowAdvance(
   context: WorkflowCursorContext,
   d: Database,
   takeoverFromMachineId: string | null,
+  selfRulingPlan?: Parameters<typeof recordWorkflowSelfRuling>[0],
 ): Promise<void> {
   const at = nowIso()
   const obligationPlan = appendWorkflowClose(
@@ -907,6 +984,7 @@ async function persistWorkflowAdvance(
     const current = d.query<{ revision: number }, [string]>('SELECT revision FROM workflow_cursor WHERE record_id=?').get(row.record_id)
     if (!current || current.revision !== row.revision) throw new Error(`workflow cursor ${row.id} changed while it advanced; rerun the command`)
     if (row.state === 'awaiting-ruling') closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, d)
+    if (selfRulingPlan) recordWorkflowSelfRuling(selfRulingPlan, d)
     for (const insert of obligationInserts) d.query(`INSERT INTO workflow_obligation
       (record_id,cursor_record_id,step_ordinal,step_slug,floor,require_pull_request,operator_ruling,
        expected_exit_code,expected_status,floor_deferrable,reason,session_id,created_at)
@@ -1001,6 +1079,7 @@ async function nextWorkflowStepImpl(
     context,
     d,
     takeoverFromMachineId,
+    close.selfRulingPlan,
   )
   const rendered = renderWorkflowAdvanceResult({
     row,

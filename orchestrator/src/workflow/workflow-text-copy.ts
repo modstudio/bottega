@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { db, nowIso, writeTransaction } from '../database/db.ts'
+import { db, writeTransaction } from '../database/db.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { writeHostedTaskFlow } from '../record/record-task-flow-write-client.ts'
@@ -44,7 +44,7 @@ export type WorkflowTextDocumentPorts = {
   create(taskKey: string, project: string, title: string, body: string): Promise<string>
 }
 
-type CopyRow = { id: string; stepSlug: string; body: string }
+type CopyRow = { id: string; stepSlug: string; body: string; createdAt: string }
 type CopyCursor = {
   recordId: string
   number: number
@@ -99,14 +99,14 @@ const firstToken = (title: string) => title.trim().split(/\s+/, 1)[0] ?? ''
 
 function uncopiedRows(cursorId: string, database: Database): CopyRow[] {
   return database
-    .query<{ record_id: string; step_slug: string; body: string }, [string]>(
-      `SELECT t.record_id,t.step_slug,t.body FROM workflow_step_text t
+    .query<{ record_id: string; step_slug: string; body: string; created_at: string }, [string]>(
+      `SELECT t.record_id,t.step_slug,t.body,t.created_at FROM workflow_step_text t
        LEFT JOIN workflow_text_copy c ON c.workflow_text_record_id=t.record_id
        WHERE t.cursor_record_id=? AND c.workflow_text_record_id IS NULL
        ORDER BY t.step_ordinal,t.rowid`,
     )
     .all(cursorId)
-    .map((row) => ({ id: row.record_id, stepSlug: row.step_slug, body: row.body }))
+    .map((row) => ({ id: row.record_id, stepSlug: row.step_slug, body: row.body, createdAt: row.created_at }))
 }
 
 async function recordCopy(
@@ -114,9 +114,9 @@ async function recordCopy(
   textId: string,
   reference: string,
   database: Database,
+  copiedAt: string,
   client?: RecordTaskFlowClient,
 ): Promise<void> {
-  const copiedAt = nowIso()
   const id = taskFlowRequestId('copy-text', [cursorId, textId, reference])
   await writeHostedTaskFlow('copy-text', {
     requestId: taskFlowRequestId('copy-text', [id]),
@@ -182,7 +182,7 @@ export async function copyWorkflowTextForCursor(
         const reference =
           found?.reference ??
           (await documents.create(task.key, cursor.project, `${token} ${row.stepSlug}`, row.body))
-        await recordCopy(cursor.recordId, row.id, reference, database, client)
+        await recordCopy(cursor.recordId, row.id, reference, database, row.createdAt, client)
         copied.push({ id: row.id, documentReference: reference, reused: Boolean(found) })
         if (!found) existing.push({ reference, title: `${token} ${row.stepSlug}` })
       } catch (error) {

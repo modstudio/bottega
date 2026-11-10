@@ -80,7 +80,7 @@ type LocalTaskLinkRow = { id: string; task_key: string; project: string }
 type LocalTaskLinkConfig = {
   pendingSql: string
   linkedSql: string
-  write(database: Database, update: PendingLocalTaskLink): void
+  write(database: Database, update: PendingLocalTaskLink): void | Promise<unknown>
 }
 
 const LOCAL_TASK_LINKS = {
@@ -455,6 +455,9 @@ export async function linkRunTasks(
   }
   const pendingUpdates = deriveLocalTaskLinks(database, taskIndex, report)
   if (!options.dryRun) {
+    for (const update of pendingUpdates) {
+      if (update.table === 'workflow_cursor') await writeLocalTaskLink(database, update)
+    }
     writeTransaction(() => {
       const update = database.query(
         `UPDATE run SET task_record_id=COALESCE(task_record_id,?),
@@ -490,7 +493,7 @@ export async function linkRunTasks(
         }
       }
       for (const update of pendingUpdates) {
-        writeLocalTaskLink(database, update)
+        if (update.table !== 'workflow_cursor') LOCAL_TASK_LINKS[update.table].write(database, update)
       }
     }, database)
   }
@@ -527,8 +530,8 @@ function localTaskLinkRows(database: Database, table: LocalTaskLinkTable): Local
   return database.query<LocalTaskLinkRow, []>(LOCAL_TASK_LINKS[table].pendingSql).all()
 }
 
-function writeLocalTaskLink(database: Database, update: PendingLocalTaskLink): void {
-  LOCAL_TASK_LINKS[update.table].write(database, update)
+async function writeLocalTaskLink(database: Database, update: PendingLocalTaskLink): Promise<void> {
+  await LOCAL_TASK_LINKS[update.table].write(database, update)
 }
 
 function invalidRunTaskReferenceCount(database: Database, tasks: HubTaskKeyMap): number {

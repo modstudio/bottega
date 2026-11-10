@@ -2,7 +2,7 @@
 /** Selects one open workflow cursor by public handle or declared identity. */
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
-import { db, sessionId, writeTransaction } from '../database/db.ts'
+import { db, sessionId } from '../database/db.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { readThroughTaskFlow, type TaskFlowReadStatus } from './task-flow-read-through.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
@@ -157,6 +157,7 @@ export type SelectableCursorRow = {
   taken_over_from_machine_id: string | null
   last_advanced_machine_id: string | null
   revision: number
+  updated_at: string
 }
 
 const mismatch = (
