@@ -644,13 +644,7 @@ describe('judge ruling', () => {
     const id = insert('ok', 'review-lens')
     db().query("UPDATE run SET lens='correctness',model='m' WHERE record_id=?").run(id)
     const reviewId = recordReview(id, reviewReply(2, 'high'), db())
-    const unavailable = createMemoryRecordApiClient()
-    installRecordApiClient({
-      ...unavailable,
-      putScore: async () => {
-        throw new Error('fixture record unreachable')
-      },
-    })
+    installRecordApiClient(createMemoryRecordApiClient())
 
     await judge(id, ['full', 'right'], {
       reproduced: 'all',

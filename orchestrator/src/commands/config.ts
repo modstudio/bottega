@@ -8,6 +8,7 @@ import { isDelegationKey } from '../../../shared/delegation-mode.ts'
 import { listMachineEntries } from '../../../shared/machine-config.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { resolveRecordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
+import { RECORD_PERSONAL_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import {
   isShipToConfigKey,
   SHIP_TO_CONFIG_KEY,
@@ -126,7 +127,8 @@ export async function configWriteTarget(
       destination: { destinationSpaceId: destination.spaceId },
     }
   }
-  if (!who.personalSpaceId) throw new Error('personal space is not provisioned')
+  if (!who.personalSpaceId)
+    throw new Error(`personal space is not provisioned; ${RECORD_PERSONAL_SPACE_REMEDY}`)
   const destination = await resolveRecordSpaceOwnerDestination(
     verb,
     { space: who.personalSpaceId },

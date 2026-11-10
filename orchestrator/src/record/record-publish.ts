@@ -4,6 +4,7 @@ import { agentsPayload } from '../agent/agent-commands.ts'
 import { blockersPayload, healthPayload } from '../health/health-commands.ts'
 import { jobsPayload } from '../jobs/job-commands.ts'
 import { state } from '../state/serve.ts'
+import { RECORD_PERSONAL_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import { machineId } from './machine-identity.ts'
 import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
 import { SNAPSHOT_KINDS, type SnapshotKind } from './record-snapshots.ts'
@@ -60,7 +61,8 @@ export async function publishSnapshotsCommand(
   const identity = deps.identity ?? machineId()
   const build = deps.build ?? buildSnapshotPayload
   const personalSpaceId = (await client.whoami()).personalSpaceId
-  if (!personalSpaceId) throw new Error('personal space is not provisioned')
+  if (!personalSpaceId)
+    throw new Error(`personal space is not provisioned; ${RECORD_PERSONAL_SPACE_REMEDY}`)
   const destination = { destinationSpaceId: personalSpaceId }
   let failed = false
   for (const kind of SNAPSHOT_KINDS) {

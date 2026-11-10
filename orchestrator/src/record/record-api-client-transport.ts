@@ -5,12 +5,29 @@ import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { scheduleHostedCallObservation } from '../../../shared/hosted-call-observation.ts'
 import { runningInstallationIdentity } from '../../../shared/install-root.ts'
+import packageManifest from '../../../package.json'
 import {
   classifyHostedTransportError,
   type HostedCallOutcomeRecorder,
   recordHostedCallOutcome,
 } from '../hosted-call-outcome.ts'
 import { bearerHeaders } from './record-auth.ts'
+
+let memoizedUserAgent: string | undefined
+
+function recordUserAgent(
+  identityResolver: typeof runningInstallationIdentity = runningInstallationIdentity,
+): string {
+  if (memoizedUserAgent) return memoizedUserAgent
+  try {
+    const identity = identityResolver(import.meta.dir, process.env)
+    const version = identity.kind === 'distribution' ? identity.manifest.version : identity.version
+    memoizedUserAgent = `${PLATFORM_SLUG}/${version}`
+  } catch {
+    memoizedUserAgent = `${PLATFORM_SLUG}/${packageManifest.version}`
+  }
+  return memoizedUserAgent
+}
 
 function recordHostedRouteClass(path: string): string {
   const pathname = path.split('?', 1)[0] ?? path
@@ -53,13 +70,13 @@ export async function recordTransport(
   init: RequestInit,
   transport: typeof fetch = hostedApiFetch,
   recorder: HostedCallOutcomeRecorder = recordHostedCallOutcome,
+  identityResolver: typeof runningInstallationIdentity = runningInstallationIdentity,
 ): Promise<Response> {
   const startedAt = performance.now()
+  const userAgent = recordUserAgent(identityResolver)
   try {
     const headers = new Headers(init.headers)
-    const identity = runningInstallationIdentity(import.meta.dir, process.env)
-    const version = identity.kind === 'distribution' ? identity.manifest.version : identity.version
-    headers.set('user-agent', `${PLATFORM_SLUG}/${version}`)
+    headers.set('user-agent', userAgent)
     const response = await transport(`${baseUrl}${path}`, { ...init, headers })
     scheduleHostedCallObservation(recorder, {
       observedAt: new Date().toISOString(),

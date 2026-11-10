@@ -70,8 +70,6 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
       autoMode: { allow: [], soft_deny: [], hard_deny: [], environment: [] },
     }),
     upsertScore: async () => undefined,
-    voidRun: async () => undefined,
-    unvoidRun: async () => undefined,
     listScores: async () => [],
     countScores: async () => ({ scores: 0, voids: 0 }),
     upsertSnapshot: async () => ({ takenAt: '2026-09-17T12:00:00.000Z' }),

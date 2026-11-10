@@ -19,7 +19,6 @@ import type { TableStorageMeasurement } from '../../../shared/storage-lifecycle.
 import type { CanonFinding } from '../canon/canon-lint.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
-import type { VerdictInput } from '../verdict/verdict-payload.ts'
 import { recordBoardClient } from './record-api-client-board.ts'
 import {
   classifyBoardStreamResponse,
@@ -55,7 +54,7 @@ import {
 } from './record-api-client-paths.ts'
 import { type RecordPortClient, recordPortClient } from './record-api-client-port.ts'
 import { RecordApiRequestError, responseRecord } from './record-api-client-response.ts'
-import { type RecordRunDestinationDecision, recordRunClient } from './record-api-client-run.ts'
+import { recordRunClient } from './record-api-client-run.ts'
 
 export { recordAuthRefusal, recordAuthToken } from './record-api-client-error.ts'
 export { RecordApiRequestError } from './record-api-client-response.ts'
@@ -383,21 +382,6 @@ export type RecordApiClient = ProjectIdentityClient &
       input: { project: string; projectId?: string | null; id: string },
       destination?: RecordRequestDestination,
     ): Promise<RecordSubject>
-    putScore(
-      runId: string,
-      input: VerdictInput,
-      destination: RecordRunDestinationDecision,
-    ): Promise<void>
-    voidRun(
-      runId: string,
-      input: { reason: string },
-      destination: RecordRunDestinationDecision,
-    ): Promise<void>
-    unvoidRun(
-      runId: string,
-      input: { note: string },
-      destination: RecordRequestDestination,
-    ): Promise<void>
     listScores(query: {
       updatedSince?: string
       limit?: number
@@ -768,10 +752,10 @@ export function recordApiClient(request = recordApiRequest): RecordApiClient {
     ...projectIdentityClient(request),
     ...recordProjectSubjectClient(request),
     ...recordRoutingEvidenceClient(request),
+    ...recordRunClient(request),
     ...recordBoardClient(request),
     ...recordApiBoardWatchClient(),
-  } as RecordApiClient
-  Object.assign(client, recordRunClient(request))
+  }
   return client
 }
 

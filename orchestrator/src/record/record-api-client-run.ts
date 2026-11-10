@@ -1,32 +1,13 @@
 // concern: record-api-client-run
 /** Owns run-addressed hosted writes and binds each to the run project's destination. */
 
-import type { ProjectWriteSpaceDecision } from '../../../shared/record-write-space.ts'
-import type { VerdictInput } from '../verdict/verdict-payload.ts'
 import type {
   RecordClientRequest,
   RecordRequestDestination,
   RecordRunMethod,
 } from './record-api-client-paths.ts'
 
-export type RecordRunDestinationDecision = ProjectWriteSpaceDecision
-
 type RecordRunClient = {
-  putScore(
-    runId: string,
-    input: VerdictInput,
-    destination: RecordRunDestinationDecision,
-  ): Promise<void>
-  voidRun(
-    runId: string,
-    input: { reason: string },
-    destination: RecordRunDestinationDecision,
-  ): Promise<void>
-  unvoidRun(
-    runId: string,
-    input: { note: string },
-    destination: RecordRunDestinationDecision,
-  ): Promise<void>
   listScores(query: {
     updatedSince?: string
     limit?: number
@@ -44,24 +25,6 @@ export function recordRunClient(
   request: RecordClientRequest,
 ): Pick<RecordRunClient, RecordRunMethod> {
   return {
-    putScore: async (runId, input, destination) =>
-      void (await request(`/v1/runs/${runId}/score`, {
-        method: 'PUT',
-        body: JSON.stringify(input),
-        ...runDestination(destination),
-      })),
-    voidRun: async (runId, input, destination) =>
-      void (await request(`/v1/runs/${runId}/void`, {
-        method: 'POST',
-        body: JSON.stringify(input),
-        ...runDestination(destination),
-      })),
-    unvoidRun: async (runId, input, destination) =>
-      void (await request(`/v1/runs/${runId}/unvoid`, {
-        method: 'POST',
-        body: JSON.stringify(input),
-        ...runDestination(destination),
-      })),
     listScores: (query) => {
       const search = new URLSearchParams()
       if (query.updatedSince) search.set('updatedSince', query.updatedSince)
@@ -72,9 +35,4 @@ export function recordRunClient(
     },
     counts: (destination) => request('/v1/docs/counts', destination),
   }
-}
-
-function runDestination(decision: RecordRunDestinationDecision): RecordRequestDestination {
-  if ('refused' in decision) throw new Error(decision.remedy)
-  return { destinationSpaceId: decision.spaceId }
 }

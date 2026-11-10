@@ -4,6 +4,28 @@ import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { recordHostedCallOutcome } from '../hosted-call-outcome.ts'
 import { recordTransport } from './record-api-client-transport.ts'
 
+test('record transport sends the fallback user-agent when installation identity resolution fails', async () => {
+  let userAgent: string | null = null
+  const transport = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    userAgent = new Headers(init?.headers).get('user-agent')
+    return new Response('{}', { status: 200 })
+  }) as unknown as typeof fetch
+
+  await expect(
+    recordTransport(
+      'https://record.test',
+      '/v1/docs/example',
+      {},
+      transport,
+      () => undefined,
+      () => {
+        throw new Error('fixture identity resolution failure')
+      },
+    ),
+  ).resolves.toMatchObject({ status: 200 })
+  expect(userAgent).toBe(`${PLATFORM_SLUG}/0.5.6`)
+})
+
 test('record transport stores HTTP and transport-error outcomes for its route class', async () => {
   const database = migratedTestDatabase()
   let calls = 0
