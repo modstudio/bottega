@@ -994,14 +994,25 @@ export async function syncHostedRecord(input: {
   postgres?: SQL
 }): Promise<RecordSyncResponse> {
   const postgres = input.postgres ?? recordPool(input.url)
-  const activeSpaceId = input.identity.activeSpaceId
-  if (!activeSpaceId) throw new Error('record session has no active space')
+  const personalSpaceId = input.identity.personalSpaceId
+  if (!personalSpaceId) throw new Error('record session has no personal space')
+  const destinationSpaceIds = [
+    ...new Set(
+      input.request.rows
+        .map((row) => row.spaceHint)
+        .filter(
+          (spaceId): spaceId is string =>
+            spaceId !== null &&
+            recordSyncAuthorizationDecision(input.identity, spaceId).status === 'allowed',
+        ),
+    ),
+  ]
   let machineNameRefusal: string | undefined
   try {
     await upsertHostedMachine(postgres, input.request.machine.seenAt, input.request.machine, {
       userId: input.identity.user.id,
-      spaceId: activeSpaceId,
-    })
+      spaceId: personalSpaceId,
+    }, destinationSpaceIds)
   } catch (error) {
     if (error instanceof MachineNameRefusal) machineNameRefusal = error.message
     else throw error

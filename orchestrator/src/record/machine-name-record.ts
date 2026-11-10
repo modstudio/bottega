@@ -78,6 +78,7 @@ export async function upsertHostedMachine(
   seenAt: string,
   identity: { id: string; shortName?: string; displayName?: string; name?: string },
   principal: RecordPrincipal,
+  claimSpaceIds: readonly string[] = [principal.spaceId],
 ): Promise<void> {
   const shortName = identity.shortName ?? identity.name
   const displayName = identity.displayName ?? identity.name
@@ -92,29 +93,32 @@ export async function upsertHostedMachine(
       ON CONFLICT (id) DO UPDATE SET last_seen=excluded.last_seen
       WHERE machine.user_id=excluded.user_id RETURNING user_id
     `
-    if (owned.length > 0) return
-    const owners = await tx`SELECT user_id FROM machine WHERE id=${identity.id}::uuid`
-    const decision = recordSyncMachineOwnershipDecision(
-      identity.id,
-      owners[0]?.user_id == null ? null : String(owners[0].user_id),
-      principal.userId,
-    )
-    if (decision.status === 'refused') throw new RecordSyncRequestRefusal(decision.reason)
-    throw new Error(`machine ownership changed while registering ${identity.id}`)
-  })
-  await postgres.begin(async (tx) => {
-    await claimInSpace(tx, {
-      userId: principal.userId,
-      spaceId: principal.spaceId,
-      machineId: identity.id,
-      shortName,
-      now: seenAt,
-    })
+    if (owned.length === 0) {
+      const owners = await tx`SELECT user_id FROM machine WHERE id=${identity.id}::uuid`
+      const decision = recordSyncMachineOwnershipDecision(
+        identity.id,
+        owners[0]?.user_id == null ? null : String(owners[0].user_id),
+        principal.userId,
+      )
+      if (decision.status === 'refused') throw new RecordSyncRequestRefusal(decision.reason)
+      throw new Error(`machine ownership changed while registering ${identity.id}`)
+    }
     await tx`
       UPDATE machine SET name=${displayName},short_name=${shortName},display_name=${displayName}
       WHERE id=${identity.id}::uuid AND user_id=${principal.userId}::uuid
     `
   })
+  for (const spaceId of new Set(claimSpaceIds)) {
+    await postgres.begin(async (tx) => {
+      await claimInSpace(tx, {
+        userId: principal.userId,
+        spaceId,
+        machineId: identity.id,
+        shortName,
+        now: seenAt,
+      })
+    })
+  }
 }
 
 export async function renameHostedMachine(input: {
