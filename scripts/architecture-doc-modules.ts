@@ -25,7 +25,7 @@ export const privateDocImports = [
 ] as const
 
 export const docModules: DocModule[] = [
-  module('orchestrator/src/doc/doc-revision-conflict.ts', ['zod']),
+  module('orchestrator/src/doc/doc-revision-conflict.ts', ['zod', './doc-write-allowed.ts']),
   module('orchestrator/src/doc/doc-context-write.ts', [
     '../../../shared/brand.ts',
     '../workflow/workflow-task-reference.ts',

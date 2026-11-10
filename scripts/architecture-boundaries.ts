@@ -352,6 +352,7 @@ export const importBoundaries: ImportBoundary[] = [
       './doc-audiences-codec.ts',
       './doc-read-store.ts',
       './doc-subjects.ts',
+      './doc-revision-conflict.ts',
       './doc-write-allowed.ts',
     ],
     'Keep local revision ordering and compare-and-set facts independent of hosted transport and CLI.',

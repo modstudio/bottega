@@ -309,19 +309,25 @@ test('transport failures report the request write outcome', async () => {
     await expect(recordApiRequest('/v1/docs', {}, authentication, failed)).rejects.toThrow(
       'nothing was written',
     )
-    const malformed = recordApiClient((path, init) =>
-      recordApiRequest(
-        path,
-        init,
-        authentication,
-        (async () => new Response('{', { status: 200 })) as unknown as typeof fetch,
-      ),
-    )
-    await expect(
-      malformed.importDoc({ doc: { scope: 'project', subject: PLATFORM_SLUG }, revisions: [] } as never),
-    ).rejects.toThrow(
-      'the write may have been applied; check before retrying',
-    )
+    installRecordApiClient(null)
+    try {
+      const malformed = recordApiClient((path, init) =>
+        recordApiRequest(
+          path,
+          init,
+          authentication,
+          (async () => new Response('{', { status: 200 })) as unknown as typeof fetch,
+        ),
+      )
+      await expect(
+        malformed.importDoc({
+          doc: { scope: 'project', subject: PLATFORM_SLUG },
+          revisions: [],
+        } as never),
+      ).rejects.toThrow('the write may have been applied; check before retrying')
+    } finally {
+      installRecordApiClient(createMemoryRecordApiClient())
+    }
   } finally {
     process.env.NODE_ENV = previousEnv
     if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL

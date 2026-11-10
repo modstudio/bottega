@@ -1,14 +1,14 @@
 // concern: doc-revision-conflict
 /** Owns the typed optimistic-write conflict and its record API wire contract. */
 import { z } from 'zod'
+import type { DocRevisionRefusalReason } from './doc-write-allowed.ts'
 
 export const REVISION_CONFLICT_CODE = 'revision-conflict' as const
-export const DOC_REVISION_REFUSAL_REASONS = [
+const DOC_REVISION_REFUSAL_REASONS = [
   'missing-hosted-revision',
   'stale-revision',
   'already-exists',
 ] as const
-export type DocRevisionRefusalReason = (typeof DOC_REVISION_REFUSAL_REASONS)[number]
 export type RevisionConflictReason = DocRevisionRefusalReason | 'workflow-version'
 
 export const revisionConflictBodySchema = z.object({
