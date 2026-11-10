@@ -419,28 +419,110 @@ async function applyStageUpdates(tx: SQL, body: StageUpdateBody) {
 }
 
 async function applyAdopt(tx: SQL, body: AdoptBody) {
-  const rows = (await tx.unsafe(
-    `SELECT task_id::text,revision,last_request_id::text
+  const stageLocations = (await tx.unsafe(
+    'SELECT flow_record_id::text FROM task_flow_stage WHERE id=$1::uuid',
+    [body.stage.id],
+  )) as Array<{ flow_record_id: string }>
+  if (!stageLocations[0]) conflict('task_flow_stage', body.stage.id, null)
+  const sourceRows = (await tx.unsafe(
+    `SELECT id::text,task_id::text,revision,last_request_id::text
      FROM task_flow WHERE id=$1::uuid FOR UPDATE`,
-    [body.flow.id],
-  )) as Array<{ task_id: string | null; revision: number | string; last_request_id: string | null }>
-  const row = rows[0]
-  if (!row) conflict('task_flow', body.flow.id, null)
-  if (row.task_id !== null && row.task_id !== body.flow.values.taskId)
-    conflict('task_flow', body.flow.id, Number(row.revision), 'already-exists')
-  if (
-    decideRevisionWrite(
-      { revision: Number(row.revision), lastRequestId: row.last_request_id },
-      body.flow.expectedRevision,
-      body.requestId,
-    ).kind === 'retry'
+    [stageLocations[0].flow_record_id],
+  )) as Array<{
+    id: string
+    task_id: string | null
+    revision: number | string
+    last_request_id: string | null
+  }>
+  const source = sourceRows[0]
+  if (!source) conflict('task_flow', stageLocations[0].flow_record_id, null)
+  if (source.task_id !== null && source.task_id !== body.taskId)
+    conflict('task_flow', source.id, Number(source.revision), 'already-exists')
+
+  const targetRows = (await tx.unsafe(
+    `SELECT id::text,open_stage_record_id::text,revision
+     FROM task_flow WHERE space_id=current_setting('app.space_id')::uuid AND task_id=$1::uuid
+     FOR UPDATE`,
+    [body.taskId],
+  )) as Array<{ id: string; open_stage_record_id: string | null; revision: number | string }>
+  const target = targetRows[0]
+  const stageRows = (await tx.unsafe(
+    `SELECT revision,last_request_id::text FROM task_flow_stage WHERE id=$1::uuid FOR UPDATE`,
+    [body.stage.id],
+  )) as RevisionRow[]
+  const stage = stageRows[0]
+  if (!stage) conflict('task_flow_stage', body.stage.id, null)
+  const stageDecision = decideRevisionWrite(
+    { revision: Number(stage.revision), lastRequestId: stage.last_request_id },
+    body.stage.expectedRevision,
+    body.requestId,
   )
-    return { revisions: { [body.flow.id]: body.flow.expectedRevision + 1 } }
-  if (row.task_id !== null) conflict('task_flow', body.flow.id, Number(row.revision))
+  if (stageDecision.kind === 'conflict')
+    conflict('task_flow_stage', body.stage.id, stageDecision.currentRevision)
+  if (stageDecision.kind === 'retry') {
+    const flow = target ?? source
+    return {
+      revisions: {
+        [body.stage.id]: body.stage.expectedRevision + 1,
+        [flow.id]: Number(flow.revision),
+      },
+      flowRecordId: flow.id,
+    }
+  }
+  if (source.task_id === body.taskId)
+    conflict('task_flow_stage', body.stage.id, Number(stage.revision))
+
+  if (target && target.id !== source.id) {
+    if (target.open_stage_record_id !== null && target.open_stage_record_id !== body.stage.id)
+      refusal(
+        'the task flow already has another open stage; close or abandon it before adopting this stage',
+        `task_flow.id=${target.id}`,
+        'already-exists',
+        String(target.revision),
+      )
+    const sourceRevision = Number(source.revision) + 1
+    const targetRevision = Number(target.revision) + 1
+    await tx.unsafe(
+      `UPDATE task_flow SET state='dropped',open_stage_record_id=NULL,updated_machine_id=$1::uuid,
+         updated_at=$2::timestamptz,revision=revision+1,last_request_id=$3::uuid WHERE id=$4::uuid`,
+      [body.updatedMachineId, body.updatedAt, body.requestId, source.id],
+    )
+    await tx.unsafe(
+      `UPDATE task_flow SET open_stage_record_id=$1::uuid,updated_machine_id=$2::uuid,
+         updated_at=$3::timestamptz,revision=revision+1,last_request_id=$4::uuid WHERE id=$5::uuid`,
+      [body.stage.id, body.updatedMachineId, body.updatedAt, body.requestId, target.id],
+    )
+    await tx.unsafe(
+      `UPDATE task_flow_stage SET flow_record_id=$1::uuid,revision=revision+1,last_request_id=$2::uuid
+       WHERE id=$3::uuid`,
+      [target.id, body.requestId, body.stage.id],
+    )
+    return {
+      revisions: {
+        [source.id]: sourceRevision,
+        [target.id]: targetRevision,
+        [body.stage.id]: body.stage.expectedRevision + 1,
+      },
+      flowRecordId: target.id,
+    }
+  }
+
+  const sourceRevision = Number(source.revision) + 1
+  await tx.unsafe(
+    `UPDATE task_flow SET task_id=$1::uuid,open_stage_record_id=$2::uuid,updated_machine_id=$3::uuid,
+       updated_at=$4::timestamptz,revision=revision+1,last_request_id=$5::uuid WHERE id=$6::uuid`,
+    [body.taskId, body.stage.id, body.updatedMachineId, body.updatedAt, body.requestId, source.id],
+  )
+  await tx.unsafe(
+    `UPDATE task_flow_stage SET revision=revision+1,last_request_id=$1::uuid WHERE id=$2::uuid`,
+    [body.requestId, body.stage.id],
+  )
   return {
     revisions: {
-      [body.flow.id]: await updateRevisionRow(tx, 'task_flow', body.flow, body.requestId),
+      [source.id]: sourceRevision,
+      [body.stage.id]: body.stage.expectedRevision + 1,
     },
+    flowRecordId: source.id,
   }
 }
 

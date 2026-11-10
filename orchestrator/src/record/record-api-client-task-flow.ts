@@ -19,6 +19,7 @@ import {
   type TaskFlowIntent,
   type TaskFlowIntentInput,
   type TaskFlowWriteResult,
+  taskFlowAdoptResultSchema,
   taskFlowComposeResultSchema,
   taskFlowWriteResultSchema,
 } from './record-task-flow-write-contract.ts'
@@ -180,4 +181,3 @@ export const recordTaskFlowClient = (request: Request): RecordTaskFlowClient => 
       destination,
     ),
 })
-  taskFlowAdoptResultSchema,

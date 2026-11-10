@@ -89,7 +89,7 @@ test('task-flow adopt validates and dispatches its dedicated route', async () =>
     {
       writeTaskFlow: async (intent, input) => {
         calls.push({ intent, input })
-        return { revisions: { [FLOW]: 2 } }
+        return { revisions: { [FLOW]: 2 }, flowRecordId: FLOW }
       },
       listWorkflowCatalogue: async () => [],
       draftWorkflow: async () => null,
@@ -103,11 +103,10 @@ test('task-flow adopt validates and dispatches its dedicated route', async () =>
   )
   const body = {
     requestId: REQUEST,
-    flow: {
-      id: FLOW,
-      expectedRevision: 1,
-      values: { taskId: TASK, updatedMachineId: MACHINE, updatedAt: '2026-11-10T12:00:00.000Z' },
-    },
+    stage: { id: FLOW, expectedRevision: 1 },
+    taskId: TASK,
+    updatedMachineId: MACHINE,
+    updatedAt: '2026-11-10T12:00:00.000Z',
   }
   const response = await app.request('/v1/task-flow/adopt', {
     method: 'POST',
