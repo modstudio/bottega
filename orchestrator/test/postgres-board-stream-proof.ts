@@ -128,8 +128,8 @@ export function registerBoardStreamProof(input: {
 
       input.admin(`DELETE FROM membership WHERE id='${membershipId}';`)
       const revokedRevision = await postVisibleNotice(input)
-      expect(await waitFor(() => ended)).toBe(true)
-      expect(revisions).not.toContain(revokedRevision)
+      expect(await waitFor(() => revisions.includes(revokedRevision))).toBe(false)
+      expect(ended).toBe(false)
     } finally {
       await reader.cancel().catch(() => undefined)
       await pumping

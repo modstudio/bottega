@@ -11,6 +11,7 @@ type ProofInput = {
   userId(): string
   project: string
   projectId: string
+  spaceId(): string
   expiresAt: string
   caseSession(label: string): string
   succeeds(user: string, password: string, source: string): string
@@ -63,7 +64,12 @@ function seedLocalBoard(input: ProofInput) {
   const local = db()
   local
     .query(`INSERT OR IGNORE INTO project (record_id,name,path,settings) VALUES (?,?,?,?)`)
-    .run(input.projectId, input.project, `/fixtures/${input.project}`, '{}')
+    .run(
+      input.projectId,
+      input.project,
+      `/fixtures/${input.project}`,
+      JSON.stringify({ space: input.spaceId() }),
+    )
   const created = '2026-10-05T10:00:00.000Z'
   const notice = local
     .query(
