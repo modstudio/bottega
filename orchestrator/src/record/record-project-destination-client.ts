@@ -2,13 +2,13 @@
 /** Adapts the pure project destination decision to authenticated record clients. */
 
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
+import { declaredRecordSpace } from '../project/declared-record-space.ts'
 import type { ProjectSettings, StoredProjectSettings } from '../project/project-settings.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
   type ProjectRecordDestination,
   projectRecordDestination,
 } from './record-project-destination.ts'
-import { declaredRecordSpace } from '../project/declared-record-space.ts'
 
 export function projectDestinationFromIdentity(
   project: string,

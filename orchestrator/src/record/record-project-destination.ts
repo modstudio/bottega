@@ -1,14 +1,17 @@
 // concern: record-project-destination
 /** Resolves a registered project's hosted-record destination without consulting hosted state. */
 
-import {
-  type RecordSpaceMembership,
-} from '../../../shared/record-space-membership.ts'
+import type { RecordSpaceMembership } from '../../../shared/record-space-membership.ts'
 import { recordWriteSpace } from '../../../shared/record-write-space.ts'
 
 export type ProjectRecordDestination =
   | { project: string; spaceId: string }
-  | { project: string; declaredSpace: string | null; refused: 'undeclared-project' | 'declared-space-not-member'; remedy: string }
+  | {
+      project: string
+      declaredSpace: string | null
+      refused: 'undeclared-project' | 'declared-space-not-member'
+      remedy: string
+    }
 
 /** Resolve a register declaration to a stable id without consulting the active space. */
 export function projectRecordDestination(
@@ -22,5 +25,10 @@ export function projectRecordDestination(
   )
   return 'spaceId' in decision
     ? { project, spaceId: decision.spaceId }
-    : { project, declaredSpace, refused: decision.refused as 'undeclared-project' | 'declared-space-not-member', remedy: decision.remedy }
+    : {
+        project,
+        declaredSpace,
+        refused: decision.refused as 'undeclared-project' | 'declared-space-not-member',
+        remedy: decision.remedy,
+      }
 }

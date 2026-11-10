@@ -142,9 +142,7 @@ function fakeClient(overrides: Partial<RecordClient> = {}, activeSpaceId = perso
 }
 
 function caller(client: RecordClient) {
-  return createHostedContextRouter(() => client, () => [
-    { name: 'alpha', path: '/alpha', settings: { space: 'personal' } } as never,
-  ]).createCaller({})
+  return createHostedContextRouter(() => client).createCaller({})
 }
 
 describe('hosted context router', () => {

@@ -11,7 +11,10 @@ import {
   type CredentialMode,
 } from '../../../shared/credential.ts'
 import { credentialPayerFromScope } from '../../../shared/credential-resolution.ts'
-import { recordSpaceMembershipRefusal } from '../../../shared/record-remedies.ts'
+import {
+  RECORD_ACTIVE_SPACE_REMEDY,
+  recordSpaceMembershipRefusal,
+} from '../../../shared/record-remedies.ts'
 import {
   parseRecordSpaceMemberships,
   recordSpaceMembership,
@@ -36,7 +39,6 @@ import {
 } from '../config/credential-service.ts'
 import { runWithEnvironment } from '../config/secret-run.ts'
 import { projectByName } from '../project/projects.ts'
-import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import { log } from './support.ts'
 
 type BindingOptions = {

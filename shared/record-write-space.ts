@@ -1,8 +1,5 @@
 import { PLATFORM_SLUG } from './brand.ts'
-import {
-  type RecordSpaceMembership,
-  recordSpaceMembership,
-} from './record-space-membership.ts'
+import { type RecordSpaceMembership, recordSpaceMembership } from './record-space-membership.ts'
 
 export type RecordWriteOwner =
   | { kind: 'project'; name: string }
@@ -19,7 +16,15 @@ export type RecordWriteSpaceFacts = {
 
 export type RecordWriteSpaceDecision =
   | { spaceId: string }
-  | { refused: 'no-owner' | 'undeclared-project' | 'declared-space-not-member' | 'personal-space-not-provisioned' | 'space-owner-without-value'; remedy: string }
+  | {
+      refused:
+        | 'no-owner'
+        | 'undeclared-project'
+        | 'declared-space-not-member'
+        | 'personal-space-not-provisioned'
+        | 'space-owner-without-value'
+      remedy: string
+    }
 
 export function recordWriteSpace(
   owner: RecordWriteOwner | null,
@@ -39,7 +44,12 @@ export function recordWriteSpace(
           remedy: 'personal space is not provisioned',
         }
   }
-  const project = owner.kind === 'session' ? owner.checkoutProject! : owner.kind === 'task' ? owner.projectName : owner.name
+  const project =
+    owner.kind === 'session'
+      ? owner.checkoutProject!
+      : owner.kind === 'task'
+        ? owner.projectName
+        : owner.name
   const declared = facts.declaredSpaces[project]?.trim()
   if (!declared) {
     return {

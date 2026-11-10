@@ -1,6 +1,4 @@
-import {
-  type RecordSpaceMembership,
-} from '../../shared/record-space-membership.ts'
+import type { RecordSpaceMembership } from '../../shared/record-space-membership.ts'
 import { recordWriteSpace } from '../../shared/record-write-space.ts'
 import { declaredProjectSpace } from './hosted-write-mode.ts'
 
@@ -54,7 +52,10 @@ export function taskProjectDestination(
   )
   return 'spaceId' in decision
     ? { project: projectName, destinationSpaceId: decision.spaceId }
-    : { project: projectName, refused: decision.refused as 'undeclared-project' | 'declared-space-not-member' }
+    : {
+        project: projectName,
+        refused: decision.refused as 'undeclared-project' | 'declared-space-not-member',
+      }
 }
 
 /** Partition project-attributed rows by destination without letting one refusal block another. */

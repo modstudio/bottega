@@ -9,7 +9,8 @@ describe('project record destination', () => {
 
   test('refuses when the register declares none', () => {
     expect(projectRecordDestination('plain', null, memberships)).toMatchObject({
-      project: 'plain', refused: 'undeclared-project',
+      project: 'plain',
+      refused: 'undeclared-project',
     })
   })
 

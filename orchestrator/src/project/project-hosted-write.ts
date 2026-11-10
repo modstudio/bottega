@@ -6,7 +6,6 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { recordSpaceMembershipRefusal } from '../../../shared/record-remedies.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
-import { declaredRecordSpace } from './declared-record-space.ts'
 import {
   projectDestinationFromIdentity,
   requireProjectRecordDestination,
@@ -17,6 +16,7 @@ import {
   requireHostedRecord,
   throwIfRecordRefused,
 } from '../record/record-write-authority.ts'
+import { declaredRecordSpace } from './declared-record-space.ts'
 import type { ProjectSettings, StoredProjectSettings } from './project-settings.ts'
 
 export async function writeProjectToHostedRecord(

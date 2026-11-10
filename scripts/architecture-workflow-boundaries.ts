@@ -10,9 +10,9 @@ export const workflowBoundarySpecs = [
       '../../../shared/brand.ts',
       '../../../shared/record-remedies.ts',
       '../project-space.ts',
+      '../project/declared-record-space.ts',
       '../project/projects.ts',
       '../record/install-binding.ts',
-      '../record/record-project-destination.ts',
     ],
     reason:
       'Keep cross-owner workflow read routing in one adapter while the cache and routing decision remain pure.',

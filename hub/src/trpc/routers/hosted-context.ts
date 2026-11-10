@@ -26,7 +26,6 @@ import {
   requiredRecordApiUrl,
 } from '../../record-client.ts'
 import type { Context } from '../context.ts'
-import { projects } from '../../projects.ts'
 
 const t = initTRPC.context<Context>().create()
 const slug = z.string().trim().min(1, 'Slug is required')
@@ -37,7 +36,6 @@ const project = z.string().min(1)
 const target = z.union([z.object({ user: z.literal(true) }), z.object({ project })])
 
 type ClientFactory = (context: Context) => RecordClient
-type ProjectSpaceFactory = typeof projects
 
 function defaultClient(context: Context): RecordClient {
   return createRecordClient({
@@ -212,22 +210,21 @@ function parseStoredSettings(body: string): OwnedSettings {
 async function settingsRow(
   client: RecordClient,
   address: z.infer<typeof target>,
-  registeredProjects: ProjectSpaceFactory,
 ): Promise<{ row: RecordDoc; destination: string | undefined }> {
   const subject = 'user' in address ? '' : address.project
   const identity = await client.whoami()
-  const registered = registeredProjects()
-  const owner = 'user' in address
-    ? ({ kind: 'personal' } as const)
-    : ({ kind: 'project', name: address.project } as const)
-  const decision = recordWriteSpace(
-    owner,
-    {
-      declaredSpaces: Object.fromEntries(registered.map((project) => [project.name, project.settings.space])),
-      personalSpaceId: identity.personalSpaceId,
-      memberships: parseRecordSpaceMemberships(identity.memberships),
-    },
-  )
+  const registered = await client.projects()
+  const owner =
+    'user' in address
+      ? ({ kind: 'personal' } as const)
+      : ({ kind: 'project', name: address.project } as const)
+  const decision = recordWriteSpace(owner, {
+    declaredSpaces: Object.fromEntries(
+      registered.map((project) => [project.name, project.spaceId]),
+    ),
+    personalSpaceId: identity.personalSpaceId,
+    memberships: parseRecordSpaceMemberships(identity.memberships),
+  })
   if ('refused' in decision) throw new TRPCError({ code: 'CONFLICT', message: decision.remedy })
   const destination = decision.spaceId
   const rows = await allDocs(client, { scope: 'settings', subject }, destination)
@@ -244,12 +241,8 @@ async function settingsRow(
   return { row, destination }
 }
 
-async function hostedSettingsGet(
-  client: RecordClient,
-  input: z.infer<typeof target>,
-  registeredProjects: ProjectSpaceFactory,
-) {
-  const { row, destination } = await settingsRow(client, input, registeredProjects)
+async function hostedSettingsGet(client: RecordClient, input: z.infer<typeof target>) {
+  const { row, destination } = await settingsRow(client, input)
   return {
     mode: 'hosted' as const,
     target:
@@ -277,10 +270,7 @@ function putUserEntry(
   })
 }
 
-export function createHostedContextRouter(
-  clientFor: ClientFactory = defaultClient,
-  registeredProjects: ProjectSpaceFactory = projects,
-) {
+export function createHostedContextRouter(clientFor: ClientFactory = defaultClient) {
   return t.router({
     projects: t.procedure.query(async ({ ctx }) =>
       (await clientFor(ctx).projects()).map((project) => ({
@@ -429,7 +419,7 @@ export function createHostedContextRouter(
     settings: t.router({
       get: t.procedure
         .input(target)
-        .query(({ ctx, input }) => hostedSettingsGet(clientFor(ctx), input, registeredProjects)),
+        .query(({ ctx, input }) => hostedSettingsGet(clientFor(ctx), input)),
       permission: t.procedure
         .input(
           z.object({

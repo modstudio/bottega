@@ -1,14 +1,18 @@
 import { describe, expect, test } from 'bun:test'
-import { recordWriteSpace, type RecordWriteOwner } from './record-write-space.ts'
+import { type RecordWriteOwner, recordWriteSpace } from './record-write-space.ts'
 
 const memberships = [{ spaceId: 'project-id', slug: 'project-space', permission: 'write' }]
-const facts = { declaredSpaces: { bottega: 'project-space' }, personalSpaceId: 'personal-id', memberships }
+const facts = {
+  declaredSpaces: { fixture: 'project-space' },
+  personalSpaceId: 'personal-id',
+  memberships,
+}
 
 describe('recordWriteSpace', () => {
   for (const [owner, spaceId] of [
-    [{ kind: 'project', name: 'bottega' }, 'project-id'],
-    [{ kind: 'task', projectName: 'bottega' }, 'project-id'],
-    [{ kind: 'session', checkoutProject: 'bottega' }, 'project-id'],
+    [{ kind: 'project', name: 'fixture' }, 'project-id'],
+    [{ kind: 'task', projectName: 'fixture' }, 'project-id'],
+    [{ kind: 'session', checkoutProject: 'fixture' }, 'project-id'],
     [{ kind: 'session', checkoutProject: null }, 'personal-id'],
     [{ kind: 'personal' }, 'personal-id'],
     [{ kind: 'space', value: 'explicit-id' }, 'explicit-id'],
@@ -23,11 +27,14 @@ describe('recordWriteSpace', () => {
     [{ kind: 'personal' }, 'personal-space-not-provisioned'],
     [{ kind: 'space', value: null }, 'space-owner-without-value'],
   ] as const)('refuses %p', (owner, refused) => {
-    const selectedFacts = refused === 'declared-space-not-member'
-      ? { ...facts, declaredSpaces: { outside: 'outside-space' } }
-      : refused === 'personal-space-not-provisioned'
-        ? { ...facts, personalSpaceId: null }
-        : facts
-    expect(recordWriteSpace(owner as RecordWriteOwner | null, selectedFacts)).toMatchObject({ refused })
+    const selectedFacts =
+      refused === 'declared-space-not-member'
+        ? { ...facts, declaredSpaces: { outside: 'outside-space' } }
+        : refused === 'personal-space-not-provisioned'
+          ? { ...facts, personalSpaceId: null }
+          : facts
+    expect(recordWriteSpace(owner as RecordWriteOwner | null, selectedFacts)).toMatchObject({
+      refused,
+    })
   })
 })

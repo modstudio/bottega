@@ -1,6 +1,7 @@
 // concern: record-cache
 /** Advances the local record mirror from the ordered hosted change feed. */
 import type { Database } from 'bun:sqlite'
+import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { nowIso, writeTransaction } from '../database/db.ts'
 import { projectRowByName } from '../project/projects.ts'
@@ -39,7 +40,6 @@ import {
   type RecordPortRow,
   type RecordPortTable,
 } from './record-port-contract.ts'
-import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import type { RecordRoutingEvidence } from './record-routing-evidence-contract.ts'
 import {
   deleteRoutingPoolRow,

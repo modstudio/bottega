@@ -26,9 +26,10 @@ export const projectModules: ProjectModule[] = [
   module('orchestrator/src/project/project-settings-patch.ts', []),
   module('orchestrator/src/project/declared-project-space.ts', [
     '../../../shared/brand.ts',
-    '../record/record-project-destination.ts',
+    './declared-record-space.ts',
     './projects.ts',
   ]),
+  module('orchestrator/src/project/declared-record-space.ts', ['./project-settings.ts']),
   module('orchestrator/src/project/project-fill-space-decision.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-space-membership.ts',
@@ -52,6 +53,7 @@ export const projectModules: ProjectModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/record-project-contract.ts',
     '../../../shared/record-space-membership.ts',
+    '../../../shared/record-write-space.ts',
     '../record/record-project-columns.ts',
     './project-settings.ts',
     './project-space-refusals.ts',
@@ -79,6 +81,7 @@ export const projectModules: ProjectModule[] = [
     '../record/record-project-destination.ts',
     '../record/record-project-destination-client.ts',
     '../record/record-write-authority.ts',
+    './declared-record-space.ts',
     './project-settings.ts',
   ]),
   module('orchestrator/src/project/project-push-refusal.ts', [

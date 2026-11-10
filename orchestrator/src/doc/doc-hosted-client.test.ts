@@ -191,6 +191,39 @@ test('a non-project document client binds every call to the personal space', asy
   expect(destinations).toEqual(['personal-space', 'personal-space'])
 })
 
+test('task context binds to its project while the personal space is active', async () => {
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'context-project',
+    path: '/repo/context-project',
+    settings: { space: 'context-team' },
+  })
+  let destination: string | undefined
+  const memory = createMemoryRecordApiClient()
+  installRecordApiClient({
+    ...memory,
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'personal-space',
+      personalSpaceId: 'personal-space',
+      memberships: [
+        { space_id: 'personal-space', slug: 'personal', permission: 'write' },
+        { space_id: 'context-space', slug: 'context-team', permission: 'write' },
+      ],
+    }),
+    getDoc: async (_id, requestDestination) => {
+      destination = requestDestination?.destinationSpaceId
+      return {}
+    },
+  })
+  const client = await hostedDocClient('context', `task:${newRecordId()}`, {
+    kind: 'task',
+    projectName: 'context-project',
+  })
+  await client.getDoc('doc')
+  expect(destination).toBe('context-space')
+})
+
 test('a personal document client refuses when no personal space is provisioned', async () => {
   const memory = createMemoryRecordApiClient()
   installRecordApiClient({

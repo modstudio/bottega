@@ -2,6 +2,7 @@
 /** Builds the per-space hosted bulk payloads for a legacy port import. */
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import { db } from '../database/db.ts'
 import { importDoc } from '../doc/docs.ts'
 import type { Project } from '../project/projects.ts'
@@ -9,7 +10,6 @@ import { projects } from '../project/projects.ts'
 import { activeRecordSpace, effectiveProjectSpace } from '../project-space.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import type { RecordPortImportInput } from '../record/record-port-contract.ts'
-import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import { normalizePortBaselineScannedAt } from './porting-date.ts'
 import { type ImportPlan, ImportRefusalError } from './porting-import-contract.ts'
 

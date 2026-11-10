@@ -3,8 +3,8 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { replicatedRecordId } from '../../../shared/record-id.ts'
-import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
+import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { db } from '../database/db.ts'
 import {
   LOCAL_PIN_VERSION_SQL,
@@ -12,6 +12,7 @@ import {
   LOCAL_SELECTION_PIN_VERSION_JOINS_SQL,
 } from '../lens/lens-profile-pin-version-sql.ts'
 import { normalizePortBaselineScannedAt } from '../porting/porting-date.ts'
+import { declaredRecordSpace } from '../project/declared-record-space.ts'
 import { projects } from '../project/projects.ts'
 import { activeRecordSpace, cachedProjectSpaces } from '../project-space.ts'
 import type { RecordApiClient } from './record-api-client.ts'
@@ -20,10 +21,7 @@ import type { RecordIdentity } from './record-auth.ts'
 import { pullRecordCache } from './record-cache.ts'
 import type { RecordLensImportInput } from './record-lens-contract.ts'
 import type { RecordPortImportInput } from './record-port-contract.ts'
-import {
-  projectRecordDestination,
-} from './record-project-destination.ts'
-import { declaredRecordSpace } from '../project/declared-record-space.ts'
+import { projectRecordDestination } from './record-project-destination.ts'
 import { syncRecord } from './record-sync.ts'
 import type { RecordWorkflowImportInput } from './record-workflow-contract.ts'
 
@@ -70,7 +68,6 @@ function cachedProjectRoutes(local: Database): Map<string, string | null> {
 function currentProjectRoutes(
   local: Database,
   identity: RecordIdentity,
-  activeSpaceId: string,
 ): Map<string, string | null> {
   const memberships = parseRecordSpaceMemberships(identity.memberships)
   return new Map(
@@ -657,7 +654,7 @@ export async function pushCataloguesCommand(
   const identity = await client.whoami(),
     active = identity.activeSpaceId ?? localActive
   if (!active) throw new Error(RECORD_ACTIVE_SPACE_REMEDY)
-  const plan = planCataloguePush(local, active, currentProjectRoutes(local, identity, active))
+  const plan = planCataloguePush(local, active, currentProjectRoutes(local, identity))
   logPlan(plan, presentation)
   for (const skip of plan.skipped)
     presentation.log(`skipped ${skip.kind} ${skip.id}: ${skip.reason}`)

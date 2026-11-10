@@ -36,7 +36,7 @@ import {
 } from './doc-article-fields.ts'
 import { assertDocBodyCommands, assertStoredDocBodyCommands } from './doc-command-check.ts'
 import { exportDocFiles, importDocFiles } from './doc-files.ts'
-import { hostedDocClient } from './doc-hosted-client.ts'
+import { contextTaskOwner, hostedDocClient } from './doc-hosted-client.ts'
 import {
   assertDocWriteRevisionForAuthority,
   hostedDocWriteOperation,
@@ -364,6 +364,9 @@ function localDocWriteState(input: DocWriteInput): { owner: string | null; prior
   return { owner, prior: getDoc(input.scope, input.subject, input.slug, owner) }
 }
 
+const hostedDocWriteClient = (input: DocWriteInput) =>
+  hostedDocClient(input.scope, input.subject, contextTaskOwner(input.contextTask))
+
 async function setDocWithOp(
   input: DocWriteInput,
   requestedOp?: 'import',
@@ -404,11 +407,7 @@ async function setDocWithOp(
         identity,
       }),
     hosted: async () => {
-      const client = await hostedDocClient(
-        input.scope,
-        input.subject,
-        input.contextTask ? { kind: 'task', projectName: input.contextTask.project } : undefined,
-      )
+      const client = await hostedDocWriteClient(input)
       const hostedInput: Parameters<typeof client.upsertDoc>[0] = {
         scope: input.scope,
         subject: input.subject,

@@ -3,6 +3,7 @@
 
 import type { DocForm, DocKind, DocStatus } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import { db, writableDb } from '../database/db.ts'
 import { decodeStoredDocAudiences } from '../doc/doc-audiences-codec.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
@@ -14,7 +15,6 @@ import type {
 } from './record-api-client.ts'
 import { recordApiClient } from './record-api-client.ts'
 import { recordDocArticleCompatibilityRefusal } from './record-doc-transport-contract.ts'
-import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import { requireProjectRecordDestination } from './record-project-destination-client.ts'
 
 type Presentation = { log(value: string): void }

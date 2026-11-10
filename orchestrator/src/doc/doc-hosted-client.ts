@@ -1,8 +1,9 @@
 // concern: doc-hosted-client
 /** Binds project-addressed hosted document operations to the register's destination. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
-import { recordWriteSpace, type RecordWriteOwner } from '../../../shared/record-write-space.ts'
+import { type RecordWriteOwner, recordWriteSpace } from '../../../shared/record-write-space.ts'
 import { declaredRecordSpace } from '../project/declared-record-space.ts'
 import { projectAt, projectRowByName, projects } from '../project/projects.ts'
 import {
@@ -10,8 +11,8 @@ import {
   RecordApiRequestError,
   recordApiClient,
 } from '../record/record-api-client.ts'
-import { docWriteProjectName } from './doc-write-allowed.ts'
 import { resolveContextTaskByRecordId } from './context-write-adapter.ts'
+import { docWriteProjectName } from './doc-write-allowed.ts'
 
 type HostedDocClient = Pick<
   RecordApiClient,
@@ -80,10 +81,16 @@ async function docOwner(
     const task = await resolveContextTaskByRecordId(subject.slice('task:'.length))
     if (task) return { kind: 'task', projectName: task.project }
     throw new RecordApiRequestError(
-      'task context owner could not be resolved; retry with `bottega agent context set --task <KEY>`',
+      `task context owner could not be resolved; retry with \`${PLATFORM_SLUG} agent context set --task <KEY>\``,
       'refused',
       409,
     )
   }
   return null
+}
+
+export function contextTaskOwner(
+  task: { project: string } | undefined,
+): RecordWriteOwner | undefined {
+  return task ? { kind: 'task', projectName: task.project } : undefined
 }

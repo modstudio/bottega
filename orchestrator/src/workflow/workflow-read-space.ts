@@ -3,7 +3,10 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { RECORD_ACTIVE_SPACE_REMEDY, recordSpaceMembershipRefusal } from '../../../shared/record-remedies.ts'
+import {
+  RECORD_ACTIVE_SPACE_REMEDY,
+  recordSpaceMembershipRefusal,
+} from '../../../shared/record-remedies.ts'
 import { declaredRecordSpace } from '../project/declared-record-space.ts'
 import { projectRowByName } from '../project/projects.ts'
 import { activeRecordSpace, cachedProjectSpaces, workflowReadSpace } from '../project-space.ts'
