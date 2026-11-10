@@ -181,6 +181,7 @@ test('a failed onset post preserves the state and records the announcement error
       return Response.json({ status: 'success', data: { result: [{ value: [base, value] }] } })
     }) as unknown as typeof fetch,
     resolveToken: async () => 'token',
+    destinationResolver: async () => ({ destinationSpaceId: 'space-personal' }),
     boardClient: {
       listBoardMessages: async () => ({ messages: [], truncated: false }),
       postBoardMessage: async (input) => {

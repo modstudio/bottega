@@ -16,6 +16,7 @@ import {
   type HostedBoardChanges,
   type HostedBoardMessage,
 } from '../record/record-board-contract.ts'
+import { hostedBoardMessageIsStale } from './board-hosted-cache-revision.ts'
 import {
   boardPresenceDestination,
   boardWriteDestination,
@@ -108,20 +109,6 @@ function recordRefresh(database: Database, at: number, outcome: string): void {
   }, database)
 }
 
-function cachedRevision(database: Database, id: string): string | null {
-  return (
-    (
-      database.query('SELECT revision FROM hosted_board_message_cache WHERE id=?').get(id) as {
-        revision: string
-      } | null
-    )?.revision ?? null
-  )
-}
-
-function incomingIsStale(cached: string | null, incoming: string): boolean {
-  return cached !== null && BigInt(incoming) < BigInt(cached)
-}
-
 export function queueHostedBoardAcknowledgement(
   messageId: string,
   readerSession: string,
@@ -170,7 +157,7 @@ function replacePage(database: Database, page: HostedBoardChanges): number {
     let applied = 0
     for (const change of page.items) {
       const message = change.message
-      if (incomingIsStale(cachedRevision(database, message.id), message.revision)) continue
+      if (hostedBoardMessageIsStale(database, message.id, message.revision)) continue
       putMessage.run(
         message.id,
         message.kind,

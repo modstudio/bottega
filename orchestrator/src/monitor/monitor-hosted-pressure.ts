@@ -61,10 +61,11 @@ type Dependencies = {
   >
   env?: Record<string, string | undefined>
   cwd?: string
+  destinationResolver?: typeof boardWriteDestination
 }
 export type HostedPressureAnnouncementDependencies = Pick<
   Dependencies,
-  'boardClient' | 'env' | 'cwd'
+  'boardClient' | 'env' | 'cwd' | 'destinationResolver'
 >
 type CacheRow = {
   checked_at: string
@@ -219,7 +220,10 @@ export async function announceHostedPressureActions(
       signal,
     )
     const actions = decide(overview.messages)
-    const destination = actions.length > 0 ? await boardWriteDestination(client) : undefined
+    const destination =
+      actions.length > 0
+        ? await (dependencies.destinationResolver ?? boardWriteDestination)(client as RecordApiClient)
+        : undefined
     for (const action of actions) {
       if (action.kind === 'withdraw') {
         await client.withdrawBoardMessage(

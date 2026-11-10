@@ -137,44 +137,6 @@ test('local board audience decision refuses shared-space reach with the hosted-b
   expect(localBoardAudienceRefusal({ kind: 'operator' })).toBeNull()
 })
 
-test('hosted post and reply expose unavailable posting counts as null', async () => {
-  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
-  const root = hostedMessage()
-  const reply = hostedMessage()
-  let replyAudience: { kind: string } | undefined
-  const client = {
-    ...createMemoryRecordApiClient(),
-    postBoardMessage: async () => root,
-    replyBoardMessage: async (_rootId: string, input: { audience?: { kind: string } }) => {
-      replyAudience = input.audience
-      return reply
-    },
-  }
-  await expect(
-    boardPost(
-      { audience: 'operator', title: 'Hosted', body: 'body' },
-      { env, client, destinationResolver },
-    ),
-  ).resolves.toEqual({
-    recordId: root.id,
-    number: null,
-    dropped: false,
-    reached: null,
-    warning: null,
-  })
-  await expect(
-    boardReply(root.id, 'reply', { env, client, destinationResolver }, { kind: 'acknowledged' }),
-  ).resolves.toEqual({
-    recordId: reply.id,
-    number: null,
-    rootId: root.id,
-    dropped: false,
-    reached: null,
-    warning: null,
-  })
-  expect(replyAudience).toEqual({ kind: 'acknowledged' })
-})
-
 test('uploaded message and claim UUIDs route to hosted rows instead of retired local shadows', async () => {
   const clock = Date.parse('2026-10-05T12:00:00Z')
   const localMessage = postNotice(

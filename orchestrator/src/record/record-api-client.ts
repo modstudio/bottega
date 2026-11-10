@@ -20,7 +20,7 @@ import type { CanonFinding } from '../canon/canon-lint.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import type { VerdictInput } from '../verdict/verdict-payload.ts'
-import { recordBoardRootClient } from './record-api-client-board.ts'
+import { recordBoardClient } from './record-api-client-board.ts'
 import {
   classifyBoardStreamResponse,
   releaseUnopenedStream,
@@ -38,12 +38,10 @@ import { type RecordMachineClient, recordMachineClient } from './record-api-clie
 import { recordModerationClient } from './record-api-client-moderation.ts'
 import { recordOutsideClient } from './record-api-client-outside.ts'
 import {
-  boardClaimListPath,
   docSearchParams,
   type ProjectIdentityClient,
   projectIdentityClient,
   type RecordApiAuthentication,
-  type RecordBoardMethod,
   type RecordBoardStreamOpen,
   type RecordBoardWatchMethod,
   type RecordDocOrderInput,
@@ -76,26 +74,25 @@ import type { RecordSettingsClient } from './record-api-client-settings.ts'
 import { boardStreamHeaders, recordTransport } from './record-api-client-transport.ts'
 import { type RecordWorkflowClient, recordWorkflowClient } from './record-api-client-workflow.ts'
 import { bearerHeaders } from './record-auth.ts'
-import {
-  type HostedBoardAcceptInput,
-  type HostedBoardChanges,
-  type HostedBoardClaim,
-  type HostedBoardFilingCompleteInput,
-  type HostedBoardFilingFailInput,
-  type HostedBoardMessage,
-  type HostedBoardOverview,
-  type HostedBoardOverviewFilters,
-  type HostedBoardPostInput,
-  type HostedBoardReceipt,
-  type HostedBoardReceiptInput,
-  type HostedBoardReplyInput,
-  type HostedBoardSessionInput,
-  type HostedBoardStatus,
-  type HostedBoardSuccessorInput,
-  type HostedBoardSuccessorResult,
-  type HostedBoardTakeClaimInput,
-  type HostedBoardThread,
-  hostedBoardReplyBody,
+import type {
+  HostedBoardAcceptInput,
+  HostedBoardChanges,
+  HostedBoardClaim,
+  HostedBoardFilingCompleteInput,
+  HostedBoardFilingFailInput,
+  HostedBoardMessage,
+  HostedBoardOverview,
+  HostedBoardOverviewFilters,
+  HostedBoardPostInput,
+  HostedBoardReceipt,
+  HostedBoardReceiptInput,
+  HostedBoardReplyInput,
+  HostedBoardSessionInput,
+  HostedBoardStatus,
+  HostedBoardSuccessorInput,
+  HostedBoardSuccessorResult,
+  HostedBoardTakeClaimInput,
+  HostedBoardThread,
 } from './record-board-contract.ts'
 import {
   type RecordDocWriteResponse,
@@ -920,68 +917,6 @@ const recordRunClient = (request = recordApiRequest): Pick<RecordApiClient, Reco
     return request(`/v1/scores${suffix ? `?${suffix}` : ''}`)
   },
   counts: (destination) => request('/v1/docs/counts', destination),
-})
-
-const recordBoardClient = (
-  request = recordApiRequest,
-): Pick<RecordApiClient, RecordBoardMethod> => ({
-  ...recordBoardRootClient(request),
-  replyBoardMessage: (rootId, input, destination) =>
-    request(`/v1/board/messages/${rootId}/replies`, {
-      method: 'POST',
-      body: hostedBoardReplyBody(input),
-      ...destination,
-    }),
-  acceptBoardAnswer: (id, input, destination) =>
-    request(`/v1/board/messages/${id}/accept`, {
-      method: 'POST',
-      body: JSON.stringify(input),
-      ...destination,
-    }),
-  takeBoardFilingLease: (id, input, destination) =>
-    request(`/v1/board/messages/${id}/filing-lease`, {
-      method: 'POST',
-      body: JSON.stringify(input ?? {}),
-      ...destination,
-    }),
-  completeBoardFilingLease: (id, input, destination) =>
-    request(`/v1/board/messages/${id}/filing-lease/complete`, {
-      method: 'POST',
-      body: JSON.stringify(input),
-      ...destination,
-    }),
-  failBoardFilingLease: (id, input, destination) =>
-    request(`/v1/board/messages/${id}/filing-lease/fail`, {
-      method: 'POST',
-      body: JSON.stringify(input),
-      ...destination,
-    }),
-  getBoardThread: (id) => request(`/v1/board/threads/${id}`),
-  getBoardStatus: (id) => request(`/v1/board/messages/${id}/status`),
-  putBoardReceipt: (input, signal, destination) =>
-    request('/v1/board/receipts', {
-      method: 'PUT',
-      body: JSON.stringify(input),
-      signal,
-      ...destination,
-    }),
-  takeBoardSuccessor: (input, destination) =>
-    request('/v1/board/successor', { method: 'PUT', body: JSON.stringify(input), ...destination }),
-  takeBoardClaim: (input, destination) =>
-    request('/v1/board/claims', { method: 'PUT', body: JSON.stringify(input), ...destination }),
-  renewBoardClaim: (id, input, destination) =>
-    request(`/v1/board/claims/${id}/renew`, {
-      method: 'POST',
-      body: JSON.stringify(input ?? {}),
-      ...destination,
-    }),
-  releaseBoardClaim: (id, input, destination) =>
-    request(`/v1/board/claims/${id}/release`, {
-      method: 'POST',
-      body: JSON.stringify(input ?? {}),
-      ...destination,
-    }),
-  listBoardClaims: (project, projectId) => request(boardClaimListPath(project, projectId)),
 })
 
 function recordIdentityAndSpaceClient(

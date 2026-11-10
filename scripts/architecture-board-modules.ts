@@ -54,6 +54,7 @@ export const boardModules: BoardModule[] = [
     '../database/db.ts',
   ]),
   module('orchestrator/src/board/board-hosted-refresh-budget.ts', []),
+  module('orchestrator/src/board/board-hosted-cache-revision.ts', ['bun:sqlite']),
   module('orchestrator/src/board/board-hosted-cache.ts', [
     'bun:sqlite',
     '../../../shared/board-purpose.ts',
@@ -64,6 +65,7 @@ export const boardModules: BoardModule[] = [
     '../record/record-board-contract.ts',
     '../record/machine-identity.ts',
     './board-hosted-refresh-budget.ts',
+    './board-hosted-cache-revision.ts',
     './board-hosted-presence-destination.ts',
     './board-hosted-receipt-cache.ts',
     './board-hosted-successor.ts',

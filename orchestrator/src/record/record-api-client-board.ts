@@ -1,16 +1,28 @@
 // concern: record-api-client
 /** Builds hosted board root-message requests. */
 
-import type { RecordClientRequest, RecordRequestDestination } from './record-api-client-paths.ts'
+import {
+  boardClaimListPath,
+  type RecordClientRequest,
+  type RecordRequestDestination,
+} from './record-api-client-paths.ts'
 import type {
+  HostedBoardAcceptInput,
   HostedBoardChanges,
+  HostedBoardFilingCompleteInput,
+  HostedBoardFilingFailInput,
   HostedBoardMessage,
   HostedBoardOverview,
   HostedBoardOverviewFilters,
   HostedBoardPostInput,
   HostedBoardPresenceInput,
+  HostedBoardReceiptInput,
+  HostedBoardReplyInput,
   HostedBoardSessionInput,
+  HostedBoardSuccessorInput,
+  HostedBoardTakeClaimInput,
 } from './record-board-contract.ts'
+import { hostedBoardReplyBody } from './record-board-contract.ts'
 
 type BoardRootClient = {
   listBoardChanges(
@@ -77,5 +89,123 @@ export function recordBoardRootClient(request: RecordClientRequest): BoardRootCl
         signal,
         ...destination,
       }),
+  }
+}
+
+function recordBoardMessageClient(request: RecordClientRequest) {
+  return {
+    replyBoardMessage: (
+      rootId: string,
+      input: HostedBoardReplyInput,
+      destination?: RecordRequestDestination,
+    ) =>
+      request(`/v1/board/messages/${rootId}/replies`, {
+        method: 'POST',
+        body: hostedBoardReplyBody(input),
+        ...destination,
+      }),
+    acceptBoardAnswer: (
+      id: string,
+      input: HostedBoardAcceptInput,
+      destination?: RecordRequestDestination,
+    ) =>
+      request(`/v1/board/messages/${id}/accept`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+        ...destination,
+      }),
+    takeBoardFilingLease: (
+      id: string,
+      input?: HostedBoardSessionInput,
+      destination?: RecordRequestDestination,
+    ) =>
+      request(`/v1/board/messages/${id}/filing-lease`, {
+        method: 'POST',
+        body: JSON.stringify(input ?? {}),
+        ...destination,
+      }),
+    completeBoardFilingLease: (
+      id: string,
+      input: HostedBoardFilingCompleteInput,
+      destination?: RecordRequestDestination,
+    ) =>
+      request(`/v1/board/messages/${id}/filing-lease/complete`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+        ...destination,
+      }),
+    failBoardFilingLease: (
+      id: string,
+      input: HostedBoardFilingFailInput,
+      destination?: RecordRequestDestination,
+    ) =>
+      request(`/v1/board/messages/${id}/filing-lease/fail`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+        ...destination,
+      }),
+    getBoardThread: (id: string) => request(`/v1/board/threads/${id}`),
+    getBoardStatus: (id: string) => request(`/v1/board/messages/${id}/status`),
+    putBoardReceipt: (
+      input: HostedBoardReceiptInput,
+      signal?: AbortSignal,
+      destination?: RecordRequestDestination,
+    ) =>
+      request('/v1/board/receipts', {
+        method: 'PUT',
+        body: JSON.stringify(input),
+        signal,
+        ...destination,
+      }),
+  }
+}
+
+function recordBoardCoordinationClient(request: RecordClientRequest) {
+  return {
+    takeBoardSuccessor: (
+      input: HostedBoardSuccessorInput,
+      destination?: RecordRequestDestination,
+    ) =>
+      request('/v1/board/successor', {
+        method: 'PUT',
+        body: JSON.stringify(input),
+        ...destination,
+      }),
+    takeBoardClaim: (input: HostedBoardTakeClaimInput, destination?: RecordRequestDestination) =>
+      request('/v1/board/claims', {
+        method: 'PUT',
+        body: JSON.stringify(input),
+        ...destination,
+      }),
+    renewBoardClaim: (
+      id: string,
+      input?: { holderSession?: string | null },
+      destination?: RecordRequestDestination,
+    ) =>
+      request(`/v1/board/claims/${id}/renew`, {
+        method: 'POST',
+        body: JSON.stringify(input ?? {}),
+        ...destination,
+      }),
+    releaseBoardClaim: (
+      id: string,
+      input?: { holderSession?: string | null },
+      destination?: RecordRequestDestination,
+    ) =>
+      request(`/v1/board/claims/${id}/release`, {
+        method: 'POST',
+        body: JSON.stringify(input ?? {}),
+        ...destination,
+      }),
+    listBoardClaims: (project: string, projectId?: string | null) =>
+      request(boardClaimListPath(project, projectId)),
+  }
+}
+
+export function recordBoardClient(request: RecordClientRequest) {
+  return {
+    ...recordBoardRootClient(request),
+    ...recordBoardMessageClient(request),
+    ...recordBoardCoordinationClient(request),
   }
 }
