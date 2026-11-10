@@ -289,6 +289,7 @@ export const recordModules: RecordModule[] = [
     './record-cursor.ts',
     './record-workflow-contract.ts',
     './record-task-flow.ts',
+    './record-task-flow-write-contract.ts',
     './record-api-errors.ts',
   ]),
   module('orchestrator/src/record/record-api-client-workflow.ts', [
@@ -305,8 +306,11 @@ export const recordModules: RecordModule[] = [
     './record-task-flow-contract.ts',
   ]),
   module('orchestrator/src/record/record-api-client-task-flow.ts', [
+    '../doc/doc-revision-conflict.ts',
+    './record-api-client-response.ts',
     './record-api-client-paths.ts',
     './record-task-flow-contract.ts',
+    './record-task-flow-write-contract.ts',
   ]),
   module('orchestrator/src/record/record-cache-workflow.ts', [
     ...cacheDeleteImports,

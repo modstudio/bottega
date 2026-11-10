@@ -24,6 +24,7 @@ export const TASK_IDENTITY_INTEGER_COLUMNS = [
 export const HOSTED_TASK_IDENTITY_INTEGER_COLUMNS = [
   'task_flow.revision',
   'task_flow_stage.active_ordinal',
+  'task_flow_stage.number',
   'task_flow_stage.total_steps',
   'task_flow_stage.revision',
 ] as const

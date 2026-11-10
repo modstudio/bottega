@@ -1,8 +1,9 @@
 // concern: hosted task-flow writes
 /** Applies tenant-bound workflow command intents with optimistic revisions and request idempotency. */
 import type { SQL } from 'bun'
-import { newRecordId } from '../../../shared/record-id.ts'
+import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
 import { recordPool } from './record-pool.ts'
 import type {
@@ -14,6 +15,20 @@ import type {
 type Tenant = { url: string } & TenantPrincipal
 type Mutation = { id: string; expectedRevision: number; values: Record<string, unknown> }
 type RevisionRow = { revision: number | string; last_request_id: string | null }
+type IntentBody = {
+  requestId: string
+  flowInsert?: Record<string, unknown>
+  flowChange?: Mutation
+  stageInsert?: Record<string, unknown>
+  stageChanges?: Mutation[]
+  stage?: Mutation
+  flow?: Mutation
+  obligationInserts?: Record<string, unknown>[]
+  obligationUpdates?: Record<string, unknown>[]
+  rows?: Record<string, unknown>[]
+  ids?: string[]
+  row?: Record<string, unknown>
+}
 
 const columnNames: Record<string, string> = {
   flowRecordId: 'flow_record_id',
@@ -32,7 +47,12 @@ const columnNames: Record<string, string> = {
 }
 const jsonColumns = new Set(['arguments', 'closed_step_notes'])
 
-function conflict(table: string, id: string, currentRevision: number | null, reason = 'stale-revision') {
+function conflict(
+  table: string,
+  id: string,
+  currentRevision: number | null,
+  reason = 'stale-revision',
+) {
   throw new DocRevisionConflictError(
     `${table} ${id} does not satisfy the requested write precondition`,
     `${table}.id=${id}`,
@@ -55,7 +75,8 @@ async function revisionDecision(
   if (!row) conflict(table, mutation.id, null)
   const current = Number(row!.revision)
   if (current === mutation.expectedRevision) return 'write'
-  if (current === mutation.expectedRevision + 1 && row!.last_request_id === requestId) return 'retry'
+  if (current === mutation.expectedRevision + 1 && row!.last_request_id === requestId)
+    return 'retry'
   return conflict(table, mutation.id, current)
 }
 
@@ -100,9 +121,11 @@ const same = (left: unknown, right: unknown) =>
   JSON.stringify(comparable(left)) === JSON.stringify(comparable(right))
 
 async function existingRow(tx: SQL, table: string, id: string) {
-  return ((await tx.unsafe(`SELECT * FROM ${table} WHERE id=$1::uuid FOR UPDATE`, [id])) as Array<
-    Record<string, unknown>
-  >)[0]
+  return (
+    (await tx.unsafe(`SELECT * FROM ${table} WHERE id=$1::uuid FOR UPDATE`, [id])) as Array<
+      Record<string, unknown>
+    >
+  )[0]
 }
 
 function assertSameInsert(
@@ -161,9 +184,10 @@ async function insertStage(
     assertSameInsert('task_flow_stage', String(row.id), existing, row)
     return Number(existing.revision)
   }
-  const flow = (await tx`SELECT project_id::text FROM task_flow WHERE id=${row.flowRecordId}::uuid FOR UPDATE`) as Array<{
-    project_id: string
-  }>
+  const flow =
+    (await tx`SELECT project_id::text FROM task_flow WHERE id=${row.flowRecordId}::uuid FOR UPDATE`) as Array<{
+      project_id: string
+    }>
   if (!flow[0] || flow[0].project_id !== row.projectId)
     conflict('task_flow_stage', String(row.id), null, 'already-exists')
   const number = await allocateStageNumber(tx, spaceId, String(row.projectId))
@@ -174,8 +198,8 @@ async function insertStage(
      last_advanced_machine_id,revision,last_request_id,created_at,updated_at)
     VALUES (${row.id}::uuid,${spaceId}::uuid,${row.flowRecordId}::uuid,${row.projectId}::uuid,${number},
       ${row.workflow},${row.mode},${row.workflowKey},${row.instanceId},${row.sessionId},
-      ${row.workflowVersionId}::uuid,${row.catalogueVersionId}::uuid,${JSON.stringify(row.arguments)}::jsonb,
-      ${row.activeOrdinal},${row.activeSlug},${row.state},${JSON.stringify(row.closedStepNotes)}::jsonb,
+      ${row.workflowVersionId}::uuid,${row.catalogueVersionId}::uuid,${bindJsonb(tx, row.arguments)},
+      ${row.activeOrdinal},${row.activeSlug},${row.state},${bindJsonb(tx, row.closedStepNotes)},
       ${row.question},${row.autonomy},${row.enforcement},${row.totalSteps},${row.openedMachineId}::uuid,
       ${row.takenOverFromMachineId}::uuid,${row.lastAdvancedMachineId}::uuid,1,${requestId}::uuid,
       ${row.createdAt}::timestamptz,${row.updatedAt}::timestamptz)`
@@ -192,7 +216,7 @@ async function insertObligation(tx: SQL, spaceId: string, row: Record<string, un
     VALUES (${row.id}::uuid,${spaceId}::uuid,${row.stageRecordId}::uuid,${row.stepOrdinal},${row.stepSlug},
       ${row.floor},${row.requirePullRequest},${row.expectedExitCode},${row.expectedStatus},${row.floorDeferrable},
       ${row.reason},${row.sessionId},${row.createdAt}::timestamptz,${row.satisfiedAt}::timestamptz,
-      ${row.satisfiedStepOrdinal},${row.satisfiedStepSlug},${JSON.stringify(row.satisfiedEvidence)}::jsonb,
+      ${row.satisfiedStepOrdinal},${row.satisfiedStepSlug},${bindJsonb(tx, row.satisfiedEvidence)},
       ${row.abandonedAt}::timestamptz,${row.abandonedReason},${row.operatorRuling})`
 }
 
@@ -228,34 +252,60 @@ async function insertCopy(tx: SQL, spaceId: string, row: Record<string, unknown>
       ${row.taskDocumentReference},${row.copiedAt}::timestamptz)`
 }
 
+async function applyCompose(tx: SQL, input: Tenant, body: IntentBody) {
+  const revisions: Record<string, number> = {}
+  if (body.flowInsert)
+    revisions[String(body.flowInsert.id)] = await insertFlow(
+      tx,
+      input.spaceId,
+      body.requestId,
+      body.flowInsert,
+    )
+  if (body.flowChange)
+    revisions[body.flowChange.id] = await updateRevisionRow(
+      tx,
+      'task_flow',
+      body.flowChange,
+      body.requestId,
+    )
+  if (body.stageInsert)
+    revisions[String(body.stageInsert.id)] = await insertStage(
+      tx,
+      input.spaceId,
+      body.requestId,
+      body.stageInsert,
+    )
+  for (const change of body.stageChanges ?? [])
+    revisions[change.id] = await updateRevisionRow(tx, 'task_flow_stage', change, body.requestId)
+  return { revisions }
+}
+
+async function applyStageMutation(tx: SQL, input: Tenant, body: IntentBody) {
+  const revisions: Record<string, number> = {}
+  const stage = body.stage!
+  revisions[stage.id] = await updateRevisionRow(tx, 'task_flow_stage', stage, body.requestId)
+  if (body.flow)
+    revisions[body.flow.id] = await updateRevisionRow(tx, 'task_flow', body.flow, body.requestId)
+  for (const row of body.obligationInserts ?? []) await insertObligation(tx, input.spaceId, row)
+  for (const row of body.obligationUpdates ?? []) await updateObligation(tx, row)
+  return { revisions }
+}
+
 async function applyIntent<K extends TaskFlowIntent>(
   tx: SQL,
   input: Tenant & TaskFlowIntentInput<K>,
   intent: K,
 ): Promise<TaskFlowWriteResult> {
-  const revisions: Record<string, number> = {}
-  const body = input as Tenant & Record<string, any>
-  if (intent === 'compose') {
-    if (body.flowInsert)
-      revisions[body.flowInsert.id] = await insertFlow(tx, input.spaceId, body.requestId, body.flowInsert)
-    if (body.flowChange)
-      revisions[body.flowChange.id] = await updateRevisionRow(tx, 'task_flow', body.flowChange, body.requestId)
-    if (body.stageInsert)
-      revisions[body.stageInsert.id] = await insertStage(tx, input.spaceId, body.requestId, body.stageInsert)
-    for (const change of body.stageChanges)
-      revisions[change.id] = await updateRevisionRow(tx, 'task_flow_stage', change, body.requestId)
-  } else if (intent === 'stage-update' || intent === 'advance' || intent === 'await-ruling' || intent === 'abandon') {
-    revisions[body.stage.id] = await updateRevisionRow(tx, 'task_flow_stage', body.stage, body.requestId)
-    if (body.flow)
-      revisions[body.flow.id] = await updateRevisionRow(tx, 'task_flow', body.flow, body.requestId)
-    for (const row of body.obligationInserts ?? []) await insertObligation(tx, input.spaceId, row)
-    for (const row of body.obligationUpdates ?? []) await updateObligation(tx, row)
-  } else if (intent === 'attach-text') {
-    for (const row of body.rows) await insertText(tx, input.spaceId, row)
-  } else if (intent === 'delete-text') {
-    await tx`DELETE FROM workflow_step_text WHERE id IN ${tx(body.ids)} AND space_id=${input.spaceId}::uuid`
-  } else if (intent === 'copy-text') await insertCopy(tx, input.spaceId, body.row)
-  return { revisions }
+  const body = input as Tenant & IntentBody
+  if (intent === 'compose') return applyCompose(tx, input, body)
+  if (['stage-update', 'advance', 'await-ruling', 'abandon'].includes(intent))
+    return applyStageMutation(tx, input, body)
+  if (intent === 'attach-text')
+    for (const row of body.rows ?? []) await insertText(tx, input.spaceId, row)
+  if (intent === 'delete-text')
+    await tx`DELETE FROM workflow_step_text WHERE id IN ${tx(body.ids ?? [])} AND space_id=${input.spaceId}::uuid`
+  if (intent === 'copy-text') await insertCopy(tx, input.spaceId, body.row!)
+  return { revisions: {} }
 }
 
 function writeIntent<K extends TaskFlowIntent>(intent: K) {

@@ -52,6 +52,29 @@ type Ports = {
 }
 const limit = z.coerce.number().int().min(1).max(100).default(20)
 
+function registerTaskFlowWriteRoutes(
+  app: Hono<Environment>,
+  deps: RecordWorkflowRouteDeps,
+  ports: Ports,
+): void {
+  for (const intent of Object.keys(taskFlowIntentSchemas) as TaskFlowIntent[])
+    app.post(`/v1/task-flow/${intent}`, async (context) => {
+      const active = ports.scope(context)
+      if (!active) return ports.noSpace(context)
+      const body = taskFlowIntentSchemas[intent].safeParse(
+        await context.req.json().catch(() => null),
+      )
+      if (!body.success) return context.json({ error: `invalid task-flow ${intent} request` }, 400)
+      try {
+        return context.json(await deps.writeTaskFlow(intent, { ...active, ...body.data } as never))
+      } catch (error) {
+        if (error instanceof DocRevisionConflictError)
+          return renderRecordApiRefusal(context, error)!
+        throw error
+      }
+    })
+}
+
 export function registerRecordWorkflowRoutes(
   app: Hono<Environment>,
   deps: RecordWorkflowRouteDeps,
@@ -84,21 +107,7 @@ export function registerRecordWorkflowRoutes(
       throw error
     }
   })
-  for (const intent of Object.keys(taskFlowIntentSchemas) as TaskFlowIntent[])
-    app.post(`/v1/task-flow/${intent}`, async (context) => {
-      const active = ports.scope(context)
-      if (!active) return ports.noSpace(context)
-      const body = taskFlowIntentSchemas[intent].safeParse(
-        await context.req.json().catch(() => null),
-      )
-      if (!body.success)
-        return context.json({ error: `invalid task-flow ${intent} request` }, 400)
-      try {
-        return context.json(await deps.writeTaskFlow(intent, { ...active, ...body.data } as never))
-      } catch (error) {
-        return failure(context, error)
-      }
-    })
+  registerTaskFlowWriteRoutes(app, deps, ports)
   app.get('/v1/workflow-catalogue/:table', async (context) => {
     const active = ports.scope(context)
     if (!active) return ports.noSpace(context)

@@ -11,6 +11,16 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const recordInvariantModules = [
+  module('orchestrator/src/record/record-task-flow-write-contract.ts', ['zod']),
+  module('orchestrator/src/record/record-task-flow-write.ts', [
+    'bun',
+    '../../../shared/record-id.ts',
+    '../../../shared/record/jsonb-sql.ts',
+    '../../../shared/record/tenant.ts',
+    '../doc/doc-revision-conflict.ts',
+    './record-pool.ts',
+    './record-task-flow-write-contract.ts',
+  ]),
   module('orchestrator/src/record/active-space-invariant.ts', [
     '../../../shared/record-remedies.ts',
   ]),

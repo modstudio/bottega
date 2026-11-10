@@ -1,10 +1,11 @@
 // concern: hosted task-flow client
-import type { RecordRequestDestination } from './record-api-client-paths.ts'
+
 import {
   DocRevisionConflictError,
   REVISION_CONFLICT_CODE,
   type RevisionConflictReason,
 } from '../doc/doc-revision-conflict.ts'
+import type { RecordRequestDestination } from './record-api-client-paths.ts'
 import { RecordApiRequestError } from './record-api-client-response.ts'
 import { type HostedTaskFlow, hostedTaskFlowSchema } from './record-task-flow-contract.ts'
 import {
@@ -23,14 +24,38 @@ export type RecordTaskFlowClient = {
     selector: { taskKey?: string; flowRecordId?: string },
     destination?: RecordRequestDestination,
   ): Promise<HostedTaskFlow>
-  composeTaskFlow?(input: TaskFlowIntentInput<'compose'>, destination?: RecordRequestDestination): Promise<TaskFlowWriteResult>
-  updateTaskFlowStage?(input: TaskFlowIntentInput<'stage-update'>, destination?: RecordRequestDestination): Promise<TaskFlowWriteResult>
-  advanceTaskFlow?(input: TaskFlowIntentInput<'advance'>, destination?: RecordRequestDestination): Promise<TaskFlowWriteResult>
-  awaitTaskFlowRuling?(input: TaskFlowIntentInput<'await-ruling'>, destination?: RecordRequestDestination): Promise<TaskFlowWriteResult>
-  abandonTaskFlow?(input: TaskFlowIntentInput<'abandon'>, destination?: RecordRequestDestination): Promise<TaskFlowWriteResult>
-  attachTaskFlowText?(input: TaskFlowIntentInput<'attach-text'>, destination?: RecordRequestDestination): Promise<TaskFlowWriteResult>
-  deleteTaskFlowText?(input: TaskFlowIntentInput<'delete-text'>, destination?: RecordRequestDestination): Promise<TaskFlowWriteResult>
-  copyTaskFlowText?(input: TaskFlowIntentInput<'copy-text'>, destination?: RecordRequestDestination): Promise<TaskFlowWriteResult>
+  composeTaskFlow?(
+    input: TaskFlowIntentInput<'compose'>,
+    destination?: RecordRequestDestination,
+  ): Promise<TaskFlowWriteResult>
+  updateTaskFlowStage?(
+    input: TaskFlowIntentInput<'stage-update'>,
+    destination?: RecordRequestDestination,
+  ): Promise<TaskFlowWriteResult>
+  advanceTaskFlow?(
+    input: TaskFlowIntentInput<'advance'>,
+    destination?: RecordRequestDestination,
+  ): Promise<TaskFlowWriteResult>
+  awaitTaskFlowRuling?(
+    input: TaskFlowIntentInput<'await-ruling'>,
+    destination?: RecordRequestDestination,
+  ): Promise<TaskFlowWriteResult>
+  abandonTaskFlow?(
+    input: TaskFlowIntentInput<'abandon'>,
+    destination?: RecordRequestDestination,
+  ): Promise<TaskFlowWriteResult>
+  attachTaskFlowText?(
+    input: TaskFlowIntentInput<'attach-text'>,
+    destination?: RecordRequestDestination,
+  ): Promise<TaskFlowWriteResult>
+  deleteTaskFlowText?(
+    input: TaskFlowIntentInput<'delete-text'>,
+    destination?: RecordRequestDestination,
+  ): Promise<TaskFlowWriteResult>
+  copyTaskFlowText?(
+    input: TaskFlowIntentInput<'copy-text'>,
+    destination?: RecordRequestDestination,
+  ): Promise<TaskFlowWriteResult>
 }
 async function write<K extends TaskFlowIntent>(
   request: Request,

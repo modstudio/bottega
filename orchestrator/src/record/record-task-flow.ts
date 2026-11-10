@@ -23,12 +23,12 @@ function toHostedStage(row: Record<string, unknown>): HostedStage {
   return {
     id: String(row.stage_id),
     flowRecordId: String(row.stage_flow_record_id),
-    projectId: String(row.stage_project_id),
-    number: Number(row.stage_number),
+    projectId: row.stage_project_id == null ? null : String(row.stage_project_id),
+    number: row.stage_number == null ? null : Number(row.stage_number),
     workflow: String(row.stage_workflow),
     mode: String(row.stage_mode),
-    workflowKey: String(row.stage_workflow_key),
-    instanceId: String(row.stage_instance_id),
+    workflowKey: row.stage_workflow_key == null ? null : String(row.stage_workflow_key),
+    instanceId: row.stage_instance_id == null ? null : String(row.stage_instance_id),
     sessionId: row.stage_session_id == null ? null : String(row.stage_session_id),
     workflowVersionId: String(row.stage_workflow_version_id),
     catalogueVersionId: String(row.stage_catalogue_version_id),
@@ -39,7 +39,7 @@ function toHostedStage(row: Record<string, unknown>): HostedStage {
     closedStepNotes: row.stage_closed_step_notes as unknown[],
     question: row.stage_question == null ? null : String(row.stage_question),
     autonomy: row.stage_autonomy == null ? null : String(row.stage_autonomy),
-    enforcement: String(row.stage_enforcement),
+    enforcement: row.stage_enforcement == null ? null : String(row.stage_enforcement),
     totalSteps: Number(row.stage_total_steps),
     openedMachineId: String(row.stage_opened_machine_id),
     takenOverFromMachineId:
@@ -72,13 +72,21 @@ async function stageChildren(tx: SQL, spaceId: string, flowId: string) {
     WHERE c.space_id=${spaceId}::uuid AND s.flow_record_id=${flowId}::uuid ORDER BY c.copied_at,c.id`
   return {
     obligations: obligations.map((item: Record<string, unknown>) => ({
-      id: String(item.id), stageRecordId: String(item.stage_record_id),
-      stepOrdinal: Number(item.step_ordinal), stepSlug: String(item.step_slug), floor: String(item.floor),
-      requirePullRequest: Boolean(item.require_pull_request), expectedExitCode: Number(item.expected_exit_code),
-      expectedStatus: String(item.expected_status), floorDeferrable: Boolean(item.floor_deferrable),
-      reason: String(item.reason), sessionId: item.session_id == null ? null : String(item.session_id),
-      createdAt: recordIso(item.created_at), satisfiedAt: nullableIso(item.satisfied_at),
-      satisfiedStepOrdinal: item.satisfied_step_ordinal == null ? null : Number(item.satisfied_step_ordinal),
+      id: String(item.id),
+      stageRecordId: String(item.stage_record_id),
+      stepOrdinal: Number(item.step_ordinal),
+      stepSlug: String(item.step_slug),
+      floor: String(item.floor),
+      requirePullRequest: Boolean(item.require_pull_request),
+      expectedExitCode: Number(item.expected_exit_code),
+      expectedStatus: String(item.expected_status),
+      floorDeferrable: Boolean(item.floor_deferrable),
+      reason: String(item.reason),
+      sessionId: item.session_id == null ? null : String(item.session_id),
+      createdAt: recordIso(item.created_at),
+      satisfiedAt: nullableIso(item.satisfied_at),
+      satisfiedStepOrdinal:
+        item.satisfied_step_ordinal == null ? null : Number(item.satisfied_step_ordinal),
       satisfiedStepSlug: item.satisfied_step_slug == null ? null : String(item.satisfied_step_slug),
       satisfiedEvidence: item.satisfied_evidence as unknown[] | null,
       abandonedAt: nullableIso(item.abandoned_at),
@@ -86,18 +94,27 @@ async function stageChildren(tx: SQL, spaceId: string, flowId: string) {
       operatorRuling: Boolean(item.operator_ruling),
     })),
     stepTexts: texts.map((item: Record<string, unknown>) => ({
-      id: String(item.id), stageRecordId: String(item.stage_record_id), stepOrdinal: Number(item.step_ordinal),
-      stepSlug: String(item.step_slug), body: String(item.body), createdAt: recordIso(item.created_at),
+      id: String(item.id),
+      stageRecordId: String(item.stage_record_id),
+      stepOrdinal: Number(item.step_ordinal),
+      stepSlug: String(item.step_slug),
+      body: String(item.body),
+      createdAt: recordIso(item.created_at),
     })),
     textCopies: copies.map((item: Record<string, unknown>) => ({
-      id: String(item.id), workflowTextRecordId: String(item.workflow_text_record_id),
-      stageRecordId: String(item.stage_record_id), taskDocumentReference: String(item.task_document_reference),
+      id: String(item.id),
+      workflowTextRecordId: String(item.workflow_text_record_id),
+      stageRecordId: String(item.stage_record_id),
+      taskDocumentReference: String(item.task_document_reference),
       copiedAt: recordIso(item.copied_at),
     })),
   }
 }
 
-function withChildren(stage: HostedStage, children: Awaited<ReturnType<typeof stageChildren>>): HostedStage {
+function withChildren(
+  stage: HostedStage,
+  children: Awaited<ReturnType<typeof stageChildren>>,
+): HostedStage {
   return {
     ...stage,
     obligations: children.obligations.filter((row) => row.stageRecordId === stage.id),
