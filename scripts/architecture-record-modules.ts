@@ -72,7 +72,6 @@ export const recordModules: RecordModule[] = [
     '../database/db.ts',
     '../doc/docs.ts',
     '../project/projects.ts',
-    '../project-space.ts',
     '../record/record-api-client.ts',
     '../record/record-port-contract.ts',
     '../record/record-project-destination.ts',
