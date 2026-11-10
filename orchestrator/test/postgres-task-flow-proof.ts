@@ -92,6 +92,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
       `)
       input.signIn()
       const client = recordApiClient()
+      const directSpace = { destinationSpaceId: input.spaceId() }
       await client.ensureSpaceBuiltIns!({ destinationSpaceId: input.spaceId() })
       const workflowVersionId = input.admin(
         `SELECT version.id FROM workflow_version version JOIN workflow ON workflow.id=version.workflow_id
@@ -139,14 +140,17 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         updatedAt: at,
       }
       expect(
-        await client.composeTaskFlow!({
-          requestId: composeRequestId,
-          flowInsert: flow,
-          stageInsert: stage,
-        }),
+        await client.composeTaskFlow!(
+          {
+            requestId: composeRequestId,
+            flowInsert: flow,
+            stageInsert: stage,
+          },
+          directSpace,
+        ),
       ).toEqual({ revisions: { [flowId]: 1, [stageId]: 1 } })
 
-      const composed = await client.readTaskFlow!({ flowRecordId: flowId })
+      const composed = await client.readTaskFlow!({ flowRecordId: flowId }, directSpace)
       expect(composed.stage).toMatchObject({
         number: 1,
         workflowKey: DIRECT_TASK_KEY,
@@ -157,17 +161,23 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         enforcement: 'note-only',
       })
       expect(
-        await client.composeTaskFlow!({
-          requestId: newRecordId(),
-          stageInsert: stage,
-        }),
+        await client.composeTaskFlow!(
+          {
+            requestId: newRecordId(),
+            stageInsert: stage,
+          },
+          directSpace,
+        ),
       ).toEqual({ revisions: { [stageId]: 1 } })
 
       await expect(
-        client.composeTaskFlow!({
-          requestId: newRecordId(),
-          stageInsert: { ...stage, id: newRecordId() },
-        }),
+        client.composeTaskFlow!(
+          {
+            requestId: newRecordId(),
+            stageInsert: { ...stage, id: newRecordId() },
+          },
+          directSpace,
+        ),
       ).rejects.toMatchObject({
         reason: 'already-exists',
         condition: 'task_flow_stage.(project_id,workflow,mode,workflow_key,instance_id)',
@@ -176,12 +186,15 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
 
       const secondStageId = newRecordId()
       expect(
-        await client.composeTaskFlow!({
-          requestId: newRecordId(),
-          stageInsert: { ...stage, id: secondStageId, workflowKey: `${DIRECT_TASK_KEY}-second` },
-        }),
+        await client.composeTaskFlow!(
+          {
+            requestId: newRecordId(),
+            stageInsert: { ...stage, id: secondStageId, workflowKey: `${DIRECT_TASK_KEY}-second` },
+          },
+          directSpace,
+        ),
       ).toEqual({ revisions: { [secondStageId]: 1 } })
-      const withSecondStage = await client.readTaskFlow!({ flowRecordId: flowId })
+      const withSecondStage = await client.readTaskFlow!({ flowRecordId: flowId }, directSpace)
       expect(withSecondStage.otherStages).toContainEqual(
         expect.objectContaining({ id: secondStageId, number: 2 }),
       )
@@ -231,10 +244,14 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
           },
         ],
       }
-      expect(await client.advanceTaskFlow!(advance)).toEqual({ revisions: { [stageId]: 2 } })
-      expect(await client.advanceTaskFlow!(advance)).toEqual({ revisions: { [stageId]: 2 } })
+      expect(await client.advanceTaskFlow!(advance, directSpace)).toEqual({
+        revisions: { [stageId]: 2 },
+      })
+      expect(await client.advanceTaskFlow!(advance, directSpace)).toEqual({
+        revisions: { [stageId]: 2 },
+      })
       expect(
-        (await client.readTaskFlow!({ flowRecordId: flowId })).stage?.obligations,
+        (await client.readTaskFlow!({ flowRecordId: flowId }, directSpace)).stage?.obligations,
       ).toContainEqual(
         expect.objectContaining({
           id: obligationId,
@@ -243,43 +260,52 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         }),
       )
       expect(
-        await client.attachTaskFlowText!({
-          requestId: newRecordId(),
-          rows: [
-            {
-              id: textId,
+        await client.attachTaskFlowText!(
+          {
+            requestId: newRecordId(),
+            rows: [
+              {
+                id: textId,
+                stageRecordId: stageId,
+                stepOrdinal: 1,
+                stepSlug: 'implement',
+                body: 'project-move depth proof',
+                createdAt: at,
+              },
+            ],
+          },
+          directSpace,
+        ),
+      ).toEqual({ revisions: {} })
+      expect(
+        await client.copyTaskFlowText!(
+          {
+            requestId: newRecordId(),
+            row: {
+              id: copyId,
+              workflowTextRecordId: textId,
               stageRecordId: stageId,
-              stepOrdinal: 1,
-              stepSlug: 'implement',
-              body: 'project-move depth proof',
-              createdAt: at,
+              taskDocumentReference: 'DEV-2234',
+              copiedAt: at,
             },
-          ],
-        }),
+          },
+          directSpace,
+        ),
       ).toEqual({ revisions: {} })
       expect(
-        await client.copyTaskFlowText!({
-          requestId: newRecordId(),
-          row: {
-            id: copyId,
-            workflowTextRecordId: textId,
-            stageRecordId: stageId,
-            taskDocumentReference: 'DEV-2234',
-            copiedAt: at,
+        await client.copyTaskFlowText!(
+          {
+            requestId: newRecordId(),
+            row: {
+              id: newRecordId(),
+              workflowTextRecordId: textId,
+              stageRecordId: stageId,
+              taskDocumentReference: 'DEV-2234-repeated',
+              copiedAt: at,
+            },
           },
-        }),
-      ).toEqual({ revisions: {} })
-      expect(
-        await client.copyTaskFlowText!({
-          requestId: newRecordId(),
-          row: {
-            id: newRecordId(),
-            workflowTextRecordId: textId,
-            stageRecordId: stageId,
-            taskDocumentReference: 'DEV-2234-repeated',
-            copiedAt: at,
-          },
-        }),
+          directSpace,
+        ),
       ).toEqual({ revisions: {} })
       expect(
         Number(
@@ -289,67 +315,79 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         ),
       ).toBe(1)
       expect(
-        await client.deleteTaskFlowText!({
-          requestId: newRecordId(),
-          stageRecordId: stageId,
-          ids: [textId],
-        }),
+        await client.deleteTaskFlowText!(
+          {
+            requestId: newRecordId(),
+            stageRecordId: stageId,
+            ids: [textId],
+          },
+          directSpace,
+        ),
       ).toEqual({ revisions: {} })
       expect(input.admin(`SELECT count(*) FROM workflow_step_text WHERE id='${textId}';`)).toBe('0')
       expect(input.admin(`SELECT count(*) FROM workflow_text_copy WHERE id='${copyId}';`)).toBe('1')
 
       expect(
-        await client.attachTaskFlowText!({
-          requestId: newRecordId(),
-          rows: [
-            {
-              id: advanceTextId,
-              stageRecordId: stageId,
-              stepOrdinal: 1,
-              stepSlug: 'implement',
-              body: 'advance deletion proof',
-              createdAt: at,
-            },
-            {
-              id: moveTextId,
-              stageRecordId: stageId,
-              stepOrdinal: 1,
-              stepSlug: 'implement',
-              body: 'project-move depth proof',
-              createdAt: at,
-            },
-          ],
-        }),
+        await client.attachTaskFlowText!(
+          {
+            requestId: newRecordId(),
+            rows: [
+              {
+                id: advanceTextId,
+                stageRecordId: stageId,
+                stepOrdinal: 1,
+                stepSlug: 'implement',
+                body: 'advance deletion proof',
+                createdAt: at,
+              },
+              {
+                id: moveTextId,
+                stageRecordId: stageId,
+                stepOrdinal: 1,
+                stepSlug: 'implement',
+                body: 'project-move depth proof',
+                createdAt: at,
+              },
+            ],
+          },
+          directSpace,
+        ),
       ).toEqual({ revisions: {} })
       for (const [id, workflowTextRecordId] of [
         [advanceCopyId, advanceTextId],
         [moveCopyId, moveTextId],
       ] as const)
         expect(
-          await client.copyTaskFlowText!({
-            requestId: newRecordId(),
-            row: {
-              id,
-              workflowTextRecordId,
-              stageRecordId: stageId,
-              taskDocumentReference: 'DEV-2234',
-              copiedAt: at,
+          await client.copyTaskFlowText!(
+            {
+              requestId: newRecordId(),
+              row: {
+                id,
+                workflowTextRecordId,
+                stageRecordId: stageId,
+                taskDocumentReference: 'DEV-2234',
+                copiedAt: at,
+              },
             },
-          }),
+            directSpace,
+          ),
         ).toEqual({ revisions: {} })
       await expect(
-        client.advanceTaskFlow!({ ...advance, requestId: newRecordId() }),
+        client.advanceTaskFlow!({ ...advance, requestId: newRecordId() }, directSpace),
       ).rejects.toMatchObject({ condition: `task_flow_stage.id=${stageId}`, currentRevision: '2' })
       expect(
-        await client.advanceTaskFlow!({
-          requestId: newRecordId(),
-          stage: {
-            id: stageId,
-            expectedRevision: 2,
-            values: { updatedAt: new Date(Date.now() + 2_000).toISOString() },
+        await client.advanceTaskFlow!(
+          {
+            requestId: newRecordId(),
+            stage: {
+              id: stageId,
+              expectedRevision: 2,
+              values: { updatedAt: new Date(Date.now() + 2_000).toISOString() },
+            },
+            deleteTextIds: [advanceTextId],
           },
-          deleteTextIds: [advanceTextId],
-        }),
+          directSpace,
+        ),
       ).toEqual({ revisions: { [stageId]: 3 } })
       expect(
         input.admin(`SELECT count(*) FROM workflow_step_text WHERE id='${advanceTextId}';`),
@@ -358,16 +396,22 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         input.admin(`SELECT count(*) FROM workflow_text_copy WHERE id='${advanceCopyId}';`),
       ).toBe('1')
 
-      expect(await client.composeTaskFlow!({ requestId: newRecordId(), flowInsert: flow })).toEqual(
-        {
-          revisions: { [flowId]: 1 },
-        },
-      )
+      expect(
+        await client.composeTaskFlow!(
+          { requestId: newRecordId(), flowInsert: flow },
+          directSpace,
+        ),
+      ).toEqual({
+        revisions: { [flowId]: 1 },
+      })
       await expect(
-        client.composeTaskFlow!({
-          requestId: newRecordId(),
-          flowInsert: { ...flow, state: 'done' },
-        }),
+        client.composeTaskFlow!(
+          {
+            requestId: newRecordId(),
+            flowInsert: { ...flow, state: 'done' },
+          },
+          directSpace,
+        ),
       ).rejects.toMatchObject({ condition: `task_flow.id=${flowId}` })
 
       const otherSpace = await auth.api.createOrganization({

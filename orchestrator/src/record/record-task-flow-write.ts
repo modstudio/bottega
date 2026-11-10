@@ -219,6 +219,8 @@ async function insertStage(
 async function insertObligation(tx: SQL, spaceId: string, row: Record<string, unknown>) {
   const existing = await existingRow(tx, 'workflow_obligation', String(row.id))
   if (existing) return assertSameInsert('workflow_obligation', String(row.id), existing, row)
+  const satisfiedEvidence =
+    row.satisfiedEvidence === null ? null : bindJsonb(tx, row.satisfiedEvidence)
   await tx`INSERT INTO workflow_obligation
     (id,space_id,stage_record_id,step_ordinal,step_slug,floor,require_pull_request,expected_exit_code,
      expected_status,floor_deferrable,reason,session_id,created_at,satisfied_at,satisfied_step_ordinal,
@@ -226,7 +228,7 @@ async function insertObligation(tx: SQL, spaceId: string, row: Record<string, un
     VALUES (${row.id}::uuid,${spaceId}::uuid,${row.stageRecordId}::uuid,${row.stepOrdinal},${row.stepSlug},
       ${row.floor},${row.requirePullRequest},${row.expectedExitCode},${row.expectedStatus},${row.floorDeferrable},
       ${row.reason},${row.sessionId},${row.createdAt}::timestamptz,${row.satisfiedAt}::timestamptz,
-      ${row.satisfiedStepOrdinal},${row.satisfiedStepSlug},${bindJsonb(tx, row.satisfiedEvidence)},
+      ${row.satisfiedStepOrdinal},${row.satisfiedStepSlug},${satisfiedEvidence},
       ${row.abandonedAt}::timestamptz,${row.abandonedReason},${row.operatorRuling})`
 }
 
