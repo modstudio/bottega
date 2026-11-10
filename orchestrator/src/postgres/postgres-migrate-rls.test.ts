@@ -211,6 +211,9 @@ realPostgres('RLS proof against real Postgres', () => {
       RECORD_HUB_URL: process.env.RECORD_HUB_URL,
     })
     process.env.BOTTEGA_RECORD_API_URL = `http://127.0.0.1:${apiServer.port}`
+    // The record API serves the same destination-less report contract as the hosted hub,
+    // so record doctor's hub check reads it here; this suite proves ownership, not the hub.
+    process.env.BOTTEGA_HOSTED_URL = process.env.BOTTEGA_RECORD_API_URL
     installRecordApiClient(null)
     installRecordSessionRunner(recordSession.runner)
     const storedToken = () => recordSession.token()!
@@ -300,6 +303,7 @@ realPostgres('RLS proof against real Postgres', () => {
     delete process.env.RECORD_HUB_URL
     delete process.env.RECORD_AUTH_DATABASE_URL
     delete process.env.BOTTEGA_RECORD_API_URL
+    delete process.env.BOTTEGA_HOSTED_URL
     if (!container) return
     psql(
       'postgres',
