@@ -578,6 +578,7 @@ export const recordModules: RecordModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/machine-config.ts',
     '../../../shared/moderation-hide-reason.ts',
+    '../../../shared/record-space-owner-destination.ts',
     '../database/db.ts',
     '../postgres/postgres-migrate.ts',
     '../project/projects.ts',

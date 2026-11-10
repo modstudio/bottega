@@ -113,10 +113,7 @@ async function identity(client: ConfigClient) {
   return hostedIdentity(client)
 }
 
-async function unpinServerRevoked(
-  client: ConfigClient,
-  destination: ConfigDestination = {},
-) {
+async function unpinServerRevoked(client: ConfigClient, destination: ConfigDestination = {}) {
   const remote = await client.listMachineKeys(destination)
   for (const key of remote) if (key.revokedAt) await unpinTrustedMachine(key.keyId)
   return remote
@@ -226,8 +223,7 @@ export async function machineInit(
     }
   } else writeMachineKey(pair, env)
   await pinTrustedMachine(keyId, pair.publicKey, label, env)
-  if (!pinned)
-    writeHostedConfigIdentity({ spaceId: selectedSpaceId, userId: current.user.id }, env)
+  if (!pinned) writeHostedConfigIdentity({ spaceId: selectedSpaceId, userId: current.user.id }, env)
   const registered = await client.registerMachineKey(
     keyId,
     encoded(pair.publicKey),

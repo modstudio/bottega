@@ -4,11 +4,11 @@ import { createInterface } from 'node:readline/promises'
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type ConfigClient, type ConfigScope, configClient } from '../../../shared/config-client.ts'
-import { readHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { isDelegationKey } from '../../../shared/delegation-mode.ts'
+import { readHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { listMachineEntries } from '../../../shared/machine-config.ts'
-import { recordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
+import { recordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
 import {
   isShipToConfigKey,
   SHIP_TO_CONFIG_KEY,
@@ -169,7 +169,11 @@ function registerMachineCommands(config: Command): void {
     .option('--display-name <name>', 'display machine name')
     .action(async (options) => {
       const client = configClient()
-      const selected = await selectedMachineSpace('machine config machine init', options.space, client)
+      const selected = await selectedMachineSpace(
+        'machine config machine init',
+        options.space,
+        client,
+      )
       log(
         await machineInit(
           selected.spaceId,

@@ -1,7 +1,4 @@
-import {
-  recordSpaceMembershipRefusal,
-  recordSpaceOwnerRequiredRemedy,
-} from './record-remedies.ts'
+import { recordSpaceMembershipRefusal, recordSpaceOwnerRequiredRemedy } from './record-remedies.ts'
 import { type RecordSpaceMembership, recordSpaceMembership } from './record-space-membership.ts'
 
 export type RecordSpaceOwnerFlags = {

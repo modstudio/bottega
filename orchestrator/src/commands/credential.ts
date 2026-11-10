@@ -15,11 +15,11 @@ import {
   RECORD_ACTIVE_SPACE_REMEDY,
   recordSpaceMembershipRefusal,
 } from '../../../shared/record-remedies.ts'
-import { recordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
 import {
   parseRecordSpaceMemberships,
   recordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
+import { recordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
 import {
   CREDENTIAL_SLOTS,
   credentialDisplayName,
@@ -102,6 +102,26 @@ export function validateBindingExclusivity(options: BindingOptions): void {
     throw new Error('--account, --project, and --space are mutually exclusive')
 }
 
+function selectedCredentialWriteSpace(
+  verb: string,
+  options: BindingOptions,
+  memberships: ReturnType<typeof parseRecordSpaceMemberships>,
+): CredentialBindingAddress {
+  const destination = recordSpaceOwnerDestination(
+    verb,
+    { space: options.space, project: options.project, account: options.account },
+    memberships,
+  )
+  if (destination.kind === 'refused') throw new Error(destination.remedy)
+  if (destination.kind !== 'space') throw new Error('credential owner was not resolved')
+  return {
+    projectId: null,
+    projectName: undefined,
+    spaceName: destination.slug,
+    destinationSpaceId: destination.spaceId,
+  }
+}
+
 async function bindingAddress(
   options: BindingOptions,
   writeVerb?: string,
@@ -112,32 +132,11 @@ async function bindingAddress(
   if (options.project && !project) throw new Error(`no project ${options.project}`)
   if (project) return projectCredentialBinding(project, client)
   if (options.account) return accountCredentialBinding(client)
-  if (writeVerb && !options.space) {
-    const destination = recordSpaceOwnerDestination(
-      writeVerb,
-      { space: options.space, project: options.project, account: options.account },
-      [],
-    )
-    if (destination.kind === 'refused') throw new Error(destination.remedy)
-  }
+  if (writeVerb && !options.space) selectedCredentialWriteSpace(writeVerb, options, [])
   const who = await client.whoami()
   const memberships = parseRecordSpaceMemberships(who.memberships)
-  if (writeVerb) {
-    const destination = recordSpaceOwnerDestination(
-      writeVerb,
-      { space: options.space, project: options.project, account: options.account },
-      memberships,
-    )
-    if (destination.kind === 'refused') throw new Error(destination.remedy)
-    if (destination.kind !== 'space') throw new Error('credential owner was not resolved')
-    return {
-      projectId: null,
-      projectName: undefined,
-      spaceName: destination.slug,
-      destinationSpaceId: destination.spaceId,
-    }
-  }
-  let destinationSpaceId = options.space
+  if (writeVerb) return selectedCredentialWriteSpace(writeVerb, options, memberships)
+  const destinationSpaceId = options.space
     ? recordSpaceMembership(options.space, memberships)?.spaceId
     : who.activeSpaceId
   if (!destinationSpaceId) {

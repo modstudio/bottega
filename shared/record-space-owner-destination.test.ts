@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from './brand.ts'
 import { recordSpaceOwnerDestination } from './record-space-owner-destination.ts'
 
 const memberships = [{ spaceId: 'space-id', slug: 'member-space', permission: 'write' }]
@@ -21,17 +22,18 @@ describe('recordSpaceOwnerDestination', () => {
   test('refuses an unknown or non-member slug with the membership remedy', () => {
     expect(recordSpaceOwnerDestination('lens set', { space: 'outside' }, memberships)).toEqual({
       kind: 'refused',
-      remedy:
-        'the signed-in user is not a member of record space outside; an invitation from a member of that space is needed; list invitations with `bottega record space invitations`, then accept one with `bottega record space accept <invitation-id>`',
+      remedy: `the signed-in user is not a member of record space outside; an invitation from a member of that space is needed; list invitations with \`${PLATFORM_SLUG} record space invitations\`, then accept one with \`${PLATFORM_SLUG} record space accept <invitation-id>\``,
     })
   })
 
   test('returns the selected member space', () => {
-    expect(recordSpaceOwnerDestination('lens set', { space: 'member-space' }, memberships)).toEqual({
-      kind: 'space',
-      spaceId: 'space-id',
-      slug: 'member-space',
-    })
+    expect(recordSpaceOwnerDestination('lens set', { space: 'member-space' }, memberships)).toEqual(
+      {
+        kind: 'space',
+        spaceId: 'space-id',
+        slug: 'member-space',
+      },
+    )
   })
 
   test.each([

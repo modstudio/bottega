@@ -8,7 +8,10 @@ export type RecordConfigAccessClient = {
     items: Array<{ email: string; role: string; permission: string; configAccess: boolean }>
   }>
   grantConfigAccess(email: string, destinationSpaceId: string): Promise<{ granted: true }>
-  withdrawConfigAccess(email: string, destinationSpaceId: string): Promise<{
+  withdrawConfigAccess(
+    email: string,
+    destinationSpaceId: string,
+  ): Promise<{
     revokedMachineKeyIds: string[]
     readableSecretKeys: string[]
   }>

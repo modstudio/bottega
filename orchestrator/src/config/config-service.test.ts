@@ -888,9 +888,9 @@ test('machine init converges with an existing key, pin, space, and registration'
   expect(registrations).toEqual([first, first])
 
   identity = { ...identity, activeSpaceId: '01990000-0000-7000-8000-000000000003' }
-  await expect(
-    machineInit(identity.activeSpaceId, 'fixture', client, env),
-  ).rejects.toThrow('switch back')
+  await expect(machineInit(identity.activeSpaceId, 'fixture', client, env)).rejects.toThrow(
+    'switch back',
+  )
   expect(readHostedConfigIdentity(env)).toEqual({ spaceId, userId })
   expect(registrations).toEqual([first, first])
 

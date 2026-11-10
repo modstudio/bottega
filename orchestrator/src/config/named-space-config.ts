@@ -26,7 +26,7 @@ import {
 import { recordConfigCallOutcome } from './hosted-config-call-outcome.ts'
 import { machineTrustRefusal } from './machine-trust-refusal.ts'
 
-export type NamedSpace = {
+type NamedSpace = {
   destination: ConfigDestination
   slug: string
   spaceId: string

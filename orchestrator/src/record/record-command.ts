@@ -367,11 +367,7 @@ async function recordSpaceWriteDestination(
     if (missing.kind === 'refused') throw new Error(missing.remedy)
   }
   const identity = await recordMemberships()
-  const destination = recordSpaceOwnerDestination(
-    verb,
-    { space: requested },
-    identity.memberships,
-  )
+  const destination = recordSpaceOwnerDestination(verb, { space: requested }, identity.memberships)
   if (destination.kind === 'refused') throw new Error(destination.remedy)
   if (destination.kind !== 'space') throw new Error('record space owner was not resolved')
   return destination.spaceId
