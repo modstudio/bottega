@@ -190,6 +190,58 @@ export function registerConfigAccessSpaceCreationProof(input: {
     ).toBe('0|t|1')
   })
 
+  test('config access grant changes the requested space instead of the active space', async () => {
+    const activeSpaceId = newRecordId()
+    const requestedSpaceId = newRecordId()
+    const headers = bearerHeaders(input.token())
+    const auth = testRecordAuth(input.actorUrl(), input.authUrl())
+    const previous = await auth.api.getSession({ headers })
+    const previousSpaceId = previous?.session.activeOrganizationId
+    if (!previousSpaceId) throw new Error('config access destination proof user has no active space')
+    try {
+      input.succeeds(`
+        INSERT INTO space (id,name,slug,created_at) VALUES
+          ('${activeSpaceId}','Config access active proof','config-active-${activeSpaceId.slice(-8)}',now()),
+          ('${requestedSpaceId}','Config access requested proof','config-requested-${requestedSpaceId.slice(-8)}',now());
+        INSERT INTO membership (id,space_id,user_id,role,permission,config_access,created_at) VALUES
+          ('${newRecordId()}','${activeSpaceId}','${input.userId()}','owner','write',true,now()),
+          ('${newRecordId()}','${activeSpaceId}','${input.otherUserId()}','member','write',false,now()),
+          ('${newRecordId()}','${requestedSpaceId}','${input.userId()}','owner','write',true,now()),
+          ('${newRecordId()}','${requestedSpaceId}','${input.otherUserId()}','member','write',false,now());`)
+      await setActiveRecordSpaceForSession(input.actorUrl(), headers, activeSpaceId)
+
+      const response = await fetch(`${input.apiUrl()}/v1/config-access/grant`, {
+        method: 'POST',
+        headers: {
+          ...Object.fromEntries(headers),
+          'content-type': 'application/json',
+          'x-record-space': requestedSpaceId,
+        },
+        body: JSON.stringify({ email: SIGN_UP_AUTH.emailB }),
+      })
+
+      expect(response.status).toBe(200)
+      expect(
+        input.succeeds(
+          `SELECT
+             (SELECT config_access FROM membership
+              WHERE space_id='${activeSpaceId}' AND user_id='${input.otherUserId()}'),
+             (SELECT config_access FROM membership
+              WHERE space_id='${requestedSpaceId}' AND user_id='${input.otherUserId()}');`,
+        ),
+      ).toBe('f|t')
+    } finally {
+      try {
+        await setActiveRecordSpaceForSession(input.actorUrl(), headers, previousSpaceId)
+      } finally {
+        input.succeeds(`
+          DELETE FROM membership WHERE space_id IN ('${activeSpaceId}','${requestedSpaceId}');
+          DELETE FROM space WHERE id IN ('${activeSpaceId}','${requestedSpaceId}');`)
+        await auth.close()
+      }
+    }
+  })
+
   test('withdraw endpoint revokes only the member machines, returns exposed names, and refuses owners and non-holders', async () => {
     const spaceId = input.succeeds(
       `SELECT space_id FROM membership WHERE user_id='${input.userId()}' AND role='owner' ORDER BY created_at LIMIT 1;`,
