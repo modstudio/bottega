@@ -79,7 +79,6 @@ console.log(
       repository: true,
       settings: {
         keyPrefixes: ['LOC'],
-        space: 'workshop',
         color: '#654321',
         colorDark: '#fedcba',
         tracker: { protocol: 'hub' },

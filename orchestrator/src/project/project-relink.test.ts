@@ -28,6 +28,18 @@ import {
 } from './project-relink.ts'
 import { projectByName, upsertProject } from './projects.ts'
 
+function createProjectRecordApiClient() {
+  return {
+    ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'space-a',
+      personalSpaceId: 'space-a',
+      memberships: [{ space_id: 'space-a', slug: 'space-a', permission: 'write' as const }],
+    }),
+  }
+}
+
 function relinkDatabase(): Database {
   const database = new Database(':memory:')
   database.exec('PRAGMA foreign_keys = ON')
@@ -156,7 +168,7 @@ test('relink rewrites every registered reference and only pending matching paylo
 test('a project without a hosted namesake is unchanged', async () => {
   const localId = newRecordId()
   installRecordApiClient({
-    ...createMemoryRecordApiClient(),
+    ...createProjectRecordApiClient(),
     listProjects: async () => [],
   })
   const database = relinkDatabase()
@@ -169,7 +181,7 @@ test('a project without a hosted namesake is unchanged', async () => {
       stack: null,
       canon: true,
       retiredAt: null,
-      settings: {},
+      settings: { space: 'space-a' },
     },
     database,
   )
@@ -179,9 +191,14 @@ test('a project without a hosted namesake is unchanged', async () => {
 
 test('project relink refuses a retired hosted namesake', async () => {
   const name = `retired-relink-${newRecordId()}`
-  upsertProject({ recordId: newRecordId(), name, path: `/tmp/${name}` })
+  upsertProject({
+    recordId: newRecordId(),
+    name,
+    path: `/tmp/${name}`,
+    settings: { space: 'space-a' },
+  })
   installRecordApiClient({
-    ...createMemoryRecordApiClient(),
+    ...createProjectRecordApiClient(),
     listProjects: async () => [
       {
         id: newRecordId(),
@@ -195,7 +212,7 @@ test('project relink refuses a retired hosted namesake', async () => {
         color: null,
         colorDark: null,
         canon: true,
-        settings: {},
+        settings: { space: 'space-a' },
         retiredAt: '2026-01-01T00:00:00.000Z',
       },
     ],
@@ -209,7 +226,7 @@ test('an already-linked project reports already-linked even when its hosted row 
   const projectId = newRecordId()
   const name = 'already-linked-retired'
   installRecordApiClient({
-    ...createMemoryRecordApiClient(),
+    ...createProjectRecordApiClient(),
     listProjects: async () => [
       {
         id: projectId,
@@ -223,7 +240,7 @@ test('an already-linked project reports already-linked even when its hosted row 
         color: null,
         colorDark: null,
         canon: true,
-        settings: {},
+        settings: { space: 'space-a' },
         retiredAt: '2026-01-01T00:00:00.000Z',
       },
     ],
@@ -240,7 +257,7 @@ test('an already-linked project reports already-linked even when its hosted row 
         stack: null,
         canon: true,
         retiredAt: null,
-        settings: {},
+        settings: { space: 'space-a' },
       },
       database,
     ),
@@ -251,9 +268,14 @@ test('record sign-in adopts a local project with a hosted namesake', async () =>
   const name = `sign-in-relink-${newRecordId()}`
   const oldId = newRecordId()
   const hostedId = newRecordId()
-  upsertProject({ recordId: oldId, name, path: `/tmp/${name}` })
+  upsertProject({
+    recordId: oldId,
+    name,
+    path: `/tmp/${name}`,
+    settings: { space: 'space-a' },
+  })
   installRecordApiClient({
-    ...createMemoryRecordApiClient(),
+    ...createProjectRecordApiClient(),
     listProjects: async () => [
       {
         id: hostedId,
@@ -293,11 +315,21 @@ test('record sign-in reports one adoption failure and continues to a later proje
   const name = `zz-sign-in-continues-${newRecordId()}`
   const oldId = newRecordId()
   const hostedId = newRecordId()
-  upsertProject({ recordId: newRecordId(), name: failedName, path: `/tmp/${failedName}` })
-  upsertProject({ recordId: oldId, name, path: `/tmp/${name}` })
+  upsertProject({
+    recordId: newRecordId(),
+    name: failedName,
+    path: `/tmp/${failedName}`,
+    settings: { space: 'space-a' },
+  })
+  upsertProject({
+    recordId: oldId,
+    name,
+    path: `/tmp/${name}`,
+    settings: { space: 'space-a' },
+  })
   let listings = 0
   installRecordApiClient({
-    ...createMemoryRecordApiClient(),
+    ...createProjectRecordApiClient(),
     listProjects: async () => {
       listings += 1
       if (listings === 1) throw new Error('space listing refused')

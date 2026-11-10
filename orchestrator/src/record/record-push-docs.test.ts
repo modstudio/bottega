@@ -19,7 +19,7 @@ function insertProject(name: string): string {
   return (
     db()
       .query<{ record_id: string }, [string]>(
-        "INSERT INTO project (record_id,name, path, canon, settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?, '/tmp/p', 1, '{}') RETURNING record_id",
+        `INSERT INTO project (record_id,name, path, canon, settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?, '/tmp/p', 1, '{"space":"space-a"}') RETURNING record_id`,
       )
       .get(name) as { record_id: string }
   ).record_id
@@ -182,9 +182,9 @@ function capturingClient(overrides: Partial<RecordApiClient> = {}): {
       overrides.whoami ??
       (async () => ({
         user: { id: newRecordId() },
-        activeSpaceId: newRecordId(),
-        personalSpaceId: newRecordId(),
-        memberships: [],
+        activeSpaceId: 'space-a',
+        personalSpaceId: 'space-a',
+        memberships: [{ space_id: 'space-a', slug: 'space-a', permission: 'write' }],
       })),
     storage: overrides.storage ?? (async () => ({ tables: [] })),
   }

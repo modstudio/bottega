@@ -21,6 +21,18 @@ import { RecordProjectSpaceConflictError } from '../record/record-project-space-
 import { fillAbsentProjectSettings, projectCommand } from './project-commands.ts'
 import { type Project, projectByName, projects, retireProject, upsertProject } from './projects.ts'
 
+function createProjectRecordApiClient() {
+  return {
+    ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'space-a',
+      personalSpaceId: 'space-a',
+      memberships: [{ space_id: 'space-a', slug: 'space-a', permission: 'write' as const }],
+    }),
+  }
+}
+
 async function runProject(
   args: string[],
   flags: Record<string, string | boolean> = {},
@@ -79,7 +91,13 @@ describe(`${PLATFORM_SLUG} project retire`, () => {
   })
 
   test('retire --undo clears the stamp', async () => {
-    upsertProject({ recordId: newRecordId(), name: 'undo-me', path: '/w/undo-me' })
+    installRecordApiClient(createProjectRecordApiClient())
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'undo-me',
+      path: '/w/undo-me',
+      settings: { space: 'space-a' },
+    })
     expect(await runProject(['project', 'retire', 'undo-me'])).toBe('retired undo-me')
     expect(projectByName('undo-me')).toBeNull()
     expect(await runProject(['project', 'retire', 'undo-me'])).toBe('already retired undo-me')
@@ -91,7 +109,7 @@ describe(`${PLATFORM_SLUG} project retire`, () => {
 
   test('re-adding a retired name prints un-retired', async () => {
     installRecordApiClient({
-      ...createMemoryRecordApiClient(),
+      ...createProjectRecordApiClient(),
       whoami: async () => ({
         user: { id: 'user-a' },
         activeSpaceId: 'space-a',
@@ -114,7 +132,7 @@ describe(`${PLATFORM_SLUG} project retire`, () => {
 
 test('hosted failure leaves the local register unchanged', async () => {
   installRecordApiClient({
-    ...createMemoryRecordApiClient(),
+    ...createProjectRecordApiClient(),
     whoami: async () => ({
       user: { id: 'user-a' },
       activeSpaceId: 'space-a',
@@ -136,7 +154,7 @@ test('project add adopts a matching hosted project without writing it', async ()
   const hostedId = newRecordId()
   const writes: string[] = []
   installRecordApiClient({
-    ...createMemoryRecordApiClient(),
+    ...createProjectRecordApiClient(),
     whoami: async () => ({
       user: { id: 'user-a' },
       activeSpaceId: 'space-a',
@@ -209,7 +227,7 @@ test('project add pulls the hosted project space catalogues before lens validati
     requiresExecution: false,
   })
   installRecordApiClient({
-    ...createMemoryRecordApiClient(),
+    ...createProjectRecordApiClient(),
     whoami: async () => ({
       user: { id: 'user-a' },
       activeSpaceId: otherSpace,
@@ -277,7 +295,7 @@ test('project add pulls the hosted project space catalogues before lens validati
 test('project add refuses a failed catalogue pull with the named stream', async () => {
   const targetSpace = newRecordId()
   installRecordApiClient({
-    ...createMemoryRecordApiClient(),
+    ...createProjectRecordApiClient(),
     whoami: async () => ({
       user: { id: 'user-a' },
       activeSpaceId: targetSpace,
@@ -302,7 +320,7 @@ test('project add refuses a failed catalogue pull with the named stream', async 
 test('project add never mints when the hosted project list is unreachable', async () => {
   let writes = 0
   installRecordApiClient({
-    ...createMemoryRecordApiClient(),
+    ...createProjectRecordApiClient(),
     whoami: async () => ({
       user: { id: 'user-a' },
       activeSpaceId: 'space-a',
@@ -326,10 +344,15 @@ test('project add never mints when the hosted project list is unreachable', asyn
 })
 
 test('hosted rename failure leaves hosted and local unchanged', async () => {
-  upsertProject({ recordId: newRecordId(), name: 'rename-src', path: '/w/rename-src' })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'rename-src',
+    path: '/w/rename-src',
+    settings: { space: 'space-a' },
+  })
   const hosted: string[] = []
   installRecordApiClient({
-    ...createMemoryRecordApiClient(),
+    ...createProjectRecordApiClient(),
     upsertProject: async (input) => {
       hosted.push(input.name)
       throw new Error(`record API 503\ncleared by: ${PLATFORM_SLUG} record doctor`)
@@ -347,11 +370,16 @@ test('hosted rename failure leaves hosted and local unchanged', async () => {
 })
 
 test('local rename collision makes no hosted call', async () => {
-  upsertProject({ recordId: newRecordId(), name: 'taken-src', path: '/w/taken-src' })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'taken-src',
+    path: '/w/taken-src',
+    settings: { space: 'space-a' },
+  })
   upsertProject({ recordId: newRecordId(), name: 'taken-dst', path: '/w/taken-dst' })
   let hosted = 0
   installRecordApiClient({
-    ...createMemoryRecordApiClient(),
+    ...createProjectRecordApiClient(),
     upsertProject: async (input) => {
       hosted += 1
       return { id: input.id!, name: input.name }
@@ -369,10 +397,15 @@ test('local rename collision makes no hosted call', async () => {
 })
 
 test('empty rename target makes no hosted call', async () => {
-  upsertProject({ recordId: newRecordId(), name: 'empty-src', path: '/w/empty-src' })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'empty-src',
+    path: '/w/empty-src',
+    settings: { space: 'space-a' },
+  })
   let hosted = 0
   installRecordApiClient({
-    ...createMemoryRecordApiClient(),
+    ...createProjectRecordApiClient(),
     upsertProject: async (input) => {
       hosted += 1
       return { id: input.id!, name: input.name }
@@ -388,6 +421,18 @@ test('empty rename target makes no hosted call', async () => {
 test('project set validates review lenses against the project space catalogue', async () => {
   const activeSpace = newRecordId()
   const projectSpace = newRecordId()
+  installRecordApiClient({
+    ...createProjectRecordApiClient(),
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: activeSpace,
+      personalSpaceId: activeSpace,
+      memberships: [
+        { space_id: activeSpace, slug: 'active', permission: 'write' },
+        { space_id: projectSpace, slug: 'project', permission: 'write' },
+      ],
+    }),
+  })
   rememberActiveRecordSpace(db(), activeSpace)
   for (const [spaceId, key, enabled] of [
     [activeSpace, 'set-active-only', true],
@@ -407,7 +452,12 @@ test('project set validates review lenses against the project space catalogue', 
       requiresExecution: false,
     })
   }
-  upsertProject({ recordId: newRecordId(), name: 'project-lenses', path: '/w/project-lenses' })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'project-lenses',
+    path: '/w/project-lenses',
+    settings: { space: 'project' },
+  })
   rememberProjectSpace(db(), 'project-lenses', projectSpace)
 
   await expect(
@@ -432,7 +482,7 @@ test('project set validates review lenses against the project space catalogue', 
 })
 
 test('project set reports setting effects without values and reports a no-op', async () => {
-  installRecordApiClient(createMemoryRecordApiClient())
+  installRecordApiClient(createProjectRecordApiClient())
   upsertProject({
     recordId: newRecordId(),
     name: 'settings-effect',
@@ -440,6 +490,7 @@ test('project set reports setting effects without values and reports a no-op', a
     settings: {
       checks: { spelling: true, attribution: true },
       color: 'secret-reference',
+      space: 'space-a',
     },
   })
 
@@ -467,7 +518,7 @@ test('project set reports setting effects without values and reports a no-op', a
 })
 
 test('project set keeps a stored key this binary does not know', async () => {
-  installRecordApiClient(createMemoryRecordApiClient())
+  installRecordApiClient(createProjectRecordApiClient())
   const newerRiskPath = {
     pattern: '^hub/web/',
     tier: 3,
@@ -475,13 +526,14 @@ test('project set keeps a stored key this binary does not know', async () => {
     firm: true,
     weight: 2,
   }
+  const storedSettings = {
+    review: { lenses: [], risk: { paths: [newerRiskPath], unlisted: 0 } },
+  } as unknown as Project['settings']
   upsertProject({
     recordId: newRecordId(),
     name: 'settings-newer-binary',
     path: '/w/settings-newer-binary',
-    settings: {
-      review: { lenses: [], risk: { paths: [newerRiskPath], unlisted: 0 } },
-    } as unknown as Project['settings'],
+    settings: storedSettings,
   })
 
   const listed = JSON.parse(await runProject(['project', 'list'], { json: true })) as {
@@ -491,6 +543,13 @@ test('project set keeps a stored key this binary does not know', async () => {
   expect(listed.find((row) => row.name === 'settings-newer-binary')?.problems).toEqual([
     `project settings-newer-binary has no declared record space; run \`${PLATFORM_SLUG} project set settings-newer-binary --space <slug>\``,
   ])
+
+  upsertProject({
+    recordId: projectByName('settings-newer-binary')!.recordId,
+    name: 'settings-newer-binary',
+    path: '/w/settings-newer-binary',
+    settings: { ...storedSettings, space: 'space-a' },
+  })
 
   await runProject(['project', 'set', 'settings-newer-binary'], {
     settings: JSON.stringify({ checks: { spelling: true } }),
@@ -511,7 +570,7 @@ test('project set keeps a stored key this binary does not know', async () => {
 })
 
 test('project set keeps a check name and a tracker verb this binary does not know', async () => {
-  installRecordApiClient(createMemoryRecordApiClient())
+  installRecordApiClient(createProjectRecordApiClient())
   const storedSettings = {
     checks: { spelling: true, brandNewCheck: true },
     tracker: { protocol: 'cursor-mcp', actions: { search: 'task_list', newVerb: 'tool' } },
@@ -530,6 +589,13 @@ test('project set keeps a check name and a tracker verb this binary does not kno
   expect(listed.find((row) => row.name === 'settings-newer-names')?.problems).toEqual([
     `project settings-newer-names has no declared record space; run \`${PLATFORM_SLUG} project set settings-newer-names --space <slug>\``,
   ])
+
+  upsertProject({
+    recordId: projectByName('settings-newer-names')!.recordId,
+    name: 'settings-newer-names',
+    path: '/w/settings-newer-names',
+    settings: { ...storedSettings, space: 'space-a' },
+  })
 
   await runProject(['project', 'set', 'settings-newer-names'], {
     settings: JSON.stringify({ gate: 'bun run check' }),
@@ -558,7 +624,7 @@ test('project set keeps a check name and a tracker verb this binary does not kno
 })
 
 test('project set refuses non-object settings without changing stored settings', async () => {
-  installRecordApiClient(createMemoryRecordApiClient())
+  installRecordApiClient(createProjectRecordApiClient())
   upsertProject({
     recordId: newRecordId(),
     name: 'settings-object',
@@ -573,12 +639,12 @@ test('project set refuses non-object settings without changing stored settings',
 })
 
 test('project set reports the stored autonomy ship-to key', async () => {
-  installRecordApiClient(createMemoryRecordApiClient())
+  installRecordApiClient(createProjectRecordApiClient())
   upsertProject({
     recordId: newRecordId(),
     name: 'settings-autonomy',
     path: '/w/settings-autonomy',
-    settings: { autonomy: { preset: 'manual' } },
+    settings: { autonomy: { preset: 'manual' }, space: 'space-a' },
   })
 
   expect(
@@ -586,18 +652,23 @@ test('project set reports the stored autonomy ship-to key', async () => {
       settings: JSON.stringify({ autonomy: { shipTo: 'trunk' } }),
     }),
   ).toBe('updated settings-autonomy\n               added autonomy.ship-to')
+  const updated = projectByName('settings-autonomy')!
+  upsertProject({
+    ...updated,
+    settings: { autonomy: updated.settings.autonomy },
+  })
   expect(projectByName('settings-autonomy')?.settings).toEqual({
     autonomy: { preset: 'manual', 'ship-to': 'trunk' },
   })
 })
 
 test('project set with --json emits only the existing project JSON', async () => {
-  installRecordApiClient(createMemoryRecordApiClient())
+  installRecordApiClient(createProjectRecordApiClient())
   upsertProject({
     recordId: newRecordId(),
     name: 'settings-json',
     path: '/w/settings-json',
-    settings: { checks: { spelling: true } },
+    settings: { checks: { spelling: true }, space: 'space-a' },
   })
 
   const output = await runProject(['project', 'set', 'settings-json'], {
@@ -612,7 +683,12 @@ test('project set with --json emits only the existing project JSON', async () =>
 })
 
 test('rename writes hosted once and updates the local name and release ledger', async () => {
-  upsertProject({ recordId: newRecordId(), name: 'once-src', path: '/w/once-src' })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'once-src',
+    path: '/w/once-src',
+    settings: { space: 'space-a' },
+  })
   writableDb()
     .query(
       `INSERT INTO release_ledger
@@ -622,7 +698,7 @@ test('rename writes hosted once and updates the local name and release ledger', 
     .run(newRecordId())
   const hosted: Array<{ name: string }> = []
   installRecordApiClient({
-    ...createMemoryRecordApiClient(),
+    ...createProjectRecordApiClient(),
     upsertProject: async (input) => {
       hosted.push({ name: input.name })
       return { id: input.id!, name: input.name }
@@ -647,7 +723,7 @@ test('project push writes every registered project to the hosted record', async 
   const names: string[] = []
   const destinations = new Map<string, string | undefined>()
   installRecordApiClient({
-    ...createMemoryRecordApiClient(),
+    ...createProjectRecordApiClient(),
     whoami: async () => ({
       user: { id: 'user-a' },
       activeSpaceId: 'space-active',
@@ -663,7 +739,12 @@ test('project push writes every registered project to the hosted record', async 
       return { id: input.id!, name: input.name }
     },
   })
-  upsertProject({ recordId: newRecordId(), name: 'push-live', path: '/w/push-live' })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'push-live',
+    path: '/w/push-live',
+    settings: { space: 'active' },
+  })
   upsertProject({
     recordId: newRecordId(),
     name: 'push-retired',
@@ -682,7 +763,7 @@ test('project push writes every registered project to the hosted record', async 
 test('project push continues past space conflicts and reports every refusal with its remedy', async () => {
   const attempted: string[] = []
   installRecordApiClient({
-    ...createMemoryRecordApiClient(),
+    ...createProjectRecordApiClient(),
     whoami: async () => ({
       user: { id: 'user-a' },
       activeSpaceId: 'space-request',
@@ -704,8 +785,14 @@ test('project push continues past space conflicts and reports every refusal with
     recordId: newRecordId(),
     name: 'aaa-push-refused',
     path: '/w/aaa-push-refused',
+    settings: { space: 'request' },
   })
-  upsertProject({ recordId: newRecordId(), name: 'zzz-push-after', path: '/w/zzz-push-after' })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'zzz-push-after',
+    path: '/w/zzz-push-after',
+    settings: { space: 'request' },
+  })
 
   let message = ''
   try {
@@ -730,7 +817,7 @@ test('project push stops at a read-only project refusal without adding the docto
     remedy: 'A space owner or admin can change the membership permission.',
   }
   installRecordApiClient({
-    ...createMemoryRecordApiClient(),
+    ...createProjectRecordApiClient(),
     whoami: async () => ({
       user: { id: 'user-a' },
       activeSpaceId: 'space-read',
@@ -748,8 +835,14 @@ test('project push stops at a read-only project refusal without adding the docto
     recordId: newRecordId(),
     name: 'aab-push-read-only',
     path: '/w/aab-push-read-only',
+    settings: { space: 'read' },
   })
-  upsertProject({ recordId: newRecordId(), name: 'zzzz-push-after-403', path: '/w/after-403' })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'zzzz-push-after-403',
+    path: '/w/after-403',
+    settings: { space: 'read' },
+  })
 
   let rejection: unknown
   try {

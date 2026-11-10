@@ -21,8 +21,21 @@ afterEach(() => {
 })
 
 test('a hosted set that sends an article field refuses before the local commit', async () => {
-  upsertProject({ recordId: newRecordId(), name: 'hosted-article', path: '/w/hosted-article' })
-  installRecordApiClient(createMemoryRecordApiClient())
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'hosted-article',
+    path: '/w/hosted-article',
+    settings: { space: 'space-a' },
+  })
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'space-a',
+      personalSpaceId: 'space-a',
+      memberships: [{ space_id: 'space-a', slug: 'space-a', permission: 'write' }],
+    }),
+  })
 
   await expect(
     setDoc({

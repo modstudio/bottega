@@ -220,7 +220,7 @@ test('push maps current, prior, and null profile version pins through the versio
       recordId: projectId,
       name: projectName,
       path: `/tmp/${projectName}`,
-      settings: {},
+      settings: { space: 'active' },
     })
     await selectProjectProfile({
       project: projectName,
@@ -490,13 +490,13 @@ test('push and cache reconciliation normalizes a date-only baseline', async () =
     recordId: sourceId,
     name: 'dated-source',
     path: '/tmp/dated-source',
-    settings: {},
+    settings: { space: 'active' },
   })
   upsertProject({
     recordId: targetId,
     name: 'dated-target',
     path: '/tmp/dated-target',
-    settings: {},
+    settings: { space: 'active' },
   })
   rememberProjectSpace(local, 'dated-source', spaceId)
   rememberProjectSpace(local, 'dated-target', spaceId)
@@ -533,7 +533,7 @@ test('prints workflow import reconciliation outcomes', async () => {
     recordId: projectId,
     name: projectName,
     path: `/tmp/${projectName}`,
-    settings: {},
+    settings: { space: 'active' },
   })
   rememberActiveRecordSpace(local, spaceId)
   rememberProjectSpace(local, projectName, spaceId)
