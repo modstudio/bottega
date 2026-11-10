@@ -5,13 +5,13 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { type RecordCursor, type RecordListCursorRow, recordCursorAt } from './record-cursor.ts'
 import { recordPool } from './record-pool.ts'
-import { RecordRevisionConflictError } from './record-revision-conflict.ts'
 import {
   type RecordWorkflowDraftInput,
   RecordWorkflowError,
   type RecordWorkflowKind,
   type RecordWorkflowTable,
   type RecordWorkflowTransitionInput,
+  workflowVersionConflict,
 } from './record-workflow-contract.ts'
 
 type Tenant = { url: string } & TenantPrincipal
@@ -277,10 +277,7 @@ async function transition(
       const current = rows.find((row) => row.status === 'production')
       const currentN = current ? number(current.n) : null
       if (currentN !== input.expectedProductionVersion)
-        throw new RecordRevisionConflictError(
-          `workflow version conflict: expected ${input.expectedProductionVersion ?? 'none'}, current ${currentN ?? 'none'}; re-read the workflow catalogue, then retry with expectedProductionVersion ${currentN ?? 'null'}`,
-          currentN === null ? null : String(currentN),
-        )
+        throw workflowVersionConflict(input.expectedProductionVersion, currentN)
       const target = rows.find((row) => number(row.n) === input.n)
       if (!target)
         throw new RecordWorkflowError(`hosted ${input.kind} has no version ${input.n}`, 404)

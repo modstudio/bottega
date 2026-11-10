@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { recordWorkflowPageSchema } from './record-workflow-contract.ts'
+import { recordWorkflowPageSchema, workflowVersionConflict } from './record-workflow-contract.ts'
 
 const eventRow = {
   id: '01a154c0-0000-7000-8000-000000000001',
@@ -26,4 +26,19 @@ test('an event page with the insertion cursor keeps its own updatedAt', () => {
     nextCursor: null,
   })
   expect(page.items[0]).toMatchObject({ updatedAt: '2026-10-19T12:00:00.000Z' })
+})
+
+test('a workflow version conflict names expected and current versions with its remedy', () => {
+  expect(workflowVersionConflict(1, 2)).toMatchObject({
+    status: 409,
+    currentRevision: '2',
+    message:
+      'workflow version conflict: expected 1, current 2; re-read the workflow catalogue, then retry with expectedProductionVersion 2',
+  })
+  const absent = workflowVersionConflict(1, null)
+  expect(absent).toMatchObject({ status: 409, currentRevision: null })
+  expect(absent.message).toBe(
+    'workflow version conflict: expected 1, current none; re-read the workflow catalogue',
+  )
+  expect(absent.message).not.toContain('retry')
 })

@@ -275,11 +275,11 @@ export const recordModules: RecordModule[] = [
     './record-cursor.ts',
     './record-workflow-contract.ts',
     './record-pool.ts',
-    './record-revision-conflict.ts',
   ]),
   module('orchestrator/src/record/record-workflow-contract.ts', [
     'zod',
     './record-catalogue-contract.ts',
+    './record-revision-conflict.ts',
   ]),
   module('orchestrator/src/record/record-api-workflow.ts', [
     'hono',

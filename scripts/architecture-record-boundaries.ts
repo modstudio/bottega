@@ -141,6 +141,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       '../../../shared/personal-item-space.ts',
       '../../../shared/record-client-addresses.ts',
       '../../../shared/record-project-contract.ts',
+      '../../../shared/record-remedies.ts',
       '../../../shared/storage-lifecycle.ts',
       '../verdict/verdict-payload.ts',
       '../verdict/verdict-rules.ts',

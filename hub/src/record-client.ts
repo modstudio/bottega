@@ -1,6 +1,5 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
-import { hostedRequestSafetyStatement } from '../../shared/record-remedies.ts'
 import { BOARD_PURPOSES } from '../../shared/board-purpose.ts'
 import {
   CREDENTIAL_BINDINGS,
@@ -28,6 +27,7 @@ import {
 } from '../../shared/orch-contract.ts'
 import { resolveRecordApiUrl } from '../../shared/record-api-url.ts'
 import { RecordProjectsSchema } from '../../shared/record-project-contract.ts'
+import { hostedRequestSafetyStatement } from '../../shared/record-remedies.ts'
 import type { RunDetailReviewLens } from '../../shared/review-presentation.ts'
 import { SubjectOutputSchema } from '../../shared/subjects.ts'
 import {

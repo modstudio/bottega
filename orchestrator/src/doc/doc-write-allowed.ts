@@ -241,10 +241,7 @@ export function refuseSettingsAddress(
   )
 }
 
-export type DocRevisionRefusalReason =
-  | 'missing-hosted-revision'
-  | 'stale-revision'
-  | 'already-exists'
+type DocRevisionRefusalReason = 'missing-hosted-revision' | 'stale-revision' | 'already-exists'
 export type DocRevisionDecision =
   | { allow: true }
   | { allow: false; refusal: Refusal; reason: DocRevisionRefusalReason }

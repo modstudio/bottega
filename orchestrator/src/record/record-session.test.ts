@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { installRecordSessionRunner } from '../../test/fixtures/record-session.ts'
 import { db } from '../database/db.ts'
-import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { RECORD_SESSION_KEY } from './record-auth.ts'
 import {
   currentRecordSession,

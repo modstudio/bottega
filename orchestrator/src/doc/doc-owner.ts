@@ -1,9 +1,9 @@
 // concern: doc-owner
 /** Resolves the stable owner of user-scoped documents in either record mode. */
 
+import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { signedInRecordUserId } from '../record/record-attribution.ts'
-import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import {
   currentRecordWriteDecision,
   throwIfRecordRefused,

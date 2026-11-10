@@ -18,8 +18,8 @@ import { db } from '../database/db.ts'
 import { dropContextItem, getContext, setContextItem } from '../doc/context-service.ts'
 import { CONTEXT_ITEM_KINDS } from '../doc/doc-context-write.ts'
 import { resolveDocRevisionIdentifier } from '../doc/doc-revision-identifier.ts'
-import { type SelectedDocWriteTree, withDocWriteTreeRemedy } from '../doc/doc-write-tree.ts'
 import { DocRevisionWriteConflictError } from '../doc/doc-write-allowed.ts'
+import { type SelectedDocWriteTree, withDocWriteTreeRemedy } from '../doc/doc-write-tree.ts'
 import {
   getDoc,
   getDocForAudience,
@@ -32,9 +32,9 @@ import {
   signedInDocOwner,
   storedDocWarnings,
 } from '../doc/docs.ts'
+import { RecordApiRequestError } from '../record/record-api-client.ts'
 import { registerMcpDocConsumeTool } from './mcp-doc-consume-tool.ts'
 import { decideMcpDocWrite } from './mcp-doc-write.ts'
-import { RecordApiRequestError } from '../record/record-api-client.ts'
 
 const text = (value: unknown) => ({
   content: [

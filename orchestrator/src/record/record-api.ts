@@ -10,6 +10,7 @@ import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, type DocAudience } from '../../
 import { isPersonalItem } from '../../../shared/personal-item-space.ts'
 import type { RecordClientAddresses } from '../../../shared/record-client-addresses.ts'
 import type { RecordProject } from '../../../shared/record-project-contract.ts'
+import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
 import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
@@ -59,7 +60,6 @@ import {
   registerRecordWorkflowRoutes,
 } from './record-api-workflow.ts'
 import { registerRecordWriteRoutes } from './record-api-write-routes.ts'
-import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import type { RecordCanonImportInput, RecordCanonImportResult } from './record-canon-import.ts'
 import type { ConfigTenant } from './record-config.ts'

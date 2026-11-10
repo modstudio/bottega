@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { PLATFORM_NAME } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
@@ -134,7 +134,7 @@ test('an explicit create against an existing document returns the typed 409 reme
   expect(await response.json()).toEqual({
     error:
       `refusing create for project/${PLATFORM_NAME}/existing: the row already exists at revision ${created.revisionId}\n` +
-      `cleared by: read the doc, then write it with bottega doc set existing --scope project --subject ${PLATFORM_NAME} --expect ${created.revisionId}`,
+      `cleared by: read the doc, then write it with ${PLATFORM_SLUG} doc set existing --scope project --subject ${PLATFORM_NAME} --expect ${created.revisionId}`,
     code: 'revision-conflict',
     currentRevision: created.revisionId,
   })
