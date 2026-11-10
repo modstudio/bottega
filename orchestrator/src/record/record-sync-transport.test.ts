@@ -89,11 +89,13 @@ test('sync sends an empty batch to register and refresh its machine', async () =
 })
 
 test('sync ensures built-ins once per content identity, and again once the marker expires', async () => {
-  using local = localOutbox(0)
+  using local = localOutbox(1)
   let ensured = 0
   const client = {
     whoami,
-    sync: async () => ({ results: [] }),
+    sync: async (request: { rows: { id: number }[] }) => ({
+      results: request.rows.map((row) => ({ id: row.id, status: 'synced' as const })),
+    }),
     ensureSpaceBuiltIns: async () => {
       ensured++
       return { inserted: 1, alreadyPresent: 0 }
@@ -115,6 +117,11 @@ test('sync ensures built-ins once per content identity, and again once the marke
   local
     .query(`UPDATE schema_meta SET value=? WHERE key='record_built_ins:${SPACE_ID}'`)
     .run(`${identity}@${expired}`)
+  local
+    .query(
+      "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,2,'run','record-2','{}',?)",
+    )
+    .run(newRecordId(), STAMP)
   await syncRecord({ ...options(local), client })
   expect(ensured).toBe(2)
 })

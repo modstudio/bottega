@@ -320,6 +320,7 @@ test('contention waits for its local run to enqueue a record row', async () => {
       local,
       now: () => STAMP,
       identity: { id: machineId(), name: 'test-machine' },
+      projectSpaces: { 'run-fixture': PLATFORM_SLUG },
       client: dependencyClient(deliveredBatches, () => ({ status: 'synced' })),
     }),
   ).toMatchObject({ pushed: 2, failed: 0, pending: 0 })
@@ -405,6 +406,7 @@ test('contention stops waiting when its local run becomes terminal without an ou
       local,
       now: () => STAMP,
       identity: { id: machineId(), name: 'test-machine' },
+      projectSpaces: { 'run-fixture': PLATFORM_SLUG },
       client: dependencyClient(liveBatches, () => ({ status: 'synced' })),
     }),
   ).toMatchObject({ pushed: 0, failed: 0, pending: 1 })
@@ -417,6 +419,7 @@ test('contention stops waiting when its local run becomes terminal without an ou
       local,
       now: () => STAMP,
       identity: { id: machineId(), name: 'test-machine' },
+      projectSpaces: { 'run-fixture': PLATFORM_SLUG },
       client: dependencyClient(terminalBatches, () => ({ status: 'synced' })),
     }),
   ).toMatchObject({ pushed: 1, failed: 0, pending: 0 })

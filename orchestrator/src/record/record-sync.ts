@@ -5,9 +5,9 @@ import { hostname } from 'node:os'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { storedMachineNames, writeMachineNames } from '../../../shared/machine-config.ts'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
+import { recordWriteSpace } from '../../../shared/record-write-space.ts'
 import {
   parseRecordSpaceMemberships,
-  recordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
 import { db, nowIso } from '../database/db.ts'
 import { backfillReleaseRecords } from '../release/release-outbox.ts'
@@ -51,6 +51,7 @@ import type {
   Payload,
   RecordSyncOptions,
   RecordSyncResult,
+  RoutingHeldOutboxRow,
 } from './record-sync-types.ts'
 
 export type {
@@ -197,6 +198,8 @@ function planBatchRow(
     plannedParents: ReadonlyMap<string, readonly number[]>
     quarantinedParentHolds: QuarantinedParentHoldAccumulator
     projectSpaces?: Record<string, string>
+    personalSpaceId: string | null
+    routingHeld: Map<number, RoutingHeldOutboxRow>
   },
 ): PlannedBatchRow {
   const { row, parsed } = candidate
@@ -219,7 +222,18 @@ function planBatchRow(
   const declared = projectName
     ? declaredProjectSpace(input.local, projectName, input.projectSpaces)
     : null
-  const membership = declared ? recordSpaceMembership(declared, input.memberships) : undefined
+  const destination = recordWriteSpace(
+    projectName ? { kind: 'project', name: projectName } : { kind: 'personal' },
+    {
+      declaredSpaces: projectName ? { [projectName]: declared } : {},
+      personalSpaceId: input.personalSpaceId,
+      memberships: input.memberships,
+    },
+  )
+  if ('refused' in destination) {
+    input.routingHeld.set(row.id, { id: row.id, kind: row.kind, reason: destination.remedy })
+    return { disposition: 'skip' }
+  }
   return {
     disposition: 'include',
     parentKeys: parsed
@@ -229,7 +243,7 @@ function planBatchRow(
       id: row.id,
       kind: row.kind,
       payload: candidate.payload,
-      spaceHint: membership?.spaceId ?? declared,
+      spaceHint: destination.spaceId,
     },
   }
 }
@@ -438,6 +452,8 @@ function nextBatch(input: {
   blocked: BlockedOutboxRow[]
   quarantinedParentHolds: QuarantinedParentHoldAccumulator
   projectSpaces?: Record<string, string>
+  personalSpaceId: string | null
+  routingHeld: Map<number, RoutingHeldOutboxRow>
 }): {
   request: RecordSyncRequest
   localRows: Map<number, OutboxRow>
@@ -479,6 +495,8 @@ function nextBatch(input: {
       plannedParents,
       quarantinedParentHolds: input.quarantinedParentHolds,
       projectSpaces: input.projectSpaces,
+      personalSpaceId: input.personalSpaceId,
+      routingHeld: input.routingHeld,
     })
     if (planned.disposition === 'stop') break
     if (planned.disposition === 'skip') continue
@@ -538,17 +556,18 @@ async function sendSyncBatch(input: {
   }
 }
 
-async function ensureActiveSpaceBuiltIns(
-  client: Pick<ReturnType<typeof recordApiClient>, 'whoami' | 'ensureSpaceBuiltIns'>,
+async function ensureBatchBuiltIns(
+  client: Pick<ReturnType<typeof recordApiClient>, 'ensureSpaceBuiltIns'>,
   local: Database,
-): Promise<Awaited<ReturnType<typeof client.whoami>>> {
-  const session = await client.whoami()
-  if (session.activeSpaceId && client.ensureSpaceBuiltIns) {
-    if (builtInsEnsured(local, session.activeSpaceId)) return session
-    await client.ensureSpaceBuiltIns({ destinationSpaceId: session.activeSpaceId })
-    recordBuiltInsEnsured(local, session.activeSpaceId)
+  rows: readonly RecordSyncRequestRow[],
+): Promise<void> {
+  if (!client.ensureSpaceBuiltIns) return
+  const spaces = new Set(rows.map((row) => row.spaceHint).filter((space): space is string => !!space))
+  for (const spaceId of spaces) {
+    if (builtInsEnsured(local, spaceId)) continue
+    await client.ensureSpaceBuiltIns({ destinationSpaceId: spaceId })
+    recordBuiltInsEnsured(local, spaceId)
   }
-  return session
 }
 
 function completedSyncResult(input: {
@@ -557,6 +576,7 @@ function completedSyncResult(input: {
   local: Database
   blocked: BlockedOutboxRow[]
   held: Map<string, HeldRecordSyncRows>
+  routingHeld: Map<number, RoutingHeldOutboxRow>
   quarantinedParentHolds: QuarantinedParentHoldAccumulator
   readOnlyDeferred: Map<string, number>
   backfill: RecordSyncResult['backfill']
@@ -587,6 +607,7 @@ function completedSyncResult(input: {
     blocked: input.blocked,
     ...(input.machineNameRefusal ? { machineNameRefusal: input.machineNameRefusal } : {}),
     ...(input.held.size ? { held: [...input.held.values()] } : {}),
+    ...(input.routingHeld.size ? { routingHeld: [...input.routingHeld.values()] } : {}),
     ...quarantinedParentHoldResult(input.quarantinedParentHolds),
     ...(input.readOnlyDeferred.size
       ? {
@@ -679,13 +700,14 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   const writableLocal = local!
   const client = options.client ?? recordApiClient()
   if (!client.sync) throw new Error('record API client does not provide evidence sync')
-  const session = await ensureActiveSpaceBuiltIns(client, writableLocal)
+  const session = await client.whoami()
   const memberships = parseRecordSpaceMemberships(session.memberships)
   const blocked: BlockedOutboxRow[] = []
   let pushed = 0
   let failed = 0
   const readOnlyDeferred = new Map<string, number>()
   const held = new Map<string, HeldRecordSyncRows>()
+  const routingHeld = new Map<number, RoutingHeldOutboxRow>()
   const quarantinedParentHolds: QuarantinedParentHoldAccumulator = new Map()
   const attempted = new Set<number>()
   const candidates = preparePendingRows(writableLocal)
@@ -702,9 +724,12 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
       blocked,
       quarantinedParentHolds,
       projectSpaces: options.projectSpaces,
+      personalSpaceId: session.personalSpaceId,
+      routingHeld,
     })
     failed += batch.quarantined
     if (noBatchRemaining(batch.request.rows.length, sentBatch)) break
+    await ensureBatchBuiltIns(client, writableLocal, batch.request.rows)
     const applied = await sendSyncBatch({
       client: { sync: client.sync },
       batch,
@@ -729,6 +754,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     local: writableLocal,
     blocked,
     held,
+    routingHeld,
     quarantinedParentHolds,
     readOnlyDeferred,
     backfill,

@@ -9,9 +9,18 @@ import {
   quarantinedOutboxLines,
   quarantinedParentHeldLines,
   readOnlyDeferredLines,
+  routingHeldOutboxLines,
   routingPoolLine,
   syncCommand,
 } from './record-sync-command.ts'
+
+test('sync presentation names each row held by destination routing', () => {
+  expect(
+    routingHeldOutboxLines([
+      { id: 17, kind: 'run', reason: 'project example has no declared record space' },
+    ]),
+  ).toEqual(['held orch:17\trun\tproject example has no declared record space'])
+})
 
 test('sync adopts a zero-candidate local board with the configured record client', async () => {
   const output: string[] = []

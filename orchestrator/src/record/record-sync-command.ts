@@ -34,6 +34,12 @@ function heldOutboxLines(
   return rows.map((row) => `held ${row.rows}\t${row.kind}\t${row.reason}`)
 }
 
+export function routingHeldOutboxLines(
+  rows: NonNullable<Awaited<ReturnType<typeof syncRecord>>['routingHeld']>,
+): string[] {
+  return rows.map((row) => `held orch:${row.id}\t${row.kind}\t${row.reason}`)
+}
+
 export function routingPoolLine(
   pool: NonNullable<Awaited<ReturnType<typeof syncRecord>>['routingPool']>,
 ): string {
@@ -135,6 +141,7 @@ export async function syncCommand(
   for (const line of blockedOutboxLines(result.blocked)) presentation.log(line)
   for (const line of readOnlyDeferredLines(result.readOnlyDeferred ?? [])) presentation.log(line)
   for (const line of heldOutboxLines(result.held ?? [])) presentation.log(line)
+  for (const line of routingHeldOutboxLines(result.routingHeld ?? [])) presentation.log(line)
   for (const line of quarantinedParentHeldLines(result.quarantinedParentHolds ?? []))
     presentation.log(line)
 }

@@ -1,12 +1,68 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { localOutbox, options, RECORD_ID, STAMP } from '../../test/fixtures/record-sync.ts'
 import { fakePostgres } from '../../test/fixtures/record-sync-postgres.ts'
 import { applyMigrations } from '../database/migrations.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { enqueueContention } from './landing-outbox.ts'
 import { syncRecord } from './record-sync.ts'
 
-test('declared project spaces override the active space while an unset project falls back', async () => {
+test('project-owned evidence uses its declared space while the active space is personal', async () => {
+  const local = migratedTestDatabase()
+  const rows = [
+    { kind: 'run', id: 'run-1' },
+    { kind: 'score', id: 'run-1' },
+    { kind: 'review', id: 'review-1' },
+    { kind: 'contention', id: 'contention-1' },
+  ]
+  for (const [index, row] of rows.entries()) {
+    local
+      .query(
+        'INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,?,?,?,?,?)',
+      )
+      .run(
+        newRecordId(),
+        index + 1,
+        row.kind,
+        row.id,
+        JSON.stringify({ id: row.id, projectId: 'project-1', projectName: 'declared' }),
+        STAMP,
+      )
+  }
+  const personal = '01990000-0000-7000-8000-000000000010'
+  const team = '01990000-0000-7000-8000-000000000011'
+  const hints: Array<string | null> = []
+
+  expect(
+    await syncRecord({
+      local,
+      projectSpaces: { declared: 'team' },
+      identity: { id: '01990000-0000-7000-8000-000000000012', name: 'test-machine' },
+      client: {
+        whoami: async () => ({
+          user: { id: '01990000-0000-7000-8000-000000000013' },
+          activeSpaceId: personal,
+          personalSpaceId: personal,
+          memberships: [
+            { space_id: personal, slug: 'personal', permission: 'write' },
+            { space_id: team, slug: 'team', permission: 'write' },
+          ],
+        }),
+        sync: async (request) => {
+          hints.push(...request.rows.map((row) => row.spaceHint))
+          return {
+            results: request.rows.map((row) => ({ id: row.id, status: 'synced' as const })),
+          }
+        },
+      },
+    }),
+  ).toMatchObject({ pushed: 4, pending: 0 })
+  expect(hints).toEqual([team, team, team, team])
+  local.close()
+})
+
+test('declared project spaces override the active space while an unset project stays pending', async () => {
   const local = localOutbox(2, 'declared')
   const second = JSON.parse(
     local.query<{ payload: string }, []>('SELECT payload FROM outbox WHERE id=2').get()!.payload,
@@ -25,15 +81,51 @@ test('declared project spaces override the active space while an unset project f
       projectSpaces: { declared: 'team' },
     }),
   ).toEqual({
-    pushed: 2,
+    pushed: 1,
     failed: 0,
-    pending: 0,
+    pending: 1,
     configured: true,
     quarantined: [],
     blocked: [],
+    routingHeld: [
+      {
+        id: 2,
+        kind: 'run',
+        reason: expect.stringContaining('project fallback has no declared record space'),
+      },
+    ],
   })
   expect(remote.transactionSpaceIds).toContain(declaredSpace)
-  expect(remote.transactionSpaceIds).toContain(options(local, remote).principal.spaceId)
+  local.close()
+})
+
+test('a project space outside the signed-in memberships stays pending', async () => {
+  const local = localOutbox(1, 'declared')
+  const remote = fakePostgres()
+
+  expect(
+    await syncRecord({
+      ...options(local, remote),
+      projectSpaces: { declared: 'outside' },
+    }),
+  ).toMatchObject({
+    pushed: 0,
+    failed: 0,
+    pending: 1,
+    quarantined: [],
+    routingHeld: [
+      {
+        id: 1,
+        kind: 'run',
+        reason: expect.stringContaining('not a member of record space outside'),
+      },
+    ],
+  })
+  expect(local.query('SELECT synced_at,quarantined_at,attempts FROM outbox').get()).toEqual({
+    synced_at: null,
+    quarantined_at: null,
+    attempts: 0,
+  })
   local.close()
 })
 
