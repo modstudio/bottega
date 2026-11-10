@@ -261,7 +261,7 @@ export type RecordApiClient = ProjectIdentityClient &
     putSnapshot(
       kind: SnapshotKind,
       input: { machineId: string; payload: unknown },
-      destination: RecordRunDestinationDecision,
+      destination: RecordRequestDestination,
     ): Promise<{ takenAt: string }>
     listSnapshots(): Promise<{
       items: Array<{

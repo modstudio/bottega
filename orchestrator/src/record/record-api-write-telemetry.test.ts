@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import type { NoDestinationWriteReport } from '../../../shared/record-no-destination-write-contract.ts'
 import { identity, idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
 import { recordApiTestApp } from '../../test/fixtures/record-api-app.ts'
+import type { RecordIdentity } from './record-auth.ts'
 
 const appWith = (session: RecordIdentity | null, overrides: Record<string, unknown> = {}) =>
   recordApiTestApp(session, { ...idleSubjectDeps(), ...idleRecordApiDeps() }, overrides)
