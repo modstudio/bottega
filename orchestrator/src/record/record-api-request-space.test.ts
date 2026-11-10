@@ -129,6 +129,38 @@ test('task-flow write routes authorize and bind a requested space', async () => 
   expect(destinations).toEqual(['space-write'])
 })
 
+test('task-flow stage lists authorize and bind a requested space', async () => {
+  const destinations: Array<string | undefined> = []
+  const app = new Hono<ApiEnvironment>()
+  app.use('/v1/*', async (context, next) => {
+    context.set('identity', {
+      ...identity,
+      memberships: [
+        identity.memberships[0]!,
+        {
+          space_id: 'space-read',
+          name: 'Read Space',
+          slug: 'space-read',
+          role: 'member',
+          permission: 'read',
+        },
+      ],
+    })
+    return next()
+  })
+  registerRecordRequestSpace(app)
+  app.get('/v1/task-flow/stages', (context) => {
+    destinations.push(context.get('destinationSpaceId'))
+    return context.json({ items: [], truncated: false })
+  })
+
+  const response = await app.request('/v1/task-flow/stages?taskKey=DEV-2234', {
+    headers: { 'x-record-space': 'space-read' },
+  })
+  expect(response.status).toBe(200)
+  expect(destinations).toEqual(['space-read'])
+})
+
 test('read-only members are refused before remaining tenant write routes run', async () => {
   // Production break watched: register request-space authorization only for projects and docs.
   const writes: string[] = []

@@ -1,6 +1,7 @@
 // concern: hosted task-flow writes
 /** Applies tenant-bound workflow command intents with optimistic revisions and request idempotency.
- * Every intent locks task_flow first, task_flow_stage second, and child rows last.
+ * Compose locks the project stage-number advisory key first. Every intent then locks task_flow,
+ * task_flow_stage, and child rows in that order.
  */
 import type { SQL } from 'bun'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
@@ -8,10 +9,11 @@ import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
 import { isUniqueViolation } from './record-config-error.ts'
 import { recordPool } from './record-pool.ts'
-import { allocateRecordSequence } from './record-sequence.ts'
 import type {
+  TaskFlowComposeResult,
   TaskFlowIntent,
   TaskFlowIntentBody,
+  TaskFlowIntentResult,
   TaskFlowWriteResult,
 } from './record-task-flow-write-contract.ts'
 import {
@@ -179,7 +181,7 @@ async function insertStage(
   spaceId: string,
   requestId: string,
   row: Record<string, unknown>,
-): Promise<number> {
+): Promise<{ revision: number; number: number }> {
   const flow =
     (await tx`SELECT project_id::text FROM task_flow WHERE id=${row.flowRecordId}::uuid FOR UPDATE`) as Array<{
       project_id: string
@@ -195,9 +197,13 @@ async function insertStage(
   const existing = await existingRow(tx, 'task_flow_stage', String(row.id))
   if (existing) {
     assertSameInsert('task_flow_stage', String(row.id), existing, row)
-    return Number(existing.revision)
+    if (existing.number == null)
+      conflict('task_flow_stage', String(row.id), Number(existing.revision), 'already-exists')
+    return { revision: Number(existing.revision), number: Number(existing.number) }
   }
-  const number = await allocateRecordSequence(tx, spaceId, String(row.projectId), 'task_flow_stage')
+  const next = (await tx`SELECT coalesce(max(number),0)+1 AS number FROM task_flow_stage
+    WHERE project_id=${row.projectId}::uuid`) as Array<{ number: number | string }>
+  const number = Number(next[0]!.number)
   await tx`INSERT INTO task_flow_stage
     (id,space_id,flow_record_id,project_id,number,workflow,mode,workflow_key,instance_id,session_id,
      workflow_version_id,catalogue_version_id,arguments,active_ordinal,active_slug,state,closed_step_notes,
@@ -210,7 +216,7 @@ async function insertStage(
       ${row.question},${row.autonomy},${row.enforcement},${row.totalSteps},${row.openedMachineId}::uuid,
       ${row.takenOverFromMachineId}::uuid,${row.lastAdvancedMachineId}::uuid,1,${requestId}::uuid,
       ${row.createdAt}::timestamptz,${row.updatedAt}::timestamptz)`
-  return 1
+  return { revision: 1, number }
 }
 
 async function insertObligation(tx: SQL, spaceId: string, row: Record<string, unknown>) {
@@ -320,8 +326,10 @@ function postgresSqlState(error: unknown): string | null {
   return null
 }
 
-async function applyCompose(tx: SQL, input: Tenant, body: ComposeBody) {
+async function applyCompose(tx: SQL, input: Tenant, body: ComposeBody): Promise<TaskFlowComposeResult> {
   const revisions: Record<string, number> = {}
+  if (body.stageInsert)
+    await tx`SELECT pg_advisory_xact_lock(hashtextextended(${body.stageInsert.projectId},0))`
   if (body.flowInsert)
     revisions[String(body.flowInsert.id)] = await insertFlow(
       tx,
@@ -336,16 +344,15 @@ async function applyCompose(tx: SQL, input: Tenant, body: ComposeBody) {
       body.flowChange,
       body.requestId,
     )
-  if (body.stageInsert)
-    revisions[String(body.stageInsert.id)] = await insertStage(
-      tx,
-      input.spaceId,
-      body.requestId,
-      body.stageInsert,
-    )
+  let stage: TaskFlowComposeResult['stage'] = null
+  if (body.stageInsert) {
+    const inserted = await insertStage(tx, input.spaceId, body.requestId, body.stageInsert)
+    revisions[String(body.stageInsert.id)] = inserted.revision
+    stage = { id: String(body.stageInsert.id), number: inserted.number }
+  }
   for (const change of body.stageChanges ?? [])
     revisions[change.id] = await updateRevisionRow(tx, 'task_flow_stage', change, body.requestId)
-  return { revisions }
+  return { revisions, stage }
 }
 
 async function lockParentFlowForStage(tx: SQL, stageId: string): Promise<void> {
@@ -446,11 +453,11 @@ const intentAppliers: { [K in TaskFlowIntent]: Applier<K> } = {
 export async function writeRecordTaskFlow<K extends TaskFlowIntent>(
   intent: K,
   input: Tenant & TaskFlowIntentBody<K>,
-): Promise<TaskFlowWriteResult> {
+): Promise<TaskFlowIntentResult<K>> {
   try {
     return await recordPool(input.url).begin(async (tx) => {
       await bindTenant(tx, input)
-      return intentAppliers[intent](tx, input)
+      return intentAppliers[intent](tx, input) as Promise<TaskFlowIntentResult<K>>
     })
   } catch (error) {
     const slot = isUniqueViolation(error, 'task_flow_stage_open_slot_unique')

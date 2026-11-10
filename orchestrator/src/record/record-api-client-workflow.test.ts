@@ -44,3 +44,29 @@ test.each([404, 405])('task-flow write refuses an old record API response %s', a
     }),
   ).rejects.toThrow('record API predates task-flow writes; release hosted-api, then retry')
 })
+
+test('task-flow stage lists carry combined filters and the destination space', async () => {
+  const requests: Array<{
+    path: string
+    destinationSpaceId?: string
+  }> = []
+  const client = recordTaskFlowClient(async (path, init) => {
+    requests.push({ path, destinationSpaceId: init?.destinationSpaceId })
+    return { items: [], truncated: false } as never
+  })
+  await client.listTaskFlowStages!(
+    {
+      projectId: '00000000-0000-4000-8000-000000000001',
+      number: 4,
+      states: ['running', 'awaiting-ruling'],
+      limit: 50,
+    },
+    { destinationSpaceId: '00000000-0000-4000-8000-000000000002' },
+  )
+  expect(requests).toEqual([
+    {
+      path: '/v1/task-flow/stages?projectId=00000000-0000-4000-8000-000000000001&number=4&state=running&state=awaiting-ruling&limit=50',
+      destinationSpaceId: '00000000-0000-4000-8000-000000000002',
+    },
+  ])
+})

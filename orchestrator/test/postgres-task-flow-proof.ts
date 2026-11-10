@@ -67,6 +67,10 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
     const flowId = newRecordId()
     const stageId = newRecordId()
     const taskId = newRecordId()
+    const otherProjectId = newRecordId()
+    const otherProjectTaskId = newRecordId()
+    const otherProjectFlowId = newRecordId()
+    const otherProjectStageId = newRecordId()
     const machineId = newRecordId()
     const composeRequestId = newRecordId()
     const advanceRequestId = newRecordId()
@@ -89,6 +93,14 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
            first_seen,last_seen,created_at,updated_at)
         VALUES ('${taskId}','${input.spaceId()}','${PROJECT}','${input.projectId()}',
           '${DIRECT_TASK_KEY}','${PROJECT}','direct task-flow proof','active','active','local',
+          now(),now(),now(),now());
+        INSERT INTO project(id,space_id,name,created_at)
+        VALUES ('${otherProjectId}','${input.spaceId()}','other-task-flow-project',now());
+        INSERT INTO hub_task
+          (id,space_id,project_name,project_id,key,project,title,status,status_category,source,
+           first_seen,last_seen,created_at,updated_at)
+        VALUES ('${otherProjectTaskId}','${input.spaceId()}','other-task-flow-project','${otherProjectId}',
+          'BB-2234','other-task-flow-project','other project task-flow proof','active','active','local',
           now(),now(),now(),now());
       `)
       input.signIn()
@@ -149,7 +161,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
           },
           directSpace,
         ),
-      ).toEqual({ revisions: { [flowId]: 1, [stageId]: 1 } })
+      ).toEqual({ revisions: { [flowId]: 1, [stageId]: 1 }, stage: { id: stageId, number: 1 } })
 
       const composed = await client.readTaskFlow!({ flowRecordId: flowId }, directSpace)
       expect(composed.stage).toMatchObject({
@@ -169,7 +181,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
           },
           directSpace,
         ),
-      ).toEqual({ revisions: { [stageId]: 1 } })
+      ).toEqual({ revisions: { [stageId]: 1 }, stage: { id: stageId, number: 1 } })
 
       await expect(
         client.composeTaskFlow!(
@@ -194,11 +206,91 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
           },
           directSpace,
         ),
-      ).toEqual({ revisions: { [secondStageId]: 1 } })
+      ).toEqual({
+        revisions: { [secondStageId]: 1 },
+        stage: { id: secondStageId, number: 2 },
+      })
       const withSecondStage = await client.readTaskFlow!({ flowRecordId: flowId }, directSpace)
       expect(withSecondStage.otherStages).toContainEqual(
         expect.objectContaining({ id: secondStageId, number: 2 }),
       )
+
+      const concurrentStageIds = Array.from({ length: 4 }, () => newRecordId())
+      const concurrent = await Promise.all(
+        concurrentStageIds.map((id, index) =>
+          client.composeTaskFlow!(
+            {
+              requestId: newRecordId(),
+              stageInsert: {
+                ...stage,
+                id,
+                workflowKey: `${DIRECT_TASK_KEY}-concurrent-${index}`,
+              },
+            },
+            directSpace,
+          ),
+        ),
+      )
+      expect(concurrent.map((result) => result.stage?.number).sort((a, b) => a! - b!)).toEqual([
+        3, 4, 5, 6,
+      ])
+
+      const otherProjectFlow = {
+        ...flow,
+        id: otherProjectFlowId,
+        projectId: otherProjectId,
+        taskId: otherProjectTaskId,
+        openStageRecordId: otherProjectStageId,
+      }
+      const otherProjectStage = {
+        ...stage,
+        id: otherProjectStageId,
+        flowRecordId: otherProjectFlowId,
+        projectId: otherProjectId,
+        workflowKey: 'BB-2234',
+        sessionId: 'other-project-session',
+      }
+      expect(
+        await client.composeTaskFlow!(
+          {
+            requestId: newRecordId(),
+            flowInsert: otherProjectFlow,
+            stageInsert: otherProjectStage,
+          },
+          directSpace,
+        ),
+      ).toMatchObject({ stage: { id: otherProjectStageId, number: 1 } })
+
+      const byProjectNumber = await client.listTaskFlowStages!(
+        { projectId: input.projectId(), number: 1 },
+        directSpace,
+      )
+      expect(byProjectNumber).toMatchObject({
+        truncated: false,
+        items: [
+          {
+            stage: {
+              id: stageId,
+              projectId: input.projectId(),
+              projectName: PROJECT,
+              workflowVersionId,
+              workflowVersionNumber: expect.any(Number),
+              catalogueVersionId,
+              catalogueVersionNumber: expect.any(Number),
+            },
+            flow: { id: flowId, taskKey: DIRECT_TASK_KEY, openStageCount: 6 },
+          },
+        ],
+      })
+      expect(
+        (await client.listTaskFlowStages!({ sessionId: 'direct-client-a' }, directSpace)).items,
+      ).toHaveLength(6)
+      expect(
+        (await client.listTaskFlowStages!({ states: ['running'] }, directSpace)).items,
+      ).toHaveLength(7)
+      expect(
+        (await client.listTaskFlowStages!({ taskKey: DIRECT_TASK_KEY }, directSpace)).items,
+      ).toHaveLength(6)
 
       const advance = {
         requestId: advanceRequestId,
@@ -401,6 +493,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         await client.composeTaskFlow!({ requestId: newRecordId(), flowInsert: flow }, directSpace),
       ).toEqual({
         revisions: { [flowId]: 1 },
+        stage: null,
       })
       await expect(
         client.composeTaskFlow!(
@@ -420,6 +513,12 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
           keepCurrentActiveOrganization: true,
         },
       })
+      expect(
+        await client.listTaskFlowStages!(
+          { taskKey: DIRECT_TASK_KEY },
+          { destinationSpaceId: otherSpace.id },
+        ),
+      ).toEqual({ items: [], truncated: false })
       await expect(
         client.advanceTaskFlow!(
           {

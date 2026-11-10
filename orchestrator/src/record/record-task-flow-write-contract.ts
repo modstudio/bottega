@@ -221,3 +221,10 @@ export type TaskFlowIntentBody<K extends TaskFlowIntent> = z.output<
 >
 export const taskFlowWriteResultSchema = z.object({ revisions: z.record(id, revision) })
 export type TaskFlowWriteResult = z.infer<typeof taskFlowWriteResultSchema>
+export const taskFlowComposeResultSchema = taskFlowWriteResultSchema.extend({
+  stage: z.object({ id, number: z.number().int().positive() }).nullable(),
+})
+export type TaskFlowComposeResult = z.infer<typeof taskFlowComposeResultSchema>
+export type TaskFlowIntentResult<K extends TaskFlowIntent> = K extends 'compose'
+  ? TaskFlowComposeResult
+  : TaskFlowWriteResult
