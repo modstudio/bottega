@@ -795,18 +795,21 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
     const machineA = newRecordId()
     const machineB = newRecordId()
     const taskId = newRecordId()
+    const projectId = newRecordId()
     const configRoot = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-task-flow-proof-`))
     const previousConfigRoot = process.env.BOTTEGA_CONFIG_HOME
-    const databaseA = proofDatabase(input.projectId(), input.spaceId())
+    const databaseA = proofDatabase(projectId, input.spaceId())
     let databaseB: Database | undefined
     const auth = testRecordAuth(input.urls().actor, input.urls().auth)
     try {
       process.env.BOTTEGA_CONFIG_HOME = configRoot
       input.admin(`
+        INSERT INTO project(id,space_id,name,created_at)
+        VALUES ('${projectId}','${input.spaceId()}','${PROJECT}',now());
         INSERT INTO hub_task
           (id,space_id,project_name,project_id,key,project,title,status,status_category,source,
            first_seen,last_seen,created_at,updated_at)
-        VALUES ('${taskId}','${input.spaceId()}','${PROJECT}','${input.projectId()}',
+        VALUES ('${taskId}','${input.spaceId()}','${PROJECT}','${projectId}',
           '${TASK_KEY}','${PROJECT}','task-flow takeover proof','active','active','local',
           now(),now(),now(),now());
       `)
