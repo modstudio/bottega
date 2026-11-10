@@ -27,6 +27,7 @@ type Mutation = { id: string; expectedRevision: number; values: Record<string, u
 type RevisionRow = { revision: number | string; last_request_id: string | null }
 type ComposeBody = TaskFlowIntentBody<'compose'>
 type StageUpdateBody = TaskFlowIntentBody<'stage-update'>
+type AdoptBody = TaskFlowIntentBody<'adopt'>
 type StageMutationBody =
   | TaskFlowIntentBody<'advance'>
   | TaskFlowIntentBody<'await-ruling'>
@@ -417,6 +418,32 @@ async function applyStageUpdates(tx: SQL, body: StageUpdateBody) {
   return { revisions }
 }
 
+async function applyAdopt(tx: SQL, body: AdoptBody) {
+  const rows = (await tx.unsafe(
+    `SELECT task_id::text,revision,last_request_id::text
+     FROM task_flow WHERE id=$1::uuid FOR UPDATE`,
+    [body.flow.id],
+  )) as Array<{ task_id: string | null; revision: number | string; last_request_id: string | null }>
+  const row = rows[0]
+  if (!row) conflict('task_flow', body.flow.id, null)
+  if (row.task_id !== null && row.task_id !== body.flow.values.taskId)
+    conflict('task_flow', body.flow.id, Number(row.revision), 'already-exists')
+  if (
+    decideRevisionWrite(
+      { revision: Number(row.revision), lastRequestId: row.last_request_id },
+      body.flow.expectedRevision,
+      body.requestId,
+    ).kind === 'retry'
+  )
+    return { revisions: { [body.flow.id]: body.flow.expectedRevision + 1 } }
+  if (row.task_id !== null) conflict('task_flow', body.flow.id, Number(row.revision))
+  return {
+    revisions: {
+      [body.flow.id]: await updateRevisionRow(tx, 'task_flow', body.flow, body.requestId),
+    },
+  }
+}
+
 type Applier<K extends TaskFlowIntent> = (
   tx: SQL,
   input: Tenant & TaskFlowIntentBody<K>,
@@ -428,6 +455,7 @@ const intentAppliers: { [K in TaskFlowIntent]: Applier<K> } = {
   advance: (tx, input) => applyStageMutation(tx, input, input),
   'await-ruling': (tx, input) => applyStageMutation(tx, input, input),
   abandon: (tx, input) => applyStageMutation(tx, input, input),
+  adopt: (tx, input) => applyAdopt(tx, input),
   'attach-text': async (tx, input) => {
     for (const row of input.rows) {
       await lockParentFlowForStage(tx, row.stageRecordId)

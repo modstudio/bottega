@@ -295,6 +295,71 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         (await client.listTaskFlowStages!({ taskKey: DIRECT_TASK_KEY }, directSpace)).items,
       ).toHaveLength(6)
 
+      const tasklessFlowId = newRecordId()
+      const tasklessStageId = newRecordId()
+      const tasklessRequestId = newRecordId()
+      const tasklessFlow = {
+        ...flow,
+        id: tasklessFlowId,
+        taskId: null,
+        openStageRecordId: tasklessStageId,
+      }
+      const tasklessStage = {
+        ...stage,
+        id: tasklessStageId,
+        flowRecordId: tasklessFlowId,
+        workflowKey: 'taskless-proof',
+        sessionId: 'taskless-proof-session',
+      }
+      expect(
+        await client.composeTaskFlow!(
+          {
+            requestId: newRecordId(),
+            flowInsert: tasklessFlow,
+            stageInsert: tasklessStage,
+          },
+          directSpace,
+        ),
+      ).toMatchObject({ revisions: { [tasklessFlowId]: 1, [tasklessStageId]: 1 } })
+      expect(
+        (await client.readTaskFlow!({ flowRecordId: tasklessFlowId }, directSpace)).flow,
+      ).toMatchObject({ taskId: null, taskKey: null })
+      expect(
+        (await client.listTaskFlowStages!({ sessionId: 'taskless-proof-session' }, directSpace))
+          .items[0],
+      ).toMatchObject({ flow: { id: tasklessFlowId, taskId: null, taskKey: null } })
+      const adopt = {
+        requestId: tasklessRequestId,
+        flow: {
+          id: tasklessFlowId,
+          expectedRevision: 1,
+          values: { taskId, updatedMachineId: machineId, updatedAt: at },
+        },
+      }
+      expect(await client.adoptTaskFlow!(adopt, directSpace)).toEqual({
+        revisions: { [tasklessFlowId]: 2 },
+      })
+      expect(await client.adoptTaskFlow!(adopt, directSpace)).toEqual({
+        revisions: { [tasklessFlowId]: 2 },
+      })
+      await expect(
+        client.adoptTaskFlow!(
+          {
+            ...adopt,
+            requestId: newRecordId(),
+            flow: {
+              ...adopt.flow,
+              expectedRevision: 2,
+              values: { ...adopt.flow.values, taskId: newRecordId() },
+            },
+          },
+          directSpace,
+        ),
+      ).rejects.toMatchObject({ reason: 'already-exists', condition: `task_flow.id=${tasklessFlowId}` })
+      expect(
+        (await client.readTaskFlow!({ flowRecordId: tasklessFlowId }, directSpace)).flow,
+      ).toMatchObject({ taskId, taskKey: DIRECT_TASK_KEY })
+
       const advance = {
         requestId: advanceRequestId,
         stage: {

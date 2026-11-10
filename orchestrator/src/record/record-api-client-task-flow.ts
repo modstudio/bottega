@@ -14,6 +14,7 @@ import {
   type TaskFlowStageListQuery,
 } from './record-task-flow-contract.ts'
 import {
+  type TaskFlowAdoptResult,
   type TaskFlowComposeResult,
   type TaskFlowIntent,
   type TaskFlowIntentInput,
@@ -57,6 +58,10 @@ export type RecordTaskFlowClient = {
     input: TaskFlowIntentInput<'abandon'>,
     destination?: RecordRequestDestination,
   ): Promise<TaskFlowWriteResult>
+  adoptTaskFlow?(
+    input: TaskFlowIntentInput<'adopt'>,
+    destination?: RecordRequestDestination,
+  ): Promise<TaskFlowAdoptResult>
   attachTaskFlowText?(
     input: TaskFlowIntentInput<'attach-text'>,
     destination?: RecordRequestDestination,
@@ -148,6 +153,8 @@ export const recordTaskFlowClient = (request: Request): RecordTaskFlowClient => 
     ),
   abandonTaskFlow: (input, destination) =>
     write(request, 'abandon', input, (body) => taskFlowWriteResultSchema.parse(body), destination),
+  adoptTaskFlow: (input, destination) =>
+    write(request, 'adopt', input, (body) => taskFlowAdoptResultSchema.parse(body), destination),
   attachTaskFlowText: (input, destination) =>
     write(
       request,
@@ -173,3 +180,4 @@ export const recordTaskFlowClient = (request: Request): RecordTaskFlowClient => 
       destination,
     ),
 })
+  taskFlowAdoptResultSchema,

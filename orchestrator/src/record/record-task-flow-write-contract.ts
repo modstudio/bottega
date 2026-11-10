@@ -1,6 +1,9 @@
 // concern: hosted task-flow write contract
 /** Declares the validated wire shapes for hosted task-flow command intents. */
 import { z } from 'zod'
+import { v5 as uuidv5 } from 'uuid'
+
+export const TASK_FLOW_REQUEST_NAMESPACE = '41437bd5-95cf-5c85-b91b-6345d433dcc4'
 
 const id = z.string().uuid()
 const stamp = z.string().datetime()
@@ -11,7 +14,7 @@ const nullableText = z.string().nullable()
 const flowInsert = z.object({
   id,
   projectId: id,
-  taskId: id,
+  taskId: nullableId,
   state: z.enum(['open', 'done', 'dropped']),
   openStageRecordId: nullableId,
   openingMachineId: id,
@@ -193,6 +196,13 @@ const taskFlowAbandonSchema = z.object({
   obligationUpdates: z.array(obligationUpdate).default([]),
   deleteTextIds: z.array(id).default([]),
 })
+const taskFlowAdoptSchema = z.object({
+  ...base,
+  stage: z.object({ id, expectedRevision: revision }),
+  taskId: id,
+  updatedMachineId: id,
+  updatedAt: stamp,
+})
 const taskFlowAttachTextSchema = z.object({ ...base, rows: z.array(textInsert).min(1) })
 const taskFlowDeleteTextSchema = z.object({
   ...base,
@@ -207,6 +217,7 @@ export const taskFlowIntentSchemas = {
   advance: taskFlowAdvanceSchema,
   'await-ruling': taskFlowAwaitRulingSchema,
   abandon: taskFlowAbandonSchema,
+  adopt: taskFlowAdoptSchema,
   'attach-text': taskFlowAttachTextSchema,
   'delete-text': taskFlowDeleteTextSchema,
   'copy-text': taskFlowCopyTextSchema,
@@ -225,6 +236,14 @@ export const taskFlowComposeResultSchema = taskFlowWriteResultSchema.extend({
   stage: z.object({ id, number: z.number().int().positive() }).nullable(),
 })
 export type TaskFlowComposeResult = z.infer<typeof taskFlowComposeResultSchema>
+export const taskFlowAdoptResultSchema = taskFlowWriteResultSchema.extend({ flowRecordId: id })
+export type TaskFlowAdoptResult = z.infer<typeof taskFlowAdoptResultSchema>
 export type TaskFlowIntentResult<K extends TaskFlowIntent> = K extends 'compose'
   ? TaskFlowComposeResult
-  : TaskFlowWriteResult
+  : K extends 'adopt'
+    ? TaskFlowAdoptResult
+    : TaskFlowWriteResult
+
+export function taskFlowRequestId(intent: TaskFlowIntent, parts: readonly string[]): string {
+  return uuidv5([intent, ...parts].join('\n'), TASK_FLOW_REQUEST_NAMESPACE)
+}
