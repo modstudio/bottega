@@ -10,7 +10,8 @@ import {
 } from '../../../shared/record-remedies.ts'
 import { declaredRecordSpace } from '../project/declared-record-space.ts'
 import { projectRowByName } from '../project/projects.ts'
-import { activeRecordSpace, cachedProjectSpaces, workflowReadSpace } from '../project-space.ts'
+import { activeRecordSpace, workflowReadSpace } from '../project-space.ts'
+import { cachedProjectSpaces } from '../project-space-cache.ts'
 import { readRecordInstallBinding } from '../record/install-binding.ts'
 
 const missingProjectRouteRefusal = (project: string) =>

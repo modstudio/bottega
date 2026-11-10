@@ -29,12 +29,6 @@ export const architectureViolationBaseline: readonly ArchitectureViolationBaseli
   },
   {
     rule: 'no-active-space-resolver-import',
-    from: 'orchestrator/src/record/record-push-catalogues.ts',
-    to: 'orchestrator/src/project-space.ts',
-    reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
-  },
-  {
-    rule: 'no-active-space-resolver-import',
     from: 'orchestrator/src/record/record-config.ts',
     to: 'shared/personal-item-space.ts',
     reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',

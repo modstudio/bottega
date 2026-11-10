@@ -93,6 +93,7 @@ export function fakePostgres(
   statements: string[]
   parameters: unknown[][]
   transactionSpaceIds: string[]
+  boundSpaceIds: string[]
 } {
   const statements: string[] = []
   const parameters: unknown[][] = []
@@ -102,11 +103,13 @@ export function fakePostgres(
   let runWrites = 0
   let runReferenceAvailable = true
   const transactionSpaceIds: string[] = []
+  const boundSpaceIds: string[] = []
   const tx = (async (parts: TemplateStringsArray, ...values: unknown[]) => {
     const source = parts.join('?')
     statements.push(source)
     if (source.includes("set_config('app.space_id'")) {
       transactionSpaceIds[transaction] = String(values[0])
+      boundSpaceIds.push(String(values[0]))
     }
     if (source.includes('SELECT job, failure_kind, machine_id FROM run')) {
       return [
@@ -219,7 +222,7 @@ export function fakePostgres(
       close: async () => {},
     },
   ) as unknown as SQL
-  return { sql, statements, parameters, transactionSpaceIds }
+  return { sql, statements, parameters, transactionSpaceIds, boundSpaceIds }
 }
 
 export const serverError = (message: string, errno: number) =>

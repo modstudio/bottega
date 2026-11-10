@@ -10,6 +10,7 @@ export function recordSignInRemedy(email: string): Extract<RefusalRemedy, { kind
 
 export const RECORD_SIGN_IN_REMEDY = `record session is missing or expired; run \`${recordSignInRemedy('<email>').argv.join(' ')}\``
 export const RECORD_ACTIVE_SPACE_REMEDY = `record session has no active space; run \`${PLATFORM_SLUG} record space switch <slug>\``
+export const RECORD_PERSONAL_SPACE_REMEDY = `run \`${PLATFORM_SLUG} record sign-in\` to restore the personal space`
 export const RUN_RETRY_REMEDY = `${PLATFORM_SLUG} run retry <run>`
 
 export type HostedRequestSafety = 'probe' | 'idempotent' | 'non-idempotent'

@@ -94,6 +94,7 @@ export const options = (
     spaceId: '01990000-0000-7000-8000-000000000001',
   },
   memberships,
+  projectSpaces: { [PLATFORM_SLUG]: 'platform', 'run-fixture': 'platform' },
   client: {
     whoami: async () => ({
       user: { id: '01990000-0000-7000-8000-000000000002' },

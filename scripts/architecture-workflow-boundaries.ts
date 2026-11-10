@@ -9,6 +9,7 @@ export const workflowBoundarySpecs = [
       'bun:sqlite',
       '../../../shared/brand.ts',
       '../../../shared/record-remedies.ts',
+      '../project-space-cache.ts',
       '../project-space.ts',
       '../project/declared-record-space.ts',
       '../project/projects.ts',

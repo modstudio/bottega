@@ -73,6 +73,7 @@ test('release sender upserts the finished state by record id in the project spac
       spaceId: SPACE_ID,
     },
     memberships: [{ spaceId: SPACE_ID, slug: 'platform', permission: 'write' as const }],
+    projectSpaces: { [PLATFORM_SLUG]: 'platform' },
     client: {
       whoami: async () => ({
         user: { id: '01990000-0000-7000-8000-000000000002' },

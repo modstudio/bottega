@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from './brand.ts'
 import { type RecordWriteOwner, recordWriteSpace } from './record-write-space.ts'
 
 const memberships = [{ spaceId: 'project-id', slug: 'project-space', permission: 'write' }]
@@ -35,6 +36,13 @@ describe('recordWriteSpace', () => {
           : facts
     expect(recordWriteSpace(owner as RecordWriteOwner | null, selectedFacts)).toMatchObject({
       refused,
+    })
+  })
+
+  test('a missing personal space names the sign-in remedy', () => {
+    expect(recordWriteSpace({ kind: 'personal' }, { ...facts, personalSpaceId: null })).toEqual({
+      refused: 'personal-space-not-provisioned',
+      remedy: `run \`${PLATFORM_SLUG} record sign-in\` to restore the personal space`,
     })
   })
 })
