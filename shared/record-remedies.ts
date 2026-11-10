@@ -59,6 +59,19 @@ export function recordSpaceMembershipRefusal(space: string): string {
   )
 }
 
+export function recordSpaceOwnerRequiredRemedy(
+  verb: string,
+  alternatives: readonly ('project' | 'account')[] = [],
+): string {
+  const flags = [
+    '--space <slug>',
+    ...alternatives.map((alternative) =>
+      alternative === 'project' ? '--project <name>' : '--account',
+    ),
+  ]
+  return `${verb} writes to a record space and names none; pass ${flags.join(', or ')}`
+}
+
 export const pinnedSpaceMismatchRemedy = (pinned: string) =>
   `record active space differs from this machine's initialized hosted-config space; switch back to ${pinned}, or remove this machine's hosted-config bootstrap and initialize it for the other space`
 
