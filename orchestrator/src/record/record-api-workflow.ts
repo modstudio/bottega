@@ -14,6 +14,11 @@ import {
 } from './record-cursor.ts'
 import { RecordTaskFlowError } from './record-task-flow.ts'
 import {
+  type TaskFlowIntent,
+  type TaskFlowIntentInput,
+  taskFlowIntentSchemas,
+} from './record-task-flow-write-contract.ts'
+import {
   type RecordWorkflowDraftInput,
   RecordWorkflowError,
   type RecordWorkflowImportInput,
@@ -29,6 +34,10 @@ type Environment = { Variables: { identity: RecordIdentity; destinationSpaceId?:
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
 export type RecordWorkflowRouteDeps = {
   readTaskFlow?(input: Tenant & { taskKey?: string; flowRecordId?: string }): Promise<unknown>
+  writeTaskFlow<K extends TaskFlowIntent>(
+    intent: K,
+    input: Tenant & TaskFlowIntentInput<K>,
+  ): Promise<unknown>
   listWorkflowCatalogue(
     input: Tenant & { table: RecordWorkflowTable; limit: number; cursor: RecordCursor | null },
   ): Promise<(Record<string, unknown> & RecordListCursorRow)[]>
@@ -75,6 +84,21 @@ export function registerRecordWorkflowRoutes(
       throw error
     }
   })
+  for (const intent of Object.keys(taskFlowIntentSchemas) as TaskFlowIntent[])
+    app.post(`/v1/task-flow/${intent}`, async (context) => {
+      const active = ports.scope(context)
+      if (!active) return ports.noSpace(context)
+      const body = taskFlowIntentSchemas[intent].safeParse(
+        await context.req.json().catch(() => null),
+      )
+      if (!body.success)
+        return context.json({ error: `invalid task-flow ${intent} request` }, 400)
+      try {
+        return context.json(await deps.writeTaskFlow(intent, { ...active, ...body.data } as never))
+      } catch (error) {
+        return failure(context, error)
+      }
+    })
   app.get('/v1/workflow-catalogue/:table', async (context) => {
     const active = ports.scope(context)
     if (!active) return ports.noSpace(context)

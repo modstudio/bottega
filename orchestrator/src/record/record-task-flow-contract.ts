@@ -7,11 +7,53 @@ export const RECORD_TASK_FLOW_NOT_FOUND_MESSAGE = 'hosted task flow was not foun
 const nullableId = z.string().uuid().nullable()
 const machine = z.object({ id: z.string().uuid(), displayName: z.string().min(1) })
 
+const obligation = z.object({
+  id: z.string().uuid(),
+  stageRecordId: z.string().uuid(),
+  stepOrdinal: z.number().int(),
+  stepSlug: z.string(),
+  floor: z.string(),
+  requirePullRequest: z.boolean(),
+  expectedExitCode: z.number().int(),
+  expectedStatus: z.string(),
+  floorDeferrable: z.boolean(),
+  reason: z.string(),
+  sessionId: z.string().nullable(),
+  createdAt: z.string(),
+  satisfiedAt: z.string().nullable(),
+  satisfiedStepOrdinal: z.number().int().nullable(),
+  satisfiedStepSlug: z.string().nullable(),
+  satisfiedEvidence: z.array(z.unknown()).nullable(),
+  abandonedAt: z.string().nullable(),
+  abandonedReason: z.string().nullable(),
+  operatorRuling: z.boolean(),
+})
+const stepText = z.object({
+  id: z.string().uuid(),
+  stageRecordId: z.string().uuid(),
+  stepOrdinal: z.number().int(),
+  stepSlug: z.string(),
+  body: z.string(),
+  createdAt: z.string(),
+})
+const textCopy = z.object({
+  id: z.string().uuid(),
+  workflowTextRecordId: z.string().uuid(),
+  stageRecordId: z.string().uuid(),
+  taskDocumentReference: z.string(),
+  copiedAt: z.string(),
+})
+
 const hostedTaskFlowStageSchema = z.object({
   id: z.string().uuid(),
   flowRecordId: z.string().uuid(),
+  projectId: z.string().uuid(),
+  number: z.number().int().positive(),
   workflow: z.string(),
   mode: z.string(),
+  workflowKey: z.string(),
+  instanceId: z.string(),
+  sessionId: z.string().nullable(),
   workflowVersionId: z.string().uuid(),
   catalogueVersionId: z.string().uuid(),
   arguments: z.record(z.string(), z.string()),
@@ -19,6 +61,9 @@ const hostedTaskFlowStageSchema = z.object({
   activeSlug: z.string(),
   state: z.enum(['running', 'awaiting-ruling', 'done', 'abandoned']),
   closedStepNotes: z.array(z.unknown()),
+  question: z.string().nullable(),
+  autonomy: z.string().nullable(),
+  enforcement: z.string(),
   totalSteps: z.number().int().positive(),
   openedMachineId: z.string().uuid(),
   takenOverFromMachineId: nullableId,
@@ -26,6 +71,9 @@ const hostedTaskFlowStageSchema = z.object({
   revision: z.number().int().positive(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  obligations: z.array(obligation),
+  stepTexts: z.array(stepText),
+  textCopies: z.array(textCopy),
 })
 
 export const hostedTaskFlowSchema = z.object({

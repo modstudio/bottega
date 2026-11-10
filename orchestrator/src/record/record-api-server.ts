@@ -140,6 +140,17 @@ import {
 } from './record-subjects.ts'
 import { syncHostedRecord } from './record-sync-service.ts'
 import { readRecordTaskFlow } from './record-task-flow.ts'
+import {
+  abandonRecordTaskFlow,
+  advanceRecordTaskFlow,
+  attachRecordTaskFlowText,
+  awaitRecordTaskFlowRuling,
+  composeRecordTaskFlow,
+  copyRecordTaskFlowText,
+  deleteRecordTaskFlowText,
+  updateRecordTaskFlowStage,
+} from './record-task-flow-write.ts'
+import type { TaskFlowIntent } from './record-task-flow-write-contract.ts'
 import { deleteTrialRecordSpace } from './record-trial-space-delete.ts'
 import {
   countRecordScores,
@@ -360,9 +371,20 @@ function registerStorageRoute(
 }
 
 function recordProjectDependencies() {
+  const taskFlowWriters = {
+    compose: composeRecordTaskFlow,
+    'stage-update': updateRecordTaskFlowStage,
+    advance: advanceRecordTaskFlow,
+    'await-ruling': awaitRecordTaskFlowRuling,
+    abandon: abandonRecordTaskFlow,
+    'attach-text': attachRecordTaskFlowText,
+    'delete-text': deleteRecordTaskFlowText,
+    'copy-text': copyRecordTaskFlowText,
+  }
   return {
     readProjects: listRecordProjects,
     readTaskFlow: readRecordTaskFlow,
+    writeTaskFlow: (intent: TaskFlowIntent, input: never) => taskFlowWriters[intent](input),
     upsertProject: async (input: Parameters<typeof upsertRecordProject>[0]) => {
       try {
         return await upsertRecordProject(input)
