@@ -111,7 +111,7 @@ test('endpoint key reporting distinguishes an absent secret from a store it coul
     }),
   ).toEqual({
     status: 'could-not-check',
-    reason: `hosted secret PROJECT_KEY could not be opened: machine-key-missing\ncleared by: ${PLATFORM_SLUG} machine config machine init`,
+    reason: `hosted secret PROJECT_KEY could not be opened: machine-key-missing\ncleared by: ${PLATFORM_SLUG} machine config machine init --space <slug>`,
   })
 })
 
@@ -166,7 +166,7 @@ test('a sealed-store failure is not reported as an unset secret', async () => {
       },
     ),
   ).rejects.toThrow(
-    `agent endpoint API key SEALED_KEY could not be resolved: hosted secret SEALED_KEY could not be opened: machine-key-missing\ncleared by: ${PLATFORM_SLUG} machine config machine init`,
+    `agent endpoint API key SEALED_KEY could not be resolved: hosted secret SEALED_KEY could not be opened: machine-key-missing\ncleared by: ${PLATFORM_SLUG} machine config machine init --space <slug>`,
   )
 })
 

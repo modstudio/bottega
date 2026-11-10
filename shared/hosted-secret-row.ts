@@ -11,7 +11,7 @@ export function localMachine() {
   const pair = readMachineKey()
   if (!pair)
     throw new Error(
-      `machine key is not initialized; run \`${PLATFORM_SLUG} machine config machine init\``,
+      `machine key is not initialized; run \`${PLATFORM_SLUG} machine config machine init --space <slug>\``,
     )
   return machineKeyInfo(pair)
 }

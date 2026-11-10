@@ -7,8 +7,8 @@ import { ConfigServiceError } from './record-config-error.ts'
 import { assertRecordMigrationsCurrent } from './record-migration-requirement.ts'
 import { recordPool } from './record-pool.ts'
 
-const claimOrRevokeRemedy = `run \`${PLATFORM_SLUG} machine config machine init\` on each machine to claim it, or revoke it with \`${PLATFORM_SLUG} machine config machine revoke <keyId>\`, then retry`
-const preserveDekRemedy = `from one of the member's machines, trust a machine of a remaining config-access holder with \`${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey>\` so the data key is wrapped for it, then retry`
+const claimOrRevokeRemedy = `run \`${PLATFORM_SLUG} machine config machine init --space <slug>\` on each machine to claim it, or revoke it with \`${PLATFORM_SLUG} machine config machine revoke <keyId>\`, then retry`
+const preserveDekRemedy = `from one of the member's machines, trust a machine of a remaining config-access holder with \`${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey> --space <slug>\` so the data key is wrapped for it, then retry`
 
 export async function assertConfigAccessRemovalSafe(
   tx: SQL,

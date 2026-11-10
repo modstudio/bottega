@@ -118,8 +118,8 @@ function wrapRow(row: Record<string, unknown>): DataKeyWrap {
   }
 }
 
-const withdrawnConfigAccessRemedy = `ask a space owner or admin to grant config access, run \`${PLATFORM_SLUG} machine config machine init\` to replace the revoked key, then trust the new key from a machine that holds config access with \`${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey>\``
-const machineClaimRemedy = `run \`${PLATFORM_SLUG} machine config machine init\` on that machine`
+const withdrawnConfigAccessRemedy = `ask a space owner or admin to grant config access, run \`${PLATFORM_SLUG} machine config machine init --space <slug>\` to replace the revoked key, then trust the new key from a machine that holds config access with \`${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey> --space <slug>\``
+const machineClaimRemedy = `run \`${PLATFORM_SLUG} machine config machine init --space <slug>\` on that machine`
 
 function revokedMachineRefusal(condition: string): ConfigServiceError {
   return new ConfigServiceError(`${condition}; ${withdrawnConfigAccessRemedy}`, 422)
@@ -847,7 +847,7 @@ export async function registerMachineKey(
       )
     if (row.user_id != null && String(row.user_id) !== input.userId)
       throw new ConfigServiceError(
-        `machine key ${input.keyId} belongs to another user; register from the owning user's machine, or initialize a new key on this machine with \`${PLATFORM_SLUG} machine config machine init\``,
+        `machine key ${input.keyId} belongs to another user; register from the owning user's machine, or initialize a new key on this machine with \`${PLATFORM_SLUG} machine config machine init --space <slug>\``,
         409,
       )
     return {

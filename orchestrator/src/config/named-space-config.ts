@@ -88,7 +88,7 @@ export async function machineRegister(
   const pair = readMachineKey(env)
   if (!pair)
     throw new Error(
-      `machine key is not initialized; run \`${PLATFORM_SLUG} machine config machine init\``,
+      `machine key is not initialized; run \`${PLATFORM_SLUG} machine config machine init --space ${selectedSpace.slug}\``,
     )
   const keyId = await machineKeyId(pair.publicKey)
   const publicKey = encoded(pair.publicKey)
@@ -154,7 +154,7 @@ export async function machineTrustInSpace(
   const pair = readMachineKey(env)
   if (!pair)
     throw new Error(
-      `machine key is not initialized; run \`${PLATFORM_SLUG} machine config machine init\``,
+      `machine key is not initialized; run \`${PLATFORM_SLUG} machine config machine init --space ${selectedSpace.slug}\``,
     )
   const localKeyId = await machineKeyId(pair.publicKey)
   try {

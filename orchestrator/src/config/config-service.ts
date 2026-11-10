@@ -268,7 +268,7 @@ export async function machineTrust(
     throw new Error('machine key id does not match public key')
   const remote = await unpinServerRevoked(client, destination)
   const registered = remote.find((item) => item.keyId === keyId)
-  const refusal = machineTrustRefusal(keyId, registered)
+  const refusal = machineTrustRefusal(keyId, registered, '<slug>')
   if (refusal) throw new Error(refusal)
   await pinTrustedMachine(keyId, publicBytes, label)
   const machine = await localMachine()

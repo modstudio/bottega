@@ -54,7 +54,7 @@ export async function hostedIdentity(
 ): Promise<{ spaceId: string; userId: string }> {
   if (!pinned)
     throw new Error(
-      `hosted config machine is not initialized; run \`${PLATFORM_SLUG} machine config machine init\``,
+      `hosted config machine is not initialized; run \`${PLATFORM_SLUG} machine config machine init --space <slug>\``,
     )
   const current = await client.whoami()
   if (!current.activeSpaceId) throw new Error(RECORD_ACTIVE_SPACE_REMEDY)
@@ -72,7 +72,7 @@ export async function destinationHostedIdentity(
 ): Promise<HostedConfigIdentity> {
   if (!pinned)
     throw new Error(
-      `hosted config machine is not initialized; run \`${PLATFORM_SLUG} machine config machine init\``,
+      `hosted config machine is not initialized; run \`${PLATFORM_SLUG} machine config machine init --space <slug>\``,
     )
   const current = await client.whoami()
   if (current.user.id !== pinned.userId) throw new Error(pinnedUserMismatchRemedy(pinned.userId))
