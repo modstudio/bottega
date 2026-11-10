@@ -35,6 +35,7 @@ import {
   mayCloseOnAgentSelfRuling,
 } from './workflow-floor.ts'
 import { workflowReadSpaceFor } from './workflow-read-space.ts'
+import { workflowHostedSpace } from './workflow-hosted-space.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
 import { workflowPromotionReport } from './workflow-shared-promotion.ts'
 import {
@@ -603,11 +604,6 @@ export const setStepCatalogueLocal = (
   return lifecycle.write(CATALOGUE, definition, reason, author, 'set', d)
 }
 const writeAuthor = (value?: string) => value?.trim() || sessionId() || 'unknown'
-async function activeSpace(d?: Database, project?: string, destinationSpaceId?: string) {
-  const spaceId = project && d ? effectiveProjectSpace(d, project) : destinationSpaceId
-  if (!spaceId) throw new Error('workflow catalogue write has no record space')
-  return spaceId
-}
 function catalogueDraft(
   event: 'set' | 'fork' | 'import',
   definition: unknown,
@@ -628,7 +624,7 @@ function catalogueDraft(
       if (event === 'import') requireImportableCatalogue(definition)
       else requireCatalogue(definition)
       if (!reason?.trim()) throw new Error('reason is required')
-      const spaceId = await activeSpace(d, project, destinationSpaceId)
+      const spaceId = workflowHostedSpace(d, project, destinationSpaceId, effectiveProjectSpace)
       const result = await recordApiClient().draftWorkflow!(
         {
           kind: 'step_catalogue',
@@ -664,7 +660,7 @@ export const forkStepCatalogue = (
     },
     hosted: async () => {
       if (!reason?.trim()) throw new Error('reason is required')
-      const spaceId = await activeSpace(d, project)
+      const spaceId = workflowHostedSpace(d, project, undefined, effectiveProjectSpace)
       const result = await recordApiClient().draftWorkflow!(
         {
           kind: 'step_catalogue',
@@ -703,7 +699,12 @@ export const retireStepCatalogue = (
     local: () => lifecycle.retire(CATALOGUE, n, reason, author, d),
     hosted: async () => {
       if (!reason?.trim()) throw new Error('reason is required')
-      const spaceId = await activeSpace(undefined, undefined, destinationSpaceId),
+      const spaceId = workflowHostedSpace(
+          d,
+          undefined,
+          destinationSpaceId,
+          effectiveProjectSpace,
+        ),
         current = d
           .query<{ n: number }, [string]>(
             `SELECT v.n FROM step_catalogue_version v JOIN step_catalogue c ON c.record_id=v.catalogue_record_id WHERE c.slug='shared' AND c.space_id=? AND v.status='production' AND v.superseded_at IS NULL`,
@@ -865,7 +866,7 @@ export function promoteStepCatalogue(
     },
     hosted: async () => {
       if (!reason?.trim()) throw new Error('reason is required')
-      const spaceId = await activeSpace(d, project, destinationSpaceId),
+      const spaceId = workflowHostedSpace(d, project, destinationSpaceId, effectiveProjectSpace),
         target = selectedStepCatalogue(n, d, spaceId)
       if (target.status === 'retired') throw new Error(`step catalogue version ${n} is not a draft`)
       const decision = await promoteSharedStepCatalogue(

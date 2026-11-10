@@ -650,7 +650,7 @@ export function retireWorkflow(
     local: () => workflowLifecycle.retire(slug, n, reasonValue, authorValue, d),
     hosted: async () => {
       if (!reasonValue?.trim()) throw new Error('reason is required')
-      const spaceId = workflowHostedSpace(d, undefined, destinationSpaceId)
+      const spaceId = workflowHostedSpace(d, undefined, destinationSpaceId, effectiveProjectSpace)
       hostedProductionCatalogue(d, spaceId)
       const current = d
         .query<{ n: number }, [string, string]>(
@@ -694,7 +694,7 @@ export function forkWorkflow(
     },
     hosted: async () => {
       if (!reason?.trim()) throw new Error('reason is required')
-      const spaceId = workflowHostedSpace(d, undefined, destinationSpaceId)
+      const spaceId = workflowHostedSpace(d, undefined, destinationSpaceId, effectiveProjectSpace)
       const catalogue = hostedProductionCatalogue(d, spaceId)
       requireValid(selectedWorkflow(slug, from, d, spaceId).definition, undefined, catalogue)
       const result = await recordApiClient().draftWorkflow!(
