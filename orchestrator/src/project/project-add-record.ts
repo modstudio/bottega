@@ -36,7 +36,6 @@ export async function projectAddDecision(input: {
     ...input,
     hostedProjects,
     memberships,
-    activeSpaceId: identity.activeSpaceId,
   })
   return decision
 }
