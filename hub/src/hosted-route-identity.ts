@@ -1,3 +1,6 @@
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { noDestinationWriteCause } from '../../shared/record-no-destination-write-contract.ts'
+import { noDestinationWriteCounter } from '../../shared/record-no-destination-write-counter.ts'
 import {
   hostedRequestSafetyStatement,
   RECORD_SIGN_IN_REMEDY,
@@ -7,6 +10,7 @@ import {
   type RecordSpaceMembership,
 } from '../../shared/record-space-membership.ts'
 import { recordSpaceRequestDecision } from '../../shared/record-space-request.ts'
+import { hostedNoDestinationWriteDecision } from './hosted-no-destination-write-decision.ts'
 
 type RecordIdentity = {
   userId: string
@@ -72,6 +76,16 @@ export function identityRefusal(identity: TaskSpaceIdentity): Response | null {
   return null
 }
 
+export function refusedSpaceResponse(space: string): Response {
+  return Response.json(
+    {
+      error: `record space '${space}' is not among the caller's memberships`,
+      remedy: `Run \`${PLATFORM_SLUG} record space list\` and choose a space where the caller is a member.`,
+    },
+    { status: 403 },
+  )
+}
+
 export function assertAuthenticatedIdentity(
   identity: TaskSpaceIdentity,
 ): asserts identity is Extract<TaskSpaceIdentity, { kind: 'authenticated' }> {
@@ -83,6 +97,9 @@ export async function taskSpaceIdentity(
   base: string,
   fetchImpl: typeof fetch,
   honorRequestedSpace: boolean,
+  dependencies: {
+    counter?: typeof noDestinationWriteCounter
+  } = {},
 ): Promise<TaskSpaceIdentity> {
   const authorization = request.headers.get('authorization')
   if (!authorization) return { kind: 'unauthenticated' }
@@ -106,6 +123,26 @@ export async function taskSpaceIdentity(
     identity.memberships,
   )
   if (!decision.allowed) return { kind: 'refused-space', refusedSpace: decision.requestedSpace }
+  const measurement = hostedNoDestinationWriteDecision({
+    method: request.method,
+    requestedSpacePresent: request.headers.has('x-record-space'),
+    routeHonorsRequestedSpace: honorRequestedSpace,
+    identityOutcome: 'authenticated',
+    pathname: new URL(request.url).pathname,
+  })
+  if (measurement.counted) {
+    try {
+      ;(dependencies.counter ?? noDestinationWriteCounter)({
+        record: {
+          spaceId: identity.activeSpaceId,
+          route: measurement.route,
+          cause: noDestinationWriteCause(request.headers.get('user-agent')),
+        },
+      })
+    } catch (error) {
+      console.error('record-write no-destination recording failed', error)
+    }
+  }
   return {
     kind: 'authenticated',
     userId: identity.userId,

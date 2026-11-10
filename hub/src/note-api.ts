@@ -24,6 +24,7 @@ import type { HostedRouteConfig } from './hosted-route-config.ts'
 import {
   assertAuthenticatedIdentity,
   identityRefusal,
+  refusedSpaceResponse,
   taskSpaceIdentity,
 } from './hosted-route-identity.ts'
 import { HOSTED_PROMOTION_TITLE_REFUSAL, requiredPromotionTitle } from './note-promotion-body.ts'
@@ -196,14 +197,7 @@ export async function noteApi(
   )
   const refusal = identityRefusal(who)
   if (refusal) return refusal
-  if (who.kind === 'refused-space')
-    return json(
-      {
-        error: `record space '${who.refusedSpace}' is not among the caller's memberships`,
-        remedy: `Run \`${PLATFORM_SLUG} record space list\` and choose a space where the caller is a member.`,
-      },
-      403,
-    )
+  if (who.kind === 'refused-space') return refusedSpaceResponse(who.refusedSpace)
   assertAuthenticatedIdentity(who)
   const body =
     request.method === 'GET'

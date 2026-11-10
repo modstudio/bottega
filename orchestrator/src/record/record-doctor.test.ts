@@ -4,12 +4,14 @@ import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { ConfigClientError } from '../../../shared/config-client.ts'
 import { HostedSecretError } from '../../../shared/hosted-secrets.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { seedWorkflows } from '../workflow/workflow-seeds.ts'
 import {
   agentSecretChecks,
   decideRecordDoctorChecks,
+  hostedHubDestinationlessWriteFacts,
   localQuestionCountForSpace,
   recordDoctorExitCode,
   redactRecordPasswords,
@@ -43,6 +45,7 @@ describe('record doctor decisions', () => {
     },
     quarantinedOutboxRows: [],
     noDestinationWrites: { processStartedAt: '2026-11-09T00:00:00.000Z', counts: [] },
+    hubNoDestinationWrites: { processStartedAt: '2026-11-09T00:00:00.000Z', counts: [] },
     operatorConnectionPresent: false,
   } as const
 
@@ -78,6 +81,7 @@ describe('record doctor decisions', () => {
       'local runs the record does not reflect',
       'local outbox quarantined rows',
       'destination-less hosted writes',
+      'destination-less hosted hub writes',
     ])
     expect(JSON.stringify(checks)).not.toContain('BOTTEGA_RECORD_URL')
     expect(JSON.stringify(checks)).not.toContain('BETTER_AUTH_SECRET')
@@ -112,6 +116,31 @@ describe('record doctor decisions', () => {
     expect(checks.find((check) => check.name === 'destination-less hosted writes')?.detail).toBe(
       failure,
     )
+  })
+
+  test('hosted hub destination-less counts pass without failing doctor', () => {
+    const checks = decideRecordDoctorChecks({
+      ...healthyFacts,
+      hubNoDestinationWrites: {
+        processStartedAt: '2026-11-09T00:00:00.000Z',
+        counts: [{ spaceId: 'space-1', route: '/v1/tasks', cause: 'cli/1', occurrences: 2 }],
+      },
+    })
+    expect(recordDoctorExitCode(checks)).toBe(0)
+    expect(
+      checks.find((check) => check.name === 'destination-less hosted hub writes')?.detail,
+    ).toBe('2 since 2026-11-09T00:00:00.000Z\n2  /v1/tasks  cli/1')
+  })
+
+  test('hosted hub destination-less failures fail doctor and never print zero', () => {
+    const checks = decideRecordDoctorChecks({
+      ...healthyFacts,
+      hubNoDestinationWrites: undefined,
+      hubNoDestinationWritesFailure: 'hub unavailable; retry',
+    })
+    const check = checks.find((row) => row.name === 'destination-less hosted hub writes')
+    expect(check).toMatchObject({ status: 'fail', detail: 'hub unavailable; retry' })
+    expect(check?.detail).not.toContain('0 since')
   })
 
   test('an accepted session with no memberships fails the active-space check', () => {
@@ -384,6 +413,58 @@ describe('record doctor decisions', () => {
       }),
     ).toBe(1)
     database.close()
+  })
+})
+
+describe('hosted hub destination-less write facts', () => {
+  test('reports an unset hosted URL with a remedy', async () => {
+    expect(await hostedHubDestinationlessWriteFacts({ token: 'token' })).toEqual({
+      hubNoDestinationWritesFailure: `BOTTEGA_HOSTED_URL is not set; run \`${PLATFORM_SLUG} record use <address>\``,
+    })
+  })
+
+  test('reads zero counts with the record session bearer', async () => {
+    const authorizations: Array<string | null> = []
+    const result = await hostedHubDestinationlessWriteFacts({
+      hostedUrl: 'https://hub.example.test/',
+      token: 'secret-token',
+      fetchImpl: (async (_url: string | URL | Request, init?: RequestInit) => {
+        authorizations.push(new Headers(init?.headers as HeadersInit).get('authorization'))
+        return Response.json({ processStartedAt: '2026-11-10T00:00:00.000Z', counts: [] })
+      }) as unknown as typeof fetch,
+    })
+    expect(authorizations).toEqual(['Bearer secret-token'])
+    expect(result.hubNoDestinationWrites?.counts).toEqual([])
+  })
+
+  test('reports unreachable and non-success responses with remedies', async () => {
+    const unreachable = await hostedHubDestinationlessWriteFacts({
+      hostedUrl: 'https://hub.example.test',
+      token: 'token',
+      fetchImpl: (async () => {
+        throw new Error('connection refused')
+      }) as unknown as typeof fetch,
+    })
+    expect(unreachable.hubNoDestinationWritesFailure).toContain('connection refused')
+    expect(unreachable.hubNoDestinationWritesFailure).toContain('check BOTTEGA_HOSTED_URL')
+
+    const nonSuccess = await hostedHubDestinationlessWriteFacts({
+      hostedUrl: 'https://hub.example.test',
+      token: 'token',
+      fetchImpl: (async () => new Response('no', { status: 503 })) as unknown as typeof fetch,
+    })
+    expect(nonSuccess.hubNoDestinationWritesFailure).toContain('returned 503')
+    expect(nonSuccess.hubNoDestinationWritesFailure).toContain('check BOTTEGA_HOSTED_URL')
+  })
+
+  test('reports a 401 with the record sign-in remedy', async () => {
+    const result = await hostedHubDestinationlessWriteFacts({
+      hostedUrl: 'https://hub.example.test',
+      token: 'token',
+      fetchImpl: (async () => new Response('no', { status: 401 })) as unknown as typeof fetch,
+    })
+    expect(result.hubNoDestinationWritesFailure).toContain('returned 401')
+    expect(result.hubNoDestinationWritesFailure).toContain(RECORD_SIGN_IN_REMEDY)
   })
 })
 

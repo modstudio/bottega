@@ -4,7 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { resolveEnvValuesWithHosted } from '../../../shared/env-source.ts'
+import { readEnvValues, resolveEnvValuesWithHosted } from '../../../shared/env-source.ts'
 import {
   operatorCredentialResolveCommand,
   RECORD_MIGRATE_OPERATOR_CREDENTIAL,
@@ -15,6 +15,12 @@ import {
   RECORD_READER_ROLE,
 } from '../../../shared/record/schema.ts'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
+import {
+  NO_DESTINATION_WRITES_ROUTE,
+  type NoDestinationWriteReport,
+  type NoDestinationWriteReportRow,
+  parseNoDestinationWriteReport,
+} from '../../../shared/record-no-destination-write-contract.ts'
 import {
   RECORD_ACTIVE_SPACE_REMEDY,
   RECORD_SIGN_IN_REMEDY,
@@ -39,11 +45,7 @@ import { machineId } from './machine-identity.ts'
 import { quarantinedOutboxRows } from './outbox-quarantine.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
 import { recordAttributionFailure } from './record-attribution.ts'
-import {
-  NO_DESTINATION_WRITES_ROUTE,
-  type NoDestinationWriteReport,
-  type NoDestinationWriteReportRow,
-} from './record-no-destination-write-contract.ts'
+import { bearerHeaders } from './record-auth.ts'
 import { recordPool } from './record-pool.ts'
 import { storedRecordToken } from './record-session.ts'
 
@@ -81,11 +83,15 @@ export type RecordDoctorFacts = {
   agentCredentialChecks?: readonly RecordDoctorCheck[]
   noDestinationWrites?: NoDestinationWriteReport
   noDestinationWritesFailure?: string
+  hubNoDestinationWrites?: NoDestinationWriteReport
+  hubNoDestinationWritesFailure?: string
 }
 
 const API_CONFIGURATION_REMEDY = `run \`${PLATFORM_SLUG} record use <address>\``
 const API_REACHABILITY_REMEDY =
   'check BOTTEGA_RECORD_API_URL and make the hosted record API reachable, then retry'
+const HOSTED_APP_REACHABILITY_REMEDY =
+  'check BOTTEGA_HOSTED_URL and make the hosted hub reachable, then retry'
 export function recordDoctorExitCode(checks: readonly RecordDoctorCheck[]): 0 | 1 {
   return checks.some((check) => check.status === 'fail') ? 1 : 0
 }
@@ -112,22 +118,43 @@ function destinationlessWriteDetail(
   ].join('\n')
 }
 
-function destinationlessWriteCheck(facts: RecordDoctorFacts): RecordDoctorCheck {
-  return facts.noDestinationWrites
+function destinationlessCheck(
+  name: string,
+  report: NoDestinationWriteReport | undefined,
+  failure: string | undefined,
+  fallback: string,
+): RecordDoctorCheck {
+  return report
     ? {
-        name: 'destination-less hosted writes',
+        name,
         status: 'pass',
-        detail: destinationlessWriteDetail(facts.noDestinationWrites),
+        detail: destinationlessWriteDetail(report),
         section: 'customer',
       }
     : {
-        name: 'destination-less hosted writes',
+        name,
         status: 'fail',
-        detail:
-          facts.noDestinationWritesFailure ??
-          `hosted route ${NO_DESTINATION_WRITES_ROUTE} was not measured; ${API_REACHABILITY_REMEDY}`,
+        detail: failure ?? fallback,
         section: 'customer',
       }
+}
+
+function destinationlessWriteCheck(facts: RecordDoctorFacts): RecordDoctorCheck {
+  return destinationlessCheck(
+    'destination-less hosted writes',
+    facts.noDestinationWrites,
+    facts.noDestinationWritesFailure,
+    `hosted route ${NO_DESTINATION_WRITES_ROUTE} was not measured; ${API_REACHABILITY_REMEDY}`,
+  )
+}
+
+function hostedHubDestinationlessWriteCheck(facts: RecordDoctorFacts): RecordDoctorCheck {
+  return destinationlessCheck(
+    'destination-less hosted hub writes',
+    facts.hubNoDestinationWrites,
+    facts.hubNoDestinationWritesFailure,
+    `hosted hub route ${NO_DESTINATION_WRITES_ROUTE} was not measured; ${HOSTED_APP_REACHABILITY_REMEDY}`,
+  )
 }
 
 function attributionFailureCheck(failure: string | null): RecordDoctorCheck {
@@ -295,6 +322,7 @@ export function decideRecordDoctorChecks(facts: RecordDoctorFacts): RecordDoctor
   checks.push(...(facts.agentCredentialChecks ?? []))
 
   checks.push(destinationlessWriteCheck(facts))
+  checks.push(hostedHubDestinationlessWriteCheck(facts))
 
   if (facts.operatorConnectionPresent)
     checks.push(
@@ -453,6 +481,37 @@ async function destinationlessWriteFacts(client: ReturnType<typeof recordApiClie
   }
 }
 
+export async function hostedHubDestinationlessWriteFacts(input: {
+  hostedUrl?: string
+  token: string
+  fetchImpl?: typeof fetch
+}): Promise<{
+  hubNoDestinationWrites?: NoDestinationWriteReport
+  hubNoDestinationWritesFailure?: string
+}> {
+  if (!input.hostedUrl)
+    return {
+      hubNoDestinationWritesFailure: `BOTTEGA_HOSTED_URL is not set; run \`${PLATFORM_SLUG} record use <address>\``,
+    }
+  try {
+    const response = await (input.fetchImpl ?? fetch)(
+      `${input.hostedUrl.replace(/\/$/, '')}${NO_DESTINATION_WRITES_ROUTE}`,
+      { headers: bearerHeaders(input.token) },
+    )
+    if (!response.ok)
+      return {
+        hubNoDestinationWritesFailure: `hosted hub route ${NO_DESTINATION_WRITES_ROUTE} returned ${response.status}; ${response.status === 401 ? RECORD_SIGN_IN_REMEDY : HOSTED_APP_REACHABILITY_REMEDY}`,
+      }
+    return {
+      hubNoDestinationWrites: parseNoDestinationWriteReport(await response.json(), 'hosted hub'),
+    }
+  } catch (error) {
+    return {
+      hubNoDestinationWritesFailure: `hosted hub route ${NO_DESTINATION_WRITES_ROUTE} failed: ${error instanceof Error ? error.message : String(error)}; ${HOSTED_APP_REACHABILITY_REMEDY}`,
+    }
+  }
+}
+
 async function customerFacts(
   projects: Array<{ name: string; space: string | null }>,
   database: Database,
@@ -466,6 +525,12 @@ async function customerFacts(
   let sessionFailure: string | undefined
   let identity: Awaited<ReturnType<ReturnType<typeof recordApiClient>['whoami']>> | null = null
   let measurement: Awaited<ReturnType<typeof destinationlessWriteFacts>> = {}
+  const hubMeasurement = token
+    ? await hostedHubDestinationlessWriteFacts({
+        hostedUrl: readEnvValues(['BOTTEGA_HOSTED_URL']).BOTTEGA_HOSTED_URL,
+        token,
+      })
+    : { hubNoDestinationWritesFailure: RECORD_SIGN_IN_REMEDY }
   if (!apiConfigured) {
     apiFailure = API_CONFIGURATION_REMEDY
     sessionFailure = RECORD_SIGN_IN_REMEDY
@@ -505,6 +570,7 @@ async function customerFacts(
     memberships: parseRecordSpaceMemberships(identity?.memberships),
     projects,
     ...measurement,
+    ...hubMeasurement,
     pendingOutboxRows: pendingOutboxCount(database),
     runRecordBackfill: inspectRunRecordBackfill(database),
     quarantinedOutboxRows: quarantinedOutboxRows(database).map((row) => ({

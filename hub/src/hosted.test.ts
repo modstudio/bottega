@@ -190,3 +190,69 @@ describe('hosted index', () => {
     }
   })
 })
+
+describe('hosted destination-less write report', () => {
+  const config = {
+    recordApiUrl: 'https://api.example.test',
+    recordDatabaseUrl: {} as never,
+  }
+  const identityFetch = (async (request: RequestInfo | URL) => {
+    if (!String(request).endsWith('/v1/whoami')) throw new Error('unexpected request')
+    return Response.json({
+      user: { id: 'user-a', name: 'A' },
+      activeSpaceId: 'space-a',
+      memberships: [
+        { space_id: 'space-a', slug: 'a', permission: 'write' },
+        { space_id: 'space-b', slug: 'b', permission: 'read' },
+      ],
+    })
+  }) as typeof fetch
+
+  test('refuses an unauthenticated caller', async () => {
+    const response = await hostedRequestHandler(config)(
+      new Request('https://hub.example.test/v1/health/no-destination-writes'),
+    )
+    expect(response.status).toBe(401)
+  })
+
+  test('refuses a requested space outside the caller memberships with JSON guidance', async () => {
+    const response = await hostedRequestHandler(config, {
+      noDestinationWrites: { fetch: identityFetch },
+    })(
+      new Request('https://hub.example.test/v1/health/no-destination-writes', {
+        headers: {
+          authorization: 'Bearer token',
+          'x-record-space': 'space-c',
+        },
+      }),
+    )
+    expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({
+      error: "record space 'space-c' is not among the caller's memberships",
+      remedy: `Run \`${PLATFORM_SLUG} record space list\` and choose a space where the caller is a member.`,
+    })
+  })
+
+  test('reports only spaces in the authenticated caller memberships', async () => {
+    const reads: string[][] = []
+    const response = await hostedRequestHandler(config, {
+      noDestinationWrites: {
+        fetch: identityFetch,
+        counter: ((input: { read: string[] }) => {
+          reads.push(input.read)
+          return { processStartedAt: '2026-11-10T00:00:00.000Z', counts: [] }
+        }) as never,
+      },
+    })(
+      new Request('https://hub.example.test/v1/health/no-destination-writes', {
+        headers: { authorization: 'Bearer token' },
+      }),
+    )
+    expect(response.status).toBe(200)
+    expect(reads).toEqual([['space-a', 'space-b']])
+    expect(await response.json()).toEqual({
+      processStartedAt: '2026-11-10T00:00:00.000Z',
+      counts: [],
+    })
+  })
+})

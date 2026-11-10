@@ -9,6 +9,10 @@ import { recordServiceUrl } from '../../shared/record/service-connection.ts'
 import { appStaticPath, resolveAppStatic } from './app-static.ts'
 import { changeApi } from './change-api.ts'
 import { hostedHealthResponse } from './hosted-health.ts'
+import {
+  type HostedNoDestinationWriteDependencies,
+  hostedNoDestinationWriteApi,
+} from './hosted-no-destination-write-api.ts'
 import type { HostedRouteConfig } from './hosted-route-config.ts'
 import { hostedVersionResponse } from './hosted-version.ts'
 import { noteApi } from './note-api.ts'
@@ -28,6 +32,7 @@ type HostedRouteDependencies = {
   waitingEmail?: Parameters<typeof operatorWaitingEmailApi>[2]
   reports?: Parameters<typeof reportApi>[2]
   publicDocsText?: Parameters<typeof publicDocsTextApi>[1]
+  noDestinationWrites?: HostedNoDestinationWriteDependencies
 }
 
 function transformDocsIndex(response: Response, pathname: string): Response {
@@ -66,6 +71,18 @@ export function hostedServerConfig(environment: ServerEnvironment = process.env)
   return { port, hostname: '0.0.0.0', recordApiUrl, recordDatabaseUrl }
 }
 
+async function hostedDiagnosticResponse(
+  request: Request,
+  config: HostedRouteConfig,
+  dependencies: HostedRouteDependencies,
+): Promise<Response | null> {
+  const health = hostedHealthResponse(request)
+  if (health) return health
+  const version = hostedVersionResponse(request, readBuiltCommit())
+  if (version) return version
+  return hostedNoDestinationWriteApi(request, config, dependencies.noDestinationWrites)
+}
+
 export function hostedRequestHandler(
   config: HostedRouteConfig,
   dependencies: HostedRouteDependencies = {},
@@ -73,10 +90,8 @@ export function hostedRequestHandler(
   const dist = join(resolveInstallRoot(import.meta.dir, process.env), 'hub/web/dist')
   return async (req: Request): Promise<Response> => {
     const url = new URL(req.url)
-    const health = hostedHealthResponse(req)
-    if (health) return health
-    const version = hostedVersionResponse(req, readBuiltCommit())
-    if (version) return version
+    const diagnostic = await hostedDiagnosticResponse(req, config, dependencies)
+    if (diagnostic) return diagnostic
     const changes = await changeApi(req, config, dependencies.changes)
     if (changes) return changes
     const tasks = await taskApi(req, config, dependencies.tasks)
