@@ -450,10 +450,7 @@ const intentAppliers: { [K in TaskFlowIntent]: Applier<K> } = {
   },
 }
 
-async function withTaskFlowTenant<T>(
-  input: Tenant,
-  apply: (tx: SQL) => Promise<T>,
-): Promise<T> {
+async function withTaskFlowTenant<T>(input: Tenant, apply: (tx: SQL) => Promise<T>): Promise<T> {
   return await recordPool(input.url).begin(async (tx) => {
     await bindTenant(tx, input)
     return apply(tx)
