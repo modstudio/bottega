@@ -190,6 +190,41 @@ function MemberRowActions({
   )
 }
 
+function WithdrawAccessDialog({
+  open,
+  pending,
+  disabled,
+  onCancel,
+  onWithdraw,
+}: {
+  open: boolean
+  pending: boolean
+  disabled: boolean
+  onCancel: () => void
+  onWithdraw: () => void
+}) {
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onCancel()
+      }}
+      title="Withdraw config access"
+      description="Withdrawing config access revokes this member's machines and stops them reading this space's secrets."
+      footer={
+        <>
+          <Button variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button variant="danger" disabled={pending || disabled} onClick={onWithdraw}>
+            Withdraw
+          </Button>
+        </>
+      }
+    />
+  )
+}
+
 function MembersRoute() {
   if (!isHostedMode()) return <Navigate to="/" />
   return <MembersPage />
@@ -280,6 +315,24 @@ function MembersPage() {
   )
 }
 
+function useMemberMutations(onChanged: () => Promise<void>) {
+  return {
+    changeRole: useMutation({
+      mutationFn: ({ id, role }: { id: string; role: OrganizationRole }) =>
+        updateOrganizationMemberRole(id, role),
+      onSuccess: onChanged,
+    }),
+    remove: useMutation({ mutationFn: removeOrganizationMember, onSuccess: onChanged }),
+    grant: useMutation(trpc.record.grantConfigAccess.mutationOptions({ onSuccess: onChanged })),
+    withdraw: useMutation(
+      trpc.record.withdrawConfigAccess.mutationOptions({ onSuccess: onChanged }),
+    ),
+    setPermission: useMutation(
+      trpc.record.setMemberPermission.mutationOptions({ onSuccess: onChanged }),
+    ),
+  }
+}
+
 function MemberTable({
   rows,
   callerRole,
@@ -300,19 +353,7 @@ function MemberTable({
   const [removeConfirm, setRemoveConfirm] = useState<string | null>(null)
   const [withdrawTarget, setWithdrawTarget] = useState<MemberAccessRow | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
-  const changeRole = useMutation({
-    mutationFn: ({ id, role }: { id: string; role: OrganizationRole }) =>
-      updateOrganizationMemberRole(id, role),
-    onSuccess: onChanged,
-  })
-  const remove = useMutation({ mutationFn: removeOrganizationMember, onSuccess: onChanged })
-  const grant = useMutation(trpc.record.grantConfigAccess.mutationOptions({ onSuccess: onChanged }))
-  const withdraw = useMutation(
-    trpc.record.withdrawConfigAccess.mutationOptions({ onSuccess: onChanged }),
-  )
-  const setPermission = useMutation(
-    trpc.record.setMemberPermission.mutationOptions({ onSuccess: onChanged }),
-  )
+  const { changeRole, remove, grant, withdraw, setPermission } = useMemberMutations(onChanged)
   const canEditMember = (member: OrganizationMember) =>
     callerRole === 'owner' || (callerRole === 'admin' && member.role !== 'owner')
   const act = async (id: string, operation: () => Promise<unknown>) => {
@@ -388,23 +429,12 @@ function MemberTable({
         )}
         empty={{ title: 'No members.' }}
       />
-      <Dialog
+      <WithdrawAccessDialog
         open={withdrawTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setWithdrawTarget(null)
-        }}
-        title="Withdraw config access"
-        description="Withdrawing config access revokes this member's machines and stops them reading this space's secrets."
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setWithdrawTarget(null)}>
-              Cancel
-            </Button>
-            <Button variant="danger" disabled={withdraw.isPending} onClick={withdrawAccess}>
-              Withdraw
-            </Button>
-          </>
-        }
+        pending={withdraw.isPending}
+        disabled={Boolean(memberWriteRefusal)}
+        onCancel={() => setWithdrawTarget(null)}
+        onWithdraw={withdrawAccess}
       />
     </>
   )
