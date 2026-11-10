@@ -6,7 +6,10 @@ import {
   docLintProfile,
   introducedDocFindings,
   lintDoc,
+  STALE_REFERENCE_RULES,
+  summarizeDocLint,
 } from './doc-lint.ts'
+import { storedDocLintRefusal } from './doc-lint-adapter.ts'
 
 const checkout = (paths: string[]): CanonLintInput => ({
   files: [],
@@ -30,6 +33,7 @@ const doc = (body: string, extra: Partial<Parameters<typeof lintDoc>[0]> = {}) =
   slug: 'guide',
   body,
   kind: 'working' as const,
+  status: 'current' as const,
   summary: 'Written summary.',
   ...extra,
 })
@@ -207,6 +211,148 @@ describe('stored document lint', () => {
     expect(lintDoc(doc('See `src/other.ts`.', { referenceProjects }))).toEqual([
       expect.objectContaining({ rule: 'doc/reference-path' }),
     ])
+  })
+
+  test('finished documents are exempt from stale path findings', () => {
+    const stale = doc('See `src/other.ts`.', { referenceProjects })
+    expect(lintDoc(stale)).toEqual([expect.objectContaining({ rule: 'doc/reference-path' })])
+    expect(lintDoc({ ...stale, status: 'draft' })).toEqual([
+      expect.objectContaining({ rule: 'doc/reference-path' }),
+    ])
+    expect(lintDoc({ ...stale, status: 'archived' })).toEqual([])
+    expect(lintDoc({ ...stale, status: 'superseded' })).toEqual([])
+  })
+
+  test('archiving or revising a finished document is never refused for its content', () => {
+    const current = doc('This was called legacy.')
+    expect(storedDocLintRefusal({ ...current, status: 'archived' }, current)).toBeNull()
+    expect(
+      storedDocLintRefusal(
+        { ...current, body: 'This was formerly legacy.', status: 'archived' },
+        { ...current, status: 'archived' },
+      ),
+    ).toBeNull()
+    expect(storedDocLintRefusal({ ...current, status: 'superseded' }, current)).toBeNull()
+  })
+
+  test('summarizes documents, errors, and stale reference errors by kind and status', () => {
+    expect(STALE_REFERENCE_RULES).toEqual(
+      new Set([
+        'doc/reference-path',
+        'doc/reference-symbol',
+        'doc/reference-heading',
+        'doc/reference-code',
+        'doc/reference-script',
+        'doc/line-anchor',
+      ]),
+    )
+    const summary = summarizeDocLint([
+      {
+        kind: 'working',
+        status: 'current',
+        findings: [
+          {
+            rule: 'doc/reference-path',
+            level: 'error',
+            line: 1,
+            message: 'stale path',
+            remedy: 'fix it',
+          },
+          {
+            rule: 'doc/line-anchor',
+            level: 'error',
+            line: 1,
+            message: 'line anchor',
+            remedy: 'fix it',
+          },
+          {
+            rule: 'doc/history',
+            level: 'warning',
+            line: 1,
+            message: 'history',
+            remedy: 'fix it',
+          },
+        ],
+      },
+      {
+        kind: 'article',
+        status: 'current',
+        findings: [
+          {
+            rule: 'doc/date',
+            level: 'error',
+            line: 1,
+            message: 'date',
+            remedy: 'fix it',
+          },
+        ],
+      },
+      { kind: 'working', status: 'archived', findings: [] },
+      { kind: 'working', status: 'archived', findings: [] },
+      { kind: 'article', status: 'superseded', findings: [] },
+      {
+        kind: 'article',
+        status: 'draft',
+        findings: [
+          {
+            rule: 'doc/reference-unverifiable',
+            level: 'error',
+            line: 1,
+            message: 'checkout unavailable',
+            remedy: 'fix it',
+          },
+        ],
+      },
+    ])
+
+    expect(summary).toContainEqual({
+      kind: 'working',
+      status: 'current',
+      documents: 1,
+      errors: 2,
+      staleReferenceErrors: 2,
+      unverifiableReferenceErrors: 0,
+    })
+    expect(summary).toContainEqual({
+      kind: 'article',
+      status: 'current',
+      documents: 1,
+      errors: 1,
+      staleReferenceErrors: 0,
+      unverifiableReferenceErrors: 0,
+    })
+    expect(summary).toContainEqual({
+      kind: 'working',
+      status: 'archived',
+      documents: 2,
+      errors: 0,
+      staleReferenceErrors: 0,
+      unverifiableReferenceErrors: 0,
+    })
+    expect(summary).toContainEqual({
+      kind: 'article',
+      status: 'superseded',
+      documents: 1,
+      errors: 0,
+      staleReferenceErrors: 0,
+      unverifiableReferenceErrors: 0,
+    })
+    expect(summary).toContainEqual({
+      kind: 'article',
+      status: 'draft',
+      documents: 1,
+      errors: 1,
+      staleReferenceErrors: 0,
+      unverifiableReferenceErrors: 1,
+    })
+    expect(summary).toContainEqual({
+      kind: 'working',
+      status: 'draft',
+      documents: 0,
+      errors: 0,
+      staleReferenceErrors: 0,
+      unverifiableReferenceErrors: 0,
+    })
   })
 
   test('a context item id beginning design does not invoke the design document shape', () => {

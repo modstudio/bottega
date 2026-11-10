@@ -579,14 +579,26 @@ describe('scoped operator docs', () => {
       .run('This was called legacy.', stored.record_id)
     const result = await command(['doc', 'lint', '--scope', 'global', '--json'])
     expect(result.code).toBe(1)
-    expect(JSON.parse(result.out)).toEqual([
-      expect.objectContaining({
-        slug: 'lint-me',
-        rule: 'doc/history',
-        level: 'error',
-        remedy: expect.any(String),
-      }),
-    ])
+    expect(JSON.parse(result.out)).toEqual({
+      findings: [
+        expect.objectContaining({
+          slug: 'lint-me',
+          rule: 'doc/history',
+          level: 'error',
+          remedy: expect.any(String),
+        }),
+      ],
+      summary: expect.arrayContaining([
+        {
+          kind: 'working',
+          status: 'current',
+          documents: 1,
+          errors: 1,
+          staleReferenceErrors: 0,
+          unverifiableReferenceErrors: 0,
+        },
+      ]),
+    })
   })
 
   test(`${PLATFORM_SLUG} doc lint prints warning findings without failing`, async () => {
@@ -603,6 +615,12 @@ describe('scoped operator docs', () => {
     const result = await command(['doc', 'lint', '--scope', 'global'])
     expect(result.code).toBe(0)
     expect(result.out).toContain('doc/history warning')
+    expect(result.out.indexOf('summary:')).toBeGreaterThan(
+      result.out.indexOf('doc/history warning'),
+    )
+    expect(result.out).toContain(
+      'working/current documents=1 errors=0 stale-reference-errors=0 unverifiable-reference-errors=0',
+    )
   })
 
   test(`${PLATFORM_SLUG} doc warnings lists standing warnings and says so when none`, async () => {

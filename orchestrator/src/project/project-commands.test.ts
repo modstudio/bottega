@@ -90,11 +90,23 @@ describe(`${PLATFORM_SLUG} project retire`, () => {
   })
 
   test('re-adding a retired name prints un-retired', async () => {
+    installRecordApiClient({
+      ...createMemoryRecordApiClient(),
+      whoami: async () => ({
+        user: { id: 'user-a' },
+        activeSpaceId: 'space-a',
+        personalSpaceId: 'space-a',
+        memberships: [{ space_id: 'space-a', slug: 'space-a', permission: 'write' }],
+      }),
+    })
     const path = mkdtempSync(join(tmpdir(), 'orch-unretire-'))
     upsertProject({ recordId: newRecordId(), name: 'readded', path })
     expect(retireProject('readded')).toBe('retired')
     expect(projects().some((project) => project.name === 'readded')).toBe(false)
-    const out = await runProject(['project', 'add', path], { name: 'readded' })
+    const out = await runProject(['project', 'add', path], {
+      name: 'readded',
+      space: 'space-a',
+    })
     expect(out).toContain('un-retired readded')
     expect(projectByName('readded')?.path).toBe(path)
   })
@@ -103,14 +115,20 @@ describe(`${PLATFORM_SLUG} project retire`, () => {
 test('hosted failure leaves the local register unchanged', async () => {
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'space-a',
+      personalSpaceId: 'space-a',
+      memberships: [{ space_id: 'space-a', slug: 'space-a', permission: 'write' }],
+    }),
     upsertProject: async () => {
       throw new Error(`record API 503\ncleared by: ${PLATFORM_SLUG} record doctor`)
     },
   })
   const path = mkdtempSync(join(tmpdir(), 'orch-hosted-fail-'))
-  await expect(runProject(['project', 'add', path], { name: 'hosted-fail' })).rejects.toThrow(
-    `cleared by: ${PLATFORM_SLUG} record doctor`,
-  )
+  await expect(
+    runProject(['project', 'add', path], { name: 'hosted-fail', space: 'space-a' }),
+  ).rejects.toThrow(`cleared by: ${PLATFORM_SLUG} record doctor`)
   expect(projectByName('hosted-fail')).toBeNull()
 })
 
@@ -273,7 +291,9 @@ test('project add refuses a failed catalogue pull with the named stream', async 
   })
   const path = mkdtempSync(join(tmpdir(), 'orch-catalogue-fail-'))
 
-  await expect(runProject(['project', 'add', path], { name: 'catalogue-fail' })).rejects.toThrow(
+  await expect(
+    runProject(['project', 'add', path], { name: 'catalogue-fail', space: 'target' }),
+  ).rejects.toThrow(
     `failed to pull workflow catalogue for record space target: workflow endpoint unavailable`,
   )
   expect(projectByName('catalogue-fail')).toBeNull()
@@ -468,7 +488,9 @@ test('project set keeps a stored key this binary does not know', async () => {
     name: string
     problems: string[]
   }[]
-  expect(listed.find((row) => row.name === 'settings-newer-binary')?.problems).toEqual([])
+  expect(listed.find((row) => row.name === 'settings-newer-binary')?.problems).toEqual([
+    `project settings-newer-binary has no declared record space; run \`${PLATFORM_SLUG} project set settings-newer-binary --space <slug>\``,
+  ])
 
   await runProject(['project', 'set', 'settings-newer-binary'], {
     settings: JSON.stringify({ checks: { spelling: true } }),
@@ -505,7 +527,9 @@ test('project set keeps a check name and a tracker verb this binary does not kno
     name: string
     problems: string[]
   }[]
-  expect(listed.find((row) => row.name === 'settings-newer-names')?.problems).toEqual([])
+  expect(listed.find((row) => row.name === 'settings-newer-names')?.problems).toEqual([
+    `project settings-newer-names has no declared record space; run \`${PLATFORM_SLUG} project set settings-newer-names --space <slug>\``,
+  ])
 
   await runProject(['project', 'set', 'settings-newer-names'], {
     settings: JSON.stringify({ gate: 'bun run check' }),

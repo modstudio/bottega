@@ -137,6 +137,7 @@ function assertImportedRecordDoc(
             slug: String(existing.slug),
             body: String(existing.body),
             kind: (existing.kind == null ? 'working' : String(existing.kind)) as DocKind,
+            status: (existing.status == null ? 'current' : String(existing.status)) as DocStatus,
           }
         : undefined,
     ),

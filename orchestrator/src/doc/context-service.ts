@@ -174,6 +174,9 @@ export async function dropContextItem(
     reason: `drop context item ${input.id}`,
     expectedRevision: input.expectedRevision,
     contextTask: task ?? undefined,
+    contextDropTarget: task
+      ? { kind: 'task', value: task.key }
+      : { kind: 'session', value: holder.slice('session:'.length) },
   })
   return { holder, task: task?.key ?? null, id: input.id, removed: true }
 }

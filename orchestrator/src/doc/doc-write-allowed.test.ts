@@ -359,6 +359,35 @@ describe('decideDocRevisionWrite', () => {
     })
   })
 
+  test('context removals name the removal verb that reached the revision refusal', () => {
+    const holder = 'task:01a1bf5e-5ce3-74de-9fc5-0698c26b4d91'
+    const cases = [
+      {
+        op: 'delete' as const,
+        contextDropTarget: undefined,
+        remedy: `${PLATFORM_SLUG} doc rm approval --scope context --subject ${holder} --reason <text> --expect revision-2`,
+      },
+      {
+        op: 'delete' as const,
+        contextDropTarget: { kind: 'task' as const, value: 'DEV-2236' },
+        remedy: `${PLATFORM_SLUG} agent context drop --task DEV-2236 --id approval --expected-revision revision-2`,
+      },
+    ]
+    for (const { op, contextDropTarget, remedy } of cases) {
+      const decision = decideDocRevisionWrite({
+        current: 'revision-2',
+        isCreate: false,
+        op,
+        contextDropTarget,
+        scope: 'context',
+        subject: holder,
+        slug: 'approval',
+      })
+      expect(decision.allow).toBe(false)
+      if (!decision.allow) expect(renderRefusal(decision.refusal)).toContain(remedy)
+    }
+  })
+
   test('refuses stale optional tokens in other scopes and tokens for a create', () => {
     expect(
       decideDocRevisionWrite({

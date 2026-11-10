@@ -237,6 +237,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'project',
   'project add',
   'project fill-record-ids',
+  'project fill-space',
   'project list',
   'project migrate-create',
   'project push',

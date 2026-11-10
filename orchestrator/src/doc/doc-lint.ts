@@ -2,7 +2,13 @@
 /** Pure lint rules for stored documents. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { DocKind, DocScope } from '../../../shared/docs.ts'
+import {
+  DOC_KINDS,
+  DOC_STATUSES,
+  type DocKind,
+  type DocScope,
+  type DocStatus,
+} from '../../../shared/docs.ts'
 import { lintProse, type ProseFinding } from '../../../shared/prose/prose-lint.ts'
 import { type CanonLintInput, lintCanonReferences } from '../canon/canon-lint.ts'
 export type DocLintFinding = {
@@ -19,8 +25,22 @@ export type LintableDoc = {
   slug: string
   body: string
   kind: DocKind
+  status: DocStatus
   summary?: string | null
   referenceProjects?: DocReferenceProject[]
+}
+
+export type DocLintSummary = {
+  kind: DocKind
+  status: DocStatus
+  documents: number
+  errors: number
+  staleReferenceErrors: number
+  unverifiableReferenceErrors: number
+}
+
+export type SummarizedLintDoc = Pick<LintableDoc, 'kind' | 'status'> & {
+  findings: DocLintFinding[]
 }
 
 type DocLintRule = 'history' | 'issue' | 'numeral' | 'date'
@@ -63,6 +83,15 @@ const DESIGN_HEADINGS = [
   '## How it is measured',
 ] as const
 const PROVISIONAL_HEADING = '## Provisional'
+
+export const STALE_REFERENCE_RULES: ReadonlySet<string> = new Set([
+  'doc/reference-path',
+  'doc/reference-symbol',
+  'doc/reference-heading',
+  'doc/reference-code',
+  'doc/reference-script',
+  'doc/line-anchor',
+])
 
 function referenceRemedy(rule: string): string {
   if (rule === 'doc/reference-unverifiable')
@@ -194,6 +223,7 @@ function proseFindingLevel(finding: ProseFinding, profile: DocLintProfile): DocL
 }
 
 export function lintDoc(doc: LintableDoc): DocLintFinding[] {
+  if (doc.status === 'archived' || doc.status === 'superseded') return []
   const articleSummaryFindings: DocLintFinding[] =
     doc.kind === 'article' && !doc.summary
       ? [
@@ -229,6 +259,28 @@ export function lintDoc(doc: LintableDoc): DocLintFinding[] {
   findings.push(...articleSummaryFindings)
   return findings.sort(
     (a, b) => a.rule.localeCompare(b.rule) || a.line - b.line || a.message.localeCompare(b.message),
+  )
+}
+
+/** Counts the live drift class while retaining finished-document populations. */
+export function summarizeDocLint(docs: SummarizedLintDoc[]): DocLintSummary[] {
+  return DOC_KINDS.flatMap((kind) =>
+    DOC_STATUSES.map((status) => {
+      const matching = docs.filter((doc) => doc.kind === kind && doc.status === status)
+      const errors = matching.flatMap(({ findings }) =>
+        findings.filter(({ level }) => level === 'error'),
+      )
+      return {
+        kind,
+        status,
+        documents: matching.length,
+        errors: errors.length,
+        staleReferenceErrors: errors.filter(({ rule }) => STALE_REFERENCE_RULES.has(rule)).length,
+        unverifiableReferenceErrors: errors.filter(
+          ({ rule }) => rule === 'doc/reference-unverifiable',
+        ).length,
+      }
+    }),
   )
 }
 

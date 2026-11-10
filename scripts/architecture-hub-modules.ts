@@ -24,11 +24,13 @@ export const hubModuleSpecs = [
       '@trpc/server',
       'zod',
       '../../record-client.ts',
+      '../../hosted-resolved-keys.ts',
       '../context.ts',
       './record-inputs.ts',
       './record-router-client.ts',
     ],
   },
+  { file: 'hub/src/hosted-resolved-keys.ts', allowed: ['./record-client.ts'] },
   {
     file: 'hub/src/trpc/routers/record-member-permission.ts',
     allowed: [

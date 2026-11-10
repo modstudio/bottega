@@ -27,7 +27,7 @@ import {
 } from './doc-context-write.ts'
 import { listDocsStore } from './doc-read-store.ts'
 import { isScratchLocation } from './doc-resume-write.ts'
-import { taskContextHolder } from './doc-subjects.ts'
+import { isValidContextHolderSubject, taskContextHolder } from './doc-subjects.ts'
 
 type ContextTask = HubTaskReference
 export type ContextFactsPorts = {
@@ -244,11 +244,13 @@ export async function assertContextDropAllowed({
   const holder = doc.subject ?? ''
   const refusal =
     holderOwnershipRefusal(holder, sessionId(database), doc.slug) ??
-    contextDropRefusal(
-      decodeContextItem(holder, doc.slug, doc.body),
-      storedItems(holder, database),
-      await contextProfileForHolder(holder, ports, task),
-    )
+    (isValidContextHolderSubject(holder)
+      ? contextDropRefusal(
+          decodeContextItem(holder, doc.slug, doc.body),
+          storedItems(holder, database),
+          await contextProfileForHolder(holder, ports, task),
+        )
+      : null)
   if (refusal) throw new Error(refusal)
 }
 

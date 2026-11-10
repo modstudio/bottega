@@ -69,6 +69,9 @@ export type DocRevisionOp =
   | 'import'
   | 'backfill'
 
+/** The holder a caller named to `agent context drop`, so its refusal can repeat that verb. */
+export type ContextDropTarget = { kind: 'task' | 'session'; value: string }
+
 export type CanonRow = { slug: string; body: string }
 export type CanonWriteTree = { project: { name: string }; root: string }
 export { composeCanonRows }
@@ -265,6 +268,7 @@ export type DocRevisionWriteInput = {
   current: string | null
   isCreate: boolean
   op?: DocRevisionOp
+  contextDropTarget?: ContextDropTarget
   scope: string
   subject: string | null
   slug: string
@@ -337,11 +341,17 @@ export function decideDocRevisionWrite(input: DocRevisionWriteInput): DocRevisio
 
 /** Every revision refusal names the write verb that owns the addressed scope. */
 function revisionRemedy(
-  input: RevisionAddress,
+  input: RevisionAddress & Pick<DocRevisionWriteInput, 'op' | 'contextDropTarget'>,
   current: string,
   operation: 'create' | 'update',
 ): string {
   if (input.scope === 'context') {
+    if (input.contextDropTarget) {
+      return `${PLATFORM_SLUG} agent context drop --${input.contextDropTarget.kind} ${input.contextDropTarget.value} --id ${input.slug} --expected-revision ${current}`
+    }
+    if (input.op === 'delete') {
+      return `${PLATFORM_SLUG} doc rm ${input.slug} --scope context --subject ${input.subject} --reason <text> --expect ${current}`
+    }
     return `read the context item with ${PLATFORM_SLUG} agent context show, then re-apply it with ${PLATFORM_SLUG} agent context set --id ${input.slug} --expected-revision ${current} (expected_revision over MCP)`
   }
   if (input.scope === 'settings') {
@@ -355,8 +365,8 @@ function revisionRemedy(
 
 /** Hosted services have no checkout inventory, so they enforce every pure rule except references. */
 export function recordDocLintRefusal(
-  next: Pick<LintableDoc, 'scope' | 'subject' | 'slug' | 'body' | 'kind'>,
-  current?: Pick<LintableDoc, 'scope' | 'subject' | 'slug' | 'body' | 'kind'>,
+  next: Pick<LintableDoc, 'scope' | 'subject' | 'slug' | 'body' | 'kind' | 'status'>,
+  current?: Pick<LintableDoc, 'scope' | 'subject' | 'slug' | 'body' | 'kind' | 'status'>,
 ): string | null {
   const findings = lintDoc(next)
   const introduced = current ? introducedDocFindings(lintDoc(current), findings) : findings

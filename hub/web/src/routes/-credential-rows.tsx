@@ -35,6 +35,8 @@ export type CredentialDisplayRow = {
   hint: string
   updatedAt: string
   missing: boolean
+  /** Your own copy with no project binding, which resolves across every space its reach admits. */
+  accountCopy: boolean
   usages: CredentialUsage[]
   preferences: CredentialPreference[]
 }
@@ -56,7 +58,7 @@ export function typedCredentialRows(rows: SecretRow[]): TypedCredentialRow[] {
 
 export type CredentialPart = { role: 'provider' | 'name' | 'type'; value: string }
 
-function credentialParts(identity: {
+export function credentialParts(identity: {
   provider: string
   name: string | null
   type: string
@@ -186,6 +188,7 @@ export function credentialDisplayRows(
     hint: row.hint,
     updatedAt: row.updatedAt,
     missing: false,
+    accountCopy: row.scope === 'user' && row.projectId === null,
     usages: [],
     preferences: preferences.filter((preference) =>
       preferenceSelectsRow(preference, row, projects, spaceId),
@@ -231,6 +234,7 @@ export function credentialDisplayRows(
       hint: 'missing',
       updatedAt: preference.updatedAt,
       missing: true,
+      accountCopy: false,
       usages: [],
       preferences: [preference],
     })
