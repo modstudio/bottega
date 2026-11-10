@@ -63,6 +63,8 @@ const reasonOption = (command: Command) =>
   command.option('--reason <value>', 'record why this change is being made')
 const authorOption = (command: Command) =>
   command.option('--author <value>', 'record who is making this change')
+const spaceOption = (command: Command) =>
+  command.option('--space <slug>', 'write to this record space')
 const workflowArgv = (verb: string, args: string[], options: OptionValues) =>
   productArgv('workflow', [verb, ...args], options)
 type WorkflowRegistration = {
@@ -570,11 +572,9 @@ function registerWorkflowCatalogue({
   jsonOption(
     authorOption(
       reasonOption(
-        catalogue
-          .command('set')
-          .description('create a draft step catalogue from a JSON file')
-          .option('--space <slug>', 'write to this record space')
-          .option('--file <value>', 'read the catalogue definition from this file'),
+        spaceOption(
+          catalogue.command('set').description('create a draft step catalogue from a JSON file'),
+        ).option('--file <value>', 'read the catalogue definition from this file'),
       ),
     ),
   )
@@ -588,12 +588,7 @@ function registerWorkflowCatalogue({
   ] as const) {
     jsonOption(
       authorOption(
-        reasonOption(
-          catalogue
-            .command(`${verb} <version>`)
-            .description(description)
-            .option('--space <slug>', 'write to this record space'),
-        ),
+        reasonOption(spaceOption(catalogue.command(`${verb} <version>`).description(description))),
       ),
     )
       .allowExcessArguments(false)

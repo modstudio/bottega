@@ -7,14 +7,11 @@ import { type ContextMomentWrite, contextMomentWrite } from '../../../shared/con
 import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
-import { recordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
-import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { contentTree, reviewChangedPaths } from '../git/git-environment.ts'
 import { type Project, projectAt, projects } from '../project/projects.ts'
-import { recordApiClient } from '../record/record-api-client.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveReviewBase } from '../review/review-target.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
@@ -95,6 +92,7 @@ import {
   productionWorkflowTree,
   promoteMatchingWorkflowTreeDrafts,
 } from './workflow-tree-store.ts'
+import { positive, workflowWriteSpace } from './workflow-write-space.ts'
 import {
   composeWorkflow,
   forkWorkflow,
@@ -129,12 +127,6 @@ type ProbePrintRecord =
   | Pick<ProbeRecord, 'id' | 'withheld'>
   | Pick<ProbeRecord, 'id' | 'withheld' | 'exitCode' | 'outputTail'>
 export type CommandOutcome = { exitCode: number; errorLine?: string }
-const positive = (value: string | undefined, label: string): number | undefined => {
-  if (value === undefined) return undefined
-  const n = Number(value)
-  if (!Number.isInteger(n) || n < 1) throw new Error(`${label} must be a positive integer`)
-  return n
-}
 const obligationUuid = (value: string | undefined): string | undefined => {
   if (value === undefined) return undefined
   if (!hasRecordIdShape(value))
@@ -198,6 +190,7 @@ export async function promoteWorkflowCommand(argv: string[], print: WorkflowPrin
       positive(argv[3], 'version')!,
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
+      undefined,
       undefined,
       await workflowWriteSpace('workflow promote', argv),
     ),
@@ -847,23 +840,6 @@ export async function retireCatalogueCommand(argv: string[], print: WorkflowPrin
       await workflowWriteSpace('workflow catalogue retire', argv),
     ),
   )
-}
-
-async function workflowWriteSpace(verb: string, argv: string[]): Promise<string> {
-  const requested = flagValue(argv, 'space')
-  if (!requested) {
-    const missing = recordSpaceOwnerDestination(verb, { space: requested }, [])
-    if (missing.kind === 'refused') throw new Error(missing.remedy)
-  }
-  const identity = await recordApiClient().whoami()
-  const destination = recordSpaceOwnerDestination(
-    verb,
-    { space: requested },
-    parseRecordSpaceMemberships(identity.memberships),
-  )
-  if (destination.kind === 'refused') throw new Error(destination.remedy)
-  if (destination.kind !== 'space') throw new Error('workflow space owner was not resolved')
-  return destination.spaceId
 }
 
 export function catalogueVersionsCommand(

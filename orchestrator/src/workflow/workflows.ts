@@ -487,7 +487,19 @@ export const setWorkflow = (
   destinationSpaceId?: string,
 ) => {
   assertWorkflowWriteAllowed('set workflow')
-  return hostedDraft('set', slug, definition, undefined, reason, author, d, undefined, undefined, undefined, destinationSpaceId)
+  return hostedDraft(
+    'set',
+    slug,
+    definition,
+    undefined,
+    reason,
+    author,
+    d,
+    undefined,
+    undefined,
+    undefined,
+    destinationSpaceId,
+  )
 }
 
 const writeAuthor = (value?: string) => value?.trim() || sessionId() || 'unknown'

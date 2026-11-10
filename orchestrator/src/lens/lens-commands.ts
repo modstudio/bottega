@@ -1,9 +1,9 @@
 // concern: review
 /** Owns lens registry command decisions. Must not know CLI grammar. */
 import { readFileSync } from 'node:fs'
-import { recordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
-import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
+import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
+import { recordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
 import { flagValue } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import { type Project, projectAt, projectByName } from '../project/projects.ts'

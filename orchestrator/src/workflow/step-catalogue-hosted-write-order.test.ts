@@ -23,15 +23,7 @@ const promoteStepCatalogue = (
   author?: string,
   database?: ReturnType<typeof db>,
   project?: string,
-) =>
-  promoteStepCatalogueService(
-    n,
-    reason,
-    author,
-    database,
-    project,
-    project ? undefined : SPACE,
-  )
+) => promoteStepCatalogueService(n, reason, author, database, project, project ? undefined : SPACE)
 const at = '2026-10-18T12:00:00.000Z'
 const whoami = async () => ({
   user: { id: newRecordId() },

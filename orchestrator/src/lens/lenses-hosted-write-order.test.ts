@@ -17,8 +17,7 @@ import {
 } from './lenses.ts'
 
 const HOSTED_SPACE = '01990000-0000-7000-8000-000000000002'
-const setLens = (input: Parameters<typeof setLensService>[0]) =>
-  setLensService(input, HOSTED_SPACE)
+const setLens = (input: Parameters<typeof setLensService>[0]) => setLensService(input, HOSTED_SPACE)
 const setProfile = (input: Parameters<typeof setProfileService>[0]) =>
   setProfileService(input, input.project ? undefined : HOSTED_SPACE)
 

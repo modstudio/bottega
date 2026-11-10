@@ -16,10 +16,10 @@ import { BUILT_IN_WORKFLOW_AUTHOR } from './workflow-built-ins.ts'
 import {
   importWorkflow,
   productionWorkflows,
-  promoteWorkflow as promoteWorkflowService,
   promoteWorkflowLocal,
-  setWorkflow as setWorkflowService,
+  promoteWorkflow as promoteWorkflowService,
   setWorkflowLocal,
+  setWorkflow as setWorkflowService,
   type WorkflowDefinition,
 } from './workflows.ts'
 

@@ -582,7 +582,17 @@ export const setStepCatalogue = (
   destinationSpaceId?: string,
 ) => {
   assertCatalogueWriteAllowed('set step catalogue')
-  return catalogueDraft('set', definition, undefined, reason, author, d, undefined, undefined, destinationSpaceId)
+  return catalogueDraft(
+    'set',
+    definition,
+    undefined,
+    reason,
+    author,
+    d,
+    undefined,
+    undefined,
+    destinationSpaceId,
+  )
 }
 export const setStepCatalogueLocal = (
   definition: unknown,
