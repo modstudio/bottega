@@ -305,7 +305,6 @@ export const undeclaredModulesBaseline: readonly string[] = [
   'orchestrator/src/jobs/jobs.ts',
   'orchestrator/src/judgment-closeout-refusal.ts',
   'orchestrator/src/judgment.ts',
-  'orchestrator/src/lens/lens-commands.ts',
   'orchestrator/src/lens/lenses.ts',
   'orchestrator/src/mailbox/mailbox-commands.ts',
   'orchestrator/src/mailbox/mailbox-notice.ts',

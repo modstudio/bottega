@@ -44,6 +44,16 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/postgres/migration-failure.ts', []),
   module('orchestrator/src/postgres/migration-notices.ts', []),
   module('orchestrator/src/lens/lens-built-ins.ts', []),
+  module('orchestrator/src/lens/lens-commands.ts', [
+    'node:fs',
+    '../../../shared/record-api-url.ts',
+    '../../../shared/record-space-owner-destination.ts',
+    '../cli/args.ts',
+    '../database/db.ts',
+    '../project/projects.ts',
+    '../record/record-space.ts',
+    './lenses.ts',
+  ]),
   module('orchestrator/src/lens/lens-profile-version.ts', []),
   module('orchestrator/src/lens/lens-profile-pin-version-sql.ts', []),
   module('orchestrator/src/lens/lens-seeds.ts', [
