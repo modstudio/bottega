@@ -80,6 +80,12 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/refusal.ts',
   ]),
+  module('orchestrator/src/config/machine-trust.ts', [
+    '../../../shared/config-client.ts',
+    '../../../shared/hosted-config-space.ts',
+    './config-service.ts',
+    './named-space-config.ts',
+  ]),
   module('orchestrator/src/config/named-space-config.ts', [
     'node:os',
     '../../../shared/brand.ts',
@@ -127,6 +133,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/credential.ts',
     '../../../shared/credential-resolution.ts',
     '../../../shared/record-remedies.ts',
+    '../../../shared/record-space-owner-destination.ts',
     '../../../shared/record-space-membership.ts',
     '../config/credential-service.ts',
     '../config/credential-presentation.ts',
@@ -138,6 +145,7 @@ export const settingsModules: SettingsModule[] = [
   ]),
   module('orchestrator/src/config/hosted-config-call-outcome.ts', [
     '../../../shared/config-client.ts',
+    '../../../shared/config-directory.ts',
     '../hosted-call-outcome.ts',
   ]),
   module('orchestrator/src/commands/config.ts', [
@@ -147,8 +155,12 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/config-client.ts',
     '../../../shared/delegation-mode.ts',
     '../../../shared/machine-config.ts',
+    '../../../shared/record-space-membership.ts',
+    '../../../shared/record-space-owner-destination.ts',
     '../../../shared/ship-to.ts',
     '../config/config-service.ts',
+    '../config/hosted-config-call-outcome.ts',
+    '../config/machine-trust.ts',
     '../config/named-space-config.ts',
     '../config/secret-run.ts',
     '../run/run-process.ts',

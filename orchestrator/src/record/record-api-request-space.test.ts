@@ -161,6 +161,31 @@ test('task-flow stage lists authorize and bind a requested space', async () => {
   expect(destinations).toEqual(['space-read'])
 })
 
+test('config-access routes authorize and bind a requested space', async () => {
+  const destinations: Array<string | undefined> = []
+  const app = new Hono<ApiEnvironment>()
+  app.use('/v1/*', async (context, next) => {
+    context.set('identity', identity)
+    return next()
+  })
+  registerRecordRequestSpace(app)
+  const paths = ['/v1/config-access', '/v1/config-access/grant']
+  for (const path of paths) {
+    app.post(path, (context) => {
+      destinations.push(context.get('destinationSpaceId'))
+      return context.json({ ok: true })
+    })
+  }
+  for (const path of paths) {
+    const response = await app.request(path, {
+      method: 'POST',
+      headers: { 'x-record-space': 'space-a' },
+    })
+    expect(response.status).toBe(200)
+  }
+  expect(destinations).toEqual(['space-a', 'space-a'])
+})
+
 test('read-only members are refused before remaining tenant write routes run', async () => {
   // Production break watched: register request-space authorization only for projects and docs.
   const writes: string[] = []

@@ -1,7 +1,12 @@
 // concern: hosted-config-call-outcome
 /** Adapts hosted config observations into the machine-local outcome store. */
 
-import type { ConfigCallObservation } from '../../../shared/config-client.ts'
+import {
+  type ConfigCallObservation,
+  type ConfigClient,
+  configClient,
+} from '../../../shared/config-client.ts'
+import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { classifyHostedTransportError, recordHostedCallOutcome } from '../hosted-call-outcome.ts'
 
 function configRouteClass(path: string): string {
@@ -22,4 +27,13 @@ export function recordConfigCallOutcome(observation: ConfigCallObservation): voi
       observation.error === null ? null : classifyHostedTransportError(observation.error),
     latencyMs: observation.latencyMs,
   })
+}
+
+export function hostedConfigClient(
+  env: ConfigEnvironment = process.env,
+  transport: Parameters<typeof configClient>[1] = fetch,
+  token?: string | null,
+  signal?: AbortSignal,
+): ConfigClient {
+  return configClient(env, transport, token, signal, recordConfigCallOutcome)
 }

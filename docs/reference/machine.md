@@ -227,12 +227,13 @@ display help for command
 
 ## bottega machine config machine init
 
-**Synopsis:** `bottega machine config machine init [--label <label>] [--short-name <name>] [--display-name <name>]`
+**Synopsis:** `bottega machine config machine init [--space <slug>] [--label <label>] [--short-name <name>] [--display-name <name>]`
 
 create this machine encryption identity
 
 ### Options
 
+- `--space <slug>`: initialize for this record space
 - `--label <label>`: label stored for this machine identity
 - `--short-name <name>`: short machine name
 - `--display-name <name>`: display machine name
@@ -249,7 +250,7 @@ register this machine encryption identity in a record space
 
 ### Options
 
-- `--space <slug>`: register in this record space instead of the active space
+- `--space <slug>`: register in this record space
 - `--label <label>`: label stored for this machine identity
 
 ### Related
@@ -284,7 +285,7 @@ trust a machine public key for sealed configuration
 
 ### Options
 
-- `--space <slug>`: trust in this record space instead of the active space
+- `--space <slug>`: trust in this record space
 - `--label <label>`: label stored for the trusted machine
 - `--yes`: trust the machine without interactive confirmation
 

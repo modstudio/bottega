@@ -1,9 +1,15 @@
 // concern: review
 /** Owns lens registry command decisions. Must not know CLI grammar. */
 import { readFileSync } from 'node:fs'
+import { recordApiConfigured } from '../../../shared/record-api-url.ts'
+import {
+  type RecordSpaceOtherOwner,
+  resolveRecordSpaceOwnerDestination,
+} from '../../../shared/record-space-owner-destination.ts'
 import { flagValue } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import { type Project, projectAt, projectByName } from '../project/projects.ts'
+import { recordMemberships } from '../record/record-space.ts'
 import { listLenses, listProfiles, setLens, setProfile, showLens, showProfile } from './lenses.ts'
 
 type LensPresentation = { log(value: string): void }
@@ -69,16 +75,19 @@ export async function setLensCommand(argv: string[], emit: Emit): Promise<void> 
       'lens set requires id, title, question, excludes, enabled, requires-execution, slots, and reason',
     )
   emit(
-    await setLens({
-      id,
-      title,
-      question,
-      excludes,
-      slots: source(argv, 'slots', 'slots-file'),
-      enabled: enabled(argv),
-      requiresExecution: booleanFlag(argv, 'requires-execution'),
-      reason,
-    }),
+    await setLens(
+      {
+        id,
+        title,
+        question,
+        excludes,
+        slots: source(argv, 'slots', 'slots-file'),
+        enabled: enabled(argv),
+        requiresExecution: booleanFlag(argv, 'requires-execution'),
+        reason,
+      },
+      await explicitSpaceDestination('lens set', flag('space'), []),
+    ),
   )
 }
 
@@ -130,15 +139,36 @@ export async function setProfileCommand(
     reason = flag('reason')
   if (!id || !flag('axis') || !flag('name') || !reason?.trim())
     throw new Error('lens profile set requires lens, axis, name, enabled, body, and reason')
+  const project = profileProject(argv, cwd) ?? undefined
   emit(
-    await setProfile({
-      lensId: id,
-      project: profileProject(argv, cwd) ?? undefined,
-      axis: flag('axis')!,
-      name: flag('name')!,
-      body: source(argv, 'body', 'body-file'),
-      enabled: enabled(argv),
-      reason,
-    }),
+    await setProfile(
+      {
+        lensId: id,
+        project,
+        axis: flag('axis')!,
+        name: flag('name')!,
+        body: source(argv, 'body', 'body-file'),
+        enabled: enabled(argv),
+        reason,
+      },
+      project
+        ? undefined
+        : await explicitSpaceDestination('lens profile set', flag('space'), ['project']),
+    ),
   )
+}
+
+async function explicitSpaceDestination(
+  verb: string,
+  requested: string | undefined,
+  accepts: readonly RecordSpaceOtherOwner[],
+): Promise<string> {
+  if (!recordApiConfigured()) return ''
+  const destination = await resolveRecordSpaceOwnerDestination(
+    verb,
+    { space: requested },
+    accepts,
+    async () => (await recordMemberships()).memberships,
+  )
+  return destination.spaceId
 }

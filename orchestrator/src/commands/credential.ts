@@ -19,6 +19,7 @@ import {
   parseRecordSpaceMemberships,
   recordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
+import { resolveRecordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
 import {
   CREDENTIAL_SLOTS,
   credentialDisplayName,
@@ -101,23 +102,47 @@ export function validateBindingExclusivity(options: BindingOptions): void {
     throw new Error('--account, --project, and --space are mutually exclusive')
 }
 
-async function bindingAddress(options: BindingOptions): Promise<CredentialBindingAddress> {
+async function selectedCredentialWriteSpace(
+  verb: string,
+  options: BindingOptions,
+  loadMemberships: () => Promise<ReturnType<typeof parseRecordSpaceMemberships>>,
+): Promise<CredentialBindingAddress> {
+  const destination = await resolveRecordSpaceOwnerDestination(
+    verb,
+    { space: options.space, project: options.project, account: options.account },
+    ['project', 'account'],
+    loadMemberships,
+  )
+  return {
+    projectId: null,
+    projectName: undefined,
+    spaceName: destination.slug,
+    destinationSpaceId: destination.spaceId,
+  }
+}
+
+async function bindingAddress(
+  options: BindingOptions,
+  writeVerb?: string,
+): Promise<CredentialBindingAddress> {
   validateBindingExclusivity(options)
   const client = configClient()
   const project = options.project ? projectByName(options.project) : null
   if (options.project && !project) throw new Error(`no project ${options.project}`)
   if (project) return projectCredentialBinding(project, client)
   if (options.account) return accountCredentialBinding(client)
+  if (writeVerb)
+    return selectedCredentialWriteSpace(writeVerb, options, async () =>
+      parseRecordSpaceMemberships((await client.whoami()).memberships),
+    )
   const who = await client.whoami()
   const memberships = parseRecordSpaceMemberships(who.memberships)
-  let destinationSpaceId: string
-  if (options.space) {
-    const membership = recordSpaceMembership(options.space, memberships)
-    if (!membership) throw new Error(recordSpaceMembershipRefusal(options.space))
-    destinationSpaceId = membership.spaceId
-  } else {
-    if (!who.activeSpaceId) throw new Error(RECORD_ACTIVE_SPACE_REMEDY)
-    destinationSpaceId = who.activeSpaceId
+  const destinationSpaceId = options.space
+    ? recordSpaceMembership(options.space, memberships)?.spaceId
+    : who.activeSpaceId
+  if (!destinationSpaceId) {
+    if (options.space) throw new Error(recordSpaceMembershipRefusal(options.space))
+    throw new Error(RECORD_ACTIVE_SPACE_REMEDY)
   }
   const membership = recordSpaceMembership(destinationSpaceId, memberships)
   if (!membership) throw new Error(recordSpaceMembershipRefusal(destinationSpaceId))
@@ -129,7 +154,11 @@ async function bindingAddress(options: BindingOptions): Promise<CredentialBindin
   }
 }
 
-async function address(name: string, options: BindingOptions): Promise<CredentialAddress> {
+async function address(
+  name: string,
+  options: BindingOptions,
+  writeVerb?: string,
+): Promise<CredentialAddress> {
   validateBindingExclusivity(options)
   const identity = identityName(name)
   if (options.project) {
@@ -146,7 +175,7 @@ async function address(name: string, options: BindingOptions): Promise<Credentia
   }
   return {
     ...identity,
-    ...(await bindingAddress(options)),
+    ...(await bindingAddress(options, writeVerb)),
     mode: mode(options.mode),
     environment: environment(options.env),
     payer: options.shared ? 'shared' : 'personal',
@@ -233,7 +262,7 @@ export function registerCredentialCommands(program: Command): void {
     .action(async (name, options: BindingOptions) => {
       validateAccountOptions(options)
       if (process.stdin.isTTY) throw new Error('credential value must be provided on stdin')
-      const target = await address(name, options)
+      const target = await address(name, options, 'credential set')
       if (options.account && options.reach !== undefined)
         target.reachSpaceIds = await parsedReach(options.reach)
       await setCredential(target, await Bun.stdin.text())
@@ -242,7 +271,7 @@ export function registerCredentialCommands(program: Command): void {
     .description('delete a credential')
     .action(async (name, options: BindingOptions) => {
       validateAccountOptions(options)
-      await deleteCredential(await address(name, options))
+      await deleteCredential(await address(name, options, 'credential delete'))
     })
   addBindingOptions(credential.command('list'), false)
     .description('list credential metadata and masked hints')

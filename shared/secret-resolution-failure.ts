@@ -172,11 +172,11 @@ export function secretResolutionFailure(
   const condition = `${conditionPrefix}${fallbackCondition}`
   switch (error.reason) {
     case 'machine-key-missing':
-      return `${condition}\ncleared by: ${PLATFORM_SLUG} machine config machine init`
+      return `${condition}\ncleared by: ${PLATFORM_SLUG} machine config machine init --space <slug>`
     case 'missing-wrap':
       return `${condition}\ncleared by: restore this machine's data-key wrap, then retry`
     case 'untrusted-sender':
-      return `${condition}\ncleared by: trust the sealing machine with ${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey>, then retry`
+      return `${condition}\ncleared by: trust the sealing machine with ${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey> --space <slug>, then retry`
     case 'authentication-failed':
       return `${condition}\ncleared by: repair the sealed value from a trusted machine, then retry`
     case 'hosted-failure':
