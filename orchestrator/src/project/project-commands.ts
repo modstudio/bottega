@@ -582,10 +582,7 @@ function incompleteWorktreeProblems(candidate: Parameters<typeof worktreeWarning
   )
 }
 
-function patchedProjectSettings(
-  project: Project,
-  patch: Record<string, unknown> | undefined,
-) {
+function patchedProjectSettings(project: Project, patch: Record<string, unknown> | undefined) {
   if (patch === undefined) return { settings: project.settings, patch, before: null }
   return {
     settings: mergeProjectSettings(project.settings, patch) as Project['settings'],
@@ -658,6 +655,72 @@ async function persistSetProject(
   })
 }
 
+function projectSetCandidate(
+  project: Project,
+  currentName: string,
+  flags: ProjectFlags,
+  settings: Project['settings'],
+): Project {
+  return {
+    recordId: project.recordId,
+    name: flags.flag('name') ?? currentName,
+    path: flags.flag('path') ?? project.path,
+    stack: flags.flag('stack') ?? project.stack,
+    canon: flags.has('no-canon') ? false : flags.has('canon') ? true : project.canon,
+    retiredAt: project.retiredAt,
+    settings,
+  }
+}
+
+function validateProjectSetCandidate(
+  project: Project,
+  candidate: Project,
+  settingsPatch: Record<string, unknown> | undefined,
+  flags: ProjectFlags,
+): void {
+  const lensSpaceId = effectiveProjectSpace(db(), project.name)
+  const malformed = validateRegisterWrite({
+    merged: candidate.settings,
+    supplied: settingsPatch,
+    projectPath: candidate.path,
+    context: {
+      validateKeyPrefixes:
+        writesKeyPrefixes(settingsPatch) ||
+        (candidate.name !== project.name && candidate.settings.keyPrefixes !== undefined),
+      currentProjectName: project.name,
+      projectNameAfterWrite: candidate.name,
+      register: projects(),
+      enabledLensIds: enabledLensIds(lensSpaceId),
+      enabledLensSpaceId: lensSpaceId,
+    },
+  }).filter((problem) => !skipLegacyCreateMigration(project, candidate, problem))
+  if (malformed.length) throw new Error(malformed.join('\n'))
+  const incomplete = incompleteWorktreeProblems(candidate)
+  if (incomplete.length && !flags.has('allow-incomplete')) throw new Error(incomplete.join('\n'))
+  assertRegisterBranches(candidate)
+  verifyWrittenVisibility(settingsPatch, candidate)
+}
+
+function presentProjectSet(
+  project: Project,
+  settingsBefore: Record<string, unknown> | null,
+  flags: ProjectFlags,
+  presentation: ProjectPresentation,
+): void {
+  if (flags.has('json')) {
+    presentation.log(JSON.stringify(listedProjectJson(project)))
+    return
+  }
+  presentation.log(`updated ${project.name}`)
+  printSettingsEffect(persistedSettingsEffect(settingsBefore, project), presentation)
+  for (const warning of worktreeWarnings(project)) {
+    presentation.log(`${' '.repeat(14)} ! ${warning}`)
+  }
+  for (const line of credentialLinesFromRead(project.name, readMcpConfigResult(project.path))) {
+    presentation.log(`${' '.repeat(14)} ! ${line}`)
+  }
+}
+
 async function setProjectCommand(
   argv: string[],
   flags: ProjectFlags,
@@ -673,66 +736,22 @@ async function setProjectCommand(
   const settingsPatch = await projectSetSettingsPatch(
     flags.flag('settings'),
     flags.flag('space'),
-    async (space) =>
-      (await hostedProjectDestination(name, { space }))?.destinationSpaceId ?? null,
+    async (space) => (await hostedProjectDestination(name, { space }))?.destinationSpaceId ?? null,
   )
-  const {
-    settings,
-    before: settingsBefore,
-  } = patchedProjectSettings(project, settingsPatch)
-  const nextName = flags.flag('name') ?? name
-  const candidate = {
-    recordId: project.recordId,
-    name: nextName,
-    path: flags.flag('path') ?? project.path,
-    stack: flags.flag('stack') ?? project.stack,
-    canon: flags.has('no-canon') ? false : flags.has('canon') ? true : project.canon,
-    retiredAt: project.retiredAt,
-    settings,
-  }
-  const lensSpaceId = effectiveProjectSpace(db(), name)
-  // The patch's own keys are refused strictly; the row it merges into is read
-  // in strip mode, so a key a newer binary wrote survives the update.
-  const malformed = validateRegisterWrite({
-    merged: candidate.settings,
-    supplied: settingsPatch,
-    projectPath: candidate.path,
-    context: {
-      validateKeyPrefixes:
-        writesKeyPrefixes(settingsPatch) ||
-        (nextName !== name && candidate.settings.keyPrefixes !== undefined),
-      currentProjectName: name,
-      projectNameAfterWrite: nextName,
-      register: projects(),
-      enabledLensIds: enabledLensIds(lensSpaceId),
-      enabledLensSpaceId: lensSpaceId,
-    },
-  }).filter((problem) => !skipLegacyCreateMigration(project, candidate, problem))
-  if (malformed.length) throw new Error(malformed.join('\n'))
-  const incomplete = incompleteWorktreeProblems(candidate)
-  if (incomplete.length && !flags.has('allow-incomplete')) throw new Error(incomplete.join('\n'))
-  assertRegisterBranches(candidate)
-  verifyWrittenVisibility(settingsPatch, candidate)
+  const { settings, before: settingsBefore } = patchedProjectSettings(project, settingsPatch)
+  const candidate = projectSetCandidate(project, name, flags, settings)
+  validateProjectSetCandidate(project, candidate, settingsPatch, flags)
   const previousTrunk = typeof project.settings.trunk === 'string' ? project.settings.trunk : null
   const destination = await hostedProjectDestination(candidate.name, candidate.settings)
   await refuseHostedProjectSpaceChange(project, candidate.settings, destination)
-  await persistSetProject(name, nextName, previousTrunk, candidate, destination?.destinationSpaceId)
-  const persistedProject = projectByName(nextName)!
-  if (flags.has('json')) {
-    presentation.log(JSON.stringify(listedProjectJson(persistedProject)))
-    return
-  }
-  presentation.log(`updated ${nextName}`)
-  printSettingsEffect(persistedSettingsEffect(settingsBefore, persistedProject), presentation)
-  for (const warning of worktreeWarnings(persistedProject)) {
-    presentation.log(`${' '.repeat(14)} ! ${warning}`)
-  }
-  for (const line of credentialLinesFromRead(
-    persistedProject.name,
-    readMcpConfigResult(persistedProject.path),
-  )) {
-    presentation.log(`${' '.repeat(14)} ! ${line}`)
-  }
+  await persistSetProject(
+    name,
+    candidate.name,
+    previousTrunk,
+    candidate,
+    destination?.destinationSpaceId,
+  )
+  presentProjectSet(projectByName(candidate.name)!, settingsBefore, flags, presentation)
 }
 
 function printProjectSpaceFillRow(
@@ -834,51 +853,44 @@ async function pushProjectsCommand(
   )
 }
 
+type ProjectCommandDependencies = {
+  requireSpaceMembership(space: string): Promise<unknown>
+  planProjectSpaceFill?: typeof planProjectSpaceFill
+  fillProjectSpace?: typeof fillAbsentProjectSettings
+}
+
+async function dispatchPrimaryProjectCommand(
+  sub: string,
+  argv: string[],
+  flags: ProjectFlags,
+  presentation: ProjectPresentation,
+  dependencies: ProjectCommandDependencies,
+): Promise<boolean> {
+  if (sub === 'list') listProjectsCommand(flags, presentation)
+  else if (sub === 'add')
+    await addProjectCommand(argv, flags, presentation, dependencies.requireSpaceMembership)
+  else if (sub === 'set') await setProjectCommand(argv, flags, presentation)
+  else if (sub === 'fill-space')
+    await fillProjectSpacesCommand(flags, presentation, {
+      plan: dependencies.planProjectSpaceFill ?? planProjectSpaceFill,
+      fill: dependencies.fillProjectSpace ?? fillAbsentProjectSettings,
+    })
+  else if (sub === 'relink') await relinkProjectCommand(argv[2], presentation)
+  else if (sub === 'select-profile') await selectProfileCommand(argv, flags, presentation)
+  else return false
+  return true
+}
+
 export async function projectCommand(
   sub: string,
   argv: string[],
   flags: ProjectFlags,
   presentation: ProjectPresentation,
-  dependencies: {
-    requireSpaceMembership(space: string): Promise<unknown>
-    planProjectSpaceFill?: typeof planProjectSpaceFill
-    fillProjectSpace?: typeof fillAbsentProjectSettings
-  },
+  dependencies: ProjectCommandDependencies,
 ): Promise<void> {
   const { has } = flags
 
-  if (sub === 'list') {
-    listProjectsCommand(flags, presentation)
-    return
-  }
-
-  if (sub === 'add') {
-    await addProjectCommand(argv, flags, presentation, dependencies.requireSpaceMembership)
-    return
-  }
-
-  if (sub === 'set') {
-    await setProjectCommand(argv, flags, presentation)
-    return
-  }
-
-  if (sub === 'fill-space') {
-    await fillProjectSpacesCommand(flags, presentation, {
-      plan: dependencies.planProjectSpaceFill ?? planProjectSpaceFill,
-      fill: dependencies.fillProjectSpace ?? fillAbsentProjectSettings,
-    })
-    return
-  }
-
-  if (sub === 'relink') {
-    await relinkProjectCommand(argv[2], presentation)
-    return
-  }
-
-  if (sub === 'select-profile') {
-    await selectProfileCommand(argv, flags, presentation)
-    return
-  }
+  if (await dispatchPrimaryProjectCommand(sub, argv, flags, presentation, dependencies)) return
 
   if (sub === 'migrate-create') {
     const name = argv[2]

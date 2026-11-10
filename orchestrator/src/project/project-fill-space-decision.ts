@@ -34,5 +34,5 @@ export function decideProjectSpaceFill(input: {
   if (!declaredMembership) return { kind: 'fill', space: hosted[0]!.slug }
   return declaredMembership.spaceId === hosted[0]!.spaceId
     ? { kind: 'ok' }
-    : { kind: 'mismatch', declared, spaces }
+    : { kind: 'mismatch', declared: declared!, spaces }
 }

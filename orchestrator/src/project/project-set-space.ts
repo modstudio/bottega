@@ -19,7 +19,8 @@ export async function projectSetSettingsPatch(
       resolveSpaceId(selectedSpace),
       resolveSpaceId(suppliedSpace),
     ])
-    const same = selectedId && suppliedId ? selectedId === suppliedId : selectedSpace === suppliedSpace
+    const same =
+      selectedId && suppliedId ? selectedId === suppliedId : selectedSpace === suppliedSpace
     if (!same) throw new Error('--space and settings.space must name the same record space')
   }
   return { ...supplied, space: selectedSpace }
