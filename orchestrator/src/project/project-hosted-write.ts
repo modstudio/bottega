@@ -3,10 +3,8 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { recordSpaceMembershipRefusal } from '../../../shared/record-remedies.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
-import { declaredRecordSpace } from '../record/record-project-destination.ts'
 import {
   projectDestinationFromIdentity,
   requireProjectRecordDestination,
@@ -17,6 +15,7 @@ import {
   requireHostedRecord,
   throwIfRecordRefused,
 } from '../record/record-write-authority.ts'
+import { declaredRecordSpace } from './declared-record-space.ts'
 import type { ProjectSettings, StoredProjectSettings } from './project-settings.ts'
 
 export async function writeProjectToHostedRecord(
@@ -87,7 +86,7 @@ export async function hostedProjectDestination(
   if (authority.verdict === 'local-authoritative') return undefined
   const identity = await recordApiClient().whoami()
   const decision = projectDestinationFromIdentity(project, settings, identity)
-  if ('refused' in decision) throw new Error(recordSpaceMembershipRefusal(decision.declaredSpace))
+  if ('refused' in decision) throw new Error(decision.remedy)
   return {
     destinationSpaceId: decision.spaceId,
     memberships: parseRecordSpaceMemberships(identity.memberships),

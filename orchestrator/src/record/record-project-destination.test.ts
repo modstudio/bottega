@@ -7,25 +7,26 @@ describe('project record destination', () => {
     { spaceId: 'stable-declared', slug: 'declared', permission: 'write' },
   ]
 
-  test('uses the active space when the register declares none', () => {
-    expect(projectRecordDestination('plain', null, 'stable-active', memberships)).toEqual({
+  test('refuses when the register declares none', () => {
+    expect(projectRecordDestination('plain', null, memberships)).toMatchObject({
       project: 'plain',
-      spaceId: 'stable-active',
+      refused: 'undeclared-project',
     })
   })
 
   test('resolves a declared slug to its stable membership id', () => {
-    expect(projectRecordDestination('routed', 'declared', 'stable-active', memberships)).toEqual({
+    expect(projectRecordDestination('routed', 'declared', memberships)).toEqual({
       project: 'routed',
       spaceId: 'stable-declared',
     })
   })
 
   test('names a declaration outside the signed-in memberships', () => {
-    expect(projectRecordDestination('blocked', 'outside', 'stable-active', memberships)).toEqual({
+    expect(projectRecordDestination('blocked', 'outside', memberships)).toMatchObject({
       project: 'blocked',
-      declaredSpace: 'outside',
       refused: 'declared-space-not-member',
     })
+    const refusal = projectRecordDestination('blocked', 'outside', memberships)
+    expect('remedy' in refusal && refusal.remedy).toContain('record space invitations')
   })
 })

@@ -42,6 +42,14 @@ export const machineNotTrustedRemedy = (spaceId: string) =>
 export const configAccessRemedy = (space?: string) =>
   `signed-in user lacks config access${space ? ` in record space ${space}` : ''}; a space owner or admin grants it with \`${PLATFORM_SLUG} record space access grant <email>\``
 
+export function declaredProjectSpaceRemedy(project: string): string {
+  return `${PLATFORM_SLUG} project set ${project} --space <slug>`
+}
+
+export function undeclaredProjectSpaceRefusal(project: string): string {
+  return `project ${project} has no declared record space; run \`${declaredProjectSpaceRemedy(project)}\``
+}
+
 export function recordSpaceMembershipRefusal(space: string): string {
   return (
     `the signed-in user is not a member of record space ${space}; ` +

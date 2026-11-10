@@ -1,11 +1,20 @@
-import { expect, test } from 'bun:test'
+import { afterEach, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { retireProject, upsertProject } from '../project/projects.ts'
+import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from './context-write-adapter.ts'
 import { hostedDocClient } from './doc-hosted-client.ts'
+
+const globals = globalThis as typeof globalThis & {
+  [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts
+}
+
+afterEach(() => {
+  delete globals[CONTEXT_FACTS_PORTS_KEY]
+})
 
 test('a project-addressed document client binds every call to the declared space', async () => {
   upsertProject({
@@ -189,6 +198,123 @@ test('a non-project document client binds every call to the personal space', asy
     author: 'user-a',
   })
   expect(destinations).toEqual(['personal-space', 'personal-space'])
+})
+
+test('task context binds to its project while the personal space is active', async () => {
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'context-project',
+    path: '/repo/context-project',
+    settings: { space: 'context-team' },
+  })
+  let destination: string | undefined
+  const memory = createMemoryRecordApiClient()
+  installRecordApiClient({
+    ...memory,
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'personal-space',
+      personalSpaceId: 'personal-space',
+      memberships: [
+        { space_id: 'personal-space', slug: 'personal', permission: 'write' },
+        { space_id: 'context-space', slug: 'context-team', permission: 'write' },
+      ],
+    }),
+    getDoc: async (_id, requestDestination) => {
+      destination = requestDestination?.destinationSpaceId
+      return {}
+    },
+  })
+  const client = await hostedDocClient('context', `task:${newRecordId()}`, {
+    kind: 'task',
+    projectName: 'context-project',
+  })
+  await client.getDoc('doc')
+  expect(destination).toBe('context-space')
+})
+
+function captureDestination(spaces: { space_id: string; slug: string }[]) {
+  const seen: { destination?: string } = {}
+  const memory = createMemoryRecordApiClient()
+  installRecordApiClient({
+    ...memory,
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'personal-space',
+      personalSpaceId: 'personal-space',
+      memberships: [
+        { space_id: 'personal-space', slug: 'personal', permission: 'write' },
+        ...spaces.map((space) => ({ ...space, permission: 'write' })),
+      ],
+    }),
+    getDoc: async (_id, requestDestination) => {
+      seen.destination = requestDestination?.destinationSpaceId
+      return {}
+    },
+  })
+  return seen
+}
+
+test('a task context subject derives its project space past a project whose tasks cannot be read', async () => {
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'aaa-unreadable-project',
+    path: '/repo/aaa-unreadable-project',
+    settings: { space: 'unreadable-team' },
+  })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'derived-project',
+    path: '/repo/derived-project',
+    settings: { space: 'derived-team' },
+  })
+  const recordId = newRecordId()
+  const read: string[] = []
+  globals[CONTEXT_FACTS_PORTS_KEY] = {
+    tasks: async (project) => {
+      read.push(project)
+      if (project === 'aaa-unreadable-project') throw new Error('task list failed')
+      return project === 'derived-project'
+        ? [{ key: 'DER-1', record_id: recordId, project: 'derived-project' }]
+        : []
+    },
+    task: async () => null,
+    pointer: async () => null,
+  }
+  const seen = captureDestination([{ space_id: 'derived-space', slug: 'derived-team' }])
+  const client = await hostedDocClient('context', `task:${recordId}`)
+  await client.getDoc('doc')
+  expect(read.slice(0, 2)).toEqual(['aaa-unreadable-project', 'derived-project'])
+  expect(seen.destination).toBe('derived-space')
+  await expect(hostedDocClient('context', `task:${newRecordId()}`)).rejects.toMatchObject({
+    status: 409,
+    message: expect.stringContaining('aaa-unreadable-project could not be read'),
+  })
+  globals[CONTEXT_FACTS_PORTS_KEY] = {
+    tasks: async () => [],
+    task: async () => null,
+    pointer: async () => null,
+  }
+  await expect(hostedDocClient('context', `task:${newRecordId()}`)).rejects.toMatchObject({
+    status: 409,
+    message: expect.stringContaining('agent context set --task <KEY>'),
+  })
+})
+
+test('a session context subject writes to its checkout project space, else the personal space', async () => {
+  const seen = captureDestination([{ space_id: 'checkout-space', slug: 'checkout-team' }])
+  const personal = await hostedDocClient('context', 'session:outside-checkout')
+  await personal.getDoc('doc')
+  expect(seen.destination).toBe('personal-space')
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'checkout-project',
+    path: process.cwd(),
+    settings: { space: 'checkout-team' },
+  })
+  const checkout = await hostedDocClient('context', 'session:inside-checkout')
+  await checkout.getDoc('doc')
+  expect(seen.destination).toBe('checkout-space')
 })
 
 test('a personal document client refuses when no personal space is provisioned', async () => {

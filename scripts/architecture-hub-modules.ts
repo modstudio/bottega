@@ -408,6 +408,7 @@ export const hubModuleSpecs = [
     file: 'hub/src/note-project-space.ts',
     allowed: [
       '../../shared/brand.ts',
+      '../../shared/record-remedies.ts',
       './note-client.ts',
       './projects.ts',
       './task-client.ts',

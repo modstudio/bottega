@@ -29,7 +29,7 @@ import { listDocsStore } from './doc-read-store.ts'
 import { isScratchLocation } from './doc-resume-write.ts'
 import { isValidContextHolderSubject, taskContextHolder } from './doc-subjects.ts'
 
-type ContextTask = HubTaskReference
+export type ContextTask = HubTaskReference
 export type ContextFactsPorts = {
   tasks: HubTaskReader
   task: HubTaskPuller
@@ -113,6 +113,28 @@ export async function resolveContextTask(
     )
   }
   return resolveOrPullHubTaskReference(project.name, key, ports.tasks, ports.task)
+}
+
+type ContextTaskByRecordId = { task: ContextTask | null; unreadable: string[] }
+
+/** Resolve the stable task identity used in a context subject, naming every project whose tasks could not be read. */
+export async function resolveContextTaskByRecordId(
+  recordId: string,
+  database: Database = db(),
+  ports: ContextFactsPorts = defaultContextFactsPorts(),
+): Promise<ContextTaskByRecordId> {
+  const readTasks = bestEffortProjectTaskReader(ports)
+  const unreadable: string[] = []
+  for (const project of projects(undefined, database)) {
+    const tasks = await readTasks(project.name)
+    if (!tasks) {
+      unreadable.push(project.name)
+      continue
+    }
+    const match = tasks.find((task) => task.record_id === recordId)
+    if (match) return { task: match, unreadable }
+  }
+  return { task: null, unreadable }
 }
 
 export function taskProfile(key: string, tasks: readonly ContextTask[]): ContextProfile {

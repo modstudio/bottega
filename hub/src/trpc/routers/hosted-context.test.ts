@@ -57,7 +57,10 @@ function fakeClient(overrides: Partial<RecordClient> = {}, activeSpaceId = perso
       user: { id: userId },
       activeSpaceId,
       personalSpaceId,
-      memberships: [],
+      memberships: [
+        { space_id: personalSpaceId, slug: 'personal', permission: 'write' },
+        { space_id: organizationSpaceId, slug: 'organization', permission: 'write' },
+      ],
     })),
     projects: mock(async () => [
       {

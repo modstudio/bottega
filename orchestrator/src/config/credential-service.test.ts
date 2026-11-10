@@ -30,7 +30,7 @@ test('project credential address matches credential resolve project defaults', a
   const projectId = crypto.randomUUID()
   const spaceId = crypto.randomUUID()
   const target = await projectCredentialAddress(
-    { name: 'starship', recordId: projectId, settings: {} },
+    { name: 'starship', recordId: projectId, settings: { space: 'team' } },
     'openrouter',
     {
       whoami: async () => ({
@@ -117,7 +117,7 @@ const address: CredentialAddress = {
 const project = {
   name: 'alpha',
   recordId: '01990000-0000-7000-8000-000000000001',
-  settings: {},
+  settings: { space: 'studio' },
 }
 const identity = { provider: address.provider, name: address.name, type: address.type }
 

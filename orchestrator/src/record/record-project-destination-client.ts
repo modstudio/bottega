@@ -1,13 +1,11 @@
 // concern: record-project-destination-client
 /** Adapts the pure project destination decision to authenticated record clients. */
 
-import { recordSpaceMembershipRefusal } from '../../../shared/record-remedies.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
+import { declaredRecordSpace } from '../project/declared-record-space.ts'
 import type { ProjectSettings, StoredProjectSettings } from '../project/project-settings.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
-  declaredRecordSpace,
-  noActiveRecordSpaceRefusal,
   type ProjectRecordDestination,
   projectRecordDestination,
 } from './record-project-destination.ts'
@@ -17,11 +15,9 @@ export function projectDestinationFromIdentity(
   settings: ProjectSettings | StoredProjectSettings | undefined,
   identity: RecordIdentity,
 ): ProjectRecordDestination {
-  if (!identity.activeSpaceId) throw new Error(noActiveRecordSpaceRefusal())
   return projectRecordDestination(
     project,
     declaredRecordSpace(settings),
-    identity.activeSpaceId,
     parseRecordSpaceMemberships(identity.memberships),
   )
 }
@@ -32,6 +28,6 @@ export async function requireProjectRecordDestination(
   client: { whoami(): Promise<RecordIdentity> },
 ): Promise<string> {
   const decision = projectDestinationFromIdentity(project, settings, await client.whoami())
-  if ('refused' in decision) throw new Error(recordSpaceMembershipRefusal(decision.declaredSpace))
+  if ('refused' in decision) throw new Error(decision.remedy)
   return decision.spaceId
 }

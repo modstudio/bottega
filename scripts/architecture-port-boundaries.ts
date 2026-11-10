@@ -29,6 +29,7 @@ export const portBoundarySpecs = [
     allowed: [
       'bun:sqlite',
       '../../../shared/record-id.ts',
+      '../../../shared/record-remedies.ts',
       '../database/db.ts',
       '../doc/docs.ts',
       '../project/projects.ts',

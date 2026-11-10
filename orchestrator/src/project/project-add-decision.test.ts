@@ -36,7 +36,6 @@ describe('decideProjectAdd', () => {
         requestedSettings: { checks: { spelling: true } },
         hostedProjects: [hosted()],
         memberships,
-        activeSpaceId: 'space-b',
       }),
     ).toEqual({
       decision: {
@@ -63,7 +62,6 @@ describe('decideProjectAdd', () => {
       requestedSettings: { trunk: 'develop', keyPrefixes: ['OTHER'] },
       hostedProjects: [hosted()],
       memberships,
-      activeSpaceId: 'space-a',
     })
     expect(decision.decision.kind).toBe('refuse')
     if (decision.decision.kind !== 'refuse') return
@@ -84,7 +82,6 @@ describe('decideProjectAdd', () => {
         requestedSettings: {},
         hostedProjects: [previousShape],
         memberships,
-        activeSpaceId: 'space-a',
       }),
     ).toEqual({
       decision: {
@@ -103,7 +100,6 @@ describe('decideProjectAdd', () => {
       requestedSettings: {},
       hostedProjects: [hosted({ retiredAt: '2026-11-04T12:00:00.000Z' })],
       memberships,
-      activeSpaceId: 'space-a',
     })
     expect(decision).toEqual({
       decision: {
@@ -122,7 +118,6 @@ describe('decideProjectAdd', () => {
         requestedSettings: {},
         hostedProjects: [hosted(), hosted({ id: 'project-b', spaceId: 'space-b' })],
         memberships,
-        activeSpaceId: 'space-a',
       }),
     ).toEqual({
       decision: {
@@ -143,7 +138,6 @@ describe('decideProjectAdd', () => {
         selectedSpace: 'beta',
         hostedProjects: [hosted(), hosted({ id: 'project-b', spaceId: 'space-b' })],
         memberships,
-        activeSpaceId: 'space-a',
       }),
     ).toMatchObject({
       decision: { kind: 'adopt', recordId: 'project-b', space: 'beta' },
@@ -161,7 +155,6 @@ describe('decideProjectAdd', () => {
         selectedSpace: 'space-b',
         hostedProjects: [hosted()],
         memberships,
-        activeSpaceId: 'space-a',
       }),
     ).toEqual({
       decision: {
@@ -182,7 +175,6 @@ describe('decideProjectAdd', () => {
         selectedSpace: 'SPACE-B',
         hostedProjects: [hosted()],
         memberships,
-        activeSpaceId: 'space-a',
       }),
     ).toEqual({
       decision: { kind: 'mint', settings: { space: 'beta' } },
@@ -199,7 +191,6 @@ describe('decideProjectAdd', () => {
         requestedSettings: {},
         hostedProjects: [],
         memberships,
-        activeSpaceId: 'space-a',
       }),
     ).toEqual({
       decision: {

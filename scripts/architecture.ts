@@ -811,7 +811,6 @@ const activeSpaceResolverRule: ArchitectureRule = {
     path: [
       'shared/personal-item-space.ts',
       'orchestrator/src/project-space.ts',
-      'orchestrator/src/record/record-project-destination.ts',
       'hub/src/task-project-space.ts',
     ]
       .map(exactArchitecturePath)

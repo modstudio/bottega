@@ -37,7 +37,7 @@ const PROJECT = 'auth-a-project'
 const WORKFLOW = 'fix-defect'
 const TASK_KEY = 'AA-2098'
 
-function proofDatabase(projectId: string): Database {
+function proofDatabase(projectId: string, spaceId: string): Database {
   const database = migratedTestDatabase()
   seedWorkflows(database)
   installWorkflowStoreFixture(database)
@@ -53,6 +53,7 @@ function proofDatabase(projectId: string): Database {
       JSON.stringify({
         trunk: 'main',
         gate: 'bun run check',
+        space: spaceId,
         docs: { protocol: 'orch-docs' },
         tracker: { protocol: 'hub' },
       }),
@@ -67,7 +68,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
     const taskId = newRecordId()
     const configRoot = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-task-flow-proof-`))
     const previousConfigRoot = process.env.BOTTEGA_CONFIG_HOME
-    const databaseA = proofDatabase(input.projectId())
+    const databaseA = proofDatabase(input.projectId(), input.spaceId())
     let databaseB: Database | undefined
     const auth = testRecordAuth(input.urls().actor, input.urls().auth)
     try {

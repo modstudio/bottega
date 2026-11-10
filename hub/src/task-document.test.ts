@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import { declareFixtureProjectSpace } from '../test/fixture-project-space.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { writeTransaction } from './db.ts'
 import { createTask, showTask } from './task.ts'
@@ -8,6 +9,8 @@ import {
   getTaskDocument,
   updateTaskDocument,
 } from './task-document.ts'
+
+declareFixtureProjectSpace('workshop', 'workshop')
 
 const seed = (key: string, project: string) => {
   const stamp = new Date().toISOString()

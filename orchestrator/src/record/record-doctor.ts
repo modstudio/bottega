@@ -45,7 +45,6 @@ import {
   type NoDestinationWriteReportRow,
 } from './record-no-destination-write-contract.ts'
 import { recordPool } from './record-pool.ts'
-import { effectiveProjectSpace } from './record-project-destination.ts'
 import { storedRecordToken } from './record-session.ts'
 
 async function refuseOwnerConnection(postgres: SQL, operation: string): Promise<void> {
@@ -419,7 +418,7 @@ export function localQuestionCountForSpace(
     .all()
   return rows.filter((row) => {
     const space = row.project ? projectSpaces.get(row.project) : null
-    const effectiveSpace = effectiveProjectSpace(space ?? null, activeSpace.id)
+    const effectiveSpace = space ?? activeSpace.id
     return effectiveSpace === activeSpace.id || effectiveSpace === activeSpace.slug
   }).length
 }

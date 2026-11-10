@@ -225,6 +225,15 @@ describe('settings render write', () => {
   })
 
   test('refuses a registered project main checkout', async () => {
+    installRecordApiClient({
+      ...createMemoryRecordApiClient(),
+      whoami: async () => ({
+        user: { id: 'user-a' },
+        activeSpaceId: 'space-a',
+        personalSpaceId: 'space-a',
+        memberships: [{ space_id: 'space-a', slug: 'space-a', permission: 'write' }],
+      }),
+    })
     mkdirSync(join(root, '.claude'), { recursive: true })
     writeFileSync(join(root, '.claude', 'settings.json'), '{}\n')
     upsertProject({
@@ -233,7 +242,7 @@ describe('settings render write', () => {
       path: root,
       stack: null,
       canon: true,
-      settings: { managedContext: true },
+      settings: { managedContext: true, space: 'space-a' },
     })
     await setDoc({
       scope: 'settings',

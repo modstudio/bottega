@@ -151,7 +151,6 @@ export function decideProjectAdd(input: {
   selectedSpace?: string
   hostedProjects: readonly AddHostedProject[]
   memberships: readonly RecordSpaceMembership[]
-  activeSpaceId: string | null
 }): ProjectAddDecisionResult {
   const selectedMembership = input.selectedSpace
     ? recordSpaceMembership(input.selectedSpace, input.memberships)

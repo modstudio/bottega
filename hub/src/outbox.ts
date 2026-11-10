@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
+import { declaredProjectSpaceRemedy } from '../../shared/record-remedies.ts'
 import { db, hostedDeliveryRefusal, nowIso, writeTransaction } from './db.ts'
 import type { PendingHostedOutbox } from './outbox-fast-cycle.ts'
 import { decideOutboxLifecycle } from './outbox-lifecycle.ts'
@@ -427,6 +428,11 @@ function routingWaitMessage(project: string, reason: string): string {
       `${ROUTING_WAIT_PREFIX} project "${project}" is not registered; register it with ` +
       `${PLATFORM_SLUG} project add <path>, or, if it is not a real project, note that such ` +
       'rows cannot be retired yet'
+    )
+  if (reason === 'undeclared-project')
+    return (
+      `${ROUTING_WAIT_PREFIX} project "${project}" has no declared record space; run ` +
+      `\`${declaredProjectSpaceRemedy(project)}\``
     )
   return `${ROUTING_WAIT_PREFIX} project "${project}" was refused: ${reason}`
 }

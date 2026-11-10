@@ -101,6 +101,7 @@ test('project add and set JSON use the published contract and carry record_id', 
     recordId: newRecordId(),
     name: 'identity-json-set',
     path: '/w/identity-json-set',
+    settings: { space: 'space-a' },
   })
   const existingSetId = projectByName('identity-json-set')!.recordId
   const set = OrchProjectSchema.parse(
@@ -176,16 +177,19 @@ test('project push stores returned identities without overwriting concurrent set
     name: 'identity-push-set',
     path: '/w/identity-push-set',
     stack: 'before',
+    settings: { space: 'space-a' },
   })
   upsertProject({
     recordId: newRecordId(),
     name: 'identity-push-retire',
     path: '/w/identity-push-retire',
+    settings: { space: 'space-a' },
   })
   upsertProject({
     recordId: newRecordId(),
     name: 'identity-push-already-retired',
     path: '/w/identity-push-already-retired',
+    settings: { space: 'space-a' },
   })
   const setId = projectByName('identity-push-set')!.recordId
   const retiredId = projectByName('identity-push-retire')!.recordId
@@ -193,6 +197,12 @@ test('project push stores returned identities without overwriting concurrent set
   retireProject('identity-push-already-retired')
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'space-a',
+      personalSpaceId: 'space-a',
+      memberships: [{ space_id: 'space-a', slug: 'space-a', permission: 'write' }],
+    }),
     upsertProject: async (input) => {
       if (input.name === 'identity-push-set') {
         upsertProject({

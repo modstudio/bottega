@@ -11,13 +11,6 @@ export const architectureViolationBaseline: readonly ArchitectureViolationBaseli
   {
     rule: 'no-active-space-resolver-import',
     from: 'orchestrator/src/workflow/workflow-read-space.ts',
-    to: 'orchestrator/src/record/record-project-destination.ts',
-    reason:
-      'viewing read; reclassified when DEV-2244 splits the viewing default from the write decision',
-  },
-  {
-    rule: 'no-active-space-resolver-import',
-    from: 'orchestrator/src/workflow/workflow-read-space.ts',
     to: 'orchestrator/src/project-space.ts',
     reason:
       'viewing read; reclassified when DEV-2244 splits the viewing default from the write decision',
@@ -36,34 +29,9 @@ export const architectureViolationBaseline: readonly ArchitectureViolationBaseli
   },
   {
     rule: 'no-active-space-resolver-import',
-    from: 'orchestrator/src/record/record-push-docs.ts',
-    to: 'orchestrator/src/record/record-project-destination.ts',
-    reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
-  },
-  {
-    rule: 'no-active-space-resolver-import',
-    from: 'orchestrator/src/record/record-push-catalogues.ts',
-    to: 'orchestrator/src/record/record-project-destination.ts',
-    reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
-  },
-  {
-    rule: 'no-active-space-resolver-import',
     from: 'orchestrator/src/record/record-push-catalogues.ts',
     to: 'orchestrator/src/project-space.ts',
     reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
-  },
-  {
-    rule: 'no-active-space-resolver-import',
-    from: 'orchestrator/src/record/record-project-destination-client.ts',
-    to: 'orchestrator/src/record/record-project-destination.ts',
-    reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
-  },
-  {
-    rule: 'no-active-space-resolver-import',
-    from: 'orchestrator/src/record/record-doctor.ts',
-    to: 'orchestrator/src/record/record-project-destination.ts',
-    reason:
-      'viewing read; reclassified when DEV-2244 splits the viewing default from the write decision',
   },
   {
     rule: 'no-active-space-resolver-import',
@@ -74,21 +42,7 @@ export const architectureViolationBaseline: readonly ArchitectureViolationBaseli
   {
     rule: 'no-active-space-resolver-import',
     from: 'orchestrator/src/record/record-cache.ts',
-    to: 'orchestrator/src/record/record-project-destination.ts',
-    reason:
-      'viewing read; reclassified when DEV-2244 splits the viewing default from the write decision',
-  },
-  {
-    rule: 'no-active-space-resolver-import',
-    from: 'orchestrator/src/record/record-cache.ts',
     to: 'orchestrator/src/project-space.ts',
-    reason:
-      'viewing read; reclassified when DEV-2244 splits the viewing default from the write decision',
-  },
-  {
-    rule: 'no-active-space-resolver-import',
-    from: 'orchestrator/src/record/record-cache-feed.ts',
-    to: 'orchestrator/src/record/record-project-destination.ts',
     reason:
       'viewing read; reclassified when DEV-2244 splits the viewing default from the write decision',
   },
@@ -120,19 +74,6 @@ export const architectureViolationBaseline: readonly ArchitectureViolationBaseli
   },
   {
     rule: 'no-active-space-resolver-import',
-    from: 'orchestrator/src/project/project-hosted-write.ts',
-    to: 'orchestrator/src/record/record-project-destination.ts',
-    reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
-  },
-  {
-    rule: 'no-active-space-resolver-import',
-    from: 'orchestrator/src/project/declared-project-space.ts',
-    to: 'orchestrator/src/record/record-project-destination.ts',
-    reason:
-      'reads only declaredRecordSpace; leaves the baseline when DEV-2244 splits the declared-space read from the fallback',
-  },
-  {
-    rule: 'no-active-space-resolver-import',
     from: 'orchestrator/src/project/project-commands.ts',
     to: 'orchestrator/src/project-space.ts',
     reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
@@ -141,12 +82,6 @@ export const architectureViolationBaseline: readonly ArchitectureViolationBaseli
     rule: 'no-active-space-resolver-import',
     from: 'orchestrator/src/porting/porting.ts',
     to: 'orchestrator/src/project-space.ts',
-    reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
-  },
-  {
-    rule: 'no-active-space-resolver-import',
-    from: 'orchestrator/src/porting/porting-hosted-import.ts',
-    to: 'orchestrator/src/record/record-project-destination.ts',
     reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
   },
   {
@@ -163,27 +98,8 @@ export const architectureViolationBaseline: readonly ArchitectureViolationBaseli
   },
   {
     rule: 'no-active-space-resolver-import',
-    from: 'orchestrator/src/doc/doc-hosted-client.ts',
-    to: 'shared/personal-item-space.ts',
-    reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
-  },
-  {
-    rule: 'no-active-space-resolver-import',
     from: 'orchestrator/src/database/workflow-uuid-migration-preflight.ts',
     to: 'orchestrator/src/project-space.ts',
-    reason:
-      'viewing read; reclassified when DEV-2244 splits the viewing default from the write decision',
-  },
-  {
-    rule: 'no-active-space-resolver-import',
-    from: 'orchestrator/src/commands/credential.ts',
-    to: 'orchestrator/src/record/record-project-destination.ts',
-    reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
-  },
-  {
-    rule: 'no-active-space-resolver-import',
-    from: 'hub/src/trpc/routers/hosted-context.ts',
-    to: 'shared/personal-item-space.ts',
     reason:
       'viewing read; reclassified when DEV-2244 splits the viewing default from the write decision',
   },

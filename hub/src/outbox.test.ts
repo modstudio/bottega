@@ -33,7 +33,7 @@ const project = {
   name: 'fixture',
   path: '/fixture',
   repository: true,
-  settings: { keyPrefixes: ['FIX'] },
+  settings: { keyPrefixes: ['FIX'], space: 'one' },
 }
 const identity: HostedTaskIdentity = {
   userId: 'user-one',

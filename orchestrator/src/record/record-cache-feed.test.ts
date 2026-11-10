@@ -58,7 +58,9 @@ const docRow = (id: string) => ({
 const project = (name = 'feed-project') => {
   const id = newRecordId()
   db()
-    .query("INSERT INTO project(record_id,name,path,settings) VALUES (?,?,?, '{}')")
+    .query(
+      `INSERT INTO project(record_id,name,path,settings) VALUES (?,?,?, '{"space":"space-a"}')`,
+    )
     .run(id, name, `/tmp/${name}`)
   return { id, name }
 }

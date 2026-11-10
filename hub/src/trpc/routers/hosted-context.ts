@@ -8,7 +8,9 @@ import {
   RULINGS_CONFIG_KEY,
   RULINGS_VALUES,
 } from '../../../../shared/autonomy.ts'
-import { resolvePersonalItemSpace } from '../../../../shared/personal-item-space.ts'
+import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
+import { parseRecordSpaceMemberships } from '../../../../shared/record-space-membership.ts'
+import { recordWriteSpace } from '../../../../shared/record-write-space.ts'
 import { summarizeSettings } from '../../../../shared/settings-summary.ts'
 import {
   readStoredShipTo,
@@ -43,11 +45,15 @@ function defaultClient(context: Context): RecordClient {
   })
 }
 
-async function allDocs(client: RecordClient, input: { scope: string; subject?: string }) {
+async function allDocs(
+  client: RecordClient,
+  input: { scope: string; subject?: string },
+  destinationSpaceId?: string,
+) {
   const rows: RecordDoc[] = []
   let cursor: string | undefined
   do {
-    const page = await client.docs({ ...input, limit: 100, cursor })
+    const page = await client.docs({ ...input, limit: 100, cursor }, destinationSpaceId)
     rows.push(...page.items)
     cursor = page.nextCursor ?? undefined
   } while (cursor)
@@ -56,17 +62,12 @@ async function allDocs(client: RecordClient, input: { scope: string; subject?: s
 
 async function personalSpace(client: RecordClient): Promise<{ userId: string; spaceId: string }> {
   const identity = await client.whoami()
-  const spaceId = resolvePersonalItemSpace(
-    {
-      userId: identity.user.id,
-      activeSpaceId: identity.activeSpaceId,
-      personalSpaceId: identity.personalSpaceId,
-    },
-    { kind: 'document', scope: 'canon', subject: null, ownerUserId: identity.user.id },
+  const decision = recordWriteSpace(
+    { kind: 'personal' },
+    { declaredSpaces: {}, personalSpaceId: identity.personalSpaceId, memberships: [] },
   )
-  if (!spaceId)
-    throw new TRPCError({ code: 'CONFLICT', message: 'personal space is not provisioned' })
-  return { userId: identity.user.id, spaceId }
+  if ('refused' in decision) throw new TRPCError({ code: 'CONFLICT', message: decision.remedy })
+  return { userId: identity.user.id, spaceId: decision.spaceId }
 }
 
 async function allPersonalDocs(client: RecordClient, input: { scope: string; subject?: string }) {
@@ -213,25 +214,26 @@ async function settingsRow(
 ): Promise<{ row: RecordDoc; destination: string | undefined }> {
   const subject = 'user' in address ? '' : address.project
   const identity = await client.whoami()
-  const destination = resolvePersonalItemSpace(
-    {
-      userId: identity.user.id,
-      activeSpaceId: identity.activeSpaceId,
-      personalSpaceId: identity.personalSpaceId,
-    },
-    {
-      kind: 'document',
-      scope: 'settings',
-      subject: 'user' in address ? null : address.project,
-      ownerUserId: 'user' in address ? identity.user.id : null,
-    },
-  )
-  if ('user' in address && !destination)
-    throw new TRPCError({ code: 'CONFLICT', message: 'personal space is not provisioned' })
-  const rows =
-    'user' in address && destination
-      ? (await client.docs({ scope: 'settings', subject, limit: 100 }, destination)).items
-      : await allDocs(client, { scope: 'settings', subject })
+  const registered = await client.projects()
+  if (!('user' in address) && !registered.some((project) => project.name === address.project))
+    throw new TRPCError({
+      code: 'NOT_FOUND',
+      message: `project ${address.project} is not in the hosted record; run \`${PLATFORM_SLUG} project push\``,
+    })
+  const owner =
+    'user' in address
+      ? ({ kind: 'personal' } as const)
+      : ({ kind: 'project', name: address.project } as const)
+  const decision = recordWriteSpace(owner, {
+    declaredSpaces: Object.fromEntries(
+      registered.map((project) => [project.name, project.spaceId]),
+    ),
+    personalSpaceId: identity.personalSpaceId,
+    memberships: parseRecordSpaceMemberships(identity.memberships),
+  })
+  if ('refused' in decision) throw new TRPCError({ code: 'CONFLICT', message: decision.remedy })
+  const destination = decision.spaceId
+  const rows = await allDocs(client, { scope: 'settings', subject }, destination)
   const row = rows.find((candidate) =>
     'user' in address
       ? candidate.subject === null &&
@@ -242,7 +244,7 @@ async function settingsRow(
         candidate.slug === 'settings',
   )
   if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'settings doc not found' })
-  return { row, destination: 'user' in address ? (destination ?? undefined) : undefined }
+  return { row, destination }
 }
 
 async function hostedSettingsGet(client: RecordClient, input: z.infer<typeof target>) {

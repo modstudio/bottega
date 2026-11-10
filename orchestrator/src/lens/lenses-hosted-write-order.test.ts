@@ -151,10 +151,21 @@ test('hosted profile failure is inert and success adopts hosted identities and v
 test('hosted selection failure is inert and success adopts hosted identities and versions', async () => {
   installHostedCorrectness()
   const projectId = newRecordId()
-  upsertProject({ recordId: projectId, name: 'hosted-project', path: '/tmp/hosted', settings: {} })
+  upsertProject({
+    recordId: projectId,
+    name: 'hosted-project',
+    path: '/tmp/hosted',
+    settings: { space: HOSTED_SPACE },
+  })
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: HOSTED_SPACE,
+      personalSpaceId: 'space-a',
+      memberships: [{ space_id: HOSTED_SPACE, slug: 'hosted', permission: 'write' }],
+    }),
     selectProjectLensProfile: async () => {
       throw new Error('hosted selection write failed')
     },
@@ -180,6 +191,12 @@ test('hosted selection failure is inert and success adopts hosted identities and
   const revisionId = newRecordId()
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: HOSTED_SPACE,
+      personalSpaceId: 'space-a',
+      memberships: [{ space_id: HOSTED_SPACE, slug: 'hosted', permission: 'write' }],
+    }),
     selectProjectLensProfile: async () => ({
       selection: {
         id: selectionId,

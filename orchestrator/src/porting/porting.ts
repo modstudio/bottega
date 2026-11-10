@@ -1,8 +1,10 @@
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
+import { projectRowByName } from '../project/projects.ts'
 import { activeRecordSpace, effectiveProjectSpace } from '../project-space.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { applyPortWriteResponse } from '../record/record-cache-port.ts'
+import { projectDestinationFromIdentity } from '../record/record-project-destination-client.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { workerStoreWriteRefusal } from '../worker-store-write.ts'
 import { type HubTaskReader, resolveHubTaskReference } from '../workflow/workflow-task-reference.ts'
@@ -65,7 +67,14 @@ function projectSpace(recordId: string): string | null {
 }
 async function hostedSpace(recordId?: string): Promise<string> {
   const identity = await recordApiClient().whoami()
-  const spaceId = recordId ? projectSpace(recordId) : identity.activeSpaceId
+  if (recordId) {
+    const name = projectName(recordId)
+    const project = projectRowByName(name)
+    const decision = projectDestinationFromIdentity(name, project?.settings, identity)
+    if ('refused' in decision) throw new Error(decision.remedy)
+    return decision.spaceId
+  }
+  const spaceId = identity.activeSpaceId
   if (!spaceId) throw new Error('record session has no active space')
   return spaceId
 }

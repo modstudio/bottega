@@ -22,6 +22,7 @@ export const recordChangeModules = [
   module('orchestrator/src/record/record-cache-feed.ts', [
     'bun:sqlite',
     '../../../shared/record-space-membership.ts',
+    '../../../shared/record-remedies.ts',
     '../database/db.ts',
     '../project-space.ts',
     '../project/projects.ts',

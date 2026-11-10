@@ -2,11 +2,11 @@
 /** Classifies one project's declared and hosted record spaces without I/O. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { declaredProjectSpaceRemedy } from '../../../shared/record-remedies.ts'
 import {
   type RecordSpaceMembership,
   recordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
-import { declaredProjectSpaceRemedy } from './declared-project-space.ts'
 
 export type FillSpaceDecision =
   | { kind: 'ok' }

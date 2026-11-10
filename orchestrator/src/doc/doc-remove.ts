@@ -5,7 +5,7 @@ import { writableDb } from '../database/db.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
 import type { DocWriteContext } from './doc-article-fields.ts'
-import { hostedDocClient } from './doc-hosted-client.ts'
+import { contextTaskOwner, hostedDocClient } from './doc-hosted-client.ts'
 import { type Doc, getDocStore } from './doc-read-store.ts'
 import { assertLocalStoredReferenceWrite } from './doc-reference-write.ts'
 import { assertLocalRevisionWrite } from './doc-revision-store.ts'
@@ -56,7 +56,11 @@ export async function removeStoredDoc(
   return applyRecordWriteAuthority({
     local: () => executeLocalDocRemove({ scope, subject, owner, slug, doc, identity, ...context }),
     hosted: async () => {
-      const client = await hostedDocClient(doc.scope, doc.subject)
+      const client = await hostedDocClient(
+        doc.scope,
+        doc.subject,
+        contextTaskOwner(context.contextTask),
+      )
       let recordId = doc.record_id
       let hostedExpected = context.expectedRevision
       if (!recordId) {

@@ -16,10 +16,10 @@ const identity = {
   ],
 }
 
-test('project destination resolves declarations, fallback, and each refusal', () => {
+test('project destination resolves declarations and each refusal', () => {
   expect(taskProjectDestination('defaulted', registered, identity)).toEqual({
     project: 'defaulted',
-    destinationSpaceId: 'space-a',
+    refused: 'undeclared-project',
   })
   expect(taskProjectDestination('by-slug', registered, identity)).toEqual({
     project: 'by-slug',
