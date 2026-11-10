@@ -77,6 +77,7 @@ import {
   wrapsForRecipients,
 } from './data-key-access.ts'
 import { recordConfigCallOutcome } from './hosted-config-call-outcome.ts'
+import { machineTrustRefusal } from './machine-trust-refusal.ts'
 
 const hostedConfigClient = (env: ConfigEnvironment = process.env): ConfigClient =>
   configClient(env, fetch, undefined, undefined, recordConfigCallOutcome)
@@ -256,8 +257,8 @@ export async function machineTrust(
     throw new Error('machine key id does not match public key')
   const remote = await unpinServerRevoked(client)
   const registered = remote.find((item) => item.keyId === keyId)
-  if (!registered || registered.revokedAt)
-    throw new Error(`machine key ${keyId} is not registered and active in this space`)
+  const refusal = machineTrustRefusal(keyId, registered)
+  if (refusal) throw new Error(refusal)
   await pinTrustedMachine(keyId, publicBytes, label)
   const machine = await localMachine()
   const trust = await readTrustList()
