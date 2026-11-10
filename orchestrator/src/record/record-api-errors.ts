@@ -2,6 +2,7 @@
 /** Maps hosted-service refusals to their HTTP status without hiding unexpected failures. */
 
 import type { Context } from 'hono'
+import { DocRevisionConflictError, revisionConflictBody } from '../doc/doc-revision-conflict.ts'
 import { RecordBoardError } from './record-board-contract.ts'
 import { ConfigServiceError } from './record-config-error.ts'
 import { RecordDocError } from './record-docs.ts'
@@ -14,6 +15,8 @@ import { TrialSpaceDeleteError } from './record-trial-space-contract.ts'
 import { RecordVerdictError } from './record-verdicts.ts'
 
 export function renderRecordApiRefusal(context: Context, error: unknown): Response | null {
+  if (error instanceof DocRevisionConflictError)
+    return context.json(revisionConflictBody(error), 409)
   if (error instanceof RecordProjectSpaceConflictError)
     return context.json(projectSpaceConflictResponse(error), error.status)
   if (

@@ -222,7 +222,9 @@ describe('hosted-only note safety', () => {
         { text: 'Must not enter cache', cwd: '/fixtures/repos/workshop', forceNew: true },
         { hosted: unreachable },
       ),
-    ).rejects.toThrow('network error')
+    ).rejects.toThrow(
+      'the hosted record at https://hub.example.test could not be reached (offline); nothing was written',
+    )
     expect(db().query<{ count: number }, []>('SELECT count(*) count FROM note').get()!.count).toBe(
       before,
     )
@@ -240,7 +242,9 @@ describe('hosted-only note safety', () => {
     const before = db().query<{ count: number }, []>('SELECT count(*) count FROM task').get()!.count
     await expect(
       promoteNote(id, { hosted: unreachable, title: 'Promotion failure' }),
-    ).rejects.toThrow('network error')
+    ).rejects.toThrow(
+      'the hosted record at https://hub.example.test could not be reached (offline); nothing was written',
+    )
     expect(db().query<{ count: number }, []>('SELECT count(*) count FROM task').get()!.count).toBe(
       before,
     )

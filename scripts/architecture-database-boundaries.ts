@@ -53,6 +53,7 @@ export const databaseBoundarySpecs: ImportBoundary[] = [
       `${source}contention.ts`,
       `${source}database-file-family.ts`,
       `${source}database-location.ts`,
+      `${source}hosted-table-guard.ts`,
       `${source}machine-identity-store.ts`,
       `${source}migration-compatibility.ts`,
       `${source}migration-drain-state.ts`,

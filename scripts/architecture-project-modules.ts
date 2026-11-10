@@ -24,13 +24,37 @@ export const projectModules: ProjectModule[] = [
     './project-settings.ts',
   ]),
   module('orchestrator/src/project/project-settings-patch.ts', []),
+  module('orchestrator/src/project/declared-project-space.ts', [
+    '../../../shared/brand.ts',
+    '../record/record-project-destination.ts',
+    './projects.ts',
+  ]),
+  module('orchestrator/src/project/project-fill-space-decision.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/record-space-membership.ts',
+    './declared-project-space.ts',
+  ]),
+  module('orchestrator/src/project/project-fill-space.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/record-space-membership.ts',
+    '../record/record-api-client.ts',
+    '../record/record-cache-projects.ts',
+    '../record/record-write-authority.ts',
+    './project-fill-space-decision.ts',
+    './projects.ts',
+  ]),
+  module('orchestrator/src/project/project-space-refusals.ts', []),
+  module('orchestrator/src/project/project-set-space.ts', [
+    './project-settings-patch.ts',
+    './project-space-refusals.ts',
+  ]),
   module('orchestrator/src/project/project-add-decision.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-project-contract.ts',
     '../../../shared/record-space-membership.ts',
     '../record/record-project-columns.ts',
-    '../record/record-project-destination.ts',
     './project-settings.ts',
+    './project-space-refusals.ts',
     './project-retired-hosted.ts',
   ]),
   module('orchestrator/src/project/project-add-record.ts', [

@@ -105,6 +105,7 @@ type OpenHook = (database: Database) => void
 export type OpenHooks = {
   afterWritableOpen?: OpenHook[]
   afterInitialize?: OpenHook[]
+  access?: (database: Database) => Database
 }
 let openHooks: OpenHooks | null = null
 export function registerOpenHooks(hooks: OpenHooks): () => void {
@@ -115,7 +116,11 @@ export function registerOpenHooks(hooks: OpenHooks): () => void {
   }
 }
 function registeredOpenHooks(): OpenHooks {
-  if (openHooks && Object.values(openHooks).some((hooks) => hooks?.length)) return openHooks
+  if (
+    openHooks &&
+    (openHooks.afterWritableOpen?.length || openHooks.afterInitialize?.length || openHooks.access)
+  )
+    return openHooks
   throw new Error(
     'refusing writable database open: standard store hooks are not registered\n' +
       'invariant: Writable stores run evidence hygiene, liveness reaping, and workflow seeding.\n' +
@@ -125,7 +130,7 @@ function registeredOpenHooks(): OpenHooks {
 function requireOpenHooksForWritableMode(): void {
   if (!storeWritesRefused()) registeredOpenHooks()
 }
-function runOpenHooks(moment: keyof OpenHooks, database: Database): void {
+function runOpenHooks(moment: 'afterWritableOpen' | 'afterInitialize', database: Database): void {
   for (const hook of registeredOpenHooks()[moment] ?? []) hook(database)
 }
 /**
@@ -308,6 +313,7 @@ function commandReadOnlyDatabase(): Database {
     throw new Error(migrationWindow.refusal)
   }
   if (migrationWindow.waited) recordMigrationWindowWait(migrationWindow.waited, true)
+  readOnlyHandle = openHooks?.access?.(readOnlyHandle) ?? readOnlyHandle
   return readOnlyHandle
 }
 
@@ -595,9 +601,9 @@ function defaultDatabase(writable: boolean): Database {
   if (openMode === 'read-write') keepJournalSidecars(d)
   const migrationWindow = migrationWindowRefusal(d)
   if (migrationWindow.refusal) refuseOpenMigration(d, migrationWindow.refusal)
-  finishDefaultDatabaseOpen(d, openMode, writable)
+  const accessed = finishDefaultDatabaseOpen(d, openMode, writable)
   if (migrationWindow.waited) recordMigrationWindowWait(migrationWindow.waited)
-  return d
+  return accessed
 }
 
 function refuseOpenMigration(d: Database, refused: string): never {
@@ -698,7 +704,11 @@ function awaitMigrationWindowForMigrationWinner(database: Database): void {
   if (migrationWindow.waited) recordMigrationWindowWait(migrationWindow.waited, true)
 }
 
-function finishDefaultDatabaseOpen(d: Database, openMode: StoreOpenMode, writable: boolean): void {
+function finishDefaultDatabaseOpen(
+  d: Database,
+  openMode: StoreOpenMode,
+  writable: boolean,
+): Database {
   const registered = d.query('SELECT path FROM project WHERE name = ?').get(PLATFORM_SLUG) as {
     path: string
   } | null
@@ -723,6 +733,8 @@ function finishDefaultDatabaseOpen(d: Database, openMode: StoreOpenMode, writabl
   openedUserVersion = readUserVersion(d)
   if (connectionWritable) runOpenHooks('afterWritableOpen', d)
   if (writable && registeredStoreWriteProtected) throw new Error(LINKED_WORKTREE_WRITE_REFUSAL)
+  handle = openHooks?.access?.(d) ?? d
+  return handle
 }
 
 export type LiveRun = {

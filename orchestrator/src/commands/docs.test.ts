@@ -260,7 +260,7 @@ test('converted command families preserve trunk output and exit status without o
     [
       ['project', 'set'],
       1,
-      `${PLATFORM_SLUG} project set <name> [--stack X] [--path P] [--canon|--no-canon] [--settings JSON] [--json]`,
+      `${PLATFORM_SLUG} project set <name> [--stack X] [--space <id-or-slug>] [--path P] [--canon|--no-canon] [--settings JSON] [--json]`,
     ],
     [
       ['project', 'select-profile'],
@@ -306,7 +306,7 @@ test('converted command families preserve trunk output and exit status without o
     })
     expect(await runRegisteredCommand(['project', 'bogus'])).toEqual({
       code: 1,
-      firstLine: `unknown: ${PLATFORM_SLUG} project bogus. Try list | add | set | remove | retire | push | fill-record-ids`,
+      firstLine: `unknown: ${PLATFORM_SLUG} project bogus. Try list | add | set | fill-space | remove | retire | push | fill-record-ids`,
     })
     expect(await runRegisteredCommand(['subject', 'bogus', 'fixture-project'])).toEqual({
       code: 1,

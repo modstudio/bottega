@@ -1,10 +1,14 @@
-export type HostedRequestSafety = 'probe' | 'idempotent' | 'non-idempotent'
+import {
+  type HostedRequestSafety,
+  hostedRequestSafetyStatement,
+} from '../../shared/record-remedies.ts'
+
+export type { HostedRequestSafety } from '../../shared/record-remedies.ts'
 
 type HostedRefusal = {
   status?: number
   statusText?: string
   body?: unknown
-  cause?: unknown
   safety: HostedRequestSafety
 }
 
@@ -19,27 +23,23 @@ function retryStatement(refusal: HostedRefusal): string {
     refusal.safety === 'probe' ||
     (refusal.status !== undefined && refusal.status >= 400 && refusal.status < 500)
   )
-    return 'nothing was written'
-  if (refusal.safety === 'idempotent') return 'safe to retry'
-  return 'the write may have been applied; check before retrying'
+    return hostedRequestSafetyStatement('probe')
+  return hostedRequestSafetyStatement(refusal.safety)
 }
 
 export function hostedRefusalError(refusal: HostedRefusal): Error {
   const body = objectBody(refusal.body)
   const status = refusal.status === undefined ? 'network error' : String(refusal.status)
-  const cause = refusal.cause instanceof Error ? refusal.cause.message : String(refusal.cause ?? '')
   const detail =
     typeof body?.error === 'string' && body.error.trim()
       ? body.error
-      : refusal.statusText?.trim() || cause || status
+      : refusal.statusText?.trim() || status
   const serverRemedy =
     typeof body?.remedy === 'string' && body.remedy.trim() ? body.remedy.trim() : null
   const retry = retryStatement(refusal)
-  const serverStatesWriteOutcome = [
-    'nothing was written',
-    'safe to retry',
-    'check before retrying',
-  ].some((statement) => serverRemedy?.toLowerCase().includes(statement))
+  const serverStatesWriteOutcome = (['probe', 'idempotent', 'non-idempotent'] as const).some(
+    (safety) => serverRemedy?.toLowerCase().includes(hostedRequestSafetyStatement(safety)),
+  )
   const remedies = [
     serverRemedy,
     serverStatesWriteOutcome || serverRemedy?.toLowerCase().includes(retry) ? null : retry,

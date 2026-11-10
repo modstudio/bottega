@@ -27,6 +27,7 @@ const refusals = (
     hostedTables?: readonly string[]
     allowedHostedOutbox?: readonly string[]
     allowedHostedCaches?: readonly string[]
+    hostedWithoutLocalAccess?: readonly string[]
   } = {},
 ) =>
   stateClassRefusals({
@@ -41,6 +42,7 @@ const refusals = (
     hostedTables: options.hostedTables ?? ['hosted_row'],
     allowedHostedOutbox: options.allowedHostedOutbox ?? [],
     allowedHostedCaches: options.allowedHostedCaches ?? [],
+    hostedWithoutLocalAccess: options.hostedWithoutLocalAccess ?? [],
   })
 
 describe('stateClassRefusals', () => {
@@ -72,6 +74,19 @@ describe('stateClassRefusals', () => {
   test('refuses stale declarations', () => {
     expect(refusals([hosted('local_row'), hosted('removed_row')])).toContain(
       'orchestrator.removed_row: state class declaration is stale because the table does not exist; remedy: remove its row from scripts/identity-state-classes.ts',
+    )
+  })
+
+  test('refuses a guard table that is not a hosted orchestrator declaration', () => {
+    expect(
+      refusals(
+        [hosted('local_row', { class: 'machine', counterpart: undefined, ruling: 'ruling' })],
+        {
+          hostedWithoutLocalAccess: ['local_row'],
+        },
+      ),
+    ).toContain(
+      'local_row: hosted-table guard entry is not a declared hosted orchestrator table; remedy: edit orchestrator/src/database/hosted-table-guard.ts',
     )
   })
 

@@ -10,12 +10,15 @@ import type {
   DocStatus,
 } from '../../../shared/docs.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
-import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
+import {
+  type HostedRequestSafety,
+  RECORD_SIGN_IN_REMEDY,
+  recordUnreachableRefusal,
+} from '../../../shared/record-remedies.ts'
 import type { TableStorageMeasurement } from '../../../shared/storage-lifecycle.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
-import { MISSING_HOSTED_REVISION_REMEDY, RECORD_WRITE_REMEDY } from '../doc/doc-write-allowed.ts'
 import type { VerdictInput } from '../verdict/verdict-payload.ts'
 import { recordBoardRootClient } from './record-api-client-board.ts'
 import {
@@ -24,6 +27,12 @@ import {
 } from './record-api-client-board-stream.ts'
 import { type RecordChangesClient, recordChangesClient } from './record-api-client-changes.ts'
 import { recordConfigAccessClient } from './record-api-client-config-access.ts'
+import {
+  recordApiUnreachable as classifyRecordApiUnreachable,
+  recordApiError,
+  recordAuthRefusal,
+  recordAuthToken,
+} from './record-api-client-error.ts'
 import { type RecordLensClient, recordLensClient } from './record-api-client-lens.ts'
 import { type RecordMachineClient, recordMachineClient } from './record-api-client-machine.ts'
 import { recordModerationClient } from './record-api-client-moderation.ts'
@@ -48,16 +57,12 @@ import {
   subjectMutationBody,
 } from './record-api-client-paths.ts'
 import { type RecordPortClient, recordPortClient } from './record-api-client-port.ts'
-import {
-  RecordApiRequestError,
-  responseCode,
-  responseMessage,
-  responseRecord,
-} from './record-api-client-response.ts'
-import { parseProjectSpaceConflictResponse } from './record-project-space-contract.ts'
+import { RecordApiRequestError, responseRecord } from './record-api-client-response.ts'
 
+export { recordAuthRefusal, recordAuthToken } from './record-api-client-error.ts'
 export { RecordApiRequestError } from './record-api-client-response.ts'
 
+import { sendWithStoredRecordSessionToken } from '../../../shared/record-session.ts'
 import {
   type RecordRoutingEvidenceClient,
   recordRoutingEvidenceClient,
@@ -70,7 +75,7 @@ import {
 import type { RecordSettingsClient } from './record-api-client-settings.ts'
 import { boardStreamHeaders, recordTransport } from './record-api-client-transport.ts'
 import { type RecordWorkflowClient, recordWorkflowClient } from './record-api-client-workflow.ts'
-import { bearerHeaders, RECORD_SIGN_IN_REMEDY } from './record-auth.ts'
+import { bearerHeaders } from './record-auth.ts'
 import {
   type HostedBoardAcceptInput,
   type HostedBoardChanges,
@@ -461,84 +466,29 @@ function injectSlot(): InjectSlot {
 const injectedClient = (): RecordApiClient | null => injectSlot().current
 export const recordApiClientInjected = (): boolean => injectedClient() !== null
 
-const recordApiStatus = (status: number) => `record API ${status}`
-
-function recordApiUnreachable(error: unknown): Error {
-  const detail = error instanceof Error ? error.message : String(error)
-  return new RecordApiRequestError(
-    `record API is unreachable: ${detail}\n${RECORD_WRITE_REMEDY}`,
-    'unreachable',
-  )
-}
+const recordApiUnreachable = (
+  error: unknown,
+  outcome: HostedRequestSafety,
+  origin = recordApiBaseUrl(),
+) => classifyRecordApiUnreachable(error, origin, outcome)
 
 export const recordIdentityResponse = (body: unknown) =>
-  parseRecordIdentityResponse(body, (message) => recordApiUnreachable(new Error(message)))
-
-function recordApiServerError(message: string, status: number): RecordApiRequestError {
-  const fallback = recordApiStatus(status)
-  const statusMessage = message === fallback ? message : `${fallback}: ${message}`
-  return new RecordApiRequestError(`${statusMessage}\n${RECORD_WRITE_REMEDY}`, 'server', status)
-}
-
-function recordApiError(body: unknown, status: number, headers: Headers = new Headers()): Error {
-  if (status === 401) return recordAuthRefusal(status, body, headers)
-  const projectSpaceConflict = parseProjectSpaceConflictResponse(body, status)
-  if (projectSpaceConflict) return projectSpaceConflict
-  const message = responseMessage(body, recordApiStatus(status))
-  if (status === 429) return new RecordApiRequestError(message, 'refused', status)
-  if (message === RECORD_ACTIVE_SPACE_REMEDY)
-    return new RecordApiRequestError(message, 'refused', status)
-  if (message.includes(MISSING_HOSTED_REVISION_REMEDY))
-    return new RecordApiRequestError(message, 'refused', status)
-  if (status >= 400 && status < 500) return new RecordApiRequestError(message, 'refused', status)
-  return recordApiServerError(message, status)
-}
-
-export function recordAuthToken(headers: Headers, body: unknown): string | null {
-  const fromHeader = headers.get('set-auth-token')?.trim()
-  if (fromHeader) return fromHeader
-  const token = responseRecord(body).token
-  return typeof token === 'string' && token.trim() ? token : null
-}
-
-export function recordAuthRefusal(status: number, body: unknown, headers: Headers): Error {
-  if (status === 401)
-    return new RecordApiRequestError(
-      `record credentials were refused; ${RECORD_SIGN_IN_REMEDY}`,
-      'refused',
-    )
-  if (status === 429) {
-    const interval = headers.get('retry-after') ?? headers.get('x-ratelimit-reset') ?? 'later'
-    return new RecordApiRequestError(
-      `record sign-in is rate limited; retry after ${interval}`,
-      'refused',
-    )
-  }
-  const message = responseMessage(body, recordApiStatus(status))
-  if (status >= 400 && status < 500) {
-    const code = responseCode(body)
-    const existingAccount = code
-      ? code === 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL' || code === 'USER_ALREADY_EXISTS'
-      : message.startsWith('User already exists')
-    return new RecordApiRequestError(message, 'refused', status, code, existingAccount)
-  }
-  return recordApiServerError(message, status)
-}
+  parseRecordIdentityResponse(body, (message) => recordApiUnreachable(new Error(message), 'probe'))
 
 async function recordEmailAuthRequest(
   path: '/api/auth/sign-in/email' | '/api/auth/sign-up/email',
   body: Record<string, string>,
 ) {
+  const origin = recordApiBaseUrl()
   let response: Response
   try {
-    response = await recordTransport(recordApiBaseUrl(), path, {
+    response = await recordTransport(origin, path, {
       method: 'POST',
       headers: new Headers({ 'content-type': 'application/json' }),
       body: JSON.stringify(body),
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    throw new RecordApiRequestError(`record API is unreachable: ${message}`, 'unreachable')
+    throw classifyRecordApiUnreachable(error, origin, 'non-idempotent')
   }
   const payload = await response.json().catch(() => null)
   if (!response.ok) throw recordAuthRefusal(response.status, payload, response.headers)
@@ -584,24 +534,41 @@ export async function recordApiRequest<T>(
   transport: typeof fetch = hostedApiFetch,
 ): Promise<T> {
   throwIfRecordApiRequestRefused()
-  const token = init.signal
-    ? await (authentication
-        ? authentication.tokenAsync(init.signal)
-        : storedRecordTokenAsync(undefined, init.signal))
-    : authentication
-      ? authentication.token()
-      : storedRecordToken()
-  if (!token) throw new RecordApiRequestError(RECORD_SIGN_IN_REMEDY, 'refused')
-  const headers = new Headers(init.headers)
-  for (const [name, value] of bearerHeaders(token)) headers.set(name, value)
-  if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json')
-  if (init.destinationSpaceId) headers.set('x-record-space', init.destinationSpaceId)
-  let response: Response
-  try {
-    response = await recordTransport(recordApiBaseUrl(), path, { ...init, headers }, transport)
-  } catch (error) {
-    throw recordApiUnreachable(error)
+  const readToken = async () =>
+    init.signal
+      ? await (authentication
+          ? authentication.tokenAsync(init.signal)
+          : storedRecordTokenAsync(undefined, init.signal))
+      : authentication
+        ? authentication.token()
+        : storedRecordToken()
+  const origin = recordApiBaseUrl()
+  const send = async (bearer: string) => {
+    const headers = new Headers(init.headers)
+    for (const [name, value] of bearerHeaders(bearer)) headers.set(name, value)
+    if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json')
+    if (init.destinationSpaceId) headers.set('x-record-space', init.destinationSpaceId)
+    try {
+      return await recordTransport(origin, path, { ...init, headers }, transport)
+    } catch (error) {
+      const method = init.method?.toUpperCase() ?? 'GET'
+      throw classifyRecordApiUnreachable(
+        error,
+        origin,
+        method === 'GET' || method === 'HEAD' ? 'probe' : 'non-idempotent',
+      )
+    }
   }
+  const sendStored = async (token: string | null) => {
+    if (!token) throw new RecordApiRequestError(RECORD_SIGN_IN_REMEDY, 'refused')
+    return send(token)
+  }
+  const response = authentication
+    ? await sendStored(await readToken())
+    : await sendWithStoredRecordSessionToken(sendStored, {
+        signal: init.signal ?? undefined,
+        readToken,
+      })
   const body = await response.json().catch(() => null)
   if (!response.ok) {
     if (init.acceptedError?.status === response.status) return init.acceptedError.schema(body)
@@ -626,7 +593,7 @@ async function publicRequest<T>(path: string): Promise<T> {
       headers: new Headers(),
     })
   } catch (error) {
-    throw recordApiUnreachable(error)
+    throw recordApiUnreachable(error, 'probe')
   }
   const body = await response.json().catch(() => null)
   if (!response.ok) throw recordApiError(body, response.status)
@@ -636,7 +603,7 @@ async function publicRequest<T>(path: string): Promise<T> {
 function ids(body: unknown): RecordDocWriteResponse<{ id: string; revisionId: string }> {
   const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
   if (typeof record.id !== 'string' || typeof record.revisionId !== 'string') {
-    throw recordApiUnreachable(new Error('record API returned an invalid body'))
+    throw recordApiUnreachable(new Error('record API returned an invalid body'), 'non-idempotent')
   }
   return {
     id: record.id,
@@ -652,7 +619,7 @@ function importIds(body: unknown): RecordDocImportResult {
     !Array.isArray(record.revisionIds) ||
     record.revisionIds.some((value) => typeof value !== 'string')
   ) {
-    throw recordApiUnreachable(new Error('record API returned an invalid body'))
+    throw recordApiUnreachable(new Error('record API returned an invalid body'), 'non-idempotent')
   }
   return {
     id: record.id,
@@ -664,13 +631,16 @@ function importIds(body: unknown): RecordDocImportResult {
 function organizationResponse(body: unknown): { id: string; slug: string } {
   const value = responseRecord(body)
   if (typeof value.id !== 'string' || typeof value.slug !== 'string')
-    throw recordApiUnreachable(new Error('record API returned an invalid organization'))
+    throw recordApiUnreachable(
+      new Error('record API returned an invalid organization'),
+      'non-idempotent',
+    )
   return { id: value.id, slug: value.slug }
 }
 
 export function recordInvitationListResponse(body: unknown): HostedRecordInvitation[] {
   if (!Array.isArray(body))
-    throw recordApiUnreachable(new Error('record API returned an invalid invitation list'))
+    throw recordApiUnreachable(new Error('record API returned an invalid invitation list'), 'probe')
   return body.map((row) => {
     const value = responseRecord(row)
     for (const field of [
@@ -682,11 +652,14 @@ export function recordInvitationListResponse(body: unknown): HostedRecordInvitat
       'expiresAt',
     ] as const) {
       if (typeof value[field] !== 'string')
-        throw recordApiUnreachable(new Error('record API returned an invalid invitation list'))
+        throw recordApiUnreachable(
+          new Error('record API returned an invalid invitation list'),
+          'probe',
+        )
     }
     const expiresAt = new Date(value.expiresAt as string)
     if (Number.isNaN(expiresAt.getTime()))
-      throw recordApiUnreachable(new Error('record API returned an invalid invitation'))
+      throw recordApiUnreachable(new Error('record API returned an invalid invitation'), 'probe')
     return value as HostedRecordInvitation
   })
 }
@@ -697,7 +670,10 @@ function acceptedInvitationResponse(
   const value = responseRecord(body)
   const invitation = responseRecord(value.invitation)
   if (typeof invitation.organizationId !== 'string')
-    throw recordApiUnreachable(new Error('record API returned an invalid accepted invitation'))
+    throw recordApiUnreachable(
+      new Error('record API returned an invalid accepted invitation'),
+      'non-idempotent',
+    )
   return { invitation: { organizationId: invitation.organizationId } }
 }
 
@@ -1017,11 +993,13 @@ async function fetchBoardStream(signal?: AbortSignal): Promise<RecordBoardStream
     drop()
     connection.abort()
   }
+  let origin: string | null = null
   try {
     throwIfRecordApiRequestRefused()
+    origin = recordApiBaseUrl()
     // The stream is unbounded until a streaming budget exists.
     const response = await recordTransport(
-      recordApiBaseUrl(),
+      origin,
       '/v1/board/stream',
       {
         method: 'GET',
@@ -1040,6 +1018,10 @@ async function fetchBoardStream(signal?: AbortSignal): Promise<RecordBoardStream
     connection.abort()
     drop()
     if (signal?.aborted) return { kind: 'error', reason: 'aborted' }
-    return { kind: 'error', reason: error instanceof Error ? error.message : String(error) }
+    const detail = error instanceof Error ? error.message : String(error)
+    return {
+      kind: 'error',
+      reason: origin ? recordUnreachableRefusal(origin, detail, 'probe') : detail,
+    }
   }
 }

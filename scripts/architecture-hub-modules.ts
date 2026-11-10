@@ -154,7 +154,14 @@ export const hubModuleSpecs = [
       '../../shared/record-space-request.ts',
     ],
   },
-  { file: 'hub/src/hosted-refusal.ts', allowed: [] },
+  {
+    file: 'hub/src/hosted-refusal.ts',
+    allowed: ['../../shared/record-remedies.ts'],
+  },
+  {
+    file: 'hub/src/hosted-session-send.ts',
+    allowed: ['../../shared/record-remedies.ts', '../../shared/record-session.ts'],
+  },
   {
     file: 'hub/src/hosted-outside-notes.ts',
     allowed: [

@@ -11,6 +11,7 @@ import {
   type RecordWorkflowKind,
   type RecordWorkflowTable,
   type RecordWorkflowTransitionInput,
+  workflowVersionConflict,
 } from './record-workflow-contract.ts'
 
 type Tenant = { url: string } & TenantPrincipal
@@ -276,9 +277,7 @@ async function transition(
       const current = rows.find((row) => row.status === 'production')
       const currentN = current ? number(current.n) : null
       if (currentN !== input.expectedProductionVersion)
-        throw new RecordWorkflowError(
-          `refusing stale hosted ${action}: expected production version ${input.expectedProductionVersion ?? 'none'}, current version ${currentN ?? 'none'}`,
-        )
+        throw workflowVersionConflict(input.expectedProductionVersion, currentN)
       const target = rows.find((row) => number(row.n) === input.n)
       if (!target)
         throw new RecordWorkflowError(`hosted ${input.kind} has no version ${input.n}`, 404)

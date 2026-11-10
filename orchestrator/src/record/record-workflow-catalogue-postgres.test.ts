@@ -109,7 +109,12 @@ postgres('hosted workflow catalogue compare-and-set writers', () => {
         n: 2,
         expectedProductionVersion: null,
       }),
-    ).rejects.toMatchObject({ status: 409 })
+    ).rejects.toMatchObject({
+      status: 409,
+      currentRevision: '1',
+      message:
+        'workflow version conflict: expected none, current 1; re-read the workflow catalogue, then retry with expectedProductionVersion 1',
+    })
     await expect(
       retireRecordWorkflow({
         ...context,
@@ -118,7 +123,12 @@ postgres('hosted workflow catalogue compare-and-set writers', () => {
         n: 1,
         expectedProductionVersion: null,
       }),
-    ).rejects.toMatchObject({ status: 409 })
+    ).rejects.toMatchObject({
+      status: 409,
+      currentRevision: '1',
+      message:
+        'workflow version conflict: expected none, current 1; re-read the workflow catalogue, then retry with expectedProductionVersion 1',
+    })
     const sql = new SQL(url!)
     try {
       const rows =

@@ -503,6 +503,7 @@ const projectSpecs: readonly Spec[] = [
     [
       o('--name <value>'),
       o('--stack <value>'),
+      o('--space <value>'),
       [
         '--settings <value>',
         'apply a JSON Merge Patch: objects merge; arrays and values replace; null removes a key; omitted keys are kept',
@@ -527,6 +528,7 @@ const projectSpecs: readonly Spec[] = [
     ],
   ],
   ['migrate-create [name]', 'migrate a legacy create command', [o('--apply')]],
+  ['fill-space', 'classify or fill missing project space declarations', [o('--apply'), ...json]],
   [
     'remove [name]',
     "remove a project from this machine's register; the shared project stays in the space (retire it with project retire)",
@@ -543,7 +545,13 @@ async function runProject(verb: string, args: string[], command: Command): Promi
     verb,
     ['project', verb, ...args],
     optionFlags(command.opts()),
-    { log, cwd: process.cwd },
+    {
+      log,
+      cwd: process.cwd,
+      exitCode: (code) => {
+        process.exitCode = code
+      },
+    },
     { requireSpaceMembership: requireRecordSpaceMembership },
   )
 }

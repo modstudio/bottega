@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import { chmodSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_NAME } from './brand.ts'
 import { readOwnerOnlySecretFile } from './file-backed-secret-paths.ts'
 import { decideKeyStore, KEYSTORE_ENV } from './key-store.ts'
 import {
+  type AsyncSecurityRunner,
   deleteKeychainItem,
   keychainPlatform,
   readKeychainItem,
@@ -18,14 +19,21 @@ import {
   recordSessionDirectory,
   recordSessionPath,
   recordSessionProbePath,
+  recordSessionStampPath,
 } from './state-directory.ts'
 
-export type { SecurityRunner } from './keychain.ts'
+export type { AsyncSecurityRunner, SecurityRunner } from './keychain.ts'
 
 const SERVICE = `${PLATFORM_NAME}-record-session`
 const ACCOUNT = 'record'
 const PROBE_ACCOUNT = 'record-probe'
 const FILE_REMEDY = `set ${KEYSTORE_ENV}=file to keep the record session and the machine key in owner-only files`
+let memoizedToken: string | null | undefined
+const UNREADABLE_STAMP = Symbol('unreadable-record-session-stamp')
+type SessionStamp = string | null | typeof UNREADABLE_STAMP
+let memoizedStamp: SessionStamp | undefined
+let pendingToken: Promise<string | null> | null = null
+let tokenGeneration = 0
 
 function useFile(): boolean {
   return decideKeyStore(process.env[KEYSTORE_ENV]) === 'file'
@@ -33,6 +41,27 @@ function useFile(): boolean {
 
 function readFileToken(): string | null {
   return readOwnerOnlySecretFile(recordSessionPath(process.env), 'record session')?.trim() || null
+}
+
+function readSessionStamp(): SessionStamp {
+  try {
+    return readFileSync(recordSessionStampPath(process.env), 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    return UNREADABLE_STAMP
+  }
+}
+
+function sameSessionStamp(left: SessionStamp | undefined, right: SessionStamp): boolean {
+  if (left === undefined) return false
+  if (right === UNREADABLE_STAMP) return true
+  return left === right
+}
+
+function touchRecordSessionStamp(): void {
+  const directory = ensureRecordSessionDirectory(process.env)
+  writeFileSync(recordSessionStampPath(process.env), randomUUID(), { mode: 0o600 })
+  chmodSync(directory, 0o700)
 }
 
 function keychainFailureWithFileRemedy(error: unknown): Error {
@@ -50,29 +79,108 @@ function withKeychainRemedy<T>(operation: () => T): T {
 }
 
 export function readRecordSessionToken(runner?: SecurityRunner): string | null {
-  if (useFile()) return readFileToken()
-  return withKeychainRemedy(() => readKeychainItem(SERVICE, ACCOUNT, runner))
+  if (runner)
+    return useFile()
+      ? readFileToken()
+      : withKeychainRemedy(() => readKeychainItem(SERVICE, ACCOUNT, runner))
+  const stamp = readSessionStamp()
+  if (memoizedToken !== undefined && sameSessionStamp(memoizedStamp, stamp)) return memoizedToken
+  const token = useFile()
+    ? readFileToken()
+    : withKeychainRemedy(() => readKeychainItem(SERVICE, ACCOUNT, runner))
+  if (token !== null) {
+    memoizedToken = token
+    memoizedStamp = stamp
+  }
+  return token
 }
 
-export async function readRecordSessionTokenAsync(signal?: AbortSignal): Promise<string | null> {
+export async function readRecordSessionTokenAsync(
+  signal?: AbortSignal,
+  runner?: AsyncSecurityRunner,
+): Promise<string | null> {
+  if (signal?.aborted) throw signal.reason
+  const stamp = readSessionStamp()
+  if (memoizedToken !== undefined && sameSessionStamp(memoizedStamp, stamp)) return memoizedToken
+  if (pendingToken) return raceCallerSignal(pendingToken, signal)
   if (useFile()) {
-    if (signal?.aborted) throw signal.reason
-    return readFileToken()
+    const token = readFileToken()
+    if (token !== null) {
+      memoizedToken = token
+      memoizedStamp = stamp
+    }
+    return token
   }
-  try {
-    return await readKeychainItemAsync(SERVICE, ACCOUNT, signal)
-  } catch (error) {
-    if (signal?.aborted || keychainPlatform() !== 'linux') throw error
-    throw keychainFailureWithFileRemedy(error)
-  }
+  const generation = tokenGeneration
+  const read = readKeychainItemAsync(SERVICE, ACCOUNT, undefined, runner)
+    .catch((error) => {
+      if (keychainPlatform() !== 'linux') throw error
+      throw keychainFailureWithFileRemedy(error)
+    })
+    .then((token) => {
+      if (generation === tokenGeneration && token !== null) {
+        memoizedToken = token
+        memoizedStamp = stamp
+      }
+      return token
+    })
+    .finally(() => {
+      if (pendingToken === read) pendingToken = null
+    })
+  pendingToken = read
+  return raceCallerSignal(read, signal)
+}
+
+function raceCallerSignal<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return operation
+  if (signal.aborted) return Promise.reject(signal.reason)
+  return new Promise<T>((resolve, reject) => {
+    const aborted = () => reject(signal.reason)
+    signal.addEventListener('abort', aborted, { once: true })
+    operation.then(resolve, reject).finally(() => signal.removeEventListener('abort', aborted))
+  })
+}
+
+type StoredRecordSessionSendOptions = {
+  signal?: AbortSignal
+  readToken?: () => string | null | Promise<string | null>
+}
+
+/** Send once with the stored token, refreshing and retrying once when another process changed it. */
+export async function sendWithStoredRecordSessionToken<T extends { status: number }>(
+  send: (token: string | null) => Promise<T>,
+  options: StoredRecordSessionSendOptions = {},
+): Promise<T> {
+  const readToken =
+    options.readToken ??
+    (() =>
+      options.signal ? readRecordSessionTokenAsync(options.signal) : readRecordSessionToken())
+  const token = await readToken()
+  const response = await send(token)
+  if (response.status !== 401) return response
+  forgetRecordSessionToken()
+  const refreshedToken = await readToken()
+  return refreshedToken !== token ? send(refreshedToken) : response
+}
+
+/** Forget the process copy so a later read observes a session changed by another process. */
+export function forgetRecordSessionToken(): void {
+  tokenGeneration += 1
+  memoizedToken = undefined
+  memoizedStamp = undefined
+  pendingToken = null
 }
 
 export function writeRecordSessionToken(token: string, runner?: SecurityRunner): void {
   if (!useFile()) {
     withKeychainRemedy(() => writeKeychainItem(SERVICE, ACCOUNT, token, runner))
+    touchRecordSessionStamp()
+    forgetRecordSessionToken()
     return
   }
   writeFileToken(recordSessionPath(process.env), token)
+  touchRecordSessionStamp()
+  forgetRecordSessionToken()
 }
 
 function writeFileToken(path: string, token: string): void {
@@ -121,7 +229,11 @@ export function probeRecordSessionStore(runner?: SecurityRunner): void {
 export function clearRecordSessionToken(runner?: SecurityRunner): void {
   if (useFile()) {
     rmSync(recordSessionPath(process.env), { force: true })
+    touchRecordSessionStamp()
+    forgetRecordSessionToken()
     return
   }
   withKeychainRemedy(() => deleteKeychainItem(SERVICE, ACCOUNT, runner))
+  touchRecordSessionStamp()
+  forgetRecordSessionToken()
 }

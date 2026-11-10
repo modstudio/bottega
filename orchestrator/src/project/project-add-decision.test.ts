@@ -189,4 +189,23 @@ describe('decideProjectAdd', () => {
       targetSpace: { id: 'space-b', label: 'beta' },
     })
   })
+
+  test('refuses to mint without a declared space even when an active space exists', () => {
+    expect(
+      decideProjectAdd({
+        name: 'new-project',
+        requestedStack: null,
+        stackWasRequested: false,
+        requestedSettings: {},
+        hostedProjects: [],
+        memberships,
+        activeSpaceId: 'space-a',
+      }),
+    ).toEqual({
+      decision: {
+        kind: 'refuse',
+        reason: 'project add requires a record space; retry with --space <id-or-slug>',
+      },
+    })
+  })
 })

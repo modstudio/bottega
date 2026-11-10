@@ -14,16 +14,6 @@ describe('hosted refusal text', () => {
     )
   })
 
-  test('reports a network error on a non-idempotent write as ambiguous', () => {
-    const error = hostedRefusalError({
-      cause: new TypeError('connection closed'),
-      safety: 'non-idempotent',
-    })
-    expect(error.message).toBe(
-      'hosted hub refused the request (network error): connection closed. the write may have been applied; check before retrying',
-    )
-  })
-
   test('reports a 4xx write as not applied', () => {
     const error = hostedRefusalError({
       status: 422,

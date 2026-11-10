@@ -1,10 +1,20 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { chmodSync, existsSync, mkdtempSync, rmSync, statSync } from 'node:fs'
+import {
+  appendFileSync,
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { PLATFORM_NAME } from './brand.ts'
 import {
   clearRecordSessionToken,
+  forgetRecordSessionToken,
   probeRecordSessionStore,
   readRecordSessionToken,
   readRecordSessionTokenAsync,
@@ -12,9 +22,11 @@ import {
   writeRecordSessionToken,
 } from './record-session.ts'
 import {
+  ensureRecordSessionDirectory,
   recordSessionDirectory,
   recordSessionPath,
   recordSessionProbePath,
+  recordSessionStampPath,
   STATE_HOME_ENV,
 } from './state-directory.ts'
 
@@ -33,6 +45,7 @@ const originalPlatform = platformHolder[PLATFORM_KEY]
 const roots: string[] = []
 
 function restoreEnvironment(): void {
+  forgetRecordSessionToken()
   if (originalKeyStore === undefined) delete process.env.BOTTEGA_KEYSTORE
   else process.env.BOTTEGA_KEYSTORE = originalKeyStore
   if (originalStateHome === undefined) delete process.env[STATE_HOME_ENV]
@@ -46,6 +59,9 @@ afterEach(restoreEnvironment)
 
 describe('record session keychain', () => {
   beforeEach(() => {
+    const root = mkdtempSync(join(tmpdir(), 'record-session-keychain-'))
+    roots.push(root)
+    process.env[STATE_HOME_ENV] = root
     delete process.env.BOTTEGA_KEYSTORE
     platformHolder[PLATFORM_KEY] = 'darwin'
   })
@@ -104,6 +120,7 @@ describe('record session keychain', () => {
 
   test('returns null only for a missing item and redacts write failures', () => {
     expect(readRecordSessionToken(() => result(44, '', 'not found'))).toBeNull()
+    forgetRecordSessionToken()
     expect(() => readRecordSessionToken(() => result(2, '', 'keychain unavailable'))).toThrow(
       'security find-generic-password failed with exit code 2: keychain unavailable',
     )
@@ -111,6 +128,53 @@ describe('record session keychain', () => {
     expect(() => writeRecordSessionToken(token, () => result(3, '', `rejected ${token}`))).toThrow(
       'security add-generic-password failed with exit code 3: rejected ***',
     )
+  })
+
+  test('an injected runner bypasses the process memo', () => {
+    expect(readRecordSessionToken(() => result(0, 'first-token\n'))).toBe('first-token')
+    expect(readRecordSessionToken(() => result(0, 'second-token\n'))).toBe('second-token')
+  })
+
+  test('forgetting a pending read prevents it from repopulating the memo', async () => {
+    let finish!: (value: ReturnType<typeof result>) => void
+    const pending = readRecordSessionTokenAsync(
+      undefined,
+      async () => await new Promise((resolve) => (finish = resolve)),
+    )
+    forgetRecordSessionToken()
+    finish(result(0, 'stale-token\n'))
+    expect(await pending).toBe('stale-token')
+
+    let freshReads = 0
+    expect(
+      await readRecordSessionTokenAsync(undefined, async () => {
+        freshReads += 1
+        return result(0, 'fresh-token\n')
+      }),
+    ).toBe('fresh-token')
+    expect(freshReads).toBe(1)
+  })
+
+  test("one caller's abort does not cancel another caller's pending read", async () => {
+    let finish!: (value: ReturnType<typeof result>) => void
+    let reads = 0
+    const runner = async (_argv: string[], _stdin?: Uint8Array, signal?: AbortSignal) => {
+      reads += 1
+      return await new Promise<ReturnType<typeof result>>((resolve, reject) => {
+        finish = resolve
+        signal?.addEventListener('abort', () => reject(signal.reason), { once: true })
+      })
+    }
+    const controller = new AbortController()
+    const cancelled = readRecordSessionTokenAsync(controller.signal, runner)
+    const shared = readRecordSessionTokenAsync(undefined, runner)
+    const reason = new Error('caller cancelled')
+    controller.abort(reason)
+    finish(result(0, 'shared-token\n'))
+
+    await expect(cancelled).rejects.toBe(reason)
+    await expect(shared).resolves.toBe('shared-token')
+    expect(reads).toBe(1)
   })
 
   test('does not create a session file without the opt-in', () => {
@@ -197,6 +261,60 @@ describe('file-backed record session', () => {
 
     expect(readRecordSessionToken(unusedRunner)).toBe('second-token')
     expect(runnerCalls).toBe(0)
+  })
+
+  test('reads a token only once per process', () => {
+    writeRecordSessionToken('first-token', unusedRunner)
+    expect(readRecordSessionToken()).toBe('first-token')
+    rmSync(recordSessionPath(process.env))
+    expect(readRecordSessionToken()).toBe('first-token')
+  })
+
+  test('an external write and stamp replaces a memoized token', () => {
+    writeRecordSessionToken('first-token', unusedRunner)
+    expect(readRecordSessionToken()).toBe('first-token')
+    writeFileSync(recordSessionPath(process.env), 'second-token', { mode: 0o600 })
+    appendFileSync(recordSessionStampPath(process.env), '-changed')
+
+    expect(readRecordSessionToken()).toBe('second-token')
+  })
+
+  test('an external stamp rewrite with the same length invalidates the memo', () => {
+    writeRecordSessionToken('first-token', unusedRunner)
+    expect(readRecordSessionToken()).toBe('first-token')
+    writeFileSync(recordSessionPath(process.env), 'second-token', { mode: 0o600 })
+    const stampPath = recordSessionStampPath(process.env)
+    const length = statSync(stampPath).size
+    writeFileSync(stampPath, 'x'.repeat(length), { mode: 0o600 })
+
+    expect(readRecordSessionToken()).toBe('second-token')
+  })
+
+  test('an unreadable stamp keeps the memo and does not throw', () => {
+    writeRecordSessionToken('first-token', unusedRunner)
+    expect(readRecordSessionToken()).toBe('first-token')
+    writeFileSync(recordSessionPath(process.env), 'unobserved-token', { mode: 0o600 })
+    const stampPath = recordSessionStampPath(process.env)
+    rmSync(stampPath)
+    mkdirSync(stampPath)
+
+    expect(readRecordSessionToken()).toBe('first-token')
+  })
+
+  test('a null read is not latched without a stamp change', () => {
+    expect(readRecordSessionToken()).toBeNull()
+    ensureRecordSessionDirectory(process.env)
+    writeFileSync(recordSessionPath(process.env), 'appeared-token', { mode: 0o600 })
+
+    expect(readRecordSessionToken()).toBe('appeared-token')
+  })
+
+  test('without a stamp change the memoized token is reused', () => {
+    writeRecordSessionToken('first-token', unusedRunner)
+    expect(readRecordSessionToken()).toBe('first-token')
+    writeFileSync(recordSessionPath(process.env), 'unobserved-token', { mode: 0o600 })
+
+    expect(readRecordSessionToken()).toBe('first-token')
   })
 
   test('probes a distinct file without changing the real session', () => {

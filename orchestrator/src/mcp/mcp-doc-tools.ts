@@ -1,6 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   DOC_AUDIENCES,
   DOC_FORMS,
@@ -17,6 +16,7 @@ import type { CanonLintInputCollector } from '../canon/canon-files.ts'
 import { db } from '../database/db.ts'
 import { dropContextItem, getContext, setContextItem } from '../doc/context-service.ts'
 import { CONTEXT_ITEM_KINDS } from '../doc/doc-context-write.ts'
+import { DocRevisionConflictError, REVISION_CONFLICT_CODE } from '../doc/doc-revision-conflict.ts'
 import { resolveDocRevisionIdentifier } from '../doc/doc-revision-identifier.ts'
 import { type SelectedDocWriteTree, withDocWriteTreeRemedy } from '../doc/doc-write-tree.ts'
 import {
@@ -31,6 +31,7 @@ import {
   signedInDocOwner,
   storedDocWarnings,
 } from '../doc/docs.ts'
+import { RecordApiRequestError } from '../record/record-api-client.ts'
 import { registerMcpDocConsumeTool } from './mcp-doc-consume-tool.ts'
 import { decideMcpDocWrite } from './mcp-doc-write.ts'
 
@@ -48,26 +49,28 @@ const audiencesSchema = z
   )
   .transform(normalizeDocAudiences)
 
-function rethrowMcpDocWriteError(error: unknown): never {
-  const message = error instanceof Error ? error.message : String(error)
-  const currentRevision = message.match(/current revision ([^;,\s]+)/)?.[1]
-  if (
-    !currentRevision ||
-    !message.includes(`re-read the doc, then re-apply the edit with ${PLATFORM_SLUG} doc set`)
-  ) {
-    throw error
-  }
-
-  const withoutCliRemedy = message.replace(
-    new RegExp(
-      `\\n[^\\n]*re-read the doc, then re-apply the edit with ${PLATFORM_SLUG} doc set .* --expect [^\\s]+$`,
-    ),
-    '',
-  )
-  throw new Error(
-    `${withoutCliRemedy}; pass expected_revision ${currentRevision}; ` +
-      're-read with get_doc and re-apply the edit',
-  )
+export function rethrowMcpDocWriteError(error: unknown): never {
+  const conflict =
+    error instanceof RecordApiRequestError && error.code === REVISION_CONFLICT_CODE
+      ? {
+          condition: error.condition,
+          reason: error.reason,
+          currentRevision: error.currentRevision,
+        }
+      : error instanceof DocRevisionConflictError
+        ? error
+        : null
+  if (!conflict || conflict.currentRevision === null) throw error
+  const currentRevision = conflict.currentRevision
+  if (conflict.reason === 'already-exists')
+    throw new Error(
+      `${conflict.condition}; read it with get_doc, then pass expected_revision ${currentRevision} to overwrite it`,
+    )
+  if (conflict.reason === 'stale-revision')
+    throw new Error(
+      `${conflict.condition}; pass expected_revision ${currentRevision}; re-read with get_doc and re-apply the edit`,
+    )
+  throw error
 }
 
 async function withMcpDocWriteRemedy<T>(write: () => Promise<T>): Promise<T> {

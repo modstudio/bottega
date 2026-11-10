@@ -504,6 +504,26 @@ test.each(['notice', 'claim'] as const)(
   },
 )
 
+test('a revision conflict keeps the board adoption remedy', async () => {
+  presence()
+  const local = postNotice(
+    { audience: 'session:reader', title: 'conflict', body: 'conflict' },
+    {},
+    NOW,
+  )
+  const base = capturingClient([]).client
+  const client: RecordApiClient = {
+    ...base,
+    async postBoardMessage() {
+      throw new RecordApiRequestError('hosted row changed', 'conflict')
+    },
+  }
+
+  await expect(adoptHostedBoard({ confirm: 1, clock: () => NOW, client })).rejects.toThrow(
+    `withdraw local notice ${local.recordId} (or let it expire), then rerun ${PLATFORM_SLUG} board adopt with the new --confirm total`,
+  )
+})
+
 test('withdrawing a row after an unexpected refusal drops its pending ledger row from the rerun', async () => {
   presence()
   const local = postNotice(

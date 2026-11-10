@@ -27,6 +27,7 @@ import {
 } from '../../shared/orch-contract.ts'
 import { resolveRecordApiUrl } from '../../shared/record-api-url.ts'
 import { RecordProjectsSchema } from '../../shared/record-project-contract.ts'
+import { hostedRequestSafetyStatement } from '../../shared/record-remedies.ts'
 import type { RunDetailReviewLens } from '../../shared/review-presentation.ts'
 import { SubjectOutputSchema } from '../../shared/subjects.ts'
 import {
@@ -598,14 +599,13 @@ async function request<T>(
   const fetchImpl = options.fetch ?? globalThis.fetch
   const signal = init.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal
   const startedAt = Date.now()
-  const retryStatement =
-    !init.method || init.method.toUpperCase() === 'GET'
-      ? 'nothing was written; retry'
-      : 'the write may have been applied; check before retrying'
+  const safety = !init.method || init.method.toUpperCase() === 'GET' ? 'probe' : 'non-idempotent'
+  const retry = safety === 'probe' ? '; retry,' : ','
+  const retryStatement = `${hostedRequestSafetyStatement(safety)}${retry} and if it stalls again`
   const timeoutError = () =>
     new TRPCError({
       code: 'TIMEOUT',
-      message: `the hosted record API did not answer ${path} within ${Date.now() - startedAt} ms; ${retryStatement}, and if it stalls again check the hosted API health and report the path`,
+      message: `the hosted record API did not answer ${path} within ${Date.now() - startedAt} ms; ${retryStatement} check the hosted API health and report the path`,
     })
   let timeout: ReturnType<typeof setTimeout> | undefined
   const expired = new Promise<never>((_, reject) => {

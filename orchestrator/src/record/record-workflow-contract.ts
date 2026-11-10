@@ -1,6 +1,7 @@
 // concern: record-workflow-contract
 /** Pure transport contract for the hosted workflow catalogue. */
 import { z } from 'zod'
+import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
 import { recordCatalogueImportResultSchema } from './record-catalogue-contract.ts'
 
 export const RECORD_WORKFLOW_TABLES = [
@@ -20,6 +21,19 @@ export class RecordWorkflowError extends Error {
     super(message)
     this.status = status
   }
+}
+
+export function workflowVersionConflict(
+  expected: number | null,
+  current: number | null,
+): DocRevisionConflictError {
+  const condition = `workflow version conflict: expected ${expected ?? 'none'}, current ${current ?? 'none'}`
+  return new DocRevisionConflictError(
+    `${condition}; re-read the workflow catalogue${current === null ? '' : `, then retry with expectedProductionVersion ${current}`}`,
+    condition,
+    'workflow-version',
+    current === null ? null : String(current),
+  )
 }
 
 const uuid = z.string().uuid(),
