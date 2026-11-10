@@ -19,7 +19,7 @@ test('machine names are claimed once in every distinct sync destination space', 
     [SPACE_A, SPACE_B, SPACE_A],
   )
 
-  expect(remote.transactionSpaceIds).toEqual([PERSONAL_SPACE_ID, SPACE_A, SPACE_B])
+  expect(remote.boundSpaceIds).toEqual([PERSONAL_SPACE_ID, SPACE_A, SPACE_B])
 })
 
 test('an empty sync destination set updates the user-owned machine without making a claim', async () => {

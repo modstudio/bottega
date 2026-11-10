@@ -3,6 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
   recordSyncAuthorizationDecision,
+  recordSyncClaimSpaceIds,
   recordSyncMachineOwnershipDecision,
 } from './record-sync-decision.ts'
 
@@ -67,4 +68,22 @@ test('sync machine ownership permits registration and the owner but refuses anot
     status: 'refused',
     reason: `machine ${machineId} is registered to another user; sign in as the user that registered this machine, then retry \`${PLATFORM_SLUG} record sync\``,
   })
+})
+
+test('machine name claims go to each writable destination, including the fallback for an unnamed row', () => {
+  const team = '01990000-0000-7000-8000-000000000004'
+  const session: RecordIdentity = {
+    ...identity,
+    activeSpaceId: team,
+    memberships: [...identity.memberships, { space_id: team, slug: 'team', permission: 'write' }],
+  }
+  expect(
+    recordSyncClaimSpaceIds(session, [
+      'active',
+      '01990000-0000-7000-8000-000000000002',
+      'read-only',
+      'outside',
+      null,
+    ]),
+  ).toEqual(['01990000-0000-7000-8000-000000000002', team])
 })

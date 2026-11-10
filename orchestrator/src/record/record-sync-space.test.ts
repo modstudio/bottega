@@ -272,8 +272,10 @@ test('two declared projects bind their own spaces in separate transactions', asy
       projectSpaces: { alpha: 'alpha', beta: 'beta' },
     }),
   ).toMatchObject({ pushed: 2, failed: 0 })
-  expect(remote.transactionSpaceIds.filter((id) => id === alpha)).toHaveLength(2)
-  expect(remote.transactionSpaceIds.filter((id) => id === beta)).toHaveLength(2)
+  const [, claims, ...rowTransactions] = remote.transactionSpaceIds
+  expect(rowTransactions).toEqual([alpha, beta])
+  expect(claims).toBe(beta)
+  expect(remote.boundSpaceIds).toEqual(expect.arrayContaining([alpha, beta]))
   local.close()
 })
 

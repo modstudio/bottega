@@ -78,7 +78,7 @@ export async function upsertHostedMachine(
   seenAt: string,
   identity: { id: string; shortName?: string; displayName?: string; name?: string },
   principal: RecordPrincipal,
-  claimSpaceIds: readonly string[] = [principal.spaceId],
+  claimSpaceIds: readonly string[],
 ): Promise<void> {
   const shortName = identity.shortName ?? identity.name
   const displayName = identity.displayName ?? identity.name
@@ -103,13 +103,12 @@ export async function upsertHostedMachine(
       if (decision.status === 'refused') throw new RecordSyncRequestRefusal(decision.reason)
       throw new Error(`machine ownership changed while registering ${identity.id}`)
     }
-    await tx`
-      UPDATE machine SET name=${displayName},short_name=${shortName},display_name=${displayName}
-      WHERE id=${identity.id}::uuid AND user_id=${principal.userId}::uuid
-    `
   })
-  for (const spaceId of new Set(claimSpaceIds)) {
-    await postgres.begin(async (tx) => {
+  const spaces = [...new Set(claimSpaceIds)]
+  if (spaces.length === 0) return
+  // A held name in any destination space leaves every claim and the canonical names unset.
+  await postgres.begin(async (tx) => {
+    for (const spaceId of spaces) {
       await claimInSpace(tx, {
         userId: principal.userId,
         spaceId,
@@ -117,8 +116,12 @@ export async function upsertHostedMachine(
         shortName,
         now: seenAt,
       })
-    })
-  }
+    }
+    await tx`
+      UPDATE machine SET name=${displayName},short_name=${shortName},display_name=${displayName}
+      WHERE id=${identity.id}::uuid AND user_id=${principal.userId}::uuid
+    `
+  })
 }
 
 export async function syncHostedMachine(
