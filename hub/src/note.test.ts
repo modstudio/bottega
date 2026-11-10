@@ -29,13 +29,11 @@ import {
 } from './note.ts'
 import { listOutsideProjectNotes } from './note-outside.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
-import { projects } from './projects.ts'
 import { createLocalTaskInTransaction, showTask } from './task.ts'
 
 const scratch = mkdtempSync(join(tmpdir(), 'hub-note-'))
-const workshop = () => projects().find((project) => project.name === 'workshop')!
 beforeAll(resetFixtureStore)
-declareFixtureProjectSpace('workshop', 'workshop')
+const workshop = declareFixtureProjectSpace('workshop', 'workshop')
 afterAll(resetFixtureStore)
 afterAll(() => rmSync(scratch, { recursive: true, force: true }))
 
