@@ -6,7 +6,6 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type ContextMomentWrite, contextMomentWrite } from '../../../shared/context-moment.ts'
 import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
-import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
@@ -92,7 +91,7 @@ import {
   productionWorkflowTree,
   promoteMatchingWorkflowTreeDrafts,
 } from './workflow-tree-store.ts'
-import { positive, workflowWriteSpace } from './workflow-write-space.ts'
+import { obligationUuid, positive, workflowWriteSpace } from './workflow-write-space.ts'
 import {
   composeWorkflow,
   forkWorkflow,
@@ -127,15 +126,6 @@ type ProbePrintRecord =
   | Pick<ProbeRecord, 'id' | 'withheld'>
   | Pick<ProbeRecord, 'id' | 'withheld' | 'exitCode' | 'outputTail'>
 export type CommandOutcome = { exitCode: number; errorLine?: string }
-const obligationUuid = (value: string | undefined): string | undefined => {
-  if (value === undefined) return undefined
-  if (!hasRecordIdShape(value))
-    throw new Error(
-      `--satisfies must be an obligation UUID from ${PLATFORM_SLUG} workflow cursors --json`,
-    )
-  return value.toLowerCase()
-}
-
 export function workflowPrint(json: boolean, presentation: WorkflowPresentation): WorkflowPrint {
   return (value, line) =>
     presentation.log(json ? JSON.stringify(value) : (line ?? JSON.stringify(value, null, 2)))

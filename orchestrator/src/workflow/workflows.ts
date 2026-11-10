@@ -27,6 +27,7 @@ import { missingWorkflowArguments, refuseUnknownWorkflowArgument } from './workf
 import { autonomyNoticeOutput } from './workflow-autonomy-output.ts'
 import { BUILT_IN_WORKFLOW_AUTHOR } from './workflow-built-ins.ts'
 import type { WorkflowDefinition, WorkflowMode, WorkflowModeStep } from './workflow-definition.ts'
+import { workflowHostedSpace } from './workflow-hosted-space.ts'
 import {
   mergedChangeSources,
   resolveWorkflowProjectFacts,
@@ -503,11 +504,6 @@ export const setWorkflow = (
 }
 
 const writeAuthor = (value?: string) => value?.trim() || sessionId() || 'unknown'
-async function hostedSpace(d: Database, project?: string, destinationSpaceId?: string) {
-  const spaceId = project ? effectiveProjectSpace(d, project) : destinationSpaceId
-  if (!spaceId) throw new Error('workflow write has no record space')
-  return spaceId
-}
 const HOSTED_CATALOGUE_REFUSAL = `the hosted space has no production step catalogue; run \`${PLATFORM_SLUG} workflow catalogue set --file <path> --reason <reason>\` in that space, then promote it`
 function hostedProductionCatalogue(d: Database, spaceId: string): StepCatalogueDefinition {
   try {
@@ -534,7 +530,7 @@ function hostedDraft(
     local: () => writeDraftLocal(slug, definition, reason, author, kind, d, knownCatalogue),
     hosted: async () => {
       if (!reason?.trim()) throw new Error('reason is required')
-      const spaceId = await hostedSpace(d, project, destinationSpaceId)
+      const spaceId = workflowHostedSpace(d, project, destinationSpaceId, effectiveProjectSpace)
       requireValid(definition, undefined, knownCatalogue ?? hostedProductionCatalogue(d, spaceId))
       const result = await recordApiClient().draftWorkflow!(
         {
@@ -574,7 +570,7 @@ export function promoteWorkflow(
     },
     hosted: async () => {
       if (!reasonValue?.trim()) throw new Error('reason is required')
-      const spaceId = await hostedSpace(d, project, destinationSpaceId)
+      const spaceId = workflowHostedSpace(d, project, destinationSpaceId, effectiveProjectSpace)
       const target = selectedWorkflow(slug, n, d, spaceId)
       if (target.status === 'retired')
         throw new Error(`workflow "${slug}" version ${n} is not a draft`)
@@ -654,7 +650,7 @@ export function retireWorkflow(
     local: () => workflowLifecycle.retire(slug, n, reasonValue, authorValue, d),
     hosted: async () => {
       if (!reasonValue?.trim()) throw new Error('reason is required')
-      const spaceId = await hostedSpace(d, undefined, destinationSpaceId)
+      const spaceId = workflowHostedSpace(d, undefined, destinationSpaceId)
       hostedProductionCatalogue(d, spaceId)
       const current = d
         .query<{ n: number }, [string, string]>(
@@ -698,7 +694,7 @@ export function forkWorkflow(
     },
     hosted: async () => {
       if (!reason?.trim()) throw new Error('reason is required')
-      const spaceId = await hostedSpace(d, undefined, destinationSpaceId)
+      const spaceId = workflowHostedSpace(d, undefined, destinationSpaceId)
       const catalogue = hostedProductionCatalogue(d, spaceId)
       requireValid(selectedWorkflow(slug, from, d, spaceId).definition, undefined, catalogue)
       const result = await recordApiClient().draftWorkflow!(
