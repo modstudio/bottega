@@ -10,13 +10,11 @@ export function machineTrustRefusal(
   registered: RegisteredMachineKey | undefined,
   spaceSlug?: string,
 ): string | null {
-  const registerCommand = `${PLATFORM_SLUG} machine config machine register${spaceSlug ? ` --space ${spaceSlug}` : ''}`
-  const trustAgain = spaceSlug
-    ? `trust it again with \`${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey> --space ${spaceSlug}\``
-    : 'trust it again'
-  const trustNewKey = spaceSlug
-    ? `trust the new key with \`${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey> --space ${spaceSlug}\``
-    : 'trust the new key'
+  const spaceOption = spaceSlug ? ` --space ${spaceSlug}` : ''
+  const registerCommand = `${PLATFORM_SLUG} machine config machine register${spaceOption}`
+  const trustCommand = `${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey>${spaceOption}`
+  const trustAgain = spaceSlug ? `trust it again with \`${trustCommand}\`` : 'trust it again'
+  const trustNewKey = spaceSlug ? `trust the new key with \`${trustCommand}\`` : 'trust the new key'
   if (!registered)
     return renderRefusal(
       refusal(`machine key ${keyId} is not registered in this space`, {

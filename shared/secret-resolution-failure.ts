@@ -23,6 +23,8 @@ type HostedFailureCause = {
   code?: string | number
 }
 
+type RecordConfigRefusal = { error?: string; remedy?: string }
+
 export type SecretResolutionFailureClassification =
   | { kind: 'hosted-failure'; cause?: HostedFailureCause }
   | {
@@ -113,9 +115,9 @@ function configClientRemedy(
 
 function displayableConfigRefusal(
   error: ConfigClientError,
+  classification: Extract<SecretResolutionFailureClassification, { kind: 'config-client' }>,
   options: SecretResolutionFailureOptions,
-): { error?: string; remedy?: string } | null {
-  const classification = classifySecretResolutionFailure(error)
+): RecordConfigRefusal | null {
   if (
     options.exhaustedRetryCommand ||
     error.reason !== 'response' ||
@@ -133,11 +135,13 @@ function displayableConfigRefusal(
 }
 
 function renderConfigClientFailure(
-  condition: string,
+  fallbackCondition: string,
   classification: Extract<SecretResolutionFailureClassification, { kind: 'config-client' }>,
-  recordRefusal: { remedy?: string } | null,
+  recordRefusal: RecordConfigRefusal | null,
   options: SecretResolutionFailureOptions,
+  conditionPrefix = '',
 ): string {
+  const condition = `${conditionPrefix}${recordRefusal?.error ?? fallbackCondition}`
   return recordRefusal?.remedy
     ? renderRefusal(refusal(condition, { kind: 'edit', text: recordRefusal.remedy }))
     : `${condition}${configClientRemedy(classification, options)}`
@@ -150,21 +154,22 @@ export function secretResolutionFailure(
 ): string | null {
   const classification = classifySecretResolutionFailure(error)
   if (error instanceof ConfigClientError && classification?.kind === 'config-client') {
-    const recordRefusal = displayableConfigRefusal(error, options)
-    const condition =
-      recordRefusal?.error ??
-      (error.reason === 'unreachable'
+    const recordRefusal = displayableConfigRefusal(error, classification, options)
+    const fallbackCondition =
+      error.reason === 'unreachable'
         ? 'hosted secret service is unreachable'
-        : 'hosted secret service refused the request')
-    return renderConfigClientFailure(condition, classification, recordRefusal, options)
+        : 'hosted secret service refused the request'
+    return renderConfigClientFailure(fallbackCondition, classification, recordRefusal, options)
   }
   if (!(error instanceof HostedSecretError)) return null
   const causeSummary = hostedFailureCauseSummary(classification)
   const recordRefusal =
     classification?.kind === 'config-client' && error.cause instanceof ConfigClientError
-      ? displayableConfigRefusal(error.cause, options)
+      ? displayableConfigRefusal(error.cause, classification, options)
       : null
-  const condition = `hosted secret ${error.secretName} could not be opened: ${recordRefusal?.error ?? `${error.reason}${causeSummary}`}`
+  const conditionPrefix = `hosted secret ${error.secretName} could not be opened: `
+  const fallbackCondition = `${error.reason}${causeSummary}`
+  const condition = `${conditionPrefix}${fallbackCondition}`
   switch (error.reason) {
     case 'machine-key-missing':
       return `${condition}\ncleared by: ${PLATFORM_SLUG} machine config machine init`
@@ -176,7 +181,13 @@ export function secretResolutionFailure(
       return `${condition}\ncleared by: repair the sealed value from a trusted machine, then retry`
     case 'hosted-failure':
       if (classification?.kind === 'config-client')
-        return renderConfigClientFailure(condition, classification, recordRefusal, options)
+        return renderConfigClientFailure(
+          fallbackCondition,
+          classification,
+          recordRefusal,
+          options,
+          conditionPrefix,
+        )
       return `${condition}\ncleared by: ${options.exhaustedRetryCommand ?? `${PLATFORM_SLUG} record doctor`}`
   }
 }
