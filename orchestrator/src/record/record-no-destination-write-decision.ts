@@ -7,13 +7,15 @@ export type NoDestinationWrite = { spaceId: string; route: string; cause: string
 
 export function destinationlessWrite(input: {
   method: string
+  destinationRequested?: boolean
   destinationSpaceId?: string
   activeSpaceId: string | null
   route: string
   userAgent?: string | null
 }): NoDestinationWrite | null {
   if (input.method === 'GET' || input.method === 'HEAD') return null
-  if (input.destinationSpaceId !== undefined || !input.activeSpaceId) return null
+  if (input.destinationRequested || input.destinationSpaceId !== undefined || !input.activeSpaceId)
+    return null
   return {
     spaceId: input.activeSpaceId,
     route: input.route,

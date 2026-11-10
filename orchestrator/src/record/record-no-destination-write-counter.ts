@@ -1,15 +1,14 @@
 // concern: record-no-destination-write-counter
 /** Keeps process-local destination-less write measurements and emits best-effort evidence logs. */
 
+import type {
+  NoDestinationWriteReport,
+  NoDestinationWriteReportRow,
+} from './record-no-destination-write-contract.ts'
 import type { NoDestinationWrite } from './record-no-destination-write-decision.ts'
 
-export type NoDestinationWriteReport = {
-  processStartedAt: string
-  counts: ReadonlyArray<NoDestinationWrite & { occurrences: number }>
-}
-
 const processStartedAt = new Date().toISOString()
-const counts = new Map<string, NoDestinationWrite & { occurrences: number }>()
+const counts = new Map<string, NoDestinationWriteReportRow>()
 
 export function noDestinationWriteCounter(
   input: { record: NoDestinationWrite } | { read: readonly string[] },

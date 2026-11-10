@@ -10,29 +10,14 @@ import {
   recordSpaceRequestDecision,
 } from '../../../shared/record-space-request.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import { noDestinationWriteCounter } from './record-no-destination-write-counter.ts'
-import { destinationlessWrite } from './record-no-destination-write-decision.ts'
 
 type ApiEnvironment = {
-  Variables: {
-    identity: RecordIdentity
-    destinationSpaceId?: string
-    destinationlessWriteGuarded?: true
-    destinationlessWriteRecorded?: true
-  }
+  Variables: { identity: RecordIdentity; destinationSpaceId?: string }
 }
 
 /** Install destination authorization on project-owned record operations. */
 export function registerRecordRequestSpace(app: Hono<ApiEnvironment>): void {
-  app.use('/v1/*', async (context, next) => {
-    try {
-      await next()
-    } finally {
-      if (context.get('destinationlessWriteGuarded')) recordDestinationlessWrite(context)
-    }
-  })
   const requestedSpace = async (context: Context<ApiEnvironment>, next: Next) => {
-    context.set('destinationlessWriteGuarded', true)
     if (context.req.method === 'GET' && context.req.path === '/v1/docs/search') return next()
     const requested = context.req.header('x-record-space') ?? null
     const memberships = parseRecordSpaceMemberships(context.get('identity').memberships)
@@ -62,57 +47,25 @@ export function registerRecordRequestSpace(app: Hono<ApiEnvironment>): void {
       context.set('destinationSpaceId', decision.spaceId)
     await next()
   }
-  const requestedRootSpace = (root: string) => (context: Context<ApiEnvironment>, next: Next) =>
-    context.req.path === root ? requestedSpace(context, next) : next()
-  app.get('/v1/health/no-destination-writes', (context) =>
-    context.json(
-      noDestinationWriteCounter({
-        read: context.get('identity').memberships.map((row) => String(row.space_id)),
-      }),
-    ),
-  )
-  app.use('/v1/projects', requestedRootSpace('/v1/projects'))
+  app.use('/v1/projects', requestedSpace)
   app.use('/v1/projects/*', requestedSpace)
-  app.use('/v1/releases', requestedRootSpace('/v1/releases'))
+  app.use('/v1/releases', requestedSpace)
   app.use('/v1/releases/*', requestedSpace)
-  app.use('/v1/docs', requestedRootSpace('/v1/docs'))
+  app.use('/v1/docs', requestedSpace)
   app.use('/v1/docs/*', requestedSpace)
-  app.use('/v1/subjects', requestedRootSpace('/v1/subjects'))
+  app.use('/v1/subjects', requestedSpace)
   app.use('/v1/subjects/*', requestedSpace)
-  app.use('/v1/lens-catalogue', requestedRootSpace('/v1/lens-catalogue'))
+  app.use('/v1/lens-catalogue', requestedSpace)
   app.use('/v1/lens-catalogue/*', requestedSpace)
-  app.use('/v1/workflow-catalogue', requestedRootSpace('/v1/workflow-catalogue'))
+  app.use('/v1/workflow-catalogue', requestedSpace)
   app.use('/v1/workflow-catalogue/*', requestedSpace)
   app.use('/v1/task-flow', requestedSpace)
-  app.use('/v1/port-catalogue', requestedRootSpace('/v1/port-catalogue'))
+  app.use('/v1/port-catalogue', requestedSpace)
   app.use('/v1/port-catalogue/*', requestedSpace)
   app.use('/v1/settings/permission', requestedSpace)
   app.use('/v1/settings/auto-mode', requestedSpace)
   app.use('/v1/config/*', requestedSpace)
   app.use('/v1/runs/*', requestedSpace)
-  app.use('/v1/snapshots', requestedRootSpace('/v1/snapshots'))
+  app.use('/v1/snapshots', requestedSpace)
   app.use('/v1/snapshots/*', requestedSpace)
-}
-
-export function recordDestinationlessWrite(context: Context<ApiEnvironment>): void {
-  const identity = context.get('identity')
-  const decision = destinationlessWrite({
-    method: context.req.method,
-    destinationSpaceId: context.get('destinationSpaceId'),
-    activeSpaceId: identity.activeSpaceId,
-    route: context.req.routePath,
-    userAgent: context.req.header('user-agent'),
-  })
-  if (!decision) return
-  if (context.get('destinationlessWriteRecorded')) return
-  context.set('destinationlessWriteRecorded', true)
-  try {
-    noDestinationWriteCounter({ record: decision })
-  } catch (error) {
-    queueMicrotask(() => {
-      try {
-        console.error('record-write no-destination recording failed', error)
-      } catch {}
-    })
-  }
 }

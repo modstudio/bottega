@@ -799,10 +799,10 @@ function runtimeBoundaryRules() {
 }
 
 const activeSpaceResolverRule: ArchitectureRule = {
-  name: 'hosted-write-imports-no-active-space-resolver',
+  name: 'no-active-space-resolver-import',
   severity: 'error',
   comment:
-    'Hosted write paths must receive an explicit destination and may not resolve one from active space.',
+    'Production orchestrator and hub modules may not newly import active-space fallback modules; DEV-2244 replaces them with the owner-routed destination decision.',
   from: {
     path: '^(?:orchestrator|hub)/',
     pathNot: ['(?:\\.test|\\.fixture)\\.ts$|^orchestrator/test/'],

@@ -16,7 +16,13 @@ import { registerRecordProjectRoutes } from './record-api-projects.ts'
 import { registerRecordSettingsRoutes } from './record-api-settings.ts'
 import type { RecordIdentity } from './record-auth.ts'
 
-type ApiEnvironment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
+type ApiEnvironment = {
+  Variables: {
+    identity: RecordIdentity
+    destinationSpaceId?: string
+    destinationlessWriteRecorded?: true
+  }
+}
 type Deps = Parameters<typeof registerRecordProjectRoutes>[1] & {
   renameDocSubject: Parameters<typeof registerRecordDocRenameRoute>[1]
 } & Parameters<typeof registerRecordSettingsRoutes>[1] &

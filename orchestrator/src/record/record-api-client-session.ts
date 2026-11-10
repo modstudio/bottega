@@ -4,7 +4,7 @@
 import type { RecordClientRequest } from './record-api-client-paths.ts'
 import { responseRecord } from './record-api-client-response.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import type { NoDestinationWriteReport } from './record-no-destination-write-counter.ts'
+import type { NoDestinationWriteReport } from './record-no-destination-write-contract.ts'
 import type { RecordSyncRequest, RecordSyncResponse } from './record-sync-contract.ts'
 
 export type RecordSessionClient = {

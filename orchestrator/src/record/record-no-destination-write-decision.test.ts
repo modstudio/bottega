@@ -20,11 +20,6 @@ test('records a patterned write route with no destination', () => {
 test('does not record reads or writes with a destination', () => {
   expect(destinationlessWrite({ ...input, method: 'GET' })).toBeNull()
   expect(destinationlessWrite({ ...input, method: 'HEAD' })).toBeNull()
+  expect(destinationlessWrite({ ...input, destinationRequested: true })).toBeNull()
   expect(destinationlessWrite({ ...input, destinationSpaceId: 'space-b' })).toBeNull()
-})
-
-test('records board writes through the same decision', () => {
-  expect(
-    destinationlessWrite({ ...input, method: 'PUT', route: '/v1/board/messages' }),
-  ).toMatchObject({ route: '/v1/board/messages' })
 })
