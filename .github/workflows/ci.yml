@@ -198,7 +198,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Trust the workspace
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        run: git config --system --add safe.directory "$GITHUB_WORKSPACE"
       - name: Install Bun
         run: npm install --global "bun@$(cat .bun-version)"
       - name: Install
@@ -216,7 +216,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Trust the workspace
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        run: git config --system --add safe.directory "$GITHUB_WORKSPACE"
       - name: Install Bun
         run: npm install --global "bun@$(cat .bun-version)"
       - name: Install
