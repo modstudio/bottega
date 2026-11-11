@@ -71,7 +71,6 @@ async function prepareStepServe(
   autonomy: AutonomyResolution | undefined,
   cursor: number | undefined,
   live?: LiveCursorAutonomy,
-  commitCount: CommitCountPort = readCommitsPastLanding,
 ) {
   const handled =
     cursor === undefined
@@ -95,7 +94,7 @@ async function prepareStepServe(
         database,
       ) as CursorRow | null)
     : (handled ?? findWorkflowCursor(project, slug, mode, args, context, database, cursor))
-  let row = handled ?? candidate
+  const row = handled ?? candidate
   const opensCursor = row === null
   const startDecision = decideCursorStart(row?.state ?? null)
   const resolvedArguments =
@@ -121,6 +120,51 @@ async function prepareStepServe(
   if (index < 0) throw new Error(`workflow "${slug}" has no step "${resolvedStepSlug}"`)
   const requested = composition.steps[index]!
   return { row, opensCursor, composition, requested, index, input, resolvedArguments }
+}
+
+async function refreshStepServe(
+  slug: string,
+  project: string,
+  stepSlug: string,
+  args: Record<string, string>,
+  mode: string,
+  context: WorkflowCursorContext,
+  database: Database,
+  autonomy: AutonomyResolution | undefined,
+  cursor: number | undefined,
+  live: LiveCursorAutonomy | undefined,
+  commitCount: CommitCountPort,
+) {
+  await readThroughWorkflowCursorContext(project, context, database)
+  await linkResolvedWorkflowTask(project, context, database)
+  let prepared = await prepareStepServe(
+    slug,
+    project,
+    stepSlug,
+    args,
+    mode,
+    context,
+    database,
+    autonomy,
+    cursor,
+    live,
+  )
+  if (prepared.index === 0 && prepared.row && decideCursorStart(prepared.row.state) === 'retire') {
+    await insertWorkflowCursor(prepared.composition, context, database, autonomy, commitCount)
+    prepared = await prepareStepServe(
+      slug,
+      project,
+      stepSlug,
+      args,
+      mode,
+      context,
+      database,
+      autonomy,
+      cursor,
+      live,
+    )
+  }
+  return prepared
 }
 
 function serveDecision(
@@ -255,19 +299,10 @@ async function serveWorkflowStepWithCursor(
     autonomy,
     cursor,
     live,
-    commitCount,
   )
-  if (
-    !(
-      prepared.index === 0 &&
-      prepared.row &&
-      decideCursorStart(prepared.row.state) === 'retire'
-    )
-  )
+  if (!(prepared.index === 0 && prepared.row && decideCursorStart(prepared.row.state) === 'retire'))
     serveDecision(prepared, slug, mode, args)
-  await readThroughWorkflowCursorContext(project, context, database)
-  await linkResolvedWorkflowTask(project, context, database)
-  prepared = await prepareStepServe(
+  prepared = await refreshStepServe(
     slug,
     project,
     stepSlug,
@@ -280,32 +315,6 @@ async function serveWorkflowStepWithCursor(
     live,
     commitCount,
   )
-  if (
-    prepared.index === 0 &&
-    prepared.row &&
-    decideCursorStart(prepared.row.state) === 'retire'
-  ) {
-    await insertWorkflowCursor(
-      prepared.composition,
-      context,
-      database,
-      autonomy,
-      commitCount,
-    )
-    prepared = await prepareStepServe(
-      slug,
-      project,
-      stepSlug,
-      args,
-      mode,
-      context,
-      database,
-      autonomy,
-      cursor,
-      live,
-      commitCount,
-    )
-  }
   let { row } = prepared
   const { opensCursor, composition, requested, index, input, resolvedArguments } = prepared
   const decision = serveDecision(prepared, slug, mode, args)

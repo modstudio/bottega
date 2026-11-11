@@ -23,6 +23,7 @@ import {
   refuseTerminalCursor,
 } from './workflow-cursor-result.ts'
 import {
+  readThroughWorkflowCursorContext,
   type SelectableCursorRow,
   selectWorkflowCursorForClose,
   type WorkflowCursorContext,
@@ -288,6 +289,7 @@ export async function closeCursorWithTextCopy(
   refuseTerminalCursor(row)
   if (input.action === 'next') refuseMissingCloseNote(input.note, row.ordinal + 1, row.step_slug)
   else refuseMissingAbandonReason(input.reason)
+  await readThroughWorkflowCursorContext(row.project, input.context, database)
 
   const copy = await copyWorkflowTextForCursor(
     {

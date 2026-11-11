@@ -87,7 +87,9 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../run/question-mutation.ts',
     './task-flow.ts',
     './workflow-cursor-arguments.ts',
+    './workflow-cursor-format.ts',
     './workflow-cursor-selection.ts',
+    './workflow-cursor-transition.ts',
   ]),
   module('orchestrator/src/workflow/workflow-task-reference.ts', [
     '../../../shared/brand.ts',

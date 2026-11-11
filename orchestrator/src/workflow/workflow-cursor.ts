@@ -125,6 +125,38 @@ export type CursorSummary = {
   previousSession?: string | null
 }
 
+function refuseLocalComposeBranch(
+  composition: {
+    project: string
+    workflow: { slug: string }
+    mode: { slug: string }
+    arguments: Record<string, string>
+  },
+  context: WorkflowCursorContext,
+  database: Database,
+  commitCount: CommitCountPort,
+): void {
+  const existing = keyOf(composition.arguments)
+    ? findWorkflowCursor(
+        composition.project,
+        composition.workflow.slug,
+        composition.mode.slug,
+        composition.arguments,
+        context,
+        database,
+      )
+    : null
+  if (decideCursorStart(existing?.state ?? null) === 'reuse') return
+  const refusal = workflowComposeBranchRefusal({
+    workflow: composition.workflow.slug,
+    project: composition.project,
+    args: composition.arguments,
+    d: database,
+    commitCount,
+  })
+  if (refusal) throw new Error(refusal)
+}
+
 export async function composeWorkflowWithCursor(
   slug: string,
   project: string,
@@ -139,26 +171,7 @@ export async function composeWorkflowWithCursor(
   const autonomy = live.resolution
   const composition = composeWorkflow(slug, project, mode, args, d, selection, autonomy)
   if (!composition.mode || composition.needs.arguments) return { ...composition, cursor: null }
-  const localExisting = keyOf(composition.arguments)
-    ? findWorkflowCursor(
-        composition.project,
-        composition.workflow.slug,
-        composition.mode.slug,
-        composition.arguments,
-        context,
-        d,
-      )
-    : null
-  if (decideCursorStart(localExisting?.state ?? null) !== 'reuse') {
-    const refusal = workflowComposeBranchRefusal({
-      workflow: composition.workflow.slug,
-      project: composition.project,
-      args: composition.arguments,
-      d,
-      commitCount,
-    })
-    if (refusal) throw new Error(refusal)
-  }
+  refuseLocalComposeBranch(composition, context, d, commitCount)
   await readThroughWorkflowCursorContext(project, context, d)
   await linkResolvedWorkflowTask(project, context, d)
   const existing = keyOf(composition.arguments)

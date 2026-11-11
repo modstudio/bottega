@@ -48,7 +48,6 @@ import { awaitWorkflowRuling } from '../workflow/workflow-cursor.ts'
 import { ruleWorkflow } from '../workflow/workflow-cursor-ruling.ts'
 import {
   mcpWorkflowCursorContext,
-  readThroughWorkflowCursorContext,
   resolveMcpSelectedCursorContext,
 } from '../workflow/workflow-cursor-selection.ts'
 import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
@@ -241,11 +240,7 @@ const ledgerSourceSchema = z.object({
   note: z.string(),
 })
 
-export async function fileIssue(
-  input: FileIssueInput,
-  reporter: IssueReporter = { kind: 'session' },
-  reportingProject?: string,
-) {
+function resolveIssueReporter(reporter: IssueReporter, reportingProject?: string) {
   if (reporter.kind !== 'session' && reporter.kind !== 'monitor')
     throw new Error('unknown issue reporter kind')
   const session = reporter.kind === 'session' ? sessionId() : null
@@ -278,31 +273,18 @@ export async function fileIssue(
     const cwd = worker?.launch_cwd ?? process.cwd()
     throw new Error(`cannot file issue: no registered project contains ${cwd}`)
   }
-  const platformProject = registeredProject(PLATFORM_SLUG)
-  const type = input.kind.toUpperCase()
-  const { title, shortened: titleShortened } = filedIssueTitle(input)
-  const duplicateSearch = await searchDuplicateIssues(title)
-  const duplicateRecord = duplicateSearch.duplicates?.length
-    ? [
-        '',
-        'SUSPECTED DUPLICATES',
-        ...duplicateSearch.duplicates.map(
-          (candidate) =>
-            `- ${candidate.key} [${candidate.status ?? 'unknown'}] ${candidate.title.replace(/\s+/g, ' ').trim()}`,
-        ),
-      ]
-    : duplicateSearch.error
-      ? ['', 'DUPLICATE SEARCH FAILED', duplicateSearch.error]
-      : []
-  const filedFields = [
+  return { project, reporter, reporterId, session, worker }
+}
+
+function issueFields(input: FileIssueInput, context: ReturnType<typeof resolveIssueReporter>) {
+  const { project, reporter, reporterId, session, worker } = context
+  return [
     ...(worker
       ? [
-          `Filed by orchestrator run ${worker.record_id} (${worker.job}, ${worker.agent}) while working ${
-            worker.launch_key ?? 'with no task key'
-          }`,
+          `Filed by orchestrator run ${worker.record_id} (${worker.job}, ${worker.agent}) while working ${worker.launch_key ?? 'with no task key'}`,
         ]
       : []),
-    `TYPE: ${type}`,
+    `TYPE: ${input.kind.toUpperCase()}`,
     ...(worker
       ? [`REPORTER KIND: WORKER`, `REPORTING WORKER RUN: ${reporterId}`]
       : reporter.kind === 'session'
@@ -320,12 +302,7 @@ export async function fileIssue(
     'EXPECTED INSTEAD',
     input.expected,
     ...(input.kind === 'defect'
-      ? [
-          '',
-          'HOW TO REPRODUCE',
-          `Command: ${input.reproduce_command}`,
-          `Environment: ${input.environment}`,
-        ]
+      ? ['', 'HOW TO REPRODUCE', `Command: ${input.reproduce_command}`, `Environment: ${input.environment}`]
       : []),
     '',
     'EVIDENCE',
@@ -334,11 +311,15 @@ export async function fileIssue(
     'WHAT IS NOT ESTABLISHED',
     input.not_established,
   ].join('\n')
-  const body = [
+}
+
+function issueBody(input: FileIssueInput, context: ReturnType<typeof resolveIssueReporter>) {
+  const fields = issueFields(input, context)
+  return [
     filedIssueDataLine({
       version: 1,
       kind: input.kind,
-      reporting_project: project.name,
+      reporting_project: context.project.name,
       submitted_title: input.title ?? null,
       what_happened: input.what_happened,
       expected: input.expected,
@@ -348,11 +329,38 @@ export async function fileIssue(
       not_established: input.not_established,
     }),
     '',
-    filedFields,
-    ...duplicateRecord,
+    fields,
     ...(input.title === undefined ? [] : ['', 'SUBMITTED TITLE', input.title]),
     '',
-    `FILED FIELDS LENGTH: ${filedFields.length}`,
+    `FILED FIELDS LENGTH: ${fields.length}`,
+  ].join('\n')
+}
+
+export async function fileIssue(
+  input: FileIssueInput,
+  reporter: IssueReporter = { kind: 'session' },
+  reportingProject?: string,
+) {
+  const context = resolveIssueReporter(reporter, reportingProject)
+  const { project, reporterId, session, worker } = context
+  const platformProject = registeredProject(PLATFORM_SLUG)
+  const { title, shortened: titleShortened } = filedIssueTitle(input)
+  const duplicateSearch = await searchDuplicateIssues(title)
+  const duplicateRecord = duplicateSearch.duplicates?.length
+    ? [
+        '',
+        'SUSPECTED DUPLICATES',
+        ...duplicateSearch.duplicates.map(
+          (candidate) =>
+            `- ${candidate.key} [${candidate.status ?? 'unknown'}] ${candidate.title.replace(/\s+/g, ' ').trim()}`,
+        ),
+      ]
+    : duplicateSearch.error
+      ? ['', 'DUPLICATE SEARCH FAILED', duplicateSearch.error]
+      : []
+  const body = [
+    issueBody(input, context),
+    ...duplicateRecord,
   ].join('\n')
   let stdout: string
   try {
@@ -467,7 +475,7 @@ function registerWorkflowListTool(server: McpServer): void {
 }
 
 async function abandonWorkflowWithTextCopy(cursor: number, reason: string, ports: DocsMcpPorts) {
-  const { context, selectedRow } = await resolveMcpSelectedCursorContext(
+  const { context } = await resolveMcpSelectedCursorContext(
     undefined,
     undefined,
     undefined,
@@ -475,7 +483,6 @@ async function abandonWorkflowWithTextCopy(cursor: number, reason: string, ports
     cursor,
     ports.hubTaskReader,
   )
-  await readThroughWorkflowCursorContext(selectedRow!.project, context)
   const result = await closeCursorWithTextCopy(
     {
       action: 'abandon',
@@ -602,13 +609,27 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
       return handler(...args)
     })) as typeof server.registerTool
 
+  registerCoreTools(server, ports)
+  registerWorkflowActionTools(server, ports)
+  registerProjectReviewTools(server)
+  registerPortPairTools(server)
+  registerPortLedgerTools(server, ports)
+  registerDoctrineTools(server)
+  registerFileIssueTool(server)
+  registerNoteTool(server)
+  return server
+}
+
+function registerCoreTools(server: McpServer, ports: DocsMcpPorts): void {
   registerWorkflowPrompts(server, ports.hubTaskReader)
   registerSearchTools(server)
   registerOperatorTools(server)
   registerBoardTools(server)
   registerSetupTools(server)
   registerWorkflowListTool(server)
+}
 
+function registerWorkflowActionTools(server: McpServer, ports: DocsMcpPorts): void {
   server.registerTool(
     'compose_workflow',
     {
@@ -667,7 +688,9 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
     },
     async ({ cursor, reason }) => abandonWorkflowWithTextCopy(cursor, reason, ports),
   )
+}
 
+function registerProjectReviewTools(server: McpServer): void {
   server.registerTool(
     'list_projects',
     {
@@ -738,7 +761,9 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
 
   registerDocTools(server, { selectDocWriteTree, collectCanonLintInput })
   registerSubjectTools(server)
+}
 
+function registerPortPairTools(server: McpServer): void {
   server.registerTool(
     'inspect_port_baseline',
     {
@@ -795,7 +820,9 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
       return text(await addSkip(pair.record_id, candidate, reason))
     },
   )
+}
 
+function registerPortLedgerTools(server: McpServer, ports: DocsMcpPorts): void {
   server.registerTool(
     'list_port_ledger_refs',
     {
@@ -862,7 +889,9 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
     async ({ project, task_key }) =>
       text({ removed: await removeLedgerRef(registeredProject(project).recordId, task_key) }),
   )
+}
 
+function registerDoctrineTools(server: McpServer): void {
   server.registerTool(
     'list_port_doctrine',
     {
@@ -894,7 +923,9 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
     },
     async ({ number }) => text({ retired: await retireDoctrineRule(number) }),
   )
+}
 
+function registerFileIssueTool(server: McpServer): void {
   server.registerTool(
     'file_issue',
     {
@@ -975,7 +1006,9 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
       return text(await fileIssue(issue as FileIssueInput, reporter, input.reporting_project))
     },
   )
+}
 
+function registerNoteTool(server: McpServer): void {
   server.registerTool(
     'note',
     {
@@ -1001,8 +1034,6 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
       }
     },
   )
-
-  return server
 }
 
 export async function serveDocsMcp(): Promise<void> {

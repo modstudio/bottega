@@ -2,12 +2,14 @@
 /** Selects one open workflow cursor by public handle or declared identity. */
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
-import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { db, sessionId } from '../database/db.ts'
-import { readRecordInstallBinding } from '../record/install-binding.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { openTaskFlowStageCursor, type TaskFlowStageCursorRow } from './task-flow.ts'
-import { readThroughTaskFlow, type TaskFlowReadStatus } from './task-flow-read-through.ts'
+import {
+  readThroughTaskFlow,
+  type TaskFlowReadStatus,
+  taskFlowReadThroughEnabled,
+} from './task-flow-read-through.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { workflowTaskBindingCommand } from './workflow-cursor-format.ts'
 import { hasClosedStep } from './workflow-cursor-trail.ts'
@@ -80,7 +82,6 @@ export async function resolveWorkflowCursorContext(
   context: WorkflowCursorContext,
   reader?: HubTaskReader,
   selectedRow?: Pick<SelectableCursorRow, 'workflow_key'>,
-  database: Database = db(),
 ): Promise<WorkflowCursorContext> {
   const key = workflowCursorContextKey(workflowKeyOf(args) || undefined, selectedRow?.workflow_key)
   if (!key) return { ...context, workflowKey: undefined, taskRecordId: null }
@@ -100,7 +101,7 @@ export async function readThroughWorkflowCursorContext(
   database: Database = db(),
 ): Promise<WorkflowCursorContext> {
   if (!context.workflowKey || !context.taskRecordId) return context
-  if (!recordApiConfigured(process.env) && !readRecordInstallBinding(database).bound) return context
+  if (!taskFlowReadThroughEnabled(database)) return context
   const taskFlowRead = await readThroughTaskFlow(database, {
     project,
     taskKey: context.workflowKey,

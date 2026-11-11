@@ -4,6 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { writeTransaction } from '../database/db.ts'
+import { readRecordInstallBinding } from '../record/install-binding.ts'
 import { RecordApiRequestError, recordApiClient } from '../record/record-api-client.ts'
 import {
   type HostedTaskFlow,
@@ -21,6 +22,11 @@ import {
 } from './task-flow-decision.ts'
 
 export type { TaskFlowReadStatus } from './task-flow-decision.ts'
+
+/** Whether this install has a hosted record whose task-flow cache may be refreshed. */
+export function taskFlowReadThroughEnabled(database: Database): boolean {
+  return recordApiConfigured(process.env) || readRecordInstallBinding(database).bound
+}
 
 type HostedStage = NonNullable<HostedTaskFlow['otherStages']>[number]
 

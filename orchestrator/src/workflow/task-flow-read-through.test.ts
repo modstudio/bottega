@@ -650,7 +650,6 @@ test.each([
       {},
       async () => [{ key: 'DEV-2098', record_id: taskId, project: 'read-through-fixture' }],
       selectedRow,
-      ids.database,
     )
     await resolveLinkedWorkflowCursorMode(
       workflow,

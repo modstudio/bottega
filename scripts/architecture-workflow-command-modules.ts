@@ -28,6 +28,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     '../../../shared/record-api-url.ts',
     '../../../shared/record-remedies.ts',
     '../database/db.ts',
+    '../record/install-binding.ts',
     '../record/record-api-client.ts',
     '../record/record-task-flow-contract.ts',
     '../record/record-task-flow-write-client.ts',
