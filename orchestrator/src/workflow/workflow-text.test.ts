@@ -94,16 +94,18 @@ const database = testDatabaseFixture((d) => {
 })
 
 async function open(d: Database): Promise<number> {
-  return (await getWorkflowStepWithCursor(
-    'text-fixture',
-    'fixture',
-    'text-source',
-    {},
-    'default',
-    context,
-    d,
-    {},
-  )).cursor
+  return (
+    await getWorkflowStepWithCursor(
+      'text-fixture',
+      'fixture',
+      'text-source',
+      {},
+      'default',
+      context,
+      d,
+      {},
+    )
+  ).cursor
 }
 
 const abandon = async (d: Database, cursor: number, reason: string) =>

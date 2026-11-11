@@ -5,14 +5,14 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, writeTransaction } from '../database/db.ts'
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
-import { recordApiClient } from '../record/record-api-client.ts'
 import { machineId } from '../record/machine-identity.ts'
+import { recordApiClient } from '../record/record-api-client.ts'
+import { writeHostedTaskFlow } from '../record/record-task-flow-write-client.ts'
 import {
-  taskFlowRequestId,
   type TaskFlowComposeResult,
   type TaskFlowIntentInput,
+  taskFlowRequestId,
 } from '../record/record-task-flow-write-contract.ts'
-import { writeHostedTaskFlow } from '../record/record-task-flow-write-client.ts'
 import type { AutonomyResolution } from './autonomy.ts'
 import {
   attachInsertedTaskFlowStage,
@@ -34,7 +34,7 @@ import { storedCursorAutonomyJson } from './workflow-cursor-autonomy.ts'
 import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
 import type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { refuseUnlinkedCursorLabelCollision } from './workflow-cursor-task-reference.ts'
-import { composeWorkflow } from './workflows.ts'
+import type { composeWorkflow } from './workflows.ts'
 
 type Composition = ReturnType<typeof composeWorkflow>
 type ExistingFlow = { record_id: string; revision: number } | null
@@ -97,6 +97,7 @@ function readComposeFacts(
   context: WorkflowCursorContext,
   autonomy: AutonomyResolution | undefined,
   database: Database,
+  keylessOrdinalOffset = 0,
 ): ComposeFacts {
   const key = workflowKeyOf(composition.arguments)
   const projectRecordId = database
@@ -132,7 +133,8 @@ function readComposeFacts(
   const owner = context.session ?? machine
   const ordinal = key
     ? 0
-    : keylessComposeOrdinal(composition, context, projectRecordId, machine, database)
+    : keylessComposeOrdinal(composition, context, projectRecordId, machine, database) +
+      keylessOrdinalOffset
   const instance = decideKeylessComposeInstance({
     key,
     owner,
@@ -279,7 +281,7 @@ function applyHostedCompose(
   context: WorkflowCursorContext,
   database: Database,
 ): WorkflowCloseCursor {
-  const cursorRecordId = hosted?.stage.id ?? facts.rowInput.recordId
+  const cursorRecordId = hosted?.stage?.id ?? facts.rowInput.recordId
   const flowRecordId =
     facts.existingFlow?.record_id ??
     (hosted
@@ -301,7 +303,7 @@ function applyHostedCompose(
       {
         ...facts.rowInput,
         recordId: cursorRecordId,
-        number: hosted?.stage.number,
+        number: hosted?.stage?.number,
         revision: hosted?.revisions[cursorRecordId] ?? 1,
       },
       'local-identity',
@@ -334,7 +336,9 @@ function applyHostedCompose(
 }
 
 function cacheComposeReplay(
-  replay: Awaited<ReturnType<NonNullable<ReturnType<typeof recordApiClient>['listTaskFlowStages']>>>['items'][number],
+  replay: Awaited<
+    ReturnType<NonNullable<ReturnType<typeof recordApiClient>['listTaskFlowStages']>>
+  >['items'][number],
   facts: ComposeFacts,
   composition: Composition,
   context: WorkflowCursorContext,
@@ -416,18 +420,13 @@ async function recoverComposeConflict(
       `${error.message}; close or abandon the stage holding this workflow slot, then retry`,
     )
   const alreadyCached = database
-    .query<{ record_id: string }, [string]>('SELECT record_id FROM workflow_cursor WHERE record_id=?')
+    .query<{ record_id: string }, [string]>(
+      'SELECT record_id FROM workflow_cursor WHERE record_id=?',
+    )
     .get(replay.stage.id)
   if (!alreadyCached) return cacheComposeReplay(replay, facts, composition, context, database)
   if (facts.key || keylessSiblingRetry) throw error
-  return insertWorkflowCursor(
-    composition,
-    context,
-    database,
-    autonomy,
-    commitCount,
-    true,
-  )
+  return insertWorkflowCursor(composition, context, database, autonomy, commitCount, true)
 }
 
 export async function insertWorkflowCursor(
@@ -446,7 +445,13 @@ export async function insertWorkflowCursor(
     commitCount,
   })
   if (refusal) throw new Error(refusal)
-  const facts = readComposeFacts(composition, context, autonomy, database)
+  const facts = readComposeFacts(
+    composition,
+    context,
+    autonomy,
+    database,
+    keylessSiblingRetry ? 1 : 0,
+  )
   const destination = await resolveTaskFlowDestination(
     composition.project,
     database,
@@ -461,7 +466,8 @@ export async function insertWorkflowCursor(
     )
     return applyHostedCompose(hosted, facts, composition, context, database)
   } catch (error) {
-    if (!(error instanceof DocRevisionConflictError) || error.reason !== 'already-exists') throw error
+    if (!(error instanceof DocRevisionConflictError) || error.reason !== 'already-exists')
+      throw error
     return recoverComposeConflict(
       error,
       facts,

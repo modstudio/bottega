@@ -3,11 +3,11 @@
 
 import type { Database } from 'bun:sqlite'
 import { writableDb, writeTransaction } from '../database/db.ts'
-import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { machineId } from '../record/machine-identity.ts'
-import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
-import type { TaskFlowAdoptResult } from '../record/record-task-flow-write-contract.ts'
+import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { writeHostedTaskFlow } from '../record/record-task-flow-write-client.ts'
+import type { TaskFlowAdoptResult } from '../record/record-task-flow-write-contract.ts'
+import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { linkWorkflowQuestionsTaskReference } from '../run/question-mutation.ts'
 import { cacheAdoptedTaskFlow } from './task-flow.ts'
 import { resolveTaskFlowDestination } from './task-flow-hosted-destination.ts'
@@ -23,10 +23,7 @@ export async function linkWorkflowTaskLabel(
   client?: RecordTaskFlowClient,
 ): Promise<{ workflow_cursor: number; question: number }> {
   const rows = database
-    .query<
-      { record_id: string; revision: number; updated_at: string },
-      [string, string]
-    >(
+    .query<{ record_id: string; revision: number; updated_at: string }, [string, string]>(
       `SELECT record_id,revision,updated_at FROM workflow_cursor
        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
          AND workflow_key=? AND task_record_id IS NULL ORDER BY record_id`,
@@ -55,10 +52,14 @@ export async function linkWorkflowTaskLabel(
   return writeTransaction(() => {
     for (const { row, result } of hosted) {
       const current = database
-        .query<{ revision: number }, [string]>('SELECT revision FROM workflow_cursor WHERE record_id=?')
+        .query<{ revision: number }, [string]>(
+          'SELECT revision FROM workflow_cursor WHERE record_id=?',
+        )
         .get(row.record_id)
       if (!current || current.revision !== row.revision)
-        throw new Error(`workflow cursor ${row.record_id} changed while its task was linked; rerun the command`)
+        throw new Error(
+          `workflow cursor ${row.record_id} changed while its task was linked; rerun the command`,
+        )
       cacheAdoptedTaskFlow(
         {
           project: input.project,

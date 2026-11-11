@@ -644,8 +644,15 @@ describe('orch MCP', () => {
           holder: { id: remoteMachine, displayName: 'Remote MCP machine' },
         },
       }
+      const hostedSpaceId = newRecordId()
       installRecordApiClient({
         ...createMemoryRecordApiClient(),
+        whoami: async () => ({
+          user: { id: 'mcp-workflow-user' },
+          activeSpaceId: hostedSpaceId,
+          personalSpaceId: hostedSpaceId,
+          memberships: [{ space_id: hostedSpaceId, slug: 'mcp-workflow', permission: 'write' }],
+        }),
         readTaskFlow: async () => hosted,
         advanceTaskFlow: async (input) => ({
           revisions: {
@@ -675,7 +682,7 @@ describe('orch MCP', () => {
         deleteTaskFlowText: async () => ({ revisions: {} }),
       })
       process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
-      rememberProjectSpace(db(), project, newRecordId())
+      rememberProjectSpace(db(), project, hostedSpaceId)
       const advanced = await call('next_workflow_step', {
         ...common,
         cursor: first.id,

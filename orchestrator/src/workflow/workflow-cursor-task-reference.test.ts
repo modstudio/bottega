@@ -20,7 +20,7 @@ describe('workflow cursor task reference', () => {
     })
     await expect(
       composeWorkflowWithCursor('flow', 'fixture', 'default', args, unresolved, d, {}, {}),
-  ).rejects.toThrow(
+    ).rejects.toThrow(
       'task key DEV-822 names no task in hub and earlier cursor 1 holds that label; use a real task key',
     )
   })
@@ -52,7 +52,7 @@ describe('workflow cursor task reference', () => {
     const resolved = await resolveWorkflowCursorContext('fixture', args, context, async () => [
       { key: args.key, record_id: 'task-DEV-822', project: 'fixture' },
     ])
-    nextWorkflowStep(
+    await nextWorkflowStep(
       'flow',
       'fixture',
       'default',

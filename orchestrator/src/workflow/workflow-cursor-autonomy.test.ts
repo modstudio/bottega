@@ -240,7 +240,7 @@ describe('workflow cursor stored autonomy', () => {
 
     await expect(
       getWorkflowStepWithCursor('flow', 'fixture', 'lens', args, 'default', context, d, {}),
-  ).rejects.toThrow('workflow flow for DEV-822 is abandoned; compose it again to start a new run')
+    ).rejects.toThrow('workflow flow for DEV-822 is abandoned; compose it again to start a new run')
   })
 
   test('an active cursor needing ship-to refuses a snapshot with no level', async () => {
@@ -253,7 +253,7 @@ describe('workflow cursor stored autonomy', () => {
 
     await expect(
       getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d, {}),
-  ).rejects.toThrow(
+    ).rejects.toThrow(
       `workflow cursor ${opened.cursor!.id}'s stored autonomy has no ship-to level; clear it with: ${PLATFORM_SLUG} workflow abandon --cursor ${opened.cursor!.id} --reason "<why>"; then start a new run with: ${PLATFORM_SLUG} workflow compose flow --project fixture --mode default --arg key=DEV-822 --arg branch=DEV-822-work --arg worktree=/tmp/work`,
     )
   })
@@ -266,7 +266,18 @@ describe('workflow cursor stored autonomy', () => {
     })
 
     expect(
-      (await getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d, {})).slug,
+      (
+        await getWorkflowStepWithCursor(
+          'flow',
+          'fixture',
+          'rebase',
+          args,
+          'default',
+          context,
+          d,
+          {},
+        )
+      ).slug,
     ).toBe('rebase')
   })
 })

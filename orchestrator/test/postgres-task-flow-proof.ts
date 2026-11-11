@@ -871,7 +871,11 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         expect(hosted.otherStages?.map((stage) => stage.id)).not.toContain(localIds.stage_id)
       }
 
-      await readThroughTaskFlow(databaseB, { taskKey: TASK_KEY, taskRecordId: taskId })
+      await readThroughTaskFlow(databaseB, {
+        project: PROJECT,
+        taskKey: TASK_KEY,
+        taskRecordId: taskId,
+      })
       setMachineValue('machine.id', machineB)
       await syncRecord({
         local: databaseB,

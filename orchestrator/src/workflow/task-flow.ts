@@ -342,5 +342,3 @@ export function attachInsertedTaskFlowStage(
   attachTaskFlowStage(flow.flowRecordId, input.cursor.record_id, d)
   return flow.flowRecordId
 }
-
-

@@ -85,7 +85,7 @@ type LocalTaskLinkConfig = {
     database: Database,
     update: PendingLocalTaskLink,
     taskFlowClient?: RecordTaskFlowClient,
-  ): void | Promise<unknown>
+  ): unknown | Promise<unknown>
 }
 
 const LOCAL_TASK_LINKS = {
@@ -116,7 +116,7 @@ const LOCAL_TASK_LINKS = {
       JOIN project p ON p.record_id=c.project_record_id
       WHERE q.workflow_task_record_id IS NOT NULL`,
     write: (database, update) => {
-      linkWorkflowQuestionsTaskReference(
+      return linkWorkflowQuestionsTaskReference(
         {
           project: update.project,
           workflowKey: update.taskKey,
@@ -132,7 +132,7 @@ const LOCAL_TASK_LINKS = {
     linkedSql: `SELECT r.task_record_id,p.name project FROM port_ref r
       JOIN project p ON p.record_id=r.target_project_record_id WHERE r.task_record_id IS NOT NULL`,
     write: (database, update) => {
-      database
+      return database
         .query('UPDATE port_ref SET task_record_id=? WHERE record_id=? AND task_record_id IS NULL')
         .run(update.taskId, update.id)
     },
@@ -144,7 +144,7 @@ const LOCAL_TASK_LINKS = {
     linkedSql: `SELECT s.current_task_record_id task_record_id,p.name project FROM presence s
       JOIN project p ON p.record_id=s.project_record_id WHERE s.current_task_record_id IS NOT NULL`,
     write: (database, update) => {
-      database
+      return database
         .query(
           'UPDATE presence SET current_task_record_id=? WHERE session_id=? AND current_task_record_id IS NULL',
         )
@@ -425,6 +425,75 @@ function recordUnlinkedLaunchKey(
   )
 }
 
+export function applyRunLinkFactsToReport(
+  report: RunTaskLinkReport,
+  runs: readonly RunLinkFacts[],
+  links: readonly DerivedRunLinks[],
+  tasks: HubTaskKeyMap,
+): void {
+  const byId = new Map(runs.map((run) => [run.record_id, run]))
+  for (const link of links) {
+    const run = byId.get(link.record_id)!
+    if (link.task_source) report.task_links_by_source[link.task_source]++
+    if (link.project_source) report.project_links_by_source[link.project_source]++
+    const taskId = link.task_record_id ?? run.task_record_id
+    const projectId = link.project_record_id ?? run.project_record_id
+    if (taskId === null) increment(report.without_task_by_job, run.job)
+    if (taskId === null && run.launch_key) recordUnlinkedLaunchKey(report, run.launch_key, tasks)
+    if (run.probe !== 1 && taskId === null && projectId === null)
+      increment(report.without_task_or_project_by_job, run.job)
+  }
+}
+
+async function persistRunTaskLinks(
+  database: Database,
+  links: readonly DerivedRunLinks[],
+  pendingUpdates: readonly PendingLocalTaskLink[],
+  taskFlowClient?: RecordTaskFlowClient,
+): Promise<void> {
+  for (const update of pendingUpdates) {
+    if (update.table === 'workflow_cursor')
+      await writeLocalTaskLink(database, update, taskFlowClient)
+  }
+  writeTransaction(() => {
+    const updateRun = database.query(
+      `UPDATE run SET task_record_id=COALESCE(task_record_id,?),
+                      project_record_id=COALESCE(project_record_id,?)
+       WHERE record_id=?`,
+    )
+    for (const link of links) {
+      if (!link.task_record_id && !link.project_record_id) continue
+      updateRun.run(link.task_record_id ?? null, link.project_record_id ?? null, link.record_id)
+      const linkedRun = database
+        .query<
+          {
+            job: string
+            status: string
+            finished_at: string
+            parent_run_record_id: string | null
+          },
+          [string]
+        >(
+          `SELECT job,status,COALESCE(last_event_at,started_at) AS finished_at,
+                  parent_run_record_id
+           FROM run WHERE record_id=?`,
+        )
+        .get(link.record_id)!
+      if (!isRunRecordEligible(linkedRun.status, linkedRun.job)) continue
+      const finishedAt = runRecordFinishedAt(
+        database,
+        link.record_id,
+        linkedRun.parent_run_record_id,
+        linkedRun.finished_at,
+      )
+      enqueueRunRecord(database, link.record_id, machineId(), finishedAt)
+    }
+    for (const update of pendingUpdates) {
+      if (update.table !== 'workflow_cursor') LOCAL_TASK_LINKS[update.table].write(database, update)
+    }
+  }, database)
+}
+
 export async function linkRunTasks(
   options: { dryRun: boolean },
   dependencies: {
@@ -447,67 +516,10 @@ export async function linkRunTasks(
     .all()
   const links = deriveRunLinks(runs, tasks, registered)
   const report = emptyReport(options.dryRun)
-  const byId = new Map(runs.map((run) => [run.record_id, run]))
-  for (const link of links) {
-    const run = byId.get(link.record_id)!
-    if (link.task_source) report.task_links_by_source[link.task_source]++
-    if (link.project_source) report.project_links_by_source[link.project_source]++
-    const taskId = link.task_record_id ?? run.task_record_id
-    const projectId = link.project_record_id ?? run.project_record_id
-    if (taskId === null) increment(report.without_task_by_job, run.job)
-    if (taskId === null && run.launch_key) {
-      recordUnlinkedLaunchKey(report, run.launch_key, tasks)
-    }
-    if (run.probe !== 1 && taskId === null && projectId === null) {
-      increment(report.without_task_or_project_by_job, run.job)
-    }
-  }
+  applyRunLinkFactsToReport(report, runs, links, tasks)
   const pendingUpdates = deriveLocalTaskLinks(database, taskIndex, report)
-  if (!options.dryRun) {
-    for (const update of pendingUpdates) {
-      if (update.table === 'workflow_cursor')
-        await writeLocalTaskLink(database, update, dependencies.taskFlowClient)
-    }
-    writeTransaction(() => {
-      const update = database.query(
-        `UPDATE run SET task_record_id=COALESCE(task_record_id,?),
-                        project_record_id=COALESCE(project_record_id,?)
-         WHERE record_id=?`,
-      )
-      for (const link of links) {
-        if (!link.task_record_id && !link.project_record_id) continue
-        update.run(link.task_record_id ?? null, link.project_record_id ?? null, link.record_id)
-        const linkedRun = database
-          .query<
-            {
-              job: string
-              status: string
-              finished_at: string
-              parent_run_record_id: string | null
-            },
-            [string]
-          >(
-            `SELECT job,status,COALESCE(last_event_at,started_at) AS finished_at,
-                    parent_run_record_id
-             FROM run WHERE record_id=?`,
-          )
-          .get(link.record_id)!
-        if (isRunRecordEligible(linkedRun.status, linkedRun.job)) {
-          const finishedAt = runRecordFinishedAt(
-            database,
-            link.record_id,
-            linkedRun.parent_run_record_id,
-            linkedRun.finished_at,
-          )
-          enqueueRunRecord(database, link.record_id, machineId(), finishedAt)
-        }
-      }
-      for (const update of pendingUpdates) {
-        if (update.table !== 'workflow_cursor')
-          LOCAL_TASK_LINKS[update.table].write(database, update)
-      }
-    }, database)
-  }
+  if (!options.dryRun)
+    await persistRunTaskLinks(database, links, pendingUpdates, dependencies.taskFlowClient)
   return report
 }
 

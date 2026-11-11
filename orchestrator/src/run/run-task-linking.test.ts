@@ -207,6 +207,14 @@ describe('hosted run task linking', () => {
       db().exec('PRAGMA foreign_keys=ON')
     }
     const taskFlowClient: RecordTaskFlowClient = {
+      whoami: async () => ({
+        user: { id: 'hosted-link-user' },
+        activeSpaceId: 'hosted-link-space',
+        personalSpaceId: 'hosted-link-space',
+        memberships: [
+          { space_id: 'hosted-link-space', slug: 'hosted-link', permission: 'write' },
+        ],
+      }),
       adoptTaskFlow: async () => {
         throw new Error('hosted adoption failed')
       },

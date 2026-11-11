@@ -84,4 +84,3 @@ export function recordWorkflowSelfRuling(
   )
   return { questionId: question.number }
 }
-

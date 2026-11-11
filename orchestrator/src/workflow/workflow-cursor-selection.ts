@@ -109,7 +109,7 @@ export const resolveMcpCursorContext = (
 export async function resolveMcpSelectedCursorContext(
   project: string | undefined,
   workflow: string | undefined,
-  mode: string | undefined,
+  _mode: string | undefined,
   args: Record<string, string>,
   cursor: number | undefined,
   reader?: HubTaskReader,
@@ -249,7 +249,7 @@ function selectKeyedTaskStage(
   cursor: number | undefined,
   d: Database,
   taskRecordId: string | null | undefined,
-  taskStatusCategory: string | null | undefined,
+  _taskStatusCategory: string | null | undefined,
 ): SelectableCursorRow | null {
   const handled = cursor === undefined ? null : selectByHandle(cursor, identity, d)
   if (!taskRecordId) return handled
@@ -277,7 +277,12 @@ function selectKeyedTaskStage(
          AND workflow_slug=? AND mode_slug=? AND task_record_id=?
          AND instance_id='' ORDER BY number DESC LIMIT 1`,
     )
-    .get(identity.project, identity.workflow, identity.mode, taskRecordId) as SelectableCursorRow | null
+    .get(
+      identity.project,
+      identity.workflow,
+      identity.mode,
+      taskRecordId,
+    ) as SelectableCursorRow | null
   return fallback ? validateIdentity(fallback, identity) : null
 }
 

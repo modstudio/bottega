@@ -1,9 +1,13 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test'
 import type { Database } from 'bun:sqlite'
+import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
-import type { TaskFlowIntentInput } from '../record/record-task-flow-write-contract.ts'
-import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
+import {
+  type TaskFlowIntentInput,
+  taskFlowRequestId,
+} from '../record/record-task-flow-write-contract.ts'
 import { awaitWorkflowRuling, composeWorkflowWithCursor, ruleWorkflow } from './workflow-cursor.ts'
+import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
 import {
   abandonCursor,
   context,
@@ -16,6 +20,15 @@ import { copyWorkflowTextForCursor } from './workflow-text-copy.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
 const hostedUrl = 'https://record.example.test'
+const destinationSpaceId = 'fixture-space'
+const projectIdentityClient = {
+  whoami: async () => ({
+    user: { id: 'fixture-user' },
+    activeSpaceId: destinationSpaceId,
+    personalSpaceId: destinationSpaceId,
+    memberships: [{ space_id: destinationSpaceId, slug: 'fixture-space', permission: 'write' }],
+  }),
+}
 let priorHostedUrl: string | undefined
 
 beforeEach(() => {
@@ -30,14 +43,22 @@ afterEach(() => {
 
 function composeClient(
   calls: TaskFlowIntentInput<'compose'>[],
-  options: { fail?: Error; number?: number; flowRevision?: number; stageRevision?: number } = {},
+  options: {
+    fail?: Error
+    number?: number
+    flowRevision?: number
+    stageRevision?: number
+    destinations?: Array<{ destinationSpaceId?: string } | undefined>
+  } = {},
 ): RecordTaskFlowClient {
   let replay:
     | { stage: { id: string; number: number }; revisions: Record<string, number> }
     | undefined
   return {
-    composeTaskFlow: async (input) => {
+    ...projectIdentityClient,
+    composeTaskFlow: async (input, destination) => {
       calls.push(input)
+      options.destinations?.push(destination)
       if (options.fail) throw options.fail
       if (replay) return replay
       const stage = input.stageInsert!
@@ -73,7 +94,8 @@ function installKeylessWorkflow(d: Database, slug: string): void {
 test('hosted compose runs first and caches its number and revisions without an outbox row', async () => {
   const d = database()
   const calls: TaskFlowIntentInput<'compose'>[] = []
-  const taskFlowClient = composeClient(calls)
+  const destinations: Array<{ destinationSpaceId?: string } | undefined> = []
+  const taskFlowClient = composeClient(calls, { destinations })
 
   const composed = await composeWorkflowWithCursor(
     'flow',
@@ -87,6 +109,7 @@ test('hosted compose runs first and caches its number and revisions without an o
   )
 
   expect(calls).toHaveLength(1)
+  expect(destinations).toEqual([{ destinationSpaceId }])
   expect(calls[0]).toMatchObject({
     flowInsert: { taskId: 'task-DEV-HOSTED' },
     stageInsert: { workflow: 'flow', workflowKey: 'DEV-HOSTED' },
@@ -202,6 +225,7 @@ test('advance, await, rule, and abandon call the record before caching returned 
   let stageId = ''
   let flowId = ''
   const taskFlowClient: RecordTaskFlowClient = {
+    ...projectIdentityClient,
     ...composeClient(composeCalls, { stageRevision: 7, flowRevision: 4 }),
     advanceTaskFlow: async (input) => {
       events.push('advance')
@@ -307,6 +331,7 @@ test('adoption calls adopt then stage-update and caches the hosted flow identity
   const events: string[] = []
   let hostedFlowId = ''
   const taskFlowClient: RecordTaskFlowClient = {
+    ...projectIdentityClient,
     composeTaskFlow: async (input) => {
       hostedFlowId = input.flowInsert!.id
       return {
@@ -366,6 +391,7 @@ test('hosted text attach, copy, and delete happen before their local rows change
   const composeCalls: TaskFlowIntentInput<'compose'>[] = []
   const events: string[] = []
   const taskFlowClient: RecordTaskFlowClient = {
+    ...projectIdentityClient,
     ...composeClient(composeCalls),
     attachTaskFlowText: async (input) => {
       events.push('attach-text')
@@ -441,6 +467,7 @@ test('keyless hosted composes use distinct deterministic session slots', async (
   installKeylessWorkflow(d, 'hosted-keyless-slots')
   const calls: TaskFlowIntentInput<'compose'>[] = []
   const taskFlowClient: RecordTaskFlowClient = {
+    ...projectIdentityClient,
     composeTaskFlow: async (input) => {
       calls.push(input)
       const number = 90 + calls.length
@@ -523,4 +550,109 @@ test('keyless compose crash recovery reuses the same request and instance slot',
     number: 101,
     instance_id: calls[0]!.stageInsert!.instanceId,
   })
+})
+
+test('keyless open-slot recovery recounts once and composes the next sibling slot', async () => {
+  const d = database()
+  installKeylessWorkflow(d, 'hosted-keyless-sibling')
+  const composeCalls: TaskFlowIntentInput<'compose'>[] = []
+  let setupStageId = ''
+  let setupFlowId = ''
+  let listCalls = 0
+  const taskFlowClient: RecordTaskFlowClient = {
+    ...projectIdentityClient,
+    composeTaskFlow: async (input) => {
+      if (!setupStageId) {
+        setupStageId = input.stageInsert!.id
+        setupFlowId = input.flowInsert!.id
+        return {
+          stage: { id: setupStageId, number: 201 },
+          revisions: { [setupFlowId]: 1, [setupStageId]: 1 },
+        }
+      }
+      composeCalls.push(input)
+      if (composeCalls.length === 1)
+        throw new DocRevisionConflictError(
+          'the keyless slot already exists',
+          'task_flow_stage_open_slot_unique',
+          'already-exists',
+          null,
+        )
+      return {
+        stage: { id: input.stageInsert!.id, number: 203 },
+        revisions: { [input.flowInsert!.id]: 1, [input.stageInsert!.id]: 1 },
+      }
+    },
+    listTaskFlowStages: async () => {
+      listCalls += 1
+      const failed = composeCalls[0]!.stageInsert!
+      return {
+        truncated: false,
+        items: [
+          {
+            stage: {
+              ...failed,
+              id: setupStageId,
+              number: 201,
+              projectName: 'fixture',
+              workflowKey: null,
+              workflowVersionNumber: 1,
+              catalogueVersionNumber: 1,
+              revision: 1,
+            },
+            flow: {
+              id: setupFlowId,
+              projectId: failed.projectId,
+              taskId: null,
+              taskKey: null,
+              state: 'open',
+              openStageRecordId: setupStageId,
+              openStageCount: 1,
+              openingMachineId: failed.openedMachineId,
+              updatedMachineId: failed.lastAdvancedMachineId,
+              revision: 1,
+              createdAt: failed.createdAt,
+              updatedAt: failed.updatedAt,
+            },
+          },
+        ],
+      }
+    },
+  }
+  const hostedContext = { session: 'keyless-sibling-session', taskFlowClient }
+  await composeWorkflowWithCursor(
+    'hosted-keyless-sibling',
+    'fixture',
+    'default',
+    {},
+    hostedContext,
+    d,
+    {},
+    {},
+  )
+  await composeWorkflowWithCursor(
+    'hosted-keyless-sibling',
+    'fixture',
+    'default',
+    {},
+    hostedContext,
+    d,
+    {},
+    {},
+  )
+
+  expect(listCalls).toBe(1)
+  expect(composeCalls).toHaveLength(2)
+  expect(composeCalls[1]!.stageInsert!.instanceId).not.toBe(
+    composeCalls[0]!.stageInsert!.instanceId,
+  )
+  expect(composeCalls[1]!.requestId).toBe(
+    taskFlowRequestId('compose', [
+      composeCalls[1]!.stageInsert!.projectId,
+      'hosted-keyless-sibling',
+      'default',
+      '',
+      composeCalls[1]!.stageInsert!.instanceId ?? '',
+    ]),
+  )
 })

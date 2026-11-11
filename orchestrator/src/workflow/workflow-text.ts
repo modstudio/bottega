@@ -3,12 +3,12 @@
 import type { Database } from 'bun:sqlite'
 import { writableDb, writeTransaction } from '../database/db.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
-import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { writeHostedTaskFlow } from '../record/record-task-flow-write-client.ts'
+import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
+import { resolveTaskFlowDestination } from './task-flow-hosted-destination.ts'
 import type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { selectWorkflowCursor } from './workflow-cursor-selection.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
-import { resolveTaskFlowDestination } from './task-flow-hosted-destination.ts'
 import { linkWorkflowTaskLabel } from './workflow-task-linking.ts'
 
 export const WORKFLOW_TEXT_ATTACHMENT_MAX_BYTES = 32 * 1024
@@ -134,6 +134,7 @@ function workflowTextRows(cursorId: string, d: Database): WorkflowTextRow[] {
 type AttachCursorRow = {
   id: number
   record_id: string
+  project: string
   session_id: string | null
   ordinal: number
   step_slug: string
@@ -151,7 +152,10 @@ function attachSelectedWorkflowText(
   d: Database,
 ): string {
   const existing = d
-    .query<{ cursor_record_id: string; step_ordinal: number; step_slug: string; body: string }, [string]>(
+    .query<
+      { cursor_record_id: string; step_ordinal: number; step_slug: string; body: string },
+      [string]
+    >(
       'SELECT cursor_record_id,step_ordinal,step_slug,body FROM workflow_step_text WHERE record_id=?',
     )
     .get(recordId)
@@ -161,7 +165,8 @@ function attachSelectedWorkflowText(
       existing.step_ordinal !== row.ordinal + 1 ||
       existing.step_slug !== row.step_slug ||
       existing.body !== body
-    ) throw new Error(`workflow text ${recordId} already exists with different values`)
+    )
+      throw new Error(`workflow text ${recordId} already exists with different values`)
     return workflowTextAttachmentToken(recordId)
   }
   const attachmentBytes = Buffer.byteLength(body, 'utf8')
@@ -236,11 +241,15 @@ async function attachWorkflowTextUnchecked(
   d: Database = writableDb(),
 ): Promise<string> {
   if (identity.key && context.taskRecordId)
-    await linkWorkflowTaskLabel(d, {
-      project: identity.project,
-      workflowKey: identity.key,
-      taskRecordId: context.taskRecordId,
-    }, context.taskFlowClient)
+    await linkWorkflowTaskLabel(
+      d,
+      {
+        project: identity.project,
+        workflowKey: identity.key,
+        taskRecordId: context.taskRecordId,
+      },
+      context.taskFlowClient,
+    )
   const row = selectWorkflowCursor(identity, cursor, context.session, d) as AttachCursorRow | null
   if (!row) throw new Error('workflow has no live cursor; fetch its current step first')
   const recordId = taskFlowRequestId('attach-text', [
@@ -255,13 +264,27 @@ async function attachWorkflowTextUnchecked(
     'attach-text',
     {
       requestId: taskFlowRequestId('attach-text', [recordId]),
-      rows: [{ id: recordId, stageRecordId: row.record_id, stepOrdinal: row.ordinal + 1, stepSlug: row.step_slug, body, createdAt }],
+      rows: [
+        {
+          id: recordId,
+          stageRecordId: row.record_id,
+          stepOrdinal: row.ordinal + 1,
+          stepSlug: row.step_slug,
+          body,
+          createdAt,
+        },
+      ],
     },
     destination,
     context.taskFlowClient,
   )
   return writeTransaction(() => {
-    const current = selectWorkflowCursor(identity, cursor, context.session, d) as AttachCursorRow | null
+    const current = selectWorkflowCursor(
+      identity,
+      cursor,
+      context.session,
+      d,
+    ) as AttachCursorRow | null
     if (!current || current.record_id !== row.record_id || current.revision !== row.revision)
       throw new Error(`workflow cursor changed while text was attached; rerun the attach command`)
     return attachSelectedWorkflowText(current, body, context, recordId, createdAt, d)
@@ -336,7 +359,11 @@ export async function deleteWorkflowText(
   const destination = await resolveTaskFlowDestination(row.project, d, client)
   await writeHostedTaskFlow(
     'delete-text',
-    { requestId: taskFlowRequestId('delete-text', [cursorId, ...ids.sort()]), stageRecordId: cursorId, ids },
+    {
+      requestId: taskFlowRequestId('delete-text', [cursorId, ...ids.sort()]),
+      stageRecordId: cursorId,
+      ids,
+    },
     destination,
     client,
   )

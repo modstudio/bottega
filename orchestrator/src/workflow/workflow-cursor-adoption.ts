@@ -2,10 +2,10 @@
 /** Atomically adopts a task key and republishes every cursor-bound question. */
 import type { Database } from 'bun:sqlite'
 import { nowIso, writeTransaction } from '../database/db.ts'
-import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { machineId } from '../record/machine-identity.ts'
-import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
+import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { writeHostedTaskFlow } from '../record/record-task-flow-write-client.ts'
+import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import {
   attachTaskFlowStage,
@@ -71,14 +71,7 @@ export async function adoptWorkflowTask(
       )
     return
   }
-  const conflict = d
-    .query<{ id: number }, [string, string, string, string]>(
-      `SELECT number id FROM workflow_cursor
-       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-         AND workflow_slug=? AND mode_slug=? AND workflow_key=?
-         AND state NOT IN ('done','abandoned') LIMIT 1`,
-    )
-    .get(row.project, row.workflow_slug, row.mode_slug, key)
+  const conflict = conflictingAdoptionCursor(row, key, d)
   if (conflict)
     throw new Error(
       `cursor ${row.id} cannot adopt ${key}; open cursor ${conflict.id} already holds it`,
@@ -121,41 +114,60 @@ export async function adoptWorkflowTask(
     }
     writeTransaction(() => {
       const current = d
-        .query<{ revision: number }, [string]>('SELECT revision FROM workflow_cursor WHERE record_id=?')
+        .query<{ revision: number }, [string]>(
+          'SELECT revision FROM workflow_cursor WHERE record_id=?',
+        )
         .get(row.record_id)
       if (!current || current.revision !== row.revision)
-        throw new Error(`workflow cursor ${row.id} changed while adopting ${key}; rerun the command`)
+        throw new Error(
+          `workflow cursor ${row.id} changed while adopting ${key}; rerun the command`,
+        )
       assignWorkflowTaskKey(row, key, adoptedTaskId, d)
       if (adopted)
         cacheAdoptedTaskFlow(
-        {
-          project: row.project,
-          taskRecordId: adoptedTaskId,
-          cursorRecordId: row.record_id,
-          flowRecordId: adopted.flowRecordId,
-          flowRevision: adopted.revisions[adopted.flowRecordId]!,
-          stageRevision,
-          statusCategory,
-          at,
-        },
-        d,
-      )
+          {
+            project: row.project,
+            taskRecordId: adoptedTaskId,
+            cursorRecordId: row.record_id,
+            flowRecordId: adopted.flowRecordId,
+            flowRevision: adopted.revisions[adopted.flowRecordId]!,
+            stageRevision,
+            statusCategory,
+            at,
+          },
+          d,
+        )
       else {
         const flow = selectTaskFlowStage(
-      {
-        project: row.project,
-        taskRecordId: adoptedTaskId,
-        taskKey: key,
-        cursor: row.id,
-        workflow: row.workflow_slug,
-        mode: row.mode_slug,
-      },
-      d,
-    )
+          {
+            project: row.project,
+            taskRecordId: adoptedTaskId,
+            taskKey: key,
+            cursor: row.id,
+            workflow: row.workflow_slug,
+            mode: row.mode_slug,
+          },
+          d,
+        )
         attachTaskFlowStage(flow.flowRecordId, row.record_id, d)
       }
     }, d)
     return
   }
   assignWorkflowTaskKey(row, key, null, d)
+}
+
+function conflictingAdoptionCursor(
+  row: AdoptionCursor,
+  key: string,
+  database: Database,
+): { id: number } | null {
+  return database
+    .query<{ id: number }, [string, string, string, string]>(
+      `SELECT number id FROM workflow_cursor
+       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+         AND workflow_slug=? AND mode_slug=? AND workflow_key=?
+         AND state NOT IN ('done','abandoned') LIMIT 1`,
+    )
+    .get(row.project, row.workflow_slug, row.mode_slug, key)
 }

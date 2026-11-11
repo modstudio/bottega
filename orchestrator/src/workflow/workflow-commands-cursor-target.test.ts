@@ -114,16 +114,32 @@ test('next by cursor alone reads through the row key and links the hosted task',
   })
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: 'cursor-target-user' },
+      activeSpaceId: 'cursor-target-space',
+      personalSpaceId: 'cursor-target-space',
+      memberships: [
+        { space_id: 'cursor-target-space', slug: 'cursor-target', permission: 'write' },
+      ],
+    }),
     readTaskFlow: async () => hosted(1, 0),
   })
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
-  await readThroughTaskFlow(db(), { taskKey: key, taskRecordId: taskId })
+  await readThroughTaskFlow(db(), { project, taskKey: key, taskRecordId: taskId })
   db().query('UPDATE workflow_cursor SET task_record_id=NULL WHERE record_id=?').run(stageId)
   const cursor = db()
     .query<{ number: number }, [string]>('SELECT number FROM workflow_cursor WHERE record_id=?')
     .get(stageId)!.number
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: 'cursor-target-user' },
+      activeSpaceId: 'cursor-target-space',
+      personalSpaceId: 'cursor-target-space',
+      memberships: [
+        { space_id: 'cursor-target-space', slug: 'cursor-target', permission: 'write' },
+      ],
+    }),
     readTaskFlow: async () => hosted(2, 1),
   })
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'

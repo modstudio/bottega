@@ -253,7 +253,9 @@ test('self-ruling refuses ask autonomy without changing the cursor or questions'
       ports,
     )
   }
-  await expect(selfRule(d)).rejects.toThrow(/resolved autonomy is ask.*workflow await.*workflow rule/)
+  await expect(selfRule(d)).rejects.toThrow(
+    /resolved autonomy is ask.*workflow await.*workflow rule/,
+  )
   expect(d.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({
     ordinal: 3,
     step_slug: 'ship-triage',

@@ -175,16 +175,18 @@ describe('conditional workflow cursor advance', () => {
       }),
     ])
     expect(
-      (await getWorkflowStepWithCursor(
-        'conditional-skip',
-        'fixture',
-        'score',
-        args,
-        'default',
-        context,
-        d,
-        {},
-      )).slug,
+      (
+        await getWorkflowStepWithCursor(
+          'conditional-skip',
+          'fixture',
+          'score',
+          args,
+          'default',
+          context,
+          d,
+          {},
+        )
+      ).slug,
     ).toBe('complete')
   })
 
@@ -219,7 +221,9 @@ describe('conditional workflow cursor advance', () => {
     const d = database()
     installConditionalFixture(d, 'conditional-end', ['score'], [])
     await open(d, 'conditional-end')
-    expect(await closeChoice(d, 'conditional-end', 'clear')).toContain('is finished: 2 steps closed')
+    expect(await closeChoice(d, 'conditional-end', 'clear')).toContain(
+      'is finished: 2 steps closed',
+    )
     expect(d.query('SELECT state FROM workflow_cursor').get()).toEqual({
       state: 'done',
     })
@@ -583,9 +587,11 @@ describe('ruling outcomes and bounded re-entry', () => {
       /automatic re-entry bound is reached/,
     )
     await expect(closeStep(d, 'reentry-bound', 'changed')).rejects.toThrow(/workflow await/)
-    await expect(closeStep(d, 'reentry-bound', 'changed')).rejects.toThrow(/non-re-entering outcome/)
+    await expect(closeStep(d, 'reentry-bound', 'changed')).rejects.toThrow(
+      /non-re-entering outcome/,
+    )
     await expect(
-closeStep(d, 'reentry-bound', 'changed', undefined, {
+      closeStep(d, 'reentry-bound', 'changed', undefined, {
         review: insertGradedReview(d),
       }),
     ).rejects.toThrow(/automatic re-entry bound is reached/)

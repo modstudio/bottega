@@ -146,7 +146,7 @@ test('a workflow without a key argument adopts --task and renders and closes its
   expect(served.body).toContain(KEYLESS_TRACKER_ACTION_KEY)
 
   await expect(
-nextWorkflowStep(
+    nextWorkflowStep(
       'keyless-binding',
       'fixture',
       'default',
@@ -338,7 +338,7 @@ test('operator-ruling cursor refusals name the bound question remedy', async () 
     )
     .get(newRecordId(), cursorRecord.record_id)!
   await expect(
-nextWorkflowStep(
+    nextWorkflowStep(
       'operator-signoff',
       'fixture',
       'default',
@@ -358,7 +358,7 @@ nextWorkflowStep(
       WHERE number=?`,
   ).run(question.number)
   await expect(
-nextWorkflowStep(
+    nextWorkflowStep(
       'operator-signoff',
       'fixture',
       'default',
@@ -384,7 +384,7 @@ nextWorkflowStep(
     {},
   )
   await expect(
-nextWorkflowStep(
+    nextWorkflowStep(
       'operator-signoff',
       'fixture',
       'default',
@@ -477,7 +477,7 @@ test('next refuses an undeclared argument before storing it and a correct next s
     .get(cursor)!
 
   await expect(
-nextWorkflowStep(
+    nextWorkflowStep(
       'unknown-next-argument',
       'fixture',
       'default',

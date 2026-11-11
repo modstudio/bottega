@@ -4,9 +4,9 @@ import { recordApiClient } from './record-api-client.ts'
 import type { RecordRequestDestination } from './record-api-client-paths.ts'
 import type { RecordTaskFlowClient } from './record-api-client-task-flow.ts'
 import type {
-  type TaskFlowIntent,
-  type TaskFlowIntentInput,
-  type TaskFlowIntentResult,
+  TaskFlowIntent,
+  TaskFlowIntentInput,
+  TaskFlowIntentResult,
 } from './record-task-flow-write-contract.ts'
 import { applyRecordWriteAuthority } from './record-write-authority.ts'
 
@@ -32,7 +32,10 @@ export async function writeHostedTaskFlow<K extends TaskFlowIntent>(
     local: () => null,
     hosted: async () => {
       const method = client[methodByIntent[intent]] as
-        | ((body: TaskFlowIntentInput<K>) => Promise<TaskFlowIntentResult<K>>)
+        | ((
+            body: TaskFlowIntentInput<K>,
+            destination?: RecordRequestDestination,
+          ) => Promise<TaskFlowIntentResult<K>>)
         | undefined
       if (!method)
         throw new Error(

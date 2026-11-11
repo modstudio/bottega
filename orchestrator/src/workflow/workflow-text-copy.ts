@@ -8,8 +8,8 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, writeTransaction } from '../database/db.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
-import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { writeHostedTaskFlow } from '../record/record-task-flow-write-client.ts'
+import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
 import { resolveTaskFlowDestination } from './task-flow-hosted-destination.ts'
 import { abandonSelectedWorkflowCursorForClose, nextWorkflowStep } from './workflow-cursor.ts'
@@ -107,7 +107,12 @@ function uncopiedRows(cursorId: string, database: Database): CopyRow[] {
        ORDER BY t.step_ordinal,t.rowid`,
     )
     .all(cursorId)
-    .map((row) => ({ id: row.record_id, stepSlug: row.step_slug, body: row.body, createdAt: row.created_at }))
+    .map((row) => ({
+      id: row.record_id,
+      stepSlug: row.step_slug,
+      body: row.body,
+      createdAt: row.created_at,
+    }))
 }
 
 async function recordCopy(
@@ -120,10 +125,21 @@ async function recordCopy(
   client?: RecordTaskFlowClient,
 ): Promise<void> {
   const id = taskFlowRequestId('copy-text', [cursorId, textId, reference])
-  await writeHostedTaskFlow('copy-text', {
-    requestId: taskFlowRequestId('copy-text', [id]),
-    row: { id, workflowTextRecordId: textId, stageRecordId: cursorId, taskDocumentReference: reference, copiedAt },
-  }, destination, client)
+  await writeHostedTaskFlow(
+    'copy-text',
+    {
+      requestId: taskFlowRequestId('copy-text', [id]),
+      row: {
+        id,
+        workflowTextRecordId: textId,
+        stageRecordId: cursorId,
+        taskDocumentReference: reference,
+        copiedAt,
+      },
+    },
+    destination,
+    client,
+  )
   writeTransaction(() => {
     database
       .query(

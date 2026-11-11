@@ -6,6 +6,7 @@ import {
 } from '../doc/doc-revision-conflict.ts'
 import type { RecordRequestDestination } from './record-api-client-paths.ts'
 import { RecordApiRequestError } from './record-api-client-response.ts'
+import type { RecordIdentity } from './record-auth.ts'
 import {
   type HostedTaskFlow,
   type HostedTaskFlowStageList,
@@ -23,7 +24,6 @@ import {
   taskFlowComposeResultSchema,
   taskFlowWriteResultSchema,
 } from './record-task-flow-write-contract.ts'
-import type { RecordIdentity } from './record-auth.ts'
 
 type Request = <T>(
   path: string,

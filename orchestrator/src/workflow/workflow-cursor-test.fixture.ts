@@ -79,7 +79,16 @@ export async function prepareOperatorRulingCursor(d: Database, session: string |
     {},
     {},
   )
-  await awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Proceed?', ownerContext, d, () => {})
+  await awaitWorkflowRuling(
+    'flow',
+    'fixture',
+    'default',
+    args,
+    'Proceed?',
+    ownerContext,
+    d,
+    () => {},
+  )
   return composition.cursor!.id
 }
 

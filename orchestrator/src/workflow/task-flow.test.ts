@@ -60,7 +60,16 @@ test('cursor commands attach, refuse overlap, finish, re-enter, and abandon task
   installTaskFlowLifecycleWorkflow(d, plan)
   installTaskFlowLifecycleWorkflow(d, ship)
 
-  const opened = await composeWorkflowWithCursor(plan, 'fixture', 'default', args, context, d, {}, {})
+  const opened = await composeWorkflowWithCursor(
+    plan,
+    'fixture',
+    'default',
+    args,
+    context,
+    d,
+    {},
+    {},
+  )
   const planCursor = opened.cursor!.id
   const pointers = (cursorNumber: number) =>
     d
@@ -87,10 +96,29 @@ test('cursor commands attach, refuse overlap, finish, re-enter, and abandon task
   ).rejects.toThrow(`task DEV-FLOW already has open stage cursor ${planCursor} ${plan} default`)
 
   d.query("UPDATE workflow_cursor SET enforcement='note-only' WHERE number=?").run(planCursor)
-  await nextWorkflowStep(plan, 'fixture', 'default', args, 'plan finished', context, d, {}, testPorts)
+  await nextWorkflowStep(
+    plan,
+    'fixture',
+    'default',
+    args,
+    'plan finished',
+    context,
+    d,
+    {},
+    testPorts,
+  )
   expect(pointers(planCursor).openStage).toBeNull()
 
-  const reentered = await composeWorkflowWithCursor(ship, 'fixture', 'default', args, context, d, {}, {})
+  const reentered = await composeWorkflowWithCursor(
+    ship,
+    'fixture',
+    'default',
+    args,
+    context,
+    d,
+    {},
+    {},
+  )
   const shipCursor = reentered.cursor!.id
   const shipPointers = pointers(shipCursor)
   expect(reentered.cursor?.opened).toBe(true)
@@ -116,7 +144,16 @@ test('task-flow mutations never enqueue flow or stage rows', async () => {
     taskStatusCategory: 'active',
   }
 
-  const opened = await composeWorkflowWithCursor(workflow, 'fixture', 'default', args, context, d, {}, {})
+  const opened = await composeWorkflowWithCursor(
+    workflow,
+    'fixture',
+    'default',
+    args,
+    context,
+    d,
+    {},
+    {},
+  )
   const cursor = opened.cursor!.id
   expect(d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%'").all()).toEqual([])
 
@@ -208,7 +245,9 @@ test('task adoption attaches a local flow and later advance writes no outbox row
   )
 
   expect(
-    d.query('SELECT task_flow_record_id FROM workflow_cursor WHERE number=?').get(opened.cursor!.id),
+    d
+      .query('SELECT task_flow_record_id FROM workflow_cursor WHERE number=?')
+      .get(opened.cursor!.id),
   ).toEqual({ task_flow_record_id: expect.any(String) })
   expect(d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%'").all()).toEqual([])
 })
@@ -270,7 +309,16 @@ test('finishing a keyed stage clears the local flow without enqueueing', async (
   }
   installTaskFlowLifecycleWorkflow(d, workflow)
 
-  const opened = await composeWorkflowWithCursor(workflow, 'fixture', 'default', args, context, d, {}, {})
+  const opened = await composeWorkflowWithCursor(
+    workflow,
+    'fixture',
+    'default',
+    args,
+    context,
+    d,
+    {},
+    {},
+  )
   d.query("UPDATE workflow_cursor SET enforcement='note-only' WHERE number=?").run(
     opened.cursor!.id,
   )
@@ -392,7 +440,16 @@ test('takeover without a keyed record read refuses with the --key remedy', async
     taskStatusCategory: 'active',
   }
   installTaskFlowLifecycleWorkflow(d, workflow, ['score', 'complete'])
-  const opened = await composeWorkflowWithCursor(workflow, 'fixture', 'default', args, context, d, {}, {})
+  const opened = await composeWorkflowWithCursor(
+    workflow,
+    'fixture',
+    'default',
+    args,
+    context,
+    d,
+    {},
+    {},
+  )
   const holder = newRecordId()
   d.query('UPDATE workflow_cursor SET last_advanced_machine_id=? WHERE number=?').run(
     holder,

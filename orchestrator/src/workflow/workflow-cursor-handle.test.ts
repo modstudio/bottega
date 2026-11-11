@@ -130,7 +130,7 @@ test('two keyless runs in one session have distinct handles and advance independ
     ordinal: 0,
   })
   await expect(
-nextWorkflowStep('keyless-runs', 'fixture', 'default', {}, 'ambiguous', context, d, {}, ports),
+    nextWorkflowStep('keyless-runs', 'fixture', 'default', {}, 'ambiguous', context, d, {}, ports),
   ).rejects.toThrow(
     `more than one open keyless workflow cursor matches; pass a cursor handle:\n` +
       `cursor ${first.cursor}, unassigned, keyless-runs default, step 2 complete\n` +
@@ -198,26 +198,30 @@ test('step 1 reuses one untouched composed keyless cursor but opens after it adv
 test('step 1 ignores two advanced keyless cursors and opens a third', async () => {
   const d = database()
   installKeylessWorkflow(d, 'advanced-keyless-runs')
-  const first = (await composeWorkflowWithCursor(
-    'advanced-keyless-runs',
-    'fixture',
-    'default',
-    {},
-    context,
-    d,
-    {},
-    {},
-  )).cursor!.id
-  const second = (await composeWorkflowWithCursor(
-    'advanced-keyless-runs',
-    'fixture',
-    'default',
-    {},
-    context,
-    d,
-    {},
-    {},
-  )).cursor!.id
+  const first = (
+    await composeWorkflowWithCursor(
+      'advanced-keyless-runs',
+      'fixture',
+      'default',
+      {},
+      context,
+      d,
+      {},
+      {},
+    )
+  ).cursor!.id
+  const second = (
+    await composeWorkflowWithCursor(
+      'advanced-keyless-runs',
+      'fixture',
+      'default',
+      {},
+      context,
+      d,
+      {},
+      {},
+    )
+  ).cursor!.id
   d.query("UPDATE workflow_cursor SET enforcement='note-only'").run()
   for (const cursor of [first, second])
     await nextWorkflowStep(
@@ -252,26 +256,30 @@ test('step 1 ignores two advanced keyless cursors and opens a third', async () =
 test('step 1 reuses the untouched cursor when another keyless cursor is advanced', async () => {
   const d = database()
   installKeylessWorkflow(d, 'mixed-keyless-runs')
-  const advanced = (await composeWorkflowWithCursor(
-    'mixed-keyless-runs',
-    'fixture',
-    'default',
-    {},
-    context,
-    d,
-    {},
-    {},
-  )).cursor!.id
-  const untouched = (await composeWorkflowWithCursor(
-    'mixed-keyless-runs',
-    'fixture',
-    'default',
-    {},
-    context,
-    d,
-    {},
-    {},
-  )).cursor!.id
+  const advanced = (
+    await composeWorkflowWithCursor(
+      'mixed-keyless-runs',
+      'fixture',
+      'default',
+      {},
+      context,
+      d,
+      {},
+      {},
+    )
+  ).cursor!.id
+  const untouched = (
+    await composeWorkflowWithCursor(
+      'mixed-keyless-runs',
+      'fixture',
+      'default',
+      {},
+      context,
+      d,
+      {},
+      {},
+    )
+  ).cursor!.id
   d.query("UPDATE workflow_cursor SET enforcement='note-only'").run()
   await nextWorkflowStep(
     'mixed-keyless-runs',
@@ -305,16 +313,18 @@ test('step 1 reuses the untouched cursor when another keyless cursor is advanced
 test('step 1 reuses a cursor whose trail contains only an argument rebound', async () => {
   const d = database()
   installKeylessWorkflow(d, 'rebound-keyless-run')
-  const opened = (await composeWorkflowWithCursor(
-    'rebound-keyless-run',
-    'fixture',
-    'default',
-    {},
-    context,
-    d,
-    {},
-    {},
-  )).cursor!.id
+  const opened = (
+    await composeWorkflowWithCursor(
+      'rebound-keyless-run',
+      'fixture',
+      'default',
+      {},
+      context,
+      d,
+      {},
+      {},
+    )
+  ).cursor!.id
   d.query('UPDATE workflow_cursor SET closed=? WHERE number=?').run(
     JSON.stringify([
       {
@@ -347,26 +357,30 @@ test('step 1 reuses a cursor whose trail contains only an argument rebound', asy
 test('step 1 refuses when two untouched keyless cursors match', async () => {
   const d = database()
   installKeylessWorkflow(d, 'untouched-keyless-runs')
-  const first = (await composeWorkflowWithCursor(
-    'untouched-keyless-runs',
-    'fixture',
-    'default',
-    {},
-    context,
-    d,
-    {},
-    {},
-  )).cursor!.id
-  const second = (await composeWorkflowWithCursor(
-    'untouched-keyless-runs',
-    'fixture',
-    'default',
-    {},
-    context,
-    d,
-    {},
-    {},
-  )).cursor!.id
+  const first = (
+    await composeWorkflowWithCursor(
+      'untouched-keyless-runs',
+      'fixture',
+      'default',
+      {},
+      context,
+      d,
+      {},
+      {},
+    )
+  ).cursor!.id
+  const second = (
+    await composeWorkflowWithCursor(
+      'untouched-keyless-runs',
+      'fixture',
+      'default',
+      {},
+      context,
+      d,
+      {},
+      {},
+    )
+  ).cursor!.id
 
   await expect(
     getWorkflowStepWithCursor(
@@ -413,7 +427,7 @@ test('a handle to a done or abandoned cursor never opens a replacement', async (
         {},
         opened.cursor,
       ),
-  ).rejects.toThrow(
+    ).rejects.toThrow(
       `cursor ${opened.cursor} is ${state}; a new run is opened by fetching step 1 without a handle`,
     )
     expect(d.query('SELECT count(*) AS n FROM workflow_cursor').get()).toEqual({
@@ -545,43 +559,49 @@ test('closing with task adopts a key once and rekeys cursor questions', async ()
   const keyedArgs = { key: 'DEV-1082' }
   const adoptedContext = { ...context, taskRecordId: 'task-DEV-1082' }
   expect(
-    (await getWorkflowStepWithCursor(
-      'adopt-key',
-      'fixture',
-      'complete',
-      keyedArgs,
-      'default',
-      adoptedContext,
-      d,
-      {},
-    )).cursor,
+    (
+      await getWorkflowStepWithCursor(
+        'adopt-key',
+        'fixture',
+        'complete',
+        keyedArgs,
+        'default',
+        adoptedContext,
+        d,
+        {},
+      )
+    ).cursor,
   ).toBe(opened.cursor)
   expect(
-    (await composeWorkflowWithCursor(
-      'adopt-key',
-      'fixture',
-      'default',
-      keyedArgs,
-      adoptedContext,
-      d,
-      {},
-      {},
-    )).cursor?.id,
+    (
+      await composeWorkflowWithCursor(
+        'adopt-key',
+        'fixture',
+        'default',
+        keyedArgs,
+        adoptedContext,
+        d,
+        {},
+        {},
+      )
+    ).cursor?.id,
   ).toBe(opened.cursor)
   expect(
-    (await awaitWorkflowRuling(
-      'adopt-key',
-      'fixture',
-      'default',
-      keyedArgs,
-      'Done?',
-      adoptedContext,
-      d,
-      () => {},
-    )).id,
+    (
+      await awaitWorkflowRuling(
+        'adopt-key',
+        'fixture',
+        'default',
+        keyedArgs,
+        'Done?',
+        adoptedContext,
+        d,
+        () => {},
+      )
+    ).id,
   ).toBe(opened.cursor)
   await expect(
-nextWorkflowStep(
+    nextWorkflowStep(
       'adopt-key',
       'fixture',
       'default',
@@ -635,7 +655,7 @@ test('adoption refuses a key held by another open cursor', async () => {
   )
   d.query("UPDATE workflow_cursor SET enforcement='note-only'").run()
   await expect(
-nextWorkflowStep(
+    nextWorkflowStep(
       'adopt-conflict',
       'fixture',
       'default',
