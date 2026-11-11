@@ -8,7 +8,11 @@ import { applyHostedTask } from './task-cache.ts'
 
 beforeEach(resetFixtureStore)
 
-const options = { baseUrl: 'https://hub.example.test', token: 'session' } as const
+const options = {
+  baseUrl: 'https://hub.example.test',
+  token: 'session',
+  personalSpaceId: 'space-one',
+} as const
 const registered = [
   { name: 'one', settings: { space: 'one' } },
   { name: 'two', settings: { space: 'two' } },

@@ -15,7 +15,11 @@ import { HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE, HOSTED_NOTE_TABLE } from './push-con
 
 beforeEach(resetFixtureStore)
 
-const options = { baseUrl: 'https://hub.example.test', token: 'session' } as const
+const options = {
+  baseUrl: 'https://hub.example.test',
+  token: 'session',
+  personalSpaceId: 'space-one',
+} as const
 const registered = [
   { name: 'one', settings: { space: 'one' } },
   { name: 'two', settings: { space: 'two' } },
@@ -160,7 +164,7 @@ test('a first feed pass full-pulls every family and space before storing the hor
       .sort(),
   ).toEqual(['space-one', 'space-two'])
   expect(calls.filter((call) => call.path === '/v1/sends').map((call) => call.space)).toEqual([
-    null,
+    'space-one',
   ])
   expect(report.families.map((family) => family.report.resets)).toEqual([2, 2, 1])
 })

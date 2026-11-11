@@ -66,6 +66,7 @@ type PullOptions = {
   token?: string | null
   fetch?: TaskFetch
   registeredProjects?: readonly RegisteredTaskSpace[]
+  personalSpaceId?: string
 }
 
 const emptyCounts = (spaceId: string): SpaceCounts => ({
@@ -441,12 +442,14 @@ async function prepareFeedPass(options: PullOptions): Promise<FeedPass> {
       'the hosted hub does not serve the record change feed; release the hosted hub at or after the version that does',
     )
   const registered = options.registeredProjects ?? projects()
-  let personalSpaceId: string | null = null
+  let personalSpaceId: string | null = options.personalSpaceId ?? null
   const preparationFailures: string[] = []
-  try {
-    personalSpaceId = await personalRecordSpace(shared)
-  } catch (cause) {
-    preparationFailures.push(`send: ${cause instanceof Error ? cause.message : String(cause)}`)
+  if (!personalSpaceId) {
+    try {
+      personalSpaceId = await personalRecordSpace(shared)
+    } catch (cause) {
+      preparationFailures.push(`send: ${cause instanceof Error ? cause.message : String(cause)}`)
+    }
   }
   const families = feedFamilies(registered, identity, personalSpaceId)
   const previous = jsonSetting<Record<string, string[]>>(FEED_SPACES, {})
