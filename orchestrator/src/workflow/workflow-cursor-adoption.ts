@@ -10,7 +10,7 @@ import {
 } from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
-import { vacateRetiredWorkflowKeySlot } from './task-flow.ts'
+import { refuseTaskFlowStageConflict, vacateRetiredWorkflowKeySlot } from './task-flow.ts'
 import { taskFlowStore } from './task-flow-store.ts'
 
 type AdoptionCursor = {
@@ -97,6 +97,16 @@ export async function adoptWorkflowTask(
     }
     const updated = await writeHostedTaskFlow('stage-update', updatePayload, target, client)
     writeTransaction(() => {
+      refuseTaskFlowStageConflict(
+        {
+          taskRecordId: adoptedTaskId,
+          taskKey: key,
+          cursor: row.id,
+          workflow: row.workflow_slug,
+          mode: row.mode_slug,
+        },
+        d,
+      )
       taskFlowStore(d).write('adopt', adoptPayload, adopted)
       stageRevision = taskFlowStore(d).write('stage-update', updatePayload, updated).revisions[
         row.record_id

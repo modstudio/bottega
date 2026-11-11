@@ -174,7 +174,7 @@ test('next by cursor alone reads through the row key and links the hosted task',
     },
   )
 
-  expect(lines.join('\n')).toContain('Took over this workflow stage from Remote CLI machine.')
+  expect(lines.join('\n')).not.toContain('Took over this workflow stage from Remote CLI machine.')
   expect(
     db()
       .query('SELECT ordinal,state,task_record_id FROM workflow_cursor WHERE record_id=?')

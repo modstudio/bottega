@@ -1,7 +1,6 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
-import { selectTaskFlowStage } from './task-flow.ts'
 import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { ruleWorkflow } from './workflow-cursor-ruling.ts'
 import {
@@ -349,34 +348,6 @@ test('abandoning a keyed stage clears the local flow without enqueueing', async 
     open_stage_cursor_record_id: null,
   })
   expect(d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%'").all()).toEqual([])
-})
-
-test('an unknown task status preserves the projected flow state', async () => {
-  const d = migratedTestDatabase()
-  try {
-    d.query(
-      `INSERT INTO project(record_id,name,path,canon,settings)
-       VALUES (?,'fixture','/fixture',0,'{"trunk":"main"}')`,
-    ).run(newRecordId())
-    const input = {
-      project: 'fixture',
-      taskRecordId: 'task-1',
-      taskKey: 'DEV-1',
-      workflow: 'ship-task',
-      mode: 'default',
-    }
-
-    const flow = selectTaskFlowStage({ ...input, statusCategory: 'done' }, d)
-    selectTaskFlowStage(input, d)
-
-    expect(d.query('SELECT state FROM task_flow WHERE record_id=?').get(flow.flowRecordId)).toEqual(
-      {
-        state: 'done',
-      },
-    )
-  } finally {
-    d.close()
-  }
 })
 
 test('unreachable takeover refuses without changing takeover or revision', async () => {

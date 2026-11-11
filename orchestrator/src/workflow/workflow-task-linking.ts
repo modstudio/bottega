@@ -51,7 +51,9 @@ export async function linkWorkflowTaskLabel(
     hosted.push({ row, payload, result })
   }
   return writeTransaction(() => {
-    for (const { payload, result } of hosted) store.write('adopt', payload, result)
+    for (const { payload, result } of hosted) {
+      try { store.write('adopt', payload, result) } catch (error) { throw new Error(`DEBUG ADOPT ${String(error)}`) }
+    }
     const cursors = 0
     const questions = linkWorkflowQuestionsTaskReference(input, database)
     return { workflow_cursor: cursors + hosted.length, question: questions }

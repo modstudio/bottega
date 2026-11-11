@@ -3,8 +3,6 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
-import { nowIso } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   decideTaskStageSelection,
@@ -12,11 +10,7 @@ import {
   taskFlowState,
 } from './task-flow-decision.ts'
 import { taskFlowStore } from './task-flow-store.ts'
-import type {
-  TaskFlowProjectionRow,
-  TaskFlowStageCursorRow,
-  WorkflowCursorInsert,
-} from './task-flow-store-types.ts'
+import type { TaskFlowStageCursorRow, WorkflowCursorInsert } from './task-flow-store-types.ts'
 
 export function vacateRetiredWorkflowKeySlot(
   project: string,
@@ -97,25 +91,6 @@ export function cacheAdoptedTaskFlow(
   })
 }
 
-function projectTaskFlow(
-  project: string,
-  taskRecordId: string,
-  statusCategory: string | null | undefined,
-  d: Database,
-): TaskFlowProjectionRow {
-  const at = nowIso()
-  const state = taskFlowState(statusCategory)
-  const machine = machineId()
-  return taskFlowStore(d).projectFlow({
-    recordId: newRecordId(),
-    project,
-    taskRecordId,
-    state,
-    at,
-    machineId: machine,
-  })
-}
-
 function openStage(
   taskRecordId: string,
   d: Database,
@@ -143,30 +118,3 @@ export function refuseTaskFlowStageConflict(
       `task ${input.taskKey} already has open stage cursor ${decision.stage.cursor} ${decision.stage.workflow} ${decision.stage.mode}; finish it with ${PLATFORM_SLUG} workflow next ${decision.stage.workflow} --cursor ${decision.stage.cursor}, or drop it with ${PLATFORM_SLUG} workflow abandon ${decision.stage.workflow} --cursor ${decision.stage.cursor}`,
     )
 }
-
-export function selectTaskFlowStage(
-  input: {
-    project: string
-    taskRecordId: string
-    taskKey: string
-    statusCategory?: string | null
-    cursor?: number
-    workflow: string
-    mode: string
-  },
-  d: Database,
-): { flowRecordId: string; cursorRecordId: string | null } {
-  refuseTaskFlowStageConflict(input, d)
-  const flow = projectTaskFlow(input.project, input.taskRecordId, input.statusCategory, d)
-  const stage = openStage(input.taskRecordId, d)
-  const decision = decideTaskStageSelection(stage, input)
-  if (decision.action === 'refuse')
-    throw new Error(
-      `task ${input.taskKey} already has open stage cursor ${decision.stage.cursor} ${decision.stage.workflow} ${decision.stage.mode}; finish it with ${PLATFORM_SLUG} workflow next ${decision.stage.workflow} --cursor ${decision.stage.cursor}, or drop it with ${PLATFORM_SLUG} workflow abandon ${decision.stage.workflow} --cursor ${decision.stage.cursor}`,
-    )
-  return {
-    flowRecordId: flow.record_id,
-    cursorRecordId: decision.action === 'reuse' ? stage!.recordId : null,
-  }
-}
-

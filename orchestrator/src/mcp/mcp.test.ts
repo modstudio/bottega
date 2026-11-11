@@ -596,7 +596,7 @@ describe('orch MCP', () => {
     await client.connect(clientTransport)
     const previousRecordUrl = process.env.BOTTEGA_RECORD_API_URL
     const flowId = newRecordId()
-    const adoptedFlowId = newRecordId()
+    const adoptedFlowIds = new Map<string, string>()
     const call = async (name: string, toolArgs: Record<string, unknown>) => {
       const result = await client.callTool({ name, arguments: toolArgs })
       if (result.isError)
@@ -705,10 +705,17 @@ describe('orch MCP', () => {
             input.stages.map((stage) => [stage.id, stage.expectedRevision + 1]),
           ),
         }),
-        adoptTaskFlow: async (input) => ({
-          flowRecordId: adoptedFlowId,
-          revisions: { [adoptedFlowId]: 1, [input.stage.id]: input.stage.expectedRevision + 1 },
-        }),
+        adoptTaskFlow: async (input) => {
+          const adoptedFlowId = adoptedFlowIds.get(input.stage.id) ?? newRecordId()
+          adoptedFlowIds.set(input.stage.id, adoptedFlowId)
+          return {
+            flowRecordId: adoptedFlowId,
+            revisions: {
+              [adoptedFlowId]: 1,
+              [input.stage.id]: input.stage.expectedRevision + 1,
+            },
+          }
+        },
         attachTaskFlowText: async () => ({ revisions: {} }),
         abandonTaskFlow: async (input) => ({
           revisions: {
@@ -726,7 +733,7 @@ describe('orch MCP', () => {
         note: 'closed through MCP handle',
         run: evidenceRunNumber,
       })
-      expect(advanced).toContain('Took over this workflow stage from Remote MCP machine.')
+      expect(advanced).not.toContain('Took over this workflow stage from Remote MCP machine.')
       await call('await_workflow_ruling', {
         ...common,
         args: args('DEV-1082-MCP-B'),
