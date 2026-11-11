@@ -9,7 +9,7 @@ import {
   buildRecordTeardownPredicates,
   RECORD_DELETE_APPEND_ONLY_SPACE_ROWS,
   RECORD_DELETE_PROTECTED_SPACE_ROWS,
-  type RecordDefinerCount,
+  readRecordDefinerCounts,
   SPACE_TEARDOWN_PLAN,
 } from './record-space-teardown-plan.ts'
 import { isTrialSpaceMetadata, TRIAL_IDENTIFIER_PREFIX } from './record-trial-space.ts'
@@ -125,20 +125,6 @@ export function decideSpaceDelete(facts: ConfirmedSpaceDeleteFacts): SpaceDelete
   }
 }
 const teardownSql = buildRecordTeardownPredicates(SPACE_TEARDOWN_PLAN, 'space', 'id=$1')
-
-function appendDefinerCounts(
-  tables: SpaceDeleteResult['tables'],
-  rows: readonly Record<string, unknown>[],
-  declared: readonly RecordDefinerCount[],
-  functionName: string,
-): void {
-  const row = rows[0]
-  for (const { table, countColumn } of declared) {
-    if (!row || !(countColumn in row))
-      throw new Error(`${functionName} result is missing declared count column ${countColumn}`)
-    tables.push({ table, count: Number(row[countColumn]) })
-  }
-}
 
 async function facts(tx: SQL, slug: string, userId: string) {
   await tx`SELECT set_config('app.user_id', ${userId}, true)`
@@ -264,11 +250,12 @@ async function deleteRecordSpaceTransaction(
     const tables: SpaceDeleteResult['tables'] = []
     const appendOnlyRows =
       await tx`SELECT * FROM record_delete_append_only_space_rows(${read.spaceId}::uuid)`
-    appendDefinerCounts(
-      tables,
-      appendOnlyRows,
-      RECORD_DELETE_APPEND_ONLY_SPACE_ROWS,
-      'record_delete_append_only_space_rows',
+    tables.push(
+      ...readRecordDefinerCounts(
+        appendOnlyRows,
+        RECORD_DELETE_APPEND_ONLY_SPACE_ROWS,
+        'record_delete_append_only_space_rows',
+      ),
     )
     // These rows precede every membership so membership_revoke_config_machines cannot strand a DEK.
     for (const step of SPACE_TEARDOWN_PLAN.filter((item) => item.table !== 'membership')) {
@@ -282,13 +269,14 @@ async function deleteRecordSpaceTransaction(
       mode === 'trial'
         ? await tx`SELECT * FROM record_delete_trial_protected_space_rows(${read.spaceId}::uuid)`
         : await tx`SELECT * FROM record_delete_protected_space_rows(${read.spaceId}::uuid)`
-    appendDefinerCounts(
-      tables,
-      protectedRows,
-      RECORD_DELETE_PROTECTED_SPACE_ROWS,
-      mode === 'trial'
-        ? 'record_delete_trial_protected_space_rows'
-        : 'record_delete_protected_space_rows',
+    tables.push(
+      ...readRecordDefinerCounts(
+        protectedRows,
+        RECORD_DELETE_PROTECTED_SPACE_ROWS,
+        mode === 'trial'
+          ? 'record_delete_trial_protected_space_rows'
+          : 'record_delete_protected_space_rows',
+      ),
     )
     const memberships =
       await tx`DELETE FROM membership WHERE space_id=${read.spaceId}::uuid RETURNING id`

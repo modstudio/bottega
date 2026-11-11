@@ -190,6 +190,125 @@ export function registerTrialSpaceTeardownProof(input: {
     await closeRecordPools()
   })
 
+  test('append-only teardown definers refuse non-owners and mismatched tenant bindings', async () => {
+    const owner = newRecordId()
+    const member = newRecordId()
+    const space = newRecordId()
+    const otherSpace = newRecordId()
+    const project = newRecordId()
+    const machine = newRecordId()
+    const machineClaim = newRecordId()
+    const outsideWrite = newRecordId()
+    const subscription = newRecordId()
+    const send = newRecordId()
+    const recipient = newRecordId()
+    const presence = newRecordId()
+    const slug = `definer-guard-${space}`
+    input.admin(`
+      INSERT INTO "user"(id,email,name,created_at) VALUES
+        ('${owner}','definer-owner-${owner}@example.test','definer owner',now()),
+        ('${member}','definer-member-${member}@example.test','definer member',now());
+      INSERT INTO space(id,name,slug,metadata,created_at) VALUES
+        ('${space}','definer target','${slug}',NULL,now()),
+        ('${otherSpace}','definer other','definer-other-${otherSpace}',NULL,now());
+      INSERT INTO membership(id,space_id,user_id,role,permission,config_access,created_at) VALUES
+        ('${newRecordId()}','${space}','${owner}','owner','write',true,now()),
+        ('${newRecordId()}','${space}','${member}','member','write',false,now()),
+        ('${newRecordId()}','${otherSpace}','${owner}','owner','write',true,now());
+      INSERT INTO project(id,space_id,name,key_prefixes,created_at)
+        VALUES ('${project}','${space}','definer guard',ARRAY['DG'],now());
+      INSERT INTO machine(id,user_id,name,registered_at,last_seen)
+        VALUES ('${machine}','${owner}','definer-guard',now(),now());
+      INSERT INTO machine_name_claim(id,space_id,short_name,machine_id,claimed_at)
+        VALUES ('${machineClaim}','${space}','definer-guard','${machine}',now());
+      INSERT INTO space_outside_write(id,space_id,user_id,kind,subject_id,created_at)
+        VALUES ('${outsideWrite}','${space}','${owner}','post','${newRecordId()}',now());
+      INSERT INTO hub_report_subscription(id,space_id,scope_kind,project_name,project_id,cadence,hour,zone,enabled,created_at,updated_at)
+        VALUES ('${subscription}','${space}','project','definer guard','${project}','daily',0,'UTC',1,now(),now());
+      INSERT INTO hub_send(id,space_id,at,"window",recipients,projects,items,status,test,created_at,machine,subscription_id,period_start,period_end)
+        VALUES ('${send}','${space}',now(),'day','owner@example.test','definer guard',1,'sent',0,now(),'definer-guard','${subscription}',now()-interval '1 day',now());
+      INSERT INTO hub_send_recipient(id,space_id,send_id,user_id,name,email,created_at)
+        VALUES ('${recipient}','${space}','${send}','${owner}','Owner','owner@example.test',now());
+      INSERT INTO board_presence(id,space_id,user_id,session,project_id,role,first_seen,last_seen)
+        VALUES ('${presence}','${space}','${owner}','definer-guard','${project}','architect',now(),now());`)
+
+    const assertRowsRemain = () =>
+      expect(
+        input.admin(
+          `SELECT (SELECT count(*) FROM machine_name_claim WHERE id='${machineClaim}') || '|' ||
+            (SELECT count(*) FROM space_outside_write WHERE id='${outsideWrite}') || '|' ||
+            (SELECT count(*) FROM hub_send WHERE id='${send}') || '|' ||
+            (SELECT count(*) FROM hub_send_recipient WHERE id='${recipient}') || '|' ||
+            (SELECT count(*) FROM board_presence WHERE id='${presence}');`,
+        ),
+      ).toBe('1|1|1|1|1')
+    const assertRefused = (result: PsqlResult, guard: string) => {
+      expect(result.code).not.toBe(0)
+      expect(result.stderr).toContain('42501')
+      expect(result.stderr).toContain(guard)
+      assertRowsRemain()
+    }
+
+    assertRefused(
+      input.psql(
+        RECORD_ACTOR_ROLE,
+        'actor-password',
+        `\\set VERBOSITY verbose
+         SET app.user_id='${member}';
+         SET app.space_id='${space}';
+         SELECT * FROM record_delete_append_only_space_rows('${space}');`,
+      ),
+      'caller-owner guard failed',
+    )
+    assertRefused(
+      input.psql(
+        RECORD_ACTOR_ROLE,
+        'actor-password',
+        `\\set VERBOSITY verbose
+         SET app.user_id='${member}';
+         SET app.space_id='${space}';
+         SELECT * FROM record_delete_append_only_project_rows('${project}');`,
+      ),
+      'caller-owner guard failed',
+    )
+    assertRefused(
+      input.psql(
+        RECORD_ACTOR_ROLE,
+        'actor-password',
+        `\\set VERBOSITY verbose
+         SET app.user_id='${owner}';
+         SET app.space_id='${otherSpace}';
+         SELECT * FROM record_delete_append_only_space_rows('${space}');`,
+      ),
+      'tenant-binding guard failed',
+    )
+    assertRefused(
+      input.psql(
+        RECORD_ACTOR_ROLE,
+        'actor-password',
+        `\\set VERBOSITY verbose
+         SET app.user_id='${owner}';
+         SET app.space_id='${otherSpace}';
+         SELECT * FROM record_delete_append_only_project_rows('${project}');`,
+      ),
+      'tenant-binding guard failed',
+    )
+
+    await deleteRecordSpace({
+      url: input.actorUrl(),
+      slug,
+      confirmation: slug,
+      userId: owner,
+      activeSpaceId: otherSpace,
+    })
+    input.admin(`
+      DELETE FROM membership WHERE space_id='${otherSpace}';
+      DELETE FROM space WHERE id='${otherSpace}';
+      DELETE FROM machine WHERE id='${machine}';
+      DELETE FROM "user" WHERE id IN ('${owner}','${member}');`)
+    await closeRecordPools()
+  })
+
   test('general space delete protects personal spaces and deletes unmarked protected rows', async () => {
     const owner = input.userId()
     const personal = input.admin(`SELECT personal_space_id FROM "user" WHERE id='${owner}';`)

@@ -15,11 +15,25 @@ import {
   RECORD_DELETE_APPEND_ONLY_PROJECT_ROWS,
   RECORD_DELETE_APPEND_ONLY_SPACE_ROWS,
   RECORD_DELETE_PROTECTED_SPACE_ROWS,
+  readRecordDefinerCounts,
   SPACE_TEARDOWN_EXCLUSIONS,
   SPACE_TEARDOWN_PLAN,
   unclassifiedProjectTables,
   unclassifiedSpaceTables,
 } from './record-space-teardown-plan.ts'
+
+test('definer count reading refuses a missing declared column', () => {
+  expect(() =>
+    readRecordDefinerCounts(
+      [{ first_count: 1 }],
+      [
+        { table: 'first', countColumn: 'first_count' },
+        { table: 'missing', countColumn: 'missing_count' },
+      ],
+      'record_delete_fixture_rows',
+    ),
+  ).toThrow('record_delete_fixture_rows result is missing declared count column missing_count')
+})
 
 const policyReachesRole = (to: unknown, role: string) =>
   to === undefined || to === 'public' || to === role || (Array.isArray(to) && to.includes(role))

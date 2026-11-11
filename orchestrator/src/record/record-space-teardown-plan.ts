@@ -50,6 +50,19 @@ export type RecordTeardownExclusion = {
 }
 export type RecordDefinerCount = { table: string; countColumn: string }
 
+export function readRecordDefinerCounts(
+  rows: readonly Record<string, unknown>[],
+  declared: readonly RecordDefinerCount[],
+  functionName: string,
+): { table: string; count: number }[] {
+  const row = rows[0]
+  return declared.map(({ table, countColumn }) => {
+    if (!row || !(countColumn in row))
+      throw new Error(`${functionName} result is missing declared count column ${countColumn}`)
+    return { table, count: Number(row[countColumn]) }
+  })
+}
+
 export const RECORD_DELETE_APPEND_ONLY_SPACE_ROWS = [
   { table: 'hub_send_recipient', countColumn: 'hub_send_recipient_count' },
   { table: 'hub_send', countColumn: 'hub_send_count' },
@@ -127,12 +140,12 @@ export const PROJECT_PURGE_EXCLUSIONS = {
   hub_send: {
     removedBy: 'definer',
     reason:
-      'deleted by the append-only teardown definer function; append-only record_actor holds no DELETE policy',
+      'deleted by the append-only project definer for sends of a subscription whose project_id is the project; sends of a multi-project subscription survive with it; append-only record_actor holds no DELETE policy',
   },
   hub_send_recipient: {
     removedBy: 'definer',
     reason:
-      'deleted by the append-only teardown definer function; append-only record_actor holds no DELETE policy',
+      'deleted by the append-only project definer for sends of a subscription whose project_id is the project; sends of a multi-project subscription survive with it; append-only record_actor holds no DELETE policy',
   },
   public_doc_space: {
     removedBy: 'refused',
