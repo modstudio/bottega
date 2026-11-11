@@ -41,6 +41,9 @@ export function registerTrialSpaceTeardownProof(input: {
     const purgedSubscription = newRecordId()
     const purgedSend = newRecordId()
     const purgedRecipient = newRecordId()
+    const survivingSubscription = newRecordId()
+    const survivingSend = newRecordId()
+    const survivingRecipient = newRecordId()
     const purgedPresence = newRecordId()
     input.admin(`
       INSERT INTO "user"(id,email,name,created_at)
@@ -64,11 +67,17 @@ export function registerTrialSpaceTeardownProof(input: {
         ('${purgedInterval}','${space}','PP-1','${purgedTask}','purged-proof','${purgedProject}','proof',now()-interval '1 minute',now(),'purged',now()),
         ('${peerInterval}','${space}','PEER-1','${peerTask}','peer-proof','${peerProject}','proof',now()-interval '1 minute',now(),'peer',now());
       INSERT INTO hub_report_subscription(id,space_id,scope_kind,project_name,project_id,cadence,hour,zone,enabled,created_at,updated_at)
-        VALUES ('${purgedSubscription}','${space}','project','purged-proof','${purgedProject}','daily',0,'UTC',1,now(),now());
+        VALUES
+          ('${purgedSubscription}','${space}','project','purged-proof','${purgedProject}','daily',0,'UTC',1,now(),now()),
+          ('${survivingSubscription}','${space}','space',NULL,NULL,'daily',0,'UTC',1,now(),now());
       INSERT INTO hub_send(id,space_id,at,"window",recipients,projects,items,status,test,created_at,machine,subscription_id,period_start,period_end)
-        VALUES ('${purgedSend}','${space}',now(),'day','owner@example.test','purged-proof',1,'sent',0,now(),'proof','${purgedSubscription}',now()-interval '1 day',now());
+        VALUES
+          ('${purgedSend}','${space}',now(),'day','owner@example.test','purged-proof',1,'sent',0,now(),'proof','${purgedSubscription}',now()-interval '1 day',now()),
+          ('${survivingSend}','${space}',now(),'day','owner@example.test','purged-proof',1,'sent',0,now(),'proof','${survivingSubscription}',now()-interval '1 day',now());
       INSERT INTO hub_send_recipient(id,space_id,send_id,user_id,name,email,created_at)
-        VALUES ('${purgedRecipient}','${space}','${purgedSend}','${owner}','Owner','owner@example.test',now());
+        VALUES
+          ('${purgedRecipient}','${space}','${purgedSend}','${owner}','Owner','owner@example.test',now()),
+          ('${survivingRecipient}','${space}','${survivingSend}','${owner}','Owner','owner@example.test',now());
       INSERT INTO board_presence(id,space_id,user_id,session,project_id,role,first_seen,last_seen)
         VALUES ('${purgedPresence}','${space}','${owner}','purge-proof','${purgedProject}','architect',now(),now());`)
 
@@ -92,9 +101,12 @@ export function registerTrialSpaceTeardownProof(input: {
       input.admin(
         `SELECT (SELECT count(*) FROM project WHERE id='${peerProject}') || '|' ||
           (SELECT count(*) FROM hub_task WHERE id='${peerTask}') || '|' ||
-          (SELECT count(*) FROM hub_interval WHERE id='${peerInterval}');`,
+          (SELECT count(*) FROM hub_interval WHERE id='${peerInterval}') || '|' ||
+          (SELECT count(*) FROM hub_report_subscription WHERE id='${survivingSubscription}') || '|' ||
+          (SELECT count(*) FROM hub_send WHERE id='${survivingSend}') || '|' ||
+          (SELECT count(*) FROM hub_send_recipient WHERE id='${survivingRecipient}');`,
       ),
-    ).toBe('1|1|1')
+    ).toBe('1|1|1|1|1|1')
     expect(
       await purgeRecordProject({
         url: input.actorUrl(),
@@ -183,7 +195,10 @@ export function registerTrialSpaceTeardownProof(input: {
       confirmation: 'peer-proof',
     })
     input.admin(
-      `DELETE FROM membership WHERE space_id IN ('${space}','${otherSpace}');
+      `DELETE FROM hub_send_recipient WHERE id='${survivingRecipient}';
+       DELETE FROM hub_send WHERE id='${survivingSend}';
+       DELETE FROM hub_report_subscription WHERE id='${survivingSubscription}';
+       DELETE FROM membership WHERE space_id IN ('${space}','${otherSpace}');
        DELETE FROM space WHERE id IN ('${space}','${otherSpace}');
        DELETE FROM "user" WHERE id='${owner}';`,
     )
