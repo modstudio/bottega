@@ -38,6 +38,28 @@ test('hub purge removes the target and its children while preserving a sibling',
     'at',
     SIBLING,
   )
+  insertTask.run(
+    'task-target-name-only',
+    'DEV-3',
+    'target',
+    'target name only',
+    'open',
+    'local',
+    'at',
+    'at',
+    null,
+  )
+  insertTask.run(
+    'task-sibling-name-only',
+    'DEV-4',
+    'sibling',
+    'sibling name only',
+    'open',
+    'local',
+    'at',
+    'at',
+    null,
+  )
   database
     .query(
       `INSERT INTO task_comment(record_id,task_key,task_record_id,body,created_at)
@@ -62,19 +84,30 @@ test('hub purge removes the target and its children while preserving a sibling',
        VALUES (?,?,?,?,?,?)`,
     )
     .run('outbox-target', 'hub_task', 'task-target', 'upsert', 'at', TARGET)
+  const insertClaim = database.query(
+    `INSERT INTO task_identity_claim(project,external_id,key,first_seen,last_seen,project_record_id)
+     VALUES (?,?,?,?,?,?)`,
+  )
+  insertClaim.run('target', 'target-external', 'DEV-5', 'at', 'at', null)
+  insertClaim.run('sibling', 'sibling-external', 'DEV-6', 'at', 'at', null)
 
-  const report = purgeHubProject(database, TARGET)
+  const report = purgeHubProject(database, TARGET, 'target')
   expect(Object.fromEntries(report.map(({ table, count }) => [table, count]))).toMatchObject({
     task_comment: 1,
-    task: 1,
+    task: 2,
     note_acknowledgement: 1,
     note: 1,
     hosted_outbox: 1,
+    task_identity_claim: 1,
   })
   expect(database.query('SELECT record_id FROM task ORDER BY record_id').all()).toEqual([
     { record_id: 'task-sibling' },
+    { record_id: 'task-sibling-name-only' },
   ])
   expect(database.query("SELECT 1 FROM note WHERE record_id='note-target'").get()).toBeNull()
   expect(database.query("SELECT 1 FROM note WHERE record_id='note-sibling'").get()).not.toBeNull()
+  expect(database.query('SELECT project FROM task_identity_claim ORDER BY project').all()).toEqual([
+    { project: 'sibling' },
+  ])
   database.close()
 })

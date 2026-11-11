@@ -259,7 +259,11 @@ function compositeRouteUnits(
     spelling: commandUnit.spelling,
     group: commandUnit.group,
     description: commandUnit.description,
-    arguments: [],
+    arguments: (route.positionals ?? []).map((name) => ({
+      name,
+      required: true,
+      variadic: false,
+    })),
     options,
     examples: [],
     optionsByHelp: false,

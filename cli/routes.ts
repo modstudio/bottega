@@ -19,10 +19,9 @@ export type CommandRoute = {
     fixedArguments?: readonly string[]
   }[]
   /** Leading non-option arguments forwarded to every composite part. */
-  positionals?: number
+  positionals?: readonly string[]
   continueOnFailure?: boolean
   description?: string
-  usageSuffix?: string
   options?: readonly {
     flags: string
     description: string
@@ -142,8 +141,7 @@ export const ROUTES = (
       command: ['project', 'purge'],
       owner: 'composite',
       description: 'purge a project from the hosted record and this machine stores',
-      usageSuffix: '<name> --confirm <name>',
-      positionals: 1,
+      positionals: ['name'],
       composite: [
         {
           owner: 'orch',
@@ -151,11 +149,17 @@ export const ROUTES = (
           label: 'hosted and orchestrator purge',
           options: { '--confirm': true },
         },
-        { owner: 'hub', argv: ['project-purge'], label: 'hub purge' },
+        {
+          owner: 'hub',
+          argv: ['project-purge'],
+          label: 'hub purge',
+          options: { '--confirm': true },
+        },
         {
           owner: 'orch',
           argv: ['project-purge-remove'],
           label: 'register removal',
+          options: { '--confirm': true },
         },
       ],
     },

@@ -6,6 +6,7 @@
 import { existsSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { renderRemovalReport as renderRecordRemovalReport } from '../../../shared/removal-report.ts'
 import { db, tryWriteContention, writeTransaction } from '../database/db.ts'
 import { listLenses, selectProjectProfile } from '../lens/lenses.ts'
 import { credentialLinesFromRead } from '../mcp/mcp-credential-literal.ts'
@@ -16,7 +17,6 @@ import {
   pullRecordCataloguesForSpace,
   RecordCataloguePullError,
 } from '../record/record-cache-catalogues.ts'
-import { renderRecordRemovalReport } from '../record/record-removal-report.ts'
 import { migrateCreate } from '../worktree/worktree-template.ts'
 import { declaredProjectSpace } from './declared-project-space.ts'
 import { projectAddDecision } from './project-add-record.ts'
@@ -840,6 +840,14 @@ function removedProjectMessage(name: string, removed: boolean, purged: boolean):
     : `removed ${name} from this machine; the shared project is unchanged`
 }
 
+export function removeProjectCommand(
+  name: string,
+  options: { purged: boolean },
+  presentation: ProjectPresentation,
+): void {
+  presentation.log(removedProjectMessage(name, removeProject(name), options.purged))
+}
+
 async function purgeProjectCommand(
   argv: string[],
   flags: ProjectFlags,
@@ -870,7 +878,7 @@ async function purgeProjectCommand(
   } else {
     renderRecordRemovalReport(result.tables, (value) => presentation.log(value))
   }
-  renderRecordRemovalReport(purgeLocalProjectRows(project.recordId), (value) =>
+  renderRecordRemovalReport(purgeLocalProjectRows(project.recordId, project.name), (value) =>
     presentation.log(value),
   )
 }
@@ -976,7 +984,7 @@ export async function projectCommand(
   if (sub === 'remove') {
     const name = argv[2]
     if (!name) throw new Error(`${PLATFORM_SLUG} project remove <name>`)
-    presentation.log(removedProjectMessage(name, removeProject(name), has('purged')))
+    removeProjectCommand(name, { purged: false }, presentation)
     return
   }
 

@@ -1,5 +1,5 @@
 // concern: record-project-purge-contract
-import type { RecordRemovalReport } from './record-removal-report.ts'
+import type { RemovalReport as RecordRemovalReport } from '../../../shared/removal-report.ts'
 
 /** Stable hosted project-purge response shape. */
 export class RecordProjectPurgeError extends Error {

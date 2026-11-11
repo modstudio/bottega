@@ -16,8 +16,9 @@ type ForeignKey = {
   parent: string
   from: string
   to: string
+  onDelete: string
 }
-type PurgeStep = { table: string; predicate: string }
+type PurgeStep = { table: string; predicate: string; key: 'record-id' | 'name' }
 
 const ORCHESTRATOR_PROJECT_PURGE_EXCLUSIONS = {
   project: 'the register row is deleted by the final composite part',
@@ -55,6 +56,7 @@ function foreignKeys(database: Database, names: readonly string[]): ForeignKey[]
           parent: String(fk.table),
           from: String(fk.from),
           to: String(fk.to),
+          onDelete: String(fk.on_delete),
         }
       }),
   )
@@ -103,16 +105,39 @@ export function orchestratorProjectPurgePlan(database: Database): PurgeStep[] {
   const steps = names.flatMap((table) => {
     if (table === 'project' || table === 'outbox' || LOCAL_CATALOGUE_TABLES.has(table)) return []
     const predicate = projectPredicate(table, keys, memo)
-    return predicate ? [{ table, predicate }] : []
+    return predicate ? [{ table, predicate, key: 'record-id' as const }] : []
   })
-  const depth = (table: string, seen = new Set<string>()): number => {
-    if (seen.has(table)) return 0
-    const parents = keys.filter((key) => key.table === table).map((key) => key.parent)
-    return parents.length
-      ? 1 + Math.max(...parents.map((parent) => depth(parent, new Set(seen).add(table))))
-      : 0
+  const planned = new Set(steps.map(({ table }) => table))
+  const blockingParents = new Map<string, Set<string>>()
+  for (const table of planned) blockingParents.set(table, new Set())
+  for (const key of keys) {
+    if (
+      key.table !== key.parent &&
+      planned.has(key.table) &&
+      planned.has(key.parent) &&
+      (key.onDelete === 'RESTRICT' || key.onDelete === 'NO ACTION')
+    ) {
+      blockingParents.get(key.table)!.add(key.parent)
+    }
   }
-  steps.sort((a, b) => depth(b.table) - depth(a.table) || a.table.localeCompare(b.table))
+  const ordered: PurgeStep[] = []
+  const remaining = new Map(steps.map((step) => [step.table, step]))
+  while (remaining.size) {
+    const ready = [...remaining.keys()]
+      .filter((table) =>
+        [...(blockingParents.get(table) ?? [])].every((parent) => !remaining.has(parent)),
+      )
+      .sort()
+    if (!ready.length)
+      throw new Error(
+        `project purge blocking foreign-key cycle: ${[...remaining.keys()].sort().join(', ')}`,
+      )
+    for (const table of ready) {
+      ordered.unshift(remaining.get(table)!)
+      remaining.delete(table)
+    }
+  }
+  steps.splice(0, steps.length, ...ordered)
   for (const table of LOCAL_CATALOGUE_TABLES) {
     if (!names.includes(table)) continue
     const columns = database
@@ -124,11 +149,15 @@ export function orchestratorProjectPurgePlan(database: Database): PurgeStep[] {
       steps.unshift({
         table,
         predicate: `space_id IS NULL AND (${columns.map((column) => `${quote(column)}=?`).join(' OR ')})`,
+        key: 'record-id',
       })
   }
+  if (names.includes('board_reach_delivery'))
+    steps.unshift({ table: 'board_reach_delivery', predicate: 'reader_project=?', key: 'name' })
   steps.push({
     table: 'outbox',
     predicate: "synced_at IS NULL AND (payload LIKE '%' || ? || '%' OR row_id=? OR record_id=?)",
+    key: 'record-id',
   })
   return steps
 }
@@ -143,7 +172,11 @@ export function uncoveredOrchestratorProjectTables(database: Database): string[]
       .map((row) => String((row as Record<string, unknown>).name))
     return (
       columns.some(
-        (column) => column === 'project_record_id' || column.endsWith('_project_record_id'),
+        (column) =>
+          column === 'project' ||
+          column.endsWith('_project') ||
+          column === 'project_record_id' ||
+          column.endsWith('_project_record_id'),
       ) &&
       !covered.has(table) &&
       !excluded.has(table)
@@ -186,6 +219,7 @@ export function localProjectPurgeRefusals(database: Database, projectRecordId: s
 export function purgeLocalOrchestratorProject(
   database: Database,
   projectRecordId: string,
+  projectName: string,
   runsDirectory = resolveRunsDirectory(process.env),
 ): RemovalReport {
   const uncovered = uncoveredOrchestratorProjectTables(database)
@@ -201,7 +235,7 @@ export function purgeLocalOrchestratorProject(
       const predicate = step.predicate.replaceAll('?', '?1')
       const count = database
         .query(`DELETE FROM ${quote(step.table)} WHERE ${predicate}`)
-        .run(projectRecordId).changes
+        .run(step.key === 'name' ? projectName : projectRecordId).changes
       rows.push({ table: step.table, count })
     }
     return rows

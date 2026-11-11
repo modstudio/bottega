@@ -504,8 +504,8 @@ export function projectLocalPurgeRefusals(projectRecordId: string): string[] {
   return localProjectPurgeRefusals(db(), projectRecordId)
 }
 
-export function purgeLocalProjectRows(projectRecordId: string) {
-  return purgeLocalOrchestratorProject(db(), projectRecordId)
+export function purgeLocalProjectRows(projectRecordId: string, projectName: string) {
+  return purgeLocalOrchestratorProject(db(), projectRecordId, projectName)
 }
 
 export function retireProject(name: string): 'retired' | 'already-retired' {

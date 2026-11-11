@@ -13,27 +13,49 @@ const LOCAL_PROJECT_PURGE_EXCLUSIONS = {
 const LOCAL_PROJECT_PURGE_PLAN = [
   {
     table: 'task_comment',
-    predicate: 'task_record_id IN (SELECT record_id FROM task WHERE project_record_id=?)',
+    predicate:
+      'task_record_id IN (SELECT record_id FROM task WHERE project_record_id=?1 OR (project_record_id IS NULL AND project=?2))',
   },
   {
     table: 'task_document',
-    predicate: 'task_record_id IN (SELECT record_id FROM task WHERE project_record_id=?)',
+    predicate:
+      'task_record_id IN (SELECT record_id FROM task WHERE project_record_id=?1 OR (project_record_id IS NULL AND project=?2))',
   },
   {
     table: 'task_status_event',
-    predicate: 'task_record_id IN (SELECT record_id FROM task WHERE project_record_id=?)',
+    predicate:
+      'task_record_id IN (SELECT record_id FROM task WHERE project_record_id=?1 OR (project_record_id IS NULL AND project=?2))',
   },
-  { table: 'task', predicate: 'project_record_id=?' },
+  {
+    table: 'task',
+    predicate: 'project_record_id=?1 OR (project_record_id IS NULL AND project=?2)',
+  },
   {
     table: 'note_acknowledgement',
-    predicate: 'note_record_id IN (SELECT record_id FROM note WHERE project_record_id=?)',
+    predicate:
+      'note_record_id IN (SELECT record_id FROM note WHERE project_record_id=?1 OR (project_record_id IS NULL AND project=?2))',
   },
-  { table: 'note', predicate: 'project_record_id=?' },
-  { table: 'note_counter', predicate: 'project_record_id=?' },
-  { table: 'interval', predicate: 'project_record_id=?' },
-  { table: 'question', predicate: 'project_record_id=?' },
-  { table: 'task_identity_claim', predicate: 'project_record_id=?' },
-  { table: 'hosted_outbox', predicate: 'routing_project_record_id=?' },
+  {
+    table: 'note',
+    predicate: 'project_record_id=?1 OR (project_record_id IS NULL AND project=?2)',
+  },
+  {
+    table: 'note_counter',
+    predicate: 'project_record_id=?1 OR (project_record_id IS NULL AND project=?2)',
+  },
+  {
+    table: 'interval',
+    predicate: 'project_record_id=?1 OR (project_record_id IS NULL AND project=?2)',
+  },
+  {
+    table: 'question',
+    predicate: 'project_record_id=?1 OR (project_record_id IS NULL AND project=?2)',
+  },
+  {
+    table: 'task_identity_claim',
+    predicate: 'project_record_id=?1 OR (project_record_id IS NULL AND project=?2)',
+  },
+  { table: 'hosted_outbox', predicate: 'routing_project_record_id=?1' },
 ] as const
 
 const quote = (value: string) => `"${value.replaceAll('"', '""')}"`
@@ -62,7 +84,11 @@ export function uncoveredHubProjectTables(database: Database): string[] {
     .map(({ name }) => name)
 }
 
-export function purgeHubProject(database: Database, projectRecordId: string): RemovalReport {
+export function purgeHubProject(
+  database: Database,
+  projectRecordId: string,
+  projectName: string,
+): RemovalReport {
   const uncovered = uncoveredHubProjectTables(database)
   if (uncovered.length)
     throw new Error(`project purge plan does not cover hub table(s): ${uncovered.join(', ')}`)
@@ -70,9 +96,13 @@ export function purgeHubProject(database: Database, projectRecordId: string): Re
     (conn) =>
       LOCAL_PROJECT_PURGE_PLAN.map((step) => ({
         table: step.table,
-        count: conn
-          .query(`DELETE FROM ${quote(step.table)} WHERE ${step.predicate}`)
-          .run(projectRecordId).changes,
+        count: step.predicate.includes('?2')
+          ? conn
+              .query(`DELETE FROM ${quote(step.table)} WHERE ${step.predicate}`)
+              .run(projectRecordId, projectName).changes
+          : conn
+              .query(`DELETE FROM ${quote(step.table)} WHERE ${step.predicate}`)
+              .run(projectRecordId).changes,
       })),
     database,
   )

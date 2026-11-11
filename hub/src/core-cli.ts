@@ -423,10 +423,15 @@ export function registerCoreCommands(program: Command): void {
     .command('project-purge <name>')
     .helpOption(false)
     .description('purge one project from the local hub store')
-    .action((name: string) => {
+    .option('--confirm <name>')
+    .action((name: string, options: { confirm?: string }) => {
+      if (options.confirm !== name)
+        throw new Error(
+          `confirmation guard failed: --confirm must equal ${name}; run \`${PLATFORM_SLUG} project purge ${name} --confirm ${name}\``,
+        )
       requireDatabase()
       const recordId = projectRecordIdFor(name)
       if (!recordId) throw new Error(`registered project ${name} has no hosted record id`)
-      renderRemovalReport(purgeHubProject(db(), recordId), console.log)
+      renderRemovalReport(purgeHubProject(db(), recordId, name), console.log)
     })
 }
