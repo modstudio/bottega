@@ -333,6 +333,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../record/record-api-client-task-flow.ts',
     '../workflow/workflow-task-linking.ts',
     '../workflow/workflow-task-reference.ts',
+    '../workflow/task-flow-store.ts',
     './question-mutation.ts',
     './run-outbox.ts',
     './synthetic-lifecycle-job.ts',
@@ -342,7 +343,11 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../branch/task-branch-reuse.ts',
   ]),
   module('orchestrator/src/run/task-rulings.ts', ['./question-vocabulary.ts']),
-  module('orchestrator/src/run/task-rulings-store.ts', ['../database/db.ts', './task-rulings.ts']),
+  module('orchestrator/src/run/task-rulings-store.ts', [
+    '../database/db.ts',
+    '../workflow/task-flow-store.ts',
+    './task-rulings.ts',
+  ]),
   module(
     'orchestrator/src/run/run-close.ts',
     [

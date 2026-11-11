@@ -7,6 +7,7 @@ import { db, sessionId } from '../database/db.ts'
 import { voidedSql } from '../evidence/evidence-query.ts'
 import { projectAt } from '../project/projects.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
+import { taskFlowStore } from '../workflow/task-flow-store.ts'
 import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 import { runQuestionGroupFooter } from './question-display.ts'
 import { displayRunQuestion } from './question-display-probe.ts'
@@ -138,15 +139,7 @@ function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
   const scoped = input.requestedCwd !== undefined
   const scopedProject = scoped ? projectAt(input.requestedCwd!) : null
   const defaultProject = !scoped && !input.all ? projectAt(process.cwd()) : null
-  const rows = db()
-    .query(
-      `SELECT q.number,q.record_id,q.asked_at,q.question,c.number cursor_record_id,c.project,c.project_record_id,c.workflow_slug,c.mode_slug,c.args,
-              c.ordinal,c.step_slug,c.session_id
-         FROM question q JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
-        WHERE c.state='awaiting-ruling' AND ${questionOpenSql('q')}
-        ORDER BY q.asked_at,q.number`,
-    )
-    .all() as Array<{
+  const rows = taskFlowStore(db()).workflowInboxQuestions<{
     number: number
     record_id: string
     asked_at: string
@@ -160,7 +153,7 @@ function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
     ordinal: number
     step_slug: string
     session_id: string | null
-  }>
+  }>()
   const visible = rows.filter((row) => {
     if (scoped) return scopedProject !== null && row.project_record_id === scopedProject.recordId
     if (input.all) return true

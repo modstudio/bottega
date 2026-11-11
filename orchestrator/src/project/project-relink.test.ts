@@ -20,7 +20,7 @@ import {
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
 import { completeSignInCommand } from '../record/record-auth-command.ts'
-import { PROJECT_REFERENCES } from './project-reference-counts.ts'
+import { PROJECT_REFERENCE_REPORT } from './project-reference-counts.ts'
 import {
   adoptHostedProjectIdentity,
   relinkProjectByName,
@@ -58,7 +58,7 @@ function relinkDatabase(): Database {
      );`,
   )
   const columns = new Map<string, Set<string>>()
-  for (const [key, , column, explicitTable] of PROJECT_REFERENCES) {
+  for (const [key, , column, explicitTable] of PROJECT_REFERENCE_REPORT) {
     const table = explicitTable ?? key
     const tableColumns = columns.get(table) ?? new Set<string>()
     tableColumns.add(column)
@@ -78,7 +78,7 @@ function relinkDatabase(): Database {
 
 function insertReferenceRows(database: Database, projectId: string, otherId: string): void {
   const columns = new Map<string, Set<string>>()
-  for (const [key, , column, explicitTable] of PROJECT_REFERENCES) {
+  for (const [key, , column, explicitTable] of PROJECT_REFERENCE_REPORT) {
     const table = explicitTable ?? key
     const tableColumns = columns.get(table) ?? new Set<string>()
     tableColumns.add(column)
@@ -139,7 +139,7 @@ test('relink rewrites every registered reference and only pending matching paylo
   const result = relinkProjectIdentity({ name: 'local', recordId: oldId }, hostedId, database)
 
   expect(result).toMatchObject({ oldId, newId: hostedId, status: 'relinked' })
-  for (const [key, , column, explicitTable] of PROJECT_REFERENCES) {
+  for (const [key, , column, explicitTable] of PROJECT_REFERENCE_REPORT) {
     const table = explicitTable ?? key
     expect(
       database.query(`SELECT ${column} value FROM ${table} ORDER BY rowid`).all(),

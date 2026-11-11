@@ -4,21 +4,19 @@ import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
 import { db, sessionId } from '../database/db.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
-import { openTaskFlowStageCursor, type TaskFlowStageCursorRow } from './task-flow.ts'
+import { openTaskFlowStageCursor } from './task-flow.ts'
 import {
   readThroughTaskFlow,
   type TaskFlowReadStatus,
   taskFlowReadThroughEnabled,
 } from './task-flow-read-through.ts'
+import { taskFlowStore } from './task-flow-store.ts'
+import type { TaskFlowStageCursorRow } from './task-flow-store-types.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { workflowTaskBindingCommand } from './workflow-cursor-format.ts'
 import { hasClosedStep } from './workflow-cursor-trail.ts'
 import { type HubTaskReader, resolveHubTaskReference } from './workflow-task-reference.ts'
 import { resolveWorkflowMode, showResolvedWorkflow } from './workflows.ts'
-
-/** The persisted cursor columns a listed cursor carries; storage identity is not one of them. */
-export const LISTED_CURSOR_COLUMNS =
-  "number id,record_id,project,workflow_slug,mode_slug,workflow_key,task_record_id,task_flow_record_id,instance_id,session_id,ordinal,step_slug,state,workflow_version_record_id,catalogue_version_record_id,(SELECT n FROM workflow_version WHERE record_id=workflow_version_record_id) workflow_version,(SELECT n FROM step_catalogue_version WHERE record_id=catalogue_version_record_id) catalogue_version,args,autonomy,closed,question,total_steps,created_at,updated_at,enforcement,opened_machine_id,taken_over_from_machine_id,last_advanced_machine_id,revision,(SELECT COUNT(*) FROM workflow_cursor stage WHERE stage.task_flow_record_id=workflow_cursor.task_flow_record_id AND stage.state NOT IN ('done','abandoned')) open_stage_count"
 
 export type WorkflowCursorSelector = {
   project?: string
@@ -193,9 +191,7 @@ function selectByHandle(
   d: Database,
   includeTerminal = false,
 ): SelectableCursorRow {
-  const row = d
-    .query(`SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor WHERE number=?`)
-    .get(cursor) as SelectableCursorRow | null
+  const row = taskFlowStore(d).stageByHandle(cursor)
   if (!row)
     throw new Error(
       `workflow cursor ${cursor} does not exist on this machine; cursor handles are per-machine labels, so pass the task key as the workflow argument key (--arg key=<KEY> on the CLI, args.key over MCP) to read the hosted flow`,
@@ -250,19 +246,12 @@ function selectKeyedTaskStage(
     )
       return validateIdentity(row, identity)
   }
-  const fallback = d
-    .query(
-      `SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor
-       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-         AND workflow_slug=? AND mode_slug=? AND task_record_id=?
-         AND instance_id='' ORDER BY number DESC LIMIT 1`,
-    )
-    .get(
-      identity.project,
-      identity.workflow,
-      identity.mode,
-      taskRecordId,
-    ) as SelectableCursorRow | null
+  const fallback = taskFlowStore(d).latestStageForTask({
+    project: identity.project,
+    workflow: identity.workflow,
+    mode: identity.mode,
+    taskRecordId,
+  })
   return fallback ? validateIdentity(fallback, identity) : null
 }
 
@@ -285,14 +274,13 @@ export function selectWorkflowCursor(
   if (cursor !== undefined) return selectByHandle(cursor, identity, d)
   if (!identity.project || !identity.workflow || !identity.mode) return null
   if (!ownerSession) return null
-  const rows = d
-    .query(
-      `SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor
-       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-         AND workflow_slug=? AND mode_slug=? AND workflow_key=''
-         AND session_id=? AND state NOT IN ('done','abandoned') ORDER BY number`,
-    )
-    .all(identity.project, identity.workflow, identity.mode, ownerSession) as SelectableCursorRow[]
+  const rows = taskFlowStore(d).openKeylessStages({
+    project: identity.project,
+    workflow: identity.workflow,
+    mode: identity.mode,
+    sessionId: ownerSession,
+    untouched: false,
+  })
   if (rows.length > 1) {
     refuseAmbiguousKeylessCursors(rows)
   }
@@ -305,15 +293,14 @@ export function selectUntouchedKeylessWorkflowCursor(
   d: Database,
 ): SelectableCursorRow | null {
   if (!ownerSession) return null
-  const rows = d
-    .query(
-      `SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor
-       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-         AND workflow_slug=? AND mode_slug=? AND workflow_key=''
-         AND session_id=? AND state NOT IN ('done','abandoned')
-         AND ordinal=0 ORDER BY number`,
-    )
-    .all(identity.project, identity.workflow, identity.mode, ownerSession)
+  const rows = taskFlowStore(d)
+    .openKeylessStages({
+      project: identity.project,
+      workflow: identity.workflow,
+      mode: identity.mode,
+      sessionId: ownerSession,
+      untouched: true,
+    })
     .filter(
       (row) => !hasClosedStep((row as SelectableCursorRow & { closed: string }).closed),
     ) as SelectableCursorRow[]
@@ -341,21 +328,13 @@ export function resolveWorkflowCursorMode(
   }
   if (selectedRow) return validateIdentity(selectedRow, identity).mode_slug
   if (requested) return requested
-  const rows = d
-    .query(
-      `SELECT DISTINCT mode_slug FROM workflow_cursor
-       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-         AND workflow_slug=? AND ${key ? '(task_record_id=? OR workflow_key=?)' : "workflow_key=''"}
-         AND ${key ? "instance_id=''" : 'session_id=?'}
-         AND state NOT IN ('done','abandoned') ORDER BY mode_slug`,
-    )
-    .all(
-      ...(key
-        ? [project, slug, context.taskRecordId ?? null, key]
-        : [project, slug, context.session ?? '']),
-    ) as {
-    mode_slug: string
-  }[]
+  const rows = taskFlowStore(d).activeStageModes({
+    project,
+    workflow: slug,
+    taskRecordId: context.taskRecordId ?? null,
+    key,
+    sessionId: context.session ?? '',
+  })
   if (rows.length === 1) return rows[0]!.mode_slug
   if (rows.length > 1)
     throw new Error(

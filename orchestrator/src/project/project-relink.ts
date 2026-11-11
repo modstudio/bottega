@@ -10,7 +10,8 @@ import { rewritePendingOutboxPayloads } from '../record/outbox-enqueue.ts'
 import { retryOutboxRowsMatchingInWriteTransaction } from '../record/outbox-quarantine.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
-import { PROJECT_REFERENCES } from './project-reference-counts.ts'
+import { taskFlowStore } from '../workflow/task-flow-store.ts'
+import { PROJECT_REFERENCE_REPORT, PROJECT_REFERENCES } from './project-reference-counts.ts'
 import { retiredHostedProjectMessage } from './project-retired-hosted.ts'
 import type { Project } from './projects.ts'
 import { projectByName, projects } from './projects.ts'
@@ -87,12 +88,20 @@ export function relinkProjectIdentity(
   let retried = 0
   const rewritten = writeTransaction(() => {
     database.exec('PRAGMA defer_foreign_keys = ON')
-    const counts: Record<string, number> = {}
+    const sqlCounts: Record<string, number> = {}
     for (const { table, column } of referenceColumns()) {
       const updateProjectReference = `UPDATE ${table} SET ${column}=? WHERE ${column}=?`
       const changes = database.query(updateProjectReference).run(hostedId, oldId).changes
-      counts[table] = (counts[table] ?? 0) + changes
+      sqlCounts[table] = (sqlCounts[table] ?? 0) + changes
     }
+    const taskFlowCounts = taskFlowStore(database).relinkProjectReferences(oldId, hostedId)
+    const referenceCounts: Record<string, number> = { ...sqlCounts, ...taskFlowCounts }
+    const counts: Record<string, number> = Object.fromEntries(
+      PROJECT_REFERENCE_REPORT.map(([key, , , explicitTable]) => [
+        explicitTable ?? key,
+        referenceCounts[explicitTable ?? key] ?? 0,
+      ]),
+    )
     counts.project = database
       .query('UPDATE project SET record_id=? WHERE name=? AND record_id=?')
       .run(hostedId, project.name, oldId).changes

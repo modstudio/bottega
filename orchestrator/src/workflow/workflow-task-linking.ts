@@ -13,6 +13,7 @@ import type { TaskFlowAdoptResult } from '../record/record-task-flow-write-contr
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { linkWorkflowQuestionsTaskReference } from '../run/question-mutation.ts'
 import { cacheAdoptedTaskFlow } from './task-flow.ts'
+import { taskFlowStore } from './task-flow-store.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import {
   findWorkflowCursor,
@@ -28,13 +29,8 @@ export async function linkWorkflowTaskLabel(
   input: { project: string; workflowKey: string; taskRecordId: string },
   client?: RecordTaskFlowClient,
 ): Promise<{ workflow_cursor: number; question: number }> {
-  const rows = database
-    .query<{ record_id: string; revision: number; updated_at: string }, [string, string]>(
-      `SELECT record_id,revision,updated_at FROM workflow_cursor
-       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-         AND workflow_key=? AND task_record_id IS NULL ORDER BY record_id`,
-    )
-    .all(input.project, input.workflowKey)
+  const store = taskFlowStore(database)
+  const rows = store.stagesNeedingTaskLink(input.project, input.workflowKey)
   const hosted = [] as Array<{
     row: (typeof rows)[number]
     result: TaskFlowAdoptResult
@@ -57,12 +53,8 @@ export async function linkWorkflowTaskLabel(
   }
   return writeTransaction(() => {
     for (const { row, result } of hosted) {
-      const current = database
-        .query<{ revision: number }, [string]>(
-          'SELECT revision FROM workflow_cursor WHERE record_id=?',
-        )
-        .get(row.record_id)
-      if (!current || current.revision !== row.revision)
+      const currentRevision = store.stageRevision(row.record_id)
+      if (currentRevision !== row.revision)
         throw new Error(
           `workflow cursor ${row.record_id} changed while its task was linked; rerun the command`,
         )
@@ -79,13 +71,7 @@ export async function linkWorkflowTaskLabel(
         database,
       )
     }
-    const cursors = database
-      .query(
-        `UPDATE workflow_cursor SET task_record_id=?
-         WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-           AND workflow_key=? AND task_record_id IS NULL`,
-      )
-      .run(input.taskRecordId, input.project, input.workflowKey).changes
+    const cursors = store.linkUnhostedStagesToTask(input)
     const questions = linkWorkflowQuestionsTaskReference(input, database)
     return { workflow_cursor: cursors + hosted.length, question: questions }
   }, database)

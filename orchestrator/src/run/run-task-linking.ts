@@ -6,6 +6,7 @@ import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { type Project, projectForTaskKey, projects } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
+import { taskFlowStore } from '../workflow/task-flow-store.ts'
 import { linkWorkflowTaskLabel } from '../workflow/workflow-task-linking.ts'
 import {
   type HubTaskKeyMap,
@@ -78,9 +79,10 @@ type PendingLocalTaskLink = {
 }
 
 type LocalTaskLinkRow = { id: string; task_key: string; project: string }
+type LinkedLocalTaskReference = { task_record_id: string; project: string }
 type LocalTaskLinkConfigBase = {
-  pendingSql: string
-  linkedSql: string
+  pendingRows(database: Database): LocalTaskLinkRow[]
+  linkedRows(database: Database): LinkedLocalTaskReference[]
 }
 type HostedFirstTaskLinkConfig = LocalTaskLinkConfigBase & {
   regime: 'hosted-first'
@@ -99,11 +101,10 @@ type LocalTaskLinkConfig = HostedFirstTaskLinkConfig | SynchronousTaskLinkConfig
 const LOCAL_TASK_LINKS = {
   workflow_cursor: {
     regime: 'hosted-first',
-    pendingSql: `SELECT c.record_id id,c.workflow_key task_key,p.name project
-      FROM workflow_cursor c JOIN project p ON p.record_id=c.project_record_id
-      WHERE c.task_record_id IS NULL AND c.workflow_key<>''`,
-    linkedSql: `SELECT c.task_record_id,p.name project FROM workflow_cursor c
-      JOIN project p ON p.record_id=c.project_record_id WHERE c.task_record_id IS NOT NULL`,
+    pendingRows: (database) =>
+      taskFlowStore(database).pendingTaskLinks<LocalTaskLinkRow>('workflow_cursor'),
+    linkedRows: (database) =>
+      taskFlowStore(database).linkedTaskReferences<LinkedLocalTaskReference>('workflow_cursor'),
     write: (database, update, taskFlowClient) =>
       linkWorkflowTaskLabel(
         database,
@@ -117,14 +118,10 @@ const LOCAL_TASK_LINKS = {
   },
   question: {
     regime: 'synchronous',
-    pendingSql: `SELECT q.record_id id,q.workflow_key task_key,p.name project
-      FROM question q JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
-      JOIN project p ON p.record_id=c.project_record_id
-      WHERE q.workflow_task_record_id IS NULL AND q.workflow_key IS NOT NULL`,
-    linkedSql: `SELECT q.workflow_task_record_id task_record_id,p.name project
-      FROM question q JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
-      JOIN project p ON p.record_id=c.project_record_id
-      WHERE q.workflow_task_record_id IS NOT NULL`,
+    pendingRows: (database) =>
+      taskFlowStore(database).pendingTaskLinks<LocalTaskLinkRow>('question'),
+    linkedRows: (database) =>
+      taskFlowStore(database).linkedTaskReferences<LinkedLocalTaskReference>('question'),
     write: (database, update) => {
       linkWorkflowQuestionsTaskReference(
         {
@@ -138,10 +135,19 @@ const LOCAL_TASK_LINKS = {
   },
   port_ref: {
     regime: 'synchronous',
-    pendingSql: `SELECT r.record_id id,r.task_key,p.name project FROM port_ref r
-      JOIN project p ON p.record_id=r.target_project_record_id WHERE r.task_record_id IS NULL`,
-    linkedSql: `SELECT r.task_record_id,p.name project FROM port_ref r
-      JOIN project p ON p.record_id=r.target_project_record_id WHERE r.task_record_id IS NOT NULL`,
+    pendingRows: (database) =>
+      database
+        .query<
+          LocalTaskLinkRow,
+          []
+        >(`SELECT r.record_id id,r.task_key,p.name project FROM port_ref r
+          JOIN project p ON p.record_id=r.target_project_record_id WHERE r.task_record_id IS NULL`)
+        .all(),
+    linkedRows: (database) =>
+      database
+        .query<LinkedLocalTaskReference, []>(`SELECT r.task_record_id,p.name project FROM port_ref r
+          JOIN project p ON p.record_id=r.target_project_record_id WHERE r.task_record_id IS NOT NULL`)
+        .all(),
     write: (database, update) => {
       database
         .query('UPDATE port_ref SET task_record_id=? WHERE record_id=? AND task_record_id IS NULL')
@@ -150,11 +156,23 @@ const LOCAL_TASK_LINKS = {
   },
   presence: {
     regime: 'synchronous',
-    pendingSql: `SELECT s.session_id id,s.current_task_key task_key,p.name project FROM presence s
-      JOIN project p ON p.record_id=s.project_record_id
-      WHERE s.current_task_record_id IS NULL AND s.current_task_key IS NOT NULL`,
-    linkedSql: `SELECT s.current_task_record_id task_record_id,p.name project FROM presence s
-      JOIN project p ON p.record_id=s.project_record_id WHERE s.current_task_record_id IS NOT NULL`,
+    pendingRows: (database) =>
+      database
+        .query<
+          LocalTaskLinkRow,
+          []
+        >(`SELECT s.session_id id,s.current_task_key task_key,p.name project FROM presence s
+          JOIN project p ON p.record_id=s.project_record_id
+          WHERE s.current_task_record_id IS NULL AND s.current_task_key IS NOT NULL`)
+        .all(),
+    linkedRows: (database) =>
+      database
+        .query<
+          LinkedLocalTaskReference,
+          []
+        >(`SELECT s.current_task_record_id task_record_id,p.name project FROM presence s
+          JOIN project p ON p.record_id=s.project_record_id WHERE s.current_task_record_id IS NOT NULL`)
+        .all(),
     write: (database, update) => {
       database
         .query(
@@ -563,7 +581,7 @@ function deriveLocalTaskLinks(
 }
 
 function localTaskLinkRows(database: Database, table: LocalTaskLinkTable): LocalTaskLinkRow[] {
-  return database.query<LocalTaskLinkRow, []>(LOCAL_TASK_LINKS[table].pendingSql).all()
+  return LOCAL_TASK_LINKS[table].pendingRows(database)
 }
 
 async function writeHostedFirstTaskLink(
@@ -656,9 +674,7 @@ export async function runTaskReferenceDoctorLine(): Promise<string> {
     const tasks = await hubTaskMap(projects())
     const database = db()
     const related = localTaskLinkTables().map((table) => {
-      const rows = database
-        .query<{ task_record_id: string; project: string }, []>(LOCAL_TASK_LINKS[table].linkedSql)
-        .all()
+      const rows = LOCAL_TASK_LINKS[table].linkedRows(database)
       const invalid = rows.filter(
         (row) =>
           tasks.byProjectId.get(projectTaskRecordKey(row.project, row.task_record_id))

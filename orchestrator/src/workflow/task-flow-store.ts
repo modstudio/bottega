@@ -1,0 +1,296 @@
+// concern: task flow persistence port
+/** The task-flow persistence port and its resolver. */
+
+import type { Database } from 'bun:sqlite'
+import { sqliteTaskFlowStore } from './task-flow-store-sqlite.ts'
+import type {
+  TaskFlowProjectionRow,
+  TaskFlowStageCursorRow,
+  WorkflowCursorInsert,
+} from './task-flow-store-types.ts'
+
+/**
+ * Names the task-flow questions and write intents used by the workflow engine.
+ * Migrations and their preflights write the local tables directly by design, as do the hosted-cache
+ * writer in record/record-cache-workflow.ts and refresh in workflow/task-flow-read-through.ts.
+ */
+export interface TaskFlowStore {
+  retireStageIdentity(input: {
+    project: string
+    workflow: string
+    mode: string
+    key: string
+    exceptRecordId: string | null
+  }): void
+  conflictingHostedStage(input: {
+    projectRecordId: string
+    workflow: string
+    mode: string
+    key: string
+    recordId: string
+  }): { number: number; record_id: string } | null
+  insertStage(
+    row: WorkflowCursorInsert & { projectRecordId: string },
+    conflict: 'local-identity' | 'hosted-record',
+  ): string
+  openStageForTask(taskRecordId: string): TaskFlowStageCursorRow | null
+  flowRecordIdForTask(taskRecordId: string): string | null
+  cacheAdoptedFlow(input: {
+    project: string
+    taskRecordId: string
+    cursorRecordId: string
+    flowRecordId: string
+    flowRevision: number
+    stageRevision: number
+    state: string | null
+    at: string
+    machineId: string
+  }): void
+  stampStageMachine(cursorRecordId: string, revisionIncrement: 0 | 1, machineId: string): void
+  projectFlow(input: {
+    recordId: string
+    project: string
+    taskRecordId: string
+    state: string | null
+    at: string
+    machineId: string
+  }): TaskFlowProjectionRow
+  flowProjectionForTask(taskRecordId: string): TaskFlowProjectionRow | null
+  attachStageToFlow(input: {
+    flowRecordId: string
+    cursorRecordId: string
+    at: string
+    machineId: string
+  }): void
+  stageByHandle(cursor: number): TaskFlowStageCursorRow | null
+  stageByRecordId(recordId: string): TaskFlowStageCursorRow | null
+  latestStageForTask(input: {
+    project: string
+    workflow: string
+    mode: string
+    taskRecordId: string
+  }): TaskFlowStageCursorRow | null
+  openKeylessStages(input: {
+    project: string
+    workflow: string
+    mode: string
+    sessionId: string
+    untouched: boolean
+  }): TaskFlowStageCursorRow[]
+  activeStageModes(input: {
+    project: string
+    workflow: string
+    taskRecordId: string | null
+    key: string
+    sessionId: string
+  }): Array<{ mode_slug: string }>
+  listOpenStages<T extends object>(input: { project?: string; sessionId?: string }): T[]
+  openStageWorktrees(): Array<{
+    number: number
+    workflow: string
+    project: string
+    args: string
+  }>
+  activeStageAutonomy(project: string, taskRecordId: string): Array<{ autonomy: string | null }>
+  stageIdentityMap(): Array<{ number: number; record_id: string }>
+  stageHoldingTaskKey(input: {
+    project: string
+    workflow: string
+    mode: string
+    key: string
+  }): { id: number } | null
+  stageRevision(recordId: string): number | null
+  flowState(recordId: string): {
+    record_id: string
+    revision: number
+    open_stage_cursor_record_id: string | null
+  } | null
+  textsForStage<T extends object>(stageRecordId: string): T[]
+  textByRecordId<T extends object>(recordId: string): T | null
+  textAttachmentByRecordId<T extends object>(recordId: string): T | null
+  insertText(input: {
+    recordId: string
+    stageRecordId: string
+    stepOrdinal: number
+    stepSlug: string
+    body: string
+    createdAt: string
+  }): string | null
+  textRecordIdsForStage(stageRecordId: string): string[]
+  copiedTextRecordIdsForStage(stageRecordId: string): string[]
+  deleteTexts(recordIds: readonly string[]): void
+  stageProject(recordId: string): string | null
+  uncopiedTextsForStage<T extends object>(stageRecordId: string): T[]
+  recordTextCopy(input: {
+    recordId: string
+    textRecordId: string
+    stageRecordId: string
+    documentReference: string
+    copiedAt: string
+  }): void
+  liveTextAttachment(recordId: string): { cursor: number; step_slug: string; body: string } | null
+  copiedTextReference(recordId: string): string | null
+  openObligationRecordIds(stageRecordId: string): string[]
+  openObligations<T extends object>(stageRecordId: string): T[]
+  obligationByRecordId<T extends object>(recordId: string): T | null
+  nextKeylessInstanceSlot(input: {
+    projectRecordId: string
+    workflow: string
+    mode: string
+    sessionId: string | null
+    machineId: string
+  }): number
+  flowForTask(taskRecordId: string): { record_id: string; revision: number } | null
+  hasStage(recordId: string): boolean
+  assignStageTaskKey(input: {
+    recordId: string
+    workflowKey: string
+    taskRecordId: string | null
+    argumentsJson: string
+    updatedAt: string
+  }): void
+  stagesNeedingTaskLink(
+    project: string,
+    workflowKey: string,
+  ): Array<{
+    record_id: string
+    revision: number
+    updated_at: string
+  }>
+  linkUnhostedStagesToTask(input: {
+    taskRecordId: string
+    project: string
+    workflowKey: string
+  }): number
+  unlinkedLabelHolder(input: {
+    project: string
+    workflow: string
+    mode: string
+    key: string
+  }): number | null
+  updateReusedStage(input: {
+    recordId: string
+    argumentsJson: string
+    closedJson: string
+    sessionId: string | null
+    updatedAt: string
+    revision: number
+  }): void
+  updateServedStage(input: {
+    recordId: string
+    argumentsJson: string
+    closedJson: string
+    ordinal: number
+    stepSlug: string
+    state: string
+    question: string | null
+    sessionId: string | null
+    updatedAt: string
+    machineId: string
+    revision: number
+  }): void
+  resumeStageAfterRuling(input: {
+    recordId: string
+    sessionId: string | null
+    updatedAt: string
+    machineId: string
+    revision: number
+  }): void
+  awaitStageRuling(input: {
+    recordId: string
+    argumentsJson: string
+    closedJson: string
+    question: string
+    sessionId: string | null
+    updatedAt: string
+    machineId: string
+    revision: number
+  }): void
+  abandonOpenObligations(stageRecordId: string, at: string, reason: string): void
+  abandonStage(input: {
+    recordId: string
+    closedJson: string
+    sessionId: string | null
+    updatedAt: string
+    machineId: string
+    revision: number
+  }): void
+  clearFlowOpenStage(input: {
+    recordId: string
+    updatedAt: string
+    machineId: string
+    revision: number
+  }): void
+  insertObligation(input: {
+    id: string
+    stageRecordId: string
+    stepOrdinal: number
+    stepSlug: string
+    floor: string
+    requirePullRequest: boolean
+    operatorRuling: boolean
+    expectedExitCode: number
+    expectedStatus: string
+    floorDeferrable: boolean
+    reason: string
+    sessionId: string | null
+    createdAt: string
+  }): void
+  satisfyObligation(input: {
+    id: string
+    stageRecordId: string
+    satisfiedAt?: string | null
+    satisfiedStepOrdinal?: number | null
+    satisfiedStepSlug?: string | null
+    satisfiedEvidence?: unknown
+  }): void
+  advanceStage(input: {
+    recordId: string
+    argumentsJson: string
+    ordinal: number
+    stepSlug: string
+    state: string
+    closedJson: string
+    sessionId: string | null
+    updatedAt: string
+    takenOverFromMachineId: string | null
+    machineId: string
+    revision: number
+  }): void
+  closeOutShipTaskStage<T extends object>(sessionId: string, project: string, branch: string): T[]
+  waitingWorkflowQuestions<T extends object>(): T[]
+  cursorWorkForSession<T extends object>(sessionId: string): T[]
+  cursorLifecycleForSession<T extends object>(sessionId: string): T[]
+  openStagesForSession<T extends object>(sessionId: string): T[]
+  openWorkflowQuestionCountForSession(sessionId: string): number
+  workflowInboxQuestions<T extends object>(): T[]
+  rulingRows<T extends object>(input: {
+    kind: 'workflow' | 'run' | 'all'
+    since?: string
+    after: number | null
+    cursor: number | null
+  }): T[]
+  rulingFileQuestion<T extends object>(questionId: string): T | null
+  questionOutboxRow<T extends object>(questionId: string): T | null
+  questionCloseFacts<T extends object>(questionId: string): T | null
+  overturnRulingRow<T extends object>(questionId: string): T | null
+  unlinkedWorkflowQuestionIds(project: string, workflowKey: string): string[]
+  pendingTaskLinks<T extends object>(table: 'workflow_cursor' | 'question'): T[]
+  linkedTaskReferences<T extends object>(table: 'workflow_cursor' | 'question'): T[]
+  projectReferenceCounts(projectRecordId: string): {
+    workflow_cursor: number
+    task_flow: number
+  }
+  relinkProjectReferences(
+    oldRecordId: string,
+    newRecordId: string,
+  ): Record<'task_flow' | 'workflow_cursor', number>
+  renameStageProject(currentName: string, nextName: string): void
+  taskRulingRows<T extends object>(project: string, taskRecordId: string, limit: number): T[]
+  localQuestionProjects(): Array<{ project: string | null }>
+}
+
+/** Resolves task-flow persistence to the local SQLite adapter. */
+export function taskFlowStore(database: Database): TaskFlowStore {
+  return sqliteTaskFlowStore(database)
+}

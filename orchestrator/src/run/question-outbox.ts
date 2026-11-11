@@ -5,13 +5,13 @@ import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
-
 import { insertOutboxRow, refreshPendingOutboxRow } from '../record/outbox-enqueue.ts'
 import {
   RELEASED_OUTBOX_PAYLOAD,
   releasedOutboxPayloadSql,
 } from '../record/outbox-prune-payload.ts'
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
+import { taskFlowStore } from '../workflow/task-flow-store.ts'
 
 type QuestionRow = Record<string, unknown> & {
   record_id: string
@@ -28,19 +28,7 @@ type QuestionRow = Record<string, unknown> & {
 const json = (value: unknown): unknown => (value == null ? null : JSON.parse(String(value)))
 
 function loadQuestion(database: Database, questionId: string): QuestionRow {
-  const row = database
-    .query<QuestionRow, [string]>(
-      `SELECT q.*, r.record_id AS run_record_id,
-              COALESCE(run_project.name, cursor.project) AS project_name,
-              COALESCE(run_project.record_id, cursor_project.record_id) AS project_record_id
-         FROM question q
-         LEFT JOIN run r ON r.record_id=q.run_record_id
-         LEFT JOIN project run_project ON run_project.record_id=r.project_record_id
-         LEFT JOIN workflow_cursor cursor ON cursor.record_id=q.workflow_cursor_record_id
-         LEFT JOIN project cursor_project ON cursor_project.record_id=cursor.project_record_id
-        WHERE q.record_id=?`,
-    )
-    .get(questionId)
+  const row = taskFlowStore(database).questionOutboxRow<QuestionRow>(questionId)
   if (!row) throw new Error(`question ${questionId} does not exist and cannot be enqueued`)
   return row
 }

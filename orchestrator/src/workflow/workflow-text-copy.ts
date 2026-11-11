@@ -15,6 +15,7 @@ import {
 } from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
+import { taskFlowStore } from './task-flow-store.ts'
 import { abandonSelectedWorkflowCursorForClose, nextWorkflowStep } from './workflow-cursor.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import {
@@ -105,14 +106,13 @@ export const productionWorkflowTextDocumentPorts: WorkflowTextDocumentPorts = {
 const firstToken = (title: string) => title.trim().split(/\s+/, 1)[0] ?? ''
 
 function uncopiedRows(cursorId: string, database: Database): CopyRow[] {
-  return database
-    .query<{ record_id: string; step_slug: string; body: string; created_at: string }, [string]>(
-      `SELECT t.record_id,t.step_slug,t.body,t.created_at FROM workflow_step_text t
-       LEFT JOIN workflow_text_copy c ON c.workflow_text_record_id=t.record_id
-       WHERE t.cursor_record_id=? AND c.workflow_text_record_id IS NULL
-       ORDER BY t.step_ordinal,t.rowid`,
-    )
-    .all(cursorId)
+  return taskFlowStore(database)
+    .uncopiedTextsForStage<{
+      record_id: string
+      step_slug: string
+      body: string
+      created_at: string
+    }>(cursorId)
     .map((row) => ({
       id: row.record_id,
       stepSlug: row.step_slug,
@@ -147,13 +147,13 @@ async function recordCopy(
     client,
   )
   writeTransaction(() => {
-    database
-      .query(
-        `INSERT OR IGNORE INTO workflow_text_copy
-         (record_id,workflow_text_record_id,cursor_record_id,task_document_reference,copied_at)
-         VALUES (?,?,?,?,?)`,
-      )
-      .run(id, textId, cursorId, reference, copiedAt)
+    taskFlowStore(database).recordTextCopy({
+      recordId: id,
+      textRecordId: textId,
+      stageRecordId: cursorId,
+      documentReference: reference,
+      copiedAt,
+    })
   }, database)
 }
 
@@ -366,20 +366,12 @@ export function showWorkflowText(
   | { kind: 'live'; id: string; cursor: number; stepSlug: string; body: string }
   | { kind: 'redirect'; id: string; documentReference: string } {
   const id = workflowTextAttachmentId(idInput)
-  const live = database
-    .query<{ cursor: number; step_slug: string; body: string }, [string]>(
-      `SELECT c.number cursor,t.step_slug,t.body FROM workflow_step_text t
-       JOIN workflow_cursor c ON c.record_id=t.cursor_record_id WHERE t.record_id=?`,
-    )
-    .get(id)
+  const store = taskFlowStore(database)
+  const live = store.liveTextAttachment(id)
   if (live)
     return { kind: 'live', id, cursor: live.cursor, stepSlug: live.step_slug, body: live.body }
-  const copied = database
-    .query<{ task_document_reference: string }, [string]>(
-      'SELECT task_document_reference FROM workflow_text_copy WHERE workflow_text_record_id=?',
-    )
-    .get(id)
-  if (copied) return { kind: 'redirect', id, documentReference: copied.task_document_reference }
+  const copied = store.copiedTextReference(id)
+  if (copied) return { kind: 'redirect', id, documentReference: copied }
   throw new Error(
     `${workflowTextAttachmentToken(id)} is not held on this machine; attachments of a cursor not linked to a task are removed when the cursor closes, and an id from another machine is readable only through its task document`,
   )

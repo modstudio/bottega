@@ -2,6 +2,7 @@
 /** Guards the natural-key slot held by an older unlinked workflow cursor label. */
 
 import type { Database } from 'bun:sqlite'
+import { taskFlowStore } from './task-flow-store.ts'
 
 export function refuseUnlinkedCursorLabelCollision(
   d: Database,
@@ -14,16 +15,9 @@ export function refuseUnlinkedCursorLabelCollision(
   },
 ): void {
   if (input.taskRecordId !== null && input.taskRecordId !== undefined) return
-  const occupied = d
-    .query<{ number: number }, [string, string, string, string]>(
-      `SELECT number FROM workflow_cursor
-       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-         AND workflow_slug=? AND mode_slug=? AND workflow_key=? AND instance_id=''
-       LIMIT 1`,
-    )
-    .get(input.project, input.workflow, input.mode, input.key)
-  if (occupied)
+  const occupied = taskFlowStore(d).unlinkedLabelHolder(input)
+  if (occupied !== null)
     throw new Error(
-      `task key ${input.key} names no task in hub and earlier cursor ${occupied.number} holds that label; use a real task key`,
+      `task key ${input.key} names no task in hub and earlier cursor ${occupied} holds that label; use a real task key`,
     )
 }
