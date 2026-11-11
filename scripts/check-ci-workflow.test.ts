@@ -21,9 +21,9 @@ test('refuses a workflow with a missing or extra job', () => {
   const workflow = `jobs:\n${expectedWorkflowJobNames()
     .map((job) => {
       if (job === 'hub-ui-stories')
-        return `  ${job}:\n    container:\n      image: mcr.microsoft.com/playwright:v${playwrightPin}-noble\n    steps:\n      - run: bun run --cwd hub/ui storybook:test\n      - run: bun run --cwd hub/views storybook:test`
+        return `  ${job}:\n    container:\n      image: mcr.microsoft.com/playwright:v${playwrightPin}-noble\n    steps:\n      - name: Install Bun\n        run: npm install --global "bun@$(cat .bun-version)"\n      - run: bun run --cwd hub/ui storybook:test\n      - run: bun run --cwd hub/views storybook:test`
       if (job === 'hub-web-smoke')
-        return `  ${job}:\n    container:\n      image: mcr.microsoft.com/playwright:v${playwrightPin}-noble`
+        return `  ${job}:\n    container:\n      image: mcr.microsoft.com/playwright:v${playwrightPin}-noble\n    steps:\n      - name: Install Bun\n        run: npm install --global "bun@$(cat .bun-version)"`
       if (job === 'orchestrator-hooks') return hooksJobFixture()
       if (job === processSuite.job) return processHooksJobFixture()
       if (job === 'postgres') return postgresJobFixture()
@@ -216,6 +216,28 @@ test('refuses a playwright install run command', () => {
   ).toThrow('run the job in the pinned Playwright image instead')
 })
 
+test('refuses setup-bun in a Playwright browser job', () => {
+  expect(() =>
+    checkCiWorkflow(
+      readWorkflowFixture().replace(
+        '      - name: Install Bun\n        run: npm install --global "bun@$(cat .bun-version)"',
+        '      - uses: oven-sh/setup-bun@v2\n        with:\n          bun-version-file: .bun-version',
+      ),
+    ),
+  ).toThrow('job hub-ui-stories must not use oven-sh/setup-bun')
+})
+
+test('refuses a literal npm Bun version in a Playwright browser job', () => {
+  expect(() =>
+    checkCiWorkflow(
+      readWorkflowFixture().replace(
+        'npm install --global "bun@$(cat .bun-version)"',
+        'npm install --global "bun@1.4.4"',
+      ),
+    ),
+  ).toThrow('job hub-ui-stories must install Bun from .bun-version')
+})
+
 test('accepts the real CI workflow', () => {
   expect(() =>
     checkCiWorkflow(readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')),
@@ -266,9 +288,9 @@ function readWorkflowFixture() {
   return `jobs:\n${expectedWorkflowJobNames()
     .map((job) => {
       if (job === 'hub-ui-stories')
-        return `  ${job}:\n    container:\n      image: mcr.microsoft.com/playwright:v${playwrightPin}-noble\n    steps:\n      - run: bun run --cwd hub/ui storybook:test\n      - run: bun run --cwd hub/views storybook:test`
+        return `  ${job}:\n    container:\n      image: mcr.microsoft.com/playwright:v${playwrightPin}-noble\n    steps:\n      - name: Install Bun\n        run: npm install --global "bun@$(cat .bun-version)"\n      - run: bun run --cwd hub/ui storybook:test\n      - run: bun run --cwd hub/views storybook:test`
       if (job === 'hub-web-smoke')
-        return `  ${job}:\n    container:\n      image: mcr.microsoft.com/playwright:v${playwrightPin}-noble`
+        return `  ${job}:\n    container:\n      image: mcr.microsoft.com/playwright:v${playwrightPin}-noble\n    steps:\n      - name: Install Bun\n        run: npm install --global "bun@$(cat .bun-version)"`
       if (job === 'orchestrator-hooks') return hooksJobFixture()
       if (job === processSuite.job) return processHooksJobFixture()
       if (job === 'postgres') return postgresJobFixture()

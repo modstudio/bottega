@@ -10,6 +10,7 @@ const playwrightPackageFiles = [
   'hub/web/package.json',
 ] as const
 const playwrightBrowserJobs = ['hub-web-smoke', 'hub-ui-stories'] as const
+const playwrightBunInstallCommand = 'npm install --global "bun@$(cat .bun-version)"'
 
 export function agreedPlaywrightDependencyPin(
   pins: readonly { file: string; pin: string | undefined }[],
@@ -108,6 +109,19 @@ function playwrightContainerImage(job: string): PlaywrightContainerImage | undef
   return undefined
 }
 
+function checkPlaywrightBunInstall(job: string, jobName: string): void {
+  if (job.includes('oven-sh/setup-bun')) {
+    throw new Error(
+      `.github/workflows/ci.yml job ${jobName} must not use oven-sh/setup-bun because the Playwright image has no unzip; replace it with an Install Bun step that runs ${playwrightBunInstallCommand}`,
+    )
+  }
+  if (!workflowRunCommands(job).includes(playwrightBunInstallCommand)) {
+    throw new Error(
+      `.github/workflows/ci.yml job ${jobName} must install Bun from .bun-version; add an Install Bun step that runs ${playwrightBunInstallCommand}`,
+    )
+  }
+}
+
 function aggregateNeeds(source: string): string[] {
   const job = workflowJob(source, 'ci')
   const inline = job.match(/^ {4}needs:\s*\[([^\]]*)\]\s*$/m)
@@ -153,6 +167,7 @@ function checkPlaywrightJobs(source: string, jobNames: readonly string[]): void 
         `.github/workflows/ci.yml job ${jobName} must run in the pinned Playwright image; add container: image: mcr.microsoft.com/playwright:v${playwrightPin}-noble`,
       )
     }
+    checkPlaywrightBunInstall(job, jobName)
   }
   for (const jobName of jobNames) {
     const job = workflowJob(source, jobName)
