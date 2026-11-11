@@ -34,7 +34,6 @@ import { JOBS } from '../jobs/jobs.ts'
 import { tellCommand } from '../mailbox/mailbox-commands.ts'
 import { mcpCommand } from '../mcp/mcp-commands.ts'
 import { readerMcpProxyCommand } from '../mcp/mcp-reader-proxy.ts'
-import { serveDocsMcp } from '../mcp/mcp.ts'
 import { metricCommand } from '../metric/metric-commands.ts'
 import { monitorCommand } from '../monitor/monitor-commands.ts'
 import { storageCommand } from '../monitor/storage-commands.ts'
@@ -180,7 +179,7 @@ function registerMcpServers(program: Command): void {
   program
     .command('mcp-serve-child', { hidden: true })
     .allowExcessArguments(false)
-    .action(() => serveDocsMcp())
+    .action(async () => (await import('../mcp/mcp.ts')).serveDocsMcp())
   program
     .command('mcp-reader-proxy <policy> <project> <server> <tree>', { hidden: true })
     .allowExcessArguments(false)

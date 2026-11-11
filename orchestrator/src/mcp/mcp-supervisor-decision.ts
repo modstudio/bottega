@@ -1,15 +1,14 @@
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 
 export const MCP_SERVER_STALE_EXIT = 75
 export const MCP_SERVER_RESTART_BACKOFF_MS = 250
 export const MCP_SERVER_CRASH_LOOP_CEILING = 5
-export const MCP_SERVER_CRASH_LOOP_WINDOW_MS = 30_000
+const MCP_SERVER_CRASH_LOOP_WINDOW_MS = 30_000
 export const MCP_SERVER_SHUTDOWN_WAIT_MS = 2_000
-export const MCP_SUPERVISOR_ID_PREFIX = 'bottega-mcp-supervisor:'
+export const MCP_SUPERVISOR_ID_PREFIX = `${PLATFORM_SLUG}-mcp-supervisor:`
 
-export type JsonRpcId = string | number | null
+type JsonRpcId = string | number | null
 export type JsonRpcMessage = Record<string, unknown>
-export type McpSupervisorSignal = 'SIGINT' | 'SIGTERM'
 
 type SupervisorPhase =
   | 'running'
@@ -38,7 +37,6 @@ export type McpSupervisorEvent =
   | { type: 'child-exit'; code: number; status: string; at: number }
   | { type: 'timer'; kind: 'restart' | 'shutdown'; token: number }
   | { type: 'client-close' }
-  | { type: 'signal'; signal: McpSupervisorSignal }
 
 export type McpSupervisorAction =
   | { type: 'send-child'; message: JsonRpcMessage }
@@ -112,12 +110,12 @@ const jsonRpcError = (id: JsonRpcId, message: string): JsonRpcMessage => ({
 })
 
 const restartError = (id: JsonRpcId) =>
-  jsonRpcError(id, 'Bottega MCP server restarted; this call may be retried.')
+  jsonRpcError(id, `${PLATFORM_NAME} MCP server restarted; this call may be retried.`)
 
 const crashLoopError = (id: JsonRpcId, status: string | null) =>
   jsonRpcError(
     id,
-    `Bottega MCP server stopped after a crash loop (last child ${status ?? 'status unknown'}); run ${PLATFORM_SLUG} machine doctor, then reconnect the server in the harness.`,
+    `${PLATFORM_NAME} MCP server stopped after a crash loop (last child ${status ?? 'status unknown'}); run ${PLATFORM_SLUG} machine doctor, then reconnect the server in the harness.`,
   )
 
 const toolsChangedNotification = (): JsonRpcMessage => ({
@@ -279,15 +277,6 @@ export function reduceMcpSupervisor(
   if (event.type === 'child-message') return childMessage(state, event.message)
   if (event.type === 'child-exit') return childExit(state, event)
   if (event.type === 'timer') return timer(state, event)
-  if (event.type === 'signal') {
-    return {
-      state: { ...state, phase: 'stopped' },
-      actions: [
-        { type: 'signal-child', signal: event.signal },
-        { type: 'exit', code: event.signal === 'SIGINT' ? 130 : 143 },
-      ],
-    }
-  }
   if (state.phase === 'failed') {
     return { state: { ...state, phase: 'stopped' }, actions: [{ type: 'exit', code: 0 }] }
   }

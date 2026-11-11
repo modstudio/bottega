@@ -63,7 +63,11 @@ export const mcpBoundarySpecs: ImportBoundary[] = [
   boundary(
     'mcp-supervisor-boundary',
     'orchestrator/src/mcp/mcp-supervisor.ts',
-    ['../../../shared/self-spawn.ts', './mcp-supervisor-decision.ts'],
+    [
+      '../../../shared/bounded-process.ts',
+      '../../../shared/self-spawn.ts',
+      './mcp-supervisor-decision.ts',
+    ],
     'Keep the stable MCP front independent of stores and tools: it only spawns the real server and relays framed messages.',
   ),
   boundary(

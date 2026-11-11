@@ -1,3 +1,4 @@
+import { startParentBound } from '../../../shared/bounded-process.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import {
   initialMcpSupervisorState,
@@ -5,7 +6,6 @@ import {
   type JsonRpcMessage,
   type McpSupervisorAction,
   type McpSupervisorEvent,
-  type McpSupervisorSignal,
   reduceMcpSupervisor,
 } from './mcp-supervisor-decision.ts'
 
@@ -26,10 +26,8 @@ export async function serveMcpSupervisor(): Promise<void> {
   }
 
   const spawnChild = () => {
-    const process = Bun.spawn(bottegaEntryArgv('mcp-serve-child'), {
-      stdin: 'pipe',
-      stdout: 'pipe',
-      stderr: 'pipe',
+    const process = startParentBound(bottegaEntryArgv('mcp-serve-child'), {
+      name: 'MCP server child',
     })
     const stdout = relayChildStdout(process.stdout, dispatch)
     const stderr = relayChildStderr(process.stderr)
@@ -89,17 +87,8 @@ export async function serveMcpSupervisor(): Promise<void> {
     }
   })
   process.stdin.once('end', () => dispatch({ type: 'client-close' }))
-  process.once('SIGINT', () => dispatchSignal('SIGINT', dispatch))
-  process.once('SIGTERM', () => dispatchSignal('SIGTERM', dispatch))
   process.stdin.resume()
   await done
-}
-
-function dispatchSignal(
-  signal: McpSupervisorSignal,
-  dispatch: (event: McpSupervisorEvent) => void,
-): void {
-  dispatch({ type: 'signal', signal })
 }
 
 async function relayChildStdout(

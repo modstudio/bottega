@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   initialMcpSupervisorState,
   JsonLineDecoder,
@@ -55,7 +56,7 @@ describe('MCP supervisor decision', () => {
         id: 'call-1',
         error: {
           code: -32000,
-          message: 'Bottega MCP server restarted; this call may be retried.',
+          message: `${PLATFORM_NAME} MCP server restarted; this call may be retried.`,
         },
       },
     })
@@ -156,7 +157,7 @@ describe('MCP supervisor decision', () => {
       })
       expect(JSON.stringify(refused.actions[0])).toContain(`exit status ${MCP_SERVER_STALE_EXIT}`)
       expect(JSON.stringify(refused.actions[0])).toContain(
-        'run bottega machine doctor, then reconnect the server in the harness',
+        `run ${PLATFORM_SLUG} machine doctor, then reconnect the server in the harness`,
       )
     }
   })

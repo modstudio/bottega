@@ -20,6 +20,54 @@ type BoundedProcessOptions = {
 
 type BoundedSyncOptions = Omit<BoundedProcessOptions, 'signal'>
 
+type ParentBoundProcessOptions = {
+  name: string
+  cwd?: string
+  env?: Record<string, string | undefined>
+}
+
+type ParentBoundChild = { exited: Promise<number>; kill(signal?: NodeJS.Signals): void }
+
+const parentBoundChildren = new Set<ParentBoundChild>()
+let parentBoundHooksInstalled = false
+
+function killParentBoundChildren(signal: NodeJS.Signals): void {
+  for (const child of parentBoundChildren) child.kill(signal)
+}
+
+function installParentBoundHooks(): void {
+  if (parentBoundHooksInstalled) return
+  parentBoundHooksInstalled = true
+  process.once('exit', () => killParentBoundChildren('SIGTERM'))
+  process.once('SIGINT', () => {
+    killParentBoundChildren('SIGINT')
+    process.exit(130)
+  })
+  process.once('SIGTERM', () => {
+    killParentBoundChildren('SIGTERM')
+    process.exit(143)
+  })
+}
+
+/** Start a streaming child whose lifetime is bounded by this parent instead of a deadline. */
+export function startParentBound(
+  argv: readonly string[],
+  options: ParentBoundProcessOptions,
+) {
+  if (!argv.length) throw new TypeError(`${options.name} requires a non-empty argv`)
+  installParentBoundHooks()
+  const child = Bun.spawn([...argv], {
+    cwd: options.cwd,
+    env: options.env,
+    stdin: 'pipe',
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  parentBoundChildren.add(child)
+  void child.exited.then(() => parentBoundChildren.delete(child))
+  return child
+}
+
 export function isDeadlineAbort(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'TimeoutError'
 }
