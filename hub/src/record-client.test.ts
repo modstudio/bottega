@@ -3,7 +3,8 @@ import { TRPCError } from '@trpc/server'
 import { getTableColumns } from 'drizzle-orm'
 import type { z } from 'zod'
 import { run } from '../../shared/record/schema-run.ts'
-import { createRecordClient, type RecordFetch, recordRunDetailSchema } from './record-client.ts'
+import { createRecordClient, recordRunDetailSchema } from './record-client.ts'
+import type { RecordFetch } from './record-client-options.ts'
 
 const whoamiBody = {
   user: { id: 'user-a', email: 'a@example.test' },
@@ -16,6 +17,7 @@ const boardRootId = '01990000-0000-7000-8000-000000000011'
 const boardReplyId = '01990000-0000-7000-8000-000000000012'
 const boardMessage = {
   id: boardRootId,
+  spaceId: '01990000-0000-7000-8000-000000000001',
   kind: 'notice',
   threadRootId: null,
   title: 'Hosted notice',
@@ -148,16 +150,27 @@ describe('record client', () => {
     expect(spaces).toEqual([spaceId, spaceId, spaceId])
   })
 
-  test('clears a credential preference by identity', async () => {
-    const requests: Array<{ url: string; method: string | undefined; body: string | null }> = []
+  test('administers config and member access in the requested space', async () => {
+    const requests: Array<{
+      url: string
+      method: string | undefined
+      body: string | null
+      spaceId: string | null
+    }> = []
     const client = clientWith(async (url, init) => {
       requests.push({
         url: String(url),
         method: init?.method,
         body: typeof init?.body === 'string' ? init.body : null,
+        spaceId: new Headers(init?.headers).get('x-record-space'),
       })
+      if (String(url).endsWith('/grant')) return jsonResponse({ granted: true })
+      if (String(url).endsWith('/withdraw'))
+        return jsonResponse({ revokedMachineKeyIds: [], readableSecretKeys: [] })
+      if (String(url).endsWith('/permission')) return jsonResponse({ permission: 'read' })
       return jsonResponse({ deleted: true })
     })
+    const administeredSpaceId = '01990000-0000-7000-8000-000000000099'
     const identity = {
       projectId: '01990000-0000-7000-8000-000000000013',
       provider: 'openrouter',
@@ -167,13 +180,35 @@ describe('record client', () => {
       environment: 'local' as const,
     }
 
-    await client.clearCredentialPreference(identity)
+    await client.clearCredentialPreference(identity, administeredSpaceId)
+    await client.grantConfigAccess('member@example.test', administeredSpaceId)
+    await client.withdrawConfigAccess('member@example.test', administeredSpaceId)
+    await client.setMemberPermission('member@example.test', 'read', administeredSpaceId)
 
     expect(requests).toEqual([
       {
         url: 'https://api.example.test/v1/config/credential-preferences',
         method: 'DELETE',
         body: JSON.stringify(identity),
+        spaceId: administeredSpaceId,
+      },
+      {
+        url: 'https://api.example.test/v1/config-access/grant',
+        method: 'POST',
+        body: JSON.stringify({ email: 'member@example.test' }),
+        spaceId: administeredSpaceId,
+      },
+      {
+        url: 'https://api.example.test/v1/config-access/withdraw',
+        method: 'POST',
+        body: JSON.stringify({ email: 'member@example.test' }),
+        spaceId: administeredSpaceId,
+      },
+      {
+        url: 'https://api.example.test/v1/members/permission',
+        method: 'POST',
+        body: JSON.stringify({ email: 'member@example.test', permission: 'read' }),
+        spaceId: administeredSpaceId,
       },
     ])
   })
@@ -419,6 +454,7 @@ describe('record client', () => {
       body: unknown
       cookie: string | null
       authorization: string | null
+      spaceId: string | null
     }> = []
     const fetch: RecordFetch = async (url, init) => {
       const headers = new Headers(init?.headers)
@@ -428,6 +464,7 @@ describe('record client', () => {
         body: init?.body ? JSON.parse(String(init.body)) : null,
         cookie: headers.get('Cookie'),
         authorization: headers.get('Authorization'),
+        spaceId: headers.get('x-record-space'),
       })
       if (url.includes('/status')) return jsonResponse({ message: boardMessage, receipts: [] })
       if (url.includes('/threads/')) return jsonResponse({ root: boardMessage, replies: [] })
@@ -443,18 +480,25 @@ describe('record client', () => {
     await client.boardList({ kind: 'notice', open: true, includeEnded: true })
     await client.boardThread(boardRootId)
     await client.boardStatus(boardRootId)
-    await client.boardPost({
-      id: boardRootId,
-      kind: 'notice',
-      audience: 'architects',
-      title: 'Hosted notice',
-      body: 'Body',
-      expiresAt: '2026-10-07T12:00:00.000Z',
-      project: 'workshop',
-    })
-    await client.boardReply(boardRootId, { id: boardReplyId, body: 'Reply' })
-    await client.boardAccept(boardRootId, boardReplyId)
-    await client.boardWithdraw(boardRootId)
+    await client.boardPost(
+      {
+        id: boardRootId,
+        kind: 'notice',
+        audience: 'architects',
+        title: 'Hosted notice',
+        body: 'Body',
+        expiresAt: '2026-10-07T12:00:00.000Z',
+        project: 'workshop',
+      },
+      whoamiBody.activeSpaceId,
+    )
+    await client.boardReply(
+      boardRootId,
+      { id: boardReplyId, body: 'Reply' },
+      whoamiBody.activeSpaceId,
+    )
+    await client.boardAccept(boardRootId, boardReplyId, whoamiBody.activeSpaceId)
+    await client.boardWithdraw(boardRootId, whoamiBody.activeSpaceId)
 
     expect(requests.map(({ url, method, body }) => ({ url, method, body }))).toEqual([
       {
@@ -506,6 +550,12 @@ describe('record client', () => {
         ({ cookie, authorization }) => cookie === 'sid=abc' && authorization === 'Bearer tok',
       ),
     ).toBe(true)
+    expect(requests.slice(3).map(({ spaceId }) => spaceId)).toEqual([
+      whoamiBody.activeSpaceId,
+      whoamiBody.activeSpaceId,
+      whoamiBody.activeSpaceId,
+      whoamiBody.activeSpaceId,
+    ])
   })
 
   test('sets the active space through the authenticated record API', async () => {
@@ -562,28 +612,41 @@ describe('record client', () => {
 
   test('scores and voids hosted runs without sending a scorer identity', async () => {
     const runId = '01990000-0000-7000-8000-000000000001'
-    const requests: { url: string; method: string; body: Record<string, unknown> }[] = []
+    const runSpaceId = '01990000-0000-7000-8000-000000000099'
+    const requests: {
+      url: string
+      method: string
+      body: Record<string, unknown>
+      spaceId: string | null
+    }[] = []
     const fetch: RecordFetch = async (url, init) => {
+      const headers = new Headers(init?.headers)
       requests.push({
         url,
         method: init?.method ?? '',
         body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+        spaceId: headers.get('x-record-space'),
       })
       return jsonResponse({ ok: true })
     }
     const client = clientWith(fetch)
-    await client.score(runId, {
-      delivery: 'full',
-      quality: 'right',
-      fidelity: 'faithful',
-      note: null,
-      scoredAt: '2026-09-22T12:00:00.000Z',
-    })
-    await client.void(runId, { reason: 'not evidence' })
+    await client.score(
+      runId,
+      {
+        delivery: 'full',
+        quality: 'right',
+        fidelity: 'faithful',
+        note: null,
+        scoredAt: '2026-09-22T12:00:00.000Z',
+      },
+      runSpaceId,
+    )
+    await client.void(runId, { reason: 'not evidence' }, runSpaceId)
     expect(requests).toEqual([
       {
         url: `https://api.example.test/v1/runs/${runId}/score`,
         method: 'PUT',
+        spaceId: runSpaceId,
         body: {
           delivery: 'full',
           quality: 'right',
@@ -595,6 +658,7 @@ describe('record client', () => {
       {
         url: `https://api.example.test/v1/runs/${runId}/void`,
         method: 'POST',
+        spaceId: runSpaceId,
         body: { reason: 'not evidence' },
       },
     ])
@@ -765,19 +829,24 @@ describe('record client', () => {
   test('maps permission and rate refusals without hiding their messages', async () => {
     const forbidden: RecordFetch = async () => jsonResponse({ error: 'not the author' }, 403)
     const limited: RecordFetch = async () => jsonResponse({ error: 'post rate cap reached' }, 429)
-    await expect(clientWith(forbidden).boardWithdraw(boardRootId)).rejects.toMatchObject({
+    await expect(
+      clientWith(forbidden).boardWithdraw(boardRootId, whoamiBody.activeSpaceId),
+    ).rejects.toMatchObject({
       code: 'FORBIDDEN',
       message: 'not the author',
     })
     await expect(
-      clientWith(limited).boardPost({
-        id: boardRootId,
-        kind: 'notice',
-        audience: 'architects',
-        title: 'Title',
-        body: 'Body',
-        expiresAt: '2026-10-07T12:00:00.000Z',
-      }),
+      clientWith(limited).boardPost(
+        {
+          id: boardRootId,
+          kind: 'notice',
+          audience: 'architects',
+          title: 'Title',
+          body: 'Body',
+          expiresAt: '2026-10-07T12:00:00.000Z',
+        },
+        whoamiBody.activeSpaceId,
+      ),
     ).rejects.toMatchObject({ code: 'TOO_MANY_REQUESTS', message: 'post rate cap reached' })
   })
 

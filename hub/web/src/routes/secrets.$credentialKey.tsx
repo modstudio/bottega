@@ -101,7 +101,9 @@ function CredentialDetailRoute() {
                     size="sm"
                     variant="secondary"
                     disabled={clearPreference.isPending}
-                    onClick={() => clearPreference.mutate(preference)}
+                    onClick={() =>
+                      clearPreference.mutate({ ...preference, spaceId: credentials.spaceId })
+                    }
                   >
                     Clear
                   </Button>

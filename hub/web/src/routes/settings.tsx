@@ -425,11 +425,13 @@ function SubscriptionDialog({
       recipientUserIds: draft.recipientUserIds,
       recipientEmails: draft.recipientEmails,
     }
-    if (row) return update.mutate({ id: row.id, ...input })
-    create.mutate(input)
+    if (row) return update.mutate({ id: row.id, spaceId, ...input })
+    create.mutate({ spaceId, ...input })
   }
   const pending = create.isPending || update.isPending || remove.isPending || sendTest.isPending
   const failure = create.error ?? update.error ?? remove.error
+  const removeSubscription = () =>
+    confirmingDelete ? remove.mutate({ id: row!.id, spaceId }) : setConfirmingDelete(true)
   return (
     <Dialog
       open
@@ -441,13 +443,7 @@ function SubscriptionDialog({
           <div className="flex items-center gap-2">
             {row ? (
               <>
-                <Button
-                  variant="danger"
-                  disabled={pending}
-                  onClick={() =>
-                    confirmingDelete ? remove.mutate({ id: row.id }) : setConfirmingDelete(true)
-                  }
-                >
+                <Button variant="danger" disabled={pending} onClick={removeSubscription}>
                   {confirmingDelete ? 'Confirm delete' : 'Delete'}
                 </Button>
                 <Button
@@ -455,7 +451,7 @@ function SubscriptionDialog({
                   disabled={pending}
                   onClick={() => {
                     setTestMessage('')
-                    sendTest.mutate({ id: row.id })
+                    sendTest.mutate({ id: row.id, spaceId })
                   }}
                 >
                   Send test

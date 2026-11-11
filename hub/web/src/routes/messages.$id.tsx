@@ -21,6 +21,14 @@ type ThreadRoot = BoardOutputs['thread']['root']
 type ThreadReply = BoardOutputs['thread']['replies'][number]
 type StatusReceipt = BoardOutputs['status']['receipts'][number]
 
+function messageWriteInputs(id: string, body: string, spaceId?: string) {
+  return {
+    reply: { id, body, spaceId },
+    accept: (replyId: string) => ({ questionId: id, replyId, spaceId }),
+    withdraw: { id, spaceId },
+  }
+}
+
 export function MessageReceipts({
   receipts,
   reached,
@@ -221,6 +229,13 @@ function LocalMessageDetail() {
     })
   }
   const tags = root.senderTags?.map((tag) => `${tag.kind}:${tag.value}`).join(', ') || '-'
+  const inputs = messageWriteInputs(id, replyBody, root.spaceId)
+  const replyToMessage = () =>
+    runAction('reply', (onError) => reply.mutate(inputs.reply, { onError }))
+  const acceptReply = (replyId: string) =>
+    runAction('accept', (onError) => accept.mutate(inputs.accept(replyId), { onError }))
+  const withdrawMessage = () =>
+    runAction('withdraw', (onError) => withdraw.mutate(inputs.withdraw, { onError }))
   return (
     <Companion
       onClose={close}
@@ -270,12 +285,8 @@ function LocalMessageDetail() {
         acceptPending={accept.isPending}
         canAccept={canManage}
         onReplyBody={setReplyBody}
-        onReply={() =>
-          runAction('reply', (onError) => reply.mutate({ id, body: replyBody }, { onError }))
-        }
-        onAccept={(replyId) =>
-          runAction('accept', (onError) => accept.mutate({ questionId: id, replyId }, { onError }))
-        }
+        onReply={replyToMessage}
+        onAccept={acceptReply}
       />
       <AcceptedNoteWarning root={root} />
       {actionError && actionError.action !== 'withdraw' ? (
@@ -291,13 +302,7 @@ function LocalMessageDetail() {
         footer={
           <>
             <Button onClick={() => setWithdrawing(false)}>Cancel</Button>
-            <Button
-              variant="danger"
-              disabled={withdraw.isPending}
-              onClick={() =>
-                runAction('withdraw', (onError) => withdraw.mutate({ id }, { onError }))
-              }
-            >
+            <Button variant="danger" disabled={withdraw.isPending} onClick={withdrawMessage}>
               {withdraw.isPending ? 'Withdrawing...' : 'Withdraw'}
             </Button>
           </>

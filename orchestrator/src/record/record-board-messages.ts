@@ -117,6 +117,7 @@ export function hostedBoardMessageView(
 ): HostedBoardMessage {
   return {
     id: String(row.id),
+    spaceId: String(row.space_id),
     kind: String(row.kind),
     purpose: row.purpose == null ? null : parseBoardPurpose(String(row.purpose)),
     threadRootId: row.thread_root_id == null ? null : String(row.thread_root_id),

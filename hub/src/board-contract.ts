@@ -9,7 +9,9 @@ export const BoardIdSchema = z
     'board id must be a positive integer string or UUID',
   )
 const NoteIdSchema = z.string().refine(hasRecordIdShape, 'note id must be a UUID')
-export const BoardIdInputSchema = z.object({ id: BoardIdSchema })
+export const BoardIdInputSchema = z.object({
+  id: BoardIdSchema,
+})
 export const BoardListInputSchema = z.object({
   kind: z.enum(['notice', 'question']).optional(),
   open: z.boolean().optional(),
@@ -49,6 +51,7 @@ const BoardTagSchema = z.object({
 })
 const BoardMessageSchema = z.object({
   id: BoardIdSchema,
+  spaceId: z.string().optional(),
   kind: z.string().nullable(),
   purpose: z.enum(BOARD_PURPOSES).nullable().optional(),
   threadRootId: BoardIdSchema.nullable(),
