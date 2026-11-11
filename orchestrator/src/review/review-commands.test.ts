@@ -386,6 +386,18 @@ M 100644 :5 notes.md
   if (result.exitCode !== 0) throw new Error(result.stderr.toString())
 }
 
+function integratePostFixTrunk(repo: string, resolveConflict: boolean): void {
+  if (!resolveConflict) {
+    git(repo, 'merge', '--no-edit', 'main')
+    return
+  }
+  const rebase = spawnFixtureGitSync(['rebase', 'main'], { cwd: repo })
+  expect(rebase.exitCode).not.toBe(0)
+  writeFileSync(join(repo, 'critical/shared.ts'), 'export const shared = "branch"\n')
+  git(repo, 'add', 'critical/shared.ts')
+  git(repo, '-c', 'core.editor=true', 'rebase', '--continue')
+}
+
 function postFixFixture(options: {
   fixPath?: string
   fixAfterMerge?: boolean
@@ -541,15 +553,7 @@ function postFixFixture(options: {
   )
   git(repo, 'commit', '-m', 'advance trunk')
   git(repo, 'checkout', branch)
-  if (options.resolveConflict) {
-    const rebase = spawnFixtureGitSync(['rebase', 'main'], { cwd: repo })
-    expect(rebase.exitCode).not.toBe(0)
-    writeFileSync(join(repo, 'critical/shared.ts'), 'export const shared = "branch"\n')
-    git(repo, 'add', 'critical/shared.ts')
-    git(repo, '-c', 'core.editor=true', 'rebase', '--continue')
-  } else {
-    git(repo, 'merge', '--no-edit', 'main')
-  }
+  integratePostFixTrunk(repo, options.resolveConflict ?? false)
   const mergeTip = git(repo, 'rev-parse', 'HEAD')
   if (options.fixPath && options.fixAfterMerge) {
     const absoluteFix = join(repo, options.fixPath)

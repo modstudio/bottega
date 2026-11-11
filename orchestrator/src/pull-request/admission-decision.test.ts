@@ -74,11 +74,9 @@ describe('pull-request admission decision', () => {
       ).overrideId,
     ).toBeNull()
     expect(
-      decideAdmission(
-        { ...change, tip: 'different-head', tree: 'different-tree' },
-        ceilingGap,
-        [ceiling],
-      ).overrideId,
+      decideAdmission({ ...change, tip: 'different-head', tree: 'different-tree' }, ceilingGap, [
+        ceiling,
+      ]).overrideId,
     ).toBe('ceiling-ruling')
     expect(
       decideAdmission(

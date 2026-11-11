@@ -212,8 +212,7 @@ test.each([
     tier: scenario.tier,
     review: undefined,
   })
-  const relevant =
-    scenario.tier === 0 ? { lenses: [] } : { lenses: ['lens-a', 'lens-b'] }
+  const relevant = scenario.tier === 0 ? { lenses: [] } : { lenses: ['lens-a', 'lens-b'] }
   const reviewPlan = applicableRoundLensPlan({
     relevant,
     facts: {
@@ -225,7 +224,7 @@ test.each([
     postFix,
     fixPathsByLens: carry.reOwedPathsByLens,
   })
-  expect(reviewPlan.round.lenses).toEqual(scenario.expectedRound)
+  expect(reviewPlan.round.lenses).toEqual([...scenario.expectedRound])
 
   const triage = decideTriage({
     patchId: scenario.patchId,
@@ -253,6 +252,6 @@ test.each([
   })
   expect(triage.complete).toBe(scenario.expectedComplete)
   expect(triage.complete ? [] : triage.missingLenses.map(({ lens }) => lens)).toEqual(
-    scenario.expectedMissing,
+    [...scenario.expectedMissing],
   )
 })
