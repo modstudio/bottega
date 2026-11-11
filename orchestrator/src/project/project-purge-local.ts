@@ -98,27 +98,13 @@ function projectPredicate(
   return predicate
 }
 
-export function orchestratorProjectPurgePlan(database: Database): PurgeStep[] {
-  const names = tables(database)
-  const keys = foreignKeys(database, names)
-  const memo = new Map<string, string | null>()
-  const steps = names.flatMap((table) => {
-    if (table === 'project' || table === 'outbox' || LOCAL_CATALOGUE_TABLES.has(table)) return []
-    const predicate = projectPredicate(table, keys, memo)
-    return predicate ? [{ table, predicate, key: 'record-id' as const }] : []
-  })
+function orderPurgeSteps(steps: PurgeStep[], keys: readonly ForeignKey[]): PurgeStep[] {
   const planned = new Set(steps.map(({ table }) => table))
-  const blockingParents = new Map<string, Set<string>>()
-  for (const table of planned) blockingParents.set(table, new Set())
+  const blockingParents = new Map([...planned].map((table) => [table, new Set<string>()]))
   for (const key of keys) {
-    if (
-      key.table !== key.parent &&
-      planned.has(key.table) &&
-      planned.has(key.parent) &&
-      (key.onDelete === 'RESTRICT' || key.onDelete === 'NO ACTION')
-    ) {
-      blockingParents.get(key.table)!.add(key.parent)
-    }
+    const blocks = key.onDelete === 'RESTRICT' || key.onDelete === 'NO ACTION'
+    if (key.table !== key.parent && planned.has(key.parent) && blocks)
+      blockingParents.get(key.table)?.add(key.parent)
   }
   const preferenceDepth = (table: string, seen = new Set<string>()): number => {
     if (seen.has(table)) return 0
@@ -126,8 +112,7 @@ export function orchestratorProjectPurgePlan(database: Database): PurgeStep[] {
       .filter((key) => key.table === table && key.parent !== table && planned.has(key.parent))
       .map((key) => key.parent)
     return parents.length
-      ? 1 +
-          Math.max(...parents.map((parent) => preferenceDepth(parent, new Set(seen).add(table))))
+      ? 1 + Math.max(...parents.map((parent) => preferenceDepth(parent, new Set(seen).add(table))))
       : 0
   }
   const blockingChildren = new Map([...planned].map((table) => [table, 0]))
@@ -151,7 +136,19 @@ export function orchestratorProjectPurgePlan(database: Database): PurgeStep[] {
         blockingChildren.set(parent, blockingChildren.get(parent)! - 1)
     }
   }
-  steps.splice(0, steps.length, ...ordered)
+  return ordered
+}
+
+export function orchestratorProjectPurgePlan(database: Database): PurgeStep[] {
+  const names = tables(database)
+  const keys = foreignKeys(database, names)
+  const memo = new Map<string, string | null>()
+  const steps: PurgeStep[] = names.flatMap((table) => {
+    if (table === 'project' || table === 'outbox' || LOCAL_CATALOGUE_TABLES.has(table)) return []
+    const predicate = projectPredicate(table, keys, memo)
+    return predicate ? [{ table, predicate, key: 'record-id' as const }] : []
+  })
+  steps.splice(0, steps.length, ...orderPurgeSteps(steps, keys))
   for (const table of LOCAL_CATALOGUE_TABLES) {
     if (!names.includes(table)) continue
     const columns = database

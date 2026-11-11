@@ -163,7 +163,7 @@ const GLOBAL_SUBSTITUTIONS: Readonly<Record<string, GlobalSubstitution>> = {
 const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
   ...exempt(
     'orchestrator/src/project/project-purge-local.ts',
-    ['8af00ad0d221eb05', 'f5ab4b5264982dab', 'acac8c479e5fa140'],
+    ['8af00ad0d221eb05', 'f5ab4b5264982dab', 'acac8c479e5fa140', 'b4bbdd9fcdf6e472'],
     'project purge quotes identifiers enumerated from the same live SQLite schema',
   ),
   ...exempt(

@@ -39,7 +39,7 @@ test('orchestrator purge removes a populated project without touching its siblin
   const database = new Database(':memory:')
   applyMigrations(database)
   database.exec('PRAGMA foreign_keys=ON')
-  const runsDirectory = mkdtempSync(join(tmpdir(), 'bottega-project-purge-'))
+  const runsDirectory = mkdtempSync(join(tmpdir(), 'project-purge-'))
   try {
     database
       .query('INSERT INTO project(record_id,name,path) VALUES (?,?,?)')
@@ -172,14 +172,12 @@ test('orchestrator purge removes a populated project without touching its siblin
       'task-sibling',
       'flow-sibling',
     )
-    database.query('UPDATE task_flow SET open_stage_cursor_record_id=? WHERE record_id=?').run(
-      'cursor-target',
-      'flow-target',
-    )
-    database.query('UPDATE task_flow SET open_stage_cursor_record_id=? WHERE record_id=?').run(
-      'cursor-sibling',
-      'flow-sibling',
-    )
+    database
+      .query('UPDATE task_flow SET open_stage_cursor_record_id=? WHERE record_id=?')
+      .run('cursor-target', 'flow-target')
+    database
+      .query('UPDATE task_flow SET open_stage_cursor_record_id=? WHERE record_id=?')
+      .run('cursor-sibling', 'flow-sibling')
 
     const insertLanding = database.query(
       `INSERT INTO landing(record_id,project,project_record_id,branch,status,started_at,finished_at)
@@ -277,7 +275,8 @@ test('orchestrator purge removes a populated project without touching its siblin
       ['landing', 'landing-target'],
       ['board_message', 'board-target'],
       ['board_reach_delivery', 'reach-target'],
-    ]) expect(database.query(`SELECT 1 FROM ${table} WHERE record_id=?`).get(id)).toBeNull()
+    ] as const)
+      expect(database.query(`SELECT 1 FROM ${table} WHERE record_id=?`).get(id)).toBeNull()
     for (const [table, id] of [
       ['run', 'run-sibling'],
       ['score', 'score-sibling'],
@@ -293,17 +292,28 @@ test('orchestrator purge removes a populated project without touching its siblin
       ['landing', 'landing-sibling'],
       ['board_message', 'board-sibling'],
       ['board_reach_delivery', 'reach-sibling'],
-    ]) expect(database.query(`SELECT 1 FROM ${table} WHERE record_id=?`).get(id)).not.toBeNull()
-    expect(database.query("SELECT 1 FROM port_ref WHERE record_id='port-target-hosted'").get()).not.toBeNull()
-    expect(database.query("SELECT 1 FROM port_ref WHERE record_id='port-target-local'").get()).toBeNull()
-    expect(database.query("SELECT 1 FROM port_ref WHERE record_id='port-sibling-local'").get()).not.toBeNull()
-    expect(database.query('SELECT 1 FROM main_stack_activity WHERE project_record_id=?').get(TARGET)).toBeNull()
+    ] as const)
+      expect(database.query(`SELECT 1 FROM ${table} WHERE record_id=?`).get(id)).not.toBeNull()
+    expect(
+      database.query("SELECT 1 FROM port_ref WHERE record_id='port-target-hosted'").get(),
+    ).not.toBeNull()
+    expect(
+      database.query("SELECT 1 FROM port_ref WHERE record_id='port-target-local'").get(),
+    ).toBeNull()
+    expect(
+      database.query("SELECT 1 FROM port_ref WHERE record_id='port-sibling-local'").get(),
+    ).not.toBeNull()
+    expect(
+      database.query('SELECT 1 FROM main_stack_activity WHERE project_record_id=?').get(TARGET),
+    ).toBeNull()
     expect(
       database.query('SELECT 1 FROM main_stack_activity WHERE project_record_id=?').get(SIBLING),
     ).not.toBeNull()
     expect(database.query("SELECT 1 FROM outbox WHERE row_id='pending-target'").get()).toBeNull()
     expect(database.query("SELECT 1 FROM outbox WHERE row_id='synced-target'").get()).not.toBeNull()
-    expect(database.query("SELECT 1 FROM outbox WHERE row_id='pending-sibling'").get()).not.toBeNull()
+    expect(
+      database.query("SELECT 1 FROM outbox WHERE row_id='pending-sibling'").get(),
+    ).not.toBeNull()
     expect(existsSync(join(runsDirectory, 'run-target'))).toBeFalse()
     expect(existsSync(join(runsDirectory, 'run-target-missing-folder'))).toBeFalse()
     expect(existsSync(join(runsDirectory, 'run-sibling'))).toBeTrue()
