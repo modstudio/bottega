@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { parseNoDestinationWriteReport } from './record-no-destination-write-contract.ts'
 import { createNoDestinationWriteCounter } from './record-no-destination-write-counter.ts'
 
 const emptyReport = async () => ({
@@ -34,4 +35,13 @@ test('a failed insert is counted only for reports that include its space', async
   ).resolves.toBeUndefined()
   expect((await counter.read(['space-a'], emptyReport)).unrecorded).toBe(1)
   expect((await counter.read(['space-b'], emptyReport)).unrecorded).toBe(0)
+})
+
+test('the report parser refuses the process-local shape with a deployment remedy', () => {
+  expect(() =>
+    parseNoDestinationWriteReport(
+      { processStartedAt: '2026-11-11T00:00:00.000Z', counts: [] },
+      'hosted API',
+    ),
+  ).toThrow('deploy the current hosted API and hub, then retry')
 })

@@ -4,13 +4,13 @@ import { fileURLToPath } from 'node:url'
 import { PGlite, type Transaction } from '@electric-sql/pglite'
 import type { SQL } from 'bun'
 import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
+import { migrationSessionStatements } from './record/migration-session.ts'
+import { RECORD_ACTOR_ROLE } from './record/schema.ts'
 import { createNoDestinationWriteCounter } from './record-no-destination-write-counter.ts'
 import {
   readNoDestinationWrites,
   recordNoDestinationWrite,
 } from './record-no-destination-write-store.ts'
-import { migrationSessionStatements } from './record/migration-session.ts'
-import { RECORD_ACTOR_ROLE } from './record/schema.ts'
 
 const spaceA = '01990000-0000-7000-8000-000000009101'
 const spaceB = '01990000-0000-7000-8000-000000009102'

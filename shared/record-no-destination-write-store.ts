@@ -2,12 +2,12 @@
 /** Persists and summarizes destination-less write telemetry under record tenancy. */
 
 import type { SQL } from 'bun'
+import { newRecordId } from './record/schema.ts'
+import { bindTenant, type TenantPrincipal } from './record/tenant.ts'
 import type {
   NoDestinationWrite,
   NoDestinationWriteStoreReport,
 } from './record-no-destination-write-contract.ts'
-import { newRecordId } from './record/schema.ts'
-import { bindTenant, type TenantPrincipal } from './record/tenant.ts'
 
 const rows = <T>(value: unknown) => value as T[]
 

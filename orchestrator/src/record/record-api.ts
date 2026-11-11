@@ -100,10 +100,6 @@ import type {
 import { runsWindowQuery } from './record-runs-window-query.ts'
 import { type RecordSnapshot, SNAPSHOT_KINDS, type SnapshotKind } from './record-snapshots.ts'
 import type { RecordScore } from './record-verdicts.ts'
-import {
-  createNoDestinationWriteCounter,
-  type NoDestinationWriteCounter,
-} from '../../../shared/record-no-destination-write-counter.ts'
 
 export const SNAPSHOT_MAX_BYTES = 1024 * 1024
 
@@ -123,7 +119,7 @@ type RecordApiDeps = RecordSessionRouteDeps &
   RecordSettingsRouteDeps & {
     clientAddresses: RecordClientAddresses
     recordUrl: string
-    noDestinationWriteCounter?: NoDestinationWriteCounter
+    noDestinationWriteCounter?: Parameters<typeof registerRecordWriteTelemetry>[1]['counter']
     allowedOrigins?: string[]
     auth: { handler(request: Request): Response | Promise<Response> }
     readSession(headers: Headers): Promise<RecordIdentity | null>
@@ -298,12 +294,12 @@ function registerRecordIdentityMiddleware(app: Hono<ApiEnvironment>, deps: Deps)
   })
 }
 
+function writeTelemetryDeps(deps: Deps) {
+  return { recordUrl: deps.recordUrl, counter: deps.noDestinationWriteCounter }
+}
+
 export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   const app = new Hono<ApiEnvironment>()
-  const writeTelemetry = {
-    recordUrl: deps.recordUrl,
-    counter: deps.noDestinationWriteCounter ?? createNoDestinationWriteCounter(),
-  }
   app.onError((error, context) => {
     const refusal = renderRecordApiRefusal(context, error)
     if (refusal) return refusal
@@ -319,7 +315,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   registerPublicDocRoutes(app, deps)
   registerRecordIdentityMiddleware(app, deps)
   // The report route must follow the identity middleware that authenticates it.
-  registerRecordWriteTelemetry(app, writeTelemetry)
+  registerRecordWriteTelemetry(app, writeTelemetryDeps(deps))
   registerRecordIdentityRoutes(app, deps)
   registerRecordSessionRoutes(app, deps)
   registerRecordRequestSpace(app)

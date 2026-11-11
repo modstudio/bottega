@@ -3,15 +3,18 @@
 
 import type { Context, Hono } from 'hono'
 import { NO_DESTINATION_WRITES_ROUTE } from '../../../shared/record-no-destination-write-contract.ts'
-import type { NoDestinationWriteCounter } from '../../../shared/record-no-destination-write-counter.ts'
+import {
+  createNoDestinationWriteCounter,
+  type NoDestinationWriteCounter,
+} from '../../../shared/record-no-destination-write-counter.ts'
 import {
   readNoDestinationWrites,
   recordNoDestinationWrite,
 } from '../../../shared/record-no-destination-write-store.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
-import { recordPool } from './record-pool.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { destinationlessWrite } from './record-no-destination-write-decision.ts'
+import { recordPool } from './record-pool.ts'
 
 export type RecordWriteTelemetryEnvironment = {
   Variables: {
@@ -24,12 +27,26 @@ export type RecordWriteTelemetryEnvironment = {
 
 export type RecordWriteTelemetryContext = Context<RecordWriteTelemetryEnvironment>
 
+const counters = new Map<string, NoDestinationWriteCounter>()
+
+function counterFor(recordUrl: string): NoDestinationWriteCounter {
+  const existing = counters.get(recordUrl)
+  if (existing) return existing
+  const counter = createNoDestinationWriteCounter()
+  counters.set(recordUrl, counter)
+  return counter
+}
+
 export function registerRecordWriteTelemetry(
   app: Hono<RecordWriteTelemetryEnvironment>,
-  deps: { recordUrl: string; counter: NoDestinationWriteCounter },
+  deps: { recordUrl: string; counter?: NoDestinationWriteCounter },
 ): void {
+  const writeTelemetry = {
+    recordUrl: deps.recordUrl,
+    counter: deps.counter ?? counterFor(deps.recordUrl),
+  }
   app.use('/v1/*', async (context, next) => {
-    context.set('writeTelemetry', deps)
+    context.set('writeTelemetry', writeTelemetry)
     await next()
   })
   app.get(NO_DESTINATION_WRITES_ROUTE, async (context) => {
@@ -38,7 +55,7 @@ export function registerRecordWriteTelemetry(
       (membership) => membership.spaceId,
     )
     return context.json(
-      await deps.counter.read(spaceIds, () =>
+      await writeTelemetry.counter.read(spaceIds, () =>
         readNoDestinationWrites(recordPool(deps.recordUrl), {
           userId: identity.user.id,
           spaceId: identity.activeSpaceId,
