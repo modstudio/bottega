@@ -4,7 +4,9 @@ import type { Database } from 'bun:sqlite'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { writeTransaction } from '../database/db.ts'
+import { projectByName } from '../project/projects.ts'
 import { RecordApiRequestError, recordApiClient } from '../record/record-api-client.ts'
+import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import {
   type HostedTaskFlow,
   RECORD_TASK_FLOW_NOT_FOUND_MESSAGE,
@@ -15,7 +17,6 @@ import {
   decideTaskFlowReadThrough,
   type TaskFlowReadStatus,
 } from './task-flow-decision.ts'
-import { resolveTaskFlowDestination } from './task-flow-hosted-destination.ts'
 
 export type { TaskFlowReadStatus } from './task-flow-decision.ts'
 
@@ -143,7 +144,16 @@ export async function readThroughTaskFlow(
   const configured = recordApiConfigured(process.env)
   try {
     const client = recordApiClient()
-    const destination = await resolveTaskFlowDestination(input.project, database, client)
+    const project = projectByName(input.project, database)
+    if (!project)
+      throw new Error(`project ${input.project} is not registered; register it, then retry`)
+    const destination = {
+      destinationSpaceId: await requireProjectRecordDestination(
+        project.name,
+        project.settings,
+        client,
+      ),
+    }
     const hosted = await client.readTaskFlow!({ taskKey: input.taskKey }, destination)
     const local = database
       .query<{ flow_revision: number; stage_revision: number | null }, [string]>(

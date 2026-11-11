@@ -13,9 +13,12 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 export const recordInvariantModules = [
   module('orchestrator/src/record/record-task-flow-write-contract.ts', ['uuid', 'zod']),
   module('orchestrator/src/record/record-task-flow-write-client.ts', [
+    'bun:sqlite',
+    '../project/projects.ts',
     './record-api-client.ts',
     './record-api-client-paths.ts',
     './record-api-client-task-flow.ts',
+    './record-project-destination-client.ts',
     './record-task-flow-write-contract.ts',
     './record-write-authority.ts',
   ]),

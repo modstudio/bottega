@@ -8,10 +8,13 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, writeTransaction } from '../database/db.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
-import { writeHostedTaskFlow } from '../record/record-task-flow-write-client.ts'
+import {
+  type TaskFlowWriteTarget,
+  taskFlowWriteTarget,
+  writeHostedTaskFlow,
+} from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
-import { resolveTaskFlowDestination } from './task-flow-hosted-destination.ts'
 import { abandonSelectedWorkflowCursorForClose, nextWorkflowStep } from './workflow-cursor.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import {
@@ -121,7 +124,7 @@ async function recordCopy(
   reference: string,
   database: Database,
   copiedAt: string,
-  destination: Awaited<ReturnType<typeof resolveTaskFlowDestination>>,
+  target: TaskFlowWriteTarget,
   client?: RecordTaskFlowClient,
 ): Promise<void> {
   const id = taskFlowRequestId('copy-text', [cursorId, textId, reference])
@@ -137,7 +140,7 @@ async function recordCopy(
         copiedAt,
       },
     },
-    destination,
+    target,
     client,
   )
   writeTransaction(() => {
@@ -180,7 +183,7 @@ export async function copyWorkflowTextForCursor(
   const rows = uncopiedRows(cursor.recordId, database)
   if (!cursor.taskRecordId || rows.length === 0)
     return { cursor: cursor.number, copied: [], uncopied: [], unsupported: null }
-  const destination = await resolveTaskFlowDestination(cursor.project, database, client)
+  const target = taskFlowWriteTarget(cursor.project, database)
   try {
     const task = (await taskReader(cursor.project)).find(
       (candidate) => candidate.record_id === cursor.taskRecordId,
@@ -207,7 +210,7 @@ export async function copyWorkflowTextForCursor(
           reference,
           database,
           row.createdAt,
-          destination,
+          target,
           client,
         )
         copied.push({ id: row.id, documentReference: reference, reused: Boolean(found) })

@@ -12,10 +12,10 @@ import {
   awaitWorkflowRuling,
   composeWorkflowWithCursor,
   nextWorkflowStep,
-  ruleWorkflow,
 } from './workflow-cursor.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { cursorName } from './workflow-cursor-format.ts'
+import { ruleWorkflow } from './workflow-cursor-ruling.ts'
 import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
 import {
   selectWorkflowCursorForClose,

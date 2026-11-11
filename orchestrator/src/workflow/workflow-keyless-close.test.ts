@@ -7,7 +7,8 @@ import {
   promoteStepCatalogueLocal,
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
-import { composeWorkflowWithCursor, getWorkflowStepWithCursor } from './workflow-cursor.ts'
+import { composeWorkflowWithCursor } from './workflow-cursor.ts'
+import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
 import {
   selectAndNextWorkflowStep as nextWorkflowStep,
   testPorts,

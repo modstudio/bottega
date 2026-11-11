@@ -6,8 +6,9 @@ import {
   type TaskFlowIntentInput,
   taskFlowRequestId,
 } from '../record/record-task-flow-write-contract.ts'
-import { awaitWorkflowRuling, composeWorkflowWithCursor, ruleWorkflow } from './workflow-cursor.ts'
+import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
+import { ruleWorkflow } from './workflow-cursor-ruling.ts'
 import {
   abandonCursor,
   context,
@@ -323,6 +324,80 @@ test('advance, await, rule, and abandon call the record before caching returned 
   expect(d.query('SELECT revision FROM task_flow WHERE record_id=?').get(flowId)).toEqual({
     revision: 8,
   })
+})
+
+test("abandoning a stage that is not its flow's open stage preserves the pointer", async () => {
+  const d = database()
+  let number = 40
+  let abandoned: TaskFlowIntentInput<'abandon'> | undefined
+  const taskFlowClient: RecordTaskFlowClient = {
+    ...projectIdentityClient,
+    composeTaskFlow: async (input) => ({
+      stage: { id: input.stageInsert!.id, number: number++ },
+      revisions: {
+        [input.stageInsert!.id]: 1,
+        [input.flowInsert?.id ?? input.flowChange!.id]: 1,
+      },
+    }),
+    abandonTaskFlow: async (input) => {
+      abandoned = input
+      return { revisions: { [input.stage.id]: 2 } }
+    },
+  }
+  const firstContext = { ...context, taskRecordId: 'task-DEV-FIRST', taskFlowClient }
+  const secondContext = { ...context, taskRecordId: 'task-DEV-SECOND', taskFlowClient }
+  const firstArgs = { key: 'DEV-FIRST', branch: 'first', worktree: '/tmp/first' }
+  const secondArgs = { key: 'DEV-SECOND', branch: 'second', worktree: '/tmp/second' }
+  const first = await composeWorkflowWithCursor(
+    'flow',
+    'fixture',
+    'default',
+    firstArgs,
+    firstContext,
+    d,
+    {},
+    {},
+  )
+  const second = await composeWorkflowWithCursor(
+    'flow',
+    'fixture',
+    'default',
+    secondArgs,
+    secondContext,
+    d,
+    {},
+    {},
+  )
+  const firstStage = d
+    .query<{ record_id: string; task_flow_record_id: string }, [number]>(
+      'SELECT record_id,task_flow_record_id FROM workflow_cursor WHERE number=?',
+    )
+    .get(first.cursor!.id)!
+  const secondStageId = d
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM workflow_cursor WHERE number=?')
+    .get(second.cursor!.id)!.record_id
+  d.query('UPDATE task_flow SET open_stage_cursor_record_id=? WHERE record_id=?').run(
+    secondStageId,
+    firstStage.task_flow_record_id,
+  )
+
+  await abandonCursor(
+    'flow',
+    'fixture',
+    'default',
+    firstArgs,
+    'superseded stage',
+    firstContext,
+    d,
+    first.cursor!.id,
+  )
+
+  expect(abandoned?.flow).toBeUndefined()
+  expect(
+    d
+      .query('SELECT open_stage_cursor_record_id,revision FROM task_flow WHERE record_id=?')
+      .get(firstStage.task_flow_record_id),
+  ).toEqual({ open_stage_cursor_record_id: secondStageId, revision: 1 })
 })
 
 test('adoption calls adopt then stage-update and caches the hosted flow identity', async () => {

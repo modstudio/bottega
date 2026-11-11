@@ -9,6 +9,7 @@ import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { workflowTaskBindingCommand } from './workflow-cursor-format.ts'
 import { hasClosedStep } from './workflow-cursor-trail.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
+import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
 import { type HubTaskReader, resolveHubTaskReference } from './workflow-task-reference.ts'
 import { resolveWorkflowMode, showResolvedWorkflow } from './workflows.ts'
 
@@ -70,6 +71,13 @@ export function findWorkflowCursor(
     context.taskRecordId,
     context.taskStatusCategory,
   )
+}
+
+/** Selects the complete persisted cursor shape used by mutation services. */
+export function findWorkflowCloseCursor(
+  ...args: Parameters<typeof findWorkflowCursor>
+): WorkflowCloseCursor | null {
+  return findWorkflowCursor(...args) as WorkflowCloseCursor | null
 }
 
 export async function resolveWorkflowCursorContext(

@@ -3,7 +3,10 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { notifyWaitingItem } from '../operator/operator-waiting.ts'
 import { machineId } from '../record/machine-identity.ts'
-import { writeHostedTaskFlow } from '../record/record-task-flow-write-client.ts'
+import {
+  taskFlowWriteTarget,
+  writeHostedTaskFlow,
+} from '../record/record-task-flow-write-client.ts'
 import {
   type TaskFlowIntentInput,
   taskFlowRequestId,
@@ -11,7 +14,6 @@ import {
 import { upsertWorkflowQuestion } from '../run/question-mutation.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
 import { decideWorkflowTakeover, workflowTakeoverNotice } from './task-flow-decision.ts'
-import { resolveTaskFlowDestination } from './task-flow-hosted-destination.ts'
 import { type CommitCountPort, readCommitsPastLanding } from './workflow-compose-branch.ts'
 import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
 import { workflowKeyOf as keyOf, resolveCursorArguments } from './workflow-cursor-arguments.ts'
@@ -26,12 +28,12 @@ import {
 } from './workflow-cursor-result.ts'
 import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
 import {
-  findWorkflowCursor,
+  findWorkflowCloseCursor,
   LISTED_CURSOR_COLUMNS,
   selectWorkflowCursorForClose,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
-import { cursorComposition, getWorkflowStepWithCursorImpl } from './workflow-cursor-serve.ts'
+import { cursorComposition } from './workflow-cursor-serve.ts'
 import {
   type ClosedStep,
   type CursorTrailEntry,
@@ -73,12 +75,6 @@ import { deleteWorkflowTextLocally, workflowTextDeletionIds } from './workflow-t
 import { composeWorkflow } from './workflows.ts'
 
 type CursorRow = WorkflowCloseCursor
-
-export { ruleWorkflow } from './workflow-cursor-ruling.ts'
-export { cursorComposition } from './workflow-cursor-serve.ts'
-
-const findCursor = (...args: Parameters<typeof findWorkflowCursor>): CursorRow | null =>
-  findWorkflowCursor(...args) as CursorRow | null
 
 /** Re-reads, inside the close transaction, a cursor selected before its text copy. */
 function reselectCursor(
@@ -140,7 +136,7 @@ export async function composeWorkflowWithCursor(
   if (!composition.mode || composition.needs.arguments) return { ...composition, cursor: null }
   await linkResolvedWorkflowTask(project, context, d)
   const existing = keyOf(composition.arguments)
-    ? findCursor(
+    ? findWorkflowCloseCursor(
         composition.project,
         composition.workflow.slug,
         composition.mode!.slug,
@@ -153,11 +149,6 @@ export async function composeWorkflowWithCursor(
   let row: CursorRow
   if (existing && start === 'reuse') {
     const resolved = resolveCursorArguments(existing, args, d, true)
-    const destination = await resolveTaskFlowDestination(
-      existing.project,
-      d,
-      context.taskFlowClient,
-    )
     const hosted = await writeHostedTaskFlow(
       'stage-update',
       {
@@ -178,7 +169,7 @@ export async function composeWorkflowWithCursor(
           },
         ],
       },
-      destination,
+      taskFlowWriteTarget(existing.project, d),
       context.taskFlowClient,
     )
     writeTransaction(() => {
@@ -215,36 +206,6 @@ export async function composeWorkflowWithCursor(
       previousSession: start === 'reuse' ? takenOverFrom(existing, context) : null,
     } satisfies CursorSummary,
   }
-}
-
-export async function getWorkflowStepWithCursor(
-  slug: string,
-  project: string,
-  stepSlug: string,
-  args: Record<string, string>,
-  mode: string,
-  context: WorkflowCursorContext,
-  d: Database = writableDb(),
-  live: LiveCursorAutonomy,
-  cursor?: number,
-  commitCount: CommitCountPort = readCommitsPastLanding,
-) {
-  const autonomy = live.resolution
-  return withLinkedWorkflowTask(project, context, d, () =>
-    getWorkflowStepWithCursorImpl(
-      slug,
-      project,
-      stepSlug,
-      args,
-      mode,
-      context,
-      d,
-      autonomy,
-      cursor,
-      live,
-      commitCount,
-    ),
-  )
 }
 
 function applyFloorDecision(
@@ -494,17 +455,20 @@ async function persistWorkflowAdvance(
   const flow =
     finishing && row.task_flow_record_id
       ? d
-          .query<{ record_id: string; revision: number }, [string]>(
-            'SELECT record_id,revision FROM task_flow WHERE record_id=?',
+          .query<
+            { record_id: string; revision: number; open_stage_cursor_record_id: string | null },
+            [string]
+          >(
+            'SELECT record_id,revision,open_stage_cursor_record_id FROM task_flow WHERE record_id=?',
           )
           .get(row.task_flow_record_id)
       : null
+  const closingFlow = flow?.open_stage_cursor_record_id === row.record_id ? flow : null
   const { parts, obligationInserts, obligationUpdates } = advanceRecordRows(
     row,
-    flow,
+    closingFlow,
     obligationPlan,
   )
-  const destination = await resolveTaskFlowDestination(row.project, d, context.taskFlowClient)
   const hosted = await writeHostedTaskFlow(
     'advance',
     {
@@ -525,11 +489,11 @@ async function persistWorkflowAdvance(
           updatedAt: at,
         },
       },
-      ...(flow
+      ...(closingFlow
         ? {
             flow: {
-              id: flow.record_id,
-              expectedRevision: flow.revision,
+              id: closingFlow.record_id,
+              expectedRevision: closingFlow.revision,
               values: {
                 openStageRecordId: null,
                 updatedMachineId: machineId(),
@@ -542,7 +506,7 @@ async function persistWorkflowAdvance(
       obligationUpdates,
       deleteTextIds,
     },
-    destination,
+    taskFlowWriteTarget(row.project, d),
     context.taskFlowClient,
   )
   applyWorkflowAdvanceLocally({
@@ -555,7 +519,7 @@ async function persistWorkflowAdvance(
     takeoverFromMachineId,
     finishing,
     next,
-    flow,
+    flow: closingFlow,
     obligationInserts,
     obligationUpdates,
     deleteTextIds,
@@ -863,7 +827,7 @@ async function awaitWorkflowRulingImpl(
   cursor?: number,
 ): Promise<{ summary: CursorSummary & { questionId: number }; cursorId: string }> {
   if (!question?.trim()) throw new Error('--question is required')
-  const row = findCursor(project, slug, mode, args, context, d, cursor)
+  const row = findWorkflowCloseCursor(project, slug, mode, args, context, d, cursor)
   if (!row)
     throw new Error(
       `${cursorName(slug, mode, keyOf(args))} has no cursor; compose the workflow first`,
@@ -871,7 +835,6 @@ async function awaitWorkflowRulingImpl(
   refuseTerminalCursor(row)
   const resolved = resolveCursorArguments(row, args, d)
   const at = resolved.updatedAt
-  const destination = await resolveTaskFlowDestination(row.project, d, context.taskFlowClient)
   const hosted = await writeHostedTaskFlow(
     'await-ruling',
     {
@@ -889,7 +852,7 @@ async function awaitWorkflowRulingImpl(
         },
       },
     },
-    destination,
+    taskFlowWriteTarget(row.project, d),
     context.taskFlowClient,
   )
   return writeTransaction(() => {

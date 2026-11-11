@@ -3,7 +3,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
-import { applyCursorArguments } from './workflow-cursor-arguments.ts'
+import { resolveCursorArguments } from './workflow-cursor-arguments.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
@@ -75,9 +75,8 @@ test.each([
       step_slug: 'lens',
     }
 
-    expect(applyCursorArguments(row, { key: 'DEV-1499', branch: 'after' }, database())).toEqual({
-      key: 'DEV-1499',
-      branch: 'after',
-    })
+    expect(
+      resolveCursorArguments(row, { key: 'DEV-1499', branch: 'after' }, database()).args,
+    ).toEqual({ key: 'DEV-1499', branch: 'after' })
   },
 )

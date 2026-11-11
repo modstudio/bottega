@@ -4,12 +4,14 @@
 import type { Database } from 'bun:sqlite'
 import { nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
-import { writeHostedTaskFlow } from '../record/record-task-flow-write-client.ts'
+import {
+  taskFlowWriteTarget,
+  writeHostedTaskFlow,
+} from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import type { AutonomyResolution, LiveCursorAutonomy } from './autonomy.ts'
-import { resolveTaskFlowDestination } from './task-flow-hosted-destination.ts'
 import { type CommitCountPort, readCommitsPastLanding } from './workflow-compose-branch.ts'
-import { applyCursorArguments, workflowKeyOf } from './workflow-cursor-arguments.ts'
+import { resolveCursorArguments, workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { insertWorkflowCursor } from './workflow-cursor-compose.ts'
 import { formatCursorOpened, formatCursorResumed } from './workflow-cursor-format.ts'
@@ -17,11 +19,12 @@ import { closeOpenWorkflowQuestion } from './workflow-cursor-mutation.ts'
 import { refuseInvalidServe } from './workflow-cursor-result.ts'
 import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
 import {
-  findWorkflowCursor,
+  findWorkflowCloseCursor,
   type SelectableCursorRow,
   selectUntouchedKeylessWorkflowCursor,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
+import { withLinkedWorkflowTask } from './workflow-task-linking.ts'
 import { type CursorTrailEntry, isClosedStep } from './workflow-cursor-trail.ts'
 import {
   cursorValue,
@@ -35,8 +38,6 @@ import { withWorkflowTextFacts } from './workflow-text.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
 type CursorRow = WorkflowCloseCursor
-const findCursor = (...args: Parameters<typeof findWorkflowCursor>): CursorRow | null =>
-  findWorkflowCursor(...args) as CursorRow | null
 
 export function cursorComposition(
   row: SelectableCursorRow,
@@ -73,7 +74,9 @@ async function prepareStepServe(
   commitCount: CommitCountPort = readCommitsPastLanding,
 ) {
   const handled =
-    cursor === undefined ? null : findCursor(project, slug, mode, args, context, database, cursor)
+    cursor === undefined
+      ? null
+      : findWorkflowCloseCursor(project, slug, mode, args, context, database, cursor)
   const preliminary =
     handled && decideCursorStart(handled.state) === 'reuse'
       ? cursorComposition(handled, database, live)
@@ -91,12 +94,18 @@ async function prepareStepServe(
         context.session,
         database,
       ) as CursorRow | null)
-    : (handled ?? findCursor(project, slug, mode, args, context, database, cursor))
+    : (handled ??
+      findWorkflowCloseCursor(project, slug, mode, args, context, database, cursor))
   let row = handled ?? candidate
   const opensCursor = row === null
   const startDecision = decideCursorStart(row?.state ?? null)
-  if (row && startDecision === 'reuse') applyCursorArguments(row, args, database)
-  const input = decideCursorCompositionInput(row, args, mode)
+  const resolvedArguments =
+    row && startDecision === 'reuse' ? resolveCursorArguments(row, args, database) : null
+  const compositionRow =
+    row && resolvedArguments
+      ? { ...row, args: resolvedArguments.encoded, closed: resolvedArguments.closed }
+      : row
+  const input = decideCursorCompositionInput(compositionRow, args, mode)
   const composition = composeWorkflow(
     slug,
     project,
@@ -114,7 +123,7 @@ async function prepareStepServe(
   const requested = composition.steps[index]!
   if (index === 0 && startDecision === 'retire')
     row = await insertWorkflowCursor(composition, context, database, autonomy, commitCount)
-  return { row, opensCursor, composition, requested, index, input }
+  return { row, opensCursor, composition, requested, index, input, resolvedArguments }
 }
 
 async function applyServeTransition(
@@ -122,14 +131,13 @@ async function applyServeTransition(
   decision: Extract<ReturnType<typeof decideCursorTransition>, { action: 'serve' }>,
   context: WorkflowCursorContext,
   database: Database,
+  resolvedArguments: ReturnType<typeof resolveCursorArguments> | null,
 ): Promise<void> {
-  if (!decision.move && !decision.resume) return
+  const argumentsChanged =
+    resolvedArguments !== null &&
+    (resolvedArguments.encoded !== row.args || resolvedArguments.closed !== row.closed)
+  if (!decision.move && !decision.resume && !argumentsChanged) return
   const at = nowIso()
-  const destination = await resolveTaskFlowDestination(
-    row.project,
-    database,
-    context.taskFlowClient,
-  )
   const hosted = await writeHostedTaskFlow(
     'stage-update',
     {
@@ -139,18 +147,28 @@ async function applyServeTransition(
           id: row.record_id,
           expectedRevision: row.revision,
           values: {
-            activeOrdinal: decision.ordinal,
-            activeSlug: decision.slug,
-            state: 'running',
-            question: null,
-            sessionId: context.session ?? row.session_id,
-            lastAdvancedMachineId: machineId(),
+            ...(decision.move || decision.resume
+              ? {
+                  activeOrdinal: decision.ordinal,
+                  activeSlug: decision.slug,
+                  state: 'running' as const,
+                  question: null,
+                  sessionId: context.session ?? row.session_id,
+                  lastAdvancedMachineId: machineId(),
+                }
+              : {}),
+            ...(argumentsChanged
+              ? {
+                  arguments: resolvedArguments.args,
+                  closedStepNotes: JSON.parse(resolvedArguments.closed) as unknown[],
+                }
+              : {}),
             updatedAt: at,
           },
         },
       ],
     },
-    destination,
+    taskFlowWriteTarget(row.project, database),
     context.taskFlowClient,
   )
   writeTransaction(() => {
@@ -163,18 +181,22 @@ async function applyServeTransition(
       throw new Error(
         `workflow cursor ${row.id} changed while its step was served; rerun the command`,
       )
-    if (row.state === 'awaiting-ruling')
+    if ((decision.move || decision.resume) && row.state === 'awaiting-ruling')
       closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, database)
     const revision = hosted?.revisions[row.record_id] ?? row.revision + 1
     database
       .query(
-        `UPDATE workflow_cursor SET ordinal=?,step_slug=?,state='running',question=NULL,
+        `UPDATE workflow_cursor SET args=?,closed=?,ordinal=?,step_slug=?,state=?,question=?,
          session_id=COALESCE(?,session_id),updated_at=?,opened_machine_id=COALESCE(opened_machine_id,?),
          last_advanced_machine_id=?,revision=? WHERE record_id=?`,
       )
       .run(
-        decision.ordinal,
-        decision.slug,
+        resolvedArguments?.encoded ?? row.args,
+        resolvedArguments?.closed ?? row.closed,
+        decision.move || decision.resume ? decision.ordinal : row.ordinal,
+        decision.move || decision.resume ? decision.slug : row.step_slug,
+        decision.move || decision.resume ? 'running' : row.state,
+        decision.move || decision.resume ? null : row.question,
         context.session ?? null,
         at,
         machineId(),
@@ -183,13 +205,19 @@ async function applyServeTransition(
         row.record_id,
       )
     row.revision = revision
-    row.ordinal = decision.ordinal
-    row.step_slug = decision.slug
-    row.state = 'running'
+    if (resolvedArguments) {
+      row.args = resolvedArguments.encoded
+      row.closed = resolvedArguments.closed
+    }
+    if (decision.move || decision.resume) {
+      row.ordinal = decision.ordinal
+      row.step_slug = decision.slug
+      row.state = 'running'
+    }
   }, database)
 }
 
-export async function getWorkflowStepWithCursorImpl(
+async function serveWorkflowStepWithCursor(
   slug: string,
   project: string,
   stepSlug: string,
@@ -216,7 +244,7 @@ export async function getWorkflowStepWithCursorImpl(
     commitCount,
   )
   let { row } = prepared
-  const { opensCursor, composition, requested, index, input } = prepared
+  const { opensCursor, composition, requested, index, input, resolvedArguments } = prepared
   const decision = decideCursorTransition(
     row ? cursorValue(row.ordinal, row.step_slug, row.state) : null,
     { kind: 'serve', ordinal: index, slug: requested.slug },
@@ -224,7 +252,7 @@ export async function getWorkflowStepWithCursorImpl(
   refuseInvalidServe(decision, row, composition, slug, mode, args)
   if (decision.action !== 'serve') throw new Error('invalid serve transition')
   if (!row) row = await insertWorkflowCursor(composition, context, database, autonomy, commitCount)
-  await applyServeTransition(row, decision, context, database)
+  await applyServeTransition(row, decision, context, database, resolvedArguments)
   const served = withWorkflowTextFacts(
     getWorkflowStep(
       slug,
@@ -267,4 +295,33 @@ export async function getWorkflowStepWithCursorImpl(
     pass: stepPass(flow, composition.steps, decision.ordinal),
     notice: [openNotice, redirectNotice].filter(Boolean).join('\n'),
   }
+}
+
+export async function getWorkflowStepWithCursor(
+  slug: string,
+  project: string,
+  stepSlug: string,
+  args: Record<string, string>,
+  mode: string,
+  context: WorkflowCursorContext,
+  database: Database = writableDb(),
+  live: LiveCursorAutonomy,
+  cursor?: number,
+  commitCount: CommitCountPort = readCommitsPastLanding,
+) {
+  return withLinkedWorkflowTask(project, context, database, () =>
+    serveWorkflowStepWithCursor(
+      slug,
+      project,
+      stepSlug,
+      args,
+      mode,
+      context,
+      database,
+      live.resolution,
+      cursor,
+      live,
+      commitCount,
+    ),
+  )
 }

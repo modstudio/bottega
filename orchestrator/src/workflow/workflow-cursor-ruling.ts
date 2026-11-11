@@ -5,7 +5,10 @@ import type { Database } from 'bun:sqlite'
 import { nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
 import { machineId } from '../record/machine-identity.ts'
-import { writeHostedTaskFlow } from '../record/record-task-flow-write-client.ts'
+import {
+  taskFlowWriteTarget,
+  writeHostedTaskFlow,
+} from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import {
   answerWorkflowQuestion,
@@ -13,7 +16,6 @@ import {
 } from '../run/question-mutation.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { resolvedRulingPersonName } from '../run/ruling-attribution.ts'
-import { resolveTaskFlowDestination } from './task-flow-hosted-destination.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
@@ -84,11 +86,6 @@ export async function ruleWorkflow(
   const question = selectOpenWorkflowQuestion(row.record_id, database)
   if (!question)
     throw new Error(`${cursorName(slug, mode, row.workflow_key)} has no open question to rule on`)
-  const destination = await resolveTaskFlowDestination(
-    row.project,
-    database,
-    context.taskFlowClient,
-  )
   const hosted = await writeHostedTaskFlow(
     'stage-update',
     {
@@ -106,7 +103,7 @@ export async function ruleWorkflow(
         },
       ],
     },
-    destination,
+    taskFlowWriteTarget(row.project, database),
     context.taskFlowClient,
   )
   return applyWorkflowRulingLocally({

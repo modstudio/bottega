@@ -9,10 +9,10 @@ import {
 import {
   awaitWorkflowRuling,
   composeWorkflowWithCursor,
-  getWorkflowStepWithCursor,
-  ruleWorkflow,
 } from './workflow-cursor.ts'
 import { listWorkflowCursors } from './workflow-cursor-list.ts'
+import { ruleWorkflow } from './workflow-cursor-ruling.ts'
+import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
 import {
   abandonCursor,
   args,

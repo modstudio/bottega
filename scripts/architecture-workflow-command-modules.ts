@@ -12,15 +12,6 @@ const module = (file: string, allowed: string[]): WorkflowCommandModule => ({
 })
 
 export const workflowCommandModules: WorkflowCommandModule[] = [
-  module('orchestrator/src/workflow/task-flow-hosted-destination.ts', [
-    'bun:sqlite',
-    '../project/projects.ts',
-    '../record/record-api-client.ts',
-    '../record/record-api-client-paths.ts',
-    '../record/record-api-client-task-flow.ts',
-    '../record/record-project-destination-client.ts',
-    '../record/record-write-authority.ts',
-  ]),
   module('orchestrator/src/workflow/workflow-hosted-space.ts', ['bun:sqlite']),
   module('orchestrator/src/workflow/workflow-command-arguments.ts', [
     '../../../shared/brand.ts',
@@ -40,7 +31,6 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     '../record/record-api-client.ts',
     '../record/record-task-flow-contract.ts',
     './task-flow-decision.ts',
-    './task-flow-hosted-destination.ts',
     './task-flow.ts',
   ]),
   module('orchestrator/src/workflow/task-flow.ts', [
@@ -81,7 +71,6 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     './autonomy.ts',
     './task-flow.ts',
     './task-flow-decision.ts',
-    './task-flow-hosted-destination.ts',
     './workflow-compose-branch.ts',
     './workflow-cursor-arguments.ts',
     './workflow-cursor-autonomy.ts',
@@ -97,7 +86,6 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     '../record/record-task-flow-write-client.ts',
     '../record/record-task-flow-write-contract.ts',
     './autonomy.ts',
-    './task-flow-hosted-destination.ts',
     './workflow-compose-branch.ts',
     './workflow-cursor-arguments.ts',
     './workflow-cursor-autonomy.ts',
@@ -123,7 +111,6 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     '../run/question-mutation.ts',
     '../run/question-open.ts',
     '../run/ruling-attribution.ts',
-    './task-flow-hosted-destination.ts',
     './workflow-cursor-arguments.ts',
     './workflow-cursor-format.ts',
     './workflow-cursor-row.ts',

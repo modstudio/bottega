@@ -44,7 +44,8 @@ import {
   type LandingBranchPorts,
   workflowComposeBranchRefusal,
 } from '../workflow/workflow-compose-branch.ts'
-import { awaitWorkflowRuling, ruleWorkflow } from '../workflow/workflow-cursor.ts'
+import { awaitWorkflowRuling } from '../workflow/workflow-cursor.ts'
+import { ruleWorkflow } from '../workflow/workflow-cursor-ruling.ts'
 import {
   mcpWorkflowCursorContext,
   resolveMcpSelectedCursorContext,

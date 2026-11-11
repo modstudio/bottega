@@ -9,9 +9,10 @@ import {
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
 import { autonomyNoticeOutput } from './workflow-autonomy-output.ts'
-import { composeWorkflowWithCursor, getWorkflowStepWithCursor } from './workflow-cursor.ts'
+import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { combineCursorAutonomy, mapStoredAutonomyResolution } from './workflow-cursor-autonomy.ts'
 import { abandonCursor } from './workflow-cursor-test.fixture.ts'
+import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
 import { renderWorkflowStep } from './workflow-render.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'

@@ -2,7 +2,8 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { selectTaskFlowStage } from './task-flow.ts'
-import { awaitWorkflowRuling, composeWorkflowWithCursor, ruleWorkflow } from './workflow-cursor.ts'
+import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
+import { ruleWorkflow } from './workflow-cursor-ruling.ts'
 import {
   abandonCursor,
   database as cursorDatabase,

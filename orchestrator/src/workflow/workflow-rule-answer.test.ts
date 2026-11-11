@@ -5,7 +5,8 @@ import {
   promoteStepCatalogueLocal,
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
-import { awaitWorkflowRuling, composeWorkflowWithCursor, ruleWorkflow } from './workflow-cursor.ts'
+import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
+import { ruleWorkflow } from './workflow-cursor-ruling.ts'
 import { args, context, database } from './workflow-cursor-test.fixture.ts'
 import { decideWorkflowRuleAnswer } from './workflow-rule-answer.ts'
 

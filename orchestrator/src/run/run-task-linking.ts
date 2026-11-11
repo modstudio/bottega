@@ -78,18 +78,27 @@ type PendingLocalTaskLink = {
 }
 
 type LocalTaskLinkRow = { id: string; task_key: string; project: string }
-type LocalTaskLinkConfig = {
+type LocalTaskLinkConfigBase = {
   pendingSql: string
   linkedSql: string
+}
+type HostedFirstTaskLinkConfig = LocalTaskLinkConfigBase & {
+  regime: 'hosted-first'
   write(
     database: Database,
     update: PendingLocalTaskLink,
     taskFlowClient?: RecordTaskFlowClient,
-  ): unknown | Promise<unknown>
+  ): Promise<unknown>
 }
+type SynchronousTaskLinkConfig = LocalTaskLinkConfigBase & {
+  regime: 'synchronous'
+  write(database: Database, update: PendingLocalTaskLink): void
+}
+type LocalTaskLinkConfig = HostedFirstTaskLinkConfig | SynchronousTaskLinkConfig
 
 const LOCAL_TASK_LINKS = {
   workflow_cursor: {
+    regime: 'hosted-first',
     pendingSql: `SELECT c.record_id id,c.workflow_key task_key,p.name project
       FROM workflow_cursor c JOIN project p ON p.record_id=c.project_record_id
       WHERE c.task_record_id IS NULL AND c.workflow_key<>''`,
@@ -107,6 +116,7 @@ const LOCAL_TASK_LINKS = {
       ),
   },
   question: {
+    regime: 'synchronous',
     pendingSql: `SELECT q.record_id id,q.workflow_key task_key,p.name project
       FROM question q JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
       JOIN project p ON p.record_id=c.project_record_id
@@ -116,7 +126,7 @@ const LOCAL_TASK_LINKS = {
       JOIN project p ON p.record_id=c.project_record_id
       WHERE q.workflow_task_record_id IS NOT NULL`,
     write: (database, update) => {
-      return linkWorkflowQuestionsTaskReference(
+      linkWorkflowQuestionsTaskReference(
         {
           project: update.project,
           workflowKey: update.taskKey,
@@ -127,24 +137,26 @@ const LOCAL_TASK_LINKS = {
     },
   },
   port_ref: {
+    regime: 'synchronous',
     pendingSql: `SELECT r.record_id id,r.task_key,p.name project FROM port_ref r
       JOIN project p ON p.record_id=r.target_project_record_id WHERE r.task_record_id IS NULL`,
     linkedSql: `SELECT r.task_record_id,p.name project FROM port_ref r
       JOIN project p ON p.record_id=r.target_project_record_id WHERE r.task_record_id IS NOT NULL`,
     write: (database, update) => {
-      return database
+      database
         .query('UPDATE port_ref SET task_record_id=? WHERE record_id=? AND task_record_id IS NULL')
         .run(update.taskId, update.id)
     },
   },
   presence: {
+    regime: 'synchronous',
     pendingSql: `SELECT s.session_id id,s.current_task_key task_key,p.name project FROM presence s
       JOIN project p ON p.record_id=s.project_record_id
       WHERE s.current_task_record_id IS NULL AND s.current_task_key IS NOT NULL`,
     linkedSql: `SELECT s.current_task_record_id task_record_id,p.name project FROM presence s
       JOIN project p ON p.record_id=s.project_record_id WHERE s.current_task_record_id IS NOT NULL`,
     write: (database, update) => {
-      return database
+      database
         .query(
           'UPDATE presence SET current_task_record_id=? WHERE session_id=? AND current_task_record_id IS NULL',
         )
@@ -451,10 +463,14 @@ async function persistRunTaskLinks(
   pendingUpdates: readonly PendingLocalTaskLink[],
   taskFlowClient?: RecordTaskFlowClient,
 ): Promise<void> {
-  for (const update of pendingUpdates) {
-    if (update.table === 'workflow_cursor')
-      await writeLocalTaskLink(database, update, taskFlowClient)
-  }
+  const hostedFirst = pendingUpdates.filter(
+    (update) => LOCAL_TASK_LINKS[update.table].regime === 'hosted-first',
+  )
+  const synchronous = pendingUpdates.filter(
+    (update) => LOCAL_TASK_LINKS[update.table].regime === 'synchronous',
+  )
+  for (const update of hostedFirst)
+    await writeHostedFirstTaskLink(database, update, taskFlowClient)
   writeTransaction(() => {
     const updateRun = database.query(
       `UPDATE run SET task_record_id=COALESCE(task_record_id,?),
@@ -488,9 +504,7 @@ async function persistRunTaskLinks(
       )
       enqueueRunRecord(database, link.record_id, machineId(), finishedAt)
     }
-    for (const update of pendingUpdates) {
-      if (update.table !== 'workflow_cursor') LOCAL_TASK_LINKS[update.table].write(database, update)
-    }
+    for (const update of synchronous) writeSynchronousTaskLink(database, update)
   }, database)
 }
 
@@ -553,12 +567,22 @@ function localTaskLinkRows(database: Database, table: LocalTaskLinkTable): Local
   return database.query<LocalTaskLinkRow, []>(LOCAL_TASK_LINKS[table].pendingSql).all()
 }
 
-async function writeLocalTaskLink(
+async function writeHostedFirstTaskLink(
   database: Database,
   update: PendingLocalTaskLink,
   taskFlowClient?: RecordTaskFlowClient,
 ): Promise<void> {
-  await LOCAL_TASK_LINKS[update.table].write(database, update, taskFlowClient)
+  const config = LOCAL_TASK_LINKS[update.table]
+  if (config.regime !== 'hosted-first')
+    throw new Error(`task link ${update.table} is not hosted-first`)
+  await config.write(database, update, taskFlowClient)
+}
+
+function writeSynchronousTaskLink(database: Database, update: PendingLocalTaskLink): void {
+  const config = LOCAL_TASK_LINKS[update.table]
+  if (config.regime !== 'synchronous')
+    throw new Error(`task link ${update.table} is not synchronous`)
+  config.write(database, update)
 }
 
 function invalidRunTaskReferenceCount(database: Database, tasks: HubTaskKeyMap): number {

@@ -8,7 +8,7 @@ import {
   type CommitCountPort,
   readCommitsPastLanding,
 } from '../workflow/workflow-compose-branch.ts'
-import { getWorkflowStepWithCursor } from '../workflow/workflow-cursor.ts'
+import { getWorkflowStepWithCursor } from '../workflow/workflow-cursor-serve.ts'
 import { resolveWorkflowLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
 import { resolveMcpCursorContext } from '../workflow/workflow-cursor-selection.ts'
 import { renderWorkflowStep } from '../workflow/workflow-render.ts'

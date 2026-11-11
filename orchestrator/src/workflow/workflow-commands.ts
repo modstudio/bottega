@@ -29,12 +29,12 @@ import type { CommitCountPort } from './workflow-compose-branch.ts'
 import {
   awaitWorkflowRuling,
   composeWorkflowWithCursor,
-  getWorkflowStepWithCursor,
-  ruleWorkflow,
 } from './workflow-cursor.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { cursorCommandTarget } from './workflow-cursor-command-target.ts'
 import { renderWorkflowCursorLine } from './workflow-cursor-format.ts'
+import { ruleWorkflow } from './workflow-cursor-ruling.ts'
+import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
 import { listWorkflowCursors } from './workflow-cursor-list.ts'
 import {
   resolveCursorLiveAutonomy,

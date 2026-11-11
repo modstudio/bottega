@@ -4,8 +4,8 @@ import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import {
   awaitWorkflowRuling,
   composeWorkflowWithCursor,
-  getWorkflowStepWithCursor,
 } from './workflow-cursor.ts'
+import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
 import { selectAndNextWorkflowStep as nextWorkflowStep } from './workflow-cursor-test.fixture.ts'
 import type { FloorEvidencePorts } from './workflow-floor-evidence.ts'
 import { seedWorkflows } from './workflow-seeds.ts'

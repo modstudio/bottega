@@ -118,33 +118,6 @@ function rebindableArguments(row: ArgumentCursor, d: Database): Set<string> {
   )
 }
 
-export function applyCursorArguments(
-  row: ArgumentCursor,
-  supplied: Record<string, string>,
-  d: Database,
-  composing = false,
-): Record<string, string> {
-  const resolved = resolveCursorArguments(row, supplied, d, composing)
-  if (resolved.closed !== row.closed) {
-    d.query('UPDATE workflow_cursor SET args=?,closed=?,updated_at=? WHERE record_id=?').run(
-      resolved.encoded,
-      resolved.closed,
-      resolved.updatedAt,
-      row.record_id,
-    )
-    row.args = resolved.encoded
-    row.closed = resolved.closed
-  } else if (resolved.encoded !== row.args) {
-    d.query('UPDATE workflow_cursor SET args=?,updated_at=? WHERE record_id=?').run(
-      resolved.encoded,
-      resolved.updatedAt,
-      row.record_id,
-    )
-    row.args = resolved.encoded
-  }
-  return resolved.args
-}
-
 export function resolveCursorArguments(
   row: ArgumentCursor,
   supplied: Record<string, string>,

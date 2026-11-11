@@ -4,7 +4,10 @@ import type { Database } from 'bun:sqlite'
 import { nowIso, writeTransaction } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
-import { writeHostedTaskFlow } from '../record/record-task-flow-write-client.ts'
+import {
+  taskFlowWriteTarget,
+  writeHostedTaskFlow,
+} from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import {
@@ -13,7 +16,6 @@ import {
   selectTaskFlowStage,
   vacateRetiredWorkflowKeySlot,
 } from './task-flow.ts'
-import { resolveTaskFlowDestination } from './task-flow-hosted-destination.ts'
 
 type AdoptionCursor = {
   id: number
@@ -79,7 +81,7 @@ export async function adoptWorkflowTask(
   const adoptedTaskId = taskRecordId ?? null
   if (adoptedTaskId) {
     const at = nowIso()
-    const destination = await resolveTaskFlowDestination(row.project, d, client)
+    const target = taskFlowWriteTarget(row.project, d)
     const adopted = await writeHostedTaskFlow(
       'adopt',
       {
@@ -89,7 +91,7 @@ export async function adoptWorkflowTask(
         updatedMachineId: machineId(),
         updatedAt: at,
       },
-      destination,
+      target,
       client,
     )
     let stageRevision = adopted?.revisions[row.record_id] ?? row.revision
@@ -107,7 +109,7 @@ export async function adoptWorkflowTask(
             },
           ],
         },
-        destination,
+        target,
         client,
       )
       stageRevision = updated?.revisions[row.record_id] ?? stageRevision

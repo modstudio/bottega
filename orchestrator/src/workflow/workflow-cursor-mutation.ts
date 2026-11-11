@@ -3,11 +3,13 @@
 import type { Database } from 'bun:sqlite'
 import { nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
-import { writeHostedTaskFlow } from '../record/record-task-flow-write-client.ts'
+import {
+  taskFlowWriteTarget,
+  writeHostedTaskFlow,
+} from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { closeQuestions } from '../run/question-close.ts'
 import { questionOpenSql } from '../run/question-open.ts'
-import { resolveTaskFlowDestination } from './task-flow-hosted-destination.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import { refuseTerminalCursor } from './workflow-cursor-result.ts'
 import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
@@ -48,13 +50,16 @@ export async function abandonWorkflowCursor(
   const deleteTextIds = workflowTextDeletionIds(row.record_id, Boolean(row.task_record_id), d)
   const flow = row.task_flow_record_id
     ? d
-        .query<{ record_id: string; revision: number }, [string]>(
-          'SELECT record_id,revision FROM task_flow WHERE record_id=?',
+        .query<
+          { record_id: string; revision: number; open_stage_cursor_record_id: string | null },
+          [string]
+        >(
+          'SELECT record_id,revision,open_stage_cursor_record_id FROM task_flow WHERE record_id=?',
         )
         .get(row.task_flow_record_id)
     : null
+  const closesOpenStage = flow?.open_stage_cursor_record_id === row.record_id
   const parts = abandonmentRevisionParts(row, flow)
-  const destination = await resolveTaskFlowDestination(row.project, d, context.taskFlowClient)
   const hosted = await writeHostedTaskFlow(
     'abandon',
     {
@@ -70,7 +75,7 @@ export async function abandonWorkflowCursor(
           updatedAt: at,
         },
       },
-      ...(flow
+      ...(flow && closesOpenStage
         ? {
             flow: {
               id: flow.record_id,
@@ -91,7 +96,7 @@ export async function abandonWorkflowCursor(
       })),
       deleteTextIds,
     },
-    destination,
+    taskFlowWriteTarget(row.project, d),
     context.taskFlowClient,
   )
   return writeTransaction(() => {
@@ -119,7 +124,7 @@ export async function abandonWorkflowCursor(
       hosted?.revisions[row.record_id] ?? row.revision + 1,
       row.record_id,
     )
-    if (flow)
+    if (flow && closesOpenStage)
       d.query(
         `UPDATE task_flow SET open_stage_cursor_record_id=NULL,updated_at=?,updated_machine_id=?,revision=? WHERE record_id=?`,
       ).run(at, machineId(), hosted?.revisions[flow.record_id] ?? flow.revision + 1, flow.record_id)

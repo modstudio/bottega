@@ -3,9 +3,11 @@
 import type { Database } from 'bun:sqlite'
 import { writableDb, writeTransaction } from '../database/db.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
-import { writeHostedTaskFlow } from '../record/record-task-flow-write-client.ts'
+import {
+  taskFlowWriteTarget,
+  writeHostedTaskFlow,
+} from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
-import { resolveTaskFlowDestination } from './task-flow-hosted-destination.ts'
 import type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { selectWorkflowCursor } from './workflow-cursor-selection.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
@@ -206,7 +208,6 @@ async function attachWorkflowTextByHandleUnchecked(
     body,
   ])
   const createdAt = row.updated_at
-  const destination = await resolveTaskFlowDestination(row.project, d, context.taskFlowClient)
   await writeHostedTaskFlow(
     'attach-text',
     {
@@ -222,7 +223,7 @@ async function attachWorkflowTextByHandleUnchecked(
         },
       ],
     },
-    destination,
+    taskFlowWriteTarget(row.project, d),
     context.taskFlowClient,
   )
   return writeTransaction(() => {
@@ -259,7 +260,6 @@ async function attachWorkflowTextUnchecked(
     body,
   ])
   const createdAt = row.updated_at
-  const destination = await resolveTaskFlowDestination(row.project, d, context.taskFlowClient)
   await writeHostedTaskFlow(
     'attach-text',
     {
@@ -275,7 +275,7 @@ async function attachWorkflowTextUnchecked(
         },
       ],
     },
-    destination,
+    taskFlowWriteTarget(row.project, d),
     context.taskFlowClient,
   )
   return writeTransaction(() => {
@@ -356,7 +356,6 @@ export async function deleteWorkflowText(
     .query<{ project: string }, [string]>('SELECT project FROM workflow_cursor WHERE record_id=?')
     .get(cursorId)
   if (!row) throw new Error(`workflow cursor ${cursorId} does not exist; retry with a live cursor`)
-  const destination = await resolveTaskFlowDestination(row.project, d, client)
   await writeHostedTaskFlow(
     'delete-text',
     {
@@ -364,7 +363,7 @@ export async function deleteWorkflowText(
       stageRecordId: cursorId,
       ids,
     },
-    destination,
+    taskFlowWriteTarget(row.project, d),
     client,
   )
   writeTransaction(() => deleteWorkflowTextLocally(ids, d), d)

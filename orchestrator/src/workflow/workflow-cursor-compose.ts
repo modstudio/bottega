@@ -5,9 +5,16 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, writeTransaction } from '../database/db.ts'
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
+import { projectByName } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
-import { writeHostedTaskFlow } from '../record/record-task-flow-write-client.ts'
+import type { RecordRequestDestination } from '../record/record-api-client-paths.ts'
+import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
+import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
+import {
+  taskFlowWriteTarget,
+  writeHostedTaskFlow,
+} from '../record/record-task-flow-write-client.ts'
 import {
   type TaskFlowComposeResult,
   type TaskFlowIntentInput,
@@ -23,7 +30,6 @@ import {
   type WorkflowCursorInsert,
 } from './task-flow.ts'
 import { taskFlowState } from './task-flow-decision.ts'
-import { resolveTaskFlowDestination } from './task-flow-hosted-destination.ts'
 import {
   type CommitCountPort,
   readCommitsPastLanding,
@@ -397,7 +403,7 @@ async function recoverComposeConflict(
   autonomy: AutonomyResolution | undefined,
   commitCount: CommitCountPort,
   keylessSiblingRetry: boolean,
-  destination: Awaited<ReturnType<typeof resolveTaskFlowDestination>>,
+  destination: RecordRequestDestination,
 ): Promise<WorkflowCloseCursor> {
   const client = context.taskFlowClient ?? recordApiClient()
   const listed = await client.listTaskFlowStages!(
@@ -452,16 +458,12 @@ export async function insertWorkflowCursor(
     database,
     keylessSiblingRetry ? 1 : 0,
   )
-  const destination = await resolveTaskFlowDestination(
-    composition.project,
-    database,
-    context.taskFlowClient,
-  )
+  const target = taskFlowWriteTarget(composition.project, database)
   try {
     const hosted = await writeHostedTaskFlow(
       'compose',
       composeIntent(composition, context, facts),
-      destination,
+      target,
       context.taskFlowClient,
     )
     return applyHostedCompose(hosted, facts, composition, context, database)
@@ -477,7 +479,26 @@ export async function insertWorkflowCursor(
       autonomy,
       commitCount,
       keylessSiblingRetry,
-      destination,
+      await composeReadDestination(composition.project, database, context.taskFlowClient),
     )
+  }
+}
+
+async function composeReadDestination(
+  projectName: string,
+  database: Database,
+  suppliedClient?: RecordTaskFlowClient,
+): Promise<RecordRequestDestination> {
+  const project = projectByName(projectName, database)
+  if (!project) throw new Error(`project ${projectName} is not registered; register it, then retry`)
+  const client = suppliedClient?.whoami
+    ? { whoami: suppliedClient.whoami.bind(suppliedClient) }
+    : recordApiClient()
+  return {
+    destinationSpaceId: await requireProjectRecordDestination(
+      project.name,
+      project.settings,
+      client,
+    ),
   }
 }
