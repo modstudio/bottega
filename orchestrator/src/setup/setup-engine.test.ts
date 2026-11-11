@@ -19,6 +19,7 @@ import {
 import type { SetupFacts } from './setup-facts.ts'
 import { legacyMcpServerName, type McpServer } from './setup-mcp.ts'
 import {
+  plannedKeystoreAction,
   planSetupActions,
   recommendedAnswers,
   setupActionPrerequisiteKinds,
@@ -73,6 +74,36 @@ const machine = {
   git: { path: '/bin/git', version: '1' },
   gh: { path: '/bin/gh', version: '1', loggedIn: true },
 } as SetupFacts
+
+test('does not plan a file keystore when the keychain is usable, unknown, or explicitly selected', () => {
+  const keystore = (keychainUsable: boolean | null, source: SetupFacts['keystore']['source']) =>
+    plannedKeystoreAction({
+      ...machine,
+      keystore: { value: 'keychain', source, keychainUsable },
+    })
+
+  expect(keystore(true, { kind: 'default' })).toBeNull()
+  expect(keystore(null, { kind: 'default' })).toBeNull()
+  expect(keystore(false, { kind: 'environment', name: 'BOTTEGA_KEYSTORE' })).toBeNull()
+  expect(keystore(false, { kind: 'machine-file' })).toBeNull()
+})
+
+test('plans the fallback keystore before environment migration', () => {
+  const facts = {
+    ...machine,
+    os: { platform: 'linux', arch: 'x64', wsl: false },
+    keystore: {
+      value: 'keychain',
+      source: { kind: 'default' },
+      keychainUsable: false,
+    },
+  } as SetupFacts
+  const plan = proposeSetup(facts, [], [], [])
+  const kinds = planSetupActions(plan, recommendedAnswers(plan)).map((action) => action.kind)
+
+  expect(kinds).toContain('set-keystore')
+  expect(kinds.indexOf('set-keystore')).toBeLessThan(kinds.indexOf('migrate-environment'))
+})
 
 test('folder defaults include registered paths and names found in hosted spaces', () => {
   const registeredProject = registered({}, { name: 'local', path: '/work/local' })

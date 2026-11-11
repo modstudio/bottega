@@ -154,6 +154,7 @@ export const settingsModules: SettingsModule[] = [
     'commander',
     '../../../shared/config-client.ts',
     '../../../shared/delegation-mode.ts',
+    '../../../shared/key-store-constants.ts',
     '../../../shared/machine-config.ts',
     '../../../shared/record-space-membership.ts',
     '../../../shared/record-space-owner-destination.ts',

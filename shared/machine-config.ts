@@ -21,6 +21,7 @@ import {
   type DelegationSettingKey,
   type DelegationSettings,
 } from './delegation-mode.ts'
+import { KEYSTORE_DEFAULT, KEYSTORE_ENV, KEYSTORE_VALUES } from './key-store-constants.ts'
 import { containsSecretShaped } from './secret-shaped.ts'
 import {
   SETTINGS_PERMISSION_LISTS,
@@ -88,6 +89,12 @@ export const MACHINE_CONFIG = {
   'machine.former_short_names': { type: 'string', default: '' },
   'machine.level': { type: 'string', default: 'full', values: MACHINE_LEVELS },
   'machine.global_use': { type: 'string', default: 'on', values: ['on', 'off'] },
+  'machine.keystore': {
+    environment: KEYSTORE_ENV,
+    type: 'string',
+    default: KEYSTORE_DEFAULT,
+    values: KEYSTORE_VALUES,
+  },
   ...DELEGATION_MACHINE_CONFIG,
   'model_host.url': {
     environment: 'BOTTEGA_MODEL_HOST_URL',

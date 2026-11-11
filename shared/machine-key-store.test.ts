@@ -35,12 +35,14 @@ describe('file machine key store', () => {
 
 describe('machine key store decisions', () => {
   test('keeps file machine keys explicit on every platform', () => {
-    expect(decideMachineKeyStore(undefined, 'darwin')).toBe('keychain')
-    expect(decideMachineKeyStore(undefined, 'linux')).toBe('keychain')
-    expect(decideMachineKeyStore('file', 'linux')).toBe('file')
-    expect(decideMachineKeyStore('file', 'win32')).toBe('file')
-    expect(() => decideMachineKeyStore('unknown', 'linux')).toThrow(
-      "BOTTEGA_KEYSTORE must be 'file' when set",
-    )
+    expect(decideMachineKeyStore(environment(), 'darwin')).toBe('file')
+    const defaultEnvironment = { BOTTEGA_CONFIG_HOME: mkdtempSync(join(tmpdir(), 'machine-key-')) }
+    roots.push(defaultEnvironment.BOTTEGA_CONFIG_HOME)
+    expect(decideMachineKeyStore(defaultEnvironment, 'linux')).toBe('keychain')
+    expect(decideMachineKeyStore(environment(), 'linux')).toBe('file')
+    expect(decideMachineKeyStore(environment(), 'win32')).toBe('file')
+    expect(() =>
+      decideMachineKeyStore({ ...defaultEnvironment, BOTTEGA_KEYSTORE: 'unknown' }, 'linux'),
+    ).toThrow('key machine.keystore must be one of keychain, file')
   })
 })

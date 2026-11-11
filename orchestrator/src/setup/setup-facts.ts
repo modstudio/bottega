@@ -2,8 +2,16 @@
 /** Owns read-only machine setup facts. Must not know the store, registered agents, routing, or CLI grammar. */
 import { existsSync, readFileSync } from 'node:fs'
 import { which } from 'bun'
+import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { type InstallationKind, installationIdentity } from '../../../shared/install-root.ts'
-import { type MachineLevel, readMachineFileValue } from '../../../shared/machine-config.ts'
+import { KEYSTORE_DEFAULT, type Keystore } from '../../../shared/key-store-constants.ts'
+import { probeMachineKeychain, type UsableKeychainProbeResult } from '../../../shared/keychain.ts'
+import {
+  type MachineLevel,
+  type MachineValueSource,
+  readMachineFileValue,
+  readMachineValueWithSource,
+} from '../../../shared/machine-config.ts'
 import { recordApiConfigured, resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { runAgentAuthCheck } from '../agent/agent-auth.ts'
 import {
@@ -41,6 +49,11 @@ export type CommandCapture = CliVersionCapture
 export type SetupFactsCapture = {
   machineLevel: MachineLevel | null
   globalUse?: 'on' | 'off' | null
+  keystore?: {
+    value: Keystore
+    source: MachineValueSource
+    keychainUsable: boolean | null
+  }
   installationKind?: InstallationKind | null
   schedules?: ScheduleSetupFact[]
   scheduleLinger?: boolean | null
@@ -69,6 +82,11 @@ export type SetupFactsCapture = {
 export type SetupFacts = {
   machineLevel: MachineLevel | null
   globalUse: 'on' | 'off' | null
+  keystore: {
+    value: Keystore
+    source: MachineValueSource
+    keychainUsable: boolean | null
+  }
   installationKind: InstallationKind | null
   schedules: ScheduleSetupFact[]
   scheduleLinger: boolean | null
@@ -96,6 +114,11 @@ export function classifySetupFacts(capture: SetupFactsCapture): SetupFacts {
   return {
     machineLevel: capture.machineLevel,
     globalUse: capture.globalUse ?? null,
+    keystore: capture.keystore ?? {
+      value: KEYSTORE_DEFAULT,
+      source: { kind: 'default' },
+      keychainUsable: null,
+    },
     installationKind: capture.installationKind ?? null,
     schedules: capture.schedules ?? [],
     scheduleLinger: capture.scheduleLinger ?? null,
@@ -182,6 +205,29 @@ function readSetupGlobalUse(): 'on' | 'off' | null {
   return (readMachineFileValue('machine.global_use') as 'on' | 'off' | undefined) ?? null
 }
 
+export function gatherKeystoreSetupFact(
+  environment: ConfigEnvironment = process.env,
+  platform: NodeJS.Platform = process.platform,
+  probe: () => UsableKeychainProbeResult = probeMachineKeychain,
+): SetupFacts['keystore'] {
+  const resolved = readMachineValueWithSource('machine.keystore', environment)
+  const selected = { ...resolved, value: resolved.value as Keystore }
+  if (platform !== 'linux' || selected.source.kind !== 'default') {
+    return { ...selected, keychainUsable: null }
+  }
+  const result = probe()
+  if (result.usable) return { ...selected, keychainUsable: true }
+  return {
+    ...selected,
+    keychainUsable:
+      result.kind === 'libsecret-missing' ||
+      result.kind === 'no-unlocked-collection' ||
+      result.kind === 'no-session-bus'
+        ? false
+        : null,
+  }
+}
+
 /** The running installation's kind, or null when its identity is unreadable; doctor reports why. */
 function readInstallationKind(): InstallationKind | null {
   try {
@@ -225,6 +271,7 @@ export async function gatherSetupFacts(
   return classifySetupFacts({
     machineLevel: readSetupMachineLevel(),
     globalUse: readSetupGlobalUse(),
+    keystore: gatherKeystoreSetupFact(),
     installationKind,
     schedules: installationKind === 'distribution' ? gatherScheduleSetupFacts() : [],
     scheduleLinger: installationKind === 'distribution' ? gatherScheduleLingerFact() : null,

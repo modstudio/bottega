@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CONFIG_HOME_ENV } from '../../shared/config-directory.ts'
-import { KEYSTORE_ENV } from '../../shared/key-store.ts'
+import { KEYSTORE_ENV } from '../../shared/key-store-constants.ts'
 import { signInCommand } from '../src/record/record-auth-command.ts'
 import { registerCustomerAuthProof } from './postgres-customer-auth-proof.ts'
 

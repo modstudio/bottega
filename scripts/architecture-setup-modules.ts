@@ -161,6 +161,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       './setup-toolchain.ts',
     ],
     typeOnlyAllowed: [
+      '../../../shared/key-store-constants.ts',
       '../project/projects.ts',
       './setup-facts.ts',
       './setup-mcp.ts',

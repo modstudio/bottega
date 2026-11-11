@@ -1,4 +1,6 @@
+import { randomUUID } from 'node:crypto'
 import { startBounded, startBoundedSyncBytes } from './bounded-process.ts'
+import { PLATFORM_NAME } from './brand.ts'
 
 type SecurityResult = {
   exitCode: number
@@ -26,6 +28,20 @@ export type SecretFailureKind =
   | 'no-session-bus'
   | 'other'
 
+export class SecretStoreError extends Error {
+  readonly kind: SecretFailureKind
+
+  constructor(message: string, kind: SecretFailureKind) {
+    super(message)
+    this.name = 'SecretStoreError'
+    this.kind = kind
+  }
+}
+
+export type UsableKeychainProbeResult =
+  | { usable: true }
+  | { usable: false; kind: SecretFailureKind }
+
 type KeychainBackend = 'security' | 'bun-secrets'
 type LinuxSecretOperation = 'get' | 'set' | 'delete'
 
@@ -38,6 +54,8 @@ const PLATFORM_KEY = Symbol.for('orch.keychain-platform')
 const SECRET_OPERATION_ENV = 'BOTTEGA_SECRET_OPERATION'
 const SECRET_SERVICE_ENV = 'BOTTEGA_SECRET_SERVICE'
 const SECRET_ACCOUNT_ENV = 'BOTTEGA_SECRET_ACCOUNT'
+const MACHINE_PROBE_SERVICE = `${PLATFORM_NAME}-machine-keychain-probe`
+const MACHINE_PROBE_ACCOUNT = 'machine-setup'
 const COLLECTION_LOCKED_ARGV = [
   'busctl',
   '--user',
@@ -193,9 +211,10 @@ function parseSecretFailure(result: SecurityResult): { code: string; message: st
   }
 }
 
-function noUnlockedCollectionFailure(operation: LinuxSecretOperation): Error {
-  return new Error(
+function noUnlockedCollectionFailure(operation: LinuxSecretOperation): SecretStoreError {
+  return new SecretStoreError(
     `Bun.secrets ${operation} refused: no unlocked login keyring is available; start and unlock it with ${UNLOCK_LOGIN_KEYRING_REMEDY}`,
+    'no-unlocked-collection',
   )
 }
 
@@ -209,20 +228,23 @@ function secretFailure(
   const message = redactedValue ? parsed.message.replaceAll(redactedValue, '***') : parsed.message
   const kind = classifySecretFailure(code, message)
   if (kind === 'libsecret-missing') {
-    return new Error(
+    return new SecretStoreError(
       `Bun.secrets ${operation} refused: libsecret and a Secret Service keyring are unavailable; install libsecret-1-0 and gnome-keyring`,
+      kind,
     )
   }
   if (kind === 'no-unlocked-collection') {
     return noUnlockedCollectionFailure(operation)
   }
   if (kind === 'no-session-bus') {
-    return new Error(
+    return new SecretStoreError(
       `Bun.secrets ${operation} refused: no user D-Bus session is reachable; run inside a user D-Bus session`,
+      kind,
     )
   }
-  return new Error(
+  return new SecretStoreError(
     `Bun.secrets ${operation} failed with exit code ${result.exitCode}${message ? `: ${message}` : ''}`,
+    kind,
   )
 }
 
@@ -431,4 +453,37 @@ export function deleteKeychainItem(
   const result = runner(['security', 'delete-generic-password', '-a', account, '-s', service])
   if (result.exitCode === MISSING_ITEM_EXIT_CODE) return
   if (result.exitCode !== 0) throw failure('delete-generic-password', result)
+}
+
+/** Prove a keychain is usable by writing and removing a disposable item. */
+export function probeKeychainStore(
+  service: string,
+  account: string,
+  runner?: SecurityRunner,
+): void {
+  let writeError: unknown
+  try {
+    writeKeychainItem(service, account, randomUUID(), runner)
+  } catch (error) {
+    writeError = error
+  }
+  try {
+    deleteKeychainItem(service, account, runner)
+  } catch (error) {
+    if (!writeError) throw error
+  }
+  if (writeError) throw writeError
+}
+
+/** Classify whether the machine can read its platform keychain without changing it. */
+export function probeMachineKeychain(runner?: SecurityRunner): UsableKeychainProbeResult {
+  try {
+    readKeychainItem(MACHINE_PROBE_SERVICE, MACHINE_PROBE_ACCOUNT, runner)
+    return { usable: true }
+  } catch (error) {
+    return {
+      usable: false,
+      kind: error instanceof SecretStoreError ? error.kind : 'other',
+    }
+  }
 }

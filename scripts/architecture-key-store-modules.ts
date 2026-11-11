@@ -12,7 +12,12 @@ const module = (file: string, allowed: string[]): KeyStoreModule => ({
 })
 
 export const keyStoreModules: KeyStoreModule[] = [
-  module('shared/key-store.ts', ['./brand.ts']),
+  module('shared/key-store-constants.ts', ['./brand.ts']),
+  module('shared/key-store.ts', [
+    './config-directory.ts',
+    './key-store-constants.ts',
+    './machine-config.ts',
+  ]),
   module('shared/file-backed-secret-paths.ts', [
     'node:fs',
     './config-directory.ts',
@@ -25,6 +30,7 @@ export const keyStoreModules: KeyStoreModule[] = [
     './brand.ts',
     './config-directory.ts',
     './file-backed-secret-paths.ts',
+    './key-store-constants.ts',
     './key-store.ts',
     './machine-key-id.ts',
     './secret-envelope.ts',

@@ -11,7 +11,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { PLATFORM_NAME } from './brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from './brand.ts'
 import {
   clearRecordSessionToken,
   forgetRecordSessionToken,
@@ -218,14 +218,14 @@ describe('record session keychain', () => {
 
   test('a failed probe keeps the store error and adds the file-store remedy', () => {
     expect(() => probeRecordSessionStore(() => result(70, '', 'keychain unavailable'))).toThrow(
-      'security add-generic-password failed with exit code 70: keychain unavailable\ncleared by: set BOTTEGA_KEYSTORE=file to keep the record session and the machine key in owner-only files',
+      `security add-generic-password failed with exit code 70: keychain unavailable\ncleared by: run ${PLATFORM_SLUG} machine setup, or choose the file keystore directly with ${PLATFORM_SLUG} machine config set --machine machine.keystore file`,
     )
   })
 
   test('adds the file opt-in remedy to Linux keychain failures', () => {
     platformHolder[PLATFORM_KEY] = 'linux'
     expect(() => readRecordSessionToken(() => result(70, '', 'keychain unavailable'))).toThrow(
-      '; or set BOTTEGA_KEYSTORE=file to keep the record session and the machine key in owner-only files',
+      `; or run ${PLATFORM_SLUG} machine setup, or choose the file keystore directly with ${PLATFORM_SLUG} machine config set --machine machine.keystore file`,
     )
   })
 })

@@ -4,6 +4,7 @@
 import { homedir } from 'node:os'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { ConfigClientError, type ConfigClientErrorReason } from '../../../shared/config-client.ts'
+import { fileBackedSecretPaths } from '../../../shared/file-backed-secret-paths.ts'
 import { type MachineLevel, setMachineValue } from '../../../shared/machine-config.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { resolveStatePaths } from '../../../shared/state-directory.ts'
@@ -257,6 +258,11 @@ export async function withMigratedProcessEnvironment<T>(
 export const setupEnvironmentService = {
   setMachineLevel: (level: MachineLevel) => setMachineValue('machine.level', level),
   setGlobalUse: (value: 'on' | 'off') => setMachineValue('machine.global_use', value),
+  setKeystore: (value: 'file') => {
+    setMachineValue('machine.keystore', value)
+    const paths = fileBackedSecretPaths(process.env).join(', ')
+    return `file keystore chosen because no usable keychain was found; file-backed secrets live at ${paths}; this machine may need a new machine key; run ${PLATFORM_SLUG} machine config machine init`
+  },
   migrateEnvironment: async (
     preparedStateFileMigration?: PreparedStateFileMigration | null,
   ): Promise<EnvironmentMigrationResult> =>

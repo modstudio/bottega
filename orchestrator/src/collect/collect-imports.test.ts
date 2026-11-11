@@ -12,6 +12,7 @@ const DEGRADED_COLLECTION_GRAPH = [
   '../../../shared/docs.ts',
   '../../../shared/embedded-assets.ts',
   '../../../shared/install-root.ts',
+  '../../../shared/key-store-constants.ts',
   '../../../shared/machine-config.ts',
   '../../../shared/machine-label.ts',
   '../../../shared/orch-contract.ts',
