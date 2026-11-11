@@ -67,11 +67,8 @@ import {
   writeProjectToHostedRecord,
 } from './project-hosted-write.ts'
 import { type SettingsObjectMode, validateProjectInjectionSettings } from './project-injection.ts'
+import { localProjectPurgeRefusals, purgeLocalOrchestratorProject } from './project-purge-local.ts'
 import { projectPushRefusalMessage } from './project-push-refusal.ts'
-import {
-  localProjectPurgeRefusals,
-  purgeLocalOrchestratorProject,
-} from './project-purge-local.ts'
 import {
   PROJECT_REFERENCES,
   type ProjectReferenceCounts,

@@ -22,6 +22,7 @@ export type CommandRoute = {
   positionals?: number
   continueOnFailure?: boolean
   description?: string
+  usageSuffix?: string
   options?: readonly {
     flags: string
     description: string
@@ -141,6 +142,7 @@ export const ROUTES = (
       command: ['project', 'purge'],
       owner: 'composite',
       description: 'purge a project from the hosted record and this machine stores',
+      usageSuffix: '<name> --confirm <name>',
       positionals: 1,
       composite: [
         {
@@ -152,9 +154,8 @@ export const ROUTES = (
         { owner: 'hub', argv: ['project-purge'], label: 'hub purge' },
         {
           owner: 'orch',
-          argv: ['project', 'remove'],
+          argv: ['project-purge-remove'],
           label: 'register removal',
-          fixedArguments: ['--purged'],
         },
       ],
     },

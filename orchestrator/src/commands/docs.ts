@@ -533,7 +533,7 @@ const projectSpecs: readonly Spec[] = [
   [
     'remove [name]',
     "remove a project from this machine's register; the shared project stays in the space (retire it with project retire)",
-    [o('--purged')],
+    [],
   ],
   ['retire [name]', 'retire or un-retire a project', [o('--undo')]],
   ['purge <name>', 'purge a project from the hosted record', [o('--confirm <name>')]],
@@ -581,4 +581,16 @@ export function register(program: Command): void {
   registerCanon(program)
   registerPort(program)
   registerProject(program)
+  program
+    .command('project-purge-remove <name>', { hidden: true })
+    .helpOption(false)
+    .action((name: string) =>
+      projectCommand(
+        'remove',
+        ['project', 'remove', name],
+        { has: (flag) => flag === 'purged', flag: () => undefined },
+        { log, cwd: process.cwd },
+        { requireSpaceMembership: requireRecordSpaceMembership },
+      ),
+    )
 }

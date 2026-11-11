@@ -45,7 +45,8 @@ function helpRequested(rest: readonly string[]): boolean {
 }
 
 export function routeHelp(route: CommandRoute): string {
-  const lines = [`usage: ${PLATFORM_SLUG} ${route.command.join(' ')} [options]`]
+  const suffix = route.usageSuffix ?? '[options]'
+  const lines = [`usage: ${PLATFORM_SLUG} ${route.command.join(' ')} ${suffix}`]
   if (route.description) lines.push('', route.description)
   if (route.options?.length) {
     const width = Math.max(...route.options.map((option) => option.flags.length))

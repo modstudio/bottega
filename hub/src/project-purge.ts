@@ -39,7 +39,7 @@ const LOCAL_PROJECT_PURGE_PLAN = [
 const quote = (value: string) => `"${value.replaceAll('"', '""')}"`
 
 export function uncoveredHubProjectTables(database: Database): string[] {
-  const covered = new Set(LOCAL_PROJECT_PURGE_PLAN.map((step) => step.table))
+  const covered = new Set<string>(LOCAL_PROJECT_PURGE_PLAN.map((step) => step.table))
   const excluded = new Set(Object.keys(LOCAL_PROJECT_PURGE_EXCLUSIONS))
   return database
     .query<{ name: string }, []>(
