@@ -230,6 +230,11 @@ export const machineNameClaim = pgTable.withRLS(
       unique('machine_name_claim_space_short_name_unique').on(table.spaceId, table.shortName),
       selectPolicy!,
       insertPolicy!,
+      pgPolicy('machine_name_claim_owner_delete', {
+        for: 'delete',
+        to: RECORD_OWNER_ROLE,
+        using: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+      }),
     ]
   },
 )

@@ -38,6 +38,13 @@ export function registerTrialSpaceTeardownProof(input: {
     const crossSpaceTask = newRecordId()
     const purgedInterval = newRecordId()
     const peerInterval = newRecordId()
+    const purgedSubscription = newRecordId()
+    const purgedSend = newRecordId()
+    const purgedRecipient = newRecordId()
+    const survivingSubscription = newRecordId()
+    const survivingSend = newRecordId()
+    const survivingRecipient = newRecordId()
+    const purgedPresence = newRecordId()
     input.admin(`
       INSERT INTO "user"(id,email,name,created_at)
         VALUES ('${owner}','purge-proof-${owner}@example.test','purge proof owner',now());
@@ -58,7 +65,21 @@ export function registerTrialSpaceTeardownProof(input: {
         ('${crossSpaceTask}','${otherSpace}','cross-proof','${crossSpaceProject}','CROSS-1','cross-proof','cross','done','local',now(),now(),now(),now());
       INSERT INTO hub_interval(id,space_id,task_key,task_id,project_name,project_id,source,start_at,end_at,ref,updated_at) VALUES
         ('${purgedInterval}','${space}','PP-1','${purgedTask}','purged-proof','${purgedProject}','proof',now()-interval '1 minute',now(),'purged',now()),
-        ('${peerInterval}','${space}','PEER-1','${peerTask}','peer-proof','${peerProject}','proof',now()-interval '1 minute',now(),'peer',now());`)
+        ('${peerInterval}','${space}','PEER-1','${peerTask}','peer-proof','${peerProject}','proof',now()-interval '1 minute',now(),'peer',now());
+      INSERT INTO hub_report_subscription(id,space_id,scope_kind,project_name,project_id,cadence,hour,zone,enabled,created_at,updated_at)
+        VALUES
+          ('${purgedSubscription}','${space}','project','purged-proof','${purgedProject}','daily',0,'UTC',1,now(),now()),
+          ('${survivingSubscription}','${space}','space',NULL,NULL,'daily',0,'UTC',1,now(),now());
+      INSERT INTO hub_send(id,space_id,at,"window",recipients,projects,items,status,test,created_at,machine,subscription_id,period_start,period_end)
+        VALUES
+          ('${purgedSend}','${space}',now(),'day','owner@example.test','purged-proof',1,'sent',0,now(),'proof','${purgedSubscription}',now()-interval '1 day',now()),
+          ('${survivingSend}','${space}',now(),'day','owner@example.test','purged-proof',1,'sent',0,now(),'proof','${survivingSubscription}',now()-interval '1 day',now());
+      INSERT INTO hub_send_recipient(id,space_id,send_id,user_id,name,email,created_at)
+        VALUES
+          ('${purgedRecipient}','${space}','${purgedSend}','${owner}','Owner','owner@example.test',now()),
+          ('${survivingRecipient}','${space}','${survivingSend}','${owner}','Owner','owner@example.test',now());
+      INSERT INTO board_presence(id,space_id,user_id,session,project_id,role,first_seen,last_seen)
+        VALUES ('${purgedPresence}','${space}','${owner}','purge-proof','${purgedProject}','architect',now(),now());`)
 
     const result = await purgeRecordProject({
       url: input.actorUrl(),
@@ -72,14 +93,20 @@ export function registerTrialSpaceTeardownProof(input: {
     expect(counts.project).toBe(1)
     expect(counts.hub_task).toBe(1)
     expect(counts.hub_interval).toBe(1)
+    expect(counts.hub_send_recipient).toBe(1)
+    expect(counts.hub_send).toBe(1)
+    expect(counts.board_presence).toBe(1)
     expect(input.admin(`SELECT count(*) FROM project WHERE id='${purgedProject}';`)).toBe('0')
     expect(
       input.admin(
         `SELECT (SELECT count(*) FROM project WHERE id='${peerProject}') || '|' ||
           (SELECT count(*) FROM hub_task WHERE id='${peerTask}') || '|' ||
-          (SELECT count(*) FROM hub_interval WHERE id='${peerInterval}');`,
+          (SELECT count(*) FROM hub_interval WHERE id='${peerInterval}') || '|' ||
+          (SELECT count(*) FROM hub_report_subscription WHERE id='${survivingSubscription}') || '|' ||
+          (SELECT count(*) FROM hub_send WHERE id='${survivingSend}') || '|' ||
+          (SELECT count(*) FROM hub_send_recipient WHERE id='${survivingRecipient}');`,
       ),
-    ).toBe('1|1|1')
+    ).toBe('1|1|1|1|1|1')
     expect(
       await purgeRecordProject({
         url: input.actorUrl(),
@@ -168,10 +195,133 @@ export function registerTrialSpaceTeardownProof(input: {
       confirmation: 'peer-proof',
     })
     input.admin(
-      `DELETE FROM membership WHERE space_id IN ('${space}','${otherSpace}');
+      `DELETE FROM hub_send_recipient WHERE id='${survivingRecipient}';
+       DELETE FROM hub_send WHERE id='${survivingSend}';
+       DELETE FROM hub_report_subscription WHERE id='${survivingSubscription}';
+       DELETE FROM membership WHERE space_id IN ('${space}','${otherSpace}');
        DELETE FROM space WHERE id IN ('${space}','${otherSpace}');
        DELETE FROM "user" WHERE id='${owner}';`,
     )
+    await closeRecordPools()
+  })
+
+  test('append-only teardown definers refuse non-owners and mismatched tenant bindings', async () => {
+    const owner = newRecordId()
+    const member = newRecordId()
+    const space = newRecordId()
+    const otherSpace = newRecordId()
+    const project = newRecordId()
+    const machine = newRecordId()
+    const machineClaim = newRecordId()
+    const outsideWrite = newRecordId()
+    const subscription = newRecordId()
+    const send = newRecordId()
+    const recipient = newRecordId()
+    const presence = newRecordId()
+    const slug = `definer-guard-${space}`
+    input.admin(`
+      INSERT INTO "user"(id,email,name,created_at) VALUES
+        ('${owner}','definer-owner-${owner}@example.test','definer owner',now()),
+        ('${member}','definer-member-${member}@example.test','definer member',now());
+      INSERT INTO space(id,name,slug,metadata,created_at) VALUES
+        ('${space}','definer target','${slug}',NULL,now()),
+        ('${otherSpace}','definer other','definer-other-${otherSpace}',NULL,now());
+      INSERT INTO membership(id,space_id,user_id,role,permission,config_access,created_at) VALUES
+        ('${newRecordId()}','${space}','${owner}','owner','write',true,now()),
+        ('${newRecordId()}','${space}','${member}','member','write',false,now()),
+        ('${newRecordId()}','${otherSpace}','${owner}','owner','write',true,now());
+      INSERT INTO project(id,space_id,name,key_prefixes,created_at)
+        VALUES ('${project}','${space}','definer guard',ARRAY['DG'],now());
+      INSERT INTO machine(id,user_id,name,registered_at,last_seen)
+        VALUES ('${machine}','${owner}','definer-guard',now(),now());
+      INSERT INTO machine_name_claim(id,space_id,short_name,machine_id,claimed_at)
+        VALUES ('${machineClaim}','${space}','definer-guard','${machine}',now());
+      INSERT INTO space_outside_write(id,space_id,user_id,kind,subject_id,created_at)
+        VALUES ('${outsideWrite}','${space}','${owner}','post','${newRecordId()}',now());
+      INSERT INTO hub_report_subscription(id,space_id,scope_kind,project_name,project_id,cadence,hour,zone,enabled,created_at,updated_at)
+        VALUES ('${subscription}','${space}','project','definer guard','${project}','daily',0,'UTC',1,now(),now());
+      INSERT INTO hub_send(id,space_id,at,"window",recipients,projects,items,status,test,created_at,machine,subscription_id,period_start,period_end)
+        VALUES ('${send}','${space}',now(),'day','owner@example.test','definer guard',1,'sent',0,now(),'definer-guard','${subscription}',now()-interval '1 day',now());
+      INSERT INTO hub_send_recipient(id,space_id,send_id,user_id,name,email,created_at)
+        VALUES ('${recipient}','${space}','${send}','${owner}','Owner','owner@example.test',now());
+      INSERT INTO board_presence(id,space_id,user_id,session,project_id,role,first_seen,last_seen)
+        VALUES ('${presence}','${space}','${owner}','definer-guard','${project}','architect',now(),now());`)
+
+    const assertRowsRemain = () =>
+      expect(
+        input.admin(
+          `SELECT (SELECT count(*) FROM machine_name_claim WHERE id='${machineClaim}') || '|' ||
+            (SELECT count(*) FROM space_outside_write WHERE id='${outsideWrite}') || '|' ||
+            (SELECT count(*) FROM hub_send WHERE id='${send}') || '|' ||
+            (SELECT count(*) FROM hub_send_recipient WHERE id='${recipient}') || '|' ||
+            (SELECT count(*) FROM board_presence WHERE id='${presence}');`,
+        ),
+      ).toBe('1|1|1|1|1')
+    const assertRefused = (result: PsqlResult, guard: string) => {
+      expect(result.code).not.toBe(0)
+      expect(result.stderr).toContain('42501')
+      expect(result.stderr).toContain(guard)
+      assertRowsRemain()
+    }
+
+    assertRefused(
+      input.psql(
+        RECORD_ACTOR_ROLE,
+        'actor-password',
+        `\\set VERBOSITY verbose
+         SET app.user_id='${member}';
+         SET app.space_id='${space}';
+         SELECT * FROM record_delete_append_only_space_rows('${space}');`,
+      ),
+      'caller-owner guard failed',
+    )
+    assertRefused(
+      input.psql(
+        RECORD_ACTOR_ROLE,
+        'actor-password',
+        `\\set VERBOSITY verbose
+         SET app.user_id='${member}';
+         SET app.space_id='${space}';
+         SELECT * FROM record_delete_append_only_project_rows('${project}');`,
+      ),
+      'caller-owner guard failed',
+    )
+    assertRefused(
+      input.psql(
+        RECORD_ACTOR_ROLE,
+        'actor-password',
+        `\\set VERBOSITY verbose
+         SET app.user_id='${owner}';
+         SET app.space_id='${otherSpace}';
+         SELECT * FROM record_delete_append_only_space_rows('${space}');`,
+      ),
+      'tenant-binding guard failed',
+    )
+    assertRefused(
+      input.psql(
+        RECORD_ACTOR_ROLE,
+        'actor-password',
+        `\\set VERBOSITY verbose
+         SET app.user_id='${owner}';
+         SET app.space_id='${otherSpace}';
+         SELECT * FROM record_delete_append_only_project_rows('${project}');`,
+      ),
+      'tenant-binding guard failed',
+    )
+
+    input.admin(`DELETE FROM membership WHERE space_id='${space}' AND user_id='${member}';`)
+    await deleteRecordSpace({
+      url: input.actorUrl(),
+      slug,
+      confirmation: slug,
+      userId: owner,
+      activeSpaceId: otherSpace,
+    })
+    input.admin(`
+      DELETE FROM membership WHERE space_id='${otherSpace}';
+      DELETE FROM space WHERE id='${otherSpace}';
+      DELETE FROM machine WHERE id='${machine}';
+      DELETE FROM "user" WHERE id IN ('${owner}','${member}');`)
     await closeRecordPools()
   })
 
@@ -202,12 +352,33 @@ export function registerTrialSpaceTeardownProof(input: {
     const space = newRecordId()
     const dek = newRecordId()
     const evidence = newRecordId()
+    const project = newRecordId()
+    const machine = newRecordId()
+    const machineClaim = newRecordId()
+    const outsideWrite = newRecordId()
+    const send = newRecordId()
+    const sendRecipient = newRecordId()
+    const presence = newRecordId()
     const slug = `trial-general-delete-${space}`
     input.admin(`
       INSERT INTO space(id,name,slug,metadata,created_at)
         VALUES ('${space}','general delete','${slug}',NULL,now());
       INSERT INTO membership(id,space_id,user_id,role,permission,config_access,created_at)
         VALUES ('${newRecordId()}','${space}','${owner}','owner','write',true,now());
+      INSERT INTO project(id,space_id,name,key_prefixes,created_at)
+        VALUES ('${project}','${space}','delete proof',ARRAY['DELETE'],now());
+      INSERT INTO machine(id,user_id,name,registered_at,last_seen)
+        VALUES ('${machine}','${owner}','delete-proof',now(),now());
+      INSERT INTO machine_name_claim(id,space_id,short_name,machine_id,claimed_at)
+        VALUES ('${machineClaim}','${space}','delete-proof','${machine}',now());
+      INSERT INTO space_outside_write(id,space_id,user_id,kind,subject_id,created_at)
+        VALUES ('${outsideWrite}','${space}','${owner}','post','${newRecordId()}',now());
+      INSERT INTO hub_send(id,space_id,at,"window",recipients,projects,items,status,test,created_at,machine)
+        VALUES ('${send}','${space}',now(),'day','owner@example.test','delete proof',1,'sent',1,now(),'proof');
+      INSERT INTO hub_send_recipient(id,space_id,send_id,user_id,name,email,created_at)
+        VALUES ('${sendRecipient}','${space}','${send}','${owner}','Owner','owner@example.test',now());
+      INSERT INTO board_presence(id,space_id,user_id,session,project_id,role,machine_id,first_seen,last_seen)
+        VALUES ('${presence}','${space}','${owner}','delete-proof','${project}','architect','${machine}',now(),now());
       INSERT INTO secret_dek(id,space_id,version,created_at) VALUES ('${dek}','${space}',1,now());
       INSERT INTO routing_evidence_head(id,space_id,sequence) VALUES ('${evidence}','${space}',1);`)
     await expect(
@@ -235,6 +406,11 @@ export function registerTrialSpaceTeardownProof(input: {
     const deletedCounts = Object.fromEntries(deleted.tables.map((row) => [row.table, row.count]))
     expect(deletedCounts.secret_dek).toBe(1)
     expect(deletedCounts.routing_evidence_head).toBe(1)
+    expect(deletedCounts.hub_send_recipient).toBe(1)
+    expect(deletedCounts.hub_send).toBe(1)
+    expect(deletedCounts.space_outside_write).toBe(1)
+    expect(deletedCounts.machine_name_claim).toBe(1)
+    expect(deletedCounts.board_presence).toBe(1)
     expect(deletedCounts.space).toBe(1)
     expect(
       input.admin(
@@ -449,6 +625,20 @@ export function registerTrialSpaceTeardownProof(input: {
           has_function_privilege('public', 'record_delete_protected_space_rows(uuid)', 'EXECUTE');`,
       ),
     ).toBe('true|false|false')
+  })
+
+  test('the append-only teardown definers grant execute only to record_actor', () => {
+    for (const functionName of [
+      'record_delete_append_only_space_rows',
+      'record_delete_append_only_project_rows',
+    ])
+      expect(
+        input.admin(
+          `SELECT has_function_privilege('${RECORD_ACTOR_ROLE}', '${functionName}(uuid)', 'EXECUTE') || '|' ||
+            has_function_privilege('${RECORD_READER_ROLE}', '${functionName}(uuid)', 'EXECUTE') || '|' ||
+            has_function_privilege('public', '${functionName}(uuid)', 'EXECUTE');`,
+        ),
+      ).toBe('true|false|false')
   })
 
   test('the real organization update hook preserves but never changes a trial marker', async () => {

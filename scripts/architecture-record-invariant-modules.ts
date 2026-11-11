@@ -78,6 +78,7 @@ export const recordInvariantModules = [
     'bun',
     '../../../shared/brand.ts',
     '../../../shared/record/tenant.ts',
+    './record-migration-requirement.ts',
     './record-pool.ts',
     './record-project-purge-contract.ts',
     './record-space-teardown-plan.ts',

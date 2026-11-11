@@ -552,10 +552,20 @@ export const spaceOutsideWrite = pgTable.withRLS(
       to: RECORD_ACTOR_ROLE,
       using: sql`${table.userId} = ${currentUser}`,
     }),
+    pgPolicy('space_outside_write_owner_select', {
+      for: 'select',
+      to: RECORD_OWNER_ROLE,
+      using: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+    }),
     pgPolicy('space_outside_write_owner_insert', {
       for: 'insert',
       to: RECORD_OWNER_ROLE,
       withCheck: sql`true`,
+    }),
+    pgPolicy('space_outside_write_owner_delete', {
+      for: 'delete',
+      to: RECORD_OWNER_ROLE,
+      using: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
     }),
   ],
 )

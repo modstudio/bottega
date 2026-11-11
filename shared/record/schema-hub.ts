@@ -25,6 +25,7 @@ import {
   membership,
   project,
   RECORD_ACTOR_ROLE,
+  RECORD_OWNER_ROLE,
   spaceIdentity,
   tenantPolicies,
   user,
@@ -412,6 +413,11 @@ export const hubSend = pgTable.withRLS(
       using: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
       withCheck: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
     }),
+    pgPolicy('hub_send_owner_delete', {
+      for: 'delete',
+      to: RECORD_OWNER_ROLE,
+      using: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+    }),
   ],
 )
 
@@ -444,6 +450,11 @@ export const hubSendRecipient = pgTable.withRLS(
     pgPolicy('hub_send_recipient_space_insert', {
       for: 'insert',
       withCheck: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+    }),
+    pgPolicy('hub_send_recipient_owner_delete', {
+      for: 'delete',
+      to: RECORD_OWNER_ROLE,
+      using: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
     }),
   ],
 )
