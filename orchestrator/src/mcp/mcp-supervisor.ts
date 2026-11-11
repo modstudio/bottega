@@ -26,18 +26,18 @@ export async function serveMcpSupervisor(): Promise<void> {
   }
 
   const spawnChild = () => {
-    const process = startParentBound(bottegaEntryArgv('mcp-serve-child'), {
+    const spawned = startParentBound(bottegaEntryArgv('mcp-serve-child'), {
       name: 'MCP server child',
     })
-    const stdout = relayChildStdout(process.stdout, dispatch)
-    const stderr = relayChildStderr(process.stderr)
+    const stdout = relayChildStdout(spawned.stdout, dispatch)
+    const stderr = relayChildStderr(spawned.stderr)
     void (async () => {
-      const code = await process.exited
-      await Promise.all([stdout, stderr])
-      if (child === process) child = null
+      const code = await spawned.exited
+      await Promise.allSettled([stdout, stderr])
+      if (child === spawned) child = null
       dispatch({ type: 'child-exit', code, status: `exit status ${code}`, at: Date.now() })
     })()
-    return process
+    return spawned
   }
 
   const apply = (action: McpSupervisorAction) => {

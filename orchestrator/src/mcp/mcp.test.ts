@@ -38,7 +38,7 @@ import {
   showResolvedWorkflow,
 } from '../workflow/workflows.ts'
 import { createDocsMcpServer, fileIssueTaskKey } from './mcp.ts'
-import { MCP_SERVER_STALE_EXIT } from './mcp-supervisor-decision.ts'
+import { MCP_SERVER_STALE_EXIT } from './mcp-exit-status.ts'
 
 describe('orch MCP', () => {
   test('an incompatible schema reload reports the refusal and exits for supervision', () => {

@@ -112,7 +112,10 @@ function hideJournalAfter(version: number): void {
   })
 }
 
-function prepareStaleSchemaReload(compatibility: string | null): {
+function prepareStaleSchemaReload(
+  compatibility: string | null,
+  onRefusal?: (reason: string) => void,
+): {
   prior: number
   next: number
 } {
@@ -125,7 +128,7 @@ function prepareStaleSchemaReload(compatibility: string | null): {
   const other = new Database(DB_PATH, { readwrite: true, create: false })
   other.exec(`PRAGMA user_version = ${prior}`)
   db()
-  enableSchemaReload(() => {})
+  enableSchemaReload(() => {}, onRefusal)
   other
     .query('UPDATE orch_migrations SET compatibility=? WHERE created_at=?')
     .run(compatibility, entry.when)
@@ -159,10 +162,13 @@ test.each(['fenced', null] as const)(
   'schema reload refuses a %s store row absent from the process journal',
   (compatibility) => {
     try {
-      const { prior, next } = prepareStaleSchemaReload(compatibility)
-      expect(() => db()).toThrow(
-        `store migrated from version ${prior} to ${next} past this process's version; restart this process, and re-dispatch any run it was coordinating`,
-      )
+      let refusal: string | undefined
+      const { prior, next } = prepareStaleSchemaReload(compatibility, (reason) => {
+        refusal = reason
+      })
+      const expected = `store migrated from version ${prior} to ${next} past this process's version; restart this process, and re-dispatch any run it was coordinating`
+      expect(() => db()).toThrow(expected)
+      expect(refusal).toBe(expected)
     } finally {
       registerEmbeddedAssets(null)
       closeDatabaseForFixture()

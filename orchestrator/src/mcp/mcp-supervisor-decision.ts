@@ -1,6 +1,6 @@
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { MCP_SERVER_STALE_EXIT } from './mcp-exit-status.ts'
 
-export const MCP_SERVER_STALE_EXIT = 75
 export const MCP_SERVER_RESTART_BACKOFF_MS = 250
 export const MCP_SERVER_CRASH_LOOP_CEILING = 5
 const MCP_SERVER_CRASH_LOOP_WINDOW_MS = 30_000
@@ -22,6 +22,7 @@ export type McpSupervisorState = {
   phase: SupervisorPhase
   initialize: JsonRpcMessage | null
   initialized: JsonRpcMessage | null
+  handshakeAnswered: boolean
   inFlight: JsonRpcId[]
   buffered: JsonRpcMessage[]
   recentExits: number[]
@@ -57,6 +58,7 @@ export function initialMcpSupervisorState(): McpSupervisorState {
     phase: 'running',
     initialize: null,
     initialized: null,
+    handshakeAnswered: false,
     inFlight: [],
     buffered: [],
     recentExits: [],
@@ -67,15 +69,15 @@ export function initialMcpSupervisorState(): McpSupervisorState {
   }
 }
 
-const isRequest = (message: JsonRpcMessage): message is JsonRpcMessage & { id: JsonRpcId } =>
-  typeof message.method === 'string' &&
+const hasJsonRpcId = (message: JsonRpcMessage): message is JsonRpcMessage & { id: JsonRpcId } =>
   Object.hasOwn(message, 'id') &&
   (typeof message.id === 'string' || typeof message.id === 'number' || message.id === null)
 
+const isRequest = (message: JsonRpcMessage): message is JsonRpcMessage & { id: JsonRpcId } =>
+  typeof message.method === 'string' && hasJsonRpcId(message)
+
 const isResponse = (message: JsonRpcMessage): message is JsonRpcMessage & { id: JsonRpcId } =>
-  typeof message.method !== 'string' &&
-  Object.hasOwn(message, 'id') &&
-  (typeof message.id === 'string' || typeof message.id === 'number' || message.id === null)
+  typeof message.method !== 'string' && hasJsonRpcId(message)
 
 const isInitialize = (message: JsonRpcMessage) =>
   message.method === 'initialize' && isRequest(message)
@@ -84,9 +86,17 @@ const isInitialized = (message: JsonRpcMessage) =>
 
 const sameId = (left: JsonRpcId, right: JsonRpcId) => typeof left === typeof right && left === right
 
+function firstHandshakeMessage(state: McpSupervisorState, message: JsonRpcMessage): boolean {
+  return (
+    (isInitialize(message) && state.initialize === null) ||
+    (isInitialized(message) && state.initialized === null)
+  )
+}
+
 function rememberHandshake(state: McpSupervisorState, message: JsonRpcMessage): McpSupervisorState {
-  if (isInitialize(message) && !state.initialize) return { ...state, initialize: message }
-  if (isInitialized(message) && !state.initialized) return { ...state, initialized: message }
+  if (!firstHandshakeMessage(state, message)) return state
+  if (isInitialize(message)) return { ...state, initialize: message }
+  if (isInitialized(message)) return { ...state, initialized: message }
   return state
 }
 
@@ -140,13 +150,15 @@ function sendBuffered(state: McpSupervisorState): McpSupervisorTransition {
     next = trackRequest(next, message)
     actions.push({ type: 'send-child', message })
   }
-  actions.push({ type: 'send-client', message: toolsChangedNotification() })
+  if (state.handshakeAnswered) {
+    actions.push({ type: 'send-client', message: toolsChangedNotification() })
+  }
   return { state: next, actions }
 }
 
 function startReplacement(state: McpSupervisorState): McpSupervisorTransition {
   const actions: McpSupervisorAction[] = [{ type: 'start-child' }]
-  if (!state.initialize) {
+  if (!state.initialize || !state.handshakeAnswered) {
     const forwarded = sendBuffered(state)
     return { state: forwarded.state, actions: [...actions, ...forwarded.actions] }
   }
@@ -167,6 +179,7 @@ function clientMessage(
   state: McpSupervisorState,
   message: JsonRpcMessage,
 ): McpSupervisorTransition {
+  const firstHandshake = firstHandshakeMessage(state, message)
   const next = rememberHandshake(state, message)
   if (next.phase === 'failed') {
     return {
@@ -177,11 +190,11 @@ function clientMessage(
     }
   }
   if (next.phase === 'waiting-restart' || next.phase === 'replaying') {
-    const firstHandshakeMessage =
-      (isInitialize(message) && state.initialize === null) ||
-      (isInitialized(message) && state.initialized === null)
     return {
-      state: firstHandshakeMessage ? next : { ...next, buffered: [...next.buffered, message] },
+      state:
+        firstHandshake && next.handshakeAnswered
+          ? next
+          : { ...next, buffered: [...next.buffered, message] },
       actions: [],
     }
   }
@@ -204,8 +217,17 @@ function childMessage(state: McpSupervisorState, message: JsonRpcMessage): McpSu
     }
   }
   if (state.phase !== 'running' && state.phase !== 'replaying') return { state, actions: [] }
+  const answeredInitialize =
+    !state.handshakeAnswered &&
+    state.initialize !== null &&
+    isResponse(message) &&
+    isRequest(state.initialize) &&
+    sameId(message.id, state.initialize.id)
   return {
-    state: forgetResponse(state, message),
+    state: forgetResponse(
+      answeredInitialize ? { ...state, handshakeAnswered: true } : state,
+      message,
+    ),
     actions: [{ type: 'send-client', message }],
   }
 }

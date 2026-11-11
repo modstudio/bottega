@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { MCP_SERVER_STALE_EXIT } from './mcp-exit-status.ts'
 import {
   initialMcpSupervisorState,
   JsonLineDecoder,
   MCP_SERVER_CRASH_LOOP_CEILING,
   MCP_SERVER_RESTART_BACKOFF_MS,
   MCP_SERVER_SHUTDOWN_WAIT_MS,
-  MCP_SERVER_STALE_EXIT,
   MCP_SUPERVISOR_ID_PREFIX,
   type McpSupervisorEvent,
   type McpSupervisorState,
@@ -107,6 +107,40 @@ describe('MCP supervisor decision', () => {
       message: response(replayId as string),
     })
     expect(completed.state.inFlight).toEqual(['buffered-1', 'buffered-2'])
+  })
+
+  test('forwards an initialize that arrives while down and answers its client id', () => {
+    const exited = transition(initialMcpSupervisorState(), {
+      type: 'child-exit',
+      code: 1,
+      status: 'exit status 1',
+      at: 1_000,
+    })
+    const waiting = transition(exited.state, {
+      type: 'client-message',
+      message: request(1, 'initialize'),
+    })
+    const restarted = transition(waiting.state, {
+      type: 'timer',
+      kind: 'restart',
+      token: 1,
+    })
+
+    expect(restarted.actions).toEqual([
+      { type: 'start-child' },
+      { type: 'send-child', message: request(1, 'initialize') },
+    ])
+    expect(restarted.actions).not.toContainEqual({
+      type: 'send-client',
+      message: { jsonrpc: '2.0', method: 'notifications/tools/list_changed' },
+    })
+
+    const answered = transition(restarted.state, {
+      type: 'child-message',
+      message: response(1),
+    })
+    expect(answered.actions).toEqual([{ type: 'send-client', message: response(1) }])
+    expect(answered.state.handshakeAnswered).toBe(true)
   })
 
   test('restarts stale children immediately and backs off other exits', () => {

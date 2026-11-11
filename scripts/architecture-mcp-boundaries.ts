@@ -66,6 +66,7 @@ export const mcpBoundarySpecs: ImportBoundary[] = [
     [
       '../../../shared/bounded-process.ts',
       '../../../shared/self-spawn.ts',
+      './mcp-exit-status.ts',
       './mcp-supervisor-decision.ts',
     ],
     'Keep the stable MCP front independent of stores and tools: it only spawns the real server and relays framed messages.',
