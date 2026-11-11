@@ -23,9 +23,13 @@ import {
 } from '../../board-contract.ts'
 import type { RecordClient } from '../../record-client.ts'
 import type { Context } from '../context.ts'
+import { spaceId } from './record-inputs.ts'
 import { recordClient } from './record-router-client.ts'
 
 const t = initTRPC.context<Context>().create()
+const boardReplyInput = BoardReplyInputSchema.extend({ spaceId })
+const boardAcceptInput = BoardAcceptInputSchema.extend({ spaceId })
+const boardIdInput = BoardIdInputSchema.extend({ spaceId })
 
 type HostedBoardClient = Pick<
   RecordClient,
@@ -36,6 +40,8 @@ type HostedBoardClient = Pick<
   | 'boardReply'
   | 'boardAccept'
   | 'boardWithdraw'
+  | 'projects'
+  | 'whoami'
 >
 type HostedBoardDeps = {
   clientFor: (context: Context) => HostedBoardClient
@@ -52,6 +58,37 @@ function absoluteBoardTime(clock: number, duration: string | undefined, defaultM
     throw new Error(`invalid duration ${value}; use a positive value such as 30m or 1d`)
   }
   return date.toISOString()
+}
+
+type BoardPostDestination = { spaceId: string } | { refused: string; remedy: string }
+
+export function boardPostDestination(input: {
+  project?: string
+  projects: Array<{ name: string; spaceId: string }>
+  personalSpaceId: string | null
+}): BoardPostDestination {
+  if (!input.project) {
+    return input.personalSpaceId
+      ? { spaceId: input.personalSpaceId }
+      : {
+          refused: 'record user has no personal space',
+          remedy: 'provision a personal space, then retry the board post',
+        }
+  }
+  const matches = input.projects.filter((project) => project.name === input.project)
+  if (matches.length === 0)
+    return {
+      refused: `record project ${input.project} has no declared space`,
+      remedy: 'register the project in a record space, then retry the board post',
+    }
+  if (matches.length > 1) {
+    const spaces = [...new Set(matches.map((project) => project.spaceId))].sort()
+    return {
+      refused: `record project ${input.project} is ambiguous across spaces ${spaces.join(', ')}`,
+      remedy: 'use a project name that identifies one record space, then retry the board post',
+    }
+  }
+  return { spaceId: matches[0]!.spaceId }
 }
 
 async function call<T>(operation: () => Promise<T>): Promise<T> {
@@ -72,6 +109,51 @@ async function call<T>(operation: () => Promise<T>): Promise<T> {
       cause,
     })
   }
+}
+
+function boardPostProcedure(deps: HostedBoardDeps) {
+  return t.procedure.input(BoardPostInputSchema).mutation(({ ctx, input }) =>
+    call(async () => {
+      const client = deps.clientFor(ctx)
+      const destination = boardPostDestination({
+        project: input.project,
+        projects: input.project ? await client.projects() : [],
+        personalSpaceId: input.project ? null : (await client.whoami()).personalSpaceId,
+      })
+      if ('refused' in destination) throw new Error(`${destination.refused}\n${destination.remedy}`)
+      const id = deps.newId()
+      const now = deps.clock()
+      const purpose = defaultBoardPurpose(input.purpose, Boolean(input.ackRequired))
+      const message = await client.boardPost(
+        {
+          id,
+          kind: 'notice',
+          purpose,
+          audience: input.audience,
+          title: input.title,
+          body: input.body,
+          expiresAt: absoluteBoardTime(now, input.expires, boardDefaultExpiryMs(purpose)),
+          ...(input.ackRequired
+            ? {
+                ackRequired: true,
+                ackDeadline: absoluteBoardTime(now, input.deadline, BOARD_DEFAULT_ACK_DEADLINE_MS),
+              }
+            : {}),
+          ...(input.task ? { task: input.task } : {}),
+          ...(input.paths ? { paths: input.paths } : {}),
+          ...(input.topics ? { topics: input.topics } : {}),
+          ...(input.project ? { project: input.project } : {}),
+        },
+        destination.spaceId,
+      )
+      return BoardPostResultSchema.parse({
+        id: message.id,
+        dropped: message.id !== id,
+        reached: null,
+        warning: null,
+      })
+    }),
+  )
 }
 
 export function createHostedBoardRouter(
@@ -108,44 +190,17 @@ export function createHostedBoardRouter(
         })
       }),
     ),
-    post: t.procedure.input(BoardPostInputSchema).mutation(({ ctx, input }) =>
+    post: boardPostProcedure(deps),
+    reply: t.procedure.input(boardReplyInput).mutation(({ ctx, input }) =>
       call(async () => {
-        const id = deps.newId()
-        const now = deps.clock()
-        const purpose = defaultBoardPurpose(input.purpose, Boolean(input.ackRequired))
-        const message = await deps.clientFor(ctx).boardPost({
-          id,
-          kind: 'notice',
-          purpose,
-          audience: input.audience,
-          title: input.title,
-          body: input.body,
-          expiresAt: absoluteBoardTime(now, input.expires, boardDefaultExpiryMs(purpose)),
-          ...(input.ackRequired
-            ? {
-                ackRequired: true,
-                ackDeadline: absoluteBoardTime(now, input.deadline, BOARD_DEFAULT_ACK_DEADLINE_MS),
-              }
-            : {}),
-          ...(input.task ? { task: input.task } : {}),
-          ...(input.paths ? { paths: input.paths } : {}),
-          ...(input.topics ? { topics: input.topics } : {}),
-          ...(input.project ? { project: input.project } : {}),
-        })
-        return BoardPostResultSchema.parse({
-          id: message.id,
-          dropped: message.id !== id,
-          reached: null,
-          warning: null,
-        })
-      }),
-    ),
-    reply: t.procedure.input(BoardReplyInputSchema).mutation(({ ctx, input }) =>
-      call(async () => {
-        const message = await deps.clientFor(ctx).boardReply(input.id, {
-          id: deps.newId(),
-          body: input.body,
-        })
+        const message = await deps.clientFor(ctx).boardReply(
+          input.id,
+          {
+            id: deps.newId(),
+            body: input.body,
+          },
+          input.spaceId,
+        )
         return BoardReplyResultSchema.parse({
           id: message.id,
           rootId: message.threadRootId,
@@ -155,9 +210,11 @@ export function createHostedBoardRouter(
         })
       }),
     ),
-    accept: t.procedure.input(BoardAcceptInputSchema).mutation(({ ctx, input }) =>
+    accept: t.procedure.input(boardAcceptInput).mutation(({ ctx, input }) =>
       call(async () => {
-        const thread = await deps.clientFor(ctx).boardAccept(input.questionId, input.replyId)
+        const thread = await deps
+          .clientFor(ctx)
+          .boardAccept(input.questionId, input.replyId, input.spaceId)
         return BoardAcceptResultSchema.parse({
           accepted: input.replyId,
           questionId: input.questionId,
@@ -167,9 +224,9 @@ export function createHostedBoardRouter(
         })
       }),
     ),
-    withdraw: t.procedure.input(BoardIdInputSchema).mutation(({ ctx, input }) =>
+    withdraw: t.procedure.input(boardIdInput).mutation(({ ctx, input }) =>
       call(async () => {
-        const message = await deps.clientFor(ctx).boardWithdraw(input.id)
+        const message = await deps.clientFor(ctx).boardWithdraw(input.id, input.spaceId)
         return BoardWithdrawResultSchema.parse({ withdrawn: message.id })
       }),
     ),

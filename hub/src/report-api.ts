@@ -21,6 +21,7 @@ import type { HostedRouteConfig } from './hosted-route-config.ts'
 import {
   assertAuthenticatedIdentity,
   identityRefusal,
+  refusedSpaceResponse,
   taskSpaceIdentity,
 } from './hosted-route-identity.ts'
 
@@ -184,12 +185,11 @@ export async function reportApi(
     request,
     config.recordApiUrl,
     (dependencies.fetch ?? hostedApiFetch) as typeof fetch,
-    false,
+    true,
   )
   const refusal = identityRefusal(identity)
   if (refusal) return refusal
-  if (identity.kind === 'refused-space')
-    throw new Error('report identity refused a space it ignored')
+  if (identity.kind === 'refused-space') return refusedSpaceResponse(identity.refusedSpace)
   assertAuthenticatedIdentity(identity)
   const access = recordSpaceAccessDecision(
     recordRequestNature(request.method),

@@ -65,6 +65,7 @@ function memberColumns(
   canEditMember: (member: OrganizationMember) => boolean,
   changeRole: (member: OrganizationMember, role: OrganizationRole) => void,
   changePermission: (member: MemberAccessRow, permission: MemberPermission) => void,
+  memberWriteRefusal?: string,
 ): CollectionColumn<MemberAccessRow>[] {
   return [
     {
@@ -113,7 +114,11 @@ function memberColumns(
             label={`Permission for ${member.user.name}`}
             size="sm"
             value={member.permission}
-            options={permissionOptions}
+            options={permissionOptions.map((option) => ({
+              ...option,
+              disabled: Boolean(memberWriteRefusal),
+            }))}
+            hint={memberWriteRefusal}
             onChange={(permission) => changePermission(member, permission as MemberPermission)}
           />
         ) : (
@@ -134,6 +139,7 @@ function MemberRowActions({
   callerRole,
   callerEmail,
   canEdit,
+  memberWritesDisabled,
   removeConfirm,
   error,
   onGrant,
@@ -144,6 +150,7 @@ function MemberRowActions({
   callerRole?: OrganizationRole
   callerEmail?: string
   canEdit: boolean
+  memberWritesDisabled: boolean
   removeConfirm: boolean
   error?: string
   onGrant: () => void
@@ -160,12 +167,12 @@ function MemberRowActions({
   return (
     <div className="grid gap-2">
       {canGrant ? (
-        <Button size="sm" onClick={onGrant}>
+        <Button size="sm" disabled={memberWritesDisabled} onClick={onGrant}>
           Grant config access
         </Button>
       ) : null}
       {canWithdraw ? (
-        <Button size="sm" onClick={onWithdraw}>
+        <Button size="sm" disabled={memberWritesDisabled} onClick={onWithdraw}>
           Withdraw config access
         </Button>
       ) : null}
@@ -180,6 +187,41 @@ function MemberRowActions({
         </p>
       ) : null}
     </div>
+  )
+}
+
+function WithdrawAccessDialog({
+  open,
+  pending,
+  disabled,
+  onCancel,
+  onWithdraw,
+}: {
+  open: boolean
+  pending: boolean
+  disabled: boolean
+  onCancel: () => void
+  onWithdraw: () => void
+}) {
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onCancel()
+      }}
+      title="Withdraw config access"
+      description="Withdrawing config access revokes this member's machines and stops them reading this space's secrets."
+      footer={
+        <>
+          <Button variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button variant="danger" disabled={pending || disabled} onClick={onWithdraw}>
+            Withdraw
+          </Button>
+        </>
+      }
+    />
   )
 }
 
@@ -201,6 +243,7 @@ function MembersPage() {
     queryFn: activeOrganizationMember,
   })
   const configAccess = useQuery(trpc.record.configAccess.queryOptions())
+  const whoami = useQuery(trpc.record.whoami.queryOptions())
   const refresh = async () => {
     await Promise.all([
       members.refetch(),
@@ -209,9 +252,9 @@ function MembersPage() {
       caller.refetch(),
     ])
   }
-  if (members.isPending || invitations.isPending || caller.isPending)
+  if (members.isPending || invitations.isPending || caller.isPending || whoami.isPending)
     return <EmptyState title="Loading members..." />
-  const loadError = members.error || invitations.error || caller.error
+  const loadError = members.error || invitations.error || caller.error || whoami.error
   if (loadError) return <ErrorState title="Could not load members" message={loadError.message} />
   const memberRows = members.data?.members ?? []
   const accessRows = configAccess.isPending
@@ -229,6 +272,9 @@ function MembersPage() {
   )
   const callerRole = caller.data?.role
   const canManage = callerRole === 'owner' || callerRole === 'admin'
+  const memberWriteRefusal = whoami.data?.activeSpaceId
+    ? undefined
+    : 'record session has no active space; choose a space to administer its members'
   const invite = canManage ? (
     <InviteForm
       callerRole={callerRole}
@@ -255,6 +301,8 @@ function MembersPage() {
         callerRole={callerRole}
         callerEmail={caller.data?.user.email}
         onChanged={refresh}
+        spaceId={whoami.data?.activeSpaceId ?? null}
+        memberWriteRefusal={memberWriteRefusal}
         actions={invite}
       />
       <InvitationTable
@@ -267,35 +315,45 @@ function MembersPage() {
   )
 }
 
+function useMemberMutations(onChanged: () => Promise<void>) {
+  return {
+    changeRole: useMutation({
+      mutationFn: ({ id, role }: { id: string; role: OrganizationRole }) =>
+        updateOrganizationMemberRole(id, role),
+      onSuccess: onChanged,
+    }),
+    remove: useMutation({ mutationFn: removeOrganizationMember, onSuccess: onChanged }),
+    grant: useMutation(trpc.record.grantConfigAccess.mutationOptions({ onSuccess: onChanged })),
+    withdraw: useMutation(
+      trpc.record.withdrawConfigAccess.mutationOptions({ onSuccess: onChanged }),
+    ),
+    setPermission: useMutation(
+      trpc.record.setMemberPermission.mutationOptions({ onSuccess: onChanged }),
+    ),
+  }
+}
+
 function MemberTable({
   rows,
   callerRole,
   callerEmail,
   onChanged,
   actions,
+  spaceId,
+  memberWriteRefusal,
 }: {
   rows: MemberAccessRow[]
   callerRole?: OrganizationRole
   callerEmail?: string
   onChanged: () => Promise<void>
   actions?: React.ReactNode
+  spaceId: string | null
+  memberWriteRefusal?: string
 }) {
   const [removeConfirm, setRemoveConfirm] = useState<string | null>(null)
   const [withdrawTarget, setWithdrawTarget] = useState<MemberAccessRow | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
-  const changeRole = useMutation({
-    mutationFn: ({ id, role }: { id: string; role: OrganizationRole }) =>
-      updateOrganizationMemberRole(id, role),
-    onSuccess: onChanged,
-  })
-  const remove = useMutation({ mutationFn: removeOrganizationMember, onSuccess: onChanged })
-  const grant = useMutation(trpc.record.grantConfigAccess.mutationOptions({ onSuccess: onChanged }))
-  const withdraw = useMutation(
-    trpc.record.withdrawConfigAccess.mutationOptions({ onSuccess: onChanged }),
-  )
-  const setPermission = useMutation(
-    trpc.record.setMemberPermission.mutationOptions({ onSuccess: onChanged }),
-  )
+  const { changeRole, remove, grant, withdraw, setPermission } = useMemberMutations(onChanged)
   const canEditMember = (member: OrganizationMember) =>
     callerRole === 'owner' || (callerRole === 'admin' && member.role !== 'owner')
   const act = async (id: string, operation: () => Promise<unknown>) => {
@@ -309,16 +367,31 @@ function MemberTable({
       }))
     }
   }
+  const actInSpace = (id: string, operation: (destination: string) => Promise<unknown>) => {
+    if (!spaceId) {
+      setErrors((current) => ({ ...current, [id]: memberWriteRefusal ?? '' }))
+      return
+    }
+    void act(id, () => operation(spaceId))
+  }
   const columns = memberColumns(
     callerRole,
     canEditMember,
-    (member, role) => {
-      void act(member.id, () => changeRole.mutateAsync({ id: member.id, role }))
-    },
-    (member, permission) => {
-      void act(member.id, () => setPermission.mutateAsync({ email: member.user.email, permission }))
-    },
+    (member, role) => void act(member.id, () => changeRole.mutateAsync({ id: member.id, role })),
+    (member, permission) =>
+      actInSpace(member.id, (destination) =>
+        setPermission.mutateAsync({ email: member.user.email, permission, spaceId: destination }),
+      ),
+    memberWriteRefusal,
   )
+  const withdrawAccess = () => {
+    if (!withdrawTarget) return
+    const member = withdrawTarget
+    setWithdrawTarget(null)
+    actInSpace(member.id, (destination) =>
+      withdraw.mutateAsync({ email: member.user.email, spaceId: destination }),
+    )
+  }
   return (
     <>
       <Collection
@@ -335,10 +408,13 @@ function MemberTable({
             callerRole={callerRole}
             callerEmail={callerEmail}
             canEdit={canEditMember(member)}
+            memberWritesDisabled={Boolean(memberWriteRefusal)}
             removeConfirm={removeConfirm === member.id}
-            error={errors[member.id]}
+            error={errors[member.id] || memberWriteRefusal}
             onGrant={() =>
-              void act(member.id, () => grant.mutateAsync({ email: member.user.email }))
+              actInSpace(member.id, (destination) =>
+                grant.mutateAsync({ email: member.user.email, spaceId: destination }),
+              )
             }
             onWithdraw={() => setWithdrawTarget(member)}
             onRemove={() =>
@@ -353,32 +429,12 @@ function MemberTable({
         )}
         empty={{ title: 'No members.' }}
       />
-      <Dialog
+      <WithdrawAccessDialog
         open={withdrawTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setWithdrawTarget(null)
-        }}
-        title="Withdraw config access"
-        description="Withdrawing config access revokes this member's machines and stops them reading this space's secrets."
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setWithdrawTarget(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="danger"
-              disabled={withdraw.isPending}
-              onClick={() => {
-                if (!withdrawTarget) return
-                const member = withdrawTarget
-                setWithdrawTarget(null)
-                void act(member.id, () => withdraw.mutateAsync({ email: member.user.email }))
-              }}
-            >
-              Withdraw
-            </Button>
-          </>
-        }
+        pending={withdraw.isPending}
+        disabled={Boolean(memberWriteRefusal)}
+        onCancel={() => setWithdrawTarget(null)}
+        onWithdraw={withdrawAccess}
       />
     </>
   )
