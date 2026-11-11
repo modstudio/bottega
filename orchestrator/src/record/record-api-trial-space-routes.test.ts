@@ -17,9 +17,12 @@ test('the trial-space route derives the caller from identity and accepts the bod
       return {
         nothingToRemove: true,
         activeSpaceCleared: false,
-        tables: {},
+        tables: [],
         neutralized: [],
       }
+    },
+    deleteSpace: async () => {
+      throw new Error('must not be called')
     },
   })
   const response = await app.request('/v1/spaces/delete-trial', {
@@ -49,6 +52,9 @@ test('the trial-space route refuses a missing slug', async () => {
     deleteTrialSpace: async () => {
       throw new Error('must not be called')
     },
+    deleteSpace: async () => {
+      throw new Error('must not be called')
+    },
   })
   const response = await app.request('/v1/spaces/delete-trial', {
     method: 'POST',
@@ -56,4 +62,73 @@ test('the trial-space route refuses a missing slug', async () => {
     body: '{}',
   })
   expect(response.status).toBe(422)
+})
+
+test('the general space route passes the typed confirmation and authenticated caller', async () => {
+  const calls: unknown[] = []
+  const app = new Hono<{ Variables: { identity: typeof identity } }>()
+  app.use('/v1/*', async (context, next) => {
+    context.set('identity', identity)
+    await next()
+  })
+  registerRecordTrialSpaceRoutes(app, {
+    recordUrl: 'postgres://record.test/record',
+    deleteTrialSpace: async () => {
+      throw new Error('must not be called')
+    },
+    deleteSpace: async (input) => {
+      calls.push(input)
+      return { nothingToRemove: true, activeSpaceCleared: false, tables: [], neutralized: [] }
+    },
+  })
+  const response = await app.request('/v1/spaces/delete', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ slug: 'demo', confirmation: 'demo' }),
+  })
+  expect(response.status).toBe(200)
+  expect(calls).toEqual([
+    {
+      url: 'postgres://record.test/record',
+      slug: 'demo',
+      confirmation: 'demo',
+      userId: identity.user.id,
+      activeSpaceId: identity.activeSpaceId,
+    },
+  ])
+})
+
+test('each space-delete route can be registered without the other dependency', async () => {
+  const trialOnly = new Hono<{ Variables: { identity: typeof identity } }>()
+  trialOnly.use('/v1/*', async (context, next) => {
+    context.set('identity', identity)
+    await next()
+  })
+  registerRecordTrialSpaceRoutes(trialOnly, {
+    recordUrl: 'postgres://record.test/record',
+    deleteTrialSpace: async () => ({
+      nothingToRemove: true,
+      activeSpaceCleared: false,
+      tables: [],
+      neutralized: [],
+    }),
+  })
+  expect(
+    (
+      await trialOnly.request('/v1/spaces/delete-trial', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ slug: 'trial-only' }),
+      })
+    ).status,
+  ).toBe(200)
+  expect(
+    (
+      await trialOnly.request('/v1/spaces/delete', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ slug: 'trial-only', confirmation: 'trial-only' }),
+      })
+    ).status,
+  ).toBe(404)
 })

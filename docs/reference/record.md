@@ -38,6 +38,7 @@ the hosted record and outbox
 - [bottega record space access list](#bottega-record-space-access-list)
 - [bottega record space access withdraw](#bottega-record-space-access-withdraw)
 - [bottega record space create](#bottega-record-space-create)
+- [bottega record space delete](#bottega-record-space-delete)
 - [bottega record space delete-trial](#bottega-record-space-delete-trial)
 - [bottega record space help](#bottega-record-space-help)
 - [bottega record space hidden](#bottega-record-space-hidden)
@@ -425,6 +426,7 @@ manage hosted record spaces
 - [bottega record space accept](./record.md#bottega-record-space-accept)
 - [bottega record space access](./record.md#bottega-record-space-access)
 - [bottega record space create](./record.md#bottega-record-space-create)
+- [bottega record space delete](./record.md#bottega-record-space-delete)
 - [bottega record space delete-trial](./record.md#bottega-record-space-delete-trial)
 - [bottega record space help](./record.md#bottega-record-space-help)
 - [bottega record space hidden](./record.md#bottega-record-space-hidden)
@@ -525,6 +527,20 @@ create a hosted record space and report how to switch back
 - `--name <name>`: display name for the new space
 - `--slug <slug>`: URL slug for the new space
 - `--trial`: mark this trial-prefixed space for trial teardown
+
+### Related
+
+- [bottega record space](./record.md#bottega-record-space)
+
+## bottega record space delete
+
+**Synopsis:** `bottega record space delete <slug> [--confirm <slug>]`
+
+delete one hosted record space after confirmation
+
+### Options
+
+- `--confirm <slug>`: repeat the space slug
 
 ### Related
 

@@ -10,6 +10,7 @@ the project register
 - [bottega project fill-space](#bottega-project-fill-space)
 - [bottega project list](#bottega-project-list)
 - [bottega project migrate-create](#bottega-project-migrate-create)
+- [bottega project purge](#bottega-project-purge)
 - [bottega project push](#bottega-project-push)
 - [bottega project relink](#bottega-project-relink)
 - [bottega project remove](#bottega-project-remove)
@@ -30,6 +31,7 @@ the project register
 - [bottega project fill-space](./project.md#bottega-project-fill-space)
 - [bottega project list](./project.md#bottega-project-list)
 - [bottega project migrate-create](./project.md#bottega-project-migrate-create)
+- [bottega project purge](./project.md#bottega-project-purge)
 - [bottega project push](./project.md#bottega-project-push)
 - [bottega project relink](./project.md#bottega-project-relink)
 - [bottega project remove](./project.md#bottega-project-remove)
@@ -110,6 +112,20 @@ migrate a legacy create command
 ### Options
 
 - `--apply`: apply the proposed migration
+
+### Related
+
+- [bottega project](./project.md#bottega-project)
+
+## bottega project purge
+
+**Synopsis:** `bottega project purge <name> [--confirm <name>]`
+
+purge a project from the hosted record
+
+### Options
+
+- `--confirm <name>`: repeat the project or space name to confirm deletion
 
 ### Related
 

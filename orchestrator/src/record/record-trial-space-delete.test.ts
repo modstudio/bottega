@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import { decideTrialSpaceDelete, type TrialDeleteFacts } from './record-trial-space-delete.ts'
+import {
+  type ConfirmedSpaceDeleteFacts,
+  decideSpaceDelete,
+  decideTrialSpaceDelete,
+  type SpaceDeleteFacts,
+} from './record-trial-space-delete.ts'
 
-const base: TrialDeleteFacts = {
+const base: SpaceDeleteFacts = {
   exists: true,
   slug: 'trial-demo',
   marked: true,
@@ -51,6 +56,42 @@ describe('trial space delete guard', () => {
       allowed: true,
       nothing: true,
       neutralize: [],
+    })
+  })
+})
+describe('confirmed space delete guard', () => {
+  const general: ConfirmedSpaceDeleteFacts = {
+    ...base,
+    confirmation: base.slug,
+    personalSpace: false,
+  }
+  test('requires confirmation, ownership, no listing, no personal-space owner, and trial-only peers', () => {
+    expect(decideSpaceDelete({ ...general, confirmation: 'other' })).toMatchObject({
+      allowed: false,
+      refusal: expect.stringContaining('--confirm trial-demo'),
+    })
+    expect(decideSpaceDelete({ ...general, callerUserId: 'other' })).toMatchObject({
+      allowed: false,
+      refusal: expect.stringContaining('caller-owner'),
+    })
+    expect(decideSpaceDelete({ ...general, publiclyListed: true })).toMatchObject({
+      allowed: false,
+      refusal: expect.stringContaining('public-listing'),
+    })
+    expect(decideSpaceDelete({ ...general, personalSpace: true })).toMatchObject({
+      allowed: false,
+      refusal: expect.stringContaining('personal-space'),
+    })
+    expect(
+      decideSpaceDelete({
+        ...general,
+        members: [base.members[0]!, { ...base.members[1]!, email: 'real@example.test' }],
+      }),
+    ).toMatchObject({ allowed: false, refusal: expect.stringContaining('member removal') })
+    expect(decideSpaceDelete(general)).toEqual({
+      allowed: true,
+      nothing: false,
+      neutralize: [base.members[1]!],
     })
   })
 })

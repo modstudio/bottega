@@ -102,6 +102,12 @@ test('registered doc reorder accepts parent and repeatable slug handles', async 
   expect(result.firstLine).not.toContain('unknown option')
 })
 
+test('the real project program parses purge confirmation', async () => {
+  const result = await runRegisteredCommand(['project', 'purge', 'demo', '--confirm', 'demo'])
+  expect(result.firstLine).not.toContain("unknown option '--confirm'")
+  expect(result.firstLine).toContain('no project "demo"')
+})
+
 test('converted command families preserve trunk output and exit status without optional arguments', async () => {
   const originalCwd = process.cwd()
   const fixtureRoot = mkdtempSync(join(tmpdir(), 'command-family-'))
@@ -306,7 +312,7 @@ test('converted command families preserve trunk output and exit status without o
     })
     expect(await runRegisteredCommand(['project', 'bogus'])).toEqual({
       code: 1,
-      firstLine: `unknown: ${PLATFORM_SLUG} project bogus. Try list | add | set | fill-space | remove | retire | push | fill-record-ids`,
+      firstLine: `unknown: ${PLATFORM_SLUG} project bogus. Try list | add | set | fill-space | remove | retire | purge | push | fill-record-ids`,
     })
     expect(await runRegisteredCommand(['subject', 'bogus', 'fixture-project'])).toEqual({
       code: 1,

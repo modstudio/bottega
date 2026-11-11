@@ -25,10 +25,12 @@ import {
   listPublicDocProjects,
   type PublicDocDesignation,
 } from './record-public-doc-designation.ts'
+import { renderRecordRemovalReport } from './record-removal-report.ts'
 import {
   acceptRecordInvitation,
   blockRecordSpaceOutsideAuthor,
   createRecordSpace,
+  deleteSpace,
   deleteTrialSpace,
   grantRecordSpaceConfigAccess,
   hideRecordSpaceRow,
@@ -347,7 +349,14 @@ export async function recordSpaceDeleteTrialCommand(
   slug: string,
   presentation: Presentation,
 ): Promise<void> {
-  const result = await deleteTrialSpace(slug)
+  renderSpaceDeleteResult(slug, await deleteTrialSpace(slug), presentation)
+}
+
+function renderSpaceDeleteResult(
+  slug: string,
+  result: Awaited<ReturnType<typeof deleteTrialSpace>>,
+  presentation: Presentation,
+): void {
   if (result.nothingToRemove) {
     presentation.log(`no space ${slug} among your spaces; nothing removed`)
     return
@@ -356,12 +365,19 @@ export async function recordSpaceDeleteTrialCommand(
     presentation.log(
       `neutralized\t${account.email}\tsessions ${account.sessions}\tmachine keys ${account.machineKeys}`,
     )
-  for (const [table, count] of Object.entries(result.tables).filter(([, count]) => count > 0))
-    presentation.log(`removed\t${table}\t${count}`)
+  renderRecordRemovalReport(result.tables, (value) => presentation.log(value))
   if (result.activeSpaceCleared)
     presentation.log(
       `active record space is now none; select one: ${PLATFORM_SLUG} record space switch <slug>`,
     )
+}
+
+export async function recordSpaceDeleteCommand(
+  slug: string,
+  confirmation: string,
+  presentation: Presentation,
+): Promise<void> {
+  renderSpaceDeleteResult(slug, await deleteSpace(slug, confirmation), presentation)
 }
 
 export async function recordSpaceSwitchCommand(

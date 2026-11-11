@@ -328,6 +328,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-api-client-paths.ts', [
     '../../../shared/docs.ts',
     '../../../shared/record-project-contract.ts',
+    './record-project-purge-contract.ts',
   ]),
   module('orchestrator/src/record/record-doc-command-check.ts', [
     '../doc/doc-command-check.ts',
@@ -581,6 +582,7 @@ export const recordModules: RecordModule[] = [
     './outbox-redaction.ts',
     './record-doctor.ts',
     './record-public-doc-designation.ts',
+    './record-removal-report.ts',
     './record-space-move.ts',
     './record-space.ts',
     './record-space-built-ins.ts',
@@ -682,6 +684,7 @@ export const recordModules: RecordModule[] = [
     './record-config-error.ts',
     './record-docs.ts',
     './record-projects.ts',
+    './record-project-purge-contract.ts',
     './record-project-space-contract.ts',
     './record-trial-space-contract.ts',
     './record-verdicts.ts',

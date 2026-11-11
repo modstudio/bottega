@@ -83,6 +83,7 @@ import type {
   RecordDocOrderInput,
   RecordDocRevision,
 } from './record-docs.ts'
+import type { RecordProjectPurgeResult } from './record-project-purge-contract.ts'
 import type { RecordProjectUpsertInput } from './record-projects.ts'
 import type {
   PublicRecordDoc,
@@ -145,6 +146,9 @@ type RecordApiDeps = RecordSessionRouteDeps &
     readProjects(input: Tenant): Promise<RecordProject[]>
     upsertProject(input: Tenant & RecordProjectUpsertInput): Promise<{ id: string; name: string }>
     retireProject(input: Tenant & { id: string }): Promise<{ name: string }>
+    purgeProject(
+      input: Tenant & { id: string; confirmation: string },
+    ): Promise<RecordProjectPurgeResult>
     listDocs(input: Tenant & RecordDocListInput): Promise<RecordDocListEntry[]>
     listPublicDocs(input: { url: string }): Promise<PublicRecordDocTreeItem[]>
     readPublicDoc(input: { url: string; id: string }): Promise<PublicRecordDoc | null>

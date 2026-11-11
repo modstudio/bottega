@@ -103,6 +103,7 @@ const descriptions: Record<string, string> = {
   apply: 'apply the proposed migration',
   retired: 'include retired projects',
   undo: 'reverse project retirement',
+  confirm: 'repeat the project or space name to confirm deletion',
 }
 
 const key = (flags: string) => flags.match(/^--([^ <]+)/)?.[1] ?? flags
@@ -535,6 +536,7 @@ const projectSpecs: readonly Spec[] = [
     [],
   ],
   ['retire [name]', 'retire or un-retire a project', [o('--undo')]],
+  ['purge <name>', 'purge a project from the hosted record', [o('--confirm <name>')]],
   ['push', 'push projects to the hosted record', json],
   ['fill-record-ids', 'fill missing hosted project identities', json],
   ['relink [name]', 'adopt the hosted identity of a registered project', []],

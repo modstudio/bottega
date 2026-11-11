@@ -6,6 +6,7 @@ import {
   type RecordProject,
   RecordProjectsSchema,
 } from '../../../shared/record-project-contract.ts'
+import type { RecordProjectPurgeResult } from './record-project-purge-contract.ts'
 
 export type RecordRequestDestination = { destinationSpaceId?: string }
 export type RecordApiAuthentication = {
@@ -54,6 +55,7 @@ export type RecordProjectSubjectMethod =
 export type RecordIdentityAndSpaceMethod =
   | 'createOrganization'
   | 'deleteTrialSpace'
+  | 'deleteSpace'
   | 'setActiveOrganization'
   | 'listInvitations'
   | 'acceptInvitation'
@@ -75,6 +77,11 @@ export type ProjectIdentityClient = {
   ): Promise<{ id: string; name: string }>
   listProjects(destination?: RecordRequestDestination): Promise<RecordProject[]>
   retireProject(id: string, destination?: RecordRequestDestination): Promise<{ name: string }>
+  purgeProject(
+    id: string,
+    confirmation: string,
+    destination?: RecordRequestDestination,
+  ): Promise<RecordProjectPurgeResult>
 }
 
 export type RecordClientRequest = <T>(
@@ -152,6 +159,12 @@ export function projectIdentityClient(request: RecordClientRequest): ProjectIden
     retireProject: (id, destination) =>
       request<{ name: string }>(`/v1/projects/${encodeURIComponent(id)}/retire`, {
         method: 'POST',
+        ...destination,
+      }),
+    purgeProject: (id, confirmation, destination) =>
+      request<RecordProjectPurgeResult>(`/v1/projects/${encodeURIComponent(id)}/purge`, {
+        method: 'POST',
+        body: JSON.stringify({ confirmation }),
         ...destination,
       }),
   }
