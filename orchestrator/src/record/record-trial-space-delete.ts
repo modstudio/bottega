@@ -25,7 +25,12 @@ const retry = `choose a space created with \`${PLATFORM_SLUG} record space creat
 type CommonSpaceDeleteGuard =
   | { kind: 'public-listing' }
   | { kind: 'caller-owner' }
-  | { kind: 'trial-member-email' | 'trial-member-spaces'; member: TrialMemberFact }
+  | { kind: 'trial-member-email'; member: TrialMemberFact }
+  | { kind: 'trial-member-spaces'; member: TrialMemberFact }
+type SharedSpaceDeleteGuard = Extract<
+  CommonSpaceDeleteGuard,
+  { kind: 'public-listing' | 'caller-owner' }
+>
 function commonSpaceDeleteGuard(facts: SpaceDeleteFacts): CommonSpaceDeleteGuard | null {
   if (facts.publiclyListed) return { kind: 'public-listing' }
   if (facts.members.find((member) => member.userId === facts.callerUserId)?.role !== 'owner')
@@ -40,22 +45,20 @@ function commonSpaceDeleteGuard(facts: SpaceDeleteFacts): CommonSpaceDeleteGuard
 }
 function renderCommonSpaceDeleteGuard(
   facts: SpaceDeleteFacts,
-  guard: CommonSpaceDeleteGuard,
+  guard: SharedSpaceDeleteGuard,
   subject: 'trial space' | 'space',
   retryCommand: string,
-): string | null {
+): string {
   if (guard.kind === 'public-listing')
     return `public-listing guard failed: ${subject} ${facts.slug} is publicly listed in public_doc_space; ask record_owner to remove that row, then retry`
-  if (guard.kind === 'caller-owner')
-    return `caller-owner guard failed: ask an owner of ${facts.slug} to run ${retryCommand}`
-  return null
+  return `caller-owner guard failed: ask an owner of ${facts.slug} to run ${retryCommand}`
 }
 function renderTrialGuard(facts: SpaceDeleteFacts, guard: CommonSpaceDeleteGuard): string {
-  const common = renderCommonSpaceDeleteGuard(facts, guard, 'trial space', 'delete-trial')
-  if (common) return common
   if (guard.kind === 'trial-member-email')
     return `trial-member-email guard failed: ${guard.member.email} is not a trial account; remove that member, then retry`
-  return `trial-member-spaces guard failed: ${guard.member.email} belongs to a non-trial space; remove that member, then retry`
+  if (guard.kind === 'trial-member-spaces')
+    return `trial-member-spaces guard failed: ${guard.member.email} belongs to a non-trial space; remove that member, then retry`
+  return renderCommonSpaceDeleteGuard(facts, guard, 'trial space', 'delete-trial')
 }
 export function decideTrialSpaceDelete(facts: SpaceDeleteFacts): SpaceDeleteDecision {
   if (!facts.exists) return { allowed: true, nothing: true, neutralize: [] }
@@ -96,17 +99,18 @@ export function decideSpaceDelete(facts: ConfirmedSpaceDeleteFacts): SpaceDelete
     }
   const guard = commonSpaceDeleteGuard(facts)
   if (guard) {
+    if (guard.kind === 'trial-member-email' || guard.kind === 'trial-member-spaces')
+      return {
+        allowed: false,
+        refusal: `${guard.member.email} holds a real account in ${facts.slug}; space delete removes only the owner and trial accounts, and member removal is not yet available from the CLI, so this space cannot be deleted while that member remains`,
+      }
     const common = renderCommonSpaceDeleteGuard(
       facts,
       guard,
       'space',
       `\`${PLATFORM_SLUG} record space delete ${facts.slug} --confirm ${facts.slug}\``,
     )
-    if (common) return { allowed: false, refusal: common }
-    return {
-      allowed: false,
-      refusal: `${guard.member.email} holds a real account in ${facts.slug}; space delete removes only the owner and trial accounts, and member removal is not yet available from the CLI, so this space cannot be deleted while that member remains`,
-    }
+    return { allowed: false, refusal: common }
   }
   return {
     allowed: true,
