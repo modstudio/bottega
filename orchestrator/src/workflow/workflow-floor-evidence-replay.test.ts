@@ -3,10 +3,10 @@ import {
   type FloorEvidencePorts,
   invokeFloorEvidencePort,
   MAX_FLOOR_EVIDENCE_REPLAY_ROUNDS,
-  withReplayedFloorEvidence,
+  withReplayedFloorEvidenceAsync,
 } from './workflow-floor-evidence-replay.ts'
 
-test('external floor evidence misses once and then replays the recorded result', () => {
+test('external floor evidence misses once and then replays the recorded result', async () => {
   let calls = 0
   const ports: FloorEvidencePorts = {
     readTask: (key) => {
@@ -14,40 +14,40 @@ test('external floor evidence misses once and then replays the recorded result',
       return { key, status: 'done', statusCategory: 'done', commentIds: [] }
     },
   }
-  const result = withReplayedFloorEvidence(ports, (replay) =>
+  const result = await withReplayedFloorEvidenceAsync(ports, async (replay) =>
     replay.readTask!('DEV-1141', { fresh: true }),
   )
   expect(result.key).toBe('DEV-1141')
   expect(calls).toBe(1)
 })
 
-test('recorded floor evidence errors are rethrown without calling the port again', () => {
+test('recorded floor evidence errors are rethrown without calling the port again', async () => {
   const refusal = new Error('tracker unavailable')
   let calls = 0
-  expect(() =>
-    withReplayedFloorEvidence(
+  await expect(
+    withReplayedFloorEvidenceAsync(
       {
         readTask: () => {
           calls += 1
           throw refusal
         },
       },
-      (replay) => replay.readTask!('DEV-1141', { fresh: true }),
+      async (replay) => replay.readTask!('DEV-1141', { fresh: true }),
     ),
-  ).toThrow(refusal)
+  ).rejects.toThrow(refusal)
   expect(calls).toBe(1)
 })
 
-test('different floor evidence arguments are separate misses', () => {
+test('different floor evidence arguments are separate misses', async () => {
   const calls: string[] = []
-  const result = withReplayedFloorEvidence(
+  const result = await withReplayedFloorEvidenceAsync(
     {
       readTask: (key) => {
         calls.push(key)
         return { key, status: 'done', statusCategory: 'done', commentIds: [] }
       },
     },
-    (replay) => [
+    async (replay) => [
       replay.readTask!('DEV-1141', { fresh: true }).key,
       replay.readTask!('DEV-1142', { fresh: true }).key,
     ],
@@ -56,9 +56,9 @@ test('different floor evidence arguments are separate misses', () => {
   expect(calls).toEqual(['DEV-1141', 'DEV-1142'])
 })
 
-test('inline default ports use the same miss and replay path', () => {
+test('inline default ports use the same miss and replay path', async () => {
   let calls = 0
-  const result = withReplayedFloorEvidence({}, (replay) =>
+  const result = await withReplayedFloorEvidenceAsync({}, async (replay) =>
     invokeFloorEvidencePort(
       replay,
       'resolveTreeCommit',
@@ -73,16 +73,16 @@ test('inline default ports use the same miss and replay path', () => {
   expect(calls).toBe(1)
 })
 
-test('the replay round bound refuses and names the port still missing', () => {
+test('the replay round bound refuses and names the port still missing', async () => {
   let round = 0
-  expect(() =>
-    withReplayedFloorEvidence(
+  await expect(
+    withReplayedFloorEvidenceAsync(
       {
         resolveTreeCommit: (worktree) => worktree,
       },
-      (replay) => replay.resolveTreeCommit!(`/tmp/tree-${round++}`),
+      async (replay) => replay.resolveTreeCommit!(`/tmp/tree-${round++}`),
     ),
-  ).toThrow(
+  ).rejects.toThrow(
     `floor evidence replay exhausted after ${MAX_FLOOR_EVIDENCE_REPLAY_ROUNDS} rounds; still missing resolveTreeCommit`,
   )
 })

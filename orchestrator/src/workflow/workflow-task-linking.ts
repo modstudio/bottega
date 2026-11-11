@@ -10,6 +10,7 @@ import type { TaskFlowAdoptResult } from '../record/record-task-flow-write-contr
 import { writeHostedTaskFlow } from '../record/record-task-flow-write-client.ts'
 import { linkWorkflowQuestionsTaskReference } from '../run/question-mutation.ts'
 import { cacheAdoptedTaskFlow } from './task-flow.ts'
+import { resolveTaskFlowDestination } from './task-flow-hosted-destination.ts'
 import {
   resolveWorkflowCursorMode,
   type SelectableCursorRow,
@@ -35,6 +36,7 @@ export async function linkWorkflowTaskLabel(
     row: (typeof rows)[number]
     result: TaskFlowAdoptResult
   }>
+  const destination = await resolveTaskFlowDestination(input.project, database, client)
   for (const row of rows) {
     const result = await writeHostedTaskFlow(
       'adopt',
@@ -45,6 +47,7 @@ export async function linkWorkflowTaskLabel(
         updatedMachineId: machineId(),
         updatedAt: row.updated_at,
       },
+      destination,
       client,
     )
     if (result) hosted.push({ row, result })

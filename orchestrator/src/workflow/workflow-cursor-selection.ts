@@ -84,7 +84,11 @@ export async function resolveWorkflowCursorContext(
   if (!key) return { ...context, workflowKey: undefined, taskRecordId: null }
   const task = await resolveHubTaskReference(project, key, reader)
   const taskFlowRead = task?.record_id
-    ? await readThroughTaskFlow(database, { taskKey: key, taskRecordId: task.record_id })
+    ? await readThroughTaskFlow(database, {
+        project,
+        taskKey: key,
+        taskRecordId: task.record_id,
+      })
     : undefined
   return {
     ...context,

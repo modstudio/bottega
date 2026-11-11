@@ -15,6 +15,7 @@ import {
   decideTaskFlowReadThrough,
   type TaskFlowReadStatus,
 } from './task-flow-decision.ts'
+import { resolveTaskFlowDestination } from './task-flow-hosted-destination.ts'
 
 export type { TaskFlowReadStatus } from './task-flow-decision.ts'
 
@@ -137,11 +138,13 @@ function cacheHostedTaskFlowRows(
 
 export async function readThroughTaskFlow(
   database: Database,
-  input: { taskKey: string; taskRecordId: string },
+  input: { project: string; taskKey: string; taskRecordId: string },
 ): Promise<TaskFlowReadStatus> {
   const configured = recordApiConfigured(process.env)
   try {
-    const hosted = await recordApiClient().readTaskFlow!({ taskKey: input.taskKey })
+    const client = recordApiClient()
+    const destination = await resolveTaskFlowDestination(input.project, database, client)
+    const hosted = await client.readTaskFlow!({ taskKey: input.taskKey }, destination)
     const local = database
       .query<{ flow_revision: number; stage_revision: number | null }, [string]>(
         `SELECT flow.revision flow_revision,cursor.revision stage_revision

@@ -1,8 +1,9 @@
 // concern: hosted task-flow write client
 /** Routes one task-flow intent through the install's record write authority. */
 import { recordApiClient } from './record-api-client.ts'
+import type { RecordRequestDestination } from './record-api-client-paths.ts'
 import type { RecordTaskFlowClient } from './record-api-client-task-flow.ts'
-import {
+import type {
   type TaskFlowIntent,
   type TaskFlowIntentInput,
   type TaskFlowIntentResult,
@@ -24,6 +25,7 @@ const methodByIntent = {
 export async function writeHostedTaskFlow<K extends TaskFlowIntent>(
   intent: K,
   input: TaskFlowIntentInput<K>,
+  destination: RecordRequestDestination | undefined,
   client: RecordTaskFlowClient = recordApiClient(),
 ): Promise<TaskFlowIntentResult<K> | null> {
   return applyRecordWriteAuthority({
@@ -36,7 +38,7 @@ export async function writeHostedTaskFlow<K extends TaskFlowIntent>(
         throw new Error(
           `record API predates the ${intent} task-flow write; release hosted-api, then retry`,
         )
-      return method(input)
+      return method(input, destination)
     },
   })
 }

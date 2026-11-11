@@ -343,16 +343,4 @@ export function attachInsertedTaskFlowStage(
   return flow.flowRecordId
 }
 
-export function closeTaskFlowStage(cursorRecordId: string, d: Database): void {
-  const flow = d
-    .query<{ record_id: string }, [string]>(
-      'SELECT record_id FROM task_flow WHERE open_stage_cursor_record_id=?',
-    )
-    .get(cursorRecordId)
-  if (!flow) return
-  d.query(
-    'UPDATE task_flow SET open_stage_cursor_record_id=NULL,updated_at=? WHERE record_id=?',
-  ).run(nowIso(), flow.record_id)
-  stampTaskFlowMachine(flow.record_id, d)
-}
 

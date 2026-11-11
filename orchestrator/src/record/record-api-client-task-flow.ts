@@ -23,6 +23,7 @@ import {
   taskFlowComposeResultSchema,
   taskFlowWriteResultSchema,
 } from './record-task-flow-write-contract.ts'
+import type { RecordIdentity } from './record-auth.ts'
 
 type Request = <T>(
   path: string,
@@ -31,6 +32,7 @@ type Request = <T>(
 const TASK_FLOW_WRITE_REFUSAL =
   'record API predates task-flow writes; release hosted-api, then retry'
 export type RecordTaskFlowClient = {
+  whoami?(): Promise<RecordIdentity>
   readTaskFlow?(
     selector: { taskKey?: string; flowRecordId?: string },
     destination?: RecordRequestDestination,

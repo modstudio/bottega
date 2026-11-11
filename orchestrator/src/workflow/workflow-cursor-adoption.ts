@@ -13,6 +13,7 @@ import {
   selectTaskFlowStage,
   vacateRetiredWorkflowKeySlot,
 } from './task-flow.ts'
+import { resolveTaskFlowDestination } from './task-flow-hosted-destination.ts'
 
 type AdoptionCursor = {
   id: number
@@ -85,6 +86,7 @@ export async function adoptWorkflowTask(
   const adoptedTaskId = taskRecordId ?? null
   if (adoptedTaskId) {
     const at = nowIso()
+    const destination = await resolveTaskFlowDestination(row.project, d, client)
     const adopted = await writeHostedTaskFlow(
       'adopt',
       {
@@ -94,6 +96,7 @@ export async function adoptWorkflowTask(
         updatedMachineId: machineId(),
         updatedAt: at,
       },
+      destination,
       client,
     )
     let stageRevision = adopted?.revisions[row.record_id] ?? row.revision
@@ -111,6 +114,7 @@ export async function adoptWorkflowTask(
             },
           ],
         },
+        destination,
         client,
       )
       stageRevision = updated?.revisions[row.record_id] ?? stageRevision

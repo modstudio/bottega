@@ -8,6 +8,7 @@ import { writeHostedTaskFlow } from '../record/record-task-flow-write-client.ts'
 import type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { selectWorkflowCursor } from './workflow-cursor-selection.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
+import { resolveTaskFlowDestination } from './task-flow-hosted-destination.ts'
 import { linkWorkflowTaskLabel } from './workflow-task-linking.ts'
 
 export const WORKFLOW_TEXT_ATTACHMENT_MAX_BYTES = 32 * 1024
@@ -200,6 +201,7 @@ async function attachWorkflowTextByHandleUnchecked(
     body,
   ])
   const createdAt = row.updated_at
+  const destination = await resolveTaskFlowDestination(row.project, d, context.taskFlowClient)
   await writeHostedTaskFlow(
     'attach-text',
     {
@@ -215,6 +217,7 @@ async function attachWorkflowTextByHandleUnchecked(
         },
       ],
     },
+    destination,
     context.taskFlowClient,
   )
   return writeTransaction(() => {
@@ -247,12 +250,14 @@ async function attachWorkflowTextUnchecked(
     body,
   ])
   const createdAt = row.updated_at
+  const destination = await resolveTaskFlowDestination(row.project, d, context.taskFlowClient)
   await writeHostedTaskFlow(
     'attach-text',
     {
       requestId: taskFlowRequestId('attach-text', [recordId]),
       rows: [{ id: recordId, stageRecordId: row.record_id, stepOrdinal: row.ordinal + 1, stepSlug: row.step_slug, body, createdAt }],
     },
+    destination,
     context.taskFlowClient,
   )
   return writeTransaction(() => {
@@ -324,9 +329,15 @@ export async function deleteWorkflowText(
 ): Promise<void> {
   const ids = workflowTextDeletionIds(cursorId, linked, d)
   if (!ids.length) return
+  const row = d
+    .query<{ project: string }, [string]>('SELECT project FROM workflow_cursor WHERE record_id=?')
+    .get(cursorId)
+  if (!row) throw new Error(`workflow cursor ${cursorId} does not exist; retry with a live cursor`)
+  const destination = await resolveTaskFlowDestination(row.project, d, client)
   await writeHostedTaskFlow(
     'delete-text',
     { requestId: taskFlowRequestId('delete-text', [cursorId, ...ids.sort()]), stageRecordId: cursorId, ids },
+    destination,
     client,
   )
   writeTransaction(() => deleteWorkflowTextLocally(ids, d), d)

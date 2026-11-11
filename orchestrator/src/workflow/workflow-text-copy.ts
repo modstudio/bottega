@@ -11,6 +11,7 @@ import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { writeHostedTaskFlow } from '../record/record-task-flow-write-client.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
+import { resolveTaskFlowDestination } from './task-flow-hosted-destination.ts'
 import { abandonSelectedWorkflowCursorForClose, nextWorkflowStep } from './workflow-cursor.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import {
@@ -115,13 +116,14 @@ async function recordCopy(
   reference: string,
   database: Database,
   copiedAt: string,
+  destination: Awaited<ReturnType<typeof resolveTaskFlowDestination>>,
   client?: RecordTaskFlowClient,
 ): Promise<void> {
   const id = taskFlowRequestId('copy-text', [cursorId, textId, reference])
   await writeHostedTaskFlow('copy-text', {
     requestId: taskFlowRequestId('copy-text', [id]),
     row: { id, workflowTextRecordId: textId, stageRecordId: cursorId, taskDocumentReference: reference, copiedAt },
-  }, client)
+  }, destination, client)
   writeTransaction(() => {
     database
       .query(
@@ -162,6 +164,7 @@ export async function copyWorkflowTextForCursor(
   const rows = uncopiedRows(cursor.recordId, database)
   if (!cursor.taskRecordId || rows.length === 0)
     return { cursor: cursor.number, copied: [], uncopied: [], unsupported: null }
+  const destination = await resolveTaskFlowDestination(cursor.project, database, client)
   try {
     const task = (await taskReader(cursor.project)).find(
       (candidate) => candidate.record_id === cursor.taskRecordId,
@@ -182,7 +185,15 @@ export async function copyWorkflowTextForCursor(
         const reference =
           found?.reference ??
           (await documents.create(task.key, cursor.project, `${token} ${row.stepSlug}`, row.body))
-        await recordCopy(cursor.recordId, row.id, reference, database, row.createdAt, client)
+        await recordCopy(
+          cursor.recordId,
+          row.id,
+          reference,
+          database,
+          row.createdAt,
+          destination,
+          client,
+        )
         copied.push({ id: row.id, documentReference: reference, reused: Boolean(found) })
         if (!found) existing.push({ reference, title: `${token} ${row.stepSlug}` })
       } catch (error) {

@@ -311,10 +311,18 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-api-client-task-flow.ts', [
     '../doc/doc-revision-conflict.ts',
+    './record-auth.ts',
     './record-api-client-response.ts',
     './record-api-client-paths.ts',
     './record-task-flow-contract.ts',
     './record-task-flow-write-contract.ts',
+  ]),
+  module('orchestrator/src/record/record-task-flow-write-client.ts', [
+    './record-api-client.ts',
+    './record-api-client-paths.ts',
+    './record-api-client-task-flow.ts',
+    './record-task-flow-write-contract.ts',
+    './record-write-authority.ts',
   ]),
   module('orchestrator/src/record/record-cache-workflow.ts', [
     ...cacheDeleteImports,

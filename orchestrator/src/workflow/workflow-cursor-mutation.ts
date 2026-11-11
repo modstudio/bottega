@@ -8,6 +8,7 @@ import { writeHostedTaskFlow } from '../record/record-task-flow-write-client.ts'
 import { closeQuestions } from '../run/question-close.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { cursorName } from './workflow-cursor-format.ts'
+import { resolveTaskFlowDestination } from './task-flow-hosted-destination.ts'
 import { refuseTerminalCursor } from './workflow-cursor-result.ts'
 import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
 import type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
@@ -54,6 +55,7 @@ export async function abandonWorkflowCursor(
   ).get(row.task_flow_record_id) : null
   const parts = [{ id: row.record_id, revision: row.revision }, ...(flow ? [{ id: flow.record_id, revision: flow.revision }] : [])]
     .sort((a, b) => a.id.localeCompare(b.id)).flatMap(({ id, revision }) => [id, String(revision)])
+  const destination = await resolveTaskFlowDestination(row.project, d, context.taskFlowClient)
   const hosted = await writeHostedTaskFlow('abandon', {
     requestId: taskFlowRequestId('abandon', parts),
     stage: { id: row.record_id, expectedRevision: row.revision, values: {
@@ -65,7 +67,7 @@ export async function abandonWorkflowCursor(
     } } } : {}),
     obligationUpdates: obligations.map(({ record_id }) => ({ id: record_id, stageRecordId: row.record_id, abandonedAt: at, abandonedReason: reason.trim() })),
     deleteTextIds,
-  }, context.taskFlowClient)
+  }, destination, context.taskFlowClient)
   return writeTransaction(() => {
     const current = d.query<{ revision: number }, [string]>('SELECT revision FROM workflow_cursor WHERE record_id=?').get(row.record_id)
     if (!current || current.revision !== row.revision) throw new Error(`workflow cursor ${row.id} changed while it was abandoned; rerun the command`)

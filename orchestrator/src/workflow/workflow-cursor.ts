@@ -1,10 +1,7 @@
 import type { Database } from 'bun:sqlite'
-import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { notifyWaitingItem } from '../operator/operator-waiting.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
-import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
-import { recordApiClient } from '../record/record-api-client.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { taskFlowRequestId, type TaskFlowIntentInput } from '../record/record-task-flow-write-contract.ts'
 import { writeHostedTaskFlow } from '../record/record-task-flow-write-client.ts'
@@ -16,26 +13,17 @@ import {
 import { questionOpenSql } from '../run/question-open.ts'
 import { resolvedRulingPersonName } from '../run/ruling-attribution.ts'
 import type { AutonomyResolution, LiveCursorAutonomy } from './autonomy.ts'
-import {
-  attachInsertedTaskFlowStage,
-  cacheAdoptedTaskFlow,
-  insertWorkflowCursorRow,
-  refuseTaskFlowStageConflict,
-  stampWorkflowCursorMachine,
-} from './task-flow.ts'
-import { decideWorkflowTakeover, taskFlowState, workflowTakeoverNotice } from './task-flow-decision.ts'
-import {
-  type CommitCountPort,
-  readCommitsPastLanding,
-  workflowComposeBranchRefusal,
-} from './workflow-compose-branch.ts'
+import { cacheAdoptedTaskFlow } from './task-flow.ts'
+import { decideWorkflowTakeover, workflowTakeoverNotice } from './task-flow-decision.ts'
+import { type CommitCountPort, readCommitsPastLanding } from './workflow-compose-branch.ts'
 import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
 import {
   applyCursorArguments,
   resolveCursorArguments,
   workflowKeyOf as keyOf,
 } from './workflow-cursor-arguments.ts'
-import { cursorAutonomy, storedCursorAutonomyJson } from './workflow-cursor-autonomy.ts'
+import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
+import { insertWorkflowCursor } from './workflow-cursor-compose.ts'
 import { cursorName, formatCursorOpened, formatCursorResumed } from './workflow-cursor-format.ts'
 import {
   abandonWorkflowCursor,
@@ -57,7 +45,6 @@ import {
   selectWorkflowCursorForClose,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
-import { refuseUnlinkedCursorLabelCollision } from './workflow-cursor-task-reference.ts'
 import {
   type ClosedStep,
   type CursorTrailEntry,
@@ -107,6 +94,7 @@ import {
   withWorkflowTextFacts,
 } from './workflow-text.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
+import { resolveTaskFlowDestination } from './task-flow-hosted-destination.ts'
 
 type CursorRow = WorkflowCloseCursor
 const findCursor = (...args: Parameters<typeof findWorkflowCursor>): CursorRow | null =>
@@ -147,291 +135,6 @@ function adoptLinkedTask(
 const takenOverFrom = (row: CursorRow | null, context: WorkflowCursorContext): string | null =>
   row?.session_id && context.session && row.session_id !== context.session ? row.session_id : null
 
-function attachCompositionTaskFlowStage(
-  row: CursorRow,
-  composition: ReturnType<typeof composeWorkflow>,
-  context: WorkflowCursorContext,
-  database: Database,
-): string | null {
-  return attachInsertedTaskFlowStage(
-    {
-      project: composition.project,
-      taskRecordId: context.taskRecordId,
-      taskKey: keyOf(composition.arguments),
-      statusCategory: context.taskStatusCategory,
-      cursor: row,
-    },
-    database,
-  )
-}
-
-/**
- * Create, or resume, the cursor a composition opens.
- *
- * Every door that opens a cursor comes through here, so the empty-branch refusal is taken once
- * rather than at each caller: a workflow that lands a built branch is not opened for a branch that
- * carries nothing to land.
- */
-async function insertCursor(
-  composition: ReturnType<typeof composeWorkflow>,
-  context: WorkflowCursorContext,
-  d: Database,
-  autonomy?: AutonomyResolution,
-  commitCount: CommitCountPort = readCommitsPastLanding,
-  keylessSiblingRetry = false,
-): Promise<CursorRow> {
-  const refusal = workflowComposeBranchRefusal({
-    workflow: composition.workflow.slug,
-    project: composition.project,
-    args: composition.arguments,
-    d,
-    commitCount,
-  })
-  if (refusal) throw new Error(refusal)
-  const cursorRecordId = newRecordId()
-  const key = keyOf(composition.arguments)
-  const at = nowIso()
-  const projectRecordId = d
-    .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
-    .get(composition.project)!.record_id
-  const existingFlow = context.taskRecordId
-    ? d
-        .query<{ record_id: string; revision: number }, [string]>(
-          'SELECT record_id,revision FROM task_flow WHERE task_record_id=?',
-        )
-        .get(context.taskRecordId)
-    : null
-  if (context.taskRecordId && key)
-    refuseTaskFlowStageConflict(
-      {
-        taskRecordId: context.taskRecordId,
-        taskKey: key,
-        workflow: composition.workflow.slug,
-        mode: composition.mode!.slug,
-      },
-      d,
-    )
-  const flowRecordId = existingFlow?.record_id ?? newRecordId()
-  const machine = machineId()
-  const owner = context.session ?? machine
-  const keylessOrdinal = key
-    ? null
-    : d.query<{ n: number }, [string, string, string, string | null, string | null, string]>(
-        `SELECT COUNT(*)+1 n FROM workflow_cursor
-         WHERE project_record_id=? AND workflow_slug=? AND mode_slug=? AND workflow_key=''
-           AND (session_id=? OR (? IS NULL AND session_id IS NULL AND opened_machine_id=?))`,
-      ).get(projectRecordId, composition.workflow.slug, composition.mode!.slug, context.session ?? null, context.session ?? null, machine)!.n
-  const instance = key
-    ? ''
-    : taskFlowRequestId('compose', [
-        'keyless-instance', owner, projectRecordId, composition.workflow.slug,
-        composition.mode!.slug, String(keylessOrdinal),
-      ])
-  const autonomyJson = storedCursorAutonomyJson(autonomy, {
-    steps: Object.fromEntries(composition.steps.map((step) => [step.slug, step.resolvedAutonomy])),
-    rulings: composition.rulings,
-  })
-  if (key)
-    refuseUnlinkedCursorLabelCollision(d, {
-      project: composition.project,
-      workflow: composition.workflow.slug,
-      mode: composition.mode!.slug,
-      key,
-      taskRecordId: context.taskRecordId,
-    })
-  const rowInput = {
-      recordId: cursorRecordId,
-      projectRecordId,
-      project: composition.project,
-      workflow: composition.workflow.slug,
-      mode: composition.mode!.slug,
-      workflowKey: key,
-      taskRecordId: context.taskRecordId ?? null,
-      taskFlowRecordId: null,
-      instanceId: instance,
-      sessionId: context.session ?? null,
-      workflowVersionRecordId: composition.workflow.record_id,
-      catalogueVersionRecordId: composition.catalogue.record_id,
-      args: JSON.stringify(composition.arguments),
-      autonomy: autonomyJson,
-      ordinal: 0,
-      stepSlug: composition.steps[0]!.slug,
-      state: 'running',
-      closed: '[]',
-      question: null,
-      totalSteps: composition.steps.length,
-      createdAt: at,
-      updatedAt: at,
-      enforcement: 'floors',
-      openedMachineId: machine,
-      takenOverFromMachineId: null,
-      lastAdvancedMachineId: machine,
-      revision: 1,
-    } as const
-  let hosted
-  try {
-    hosted = await writeHostedTaskFlow(
-    'compose',
-    {
-      requestId: taskFlowRequestId('compose', [
-        projectRecordId,
-        composition.workflow.slug,
-        composition.mode!.slug,
-        key,
-        instance,
-      ]),
-      ...(existingFlow
-        ? {
-            flowChange: {
-              id: existingFlow.record_id,
-              expectedRevision: existingFlow.revision,
-              values: { openStageRecordId: cursorRecordId, updatedMachineId: machine, updatedAt: at },
-            },
-          }
-        : {
-            flowInsert: {
-              id: flowRecordId,
-              projectId: projectRecordId,
-              taskId: context.taskRecordId ?? null,
-              state: taskFlowState(context.taskStatusCategory) ?? 'open',
-              openStageRecordId: cursorRecordId,
-              openingMachineId: machine,
-              updatedMachineId: machine,
-              createdAt: at,
-              updatedAt: at,
-            },
-          }),
-      stageInsert: {
-        id: cursorRecordId,
-        flowRecordId,
-        projectId: projectRecordId,
-        workflow: composition.workflow.slug,
-        mode: composition.mode!.slug,
-        workflowKey: key,
-        instanceId: instance,
-        sessionId: context.session ?? null,
-        workflowVersionId: composition.workflow.record_id,
-        catalogueVersionId: composition.catalogue.record_id,
-        arguments: composition.arguments,
-        activeOrdinal: 0,
-        activeSlug: composition.steps[0]!.slug,
-        state: 'running',
-        closedStepNotes: [],
-        question: null,
-        autonomy: autonomyJson,
-        enforcement: 'floors',
-        totalSteps: composition.steps.length,
-        openedMachineId: machine,
-        takenOverFromMachineId: null,
-        lastAdvancedMachineId: machine,
-        createdAt: at,
-        updatedAt: at,
-      },
-    },
-      context.taskFlowClient,
-    )
-  } catch (error) {
-    if (!(error instanceof DocRevisionConflictError) || error.reason !== 'already-exists') throw error
-    const client = context.taskFlowClient ?? recordApiClient()
-    const listed = await client.listTaskFlowStages!({
-      projectId: projectRecordId,
-      states: ['running', 'awaiting-ruling'],
-      ...(key ? { taskKey: key } : { sessionId: context.session ?? undefined }),
-    })
-    const replay = listed.items.find(({ stage }) =>
-      stage.workflow === composition.workflow.slug &&
-      stage.mode === composition.mode!.slug &&
-      (stage.workflowKey ?? '') === key &&
-      (stage.instanceId ?? '') === instance,
-    )
-    if (!replay)
-      throw new Error(`${error.message}; close or abandon the stage holding this workflow slot, then retry`)
-    const { stage, flow } = replay
-    const alreadyCached = d
-      .query<{ record_id: string }, [string]>('SELECT record_id FROM workflow_cursor WHERE record_id=?')
-      .get(stage.id)
-    if (alreadyCached) {
-      if (key || keylessSiblingRetry) throw error
-      return insertCursor(composition, context, d, autonomy, commitCount, true)
-    }
-    return writeTransaction(() => {
-      const stored = insertWorkflowCursorRow(d, {
-        ...rowInput,
-        recordId: stage.id,
-        number: stage.number ?? undefined,
-        taskRecordId: flow.taskId,
-        taskFlowRecordId: flow.taskId ? flow.id : null,
-        instanceId: stage.instanceId ?? instance,
-        sessionId: stage.sessionId ?? null,
-        args: JSON.stringify(stage.arguments),
-        ordinal: stage.activeOrdinal,
-        stepSlug: stage.activeSlug,
-        state: stage.state,
-        closed: JSON.stringify(stage.closedStepNotes),
-        question: stage.question ?? null,
-        createdAt: stage.createdAt,
-        updatedAt: stage.updatedAt,
-        revision: stage.revision,
-      }, 'hosted-record')
-      if (flow.taskId) cacheAdoptedTaskFlow({
-        project: composition.project, taskRecordId: flow.taskId, cursorRecordId: stored,
-        flowRecordId: flow.id, flowRevision: flow.revision, stageRevision: stage.revision,
-        statusCategory: context.taskStatusCategory, at: stage.updatedAt,
-      }, d)
-      return d.query('SELECT number id,* FROM workflow_cursor WHERE record_id=?').get(stored) as CursorRow
-    }, d)
-  }
-  const hostedCursorRecordId = hosted?.stage?.id ?? cursorRecordId
-  const hostedFlowRecordId = existingFlow?.record_id ??
-    (hosted
-      ? Object.keys(hosted.revisions).find((recordId) => recordId !== hostedCursorRecordId)
-      : undefined) ?? flowRecordId
-  return writeTransaction(() => {
-    if (existingFlow) {
-      const current = d
-        .query<{ revision: number }, [string]>('SELECT revision FROM task_flow WHERE record_id=?')
-        .get(existingFlow.record_id)
-      if (!current || current.revision !== existingFlow.revision)
-        throw new Error(`task flow ${existingFlow.record_id} changed while composing; rerun the command`)
-    }
-    const storedRecordId = insertWorkflowCursorRow(
-      d,
-      {
-        ...rowInput,
-        recordId: hostedCursorRecordId,
-        number: hosted?.stage?.number,
-        revision: hosted?.revisions[hostedCursorRecordId] ?? 1,
-      },
-      'local-identity',
-    )
-    if (hosted) {
-      if (context.taskRecordId)
-        cacheAdoptedTaskFlow(
-          {
-            project: composition.project,
-            taskRecordId: context.taskRecordId,
-            cursorRecordId: storedRecordId,
-            flowRecordId: hostedFlowRecordId,
-            flowRevision: hosted.revisions[hostedFlowRecordId]!,
-            stageRevision: hosted.revisions[hostedCursorRecordId]!,
-            statusCategory: context.taskStatusCategory,
-            at,
-          },
-          d,
-        )
-    } else {
-      stampWorkflowCursorMachine(storedRecordId, storedRecordId === cursorRecordId ? 0 : 1, d)
-      const local = d
-        .query('SELECT number id,* FROM workflow_cursor WHERE record_id=?')
-        .get(storedRecordId) as CursorRow
-      local.task_flow_record_id = attachCompositionTaskFlowStage(local, composition, context, d)
-    }
-    return d
-      .query('SELECT number id,* FROM workflow_cursor WHERE record_id=?')
-      .get(storedRecordId) as CursorRow
-  }, d)
-}
-
 export type CursorSummary = {
   id: number
   n: number
@@ -470,6 +173,11 @@ export async function composeWorkflowWithCursor(
     let row: CursorRow
     if (existing && start === 'reuse') {
       const resolved = resolveCursorArguments(existing, args, d, true)
+      const destination = await resolveTaskFlowDestination(
+        existing.project,
+        d,
+        context.taskFlowClient,
+      )
       const hosted = await writeHostedTaskFlow(
         'stage-update',
         {
@@ -487,6 +195,7 @@ export async function composeWorkflowWithCursor(
             },
           ],
         },
+        destination,
         context.taskFlowClient,
       )
       writeTransaction(() => {
@@ -507,7 +216,7 @@ export async function composeWorkflowWithCursor(
         )
       }, d)
       row = d.query('SELECT number id,* FROM workflow_cursor WHERE record_id=?').get(existing.record_id) as CursorRow
-    } else row = await insertCursor(composition, context, d, autonomy, commitCount)
+    } else row = await insertWorkflowCursor(composition, context, d, autonomy, commitCount)
     return {
       ...cursorComposition(row, d, live),
       cursor: {
@@ -594,7 +303,7 @@ async function prepareStepServe(
   if (index < 0) throw new Error(`workflow "${slug}" has no step "${resolvedStepSlug}"`)
   const requested = composition.steps[index]!
   if (index === 0 && startDecision === 'retire')
-    row = await insertCursor(composition, context, d, autonomy, commitCount)
+    row = await insertWorkflowCursor(composition, context, d, autonomy, commitCount)
   return { row, opensCursor, composition, requested, index, input }
 }
 
@@ -632,9 +341,10 @@ async function getWorkflowStepWithCursorImpl(
   )
   refuseInvalidServe(decision, row, composition, slug, mode, args)
   if (decision.action !== 'serve') throw new Error('invalid serve transition')
-  if (!row) row = await insertCursor(composition, context, d, autonomy, commitCount)
+  if (!row) row = await insertWorkflowCursor(composition, context, d, autonomy, commitCount)
   if (decision.move || decision.resume) {
     const at = nowIso()
+    const destination = await resolveTaskFlowDestination(row.project, d, context.taskFlowClient)
     const hosted = await writeHostedTaskFlow(
       'stage-update',
       {
@@ -655,6 +365,7 @@ async function getWorkflowStepWithCursorImpl(
           },
         ],
       },
+      destination,
       context.taskFlowClient,
     )
     writeTransaction(() => {
@@ -994,6 +705,7 @@ async function persistWorkflowAdvance(
   const obligationUpdates: NonNullable<TaskFlowIntentInput<'advance'>['obligationUpdates']> = obligationPlan.obligationUpdate
     ? [obligationPlan.obligationUpdate] as NonNullable<TaskFlowIntentInput<'advance'>['obligationUpdates']>
     : []
+  const destination = await resolveTaskFlowDestination(row.project, d, context.taskFlowClient)
   const hosted = await writeHostedTaskFlow(
     'advance',
     {
@@ -1011,6 +723,7 @@ async function persistWorkflowAdvance(
       } } } : {}),
       obligationInserts, obligationUpdates, deleteTextIds,
     },
+    destination,
     context.taskFlowClient,
   )
   writeTransaction(() => {
@@ -1216,6 +929,7 @@ async function awaitWorkflowRulingImpl(
   refuseTerminalCursor(row)
   const resolved = resolveCursorArguments(row, args, d)
   const at = resolved.updatedAt
+  const destination = await resolveTaskFlowDestination(row.project, d, context.taskFlowClient)
   const hosted = await writeHostedTaskFlow(
     'await-ruling',
     {
@@ -1233,6 +947,7 @@ async function awaitWorkflowRulingImpl(
         },
       },
     },
+    destination,
     context.taskFlowClient,
   )
   return writeTransaction(() => {
@@ -1332,6 +1047,7 @@ export async function ruleWorkflow(
         throw new Error(
           `${cursorName(slug, mode, row.workflow_key)} has no open question to rule on`,
         )
+  const destination = await resolveTaskFlowDestination(row.project, d, context.taskFlowClient)
   const hosted = await writeHostedTaskFlow(
     'stage-update',
     {
@@ -1349,6 +1065,7 @@ export async function ruleWorkflow(
         },
       ],
     },
+    destination,
     context.taskFlowClient,
   )
   return writeTransaction(() => {

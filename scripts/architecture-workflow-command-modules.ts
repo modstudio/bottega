@@ -12,6 +12,15 @@ const module = (file: string, allowed: string[]): WorkflowCommandModule => ({
 })
 
 export const workflowCommandModules: WorkflowCommandModule[] = [
+  module('orchestrator/src/workflow/task-flow-hosted-destination.ts', [
+    'bun:sqlite',
+    '../project/projects.ts',
+    '../record/record-api-client.ts',
+    '../record/record-api-client-paths.ts',
+    '../record/record-api-client-task-flow.ts',
+    '../record/record-project-destination-client.ts',
+    '../record/record-write-authority.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-hosted-space.ts', ['bun:sqlite']),
   module('orchestrator/src/workflow/workflow-command-arguments.ts', [
     '../../../shared/brand.ts',
@@ -31,6 +40,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     '../record/record-api-client.ts',
     '../record/record-task-flow-contract.ts',
     './task-flow-decision.ts',
+    './task-flow-hosted-destination.ts',
     './task-flow.ts',
   ]),
   module('orchestrator/src/workflow/task-flow.ts', [
@@ -40,28 +50,6 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     '../database/db.ts',
     '../record/machine-identity.ts',
     './task-flow-decision.ts',
-    './task-flow-outbox.ts',
-    './task-flow-stage-outbox.ts',
-  ]),
-  module('orchestrator/src/workflow/task-flow-outbox.ts', [
-    'bun:sqlite',
-    '../../../shared/record/schema.ts',
-    '../database/db.ts',
-    '../record/machine-identity.ts',
-    './task-flow-outbox-write.ts',
-  ]),
-  module('orchestrator/src/workflow/task-flow-stage-outbox.ts', [
-    'bun:sqlite',
-    '../../../shared/record/schema.ts',
-    '../database/db.ts',
-    '../record/machine-identity.ts',
-    './task-flow-outbox-write.ts',
-  ]),
-  module('orchestrator/src/workflow/task-flow-outbox-write.ts', [
-    'bun:sqlite',
-    '../../../shared/record-id.ts',
-    '../record/outbox-enqueue.ts',
-    '../record/outbox-sanitize.ts',
   ]),
   module('orchestrator/src/workflow/workflow-cursor-identity.ts', [
     'bun:sqlite',

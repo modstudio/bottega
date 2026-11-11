@@ -3,7 +3,7 @@
 import { z } from 'zod'
 import { v5 } from 'uuid'
 
-export const TASK_FLOW_REQUEST_ID_NAMESPACE = v5.URL
+const TASK_FLOW_REQUEST_ID_NAMESPACE = v5.URL
 
 export function taskFlowRequestId(intent: TaskFlowIntent, parts: readonly string[]): string {
   return v5(JSON.stringify([intent, ...parts]), TASK_FLOW_REQUEST_ID_NAMESPACE)
