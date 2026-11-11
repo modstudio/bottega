@@ -228,6 +228,7 @@ export function unusedIdentityAndSpaceClientMethods(): Pick<
   | 'storage'
   | 'whoami'
   | 'createOrganization'
+  | 'deleteSpace'
   | 'deleteTrialSpace'
   | 'setActiveOrganization'
   | 'listInvitations'
@@ -251,6 +252,7 @@ export function unusedIdentityAndSpaceClientMethods(): Pick<
     storage: unusedIdentityAndSpace,
     whoami: unusedIdentityAndSpace,
     createOrganization: unusedIdentityAndSpace,
+    deleteSpace: unusedIdentityAndSpace,
     deleteTrialSpace: unusedIdentityAndSpace,
     setActiveOrganization: unusedIdentityAndSpace,
     listInvitations: unusedIdentityAndSpace,
@@ -956,6 +958,9 @@ export function createMemoryRecordApiClient(
     },
     async retireProject(name) {
       return { name }
+    },
+    async purgeProject() {
+      return { nothingToRemove: true, tables: [], project: 0 }
     },
     async renameSubject(input) {
       const matchingDocs = [...docs.values()].filter((doc) => doc.subject === input.from)

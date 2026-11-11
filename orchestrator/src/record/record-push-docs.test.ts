@@ -175,6 +175,8 @@ function capturingClient(overrides: Partial<RecordApiClient> = {}): {
       voids: 0,
     }),
     ...overrides,
+    purgeProject:
+      overrides.purgeProject ?? (async () => ({ nothingToRemove: true, tables: [], project: 0 })),
     whoami:
       overrides.whoami ??
       (async () => ({
