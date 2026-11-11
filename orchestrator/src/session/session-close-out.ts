@@ -22,8 +22,8 @@ import { isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { observeGrokTrustHeadings } from '../sandbox/grok-trust.ts'
 import { shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import {
-  taskFlowStore,
   type TaskFlowOpenSessionStageRow as OpenCursor,
+  taskFlowStore,
 } from '../workflow/task-flow-store.ts'
 import { hasAbsentTreeTeardownPlanWithRegisteredRemoveCommand } from '../worktree/worktree-remove.ts'
 import {

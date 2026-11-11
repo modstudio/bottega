@@ -36,7 +36,6 @@ import type {
 
 export type {
   TaskFlowCloseOutStageRow,
-  TaskFlowInboxQuestionRow,
   TaskFlowLinkedTaskReferenceRow,
   TaskFlowListedStageRow,
   TaskFlowOpenSessionStageRow,

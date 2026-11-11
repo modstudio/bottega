@@ -3,7 +3,6 @@
 
 import type { CursorState } from './workflow-cursor-transition.ts'
 import type { EnforcementMode } from './workflow-floor.ts'
-import type { AnswererKind } from '../../../shared/question-vocabulary.ts'
 
 export type TaskFlowStageCursorRow = {
   id: number
@@ -244,7 +243,7 @@ export type TaskFlowTaskRulingRow = {
   answer: string
   answer_basis: string | null
   answered_at: string
-  answerer_kind: AnswererKind | null
+  answerer_kind: 'agent' | 'operator' | 'eval' | null
   answered_by_name: string | null
   overturned_at: string | null
   overturned_by_name: string | null

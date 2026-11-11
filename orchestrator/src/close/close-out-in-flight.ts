@@ -13,8 +13,8 @@ import {
   pullRequestLookupNeeded,
 } from '../landing-tree/landing-tree.ts'
 import {
-  taskFlowStore,
   type TaskFlowCloseOutStageRow as CursorRow,
+  taskFlowStore,
 } from '../workflow/task-flow-store.ts'
 import {
   annotateHeldTreeDetail,

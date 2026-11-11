@@ -4,10 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
-import {
-  taskFlowStore,
-  type TaskFlowListedStageRow as ListedCursorRow,
-} from './task-flow-store.ts'
+import { type TaskFlowListedStageRow as ListedCursorRow, taskFlowStore } from './task-flow-store.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { renderWorkflowCursorLine } from './workflow-cursor-format.ts'
 import { workflowCursorProjectScope } from './workflow-cursor-selection.ts'

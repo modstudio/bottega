@@ -12,8 +12,8 @@ import {
 } from '../record/outbox-prune-payload.ts'
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 import {
-  taskFlowStore,
   type TaskFlowQuestionOutboxRow as QuestionRow,
+  taskFlowStore,
 } from '../workflow/task-flow-store.ts'
 
 const json = (value: unknown): unknown => (value == null ? null : JSON.parse(String(value)))

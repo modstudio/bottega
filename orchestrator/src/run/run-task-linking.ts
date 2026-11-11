@@ -7,9 +7,9 @@ import { type Project, projectForTaskKey, projects } from '../project/projects.t
 import { machineId } from '../record/machine-identity.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import {
-  taskFlowStore,
   type TaskFlowLinkedTaskReferenceRow as LinkedLocalTaskReference,
   type TaskFlowPendingTaskLinkRow as LocalTaskLinkRow,
+  taskFlowStore,
 } from '../workflow/task-flow-store.ts'
 import { linkWorkflowTaskLabel } from '../workflow/workflow-task-linking.ts'
 import {
