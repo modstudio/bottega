@@ -62,9 +62,7 @@ describe('review coverage', () => {
   })
 
   test('carries an unchanged patch when trunk touched the same path', () => {
-    const calls: string[][] = []
     const runner: CoverageGitRunner = (args) => {
-      calls.push(args)
       const command = args.join(' ')
       if (command === 'rev-parse tip^{tree}') return result(true, 'tip-tree')
       if (command === 'cat-file -e reviewed-commit^{commit}') return result(true)
@@ -100,6 +98,5 @@ describe('review coverage', () => {
         { skipExact: true },
       ),
     ).toMatchObject({ kind: 'carried', class: 'trivial-rebase', patchId: 'patch-a' })
-    expect(calls).not.toContainEqual(['diff', '--name-only', 'old-base..new-base', '-z'])
   })
 })

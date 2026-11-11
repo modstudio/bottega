@@ -288,7 +288,12 @@ function printCeilingArchitectCredit(
   if (!guidance) return false
   log(guidance)
   if (output.post_fix.kind === 're-lens') {
-    printPostFixTriggers(output.post_fix, output.lenses, output.secondOpinion, log)
+    printPostFixTriggers(
+      output.post_fix,
+      output.credited_by_architect_read.lenses,
+      output.credited_by_architect_read.secondOpinion,
+      log,
+    )
   }
   for (const lens of output.credited_lens_profiles) {
     const sources = lens.profiles

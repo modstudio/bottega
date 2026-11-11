@@ -161,7 +161,6 @@ export function reviewCoverageVerdict(
     }
   }
   const newBase = newBaseResult.out
-  const changePaths = changedPaths(runner, oldBase, reviewedCommit)
   const reviewedPatch = review.patchId || changeIdentity(runner, oldBase, reviewedCommit)
   const candidatePatch = changeIdentity(runner, newBase, tip)
   if (!reviewedPatch || reviewedPatch !== candidatePatch) {
@@ -170,7 +169,7 @@ export function reviewCoverageVerdict(
   const candidatePaths = [...changedPaths(runner, newBase, tip)].sort()
   const reviewedPaths = review.pathSet
     ? (JSON.parse(review.pathSet) as string[])
-    : [...changePaths].sort()
+    : [...changedPaths(runner, oldBase, reviewedCommit)].sort()
   if (JSON.stringify(reviewedPaths) !== JSON.stringify(candidatePaths)) {
     return { kind: 'invalid', reason: 'path set differs', resolution: resolved.resolution }
   }
