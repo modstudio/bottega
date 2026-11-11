@@ -20,11 +20,6 @@ export const recordBindingModules: RecordModule[] = [
     '../hosted-call-outcome.ts',
     './record-auth.ts',
   ]),
-  module('orchestrator/src/record/record-api-client-run.ts', [
-    '../../../shared/record-write-space.ts',
-    '../verdict/verdict-payload.ts',
-    './record-api-client-paths.ts',
-  ]),
   module('orchestrator/src/record/record-write-destination.ts', [
     '../../../shared/record-space-membership.ts',
     '../../../shared/record-write-space.ts',

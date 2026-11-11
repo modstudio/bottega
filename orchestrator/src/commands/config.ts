@@ -6,9 +6,9 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ConfigClient, ConfigScope } from '../../../shared/config-client.ts'
 import { isDelegationKey } from '../../../shared/delegation-mode.ts'
 import { listMachineEntries } from '../../../shared/machine-config.ts'
-import { RECORD_PERSONAL_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { resolveRecordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
+import { recordWriteSpace } from '../../../shared/record-write-space.ts'
 import {
   isShipToConfigKey,
   SHIP_TO_CONFIG_KEY,
@@ -113,29 +113,21 @@ export async function configWriteTarget(
   requested: string | undefined,
   client: ConfigClient,
 ): Promise<{ scope: ConfigScope; destination: { destinationSpaceId: string } }> {
-  const who = await client.whoami()
-  const memberships = parseRecordSpaceMemberships(who.memberships)
   if (requested) {
-    const destination = await resolveRecordSpaceOwnerDestination(
-      verb,
-      { space: requested },
-      [],
-      async () => memberships,
-    )
+    const destination = await selectedMachineSpace(verb, requested, client)
     return {
       scope: 'space',
       destination: { destinationSpaceId: destination.spaceId },
     }
   }
-  if (!who.personalSpaceId)
-    throw new Error(`personal space is not provisioned; ${RECORD_PERSONAL_SPACE_REMEDY}`)
-  const destination = await resolveRecordSpaceOwnerDestination(
-    verb,
-    { space: who.personalSpaceId },
-    [],
-    async () => memberships,
+  const who = await client.whoami()
+  const memberships = parseRecordSpaceMemberships(who.memberships)
+  const decision = recordWriteSpace(
+    { kind: 'personal' },
+    { declaredSpaces: {}, personalSpaceId: who.personalSpaceId, memberships },
   )
-  return { scope: 'user', destination: { destinationSpaceId: destination.spaceId } }
+  if ('refused' in decision) throw new Error(decision.remedy)
+  return { scope: 'user', destination: { destinationSpaceId: decision.spaceId } }
 }
 function expectedRowVersion(value: string | undefined): number | null | undefined {
   if (value === undefined) return undefined

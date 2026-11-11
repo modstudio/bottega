@@ -163,3 +163,18 @@ test('config writes route user scope to personal space and named scope independe
     'not a member of record space missing',
   )
 })
+
+test('a config write without a personal space names the record sign-in remedy', async () => {
+  const client = {
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: null,
+      personalSpaceId: null,
+      memberships: [],
+    }),
+  } as unknown as ConfigClient
+
+  await expect(configWriteTarget('machine config set', undefined, client)).rejects.toThrow(
+    `${PLATFORM_SLUG} record sign-in`,
+  )
+})

@@ -1,5 +1,6 @@
 import { describe, expect, spyOn, test } from 'bun:test'
 import { z } from 'zod'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { OrchAgentDefinitionSchema } from '../../../shared/orch-contract.ts'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { agentsCommand } from '../agent/agent-commands.ts'
@@ -62,6 +63,28 @@ describe('record snapshot payloads', () => {
     expect(
       result.data.every((agent) => agent.operatedBy === 'vendor' || agent.operatedBy === 'self'),
     ).toBe(true)
+  })
+
+  test('a publish without a personal space names the record sign-in remedy', async () => {
+    const client = createMemoryRecordApiClient()
+    client.whoami = async () => ({
+      user: { id: 'user-a', email: 'a@example.test' },
+      activeSpaceId: null,
+      personalSpaceId: null,
+      memberships: [],
+    })
+
+    await expect(
+      publishSnapshotsCommand(
+        { log() {}, setExitCode() {} },
+        {
+          client,
+          identity: '01990000-0000-7000-8000-000000000001',
+          build: async (kind) => ({ kind }),
+          availability: { hostedConfigured: true, signedIn: true },
+        },
+      ),
+    ).rejects.toThrow(`${PLATFORM_SLUG} record sign-in`)
   })
 
   test('one failed kind does not stop the remaining publishes and makes the command fail', async () => {

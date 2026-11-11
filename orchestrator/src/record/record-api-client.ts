@@ -54,7 +54,6 @@ import {
 } from './record-api-client-paths.ts'
 import { type RecordPortClient, recordPortClient } from './record-api-client-port.ts'
 import { RecordApiRequestError, responseRecord } from './record-api-client-response.ts'
-import { recordRunClient } from './record-api-client-run.ts'
 
 export { recordAuthRefusal, recordAuthToken } from './record-api-client-error.ts'
 export { RecordApiRequestError } from './record-api-client-response.ts'
@@ -752,7 +751,15 @@ export function recordApiClient(request = recordApiRequest): RecordApiClient {
     ...projectIdentityClient(request),
     ...recordProjectSubjectClient(request),
     ...recordRoutingEvidenceClient(request),
-    ...recordRunClient(request),
+    listScores: (query) => {
+      const search = new URLSearchParams()
+      if (query.updatedSince) search.set('updatedSince', query.updatedSince)
+      if (query.limit) search.set('limit', String(query.limit))
+      if (query.cursor) search.set('cursor', query.cursor)
+      const suffix = search.toString()
+      return request(`/v1/scores${suffix ? `?${suffix}` : ''}`)
+    },
+    counts: (destination) => request('/v1/docs/counts', destination),
     ...recordBoardClient(request),
     ...recordApiBoardWatchClient(),
   }

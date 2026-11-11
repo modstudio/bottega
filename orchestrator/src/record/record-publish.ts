@@ -1,6 +1,5 @@
 // concern: record-publish
 /** Builds local orchestrator views and publishes each independently to the hosted record. */
-import { RECORD_PERSONAL_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import { agentsPayload } from '../agent/agent-commands.ts'
 import { blockersPayload, healthPayload } from '../health/health-commands.ts'
 import { jobsPayload } from '../jobs/job-commands.ts'
@@ -8,6 +7,7 @@ import { state } from '../state/serve.ts'
 import { machineId } from './machine-identity.ts'
 import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
 import { SNAPSHOT_KINDS, type SnapshotKind } from './record-snapshots.ts'
+import { recordWriteDestination } from './record-write-destination.ts'
 
 export async function buildSnapshotPayload(kind: SnapshotKind): Promise<unknown> {
   switch (kind) {
@@ -60,10 +60,7 @@ export async function publishSnapshotsCommand(
   const client = deps.client ?? recordApiClient()
   const identity = deps.identity ?? machineId()
   const build = deps.build ?? buildSnapshotPayload
-  const personalSpaceId = (await client.whoami()).personalSpaceId
-  if (!personalSpaceId)
-    throw new Error(`personal space is not provisioned; ${RECORD_PERSONAL_SPACE_REMEDY}`)
-  const destination = { destinationSpaceId: personalSpaceId }
+  const destination = await recordWriteDestination(client, { kind: 'personal' })
   let failed = false
   for (const kind of SNAPSHOT_KINDS) {
     let bytes = 0
