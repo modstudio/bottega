@@ -15,7 +15,9 @@ if (Object.entries(SPACE_TEARDOWN_EXCLUSIONS).some(([, reason]) => !reason.trim(
   throw new Error('every space teardown exclusion needs a reason')
 const missingProject = unclassifiedProjectTables()
 if (missingProject.length)
-  throw new Error(`project purge plan does not classify hosted tables: ${missingProject.join(', ')}`)
+  throw new Error(
+    `project purge plan does not classify hosted tables: ${missingProject.join(', ')}`,
+  )
 if (Object.entries(PROJECT_PURGE_EXCLUSIONS).some(([, reason]) => !reason.trim()))
   throw new Error('every project purge exclusion needs a reason')
 console.log(

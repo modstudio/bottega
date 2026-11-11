@@ -683,6 +683,7 @@ export const recordModules: RecordModule[] = [
     './record-config-error.ts',
     './record-docs.ts',
     './record-projects.ts',
+    './record-project-purge-contract.ts',
     './record-project-space-contract.ts',
     './record-trial-space-contract.ts',
     './record-verdicts.ts',

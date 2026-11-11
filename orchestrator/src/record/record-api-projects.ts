@@ -81,7 +81,7 @@ export function registerRecordProjectRoutes(
       return context.json(
         await deps.purgeProject({
           ...tenant,
-          spaceIds: identity.memberships.map((membership) => membership.space_id),
+          spaceIds: identity.memberships.map((membership) => String(membership.space_id)),
           id: id.data,
           confirmation: body.data.confirmation,
         }),

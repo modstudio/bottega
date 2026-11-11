@@ -6,9 +6,9 @@ import {
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
 } from '../../shared/record/schema.ts'
-import { bearerHeaders } from '../src/record/record-auth.ts'
 import { renderRecordApiRefusal } from '../src/record/record-api-errors.ts'
 import { registerRecordProjectRoutes } from '../src/record/record-api-projects.ts'
+import { bearerHeaders, type RecordIdentity } from '../src/record/record-auth.ts'
 import { closeRecordPools } from '../src/record/record-pool.ts'
 import { purgeRecordProject } from '../src/record/record-project-purge.ts'
 import {
@@ -89,16 +89,28 @@ export function registerTrialSpaceTeardownProof(input: {
       }),
     ).toEqual({ nothingToRemove: true, tables: [], project: 0 })
 
-    const routeIdentity = {
+    const routeIdentity: RecordIdentity = {
       user: { id: owner, email: `purge-${owner}@example.test` },
       activeSpaceId: space,
       personalSpaceId: null,
       memberships: [
-        { space_id: space, name: 'Purge proof', slug: `purge-${space}`, role: 'owner', permission: 'write' },
-        { space_id: otherSpace, name: 'Purge other', slug: `purge-other-${otherSpace}`, role: 'owner', permission: 'write' },
+        {
+          space_id: space,
+          name: 'Purge proof',
+          slug: `purge-${space}`,
+          role: 'owner',
+          permission: 'write',
+        },
+        {
+          space_id: otherSpace,
+          name: 'Purge other',
+          slug: `purge-other-${otherSpace}`,
+          role: 'owner',
+          permission: 'write',
+        },
       ],
     }
-    const app = new Hono<{ Variables: { identity: typeof routeIdentity } }>()
+    const app = new Hono<{ Variables: { identity: RecordIdentity } }>()
     app.use('/v1/*', async (context, next) => {
       context.set('identity', routeIdentity)
       await next()
@@ -128,7 +140,9 @@ export function registerTrialSpaceTeardownProof(input: {
       body: JSON.stringify({ confirmation: 'cross-proof' }),
     })
     expect(refused.status).toBe(422)
-    expect(await refused.json()).toMatchObject({ error: expect.stringContaining('declared-space guard failed') })
+    expect(await refused.json()).toMatchObject({
+      error: expect.stringContaining('declared-space guard failed'),
+    })
     expect(
       input.admin(
         `SELECT (SELECT count(*) FROM project WHERE id='${crossSpaceProject}') || '|' ||
@@ -151,7 +165,9 @@ export function registerTrialSpaceTeardownProof(input: {
       id: peerProject,
       confirmation: 'peer-proof',
     })
-    input.admin(`DELETE FROM membership WHERE space_id IN ('${space}','${otherSpace}'); DELETE FROM space WHERE id IN ('${space}','${otherSpace}');`)
+    input.admin(
+      `DELETE FROM membership WHERE space_id IN ('${space}','${otherSpace}'); DELETE FROM space WHERE id IN ('${space}','${otherSpace}');`,
+    )
     await closeRecordPools()
   })
 
@@ -417,6 +433,16 @@ export function registerTrialSpaceTeardownProof(input: {
         `SELECT record_user_has_real_space_membership('${newRecordId()}');`,
       ),
     ).not.toMatchObject({ code: 0 })
+  })
+
+  test('the general protected-row definer grants execute only to record_actor', () => {
+    expect(
+      input.admin(
+        `SELECT has_function_privilege('${RECORD_ACTOR_ROLE}', 'record_delete_protected_space_rows(uuid)', 'EXECUTE') || '|' ||
+          has_function_privilege('${RECORD_READER_ROLE}', 'record_delete_protected_space_rows(uuid)', 'EXECUTE') || '|' ||
+          has_function_privilege('public', 'record_delete_protected_space_rows(uuid)', 'EXECUTE');`,
+      ),
+    ).toBe('true|false|false')
   })
 
   test('the real organization update hook preserves but never changes a trial marker', async () => {

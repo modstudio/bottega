@@ -6,12 +6,12 @@ import { DocRevisionConflictError, revisionConflictBody } from '../doc/doc-revis
 import { RecordBoardError } from './record-board-contract.ts'
 import { ConfigServiceError } from './record-config-error.ts'
 import { RecordDocError } from './record-docs.ts'
+import { RecordProjectPurgeError } from './record-project-purge-contract.ts'
 import {
   projectSpaceConflictResponse,
   RecordProjectSpaceConflictError,
 } from './record-project-space-contract.ts'
 import { RecordProjectError } from './record-projects.ts'
-import { RecordProjectPurgeError } from './record-project-purge-contract.ts'
 import { SpaceDeleteError } from './record-trial-space-contract.ts'
 import { RecordVerdictError } from './record-verdicts.ts'
 

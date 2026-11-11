@@ -8,10 +8,7 @@ import {
   RecordProjectPurgeError,
   type RecordProjectPurgeResult,
 } from './record-project-purge-contract.ts'
-import {
-  buildRecordTeardownPredicates,
-  PROJECT_PURGE_PLAN,
-} from './record-space-teardown-plan.ts'
+import { buildRecordTeardownPredicates, PROJECT_PURGE_PLAN } from './record-space-teardown-plan.ts'
 export type ProjectPurgeFacts = {
   exists: boolean
   name: string
@@ -98,7 +95,9 @@ export async function purgeRecordProject(input: {
     }
     const projects = await tx`DELETE FROM project WHERE id=${input.id}::uuid RETURNING id`
     if (projects.length !== 1)
-      throw new Error(`project purge invariant failed: expected to delete one project row, deleted ${projects.length}`)
+      throw new Error(
+        `project purge invariant failed: expected to delete one project row, deleted ${projects.length}`,
+      )
     return { nothingToRemove: false, tables, project: projects.length }
   })
 }

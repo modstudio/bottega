@@ -30,7 +30,6 @@ import { fillProjectRecordIds } from './project-record-identity.ts'
 import { formatProjectRelink, relinkProjectByName } from './project-relink.ts'
 import { persistLocalProjectSet } from './project-rename.ts'
 import { projectSetSettingsPatch } from './project-set-space.ts'
-import { PROJECT_REFERENCES, projectReferenceCounts } from './project-reference-counts.ts'
 import {
   mergeProjectSettings,
   type SettingsPatchEffect,
@@ -42,6 +41,7 @@ import {
   assertRegisterVisibility,
   isProjectRepository,
   type Project,
+  ProjectRemovalRefusalError,
   type ProjectSettings,
   projectByName,
   projectLifecycleForm,
@@ -847,7 +847,10 @@ async function purgeProjectCommand(
     project.settings,
     confirmation,
   )
-  if (result.nothingToRemove) presentation.log(`no hosted project ${name}; nothing remained hosted`)
+  if (result.nothingToRemove)
+    presentation.log(
+      `no hosted project with id ${project.recordId} exists in any record space this caller belongs to; nothing remained hosted`,
+    )
   else {
     for (const row of result.tables) presentation.log(`removed\t${row.table}\t${row.count}`)
     presentation.log(`removed\tproject\t${result.project}`)
@@ -856,18 +859,9 @@ async function purgeProjectCommand(
     removeProject(name)
     presentation.log(`removed ${name} from this machine's register`)
   } catch (error) {
-    if (!(error instanceof Error) || !error.message.startsWith(`project ${name} is referenced by`))
-      throw error
-    const counts = projectReferenceCounts(db(), project.recordId)
-    const tables = [
-      ...new Set(
-        PROJECT_REFERENCES.filter(([key]) => counts[key] > 0).map(
-          ([key, , , explicitTable]) => explicitTable ?? key,
-        ),
-      ),
-    ]
+    if (!(error instanceof ProjectRemovalRefusalError)) throw error
     presentation.log(
-      `${name} remains in this machine's register because local tables still reference it: ${tables.join(', ')}`,
+      `${name} remains in this machine's register because local tables still reference it: ${error.tables.join(', ')}`,
     )
   }
 }

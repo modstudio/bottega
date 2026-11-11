@@ -38,7 +38,7 @@ type ForeignKeyFact = {
   parentColumns: string[]
   onDelete?: string
 }
-export type RecordTeardownReach = {
+type RecordTeardownReach = {
   columns: string[]
   parent: string
   parentColumns: string[]
@@ -249,11 +249,5 @@ export function unclassifiedProjectTables(
   order: readonly string[] = PROJECT_PURGE_ORDER,
   exclusions: Readonly<Record<string, string>> = PROJECT_PURGE_EXCLUSIONS,
 ): string[] {
-  return unclassifiedTeardownTables(
-    'project',
-    belongsToPurgedProject,
-    tables,
-    order,
-    exclusions,
-  )
+  return unclassifiedTeardownTables('project', belongsToPurgedProject, tables, order, exclusions)
 }

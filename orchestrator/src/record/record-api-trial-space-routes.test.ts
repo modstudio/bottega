@@ -114,17 +114,21 @@ test('each space-delete route can be registered without the other dependency', a
     }),
   })
   expect(
-    (await trialOnly.request('/v1/spaces/delete-trial', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ slug: 'trial-only' }),
-    })).status,
+    (
+      await trialOnly.request('/v1/spaces/delete-trial', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ slug: 'trial-only' }),
+      })
+    ).status,
   ).toBe(200)
   expect(
-    (await trialOnly.request('/v1/spaces/delete', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ slug: 'trial-only', confirmation: 'trial-only' }),
-    })).status,
+    (
+      await trialOnly.request('/v1/spaces/delete', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ slug: 'trial-only', confirmation: 'trial-only' }),
+      })
+    ).status,
   ).toBe(404)
 })

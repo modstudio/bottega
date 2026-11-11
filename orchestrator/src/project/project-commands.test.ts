@@ -154,6 +154,40 @@ test('project purge reports hosted counts and removes an unreferenced register r
   expect(projectByName('purge-me')).toBeNull()
 })
 
+test('project purge keeps the register row and names its referencing local tables', async () => {
+  const recordId = newRecordId()
+  const messageId = newRecordId()
+  upsertProject({
+    recordId,
+    name: 'purge-local-reference',
+    path: '/w/purge-local-reference',
+    settings: { space: 'space-a' },
+  })
+  db()
+    .query(
+      `INSERT INTO board_message
+     (record_id,number,kind,author_kind,audience,title,body,ack_required,expires_at,created_at,
+      author_project_record_id)
+     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM board_message),'notice','operator',
+      'architects','purge proof','proof',0,'2099-01-01T00:00:00.000Z',
+      '2026-11-11T00:00:00.000Z',?)`,
+    )
+    .run(messageId, recordId)
+  installRecordApiClient({
+    ...createProjectRecordApiClient(),
+    purgeProject: async () => ({ nothingToRemove: false, tables: [], project: 1 }),
+  })
+  expect(
+    await runProject(['project', 'purge', 'purge-local-reference'], {
+      confirm: 'purge-local-reference',
+    }),
+  ).toContain(
+    "purge-local-reference remains in this machine's register because local tables still reference it: board_message",
+  )
+  expect(projectByName('purge-local-reference')).not.toBeNull()
+  db().query('DELETE FROM board_message WHERE record_id=?').run(messageId)
+})
+
 test('hosted failure leaves the local register unchanged', async () => {
   installRecordApiClient({
     ...createProjectRecordApiClient(),

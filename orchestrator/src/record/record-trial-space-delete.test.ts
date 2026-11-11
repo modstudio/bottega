@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  type ConfirmedSpaceDeleteFacts,
   decideSpaceDelete,
   decideTrialSpaceDelete,
-  type ConfirmedSpaceDeleteFacts,
   type SpaceDeleteFacts,
 } from './record-trial-space-delete.ts'
 

@@ -25,36 +25,40 @@ export function registerRecordTrialSpaceRoutes(
     }): Promise<SpaceDeleteResult>
   },
 ): void {
-  if (deps.deleteTrialSpace) app.post('/v1/spaces/delete-trial', async (context) => {
-    const body = z
-      .object({ slug: z.string().min(1) })
-      .safeParse(await context.req.json().catch(() => null))
-    if (!body.success) return context.json({ error: 'trial space slug is required' }, 422)
-    const identity = context.get('identity')
-    return context.json(
-      await deps.deleteTrialSpace({
-        url: deps.recordUrl,
-        slug: body.data.slug,
-        userId: identity.user.id,
-        activeSpaceId: identity.activeSpaceId,
-      }),
-    )
-  })
-  if (deps.deleteSpace) app.post('/v1/spaces/delete', async (context) => {
-    const body = z
-      .object({ slug: z.string().min(1), confirmation: z.string().min(1) })
-      .safeParse(await context.req.json().catch(() => null))
-    if (!body.success)
-      return context.json({ error: 'space slug and confirmation are required' }, 422)
-    const identity = context.get('identity')
-    return context.json(
-      await deps.deleteSpace({
-        url: deps.recordUrl,
-        slug: body.data.slug,
-        confirmation: body.data.confirmation,
-        userId: identity.user.id,
-        activeSpaceId: identity.activeSpaceId,
-      }),
-    )
-  })
+  const deleteTrialSpace = deps.deleteTrialSpace
+  if (deleteTrialSpace)
+    app.post('/v1/spaces/delete-trial', async (context) => {
+      const body = z
+        .object({ slug: z.string().min(1) })
+        .safeParse(await context.req.json().catch(() => null))
+      if (!body.success) return context.json({ error: 'trial space slug is required' }, 422)
+      const identity = context.get('identity')
+      return context.json(
+        await deleteTrialSpace({
+          url: deps.recordUrl,
+          slug: body.data.slug,
+          userId: identity.user.id,
+          activeSpaceId: identity.activeSpaceId,
+        }),
+      )
+    })
+  const deleteSpace = deps.deleteSpace
+  if (deleteSpace)
+    app.post('/v1/spaces/delete', async (context) => {
+      const body = z
+        .object({ slug: z.string().min(1), confirmation: z.string().min(1) })
+        .safeParse(await context.req.json().catch(() => null))
+      if (!body.success)
+        return context.json({ error: 'space slug and confirmation are required' }, 422)
+      const identity = context.get('identity')
+      return context.json(
+        await deleteSpace({
+          url: deps.recordUrl,
+          slug: body.data.slug,
+          confirmation: body.data.confirmation,
+          userId: identity.user.id,
+          activeSpaceId: identity.activeSpaceId,
+        }),
+      )
+    })
 }

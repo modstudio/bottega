@@ -4,8 +4,8 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { renderRecordApiRefusal } from './record-api-errors.ts'
 import { registerRecordProjectRoutes } from './record-api-projects.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import { RecordProjectSpaceConflictError } from './record-project-space-contract.ts'
 import { RecordProjectPurgeError } from './record-project-purge-contract.ts'
+import { RecordProjectSpaceConflictError } from './record-project-space-contract.ts'
 import { classifyProjectWriteRefusal } from './record-project-space-server.ts'
 
 const conflict = {
@@ -77,7 +77,13 @@ test('the purge route binds every caller membership and renders guard refusals a
     activeSpaceId: conflict.spaceId,
     personalSpaceId: conflict.spaceId,
     memberships: [
-      { space_id: conflict.spaceId, name: 'Alpha', slug: 'alpha', role: 'owner', permission: 'write' },
+      {
+        space_id: conflict.spaceId,
+        name: 'Alpha',
+        slug: 'alpha',
+        role: 'owner',
+        permission: 'write',
+      },
       { space_id: otherSpaceId, name: 'Beta', slug: 'beta', role: 'owner', permission: 'write' },
     ],
   }

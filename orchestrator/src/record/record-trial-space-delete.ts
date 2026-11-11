@@ -4,15 +4,9 @@ import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bindTenant } from '../../../shared/record/tenant.ts'
 import { recordPool } from './record-pool.ts'
-import {
-  buildRecordTeardownPredicates,
-  SPACE_TEARDOWN_PLAN,
-} from './record-space-teardown-plan.ts'
+import { buildRecordTeardownPredicates, SPACE_TEARDOWN_PLAN } from './record-space-teardown-plan.ts'
 import { isTrialSpaceMetadata, TRIAL_IDENTIFIER_PREFIX } from './record-trial-space.ts'
-import {
-  SpaceDeleteError,
-  type SpaceDeleteResult,
-} from './record-trial-space-contract.ts'
+import { SpaceDeleteError, type SpaceDeleteResult } from './record-trial-space-contract.ts'
 
 type TrialMemberFact = { userId: string; email: string; role: string; hasRealSpace: boolean }
 export type SpaceDeleteFacts = {
@@ -31,9 +25,7 @@ type CommonSpaceDeleteGuard =
   | { kind: 'public-listing' }
   | { kind: 'caller-owner' }
   | { kind: 'trial-member-email' | 'trial-member-spaces'; member: TrialMemberFact }
-function commonSpaceDeleteGuard(
-  facts: SpaceDeleteFacts,
-): CommonSpaceDeleteGuard | null {
+function commonSpaceDeleteGuard(facts: SpaceDeleteFacts): CommonSpaceDeleteGuard | null {
   if (facts.publiclyListed) return { kind: 'public-listing' }
   if (facts.members.find((member) => member.userId === facts.callerUserId)?.role !== 'owner')
     return { kind: 'caller-owner' }
@@ -41,8 +33,7 @@ function commonSpaceDeleteGuard(
     if (member.userId === facts.callerUserId) continue
     if (!member.email.startsWith(TRIAL_IDENTIFIER_PREFIX))
       return { kind: 'trial-member-email', member }
-    if (member.hasRealSpace)
-      return { kind: 'trial-member-spaces', member }
+    if (member.hasRealSpace) return { kind: 'trial-member-spaces', member }
   }
   return null
 }
