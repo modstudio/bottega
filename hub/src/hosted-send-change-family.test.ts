@@ -1,11 +1,20 @@
-import { beforeEach, expect, test } from 'bun:test'
+import { afterAll, beforeEach, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { pullHostedChanges } from './hosted-change-cache.ts'
 import type { HostedSend } from './hosted-reports.ts'
 import { cacheHostedSend } from './report-cache.ts'
 
-beforeEach(resetFixtureStore)
+const originalRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+
+beforeEach(() => {
+  resetFixtureStore()
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+})
+afterAll(() => {
+  if (originalRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+  else process.env.BOTTEGA_RECORD_API_URL = originalRecordApiUrl
+})
 
 const options = { baseUrl: 'https://hub.example.test', token: 'session' } as const
 const registered = [
@@ -63,10 +72,59 @@ const page = (cursor: string, changes: unknown[]) =>
   Response.json({ changes, cursor, lag: 0, more: false })
 const route = (feed: () => Response) => async (input: string) => {
   const url = new URL(input)
+  if (url.pathname === '/v1/whoami')
+    return Response.json({
+      user: { id: 'user-one' },
+      activeSpaceId: 'space-one',
+      personalSpaceId: 'space-one',
+      memberships: identity.memberships,
+    })
   if (url.pathname === '/v1/tasks/identity') return Response.json(identity)
   if (url.pathname === '/v1/changes') return feed()
   throw new Error(`unexpected route ${url.pathname}`)
 }
+
+test('send full pull uses personal space when the active space differs', async () => {
+  writeTransaction((conn) => {
+    conn
+      .query('INSERT INTO setting(key,value) VALUES (?,?)')
+      .run('collect.hosted-record-changes.cursor', 'before')
+    conn.query('INSERT INTO setting(key,value) VALUES (?,?)').run(
+      'collect.hosted-record-changes.spaces',
+      JSON.stringify({
+        task: ['space-active', 'space-one', 'space-two'],
+        note: ['space-active', 'space-one', 'space-two'],
+        send: [],
+      }),
+    )
+  })
+  const requested: Array<{ path: string; space: string | null }> = []
+  const fetch = async (input: string, init?: RequestInit) => {
+    const url = new URL(input)
+    if (url.pathname === '/v1/whoami')
+      return Response.json({
+        user: { id: 'user-one' },
+        activeSpaceId: 'space-active',
+        personalSpaceId: 'space-personal',
+        memberships: [],
+      })
+    if (url.pathname === '/v1/tasks/identity')
+      return Response.json({ ...identity, activeSpaceId: 'space-active' })
+    if (url.pathname === '/v1/sends') {
+      requested.push({
+        path: url.pathname,
+        space: new Headers(init?.headers).get('x-record-space'),
+      })
+      return Response.json({ sends: [], cursor: null, more: false })
+    }
+    if (url.pathname === '/v1/changes') return page('after', [])
+    throw new Error(`unexpected route ${url.pathname}`)
+  }
+
+  await pullHostedChanges({ ...options, fetch, registeredProjects: registered })
+
+  expect(requested).toEqual([{ path: '/v1/sends', space: 'space-personal' }])
+})
 const sendReport = (report: Awaited<ReturnType<typeof pullHostedChanges>>) =>
   report.families.find((entry) => entry.name === 'send')!.report
 

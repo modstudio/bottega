@@ -442,7 +442,8 @@ function registerTaskLifecycleCommands(task: Command): void {
     })
   task
     .command('prune-foreign')
-    .description('soft-delete foreign tasks from the active hosted space')
+    .description('soft-delete foreign tasks from one hosted space')
+    .option('--space <id>', 'record space to inspect and clean')
     .option('--dry-run', 'list candidates without deleting them')
     .option('--confirm <N>', 'confirm the exact candidate count')
     .option('--project <name>', 'limit candidates to this project')

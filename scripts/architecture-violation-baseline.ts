@@ -4,6 +4,13 @@ type ArchitectureViolationBaseline = ArchitectureViolationEdge & { reason: strin
 export const architectureViolationBaseline: readonly ArchitectureViolationBaseline[] = [
   {
     rule: 'no-active-space-resolver-import',
+    from: 'hub/src/hosted-write-destination.ts',
+    to: 'hub/src/task-project-space.ts',
+    reason:
+      'DEV-2256 owner-routed hosted write destination; it uses project memberships and never falls back to the active space',
+  },
+  {
+    rule: 'no-active-space-resolver-import',
     from: 'orchestrator/src/workflow/workflows.ts',
     to: 'orchestrator/src/project-space.ts',
     reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',

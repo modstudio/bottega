@@ -23,11 +23,22 @@ test('report push sends the existing record id', async () => {
   let sent: Record<string, unknown> | undefined
   const fetch = async (input: string, init?: RequestInit) => {
     const path = new URL(input).pathname
+    if (path === '/v1/whoami')
+      return Response.json({
+        user: { id: 'user' },
+        activeSpaceId: 'space-active',
+        personalSpaceId: 'space-personal',
+        memberships: [],
+      })
     if (path === '/v1/sends/mirror') {
+      expect(new Headers(init?.headers).get('x-record-space')).toBe('space-personal')
       sent = (JSON.parse(String(init?.body)) as { sends: Record<string, unknown>[] }).sends[0]
       return Response.json({ upserted: 1 })
     }
-    if (path === '/v1/sends/counts') return Response.json({ sends: 1 })
+    if (path === '/v1/sends/counts') {
+      expect(new Headers(init?.headers).get('x-record-space')).toBe('space-personal')
+      return Response.json({ sends: 1 })
+    }
     return Response.json({ error: 'unexpected request' }, { status: 500 })
   }
 
