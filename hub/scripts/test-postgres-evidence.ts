@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
 import { SQL } from 'bun'
-import { createNoDestinationWriteCounter } from '../../shared/record-no-destination-write-counter.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { OUTSIDE_WRITES_PER_HOUR } from '../../shared/outside-write-decision.ts'
 import { readRecordChanges } from '../../shared/record/record-changes.ts'
@@ -12,6 +11,7 @@ import {
   recordServiceUrl,
 } from '../../shared/record/service-connection.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
+import { createNoDestinationWriteCounter } from '../../shared/record-no-destination-write-counter.ts'
 import type { IntervalEvidence } from '../src/hosted-evidence.ts'
 import { hostedMeasures, loadHostedMeasureRows } from '../src/hosted-measures.ts'
 import { listHostedNotes } from '../src/hosted-note-list.ts'
