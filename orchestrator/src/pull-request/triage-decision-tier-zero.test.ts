@@ -30,7 +30,6 @@ const review = (
 const evidence = (overrides: Partial<TriageEvidence> = {}): TriageEvidence => ({
   patchId: 'patch-a',
   pathSet: '["a.ts"]',
-  tip: 'tip-a',
   tier: 1,
   applicableReview: { lenses: ['correctness'] },
   branchOwnerSession: 'owner-session',
@@ -43,7 +42,6 @@ const evidence = (overrides: Partial<TriageEvidence> = {}): TriageEvidence => ({
 describe('pull-request triage decision at tier zero', () => {
   const ownerRead = (overrides: Partial<TriageEvidence['reads'][number]> = {}) => ({
     recordId: 'record-9',
-    tip: 'tip-a',
     patchId: 'patch-a',
     pathSet: '["a.ts"]',
     recordedAt: '2026-09-25T02:00:00Z',
@@ -57,7 +55,7 @@ describe('pull-request triage decision at tier zero', () => {
     ).toMatchObject({ complete: false, architectReadRequired: true })
   })
 
-  test('tier zero admits an exact owner-recorded read of the tip', () => {
+  test('tier zero admits an exact owner-recorded read of the patch', () => {
     expect(
       decideTriage(
         evidence({
@@ -81,14 +79,14 @@ describe('pull-request triage decision at tier zero', () => {
     })
   })
 
-  test('tier zero refuses a read of another tip', () => {
+  test('tier zero refuses a read of another patch', () => {
     expect(
       decideTriage(
         evidence({
           tier: 0,
           applicableReview: { lenses: [] },
           reviews: [],
-          reads: [ownerRead({ tip: 'tip-other' })],
+          reads: [ownerRead({ patchId: 'patch-other' })],
         }),
       ),
     ).toMatchObject({ complete: false, architectReadRequired: true })

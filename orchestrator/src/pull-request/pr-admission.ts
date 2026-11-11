@@ -162,7 +162,6 @@ function triageDecision(change: PullRequestChange, database: Database): TriageDe
   return decideTriage({
     patchId: change.group.patchId,
     pathSet: serializePathSet(change.group.pathSet),
-    tip: change.tip,
     tier: change.tier,
     applicableReview: change.applicability,
     reviewPlan: change.reviewPlan,
@@ -173,7 +172,6 @@ function triageDecision(change: PullRequestChange, database: Database): TriageDe
       .query<
         {
           record_id: string
-          tip: string
           patch_id: string
           path_set: string
           recorded_at: string
@@ -181,7 +179,7 @@ function triageDecision(change: PullRequestChange, database: Database): TriageDe
         },
         string[]
       >(
-        `SELECT record_id,tip,patch_id,path_set,recorded_at,session_id FROM review_read
+        `SELECT record_id,patch_id,path_set,recorded_at,session_id FROM review_read
         WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
           AND branch IN (${lineage.map(() => '?').join(',')})
         ORDER BY recorded_at DESC,record_id DESC`,
@@ -189,7 +187,6 @@ function triageDecision(change: PullRequestChange, database: Database): TriageDe
       .all(change.project.name, ...lineage)
       .map((row) => ({
         recordId: row.record_id,
-        tip: row.tip,
         patchId: row.patch_id,
         pathSet: row.path_set,
         recordedAt: row.recorded_at,
@@ -257,8 +254,6 @@ function admissionChange(change: PullRequestChange) {
   return {
     project: change.project.name,
     branch: change.branch,
-    tip: change.tip,
-    tree: change.tree,
     patchId: change.group.patchId,
     pathSet: serializePathSet(change.group.pathSet),
   }
@@ -328,8 +323,8 @@ export function triageRefusal(
   }
   if (decision.architectReadRequired) {
     const credit = decision.earlierReviewNumber
-      ? `review ${decision.earlierReviewNumber} can be credited only after an architect reads this exact tip`
-      : `tier ${change.tier} requires an architect read of this exact tip`
+      ? `review ${decision.earlierReviewNumber} can be credited only after an architect reads this exact patch`
+      : `tier ${change.tier} requires an architect read of this exact patch`
     lines.push(
       `architect-read path failed: ${credit}; cleared by: ${REVIEW_READ_VERB} --sha ${change.tip} --note "<what was read and why it lands>"`,
     )

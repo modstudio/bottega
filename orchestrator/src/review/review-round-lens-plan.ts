@@ -59,7 +59,7 @@ export type BudgetedReviewPlanDecision = {
   creditedByArchitectRead: ApplicableReview
 }
 
-/** Apply the round ceiling to both work dispatched and exact-tip admission evidence. */
+/** Apply the round ceiling to both work dispatched and exact-patch admission evidence. */
 export function reviewPlanForBudget(input: {
   reviewPlan: ReviewFunnelPlan
   budget: ReviewRoundBudgetDecision

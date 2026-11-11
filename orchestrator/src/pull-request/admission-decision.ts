@@ -12,14 +12,16 @@ import {
 export type AdmissionChange = {
   project: string
   branch: string
-  tip: string
-  tree: string
   patchId: string
   pathSet: string
 }
 
-export type AdmissionOverride = Omit<AdmissionChange, 'patchId' | 'pathSet'> & {
+export type AdmissionOverride = {
   recordId: string
+  project: string
+  branch: string
+  tip: string
+  tree: string
   patchId: string | null
   pathSet: string | null
   attribution: TriageOverrideAttribution
@@ -42,8 +44,6 @@ export function decideAdmission(
     (candidate) =>
       candidate.project === change.project &&
       candidate.branch === change.branch &&
-      candidate.tip === change.tip &&
-      candidate.tree === change.tree &&
       candidate.patchId === change.patchId &&
       candidate.pathSet === change.pathSet,
   )

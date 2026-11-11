@@ -29,8 +29,6 @@ const incomplete: TriageDecision = {
 const change = {
   project: 'fixture',
   branch: 'DEV-977-fixture',
-  tip: 'tip-new',
-  tree: 'tree-new',
   patchId: 'patch-new',
   pathSet: '["a.ts"]',
 }
@@ -40,11 +38,13 @@ const override = (values: Partial<AdmissionOverride> = {}): AdmissionOverride =>
   attribution: 'operator',
   missingLenses: [],
   ...change,
+  tip: 'tip-new',
+  tree: 'tree-new',
   ...values,
 })
 
 describe('pull-request admission decision', () => {
-  test('an override for the exact tip and change group admits', () => {
+  test('an override for the exact patch and path set admits', () => {
     expect(decideAdmission(change, incomplete, [override()])).toEqual({
       complete: true,
       overrideId: 'override-17',
@@ -74,8 +74,10 @@ describe('pull-request admission decision', () => {
       ).overrideId,
     ).toBeNull()
     expect(
-      decideAdmission({ ...change, tip: 'different-head' }, ceilingGap, [ceiling]).overrideId,
-    ).toBeNull()
+      decideAdmission(change, ceilingGap, [
+        { ...ceiling, tip: 'different-head', tree: 'different-tree' },
+      ]).overrideId,
+    ).toBe('ceiling-ruling')
     expect(
       decideAdmission(
         change,
@@ -115,10 +117,8 @@ describe('pull-request admission decision', () => {
   })
 
   test.each([
-    ['an older tip', { tip: 'tip-old', tree: 'tree-old' }],
     ['another project', { project: 'other' }],
     ['another branch', { branch: 'DEV-977-other' }],
-    ['another tree', { tree: 'tree-old' }],
     ['another patch', { patchId: 'patch-old' }],
     ['another path set', { pathSet: '["b.ts"]' }],
     ['a null change group from an old-shape payload', { patchId: null, pathSet: null }],
@@ -127,6 +127,16 @@ describe('pull-request admission decision', () => {
       complete: false,
       overrideId: null,
       triage: incomplete,
+    })
+  })
+
+  test.each([
+    ['another tip', { tip: 'tip-old' }],
+    ['another tree', { tree: 'tree-old' }],
+  ])('an override survives %s when the patch identity is unchanged', (_label, values) => {
+    expect(decideAdmission(change, incomplete, [override(values)])).toMatchObject({
+      complete: true,
+      overrideId: 'override-17',
     })
   })
 

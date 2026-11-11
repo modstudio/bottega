@@ -92,7 +92,6 @@ test('an undisposed finding at the ceiling refuses without recording a ruling', 
   const triage = decideTriage({
     patchId: 'patch',
     pathSet: '["a.ts"]',
-    tip: 'tip',
     tier: 3,
     applicableReview: { lenses: ['correctness', 'craft'] },
     branchOwnerSession: null,
@@ -178,7 +177,6 @@ test('a ceiling ruling records and admits an emptied-round architect-read postur
   const triage = decideTriage({
     patchId: 'patch',
     pathSet: '["a.ts"]',
-    tip: 'tip',
     tier: 3,
     applicableReview: { lenses: ['correctness'] },
     reviewPlan: {
@@ -480,7 +478,6 @@ test('a lens recorded on the branch is refused as missing for this change, not a
   const decision = decideTriage({
     patchId: 'patch',
     pathSet: '["a.ts"]',
-    tip: 'tip',
     tier: 2,
     applicableReview: { lenses: ['correctness', 'craft'] },
     reviewPlan: {
@@ -557,7 +554,6 @@ test('a lens a fix brought into scope names that path and the lenses already com
   const decision = decideTriage({
     patchId: 'patch',
     pathSet: '["branch/tree.ts","src/a.ts"]',
-    tip: 'tip',
     tier: 3,
     applicableReview: { lenses: ['correctness', 'teardown-safety'] },
     reviewPlan,
@@ -643,7 +639,6 @@ test('a lens the round asks to run again is not also reported as already complet
   const decision = decideTriage({
     patchId: 'patch',
     pathSet: '["branch/tree.ts","src/a.ts"]',
-    tip: 'tip',
     tier: 3,
     applicableReview: { lenses: ['correctness', 'craft', 'teardown-safety'] },
     reviewPlan,
@@ -745,7 +740,6 @@ test('a lens owed as a second opinion is not also reported as already complete',
   const decision = decideTriage({
     patchId: 'patch',
     pathSet: '["src/a.ts"]',
-    tip: 'tip',
     tier: 3,
     applicableReview: { lenses: ['correctness', 'safety'] },
     reviewPlan,
@@ -794,7 +788,6 @@ test('a generic no-round refusal prints beside the unfinished-review remedy, wit
   const decision = decideTriage({
     patchId: 'patch',
     pathSet: '["a.ts"]',
-    tip: 'tip',
     tier: 1,
     applicableReview: { lenses: [] },
     branchOwnerSession: 'owner-session',
@@ -829,7 +822,6 @@ test('tier zero without a read names the architect-read command', () => {
   const decision = decideTriage({
     patchId: 'patch-a',
     pathSet: '["a.ts"]',
-    tip: 'tip-abc',
     tier: 0,
     applicableReview: { lenses: [] },
     branchOwnerSession: 'owner-session',
@@ -872,7 +864,6 @@ test('a creditable composed round refusal names only the architect read', () => 
   const decision = decideTriage({
     patchId: 'patch',
     pathSet: '["a.ts"]',
-    tip: 'tip',
     tier: 2,
     applicableReview: { lenses: ['correctness', 'craft'] },
     branchOwnerSession: 'owner-session',
@@ -976,12 +967,12 @@ test.each([
   [
     'a missing architect read',
     { finalTierRaised: false, architectReadRequired: true },
-    'review 93 can be credited only after an architect reads this exact tip',
+    'review 93 can be credited only after an architect reads this exact patch',
   ],
   [
     'a funnel plan after a tier rise',
     { finalTierRaised: true, architectReadRequired: true },
-    'review 93 can be credited only after an architect reads this exact tip',
+    'review 93 can be credited only after an architect reads this exact patch',
   ],
 ] as const)(
   'credited-earlier-review refusal for %s prints its display number',
