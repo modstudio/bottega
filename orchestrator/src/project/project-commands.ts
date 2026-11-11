@@ -845,7 +845,12 @@ export function removeProjectCommand(
   options: { purged: boolean },
   presentation: ProjectPresentation,
 ): void {
-  presentation.log(removedProjectMessage(name, removeProject(name), options.purged))
+  const removed = removeProject(name, { includeRetired: options.purged })
+  if (!removed && options.purged)
+    throw new Error(
+      `project ${name} is not in this machine's register; the purge removed its rows but found no register entry to remove — run \`${PLATFORM_SLUG} project list --retired\` to inspect the register`,
+    )
+  presentation.log(removedProjectMessage(name, removed, options.purged))
 }
 
 async function purgeProjectCommand(

@@ -481,9 +481,9 @@ export function projectRemovalRefusal(
   ]
 }
 
-export function removeProject(name: string): boolean {
+export function removeProject(name: string, options: { includeRetired?: boolean } = {}): boolean {
   writableDb()
-  const project = projectByName(name)
+  const project = options.includeRetired ? projectRowByName(name) : projectByName(name)
   if (!project) return false
   const counts = projectReferenceCounts(db(), project.recordId)
   const refusal = projectRemovalRefusal(name, counts)
