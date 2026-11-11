@@ -68,7 +68,7 @@ export const PROJECT_PURGE_EXCLUSIONS = {
     'purge refuses a publicly listed project, so no row can remain, and record_actor holds no DELETE on the table by design',
 } as const
 
-function foreignKeyFacts(tables: readonly PgTable[] = hostedRecordTables): ForeignKeyFact[] {
+function foreignKeyFacts(tables: readonly PgTable[] = HOSTED_RECORD_TABLES): ForeignKeyFact[] {
   return tables.flatMap((item) =>
     getTableConfig(item).foreignKeys.map((key) => {
       const reference = key.reference()
