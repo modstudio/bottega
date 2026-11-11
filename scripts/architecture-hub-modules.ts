@@ -82,7 +82,7 @@ export const hubModuleSpecs = [
   },
   {
     file: 'hub/src/hosted-route-config.ts',
-    allowed: ['bun'],
+    allowed: ['bun', '../../shared/record-no-destination-write-counter.ts'],
   },
   {
     file: 'hub/src/public-docs-text.ts',
@@ -193,6 +193,7 @@ export const hubModuleSpecs = [
       '../../shared/brand.ts',
       '../../shared/record-no-destination-write-contract.ts',
       '../../shared/record-no-destination-write-counter.ts',
+      '../../shared/record/no-destination-write-store.ts',
       '../../shared/record-remedies.ts',
       '../../shared/record-space-membership.ts',
       '../../shared/record-space-request.ts',
@@ -209,6 +210,7 @@ export const hubModuleSpecs = [
       '../../shared/bounded-fetch.ts',
       '../../shared/record-no-destination-write-contract.ts',
       '../../shared/record-no-destination-write-counter.ts',
+      '../../shared/record/no-destination-write-store.ts',
       './hosted-route-config.ts',
       './hosted-route-identity.ts',
     ],

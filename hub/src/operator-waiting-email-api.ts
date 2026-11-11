@@ -44,6 +44,7 @@ export async function operatorWaitingEmailApi(
     config.recordApiUrl,
     dependencies.fetch ?? hostedApiFetch,
     true,
+    { counter: config.noDestinationWriteCounter, database: () => config.recordDatabaseUrl },
   )
   const refusal = identityRefusal(identity)
   if (refusal) return refusal

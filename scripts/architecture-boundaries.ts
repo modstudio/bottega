@@ -521,6 +521,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../../shared/built-commit.ts',
       '../../shared/hosted-server.ts',
       '../../shared/install-root.ts',
+      '../../shared/record-no-destination-write-counter.ts',
       '../../shared/record/service-connection.ts',
       './app-static.ts',
       './change-api.ts',

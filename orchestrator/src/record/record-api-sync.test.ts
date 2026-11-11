@@ -1,7 +1,9 @@
 import { expect, mock, test } from 'bun:test'
 import { Hono } from 'hono'
 import { identity } from '../../test/fixtures/record-api.ts'
+import { noDestinationWriteTestDeps } from '../../test/fixtures/record-api-app.ts'
 import { registerRecordSyncRoute } from './record-api-sync.ts'
+import type { RecordWriteTelemetryEnvironment } from './record-api-write-telemetry.ts'
 import {
   RECORD_SYNC_MAX_PAYLOAD_BYTES,
   RECORD_SYNC_MAX_REQUEST_BYTES,
@@ -14,11 +16,13 @@ test('sync forwards raw payloads with the authenticated identity and enforces by
   const syncRecord = mock(async (input: { request: { rows: Array<{ id: number }> } }) => ({
     results: input.request.rows.map((row) => ({ id: row.id, status: 'synced' as const })),
   }))
-  const app = new Hono<{
-    Variables: { identity: typeof identity; destinationSpaceId?: string }
-  }>()
+  const app = new Hono<RecordWriteTelemetryEnvironment>()
   app.use('*', async (context, next) => {
     context.set('identity', identity)
+    context.set('writeTelemetry', {
+      database: noDestinationWriteTestDeps.noDestinationWriteDatabase,
+      counter: noDestinationWriteTestDeps.noDestinationWriteCounter,
+    })
     await next()
   })
   registerRecordSyncRoute(app, {

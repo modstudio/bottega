@@ -152,6 +152,7 @@ export function registerConfigAccessSpaceCreationProof(input: {
       } finally {
         input.succeeds(`
           DELETE FROM space_outside_intake WHERE space_id='${spaceId}';
+          DELETE FROM no_destination_write WHERE space_id='${spaceId}';
           DELETE FROM project WHERE id='${projectId}';
           DELETE FROM membership WHERE space_id='${spaceId}';
           DELETE FROM space WHERE id='${spaceId}';`)

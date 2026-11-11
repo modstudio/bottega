@@ -119,6 +119,8 @@ type RecordApiDeps = RecordSessionRouteDeps &
   RecordSettingsRouteDeps & {
     clientAddresses: RecordClientAddresses
     recordUrl: string
+    noDestinationWriteCounter: Parameters<typeof registerRecordWriteTelemetry>[1]['counter']
+    noDestinationWriteDatabase: Parameters<typeof registerRecordWriteTelemetry>[1]['database']
     allowedOrigins?: string[]
     auth: { handler(request: Request): Response | Promise<Response> }
     readSession(headers: Headers): Promise<RecordIdentity | null>
@@ -293,6 +295,13 @@ function registerRecordIdentityMiddleware(app: Hono<ApiEnvironment>, deps: Deps)
   })
 }
 
+function writeTelemetryDeps(deps: Deps) {
+  return {
+    database: deps.noDestinationWriteDatabase,
+    counter: deps.noDestinationWriteCounter,
+  }
+}
+
 export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   const app = new Hono<ApiEnvironment>()
   app.onError((error, context) => {
@@ -310,7 +319,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   registerPublicDocRoutes(app, deps)
   registerRecordIdentityMiddleware(app, deps)
   // The report route must follow the identity middleware that authenticates it.
-  registerRecordWriteTelemetry(app)
+  registerRecordWriteTelemetry(app, writeTelemetryDeps(deps))
   registerRecordIdentityRoutes(app, deps)
   registerRecordSessionRoutes(app, deps)
   registerRecordRequestSpace(app)

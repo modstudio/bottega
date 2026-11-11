@@ -11,6 +11,7 @@ import {
   recordServiceUrl,
 } from '../../shared/record/service-connection.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
+import { createNoDestinationWriteCounter } from '../../shared/record-no-destination-write-counter.ts'
 import type { IntervalEvidence } from '../src/hosted-evidence.ts'
 import { hostedMeasures, loadHostedMeasureRows } from '../src/hosted-measures.ts'
 import { listHostedNotes } from '../src/hosted-note-list.ts'
@@ -605,7 +606,11 @@ try {
         headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       }),
-      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: actorUrl },
+      {
+        recordApiUrl: 'https://record.example.test',
+        recordDatabaseUrl: actorUrl,
+        noDestinationWriteCounter: createNoDestinationWriteCounter(),
+      },
       { fetch: outsideFetch },
     )
   const d2NoteIds: string[] = []
@@ -2577,6 +2582,7 @@ try {
   await admin`DELETE FROM seq WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM project WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM record_change WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
+  await admin`DELETE FROM no_destination_write WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM space WHERE id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM machine WHERE id=${MACHINE}::uuid`
   await admin`DELETE FROM "user" WHERE id IN (${USER}::uuid, ${SECOND_USER}::uuid, ${READ_USER}::uuid,

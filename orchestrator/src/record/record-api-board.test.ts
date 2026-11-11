@@ -3,6 +3,7 @@ import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
+import { noDestinationWriteTestDeps } from '../../test/fixtures/record-api-app.ts'
 import { recordApi } from './record-api.ts'
 import type { RecordIdentity } from './record-auth.ts'
 
@@ -19,6 +20,7 @@ const identity: RecordIdentity = {
 function appWith(session: RecordIdentity | null, overrides: Record<string, unknown> = {}) {
   return recordApi({
     recordUrl: 'postgres://record.test/record',
+    ...noDestinationWriteTestDeps,
     auth: { handler: () => Response.json({ handled: true }) },
     readSession: async () => session,
     setActiveSpace: async () => undefined,
