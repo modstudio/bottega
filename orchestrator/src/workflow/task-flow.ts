@@ -97,14 +97,6 @@ export function cacheAdoptedTaskFlow(
   })
 }
 
-export function stampWorkflowCursorMachine(
-  cursorRecordId: string,
-  revisionIncrement: 0 | 1,
-  d: Database,
-): void {
-  taskFlowStore(d).stampStageMachine(cursorRecordId, revisionIncrement, machineId())
-}
-
 function projectTaskFlow(
   project: string,
   taskRecordId: string,
@@ -178,11 +170,7 @@ export function selectTaskFlowStage(
   }
 }
 
-export function attachTaskFlowStage(
-  flowRecordId: string,
-  cursorRecordId: string,
-  d: Database,
-): void {
+function attachTaskFlowStage(flowRecordId: string, cursorRecordId: string, d: Database): void {
   const at = nowIso()
   taskFlowStore(d).attachStageToFlow({
     flowRecordId,

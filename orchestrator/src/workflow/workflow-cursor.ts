@@ -532,18 +532,8 @@ async function persistWorkflowAdvance(
   )
   applyWorkflowAdvanceLocally({
     row,
-    closed,
-    advance,
-    context,
     database: d,
     at,
-    takeoverFromMachineId,
-    finishing,
-    next,
-    flow: closingFlow,
-    obligationInserts,
-    obligationUpdates,
-    deleteTextIds,
     selfRulingPlan,
     payload,
     hosted,
@@ -595,40 +585,13 @@ function advanceRecordRows(
 
 function applyWorkflowAdvanceLocally(input: {
   row: CursorRow
-  closed: CursorTrailEntry[]
-  advance: ReturnType<typeof decideConditionalAdvance>
-  context: WorkflowCursorContext
   database: Database
   at: string
-  takeoverFromMachineId: string | null
-  finishing: boolean
-  next: ReturnType<typeof composeWorkflow>['steps'][number] | null
-  flow: { record_id: string; revision: number } | null
-  obligationInserts: NonNullable<TaskFlowIntentInput<'advance'>['obligationInserts']>
-  obligationUpdates: NonNullable<TaskFlowIntentInput<'advance'>['obligationUpdates']>
-  deleteTextIds: string[]
   selfRulingPlan?: Parameters<typeof recordWorkflowSelfRuling>[0]
   payload: TaskFlowIntentInput<'advance'>
   hosted: TaskFlowIntentResult<'advance'> | null
 }): void {
-  const {
-    row,
-    closed,
-    advance,
-    context,
-    database: d,
-    at,
-    takeoverFromMachineId,
-    finishing,
-    next,
-    flow,
-    obligationInserts,
-    obligationUpdates,
-    deleteTextIds,
-    selfRulingPlan,
-    payload,
-    hosted,
-  } = input
+  const { row, database: d, at, selfRulingPlan, payload, hosted } = input
   writeTransaction(() => {
     if (row.state === 'awaiting-ruling')
       closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, d)

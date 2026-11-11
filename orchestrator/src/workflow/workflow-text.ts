@@ -213,6 +213,7 @@ async function attachWorkflowTextByHandleUnchecked(
 ): Promise<string> {
   const row = selectWorkflowCursor({}, cursor, undefined, d) as AttachCursorRow
   const { recordId, createdAt, input } = attachTextIntent(row, body)
+  const token = attachSelectedWorkflowText(row, body, context, recordId, createdAt, d)
   const hosted = await writeHostedTaskFlow(
     'attach-text',
     input,
@@ -224,7 +225,7 @@ async function attachWorkflowTextByHandleUnchecked(
     if (current.record_id !== row.record_id || current.revision !== row.revision)
       throw new Error(`cursor ${cursor} changed while text was attached; rerun the attach command`)
     taskFlowStore(d).write('attach-text', input, hosted)
-    return attachSelectedWorkflowText(current, body, context, recordId, createdAt, d)
+    return token
   }, d)
 }
 
@@ -248,6 +249,7 @@ async function attachWorkflowTextUnchecked(
   const row = selectWorkflowCursor(identity, cursor, context.session, d) as AttachCursorRow | null
   if (!row) throw new Error('workflow has no live cursor; fetch its current step first')
   const { recordId, createdAt, input } = attachTextIntent(row, body)
+  const token = attachSelectedWorkflowText(row, body, context, recordId, createdAt, d)
   const hosted = await writeHostedTaskFlow(
     'attach-text',
     input,
@@ -264,7 +266,7 @@ async function attachWorkflowTextUnchecked(
     if (!current || current.record_id !== row.record_id || current.revision !== row.revision)
       throw new Error(`workflow cursor changed while text was attached; rerun the attach command`)
     taskFlowStore(d).write('attach-text', input, hosted)
-    return attachSelectedWorkflowText(current, body, context, recordId, createdAt, d)
+    return token
   }, d)
 }
 
@@ -303,10 +305,6 @@ export function workflowTextDeletionIds(cursorId: string, linked: boolean, d: Da
   const copiedIds = new Set(store.copiedTextRecordIdsForStage(cursorId))
   const deletable = workflowTextIdsToDelete({ linked, rowIds, copiedIds })
   return deletable
-}
-
-export function deleteWorkflowTextLocally(ids: readonly string[], d: Database): void {
-  taskFlowStore(d).deleteTexts(ids)
 }
 
 export async function deleteWorkflowText(

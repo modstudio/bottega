@@ -71,28 +71,33 @@ function revisionRefusal(database: Database, intent: TaskFlowIntent, mutation: M
     throw new Error(
       `workflow cursor ${cursor} changed while its task was linked; rerun the command`,
     )
-  if (intent === 'stage-update') {
-    if ('workflowKey' in values)
-      throw new Error(
-        `workflow cursor ${cursor} changed while adopting ${String(values.workflowKey)}; rerun the command`,
-      )
-    if ('activeOrdinal' in values)
-      throw new Error(
-        `workflow cursor ${cursor} changed while its step was served; rerun the command`,
-      )
-    if (values.state === 'running' && values.question === null)
-      throw new Error(
-        `workflow cursor ${cursor} changed while its ruling was recorded; rerun the command`,
-      )
-    throw new Error(`workflow cursor ${cursor} changed while composing; rerun the command`)
-  }
+  if (intent === 'stage-update') return stageUpdateRevisionRefusal(cursor, values)
   throw new Error(`workflow cursor ${cursor} changed; rerun the command`)
+}
+
+function stageUpdateRevisionRefusal(
+  cursor: number | string,
+  values: Record<string, unknown>,
+): never {
+  if ('workflowKey' in values)
+    throw new Error(
+      `workflow cursor ${cursor} changed while adopting ${String(values.workflowKey)}; rerun the command`,
+    )
+  if ('activeOrdinal' in values)
+    throw new Error(
+      `workflow cursor ${cursor} changed while its step was served; rerun the command`,
+    )
+  if (values.state === 'running' && values.question === null)
+    throw new Error(
+      `workflow cursor ${cursor} changed while its ruling was recorded; rerun the command`,
+    )
+  throw new Error(`workflow cursor ${cursor} changed while composing; rerun the command`)
 }
 
 function revision(database: Database, table: string, id: string): number | null {
   return (
     database
-      .query<{ revision: number }, [string]>(`SELECT revision FROM ${table} WHERE record_id=?`)
+      .prepare<{ revision: number }, [string]>(`SELECT revision FROM ${table} WHERE record_id=?`)
       .get(id)?.revision ?? null
   )
 }
@@ -112,7 +117,7 @@ function updateMutation(
   const assignments = entries.map(([key]) => `${columns[key]}=?`)
   const values = entries.map(([key, value]) => storedValue(key, value))
   database
-    .query(`UPDATE ${table} SET ${[...assignments, 'revision=?'].join(',')} WHERE record_id=?`)
+    .prepare(`UPDATE ${table} SET ${[...assignments, 'revision=?'].join(',')} WHERE record_id=?`)
     .run(...values, next, mutation.id)
   return next
 }
@@ -236,7 +241,7 @@ function updateObligation(database: Database, row: Record<string, unknown>): voi
     abandonedReason: 'abandoned_reason',
   }
   const result = database
-    .query(`UPDATE workflow_obligation SET ${entries.map(([key]) => `${names[key]}=?`).join(',')}
+    .prepare(`UPDATE workflow_obligation SET ${entries.map(([key]) => `${names[key]}=?`).join(',')}
     WHERE record_id=? AND cursor_record_id=?`)
     .run(...entries.map(([key, value]) => storedValue(key, value)), row.id, row.stageRecordId)
   if (result.changes !== 1)
@@ -277,6 +282,48 @@ function applyStageMutation(
   return result
 }
 
+function sourceFlowForAdopt(
+  database: Database,
+  stageId: string,
+  body: Record<string, unknown>,
+  applied: { revisions: Record<string, number>; flowRecordId: string } | undefined,
+): { record_id: string; revision: number; task_record_id: string | null } {
+  const source = database
+    .query<{ record_id: string; revision: number; task_record_id: string | null }, [string]>(
+      `SELECT f.record_id,f.revision,f.task_record_id FROM task_flow f JOIN workflow_cursor c
+     ON c.task_flow_record_id=f.record_id WHERE c.record_id=?`,
+    )
+    .get(stageId)
+  if (source) return source
+  const project = database
+    .query<{ project_record_id: string }, [string]>(
+      'SELECT project_record_id FROM workflow_cursor WHERE record_id=?',
+    )
+    .get(stageId)!
+  const flowRecordId = applied?.flowRecordId ?? newRecordId()
+  database
+    .query(`INSERT INTO task_flow
+      (record_id,task_record_id,project_record_id,state,open_stage_cursor_record_id,created_at,updated_at,
+       opening_machine_id,updated_machine_id,revision) VALUES (?,?,?,?,?,?,?,?,?,?)`)
+    .run(
+      flowRecordId,
+      body.taskId,
+      project.project_record_id,
+      body.state ?? 'open',
+      stageId,
+      body.updatedAt,
+      body.updatedAt,
+      body.updatedMachineId,
+      body.updatedMachineId,
+      applied?.revisions[flowRecordId] ?? 1,
+    )
+  return {
+    record_id: flowRecordId,
+    revision: applied?.revisions[flowRecordId] ?? 1,
+    task_record_id: String(body.taskId),
+  }
+}
+
 function applyAdopt(
   database: Database,
   body: Record<string, unknown>,
@@ -285,41 +332,7 @@ function applyAdopt(
   const stage = body.stage as { id: string; expectedRevision: number }
   if (revision(database, 'workflow_cursor', stage.id) !== stage.expectedRevision)
     revisionRefusal(database, 'adopt', { ...stage, values: {} })
-  let source = database
-    .query<{ record_id: string; revision: number; task_record_id: string | null }, [string]>(
-      `SELECT f.record_id,f.revision,f.task_record_id FROM task_flow f JOIN workflow_cursor c
-     ON c.task_flow_record_id=f.record_id WHERE c.record_id=?`,
-    )
-    .get(stage.id)
-  if (!source) {
-    const stageProject = database
-      .query<{ project_record_id: string }, [string]>(
-        'SELECT project_record_id FROM workflow_cursor WHERE record_id=?',
-      )
-      .get(stage.id)!
-    const flowRecordId = applied?.flowRecordId ?? newRecordId()
-    database
-      .query(`INSERT INTO task_flow
-      (record_id,task_record_id,project_record_id,state,open_stage_cursor_record_id,created_at,updated_at,
-       opening_machine_id,updated_machine_id,revision) VALUES (?,?,?,?,?,?,?,?,?,?)`)
-      .run(
-        flowRecordId,
-        body.taskId,
-        stageProject.project_record_id,
-        body.state ?? 'open',
-        stage.id,
-        body.updatedAt,
-        body.updatedAt,
-        body.updatedMachineId,
-        body.updatedMachineId,
-        applied?.revisions[flowRecordId] ?? 1,
-      )
-    source = {
-      record_id: flowRecordId,
-      revision: applied?.revisions[flowRecordId] ?? 1,
-      task_record_id: String(body.taskId),
-    }
-  }
+  const source = sourceFlowForAdopt(database, stage.id, body, applied)
   const target = database
     .query<{ record_id: string; revision: number }, [string]>(
       'SELECT record_id,revision FROM task_flow WHERE task_record_id=?',
@@ -379,79 +392,119 @@ function applyAdopt(
   }
 }
 
-export function writeSqliteTaskFlow<K extends TaskFlowIntent>(
+function writeCompose(
   database: Database,
-  intent: K,
-  payload: TaskFlowIntentInput<K>,
-  applied?: TaskFlowIntentResult<K> | null,
-): TaskFlowIntentResult<K> {
-  const body = payload as Record<string, unknown>
-  const revisions = (applied as { revisions: Record<string, number> } | null | undefined)?.revisions
-  if (intent === 'compose') {
-    const result: Record<string, number> = {}
-    const flowInsert = body.flowInsert as Record<string, unknown> | undefined
-    // Local task_flow.task_record_id is NOT NULL (orchestrator/migrations/0198_task_flow.sql).
-    // Until the handle/schema slices, an unlinked compose keeps today's flow-less local shape.
-    if (flowInsert?.taskId != null) {
-      const next = revisions?.[String(flowInsert.id)] ?? 1
-      insertFlow(database, flowInsert, next)
-      result[String(flowInsert.id)] = next
+  body: Record<string, unknown>,
+  applied: TaskFlowIntentResult<'compose'> | null | undefined,
+): TaskFlowIntentResult<'compose'> {
+  const revisions = applied?.revisions
+  const result: Record<string, number> = {}
+  const appliedCompose = applied as
+    | { revisions: Record<string, number>; stage: { id: string; number: number } | null }
+    | null
+    | undefined
+  const payloadStage = body.stageInsert as Record<string, unknown> | undefined
+  const stageId = appliedCompose?.stage?.id ?? (payloadStage ? String(payloadStage.id) : null)
+  const appliedFlowId = appliedCompose
+    ? Object.keys(appliedCompose.revisions).find((id) => id !== stageId)
+    : undefined
+  const keepsLocalFlow = Boolean(payloadStage?.workflowKey)
+  const rawFlowInsert = keepsLocalFlow
+    ? (body.flowInsert as Record<string, unknown> | undefined)
+    : undefined
+  const flowInsert = rawFlowInsert
+    ? {
+        ...rawFlowInsert,
+        id: appliedFlowId ?? rawFlowInsert.id,
+        openStageRecordId: stageId ?? rawFlowInsert.openStageRecordId,
+      }
+    : undefined
+  let stage: { id: string; number: number } | null = null
+  if (payloadStage) {
+    const row = {
+      ...payloadStage,
+      id: stageId,
+      flowRecordId: keepsLocalFlow ? (appliedFlowId ?? payloadStage.flowRecordId) : null,
     }
-    const flowChange = body.flowChange as Mutation | undefined
-    if (flowChange)
-      result[flowChange.id] = updateMutation(
-        database,
-        'task_flow',
-        flowColumns,
-        flowChange,
-        intent,
-        revisions,
-      )
-    let stage: { id: string; number: number } | null = null
-    if (body.stageInsert) {
-      const row = body.stageInsert as Record<string, unknown>
-      const next = revisions?.[String(row.id)] ?? 1
-      stage = insertStage(database, row, next)
-      result[String(row.id)] = next
-    }
-    for (const change of (body.stageChanges as Mutation[] | undefined) ?? [])
-      result[change.id] = updateMutation(
-        database,
-        'workflow_cursor',
-        stageColumns,
-        change,
-        intent,
-        revisions,
-      )
-    // The record number is per project while SQLite handles remain machine-wide until 2c-2d.
-    return { revisions: result, stage } as TaskFlowIntentResult<K>
+    if (row.workflowKey && row.instanceId === '')
+      database
+        .query(`UPDATE workflow_cursor SET instance_id=instance_id || '#' || number
+            WHERE project_record_id=? AND workflow_slug=? AND mode_slug=? AND workflow_key=?
+              AND instance_id='' AND record_id<>? AND state IN ('done','abandoned')`)
+        .run(row.projectId, row.workflow, row.mode, row.workflowKey, row.id)
+    const next = revisions?.[String(row.id)] ?? 1
+    stage = insertStage(database, row, next)
+    result[String(row.id)] = next
   }
-  if (intent === 'stage-update') {
-    const result: Record<string, number> = {}
-    const flow = body.flow as Mutation | undefined
-    if (flow)
-      result[flow.id] = updateMutation(database, 'task_flow', flowColumns, flow, intent, revisions)
-    for (const stage of body.stages as Mutation[])
-      result[stage.id] = updateMutation(
-        database,
-        'workflow_cursor',
-        stageColumns,
-        stage,
-        intent,
-        revisions,
-      )
-    return { revisions: result } as TaskFlowIntentResult<K>
+  // Local task_flow.task_record_id is NOT NULL (orchestrator/migrations/0198_task_flow.sql).
+  // Until the handle/schema slices, an unlinked compose keeps today's flow-less local shape.
+  if (flowInsert?.taskId != null) {
+    const next = revisions?.[String(flowInsert.id)] ?? 1
+    insertFlow(database, flowInsert, next)
+    result[String(flowInsert.id)] = next
+    if (stage)
+      database
+        .query(
+          'UPDATE workflow_cursor SET task_record_id=?,task_flow_record_id=? WHERE record_id=?',
+        )
+        .run(flowInsert.taskId, flowInsert.id, stage.id)
   }
-  if (intent === 'advance' || intent === 'await-ruling' || intent === 'abandon')
-    return {
-      revisions: applyStageMutation(database, intent, body, revisions),
-    } as TaskFlowIntentResult<K>
-  if (intent === 'adopt')
-    return applyAdopt(
+  const flowChange = keepsLocalFlow ? (body.flowChange as Mutation | undefined) : undefined
+  if (flowChange)
+    result[flowChange.id] = updateMutation(
       database,
-      body,
-      applied as { revisions: Record<string, number>; flowRecordId: string } | undefined,
-    ) as TaskFlowIntentResult<K>
+      'task_flow',
+      flowColumns,
+      flowChange,
+      'compose',
+      revisions,
+    )
+  for (const change of (body.stageChanges as Mutation[] | undefined) ?? [])
+    result[change.id] = updateMutation(
+      database,
+      'workflow_cursor',
+      stageColumns,
+      change,
+      'compose',
+      revisions,
+    )
+  // The record number is per project while SQLite handles remain machine-wide until 2c-2d.
+  return { revisions: result, stage }
+}
+
+function writeStageUpdate(
+  database: Database,
+  body: Record<string, unknown>,
+  revisions?: Record<string, number>,
+) {
+  const result: Record<string, number> = {}
+  const flow = body.flow as Mutation | undefined
+  if (flow)
+    result[flow.id] = updateMutation(
+      database,
+      'task_flow',
+      flowColumns,
+      flow,
+      'stage-update',
+      revisions,
+    )
+  for (const stage of body.stages as Mutation[])
+    result[stage.id] = updateMutation(
+      database,
+      'workflow_cursor',
+      stageColumns,
+      stage,
+      'stage-update',
+      revisions,
+    )
+  return { revisions: result }
+}
+
+function writeTextIntent(
+  database: Database,
+  intent: 'attach-text' | 'delete-text' | 'copy-text',
+  body: Record<string, unknown>,
+) {
   if (intent === 'attach-text') {
     for (const row of body.rows as Record<string, unknown>[])
       database
@@ -459,9 +512,9 @@ export function writeSqliteTaskFlow<K extends TaskFlowIntent>(
           'INSERT INTO workflow_step_text(record_id,cursor_record_id,step_ordinal,step_slug,body,created_at) VALUES (?,?,?,?,?,?)',
         )
         .run(row.id, row.stageRecordId, row.stepOrdinal, row.stepSlug, row.body, row.createdAt)
-  } else if (intent === 'delete-text') {
+  } else if (intent === 'delete-text')
     deleteTexts(database, String(body.stageRecordId), body.ids as string[])
-  } else {
+  else {
     const row = body.row as Record<string, unknown>
     database
       .query(`INSERT OR IGNORE INTO workflow_text_copy
@@ -474,5 +527,38 @@ export function writeSqliteTaskFlow<K extends TaskFlowIntent>(
         row.copiedAt,
       )
   }
-  return { revisions: {} } as TaskFlowIntentResult<K>
+  return { revisions: {} }
+}
+
+export function writeSqliteTaskFlow<K extends TaskFlowIntent>(
+  database: Database,
+  intent: K,
+  payload: TaskFlowIntentInput<K>,
+  applied?: TaskFlowIntentResult<K> | null,
+): TaskFlowIntentResult<K> {
+  const body = payload as Record<string, unknown>
+  const revisions = (applied as { revisions: Record<string, number> } | null | undefined)?.revisions
+  if (intent === 'compose')
+    return writeCompose(
+      database,
+      body,
+      applied as TaskFlowIntentResult<'compose'> | null,
+    ) as TaskFlowIntentResult<K>
+  if (intent === 'stage-update')
+    return writeStageUpdate(database, body, revisions) as TaskFlowIntentResult<K>
+  if (intent === 'advance' || intent === 'await-ruling' || intent === 'abandon')
+    return {
+      revisions: applyStageMutation(database, intent, body, revisions),
+    } as TaskFlowIntentResult<K>
+  if (intent === 'adopt')
+    return applyAdopt(
+      database,
+      body,
+      applied as { revisions: Record<string, number>; flowRecordId: string } | undefined,
+    ) as TaskFlowIntentResult<K>
+  return writeTextIntent(
+    database,
+    intent as 'attach-text' | 'delete-text' | 'copy-text',
+    body,
+  ) as TaskFlowIntentResult<K>
 }

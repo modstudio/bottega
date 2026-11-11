@@ -119,9 +119,16 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/workflow/task-flow-store-sqlite.ts', [
     'bun:sqlite',
+    '../record/record-task-flow-write-contract.ts',
     '../run/question-open.ts',
     './task-flow-store-sqlite-questions.ts',
+    './task-flow-store-sqlite-write.ts',
     './task-flow-store-types.ts',
+  ]),
+  module('orchestrator/src/workflow/task-flow-store-sqlite-write.ts', [
+    'bun:sqlite',
+    '../../../shared/record-id.ts',
+    '../record/record-task-flow-write-contract.ts',
   ]),
   module('orchestrator/src/workflow/task-flow-store-sqlite-questions.ts', [
     'bun:sqlite',

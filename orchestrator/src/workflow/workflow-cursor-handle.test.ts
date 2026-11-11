@@ -540,7 +540,7 @@ test('closing with task adopts a key once and rekeys cursor questions', async ()
   }
   expect(adopted.workflow_key).toBe('DEV-1082')
   expect(adopted.task_record_id).toBe('task-DEV-1082')
-  expect(adopted.instance_id).toBe('')
+  expect(adopted.instance_id).not.toBe('')
   expect(JSON.parse(adopted.args).key).toBe('DEV-1082')
   expect(d.query('SELECT workflow_key,workflow_task_record_id FROM question').get()).toEqual({
     workflow_key: 'DEV-1082',
