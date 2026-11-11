@@ -44,28 +44,101 @@ type RecordTeardownReach = {
   parentColumns: string[]
 }
 export type RecordTeardownStep = { table: string; reachedBy: RecordTeardownReach[] }
+export type RecordTeardownExclusion = {
+  removedBy: 'definer' | 'cascade' | 'set-null' | 'refused'
+  reason: string
+}
+export type RecordDefinerCount = { table: string; countColumn: string }
+
+export const RECORD_DELETE_APPEND_ONLY_SPACE_ROWS = [
+  { table: 'hub_send_recipient', countColumn: 'hub_send_recipient_count' },
+  { table: 'hub_send', countColumn: 'hub_send_count' },
+  { table: 'space_outside_write', countColumn: 'space_outside_write_count' },
+  { table: 'machine_name_claim', countColumn: 'machine_name_claim_count' },
+  { table: 'board_presence', countColumn: 'board_presence_count' },
+] as const satisfies readonly RecordDefinerCount[]
+export const RECORD_DELETE_PROTECTED_SPACE_ROWS = [
+  { table: 'secret_dek', countColumn: 'secret_dek_count' },
+  { table: 'routing_evidence_head', countColumn: 'routing_evidence_head_count' },
+] as const satisfies readonly RecordDefinerCount[]
+export const RECORD_DELETE_APPEND_ONLY_PROJECT_ROWS = [
+  { table: 'hub_send_recipient', countColumn: 'hub_send_recipient_count' },
+  { table: 'hub_send', countColumn: 'hub_send_count' },
+  { table: 'board_presence', countColumn: 'board_presence_count' },
+] as const satisfies readonly RecordDefinerCount[]
+
 export const SPACE_TEARDOWN_EXCLUSIONS = {
-  board_presence:
-    'deleted by the append-only teardown definer function; record_actor holds no DELETE policy',
-  hub_send:
-    'deleted by the append-only teardown definer function; append-only record_actor holds no DELETE policy',
-  hub_send_recipient:
-    'deleted by the append-only teardown definer function; append-only record_actor holds no DELETE policy',
-  machine_name_claim:
-    'deleted by the append-only teardown definer function; record_actor holds no DELETE policy',
-  public_doc_space:
-    'a published space is refused before teardown and record_actor holds SELECT only',
-  record_change: 'ON DELETE CASCADE removes change-feed rows with the space',
-  routing_evidence_head: 'deleted by the trial teardown definer function; actor DELETE is revoked',
-  session: 'session.active_space_id is ON DELETE SET NULL',
-  secret_dek: 'deleted by the trial teardown definer function; actor DELETE is revoked',
-  space_outside_write:
-    'deleted by the append-only teardown definer function; record_actor holds no DELETE policy',
-  user: 'personal_space_id and last_active_space_id are ON DELETE SET NULL',
+  board_presence: {
+    removedBy: 'definer',
+    reason:
+      'deleted by the append-only teardown definer function; record_actor holds no DELETE policy',
+  },
+  hub_send: {
+    removedBy: 'definer',
+    reason:
+      'deleted by the append-only teardown definer function; append-only record_actor holds no DELETE policy',
+  },
+  hub_send_recipient: {
+    removedBy: 'definer',
+    reason:
+      'deleted by the append-only teardown definer function; append-only record_actor holds no DELETE policy',
+  },
+  machine_name_claim: {
+    removedBy: 'definer',
+    reason:
+      'deleted by the append-only teardown definer function; record_actor holds no DELETE policy',
+  },
+  public_doc_space: {
+    removedBy: 'refused',
+    reason: 'a published space is refused before teardown and record_actor holds SELECT only',
+  },
+  record_change: {
+    removedBy: 'cascade',
+    reason: 'ON DELETE CASCADE removes change-feed rows with the space',
+  },
+  routing_evidence_head: {
+    removedBy: 'definer',
+    reason: 'deleted by the trial teardown definer function; actor DELETE is revoked',
+  },
+  session: {
+    removedBy: 'set-null',
+    reason: 'session.active_space_id is ON DELETE SET NULL',
+  },
+  secret_dek: {
+    removedBy: 'definer',
+    reason: 'deleted by the trial teardown definer function; actor DELETE is revoked',
+  },
+  space_outside_write: {
+    removedBy: 'definer',
+    reason:
+      'deleted by the append-only teardown definer function; record_actor holds no DELETE policy',
+  },
+  user: {
+    removedBy: 'set-null',
+    reason: 'personal_space_id and last_active_space_id are ON DELETE SET NULL',
+  },
 } as const
 export const PROJECT_PURGE_EXCLUSIONS = {
-  public_doc_space:
-    'purge refuses a publicly listed project, so no row can remain, and record_actor holds no DELETE on the table by design',
+  board_presence: {
+    removedBy: 'definer',
+    reason:
+      'deleted by the append-only teardown definer function; record_actor holds no DELETE policy',
+  },
+  hub_send: {
+    removedBy: 'definer',
+    reason:
+      'deleted by the append-only teardown definer function; append-only record_actor holds no DELETE policy',
+  },
+  hub_send_recipient: {
+    removedBy: 'definer',
+    reason:
+      'deleted by the append-only teardown definer function; append-only record_actor holds no DELETE policy',
+  },
+  public_doc_space: {
+    removedBy: 'refused',
+    reason:
+      'purge refuses a publicly listed project, so no row can remain, and record_actor holds no DELETE on the table by design',
+  },
 } as const
 
 function foreignKeyFacts(tables: readonly PgTable[] = HOSTED_RECORD_TABLES): ForeignKeyFact[] {
@@ -90,7 +163,7 @@ const belongsToPurgedProject = (fact: ForeignKeyFact) => fact.onDelete !== 'casc
 function discoverReachedTables(
   facts: readonly ForeignKeyFact[],
   tableNames: readonly string[],
-  exclusions: Readonly<Record<string, string>>,
+  exclusions: Readonly<Record<string, RecordTeardownExclusion>>,
   rootTable: string,
   follows: (fact: ForeignKeyFact) => boolean,
 ): Map<string, RecordTeardownReach[]> {
@@ -164,7 +237,7 @@ function orderReachedTables(
 
 export function deriveSpaceTeardownPlan(
   tables: readonly PgTable[] = HOSTED_RECORD_TABLES,
-  exclusions: Readonly<Record<string, string>> = SPACE_TEARDOWN_EXCLUSIONS,
+  exclusions: Readonly<Record<string, RecordTeardownExclusion>> = SPACE_TEARDOWN_EXCLUSIONS,
 ): RecordTeardownStep[] {
   const facts = foreignKeyFacts(tables)
   const names = tables.map((item) => getTableConfig(item).name)
@@ -181,7 +254,7 @@ export const SPACE_TEARDOWN_ORDER = SPACE_TEARDOWN_PLAN.map((step) => step.table
 
 export function deriveProjectPurgePlan(
   tables: readonly PgTable[] = HOSTED_RECORD_TABLES,
-  exclusions: Readonly<Record<string, string>> = PROJECT_PURGE_EXCLUSIONS,
+  exclusions: Readonly<Record<string, RecordTeardownExclusion>> = PROJECT_PURGE_EXCLUSIONS,
 ): RecordTeardownStep[] {
   const facts = foreignKeyFacts(tables)
   const names = tables.map((item) => getTableConfig(item).name)
@@ -228,7 +301,7 @@ function unclassifiedTeardownTables(
   follows: (fact: ForeignKeyFact) => boolean,
   tables: readonly PgTable[] = HOSTED_RECORD_TABLES,
   order: readonly string[],
-  exclusions: Readonly<Record<string, string>>,
+  exclusions: Readonly<Record<string, RecordTeardownExclusion>>,
 ): string[] {
   const classified = new Set(order)
   return [
@@ -249,7 +322,7 @@ function unclassifiedTeardownTables(
 export function unclassifiedSpaceTables(
   tables: readonly PgTable[] = HOSTED_RECORD_TABLES,
   order: readonly string[] = SPACE_TEARDOWN_ORDER,
-  exclusions: Readonly<Record<string, string>> = SPACE_TEARDOWN_EXCLUSIONS,
+  exclusions: Readonly<Record<string, RecordTeardownExclusion>> = SPACE_TEARDOWN_EXCLUSIONS,
 ): string[] {
   return unclassifiedTeardownTables('space', blocksParentDelete, tables, order, exclusions)
 }
@@ -257,7 +330,7 @@ export function unclassifiedSpaceTables(
 export function unclassifiedProjectTables(
   tables: readonly PgTable[] = HOSTED_RECORD_TABLES,
   order: readonly string[] = PROJECT_PURGE_ORDER,
-  exclusions: Readonly<Record<string, string>> = PROJECT_PURGE_EXCLUSIONS,
+  exclusions: Readonly<Record<string, RecordTeardownExclusion>> = PROJECT_PURGE_EXCLUSIONS,
 ): string[] {
   return unclassifiedTeardownTables('project', belongsToPurgedProject, tables, order, exclusions)
 }

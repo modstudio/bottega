@@ -38,6 +38,10 @@ export function registerTrialSpaceTeardownProof(input: {
     const crossSpaceTask = newRecordId()
     const purgedInterval = newRecordId()
     const peerInterval = newRecordId()
+    const purgedSubscription = newRecordId()
+    const purgedSend = newRecordId()
+    const purgedRecipient = newRecordId()
+    const purgedPresence = newRecordId()
     input.admin(`
       INSERT INTO "user"(id,email,name,created_at)
         VALUES ('${owner}','purge-proof-${owner}@example.test','purge proof owner',now());
@@ -58,7 +62,15 @@ export function registerTrialSpaceTeardownProof(input: {
         ('${crossSpaceTask}','${otherSpace}','cross-proof','${crossSpaceProject}','CROSS-1','cross-proof','cross','done','local',now(),now(),now(),now());
       INSERT INTO hub_interval(id,space_id,task_key,task_id,project_name,project_id,source,start_at,end_at,ref,updated_at) VALUES
         ('${purgedInterval}','${space}','PP-1','${purgedTask}','purged-proof','${purgedProject}','proof',now()-interval '1 minute',now(),'purged',now()),
-        ('${peerInterval}','${space}','PEER-1','${peerTask}','peer-proof','${peerProject}','proof',now()-interval '1 minute',now(),'peer',now());`)
+        ('${peerInterval}','${space}','PEER-1','${peerTask}','peer-proof','${peerProject}','proof',now()-interval '1 minute',now(),'peer',now());
+      INSERT INTO hub_report_subscription(id,space_id,scope_kind,project_name,project_id,cadence,hour,zone,enabled,created_at,updated_at)
+        VALUES ('${purgedSubscription}','${space}','project','purged-proof','${purgedProject}','daily',0,'UTC',1,now(),now());
+      INSERT INTO hub_send(id,space_id,at,"window",recipients,projects,items,status,test,created_at,machine,subscription_id,period_start,period_end)
+        VALUES ('${purgedSend}','${space}',now(),'day','owner@example.test','purged-proof',1,'sent',0,now(),'proof','${purgedSubscription}',now()-interval '1 day',now());
+      INSERT INTO hub_send_recipient(id,space_id,send_id,user_id,name,email,created_at)
+        VALUES ('${purgedRecipient}','${space}','${purgedSend}','${owner}','Owner','owner@example.test',now());
+      INSERT INTO board_presence(id,space_id,user_id,session,project_id,role,first_seen,last_seen)
+        VALUES ('${purgedPresence}','${space}','${owner}','purge-proof','${purgedProject}','architect',now(),now());`)
 
     const result = await purgeRecordProject({
       url: input.actorUrl(),
@@ -72,6 +84,9 @@ export function registerTrialSpaceTeardownProof(input: {
     expect(counts.project).toBe(1)
     expect(counts.hub_task).toBe(1)
     expect(counts.hub_interval).toBe(1)
+    expect(counts.hub_send_recipient).toBe(1)
+    expect(counts.hub_send).toBe(1)
+    expect(counts.board_presence).toBe(1)
     expect(input.admin(`SELECT count(*) FROM project WHERE id='${purgedProject}';`)).toBe('0')
     expect(
       input.admin(
@@ -475,6 +490,20 @@ export function registerTrialSpaceTeardownProof(input: {
           has_function_privilege('public', 'record_delete_protected_space_rows(uuid)', 'EXECUTE');`,
       ),
     ).toBe('true|false|false')
+  })
+
+  test('the append-only teardown definers grant execute only to record_actor', () => {
+    for (const functionName of [
+      'record_delete_append_only_space_rows',
+      'record_delete_append_only_project_rows',
+    ])
+      expect(
+        input.admin(
+          `SELECT has_function_privilege('${RECORD_ACTOR_ROLE}', '${functionName}(uuid)', 'EXECUTE') || '|' ||
+            has_function_privilege('${RECORD_READER_ROLE}', '${functionName}(uuid)', 'EXECUTE') || '|' ||
+            has_function_privilege('public', '${functionName}(uuid)', 'EXECUTE');`,
+        ),
+      ).toBe('true|false|false')
   })
 
   test('the real organization update hook preserves but never changes a trial marker', async () => {

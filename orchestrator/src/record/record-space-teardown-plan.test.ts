@@ -10,6 +10,11 @@ import {
   deriveProjectPurgePlan,
   deriveSpaceTeardownPlan,
   HOSTED_RECORD_TABLES,
+  PROJECT_PURGE_EXCLUSIONS,
+  PROJECT_PURGE_PLAN,
+  RECORD_DELETE_APPEND_ONLY_PROJECT_ROWS,
+  RECORD_DELETE_APPEND_ONLY_SPACE_ROWS,
+  RECORD_DELETE_PROTECTED_SPACE_ROWS,
   SPACE_TEARDOWN_EXCLUSIONS,
   SPACE_TEARDOWN_PLAN,
   unclassifiedProjectTables,
@@ -18,47 +23,79 @@ import {
 
 const policyReachesRole = (to: unknown, role: string) =>
   to === undefined || to === 'public' || to === role || (Array.isArray(to) && to.includes(role))
+const hostedTables = new Map(
+  HOSTED_RECORD_TABLES.map((table) => [getTableConfig(table).name, getTableConfig(table)]),
+)
+const plans = [
+  { name: 'space teardown', plan: SPACE_TEARDOWN_PLAN, exclusions: SPACE_TEARDOWN_EXCLUSIONS },
+  { name: 'project purge', plan: PROJECT_PURGE_PLAN, exclusions: PROJECT_PURGE_EXCLUSIONS },
+] as const
 
-test('every planned RLS teardown table permits actor deletion', () => {
-  const tables = new Map(
-    HOSTED_RECORD_TABLES.map((table) => [getTableConfig(table).name, getTableConfig(table)]),
+test('every planned RLS teardown and purge table permits actor deletion', () => {
+  const gaps = plans.flatMap(({ name, plan }) =>
+    plan.flatMap(({ table }) => {
+      const config = hostedTables.get(table)
+      if (!config?.enableRLS) return []
+      const permitsActorDelete = config.policies.some(
+        (policy) =>
+          (policy.for === 'delete' || policy.for === 'all') &&
+          policyReachesRole(policy.to, RECORD_ACTOR_ROLE),
+      )
+      return permitsActorDelete ? [] : [`${name}: ${table}`]
+    }),
   )
-  const gaps = SPACE_TEARDOWN_PLAN.flatMap(({ table }) => {
-    const config = tables.get(table)
-    if (!config?.enableRLS) return []
-    const permitsActorDelete = config.policies.some((policy) => {
-      if (policy.for !== 'delete' && policy.for !== 'all') return false
-      return policyReachesRole(policy.to, RECORD_ACTOR_ROLE)
-    })
-    return permitsActorDelete ? [] : [table]
-  })
   expect(
     gaps,
-    `RLS teardown tables without record_actor DELETE: ${gaps.join(', ')}; add an actor DELETE policy, or delete each table in a definer function and list it in SPACE_TEARDOWN_EXCLUSIONS`,
+    `RLS teardown tables without record_actor DELETE: ${gaps.join(', ')}; add an actor DELETE policy, or delete each table in a definer function and list it in the corresponding exclusions map`,
   ).toEqual([])
 })
 
-test('every definer-deleted RLS teardown exclusion permits owner visibility and deletion', () => {
-  const tables = new Map(
-    HOSTED_RECORD_TABLES.map((table) => [getTableConfig(table).name, getTableConfig(table)]),
+test('every definer-deleted RLS teardown and purge exclusion permits owner visibility and deletion', () => {
+  const gaps = plans.flatMap(({ name, exclusions }) =>
+    Object.entries(exclusions).flatMap(([table, exclusion]) => {
+      if (exclusion.removedBy !== 'definer') return []
+      const config = hostedTables.get(table)
+      if (!config?.enableRLS) return []
+      return (['select', 'delete'] as const).flatMap((command) => {
+        const permitsOwnerCommand = config.policies.some(
+          (policy) =>
+            (policy.for === command || policy.for === 'all') &&
+            policyReachesRole(policy.to, RECORD_OWNER_ROLE),
+        )
+        return permitsOwnerCommand ? [] : [`${name}: ${table} ${command.toUpperCase()}`]
+      })
+    }),
   )
-  const gaps = Object.entries(SPACE_TEARDOWN_EXCLUSIONS).flatMap(([table, reason]) => {
-    if (!reason.includes('deleted by') || !reason.includes('definer function')) return []
-    const config = tables.get(table)
-    if (!config?.enableRLS) return []
-    return (['select', 'delete'] as const).flatMap((command) => {
-      const permitsOwnerCommand = config.policies.some(
-        (policy) =>
-          (policy.for === command || policy.for === 'all') &&
-          policyReachesRole(policy.to, RECORD_OWNER_ROLE),
-      )
-      return permitsOwnerCommand ? [] : [`${table} ${command.toUpperCase()}`]
-    })
-  })
   expect(
     gaps,
     `RLS teardown exclusions deleted by a definer function without required record_owner policies: ${gaps.join(', ')}; add the named record_owner SELECT or DELETE policy so the definer function can see and remove each row under FORCE ROW LEVEL SECURITY`,
   ).toEqual([])
+})
+
+test('every teardown exclusion names a hosted record table', () => {
+  const gaps = plans.flatMap(({ name, exclusions }) =>
+    Object.keys(exclusions).flatMap((table) =>
+      hostedTables.has(table) ? [] : [`${name}: ${table}`],
+    ),
+  )
+  expect(gaps, `teardown exclusions naming unknown hosted tables: ${gaps.join(', ')}`).toEqual([])
+})
+
+test('definer count declarations exactly cover definer-deleted exclusions', () => {
+  const spaceDefinerTables = [
+    ...new Set([
+      ...RECORD_DELETE_APPEND_ONLY_SPACE_ROWS.map(({ table }) => table),
+      ...RECORD_DELETE_PROTECTED_SPACE_ROWS.map(({ table }) => table),
+    ]),
+  ].sort()
+  const purgeDefinerTables = RECORD_DELETE_APPEND_ONLY_PROJECT_ROWS.map(({ table }) => table).sort()
+  const excluded = (exclusions: Record<string, { removedBy: string }>) =>
+    Object.entries(exclusions)
+      .filter(([, value]) => value.removedBy === 'definer')
+      .map(([table]) => table)
+      .sort()
+  expect(spaceDefinerTables).toEqual(excluded(SPACE_TEARDOWN_EXCLUSIONS))
+  expect(purgeDefinerTables).toEqual(excluded(PROJECT_PURGE_EXCLUSIONS))
 })
 
 test('an unclassified space foreign key is refused', () => {

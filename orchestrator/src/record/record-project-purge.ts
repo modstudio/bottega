@@ -8,7 +8,11 @@ import {
   RecordProjectPurgeError,
   type RecordProjectPurgeResult,
 } from './record-project-purge-contract.ts'
-import { buildRecordTeardownPredicates, PROJECT_PURGE_PLAN } from './record-space-teardown-plan.ts'
+import {
+  buildRecordTeardownPredicates,
+  PROJECT_PURGE_PLAN,
+  RECORD_DELETE_APPEND_ONLY_PROJECT_ROWS,
+} from './record-space-teardown-plan.ts'
 export type ProjectPurgeFacts = {
   exists: boolean
   name: string
@@ -105,6 +109,16 @@ export async function purgeRecordProject(input: {
     })
     if (!writeDecision.allowed) throw new RecordProjectPurgeError(writeDecision.refusal)
     const tables: RecordProjectPurgeResult['tables'] = []
+    const appendOnlyRows =
+      await tx`SELECT * FROM record_delete_append_only_project_rows(${input.id}::uuid)`
+    const appendOnlyRow = appendOnlyRows[0]
+    for (const { table, countColumn } of RECORD_DELETE_APPEND_ONLY_PROJECT_ROWS) {
+      if (!appendOnlyRow || !(countColumn in appendOnlyRow))
+        throw new Error(
+          `record_delete_append_only_project_rows result is missing declared count column ${countColumn}`,
+        )
+      tables.push({ table, count: Number(appendOnlyRow[countColumn]) })
+    }
     for (const step of PROJECT_PURGE_PLAN) {
       const deleted = await tx.unsafe(
         `DELETE FROM ${purgeSql.identifier(step.table)} WHERE ${purgeSql.predicate(step.table)} RETURNING 1`,

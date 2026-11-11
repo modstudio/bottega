@@ -5,7 +5,13 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bindTenant } from '../../../shared/record/tenant.ts'
 import { assertRecordMigrationsCurrent } from './record-migration-requirement.ts'
 import { recordPool } from './record-pool.ts'
-import { buildRecordTeardownPredicates, SPACE_TEARDOWN_PLAN } from './record-space-teardown-plan.ts'
+import {
+  buildRecordTeardownPredicates,
+  RECORD_DELETE_APPEND_ONLY_SPACE_ROWS,
+  RECORD_DELETE_PROTECTED_SPACE_ROWS,
+  type RecordDefinerCount,
+  SPACE_TEARDOWN_PLAN,
+} from './record-space-teardown-plan.ts'
 import { isTrialSpaceMetadata, TRIAL_IDENTIFIER_PREFIX } from './record-trial-space.ts'
 import { SpaceDeleteError, type SpaceDeleteResult } from './record-trial-space-contract.ts'
 
@@ -119,6 +125,20 @@ export function decideSpaceDelete(facts: ConfirmedSpaceDeleteFacts): SpaceDelete
   }
 }
 const teardownSql = buildRecordTeardownPredicates(SPACE_TEARDOWN_PLAN, 'space', 'id=$1')
+
+function appendDefinerCounts(
+  tables: SpaceDeleteResult['tables'],
+  rows: readonly Record<string, unknown>[],
+  declared: readonly RecordDefinerCount[],
+  functionName: string,
+): void {
+  const row = rows[0]
+  for (const { table, countColumn } of declared) {
+    if (!row || !(countColumn in row))
+      throw new Error(`${functionName} result is missing declared count column ${countColumn}`)
+    tables.push({ table, count: Number(row[countColumn]) })
+  }
+}
 
 async function facts(tx: SQL, slug: string, userId: string) {
   await tx`SELECT set_config('app.user_id', ${userId}, true)`
@@ -244,23 +264,12 @@ async function deleteRecordSpaceTransaction(
     const tables: SpaceDeleteResult['tables'] = []
     const appendOnlyRows =
       await tx`SELECT * FROM record_delete_append_only_space_rows(${read.spaceId}::uuid)`
-    tables.push({
-      table: 'hub_send_recipient',
-      count: Number(appendOnlyRows[0]?.hub_send_recipient_count ?? 0),
-    })
-    tables.push({ table: 'hub_send', count: Number(appendOnlyRows[0]?.hub_send_count ?? 0) })
-    tables.push({
-      table: 'space_outside_write',
-      count: Number(appendOnlyRows[0]?.space_outside_write_count ?? 0),
-    })
-    tables.push({
-      table: 'machine_name_claim',
-      count: Number(appendOnlyRows[0]?.machine_name_claim_count ?? 0),
-    })
-    tables.push({
-      table: 'board_presence',
-      count: Number(appendOnlyRows[0]?.board_presence_count ?? 0),
-    })
+    appendDefinerCounts(
+      tables,
+      appendOnlyRows,
+      RECORD_DELETE_APPEND_ONLY_SPACE_ROWS,
+      'record_delete_append_only_space_rows',
+    )
     // These rows precede every membership so membership_revoke_config_machines cannot strand a DEK.
     for (const step of SPACE_TEARDOWN_PLAN.filter((item) => item.table !== 'membership')) {
       const deleted = await tx.unsafe(
@@ -273,11 +282,14 @@ async function deleteRecordSpaceTransaction(
       mode === 'trial'
         ? await tx`SELECT * FROM record_delete_trial_protected_space_rows(${read.spaceId}::uuid)`
         : await tx`SELECT * FROM record_delete_protected_space_rows(${read.spaceId}::uuid)`
-    tables.push({ table: 'secret_dek', count: Number(protectedRows[0]?.secret_dek_count ?? 0) })
-    tables.push({
-      table: 'routing_evidence_head',
-      count: Number(protectedRows[0]?.routing_evidence_head_count ?? 0),
-    })
+    appendDefinerCounts(
+      tables,
+      protectedRows,
+      RECORD_DELETE_PROTECTED_SPACE_ROWS,
+      mode === 'trial'
+        ? 'record_delete_trial_protected_space_rows'
+        : 'record_delete_protected_space_rows',
+    )
     const memberships =
       await tx`DELETE FROM membership WHERE space_id=${read.spaceId}::uuid RETURNING id`
     tables.push({ table: 'membership', count: memberships.length })
