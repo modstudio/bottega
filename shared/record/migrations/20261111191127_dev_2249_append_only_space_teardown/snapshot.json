@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "9b1265c2-c3cb-4997-86e4-6ffab4bf671e",
+  "id": "bfed6916-1cb4-4014-8ec1-53eced08bb8d",
   "prevIds": [
     "42fb1b85-751c-4ec7-b443-9b1b8e9fdbcb"
   ],
@@ -29645,6 +29645,19 @@
       "using": "\"space_outside_write\".\"user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
       "withCheck": null,
       "name": "space_outside_write_actor_select",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "space_outside_write"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "record_owner"
+      ],
+      "using": "\"space_outside_write\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
+      "withCheck": null,
+      "name": "space_outside_write_owner_select",
       "entityType": "policies",
       "schema": "public",
       "table": "space_outside_write"

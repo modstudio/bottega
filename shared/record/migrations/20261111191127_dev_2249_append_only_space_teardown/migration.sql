@@ -1,3 +1,7 @@
+CREATE POLICY "space_outside_write_owner_select" ON "space_outside_write"
+AS PERMISSIVE FOR SELECT TO "record_owner"
+USING ("space_outside_write"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid);
+--> statement-breakpoint
 CREATE POLICY "space_outside_write_owner_delete" ON "space_outside_write"
 AS PERMISSIVE FOR DELETE TO "record_owner"
 USING ("space_outside_write"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid);

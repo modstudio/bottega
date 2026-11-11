@@ -38,7 +38,7 @@ test('every planned RLS teardown table permits actor deletion', () => {
   ).toEqual([])
 })
 
-test('every definer-deleted RLS teardown exclusion permits owner deletion', () => {
+test('every definer-deleted RLS teardown exclusion permits owner visibility and deletion', () => {
   const tables = new Map(
     HOSTED_RECORD_TABLES.map((table) => [getTableConfig(table).name, getTableConfig(table)]),
   )
@@ -46,16 +46,18 @@ test('every definer-deleted RLS teardown exclusion permits owner deletion', () =
     if (!reason.includes('deleted by') || !reason.includes('definer function')) return []
     const config = tables.get(table)
     if (!config?.enableRLS) return []
-    const permitsOwnerDelete = config.policies.some(
-      (policy) =>
-        (policy.for === 'delete' || policy.for === 'all') &&
-        policyReachesRole(policy.to, RECORD_OWNER_ROLE),
-    )
-    return permitsOwnerDelete ? [] : [table]
+    return (['select', 'delete'] as const).flatMap((command) => {
+      const permitsOwnerCommand = config.policies.some(
+        (policy) =>
+          (policy.for === command || policy.for === 'all') &&
+          policyReachesRole(policy.to, RECORD_OWNER_ROLE),
+      )
+      return permitsOwnerCommand ? [] : [`${table} ${command.toUpperCase()}`]
+    })
   })
   expect(
     gaps,
-    `RLS teardown exclusions deleted by a definer function without record_owner DELETE: ${gaps.join(', ')}; add a record_owner DELETE policy so the definer function can remove each row under FORCE ROW LEVEL SECURITY`,
+    `RLS teardown exclusions deleted by a definer function without required record_owner policies: ${gaps.join(', ')}; add the named record_owner SELECT or DELETE policy so the definer function can see and remove each row under FORCE ROW LEVEL SECURITY`,
   ).toEqual([])
 })
 
