@@ -29,12 +29,12 @@ export type SecretFailureKind =
   | 'other'
 
 export class SecretStoreError extends Error {
-  constructor(
-    message: string,
-    readonly kind: SecretFailureKind,
-  ) {
+  readonly kind: SecretFailureKind
+
+  constructor(message: string, kind: SecretFailureKind) {
     super(message)
     this.name = 'SecretStoreError'
+    this.kind = kind
   }
 }
 

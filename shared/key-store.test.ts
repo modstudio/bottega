@@ -2,8 +2,8 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { KEYSTORE_ENV } from './key-store-constants.ts'
 import { decideKeyStore } from './key-store.ts'
+import { KEYSTORE_ENV } from './key-store-constants.ts'
 import { setMachineValue } from './machine-config.ts'
 
 const temporary: string[] = []

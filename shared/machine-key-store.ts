@@ -49,10 +49,7 @@ function decode(value: string): Uint8Array {
   return bytes
 }
 
-export function decideMachineKeyStore(
-  environment: ConfigEnvironment,
-  platform: string,
-): Keystore {
+export function decideMachineKeyStore(environment: ConfigEnvironment, platform: string): Keystore {
   const selected = decideKeyStore(environment)
   if (selected === 'file') return selected
   try {

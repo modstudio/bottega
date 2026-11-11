@@ -110,17 +110,12 @@ test('classifies injected Linux keychain probe failures without parsing messages
   temporary.push(root)
   const env = { BOTTEGA_CONFIG_HOME: root }
 
-  for (const kind of [
-    'libsecret-missing',
-    'no-unlocked-collection',
-    'no-session-bus',
-  ] as const) {
+  for (const kind of ['libsecret-missing', 'no-unlocked-collection', 'no-session-bus'] as const) {
     expect(
       gatherKeystoreSetupFact(env, 'linux', () => ({ usable: false, kind })).keychainUsable,
     ).toBe(false)
   }
   expect(
-    gatherKeystoreSetupFact(env, 'linux', () => ({ usable: false, kind: 'other' }))
-      .keychainUsable,
+    gatherKeystoreSetupFact(env, 'linux', () => ({ usable: false, kind: 'other' })).keychainUsable,
   ).toBeNull()
 })

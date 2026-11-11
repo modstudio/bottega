@@ -1,7 +1,8 @@
 // concern: setup-planner
 /** Resolves setup answers into ordered project-register actions. Pure: it never applies them. */
-import { MACHINE_LEVELS, type MachineLevel } from '../../../shared/machine-config.ts'
+
 import type { Keystore } from '../../../shared/key-store-constants.ts'
+import { MACHINE_LEVELS, type MachineLevel } from '../../../shared/machine-config.ts'
 import type { ProjectSettings } from '../project/projects.ts'
 import {
   MACHINE_GLOBAL_USE_QUESTION_ID,

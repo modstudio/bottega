@@ -5,10 +5,7 @@ import { which } from 'bun'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { type InstallationKind, installationIdentity } from '../../../shared/install-root.ts'
 import type { Keystore } from '../../../shared/key-store-constants.ts'
-import {
-  probeMachineKeychain,
-  type UsableKeychainProbeResult,
-} from '../../../shared/keychain.ts'
+import { probeMachineKeychain, type UsableKeychainProbeResult } from '../../../shared/keychain.ts'
 import {
   type MachineLevel,
   type MachineValueSource,
