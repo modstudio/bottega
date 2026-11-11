@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import {
   checkCiWorkflow,
   checkReleaseWorkflow,
@@ -9,6 +10,11 @@ import { CI_ONLY_SUITES } from './check-plan.ts'
 
 const postgresServiceContainer = `BOTTEGA_TEST_POSTGRES_CONTAINER: \${{ job.services.postgres.id }}`
 const processSuite = CI_ONLY_SUITES[0]!
+const playwrightPin = (
+  JSON.parse(readFileSync(new URL('../hub/web/package.json', import.meta.url), 'utf8')) as {
+    devDependencies: Record<string, string>
+  }
+).devDependencies.playwright
 
 test('refuses a workflow with a missing or extra job', () => {
   const workflow = `jobs:\n${expectedWorkflowJobNames()
@@ -109,6 +115,34 @@ test('requires the story job to run the hub-views story-test script', () => {
       ),
     ),
   ).toThrow('must run the hub-views story-test script')
+})
+
+test('refuses a mismatched Playwright image tag', () => {
+  expect(() =>
+    checkCiWorkflow(
+      readWorkflowFixture().replace(
+        '    runs-on: ubuntu-latest',
+        '    runs-on: ubuntu-latest\n    container:\n      image: mcr.microsoft.com/playwright:v1.63.0-noble',
+      ),
+    ),
+  ).toThrow(`set the image tag to v${playwrightPin}-noble`)
+})
+
+test('refuses a playwright install run command', () => {
+  expect(() =>
+    checkCiWorkflow(
+      readWorkflowFixture().replace(
+        '    runs-on: ubuntu-latest',
+        '    runs-on: ubuntu-latest\n    steps:\n      - run: bunx playwright install chromium',
+      ),
+    ),
+  ).toThrow('run the job in the pinned Playwright image instead')
+})
+
+test('accepts the real CI workflow', () => {
+  expect(() =>
+    checkCiWorkflow(readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')),
+  ).not.toThrow()
 })
 
 test('refuses a release upload outside the release publisher', () => {

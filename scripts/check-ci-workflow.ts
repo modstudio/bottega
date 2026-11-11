@@ -4,6 +4,30 @@ import { CHECK_LEGS, CI_ONLY_JOBS, CI_ONLY_SUITES } from './check-plan.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const postgresServiceContainer = `BOTTEGA_TEST_POSTGRES_CONTAINER: \${{ job.services.postgres.id }}`
+const playwrightPackageFiles = [
+  'hub/ui/package.json',
+  'hub/views/package.json',
+  'hub/web/package.json',
+] as const
+
+function playwrightDependencyPin(): string {
+  const pins = playwrightPackageFiles.map((file) => {
+    const packageJson = JSON.parse(readFileSync(`${root}${file}`, 'utf8')) as {
+      devDependencies?: Record<string, string>
+    }
+    const pin = packageJson.devDependencies?.playwright
+    if (!pin) throw new Error(`${file} must pin the playwright devDependency`)
+    return { file, pin }
+  })
+  const expected = pins[0]!.pin
+  const mismatch = pins.find(({ pin }) => pin !== expected)
+  if (mismatch) {
+    throw new Error(
+      `${mismatch.file} pins playwright ${mismatch.pin}, but ${pins[0]!.file} pins ${expected}; set all three package.json playwright pins to the same version`,
+    )
+  }
+  return expected
+}
 
 function workflowJobNames(source: string): string[] {
   const jobsStart = source.split('\n').indexOf('jobs:')
@@ -84,6 +108,28 @@ function checkCiOnlySuiteJobs(source: string): void {
   }
 }
 
+/** Pins Playwright container versions and forbids runtime browser installation. */
+function checkPlaywrightJobs(source: string, jobNames: readonly string[]): void {
+  const playwrightPin = playwrightDependencyPin()
+  for (const jobName of jobNames) {
+    const job = workflowJob(source, jobName)
+    for (const image of job.matchAll(/mcr\.microsoft\.com\/playwright:v([^\s-]+)-([^\s]+)/g)) {
+      if (image[1] !== playwrightPin) {
+        throw new Error(
+          `.github/workflows/ci.yml job ${jobName} uses Playwright image ${image[0]}; set the image tag to v${playwrightPin}-${image[2]}`,
+        )
+      }
+    }
+    for (const command of workflowRunCommands(job)) {
+      if (/\bplaywright\s+install\b/.test(command)) {
+        throw new Error(
+          `.github/workflows/ci.yml job ${jobName} runs "playwright install"; remove that command and run the job in the pinned Playwright image instead`,
+        )
+      }
+    }
+  }
+}
+
 export function expectedWorkflowJobNames(): string[] {
   return [
     'secrets',
@@ -112,6 +158,7 @@ export function checkCiWorkflow(source: string): void {
       `CI aggregate needs do not match check plan: missing ${missing.join(', ') || 'none'}; unknown ${unknown.join(', ') || 'none'}`,
     )
   }
+  checkPlaywrightJobs(source, actual)
   if (!workflowJob(source, 'hub-ui-stories').includes('bun run --cwd hub/ui storybook:test'))
     throw new Error('hub-ui-stories job must run the hub-ui story-test script')
   if (!workflowJob(source, 'hub-ui-stories').includes('bun run --cwd hub/views storybook:test'))
