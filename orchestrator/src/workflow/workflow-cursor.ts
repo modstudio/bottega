@@ -452,17 +452,7 @@ async function persistWorkflowAdvance(
   const finishing = advance.ordinal === null
   const next = finishing ? null : composition.steps[advance.ordinal as number]!
   const deleteTextIds = advanceTextDeletionIds(row, composition, finishing, d)
-  const flow =
-    finishing && row.task_flow_record_id
-      ? d
-          .query<
-            { record_id: string; revision: number; open_stage_cursor_record_id: string | null },
-            [string]
-          >(
-            'SELECT record_id,revision,open_stage_cursor_record_id FROM task_flow WHERE record_id=?',
-          )
-          .get(row.task_flow_record_id)
-      : null
+  const flow = finishing ? selectClosingTaskFlow(row, d) : null
   const closingFlow = flow?.open_stage_cursor_record_id === row.record_id ? flow : null
   const { parts, obligationInserts, obligationUpdates } = advanceRecordRows(
     row,
@@ -526,6 +516,16 @@ async function persistWorkflowAdvance(
     selfRulingPlan,
     revisions: hosted?.revisions,
   })
+}
+
+function selectClosingTaskFlow(row: CursorRow, database: Database) {
+  if (!row.task_flow_record_id) return null
+  return database
+    .query<
+      { record_id: string; revision: number; open_stage_cursor_record_id: string | null },
+      [string]
+    >('SELECT record_id,revision,open_stage_cursor_record_id FROM task_flow WHERE record_id=?')
+    .get(row.task_flow_record_id)
 }
 
 function advanceTextDeletionIds(

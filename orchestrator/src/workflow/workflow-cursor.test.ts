@@ -6,10 +6,7 @@ import {
   promoteStepCatalogueLocal,
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
-import {
-  awaitWorkflowRuling,
-  composeWorkflowWithCursor,
-} from './workflow-cursor.ts'
+import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { listWorkflowCursors } from './workflow-cursor-list.ts'
 import { ruleWorkflow } from './workflow-cursor-ruling.ts'
 import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'

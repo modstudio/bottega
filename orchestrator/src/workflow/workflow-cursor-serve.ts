@@ -24,7 +24,6 @@ import {
   selectUntouchedKeylessWorkflowCursor,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
-import { withLinkedWorkflowTask } from './workflow-task-linking.ts'
 import { type CursorTrailEntry, isClosedStep } from './workflow-cursor-trail.ts'
 import {
   cursorValue,
@@ -34,6 +33,7 @@ import {
   stepPass,
 } from './workflow-cursor-transition.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
+import { withLinkedWorkflowTask } from './workflow-task-linking.ts'
 import { withWorkflowTextFacts } from './workflow-text.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
@@ -94,8 +94,7 @@ async function prepareStepServe(
         context.session,
         database,
       ) as CursorRow | null)
-    : (handled ??
-      findWorkflowCloseCursor(project, slug, mode, args, context, database, cursor))
+    : (handled ?? findWorkflowCloseCursor(project, slug, mode, args, context, database, cursor))
   let row = handled ?? candidate
   const opensCursor = row === null
   const startDecision = decideCursorStart(row?.state ?? null)

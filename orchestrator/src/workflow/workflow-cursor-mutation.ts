@@ -53,9 +53,7 @@ export async function abandonWorkflowCursor(
         .query<
           { record_id: string; revision: number; open_stage_cursor_record_id: string | null },
           [string]
-        >(
-          'SELECT record_id,revision,open_stage_cursor_record_id FROM task_flow WHERE record_id=?',
-        )
+        >('SELECT record_id,revision,open_stage_cursor_record_id FROM task_flow WHERE record_id=?')
         .get(row.task_flow_record_id)
     : null
   const closesOpenStage = flow?.open_stage_cursor_record_id === row.record_id

@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { rememberProjectSpace } from '../project-space-cache.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
@@ -51,9 +50,6 @@ test('serving a rebound argument writes hosted-first and preserves the local row
     d,
   )
   promoteWorkflowLocal('flow', rebindable.n, 'serve rebound fixture', 'test', d)
-  for (const table of ['workflow', 'workflow_version', 'step_catalogue', 'step_catalogue_version'])
-    d.query(`UPDATE ${table} SET space_id=?`).run(destinationSpaceId)
-  rememberProjectSpace(d, 'fixture', destinationSpaceId)
   process.env.BOTTEGA_RECORD_API_URL = hostedUrl
   let refusal: Error | null = null
   let expectedBranch = 'rebound-one'
@@ -70,7 +66,9 @@ test('serving a rebound argument writes hosted-first and preserves the local row
       expect(input.stages[0]!.values.closedStepNotes).toHaveLength(
         expectedBranch === 'rebound-one' ? 1 : 2,
       )
-      expect(d.query('SELECT args,closed FROM workflow_cursor WHERE record_id=?').get(cursor.record_id)).toEqual({
+      expect(
+        d.query('SELECT args,closed FROM workflow_cursor WHERE record_id=?').get(cursor.record_id),
+      ).toEqual({
         args: expectedLocal.args,
         closed: expectedLocal.closed,
       })
@@ -117,6 +115,8 @@ test('serving a rebound argument writes hosted-first and preserves the local row
     ),
   ).rejects.toThrow('hosted serve unavailable')
   expect(
-    d.query('SELECT args,closed,revision FROM workflow_cursor WHERE record_id=?').get(cursor.record_id),
+    d
+      .query('SELECT args,closed,revision FROM workflow_cursor WHERE record_id=?')
+      .get(cursor.record_id),
   ).toEqual(afterSuccess)
 })

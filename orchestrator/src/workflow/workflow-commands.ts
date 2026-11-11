@@ -26,24 +26,21 @@ import {
 } from './step-catalogue.ts'
 import { obligationUuid, positive } from './workflow-command-arguments.ts'
 import type { CommitCountPort } from './workflow-compose-branch.ts'
-import {
-  awaitWorkflowRuling,
-  composeWorkflowWithCursor,
-} from './workflow-cursor.ts'
+import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { cursorCommandTarget } from './workflow-cursor-command-target.ts'
 import { renderWorkflowCursorLine } from './workflow-cursor-format.ts'
-import { ruleWorkflow } from './workflow-cursor-ruling.ts'
-import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
 import { listWorkflowCursors } from './workflow-cursor-list.ts'
 import {
   resolveCursorLiveAutonomy,
   resolveWorkflowLiveAutonomy,
 } from './workflow-cursor-live-autonomy.ts'
+import { ruleWorkflow } from './workflow-cursor-ruling.ts'
 import {
   cliWorkflowCursorContext,
   resolveWorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
+import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
 import { parseWorkflowEvidencePayload, RECORD_EVIDENCE_FLAG } from './workflow-evidence-payload.ts'
 import { workflowExecCheckoutRefusal, workflowExecCommandCwd } from './workflow-exec-checkout.ts'
 import {

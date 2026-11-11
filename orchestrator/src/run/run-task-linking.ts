@@ -469,8 +469,7 @@ async function persistRunTaskLinks(
   const synchronous = pendingUpdates.filter(
     (update) => LOCAL_TASK_LINKS[update.table].regime === 'synchronous',
   )
-  for (const update of hostedFirst)
-    await writeHostedFirstTaskLink(database, update, taskFlowClient)
+  for (const update of hostedFirst) await writeHostedFirstTaskLink(database, update, taskFlowClient)
   writeTransaction(() => {
     const updateRun = database.query(
       `UPDATE run SET task_record_id=COALESCE(task_record_id,?),

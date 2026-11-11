@@ -9,7 +9,7 @@ import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { workflowTaskBindingCommand } from './workflow-cursor-format.ts'
 import { hasClosedStep } from './workflow-cursor-trail.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
-import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
+import type { EnforcementMode } from './workflow-floor.ts'
 import { type HubTaskReader, resolveHubTaskReference } from './workflow-task-reference.ts'
 import { resolveWorkflowMode, showResolvedWorkflow } from './workflows.ts'
 
@@ -165,12 +165,19 @@ export type SelectableCursorRow = {
   catalogue_version: number
   args: string
   autonomy: string | null
+  closed: string
+  question: string | null
+  total_steps: number
+  created_at: string
+  enforcement: EnforcementMode
   opened_machine_id: string | null
   taken_over_from_machine_id: string | null
   last_advanced_machine_id: string | null
   revision: number
   updated_at: string
 }
+
+export type WorkflowCloseCursor = SelectableCursorRow
 
 const mismatch = (
   row: Pick<SelectableCursorRow, 'id' | 'workflow_slug'>,

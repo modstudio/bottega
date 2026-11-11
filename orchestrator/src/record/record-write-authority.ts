@@ -34,15 +34,18 @@ export function throwIfRecordRefused(decision: RecordWriteDecision): void {
   if (decision.verdict === 'refused') throw new Error(decision.refusal)
 }
 
-export function applyRecordWriteAuthority<T>(actions: {
-  local(): T | Promise<T>
-  hosted(): T | Promise<T>
-}, database: Database = db()): Promise<T> {
+export function applyRecordWriteAuthority<T>(
+  actions: {
+    local(): T | Promise<T>
+    hosted(): T | Promise<T>
+  },
+  database: Database = db(),
+): Promise<T> {
   const decision = currentRecordWriteDecision(database)
   throwIfRecordRefused(decision)
   if (decision.verdict === 'local-authoritative') return Promise.resolve(actions.local())
   return Promise.resolve(actions.hosted()).then((result) => {
-    rememberHostedRecord(database)
+    rememberHostedRecord()
     return result
   })
 }

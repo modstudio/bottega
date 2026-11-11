@@ -62,21 +62,24 @@ export async function writeHostedTaskFlow<K extends TaskFlowIntent>(
   target: TaskFlowWriteTarget,
   client: RecordTaskFlowClient = recordApiClient(),
 ): Promise<TaskFlowIntentResult<K> | null> {
-  return applyRecordWriteAuthority({
-    local: () => null,
-    hosted: async () => {
-      const destination = await destinationFor(target, client)
-      const method = client[methodByIntent[intent]] as
-        | ((
-            body: TaskFlowIntentInput<K>,
-            destination?: RecordRequestDestination,
-          ) => Promise<TaskFlowIntentResult<K>>)
-        | undefined
-      if (!method)
-        throw new Error(
-          `record API predates the ${intent} task-flow write; release hosted-api, then retry`,
-        )
-      return method(input, destination)
+  return applyRecordWriteAuthority(
+    {
+      local: () => null,
+      hosted: async () => {
+        const destination = await destinationFor(target, client)
+        const method = client[methodByIntent[intent]] as
+          | ((
+              body: TaskFlowIntentInput<K>,
+              destination?: RecordRequestDestination,
+            ) => Promise<TaskFlowIntentResult<K>>)
+          | undefined
+        if (!method)
+          throw new Error(
+            `record API predates the ${intent} task-flow write; release hosted-api, then retry`,
+          )
+        return method(input, destination)
+      },
     },
-  }, target.database)
+    target.database,
+  )
 }
