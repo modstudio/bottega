@@ -19,7 +19,7 @@ import { recordPool } from './record-pool.ts'
 export type RecordWriteTelemetryEnvironment = {
   Variables: {
     identity: RecordIdentity
-    writeTelemetry: { recordUrl: string; counter: NoDestinationWriteCounter }
+    writeTelemetry?: { recordUrl: string; counter: NoDestinationWriteCounter }
     destinationSpaceId?: string
     destinationlessWriteRecorded?: true
   }
@@ -58,7 +58,7 @@ export function registerRecordWriteTelemetry(
       await writeTelemetry.counter.read(spaceIds, () =>
         readNoDestinationWrites(recordPool(deps.recordUrl), {
           userId: identity.user.id,
-          spaceId: identity.activeSpaceId,
+          spaceId: identity.activeSpaceId ?? '',
           spaceIds,
         }),
       ),
@@ -66,8 +66,16 @@ export function registerRecordWriteTelemetry(
   })
 }
 
-export function recordDestinationlessWrite(context: RecordWriteTelemetryContext): void {
-  const deps = context.get('writeTelemetry')
+export function recordDestinationlessWrite(
+  context: RecordWriteTelemetryContext,
+  fallback?: { recordUrl: string },
+): void {
+  const deps =
+    context.get('writeTelemetry') ??
+    (fallback
+      ? { recordUrl: fallback.recordUrl, counter: counterFor(fallback.recordUrl) }
+      : undefined)
+  if (!deps) throw new Error('destination-less write telemetry is not configured')
   const identity = context.get('identity')
   const decision = destinationlessWrite({
     method: context.req.method,

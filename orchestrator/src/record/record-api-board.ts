@@ -238,7 +238,7 @@ function boardTenant(
 }
 
 function boardRequestTenant(context: BoardRouteContext, recordUrl: string): BoardTenant | null {
-  recordDestinationlessWrite(context)
+  recordDestinationlessWrite(context, { recordUrl })
   return boardTenant(recordUrl, context.get('identity'), context.get('destinationSpaceId'))
 }
 

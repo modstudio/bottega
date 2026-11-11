@@ -27,6 +27,11 @@ export const RECORD_PROJECT_SPACE_OWNERSHIP = [
       { table: 'landing', column: 'landing_id' },
     ],
   },
+  {
+    table: 'no_destination_write',
+    kind: 'space',
+    reason: 'space-attributed telemetry',
+  },
   { table: 'doc', kind: 'project', ownerColumns: ['project_id'] },
   {
     table: 'doc_related_subject',

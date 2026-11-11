@@ -101,6 +101,12 @@ test('durable counts survive a counter restart and tenant reads exclude other sp
 })
 
 test('prune removes only telemetry older than the raw window', async () => {
+  const moveDefinition = (
+    await database.query<{ definition: string }>(
+      "SELECT pg_get_functiondef('record_move_project_space(text,text,text,bigint)'::regprocedure) AS definition",
+    )
+  ).rows[0]?.definition
+  expect(moveDefinition).toContain("('no_destination_write','space')")
   await database.exec(`
     RESET ROLE;
     UPDATE no_destination_write SET at=now() - interval '15 days' WHERE space_id='${spaceA}';

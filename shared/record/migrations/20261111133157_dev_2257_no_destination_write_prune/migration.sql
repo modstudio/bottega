@@ -1,4 +1,4 @@
-ALTER TABLE public.no_destination_write FORCE ROW LEVEL SECURITY;
+ALTER TABLE "no_destination_write" FORCE ROW LEVEL SECURITY;
 
 CREATE FUNCTION public.no_destination_write_prune() RETURNS bigint
 LANGUAGE plpgsql
