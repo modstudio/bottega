@@ -425,7 +425,10 @@ realPostgres('project import against copied live SQLite data', () => {
       attempts: number
       last_error: string
     }> = []
-    let finalParentDeferred = new Map<number, { kind: string; reason: string }>()
+    let finalParentDeferred = new Map<
+      number,
+      { kind: string; cause: 'live-run' | 'unsynced-parent'; reason: string }
+    >()
     let replayPasses = 0
     while (true) {
       replayPasses++
@@ -456,7 +459,7 @@ realPostgres('project import against copied live SQLite data', () => {
       finalParentDeferred = new Map(
         (synced.parentDeferred ?? []).map((row) => [
           row.id,
-          { kind: row.kind, reason: row.reason },
+          { kind: row.kind, cause: row.cause, reason: row.reason },
         ]),
       )
       if (synced.pending === 0) break
@@ -509,7 +512,7 @@ realPostgres('project import against copied live SQLite data', () => {
     const requiredRows = outboxRows.filter(
       (row) =>
         !historyIds.has(row.id) &&
-        !finalParentDeferred.has(row.id) &&
+        finalParentDeferred.get(row.id)?.cause !== 'live-run' &&
         row.quarantined_at === null &&
         row.retired_at === null,
     )

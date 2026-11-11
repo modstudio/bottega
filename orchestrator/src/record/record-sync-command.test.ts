@@ -56,6 +56,7 @@ test('sync reports each row deferred by a pending parent', async () => {
             {
               id: 23,
               kind: 'contention',
+              cause: 'live-run',
               reason: 'waits for run run-1, which is still running',
             },
           ],

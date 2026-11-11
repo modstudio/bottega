@@ -264,6 +264,7 @@ test('a deferred same-batch parent leaves its child pending', async () => {
     {
       id: 2,
       kind: 'score',
+      cause: 'unsynced-parent',
       reason: 'waits for run run-1, whose outbox row orch:1 has not synced',
     },
   ])
@@ -318,6 +319,7 @@ test('contention waits for its local run to enqueue a record row', async () => {
     {
       id: 1,
       kind: 'contention',
+      cause: 'live-run',
       reason: `waits for run ${runId}, which is still running; it syncs after that run finishes`,
     },
   ])

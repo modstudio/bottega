@@ -228,7 +228,8 @@ function outboxDependencyState(
       return { ...dependency, reason: parent.blockedReason }
     }
     deferred = true
-    if (dependency.quarantinedParent) quarantinedParents.push(dependency.quarantinedParent)
+    if ('quarantinedParent' in dependency && dependency.quarantinedParent)
+      quarantinedParents.push(dependency.quarantinedParent)
     deferredParent ??= dependency.deferredParent
   }
   return {
@@ -321,7 +322,14 @@ export function outboxRowWaitsForParent(
     'status' in parent
       ? `waits for run ${parent.recordId}, which is still ${parent.status}; it syncs after that run finishes`
       : `waits for ${parent.kind} ${parent.recordId}, whose outbox row orch:${parent.outboxId} has not synced`
-  return { parentDeferred: { id: row.id, kind: row.kind, reason } }
+  return {
+    parentDeferred: {
+      id: row.id,
+      kind: row.kind,
+      cause: 'status' in parent ? 'live-run' : 'unsynced-parent',
+      reason,
+    },
+  }
 }
 
 export function refreshParentDeferredOutboxRows(
