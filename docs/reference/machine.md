@@ -129,7 +129,7 @@ rank reported environment blockers by recurrence
 
 **Synopsis:** `bottega machine config`
 
-manage scoped configuration values; machine.keystore selects keychain or file, BOTTEGA_KEYSTORE overrides it, and machine setup chooses file on Linux when no usable keychain is found
+manage scoped configuration values
 
 ### Related
 

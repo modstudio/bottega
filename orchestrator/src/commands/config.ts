@@ -41,7 +41,7 @@ import { requestedMachineNames } from './machine-name-options.ts'
 import { log, rawArgv } from './support.ts'
 
 const SUBSCRIPTION_PRICE_HELP = `\nSubscription monthly prices are user-scope keys named subscription.<harness>.monthly_usd, for example ${subscriptionMonthlyUsdKey('codex')} and ${subscriptionMonthlyUsdKey('grok')}.\nExamples:\n  ${PLATFORM_SLUG} machine config set ${subscriptionMonthlyUsdKey('codex')} <usd>\n  ${PLATFORM_SLUG} machine config set ${subscriptionMonthlyUsdKey('grok')} <usd>\n`
-const CONFIG_DESCRIPTION = `manage scoped configuration values; machine.keystore selects keychain or file, ${KEYSTORE_ENV} overrides it, and machine setup chooses file on Linux when no usable keychain is found`
+const KEYSTORE_HELP = `\nmachine.keystore selects keychain or file storage for the record session and the machine key. ${KEYSTORE_ENV} overrides it, and ${PLATFORM_SLUG} machine setup chooses file on Linux when no usable keychain is found.\n`
 
 function registerConfigSet(config: Command): void {
   config
@@ -49,7 +49,7 @@ function registerConfigSet(config: Command): void {
     .description(
       'set one configuration value; subscription.<harness>.monthly_usd is a user-scope monthly price in USD',
     )
-    .addHelpText('after', SUBSCRIPTION_PRICE_HELP)
+    .addHelpText('after', `${SUBSCRIPTION_PRICE_HELP}${KEYSTORE_HELP}`)
     .option('--space <slug>', 'write the value in this record space')
     .option('--machine', 'write the value in machine configuration')
     .option('--expect <rowVersion>', 'row version required before writing')
@@ -302,7 +302,7 @@ async function sealPipedSecret(key: string, options: { space?: string }): Promis
 }
 
 export function register(program: Command): void {
-  const config = program.command('config').description(CONFIG_DESCRIPTION)
+  const config = program.command('config').description('manage scoped configuration values')
   registerMachineCommands(config)
   registerConfigGet(config)
   registerConfigSet(config)
