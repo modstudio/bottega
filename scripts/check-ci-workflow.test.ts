@@ -21,9 +21,9 @@ test('refuses a workflow with a missing or extra job', () => {
   const workflow = `jobs:\n${expectedWorkflowJobNames()
     .map((job) => {
       if (job === 'hub-ui-stories')
-        return `  ${job}:\n    container:\n      image: mcr.microsoft.com/playwright:v${playwrightPin}-noble\n    steps:\n      - name: Install Bun\n        run: npm install --global "bun@$(cat .bun-version)"\n      - run: bun run --cwd hub/ui storybook:test\n      - run: bun run --cwd hub/views storybook:test`
+        return `  ${job}:\n    container:\n      image: mcr.microsoft.com/playwright:v${playwrightPin}-noble\n    steps:\n      - name: Trust the workspace\n        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"\n      - name: Install Bun\n        run: npm install --global "bun@$(cat .bun-version)"\n      - run: bun run --cwd hub/ui storybook:test\n      - run: bun run --cwd hub/views storybook:test`
       if (job === 'hub-web-smoke')
-        return `  ${job}:\n    container:\n      image: mcr.microsoft.com/playwright:v${playwrightPin}-noble\n    steps:\n      - name: Install Bun\n        run: npm install --global "bun@$(cat .bun-version)"`
+        return `  ${job}:\n    container:\n      image: mcr.microsoft.com/playwright:v${playwrightPin}-noble\n    steps:\n      - name: Trust the workspace\n        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"\n      - name: Install Bun\n        run: npm install --global "bun@$(cat .bun-version)"`
       if (job === 'orchestrator-hooks') return hooksJobFixture()
       if (job === processSuite.job) return processHooksJobFixture()
       if (job === 'postgres') return postgresJobFixture()
@@ -238,6 +238,19 @@ test('refuses a literal npm Bun version in a Playwright browser job', () => {
   ).toThrow('job hub-ui-stories must install Bun from .bun-version')
 })
 
+test('requires Playwright browser jobs to trust the workspace', () => {
+  expect(() =>
+    checkCiWorkflow(
+      readWorkflowFixture().replace(
+        '      - name: Trust the workspace\n        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"\n',
+        '',
+      ),
+    ),
+  ).toThrow(
+    'job hub-ui-stories must trust the workspace because the Playwright container runs as root over a workspace owned by the runner user, so git refuses it',
+  )
+})
+
 test('accepts the real CI workflow', () => {
   expect(() =>
     checkCiWorkflow(readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')),
@@ -288,9 +301,9 @@ function readWorkflowFixture() {
   return `jobs:\n${expectedWorkflowJobNames()
     .map((job) => {
       if (job === 'hub-ui-stories')
-        return `  ${job}:\n    container:\n      image: mcr.microsoft.com/playwright:v${playwrightPin}-noble\n    steps:\n      - name: Install Bun\n        run: npm install --global "bun@$(cat .bun-version)"\n      - run: bun run --cwd hub/ui storybook:test\n      - run: bun run --cwd hub/views storybook:test`
+        return `  ${job}:\n    container:\n      image: mcr.microsoft.com/playwright:v${playwrightPin}-noble\n    steps:\n      - name: Trust the workspace\n        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"\n      - name: Install Bun\n        run: npm install --global "bun@$(cat .bun-version)"\n      - run: bun run --cwd hub/ui storybook:test\n      - run: bun run --cwd hub/views storybook:test`
       if (job === 'hub-web-smoke')
-        return `  ${job}:\n    container:\n      image: mcr.microsoft.com/playwright:v${playwrightPin}-noble\n    steps:\n      - name: Install Bun\n        run: npm install --global "bun@$(cat .bun-version)"`
+        return `  ${job}:\n    container:\n      image: mcr.microsoft.com/playwright:v${playwrightPin}-noble\n    steps:\n      - name: Trust the workspace\n        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"\n      - name: Install Bun\n        run: npm install --global "bun@$(cat .bun-version)"`
       if (job === 'orchestrator-hooks') return hooksJobFixture()
       if (job === processSuite.job) return processHooksJobFixture()
       if (job === 'postgres') return postgresJobFixture()

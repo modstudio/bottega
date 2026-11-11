@@ -11,6 +11,8 @@ const playwrightPackageFiles = [
 ] as const
 const playwrightBrowserJobs = ['hub-web-smoke', 'hub-ui-stories'] as const
 const playwrightBunInstallCommand = 'npm install --global "bun@$(cat .bun-version)"'
+const playwrightTrustWorkspaceCommand =
+  'git config --global --add safe.directory "$GITHUB_WORKSPACE"'
 
 export function agreedPlaywrightDependencyPin(
   pins: readonly { file: string; pin: string | undefined }[],
@@ -122,6 +124,14 @@ function checkPlaywrightBunInstall(job: string, jobName: string): void {
   }
 }
 
+function checkPlaywrightWorkspaceTrust(job: string, jobName: string): void {
+  if (!workflowRunCommands(job).includes(playwrightTrustWorkspaceCommand)) {
+    throw new Error(
+      `.github/workflows/ci.yml job ${jobName} must trust the workspace because the Playwright container runs as root over a workspace owned by the runner user, so git refuses it; add a Trust the workspace step that runs ${playwrightTrustWorkspaceCommand}`,
+    )
+  }
+}
+
 function aggregateNeeds(source: string): string[] {
   const job = workflowJob(source, 'ci')
   const inline = job.match(/^ {4}needs:\s*\[([^\]]*)\]\s*$/m)
@@ -167,6 +177,7 @@ function checkPlaywrightJobs(source: string, jobNames: readonly string[]): void 
         `.github/workflows/ci.yml job ${jobName} must run in the pinned Playwright image; add container: image: mcr.microsoft.com/playwright:v${playwrightPin}-noble`,
       )
     }
+    checkPlaywrightWorkspaceTrust(job, jobName)
     checkPlaywrightBunInstall(job, jobName)
   }
   for (const jobName of jobNames) {
