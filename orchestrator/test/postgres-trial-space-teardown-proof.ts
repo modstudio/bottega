@@ -294,6 +294,7 @@ export function registerTrialSpaceTeardownProof(input: {
       'tenant-binding guard failed',
     )
 
+    input.admin(`DELETE FROM membership WHERE space_id='${space}' AND user_id='${member}';`)
     await deleteRecordSpace({
       url: input.actorUrl(),
       slug,
