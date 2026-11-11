@@ -26,6 +26,7 @@ import {
   type QuarantinedParentHoldAccumulator,
   quarantinedParentHoldResult,
   recordQuarantinedParentsHoldingRow,
+  refreshParentDeferredOutboxRows,
 } from './outbox-dependency.ts'
 import { quarantinedOutboxRows, quarantineOutboxRow } from './outbox-quarantine.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
@@ -46,6 +47,7 @@ import type {
   BlockedOutboxRow,
   HeldRecordSyncRows,
   OutboxRow,
+  ParentDeferredOutboxRow,
   Payload,
   RecordSyncOptions,
   RecordSyncResult,
@@ -210,7 +212,10 @@ function planBatchRow(
       input.plannedParents,
     )
   }
-  if (parsed && outboxRowWaitsForParent(input.local, row, parsed, input.plannedParents)) {
+  const parentWait = parsed
+    ? outboxRowWaitsForParent(input.local, row, parsed, input.plannedParents)
+    : { disposition: 'ready' as const }
+  if (parentWait.disposition !== 'ready') {
     return { disposition: input.hasBatchRows ? 'stop' : 'skip' }
   }
   if (parsed && deferOutboxRow(input.local, row, parsed, input.blocked, input.plannedParents))
@@ -577,6 +582,7 @@ function completedSyncResult(input: {
   blocked: BlockedOutboxRow[]
   held: Map<string, HeldRecordSyncRows>
   routingHeld: Map<number, RoutingHeldOutboxRow>
+  parentDeferred: ParentDeferredOutboxRow[]
   quarantinedParentHolds: QuarantinedParentHoldAccumulator
   readOnlyDeferred: Map<string, number>
   backfill: RecordSyncResult['backfill']
@@ -608,6 +614,7 @@ function completedSyncResult(input: {
     ...(input.machineNameRefusal ? { machineNameRefusal: input.machineNameRefusal } : {}),
     ...(input.held.size ? { held: [...input.held.values()] } : {}),
     ...(input.routingHeld.size ? { routingHeld: [...input.routingHeld.values()] } : {}),
+    ...(input.parentDeferred.length ? { parentDeferred: input.parentDeferred } : {}),
     ...quarantinedParentHoldResult(input.quarantinedParentHolds),
     ...(input.readOnlyDeferred.size
       ? {
@@ -753,6 +760,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   cacheFirstSyncedMachineNames(options, identity, machineNameRefusal)
   const cachePull = await pullAfterSync(options, writableLocal, session)
   rememberHostedRecord(writableLocal)
+  const parentDeferred = refreshParentDeferredOutboxRows(writableLocal)
   return completedSyncResult({
     pushed,
     failed,
@@ -760,6 +768,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     blocked,
     held,
     routingHeld,
+    parentDeferred,
     quarantinedParentHolds,
     readOnlyDeferred,
     backfill,

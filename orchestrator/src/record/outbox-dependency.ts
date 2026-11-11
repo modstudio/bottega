@@ -8,6 +8,7 @@ import { evidenceReferences } from './record-evidence-references.ts'
 import type {
   BlockedOutboxRow,
   OutboxRow,
+  ParentDeferredOutboxRow,
   Payload,
   QuarantinedParentHold,
 } from './record-sync-types.ts'
@@ -21,10 +22,37 @@ type ParentState = {
   retired_at: string | null
 }
 
+type DeferredParent =
+  | { kind: 'run'; recordId: string; status: string }
+  | { kind: string; recordId: string; outboxId: number }
+
 export type QuarantinedParentHoldAccumulator = Map<
   number,
   QuarantinedParentHold & { rowIds: Set<number> }
 >
+
+type PendingOutboxRowWithPayload = { row: OutboxRow; payload: Payload }
+
+function pendingOutboxRowsWithPayload(database: Database): PendingOutboxRowWithPayload[] {
+  const rows = database
+    .query<OutboxRow, []>(
+      `SELECT id,kind,row_id,payload FROM outbox
+       WHERE synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL ORDER BY id`,
+    )
+    .all()
+  const parsedRows: PendingOutboxRowWithPayload[] = []
+  for (const row of rows) {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(row.payload)
+    } catch {
+      continue
+    }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) continue
+    parsedRows.push({ row, payload: parsed as Payload })
+  }
+  return parsedRows
+}
 
 function parentRowDisposition(
   rows: ParentState[],
@@ -36,14 +64,14 @@ function parentRowDisposition(
   return latest.quarantined_at === null ? 'pending' : 'quarantined'
 }
 
-function localRunIsLive(database: Database, recordId: string): boolean {
-  return Boolean(
+function localLiveRunStatus(database: Database, recordId: string): string | null {
+  return (
     database
-      .query<{ found: number }, [string]>(
-        `SELECT 1 AS found FROM run WHERE record_id=?
+      .query<{ status: string }, [string]>(
+        `SELECT status FROM run WHERE record_id=?
          AND status NOT IN ${TERMINAL_RUN_STATUS_SQL}`,
       )
-      .get(recordId),
+      .get(recordId)?.status ?? null
   )
 }
 
@@ -56,8 +84,12 @@ function localParentDependency(database: Database, parent: ParentRef) {
     .all(parent.kind, parent.recordId)
   const disposition = parentRowDisposition(rows)
   if (disposition === 'missing') {
-    return parent.kind === 'run' && localRunIsLive(database, parent.recordId)
-      ? { disposition: 'deferred' as const }
+    const status = parent.kind === 'run' ? localLiveRunStatus(database, parent.recordId) : null
+    return status
+      ? {
+          disposition: 'deferred' as const,
+          deferredParent: { kind: 'run' as const, recordId: parent.recordId, status },
+        }
       : { disposition: 'ready' as const }
   }
   if (disposition === 'ready') return { disposition }
@@ -70,6 +102,15 @@ function localParentDependency(database: Database, parent: ParentRef) {
             id: rows[0]!.id,
             kind: parent.kind,
             quarantinedAt: rows[0]!.quarantined_at!,
+          },
+        }
+      : {}),
+    ...(disposition === 'pending'
+      ? {
+          deferredParent: {
+            kind: parent.kind,
+            recordId: parent.recordId,
+            outboxId: rows[0]!.id,
           },
         }
       : {}),
@@ -164,22 +205,9 @@ function outboxParentRecordIds(row: OutboxRow, payload: Payload, database: Datab
 }
 
 export function blockedByRetiredParentRows(database: Database): BlockedOutboxRow[] {
-  const rows = database
-    .query<OutboxRow, []>(
-      `SELECT id,kind,row_id,payload FROM outbox
-       WHERE synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL ORDER BY id`,
-    )
-    .all()
   const blocked: BlockedOutboxRow[] = []
-  for (const row of rows) {
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(row.payload)
-    } catch {
-      continue
-    }
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) continue
-    const blockedRow = blockedByRetiredParent(row, parsed as Payload, database)
+  for (const { row, payload } of pendingOutboxRowsWithPayload(database)) {
+    const blockedRow = blockedByRetiredParent(row, payload, database)
     if (blockedRow) blocked.push(blockedRow)
   }
   return blocked
@@ -194,11 +222,13 @@ function outboxDependencyState(
   parentRecordId?: string
   reason?: string
   quarantinedParents?: { id: number; kind: string; quarantinedAt: string }[]
+  deferredParent?: DeferredParent
 } {
   const unique = new Map(
     parents.map((parent) => [outboxParentIdentityKey(parent.kind, parent.recordId), parent]),
   )
   let deferred = false
+  let deferredParent: DeferredParent | undefined
   const quarantinedParents: { id: number; kind: string; quarantinedAt: string }[] = []
   for (const parent of unique.values()) {
     if (plannedParents?.has(outboxParentIdentityKey(parent.kind, parent.recordId))) continue
@@ -208,11 +238,14 @@ function outboxDependencyState(
       return { ...dependency, reason: parent.blockedReason }
     }
     deferred = true
-    if (dependency.quarantinedParent) quarantinedParents.push(dependency.quarantinedParent)
+    if ('quarantinedParent' in dependency && dependency.quarantinedParent)
+      quarantinedParents.push(dependency.quarantinedParent)
+    deferredParent ??= dependency.deferredParent
   }
   return {
     disposition: deferred ? 'deferred' : 'ready',
     ...(quarantinedParents.length ? { quarantinedParents } : {}),
+    ...(!quarantinedParents.length && deferredParent ? { deferredParent } : {}),
   }
 }
 
@@ -290,8 +323,36 @@ export function outboxRowWaitsForParent(
   row: OutboxRow,
   payload: Payload,
   plannedParents?: ReadonlyMap<string, readonly number[]>,
-): boolean {
-  return outboxDependency(row, payload, database, plannedParents).disposition === 'deferred'
+):
+  | { disposition: 'ready' }
+  | { disposition: 'deferred-unreported' }
+  | { disposition: 'deferred'; parentDeferred: ParentDeferredOutboxRow } {
+  const dependency = outboxDependency(row, payload, database, plannedParents)
+  if (dependency.disposition !== 'deferred') return { disposition: 'ready' }
+  const parent = dependency.deferredParent
+  if (!parent) return { disposition: 'deferred-unreported' }
+  const reason =
+    'status' in parent
+      ? `waits for run ${parent.recordId}, which is still ${parent.status}; it syncs after that run finishes`
+      : `waits for ${parent.kind} ${parent.recordId}, whose outbox row orch:${parent.outboxId} has not synced`
+  return {
+    disposition: 'deferred',
+    parentDeferred: {
+      id: row.id,
+      kind: row.kind,
+      cause: 'status' in parent ? 'live-run' : 'unsynced-parent',
+      reason,
+    },
+  }
+}
+
+export function refreshParentDeferredOutboxRows(database: Database): ParentDeferredOutboxRow[] {
+  const deferred: ParentDeferredOutboxRow[] = []
+  for (const { row, payload } of pendingOutboxRowsWithPayload(database)) {
+    const wait = outboxRowWaitsForParent(database, row, payload)
+    if (wait.disposition === 'deferred') deferred.push(wait.parentDeferred)
+  }
+  return deferred
 }
 
 export function recordQuarantinedParentsHoldingRow(
@@ -320,22 +381,9 @@ export function quarantinedParentHoldResult(holds: QuarantinedParentHoldAccumula
 }
 
 export function quarantinedParentHolds(database: Database): QuarantinedParentHold[] {
-  const rows = database
-    .query<OutboxRow, []>(
-      `SELECT id,kind,row_id,payload FROM outbox
-       WHERE synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL ORDER BY id`,
-    )
-    .all()
   const holds: QuarantinedParentHoldAccumulator = new Map()
-  for (const row of rows) {
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(row.payload)
-    } catch {
-      continue
-    }
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) continue
-    recordQuarantinedParentsHoldingRow(database, row, parsed as Payload, holds)
+  for (const { row, payload } of pendingOutboxRowsWithPayload(database)) {
+    recordQuarantinedParentsHoldingRow(database, row, payload, holds)
   }
   return quarantinedParentHoldResult(holds).quarantinedParentHolds ?? []
 }
