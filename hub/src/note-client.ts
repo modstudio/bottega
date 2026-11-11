@@ -22,7 +22,7 @@ const TEST_REFUSAL = `${PLATFORM_SLUG} note client refuses a real hosted URL unl
 const REMEDY = MISSING_HOSTED_URL_REMEDY
 type NoteFetch = (input: string, init?: RequestInit) => Promise<Response>
 type Options = { baseUrl?: string; token?: string | null; fetch?: NoteFetch; recordSpace?: string }
-type WriteOptions = Omit<Options, 'recordSpace'> & { recordSpace: string }
+export type NoteWriteOptions = Omit<Options, 'recordSpace'> & { recordSpace: string }
 class HostedNoteRequestError extends Error {
   readonly status: number
   constructor(status: number, message: string) {
@@ -85,7 +85,7 @@ async function writeRequest<T>(
   path: string,
   method: Exclude<HostedSessionMethod, 'GET'>,
   body: unknown,
-  options: WriteOptions,
+  options: NoteWriteOptions,
   safety: HostedRequestSafety,
 ): Promise<T> {
   await requestSetup(options)
@@ -109,11 +109,15 @@ async function assertNoteCapabilities(options?: Options) {
   const identity = await hostedTaskIdentity(options)
   assertProjectNoteCounters(identity)
 }
-export const hostedCreateNote = async (body: unknown, options: WriteOptions) => {
+export const hostedCreateNote = async (body: unknown, options: NoteWriteOptions) => {
   await assertNoteCapabilities(options)
   return writeRequest<HostedNote>('/v1/notes', 'POST', body, options, 'non-idempotent')
 }
-export const hostedPromoteNote = (recordId: string, input: PromoteNoteInput, options: WriteOptions) =>
+export const hostedPromoteNote = (
+  recordId: string,
+  input: PromoteNoteInput,
+  options: NoteWriteOptions,
+) =>
   writeRequest<{ note: HostedNote; task: HostedTask | null; comment: HostedComment | null }>(
     `/v1/notes/${recordId}/promote`,
     'POST',
@@ -121,7 +125,7 @@ export const hostedPromoteNote = (recordId: string, input: PromoteNoteInput, opt
     options,
     'non-idempotent',
   )
-export const hostedReapNotes = async (body: unknown, options: WriteOptions) => {
+export const hostedReapNotes = async (body: unknown, options: NoteWriteOptions) => {
   const identity = await hostedTaskIdentity(options)
   assertNoteTriageStaleness(identity)
   return writeRequest<{
@@ -147,7 +151,7 @@ export async function hostedNoteChanges(cursor: string | null, options?: Options
     more?: boolean
   }>(`/v1/notes?${query}`, options)
 }
-export const hostedMirrorNotes = async (body: unknown, options: WriteOptions) => {
+export const hostedMirrorNotes = async (body: unknown, options: NoteWriteOptions) => {
   await assertNoteCapabilities(options)
   return writeRequest<{
     upserted: number

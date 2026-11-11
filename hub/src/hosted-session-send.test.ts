@@ -59,11 +59,14 @@ test('hosted session writes require and send a destination while reads remain un
   void compileOnly
 
   const compileOnlyClient = () =>
-    // @ts-expect-error A task-client write cannot omit its destination space.
-    hostedCreateTask({}, {
-      baseUrl: 'https://hub.example.test',
-      token: 'session',
-      fetch: async () => Response.json({}),
-    })
+    hostedCreateTask(
+      {},
+      // @ts-expect-error A task-client write cannot omit its destination space.
+      {
+        baseUrl: 'https://hub.example.test',
+        token: 'session',
+        fetch: async () => Response.json({}),
+      },
+    )
   void compileOnlyClient
 })

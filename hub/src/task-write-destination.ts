@@ -1,3 +1,4 @@
+import { undeclaredProjectSpaceRefusal } from '../../shared/record-remedies.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import {
   declaredProjectSpace,
@@ -5,7 +6,6 @@ import {
   projectWriteDecisionFor,
   type TaskWriteMode,
 } from './hosted-write-mode.ts'
-import { undeclaredProjectSpaceRefusal } from '../../shared/record-remedies.ts'
 import { readInstallBinding } from './install-binding.ts'
 import { projects } from './projects.ts'
 import type { TaskFetch } from './task-client.ts'

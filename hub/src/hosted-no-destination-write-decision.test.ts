@@ -43,9 +43,9 @@ test('uses declared route patterns and marks unknown write paths', () => {
 })
 
 test('outside-note intake is not counted but an ordinary untargeted note write is', () => {
-  expect(
-    hostedNoDestinationWriteDecision({ ...input, pathname: '/v1/notes/outside' }),
-  ).toEqual({ counted: false })
+  expect(hostedNoDestinationWriteDecision({ ...input, pathname: '/v1/notes/outside' })).toEqual({
+    counted: false,
+  })
   expect(hostedNoDestinationWriteDecision({ ...input, pathname: '/v1/notes' })).toEqual({
     counted: true,
     route: '/v1/notes',

@@ -24,7 +24,9 @@ export type HostedSessionRequest = HostedSessionRequestBase &
       }
   )
 
-async function send(input: HostedSessionRequestBase & { method: HostedSessionMethod; recordSpace?: string | null }) {
+async function send(
+  input: HostedSessionRequestBase & { method: HostedSessionMethod; recordSpace?: string | null },
+) {
   const send = async (token: string | null) => {
     if (!token) throw new Error(RECORD_SIGN_IN_REMEDY)
     try {

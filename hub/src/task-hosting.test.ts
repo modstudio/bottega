@@ -686,7 +686,7 @@ describe('hosted-only task safety', () => {
     }
     await hostedCreateTask({}, options)
     await hostedCreateDocument('DEV-1', {}, options)
-    await expect(hostedCreateTask({}, { ...options, recordSpace: null })).rejects.toThrow(
+    await expect(hostedCreateTask({}, { ...options, recordSpace: null } as never)).rejects.toThrow(
       'hosted write names no destination space: /v1/tasks',
     )
 
