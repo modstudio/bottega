@@ -2,13 +2,17 @@
 /** Selects one open workflow cursor by public handle or declared identity. */
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
-import { db, sessionId, writeTransaction } from '../database/db.ts'
-import { attachTaskFlowStage, selectTaskFlowStage } from './task-flow.ts'
-import { readThroughTaskFlow, type TaskFlowReadStatus } from './task-flow-read-through.ts'
+import { db, sessionId } from '../database/db.ts'
+import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
+import { openTaskFlowStageCursor, type TaskFlowStageCursorRow } from './task-flow.ts'
+import {
+  readThroughTaskFlow,
+  type TaskFlowReadStatus,
+  taskFlowReadThroughEnabled,
+} from './task-flow-read-through.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { workflowTaskBindingCommand } from './workflow-cursor-format.ts'
 import { hasClosedStep } from './workflow-cursor-trail.ts'
-import type { CursorState } from './workflow-cursor-transition.ts'
 import { type HubTaskReader, resolveHubTaskReference } from './workflow-task-reference.ts'
 import { resolveWorkflowMode, showResolvedWorkflow } from './workflows.ts'
 
@@ -31,6 +35,7 @@ export type WorkflowCursorContext = {
   adoptionTaskRecordId?: string | null
   taskStatusCategory?: string | null
   taskFlowRead?: TaskFlowReadStatus
+  taskFlowClient?: RecordTaskFlowClient
 }
 
 const MCP_INSTANCE = randomUUID()
@@ -77,21 +82,33 @@ export async function resolveWorkflowCursorContext(
   context: WorkflowCursorContext,
   reader?: HubTaskReader,
   selectedRow?: Pick<SelectableCursorRow, 'workflow_key'>,
-  database: Database = db(),
 ): Promise<WorkflowCursorContext> {
   const key = workflowCursorContextKey(workflowKeyOf(args) || undefined, selectedRow?.workflow_key)
   if (!key) return { ...context, workflowKey: undefined, taskRecordId: null }
   const task = await resolveHubTaskReference(project, key, reader)
-  const taskFlowRead = task?.record_id
-    ? await readThroughTaskFlow(database, { taskKey: key, taskRecordId: task.record_id })
-    : undefined
   return {
     ...context,
     workflowKey: key,
     taskRecordId: task?.record_id ?? null,
     taskStatusCategory: task?.status_category ?? null,
-    taskFlowRead,
   }
+}
+
+/** Refreshes a resolved keyed context only after local-only refusals have been decided. */
+export async function readThroughWorkflowCursorContext(
+  project: string,
+  context: WorkflowCursorContext,
+  database: Database = db(),
+): Promise<WorkflowCursorContext> {
+  if (!context.workflowKey || !context.taskRecordId) return context
+  if (!taskFlowReadThroughEnabled(database)) return context
+  const taskFlowRead = await readThroughTaskFlow(database, {
+    project,
+    taskKey: context.workflowKey,
+    taskRecordId: context.taskRecordId,
+  })
+  context.taskFlowRead = taskFlowRead
+  return context
 }
 
 export const resolveMcpCursorContext = (
@@ -104,7 +121,7 @@ export const resolveMcpCursorContext = (
 export async function resolveMcpSelectedCursorContext(
   project: string | undefined,
   workflow: string | undefined,
-  mode: string | undefined,
+  _mode: string | undefined,
   args: Record<string, string>,
   cursor: number | undefined,
   reader?: HubTaskReader,
@@ -132,31 +149,7 @@ export function workflowCursorProjectScope(
   throw new Error(`cannot list workflow cursors from ${cwd}: pass --project, --session or --all`)
 }
 
-export type SelectableCursorRow = {
-  id: number
-  record_id: string
-  project: string
-  workflow_slug: string
-  mode_slug: string
-  workflow_key: string
-  task_record_id: string | null
-  task_flow_record_id: string | null
-  instance_id: string
-  session_id: string | null
-  ordinal: number
-  step_slug: string
-  state: CursorState
-  workflow_version_record_id: string
-  catalogue_version_record_id: string
-  workflow_version: number
-  catalogue_version: number
-  args: string
-  autonomy: string | null
-  opened_machine_id: string | null
-  taken_over_from_machine_id: string | null
-  last_advanced_machine_id: string | null
-  revision: number
-}
+export type SelectableCursorRow = TaskFlowStageCursorRow
 
 const mismatch = (
   row: Pick<SelectableCursorRow, 'id' | 'workflow_slug'>,
@@ -243,50 +236,34 @@ function selectKeyedTaskStage(
   cursor: number | undefined,
   d: Database,
   taskRecordId: string | null | undefined,
-  taskStatusCategory: string | null | undefined,
+  _taskStatusCategory: string | null | undefined,
 ): SelectableCursorRow | null {
   const handled = cursor === undefined ? null : selectByHandle(cursor, identity, d)
   if (!taskRecordId) return handled
-  return writeTransaction(() => {
-    const selected = selectTaskFlowStage(
-      {
-        project: identity.project,
-        taskRecordId,
-        taskKey: identity.key,
-        statusCategory: taskStatusCategory,
-        workflow: identity.workflow,
-        mode: identity.mode,
-        ...(cursor === undefined ? {} : { cursor }),
-      },
-      d,
+  if (handled) return handled
+  const row = openTaskFlowStageCursor(taskRecordId, d)
+  if (row) {
+    if (
+      row.workflow_slug === identity.workflow &&
+      row.mode_slug === identity.mode &&
+      row.workflow_key === identity.key
     )
-    if (handled) return handled
-    if (selected.cursorRecordId) {
-      const row = d
-        .query(`SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor WHERE record_id=?`)
-        .get(selected.cursorRecordId) as SelectableCursorRow
       return validateIdentity(row, identity)
-    }
-    // Adopt an open keyed cursor that the 0198 backfill deliberately left without a flow.
-    const fallback = d
-      .query(
-        `SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor
-         WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-           AND workflow_slug=? AND mode_slug=? AND task_record_id=?
-           AND instance_id='' ORDER BY number DESC LIMIT 1`,
-      )
-      .get(
-        identity.project,
-        identity.workflow,
-        identity.mode,
-        taskRecordId,
-      ) as SelectableCursorRow | null
-    if (fallback && fallback.state !== 'done' && fallback.state !== 'abandoned') {
-      attachTaskFlowStage(selected.flowRecordId, fallback.record_id, d)
-      fallback.task_flow_record_id = selected.flowRecordId
-    }
-    return fallback
-  }, d)
+  }
+  const fallback = d
+    .query(
+      `SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor
+       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+         AND workflow_slug=? AND mode_slug=? AND task_record_id=?
+         AND instance_id='' ORDER BY number DESC LIMIT 1`,
+    )
+    .get(
+      identity.project,
+      identity.workflow,
+      identity.mode,
+      taskRecordId,
+    ) as SelectableCursorRow | null
+  return fallback ? validateIdentity(fallback, identity) : null
 }
 
 export function selectWorkflowCursor(
@@ -368,13 +345,13 @@ export function resolveWorkflowCursorMode(
     .query(
       `SELECT DISTINCT mode_slug FROM workflow_cursor
        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-         AND workflow_slug=? AND ${key ? 'task_record_id=?' : "workflow_key=''"}
+         AND workflow_slug=? AND ${key ? '(task_record_id=? OR workflow_key=?)' : "workflow_key=''"}
          AND ${key ? "instance_id=''" : 'session_id=?'}
          AND state NOT IN ('done','abandoned') ORDER BY mode_slug`,
     )
     .all(
       ...(key
-        ? [project, slug, context.taskRecordId ?? null]
+        ? [project, slug, context.taskRecordId ?? null, key]
         : [project, slug, context.session ?? '']),
     ) as {
     mode_slug: string

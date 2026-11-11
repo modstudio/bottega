@@ -5,6 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { type Project, projectForTaskKey, projects } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
+import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { linkWorkflowTaskLabel } from '../workflow/workflow-task-linking.ts'
 import {
   type HubTaskKeyMap,
@@ -77,28 +78,45 @@ type PendingLocalTaskLink = {
 }
 
 type LocalTaskLinkRow = { id: string; task_key: string; project: string }
-type LocalTaskLinkConfig = {
+type LocalTaskLinkConfigBase = {
   pendingSql: string
   linkedSql: string
+}
+type HostedFirstTaskLinkConfig = LocalTaskLinkConfigBase & {
+  regime: 'hosted-first'
+  write(
+    database: Database,
+    update: PendingLocalTaskLink,
+    taskFlowClient?: RecordTaskFlowClient,
+  ): Promise<unknown>
+}
+type SynchronousTaskLinkConfig = LocalTaskLinkConfigBase & {
+  regime: 'synchronous'
   write(database: Database, update: PendingLocalTaskLink): void
 }
+type LocalTaskLinkConfig = HostedFirstTaskLinkConfig | SynchronousTaskLinkConfig
 
 const LOCAL_TASK_LINKS = {
   workflow_cursor: {
+    regime: 'hosted-first',
     pendingSql: `SELECT c.record_id id,c.workflow_key task_key,p.name project
       FROM workflow_cursor c JOIN project p ON p.record_id=c.project_record_id
       WHERE c.task_record_id IS NULL AND c.workflow_key<>''`,
     linkedSql: `SELECT c.task_record_id,p.name project FROM workflow_cursor c
       JOIN project p ON p.record_id=c.project_record_id WHERE c.task_record_id IS NOT NULL`,
-    write: (database, update) => {
-      linkWorkflowTaskLabel(database, {
-        project: update.project,
-        workflowKey: update.taskKey,
-        taskRecordId: update.taskId,
-      })
-    },
+    write: (database, update, taskFlowClient) =>
+      linkWorkflowTaskLabel(
+        database,
+        {
+          project: update.project,
+          workflowKey: update.taskKey,
+          taskRecordId: update.taskId,
+        },
+        taskFlowClient,
+      ),
   },
   question: {
+    regime: 'synchronous',
     pendingSql: `SELECT q.record_id id,q.workflow_key task_key,p.name project
       FROM question q JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
       JOIN project p ON p.record_id=c.project_record_id
@@ -119,6 +137,7 @@ const LOCAL_TASK_LINKS = {
     },
   },
   port_ref: {
+    regime: 'synchronous',
     pendingSql: `SELECT r.record_id id,r.task_key,p.name project FROM port_ref r
       JOIN project p ON p.record_id=r.target_project_record_id WHERE r.task_record_id IS NULL`,
     linkedSql: `SELECT r.task_record_id,p.name project FROM port_ref r
@@ -130,6 +149,7 @@ const LOCAL_TASK_LINKS = {
     },
   },
   presence: {
+    regime: 'synchronous',
     pendingSql: `SELECT s.session_id id,s.current_task_key task_key,p.name project FROM presence s
       JOIN project p ON p.record_id=s.project_record_id
       WHERE s.current_task_record_id IS NULL AND s.current_task_key IS NOT NULL`,
@@ -417,12 +437,83 @@ function recordUnlinkedLaunchKey(
   )
 }
 
+function applyRunLinkFactsToReport(
+  report: RunTaskLinkReport,
+  runs: readonly RunLinkFacts[],
+  links: readonly DerivedRunLinks[],
+  tasks: HubTaskKeyMap,
+): void {
+  const byId = new Map(runs.map((run) => [run.record_id, run]))
+  for (const link of links) {
+    const run = byId.get(link.record_id)!
+    if (link.task_source) report.task_links_by_source[link.task_source]++
+    if (link.project_source) report.project_links_by_source[link.project_source]++
+    const taskId = link.task_record_id ?? run.task_record_id
+    const projectId = link.project_record_id ?? run.project_record_id
+    if (taskId === null) increment(report.without_task_by_job, run.job)
+    if (taskId === null && run.launch_key) recordUnlinkedLaunchKey(report, run.launch_key, tasks)
+    if (run.probe !== 1 && taskId === null && projectId === null)
+      increment(report.without_task_or_project_by_job, run.job)
+  }
+}
+
+async function persistRunTaskLinks(
+  database: Database,
+  links: readonly DerivedRunLinks[],
+  pendingUpdates: readonly PendingLocalTaskLink[],
+  taskFlowClient?: RecordTaskFlowClient,
+): Promise<void> {
+  const hostedFirst = pendingUpdates.filter(
+    (update) => LOCAL_TASK_LINKS[update.table].regime === 'hosted-first',
+  )
+  const synchronous = pendingUpdates.filter(
+    (update) => LOCAL_TASK_LINKS[update.table].regime === 'synchronous',
+  )
+  for (const update of hostedFirst) await writeHostedFirstTaskLink(database, update, taskFlowClient)
+  writeTransaction(() => {
+    const updateRun = database.query(
+      `UPDATE run SET task_record_id=COALESCE(task_record_id,?),
+                      project_record_id=COALESCE(project_record_id,?)
+       WHERE record_id=?`,
+    )
+    for (const link of links) {
+      if (!link.task_record_id && !link.project_record_id) continue
+      updateRun.run(link.task_record_id ?? null, link.project_record_id ?? null, link.record_id)
+      const linkedRun = database
+        .query<
+          {
+            job: string
+            status: string
+            finished_at: string
+            parent_run_record_id: string | null
+          },
+          [string]
+        >(
+          `SELECT job,status,COALESCE(last_event_at,started_at) AS finished_at,
+                  parent_run_record_id
+           FROM run WHERE record_id=?`,
+        )
+        .get(link.record_id)!
+      if (!isRunRecordEligible(linkedRun.status, linkedRun.job)) continue
+      const finishedAt = runRecordFinishedAt(
+        database,
+        link.record_id,
+        linkedRun.parent_run_record_id,
+        linkedRun.finished_at,
+      )
+      enqueueRunRecord(database, link.record_id, machineId(), finishedAt)
+    }
+    for (const update of synchronous) writeSynchronousTaskLink(database, update)
+  }, database)
+}
+
 export async function linkRunTasks(
   options: { dryRun: boolean },
   dependencies: {
     database?: Database
     registeredProjects?: readonly Project[]
     hubReader?: HubTaskReader
+    taskFlowClient?: RecordTaskFlowClient
   } = {},
 ): Promise<RunTaskLinkReport> {
   const database = dependencies.database ?? (options.dryRun ? db() : writableDb())
@@ -438,62 +529,10 @@ export async function linkRunTasks(
     .all()
   const links = deriveRunLinks(runs, tasks, registered)
   const report = emptyReport(options.dryRun)
-  const byId = new Map(runs.map((run) => [run.record_id, run]))
-  for (const link of links) {
-    const run = byId.get(link.record_id)!
-    if (link.task_source) report.task_links_by_source[link.task_source]++
-    if (link.project_source) report.project_links_by_source[link.project_source]++
-    const taskId = link.task_record_id ?? run.task_record_id
-    const projectId = link.project_record_id ?? run.project_record_id
-    if (taskId === null) increment(report.without_task_by_job, run.job)
-    if (taskId === null && run.launch_key) {
-      recordUnlinkedLaunchKey(report, run.launch_key, tasks)
-    }
-    if (run.probe !== 1 && taskId === null && projectId === null) {
-      increment(report.without_task_or_project_by_job, run.job)
-    }
-  }
+  applyRunLinkFactsToReport(report, runs, links, tasks)
   const pendingUpdates = deriveLocalTaskLinks(database, taskIndex, report)
-  if (!options.dryRun) {
-    writeTransaction(() => {
-      const update = database.query(
-        `UPDATE run SET task_record_id=COALESCE(task_record_id,?),
-                        project_record_id=COALESCE(project_record_id,?)
-         WHERE record_id=?`,
-      )
-      for (const link of links) {
-        if (!link.task_record_id && !link.project_record_id) continue
-        update.run(link.task_record_id ?? null, link.project_record_id ?? null, link.record_id)
-        const linkedRun = database
-          .query<
-            {
-              job: string
-              status: string
-              finished_at: string
-              parent_run_record_id: string | null
-            },
-            [string]
-          >(
-            `SELECT job,status,COALESCE(last_event_at,started_at) AS finished_at,
-                    parent_run_record_id
-             FROM run WHERE record_id=?`,
-          )
-          .get(link.record_id)!
-        if (isRunRecordEligible(linkedRun.status, linkedRun.job)) {
-          const finishedAt = runRecordFinishedAt(
-            database,
-            link.record_id,
-            linkedRun.parent_run_record_id,
-            linkedRun.finished_at,
-          )
-          enqueueRunRecord(database, link.record_id, machineId(), finishedAt)
-        }
-      }
-      for (const update of pendingUpdates) {
-        writeLocalTaskLink(database, update)
-      }
-    }, database)
-  }
+  if (!options.dryRun)
+    await persistRunTaskLinks(database, links, pendingUpdates, dependencies.taskFlowClient)
   return report
 }
 
@@ -527,8 +566,22 @@ function localTaskLinkRows(database: Database, table: LocalTaskLinkTable): Local
   return database.query<LocalTaskLinkRow, []>(LOCAL_TASK_LINKS[table].pendingSql).all()
 }
 
-function writeLocalTaskLink(database: Database, update: PendingLocalTaskLink): void {
-  LOCAL_TASK_LINKS[update.table].write(database, update)
+async function writeHostedFirstTaskLink(
+  database: Database,
+  update: PendingLocalTaskLink,
+  taskFlowClient?: RecordTaskFlowClient,
+): Promise<void> {
+  const config = LOCAL_TASK_LINKS[update.table]
+  if (config.regime !== 'hosted-first')
+    throw new Error(`task link ${update.table} is not hosted-first`)
+  await config.write(database, update, taskFlowClient)
+}
+
+function writeSynchronousTaskLink(database: Database, update: PendingLocalTaskLink): void {
+  const config = LOCAL_TASK_LINKS[update.table]
+  if (config.regime !== 'synchronous')
+    throw new Error(`task link ${update.table} is not synchronous`)
+  config.write(database, update)
 }
 
 function invalidRunTaskReferenceCount(database: Database, tasks: HubTaskKeyMap): number {

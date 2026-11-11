@@ -108,14 +108,14 @@ export function invokeFloorEvidencePort<Name extends ExternalPort>(
   >
 }
 
-export function withReplayedFloorEvidence<T>(
+export async function withReplayedFloorEvidenceAsync<T>(
   ports: FloorEvidencePorts,
-  transaction: (ports: FloorEvidencePorts) => T,
-): T {
+  transaction: (ports: FloorEvidencePorts) => Promise<T>,
+): Promise<T> {
   const memo = new Map<string, RecordedCall>()
   for (let round = 1; round <= MAX_FLOOR_EVIDENCE_REPLAY_ROUNDS; round += 1) {
     try {
-      return transaction(replayingPorts(ports, memo))
+      return await transaction(replayingPorts(ports, memo))
     } catch (error) {
       if (!(error instanceof FloorEvidencePortMiss)) throw error
       if (round === MAX_FLOOR_EVIDENCE_REPLAY_ROUNDS) {

@@ -11,7 +11,7 @@ import {
 } from './workflow-cursor-test.fixture.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
-test('compose protects an open branch while worktree compose and branch next still rebind', () => {
+test('compose protects an open branch while worktree compose and branch next still rebind', async () => {
   const d = database()
   const slug = 'compose-rebind-fixture'
   const draft = setWorkflowLocal(
@@ -38,7 +38,7 @@ test('compose protects an open branch while worktree compose and branch next sti
     d,
   )
   promoteWorkflowLocal(slug, draft.n, 'test fixture', 'test', d)
-  composeWorkflowWithCursor(
+  await composeWorkflowWithCursor(
     slug,
     'fixture',
     'default',
@@ -49,7 +49,7 @@ test('compose protects an open branch while worktree compose and branch next sti
     {},
   )
 
-  composeWorkflowWithCursor(
+  await composeWorkflowWithCursor(
     slug,
     'fixture',
     'default',
@@ -59,7 +59,7 @@ test('compose protects an open branch while worktree compose and branch next sti
     {},
     {},
   )
-  expect(() =>
+  await expect(
     composeWorkflowWithCursor(
       slug,
       'fixture',
@@ -70,7 +70,7 @@ test('compose protects an open branch while worktree compose and branch next sti
       {},
       {},
     ),
-  ).toThrow(
+  ).rejects.toThrow(
     `workflow compose cannot rebind open cursor 1 from stored branch "DEV-822-old" at step 1 lens; ` +
       `finish it with ${PLATFORM_SLUG} workflow next ${slug} --cursor 1, or abandon it with ` +
       `${PLATFORM_SLUG} workflow abandon ${slug} --cursor 1 --reason "<text>"; a renamed branch of the ` +
@@ -83,7 +83,7 @@ test('compose protects an open branch while worktree compose and branch next sti
     worktree: '/tmp/reopened',
   }
   expect(
-    nextWorkflowStep(
+    await nextWorkflowStep(
       slug,
       'fixture',
       'default',

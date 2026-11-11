@@ -394,7 +394,7 @@ test('workflow import resolves hosted production from the worktree without BOTTE
   )
 })
 
-test('workflow tree project refusal is only required for a configured record without an owner', () => {
+test('workflow tree project refusal is only required for a configured record without an owner', async () => {
   const input = { command: 'hydrate' as const, root: '/fixture/unowned' }
   expect(
     workflowProjectRefusal({
@@ -582,7 +582,7 @@ test('workflow probe and exec preserve child options after the real argv separat
   }
 })
 
-test('command outcome maps a signal to its shell status and error line', () => {
+test('command outcome maps a signal to its shell status and error line', async () => {
   expect(
     commandOutcome('exec', {
       id: 1,
@@ -730,7 +730,7 @@ test('next resolves an omitted mode to the composed cursor default', async () =>
   publishCursorWorkflow(slug, [
     { slug: 'report', title: 'Report', default: true, steps: [step.slug] },
   ])
-  composeWorkflowWithCursor(
+  await composeWorkflowWithCursor(
     slug,
     project,
     undefined,
@@ -810,7 +810,7 @@ test('next preserves an explicit mode', async () => {
     { slug: 'report', title: 'Report', default: true, steps: [step.slug] },
     { slug: 'repair', title: 'Repair', steps: [step.slug] },
   ])
-  composeWorkflowWithCursor(
+  await composeWorkflowWithCursor(
     slug,
     project,
     'repair',
@@ -857,7 +857,7 @@ test('mode-less cursor verbs keep using the cursor mode after the workflow defau
     { slug: 'report', title: 'Report', default: true, steps },
     { slug: 'repair', title: 'Repair', steps },
   ])
-  composeWorkflowWithCursor(slug, project, undefined, { key }, {}, undefined, {}, {})
+  await composeWorkflowWithCursor(slug, project, undefined, { key }, {}, undefined, {}, {})
   const changed = setWorkflowLocal(
     slug,
     {
@@ -902,7 +902,7 @@ test('every CLI cursor verb routes by handle, including handle-only abandon', as
   ]
   registerFixtureProject(project)
   publishCursorWorkflow(slug, [{ slug: 'report', title: 'Report', default: true, steps }])
-  const first = composeWorkflowWithCursor(
+  const first = await composeWorkflowWithCursor(
     slug,
     project,
     'report',
@@ -912,7 +912,7 @@ test('every CLI cursor verb routes by handle, including handle-only abandon', as
     {},
     {},
   )
-  const second = composeWorkflowWithCursor(
+  const second = await composeWorkflowWithCursor(
     slug,
     project,
     'report',
@@ -974,7 +974,7 @@ test('a cursor refuses a supplied workflow or project that differs from its row'
   publishCursorWorkflow(slug, [
     { slug: 'report', title: 'Report', default: true, steps: [step.slug] },
   ])
-  const opened = composeWorkflowWithCursor(
+  const opened = await composeWorkflowWithCursor(
     slug,
     project,
     'report',
@@ -1022,8 +1022,8 @@ test('mode-less cursor command refuses active cursors in multiple modes', async 
     { slug: 'report', title: 'Report', default: true, steps: [step.slug] },
     { slug: 'repair', title: 'Repair', steps: [step.slug] },
   ])
-  composeWorkflowWithCursor(slug, project, 'report', { key }, {}, undefined, {}, {})
-  composeWorkflowWithCursor(slug, project, 'repair', { key }, {}, undefined, {}, {})
+  await composeWorkflowWithCursor(slug, project, 'report', { key }, {}, undefined, {}, {})
+  await composeWorkflowWithCursor(slug, project, 'repair', { key }, {}, undefined, {}, {})
 
   expect(
     workflowCommand(

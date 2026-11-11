@@ -6,6 +6,7 @@ import {
 } from '../doc/doc-revision-conflict.ts'
 import type { RecordRequestDestination } from './record-api-client-paths.ts'
 import { RecordApiRequestError } from './record-api-client-response.ts'
+import type { RecordIdentity } from './record-auth.ts'
 import {
   type HostedTaskFlow,
   type HostedTaskFlowStageList,
@@ -31,6 +32,7 @@ type Request = <T>(
 const TASK_FLOW_WRITE_REFUSAL =
   'record API predates task-flow writes; release hosted-api, then retry'
 export type RecordTaskFlowClient = {
+  whoami?(): Promise<RecordIdentity>
   readTaskFlow?(
     selector: { taskKey?: string; flowRecordId?: string },
     destination?: RecordRequestDestination,

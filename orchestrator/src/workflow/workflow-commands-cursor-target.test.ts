@@ -7,6 +7,7 @@ import {
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { db, sessionId } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
+import { rememberProjectSpace } from '../project-space-cache.ts'
 import type { HostedTaskFlow } from '../record/record-task-flow-contract.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
 import { readThroughTaskFlow } from './task-flow-read-through.ts'
@@ -22,7 +23,7 @@ import {
 let priorSession: string | undefined
 const previousRecordUrl = process.env.BOTTEGA_RECORD_API_URL
 
-beforeEach(() => {
+beforeEach(async () => {
   priorSession = process.env.CLAUDE_CODE_SESSION_ID
   process.env.CLAUDE_CODE_SESSION_ID = 'workflow-command-positionals'
 })
@@ -52,6 +53,7 @@ test('next by cursor alone reads through the row key and links the hosted task',
     settings: {
       gate: 'bun run check',
       trunk: 'main',
+      space: 'cursor-target-space',
       docs: { protocol: 'orch-docs' },
       tracker: { kind: 'hub', protocol: 'hub' },
     },
@@ -60,6 +62,7 @@ test('next by cursor alone reads through the row key and links the hosted task',
   const projectId = db()
     .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
     .get(project)!.record_id
+  rememberProjectSpace(db(), project, 'cursor-target-space')
   const hosted = (revision: number, ordinal: number): HostedTaskFlow => ({
     flow: {
       id: flowId,
@@ -114,17 +117,43 @@ test('next by cursor alone reads through the row key and links the hosted task',
   })
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: 'cursor-target-user' },
+      activeSpaceId: 'cursor-target-space',
+      personalSpaceId: 'cursor-target-space',
+      memberships: [
+        { space_id: 'cursor-target-space', slug: 'cursor-target', permission: 'write' },
+      ],
+    }),
     readTaskFlow: async () => hosted(1, 0),
   })
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
-  await readThroughTaskFlow(db(), { taskKey: key, taskRecordId: taskId })
+  await readThroughTaskFlow(db(), { project, taskKey: key, taskRecordId: taskId })
   db().query('UPDATE workflow_cursor SET task_record_id=NULL WHERE record_id=?').run(stageId)
   const cursor = db()
     .query<{ number: number }, [string]>('SELECT number FROM workflow_cursor WHERE record_id=?')
     .get(stageId)!.number
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: 'cursor-target-user' },
+      activeSpaceId: 'cursor-target-space',
+      personalSpaceId: 'cursor-target-space',
+      memberships: [
+        { space_id: 'cursor-target-space', slug: 'cursor-target', permission: 'write' },
+      ],
+    }),
     readTaskFlow: async () => hosted(2, 1),
+    adoptTaskFlow: async (input) => ({
+      flowRecordId: flowId,
+      revisions: { [flowId]: 3, [input.stage.id]: input.stage.expectedRevision + 1 },
+    }),
+    advanceTaskFlow: async (input) => ({
+      revisions: {
+        [input.stage.id]: input.stage.expectedRevision + 1,
+        ...(input.flow ? { [input.flow.id]: input.flow.expectedRevision + 1 } : {}),
+      },
+    }),
   })
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
   const lines: string[] = []
@@ -163,7 +192,7 @@ test('cursor verbs parse every documented positional form before flags', async (
   const steps = [currentStep, nextStep]
   registerFixtureProject(project)
   publishCursorWorkflow(slug, [{ slug: 'default', title: 'Default', default: true, steps }])
-  const opened = composeWorkflowWithCursor(
+  const opened = await composeWorkflowWithCursor(
     slug,
     project,
     'default',

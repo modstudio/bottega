@@ -10,6 +10,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
+  identity,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import {
@@ -187,7 +188,13 @@ describe('orch MCP', () => {
   })
 
   test('workflow ruling tools return the durable question id', async () => {
-    upsertProject({ recordId: newRecordId(), name: 'fixture', path: '/fixture', settings: {} })
+    const flowRecordId = newRecordId()
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'fixture',
+      path: '/fixture',
+      settings: { space: 'space-a' },
+    })
     db()
       .query(
         `INSERT INTO workflow_cursor
@@ -198,6 +205,31 @@ describe('orch MCP', () => {
                0,'diagnose','running','[]',NULL,1,'2026-10-01','2026-10-01','floors')`,
       )
       .run(workflowVersionRecordId(db(), 'fix-defect'), catalogueVersionRecordId(db()))
+    db()
+      .query(
+        `INSERT INTO task_flow
+         (record_id,task_record_id,project_record_id,state,open_stage_cursor_record_id,created_at,updated_at)
+         SELECT ?, 'task-DEV-1069', project_record_id, 'open', record_id, created_at, updated_at
+         FROM workflow_cursor WHERE project='fixture' AND workflow_key='DEV-1069'`,
+      )
+      .run(flowRecordId)
+    db()
+      .query(
+        "UPDATE workflow_cursor SET task_record_id='task-DEV-1069',task_flow_record_id=? WHERE project='fixture' AND workflow_key='DEV-1069'",
+      )
+      .run(flowRecordId)
+    installRecordApiClient({
+      ...createMemoryRecordApiClient(),
+      whoami: async () => identity,
+      awaitTaskFlowRuling: async (input) => ({
+        revisions: { [input.stage.id]: input.stage.expectedRevision + 1 },
+      }),
+      updateTaskFlowStage: async (input) => ({
+        revisions: Object.fromEntries(
+          input.stages.map((stage) => [stage.id, stage.expectedRevision + 1]),
+        ),
+      }),
+    })
     const server = createDocsMcpServer({
       hubTaskReader: async () => [
         { key: 'DEV-1069', record_id: 'task-DEV-1069', project: 'fixture' },
@@ -218,7 +250,8 @@ describe('orch MCP', () => {
           question: 'Proceed?',
         },
       })
-      const awaitResult = JSON.parse((awaited.content as { text: string }[])[0]!.text) as {
+      const awaitedText = (awaited.content as { text: string }[])[0]!.text
+      const awaitResult = JSON.parse(awaitedText) as {
         questionId: number
       }
       const ruled = await client.callTool({
@@ -237,6 +270,7 @@ describe('orch MCP', () => {
         questionId: awaitResult.questionId,
       })
     } finally {
+      installRecordApiClient(createMemoryRecordApiClient())
       await client.close()
       await server.close()
     }
@@ -562,6 +596,7 @@ describe('orch MCP', () => {
     await client.connect(clientTransport)
     const previousRecordUrl = process.env.BOTTEGA_RECORD_API_URL
     const flowId = newRecordId()
+    const adoptedFlowId = newRecordId()
     const call = async (name: string, toolArgs: Record<string, unknown>) => {
       const result = await client.callTool({ name, arguments: toolArgs })
       if (result.isError)
@@ -643,11 +678,48 @@ describe('orch MCP', () => {
           holder: { id: remoteMachine, displayName: 'Remote MCP machine' },
         },
       }
+      const hostedSpaceId = newRecordId()
+      db()
+        .query("UPDATE project SET settings=json_set(settings,'$.space',?) WHERE name=?")
+        .run(hostedSpaceId, project)
       installRecordApiClient({
         ...createMemoryRecordApiClient(),
+        whoami: async () => ({
+          user: { id: 'mcp-workflow-user' },
+          activeSpaceId: hostedSpaceId,
+          personalSpaceId: hostedSpaceId,
+          memberships: [{ space_id: hostedSpaceId, slug: 'mcp-workflow', permission: 'write' }],
+        }),
         readTaskFlow: async () => hosted,
+        advanceTaskFlow: async (input) => ({
+          revisions: {
+            [input.stage.id]: input.stage.expectedRevision + 1,
+            ...(input.flow ? { [input.flow.id]: input.flow.expectedRevision + 1 } : {}),
+          },
+        }),
+        awaitTaskFlowRuling: async (input) => ({
+          revisions: { [input.stage.id]: input.stage.expectedRevision + 1 },
+        }),
+        updateTaskFlowStage: async (input) => ({
+          revisions: Object.fromEntries(
+            input.stages.map((stage) => [stage.id, stage.expectedRevision + 1]),
+          ),
+        }),
+        adoptTaskFlow: async (input) => ({
+          flowRecordId: adoptedFlowId,
+          revisions: { [adoptedFlowId]: 1, [input.stage.id]: input.stage.expectedRevision + 1 },
+        }),
+        attachTaskFlowText: async () => ({ revisions: {} }),
+        abandonTaskFlow: async (input) => ({
+          revisions: {
+            [input.stage.id]: input.stage.expectedRevision + 1,
+            ...(input.flow ? { [input.flow.id]: input.flow.expectedRevision + 1 } : {}),
+          },
+        }),
+        deleteTaskFlowText: async () => ({ revisions: {} }),
       })
       process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
+      rememberProjectSpace(db(), project, hostedSpaceId)
       const advanced = await call('next_workflow_step', {
         ...common,
         cursor: first.id,
@@ -655,9 +727,6 @@ describe('orch MCP', () => {
         run: evidenceRunNumber,
       })
       expect(advanced).toContain('Took over this workflow stage from Remote MCP machine.')
-      if (previousRecordUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
-      else process.env.BOTTEGA_RECORD_API_URL = previousRecordUrl
-      installRecordApiClient(createMemoryRecordApiClient())
       await call('await_workflow_ruling', {
         ...common,
         args: args('DEV-1082-MCP-B'),

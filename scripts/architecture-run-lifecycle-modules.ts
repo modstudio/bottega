@@ -214,6 +214,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-startup-failure.ts', [
     '../database/db.ts',
     '../record/machine-identity.ts',
+    '../record/record-api-client-task-flow.ts',
     './run-liveness.ts',
     './run-number.ts',
     './run-outbox.ts',
@@ -329,6 +330,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../database/db.ts',
     '../project/projects.ts',
     '../record/machine-identity.ts',
+    '../record/record-api-client-task-flow.ts',
     '../workflow/workflow-task-linking.ts',
     '../workflow/workflow-task-reference.ts',
     './question-mutation.ts',

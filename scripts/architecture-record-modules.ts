@@ -305,6 +305,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-api-client-task-flow.ts', [
     '../doc/doc-revision-conflict.ts',
+    './record-auth.ts',
     './record-api-client-response.ts',
     './record-api-client-paths.ts',
     './record-task-flow-contract.ts',

@@ -1,10 +1,14 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { resolvedRecordOrigin } from '../../../shared/record-api-url.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addProject } from '../../test/fixtures/offline-branch-landing.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import type { Project } from '../project/projects.ts'
+import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { type HubTaskReference, taskKeyMap } from '../workflow/workflow-task-reference.ts'
 import { deriveRunLinks, linkRunTasks, type RunLinkFacts } from './run-task-linking.ts'
 
@@ -155,6 +159,99 @@ describe('run link derivation', () => {
         registered,
       )[0],
     ).not.toHaveProperty('task_record_id')
+  })
+})
+
+describe('hosted run task linking', () => {
+  test('an adoption failure leaves run and other local task links unwritten', async () => {
+    const database = migratedTestDatabase()
+    const projectId = newRecordId()
+    const runId = newRecordId()
+    database
+      .query(
+        `INSERT INTO project (record_id,name,path,stack,settings)
+         VALUES (?,'hosted-link-failure','/work/hosted-link-failure','bun','{"space":"hosted-link-space"}')`,
+      )
+      .run(projectId)
+    database
+      .query(
+        `INSERT INTO run
+         (record_id,number,started_at,agent,job,prompt_sha,spec_sha,prompt_bytes,prompt_head,status,
+          latency_ms,probe,turn,transport,project_record_id,launch_key)
+         VALUES (?,992,'t','codex','implement','sha','spec',1,'head','ok',1,0,1,'cli',?,'FAIL-1')`,
+      )
+      .run(runId, projectId)
+    database
+      .query('INSERT INTO record_install_binding (id,bound_at,record_origin) VALUES (1,?,?)')
+      .run('2026-11-10T00:00:00.000Z', resolvedRecordOrigin())
+    database.exec('PRAGMA foreign_keys=OFF')
+    try {
+      database
+        .query(
+          `INSERT INTO workflow_cursor
+          (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,
+           workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,total_steps,created_at,updated_at)
+         VALUES ('cursor-hosted-failure',992,'hosted-link-failure',?,'flow','default','FAIL-1','',
+                 'workflow-version','catalogue-version','{}',0,'step','running','[]',1,'t','t')`,
+        )
+        .run(projectId)
+      database
+        .query(
+          `INSERT INTO question
+          (record_id,number,workflow_cursor_record_id,workflow_key,asked_at,question,asked_via)
+         VALUES ('question-hosted-failure',992,'cursor-hosted-failure','FAIL-1','t','question','live')`,
+        )
+        .run()
+      database
+        .query(
+          `INSERT INTO presence
+          (session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
+         VALUES ('hosted-failure-session','claude','architect','machine','hosted-link-failure',?,
+                 '/work/hosted-link-failure','FAIL-1','t')`,
+        )
+        .run(projectId)
+    } finally {
+      database.exec('PRAGMA foreign_keys=ON')
+    }
+    const taskFlowClient: RecordTaskFlowClient = {
+      whoami: async () => ({
+        user: { id: 'hosted-link-user' },
+        activeSpaceId: 'hosted-link-space',
+        personalSpaceId: 'hosted-link-space',
+        memberships: [{ space_id: 'hosted-link-space', slug: 'hosted-link', permission: 'write' }],
+      }),
+      adoptTaskFlow: async () => {
+        throw new Error('hosted adoption failed')
+      },
+    }
+
+    await expect(
+      linkRunTasks(
+        { dryRun: false },
+        {
+          hubReader: async () => [
+            { key: 'FAIL-1', record_id: 'task-hosted-failure', project: 'hosted-link-failure' },
+          ],
+          taskFlowClient,
+          database,
+        },
+      ),
+    ).rejects.toThrow('hosted adoption failed')
+
+    expect(database.query('SELECT task_record_id FROM run WHERE record_id=?').get(runId)).toEqual({
+      task_record_id: null,
+    })
+    expect(
+      database
+        .query(
+          `SELECT
+          (SELECT task_record_id FROM workflow_cursor WHERE record_id='cursor-hosted-failure') cursor_task,
+          (SELECT workflow_task_record_id FROM question WHERE record_id='question-hosted-failure') question_task,
+          (SELECT current_task_record_id FROM presence WHERE session_id='hosted-failure-session') presence_task`,
+        )
+        .get(),
+    ).toEqual({ cursor_task: null, question_task: null, presence_task: null })
+    database.close()
   })
 })
 

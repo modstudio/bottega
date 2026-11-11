@@ -12,12 +12,12 @@ import {
   awaitWorkflowRuling,
   composeWorkflowWithCursor,
   nextWorkflowStep,
-  ruleWorkflow,
 } from './workflow-cursor.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { cursorName } from './workflow-cursor-format.ts'
-import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
+import { ruleWorkflow } from './workflow-cursor-ruling.ts'
 import {
+  type SelectableCursorRow,
   selectWorkflowCursorForClose,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
@@ -42,6 +42,7 @@ export const database = testDatabaseFixture((d) => {
     JSON.stringify({
       gate: 'bun run check',
       trunk: 'develop',
+      space: 'fixture-space',
       docs: { protocol: 'orch-docs' },
       tracker: { protocol: 'hub' },
     }),
@@ -56,7 +57,7 @@ export const matchingCheckout = {
   ...{ project: 'fixture', branch: args.branch, checkoutPath: '/tmp/work' },
 }
 
-export function prepareOperatorRulingCursor(d: Database, session: string | null) {
+export async function prepareOperatorRulingCursor(d: Database, session: string | null) {
   const current = productionStepCatalogue(d).definition
   const steps = current.steps.map((step) =>
     step.slug === 'rebase' ? { ...step, floor: ['ruling'], operatorRuling: true } : step,
@@ -69,7 +70,7 @@ export function prepareOperatorRulingCursor(d: Database, session: string | null)
   )
   promoteStepCatalogueLocal(draft.n, 'relayed operator ruling fixture', 'test', d)
   const ownerContext = { ...context, session }
-  const composition = composeWorkflowWithCursor(
+  const composition = await composeWorkflowWithCursor(
     'flow',
     'fixture',
     'default',
@@ -79,7 +80,16 @@ export function prepareOperatorRulingCursor(d: Database, session: string | null)
     {},
     {},
   )
-  awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Proceed?', ownerContext, d, () => {})
+  await awaitWorkflowRuling(
+    'flow',
+    'fixture',
+    'default',
+    args,
+    'Proceed?',
+    ownerContext,
+    d,
+    () => {},
+  )
   return composition.cursor!.id
 }
 
@@ -219,7 +229,7 @@ export function closeStep(
 }
 
 /** Selects a cursor through the same path as the production close service, then advances it. */
-export function selectAndNextWorkflowStep(
+export async function selectAndNextWorkflowStep(
   slug: string,
   project: string,
   mode: string,
@@ -233,7 +243,7 @@ export function selectAndNextWorkflowStep(
   selfRuling?: WorkflowSelfRulingInput,
   outcome?: string,
   live?: LiveCursorAutonomy,
-): string {
+): Promise<string> {
   const key = workflowKeyOf(callArgs)
   const row = selectWorkflowCursorForClose(
     { project, workflow: slug, mode, ...(key ? { key } : {}) },
@@ -242,10 +252,10 @@ export function selectAndNextWorkflowStep(
     d,
     callContext.taskRecordId,
     callContext.taskStatusCategory,
-  ) as WorkflowCloseCursor | null
+  ) as SelectableCursorRow | null
   if (!row)
     throw new Error(`${cursorName(slug, mode, key)} has no cursor; compose the workflow first`)
-  return nextWorkflowStep(
+  return await nextWorkflowStep(
     row,
     project,
     callArgs,
@@ -261,7 +271,7 @@ export function selectAndNextWorkflowStep(
 }
 
 /** Abandons a cursor the way the close service does: select it, then close the selected row. */
-export function abandonCursor(
+export async function abandonCursor(
   slug: string,
   project: string,
   mode: string,
@@ -270,7 +280,7 @@ export function abandonCursor(
   callContext: WorkflowCursorContext,
   d: Database,
   cursor?: number,
-): string {
+): Promise<string> {
   const key = workflowKeyOf(callArgs)
   const row = selectWorkflowCursorForClose(
     { project, workflow: slug, mode, ...(key ? { key } : {}) },
@@ -279,7 +289,7 @@ export function abandonCursor(
     d,
     callContext.taskRecordId,
     callContext.taskStatusCategory,
-  ) as WorkflowCloseCursor | null
+  ) as SelectableCursorRow | null
   if (!row) throw new Error(`fixture has no ${slug} cursor to abandon`)
-  return abandonSelectedWorkflowCursorForClose(row, reason, callContext, d, callArgs)
+  return await abandonSelectedWorkflowCursorForClose(row, reason, callContext, d, callArgs)
 }

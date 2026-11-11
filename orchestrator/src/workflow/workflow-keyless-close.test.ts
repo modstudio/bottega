@@ -7,7 +7,8 @@ import {
   promoteStepCatalogueLocal,
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
-import { composeWorkflowWithCursor, getWorkflowStepWithCursor } from './workflow-cursor.ts'
+import { composeWorkflowWithCursor } from './workflow-cursor.ts'
+import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
 import {
   selectAndNextWorkflowStep as nextWorkflowStep,
   testPorts,
@@ -53,7 +54,7 @@ const database = testDatabaseFixture((d) => {
   promoteWorkflowLocal(planTask.slug, workflow.n, 'current tree fixture', 'test', d)
 })
 
-test('every plan-task step renders on a keyless cursor in every mode', () => {
+test('every plan-task step renders on a keyless cursor in every mode', async () => {
   const d = database()
   for (const mode of planTask.definition.modes) {
     const composition = composeWorkflow('plan-task', 'fixture', mode.slug, {}, d)
@@ -64,7 +65,7 @@ test('every plan-task step renders on a keyless cursor in every mode', () => {
   }
 })
 
-test('a workflow without a key argument adopts --task and renders and closes its next step', () => {
+test('a workflow without a key argument adopts --task and renders and closes its next step', async () => {
   const d = database()
   const current = productionStepCatalogue(d).definition
   const catalogue = setStepCatalogueLocal(
@@ -121,7 +122,7 @@ test('a workflow without a key argument adopts --task and renders and closes its
   promoteWorkflowLocal('keyless-binding', workflow.n, 'keyless binding fixture', 'test', d)
 
   const context = { session: 'keyless-binding-session' }
-  const opened = composeWorkflowWithCursor(
+  const opened = await composeWorkflowWithCursor(
     'keyless-binding',
     'fixture',
     'default',
@@ -132,7 +133,7 @@ test('a workflow without a key argument adopts --task and renders and closes its
     {},
   )
   const cursor = opened.cursor!.id
-  const served = getWorkflowStepWithCursor(
+  const served = await getWorkflowStepWithCursor(
     'keyless-binding',
     'fixture',
     'bind-task',
@@ -145,7 +146,7 @@ test('a workflow without a key argument adopts --task and renders and closes its
   )
   expect(served.body).toContain(KEYLESS_TRACKER_ACTION_KEY)
 
-  expect(() =>
+  await expect(
     nextWorkflowStep(
       'keyless-binding',
       'fixture',
@@ -158,12 +159,12 @@ test('a workflow without a key argument adopts --task and renders and closes its
       testPorts,
       cursor,
     ),
-  ).toThrow(`--cursor ${cursor} --task <KEY>`)
+  ).rejects.toThrow(`--cursor ${cursor} --task <KEY>`)
   expect(
     d.query('SELECT ordinal,workflow_key FROM workflow_cursor WHERE number=?').get(cursor),
   ).toEqual({ ordinal: 0, workflow_key: '' })
 
-  const advanced = nextWorkflowStep(
+  const advanced = await nextWorkflowStep(
     'keyless-binding',
     'fixture',
     'default',
@@ -178,7 +179,7 @@ test('a workflow without a key argument adopts --task and renders and closes its
   expect(advanced).toContain('DEV-822')
   expect(advanced).not.toContain(`task show ${KEYLESS_TRACKER_ACTION_KEY}`)
   expect(
-    nextWorkflowStep(
+    await nextWorkflowStep(
       'keyless-binding',
       'fixture',
       'default',
@@ -193,7 +194,7 @@ test('a workflow without a key argument adopts --task and renders and closes its
   ).toContain('is finished')
 })
 
-test('a prose KEY marker without a key-bound tracker action closes keylessly', () => {
+test('a prose KEY marker without a key-bound tracker action closes keylessly', async () => {
   const d = database()
   const current = productionStepCatalogue(d).definition
   const catalogue = setStepCatalogueLocal(
@@ -239,7 +240,7 @@ test('a prose KEY marker without a key-bound tracker action closes keylessly', (
   )
   promoteWorkflowLocal('prose-key-marker', workflow.n, 'prose key marker fixture', 'test', d)
   const context = { session: 'prose-key-marker-session' }
-  const opened = composeWorkflowWithCursor(
+  const opened = await composeWorkflowWithCursor(
     'prose-key-marker',
     'fixture',
     'default',
@@ -251,7 +252,7 @@ test('a prose KEY marker without a key-bound tracker action closes keylessly', (
   )
 
   expect(
-    nextWorkflowStep(
+    await nextWorkflowStep(
       'prose-key-marker',
       'fixture',
       'default',
@@ -267,7 +268,7 @@ test('a prose KEY marker without a key-bound tracker action closes keylessly', (
   ).toContain('is finished')
 })
 
-test('operator-ruling cursor refusals name the bound question remedy', () => {
+test('operator-ruling cursor refusals name the bound question remedy', async () => {
   const d = database()
   const current = productionStepCatalogue(d).definition
   const catalogue = setStepCatalogueLocal(
@@ -315,7 +316,7 @@ test('operator-ruling cursor refusals name the bound question remedy', () => {
   promoteWorkflowLocal('operator-signoff', workflow.n, 'operator ruling refusal fixture', 'test', d)
 
   const answeredContext = { session: 'operator-signoff-answered' }
-  const answered = composeWorkflowWithCursor(
+  const answered = await composeWorkflowWithCursor(
     'operator-signoff',
     'fixture',
     'default',
@@ -337,7 +338,7 @@ test('operator-ruling cursor refusals name the bound question remedy', () => {
        RETURNING number`,
     )
     .get(newRecordId(), cursorRecord.record_id)!
-  expect(() =>
+  await expect(
     nextWorkflowStep(
       'operator-signoff',
       'fixture',
@@ -350,14 +351,14 @@ test('operator-ruling cursor refusals name the bound question remedy', () => {
       testPorts,
       answeredCursor,
     ),
-  ).toThrow(`--ruling ${question.number}`)
+  ).rejects.toThrow(`--ruling ${question.number}`)
 
   d.query(
     `UPDATE question
         SET overturned_at='2026-11-01T00:00:02.000Z',replacement='Obtain security approval instead.'
       WHERE number=?`,
   ).run(question.number)
-  expect(() =>
+  await expect(
     nextWorkflowStep(
       'operator-signoff',
       'fixture',
@@ -370,10 +371,10 @@ test('operator-ruling cursor refusals name the bound question remedy', () => {
       testPorts,
       answeredCursor,
     ),
-  ).toThrow('workflow await')
+  ).rejects.toThrow('workflow await')
 
   const emptyContext = { session: 'operator-signoff-empty' }
-  const empty = composeWorkflowWithCursor(
+  const empty = await composeWorkflowWithCursor(
     'operator-signoff',
     'fixture',
     'default',
@@ -383,7 +384,7 @@ test('operator-ruling cursor refusals name the bound question remedy', () => {
     {},
     {},
   )
-  expect(() =>
+  await expect(
     nextWorkflowStep(
       'operator-signoff',
       'fixture',
@@ -396,10 +397,10 @@ test('operator-ruling cursor refusals name the bound question remedy', () => {
       testPorts,
       empty.cursor!.id,
     ),
-  ).toThrow('workflow await')
+  ).rejects.toThrow('workflow await')
 })
 
-test('next refuses an undeclared argument before storing it and a correct next still renders', () => {
+test('next refuses an undeclared argument before storing it and a correct next still renders', async () => {
   const d = database()
   const current = productionStepCatalogue(d).definition
   const catalogue = setStepCatalogueLocal(
@@ -461,7 +462,7 @@ test('next refuses an undeclared argument before storing it and a correct next s
     d,
   )
   const context = { session: 'unknown-next-argument-session' }
-  const opened = composeWorkflowWithCursor(
+  const opened = await composeWorkflowWithCursor(
     'unknown-next-argument',
     'fixture',
     'default',
@@ -476,7 +477,7 @@ test('next refuses an undeclared argument before storing it and a correct next s
     .query<{ args: string }, [number]>('SELECT args FROM workflow_cursor WHERE number=?')
     .get(cursor)!
 
-  expect(() =>
+  await expect(
     nextWorkflowStep(
       'unknown-next-argument',
       'fixture',
@@ -489,7 +490,7 @@ test('next refuses an undeclared argument before storing it and a correct next s
       testPorts,
       cursor,
     ),
-  ).toThrow(
+  ).rejects.toThrow(
     `workflow next cursor ${cursor}: workflow "unknown-next-argument" has no argument "typo"; declared arguments: key`,
   )
   expect(
@@ -498,7 +499,7 @@ test('next refuses an undeclared argument before storing it and a correct next s
       .get(cursor),
   ).toEqual(before)
   expect(
-    nextWorkflowStep(
+    await nextWorkflowStep(
       'unknown-next-argument',
       'fixture',
       'default',
@@ -514,9 +515,9 @@ test('next refuses an undeclared argument before storing it and a correct next s
   ).toContain('Rendered after valid next.')
 })
 
-test('a key argument cannot stand in for task adoption on a keyless cursor', () => {
+test('a key argument cannot stand in for task adoption on a keyless cursor', async () => {
   const d = database()
-  const opened = composeWorkflowWithCursor(
+  const opened = await composeWorkflowWithCursor(
     'plan-task',
     'fixture',
     'requirements',
@@ -526,7 +527,7 @@ test('a key argument cannot stand in for task adoption on a keyless cursor', () 
     {},
     {},
   )
-  expect(() =>
+  await expect(
     getWorkflowStepWithCursor(
       'plan-task',
       'fixture',
@@ -538,10 +539,10 @@ test('a key argument cannot stand in for task adoption on a keyless cursor', () 
       {},
       opened.cursor!.id,
     ),
-  ).toThrow(`workflow next plan-task --cursor ${opened.cursor!.id} --task <KEY>`)
+  ).rejects.toThrow(`workflow next plan-task --cursor ${opened.cursor!.id} --task <KEY>`)
 })
 
-test('compose refuses an undeclared argument and lists the declared arguments', () => {
+test('compose refuses an undeclared argument and lists the declared arguments', async () => {
   expect(() =>
     composeWorkflow('plan-task', 'fixture', 'requirements', { typo: 'value' }, database()),
   ).toThrow('workflow "plan-task" has no argument "typo"; declared arguments: key')

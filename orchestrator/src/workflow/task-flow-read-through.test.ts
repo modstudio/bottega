@@ -1,11 +1,14 @@
 import { afterEach, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { resolvedRecordOrigin } from '../../../shared/record-api-url.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import { rememberActiveRecordSpace } from '../project-space.ts'
+import { rememberProjectSpace } from '../project-space-cache.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
 import {
   type HostedTaskFlow,
@@ -20,12 +23,36 @@ import { seedWorkflows } from './workflow-seeds.ts'
 import { resolveLinkedWorkflowCursorMode } from './workflow-task-linking.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
-const previousRecordUrl = process.env.BOTTEGA_RECORD_API_URL
+const whoami = async () => ({
+  user: { id: 'read-through-user' },
+  activeSpaceId: 'read-through-space',
+  personalSpaceId: 'read-through-space',
+  memberships: [
+    { space_id: 'read-through-space', slug: 'read-through-space', permission: 'write' },
+  ],
+})
 afterEach(() => {
   installRecordApiClient(createMemoryRecordApiClient())
-  if (previousRecordUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
-  else process.env.BOTTEGA_RECORD_API_URL = previousRecordUrl
 })
+
+function bindHosted(database: ReturnType<typeof migratedTestDatabase>): void {
+  for (const table of [
+    'workflow',
+    'workflow_version',
+    'step_catalogue',
+    'step_catalogue_version',
+  ]) {
+    database.query(`UPDATE ${table} SET space_id = 'read-through-space'`).run()
+  }
+  rememberActiveRecordSpace(database, 'read-through-space')
+  rememberProjectSpace(database, 'read-through-fixture', 'read-through-space')
+  database
+    .query(
+      `INSERT INTO record_install_binding (id,bound_at,record_origin) VALUES (1,?,?)
+       ON CONFLICT(id) DO UPDATE SET bound_at=excluded.bound_at,record_origin=excluded.record_origin`,
+    )
+    .run('2026-11-10T00:00:00.000Z', resolvedRecordOrigin())
+}
 
 function fixture() {
   const database = migratedTestDatabase()
@@ -35,7 +62,7 @@ function fixture() {
     .query(
       `INSERT INTO project(record_id,name,path,stack,canon,settings)
        VALUES (?,'read-through-fixture','/tmp/read-through-fixture','bun',0,
-         '{"trunk":"main","docs":{"protocol":"orch-docs"},"tracker":{"protocol":"hub"}}')`,
+         '{"trunk":"main","space":"read-through-space","docs":{"protocol":"orch-docs"},"tracker":{"protocol":"hub"}}')`,
     )
     .run(projectId)
   const workflowVersionId = database
@@ -119,12 +146,48 @@ function hosted(
   }
 }
 
-function installHosted(flow: HostedTaskFlow): void {
+function installHosted(
+  database: ReturnType<typeof migratedTestDatabase>,
+  flow: HostedTaskFlow,
+): void {
+  bindHosted(database)
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
+    whoami,
     readTaskFlow: async () => flow,
+    composeTaskFlow: async (input) => {
+      const stageId = input.stageInsert?.id
+      const revisions = Object.fromEntries([
+        ...(input.flowInsert ? [[input.flowInsert.id, 1] as const] : []),
+        ...(input.flowChange
+          ? [[input.flowChange.id, input.flowChange.expectedRevision + 1] as const]
+          : []),
+        ...(stageId ? [[stageId, 1] as const] : []),
+      ])
+      return {
+        stage: stageId ? { id: stageId, number: (flow.stage?.number ?? 1) + 1 } : null,
+        revisions,
+      }
+    },
+    adoptTaskFlow: async (input) => ({
+      flowRecordId: flow.flow.id,
+      revisions: {
+        [flow.flow.id]: flow.flow.revision,
+        [input.stage.id]: input.stage.expectedRevision + 1,
+      },
+    }),
+    updateTaskFlowStage: async (input) => ({
+      revisions: Object.fromEntries(
+        input.stages.map((stage) => [stage.id, stage.expectedRevision + 1]),
+      ),
+    }),
+    advanceTaskFlow: async (input) => ({
+      revisions: {
+        [input.stage.id]: input.stage.expectedRevision + 1,
+        ...(input.flow ? { [input.flow.id]: input.flow.expectedRevision + 1 } : {}),
+      },
+    }),
   })
-  process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
 }
 
 async function cacheHostedTaskFlow(
@@ -132,8 +195,12 @@ async function cacheHostedTaskFlow(
   taskKey: string,
   flow: HostedTaskFlow,
 ): Promise<void> {
-  installHosted(flow)
-  await readThroughTaskFlow(database, { taskKey, taskRecordId: flow.flow.taskId! })
+  installHosted(database, flow)
+  await readThroughTaskFlow(database, {
+    project: 'read-through-fixture',
+    taskKey,
+    taskRecordId: flow.flow.taskId!,
+  })
 }
 
 test('hosted newer than local refreshes the cached stage', async () => {
@@ -147,8 +214,9 @@ test('hosted newer than local refreshes the cached stage', async () => {
       'DEV-2098',
       hosted(ids, { taskId, flowId, stageId, stageRevision: 3 }),
     )
-    installHosted(hosted(ids, { taskId, flowId, stageId, stageRevision: 4 }))
+    installHosted(ids.database, hosted(ids, { taskId, flowId, stageId, stageRevision: 4 }))
     const status = await readThroughTaskFlow(ids.database, {
+      project: 'read-through-fixture',
       taskKey: 'DEV-2098',
       taskRecordId: taskId,
     })
@@ -213,6 +281,7 @@ test('a hosted close at the tied flow revision is applied and not re-attached', 
     }
     const { holder: _holder, ...listedStage } = closedStage
     installHosted(
+      ids.database,
       hosted(ids, {
         taskId,
         flowId,
@@ -222,7 +291,11 @@ test('a hosted close at the tied flow revision is applied and not re-attached', 
       }),
     )
 
-    await readThroughTaskFlow(ids.database, { taskKey: 'DEV-2098', taskRecordId: taskId })
+    await readThroughTaskFlow(ids.database, {
+      project: 'read-through-fixture',
+      taskKey: 'DEV-2098',
+      taskRecordId: taskId,
+    })
 
     expect(
       ids.database
@@ -235,7 +308,7 @@ test('a hosted close at the tied flow revision is applied and not re-attached', 
         .get(flowId),
     ).toEqual({ open_stage_cursor_record_id: null, revision: 31 })
 
-    const composed = composeWorkflowWithCursor(
+    const composed = await composeWorkflowWithCursor(
       workflow,
       'read-through-fixture',
       'default',
@@ -270,9 +343,13 @@ test('a newer hosted flow without a stage list leaves the local flow and cursor 
       flowRevision: 31,
     })
     await cacheHostedTaskFlow(ids.database, 'DEV-2098', local)
-    installHosted(hosted(ids, { taskId, flowId, stage: false, flowRevision: 34 }))
+    installHosted(ids.database, hosted(ids, { taskId, flowId, stage: false, flowRevision: 34 }))
 
-    await readThroughTaskFlow(ids.database, { taskKey: 'DEV-2098', taskRecordId: taskId })
+    await readThroughTaskFlow(ids.database, {
+      project: 'read-through-fixture',
+      taskKey: 'DEV-2098',
+      taskRecordId: taskId,
+    })
 
     expect(
       ids.database
@@ -352,7 +429,7 @@ test('a listed hosted stage with no local row is not inserted', async () => {
   }
 })
 
-test('hosted task-flow parsing round-trips other stages', () => {
+test('hosted task-flow parsing round-trips other stages', async () => {
   const ids = fixture()
   try {
     const open = hosted(ids, {})
@@ -557,7 +634,7 @@ test.each([
     ids.database
       .query('UPDATE workflow_cursor SET task_record_id=NULL WHERE record_id=?')
       .run(stageId)
-    installHosted(remote)
+    installHosted(ids.database, remote)
     const cursor = ids.database
       .query<{ number: number }, [string]>('SELECT number FROM workflow_cursor WHERE record_id=?')
       .get(stageId)!.number
@@ -573,9 +650,8 @@ test.each([
       {},
       async () => [{ key: 'DEV-2098', record_id: taskId, project: 'read-through-fixture' }],
       selectedRow,
-      ids.database,
     )
-    resolveLinkedWorkflowCursorMode(
+    await resolveLinkedWorkflowCursorMode(
       workflow,
       'read-through-fixture',
       'default',
@@ -595,9 +671,9 @@ test.each([
       ids.database
         .query('SELECT ordinal,revision FROM workflow_cursor WHERE record_id=?')
         .get(stageId),
-    ).toEqual({ ordinal: 1, revision: 4 })
+    ).toEqual({ ordinal: 1, revision: 5 })
 
-    const result = selectAndNextWorkflowStep(
+    const result = await selectAndNextWorkflowStep(
       workflow,
       'read-through-fixture',
       'default',
@@ -645,8 +721,12 @@ test('local stage ahead of hosted is not clobbered', async () => {
       'DEV-2098',
       hosted(ids, { taskId, flowId, stageId, stageRevision: 6 }),
     )
-    installHosted(hosted(ids, { taskId, flowId, stageId, stageRevision: 5 }))
-    await readThroughTaskFlow(ids.database, { taskKey: 'DEV-2098', taskRecordId: taskId })
+    installHosted(ids.database, hosted(ids, { taskId, flowId, stageId, stageRevision: 5 }))
+    await readThroughTaskFlow(ids.database, {
+      project: 'read-through-fixture',
+      taskKey: 'DEV-2098',
+      taskRecordId: taskId,
+    })
     expect(
       ids.database.query('SELECT revision FROM workflow_cursor WHERE record_id=?').get(stageId),
     ).toEqual({ revision: 6 })
@@ -660,8 +740,12 @@ test('hosted flow without a stage is adopted when local has no flow', async () =
   try {
     const taskId = newRecordId()
     const flow = hosted(ids, { taskId, stage: false })
-    installHosted(flow)
-    await readThroughTaskFlow(ids.database, { taskKey: 'DEV-2098', taskRecordId: taskId })
+    installHosted(ids.database, flow)
+    await readThroughTaskFlow(ids.database, {
+      project: 'read-through-fixture',
+      taskKey: 'DEV-2098',
+      taskRecordId: taskId,
+    })
     expect(
       ids.database
         .query('SELECT record_id,open_stage_cursor_record_id FROM task_flow WHERE task_record_id=?')
@@ -677,13 +761,18 @@ test('recognized task-flow not-found is a reachable empty read', async () => {
   try {
     installRecordApiClient({
       ...createMemoryRecordApiClient(),
+      whoami,
       readTaskFlow: async () => {
         throw new RecordApiRequestError(RECORD_TASK_FLOW_NOT_FOUND_MESSAGE, 'refused', 404)
       },
     })
-    process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
+    bindHosted(ids.database)
     await expect(
-      readThroughTaskFlow(ids.database, { taskKey: 'DEV-2098', taskRecordId: newRecordId() }),
+      readThroughTaskFlow(ids.database, {
+        project: 'read-through-fixture',
+        taskKey: 'DEV-2098',
+        taskRecordId: newRecordId(),
+      }),
     ).resolves.toEqual({ status: 'reachable' })
   } finally {
     ids.database.close()
@@ -695,13 +784,18 @@ test('route-missing 404 is unreachable with the hosted-api release remedy', asyn
   try {
     installRecordApiClient({
       ...createMemoryRecordApiClient(),
+      whoami,
       readTaskFlow: async () => {
         throw new RecordApiRequestError('record API 404', 'refused', 404)
       },
     })
-    process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
+    bindHosted(ids.database)
     await expect(
-      readThroughTaskFlow(ids.database, { taskKey: 'DEV-2098', taskRecordId: newRecordId() }),
+      readThroughTaskFlow(ids.database, {
+        project: 'read-through-fixture',
+        taskKey: 'DEV-2098',
+        taskRecordId: newRecordId(),
+      }),
     ).resolves.toEqual({
       status: 'unreachable',
       remedy: 'record API predates task-flow read; release hosted-api, then retry',

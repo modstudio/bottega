@@ -26,12 +26,7 @@ import {
 } from './step-catalogue.ts'
 import { obligationUuid, positive } from './workflow-command-arguments.ts'
 import type { CommitCountPort } from './workflow-compose-branch.ts'
-import {
-  awaitWorkflowRuling,
-  composeWorkflowWithCursor,
-  getWorkflowStepWithCursor,
-  ruleWorkflow,
-} from './workflow-cursor.ts'
+import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { cursorCommandTarget } from './workflow-cursor-command-target.ts'
 import { renderWorkflowCursorLine } from './workflow-cursor-format.ts'
@@ -40,10 +35,12 @@ import {
   resolveCursorLiveAutonomy,
   resolveWorkflowLiveAutonomy,
 } from './workflow-cursor-live-autonomy.ts'
+import { ruleWorkflow } from './workflow-cursor-ruling.ts'
 import {
   cliWorkflowCursorContext,
   resolveWorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
+import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
 import { parseWorkflowEvidencePayload, RECORD_EVIDENCE_FLAG } from './workflow-evidence-payload.ts'
 import { workflowExecCheckoutRefusal, workflowExecCommandCwd } from './workflow-exec-checkout.ts'
 import {
@@ -266,7 +263,7 @@ export async function attachCommand(
     options.hubTaskReader,
     selectedRow,
   )
-  const mode = resolveLinkedWorkflowCursorMode(
+  const mode = await resolveLinkedWorkflowCursorMode(
     slug,
     project,
     flagValue(argv, 'mode'),
@@ -450,7 +447,7 @@ export async function ruleCommand(
     options.hubTaskReader,
     selectedRow,
   )
-  const mode = resolveLinkedWorkflowCursorMode(
+  const mode = await resolveLinkedWorkflowCursorMode(
     slug,
     project,
     flagValue(argv, 'mode'),
@@ -501,7 +498,7 @@ export async function abandonCommand(
     options.hubTaskReader,
     selectedRow,
   )
-  const mode = resolveLinkedWorkflowCursorMode(
+  const mode = await resolveLinkedWorkflowCursorMode(
     slug,
     project,
     flagValue(argv, 'mode'),
@@ -565,7 +562,7 @@ export async function stepCommand(
     selectedRow,
   )
   const mode = cursor
-    ? resolveLinkedWorkflowCursorMode(
+    ? await resolveLinkedWorkflowCursorMode(
         slug,
         project,
         requestedMode,
@@ -600,7 +597,7 @@ export async function stepCommand(
     step: mode ? undefined : stepSlug,
   })
   const step = mode
-    ? getWorkflowStepWithCursor(
+    ? await getWorkflowStepWithCursor(
         slug,
         project,
         stepSlug,
@@ -645,7 +642,7 @@ export async function nextCommand(
     ? await resolveHubTaskReference(project, evidence.task, options.hubTaskReader)
     : null
   context = { ...context, adoptionTaskRecordId: adoptedTask?.record_id ?? null }
-  const mode = resolveLinkedWorkflowCursorMode(
+  const mode = await resolveLinkedWorkflowCursorMode(
     slug,
     project,
     flagValue(argv, 'mode'),
@@ -738,7 +735,7 @@ export async function awaitCommand(
     options.hubTaskReader,
     selectedRow,
   )
-  const mode = resolveLinkedWorkflowCursorMode(
+  const mode = await resolveLinkedWorkflowCursorMode(
     slug,
     project,
     flagValue(argv, 'mode'),
@@ -749,7 +746,7 @@ export async function awaitCommand(
     undefined,
     selectedRow,
   )
-  const result = awaitWorkflowRuling(
+  const result = await awaitWorkflowRuling(
     slug,
     project,
     mode,
@@ -1034,7 +1031,7 @@ export async function composeCommand(
   const pure = composeWorkflow(argv[2]!, project, mode, args, undefined, selection, autonomy)
   const result =
     pure.mode && !pure.needs.arguments
-      ? composeWorkflowWithCursor(
+      ? await composeWorkflowWithCursor(
           argv[2]!,
           project,
           mode,

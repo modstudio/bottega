@@ -13,21 +13,21 @@ describe('workflow cursor task reference', () => {
   test('an unknown user task key is stored as a label with no UUID link', async () => {
     const d = database()
     const unresolved = await resolveWorkflowCursorContext('fixture', args, context, async () => [])
-    composeWorkflowWithCursor('flow', 'fixture', 'default', args, unresolved, d, {}, {})
+    await composeWorkflowWithCursor('flow', 'fixture', 'default', args, unresolved, d, {}, {})
     expect(d.query('SELECT workflow_key,task_record_id FROM workflow_cursor').get()).toEqual({
       workflow_key: 'DEV-822',
       task_record_id: null,
     })
-    expect(() =>
+    await expect(
       composeWorkflowWithCursor('flow', 'fixture', 'default', args, unresolved, d, {}, {}),
-    ).toThrow(
+    ).rejects.toThrow(
       'task key DEV-822 names no task in hub and earlier cursor 1 holds that label; use a real task key',
     )
   })
 
   test('a pre-rollout cursor named by number links to its resolved task on next', async () => {
     const d = database()
-    composeWorkflowWithCursor(
+    await composeWorkflowWithCursor(
       'flow',
       'fixture',
       'default',
@@ -52,7 +52,7 @@ describe('workflow cursor task reference', () => {
     const resolved = await resolveWorkflowCursorContext('fixture', args, context, async () => [
       { key: args.key, record_id: 'task-DEV-822', project: 'fixture' },
     ])
-    nextWorkflowStep(
+    await nextWorkflowStep(
       'flow',
       'fixture',
       'default',
@@ -80,7 +80,7 @@ describe('workflow cursor task reference', () => {
   test('a supplied task cannot select or move that task cursor instead of the selector cursor', async () => {
     const d = database()
     for (const key of ['DEV-A', 'DEV-B']) {
-      composeWorkflowWithCursor(
+      await composeWorkflowWithCursor(
         'flow',
         'fixture',
         'default',

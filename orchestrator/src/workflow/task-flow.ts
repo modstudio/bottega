@@ -11,8 +11,40 @@ import {
   type OpenTaskStage,
   taskFlowState,
 } from './task-flow-decision.ts'
-import { enqueueTaskFlowRecord } from './task-flow-outbox.ts'
-import { enqueueTaskFlowStageRecord } from './task-flow-stage-outbox.ts'
+import type { CursorState } from './workflow-cursor-transition.ts'
+import type { EnforcementMode } from './workflow-floor.ts'
+
+export type TaskFlowStageCursorRow = {
+  id: number
+  record_id: string
+  project: string
+  workflow_slug: string
+  mode_slug: string
+  workflow_key: string
+  task_record_id: string | null
+  task_flow_record_id: string | null
+  instance_id: string
+  session_id: string | null
+  ordinal: number
+  step_slug: string
+  state: CursorState
+  workflow_version_record_id: string
+  catalogue_version_record_id: string
+  workflow_version: number
+  catalogue_version: number
+  args: string
+  autonomy: string | null
+  closed: string
+  question: string | null
+  total_steps: number
+  created_at: string
+  enforcement: EnforcementMode
+  opened_machine_id: string | null
+  taken_over_from_machine_id: string | null
+  last_advanced_machine_id: string | null
+  revision: number
+  updated_at: string
+}
 
 export type WorkflowCursorInsert = {
   recordId: string
@@ -145,6 +177,79 @@ export function insertWorkflowCursorRow(
 
 type TaskFlowRow = { record_id: string; open_stage_cursor_record_id: string | null }
 
+/** Reads the open cursor projected by a task flow without creating or changing either row. */
+export function openTaskFlowStageCursor(
+  taskRecordId: string,
+  d: Database,
+): TaskFlowStageCursorRow | null {
+  return d
+    .query<TaskFlowStageCursorRow, [string]>(
+      `SELECT cursor.number id,cursor.record_id,cursor.project,cursor.workflow_slug,cursor.mode_slug,
+       cursor.workflow_key,cursor.task_record_id,cursor.task_flow_record_id,cursor.instance_id,
+       cursor.session_id,cursor.ordinal,cursor.step_slug,cursor.state,cursor.workflow_version_record_id,
+       cursor.catalogue_version_record_id,
+       (SELECT n FROM workflow_version WHERE record_id=cursor.workflow_version_record_id) workflow_version,
+       (SELECT n FROM step_catalogue_version WHERE record_id=cursor.catalogue_version_record_id) catalogue_version,
+       cursor.args,cursor.autonomy,cursor.closed,cursor.question,cursor.total_steps,cursor.created_at,
+       cursor.updated_at,cursor.enforcement,cursor.opened_machine_id,cursor.taken_over_from_machine_id,
+       cursor.last_advanced_machine_id,cursor.revision
+       FROM task_flow flow JOIN workflow_cursor cursor
+       ON cursor.record_id=flow.open_stage_cursor_record_id WHERE flow.task_record_id=?`,
+    )
+    .get(taskRecordId)
+}
+
+export function cacheAdoptedTaskFlow(
+  input: {
+    project: string
+    taskRecordId: string
+    cursorRecordId: string
+    flowRecordId: string
+    flowRevision: number
+    stageRevision: number
+    statusCategory?: string | null
+    at: string
+  },
+  d: Database,
+): void {
+  const existing = d
+    .query<{ record_id: string }, [string]>(
+      'SELECT record_id FROM task_flow WHERE task_record_id=?',
+    )
+    .get(input.taskRecordId)
+  if (existing && existing.record_id !== input.flowRecordId)
+    throw new Error(
+      `task flow ${existing.record_id} disagrees with hosted flow ${input.flowRecordId}; rerun after refreshing the hosted task flow`,
+    )
+  const machine = machineId()
+  d.query(
+    `INSERT INTO task_flow
+       (record_id,task_record_id,project_record_id,state,open_stage_cursor_record_id,
+        created_at,updated_at,opening_machine_id,updated_machine_id,revision)
+     VALUES (?,?,(SELECT record_id FROM project WHERE name=?),COALESCE(?,'open'),?,?,?,?,?,?)
+     ON CONFLICT(task_record_id) DO UPDATE SET
+       state=COALESCE(excluded.state,task_flow.state),
+       open_stage_cursor_record_id=excluded.open_stage_cursor_record_id,
+       updated_at=excluded.updated_at,updated_machine_id=excluded.updated_machine_id,
+       revision=excluded.revision`,
+  ).run(
+    input.flowRecordId,
+    input.taskRecordId,
+    input.project,
+    taskFlowState(input.statusCategory),
+    input.cursorRecordId,
+    input.at,
+    input.at,
+    machine,
+    machine,
+    input.flowRevision,
+  )
+  d.query(
+    `UPDATE workflow_cursor SET task_record_id=?,task_flow_record_id=?,revision=?
+     WHERE record_id=?`,
+  ).run(input.taskRecordId, input.flowRecordId, input.stageRevision, input.cursorRecordId)
+}
+
 function stampTaskFlowMachine(flowRecordId: string, d: Database): void {
   const machine = machineId()
   d.query(
@@ -190,18 +295,39 @@ function projectTaskFlow(
        RETURNING record_id,open_stage_cursor_record_id`,
     )
     .get(newRecordId(), taskRecordId, project, state, at, at, machine, machine, state)!
-  enqueueTaskFlowRecord(d, flow.record_id)
   return flow
 }
 
-function openStage(flow: TaskFlowRow, d: Database): (OpenTaskStage & { recordId: string }) | null {
-  if (!flow.open_stage_cursor_record_id) return null
-  return d
-    .query<OpenTaskStage & { recordId: string }, [string]>(
-      `SELECT number cursor,workflow_slug workflow,mode_slug mode,record_id recordId
-       FROM workflow_cursor WHERE record_id=?`,
+function openStage(
+  taskRecordId: string,
+  d: Database,
+): (OpenTaskStage & { recordId: string }) | null {
+  const cursor = openTaskFlowStageCursor(taskRecordId, d)
+  return cursor
+    ? {
+        cursor: cursor.id,
+        workflow: cursor.workflow_slug,
+        mode: cursor.mode_slug,
+        recordId: cursor.record_id,
+      }
+    : null
+}
+
+export function refuseTaskFlowStageConflict(
+  input: { taskRecordId: string; taskKey: string; cursor?: number; workflow: string; mode: string },
+  d: Database,
+): void {
+  const flow = d
+    .query<TaskFlowRow, [string]>(
+      'SELECT record_id,open_stage_cursor_record_id FROM task_flow WHERE task_record_id=?',
     )
-    .get(flow.open_stage_cursor_record_id)
+    .get(input.taskRecordId)
+  if (!flow) return
+  const decision = decideTaskStageSelection(openStage(input.taskRecordId, d), input)
+  if (decision.action === 'refuse')
+    throw new Error(
+      `task ${input.taskKey} already has open stage cursor ${decision.stage.cursor} ${decision.stage.workflow} ${decision.stage.mode}; finish it with ${PLATFORM_SLUG} workflow next ${decision.stage.workflow} --cursor ${decision.stage.cursor}, or drop it with ${PLATFORM_SLUG} workflow abandon ${decision.stage.workflow} --cursor ${decision.stage.cursor}`,
+    )
 }
 
 export function selectTaskFlowStage(
@@ -216,8 +342,9 @@ export function selectTaskFlowStage(
   },
   d: Database,
 ): { flowRecordId: string; cursorRecordId: string | null } {
+  refuseTaskFlowStageConflict(input, d)
   const flow = projectTaskFlow(input.project, input.taskRecordId, input.statusCategory, d)
-  const stage = openStage(flow, d)
+  const stage = openStage(input.taskRecordId, d)
   const decision = decideTaskStageSelection(stage, input)
   if (decision.action === 'refuse')
     throw new Error(
@@ -246,8 +373,6 @@ export function attachTaskFlowStage(
     flowRecordId,
   )
   stampTaskFlowMachine(flowRecordId, d)
-  enqueueTaskFlowRecord(d, flowRecordId)
-  enqueueTaskFlowStageRecord(d, cursorRecordId)
 }
 
 export function attachInsertedTaskFlowStage(
@@ -275,34 +400,4 @@ export function attachInsertedTaskFlowStage(
   )
   attachTaskFlowStage(flow.flowRecordId, input.cursor.record_id, d)
   return flow.flowRecordId
-}
-
-export function closeTaskFlowStage(cursorRecordId: string, d: Database): void {
-  const flow = d
-    .query<{ record_id: string }, [string]>(
-      'SELECT record_id FROM task_flow WHERE open_stage_cursor_record_id=?',
-    )
-    .get(cursorRecordId)
-  if (!flow) return
-  d.query(
-    'UPDATE task_flow SET open_stage_cursor_record_id=NULL,updated_at=? WHERE record_id=?',
-  ).run(nowIso(), flow.record_id)
-  stampTaskFlowMachine(flow.record_id, d)
-  enqueueTaskFlowRecord(d, flow.record_id)
-}
-
-function enqueueTaskFlowCursorState(cursorRecordId: string, d: Database): void {
-  const flow = d
-    .query<{ task_flow_record_id: string }, [string]>(
-      'SELECT task_flow_record_id FROM workflow_cursor WHERE record_id=?',
-    )
-    .get(cursorRecordId)
-  if (!flow?.task_flow_record_id) return
-  enqueueTaskFlowRecord(d, flow.task_flow_record_id)
-  enqueueTaskFlowStageRecord(d, cursorRecordId)
-}
-
-export function recordTaskFlowCursorMutation(cursorRecordId: string, d: Database): void {
-  stampWorkflowCursorMachine(cursorRecordId, 1, d)
-  enqueueTaskFlowCursorState(cursorRecordId, d)
 }

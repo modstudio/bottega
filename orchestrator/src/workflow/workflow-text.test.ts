@@ -7,7 +7,7 @@ import {
   promoteStepCatalogueLocal,
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
-import { getWorkflowStepWithCursor } from './workflow-cursor.ts'
+import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
 import {
   abandonCursor,
   selectAndNextWorkflowStep as nextWorkflowStep,
@@ -93,21 +93,23 @@ const database = testDatabaseFixture((d) => {
   promoteWorkflowLocal('text-fixture', workflow.n, 'publish fixture', 'test', d)
 })
 
-function open(d: Database): number {
-  return getWorkflowStepWithCursor(
-    'text-fixture',
-    'fixture',
-    'text-source',
-    {},
-    'default',
-    context,
-    d,
-    {},
+async function open(d: Database): Promise<number> {
+  return (
+    await getWorkflowStepWithCursor(
+      'text-fixture',
+      'fixture',
+      'text-source',
+      {},
+      'default',
+      context,
+      d,
+      {},
+    )
   ).cursor
 }
 
-const abandon = (d: Database, cursor: number, reason: string) =>
-  abandonCursor('text-fixture', 'fixture', 'default', {}, reason, context, d, cursor)
+const abandon = async (d: Database, cursor: number, reason: string) =>
+  await abandonCursor('text-fixture', 'fixture', 'default', {}, reason, context, d, cursor)
 
 const rowCount = (d: Database, cursor: number) =>
   (
@@ -120,7 +122,7 @@ const rowCount = (d: Database, cursor: number) =>
   ).count
 
 describe('workflow text decisions', () => {
-  test('linked deletion selects only copied rows while unlinked deletion selects every row', () => {
+  test('linked deletion selects only copied rows while unlinked deletion selects every row', async () => {
     const cases = [
       { linked: false, copied: [], expected: ['one', 'two'] },
       { linked: true, copied: [], expected: [] },
@@ -137,7 +139,7 @@ describe('workflow text decisions', () => {
       ).toEqual(entry.expected)
   })
 
-  test('attach permission names both measured byte bounds and ownership', () => {
+  test('attach permission names both measured byte bounds and ownership', async () => {
     expect(
       decideWorkflowTextAttach({
         state: 'running',
@@ -180,7 +182,7 @@ describe('workflow text decisions', () => {
     })
   })
 
-  test('an attached-text reference is bound to its cursor and exact step', () => {
+  test('an attached-text reference is bound to its cursor and exact step', async () => {
     const attachment = {
       id: 'attachment-9',
       cursorId: 'cursor-3',
@@ -214,7 +216,7 @@ describe('workflow text decisions', () => {
     ).toBe(false)
   })
 
-  test('facts carry all text only for the declared cursor-local need, ordered by step and id', () => {
+  test('facts carry all text only for the declared cursor-local need, ordered by step and id', async () => {
     const rows = [
       {
         id: 'attachment-4',
@@ -252,13 +254,13 @@ describe('workflow text decisions', () => {
 describe('workflow text lifecycle', () => {
   test('attach then close meets the floor, injects text, and stores only a marker in the trail', async () => {
     const d = database()
-    const cursor = open(d)
+    const cursor = await open(d)
     const reference = await attachWorkflowTextByHandle(cursor, 'research body', context, d)
     expect(
       d.query<{ record_id: string }, []>('SELECT record_id FROM workflow_step_text').get()
         ?.record_id,
-    ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
-    const rendered = nextWorkflowStep(
+    ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+    const rendered = await nextWorkflowStep(
       'text-fixture',
       'fixture',
       'default',
@@ -284,9 +286,9 @@ describe('workflow text lifecycle', () => {
 
   test('closing a workflow-text step deletes every attachment while the cursor stays live', async () => {
     const d = database()
-    const cursor = open(d)
+    const cursor = await open(d)
     const source = await attachWorkflowTextByHandle(cursor, 'source', context, d)
-    nextWorkflowStep(
+    await nextWorkflowStep(
       'text-fixture',
       'fixture',
       'default',
@@ -299,7 +301,7 @@ describe('workflow text lifecycle', () => {
       cursor,
     )
     const consumer = await attachWorkflowTextByHandle(cursor, 'consumer copy', context, d)
-    nextWorkflowStep(
+    await nextWorkflowStep(
       'text-fixture',
       'fixture',
       'default',
@@ -321,10 +323,10 @@ describe('workflow text lifecycle', () => {
 
   test('finish and abandon each remove cursor text', async () => {
     const finished = database()
-    const finishedCursor = open(finished)
+    const finishedCursor = await open(finished)
     for (const note of ['source', 'consumer', 'final']) {
       const reference = await attachWorkflowTextByHandle(finishedCursor, note, context, finished)
-      nextWorkflowStep(
+      await nextWorkflowStep(
         'text-fixture',
         'fixture',
         'default',
@@ -340,14 +342,14 @@ describe('workflow text lifecycle', () => {
     expect(rowCount(finished, finishedCursor)).toBe(0)
 
     const abandoned = database()
-    const abandonedCursor = open(abandoned)
+    const abandonedCursor = await open(abandoned)
     const abandonedReference = await attachWorkflowTextByHandle(
       abandonedCursor,
       'discard me',
       context,
       abandoned,
     )
-    abandon(abandoned, abandonedCursor, 'no longer needed')
+    await abandon(abandoned, abandonedCursor, 'no longer needed')
     expect(rowCount(abandoned, abandonedCursor)).toBe(0)
     expect(() => showWorkflowText(abandonedReference, abandoned)).toThrow(
       `${abandonedReference} is not held on this machine; attachments of a cursor not linked to a task are removed when the cursor closes, and an id from another machine is readable only through its task document`,
@@ -356,7 +358,7 @@ describe('workflow text lifecycle', () => {
 
   test('the service refuses text over either live byte bound', async () => {
     const d = database()
-    const cursor = open(d)
+    const cursor = await open(d)
     await expect(
       attachWorkflowTextByHandle(
         cursor,
@@ -414,7 +416,7 @@ function documentFake(initial: WorkflowTaskDocument[] = []): {
 describe('task-linked workflow text preservation', () => {
   test('a task kept in its own tracker reports unsupported once and preserves every text', async () => {
     const d = database()
-    const cursor = open(d)
+    const cursor = await open(d)
     linkCursor(d, cursor)
     const references = [
       await attachWorkflowTextByHandle(cursor, 'first external text', context, d),
@@ -462,7 +464,7 @@ describe('task-linked workflow text preservation', () => {
 
   test("a task whose source is 'local' copies every text normally", async () => {
     const d = database()
-    const cursor = open(d)
+    const cursor = await open(d)
     linkCursor(d, cursor)
     await attachWorkflowTextByHandle(cursor, 'first local text', context, d)
     await attachWorkflowTextByHandle(cursor, 'second local text', context, d)
@@ -496,7 +498,7 @@ describe('task-linked workflow text preservation', () => {
 
   test('the close service copies through a context-only task link and leaves a redirect', async () => {
     const d = database()
-    const cursor = open(d)
+    const cursor = await open(d)
     d.query("UPDATE workflow_cursor SET workflow_key='DEV-1975',args=? WHERE number=?").run(
       JSON.stringify({ key: 'DEV-1975' }),
       cursor,
@@ -531,7 +533,7 @@ describe('task-linked workflow text preservation', () => {
 
   test('an unlinked close deletes its text and never calls the document port', async () => {
     const d = database()
-    const cursor = open(d)
+    const cursor = await open(d)
     const reference = await attachWorkflowTextByHandle(cursor, 'not linked', context, d)
     const refusing: WorkflowTextDocumentPorts = {
       list: async () => {
@@ -565,7 +567,7 @@ describe('task-linked workflow text preservation', () => {
       },
     }
     const nextDb = database()
-    const nextCursor = open(nextDb)
+    const nextCursor = await open(nextDb)
     linkCursor(nextDb, nextCursor)
     await attachWorkflowTextByHandle(nextCursor, 'must not copy', context, nextDb)
     await expect(
@@ -586,10 +588,10 @@ describe('task-linked workflow text preservation', () => {
     ).rejects.toThrow('--note is required')
 
     const terminalDb = database()
-    const terminalCursor = open(terminalDb)
+    const terminalCursor = await open(terminalDb)
     linkCursor(terminalDb, terminalCursor)
     await attachWorkflowTextByHandle(terminalCursor, 'terminal text', context, terminalDb)
-    abandon(terminalDb, terminalCursor, 'first close')
+    await abandon(terminalDb, terminalCursor, 'first close')
     await expect(
       closeCursorWithTextCopy(
         {
@@ -622,7 +624,7 @@ describe('task-linked workflow text preservation', () => {
     ]
     for (const move of moves) {
       const d = database()
-      const cursor = open(d)
+      const cursor = await open(d)
       linkCursor(d, cursor)
       await attachWorkflowTextByHandle(cursor, 'copied while another session advances', context, d)
       const fake = documentFake()
@@ -656,7 +658,7 @@ describe('task-linked workflow text preservation', () => {
   test('finish and abandon preserve every attachment as a readable document redirect', async () => {
     for (const terminal of ['finish', 'abandon'] as const) {
       const d = database()
-      const cursor = open(d)
+      const cursor = await open(d)
       linkCursor(d, cursor)
       const fake = documentFake()
       const references: string[] = []
@@ -675,7 +677,7 @@ describe('task-linked workflow text preservation', () => {
             taskReader,
             fake.ports,
           )
-          nextWorkflowStep(
+          await nextWorkflowStep(
             'text-fixture',
             'fixture',
             'default',
@@ -699,7 +701,7 @@ describe('task-linked workflow text preservation', () => {
           taskReader,
           fake.ports,
         )
-        abandon(d, cursor, 'done')
+        await abandon(d, cursor, 'done')
       }
       for (const reference of references) {
         const shown = showWorkflowText(reference, d)
@@ -715,7 +717,7 @@ describe('task-linked workflow text preservation', () => {
 
   test('a failed copy does not block close, and terminal retry copies then deletes the live row', async () => {
     const d = database()
-    const cursor = open(d)
+    const cursor = await open(d)
     linkCursor(d, cursor)
     const reference = await attachWorkflowTextByHandle(cursor, 'survives failure', context, d)
     const failing = documentFake()
@@ -729,7 +731,7 @@ describe('task-linked workflow text preservation', () => {
       failing.ports,
     )
     expect(failed.uncopied).toHaveLength(1)
-    abandon(d, cursor, 'close anyway')
+    await abandon(d, cursor, 'close anyway')
     expect(workflowTextUncopiedReport(failed)).toContain('workflow text copy --cursor')
     expect(showWorkflowText(reference, d)).toMatchObject({ kind: 'live', body: 'survives failure' })
 
@@ -749,7 +751,7 @@ describe('task-linked workflow text preservation', () => {
 
   test('retry reuses only an exact first title token, never a prefix collision', async () => {
     const exactDb = database()
-    const exactCursor = open(exactDb)
+    const exactCursor = await open(exactDb)
     linkCursor(exactDb, exactCursor)
     const exactReference = await attachWorkflowTextByHandle(exactCursor, 'exact', context, exactDb)
     const exactId = exactReference.slice('attached-text:'.length)
@@ -768,7 +770,7 @@ describe('task-linked workflow text preservation', () => {
     expect(exact.created).toHaveLength(0)
 
     const prefixDb = database()
-    const prefixCursor = open(prefixDb)
+    const prefixCursor = await open(prefixDb)
     linkCursor(prefixDb, prefixCursor)
     const prefixReference = await attachWorkflowTextByHandle(
       prefixCursor,

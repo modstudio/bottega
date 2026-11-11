@@ -9,8 +9,9 @@ import {
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
 import { autonomyNoticeOutput } from './workflow-autonomy-output.ts'
-import { composeWorkflowWithCursor, getWorkflowStepWithCursor } from './workflow-cursor.ts'
+import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { combineCursorAutonomy, mapStoredAutonomyResolution } from './workflow-cursor-autonomy.ts'
+import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
 import { abandonCursor } from './workflow-cursor-test.fixture.ts'
 import { renderWorkflowStep } from './workflow-render.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
@@ -91,9 +92,9 @@ function replaceCursorAutonomy(
   d.query('UPDATE workflow_cursor SET autonomy=?').run(JSON.stringify(stored))
 }
 
-function composeShipToFlow(d: Database) {
+async function composeShipToFlow(d: Database) {
   const composed = composeWorkflow('flow', 'fixture', 'default', args, d)
-  return composeWorkflowWithCursor(
+  return await composeWorkflowWithCursor(
     'flow',
     'fixture',
     'default',
@@ -113,7 +114,7 @@ function composeShipToFlow(d: Database) {
 }
 
 describe('workflow cursor stored autonomy', () => {
-  test('combines a stricter live resolution across autonomy subjects', () => {
+  test('combines a stricter live resolution across autonomy subjects', async () => {
     const combined = combineCursorAutonomy(pinnedAutonomy(), liveAutonomy())
 
     expect(combined.resolution.steps.lens).toEqual({
@@ -135,7 +136,7 @@ describe('workflow cursor stored autonomy', () => {
     expect(combined.looserLiveDifferences).toEqual([])
   })
 
-  test('carries a live fallback note through a pinned cursor composition', () => {
+  test('carries a live fallback note through a pinned cursor composition', async () => {
     const pinned = pinnedAutonomy()
     const live = liveAutonomy()
     live.note = 'hosted autonomy settings unavailable: offline; resolved from built-in'
@@ -165,7 +166,7 @@ describe('workflow cursor stored autonomy', () => {
     )
   })
 
-  test('keeps stricter pins and reports looser live settings', () => {
+  test('keeps stricter pins and reports looser live settings', async () => {
     const pinned = pinnedAutonomy()
     pinned.steps.lens = { value: 'ask', scope: 'pinned step' }
     pinned.stages!.review = { value: 'ask', scope: 'pinned stage' }
@@ -187,7 +188,7 @@ describe('workflow cursor stored autonomy', () => {
     })
   })
 
-  test('keeps the pinned scope when strictness ties', () => {
+  test('keeps the pinned scope when strictness ties', async () => {
     const pinned = pinnedAutonomy()
     const live = liveAutonomy()
     live.steps.lens = { value: 'auto', scope: 'live step' }
@@ -198,7 +199,7 @@ describe('workflow cursor stored autonomy', () => {
     })
   })
 
-  test('returns the pin unchanged when no live resolution is available', () => {
+  test('returns the pin unchanged when no live resolution is available', async () => {
     const pinned = pinnedAutonomy()
 
     expect(combineCursorAutonomy(pinned)).toEqual({
@@ -207,7 +208,7 @@ describe('workflow cursor stored autonomy', () => {
     })
   })
 
-  test('maps a legacy release resolution to ship-to', () => {
+  test('maps a legacy release resolution to ship-to', async () => {
     const stored = {
       steps: {},
       rulings: { value: 'agent' as const, scope: 'test' },
@@ -220,7 +221,7 @@ describe('workflow cursor stored autonomy', () => {
     })
   })
 
-  test('leaves ship-to absent when a stored snapshot has no usable level', () => {
+  test('leaves ship-to absent when a stored snapshot has no usable level', async () => {
     const stored = {
       steps: {},
       rulings: { value: 'agent' as const, scope: 'test' },
@@ -229,44 +230,55 @@ describe('workflow cursor stored autonomy', () => {
     expect(mapStoredAutonomyResolution(stored).shipTo).toBeUndefined()
   })
 
-  test('step fetch refuses an abandoned cursor without composing its old autonomy', () => {
+  test('step fetch refuses an abandoned cursor without composing its old autonomy', async () => {
     const d = database()
     installShipToFlow(d)
-    composeShipToFlow(d)
-    abandonCursor('flow', 'fixture', 'default', args, 'operator stopped', context, d)
+    await composeShipToFlow(d)
+    await abandonCursor('flow', 'fixture', 'default', args, 'operator stopped', context, d)
     replaceCursorAutonomy(d, (stored) => {
       delete stored.shipTo
     })
 
-    expect(() =>
+    await expect(
       getWorkflowStepWithCursor('flow', 'fixture', 'lens', args, 'default', context, d, {}),
-    ).toThrow('workflow flow for DEV-822 is abandoned; compose it again to start a new run')
+    ).rejects.toThrow('workflow flow for DEV-822 is abandoned; compose it again to start a new run')
   })
 
-  test('an active cursor needing ship-to refuses a snapshot with no level', () => {
+  test('an active cursor needing ship-to refuses a snapshot with no level', async () => {
     const d = database()
     installShipToFlow(d)
-    const opened = composeShipToFlow(d)
+    const opened = await composeShipToFlow(d)
     replaceCursorAutonomy(d, (stored) => {
       delete stored.shipTo
     })
 
-    expect(() =>
+    await expect(
       getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d, {}),
-    ).toThrow(
+    ).rejects.toThrow(
       `workflow cursor ${opened.cursor!.id}'s stored autonomy has no ship-to level; clear it with: ${PLATFORM_SLUG} workflow abandon --cursor ${opened.cursor!.id} --reason "<why>"; then start a new run with: ${PLATFORM_SLUG} workflow compose flow --project fixture --mode default --arg key=DEV-822 --arg branch=DEV-822-work --arg worktree=/tmp/work`,
     )
   })
 
-  test('an active cursor not needing ship-to serves a snapshot with no level', () => {
+  test('an active cursor not needing ship-to serves a snapshot with no level', async () => {
     const d = database()
-    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
+    await composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
     replaceCursorAutonomy(d, (stored) => {
       delete stored.shipTo
     })
 
     expect(
-      getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d, {}).slug,
+      (
+        await getWorkflowStepWithCursor(
+          'flow',
+          'fixture',
+          'rebase',
+          args,
+          'default',
+          context,
+          d,
+          {},
+        )
+      ).slug,
     ).toBe('rebase')
   })
 })
