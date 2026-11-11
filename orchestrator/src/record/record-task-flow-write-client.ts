@@ -24,9 +24,9 @@ export const taskFlowWriteTarget = (
   database: Database,
 ): TaskFlowWriteTarget => ({ projectName, database })
 
-function destinationFor(
+export function resolveTaskFlowDestination(
   target: TaskFlowWriteTarget,
-  client: RecordTaskFlowClient,
+  client: RecordTaskFlowClient = recordApiClient(),
 ): Promise<RecordRequestDestination> {
   if (!target.destination) {
     const project = projectByName(target.projectName, target.database)
@@ -66,7 +66,7 @@ export async function writeHostedTaskFlow<K extends TaskFlowIntent>(
     {
       local: () => null,
       hosted: async () => {
-        const destination = await destinationFor(target, client)
+        const destination = await resolveTaskFlowDestination(target, client)
         const method = client[methodByIntent[intent]] as
           | ((
               body: TaskFlowIntentInput<K>,

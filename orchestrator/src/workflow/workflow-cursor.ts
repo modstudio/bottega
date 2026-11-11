@@ -26,10 +26,10 @@ import {
   refuseTerminalCursor,
   renderWorkflowAdvanceResult,
 } from './workflow-cursor-result.ts'
-import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
 import {
-  findWorkflowCloseCursor,
+  findWorkflowCursor,
   LISTED_CURSOR_COLUMNS,
+  type SelectableCursorRow,
   selectWorkflowCursorForClose,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
@@ -74,11 +74,11 @@ import { linkResolvedWorkflowTask, withLinkedWorkflowTask } from './workflow-tas
 import { deleteWorkflowTextLocally, workflowTextDeletionIds } from './workflow-text.ts'
 import { composeWorkflow } from './workflows.ts'
 
-type CursorRow = WorkflowCloseCursor
+type CursorRow = SelectableCursorRow
 
 /** Re-reads, inside the close transaction, a cursor selected before its text copy. */
 function reselectCursor(
-  selected: WorkflowCloseCursor,
+  selected: SelectableCursorRow,
   args: Record<string, string>,
   context: WorkflowCursorContext,
   d: Database,
@@ -136,7 +136,7 @@ export async function composeWorkflowWithCursor(
   if (!composition.mode || composition.needs.arguments) return { ...composition, cursor: null }
   await linkResolvedWorkflowTask(project, context, d)
   const existing = keyOf(composition.arguments)
-    ? findWorkflowCloseCursor(
+    ? findWorkflowCursor(
         composition.project,
         composition.workflow.slug,
         composition.mode!.slug,
@@ -757,7 +757,7 @@ async function nextWorkflowStepImpl(
 }
 
 export async function nextWorkflowStep(
-  selected: WorkflowCloseCursor,
+  selected: SelectableCursorRow,
   project: string,
   args: Record<string, string>,
   note: string | undefined,
@@ -804,7 +804,7 @@ async function abandonSelectedWorkflowCursor(
 
 /** Abandons a cursor the close service selected before copying its attached text. */
 export async function abandonSelectedWorkflowCursorForClose(
-  selected: WorkflowCloseCursor,
+  selected: SelectableCursorRow,
   reason: string | undefined,
   context: WorkflowCursorContext,
   d: Database,
@@ -827,7 +827,7 @@ async function awaitWorkflowRulingImpl(
   cursor?: number,
 ): Promise<{ summary: CursorSummary & { questionId: number }; cursorId: string }> {
   if (!question?.trim()) throw new Error('--question is required')
-  const row = findWorkflowCloseCursor(project, slug, mode, args, context, d, cursor)
+  const row = findWorkflowCursor(project, slug, mode, args, context, d, cursor)
   if (!row)
     throw new Error(
       `${cursorName(slug, mode, keyOf(args))} has no cursor; compose the workflow first`,

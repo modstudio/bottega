@@ -18,8 +18,11 @@ import { questionOpenSql } from '../run/question-open.ts'
 import { resolvedRulingPersonName } from '../run/ruling-attribution.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { cursorName } from './workflow-cursor-format.ts'
-import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
-import { findWorkflowCursor, type WorkflowCursorContext } from './workflow-cursor-selection.ts'
+import {
+  findWorkflowCursor,
+  type SelectableCursorRow,
+  type WorkflowCursorContext,
+} from './workflow-cursor-selection.ts'
 import { decideWorkflowRuleAnswer, pinnedWorkflowRuleStep } from './workflow-rule-answer.ts'
 import { linkResolvedWorkflowTask } from './workflow-task-linking.ts'
 
@@ -51,15 +54,7 @@ export async function ruleWorkflow(
     await assertOrchestratorProse([{ field: 'ruling text', text: ruling, prior: null }])
   if (!ruling?.trim()) throw new Error('--ruling is required')
   await linkResolvedWorkflowTask(project, context, database)
-  const row = findWorkflowCursor(
-    project,
-    slug,
-    mode,
-    args,
-    context,
-    database,
-    cursor,
-  ) as WorkflowCloseCursor | null
+  const row = findWorkflowCursor(project, slug, mode, args, context, database, cursor)
   if (!row)
     throw new Error(
       `${cursorName(slug, mode, workflowKeyOf(args))} has no cursor; compose the workflow first`,
@@ -122,7 +117,7 @@ export async function ruleWorkflow(
 }
 
 function applyWorkflowRulingLocally(input: {
-  row: WorkflowCloseCursor
+  row: SelectableCursorRow
   question: { record_id: string; number: number }
   ruling: string
   actor: string | null

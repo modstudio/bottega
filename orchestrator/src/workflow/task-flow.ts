@@ -11,10 +11,43 @@ import {
   type OpenTaskStage,
   taskFlowState,
 } from './task-flow-decision.ts'
+import type { CursorState } from './workflow-cursor-transition.ts'
+import type { EnforcementMode } from './workflow-floor.ts'
+
+export type TaskFlowStageCursorRow = {
+  id: number
+  record_id: string
+  project: string
+  workflow_slug: string
+  mode_slug: string
+  workflow_key: string
+  task_record_id: string | null
+  task_flow_record_id: string | null
+  instance_id: string
+  session_id: string | null
+  ordinal: number
+  step_slug: string
+  state: CursorState
+  workflow_version_record_id: string
+  catalogue_version_record_id: string
+  workflow_version: number
+  catalogue_version: number
+  args: string
+  autonomy: string | null
+  closed: string
+  question: string | null
+  total_steps: number
+  created_at: string
+  enforcement: EnforcementMode
+  opened_machine_id: string | null
+  taken_over_from_machine_id: string | null
+  last_advanced_machine_id: string | null
+  revision: number
+  updated_at: string
+}
 
 export type WorkflowCursorInsert = {
   recordId: string
-  number?: number
   projectRecordId?: string
   project: string
   workflow: string
@@ -107,13 +140,12 @@ export function insertWorkflowCursorRow(
         task_flow_record_id,instance_id,session_id,workflow_version_record_id,catalogue_version_record_id,
         args,autonomy,ordinal,step_slug,state,closed,question,total_steps,created_at,updated_at,enforcement,
         opened_machine_id,taken_over_from_machine_id,last_advanced_machine_id,revision)
-       VALUES (?,COALESCE(?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor)),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ${conflictSql}
        RETURNING record_id`,
     )
     .get(
       row.recordId,
-      row.number ?? null,
       row.project,
       projectRecordId,
       row.workflow,
@@ -144,6 +176,28 @@ export function insertWorkflowCursorRow(
 }
 
 type TaskFlowRow = { record_id: string; open_stage_cursor_record_id: string | null }
+
+/** Reads the open cursor projected by a task flow without creating or changing either row. */
+export function openTaskFlowStageCursor(
+  taskRecordId: string,
+  d: Database,
+): TaskFlowStageCursorRow | null {
+  return d
+    .query<TaskFlowStageCursorRow, [string]>(
+      `SELECT cursor.number id,cursor.record_id,cursor.project,cursor.workflow_slug,cursor.mode_slug,
+       cursor.workflow_key,cursor.task_record_id,cursor.task_flow_record_id,cursor.instance_id,
+       cursor.session_id,cursor.ordinal,cursor.step_slug,cursor.state,cursor.workflow_version_record_id,
+       cursor.catalogue_version_record_id,
+       (SELECT n FROM workflow_version WHERE record_id=cursor.workflow_version_record_id) workflow_version,
+       (SELECT n FROM step_catalogue_version WHERE record_id=cursor.catalogue_version_record_id) catalogue_version,
+       cursor.args,cursor.autonomy,cursor.closed,cursor.question,cursor.total_steps,cursor.created_at,
+       cursor.updated_at,cursor.enforcement,cursor.opened_machine_id,cursor.taken_over_from_machine_id,
+       cursor.last_advanced_machine_id,cursor.revision
+       FROM task_flow flow JOIN workflow_cursor cursor
+       ON cursor.record_id=flow.open_stage_cursor_record_id WHERE flow.task_record_id=?`,
+    )
+    .get(taskRecordId)
+}
 
 export function cacheAdoptedTaskFlow(
   input: {
@@ -244,14 +298,19 @@ function projectTaskFlow(
   return flow
 }
 
-function openStage(flow: TaskFlowRow, d: Database): (OpenTaskStage & { recordId: string }) | null {
-  if (!flow.open_stage_cursor_record_id) return null
-  return d
-    .query<OpenTaskStage & { recordId: string }, [string]>(
-      `SELECT number cursor,workflow_slug workflow,mode_slug mode,record_id recordId
-       FROM workflow_cursor WHERE record_id=?`,
-    )
-    .get(flow.open_stage_cursor_record_id)
+function openStage(
+  taskRecordId: string,
+  d: Database,
+): (OpenTaskStage & { recordId: string }) | null {
+  const cursor = openTaskFlowStageCursor(taskRecordId, d)
+  return cursor
+    ? {
+        cursor: cursor.id,
+        workflow: cursor.workflow_slug,
+        mode: cursor.mode_slug,
+        recordId: cursor.record_id,
+      }
+    : null
 }
 
 export function refuseTaskFlowStageConflict(
@@ -264,7 +323,7 @@ export function refuseTaskFlowStageConflict(
     )
     .get(input.taskRecordId)
   if (!flow) return
-  const decision = decideTaskStageSelection(openStage(flow, d), input)
+  const decision = decideTaskStageSelection(openStage(input.taskRecordId, d), input)
   if (decision.action === 'refuse')
     throw new Error(
       `task ${input.taskKey} already has open stage cursor ${decision.stage.cursor} ${decision.stage.workflow} ${decision.stage.mode}; finish it with ${PLATFORM_SLUG} workflow next ${decision.stage.workflow} --cursor ${decision.stage.cursor}, or drop it with ${PLATFORM_SLUG} workflow abandon ${decision.stage.workflow} --cursor ${decision.stage.cursor}`,
@@ -285,7 +344,7 @@ export function selectTaskFlowStage(
 ): { flowRecordId: string; cursorRecordId: string | null } {
   refuseTaskFlowStageConflict(input, d)
   const flow = projectTaskFlow(input.project, input.taskRecordId, input.statusCategory, d)
-  const stage = openStage(flow, d)
+  const stage = openStage(input.taskRecordId, d)
   const decision = decideTaskStageSelection(stage, input)
   if (decision.action === 'refuse')
     throw new Error(

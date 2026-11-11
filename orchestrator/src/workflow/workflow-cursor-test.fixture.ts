@@ -15,9 +15,9 @@ import {
 } from './workflow-cursor.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { cursorName } from './workflow-cursor-format.ts'
-import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
 import { ruleWorkflow } from './workflow-cursor-ruling.ts'
 import {
+  type SelectableCursorRow,
   selectWorkflowCursorForClose,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
@@ -252,7 +252,7 @@ export async function selectAndNextWorkflowStep(
     d,
     callContext.taskRecordId,
     callContext.taskStatusCategory,
-  ) as WorkflowCloseCursor | null
+  ) as SelectableCursorRow | null
   if (!row)
     throw new Error(`${cursorName(slug, mode, key)} has no cursor; compose the workflow first`)
   return await nextWorkflowStep(
@@ -289,7 +289,7 @@ export async function abandonCursor(
     d,
     callContext.taskRecordId,
     callContext.taskStatusCategory,
-  ) as WorkflowCloseCursor | null
+  ) as SelectableCursorRow | null
   if (!row) throw new Error(`fixture has no ${slug} cursor to abandon`)
   return await abandonSelectedWorkflowCursorForClose(row, reason, callContext, d, callArgs)
 }

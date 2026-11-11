@@ -12,8 +12,7 @@ import { closeQuestions } from '../run/question-close.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import { refuseTerminalCursor } from './workflow-cursor-result.ts'
-import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
-import type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
+import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import type { CursorTrailEntry } from './workflow-cursor-trail.ts'
 import { deleteWorkflowTextLocally, workflowTextDeletionIds } from './workflow-text.ts'
 
@@ -34,7 +33,7 @@ export function closeOpenWorkflowQuestion(
 }
 
 export async function abandonWorkflowCursor(
-  row: WorkflowCloseCursor,
+  row: SelectableCursorRow,
   reason: string,
   context: WorkflowCursorContext,
   d: Database,
@@ -131,7 +130,7 @@ export async function abandonWorkflowCursor(
 }
 
 function abandonedCursorTrail(
-  row: WorkflowCloseCursor,
+  row: SelectableCursorRow,
   reason: string,
   at: string,
 ): CursorTrailEntry[] {
@@ -141,7 +140,7 @@ function abandonedCursorTrail(
 }
 
 function abandonmentRevisionParts(
-  row: WorkflowCloseCursor,
+  row: SelectableCursorRow,
   flow: { record_id: string; revision: number } | null,
 ): string[] {
   return [

@@ -5,13 +5,11 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, writeTransaction } from '../database/db.ts'
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
-import { projectByName } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
-import type { RecordRequestDestination } from '../record/record-api-client-paths.ts'
-import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
-import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import {
+  resolveTaskFlowDestination,
+  type TaskFlowWriteTarget,
   taskFlowWriteTarget,
   writeHostedTaskFlow,
 } from '../record/record-task-flow-write-client.ts'
@@ -37,8 +35,7 @@ import {
 } from './workflow-compose-branch.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { storedCursorAutonomyJson } from './workflow-cursor-autonomy.ts'
-import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
-import type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
+import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { refuseUnlinkedCursorLabelCollision } from './workflow-cursor-task-reference.ts'
 import type { composeWorkflow } from './workflows.ts'
 
@@ -263,7 +260,7 @@ function composeIntent(
 }
 
 function attachLocalComposition(
-  row: WorkflowCloseCursor,
+  row: SelectableCursorRow,
   composition: Composition,
   context: WorkflowCursorContext,
   database: Database,
@@ -286,7 +283,7 @@ function applyHostedCompose(
   composition: Composition,
   context: WorkflowCursorContext,
   database: Database,
-): WorkflowCloseCursor {
+): SelectableCursorRow {
   const cursorRecordId = hosted?.stage?.id ?? facts.rowInput.recordId
   const flowRecordId =
     facts.existingFlow?.record_id ??
@@ -309,7 +306,6 @@ function applyHostedCompose(
       {
         ...facts.rowInput,
         recordId: cursorRecordId,
-        number: hosted?.stage?.number,
         revision: hosted?.revisions[cursorRecordId] ?? 1,
       },
       'local-identity',
@@ -332,12 +328,12 @@ function applyHostedCompose(
       stampWorkflowCursorMachine(stored, stored === facts.rowInput.recordId ? 0 : 1, database)
       const local = database
         .query('SELECT number id,* FROM workflow_cursor WHERE record_id=?')
-        .get(stored) as WorkflowCloseCursor
+        .get(stored) as SelectableCursorRow
       local.task_flow_record_id = attachLocalComposition(local, composition, context, database)
     }
     return database
       .query('SELECT number id,* FROM workflow_cursor WHERE record_id=?')
-      .get(stored) as WorkflowCloseCursor
+      .get(stored) as SelectableCursorRow
   }, database)
 }
 
@@ -349,7 +345,7 @@ function cacheComposeReplay(
   composition: Composition,
   context: WorkflowCursorContext,
   database: Database,
-): WorkflowCloseCursor {
+): SelectableCursorRow {
   const { stage, flow } = replay
   return writeTransaction(() => {
     const stored = insertWorkflowCursorRow(
@@ -357,7 +353,6 @@ function cacheComposeReplay(
       {
         ...facts.rowInput,
         recordId: stage.id,
-        number: stage.number ?? undefined,
         taskRecordId: flow.taskId,
         taskFlowRecordId: flow.taskId ? flow.id : null,
         instanceId: stage.instanceId ?? facts.instance,
@@ -390,7 +385,7 @@ function cacheComposeReplay(
       )
     return database
       .query('SELECT number id,* FROM workflow_cursor WHERE record_id=?')
-      .get(stored) as WorkflowCloseCursor
+      .get(stored) as SelectableCursorRow
   }, database)
 }
 
@@ -403,8 +398,8 @@ async function recoverComposeConflict(
   autonomy: AutonomyResolution | undefined,
   commitCount: CommitCountPort,
   keylessSiblingRetry: boolean,
-  destination: RecordRequestDestination,
-): Promise<WorkflowCloseCursor> {
+  target: TaskFlowWriteTarget,
+): Promise<SelectableCursorRow> {
   const client = context.taskFlowClient ?? recordApiClient()
   const listed = await client.listTaskFlowStages!(
     {
@@ -412,7 +407,7 @@ async function recoverComposeConflict(
       states: ['running', 'awaiting-ruling'],
       ...(facts.key ? { taskKey: facts.key } : { sessionId: context.session ?? undefined }),
     },
-    destination,
+    await resolveTaskFlowDestination(target, client),
   )
   const replay = listed.items.find(
     ({ stage }) =>
@@ -442,7 +437,7 @@ export async function insertWorkflowCursor(
   autonomy?: AutonomyResolution,
   commitCount: CommitCountPort = readCommitsPastLanding,
   keylessSiblingRetry = false,
-): Promise<WorkflowCloseCursor> {
+): Promise<SelectableCursorRow> {
   const refusal = workflowComposeBranchRefusal({
     workflow: composition.workflow.slug,
     project: composition.project,
@@ -479,26 +474,7 @@ export async function insertWorkflowCursor(
       autonomy,
       commitCount,
       keylessSiblingRetry,
-      await composeReadDestination(composition.project, database, context.taskFlowClient),
+      target,
     )
-  }
-}
-
-async function composeReadDestination(
-  projectName: string,
-  database: Database,
-  suppliedClient?: RecordTaskFlowClient,
-): Promise<RecordRequestDestination> {
-  const project = projectByName(projectName, database)
-  if (!project) throw new Error(`project ${projectName} is not registered; register it, then retry`)
-  const client = suppliedClient?.whoami
-    ? { whoami: suppliedClient.whoami.bind(suppliedClient) }
-    : recordApiClient()
-  return {
-    destinationSpaceId: await requireProjectRecordDestination(
-      project.name,
-      project.settings,
-      client,
-    ),
   }
 }

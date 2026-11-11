@@ -17,9 +17,8 @@ import { insertWorkflowCursor } from './workflow-cursor-compose.ts'
 import { formatCursorOpened, formatCursorResumed } from './workflow-cursor-format.ts'
 import { closeOpenWorkflowQuestion } from './workflow-cursor-mutation.ts'
 import { refuseInvalidServe } from './workflow-cursor-result.ts'
-import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
 import {
-  findWorkflowCloseCursor,
+  findWorkflowCursor,
   type SelectableCursorRow,
   selectUntouchedKeylessWorkflowCursor,
   type WorkflowCursorContext,
@@ -37,7 +36,7 @@ import { withLinkedWorkflowTask } from './workflow-task-linking.ts'
 import { withWorkflowTextFacts } from './workflow-text.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
-type CursorRow = WorkflowCloseCursor
+type CursorRow = SelectableCursorRow
 
 export function cursorComposition(
   row: SelectableCursorRow,
@@ -76,7 +75,7 @@ async function prepareStepServe(
   const handled =
     cursor === undefined
       ? null
-      : findWorkflowCloseCursor(project, slug, mode, args, context, database, cursor)
+      : findWorkflowCursor(project, slug, mode, args, context, database, cursor)
   const preliminary =
     handled && decideCursorStart(handled.state) === 'reuse'
       ? cursorComposition(handled, database, live)
@@ -94,7 +93,7 @@ async function prepareStepServe(
         context.session,
         database,
       ) as CursorRow | null)
-    : (handled ?? findWorkflowCloseCursor(project, slug, mode, args, context, database, cursor))
+    : (handled ?? findWorkflowCursor(project, slug, mode, args, context, database, cursor))
   let row = handled ?? candidate
   const opensCursor = row === null
   const startDecision = decideCursorStart(row?.state ?? null)

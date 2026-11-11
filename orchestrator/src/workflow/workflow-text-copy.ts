@@ -22,9 +22,11 @@ import {
   refuseMissingCloseNote,
   refuseTerminalCursor,
 } from './workflow-cursor-result.ts'
-import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
-import type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
-import { selectWorkflowCursorForClose } from './workflow-cursor-selection.ts'
+import {
+  type SelectableCursorRow,
+  selectWorkflowCursorForClose,
+  type WorkflowCursorContext,
+} from './workflow-cursor-selection.ts'
 import type { FloorEvidencePorts, WorkflowEvidenceInput } from './workflow-floor-evidence.ts'
 import {
   assertWorkflowSelfRulingProse,
@@ -278,7 +280,7 @@ export async function closeCursorWithTextCopy(
     database,
     input.context.taskRecordId,
     input.context.taskStatusCategory,
-  ) as WorkflowCloseCursor | null
+  ) as SelectableCursorRow | null
   if (!row)
     throw new Error(
       `${cursorName(input.workflow ?? 'workflow', input.mode ?? 'default', input.key ?? '')} has no cursor; compose the workflow first`,
@@ -382,7 +384,7 @@ export function showWorkflowText(
 }
 
 export function cursorForWorkflowTextCopy(cursor: number, database: Database = db()): CopyCursor {
-  const row = selectWorkflowCursorForClose({}, cursor, null, database) as WorkflowCloseCursor
+  const row = selectWorkflowCursorForClose({}, cursor, null, database) as SelectableCursorRow
   return {
     recordId: row.record_id,
     number: row.id,

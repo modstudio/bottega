@@ -4,12 +4,11 @@ import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
 import { db, sessionId } from '../database/db.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
+import { openTaskFlowStageCursor, type TaskFlowStageCursorRow } from './task-flow.ts'
 import { readThroughTaskFlow, type TaskFlowReadStatus } from './task-flow-read-through.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { workflowTaskBindingCommand } from './workflow-cursor-format.ts'
 import { hasClosedStep } from './workflow-cursor-trail.ts'
-import type { CursorState } from './workflow-cursor-transition.ts'
-import type { EnforcementMode } from './workflow-floor.ts'
 import { type HubTaskReader, resolveHubTaskReference } from './workflow-task-reference.ts'
 import { resolveWorkflowMode, showResolvedWorkflow } from './workflows.ts'
 
@@ -71,13 +70,6 @@ export function findWorkflowCursor(
     context.taskRecordId,
     context.taskStatusCategory,
   )
-}
-
-/** Selects the complete persisted cursor shape used by mutation services. */
-export function findWorkflowCloseCursor(
-  ...args: Parameters<typeof findWorkflowCursor>
-): WorkflowCloseCursor | null {
-  return findWorkflowCursor(...args) as WorkflowCloseCursor | null
 }
 
 export async function resolveWorkflowCursorContext(
@@ -145,39 +137,7 @@ export function workflowCursorProjectScope(
   throw new Error(`cannot list workflow cursors from ${cwd}: pass --project, --session or --all`)
 }
 
-export type SelectableCursorRow = {
-  id: number
-  record_id: string
-  project: string
-  workflow_slug: string
-  mode_slug: string
-  workflow_key: string
-  task_record_id: string | null
-  task_flow_record_id: string | null
-  instance_id: string
-  session_id: string | null
-  ordinal: number
-  step_slug: string
-  state: CursorState
-  workflow_version_record_id: string
-  catalogue_version_record_id: string
-  workflow_version: number
-  catalogue_version: number
-  args: string
-  autonomy: string | null
-  closed: string
-  question: string | null
-  total_steps: number
-  created_at: string
-  enforcement: EnforcementMode
-  opened_machine_id: string | null
-  taken_over_from_machine_id: string | null
-  last_advanced_machine_id: string | null
-  revision: number
-  updated_at: string
-}
-
-export type WorkflowCloseCursor = SelectableCursorRow
+export type SelectableCursorRow = TaskFlowStageCursorRow
 
 const mismatch = (
   row: Pick<SelectableCursorRow, 'id' | 'workflow_slug'>,
@@ -269,15 +229,8 @@ function selectKeyedTaskStage(
   const handled = cursor === undefined ? null : selectByHandle(cursor, identity, d)
   if (!taskRecordId) return handled
   if (handled) return handled
-  const selected = d
-    .query<{ open_stage_cursor_record_id: string | null }, [string]>(
-      'SELECT open_stage_cursor_record_id FROM task_flow WHERE task_record_id=?',
-    )
-    .get(taskRecordId)
-  if (selected?.open_stage_cursor_record_id) {
-    const row = d
-      .query(`SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor WHERE record_id=?`)
-      .get(selected.open_stage_cursor_record_id) as SelectableCursorRow
+  const row = openTaskFlowStageCursor(taskRecordId, d)
+  if (row) {
     if (
       row.workflow_slug === identity.workflow &&
       row.mode_slug === identity.mode &&

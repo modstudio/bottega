@@ -194,23 +194,17 @@ function attachSelectedWorkflowText(
   return workflowTextAttachmentToken(inserted.id)
 }
 
-async function attachWorkflowTextByHandleUnchecked(
-  cursor: number,
-  body: string,
-  context: WorkflowCursorContext,
-  d: Database = writableDb(),
-): Promise<string> {
-  const row = selectWorkflowCursor({}, cursor, undefined, d) as AttachCursorRow
+function attachTextIntent(row: AttachCursorRow, body: string) {
   const recordId = taskFlowRequestId('attach-text', [
     row.record_id,
     String(row.ordinal + 1),
     row.step_slug,
     body,
   ])
-  const createdAt = row.updated_at
-  await writeHostedTaskFlow(
-    'attach-text',
-    {
+  return {
+    recordId,
+    createdAt: row.updated_at,
+    input: {
       requestId: taskFlowRequestId('attach-text', [recordId]),
       rows: [
         {
@@ -219,10 +213,24 @@ async function attachWorkflowTextByHandleUnchecked(
           stepOrdinal: row.ordinal + 1,
           stepSlug: row.step_slug,
           body,
-          createdAt,
+          createdAt: row.updated_at,
         },
       ],
     },
+  }
+}
+
+async function attachWorkflowTextByHandleUnchecked(
+  cursor: number,
+  body: string,
+  context: WorkflowCursorContext,
+  d: Database = writableDb(),
+): Promise<string> {
+  const row = selectWorkflowCursor({}, cursor, undefined, d) as AttachCursorRow
+  const { recordId, createdAt, input } = attachTextIntent(row, body)
+  await writeHostedTaskFlow(
+    'attach-text',
+    input,
     taskFlowWriteTarget(row.project, d),
     context.taskFlowClient,
   )
@@ -253,28 +261,10 @@ async function attachWorkflowTextUnchecked(
     )
   const row = selectWorkflowCursor(identity, cursor, context.session, d) as AttachCursorRow | null
   if (!row) throw new Error('workflow has no live cursor; fetch its current step first')
-  const recordId = taskFlowRequestId('attach-text', [
-    row.record_id,
-    String(row.ordinal + 1),
-    row.step_slug,
-    body,
-  ])
-  const createdAt = row.updated_at
+  const { recordId, createdAt, input } = attachTextIntent(row, body)
   await writeHostedTaskFlow(
     'attach-text',
-    {
-      requestId: taskFlowRequestId('attach-text', [recordId]),
-      rows: [
-        {
-          id: recordId,
-          stageRecordId: row.record_id,
-          stepOrdinal: row.ordinal + 1,
-          stepSlug: row.step_slug,
-          body,
-          createdAt,
-        },
-      ],
-    },
+    input,
     taskFlowWriteTarget(row.project, d),
     context.taskFlowClient,
   )
