@@ -193,15 +193,16 @@ jobs:
   hub-web-smoke:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: .bun-version
+      - name: Trust the workspace
+        run: git config --system --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Install Bun
+        run: npm install --global "bun@$(cat .bun-version)"
       - name: Install
         run: bun install --silent
-      - name: Install Chromium
-        run: scripts/ci/install-chromium.sh hub/web
       - name: Build
         run: bun run --cwd hub/web build
       - name: Smoke
@@ -210,15 +211,16 @@ jobs:
   hub-ui-stories:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: .bun-version
+      - name: Trust the workspace
+        run: git config --system --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Install Bun
+        run: npm install --global "bun@$(cat .bun-version)"
       - name: Install
         run: bun install --silent
-      - name: Install Chromium
-        run: scripts/ci/install-chromium.sh hub/ui
       - name: Build stories
         run: bun run --cwd hub/ui storybook:build
       - name: Build view stories

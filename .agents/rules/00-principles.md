@@ -69,14 +69,16 @@ without a separate maintenance process because ordinary review supplies it.
 
 ## The platform is deliberately opinionated
 
-Use one disposable worktree per run. Workers never push. Escalate every
-decision. Complete review before landing. Compile canon into every prompt.
-Record a verdict before the next run routes.
+All work runs inside a workflow from start to finish; the workflow governs
+each step, and what it records is the session's context. Use one disposable
+worktree per run. Workers never push. Escalate every decision. Complete
+review before landing. Compile canon into every prompt. Record a verdict
+before the next run routes.
 
-These invariants are product behavior, not preferences or configuration.
-Models vary, so the surrounding process stays rigid enough to produce a
-consistent outcome. A workflow that needs different invariants is a different
-product rather than a configuration mode.
+These invariants are product behavior, not configuration: models vary, so
+the process stays rigid enough to produce a consistent outcome. A project
+customizes a workflow only where its needs differ, such as review lenses for
+its stack, and never works around one.
 
 ## Canon binds and may be replaced
 

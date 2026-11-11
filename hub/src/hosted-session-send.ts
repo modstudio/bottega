@@ -5,19 +5,34 @@ import {
 } from '../../shared/record-remedies.ts'
 import { sendWithStoredRecordSessionToken } from '../../shared/record-session.ts'
 
-type HostedSessionRequest = {
+type HostedSessionRequestBase = {
   origin: string
   url: string
-  method: string
   body?: unknown
   token?: string | null
-  recordSpace?: string | null
   safety: HostedRequestSafety
   fetch: (input: string, init: RequestInit) => Promise<Response>
 }
 
-/** Send one hub request with either an explicit token or the process record session. */
-export async function sendHostedSessionRequest(input: HostedSessionRequest): Promise<Response> {
+export type HostedSessionMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+export type HostedOutsideNoteBody = {
+  project: string
+  text: string
+  area?: string | null
+  anchor: string
+}
+export type HostedSessionRequest = HostedSessionRequestBase &
+  (
+    | { method: 'GET'; recordSpace?: string | null }
+    | {
+        method: Exclude<HostedSessionMethod, 'GET'>
+        recordSpace: string
+      }
+  )
+
+async function send(
+  input: HostedSessionRequestBase & { method: HostedSessionMethod; recordSpace?: string | null },
+) {
   const send = async (token: string | null) => {
     if (!token) throw new Error(RECORD_SIGN_IN_REMEDY)
     try {
@@ -38,4 +53,21 @@ export async function sendHostedSessionRequest(input: HostedSessionRequest): Pro
   return input.token === undefined
     ? await sendWithStoredRecordSessionToken(send)
     : await send(input.token)
+}
+
+/** Send one hub request with either an explicit token or the process record session. */
+export async function sendHostedSessionRequest(input: HostedSessionRequest): Promise<Response> {
+  if (input.method !== 'GET' && !input.recordSpace?.trim())
+    throw new Error(`hosted write names no destination space: ${new URL(input.url).pathname}`)
+  return send(input)
+}
+
+/**
+ * Send the one user-scoped hosted write whose destination is the project named in its body,
+ * resolved through outside-note intake rather than an x-record-space header.
+ */
+export function sendHostedOutsideNoteRequest(
+  input: HostedSessionRequestBase & { body: HostedOutsideNoteBody },
+): Promise<Response> {
+  return send({ ...input, method: 'POST' })
 }
