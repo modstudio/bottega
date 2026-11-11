@@ -18,6 +18,17 @@ export const hubModuleSpecs = [
       './record-client-options.ts',
     ],
   },
+  {
+    file: 'hub/src/hosted-write-destination.ts',
+    allowed: [
+      '../../shared/brand.ts',
+      '../../shared/record-remedies.ts',
+      './personal-record-space.ts',
+      './projects.ts',
+      './task-client.ts',
+      './task-project-space.ts',
+    ],
+  },
   { file: 'hub/src/note-git.ts', allowed: ['../../shared/git.ts'] },
   {
     file: 'hub/src/record-bigint.ts',
@@ -458,12 +469,8 @@ export const hubModuleSpecs = [
   {
     file: 'hub/src/note-project-space.ts',
     allowed: [
-      '../../shared/brand.ts',
-      '../../shared/record-remedies.ts',
+      './hosted-write-destination.ts',
       './note-client.ts',
-      './personal-record-space.ts',
-      './projects.ts',
-      './task-client.ts',
       './task-project-space.ts',
     ],
   },

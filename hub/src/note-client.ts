@@ -4,6 +4,7 @@ import type { NoteAnchorWire } from '../../shared/note-anchor.ts'
 import type { HostedAcknowledgement, HostedNote, PromoteNoteInput } from './hosted-notes.ts'
 import { type HostedRequestSafety, hostedRefusalError } from './hosted-refusal.ts'
 import {
+  type HostedOutsideNoteBody,
   type HostedSessionMethod,
   sendHostedOutsideNoteRequest,
   sendHostedSessionRequest,
@@ -63,12 +64,20 @@ function requestSetup(options: Options) {
   return Promise.resolve()
 }
 
-async function request<T>(path: string, options: Options = {}): Promise<T> {
-  await requestSetup(options)
+function requestContext(path: string, options: Options) {
   const baseUrl = options.baseUrl ?? resolveHostedUrl()
   if (!baseUrl) throw new Error(`hosted hub is not configured. ${REMEDY}`)
   if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
-  const url = `${baseUrl.replace(/\/$/, '')}${path}`
+  return {
+    baseUrl,
+    url: `${baseUrl.replace(/\/$/, '')}${path}`,
+    fetch: options.fetch ?? fetch,
+  }
+}
+
+async function request<T>(path: string, options: Options = {}): Promise<T> {
+  await requestSetup(options)
+  const { baseUrl, url, fetch: requestFetch } = requestContext(path, options)
   const response = await sendHostedSessionRequest({
     origin: baseUrl,
     url,
@@ -76,7 +85,7 @@ async function request<T>(path: string, options: Options = {}): Promise<T> {
     token: options.token,
     recordSpace: options.recordSpace,
     safety: 'probe',
-    fetch: options.fetch ?? fetch,
+    fetch: requestFetch,
   })
   return requestValue<T>(url, response, 'probe')
 }
@@ -89,10 +98,7 @@ async function writeRequest<T>(
   safety: HostedRequestSafety,
 ): Promise<T> {
   await requestSetup(options)
-  const baseUrl = options.baseUrl ?? resolveHostedUrl()
-  if (!baseUrl) throw new Error(`hosted hub is not configured. ${REMEDY}`)
-  if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
-  const url = `${baseUrl.replace(/\/$/, '')}${path}`
+  const { baseUrl, url, fetch: requestFetch } = requestContext(path, options)
   const response = await sendHostedSessionRequest({
     origin: baseUrl,
     url,
@@ -101,7 +107,7 @@ async function writeRequest<T>(
     token: options.token,
     recordSpace: options.recordSpace,
     safety,
-    fetch: options.fetch ?? fetch,
+    fetch: requestFetch,
   })
   return requestValue<T>(url, response, safety)
 }
@@ -174,7 +180,7 @@ export type OutsideNote = {
   created_at: string
 }
 export const hostedCreateOutsideNote = (
-  body: { project: string; text: string; area?: string | null; anchor: string },
+  body: HostedOutsideNoteBody,
   options?: Options,
 ) => outsideNoteRequest(body, options)
 export const hostedListOutsideNotes = (project: string, options?: Options) =>
@@ -182,20 +188,17 @@ export const hostedListOutsideNotes = (project: string, options?: Options) =>
 export type NoteClientOptions = Options
 
 async function outsideNoteRequest(
-  body: { project: string; text: string; area?: string | null; anchor: string },
+  body: HostedOutsideNoteBody,
   options: Options = {},
 ) {
-  const baseUrl = options.baseUrl ?? resolveHostedUrl()
-  if (!baseUrl) throw new Error(`hosted hub is not configured. ${REMEDY}`)
-  if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
-  const url = `${baseUrl.replace(/\/$/, '')}/v1/notes/outside`
+  const { baseUrl, url, fetch: requestFetch } = requestContext('/v1/notes/outside', options)
   const response = await sendHostedOutsideNoteRequest({
     origin: baseUrl,
     url,
     body,
     token: options.token,
     safety: 'non-idempotent',
-    fetch: options.fetch ?? fetch,
+    fetch: requestFetch,
   })
   return requestValue<{ id: string; number: number; project: string }>(
     url,

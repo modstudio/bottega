@@ -19,6 +19,7 @@ export type ReportClientOptions = {
   baseUrl?: string
   token?: string | null
   fetch?: ReportFetch
+  recordSpace?: string
 }
 
 async function request<T>(
@@ -40,15 +41,8 @@ async function request<T>(
     safety,
     fetch: options.fetch ?? fetch,
   }
-  const response = await sendHostedSessionRequest(
-    method === 'GET'
-      ? { ...common, method }
-      : {
-          ...common,
-          method,
-          recordSpace: await personalRecordSpace(options),
-        },
-  )
+  const recordSpace = options.recordSpace ?? (await personalRecordSpace(options))
+  const response = await sendHostedSessionRequest({ ...common, method, recordSpace })
   const bodyResult = await jsonBody(response, url)
   if (!bodyResult.ok)
     throw hostedRefusalError({

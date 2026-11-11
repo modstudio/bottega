@@ -5,6 +5,8 @@ import { confirmCount } from './hosted-tasks.ts'
 import { pruneForeignHostedTasks, selectForeignHostedTasks } from './task-prune-foreign.ts'
 
 declareFixtureProjectSpace('workshop', 'workshop')
+declareFixtureProjectSpace('cleaned', 'clean')
+declareFixtureProjectSpace('active-project', 'active')
 
 const task = (key: string, project: string, source: HostedTask['source'] = 'mcp'): HostedTask => ({
   id: `id-${key}`,
@@ -132,6 +134,7 @@ test('foreign prune requires a space and addresses list, presence, and delete to
         activeSpaceId: 'space-active',
         memberships: [
           { spaceId: 'space-clean', slug: 'clean', permission: 'write' },
+          { spaceId: 'space-active', slug: 'active', permission: 'write' },
           { spaceId: 'space-workshop', slug: 'workshop', permission: 'write' },
         ],
       })
@@ -139,7 +142,7 @@ test('foreign prune requires a space and addresses list, presence, and delete to
       if (init?.method === 'DELETE')
         return Response.json({ tasks: 1, comments: 0, documents: 0, statusEvents: 0 })
       return Response.json({
-        tasks: [task('DEV-1', 'workshop')],
+        tasks: [task('CLEAN-1', 'cleaned'), task('ACTIVE-1', 'active-project')],
         comments: [],
         documents: [],
         statusEvents: [],
@@ -149,12 +152,12 @@ test('foreign prune requires a space and addresses list, presence, and delete to
     }
     if (path === '/v1/tasks/presence')
       return Response.json({
-        present: [{ space_id: 'space-workshop', key: 'DEV-1' }],
+        present: [{ space_id: 'space-active', key: 'ACTIVE-1' }],
         refused: [],
       })
     return Response.json({ error: 'unexpected' }, { status: 500 })
   }
-  await pruneForeignHostedTasks({
+  const result = await pruneForeignHostedTasks({
     space: 'space-clean',
     confirmation: 1,
     baseUrl: 'https://hub.example.test',
@@ -166,4 +169,6 @@ test('foreign prune requires a space and addresses list, presence, and delete to
     { path: '/v1/tasks/presence', space: 'space-clean' },
     { path: '/v1/tasks', space: 'space-clean' },
   ])
+  expect(result.space_id).toBe('space-clean')
+  expect(result.tasks.map((row) => row.key)).toEqual(['ACTIVE-1'])
 })

@@ -38,7 +38,7 @@ export async function runHostedTaskMaintenance(
     )
   console.log(
     result.deleted
-      ? `soft-deleted ${result.deleted.tasks} tasks in active space ${result.active_space_id}`
+      ? `soft-deleted ${result.deleted.tasks} tasks in space ${result.space_id}`
       : `${result.tasks.length} foreign tasks; dry run, nothing deleted`,
   )
 }

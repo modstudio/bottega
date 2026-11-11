@@ -15,6 +15,12 @@ type HostedSessionRequestBase = {
 }
 
 export type HostedSessionMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+export type HostedOutsideNoteBody = {
+  project: string
+  text: string
+  area?: string | null
+  anchor: string
+}
 export type HostedSessionRequest = HostedSessionRequestBase &
   (
     | { method: 'GET'; recordSpace?: string | null }
@@ -61,7 +67,7 @@ export async function sendHostedSessionRequest(input: HostedSessionRequest): Pro
  * resolved through outside-note intake rather than an x-record-space header.
  */
 export function sendHostedOutsideNoteRequest(
-  input: HostedSessionRequestBase & { body: { project: string } & Record<string, unknown> },
+  input: HostedSessionRequestBase & { body: HostedOutsideNoteBody },
 ): Promise<Response> {
   return send({ ...input, method: 'POST' })
 }

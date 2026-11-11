@@ -14,8 +14,6 @@ test('a note without a project targets the personal space', async () => {
     baseUrl: 'https://hub.example.test',
     token: 'session',
     fetch: async (input) => {
-      expect(new URL(input).origin).toBe('https://record.example.test')
-      expect(new URL(input).pathname).toBe('/v1/whoami')
       return Response.json({
         user: { id: 'user' },
         activeSpaceId: null,

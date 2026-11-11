@@ -7,7 +7,6 @@ import {
 } from '../../shared/collect-lease-log.ts'
 import { DEFAULT_IDLE_CAP_MS } from '../../shared/interval.ts'
 import { sendOperatorNotification } from '../../shared/operator-notification.ts'
-import { undeclaredProjectSpaceRefusal } from '../../shared/record-remedies.ts'
 import { refusal, renderRefusal } from '../../shared/refusal.ts'
 import { FAST_MS, SLOW_MS } from './collect-cadence.ts'
 import {
@@ -24,7 +23,6 @@ import {
   pullHostedChanges,
 } from './hosted-change-cache.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
-import { declaredProjectSpace } from './hosted-write-mode.ts'
 
 export { resolveHostedUrl }
 
@@ -51,7 +49,6 @@ import {
 } from './outbox.ts'
 import { HostedOutboxDrainSchedule, type PendingHostedOutbox } from './outbox-fast-cycle.ts'
 import { pruneOutboxTrace } from './outbox-trace.ts'
-import { personalRecordSpace } from './personal-record-space.ts'
 import { applyProjectRegisterNames } from './project-record-id.ts'
 import { projects } from './projects.ts'
 import { rollUpDays } from './query.ts'
@@ -769,20 +766,9 @@ export async function deliverOperatorNotifications(
 /** Keep waiting-email delivery behind the store identity decided once when the watcher starts. */
 export async function deliverOperatorWaitingEmailsWhenAllowed(
   deliveryOffReason: string | null,
-  deliver: typeof deliverOperatorWaitingEmails = () =>
-    deliverOperatorWaitingEmails({ destination: waitingEmailDestination }),
+  deliver: typeof deliverOperatorWaitingEmails = deliverOperatorWaitingEmails,
 ): Promise<void> {
   if (!deliveryOffReason) await deliver()
-}
-
-async function waitingEmailDestination(item: { project: string | null }): Promise<string> {
-  if (!item.project) {
-    return personalRecordSpace()
-  }
-  const project = projects().find((candidate) => candidate.name === item.project)
-  const space = declaredProjectSpace(project?.settings.space)
-  if (!space) throw new Error(undeclaredProjectSpaceRefusal(item.project))
-  return space
 }
 
 function reportWatchDeliveryRefusal(results: CollectCycleResult): boolean {

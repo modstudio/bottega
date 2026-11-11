@@ -19,6 +19,7 @@ import {
   hostedNotePullRows,
 } from './note-cache.ts'
 import { notePullSpaces } from './note-project-space.ts'
+import { personalRecordSpace } from './personal-record-space.ts'
 import {
   HOSTED_MACHINE_TABLES,
   pendingEditSkipsPull,
@@ -309,12 +310,14 @@ const snapshotCursorKey = (feed: FeedFamily, space: string) =>
 function feedFamilies(
   registered: readonly RegisteredTaskSpace[],
   identity: TaskDestinationIdentity,
+  personalSpaceId: string | null,
 ): FeedFamily[] {
   const values: Array<[FamilyName, HostedChangeFamily]> = [
     ['task', createHostedTaskChangeFamily(registered, identity)],
     ['note', noteFamily(registered, identity)],
-    ['send', createHostedSendChangeFamily(registered, identity)],
   ]
+  if (personalSpaceId)
+    values.push(['send', createHostedSendChangeFamily(registered, identity, personalSpaceId)])
   return values.map(([name, family]) => ({
     name,
     family,
@@ -427,6 +430,7 @@ type FeedPass = {
   pending: Set<string>
   counts: Map<string, SpaceCounts>
   cursor: string | undefined
+  preparationFailures: string[]
 }
 
 async function prepareFeedPass(options: PullOptions): Promise<FeedPass> {
@@ -437,7 +441,16 @@ async function prepareFeedPass(options: PullOptions): Promise<FeedPass> {
       'the hosted hub does not serve the record change feed; release the hosted hub at or after the version that does',
     )
   const registered = options.registeredProjects ?? projects()
-  const families = feedFamilies(registered, identity)
+  let personalSpaceId: string | null = null
+  const preparationFailures: string[] = []
+  try {
+    personalSpaceId = await personalRecordSpace(shared)
+  } catch (cause) {
+    preparationFailures.push(
+      `send: ${cause instanceof Error ? cause.message : String(cause)}`,
+    )
+  }
+  const families = feedFamilies(registered, identity, personalSpaceId)
   const previous = jsonSetting<Record<string, string[]>>(FEED_SPACES, {})
   const remembered = Object.fromEntries(families.map((feed) => [feed.name, feed.spaces]))
   const validPairs = new Set(
@@ -449,7 +462,15 @@ async function prepareFeedPass(options: PullOptions): Promise<FeedPass> {
   for (const feed of families)
     for (const space of feed.spaces)
       if (!(previous[feed.name] ?? []).includes(space)) pending.add(pair(feed.name, space))
-  return { shared, families, remembered, pending, counts: new Map(), cursor: setting(FEED_CURSOR) }
+  return {
+    shared,
+    families,
+    remembered,
+    pending,
+    counts: new Map(),
+    cursor: setting(FEED_CURSOR),
+    preparationFailures,
+  }
 }
 
 async function establishFeedCursor(pass: FeedPass) {
@@ -542,7 +563,7 @@ export async function pullHostedChanges(options: PullOptions = {}): Promise<Host
   let restarted = false
   for (;;) {
     await establishFeedCursor(pass)
-    const failures = await runPendingPulls(pass)
+    const failures = [...pass.preparationFailures, ...(await runPendingPulls(pass))]
     storeInitialFeedState(pass)
     if ((await followFeed(pass)) === 'reset') {
       if (restarted) throw new Error('hosted change feed reset more than once in one pass')

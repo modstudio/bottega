@@ -1,38 +1,13 @@
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { undeclaredProjectSpaceRefusal } from '../../shared/record-remedies.ts'
 import type { NoteClientOptions, NoteWriteOptions } from './note-client.ts'
-import { personalRecordSpace } from './personal-record-space.ts'
-import { projects } from './projects.ts'
-import { hostedTaskIdentity } from './task-client.ts'
+import { hostedWriteDestination } from './hosted-write-destination.ts'
 import { taskProjectDestination } from './task-project-space.ts'
-
-async function personalNoteOptions(options: NoteClientOptions): Promise<NoteWriteOptions> {
-  return { ...options, recordSpace: await personalRecordSpace(options) }
-}
 
 export async function noteDestinationOptions(
   project: string | null,
   options: NoteClientOptions = {},
 ): Promise<NoteWriteOptions> {
   if (options.recordSpace) return { ...options, recordSpace: options.recordSpace }
-  if (project === null) return personalNoteOptions(options)
-  const registered = projects().find((candidate) => candidate.name === project)
-  if (!registered)
-    throw new Error(`project '${project}' is not registered; run \`${PLATFORM_SLUG} project list\``)
-  const identity = await hostedTaskIdentity(options)
-  const destination = taskProjectDestination(project, projects(), identity)
-  if ('refused' in destination) {
-    if (destination.refused === 'unregistered-project')
-      throw new Error(
-        `project '${project}' is not registered; run \`${PLATFORM_SLUG} project list\``,
-      )
-    if (destination.refused === 'undeclared-project')
-      throw new Error(undeclaredProjectSpaceRefusal(project))
-    throw new Error(
-      `project '${project}' declares a record space the signed-in user is not a member of; run \`${PLATFORM_SLUG} record space list\``,
-    )
-  }
-  return { ...options, recordSpace: destination.destinationSpaceId }
+  return { ...options, recordSpace: await hostedWriteDestination(project, options) }
 }
 
 export function notePullSpaces(

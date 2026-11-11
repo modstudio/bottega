@@ -122,29 +122,11 @@ function assertHostedTaskWriteConfigured(options: { baseUrl?: string } = {}) {
   return baseUrl
 }
 
-async function responseObject(
-  path: string,
-  method: HostedSessionMethod,
-  body?: unknown,
-  options: HostedRequestOptions = {},
-  safety: HostedRequestSafety = 'probe',
+async function responseValue(
+  response: Response,
+  url: string,
+  safety: HostedRequestSafety,
 ): Promise<{ response: Response; value: Record<string, unknown> }> {
-  const baseUrl = assertHostedTaskWriteConfigured(options)
-  if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
-  const url = `${baseUrl.replace(/\/$/, '')}${path}`
-  const common = {
-    origin: baseUrl,
-    url,
-    body,
-    token: options.token,
-    safety,
-    fetch: (input: string, init: RequestInit) => hostedFetch(input, init, options),
-  }
-  const response = await sendHostedSessionRequest(
-    method === 'GET'
-      ? { ...common, method, recordSpace: options.recordSpace }
-      : { ...common, method, recordSpace: options.recordSpace as string },
-  )
   const bodyResult = await jsonBody(response, url)
   const value = bodyResult.ok ? bodyResult.value : null
   if (!bodyResult.ok || !value || typeof value !== 'object' || Array.isArray(value))
@@ -157,14 +139,72 @@ async function responseObject(
   return { response, value: value as Record<string, unknown> }
 }
 
-async function request<T>(
+async function readResponseObject(
   path: string,
-  method: HostedSessionMethod,
-  body?: unknown,
   options: HostedRequestOptions = {},
   safety: HostedRequestSafety = 'probe',
+): Promise<{ response: Response; value: Record<string, unknown> }> {
+  const baseUrl = assertHostedTaskWriteConfigured(options)
+  if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
+  const url = `${baseUrl.replace(/\/$/, '')}${path}`
+  const common = {
+    origin: baseUrl,
+    url,
+    token: options.token,
+    safety,
+    fetch: (input: string, init: RequestInit) => hostedFetch(input, init, options),
+  }
+  const response = await sendHostedSessionRequest({
+    ...common,
+    method: 'GET',
+    recordSpace: options.recordSpace,
+  })
+  return responseValue(response, url, safety)
+}
+
+async function writeResponseObject(
+  path: string,
+  method: Exclude<HostedSessionMethod, 'GET'>,
+  body: unknown,
+  options: HostedWriteRequestOptions,
+  safety: HostedRequestSafety = 'probe',
+): Promise<{ response: Response; value: Record<string, unknown> }> {
+  const baseUrl = assertHostedTaskWriteConfigured(options)
+  if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
+  const url = `${baseUrl.replace(/\/$/, '')}${path}`
+  const response = await sendHostedSessionRequest({
+    origin: baseUrl,
+    url,
+    method,
+    body,
+    token: options.token,
+    recordSpace: options.recordSpace,
+    safety,
+    fetch: (input: string, init: RequestInit) => hostedFetch(input, init, options),
+  })
+  return responseValue(response, url, safety)
+}
+
+async function readRequest<T>(path: string, options: HostedRequestOptions = {}): Promise<T> {
+  const { response, value } = await readResponseObject(path, options)
+  if (!response.ok)
+    throw hostedRefusalError({
+      status: response.status,
+      statusText: response.statusText,
+      body: value,
+      safety: 'probe',
+    })
+  return value as T
+}
+
+async function writeRequest<T>(
+  path: string,
+  method: Exclude<HostedSessionMethod, 'GET'>,
+  body: unknown,
+  options: HostedWriteRequestOptions,
+  safety: HostedRequestSafety = 'probe',
 ): Promise<T> {
-  const { response, value } = await responseObject(path, method, body, options, safety)
+  const { response, value } = await writeResponseObject(path, method, body, options, safety)
   if (!response.ok)
     throw hostedRefusalError({
       status: response.status,
@@ -188,12 +228,10 @@ export const isMissingHostedTask = (cause: unknown) =>
 
 export async function hostedGetTask(
   taskId: string,
-  options?: Parameters<typeof request>[3],
+  options?: HostedRequestOptions,
 ): Promise<{ task: HostedTask; comments: HostedComment[]; documents: HostedDocument[] }> {
-  const { response, value } = await responseObject(
+  const { response, value } = await readResponseObject(
     `/v1/tasks/${encodeURIComponent(taskId)}`,
-    'GET',
-    undefined,
     options,
   )
   if (!response.ok)
@@ -210,7 +248,7 @@ export async function hostedGetTask(
 }
 
 export const hostedCreateTask = (body: unknown, options: HostedWriteRequestOptions) =>
-  request<HostedTask>('/v1/tasks', 'POST', body, options, 'non-idempotent')
+  writeRequest<HostedTask>('/v1/tasks', 'POST', body, options, 'non-idempotent')
 export const hostedCreateOperatorWaitingEmail = (
   body: unknown,
   options: HostedWriteRequestOptions,
@@ -220,7 +258,7 @@ async function operatorWaitingEmailRequest(
   body: unknown,
   options: HostedWriteRequestOptions,
 ): Promise<OperatorWaitingEmailResult> {
-  const { response, value } = await responseObject(
+  const { response, value } = await writeResponseObject(
     '/v1/operator-waiting-emails',
     'POST',
     body,
@@ -243,14 +281,14 @@ export const hostedCreateDocument = (
   body: unknown,
   options: HostedWriteRequestOptions,
 ) =>
-  request<HostedDocument>(
+  writeRequest<HostedDocument>(
     `/v1/tasks/${encodeURIComponent(key)}/documents`,
     'POST',
     body,
     options,
     'non-idempotent',
   )
-export async function hostedListTasks(options?: Parameters<typeof request>[3]) {
+export async function hostedListTasks(options?: HostedRequestOptions) {
   type Result = {
     tasks: HostedTask[]
     comments: HostedComment[]
@@ -262,10 +300,8 @@ export async function hostedListTasks(options?: Parameters<typeof request>[3]) {
   for (;;) {
     const query = new URLSearchParams()
     if (cursor) query.set('cursor', cursor)
-    const page = await request<Result & { cursor: string; more: boolean }>(
+    const page = await readRequest<Result & { cursor: string; more: boolean }>(
       `/v1/tasks?${query}`,
-      'GET',
-      undefined,
       options,
     )
     rows.tasks.push(...page.tasks)
@@ -282,7 +318,7 @@ export const hostedTaskPresence = (
   pairs: HostedTaskPresencePair[],
   options: HostedWriteRequestOptions,
 ) =>
-  request<{
+  writeRequest<{
     present: HostedTaskPresencePair[]
     refused: Array<HostedTaskPresencePair & { reason: 'not-a-member' }>
   }>('/v1/tasks/presence', 'POST', { pairs }, options)
@@ -292,7 +328,7 @@ export const hostedDeleteTasks = (
   confirmation: number | undefined,
   options: HostedWriteRequestOptions,
 ) =>
-  request<{
+  writeRequest<{
     tasks: number
     comments: number
     documents: number
@@ -301,18 +337,18 @@ export const hostedDeleteTasks = (
 
 export async function hostedTaskChanges(
   cursor: string | null,
-  options?: Parameters<typeof request>[3],
+  options?: HostedRequestOptions,
 ) {
   const query = new URLSearchParams({ includeDeleted: 'true' })
   if (cursor) query.set('cursor', cursor)
-  return request<{
+  return readRequest<{
     tasks: HostedTask[]
     comments: HostedComment[]
     documents: HostedDocument[]
     statusEvents: import('./hosted-tasks.ts').HostedStatusEvent[]
     cursor: string
     more?: boolean
-  }>(`/v1/tasks?${query}`, 'GET', undefined, options)
+  }>(`/v1/tasks?${query}`, options)
 }
 
 function malformedChangePage(detail: string) {
@@ -358,15 +394,13 @@ function parseRecordChangeEntry(value: unknown, index: number): HostedRecordChan
 
 export async function hostedRecordChanges(
   after: string | undefined,
-  options: Parameters<typeof request>[3] & { limit?: number } = {},
+  options: HostedRequestOptions & { limit?: number } = {},
 ): Promise<HostedRecordChangeResult> {
   const query = new URLSearchParams()
   if (after !== undefined) query.set('after', after)
   if (options.limit !== undefined) query.set('limit', String(options.limit))
-  const { response, value } = await responseObject(
+  const { response, value } = await readResponseObject(
     `/v1/changes?${query}`,
-    'GET',
-    undefined,
     options,
   )
   if (response.status === 410) {
@@ -413,12 +447,12 @@ function capabilityFlag(capabilities: unknown, name: string): boolean {
 
 export async function hostedIdentitySet(
   table: PushableHubChangeTable,
-  options: Parameters<typeof request>[3] & { after?: string | null } = {},
+  options: HostedRequestOptions & { after?: string | null } = {},
 ): Promise<{ ids: string[]; more: boolean }> {
   const query = new URLSearchParams({ table })
   if (options.after) query.set('after', options.after)
   return parseIdentitySetPage(
-    await request<Record<string, unknown>>(`/v1/changes/ids?${query}`, 'GET', undefined, options),
+    await readRequest<Record<string, unknown>>(`/v1/changes/ids?${query}`, options),
   )
 }
 
@@ -496,7 +530,7 @@ type TaskIdentityResult =
   | { unauthorized: false; value: Record<string, unknown> }
 
 async function taskIdentityResponse(
-  options: Parameters<typeof request>[3] = {},
+  options: HostedRequestOptions = {},
 ): Promise<{ response: Response; url: string }> {
   const baseUrl = assertHostedTaskWriteConfigured(options)
   if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
@@ -513,7 +547,7 @@ async function taskIdentityResponse(
 }
 
 async function taskIdentityResult(
-  options: Parameters<typeof request>[3] = {},
+  options: HostedRequestOptions = {},
 ): Promise<TaskIdentityResult> {
   const { response, url } = await taskIdentityResponse(options)
   const bodyResult = await jsonBody(response, url)
@@ -572,7 +606,7 @@ function validateTaskIdentityUser(object: Record<string, unknown>): void {
 }
 
 export async function hostedTaskIdentity(
-  options?: Parameters<typeof request>[3],
+  options?: HostedRequestOptions,
 ): Promise<HostedTaskIdentity> {
   const result = await taskIdentityResult(options)
   if (result.unauthorized) throw result.error
@@ -605,14 +639,14 @@ export async function hostedTaskIdentity(
 }
 
 export async function hostedSignedInUserId(
-  options?: Parameters<typeof request>[3],
+  options?: HostedRequestOptions,
 ): Promise<string | null> {
   const result = await taskIdentityResult(options)
   return result.unauthorized ? null : (result.value.userId as string)
 }
 
 export async function hostedSignedInUser(
-  options?: Parameters<typeof request>[3],
+  options?: HostedRequestOptions,
 ): Promise<{ id: string; name: string | null } | null> {
   const result = await taskIdentityResult(options)
   return result.unauthorized

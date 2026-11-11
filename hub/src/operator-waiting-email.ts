@@ -5,7 +5,12 @@ import { readMachineValue } from '../../shared/machine-config.ts'
 import { operatorInboxPath } from '../../shared/operator-inbox.ts'
 import type { OperatorWaitingItem } from '../../shared/orch-contract.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
+import {
+  hostedWriteDestination,
+  type HostedWriteDestinationOptions,
+} from './hosted-write-destination.ts'
 import { waiting } from './orch.ts'
+import { personalRecordSpace } from './personal-record-space.ts'
 import { hostedCreateOperatorWaitingEmail, hostedSignedInUserId } from './task-client.ts'
 import { uniqueTaskRecordIdForKey } from './task-identity.ts'
 
@@ -22,10 +27,6 @@ const waitingItemRecordId = (item: WaitingEmailLedgerKey) =>
 
 const ledgerKey = (item: WaitingEmailLedgerKey) =>
   `${item.kind}\u0000${waitingItemRecordId(item)}\u0000${item.episode}`
-
-const missingDestination = async () => {
-  throw new Error('operator waiting email destination resolver is missing')
-}
 
 function waitingEmailPushError(item: OperatorWaitingItem, cause: unknown): string {
   return (
@@ -122,6 +123,7 @@ export async function deliverOperatorWaitingEmails(
     record?: (item: OperatorWaitingItem) => void
     error?: (message: string) => void
     destination?: (item: OperatorWaitingItem) => Promise<string>
+    destinationOptions?: HostedWriteDestinationOptions
   } = {},
 ): Promise<void> {
   const error = dependencies.error ?? console.error
@@ -142,9 +144,20 @@ export async function deliverOperatorWaitingEmails(
     return
   }
   const port = readMachineValue('hub.port')
+  let personalSpace: Promise<string> | undefined
+  const destination =
+    dependencies.destination ??
+    ((item: OperatorWaitingItem) => {
+      if (item.project === null)
+        personalSpace ??= personalRecordSpace(dependencies.destinationOptions)
+      return hostedWriteDestination(item.project, {
+        ...dependencies.destinationOptions,
+        personalSpace,
+      })
+    })
   for (const item of due) {
     try {
-      const recordSpace = await (dependencies.destination ?? missingDestination)(item)
+      const recordSpace = await destination(item)
       const result = await (dependencies.push ?? hostedCreateOperatorWaitingEmail)(
         {
           kind: item.kind,

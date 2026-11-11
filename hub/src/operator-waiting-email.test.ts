@@ -1,7 +1,16 @@
-import { expect, test } from 'bun:test'
+import { afterEach, expect, test } from 'bun:test'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
 import type { OperatorWaitingItem } from '../../shared/orch-contract.ts'
+import { declareFixtureProjectSpace } from '../test/fixture-project-space.ts'
 import { deliverOperatorWaitingEmails, dueOperatorWaitingEmails } from './operator-waiting-email.ts'
+
+declareFixtureProjectSpace('workshop', 'workshop')
+const originalRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+
+afterEach(() => {
+  if (originalRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+  else process.env.BOTTEGA_RECORD_API_URL = originalRecordApiUrl
+})
 
 const item = (patch: Partial<OperatorWaitingItem> = {}): OperatorWaitingItem => ({
   kind: 'question',
@@ -162,24 +171,47 @@ test('local loop records abandonment once but leaves intent and failed results r
   ])
 })
 
-test('waiting email writes use declared or personal destinations and hold undeclared projects', async () => {
+test('waiting email real resolver uses declared or personal destinations and holds refused projects', async () => {
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   const pushed: Array<{ project: string | null; space: string | null }> = []
   const errors: string[] = []
   const rows = [
-    item({ project: 'declared', episode: 'declared' }),
+    item({ project: 'workshop', episode: 'declared' }),
     item({ id: 8, project: null, episode: 'personal' }),
-    item({ id: 9, project: 'undeclared', episode: 'held' }),
+    item({ id: 9, project: PLATFORM_NAME.toLowerCase(), episode: 'undeclared' }),
+    item({ id: 10, project: 'missing-project', episode: 'unregistered' }),
   ]
+  let personalLookups = 0
   await deliverOperatorWaitingEmails({
     delay: () => 30,
     signedIn: async () => 'user',
     readWaiting: async () => rows,
     ledger: () => [],
     now: () => new Date('2026-09-25T11:00:00.000Z'),
-    destination: async (row) => {
-      if (row.project === 'declared') return 'space-declared'
-      if (row.project === null) return 'space-personal'
-      throw new Error("project 'undeclared' has no declared record space")
+    destinationOptions: {
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: async (input) => {
+        const url = new URL(input)
+        if (url.origin === 'https://record.example.test') {
+          personalLookups += 1
+          return Response.json({
+            user: { id: 'user' },
+            activeSpaceId: 'space-active',
+            personalSpaceId: 'space-personal',
+            memberships: [],
+          })
+        }
+        if (url.pathname === '/v1/tasks/identity')
+          return Response.json({
+            userId: 'user',
+            activeSpaceId: 'space-active',
+            memberships: [
+              { spaceId: 'space-declared', slug: 'workshop', permission: 'write' },
+            ],
+          })
+        return Response.json({ error: 'unexpected request' }, { status: 500 })
+      },
     },
     push: async (body, options) => {
       pushed.push({
@@ -193,10 +225,12 @@ test('waiting email writes use declared or personal destinations and hold undecl
     error: (message) => errors.push(message),
   })
   expect(pushed).toEqual([
-    { project: 'declared', space: 'space-declared' },
+    { project: 'workshop', space: 'space-declared' },
     { project: null, space: 'space-personal' },
   ])
+  expect(personalLookups).toBe(1)
   expect(errors).toEqual([
-    `hub: operator waiting email push failed for question ${item().question_record_id} in project undeclared: Error: project 'undeclared' has no declared record space`,
+    `hub: operator waiting email push failed for question ${item().question_record_id} in project ${PLATFORM_NAME.toLowerCase()}: Error: project ${PLATFORM_NAME.toLowerCase()} has no declared record space; run \`${PLATFORM_SLUG} project set ${PLATFORM_NAME.toLowerCase()} --space <slug>\``,
+    `hub: operator waiting email push failed for question ${item().question_record_id} in project missing-project: Error: project 'missing-project' is not registered; run \`${PLATFORM_SLUG} project list\``,
   ])
 })
