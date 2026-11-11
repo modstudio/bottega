@@ -55,12 +55,14 @@ describe('record HTTP authentication responses', () => {
       })
       expect(requests[0]).toEqual({
         url: 'https://api.example.test/api/auth/sign-in/email',
-        headers: new Headers({
-          'content-type': 'application/json',
-          'user-agent': `${PLATFORM_SLUG}/0.5.6`,
-        }),
+        headers: expect.any(Headers),
         body: { email: 'a@example.test', password: 'secret' },
       })
+      expect([...(requests[0]?.headers.keys() ?? [])]).toEqual(['content-type', 'user-agent'])
+      expect(requests[0]?.headers.get('content-type')).toBe('application/json')
+      expect(requests[0]?.headers.get('user-agent')).toMatch(
+        new RegExp(`^${PLATFORM_SLUG}/\\d+\\.\\d+\\.\\d+`),
+      )
       expect(requests[0]?.headers.has('origin')).toBe(false)
     } finally {
       globalThis.fetch = originalFetch

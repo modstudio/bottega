@@ -796,7 +796,7 @@ test('rotation plan retires an unreferenced old key and does so on a converged r
   ).toEqual({ reseal: [], retireDekIds: ['unused-old'] })
 })
 
-test('entry writes and deletes pass explicit expected row versions without a prior read', async () => {
+test('entry writes and deletes name their destination space and pass explicit row versions without a prior read', async () => {
   const writes: unknown[] = []
   const client = {
     getEntry: async () => {
@@ -812,14 +812,16 @@ test('entry writes and deletes pass explicit expected row versions without a pri
     },
   } as unknown as ConfigClient
 
-  await setEntry('autonomy.preset', 'guided', 'user', 4, client)
-  await deleteEntry('autonomy.stage.review', 'user', 7, client)
+  const destination = { destinationSpaceId: 'personal-space' }
+  await setEntry('autonomy.preset', 'guided', 'user', 4, client, destination)
+  await deleteEntry('autonomy.stage.review', 'user', 7, client, destination)
 
   expect(writes).toEqual([
     [
       'put',
       'autonomy.preset',
       {
+        destinationSpaceId: 'personal-space',
         scope: 'user',
         environment: 'default',
         value: 'guided',
@@ -829,7 +831,12 @@ test('entry writes and deletes pass explicit expected row versions without a pri
     [
       'delete',
       'autonomy.stage.review',
-      { scope: 'user', environment: 'default', expectedRowVersion: 7 },
+      {
+        destinationSpaceId: 'personal-space',
+        scope: 'user',
+        environment: 'default',
+        expectedRowVersion: 7,
+      },
     ],
   ])
 })
