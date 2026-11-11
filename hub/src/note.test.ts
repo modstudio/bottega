@@ -145,7 +145,8 @@ describe('suggestion notes', () => {
       token: 'test',
       fetch: async (input: string, init?: RequestInit) => {
         const url = new URL(input)
-        paths.push(`${init?.method ?? 'GET'} ${url.pathname}`)
+        const space = new Headers(init?.headers).get('x-record-space')
+        paths.push(`${init?.method ?? 'GET'} ${url.pathname} ${space}`)
         if (url.pathname === '/v1/notes/outside' && init?.method === 'POST')
           return Response.json({ id: crypto.randomUUID(), number: 7, project: 'outside-project' })
         if (url.pathname === '/v1/notes/outside')
@@ -172,13 +173,12 @@ describe('suggestion notes', () => {
       },
       { hosted: outsideHosted },
     )
-    expect(created.note.label).toBe('outside-project#7')
     expect('outside' in created && created.outside).toBeTrue()
     expect(listNotes()).toHaveLength(before)
     expect((await listOutsideProjectNotes('outside-project', outsideHosted))[0]?.label).toBe(
       'outside-project#7',
     )
-    expect(paths).toEqual(['POST /v1/notes/outside', 'GET /v1/notes/outside'])
+    expect(paths).toEqual(['POST /v1/notes/outside null', 'GET /v1/notes/outside null'])
   })
 
   test('an outside project list supports only text filtering', async () => {

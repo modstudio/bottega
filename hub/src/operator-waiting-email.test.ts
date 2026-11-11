@@ -1,7 +1,16 @@
-import { expect, test } from 'bun:test'
+import { afterEach, expect, test } from 'bun:test'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
 import type { OperatorWaitingItem } from '../../shared/orch-contract.ts'
+import { declareFixtureProjectSpace } from '../test/fixture-project-space.ts'
 import { deliverOperatorWaitingEmails, dueOperatorWaitingEmails } from './operator-waiting-email.ts'
+
+declareFixtureProjectSpace('workshop', 'workshop')
+const originalRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+
+afterEach(() => {
+  if (originalRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+  else process.env.BOTTEGA_RECORD_API_URL = originalRecordApiUrl
+})
 
 const item = (patch: Partial<OperatorWaitingItem> = {}): OperatorWaitingItem => ({
   kind: 'question',
@@ -41,6 +50,7 @@ test('local loop skips without a hosted sign-in and does not read or record wait
   const calls: string[] = []
   await deliverOperatorWaitingEmails({
     delay: () => 30,
+    destination: async () => 'space-project',
     signedIn: async () => null,
     readWaiting: async () => {
       calls.push('waiting')
@@ -60,6 +70,7 @@ test('local loop records only successful pushes and logs failures for retry', as
   const errors: string[] = []
   await deliverOperatorWaitingEmails({
     delay: () => 30,
+    destination: async () => 'space-project',
     signedIn: async () => 'user',
     readWaiting: async () => [item(), item({ id: 8, episode: 'episode-2' })],
     ledger: () => [],
@@ -73,7 +84,9 @@ test('local loop records only successful pushes and logs failures for retry', as
     error: (message) => errors.push(message),
   })
   expect(recorded).toEqual([7])
-  expect(errors).toEqual(['hub: operator waiting email push failed: Error: offline'])
+  expect(errors).toEqual([
+    `hub: operator waiting email push failed for question ${item().question_record_id} in project ${PLATFORM_NAME.toLowerCase()}: Error: offline`,
+  ])
 })
 
 test('local loop sends a task UUID only when the waiting key resolves', async () => {
@@ -81,6 +94,7 @@ test('local loop sends a task UUID only when the waiting key resolves', async ()
   const taskId = '01990000-0000-7000-8000-000000000943'
   await deliverOperatorWaitingEmails({
     delay: () => 30,
+    destination: async () => 'space-project',
     signedIn: async () => 'user',
     readWaiting: async () => [item(), item({ id: 8, task_key: 'MISSING-8', episode: 'episode-2' })],
     ledger: () => [],
@@ -104,6 +118,7 @@ test('local loop names each waiting item by its kind-specific UUID', async () =>
   const workflowRecordId = '01990000-0000-7000-8000-000000000008'
   await deliverOperatorWaitingEmails({
     delay: () => 30,
+    destination: async () => 'space-project',
     signedIn: async () => 'user',
     readWaiting: async () => [
       item(),
@@ -136,6 +151,7 @@ test('local loop records abandonment once but leaves intent and failed results r
   const statuses = ['intent', 'failed', 'abandoned'] as const
   await deliverOperatorWaitingEmails({
     delay: () => 30,
+    destination: async () => 'space-project',
     signedIn: async () => 'user',
     readWaiting: async () => statuses.map((_, id) => item({ id: id + 1, episode: `e-${id}` })),
     ledger: () => [],
@@ -150,7 +166,69 @@ test('local loop records abandonment once but leaves intent and failed results r
   })
   expect(recorded).toEqual([3])
   expect(errors).toEqual([
-    'hub: operator waiting email push failed: Error: delivery refused',
+    `hub: operator waiting email push failed for question ${item().question_record_id} in project ${PLATFORM_NAME.toLowerCase()}: Error: delivery refused`,
     'hub: operator waiting email abandoned after retries: delivery refused',
+  ])
+})
+
+test('waiting email real resolver uses declared or personal destinations and holds refused projects', async () => {
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  const pushed: Array<{ project: string | null; space: string | null }> = []
+  const errors: string[] = []
+  const rows = [
+    item({ project: 'workshop', episode: 'declared' }),
+    item({ id: 8, project: null, episode: 'personal' }),
+    item({ id: 9, project: 'beta', episode: 'undeclared' }),
+    item({ id: 10, project: 'missing-project', episode: 'unregistered' }),
+  ]
+  let personalLookups = 0
+  await deliverOperatorWaitingEmails({
+    delay: () => 30,
+    signedIn: async () => 'user',
+    readWaiting: async () => rows,
+    ledger: () => [],
+    now: () => new Date('2026-09-25T11:00:00.000Z'),
+    destinationOptions: {
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: async (input) => {
+        const url = new URL(input)
+        if (url.origin === 'https://record.example.test') {
+          personalLookups += 1
+          return Response.json({
+            user: { id: 'user' },
+            activeSpaceId: 'space-active',
+            personalSpaceId: 'space-personal',
+            memberships: [],
+          })
+        }
+        if (url.pathname === '/v1/tasks/identity')
+          return Response.json({
+            userId: 'user',
+            activeSpaceId: 'space-active',
+            memberships: [{ spaceId: 'space-declared', slug: 'workshop', permission: 'write' }],
+          })
+        return Response.json({ error: 'unexpected request' }, { status: 500 })
+      },
+    },
+    push: async (body, options) => {
+      pushed.push({
+        project: (body as { project: string | null }).project,
+        space: options?.recordSpace ?? null,
+      })
+      return { id: 'mail', status: 'sent', reason: null }
+    },
+    taskRecordId: () => null,
+    record: () => undefined,
+    error: (message) => errors.push(message),
+  })
+  expect(pushed).toEqual([
+    { project: 'workshop', space: 'space-declared' },
+    { project: null, space: 'space-personal' },
+  ])
+  expect(personalLookups).toBe(1)
+  expect(errors).toEqual([
+    `hub: operator waiting email push failed for question ${item().question_record_id} in project beta: Error: project beta has no declared record space; run \`${PLATFORM_SLUG} project set beta --space <slug>\``,
+    `hub: operator waiting email push failed for question ${item().question_record_id} in project missing-project: Error: project 'missing-project' is not registered; run \`${PLATFORM_SLUG} project list\``,
   ])
 })
