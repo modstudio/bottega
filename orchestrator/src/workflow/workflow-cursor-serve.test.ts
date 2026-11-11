@@ -1,25 +1,15 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { expect, test } from 'bun:test'
+import { resolvedRecordOrigin } from '../../../shared/record-api-url.ts'
+import { rememberProjectSpace } from '../project-space-cache.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
 import { args, context, database } from './workflow-cursor-test.fixture.ts'
 import { promoteWorkflowLocal, setWorkflowLocal, showResolvedWorkflow } from './workflows.ts'
 
-const hostedUrl = 'https://record.example.test'
 const destinationSpaceId = 'fixture-space'
-let priorHostedUrl: string | undefined
-
-beforeEach(() => {
-  priorHostedUrl = process.env.BOTTEGA_RECORD_API_URL
-})
-
-afterEach(() => {
-  if (priorHostedUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
-  else process.env.BOTTEGA_RECORD_API_URL = priorHostedUrl
-})
 
 test('serving a rebound argument writes hosted-first and preserves the local row on failure', async () => {
-  delete process.env.BOTTEGA_RECORD_API_URL
   const d = database()
   const opened = await composeWorkflowWithCursor(
     'flow',
@@ -50,7 +40,13 @@ test('serving a rebound argument writes hosted-first and preserves the local row
     d,
   )
   promoteWorkflowLocal('flow', rebindable.n, 'serve rebound fixture', 'test', d)
-  process.env.BOTTEGA_RECORD_API_URL = hostedUrl
+  for (const table of ['workflow', 'workflow_version', 'step_catalogue', 'step_catalogue_version'])
+    d.query(`UPDATE ${table} SET space_id=?`).run(destinationSpaceId)
+  rememberProjectSpace(d, 'fixture', destinationSpaceId)
+  d.query('INSERT INTO record_install_binding (id,bound_at,record_origin) VALUES (1,?,?)').run(
+    '2026-11-10T00:00:00.000Z',
+    resolvedRecordOrigin(),
+  )
   let refusal: Error | null = null
   let expectedBranch = 'rebound-one'
   let expectedLocal = { args: cursor.args, closed: cursor.closed }
