@@ -92,7 +92,7 @@ export type TaskFlowUncopiedTextRow = {
   created_at: string
 }
 
-export type TaskFlowObligationFloorRow = {
+type TaskFlowObligationFloorRow = {
   id: string
   floor: string
   require_pull_request: boolean | number

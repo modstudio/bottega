@@ -485,3 +485,46 @@ test('a takeover refused for a missing close note leaves the cursor untouched', 
       .get(opened.cursor!.id),
   ).toEqual(before)
 })
+
+test('a reachable record holder is named in a successful takeover notice', async () => {
+  const d = cursorDatabase()
+  const workflow = 'task-flow-takeover-notice'
+  const args = { key: 'DEV-TAKEOVER-NOTICE' }
+  const context = {
+    session: 'task-flow-takeover-notice',
+    taskRecordId: 'task-DEV-TAKEOVER-NOTICE',
+    taskStatusCategory: 'active',
+  }
+  installTaskFlowLifecycleWorkflow(d, workflow, ['score', 'complete'])
+  const opened = await composeWorkflowWithCursor(
+    workflow,
+    'fixture',
+    'default',
+    args,
+    context,
+    d,
+    {},
+    {},
+  )
+  const holder = newRecordId()
+  d.query(
+    "UPDATE workflow_cursor SET last_advanced_machine_id=?,enforcement='note-only' WHERE number=?",
+  ).run(holder, opened.cursor!.id)
+
+  const result = await nextWorkflowStep(
+    workflow,
+    'fixture',
+    'default',
+    args,
+    'closed after takeover',
+    {
+      ...context,
+      taskFlowRead: { status: 'reachable', holder: { id: holder, displayName: 'Machine B' } },
+    },
+    d,
+    {},
+    testPorts,
+  )
+
+  expect(result).toContain('Took over this workflow stage from Machine B.')
+})

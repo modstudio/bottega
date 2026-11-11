@@ -117,10 +117,7 @@ class SqliteTaskFlowStore {
       .get(input.projectRecordId, input.workflow, input.mode, input.key, input.recordId)
   }
 
-  insertStage(
-    row: WorkflowCursorInsert,
-    conflict: 'local-identity' | 'hosted-record',
-  ): string {
+  insertStage(row: WorkflowCursorInsert, conflict: 'local-identity' | 'hosted-record'): string {
     const conflictSql =
       conflict === 'local-identity'
         ? `ON CONFLICT(project_record_id,workflow_slug,mode_slug,workflow_key,instance_id) DO UPDATE SET
@@ -203,7 +200,7 @@ class SqliteTaskFlowStore {
     writeTransaction(() => {
       this.database
         .query(
-        `INSERT INTO task_flow
+          `INSERT INTO task_flow
          (record_id,task_record_id,project_record_id,state,open_stage_cursor_record_id,
           created_at,updated_at,opening_machine_id,updated_machine_id,revision)
          VALUES (?,?,(SELECT record_id FROM project WHERE name=?),COALESCE(?,'open'),?,?,?,?,?,?)
@@ -214,20 +211,20 @@ class SqliteTaskFlowStore {
          revision=excluded.revision`,
         )
         .run(
-        input.flowRecordId,
-        input.taskRecordId,
-        input.project,
-        input.state,
-        input.cursorRecordId,
-        input.at,
-        input.at,
-        input.machineId,
-        input.machineId,
+          input.flowRecordId,
+          input.taskRecordId,
+          input.project,
+          input.state,
+          input.cursorRecordId,
+          input.at,
+          input.at,
+          input.machineId,
+          input.machineId,
           input.flowRevision,
         )
       this.database
         .query(
-        `UPDATE workflow_cursor SET task_record_id=?,task_flow_record_id=?,revision=?
+          `UPDATE workflow_cursor SET task_record_id=?,task_flow_record_id=?,revision=?
          WHERE record_id=?`,
         )
         .run(input.taskRecordId, input.flowRecordId, input.stageRevision, input.cursorRecordId)
@@ -664,9 +661,7 @@ class SqliteTaskFlowStore {
     return questions.pendingTaskLinks(this.database, table)
   }
 
-  linkedTaskReferences(
-    table: 'workflow_cursor' | 'question',
-  ): TaskFlowLinkedTaskReferenceRow[] {
+  linkedTaskReferences(table: 'workflow_cursor' | 'question'): TaskFlowLinkedTaskReferenceRow[] {
     return questions.linkedTaskReferences(this.database, table)
   }
 
@@ -709,11 +704,7 @@ class SqliteTaskFlowStore {
     questions.renameStageProject(this.database, currentName, nextName)
   }
 
-  taskRulingRows(
-    project: string,
-    taskRecordId: string,
-    limit: number,
-  ): TaskFlowTaskRulingRow[] {
+  taskRulingRows(project: string, taskRecordId: string, limit: number): TaskFlowTaskRulingRow[] {
     return questions.taskRulingRows(this.database, project, taskRecordId, limit)
   }
 

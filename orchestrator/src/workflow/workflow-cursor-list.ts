@@ -4,13 +4,13 @@
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
-import { taskFlowStore } from './task-flow-store.ts'
+import {
+  taskFlowStore,
+  type TaskFlowListedStageRow as ListedCursorRow,
+} from './task-flow-store.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { renderWorkflowCursorLine } from './workflow-cursor-format.ts'
-import {
-  type SelectableCursorRow,
-  workflowCursorProjectScope,
-} from './workflow-cursor-selection.ts'
+import { workflowCursorProjectScope } from './workflow-cursor-selection.ts'
 import { openWorkflowObligations } from './workflow-obligation-floor.ts'
 import { composeWorkflow } from './workflows.ts'
 
@@ -19,15 +19,6 @@ export type CursorListOptions = {
   all?: boolean
   project?: string
   cwd?: string
-}
-
-type ListedCursorRow = SelectableCursorRow & {
-  closed: string
-  question: string | null
-  question_number: number | null
-  total_steps: number
-  created_at: string
-  updated_at: string
 }
 
 export function listWorkflowCursors(

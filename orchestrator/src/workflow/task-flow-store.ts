@@ -34,6 +34,19 @@ import type {
   WorkflowCursorInsert,
 } from './task-flow-store-types.ts'
 
+export type {
+  TaskFlowCloseOutStageRow,
+  TaskFlowInboxQuestionRow,
+  TaskFlowLinkedTaskReferenceRow,
+  TaskFlowListedStageRow,
+  TaskFlowOpenSessionStageRow,
+  TaskFlowOverturnRulingRow,
+  TaskFlowPendingTaskLinkRow,
+  TaskFlowQuestionOutboxRow,
+  TaskFlowRulingFileRow,
+  TaskFlowWaitingQuestionRow,
+} from './task-flow-store-types.ts'
+
 /**
  * Names the task-flow questions and write intents used by the workflow engine.
  * Migrations and their preflights write the local tables directly by design, as do the hosted-cache
@@ -59,10 +72,7 @@ export interface TaskFlowStore {
     key: string
     recordId: string
   }): { number: number; record_id: string } | null
-  insertStage(
-    row: WorkflowCursorInsert,
-    conflict: 'local-identity' | 'hosted-record',
-  ): string
+  insertStage(row: WorkflowCursorInsert, conflict: 'local-identity' | 'hosted-record'): string
   openStageForTask(taskRecordId: string): TaskFlowStageCursorRow | null
   flowRecordIdForTask(taskRecordId: string): string | null
   cacheAdoptedFlow(input: {
@@ -178,9 +188,7 @@ export interface TaskFlowStore {
   overturnRulingRow(questionId: string): TaskFlowOverturnRulingRow | null
   unlinkedWorkflowQuestionIds(project: string, workflowKey: string): string[]
   pendingTaskLinks(table: 'workflow_cursor' | 'question'): TaskFlowPendingTaskLinkRow[]
-  linkedTaskReferences(
-    table: 'workflow_cursor' | 'question',
-  ): TaskFlowLinkedTaskReferenceRow[]
+  linkedTaskReferences(table: 'workflow_cursor' | 'question'): TaskFlowLinkedTaskReferenceRow[]
   projectReferenceCounts(projectRecordId: string): {
     workflow_cursor: number
     task_flow: number

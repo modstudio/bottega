@@ -22,33 +22,31 @@ function storedValue(key: string, value: unknown): SQLQueryBindings {
 
 export type TaskFlowStaleRowKind = 'flow' | 'stage' | 'cursor'
 
+const REVISION_ACTION: Record<TaskFlowIntent, string> = {
+  compose: 'composing',
+  'stage-update': 'applying a stage update',
+  advance: 'advancing',
+  'await-ruling': 'awaiting a ruling',
+  abandon: 'being abandoned',
+  adopt: 'linking its task',
+  'attach-text': 'attaching text',
+  'delete-text': 'deleting text',
+  'copy-text': 'copying text',
+}
+
+const ROW_SUBJECT: Record<TaskFlowStaleRowKind, string> = {
+  flow: 'task flow',
+  stage: 'workflow stage',
+  cursor: 'workflow cursor',
+}
+
 /** Chooses a stale-write refusal solely from the declared intent and row kind. */
 export function taskFlowRevisionRefusal(
   intent: TaskFlowIntent,
   rowKind: TaskFlowStaleRowKind,
   identifier: string | number,
 ): string {
-  const subject =
-    rowKind === 'flow'
-      ? `task flow ${identifier}`
-      : rowKind === 'stage'
-        ? `workflow stage ${identifier}`
-        : `workflow cursor ${identifier}`
-  const action =
-    intent === 'compose'
-      ? 'composing'
-      : intent === 'stage-update'
-        ? 'applying a stage update'
-        : intent === 'advance'
-          ? 'advancing'
-          : intent === 'await-ruling'
-            ? 'awaiting a ruling'
-            : intent === 'abandon'
-              ? 'being abandoned'
-              : intent === 'adopt'
-                ? 'linking its task'
-                : `applying ${intent}`
-  return `${subject} changed while ${action}; rerun the command`
+  return `${ROW_SUBJECT[rowKind]} ${identifier} changed while ${REVISION_ACTION[intent]}; rerun the command`
 }
 
 function revisionRefusal(
@@ -308,15 +306,8 @@ function applyStageMutation(
   const result: Record<string, number> = {}
   const flow = body.flow as Mutation | undefined
   const stage = body.stage as unknown as Mutation
-  if (flow)
-    result[flow.id] = updateMutation(database, 'task_flow', flow, intent, revisions)
-  result[stage.id] = updateMutation(
-    database,
-    'workflow_cursor',
-    stage,
-    intent,
-    revisions,
-  )
+  if (flow) result[flow.id] = updateMutation(database, 'task_flow', flow, intent, revisions)
+  result[stage.id] = updateMutation(database, 'workflow_cursor', stage, intent, revisions)
   for (const row of (body.obligationInserts as SqlRow[] | undefined) ?? [])
     insertObligation(database, row)
   for (const row of (body.obligationUpdates as SqlRow[] | undefined) ?? [])
@@ -492,21 +483,9 @@ function writeCompose(
   }
   const flowChange = keepsLocalFlow ? (body.flowChange as Mutation | undefined) : undefined
   if (flowChange)
-    result[flowChange.id] = updateMutation(
-      database,
-      'task_flow',
-      flowChange,
-      'compose',
-      revisions,
-    )
+    result[flowChange.id] = updateMutation(database, 'task_flow', flowChange, 'compose', revisions)
   for (const change of (body.stageChanges as Mutation[] | undefined) ?? [])
-    result[change.id] = updateMutation(
-      database,
-      'workflow_cursor',
-      change,
-      'compose',
-      revisions,
-    )
+    result[change.id] = updateMutation(database, 'workflow_cursor', change, 'compose', revisions)
   // The record number is per project while SQLite handles remain machine-wide until 2c-2d.
   return { revisions: result, stage }
 }
@@ -514,22 +493,9 @@ function writeCompose(
 function writeStageUpdate(database: Database, body: SqlRow, revisions?: Record<string, number>) {
   const result: Record<string, number> = {}
   const flow = body.flow as Mutation | undefined
-  if (flow)
-    result[flow.id] = updateMutation(
-      database,
-      'task_flow',
-      flow,
-      'stage-update',
-      revisions,
-    )
+  if (flow) result[flow.id] = updateMutation(database, 'task_flow', flow, 'stage-update', revisions)
   for (const stage of body.stages as unknown as Mutation[])
-    result[stage.id] = updateMutation(
-      database,
-      'workflow_cursor',
-      stage,
-      'stage-update',
-      revisions,
-    )
+    result[stage.id] = updateMutation(database, 'workflow_cursor', stage, 'stage-update', revisions)
   return { revisions: result }
 }
 

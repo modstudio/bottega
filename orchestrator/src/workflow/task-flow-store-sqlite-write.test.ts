@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import type { TaskFlowIntentInput } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowStore } from './task-flow-store.ts'
+import { taskFlowRevisionRefusal } from './task-flow-store-sqlite-write.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
@@ -98,4 +99,53 @@ test('local compose returns the machine-wide number it minted', async () => {
     {},
   )
   expect(second.cursor!.id).toBe(first.id + 1)
+})
+
+test('revision refusal names the declared intent and stale row kind', () => {
+  const cases = [
+    ['compose', 'flow', 'flow-id', 'task flow flow-id changed while composing'],
+    ['compose', 'stage', 'stage-id', 'workflow stage stage-id changed while composing'],
+    ['compose', 'cursor', 12, 'workflow cursor 12 changed while composing'],
+    ['stage-update', 'cursor', 13, 'workflow cursor 13 changed while applying a stage update'],
+    ['advance', 'flow', 'flow-id', 'task flow flow-id changed while advancing'],
+    ['advance', 'cursor', 14, 'workflow cursor 14 changed while advancing'],
+    ['await-ruling', 'cursor', 15, 'workflow cursor 15 changed while awaiting a ruling'],
+    ['abandon', 'flow', 'flow-id', 'task flow flow-id changed while being abandoned'],
+    ['abandon', 'cursor', 16, 'workflow cursor 16 changed while being abandoned'],
+    ['adopt', 'stage', 'stage-id', 'workflow stage stage-id changed while linking its task'],
+    ['adopt', 'cursor', 17, 'workflow cursor 17 changed while linking its task'],
+  ] as const
+  for (const [intent, rowKind, identifier, expected] of cases)
+    expect(taskFlowRevisionRefusal(intent, rowKind, identifier)).toBe(
+      `${expected}; rerun the command`,
+    )
+})
+
+test('flow mutation preserves state when the payload omits it', async () => {
+  const d = database()
+  const row = await stage(d)
+  const flow = d
+    .query<{ record_id: string; revision: number }, [string]>(
+      "UPDATE task_flow SET state='done' WHERE record_id=? RETURNING record_id,revision",
+    )
+    .get(row.task_flow_record_id!)!
+  taskFlowStore(d).write('stage-update', {
+    requestId: row.record_id,
+    flow: {
+      id: flow.record_id,
+      expectedRevision: flow.revision,
+      values: {
+        updatedMachineId: '00000000-0000-4000-8000-000000000003',
+        updatedAt: row.updated_at,
+      },
+    },
+    stages: [
+      { id: row.record_id, expectedRevision: row.revision, values: { updatedAt: row.updated_at } },
+    ],
+  })
+  expect(
+    d
+      .query<{ state: string }, [string]>('SELECT state FROM task_flow WHERE record_id=?')
+      .get(flow.record_id)?.state,
+  ).toBe('done')
 })
