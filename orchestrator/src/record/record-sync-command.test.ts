@@ -38,6 +38,35 @@ test('sync reports each row held by destination routing', async () => {
   expect(output).toContain('held orch:17\trun\tproject example has no declared record space')
 })
 
+test('sync reports each row deferred by a pending parent', async () => {
+  const output: string[] = []
+  await syncCommand(
+    { backfill: false },
+    { log: (line) => output.push(line) },
+    {
+      sync: async () =>
+        ({
+          configured: true,
+          pushed: 0,
+          failed: 0,
+          pending: 1,
+          quarantined: [],
+          blocked: [],
+          parentDeferred: [
+            {
+              id: 23,
+              kind: 'contention',
+              reason: 'waits for run run-1, which is still running',
+            },
+          ],
+        }) as never,
+      boardAdoption: { database: db(), hostedConfigured: () => false, signedIn: () => false },
+    },
+  )
+
+  expect(output).toContain('held orch:23\tcontention\twaits for run run-1, which is still running')
+})
+
 test('sync adopts a zero-candidate local board with the configured record client', async () => {
   const output: string[] = []
   const baseClient = createMemoryRecordApiClient()

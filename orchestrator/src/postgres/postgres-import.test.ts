@@ -27,7 +27,7 @@ import {
 import { syncRecord } from '../record/record-sync.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { backfillRunRecords } from '../run/run-outbox.ts'
-import { HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
+import { SYNTHETIC_LIFECYCLE_JOBS } from '../run/synthetic-lifecycle-job.ts'
 import { backfillScoreRecords } from '../score/score-outbox.ts'
 import { importProjects, projectImportRecordId } from './postgres-import.ts'
 import { migratePostgres } from './postgres-migrate.ts'
@@ -425,6 +425,7 @@ realPostgres('project import against copied live SQLite data', () => {
       attempts: number
       last_error: string
     }> = []
+    let finalParentDeferred = new Map<number, { kind: string; reason: string }>()
     let replayPasses = 0
     while (true) {
       replayPasses++
@@ -439,8 +440,24 @@ realPostgres('project import against copied live SQLite data', () => {
         // register names a space this user cannot reach maps here instead.
         projectSpaces,
       })
+      const syncHolds = Object.fromEntries(
+        [
+          ['routingHeld', synced.routingHeld],
+          ['held', synced.held],
+          ['quarantinedParentHolds', synced.quarantinedParentHolds],
+          ['parentDeferred', synced.parentDeferred],
+        ].filter((entry) => entry[1] !== undefined),
+      )
       console.log(
-        `live-copy sync: pushed ${synced.pushed}, failed ${synced.failed}, pending ${synced.pending}`,
+        `live-copy sync: pushed ${synced.pushed}, failed ${synced.failed}, pending ${synced.pending}${
+          Object.keys(syncHolds).length ? ` ${JSON.stringify(syncHolds)}` : ''
+        }`,
+      )
+      finalParentDeferred = new Map(
+        (synced.parentDeferred ?? []).map((row) => [
+          row.id,
+          { kind: row.kind, reason: row.reason },
+        ]),
       )
       if (synced.pending === 0) break
       const refused = source
@@ -466,24 +483,48 @@ realPostgres('project import against copied live SQLite data', () => {
         source.query('UPDATE outbox SET synced_at=? WHERE id=?').run('history-refused', row.id)
       }
     }
+    for (const [id, row] of finalParentDeferred) {
+      console.log(`live-copy parent deferred: orch:${id} ${row.kind}: ${row.reason}`)
+    }
     const outboxRows = source
       .query<
         {
           id: number
+          kind: string
+          row_id: string
+          created_at: string
+          attempts: number
           synced_at: string | null
           last_error: string | null
           quarantined_at: string | null
           retired_at: string | null
         },
         []
-      >('SELECT id, synced_at, last_error, quarantined_at, retired_at FROM outbox ORDER BY id')
+      >(
+        `SELECT id, kind, row_id, created_at, attempts, synced_at, last_error,
+                quarantined_at, retired_at
+         FROM outbox ORDER BY id`,
+      )
       .all()
     const requiredRows = outboxRows.filter(
-      (row) => !historyIds.has(row.id) && row.quarantined_at === null && row.retired_at === null,
+      (row) =>
+        !historyIds.has(row.id) &&
+        !finalParentDeferred.has(row.id) &&
+        row.quarantined_at === null &&
+        row.retired_at === null,
     )
-    expect(requiredRows.every((row) => row.synced_at !== null && row.last_error === null)).toBe(
-      true,
-    )
+    expect(
+      requiredRows
+        .filter((row) => row.synced_at === null || row.last_error !== null)
+        .map((row) => ({
+          outbox_id: row.id,
+          kind: row.kind,
+          record_id: row.row_id,
+          created_at: row.created_at,
+          attempts: row.attempts,
+          last_error: row.last_error,
+        })),
+    ).toEqual([])
     expect(
       outboxRows
         .filter(
@@ -500,12 +541,13 @@ realPostgres('project import against copied live SQLite data', () => {
       `live-copy history refused: ${refusedHistory.length}; errors: ${JSON.stringify(refusalMessages)}`,
     )
     const missingOutbox = source
-      .query<{ count: number }, [string, string]>(
+      .query<{ count: number }, string[]>(
         `SELECT count(*) AS count FROM run r
-         WHERE r.status <> 'running' AND r.job NOT IN (?,?)
+         WHERE r.status <> 'running'
+           AND r.job NOT IN (${SYNTHETIC_LIFECYCLE_JOBS.map(() => '?').join(',')})
            AND NOT EXISTS (SELECT 1 FROM outbox o WHERE o.kind='run' AND o.row_id=r.record_id)`,
       )
-      .get(HOOK_TREE_JOB, LANDING_TREE_JOB)!.count
+      .get(...SYNTHETIC_LIFECYCLE_JOBS)!.count
     expect(missingOutbox).toBe(0)
     source.close()
   })

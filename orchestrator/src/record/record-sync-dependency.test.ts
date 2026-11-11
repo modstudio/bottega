@@ -239,6 +239,7 @@ test('pending children report the quarantined parent holding them', async () => 
   expect(result.quarantinedParentHolds).toEqual([
     { id: 1, kind: 'run', quarantinedAt: STAMP, rows: 2 },
   ])
+  expect(result.parentDeferred).toBeUndefined()
   expect(batches).toEqual([[]])
 })
 
@@ -259,6 +260,13 @@ test('a deferred same-batch parent leaves its child pending', async () => {
     })),
   })
   expect(result).toMatchObject({ pushed: 0, failed: 0, pending: 2 })
+  expect(result.parentDeferred).toEqual([
+    {
+      id: 2,
+      kind: 'score',
+      reason: 'waits for run run-1, whose outbox row orch:1 has not synced',
+    },
+  ])
   expect(result.quarantinedParentHolds).toBeUndefined()
   expect(batches).toEqual([[1, 2]])
   expect(local.query('SELECT attempts FROM outbox ORDER BY id').all()).toEqual([
@@ -267,14 +275,14 @@ test('a deferred same-batch parent leaves its child pending', async () => {
   ])
 
   const retryBatches: number[][] = []
-  expect(
-    await syncRecord({
-      local,
-      now: () => STAMP,
-      identity: { id: machineId(), name: 'test-machine' },
-      client: dependencyClient(retryBatches, () => ({ status: 'synced' })),
-    }),
-  ).toMatchObject({ pushed: 2, failed: 0, pending: 0 })
+  const retry = await syncRecord({
+    local,
+    now: () => STAMP,
+    identity: { id: machineId(), name: 'test-machine' },
+    client: dependencyClient(retryBatches, () => ({ status: 'synced' })),
+  })
+  expect(retry).toMatchObject({ pushed: 2, failed: 0, pending: 0 })
+  expect(retry.parentDeferred).toBeUndefined()
   expect(retryBatches).toEqual([[1, 2]])
   expect(local.query('SELECT synced_at FROM outbox ORDER BY id').all()).toEqual([
     { synced_at: STAMP },
@@ -299,14 +307,20 @@ test('contention waits for its local run to enqueue a record row', async () => {
   })
   const deferredBatches: number[][] = []
 
-  expect(
-    await syncRecord({
-      local,
-      now: () => STAMP,
-      identity: { id: machineId(), name: 'test-machine' },
-      client: dependencyClient(deferredBatches, () => ({ status: 'synced' })),
-    }),
-  ).toMatchObject({ pushed: 0, failed: 0, pending: 1 })
+  const deferred = await syncRecord({
+    local,
+    now: () => STAMP,
+    identity: { id: machineId(), name: 'test-machine' },
+    client: dependencyClient(deferredBatches, () => ({ status: 'synced' })),
+  })
+  expect(deferred).toMatchObject({ pushed: 0, failed: 0, pending: 1 })
+  expect(deferred.parentDeferred).toEqual([
+    {
+      id: 1,
+      kind: 'contention',
+      reason: `waits for run ${runId}, which is still running; it syncs after that run finishes`,
+    },
+  ])
   expect(deferredBatches).toEqual([[]])
   expect(local.query('SELECT attempts,synced_at FROM outbox WHERE id=1').get()).toEqual({
     attempts: 0,
@@ -414,15 +428,15 @@ test('contention stops waiting when its local run becomes terminal without an ou
 
   local.query("UPDATE run SET status='ok' WHERE record_id=?").run(runId)
   const terminalBatches: number[][] = []
-  expect(
-    await syncRecord({
-      local,
-      now: () => STAMP,
-      identity: { id: machineId(), name: 'test-machine' },
-      projectSpaces: { 'run-fixture': PLATFORM_SLUG },
-      client: dependencyClient(terminalBatches, () => ({ status: 'synced' })),
-    }),
-  ).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
+  const terminal = await syncRecord({
+    local,
+    now: () => STAMP,
+    identity: { id: machineId(), name: 'test-machine' },
+    projectSpaces: { 'run-fixture': PLATFORM_SLUG },
+    client: dependencyClient(terminalBatches, () => ({ status: 'synced' })),
+  })
+  expect(terminal).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
+  expect(terminal.parentDeferred).toBeUndefined()
   expect(terminalBatches).toEqual([[1]])
 })
 
@@ -497,14 +511,14 @@ test('a child is not sent while another parent identity remains outside the batc
   })
   const batches: number[][] = []
 
-  expect(
-    await syncRecord({
-      local,
-      now: () => STAMP,
-      identity: { id: machineId(), name: 'test-machine' },
-      client: dependencyClient(batches, () => ({ status: 'synced' })),
-    }),
-  ).toMatchObject({ pushed: 3, failed: 0, pending: 0 })
+  const result = await syncRecord({
+    local,
+    now: () => STAMP,
+    identity: { id: machineId(), name: 'test-machine' },
+    client: dependencyClient(batches, () => ({ status: 'synced' })),
+  })
+  expect(result).toMatchObject({ pushed: 3, failed: 0, pending: 0 })
+  expect(result.parentDeferred).toBeUndefined()
   expect(batches).toEqual([[1], [3], [2]])
 })
 
