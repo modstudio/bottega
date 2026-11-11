@@ -135,7 +135,7 @@ async function responseObject(
     body,
     token: options.token,
     safety,
-    fetch: (input, init) => hostedFetch(input, init, options),
+    fetch: (input: string, init: RequestInit) => hostedFetch(input, init, options),
   }
   const response = await sendHostedSessionRequest(
     method === 'GET'
@@ -610,23 +610,18 @@ export async function hostedSignedInUserId(
 
 export async function hostedSignedInUser(
   options?: Parameters<typeof request>[3],
-): Promise<{ id: string; name: string | null } | null> {
-  const result = await taskIdentityResult(options)
-  return result.unauthorized
-    ? null
-    : {
-        id: result.value.userId as string,
-        name: (result.value.userName as string | null | undefined) ?? null,
-      }
-}
-
-export async function hostedPersonalSpaceId(
-  options?: Parameters<typeof request>[3],
-): Promise<string> {
+): Promise<{ id: string; name: string | null; personalSpaceId?: string | null } | null> {
   const { value } = await responseObject('/v1/whoami', 'GET', undefined, options)
-  if (typeof value.personalSpaceId !== 'string' || !value.personalSpaceId.trim())
-    throw new Error(
-      'record user has no personal space; run `bottega record sign-in` to restore the personal space',
-    )
-  return value.personalSpaceId
+  const user = value.user
+  if (!user || typeof user !== 'object' || Array.isArray(user)) return null
+  const recordUser = user as Record<string, unknown>
+  if (typeof recordUser.id !== 'string') return null
+  return {
+    id: recordUser.id,
+    name: typeof recordUser.name === 'string' ? recordUser.name : null,
+    personalSpaceId:
+      typeof value.personalSpaceId === 'string' && value.personalSpaceId.trim()
+        ? value.personalSpaceId
+        : null,
+  }
 }

@@ -8,9 +8,9 @@ import type {
 } from './hosted-reports.ts'
 import { HOSTED_SEND_PAGE_SIZE } from './hosted-reports.ts'
 import { type HostedSessionMethod, sendHostedSessionRequest } from './hosted-session-send.ts'
-import { hostedPersonalSpaceId } from './task-client.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import { MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
+import { hostedSignedInUser } from './task-client.ts'
 
 const TEST_REFUSAL = `${PLATFORM_SLUG} report client refuses a real hosted URL unless a stub is injected in tests`
 const REMEDY = MISSING_HOSTED_URL_REMEDY
@@ -19,6 +19,15 @@ export type ReportClientOptions = {
   baseUrl?: string
   token?: string | null
   fetch?: ReportFetch
+}
+
+async function personalSpace(options: ReportClientOptions): Promise<string> {
+  const space = (await hostedSignedInUser(options))?.personalSpaceId
+  if (!space)
+    throw new Error(
+      `record user has no personal space; run \`${PLATFORM_SLUG} record sign-in\` to restore the personal space`,
+    )
+  return space
 }
 
 async function request<T>(
@@ -46,7 +55,7 @@ async function request<T>(
       : {
           ...common,
           method,
-          recordSpace: await hostedPersonalSpaceId(options),
+          recordSpace: await personalSpace(options),
         },
   )
   const bodyResult = await jsonBody(response, url)

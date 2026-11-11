@@ -7,7 +7,7 @@ test('a note without a project targets the personal space', async () => {
     token: 'session',
     fetch: async (input) => {
       expect(new URL(input).pathname).toBe('/v1/whoami')
-      return Response.json({ personalSpaceId: 'space-personal' })
+      return Response.json({ user: { id: 'user' }, personalSpaceId: 'space-personal' })
     },
   })
   expect(options.recordSpace).toBe('space-personal')

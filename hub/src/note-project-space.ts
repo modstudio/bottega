@@ -2,13 +2,19 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { undeclaredProjectSpaceRefusal } from '../../shared/record-remedies.ts'
 import type { NoteClientOptions } from './note-client.ts'
 import { projects } from './projects.ts'
-import { hostedPersonalSpaceId, hostedTaskIdentity } from './task-client.ts'
+import { hostedSignedInUser, hostedTaskIdentity } from './task-client.ts'
 import { taskProjectDestination } from './task-project-space.ts'
 export async function noteDestinationOptions(
   project: string | null,
   options: NoteClientOptions = {},
 ): Promise<NoteClientOptions> {
-  if (project === null) return { ...options, recordSpace: await hostedPersonalSpaceId(options) }
+  const registered =
+    project === null ? null : projects().find((candidate) => candidate.name === project)
+  if (!registered) {
+    const personalSpaceId = (await hostedSignedInUser(options))?.personalSpaceId
+    if (!personalSpaceId) throw new Error('record user has no personal space')
+    return { ...options, recordSpace: personalSpaceId }
+  }
   const identity = await hostedTaskIdentity(options)
   const destination = taskProjectDestination(project, projects(), identity)
   if ('refused' in destination) {

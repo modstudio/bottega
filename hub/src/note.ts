@@ -604,7 +604,7 @@ async function outsideNoteCreation(
   if (input.sameAs) throw new Error('an outside note cannot be merged; file it as new')
   const note = await createOutsideProjectNote(
     { project, text, area: input.area?.trim() || null, anchor },
-    hosted,
+    await noteDestinationOptions(project, hosted),
   )
   return { note, candidates: [], outside: true as const }
 }

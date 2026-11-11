@@ -76,7 +76,7 @@ test('local loop records only successful pushes and logs failures for retry', as
   })
   expect(recorded).toEqual([7])
   expect(errors).toEqual([
-    `hub: operator waiting email push failed for question ${item().question_record_id} in project bottega: Error: offline`,
+    `hub: operator waiting email push failed for question ${item().question_record_id} in project ${PLATFORM_NAME.toLowerCase()}: Error: offline`,
   ])
 })
 
@@ -157,7 +157,7 @@ test('local loop records abandonment once but leaves intent and failed results r
   })
   expect(recorded).toEqual([3])
   expect(errors).toEqual([
-    `hub: operator waiting email push failed for question ${item().question_record_id} in project bottega: Error: delivery refused`,
+    `hub: operator waiting email push failed for question ${item().question_record_id} in project ${PLATFORM_NAME.toLowerCase()}: Error: delivery refused`,
     'hub: operator waiting email abandoned after retries: delivery refused',
   ])
 })

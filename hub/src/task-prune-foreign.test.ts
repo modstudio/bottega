@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
+import { declareFixtureProjectSpace } from '../test/fixture-project-space.ts'
 import type { HostedTask } from './hosted-tasks.ts'
 import { confirmCount } from './hosted-tasks.ts'
-import { declareFixtureProjectSpace } from '../test/fixture-project-space.ts'
 import { pruneForeignHostedTasks, selectForeignHostedTasks } from './task-prune-foreign.ts'
 
 declareFixtureProjectSpace('workshop', 'workshop')

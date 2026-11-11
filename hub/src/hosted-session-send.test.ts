@@ -46,14 +46,14 @@ test('hosted session writes require and send a destination while reads remain un
     { method: 'POST', space: 'space-project' },
     { method: 'GET', space: null },
   ])
-})
 
-if (false) {
-  // @ts-expect-error A hosted write cannot omit its destination space.
-  void sendHostedSessionRequest({
-    ...common,
-    url: 'https://hub.example.test/v1/notes',
-    method: 'POST',
-    fetch: async () => Response.json({}),
-  })
-}
+  const compileOnly = () =>
+    // @ts-expect-error A hosted write cannot omit its destination space.
+    sendHostedSessionRequest({
+      ...common,
+      url: 'https://hub.example.test/v1/notes',
+      method: 'POST',
+      fetch: async () => Response.json({}),
+    })
+  void compileOnly
+})

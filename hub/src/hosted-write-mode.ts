@@ -82,6 +82,10 @@ export function declaredProjectSpace(space: unknown): string | null {
   return projectMappedToHostedSpace(space) ? (space as string).trim() : null
 }
 
+export function undeclaredProjectSpaceMessage(project: string): string {
+  return `project ${project} has no declared record space; run \`${PLATFORM_SLUG} project set ${project} --space <slug>\``
+}
+
 function refusalCause(
   remoteTracker: boolean,
   belongsToHostedSpace: boolean,

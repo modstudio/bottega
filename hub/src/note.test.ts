@@ -146,6 +146,17 @@ describe('suggestion notes', () => {
       fetch: async (input: string, init?: RequestInit) => {
         const url = new URL(input)
         paths.push(`${init?.method ?? 'GET'} ${url.pathname}`)
+        if (url.pathname === '/v1/whoami')
+          return Response.json({ user: { id: 'user' }, personalSpaceId: 'space-personal' })
+        if (url.pathname === '/v1/tasks/identity')
+          return Response.json({
+            userId: 'user',
+            activeSpaceId: 'space-personal',
+            memberships: [{ spaceId: 'space-personal', slug: 'personal', permission: 'write' }],
+            capabilities: { targetSpaceNotes: true },
+          })
+        if (url.pathname === '/v1/notes/outside' && init?.method === 'POST')
+          expect(new Headers(init.headers).get('x-record-space')).toBe('space-personal')
         if (url.pathname === '/v1/notes/outside' && init?.method === 'POST')
           return Response.json({ id: crypto.randomUUID(), number: 7, project: 'outside-project' })
         if (url.pathname === '/v1/notes/outside')
@@ -178,7 +189,12 @@ describe('suggestion notes', () => {
     expect((await listOutsideProjectNotes('outside-project', outsideHosted))[0]?.label).toBe(
       'outside-project#7',
     )
-    expect(paths).toEqual(['POST /v1/notes/outside', 'GET /v1/notes/outside'])
+    expect(paths).toEqual([
+      'GET /v1/whoami',
+      'GET /v1/tasks/identity',
+      'POST /v1/notes/outside',
+      'GET /v1/notes/outside',
+    ])
   })
 
   test('an outside project list supports only text filtering', async () => {

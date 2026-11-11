@@ -7,9 +7,6 @@ import type { OperatorWaitingItem } from '../../shared/orch-contract.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { waiting } from './orch.ts'
 import { hostedCreateOperatorWaitingEmail, hostedSignedInUserId } from './task-client.ts'
-import { hostedPersonalSpaceId } from './task-client.ts'
-import { declaredProjectSpace } from './hosted-write-mode.ts'
-import { projects } from './projects.ts'
 import { uniqueTaskRecordIdForKey } from './task-identity.ts'
 
 const DEFAULT_OPERATOR_EMAIL_DELAY_MINUTES = 30
@@ -26,17 +23,15 @@ const waitingItemRecordId = (item: WaitingEmailLedgerKey) =>
 const ledgerKey = (item: WaitingEmailLedgerKey) =>
   `${item.kind}\u0000${waitingItemRecordId(item)}\u0000${item.episode}`
 
-export async function operatorWaitingEmailDestination(
-  item: Pick<OperatorWaitingItem, 'project'>,
-): Promise<string> {
-  if (!item.project) return hostedPersonalSpaceId()
-  const project = projects().find((candidate) => candidate.name === item.project)
-  const space = declaredProjectSpace(project?.settings.space)
-  if (!space)
-    throw new Error(
-      `project '${item.project}' has no declared record space; run \`bottega project set ${item.project} --space <slug>\``,
-    )
-  return space
+const missingDestination = async () => {
+  throw new Error('operator waiting email destination resolver is missing')
+}
+
+function waitingEmailPushError(item: OperatorWaitingItem, cause: unknown): string {
+  return (
+    `hub: operator waiting email push failed for ${item.kind} ${waitingItemRecordId(item)}` +
+    `${item.project ? ` in project ${item.project}` : ''}: ${String(cause)}`
+  )
 }
 
 /** Question text reaches the caller only after this pure decision says the episode is due. */
@@ -149,7 +144,7 @@ export async function deliverOperatorWaitingEmails(
   const port = readMachineValue('hub.port')
   for (const item of due) {
     try {
-      const recordSpace = await (dependencies.destination ?? operatorWaitingEmailDestination)(item)
+      const recordSpace = await (dependencies.destination ?? missingDestination)(item)
       const result = await (dependencies.push ?? hostedCreateOperatorWaitingEmail)(
         {
           kind: item.kind,
@@ -180,10 +175,7 @@ export async function deliverOperatorWaitingEmails(
           )
       }
     } catch (cause) {
-      error(
-        `hub: operator waiting email push failed for ${item.kind} ${waitingItemRecordId(item)}` +
-          `${item.project ? ` in project ${item.project}` : ''}: ${String(cause)}`,
-      )
+      error(waitingEmailPushError(item, cause))
     }
   }
 }
