@@ -153,6 +153,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
       'applySettingsAutoMode',
       'applySettingsPermission',
       'createOrganization',
+      'deleteSpace',
       'deleteTrialSpace',
       'ensureSpaceBuiltIns',
       'inviteMember',
@@ -172,7 +173,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'orchestrator',
     'recordApiClient',
     ['project'],
-    ['upsertProject', 'retireProject'],
+    ['upsertProject', 'retireProject', 'purgeProject'],
   ),
   ...writeEntries(
     'orchestrator',
@@ -353,7 +354,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'orchestrator',
     'projectIdentityClient',
     ['project'],
-    ['retireProject', 'upsertProject'],
+    ['retireProject', 'upsertProject', 'purgeProject'],
   ),
   ...readEntries('hub', 'recordClient', [
     'boardList',

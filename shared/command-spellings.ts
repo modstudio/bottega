@@ -291,6 +291,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'record space access list',
   'record space access withdraw',
   'record space create',
+  'record space delete',
   'record space delete-trial',
   'record space help',
   'record space hidden',

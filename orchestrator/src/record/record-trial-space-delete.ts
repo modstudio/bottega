@@ -24,6 +24,24 @@ export type TrialDeleteDecision =
   | { allowed: true; nothing: boolean; neutralize: TrialMemberFact[] }
   | { allowed: false; refusal: string }
 const retry = `choose a space created with \`${PLATFORM_SLUG} record space create --trial\``
+function commonSpaceDeleteGuard(
+  facts: TrialDeleteFacts,
+  command: string,
+  publicSubject = `trial space ${facts.slug}`,
+): string | null {
+  if (facts.publiclyListed)
+    return `public-listing guard failed: ${publicSubject} is publicly listed in public_doc_space; ask record_owner to remove that row, then retry`
+  if (facts.members.find((member) => member.userId === facts.callerUserId)?.role !== 'owner')
+    return `caller-owner guard failed: ask an owner of ${facts.slug} to run ${command}`
+  for (const member of facts.members) {
+    if (member.userId === facts.callerUserId) continue
+    if (!member.email.startsWith(TRIAL_IDENTIFIER_PREFIX))
+      return `trial-member-email guard failed: ${member.email} is not a trial account; remove that member, then retry`
+    if (member.hasRealSpace)
+      return `trial-member-spaces guard failed: ${member.email} belongs to a non-trial space; remove that member, then retry`
+  }
+  return null
+}
 export function decideTrialSpaceDelete(facts: TrialDeleteFacts): TrialDeleteDecision {
   if (!facts.exists) return { allowed: true, nothing: true, neutralize: [] }
   if (!facts.slug.startsWith(TRIAL_IDENTIFIER_PREFIX))
@@ -36,28 +54,48 @@ export function decideTrialSpaceDelete(facts: TrialDeleteFacts): TrialDeleteDeci
       allowed: false,
       refusal: `trial-marker guard failed: ${facts.slug} has no metadata.trial marker; ${retry}`,
     }
-  if (facts.publiclyListed)
+  const refusal = commonSpaceDeleteGuard(facts, 'delete-trial')
+  if (refusal) return { allowed: false, refusal }
+  return {
+    allowed: true,
+    nothing: false,
+    neutralize: facts.members.filter((member) => member.userId !== facts.callerUserId),
+  }
+}
+
+export type SpaceDeleteFacts = TrialDeleteFacts & {
+  confirmation: string
+  personalSpace: boolean
+}
+export function decideSpaceDelete(facts: SpaceDeleteFacts): TrialDeleteDecision {
+  if (!facts.exists) return { allowed: true, nothing: true, neutralize: [] }
+  if (facts.confirmation !== facts.slug)
     return {
       allowed: false,
-      refusal: `public-listing guard failed: trial space ${facts.slug} is publicly listed in public_doc_space; ask record_owner to remove that row, then retry`,
+      refusal: `confirmation guard failed: --confirm must equal ${facts.slug}; run \`${PLATFORM_SLUG} record space delete ${facts.slug} --confirm ${facts.slug}\``,
     }
-  if (facts.members.find((member) => member.userId === facts.callerUserId)?.role !== 'owner')
+  if (facts.personalSpace)
     return {
       allowed: false,
-      refusal: `caller-owner guard failed: ask an owner of ${facts.slug} to run delete-trial`,
+      refusal: `personal-space guard failed: ${facts.slug} is a user's personal space; choose a non-personal space to delete`,
     }
-  for (const member of facts.members) {
-    if (member.userId === facts.callerUserId) continue
-    if (!member.email.startsWith(TRIAL_IDENTIFIER_PREFIX))
+  const refusal = commonSpaceDeleteGuard(
+    facts,
+    `\`${PLATFORM_SLUG} record space delete ${facts.slug} --confirm ${facts.slug}\``,
+    `space ${facts.slug}`,
+  )
+  if (refusal) {
+    const member = facts.members.find(
+      (candidate) =>
+        candidate.userId !== facts.callerUserId &&
+        (!candidate.email.startsWith(TRIAL_IDENTIFIER_PREFIX) || candidate.hasRealSpace),
+    )
+    if (member && refusal.startsWith('trial-member-'))
       return {
         allowed: false,
-        refusal: `trial-member-email guard failed: ${member.email} is not a trial account; remove that member, then retry`,
+        refusal: `${member.email} holds a real account in ${facts.slug}; space delete removes only the owner and trial accounts, and member removal is not yet available from the CLI, so this space cannot be deleted while that member remains`,
       }
-    if (member.hasRealSpace)
-      return {
-        allowed: false,
-        refusal: `trial-member-spaces guard failed: ${member.email} belongs to a non-trial space; remove that member, then retry`,
-      }
+    return { allowed: false, refusal }
   }
   return {
     allowed: true,
@@ -133,6 +171,8 @@ async function facts(tx: SQL, slug: string, userId: string) {
   }
   return {
     spaceId,
+    personalSpace:
+      (await tx`SELECT 1 FROM "user" WHERE personal_space_id=${spaceId}::uuid LIMIT 1`).length > 0,
     value: {
       exists: true,
       slug,
@@ -150,9 +190,39 @@ export async function deleteTrialRecordSpace(input: {
   userId: string
   activeSpaceId: string | null
 }): Promise<TrialSpaceDeleteResult> {
+  return deleteRecordSpaceTransaction(input, 'trial')
+}
+
+export async function deleteRecordSpace(input: {
+  url: string
+  slug: string
+  confirmation: string
+  userId: string
+  activeSpaceId: string | null
+}): Promise<TrialSpaceDeleteResult> {
+  return deleteRecordSpaceTransaction(input, 'general')
+}
+
+async function deleteRecordSpaceTransaction(
+  input: {
+    url: string
+    slug: string
+    confirmation?: string
+    userId: string
+    activeSpaceId: string | null
+  },
+  mode: 'trial' | 'general',
+): Promise<TrialSpaceDeleteResult> {
   return recordPool(input.url).begin(async (tx) => {
     const read = await facts(tx, input.slug, input.userId)
-    const decision = decideTrialSpaceDelete(read.value)
+    const decision =
+      mode === 'trial'
+        ? decideTrialSpaceDelete(read.value)
+        : decideSpaceDelete({
+            ...read.value,
+            confirmation: input.confirmation ?? '',
+            personalSpace: read.personalSpace ?? false,
+          })
     if (!decision.allowed) throw new TrialSpaceDeleteError(decision.refusal)
     if (decision.nothing || !read.spaceId)
       return { nothingToRemove: true, activeSpaceCleared: false, tables: {}, neutralized: [] }

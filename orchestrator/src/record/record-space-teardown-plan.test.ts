@@ -2,8 +2,11 @@ import { expect, test } from 'bun:test'
 import { pgTable, uuid } from 'drizzle-orm/pg-core'
 import { project, space } from '../../../shared/record/schema.ts'
 import {
+  deriveProjectPurgePlan,
   deriveSpaceTeardownPlan,
+  PROJECT_PURGE_PLAN,
   SPACE_TEARDOWN_PLAN,
+  unclassifiedProjectTables,
   unclassifiedSpaceTables,
 } from './record-space-teardown-plan.ts'
 
@@ -13,6 +16,30 @@ test('an unclassified space foreign key is refused', () => {
     spaceId: uuid('space_id').references(() => space.id),
   })
   expect(unclassifiedSpaceTables([space, fixture], [], {})).toEqual(['fixture_space_child'])
+})
+test('an unclassified project foreign key is refused', () => {
+  const fixture = pgTable('fixture_project_child', {
+    id: uuid().primaryKey(),
+    projectId: uuid('project_id').references(() => project.id),
+  })
+  expect(unclassifiedProjectTables([project, fixture], [], {})).toEqual(['fixture_project_child'])
+})
+test('project purge owns set-null rows but leaves cascade rows to postgres', () => {
+  const setNull = pgTable('fixture_set_null', {
+    id: uuid().primaryKey(),
+    projectId: uuid('project_id').references(() => project.id, { onDelete: 'set null' }),
+  })
+  const cascade = pgTable('fixture_cascade', {
+    id: uuid().primaryKey(),
+    projectId: uuid('project_id').references(() => project.id, { onDelete: 'cascade' }),
+  })
+  expect(deriveProjectPurgePlan([project, setNull, cascade], {}).map((step) => step.table)).toEqual(
+    ['fixture_set_null'],
+  )
+})
+test('the hosted project purge plan classifies every reached table', () => {
+  expect(PROJECT_PURGE_PLAN.length).toBeGreaterThan(0)
+  expect(unclassifiedProjectTables()).toEqual([])
 })
 test('a table without a space key that references an ordered table is refused', () => {
   const fixture = pgTable('fixture_project_child', {

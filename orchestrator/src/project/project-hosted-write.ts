@@ -72,6 +72,27 @@ export async function retireProjectInHostedRecord(
   })
 }
 
+export async function purgeProjectInHostedRecord(
+  project: { name: string; recordId: string },
+  settings: ProjectSettings | StoredProjectSettings,
+  confirmation: string,
+) {
+  return applyRecordWriteAuthority({
+    local: () => {
+      throw new Error(`${PLATFORM_SLUG} project purge requires the hosted record`)
+    },
+    hosted: async () => {
+      const client = recordApiClient()
+      const destinationSpaceId = await requireProjectRecordDestination(
+        project.name,
+        settings,
+        client,
+      )
+      return client.purgeProject(project.recordId, confirmation, { destinationSpaceId })
+    },
+  })
+}
+
 export type HostedProjectDestination = {
   destinationSpaceId: string
   memberships: ReturnType<typeof parseRecordSpaceMemberships>

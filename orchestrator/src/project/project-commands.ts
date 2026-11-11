@@ -21,7 +21,11 @@ import { declaredProjectSpace } from './declared-project-space.ts'
 import { projectAddDecision } from './project-add-record.ts'
 import { type ProjectSpaceFillRow, planProjectSpaceFill } from './project-fill-space.ts'
 import { spaceFillNeedsRuling } from './project-fill-space-decision.ts'
-import { hostedProjectDestination, refuseHostedProjectSpaceChange } from './project-hosted-write.ts'
+import {
+  hostedProjectDestination,
+  purgeProjectInHostedRecord,
+  refuseHostedProjectSpaceChange,
+} from './project-hosted-write.ts'
 import { fillProjectRecordIds } from './project-record-identity.ts'
 import { formatProjectRelink, relinkProjectByName } from './project-relink.ts'
 import { persistLocalProjectSet } from './project-rename.ts'
@@ -826,6 +830,39 @@ async function retireProjectCommand(
   presentation.log(outcome === 'already-retired' ? `already retired ${name}` : `retired ${name}`)
 }
 
+async function purgeProjectCommand(
+  argv: string[],
+  flags: ProjectFlags,
+  presentation: ProjectPresentation,
+): Promise<void> {
+  const name = argv[2]
+  const confirmation = flags.flag('confirm')
+  if (!name || !confirmation)
+    throw new Error(`${PLATFORM_SLUG} project purge <name> --confirm <name>`)
+  const project = projectRowByName(name)
+  if (!project) throw new Error(`no project "${name}"`)
+  const result = await purgeProjectInHostedRecord(
+    { name: project.name, recordId: project.recordId },
+    project.settings,
+    confirmation,
+  )
+  if (result.nothingToRemove) presentation.log(`no hosted project ${name}; nothing remained hosted`)
+  else {
+    for (const row of result.tables) presentation.log(`removed\t${row.table}\t${row.count}`)
+    presentation.log(`removed\tproject\t${result.project}`)
+  }
+  try {
+    removeProject(name)
+    presentation.log(`removed ${name} from this machine's register`)
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.startsWith(`project ${name} is referenced by`))
+      throw error
+    presentation.log(
+      `${name} remains in this machine's register because local tables still reference it; the local purge slice will clear it`,
+    )
+  }
+}
+
 async function fillProjectRecordIdsCommand(
   json: boolean,
   presentation: ProjectPresentation,
@@ -875,6 +912,7 @@ async function dispatchPrimaryProjectCommand(
     })
   else if (sub === 'relink') await relinkProjectCommand(argv[2], presentation)
   else if (sub === 'select-profile') await selectProfileCommand(argv, flags, presentation)
+  else if (sub === 'purge') await purgeProjectCommand(argv, flags, presentation)
   else return false
   return true
 }
@@ -950,6 +988,6 @@ export async function projectCommand(
   }
 
   throw new Error(
-    `unknown: ${PLATFORM_SLUG} project ${sub}. Try list | add | set | fill-space | remove | retire | push | fill-record-ids`,
+    `unknown: ${PLATFORM_SLUG} project ${sub}. Try list | add | set | fill-space | remove | retire | purge | push | fill-record-ids`,
   )
 }

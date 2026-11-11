@@ -16,6 +16,13 @@ export function registerRecordTrialSpaceRoutes(
       userId: string
       activeSpaceId: string | null
     }): Promise<TrialSpaceDeleteResult>
+    deleteSpace(input: {
+      url: string
+      slug: string
+      confirmation: string
+      userId: string
+      activeSpaceId: string | null
+    }): Promise<TrialSpaceDeleteResult>
   },
 ): void {
   app.post('/v1/spaces/delete-trial', async (context) => {
@@ -28,6 +35,23 @@ export function registerRecordTrialSpaceRoutes(
       await deps.deleteTrialSpace({
         url: deps.recordUrl,
         slug: body.data.slug,
+        userId: identity.user.id,
+        activeSpaceId: identity.activeSpaceId,
+      }),
+    )
+  })
+  app.post('/v1/spaces/delete', async (context) => {
+    const body = z
+      .object({ slug: z.string().min(1), confirmation: z.string().min(1) })
+      .safeParse(await context.req.json().catch(() => null))
+    if (!body.success)
+      return context.json({ error: 'space slug and confirmation are required' }, 422)
+    const identity = context.get('identity')
+    return context.json(
+      await deps.deleteSpace({
+        url: deps.recordUrl,
+        slug: body.data.slug,
+        confirmation: body.data.confirmation,
         userId: identity.user.id,
         activeSpaceId: identity.activeSpaceId,
       }),

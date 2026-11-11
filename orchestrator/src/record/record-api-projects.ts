@@ -4,6 +4,7 @@ import type { Context, Hono } from 'hono'
 import { z } from 'zod'
 import type { RecordProject } from '../../../shared/record-project-contract.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import type { RecordProjectPurgeResult } from './record-project-purge.ts'
 import type { RecordProjectUpsertInput } from './record-projects.ts'
 
 type ApiEnvironment = { Variables: { identity: RecordIdentity } }
@@ -30,6 +31,9 @@ export function registerRecordProjectRoutes(
     readProjects(input: Tenant): Promise<RecordProject[]>
     upsertProject(input: Tenant & RecordProjectUpsertInput): Promise<{ id: string; name: string }>
     retireProject(input: Tenant & { id: string }): Promise<{ name: string }>
+    purgeProject(
+      input: Tenant & { id: string; confirmation: string },
+    ): Promise<RecordProjectPurgeResult>
   },
   helpers: {
     scope(context: Context<ApiEnvironment>): Tenant | null
@@ -59,6 +63,23 @@ export function registerRecordProjectRoutes(
     if (!id.success) return context.json({ error: 'project id is required' }, 400)
     try {
       return context.json(await deps.retireProject({ ...tenant, id: id.data }))
+    } catch (error) {
+      return helpers.writeError(context, error)
+    }
+  })
+  app.post('/v1/projects/:id/purge', async (context) => {
+    const tenant = helpers.scope(context)
+    if (!tenant) return helpers.noSpace(context)
+    const id = z.string().uuid().safeParse(context.req.param('id'))
+    const body = z
+      .object({ confirmation: z.string().min(1) })
+      .safeParse(await context.req.json().catch(() => null))
+    if (!id.success || !body.success)
+      return context.json({ error: 'project id and confirmation are required' }, 400)
+    try {
+      return context.json(
+        await deps.purgeProject({ ...tenant, id: id.data, confirmation: body.data.confirmation }),
+      )
     } catch (error) {
       return helpers.writeError(context, error)
     }

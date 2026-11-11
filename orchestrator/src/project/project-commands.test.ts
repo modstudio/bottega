@@ -127,6 +127,33 @@ describe(`${PLATFORM_SLUG} project retire`, () => {
   })
 })
 
+test('project purge reports hosted counts and removes an unreferenced register row', async () => {
+  const recordId = newRecordId()
+  upsertProject({
+    recordId,
+    name: 'purge-me',
+    path: '/w/purge-me',
+    settings: { space: 'space-a' },
+  })
+  const calls: unknown[] = []
+  installRecordApiClient({
+    ...createProjectRecordApiClient(),
+    purgeProject: async (...args: unknown[]) => {
+      calls.push(args)
+      return {
+        nothingToRemove: false,
+        tables: [{ table: 'hub_task', count: 2 }],
+        project: 1,
+      }
+    },
+  })
+  expect(await runProject(['project', 'purge', 'purge-me'], { confirm: 'purge-me' })).toBe(
+    "removed\thub_task\t2\nremoved\tproject\t1\nremoved purge-me from this machine's register",
+  )
+  expect(calls).toEqual([[recordId, 'purge-me', { destinationSpaceId: 'space-a' }]])
+  expect(projectByName('purge-me')).toBeNull()
+})
+
 test('hosted failure leaves the local register unchanged', async () => {
   installRecordApiClient({
     ...createProjectRecordApiClient(),

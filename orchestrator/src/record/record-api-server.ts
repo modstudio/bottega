@@ -111,6 +111,7 @@ import {
 import { listPendingRecordInvitations } from './record-pending-invitations.ts'
 import { closeRecordPools } from './record-pool.ts'
 import { listRecordPortCatalogue, writeRecordPort } from './record-port-catalogue.ts'
+import { purgeRecordProject } from './record-project-purge.ts'
 import { RecordProjectSpaceConflictError } from './record-project-space-contract.ts'
 import { isProjectRowLevelSecurityViolation } from './record-project-space-server.ts'
 import { listRecordProjects, retireRecordProject, upsertRecordProject } from './record-projects.ts'
@@ -141,7 +142,7 @@ import {
 import { syncHostedRecord } from './record-sync-service.ts'
 import { listRecordTaskFlowStages, readRecordTaskFlow } from './record-task-flow.ts'
 import { writeRecordTaskFlow } from './record-task-flow-write.ts'
-import { deleteTrialRecordSpace } from './record-trial-space-delete.ts'
+import { deleteRecordSpace, deleteTrialRecordSpace } from './record-trial-space-delete.ts'
 import {
   countRecordScores,
   listRecordScores,
@@ -379,6 +380,7 @@ function recordProjectDependencies() {
       }
     },
     retireProject: retireRecordProject,
+    purgeProject: purgeRecordProject,
   }
 }
 
@@ -468,6 +470,7 @@ async function serveRecordApiWithAuth(
     boardWakeSource,
     boardStreamRegistry,
     deleteTrialSpace: deleteTrialRecordSpace,
+    deleteSpace: deleteRecordSpace,
   })
   registerStorageRoute(app, config, environment)
   return serveRecordApi(

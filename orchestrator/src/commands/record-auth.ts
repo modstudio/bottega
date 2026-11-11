@@ -42,6 +42,7 @@ import {
   recordSpaceAccessListCommand,
   recordSpaceAccessWithdrawCommand,
   recordSpaceCreateCommand,
+  recordSpaceDeleteCommand,
   recordSpaceDeleteTrialCommand,
   recordSpaceHiddenCommand,
   recordSpaceHideCommand,
@@ -318,6 +319,16 @@ function registerSpaceLifetimeCommands(space: Command): void {
           presentation,
           Boolean(options.trial),
         ),
+      ),
+    )
+  space
+    .command('delete')
+    .description('delete one hosted record space after confirmation')
+    .argument('<slug>')
+    .requiredOption('--confirm <slug>', 'repeat the space slug')
+    .action((slug, options) =>
+      hostedCommand(`${PLATFORM_SLUG} record space delete`, () =>
+        recordSpaceDeleteCommand(String(slug), String(options.confirm), presentation),
       ),
     )
   space

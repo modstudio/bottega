@@ -32,3 +32,12 @@ export const trialSpaceDeleteTransport = {
   }),
   response: trialSpaceDeleteResponse,
 }
+
+export const spaceDeleteTransport = {
+  options: (slug: string, confirmation: string) => ({
+    method: 'POST',
+    body: JSON.stringify({ slug, confirmation }),
+    schema: trialSpaceDeleteResponse,
+  }),
+  response: trialSpaceDeleteResponse,
+}

@@ -30,6 +30,7 @@ test('the project route renders a typed 409 naming the sent project and request 
         throw new RecordProjectSpaceConflictError(conflict)
       },
       retireProject: async () => ({ name: 'unused' }),
+      purgeProject: async () => ({ nothingToRemove: true, tables: [], project: 0 }),
     },
     {
       scope: () => ({

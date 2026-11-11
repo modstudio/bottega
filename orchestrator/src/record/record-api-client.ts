@@ -105,7 +105,7 @@ import type {
 import { storedRecordToken, storedRecordTokenAsync } from './record-session.ts'
 import type { SnapshotKind } from './record-snapshots.ts'
 import type { RecordSubject } from './record-subjects.ts'
-import { trialSpaceDeleteTransport } from './record-trial-space-contract.ts'
+import { spaceDeleteTransport, trialSpaceDeleteTransport } from './record-trial-space-contract.ts'
 import { currentRecordWriteDecision } from './record-write-authority.ts'
 
 export type RecordDocUpsertInput = {
@@ -245,6 +245,10 @@ export type RecordApiClient = ProjectIdentityClient &
     listRoutingEvidence: RecordRoutingEvidenceClient['listRoutingEvidence']
     createOrganization(input: CreateOrganizationInput): Promise<{ id: string; slug: string }>
     deleteTrialSpace(slug: string): Promise<ReturnType<typeof trialSpaceDeleteTransport.response>>
+    deleteSpace(
+      slug: string,
+      confirmation: string,
+    ): Promise<ReturnType<typeof spaceDeleteTransport.response>>
     setActiveOrganization(input: {
       organizationId?: string
       organizationSlug?: string
@@ -940,6 +944,8 @@ function recordIdentityAndSpaceClient(
       }),
     deleteTrialSpace: (slug) =>
       request('/v1/spaces/delete-trial', trialSpaceDeleteTransport.options(slug)),
+    deleteSpace: (slug, confirmation) =>
+      request('/v1/spaces/delete', spaceDeleteTransport.options(slug, confirmation)),
   }
 }
 

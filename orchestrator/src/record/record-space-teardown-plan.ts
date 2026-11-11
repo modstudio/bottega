@@ -44,6 +44,8 @@ export type SpaceTeardownReach = {
   parentColumns: string[]
 }
 export type SpaceTeardownStep = { table: string; reachedBy: SpaceTeardownReach[] }
+export type RecordTeardownReach = SpaceTeardownReach
+export type RecordTeardownStep = SpaceTeardownStep
 export const SPACE_TEARDOWN_EXCLUSIONS = {
   public_doc_space:
     'a published space is refused before teardown and record_actor holds SELECT only',
@@ -53,6 +55,7 @@ export const SPACE_TEARDOWN_EXCLUSIONS = {
   secret_dek: 'deleted by the trial teardown definer function; actor DELETE is revoked',
   user: 'personal_space_id and last_active_space_id are ON DELETE SET NULL',
 } as const
+export const PROJECT_PURGE_EXCLUSIONS: Readonly<Record<string, string>> = {}
 
 function foreignKeyFacts(tables: readonly PgTable[] = hostedRecordTables): ForeignKeyFact[] {
   return tables.flatMap((item) =>
@@ -71,21 +74,24 @@ function foreignKeyFacts(tables: readonly PgTable[] = hostedRecordTables): Forei
 
 const blocksParentDelete = (fact: ForeignKeyFact) =>
   fact.onDelete !== 'cascade' && fact.onDelete !== 'set null'
+const belongsToPurgedProject = (fact: ForeignKeyFact) => fact.onDelete !== 'cascade'
 
 function discoverReachedTables(
   facts: readonly ForeignKeyFact[],
   tableNames: readonly string[],
   exclusions: Readonly<Record<string, string>>,
+  rootTable: string,
+  follows: (fact: ForeignKeyFact) => boolean,
 ): Map<string, SpaceTeardownReach[]> {
   const reached = new Set<string>()
   const remaining = new Set(tableNames)
-  let parents = new Set(['space'])
+  let parents = new Set([rootTable])
   while (parents.size) {
     const added = new Set<string>()
     for (const name of remaining) {
       if (exclusions[name]) continue
       const reaches = facts.filter(
-        (fact) => fact.table === name && parents.has(fact.parent) && blocksParentDelete(fact),
+        (fact) => fact.table === name && parents.has(fact.parent) && follows(fact),
       )
       if (!reaches.length) continue
       reached.add(name)
@@ -102,8 +108,8 @@ function discoverReachedTables(
           (fact) =>
             fact.table === name &&
             fact.table !== fact.parent &&
-            (fact.parent === 'space' || reached.has(fact.parent)) &&
-            blocksParentDelete(fact),
+            (fact.parent === rootTable || reached.has(fact.parent)) &&
+            follows(fact),
         )
         .map(({ columns, parent, parentColumns }) => ({ columns, parent, parentColumns })),
     ]),
@@ -113,6 +119,8 @@ function discoverReachedTables(
 function orderReachedTables(
   facts: readonly ForeignKeyFact[],
   reachedBy: ReadonlyMap<string, SpaceTeardownReach[]>,
+  follows: (fact: ForeignKeyFact) => boolean,
+  cycleName: string,
 ): SpaceTeardownStep[] {
   const pending = new Set(reachedBy.keys())
   const dependencies = new Map([...pending].map((name) => [name, new Set<string>()]))
@@ -121,7 +129,7 @@ function orderReachedTables(
       fact.table !== fact.parent &&
       pending.has(fact.table) &&
       pending.has(fact.parent) &&
-      blocksParentDelete(fact)
+      follows(fact)
     )
       dependencies.get(fact.table)?.add(fact.parent)
 
@@ -134,7 +142,7 @@ function orderReachedTables(
       )
       .sort()
     if (!ready.length)
-      throw new Error(`space teardown dependency cycle: ${[...pending].sort().join(', ')}`)
+      throw new Error(`${cycleName} dependency cycle: ${[...pending].sort().join(', ')}`)
     for (const name of ready) {
       plan.push({ table: name, reachedBy: reachedBy.get(name)! })
       pending.delete(name)
@@ -149,11 +157,33 @@ export function deriveSpaceTeardownPlan(
 ): SpaceTeardownStep[] {
   const facts = foreignKeyFacts(tables)
   const names = tables.map((item) => getTableConfig(item).name)
-  return orderReachedTables(facts, discoverReachedTables(facts, names, exclusions))
+  return orderReachedTables(
+    facts,
+    discoverReachedTables(facts, names, exclusions, 'space', blocksParentDelete),
+    blocksParentDelete,
+    'space teardown',
+  )
 }
 
 export const SPACE_TEARDOWN_PLAN = deriveSpaceTeardownPlan()
 export const SPACE_TEARDOWN_ORDER = SPACE_TEARDOWN_PLAN.map((step) => step.table)
+
+export function deriveProjectPurgePlan(
+  tables: readonly PgTable[] = hostedRecordTables,
+  exclusions: Readonly<Record<string, string>> = PROJECT_PURGE_EXCLUSIONS,
+): RecordTeardownStep[] {
+  const facts = foreignKeyFacts(tables)
+  const names = tables.map((item) => getTableConfig(item).name)
+  return orderReachedTables(
+    facts,
+    discoverReachedTables(facts, names, exclusions, 'project', belongsToPurgedProject),
+    belongsToPurgedProject,
+    'project purge',
+  )
+}
+
+export const PROJECT_PURGE_PLAN = deriveProjectPurgePlan()
+export const PROJECT_PURGE_ORDER = PROJECT_PURGE_PLAN.map((step) => step.table)
 
 export function unclassifiedSpaceTables(
   tables: readonly PgTable[] = hostedRecordTables,
@@ -168,6 +198,27 @@ export function unclassifiedSpaceTables(
           (fact) =>
             blocksParentDelete(fact) &&
             (fact.parent === 'space' || classified.has(fact.parent)) &&
+            !classified.has(fact.table) &&
+            !exclusions[fact.table],
+        )
+        .map((fact) => fact.table),
+    ),
+  ].sort()
+}
+
+export function unclassifiedProjectTables(
+  tables: readonly PgTable[] = hostedRecordTables,
+  order: readonly string[] = PROJECT_PURGE_ORDER,
+  exclusions: Readonly<Record<string, string>> = PROJECT_PURGE_EXCLUSIONS,
+): string[] {
+  const classified = new Set(order)
+  return [
+    ...new Set(
+      foreignKeyFacts(tables)
+        .filter(
+          (fact) =>
+            belongsToPurgedProject(fact) &&
+            (fact.parent === 'project' || classified.has(fact.parent)) &&
             !classified.has(fact.table) &&
             !exclusions[fact.table],
         )

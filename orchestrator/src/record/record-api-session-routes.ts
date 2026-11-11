@@ -35,10 +35,11 @@ export function registerRecordSessionRoutes(
   registerRecordInvitationRoute(app, deps)
   registerRecordSyncRoute(app, deps)
   registerRecordRoutingEvidenceRoute(app, deps)
-  if (deps.deleteTrialSpace && deps.recordUrl)
+  if (deps.deleteTrialSpace && deps.deleteSpace && deps.recordUrl)
     registerRecordTrialSpaceRoutes(app, {
       ...deps,
       deleteTrialSpace: deps.deleteTrialSpace,
+      deleteSpace: deps.deleteSpace,
       recordUrl: deps.recordUrl,
     })
 }

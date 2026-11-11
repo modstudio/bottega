@@ -324,6 +324,14 @@ export async function deleteTrialSpace(
   return client.deleteTrialSpace(slug)
 }
 
+export async function deleteSpace(
+  slug: string,
+  confirmation: string,
+  client: Pick<RecordApiClient, 'deleteSpace'> = recordApiClient(),
+) {
+  return client.deleteSpace(slug, confirmation)
+}
+
 export async function inviteToRecordSpace(
   email: string,
   role: RecordSpaceRole,
