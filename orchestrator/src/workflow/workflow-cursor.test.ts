@@ -13,7 +13,6 @@ import {
   ruleWorkflow,
 } from './workflow-cursor.ts'
 import { listWorkflowCursors } from './workflow-cursor-list.ts'
-import { workflowCursorProjectScope } from './workflow-cursor-selection.ts'
 import {
   abandonCursor,
   args,
@@ -92,29 +91,6 @@ describe('workflow cursor adapter', () => {
       args: string
     }
     expect(JSON.parse(row.args).worktree).toBe('/tmp/new')
-  })
-
-  test('listing scope honors explicit flags and refuses an unresolved cwd', async () => {
-    expect(workflowCursorProjectScope({}, 'fixture', '/fixture/worktree')).toBe('fixture')
-    expect(workflowCursorProjectScope({ project: 'other' }, 'fixture', '/fixture/worktree')).toBe(
-      'other',
-    )
-    expect(
-      workflowCursorProjectScope({ session: 'session-one' }, 'fixture', '/fixture/worktree'),
-    ).toBeUndefined()
-    expect(
-      workflowCursorProjectScope(
-        { session: 'session-one', project: 'other' },
-        'fixture',
-        '/fixture/worktree',
-      ),
-    ).toBe('other')
-    expect(
-      workflowCursorProjectScope({ all: true }, 'fixture', '/fixture/worktree'),
-    ).toBeUndefined()
-    expect(() => workflowCursorProjectScope({}, undefined, '/tmp')).toThrow(
-      'cannot list workflow cursors from /tmp: pass --project, --session or --all',
-    )
   })
 
   test('compose creates once and recompose reports an advanced cursor', async () => {

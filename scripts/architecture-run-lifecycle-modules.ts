@@ -330,6 +330,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../database/db.ts',
     '../project/projects.ts',
     '../record/machine-identity.ts',
+    '../record/record-api-client-task-flow.ts',
     '../workflow/workflow-task-linking.ts',
     '../workflow/workflow-task-reference.ts',
     './question-mutation.ts',

@@ -50,7 +50,7 @@ type ComposeFacts = {
   autonomyJson: string | null
 }
 
-export function decideKeylessComposeInstance(input: {
+function decideKeylessComposeInstance(input: {
   key: string
   owner: string
   projectRecordId: string

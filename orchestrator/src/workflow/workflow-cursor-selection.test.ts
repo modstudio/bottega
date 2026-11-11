@@ -4,7 +4,10 @@ import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
-import { resolveWorkflowCursorMode } from './workflow-cursor-selection.ts'
+import {
+  resolveWorkflowCursorMode,
+  workflowCursorProjectScope,
+} from './workflow-cursor-selection.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
@@ -17,6 +20,27 @@ const definition = (mode: string) => ({
     { slug: mode, title: mode, default: true, steps: ['verify'] },
     { slug: 'non-default', title: 'Non-default', steps: ['verify'] },
   ],
+})
+
+test('listing scope honors explicit flags and refuses an unresolved cwd', () => {
+  expect(workflowCursorProjectScope({}, 'fixture', '/fixture/worktree')).toBe('fixture')
+  expect(workflowCursorProjectScope({ project: 'other' }, 'fixture', '/fixture/worktree')).toBe(
+    'other',
+  )
+  expect(
+    workflowCursorProjectScope({ session: 'session-one' }, 'fixture', '/fixture/worktree'),
+  ).toBeUndefined()
+  expect(
+    workflowCursorProjectScope(
+      { session: 'session-one', project: 'other' },
+      'fixture',
+      '/fixture/worktree',
+    ),
+  ).toBe('other')
+  expect(workflowCursorProjectScope({ all: true }, 'fixture', '/fixture/worktree')).toBeUndefined()
+  expect(() => workflowCursorProjectScope({}, undefined, '/tmp')).toThrow(
+    'cannot list workflow cursors from /tmp: pass --project, --session or --all',
+  )
 })
 
 test('a keyless cursor composed in a non-default mode resolves that mode', async () => {

@@ -425,7 +425,7 @@ function recordUnlinkedLaunchKey(
   )
 }
 
-export function applyRunLinkFactsToReport(
+function applyRunLinkFactsToReport(
   report: RunTaskLinkReport,
   runs: readonly RunLinkFacts[],
   links: readonly DerivedRunLinks[],
