@@ -4,9 +4,8 @@ import type { HostedTask } from './hosted-tasks.ts'
 import { confirmCount } from './hosted-tasks.ts'
 import { pruneForeignHostedTasks, selectForeignHostedTasks } from './task-prune-foreign.ts'
 
-declareFixtureProjectSpace('workshop', 'workshop')
-declareFixtureProjectSpace('cleaned', 'clean')
-declareFixtureProjectSpace('active-project', 'active')
+declareFixtureProjectSpace('workshop', 'clean')
+declareFixtureProjectSpace('beta', 'active')
 
 const task = (key: string, project: string, source: HostedTask['source'] = 'mcp'): HostedTask => ({
   id: `id-${key}`,
@@ -142,7 +141,7 @@ test('foreign prune requires a space and addresses list, presence, and delete to
       if (init?.method === 'DELETE')
         return Response.json({ tasks: 1, comments: 0, documents: 0, statusEvents: 0 })
       return Response.json({
-        tasks: [task('CLEAN-1', 'cleaned'), task('ACTIVE-1', 'active-project')],
+        tasks: [task('CLEAN-1', 'workshop'), task('ACTIVE-1', 'beta')],
         comments: [],
         documents: [],
         statusEvents: [],

@@ -468,11 +468,7 @@ export const hubModuleSpecs = [
   },
   {
     file: 'hub/src/note-project-space.ts',
-    allowed: [
-      './hosted-write-destination.ts',
-      './note-client.ts',
-      './task-project-space.ts',
-    ],
+    allowed: ['./hosted-write-destination.ts', './note-client.ts', './task-project-space.ts'],
   },
   {
     file: 'hub/src/note-staleness.ts',

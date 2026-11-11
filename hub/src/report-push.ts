@@ -1,12 +1,12 @@
 import { hostname } from 'node:os'
 import { db } from './db.ts'
 import type { HostedSend } from './hosted-reports.ts'
+import { personalRecordSpace } from './personal-record-space.ts'
 import {
   hostedMirrorReports,
   hostedReportCounts,
   type ReportClientOptions,
 } from './report-client.ts'
-import { personalRecordSpace } from './personal-record-space.ts'
 
 export async function pushReports(options: ReportClientOptions & { dryRun?: boolean } = {}) {
   const sends = db()

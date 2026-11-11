@@ -89,8 +89,7 @@ export async function pruneForeignHostedTasks(options: Options = {}) {
       onlyPresentElsewhere: options.onlyPresentElsewhere,
     },
   )
-  if (options.dryRun)
-    return { space_id: options.space, tasks: selected, deleted: null }
+  if (options.dryRun) return { space_id: options.space, tasks: selected, deleted: null }
   confirmCount(selected.length, options.confirmation, 'exact-always')
   const deleted = await hostedDeleteTasks(
     selected.map((task) => task.id),

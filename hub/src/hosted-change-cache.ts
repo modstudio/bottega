@@ -19,7 +19,6 @@ import {
   hostedNotePullRows,
 } from './note-cache.ts'
 import { notePullSpaces } from './note-project-space.ts'
-import { personalRecordSpace } from './personal-record-space.ts'
 import {
   HOSTED_MACHINE_TABLES,
   pendingEditSkipsPull,
@@ -27,6 +26,7 @@ import {
   type ReconciledHostedTable,
   reconcilePulledRow,
 } from './pending-hosted-edit.ts'
+import { personalRecordSpace } from './personal-record-space.ts'
 import { projects } from './projects.ts'
 import {
   type HostedRecordChange,
@@ -446,9 +446,7 @@ async function prepareFeedPass(options: PullOptions): Promise<FeedPass> {
   try {
     personalSpaceId = await personalRecordSpace(shared)
   } catch (cause) {
-    preparationFailures.push(
-      `send: ${cause instanceof Error ? cause.message : String(cause)}`,
-    )
+    preparationFailures.push(`send: ${cause instanceof Error ? cause.message : String(cause)}`)
   }
   const families = feedFamilies(registered, identity, personalSpaceId)
   const previous = jsonSetting<Record<string, string[]>>(FEED_SPACES, {})

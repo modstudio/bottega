@@ -1,5 +1,5 @@
-import type { NoteClientOptions, NoteWriteOptions } from './note-client.ts'
 import { hostedWriteDestination } from './hosted-write-destination.ts'
+import type { NoteClientOptions, NoteWriteOptions } from './note-client.ts'
 import { taskProjectDestination } from './task-project-space.ts'
 
 export async function noteDestinationOptions(

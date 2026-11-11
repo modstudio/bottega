@@ -50,7 +50,6 @@ import {
 import { HostedOutboxDrainSchedule, type PendingHostedOutbox } from './outbox-fast-cycle.ts'
 import { pruneOutboxTrace } from './outbox-trace.ts'
 import { applyProjectRegisterNames } from './project-record-id.ts'
-import { projects } from './projects.ts'
 import { rollUpDays } from './query.ts'
 import { readSettingStamp, stampSetting } from './setting-stamp.ts'
 import {

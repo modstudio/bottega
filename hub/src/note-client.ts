@@ -179,18 +179,13 @@ export type OutsideNote = {
   sightings: number
   created_at: string
 }
-export const hostedCreateOutsideNote = (
-  body: HostedOutsideNoteBody,
-  options?: Options,
-) => outsideNoteRequest(body, options)
+export const hostedCreateOutsideNote = (body: HostedOutsideNoteBody, options?: Options) =>
+  outsideNoteRequest(body, options)
 export const hostedListOutsideNotes = (project: string, options?: Options) =>
   request<OutsideNote[]>(`/v1/notes/outside?${new URLSearchParams({ project })}`, options)
 export type NoteClientOptions = Options
 
-async function outsideNoteRequest(
-  body: HostedOutsideNoteBody,
-  options: Options = {},
-) {
+async function outsideNoteRequest(body: HostedOutsideNoteBody, options: Options = {}) {
   const { baseUrl, url, fetch: requestFetch } = requestContext('/v1/notes/outside', options)
   const response = await sendHostedOutsideNoteRequest({
     origin: baseUrl,

@@ -13,7 +13,7 @@ test('a note without a project targets the personal space', async () => {
   const options = await noteDestinationOptions(null, {
     baseUrl: 'https://hub.example.test',
     token: 'session',
-    fetch: async (input) => {
+    fetch: async (_input) => {
       return Response.json({
         user: { id: 'user' },
         activeSpaceId: null,

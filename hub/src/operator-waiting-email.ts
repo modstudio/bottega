@@ -6,8 +6,8 @@ import { operatorInboxPath } from '../../shared/operator-inbox.ts'
 import type { OperatorWaitingItem } from '../../shared/orch-contract.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import {
-  hostedWriteDestination,
   type HostedWriteDestinationOptions,
+  hostedWriteDestination,
 } from './hosted-write-destination.ts'
 import { waiting } from './orch.ts'
 import { personalRecordSpace } from './personal-record-space.ts'

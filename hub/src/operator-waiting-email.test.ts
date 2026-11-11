@@ -178,7 +178,7 @@ test('waiting email real resolver uses declared or personal destinations and hol
   const rows = [
     item({ project: 'workshop', episode: 'declared' }),
     item({ id: 8, project: null, episode: 'personal' }),
-    item({ id: 9, project: PLATFORM_NAME.toLowerCase(), episode: 'undeclared' }),
+    item({ id: 9, project: 'beta', episode: 'undeclared' }),
     item({ id: 10, project: 'missing-project', episode: 'unregistered' }),
   ]
   let personalLookups = 0
@@ -206,9 +206,7 @@ test('waiting email real resolver uses declared or personal destinations and hol
           return Response.json({
             userId: 'user',
             activeSpaceId: 'space-active',
-            memberships: [
-              { spaceId: 'space-declared', slug: 'workshop', permission: 'write' },
-            ],
+            memberships: [{ spaceId: 'space-declared', slug: 'workshop', permission: 'write' }],
           })
         return Response.json({ error: 'unexpected request' }, { status: 500 })
       },
@@ -230,7 +228,7 @@ test('waiting email real resolver uses declared or personal destinations and hol
   ])
   expect(personalLookups).toBe(1)
   expect(errors).toEqual([
-    `hub: operator waiting email push failed for question ${item().question_record_id} in project ${PLATFORM_NAME.toLowerCase()}: Error: project ${PLATFORM_NAME.toLowerCase()} has no declared record space; run \`${PLATFORM_SLUG} project set ${PLATFORM_NAME.toLowerCase()} --space <slug>\``,
+    `hub: operator waiting email push failed for question ${item().question_record_id} in project beta: Error: project beta has no declared record space; run \`${PLATFORM_SLUG} project set beta --space <slug>\``,
     `hub: operator waiting email push failed for question ${item().question_record_id} in project missing-project: Error: project 'missing-project' is not registered; run \`${PLATFORM_SLUG} project list\``,
   ])
 })

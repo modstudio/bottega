@@ -335,10 +335,7 @@ export const hostedDeleteTasks = (
     statusEvents: number
   }>('/v1/tasks', 'DELETE', { ids, confirmation }, options, 'idempotent')
 
-export async function hostedTaskChanges(
-  cursor: string | null,
-  options?: HostedRequestOptions,
-) {
+export async function hostedTaskChanges(cursor: string | null, options?: HostedRequestOptions) {
   const query = new URLSearchParams({ includeDeleted: 'true' })
   if (cursor) query.set('cursor', cursor)
   return readRequest<{
@@ -399,10 +396,7 @@ export async function hostedRecordChanges(
   const query = new URLSearchParams()
   if (after !== undefined) query.set('after', after)
   if (options.limit !== undefined) query.set('limit', String(options.limit))
-  const { response, value } = await readResponseObject(
-    `/v1/changes?${query}`,
-    options,
-  )
+  const { response, value } = await readResponseObject(`/v1/changes?${query}`, options)
   if (response.status === 410) {
     if (
       value.reset !== true ||
@@ -546,9 +540,7 @@ async function taskIdentityResponse(
   return { response, url }
 }
 
-async function taskIdentityResult(
-  options: HostedRequestOptions = {},
-): Promise<TaskIdentityResult> {
+async function taskIdentityResult(options: HostedRequestOptions = {}): Promise<TaskIdentityResult> {
   const { response, url } = await taskIdentityResponse(options)
   const bodyResult = await jsonBody(response, url)
   const value = bodyResult.ok ? bodyResult.value : null
@@ -638,9 +630,7 @@ export async function hostedTaskIdentity(
   }
 }
 
-export async function hostedSignedInUserId(
-  options?: HostedRequestOptions,
-): Promise<string | null> {
+export async function hostedSignedInUserId(options?: HostedRequestOptions): Promise<string | null> {
   const result = await taskIdentityResult(options)
   return result.unauthorized ? null : (result.value.userId as string)
 }

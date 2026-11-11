@@ -1,6 +1,6 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { undeclaredProjectSpaceRefusal } from '../../shared/record-remedies.ts'
-import { personalRecordSpace, type PersonalRecordSpaceOptions } from './personal-record-space.ts'
+import { type PersonalRecordSpaceOptions, personalRecordSpace } from './personal-record-space.ts'
 import { projects } from './projects.ts'
 import { hostedTaskIdentity } from './task-client.ts'
 import { taskProjectDestination } from './task-project-space.ts'
