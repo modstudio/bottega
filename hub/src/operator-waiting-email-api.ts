@@ -10,6 +10,7 @@ import type { HostedRouteConfig } from './hosted-route-config.ts'
 import {
   assertAuthenticatedIdentity,
   identityRefusal,
+  refusedSpaceResponse,
   taskSpaceIdentity,
 } from './hosted-route-identity.ts'
 import { operatorWaitingEmailRequestSchema } from './operator-waiting-email-contract.ts'
@@ -42,12 +43,11 @@ export async function operatorWaitingEmailApi(
     request,
     config.recordApiUrl,
     dependencies.fetch ?? hostedApiFetch,
-    false,
+    true,
   )
   const refusal = identityRefusal(identity)
   if (refusal) return refusal
-  if (identity.kind === 'refused-space')
-    throw new Error('operator waiting email identity refused a space it ignored')
+  if (identity.kind === 'refused-space') return refusedSpaceResponse(identity.refusedSpace)
   assertAuthenticatedIdentity(identity)
   const access = recordSpaceAccessDecision(
     recordRequestNature(request.method),

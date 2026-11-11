@@ -1,4 +1,14 @@
 export const hubModuleSpecs = [
+  {
+    file: 'hub/src/record-board-client.ts',
+    allowed: [
+      'zod',
+      '../../shared/board-purpose.ts',
+      './board-contract.ts',
+      './record-client-options.ts',
+    ],
+  },
+  { file: 'hub/src/record-client-options.ts', allowed: [] },
   { file: 'hub/src/note-git.ts', allowed: ['../../shared/git.ts'] },
   {
     file: 'hub/src/record-bigint.ts',

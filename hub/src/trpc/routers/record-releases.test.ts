@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
-import type { RecordFetch } from '../../record-client.ts'
+import type { RecordFetch } from '../../record-client-options.ts'
 import { recordRouter } from './record.ts'
 
 const originalFetch = globalThis.fetch

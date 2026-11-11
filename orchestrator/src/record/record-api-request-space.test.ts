@@ -267,6 +267,7 @@ test('remaining tenant write routes judge and bind the requested destination spa
     '/v1/outside-intake',
     '/v1/outside-blocks',
     '/v1/moderation/hide',
+    '/v1/members/permission',
   ]) {
     app.all(path, (context) => {
       destinations.push(context.get('destinationSpaceId'))
@@ -283,6 +284,7 @@ test('remaining tenant write routes judge and bind the requested destination spa
     ['/v1/outside-intake', 'POST'],
     ['/v1/outside-blocks', 'POST'],
     ['/v1/moderation/hide', 'POST'],
+    ['/v1/members/permission', 'POST'],
   ] as const) {
     const response = await app.request(path, {
       method,
@@ -290,7 +292,7 @@ test('remaining tenant write routes judge and bind the requested destination spa
     })
     expect(response.status).toBe(200)
   }
-  expect(destinations).toEqual(Array.from({ length: 8 }, () => 'space-b'))
+  expect(destinations).toEqual(Array.from({ length: 9 }, () => 'space-b'))
 })
 
 test('catalogue routes authorize and bind their requested space before services run', async () => {
