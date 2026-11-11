@@ -645,6 +645,9 @@ describe('orch MCP', () => {
         },
       }
       const hostedSpaceId = newRecordId()
+      db()
+        .query("UPDATE project SET settings=json_set(settings,'$.space',?) WHERE name=?")
+        .run(hostedSpaceId, project)
       installRecordApiClient({
         ...createMemoryRecordApiClient(),
         whoami: async () => ({

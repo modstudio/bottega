@@ -270,20 +270,7 @@ function selectKeyedTaskStage(
     )
       return validateIdentity(row, identity)
   }
-  const fallback = d
-    .query(
-      `SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor
-       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-         AND workflow_slug=? AND mode_slug=? AND task_record_id=?
-         AND instance_id='' ORDER BY number DESC LIMIT 1`,
-    )
-    .get(
-      identity.project,
-      identity.workflow,
-      identity.mode,
-      taskRecordId,
-    ) as SelectableCursorRow | null
-  return fallback ? validateIdentity(fallback, identity) : null
+  return null
 }
 
 export function selectWorkflowCursor(

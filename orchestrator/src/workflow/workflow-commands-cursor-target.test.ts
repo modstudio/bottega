@@ -7,6 +7,7 @@ import {
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { db, sessionId } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
+import { rememberProjectSpace } from '../project-space-cache.ts'
 import type { HostedTaskFlow } from '../record/record-task-flow-contract.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
 import { readThroughTaskFlow } from './task-flow-read-through.ts'
@@ -52,6 +53,7 @@ test('next by cursor alone reads through the row key and links the hosted task',
     settings: {
       gate: 'bun run check',
       trunk: 'main',
+      space: 'cursor-target-space',
       docs: { protocol: 'orch-docs' },
       tracker: { kind: 'hub', protocol: 'hub' },
     },
@@ -60,6 +62,7 @@ test('next by cursor alone reads through the row key and links the hosted task',
   const projectId = db()
     .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
     .get(project)!.record_id
+  rememberProjectSpace(db(), project, 'cursor-target-space')
   const hosted = (revision: number, ordinal: number): HostedTaskFlow => ({
     flow: {
       id: flowId,
@@ -141,6 +144,16 @@ test('next by cursor alone reads through the row key and links the hosted task',
       ],
     }),
     readTaskFlow: async () => hosted(2, 1),
+    adoptTaskFlow: async (input) => ({
+      flowRecordId: flowId,
+      revisions: { [flowId]: 3, [input.stage.id]: input.stage.expectedRevision + 1 },
+    }),
+    advanceTaskFlow: async (input) => ({
+      revisions: {
+        [input.stage.id]: input.stage.expectedRevision + 1,
+        ...(input.flow ? { [input.flow.id]: input.flow.expectedRevision + 1 } : {}),
+      },
+    }),
   })
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
   const lines: string[] = []

@@ -175,6 +175,9 @@ describe('hosted run task linking', () => {
 
   test('an adoption failure leaves run and other local task links unwritten', async () => {
     const projectId = addProject('hosted-link-failure', '/work/hosted-link-failure')
+    db()
+      .query(`UPDATE project SET settings='{"space":"hosted-link-space"}' WHERE record_id=?`)
+      .run(projectId)
     const runId = addRun({ agent: 'codex', job: 'implement', projectRecordId: projectId })
     db().query('UPDATE run SET launch_key=? WHERE record_id=?').run('FAIL-1', runId)
     db().exec('PRAGMA foreign_keys=OFF')
@@ -211,9 +214,7 @@ describe('hosted run task linking', () => {
         user: { id: 'hosted-link-user' },
         activeSpaceId: 'hosted-link-space',
         personalSpaceId: 'hosted-link-space',
-        memberships: [
-          { space_id: 'hosted-link-space', slug: 'hosted-link', permission: 'write' },
-        ],
+        memberships: [{ space_id: 'hosted-link-space', slug: 'hosted-link', permission: 'write' }],
       }),
       adoptTaskFlow: async () => {
         throw new Error('hosted adoption failed')

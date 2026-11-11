@@ -42,6 +42,7 @@ export const database = testDatabaseFixture((d) => {
     JSON.stringify({
       gate: 'bun run check',
       trunk: 'develop',
+      space: 'fixture-space',
       docs: { protocol: 'orch-docs' },
       tracker: { protocol: 'hub' },
     }),

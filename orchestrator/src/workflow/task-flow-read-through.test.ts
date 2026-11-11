@@ -43,7 +43,7 @@ function fixture() {
     .query(
       `INSERT INTO project(record_id,name,path,stack,canon,settings)
        VALUES (?,'read-through-fixture','/tmp/read-through-fixture','bun',0,
-         '{"trunk":"main","docs":{"protocol":"orch-docs"},"tracker":{"protocol":"hub"}}')`,
+         '{"trunk":"main","space":"read-through-space","docs":{"protocol":"orch-docs"},"tracker":{"protocol":"hub"}}')`,
     )
     .run(projectId)
   const workflowVersionId = database
