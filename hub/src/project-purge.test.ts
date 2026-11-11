@@ -1,10 +1,55 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { applyMigrations } from './migrations.ts'
-import { purgeHubProject, uncoveredHubProjectTables } from './project-purge.ts'
+import {
+  purgeHubProject,
+  resolvePurgeRecordId,
+  uncoveredHubProjectTables,
+} from './project-purge.ts'
+import { everyRegisteredProject, type RegisteredProject } from './projects.ts'
 
 const TARGET = '00000000-0000-7000-8000-000000000101'
 const SIBLING = '00000000-0000-7000-8000-000000000102'
+
+const registeredProject = (recordId: string, name: string): RegisteredProject => ({
+  record_id: recordId,
+  name,
+  path: `/projects/${name}`,
+  stack: null,
+  canon: false,
+  repository: true,
+  settings: {},
+})
+
+test('every registered project includes live and retired listings', () => {
+  const live = registeredProject(TARGET, 'live-target')
+  const retired = registeredProject(SIBLING, 'retired-target')
+  const calls: Array<{ retired?: boolean } | undefined> = []
+
+  const registered = everyRegisteredProject((options) => {
+    calls.push(options)
+    return options?.retired ? [retired] : [live]
+  })
+
+  expect(calls).toEqual([undefined, { retired: true }])
+  expect(registered.map(({ name }) => name)).toEqual(['live-target', 'retired-target'])
+})
+
+test('purge resolves live and retired register entries through their hosted ids', () => {
+  const live = registeredProject(TARGET, 'live-target')
+  const retired = registeredProject(SIBLING, 'retired-target')
+  const registered = [live, retired]
+
+  expect(resolvePurgeRecordId(live.name, registered)).toBe(live.record_id)
+  expect(resolvePurgeRecordId(retired.name, registered)).toBe(retired.record_id)
+})
+
+test('purge names both register listings when the project is absent', () => {
+  expect(() => resolvePurgeRecordId('missing', [])).toThrow(
+    `project missing is not in this machine's register; run \`${PLATFORM_SLUG} project list\` and \`${PLATFORM_SLUG} project list --retired\` to inspect the register`,
+  )
+})
 
 function migratedDatabase(): Database {
   const database = new Database(':memory:')

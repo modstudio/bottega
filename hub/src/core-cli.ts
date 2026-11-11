@@ -38,8 +38,7 @@ import {
   readWorkflowCursorIdentityMap,
   startDashboardCapability,
 } from './orch.ts'
-import { purgeHubProject } from './project-purge.ts'
-import { projectRecordIdFor } from './project-record-id.ts'
+import { purgeHubProject, resolvePurgeRecordId } from './project-purge.ts'
 import { projects } from './projects.ts'
 import { estateEngagedMs, tasksInWindow } from './query.ts'
 import { printReconcile, reconcileOpenIntervals } from './reconcile.ts'
@@ -430,8 +429,7 @@ export function registerCoreCommands(program: Command): void {
           `confirmation guard failed: --confirm must equal ${name}; run \`${PLATFORM_SLUG} project purge ${name} --confirm ${name}\``,
         )
       requireDatabase()
-      const recordId = projectRecordIdFor(name)
-      if (!recordId) throw new Error(`registered project ${name} has no hosted record id`)
+      const recordId = resolvePurgeRecordId(name)
       renderRemovalReport(purgeHubProject(db(), recordId, name), console.log)
     })
 }

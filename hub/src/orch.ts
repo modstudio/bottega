@@ -496,9 +496,11 @@ export function projectListProcessError(result: ProjectListProcessResult): strin
   )
 }
 
-export function projectList(): OrchProject[] {
+export type ProjectListOptions = { retired?: boolean }
+
+export function projectList(options: ProjectListOptions = {}): OrchProject[] {
   const command = bottegaEntryArgv(PLATFORM_SLUG, resolveOrchExecutable)
-  const args = ['project', 'list', '--json']
+  const args = ['project', 'list', ...(options.retired ? ['--retired'] : []), '--json']
   const proc = Bun.spawnSync([...command, ...args], {
     env: { ...process.env },
     stdout: 'pipe',
