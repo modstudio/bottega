@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import type { ModerationHideReason } from '../../../shared/moderation-hide-reason.ts'
 import { resolveRecordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
+import { renderRemovalReport as renderRecordRemovalReport } from '../../../shared/removal-report.ts'
 import { openReadOnlyDatabase } from '../database/db.ts'
 import {
   appliedRecordMigrationCount,
@@ -25,7 +26,6 @@ import {
   listPublicDocProjects,
   type PublicDocDesignation,
 } from './record-public-doc-designation.ts'
-import { renderRecordRemovalReport } from './record-removal-report.ts'
 import {
   acceptRecordInvitation,
   blockRecordSpaceOutsideAuthor,

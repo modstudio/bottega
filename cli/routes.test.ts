@@ -228,9 +228,10 @@ test('each composite part declares exactly the options its owner command accepts
   for (const route of ROUTES) {
     for (const part of route.composite ?? []) {
       const program = part.owner === 'orch' ? orchProgram : hubProgram
+      const fixed = new Set(part.fixedArguments ?? [])
       const accepted = commandAt(program, part.argv)
         .options.map((option) => option.long)
-        .filter((name): name is string => !!name && !refused.has(name))
+        .filter((name): name is string => !!name && !refused.has(name) && !fixed.has(name))
         .sort()
       expect(
         Object.keys(part.options ?? {}).sort(),

@@ -127,7 +127,7 @@ describe(`${PLATFORM_SLUG} project retire`, () => {
   })
 })
 
-test('project purge reports hosted counts and removes an unreferenced register row', async () => {
+test('project purge reports hosted and orchestrator counts before register removal', async () => {
   const recordId = newRecordId()
   upsertProject({
     recordId,
@@ -150,19 +150,27 @@ test('project purge reports hosted counts and removes an unreferenced register r
     },
   })
   expect(await runProject(['project', 'purge', 'purge-me'], { confirm: 'purge-me' })).toBe(
-    "removed\thub_task\t2\nremoved\tproject\t1\nremoved purge-me from this machine's register",
+    'removed\thub_task\t2\nremoved\tproject\t1',
   )
   expect(calls).toEqual([[recordId, 'purge-me', { destinationSpaceId: 'space-a' }]])
-  expect(projectByName('purge-me')).toBeNull()
+  expect(projectByName('purge-me')).not.toBeNull()
 })
 
-test('project purge keeps the register row and names its referencing local tables', async () => {
+test('project purge removes referencing local rows and leaves the register for the final part', async () => {
   const recordId = newRecordId()
   const messageId = newRecordId()
+  const siblingRecordId = newRecordId()
+  const siblingMessageId = newRecordId()
   upsertProject({
     recordId,
     name: 'purge-local-reference',
     path: '/w/purge-local-reference',
+    settings: { space: 'space-a' },
+  })
+  upsertProject({
+    recordId: siblingRecordId,
+    name: 'purge-local-sibling',
+    path: '/w/purge-local-sibling',
     settings: { space: 'space-a' },
   })
   db()
@@ -175,6 +183,16 @@ test('project purge keeps the register row and names its referencing local table
       '2026-11-11T00:00:00.000Z',?)`,
     )
     .run(messageId, recordId)
+  db()
+    .query(
+      `INSERT INTO board_message
+     (record_id,number,kind,author_kind,audience,title,body,ack_required,expires_at,created_at,
+      author_project_record_id)
+     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM board_message),'notice','operator',
+      'architects','sibling proof','proof',0,'2099-01-01T00:00:00.000Z',
+      '2026-11-11T00:00:00.000Z',?)`,
+    )
+    .run(siblingMessageId, siblingRecordId)
   installRecordApiClient({
     ...createProjectRecordApiClient(),
     purgeProject: async () => ({
@@ -186,14 +204,15 @@ test('project purge keeps the register row and names its referencing local table
     await runProject(['project', 'purge', 'purge-local-reference'], {
       confirm: 'purge-local-reference',
     }),
-  ).toContain(
-    "purge-local-reference remains in this machine's register because local tables still reference it: board_message",
-  )
+  ).toContain('removed\tboard_message\t1')
   expect(projectByName('purge-local-reference')).not.toBeNull()
-  db().query('DELETE FROM board_message WHERE record_id=?').run(messageId)
+  expect(db().query('SELECT 1 FROM board_message WHERE record_id=?').get(messageId)).toBeNull()
+  expect(
+    db().query('SELECT 1 FROM board_message WHERE record_id=?').get(siblingMessageId),
+  ).not.toBeNull()
 })
 
-test('project purge keeps the register row when no hosted project is visible', async () => {
+test('project purge proceeds locally when no hosted project is visible', async () => {
   const recordId = newRecordId()
   upsertProject({
     recordId,
@@ -210,7 +229,7 @@ test('project purge keeps the register row when no hosted project is visible', a
       confirm: 'purge-not-visible',
     }),
   ).toBe(
-    `no hosted project with record id ${recordId} is visible in any space this caller belongs to; this machine's register entry is kept; run \`${PLATFORM_SLUG} project remove purge-not-visible\` to drop it`,
+    `the hosted record held nothing for purge-not-visible (${recordId}); proceeding with this machine's local stores`,
   )
   expect(projectByName('purge-not-visible')).not.toBeNull()
 })

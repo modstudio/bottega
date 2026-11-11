@@ -42,6 +42,7 @@ export type DocumentationOptionDetail = {
   valuePlaceholder: string | null
   description: string
   default: DocumentationOptionDefault | null
+  required?: boolean
 }
 
 export type DocumentationCommand = {
@@ -255,12 +256,27 @@ function compositeRouteUnits(
     const command = resolveOwnerCommand(route, part.owner, part.argv, programs)
     return visibleOptionDetails(command, part.options)
   })
+  const uniqueOptions = [
+    ...options
+      .reduce((byFlags, option) => {
+        if (!byFlags.has(option.flags)) byFlags.set(option.flags, option)
+        return byFlags
+      }, new Map<string, DocumentationOptionDetail>())
+      .values(),
+  ]
+  for (const option of uniqueOptions)
+    option.required =
+      route.requiredOptions?.some((token) => option.flags.includes(token.split(' ')[0]!)) ?? false
   writeCommand(book, {
     spelling: commandUnit.spelling,
     group: commandUnit.group,
     description: commandUnit.description,
-    arguments: [],
-    options,
+    arguments: (route.positionals ?? []).map((name) => ({
+      name,
+      required: true,
+      variadic: false,
+    })),
+    options: uniqueOptions,
     examples: [],
     optionsByHelp: false,
   })
@@ -274,7 +290,15 @@ function compositeRouteUnits(
       part.options,
     )
   })
-  return [commandUnit, ...optionDocumentation]
+  const uniqueOptionDocumentation = [
+    ...optionDocumentation
+      .reduce((bySpelling, unit) => {
+        if (!bySpelling.has(unit.spelling)) bySpelling.set(unit.spelling, unit)
+        return bySpelling
+      }, new Map<string, DocumentationUnit>())
+      .values(),
+  ]
+  return [commandUnit, ...uniqueOptionDocumentation]
 }
 
 function outboxRouteUnits(

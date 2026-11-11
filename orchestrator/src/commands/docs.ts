@@ -12,7 +12,7 @@ import { hostedDocClient } from '../doc/doc-hosted-client.ts'
 import { type HostedDocRevision, readHostedDocRevisions } from '../doc/doc-hosted-history.ts'
 import { selectDocWriteTree } from '../doc/doc-write-tree.ts'
 import { portCommand } from '../porting/port-commands.ts'
-import { projectCommand } from '../project/project-commands.ts'
+import { projectCommand, removeProjectCommand } from '../project/project-commands.ts'
 import { cachedSignedInRecordUser } from '../record/record-session.ts'
 import { requireRecordSpaceMembership } from '../record/record-space.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
@@ -536,7 +536,11 @@ const projectSpecs: readonly Spec[] = [
     [],
   ],
   ['retire [name]', 'retire or un-retire a project', [o('--undo')]],
-  ['purge <name>', 'purge a project from the hosted record', [o('--confirm <name>')]],
+  [
+    'purge <name>',
+    'purge a project from the hosted record and this machine stores',
+    [o('--confirm <name>')],
+  ],
   ['push', 'push projects to the hosted record', json],
   ['fill-record-ids', 'fill missing hosted project identities', json],
   ['relink [name]', 'adopt the hosted identity of a registered project', []],
@@ -581,4 +585,15 @@ export function register(program: Command): void {
   registerCanon(program)
   registerPort(program)
   registerProject(program)
+  program
+    .command('project-purge-remove <name>', { hidden: true })
+    .helpOption(false)
+    .option('--confirm <name>')
+    .action((name: string, options: { confirm?: string }) => {
+      if (options.confirm !== name)
+        throw new Error(
+          `confirmation guard failed: --confirm must equal ${name}; run \`${PLATFORM_SLUG} project purge ${name} --confirm ${name}\``,
+        )
+      removeProjectCommand(name, { purged: true }, { log, cwd: process.cwd })
+    })
 }

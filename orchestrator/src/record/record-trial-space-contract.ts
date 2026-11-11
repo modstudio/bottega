@@ -1,6 +1,6 @@
 // concern: record-trial-space-contract
 /** Stable transport and refusal shape shared by both destructive space-delete verbs. */
-import type { RecordRemovalReport } from './record-removal-report.ts'
+import type { RemovalReport as RecordRemovalReport } from '../../../shared/removal-report.ts'
 
 export class SpaceDeleteError extends Error {
   readonly status = 422

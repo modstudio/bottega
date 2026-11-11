@@ -489,6 +489,7 @@ export const CLI_COMMANDS = new Set([
   'port',
   'pr',
   'project',
+  'project-purge-remove',
   'provisioning',
   'question',
   'record',

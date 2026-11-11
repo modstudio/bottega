@@ -85,6 +85,10 @@ export const hubModuleSpecs = [
     allowed: ['bun:sqlite', './projects.ts'],
   },
   {
+    file: 'hub/src/project-purge.ts',
+    allowed: ['bun:sqlite', '../../shared/removal-report.ts', './db.ts'],
+  },
+  {
     file: 'hub/src/hosted-project-identity.ts',
     allowed: ['bun', '../../shared/record-project-identity.ts'],
   },
@@ -362,6 +366,7 @@ export const hubModuleSpecs = [
       '../../shared/interval.ts',
       '../../shared/machine-config.ts',
       '../../shared/question-vocabulary.ts',
+      '../../shared/removal-report.ts',
       '../../shared/update-lock.ts',
       './collect.ts',
       './db.ts',
@@ -370,6 +375,8 @@ export const hubModuleSpecs = [
       './local-auth.ts',
       './orch.ts',
       './projects.ts',
+      './project-record-id.ts',
+      './project-purge.ts',
       './query.ts',
       './reconcile.ts',
       './rulings.ts',

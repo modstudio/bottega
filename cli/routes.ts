@@ -16,7 +16,12 @@ export type CommandRoute = {
     argv: readonly string[]
     label: string
     options?: Readonly<Record<string, boolean>>
+    fixedArguments?: readonly string[]
   }[]
+  /** Leading non-option arguments forwarded to every composite part. */
+  positionals?: readonly string[]
+  /** Composite options that form part of the required public invocation. */
+  requiredOptions?: readonly string[]
   continueOnFailure?: boolean
   description?: string
   options?: readonly {
@@ -134,6 +139,33 @@ export const ROUTES = (
       'publish the generated command reference',
     ),
     route('doc', 'orch', 'doc'),
+    {
+      command: ['project', 'purge'],
+      owner: 'composite',
+      description: 'purge a project from the hosted record and this machine stores',
+      positionals: ['name'],
+      requiredOptions: ['--confirm <name>'],
+      composite: [
+        {
+          owner: 'orch',
+          argv: ['project', 'purge'],
+          label: 'hosted and orchestrator purge',
+          options: { '--confirm': true },
+        },
+        {
+          owner: 'hub',
+          argv: ['project-purge'],
+          label: 'hub purge',
+          options: { '--confirm': true },
+        },
+        {
+          owner: 'orch',
+          argv: ['project-purge-remove'],
+          label: 'register removal',
+          options: { '--confirm': true },
+        },
+      ],
+    },
     route('project', 'orch', 'project'),
     route('session', 'orch', 'session'),
     route('tree branch', 'orch', 'branches'),

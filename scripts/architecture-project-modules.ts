@@ -24,6 +24,16 @@ export const projectModules: ProjectModule[] = [
     './project-settings.ts',
   ]),
   module('orchestrator/src/project/project-settings-patch.ts', []),
+  module('orchestrator/src/project/project-purge-local.ts', [
+    'bun:sqlite',
+    'node:fs',
+    'node:path',
+    '../../../shared/brand.ts',
+    '../../../shared/removal-report.ts',
+    '../../../shared/state-directory.ts',
+    '../database/db.ts',
+    '../run/run-status.ts',
+  ]),
   module('orchestrator/src/project/declared-project-space.ts', [
     '../../../shared/record-remedies.ts',
     './declared-record-space.ts',

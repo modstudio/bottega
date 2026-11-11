@@ -67,6 +67,7 @@ import {
   writeProjectToHostedRecord,
 } from './project-hosted-write.ts'
 import { type SettingsObjectMode, validateProjectInjectionSettings } from './project-injection.ts'
+import { localProjectPurgeRefusals, purgeLocalOrchestratorProject } from './project-purge-local.ts'
 import { projectPushRefusalMessage } from './project-push-refusal.ts'
 import {
   PROJECT_REFERENCES,
@@ -480,15 +481,6 @@ export function projectRemovalRefusal(
   ]
 }
 
-export class ProjectRemovalRefusalError extends Error {
-  readonly tables: string[]
-
-  constructor(message: string, tables: string[]) {
-    super(message)
-    this.tables = tables
-  }
-}
-
 export function removeProject(name: string): boolean {
   writableDb()
   const project = projectByName(name)
@@ -503,9 +495,17 @@ export function removeProject(name: string): boolean {
         ),
       ),
     ]
-    throw new ProjectRemovalRefusalError(refusal.join('\n'), tables)
+    throw new Error(`${refusal.join('\n')}\nreferencing tables: ${tables.join(', ')}`)
   }
   return db().query('DELETE FROM project WHERE record_id = ?').run(project.recordId).changes > 0
+}
+
+export function projectLocalPurgeRefusals(projectRecordId: string): string[] {
+  return localProjectPurgeRefusals(db(), projectRecordId)
+}
+
+export function purgeLocalProjectRows(projectRecordId: string, projectName: string) {
+  return purgeLocalOrchestratorProject(db(), projectRecordId, projectName)
 }
 
 export function retireProject(name: string): 'retired' | 'already-retired' {
