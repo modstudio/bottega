@@ -159,10 +159,18 @@ test('project purge reports hosted and orchestrator counts before register remov
 test('project purge removes referencing local rows and leaves the register for the final part', async () => {
   const recordId = newRecordId()
   const messageId = newRecordId()
+  const siblingRecordId = newRecordId()
+  const siblingMessageId = newRecordId()
   upsertProject({
     recordId,
     name: 'purge-local-reference',
     path: '/w/purge-local-reference',
+    settings: { space: 'space-a' },
+  })
+  upsertProject({
+    recordId: siblingRecordId,
+    name: 'purge-local-sibling',
+    path: '/w/purge-local-sibling',
     settings: { space: 'space-a' },
   })
   db()
@@ -175,6 +183,16 @@ test('project purge removes referencing local rows and leaves the register for t
       '2026-11-11T00:00:00.000Z',?)`,
     )
     .run(messageId, recordId)
+  db()
+    .query(
+      `INSERT INTO board_message
+     (record_id,number,kind,author_kind,audience,title,body,ack_required,expires_at,created_at,
+      author_project_record_id)
+     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM board_message),'notice','operator',
+      'architects','sibling proof','proof',0,'2099-01-01T00:00:00.000Z',
+      '2026-11-11T00:00:00.000Z',?)`,
+    )
+    .run(siblingMessageId, siblingRecordId)
   installRecordApiClient({
     ...createProjectRecordApiClient(),
     purgeProject: async () => ({
@@ -189,6 +207,9 @@ test('project purge removes referencing local rows and leaves the register for t
   ).toContain('removed\tboard_message\t1')
   expect(projectByName('purge-local-reference')).not.toBeNull()
   expect(db().query('SELECT 1 FROM board_message WHERE record_id=?').get(messageId)).toBeNull()
+  expect(
+    db().query('SELECT 1 FROM board_message WHERE record_id=?').get(siblingMessageId),
+  ).not.toBeNull()
 })
 
 test('project purge proceeds locally when no hosted project is visible', async () => {
