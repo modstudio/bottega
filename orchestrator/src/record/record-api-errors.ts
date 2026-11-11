@@ -11,7 +11,8 @@ import {
   RecordProjectSpaceConflictError,
 } from './record-project-space-contract.ts'
 import { RecordProjectError } from './record-projects.ts'
-import { TrialSpaceDeleteError } from './record-trial-space-contract.ts'
+import { RecordProjectPurgeError } from './record-project-purge-contract.ts'
+import { SpaceDeleteError } from './record-trial-space-contract.ts'
 import { RecordVerdictError } from './record-verdicts.ts'
 
 export function renderRecordApiRefusal(context: Context, error: unknown): Response | null {
@@ -25,7 +26,8 @@ export function renderRecordApiRefusal(context: Context, error: unknown): Respon
     error instanceof ConfigServiceError ||
     error instanceof RecordProjectError ||
     error instanceof RecordBoardError ||
-    error instanceof TrialSpaceDeleteError
+    error instanceof SpaceDeleteError ||
+    error instanceof RecordProjectPurgeError
   ) {
     return context.json({ error: error.message }, error.status)
   }

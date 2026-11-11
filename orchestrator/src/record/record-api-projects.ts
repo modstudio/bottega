@@ -77,8 +77,14 @@ export function registerRecordProjectRoutes(
     if (!id.success || !body.success)
       return context.json({ error: 'project id and confirmation are required' }, 400)
     try {
+      const identity = context.get('identity')
       return context.json(
-        await deps.purgeProject({ ...tenant, id: id.data, confirmation: body.data.confirmation }),
+        await deps.purgeProject({
+          ...tenant,
+          spaceIds: identity.memberships.map((membership) => membership.space_id),
+          id: id.data,
+          confirmation: body.data.confirmation,
+        }),
       )
     } catch (error) {
       return helpers.writeError(context, error)

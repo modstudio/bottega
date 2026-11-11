@@ -240,6 +240,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'project fill-space',
   'project list',
   'project migrate-create',
+  'project purge',
   'project push',
   'project relink',
   'project remove',

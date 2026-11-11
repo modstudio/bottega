@@ -1,17 +1,17 @@
 // concern: record-trial-space-contract
-/** Stable transport and refusal shape for the destructive trial-space verb. */
-export class TrialSpaceDeleteError extends Error {
+/** Stable transport and refusal shape shared by both destructive space-delete verbs. */
+export class SpaceDeleteError extends Error {
   readonly status = 422
 }
-export type TrialSpaceDeleteResult = {
+export type SpaceDeleteResult = {
   nothingToRemove: boolean
   activeSpaceCleared: boolean
   tables: Record<string, number>
   neutralized: Array<{ userId: string; email: string; sessions: number; machineKeys: number }>
 }
 
-function trialSpaceDeleteResponse(body: unknown): TrialSpaceDeleteResult {
-  if (typeof body !== 'object' || body === null) throw new Error('invalid trial-space deletion')
+function spaceDeleteResponse(body: unknown): SpaceDeleteResult {
+  if (typeof body !== 'object' || body === null) throw new Error('invalid space deletion')
   const value = body as Record<string, unknown>
   if (
     typeof value.nothingToRemove !== 'boolean' ||
@@ -20,24 +20,24 @@ function trialSpaceDeleteResponse(body: unknown): TrialSpaceDeleteResult {
     value.tables === null ||
     !Array.isArray(value.neutralized)
   )
-    throw new Error('invalid trial-space deletion')
-  return value as TrialSpaceDeleteResult
+    throw new Error('invalid space deletion')
+  return value as SpaceDeleteResult
 }
 
 export const trialSpaceDeleteTransport = {
   options: (slug: string) => ({
     method: 'POST',
     body: JSON.stringify({ slug }),
-    schema: trialSpaceDeleteResponse,
+    schema: spaceDeleteResponse,
   }),
-  response: trialSpaceDeleteResponse,
+  response: spaceDeleteResponse,
 }
 
 export const spaceDeleteTransport = {
   options: (slug: string, confirmation: string) => ({
     method: 'POST',
     body: JSON.stringify({ slug, confirmation }),
-    schema: trialSpaceDeleteResponse,
+    schema: spaceDeleteResponse,
   }),
-  response: trialSpaceDeleteResponse,
+  response: spaceDeleteResponse,
 }

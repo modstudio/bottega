@@ -2,11 +2,11 @@ import { describe, expect, test } from 'bun:test'
 import {
   decideSpaceDelete,
   decideTrialSpaceDelete,
+  type ConfirmedSpaceDeleteFacts,
   type SpaceDeleteFacts,
-  type TrialDeleteFacts,
 } from './record-trial-space-delete.ts'
 
-const base: TrialDeleteFacts = {
+const base: SpaceDeleteFacts = {
   exists: true,
   slug: 'trial-demo',
   marked: true,
@@ -60,7 +60,11 @@ describe('trial space delete guard', () => {
   })
 })
 describe('confirmed space delete guard', () => {
-  const general: SpaceDeleteFacts = { ...base, confirmation: base.slug, personalSpace: false }
+  const general: ConfirmedSpaceDeleteFacts = {
+    ...base,
+    confirmation: base.slug,
+    personalSpace: false,
+  }
   test('requires confirmation, ownership, no listing, no personal-space owner, and trial-only peers', () => {
     expect(decideSpaceDelete({ ...general, confirmation: 'other' })).toMatchObject({
       allowed: false,

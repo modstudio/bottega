@@ -6,6 +6,7 @@ const base: ProjectPurgeFacts = {
   name: 'demo',
   confirmation: 'demo',
   spaceSlug: 'team',
+  declaredSpaceMatches: true,
   callerRole: 'owner',
   publiclyListed: false,
 }
@@ -14,6 +15,10 @@ describe('project purge guard', () => {
     expect(decideProjectPurge({ ...base, confirmation: 'other' })).toMatchObject({
       allowed: false,
       refusal: expect.stringContaining('--confirm demo'),
+    })
+    expect(decideProjectPurge({ ...base, declaredSpaceMatches: false })).toMatchObject({
+      allowed: false,
+      refusal: expect.stringContaining('project set demo --space team'),
     })
     expect(decideProjectPurge({ ...base, callerRole: 'admin' })).toMatchObject({
       allowed: false,

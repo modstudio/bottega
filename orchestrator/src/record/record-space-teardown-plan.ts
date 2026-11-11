@@ -1,5 +1,5 @@
 // concern: record-space-teardown-plan
-/** Derives the child-before-parent delete plan from the hosted Drizzle schema. */
+/** Derives child-before-parent space teardown and project purge plans from the hosted schema. */
 import { getTableConfig, type PgTable } from 'drizzle-orm/pg-core'
 import * as root from '../../../shared/record/schema.ts'
 import * as a from '../../../shared/record/schema-auth.ts'
@@ -38,14 +38,12 @@ type ForeignKeyFact = {
   parentColumns: string[]
   onDelete?: string
 }
-export type SpaceTeardownReach = {
+export type RecordTeardownReach = {
   columns: string[]
   parent: string
   parentColumns: string[]
 }
-export type SpaceTeardownStep = { table: string; reachedBy: SpaceTeardownReach[] }
-export type RecordTeardownReach = SpaceTeardownReach
-export type RecordTeardownStep = SpaceTeardownStep
+export type RecordTeardownStep = { table: string; reachedBy: RecordTeardownReach[] }
 export const SPACE_TEARDOWN_EXCLUSIONS = {
   public_doc_space:
     'a published space is refused before teardown and record_actor holds SELECT only',
@@ -85,7 +83,7 @@ function discoverReachedTables(
   exclusions: Readonly<Record<string, string>>,
   rootTable: string,
   follows: (fact: ForeignKeyFact) => boolean,
-): Map<string, SpaceTeardownReach[]> {
+): Map<string, RecordTeardownReach[]> {
   const reached = new Set<string>()
   const remaining = new Set(tableNames)
   let parents = new Set([rootTable])
@@ -121,10 +119,10 @@ function discoverReachedTables(
 
 function orderReachedTables(
   facts: readonly ForeignKeyFact[],
-  reachedBy: ReadonlyMap<string, SpaceTeardownReach[]>,
+  reachedBy: ReadonlyMap<string, RecordTeardownReach[]>,
   follows: (fact: ForeignKeyFact) => boolean,
   cycleName: string,
-): SpaceTeardownStep[] {
+): RecordTeardownStep[] {
   const pending = new Set(reachedBy.keys())
   const dependencies = new Map([...pending].map((name) => [name, new Set<string>()]))
   for (const fact of facts)
@@ -136,7 +134,7 @@ function orderReachedTables(
     )
       dependencies.get(fact.table)?.add(fact.parent)
 
-  const plan: SpaceTeardownStep[] = []
+  const plan: RecordTeardownStep[] = []
   while (pending.size) {
     const ready = [...pending]
       .filter(
@@ -157,7 +155,7 @@ function orderReachedTables(
 export function deriveSpaceTeardownPlan(
   tables: readonly PgTable[] = hostedRecordTables,
   exclusions: Readonly<Record<string, string>> = SPACE_TEARDOWN_EXCLUSIONS,
-): SpaceTeardownStep[] {
+): RecordTeardownStep[] {
   const facts = foreignKeyFacts(tables)
   const names = tables.map((item) => getTableConfig(item).name)
   return orderReachedTables(
@@ -188,10 +186,39 @@ export function deriveProjectPurgePlan(
 export const PROJECT_PURGE_PLAN = deriveProjectPurgePlan()
 export const PROJECT_PURGE_ORDER = PROJECT_PURGE_PLAN.map((step) => step.table)
 
-export function unclassifiedSpaceTables(
+const identifier = (value: string) => `"${value.replaceAll('"', '""')}"`
+const tuple = (columns: readonly string[]) =>
+  columns.length === 1 ? identifier(columns[0]!) : `(${columns.map(identifier).join(',')})`
+const selectList = (columns: readonly string[]) => columns.map(identifier).join(',')
+
+/** Builds one recursive row predicate for every step in a derived teardown plan. */
+export function buildRecordTeardownPredicates(
+  plan: readonly RecordTeardownStep[],
+  rootTable: string,
+  rootPredicate: string,
+): { identifier(value: string): string; predicate(table: string): string } {
+  const steps = new Map(plan.map((step) => [step.table, step]))
+  const reachPredicate = (reach: RecordTeardownReach): string => {
+    if (reach.parent === rootTable)
+      return `${tuple(reach.columns)} IN (SELECT ${selectList(reach.parentColumns)} FROM ${identifier(rootTable)} WHERE ${rootPredicate})`
+    if (!steps.has(reach.parent))
+      throw new Error(`${rootTable} teardown parent is not planned: ${reach.parent}`)
+    return `${tuple(reach.columns)} IN (SELECT ${selectList(reach.parentColumns)} FROM ${identifier(reach.parent)} WHERE ${predicate(reach.parent)})`
+  }
+  const predicate = (table: string): string => {
+    const step = steps.get(table)
+    if (!step) throw new Error(`${rootTable} teardown table is not planned: ${table}`)
+    return `(${step.reachedBy.map(reachPredicate).join(' OR ')})`
+  }
+  return { identifier, predicate }
+}
+
+function unclassifiedTeardownTables(
+  rootTable: string,
+  follows: (fact: ForeignKeyFact) => boolean,
   tables: readonly PgTable[] = hostedRecordTables,
-  order: readonly string[] = SPACE_TEARDOWN_ORDER,
-  exclusions: Readonly<Record<string, string>> = SPACE_TEARDOWN_EXCLUSIONS,
+  order: readonly string[],
+  exclusions: Readonly<Record<string, string>>,
 ): string[] {
   const classified = new Set(order)
   return [
@@ -199,8 +226,8 @@ export function unclassifiedSpaceTables(
       foreignKeyFacts(tables)
         .filter(
           (fact) =>
-            blocksParentDelete(fact) &&
-            (fact.parent === 'space' || classified.has(fact.parent)) &&
+            follows(fact) &&
+            (fact.parent === rootTable || classified.has(fact.parent)) &&
             !classified.has(fact.table) &&
             !exclusions[fact.table],
         )
@@ -209,23 +236,24 @@ export function unclassifiedSpaceTables(
   ].sort()
 }
 
+export function unclassifiedSpaceTables(
+  tables: readonly PgTable[] = hostedRecordTables,
+  order: readonly string[] = SPACE_TEARDOWN_ORDER,
+  exclusions: Readonly<Record<string, string>> = SPACE_TEARDOWN_EXCLUSIONS,
+): string[] {
+  return unclassifiedTeardownTables('space', blocksParentDelete, tables, order, exclusions)
+}
+
 export function unclassifiedProjectTables(
   tables: readonly PgTable[] = hostedRecordTables,
   order: readonly string[] = PROJECT_PURGE_ORDER,
   exclusions: Readonly<Record<string, string>> = PROJECT_PURGE_EXCLUSIONS,
 ): string[] {
-  const classified = new Set(order)
-  return [
-    ...new Set(
-      foreignKeyFacts(tables)
-        .filter(
-          (fact) =>
-            belongsToPurgedProject(fact) &&
-            (fact.parent === 'project' || classified.has(fact.parent)) &&
-            !classified.has(fact.table) &&
-            !exclusions[fact.table],
-        )
-        .map((fact) => fact.table),
-    ),
-  ].sort()
+  return unclassifiedTeardownTables(
+    'project',
+    belongsToPurgedProject,
+    tables,
+    order,
+    exclusions,
+  )
 }

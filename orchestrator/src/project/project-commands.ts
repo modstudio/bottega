@@ -30,6 +30,7 @@ import { fillProjectRecordIds } from './project-record-identity.ts'
 import { formatProjectRelink, relinkProjectByName } from './project-relink.ts'
 import { persistLocalProjectSet } from './project-rename.ts'
 import { projectSetSettingsPatch } from './project-set-space.ts'
+import { PROJECT_REFERENCES, projectReferenceCounts } from './project-reference-counts.ts'
 import {
   mergeProjectSettings,
   type SettingsPatchEffect,
@@ -857,8 +858,16 @@ async function purgeProjectCommand(
   } catch (error) {
     if (!(error instanceof Error) || !error.message.startsWith(`project ${name} is referenced by`))
       throw error
+    const counts = projectReferenceCounts(db(), project.recordId)
+    const tables = [
+      ...new Set(
+        PROJECT_REFERENCES.filter(([key]) => counts[key] > 0).map(
+          ([key, , , explicitTable]) => explicitTable ?? key,
+        ),
+      ),
+    ]
     presentation.log(
-      `${name} remains in this machine's register because local tables still reference it; the local purge slice will clear it`,
+      `${name} remains in this machine's register because local tables still reference it: ${tables.join(', ')}`,
     )
   }
 }

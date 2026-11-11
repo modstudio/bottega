@@ -5,6 +5,7 @@ import { renderRecordApiRefusal } from './record-api-errors.ts'
 import { registerRecordProjectRoutes } from './record-api-projects.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { RecordProjectSpaceConflictError } from './record-project-space-contract.ts'
+import { RecordProjectPurgeError } from './record-project-purge-contract.ts'
 import { classifyProjectWriteRefusal } from './record-project-space-server.ts'
 
 const conflict = {
@@ -66,4 +67,52 @@ test('the project route renders a typed 409 naming the sent project and request 
     error: expect.stringContaining('already recorded under another space'),
     ...conflict,
   })
+})
+
+test('the purge route binds every caller membership and renders guard refusals as 422', async () => {
+  const projectId = newRecordId()
+  const otherSpaceId = newRecordId()
+  const routeIdentity: RecordIdentity = {
+    user: { id: newRecordId(), email: 'purge-route@example.test' },
+    activeSpaceId: conflict.spaceId,
+    personalSpaceId: conflict.spaceId,
+    memberships: [
+      { space_id: conflict.spaceId, name: 'Alpha', slug: 'alpha', role: 'owner', permission: 'write' },
+      { space_id: otherSpaceId, name: 'Beta', slug: 'beta', role: 'owner', permission: 'write' },
+    ],
+  }
+  const app = new Hono<{ Variables: { identity: RecordIdentity } }>()
+  app.use('/v1/*', async (context, next) => {
+    context.set('identity', routeIdentity)
+    await next()
+  })
+  registerRecordProjectRoutes(
+    app,
+    {
+      readProjects: async () => [],
+      upsertProject: async () => ({ id: projectId, name: 'unused' }),
+      retireProject: async () => ({ name: 'unused' }),
+      purgeProject: async (input) => {
+        expect(input.spaceIds).toEqual([conflict.spaceId, otherSpaceId])
+        throw new RecordProjectPurgeError('caller-owner guard failed: proof refusal')
+      },
+    },
+    {
+      scope: () => ({
+        url: 'postgres://unused.test/record',
+        userId: routeIdentity.user.id,
+        spaceId: conflict.spaceId,
+        spaceIds: [conflict.spaceId],
+      }),
+      noSpace: (context) => context.json({ error: 'no space' }, 409),
+      writeError: (context, error) => renderRecordApiRefusal(context, error)!,
+    },
+  )
+  const response = await app.request(`/v1/projects/${projectId}/purge`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ confirmation: 'demo' }),
+  })
+  expect(response.status).toBe(422)
+  expect(await response.json()).toEqual({ error: 'caller-owner guard failed: proof refusal' })
 })

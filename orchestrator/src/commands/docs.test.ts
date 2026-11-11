@@ -102,6 +102,12 @@ test('registered doc reorder accepts parent and repeatable slug handles', async 
   expect(result.firstLine).not.toContain('unknown option')
 })
 
+test('the real project program parses purge confirmation', async () => {
+  const result = await runRegisteredCommand(['project', 'purge', 'demo', '--confirm', 'demo'])
+  expect(result.firstLine).not.toContain("unknown option '--confirm'")
+  expect(result.firstLine).toContain('no project "demo"')
+})
+
 test('converted command families preserve trunk output and exit status without optional arguments', async () => {
   const originalCwd = process.cwd()
   const fixtureRoot = mkdtempSync(join(tmpdir(), 'command-family-'))
