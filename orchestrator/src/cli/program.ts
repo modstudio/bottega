@@ -111,6 +111,8 @@ const READ_ONLY_STORE_COMMANDS = ['run', 'runs', 'result', 'gate-facts', 'typed-
 
 const INVOCATIONS_WITHOUT_SESSION_STAMP = new Set([
   'ask-server',
+  'mcp',
+  'mcp-serve-child',
   'mcp-reader-proxy',
   'migrate',
   'update',

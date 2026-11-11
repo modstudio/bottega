@@ -1,9 +1,9 @@
 // concern: mcp-commands
 /** Owns MCP server entry and configuration presentation. Must not know CLI grammar. */
 import { MCP_SERVER_NAME } from '../../../shared/brand.ts'
-import { serveDocsMcp } from './mcp.ts'
 import { mcpCompatibilityRows } from './mcp-compatibility-record.ts'
 import { bottegaMcpServerEntry } from './mcp-probe.ts'
+import { serveMcpSupervisor } from './mcp-supervisor.ts'
 
 export async function mcpCommand(
   config: boolean,
@@ -44,5 +44,5 @@ export async function mcpCommand(
     presentation.log(
       JSON.stringify({ mcpServers: { [MCP_SERVER_NAME]: bottegaMcpServerEntry(binary) } }, null, 2),
     )
-  else await serveDocsMcp()
+  else await serveMcpSupervisor()
 }

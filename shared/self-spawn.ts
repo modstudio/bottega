@@ -7,6 +7,7 @@ export const BOTTEGA_ENTRY_PROTOCOL = {
   'run-exec': { compiledArguments: ['__run-exec'], usage: 'hidden' },
   'ask-server': { compiledArguments: ['mcp', 'ask-server'], usage: 'nested' },
   'ask-proxy': { compiledArguments: ['__ask-proxy'], usage: 'hidden' },
+  'mcp-serve-child': { compiledArguments: ['mcp', 'serve-child'], usage: 'hidden' },
   'mcp-reader-proxy': { compiledArguments: ['mcp', 'reader-proxy'], usage: 'hidden' },
   'retrieval-search': { compiledArguments: ['__retrieval-search'], usage: 'hidden' },
   'check-attribution': { compiledArguments: ['__check-attribution'], usage: 'hidden' },
@@ -55,6 +56,8 @@ function sourceArguments(
       ]
     case 'mcp-reader-proxy':
       return [assetPath('bin', PLATFORM_SLUG), 'mcp', 'reader-proxy']
+    case 'mcp-serve-child':
+      return [assetPath('bin', PLATFORM_SLUG), 'mcp', 'serve-child']
     case 'retrieval-search':
       return [assetPath('bin', 'retrieval-search')]
     case 'check-attribution':

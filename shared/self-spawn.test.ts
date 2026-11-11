@@ -15,6 +15,7 @@ const entries: BottegaEntry[] = [
   'run-exec',
   'ask-server',
   'ask-proxy',
+  'mcp-serve-child',
   'retrieval-search',
 ]
 
@@ -36,6 +37,11 @@ test('source entries preserve their current argv prefixes', () => {
     assetPath('bin', PLATFORM_SLUG),
     'mcp',
     'reader-proxy',
+  ])
+  expect(bottegaEntryArgv('mcp-serve-child')).toEqual([
+    assetPath('bin', PLATFORM_SLUG),
+    'mcp',
+    'serve-child',
   ])
   expect(
     bottegaEntryArgv('ask-proxy', undefined, (executable) =>
