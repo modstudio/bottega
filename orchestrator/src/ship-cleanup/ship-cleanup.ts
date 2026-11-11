@@ -6,6 +6,7 @@ import { readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readBranchLandingRecords } from '../branch/branch-landing-records.ts'
+import { branchVerdictRemedy } from '../branch/branch-prune-remedy.ts'
 import {
   type BranchLandingRecord,
   type BranchPruneKeptReason,
@@ -13,7 +14,6 @@ import {
   findRecordedBranchLanding,
 } from '../branch/branch-state.ts'
 import {
-  branchVerdictRemedy,
   classifyMintedBranch,
   type GitRefObservation,
   observeGitRef,

@@ -600,8 +600,6 @@ function listOperatorBranch(
   return true
 }
 
-export { branchVerdictRemedy } from './branch-prune-remedy.ts'
-
 function tipStillEligible(
   project: Project,
   row: BranchReportRow,
