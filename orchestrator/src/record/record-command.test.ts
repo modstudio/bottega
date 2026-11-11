@@ -112,6 +112,29 @@ describe('record space member remove command', () => {
     expect(events).toEqual(['remove:member@example.test:space-a'])
     expect(output).toEqual(['removed member@example.test from alpha'])
   })
+
+  test('prints the withdrawal confirmation without a replace clause when no keys are readable', async () => {
+    const events: string[] = []
+    const output: string[] = []
+    const client = memberRemovalClient(true, events)
+    client.withdrawConfigAccess = async (email, destinationSpaceId) => {
+      events.push(`withdraw:${email}:${destinationSpaceId}`)
+      return { revokedMachineKeyIds: [], readableSecretKeys: [] }
+    }
+    installRecordApiClient(client)
+    try {
+      await recordSpaceMemberRemoveCommand('member@example.test', 'alpha', {
+        log: (value) => output.push(value),
+      })
+    } finally {
+      installRecordApiClient(createMemoryRecordApiClient())
+    }
+
+    expect(output).toEqual([
+      'withdrew config access from member@example.test',
+      'removed member@example.test from alpha',
+    ])
+  })
 })
 
 test('record migrate names the unconfigured tunnel remedy for connection failures', async () => {

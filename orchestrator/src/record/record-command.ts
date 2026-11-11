@@ -222,10 +222,13 @@ function renderRecordSpaceConfigAccessWithdrawal(
 ): void {
   for (const keyId of result.revokedMachineKeyIds) presentation.log(`revoked machine\t${keyId}`)
   for (const key of result.readableSecretKeys) presentation.log(`replace development key\t${key}`)
-  if (result.readableSecretKeys.length > 0)
-    presentation.log(
-      `withdrew config access from ${email}; replace the listed development keys because ${PLATFORM_SLUG} cannot replace them`,
-    )
+  presentation.log(
+    `withdrew config access from ${email}${
+      result.readableSecretKeys.length > 0
+        ? `; replace the listed development keys because ${PLATFORM_SLUG} cannot replace them`
+        : ''
+    }`,
+  )
 }
 
 export async function recordSpaceIntakeShowCommand(presentation: Presentation): Promise<void> {
