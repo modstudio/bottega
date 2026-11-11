@@ -318,7 +318,12 @@ function issueFields(input: FileIssueInput, context: ReturnType<typeof resolveIs
   ].join('\n')
 }
 
-function issueBody(input: FileIssueInput, context: ReturnType<typeof resolveIssueReporter>) {
+/** The length record stays last: legacy prose parsing anchors it at the end of the body. */
+function issueBody(
+  input: FileIssueInput,
+  context: ReturnType<typeof resolveIssueReporter>,
+  duplicateRecord: string[],
+) {
   const fields = issueFields(input, context)
   return [
     filedIssueDataLine({
@@ -335,6 +340,7 @@ function issueBody(input: FileIssueInput, context: ReturnType<typeof resolveIssu
     }),
     '',
     fields,
+    ...duplicateRecord,
     ...(input.title === undefined ? [] : ['', 'SUBMITTED TITLE', input.title]),
     '',
     `FILED FIELDS LENGTH: ${fields.length}`,
@@ -363,7 +369,7 @@ export async function fileIssue(
     : duplicateSearch.error
       ? ['', 'DUPLICATE SEARCH FAILED', duplicateSearch.error]
       : []
-  const body = [issueBody(input, context), ...duplicateRecord].join('\n')
+  const body = issueBody(input, context, duplicateRecord)
   let stdout: string
   try {
     stdout = await hubOutput([
