@@ -24,7 +24,7 @@ function argumentToken(argument: DocumentationArgument): string {
 function optionToken(option: DocumentationOptionDetail): string {
   const name = option.flags.split(/[ ,|]+/).find((part) => part.startsWith('--')) ?? option.flags
   const body = option.valuePlaceholder ? `${name} ${option.valuePlaceholder}` : name
-  return `[${body}]`
+  return option.required ? body : `[${body}]`
 }
 
 function isHelpOption(option: DocumentationOptionDetail): boolean {

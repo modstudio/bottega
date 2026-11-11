@@ -353,6 +353,22 @@ test('composite options reach only the owner that declares them', async () => {
   ])
 })
 
+test('project purge forwards its confirmation to every destructive owner part', async () => {
+  const calls: string[] = []
+  expect(
+    await dispatchBinary(
+      ['project', 'purge', 'fixture', '--confirm', 'fixture'],
+      entries(calls),
+      () => '',
+    ),
+  ).toBe(0)
+  expect(calls).toEqual([
+    'orchestrator: project purge fixture --confirm fixture',
+    'hub: project-purge fixture --confirm fixture',
+    'orchestrator: project-purge-remove fixture --confirm fixture',
+  ])
+})
+
 test('composites fail fast except for doctor and never start collect watch', async () => {
   const calls: string[] = []
   const dispatch = entries(calls)
@@ -392,6 +408,17 @@ test.each(ROUTES.filter((route) => !route.hidden && HAND_PARSED_OWNERS.has(route
 )
 
 test.each([
+  {
+    command: ['project', 'purge'],
+    help: `usage: ${PLATFORM_SLUG} project purge <name> --confirm <name>
+
+purge a project from the hosted record and this machine stores
+
+Parts:
+  hosted and orchestrator purge: --confirm <value>
+  hub purge: --confirm <value>
+  register removal: --confirm <value>`,
+  },
   {
     command: ['machine', 'migrate'],
     help: `usage: ${PLATFORM_SLUG} machine migrate [options]

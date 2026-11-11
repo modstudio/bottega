@@ -206,7 +206,7 @@ test('orchestrator purge removes a populated project without touching its siblin
        (record_id,message_source,message_record_id,reader_session,reader_project,delivery_point,
         blocked_stop,audience,acknowledgement_required,posted_at,session_started_at,posting_timing,
         concern,recorded_at)
-       VALUES (?,'local',?, 'session',?,'turn',0,'architects',0,'at','at','during','board','at')`,
+       VALUES (?,'local',?, 'session',?,'after-tool-call',0,'architects',0,'at','at','after-session','concerned','at')`,
     )
     insertReach.run('reach-target', 'board-target', 'target')
     insertReach.run('reach-sibling', 'board-sibling', 'sibling')
@@ -222,9 +222,24 @@ test('orchestrator purge removes a populated project without touching its siblin
       `INSERT INTO outbox(kind,row_id,payload,created_at,synced_at,record_id)
        VALUES ('project',?,?, 'at',?,?)`,
     )
-    insertOutbox.run('pending-target', JSON.stringify({ project_record_id: TARGET }), null, TARGET)
-    insertOutbox.run('synced-target', JSON.stringify({ project_record_id: TARGET }), 'at', TARGET)
-    insertOutbox.run('pending-sibling', JSON.stringify({ project_record_id: SIBLING }), null, SIBLING)
+    insertOutbox.run(
+      'pending-target',
+      JSON.stringify({ project_record_id: TARGET }),
+      null,
+      'outbox-target-pending',
+    )
+    insertOutbox.run(
+      'synced-target',
+      JSON.stringify({ project_record_id: TARGET }),
+      'at',
+      'outbox-target-synced',
+    )
+    insertOutbox.run(
+      'pending-sibling',
+      JSON.stringify({ project_record_id: SIBLING }),
+      null,
+      'outbox-sibling-pending',
+    )
 
     const report = purgeLocalOrchestratorProject(database, TARGET, 'target', runsDirectory)
     expect(Object.fromEntries(report.map(({ table, count }) => [table, count]))).toMatchObject({
@@ -280,8 +295,17 @@ test('orchestrator purge removes a populated project without touching its siblin
       ['board_reach_delivery', 'reach-sibling'],
     ]) expect(database.query(`SELECT 1 FROM ${table} WHERE record_id=?`).get(id)).not.toBeNull()
     expect(database.query("SELECT 1 FROM port_ref WHERE record_id='port-target-hosted'").get()).not.toBeNull()
+    expect(database.query("SELECT 1 FROM port_ref WHERE record_id='port-target-local'").get()).toBeNull()
+    expect(database.query("SELECT 1 FROM port_ref WHERE record_id='port-sibling-local'").get()).not.toBeNull()
+    expect(database.query('SELECT 1 FROM main_stack_activity WHERE project_record_id=?').get(TARGET)).toBeNull()
+    expect(
+      database.query('SELECT 1 FROM main_stack_activity WHERE project_record_id=?').get(SIBLING),
+    ).not.toBeNull()
+    expect(database.query("SELECT 1 FROM outbox WHERE row_id='pending-target'").get()).toBeNull()
     expect(database.query("SELECT 1 FROM outbox WHERE row_id='synced-target'").get()).not.toBeNull()
+    expect(database.query("SELECT 1 FROM outbox WHERE row_id='pending-sibling'").get()).not.toBeNull()
     expect(existsSync(join(runsDirectory, 'run-target'))).toBeFalse()
+    expect(existsSync(join(runsDirectory, 'run-target-missing-folder'))).toBeFalse()
     expect(existsSync(join(runsDirectory, 'run-sibling'))).toBeTrue()
     expect(database.query('DELETE FROM project WHERE record_id=?').run(TARGET).changes).toBe(1)
   } finally {

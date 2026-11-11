@@ -119,7 +119,7 @@ migrate a legacy create command
 
 ## bottega project purge
 
-**Synopsis:** `bottega project purge [--confirm <name>]`
+**Synopsis:** `bottega project purge <name> --confirm <name>`
 
 purge a project from the hosted record and this machine stores
 

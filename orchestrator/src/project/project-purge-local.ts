@@ -120,21 +120,35 @@ export function orchestratorProjectPurgePlan(database: Database): PurgeStep[] {
       blockingParents.get(key.table)!.add(key.parent)
     }
   }
+  const preferenceDepth = (table: string, seen = new Set<string>()): number => {
+    if (seen.has(table)) return 0
+    const parents = keys
+      .filter((key) => key.table === table && key.parent !== table && planned.has(key.parent))
+      .map((key) => key.parent)
+    return parents.length
+      ? 1 +
+          Math.max(...parents.map((parent) => preferenceDepth(parent, new Set(seen).add(table))))
+      : 0
+  }
+  const blockingChildren = new Map([...planned].map((table) => [table, 0]))
+  for (const parents of blockingParents.values())
+    for (const parent of parents)
+      blockingChildren.set(parent, (blockingChildren.get(parent) ?? 0) + 1)
   const ordered: PurgeStep[] = []
   const remaining = new Map(steps.map((step) => [step.table, step]))
   while (remaining.size) {
     const ready = [...remaining.keys()]
-      .filter((table) =>
-        [...(blockingParents.get(table) ?? [])].every((parent) => !remaining.has(parent)),
-      )
-      .sort()
+      .filter((table) => blockingChildren.get(table) === 0)
+      .sort((a, b) => preferenceDepth(b) - preferenceDepth(a) || a.localeCompare(b))
     if (!ready.length)
       throw new Error(
         `project purge blocking foreign-key cycle: ${[...remaining.keys()].sort().join(', ')}`,
       )
     for (const table of ready) {
-      ordered.unshift(remaining.get(table)!)
+      ordered.push(remaining.get(table)!)
       remaining.delete(table)
+      for (const parent of blockingParents.get(table) ?? [])
+        blockingChildren.set(parent, blockingChildren.get(parent)! - 1)
     }
   }
   steps.splice(0, steps.length, ...ordered)
@@ -230,13 +244,21 @@ export function purgeLocalOrchestratorProject(
     .all(projectRecordId)
     .map((row) => row.record_id)
   const report = writeTransaction(() => {
-    const rows: RemovalReport = []
-    for (const step of orchestratorProjectPurgePlan(database)) {
+    const plan = orchestratorProjectPurgePlan(database)
+    const rows: RemovalReport = plan.map((step) => {
       const predicate = step.predicate.replaceAll('?', '?1')
       const count = database
+        .query<{ count: number }, [string]>(
+          `SELECT COUNT(*) count FROM ${quote(step.table)} WHERE ${predicate}`,
+        )
+        .get(step.key === 'name' ? projectName : projectRecordId)!.count
+      return { table: step.table, count }
+    })
+    for (const step of plan) {
+      const predicate = step.predicate.replaceAll('?', '?1')
+      database
         .query(`DELETE FROM ${quote(step.table)} WHERE ${predicate}`)
-        .run(step.key === 'name' ? projectName : projectRecordId).changes
-      rows.push({ table: step.table, count })
+        .run(step.key === 'name' ? projectName : projectRecordId)
     }
     return rows
   }, database)

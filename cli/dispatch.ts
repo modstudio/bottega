@@ -45,7 +45,16 @@ function helpRequested(rest: readonly string[]): boolean {
 }
 
 export function routeHelp(route: CommandRoute): string {
-  const suffix = [...(route.positionals ?? []).map((name) => `<${name}>`), '[options]'].join(' ')
+  const required = route.requiredOptions ?? []
+  const requiredFlags = new Set(required.map((option) => option.split(' ')[0]))
+  const hasOptionalCompositeOptions = route.composite?.some((part) =>
+    Object.keys(part.options ?? {}).some((flag) => !requiredFlags.has(flag)),
+  )
+  const suffix = [
+    ...(route.positionals ?? []).map((name) => `<${name}>`),
+    ...required,
+    ...(hasOptionalCompositeOptions || !route.composite?.length ? ['[options]'] : []),
+  ].join(' ')
   const lines = [`usage: ${PLATFORM_SLUG} ${route.command.join(' ')} ${suffix}`]
   if (route.description) lines.push('', route.description)
   if (route.options?.length) {

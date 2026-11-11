@@ -20,6 +20,8 @@ export type CommandRoute = {
   }[]
   /** Leading non-option arguments forwarded to every composite part. */
   positionals?: readonly string[]
+  /** Composite options that form part of the required public invocation. */
+  requiredOptions?: readonly string[]
   continueOnFailure?: boolean
   description?: string
   options?: readonly {
@@ -142,6 +144,7 @@ export const ROUTES = (
       owner: 'composite',
       description: 'purge a project from the hosted record and this machine stores',
       positionals: ['name'],
+      requiredOptions: ['--confirm <name>'],
       composite: [
         {
           owner: 'orch',
