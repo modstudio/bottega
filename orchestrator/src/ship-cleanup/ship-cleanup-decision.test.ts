@@ -336,7 +336,7 @@ test('ship cleanup and prune give every minted branch state the same verdict', (
     expected: 'delete' | 'throwaway' | 'unlanded' | 'unknown'
   }[] = [
     { name: 'landed', state: landed, probes: [false], expected: 'delete' },
-    { name: 'superseded', state: { state: 'superseded' }, probes: [false], expected: 'delete' },
+    { name: 'superseded', state: { state: 'superseded' }, probes: [false], expected: 'unlanded' },
     { name: 'empty', state: { state: 'empty' }, probes: [false], expected: 'delete' },
     { name: 'unlanded', state: { state: 'unlanded' }, probes: [false], expected: 'unlanded' },
     { name: 'unknown', state: { state: 'unknown' }, probes: [false], expected: 'unknown' },

@@ -23,6 +23,7 @@ import {
   recordAutomaticBranchLandingEvidence,
 } from './branch-landing-service.ts'
 import { assertBranchRefMayBeDeleted } from './branch-ref-guard.ts'
+import { branchVerdictRemedy } from './branch-prune-remedy.ts'
 import { settleDeletedBranch } from './branch-settlement.ts'
 import {
   type BranchLandingRecord,
@@ -599,18 +600,7 @@ function listOperatorBranch(
   return true
 }
 
-export function branchVerdictRemedy(
-  reason: 'throwaway' | 'unlanded' | 'unknown',
-  project: string,
-  branch: string,
-  key: string | null,
-): string {
-  if (reason === 'throwaway')
-    return `${PLATFORM_SLUG} tree branch dispose ${project}:${branch} --reason throwaway --note "<why>"`
-  if (reason === 'unlanded')
-    return `land it through its own pull request, or ${PLATFORM_SLUG} tree branch dispose ${project}:${branch} --reason abandoned --note "<why>"`
-  return `${PLATFORM_SLUG} tree branch prune --project ${project} --key ${key ?? '<KEY>'} --dry-run once the reported error clears`
-}
+export { branchVerdictRemedy } from './branch-prune-remedy.ts'
 
 function tipStillEligible(
   project: Project,
@@ -639,7 +629,13 @@ function tipStillEligible(
     tipMoved: currentTip !== row.tip,
   })
   if (eligibility.eligible) return true
-  report.kept.push({ branch: row.branch, reason: eligibility.reason })
+  report.kept.push({
+    branch: row.branch,
+    reason: eligibility.reason,
+    ...(row.state === 'superseded'
+      ? { remedy: branchVerdictRemedy('superseded', report.project, row.branch, report.key) }
+      : {}),
+  })
   return false
 }
 
@@ -686,6 +682,9 @@ function deleteAndSettleBranch(
           branch: row.branch,
           reason: eligibility.reason,
           ...(eligibility.reason === 'checked-out' ? { holdingPath } : {}),
+          ...(row.state === 'superseded'
+            ? { remedy: branchVerdictRemedy('superseded', report.project, row.branch, report.key) }
+            : {}),
         })
         return
       }

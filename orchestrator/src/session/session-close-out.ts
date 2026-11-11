@@ -658,7 +658,7 @@ function unprovedBranchProcessItem(
   )
   return {
     item: `branch ${item.project}:${item.branch}`,
-    reason: 'unique work is not proved landed, superseded, or empty',
+    reason: 'unique work is not proved landed or empty',
     evidence: evidence
       ? `${evidence.commitsAhead} commit(s) ahead; patch equivalence ${evidence.patchEquivalence}; task ${evidence.taskKey ?? 'unkeyed'} is ${evidence.taskStatus}; last activity ${evidence.lastActivity ?? 'unknown'}; live run ${evidence.liveRun ? 'yes' : 'no'}; live tree ${evidence.liveTree ?? 'no'}`
       : 'branch proof is unavailable',

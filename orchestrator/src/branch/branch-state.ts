@@ -259,8 +259,8 @@ export type BranchPruneKeptReason =
 
 export function isPruneSafeLandingState(
   state: BranchLanding['state'],
-): state is 'landed' | 'superseded' | 'empty' {
-  return state === 'landed' || state === 'superseded' || state === 'empty'
+): state is 'landed' | 'empty' {
+  return state === 'landed' || state === 'empty'
 }
 
 export type MintedBranchVerdict =
@@ -272,7 +272,7 @@ export function isProbeOnlyMint(probes: readonly boolean[]): boolean {
   return probes.length > 0 && probes.every(Boolean)
 }
 
-/** Is this branch's work preserved elsewhere (landed, superseded by a recorded successor, or empty), so deleting the ref loses nothing? */
+/** Is this branch's work preserved elsewhere (landed or empty), so deleting the ref loses nothing? */
 export function decideMintedBranchVerdict(input: {
   state: BranchStateDecision['state']
   probeOnly: boolean

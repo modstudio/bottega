@@ -421,6 +421,25 @@ describe('session close-out decisions', () => {
     ])
   })
 
+  test('a superseded owned branch is not pruned', () => {
+    const result = classifySessionCloseOut(
+      facts({
+        branches: [{ project: 'p', branch: 'superseded', taskKey: 'DEV-11', state: 'superseded' }],
+      }),
+    )
+
+    expect(result.mechanical).not.toContainEqual({
+      kind: 'prune-branch',
+      project: 'p',
+      branch: 'superseded',
+    })
+    expect(result.process).toContainEqual({
+      kind: 'unproved-branch',
+      project: 'p',
+      branch: 'superseded',
+    })
+  })
+
   test('an empty branch minted by an attached run is not pruned', () => {
     const result = classifySessionCloseOut(
       facts({
