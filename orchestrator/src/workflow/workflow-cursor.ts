@@ -171,7 +171,17 @@ export async function composeWorkflowWithCursor(
   const autonomy = live.resolution
   const composition = composeWorkflow(slug, project, mode, args, d, selection, autonomy)
   if (!composition.mode || composition.needs.arguments) return { ...composition, cursor: null }
-  refuseLocalComposeBranch(composition, context, d, commitCount)
+  refuseLocalComposeBranch(
+    {
+      project: composition.project,
+      workflow: composition.workflow,
+      mode: composition.mode,
+      arguments: composition.arguments,
+    },
+    context,
+    d,
+    commitCount,
+  )
   await readThroughWorkflowCursorContext(project, context, d)
   await linkResolvedWorkflowTask(project, context, d)
   const existing = keyOf(composition.arguments)

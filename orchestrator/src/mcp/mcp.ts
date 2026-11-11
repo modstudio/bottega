@@ -302,7 +302,12 @@ function issueFields(input: FileIssueInput, context: ReturnType<typeof resolveIs
     'EXPECTED INSTEAD',
     input.expected,
     ...(input.kind === 'defect'
-      ? ['', 'HOW TO REPRODUCE', `Command: ${input.reproduce_command}`, `Environment: ${input.environment}`]
+      ? [
+          '',
+          'HOW TO REPRODUCE',
+          `Command: ${input.reproduce_command}`,
+          `Environment: ${input.environment}`,
+        ]
       : []),
     '',
     'EVIDENCE',
@@ -358,10 +363,7 @@ export async function fileIssue(
     : duplicateSearch.error
       ? ['', 'DUPLICATE SEARCH FAILED', duplicateSearch.error]
       : []
-  const body = [
-    issueBody(input, context),
-    ...duplicateRecord,
-  ].join('\n')
+  const body = [issueBody(input, context), ...duplicateRecord].join('\n')
   let stdout: string
   try {
     stdout = await hubOutput([
