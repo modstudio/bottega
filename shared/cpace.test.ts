@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { sha512 } from '@noble/hashes/sha2.js'
-import { CpaceRefusal, type CpaceRefusalCause, startCpace, startCpaceWithScalar } from './cpace.ts'
+import { CpaceRefusal, type CpaceRefusalReason, startCpace, startCpaceWithScalar } from './cpace.ts'
 
 const B_3_9 = {
   PRS: '50617373776F7264',
@@ -57,7 +57,7 @@ function concatenate(...values: Uint8Array[]): Uint8Array {
   return Uint8Array.from(values.flatMap((value) => Array.from(value)))
 }
 
-function expectRefusal(action: () => unknown, reason: CpaceRefusalCause): CpaceRefusal {
+function expectRefusal(action: () => unknown, reason: CpaceRefusalReason): CpaceRefusal {
   try {
     action()
     throw new Error('expected CPace refusal')

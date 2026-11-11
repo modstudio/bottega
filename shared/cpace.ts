@@ -23,12 +23,12 @@ export interface CpaceParty {
   finish(peerShare: Uint8Array, peerAd: Uint8Array): Uint8Array
 }
 
-export type CpaceRefusalCause = 'undecodable-share' | 'identity-share'
+export type CpaceRefusalReason = 'undecodable-share' | 'identity-share'
 
 export class CpaceRefusal extends Error {
-  readonly reason: CpaceRefusalCause
+  readonly reason: CpaceRefusalReason
 
-  constructor(reason: CpaceRefusalCause, options?: ErrorOptions) {
+  constructor(reason: CpaceRefusalReason, options?: ErrorOptions) {
     super(`CPace refused the peer's ${reason}`, options)
     this.name = 'CpaceRefusal'
     this.reason = reason
