@@ -21,7 +21,10 @@ import { parseRetainedRef } from '../resources/resource-inventory.ts'
 import { isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { observeGrokTrustHeadings } from '../sandbox/grok-trust.ts'
 import { shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
-import { taskFlowStore } from '../workflow/task-flow-store.ts'
+import {
+  type TaskFlowOpenSessionStageRow as OpenCursor,
+  taskFlowStore,
+} from '../workflow/task-flow-store.ts'
 import { hasAbsentTreeTeardownPlanWithRegisteredRemoveCommand } from '../worktree/worktree-remove.ts'
 import {
   classifySessionCloseOut,
@@ -71,15 +74,6 @@ type OwnedClaim = {
 }
 type ActiveLanding = { record_id: string; project: string; branch: string; status: string }
 type IncompleteReview = { record_id: string; number: number }
-type OpenCursor = {
-  record_id: string
-  number: number
-  workflow_slug: string
-  project: string
-  state: string
-  open_question_record_id: string | null
-}
-
 type UnprovedBranchEvidence = {
   project: string
   branch: string
@@ -220,7 +214,7 @@ function incompleteReviews(database: Database, session: string): IncompleteRevie
 }
 
 function openCursors(database: Database, session: string): OpenCursor[] {
-  return taskFlowStore(database).openStagesForSession<OpenCursor>(session)
+  return taskFlowStore(database).openStagesForSession(session)
 }
 
 function observeOwnedBranch(

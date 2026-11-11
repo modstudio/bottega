@@ -12,7 +12,10 @@ import {
   heldTreeLiveHolderInFlight,
   pullRequestLookupNeeded,
 } from '../landing-tree/landing-tree.ts'
-import { taskFlowStore } from '../workflow/task-flow-store.ts'
+import {
+  type TaskFlowCloseOutStageRow as CursorRow,
+  taskFlowStore,
+} from '../workflow/task-flow-store.ts'
 import {
   annotateHeldTreeDetail,
   type CloseOutReportResult,
@@ -27,14 +30,6 @@ type RunLandingFacts = {
   repo: string | null
   branch: string | null
   sessionId: string | null
-}
-
-type CursorRow = {
-  id: number
-  step_slug: string
-  workflow_slug: string
-  project: string
-  args: string
 }
 
 function lookupRun(runId: string): RunLandingFacts | null {
@@ -72,7 +67,7 @@ function lookupShipTaskCursor(
   branch: string,
   treePath: string,
 ): CursorRow | null {
-  const rows = taskFlowStore(db()).closeOutShipTaskStage<CursorRow>(sessionId, project, branch)
+  const rows = taskFlowStore(db()).closeOutShipTaskStage(sessionId, project, branch)
   return rows.find((row) => cursorArg(row.args, 'worktree') === treePath) ?? null
 }
 

@@ -4,13 +4,10 @@
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
-import { taskFlowStore } from './task-flow-store.ts'
+import { type TaskFlowListedStageRow as ListedCursorRow, taskFlowStore } from './task-flow-store.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { renderWorkflowCursorLine } from './workflow-cursor-format.ts'
-import {
-  type SelectableCursorRow,
-  workflowCursorProjectScope,
-} from './workflow-cursor-selection.ts'
+import { workflowCursorProjectScope } from './workflow-cursor-selection.ts'
 import { openWorkflowObligations } from './workflow-obligation-floor.ts'
 import { composeWorkflow } from './workflows.ts'
 
@@ -21,15 +18,6 @@ export type CursorListOptions = {
   cwd?: string
 }
 
-type ListedCursorRow = SelectableCursorRow & {
-  closed: string
-  question: string | null
-  question_number: number | null
-  total_steps: number
-  created_at: string
-  updated_at: string
-}
-
 export function listWorkflowCursors(
   options: CursorListOptions = {},
   d: Database = db(),
@@ -38,7 +26,7 @@ export function listWorkflowCursors(
   const cwdProject =
     options.all || options.project || options.session ? undefined : projectAt(cwd)?.name
   const project = workflowCursorProjectScope(options, cwdProject, cwd)
-  const rows = taskFlowStore(d).listOpenStages<ListedCursorRow>({
+  const rows = taskFlowStore(d).listOpenStages({
     ...(project ? { project } : {}),
     ...(options.session ? { sessionId: options.session } : {}),
   })

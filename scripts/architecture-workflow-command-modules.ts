@@ -84,7 +84,6 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     './workflow-cursor-arguments.ts',
     './workflow-cursor-autonomy.ts',
     './workflow-cursor-selection.ts',
-    './task-flow-store.ts',
     './workflow-cursor-task-reference.ts',
     './workflows.ts',
   ]),

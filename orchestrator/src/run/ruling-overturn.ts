@@ -3,29 +3,16 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
-import { taskFlowStore } from '../workflow/task-flow-store.ts'
+import {
+  type TaskFlowOverturnRulingRow as OverturnRow,
+  taskFlowStore,
+} from '../workflow/task-flow-store.ts'
 import { auditQuestionMutation, authorizeWorkflowQuestionMutation } from './question-mutation.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import { rulingActor } from './question-vocabulary.ts'
 import { resolvedRulingPersonName } from './ruling-attribution.ts'
 import { overturnRulingDecision } from './ruling-overturn-authority.ts'
 import { adoptRunMutation, auditRunMutation, runMutationActor } from './run-authority.ts'
-
-type OverturnRow = {
-  record_id: string
-  number: number
-  run_record_id: string | null
-  root_id: string | null
-  workflow_cursor_record_id: string | null
-  workflow_owner: string | null
-  workflow_updated_at: string | null
-  answered_at: string | null
-  overturned_at: string | null
-  overturned_by: string | null
-  overturned_by_name: string | null
-  overturn_reason: string | null
-  replacement: string | null
-}
 
 function refusal(row: OverturnRow): string | null {
   const decision = overturnRulingDecision({
@@ -53,7 +40,7 @@ export function overturnRuling(input: {
   fromOperator: boolean
 }) {
   writableDb()
-  const row = taskFlowStore(db()).overturnRulingRow<OverturnRow>(input.questionId)
+  const row = taskFlowStore(db()).overturnRulingRow(input.questionId)
   if (!row)
     throw new Error(
       `no question ${input.questionId}; inspect question ids with ${PLATFORM_SLUG} question inbox --all`,

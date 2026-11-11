@@ -53,10 +53,7 @@ import {
   rethrowFloorEvidencePortMiss,
 } from './workflow-floor-evidence-replay.ts'
 import { readHubTask } from './workflow-floor-task-read.ts'
-import {
-  floorFromObligationRow,
-  type WorkflowObligationFloorRow,
-} from './workflow-obligation-floor.ts'
+import { floorFromObligationRow } from './workflow-obligation-floor.ts'
 import {
   type BoundRun,
   decideRunBinding,
@@ -554,13 +551,7 @@ function resolveStoredArtifact(
   branchTip: string | null,
 ): { ref: string; exists: boolean } {
   if (ref.kind === 'attached-text') {
-    const row = taskFlowStore(d).textAttachmentByRecordId<{
-      id: string
-      cursor_record_id: string
-      step_ordinal: number
-      step_slug: string
-      body: string
-    }>(ref.id)
+    const row = taskFlowStore(d).textAttachmentByRecordId(ref.id)
     const attachment: WorkflowTextRow | null = row
       ? {
           id: row.id,
@@ -746,13 +737,7 @@ function gatherTask(
 }
 
 function gatherSatisfy(id: string, cursorId: string, d: Database): ValidatedEvidence['satisfy'] {
-  const row = taskFlowStore(d).obligationByRecordId<
-    WorkflowObligationFloorRow & {
-      cursor_record_id: string
-      satisfied_at: string | null
-      abandoned_at: string | null
-    }
-  >(id)
+  const row = taskFlowStore(d).obligationByRecordId(id)
   if (!row) return { id, found: false }
   const floor = floorFromObligationRow(row)
   return {

@@ -11,24 +11,15 @@ import {
   releasedOutboxPayloadSql,
 } from '../record/outbox-prune-payload.ts'
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
-import { taskFlowStore } from '../workflow/task-flow-store.ts'
-
-type QuestionRow = Record<string, unknown> & {
-  record_id: string
-  number: number
-  run_record_id: string | null
-  project_name: string | null
-  project_record_id: string | null
-  workflow_cursor_record_id: string | null
-  workflow_task_record_id: string | null
-  answered_by_name: string | null
-  overturned_by_name: string | null
-}
+import {
+  type TaskFlowQuestionOutboxRow as QuestionRow,
+  taskFlowStore,
+} from '../workflow/task-flow-store.ts'
 
 const json = (value: unknown): unknown => (value == null ? null : JSON.parse(String(value)))
 
 function loadQuestion(database: Database, questionId: string): QuestionRow {
-  const row = taskFlowStore(database).questionOutboxRow<QuestionRow>(questionId)
+  const row = taskFlowStore(database).questionOutboxRow(questionId)
   if (!row) throw new Error(`question ${questionId} does not exist and cannot be enqueued`)
   return row
 }

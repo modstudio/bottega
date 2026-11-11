@@ -20,11 +20,9 @@ import {
 } from '../record/record-task-flow-write-contract.ts'
 import type { AutonomyResolution } from './autonomy.ts'
 import {
-  attachInsertedTaskFlowStage,
   cacheAdoptedTaskFlow,
   insertWorkflowCursorRow,
   refuseTaskFlowStageConflict,
-  stampWorkflowCursorMachine,
 } from './task-flow.ts'
 import { taskFlowState } from './task-flow-decision.ts'
 import { taskFlowStore } from './task-flow-store.ts'
@@ -249,75 +247,17 @@ function composeIntent(
   }
 }
 
-function attachLocalComposition(
-  row: SelectableCursorRow,
-  composition: Composition,
-  context: WorkflowCursorContext,
-  database: Database,
-): string | null {
-  return attachInsertedTaskFlowStage(
-    {
-      project: composition.project,
-      taskRecordId: context.taskRecordId,
-      taskKey: workflowKeyOf(composition.arguments),
-      statusCategory: context.taskStatusCategory,
-      cursor: row,
-    },
-    database,
-  )
-}
-
 function applyHostedCompose(
   hosted: TaskFlowComposeResult | null,
-  facts: ComposeFacts,
-  composition: Composition,
-  context: WorkflowCursorContext,
+  payload: TaskFlowIntentInput<'compose'>,
+  _facts: ComposeFacts,
+  _composition: Composition,
+  _context: WorkflowCursorContext,
   database: Database,
 ): SelectableCursorRow {
-  const cursorRecordId = hosted?.stage?.id ?? facts.rowInput.recordId
-  const flowRecordId =
-    facts.existingFlow?.record_id ??
-    (hosted
-      ? Object.keys(hosted.revisions).find((recordId) => recordId !== cursorRecordId)
-      : undefined) ??
-    facts.flowRecordId
   return writeTransaction(() => {
-    if (facts.existingFlow) {
-      const current = taskFlowStore(database).flowState(facts.existingFlow.record_id)
-      if (!current || current.revision !== facts.existingFlow.revision)
-        throw new Error(
-          `task flow ${facts.existingFlow.record_id} changed while composing; rerun the command`,
-        )
-    }
-    const stored = insertWorkflowCursorRow(
-      database,
-      {
-        ...facts.rowInput,
-        recordId: cursorRecordId,
-        revision: hosted?.revisions[cursorRecordId] ?? 1,
-      },
-      'local-identity',
-    )
-    if (hosted && context.taskRecordId)
-      cacheAdoptedTaskFlow(
-        {
-          project: composition.project,
-          taskRecordId: context.taskRecordId,
-          cursorRecordId: stored,
-          flowRecordId,
-          flowRevision: hosted.revisions[flowRecordId]!,
-          stageRevision: hosted.revisions[cursorRecordId]!,
-          statusCategory: context.taskStatusCategory,
-          at: facts.at,
-        },
-        database,
-      )
-    if (!hosted) {
-      stampWorkflowCursorMachine(stored, stored === facts.rowInput.recordId ? 0 : 1, database)
-      const local = taskFlowStore(database).stageByRecordId(stored) as SelectableCursorRow
-      local.task_flow_record_id = attachLocalComposition(local, composition, context, database)
-    }
-    return taskFlowStore(database).stageByRecordId(stored) as SelectableCursorRow
+    const result = taskFlowStore(database).write('compose', payload, hosted)
+    return taskFlowStore(database).stageByRecordId(result.stage!.id) as SelectableCursorRow
   }, database)
 }
 
@@ -433,13 +373,9 @@ export async function insertWorkflowCursor(
   )
   const target = taskFlowWriteTarget(composition.project, database)
   try {
-    const hosted = await writeHostedTaskFlow(
-      'compose',
-      composeIntent(composition, context, facts),
-      target,
-      context.taskFlowClient,
-    )
-    return applyHostedCompose(hosted, facts, composition, context, database)
+    const payload = composeIntent(composition, context, facts)
+    const hosted = await writeHostedTaskFlow('compose', payload, target, context.taskFlowClient)
+    return applyHostedCompose(hosted, payload, facts, composition, context, database)
   } catch (error) {
     if (!(error instanceof DocRevisionConflictError) || error.reason !== 'already-exists')
       throw error

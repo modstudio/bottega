@@ -19,7 +19,10 @@ import { questionOpenSql } from '../run/question-open.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from '../run/run-authority.ts'
 import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
-import { taskFlowStore } from '../workflow/task-flow-store.ts'
+import {
+  taskFlowStore,
+  type TaskFlowWaitingQuestionRow as WorkflowWaitingRow,
+} from '../workflow/task-flow-store.ts'
 
 type WaitingCause = { rulings: 'agent' | 'user'; relayed: boolean; answered: boolean }
 export const questionAwaitingOperator = (cause: WaitingCause): boolean =>
@@ -168,20 +171,6 @@ export function relayQuestion(
 const shellWord = (value: string) =>
   /^[A-Za-z0-9_@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`
 
-type WorkflowWaitingRow = {
-  id: number
-  workflow_cursor_record_id: string
-  question_record_id: string
-  project: string
-  task_key: string | null
-  question: string
-  waiting_since: string
-  workflow_slug: string
-  mode_slug: string
-  args: string
-  session_id: string | null
-}
-
 function workflowWaitingEpisode(row: WorkflowWaitingRow) {
   const flags = Object.entries(JSON.parse(row.args) as Record<string, string>)
     .map(([key, value]) => ` --arg ${shellWord(`${key}=${value}`)}`)
@@ -234,7 +223,7 @@ function operatorWaitingWithEpisodes(
     root_number: number
     root_record_id: string
   }>
-  const workflows = taskFlowStore(d).waitingWorkflowQuestions<WorkflowWaitingRow>()
+  const workflows = taskFlowStore(d).waitingWorkflowQuestions()
   return [
     ...questions.map((row) => ({
       episode: row.awaiting_operator_at,

@@ -6,7 +6,11 @@ import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { type Project, projectForTaskKey, projects } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
-import { taskFlowStore } from '../workflow/task-flow-store.ts'
+import {
+  type TaskFlowLinkedTaskReferenceRow as LinkedLocalTaskReference,
+  type TaskFlowPendingTaskLinkRow as LocalTaskLinkRow,
+  taskFlowStore,
+} from '../workflow/task-flow-store.ts'
 import { linkWorkflowTaskLabel } from '../workflow/workflow-task-linking.ts'
 import {
   type HubTaskKeyMap,
@@ -78,8 +82,6 @@ type PendingLocalTaskLink = {
   taskKey: string
 }
 
-type LocalTaskLinkRow = { id: string; task_key: string; project: string }
-type LinkedLocalTaskReference = { task_record_id: string; project: string }
 type LocalTaskLinkConfigBase = {
   pendingRows(database: Database): LocalTaskLinkRow[]
   linkedRows(database: Database): LinkedLocalTaskReference[]
@@ -101,10 +103,8 @@ type LocalTaskLinkConfig = HostedFirstTaskLinkConfig | SynchronousTaskLinkConfig
 const LOCAL_TASK_LINKS = {
   workflow_cursor: {
     regime: 'hosted-first',
-    pendingRows: (database) =>
-      taskFlowStore(database).pendingTaskLinks<LocalTaskLinkRow>('workflow_cursor'),
-    linkedRows: (database) =>
-      taskFlowStore(database).linkedTaskReferences<LinkedLocalTaskReference>('workflow_cursor'),
+    pendingRows: (database) => taskFlowStore(database).pendingTaskLinks('workflow_cursor'),
+    linkedRows: (database) => taskFlowStore(database).linkedTaskReferences('workflow_cursor'),
     write: (database, update, taskFlowClient) =>
       linkWorkflowTaskLabel(
         database,
@@ -118,10 +118,8 @@ const LOCAL_TASK_LINKS = {
   },
   question: {
     regime: 'synchronous',
-    pendingRows: (database) =>
-      taskFlowStore(database).pendingTaskLinks<LocalTaskLinkRow>('question'),
-    linkedRows: (database) =>
-      taskFlowStore(database).linkedTaskReferences<LinkedLocalTaskReference>('question'),
+    pendingRows: (database) => taskFlowStore(database).pendingTaskLinks('question'),
+    linkedRows: (database) => taskFlowStore(database).linkedTaskReferences('question'),
     write: (database, update) => {
       linkWorkflowQuestionsTaskReference(
         {

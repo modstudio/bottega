@@ -8,6 +8,7 @@ import {
   taskFlowWriteTarget,
   writeHostedTaskFlow,
 } from '../record/record-task-flow-write-client.ts'
+import type { TaskFlowIntentInput } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import type { AutonomyResolution, LiveCursorAutonomy } from './autonomy.ts'
 import { taskFlowStore } from './task-flow-store.ts'
@@ -197,62 +198,45 @@ async function applyServeTransition(
     (resolvedArguments.encoded !== row.args || resolvedArguments.closed !== row.closed)
   if (!decision.move && !decision.resume && !argumentsChanged) return
   const at = nowIso()
+  const payload: TaskFlowIntentInput<'stage-update'> = {
+    requestId: taskFlowRequestId('stage-update', [row.record_id, String(row.revision)]),
+    stages: [
+      {
+        id: row.record_id,
+        expectedRevision: row.revision,
+        values: {
+          ...(decision.move || decision.resume
+            ? {
+                activeOrdinal: decision.ordinal,
+                activeSlug: decision.slug,
+                state: 'running' as const,
+                question: null,
+                sessionId: context.session ?? row.session_id,
+                lastAdvancedMachineId: machineId(),
+              }
+            : {}),
+          ...(argumentsChanged
+            ? {
+                arguments: resolvedArguments.args,
+                closedStepNotes: JSON.parse(resolvedArguments.closed) as unknown[],
+              }
+            : {}),
+          updatedAt: at,
+        },
+      },
+    ],
+  }
   const hosted = await writeHostedTaskFlow(
     'stage-update',
-    {
-      requestId: taskFlowRequestId('stage-update', [row.record_id, String(row.revision)]),
-      stages: [
-        {
-          id: row.record_id,
-          expectedRevision: row.revision,
-          values: {
-            ...(decision.move || decision.resume
-              ? {
-                  activeOrdinal: decision.ordinal,
-                  activeSlug: decision.slug,
-                  state: 'running' as const,
-                  question: null,
-                  sessionId: context.session ?? row.session_id,
-                  lastAdvancedMachineId: machineId(),
-                }
-              : {}),
-            ...(argumentsChanged
-              ? {
-                  arguments: resolvedArguments.args,
-                  closedStepNotes: JSON.parse(resolvedArguments.closed) as unknown[],
-                }
-              : {}),
-            updatedAt: at,
-          },
-        },
-      ],
-    },
+    payload,
     taskFlowWriteTarget(row.project, database),
     context.taskFlowClient,
   )
   writeTransaction(() => {
     const store = taskFlowStore(database)
-    const currentRevision = store.stageRevision(row.record_id)
-    if (currentRevision !== row.revision)
-      throw new Error(
-        `workflow cursor ${row.id} changed while its step was served; rerun the command`,
-      )
     if ((decision.move || decision.resume) && row.state === 'awaiting-ruling')
       closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, database)
-    const revision = hosted?.revisions[row.record_id] ?? row.revision + 1
-    store.updateServedStage({
-      recordId: row.record_id,
-      argumentsJson: resolvedArguments?.encoded ?? row.args,
-      closedJson: resolvedArguments?.closed ?? row.closed,
-      ordinal: decision.move || decision.resume ? decision.ordinal : row.ordinal,
-      stepSlug: decision.move || decision.resume ? decision.slug : row.step_slug,
-      state: decision.move || decision.resume ? 'running' : row.state,
-      question: decision.move || decision.resume ? null : row.question,
-      sessionId: context.session ?? null,
-      updatedAt: at,
-      machineId: machineId(),
-      revision,
-    })
+    const revision = store.write('stage-update', payload, hosted).revisions[row.record_id]!
     row.revision = revision
     if (resolvedArguments) {
       row.args = resolvedArguments.encoded

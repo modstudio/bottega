@@ -107,12 +107,7 @@ const firstToken = (title: string) => title.trim().split(/\s+/, 1)[0] ?? ''
 
 function uncopiedRows(cursorId: string, database: Database): CopyRow[] {
   return taskFlowStore(database)
-    .uncopiedTextsForStage<{
-      record_id: string
-      step_slug: string
-      body: string
-      created_at: string
-    }>(cursorId)
+    .uncopiedTextsForStage(cursorId)
     .map((row) => ({
       id: row.record_id,
       stepSlug: row.step_slug,
@@ -131,29 +126,19 @@ async function recordCopy(
   client?: RecordTaskFlowClient,
 ): Promise<void> {
   const id = taskFlowRequestId('copy-text', [cursorId, textId, reference])
-  await writeHostedTaskFlow(
-    'copy-text',
-    {
-      requestId: taskFlowRequestId('copy-text', [id]),
-      row: {
-        id,
-        workflowTextRecordId: textId,
-        stageRecordId: cursorId,
-        taskDocumentReference: reference,
-        copiedAt,
-      },
-    },
-    target,
-    client,
-  )
-  writeTransaction(() => {
-    taskFlowStore(database).recordTextCopy({
-      recordId: id,
-      textRecordId: textId,
+  const payload = {
+    requestId: taskFlowRequestId('copy-text', [id]),
+    row: {
+      id,
+      workflowTextRecordId: textId,
       stageRecordId: cursorId,
-      documentReference: reference,
+      taskDocumentReference: reference,
       copiedAt,
-    })
+    },
+  }
+  const hosted = await writeHostedTaskFlow('copy-text', payload, target, client)
+  writeTransaction(() => {
+    taskFlowStore(database).write('copy-text', payload, hosted)
   }, database)
 }
 

@@ -33,11 +33,7 @@ export function floorFromObligationRow(row: WorkflowObligationFloorRow): Floor {
 }
 
 export function openWorkflowObligations(cursorId: string, d: Database): OpenObligation[] {
-  type StoredOpenObligation = WorkflowObligationFloorRow & {
-    stepOrdinal: number
-    stepSlug: string
-  }
-  const rows = taskFlowStore(d).openObligations<StoredOpenObligation>(cursorId)
+  const rows = taskFlowStore(d).openObligations(cursorId)
   return rows.map((row) => ({
     id: row.id,
     stepOrdinal: row.stepOrdinal,

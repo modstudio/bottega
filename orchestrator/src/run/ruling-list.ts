@@ -38,7 +38,7 @@ function queryRulings(options: RulingListOptions): {
   }
   const after = options.changedAfter ?? null
   const cursor = after === null ? null : collectChangeCursor()
-  const rows = taskFlowStore(db()).rulingRows<Record<string, unknown> & { number: number }>({
+  const rows = taskFlowStore(db()).rulingRows({
     kind: options.kind,
     ...(options.since ? { since: options.since } : {}),
     after,

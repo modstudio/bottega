@@ -14,7 +14,10 @@ import {
   writableDb,
   writeTransaction,
 } from '../database/db.ts'
-import { taskFlowStore } from '../workflow/task-flow-store.ts'
+import {
+  type TaskFlowRulingFileRow as QuestionRow,
+  taskFlowStore,
+} from '../workflow/task-flow-store.ts'
 import { auditQuestionMutation, authorizeWorkflowQuestionMutation } from './question-mutation.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import { questionRulingRemedy } from './question-ruling-remedy.ts'
@@ -69,40 +72,6 @@ export type FileRulingInput = {
   fromOperator: boolean
   channel: AnswerChannel
   dashboardAuthorized?: boolean
-}
-
-type QuestionRow = {
-  record_id: string
-  number: number
-  run_record_id: string | null
-  root_id: string | null
-  workflow_cursor_record_id: string | null
-  workflow_cursor_number: number | null
-  workflow_slug: string | null
-  mode_slug: string | null
-  workflow_owner: string | null
-  workflow_updated_at: string | null
-  question: string
-  answer: string | null
-  answer_basis: string | null
-  answered_at: string | null
-  answered_by: string | null
-  answered_by_name: string | null
-  answerer_kind: string | null
-  overturned_at: string | null
-  overturned_by: string | null
-  overturned_by_name: string | null
-  replacement: string | null
-  filed_as: string | null
-  filed_ref: string | null
-  filed_record_id: string | null
-  filed_label: string | null
-  filed_at: string | null
-  repo: string | null
-  cwd: string | null
-  launch_key: string | null
-  project_path: string | null
-  args: string | null
 }
 
 function requestedKind(as: RulingFileAs): FiledRulingKind {
@@ -208,7 +177,7 @@ function ownerRefusal(
 }
 
 function loadQuestion(questionId: string): QuestionRow {
-  const row = taskFlowStore(db()).rulingFileQuestion<QuestionRow>(questionId)
+  const row = taskFlowStore(db()).rulingFileQuestion(questionId)
   if (!row)
     throw new Error(
       `no question ${questionId}; inspect question ids with ${PLATFORM_SLUG} question inbox --all`,
