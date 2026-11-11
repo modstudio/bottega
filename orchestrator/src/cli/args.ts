@@ -442,6 +442,7 @@ export const CLI_COMMANDS = new Set([
   'agents',
   'answer',
   'ask-server',
+  'mcp-serve-child',
   'mcp-reader-proxy',
   'blockers',
   'board',

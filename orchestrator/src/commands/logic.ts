@@ -177,6 +177,10 @@ function registerMcpServers(program: Command): void {
       }
     })
   program
+    .command('mcp-serve-child', { hidden: true })
+    .allowExcessArguments(false)
+    .action(async () => (await import('../mcp/mcp.ts')).serveDocsMcp())
+  program
     .command('mcp-reader-proxy <policy> <project> <server> <tree>', { hidden: true })
     .allowExcessArguments(false)
     .action((policy: string, project: string, server: string, tree: string) =>

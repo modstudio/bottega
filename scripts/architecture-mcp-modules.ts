@@ -12,6 +12,16 @@ const module = (file: string, allowed: string[]): McpModule => ({
 })
 
 export const mcpModules: McpModule[] = [
+  module('orchestrator/src/mcp/mcp-exit-status.ts', []),
+  module('orchestrator/src/mcp/mcp-supervisor-decision.ts', [
+    '../../../shared/brand.ts',
+    './mcp-exit-status.ts',
+  ]),
+  module('orchestrator/src/mcp/mcp-supervisor.ts', [
+    '../../../shared/bounded-process.ts',
+    '../../../shared/self-spawn.ts',
+    './mcp-supervisor-decision.ts',
+  ]),
   module('orchestrator/src/mcp/mcp-mode.ts', []),
   module('orchestrator/src/mcp/mcp-command.ts', ['node:path']),
   module('orchestrator/src/mcp/mcp-workflow-input.ts', ['zod']),

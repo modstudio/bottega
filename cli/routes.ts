@@ -346,6 +346,7 @@ export const ROUTES = (
       ],
     },
     route('mcp serve', 'orch', 'mcp'),
+    { command: ['mcp', 'serve-child'], owner: 'orch', argv: ['mcp-serve-child'], hidden: true },
     route('mcp ask-server', 'orch', 'ask-server'),
     { command: ['mcp', 'reader-proxy'], owner: 'orch', argv: ['mcp-reader-proxy'], hidden: true },
   ] satisfies CommandRoute[]

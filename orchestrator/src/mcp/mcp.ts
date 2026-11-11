@@ -64,6 +64,7 @@ import { composeWorkflow, listResolvedWorkflows } from '../workflow/workflows.ts
 import { fileNote, hubOutput } from './hub-notes.ts'
 import { registerBoardTools } from './mcp-board-tools.ts'
 import { registerDocTools } from './mcp-doc-tools.ts'
+import { MCP_SERVER_STALE_EXIT } from './mcp-exit-status.ts'
 import { registerOperatorTools } from './mcp-operator-tools.ts'
 import { registerWorkflowPrompts } from './mcp-prompts.ts'
 import { registerSearchTools } from './mcp-search-tools.ts'
@@ -78,6 +79,11 @@ import { registerWorkflowStepTool } from './mcp-workflow-step.ts'
 type DocsMcpPorts = LandingBranchPorts & {
   hubTaskReader?: HubTaskReader
   workflowTextDocuments?: WorkflowTextDocumentPorts
+  registerSchemaReload?: (
+    onReload: (from: number, to: number) => void,
+    onRefusal?: (reason: string) => void,
+  ) => void
+  exit?: (code: number) => void
 }
 
 const portLedgerSources = (
@@ -596,12 +602,20 @@ function registerRuleWorkflowTool(server: McpServer, ports: DocsMcpPorts): void 
 
 export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
   const server = new McpServer({ name: MCP_SERVER_NAME, version: '0.1.0' })
-  enableSchemaReload((from, to) => {
-    console.error(
-      `schema changed: re-preparing statements and re-advertising tools (user_version ${from} -> ${to})`,
-    )
-    server.sendToolListChanged()
-  })
+  const registerSchemaReload = ports.registerSchemaReload ?? enableSchemaReload
+  const exit = ports.exit ?? ((code: number) => process.exit(code))
+  registerSchemaReload(
+    (from, to) => {
+      console.error(
+        `schema changed: re-preparing statements and re-advertising tools (user_version ${from} -> ${to})`,
+      )
+      server.sendToolListChanged()
+    },
+    (reason) => {
+      console.error(reason)
+      exit(MCP_SERVER_STALE_EXIT)
+    },
+  )
   const registerTool = server.registerTool.bind(server) as (
     name: string,
     config: object,

@@ -52,8 +52,24 @@ export const mcpBoundarySpecs: ImportBoundary[] = [
   boundary(
     'mcp-commands-boundary',
     'orchestrator/src/mcp/mcp-commands.ts',
-    ['../../../shared/brand.ts', './mcp.ts', './mcp-compatibility-record.ts', './mcp-probe.ts'],
+    [
+      '../../../shared/brand.ts',
+      './mcp-compatibility-record.ts',
+      './mcp-probe.ts',
+      './mcp-supervisor.ts',
+    ],
     'Keep MCP command adapters independent of the run nucleus and the CLI: they compose concern modules for one verb and own no lifecycle.',
+  ),
+  boundary(
+    'mcp-supervisor-boundary',
+    'orchestrator/src/mcp/mcp-supervisor.ts',
+    [
+      '../../../shared/bounded-process.ts',
+      '../../../shared/self-spawn.ts',
+      './mcp-exit-status.ts',
+      './mcp-supervisor-decision.ts',
+    ],
+    'Keep the stable MCP front independent of stores and tools: it only spawns the real server and relays framed messages.',
   ),
   boundary(
     'mcp-compatibility-record-boundary',

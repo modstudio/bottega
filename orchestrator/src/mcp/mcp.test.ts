@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
 import {
   Client,
   InMemoryTransport,
@@ -38,8 +38,31 @@ import {
   showResolvedWorkflow,
 } from '../workflow/workflows.ts'
 import { createDocsMcpServer, fileIssueTaskKey } from './mcp.ts'
+import { MCP_SERVER_STALE_EXIT } from './mcp-exit-status.ts'
 
 describe('orch MCP', () => {
+  test('an incompatible schema reload reports the refusal and exits for supervision', () => {
+    let refuse: ((reason: string) => void) | undefined
+    let exitCode: number | undefined
+    const errors: string[] = []
+    const error = spyOn(console, 'error').mockImplementation((value) => errors.push(String(value)))
+    try {
+      createDocsMcpServer({
+        registerSchemaReload: (_reload, onRefusal) => {
+          refuse = onRefusal
+        },
+        exit: (code) => {
+          exitCode = code
+        },
+      })
+      refuse?.('store migration is incompatible with this process')
+      expect(exitCode).toBe(MCP_SERVER_STALE_EXIT)
+      expect(errors).toEqual(['store migration is incompatible with this process'])
+    } finally {
+      error.mockRestore()
+    }
+  })
+
   test('list_workflows lists workflows from the server project hosted space', async () => {
     const project = 'mcp-hosted-workflow-list'
     const spaceId = newRecordId()
