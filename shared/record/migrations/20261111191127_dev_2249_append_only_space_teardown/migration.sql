@@ -75,7 +75,13 @@ BEGIN
   FROM public.project p
   WHERE p.id = target_project_id;
 
-  IF target_space_id IS NULL OR NOT EXISTS (
+  IF target_space_id IS NULL THEN
+    RAISE EXCEPTION 'tenant-binding guard failed: project % is not visible in app.space_id %',
+      target_project_id, nullif(current_setting('app.space_id', true), '')
+      USING ERRCODE = '42501';
+  END IF;
+
+  IF NOT EXISTS (
     SELECT 1
     FROM public.membership m
     WHERE m.space_id = target_space_id
