@@ -218,14 +218,14 @@ describe('record session keychain', () => {
 
   test('a failed probe keeps the store error and adds the file-store remedy', () => {
     expect(() => probeRecordSessionStore(() => result(70, '', 'keychain unavailable'))).toThrow(
-      'security add-generic-password failed with exit code 70: keychain unavailable\ncleared by: set BOTTEGA_KEYSTORE=file to keep the record session and the machine key in owner-only files',
+      'security add-generic-password failed with exit code 70: keychain unavailable\ncleared by: run bottega machine setup, which chooses the file keystore when no usable keychain is available',
     )
   })
 
   test('adds the file opt-in remedy to Linux keychain failures', () => {
     platformHolder[PLATFORM_KEY] = 'linux'
     expect(() => readRecordSessionToken(() => result(70, '', 'keychain unavailable'))).toThrow(
-      '; or set BOTTEGA_KEYSTORE=file to keep the record session and the machine key in owner-only files',
+      '; or run bottega machine setup, which chooses the file keystore when no usable keychain is available',
     )
   })
 })

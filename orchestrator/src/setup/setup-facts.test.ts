@@ -1,11 +1,22 @@
-import { expect, test } from 'bun:test'
+import { afterEach, expect, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { RECORD_API_ORIGIN } from '../../../shared/brand.ts'
+import { setMachineValue } from '../../../shared/machine-config.ts'
 import {
   type CommandCapture,
   classifySetupFacts,
+  gatherKeystoreSetupFact,
   type HarnessName,
   KNOWN_HARNESSES,
 } from './setup-facts.ts'
+
+const temporary: string[] = []
+
+afterEach(() => {
+  for (const path of temporary.splice(0)) rmSync(path, { recursive: true, force: true })
+})
 
 const command = (stdout: string, exitCode = 0): CommandCapture => ({
   exitCode,
@@ -62,4 +73,31 @@ test('harnesses without an auth strategy remain unknown', () => {
   expect(captured.harnesses.claude.auth).toBe('unknown')
   expect(captured.harnesses.opencode.auth).toBe('unknown')
   expect(captured.harnesses.goose.auth).toBe('unknown')
+})
+
+test('gathers the keystore value, source, and injected Linux probe result', () => {
+  const root = mkdtempSync(join(tmpdir(), 'setup-keystore-fact-'))
+  temporary.push(root)
+  const env = { BOTTEGA_CONFIG_HOME: root }
+  expect(gatherKeystoreSetupFact(env, 'linux', () => {})).toEqual({
+    value: 'keychain',
+    source: { kind: 'default' },
+    keychainUsable: true,
+  })
+
+  setMachineValue('machine.keystore', 'file', env)
+  expect(
+    gatherKeystoreSetupFact(env, 'linux', () => {
+      throw new Error('locked')
+    }),
+  ).toEqual({
+    value: 'file',
+    source: { kind: 'machine-file' },
+    keychainUsable: false,
+  })
+  expect(gatherKeystoreSetupFact(env, 'darwin', () => {})).toEqual({
+    value: 'file',
+    source: { kind: 'machine-file' },
+    keychainUsable: null,
+  })
 })

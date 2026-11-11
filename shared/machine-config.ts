@@ -45,6 +45,7 @@ export type MachineConfigEntry = {
 
 export const MACHINE_LEVELS = ['record', 'full'] as const
 export type MachineLevel = (typeof MACHINE_LEVELS)[number]
+export const KEYSTORE_ENV = `${PLATFORM_SLUG.toUpperCase()}_KEYSTORE`
 
 const MACHINE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -88,6 +89,12 @@ export const MACHINE_CONFIG = {
   'machine.former_short_names': { type: 'string', default: '' },
   'machine.level': { type: 'string', default: 'full', values: MACHINE_LEVELS },
   'machine.global_use': { type: 'string', default: 'on', values: ['on', 'off'] },
+  'machine.keystore': {
+    environment: KEYSTORE_ENV,
+    type: 'string',
+    default: 'keychain',
+    values: ['keychain', 'file'],
+  },
   ...DELEGATION_MACHINE_CONFIG,
   'model_host.url': {
     environment: 'BOTTEGA_MODEL_HOST_URL',

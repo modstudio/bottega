@@ -12,7 +12,7 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { MCP_SERVER_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { readMachineValue } from '../../../shared/machine-config.ts'
+import { readMachineValue, readMachineValueWithSource } from '../../../shared/machine-config.ts'
 import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
 import {
   applySetupActions as applySetupActionsWithService,
@@ -25,9 +25,9 @@ import {
   setupEnvironmentService,
   withMigratedProcessEnvironment,
 } from './setup-environment-runtime.ts'
-import { readSetupMachineLevel } from './setup-facts.ts'
+import { readSetupMachineLevel, type SetupFacts } from './setup-facts.ts'
 import { LEGACY_MCP_TOOL_PREFIX } from './setup-mcp-config.ts'
-import type { SetupAction } from './setup-planner.ts'
+import { plannedKeystoreAction, type SetupAction } from './setup-planner.ts'
 import { INFERRED_RECIPE_PATH } from './setup-toolchain.ts'
 
 const FRONT_DOOR = join('/', 'bin', PLATFORM_SLUG)
@@ -110,6 +110,34 @@ test('refuses a global-use action when its environment writer is unavailable', a
 
   expect(results[0]?.status).toBe('refused')
   expect(results[0]?.message).toBe('global-use writer is unavailable')
+})
+
+test('applies the file keystore choice and a repeated setup plans no change', async () => {
+  const configHome = mkdtempSync(join(tmpdir(), 'setup-keystore-'))
+  temporary.push(configHome)
+  process.env.BOTTEGA_CONFIG_HOME = configHome
+
+  const results = await applySetupActions(
+    [{ kind: 'set-keystore', from: 'keychain', to: 'file' }],
+    { add: async () => {}, fillAbsent: async () => {} },
+    undefined,
+    setupEnvironmentService,
+  )
+
+  expect(results[0]?.status).toBe('applied')
+  expect(results[0]?.message).toContain(
+    'file keystore chosen because no usable keychain was found',
+  )
+  expect(readMachineValue('machine.keystore')).toBe('file')
+  expect(
+    plannedKeystoreAction({
+      os: { platform: 'linux', arch: 'x64', wsl: false },
+      keystore: {
+        ...readMachineValueWithSource('machine.keystore'),
+        keychainUsable: false,
+      },
+    } as SetupFacts),
+  ).toBeNull()
 })
 
 test('writes an inferred recipe before filling its absent register pointer and never overwrites', async () => {

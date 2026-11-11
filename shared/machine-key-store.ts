@@ -9,7 +9,7 @@ import {
   revokedMachineKeyDirectory,
 } from './config-directory.ts'
 import { readOwnerOnlySecretFile } from './file-backed-secret-paths.ts'
-import { decideKeyStore, KEYSTORE_ENV } from './key-store.ts'
+import { decideKeyStore } from './key-store.ts'
 import {
   decideKeychainBackend,
   deleteKeychainItem,
@@ -49,10 +49,10 @@ function decode(value: string): Uint8Array {
 }
 
 export function decideMachineKeyStore(
-  requested: string | undefined,
+  environment: ConfigEnvironment,
   platform: string,
 ): 'file' | 'keychain' {
-  const selected = decideKeyStore(requested)
+  const selected = decideKeyStore(environment)
   if (selected === 'file') return selected
   try {
     decideKeychainBackend(platform)
@@ -63,7 +63,7 @@ export function decideMachineKeyStore(
 }
 
 function useFile(env: ConfigEnvironment): boolean {
-  return decideMachineKeyStore(env[KEYSTORE_ENV], keychainPlatform()) === 'file'
+  return decideMachineKeyStore(env, keychainPlatform()) === 'file'
 }
 
 export function readMachineKey(

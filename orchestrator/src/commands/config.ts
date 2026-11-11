@@ -300,7 +300,11 @@ async function sealPipedSecret(key: string, options: { space?: string }): Promis
 }
 
 export function register(program: Command): void {
-  const config = program.command('config').description('manage scoped configuration values')
+  const config = program
+    .command('config')
+    .description(
+      'manage scoped configuration values; machine.keystore selects keychain or file, and machine setup chooses file on Linux when no usable keychain is found',
+    )
   registerMachineCommands(config)
   registerConfigGet(config)
   registerConfigSet(config)

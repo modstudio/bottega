@@ -20,6 +20,7 @@ import type { SetupFacts } from './setup-facts.ts'
 import { legacyMcpServerName, type McpServer } from './setup-mcp.ts'
 import {
   planSetupActions,
+  plannedKeystoreAction,
   recommendedAnswers,
   setupActionPrerequisiteKinds,
   validateSetupAnswers,
@@ -73,6 +74,29 @@ const machine = {
   git: { path: '/bin/git', version: '1' },
   gh: { path: '/bin/gh', version: '1', loggedIn: true },
 } as SetupFacts
+
+test('plans file keystore only for a Linux default with an unusable keychain', () => {
+  const keystore = (
+    platform: NodeJS.Platform,
+    keychainUsable: boolean | null,
+    source: SetupFacts['keystore']['source'],
+  ) =>
+    plannedKeystoreAction({
+      ...machine,
+      os: { platform, arch: 'x64', wsl: false },
+      keystore: { value: 'keychain', source, keychainUsable },
+    })
+
+  expect(keystore('linux', false, { kind: 'default' })).toEqual({
+    kind: 'set-keystore',
+    from: 'keychain',
+    to: 'file',
+  })
+  expect(keystore('linux', true, { kind: 'default' })).toBeNull()
+  expect(keystore('linux', false, { kind: 'environment', name: 'BOTTEGA_KEYSTORE' })).toBeNull()
+  expect(keystore('linux', false, { kind: 'machine-file' })).toBeNull()
+  expect(keystore('darwin', false, { kind: 'default' })).toBeNull()
+})
 
 test('folder defaults include registered paths and names found in hosted spaces', () => {
   const registeredProject = registered({}, { name: 'local', path: '/work/local' })

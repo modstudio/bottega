@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { startBounded, startBoundedSyncBytes } from './bounded-process.ts'
 
 type SecurityResult = {
@@ -431,4 +432,24 @@ export function deleteKeychainItem(
   const result = runner(['security', 'delete-generic-password', '-a', account, '-s', service])
   if (result.exitCode === MISSING_ITEM_EXIT_CODE) return
   if (result.exitCode !== 0) throw failure('delete-generic-password', result)
+}
+
+/** Prove a keychain is usable by writing and removing a disposable item. */
+export function probeKeychainStore(
+  service: string,
+  account: string,
+  runner?: SecurityRunner,
+): void {
+  let writeError: unknown
+  try {
+    writeKeychainItem(service, account, randomUUID(), runner)
+  } catch (error) {
+    writeError = error
+  }
+  try {
+    deleteKeychainItem(service, account, runner)
+  } catch (error) {
+    if (!writeError) throw error
+  }
+  if (writeError) throw writeError
 }

@@ -5,6 +5,7 @@ import { lstat, mkdir, open, readFile, realpath, rm, writeFile } from 'node:fs/p
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { fileBackedSecretPaths } from '../../../shared/file-backed-secret-paths.ts'
 import type { MachineLevel } from '../../../shared/machine-config.ts'
 import type { PreparedStateFileMigration } from './setup-environment.ts'
 import { removableLegacyPathTarget } from './setup-legacy-path.ts'
@@ -67,6 +68,7 @@ export type SetupEnvironmentService = {
   }>
   setMachineLevel?(level: MachineLevel): void
   setGlobalUse?(value: 'on' | 'off'): void
+  setKeystore?(value: 'file'): void
 }
 
 export function setupResultsRequireAttention(results: readonly SetupActionResult[]): boolean {
@@ -300,7 +302,7 @@ async function applyScheduleAction(): Promise<{
 function applyMachineSettingAction(
   action: SetupAction,
   environment: SetupEnvironmentService,
-): { status: SetupAppliedActionStatus; message: null } | null {
+): { status: SetupAppliedActionStatus; message: string | null } | null {
   if (action.kind === 'set-machine-level') {
     if (!environment.setMachineLevel) throw new Error('machine-level writer is unavailable')
     environment.setMachineLevel(action.to)
@@ -310,6 +312,15 @@ function applyMachineSettingAction(
     if (!environment.setGlobalUse) throw new Error('global-use writer is unavailable')
     environment.setGlobalUse(action.to)
     return { status: 'applied', message: null }
+  }
+  if (action.kind === 'set-keystore') {
+    if (!environment.setKeystore) throw new Error('keystore writer is unavailable')
+    environment.setKeystore(action.to)
+    const paths = fileBackedSecretPaths(process.env).join(', ')
+    return {
+      status: 'applied',
+      message: `file keystore chosen because no usable keychain was found; file-backed secrets live at ${paths}; this machine may need a new machine key; run ${PLATFORM_SLUG} machine config machine init`,
+    }
   }
   return null
 }

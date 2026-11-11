@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import { chmodSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { PLATFORM_NAME } from './brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from './brand.ts'
 import { readOwnerOnlySecretFile } from './file-backed-secret-paths.ts'
-import { decideKeyStore, KEYSTORE_ENV } from './key-store.ts'
+import { decideKeyStore } from './key-store.ts'
 import {
   type AsyncSecurityRunner,
   deleteKeychainItem,
   keychainPlatform,
+  probeKeychainStore,
   readKeychainItem,
   readKeychainItemAsync,
   type SecurityRunner,
@@ -27,7 +28,7 @@ export type { AsyncSecurityRunner, SecurityRunner } from './keychain.ts'
 const SERVICE = `${PLATFORM_NAME}-record-session`
 const ACCOUNT = 'record'
 const PROBE_ACCOUNT = 'record-probe'
-const FILE_REMEDY = `set ${KEYSTORE_ENV}=file to keep the record session and the machine key in owner-only files`
+const FILE_REMEDY = `run ${PLATFORM_SLUG} machine setup, which chooses the file keystore when no usable keychain is available`
 let memoizedToken: string | null | undefined
 const UNREADABLE_STAMP = Symbol('unreadable-record-session-stamp')
 type SessionStamp = string | null | typeof UNREADABLE_STAMP
@@ -36,7 +37,7 @@ let pendingToken: Promise<string | null> | null = null
 let tokenGeneration = 0
 
 function useFile(): boolean {
-  return decideKeyStore(process.env[KEYSTORE_ENV]) === 'file'
+  return decideKeyStore(process.env) === 'file'
 }
 
 function readFileToken(): string | null {
@@ -205,18 +206,7 @@ export function probeRecordSessionStore(runner?: SecurityRunner): void {
       rmSync(path, { force: true })
       return
     }
-    let writeError: unknown
-    try {
-      writeKeychainItem(SERVICE, PROBE_ACCOUNT, randomUUID(), runner)
-    } catch (error) {
-      writeError = error
-    }
-    try {
-      deleteKeychainItem(SERVICE, PROBE_ACCOUNT, runner)
-    } catch (error) {
-      if (!writeError) throw error
-    }
-    if (writeError) throw writeError
+    probeRecordSessionKeychain(runner)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     const remedy = fileStore
@@ -224,6 +214,11 @@ export function probeRecordSessionStore(runner?: SecurityRunner): void {
       : FILE_REMEDY
     throw new Error(renderRefusal(refusal(message, { kind: 'edit', text: remedy })))
   }
+}
+
+/** Prove the keychain backend can hold record-session data without changing the selected store. */
+export function probeRecordSessionKeychain(runner?: SecurityRunner): void {
+  probeKeychainStore(SERVICE, PROBE_ACCOUNT, runner)
 }
 
 export function clearRecordSessionToken(runner?: SecurityRunner): void {

@@ -28,6 +28,7 @@ export type SetupAction =
       to: MachineLevel
     }
   | { kind: 'set-global-use'; from: 'on' | 'off' | null; to: 'on' | 'off' }
+  | { kind: 'set-keystore'; from: 'keychain' | 'file'; to: 'file' }
   | (SetupActionBase & {
       kind: 'add'
       name: string
@@ -87,6 +88,7 @@ export function setupActionChangesMachine(action: SetupAction): boolean {
     case 'migrate-environment':
     case 'set-machine-level':
     case 'set-global-use':
+    case 'set-keystore':
       return true
     case 'unchanged':
     case 'mcp-unchanged':
@@ -111,6 +113,8 @@ export function setupActionLine(action: SetupAction): string {
       return `Set machine install level to ${action.to}`
     case 'set-global-use':
       return `Set global use to ${action.to}`
+    case 'set-keystore':
+      return 'Set keystore to file'
     case 'add':
       return `Add project ${action.name} (${action.path})`
     case 'set':
@@ -207,6 +211,15 @@ function plannedScheduleActions(plan: SetupPlan, selectedLevel: MachineLevel): S
     : []
 }
 
+export function plannedKeystoreAction(machine: SetupPlan['facts']['machine']): SetupAction | null {
+  const keystore = machine.keystore
+  return machine.os?.platform === 'linux' &&
+    keystore?.keychainUsable === false &&
+    keystore.source.kind === 'default'
+    ? { kind: 'set-keystore', from: keystore.value, to: 'file' }
+    : null
+}
+
 function plannedRegistrations(
   plan: SetupPlan,
   answers: SetupAnswers,
@@ -238,6 +251,7 @@ export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupA
       ? null
       : { kind: 'set-global-use', from: currentGlobalUse, to: selectedGlobalUse }
   const schedules = plannedScheduleActions(plan, selectedLevel)
+  const keystore = plannedKeystoreAction(plan.facts.machine)
   const registrations = plannedRegistrations(plan, answers, selectedLevel)
   const projects: SetupAction[] = plan.proposals.map((proposal) => {
     const settings = resolvedSettings(proposal, answers, plan.questions)
@@ -305,6 +319,7 @@ export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupA
   }))
   return [
     { kind: 'migrate-environment' },
+    ...(keystore ? [keystore] : []),
     ...(globalUse ? [globalUse] : []),
     ...(machineLevel ? [machineLevel] : []),
     ...schedules,

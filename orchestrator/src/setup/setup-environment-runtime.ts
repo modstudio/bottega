@@ -257,6 +257,7 @@ export async function withMigratedProcessEnvironment<T>(
 export const setupEnvironmentService = {
   setMachineLevel: (level: MachineLevel) => setMachineValue('machine.level', level),
   setGlobalUse: (value: 'on' | 'off') => setMachineValue('machine.global_use', value),
+  setKeystore: (value: 'file') => setMachineValue('machine.keystore', value),
   migrateEnvironment: async (
     preparedStateFileMigration?: PreparedStateFileMigration | null,
   ): Promise<EnvironmentMigrationResult> =>
