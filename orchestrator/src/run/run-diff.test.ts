@@ -24,6 +24,8 @@ test('since-read refuses a missing read with both remedies', () => {
     read: null,
     comparisonTip: 'current-tip',
     readIsAncestor: false,
+    currentPatchId: null,
+    currentPathSet: null,
   })
 
   expect(decision).toEqual({
@@ -40,11 +42,15 @@ test('since-read refuses a rewritten branch and names both commits', () => {
     branch: 'DEV-1257-work',
     read: {
       tip: 'read-tip',
+      patchId: 'patch-before',
+      pathSet: '["a.ts"]',
       recordedAt: '2026-10-12T12:00:00.000Z',
       note: 'read before fixes',
     },
     comparisonTip: 'rewritten-tip',
     readIsAncestor: false,
+    currentPatchId: 'patch-after',
+    currentPathSet: '["a.ts"]',
   })
 
   expect(decision.kind).toBe('refusal')
@@ -58,6 +64,8 @@ test('since-read refuses a rewritten branch and names both commits', () => {
 test('since-read selects the recorded tip as the lower bound', () => {
   const read = {
     tip: 'read-tip',
+    patchId: 'patch-before',
+    pathSet: '["a.ts"]',
     recordedAt: '2026-10-12T12:00:00.000Z',
     note: 'read before fixes',
   }
@@ -68,13 +76,38 @@ test('since-read selects the recorded tip as the lower bound', () => {
       read,
       comparisonTip: 'later-tip',
       readIsAncestor: true,
+      currentPatchId: null,
+      currentPathSet: null,
     }),
-  ).toEqual({ kind: 'bound', read })
+  ).toEqual({ kind: 'bound', read, lowerBound: 'read-tip' })
+})
+
+test('since-read selects an empty bound after a patch-preserving rebase', () => {
+  const read = {
+    tip: 'read-tip',
+    patchId: 'same-patch',
+    pathSet: '["a.ts"]',
+    recordedAt: '2026-10-12T12:00:00.000Z',
+    note: 'read before rebase',
+  }
+  expect(
+    chooseSinceReadBound({
+      runId: '1257',
+      branch: 'DEV-1257-work',
+      read,
+      comparisonTip: 'rebased-tip',
+      readIsAncestor: false,
+      currentPatchId: 'same-patch',
+      currentPathSet: '["a.ts"]',
+    }),
+  ).toEqual({ kind: 'bound', read, lowerBound: 'rebased-tip' })
 })
 
 test('an unchanged clean comparison names the architect read', () => {
   const read = {
     tip: 'read-tip',
+    patchId: 'patch-before',
+    pathSet: '["a.ts"]',
     recordedAt: '2026-10-12T12:00:00.000Z',
     note: 'read before fixes',
   }

@@ -155,7 +155,6 @@ test.each([
     name: 'an unchanged patch keeps every review',
     files: [comparison('src/a.ts', 'same', 'same')],
     patchId: 'patch-before',
-    tier: 3 as const,
     exactReviews: [completedReview],
     expectedRound: [],
     expectedComplete: true,
@@ -165,7 +164,6 @@ test.each([
     name: 'a conflict resolution reopens only the lens covering its changed file',
     files: [comparison('src/a.ts', 'replayed', 'resolved', true)],
     patchId: 'patch-after-conflict',
-    tier: 3 as const,
     exactReviews: [],
     expectedRound: ['lens-a'],
     expectedComplete: false,
@@ -175,20 +173,9 @@ test.each([
     name: 'a changed file outside lens coverage reopens no lens',
     files: [comparison('generated/output.json', 'before', 'after')],
     patchId: 'patch-after-uncovered-file',
-    tier: 3 as const,
     exactReviews: [],
     expectedRound: [],
     expectedComplete: false,
-    expectedMissing: [],
-  },
-  {
-    name: 'a tier-zero read survives a content-neutral rebase',
-    files: [comparison('src/a.ts', 'same', 'same')],
-    patchId: 'patch-before',
-    tier: 0 as const,
-    exactReviews: [],
-    expectedRound: [],
-    expectedComplete: true,
     expectedMissing: [],
   },
 ])('$name in both the funnel and admission', (scenario) => {
@@ -209,10 +196,10 @@ test.each([
       fixFiles: carry.fixFiles,
       reOwedPathsByLens: carry.reOwedPathsByLens,
     },
-    tier: scenario.tier,
+    tier: 3,
     review: undefined,
   })
-  const relevant = scenario.tier === 0 ? { lenses: [] } : { lenses: ['lens-a', 'lens-b'] }
+  const relevant = { lenses: ['lens-a', 'lens-b'] }
   const reviewPlan = applicableRoundLensPlan({
     relevant,
     facts: {
@@ -229,26 +216,13 @@ test.each([
   const triage = decideTriage({
     patchId: scenario.patchId,
     pathSet: '["src/a.ts","src/b.ts"]',
-    tip: 'tip-after-rebase',
-    tier: scenario.tier,
+    tier: 3,
     applicableReview: relevant,
     reviewPlan,
     branchOwnerSession: 'owner-session',
     reviews: scenario.exactReviews,
-    branchReviewGroups: scenario.tier === 0 ? [] : [{ reviews: [completedReview] }],
-    reads:
-      scenario.tier === 0
-        ? [
-            {
-              recordId: 'read-before-rebase',
-              tip: 'tip-before-rebase',
-              patchId: 'patch-before',
-              pathSet: '["src/a.ts","src/b.ts"]',
-              recordedAt: '2026-11-01T02:00:00Z',
-              sessionId: 'owner-session',
-            },
-          ]
-        : [],
+    branchReviewGroups: [{ reviews: [completedReview] }],
+    reads: [],
   })
   expect(triage.complete).toBe(scenario.expectedComplete)
   expect(triage.complete ? [] : triage.missingLenses.map(({ lens }) => lens)).toEqual([

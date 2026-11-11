@@ -254,7 +254,7 @@ function printReviewRoundStatus(
     )
   }
   if (output.post_fix.kind === 're-lens') {
-    printPostFixTriggers(output.post_fix, log)
+    printPostFixTriggers(output.post_fix, output.lenses, output.secondOpinion, log)
   }
   log(
     output.review_budget.currentChangeCounted
@@ -265,6 +265,8 @@ function printReviewRoundStatus(
 
 function printPostFixTriggers(
   postFix: Extract<ReturnType<typeof reviewTierOutputForTarget>['post_fix'], { kind: 're-lens' }>,
+  lenses: readonly string[],
+  secondOpinion: string | null,
   log: (...values: unknown[]) => void,
 ): void {
   if (postFix.tierThreePaths.length) {
@@ -273,6 +275,7 @@ function printPostFixTriggers(
     )
   }
   for (const [lens, paths] of Object.entries(postFix.reOwedPathsByLens ?? {})) {
+    if (!lenses.includes(lens) && lens !== secondOpinion) continue
     log(`paths reopening lens ${lens} since review ${postFix.reviewNumber}: ${paths.join(', ')}`)
   }
 }
@@ -285,7 +288,7 @@ function printCeilingArchitectCredit(
   if (!guidance) return false
   log(guidance)
   if (output.post_fix.kind === 're-lens') {
-    printPostFixTriggers(output.post_fix, log)
+    printPostFixTriggers(output.post_fix, output.lenses, output.secondOpinion, log)
   }
   for (const lens of output.credited_lens_profiles) {
     const sources = lens.profiles

@@ -162,7 +162,6 @@ function triageDecision(change: PullRequestChange, database: Database): TriageDe
   return decideTriage({
     patchId: change.group.patchId,
     pathSet: serializePathSet(change.group.pathSet),
-    tip: change.tip,
     tier: change.tier,
     applicableReview: change.applicability,
     reviewPlan: change.reviewPlan,
@@ -189,7 +188,6 @@ function triageDecision(change: PullRequestChange, database: Database): TriageDe
       .all(change.project.name, ...lineage)
       .map((row) => ({
         recordId: row.record_id,
-        tip: row.tip,
         patchId: row.patch_id,
         pathSet: row.path_set,
         recordedAt: row.recorded_at,
@@ -257,8 +255,6 @@ function admissionChange(change: PullRequestChange) {
   return {
     project: change.project.name,
     branch: change.branch,
-    tip: change.tip,
-    tree: change.tree,
     patchId: change.group.patchId,
     pathSet: serializePathSet(change.group.pathSet),
   }

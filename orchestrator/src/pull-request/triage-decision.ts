@@ -3,6 +3,7 @@
 
 import type { ApplicableReview, ReviewFunnelPlan } from '../review/review-applicability.ts'
 import type { TriageReviewRow } from '../review/review-group.ts'
+import { reviewInRound } from '../review/review-group.ts'
 import {
   countsAsLensEvidence,
   hasAdmissibleProvenance,
@@ -19,7 +20,6 @@ export type TriageReviewGroup = {
 export type TriageEvidence = {
   patchId: string
   pathSet: string
-  tip: string
   tier: 0 | 1 | 2 | 3
   applicableReview: ApplicableReview
   reviewPlan?: ReviewFunnelPlan
@@ -28,7 +28,6 @@ export type TriageEvidence = {
   branchReviewGroups: readonly TriageReviewGroup[]
   reads: readonly {
     recordId: string
-    tip: string
     patchId: string
     pathSet: string
     recordedAt: string
@@ -422,8 +421,7 @@ function matchingOwnerRead(evidence: TriageEvidence, recordedAfter?: string) {
   return evidence.reads.find(
     (read) =>
       reader(read.sessionId) &&
-      read.patchId === evidence.patchId &&
-      read.pathSet === evidence.pathSet &&
+      reviewInRound(read, evidence.patchId, evidence.pathSet) &&
       (recordedAfter === undefined || read.recordedAt > recordedAfter),
   )
 }
