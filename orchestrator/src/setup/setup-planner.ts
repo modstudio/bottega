@@ -1,6 +1,7 @@
 // concern: setup-planner
 /** Resolves setup answers into ordered project-register actions. Pure: it never applies them. */
 import { MACHINE_LEVELS, type MachineLevel } from '../../../shared/machine-config.ts'
+import type { Keystore } from '../../../shared/key-store-constants.ts'
 import type { ProjectSettings } from '../project/projects.ts'
 import {
   MACHINE_GLOBAL_USE_QUESTION_ID,
@@ -28,7 +29,7 @@ export type SetupAction =
       to: MachineLevel
     }
   | { kind: 'set-global-use'; from: 'on' | 'off' | null; to: 'on' | 'off' }
-  | { kind: 'set-keystore'; from: 'keychain' | 'file'; to: 'file' }
+  | { kind: 'set-keystore'; from: Keystore; to: 'file' }
   | (SetupActionBase & {
       kind: 'add'
       name: string
@@ -213,9 +214,7 @@ function plannedScheduleActions(plan: SetupPlan, selectedLevel: MachineLevel): S
 
 export function plannedKeystoreAction(machine: SetupPlan['facts']['machine']): SetupAction | null {
   const keystore = machine.keystore
-  return machine.os?.platform === 'linux' &&
-    keystore?.keychainUsable === false &&
-    keystore.source.kind === 'default'
+  return keystore?.keychainUsable === false && keystore.source.kind === 'default'
     ? { kind: 'set-keystore', from: keystore.value, to: 'file' }
     : null
 }
@@ -318,8 +317,8 @@ export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupA
     target: link.target,
   }))
   return [
-    { kind: 'migrate-environment' },
     ...(keystore ? [keystore] : []),
+    { kind: 'migrate-environment' },
     ...(globalUse ? [globalUse] : []),
     ...(machineLevel ? [machineLevel] : []),
     ...schedules,

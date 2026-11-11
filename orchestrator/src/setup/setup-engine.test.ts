@@ -75,27 +75,37 @@ const machine = {
   gh: { path: '/bin/gh', version: '1', loggedIn: true },
 } as SetupFacts
 
-test('plans file keystore only for a Linux default with an unusable keychain', () => {
+test('does not plan a file keystore when the keychain is usable, unknown, or explicitly selected', () => {
   const keystore = (
-    platform: NodeJS.Platform,
     keychainUsable: boolean | null,
     source: SetupFacts['keystore']['source'],
   ) =>
     plannedKeystoreAction({
       ...machine,
-      os: { platform, arch: 'x64', wsl: false },
       keystore: { value: 'keychain', source, keychainUsable },
     })
 
-  expect(keystore('linux', false, { kind: 'default' })).toEqual({
-    kind: 'set-keystore',
-    from: 'keychain',
-    to: 'file',
-  })
-  expect(keystore('linux', true, { kind: 'default' })).toBeNull()
-  expect(keystore('linux', false, { kind: 'environment', name: 'BOTTEGA_KEYSTORE' })).toBeNull()
-  expect(keystore('linux', false, { kind: 'machine-file' })).toBeNull()
-  expect(keystore('darwin', false, { kind: 'default' })).toBeNull()
+  expect(keystore(true, { kind: 'default' })).toBeNull()
+  expect(keystore(null, { kind: 'default' })).toBeNull()
+  expect(keystore(false, { kind: 'environment', name: 'BOTTEGA_KEYSTORE' })).toBeNull()
+  expect(keystore(false, { kind: 'machine-file' })).toBeNull()
+})
+
+test('plans the fallback keystore before environment migration', () => {
+  const facts = {
+    ...machine,
+    os: { platform: 'linux', arch: 'x64', wsl: false },
+    keystore: {
+      value: 'keychain',
+      source: { kind: 'default' },
+      keychainUsable: false,
+    },
+  } as SetupFacts
+  const plan = proposeSetup(facts, [], [], [])
+  const kinds = planSetupActions(plan, recommendedAnswers(plan)).map((action) => action.kind)
+
+  expect(kinds).toContain('set-keystore')
+  expect(kinds.indexOf('set-keystore')).toBeLessThan(kinds.indexOf('migrate-environment'))
 })
 
 test('folder defaults include registered paths and names found in hosted spaces', () => {

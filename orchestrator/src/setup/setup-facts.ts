@@ -2,7 +2,13 @@
 /** Owns read-only machine setup facts. Must not know the store, registered agents, routing, or CLI grammar. */
 import { existsSync, readFileSync } from 'node:fs'
 import { which } from 'bun'
+import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { type InstallationKind, installationIdentity } from '../../../shared/install-root.ts'
+import type { Keystore } from '../../../shared/key-store-constants.ts'
+import {
+  probeMachineKeychain,
+  type UsableKeychainProbeResult,
+} from '../../../shared/keychain.ts'
 import {
   type MachineLevel,
   type MachineValueSource,
@@ -10,7 +16,6 @@ import {
   readMachineValueWithSource,
 } from '../../../shared/machine-config.ts'
 import { recordApiConfigured, resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
-import { probeRecordSessionKeychain } from '../../../shared/record-session.ts'
 import { runAgentAuthCheck } from '../agent/agent-auth.ts'
 import {
   type CliVersionCapture,
@@ -48,7 +53,7 @@ export type SetupFactsCapture = {
   machineLevel: MachineLevel | null
   globalUse?: 'on' | 'off' | null
   keystore?: {
-    value: 'keychain' | 'file'
+    value: Keystore
     source: MachineValueSource
     keychainUsable: boolean | null
   }
@@ -81,7 +86,7 @@ export type SetupFacts = {
   machineLevel: MachineLevel | null
   globalUse: 'on' | 'off' | null
   keystore: {
-    value: 'keychain' | 'file'
+    value: Keystore
     source: MachineValueSource
     keychainUsable: boolean | null
   }
@@ -204,18 +209,25 @@ function readSetupGlobalUse(): 'on' | 'off' | null {
 }
 
 export function gatherKeystoreSetupFact(
-  environment: NonNullable<Parameters<typeof readMachineValueWithSource>[1]> = process.env,
+  environment: ConfigEnvironment = process.env,
   platform: NodeJS.Platform = process.platform,
-  probe: () => void = probeRecordSessionKeychain,
+  probe: () => UsableKeychainProbeResult = probeMachineKeychain,
 ): SetupFacts['keystore'] {
   const resolved = readMachineValueWithSource('machine.keystore', environment)
-  const selected = { ...resolved, value: resolved.value as 'keychain' | 'file' }
-  if (platform !== 'linux') return { ...selected, keychainUsable: null }
-  try {
-    probe()
-    return { ...selected, keychainUsable: true }
-  } catch {
-    return { ...selected, keychainUsable: false }
+  const selected = { ...resolved, value: resolved.value as Keystore }
+  if (platform !== 'linux' || selected.source.kind !== 'default') {
+    return { ...selected, keychainUsable: null }
+  }
+  const result = probe()
+  if (result.usable) return { ...selected, keychainUsable: true }
+  return {
+    ...selected,
+    keychainUsable:
+      result.kind === 'libsecret-missing' ||
+      result.kind === 'no-unlocked-collection' ||
+      result.kind === 'no-session-bus'
+        ? false
+        : null,
   }
 }
 

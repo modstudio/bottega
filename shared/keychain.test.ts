@@ -9,6 +9,7 @@ import {
   readKeychainItem,
   readKeychainItemAsync,
   readLinuxKeychainItem,
+  SecretStoreError,
   type SecurityRunner,
   writeKeychainItem,
   writeLinuxKeychainItem,
@@ -61,6 +62,18 @@ describe('Linux secret failure classification', () => {
       'no-session-bus',
     )
     expect(classifySecretFailure('ERR_SECRETS_PLATFORM_ERROR', 'unexpected failure')).toBe('other')
+  })
+
+  test('carries the classification from the raw secret failure at the throw site', () => {
+    const runner: SecurityRunner = () =>
+      secretError('ERR_SECRETS_PLATFORM_ERROR', 'libsecret not available')
+    try {
+      writeLinuxKeychainItem('service', 'account', 'value', runner)
+      throw new Error('expected the keychain write to fail')
+    } catch (error) {
+      expect(error).toBeInstanceOf(SecretStoreError)
+      expect((error as SecretStoreError).kind).toBe('libsecret-missing')
+    }
   })
 })
 

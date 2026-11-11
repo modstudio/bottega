@@ -10,6 +10,7 @@ import {
 } from './config-directory.ts'
 import { readOwnerOnlySecretFile } from './file-backed-secret-paths.ts'
 import { decideKeyStore } from './key-store.ts'
+import type { Keystore } from './key-store-constants.ts'
 import {
   decideKeychainBackend,
   deleteKeychainItem,
@@ -51,7 +52,7 @@ function decode(value: string): Uint8Array {
 export function decideMachineKeyStore(
   environment: ConfigEnvironment,
   platform: string,
-): 'file' | 'keychain' {
+): Keystore {
   const selected = decideKeyStore(environment)
   if (selected === 'file') return selected
   try {

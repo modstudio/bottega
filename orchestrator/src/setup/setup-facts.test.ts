@@ -79,25 +79,48 @@ test('gathers the keystore value, source, and injected Linux probe result', () =
   const root = mkdtempSync(join(tmpdir(), 'setup-keystore-fact-'))
   temporary.push(root)
   const env = { BOTTEGA_CONFIG_HOME: root }
-  expect(gatherKeystoreSetupFact(env, 'linux', () => {})).toEqual({
+  expect(gatherKeystoreSetupFact(env, 'linux', () => ({ usable: true }))).toEqual({
     value: 'keychain',
     source: { kind: 'default' },
     keychainUsable: true,
   })
 
   setMachineValue('machine.keystore', 'file', env)
+  let probed = false
   expect(
     gatherKeystoreSetupFact(env, 'linux', () => {
-      throw new Error('locked')
+      probed = true
+      return { usable: false, kind: 'no-unlocked-collection' }
     }),
   ).toEqual({
     value: 'file',
     source: { kind: 'machine-file' },
-    keychainUsable: false,
+    keychainUsable: null,
   })
-  expect(gatherKeystoreSetupFact(env, 'darwin', () => {})).toEqual({
+  expect(probed).toBe(false)
+  expect(gatherKeystoreSetupFact(env, 'darwin', () => ({ usable: true }))).toEqual({
     value: 'file',
     source: { kind: 'machine-file' },
     keychainUsable: null,
   })
+})
+
+test('classifies injected Linux keychain probe failures without parsing messages', () => {
+  const root = mkdtempSync(join(tmpdir(), 'setup-keystore-failure-'))
+  temporary.push(root)
+  const env = { BOTTEGA_CONFIG_HOME: root }
+
+  for (const kind of [
+    'libsecret-missing',
+    'no-unlocked-collection',
+    'no-session-bus',
+  ] as const) {
+    expect(
+      gatherKeystoreSetupFact(env, 'linux', () => ({ usable: false, kind })).keychainUsable,
+    ).toBe(false)
+  }
+  expect(
+    gatherKeystoreSetupFact(env, 'linux', () => ({ usable: false, kind: 'other' }))
+      .keychainUsable,
+  ).toBeNull()
 })

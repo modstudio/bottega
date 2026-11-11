@@ -206,7 +206,7 @@ export function probeRecordSessionStore(runner?: SecurityRunner): void {
       rmSync(path, { force: true })
       return
     }
-    probeRecordSessionKeychain(runner)
+    probeKeychainStore(SERVICE, PROBE_ACCOUNT, runner)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     const remedy = fileStore
@@ -214,11 +214,6 @@ export function probeRecordSessionStore(runner?: SecurityRunner): void {
       : FILE_REMEDY
     throw new Error(renderRefusal(refusal(message, { kind: 'edit', text: remedy })))
   }
-}
-
-/** Prove the keychain backend can hold record-session data without changing the selected store. */
-export function probeRecordSessionKeychain(runner?: SecurityRunner): void {
-  probeKeychainStore(SERVICE, PROBE_ACCOUNT, runner)
 }
 
 export function clearRecordSessionToken(runner?: SecurityRunner): void {
