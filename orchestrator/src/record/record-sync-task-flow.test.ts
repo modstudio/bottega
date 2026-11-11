@@ -5,16 +5,16 @@ import { drizzle } from 'drizzle-orm/pglite'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { syncHostedRecord } from './record-sync-service.ts'
 import {
-  readRecordTaskFlowObligation,
-  readRecordTaskFlowStage,
-  readRecordTaskFlowText,
-} from './record-task-flow.ts'
-import {
   applyTaskFlowStageValues,
   applyTaskFlowValues,
   taskFlowStageValues,
   taskFlowValues,
 } from './record-sync-task-flow.ts'
+import {
+  readRecordTaskFlowObligation,
+  readRecordTaskFlowStage,
+  readRecordTaskFlowText,
+} from './record-task-flow.ts'
 
 const actorUrl = process.env.BOTTEGA_RECORD_URL
 const adminUrl = process.env.BOTTEGA_TEST_POSTGRES_URL

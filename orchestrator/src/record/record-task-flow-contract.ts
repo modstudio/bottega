@@ -3,6 +3,7 @@
 import { z } from 'zod'
 
 export const RECORD_TASK_FLOW_NOT_FOUND_MESSAGE = 'hosted task flow was not found'
+export const RECORD_TASK_FLOW_NOT_FOUND_CODE = 'task_flow_not_found'
 export const TASK_FLOW_STAGE_LIST_LIMIT_MAX = 1_000
 export const TASK_FLOW_STAGE_LIST_REMEDY = `Pass projectId, projectId with number, sessionId, one or more state values, or taskKey; limit must be from 1 through ${TASK_FLOW_STAGE_LIST_LIMIT_MAX}.`
 
@@ -10,7 +11,7 @@ const nullableId = z.string().uuid().nullable()
 const machine = z.object({ id: z.string().uuid(), displayName: z.string().min(1) })
 const stageState = z.enum(['running', 'awaiting-ruling', 'done', 'abandoned'])
 
-export const hostedTaskFlowObligationSchema = z.object({
+const hostedTaskFlowObligationSchema = z.object({
   id: z.string().uuid(),
   stageRecordId: z.string().uuid(),
   stepOrdinal: z.number().int(),
@@ -31,7 +32,7 @@ export const hostedTaskFlowObligationSchema = z.object({
   abandonedReason: z.string().nullable(),
   operatorRuling: z.boolean(),
 })
-export const hostedTaskFlowStepTextSchema = z.object({
+const hostedTaskFlowStepTextSchema = z.object({
   id: z.string().uuid(),
   stageRecordId: z.string().uuid(),
   stepOrdinal: z.number().int(),
@@ -39,7 +40,7 @@ export const hostedTaskFlowStepTextSchema = z.object({
   body: z.string(),
   createdAt: z.string(),
 })
-export const hostedTaskFlowTextCopySchema = z.object({
+const hostedTaskFlowTextCopySchema = z.object({
   id: z.string().uuid(),
   workflowTextRecordId: z.string().uuid(),
   stageRecordId: z.string().uuid(),
@@ -47,7 +48,7 @@ export const hostedTaskFlowTextCopySchema = z.object({
   copiedAt: z.string(),
 })
 
-export const hostedTaskFlowStageSummarySchema = z.object({
+const hostedTaskFlowStageSummarySchema = z.object({
   id: z.string().uuid(),
   flowRecordId: z.string().uuid(),
   projectId: z.string().uuid().nullable(),
@@ -79,13 +80,13 @@ export const hostedTaskFlowStageSummarySchema = z.object({
   updatedAt: z.string(),
 })
 
-export const hostedTaskFlowStageSchema = hostedTaskFlowStageSummarySchema.extend({
+const hostedTaskFlowStageSchema = hostedTaskFlowStageSummarySchema.extend({
   obligations: z.array(hostedTaskFlowObligationSchema).optional(),
   stepTexts: z.array(hostedTaskFlowStepTextSchema).optional(),
   textCopies: z.array(hostedTaskFlowTextCopySchema).optional(),
 })
 
-export const hostedTaskFlowSummarySchema = z.object({
+const hostedTaskFlowSummarySchema = z.object({
   id: z.string().uuid(),
   projectId: z.string().uuid(),
   taskId: z.string().uuid().nullable(),

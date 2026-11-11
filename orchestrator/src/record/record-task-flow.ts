@@ -12,6 +12,7 @@ import {
   type HostedTaskFlowStageById,
   type HostedTaskFlowStageList,
   type HostedTaskFlowTextById,
+  RECORD_TASK_FLOW_NOT_FOUND_CODE,
   RECORD_TASK_FLOW_NOT_FOUND_MESSAGE,
   type TaskFlowStageListQuery,
 } from './record-task-flow-contract.ts'
@@ -20,7 +21,6 @@ export class RecordTaskFlowError extends Error {
   readonly status = 404
   readonly code = RECORD_TASK_FLOW_NOT_FOUND_CODE
 }
-const RECORD_TASK_FLOW_NOT_FOUND_CODE = 'task_flow_not_found'
 
 type HostedStage = NonNullable<HostedTaskFlow['otherStages']>[number]
 type HostedStageSummary = HostedTaskFlowStageList['items'][number]['stage']

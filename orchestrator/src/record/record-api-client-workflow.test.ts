@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { recordTaskFlowClient } from './record-api-client-task-flow.ts'
 import { RecordApiRequestError } from './record-api-client-response.ts'
+import { recordTaskFlowClient } from './record-api-client-task-flow.ts'
 import { recordWorkflowClient } from './record-api-client-workflow.ts'
 import type { RecordWorkflowImportInput } from './record-workflow-contract.ts'
 
@@ -87,7 +87,7 @@ const stage = {
   id: STAGE_ID,
   flowRecordId: FLOW_ID,
   projectId: PROJECT_ID,
-  projectName: 'bottega',
+  projectName: 'project',
   number: 7,
   workflow: 'delivery',
   mode: 'default',
@@ -101,7 +101,7 @@ const stage = {
   arguments: { task: 'DEV-2234' },
   activeOrdinal: 1,
   activeSlug: 'build',
-  state: 'running',
+  state: 'running' as const,
   closedStepNotes: [],
   question: null,
   autonomy: 'agent',
@@ -122,7 +122,7 @@ const flow = {
   projectId: PROJECT_ID,
   taskId: null,
   taskKey: 'DEV-2234',
-  state: 'open',
+  state: 'open' as const,
   openStageRecordId: STAGE_ID,
   openStageCount: 1,
   openingMachineId: MACHINE_ID,
@@ -194,8 +194,20 @@ test.each(['readTaskFlowStage', 'readTaskFlowText', 'readTaskFlowObligation'] as
   '%s returns null for the record ordinary not-found response',
   async (method) => {
     const client = recordTaskFlowClient(async () => {
-      throw new RecordApiRequestError('hosted task flow was not found', 'refused', 404)
+      throw new RecordApiRequestError(
+        'hosted task flow was not found',
+        'refused',
+        404,
+        'task_flow_not_found',
+      )
     })
     await expect(client[method]!(ID)).resolves.toBeNull()
   },
 )
+
+test('task-flow by-id clients do not hide an unrelated not-found response', async () => {
+  const client = recordTaskFlowClient(async () => {
+    throw new RecordApiRequestError('route not found', 'refused', 404)
+  })
+  await expect(client.readTaskFlowStage!(ID)).rejects.toThrow('route not found')
+})
