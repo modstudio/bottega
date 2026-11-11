@@ -170,39 +170,3 @@ export function selectTaskFlowStage(
   }
 }
 
-function attachTaskFlowStage(flowRecordId: string, cursorRecordId: string, d: Database): void {
-  const at = nowIso()
-  taskFlowStore(d).attachStageToFlow({
-    flowRecordId,
-    cursorRecordId,
-    at,
-    machineId: machineId(),
-  })
-}
-
-export function attachInsertedTaskFlowStage(
-  input: {
-    project: string
-    taskRecordId?: string | null
-    taskKey: string
-    statusCategory?: string | null
-    cursor: { id: number; record_id: string; workflow_slug: string; mode_slug: string }
-  },
-  d: Database,
-): string | null {
-  if (!input.taskKey || !input.taskRecordId) return null
-  const flow = selectTaskFlowStage(
-    {
-      project: input.project,
-      taskRecordId: input.taskRecordId,
-      taskKey: input.taskKey,
-      statusCategory: input.statusCategory,
-      cursor: input.cursor.id,
-      workflow: input.cursor.workflow_slug,
-      mode: input.cursor.mode_slug,
-    },
-    d,
-  )
-  attachTaskFlowStage(flow.flowRecordId, input.cursor.record_id, d)
-  return flow.flowRecordId
-}

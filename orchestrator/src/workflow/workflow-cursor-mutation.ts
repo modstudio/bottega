@@ -7,8 +7,8 @@ import {
   taskFlowWriteTarget,
   writeHostedTaskFlow,
 } from '../record/record-task-flow-write-client.ts'
-import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import type { TaskFlowIntentInput } from '../record/record-task-flow-write-contract.ts'
+import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { closeQuestions } from '../run/question-close.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { taskFlowStore } from './task-flow-store.ts'

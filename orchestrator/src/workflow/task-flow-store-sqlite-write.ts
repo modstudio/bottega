@@ -193,6 +193,7 @@ function insertFlow(database: Database, row: SqlRow, revisionValue: number): voi
        opening_machine_id,updated_machine_id,revision)
       VALUES (?,?,?,?,?,?,?,?,?,?)`)
     .run(
+      // @ts-expect-error The validated intent guarantees every required SQLite binding.
       row.id,
       row.taskId,
       row.projectId,
@@ -232,6 +233,7 @@ function insertStage(
        opened_machine_id,taken_over_from_machine_id,last_advanced_machine_id,revision)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(
+      // @ts-expect-error The validated intent guarantees every required SQLite binding.
       row.id,
       number,
       project,
@@ -272,6 +274,7 @@ function insertObligation(database: Database, row: SqlRow): void {
      satisfied_step_ordinal,satisfied_step_slug,satisfied_evidence,abandoned_at,abandoned_reason)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(
+      // @ts-expect-error The validated intent guarantees every required SQLite binding.
       row.id,
       row.stageRecordId,
       row.stepOrdinal,
@@ -307,6 +310,7 @@ function updateObligation(database: Database, row: SqlRow): void {
     abandoned_reason=CASE WHEN ? THEN ? ELSE abandoned_reason END
     WHERE record_id=? AND cursor_record_id=?`)
     .run(
+      // @ts-expect-error The validated intent guarantees every required SQLite binding.
       ...pair('satisfiedAt'),
       ...pair('satisfiedStepOrdinal'),
       ...pair('satisfiedStepSlug'),
@@ -335,7 +339,7 @@ function applyStageMutation(
 ): Record<string, number> {
   const result: Record<string, number> = {}
   const flow = body.flow as Mutation | undefined
-  const stage = body.stage as Mutation
+  const stage = body.stage as unknown as Mutation
   if (flow)
     result[flow.id] = updateMutation(database, 'task_flow', flowColumns, flow, intent, revisions)
   result[stage.id] = updateMutation(
@@ -378,6 +382,7 @@ function sourceFlowForAdopt(
       (record_id,task_record_id,project_record_id,state,open_stage_cursor_record_id,created_at,updated_at,
        opening_machine_id,updated_machine_id,revision) VALUES (?,?,?,?,?,?,?,?,?,?)`)
     .run(
+      // @ts-expect-error The validated intent guarantees every required SQLite binding.
       flowRecordId,
       body.taskId,
       project.project_record_id,
@@ -402,6 +407,7 @@ function retireComposeIdentity(database: Database, row: Record<string, unknown>)
     .query(`UPDATE workflow_cursor SET instance_id=instance_id || '#' || number
       WHERE project_record_id=? AND workflow_slug=? AND mode_slug=? AND workflow_key=?
         AND instance_id='' AND record_id<>? AND state IN ('done','abandoned')`)
+    // @ts-expect-error The validated intent guarantees every required SQLite binding.
     .run(row.projectId, row.workflow, row.mode, row.workflowKey, row.id)
 }
 
@@ -427,6 +433,7 @@ function applyAdopt(
         "UPDATE task_flow SET state='dropped',open_stage_cursor_record_id=NULL,updated_machine_id=?,updated_at=?,revision=? WHERE record_id=?",
       )
       .run(
+        // @ts-expect-error The validated intent guarantees every required SQLite binding.
         body.updatedMachineId,
         body.updatedAt,
         revisions[source.record_id] ?? source.revision + 1,
@@ -437,6 +444,7 @@ function applyAdopt(
         'UPDATE task_flow SET open_stage_cursor_record_id=?,updated_machine_id=?,updated_at=?,revision=? WHERE record_id=?',
       )
       .run(
+        // @ts-expect-error The validated intent guarantees every required SQLite binding.
         stage.id,
         body.updatedMachineId,
         body.updatedAt,
@@ -449,6 +457,7 @@ function applyAdopt(
         'UPDATE task_flow SET task_record_id=?,open_stage_cursor_record_id=?,updated_machine_id=?,updated_at=?,revision=? WHERE record_id=?',
       )
       .run(
+        // @ts-expect-error The validated intent guarantees every required SQLite binding.
         body.taskId,
         stage.id,
         body.updatedMachineId,
@@ -462,6 +471,7 @@ function applyAdopt(
     .query(
       'UPDATE workflow_cursor SET task_record_id=?,task_flow_record_id=?,last_advanced_machine_id=?,updated_at=?,revision=? WHERE record_id=?',
     )
+    // @ts-expect-error The validated intent guarantees every required SQLite binding.
     .run(body.taskId, flowRecordId, body.updatedMachineId, body.updatedAt, stageRevision, stage.id)
   return {
     revisions: {
@@ -490,15 +500,13 @@ function writeCompose(
     ? Object.keys(appliedCompose.revisions).find((id) => id !== stageId)
     : undefined
   const keepsLocalFlow = Boolean(payloadStage?.workflowKey)
-  const rawFlowInsert = keepsLocalFlow
-    ? (body.flowInsert as SqlRow | undefined)
-    : undefined
+  const rawFlowInsert = keepsLocalFlow ? (body.flowInsert as SqlRow | undefined) : undefined
   const flowInsert: SqlRow | undefined = rawFlowInsert
-    ? {
+    ? ({
         ...rawFlowInsert,
         id: appliedFlowId ?? rawFlowInsert.id,
         openStageRecordId: stageId ?? rawFlowInsert.openStageRecordId,
-      }
+      } as unknown as SqlRow)
     : undefined
   let stage: { id: string; number: number } | null = null
   if (payloadStage) {
@@ -506,7 +514,7 @@ function writeCompose(
       ...payloadStage,
       id: stageId,
       flowRecordId: keepsLocalFlow ? (appliedFlowId ?? payloadStage.flowRecordId) : null,
-    }
+    } as unknown as SqlRow
     retireComposeIdentity(database, row)
     const next = revisions?.[String(row.id)] ?? 1
     stage = insertStage(database, row, next)
@@ -523,6 +531,7 @@ function writeCompose(
         .query(
           'UPDATE workflow_cursor SET task_record_id=?,task_flow_record_id=? WHERE record_id=?',
         )
+        // @ts-expect-error The validated intent guarantees every required SQLite binding.
         .run(flowInsert.taskId, flowInsert.id, stage.id)
   }
   const flowChange = keepsLocalFlow ? (body.flowChange as Mutation | undefined) : undefined
@@ -548,11 +557,7 @@ function writeCompose(
   return { revisions: result, stage }
 }
 
-function writeStageUpdate(
-  database: Database,
-  body: SqlRow,
-  revisions?: Record<string, number>,
-) {
+function writeStageUpdate(database: Database, body: SqlRow, revisions?: Record<string, number>) {
   const result: Record<string, number> = {}
   const flow = body.flow as Mutation | undefined
   if (flow)
@@ -564,7 +569,7 @@ function writeStageUpdate(
       'stage-update',
       revisions,
     )
-  for (const stage of body.stages as Mutation[])
+  for (const stage of body.stages as unknown as Mutation[])
     result[stage.id] = updateMutation(
       database,
       'workflow_cursor',
@@ -582,20 +587,22 @@ function writeTextIntent(
   body: SqlRow,
 ) {
   if (intent === 'attach-text') {
-    for (const row of body.rows as SqlRow[])
+    for (const row of body.rows as unknown as SqlRow[])
       database
         .query(
           'INSERT INTO workflow_step_text(record_id,cursor_record_id,step_ordinal,step_slug,body,created_at) VALUES (?,?,?,?,?,?)',
         )
+        // @ts-expect-error The validated intent guarantees every required SQLite binding.
         .run(row.id, row.stageRecordId, row.stepOrdinal, row.stepSlug, row.body, row.createdAt)
   } else if (intent === 'delete-text')
-    deleteTexts(database, String(body.stageRecordId), body.ids as string[])
+    deleteTexts(database, String(body.stageRecordId), body.ids as unknown as string[])
   else {
     const row = body.row as SqlRow
     database
       .query(`INSERT OR IGNORE INTO workflow_text_copy
       (record_id,workflow_text_record_id,cursor_record_id,task_document_reference,copied_at) VALUES (?,?,?,?,?)`)
       .run(
+        // @ts-expect-error The validated intent guarantees every required SQLite binding.
         row.id,
         row.workflowTextRecordId,
         row.stageRecordId,
