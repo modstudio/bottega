@@ -286,6 +286,11 @@ describe('public Linux backend dispatch', () => {
       kind: 'no-unlocked-collection',
     })
 
+    expect(probe(() => secretError('', 'Cannot autolaunch D-Bus without X11 $DISPLAY'))).toEqual({
+      usable: false,
+      kind: 'no-session-bus',
+    })
+
     expect(probe(() => secretError('ERR_SECRETS_PLATFORM_ERROR', 'unexpected failure'))).toEqual({
       usable: false,
       kind: 'other',
