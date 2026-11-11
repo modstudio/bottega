@@ -328,8 +328,8 @@ export function triageRefusal(
   }
   if (decision.architectReadRequired) {
     const credit = decision.earlierReviewNumber
-      ? `review ${decision.earlierReviewNumber} can be credited only after an architect reads this exact tip`
-      : `tier ${change.tier} requires an architect read of this exact tip`
+      ? `review ${decision.earlierReviewNumber} can be credited only after an architect reads this exact patch`
+      : `tier ${change.tier} requires an architect read of this exact patch`
     lines.push(
       `architect-read path failed: ${credit}; cleared by: ${REVIEW_READ_VERB} --sha ${change.tip} --note "<what was read and why it lands>"`,
     )

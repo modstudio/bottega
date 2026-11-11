@@ -57,7 +57,7 @@ describe('pull-request triage decision at tier zero', () => {
     ).toMatchObject({ complete: false, architectReadRequired: true })
   })
 
-  test('tier zero admits an exact owner-recorded read of the tip', () => {
+  test('tier zero admits an exact owner-recorded read of the patch', () => {
     expect(
       decideTriage(
         evidence({
@@ -81,7 +81,7 @@ describe('pull-request triage decision at tier zero', () => {
     })
   })
 
-  test('tier zero refuses a read of another tip', () => {
+  test('tier zero keeps a read of the same patch from before a rebase', () => {
     expect(
       decideTriage(
         evidence({
@@ -89,6 +89,22 @@ describe('pull-request triage decision at tier zero', () => {
           applicableReview: { lenses: [] },
           reviews: [],
           reads: [ownerRead({ tip: 'tip-other' })],
+        }),
+      ),
+    ).toMatchObject({
+      complete: true,
+      snapshot: { admissionPath: 'architect_read', readRecordId: 'record-9' },
+    })
+  })
+
+  test('tier zero refuses a read of another patch', () => {
+    expect(
+      decideTriage(
+        evidence({
+          tier: 0,
+          applicableReview: { lenses: [] },
+          reviews: [],
+          reads: [ownerRead({ patchId: 'patch-other' })],
         }),
       ),
     ).toMatchObject({ complete: false, architectReadRequired: true })

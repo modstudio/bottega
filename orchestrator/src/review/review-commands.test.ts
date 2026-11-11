@@ -514,10 +514,11 @@ function postFixFixture(options: {
   if (options.acceptedSafetyFinding) triageFinding(reviewId, 1, 'accepted', undefined, 'high')
   db()
     .query(
-      `UPDATE review_lens SET reproduced='all',coverage='adequate',limits='absent',overlap='none'
+      `UPDATE review_lens SET reproduced='all',coverage='adequate',limits='absent',overlap='none',
+        files_covered=CASE WHEN ? THEN ? ELSE files_covered END
         WHERE review_record_id=?`,
     )
-    .run(reviewId)
+    .run(options.resolveConflict ? 1 : 0, JSON.stringify(['critical/shared.ts']), reviewId)
   completeReview(reviewId, db())
   if (options.fixPath && !options.fixAfterMerge) {
     const absoluteFix = join(repo, options.fixPath)
@@ -541,11 +542,11 @@ function postFixFixture(options: {
   git(repo, 'commit', '-m', 'advance trunk')
   git(repo, 'checkout', branch)
   if (options.resolveConflict) {
-    const merge = spawnFixtureGitSync(['merge', '--no-edit', 'main'], { cwd: repo })
-    expect(merge.exitCode).not.toBe(0)
+    const rebase = spawnFixtureGitSync(['rebase', 'main'], { cwd: repo })
+    expect(rebase.exitCode).not.toBe(0)
     writeFileSync(join(repo, 'critical/shared.ts'), 'export const shared = "branch"\n')
     git(repo, 'add', 'critical/shared.ts')
-    git(repo, 'commit', '--no-edit')
+    git(repo, '-c', 'core.editor=true', 'rebase', '--continue')
   } else {
     git(repo, 'merge', '--no-edit', 'main')
   }
@@ -836,9 +837,19 @@ test('review tier prints architect ceiling guidance after three completed rounds
   }
 })
 
-test('review tier re-lenses a conflict resolution in a trunk merge', async () => {
+test('review tier names the lens reopened by conflict resolution during rebase', async () => {
   const { repo, branch, reviewed } = postFixFixture({ resolveConflict: true })
   try {
+    const human: string[] = []
+    await runReview(['review', 'tier', branch, '--cwd', repo], human)
+    expect(
+      human.some(
+        (line) =>
+          line.startsWith('paths reopening lens correctness since review ') &&
+          line.endsWith(': critical/shared.ts'),
+      ),
+    ).toBeTrue()
+
     const json: string[] = []
     await runReview(['review', 'tier', branch, '--cwd', repo, '--json'], json)
 

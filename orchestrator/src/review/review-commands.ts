@@ -254,15 +254,27 @@ function printReviewRoundStatus(
     )
   }
   if (output.post_fix.kind === 're-lens') {
-    log(
-      `tier-3 paths touched since review ${output.post_fix.reviewNumber}: ${output.post_fix.tierThreePaths.join(', ')}`,
-    )
+    printPostFixTriggers(output.post_fix, log)
   }
   log(
     output.review_budget.currentChangeCounted
       ? 'current change is already a counted round; no new round consumed'
       : 'current change would start a new round',
   )
+}
+
+function printPostFixTriggers(
+  postFix: Extract<ReturnType<typeof reviewTierOutputForTarget>['post_fix'], { kind: 're-lens' }>,
+  log: (...values: unknown[]) => void,
+): void {
+  if (postFix.tierThreePaths.length) {
+    log(
+      `tier-3 paths touched since review ${postFix.reviewNumber}: ${postFix.tierThreePaths.join(', ')}`,
+    )
+  }
+  for (const [lens, paths] of Object.entries(postFix.reOwedPathsByLens ?? {})) {
+    log(`paths reopening lens ${lens} since review ${postFix.reviewNumber}: ${paths.join(', ')}`)
+  }
 }
 
 function printCeilingArchitectCredit(
@@ -273,9 +285,7 @@ function printCeilingArchitectCredit(
   if (!guidance) return false
   log(guidance)
   if (output.post_fix.kind === 're-lens') {
-    log(
-      `tier-3 paths touched since review ${output.post_fix.reviewNumber}: ${output.post_fix.tierThreePaths.join(', ')}`,
-    )
+    printPostFixTriggers(output.post_fix, log)
   }
   for (const lens of output.credited_lens_profiles) {
     const sources = lens.profiles

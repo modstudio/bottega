@@ -65,4 +65,46 @@ describe('review coverage', () => {
       resolution: 'pin',
     })
   })
+
+  test('carries an unchanged patch when trunk touched the same path', () => {
+    const calls: string[][] = []
+    const runner: CoverageGitRunner = (args) => {
+      calls.push(args)
+      const command = args.join(' ')
+      if (command === 'rev-parse tip^{tree}') return result(true, 'tip-tree')
+      if (command === 'cat-file -e reviewed-commit^{commit}') return result(true)
+      if (command === 'rev-parse reviewed-commit^{tree}') return result(true, 'reviewed-tree')
+      if (command === 'cat-file -e base-commit^{commit}') return result(true)
+      if (command === 'merge-base reviewed-commit base-commit') return result(true, 'old-base')
+      if (command === 'show-ref --verify --quiet refs/remotes/origin/main') return result(false)
+      if (command === 'merge-base tip main') return result(true, 'new-base')
+      if (command === 'diff --name-only old-base..reviewed-commit -z') {
+        return result(true, 'src/shared.ts\0')
+      }
+      if (command === 'diff --binary --no-ext-diff --no-color new-base..tip') {
+        return {
+          ...result(true),
+          stdout: new TextEncoder().encode('unchanged branch patch'),
+        }
+      }
+      if (command === 'patch-id --stable') return result(true, 'patch-a tip')
+      if (command === 'diff --name-only new-base..tip -z') {
+        return result(true, 'src/shared.ts\0')
+      }
+      if (command === 'log --format=%B new-base..tip') return result(true, 'rebased change')
+      throw new Error(`unexpected git call: ${command}`)
+    }
+
+    expect(
+      reviewCoverageVerdict(
+        '/unused',
+        { ...review, patchId: 'patch-a', pathSet: '["src/shared.ts"]' },
+        'tip',
+        'main',
+        runner,
+        { skipExact: true },
+      ),
+    ).toMatchObject({ kind: 'carried', class: 'trivial-rebase', patchId: 'patch-a' })
+    expect(calls).not.toContainEqual(['diff', '--name-only', 'old-base..new-base', '-z'])
+  })
 })

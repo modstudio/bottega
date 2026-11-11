@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { decideTriage, type TriageEvidence } from '../pull-request/triage-decision.ts'
 import {
   type PerPathPatch,
   postFixReviewDecision,
@@ -130,4 +131,128 @@ test('a rebase that re-owes one lens off a tier-3 path re-lenses only that lens'
     tierThreePaths: [],
     applicability: { lenses: ['correctness'] },
   })
+})
+
+const completedReview: TriageEvidence['reviews'][number] = {
+  reviewRecordId: 'review-1',
+  reviewNumber: 1,
+  recordedAt: '2026-11-01T00:00:00Z',
+  completedAt: '2026-11-01T01:00:00Z',
+  tier: 3,
+  role: 'round',
+  patchId: 'patch-before',
+  pathSet: '["src/a.ts","src/b.ts"]',
+  lensIdentities: ['lens-a', 'lens-b'],
+  lenses: [
+    { recordId: 'lens-a-row', lens: 'lens-a', graded: true, settled: true },
+    { recordId: 'lens-b-row', lens: 'lens-b', graded: true, settled: true },
+  ],
+  findings: [],
+}
+
+test.each([
+  {
+    name: 'an unchanged patch keeps every review',
+    files: [comparison('src/a.ts', 'same', 'same')],
+    patchId: 'patch-before',
+    tier: 3 as const,
+    exactReviews: [completedReview],
+    expectedRound: [],
+    expectedComplete: true,
+    expectedMissing: [],
+  },
+  {
+    name: 'a conflict resolution reopens only the lens covering its changed file',
+    files: [comparison('src/a.ts', 'replayed', 'resolved', true)],
+    patchId: 'patch-after-conflict',
+    tier: 3 as const,
+    exactReviews: [],
+    expectedRound: ['lens-a'],
+    expectedComplete: false,
+    expectedMissing: ['lens-a'],
+  },
+  {
+    name: 'a changed file outside lens coverage reopens no lens',
+    files: [comparison('generated/output.json', 'before', 'after')],
+    patchId: 'patch-after-uncovered-file',
+    tier: 3 as const,
+    exactReviews: [],
+    expectedRound: [],
+    expectedComplete: false,
+    expectedMissing: [],
+  },
+  {
+    name: 'a tier-zero read survives a content-neutral rebase',
+    files: [comparison('src/a.ts', 'same', 'same')],
+    patchId: 'patch-before',
+    tier: 0 as const,
+    exactReviews: [],
+    expectedRound: [],
+    expectedComplete: true,
+    expectedMissing: [],
+  },
+])('$name in both the funnel and admission', (scenario) => {
+  const carry = rebaseCarryDecision({
+    files: scenario.files,
+    pathsByLens: { 'lens-a': ['src/a.ts'], 'lens-b': ['src/b.ts'] },
+  })
+  const postFix = postFixReviewDecision({
+    facts: {
+      completed: {
+        number: 1,
+        identity: 'review-identity',
+        launchKey: 'DEV-2258',
+        runIds: [],
+        pathsByLens: { 'lens-a': ['src/a.ts'], 'lens-b': ['src/b.ts'] },
+      },
+      reviewedTip: 'tip-before-rebase',
+      fixFiles: carry.fixFiles,
+      reOwedPathsByLens: carry.reOwedPathsByLens,
+    },
+    tier: scenario.tier,
+    review: undefined,
+  })
+  const relevant =
+    scenario.tier === 0 ? { lenses: [] } : { lenses: ['lens-a', 'lens-b'] }
+  const reviewPlan = applicableRoundLensPlan({
+    relevant,
+    facts: {
+      reviewedPathsByLens: { 'lens-a': ['src/a.ts'], 'lens-b': ['src/b.ts'] },
+      completedLenses: ['lens-a', 'lens-b'],
+      satisfiedSecondOpinionLenses: [],
+      latestAcceptedOrModifiedLenses: [],
+    },
+    postFix,
+    fixPathsByLens: carry.reOwedPathsByLens,
+  })
+  expect(reviewPlan.round.lenses).toEqual(scenario.expectedRound)
+
+  const triage = decideTriage({
+    patchId: scenario.patchId,
+    pathSet: '["src/a.ts","src/b.ts"]',
+    tip: 'tip-after-rebase',
+    tier: scenario.tier,
+    applicableReview: relevant,
+    reviewPlan,
+    branchOwnerSession: 'owner-session',
+    reviews: scenario.exactReviews,
+    branchReviewGroups: scenario.tier === 0 ? [] : [{ reviews: [completedReview] }],
+    reads:
+      scenario.tier === 0
+        ? [
+            {
+              recordId: 'read-before-rebase',
+              tip: 'tip-before-rebase',
+              patchId: 'patch-before',
+              pathSet: '["src/a.ts","src/b.ts"]',
+              recordedAt: '2026-11-01T02:00:00Z',
+              sessionId: 'owner-session',
+            },
+          ]
+        : [],
+  })
+  expect(triage.complete).toBe(scenario.expectedComplete)
+  expect(triage.complete ? [] : triage.missingLenses.map(({ lens }) => lens)).toEqual(
+    scenario.expectedMissing,
+  )
 })

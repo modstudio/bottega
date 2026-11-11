@@ -141,7 +141,7 @@ function adapterFor(
   }
 }
 
-test("merge honors create's triage override only for its recorded head", () => {
+test("merge honors create's triage override for the same patch after a rebase", () => {
   registerProject()
   const database = db()
   recordTriageOverrideForChange(
@@ -153,11 +153,11 @@ test("merge honors create's triage override only for its recorded head", () => {
 
   expect(() =>
     mergePullRequest('42', cwd, adapterFor('changed-head', mergedHeads, database), database),
-  ).toThrow('review triage is incomplete')
-  expect(mergedHeads).toEqual([])
+  ).toThrow('stop after admission')
+  expect(mergedHeads).toEqual(['changed-head'])
 
   expect(() =>
     mergePullRequest('42', cwd, adapterFor(recordedHead, mergedHeads, database), database),
   ).toThrow('stop after admission')
-  expect(mergedHeads).toEqual([recordedHead])
+  expect(mergedHeads).toEqual(['changed-head', recordedHead])
 })

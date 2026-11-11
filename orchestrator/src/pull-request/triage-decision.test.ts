@@ -59,7 +59,7 @@ describe('pull-request triage decision', () => {
     })
   })
 
-  test('a complete exact-tip review covers an empty later-round requirement', () => {
+  test('a complete exact-patch review covers an empty later-round requirement', () => {
     expect(
       decideTriage(
         evidence({
@@ -72,7 +72,7 @@ describe('pull-request triage decision', () => {
     ).toMatchObject({ complete: true, snapshot: { admissionPath: 'exact_review' } })
   })
 
-  test('path b admits a complete earlier round plus a later read of the exact tip', () => {
+  test('path b admits a complete earlier round plus a later read of the exact patch', () => {
     const earlier = review({
       reviewId: 3,
       tier: 2,

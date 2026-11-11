@@ -406,7 +406,7 @@ function architectReadSnapshot(
 }
 
 /**
- * The read of this exact tip that admits the change.
+ * The read of this exact patch that admits the change.
  *
  * Tier `0` has no review round to fall back on, so its read must name a session: the branch
  * owner's, or any identified caller's on a branch no run owns. A read crediting an earlier
@@ -422,7 +422,6 @@ function matchingOwnerRead(evidence: TriageEvidence, recordedAfter?: string) {
   return evidence.reads.find(
     (read) =>
       reader(read.sessionId) &&
-      read.tip === evidence.tip &&
       read.patchId === evidence.patchId &&
       read.pathSet === evidence.pathSet &&
       (recordedAfter === undefined || read.recordedAt > recordedAfter),

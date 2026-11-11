@@ -976,12 +976,12 @@ test.each([
   [
     'a missing architect read',
     { finalTierRaised: false, architectReadRequired: true },
-    'review 93 can be credited only after an architect reads this exact tip',
+    'review 93 can be credited only after an architect reads this exact patch',
   ],
   [
     'a funnel plan after a tier rise',
     { finalTierRaised: true, architectReadRequired: true },
-    'review 93 can be credited only after an architect reads this exact tip',
+    'review 93 can be credited only after an architect reads this exact patch',
   ],
 ] as const)(
   'credited-earlier-review refusal for %s prints its display number',

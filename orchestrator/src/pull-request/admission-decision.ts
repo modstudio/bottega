@@ -42,8 +42,6 @@ export function decideAdmission(
     (candidate) =>
       candidate.project === change.project &&
       candidate.branch === change.branch &&
-      candidate.tip === change.tip &&
-      candidate.tree === change.tree &&
       candidate.patchId === change.patchId &&
       candidate.pathSet === change.pathSet,
   )

@@ -248,7 +248,7 @@ describe('round lens plan', () => {
     ).toEqual({ lenses: [] })
   })
 
-  test('credits only forbidden exact-tip evidence when the ceiling is exhausted', () => {
+  test('credits only forbidden exact-patch evidence when the ceiling is exhausted', () => {
     const decision = reviewPlanForBudget({
       reviewPlan: {
         round,

@@ -174,15 +174,6 @@ export function reviewCoverageVerdict(
   if (JSON.stringify(reviewedPaths) !== JSON.stringify(candidatePaths)) {
     return { kind: 'invalid', reason: 'path set differs', resolution: resolved.resolution }
   }
-  const trunkPaths = changedPaths(runner, oldBase, newBase)
-  const overlap = [...changePaths].filter((path) => trunkPaths.has(path))
-  if (overlap.length) {
-    return {
-      kind: 'invalid',
-      reason: `overlapping paths: ${overlap.sort().join(', ')}`,
-      resolution: resolved.resolution,
-    }
-  }
   const messageResult = runner(['log', '--format=%B', `${newBase}..${tip}`])
   const message = messageResult.ok ? messageResult.out : ''
   return {
