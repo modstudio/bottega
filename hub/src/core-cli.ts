@@ -34,14 +34,11 @@ import { hubDoctorLines } from './doctor.ts'
 import { reclaimFixtureQuestions } from './fixture-question-reclaim.ts'
 import { LocalHubAuth } from './local-auth.ts'
 import {
-  type ProjectListOptions,
-  projectList,
   readQuestionIdentityMap,
   readWorkflowCursorIdentityMap,
   startDashboardCapability,
 } from './orch.ts'
-import { purgeHubProject } from './project-purge.ts'
-import { type ProjectRecordIdSource, projectRecordIdFor } from './project-record-id.ts'
+import { purgeHubProject, resolvePurgeRecordId } from './project-purge.ts'
 import { projects } from './projects.ts'
 import { estateEngagedMs, tasksInWindow } from './query.ts'
 import { printReconcile, reconcileOpenIntervals } from './reconcile.ts'
@@ -63,18 +60,6 @@ import { hoursAgo } from './time.ts'
 
 /** The legs `--only` may name. */
 const COLLECT_LEGS = ['runs', 'transcripts', 'git', 'tasks']
-
-export function resolveProjectPurgeRecordId(
-  projectName: string,
-  loadProjects: (options?: ProjectListOptions) => readonly ProjectRecordIdSource[] = projectList,
-): string {
-  const recordId = projectRecordIdFor(projectName, loadProjects({ retired: true }))
-  if (!recordId)
-    throw new Error(
-      `project ${projectName} is not in this machine's register; run \`${PLATFORM_SLUG} project list --retired\` to inspect the register`,
-    )
-  return recordId
-}
 
 export async function collectOneShot(
   guard: import('./collect.ts').LeaseGuard | undefined,
@@ -444,7 +429,7 @@ export function registerCoreCommands(program: Command): void {
           `confirmation guard failed: --confirm must equal ${name}; run \`${PLATFORM_SLUG} project purge ${name} --confirm ${name}\``,
         )
       requireDatabase()
-      const recordId = resolveProjectPurgeRecordId(name)
+      const recordId = resolvePurgeRecordId(name)
       renderRemovalReport(purgeHubProject(db(), recordId, name), console.log)
     })
 }

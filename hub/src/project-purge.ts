@@ -1,8 +1,23 @@
 // concern: local-project-purge
 /** Purges the hub rows owned by one registered project. */
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import type { RemovalReport } from '../../shared/removal-report.ts'
 import { writeTransaction } from './db.ts'
+import { type ProjectRecordIdSource, projectRecordIdFor } from './project-record-id.ts'
+import { everyRegisteredProject } from './projects.ts'
+
+export function resolvePurgeRecordId(
+  projectName: string,
+  registered: readonly ProjectRecordIdSource[] = everyRegisteredProject(),
+): string {
+  const recordId = projectRecordIdFor(projectName, registered)
+  if (!recordId)
+    throw new Error(
+      `project ${projectName} is not in this machine's register; run \`${PLATFORM_SLUG} project list\` and \`${PLATFORM_SLUG} project list --retired\` to inspect the register`,
+    )
+  return recordId
+}
 
 const LOCAL_PROJECT_PURGE_EXCLUSIONS = {
   send: 'send.projects is an historical text list, not project-owned rows',

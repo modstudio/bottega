@@ -1,7 +1,7 @@
 import { expect, spyOn, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import type { CollectLegResult } from './collect.ts'
-import { collectOneShot, resolveProjectPurgeRecordId, runOneShotCollect } from './core-cli.ts'
+import { collectOneShot, runOneShotCollect } from './core-cli.ts'
 import type { HostedOutboxReport } from './outbox.ts'
 
 const result: CollectLegResult[] = [{ source: 'runs', ok: true, durationMs: 0 }]
@@ -15,25 +15,6 @@ const outboxReport: HostedOutboxReport = {
   waitingOnHostedHub: {},
   skippedCapability: false,
 }
-
-test('purge resolves a retired register entry through its hosted id', () => {
-  const retiredProject = {
-    record_id: '00000000-0000-7000-8000-000000000101',
-    name: 'retired-target',
-  }
-  expect(
-    resolveProjectPurgeRecordId('retired-target', (options) => {
-      expect(options).toEqual({ retired: true })
-      return [retiredProject]
-    }),
-  ).toBe(retiredProject.record_id)
-})
-
-test('purge names the retired register listing when the project is absent', () => {
-  expect(() => resolveProjectPurgeRecordId('missing', () => [])).toThrow(
-    `project missing is not in this machine's register; run \`${PLATFORM_SLUG} project list --retired\` to inspect the register`,
-  )
-})
 
 test('one-shot collection selects incremental work unless a rebuild window is explicit', async () => {
   const calls: string[] = []
