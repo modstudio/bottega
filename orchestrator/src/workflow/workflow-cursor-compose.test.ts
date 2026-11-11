@@ -2,9 +2,9 @@ import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { resolvedRecordOrigin } from '../../../shared/record-api-url.ts'
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
-import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
-import { rememberProjectSpace } from '../project-space-cache.ts'
 import { rememberActiveRecordSpace } from '../project-space.ts'
+import { rememberProjectSpace } from '../project-space-cache.ts'
+import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import {
   type TaskFlowIntentInput,
   taskFlowRequestId,
@@ -212,7 +212,6 @@ test('compose replay after a local crash reuses its request id and hosted stage'
 })
 
 test('local-only compose makes no client call and writes no task-flow outbox row', async () => {
-  delete process.env.BOTTEGA_RECORD_API_URL
   const d = database()
   const calls: TaskFlowIntentInput<'compose'>[] = []
   const taskFlowClient = composeClient(calls)

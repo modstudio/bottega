@@ -1,11 +1,14 @@
 import { afterEach, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { resolvedRecordOrigin } from '../../../shared/record-api-url.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import { rememberProjectSpace } from '../project-space-cache.ts'
+import { rememberActiveRecordSpace } from '../project-space.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
 import {
   type HostedTaskFlow,
@@ -20,7 +23,6 @@ import { seedWorkflows } from './workflow-seeds.ts'
 import { resolveLinkedWorkflowCursorMode } from './workflow-task-linking.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
-const previousRecordUrl = process.env.BOTTEGA_RECORD_API_URL
 const whoami = async () => ({
   user: { id: 'read-through-user' },
   activeSpaceId: 'read-through-space',
@@ -31,9 +33,26 @@ const whoami = async () => ({
 })
 afterEach(() => {
   installRecordApiClient(createMemoryRecordApiClient())
-  if (previousRecordUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
-  else process.env.BOTTEGA_RECORD_API_URL = previousRecordUrl
 })
+
+function bindHosted(database: ReturnType<typeof migratedTestDatabase>): void {
+  for (const table of [
+    'workflow',
+    'workflow_version',
+    'step_catalogue',
+    'step_catalogue_version',
+  ]) {
+    database.query(`UPDATE ${table} SET space_id = 'read-through-space'`).run()
+  }
+  rememberActiveRecordSpace(database, 'read-through-space')
+  rememberProjectSpace(database, 'read-through-fixture', 'read-through-space')
+  database
+    .query(
+      `INSERT INTO record_install_binding (id,bound_at,record_origin) VALUES (1,?,?)
+       ON CONFLICT(id) DO UPDATE SET bound_at=excluded.bound_at,record_origin=excluded.record_origin`,
+    )
+    .run('2026-11-10T00:00:00.000Z', resolvedRecordOrigin())
+}
 
 function fixture() {
   const database = migratedTestDatabase()
@@ -127,7 +146,11 @@ function hosted(
   }
 }
 
-function installHosted(flow: HostedTaskFlow): void {
+function installHosted(
+  database: ReturnType<typeof migratedTestDatabase>,
+  flow: HostedTaskFlow,
+): void {
+  bindHosted(database)
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     whoami,
@@ -165,7 +188,6 @@ function installHosted(flow: HostedTaskFlow): void {
       },
     }),
   })
-  process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
 }
 
 async function cacheHostedTaskFlow(
@@ -173,7 +195,7 @@ async function cacheHostedTaskFlow(
   taskKey: string,
   flow: HostedTaskFlow,
 ): Promise<void> {
-  installHosted(flow)
+  installHosted(database, flow)
   await readThroughTaskFlow(database, {
     project: 'read-through-fixture',
     taskKey,
@@ -192,7 +214,7 @@ test('hosted newer than local refreshes the cached stage', async () => {
       'DEV-2098',
       hosted(ids, { taskId, flowId, stageId, stageRevision: 3 }),
     )
-    installHosted(hosted(ids, { taskId, flowId, stageId, stageRevision: 4 }))
+    installHosted(ids.database, hosted(ids, { taskId, flowId, stageId, stageRevision: 4 }))
     const status = await readThroughTaskFlow(ids.database, {
       project: 'read-through-fixture',
       taskKey: 'DEV-2098',
@@ -259,6 +281,7 @@ test('a hosted close at the tied flow revision is applied and not re-attached', 
     }
     const { holder: _holder, ...listedStage } = closedStage
     installHosted(
+      ids.database,
       hosted(ids, {
         taskId,
         flowId,
@@ -320,7 +343,7 @@ test('a newer hosted flow without a stage list leaves the local flow and cursor 
       flowRevision: 31,
     })
     await cacheHostedTaskFlow(ids.database, 'DEV-2098', local)
-    installHosted(hosted(ids, { taskId, flowId, stage: false, flowRevision: 34 }))
+    installHosted(ids.database, hosted(ids, { taskId, flowId, stage: false, flowRevision: 34 }))
 
     await readThroughTaskFlow(ids.database, {
       project: 'read-through-fixture',
@@ -611,7 +634,7 @@ test.each([
     ids.database
       .query('UPDATE workflow_cursor SET task_record_id=NULL WHERE record_id=?')
       .run(stageId)
-    installHosted(remote)
+    installHosted(ids.database, remote)
     const cursor = ids.database
       .query<{ number: number }, [string]>('SELECT number FROM workflow_cursor WHERE record_id=?')
       .get(stageId)!.number
@@ -699,7 +722,7 @@ test('local stage ahead of hosted is not clobbered', async () => {
       'DEV-2098',
       hosted(ids, { taskId, flowId, stageId, stageRevision: 6 }),
     )
-    installHosted(hosted(ids, { taskId, flowId, stageId, stageRevision: 5 }))
+    installHosted(ids.database, hosted(ids, { taskId, flowId, stageId, stageRevision: 5 }))
     await readThroughTaskFlow(ids.database, {
       project: 'read-through-fixture',
       taskKey: 'DEV-2098',
@@ -718,7 +741,7 @@ test('hosted flow without a stage is adopted when local has no flow', async () =
   try {
     const taskId = newRecordId()
     const flow = hosted(ids, { taskId, stage: false })
-    installHosted(flow)
+    installHosted(ids.database, flow)
     await readThroughTaskFlow(ids.database, {
       project: 'read-through-fixture',
       taskKey: 'DEV-2098',
@@ -744,7 +767,7 @@ test('recognized task-flow not-found is a reachable empty read', async () => {
         throw new RecordApiRequestError(RECORD_TASK_FLOW_NOT_FOUND_MESSAGE, 'refused', 404)
       },
     })
-    process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
+    bindHosted(ids.database)
     await expect(
       readThroughTaskFlow(ids.database, {
         project: 'read-through-fixture',
@@ -767,7 +790,7 @@ test('route-missing 404 is unreachable with the hosted-api release remedy', asyn
         throw new RecordApiRequestError('record API 404', 'refused', 404)
       },
     })
-    process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
+    bindHosted(ids.database)
     await expect(
       readThroughTaskFlow(ids.database, {
         project: 'read-through-fixture',
