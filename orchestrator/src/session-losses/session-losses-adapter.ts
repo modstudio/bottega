@@ -18,6 +18,7 @@ import {
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { detach } from '../run/run-dispatch.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
+import { taskFlowStore } from '../workflow/task-flow-store.ts'
 import {
   type ClaimLifecycle,
   type CursorLifecycle,
@@ -108,18 +109,7 @@ function runFacts(sessionId: string): RunLifecycle[] {
 }
 
 function cursorFacts(sessionId: string): CursorLifecycle[] {
-  const rows = db()
-    .query(
-      'SELECT record_id,number,created_at,updated_at,state,closed FROM workflow_cursor WHERE session_id=?',
-    )
-    .all(sessionId) as Array<{
-    record_id: string
-    number: number
-    created_at: string
-    updated_at: string
-    state: string
-    closed: string
-  }>
+  const rows = taskFlowStore(db()).cursorLifecycleForSession(sessionId)
   return rows.map((row) => {
     const advancesAt = (JSON.parse(row.closed) as Array<{ at?: unknown }>).flatMap((entry) =>
       typeof entry.at === 'string' ? [entry.at] : [],

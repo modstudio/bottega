@@ -9,10 +9,13 @@ import {
   taskFlowWriteTarget,
   writeHostedTaskFlow,
 } from '../record/record-task-flow-write-client.ts'
-import type { TaskFlowAdoptResult } from '../record/record-task-flow-write-contract.ts'
+import type {
+  TaskFlowAdoptResult,
+  TaskFlowIntentInput,
+} from '../record/record-task-flow-write-contract.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { linkWorkflowQuestionsTaskReference } from '../run/question-mutation.ts'
-import { cacheAdoptedTaskFlow } from './task-flow.ts'
+import { taskFlowStore } from './task-flow-store.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import {
   findWorkflowCursor,
@@ -28,64 +31,28 @@ export async function linkWorkflowTaskLabel(
   input: { project: string; workflowKey: string; taskRecordId: string },
   client?: RecordTaskFlowClient,
 ): Promise<{ workflow_cursor: number; question: number }> {
-  const rows = database
-    .query<{ record_id: string; revision: number; updated_at: string }, [string, string]>(
-      `SELECT record_id,revision,updated_at FROM workflow_cursor
-       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-         AND workflow_key=? AND task_record_id IS NULL ORDER BY record_id`,
-    )
-    .all(input.project, input.workflowKey)
+  const store = taskFlowStore(database)
+  const rows = store.stagesNeedingTaskLink(input.project, input.workflowKey)
   const hosted = [] as Array<{
     row: (typeof rows)[number]
-    result: TaskFlowAdoptResult
+    payload: TaskFlowIntentInput<'adopt'>
+    result: TaskFlowAdoptResult | null
   }>
   const target = taskFlowWriteTarget(input.project, database)
   for (const row of rows) {
-    const result = await writeHostedTaskFlow(
-      'adopt',
-      {
-        requestId: taskFlowRequestId('adopt', [row.record_id, String(row.revision)]),
-        stage: { id: row.record_id, expectedRevision: row.revision },
-        taskId: input.taskRecordId,
-        updatedMachineId: machineId(),
-        updatedAt: row.updated_at,
-      },
-      target,
-      client,
-    )
-    if (result) hosted.push({ row, result })
+    const payload = {
+      requestId: taskFlowRequestId('adopt', [row.record_id, String(row.revision)]),
+      stage: { id: row.record_id, expectedRevision: row.revision },
+      taskId: input.taskRecordId,
+      updatedMachineId: machineId(),
+      updatedAt: row.updated_at,
+    }
+    const result = await writeHostedTaskFlow('adopt', payload, target, client)
+    hosted.push({ row, payload, result })
   }
   return writeTransaction(() => {
-    for (const { row, result } of hosted) {
-      const current = database
-        .query<{ revision: number }, [string]>(
-          'SELECT revision FROM workflow_cursor WHERE record_id=?',
-        )
-        .get(row.record_id)
-      if (!current || current.revision !== row.revision)
-        throw new Error(
-          `workflow cursor ${row.record_id} changed while its task was linked; rerun the command`,
-        )
-      cacheAdoptedTaskFlow(
-        {
-          project: input.project,
-          taskRecordId: input.taskRecordId,
-          cursorRecordId: row.record_id,
-          flowRecordId: result.flowRecordId,
-          flowRevision: result.revisions[result.flowRecordId]!,
-          stageRevision: result.revisions[row.record_id]!,
-          at: row.updated_at,
-        },
-        database,
-      )
-    }
-    const cursors = database
-      .query(
-        `UPDATE workflow_cursor SET task_record_id=?
-         WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-           AND workflow_key=? AND task_record_id IS NULL`,
-      )
-      .run(input.taskRecordId, input.project, input.workflowKey).changes
+    for (const { payload, result } of hosted) store.write('adopt', payload, result)
+    const cursors = 0
     const questions = linkWorkflowQuestionsTaskReference(input, database)
     return { workflow_cursor: cursors + hosted.length, question: questions }
   }, database)

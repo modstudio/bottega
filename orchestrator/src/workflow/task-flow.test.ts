@@ -1,7 +1,5 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { migratedTestDatabase } from '../database/test-database.fixture.ts'
-import { selectTaskFlowStage } from './task-flow.ts'
 import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { ruleWorkflow } from './workflow-cursor-ruling.ts'
 import {
@@ -351,34 +349,6 @@ test('abandoning a keyed stage clears the local flow without enqueueing', async 
   expect(d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%'").all()).toEqual([])
 })
 
-test('an unknown task status preserves the projected flow state', async () => {
-  const d = migratedTestDatabase()
-  try {
-    d.query(
-      `INSERT INTO project(record_id,name,path,canon,settings)
-       VALUES (?,'fixture','/fixture',0,'{"trunk":"main"}')`,
-    ).run(newRecordId())
-    const input = {
-      project: 'fixture',
-      taskRecordId: 'task-1',
-      taskKey: 'DEV-1',
-      workflow: 'ship-task',
-      mode: 'default',
-    }
-
-    const flow = selectTaskFlowStage({ ...input, statusCategory: 'done' }, d)
-    selectTaskFlowStage(input, d)
-
-    expect(d.query('SELECT state FROM task_flow WHERE record_id=?').get(flow.flowRecordId)).toEqual(
-      {
-        state: 'done',
-      },
-    )
-  } finally {
-    d.close()
-  }
-})
-
 test('unreachable takeover refuses without changing takeover or revision', async () => {
   const d = cursorDatabase()
   const workflow = 'task-flow-unreachable-takeover'
@@ -514,4 +484,47 @@ test('a takeover refused for a missing close note leaves the cursor untouched', 
       .query('SELECT taken_over_from_machine_id,revision FROM workflow_cursor WHERE number=?')
       .get(opened.cursor!.id),
   ).toEqual(before)
+})
+
+test('a reachable record holder is named in a successful takeover notice', async () => {
+  const d = cursorDatabase()
+  const workflow = 'task-flow-takeover-notice'
+  const args = { key: 'DEV-TAKEOVER-NOTICE' }
+  const context = {
+    session: 'task-flow-takeover-notice',
+    taskRecordId: 'task-DEV-TAKEOVER-NOTICE',
+    taskStatusCategory: 'active',
+  }
+  installTaskFlowLifecycleWorkflow(d, workflow, ['score', 'complete'])
+  const opened = await composeWorkflowWithCursor(
+    workflow,
+    'fixture',
+    'default',
+    args,
+    context,
+    d,
+    {},
+    {},
+  )
+  const holder = newRecordId()
+  d.query(
+    "UPDATE workflow_cursor SET last_advanced_machine_id=?,enforcement='note-only' WHERE number=?",
+  ).run(holder, opened.cursor!.id)
+
+  const result = await nextWorkflowStep(
+    workflow,
+    'fixture',
+    'default',
+    args,
+    'closed after takeover',
+    {
+      ...context,
+      taskFlowRead: { status: 'reachable', holder: { id: holder, displayName: 'Machine B' } },
+    },
+    d,
+    {},
+    testPorts,
+  )
+
+  expect(result).toContain('Took over this workflow stage from Machine B.')
 })

@@ -18,10 +18,13 @@ import { projectAt, projectByName, resolvedWorktreeTool } from '../project/proje
 import { currentOrphanProcesses } from '../resources/process-inventory.ts'
 import { refGuardDirectory } from '../resources/ref-guard.ts'
 import { parseRetainedRef } from '../resources/resource-inventory.ts'
-import { questionOpenSql } from '../run/question-open.ts'
 import { isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { observeGrokTrustHeadings } from '../sandbox/grok-trust.ts'
 import { shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
+import {
+  type TaskFlowOpenSessionStageRow as OpenCursor,
+  taskFlowStore,
+} from '../workflow/task-flow-store.ts'
 import { hasAbsentTreeTeardownPlanWithRegisteredRemoveCommand } from '../worktree/worktree-remove.ts'
 import {
   classifySessionCloseOut,
@@ -71,15 +74,6 @@ type OwnedClaim = {
 }
 type ActiveLanding = { record_id: string; project: string; branch: string; status: string }
 type IncompleteReview = { record_id: string; number: number }
-type OpenCursor = {
-  record_id: string
-  number: number
-  workflow_slug: string
-  project: string
-  state: string
-  open_question_record_id: string | null
-}
-
 type UnprovedBranchEvidence = {
   project: string
   branch: string
@@ -220,16 +214,7 @@ function incompleteReviews(database: Database, session: string): IncompleteRevie
 }
 
 function openCursors(database: Database, session: string): OpenCursor[] {
-  return database
-    .query(
-      `SELECT record_id,number,project,workflow_slug,state,
-        (SELECT q.record_id FROM question q
-          WHERE q.workflow_cursor_record_id=workflow_cursor.record_id
-            AND ${questionOpenSql('q')} LIMIT 1) open_question_record_id
-       FROM workflow_cursor
-        WHERE session_id=? AND state NOT IN ('done','abandoned') ORDER BY number`,
-    )
-    .all(session) as OpenCursor[]
+  return taskFlowStore(database).openStagesForSession(session)
 }
 
 function observeOwnedBranch(

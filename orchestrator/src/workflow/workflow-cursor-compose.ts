@@ -20,14 +20,13 @@ import {
 } from '../record/record-task-flow-write-contract.ts'
 import type { AutonomyResolution } from './autonomy.ts'
 import {
-  attachInsertedTaskFlowStage,
   cacheAdoptedTaskFlow,
   insertWorkflowCursorRow,
   refuseTaskFlowStageConflict,
-  stampWorkflowCursorMachine,
-  type WorkflowCursorInsert,
 } from './task-flow.ts'
 import { taskFlowState } from './task-flow-decision.ts'
+import { taskFlowStore } from './task-flow-store.ts'
+import type { WorkflowCursorInsert } from './task-flow-store-types.ts'
 import {
   type CommitCountPort,
   readCommitsPastLanding,
@@ -79,20 +78,13 @@ function keylessComposeOrdinal(
   machine: string,
   database: Database,
 ): number {
-  return database
-    .query<{ n: number }, [string, string, string, string | null, string | null, string]>(
-      `SELECT COUNT(*)+1 n FROM workflow_cursor
-       WHERE project_record_id=? AND workflow_slug=? AND mode_slug=? AND workflow_key=''
-         AND (session_id=? OR (? IS NULL AND session_id IS NULL AND opened_machine_id=?))`,
-    )
-    .get(
-      projectRecordId,
-      composition.workflow.slug,
-      composition.mode!.slug,
-      context.session ?? null,
-      context.session ?? null,
-      machine,
-    )!.n
+  return taskFlowStore(database).nextKeylessInstanceSlot({
+    projectRecordId,
+    workflow: composition.workflow.slug,
+    mode: composition.mode!.slug,
+    sessionId: context.session ?? null,
+    machineId: machine,
+  })
 }
 
 function readComposeFacts(
@@ -107,11 +99,7 @@ function readComposeFacts(
     .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
     .get(composition.project)!.record_id
   const existingFlow = context.taskRecordId
-    ? database
-        .query<{ record_id: string; revision: number }, [string]>(
-          'SELECT record_id,revision FROM task_flow WHERE task_record_id=?',
-        )
-        .get(context.taskRecordId)
+    ? taskFlowStore(database).flowForTask(context.taskRecordId)
     : null
   if (context.taskRecordId && key)
     refuseTaskFlowStageConflict(
@@ -259,81 +247,17 @@ function composeIntent(
   }
 }
 
-function attachLocalComposition(
-  row: SelectableCursorRow,
-  composition: Composition,
-  context: WorkflowCursorContext,
-  database: Database,
-): string | null {
-  return attachInsertedTaskFlowStage(
-    {
-      project: composition.project,
-      taskRecordId: context.taskRecordId,
-      taskKey: workflowKeyOf(composition.arguments),
-      statusCategory: context.taskStatusCategory,
-      cursor: row,
-    },
-    database,
-  )
-}
-
 function applyHostedCompose(
   hosted: TaskFlowComposeResult | null,
-  facts: ComposeFacts,
-  composition: Composition,
-  context: WorkflowCursorContext,
+  payload: TaskFlowIntentInput<'compose'>,
+  _facts: ComposeFacts,
+  _composition: Composition,
+  _context: WorkflowCursorContext,
   database: Database,
 ): SelectableCursorRow {
-  const cursorRecordId = hosted?.stage?.id ?? facts.rowInput.recordId
-  const flowRecordId =
-    facts.existingFlow?.record_id ??
-    (hosted
-      ? Object.keys(hosted.revisions).find((recordId) => recordId !== cursorRecordId)
-      : undefined) ??
-    facts.flowRecordId
   return writeTransaction(() => {
-    if (facts.existingFlow) {
-      const current = database
-        .query<{ revision: number }, [string]>('SELECT revision FROM task_flow WHERE record_id=?')
-        .get(facts.existingFlow.record_id)
-      if (!current || current.revision !== facts.existingFlow.revision)
-        throw new Error(
-          `task flow ${facts.existingFlow.record_id} changed while composing; rerun the command`,
-        )
-    }
-    const stored = insertWorkflowCursorRow(
-      database,
-      {
-        ...facts.rowInput,
-        recordId: cursorRecordId,
-        revision: hosted?.revisions[cursorRecordId] ?? 1,
-      },
-      'local-identity',
-    )
-    if (hosted && context.taskRecordId)
-      cacheAdoptedTaskFlow(
-        {
-          project: composition.project,
-          taskRecordId: context.taskRecordId,
-          cursorRecordId: stored,
-          flowRecordId,
-          flowRevision: hosted.revisions[flowRecordId]!,
-          stageRevision: hosted.revisions[cursorRecordId]!,
-          statusCategory: context.taskStatusCategory,
-          at: facts.at,
-        },
-        database,
-      )
-    if (!hosted) {
-      stampWorkflowCursorMachine(stored, stored === facts.rowInput.recordId ? 0 : 1, database)
-      const local = database
-        .query('SELECT number id,* FROM workflow_cursor WHERE record_id=?')
-        .get(stored) as SelectableCursorRow
-      local.task_flow_record_id = attachLocalComposition(local, composition, context, database)
-    }
-    return database
-      .query('SELECT number id,* FROM workflow_cursor WHERE record_id=?')
-      .get(stored) as SelectableCursorRow
+    const result = taskFlowStore(database).write('compose', payload, hosted)
+    return taskFlowStore(database).stageByRecordId(result.stage!.id) as SelectableCursorRow
   }, database)
 }
 
@@ -383,9 +307,7 @@ function cacheComposeReplay(
         },
         database,
       )
-    return database
-      .query('SELECT number id,* FROM workflow_cursor WHERE record_id=?')
-      .get(stored) as SelectableCursorRow
+    return taskFlowStore(database).stageByRecordId(stored) as SelectableCursorRow
   }, database)
 }
 
@@ -420,11 +342,7 @@ async function recoverComposeConflict(
     throw new Error(
       `${error.message}; close or abandon the stage holding this workflow slot, then retry`,
     )
-  const alreadyCached = database
-    .query<{ record_id: string }, [string]>(
-      'SELECT record_id FROM workflow_cursor WHERE record_id=?',
-    )
-    .get(replay.stage.id)
+  const alreadyCached = taskFlowStore(database).hasStage(replay.stage.id)
   if (!alreadyCached) return cacheComposeReplay(replay, facts, composition, context, database)
   if (facts.key || keylessSiblingRetry) throw error
   return insertWorkflowCursor(composition, context, database, autonomy, commitCount, true)
@@ -455,13 +373,9 @@ export async function insertWorkflowCursor(
   )
   const target = taskFlowWriteTarget(composition.project, database)
   try {
-    const hosted = await writeHostedTaskFlow(
-      'compose',
-      composeIntent(composition, context, facts),
-      target,
-      context.taskFlowClient,
-    )
-    return applyHostedCompose(hosted, facts, composition, context, database)
+    const payload = composeIntent(composition, context, facts)
+    const hosted = await writeHostedTaskFlow('compose', payload, target, context.taskFlowClient)
+    return applyHostedCompose(hosted, payload, facts, composition, context, database)
   } catch (error) {
     if (!(error instanceof DocRevisionConflictError) || error.reason !== 'already-exists')
       throw error

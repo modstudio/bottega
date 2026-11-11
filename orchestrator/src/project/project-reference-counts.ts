@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite'
+import { taskFlowStore } from '../workflow/task-flow-store.ts'
 
 export const PROJECT_REFERENCES = [
   ['run', 'run', 'project_record_id'],
@@ -19,7 +20,6 @@ export const PROJECT_REFERENCES = [
   ['branch_landing_record', 'branch_landing_record', 'project_record_id'],
   ['presence', 'presence', 'project_record_id'],
   ['worker_note_request', 'worker_note_request', 'project_record_id'],
-  ['workflow_cursor', 'workflow_cursor', 'project_record_id'],
   ['main_stack_activity', 'main_stack_activity', 'project_record_id'],
   ['port_pair_source', 'port_pair source', 'source_project_record_id', 'port_pair'],
   ['port_pair_target', 'port_pair target', 'target_project_record_id', 'port_pair'],
@@ -29,10 +29,16 @@ export const PROJECT_REFERENCES = [
   ['project_lens_profile', 'project_lens_profile', 'project_record_id'],
   ['release_ledger', 'release_ledger', 'project_record_id'],
   ['subject', 'subject', 'project_record_id'],
+] as const
+
+export const PROJECT_REFERENCE_REPORT = [
+  ...PROJECT_REFERENCES.slice(0, 18),
+  ['workflow_cursor', 'workflow_cursor', 'project_record_id'],
+  ...PROJECT_REFERENCES.slice(18),
   ['task_flow', 'task flow', 'project_record_id'],
 ] as const
 
-type ProjectReferenceKey = (typeof PROJECT_REFERENCES)[number][0]
+type ProjectReferenceKey = (typeof PROJECT_REFERENCE_REPORT)[number][0]
 export type ProjectReferenceCounts = Record<ProjectReferenceKey, number>
 
 const LOCAL_CATALOGUE_REFERENCES = new Set<ProjectReferenceKey>([
@@ -48,7 +54,8 @@ export function projectReferenceCounts(
   database: Database,
   projectRecordId: string,
 ): ProjectReferenceCounts {
-  return Object.fromEntries(
+  const taskFlowCounts = taskFlowStore(database).projectReferenceCounts(projectRecordId)
+  const sqlCounts = Object.fromEntries(
     PROJECT_REFERENCES.map(([key, , column, explicitTable]) => {
       const table = explicitTable ?? key
       const localOnly = LOCAL_CATALOGUE_REFERENCES.has(key) ? ' AND space_id IS NULL' : ''
@@ -65,5 +72,9 @@ export function projectReferenceCounts(
         .get(projectRecordId) as { n: number }
       return [key, row.n]
     }),
+  )
+  const counts: Record<string, number> = { ...sqlCounts, ...taskFlowCounts }
+  return Object.fromEntries(
+    PROJECT_REFERENCE_REPORT.map(([key]) => [key, counts[key]]),
   ) as ProjectReferenceCounts
 }

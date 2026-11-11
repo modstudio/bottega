@@ -4,11 +4,14 @@
 import type { Database } from 'bun:sqlite'
 import { nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
-import { machineId } from '../record/machine-identity.ts'
 import {
   taskFlowWriteTarget,
   writeHostedTaskFlow,
 } from '../record/record-task-flow-write-client.ts'
+import type {
+  TaskFlowIntentInput,
+  TaskFlowIntentResult,
+} from '../record/record-task-flow-write-contract.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import {
   answerWorkflowQuestion,
@@ -16,6 +19,7 @@ import {
 } from '../run/question-mutation.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { resolvedRulingPersonName } from '../run/ruling-attribution.ts'
+import { taskFlowStore } from './task-flow-store.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import {
@@ -81,23 +85,24 @@ export async function ruleWorkflow(
   const question = selectOpenWorkflowQuestion(row.record_id, database)
   if (!question)
     throw new Error(`${cursorName(slug, mode, row.workflow_key)} has no open question to rule on`)
+  const payload: TaskFlowIntentInput<'stage-update'> = {
+    requestId: taskFlowRequestId('stage-update', [row.record_id, String(row.revision)]),
+    stages: [
+      {
+        id: row.record_id,
+        expectedRevision: row.revision,
+        values: {
+          state: 'running',
+          question: null,
+          sessionId: row.session_id ?? context.session ?? null,
+          updatedAt: at,
+        },
+      },
+    ],
+  }
   const hosted = await writeHostedTaskFlow(
     'stage-update',
-    {
-      requestId: taskFlowRequestId('stage-update', [row.record_id, String(row.revision)]),
-      stages: [
-        {
-          id: row.record_id,
-          expectedRevision: row.revision,
-          values: {
-            state: 'running',
-            question: null,
-            sessionId: row.session_id ?? context.session ?? null,
-            updatedAt: at,
-          },
-        },
-      ],
-    },
+    payload,
     taskFlowWriteTarget(row.project, database),
     context.taskFlowClient,
   )
@@ -111,7 +116,8 @@ export async function ruleWorkflow(
     adoptionReason,
     at,
     context,
-    revision: hosted?.revisions[row.record_id] ?? row.revision + 1,
+    payload,
+    hosted,
     database,
   })
 }
@@ -126,20 +132,13 @@ function applyWorkflowRulingLocally(input: {
   adoptionReason: string | null
   at: string
   context: WorkflowCursorContext
-  revision: number
+  payload: TaskFlowIntentInput<'stage-update'>
+  hosted: TaskFlowIntentResult<'stage-update'> | null
   database: Database
 }): { summary: string; questionId: number } {
   const { row, question, database } = input
   return writeTransaction(() => {
-    const current = database
-      .query<{ revision: number }, [string]>(
-        'SELECT revision FROM workflow_cursor WHERE record_id=?',
-      )
-      .get(row.record_id)
-    if (!current || current.revision !== row.revision)
-      throw new Error(
-        `workflow cursor ${row.id} changed while its ruling was recorded; rerun the command`,
-      )
+    const store = taskFlowStore(database)
     answerWorkflowQuestion(
       {
         questionId: question.record_id,
@@ -154,20 +153,7 @@ function applyWorkflowRulingLocally(input: {
       },
       database,
     )
-    database
-      .query(
-        `UPDATE workflow_cursor SET state='running',question=NULL,
-         session_id=COALESCE(session_id,?),updated_at=?,opened_machine_id=COALESCE(opened_machine_id,?),
-         last_advanced_machine_id=?,revision=? WHERE record_id=?`,
-      )
-      .run(
-        input.context.session ?? null,
-        input.at,
-        machineId(),
-        machineId(),
-        input.revision,
-        row.record_id,
-      )
+    store.write('stage-update', input.payload, input.hosted)
     return {
       summary: `${cursorName(row.workflow_slug, row.mode_slug, row.workflow_key, true)} is running at step ${row.ordinal + 1} ${row.step_slug}.`,
       questionId: question.number,

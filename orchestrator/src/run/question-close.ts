@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
+import { taskFlowStore } from '../workflow/task-flow-store.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
 import { auditQuestionMutation } from './question-mutation.ts'
 import { questionOpenSql } from './question-open.ts'
@@ -122,31 +123,7 @@ export function closeQuestionByOperator(
 ): void {
   const text = reasonText.trim()
   if (!text) throw new Error('--reason must not be empty')
-  const row = database
-    .query<
-      {
-        answered_at: string | null
-        closed_at: string | null
-        run_record_id: number | null
-        workflow_cursor_record_id: string | null
-        cursor_state: string | null
-        root_id: string | null
-        latest_status: string | null
-      },
-      [string]
-    >(
-      `SELECT q.answered_at,q.closed_at,q.run_record_id,q.workflow_cursor_record_id,c.state cursor_state,
-              COALESCE(owner.parent_run_record_id,owner.record_id) root_id,
-              (SELECT latest.status FROM run latest
-                WHERE latest.record_id=COALESCE(owner.parent_run_record_id,owner.record_id)
-                   OR latest.parent_run_record_id=COALESCE(owner.parent_run_record_id,owner.record_id)
-                ORDER BY latest.turn DESC,latest.number DESC LIMIT 1) latest_status
-         FROM question q
-         LEFT JOIN run owner ON owner.record_id=q.run_record_id
-         LEFT JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
-        WHERE q.record_id=?`,
-    )
-    .get(questionId)
+  const row = taskFlowStore(database).questionCloseFacts(questionId)
   if (!row) throw new Error(`no question ${questionId}`)
   if (row.answered_at) throw new Error(`question ${questionId} is already answered`)
   if (row.closed_at) throw new Error(`question ${questionId} is already closed`)

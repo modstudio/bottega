@@ -108,6 +108,35 @@ const concerns: ConcernManifest = {
 }
 
 export const modules: ArchitectureModule[] = [
+  module('orchestrator/src/workflow/task-flow-store.ts', [
+    'bun:sqlite',
+    '../record/record-task-flow-write-contract.ts',
+    './task-flow-store-sqlite.ts',
+    './task-flow-store-types.ts',
+  ]),
+  module('orchestrator/src/workflow/task-flow-store-types.ts', [
+    './workflow-cursor-transition.ts',
+    './workflow-floor.ts',
+  ]),
+  module('orchestrator/src/workflow/task-flow-store-sqlite.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    '../record/record-task-flow-write-contract.ts',
+    '../run/question-open.ts',
+    './task-flow-store-sqlite-questions.ts',
+    './task-flow-store-sqlite-write.ts',
+    './task-flow-store-types.ts',
+  ]),
+  module('orchestrator/src/workflow/task-flow-store-sqlite-write.ts', [
+    'bun:sqlite',
+    '../../../shared/record-id.ts',
+    '../record/record-task-flow-write-contract.ts',
+  ]),
+  module('orchestrator/src/workflow/task-flow-store-sqlite-questions.ts', [
+    'bun:sqlite',
+    '../run/question-open.ts',
+    './task-flow-store-types.ts',
+  ]),
   module('orchestrator/src/machine-journal.ts', [
     'zod',
     '../../shared/install-root.ts',
@@ -228,6 +257,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/run/question-close.ts', [
     '../../../shared/brand.ts',
     '../database/db.ts',
+    '../workflow/task-flow-store.ts',
     './question-delivery.ts',
     './question-mutation.ts',
     './question-open.ts',
@@ -272,6 +302,7 @@ export const modules: ArchitectureModule[] = [
     '../git/git-environment.ts',
     '../jobs/jobs.ts',
     '../landing-tree/landing-tree.ts',
+    '../workflow/task-flow-store.ts',
     './close-out-report.ts',
   ]),
   module('orchestrator/src/close/reader-scratch-close-out.ts', [

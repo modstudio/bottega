@@ -43,6 +43,7 @@ export const workflowAutonomyModules: WorkflowAutonomyModule[] = [
     '../config/hosted-config-call-outcome.ts',
     './autonomy.ts',
     './session-context-cache.ts',
+    './task-flow-store.ts',
     './step-catalogue.ts',
     './workflow-cursor-autonomy.ts',
   ]),

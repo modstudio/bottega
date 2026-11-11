@@ -10,6 +10,7 @@ import { projectAt } from '../project/projects.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { LIVE_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { architectSessionContext } from '../workflow/session-context.ts'
+import { taskFlowStore } from '../workflow/task-flow-store.ts'
 import { listWorkflowCursors } from '../workflow/workflow-cursor-list.ts'
 import {
   type HubTaskReference,
@@ -233,12 +234,9 @@ export async function contextBrief(
        WHERE r.session_id=? AND ${questionOpenSql('q')}`,
     )
     .get(session) as { count: number }
-  const cursorQuestions = database
-    .query(
-      `SELECT COUNT(*) count FROM question q JOIN workflow_cursor c
-       ON c.record_id=q.workflow_cursor_record_id WHERE c.session_id=? AND ${questionOpenSql('q')}`,
-    )
-    .get(session) as { count: number }
+  const cursorQuestions = {
+    count: taskFlowStore(database).openWorkflowQuestionCountForSession(session),
+  }
   const boardEnv = { ...process.env, CLAUDE_CODE_SESSION_ID: session }
   const boardRequests = claimNotices(true, boardEnv, Date.now(), database).filter(
     (notice) => notice.purpose === 'request',

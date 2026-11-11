@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { projectForTaskKey, projects } from '../project/projects.ts'
 import { questionTaskHolderSql } from '../run/question-open.ts'
+import { taskFlowStore } from '../workflow/task-flow-store.ts'
 import { type CursorTrailEntry, isClosedStep } from '../workflow/workflow-cursor-trail.ts'
 import {
   type HubTaskReader,
@@ -18,7 +19,6 @@ import { listDocsStore } from './doc-read-store.ts'
 import { taskContextHolder } from './doc-subjects.ts'
 
 type KeyAt = { key: string | null; at: string }
-type CursorWork = { key: string; closed: string }
 
 export async function staleContextForSession(
   session: string,
@@ -36,11 +36,7 @@ export async function staleContextForSession(
     )
     .all(session))
     add(row)
-  for (const row of database
-    .query<CursorWork, [string]>(
-      "SELECT workflow_key key,closed FROM workflow_cursor WHERE session_id=? AND workflow_key<>''",
-    )
-    .all(session)) {
+  for (const row of taskFlowStore(database).cursorWorkForSession(session)) {
     for (const entry of JSON.parse(row.closed) as CursorTrailEntry[])
       if (isClosedStep(entry)) add({ key: row.key, at: entry.at })
   }

@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
+import { taskFlowStore } from './task-flow-store.ts'
 
 export type OpenCursorWorktree = {
   number: number
@@ -12,13 +13,7 @@ export type OpenCursorWorktree = {
 }
 
 export function openCursorWorktrees(database: Database = db()): OpenCursorWorktree[] {
-  const rows = database
-    .query<{ number: number; workflow: string; project: string; args: string }, []>(
-      `SELECT number,workflow_slug workflow,project,args FROM workflow_cursor
-       WHERE state NOT IN ('done','abandoned')
-       ORDER BY number`,
-    )
-    .all()
+  const rows = taskFlowStore(database).openStageWorktrees()
   return rows.flatMap((row) => {
     try {
       const worktree = (JSON.parse(row.args) as Record<string, unknown>).worktree

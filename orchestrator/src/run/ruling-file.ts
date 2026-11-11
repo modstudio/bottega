@@ -14,8 +14,11 @@ import {
   writableDb,
   writeTransaction,
 } from '../database/db.ts'
+import {
+  type TaskFlowRulingFileRow as QuestionRow,
+  taskFlowStore,
+} from '../workflow/task-flow-store.ts'
 import { auditQuestionMutation, authorizeWorkflowQuestionMutation } from './question-mutation.ts'
-import { questionTaskHolderSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import { questionRulingRemedy } from './question-ruling-remedy.ts'
 import {
@@ -69,40 +72,6 @@ export type FileRulingInput = {
   fromOperator: boolean
   channel: AnswerChannel
   dashboardAuthorized?: boolean
-}
-
-type QuestionRow = {
-  record_id: string
-  number: number
-  run_record_id: string | null
-  root_id: string | null
-  workflow_cursor_record_id: string | null
-  workflow_cursor_number: number | null
-  workflow_slug: string | null
-  mode_slug: string | null
-  workflow_owner: string | null
-  workflow_updated_at: string | null
-  question: string
-  answer: string | null
-  answer_basis: string | null
-  answered_at: string | null
-  answered_by: string | null
-  answered_by_name: string | null
-  answerer_kind: string | null
-  overturned_at: string | null
-  overturned_by: string | null
-  overturned_by_name: string | null
-  replacement: string | null
-  filed_as: string | null
-  filed_ref: string | null
-  filed_record_id: string | null
-  filed_label: string | null
-  filed_at: string | null
-  repo: string | null
-  cwd: string | null
-  launch_key: string | null
-  project_path: string | null
-  args: string | null
 }
 
 function requestedKind(as: RulingFileAs): FiledRulingKind {
@@ -208,23 +177,7 @@ function ownerRefusal(
 }
 
 function loadQuestion(questionId: string): QuestionRow {
-  const row = db()
-    .query(
-      `SELECT q.number,q.record_id,q.run_record_id,r.record_id run_record_id,COALESCE(r.parent_run_record_id,r.record_id) root_id,
-              q.workflow_cursor_record_id,c.number workflow_cursor_number,c.workflow_slug,c.mode_slug,c.session_id workflow_owner,
-              c.updated_at workflow_updated_at,
-              q.question, q.answer, q.answer_basis,
-              q.answered_at, q.answered_by, q.answered_by_name, q.answerer_kind,
-              q.overturned_at, q.overturned_by, q.overturned_by_name,
-              q.replacement, q.filed_as, q.filed_ref, q.filed_record_id, q.filed_label, q.filed_at,
-              COALESCE(r.repo,c.project) repo, COALESCE(r.cwd,p.path) cwd,c.args,
-              ${questionTaskHolderSql('q', 'r')} launch_key,p.path project_path
-         FROM question q LEFT JOIN run r ON r.record_id = q.run_record_id
-         LEFT JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
-         LEFT JOIN project p ON p.record_id=c.project_record_id AND p.retired_at IS NULL
-         WHERE q.record_id=?`,
-    )
-    .get(questionId) as QuestionRow | null
+  const row = taskFlowStore(db()).rulingFileQuestion(questionId)
   if (!row)
     throw new Error(
       `no question ${questionId}; inspect question ids with ${PLATFORM_SLUG} question inbox --all`,

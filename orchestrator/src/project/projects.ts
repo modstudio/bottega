@@ -70,7 +70,7 @@ import { type SettingsObjectMode, validateProjectInjectionSettings } from './pro
 import { localProjectPurgeRefusals, purgeLocalOrchestratorProject } from './project-purge-local.ts'
 import { projectPushRefusalMessage } from './project-push-refusal.ts'
 import {
-  PROJECT_REFERENCES,
+  PROJECT_REFERENCE_REPORT,
   type ProjectReferenceCounts,
   projectReferenceCounts,
 } from './project-reference-counts.ts'
@@ -471,7 +471,7 @@ export function projectRemovalRefusal(
   name: string,
   counts: ProjectReferenceCounts,
 ): string[] | null {
-  const named = PROJECT_REFERENCES.filter(([key]) => counts[key] > 0).map(
+  const named = PROJECT_REFERENCE_REPORT.filter(([key]) => counts[key] > 0).map(
     ([key, label]) => `${counts[key]} ${label}(s)`,
   )
   if (!named.length) return null
@@ -490,7 +490,7 @@ export function removeProject(name: string, options: { includeRetired?: boolean 
   if (refusal) {
     const tables = [
       ...new Set(
-        PROJECT_REFERENCES.filter(([key]) => counts[key] > 0).map(
+        PROJECT_REFERENCE_REPORT.filter(([key]) => counts[key] > 0).map(
           ([key, , , explicitTable]) => explicitTable ?? key,
         ),
       ),
