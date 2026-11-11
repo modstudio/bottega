@@ -80,6 +80,26 @@ beforeAll(async () => {
 
 afterAll(async () => database.close())
 
+test('report window does not claim coverage from before telemetry recording began', async () => {
+  const bounds = (
+    await database.query<{ coverageStart: Date; rawWindowStart: Date }>(`
+      SELECT no_destination_write_coverage_start() AS "coverageStart",
+        now() - interval '14 days' AS "rawWindowStart"
+    `)
+  ).rows[0]
+  const report = await readNoDestinationWrites(client, {
+    userId,
+    spaceId: spaceA,
+    spaceIds: [spaceA],
+  })
+
+  expect(bounds).toBeDefined()
+  expect(new Date(report.windowStart).getTime()).toBeGreaterThanOrEqual(
+    bounds!.coverageStart.getTime(),
+  )
+  expect(new Date(report.windowStart).getTime()).toBeGreaterThan(bounds!.rawWindowStart.getTime())
+})
+
 test('durable counts survive a counter restart and tenant reads exclude other spaces', async () => {
   const firstProcess = createNoDestinationWriteCounter()
   const decisionA = { spaceId: spaceA, route: '/v1/a', cause: 'cli/1' }

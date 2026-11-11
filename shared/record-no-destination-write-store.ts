@@ -30,7 +30,10 @@ export async function readNoDestinationWrites(
   return client.begin(async (tx) => {
     await bindTenant(tx, principal)
     const window = rows<{ windowStart: Date }>(
-      await tx`SELECT now() - interval '14 days' AS "windowStart"`,
+      await tx`SELECT greatest(
+        now() - interval '14 days',
+        public.no_destination_write_coverage_start()
+      ) AS "windowStart"`,
     )[0]
     if (!window) throw new Error('destination-less write telemetry returned no retention window')
     const counts = rows<{
