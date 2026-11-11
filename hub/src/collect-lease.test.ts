@@ -914,6 +914,7 @@ describe('collect lease', () => {
           {
             baseUrl: 'https://hub.example.test',
             token: 'test',
+            recordSpace: 'space-test',
             fetch: async () => await new Promise<Response>(() => {}),
             requestDeadlineMs: 5,
           },

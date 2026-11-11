@@ -1,5 +1,10 @@
 import { db } from './db.ts'
-import { hostedMirrorNotes, hostedNoteCounts, type NoteClientOptions } from './note-client.ts'
+import {
+  hostedMirrorNotes,
+  hostedNoteCounts,
+  type NoteClientOptions,
+  type NoteWriteOptions,
+} from './note-client.ts'
 import { projects } from './projects.ts'
 import { hostedTaskIdentity } from './task-client.ts'
 import { partitionProjectRows } from './task-project-space.ts'
@@ -35,7 +40,7 @@ async function pushDestination(input: {
   notes: Record<string, unknown>[]
   acknowledgements: Record<string, unknown>[]
   counters: Array<{ project: string; projectId: string; next: number }>
-  options: NoteClientOptions
+  options: NoteWriteOptions
 }) {
   let skippedNotes = 0
   let skippedAcknowledgements = 0

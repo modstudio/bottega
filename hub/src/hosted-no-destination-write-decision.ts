@@ -9,7 +9,6 @@ const hostedWriteRoutes = [
   ['POST', /^\/v1\/tasks$/, '/v1/tasks'],
   ['POST', /^\/v1\/tasks\/[^/]+\/documents$/, '/v1/tasks/:key/documents'],
   ['POST', /^\/v1\/notes$/, '/v1/notes'],
-  ['POST', /^\/v1\/notes\/outside$/, '/v1/notes/outside'],
   ['POST', /^\/v1\/notes\/[0-9a-f-]{36}\/promote$/i, '/v1/notes/:id/promote'],
   ['POST', /^\/v1\/notes\/reap$/, '/v1/notes/reap'],
   ['PUT', /^\/v1\/notes\/mirror$/, '/v1/notes/mirror'],
@@ -40,6 +39,9 @@ export function hostedNoDestinationWriteDecision(input: {
   pathname: string
 }): { counted: false } | { counted: true; route: string } {
   if (recordRequestNature(input.method) === 'read' || input.identityOutcome !== 'authenticated')
+    return { counted: false }
+  // Outside-note intake resolves the destination from the project named in the request body.
+  if (input.method.toUpperCase() === 'POST' && input.pathname === '/v1/notes/outside')
     return { counted: false }
   if (input.requestedSpacePresent && input.routeHonorsRequestedSpace) return { counted: false }
   return { counted: true, route: hostedWriteRoute(input.method, input.pathname) }
