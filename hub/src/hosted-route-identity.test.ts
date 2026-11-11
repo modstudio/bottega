@@ -1,9 +1,14 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  HOSTED_HUB_NO_DESTINATION_WRITE_SOURCE,
   identityRefusalResponse,
   recordIdentityDecision,
   taskSpaceIdentity,
 } from './hosted-route-identity.ts'
+
+test('labels hub destination-less writes apart from the record API', () => {
+  expect(HOSTED_HUB_NO_DESTINATION_WRITE_SOURCE).toBe('hub')
+})
 
 describe('record identity decision', () => {
   test('keeps a 401 distinct from record unavailability', async () => {

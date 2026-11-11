@@ -1,5 +1,5 @@
 // concern: hosted-no-destination-write-api
-/** Authenticates and serves the process-local hosted hub destination-less write report. */
+/** Authenticates and serves the hub's destination-less write report from the hosted record, with in-process unrecorded failures. */
 
 import { hostedApiFetch } from '../../shared/bounded-fetch.ts'
 import { readNoDestinationWrites } from '../../shared/record/no-destination-write-store.ts'
