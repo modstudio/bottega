@@ -23,8 +23,12 @@ import { db } from '../database/db.ts'
 import { missingIssueReportFields } from '../issue/issue-report-fields.ts'
 import { type Project, removeProject, upsertProject } from '../project/projects.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
+import { RecordApiRequestError } from '../record/record-api-client.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
-import type { HostedTaskFlow } from '../record/record-task-flow-contract.ts'
+import {
+  type HostedTaskFlow,
+  RECORD_TASK_FLOW_NOT_FOUND_MESSAGE,
+} from '../record/record-task-flow-contract.ts'
 import { productionStepCatalogue } from '../workflow/step-catalogue.ts'
 import { attachWorkflowTextByHandle } from '../workflow/workflow-text.ts'
 import { showWorkflowText } from '../workflow/workflow-text-copy.ts'
@@ -596,7 +600,7 @@ describe('orch MCP', () => {
     await client.connect(clientTransport)
     const previousRecordUrl = process.env.BOTTEGA_RECORD_API_URL
     const flowId = newRecordId()
-    const adoptedFlowIds = new Map<string, string>()
+    const adoptedFlowIds = new Map<string, string>([[firstRow.record_id, flowId]])
     const call = async (name: string, toolArgs: Record<string, unknown>) => {
       const result = await client.callTool({ name, arguments: toolArgs })
       if (result.isError)
@@ -690,7 +694,10 @@ describe('orch MCP', () => {
           personalSpaceId: hostedSpaceId,
           memberships: [{ space_id: hostedSpaceId, slug: 'mcp-workflow', permission: 'write' }],
         }),
-        readTaskFlow: async () => hosted,
+        readTaskFlow: async (input) => {
+          if (input.taskKey !== 'DEV-1082-MCP-B') return hosted
+          throw new RecordApiRequestError(RECORD_TASK_FLOW_NOT_FOUND_MESSAGE, 'refused', 404)
+        },
         advanceTaskFlow: async (input) => ({
           revisions: {
             [input.stage.id]: input.stage.expectedRevision + 1,
@@ -774,7 +781,7 @@ describe('orch MCP', () => {
         db()
           .query('SELECT ordinal,state,task_record_id FROM workflow_cursor WHERE number=?')
           .get(first.id),
-      ).toEqual({ ordinal: 2, state: 'running', task_record_id: taskId })
+      ).toEqual({ ordinal: 1, state: 'running', task_record_id: taskId })
       expect(db().query('SELECT state FROM workflow_cursor WHERE number=?').get(second.id)).toEqual(
         {
           state: 'abandoned',

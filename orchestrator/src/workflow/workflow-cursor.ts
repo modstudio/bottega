@@ -786,9 +786,8 @@ async function awaitWorkflowRulingImpl(
   )
   return writeTransaction(() => {
     const store = taskFlowStore(d)
-    try { store.write('await-ruling', payload, hosted) } catch (error) { throw new Error(`DEBUG STORE ${String(error)}`) }
-    let recordedQuestion
-    try { recordedQuestion = upsertWorkflowQuestion(
+    store.write('await-ruling', payload, hosted)
+    const recordedQuestion = upsertWorkflowQuestion(
       {
         cursorId: row.record_id,
         workflowKey: row.workflow_key,
@@ -799,7 +798,7 @@ async function awaitWorkflowRulingImpl(
         at,
       },
       d,
-    ) } catch (error) { throw new Error(`DEBUG QUESTION ${String(error)}`) }
+    )
     return {
       summary: {
         id: row.id,
