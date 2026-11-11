@@ -1,6 +1,7 @@
 import { hostname } from 'node:os'
 import { db } from './db.ts'
 import type { HostedSend } from './hosted-reports.ts'
+import { personalRecordSpace } from './personal-record-space.ts'
 import {
   hostedMirrorReports,
   hostedReportCounts,
@@ -26,7 +27,12 @@ export async function pushReports(options: ReportClientOptions & { dryRun?: bool
     }))
   const local = { sends: sends.length }
   if (options.dryRun) return { local, hosted: null, match: null }
-  const requestOptions = { baseUrl: options.baseUrl, token: options.token, fetch: options.fetch }
+  const requestOptions = {
+    baseUrl: options.baseUrl,
+    token: options.token,
+    fetch: options.fetch,
+    recordSpace: await personalRecordSpace(options),
+  }
   for (let index = 0; index < sends.length; index += 500)
     await hostedMirrorReports({ sends: sends.slice(index, index + 500) }, requestOptions)
   const hosted = await hostedReportCounts(requestOptions)

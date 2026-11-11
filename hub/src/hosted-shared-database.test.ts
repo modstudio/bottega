@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import { PLATFORM_NAME } from '../../shared/brand.ts'
+import { createNoDestinationWriteCounter } from '../../shared/record-no-destination-write-counter.ts'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
 import { hostedRequestHandler } from './hosted.ts'
 import { listHostedTasks } from './hosted-task-list.ts'
@@ -48,7 +49,11 @@ test('consecutive hosted requests bind each user on one shared database client',
     })
   }
   const handler = hostedRequestHandler(
-    { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: client },
+    {
+      recordApiUrl: 'https://record.example.test',
+      recordDatabaseUrl: client,
+      noDestinationWriteCounter: createNoDestinationWriteCounter(),
+    },
     {
       tasks: {
         fetch: fetch as typeof globalThis.fetch,

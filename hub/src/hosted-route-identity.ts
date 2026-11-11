@@ -1,6 +1,7 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { recordNoDestinationWrite } from '../../shared/record/no-destination-write-store.ts'
 import { noDestinationWriteCause } from '../../shared/record-no-destination-write-contract.ts'
-import { noDestinationWriteCounter } from '../../shared/record-no-destination-write-counter.ts'
+import type { NoDestinationWriteTelemetry } from '../../shared/record-no-destination-write-counter.ts'
 import {
   hostedRequestSafetyStatement,
   RECORD_SIGN_IN_REMEDY,
@@ -27,6 +28,8 @@ export type TaskSpaceIdentity =
   | { kind: 'refused-space'; refusedSpace: string }
   | { kind: 'unauthenticated' }
   | { kind: 'unavailable'; cause: string }
+
+export const HOSTED_HUB_NO_DESTINATION_WRITE_SOURCE = 'hub' as const
 
 export function recordIdentityDecision(
   status: number,
@@ -97,9 +100,7 @@ export async function taskSpaceIdentity(
   base: string,
   fetchImpl: typeof fetch,
   honorRequestedSpace: boolean,
-  dependencies: {
-    counter?: typeof noDestinationWriteCounter
-  } = {},
+  noDestinationWrite: NoDestinationWriteTelemetry,
 ): Promise<TaskSpaceIdentity> {
   const authorization = request.headers.get('authorization')
   if (!authorization) return { kind: 'unauthenticated' }
@@ -131,17 +132,19 @@ export async function taskSpaceIdentity(
     pathname: new URL(request.url).pathname,
   })
   if (measurement.counted) {
-    try {
-      ;(dependencies.counter ?? noDestinationWriteCounter)({
-        record: {
-          spaceId: identity.activeSpaceId,
-          route: measurement.route,
-          cause: noDestinationWriteCause(request.headers.get('user-agent')),
-        },
-      })
-    } catch (error) {
-      console.error('record-write no-destination recording failed', error)
+    const decision = {
+      spaceId: identity.activeSpaceId,
+      route: measurement.route,
+      cause: noDestinationWriteCause(request.headers.get('user-agent')),
     }
+    await noDestinationWrite.counter.record(decision, () =>
+      recordNoDestinationWrite(
+        noDestinationWrite.database(),
+        { userId: identity.userId, spaceId: identity.activeSpaceId },
+        decision,
+        HOSTED_HUB_NO_DESTINATION_WRITE_SOURCE,
+      ),
+    )
   }
   return {
     kind: 'authenticated',

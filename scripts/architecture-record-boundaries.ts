@@ -209,6 +209,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
     [
       '../../../shared/built-commit.ts',
       '../../../shared/hosted-server.ts',
+      '../../../shared/record-no-destination-write-counter.ts',
       '../../../shared/record-space-membership.ts',
       '../../../shared/record-space-request.ts',
       'bun:sqlite',
@@ -217,6 +218,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       './record-credential.ts',
       './record-member-permission.ts',
       './record-api.ts',
+      './record-pool.ts',
       './machine-name-record.ts',
       './record-lens-catalogue.ts',
       './record-port-catalogue.ts',

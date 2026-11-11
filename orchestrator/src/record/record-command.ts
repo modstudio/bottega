@@ -43,6 +43,7 @@ import {
   recordMemberships,
   recordSpaceCreateReport,
   recordSpaceRole,
+  removeRecordSpaceMember,
   resumeRecordSpaceOutsideIntake,
   setRecordSpaceOutsideIntake,
   showRecordSpaceOutsideIntake,
@@ -211,10 +212,22 @@ export async function recordSpaceAccessWithdrawCommand(
     email,
     await recordSpaceWriteDestination('record space access withdraw', space),
   )
+  renderRecordSpaceConfigAccessWithdrawal(email, result, presentation)
+}
+
+function renderRecordSpaceConfigAccessWithdrawal(
+  email: string,
+  result: Awaited<ReturnType<typeof withdrawRecordSpaceConfigAccess>>,
+  presentation: Presentation,
+): void {
   for (const keyId of result.revokedMachineKeyIds) presentation.log(`revoked machine\t${keyId}`)
   for (const key of result.readableSecretKeys) presentation.log(`replace development key\t${key}`)
   presentation.log(
-    `withdrew config access from ${email}; replace the listed development keys because ${PLATFORM_SLUG} cannot replace them`,
+    `withdrew config access from ${email}${
+      result.readableSecretKeys.length > 0
+        ? `; replace the listed development keys because ${PLATFORM_SLUG} cannot replace them`
+        : ''
+    }`,
   )
 }
 
@@ -403,17 +416,41 @@ export async function recordSpaceInviteCommand(
   presentation.log(id)
 }
 
+export async function recordSpaceMemberRemoveCommand(
+  email: string,
+  space: string | undefined,
+  presentation: Presentation,
+): Promise<void> {
+  const destination = await recordSpaceWriteDestinationDetails('record space member remove', space)
+  const member = (await listRecordSpaceConfigAccess(destination.spaceId)).find(
+    (row) => row.email.toLowerCase() === email.toLowerCase(),
+  )
+  if (member?.configAccess) {
+    const withdrawal = await withdrawRecordSpaceConfigAccess(email, destination.spaceId)
+    renderRecordSpaceConfigAccessWithdrawal(email, withdrawal, presentation)
+  }
+  await removeRecordSpaceMember(email, destination.spaceId)
+  presentation.log(`removed ${email} from ${destination.slug}`)
+}
+
 async function recordSpaceWriteDestination(
   verb: string,
   requested: string | undefined,
 ): Promise<string> {
+  return (await recordSpaceWriteDestinationDetails(verb, requested)).spaceId
+}
+
+async function recordSpaceWriteDestinationDetails(
+  verb: string,
+  requested: string | undefined,
+): Promise<{ spaceId: string; slug: string }> {
   const destination = await resolveRecordSpaceOwnerDestination(
     verb,
     { space: requested },
     [],
     async () => (await recordMemberships()).memberships,
   )
-  return destination.spaceId
+  return { spaceId: destination.spaceId, slug: destination.slug }
 }
 
 export async function recordSpaceInvitationsCommand(presentation: Presentation): Promise<void> {

@@ -1,6 +1,14 @@
 import { recordApi } from '../../src/record/record-api.ts'
 import type { RecordIdentity } from '../../src/record/record-auth.ts'
 
+export const noDestinationWriteTestDeps = {
+  noDestinationWriteDatabase: () => ({}) as never,
+  noDestinationWriteCounter: {
+    record: async () => undefined,
+    read: async () => ({ windowStart: '', unrecorded: 0, counts: [] }),
+  },
+}
+
 export const recordApiTestApp = (
   session: RecordIdentity | null,
   fixtureDeps: Record<string, unknown>,
@@ -10,6 +18,7 @@ export const recordApiTestApp = (
   const id = '01990000-0000-7000-8000-000000000001'
   return recordApi({
     recordUrl: 'postgres://record.test/record',
+    ...noDestinationWriteTestDeps,
     auth: { handler: () => Response.json({ handled: true }) },
     readSession: async () => session,
     setActiveSpace: async () => undefined,

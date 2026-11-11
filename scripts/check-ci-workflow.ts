@@ -4,6 +4,47 @@ import { CHECK_LEGS, CI_ONLY_JOBS, CI_ONLY_SUITES } from './check-plan.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const postgresServiceContainer = `BOTTEGA_TEST_POSTGRES_CONTAINER: \${{ job.services.postgres.id }}`
+const playwrightPackageFiles = [
+  'hub/ui/package.json',
+  'hub/views/package.json',
+  'hub/web/package.json',
+] as const
+const playwrightBrowserJobs = ['hub-web-smoke', 'hub-ui-stories'] as const
+const playwrightBunInstallCommand = 'npm install --global "bun@$(cat .bun-version)"'
+const playwrightTrustWorkspaceCommand =
+  'git config --system --add safe.directory "$GITHUB_WORKSPACE"'
+
+export function agreedPlaywrightDependencyPin(
+  pins: readonly { file: string; pin: string | undefined }[],
+): string {
+  for (const { file, pin } of pins) {
+    if (!pin) throw new Error(`${file} must pin the playwright devDependency`)
+    if (!/^\d+\.\d+\.\d+$/.test(pin)) {
+      throw new Error(
+        `${file} pins playwright ${pin}; pin the exact version the Playwright image tag carries`,
+      )
+    }
+  }
+  const expected = pins[0]!.pin!
+  const mismatch = pins.find(({ pin }) => pin !== expected)
+  if (mismatch) {
+    throw new Error(
+      `${mismatch.file} pins playwright ${mismatch.pin}, but ${pins[0]!.file} pins ${expected}; set all three package.json playwright pins to the same version`,
+    )
+  }
+  return expected
+}
+
+function playwrightDependencyPin(): string {
+  return agreedPlaywrightDependencyPin(
+    playwrightPackageFiles.map((file) => {
+      const packageJson = JSON.parse(readFileSync(`${root}${file}`, 'utf8')) as {
+        devDependencies?: Record<string, string>
+      }
+      return { file, pin: packageJson.devDependencies?.playwright }
+    }),
+  )
+}
 
 function workflowJobNames(source: string): string[] {
   const jobsStart = source.split('\n').indexOf('jobs:')
@@ -49,6 +90,48 @@ function workflowRunCommands(job: string): string[] {
   return commands
 }
 
+type PlaywrightContainerImage = {
+  reference: string
+  version: string
+  suffix: string
+}
+
+function playwrightContainerImage(job: string): PlaywrightContainerImage | undefined {
+  const lines = job.split('\n')
+  const container = lines.findIndex((line) => /^ {4}container:\s*$/.test(line))
+  if (container < 0) return undefined
+  for (let index = container + 1; index < lines.length; index += 1) {
+    const line = lines[index]!
+    const indent = line.match(/^\s*/)?.[0].length ?? 0
+    if (line.trim() !== '' && indent <= 4) break
+    const image =
+      /^ {6}image:\s*(mcr\.microsoft\.com\/playwright:v(\d+\.\d+\.\d+)(-[^\s]+)?)\s*$/.exec(line)
+    if (image) return { reference: image[1]!, version: image[2]!, suffix: image[3] ?? '' }
+  }
+  return undefined
+}
+
+function checkPlaywrightBunInstall(job: string, jobName: string): void {
+  if (job.includes('oven-sh/setup-bun')) {
+    throw new Error(
+      `.github/workflows/ci.yml job ${jobName} must not use oven-sh/setup-bun because the Playwright image has no unzip; replace it with an Install Bun step that runs ${playwrightBunInstallCommand}`,
+    )
+  }
+  if (!workflowRunCommands(job).includes(playwrightBunInstallCommand)) {
+    throw new Error(
+      `.github/workflows/ci.yml job ${jobName} must install Bun from .bun-version; add an Install Bun step that runs ${playwrightBunInstallCommand}`,
+    )
+  }
+}
+
+function checkPlaywrightWorkspaceTrust(job: string, jobName: string): void {
+  if (!workflowRunCommands(job).includes(playwrightTrustWorkspaceCommand)) {
+    throw new Error(
+      `.github/workflows/ci.yml job ${jobName} must trust the workspace because the Playwright container runs as root over a workspace owned by the runner user, so git refuses it, and the repository tooling reads git with global config disabled, so the trust must be system-wide; add a Trust the workspace step that runs ${playwrightTrustWorkspaceCommand}`,
+    )
+  }
+}
+
 function aggregateNeeds(source: string): string[] {
   const job = workflowJob(source, 'ci')
   const inline = job.match(/^ {4}needs:\s*\[([^\]]*)\]\s*$/m)
@@ -84,6 +167,37 @@ function checkCiOnlySuiteJobs(source: string): void {
   }
 }
 
+/** Pins Playwright container versions and forbids runtime browser installation. */
+function checkPlaywrightJobs(source: string, jobNames: readonly string[]): void {
+  const playwrightPin = playwrightDependencyPin()
+  for (const jobName of playwrightBrowserJobs) {
+    const job = workflowJob(source, jobName)
+    if (!playwrightContainerImage(job)) {
+      throw new Error(
+        `.github/workflows/ci.yml job ${jobName} must run in the pinned Playwright image; add container: image: mcr.microsoft.com/playwright:v${playwrightPin}-noble`,
+      )
+    }
+    checkPlaywrightWorkspaceTrust(job, jobName)
+    checkPlaywrightBunInstall(job, jobName)
+  }
+  for (const jobName of jobNames) {
+    const job = workflowJob(source, jobName)
+    const image = playwrightContainerImage(job)
+    if (image && image.version !== playwrightPin) {
+      throw new Error(
+        `.github/workflows/ci.yml job ${jobName} uses Playwright image ${image.reference}; set the image tag to v${playwrightPin}${image.suffix}`,
+      )
+    }
+    for (const command of workflowRunCommands(job)) {
+      if (/\bplaywright\s+install\b/.test(command)) {
+        throw new Error(
+          `.github/workflows/ci.yml job ${jobName} runs "playwright install"; remove that command and run the job in the pinned Playwright image instead`,
+        )
+      }
+    }
+  }
+}
+
 export function expectedWorkflowJobNames(): string[] {
   return [
     'secrets',
@@ -112,6 +226,7 @@ export function checkCiWorkflow(source: string): void {
       `CI aggregate needs do not match check plan: missing ${missing.join(', ') || 'none'}; unknown ${unknown.join(', ') || 'none'}`,
     )
   }
+  checkPlaywrightJobs(source, actual)
   if (!workflowJob(source, 'hub-ui-stories').includes('bun run --cwd hub/ui storybook:test'))
     throw new Error('hub-ui-stories job must run the hub-ui story-test script')
   if (!workflowJob(source, 'hub-ui-stories').includes('bun run --cwd hub/views storybook:test'))

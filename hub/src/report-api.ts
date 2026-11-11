@@ -186,6 +186,7 @@ export async function reportApi(
     config.recordApiUrl,
     (dependencies.fetch ?? hostedApiFetch) as typeof fetch,
     true,
+    { counter: config.noDestinationWriteCounter, database: () => config.recordDatabaseUrl },
   )
   const refusal = identityRefusal(identity)
   if (refusal) return refusal

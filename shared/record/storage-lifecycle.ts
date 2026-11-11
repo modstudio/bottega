@@ -105,7 +105,7 @@ export const hostedTableLifecycles: readonly TableLifecycle[] = [
     'orchestrator/src/record/record-retention.ts#pruneRecordRetention',
   ),
   ...entries(
-    ['contention'],
+    ['contention', 'no_destination_write'],
     'telemetry',
     'orchestrator/src/record/record-retention.ts#pruneRecordRetention',
     'telemetry',

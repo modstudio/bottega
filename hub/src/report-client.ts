@@ -7,9 +7,10 @@ import type {
   ReportSubscriptionWriteInput,
 } from './hosted-reports.ts'
 import { HOSTED_SEND_PAGE_SIZE } from './hosted-reports.ts'
-import { sendHostedSessionRequest } from './hosted-session-send.ts'
+import { type HostedSessionMethod, sendHostedSessionRequest } from './hosted-session-send.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import { MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
+import { personalRecordSpace } from './personal-record-space.ts'
 
 const TEST_REFUSAL = `${PLATFORM_SLUG} report client refuses a real hosted URL unless a stub is injected in tests`
 const REMEDY = MISSING_HOSTED_URL_REMEDY
@@ -18,11 +19,12 @@ export type ReportClientOptions = {
   baseUrl?: string
   token?: string | null
   fetch?: ReportFetch
+  recordSpace?: string
 }
 
 async function request<T>(
   path: string,
-  method: string,
+  method: HostedSessionMethod,
   body?: unknown,
   options: ReportClientOptions = {},
   safety: HostedRequestSafety = 'probe',
@@ -31,15 +33,16 @@ async function request<T>(
   if (!baseUrl) throw new Error(`hosted hub is not configured. ${REMEDY}`)
   if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
   const url = `${baseUrl.replace(/\/$/, '')}${path}`
-  const response = await sendHostedSessionRequest({
+  const common = {
     origin: baseUrl,
     url,
-    method,
     body,
     token: options.token,
     safety,
     fetch: options.fetch ?? fetch,
-  })
+  }
+  const recordSpace = options.recordSpace ?? (await personalRecordSpace(options))
+  const response = await sendHostedSessionRequest({ ...common, method, recordSpace })
   const bodyResult = await jsonBody(response, url)
   if (!bodyResult.ok)
     throw hostedRefusalError({

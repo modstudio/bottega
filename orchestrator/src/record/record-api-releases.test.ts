@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import { identity } from '../../test/fixtures/record-api.ts'
+import { noDestinationWriteTestDeps } from '../../test/fixtures/record-api-app.ts'
 import { recordApi } from './record-api.ts'
 
 function appWith(session: typeof identity | null, overrides: Record<string, unknown> = {}) {
   const deps = {
     recordUrl: 'postgres://record.test/record',
+    ...noDestinationWriteTestDeps,
     auth: { handler: () => Response.json({ handled: true }) },
     readSession: async () => session,
     setActiveSpace: async () => undefined,

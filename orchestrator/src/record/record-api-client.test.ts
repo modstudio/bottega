@@ -28,6 +28,7 @@ import {
 } from './record-api-client.ts'
 import { classifyBoardStreamResponse } from './record-api-client-board-stream.ts'
 import { recordApiError } from './record-api-client-error.ts'
+import type { RecordClientRequest } from './record-api-client-paths.ts'
 import { RecordProjectSpaceConflictError } from './record-project-space-contract.ts'
 
 describe('record HTTP authentication responses', () => {
@@ -167,6 +168,39 @@ test('a generic client refusal retains the server remedy', () => {
     recordApiError({ error: 'the write names no space', remedy: 'retry with --space <slug>' }, 409)
       .message,
   ).toBe('the write names no space\nretry with --space <slug>')
+})
+
+test('member removal posts the email and resolved organization id', async () => {
+  const previousEnv = process.env.NODE_ENV
+  const calls: Array<{ path: string; init?: RequestInit }> = []
+  const request = (async (path: string, init?: RequestInit) => {
+    calls.push({ path, init })
+    return undefined
+  }) as RecordClientRequest
+  installRecordApiClient(null)
+  process.env.NODE_ENV = 'development'
+  try {
+    await recordApiClient(request).removeMember({
+      email: 'member@example.test',
+      organizationId: 'space-a',
+    })
+  } finally {
+    process.env.NODE_ENV = previousEnv
+    installRecordApiClient(createMemoryRecordApiClient())
+  }
+
+  expect(calls).toEqual([
+    {
+      path: '/api/auth/organization/remove-member',
+      init: {
+        method: 'POST',
+        body: JSON.stringify({
+          memberIdOrEmail: 'member@example.test',
+          organizationId: 'space-a',
+        }),
+      },
+    },
+  ])
 })
 
 test('the record API base URL resolves from configured files', () => {

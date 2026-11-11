@@ -122,6 +122,7 @@ function capturingClient(overrides: Partial<RecordApiClient> = {}): {
     applySettingsPermission: unused,
     applySettingsAutoMode: unused,
     inviteMember: unused,
+    removeMember: unused,
     putSnapshot: unused,
     listSnapshots: unused,
     listDocs: async () => ({

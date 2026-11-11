@@ -194,6 +194,7 @@ async function pullStatusEvent(row: PushedStatusEvent) {
   await pullHostedChanges({
     baseUrl: 'https://hub.example.test',
     token: 'session',
+    personalSpaceId: spaceId,
     registeredProjects: registered(),
     fetch: async (input) => {
       const url = new URL(input)

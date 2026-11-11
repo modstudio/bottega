@@ -8,4 +8,8 @@ const unusedDatabase = (() => {
 export const hostedRouteTestConfig = {
   recordApiUrl: 'https://record.example.test',
   recordDatabaseUrl: unusedDatabase,
+  noDestinationWriteCounter: {
+    record: async () => undefined,
+    read: async () => ({ windowStart: '', unrecorded: 0, counts: [] }),
+  },
 } satisfies HostedRouteConfig

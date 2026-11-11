@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { declareFixtureProjectSpace } from '../test/fixture-project-space.ts'
 import { fixtureRecordId, resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { DUPLICATE_TITLE_FIXTURE } from './duplicate-matcher.fixture.ts'
@@ -23,6 +24,7 @@ import {
 } from './task.ts'
 import { UNATTRIBUTED } from './task-attribution.ts'
 import { taskBodyVersion } from './task-detail.ts'
+import { hostedTaskWriteOptions } from './task-write-destination.ts'
 
 beforeAll(resetFixtureStore)
 
@@ -352,6 +354,9 @@ describe('hosted-authoritative existing-row edits', () => {
 })
 
 describe('local task tracker', () => {
+  declareFixtureProjectSpace('beta', 'space-beta')
+  declareFixtureProjectSpace('delta', 'space-delta')
+  declareFixtureProjectSpace('workshop', 'space-workshop')
   describe('with hosted comment authorship', () => {
     let previousHostedUrl: string | undefined
 
@@ -425,21 +430,10 @@ describe('local task tracker', () => {
       await expect(deleteTaskComment(key, {}, comment.id, author)).rejects.toThrow('not found')
     })
   })
-  test('a project without a declared space sends no record-space header', async () => {
-    let recordSpace: string | null = 'not-called'
-    await createTask(
-      { project: 'beta', title: `No space ${crypto.randomUUID()}` },
-      {
-        hosted: {
-          ...hosted,
-          fetch: async (input, init) => {
-            recordSpace = new Headers(init?.headers).get('x-record-space')
-            return hosted.fetch(input, init)
-          },
-        },
-      },
+  test('a project without a declared space refuses with the declaration remedy', () => {
+    expect(() => hostedTaskWriteOptions('alpha', hosted)).toThrow(
+      `${PLATFORM_SLUG} project set alpha --space <slug>`,
     )
-    expect(recordSpace).toBeNull()
   })
 
   test('a hub-protocol project still mints through hub', async () => {

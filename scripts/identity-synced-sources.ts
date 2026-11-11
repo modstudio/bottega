@@ -166,6 +166,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
       'deleteTrialSpace',
       'ensureSpaceBuiltIns',
       'inviteMember',
+      'removeMember',
       'grantConfigAccess',
       'setActiveOrganization',
       'withdrawConfigAccess',
