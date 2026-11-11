@@ -38,6 +38,9 @@ type Environment = { Variables: { identity: RecordIdentity; destinationSpaceId?:
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
 export type RecordWorkflowRouteDeps = {
   readTaskFlow?(input: Tenant & { taskKey?: string; flowRecordId?: string }): Promise<unknown>
+  readTaskFlowStage?(input: Tenant & { id: string }): Promise<unknown>
+  readTaskFlowText?(input: Tenant & { id: string }): Promise<unknown>
+  readTaskFlowObligation?(input: Tenant & { id: string }): Promise<unknown>
   listTaskFlowStages?(
     input: Tenant & z.infer<typeof taskFlowStageListQuerySchema>,
   ): Promise<unknown>
@@ -157,6 +160,33 @@ function registerTaskFlowListRoute(
   })
 }
 
+function registerTaskFlowByIdRoutes(
+  app: Hono<Environment>,
+  deps: RecordWorkflowRouteDeps,
+  ports: Ports,
+): void {
+  const routes = [
+    ['/v1/task-flow/stages/:id', deps.readTaskFlowStage, 'stage'],
+    ['/v1/task-flow/texts/:id', deps.readTaskFlowText, 'text'],
+    ['/v1/task-flow/obligations/:id', deps.readTaskFlowObligation, 'obligation'],
+  ] as const
+  for (const [path, read, kind] of routes)
+    app.get(path, async (context) => {
+      if (!read) return context.json({ error: `hosted task-flow ${kind} read is unavailable` }, 503)
+      const active = ports.scope(context)
+      if (!active) return ports.noSpace(context)
+      const id = z.string().uuid().safeParse(context.req.param('id'))
+      if (!id.success) return context.json({ error: `task-flow ${kind} id is required` }, 400)
+      try {
+        return context.json(await read({ ...active, id: id.data }))
+      } catch (error) {
+        if (error instanceof RecordTaskFlowError)
+          return context.json({ error: error.message, code: error.code }, 404)
+        throw error
+      }
+    })
+}
+
 export function registerRecordWorkflowRoutes(
   app: Hono<Environment>,
   deps: RecordWorkflowRouteDeps,
@@ -189,6 +219,7 @@ export function registerRecordWorkflowRoutes(
       throw error
     }
   })
+  registerTaskFlowByIdRoutes(app, deps, ports)
   registerTaskFlowListRoute(app, deps, ports)
   registerTaskFlowWriteRoutes(app, deps, ports)
   app.get('/v1/workflow-catalogue/:table', async (context) => {

@@ -9,9 +9,16 @@ import { RecordApiRequestError } from './record-api-client-response.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
   type HostedTaskFlow,
+  type HostedTaskFlowObligationById,
+  type HostedTaskFlowStageById,
   type HostedTaskFlowStageList,
+  type HostedTaskFlowTextById,
+  hostedTaskFlowObligationByIdSchema,
   hostedTaskFlowSchema,
+  hostedTaskFlowStageByIdSchema,
   hostedTaskFlowStageListSchema,
+  hostedTaskFlowTextByIdSchema,
+  RECORD_TASK_FLOW_NOT_FOUND_CODE,
   type TaskFlowStageListQuery,
 } from './record-task-flow-contract.ts'
 import {
@@ -41,6 +48,18 @@ export type RecordTaskFlowClient = {
     selector: Omit<TaskFlowStageListQuery, 'limit'> & { limit?: number },
     destination?: RecordRequestDestination,
   ): Promise<HostedTaskFlowStageList>
+  readTaskFlowStage?(
+    id: string,
+    destination?: RecordRequestDestination,
+  ): Promise<HostedTaskFlowStageById | null>
+  readTaskFlowText?(
+    id: string,
+    destination?: RecordRequestDestination,
+  ): Promise<HostedTaskFlowTextById | null>
+  readTaskFlowObligation?(
+    id: string,
+    destination?: RecordRequestDestination,
+  ): Promise<HostedTaskFlowObligationById | null>
   composeTaskFlow?(
     input: TaskFlowIntentInput<'compose'>,
     destination?: RecordRequestDestination,
@@ -78,6 +97,24 @@ export type RecordTaskFlowClient = {
     destination?: RecordRequestDestination,
   ): Promise<TaskFlowWriteResult>
 }
+async function readById<T>(
+  request: Request,
+  path: string,
+  schema: (body: unknown) => T,
+  destination?: RecordRequestDestination,
+): Promise<T | null> {
+  try {
+    return await request(path, { ...destination, schema })
+  } catch (error) {
+    if (
+      error instanceof RecordApiRequestError &&
+      error.status === 404 &&
+      error.code === RECORD_TASK_FLOW_NOT_FOUND_CODE
+    )
+      return null
+    throw error
+  }
+}
 async function write<K extends TaskFlowIntent, T>(
   request: Request,
   intent: K,
@@ -105,81 +142,126 @@ async function write<K extends TaskFlowIntent, T>(
     throw error
   }
 }
+function taskFlowReadClient(request: Request): Partial<RecordTaskFlowClient> {
+  return {
+    readTaskFlow: (selector, destination) => {
+      const query = new URLSearchParams()
+      if (selector.taskKey) query.set('taskKey', selector.taskKey)
+      if (selector.flowRecordId) query.set('flowRecordId', selector.flowRecordId)
+      return request(`/v1/task-flow?${query}`, {
+        ...destination,
+        schema: (body) => hostedTaskFlowSchema.parse(body),
+      })
+    },
+    listTaskFlowStages: (selector, destination) => {
+      const query = new URLSearchParams()
+      if (selector.projectId) query.set('projectId', selector.projectId)
+      if (selector.number !== undefined) query.set('number', String(selector.number))
+      if (selector.sessionId) query.set('sessionId', selector.sessionId)
+      for (const state of selector.states ?? []) query.append('state', state)
+      if (selector.taskKey) query.set('taskKey', selector.taskKey)
+      if (selector.limit !== undefined) query.set('limit', String(selector.limit))
+      return request(`/v1/task-flow/stages?${query}`, {
+        ...destination,
+        schema: (body) => hostedTaskFlowStageListSchema.parse(body),
+      })
+    },
+    readTaskFlowStage: (id, destination) =>
+      readById(
+        request,
+        `/v1/task-flow/stages/${encodeURIComponent(id)}`,
+        (body) => hostedTaskFlowStageByIdSchema.parse(body),
+        destination,
+      ),
+    readTaskFlowText: (id, destination) =>
+      readById(
+        request,
+        `/v1/task-flow/texts/${encodeURIComponent(id)}`,
+        (body) => hostedTaskFlowTextByIdSchema.parse(body),
+        destination,
+      ),
+    readTaskFlowObligation: (id, destination) =>
+      readById(
+        request,
+        `/v1/task-flow/obligations/${encodeURIComponent(id)}`,
+        (body) => hostedTaskFlowObligationByIdSchema.parse(body),
+        destination,
+      ),
+  }
+}
+
+function taskFlowWriteClient(request: Request): Partial<RecordTaskFlowClient> {
+  return {
+    composeTaskFlow: (input, destination) =>
+      write(
+        request,
+        'compose',
+        input,
+        (body) => taskFlowComposeResultSchema.parse(body),
+        destination,
+      ),
+    updateTaskFlowStage: (input, destination) =>
+      write(
+        request,
+        'stage-update',
+        input,
+        (body) => taskFlowWriteResultSchema.parse(body),
+        destination,
+      ),
+    advanceTaskFlow: (input, destination) =>
+      write(
+        request,
+        'advance',
+        input,
+        (body) => taskFlowWriteResultSchema.parse(body),
+        destination,
+      ),
+    awaitTaskFlowRuling: (input, destination) =>
+      write(
+        request,
+        'await-ruling',
+        input,
+        (body) => taskFlowWriteResultSchema.parse(body),
+        destination,
+      ),
+    abandonTaskFlow: (input, destination) =>
+      write(
+        request,
+        'abandon',
+        input,
+        (body) => taskFlowWriteResultSchema.parse(body),
+        destination,
+      ),
+    adoptTaskFlow: (input, destination) =>
+      write(request, 'adopt', input, (body) => taskFlowAdoptResultSchema.parse(body), destination),
+    attachTaskFlowText: (input, destination) =>
+      write(
+        request,
+        'attach-text',
+        input,
+        (body) => taskFlowWriteResultSchema.parse(body),
+        destination,
+      ),
+    deleteTaskFlowText: (input, destination) =>
+      write(
+        request,
+        'delete-text',
+        input,
+        (body) => taskFlowWriteResultSchema.parse(body),
+        destination,
+      ),
+    copyTaskFlowText: (input, destination) =>
+      write(
+        request,
+        'copy-text',
+        input,
+        (body) => taskFlowWriteResultSchema.parse(body),
+        destination,
+      ),
+  }
+}
+
 export const recordTaskFlowClient = (request: Request): RecordTaskFlowClient => ({
-  readTaskFlow: (selector, destination) => {
-    const query = new URLSearchParams()
-    if (selector.taskKey) query.set('taskKey', selector.taskKey)
-    if (selector.flowRecordId) query.set('flowRecordId', selector.flowRecordId)
-    return request(`/v1/task-flow?${query}`, {
-      ...destination,
-      schema: (body) => hostedTaskFlowSchema.parse(body),
-    })
-  },
-  listTaskFlowStages: (selector, destination) => {
-    const query = new URLSearchParams()
-    if (selector.projectId) query.set('projectId', selector.projectId)
-    if (selector.number !== undefined) query.set('number', String(selector.number))
-    if (selector.sessionId) query.set('sessionId', selector.sessionId)
-    for (const state of selector.states ?? []) query.append('state', state)
-    if (selector.taskKey) query.set('taskKey', selector.taskKey)
-    if (selector.limit !== undefined) query.set('limit', String(selector.limit))
-    return request(`/v1/task-flow/stages?${query}`, {
-      ...destination,
-      schema: (body) => hostedTaskFlowStageListSchema.parse(body),
-    })
-  },
-  composeTaskFlow: (input, destination) =>
-    write(
-      request,
-      'compose',
-      input,
-      (body) => taskFlowComposeResultSchema.parse(body),
-      destination,
-    ),
-  updateTaskFlowStage: (input, destination) =>
-    write(
-      request,
-      'stage-update',
-      input,
-      (body) => taskFlowWriteResultSchema.parse(body),
-      destination,
-    ),
-  advanceTaskFlow: (input, destination) =>
-    write(request, 'advance', input, (body) => taskFlowWriteResultSchema.parse(body), destination),
-  awaitTaskFlowRuling: (input, destination) =>
-    write(
-      request,
-      'await-ruling',
-      input,
-      (body) => taskFlowWriteResultSchema.parse(body),
-      destination,
-    ),
-  abandonTaskFlow: (input, destination) =>
-    write(request, 'abandon', input, (body) => taskFlowWriteResultSchema.parse(body), destination),
-  adoptTaskFlow: (input, destination) =>
-    write(request, 'adopt', input, (body) => taskFlowAdoptResultSchema.parse(body), destination),
-  attachTaskFlowText: (input, destination) =>
-    write(
-      request,
-      'attach-text',
-      input,
-      (body) => taskFlowWriteResultSchema.parse(body),
-      destination,
-    ),
-  deleteTaskFlowText: (input, destination) =>
-    write(
-      request,
-      'delete-text',
-      input,
-      (body) => taskFlowWriteResultSchema.parse(body),
-      destination,
-    ),
-  copyTaskFlowText: (input, destination) =>
-    write(
-      request,
-      'copy-text',
-      input,
-      (body) => taskFlowWriteResultSchema.parse(body),
-      destination,
-    ),
+  ...taskFlowReadClient(request),
+  ...taskFlowWriteClient(request),
 })

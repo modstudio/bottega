@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { RecordApiRequestError } from './record-api-client-response.ts'
 import { recordTaskFlowClient } from './record-api-client-task-flow.ts'
 import { recordWorkflowClient } from './record-api-client-workflow.ts'
 import type { RecordWorkflowImportInput } from './record-workflow-contract.ts'
@@ -69,4 +70,37 @@ test('task-flow stage lists carry combined filters and the destination space', a
       destinationSpaceId: '00000000-0000-4000-8000-000000000002',
     },
   ])
+})
+
+const ID = '00000000-0000-4000-8000-000000000010'
+test('task-flow by-id clients return null for the record ordinary not-found response', async () => {
+  const paths: string[] = []
+  const client = recordTaskFlowClient(async (path) => {
+    paths.push(path)
+    throw new RecordApiRequestError(
+      'hosted task flow was not found',
+      'refused',
+      404,
+      'task_flow_not_found',
+    )
+  })
+  for (const method of [
+    'readTaskFlowStage',
+    'readTaskFlowText',
+    'readTaskFlowObligation',
+  ] as const) {
+    await expect(client[method]!(ID)).resolves.toBeNull()
+  }
+  expect(paths).toEqual([
+    `/v1/task-flow/stages/${ID}`,
+    `/v1/task-flow/texts/${ID}`,
+    `/v1/task-flow/obligations/${ID}`,
+  ])
+})
+
+test('task-flow by-id clients do not hide an unrelated not-found response', async () => {
+  const client = recordTaskFlowClient(async () => {
+    throw new RecordApiRequestError('route not found', 'refused', 404)
+  })
+  await expect(client.readTaskFlowStage!(ID)).rejects.toThrow('route not found')
 })
