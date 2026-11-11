@@ -5,6 +5,11 @@ import { drizzle } from 'drizzle-orm/pglite'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { syncHostedRecord } from './record-sync-service.ts'
 import {
+  readRecordTaskFlowObligation,
+  readRecordTaskFlowStage,
+  readRecordTaskFlowText,
+} from './record-task-flow.ts'
+import {
   applyTaskFlowStageValues,
   applyTaskFlowValues,
   taskFlowStageValues,
@@ -34,6 +39,10 @@ const WORKFLOW_VERSION = id('2110')
 const CATALOGUE = id('2111')
 const CATALOGUE_VERSION = id('2112')
 const STAMP = '2026-11-03T12:00:00.000Z'
+const OBLIGATION = id('2119')
+const TEXT = id('2120')
+const COPY = id('2121')
+const UNKNOWN = id('2122')
 
 const payload = (kind: 'task_flow' | 'task_flow_stage') =>
   Object.fromEntries(OUTBOX_PAYLOAD_CONTRACTS[kind].columns.map((column) => [column, null]))
@@ -43,6 +52,7 @@ function flowPayload(revision = 1, state = 'open') {
     id: FLOW,
     spaceId: SPACE,
     projectId: PROJECT,
+    number: 7,
     projectName: 'task-flow-sync-proof',
     taskId: TASK,
     state,
@@ -300,6 +310,56 @@ realPostgres('hosted task flow revisions', () => {
         id: 11,
         status: 'quarantined',
       })
+
+      await admin`INSERT INTO workflow_obligation
+        (id,space_id,stage_record_id,step_ordinal,step_slug,floor,require_pull_request,
+         expected_exit_code,expected_status,floor_deferrable,reason,session_id,created_at,
+         operator_ruling)
+        VALUES (${OBLIGATION}::uuid,${SPACE}::uuid,${STAGE}::uuid,1,'build','test',false,
+          0,'done',true,'proof','session-proof',${STAMP},false)`
+      await admin`INSERT INTO workflow_step_text
+        (id,space_id,stage_record_id,step_ordinal,step_slug,body,created_at)
+        VALUES (${TEXT}::uuid,${SPACE}::uuid,${STAGE}::uuid,1,'build','proof text',${STAMP})`
+      await admin`INSERT INTO workflow_text_copy
+        (id,space_id,workflow_text_record_id,stage_record_id,task_document_reference,copied_at)
+        VALUES (${COPY}::uuid,${SPACE}::uuid,${TEXT}::uuid,${STAGE}::uuid,'task:DEV-1978',${STAMP})`
+
+      const principal = { url: actorUrl!, userId: USER, spaceId: SPACE }
+      await expect(readRecordTaskFlowStage({ ...principal, id: STAGE })).resolves.toMatchObject({
+        stage: {
+          id: STAGE,
+          number: 7,
+          obligations: [{ id: OBLIGATION }],
+          stepTexts: [{ id: TEXT }],
+          textCopies: [{ id: COPY }],
+        },
+        flow: { id: FLOW },
+      })
+      await expect(readRecordTaskFlowText({ ...principal, id: TEXT })).resolves.toMatchObject({
+        text: { id: TEXT, stageRecordId: STAGE, stepSlug: 'build', body: 'proof text' },
+        stage: { id: STAGE, number: 7 },
+        copy: { id: COPY, taskDocumentReference: 'task:DEV-1978' },
+      })
+      await expect(
+        readRecordTaskFlowObligation({ ...principal, id: OBLIGATION }),
+      ).resolves.toMatchObject({
+        obligation: { id: OBLIGATION, stageRecordId: STAGE, floor: 'test' },
+        stage: { id: STAGE, number: 7, state: 'done' },
+      })
+
+      for (const [read, knownId] of [
+        [readRecordTaskFlowStage, STAGE],
+        [readRecordTaskFlowText, TEXT],
+        [readRecordTaskFlowObligation, OBLIGATION],
+      ] as const)
+        for (const input of [
+          { ...principal, id: UNKNOWN },
+          { ...principal, spaceId: OTHER_SPACE, id: knownId },
+        ])
+          await expect(read(input)).rejects.toMatchObject({
+            status: 404,
+            code: 'task_flow_not_found',
+          })
     } finally {
       await admin`DELETE FROM task_flow_stage WHERE id=${STAGE}::uuid`
       await admin`DELETE FROM task_flow WHERE id=${FLOW}::uuid`

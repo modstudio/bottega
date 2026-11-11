@@ -8,7 +8,10 @@ import { recordIso } from '../../../shared/record-timestamp.ts'
 import { recordPool } from './record-pool.ts'
 import {
   type HostedTaskFlow,
+  type HostedTaskFlowObligationById,
+  type HostedTaskFlowStageById,
   type HostedTaskFlowStageList,
+  type HostedTaskFlowTextById,
   RECORD_TASK_FLOW_NOT_FOUND_MESSAGE,
   type TaskFlowStageListQuery,
 } from './record-task-flow-contract.ts'
@@ -119,6 +122,52 @@ function nullableIso(value: unknown): string | null {
   return value == null ? null : recordIso(value)
 }
 
+function toHostedObligation(item: Record<string, unknown>) {
+  return {
+    id: String(item.id),
+    stageRecordId: String(item.stage_record_id),
+    stepOrdinal: Number(item.step_ordinal),
+    stepSlug: String(item.step_slug),
+    floor: String(item.floor),
+    requirePullRequest: Boolean(item.require_pull_request),
+    expectedExitCode: Number(item.expected_exit_code),
+    expectedStatus: String(item.expected_status),
+    floorDeferrable: Boolean(item.floor_deferrable),
+    reason: String(item.reason),
+    sessionId: item.session_id == null ? null : String(item.session_id),
+    createdAt: recordIso(item.created_at),
+    satisfiedAt: nullableIso(item.satisfied_at),
+    satisfiedStepOrdinal:
+      item.satisfied_step_ordinal == null ? null : Number(item.satisfied_step_ordinal),
+    satisfiedStepSlug: item.satisfied_step_slug == null ? null : String(item.satisfied_step_slug),
+    satisfiedEvidence: item.satisfied_evidence as unknown[] | null,
+    abandonedAt: nullableIso(item.abandoned_at),
+    abandonedReason: item.abandoned_reason == null ? null : String(item.abandoned_reason),
+    operatorRuling: Boolean(item.operator_ruling),
+  }
+}
+
+function toHostedStepText(item: Record<string, unknown>) {
+  return {
+    id: String(item.id),
+    stageRecordId: String(item.stage_record_id),
+    stepOrdinal: Number(item.step_ordinal),
+    stepSlug: String(item.step_slug),
+    body: String(item.body),
+    createdAt: recordIso(item.created_at),
+  }
+}
+
+function toHostedTextCopy(item: Record<string, unknown>) {
+  return {
+    id: String(item.id),
+    workflowTextRecordId: String(item.workflow_text_record_id),
+    stageRecordId: String(item.stage_record_id),
+    taskDocumentReference: String(item.task_document_reference),
+    copiedAt: recordIso(item.copied_at),
+  }
+}
+
 async function stageChildren(tx: SQL, spaceId: string, flowId: string) {
   const obligations = await tx`
     SELECT o.* FROM workflow_obligation o JOIN task_flow_stage s ON s.id=o.stage_record_id
@@ -130,43 +179,9 @@ async function stageChildren(tx: SQL, spaceId: string, flowId: string) {
     SELECT c.* FROM workflow_text_copy c JOIN task_flow_stage s ON s.id=c.stage_record_id
     WHERE c.space_id=${spaceId}::uuid AND s.flow_record_id=${flowId}::uuid ORDER BY c.copied_at,c.id`
   return {
-    obligations: obligations.map((item: Record<string, unknown>) => ({
-      id: String(item.id),
-      stageRecordId: String(item.stage_record_id),
-      stepOrdinal: Number(item.step_ordinal),
-      stepSlug: String(item.step_slug),
-      floor: String(item.floor),
-      requirePullRequest: Boolean(item.require_pull_request),
-      expectedExitCode: Number(item.expected_exit_code),
-      expectedStatus: String(item.expected_status),
-      floorDeferrable: Boolean(item.floor_deferrable),
-      reason: String(item.reason),
-      sessionId: item.session_id == null ? null : String(item.session_id),
-      createdAt: recordIso(item.created_at),
-      satisfiedAt: nullableIso(item.satisfied_at),
-      satisfiedStepOrdinal:
-        item.satisfied_step_ordinal == null ? null : Number(item.satisfied_step_ordinal),
-      satisfiedStepSlug: item.satisfied_step_slug == null ? null : String(item.satisfied_step_slug),
-      satisfiedEvidence: item.satisfied_evidence as unknown[] | null,
-      abandonedAt: nullableIso(item.abandoned_at),
-      abandonedReason: item.abandoned_reason == null ? null : String(item.abandoned_reason),
-      operatorRuling: Boolean(item.operator_ruling),
-    })),
-    stepTexts: texts.map((item: Record<string, unknown>) => ({
-      id: String(item.id),
-      stageRecordId: String(item.stage_record_id),
-      stepOrdinal: Number(item.step_ordinal),
-      stepSlug: String(item.step_slug),
-      body: String(item.body),
-      createdAt: recordIso(item.created_at),
-    })),
-    textCopies: copies.map((item: Record<string, unknown>) => ({
-      id: String(item.id),
-      workflowTextRecordId: String(item.workflow_text_record_id),
-      stageRecordId: String(item.stage_record_id),
-      taskDocumentReference: String(item.task_document_reference),
-      copiedAt: recordIso(item.copied_at),
-    })),
+    obligations: obligations.map(toHostedObligation),
+    stepTexts: texts.map(toHostedStepText),
+    textCopies: copies.map(toHostedTextCopy),
   }
 }
 
@@ -283,6 +298,87 @@ export async function listRecordTaskFlowStages(
         flow: toHostedFlow(row),
       })),
       truncated,
+    }
+  })
+}
+
+export async function readRecordTaskFlowStage(
+  input: TenantPrincipal & { url: string; id: string },
+): Promise<HostedTaskFlowStageById> {
+  return recordPool(input.url).begin(async (tx) => {
+    await bindTenant(tx, input)
+    const rows = await tx.unsafe(
+      `SELECT ${STAGE_SELECT},${FLOW_SELECT}
+       FROM task_flow_stage s
+       JOIN task_flow f ON f.id=s.flow_record_id AND f.space_id=s.space_id
+       LEFT JOIN hub_task t ON t.id=f.task_id AND t.space_id=f.space_id
+       ${STAGE_JOINS}
+       WHERE s.space_id=$1::uuid AND s.id=$2::uuid`,
+      [input.spaceId, input.id],
+    )
+    const row = rows[0]
+    if (!row) throw new RecordTaskFlowError(RECORD_TASK_FLOW_NOT_FOUND_MESSAGE)
+    const children = await stageChildren(tx, input.spaceId, String(row.stage_flow_record_id))
+    return { stage: withChildren(toHostedStage(row), children), flow: toHostedFlow(row) }
+  })
+}
+
+export async function readRecordTaskFlowText(
+  input: TenantPrincipal & { url: string; id: string },
+): Promise<HostedTaskFlowTextById> {
+  return recordPool(input.url).begin(async (tx) => {
+    await bindTenant(tx, input)
+    const rows = await tx`
+      SELECT t.*,s.id stage_id,s.number stage_number,
+             c.id copy_id,c.workflow_text_record_id copy_workflow_text_record_id,
+             c.stage_record_id copy_stage_record_id,
+             c.task_document_reference copy_task_document_reference,c.copied_at copy_copied_at
+      FROM workflow_step_text t
+      JOIN task_flow_stage s ON s.id=t.stage_record_id AND s.space_id=t.space_id
+      LEFT JOIN workflow_text_copy c
+        ON c.workflow_text_record_id=t.id AND c.space_id=t.space_id
+      WHERE t.space_id=${input.spaceId}::uuid AND t.id=${input.id}::uuid`
+    const row = rows[0] as Record<string, unknown> | undefined
+    if (!row) throw new RecordTaskFlowError(RECORD_TASK_FLOW_NOT_FOUND_MESSAGE)
+    return {
+      text: toHostedStepText(row),
+      stage: {
+        id: String(row.stage_id),
+        number: row.stage_number == null ? null : Number(row.stage_number),
+      },
+      copy:
+        row.copy_id == null
+          ? null
+          : toHostedTextCopy({
+              id: row.copy_id,
+              workflow_text_record_id: row.copy_workflow_text_record_id,
+              stage_record_id: row.copy_stage_record_id,
+              task_document_reference: row.copy_task_document_reference,
+              copied_at: row.copy_copied_at,
+            }),
+    }
+  })
+}
+
+export async function readRecordTaskFlowObligation(
+  input: TenantPrincipal & { url: string; id: string },
+): Promise<HostedTaskFlowObligationById> {
+  return recordPool(input.url).begin(async (tx) => {
+    await bindTenant(tx, input)
+    const rows = await tx`
+      SELECT o.*,s.id stage_id,s.number stage_number,s.state stage_state
+      FROM workflow_obligation o
+      JOIN task_flow_stage s ON s.id=o.stage_record_id AND s.space_id=o.space_id
+      WHERE o.space_id=${input.spaceId}::uuid AND o.id=${input.id}::uuid`
+    const row = rows[0] as Record<string, unknown> | undefined
+    if (!row) throw new RecordTaskFlowError(RECORD_TASK_FLOW_NOT_FOUND_MESSAGE)
+    return {
+      obligation: toHostedObligation(row),
+      stage: {
+        id: String(row.stage_id),
+        number: row.stage_number == null ? null : Number(row.stage_number),
+        state: String(row.stage_state) as HostedTaskFlowObligationById['stage']['state'],
+      },
     }
   })
 }

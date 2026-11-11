@@ -140,7 +140,13 @@ import {
   retireRecordSubject,
 } from './record-subjects.ts'
 import { syncHostedRecord } from './record-sync-service.ts'
-import { listRecordTaskFlowStages, readRecordTaskFlow } from './record-task-flow.ts'
+import {
+  listRecordTaskFlowStages,
+  readRecordTaskFlow,
+  readRecordTaskFlowObligation,
+  readRecordTaskFlowStage,
+  readRecordTaskFlowText,
+} from './record-task-flow.ts'
 import { writeRecordTaskFlow } from './record-task-flow-write.ts'
 import { deleteRecordSpace, deleteTrialRecordSpace } from './record-trial-space-delete.ts'
 import {
@@ -365,6 +371,9 @@ function recordProjectDependencies() {
   return {
     readProjects: listRecordProjects,
     readTaskFlow: readRecordTaskFlow,
+    readTaskFlowStage: readRecordTaskFlowStage,
+    readTaskFlowText: readRecordTaskFlowText,
+    readTaskFlowObligation: readRecordTaskFlowObligation,
     listTaskFlowStages: listRecordTaskFlowStages,
     writeTaskFlow: writeRecordTaskFlow,
     upsertProject: async (input: Parameters<typeof upsertRecordProject>[0]) => {

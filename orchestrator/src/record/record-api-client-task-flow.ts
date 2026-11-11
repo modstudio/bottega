@@ -9,9 +9,15 @@ import { RecordApiRequestError } from './record-api-client-response.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
   type HostedTaskFlow,
+  type HostedTaskFlowObligationById,
   type HostedTaskFlowStageList,
+  type HostedTaskFlowStageById,
+  type HostedTaskFlowTextById,
+  hostedTaskFlowObligationByIdSchema,
   hostedTaskFlowSchema,
+  hostedTaskFlowStageByIdSchema,
   hostedTaskFlowStageListSchema,
+  hostedTaskFlowTextByIdSchema,
   type TaskFlowStageListQuery,
 } from './record-task-flow-contract.ts'
 import {
@@ -41,6 +47,18 @@ export type RecordTaskFlowClient = {
     selector: Omit<TaskFlowStageListQuery, 'limit'> & { limit?: number },
     destination?: RecordRequestDestination,
   ): Promise<HostedTaskFlowStageList>
+  readTaskFlowStage?(
+    id: string,
+    destination?: RecordRequestDestination,
+  ): Promise<HostedTaskFlowStageById | null>
+  readTaskFlowText?(
+    id: string,
+    destination?: RecordRequestDestination,
+  ): Promise<HostedTaskFlowTextById | null>
+  readTaskFlowObligation?(
+    id: string,
+    destination?: RecordRequestDestination,
+  ): Promise<HostedTaskFlowObligationById | null>
   composeTaskFlow?(
     input: TaskFlowIntentInput<'compose'>,
     destination?: RecordRequestDestination,
@@ -77,6 +95,19 @@ export type RecordTaskFlowClient = {
     input: TaskFlowIntentInput<'copy-text'>,
     destination?: RecordRequestDestination,
   ): Promise<TaskFlowWriteResult>
+}
+async function readById<T>(
+  request: Request,
+  path: string,
+  schema: (body: unknown) => T,
+  destination?: RecordRequestDestination,
+): Promise<T | null> {
+  try {
+    return await request(path, { ...destination, schema })
+  } catch (error) {
+    if (error instanceof RecordApiRequestError && error.status === 404) return null
+    throw error
+  }
 }
 async function write<K extends TaskFlowIntent, T>(
   request: Request,
@@ -128,6 +159,27 @@ export const recordTaskFlowClient = (request: Request): RecordTaskFlowClient => 
       schema: (body) => hostedTaskFlowStageListSchema.parse(body),
     })
   },
+  readTaskFlowStage: (id, destination) =>
+    readById(
+      request,
+      `/v1/task-flow/stages/${encodeURIComponent(id)}`,
+      (body) => hostedTaskFlowStageByIdSchema.parse(body),
+      destination,
+    ),
+  readTaskFlowText: (id, destination) =>
+    readById(
+      request,
+      `/v1/task-flow/texts/${encodeURIComponent(id)}`,
+      (body) => hostedTaskFlowTextByIdSchema.parse(body),
+      destination,
+    ),
+  readTaskFlowObligation: (id, destination) =>
+    readById(
+      request,
+      `/v1/task-flow/obligations/${encodeURIComponent(id)}`,
+      (body) => hostedTaskFlowObligationByIdSchema.parse(body),
+      destination,
+    ),
   composeTaskFlow: (input, destination) =>
     write(
       request,

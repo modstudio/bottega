@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { recordTaskFlowClient } from './record-api-client-task-flow.ts'
+import { RecordApiRequestError } from './record-api-client-response.ts'
 import { recordWorkflowClient } from './record-api-client-workflow.ts'
 import type { RecordWorkflowImportInput } from './record-workflow-contract.ts'
 
@@ -70,3 +71,131 @@ test('task-flow stage lists carry combined filters and the destination space', a
     },
   ])
 })
+
+const ID = '00000000-0000-4000-8000-000000000010'
+const STAGE_ID = '00000000-0000-4000-8000-000000000011'
+const FLOW_ID = '00000000-0000-4000-8000-000000000012'
+const PROJECT_ID = '00000000-0000-4000-8000-000000000013'
+const VERSION_ID = '00000000-0000-4000-8000-000000000014'
+const CATALOGUE_ID = '00000000-0000-4000-8000-000000000015'
+const MACHINE_ID = '00000000-0000-4000-8000-000000000016'
+const TEXT_ID = '00000000-0000-4000-8000-000000000017'
+const COPY_ID = '00000000-0000-4000-8000-000000000018'
+const STAMP = '2026-11-11T12:00:00.000Z'
+
+const stage = {
+  id: STAGE_ID,
+  flowRecordId: FLOW_ID,
+  projectId: PROJECT_ID,
+  projectName: 'bottega',
+  number: 7,
+  workflow: 'delivery',
+  mode: 'default',
+  workflowKey: 'DEV-2234',
+  instanceId: 'instance',
+  sessionId: 'session',
+  workflowVersionId: VERSION_ID,
+  workflowVersionNumber: 2,
+  catalogueVersionId: CATALOGUE_ID,
+  catalogueVersionNumber: 3,
+  arguments: { task: 'DEV-2234' },
+  activeOrdinal: 1,
+  activeSlug: 'build',
+  state: 'running',
+  closedStepNotes: [],
+  question: null,
+  autonomy: 'agent',
+  enforcement: 'required',
+  totalSteps: 4,
+  openedMachineId: MACHINE_ID,
+  takenOverFromMachineId: null,
+  lastAdvancedMachineId: MACHINE_ID,
+  revision: 5,
+  createdAt: STAMP,
+  updatedAt: STAMP,
+  obligations: [],
+  stepTexts: [],
+  textCopies: [],
+}
+const flow = {
+  id: FLOW_ID,
+  projectId: PROJECT_ID,
+  taskId: null,
+  taskKey: 'DEV-2234',
+  state: 'open',
+  openStageRecordId: STAGE_ID,
+  openStageCount: 1,
+  openingMachineId: MACHINE_ID,
+  updatedMachineId: MACHINE_ID,
+  revision: 5,
+  createdAt: STAMP,
+  updatedAt: STAMP,
+}
+const text = {
+  id: TEXT_ID,
+  stageRecordId: STAGE_ID,
+  stepOrdinal: 2,
+  stepSlug: 'build',
+  body: 'evidence',
+  createdAt: STAMP,
+}
+const copy = {
+  id: COPY_ID,
+  workflowTextRecordId: TEXT_ID,
+  stageRecordId: STAGE_ID,
+  taskDocumentReference: 'task:DEV-2234#comment-1',
+  copiedAt: STAMP,
+}
+const obligation = {
+  id: ID,
+  stageRecordId: STAGE_ID,
+  stepOrdinal: 2,
+  stepSlug: 'build',
+  floor: 'test',
+  requirePullRequest: false,
+  expectedExitCode: 0,
+  expectedStatus: 'done',
+  floorDeferrable: true,
+  reason: 'required',
+  sessionId: 'session',
+  createdAt: STAMP,
+  satisfiedAt: null,
+  satisfiedStepOrdinal: null,
+  satisfiedStepSlug: null,
+  satisfiedEvidence: null,
+  abandonedAt: null,
+  abandonedReason: null,
+  operatorRuling: false,
+}
+
+test('task-flow by-id clients return the validated stage, text and obligation shapes', async () => {
+  const bodies = new Map([
+    [`/v1/task-flow/stages/${ID}`, { stage, flow }],
+    [`/v1/task-flow/texts/${ID}`, { text, stage: { id: STAGE_ID, number: 7 }, copy }],
+    [
+      `/v1/task-flow/obligations/${ID}`,
+      { obligation, stage: { id: STAGE_ID, number: 7, state: 'running' } },
+    ],
+  ])
+  const client = recordTaskFlowClient(async (path, init) => init!.schema!(bodies.get(path)))
+  await expect(client.readTaskFlowStage!(ID)).resolves.toEqual({ stage, flow })
+  await expect(client.readTaskFlowText!(ID)).resolves.toEqual({
+    text,
+    stage: { id: STAGE_ID, number: 7 },
+    copy,
+  })
+  await expect(client.readTaskFlowObligation!(ID)).resolves.toEqual({
+    obligation,
+    stage: { id: STAGE_ID, number: 7, state: 'running' },
+  })
+})
+
+test.each(['readTaskFlowStage', 'readTaskFlowText', 'readTaskFlowObligation'] as const)(
+  '%s returns null for the record ordinary not-found response',
+  async (method) => {
+    const client = recordTaskFlowClient(async () => {
+      throw new RecordApiRequestError('hosted task flow was not found', 'refused', 404)
+    })
+    await expect(client[method]!(ID)).resolves.toBeNull()
+  },
+)
