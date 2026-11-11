@@ -1,7 +1,7 @@
 // concern: session close-out
 /** Pure ownership, release classification, and final verdict for one architect session. */
 
-import type { BranchLanding } from '../branch/branch-state.ts'
+import { type BranchLanding, isPruneSafeLandingState } from '../branch/branch-state.ts'
 import type { ContextItemKind } from '../doc/doc-context-write.ts'
 import { RUN_LIVE_STATUSES, TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 
@@ -278,7 +278,7 @@ function holdsReleaseResource(held: SessionHeldRunResources | undefined): boolea
 }
 
 function isBranchProved(branch: SessionOwnedBranch): boolean {
-  return branch.state === 'landed' || branch.state === 'superseded' || branch.state === 'empty'
+  return isPruneSafeLandingState(branch.state)
 }
 
 export type ResumeHandoffRootFacts = {

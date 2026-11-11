@@ -333,10 +333,15 @@ test('ship cleanup and prune give every minted branch state the same verdict', (
     name: string
     state: BranchStateDecision
     probes: boolean[]
-    expected: 'delete' | 'throwaway' | 'unlanded' | 'unknown'
+    expected: 'delete' | 'throwaway' | 'superseded' | 'unlanded' | 'unknown'
   }[] = [
     { name: 'landed', state: landed, probes: [false], expected: 'delete' },
-    { name: 'superseded', state: { state: 'superseded' }, probes: [false], expected: 'delete' },
+    {
+      name: 'superseded',
+      state: { state: 'superseded' },
+      probes: [false],
+      expected: 'superseded',
+    },
     { name: 'empty', state: { state: 'empty' }, probes: [false], expected: 'delete' },
     { name: 'unlanded', state: { state: 'unlanded' }, probes: [false], expected: 'unlanded' },
     { name: 'unknown', state: { state: 'unknown' }, probes: [false], expected: 'unknown' },

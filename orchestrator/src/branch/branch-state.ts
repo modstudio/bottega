@@ -242,7 +242,14 @@ export type PruneEligibility =
   | { eligible: true }
   | {
       eligible: false
-      reason: 'throwaway' | 'unlanded' | 'unknown' | 'checked-out' | 'live' | 'tip-moved'
+      reason:
+        | 'throwaway'
+        | 'superseded'
+        | 'unlanded'
+        | 'unknown'
+        | 'checked-out'
+        | 'live'
+        | 'tip-moved'
     }
 
 type PruneEligibilityReason = Extract<PruneEligibility, { eligible: false }>['reason']
@@ -259,26 +266,27 @@ export type BranchPruneKeptReason =
 
 export function isPruneSafeLandingState(
   state: BranchLanding['state'],
-): state is 'landed' | 'superseded' | 'empty' {
-  return state === 'landed' || state === 'superseded' || state === 'empty'
+): state is 'landed' | 'empty' {
+  return state === 'landed' || state === 'empty'
 }
 
 export type MintedBranchVerdict =
   | { verdict: 'delete' }
   | { verdict: 'throwaway' }
-  | { verdict: 'keep'; reason: 'unlanded' | 'unknown' }
+  | { verdict: 'keep'; reason: 'superseded' | 'unlanded' | 'unknown' }
 
 export function isProbeOnlyMint(probes: readonly boolean[]): boolean {
   return probes.length > 0 && probes.every(Boolean)
 }
 
-/** Is this branch's work preserved elsewhere (landed, superseded by a recorded successor, or empty), so deleting the ref loses nothing? */
+/** Is this branch's work preserved elsewhere (landed or empty), so deleting the ref loses nothing? */
 export function decideMintedBranchVerdict(input: {
   state: BranchStateDecision['state']
   probeOnly: boolean
 }): MintedBranchVerdict {
   if (isPruneSafeLandingState(input.state)) return { verdict: 'delete' }
   if (input.probeOnly) return { verdict: 'throwaway' }
+  if (input.state === 'superseded') return { verdict: 'keep', reason: 'superseded' }
   return { verdict: 'keep', reason: input.state === 'unknown' ? 'unknown' : 'unlanded' }
 }
 

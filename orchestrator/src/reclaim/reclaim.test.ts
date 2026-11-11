@@ -104,6 +104,12 @@ describe('branch reclaim landing evidence', () => {
     expect(
       decideBranchReclaimEvidence({
         absentCommits: ['abc123'],
+        classification: 'superseded',
+      }),
+    ).toEqual({ allowed: false, state: 'superseded' })
+    expect(
+      decideBranchReclaimEvidence({
+        absentCommits: ['abc123'],
         classification: 'unknown',
       }),
     ).toEqual({ allowed: false, state: 'unknown' })
@@ -119,7 +125,16 @@ describe('branch reclaim landing evidence', () => {
       allowed: true,
       proof: 'reachable',
     })
-    for (const classification of ['landed', 'superseded', 'empty'] as const) {
+    expect(
+      decideBranchReclaimEvidence({
+        absentCommits: [],
+        classification: 'superseded',
+      }),
+    ).toEqual({
+      allowed: true,
+      proof: 'reachable',
+    })
+    for (const classification of ['landed', 'empty'] as const) {
       expect(
         decideBranchReclaimEvidence({
           absentCommits: ['abc123'],

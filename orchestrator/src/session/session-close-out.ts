@@ -5,6 +5,8 @@ import type { Database } from 'bun:sqlite'
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { branchVerdictRemedy } from '../branch/branch-prune-remedy.ts'
+import { isPruneSafeLandingState } from '../branch/branch-state.ts'
 import { branchesReport, pruneBranch } from '../branch/branches.ts'
 import { observeTaskStatus } from '../branch/task-status-observation.ts'
 import { reconcileAbsentClaims } from '../cleanup/claim-reconciliation.ts'
@@ -227,7 +229,7 @@ function observeOwnedBranch(
     .find((branch) => branch.branch === item.branch)
   if (!row) return null
   const branch: SessionOwnedBranch = { ...item, state: row.state }
-  if (row.state !== 'unlanded' && row.state !== 'unknown') return { branch, evidence: null }
+  if (isPruneSafeLandingState(row.state)) return { branch, evidence: null }
   const project = projectByName(item.project)
   const activity = project ? gitResult(['show', '-s', '--format=%cI', row.tip], project.path) : null
   const lastActivity = activity?.ok ? activity.stdout.trim() || null : null
@@ -247,7 +249,16 @@ function observeOwnedBranch(
               run.project === item.project && run.mintedBranch === item.branch && run.worktree,
           )?.worktree ?? 'checked out')
         : null,
-      remedy: `${PLATFORM_SLUG} tree branch dispose ${item.project}:${item.branch} --reason <abandoned|superseded|throwaway> --note "<why>"`,
+      remedy: branchVerdictRemedy(
+        row.state === 'unknown'
+          ? 'unknown'
+          : row.state === 'superseded'
+            ? 'superseded'
+            : 'unlanded',
+        item.project,
+        item.branch,
+        item.taskKey,
+      ),
     },
   }
 }
@@ -652,7 +663,7 @@ function unprovedBranchProcessItem(
   )
   return {
     item: `branch ${item.project}:${item.branch}`,
-    reason: 'unique work is not proved landed, superseded, or empty',
+    reason: 'unique work is not proved landed or empty',
     evidence: evidence
       ? `${evidence.commitsAhead} commit(s) ahead; patch equivalence ${evidence.patchEquivalence}; task ${evidence.taskKey ?? 'unkeyed'} is ${evidence.taskStatus}; last activity ${evidence.lastActivity ?? 'unknown'}; live run ${evidence.liveRun ? 'yes' : 'no'}; live tree ${evidence.liveTree ?? 'no'}`
       : 'branch proof is unavailable',

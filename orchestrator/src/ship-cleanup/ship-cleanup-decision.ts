@@ -104,7 +104,7 @@ export function decideTaskBranchesToPrune(
 ): {
   delete: string[]
   landingProof: string[]
-  keep: { branch: string; reason: 'throwaway' | 'unlanded' | 'unknown' }[]
+  keep: { branch: string; reason: 'throwaway' | 'superseded' | 'unlanded' | 'unknown' }[]
   gone: string[]
 } {
   const branches = [

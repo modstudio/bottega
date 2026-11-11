@@ -28,6 +28,7 @@ export const branchModuleSpecs = [
       './branch-landing-match.ts',
       './branch-landing-records.ts',
       './branch-landing-service.ts',
+      './branch-prune-remedy.ts',
       './branch-ref-guard.ts',
       './branch-settlement.ts',
       './branch-state.ts',
@@ -36,6 +37,10 @@ export const branchModuleSpecs = [
       './other-branch-state.ts',
       './task-branch.ts',
     ],
+  },
+  {
+    file: 'orchestrator/src/branch/branch-prune-remedy.ts',
+    allowed: ['../../../shared/brand.ts'],
   },
   { file: 'orchestrator/src/branch/branch-containment.ts', allowed: [] },
   {
