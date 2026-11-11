@@ -54,9 +54,9 @@ import {
 import { readHubTask } from './workflow-floor-task-read.ts'
 import {
   floorFromObligationRow,
-  WORKFLOW_OBLIGATION_FLOOR_COLUMNS,
   type WorkflowObligationFloorRow,
 } from './workflow-obligation-floor.ts'
+import { taskFlowStore } from './task-flow-store.ts'
 import {
   type BoundRun,
   decideRunBinding,
@@ -554,21 +554,13 @@ function resolveStoredArtifact(
   branchTip: string | null,
 ): { ref: string; exists: boolean } {
   if (ref.kind === 'attached-text') {
-    const row = d
-      .query<
-        {
-          id: string
-          cursor_record_id: string
-          step_ordinal: number
-          step_slug: string
-          body: string
-        },
-        [string]
-      >(
-        `SELECT record_id id,cursor_record_id,step_ordinal,step_slug,body
-           FROM workflow_step_text WHERE record_id=?`,
-      )
-      .get(ref.id)
+    const row = taskFlowStore(d).textAttachmentByRecordId<{
+      id: string
+      cursor_record_id: string
+      step_ordinal: number
+      step_slug: string
+      body: string
+    }>(ref.id)
     const attachment: WorkflowTextRow | null = row
       ? {
           id: row.id,
@@ -754,20 +746,13 @@ function gatherTask(
 }
 
 function gatherSatisfy(id: string, cursorId: string, d: Database): ValidatedEvidence['satisfy'] {
-  const row = d
-    .query<
-      WorkflowObligationFloorRow & {
-        cursor_record_id: string
-        satisfied_at: string | null
-        abandoned_at: string | null
-      },
-      [string]
-    >(
-      `SELECT ${WORKFLOW_OBLIGATION_FLOOR_COLUMNS},cursor_record_id,
-              satisfied_at,abandoned_at
-         FROM workflow_obligation WHERE record_id=?`,
-    )
-    .get(id)
+  const row = taskFlowStore(d).obligationByRecordId<
+    WorkflowObligationFloorRow & {
+      cursor_record_id: string
+      satisfied_at: string | null
+      abandoned_at: string | null
+    }
+  >(id)
   if (!row) return { id, found: false }
   const floor = floorFromObligationRow(row)
   return {

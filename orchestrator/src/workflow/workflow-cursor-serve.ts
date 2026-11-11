@@ -24,6 +24,7 @@ import {
   selectUntouchedKeylessWorkflowCursor,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
+import { taskFlowStore } from './task-flow-store.ts'
 import { type CursorTrailEntry, isClosedStep } from './workflow-cursor-trail.ts'
 import {
   cursorValue,
@@ -230,38 +231,28 @@ async function applyServeTransition(
     context.taskFlowClient,
   )
   writeTransaction(() => {
-    const current = database
-      .query<{ revision: number }, [string]>(
-        'SELECT revision FROM workflow_cursor WHERE record_id=?',
-      )
-      .get(row.record_id)
-    if (!current || current.revision !== row.revision)
+    const store = taskFlowStore(database)
+    const currentRevision = store.stageRevision(row.record_id)
+    if (currentRevision !== row.revision)
       throw new Error(
         `workflow cursor ${row.id} changed while its step was served; rerun the command`,
       )
     if ((decision.move || decision.resume) && row.state === 'awaiting-ruling')
       closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, database)
     const revision = hosted?.revisions[row.record_id] ?? row.revision + 1
-    database
-      .query(
-        `UPDATE workflow_cursor SET args=?,closed=?,ordinal=?,step_slug=?,state=?,question=?,
-         session_id=COALESCE(?,session_id),updated_at=?,opened_machine_id=COALESCE(opened_machine_id,?),
-         last_advanced_machine_id=?,revision=? WHERE record_id=?`,
-      )
-      .run(
-        resolvedArguments?.encoded ?? row.args,
-        resolvedArguments?.closed ?? row.closed,
-        decision.move || decision.resume ? decision.ordinal : row.ordinal,
-        decision.move || decision.resume ? decision.slug : row.step_slug,
-        decision.move || decision.resume ? 'running' : row.state,
-        decision.move || decision.resume ? null : row.question,
-        context.session ?? null,
-        at,
-        machineId(),
-        machineId(),
-        revision,
-        row.record_id,
-      )
+    store.updateServedStage({
+      recordId: row.record_id,
+      argumentsJson: resolvedArguments?.encoded ?? row.args,
+      closedJson: resolvedArguments?.closed ?? row.closed,
+      ordinal: decision.move || decision.resume ? decision.ordinal : row.ordinal,
+      stepSlug: decision.move || decision.resume ? decision.slug : row.step_slug,
+      state: decision.move || decision.resume ? 'running' : row.state,
+      question: decision.move || decision.resume ? null : row.question,
+      sessionId: context.session ?? null,
+      updatedAt: at,
+      machineId: machineId(),
+      revision,
+    })
     row.revision = revision
     if (resolvedArguments) {
       row.args = resolvedArguments.encoded

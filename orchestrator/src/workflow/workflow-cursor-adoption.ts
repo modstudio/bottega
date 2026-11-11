@@ -16,6 +16,7 @@ import {
   selectTaskFlowStage,
   vacateRetiredWorkflowKeySlot,
 } from './task-flow.ts'
+import { taskFlowStore } from './task-flow-store.ts'
 
 type AdoptionCursor = {
   id: number
@@ -37,9 +38,13 @@ function assignWorkflowTaskKey(
 ): void {
   vacateRetiredWorkflowKeySlot(row.project, row.workflow_slug, row.mode_slug, key, d)
   const adoptedArgs = { ...(JSON.parse(row.args) as Record<string, string>), key }
-  d.query(
-    "UPDATE workflow_cursor SET workflow_key=?,task_record_id=?,instance_id='',args=?,updated_at=? WHERE record_id=?",
-  ).run(key, taskRecordId, JSON.stringify(adoptedArgs), nowIso(), row.record_id)
+  taskFlowStore(d).assignStageTaskKey({
+    recordId: row.record_id,
+    workflowKey: key,
+    taskRecordId,
+    argumentsJson: JSON.stringify(adoptedArgs),
+    updatedAt: nowIso(),
+  })
   row.workflow_key = key
   row.task_record_id = taskRecordId
   row.args = JSON.stringify(adoptedArgs)
@@ -115,12 +120,8 @@ export async function adoptWorkflowTask(
       stageRevision = updated?.revisions[row.record_id] ?? stageRevision
     }
     writeTransaction(() => {
-      const current = d
-        .query<{ revision: number }, [string]>(
-          'SELECT revision FROM workflow_cursor WHERE record_id=?',
-        )
-        .get(row.record_id)
-      if (!current || current.revision !== row.revision)
+      const currentRevision = taskFlowStore(d).stageRevision(row.record_id)
+      if (currentRevision !== row.revision)
         throw new Error(
           `workflow cursor ${row.id} changed while adopting ${key}; rerun the command`,
         )
@@ -164,12 +165,10 @@ function conflictingAdoptionCursor(
   key: string,
   database: Database,
 ): { id: number } | null {
-  return database
-    .query<{ id: number }, [string, string, string, string]>(
-      `SELECT number id FROM workflow_cursor
-       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-         AND workflow_slug=? AND mode_slug=? AND workflow_key=?
-         AND state NOT IN ('done','abandoned') LIMIT 1`,
-    )
-    .get(row.project, row.workflow_slug, row.mode_slug, key)
+  return taskFlowStore(database).stageHoldingTaskKey({
+    project: row.project,
+    workflow: row.workflow_slug,
+    mode: row.mode_slug,
+    key,
+  })
 }

@@ -23,6 +23,7 @@ import {
   type SelectableCursorRow,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
+import { taskFlowStore } from './task-flow-store.ts'
 import { decideWorkflowRuleAnswer, pinnedWorkflowRuleStep } from './workflow-rule-answer.ts'
 import { linkResolvedWorkflowTask } from './workflow-task-linking.ts'
 
@@ -131,12 +132,9 @@ function applyWorkflowRulingLocally(input: {
 }): { summary: string; questionId: number } {
   const { row, question, database } = input
   return writeTransaction(() => {
-    const current = database
-      .query<{ revision: number }, [string]>(
-        'SELECT revision FROM workflow_cursor WHERE record_id=?',
-      )
-      .get(row.record_id)
-    if (!current || current.revision !== row.revision)
+    const store = taskFlowStore(database)
+    const currentRevision = store.stageRevision(row.record_id)
+    if (currentRevision !== row.revision)
       throw new Error(
         `workflow cursor ${row.id} changed while its ruling was recorded; rerun the command`,
       )
@@ -154,20 +152,13 @@ function applyWorkflowRulingLocally(input: {
       },
       database,
     )
-    database
-      .query(
-        `UPDATE workflow_cursor SET state='running',question=NULL,
-         session_id=COALESCE(session_id,?),updated_at=?,opened_machine_id=COALESCE(opened_machine_id,?),
-         last_advanced_machine_id=?,revision=? WHERE record_id=?`,
-      )
-      .run(
-        input.context.session ?? null,
-        input.at,
-        machineId(),
-        machineId(),
-        input.revision,
-        row.record_id,
-      )
+    store.resumeStageAfterRuling({
+      recordId: row.record_id,
+      sessionId: input.context.session ?? null,
+      updatedAt: input.at,
+      machineId: machineId(),
+      revision: input.revision,
+    })
     return {
       summary: `${cursorName(row.workflow_slug, row.mode_slug, row.workflow_key, true)} is running at step ${row.ordinal + 1} ${row.step_slug}.`,
       questionId: question.number,

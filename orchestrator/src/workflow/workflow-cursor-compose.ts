@@ -28,6 +28,7 @@ import {
   type WorkflowCursorInsert,
 } from './task-flow.ts'
 import { taskFlowState } from './task-flow-decision.ts'
+import { taskFlowStore } from './task-flow-store.ts'
 import {
   type CommitCountPort,
   readCommitsPastLanding,
@@ -79,20 +80,13 @@ function keylessComposeOrdinal(
   machine: string,
   database: Database,
 ): number {
-  return database
-    .query<{ n: number }, [string, string, string, string | null, string | null, string]>(
-      `SELECT COUNT(*)+1 n FROM workflow_cursor
-       WHERE project_record_id=? AND workflow_slug=? AND mode_slug=? AND workflow_key=''
-         AND (session_id=? OR (? IS NULL AND session_id IS NULL AND opened_machine_id=?))`,
-    )
-    .get(
-      projectRecordId,
-      composition.workflow.slug,
-      composition.mode!.slug,
-      context.session ?? null,
-      context.session ?? null,
-      machine,
-    )!.n
+  return taskFlowStore(database).nextKeylessInstanceSlot({
+    projectRecordId,
+    workflow: composition.workflow.slug,
+    mode: composition.mode!.slug,
+    sessionId: context.session ?? null,
+    machineId: machine,
+  })
 }
 
 function readComposeFacts(
@@ -107,11 +101,7 @@ function readComposeFacts(
     .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
     .get(composition.project)!.record_id
   const existingFlow = context.taskRecordId
-    ? database
-        .query<{ record_id: string; revision: number }, [string]>(
-          'SELECT record_id,revision FROM task_flow WHERE task_record_id=?',
-        )
-        .get(context.taskRecordId)
+    ? taskFlowStore(database).flowForTask(context.taskRecordId)
     : null
   if (context.taskRecordId && key)
     refuseTaskFlowStageConflict(
@@ -293,9 +283,7 @@ function applyHostedCompose(
     facts.flowRecordId
   return writeTransaction(() => {
     if (facts.existingFlow) {
-      const current = database
-        .query<{ revision: number }, [string]>('SELECT revision FROM task_flow WHERE record_id=?')
-        .get(facts.existingFlow.record_id)
+      const current = taskFlowStore(database).flowState(facts.existingFlow.record_id)
       if (!current || current.revision !== facts.existingFlow.revision)
         throw new Error(
           `task flow ${facts.existingFlow.record_id} changed while composing; rerun the command`,
@@ -326,14 +314,10 @@ function applyHostedCompose(
       )
     if (!hosted) {
       stampWorkflowCursorMachine(stored, stored === facts.rowInput.recordId ? 0 : 1, database)
-      const local = database
-        .query('SELECT number id,* FROM workflow_cursor WHERE record_id=?')
-        .get(stored) as SelectableCursorRow
+      const local = taskFlowStore(database).stageByRecordId(stored) as SelectableCursorRow
       local.task_flow_record_id = attachLocalComposition(local, composition, context, database)
     }
-    return database
-      .query('SELECT number id,* FROM workflow_cursor WHERE record_id=?')
-      .get(stored) as SelectableCursorRow
+    return taskFlowStore(database).stageByRecordId(stored) as SelectableCursorRow
   }, database)
 }
 
@@ -383,9 +367,7 @@ function cacheComposeReplay(
         },
         database,
       )
-    return database
-      .query('SELECT number id,* FROM workflow_cursor WHERE record_id=?')
-      .get(stored) as SelectableCursorRow
+    return taskFlowStore(database).stageByRecordId(stored) as SelectableCursorRow
   }, database)
 }
 
@@ -420,11 +402,7 @@ async function recoverComposeConflict(
     throw new Error(
       `${error.message}; close or abandon the stage holding this workflow slot, then retry`,
     )
-  const alreadyCached = database
-    .query<{ record_id: string }, [string]>(
-      'SELECT record_id FROM workflow_cursor WHERE record_id=?',
-    )
-    .get(replay.stage.id)
+  const alreadyCached = taskFlowStore(database).hasStage(replay.stage.id)
   if (!alreadyCached) return cacheComposeReplay(replay, facts, composition, context, database)
   if (facts.key || keylessSiblingRetry) throw error
   return insertWorkflowCursor(composition, context, database, autonomy, commitCount, true)

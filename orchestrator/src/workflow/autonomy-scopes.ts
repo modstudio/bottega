@@ -14,6 +14,7 @@ import { readMachineAutonomy } from '../../../shared/machine-config.ts'
 import { recordConfigCallOutcome } from '../config/hosted-config-call-outcome.ts'
 import { db } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
+import { taskFlowStore } from './task-flow-store.ts'
 import {
   type AutonomyLayerRow,
   type AutonomyPreset,
@@ -274,14 +275,7 @@ function workflowRulingsSnapshot(
   d: Database = db(),
 ): AutonomyResolution['rulings'] | null {
   if (!taskRecordId) return null
-  const rows = d
-    .query(
-      `SELECT autonomy FROM workflow_cursor
-       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-         AND task_record_id=? AND state IN ('running','awaiting-ruling')
-       ORDER BY updated_at DESC,number DESC`,
-    )
-    .all(project, taskRecordId) as { autonomy: string | null }[]
+  const rows = taskFlowStore(d).activeStageAutonomy(project, taskRecordId)
   return combineRulingsSnapshots(
     rows.flatMap((row) => {
       if (!row.autonomy) return []

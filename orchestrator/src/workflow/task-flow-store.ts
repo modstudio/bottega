@@ -169,6 +169,155 @@ export interface TaskFlowStore {
     revision: number
     open_stage_cursor_record_id: string | null
   } | null
+  textsForStage<T extends object>(stageRecordId: string): T[]
+  textByRecordId<T extends object>(recordId: string): T | null
+  textAttachmentByRecordId<T extends object>(recordId: string): T | null
+  insertText(input: {
+    recordId: string
+    stageRecordId: string
+    stepOrdinal: number
+    stepSlug: string
+    body: string
+    createdAt: string
+  }): string | null
+  textRecordIdsForStage(stageRecordId: string): string[]
+  copiedTextRecordIdsForStage(stageRecordId: string): string[]
+  deleteTexts(recordIds: readonly string[]): void
+  stageProject(recordId: string): string | null
+  uncopiedTextsForStage<T extends object>(stageRecordId: string): T[]
+  recordTextCopy(input: {
+    recordId: string
+    textRecordId: string
+    stageRecordId: string
+    documentReference: string
+    copiedAt: string
+  }): void
+  liveTextAttachment(recordId: string): { cursor: number; step_slug: string; body: string } | null
+  copiedTextReference(recordId: string): string | null
+  openObligationRecordIds(stageRecordId: string): string[]
+  openObligations<T extends object>(stageRecordId: string): T[]
+  obligationByRecordId<T extends object>(recordId: string): T | null
+  nextKeylessInstanceSlot(input: {
+    projectRecordId: string
+    workflow: string
+    mode: string
+    sessionId: string | null
+    machineId: string
+  }): number
+  flowForTask(taskRecordId: string): { record_id: string; revision: number } | null
+  hasStage(recordId: string): boolean
+  assignStageTaskKey(input: {
+    recordId: string
+    workflowKey: string
+    taskRecordId: string | null
+    argumentsJson: string
+    updatedAt: string
+  }): void
+  stagesNeedingTaskLink(project: string, workflowKey: string): Array<{
+    record_id: string
+    revision: number
+    updated_at: string
+  }>
+  linkUnhostedStagesToTask(input: {
+    taskRecordId: string
+    project: string
+    workflowKey: string
+  }): number
+  unlinkedLabelHolder(input: {
+    project: string
+    workflow: string
+    mode: string
+    key: string
+  }): number | null
+  updateReusedStage(input: {
+    recordId: string
+    argumentsJson: string
+    closedJson: string
+    sessionId: string | null
+    updatedAt: string
+    revision: number
+  }): void
+  updateServedStage(input: {
+    recordId: string
+    argumentsJson: string
+    closedJson: string
+    ordinal: number
+    stepSlug: string
+    state: string
+    question: string | null
+    sessionId: string | null
+    updatedAt: string
+    machineId: string
+    revision: number
+  }): void
+  resumeStageAfterRuling(input: {
+    recordId: string
+    sessionId: string | null
+    updatedAt: string
+    machineId: string
+    revision: number
+  }): void
+  awaitStageRuling(input: {
+    recordId: string
+    argumentsJson: string
+    closedJson: string
+    question: string
+    sessionId: string | null
+    updatedAt: string
+    machineId: string
+    revision: number
+  }): void
+  abandonOpenObligations(stageRecordId: string, at: string, reason: string): void
+  abandonStage(input: {
+    recordId: string
+    closedJson: string
+    sessionId: string | null
+    updatedAt: string
+    machineId: string
+    revision: number
+  }): void
+  clearFlowOpenStage(input: {
+    recordId: string
+    updatedAt: string
+    machineId: string
+    revision: number
+  }): void
+  insertObligation(input: {
+    id: string
+    stageRecordId: string
+    stepOrdinal: number
+    stepSlug: string
+    floor: string
+    requirePullRequest: boolean
+    operatorRuling: boolean
+    expectedExitCode: number
+    expectedStatus: string
+    floorDeferrable: boolean
+    reason: string
+    sessionId: string | null
+    createdAt: string
+  }): void
+  satisfyObligation(input: {
+    id: string
+    stageRecordId: string
+    satisfiedAt?: string | null
+    satisfiedStepOrdinal?: number | null
+    satisfiedStepSlug?: string | null
+    satisfiedEvidence?: unknown
+  }): void
+  advanceStage(input: {
+    recordId: string
+    argumentsJson: string
+    ordinal: number
+    stepSlug: string
+    state: string
+    closedJson: string
+    sessionId: string | null
+    updatedAt: string
+    takenOverFromMachineId: string | null
+    machineId: string
+    revision: number
+  }): void
 }
 
 /** The single task-flow persistence seam. Hosted selection is added in part 2c-2. */
