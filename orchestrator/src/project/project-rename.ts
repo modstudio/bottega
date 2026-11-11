@@ -2,6 +2,7 @@
 /** Owns an atomic local project rename and register-row update. */
 import type { Database } from 'bun:sqlite'
 import { db, writeTransaction } from '../database/db.ts'
+import { taskFlowStore } from '../workflow/task-flow-store.ts'
 import { upsertProject } from './projects.ts'
 
 const PROJECT_ID_NAME_COLUMNS = [
@@ -25,7 +26,6 @@ const PROJECT_NAME_ONLY_COLUMNS = [
   ['presence', 'project'],
   ['release_ledger', 'project'],
   ['worker_note_request', 'project'],
-  ['workflow_cursor', 'project'],
 ] as const
 
 export function applyLocalProjectRename(
@@ -48,6 +48,7 @@ export function applyLocalProjectRename(
   for (const [table, column] of PROJECT_NAME_ONLY_COLUMNS) {
     database.query(`UPDATE ${table} SET ${column}=? WHERE ${column}=?`).run(nextName, currentName)
   }
+  taskFlowStore(database).renameStageProject(currentName, nextName)
   database.query('UPDATE project SET name=? WHERE record_id=?').run(nextName, current.recordId)
 }
 

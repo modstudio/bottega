@@ -3,8 +3,8 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { type Floor, isFloorKind, type OpenObligation } from './workflow-floor.ts'
 import { taskFlowStore } from './task-flow-store.ts'
+import { type Floor, isFloorKind, type OpenObligation } from './workflow-floor.ts'
 
 export type WorkflowObligationFloorRow = {
   id: string

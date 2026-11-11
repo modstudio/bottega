@@ -19,6 +19,7 @@ import { questionOpenSql } from '../run/question-open.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from '../run/run-authority.ts'
 import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
+import { taskFlowStore } from '../workflow/task-flow-store.ts'
 
 type WaitingCause = { rulings: 'agent' | 'user'; relayed: boolean; answered: boolean }
 export const questionAwaitingOperator = (cause: WaitingCause): boolean =>
@@ -233,14 +234,7 @@ function operatorWaitingWithEpisodes(
     root_number: number
     root_record_id: string
   }>
-  const workflows = d
-    .query(
-      `SELECT c.number id,c.record_id workflow_cursor_record_id,c.project,q.record_id question_record_id,q.workflow_key task_key,q.question,q.asked_at waiting_since,
-              c.workflow_slug,c.mode_slug,c.args,c.session_id
-         FROM workflow_cursor c JOIN question q ON q.workflow_cursor_record_id=c.record_id
-        WHERE c.state='awaiting-ruling' AND ${questionOpenSql('q')}`,
-    )
-    .all() as WorkflowWaitingRow[]
+  const workflows = taskFlowStore(d).waitingWorkflowQuestions<WorkflowWaitingRow>()
   return [
     ...questions.map((row) => ({
       episode: row.awaiting_operator_at,

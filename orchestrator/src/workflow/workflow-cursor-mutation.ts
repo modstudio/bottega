@@ -10,11 +10,11 @@ import {
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { closeQuestions } from '../run/question-close.ts'
 import { questionOpenSql } from '../run/question-open.ts'
+import { taskFlowStore } from './task-flow-store.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import { refuseTerminalCursor } from './workflow-cursor-result.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import type { CursorTrailEntry } from './workflow-cursor-trail.ts'
-import { taskFlowStore } from './task-flow-store.ts'
 import { deleteWorkflowTextLocally, workflowTextDeletionIds } from './workflow-text.ts'
 
 export function closeOpenWorkflowQuestion(
@@ -45,9 +45,7 @@ export async function abandonWorkflowCursor(
   const store = taskFlowStore(d)
   const obligations = store.openObligationRecordIds(row.record_id)
   const deleteTextIds = workflowTextDeletionIds(row.record_id, Boolean(row.task_record_id), d)
-  const flow = row.task_flow_record_id
-    ? store.flowState(row.task_flow_record_id)
-    : null
+  const flow = row.task_flow_record_id ? store.flowState(row.task_flow_record_id) : null
   const closesOpenStage = flow?.open_stage_cursor_record_id === row.record_id
   const parts = abandonmentRevisionParts(row, flow)
   const hosted = await writeHostedTaskFlow(

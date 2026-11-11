@@ -3,6 +3,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { taskFlowStore } from '../workflow/task-flow-store.ts'
 import { auditQuestionMutation, authorizeWorkflowQuestionMutation } from './question-mutation.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import { rulingActor } from './question-vocabulary.ts'
@@ -52,15 +53,7 @@ export function overturnRuling(input: {
   fromOperator: boolean
 }) {
   writableDb()
-  const row = db()
-    .query(
-      `SELECT q.number,q.record_id,q.run_record_id,COALESCE(owner.parent_run_record_id,owner.record_id) root_id,
-              q.workflow_cursor_record_id,c.session_id workflow_owner,c.updated_at workflow_updated_at,
-              q.answered_at,q.overturned_at,q.overturned_by,q.overturned_by_name,q.overturn_reason,q.replacement
-         FROM question q LEFT JOIN run owner ON owner.record_id=q.run_record_id
-         LEFT JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id WHERE q.record_id=?`,
-    )
-    .get(input.questionId) as OverturnRow | null
+  const row = taskFlowStore(db()).overturnRulingRow<OverturnRow>(input.questionId)
   if (!row)
     throw new Error(
       `no question ${input.questionId}; inspect question ids with ${PLATFORM_SLUG} question inbox --all`,

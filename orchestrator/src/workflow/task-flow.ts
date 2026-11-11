@@ -12,9 +12,9 @@ import {
   taskFlowState,
 } from './task-flow-decision.ts'
 import {
-  taskFlowStore,
   type TaskFlowProjectionRow,
   type TaskFlowStageCursorRow,
+  taskFlowStore,
   type WorkflowCursorInsert,
 } from './task-flow-store.ts'
 
@@ -101,10 +101,6 @@ export function cacheAdoptedTaskFlow(
     state: taskFlowState(input.statusCategory),
     machineId: machine,
   })
-}
-
-function stampTaskFlowMachine(flowRecordId: string, d: Database): void {
-  taskFlowStore(d).stampFlowMachine(flowRecordId, machineId())
 }
 
 export function stampWorkflowCursorMachine(

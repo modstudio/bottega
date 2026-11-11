@@ -2,13 +2,14 @@
 /** Carries the local task-flow SQL behind TaskFlowStore. */
 
 import type { Database } from 'bun:sqlite'
+import { questionOpenSql } from '../run/question-open.ts'
 import type {
   TaskFlowProjectionRow,
   TaskFlowStageCursorRow,
   TaskFlowStore,
   WorkflowCursorInsert,
 } from './task-flow-store.ts'
-import { questionOpenSql } from '../run/question-open.ts'
+import * as questions from './task-flow-store-sqlite-questions.ts'
 
 const LISTED_STAGE_COLUMNS =
   "number id,record_id,project,workflow_slug,mode_slug,workflow_key,task_record_id,task_flow_record_id,instance_id,session_id,ordinal,step_slug,state,workflow_version_record_id,catalogue_version_record_id,(SELECT n FROM workflow_version WHERE record_id=workflow_version_record_id) workflow_version,(SELECT n FROM step_catalogue_version WHERE record_id=catalogue_version_record_id) catalogue_version,args,autonomy,closed,question,total_steps,created_at,updated_at,enforcement,opened_machine_id,taken_over_from_machine_id,last_advanced_machine_id,revision,(SELECT COUNT(*) FROM workflow_cursor stage WHERE stage.task_flow_record_id=workflow_cursor.task_flow_record_id AND stage.state NOT IN ('done','abandoned')) open_stage_count"
@@ -191,11 +192,7 @@ class SqliteTaskFlowStore implements TaskFlowStore {
       .run(machineId, machineId, flowRecordId)
   }
 
-  stampStageMachine(
-    cursorRecordId: string,
-    revisionIncrement: 0 | 1,
-    machineId: string,
-  ): void {
+  stampStageMachine(cursorRecordId: string, revisionIncrement: 0 | 1, machineId: string): void {
     this.database
       .query(
         `UPDATE workflow_cursor SET opened_machine_id=COALESCE(opened_machine_id,?),
@@ -259,9 +256,7 @@ class SqliteTaskFlowStore implements TaskFlowStore {
       .run(input.flowRecordId, input.cursorRecordId)
     this.stampStageMachine(input.cursorRecordId, 1, input.machineId)
     this.database
-      .query(
-        'UPDATE task_flow SET open_stage_cursor_record_id=?,updated_at=? WHERE record_id=?',
-      )
+      .query('UPDATE task_flow SET open_stage_cursor_record_id=?,updated_at=? WHERE record_id=?')
       .run(input.cursorRecordId, input.at, input.flowRecordId)
     this.stampFlowMachine(input.flowRecordId, input.machineId)
   }
@@ -956,6 +951,90 @@ class SqliteTaskFlowStore implements TaskFlowStore {
         input.revision,
         input.recordId,
       )
+  }
+
+  closeOutShipTaskStage<T extends object>(sessionId: string, project: string, branch: string): T[] {
+    return questions.closeOutShipTaskStage<T>(this.database, sessionId, project, branch)
+  }
+
+  waitingWorkflowQuestions<T extends object>(): T[] {
+    return questions.waitingWorkflowQuestions<T>(this.database)
+  }
+
+  cursorWorkForSession<T extends object>(sessionId: string): T[] {
+    return questions.cursorWorkForSession<T>(this.database, sessionId)
+  }
+
+  cursorLifecycleForSession<T extends object>(sessionId: string): T[] {
+    return questions.cursorLifecycleForSession<T>(this.database, sessionId)
+  }
+
+  openStagesForSession<T extends object>(sessionId: string): T[] {
+    return questions.openStagesForSession<T>(this.database, sessionId)
+  }
+
+  openWorkflowQuestionCountForSession(sessionId: string): number {
+    return questions.openWorkflowQuestionCountForSession(this.database, sessionId)
+  }
+
+  workflowInboxQuestions<T extends object>(): T[] {
+    return questions.workflowInboxQuestions<T>(this.database)
+  }
+
+  rulingRows<T extends object>(input: {
+    kind: 'workflow' | 'run' | 'all'
+    since?: string
+    after: number | null
+    cursor: number | null
+  }): T[] {
+    return questions.rulingRows<T>(this.database, input)
+  }
+
+  rulingFileQuestion<T extends object>(questionId: string): T | null {
+    return questions.rulingFileQuestion<T>(this.database, questionId)
+  }
+
+  questionOutboxRow<T extends object>(questionId: string): T | null {
+    return questions.questionOutboxRow<T>(this.database, questionId)
+  }
+
+  questionCloseFacts<T extends object>(questionId: string): T | null {
+    return questions.questionCloseFacts<T>(this.database, questionId)
+  }
+
+  overturnRulingRow<T extends object>(questionId: string): T | null {
+    return questions.overturnRulingRow<T>(this.database, questionId)
+  }
+
+  unlinkedWorkflowQuestionIds(project: string, workflowKey: string): string[] {
+    return questions.unlinkedWorkflowQuestionIds(this.database, project, workflowKey)
+  }
+
+  pendingTaskLinks<T extends object>(table: 'workflow_cursor' | 'question'): T[] {
+    return questions.pendingTaskLinks<T>(this.database, table)
+  }
+
+  linkedTaskReferences<T extends object>(table: 'workflow_cursor' | 'question'): T[] {
+    return questions.linkedTaskReferences<T>(this.database, table)
+  }
+
+  projectReferenceCounts(projectRecordId: string): {
+    workflow_cursor: number
+    task_flow: number
+  } {
+    return questions.projectTaskFlowReferenceCounts(this.database, projectRecordId)
+  }
+
+  renameStageProject(currentName: string, nextName: string): void {
+    questions.renameStageProject(this.database, currentName, nextName)
+  }
+
+  taskRulingRows<T extends object>(project: string, taskRecordId: string, limit: number): T[] {
+    return questions.taskRulingRows<T>(this.database, project, taskRecordId, limit)
+  }
+
+  localQuestionProjects(): Array<{ project: string | null }> {
+    return questions.localQuestionProjects(this.database)
   }
 }
 

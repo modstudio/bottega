@@ -431,19 +431,7 @@ export function localQuestionCountForSpace(
   activeSpace: { id: string; slug: string },
 ): number {
   const projectSpaces = new Map(projects.map((project) => [project.name, project.space]))
-  const rows = database
-    .query<{ project: string | null }, []>(
-      `SELECT COALESCE(run_project.name,cursor.project) AS project
-       FROM question q
-       LEFT JOIN run r ON r.record_id=q.run_record_id
-       LEFT JOIN project run_project ON run_project.record_id=r.project_record_id
-       LEFT JOIN workflow_cursor cursor ON cursor.record_id=q.workflow_cursor_record_id
-      WHERE q.run_record_id IS NULL OR EXISTS (
-        SELECT 1 FROM outbox o
-         WHERE o.kind='run' AND o.row_id=r.record_id AND o.synced_at IS NOT NULL
-      )`,
-    )
-    .all()
+  const rows = taskFlowStore(database).localQuestionProjects()
   return rows.filter((row) => {
     const space = row.project ? projectSpaces.get(row.project) : null
     const effectiveSpace = space ?? activeSpace.id
@@ -762,3 +750,5 @@ export async function diagnoseRecord(
     agentCredentialChecks: credentialChecks,
   })
 }
+
+import { taskFlowStore } from '../workflow/task-flow-store.ts'

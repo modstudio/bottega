@@ -15,6 +15,7 @@ import {
 } from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
+import { taskFlowStore } from './task-flow-store.ts'
 import { abandonSelectedWorkflowCursorForClose, nextWorkflowStep } from './workflow-cursor.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import {
@@ -44,7 +45,6 @@ import {
   workflowTextAttachmentId,
   workflowTextAttachmentToken,
 } from './workflow-text.ts'
-import { taskFlowStore } from './task-flow-store.ts'
 
 export type WorkflowTaskDocument = { reference: string; title: string }
 export type WorkflowTextDocumentPorts = {

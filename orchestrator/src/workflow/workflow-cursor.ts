@@ -14,6 +14,7 @@ import {
 import { upsertWorkflowQuestion } from '../run/question-mutation.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
 import { decideWorkflowTakeover, workflowTakeoverNotice } from './task-flow-decision.ts'
+import { taskFlowStore } from './task-flow-store.ts'
 import {
   type CommitCountPort,
   readCommitsPastLanding,
@@ -37,7 +38,6 @@ import {
   selectWorkflowCursorForClose,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
-import { taskFlowStore } from './task-flow-store.ts'
 import { cursorComposition } from './workflow-cursor-serve.ts'
 import {
   type ClosedStep,

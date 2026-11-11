@@ -6,6 +6,7 @@ import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { type Project, projectForTaskKey, projects } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
+import { taskFlowStore } from '../workflow/task-flow-store.ts'
 import { linkWorkflowTaskLabel } from '../workflow/workflow-task-linking.ts'
 import {
   type HubTaskKeyMap,
@@ -99,11 +100,8 @@ type LocalTaskLinkConfig = HostedFirstTaskLinkConfig | SynchronousTaskLinkConfig
 const LOCAL_TASK_LINKS = {
   workflow_cursor: {
     regime: 'hosted-first',
-    pendingSql: `SELECT c.record_id id,c.workflow_key task_key,p.name project
-      FROM workflow_cursor c JOIN project p ON p.record_id=c.project_record_id
-      WHERE c.task_record_id IS NULL AND c.workflow_key<>''`,
-    linkedSql: `SELECT c.task_record_id,p.name project FROM workflow_cursor c
-      JOIN project p ON p.record_id=c.project_record_id WHERE c.task_record_id IS NOT NULL`,
+    pendingSql: '',
+    linkedSql: '',
     write: (database, update, taskFlowClient) =>
       linkWorkflowTaskLabel(
         database,
@@ -117,14 +115,8 @@ const LOCAL_TASK_LINKS = {
   },
   question: {
     regime: 'synchronous',
-    pendingSql: `SELECT q.record_id id,q.workflow_key task_key,p.name project
-      FROM question q JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
-      JOIN project p ON p.record_id=c.project_record_id
-      WHERE q.workflow_task_record_id IS NULL AND q.workflow_key IS NOT NULL`,
-    linkedSql: `SELECT q.workflow_task_record_id task_record_id,p.name project
-      FROM question q JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
-      JOIN project p ON p.record_id=c.project_record_id
-      WHERE q.workflow_task_record_id IS NOT NULL`,
+    pendingSql: '',
+    linkedSql: '',
     write: (database, update) => {
       linkWorkflowQuestionsTaskReference(
         {
@@ -563,6 +555,8 @@ function deriveLocalTaskLinks(
 }
 
 function localTaskLinkRows(database: Database, table: LocalTaskLinkTable): LocalTaskLinkRow[] {
+  if (table === 'workflow_cursor' || table === 'question')
+    return taskFlowStore(database).pendingTaskLinks<LocalTaskLinkRow>(table)
   return database.query<LocalTaskLinkRow, []>(LOCAL_TASK_LINKS[table].pendingSql).all()
 }
 
@@ -656,9 +650,17 @@ export async function runTaskReferenceDoctorLine(): Promise<string> {
     const tasks = await hubTaskMap(projects())
     const database = db()
     const related = localTaskLinkTables().map((table) => {
-      const rows = database
-        .query<{ task_record_id: string; project: string }, []>(LOCAL_TASK_LINKS[table].linkedSql)
-        .all()
+      const rows =
+        table === 'workflow_cursor' || table === 'question'
+          ? taskFlowStore(database).linkedTaskReferences<{
+              task_record_id: string
+              project: string
+            }>(table)
+          : database
+              .query<{ task_record_id: string; project: string }, []>(
+                LOCAL_TASK_LINKS[table].linkedSql,
+              )
+              .all()
       const invalid = rows.filter(
         (row) =>
           tasks.byProjectId.get(projectTaskRecordKey(row.project, row.task_record_id))

@@ -14,7 +14,6 @@ import { readMachineAutonomy } from '../../../shared/machine-config.ts'
 import { recordConfigCallOutcome } from '../config/hosted-config-call-outcome.ts'
 import { db } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
-import { taskFlowStore } from './task-flow-store.ts'
 import {
   type AutonomyLayerRow,
   type AutonomyPreset,
@@ -37,6 +36,7 @@ import {
   writeSessionContextCache,
 } from './session-context-cache.ts'
 import type { CatalogueStep } from './step-catalogue.ts'
+import { taskFlowStore } from './task-flow-store.ts'
 import { combineCursorRulings } from './workflow-cursor-autonomy.ts'
 
 export const HOSTED_AUTONOMY_TIMEOUT_MS = 2000

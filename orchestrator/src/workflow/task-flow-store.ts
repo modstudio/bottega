@@ -2,9 +2,9 @@
 /** Names the task-flow questions and write intents used by the workflow engine. */
 
 import type { Database } from 'bun:sqlite'
+import { sqliteTaskFlowStore } from './task-flow-store-sqlite.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
 import type { EnforcementMode } from './workflow-floor.ts'
-import { sqliteTaskFlowStore } from './task-flow-store-sqlite.ts'
 
 export type TaskFlowStageCursorRow = {
   id: number
@@ -103,11 +103,7 @@ export interface TaskFlowStore {
     machineId: string
   }): void
   stampFlowMachine(flowRecordId: string, machineId: string): void
-  stampStageMachine(
-    cursorRecordId: string,
-    revisionIncrement: 0 | 1,
-    machineId: string,
-  ): void
+  stampStageMachine(cursorRecordId: string, revisionIncrement: 0 | 1, machineId: string): void
   projectFlow(input: {
     recordId: string
     project: string
@@ -145,10 +141,7 @@ export interface TaskFlowStore {
     key: string
     sessionId: string
   }): Array<{ mode_slug: string }>
-  listOpenStages<T extends object>(input: {
-    project?: string
-    sessionId?: string
-  }): T[]
+  listOpenStages<T extends object>(input: { project?: string; sessionId?: string }): T[]
   openStageWorktrees(): Array<{
     number: number
     workflow: string
@@ -213,7 +206,10 @@ export interface TaskFlowStore {
     argumentsJson: string
     updatedAt: string
   }): void
-  stagesNeedingTaskLink(project: string, workflowKey: string): Array<{
+  stagesNeedingTaskLink(
+    project: string,
+    workflowKey: string,
+  ): Array<{
     record_id: string
     revision: number
     updated_at: string
@@ -318,6 +314,33 @@ export interface TaskFlowStore {
     machineId: string
     revision: number
   }): void
+  closeOutShipTaskStage<T extends object>(sessionId: string, project: string, branch: string): T[]
+  waitingWorkflowQuestions<T extends object>(): T[]
+  cursorWorkForSession<T extends object>(sessionId: string): T[]
+  cursorLifecycleForSession<T extends object>(sessionId: string): T[]
+  openStagesForSession<T extends object>(sessionId: string): T[]
+  openWorkflowQuestionCountForSession(sessionId: string): number
+  workflowInboxQuestions<T extends object>(): T[]
+  rulingRows<T extends object>(input: {
+    kind: 'workflow' | 'run' | 'all'
+    since?: string
+    after: number | null
+    cursor: number | null
+  }): T[]
+  rulingFileQuestion<T extends object>(questionId: string): T | null
+  questionOutboxRow<T extends object>(questionId: string): T | null
+  questionCloseFacts<T extends object>(questionId: string): T | null
+  overturnRulingRow<T extends object>(questionId: string): T | null
+  unlinkedWorkflowQuestionIds(project: string, workflowKey: string): string[]
+  pendingTaskLinks<T extends object>(table: 'workflow_cursor' | 'question'): T[]
+  linkedTaskReferences<T extends object>(table: 'workflow_cursor' | 'question'): T[]
+  projectReferenceCounts(projectRecordId: string): {
+    workflow_cursor: number
+    task_flow: number
+  }
+  renameStageProject(currentName: string, nextName: string): void
+  taskRulingRows<T extends object>(project: string, taskRecordId: string, limit: number): T[]
+  localQuestionProjects(): Array<{ project: string | null }>
 }
 
 /** The single task-flow persistence seam. Hosted selection is added in part 2c-2. */

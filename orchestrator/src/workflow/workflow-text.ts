@@ -8,11 +8,11 @@ import {
   writeHostedTaskFlow,
 } from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
+import { taskFlowStore } from './task-flow-store.ts'
 import type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { selectWorkflowCursor } from './workflow-cursor-selection.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
 import { linkWorkflowTaskLabel } from './workflow-task-linking.ts'
-import { taskFlowStore } from './task-flow-store.ts'
 
 export const WORKFLOW_TEXT_ATTACHMENT_MAX_BYTES = 32 * 1024
 export const WORKFLOW_TEXT_CURSOR_MAX_BYTES = 64 * 1024
@@ -325,7 +325,8 @@ export async function deleteWorkflowText(
   const ids = workflowTextDeletionIds(cursorId, linked, d)
   if (!ids.length) return
   const project = taskFlowStore(d).stageProject(cursorId)
-  if (!project) throw new Error(`workflow cursor ${cursorId} does not exist; retry with a live cursor`)
+  if (!project)
+    throw new Error(`workflow cursor ${cursorId} does not exist; retry with a live cursor`)
   await writeHostedTaskFlow(
     'delete-text',
     {

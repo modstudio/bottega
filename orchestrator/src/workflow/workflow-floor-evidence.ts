@@ -28,6 +28,7 @@ import { rulingStatus } from '../run/question-vocabulary.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { parseProbeArtifact, resolveProbeArtifact } from './probe-identifier.ts'
+import { taskFlowStore } from './task-flow-store.ts'
 import {
   type CheckoutResolution,
   checkoutOutsideChangeRefusal,
@@ -56,7 +57,6 @@ import {
   floorFromObligationRow,
   type WorkflowObligationFloorRow,
 } from './workflow-obligation-floor.ts'
-import { taskFlowStore } from './task-flow-store.ts'
 import {
   type BoundRun,
   decideRunBinding,

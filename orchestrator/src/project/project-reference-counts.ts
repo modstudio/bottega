@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite'
+import { taskFlowStore } from '../workflow/task-flow-store.ts'
 
 export const PROJECT_REFERENCES = [
   ['run', 'run', 'project_record_id'],
@@ -48,8 +49,10 @@ export function projectReferenceCounts(
   database: Database,
   projectRecordId: string,
 ): ProjectReferenceCounts {
+  const taskFlowCounts = taskFlowStore(database).projectReferenceCounts(projectRecordId)
   return Object.fromEntries(
     PROJECT_REFERENCES.map(([key, , column, explicitTable]) => {
+      if (key === 'workflow_cursor' || key === 'task_flow') return [key, taskFlowCounts[key]]
       const table = explicitTable ?? key
       const localOnly = LOCAL_CATALOGUE_REFERENCES.has(key) ? ' AND space_id IS NULL' : ''
       if (key === 'port_ref_target') {
