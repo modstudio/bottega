@@ -733,7 +733,7 @@ export function recordApiClient(request = recordApiRequest): RecordApiClient {
   if (injected) return injected
   if (process.env.NODE_ENV === 'test' && !process.env.BOTTEGA_TEST_POSTGRES_CONTAINER)
     throw new Error('record API client refuses a real base URL unless a stub is injected in tests')
-  const client = {
+  const client: RecordApiClient = {
     storage: () => request<{ tables: TableStorageMeasurement[] }>('/v1/storage'),
     ...recordChangesClient(request),
     ...recordMachineClient(request),
