@@ -208,7 +208,8 @@ export function gatherKeystoreSetupFact(
   platform: NodeJS.Platform = process.platform,
   probe: () => void = probeRecordSessionKeychain,
 ): SetupFacts['keystore'] {
-  const selected = readMachineValueWithSource('machine.keystore', environment)
+  const resolved = readMachineValueWithSource('machine.keystore', environment)
+  const selected = { ...resolved, value: resolved.value as 'keychain' | 'file' }
   if (platform !== 'linux') return { ...selected, keychainUsable: null }
   try {
     probe()
