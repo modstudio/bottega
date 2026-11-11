@@ -1,6 +1,7 @@
 // concern: record-no-destination-write-counter
 /** Keeps only failed durable measurements in memory around an application-owned store port. */
 
+import type { SQL } from 'bun'
 import type {
   NoDestinationWrite,
   NoDestinationWriteReport,
@@ -13,6 +14,11 @@ export type NoDestinationWriteCounter = {
     spaceIds: readonly string[],
     load: () => Promise<NoDestinationWriteStoreReport>,
   ): Promise<NoDestinationWriteReport>
+}
+
+export type NoDestinationWriteTelemetry = {
+  counter: NoDestinationWriteCounter
+  database: SQL
 }
 
 export function createNoDestinationWriteCounter(): NoDestinationWriteCounter {

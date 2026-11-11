@@ -1,14 +1,13 @@
 // concern: record-api-write-telemetry
 /** Records destination-less hosted writes and serves their authenticated health report. */
 
-import type { SQL } from 'bun'
 import type { Context, Hono } from 'hono'
-import { NO_DESTINATION_WRITES_ROUTE } from '../../../shared/record-no-destination-write-contract.ts'
-import type { NoDestinationWriteCounter } from '../../../shared/record-no-destination-write-counter.ts'
 import {
   readNoDestinationWrites,
   recordNoDestinationWrite,
-} from '../../../shared/record-no-destination-write-store.ts'
+} from '../../../shared/record/no-destination-write-store.ts'
+import { NO_DESTINATION_WRITES_ROUTE } from '../../../shared/record-no-destination-write-contract.ts'
+import type { NoDestinationWriteTelemetry } from '../../../shared/record-no-destination-write-counter.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { destinationlessWrite } from './record-no-destination-write-decision.ts'
@@ -16,7 +15,7 @@ import { destinationlessWrite } from './record-no-destination-write-decision.ts'
 export type RecordWriteTelemetryEnvironment = {
   Variables: {
     identity: RecordIdentity
-    writeTelemetry?: { database: SQL; counter: NoDestinationWriteCounter }
+    writeTelemetry: NoDestinationWriteTelemetry
     destinationSpaceId?: string
     destinationlessWriteRecorded?: true
   }
@@ -24,14 +23,14 @@ export type RecordWriteTelemetryEnvironment = {
 
 export type RecordWriteTelemetryContext = Context<RecordWriteTelemetryEnvironment>
 
+export const RECORD_API_NO_DESTINATION_WRITE_SOURCE = 'api' as const
+
 export function registerRecordWriteTelemetry(
   app: Hono<RecordWriteTelemetryEnvironment>,
-  deps: { database?: SQL; counter?: NoDestinationWriteCounter },
+  deps: NoDestinationWriteTelemetry,
 ): void {
-  const writeTelemetry =
-    deps.database && deps.counter ? { database: deps.database, counter: deps.counter } : undefined
   app.use('/v1/*', async (context, next) => {
-    if (writeTelemetry) context.set('writeTelemetry', writeTelemetry)
+    context.set('writeTelemetry', deps)
     await next()
   })
   app.get(NO_DESTINATION_WRITES_ROUTE, async (context) => {
@@ -40,11 +39,11 @@ export function registerRecordWriteTelemetry(
       (membership) => membership.spaceId,
     )
     return context.json(
-      await writeTelemetry!.counter.read(spaceIds, () =>
+      await deps.counter.read(spaceIds, () =>
         readNoDestinationWrites(
-          writeTelemetry!.database,
+          deps.database,
           { userId: identity.user.id, spaceId: identity.activeSpaceId ?? '', spaceIds },
-          'api',
+          RECORD_API_NO_DESTINATION_WRITE_SOURCE,
         ),
       ),
     )
@@ -53,7 +52,6 @@ export function registerRecordWriteTelemetry(
 
 export function recordDestinationlessWrite(context: RecordWriteTelemetryContext): void {
   const deps = context.get('writeTelemetry')
-  if (!deps) throw new Error('destination-less write telemetry is not configured')
   const identity = context.get('identity')
   const decision = destinationlessWrite({
     method: context.req.method,
@@ -72,7 +70,7 @@ export function recordDestinationlessWrite(context: RecordWriteTelemetryContext)
         spaceId: decision.spaceId,
       },
       decision,
-      'api',
+      RECORD_API_NO_DESTINATION_WRITE_SOURCE,
     ),
   )
 }

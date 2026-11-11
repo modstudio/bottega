@@ -119,8 +119,8 @@ type RecordApiDeps = RecordSessionRouteDeps &
   RecordSettingsRouteDeps & {
     clientAddresses: RecordClientAddresses
     recordUrl: string
-    noDestinationWriteCounter?: Parameters<typeof registerRecordWriteTelemetry>[1]['counter']
-    noDestinationWriteDatabase?: Parameters<typeof registerRecordWriteTelemetry>[1]['database']
+    noDestinationWriteCounter: Parameters<typeof registerRecordWriteTelemetry>[1]['counter']
+    noDestinationWriteDatabase: Parameters<typeof registerRecordWriteTelemetry>[1]['database']
     allowedOrigins?: string[]
     auth: { handler(request: Request): Response | Promise<Response> }
     readSession(headers: Headers): Promise<RecordIdentity | null>

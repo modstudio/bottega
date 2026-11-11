@@ -4,19 +4,16 @@ import { fileURLToPath } from 'node:url'
 import { PGlite, type Transaction } from '@electric-sql/pglite'
 import type { SQL } from 'bun'
 import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
-import { migrationSessionStatements } from './record/migration-session.ts'
-import { RECORD_ACTOR_ROLE } from './record/schema.ts'
-import { createNoDestinationWriteCounter } from './record-no-destination-write-counter.ts'
-import {
-  readNoDestinationWrites,
-  recordNoDestinationWrite,
-} from './record-no-destination-write-store.ts'
+import { createNoDestinationWriteCounter } from '../record-no-destination-write-counter.ts'
+import { migrationSessionStatements } from './migration-session.ts'
+import { readNoDestinationWrites, recordNoDestinationWrite } from './no-destination-write-store.ts'
+import { RECORD_ACTOR_ROLE } from './schema.ts'
 
 const spaceA = '01990000-0000-7000-8000-000000009101'
 const spaceB = '01990000-0000-7000-8000-000000009102'
 const spaceC = '01990000-0000-7000-8000-000000009105'
 const userId = '01990000-0000-7000-8000-000000009100'
-const migrationsFolder = join(fileURLToPath(new URL('./record/migrations', import.meta.url)))
+const migrationsFolder = join(fileURLToPath(new URL('./migrations', import.meta.url)))
 
 async function applyMigration(transaction: Transaction, migration: MigrationMeta) {
   for (const statement of migration.sql) await transaction.exec(statement)
@@ -128,12 +125,18 @@ test('read-only members are recorded while non-members are refused', async () =>
   await expect(
     recordNoDestinationWrite(client, { userId, spaceId: spaceB }, readOnlyDecision, 'hub'),
   ).resolves.toBeUndefined()
+  await recordNoDestinationWrite(client, { userId, spaceId: spaceB }, readOnlyDecision, 'hub')
+  const otherCauseDecision = { ...readOnlyDecision, cause: 'cli/other' }
+  await recordNoDestinationWrite(client, { userId, spaceId: spaceB }, otherCauseDecision, 'hub')
   const report = await readNoDestinationWrites(
     client,
     { userId, spaceId: spaceB, spaceIds: [spaceB] },
     'hub',
   )
-  expect(report.counts).toEqual([expect.objectContaining({ ...readOnlyDecision, occurrences: 1 })])
+  expect(report.counts).toEqual([
+    expect.objectContaining({ ...readOnlyDecision, occurrences: 2 }),
+    expect.objectContaining({ ...otherCauseDecision, occurrences: 1 }),
+  ])
 
   await expect(
     recordNoDestinationWrite(

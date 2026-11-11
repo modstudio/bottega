@@ -53,7 +53,7 @@ ALTER FUNCTION public.no_destination_write_record(text, text, text) OWNER TO rec
 REVOKE ALL ON FUNCTION public.no_destination_write_record(text, text, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.no_destination_write_record(text, text, text) TO record_actor;
 
-CREATE OR REPLACE FUNCTION public.no_destination_write_prune() RETURNS bigint
+CREATE FUNCTION public.no_destination_write_prune() RETURNS bigint
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = pg_catalog, public, pg_temp

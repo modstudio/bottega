@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import type { NoDestinationWriteReport } from '../../../shared/record-no-destination-write-contract.ts'
 import { identity, idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
 import { recordApiTestApp } from '../../test/fixtures/record-api-app.ts'
+import { RECORD_API_NO_DESTINATION_WRITE_SOURCE } from './record-api-write-telemetry.ts'
 import type { RecordIdentity } from './record-auth.ts'
 
 const appWith = (session: RecordIdentity | null, overrides: Record<string, unknown> = {}) =>
@@ -10,6 +11,7 @@ const appWith = (session: RecordIdentity | null, overrides: Record<string, unkno
 const id = '01990000-0000-7000-8000-000000000001'
 
 test('reports destination-less writes by patterned route and client cause', async () => {
+  expect(RECORD_API_NO_DESTINATION_WRITE_SOURCE).toBe('api')
   const cause = 'measurement-seams-test/1'
   const recorded: Array<{ spaceId: string; route: string; cause: string }> = []
   const app = appWith(identity, {

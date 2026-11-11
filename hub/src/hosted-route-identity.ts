@@ -1,8 +1,7 @@
-import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { recordNoDestinationWrite } from '../../shared/record/no-destination-write-store.ts'
 import { noDestinationWriteCause } from '../../shared/record-no-destination-write-contract.ts'
-import type { NoDestinationWriteCounter } from '../../shared/record-no-destination-write-counter.ts'
-import { recordNoDestinationWrite } from '../../shared/record-no-destination-write-store.ts'
+import type { NoDestinationWriteTelemetry } from '../../shared/record-no-destination-write-counter.ts'
 import {
   hostedRequestSafetyStatement,
   RECORD_SIGN_IN_REMEDY,
@@ -29,6 +28,8 @@ export type TaskSpaceIdentity =
   | { kind: 'refused-space'; refusedSpace: string }
   | { kind: 'unauthenticated' }
   | { kind: 'unavailable'; cause: string }
+
+export const HUB_NO_DESTINATION_WRITE_SOURCE = 'hub' as const
 
 export function recordIdentityDecision(
   status: number,
@@ -99,10 +100,7 @@ export async function taskSpaceIdentity(
   base: string,
   fetchImpl: typeof fetch,
   honorRequestedSpace: boolean,
-  dependencies: {
-    counter?: NoDestinationWriteCounter
-    database?: SQL
-  } = {},
+  noDestinationWrite: NoDestinationWriteTelemetry,
 ): Promise<TaskSpaceIdentity> {
   const authorization = request.headers.get('authorization')
   if (!authorization) return { kind: 'unauthenticated' }
@@ -139,15 +137,12 @@ export async function taskSpaceIdentity(
       route: measurement.route,
       cause: noDestinationWriteCause(request.headers.get('user-agent')),
     }
-    const counter = dependencies.counter
-    if (!counter || !dependencies.database)
-      throw new Error('destination-less write telemetry requires the hosted record database')
-    await counter.record(decision, () =>
+    await noDestinationWrite.counter.record(decision, () =>
       recordNoDestinationWrite(
-        dependencies.database!,
+        noDestinationWrite.database,
         { userId: identity.userId, spaceId: identity.activeSpaceId },
         decision,
-        'hub',
+        HUB_NO_DESTINATION_WRITE_SOURCE,
       ),
     )
   }
