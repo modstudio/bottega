@@ -9,6 +9,7 @@ const playwrightPackageFiles = [
   'hub/views/package.json',
   'hub/web/package.json',
 ] as const
+const playwrightBrowserJobs = ['hub-web-smoke', 'hub-ui-stories'] as const
 
 function playwrightDependencyPin(): string {
   const pins = playwrightPackageFiles.map((file) => {
@@ -17,6 +18,11 @@ function playwrightDependencyPin(): string {
     }
     const pin = packageJson.devDependencies?.playwright
     if (!pin) throw new Error(`${file} must pin the playwright devDependency`)
+    if (!/^\d+\.\d+\.\d+$/.test(pin)) {
+      throw new Error(
+        `${file} pins playwright ${pin}; pin the exact version the Playwright image tag carries`,
+      )
+    }
     return { file, pin }
   })
   const expected = pins[0]!.pin
@@ -111,6 +117,14 @@ function checkCiOnlySuiteJobs(source: string): void {
 /** Pins Playwright container versions and forbids runtime browser installation. */
 function checkPlaywrightJobs(source: string, jobNames: readonly string[]): void {
   const playwrightPin = playwrightDependencyPin()
+  for (const jobName of playwrightBrowserJobs) {
+    const job = workflowJob(source, jobName)
+    if (!/^ {4}container:\s*\n {6}image:\s*mcr\.microsoft\.com\/playwright:v\S+\s*$/m.test(job)) {
+      throw new Error(
+        `.github/workflows/ci.yml job ${jobName} must run in the pinned Playwright image; add container: image: mcr.microsoft.com/playwright:v${playwrightPin}-noble`,
+      )
+    }
+  }
   for (const jobName of jobNames) {
     const job = workflowJob(source, jobName)
     for (const image of job.matchAll(/mcr\.microsoft\.com\/playwright:v([^\s-]+)-([^\s]+)/g)) {

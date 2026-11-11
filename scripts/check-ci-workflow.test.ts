@@ -20,7 +20,9 @@ test('refuses a workflow with a missing or extra job', () => {
   const workflow = `jobs:\n${expectedWorkflowJobNames()
     .map((job) => {
       if (job === 'hub-ui-stories')
-        return `  ${job}:\n    steps:\n      - run: bun run --cwd hub/ui storybook:test\n      - run: bun run --cwd hub/views storybook:test`
+        return `  ${job}:\n    container:\n      image: mcr.microsoft.com/playwright:v${playwrightPin}-noble\n    steps:\n      - run: bun run --cwd hub/ui storybook:test\n      - run: bun run --cwd hub/views storybook:test`
+      if (job === 'hub-web-smoke')
+        return `  ${job}:\n    container:\n      image: mcr.microsoft.com/playwright:v${playwrightPin}-noble`
       if (job === 'orchestrator-hooks') return hooksJobFixture()
       if (job === processSuite.job) return processHooksJobFixture()
       if (job === 'postgres') return postgresJobFixture()
@@ -128,6 +130,19 @@ test('refuses a mismatched Playwright image tag', () => {
   ).toThrow(`set the image tag to v${playwrightPin}-noble`)
 })
 
+test('requires the web smoke job to run in the pinned Playwright image', () => {
+  expect(() =>
+    checkCiWorkflow(
+      readWorkflowFixture().replace(
+        `  hub-web-smoke:\n    container:\n      image: mcr.microsoft.com/playwright:v${playwrightPin}-noble`,
+        '  hub-web-smoke:\n    runs-on: ubuntu-latest',
+      ),
+    ),
+  ).toThrow(
+    `job hub-web-smoke must run in the pinned Playwright image; add container: image: mcr.microsoft.com/playwright:v${playwrightPin}-noble`,
+  )
+})
+
 test('refuses a playwright install run command', () => {
   expect(() =>
     checkCiWorkflow(
@@ -189,7 +204,9 @@ function readWorkflowFixture() {
   return `jobs:\n${expectedWorkflowJobNames()
     .map((job) => {
       if (job === 'hub-ui-stories')
-        return `  ${job}:\n    steps:\n      - run: bun run --cwd hub/ui storybook:test\n      - run: bun run --cwd hub/views storybook:test`
+        return `  ${job}:\n    container:\n      image: mcr.microsoft.com/playwright:v${playwrightPin}-noble\n    steps:\n      - run: bun run --cwd hub/ui storybook:test\n      - run: bun run --cwd hub/views storybook:test`
+      if (job === 'hub-web-smoke')
+        return `  ${job}:\n    container:\n      image: mcr.microsoft.com/playwright:v${playwrightPin}-noble`
       if (job === 'orchestrator-hooks') return hooksJobFixture()
       if (job === processSuite.job) return processHooksJobFixture()
       if (job === 'postgres') return postgresJobFixture()
