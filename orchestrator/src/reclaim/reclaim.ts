@@ -75,7 +75,7 @@ function refuse(missing: string): ReclaimResult {
 }
 
 function unreachableBranchRefusal(
-  state: 'superseded' | 'unlanded' | 'unknown',
+  state: BranchLanding['state'],
   project: string,
   branch: string,
   trunk: string,
