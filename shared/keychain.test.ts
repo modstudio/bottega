@@ -5,6 +5,7 @@ import {
   decideNullRead,
   deleteLinuxKeychainItem,
   parseCollectionLocked,
+  probeMachineKeychain,
   quoteSecurityInputToken,
   readKeychainItem,
   readKeychainItemAsync,
@@ -259,6 +260,40 @@ describe('public Linux backend dispatch', () => {
     expect(readKeychainItem('service', 'account', runner)).toBe('read-value')
     expect(writeKeychainItem('service', 'account', 'written-value', runner)).toBeUndefined()
     expect(operations).toEqual(['get', 'set', 'get'])
+  })
+
+  test('classifies a read-only machine keychain probe', () => {
+    const probe = (runner: SecurityRunner) => {
+      const operations: string[] = []
+      const observed: SecurityRunner = (argv, stdin, env) => {
+        expect(stdin).toBeUndefined()
+        if (env?.BOTTEGA_SECRET_OPERATION) operations.push(env.BOTTEGA_SECRET_OPERATION)
+        return runner(argv, stdin, env)
+      }
+      const outcome = probeMachineKeychain(observed)
+      expect(operations).toEqual(['get'])
+      expect(operations).not.toContain('set')
+      expect(operations).not.toContain('delete')
+      return outcome
+    }
+
+    expect(
+      probe(() => secretError('ERR_SECRETS_PLATFORM_ERROR', 'libsecret not available')),
+    ).toEqual({ usable: false, kind: 'libsecret-missing' })
+
+    expect(probe((argv) => (argv[0] === 'busctl' ? result(0, 'b true') : result(44)))).toEqual({
+      usable: false,
+      kind: 'no-unlocked-collection',
+    })
+
+    expect(probe(() => secretError('ERR_SECRETS_PLATFORM_ERROR', 'unexpected failure'))).toEqual({
+      usable: false,
+      kind: 'other',
+    })
+
+    expect(probe((argv) => (argv[0] === 'busctl' ? result(0, 'b false') : result(44)))).toEqual({
+      usable: true,
+    })
   })
 
   test('refuses an async read without an injected runner in tests', async () => {

@@ -28,7 +28,7 @@ export type { AsyncSecurityRunner, SecurityRunner } from './keychain.ts'
 const SERVICE = `${PLATFORM_NAME}-record-session`
 const ACCOUNT = 'record'
 const PROBE_ACCOUNT = 'record-probe'
-const FILE_REMEDY = `run ${PLATFORM_SLUG} machine setup, which chooses the file keystore when no usable keychain is available`
+const FILE_REMEDY = `run ${PLATFORM_SLUG} machine setup, or choose the file keystore directly with ${PLATFORM_SLUG} machine config set --machine machine.keystore file`
 let memoizedToken: string | null | undefined
 const UNREADABLE_STAMP = Symbol('unreadable-record-session-stamp')
 type SessionStamp = string | null | typeof UNREADABLE_STAMP

@@ -21,7 +21,7 @@ import {
   type DelegationSettingKey,
   type DelegationSettings,
 } from './delegation-mode.ts'
-import { KEYSTORE_ENV, KEYSTORE_VALUES } from './key-store-constants.ts'
+import { KEYSTORE_DEFAULT, KEYSTORE_ENV, KEYSTORE_VALUES } from './key-store-constants.ts'
 import { containsSecretShaped } from './secret-shaped.ts'
 import {
   SETTINGS_PERMISSION_LISTS,
@@ -92,7 +92,7 @@ export const MACHINE_CONFIG = {
   'machine.keystore': {
     environment: KEYSTORE_ENV,
     type: 'string',
-    default: 'keychain',
+    default: KEYSTORE_DEFAULT,
     values: KEYSTORE_VALUES,
   },
   ...DELEGATION_MACHINE_CONFIG,

@@ -475,10 +475,10 @@ export function probeKeychainStore(
   if (writeError) throw writeError
 }
 
-/** Classify whether the machine can use its platform keychain without retaining probe data. */
+/** Classify whether the machine can read its platform keychain without changing it. */
 export function probeMachineKeychain(runner?: SecurityRunner): UsableKeychainProbeResult {
   try {
-    probeKeychainStore(MACHINE_PROBE_SERVICE, MACHINE_PROBE_ACCOUNT, runner)
+    readKeychainItem(MACHINE_PROBE_SERVICE, MACHINE_PROBE_ACCOUNT, runner)
     return { usable: true }
   } catch (error) {
     return {
