@@ -1,7 +1,10 @@
 import type { Database } from 'bun:sqlite'
-import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { expect, test } from 'bun:test'
+import { resolvedRecordOrigin } from '../../../shared/record-api-url.ts'
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
+import { rememberProjectSpace } from '../project-space-cache.ts'
+import { rememberActiveRecordSpace } from '../project-space.ts'
 import {
   type TaskFlowIntentInput,
   taskFlowRequestId,
@@ -20,7 +23,6 @@ import { attachWorkflowTextByHandle, deleteWorkflowText } from './workflow-text.
 import { copyWorkflowTextForCursor } from './workflow-text-copy.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
-const hostedUrl = 'https://record.example.test'
 const destinationSpaceId = 'fixture-space'
 const projectIdentityClient = {
   whoami: async () => ({
@@ -30,17 +32,24 @@ const projectIdentityClient = {
     memberships: [{ space_id: destinationSpaceId, slug: 'fixture-space', permission: 'write' }],
   }),
 }
-let priorHostedUrl: string | undefined
-
-beforeEach(() => {
-  priorHostedUrl = process.env.BOTTEGA_RECORD_API_URL
-  process.env.BOTTEGA_RECORD_API_URL = hostedUrl
-})
-
-afterEach(() => {
-  if (priorHostedUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
-  else process.env.BOTTEGA_RECORD_API_URL = priorHostedUrl
-})
+function hostedDatabase(): Database {
+  const d = database()
+  for (const table of [
+    'workflow',
+    'workflow_version',
+    'step_catalogue',
+    'step_catalogue_version',
+  ]) {
+    d.query(`UPDATE ${table} SET space_id = ?`).run(destinationSpaceId)
+  }
+  rememberActiveRecordSpace(d, destinationSpaceId)
+  rememberProjectSpace(d, 'fixture', destinationSpaceId)
+  d.query('INSERT INTO record_install_binding (id,bound_at,record_origin) VALUES (1,?,?)').run(
+    '2026-11-10T00:00:00.000Z',
+    resolvedRecordOrigin(),
+  )
+  return d
+}
 
 function composeClient(
   calls: TaskFlowIntentInput<'compose'>[],
@@ -90,10 +99,14 @@ function installKeylessWorkflow(d: Database, slug: string): void {
     d,
   )
   promoteWorkflowLocal(slug, draft.n, 'publish hosted task-flow fixture', 'test', d)
+  d.query('UPDATE workflow SET space_id = ? WHERE slug = ?').run(destinationSpaceId, slug)
+  d.query(
+    'UPDATE workflow_version SET space_id = ? WHERE workflow_record_id = (SELECT record_id FROM workflow WHERE slug = ? AND space_id = ?)',
+  ).run(destinationSpaceId, slug, destinationSpaceId)
 }
 
 test('hosted compose runs first and caches its number and revisions without an outbox row', async () => {
-  const d = database()
+  const d = hostedDatabase()
   const calls: TaskFlowIntentInput<'compose'>[] = []
   const destinations: Array<{ destinationSpaceId?: string } | undefined> = []
   const taskFlowClient = composeClient(calls, { destinations })
@@ -126,7 +139,7 @@ test('hosted compose runs first and caches its number and revisions without an o
 })
 
 test('hosted compose failure leaves no local flow or cursor', async () => {
-  const d = database()
+  const d = hostedDatabase()
   const calls: TaskFlowIntentInput<'compose'>[] = []
   const taskFlowClient = composeClient(calls, { fail: new Error('record unavailable; sign in') })
 
@@ -153,7 +166,7 @@ test('hosted compose failure leaves no local flow or cursor', async () => {
 })
 
 test('compose replay after a local crash reuses its request id and hosted stage', async () => {
-  const d = database()
+  const d = hostedDatabase()
   const calls: TaskFlowIntentInput<'compose'>[] = []
   const taskFlowClient = composeClient(calls, { number: 73 })
   d.exec(`CREATE TRIGGER fail_hosted_compose_cache BEFORE INSERT ON workflow_cursor
@@ -220,7 +233,7 @@ test('local-only compose makes no client call and writes no task-flow outbox row
 })
 
 test('advance, await, rule, and abandon call the record before caching returned revisions', async () => {
-  const d = database()
+  const d = hostedDatabase()
   const composeCalls: TaskFlowIntentInput<'compose'>[] = []
   const events: string[] = []
   let stageId = ''
@@ -327,7 +340,7 @@ test('advance, await, rule, and abandon call the record before caching returned 
 })
 
 test("abandoning a stage that is not its flow's open stage preserves the pointer", async () => {
-  const d = database()
+  const d = hostedDatabase()
   let number = 40
   let abandoned: TaskFlowIntentInput<'abandon'> | undefined
   const taskFlowClient: RecordTaskFlowClient = {
@@ -401,7 +414,7 @@ test("abandoning a stage that is not its flow's open stage preserves the pointer
 })
 
 test('adoption calls adopt then stage-update and caches the hosted flow identity', async () => {
-  const d = database()
+  const d = hostedDatabase()
   installKeylessWorkflow(d, 'hosted-adoption')
   const events: string[] = []
   let hostedFlowId = ''
@@ -462,7 +475,7 @@ test('adoption calls adopt then stage-update and caches the hosted flow identity
 })
 
 test('hosted text attach, copy, and delete happen before their local rows change', async () => {
-  const d = database()
+  const d = hostedDatabase()
   const composeCalls: TaskFlowIntentInput<'compose'>[] = []
   const events: string[] = []
   const taskFlowClient: RecordTaskFlowClient = {
@@ -538,7 +551,7 @@ test('hosted text attach, copy, and delete happen before their local rows change
 })
 
 test('keyless hosted composes use distinct deterministic session slots', async () => {
-  const d = database()
+  const d = hostedDatabase()
   installKeylessWorkflow(d, 'hosted-keyless-slots')
   const calls: TaskFlowIntentInput<'compose'>[] = []
   const taskFlowClient: RecordTaskFlowClient = {
@@ -585,7 +598,7 @@ test('keyless hosted composes use distinct deterministic session slots', async (
 })
 
 test('keyless compose crash recovery reuses the same request and instance slot', async () => {
-  const d = database()
+  const d = hostedDatabase()
   installKeylessWorkflow(d, 'hosted-keyless-replay')
   const calls: TaskFlowIntentInput<'compose'>[] = []
   const taskFlowClient = composeClient(calls, { number: 101 })
@@ -628,7 +641,7 @@ test('keyless compose crash recovery reuses the same request and instance slot',
 })
 
 test('keyless open-slot recovery recounts once and composes the next sibling slot', async () => {
-  const d = database()
+  const d = hostedDatabase()
   installKeylessWorkflow(d, 'hosted-keyless-sibling')
   const composeCalls: TaskFlowIntentInput<'compose'>[] = []
   let setupStageId = ''
