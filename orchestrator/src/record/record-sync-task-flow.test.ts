@@ -52,7 +52,6 @@ function flowPayload(revision = 1, state = 'open') {
     id: FLOW,
     spaceId: SPACE,
     projectId: PROJECT,
-    number: 7,
     projectName: 'task-flow-sync-proof',
     taskId: TASK,
     state,
@@ -311,6 +310,7 @@ realPostgres('hosted task flow revisions', () => {
         status: 'quarantined',
       })
 
+      await admin`UPDATE task_flow_stage SET number=7 WHERE id=${STAGE}::uuid`
       await admin`INSERT INTO workflow_obligation
         (id,space_id,stage_record_id,step_ordinal,step_slug,floor,require_pull_request,
          expected_exit_code,expected_status,floor_deferrable,reason,session_id,created_at,
