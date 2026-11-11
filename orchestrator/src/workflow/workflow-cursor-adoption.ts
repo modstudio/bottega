@@ -10,12 +10,7 @@ import {
 } from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
-import {
-  attachTaskFlowStage,
-  cacheAdoptedTaskFlow,
-  selectTaskFlowStage,
-  vacateRetiredWorkflowKeySlot,
-} from './task-flow.ts'
+import { vacateRetiredWorkflowKeySlot } from './task-flow.ts'
 import { taskFlowStore } from './task-flow-store.ts'
 
 type AdoptionCursor = {
@@ -38,13 +33,6 @@ function assignWorkflowTaskKey(
 ): void {
   vacateRetiredWorkflowKeySlot(row.project, row.workflow_slug, row.mode_slug, key, d)
   const adoptedArgs = { ...(JSON.parse(row.args) as Record<string, string>), key }
-  taskFlowStore(d).assignStageTaskKey({
-    recordId: row.record_id,
-    workflowKey: key,
-    taskRecordId,
-    argumentsJson: JSON.stringify(adoptedArgs),
-    updatedAt: nowIso(),
-  })
   row.workflow_key = key
   row.task_record_id = taskRecordId
   row.args = JSON.stringify(adoptedArgs)
@@ -67,7 +55,7 @@ export async function adoptWorkflowTask(
   taskRecordId: string | null | undefined,
   d: Database,
   client?: RecordTaskFlowClient,
-  statusCategory?: string | null,
+  _statusCategory?: string | null,
 ): Promise<void> {
   const key = suppliedTask?.trim()
   if (!key) return
@@ -87,77 +75,55 @@ export async function adoptWorkflowTask(
   if (adoptedTaskId) {
     const at = nowIso()
     const target = taskFlowWriteTarget(row.project, d)
-    const adopted = await writeHostedTaskFlow(
-      'adopt',
-      {
-        requestId: taskFlowRequestId('adopt', [row.record_id, String(row.revision)]),
-        stage: { id: row.record_id, expectedRevision: row.revision },
-        taskId: adoptedTaskId,
-        updatedMachineId: machineId(),
-        updatedAt: at,
-      },
-      target,
-      client,
-    )
-    let stageRevision = adopted?.revisions[row.record_id] ?? row.revision
-    if (adopted) {
-      const adoptedArgs = { ...(JSON.parse(row.args) as Record<string, string>), key }
-      const updated = await writeHostedTaskFlow(
-        'stage-update',
-        {
-          requestId: taskFlowRequestId('stage-update', [row.record_id, String(stageRevision)]),
-          stages: [
-            {
-              id: row.record_id,
-              expectedRevision: stageRevision,
-              values: { workflowKey: key, arguments: adoptedArgs, updatedAt: at },
-            },
-          ],
-        },
-        target,
-        client,
-      )
-      stageRevision = updated?.revisions[row.record_id] ?? stageRevision
+    const adoptPayload = {
+      requestId: taskFlowRequestId('adopt', [row.record_id, String(row.revision)]),
+      stage: { id: row.record_id, expectedRevision: row.revision },
+      taskId: adoptedTaskId,
+      updatedMachineId: machineId(),
+      updatedAt: at,
     }
+    const adopted = await writeHostedTaskFlow('adopt', adoptPayload, target, client)
+    let stageRevision = adopted?.revisions[row.record_id] ?? row.revision + 1
+    const adoptedArgs = { ...(JSON.parse(row.args) as Record<string, string>), key }
+    const updatePayload = {
+      requestId: taskFlowRequestId('stage-update', [row.record_id, String(stageRevision)]),
+      stages: [
+        {
+          id: row.record_id,
+          expectedRevision: stageRevision,
+          values: { workflowKey: key, arguments: adoptedArgs, updatedAt: at },
+        },
+      ],
+    }
+    const updated = await writeHostedTaskFlow('stage-update', updatePayload, target, client)
     writeTransaction(() => {
-      const currentRevision = taskFlowStore(d).stageRevision(row.record_id)
-      if (currentRevision !== row.revision)
-        throw new Error(
-          `workflow cursor ${row.id} changed while adopting ${key}; rerun the command`,
-        )
+      taskFlowStore(d).write('adopt', adoptPayload, adopted)
+      stageRevision = taskFlowStore(d).write('stage-update', updatePayload, updated).revisions[
+        row.record_id
+      ]!
       assignWorkflowTaskKey(row, key, adoptedTaskId, d)
-      if (adopted)
-        cacheAdoptedTaskFlow(
-          {
-            project: row.project,
-            taskRecordId: adoptedTaskId,
-            cursorRecordId: row.record_id,
-            flowRecordId: adopted.flowRecordId,
-            flowRevision: adopted.revisions[adopted.flowRecordId]!,
-            stageRevision,
-            statusCategory,
-            at,
-          },
-          d,
-        )
-      else {
-        const flow = selectTaskFlowStage(
-          {
-            project: row.project,
-            taskRecordId: adoptedTaskId,
-            taskKey: key,
-            cursor: row.id,
-            workflow: row.workflow_slug,
-            mode: row.mode_slug,
-          },
-          d,
-        )
-        attachTaskFlowStage(flow.flowRecordId, row.record_id, d)
-      }
     }, d)
     return
   }
-  assignWorkflowTaskKey(row, key, null, d)
+  const at = nowIso()
+  const payload = {
+    requestId: taskFlowRequestId('stage-update', [row.record_id, String(row.revision)]),
+    stages: [
+      {
+        id: row.record_id,
+        expectedRevision: row.revision,
+        values: {
+          workflowKey: key,
+          arguments: { ...(JSON.parse(row.args) as Record<string, string>), key },
+          updatedAt: at,
+        },
+      },
+    ],
+  }
+  writeTransaction(() => {
+    taskFlowStore(d).write('stage-update', payload)
+    assignWorkflowTaskKey(row, key, null, d)
+  }, d)
 }
 
 function conflictingAdoptionCursor(

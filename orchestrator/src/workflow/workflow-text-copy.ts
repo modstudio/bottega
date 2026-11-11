@@ -131,29 +131,19 @@ async function recordCopy(
   client?: RecordTaskFlowClient,
 ): Promise<void> {
   const id = taskFlowRequestId('copy-text', [cursorId, textId, reference])
-  await writeHostedTaskFlow(
-    'copy-text',
-    {
-      requestId: taskFlowRequestId('copy-text', [id]),
-      row: {
-        id,
-        workflowTextRecordId: textId,
-        stageRecordId: cursorId,
-        taskDocumentReference: reference,
-        copiedAt,
-      },
-    },
-    target,
-    client,
-  )
-  writeTransaction(() => {
-    taskFlowStore(database).recordTextCopy({
-      recordId: id,
-      textRecordId: textId,
+  const payload = {
+    requestId: taskFlowRequestId('copy-text', [id]),
+    row: {
+      id,
+      workflowTextRecordId: textId,
       stageRecordId: cursorId,
-      documentReference: reference,
+      taskDocumentReference: reference,
       copiedAt,
-    })
+    },
+  }
+  const hosted = await writeHostedTaskFlow('copy-text', payload, target, client)
+  writeTransaction(() => {
+    taskFlowStore(database).write('copy-text', payload, hosted)
   }, database)
 }
 

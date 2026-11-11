@@ -4,7 +4,6 @@
 import type { Database } from 'bun:sqlite'
 import { nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
-import { machineId } from '../record/machine-identity.ts'
 import {
   taskFlowWriteTarget,
   writeHostedTaskFlow,
@@ -82,23 +81,24 @@ export async function ruleWorkflow(
   const question = selectOpenWorkflowQuestion(row.record_id, database)
   if (!question)
     throw new Error(`${cursorName(slug, mode, row.workflow_key)} has no open question to rule on`)
+  const payload = {
+    requestId: taskFlowRequestId('stage-update', [row.record_id, String(row.revision)]),
+    stages: [
+      {
+        id: row.record_id,
+        expectedRevision: row.revision,
+        values: {
+          state: 'running',
+          question: null,
+          sessionId: row.session_id ?? context.session ?? null,
+          updatedAt: at,
+        },
+      },
+    ],
+  }
   const hosted = await writeHostedTaskFlow(
     'stage-update',
-    {
-      requestId: taskFlowRequestId('stage-update', [row.record_id, String(row.revision)]),
-      stages: [
-        {
-          id: row.record_id,
-          expectedRevision: row.revision,
-          values: {
-            state: 'running',
-            question: null,
-            sessionId: row.session_id ?? context.session ?? null,
-            updatedAt: at,
-          },
-        },
-      ],
-    },
+    payload,
     taskFlowWriteTarget(row.project, database),
     context.taskFlowClient,
   )
@@ -112,7 +112,8 @@ export async function ruleWorkflow(
     adoptionReason,
     at,
     context,
-    revision: hosted?.revisions[row.record_id] ?? row.revision + 1,
+    payload,
+    hosted,
     database,
   })
 }
@@ -127,17 +128,13 @@ function applyWorkflowRulingLocally(input: {
   adoptionReason: string | null
   at: string
   context: WorkflowCursorContext
-  revision: number
+  payload: Parameters<ReturnType<typeof taskFlowStore>['write']>[1]
+  hosted: Awaited<ReturnType<typeof writeHostedTaskFlow<'stage-update'>>>
   database: Database
 }): { summary: string; questionId: number } {
   const { row, question, database } = input
   return writeTransaction(() => {
     const store = taskFlowStore(database)
-    const currentRevision = store.stageRevision(row.record_id)
-    if (currentRevision !== row.revision)
-      throw new Error(
-        `workflow cursor ${row.id} changed while its ruling was recorded; rerun the command`,
-      )
     answerWorkflowQuestion(
       {
         questionId: question.record_id,
@@ -152,13 +149,7 @@ function applyWorkflowRulingLocally(input: {
       },
       database,
     )
-    store.resumeStageAfterRuling({
-      recordId: row.record_id,
-      sessionId: input.context.session ?? null,
-      updatedAt: input.at,
-      machineId: machineId(),
-      revision: input.revision,
-    })
+    store.write('stage-update', input.payload, input.hosted)
     return {
       summary: `${cursorName(row.workflow_slug, row.mode_slug, row.workflow_key, true)} is running at step ${row.ordinal + 1} ${row.step_slug}.`,
       questionId: question.number,

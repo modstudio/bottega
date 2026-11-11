@@ -15,7 +15,7 @@ import { cursorName } from './workflow-cursor-format.ts'
 import { refuseTerminalCursor } from './workflow-cursor-result.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import type { CursorTrailEntry } from './workflow-cursor-trail.ts'
-import { deleteWorkflowTextLocally, workflowTextDeletionIds } from './workflow-text.ts'
+import { workflowTextDeletionIds } from './workflow-text.ts'
 
 export function closeOpenWorkflowQuestion(
   cursorId: string,
@@ -48,69 +48,50 @@ export async function abandonWorkflowCursor(
   const flow = row.task_flow_record_id ? store.flowState(row.task_flow_record_id) : null
   const closesOpenStage = flow?.open_stage_cursor_record_id === row.record_id
   const parts = abandonmentRevisionParts(row, flow)
+  const payload = {
+    requestId: taskFlowRequestId('abandon', parts),
+    stage: {
+      id: row.record_id,
+      expectedRevision: row.revision,
+      values: {
+        state: 'abandoned',
+        closedStepNotes: closed,
+        question: null,
+        sessionId: context.session ?? row.session_id,
+        updatedAt: at,
+      },
+    },
+    ...(flow && closesOpenStage
+      ? {
+          flow: {
+            id: flow.record_id,
+            expectedRevision: flow.revision,
+            values: {
+              openStageRecordId: null,
+              updatedMachineId: machineId(),
+              updatedAt: at,
+            },
+          },
+        }
+      : {}),
+    obligationUpdates: obligations.map((recordId) => ({
+      id: recordId,
+      stageRecordId: row.record_id,
+      abandonedAt: at,
+      abandonedReason: reason.trim(),
+    })),
+    deleteTextIds,
+  }
   const hosted = await writeHostedTaskFlow(
     'abandon',
-    {
-      requestId: taskFlowRequestId('abandon', parts),
-      stage: {
-        id: row.record_id,
-        expectedRevision: row.revision,
-        values: {
-          state: 'abandoned',
-          closedStepNotes: closed,
-          question: null,
-          sessionId: context.session ?? row.session_id,
-          updatedAt: at,
-        },
-      },
-      ...(flow && closesOpenStage
-        ? {
-            flow: {
-              id: flow.record_id,
-              expectedRevision: flow.revision,
-              values: {
-                openStageRecordId: null,
-                updatedMachineId: machineId(),
-                updatedAt: at,
-              },
-            },
-          }
-        : {}),
-      obligationUpdates: obligations.map((recordId) => ({
-        id: recordId,
-        stageRecordId: row.record_id,
-        abandonedAt: at,
-        abandonedReason: reason.trim(),
-      })),
-      deleteTextIds,
-    },
+    payload,
     taskFlowWriteTarget(row.project, d),
     context.taskFlowClient,
   )
   return writeTransaction(() => {
-    const currentRevision = store.stageRevision(row.record_id)
-    if (currentRevision !== row.revision)
-      throw new Error(`workflow cursor ${row.id} changed while it was abandoned; rerun the command`)
     if (row.state === 'awaiting-ruling')
       closeOpenWorkflowQuestion(row.record_id, 'abandoned', at, d)
-    store.abandonOpenObligations(row.record_id, at, reason.trim())
-    deleteWorkflowTextLocally(deleteTextIds, d)
-    const machine = machineId()
-    store.abandonStage({
-      recordId: row.record_id,
-      closedJson: JSON.stringify(closed),
-      sessionId: context.session ?? null,
-      updatedAt: at,
-      machineId: machine,
-      revision: hosted?.revisions[row.record_id] ?? row.revision + 1,
-    })
-    if (flow && closesOpenStage)
-      store.clearFlowOpenStage({
-        recordId: flow.record_id,
-        updatedAt: at,
-        machineId: machine,
-        revision: hosted?.revisions[flow.record_id] ?? flow.revision + 1,
-      })
+    store.write('abandon', payload, hosted)
     return `${cursorName(row.workflow_slug, row.mode_slug, row.workflow_key, true)} was abandoned at step ${row.ordinal + 1} ${row.step_slug}.`
   }, d)
 }

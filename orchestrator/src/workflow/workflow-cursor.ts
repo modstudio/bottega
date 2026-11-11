@@ -76,7 +76,7 @@ import {
   type WorkflowSelfRulingInput,
 } from './workflow-self-ruling-mutation.ts'
 import { linkResolvedWorkflowTask, withLinkedWorkflowTask } from './workflow-task-linking.ts'
-import { deleteWorkflowTextLocally, workflowTextDeletionIds } from './workflow-text.ts'
+import { workflowTextDeletionIds } from './workflow-text.ts'
 import { composeWorkflow } from './workflows.ts'
 
 type CursorRow = SelectableCursorRow
@@ -198,42 +198,30 @@ export async function composeWorkflowWithCursor(
   let row: CursorRow
   if (existing && start === 'reuse') {
     const resolved = resolveCursorArguments(existing, args, d, true)
+    const payload = {
+      requestId: taskFlowRequestId('stage-update', [existing.record_id, String(existing.revision)]),
+      stages: [
+        {
+          id: existing.record_id,
+          expectedRevision: existing.revision,
+          values: {
+            arguments: resolved.args,
+            closedStepNotes: JSON.parse(resolved.closed) as unknown[],
+            sessionId: context.session ?? existing.session_id,
+            updatedAt: resolved.updatedAt,
+          },
+        },
+      ],
+    }
     const hosted = await writeHostedTaskFlow(
       'stage-update',
-      {
-        requestId: taskFlowRequestId('stage-update', [
-          existing.record_id,
-          String(existing.revision),
-        ]),
-        stages: [
-          {
-            id: existing.record_id,
-            expectedRevision: existing.revision,
-            values: {
-              arguments: resolved.args,
-              closedStepNotes: JSON.parse(resolved.closed) as unknown[],
-              sessionId: context.session ?? existing.session_id,
-              updatedAt: resolved.updatedAt,
-            },
-          },
-        ],
-      },
+      payload,
       taskFlowWriteTarget(existing.project, d),
       context.taskFlowClient,
     )
     writeTransaction(() => {
       const store = taskFlowStore(d)
-      const currentRevision = store.stageRevision(existing.record_id)
-      if (currentRevision !== existing.revision)
-        throw new Error(`workflow cursor ${existing.id} changed while composing; rerun the command`)
-      store.updateReusedStage({
-        recordId: existing.record_id,
-        argumentsJson: resolved.encoded,
-        closedJson: resolved.closed,
-        sessionId: context.session ?? null,
-        updatedAt: resolved.updatedAt,
-        revision: hosted?.revisions[existing.record_id] ?? existing.revision + 1,
-      })
+      store.write('stage-update', payload, hosted)
     }, d)
     row = taskFlowStore(d).stageByRecordId(existing.record_id) as CursorRow
   } else row = await insertWorkflowCursor(composition, context, d, autonomy, commitCount)
@@ -501,43 +489,44 @@ async function persistWorkflowAdvance(
     closingFlow,
     obligationPlan,
   )
+  const payload = {
+    requestId: taskFlowRequestId('advance', parts),
+    stage: {
+      id: row.record_id,
+      expectedRevision: row.revision,
+      values: {
+        arguments: JSON.parse(row.args) as Record<string, string>,
+        activeOrdinal: next ? advance.ordinal! : row.ordinal,
+        activeSlug: next?.slug ?? row.step_slug,
+        state: finishing ? 'done' : 'running',
+        closedStepNotes: closed,
+        question: null,
+        sessionId: context.session ?? row.session_id,
+        takenOverFromMachineId: takeoverFromMachineId,
+        lastAdvancedMachineId: machineId(),
+        updatedAt: at,
+      },
+    },
+    ...(closingFlow
+      ? {
+          flow: {
+            id: closingFlow.record_id,
+            expectedRevision: closingFlow.revision,
+            values: {
+              openStageRecordId: null,
+              updatedMachineId: machineId(),
+              updatedAt: at,
+            },
+          },
+        }
+      : {}),
+    obligationInserts,
+    obligationUpdates,
+    deleteTextIds,
+  }
   const hosted = await writeHostedTaskFlow(
     'advance',
-    {
-      requestId: taskFlowRequestId('advance', parts),
-      stage: {
-        id: row.record_id,
-        expectedRevision: row.revision,
-        values: {
-          arguments: JSON.parse(row.args) as Record<string, string>,
-          activeOrdinal: next ? advance.ordinal! : row.ordinal,
-          activeSlug: next?.slug ?? row.step_slug,
-          state: finishing ? 'done' : 'running',
-          closedStepNotes: closed,
-          question: null,
-          sessionId: context.session ?? row.session_id,
-          takenOverFromMachineId: takeoverFromMachineId,
-          lastAdvancedMachineId: machineId(),
-          updatedAt: at,
-        },
-      },
-      ...(closingFlow
-        ? {
-            flow: {
-              id: closingFlow.record_id,
-              expectedRevision: closingFlow.revision,
-              values: {
-                openStageRecordId: null,
-                updatedMachineId: machineId(),
-                updatedAt: at,
-              },
-            },
-          }
-        : {}),
-      obligationInserts,
-      obligationUpdates,
-      deleteTextIds,
-    },
+    payload,
     taskFlowWriteTarget(row.project, d),
     context.taskFlowClient,
   )
@@ -556,7 +545,8 @@ async function persistWorkflowAdvance(
     obligationUpdates,
     deleteTextIds,
     selfRulingPlan,
-    revisions: hosted?.revisions,
+    payload,
+    hosted,
   })
 }
 
@@ -618,7 +608,8 @@ function applyWorkflowAdvanceLocally(input: {
   obligationUpdates: NonNullable<TaskFlowIntentInput<'advance'>['obligationUpdates']>
   deleteTextIds: string[]
   selfRulingPlan?: Parameters<typeof recordWorkflowSelfRuling>[0]
-  revisions?: Record<string, number>
+  payload: TaskFlowIntentInput<'advance'>
+  hosted: TaskFlowIntentResult<'advance'> | null
 }): void {
   const {
     row,
@@ -635,40 +626,14 @@ function applyWorkflowAdvanceLocally(input: {
     obligationUpdates,
     deleteTextIds,
     selfRulingPlan,
-    revisions,
+    payload,
+    hosted,
   } = input
   writeTransaction(() => {
-    const currentRevision = taskFlowStore(d).stageRevision(row.record_id)
-    if (currentRevision !== row.revision)
-      throw new Error(`workflow cursor ${row.id} changed while it advanced; rerun the command`)
     if (row.state === 'awaiting-ruling')
       closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, d)
     if (selfRulingPlan) recordWorkflowSelfRuling(selfRulingPlan, d)
-    const store = taskFlowStore(d)
-    for (const insert of obligationInserts) store.insertObligation(insert)
-    for (const update of obligationUpdates) store.satisfyObligation(update)
-    deleteWorkflowTextLocally(deleteTextIds, d)
-    const machine = machineId()
-    store.advanceStage({
-      recordId: row.record_id,
-      argumentsJson: row.args,
-      ordinal: next ? advance.ordinal! : row.ordinal,
-      stepSlug: next?.slug ?? row.step_slug,
-      state: finishing ? 'done' : 'running',
-      closedJson: JSON.stringify(closed),
-      sessionId: context.session ?? null,
-      updatedAt: at,
-      takenOverFromMachineId: takeoverFromMachineId,
-      machineId: machine,
-      revision: revisions?.[row.record_id] ?? row.revision + 1,
-    })
-    if (flow)
-      store.clearFlowOpenStage({
-        recordId: flow.record_id,
-        updatedAt: at,
-        machineId: machine,
-        revision: revisions?.[flow.record_id] ?? flow.revision + 1,
-      })
+    taskFlowStore(d).write('advance', payload, hosted)
   }, d)
 }
 
@@ -834,44 +799,30 @@ async function awaitWorkflowRulingImpl(
   refuseTerminalCursor(row)
   const resolved = resolveCursorArguments(row, args, d)
   const at = resolved.updatedAt
-  const hosted = await writeHostedTaskFlow(
-    'await-ruling',
-    {
-      requestId: taskFlowRequestId('await-ruling', [row.record_id, String(row.revision)]),
-      stage: {
-        id: row.record_id,
-        expectedRevision: row.revision,
-        values: {
-          arguments: resolved.args,
-          closedStepNotes: JSON.parse(resolved.closed) as unknown[],
-          state: 'awaiting-ruling',
-          question: question.trim(),
-          sessionId: context.session ?? row.session_id,
-          updatedAt: at,
-        },
+  const payload = {
+    requestId: taskFlowRequestId('await-ruling', [row.record_id, String(row.revision)]),
+    stage: {
+      id: row.record_id,
+      expectedRevision: row.revision,
+      values: {
+        arguments: resolved.args,
+        closedStepNotes: JSON.parse(resolved.closed) as unknown[],
+        state: 'awaiting-ruling',
+        question: question.trim(),
+        sessionId: context.session ?? row.session_id,
+        updatedAt: at,
       },
     },
+  }
+  const hosted = await writeHostedTaskFlow(
+    'await-ruling',
+    payload,
     taskFlowWriteTarget(row.project, d),
     context.taskFlowClient,
   )
   return writeTransaction(() => {
     const store = taskFlowStore(d)
-    const currentRevision = store.stageRevision(row.record_id)
-    if (currentRevision !== row.revision)
-      throw new Error(
-        `workflow cursor ${row.id} changed while awaiting a ruling; rerun the command`,
-      )
-    const machine = machineId()
-    store.awaitStageRuling({
-      recordId: row.record_id,
-      argumentsJson: resolved.encoded,
-      closedJson: resolved.closed,
-      question: question.trim(),
-      sessionId: context.session ?? null,
-      updatedAt: at,
-      machineId: machine,
-      revision: hosted?.revisions[row.record_id] ?? row.revision + 1,
-    })
+    store.write('await-ruling', payload, hosted)
     const recordedQuestion = upsertWorkflowQuestion(
       {
         cursorId: row.record_id,

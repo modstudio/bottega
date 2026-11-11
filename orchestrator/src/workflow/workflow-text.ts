@@ -144,7 +144,7 @@ function attachSelectedWorkflowText(
   body: string,
   context: WorkflowCursorContext,
   recordId: string,
-  createdAt: string,
+  _createdAt: string,
   d: Database,
 ): string {
   const existing = taskFlowStore(d).textByRecordId<{
@@ -176,16 +176,7 @@ function attachSelectedWorkflowText(
     cursorBytes,
   })
   if (decision.action === 'refuse') throw new Error(decision.message)
-  const inserted = taskFlowStore(d).insertText({
-    recordId,
-    stageRecordId: row.record_id,
-    stepOrdinal: row.ordinal + 1,
-    stepSlug: row.step_slug,
-    body,
-    createdAt,
-  })
-  if (!inserted) throw new Error('workflow text was not attached; retry the attach call')
-  return workflowTextAttachmentToken(inserted)
+  return workflowTextAttachmentToken(recordId)
 }
 
 function attachTextIntent(row: AttachCursorRow, body: string) {
@@ -222,7 +213,7 @@ async function attachWorkflowTextByHandleUnchecked(
 ): Promise<string> {
   const row = selectWorkflowCursor({}, cursor, undefined, d) as AttachCursorRow
   const { recordId, createdAt, input } = attachTextIntent(row, body)
-  await writeHostedTaskFlow(
+  const hosted = await writeHostedTaskFlow(
     'attach-text',
     input,
     taskFlowWriteTarget(row.project, d),
@@ -232,6 +223,7 @@ async function attachWorkflowTextByHandleUnchecked(
     const current = selectWorkflowCursor({}, cursor, undefined, d) as AttachCursorRow
     if (current.record_id !== row.record_id || current.revision !== row.revision)
       throw new Error(`cursor ${cursor} changed while text was attached; rerun the attach command`)
+    taskFlowStore(d).write('attach-text', input, hosted)
     return attachSelectedWorkflowText(current, body, context, recordId, createdAt, d)
   }, d)
 }
@@ -256,7 +248,7 @@ async function attachWorkflowTextUnchecked(
   const row = selectWorkflowCursor(identity, cursor, context.session, d) as AttachCursorRow | null
   if (!row) throw new Error('workflow has no live cursor; fetch its current step first')
   const { recordId, createdAt, input } = attachTextIntent(row, body)
-  await writeHostedTaskFlow(
+  const hosted = await writeHostedTaskFlow(
     'attach-text',
     input,
     taskFlowWriteTarget(row.project, d),
@@ -271,6 +263,7 @@ async function attachWorkflowTextUnchecked(
     ) as AttachCursorRow | null
     if (!current || current.record_id !== row.record_id || current.revision !== row.revision)
       throw new Error(`workflow cursor changed while text was attached; rerun the attach command`)
+    taskFlowStore(d).write('attach-text', input, hosted)
     return attachSelectedWorkflowText(current, body, context, recordId, createdAt, d)
   }, d)
 }
@@ -327,15 +320,16 @@ export async function deleteWorkflowText(
   const project = taskFlowStore(d).stageProject(cursorId)
   if (!project)
     throw new Error(`workflow cursor ${cursorId} does not exist; retry with a live cursor`)
-  await writeHostedTaskFlow(
+  const payload = {
+    requestId: taskFlowRequestId('delete-text', [cursorId, ...ids.sort()]),
+    stageRecordId: cursorId,
+    ids,
+  }
+  const hosted = await writeHostedTaskFlow(
     'delete-text',
-    {
-      requestId: taskFlowRequestId('delete-text', [cursorId, ...ids.sort()]),
-      stageRecordId: cursorId,
-      ids,
-    },
+    payload,
     taskFlowWriteTarget(project, d),
     client,
   )
-  writeTransaction(() => deleteWorkflowTextLocally(ids, d), d)
+  writeTransaction(() => taskFlowStore(d).write('delete-text', payload, hosted), d)
 }

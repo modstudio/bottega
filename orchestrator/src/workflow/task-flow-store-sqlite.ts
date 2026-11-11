@@ -2,8 +2,14 @@
 /** Carries the local task-flow SQL behind TaskFlowStore. */
 
 import type { Database } from 'bun:sqlite'
+import type {
+  TaskFlowIntent,
+  TaskFlowIntentInput,
+  TaskFlowIntentResult,
+} from '../record/record-task-flow-write-contract.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import * as questions from './task-flow-store-sqlite-questions.ts'
+import { writeSqliteTaskFlow } from './task-flow-store-sqlite-write.ts'
 import type {
   TaskFlowProjectionRow,
   TaskFlowStageCursorRow,
@@ -20,6 +26,14 @@ class SqliteTaskFlowStore {
 
   constructor(database: Database) {
     this.database = database
+  }
+
+  write<K extends TaskFlowIntent>(
+    intent: K,
+    payload: TaskFlowIntentInput<K>,
+    applied?: TaskFlowIntentResult<K> | null,
+  ): TaskFlowIntentResult<K> {
+    return writeSqliteTaskFlow(this.database, intent, payload, applied)
   }
 
   retireStageIdentity(input: {

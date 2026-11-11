@@ -2,6 +2,11 @@
 /** The task-flow persistence port and its resolver. */
 
 import type { Database } from 'bun:sqlite'
+import type {
+  TaskFlowIntent,
+  TaskFlowIntentInput,
+  TaskFlowIntentResult,
+} from '../record/record-task-flow-write-contract.ts'
 import { sqliteTaskFlowStore } from './task-flow-store-sqlite.ts'
 import type {
   TaskFlowProjectionRow,
@@ -15,6 +20,11 @@ import type {
  * writer in record/record-cache-workflow.ts and refresh in workflow/task-flow-read-through.ts.
  */
 export interface TaskFlowStore {
+  write<K extends TaskFlowIntent>(
+    intent: K,
+    payload: TaskFlowIntentInput<K>,
+    applied?: TaskFlowIntentResult<K> | null,
+  ): TaskFlowIntentResult<K>
   retireStageIdentity(input: {
     project: string
     workflow: string
