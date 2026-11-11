@@ -242,6 +242,25 @@ async function deleteRecordSpaceTransaction(
       })
     }
     const tables: SpaceDeleteResult['tables'] = []
+    const appendOnlyRows =
+      await tx`SELECT * FROM record_delete_append_only_space_rows(${read.spaceId}::uuid)`
+    tables.push({
+      table: 'hub_send_recipient',
+      count: Number(appendOnlyRows[0]?.hub_send_recipient_count ?? 0),
+    })
+    tables.push({ table: 'hub_send', count: Number(appendOnlyRows[0]?.hub_send_count ?? 0) })
+    tables.push({
+      table: 'space_outside_write',
+      count: Number(appendOnlyRows[0]?.space_outside_write_count ?? 0),
+    })
+    tables.push({
+      table: 'machine_name_claim',
+      count: Number(appendOnlyRows[0]?.machine_name_claim_count ?? 0),
+    })
+    tables.push({
+      table: 'board_presence',
+      count: Number(appendOnlyRows[0]?.board_presence_count ?? 0),
+    })
     // These rows precede every membership so membership_revoke_config_machines cannot strand a DEK.
     for (const step of SPACE_TEARDOWN_PLAN.filter((item) => item.table !== 'membership')) {
       const deleted = await tx.unsafe(

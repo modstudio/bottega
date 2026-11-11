@@ -1,13 +1,35 @@
 import { expect, test } from 'bun:test'
-import { pgTable, uuid } from 'drizzle-orm/pg-core'
-import { project, space } from '../../../shared/record/schema.ts'
+import { getTableConfig, pgTable, uuid } from 'drizzle-orm/pg-core'
+import { project, RECORD_ACTOR_ROLE, space } from '../../../shared/record/schema.ts'
 import {
   deriveProjectPurgePlan,
   deriveSpaceTeardownPlan,
+  HOSTED_RECORD_TABLES,
   SPACE_TEARDOWN_PLAN,
   unclassifiedProjectTables,
   unclassifiedSpaceTables,
 } from './record-space-teardown-plan.ts'
+
+test('every planned RLS teardown table permits actor deletion', () => {
+  const tables = new Map(
+    HOSTED_RECORD_TABLES.map((table) => [getTableConfig(table).name, getTableConfig(table)]),
+  )
+  const gaps = SPACE_TEARDOWN_PLAN.flatMap(({ table }) => {
+    const config = tables.get(table)
+    if (!config?.enableRLS) return []
+    const permitsActorDelete = config.policies.some((policy) => {
+      if (policy.for !== 'delete' && policy.for !== 'all') return false
+      if (policy.to === undefined || policy.to === 'public' || policy.to === RECORD_ACTOR_ROLE)
+        return true
+      return Array.isArray(policy.to) && policy.to.includes(RECORD_ACTOR_ROLE)
+    })
+    return permitsActorDelete ? [] : [table]
+  })
+  expect(
+    gaps,
+    `RLS teardown tables without record_actor DELETE: ${gaps.join(', ')}; add an actor DELETE policy, or delete each table in a definer function and list it in SPACE_TEARDOWN_EXCLUSIONS`,
+  ).toEqual([])
+})
 
 test('an unclassified space foreign key is refused', () => {
   const fixture = pgTable('fixture_space_child', {

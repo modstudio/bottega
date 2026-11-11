@@ -28,7 +28,7 @@ const table = (value: unknown): value is PgTable => {
     return false
   }
 }
-const hostedRecordTables = [
+export const HOSTED_RECORD_TABLES = [
   ...new Set(modules.flatMap((module) => Object.values(module)).filter(table)),
 ]
 type ForeignKeyFact = {
@@ -45,12 +45,22 @@ type RecordTeardownReach = {
 }
 export type RecordTeardownStep = { table: string; reachedBy: RecordTeardownReach[] }
 export const SPACE_TEARDOWN_EXCLUSIONS = {
+  board_presence:
+    'deleted by the append-only teardown definer function; record_actor holds no DELETE policy',
+  hub_send:
+    'deleted by the append-only teardown definer function; append-only record_actor holds no DELETE policy',
+  hub_send_recipient:
+    'deleted by the append-only teardown definer function; append-only record_actor holds no DELETE policy',
+  machine_name_claim:
+    'deleted by the append-only teardown definer function; record_actor holds no DELETE policy',
   public_doc_space:
     'a published space is refused before teardown and record_actor holds SELECT only',
   record_change: 'ON DELETE CASCADE removes change-feed rows with the space',
   routing_evidence_head: 'deleted by the trial teardown definer function; actor DELETE is revoked',
   session: 'session.active_space_id is ON DELETE SET NULL',
   secret_dek: 'deleted by the trial teardown definer function; actor DELETE is revoked',
+  space_outside_write:
+    'deleted by the append-only teardown definer function; record_actor holds no DELETE policy',
   user: 'personal_space_id and last_active_space_id are ON DELETE SET NULL',
 } as const
 export const PROJECT_PURGE_EXCLUSIONS = {
@@ -153,7 +163,7 @@ function orderReachedTables(
 }
 
 export function deriveSpaceTeardownPlan(
-  tables: readonly PgTable[] = hostedRecordTables,
+  tables: readonly PgTable[] = HOSTED_RECORD_TABLES,
   exclusions: Readonly<Record<string, string>> = SPACE_TEARDOWN_EXCLUSIONS,
 ): RecordTeardownStep[] {
   const facts = foreignKeyFacts(tables)
@@ -170,7 +180,7 @@ export const SPACE_TEARDOWN_PLAN = deriveSpaceTeardownPlan()
 export const SPACE_TEARDOWN_ORDER = SPACE_TEARDOWN_PLAN.map((step) => step.table)
 
 export function deriveProjectPurgePlan(
-  tables: readonly PgTable[] = hostedRecordTables,
+  tables: readonly PgTable[] = HOSTED_RECORD_TABLES,
   exclusions: Readonly<Record<string, string>> = PROJECT_PURGE_EXCLUSIONS,
 ): RecordTeardownStep[] {
   const facts = foreignKeyFacts(tables)
@@ -216,7 +226,7 @@ export function buildRecordTeardownPredicates(
 function unclassifiedTeardownTables(
   rootTable: string,
   follows: (fact: ForeignKeyFact) => boolean,
-  tables: readonly PgTable[] = hostedRecordTables,
+  tables: readonly PgTable[] = HOSTED_RECORD_TABLES,
   order: readonly string[],
   exclusions: Readonly<Record<string, string>>,
 ): string[] {
@@ -237,7 +247,7 @@ function unclassifiedTeardownTables(
 }
 
 export function unclassifiedSpaceTables(
-  tables: readonly PgTable[] = hostedRecordTables,
+  tables: readonly PgTable[] = HOSTED_RECORD_TABLES,
   order: readonly string[] = SPACE_TEARDOWN_ORDER,
   exclusions: Readonly<Record<string, string>> = SPACE_TEARDOWN_EXCLUSIONS,
 ): string[] {
@@ -245,7 +255,7 @@ export function unclassifiedSpaceTables(
 }
 
 export function unclassifiedProjectTables(
-  tables: readonly PgTable[] = hostedRecordTables,
+  tables: readonly PgTable[] = HOSTED_RECORD_TABLES,
   order: readonly string[] = PROJECT_PURGE_ORDER,
   exclusions: Readonly<Record<string, string>> = PROJECT_PURGE_EXCLUSIONS,
 ): string[] {

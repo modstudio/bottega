@@ -202,12 +202,33 @@ export function registerTrialSpaceTeardownProof(input: {
     const space = newRecordId()
     const dek = newRecordId()
     const evidence = newRecordId()
+    const project = newRecordId()
+    const machine = newRecordId()
+    const machineClaim = newRecordId()
+    const outsideWrite = newRecordId()
+    const send = newRecordId()
+    const sendRecipient = newRecordId()
+    const presence = newRecordId()
     const slug = `trial-general-delete-${space}`
     input.admin(`
       INSERT INTO space(id,name,slug,metadata,created_at)
         VALUES ('${space}','general delete','${slug}',NULL,now());
       INSERT INTO membership(id,space_id,user_id,role,permission,config_access,created_at)
         VALUES ('${newRecordId()}','${space}','${owner}','owner','write',true,now());
+      INSERT INTO project(id,space_id,name,key_prefixes,created_at)
+        VALUES ('${project}','${space}','delete proof',ARRAY['DELETE'],now());
+      INSERT INTO machine(id,user_id,name,registered_at,last_seen)
+        VALUES ('${machine}','${owner}','delete-proof',now(),now());
+      INSERT INTO machine_name_claim(id,space_id,short_name,machine_id,claimed_at)
+        VALUES ('${machineClaim}','${space}','delete-proof','${machine}',now());
+      INSERT INTO space_outside_write(id,space_id,user_id,kind,subject_id,created_at)
+        VALUES ('${outsideWrite}','${space}','${owner}','post','${newRecordId()}',now());
+      INSERT INTO hub_send(id,space_id,at,"window",recipients,projects,items,status,test,created_at,machine)
+        VALUES ('${send}','${space}',now(),'day','owner@example.test','delete proof',1,'sent',1,now(),'proof');
+      INSERT INTO hub_send_recipient(id,space_id,send_id,user_id,name,email,created_at)
+        VALUES ('${sendRecipient}','${space}','${send}','${owner}','Owner','owner@example.test',now());
+      INSERT INTO board_presence(id,space_id,user_id,session,project_id,role,machine_id,first_seen,last_seen)
+        VALUES ('${presence}','${space}','${owner}','delete-proof','${project}','architect','${machine}',now(),now());
       INSERT INTO secret_dek(id,space_id,version,created_at) VALUES ('${dek}','${space}',1,now());
       INSERT INTO routing_evidence_head(id,space_id,sequence) VALUES ('${evidence}','${space}',1);`)
     await expect(
@@ -235,6 +256,11 @@ export function registerTrialSpaceTeardownProof(input: {
     const deletedCounts = Object.fromEntries(deleted.tables.map((row) => [row.table, row.count]))
     expect(deletedCounts.secret_dek).toBe(1)
     expect(deletedCounts.routing_evidence_head).toBe(1)
+    expect(deletedCounts.hub_send_recipient).toBe(1)
+    expect(deletedCounts.hub_send).toBe(1)
+    expect(deletedCounts.space_outside_write).toBe(1)
+    expect(deletedCounts.machine_name_claim).toBe(1)
+    expect(deletedCounts.board_presence).toBe(1)
     expect(deletedCounts.space).toBe(1)
     expect(
       input.admin(
