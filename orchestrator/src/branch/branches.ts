@@ -22,8 +22,8 @@ import {
   type RecordedLandingReport,
   recordAutomaticBranchLandingEvidence,
 } from './branch-landing-service.ts'
-import { assertBranchRefMayBeDeleted } from './branch-ref-guard.ts'
 import { branchVerdictRemedy } from './branch-prune-remedy.ts'
+import { assertBranchRefMayBeDeleted } from './branch-ref-guard.ts'
 import { settleDeletedBranch } from './branch-settlement.ts'
 import {
   type BranchLandingRecord,
