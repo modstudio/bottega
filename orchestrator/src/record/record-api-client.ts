@@ -43,6 +43,7 @@ import {
   type RecordApiAuthentication,
   type RecordBoardStreamOpen,
   type RecordBoardWatchMethod,
+  type RecordClientRequest,
   type RecordDocOrderInput,
   type RecordDocReadMethod,
   type RecordDocWriteMethod,
@@ -260,6 +261,7 @@ export type RecordApiClient = ProjectIdentityClient &
       role: 'member' | 'admin' | 'owner'
       organizationId: string
     }): Promise<{ id: string }>
+    removeMember(input: { email: string; organizationId: string }): Promise<void>
     putSnapshot(
       kind: SnapshotKind,
       input: { machineId: string; payload: unknown },
@@ -912,7 +914,7 @@ const recordProjectSubjectClient = (
 })
 
 function recordIdentityAndSpaceClient(
-  request = recordApiRequest,
+  request: RecordClientRequest = recordApiRequest,
 ): Pick<RecordApiClient, RecordIdentityAndSpaceMethod> {
   return {
     createOrganization: (input) =>
@@ -941,6 +943,11 @@ function recordIdentityAndSpaceClient(
       request('/api/auth/organization/invite-member', {
         method: 'POST',
         body: JSON.stringify(input),
+      }),
+    removeMember: ({ email, organizationId }) =>
+      request('/api/auth/organization/remove-member', {
+        method: 'POST',
+        body: JSON.stringify({ memberIdOrEmail: email, organizationId }),
       }),
     deleteTrialSpace: (slug) =>
       request('/v1/spaces/delete-trial', trialSpaceDeleteTransport.options(slug)),

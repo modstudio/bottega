@@ -5,7 +5,12 @@ import { readMachineValue } from '../../shared/machine-config.ts'
 import { operatorInboxPath } from '../../shared/operator-inbox.ts'
 import type { OperatorWaitingItem } from '../../shared/orch-contract.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
+import {
+  type HostedWriteDestinationOptions,
+  hostedWriteDestination,
+} from './hosted-write-destination.ts'
 import { waiting } from './orch.ts'
+import { personalRecordSpace } from './personal-record-space.ts'
 import { hostedCreateOperatorWaitingEmail, hostedSignedInUserId } from './task-client.ts'
 import { uniqueTaskRecordIdForKey } from './task-identity.ts'
 
@@ -22,6 +27,13 @@ const waitingItemRecordId = (item: WaitingEmailLedgerKey) =>
 
 const ledgerKey = (item: WaitingEmailLedgerKey) =>
   `${item.kind}\u0000${waitingItemRecordId(item)}\u0000${item.episode}`
+
+function waitingEmailPushError(item: OperatorWaitingItem, cause: unknown): string {
+  return (
+    `hub: operator waiting email push failed for ${item.kind} ${waitingItemRecordId(item)}` +
+    `${item.project ? ` in project ${item.project}` : ''}: ${String(cause)}`
+  )
+}
 
 /** Question text reaches the caller only after this pure decision says the episode is due. */
 export function dueOperatorWaitingEmails(
@@ -110,6 +122,8 @@ export async function deliverOperatorWaitingEmails(
     taskRecordId?: (taskKey: string | null) => string | null
     record?: (item: OperatorWaitingItem) => void
     error?: (message: string) => void
+    destination?: (item: OperatorWaitingItem) => Promise<string>
+    destinationOptions?: HostedWriteDestinationOptions
   } = {},
 ): Promise<void> {
   const error = dependencies.error ?? console.error
@@ -130,26 +144,41 @@ export async function deliverOperatorWaitingEmails(
     return
   }
   const port = readMachineValue('hub.port')
+  let personalSpace: Promise<string> | undefined
+  const destination =
+    dependencies.destination ??
+    ((item: OperatorWaitingItem) => {
+      if (item.project === null)
+        personalSpace ??= personalRecordSpace(dependencies.destinationOptions)
+      return hostedWriteDestination(item.project, {
+        ...dependencies.destinationOptions,
+        personalSpace,
+      })
+    })
   for (const item of due) {
     try {
-      const result = await (dependencies.push ?? hostedCreateOperatorWaitingEmail)({
-        kind: item.kind,
-        item_id: item.id,
-        item_record_id: waitingItemRecordId(item),
-        episode: item.episode,
-        project: item.project,
-        task_key: item.task_key,
-        task_id: (dependencies.taskRecordId ?? ((key) => uniqueTaskRecordIdForKey(db(), key)))(
-          item.task_key,
-        ),
-        question: item.question,
-        options: item.options,
-        recommendation: item.recommendation,
-        why: item.why,
-        waiting_since: item.waiting_since,
-        link: `http://127.0.0.1:${port}${operatorInboxPath(item.kind, item.id)}`,
-        answer_command: item.answer_command,
-      })
+      const recordSpace = await destination(item)
+      const result = await (dependencies.push ?? hostedCreateOperatorWaitingEmail)(
+        {
+          kind: item.kind,
+          item_id: item.id,
+          item_record_id: waitingItemRecordId(item),
+          episode: item.episode,
+          project: item.project,
+          task_key: item.task_key,
+          task_id: (dependencies.taskRecordId ?? ((key) => uniqueTaskRecordIdForKey(db(), key)))(
+            item.task_key,
+          ),
+          question: item.question,
+          options: item.options,
+          recommendation: item.recommendation,
+          why: item.why,
+          waiting_since: item.waiting_since,
+          link: `http://127.0.0.1:${port}${operatorInboxPath(item.kind, item.id)}`,
+          answer_command: item.answer_command,
+        },
+        { recordSpace },
+      )
       if (result.status === 'failed') throw new Error(result.reason ?? 'hosted email failed')
       if (result.status === 'sent' || result.status === 'abandoned') {
         ;(dependencies.record ?? recordPushed)(item)
@@ -159,7 +188,7 @@ export async function deliverOperatorWaitingEmails(
           )
       }
     } catch (cause) {
-      error(`hub: operator waiting email push failed: ${String(cause)}`)
+      error(waitingEmailPushError(item, cause))
     }
   }
 }

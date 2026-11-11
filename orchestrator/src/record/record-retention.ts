@@ -16,6 +16,7 @@ type PruneOutcome = { deleted: number } | { failure: string }
 type PruneOutcomes = {
   recordChange: PruneOutcome
   contention: PruneOutcome
+  noDestinationWrite: PruneOutcome
   boardPresence: PruneOutcome
 }
 
@@ -47,19 +48,24 @@ export async function runLockedRecordRetention(input: {
   tryLock(): Promise<boolean>
   pruneRecordChanges(): Promise<number>
   pruneContention(): Promise<number>
+  pruneNoDestinationWrite(): Promise<number>
   pruneBoardPresence(): Promise<number>
 }): Promise<RecordRetentionResult> {
   if (!(await input.tryLock())) return { acquired: false }
   const recordChange = await pruneOutcome(input.pruneRecordChanges)
   const contention = await pruneOutcome(input.pruneContention)
+  const noDestinationWrite = await pruneOutcome(input.pruneNoDestinationWrite)
   const boardPresence = await pruneOutcome(input.pruneBoardPresence)
   return {
     acquired: true,
-    outcomes: { recordChange, contention, boardPresence },
+    outcomes: { recordChange, contention, noDestinationWrite, boardPresence },
   }
 }
 
-async function pruneFunction(connection: SQL, name: 'record_change_prune' | 'contention_prune') {
+async function pruneFunction(
+  connection: SQL,
+  name: 'record_change_prune' | 'contention_prune' | 'no_destination_write_prune',
+) {
   return connection.begin(async (tx) => {
     const result = rows<{ deleted: number | bigint | string }>(
       await tx.unsafe(`SELECT ${name}() AS deleted`),
@@ -88,6 +94,7 @@ export async function pruneRecordRetention(
       tryLock: async () => acquired,
       pruneRecordChanges: () => pruneFunction(connection, 'record_change_prune'),
       pruneContention: () => pruneFunction(connection, 'contention_prune'),
+      pruneNoDestinationWrite: () => pruneFunction(connection, 'no_destination_write_prune'),
       pruneBoardPresence: async () => {
         const result = rows<{ deleted: number | bigint | string }>(
           await connection`SELECT public.board_presence_prune() AS deleted`,
@@ -130,13 +137,16 @@ export async function runRecordRetentionPass(
       `record retention: ${format('record_change', result.outcomes.recordChange)}, ${format(
         'contention',
         result.outcomes.contention,
-      )}, ${format('board_presence', result.outcomes.boardPresence)} in ${durationMs}ms`,
+      )}, ${format('no_destination_write', result.outcomes.noDestinationWrite)}, ${format(
+        'board_presence',
+        result.outcomes.boardPresence,
+      )} in ${durationMs}ms`,
     )
   } catch (error) {
     const durationMs = adapters.now() - startedAt
     const message = error instanceof Error ? error.message : String(error)
     adapters.log(
-      `record retention failed after ${durationMs}ms: ${message}; verify record database connectivity and that record_change_prune() and contention_prune() are installed; the next interval will retry`,
+      `record retention failed after ${durationMs}ms: ${message}; verify record database connectivity and that record_change_prune(), contention_prune(), and no_destination_write_prune() are installed; the next interval will retry`,
     )
   }
 }

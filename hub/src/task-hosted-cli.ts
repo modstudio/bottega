@@ -10,6 +10,7 @@ export async function runHostedTaskMaintenance(
     onlyPresentElsewhere?: boolean
     project?: string
     repair?: boolean
+    space?: string
   },
 ) {
   if (command === 'push') {
@@ -20,6 +21,7 @@ export async function runHostedTaskMaintenance(
   }
   const confirmation = args.confirm
   const result = await pruneForeignHostedTasks({
+    space: args.space,
     dryRun: Boolean(args.dryRun),
     confirmation: confirmation === undefined ? undefined : Number(confirmation),
     project: args.project,
@@ -36,7 +38,7 @@ export async function runHostedTaskMaintenance(
     )
   console.log(
     result.deleted
-      ? `soft-deleted ${result.deleted.tasks} tasks in active space ${result.active_space_id}`
+      ? `soft-deleted ${result.deleted.tasks} tasks in space ${result.space_id}`
       : `${result.tasks.length} foreign tasks; dry run, nothing deleted`,
   )
 }

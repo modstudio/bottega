@@ -28,6 +28,7 @@ function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
       memberships: [{ space_id: 'space-active', slug: 'active', permission: 'write' }],
     }),
     inviteMember: async () => ({ id: newRecordId() }),
+    removeMember: async () => {},
     putSnapshot: async () => ({ takenAt: new Date().toISOString() }),
     listSnapshots: async () => ({ items: [] }),
     listDocs: async () => ({ items: [], nextCursor: null }),

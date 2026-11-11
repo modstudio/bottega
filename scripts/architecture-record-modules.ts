@@ -464,11 +464,13 @@ export const recordModules: RecordModule[] = [
     './record-project-destination.ts',
   ]),
   module('orchestrator/src/record/record-api-write-telemetry.ts', [
+    'bun',
     'hono',
     '../../../shared/record-space-membership.ts',
     './record-auth.ts',
     '../../../shared/record-no-destination-write-contract.ts',
     '../../../shared/record-no-destination-write-counter.ts',
+    '../../../shared/record/no-destination-write-store.ts',
     './record-no-destination-write-decision.ts',
   ]),
   module('orchestrator/src/record/record-no-destination-write-decision.ts', [

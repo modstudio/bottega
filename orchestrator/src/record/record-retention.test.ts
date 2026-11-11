@@ -15,6 +15,7 @@ test('record retention reports both prune outcomes under an acquired lock', asyn
       tryLock: async () => true,
       pruneRecordChanges: async () => 2,
       pruneContention: async () => 3,
+      pruneNoDestinationWrite: async () => 5,
       pruneBoardPresence: async () => 4,
     }),
   ).toEqual({
@@ -22,6 +23,7 @@ test('record retention reports both prune outcomes under an acquired lock', asyn
     outcomes: {
       recordChange: { deleted: 2 },
       contention: { deleted: 3 },
+      noDestinationWrite: { deleted: 5 },
       boardPresence: { deleted: 4 },
     },
   })
@@ -37,6 +39,7 @@ test('record retention pass reports both deleted counts and one duration', async
       outcomes: {
         recordChange: { deleted: 12 },
         contention: { deleted: 7 },
+        noDestinationWrite: { deleted: 5 },
         boardPresence: { deleted: 2 },
       },
     }),
@@ -45,7 +48,7 @@ test('record retention pass reports both deleted counts and one duration', async
   })
 
   expect(lines).toEqual([
-    'record retention: record_change 12 deleted, contention 7 deleted, board_presence 2 deleted in 27ms',
+    'record retention: record_change 12 deleted, contention 7 deleted, no_destination_write 5 deleted, board_presence 2 deleted in 27ms',
   ])
 })
 
@@ -65,6 +68,10 @@ test('record retention still prunes contention when record change pruning fails'
           calls.push('contention')
           return 7
         },
+        pruneNoDestinationWrite: async () => {
+          calls.push('no_destination_write')
+          return 5
+        },
         pruneBoardPresence: async () => {
           calls.push('board_presence')
           return 2
@@ -74,9 +81,9 @@ test('record retention still prunes contention when record change pruning fails'
     log: (line) => lines.push(line),
   })
 
-  expect(calls).toEqual(['record_change', 'contention', 'board_presence'])
+  expect(calls).toEqual(['record_change', 'contention', 'no_destination_write', 'board_presence'])
   expect(lines).toEqual([
-    'record retention: record_change failed (record change unavailable), contention 7 deleted, board_presence 2 deleted in 0ms',
+    'record retention: record_change failed (record change unavailable), contention 7 deleted, no_destination_write 5 deleted, board_presence 2 deleted in 0ms',
   ])
 })
 
@@ -95,6 +102,10 @@ test('record change prune pass skips without pruning when the transaction lock i
         pruneContention: async () => {
           pruneCalls += 1
           return 5
+        },
+        pruneNoDestinationWrite: async () => {
+          pruneCalls += 1
+          return 7
         },
         pruneBoardPresence: async () => {
           pruneCalls += 1
@@ -145,7 +156,7 @@ test('a failing record change prune pass is logged and the interval keeps runnin
   expect(intervalMilliseconds).toEqual([RECORD_RETENTION_INTERVAL_MS])
   expect(pruneCalls).toBe(1)
   expect(lines).toEqual([
-    'record retention failed after 0ms: database unavailable; verify record database connectivity and that record_change_prune() and contention_prune() are installed; the next interval will retry',
+    'record retention failed after 0ms: database unavailable; verify record database connectivity and that record_change_prune(), contention_prune(), and no_destination_write_prune() are installed; the next interval will retry',
   ])
 
   intervalCallbacks[0]!()
@@ -165,6 +176,7 @@ test('stopping record retention clears its start timeout and interval', () => {
       outcomes: {
         recordChange: { deleted: 0 },
         contention: { deleted: 0 },
+        noDestinationWrite: { deleted: 0 },
         boardPresence: { deleted: 0 },
       },
     }),
@@ -180,6 +192,7 @@ test('stopping record retention clears its start timeout and interval', () => {
       outcomes: {
         recordChange: { deleted: 0 },
         contention: { deleted: 0 },
+        noDestinationWrite: { deleted: 0 },
         boardPresence: { deleted: 0 },
       },
     }),

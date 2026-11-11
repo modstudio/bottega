@@ -21,17 +21,14 @@ export function selectForeignHostedTasks(
   registered: readonly RegisteredTaskSpace[],
   identity: Awaited<ReturnType<typeof hostedTaskIdentity>>,
   present: readonly HostedTaskPresencePair[],
+  space: string,
   filters: { project?: string; onlyPresentElsewhere?: boolean } = {},
 ): ForeignHostedTask[] {
   const existing = new Set(present.map((pair) => `${pair.space_id}\0${pair.key}`))
   return tasks.flatMap((task) => {
     if (task.deleted_at || (filters.project && task.project !== filters.project)) return []
     const destination = taskProjectDestination(task.project, registered, identity)
-    if (
-      'destinationSpaceId' in destination &&
-      destination.destinationSpaceId === identity.activeSpaceId
-    )
-      return []
+    if ('destinationSpaceId' in destination && destination.destinationSpaceId === space) return []
     const targetSpaceId =
       'destinationSpaceId' in destination ? destination.destinationSpaceId : null
     const presentElsewhere = targetSpaceId ? existing.has(`${targetSpaceId}\0${task.key}`) : null
@@ -50,6 +47,7 @@ export function selectForeignHostedTasks(
 }
 
 type Options = {
+  space?: string
   dryRun?: boolean
   confirmation?: number
   project?: string
@@ -60,28 +58,43 @@ type Options = {
 }
 
 export async function pruneForeignHostedTasks(options: Options = {}) {
+  if (!options.space?.trim())
+    throw new Error('prune-foreign names no hosted space; pass --space <id> and retry')
   const request = { baseUrl: options.baseUrl, token: options.token, fetch: options.fetch }
+  const targeted = { ...request, recordSpace: options.space }
   const identity = await hostedTaskIdentity(request)
   rememberHostedInstall(identity.activeSpaceId)
-  const active = await hostedListTasks(request)
-  const preliminary = selectForeignHostedTasks(active.tasks, projects(), identity, [])
+  const active = await hostedListTasks(targeted)
+  const preliminary = selectForeignHostedTasks(
+    active.tasks,
+    projects(),
+    identity,
+    [],
+    options.space,
+  )
   const pairs = preliminary.flatMap((task) =>
     task.target_space_id ? [{ space_id: task.target_space_id, key: task.key }] : [],
   )
   const presence = pairs.length
-    ? await hostedTaskPresence(pairs, request)
+    ? await hostedTaskPresence(pairs, targeted)
     : { present: [], refused: [] }
-  const selected = selectForeignHostedTasks(active.tasks, projects(), identity, presence.present, {
-    project: options.project,
-    onlyPresentElsewhere: options.onlyPresentElsewhere,
-  })
-  if (options.dryRun)
-    return { active_space_id: identity.activeSpaceId, tasks: selected, deleted: null }
+  const selected = selectForeignHostedTasks(
+    active.tasks,
+    projects(),
+    identity,
+    presence.present,
+    options.space,
+    {
+      project: options.project,
+      onlyPresentElsewhere: options.onlyPresentElsewhere,
+    },
+  )
+  if (options.dryRun) return { space_id: options.space, tasks: selected, deleted: null }
   confirmCount(selected.length, options.confirmation, 'exact-always')
   const deleted = await hostedDeleteTasks(
     selected.map((task) => task.id),
     options.confirmation,
-    request,
+    targeted,
   )
-  return { active_space_id: identity.activeSpaceId, tasks: selected, deleted }
+  return { space_id: options.space, tasks: selected, deleted }
 }

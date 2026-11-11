@@ -60,6 +60,7 @@ export type RecordIdentityAndSpaceMethod =
   | 'listInvitations'
   | 'acceptInvitation'
   | 'inviteMember'
+  | 'removeMember'
 export type RecordBoardWatchMethod = 'releaseBoardTaskClaims' | 'openBoardStream'
 
 export type ProjectIdentityClient = {

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type ConfirmedSpaceDeleteFacts,
   decideSpaceDelete,
@@ -87,7 +88,12 @@ describe('confirmed space delete guard', () => {
         ...general,
         members: [base.members[0]!, { ...base.members[1]!, email: 'real@example.test' }],
       }),
-    ).toMatchObject({ allowed: false, refusal: expect.stringContaining('member removal') })
+    ).toMatchObject({
+      allowed: false,
+      refusal: expect.stringContaining(
+        `remove that member with \`${PLATFORM_SLUG} record space member remove real@example.test --space trial-demo\`, then retry`,
+      ),
+    })
     expect(decideSpaceDelete(general)).toEqual({
       allowed: true,
       nothing: false,

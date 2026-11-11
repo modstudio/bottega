@@ -1,27 +1,37 @@
 import { expect, test } from 'bun:test'
-import { noDestinationWriteCounter } from './record-no-destination-write-counter.ts'
+import { parseNoDestinationWriteReport } from './record-no-destination-write-contract.ts'
+import { createNoDestinationWriteCounter } from './record-no-destination-write-counter.ts'
 
-test('counts by space, route and cause and filters reports by space', () => {
-  const cause = `counter-test-${crypto.randomUUID()}`
-  noDestinationWriteCounter({ record: { spaceId: 'space-a', route: '/a', cause } })
-  noDestinationWriteCounter({ record: { spaceId: 'space-a', route: '/a', cause } })
-  noDestinationWriteCounter({ record: { spaceId: 'space-b', route: '/b', cause } })
-
-  expect(noDestinationWriteCounter({ read: ['space-a'] })?.counts).toContainEqual({
-    spaceId: 'space-a',
-    route: '/a',
-    cause,
-    occurrences: 2,
-  })
-  expect(noDestinationWriteCounter({ read: ['space-a'] })?.counts).not.toContainEqual(
-    expect.objectContaining({ spaceId: 'space-b', cause }),
-  )
+const emptyReport = async () => ({
+  windowStart: '2026-10-28T00:00:00.000Z',
+  counts: [],
 })
 
-test('a recording failure does not escape the counter', () => {
+test('a failed insert is counted only for reports that include its space', async () => {
+  const counter = createNoDestinationWriteCounter()
+  await expect(
+    counter.record({ spaceId: 'space-a', route: '/a', cause: 'cli/1' }, async () => {
+      throw new Error('database unavailable')
+    }),
+  ).resolves.toBeUndefined()
+  expect((await counter.read(['space-a'], emptyReport)).unrecorded).toBe(1)
+  expect((await counter.read(['space-b'], emptyReport)).unrecorded).toBe(0)
+})
+
+test('a failed report load rejects instead of reporting zero', async () => {
+  const counter = createNoDestinationWriteCounter()
+  await expect(
+    counter.read(['space-a'], async () => {
+      throw new Error('database unavailable')
+    }),
+  ).rejects.toThrow('database unavailable')
+})
+
+test('the report parser refuses the process-local shape with a deployment remedy', () => {
   expect(() =>
-    noDestinationWriteCounter({
-      record: { spaceId: 'space-a', route: '/a', cause: 1n },
-    } as never),
-  ).not.toThrow()
+    parseNoDestinationWriteReport(
+      { processStartedAt: '2026-11-11T00:00:00.000Z', counts: [] },
+      'hosted API',
+    ),
+  ).toThrow('deploy the current hosted API and hub, then retry')
 })

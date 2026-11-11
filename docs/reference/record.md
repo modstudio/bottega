@@ -55,6 +55,9 @@ the hosted record and outbox
 - [bottega record space invitations](#bottega-record-space-invitations)
 - [bottega record space invite](#bottega-record-space-invite)
 - [bottega record space list](#bottega-record-space-list)
+- [bottega record space member](#bottega-record-space-member)
+- [bottega record space member help](#bottega-record-space-member-help)
+- [bottega record space member remove](#bottega-record-space-member-remove)
 - [bottega record space move-project](#bottega-record-space-move-project)
 - [bottega record space switch](#bottega-record-space-switch)
 - [bottega record space unhide](#bottega-record-space-unhide)
@@ -435,6 +438,7 @@ manage hosted record spaces
 - [bottega record space invitations](./record.md#bottega-record-space-invitations)
 - [bottega record space invite](./record.md#bottega-record-space-invite)
 - [bottega record space list](./record.md#bottega-record-space-list)
+- [bottega record space member](./record.md#bottega-record-space-member)
 - [bottega record space move-project](./record.md#bottega-record-space-move-project)
 - [bottega record space switch](./record.md#bottega-record-space-switch)
 - [bottega record space unhide](./record.md#bottega-record-space-unhide)
@@ -752,6 +756,42 @@ list spaces available to the signed-in account
 ### Related
 
 - [bottega record space](./record.md#bottega-record-space)
+
+## bottega record space member
+
+**Synopsis:** `bottega record space member`
+
+manage hosted record space members
+
+### Related
+
+- [bottega record space](./record.md#bottega-record-space)
+- [bottega record space member help](./record.md#bottega-record-space-member-help)
+- [bottega record space member remove](./record.md#bottega-record-space-member-remove)
+
+## bottega record space member help
+
+**Synopsis:** `bottega record space member help [command]`
+
+display help for command
+
+### Related
+
+- [bottega record space member](./record.md#bottega-record-space-member)
+
+## bottega record space member remove
+
+**Synopsis:** `bottega record space member remove <email> [--space <slug>]`
+
+remove a member from a hosted record space
+
+### Options
+
+- `--space <slug>`: record space to remove the member from
+
+### Related
+
+- [bottega record space member](./record.md#bottega-record-space-member)
 
 ## bottega record space move-project
 

@@ -201,6 +201,7 @@ describe('hosted-only note safety', () => {
         {
           baseUrl: 'https://hub.example.test',
           token: 'test',
+          recordSpace: 'space-a',
           fetch: async (input) => {
             paths.push(new URL(input).pathname)
             return Response.json({

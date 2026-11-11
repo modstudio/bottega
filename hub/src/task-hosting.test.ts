@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { forgetRecordSessionToken, writeRecordSessionToken } from '../../shared/record-session.ts'
 import { recordSessionPath, STATE_HOME_ENV } from '../../shared/state-directory.ts'
+import { declareFixtureProjectSpace } from '../test/fixture-project-space.ts'
 import { hostedRouteTestConfig } from '../test/hosted-route-fixture.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
@@ -28,6 +29,8 @@ import { closeThenPrune } from './task-close.ts'
 
 const applyHostedTaskChanges = (changes: Parameters<typeof applyHostedTaskRows>[1]) =>
   writeTransaction((conn) => applyHostedTaskRows(conn, changes))
+
+declareFixtureProjectSpace('workshop', 'workshop')
 
 type BulkTaskRoute = 'presence' | 'delete'
 
@@ -428,6 +431,7 @@ describe('hosted-only task safety', () => {
           {},
           {
             baseUrl: 'https://hub.example.test',
+            recordSpace: 'space-a',
             fetch: async (_input, init) => {
               const authorization = new Headers(init?.headers).get('authorization') ?? ''
               authorizations.push(authorization)
@@ -645,8 +649,11 @@ describe('hosted-only task safety', () => {
         : Response.json({ tasks: 1, comments: 2, documents: 3, statusEvents: 4 })
     }
     const options = { baseUrl: 'https://hub.example.test', token: 'test', fetch }
-    await hostedTaskPresence([{ space_id: 'space-b', key: 'STO-1' }], options)
-    await hostedDeleteTasks(['task-1'], 1, options)
+    await hostedTaskPresence([{ space_id: 'space-b', key: 'STO-1' }], {
+      ...options,
+      recordSpace: 'space-a',
+    })
+    await hostedDeleteTasks(['task-1'], 1, { ...options, recordSpace: 'space-a' })
     expect(requests).toEqual([
       {
         path: '/v1/tasks/presence',
@@ -661,7 +668,7 @@ describe('hosted-only task safety', () => {
     ])
   })
 
-  test('every task write client sends a requested record space and omits an absent one', async () => {
+  test('every task write client sends a requested record space and refuses an absent one', async () => {
     const requests: Array<{ path: string; method: string; space: string | null }> = []
     const fetch = async (input: string, init?: RequestInit) => {
       requests.push({
@@ -679,12 +686,13 @@ describe('hosted-only task safety', () => {
     }
     await hostedCreateTask({}, options)
     await hostedCreateDocument('DEV-1', {}, options)
-    await hostedCreateTask({}, { ...options, recordSpace: null })
+    await expect(hostedCreateTask({}, { ...options, recordSpace: null } as never)).rejects.toThrow(
+      'hosted write names no destination space: /v1/tasks',
+    )
 
     expect(requests).toEqual([
       { path: '/v1/tasks', method: 'POST', space: 'declared-space' },
       { path: '/v1/tasks/DEV-1/documents', method: 'POST', space: 'declared-space' },
-      { path: '/v1/tasks', method: 'POST', space: null },
     ])
   })
 
@@ -697,6 +705,7 @@ describe('hosted-only task safety', () => {
           { error: 'task not found', remedy: 'Create the task in the active space.' },
           { status: 404 },
         ),
+      recordSpace: 'space-a',
     }
 
     await expect(hostedCreateTask({}, options)).rejects.toThrow(
@@ -713,6 +722,7 @@ describe('hosted-only task safety', () => {
           token: 'test',
           fetch: async () => await new Promise<Response>(() => {}),
           requestDeadlineMs: 5,
+          recordSpace: 'space-a',
         },
       ),
     ).rejects.toThrow(

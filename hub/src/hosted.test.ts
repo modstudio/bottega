@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../shared/config-directory.ts'
 import { INSTALL_HOME_ENV } from '../../shared/install-root.ts'
+import { createNoDestinationWriteCounter } from '../../shared/record-no-destination-write-counter.ts'
 import { hostedRequestHandler, hostedServerConfig } from './hosted.ts'
 import { hostedRouter } from './trpc/hosted-router.ts'
 
@@ -60,6 +61,7 @@ describe('hostedRouter', () => {
     const response = await hostedRequestHandler({
       recordApiUrl: 'https://api.example.test',
       recordDatabaseUrl: {} as never,
+      noDestinationWriteCounter: createNoDestinationWriteCounter(),
     })(new Request('https://hub.example.test/trpc/notFound'))
     const body = (await response.json()) as { error: { data: Record<string, unknown> } }
 
@@ -159,7 +161,11 @@ describe('hosted index', () => {
       )
       process.env[INSTALL_HOME_ENV] = root
       const handler = hostedRequestHandler(
-        { recordApiUrl: 'https://api.example.test', recordDatabaseUrl: {} as never },
+        {
+          recordApiUrl: 'https://api.example.test',
+          recordDatabaseUrl: {} as never,
+          noDestinationWriteCounter: createNoDestinationWriteCounter(),
+        },
         {
           publicDocsText: {
             tree: async () => ({ items: [] }),
@@ -195,6 +201,7 @@ describe('hosted destination-less write report', () => {
   const config = {
     recordApiUrl: 'https://api.example.test',
     recordDatabaseUrl: {} as never,
+    noDestinationWriteCounter: createNoDestinationWriteCounter(),
   }
   const identityFetch = (async (request: RequestInfo | URL) => {
     if (!String(request).endsWith('/v1/whoami')) throw new Error('unexpected request')
@@ -238,10 +245,13 @@ describe('hosted destination-less write report', () => {
     const response = await hostedRequestHandler(config, {
       noDestinationWrites: {
         fetch: identityFetch,
-        counter: ((input: { read: string[] }) => {
-          reads.push(input.read)
-          return { processStartedAt: '2026-11-10T00:00:00.000Z', counts: [] }
-        }) as never,
+        counter: {
+          record: async () => undefined,
+          read: async (spaceIds) => {
+            reads.push([...spaceIds])
+            return { windowStart: '2026-10-28T00:00:00.000Z', unrecorded: 0, counts: [] }
+          },
+        },
       },
     })(
       new Request('https://hub.example.test/v1/health/no-destination-writes', {
@@ -251,7 +261,8 @@ describe('hosted destination-less write report', () => {
     expect(response.status).toBe(200)
     expect(reads).toEqual([['space-a', 'space-b']])
     expect(await response.json()).toEqual({
-      processStartedAt: '2026-11-10T00:00:00.000Z',
+      windowStart: '2026-10-28T00:00:00.000Z',
+      unrecorded: 0,
       counts: [],
     })
   })

@@ -321,6 +321,7 @@ test('push client accepts one outcome per requested id and refuses a malformed s
     hostedPushChanges(body, {
       baseUrl: 'https://hub.example.test',
       token: 'session',
+      recordSpace: 'space-a',
       fetch: async () => Response.json([]),
     }),
   ).rejects.toThrow('do not match the requested ids')
@@ -328,6 +329,7 @@ test('push client accepts one outcome per requested id and refuses a malformed s
     hostedPushChanges(body, {
       baseUrl: 'https://hub.example.test',
       token: 'session',
+      recordSpace: 'space-a',
       fetch: async () => {
         throw new Error('offline')
       },
