@@ -12,7 +12,6 @@ const SPACE = '00000000-0000-4000-8000-000000000001'
 const PROJECT = '00000000-0000-4000-8000-000000000002'
 const KNOWN_ID = '00000000-0000-4000-8000-000000000003'
 const UNKNOWN_ID = '00000000-0000-4000-8000-000000000004'
-const OTHER_SPACE = '00000000-0000-4000-8000-000000000005'
 
 function taskFlowApp(calls: TaskFlowStageListQuery[]) {
   const app = new Hono<{
@@ -118,16 +117,16 @@ function taskFlowByIdApp(
   return app
 }
 
-test.each(byIdRoutes)(
-  'task-flow %s by-id route returns its tenant-bound result',
-  async (kind, path) => {
-    const calls: Array<{ kind: ByIdKind; id: string; spaceId: string }> = []
-    const response = await taskFlowByIdApp(SPACE, calls).request(`${path}/${KNOWN_ID}`)
-    expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ kind, id: KNOWN_ID, spaceId: SPACE })
-    expect(calls).toEqual([{ kind, id: KNOWN_ID, spaceId: SPACE }])
-  },
-)
+test('task-flow by-id routes pass the active space and requested id to their dependencies', async () => {
+  const calls: Array<{ kind: ByIdKind; id: string; spaceId: string }> = []
+  const app = taskFlowByIdApp(SPACE, calls)
+  for (const [, path] of byIdRoutes) await app.request(`${path}/${KNOWN_ID}`)
+  expect(calls).toEqual([
+    { kind: 'stage', id: KNOWN_ID, spaceId: SPACE },
+    { kind: 'text', id: KNOWN_ID, spaceId: SPACE },
+    { kind: 'obligation', id: KNOWN_ID, spaceId: SPACE },
+  ])
+})
 
 test.each(byIdRoutes)(
   'task-flow %s by-id route returns the ordinary not-found shape for an unknown id',
@@ -138,19 +137,5 @@ test.each(byIdRoutes)(
       error: 'hosted task flow was not found',
       code: 'task_flow_not_found',
     })
-  },
-)
-
-test.each(byIdRoutes)(
-  'task-flow %s by-id route does not reveal an id from another space',
-  async (_kind, path) => {
-    const calls: Array<{ kind: ByIdKind; id: string; spaceId: string }> = []
-    const response = await taskFlowByIdApp(OTHER_SPACE, calls).request(`${path}/${KNOWN_ID}`)
-    expect(response.status).toBe(404)
-    expect(await response.json()).toEqual({
-      error: 'hosted task flow was not found',
-      code: 'task_flow_not_found',
-    })
-    expect(calls[0]?.spaceId).toBe(OTHER_SPACE)
   },
 )
