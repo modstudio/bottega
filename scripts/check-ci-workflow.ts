@@ -127,7 +127,7 @@ function checkPlaywrightBunInstall(job: string, jobName: string): void {
 function checkPlaywrightWorkspaceTrust(job: string, jobName: string): void {
   if (!workflowRunCommands(job).includes(playwrightTrustWorkspaceCommand)) {
     throw new Error(
-      `.github/workflows/ci.yml job ${jobName} must trust the workspace because the Playwright container runs as root over a workspace owned by the runner user, so git refuses it, and Bottega reads git with global config disabled, so the trust must be system-wide; add a Trust the workspace step that runs ${playwrightTrustWorkspaceCommand}`,
+      `.github/workflows/ci.yml job ${jobName} must trust the workspace because the Playwright container runs as root over a workspace owned by the runner user, so git refuses it, and the repository tooling reads git with global config disabled, so the trust must be system-wide; add a Trust the workspace step that runs ${playwrightTrustWorkspaceCommand}`,
     )
   }
 }
