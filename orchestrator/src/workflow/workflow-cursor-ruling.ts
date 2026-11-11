@@ -9,6 +9,10 @@ import {
   writeHostedTaskFlow,
 } from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
+import type {
+  TaskFlowIntentInput,
+  TaskFlowIntentResult,
+} from '../record/record-task-flow-write-contract.ts'
 import {
   answerWorkflowQuestion,
   authorizeWorkflowQuestionMutation,
@@ -81,7 +85,7 @@ export async function ruleWorkflow(
   const question = selectOpenWorkflowQuestion(row.record_id, database)
   if (!question)
     throw new Error(`${cursorName(slug, mode, row.workflow_key)} has no open question to rule on`)
-  const payload = {
+  const payload: TaskFlowIntentInput<'stage-update'> = {
     requestId: taskFlowRequestId('stage-update', [row.record_id, String(row.revision)]),
     stages: [
       {
@@ -128,8 +132,8 @@ function applyWorkflowRulingLocally(input: {
   adoptionReason: string | null
   at: string
   context: WorkflowCursorContext
-  payload: Parameters<ReturnType<typeof taskFlowStore>['write']>[1]
-  hosted: Awaited<ReturnType<typeof writeHostedTaskFlow<'stage-update'>>>
+  payload: TaskFlowIntentInput<'stage-update'>
+  hosted: TaskFlowIntentResult<'stage-update'> | null
   database: Database
 }): { summary: string; questionId: number } {
   const { row, question, database } = input

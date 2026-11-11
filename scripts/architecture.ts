@@ -110,6 +110,7 @@ const concerns: ConcernManifest = {
 export const modules: ArchitectureModule[] = [
   module('orchestrator/src/workflow/task-flow-store.ts', [
     'bun:sqlite',
+    '../record/record-task-flow-write-contract.ts',
     './task-flow-store-sqlite.ts',
     './task-flow-store-types.ts',
   ]),

@@ -1,7 +1,7 @@
 // concern: SQLite task-flow intent writes
 /** Applies the hosted record's task-flow intent vocabulary to the local-only store. */
 
-import type { Database } from 'bun:sqlite'
+import type { Database, SQLQueryBindings } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import type {
   TaskFlowIntent,
@@ -10,6 +10,7 @@ import type {
 } from '../record/record-task-flow-write-contract.ts'
 
 type Mutation = { id: string; expectedRevision: number; values: Record<string, unknown> }
+type SqlRow = Record<string, SQLQueryBindings>
 
 const flowColumns: Record<string, string> = {
   taskId: 'task_record_id',
@@ -42,8 +43,10 @@ const stageColumns: Record<string, string> = {
 
 const jsonValues = new Set(['arguments', 'closedStepNotes', 'satisfiedEvidence'])
 
-function storedValue(key: string, value: unknown): unknown {
-  return jsonValues.has(key) ? JSON.stringify(value) : value
+function storedValue(key: string, value: unknown): SQLQueryBindings {
+  if (jsonValues.has(key) || (typeof value === 'object' && value !== null))
+    return JSON.stringify(value)
+  return value as SQLQueryBindings
 }
 
 function cursorNumber(database: Database, recordId: string): number | string {
@@ -95,34 +98,95 @@ function stageUpdateRevisionRefusal(
 }
 
 function revision(database: Database, table: string, id: string): number | null {
-  return (
-    database
-      .prepare<{ revision: number }, [string]>(`SELECT revision FROM ${table} WHERE record_id=?`)
-      .get(id)?.revision ?? null
-  )
+  const query =
+    table === 'task_flow'
+      ? database.query<{ revision: number }, [string]>(
+          'SELECT revision FROM task_flow WHERE record_id=?',
+        )
+      : database.query<{ revision: number }, [string]>(
+          'SELECT revision FROM workflow_cursor WHERE record_id=?',
+        )
+  return query.get(id)?.revision ?? null
+}
+
+function applyFlowValues(database: Database, mutation: Mutation, next: number): void {
+  const value = (key: string) =>
+    key in mutation.values ? storedValue(key, mutation.values[key]) : null
+  database
+    .query(`UPDATE task_flow SET
+    state=COALESCE(?,state),open_stage_cursor_record_id=CASE WHEN ? THEN ? ELSE open_stage_cursor_record_id END,
+    opening_machine_id=COALESCE(?,opening_machine_id),updated_machine_id=COALESCE(?,updated_machine_id),
+    created_at=COALESCE(?,created_at),updated_at=COALESCE(?,updated_at),revision=? WHERE record_id=?`)
+    .run(
+      value('state'),
+      'openStageRecordId' in mutation.values,
+      value('openStageRecordId'),
+      value('openingMachineId'),
+      value('updatedMachineId'),
+      value('createdAt'),
+      value('updatedAt'),
+      next,
+      mutation.id,
+    )
+}
+
+function applyStageValues(database: Database, mutation: Mutation, next: number): void {
+  const value = (key: string) =>
+    key in mutation.values ? storedValue(key, mutation.values[key]) : null
+  const nullable = (key: string) => [key in mutation.values, value(key)] as const
+  const session = nullable('sessionId'),
+    question = nullable('question'),
+    autonomy = nullable('autonomy')
+  const takeover = nullable('takenOverFromMachineId')
+  database
+    .query(`UPDATE workflow_cursor SET task_flow_record_id=COALESCE(?,task_flow_record_id),
+    workflow_key=COALESCE(?,workflow_key),instance_id=COALESCE(?,instance_id),
+    session_id=CASE WHEN ? THEN ? ELSE session_id END,args=COALESCE(?,args),ordinal=COALESCE(?,ordinal),
+    step_slug=COALESCE(?,step_slug),state=COALESCE(?,state),closed=COALESCE(?,closed),
+    question=CASE WHEN ? THEN ? ELSE question END,autonomy=CASE WHEN ? THEN ? ELSE autonomy END,
+    enforcement=COALESCE(?,enforcement),opened_machine_id=COALESCE(?,opened_machine_id),
+    taken_over_from_machine_id=CASE WHEN ? THEN ? ELSE taken_over_from_machine_id END,
+    last_advanced_machine_id=COALESCE(?,last_advanced_machine_id),updated_at=COALESCE(?,updated_at),revision=?
+    WHERE record_id=?`)
+    .run(
+      value('flowRecordId'),
+      value('workflowKey'),
+      value('instanceId'),
+      ...session,
+      value('arguments'),
+      value('activeOrdinal'),
+      value('activeSlug'),
+      value('state'),
+      value('closedStepNotes'),
+      ...question,
+      ...autonomy,
+      value('enforcement'),
+      value('openedMachineId'),
+      ...takeover,
+      value('lastAdvancedMachineId'),
+      value('updatedAt'),
+      next,
+      mutation.id,
+    )
 }
 
 function updateMutation(
   database: Database,
   table: 'task_flow' | 'workflow_cursor',
-  columns: Record<string, string>,
+  _columns: Record<string, string>,
   mutation: Mutation,
   intent: TaskFlowIntent,
   applied: Record<string, number> | undefined,
 ): number {
   if (revision(database, table, mutation.id) !== mutation.expectedRevision)
     revisionRefusal(database, intent, mutation)
-  const entries = Object.entries(mutation.values)
   const next = applied?.[mutation.id] ?? mutation.expectedRevision + 1
-  const assignments = entries.map(([key]) => `${columns[key]}=?`)
-  const values = entries.map(([key, value]) => storedValue(key, value))
-  database
-    .prepare(`UPDATE ${table} SET ${[...assignments, 'revision=?'].join(',')} WHERE record_id=?`)
-    .run(...values, next, mutation.id)
+  if (table === 'task_flow') applyFlowValues(database, mutation, next)
+  else applyStageValues(database, mutation, next)
   return next
 }
 
-function insertFlow(database: Database, row: Record<string, unknown>, revisionValue: number): void {
+function insertFlow(database: Database, row: SqlRow, revisionValue: number): void {
   database
     .query(`INSERT INTO task_flow
       (record_id,task_record_id,project_record_id,state,open_stage_cursor_record_id,created_at,updated_at,
@@ -144,7 +208,7 @@ function insertFlow(database: Database, row: Record<string, unknown>, revisionVa
 
 function insertStage(
   database: Database,
-  row: Record<string, unknown>,
+  row: SqlRow,
   revisionValue: number,
 ): { id: string; number: number } {
   const project = database
@@ -200,7 +264,7 @@ function insertStage(
   return { id: String(row.id), number }
 }
 
-function insertObligation(database: Database, row: Record<string, unknown>): void {
+function insertObligation(database: Database, row: SqlRow): void {
   database
     .query(`INSERT INTO workflow_obligation
     (record_id,cursor_record_id,step_ordinal,step_slug,floor,require_pull_request,operator_ruling,
@@ -230,20 +294,28 @@ function insertObligation(database: Database, row: Record<string, unknown>): voi
     )
 }
 
-function updateObligation(database: Database, row: Record<string, unknown>): void {
-  const entries = Object.entries(row).filter(([key]) => key !== 'id' && key !== 'stageRecordId')
-  const names: Record<string, string> = {
-    satisfiedAt: 'satisfied_at',
-    satisfiedStepOrdinal: 'satisfied_step_ordinal',
-    satisfiedStepSlug: 'satisfied_step_slug',
-    satisfiedEvidence: 'satisfied_evidence',
-    abandonedAt: 'abandoned_at',
-    abandonedReason: 'abandoned_reason',
-  }
+function updateObligation(database: Database, row: SqlRow): void {
+  const value = (key: string) => (key in row ? storedValue(key, row[key]) : null)
+  const pair = (key: string) => [key in row, value(key)] as const
   const result = database
-    .prepare(`UPDATE workflow_obligation SET ${entries.map(([key]) => `${names[key]}=?`).join(',')}
+    .query(`UPDATE workflow_obligation SET
+    satisfied_at=CASE WHEN ? THEN ? ELSE satisfied_at END,
+    satisfied_step_ordinal=CASE WHEN ? THEN ? ELSE satisfied_step_ordinal END,
+    satisfied_step_slug=CASE WHEN ? THEN ? ELSE satisfied_step_slug END,
+    satisfied_evidence=CASE WHEN ? THEN ? ELSE satisfied_evidence END,
+    abandoned_at=CASE WHEN ? THEN ? ELSE abandoned_at END,
+    abandoned_reason=CASE WHEN ? THEN ? ELSE abandoned_reason END
     WHERE record_id=? AND cursor_record_id=?`)
-    .run(...entries.map(([key, value]) => storedValue(key, value)), row.id, row.stageRecordId)
+    .run(
+      ...pair('satisfiedAt'),
+      ...pair('satisfiedStepOrdinal'),
+      ...pair('satisfiedStepSlug'),
+      ...pair('satisfiedEvidence'),
+      ...pair('abandonedAt'),
+      ...pair('abandonedReason'),
+      row.id,
+      row.stageRecordId,
+    )
   if (result.changes !== 1)
     throw new Error(`workflow obligation ${String(row.id)} changed; rerun the command`)
 }
@@ -258,7 +330,7 @@ function deleteTexts(database: Database, stageRecordId: string, ids: readonly st
 function applyStageMutation(
   database: Database,
   intent: 'advance' | 'await-ruling' | 'abandon',
-  body: Record<string, unknown>,
+  body: SqlRow,
   revisions: Record<string, number> | undefined,
 ): Record<string, number> {
   const result: Record<string, number> = {}
@@ -274,9 +346,9 @@ function applyStageMutation(
     intent,
     revisions,
   )
-  for (const row of (body.obligationInserts as Record<string, unknown>[] | undefined) ?? [])
+  for (const row of (body.obligationInserts as SqlRow[] | undefined) ?? [])
     insertObligation(database, row)
-  for (const row of (body.obligationUpdates as Record<string, unknown>[] | undefined) ?? [])
+  for (const row of (body.obligationUpdates as SqlRow[] | undefined) ?? [])
     updateObligation(database, row)
   deleteTexts(database, stage.id, (body.deleteTextIds as string[] | undefined) ?? [])
   return result
@@ -285,7 +357,7 @@ function applyStageMutation(
 function sourceFlowForAdopt(
   database: Database,
   stageId: string,
-  body: Record<string, unknown>,
+  body: SqlRow,
   applied: { revisions: Record<string, number>; flowRecordId: string } | undefined,
 ): { record_id: string; revision: number; task_record_id: string | null } {
   const source = database
@@ -324,9 +396,18 @@ function sourceFlowForAdopt(
   }
 }
 
+function retireComposeIdentity(database: Database, row: Record<string, unknown>): void {
+  if (!row.workflowKey || row.instanceId !== '') return
+  database
+    .query(`UPDATE workflow_cursor SET instance_id=instance_id || '#' || number
+      WHERE project_record_id=? AND workflow_slug=? AND mode_slug=? AND workflow_key=?
+        AND instance_id='' AND record_id<>? AND state IN ('done','abandoned')`)
+    .run(row.projectId, row.workflow, row.mode, row.workflowKey, row.id)
+}
+
 function applyAdopt(
   database: Database,
-  body: Record<string, unknown>,
+  body: SqlRow,
   applied: { revisions: Record<string, number>; flowRecordId: string } | undefined,
 ) {
   const stage = body.stage as { id: string; expectedRevision: number }
@@ -394,7 +475,7 @@ function applyAdopt(
 
 function writeCompose(
   database: Database,
-  body: Record<string, unknown>,
+  body: SqlRow,
   applied: TaskFlowIntentResult<'compose'> | null | undefined,
 ): TaskFlowIntentResult<'compose'> {
   const revisions = applied?.revisions
@@ -403,16 +484,16 @@ function writeCompose(
     | { revisions: Record<string, number>; stage: { id: string; number: number } | null }
     | null
     | undefined
-  const payloadStage = body.stageInsert as Record<string, unknown> | undefined
+  const payloadStage = body.stageInsert as SqlRow | undefined
   const stageId = appliedCompose?.stage?.id ?? (payloadStage ? String(payloadStage.id) : null)
   const appliedFlowId = appliedCompose
     ? Object.keys(appliedCompose.revisions).find((id) => id !== stageId)
     : undefined
   const keepsLocalFlow = Boolean(payloadStage?.workflowKey)
   const rawFlowInsert = keepsLocalFlow
-    ? (body.flowInsert as Record<string, unknown> | undefined)
+    ? (body.flowInsert as SqlRow | undefined)
     : undefined
-  const flowInsert = rawFlowInsert
+  const flowInsert: SqlRow | undefined = rawFlowInsert
     ? {
         ...rawFlowInsert,
         id: appliedFlowId ?? rawFlowInsert.id,
@@ -426,12 +507,7 @@ function writeCompose(
       id: stageId,
       flowRecordId: keepsLocalFlow ? (appliedFlowId ?? payloadStage.flowRecordId) : null,
     }
-    if (row.workflowKey && row.instanceId === '')
-      database
-        .query(`UPDATE workflow_cursor SET instance_id=instance_id || '#' || number
-            WHERE project_record_id=? AND workflow_slug=? AND mode_slug=? AND workflow_key=?
-              AND instance_id='' AND record_id<>? AND state IN ('done','abandoned')`)
-        .run(row.projectId, row.workflow, row.mode, row.workflowKey, row.id)
+    retireComposeIdentity(database, row)
     const next = revisions?.[String(row.id)] ?? 1
     stage = insertStage(database, row, next)
     result[String(row.id)] = next
@@ -474,7 +550,7 @@ function writeCompose(
 
 function writeStageUpdate(
   database: Database,
-  body: Record<string, unknown>,
+  body: SqlRow,
   revisions?: Record<string, number>,
 ) {
   const result: Record<string, number> = {}
@@ -503,10 +579,10 @@ function writeStageUpdate(
 function writeTextIntent(
   database: Database,
   intent: 'attach-text' | 'delete-text' | 'copy-text',
-  body: Record<string, unknown>,
+  body: SqlRow,
 ) {
   if (intent === 'attach-text') {
-    for (const row of body.rows as Record<string, unknown>[])
+    for (const row of body.rows as SqlRow[])
       database
         .query(
           'INSERT INTO workflow_step_text(record_id,cursor_record_id,step_ordinal,step_slug,body,created_at) VALUES (?,?,?,?,?,?)',
@@ -515,7 +591,7 @@ function writeTextIntent(
   } else if (intent === 'delete-text')
     deleteTexts(database, String(body.stageRecordId), body.ids as string[])
   else {
-    const row = body.row as Record<string, unknown>
+    const row = body.row as SqlRow
     database
       .query(`INSERT OR IGNORE INTO workflow_text_copy
       (record_id,workflow_text_record_id,cursor_record_id,task_document_reference,copied_at) VALUES (?,?,?,?,?)`)
@@ -536,7 +612,7 @@ export function writeSqliteTaskFlow<K extends TaskFlowIntent>(
   payload: TaskFlowIntentInput<K>,
   applied?: TaskFlowIntentResult<K> | null,
 ): TaskFlowIntentResult<K> {
-  const body = payload as Record<string, unknown>
+  const body = payload as unknown as SqlRow
   const revisions = (applied as { revisions: Record<string, number> } | null | undefined)?.revisions
   if (intent === 'compose')
     return writeCompose(

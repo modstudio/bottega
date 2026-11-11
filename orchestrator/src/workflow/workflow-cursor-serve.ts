@@ -9,6 +9,7 @@ import {
   writeHostedTaskFlow,
 } from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
+import type { TaskFlowIntentInput } from '../record/record-task-flow-write-contract.ts'
 import type { AutonomyResolution, LiveCursorAutonomy } from './autonomy.ts'
 import { taskFlowStore } from './task-flow-store.ts'
 import { type CommitCountPort, readCommitsPastLanding } from './workflow-compose-branch.ts'
@@ -197,7 +198,7 @@ async function applyServeTransition(
     (resolvedArguments.encoded !== row.args || resolvedArguments.closed !== row.closed)
   if (!decision.move && !decision.resume && !argumentsChanged) return
   const at = nowIso()
-  const payload = {
+  const payload: TaskFlowIntentInput<'stage-update'> = {
     requestId: taskFlowRequestId('stage-update', [row.record_id, String(row.revision)]),
     stages: [
       {

@@ -8,6 +8,7 @@ import {
   writeHostedTaskFlow,
 } from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
+import type { TaskFlowIntentInput } from '../record/record-task-flow-write-contract.ts'
 import { closeQuestions } from '../run/question-close.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { taskFlowStore } from './task-flow-store.ts'
@@ -48,7 +49,7 @@ export async function abandonWorkflowCursor(
   const flow = row.task_flow_record_id ? store.flowState(row.task_flow_record_id) : null
   const closesOpenStage = flow?.open_stage_cursor_record_id === row.record_id
   const parts = abandonmentRevisionParts(row, flow)
-  const payload = {
+  const payload: TaskFlowIntentInput<'abandon'> = {
     requestId: taskFlowRequestId('abandon', parts),
     stage: {
       id: row.record_id,

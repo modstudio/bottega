@@ -20,7 +20,6 @@ import {
 } from '../record/record-task-flow-write-contract.ts'
 import type { AutonomyResolution } from './autonomy.ts'
 import {
-  attachInsertedTaskFlowStage,
   cacheAdoptedTaskFlow,
   insertWorkflowCursorRow,
   refuseTaskFlowStageConflict,
@@ -246,24 +245,6 @@ function composeIntent(
       updatedAt: at,
     },
   }
-}
-
-function _attachLocalComposition(
-  row: SelectableCursorRow,
-  composition: Composition,
-  context: WorkflowCursorContext,
-  database: Database,
-): string | null {
-  return attachInsertedTaskFlowStage(
-    {
-      project: composition.project,
-      taskRecordId: context.taskRecordId,
-      taskKey: workflowKeyOf(composition.arguments),
-      statusCategory: context.taskStatusCategory,
-      cursor: row,
-    },
-    database,
-  )
 }
 
 function applyHostedCompose(

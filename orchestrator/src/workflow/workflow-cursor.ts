@@ -9,6 +9,7 @@ import {
 } from '../record/record-task-flow-write-client.ts'
 import {
   type TaskFlowIntentInput,
+  type TaskFlowIntentResult,
   taskFlowRequestId,
 } from '../record/record-task-flow-write-contract.ts'
 import { upsertWorkflowQuestion } from '../run/question-mutation.ts'
@@ -198,7 +199,7 @@ export async function composeWorkflowWithCursor(
   let row: CursorRow
   if (existing && start === 'reuse') {
     const resolved = resolveCursorArguments(existing, args, d, true)
-    const payload = {
+    const payload: TaskFlowIntentInput<'stage-update'> = {
       requestId: taskFlowRequestId('stage-update', [existing.record_id, String(existing.revision)]),
       stages: [
         {
@@ -489,7 +490,7 @@ async function persistWorkflowAdvance(
     closingFlow,
     obligationPlan,
   )
-  const payload = {
+  const payload: TaskFlowIntentInput<'advance'> = {
     requestId: taskFlowRequestId('advance', parts),
     stage: {
       id: row.record_id,
@@ -762,7 +763,7 @@ async function awaitWorkflowRulingImpl(
   refuseTerminalCursor(row)
   const resolved = resolveCursorArguments(row, args, d)
   const at = resolved.updatedAt
-  const payload = {
+  const payload: TaskFlowIntentInput<'await-ruling'> = {
     requestId: taskFlowRequestId('await-ruling', [row.record_id, String(row.revision)]),
     stage: {
       id: row.record_id,
