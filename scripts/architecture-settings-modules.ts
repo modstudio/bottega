@@ -157,6 +157,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/machine-config.ts',
     '../../../shared/record-space-membership.ts',
     '../../../shared/record-space-owner-destination.ts',
+    '../../../shared/record-write-space.ts',
     '../../../shared/ship-to.ts',
     '../config/config-service.ts',
     '../config/hosted-config-call-outcome.ts',

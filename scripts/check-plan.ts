@@ -241,6 +241,7 @@ export const ROOT_TEST_FILES = [
   'orchestrator/src/postgres/postgres-migrate.test.ts',
   'orchestrator/src/postgres/postgres-migrate-routing-evidence-sequence.test.ts',
   'orchestrator/src/record/record-pool-postgres.test.ts',
+  'orchestrator/src/record/record-outside-intake-postgres.test.ts',
   'orchestrator/src/postgres/postgres-migrate-stranded-runs.test.ts',
   'orchestrator/src/postgres/migration-failure.test.ts',
   'orchestrator/src/postgres/migration-notices.test.ts',

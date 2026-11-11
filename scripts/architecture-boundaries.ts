@@ -809,6 +809,7 @@ export const importBoundaries: ImportBoundary[] = [
       './machine-identity.ts',
       './record-api-client.ts',
       './record-snapshots.ts',
+      './record-write-destination.ts',
       '../state/serve.ts',
     ],
     'Enforce that snapshot publishing composes only the existing view services and record client.',

@@ -51,7 +51,6 @@ export type RecordProjectSubjectMethod =
   | 'defineProjectSubject'
   | 'reorderProjectSubjects'
   | 'retireProjectSubject'
-export type RecordRunMethod = 'putScore' | 'voidRun' | 'unvoidRun' | 'listScores' | 'counts'
 export type RecordIdentityAndSpaceMethod =
   | 'createOrganization'
   | 'deleteTrialSpace'

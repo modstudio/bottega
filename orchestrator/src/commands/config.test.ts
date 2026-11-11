@@ -12,6 +12,7 @@ import {
   configListPresentation,
   configReadPresentation,
   configSetPresentation,
+  configWriteTarget,
 } from './config.ts'
 
 const row = {
@@ -134,4 +135,46 @@ test('an explicit invalid ship-to write is refused with the shared allowed list'
   expect(() =>
     assertConfigWriteAllowed('autonomy.release', 'automatic', {}, operatorPid, operatorInventory),
   ).toThrow('expected one of branch, trunk, production')
+})
+
+test('config writes route user scope to personal space and named scope independently of active space', async () => {
+  const client = {
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'active-space',
+      personalSpaceId: 'personal-space',
+      memberships: [
+        { space_id: 'active-space', slug: 'active', permission: 'write' },
+        { space_id: 'personal-space', slug: 'personal', permission: 'write' },
+        { space_id: 'named-space', slug: 'named', permission: 'write' },
+      ],
+    }),
+  } as unknown as ConfigClient
+
+  await expect(configWriteTarget('machine config set', undefined, client)).resolves.toEqual({
+    scope: 'user',
+    destination: { destinationSpaceId: 'personal-space' },
+  })
+  await expect(configWriteTarget('machine config set', 'named', client)).resolves.toEqual({
+    scope: 'space',
+    destination: { destinationSpaceId: 'named-space' },
+  })
+  await expect(configWriteTarget('machine config set', 'missing', client)).rejects.toThrow(
+    'not a member of record space missing',
+  )
+})
+
+test('a config write without a personal space names the record sign-in remedy', async () => {
+  const client = {
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: null,
+      personalSpaceId: null,
+      memberships: [],
+    }),
+  } as unknown as ConfigClient
+
+  await expect(configWriteTarget('machine config set', undefined, client)).rejects.toThrow(
+    `${PLATFORM_SLUG} record sign-in`,
+  )
 })

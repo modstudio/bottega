@@ -139,6 +139,8 @@ export function idleRecordApiDeps() {
       changes: [],
     }),
     waitForRecordChange: async () => undefined,
+    voidRun: async () => undefined,
+    unvoidRun: async () => undefined,
     clientAddresses: {
       recordApiUrl: 'https://api.example.test',
       hubHostedUrl: 'https://app.example.test',
@@ -374,8 +376,6 @@ export function createMemoryRecordApiClient(
 ): RecordApiClient {
   const docs = new Map<string, StoredDoc>()
   const revisions = new Map<string, StoredRevision[]>()
-  const scores = new Map<string, Record<string, unknown>>()
-  const voids = new Map<string, string>()
   const boardChanges = input.boardChanges ?? []
   const boardPresence = new Map<string, HostedBoardPresenceInput>()
   const boardReceipts = new Map<string, HostedBoardReceipt>()
@@ -978,28 +978,15 @@ export function createMemoryRecordApiClient(
       }
       return { docs: matchingDocs.length, revisions: matchingRevisions.length }
     },
-    async putScore(runId, input) {
-      scores.set(runId, input)
-    },
-    async voidRun(runId, input) {
-      voids.set(runId, input.reason)
-    },
-    async unvoidRun(runId) {
-      voids.delete(runId)
-    },
     async listScores() {
-      const items = [
-        ...[...scores.entries()].map(([runId, score]) => ({ runId, ...score })),
-        ...[...voids.entries()].map(([runId, evidenceExcluded]) => ({ runId, evidenceExcluded })),
-      ]
-      return { items, nextCursor: null }
+      return { items: [], nextCursor: null }
     },
     async counts() {
       return {
         docs: docs.size,
         revisions: [...revisions.values()].reduce((sum, list) => sum + list.length, 0),
-        scores: scores.size,
-        voids: voids.size,
+        scores: 0,
+        voids: 0,
       }
     },
   }

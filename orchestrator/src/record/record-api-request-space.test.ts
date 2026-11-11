@@ -207,6 +207,9 @@ test('read-only members are refused before remaining tenant write routes run', a
     '/v1/runs/run-id/void',
     '/v1/runs/run-id/unvoid',
     '/v1/snapshots/state',
+    '/v1/outside-intake',
+    '/v1/outside-blocks',
+    '/v1/moderation/hide',
   ]) {
     app.all(path, (context) => {
       writes.push(context.req.path)
@@ -220,6 +223,9 @@ test('read-only members are refused before remaining tenant write routes run', a
     ['/v1/runs/run-id/void', 'POST'],
     ['/v1/runs/run-id/unvoid', 'POST'],
     ['/v1/snapshots/state', 'PUT'],
+    ['/v1/outside-intake', 'POST'],
+    ['/v1/outside-blocks', 'POST'],
+    ['/v1/moderation/hide', 'POST'],
   ] as const) {
     const response = await app.request(path, { method })
     expect(response.status).toBe(403)
@@ -258,6 +264,9 @@ test('remaining tenant write routes judge and bind the requested destination spa
     '/v1/runs/run-id/void',
     '/v1/runs/run-id/unvoid',
     '/v1/snapshots/state',
+    '/v1/outside-intake',
+    '/v1/outside-blocks',
+    '/v1/moderation/hide',
     '/v1/members/permission',
   ]) {
     app.all(path, (context) => {
@@ -272,6 +281,9 @@ test('remaining tenant write routes judge and bind the requested destination spa
     ['/v1/runs/run-id/void', 'POST'],
     ['/v1/runs/run-id/unvoid', 'POST'],
     ['/v1/snapshots/state', 'PUT'],
+    ['/v1/outside-intake', 'POST'],
+    ['/v1/outside-blocks', 'POST'],
+    ['/v1/moderation/hide', 'POST'],
     ['/v1/members/permission', 'POST'],
   ] as const) {
     const response = await app.request(path, {
@@ -280,7 +292,7 @@ test('remaining tenant write routes judge and bind the requested destination spa
     })
     expect(response.status).toBe(200)
   }
-  expect(destinations).toEqual(Array.from({ length: 6 }, () => 'space-b'))
+  expect(destinations).toEqual(Array.from({ length: 9 }, () => 'space-b'))
 })
 
 test('catalogue routes authorize and bind their requested space before services run', async () => {

@@ -62,3 +62,19 @@ test.each([[''], ['  ']])('record outbox retry refuses empty --matching text %p'
     program.parseAsync(['node', PLATFORM_SLUG, 'record', 'outbox', 'retry', '--matching', text]),
   ).rejects.toThrow('--matching requires non-empty text')
 })
+
+test.each([
+  ['intake set', ['record', 'space', 'intake', 'set', 'fixture']],
+  ['intake pause', ['record', 'space', 'intake', 'pause']],
+  ['intake resume', ['record', 'space', 'intake', 'resume']],
+  ['intake block', ['record', 'space', 'intake', 'block', '--message', 'message-a']],
+  ['intake unblock', ['record', 'space', 'intake', 'unblock', 'user-a']],
+  ['hide', ['record', 'space', 'hide', 'message-a', '--reason', 'spam']],
+  ['unhide', ['record', 'space', 'unhide', 'message-a']],
+])('%s refuses before its action when --space is absent', async (_name, args) => {
+  const program = new Command().exitOverride()
+  register(program)
+  await expect(program.parseAsync(['node', PLATFORM_SLUG, ...args])).rejects.toThrow(
+    "required option '--space <slug>' not specified",
+  )
+})

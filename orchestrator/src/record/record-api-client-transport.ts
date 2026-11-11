@@ -2,13 +2,37 @@
 /** Owns the recorded transport choke point for record API HTTP calls. */
 
 import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { scheduleHostedCallObservation } from '../../../shared/hosted-call-observation.ts'
+import { runningInstallationIdentity } from '../../../shared/install-root.ts'
 import {
   classifyHostedTransportError,
   type HostedCallOutcomeRecorder,
   recordHostedCallOutcome,
 } from '../hosted-call-outcome.ts'
 import { bearerHeaders } from './record-auth.ts'
+
+let memoizedUserAgent: string | undefined
+
+function runningInstallationUserAgent(): string {
+  const identity = runningInstallationIdentity(import.meta.dir, process.env)
+  const version = identity.kind === 'distribution' ? identity.manifest.version : identity.version
+  return `${PLATFORM_SLUG}/${version}`
+}
+
+function userAgentFrom(identityResolver: () => string): string {
+  try {
+    return identityResolver()
+  } catch {
+    return `${PLATFORM_SLUG}/unknown`
+  }
+}
+
+/** The running installation's user-agent, resolved once per process. */
+function runningUserAgent(): string {
+  memoizedUserAgent ??= userAgentFrom(runningInstallationUserAgent)
+  return memoizedUserAgent
+}
 
 function recordHostedRouteClass(path: string): string {
   const pathname = path.split('?', 1)[0] ?? path
@@ -51,10 +75,14 @@ export async function recordTransport(
   init: RequestInit,
   transport: typeof fetch = hostedApiFetch,
   recorder: HostedCallOutcomeRecorder = recordHostedCallOutcome,
+  identityResolver?: () => string,
 ): Promise<Response> {
   const startedAt = performance.now()
+  const userAgent = identityResolver ? userAgentFrom(identityResolver) : runningUserAgent()
   try {
-    const response = await transport(`${baseUrl}${path}`, init)
+    const headers = new Headers(init.headers)
+    headers.set('user-agent', userAgent)
+    const response = await transport(`${baseUrl}${path}`, { ...init, headers })
     scheduleHostedCallObservation(recorder, {
       observedAt: new Date().toISOString(),
       routeClass: recordHostedRouteClass(path),

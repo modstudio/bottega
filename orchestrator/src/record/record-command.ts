@@ -227,14 +227,23 @@ export async function recordSpaceIntakeShowCommand(presentation: Presentation): 
 
 export async function recordSpaceIntakePauseCommand(
   hours: number,
+  space: string | undefined,
   presentation: Presentation,
 ): Promise<void> {
-  const intake = await pauseRecordSpaceOutsideIntake(hours)
+  const intake = await pauseRecordSpaceOutsideIntake(
+    hours,
+    await recordSpaceWriteDestination('record space intake pause', space),
+  )
   presentation.log(`outside writes paused until ${intake.pausedUntil}`)
 }
 
-export async function recordSpaceIntakeResumeCommand(presentation: Presentation): Promise<void> {
-  await resumeRecordSpaceOutsideIntake()
+export async function recordSpaceIntakeResumeCommand(
+  space: string | undefined,
+  presentation: Presentation,
+): Promise<void> {
+  await resumeRecordSpaceOutsideIntake(
+    await recordSpaceWriteDestination('record space intake resume', space),
+  )
   presentation.log('outside writes resumed')
 }
 
@@ -255,34 +264,50 @@ export async function recordSpaceIntakeBlocksCommand(
 
 export async function recordSpaceIntakeBlockCommand(
   input: { message?: string; note?: string; hours?: number },
+  space: string | undefined,
   presentation: Presentation,
 ): Promise<void> {
-  const block = await blockRecordSpaceOutsideAuthor(input)
+  const block = await blockRecordSpaceOutsideAuthor(
+    input,
+    await recordSpaceWriteDestination('record space intake block', space),
+  )
   presentation.log(`blocked outside author ${block.userId}\t${block.blockedUntil ?? 'no end'}`)
 }
 
 export async function recordSpaceIntakeUnblockCommand(
   userId: string,
+  space: string | undefined,
   presentation: Presentation,
 ): Promise<void> {
-  await unblockRecordSpaceOutsideAuthor(userId)
+  await unblockRecordSpaceOutsideAuthor(
+    userId,
+    await recordSpaceWriteDestination('record space intake unblock', space),
+  )
   presentation.log(`unblocked outside author ${userId}`)
 }
 
 export async function recordSpaceHideCommand(
   target: { message?: string; note?: string },
   reason: ModerationHideReason,
+  space: string | undefined,
   presentation: Presentation,
 ): Promise<void> {
-  const hidden = await hideRecordSpaceRow({ ...target, reason })
+  const hidden = await hideRecordSpaceRow(
+    { ...target, reason },
+    await recordSpaceWriteDestination('record space hide', space),
+  )
   presentation.log(`hidden ${hidden.kind} ${hidden.kind === 'note' ? hidden.label : hidden.id}`)
 }
 
 export async function recordSpaceUnhideCommand(
   target: { message?: string; note?: string },
+  space: string | undefined,
   presentation: Presentation,
 ): Promise<void> {
-  await unhideRecordSpaceRow(target)
+  await unhideRecordSpaceRow(
+    target,
+    await recordSpaceWriteDestination('record space unhide', space),
+  )
   presentation.log(`unhidden ${target.note ?? target.message}`)
 }
 
@@ -295,9 +320,13 @@ export async function recordSpaceHiddenCommand(presentation: Presentation): Prom
 
 export async function recordSpaceIntakeSetCommand(
   project: string,
+  space: string | undefined,
   presentation: Presentation,
 ): Promise<void> {
-  const intake = await setRecordSpaceOutsideIntake(project)
+  const intake = await setRecordSpaceOutsideIntake(
+    project,
+    await recordSpaceWriteDestination('record space intake set', space),
+  )
   presentation.log(`outside intake project ${intake.project}\t${intake.projectId}`)
 }
 
