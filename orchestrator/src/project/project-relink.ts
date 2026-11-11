@@ -11,10 +11,7 @@ import { retryOutboxRowsMatchingInWriteTransaction } from '../record/outbox-quar
 import { recordApiClient } from '../record/record-api-client.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { taskFlowStore } from '../workflow/task-flow-store.ts'
-import {
-  PROJECT_REFERENCES,
-  PROJECT_REFERENCE_REPORT,
-} from './project-reference-counts.ts'
+import { PROJECT_REFERENCE_REPORT, PROJECT_REFERENCES } from './project-reference-counts.ts'
 import { retiredHostedProjectMessage } from './project-retired-hosted.ts'
 import type { Project } from './projects.ts'
 import { projectByName, projects } from './projects.ts'
@@ -98,7 +95,7 @@ export function relinkProjectIdentity(
       sqlCounts[table] = (sqlCounts[table] ?? 0) + changes
     }
     const taskFlowCounts = taskFlowStore(database).relinkProjectReferences(oldId, hostedId)
-    const referenceCounts = { ...sqlCounts, ...taskFlowCounts }
+    const referenceCounts: Record<string, number> = { ...sqlCounts, ...taskFlowCounts }
     const counts: Record<string, number> = Object.fromEntries(
       PROJECT_REFERENCE_REPORT.map(([key, , , explicitTable]) => [
         explicitTable ?? key,

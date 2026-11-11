@@ -137,7 +137,10 @@ const LOCAL_TASK_LINKS = {
     regime: 'synchronous',
     pendingRows: (database) =>
       database
-        .query<LocalTaskLinkRow, []>(`SELECT r.record_id id,r.task_key,p.name project FROM port_ref r
+        .query<
+          LocalTaskLinkRow,
+          []
+        >(`SELECT r.record_id id,r.task_key,p.name project FROM port_ref r
           JOIN project p ON p.record_id=r.target_project_record_id WHERE r.task_record_id IS NULL`)
         .all(),
     linkedRows: (database) =>
@@ -155,13 +158,19 @@ const LOCAL_TASK_LINKS = {
     regime: 'synchronous',
     pendingRows: (database) =>
       database
-        .query<LocalTaskLinkRow, []>(`SELECT s.session_id id,s.current_task_key task_key,p.name project FROM presence s
+        .query<
+          LocalTaskLinkRow,
+          []
+        >(`SELECT s.session_id id,s.current_task_key task_key,p.name project FROM presence s
           JOIN project p ON p.record_id=s.project_record_id
           WHERE s.current_task_record_id IS NULL AND s.current_task_key IS NOT NULL`)
         .all(),
     linkedRows: (database) =>
       database
-        .query<LinkedLocalTaskReference, []>(`SELECT s.current_task_record_id task_record_id,p.name project FROM presence s
+        .query<
+          LinkedLocalTaskReference,
+          []
+        >(`SELECT s.current_task_record_id task_record_id,p.name project FROM presence s
           JOIN project p ON p.record_id=s.project_record_id WHERE s.current_task_record_id IS NOT NULL`)
         .all(),
     write: (database, update) => {

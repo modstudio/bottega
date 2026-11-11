@@ -73,7 +73,7 @@ export function projectReferenceCounts(
       return [key, row.n]
     }),
   )
-  const counts = { ...sqlCounts, ...taskFlowCounts }
+  const counts: Record<string, number> = { ...sqlCounts, ...taskFlowCounts }
   return Object.fromEntries(
     PROJECT_REFERENCE_REPORT.map(([key]) => [key, counts[key]]),
   ) as ProjectReferenceCounts
