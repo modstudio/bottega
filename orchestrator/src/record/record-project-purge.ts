@@ -3,12 +3,18 @@
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bindTenant } from '../../../shared/record/tenant.ts'
+import { assertRecordMigrationsCurrent } from './record-migration-requirement.ts'
 import { recordPool } from './record-pool.ts'
 import {
   RecordProjectPurgeError,
   type RecordProjectPurgeResult,
 } from './record-project-purge-contract.ts'
-import { buildRecordTeardownPredicates, PROJECT_PURGE_PLAN } from './record-space-teardown-plan.ts'
+import {
+  buildRecordTeardownPredicates,
+  PROJECT_PURGE_PLAN,
+  RECORD_DELETE_APPEND_ONLY_PROJECT_ROWS,
+  readRecordDefinerCounts,
+} from './record-space-teardown-plan.ts'
 export type ProjectPurgeFacts = {
   exists: boolean
   name: string
@@ -70,6 +76,7 @@ export async function purgeRecordProject(input: {
   confirmation: string
 }): Promise<RecordProjectPurgeResult> {
   return recordPool(input.url).begin(async (tx: SQL) => {
+    await assertRecordMigrationsCurrent(tx)
     await bindTenant(tx, {
       userId: input.userId,
       spaceId: input.spaceId,
@@ -105,6 +112,15 @@ export async function purgeRecordProject(input: {
     })
     if (!writeDecision.allowed) throw new RecordProjectPurgeError(writeDecision.refusal)
     const tables: RecordProjectPurgeResult['tables'] = []
+    const appendOnlyRows =
+      await tx`SELECT * FROM record_delete_append_only_project_rows(${input.id}::uuid)`
+    tables.push(
+      ...readRecordDefinerCounts(
+        appendOnlyRows,
+        RECORD_DELETE_APPEND_ONLY_PROJECT_ROWS,
+        'record_delete_append_only_project_rows',
+      ),
+    )
     for (const step of PROJECT_PURGE_PLAN) {
       const deleted = await tx.unsafe(
         `DELETE FROM ${purgeSql.identifier(step.table)} WHERE ${purgeSql.predicate(step.table)} RETURNING 1`,

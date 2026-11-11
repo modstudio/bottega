@@ -5,7 +5,13 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bindTenant } from '../../../shared/record/tenant.ts'
 import { assertRecordMigrationsCurrent } from './record-migration-requirement.ts'
 import { recordPool } from './record-pool.ts'
-import { buildRecordTeardownPredicates, SPACE_TEARDOWN_PLAN } from './record-space-teardown-plan.ts'
+import {
+  buildRecordTeardownPredicates,
+  RECORD_DELETE_APPEND_ONLY_SPACE_ROWS,
+  RECORD_DELETE_PROTECTED_SPACE_ROWS,
+  readRecordDefinerCounts,
+  SPACE_TEARDOWN_PLAN,
+} from './record-space-teardown-plan.ts'
 import { isTrialSpaceMetadata, TRIAL_IDENTIFIER_PREFIX } from './record-trial-space.ts'
 import { SpaceDeleteError, type SpaceDeleteResult } from './record-trial-space-contract.ts'
 
@@ -242,6 +248,15 @@ async function deleteRecordSpaceTransaction(
       })
     }
     const tables: SpaceDeleteResult['tables'] = []
+    const appendOnlyRows =
+      await tx`SELECT * FROM record_delete_append_only_space_rows(${read.spaceId}::uuid)`
+    tables.push(
+      ...readRecordDefinerCounts(
+        appendOnlyRows,
+        RECORD_DELETE_APPEND_ONLY_SPACE_ROWS,
+        'record_delete_append_only_space_rows',
+      ),
+    )
     // These rows precede every membership so membership_revoke_config_machines cannot strand a DEK.
     for (const step of SPACE_TEARDOWN_PLAN.filter((item) => item.table !== 'membership')) {
       const deleted = await tx.unsafe(
@@ -254,11 +269,15 @@ async function deleteRecordSpaceTransaction(
       mode === 'trial'
         ? await tx`SELECT * FROM record_delete_trial_protected_space_rows(${read.spaceId}::uuid)`
         : await tx`SELECT * FROM record_delete_protected_space_rows(${read.spaceId}::uuid)`
-    tables.push({ table: 'secret_dek', count: Number(protectedRows[0]?.secret_dek_count ?? 0) })
-    tables.push({
-      table: 'routing_evidence_head',
-      count: Number(protectedRows[0]?.routing_evidence_head_count ?? 0),
-    })
+    tables.push(
+      ...readRecordDefinerCounts(
+        protectedRows,
+        RECORD_DELETE_PROTECTED_SPACE_ROWS,
+        mode === 'trial'
+          ? 'record_delete_trial_protected_space_rows'
+          : 'record_delete_protected_space_rows',
+      ),
+    )
     const memberships =
       await tx`DELETE FROM membership WHERE space_id=${read.spaceId}::uuid RETURNING id`
     tables.push({ table: 'membership', count: memberships.length })
