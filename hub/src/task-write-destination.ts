@@ -4,8 +4,8 @@ import {
   type ProjectWriteDecision,
   projectWriteDecisionFor,
   type TaskWriteMode,
-  undeclaredProjectSpaceMessage,
 } from './hosted-write-mode.ts'
+import { undeclaredProjectSpaceRefusal } from '../../shared/record-remedies.ts'
 import { readInstallBinding } from './install-binding.ts'
 import { projects } from './projects.ts'
 import type { TaskFetch } from './task-client.ts'
@@ -24,7 +24,7 @@ export function registeredTaskProject(name: string) {
 
 export function hostedTaskWriteOptions(projectName: string, options?: HostedTaskWriteOptions) {
   const recordSpace = declaredProjectSpace(registeredTaskProject(projectName).settings.space)
-  if (!recordSpace) throw new Error(undeclaredProjectSpaceMessage(projectName))
+  if (!recordSpace) throw new Error(undeclaredProjectSpaceRefusal(projectName))
   return { ...options, recordSpace }
 }
 

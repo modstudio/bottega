@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { sendHostedSessionRequest } from './hosted-session-send.ts'
+import { hostedCreateTask } from './task-client.ts'
 
 const common = {
   origin: 'https://hub.example.test',
@@ -56,4 +57,13 @@ test('hosted session writes require and send a destination while reads remain un
       fetch: async () => Response.json({}),
     })
   void compileOnly
+
+  const compileOnlyClient = () =>
+    // @ts-expect-error A task-client write cannot omit its destination space.
+    hostedCreateTask({}, {
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: async () => Response.json({}),
+    })
+  void compileOnlyClient
 })

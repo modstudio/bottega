@@ -24,10 +24,7 @@ export type HostedSessionRequest = HostedSessionRequestBase &
       }
   )
 
-/** Send one hub request with either an explicit token or the process record session. */
-export async function sendHostedSessionRequest(input: HostedSessionRequest): Promise<Response> {
-  if (input.method !== 'GET' && !input.recordSpace?.trim())
-    throw new Error(`hosted write names no destination space: ${new URL(input.url).pathname}`)
+async function send(input: HostedSessionRequestBase & { method: HostedSessionMethod; recordSpace?: string | null }) {
   const send = async (token: string | null) => {
     if (!token) throw new Error(RECORD_SIGN_IN_REMEDY)
     try {
@@ -48,4 +45,21 @@ export async function sendHostedSessionRequest(input: HostedSessionRequest): Pro
   return input.token === undefined
     ? await sendWithStoredRecordSessionToken(send)
     : await send(input.token)
+}
+
+/** Send one hub request with either an explicit token or the process record session. */
+export async function sendHostedSessionRequest(input: HostedSessionRequest): Promise<Response> {
+  if (input.method !== 'GET' && !input.recordSpace?.trim())
+    throw new Error(`hosted write names no destination space: ${new URL(input.url).pathname}`)
+  return send(input)
+}
+
+/**
+ * Send the one user-scoped hosted write whose destination is the project named in its body,
+ * resolved through outside-note intake rather than an x-record-space header.
+ */
+export function sendHostedOutsideNoteRequest(
+  input: HostedSessionRequestBase & { body: { project: string } & Record<string, unknown> },
+): Promise<Response> {
+  return send({ ...input, method: 'POST' })
 }

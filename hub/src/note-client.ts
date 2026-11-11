@@ -3,7 +3,11 @@ import { jsonBody } from '../../shared/http-json.ts'
 import type { NoteAnchorWire } from '../../shared/note-anchor.ts'
 import type { HostedAcknowledgement, HostedNote, PromoteNoteInput } from './hosted-notes.ts'
 import { type HostedRequestSafety, hostedRefusalError } from './hosted-refusal.ts'
-import { type HostedSessionMethod, sendHostedSessionRequest } from './hosted-session-send.ts'
+import {
+  type HostedSessionMethod,
+  sendHostedOutsideNoteRequest,
+  sendHostedSessionRequest,
+} from './hosted-session-send.ts'
 import type { HostedComment, HostedTask } from './hosted-tasks.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import { MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
@@ -18,6 +22,7 @@ const TEST_REFUSAL = `${PLATFORM_SLUG} note client refuses a real hosted URL unl
 const REMEDY = MISSING_HOSTED_URL_REMEDY
 type NoteFetch = (input: string, init?: RequestInit) => Promise<Response>
 type Options = { baseUrl?: string; token?: string | null; fetch?: NoteFetch; recordSpace?: string }
+type WriteOptions = Omit<Options, 'recordSpace'> & { recordSpace: string }
 class HostedNoteRequestError extends Error {
   readonly status: number
   constructor(status: number, message: string) {
@@ -27,34 +32,7 @@ class HostedNoteRequestError extends Error {
 }
 export const isMissingHostedNote = (cause: unknown) =>
   cause instanceof HostedNoteRequestError && cause.status === 404
-async function request<T>(
-  path: string,
-  method: HostedSessionMethod,
-  body?: unknown,
-  options: Options = {},
-  safety: HostedRequestSafety = 'probe',
-): Promise<T> {
-  if (options.recordSpace) {
-    const identity = await hostedTaskIdentity(options)
-    if (options.recordSpace !== identity.activeSpaceId) assertTargetSpaceNotes(identity)
-  }
-  const baseUrl = options.baseUrl ?? resolveHostedUrl()
-  if (!baseUrl) throw new Error(`hosted hub is not configured. ${REMEDY}`)
-  if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
-  const url = `${baseUrl.replace(/\/$/, '')}${path}`
-  const common = {
-    origin: baseUrl,
-    url,
-    body,
-    token: options.token,
-    safety,
-    fetch: options.fetch ?? fetch,
-  }
-  const response = await sendHostedSessionRequest(
-    method === 'GET'
-      ? { ...common, method, recordSpace: options.recordSpace }
-      : { ...common, method, recordSpace: options.recordSpace ?? '' },
-  )
+async function requestValue<T>(url: string, response: Response, safety: HostedRequestSafety) {
   const bodyResult = await jsonBody(response, url)
   if (!bodyResult.ok)
     throw hostedRefusalError({
@@ -75,26 +53,78 @@ async function request<T>(
     )
   return value as T
 }
+
+function requestSetup(options: Options) {
+  if (options.recordSpace) {
+    return hostedTaskIdentity(options).then((identity) => {
+      if (options.recordSpace !== identity.activeSpaceId) assertTargetSpaceNotes(identity)
+    })
+  }
+  return Promise.resolve()
+}
+
+async function request<T>(path: string, options: Options = {}): Promise<T> {
+  await requestSetup(options)
+  const baseUrl = options.baseUrl ?? resolveHostedUrl()
+  if (!baseUrl) throw new Error(`hosted hub is not configured. ${REMEDY}`)
+  if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
+  const url = `${baseUrl.replace(/\/$/, '')}${path}`
+  const response = await sendHostedSessionRequest({
+    origin: baseUrl,
+    url,
+    method: 'GET',
+    token: options.token,
+    recordSpace: options.recordSpace,
+    safety: 'probe',
+    fetch: options.fetch ?? fetch,
+  })
+  return requestValue<T>(url, response, 'probe')
+}
+
+async function writeRequest<T>(
+  path: string,
+  method: Exclude<HostedSessionMethod, 'GET'>,
+  body: unknown,
+  options: WriteOptions,
+  safety: HostedRequestSafety,
+): Promise<T> {
+  await requestSetup(options)
+  const baseUrl = options.baseUrl ?? resolveHostedUrl()
+  if (!baseUrl) throw new Error(`hosted hub is not configured. ${REMEDY}`)
+  if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
+  const url = `${baseUrl.replace(/\/$/, '')}${path}`
+  const response = await sendHostedSessionRequest({
+    origin: baseUrl,
+    url,
+    method,
+    body,
+    token: options.token,
+    recordSpace: options.recordSpace,
+    safety,
+    fetch: options.fetch ?? fetch,
+  })
+  return requestValue<T>(url, response, safety)
+}
 async function assertNoteCapabilities(options?: Options) {
   const identity = await hostedTaskIdentity(options)
   assertProjectNoteCounters(identity)
 }
-export const hostedCreateNote = async (body: unknown, options?: Options) => {
+export const hostedCreateNote = async (body: unknown, options: WriteOptions) => {
   await assertNoteCapabilities(options)
-  return request<HostedNote>('/v1/notes', 'POST', body, options, 'non-idempotent')
+  return writeRequest<HostedNote>('/v1/notes', 'POST', body, options, 'non-idempotent')
 }
-export const hostedPromoteNote = (recordId: string, input: PromoteNoteInput, options?: Options) =>
-  request<{ note: HostedNote; task: HostedTask | null; comment: HostedComment | null }>(
+export const hostedPromoteNote = (recordId: string, input: PromoteNoteInput, options: WriteOptions) =>
+  writeRequest<{ note: HostedNote; task: HostedTask | null; comment: HostedComment | null }>(
     `/v1/notes/${recordId}/promote`,
     'POST',
     input,
     options,
     'non-idempotent',
   )
-export const hostedReapNotes = async (body: unknown, options?: Options) => {
+export const hostedReapNotes = async (body: unknown, options: WriteOptions) => {
   const identity = await hostedTaskIdentity(options)
   assertNoteTriageStaleness(identity)
-  return request<{
+  return writeRequest<{
     marked: number
     annotated: number
     restored: number
@@ -115,25 +145,20 @@ export async function hostedNoteChanges(cursor: string | null, options?: Options
     projectCounters: Array<{ project: string; next: number }>
     cursor: string
     more?: boolean
-  }>(`/v1/notes?${query}`, 'GET', undefined, options)
+  }>(`/v1/notes?${query}`, options)
 }
-export const hostedMirrorNotes = async (body: unknown, options?: Options) => {
+export const hostedMirrorNotes = async (body: unknown, options: WriteOptions) => {
   await assertNoteCapabilities(options)
-  return request<{
+  return writeRequest<{
     upserted: number
     noteIds: Array<{ number: number; id: string }>
     skippedHidden: string[]
   }>('/v1/notes/mirror', 'PUT', body, options, 'idempotent')
 }
 export const hostedNoteCounts = (options?: Options) =>
-  request<{ note: number; note_acknowledgement: number }>(
-    '/v1/notes/counts',
-    'GET',
-    undefined,
-    options,
-  )
+  request<{ note: number; note_acknowledgement: number }>('/v1/notes/counts', options)
 export const hostedGetNote = (recordId: string, options?: Options) =>
-  request<HostedNote>(`/v1/notes/${recordId}`, 'GET', undefined, options)
+  request<HostedNote>(`/v1/notes/${recordId}`, options)
 export type OutsideNote = {
   id: string
   number: number
@@ -147,19 +172,30 @@ export type OutsideNote = {
 export const hostedCreateOutsideNote = (
   body: { project: string; text: string; area?: string | null; anchor: string },
   options?: Options,
-) =>
-  request<{ id: string; number: number; project: string }>(
-    '/v1/notes/outside',
-    'POST',
+) => outsideNoteRequest(body, options)
+export const hostedListOutsideNotes = (project: string, options?: Options) =>
+  request<OutsideNote[]>(`/v1/notes/outside?${new URLSearchParams({ project })}`, options)
+export type NoteClientOptions = Options
+
+async function outsideNoteRequest(
+  body: { project: string; text: string; area?: string | null; anchor: string },
+  options: Options = {},
+) {
+  const baseUrl = options.baseUrl ?? resolveHostedUrl()
+  if (!baseUrl) throw new Error(`hosted hub is not configured. ${REMEDY}`)
+  if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
+  const url = `${baseUrl.replace(/\/$/, '')}/v1/notes/outside`
+  const response = await sendHostedOutsideNoteRequest({
+    origin: baseUrl,
+    url,
     body,
-    options,
+    token: options.token,
+    safety: 'non-idempotent',
+    fetch: options.fetch ?? fetch,
+  })
+  return requestValue<{ id: string; number: number; project: string }>(
+    url,
+    response,
     'non-idempotent',
   )
-export const hostedListOutsideNotes = (project: string, options?: Options) =>
-  request<OutsideNote[]>(
-    `/v1/notes/outside?${new URLSearchParams({ project })}`,
-    'GET',
-    undefined,
-    options,
-  )
-export type NoteClientOptions = Options
+}

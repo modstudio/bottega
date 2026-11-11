@@ -36,6 +36,9 @@ type HostedRequestOptions = {
   recordSpace?: string | null
   requestDeadlineMs?: number
 }
+type HostedWriteRequestOptions = Omit<HostedRequestOptions, 'recordSpace'> & {
+  recordSpace: string
+}
 
 async function hostedFetch(
   input: string,
@@ -140,7 +143,7 @@ async function responseObject(
   const response = await sendHostedSessionRequest(
     method === 'GET'
       ? { ...common, method, recordSpace: options.recordSpace }
-      : { ...common, method, recordSpace: options.recordSpace ?? '' },
+      : { ...common, method, recordSpace: options.recordSpace as string },
   )
   const bodyResult = await jsonBody(response, url)
   const value = bodyResult.ok ? bodyResult.value : null
@@ -206,16 +209,16 @@ export async function hostedGetTask(
   return value as { task: HostedTask; comments: HostedComment[]; documents: HostedDocument[] }
 }
 
-export const hostedCreateTask = (body: unknown, options?: Parameters<typeof request>[3]) =>
+export const hostedCreateTask = (body: unknown, options: HostedWriteRequestOptions) =>
   request<HostedTask>('/v1/tasks', 'POST', body, options, 'non-idempotent')
 export const hostedCreateOperatorWaitingEmail = (
   body: unknown,
-  options?: Parameters<typeof request>[3],
+  options: HostedWriteRequestOptions,
 ) => operatorWaitingEmailRequest(body, options)
 
 async function operatorWaitingEmailRequest(
   body: unknown,
-  options?: Parameters<typeof request>[3],
+  options: HostedWriteRequestOptions,
 ): Promise<OperatorWaitingEmailResult> {
   const { response, value } = await responseObject(
     '/v1/operator-waiting-emails',
@@ -238,7 +241,7 @@ async function operatorWaitingEmailRequest(
 export const hostedCreateDocument = (
   key: string,
   body: unknown,
-  options?: Parameters<typeof request>[3],
+  options: HostedWriteRequestOptions,
 ) =>
   request<HostedDocument>(
     `/v1/tasks/${encodeURIComponent(key)}/documents`,
@@ -277,7 +280,7 @@ export async function hostedListTasks(options?: Parameters<typeof request>[3]) {
 
 export const hostedTaskPresence = (
   pairs: HostedTaskPresencePair[],
-  options?: Parameters<typeof request>[3],
+  options: HostedWriteRequestOptions,
 ) =>
   request<{
     present: HostedTaskPresencePair[]
@@ -287,7 +290,7 @@ export const hostedTaskPresence = (
 export const hostedDeleteTasks = (
   ids: string[],
   confirmation: number | undefined,
-  options?: Parameters<typeof request>[3],
+  options: HostedWriteRequestOptions,
 ) =>
   request<{
     tasks: number
@@ -421,7 +424,7 @@ export async function hostedIdentitySet(
 
 export async function hostedPushChanges(
   body: HostedPushChange[],
-  options: Parameters<typeof request>[3] = {},
+  options: HostedWriteRequestOptions,
 ): Promise<HostedPushOutcome[]> {
   const baseUrl = assertHostedTaskWriteConfigured(options)
   if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
@@ -432,7 +435,7 @@ export async function hostedPushChanges(
     method: 'POST',
     body,
     token: options.token,
-    recordSpace: options.recordSpace ?? '',
+    recordSpace: options.recordSpace,
     safety: 'idempotent',
     fetch: (input, init) => hostedFetch(input, init, options),
   })
@@ -610,18 +613,12 @@ export async function hostedSignedInUserId(
 
 export async function hostedSignedInUser(
   options?: Parameters<typeof request>[3],
-): Promise<{ id: string; name: string | null; personalSpaceId?: string | null } | null> {
-  const { value } = await responseObject('/v1/whoami', 'GET', undefined, options)
-  const user = value.user
-  if (!user || typeof user !== 'object' || Array.isArray(user)) return null
-  const recordUser = user as Record<string, unknown>
-  if (typeof recordUser.id !== 'string') return null
-  return {
-    id: recordUser.id,
-    name: typeof recordUser.name === 'string' ? recordUser.name : null,
-    personalSpaceId:
-      typeof value.personalSpaceId === 'string' && value.personalSpaceId.trim()
-        ? value.personalSpaceId
-        : null,
-  }
+): Promise<{ id: string; name: string | null } | null> {
+  const result = await taskIdentityResult(options)
+  return result.unauthorized
+    ? null
+    : {
+        id: result.value.userId as string,
+        name: (result.value.userName as string | null | undefined) ?? null,
+      }
 }

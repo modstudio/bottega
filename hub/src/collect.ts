@@ -7,6 +7,7 @@ import {
 } from '../../shared/collect-lease-log.ts'
 import { DEFAULT_IDLE_CAP_MS } from '../../shared/interval.ts'
 import { sendOperatorNotification } from '../../shared/operator-notification.ts'
+import { undeclaredProjectSpaceRefusal } from '../../shared/record-remedies.ts'
 import { refusal, renderRefusal } from '../../shared/refusal.ts'
 import { FAST_MS, SLOW_MS } from './collect-cadence.ts'
 import {
@@ -23,7 +24,7 @@ import {
   pullHostedChanges,
 } from './hosted-change-cache.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
-import { declaredProjectSpace, undeclaredProjectSpaceMessage } from './hosted-write-mode.ts'
+import { declaredProjectSpace } from './hosted-write-mode.ts'
 
 export { resolveHostedUrl }
 
@@ -51,6 +52,7 @@ import {
 import { HostedOutboxDrainSchedule, type PendingHostedOutbox } from './outbox-fast-cycle.ts'
 import { pruneOutboxTrace } from './outbox-trace.ts'
 import { applyProjectRegisterNames } from './project-record-id.ts'
+import { personalRecordSpace } from './personal-record-space.ts'
 import { projects } from './projects.ts'
 import { rollUpDays } from './query.ts'
 import { readSettingStamp, stampSetting } from './setting-stamp.ts'
@@ -64,7 +66,6 @@ import {
   storedLeaseHolder,
   storedLeaseSnapshot,
 } from './store-lease.ts'
-import { hostedSignedInUser } from './task-client.ts'
 import { hoursAgo } from './time.ts'
 import { WRITE_HOLD_LOG_MS } from './write-hold.ts'
 
@@ -776,16 +777,11 @@ export async function deliverOperatorWaitingEmailsWhenAllowed(
 
 async function waitingEmailDestination(item: { project: string | null }): Promise<string> {
   if (!item.project) {
-    const personalSpaceId = (await hostedSignedInUser())?.personalSpaceId
-    if (!personalSpaceId)
-      throw new Error(
-        `record user has no personal space; run \`${PLATFORM_SLUG} record sign-in\` to restore the personal space`,
-      )
-    return personalSpaceId
+    return personalRecordSpace()
   }
   const project = projects().find((candidate) => candidate.name === item.project)
   const space = declaredProjectSpace(project?.settings.space)
-  if (!space) throw new Error(undeclaredProjectSpaceMessage(item.project))
+  if (!space) throw new Error(undeclaredProjectSpaceRefusal(item.project))
   return space
 }
 

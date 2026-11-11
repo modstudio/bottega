@@ -142,11 +142,8 @@ describe('suggestion notes', () => {
     const outsideHosted = {
       baseUrl: 'https://hub.example.test',
       token: 'test',
-      recordSpace: 'space-personal',
       fetch: async (input: string, init?: RequestInit) => {
         const url = new URL(input)
-        if (url.pathname === '/v1/tasks/identity')
-          return Response.json({ userId: 'user', activeSpaceId: 'space-personal', memberships: [] })
         if (url.pathname === '/v1/notes/outside' && init?.method === 'POST')
           return Response.json({ id: crypto.randomUUID(), number: 7, project: 'outside-project' })
         if (url.pathname === '/v1/notes/outside')
