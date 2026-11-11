@@ -193,7 +193,7 @@ describe('orch MCP', () => {
       recordId: newRecordId(),
       name: 'fixture',
       path: '/fixture',
-      settings: { space: identity.activeSpaceId },
+      settings: { space: 'space-a' },
     })
     db()
       .query(
