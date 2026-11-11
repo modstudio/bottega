@@ -45,7 +45,7 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
     readProjects: async () => [],
     upsertProject: async () => ({ id: newRecordId(), name: 'one' }),
     retireProject: async () => ({ name: 'one' }),
-    purgeProject: async () => ({ nothingToRemove: true, tables: [], project: 0 }),
+    purgeProject: async () => ({ nothingToRemove: true, tables: [] }),
     listDocs: async () => [],
     listPublicDocs: async () => [],
     readPublicDoc: async () => null,

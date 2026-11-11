@@ -1,12 +1,14 @@
 // concern: record-trial-space-contract
 /** Stable transport and refusal shape shared by both destructive space-delete verbs. */
+import type { RecordRemovalReport } from './record-removal-report.ts'
+
 export class SpaceDeleteError extends Error {
   readonly status = 422
 }
 export type SpaceDeleteResult = {
   nothingToRemove: boolean
   activeSpaceCleared: boolean
-  tables: Record<string, number>
+  tables: RecordRemovalReport
   neutralized: Array<{ userId: string; email: string; sessions: number; machineKeys: number }>
 }
 
@@ -16,8 +18,14 @@ function spaceDeleteResponse(body: unknown): SpaceDeleteResult {
   if (
     typeof value.nothingToRemove !== 'boolean' ||
     typeof value.activeSpaceCleared !== 'boolean' ||
-    typeof value.tables !== 'object' ||
-    value.tables === null ||
+    !Array.isArray(value.tables) ||
+    !value.tables.every(
+      (row) =>
+        typeof row === 'object' &&
+        row !== null &&
+        typeof (row as Record<string, unknown>).table === 'string' &&
+        typeof (row as Record<string, unknown>).count === 'number',
+    ) ||
     !Array.isArray(value.neutralized)
   )
     throw new Error('invalid space deletion')

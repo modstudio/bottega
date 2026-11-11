@@ -25,6 +25,7 @@ import {
   listPublicDocProjects,
   type PublicDocDesignation,
 } from './record-public-doc-designation.ts'
+import { renderRecordRemovalReport } from './record-removal-report.ts'
 import {
   acceptRecordInvitation,
   blockRecordSpaceOutsideAuthor,
@@ -364,8 +365,7 @@ function renderSpaceDeleteResult(
     presentation.log(
       `neutralized\t${account.email}\tsessions ${account.sessions}\tmachine keys ${account.machineKeys}`,
     )
-  for (const [table, count] of Object.entries(result.tables).filter(([, count]) => count > 0))
-    presentation.log(`removed\t${table}\t${count}`)
+  renderRecordRemovalReport(result.tables, (value) => presentation.log(value))
   if (result.activeSpaceCleared)
     presentation.log(
       `active record space is now none; select one: ${PLATFORM_SLUG} record space switch <slug>`,

@@ -54,7 +54,8 @@ export const recordInvariantModules = [
     './record-session.ts',
     './active-space-invariant.ts',
   ]),
-  module('orchestrator/src/record/record-trial-space-contract.ts', []),
+  module('orchestrator/src/record/record-removal-report.ts', []),
+  module('orchestrator/src/record/record-trial-space-contract.ts', ['./record-removal-report.ts']),
   module('orchestrator/src/record/record-trial-space.ts', []),
   module('orchestrator/src/record/record-api-trial-space-routes.ts', [
     'hono',
@@ -66,6 +67,7 @@ export const recordInvariantModules = [
     'bun',
     '../../../shared/brand.ts',
     '../../../shared/record/tenant.ts',
+    './record-migration-requirement.ts',
     './record-trial-space.ts',
     './record-pool.ts',
     './record-space-teardown-plan.ts',
@@ -79,7 +81,9 @@ export const recordInvariantModules = [
     './record-project-purge-contract.ts',
     './record-space-teardown-plan.ts',
   ]),
-  module('orchestrator/src/record/record-project-purge-contract.ts', []),
+  module('orchestrator/src/record/record-project-purge-contract.ts', [
+    './record-removal-report.ts',
+  ]),
   module('orchestrator/src/record/record-space-teardown-plan.ts', [
     'drizzle-orm/pg-core',
     '../../../shared/record/schema.ts',

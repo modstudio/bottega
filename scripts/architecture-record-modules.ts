@@ -582,6 +582,7 @@ export const recordModules: RecordModule[] = [
     './outbox-redaction.ts',
     './record-doctor.ts',
     './record-public-doc-designation.ts',
+    './record-removal-report.ts',
     './record-space-move.ts',
     './record-space.ts',
     './record-space-built-ins.ts',

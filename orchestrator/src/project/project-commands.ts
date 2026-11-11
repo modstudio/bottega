@@ -16,6 +16,7 @@ import {
   pullRecordCataloguesForSpace,
   RecordCataloguePullError,
 } from '../record/record-cache-catalogues.ts'
+import { renderRecordRemovalReport } from '../record/record-removal-report.ts'
 import { migrateCreate } from '../worktree/worktree-template.ts'
 import { declaredProjectSpace } from './declared-project-space.ts'
 import { projectAddDecision } from './project-add-record.ts'
@@ -847,14 +848,13 @@ async function purgeProjectCommand(
     project.settings,
     confirmation,
   )
-  if (result.nothingToRemove)
+  if (result.nothingToRemove) {
     presentation.log(
-      `no hosted project with id ${project.recordId} exists in any record space this caller belongs to; nothing remained hosted`,
+      `no hosted project with record id ${project.recordId} is visible in any space this caller belongs to; this machine's register entry is kept; run \`${PLATFORM_SLUG} project remove ${name}\` to drop it`,
     )
-  else {
-    for (const row of result.tables) presentation.log(`removed\t${row.table}\t${row.count}`)
-    presentation.log(`removed\tproject\t${result.project}`)
+    return
   }
+  renderRecordRemovalReport(result.tables, (value) => presentation.log(value))
   try {
     removeProject(name)
     presentation.log(`removed ${name} from this machine's register`)

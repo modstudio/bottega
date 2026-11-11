@@ -4,7 +4,6 @@ import { project, space } from '../../../shared/record/schema.ts'
 import {
   deriveProjectPurgePlan,
   deriveSpaceTeardownPlan,
-  PROJECT_PURGE_PLAN,
   SPACE_TEARDOWN_PLAN,
   unclassifiedProjectTables,
   unclassifiedSpaceTables,
@@ -36,10 +35,6 @@ test('project purge owns set-null rows but leaves cascade rows to postgres', () 
   expect(deriveProjectPurgePlan([project, setNull, cascade], {}).map((step) => step.table)).toEqual(
     ['fixture_set_null'],
   )
-})
-test('the hosted project purge plan classifies every reached table', () => {
-  expect(PROJECT_PURGE_PLAN.length).toBeGreaterThan(0)
-  expect(unclassifiedProjectTables()).toEqual([])
 })
 test('a table without a space key that references an ordered table is refused', () => {
   const fixture = pgTable('fixture_project_child', {

@@ -17,7 +17,7 @@ test('the trial-space route derives the caller from identity and accepts the bod
       return {
         nothingToRemove: true,
         activeSpaceCleared: false,
-        tables: {},
+        tables: [],
         neutralized: [],
       }
     },
@@ -78,7 +78,7 @@ test('the general space route passes the typed confirmation and authenticated ca
     },
     deleteSpace: async (input) => {
       calls.push(input)
-      return { nothingToRemove: true, activeSpaceCleared: false, tables: {}, neutralized: [] }
+      return { nothingToRemove: true, activeSpaceCleared: false, tables: [], neutralized: [] }
     },
   })
   const response = await app.request('/v1/spaces/delete', {
@@ -109,7 +109,7 @@ test('each space-delete route can be registered without the other dependency', a
     deleteTrialSpace: async () => ({
       nothingToRemove: true,
       activeSpaceCleared: false,
-      tables: {},
+      tables: [],
       neutralized: [],
     }),
   })

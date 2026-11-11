@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { decideProjectPurge, type ProjectPurgeFacts } from './record-project-purge.ts'
+import {
+  decideProjectPurge,
+  decideProjectPurgeWrite,
+  type ProjectPurgeFacts,
+} from './record-project-purge.ts'
 
 const base: ProjectPurgeFacts = {
   exists: true,
@@ -33,5 +37,16 @@ describe('project purge guard', () => {
       allowed: true,
       nothing: true,
     })
+  })
+  test('classifies a failed project row lock as a write refusal', () => {
+    expect(
+      decideProjectPurgeWrite({ name: 'demo', spaceSlug: 'team', writeAllowed: false }),
+    ).toMatchObject({
+      allowed: false,
+      refusal: expect.stringContaining('project-write guard failed'),
+    })
+    expect(
+      decideProjectPurgeWrite({ name: 'demo', spaceSlug: 'team', writeAllowed: true }),
+    ).toEqual({ allowed: true, nothing: false })
   })
 })

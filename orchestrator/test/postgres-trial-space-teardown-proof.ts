@@ -69,7 +69,7 @@ export function registerTrialSpaceTeardownProof(input: {
       confirmation: 'purged-proof',
     })
     const counts = Object.fromEntries(result.tables.map((row) => [row.table, row.count]))
-    expect(result.project).toBe(1)
+    expect(counts.project).toBe(1)
     expect(counts.hub_task).toBe(1)
     expect(counts.hub_interval).toBe(1)
     expect(input.admin(`SELECT count(*) FROM project WHERE id='${purgedProject}';`)).toBe('0')
@@ -89,7 +89,7 @@ export function registerTrialSpaceTeardownProof(input: {
         id: purgedProject,
         confirmation: 'purged-proof',
       }),
-    ).toEqual({ nothingToRemove: true, tables: [], project: 0 })
+    ).toEqual({ nothingToRemove: true, tables: [] })
 
     const routeIdentity: RecordIdentity = {
       user: { id: owner, email: `purge-${owner}@example.test` },
@@ -232,9 +232,10 @@ export function registerTrialSpaceTeardownProof(input: {
       userId: owner,
       activeSpaceId: personal,
     })
-    expect(deleted.tables.secret_dek).toBe(1)
-    expect(deleted.tables.routing_evidence_head).toBe(1)
-    expect(deleted.tables.space).toBe(1)
+    const deletedCounts = Object.fromEntries(deleted.tables.map((row) => [row.table, row.count]))
+    expect(deletedCounts.secret_dek).toBe(1)
+    expect(deletedCounts.routing_evidence_head).toBe(1)
+    expect(deletedCounts.space).toBe(1)
     expect(
       input.admin(
         `SELECT (SELECT count(*) FROM space WHERE id='${space}') || '|' ||
@@ -379,7 +380,7 @@ export function registerTrialSpaceTeardownProof(input: {
         userId: owner,
         activeSpaceId: trial,
       }),
-    ).toEqual({ nothingToRemove: true, activeSpaceCleared: false, tables: {}, neutralized: [] })
+    ).toEqual({ nothingToRemove: true, activeSpaceCleared: false, tables: [], neutralized: [] })
     input.admin(`DELETE FROM membership WHERE space_id='${real}' AND user_id='${member}';`)
     const result = await deleteTrialRecordSpace({
       url: input.actorUrl(),
@@ -387,11 +388,12 @@ export function registerTrialSpaceTeardownProof(input: {
       userId: owner,
       activeSpaceId: trial,
     })
-    expect(result.tables.config_secret).toBe(1)
-    expect(result.tables.board_claim).toBe(1)
-    expect(result.tables.board_message).toBe(1)
-    expect(result.tables.space).toBe(1)
-    expect(result.tables.membership).toBe(3)
+    const counts = Object.fromEntries(result.tables.map((row) => [row.table, row.count]))
+    expect(counts.config_secret).toBe(1)
+    expect(counts.board_claim).toBe(1)
+    expect(counts.board_message).toBe(1)
+    expect(counts.space).toBe(1)
+    expect(counts.membership).toBe(3)
     expect(result.activeSpaceCleared).toBe(true)
     expect(result.neutralized).toEqual(
       [

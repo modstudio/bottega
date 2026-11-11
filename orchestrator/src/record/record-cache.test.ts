@@ -76,8 +76,7 @@ function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
     listScores: async () => ({ items: [], nextCursor: null }),
     counts: async () => ({ docs: 0, revisions: 0, scores: 0, voids: 0 }),
     ...overrides,
-    purgeProject:
-      overrides.purgeProject ?? (async () => ({ nothingToRemove: true, tables: [], project: 0 })),
+    purgeProject: overrides.purgeProject ?? (async () => ({ nothingToRemove: true, tables: [] })),
     storage: overrides.storage ?? (async () => ({ tables: [] })),
   }
 }

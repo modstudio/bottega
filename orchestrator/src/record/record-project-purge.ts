@@ -46,6 +46,19 @@ export function decideProjectPurge(facts: ProjectPurgeFacts): ProjectPurgeDecisi
   return { allowed: true, nothing: false }
 }
 
+export function decideProjectPurgeWrite(facts: {
+  name: string
+  spaceSlug: string
+  writeAllowed: boolean
+}): ProjectPurgeDecision {
+  if (!facts.writeAllowed)
+    return {
+      allowed: false,
+      refusal: `project-write guard failed: the caller cannot write project ${facts.name} in record space ${facts.spaceSlug}; restore the caller's write permission, then retry \`${PLATFORM_SLUG} project purge ${facts.name} --confirm ${facts.name}\``,
+    }
+  return { allowed: true, nothing: false }
+}
+
 const purgeSql = buildRecordTeardownPredicates(PROJECT_PURGE_PLAN, 'project', 'id=$1')
 
 export async function purgeRecordProject(input: {
@@ -83,12 +96,14 @@ export async function purgeRecordProject(input: {
         : false,
     })
     if (!decision.allowed) throw new RecordProjectPurgeError(decision.refusal)
-    if (decision.nothing) return { nothingToRemove: true, tables: [], project: 0 }
+    if (decision.nothing) return { nothingToRemove: true, tables: [] }
     const locked = await tx`SELECT id FROM project WHERE id=${input.id}::uuid FOR UPDATE`
-    if (locked.length !== 1)
-      throw new RecordProjectPurgeError(
-        `project-write guard failed: the caller cannot write project ${String(row.name)} in record space ${String(row.slug)}; restore the caller's write permission, then retry \`${PLATFORM_SLUG} project purge ${String(row.name)} --confirm ${String(row.name)}\``,
-      )
+    const writeDecision = decideProjectPurgeWrite({
+      name: String(row.name),
+      spaceSlug: String(row.slug),
+      writeAllowed: locked.length === 1,
+    })
+    if (!writeDecision.allowed) throw new RecordProjectPurgeError(writeDecision.refusal)
     const tables: RecordProjectPurgeResult['tables'] = []
     for (const step of PROJECT_PURGE_PLAN) {
       const deleted = await tx.unsafe(
@@ -102,6 +117,7 @@ export async function purgeRecordProject(input: {
       throw new Error(
         `project purge invariant failed: expected to delete one project row, deleted ${projects.length}`,
       )
-    return { nothingToRemove: false, tables, project: projects.length }
+    tables.push({ table: 'project', count: projects.length })
+    return { nothingToRemove: false, tables }
   })
 }

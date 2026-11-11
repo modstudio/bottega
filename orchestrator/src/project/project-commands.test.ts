@@ -142,8 +142,10 @@ test('project purge reports hosted counts and removes an unreferenced register r
       calls.push(args)
       return {
         nothingToRemove: false,
-        tables: [{ table: 'hub_task', count: 2 }],
-        project: 1,
+        tables: [
+          { table: 'hub_task', count: 2 },
+          { table: 'project', count: 1 },
+        ],
       }
     },
   })
@@ -175,7 +177,10 @@ test('project purge keeps the register row and names its referencing local table
     .run(messageId, recordId)
   installRecordApiClient({
     ...createProjectRecordApiClient(),
-    purgeProject: async () => ({ nothingToRemove: false, tables: [], project: 1 }),
+    purgeProject: async () => ({
+      nothingToRemove: false,
+      tables: [{ table: 'project', count: 1 }],
+    }),
   })
   expect(
     await runProject(['project', 'purge', 'purge-local-reference'], {
@@ -186,6 +191,28 @@ test('project purge keeps the register row and names its referencing local table
   )
   expect(projectByName('purge-local-reference')).not.toBeNull()
   db().query('DELETE FROM board_message WHERE record_id=?').run(messageId)
+})
+
+test('project purge keeps the register row when no hosted project is visible', async () => {
+  const recordId = newRecordId()
+  upsertProject({
+    recordId,
+    name: 'purge-not-visible',
+    path: '/w/purge-not-visible',
+    settings: { space: 'space-a' },
+  })
+  installRecordApiClient({
+    ...createProjectRecordApiClient(),
+    purgeProject: async () => ({ nothingToRemove: true, tables: [] }),
+  })
+  expect(
+    await runProject(['project', 'purge', 'purge-not-visible'], {
+      confirm: 'purge-not-visible',
+    }),
+  ).toBe(
+    `no hosted project with record id ${recordId} is visible in any space this caller belongs to; this machine's register entry is kept; run \`${PLATFORM_SLUG} project remove purge-not-visible\` to drop it`,
+  )
+  expect(projectByName('purge-not-visible')).not.toBeNull()
 })
 
 test('hosted failure leaves the local register unchanged', async () => {

@@ -960,7 +960,7 @@ export function createMemoryRecordApiClient(
       return { name }
     },
     async purgeProject() {
-      return { nothingToRemove: true, tables: [], project: 0 }
+      return { nothingToRemove: true, tables: [] }
     },
     async renameSubject(input) {
       const matchingDocs = [...docs.values()].filter((doc) => doc.subject === input.from)
