@@ -68,7 +68,6 @@ export async function purgeRecordProject(input: {
       JOIN space s ON s.id=p.space_id
       LEFT JOIN membership m ON m.space_id=p.space_id AND m.user_id=${input.userId}::uuid
       WHERE p.id=${input.id}::uuid
-      FOR UPDATE OF p
     `
     const row = rows[0]
     const decision = decideProjectPurge({
@@ -85,6 +84,11 @@ export async function purgeRecordProject(input: {
     })
     if (!decision.allowed) throw new RecordProjectPurgeError(decision.refusal)
     if (decision.nothing) return { nothingToRemove: true, tables: [], project: 0 }
+    const locked = await tx`SELECT id FROM project WHERE id=${input.id}::uuid FOR UPDATE`
+    if (locked.length !== 1)
+      throw new RecordProjectPurgeError(
+        `project-write guard failed: the caller cannot write project ${String(row.name)} in record space ${String(row.slug)}; restore the caller's write permission, then retry \`${PLATFORM_SLUG} project purge ${String(row.name)} --confirm ${String(row.name)}\``,
+      )
     const tables: RecordProjectPurgeResult['tables'] = []
     for (const step of PROJECT_PURGE_PLAN) {
       const deleted = await tx.unsafe(

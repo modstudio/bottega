@@ -27,7 +27,7 @@ export function registerTrialSpaceTeardownProof(input: {
   psql: (user: string, password: string, sql: string) => PsqlResult
 }): void {
   test('project purge removes only the selected project across every reached path', async () => {
-    const owner = input.userId()
+    const owner = newRecordId()
     const space = newRecordId()
     const otherSpace = newRecordId()
     const purgedProject = newRecordId()
@@ -39,6 +39,8 @@ export function registerTrialSpaceTeardownProof(input: {
     const purgedInterval = newRecordId()
     const peerInterval = newRecordId()
     input.admin(`
+      INSERT INTO "user"(id,email,name,created_at)
+        VALUES ('${owner}','purge-proof-${owner}@example.test','purge proof owner',now());
       INSERT INTO space(id,name,slug,metadata,created_at) VALUES
         ('${space}','purge proof','purge-${space}',NULL,now()),
         ('${otherSpace}','purge other','purge-other-${otherSpace}',NULL,now());
@@ -166,7 +168,9 @@ export function registerTrialSpaceTeardownProof(input: {
       confirmation: 'peer-proof',
     })
     input.admin(
-      `DELETE FROM membership WHERE space_id IN ('${space}','${otherSpace}'); DELETE FROM space WHERE id IN ('${space}','${otherSpace}');`,
+      `DELETE FROM membership WHERE space_id IN ('${space}','${otherSpace}');
+       DELETE FROM space WHERE id IN ('${space}','${otherSpace}');
+       DELETE FROM "user" WHERE id='${owner}';`,
     )
     await closeRecordPools()
   })
