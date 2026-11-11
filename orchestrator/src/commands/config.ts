@@ -6,9 +6,9 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ConfigClient, ConfigScope } from '../../../shared/config-client.ts'
 import { isDelegationKey } from '../../../shared/delegation-mode.ts'
 import { listMachineEntries } from '../../../shared/machine-config.ts'
+import { RECORD_PERSONAL_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { resolveRecordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
-import { RECORD_PERSONAL_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import {
   isShipToConfigKey,
   SHIP_TO_CONFIG_KEY,

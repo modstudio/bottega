@@ -803,6 +803,7 @@ export const importBoundaries: ImportBoundary[] = [
     'record-publish-boundary',
     'orchestrator/src/record/record-publish.ts',
     [
+      '../../../shared/record-remedies.ts',
       '../agent/agent-commands.ts',
       '../health/health-commands.ts',
       '../jobs/job-commands.ts',

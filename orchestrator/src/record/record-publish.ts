@@ -1,10 +1,10 @@
 // concern: record-publish
 /** Builds local orchestrator views and publishes each independently to the hosted record. */
+import { RECORD_PERSONAL_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import { agentsPayload } from '../agent/agent-commands.ts'
 import { blockersPayload, healthPayload } from '../health/health-commands.ts'
 import { jobsPayload } from '../jobs/job-commands.ts'
 import { state } from '../state/serve.ts'
-import { RECORD_PERSONAL_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import { machineId } from './machine-identity.ts'
 import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
 import { SNAPSHOT_KINDS, type SnapshotKind } from './record-snapshots.ts'

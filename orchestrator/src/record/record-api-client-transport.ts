@@ -5,7 +5,6 @@ import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { scheduleHostedCallObservation } from '../../../shared/hosted-call-observation.ts'
 import { runningInstallationIdentity } from '../../../shared/install-root.ts'
-import packageManifest from '../../../package.json'
 import {
   classifyHostedTransportError,
   type HostedCallOutcomeRecorder,
@@ -15,16 +14,18 @@ import { bearerHeaders } from './record-auth.ts'
 
 let memoizedUserAgent: string | undefined
 
-function recordUserAgent(
-  identityResolver: typeof runningInstallationIdentity = runningInstallationIdentity,
-): string {
+function runningInstallationUserAgent(): string {
+  const identity = runningInstallationIdentity(import.meta.dir, process.env)
+  const version = identity.kind === 'distribution' ? identity.manifest.version : identity.version
+  return `${PLATFORM_SLUG}/${version}`
+}
+
+function recordUserAgent(identityResolver: () => string = runningInstallationUserAgent): string {
   if (memoizedUserAgent) return memoizedUserAgent
   try {
-    const identity = identityResolver(import.meta.dir, process.env)
-    const version = identity.kind === 'distribution' ? identity.manifest.version : identity.version
-    memoizedUserAgent = `${PLATFORM_SLUG}/${version}`
+    memoizedUserAgent = identityResolver()
   } catch {
-    memoizedUserAgent = `${PLATFORM_SLUG}/${packageManifest.version}`
+    memoizedUserAgent = `${PLATFORM_SLUG}/unknown`
   }
   return memoizedUserAgent
 }
@@ -70,7 +71,7 @@ export async function recordTransport(
   init: RequestInit,
   transport: typeof fetch = hostedApiFetch,
   recorder: HostedCallOutcomeRecorder = recordHostedCallOutcome,
-  identityResolver: typeof runningInstallationIdentity = runningInstallationIdentity,
+  identityResolver: () => string = runningInstallationUserAgent,
 ): Promise<Response> {
   const startedAt = performance.now()
   const userAgent = recordUserAgent(identityResolver)

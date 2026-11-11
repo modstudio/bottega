@@ -5,9 +5,9 @@ import { recordHostedCallOutcome } from '../hosted-call-outcome.ts'
 import { recordTransport } from './record-api-client-transport.ts'
 
 test('record transport sends the fallback user-agent when installation identity resolution fails', async () => {
-  let userAgent: string | null = null
+  const userAgents: Array<string | null> = []
   const transport = (async (_input: RequestInfo | URL, init?: RequestInit) => {
-    userAgent = new Headers(init?.headers).get('user-agent')
+    userAgents.push(new Headers(init?.headers).get('user-agent'))
     return new Response('{}', { status: 200 })
   }) as unknown as typeof fetch
 
@@ -23,7 +23,7 @@ test('record transport sends the fallback user-agent when installation identity 
       },
     ),
   ).resolves.toMatchObject({ status: 200 })
-  expect(userAgent).toBe(`${PLATFORM_SLUG}/0.5.6`)
+  expect(userAgents).toEqual([`${PLATFORM_SLUG}/unknown`])
 })
 
 test('record transport stores HTTP and transport-error outcomes for its route class', async () => {
@@ -67,7 +67,7 @@ test('record transport stores HTTP and transport-error outcomes for its route cl
       { route_class: 'record-docs', http_status: 200, transport_error: null },
       { route_class: 'record-docs', http_status: null, transport_error: 'other' },
     ])
-    expect(userAgents).toEqual([`${PLATFORM_SLUG}/0.5.6`, `${PLATFORM_SLUG}/0.5.6`])
+    expect(userAgents).toEqual([`${PLATFORM_SLUG}/unknown`, `${PLATFORM_SLUG}/unknown`])
   } finally {
     database.close()
   }
