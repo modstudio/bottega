@@ -82,13 +82,15 @@ test('every teardown exclusion names a hosted record table', () => {
 })
 
 test('definer count declarations exactly cover definer-deleted exclusions', () => {
-  const spaceDefinerTables = [
+  const spaceDefinerTables: string[] = [
     ...new Set([
       ...RECORD_DELETE_APPEND_ONLY_SPACE_ROWS.map(({ table }) => table),
       ...RECORD_DELETE_PROTECTED_SPACE_ROWS.map(({ table }) => table),
     ]),
   ].sort()
-  const purgeDefinerTables = RECORD_DELETE_APPEND_ONLY_PROJECT_ROWS.map(({ table }) => table).sort()
+  const purgeDefinerTables: string[] = RECORD_DELETE_APPEND_ONLY_PROJECT_ROWS.map(
+    ({ table }) => table,
+  ).sort()
   const excluded = (exclusions: Record<string, { removedBy: string }>) =>
     Object.entries(exclusions)
       .filter(([, value]) => value.removedBy === 'definer')
