@@ -204,6 +204,7 @@ export const noDestinationWrite = pgTable.withRLS(
     spaceId: spaceIdentity(),
     route: text().notNull(),
     cause: text().notNull(),
+    source: text().notNull(),
     at: recordedAt('at'),
     createdAt: createdAt(),
   },

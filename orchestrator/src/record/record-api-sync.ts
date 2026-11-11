@@ -101,7 +101,7 @@ export function registerRecordSyncRoute(
         )
       }
       if (recordSyncHasDestinationlessRows(body.data.rows)) {
-        recordDestinationlessWrite(context, { recordUrl: deps.recordUrl })
+        recordDestinationlessWrite(context)
       }
       try {
         return context.json(

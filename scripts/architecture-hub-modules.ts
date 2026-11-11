@@ -62,7 +62,7 @@ export const hubModuleSpecs = [
   },
   {
     file: 'hub/src/hosted-route-config.ts',
-    allowed: ['bun'],
+    allowed: ['bun', '../../shared/record-no-destination-write-counter.ts'],
   },
   {
     file: 'hub/src/public-docs-text.ts',

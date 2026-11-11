@@ -2,7 +2,6 @@
 /** Persists and summarizes destination-less write telemetry under record tenancy. */
 
 import type { SQL } from 'bun'
-import { newRecordId } from './record/schema.ts'
 import { bindTenant, type TenantPrincipal } from './record/tenant.ts'
 import type {
   NoDestinationWrite,
@@ -15,25 +14,25 @@ export async function recordNoDestinationWrite(
   client: SQL,
   principal: TenantPrincipal,
   decision: NoDestinationWrite,
+  source: 'api' | 'hub',
 ): Promise<void> {
   await client.begin(async (tx) => {
     await bindTenant(tx, principal)
-    await tx`INSERT INTO no_destination_write (id, space_id, route, cause, at, created_at)
-      VALUES (${newRecordId()}, ${decision.spaceId}, ${decision.route}, ${decision.cause}, now(), now())`
+    await tx`SELECT public.no_destination_write_record(
+      ${decision.route}, ${decision.cause}, ${source}
+    )`
   })
 }
 
 export async function readNoDestinationWrites(
   client: SQL,
   principal: TenantPrincipal,
+  source: 'api' | 'hub',
 ): Promise<NoDestinationWriteStoreReport> {
   return client.begin(async (tx) => {
     await bindTenant(tx, principal)
     const window = rows<{ windowStart: Date }>(
-      await tx`SELECT greatest(
-        now() - interval '14 days',
-        public.no_destination_write_coverage_start()
-      ) AS "windowStart"`,
+      await tx`SELECT public.no_destination_write_window_start() AS "windowStart"`,
     )[0]
     if (!window) throw new Error('destination-less write telemetry returned no retention window')
     const counts = rows<{
@@ -45,7 +44,7 @@ export async function readNoDestinationWrites(
     }>(
       await tx`SELECT space_id AS "spaceId", route, cause, count(*) AS occurrences, max(at) AS "lastAt"
         FROM no_destination_write
-        WHERE at >= ${window.windowStart}
+        WHERE at >= ${window.windowStart} AND source = ${source}
         GROUP BY space_id, route, cause
         ORDER BY space_id, route, cause`,
     ).map((row) => ({

@@ -120,6 +120,7 @@ type RecordApiDeps = RecordSessionRouteDeps &
     clientAddresses: RecordClientAddresses
     recordUrl: string
     noDestinationWriteCounter?: Parameters<typeof registerRecordWriteTelemetry>[1]['counter']
+    noDestinationWriteDatabase?: Parameters<typeof registerRecordWriteTelemetry>[1]['database']
     allowedOrigins?: string[]
     auth: { handler(request: Request): Response | Promise<Response> }
     readSession(headers: Headers): Promise<RecordIdentity | null>
@@ -295,7 +296,10 @@ function registerRecordIdentityMiddleware(app: Hono<ApiEnvironment>, deps: Deps)
 }
 
 function writeTelemetryDeps(deps: Deps) {
-  return { recordUrl: deps.recordUrl, counter: deps.noDestinationWriteCounter }
+  return {
+    database: deps.noDestinationWriteDatabase,
+    counter: deps.noDestinationWriteCounter,
+  }
 }
 
 export function recordApi(deps: Deps): Hono<ApiEnvironment> {

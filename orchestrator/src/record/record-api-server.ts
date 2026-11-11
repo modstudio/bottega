@@ -5,6 +5,7 @@ import {
   HOSTED_SERVER_IDLE_TIMEOUT_SECONDS,
   hostedAccessLogLine,
 } from '../../../shared/hosted-server.ts'
+import { createNoDestinationWriteCounter } from '../../../shared/record-no-destination-write-counter.ts'
 import { probeRecord, recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { renameHostedMachine, retireHostedMachine } from './machine-name-record.ts'
 import { recordApi } from './record-api.ts'
@@ -109,7 +110,7 @@ import {
   showOutsideIntake,
 } from './record-outside-intake.ts'
 import { listPendingRecordInvitations } from './record-pending-invitations.ts'
-import { closeRecordPools } from './record-pool.ts'
+import { closeRecordPools, recordPool } from './record-pool.ts'
 import { listRecordPortCatalogue, writeRecordPort } from './record-port-catalogue.ts'
 import { purgeRecordProject } from './record-project-purge.ts'
 import { RecordProjectSpaceConflictError } from './record-project-space-contract.ts'
@@ -420,9 +421,12 @@ async function serveRecordApiWithAuth(
     prune: () => pruneRecordRetention(config.recordUrl),
   })
   const migrations = recordMigrationCount()
+  const noDestinationWriteDatabase = recordPool(config.recordUrl)
   const app = recordApi({
     clientAddresses: { recordApiUrl: config.authUrl, hubHostedUrl: config.hubUrl },
     recordUrl: config.recordUrl,
+    noDestinationWriteCounter: createNoDestinationWriteCounter(),
+    noDestinationWriteDatabase,
     ...recordChangeDependencies(config, recordChangeWakeSource),
     allowedOrigins: config.allowedOrigins,
     ...recordApiAccessDependencies(config, auth, migrations),

@@ -194,7 +194,7 @@ export async function noteApi(
     config.recordApiUrl,
     (dependencies.fetch ?? hostedApiFetch) as typeof fetch,
     true,
-    { database: config.recordDatabaseUrl },
+    { counter: config.noDestinationWriteCounter, database: config.recordDatabaseUrl },
   )
   const refusal = identityRefusal(who)
   if (refusal) return refusal

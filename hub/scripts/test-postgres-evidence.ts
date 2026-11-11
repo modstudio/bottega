@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { SQL } from 'bun'
+import { createNoDestinationWriteCounter } from '../../shared/record-no-destination-write-counter.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { OUTSIDE_WRITES_PER_HOUR } from '../../shared/outside-write-decision.ts'
 import { readRecordChanges } from '../../shared/record/record-changes.ts'
@@ -605,7 +606,11 @@ try {
         headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       }),
-      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: actorUrl },
+      {
+        recordApiUrl: 'https://record.example.test',
+        recordDatabaseUrl: actorUrl,
+        noDestinationWriteCounter: createNoDestinationWriteCounter(),
+      },
       { fetch: outsideFetch },
     )
   const d2NoteIds: string[] = []

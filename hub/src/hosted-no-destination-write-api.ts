@@ -8,7 +8,6 @@ import { readNoDestinationWrites } from '../../shared/record-no-destination-writ
 import type { HostedRouteConfig } from './hosted-route-config.ts'
 import {
   assertAuthenticatedIdentity,
-  hostedNoDestinationWriteCounter,
   identityRefusal,
   refusedSpaceResponse,
   taskSpaceIdentity,
@@ -31,20 +30,23 @@ export async function hostedNoDestinationWriteApi(
     config.recordApiUrl,
     dependencies.fetch ?? hostedApiFetch,
     true,
-    { counter: dependencies.counter, database: config.recordDatabaseUrl },
+    {
+      counter: dependencies.counter ?? config.noDestinationWriteCounter,
+      database: config.recordDatabaseUrl,
+    },
   )
   const refusal = identityRefusal(identity)
   if (refusal) return refusal
   if (identity.kind === 'refused-space') return refusedSpaceResponse(identity.refusedSpace)
   assertAuthenticatedIdentity(identity)
-  const counter = dependencies.counter ?? hostedNoDestinationWriteCounter(config.recordDatabaseUrl)
+  const counter = dependencies.counter ?? config.noDestinationWriteCounter
   return Response.json(
     await counter.read(identity.spaceIds, () =>
-      readNoDestinationWrites(config.recordDatabaseUrl, {
-        userId: identity.userId,
-        spaceId: identity.spaceId,
-        spaceIds: identity.spaceIds,
-      }),
+      readNoDestinationWrites(
+        config.recordDatabaseUrl,
+        { userId: identity.userId, spaceId: identity.spaceId, spaceIds: identity.spaceIds },
+        'hub',
+      ),
     ),
   )
 }

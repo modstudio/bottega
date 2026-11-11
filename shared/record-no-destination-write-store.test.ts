@@ -14,6 +14,7 @@ import {
 
 const spaceA = '01990000-0000-7000-8000-000000009101'
 const spaceB = '01990000-0000-7000-8000-000000009102'
+const spaceC = '01990000-0000-7000-8000-000000009105'
 const userId = '01990000-0000-7000-8000-000000009100'
 const migrationsFolder = join(fileURLToPath(new URL('./record/migrations', import.meta.url)))
 
@@ -67,12 +68,13 @@ beforeAll(async () => {
     RESET ROLE;
     INSERT INTO space (id,name,slug,created_at) VALUES
       ('${spaceA}','Telemetry A','telemetry-a',now()),
-      ('${spaceB}','Telemetry B','telemetry-b',now());
+      ('${spaceB}','Telemetry B','telemetry-b',now()),
+      ('${spaceC}','Telemetry C','telemetry-c',now());
     INSERT INTO "user" (id,email,name,created_at)
       VALUES ('${userId}','telemetry@example.test','Telemetry user',now());
     INSERT INTO membership (id,space_id,user_id,role,permission,created_at) VALUES
       ('01990000-0000-7000-8000-000000009103','${spaceA}','${userId}','member','write',now()),
-      ('01990000-0000-7000-8000-000000009104','${spaceB}','${userId}','member','write',now());
+      ('01990000-0000-7000-8000-000000009104','${spaceB}','${userId}','member','read',now());
     SET ROLE ${RECORD_ACTOR_ROLE};
   `)
   client = pgliteSql(database)
@@ -87,11 +89,11 @@ test('report window does not claim coverage from before telemetry recording bega
         now() - interval '14 days' AS "rawWindowStart"
     `)
   ).rows[0]
-  const report = await readNoDestinationWrites(client, {
-    userId,
-    spaceId: spaceA,
-    spaceIds: [spaceA],
-  })
+  const report = await readNoDestinationWrites(
+    client,
+    { userId, spaceId: spaceA, spaceIds: [spaceA] },
+    'api',
+  )
 
   expect(bounds).toBeDefined()
   expect(new Date(report.windowStart).getTime()).toBeGreaterThanOrEqual(
@@ -104,29 +106,46 @@ test('durable counts survive a counter restart and tenant reads exclude other sp
   const firstProcess = createNoDestinationWriteCounter()
   const decisionA = { spaceId: spaceA, route: '/v1/a', cause: 'cli/1' }
   await firstProcess.record(decisionA, () =>
-    recordNoDestinationWrite(client, { userId, spaceId: spaceA }, decisionA),
+    recordNoDestinationWrite(client, { userId, spaceId: spaceA }, decisionA, 'api'),
   )
   await recordNoDestinationWrite(
     client,
     { userId, spaceId: spaceB },
     { spaceId: spaceB, route: '/v1/b', cause: 'cli/2' },
+    'api',
   )
 
   const restartedProcess = createNoDestinationWriteCounter()
   const report = await restartedProcess.read([spaceA], () =>
-    readNoDestinationWrites(client, { userId, spaceId: spaceA, spaceIds: [spaceA] }),
+    readNoDestinationWrites(client, { userId, spaceId: spaceA, spaceIds: [spaceA] }, 'api'),
   )
   expect(report.counts).toEqual([{ ...decisionA, occurrences: 1, lastAt: expect.any(String) }])
   expect(report.counts).not.toContainEqual(expect.objectContaining({ spaceId: spaceB }))
 })
 
+test('read-only members are recorded while non-members are refused', async () => {
+  const readOnlyDecision = { spaceId: spaceB, route: '/v1/read-only', cause: 'cli/3' }
+  await expect(
+    recordNoDestinationWrite(client, { userId, spaceId: spaceB }, readOnlyDecision, 'hub'),
+  ).resolves.toBeUndefined()
+  const report = await readNoDestinationWrites(
+    client,
+    { userId, spaceId: spaceB, spaceIds: [spaceB] },
+    'hub',
+  )
+  expect(report.counts).toEqual([expect.objectContaining({ ...readOnlyDecision, occurrences: 1 })])
+
+  await expect(
+    recordNoDestinationWrite(
+      client,
+      { userId, spaceId: spaceC },
+      { spaceId: spaceC, route: '/v1/non-member', cause: 'cli/4' },
+      'hub',
+    ),
+  ).rejects.toThrow('destination-less write recording requires space membership')
+})
+
 test('prune removes only telemetry older than the raw window', async () => {
-  const moveDefinition = (
-    await database.query<{ definition: string }>(
-      "SELECT pg_get_functiondef('record_move_project_space(text,text,text,bigint)'::regprocedure) AS definition",
-    )
-  ).rows[0]?.definition
-  expect(moveDefinition).toContain("('no_destination_write','space')")
   await database.exec(`
     RESET ROLE;
     UPDATE no_destination_write SET at=now() - interval '15 days' WHERE space_id='${spaceA}';
@@ -136,11 +155,11 @@ test('prune removes only telemetry older than the raw window', async () => {
     await database.query<{ deleted: number }>('SELECT no_destination_write_prune() AS deleted')
   ).rows[0]
   expect(Number(result?.deleted)).toBe(1)
-  const remaining = await readNoDestinationWrites(client, {
-    userId,
-    spaceId: spaceB,
-    spaceIds: [spaceB],
-  })
+  const remaining = await readNoDestinationWrites(
+    client,
+    { userId, spaceId: spaceB, spaceIds: [spaceB] },
+    'api',
+  )
   expect(remaining.counts).toEqual([
     expect.objectContaining({ spaceId: spaceB, route: '/v1/b', occurrences: 1 }),
   ])

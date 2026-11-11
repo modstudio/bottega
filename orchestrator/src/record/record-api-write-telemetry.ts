@@ -1,12 +1,10 @@
 // concern: record-api-write-telemetry
 /** Records destination-less hosted writes and serves their authenticated health report. */
 
+import type { SQL } from 'bun'
 import type { Context, Hono } from 'hono'
 import { NO_DESTINATION_WRITES_ROUTE } from '../../../shared/record-no-destination-write-contract.ts'
-import {
-  createNoDestinationWriteCounter,
-  type NoDestinationWriteCounter,
-} from '../../../shared/record-no-destination-write-counter.ts'
+import type { NoDestinationWriteCounter } from '../../../shared/record-no-destination-write-counter.ts'
 import {
   readNoDestinationWrites,
   recordNoDestinationWrite,
@@ -14,12 +12,11 @@ import {
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { destinationlessWrite } from './record-no-destination-write-decision.ts'
-import { recordPool } from './record-pool.ts'
 
 export type RecordWriteTelemetryEnvironment = {
   Variables: {
     identity: RecordIdentity
-    writeTelemetry?: { recordUrl: string; counter: NoDestinationWriteCounter }
+    writeTelemetry?: { database: SQL; counter: NoDestinationWriteCounter }
     destinationSpaceId?: string
     destinationlessWriteRecorded?: true
   }
@@ -27,26 +24,14 @@ export type RecordWriteTelemetryEnvironment = {
 
 export type RecordWriteTelemetryContext = Context<RecordWriteTelemetryEnvironment>
 
-const counters = new Map<string, NoDestinationWriteCounter>()
-
-function counterFor(recordUrl: string): NoDestinationWriteCounter {
-  const existing = counters.get(recordUrl)
-  if (existing) return existing
-  const counter = createNoDestinationWriteCounter()
-  counters.set(recordUrl, counter)
-  return counter
-}
-
 export function registerRecordWriteTelemetry(
   app: Hono<RecordWriteTelemetryEnvironment>,
-  deps: { recordUrl: string; counter?: NoDestinationWriteCounter },
+  deps: { database?: SQL; counter?: NoDestinationWriteCounter },
 ): void {
-  const writeTelemetry = {
-    recordUrl: deps.recordUrl,
-    counter: deps.counter ?? counterFor(deps.recordUrl),
-  }
+  const writeTelemetry =
+    deps.database && deps.counter ? { database: deps.database, counter: deps.counter } : undefined
   app.use('/v1/*', async (context, next) => {
-    context.set('writeTelemetry', writeTelemetry)
+    if (writeTelemetry) context.set('writeTelemetry', writeTelemetry)
     await next()
   })
   app.get(NO_DESTINATION_WRITES_ROUTE, async (context) => {
@@ -55,26 +40,19 @@ export function registerRecordWriteTelemetry(
       (membership) => membership.spaceId,
     )
     return context.json(
-      await writeTelemetry.counter.read(spaceIds, () =>
-        readNoDestinationWrites(recordPool(deps.recordUrl), {
-          userId: identity.user.id,
-          spaceId: identity.activeSpaceId ?? '',
-          spaceIds,
-        }),
+      await writeTelemetry!.counter.read(spaceIds, () =>
+        readNoDestinationWrites(
+          writeTelemetry!.database,
+          { userId: identity.user.id, spaceId: identity.activeSpaceId ?? '', spaceIds },
+          'api',
+        ),
       ),
     )
   })
 }
 
-export function recordDestinationlessWrite(
-  context: RecordWriteTelemetryContext,
-  fallback?: { recordUrl: string },
-): void {
-  const deps =
-    context.get('writeTelemetry') ??
-    (fallback
-      ? { recordUrl: fallback.recordUrl, counter: counterFor(fallback.recordUrl) }
-      : undefined)
+export function recordDestinationlessWrite(context: RecordWriteTelemetryContext): void {
+  const deps = context.get('writeTelemetry')
   if (!deps) throw new Error('destination-less write telemetry is not configured')
   const identity = context.get('identity')
   const decision = destinationlessWrite({
@@ -88,12 +66,13 @@ export function recordDestinationlessWrite(
   context.set('destinationlessWriteRecorded', true)
   void deps.counter.record(decision, () =>
     recordNoDestinationWrite(
-      recordPool(deps.recordUrl),
+      deps.database,
       {
         userId: identity.user.id,
         spaceId: decision.spaceId,
       },
       decision,
+      'api',
     ),
   )
 }

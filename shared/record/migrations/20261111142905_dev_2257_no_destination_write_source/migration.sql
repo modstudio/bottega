@@ -1,0 +1,1 @@
+ALTER TABLE "no_destination_write" ADD COLUMN "source" text NOT NULL;

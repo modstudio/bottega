@@ -464,6 +464,7 @@ export const recordModules: RecordModule[] = [
     './record-project-destination.ts',
   ]),
   module('orchestrator/src/record/record-api-write-telemetry.ts', [
+    'bun',
     'hono',
     '../../../shared/record-space-membership.ts',
     './record-auth.ts',
@@ -471,7 +472,6 @@ export const recordModules: RecordModule[] = [
     '../../../shared/record-no-destination-write-counter.ts',
     '../../../shared/record-no-destination-write-store.ts',
     './record-no-destination-write-decision.ts',
-    './record-pool.ts',
   ]),
   module('orchestrator/src/record/record-no-destination-write-decision.ts', [
     '../../../shared/record-no-destination-write-contract.ts',

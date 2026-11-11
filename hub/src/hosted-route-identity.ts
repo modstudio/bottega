@@ -1,10 +1,7 @@
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { noDestinationWriteCause } from '../../shared/record-no-destination-write-contract.ts'
-import {
-  createNoDestinationWriteCounter,
-  type NoDestinationWriteCounter,
-} from '../../shared/record-no-destination-write-counter.ts'
+import type { NoDestinationWriteCounter } from '../../shared/record-no-destination-write-counter.ts'
 import { recordNoDestinationWrite } from '../../shared/record-no-destination-write-store.ts'
 import {
   hostedRequestSafetyStatement,
@@ -32,16 +29,6 @@ export type TaskSpaceIdentity =
   | { kind: 'refused-space'; refusedSpace: string }
   | { kind: 'unauthenticated' }
   | { kind: 'unavailable'; cause: string }
-
-const counters = new WeakMap<SQL, NoDestinationWriteCounter>()
-
-export function hostedNoDestinationWriteCounter(client: SQL): NoDestinationWriteCounter {
-  const existing = counters.get(client)
-  if (existing) return existing
-  const counter = createNoDestinationWriteCounter()
-  counters.set(client, counter)
-  return counter
-}
 
 export function recordIdentityDecision(
   status: number,
@@ -152,9 +139,7 @@ export async function taskSpaceIdentity(
       route: measurement.route,
       cause: noDestinationWriteCause(request.headers.get('user-agent')),
     }
-    const counter =
-      dependencies.counter ??
-      (dependencies.database ? hostedNoDestinationWriteCounter(dependencies.database) : undefined)
+    const counter = dependencies.counter
     if (!counter || !dependencies.database)
       throw new Error('destination-less write telemetry requires the hosted record database')
     await counter.record(decision, () =>
@@ -162,6 +147,7 @@ export async function taskSpaceIdentity(
         dependencies.database!,
         { userId: identity.userId, spaceId: identity.activeSpaceId },
         decision,
+        'hub',
       ),
     )
   }

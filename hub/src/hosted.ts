@@ -6,6 +6,7 @@ import { readBuiltCommit } from '../../shared/built-commit.ts'
 import * as hostedServer from '../../shared/hosted-server.ts'
 import { resolveInstallRoot } from '../../shared/install-root.ts'
 import { recordServiceUrl } from '../../shared/record/service-connection.ts'
+import { createNoDestinationWriteCounter } from '../../shared/record-no-destination-write-counter.ts'
 import { appStaticPath, resolveAppStatic } from './app-static.ts'
 import { changeApi } from './change-api.ts'
 import { hostedHealthResponse } from './hosted-health.ts'
@@ -141,7 +142,11 @@ export function hostedRequestHandler(
 function startHostedServer(environment: ServerEnvironment = process.env) {
   const config = hostedServerConfig(environment)
   const recordDatabase = new SQL(recordServiceUrl(config.recordDatabaseUrl))
-  const routeConfig = { recordApiUrl: config.recordApiUrl, recordDatabaseUrl: recordDatabase }
+  const routeConfig = {
+    recordApiUrl: config.recordApiUrl,
+    recordDatabaseUrl: recordDatabase,
+    noDestinationWriteCounter: createNoDestinationWriteCounter(),
+  }
   const requestHandler = hostedRequestHandler(routeConfig)
   const server = Bun.serve({
     hostname: config.hostname,

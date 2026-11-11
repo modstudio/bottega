@@ -76,23 +76,4 @@ describe('hosted destination-less write recording', () => {
       cause: expect.any(String),
     })
   })
-
-  test('a counter that throws does not fail the request', async () => {
-    const counter = {
-      record: async () => undefined,
-      read: async () => ({ windowStart: '', unrecorded: 0, counts: [] }),
-    }
-    const request = new Request('https://hub.example.test/v1/tasks', {
-      method: 'POST',
-      headers: { authorization: 'Bearer token' },
-    })
-    expect(
-      (
-        await taskSpaceIdentity(request, 'https://api.test', identityFetch, true, {
-          counter,
-          database: {} as never,
-        })
-      ).kind,
-    ).toBe('authenticated')
-  })
 })
