@@ -640,7 +640,7 @@ describe('judge ruling', () => {
     ).toEqual({ completed_at: expect.any(String) })
   })
 
-  test('judge records a findings verdict locally and enqueues it while the record is unreachable', async () => {
+  test('judge records a findings verdict locally and enqueues it for the record', async () => {
     const id = insert('ok', 'review-lens')
     db().query("UPDATE run SET lens='correctness',model='m' WHERE record_id=?").run(id)
     const reviewId = recordReview(id, reviewReply(2, 'high'), db())

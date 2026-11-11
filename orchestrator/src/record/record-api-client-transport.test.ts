@@ -67,7 +67,8 @@ test('record transport stores HTTP and transport-error outcomes for its route cl
       { route_class: 'record-docs', http_status: 200, transport_error: null },
       { route_class: 'record-docs', http_status: null, transport_error: 'other' },
     ])
-    expect(userAgents).toEqual([`${PLATFORM_SLUG}/unknown`, `${PLATFORM_SLUG}/unknown`])
+    const running = expect.stringMatching(new RegExp(`^${PLATFORM_SLUG}/\\d+\\.\\d+\\.\\d+`))
+    expect(userAgents).toEqual([running, running])
   } finally {
     database.close()
   }

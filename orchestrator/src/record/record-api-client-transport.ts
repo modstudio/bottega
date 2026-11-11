@@ -20,13 +20,17 @@ function runningInstallationUserAgent(): string {
   return `${PLATFORM_SLUG}/${version}`
 }
 
-function recordUserAgent(identityResolver: () => string = runningInstallationUserAgent): string {
-  if (memoizedUserAgent) return memoizedUserAgent
+function userAgentFrom(identityResolver: () => string): string {
   try {
-    memoizedUserAgent = identityResolver()
+    return identityResolver()
   } catch {
-    memoizedUserAgent = `${PLATFORM_SLUG}/unknown`
+    return `${PLATFORM_SLUG}/unknown`
   }
+}
+
+/** The running installation's user-agent, resolved once per process. */
+function runningUserAgent(): string {
+  memoizedUserAgent ??= userAgentFrom(runningInstallationUserAgent)
   return memoizedUserAgent
 }
 
@@ -71,10 +75,10 @@ export async function recordTransport(
   init: RequestInit,
   transport: typeof fetch = hostedApiFetch,
   recorder: HostedCallOutcomeRecorder = recordHostedCallOutcome,
-  identityResolver: () => string = runningInstallationUserAgent,
+  identityResolver?: () => string,
 ): Promise<Response> {
   const startedAt = performance.now()
-  const userAgent = recordUserAgent(identityResolver)
+  const userAgent = identityResolver ? userAgentFrom(identityResolver) : runningUserAgent()
   try {
     const headers = new Headers(init.headers)
     headers.set('user-agent', userAgent)
