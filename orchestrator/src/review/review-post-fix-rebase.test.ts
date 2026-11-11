@@ -251,7 +251,7 @@ test.each([
         : [],
   })
   expect(triage.complete).toBe(scenario.expectedComplete)
-  expect(triage.complete ? [] : triage.missingLenses.map(({ lens }) => lens)).toEqual(
-    [...scenario.expectedMissing],
-  )
+  expect(triage.complete ? [] : triage.missingLenses.map(({ lens }) => lens)).toEqual([
+    ...scenario.expectedMissing,
+  ])
 })
