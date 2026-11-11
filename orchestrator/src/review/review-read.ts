@@ -47,25 +47,14 @@ const defaultDeps: ReviewReadDeps = {
 export function latestArchitectRead(database: Database, project: string, branch: string) {
   const lineage = reviewLineage(database, project, branch)
   const row = database
-    .query<
-      { tip: string; patch_id: string; path_set: string; note: string; recorded_at: string },
-      string[]
-    >(
-      `SELECT tip,patch_id,path_set,note,recorded_at FROM review_read
+    .query<{ tip: string; note: string; recorded_at: string }, string[]>(
+      `SELECT tip,note,recorded_at FROM review_read
        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
          AND branch IN (${lineage.map(() => '?').join(',')})
        ORDER BY recorded_at DESC,record_id DESC LIMIT 1`,
     )
     .get(project, ...lineage)
-  return row
-    ? {
-        tip: row.tip,
-        patchId: row.patch_id,
-        pathSet: row.path_set,
-        note: row.note,
-        recordedAt: row.recorded_at,
-      }
-    : null
+  return row ? { tip: row.tip, note: row.note, recordedAt: row.recorded_at } : null
 }
 
 export function requireBranchRunOwner(

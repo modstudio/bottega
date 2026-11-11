@@ -29,8 +29,6 @@ const incomplete: TriageDecision = {
 const change = {
   project: 'fixture',
   branch: 'DEV-977-fixture',
-  tip: 'tip-new',
-  tree: 'tree-new',
   patchId: 'patch-new',
   pathSet: '["a.ts"]',
 }
@@ -40,6 +38,8 @@ const override = (values: Partial<AdmissionOverride> = {}): AdmissionOverride =>
   attribution: 'operator',
   missingLenses: [],
   ...change,
+  tip: 'tip-new',
+  tree: 'tree-new',
   ...values,
 })
 
@@ -74,8 +74,8 @@ describe('pull-request admission decision', () => {
       ).overrideId,
     ).toBeNull()
     expect(
-      decideAdmission({ ...change, tip: 'different-head', tree: 'different-tree' }, ceilingGap, [
-        ceiling,
+      decideAdmission(change, ceilingGap, [
+        { ...ceiling, tip: 'different-head', tree: 'different-tree' },
       ]).overrideId,
     ).toBe('ceiling-ruling')
     expect(

@@ -7,16 +7,9 @@ import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts
 import { db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { projectByName } from '../project/projects.ts'
-import { measureReviewChange, serializePathSet } from '../review/review-group.ts'
 
 type RunDiffFlags = { has(name: string): boolean }
-type ArchitectRead = {
-  tip: string
-  patchId: string
-  pathSet: string
-  note: string
-  recordedAt: string
-}
+type ArchitectRead = { tip: string; note: string; recordedAt: string }
 type Changes = {
   diff: string
   files: string[]
@@ -50,7 +43,7 @@ type RunDiffPresentation = {
 }
 
 export type SinceReadDecision =
-  | { kind: 'bound'; read: ArchitectRead; lowerBound: string }
+  | { kind: 'bound'; read: ArchitectRead }
   | { kind: 'refusal'; message: string }
 
 export function validateRunDiffBounds(flags: RunDiffFlags): void {
@@ -65,8 +58,6 @@ export function chooseSinceReadBound(input: {
   read: ArchitectRead | null
   comparisonTip: string
   readIsAncestor: boolean
-  currentPatchId: string | null
-  currentPathSet: string | null
 }): SinceReadDecision {
   if (!input.read) {
     return {
@@ -76,13 +67,7 @@ export function chooseSinceReadBound(input: {
         `cleared by: record one with ${PLATFORM_SLUG} review read --note <note>, or run ${PLATFORM_SLUG} run diff ${input.runId} for the whole change`,
     }
   }
-  if (
-    !input.readIsAncestor &&
-    (!input.currentPatchId ||
-      !input.currentPathSet ||
-      input.read.patchId !== input.currentPatchId ||
-      input.read.pathSet !== input.currentPathSet)
-  ) {
+  if (!input.readIsAncestor) {
     return {
       kind: 'refusal',
       message:
@@ -90,11 +75,7 @@ export function chooseSinceReadBound(input: {
         `cleared by: run ${PLATFORM_SLUG} run diff ${input.runId} for the whole change`,
     }
   }
-  return {
-    kind: 'bound',
-    read: input.read,
-    lowerBound: input.readIsAncestor ? input.read.tip : input.comparisonTip,
-  }
+  return { kind: 'bound', read: input.read }
 }
 
 export function unchangedSinceReadMessage(read: ArchitectRead | null, diff: string): string | null {
@@ -140,9 +121,9 @@ function evidenceLowerBound(input: {
   configuredTrunk: string | undefined
   baseCommit: string
   sinceBase: boolean
-  read: (ArchitectRead & { lowerBound: string }) | null
+  read: ArchitectRead | null
 }): { since: string; usedRecordedFallback: boolean } {
-  if (input.read) return { since: input.read.lowerBound, usedRecordedFallback: false }
+  if (input.read) return { since: input.read.tip, usedRecordedFallback: false }
   if (input.sinceBase) return { since: input.baseCommit, usedRecordedFallback: true }
   const mergeBase = startBoundedSync(['git', 'merge-base', input.evidenceBranch, input.trunk], {
     budget: 'git-plumbing',
@@ -231,20 +212,15 @@ export async function runDiffCommand(
   const sinceReadFor = (branch: string, comparisonTip: string, cwd: string) => {
     if (!has('since-read')) return null
     const read = latestArchitectRead(project!.name, branch)
-    const readIsAncestor = Boolean(read && isAncestor(cwd, read.tip, comparisonTip))
-    const measured =
-      read && !readIsAncestor ? measureReviewChange(cwd, project!, comparisonTip) : null
     const decision = chooseSinceReadBound({
       runId: id,
       branch,
       read,
       comparisonTip,
-      readIsAncestor,
-      currentPatchId: measured?.patchId ?? null,
-      currentPathSet: measured ? serializePathSet(measured.pathSet) : null,
+      readIsAncestor: Boolean(read && isAncestor(cwd, read.tip, comparisonTip)),
     })
     if (decision.kind === 'refusal') throw new Error(decision.message)
-    return { ...decision.read, lowerBound: decision.lowerBound }
+    return decision.read
   }
   const result = readRunDiffSource({
     repoRoot,
@@ -344,7 +320,7 @@ export async function runDiffCommand(
           repoRoot,
         },
         has('since-base'),
-        read?.lowerBound,
+        read?.tip,
       )
       const commits = commitsBetween(worktreePath, c.since, 'HEAD')
       const sinceNote = has('since-base')

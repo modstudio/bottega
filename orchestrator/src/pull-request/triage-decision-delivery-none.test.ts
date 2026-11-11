@@ -18,7 +18,6 @@ const producedNothing = (reviewId: number, patchId: string): TriageEvidence['rev
 const evidence = (overrides: Partial<TriageEvidence>): TriageEvidence => ({
   patchId: 'patch-a',
   pathSet: '["a.ts"]',
-  tip: 'tip-a',
   tier: 1,
   applicableReview: { lenses: ['correctness'] },
   branchOwnerSession: 'owner-session',
@@ -37,7 +36,6 @@ test('a settled delivery-none lens does not cover its lens on either admission p
         reads: [
           {
             recordId: 'record-9',
-            tip: 'tip-a',
             patchId: 'patch-a',
             pathSet: '["a.ts"]',
             recordedAt: '2026-09-25T02:00:00Z',

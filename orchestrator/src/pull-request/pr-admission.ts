@@ -172,7 +172,6 @@ function triageDecision(change: PullRequestChange, database: Database): TriageDe
       .query<
         {
           record_id: string
-          tip: string
           patch_id: string
           path_set: string
           recorded_at: string
@@ -180,7 +179,7 @@ function triageDecision(change: PullRequestChange, database: Database): TriageDe
         },
         string[]
       >(
-        `SELECT record_id,tip,patch_id,path_set,recorded_at,session_id FROM review_read
+        `SELECT record_id,patch_id,path_set,recorded_at,session_id FROM review_read
         WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
           AND branch IN (${lineage.map(() => '?').join(',')})
         ORDER BY recorded_at DESC,record_id DESC`,

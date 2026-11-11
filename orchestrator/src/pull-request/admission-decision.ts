@@ -2,7 +2,6 @@
 /** Admits review triage or an override recorded for the exact change identity. */
 
 import type { TriageOverrideAttribution } from './override-decision.ts'
-import { reviewInRound } from '../review/review-group.ts'
 import {
   ceilingTriageFacts,
   ceilingWaivableGaps,
@@ -45,7 +44,8 @@ export function decideAdmission(
     (candidate) =>
       candidate.project === change.project &&
       candidate.branch === change.branch &&
-      reviewInRound(candidate, change.patchId, change.pathSet),
+      candidate.patchId === change.patchId &&
+      candidate.pathSet === change.pathSet,
   )
   const override = identityMatches.find((candidate) => {
     if (candidate.attribution === 'operator') return true

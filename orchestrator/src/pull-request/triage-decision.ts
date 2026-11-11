@@ -3,7 +3,6 @@
 
 import type { ApplicableReview, ReviewFunnelPlan } from '../review/review-applicability.ts'
 import type { TriageReviewRow } from '../review/review-group.ts'
-import { reviewInRound } from '../review/review-group.ts'
 import {
   countsAsLensEvidence,
   hasAdmissibleProvenance,
@@ -421,7 +420,8 @@ function matchingOwnerRead(evidence: TriageEvidence, recordedAfter?: string) {
   return evidence.reads.find(
     (read) =>
       reader(read.sessionId) &&
-      reviewInRound(read, evidence.patchId, evidence.pathSet) &&
+      read.patchId === evidence.patchId &&
+      read.pathSet === evidence.pathSet &&
       (recordedAfter === undefined || read.recordedAt > recordedAfter),
   )
 }

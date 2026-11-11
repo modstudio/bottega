@@ -130,8 +130,6 @@ test('the latest architect read is selected for one project branch', () => {
 
   expect(latestArchitectRead(d, 'fixture', 'DEV-1257-work')).toEqual({
     tip: 'newer',
-    patchId: 'patch-2',
-    pathSet: '[]',
     note: 'newer note',
     recordedAt: '2026-10-12T12:00:00.000Z',
   })

@@ -289,11 +289,7 @@ export function measureChangeGroup(
 }
 
 /** A review belongs to a round when it measured that exact patch and path set. */
-export function reviewInRound(
-  review: { patchId: string | null; pathSet: string | null },
-  patchId: string,
-  pathSet: string,
-): boolean {
+export function reviewInRound(review: TriageReviewRow, patchId: string, pathSet: string): boolean {
   return review.patchId === patchId && review.pathSet === pathSet
 }
 

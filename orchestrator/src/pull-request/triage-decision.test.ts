@@ -33,7 +33,6 @@ const branchGroup = (reviews: TriageEvidence['reviews']) => ({ reviews })
 const evidence = (overrides: Partial<TriageEvidence> = {}): TriageEvidence => ({
   patchId: 'patch-a',
   pathSet: '["a.ts"]',
-  tip: 'tip-a',
   tier: 1,
   applicableReview: { lenses: ['correctness'] },
   branchOwnerSession: 'owner-session',
@@ -88,7 +87,6 @@ describe('pull-request triage decision', () => {
           reads: [
             {
               recordId: 'record-9',
-              tip: 'tip-a',
               patchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T02:00:00Z',
@@ -128,7 +126,6 @@ describe('pull-request triage decision', () => {
           reads: [
             {
               recordId: 'record-inline',
-              tip: 'tip-a',
               patchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T02:00:00Z',
@@ -193,7 +190,6 @@ describe('pull-request triage decision', () => {
           reads: [
             {
               recordId: 'record-9',
-              tip: 'tip-a',
               patchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T02:00:00Z',
@@ -249,7 +245,6 @@ describe('pull-request triage decision', () => {
           reads: [
             {
               recordId: 'record-9',
-              tip: 'tip-a',
               patchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T03:00:00Z',
@@ -304,7 +299,6 @@ describe('pull-request triage decision', () => {
           reads: [
             {
               recordId: 'record-9',
-              tip: 'tip-a',
               patchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T02:00:00Z',
@@ -401,7 +395,6 @@ describe('pull-request triage decision', () => {
           reads: [
             {
               recordId: 'record-9',
-              tip: 'tip-a',
               patchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T03:00:00Z',
@@ -424,7 +417,6 @@ describe('pull-request triage decision', () => {
           reads: [
             {
               recordId: 'read-1',
-              tip: 'tip-a',
               patchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T03:00:00Z',
@@ -463,7 +455,6 @@ describe('pull-request triage decision', () => {
           reads: [
             {
               recordId: 'record-9',
-              tip: 'tip-a',
               patchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T01:30:00Z',
@@ -499,7 +490,6 @@ describe('pull-request triage decision', () => {
           reads: [
             {
               recordId: 'record-9',
-              tip: 'tip-a',
               patchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T03:00:00Z',
@@ -578,7 +568,6 @@ describe('pull-request triage decision', () => {
       [
         {
           recordId: 'record-9',
-          tip: 'tip-a',
           patchId: 'other',
           pathSet: '["a.ts"]',
           recordedAt: '2026-09-25T02:00:00Z',
@@ -591,7 +580,6 @@ describe('pull-request triage decision', () => {
       [
         {
           recordId: 'record-9',
-          tip: 'tip-a',
           patchId: 'patch-a',
           pathSet: '["a.ts"]',
           recordedAt: '2026-09-25T00:30:00Z',
@@ -623,7 +611,6 @@ describe('pull-request triage decision', () => {
           reads: [
             {
               recordId: 'record-9',
-              tip: 'tip-a',
               patchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T02:00:00Z',
@@ -644,7 +631,6 @@ describe('pull-request triage decision', () => {
           reads: [
             {
               recordId: 'record-9',
-              tip: 'tip-a',
               patchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T02:00:00Z',
@@ -666,7 +652,6 @@ describe('pull-request triage decision', () => {
           reads: [
             {
               recordId: 'record-9',
-              tip: 'tip-a',
               patchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T02:00:00Z',
@@ -822,7 +807,6 @@ describe('pull-request triage decision', () => {
           reads: [
             {
               recordId: 'record-9',
-              tip: 'tip-a',
               patchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T02:00:00Z',
@@ -876,7 +860,6 @@ describe('pull-request triage decision', () => {
           reads: [
             {
               recordId: 'record-9',
-              tip: 'tip-a',
               patchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T02:00:00Z',
@@ -929,7 +912,6 @@ describe('pull-request triage decision', () => {
           reads: [
             {
               recordId: 'record-9',
-              tip: 'tip-a',
               patchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T03:00:00Z',
@@ -992,7 +974,6 @@ describe('pull-request triage decision', () => {
           reads: [
             {
               recordId: 'record-9',
-              tip: 'tip-a',
               patchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T03:00:00Z',
@@ -1019,7 +1000,6 @@ describe('pull-request triage decision', () => {
           reads: [
             {
               recordId: 'record-9',
-              tip: 'tip-a',
               patchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T03:00:00Z',

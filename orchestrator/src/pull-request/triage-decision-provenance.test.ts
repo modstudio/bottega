@@ -6,7 +6,6 @@ const evidence = (
 ): TriageEvidence => ({
   patchId: 'patch-a',
   pathSet: '["a.ts"]',
-  tip: 'tip-a',
   tier: 1,
   applicableReview: { lenses: ['correctness'] },
   branchOwnerSession: 'owner-session',
