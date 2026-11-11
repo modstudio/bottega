@@ -233,7 +233,6 @@ test('a rebase credits the complete round from the same branch and never another
     decideTriage({
       patchId: 'post-rebase',
       pathSet: '["a.ts"]',
-      tip: 'rebased-tip',
       tier: 2,
       applicableReview: { lenses: ['correctness', 'craft'] },
       branchOwnerSession: 'owner',
@@ -246,7 +245,6 @@ test('a rebase credits the complete round from the same branch and never another
       reads: [
         {
           recordId: 'read-30',
-          tip: 'rebased-tip',
           patchId: 'post-rebase',
           pathSet: '["a.ts"]',
           recordedAt: '2026-09-25T02:00:00Z',
@@ -457,7 +455,6 @@ test('recorded review tree paths are extracted, normalized, and confined to the 
     return decideTriage({
       patchId: 'patch',
       pathSet: '["a.ts"]',
-      tip: 'abcdef1234567890',
       tier: 1,
       applicableReview: { lenses: ['correctness'] },
       branchOwnerSession: null,

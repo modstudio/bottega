@@ -266,7 +266,7 @@ function printReviewRoundStatus(
 function printPostFixTriggers(
   postFix: Extract<ReturnType<typeof reviewTierOutputForTarget>['post_fix'], { kind: 're-lens' }>,
   lenses: readonly string[],
-  secondOpinion: string | null,
+  secondOpinion: string | null | undefined,
   log: (...values: unknown[]) => void,
 ): void {
   if (postFix.tierThreePaths.length) {
