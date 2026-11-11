@@ -7,6 +7,7 @@ import {
   idleRecordApiDeps,
   idleSubjectDeps,
 } from '../../test/fixtures/record-api.ts'
+import { noDestinationWriteTestDeps } from '../../test/fixtures/record-api-app.ts'
 import { recordApi } from './record-api.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
@@ -19,6 +20,7 @@ const notImplemented = () => Promise.reject(new Error('not implemented'))
 const appWith = (session: typeof identity | null, overrides: Record<string, unknown> = {}) =>
   recordApi({
     recordUrl: 'postgres://record.test/record',
+    ...noDestinationWriteTestDeps,
     auth: { handler: () => Response.json({ handled: true }) },
     readSession: async () => session,
     setActiveSpace: async () => undefined,
