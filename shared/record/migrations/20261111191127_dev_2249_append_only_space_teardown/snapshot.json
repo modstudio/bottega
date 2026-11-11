@@ -1,10 +1,10 @@
 {
-  "id": "e5c382a8-26b3-420f-9d84-de3521a5c828",
+  "version": "8",
+  "dialect": "postgres",
+  "id": "9b1265c2-c3cb-4997-86e4-6ffab4bf671e",
   "prevIds": [
     "42fb1b85-751c-4ec7-b443-9b1b8e9fdbcb"
   ],
-  "version": "8",
-  "dialect": "postgres",
   "ddl": [
     {
       "isRlsEnabled": false,
@@ -25829,6 +25829,19 @@
     },
     {
       "as": "PERMISSIVE",
+      "for": "DELETE",
+      "roles": [
+        "record_owner"
+      ],
+      "using": "\"machine_name_claim\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
+      "withCheck": null,
+      "name": "machine_name_claim_owner_delete",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "machine_name_claim"
+    },
+    {
+      "as": "PERMISSIVE",
       "for": "SELECT",
       "roles": [
         "public"
@@ -28299,6 +28312,19 @@
     },
     {
       "as": "PERMISSIVE",
+      "for": "DELETE",
+      "roles": [
+        "record_owner"
+      ],
+      "using": "\"hub_send\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
+      "withCheck": null,
+      "name": "hub_send_owner_delete",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "hub_send"
+    },
+    {
+      "as": "PERMISSIVE",
       "for": "SELECT",
       "roles": [
         "public"
@@ -28319,6 +28345,19 @@
       "using": null,
       "withCheck": "\"hub_send_recipient\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
       "name": "hub_send_recipient_space_insert",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "hub_send_recipient"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "DELETE",
+      "roles": [
+        "record_owner"
+      ],
+      "using": "\"hub_send_recipient\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
+      "withCheck": null,
+      "name": "hub_send_recipient_owner_delete",
       "entityType": "policies",
       "schema": "public",
       "table": "hub_send_recipient"
@@ -29619,6 +29658,19 @@
       "using": null,
       "withCheck": "true",
       "name": "space_outside_write_owner_insert",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "space_outside_write"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "DELETE",
+      "roles": [
+        "record_owner"
+      ],
+      "using": "\"space_outside_write\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
+      "withCheck": null,
+      "name": "space_outside_write_owner_delete",
       "entityType": "policies",
       "schema": "public",
       "table": "space_outside_write"

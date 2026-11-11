@@ -2,6 +2,18 @@ CREATE POLICY "space_outside_write_owner_delete" ON "space_outside_write"
 AS PERMISSIVE FOR DELETE TO "record_owner"
 USING ("space_outside_write"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid);
 --> statement-breakpoint
+CREATE POLICY "hub_send_owner_delete" ON "hub_send"
+AS PERMISSIVE FOR DELETE TO "record_owner"
+USING ("hub_send"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid);
+--> statement-breakpoint
+CREATE POLICY "hub_send_recipient_owner_delete" ON "hub_send_recipient"
+AS PERMISSIVE FOR DELETE TO "record_owner"
+USING ("hub_send_recipient"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid);
+--> statement-breakpoint
+CREATE POLICY "machine_name_claim_owner_delete" ON "machine_name_claim"
+AS PERMISSIVE FOR DELETE TO "record_owner"
+USING ("machine_name_claim"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid);
+--> statement-breakpoint
 CREATE FUNCTION public.record_delete_append_only_space_rows(target_space_id uuid)
 RETURNS TABLE(
   hub_send_recipient_count bigint,

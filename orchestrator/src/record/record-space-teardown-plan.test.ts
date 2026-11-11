@@ -1,14 +1,23 @@
 import { expect, test } from 'bun:test'
 import { getTableConfig, pgTable, uuid } from 'drizzle-orm/pg-core'
-import { project, RECORD_ACTOR_ROLE, space } from '../../../shared/record/schema.ts'
+import {
+  project,
+  RECORD_ACTOR_ROLE,
+  RECORD_OWNER_ROLE,
+  space,
+} from '../../../shared/record/schema.ts'
 import {
   deriveProjectPurgePlan,
   deriveSpaceTeardownPlan,
   HOSTED_RECORD_TABLES,
+  SPACE_TEARDOWN_EXCLUSIONS,
   SPACE_TEARDOWN_PLAN,
   unclassifiedProjectTables,
   unclassifiedSpaceTables,
 } from './record-space-teardown-plan.ts'
+
+const policyReachesRole = (to: unknown, role: string) =>
+  to === undefined || to === 'public' || to === role || (Array.isArray(to) && to.includes(role))
 
 test('every planned RLS teardown table permits actor deletion', () => {
   const tables = new Map(
@@ -19,15 +28,34 @@ test('every planned RLS teardown table permits actor deletion', () => {
     if (!config?.enableRLS) return []
     const permitsActorDelete = config.policies.some((policy) => {
       if (policy.for !== 'delete' && policy.for !== 'all') return false
-      if (policy.to === undefined || policy.to === 'public' || policy.to === RECORD_ACTOR_ROLE)
-        return true
-      return Array.isArray(policy.to) && policy.to.includes(RECORD_ACTOR_ROLE)
+      return policyReachesRole(policy.to, RECORD_ACTOR_ROLE)
     })
     return permitsActorDelete ? [] : [table]
   })
   expect(
     gaps,
     `RLS teardown tables without record_actor DELETE: ${gaps.join(', ')}; add an actor DELETE policy, or delete each table in a definer function and list it in SPACE_TEARDOWN_EXCLUSIONS`,
+  ).toEqual([])
+})
+
+test('every definer-deleted RLS teardown exclusion permits owner deletion', () => {
+  const tables = new Map(
+    HOSTED_RECORD_TABLES.map((table) => [getTableConfig(table).name, getTableConfig(table)]),
+  )
+  const gaps = Object.entries(SPACE_TEARDOWN_EXCLUSIONS).flatMap(([table, reason]) => {
+    if (!reason.includes('deleted by') || !reason.includes('definer function')) return []
+    const config = tables.get(table)
+    if (!config?.enableRLS) return []
+    const permitsOwnerDelete = config.policies.some(
+      (policy) =>
+        (policy.for === 'delete' || policy.for === 'all') &&
+        policyReachesRole(policy.to, RECORD_OWNER_ROLE),
+    )
+    return permitsOwnerDelete ? [] : [table]
+  })
+  expect(
+    gaps,
+    `RLS teardown exclusions deleted by a definer function without record_owner DELETE: ${gaps.join(', ')}; add a record_owner DELETE policy so the definer function can remove each row under FORCE ROW LEVEL SECURITY`,
   ).toEqual([])
 })
 
