@@ -23,7 +23,6 @@ import {
   recordApiSignIn,
   recordAuthRefusal,
   recordAuthToken,
-  recordIdentityAndSpaceClient,
   recordIdentityResponse,
   recordInvitationListResponse,
 } from './record-api-client.ts'
@@ -172,14 +171,23 @@ test('a generic client refusal retains the server remedy', () => {
 })
 
 test('member removal posts the email and resolved organization id', async () => {
+  const previousEnv = process.env.NODE_ENV
   const calls: Array<{ path: string; init?: RequestInit }> = []
   const request = (async (path: string, init?: RequestInit) => {
     calls.push({ path, init })
     return undefined
   }) as RecordClientRequest
-  const client = recordIdentityAndSpaceClient(request)
-
-  await client.removeMember({ email: 'member@example.test', organizationId: 'space-a' })
+  installRecordApiClient(null)
+  process.env.NODE_ENV = 'development'
+  try {
+    await recordApiClient(request).removeMember({
+      email: 'member@example.test',
+      organizationId: 'space-a',
+    })
+  } finally {
+    process.env.NODE_ENV = previousEnv
+    installRecordApiClient(createMemoryRecordApiClient())
+  }
 
   expect(calls).toEqual([
     {

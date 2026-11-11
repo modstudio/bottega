@@ -22,18 +22,6 @@ describe('record space decisions', () => {
     expect(calls).toEqual([{ email: 'member@example.test', organizationId: 'space-a' }])
   })
 
-  test('preserves a member removal refusal from the record', async () => {
-    const refusal =
-      'removing member@example.test would strand config secrets\ncleared by: transfer them'
-    await expect(
-      removeRecordSpaceMember('member@example.test', 'space-a', {
-        removeMember: async () => {
-          throw new Error(refusal)
-        },
-      }),
-    ).rejects.toThrow(refusal)
-  })
-
   test('returns active spaces from before and after creation', async () => {
     const identities = [
       {

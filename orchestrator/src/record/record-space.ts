@@ -73,9 +73,10 @@ export function recordMembershipsFromIdentity(identity: RecordIdentity): {
 }
 
 export async function listRecordSpaceConfigAccess(
+  destinationSpaceId?: string,
   client: Pick<RecordApiClient, 'listConfigAccess'> = recordApiClient(),
 ) {
-  return (await client.listConfigAccess()).items
+  return (await client.listConfigAccess(destinationSpaceId)).items
 }
 
 export async function grantRecordSpaceConfigAccess(

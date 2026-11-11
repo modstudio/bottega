@@ -102,7 +102,7 @@ export function decideSpaceDelete(facts: ConfirmedSpaceDeleteFacts): SpaceDelete
     if (guard.kind === 'trial-member-email' || guard.kind === 'trial-member-spaces')
       return {
         allowed: false,
-        refusal: `${guard.member.email} holds a real account in ${facts.slug}; space delete removes only the owner and trial accounts, and member removal is not yet available from the CLI, so this space cannot be deleted while that member remains`,
+        refusal: `${guard.member.email} holds a real account in ${facts.slug}; space delete removes only the owner and trial accounts; remove that member with \`${PLATFORM_SLUG} record space member remove ${guard.member.email} --space ${facts.slug}\`, then retry`,
       }
     const common = renderCommonSpaceDeleteGuard(
       facts,

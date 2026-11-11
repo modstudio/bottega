@@ -54,13 +54,6 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'orchestrator',
     'recordApiClientModule',
     [],
-    ['recordIdentityAndSpaceClient'],
-    'no local table; hosted identity and space mutations take user input',
-  ),
-  ...writeEntries(
-    'orchestrator',
-    'recordApiClientModule',
-    [],
     ['recordApiRequest'],
     'no local table; shared transport carries reads and writes for its callers',
   ),

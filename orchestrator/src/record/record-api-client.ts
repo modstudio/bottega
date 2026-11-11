@@ -913,7 +913,7 @@ const recordProjectSubjectClient = (
     }),
 })
 
-export function recordIdentityAndSpaceClient(
+function recordIdentityAndSpaceClient(
   request: RecordClientRequest = recordApiRequest,
 ): Pick<RecordApiClient, RecordIdentityAndSpaceMethod> {
   return {

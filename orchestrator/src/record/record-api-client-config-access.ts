@@ -4,7 +4,7 @@
 import type { RecordClientRequest } from './record-api-client-paths.ts'
 
 export type RecordConfigAccessClient = {
-  listConfigAccess(): Promise<{
+  listConfigAccess(destinationSpaceId?: string): Promise<{
     items: Array<{ email: string; role: string; permission: string; configAccess: boolean }>
   }>
   grantConfigAccess(email: string, destinationSpaceId: string): Promise<{ granted: true }>
@@ -19,7 +19,8 @@ export type RecordConfigAccessClient = {
 
 export function recordConfigAccessClient(request: RecordClientRequest): RecordConfigAccessClient {
   return {
-    listConfigAccess: () => request('/v1/config-access'),
+    listConfigAccess: (destinationSpaceId) =>
+      request('/v1/config-access', destinationSpaceId ? { destinationSpaceId } : undefined),
     grantConfigAccess: (email, destinationSpaceId) =>
       request('/v1/config-access/grant', {
         method: 'POST',
