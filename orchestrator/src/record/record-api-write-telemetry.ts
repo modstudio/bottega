@@ -15,7 +15,7 @@ import { destinationlessWrite } from './record-no-destination-write-decision.ts'
 export type RecordWriteTelemetryEnvironment = {
   Variables: {
     identity: RecordIdentity
-    writeTelemetry: NoDestinationWriteTelemetry
+    writeTelemetry?: NoDestinationWriteTelemetry
     destinationSpaceId?: string
     destinationlessWriteRecorded?: true
   }
@@ -52,6 +52,7 @@ export function registerRecordWriteTelemetry(
 
 export function recordDestinationlessWrite(context: RecordWriteTelemetryContext): void {
   const deps = context.get('writeTelemetry')
+  if (!deps) throw new Error('destination-less write telemetry is not configured')
   const identity = context.get('identity')
   const decision = destinationlessWrite({
     method: context.req.method,

@@ -8,7 +8,7 @@ import type { NoDestinationWriteCounter } from '../../shared/record-no-destinati
 import type { HostedRouteConfig } from './hosted-route-config.ts'
 import {
   assertAuthenticatedIdentity,
-  HUB_NO_DESTINATION_WRITE_SOURCE,
+  HOSTED_HUB_NO_DESTINATION_WRITE_SOURCE,
   identityRefusal,
   refusedSpaceResponse,
   taskSpaceIdentity,
@@ -46,7 +46,7 @@ export async function hostedNoDestinationWriteApi(
       readNoDestinationWrites(
         config.recordDatabaseUrl,
         { userId: identity.userId, spaceId: identity.spaceId, spaceIds: identity.spaceIds },
-        HUB_NO_DESTINATION_WRITE_SOURCE,
+        HOSTED_HUB_NO_DESTINATION_WRITE_SOURCE,
       ),
     ),
   )

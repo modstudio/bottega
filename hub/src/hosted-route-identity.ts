@@ -29,7 +29,7 @@ export type TaskSpaceIdentity =
   | { kind: 'unauthenticated' }
   | { kind: 'unavailable'; cause: string }
 
-export const HUB_NO_DESTINATION_WRITE_SOURCE = 'hub' as const
+export const HOSTED_HUB_NO_DESTINATION_WRITE_SOURCE = 'hub' as const
 
 export function recordIdentityDecision(
   status: number,
@@ -142,7 +142,7 @@ export async function taskSpaceIdentity(
         noDestinationWrite.database,
         { userId: identity.userId, spaceId: identity.activeSpaceId },
         decision,
-        HUB_NO_DESTINATION_WRITE_SOURCE,
+        HOSTED_HUB_NO_DESTINATION_WRITE_SOURCE,
       ),
     )
   }
