@@ -421,12 +421,11 @@ async function serveRecordApiWithAuth(
     prune: () => pruneRecordRetention(config.recordUrl),
   })
   const migrations = recordMigrationCount()
-  const noDestinationWriteDatabase = recordPool(config.recordUrl)
   const app = recordApi({
     clientAddresses: { recordApiUrl: config.authUrl, hubHostedUrl: config.hubUrl },
     recordUrl: config.recordUrl,
     noDestinationWriteCounter: createNoDestinationWriteCounter(),
-    noDestinationWriteDatabase,
+    noDestinationWriteDatabase: () => recordPool(config.recordUrl),
     ...recordChangeDependencies(config, recordChangeWakeSource),
     allowedOrigins: config.allowedOrigins,
     ...recordApiAccessDependencies(config, auth, migrations),

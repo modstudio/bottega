@@ -28,7 +28,7 @@ export async function hostedNoDestinationWriteApi(
     return null
   const noDestinationWrite = {
     counter: dependencies.counter ?? config.noDestinationWriteCounter,
-    database: config.recordDatabaseUrl,
+    database: () => config.recordDatabaseUrl,
   }
   const identity = await taskSpaceIdentity(
     request,
@@ -44,7 +44,7 @@ export async function hostedNoDestinationWriteApi(
   return Response.json(
     await noDestinationWrite.counter.read(identity.spaceIds, () =>
       readNoDestinationWrites(
-        config.recordDatabaseUrl,
+        noDestinationWrite.database(),
         { userId: identity.userId, spaceId: identity.spaceId, spaceIds: identity.spaceIds },
         HOSTED_HUB_NO_DESTINATION_WRITE_SOURCE,
       ),

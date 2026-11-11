@@ -41,7 +41,7 @@ export function registerRecordWriteTelemetry(
     return context.json(
       await deps.counter.read(spaceIds, () =>
         readNoDestinationWrites(
-          deps.database,
+          deps.database(),
           { userId: identity.user.id, spaceId: identity.activeSpaceId ?? '', spaceIds },
           RECORD_API_NO_DESTINATION_WRITE_SOURCE,
         ),
@@ -65,7 +65,7 @@ export function recordDestinationlessWrite(context: RecordWriteTelemetryContext)
   context.set('destinationlessWriteRecorded', true)
   void deps.counter.record(decision, () =>
     recordNoDestinationWrite(
-      deps.database,
+      deps.database(),
       {
         userId: identity.user.id,
         spaceId: decision.spaceId,

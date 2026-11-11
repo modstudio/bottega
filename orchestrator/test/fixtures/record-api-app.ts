@@ -2,7 +2,7 @@ import { recordApi } from '../../src/record/record-api.ts'
 import type { RecordIdentity } from '../../src/record/record-auth.ts'
 
 export const noDestinationWriteTestDeps = {
-  noDestinationWriteDatabase: {} as never,
+  noDestinationWriteDatabase: () => ({}) as never,
   noDestinationWriteCounter: {
     record: async () => undefined,
     read: async () => ({ windowStart: '', unrecorded: 0, counts: [] }),

@@ -15,7 +15,7 @@ test('reports destination-less writes by patterned route and client cause', asyn
   const cause = 'measurement-seams-test/1'
   const recorded: Array<{ spaceId: string; route: string; cause: string }> = []
   const app = appWith(identity, {
-    noDestinationWriteDatabase: {} as never,
+    noDestinationWriteDatabase: () => ({}) as never,
     noDestinationWriteCounter: {
       record: async (decision: (typeof recorded)[number]) => void recorded.push(decision),
       read: async (spaceIds: readonly string[]) => ({

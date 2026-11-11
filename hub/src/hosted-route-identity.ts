@@ -139,7 +139,7 @@ export async function taskSpaceIdentity(
     }
     await noDestinationWrite.counter.record(decision, () =>
       recordNoDestinationWrite(
-        noDestinationWrite.database,
+        noDestinationWrite.database(),
         { userId: identity.userId, spaceId: identity.activeSpaceId },
         decision,
         HOSTED_HUB_NO_DESTINATION_WRITE_SOURCE,

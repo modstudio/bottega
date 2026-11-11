@@ -162,7 +162,7 @@ export async function taskApi(
     config.recordApiUrl,
     (dependencies.fetch ?? hostedApiFetch) as typeof fetch,
     honorRequestedSpace,
-    { counter: config.noDestinationWriteCounter, database: config.recordDatabaseUrl },
+    { counter: config.noDestinationWriteCounter, database: () => config.recordDatabaseUrl },
   )
   const refusal = identityRefusal(who)
   if (refusal) return refusal

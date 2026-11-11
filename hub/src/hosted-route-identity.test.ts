@@ -48,7 +48,7 @@ describe('hosted destination-less write recording', () => {
       record: async (decision: unknown) => void records.push(decision),
       read: async () => ({ windowStart: '', unrecorded: 0, counts: [] }),
     }
-    const database = {} as never
+    const database = () => ({}) as never
     const request = (headers?: HeadersInit) =>
       new Request('https://hub.example.test/v1/tasks', {
         method: 'POST',

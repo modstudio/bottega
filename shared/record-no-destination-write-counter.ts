@@ -18,7 +18,7 @@ export type NoDestinationWriteCounter = {
 
 export type NoDestinationWriteTelemetry = {
   counter: NoDestinationWriteCounter
-  database: SQL
+  database: () => SQL
 }
 
 export function createNoDestinationWriteCounter(): NoDestinationWriteCounter {
