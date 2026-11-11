@@ -2,7 +2,8 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { type Project, projectByName } from '../project/projects.ts'
-import { activeRecordSpace, effectiveProjectSpace, rememberProjectSpace } from '../project-space.ts'
+import { activeRecordSpace, effectiveProjectSpace } from '../project-space.ts'
+import { rememberProjectSpace } from '../project-space-cache.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import type {
   RecordLensProfileWriteResponse,

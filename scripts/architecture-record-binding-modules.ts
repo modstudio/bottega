@@ -22,7 +22,7 @@ export const recordBindingModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-api-board-refusal.ts', [
     'hono',
-    '../../../shared/brand.ts',
+    '../../../shared/record-remedies.ts',
   ]),
   module('orchestrator/src/record/record-api-read-routes.ts', [
     './record-api-releases.ts',

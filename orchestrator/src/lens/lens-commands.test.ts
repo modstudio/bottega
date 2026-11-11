@@ -13,7 +13,7 @@ import { run } from '../cli/program.ts'
 import { registerLensCommands } from '../commands/lens.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
-import { rememberProjectSpace } from '../project-space.ts'
+import { rememberProjectSpace } from '../project-space-cache.ts'
 import { setProfileCommand } from './lens-commands.ts'
 
 const slots = JSON.stringify({

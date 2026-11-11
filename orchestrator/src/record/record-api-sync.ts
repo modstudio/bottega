@@ -4,7 +4,6 @@ import type { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import {
   type RecordWriteTelemetryEnvironment,
   recordDestinationlessWrite,
@@ -17,7 +16,10 @@ import {
   type RecordSyncRequest,
   type RecordSyncResponse,
 } from './record-sync-contract.ts'
-import { RecordSyncRequestRefusal } from './record-sync-decision.ts'
+import {
+  RecordSyncRequestRefusal,
+  recordSyncHasDestinationlessRows,
+} from './record-sync-decision.ts'
 
 type SyncEnvironment = RecordWriteTelemetryEnvironment
 
@@ -75,11 +77,9 @@ export function registerRecordSyncRoute(
         ),
     }),
     async (context) => {
-      recordDestinationlessWrite(context)
       if (!deps.syncRecord)
         return context.json({ error: 'record sync is not available in this server' }, 501)
       const identity = context.get('identity')
-      if (!identity.activeSpaceId) return context.json({ error: RECORD_ACTIVE_SPACE_REMEDY }, 409)
       const source = await context.req.text()
       let parsed: unknown
       try {
@@ -99,6 +99,9 @@ export function registerRecordSyncRoute(
           },
           oversized ? 413 : 400,
         )
+      }
+      if (recordSyncHasDestinationlessRows(body.data.rows)) {
+        recordDestinationlessWrite(context)
       }
       try {
         return context.json(

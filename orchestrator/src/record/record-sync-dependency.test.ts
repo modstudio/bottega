@@ -320,6 +320,7 @@ test('contention waits for its local run to enqueue a record row', async () => {
       local,
       now: () => STAMP,
       identity: { id: machineId(), name: 'test-machine' },
+      projectSpaces: { 'run-fixture': PLATFORM_SLUG },
       client: dependencyClient(deliveredBatches, () => ({ status: 'synced' })),
     }),
   ).toMatchObject({ pushed: 2, failed: 0, pending: 0 })
@@ -327,6 +328,40 @@ test('contention waits for its local run to enqueue a record row', async () => {
   expect(local.query('SELECT id,synced_at FROM outbox ORDER BY id').all()).toEqual([
     { id: 1, synced_at: STAMP },
     { id: 2, synced_at: STAMP },
+  ])
+})
+
+test('a waiting parent stops a populated batch and is skipped at the start of the next', async () => {
+  using local = migratedTestDatabase()
+  const runId = '01990000-0000-7000-8000-000000000014'
+  local
+    .query(
+      `INSERT INTO run
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+       VALUES (1,?,'2026-10-13T03:00:00.000Z','codex','write','sha',4,'work','running',?)`,
+    )
+    .run(runId, fixtureProjectRecordId(local))
+  insertOutboxRow(local, 1, 'landing', 'landing-1', { id: 'landing-1' })
+  insertOutboxRow(local, 2, 'contention', 'contention-1', {
+    id: 'contention-1',
+    runId,
+  })
+  insertOutboxRow(local, 3, 'review', 'review-1', { id: 'review-1' })
+  const batches: number[][] = []
+
+  expect(
+    await syncRecord({
+      local,
+      now: () => STAMP,
+      identity: { id: machineId(), name: 'test-machine' },
+      client: dependencyClient(batches, () => ({ status: 'synced' })),
+    }),
+  ).toMatchObject({ pushed: 2, failed: 0, pending: 1 })
+  expect(batches).toEqual([[1], [3]])
+  expect(local.query('SELECT id,attempts,synced_at FROM outbox ORDER BY id').all()).toEqual([
+    { id: 1, attempts: 0, synced_at: STAMP },
+    { id: 2, attempts: 0, synced_at: null },
+    { id: 3, attempts: 0, synced_at: STAMP },
   ])
 })
 
@@ -371,6 +406,7 @@ test('contention stops waiting when its local run becomes terminal without an ou
       local,
       now: () => STAMP,
       identity: { id: machineId(), name: 'test-machine' },
+      projectSpaces: { 'run-fixture': PLATFORM_SLUG },
       client: dependencyClient(liveBatches, () => ({ status: 'synced' })),
     }),
   ).toMatchObject({ pushed: 0, failed: 0, pending: 1 })
@@ -383,6 +419,7 @@ test('contention stops waiting when its local run becomes terminal without an ou
       local,
       now: () => STAMP,
       identity: { id: machineId(), name: 'test-machine' },
+      projectSpaces: { 'run-fixture': PLATFORM_SLUG },
       client: dependencyClient(terminalBatches, () => ({ status: 'synced' })),
     }),
   ).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
