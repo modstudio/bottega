@@ -11,21 +11,18 @@ const playwrightPackageFiles = [
 ] as const
 const playwrightBrowserJobs = ['hub-web-smoke', 'hub-ui-stories'] as const
 
-function playwrightDependencyPin(): string {
-  const pins = playwrightPackageFiles.map((file) => {
-    const packageJson = JSON.parse(readFileSync(`${root}${file}`, 'utf8')) as {
-      devDependencies?: Record<string, string>
-    }
-    const pin = packageJson.devDependencies?.playwright
+export function agreedPlaywrightDependencyPin(
+  pins: readonly { file: string; pin: string | undefined }[],
+): string {
+  for (const { file, pin } of pins) {
     if (!pin) throw new Error(`${file} must pin the playwright devDependency`)
     if (!/^\d+\.\d+\.\d+$/.test(pin)) {
       throw new Error(
         `${file} pins playwright ${pin}; pin the exact version the Playwright image tag carries`,
       )
     }
-    return { file, pin }
-  })
-  const expected = pins[0]!.pin
+  }
+  const expected = pins[0]!.pin!
   const mismatch = pins.find(({ pin }) => pin !== expected)
   if (mismatch) {
     throw new Error(
@@ -33,6 +30,17 @@ function playwrightDependencyPin(): string {
     )
   }
   return expected
+}
+
+function playwrightDependencyPin(): string {
+  return agreedPlaywrightDependencyPin(
+    playwrightPackageFiles.map((file) => {
+      const packageJson = JSON.parse(readFileSync(`${root}${file}`, 'utf8')) as {
+        devDependencies?: Record<string, string>
+      }
+      return { file, pin: packageJson.devDependencies?.playwright }
+    }),
+  )
 }
 
 function workflowJobNames(source: string): string[] {
@@ -79,6 +87,27 @@ function workflowRunCommands(job: string): string[] {
   return commands
 }
 
+type PlaywrightContainerImage = {
+  reference: string
+  version: string
+  suffix: string
+}
+
+function playwrightContainerImage(job: string): PlaywrightContainerImage | undefined {
+  const lines = job.split('\n')
+  const container = lines.findIndex((line) => /^ {4}container:\s*$/.test(line))
+  if (container < 0) return undefined
+  for (let index = container + 1; index < lines.length; index += 1) {
+    const line = lines[index]!
+    const indent = line.match(/^\s*/)?.[0].length ?? 0
+    if (line.trim() !== '' && indent <= 4) break
+    const image =
+      /^ {6}image:\s*(mcr\.microsoft\.com\/playwright:v(\d+\.\d+\.\d+)(-[^\s]+)?)\s*$/.exec(line)
+    if (image) return { reference: image[1]!, version: image[2]!, suffix: image[3] ?? '' }
+  }
+  return undefined
+}
+
 function aggregateNeeds(source: string): string[] {
   const job = workflowJob(source, 'ci')
   const inline = job.match(/^ {4}needs:\s*\[([^\]]*)\]\s*$/m)
@@ -119,7 +148,7 @@ function checkPlaywrightJobs(source: string, jobNames: readonly string[]): void 
   const playwrightPin = playwrightDependencyPin()
   for (const jobName of playwrightBrowserJobs) {
     const job = workflowJob(source, jobName)
-    if (!/^ {4}container:\s*\n {6}image:\s*mcr\.microsoft\.com\/playwright:v\S+\s*$/m.test(job)) {
+    if (!playwrightContainerImage(job)) {
       throw new Error(
         `.github/workflows/ci.yml job ${jobName} must run in the pinned Playwright image; add container: image: mcr.microsoft.com/playwright:v${playwrightPin}-noble`,
       )
@@ -127,12 +156,11 @@ function checkPlaywrightJobs(source: string, jobNames: readonly string[]): void 
   }
   for (const jobName of jobNames) {
     const job = workflowJob(source, jobName)
-    for (const image of job.matchAll(/mcr\.microsoft\.com\/playwright:v([^\s-]+)-([^\s]+)/g)) {
-      if (image[1] !== playwrightPin) {
-        throw new Error(
-          `.github/workflows/ci.yml job ${jobName} uses Playwright image ${image[0]}; set the image tag to v${playwrightPin}-${image[2]}`,
-        )
-      }
+    const image = playwrightContainerImage(job)
+    if (image && image.version !== playwrightPin) {
+      throw new Error(
+        `.github/workflows/ci.yml job ${jobName} uses Playwright image ${image.reference}; set the image tag to v${playwrightPin}${image.suffix}`,
+      )
     }
     for (const command of workflowRunCommands(job)) {
       if (/\bplaywright\s+install\b/.test(command)) {

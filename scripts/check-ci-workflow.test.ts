@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import {
+  agreedPlaywrightDependencyPin,
   checkCiWorkflow,
   checkReleaseWorkflow,
   expectedWorkflowJobNames,
@@ -130,6 +131,28 @@ test('refuses a mismatched Playwright image tag', () => {
   ).toThrow(`set the image tag to v${playwrightPin}-noble`)
 })
 
+test('refuses a suffix-less mismatched Playwright image tag', () => {
+  expect(() =>
+    checkCiWorkflow(
+      readWorkflowFixture().replace(
+        `mcr.microsoft.com/playwright:v${playwrightPin}-noble`,
+        'mcr.microsoft.com/playwright:v1.60.0',
+      ),
+    ),
+  ).toThrow(`set the image tag to v${playwrightPin}`)
+})
+
+test('accepts Playwright container options before the image', () => {
+  expect(() =>
+    checkCiWorkflow(
+      readWorkflowFixture().replace(
+        `    container:\n      image: mcr.microsoft.com/playwright:v${playwrightPin}-noble`,
+        `    container:\n      options: --ipc=host\n      image: mcr.microsoft.com/playwright:v${playwrightPin}-noble`,
+      ),
+    ),
+  ).not.toThrow()
+})
+
 test('requires the web smoke job to run in the pinned Playwright image', () => {
   expect(() =>
     checkCiWorkflow(
@@ -141,6 +164,45 @@ test('requires the web smoke job to run in the pinned Playwright image', () => {
   ).toThrow(
     `job hub-web-smoke must run in the pinned Playwright image; add container: image: mcr.microsoft.com/playwright:v${playwrightPin}-noble`,
   )
+})
+
+test('requires the story job to run in the pinned Playwright image', () => {
+  expect(() =>
+    checkCiWorkflow(
+      readWorkflowFixture().replace(
+        `  hub-ui-stories:\n    container:\n      image: mcr.microsoft.com/playwright:v${playwrightPin}-noble`,
+        '  hub-ui-stories:\n    runs-on: ubuntu-latest',
+      ),
+    ),
+  ).toThrow(
+    `job hub-ui-stories must run in the pinned Playwright image; add container: image: mcr.microsoft.com/playwright:v${playwrightPin}-noble`,
+  )
+})
+
+test('validates Playwright dependency pins', () => {
+  expect(() =>
+    agreedPlaywrightDependencyPin([
+      { file: 'hub/ui/package.json', pin: undefined },
+      { file: 'hub/views/package.json', pin: '1.64.1' },
+      { file: 'hub/web/package.json', pin: '1.64.1' },
+    ]),
+  ).toThrow('hub/ui/package.json must pin the playwright devDependency')
+  expect(() =>
+    agreedPlaywrightDependencyPin([
+      { file: 'hub/ui/package.json', pin: '^1.64.1' },
+      { file: 'hub/views/package.json', pin: '1.64.1' },
+      { file: 'hub/web/package.json', pin: '1.64.1' },
+    ]),
+  ).toThrow(
+    'hub/ui/package.json pins playwright ^1.64.1; pin the exact version the Playwright image tag carries',
+  )
+  expect(() =>
+    agreedPlaywrightDependencyPin([
+      { file: 'hub/ui/package.json', pin: '1.64.1' },
+      { file: 'hub/views/package.json', pin: '1.63.0' },
+      { file: 'hub/web/package.json', pin: '1.64.1' },
+    ]),
+  ).toThrow('set all three package.json playwright pins to the same version')
 })
 
 test('refuses a playwright install run command', () => {
