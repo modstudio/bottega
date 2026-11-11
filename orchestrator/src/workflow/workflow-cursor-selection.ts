@@ -4,6 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { db, sessionId } from '../database/db.ts'
+import { readRecordInstallBinding } from '../record/install-binding.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { openTaskFlowStageCursor, type TaskFlowStageCursorRow } from './task-flow.ts'
 import { readThroughTaskFlow, type TaskFlowReadStatus } from './task-flow-read-through.ts'
@@ -99,7 +100,7 @@ export async function readThroughWorkflowCursorContext(
   database: Database = db(),
 ): Promise<WorkflowCursorContext> {
   if (!context.workflowKey || !context.taskRecordId) return context
-  if (!recordApiConfigured(process.env)) return context
+  if (!recordApiConfigured(process.env) && !readRecordInstallBinding(database).bound) return context
   const taskFlowRead = await readThroughTaskFlow(database, {
     project,
     taskKey: context.workflowKey,
