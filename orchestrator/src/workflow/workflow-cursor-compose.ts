@@ -25,10 +25,10 @@ import {
   insertWorkflowCursorRow,
   refuseTaskFlowStageConflict,
   stampWorkflowCursorMachine,
-  type WorkflowCursorInsert,
 } from './task-flow.ts'
 import { taskFlowState } from './task-flow-decision.ts'
 import { taskFlowStore } from './task-flow-store.ts'
+import type { WorkflowCursorInsert } from './task-flow-store-types.ts'
 import {
   type CommitCountPort,
   readCommitsPastLanding,

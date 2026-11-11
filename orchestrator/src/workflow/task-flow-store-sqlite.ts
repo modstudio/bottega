@@ -10,8 +10,10 @@ import type {
   WorkflowCursorInsert,
 } from './task-flow-store-types.ts'
 
-const LISTED_STAGE_COLUMNS =
-  "number id,record_id,project,workflow_slug,mode_slug,workflow_key,task_record_id,task_flow_record_id,instance_id,session_id,ordinal,step_slug,state,workflow_version_record_id,catalogue_version_record_id,(SELECT n FROM workflow_version WHERE record_id=workflow_version_record_id) workflow_version,(SELECT n FROM step_catalogue_version WHERE record_id=catalogue_version_record_id) catalogue_version,args,autonomy,closed,question,total_steps,created_at,updated_at,enforcement,opened_machine_id,taken_over_from_machine_id,last_advanced_machine_id,revision,(SELECT COUNT(*) FROM workflow_cursor stage WHERE stage.task_flow_record_id=workflow_cursor.task_flow_record_id AND stage.state NOT IN ('done','abandoned')) open_stage_count"
+const STAGE_COLUMNS =
+  'cursor.number id,cursor.record_id,cursor.project,cursor.workflow_slug,cursor.mode_slug,cursor.workflow_key,cursor.task_record_id,cursor.task_flow_record_id,cursor.instance_id,cursor.session_id,cursor.ordinal,cursor.step_slug,cursor.state,cursor.workflow_version_record_id,cursor.catalogue_version_record_id,(SELECT n FROM workflow_version WHERE record_id=cursor.workflow_version_record_id) workflow_version,(SELECT n FROM step_catalogue_version WHERE record_id=cursor.catalogue_version_record_id) catalogue_version,cursor.args,cursor.autonomy,cursor.closed,cursor.question,cursor.total_steps,cursor.created_at,cursor.updated_at,cursor.enforcement,cursor.opened_machine_id,cursor.taken_over_from_machine_id,cursor.last_advanced_machine_id,cursor.revision'
+
+const LISTED_STAGE_COLUMNS = `${STAGE_COLUMNS},(SELECT COUNT(*) FROM workflow_cursor stage WHERE stage.task_flow_record_id=cursor.task_flow_record_id AND stage.state NOT IN ('done','abandoned')) open_stage_count`
 
 class SqliteTaskFlowStore {
   private readonly database: Database
@@ -61,12 +63,10 @@ class SqliteTaskFlowStore {
       .get(input.projectRecordId, input.workflow, input.mode, input.key, input.recordId)
   }
 
-  insertStage(row: WorkflowCursorInsert, conflict: 'local-identity' | 'hosted-record'): string {
-    const projectRecordId =
-      row.projectRecordId ??
-      this.database
-        .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
-        .get(row.project)!.record_id
+  insertStage(
+    row: WorkflowCursorInsert & { projectRecordId: string },
+    conflict: 'local-identity' | 'hosted-record',
+  ): string {
     const conflictSql =
       conflict === 'local-identity'
         ? `ON CONFLICT(project_record_id,workflow_slug,mode_slug,workflow_key,instance_id) DO UPDATE SET
@@ -87,7 +87,7 @@ class SqliteTaskFlowStore {
       .get(
         row.recordId,
         row.project,
-        projectRecordId,
+        row.projectRecordId,
         row.workflow,
         row.mode,
         row.workflowKey,
@@ -118,15 +118,7 @@ class SqliteTaskFlowStore {
   openStageForTask(taskRecordId: string): TaskFlowStageCursorRow | null {
     return this.database
       .query<TaskFlowStageCursorRow, [string]>(
-        `SELECT cursor.number id,cursor.record_id,cursor.project,cursor.workflow_slug,cursor.mode_slug,
-         cursor.workflow_key,cursor.task_record_id,cursor.task_flow_record_id,cursor.instance_id,
-         cursor.session_id,cursor.ordinal,cursor.step_slug,cursor.state,cursor.workflow_version_record_id,
-         cursor.catalogue_version_record_id,
-         (SELECT n FROM workflow_version WHERE record_id=cursor.workflow_version_record_id) workflow_version,
-         (SELECT n FROM step_catalogue_version WHERE record_id=cursor.catalogue_version_record_id) catalogue_version,
-         cursor.args,cursor.autonomy,cursor.closed,cursor.question,cursor.total_steps,cursor.created_at,
-         cursor.updated_at,cursor.enforcement,cursor.opened_machine_id,cursor.taken_over_from_machine_id,
-         cursor.last_advanced_machine_id,cursor.revision
+        `SELECT ${STAGE_COLUMNS}
          FROM task_flow flow JOIN workflow_cursor cursor
          ON cursor.record_id=flow.open_stage_cursor_record_id WHERE flow.task_record_id=?`,
       )
@@ -186,7 +178,7 @@ class SqliteTaskFlowStore {
       .run(input.taskRecordId, input.flowRecordId, input.stageRevision, input.cursorRecordId)
   }
 
-  stampFlowMachine(flowRecordId: string, machineId: string): void {
+  private stampFlowMachine(flowRecordId: string, machineId: string): void {
     this.database
       .query(
         `UPDATE task_flow SET opening_machine_id=COALESCE(opening_machine_id,?),
@@ -267,7 +259,7 @@ class SqliteTaskFlowStore {
   stageByHandle(cursor: number): TaskFlowStageCursorRow | null {
     return this.database
       .query<TaskFlowStageCursorRow, [number]>(
-        `SELECT ${LISTED_STAGE_COLUMNS} FROM workflow_cursor WHERE number=?`,
+        `SELECT ${LISTED_STAGE_COLUMNS} FROM workflow_cursor cursor WHERE cursor.number=?`,
       )
       .get(cursor)
   }
@@ -275,7 +267,7 @@ class SqliteTaskFlowStore {
   stageByRecordId(recordId: string): TaskFlowStageCursorRow | null {
     return this.database
       .query<TaskFlowStageCursorRow, [string]>(
-        `SELECT ${LISTED_STAGE_COLUMNS} FROM workflow_cursor WHERE record_id=?`,
+        `SELECT ${LISTED_STAGE_COLUMNS} FROM workflow_cursor cursor WHERE cursor.record_id=?`,
       )
       .get(recordId)
   }
@@ -288,10 +280,10 @@ class SqliteTaskFlowStore {
   }): TaskFlowStageCursorRow | null {
     return this.database
       .query<TaskFlowStageCursorRow, [string, string, string, string]>(
-        `SELECT ${LISTED_STAGE_COLUMNS} FROM workflow_cursor
-         WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-           AND workflow_slug=? AND mode_slug=? AND task_record_id=?
-           AND instance_id='' ORDER BY number DESC LIMIT 1`,
+        `SELECT ${LISTED_STAGE_COLUMNS} FROM workflow_cursor cursor
+         WHERE cursor.project_record_id=(SELECT record_id FROM project WHERE name=?)
+           AND cursor.workflow_slug=? AND cursor.mode_slug=? AND cursor.task_record_id=?
+           AND cursor.instance_id='' ORDER BY cursor.number DESC LIMIT 1`,
       )
       .get(input.project, input.workflow, input.mode, input.taskRecordId)
   }
@@ -305,11 +297,11 @@ class SqliteTaskFlowStore {
   }): TaskFlowStageCursorRow[] {
     const rows = this.database
       .query<TaskFlowStageCursorRow, [string, string, string, string]>(
-        `SELECT ${LISTED_STAGE_COLUMNS} FROM workflow_cursor
-         WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-           AND workflow_slug=? AND mode_slug=? AND workflow_key=''
-           AND session_id=? AND state NOT IN ('done','abandoned')
-           ${input.untouched ? 'AND ordinal=0 ' : ''}ORDER BY number`,
+        `SELECT ${LISTED_STAGE_COLUMNS} FROM workflow_cursor cursor
+         WHERE cursor.project_record_id=(SELECT record_id FROM project WHERE name=?)
+           AND cursor.workflow_slug=? AND cursor.mode_slug=? AND cursor.workflow_key=''
+           AND cursor.session_id=? AND cursor.state NOT IN ('done','abandoned')
+           ${input.untouched ? 'AND cursor.ordinal=0 ' : ''}ORDER BY cursor.number`,
       )
       .all(input.project, input.workflow, input.mode, input.sessionId)
     return rows
@@ -344,23 +336,24 @@ class SqliteTaskFlowStore {
   }
 
   listOpenStages<T extends object>(input: { project?: string; sessionId?: string }): T[] {
-    const clauses = [`state NOT IN ('done','abandoned')`]
+    const clauses = [`cursor.state NOT IN ('done','abandoned')`]
     const values: string[] = []
     if (input.project) {
-      clauses.push('project_record_id=(SELECT record_id FROM project WHERE name=?)')
+      clauses.push('cursor.project_record_id=(SELECT record_id FROM project WHERE name=?)')
       values.push(input.project)
     }
     if (input.sessionId) {
-      clauses.push('session_id=?')
+      clauses.push('cursor.session_id=?')
       values.push(input.sessionId)
     }
     return this.database
       .query<T, string[]>(
         `SELECT ${LISTED_STAGE_COLUMNS},
          (SELECT q.number FROM question q
-          WHERE q.workflow_cursor_record_id=workflow_cursor.record_id
+          WHERE q.workflow_cursor_record_id=cursor.record_id
             AND ${questionOpenSql('q')} LIMIT 1) question_number
-         FROM workflow_cursor WHERE ${clauses.join(' AND ')} ORDER BY updated_at,number`,
+         FROM workflow_cursor cursor WHERE ${clauses.join(' AND ')}
+         ORDER BY cursor.updated_at,cursor.number`,
       )
       .all(...values)
   }
@@ -1026,6 +1019,20 @@ class SqliteTaskFlowStore {
     task_flow: number
   } {
     return questions.projectTaskFlowReferenceCounts(this.database, projectRecordId)
+  }
+
+  relinkProjectReferences(
+    oldRecordId: string,
+    newRecordId: string,
+  ): Record<'task_flow' | 'workflow_cursor', number> {
+    return {
+      workflow_cursor: this.database
+        .query('UPDATE workflow_cursor SET project_record_id=? WHERE project_record_id=?')
+        .run(newRecordId, oldRecordId).changes,
+      task_flow: this.database
+        .query('UPDATE task_flow SET project_record_id=? WHERE project_record_id=?')
+        .run(newRecordId, oldRecordId).changes,
+    }
   }
 
   renameStageProject(currentName: string, nextName: string): void {

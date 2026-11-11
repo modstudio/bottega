@@ -40,6 +40,7 @@ import type { Agent } from '../agent/agents.ts'
 import { db } from '../database/db.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { inspectRunRecordBackfill, type RunRecordBackfillInspection } from '../run/run-outbox.ts'
+import { taskFlowStore } from '../workflow/task-flow-store.ts'
 import { activeSpaceInvariant } from './active-space-invariant.ts'
 import { machineId } from './machine-identity.ts'
 import { quarantinedOutboxRows } from './outbox-quarantine.ts'
@@ -750,5 +751,3 @@ export async function diagnoseRecord(
     agentCredentialChecks: credentialChecks,
   })
 }
-
-import { taskFlowStore } from '../workflow/task-flow-store.ts'

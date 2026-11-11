@@ -1,3 +1,6 @@
+// concern: task flow persistence types
+/** Shared row and insert shapes for task-flow persistence. */
+
 import type { CursorState } from './workflow-cursor-transition.ts'
 import type { EnforcementMode } from './workflow-floor.ts'
 
@@ -35,7 +38,7 @@ export type TaskFlowStageCursorRow = {
 
 export type WorkflowCursorInsert = {
   recordId: string
-  projectRecordId?: string
+  projectRecordId: string
   project: string
   workflow: string
   mode: string

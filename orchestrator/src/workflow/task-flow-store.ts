@@ -1,5 +1,5 @@
 // concern: task flow persistence port
-/** Names the task-flow questions and write intents used by the workflow engine. */
+/** The task-flow persistence port and its resolver. */
 
 import type { Database } from 'bun:sqlite'
 import { sqliteTaskFlowStore } from './task-flow-store-sqlite.ts'
@@ -9,12 +9,11 @@ import type {
   WorkflowCursorInsert,
 } from './task-flow-store-types.ts'
 
-export type {
-  TaskFlowProjectionRow,
-  TaskFlowStageCursorRow,
-  WorkflowCursorInsert,
-} from './task-flow-store-types.ts'
-
+/**
+ * Names the task-flow questions and write intents used by the workflow engine.
+ * Migrations and their preflights write the local tables directly by design, as do the hosted-cache
+ * writer in record/record-cache-workflow.ts and refresh in workflow/task-flow-read-through.ts.
+ */
 export interface TaskFlowStore {
   retireStageIdentity(input: {
     project: string
@@ -30,7 +29,10 @@ export interface TaskFlowStore {
     key: string
     recordId: string
   }): { number: number; record_id: string } | null
-  insertStage(row: WorkflowCursorInsert, conflict: 'local-identity' | 'hosted-record'): string
+  insertStage(
+    row: WorkflowCursorInsert & { projectRecordId: string },
+    conflict: 'local-identity' | 'hosted-record',
+  ): string
   openStageForTask(taskRecordId: string): TaskFlowStageCursorRow | null
   flowRecordIdForTask(taskRecordId: string): string | null
   cacheAdoptedFlow(input: {
@@ -44,7 +46,6 @@ export interface TaskFlowStore {
     at: string
     machineId: string
   }): void
-  stampFlowMachine(flowRecordId: string, machineId: string): void
   stampStageMachine(cursorRecordId: string, revisionIncrement: 0 | 1, machineId: string): void
   projectFlow(input: {
     recordId: string
@@ -280,12 +281,16 @@ export interface TaskFlowStore {
     workflow_cursor: number
     task_flow: number
   }
+  relinkProjectReferences(
+    oldRecordId: string,
+    newRecordId: string,
+  ): Record<'task_flow' | 'workflow_cursor', number>
   renameStageProject(currentName: string, nextName: string): void
   taskRulingRows<T extends object>(project: string, taskRecordId: string, limit: number): T[]
   localQuestionProjects(): Array<{ project: string | null }>
 }
 
-/** The single task-flow persistence seam. Hosted selection is added in part 2c-2. */
+/** Resolves task-flow persistence to the local SQLite adapter. */
 export function taskFlowStore(database: Database): TaskFlowStore {
   return sqliteTaskFlowStore(database)
 }

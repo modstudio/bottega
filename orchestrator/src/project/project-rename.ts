@@ -19,6 +19,7 @@ const PROJECT_ID_NAME_COLUMNS = [
 ] as const
 
 const PROJECT_NAME_ONLY_COLUMNS = [
+  // Task-flow table project names are renamed through the task-flow persistence port.
   ['board_claim', 'project'],
   ['board_message', 'author_project'],
   ['board_reach_delivery', 'reader_project'],

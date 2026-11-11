@@ -120,6 +120,7 @@ export const projectModules: ProjectModule[] = [
     '../record/outbox-sanitize.ts',
     '../record/record-api-client.ts',
     '../record/record-project-destination-client.ts',
+    '../workflow/task-flow-store.ts',
     './project-reference-counts.ts',
     './project-retired-hosted.ts',
     './projects.ts',

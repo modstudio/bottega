@@ -4,13 +4,14 @@ import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
 import { db, sessionId } from '../database/db.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
-import { openTaskFlowStageCursor, type TaskFlowStageCursorRow } from './task-flow.ts'
+import { openTaskFlowStageCursor } from './task-flow.ts'
 import {
   readThroughTaskFlow,
   type TaskFlowReadStatus,
   taskFlowReadThroughEnabled,
 } from './task-flow-read-through.ts'
 import { taskFlowStore } from './task-flow-store.ts'
+import type { TaskFlowStageCursorRow } from './task-flow-store-types.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { workflowTaskBindingCommand } from './workflow-cursor-format.ts'
 import { hasClosedStep } from './workflow-cursor-trail.ts'

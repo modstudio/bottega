@@ -65,6 +65,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './task-flow.ts',
     './task-flow-read-through.ts',
     './task-flow-store.ts',
+    './task-flow-store-types.ts',
     './workflow-task-reference.ts',
     './workflows.ts',
   ]),

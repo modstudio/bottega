@@ -8,7 +8,7 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { codeSearchCommand } from '../code/code-commands.ts'
 import { db, writableDb } from '../database/db.ts'
 import { removeProjectCommand } from './project-commands.ts'
-import { PROJECT_REFERENCES } from './project-reference-counts.ts'
+import { PROJECT_REFERENCE_REPORT } from './project-reference-counts.ts'
 import {
   type ProjectReferenceCounts,
   projectAt,
@@ -74,7 +74,7 @@ test('the review branch adapter selects the newest same-task run at a tip', () =
 })
 
 const none = Object.fromEntries(
-  PROJECT_REFERENCES.map(([key]) => [key, 0]),
+  PROJECT_REFERENCE_REPORT.map(([key]) => [key, 0]),
 ) as ProjectReferenceCounts
 
 let projectDirectory: string | null = null

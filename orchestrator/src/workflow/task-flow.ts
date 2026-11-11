@@ -11,14 +11,12 @@ import {
   type OpenTaskStage,
   taskFlowState,
 } from './task-flow-decision.ts'
-import {
-  type TaskFlowProjectionRow,
-  type TaskFlowStageCursorRow,
-  taskFlowStore,
-  type WorkflowCursorInsert,
-} from './task-flow-store.ts'
-
-export type { TaskFlowStageCursorRow, WorkflowCursorInsert } from './task-flow-store.ts'
+import { taskFlowStore } from './task-flow-store.ts'
+import type {
+  TaskFlowProjectionRow,
+  TaskFlowStageCursorRow,
+  WorkflowCursorInsert,
+} from './task-flow-store-types.ts'
 
 export function vacateRetiredWorkflowKeySlot(
   project: string,
@@ -37,11 +35,7 @@ export function insertWorkflowCursorRow(
   row: WorkflowCursorInsert,
   conflict: 'local-identity' | 'hosted-record',
 ): string {
-  const projectRecordId =
-    row.projectRecordId ??
-    database
-      .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
-      .get(row.project)!.record_id
+  const projectRecordId = row.projectRecordId
   if (row.workflowKey && row.instanceId === '') {
     vacateRetiredWorkflowKeySlot(
       row.project,
@@ -65,7 +59,7 @@ export function insertWorkflowCursorRow(
         )
     }
   }
-  return taskFlowStore(database).insertStage({ ...row, projectRecordId }, conflict)
+  return taskFlowStore(database).insertStage(row, conflict)
 }
 
 /** Reads the open cursor projected by a task flow without creating or changing either row. */
