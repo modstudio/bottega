@@ -3,11 +3,11 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   createRecordSpace,
   pendingRecordInvitations,
-  removeRecordSpaceMember,
   recordMembershipsFromIdentity,
   recordSpaceCreateReport,
   recordSpaceRole,
   refuseDuplicateRecordSpaceSlug,
+  removeRecordSpaceMember,
   switchRecordSpace,
 } from './record-space.ts'
 

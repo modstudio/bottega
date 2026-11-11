@@ -43,6 +43,7 @@ import {
   type RecordApiAuthentication,
   type RecordBoardStreamOpen,
   type RecordBoardWatchMethod,
+  type RecordClientRequest,
   type RecordDocOrderInput,
   type RecordDocReadMethod,
   type RecordDocWriteMethod,
@@ -913,7 +914,7 @@ const recordProjectSubjectClient = (
 })
 
 export function recordIdentityAndSpaceClient(
-  request = recordApiRequest,
+  request: RecordClientRequest = recordApiRequest,
 ): Pick<RecordApiClient, RecordIdentityAndSpaceMethod> {
   return {
     createOrganization: (input) =>

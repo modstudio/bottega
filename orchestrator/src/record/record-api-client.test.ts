@@ -23,12 +23,13 @@ import {
   recordApiSignIn,
   recordAuthRefusal,
   recordAuthToken,
-  recordIdentityResponse,
   recordIdentityAndSpaceClient,
+  recordIdentityResponse,
   recordInvitationListResponse,
 } from './record-api-client.ts'
 import { classifyBoardStreamResponse } from './record-api-client-board-stream.ts'
 import { recordApiError } from './record-api-client-error.ts'
+import type { RecordClientRequest } from './record-api-client-paths.ts'
 import { RecordProjectSpaceConflictError } from './record-project-space-contract.ts'
 
 describe('record HTTP authentication responses', () => {
@@ -172,10 +173,11 @@ test('a generic client refusal retains the server remedy', () => {
 
 test('member removal posts the email and resolved organization id', async () => {
   const calls: Array<{ path: string; init?: RequestInit }> = []
-  const client = recordIdentityAndSpaceClient(async (path, init) => {
+  const request = (async (path: string, init?: RequestInit) => {
     calls.push({ path, init })
     return undefined
-  })
+  }) as RecordClientRequest
+  const client = recordIdentityAndSpaceClient(request)
 
   await client.removeMember({ email: 'member@example.test', organizationId: 'space-a' })
 
