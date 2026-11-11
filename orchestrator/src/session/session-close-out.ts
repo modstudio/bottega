@@ -220,7 +220,7 @@ function incompleteReviews(database: Database, session: string): IncompleteRevie
 }
 
 function openCursors(database: Database, session: string): OpenCursor[] {
-  return taskFlowStore(database).openStagesForSession<OpenCursor>(session)
+  return taskFlowStore(database).openStagesForSession(session)
 }
 
 function observeOwnedBranch(

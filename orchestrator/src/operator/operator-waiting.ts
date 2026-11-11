@@ -234,7 +234,7 @@ function operatorWaitingWithEpisodes(
     root_number: number
     root_record_id: string
   }>
-  const workflows = taskFlowStore(d).waitingWorkflowQuestions<WorkflowWaitingRow>()
+  const workflows = taskFlowStore(d).waitingWorkflowQuestions()
   return [
     ...questions.map((row) => ({
       episode: row.awaiting_operator_at,

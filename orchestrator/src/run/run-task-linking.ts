@@ -102,9 +102,9 @@ const LOCAL_TASK_LINKS = {
   workflow_cursor: {
     regime: 'hosted-first',
     pendingRows: (database) =>
-      taskFlowStore(database).pendingTaskLinks<LocalTaskLinkRow>('workflow_cursor'),
+      taskFlowStore(database).pendingTaskLinks('workflow_cursor'),
     linkedRows: (database) =>
-      taskFlowStore(database).linkedTaskReferences<LinkedLocalTaskReference>('workflow_cursor'),
+      taskFlowStore(database).linkedTaskReferences('workflow_cursor'),
     write: (database, update, taskFlowClient) =>
       linkWorkflowTaskLabel(
         database,
@@ -119,9 +119,9 @@ const LOCAL_TASK_LINKS = {
   question: {
     regime: 'synchronous',
     pendingRows: (database) =>
-      taskFlowStore(database).pendingTaskLinks<LocalTaskLinkRow>('question'),
+      taskFlowStore(database).pendingTaskLinks('question'),
     linkedRows: (database) =>
-      taskFlowStore(database).linkedTaskReferences<LinkedLocalTaskReference>('question'),
+      taskFlowStore(database).linkedTaskReferences('question'),
     write: (database, update) => {
       linkWorkflowQuestionsTaskReference(
         {

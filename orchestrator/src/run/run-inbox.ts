@@ -139,21 +139,7 @@ function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
   const scoped = input.requestedCwd !== undefined
   const scopedProject = scoped ? projectAt(input.requestedCwd!) : null
   const defaultProject = !scoped && !input.all ? projectAt(process.cwd()) : null
-  const rows = taskFlowStore(db()).workflowInboxQuestions<{
-    number: number
-    record_id: string
-    asked_at: string
-    question: string
-    cursor_record_id: number
-    project: string
-    project_record_id: string | null
-    workflow_slug: string
-    mode_slug: string
-    args: string
-    ordinal: number
-    step_slug: string
-    session_id: string | null
-  }>()
+  const rows = taskFlowStore(db()).workflowInboxQuestions()
   const visible = rows.filter((row) => {
     if (scoped) return scopedProject !== null && row.project_record_id === scopedProject.recordId
     if (input.all) return true

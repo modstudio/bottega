@@ -6,7 +6,6 @@ import { taskFlowStore } from '../workflow/task-flow-store.ts'
 import {
   selectTaskRulings,
   TASK_RULINGS_MAX_COUNT,
-  type TaskRulingRow,
   type TaskRulingsSelection,
 } from './task-rulings.ts'
 
@@ -18,7 +17,7 @@ export function taskRulingsForDispatch(input: {
   if (input.resume || input.project === null || input.taskRecordId === null) {
     return { rulings: [], omitted: 0 }
   }
-  const rows = taskFlowStore(db()).taskRulingRows<TaskRulingRow>(
+  const rows = taskFlowStore(db()).taskRulingRows(
     input.project,
     input.taskRecordId,
     TASK_RULINGS_MAX_COUNT + 1,

@@ -3,15 +3,31 @@
 
 import type { Database } from 'bun:sqlite'
 import { questionOpenSql, questionTaskHolderSql } from '../run/question-open.ts'
+import type {
+  TaskFlowCloseOutStageRow,
+  TaskFlowCursorLifecycleRow,
+  TaskFlowCursorWorkRow,
+  TaskFlowInboxQuestionRow,
+  TaskFlowLinkedTaskReferenceRow,
+  TaskFlowOpenSessionStageRow,
+  TaskFlowOverturnRulingRow,
+  TaskFlowPendingTaskLinkRow,
+  TaskFlowQuestionCloseRow,
+  TaskFlowQuestionOutboxRow,
+  TaskFlowRulingFileRow,
+  TaskFlowRulingRow,
+  TaskFlowTaskRulingRow,
+  TaskFlowWaitingQuestionRow,
+} from './task-flow-store-types.ts'
 
-export const closeOutShipTaskStage = <T extends object>(
+export const closeOutShipTaskStage = (
   database: Database,
   sessionId: string,
   project: string,
   branch: string,
-): T[] =>
+): TaskFlowCloseOutStageRow[] =>
   database
-    .query<T, [string, string, string]>(
+    .query<TaskFlowCloseOutStageRow, [string, string, string]>(
       `SELECT number id, step_slug, workflow_slug, project, args
          FROM workflow_cursor
         WHERE session_id = ?
@@ -23,9 +39,9 @@ export const closeOutShipTaskStage = <T extends object>(
     )
     .all(sessionId, project, branch)
 
-export const waitingWorkflowQuestions = <T extends object>(database: Database): T[] =>
+export const waitingWorkflowQuestions = (database: Database): TaskFlowWaitingQuestionRow[] =>
   database
-    .query<T, []>(
+    .query<TaskFlowWaitingQuestionRow, []>(
       `SELECT c.number id,c.record_id workflow_cursor_record_id,c.project,q.record_id question_record_id,q.workflow_key task_key,q.question,q.asked_at waiting_since,
               c.workflow_slug,c.mode_slug,c.args,c.session_id
          FROM workflow_cursor c JOIN question q ON q.workflow_cursor_record_id=c.record_id
@@ -33,32 +49,32 @@ export const waitingWorkflowQuestions = <T extends object>(database: Database): 
     )
     .all()
 
-export const cursorWorkForSession = <T extends object>(
+export const cursorWorkForSession = (
   database: Database,
   sessionId: string,
-): T[] =>
+): TaskFlowCursorWorkRow[] =>
   database
-    .query<T, [string]>(
+    .query<TaskFlowCursorWorkRow, [string]>(
       "SELECT workflow_key key,closed FROM workflow_cursor WHERE session_id=? AND workflow_key<>''",
     )
     .all(sessionId)
 
-export const cursorLifecycleForSession = <T extends object>(
+export const cursorLifecycleForSession = (
   database: Database,
   sessionId: string,
-): T[] =>
+): TaskFlowCursorLifecycleRow[] =>
   database
-    .query<T, [string]>(
+    .query<TaskFlowCursorLifecycleRow, [string]>(
       'SELECT record_id,number,created_at,updated_at,state,closed FROM workflow_cursor WHERE session_id=?',
     )
     .all(sessionId)
 
-export const openStagesForSession = <T extends object>(
+export const openStagesForSession = (
   database: Database,
   sessionId: string,
-): T[] =>
+): TaskFlowOpenSessionStageRow[] =>
   database
-    .query<T, [string]>(
+    .query<TaskFlowOpenSessionStageRow, [string]>(
       `SELECT record_id,number,project,workflow_slug,state,
         (SELECT q.record_id FROM question q
           WHERE q.workflow_cursor_record_id=workflow_cursor.record_id
@@ -79,9 +95,9 @@ export const openWorkflowQuestionCountForSession = (
     )
     .get(sessionId)!.count
 
-export const workflowInboxQuestions = <T extends object>(database: Database): T[] =>
+export const workflowInboxQuestions = (database: Database): TaskFlowInboxQuestionRow[] =>
   database
-    .query<T, []>(
+    .query<TaskFlowInboxQuestionRow, []>(
       `SELECT q.number,q.record_id,q.asked_at,q.question,c.number cursor_record_id,c.project,c.project_record_id,c.workflow_slug,c.mode_slug,c.args,
               c.ordinal,c.step_slug,c.session_id
          FROM question q JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
@@ -90,7 +106,7 @@ export const workflowInboxQuestions = <T extends object>(database: Database): T[
     )
     .all()
 
-export function rulingRows<T extends object>(
+export function rulingRows(
   database: Database,
   input: {
     kind: 'workflow' | 'run' | 'all'
@@ -98,7 +114,7 @@ export function rulingRows<T extends object>(
     after: number | null
     cursor: number | null
   },
-): T[] {
+): TaskFlowRulingRow[] {
   const clauses: string[] = []
   const values: string[] = []
   if (input.kind === 'workflow') clauses.push('q.workflow_cursor_record_id IS NOT NULL')
@@ -114,7 +130,7 @@ export function rulingRows<T extends object>(
     values.push(String(input.after), String(input.cursor))
   }
   return database
-    .query<T, string[]>(
+    .query<TaskFlowRulingRow, string[]>(
       `SELECT q.number,q.record_id,q.run_record_id,r.number AS run_number,
               q.workflow_cursor_record_id workflow_cursor_id,q.workflow_key,
               COALESCE(r.repo,c.project) project,c.workflow_slug,c.mode_slug,
@@ -132,12 +148,12 @@ export function rulingRows<T extends object>(
     .all(...values)
 }
 
-export const rulingFileQuestion = <T extends object>(
+export const rulingFileQuestion = (
   database: Database,
   questionId: string,
-): T | null =>
+): TaskFlowRulingFileRow | null =>
   database
-    .query<T, [string]>(
+    .query<TaskFlowRulingFileRow, [string]>(
       `SELECT q.number,q.record_id,q.run_record_id,r.record_id run_record_id,COALESCE(r.parent_run_record_id,r.record_id) root_id,
               q.workflow_cursor_record_id,c.number workflow_cursor_number,c.workflow_slug,c.mode_slug,c.session_id workflow_owner,
               c.updated_at workflow_updated_at,
@@ -154,12 +170,12 @@ export const rulingFileQuestion = <T extends object>(
     )
     .get(questionId)
 
-export const questionOutboxRow = <T extends object>(
+export const questionOutboxRow = (
   database: Database,
   questionId: string,
-): T | null =>
+): TaskFlowQuestionOutboxRow | null =>
   database
-    .query<T, [string]>(
+    .query<TaskFlowQuestionOutboxRow, [string]>(
       `SELECT q.*, r.record_id AS run_record_id,
               COALESCE(run_project.name, cursor.project) AS project_name,
               COALESCE(run_project.record_id, cursor_project.record_id) AS project_record_id
@@ -172,12 +188,12 @@ export const questionOutboxRow = <T extends object>(
     )
     .get(questionId)
 
-export const questionCloseFacts = <T extends object>(
+export const questionCloseFacts = (
   database: Database,
   questionId: string,
-): T | null =>
+): TaskFlowQuestionCloseRow | null =>
   database
-    .query<T, [string]>(
+    .query<TaskFlowQuestionCloseRow, [string]>(
       `SELECT q.answered_at,q.closed_at,q.run_record_id,q.workflow_cursor_record_id,c.state cursor_state,
               COALESCE(owner.parent_run_record_id,owner.record_id) root_id,
               (SELECT latest.status FROM run latest
@@ -191,12 +207,12 @@ export const questionCloseFacts = <T extends object>(
     )
     .get(questionId)
 
-export const overturnRulingRow = <T extends object>(
+export const overturnRulingRow = (
   database: Database,
   questionId: string,
-): T | null =>
+): TaskFlowOverturnRulingRow | null =>
   database
-    .query<T, [string]>(
+    .query<TaskFlowOverturnRulingRow, [string]>(
       `SELECT q.number,q.record_id,q.run_record_id,COALESCE(owner.parent_run_record_id,owner.record_id) root_id,
               q.workflow_cursor_record_id,c.session_id workflow_owner,c.updated_at workflow_updated_at,
               q.answered_at,q.overturned_at,q.overturned_by,q.overturned_by_name,q.overturn_reason,q.replacement
@@ -220,20 +236,20 @@ export const unlinkedWorkflowQuestionIds = (
     .all(project, workflowKey)
     .map((row) => row.record_id)
 
-export const pendingTaskLinks = <T extends object>(
+export const pendingTaskLinks = (
   database: Database,
   table: 'workflow_cursor' | 'question',
-): T[] =>
+): TaskFlowPendingTaskLinkRow[] =>
   table === 'workflow_cursor'
     ? database
-        .query<T, []>(
+        .query<TaskFlowPendingTaskLinkRow, []>(
           `SELECT c.record_id id,c.workflow_key task_key,p.name project
            FROM workflow_cursor c JOIN project p ON p.record_id=c.project_record_id
            WHERE c.task_record_id IS NULL AND c.workflow_key<>''`,
         )
         .all()
     : database
-        .query<T, []>(
+        .query<TaskFlowPendingTaskLinkRow, []>(
           `SELECT q.record_id id,q.workflow_key task_key,p.name project
            FROM question q JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
            JOIN project p ON p.record_id=c.project_record_id
@@ -241,39 +257,25 @@ export const pendingTaskLinks = <T extends object>(
         )
         .all()
 
-export const linkedTaskReferences = <T extends object>(
+export const linkedTaskReferences = (
   database: Database,
   table: 'workflow_cursor' | 'question',
-): T[] =>
+): TaskFlowLinkedTaskReferenceRow[] =>
   table === 'workflow_cursor'
     ? database
-        .query<T, []>(
+        .query<TaskFlowLinkedTaskReferenceRow, []>(
           `SELECT c.task_record_id,p.name project FROM workflow_cursor c
            JOIN project p ON p.record_id=c.project_record_id WHERE c.task_record_id IS NOT NULL`,
         )
         .all()
     : database
-        .query<T, []>(
+        .query<TaskFlowLinkedTaskReferenceRow, []>(
           `SELECT q.workflow_task_record_id task_record_id,p.name project
            FROM question q JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
            JOIN project p ON p.record_id=c.project_record_id
            WHERE q.workflow_task_record_id IS NOT NULL`,
         )
         .all()
-
-export const projectTaskFlowReferenceCounts = (
-  database: Database,
-  projectRecordId: string,
-): { workflow_cursor: number; task_flow: number } => ({
-  workflow_cursor: database
-    .query<{ n: number }, [string]>(
-      'SELECT COUNT(*) AS n FROM workflow_cursor WHERE project_record_id=?',
-    )
-    .get(projectRecordId)!.n,
-  task_flow: database
-    .query<{ n: number }, [string]>('SELECT COUNT(*) AS n FROM task_flow WHERE project_record_id=?')
-    .get(projectRecordId)!.n,
-})
 
 export const renameStageProject = (
   database: Database,
@@ -283,14 +285,14 @@ export const renameStageProject = (
   database.query('UPDATE workflow_cursor SET project=? WHERE project=?').run(nextName, currentName)
 }
 
-export const taskRulingRows = <T extends object>(
+export const taskRulingRows = (
   database: Database,
   project: string,
   taskRecordId: string,
   limit: number,
-): T[] =>
+): TaskFlowTaskRulingRow[] =>
   database
-    .query<T, [string, string, string, string, number]>(
+    .query<TaskFlowTaskRulingRow, [string, string, string, string, number]>(
       `WITH raw_candidates AS (
          SELECT q.number question_id,q.record_id question_record_id,root.record_id run_record_id,NULL workflow_cursor_record_id,
                 q.question, q.answer, q.answer_basis, q.answered_at,

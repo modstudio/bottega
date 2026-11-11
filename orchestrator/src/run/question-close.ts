@@ -123,15 +123,7 @@ export function closeQuestionByOperator(
 ): void {
   const text = reasonText.trim()
   if (!text) throw new Error('--reason must not be empty')
-  const row = taskFlowStore(database).questionCloseFacts<{
-    answered_at: string | null
-    closed_at: string | null
-    run_record_id: number | null
-    workflow_cursor_record_id: string | null
-    cursor_state: string | null
-    root_id: string | null
-    latest_status: string | null
-  }>(questionId)
+  const row = taskFlowStore(database).questionCloseFacts(questionId)
   if (!row) throw new Error(`no question ${questionId}`)
   if (row.answered_at) throw new Error(`question ${questionId} is already answered`)
   if (row.closed_at) throw new Error(`question ${questionId} is already closed`)

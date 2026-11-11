@@ -107,12 +107,7 @@ const firstToken = (title: string) => title.trim().split(/\s+/, 1)[0] ?? ''
 
 function uncopiedRows(cursorId: string, database: Database): CopyRow[] {
   return taskFlowStore(database)
-    .uncopiedTextsForStage<{
-      record_id: string
-      step_slug: string
-      body: string
-      created_at: string
-    }>(cursorId)
+    .uncopiedTextsForStage(cursorId)
     .map((row) => ({
       id: row.record_id,
       stepSlug: row.step_slug,

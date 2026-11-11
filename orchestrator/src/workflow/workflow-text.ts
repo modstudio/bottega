@@ -111,13 +111,7 @@ export function withWorkflowTextFacts<
 
 function workflowTextRows(cursorId: string, d: Database): WorkflowTextRow[] {
   return taskFlowStore(d)
-    .textsForStage<{
-      id: string
-      cursor_record_id: string
-      step_ordinal: number
-      step_slug: string
-      body: string
-    }>(cursorId)
+    .textsForStage(cursorId)
     .map((row) => ({
       id: row.id,
       cursorId: row.cursor_record_id,
@@ -147,12 +141,7 @@ function attachSelectedWorkflowText(
   _createdAt: string,
   d: Database,
 ): string {
-  const existing = taskFlowStore(d).textByRecordId<{
-    cursor_record_id: string
-    step_ordinal: number
-    step_slug: string
-    body: string
-  }>(recordId)
+  const existing = taskFlowStore(d).textByRecordId(recordId)
   if (existing) {
     if (
       existing.cursor_record_id !== row.record_id ||

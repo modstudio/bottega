@@ -19,7 +19,6 @@ import { listDocsStore } from './doc-read-store.ts'
 import { taskContextHolder } from './doc-subjects.ts'
 
 type KeyAt = { key: string | null; at: string }
-type CursorWork = { key: string; closed: string }
 
 export async function staleContextForSession(
   session: string,
@@ -37,7 +36,7 @@ export async function staleContextForSession(
     )
     .all(session))
     add(row)
-  for (const row of taskFlowStore(database).cursorWorkForSession<CursorWork>(session)) {
+  for (const row of taskFlowStore(database).cursorWorkForSession(session)) {
     for (const entry of JSON.parse(row.closed) as CursorTrailEntry[])
       if (isClosedStep(entry)) add({ key: row.key, at: entry.at })
   }

@@ -109,14 +109,7 @@ function runFacts(sessionId: string): RunLifecycle[] {
 }
 
 function cursorFacts(sessionId: string): CursorLifecycle[] {
-  const rows = taskFlowStore(db()).cursorLifecycleForSession<{
-    record_id: string
-    number: number
-    created_at: string
-    updated_at: string
-    state: string
-    closed: string
-  }>(sessionId)
+  const rows = taskFlowStore(db()).cursorLifecycleForSession(sessionId)
   return rows.map((row) => {
     const advancesAt = (JSON.parse(row.closed) as Array<{ at?: unknown }>).flatMap((entry) =>
       typeof entry.at === 'string' ? [entry.at] : [],

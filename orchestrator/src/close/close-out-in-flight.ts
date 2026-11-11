@@ -72,7 +72,7 @@ function lookupShipTaskCursor(
   branch: string,
   treePath: string,
 ): CursorRow | null {
-  const rows = taskFlowStore(db()).closeOutShipTaskStage<CursorRow>(sessionId, project, branch)
+  const rows = taskFlowStore(db()).closeOutShipTaskStage(sessionId, project, branch)
   return rows.find((row) => cursorArg(row.args, 'worktree') === treePath) ?? null
 }
 

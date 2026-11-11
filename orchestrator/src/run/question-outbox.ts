@@ -28,7 +28,7 @@ type QuestionRow = Record<string, unknown> & {
 const json = (value: unknown): unknown => (value == null ? null : JSON.parse(String(value)))
 
 function loadQuestion(database: Database, questionId: string): QuestionRow {
-  const row = taskFlowStore(database).questionOutboxRow<QuestionRow>(questionId)
+  const row = taskFlowStore(database).questionOutboxRow(questionId)
   if (!row) throw new Error(`question ${questionId} does not exist and cannot be enqueued`)
   return row
 }

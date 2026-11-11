@@ -208,7 +208,7 @@ function ownerRefusal(
 }
 
 function loadQuestion(questionId: string): QuestionRow {
-  const row = taskFlowStore(db()).rulingFileQuestion<QuestionRow>(questionId)
+  const row = taskFlowStore(db()).rulingFileQuestion(questionId)
   if (!row)
     throw new Error(
       `no question ${questionId}; inspect question ids with ${PLATFORM_SLUG} question inbox --all`,

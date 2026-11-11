@@ -53,7 +53,7 @@ export function overturnRuling(input: {
   fromOperator: boolean
 }) {
   writableDb()
-  const row = taskFlowStore(db()).overturnRulingRow<OverturnRow>(input.questionId)
+  const row = taskFlowStore(db()).overturnRulingRow(input.questionId)
   if (!row)
     throw new Error(
       `no question ${input.questionId}; inspect question ids with ${PLATFORM_SLUG} question inbox --all`,

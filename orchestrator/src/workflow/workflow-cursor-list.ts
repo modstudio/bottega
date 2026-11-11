@@ -38,7 +38,7 @@ export function listWorkflowCursors(
   const cwdProject =
     options.all || options.project || options.session ? undefined : projectAt(cwd)?.name
   const project = workflowCursorProjectScope(options, cwdProject, cwd)
-  const rows = taskFlowStore(d).listOpenStages<ListedCursorRow>({
+  const rows = taskFlowStore(d).listOpenStages({
     ...(project ? { project } : {}),
     ...(options.session ? { sessionId: options.session } : {}),
   })
