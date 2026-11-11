@@ -3,8 +3,10 @@ import { expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import {
+  localProjectPurgeRefusals,
   orchestratorProjectPurgePlan,
   purgeLocalOrchestratorProject,
   uncoveredOrchestratorProjectTables,
@@ -12,6 +14,33 @@ import {
 
 const TARGET = '00000000-0000-7000-8000-000000000101'
 const SIBLING = '00000000-0000-7000-8000-000000000102'
+
+test('orchestrator purge refuses a forgotten resource claim', () => {
+  const database = new Database(':memory:')
+  applyMigrations(database)
+  database
+    .query('INSERT INTO project(record_id,name,path) VALUES (?,?,?)')
+    .run(TARGET, 'target', '/target')
+  database
+    .query(
+      `INSERT INTO run
+     (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+     VALUES ('run-target',1,'at','agent','job','sha',1,'prompt','ok',?)`,
+    )
+    .run(TARGET)
+  database
+    .query(
+      `INSERT INTO resource_claim
+     (record_id,root_run_record_id,run_record_id,project_record_id,kind,allocation_key,state,claimed_at)
+     VALUES ('claim-forgotten','run-target','run-target',?,'worktree','/target-worktree','forgotten','at')`,
+    )
+    .run(TARGET)
+
+  expect(localProjectPurgeRefusals(database, TARGET)).toEqual([
+    `worktree resource /target-worktree is held; clear it with \`${PLATFORM_SLUG} session close-out\``,
+  ])
+  database.close()
+})
 
 test('the live orchestrator schema has no uncovered project-bearing table', () => {
   const database = new Database(':memory:')

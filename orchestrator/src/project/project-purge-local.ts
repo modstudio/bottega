@@ -208,7 +208,7 @@ export function localProjectPurgeRefusals(database: Database, projectRecordId: s
     )
   const claims = database
     .query<{ kind: string; allocation_key: string }, [string]>(
-      "SELECT kind,allocation_key FROM resource_claim WHERE project_record_id=? AND state IN ('pending','claimed','retained','stuck') ORDER BY kind,allocation_key",
+      "SELECT kind,allocation_key FROM resource_claim WHERE project_record_id=? AND state IN ('pending','claimed','retained','forgotten','stuck') ORDER BY kind,allocation_key",
     )
     .all(projectRecordId)
   for (const claim of claims)
