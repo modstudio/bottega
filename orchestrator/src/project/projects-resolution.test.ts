@@ -557,12 +557,29 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
     }
 
     expect(() => removeProjectCommand(name, { purged: true }, presentation)).toThrow(
-      `project ${name} is not in this machine's register; the purge removed its rows but found no register entry to remove — run \`${PLATFORM_SLUG} project list --retired\` to inspect the register`,
+      `project ${name} is not in this machine's register; the purge removed its rows but found no register entry to remove — run \`${PLATFORM_SLUG} project list\` and \`${PLATFORM_SLUG} project list --retired\` to inspect the register`,
     )
     expect(logs).toEqual([])
 
     removeProjectCommand(name, { purged: false }, presentation)
     expect(logs).toEqual([`no project "${name}"`])
+  })
+
+  test('plain removal refuses a retired register row', () => {
+    const name = 'retired-removal'
+    const logs: string[] = []
+    const presentation = {
+      log: (...parts: unknown[]) => logs.push(parts.join(' ')),
+      cwd: () => process.cwd(),
+    }
+    upsertProject({ recordId: newRecordId(), name, path: `/w/${name}` })
+    expect(retireProject(name)).toBe('retired')
+
+    expect(() => removeProjectCommand(name, { purged: false }, presentation)).toThrow(
+      retiredProjectRefusal(name),
+    )
+    expect(logs).toEqual([])
+    expect(retiredProjectByName(name)).not.toBeNull()
   })
 
   test('local-only lens selections and port rows still refuse removal', () => {

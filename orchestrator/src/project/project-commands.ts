@@ -53,6 +53,7 @@ import {
   registerBranchCheck,
   removeProject,
   retiredProjectByName,
+  retiredProjectRefusal,
   retireWrittenProject,
   sniffStack,
   unretireWrittenProject,
@@ -848,8 +849,9 @@ export function removeProjectCommand(
   const removed = removeProject(name, { includeRetired: options.purged })
   if (!removed && options.purged)
     throw new Error(
-      `project ${name} is not in this machine's register; the purge removed its rows but found no register entry to remove — run \`${PLATFORM_SLUG} project list --retired\` to inspect the register`,
+      `project ${name} is not in this machine's register; the purge removed its rows but found no register entry to remove — run \`${PLATFORM_SLUG} project list\` and \`${PLATFORM_SLUG} project list --retired\` to inspect the register`,
     )
+  if (!removed && retiredProjectByName(name)) throw new Error(retiredProjectRefusal(name))
   presentation.log(removedProjectMessage(name, removed, options.purged))
 }
 
