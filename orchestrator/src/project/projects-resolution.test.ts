@@ -7,6 +7,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { codeSearchCommand } from '../code/code-commands.ts'
 import { db, writableDb } from '../database/db.ts'
+import { removeProjectCommand } from './project-commands.ts'
 import { PROJECT_REFERENCES } from './project-reference-counts.ts'
 import {
   type ProjectReferenceCounts,
@@ -531,6 +532,54 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
     upsertProject({ recordId: newRecordId(), name: 'ephemeral', path: '/w/ephemeral' })
     expect(removeProject('ephemeral')).toBe(true)
     expect(projectByName('ephemeral')).toBeNull()
+  })
+
+  test('a retired project is removed only when retired rows are included', () => {
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'retired-ephemeral',
+      path: '/w/retired-ephemeral',
+    })
+    expect(retireProject('retired-ephemeral')).toBe('retired')
+
+    expect(removeProject('retired-ephemeral')).toBe(false)
+    expect(retiredProjectByName('retired-ephemeral')).not.toBeNull()
+    expect(removeProject('retired-ephemeral', { includeRetired: true })).toBe(true)
+    expect(retiredProjectByName('retired-ephemeral')).toBeNull()
+  })
+
+  test('purge removal refuses an absent register row while plain removal reports it', () => {
+    const name = 'absent-removal'
+    const logs: string[] = []
+    const presentation = {
+      log: (...parts: unknown[]) => logs.push(parts.join(' ')),
+      cwd: () => process.cwd(),
+    }
+
+    expect(() => removeProjectCommand(name, { purged: true }, presentation)).toThrow(
+      `project ${name} is not in this machine's register; the purge removed its rows but found no register entry to remove — run \`${PLATFORM_SLUG} project list\` and \`${PLATFORM_SLUG} project list --retired\` to inspect the register`,
+    )
+    expect(logs).toEqual([])
+
+    removeProjectCommand(name, { purged: false }, presentation)
+    expect(logs).toEqual([`no project "${name}"`])
+  })
+
+  test('plain removal refuses a retired register row', () => {
+    const name = 'retired-removal'
+    const logs: string[] = []
+    const presentation = {
+      log: (...parts: unknown[]) => logs.push(parts.join(' ')),
+      cwd: () => process.cwd(),
+    }
+    upsertProject({ recordId: newRecordId(), name, path: `/w/${name}` })
+    expect(retireProject(name)).toBe('retired')
+
+    expect(() => removeProjectCommand(name, { purged: false }, presentation)).toThrow(
+      retiredProjectRefusal(name),
+    )
+    expect(logs).toEqual([])
+    expect(retiredProjectByName(name)).not.toBeNull()
   })
 
   test('local-only lens selections and port rows still refuse removal', () => {
