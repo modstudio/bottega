@@ -85,6 +85,10 @@ export const hubModuleSpecs = [
     allowed: ['bun:sqlite', './projects.ts'],
   },
   {
+    file: 'hub/src/project-purge.ts',
+    allowed: ['bun:sqlite', '../../shared/removal-report.ts', './db.ts'],
+  },
+  {
     file: 'hub/src/hosted-project-identity.ts',
     allowed: ['bun', '../../shared/record-project-identity.ts'],
   },

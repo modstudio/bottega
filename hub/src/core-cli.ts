@@ -23,6 +23,7 @@ import {
   withLease,
 } from './collect.ts'
 import {
+  db,
   formatMigrationRepairSummary,
   migrateDatabaseWithQuestionIdentityMap,
   nowIso,
@@ -37,6 +38,9 @@ import {
   startDashboardCapability,
 } from './orch.ts'
 import { projects } from './projects.ts'
+import { projectRecordIdFor } from './project-record-id.ts'
+import { purgeHubProject } from './project-purge.ts'
+import { renderRemovalReport } from '../../shared/removal-report.ts'
 import { estateEngagedMs, tasksInWindow } from './query.ts'
 import { printReconcile, reconcileOpenIntervals } from './reconcile.ts'
 import {
@@ -415,4 +419,13 @@ export function registerCoreCommands(program: Command): void {
   registerServeCommands(program)
   registerMaintenanceCommands(program)
   registerRulingCommands(program)
+  program
+    .command('project-purge <name>')
+    .description('purge one project from the local hub store')
+    .action((name: string) => {
+      requireDatabase()
+      const recordId = projectRecordIdFor(name)
+      if (!recordId) throw new Error(`registered project ${name} has no hosted record id`)
+      renderRemovalReport(purgeHubProject(db(), recordId), console.log)
+    })
 }

@@ -480,15 +480,6 @@ export function projectRemovalRefusal(
   ]
 }
 
-export class ProjectRemovalRefusalError extends Error {
-  readonly tables: string[]
-
-  constructor(message: string, tables: string[]) {
-    super(message)
-    this.tables = tables
-  }
-}
-
 export function removeProject(name: string): boolean {
   writableDb()
   const project = projectByName(name)
@@ -503,7 +494,7 @@ export function removeProject(name: string): boolean {
         ),
       ),
     ]
-    throw new ProjectRemovalRefusalError(refusal.join('\n'), tables)
+    throw new Error(`${refusal.join('\n')}\nreferencing tables: ${tables.join(', ')}`)
   }
   return db().query('DELETE FROM project WHERE record_id = ?').run(project.recordId).changes > 0
 }

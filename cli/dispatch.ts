@@ -244,8 +244,14 @@ async function composite(
 ): Promise<number> {
   const parts = route.composite ?? []
   const partArguments = parts.map(() => [] as string[])
+  let positionals = 0
   for (let index = 0; index < rest.length; index += 1) {
     const argument = rest[index]!
+    if (!argument.startsWith('-') && positionals < (route.positionals ?? 0)) {
+      for (const args of partArguments) args.push(argument)
+      positionals++
+      continue
+    }
     const option = argument.includes('=') ? argument.slice(0, argument.indexOf('=')) : argument
     const ownerIndex = parts.findIndex((part) => part.options?.[option] !== undefined)
     if (ownerIndex < 0) {
@@ -262,11 +268,15 @@ async function composite(
       partArguments[ownerIndex]!.push(value)
     }
   }
+  if (positionals !== (route.positionals ?? 0)) {
+    console.error(`expected ${route.positionals ?? 0} composite argument(s), received ${positionals}`)
+    return 2
+  }
   let result = 0
   for (const [index, part] of parts.entries()) {
     console.error(`== ${part.label} ==`)
     const code = await entries[part.owner](
-      [...part.argv, ...partArguments[index]!],
+      [...part.argv, ...(part.fixedArguments ?? []), ...partArguments[index]!],
       invocationFor(part.argv, route.command),
     )
     if (code !== 0 && result === 0) result = code

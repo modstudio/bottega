@@ -16,7 +16,7 @@ import {
   pullRecordCataloguesForSpace,
   RecordCataloguePullError,
 } from '../record/record-cache-catalogues.ts'
-import { renderRecordRemovalReport } from '../record/record-removal-report.ts'
+import { renderRemovalReport } from '../../../shared/removal-report.ts'
 import { migrateCreate } from '../worktree/worktree-template.ts'
 import { declaredProjectSpace } from './declared-project-space.ts'
 import { projectAddDecision } from './project-add-record.ts'
@@ -32,6 +32,10 @@ import { formatProjectRelink, relinkProjectByName } from './project-relink.ts'
 import { persistLocalProjectSet } from './project-rename.ts'
 import { projectSetSettingsPatch } from './project-set-space.ts'
 import {
+  localProjectPurgeRefusals,
+  purgeLocalOrchestratorProject,
+} from './project-purge-local.ts'
+import {
   mergeProjectSettings,
   type SettingsPatchEffect,
   settingsPatchEffect,
@@ -42,7 +46,6 @@ import {
   assertRegisterVisibility,
   isProjectRepository,
   type Project,
-  ProjectRemovalRefusalError,
   type ProjectSettings,
   projectByName,
   projectLifecycleForm,
@@ -832,6 +835,13 @@ async function retireProjectCommand(
   presentation.log(outcome === 'already-retired' ? `already retired ${name}` : `retired ${name}`)
 }
 
+function removedProjectMessage(name: string, removed: boolean, purged: boolean): string {
+  if (!removed) return `no project "${name}"`
+  return purged
+    ? `removed ${name} from this machine's register`
+    : `removed ${name} from this machine; the shared project is unchanged`
+}
+
 async function purgeProjectCommand(
   argv: string[],
   flags: ProjectFlags,
@@ -843,6 +853,12 @@ async function purgeProjectCommand(
     throw new Error(`${PLATFORM_SLUG} project purge <name> --confirm <name>`)
   const project = projectRowByName(name)
   if (!project) throw new Error(`no project "${name}"`)
+  if (confirmation !== name)
+    throw new Error(
+      `confirmation guard failed: --confirm must equal ${name}; run \`${PLATFORM_SLUG} project purge ${name} --confirm ${name}\``,
+    )
+  const refusals = localProjectPurgeRefusals(db(), project.recordId)
+  if (refusals.length) throw new Error(`project ${name} has live local work:\n${refusals.join('\n')}`)
   const result = await purgeProjectInHostedRecord(
     { name: project.name, recordId: project.recordId },
     project.settings,
@@ -850,20 +866,14 @@ async function purgeProjectCommand(
   )
   if (result.nothingToRemove) {
     presentation.log(
-      `no hosted project with record id ${project.recordId} is visible in any space this caller belongs to; this machine's register entry is kept; run \`${PLATFORM_SLUG} project remove ${name}\` to drop it`,
+      `the hosted record held nothing for ${name} (${project.recordId}); proceeding with this machine's local stores`,
     )
-    return
+  } else {
+    renderRemovalReport(result.tables, (value) => presentation.log(value))
   }
-  renderRecordRemovalReport(result.tables, (value) => presentation.log(value))
-  try {
-    removeProject(name)
-    presentation.log(`removed ${name} from this machine's register`)
-  } catch (error) {
-    if (!(error instanceof ProjectRemovalRefusalError)) throw error
-    presentation.log(
-      `${name} remains in this machine's register because local tables still reference it: ${error.tables.join(', ')}`,
-    )
-  }
+  renderRemovalReport(purgeLocalOrchestratorProject(db(), project.recordId), (value) =>
+    presentation.log(value),
+  )
 }
 
 async function fillProjectRecordIdsCommand(
@@ -967,11 +977,7 @@ export async function projectCommand(
   if (sub === 'remove') {
     const name = argv[2]
     if (!name) throw new Error(`${PLATFORM_SLUG} project remove <name>`)
-    presentation.log(
-      removeProject(name)
-        ? `removed ${name} from this machine; the shared project is unchanged`
-        : `no project "${name}"`,
-    )
+    presentation.log(removedProjectMessage(name, removeProject(name), has('purged')))
     return
   }
 
