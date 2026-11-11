@@ -74,19 +74,19 @@ function refuse(missing: string): ReclaimResult {
   return { ok: false, action: `refused; ${missing}` }
 }
 
-function unreachableBranchRefusal(input: {
-  state: 'superseded' | 'unlanded' | 'unknown'
-  project: string
-  branch: string
-  trunk: string
-  absent: readonly string[]
-}): ReclaimResult {
+function unreachableBranchRefusal(
+  state: 'superseded' | 'unlanded' | 'unknown',
+  project: string,
+  branch: string,
+  trunk: string,
+  absent: readonly string[],
+): ReclaimResult {
   const remedy =
-    input.state === 'superseded'
-      ? branchVerdictRemedy('superseded', input.project, input.branch, null)
-      : `prove a landing with ${PLATFORM_SLUG} tree branch landed ${input.branch} --pr <number>, or delete it by hand with git branch -D ${input.branch}`
+    state === 'superseded'
+      ? branchVerdictRemedy('superseded', project, branch, null)
+      : `prove a landing with ${PLATFORM_SLUG} tree branch landed ${branch} --pr <number>, or delete it by hand with git branch -D ${branch}`
   return refuse(
-    `branch classification is ${input.state}; commits unreachable from landing branch ${input.trunk}: ${input.absent.join(', ')}; ${remedy}`,
+    `branch classification is ${state}; commits unreachable from landing branch ${trunk}: ${absent.join(', ')}; ${remedy}`,
   )
 }
 
@@ -543,13 +543,7 @@ export function reclaimBranch(
     })
     if (!evidence.allowed) {
       return {
-        result: unreachableBranchRefusal({
-          state: evidence.state,
-          project: projectName,
-          branch,
-          trunk,
-          absent,
-        }),
+        result: unreachableBranchRefusal(evidence.state, projectName, branch, trunk, absent),
       }
     }
     const proof =

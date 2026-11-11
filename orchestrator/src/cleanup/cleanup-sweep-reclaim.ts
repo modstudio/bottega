@@ -81,10 +81,7 @@ export function reclaimAbsentTrustEntries(input: {
   return failed
 }
 
-function sweptBranchKeepLine(
-  project: string,
-  kept: BranchPruneReport['kept'][number],
-): string {
+function sweptBranchKeepLine(project: string, kept: BranchPruneReport['kept'][number]): string {
   const remedy = kept.remedy ? `; remedy: ${kept.remedy}` : ''
   return `${project} branches: kept ${kept.branch} (${kept.reason})${remedy}`
 }
