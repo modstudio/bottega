@@ -199,7 +199,6 @@ function planBatchRow(
     quarantinedParentHolds: QuarantinedParentHoldAccumulator
     projectSpaces?: Record<string, string>
     personalSpaceId: string | null
-    parentDeferred: Map<number, ParentDeferredOutboxRow>
     routingHeld: Map<number, RoutingHeldOutboxRow>
   },
 ): PlannedBatchRow {
@@ -213,12 +212,10 @@ function planBatchRow(
       input.plannedParents,
     )
   }
-  input.parentDeferred.delete(row.id)
   const parentWait = parsed
     ? outboxRowWaitsForParent(input.local, row, parsed, input.plannedParents)
-    : null
-  if (parentWait) {
-    if (parentWait.parentDeferred) input.parentDeferred.set(row.id, parentWait.parentDeferred)
+    : { disposition: 'ready' as const }
+  if (parentWait.disposition !== 'ready') {
     return { disposition: input.hasBatchRows ? 'stop' : 'skip' }
   }
   if (parsed && deferOutboxRow(input.local, row, parsed, input.blocked, input.plannedParents))
@@ -459,7 +456,6 @@ function nextBatch(input: {
   quarantinedParentHolds: QuarantinedParentHoldAccumulator
   projectSpaces?: Record<string, string>
   personalSpaceId: string | null
-  parentDeferred: Map<number, ParentDeferredOutboxRow>
   routingHeld: Map<number, RoutingHeldOutboxRow>
 }): {
   request: RecordSyncRequest
@@ -503,7 +499,6 @@ function nextBatch(input: {
       quarantinedParentHolds: input.quarantinedParentHolds,
       projectSpaces: input.projectSpaces,
       personalSpaceId: input.personalSpaceId,
-      parentDeferred: input.parentDeferred,
       routingHeld: input.routingHeld,
     })
     if (planned.disposition === 'stop') break
@@ -587,7 +582,7 @@ function completedSyncResult(input: {
   blocked: BlockedOutboxRow[]
   held: Map<string, HeldRecordSyncRows>
   routingHeld: Map<number, RoutingHeldOutboxRow>
-  parentDeferred: Map<number, ParentDeferredOutboxRow>
+  parentDeferred: ParentDeferredOutboxRow[]
   quarantinedParentHolds: QuarantinedParentHoldAccumulator
   readOnlyDeferred: Map<string, number>
   backfill: RecordSyncResult['backfill']
@@ -619,7 +614,7 @@ function completedSyncResult(input: {
     ...(input.machineNameRefusal ? { machineNameRefusal: input.machineNameRefusal } : {}),
     ...(input.held.size ? { held: [...input.held.values()] } : {}),
     ...(input.routingHeld.size ? { routingHeld: [...input.routingHeld.values()] } : {}),
-    ...(input.parentDeferred.size ? { parentDeferred: [...input.parentDeferred.values()] } : {}),
+    ...(input.parentDeferred.length ? { parentDeferred: input.parentDeferred } : {}),
     ...quarantinedParentHoldResult(input.quarantinedParentHolds),
     ...(input.readOnlyDeferred.size
       ? {
@@ -725,7 +720,6 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   const readOnlyDeferred = new Map<string, number>()
   const held = new Map<string, HeldRecordSyncRows>()
   const routingHeld = new Map<number, RoutingHeldOutboxRow>()
-  const parentDeferred = new Map<number, ParentDeferredOutboxRow>()
   const quarantinedParentHolds: QuarantinedParentHoldAccumulator = new Map()
   const attempted = new Set<number>()
   const candidates = preparePendingRows(writableLocal)
@@ -743,7 +737,6 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
       quarantinedParentHolds,
       projectSpaces: options.projectSpaces,
       personalSpaceId: session.personalSpaceId,
-      parentDeferred,
       routingHeld,
     })
     failed += batch.quarantined
@@ -767,7 +760,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   cacheFirstSyncedMachineNames(options, identity, machineNameRefusal)
   const cachePull = await pullAfterSync(options, writableLocal, session)
   rememberHostedRecord(writableLocal)
-  refreshParentDeferredOutboxRows(writableLocal, parentDeferred)
+  const parentDeferred = refreshParentDeferredOutboxRows(writableLocal)
   return completedSyncResult({
     pushed,
     failed,

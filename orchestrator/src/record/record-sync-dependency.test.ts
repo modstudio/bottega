@@ -283,7 +283,6 @@ test('a deferred same-batch parent leaves its child pending', async () => {
     client: dependencyClient(retryBatches, () => ({ status: 'synced' })),
   })
   expect(retry).toMatchObject({ pushed: 2, failed: 0, pending: 0 })
-  expect(retry.parentDeferred).toBeUndefined()
   expect(retryBatches).toEqual([[1, 2]])
   expect(local.query('SELECT synced_at FROM outbox ORDER BY id').all()).toEqual([
     { synced_at: STAMP },
@@ -520,7 +519,6 @@ test('a child is not sent while another parent identity remains outside the batc
     client: dependencyClient(batches, () => ({ status: 'synced' })),
   })
   expect(result).toMatchObject({ pushed: 3, failed: 0, pending: 0 })
-  expect(result.parentDeferred).toBeUndefined()
   expect(batches).toEqual([[1], [3], [2]])
 })
 

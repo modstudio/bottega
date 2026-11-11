@@ -27,6 +27,7 @@ import {
 import { syncRecord } from '../record/record-sync.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { backfillRunRecords } from '../run/run-outbox.ts'
+import { RECORD_REACHABLE_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { SYNTHETIC_LIFECYCLE_JOBS } from '../run/synthetic-lifecycle-job.ts'
 import { backfillScoreRecords } from '../score/score-outbox.ts'
 import { importProjects, projectImportRecordId } from './postgres-import.ts'
@@ -546,7 +547,7 @@ realPostgres('project import against copied live SQLite data', () => {
     const missingOutbox = source
       .query<{ count: number }, string[]>(
         `SELECT count(*) AS count FROM run r
-         WHERE r.status <> 'running'
+         WHERE r.status IN ${RECORD_REACHABLE_RUN_STATUS_SQL}
            AND r.job NOT IN (${SYNTHETIC_LIFECYCLE_JOBS.map(() => '?').join(',')})
            AND NOT EXISTS (SELECT 1 FROM outbox o WHERE o.kind='run' AND o.row_id=r.record_id)`,
       )
