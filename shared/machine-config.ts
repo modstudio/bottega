@@ -21,6 +21,7 @@ import {
   type DelegationSettingKey,
   type DelegationSettings,
 } from './delegation-mode.ts'
+import { MACHINE_KEYSTORE_ENV } from './key-store-constants.ts'
 import { containsSecretShaped } from './secret-shaped.ts'
 import {
   SETTINGS_PERMISSION_LISTS,
@@ -45,7 +46,6 @@ export type MachineConfigEntry = {
 
 export const MACHINE_LEVELS = ['record', 'full'] as const
 export type MachineLevel = (typeof MACHINE_LEVELS)[number]
-export const KEYSTORE_ENV = `${PLATFORM_SLUG.toUpperCase()}_KEYSTORE`
 
 const MACHINE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -90,7 +90,7 @@ export const MACHINE_CONFIG = {
   'machine.level': { type: 'string', default: 'full', values: MACHINE_LEVELS },
   'machine.global_use': { type: 'string', default: 'on', values: ['on', 'off'] },
   'machine.keystore': {
-    environment: KEYSTORE_ENV,
+    environment: MACHINE_KEYSTORE_ENV,
     type: 'string',
     default: 'keychain',
     values: ['keychain', 'file'],

@@ -5,6 +5,7 @@ import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ConfigClient, ConfigScope } from '../../../shared/config-client.ts'
 import { isDelegationKey } from '../../../shared/delegation-mode.ts'
+import { KEYSTORE_ENV } from '../../../shared/key-store.ts'
 import { listMachineEntries } from '../../../shared/machine-config.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { resolveRecordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
@@ -40,6 +41,7 @@ import { requestedMachineNames } from './machine-name-options.ts'
 import { log, rawArgv } from './support.ts'
 
 const SUBSCRIPTION_PRICE_HELP = `\nSubscription monthly prices are user-scope keys named subscription.<harness>.monthly_usd, for example ${subscriptionMonthlyUsdKey('codex')} and ${subscriptionMonthlyUsdKey('grok')}.\nExamples:\n  ${PLATFORM_SLUG} machine config set ${subscriptionMonthlyUsdKey('codex')} <usd>\n  ${PLATFORM_SLUG} machine config set ${subscriptionMonthlyUsdKey('grok')} <usd>\n`
+const CONFIG_DESCRIPTION = `manage scoped configuration values; machine.keystore selects keychain or file, ${KEYSTORE_ENV} overrides it, and machine setup chooses file on Linux when no usable keychain is found`
 
 function registerConfigSet(config: Command): void {
   config
@@ -300,11 +302,7 @@ async function sealPipedSecret(key: string, options: { space?: string }): Promis
 }
 
 export function register(program: Command): void {
-  const config = program
-    .command('config')
-    .description(
-      'manage scoped configuration values; machine.keystore selects keychain or file, and machine setup chooses file on Linux when no usable keychain is found',
-    )
+  const config = program.command('config').description(CONFIG_DESCRIPTION)
   registerMachineCommands(config)
   registerConfigGet(config)
   registerConfigSet(config)

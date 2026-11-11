@@ -5,7 +5,6 @@ import { lstat, mkdir, open, readFile, realpath, rm, writeFile } from 'node:fs/p
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { fileBackedSecretPaths } from '../../../shared/file-backed-secret-paths.ts'
 import type { MachineLevel } from '../../../shared/machine-config.ts'
 import type { PreparedStateFileMigration } from './setup-environment.ts'
 import { removableLegacyPathTarget } from './setup-legacy-path.ts'
@@ -68,7 +67,7 @@ export type SetupEnvironmentService = {
   }>
   setMachineLevel?(level: MachineLevel): void
   setGlobalUse?(value: 'on' | 'off'): void
-  setKeystore?(value: 'file'): void
+  setKeystore?(value: 'file'): string
 }
 
 export function setupResultsRequireAttention(results: readonly SetupActionResult[]): boolean {
@@ -315,11 +314,9 @@ function applyMachineSettingAction(
   }
   if (action.kind === 'set-keystore') {
     if (!environment.setKeystore) throw new Error('keystore writer is unavailable')
-    environment.setKeystore(action.to)
-    const paths = fileBackedSecretPaths(process.env).join(', ')
     return {
       status: 'applied',
-      message: `file keystore chosen because no usable keychain was found; file-backed secrets live at ${paths}; this machine may need a new machine key; run ${PLATFORM_SLUG} machine config machine init`,
+      message: environment.setKeystore(action.to),
     }
   }
   return null

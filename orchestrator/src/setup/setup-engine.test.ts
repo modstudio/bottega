@@ -19,8 +19,8 @@ import {
 import type { SetupFacts } from './setup-facts.ts'
 import { legacyMcpServerName, type McpServer } from './setup-mcp.ts'
 import {
-  planSetupActions,
   plannedKeystoreAction,
+  planSetupActions,
   recommendedAnswers,
   setupActionPrerequisiteKinds,
   validateSetupAnswers,

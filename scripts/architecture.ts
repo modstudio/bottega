@@ -579,6 +579,7 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/install-root.ts',
     '../../../shared/machine-config.ts',
     '../../../shared/record-api-url.ts',
+    '../../../shared/record-session.ts',
     '../agent/agent-auth.ts',
     '../agent/cli-version.ts',
     '../agent/model-host.ts',

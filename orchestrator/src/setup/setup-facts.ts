@@ -2,7 +2,6 @@
 /** Owns read-only machine setup facts. Must not know the store, registered agents, routing, or CLI grammar. */
 import { existsSync, readFileSync } from 'node:fs'
 import { which } from 'bun'
-import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { type InstallationKind, installationIdentity } from '../../../shared/install-root.ts'
 import {
   type MachineLevel,
@@ -205,7 +204,7 @@ function readSetupGlobalUse(): 'on' | 'off' | null {
 }
 
 export function gatherKeystoreSetupFact(
-  environment: ConfigEnvironment = process.env,
+  environment: NonNullable<Parameters<typeof readMachineValueWithSource>[1]> = process.env,
   platform: NodeJS.Platform = process.platform,
   probe: () => void = probeRecordSessionKeychain,
 ): SetupFacts['keystore'] {

@@ -125,9 +125,7 @@ test('applies the file keystore choice and a repeated setup plans no change', as
   )
 
   expect(results[0]?.status).toBe('applied')
-  expect(results[0]?.message).toContain(
-    'file keystore chosen because no usable keychain was found',
-  )
+  expect(results[0]?.message).toContain('file keystore chosen because no usable keychain was found')
   expect(readMachineValue('machine.keystore')).toBe('file')
   expect(
     plannedKeystoreAction({

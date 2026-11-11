@@ -43,8 +43,6 @@ describe('machine key store decisions', () => {
     expect(decideMachineKeyStore(environment(), 'win32')).toBe('file')
     expect(() =>
       decideMachineKeyStore({ ...defaultEnvironment, BOTTEGA_KEYSTORE: 'unknown' }, 'linux'),
-    ).toThrow(
-      'key machine.keystore must be one of keychain, file',
-    )
+    ).toThrow('key machine.keystore must be one of keychain, file')
   })
 })
