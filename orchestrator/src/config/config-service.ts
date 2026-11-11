@@ -772,8 +772,13 @@ export async function restoreLegacyEnvironmentSecrets(
   }
 }
 
-export async function getEntry(key: string, scope: ConfigScope, client = hostedConfigClient()) {
-  return client.getEntry(key, scope, HOSTED_CONFIG_ENVIRONMENT)
+export async function getEntry(
+  key: string,
+  scope: ConfigScope,
+  client = hostedConfigClient(),
+  destination: ConfigDestination = {},
+) {
+  return client.getEntry(key, scope, HOSTED_CONFIG_ENVIRONMENT, destination)
 }
 
 export type { ConfigHome }
@@ -856,6 +861,7 @@ export async function setConfigEntry(
   client: ConfigClient | undefined = undefined,
   env: ConfigEnvironment = process.env,
   clientFactory: () => ConfigClient = () => hostedConfigClient(env),
+  destination: ConfigDestination = {},
 ) {
   const home = configHome(key, requested)
   if (home === 'machine') {
@@ -867,7 +873,14 @@ export async function setConfigEntry(
     return { key: row.key, value: String(row.value), home, row }
   }
   validateHostedValue(key, value)
-  const row = await setEntry(key, value, home, expectedRowVersion, client ?? clientFactory())
+  const row = await setEntry(
+    key,
+    value,
+    home,
+    expectedRowVersion,
+    client ?? clientFactory(),
+    destination,
+  )
   return { key: row.key, value: row.value, home, row }
 }
 
@@ -961,6 +974,7 @@ export async function setEntry(
   scope: ConfigScope,
   expectedRowVersion?: number | null,
   client = hostedConfigClient(),
+  destination: ConfigDestination = {},
 ) {
   const shipTo = isShipToConfigKey(key)
   const storedKey = shipTo ? SHIP_TO_CONFIG_KEY : key
@@ -969,12 +983,13 @@ export async function setEntry(
   if (version === undefined) {
     version = null
     try {
-      version = (await getEntry(storedKey, scope, client)).rowVersion
+      version = (await getEntry(storedKey, scope, client, destination)).rowVersion
     } catch (error) {
       if (!isNotFound(error)) throw error
     }
   }
   const written = await client.putEntry(storedKey, {
+    ...destination,
     scope,
     environment: HOSTED_CONFIG_ENVIRONMENT,
     value: storedValue,
@@ -982,8 +997,8 @@ export async function setEntry(
   })
   if (shipTo) {
     try {
-      const alias = await getEntry(STORED_SHIP_TO_CONFIG_ALIAS, scope, client)
-      await deleteEntry(STORED_SHIP_TO_CONFIG_ALIAS, scope, alias.rowVersion, client)
+      const alias = await getEntry(STORED_SHIP_TO_CONFIG_ALIAS, scope, client, destination)
+      await deleteEntry(STORED_SHIP_TO_CONFIG_ALIAS, scope, alias.rowVersion, client, destination)
     } catch (error) {
       if (!isNotFound(error)) throw error
     }
@@ -991,8 +1006,11 @@ export async function setEntry(
   return written
 }
 
-export async function listEntries(client = hostedConfigClient()) {
-  return client.listEntries(HOSTED_CONFIG_ENVIRONMENT)
+export async function listEntries(
+  client = hostedConfigClient(),
+  destination: ConfigDestination = {},
+) {
+  return client.listEntries(HOSTED_CONFIG_ENVIRONMENT, destination)
 }
 
 export async function deleteEntry(
@@ -1000,9 +1018,11 @@ export async function deleteEntry(
   scope: ConfigScope,
   expectedRowVersion?: number,
   client = hostedConfigClient(),
+  destination: ConfigDestination = {},
 ) {
-  const version = expectedRowVersion ?? (await getEntry(key, scope, client)).rowVersion
+  const version = expectedRowVersion ?? (await getEntry(key, scope, client, destination)).rowVersion
   return client.deleteEntry(key, {
+    ...destination,
     scope,
     environment: HOSTED_CONFIG_ENVIRONMENT,
     expectedRowVersion: version,

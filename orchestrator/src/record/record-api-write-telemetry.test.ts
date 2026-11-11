@@ -63,25 +63,6 @@ test('reports destination-less writes by patterned route and client cause', asyn
   expect((await write(app, '/v1/sync', syncRequest('space-a'))).status).toBe(200)
   expect((await write(app, '/v1/sync', syncRequest(null))).status).toBe(200)
 
-  const spaceBIdentity: RecordIdentity = {
-    ...identity,
-    activeSpaceId: 'space-b',
-    personalSpaceId: 'space-b',
-    memberships: [
-      {
-        space_id: 'space-b',
-        name: 'Space B',
-        slug: 'space-b',
-        role: 'owner',
-        permission: 'write',
-      },
-    ],
-  }
-  const spaceBApp = appWith(spaceBIdentity, { hideRow: async () => ({}) })
-  expect(
-    (await write(spaceBApp, '/v1/moderation/hide', { message: id, reason: 'spam' })).status,
-  ).toBe(200)
-
   const refused = await app.request('/v1/projects', {
     method: 'PUT',
     headers: {
@@ -108,7 +89,6 @@ test('reports destination-less writes by patterned route and client cause', asyn
   expect(report.counts.filter((row) => row.cause === cause)).toEqual([
     { spaceId: 'space-a', route: '/v1/board/messages', cause, occurrences: 1 },
     { spaceId: 'space-a', route: '/v1/runs/:id/void', cause, occurrences: 1 },
-    { spaceId: 'space-a', route: '/v1/moderation/hide', cause, occurrences: 1 },
     { spaceId: 'space-a', route: '/v1/sync', cause, occurrences: 1 },
   ])
 })

@@ -45,6 +45,11 @@ export function responseMessage(body: unknown, fallback: string): string {
   )
 }
 
+export function responseRemedy(body: unknown): string | null {
+  const remedy = responseRecord(body).remedy
+  return typeof remedy === 'string' && remedy.trim() ? remedy : null
+}
+
 export function responseCode(body: unknown): string | null {
   const record = responseRecord(body)
   const nested = responseRecord(record.error)

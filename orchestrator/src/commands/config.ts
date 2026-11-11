@@ -8,6 +8,7 @@ import { isDelegationKey } from '../../../shared/delegation-mode.ts'
 import { listMachineEntries } from '../../../shared/machine-config.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { resolveRecordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
+import { recordWriteSpace } from '../../../shared/record-write-space.ts'
 import {
   isShipToConfigKey,
   SHIP_TO_CONFIG_KEY,
@@ -15,6 +16,7 @@ import {
   storedShipToLevel,
 } from '../../../shared/ship-to.ts'
 import {
+  configHome,
   deleteEntry,
   deleteMachineEntry,
   deleteSecret,
@@ -46,7 +48,7 @@ function registerConfigSet(config: Command): void {
       'set one configuration value; subscription.<harness>.monthly_usd is a user-scope monthly price in USD',
     )
     .addHelpText('after', SUBSCRIPTION_PRICE_HELP)
-    .option('--space', 'write the value in the active space scope')
+    .option('--space <slug>', 'write the value in this record space')
     .option('--machine', 'write the value in machine configuration')
     .option('--expect <rowVersion>', 'row version required before writing')
     .option('--json', 'write the resulting configuration row as JSON')
@@ -56,11 +58,21 @@ function registerConfigSet(config: Command): void {
       if (options.machine && options.space) {
         throw new Error('refusing machine config set: --machine cannot be combined with --space')
       }
+      const requestedHome = options.machine ? 'machine' : options.space ? 'space' : undefined
+      const home = configHome(write.key, requestedHome)
+      const client = home === 'machine' ? undefined : hostedConfigClient()
+      const target = client
+        ? await configWriteTarget('machine config set', options.space, client)
+        : undefined
       const written = await setConfigEntry(
         write.key,
         write.value,
-        options.machine ? 'machine' : options.space ? 'space' : undefined,
+        requestedHome,
         expectedRowVersion(options.expect),
+        client,
+        process.env,
+        () => client ?? hostedConfigClient(),
+        target?.destination,
       )
       if (options.json) log(configSetPresentation(written))
       else {
@@ -96,7 +108,27 @@ function registerConfigGet(config: Command): void {
     })
 }
 
-const scope = (options: { space?: boolean }): ConfigScope => (options.space ? 'space' : 'user')
+export async function configWriteTarget(
+  verb: string,
+  requested: string | undefined,
+  client: ConfigClient,
+): Promise<{ scope: ConfigScope; destination: { destinationSpaceId: string } }> {
+  if (requested) {
+    const destination = await selectedMachineSpace(verb, requested, client)
+    return {
+      scope: 'space',
+      destination: { destinationSpaceId: destination.spaceId },
+    }
+  }
+  const who = await client.whoami()
+  const memberships = parseRecordSpaceMemberships(who.memberships)
+  const decision = recordWriteSpace(
+    { kind: 'personal' },
+    { declaredSpaces: {}, personalSpaceId: who.personalSpaceId, memberships },
+  )
+  if ('refused' in decision) throw new Error(decision.remedy)
+  return { scope: 'user', destination: { destinationSpaceId: decision.spaceId } }
+}
 function expectedRowVersion(value: string | undefined): number | null | undefined {
   if (value === undefined) return undefined
   if (value === 'null') return null
@@ -258,12 +290,13 @@ async function selectedMachineSpace(
 }
 
 /** Read the piped value, refuse a blank one, and seal the rest in the requested scope. */
-async function sealPipedSecret(key: string, options: { space?: boolean }): Promise<void> {
+async function sealPipedSecret(key: string, options: { space?: string }): Promise<void> {
   if (process.stdin.isTTY) throw new Error('secret value must be provided on stdin')
-  const chosen = scope(options)
-  const decision = sealSecretDecision(key, await Bun.stdin.text(), chosen)
+  const client = hostedConfigClient()
+  const target = await configWriteTarget('machine config secret set', options.space, client)
+  const decision = sealSecretDecision(key, await Bun.stdin.text(), target.scope)
   if (decision.kind === 'refuse') throw new Error(decision.refusal)
-  await setSecret(key, decision.value, chosen)
+  await setSecret(key, decision.value, target.scope, client, { destination: target.destination })
 }
 
 export function register(program: Command): void {
@@ -283,7 +316,7 @@ export function register(program: Command): void {
   config
     .command('delete <key>')
     .description('delete one configuration value')
-    .option('--space', 'delete the value from the active space scope')
+    .option('--space <slug>', 'delete the value from this record space')
     .option('--machine', 'delete the value from machine configuration')
     .option('--expect <rowVersion>', 'row version required before deleting')
     .action(async (key, options) => {
@@ -302,27 +335,32 @@ export function register(program: Command): void {
       const expected = expectedRowVersion(options.expect)
       if (expected === null)
         throw new Error('delete expected row version must be a positive integer')
+      const client = hostedConfigClient()
+      const target = await configWriteTarget('machine config delete', options.space, client)
       if (isShipToConfigKey(key)) {
-        const selectedScope = scope(options)
-        const rows = (await listEntries()).filter(
+        const selectedScope = target.scope
+        const rows = (await listEntries(client, target.destination)).filter(
           (row) => row.scope === selectedScope && isShipToConfigKey(row.key),
         )
-        if (!rows.length) await deleteEntry(key, selectedScope, expected)
+        if (!rows.length)
+          await deleteEntry(key, selectedScope, expected, client, target.destination)
         for (const row of rows) {
           await deleteEntry(
             row.key,
             selectedScope,
             row.key === key ? (expected ?? row.rowVersion) : row.rowVersion,
+            client,
+            target.destination,
           )
         }
-      } else await deleteEntry(key, scope(options), expected)
+      } else await deleteEntry(key, target.scope, expected, client, target.destination)
     })
 
   const secret = config.command('secret').description('manage sealed configuration values')
   secret
     .command('set <key>')
     .description('set a sealed value from standard input')
-    .option('--space', 'write the value in the active space scope')
+    .option('--space <slug>', 'write the value in this record space')
     .action(async (key, options) => sealPipedSecret(key, options))
   secret
     .command('list')
@@ -333,9 +371,11 @@ export function register(program: Command): void {
   secret
     .command('delete <key>')
     .description('delete one sealed configuration value')
-    .option('--space', 'delete the value from the active space scope')
+    .option('--space <slug>', 'delete the value from this record space')
     .action(async (key, options) => {
-      await deleteSecret(key, scope(options))
+      const client = hostedConfigClient()
+      const target = await configWriteTarget('machine config secret delete', options.space, client)
+      await deleteSecret(key, target.scope, client, { destination: target.destination })
     })
   secret
     .command('run')

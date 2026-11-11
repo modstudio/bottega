@@ -1,7 +1,30 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { recordHostedCallOutcome } from '../hosted-call-outcome.ts'
 import { recordTransport } from './record-api-client-transport.ts'
+
+test('record transport sends the fallback user-agent when installation identity resolution fails', async () => {
+  const userAgents: Array<string | null> = []
+  const transport = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    userAgents.push(new Headers(init?.headers).get('user-agent'))
+    return new Response('{}', { status: 200 })
+  }) as unknown as typeof fetch
+
+  await expect(
+    recordTransport(
+      'https://record.test',
+      '/v1/docs/example',
+      {},
+      transport,
+      () => undefined,
+      () => {
+        throw new Error('fixture identity resolution failure')
+      },
+    ),
+  ).resolves.toMatchObject({ status: 200 })
+  expect(userAgents).toEqual([`${PLATFORM_SLUG}/unknown`])
+})
 
 test('record transport stores HTTP and transport-error outcomes for its route class', async () => {
   const database = migratedTestDatabase()
@@ -16,7 +39,9 @@ test('record transport stores HTTP and transport-error outcomes for its route cl
     recorded += 1
     if (recorded === 2) finish()
   }
-  const transport = (async () => {
+  const userAgents: Array<string | null> = []
+  const transport = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    userAgents.push(new Headers(init?.headers).get('user-agent'))
     calls += 1
     if (calls === 1) return new Response('{}', { status: 200 })
     throw new Error('fixture transport failure')
@@ -42,6 +67,8 @@ test('record transport stores HTTP and transport-error outcomes for its route cl
       { route_class: 'record-docs', http_status: 200, transport_error: null },
       { route_class: 'record-docs', http_status: null, transport_error: 'other' },
     ])
+    const running = expect.stringMatching(new RegExp(`^${PLATFORM_SLUG}/\\d+\\.\\d+\\.\\d+`))
+    expect(userAgents).toEqual([running, running])
   } finally {
     database.close()
   }

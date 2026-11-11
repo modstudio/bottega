@@ -562,12 +562,13 @@ list hidden board messages and notes (owner only)
 
 ## bottega record space hide
 
-**Synopsis:** `bottega record space hide <message-id|project#number> [--reason <reason>]`
+**Synopsis:** `bottega record space hide <message-id|project#number> [--space <slug>] [--reason <reason>]`
 
 hide a board message or note; shared-space notices cannot be hidden (owner only)
 
 ### Options
 
+- `--space <slug>`: record space containing the row
 - `--reason <reason>`: moderation reason
 
 ### Related
@@ -594,12 +595,13 @@ manage the outside intake project
 
 ## bottega record space intake block
 
-**Synopsis:** `bottega record space intake block [--message <id>] [--note <label>] [--hours <n>]`
+**Synopsis:** `bottega record space intake block [--space <slug>] [--message <id>] [--note <label>] [--hours <n>]`
 
-block an outside author from the active space (owner only)
+block an outside author from a record space (owner only)
 
 ### Options
 
+- `--space <slug>`: record space whose outside block changes
 - `--message <id>`: identify the author by a board message
 - `--note <label>`: identify the author by a project#number note
 - `--hours <n>`: whole hours before the block ends
@@ -634,12 +636,13 @@ display help for command
 
 ## bottega record space intake pause
 
-**Synopsis:** `bottega record space intake pause [--hours <n>]`
+**Synopsis:** `bottega record space intake pause [--space <slug>] [--hours <n>]`
 
-pause outside writes to the active space (owner only)
+pause outside writes to a record space (owner only)
 
 ### Options
 
+- `--space <slug>`: record space whose outside intake changes
 - `--hours <n>`: whole hours to pause (default: 24)
 
 ### Related
@@ -648,9 +651,13 @@ pause outside writes to the active space (owner only)
 
 ## bottega record space intake resume
 
-**Synopsis:** `bottega record space intake resume`
+**Synopsis:** `bottega record space intake resume [--space <slug>]`
 
-resume outside writes to the active space (owner only)
+resume outside writes to a record space (owner only)
+
+### Options
+
+- `--space <slug>`: record space whose outside intake changes
 
 ### Related
 
@@ -658,9 +665,13 @@ resume outside writes to the active space (owner only)
 
 ## bottega record space intake set
 
-**Synopsis:** `bottega record space intake set <project>`
+**Synopsis:** `bottega record space intake set <project> [--space <slug>]`
 
-set the active space outside intake project (owner only)
+set a record space outside intake project (owner only)
+
+### Options
+
+- `--space <slug>`: record space whose outside intake changes
 
 ### Related
 
@@ -678,9 +689,13 @@ show the active space outside intake project
 
 ## bottega record space intake unblock
 
-**Synopsis:** `bottega record space intake unblock <user-id>`
+**Synopsis:** `bottega record space intake unblock <user-id> [--space <slug>]`
 
-remove an outside-author block from the active space (owner only)
+remove an outside-author block from a record space (owner only)
+
+### Options
+
+- `--space <slug>`: record space whose outside block changes
 
 ### Related
 
@@ -755,9 +770,13 @@ select the active hosted record space
 
 ## bottega record space unhide
 
-**Synopsis:** `bottega record space unhide <message-id|project#number>`
+**Synopsis:** `bottega record space unhide <message-id|project#number> [--space <slug>]`
 
 unhide a board message or note (owner only)
+
+### Options
+
+- `--space <slug>`: record space containing the row
 
 ### Related
 

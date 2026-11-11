@@ -248,8 +248,6 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     ],
     ['draftWorkflow', 'importWorkflowCatalogue', 'promoteWorkflow', 'retireWorkflow'],
   ),
-  ...writeEntries('orchestrator', 'recordApiClient', ['score'], ['putScore']),
-  ...writeEntries('orchestrator', 'recordApiClient', ['run'], ['unvoidRun', 'voidRun']),
   ...writeEntries(
     'orchestrator',
     'recordApiClient',

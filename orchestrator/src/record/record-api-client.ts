@@ -19,7 +19,6 @@ import type { TableStorageMeasurement } from '../../../shared/storage-lifecycle.
 import type { CanonFinding } from '../canon/canon-lint.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
-import type { VerdictInput } from '../verdict/verdict-payload.ts'
 import { recordBoardClient } from './record-api-client-board.ts'
 import {
   classifyBoardStreamResponse,
@@ -50,7 +49,6 @@ import {
   type RecordIdentityAndSpaceMethod,
   type RecordProjectSubjectMethod,
   type RecordRequestDestination,
-  type RecordRunMethod,
   type RecordSnapshotAndPublicDocMethod,
   subjectMutationBody,
 } from './record-api-client-paths.ts'
@@ -261,6 +259,7 @@ export type RecordApiClient = ProjectIdentityClient &
     putSnapshot(
       kind: SnapshotKind,
       input: { machineId: string; payload: unknown },
+      destination: RecordRequestDestination,
     ): Promise<{ takenAt: string }>
     listSnapshots(): Promise<{
       items: Array<{
@@ -382,9 +381,6 @@ export type RecordApiClient = ProjectIdentityClient &
       input: { project: string; projectId?: string | null; id: string },
       destination?: RecordRequestDestination,
     ): Promise<RecordSubject>
-    putScore(runId: string, input: VerdictInput): Promise<void>
-    voidRun(runId: string, input: { reason: string }): Promise<void>
-    unvoidRun(runId: string, input: { note: string }): Promise<void>
     listScores(query: {
       updatedSince?: string
       limit?: number
@@ -737,8 +733,8 @@ export function recordApiClient(request = recordApiRequest): RecordApiClient {
   if (injected) return injected
   if (process.env.NODE_ENV === 'test' && !process.env.BOTTEGA_TEST_POSTGRES_CONTAINER)
     throw new Error('record API client refuses a real base URL unless a stub is injected in tests')
-  return {
-    storage: () => request('/v1/storage'),
+  const client: RecordApiClient = {
+    storage: () => request<{ tables: TableStorageMeasurement[] }>('/v1/storage'),
     ...recordChangesClient(request),
     ...recordMachineClient(request),
     ...recordConfigAccessClient(request),
@@ -754,18 +750,31 @@ export function recordApiClient(request = recordApiRequest): RecordApiClient {
     ...recordWorkflowClient(request),
     ...projectIdentityClient(request),
     ...recordProjectSubjectClient(request),
-    ...recordRunClient(request),
     ...recordRoutingEvidenceClient(request),
+    listScores: (query) => {
+      const search = new URLSearchParams()
+      if (query.updatedSince) search.set('updatedSince', query.updatedSince)
+      if (query.limit) search.set('limit', String(query.limit))
+      if (query.cursor) search.set('cursor', query.cursor)
+      const suffix = search.toString()
+      return request(`/v1/scores${suffix ? `?${suffix}` : ''}`)
+    },
+    counts: (destination) => request('/v1/docs/counts', destination),
     ...recordBoardClient(request),
     ...recordApiBoardWatchClient(),
   }
+  return client
 }
 
 const recordSnapshotAndPublicDocClient = (
   request = recordApiRequest,
 ): Pick<RecordApiClient, RecordSnapshotAndPublicDocMethod> => ({
-  putSnapshot: (kind, input) =>
-    request(`/v1/snapshots/${kind}`, { method: 'PUT', body: JSON.stringify(input) }),
+  putSnapshot: (kind, input, destination) =>
+    request(`/v1/snapshots/${kind}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+      ...destination,
+    }),
   listSnapshots: () => request('/v1/snapshots'),
   listPublicDocs: () => publicRequest('/public/v1/docs'),
   getPublicDoc: (id) => publicRequest(`/public/v1/docs/${id}`),
@@ -896,27 +905,6 @@ const recordProjectSubjectClient = (
       body: JSON.stringify({ project: input.project, projectId: input.projectId }),
       ...destination,
     }),
-})
-
-const recordRunClient = (request = recordApiRequest): Pick<RecordApiClient, RecordRunMethod> => ({
-  putScore: async (runId, input) =>
-    void (await request(`/v1/runs/${runId}/score`, { method: 'PUT', body: JSON.stringify(input) })),
-  voidRun: async (runId, input) =>
-    void (await request(`/v1/runs/${runId}/void`, { method: 'POST', body: JSON.stringify(input) })),
-  unvoidRun: async (runId, input) =>
-    void (await request(`/v1/runs/${runId}/unvoid`, {
-      method: 'POST',
-      body: JSON.stringify(input),
-    })),
-  listScores: (query) => {
-    const search = new URLSearchParams()
-    if (query.updatedSince) search.set('updatedSince', query.updatedSince)
-    if (query.limit) search.set('limit', String(query.limit))
-    if (query.cursor) search.set('cursor', query.cursor)
-    const suffix = search.toString()
-    return request(`/v1/scores${suffix ? `?${suffix}` : ''}`)
-  },
-  counts: (destination) => request('/v1/docs/counts', destination),
 })
 
 function recordIdentityAndSpaceClient(

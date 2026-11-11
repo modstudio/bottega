@@ -1,5 +1,6 @@
 import { describe, expect, spyOn, test } from 'bun:test'
 import { z } from 'zod'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { OrchAgentDefinitionSchema } from '../../../shared/orch-contract.ts'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { agentsCommand } from '../agent/agent-commands.ts'
@@ -64,11 +65,56 @@ describe('record snapshot payloads', () => {
     ).toBe(true)
   })
 
+  test('a publish without a personal space names the record sign-in remedy', async () => {
+    const client = createMemoryRecordApiClient()
+    client.whoami = async () => ({
+      user: { id: 'user-a', email: 'a@example.test' },
+      activeSpaceId: null,
+      personalSpaceId: null,
+      memberships: [],
+    })
+
+    await expect(
+      publishSnapshotsCommand(
+        { log() {}, setExitCode() {} },
+        {
+          client,
+          identity: '01990000-0000-7000-8000-000000000001',
+          build: async (kind) => ({ kind }),
+          availability: { hostedConfigured: true, signedIn: true },
+        },
+      ),
+    ).rejects.toThrow(`${PLATFORM_SLUG} record sign-in`)
+  })
+
   test('one failed kind does not stop the remaining publishes and makes the command fail', async () => {
     const client = createMemoryRecordApiClient()
     const attempted: SnapshotKind[] = []
-    client.putSnapshot = async (kind) => {
+    const destinations: Array<string | undefined> = []
+    client.whoami = async () => ({
+      user: { id: 'user-a', email: 'a@example.test' },
+      activeSpaceId: 'active-space',
+      personalSpaceId: 'personal-space',
+      memberships: [
+        {
+          space_id: 'active-space',
+          name: 'Active',
+          slug: 'active',
+          role: 'owner',
+          permission: 'write',
+        },
+        {
+          space_id: 'personal-space',
+          name: 'Personal',
+          slug: 'personal',
+          role: 'owner',
+          permission: 'write',
+        },
+      ],
+    })
+    client.putSnapshot = async (kind, _input, destination) => {
       attempted.push(kind)
+      destinations.push(destination.destinationSpaceId)
       if (kind === 'health') throw new Error('health refused')
       return { takenAt: '2026-09-17T12:00:00.000Z' }
     }
@@ -84,6 +130,7 @@ describe('record snapshot payloads', () => {
       },
     )
     expect(attempted).toEqual(['state', 'blockers', 'health', 'jobs', 'agents'])
+    expect(destinations).toEqual(Array.from({ length: 5 }, () => 'personal-space'))
     expect(output[2]).toMatch(/^health\t\d+\tfailed: health refused$/)
     expect(output[4]).toContain('agents\t')
     expect(exitCode).toBe(1)

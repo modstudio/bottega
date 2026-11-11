@@ -102,22 +102,25 @@ export async function showRecordSpaceOutsideIntake(
 
 export async function setRecordSpaceOutsideIntake(
   project: string,
+  destinationSpaceId: string,
   client: Pick<RecordApiClient, 'setOutsideIntake'> = recordApiClient(),
 ) {
-  return (await client.setOutsideIntake(project)).intake
+  return (await client.setOutsideIntake(project, destinationSpaceId)).intake
 }
 
 export async function pauseRecordSpaceOutsideIntake(
   hours: number,
+  destinationSpaceId: string,
   client: Pick<RecordApiClient, 'pauseOutsideIntake'> = recordApiClient(),
 ) {
-  return (await client.pauseOutsideIntake(hours)).intake
+  return (await client.pauseOutsideIntake(hours, destinationSpaceId)).intake
 }
 
 export async function resumeRecordSpaceOutsideIntake(
+  destinationSpaceId: string,
   client: Pick<RecordApiClient, 'resumeOutsideIntake'> = recordApiClient(),
 ) {
-  return (await client.resumeOutsideIntake()).intake
+  return (await client.resumeOutsideIntake(destinationSpaceId)).intake
 }
 
 export async function listRecordSpaceOutsideBlocks(
@@ -128,30 +131,34 @@ export async function listRecordSpaceOutsideBlocks(
 
 export async function blockRecordSpaceOutsideAuthor(
   input: { message?: string; note?: string; hours?: number },
+  destinationSpaceId: string,
   client: Pick<RecordApiClient, 'blockOutsideAuthor'> = recordApiClient(),
 ) {
-  return (await client.blockOutsideAuthor(input)).block
+  return (await client.blockOutsideAuthor(input, destinationSpaceId)).block
 }
 
 export async function unblockRecordSpaceOutsideAuthor(
   userId: string,
+  destinationSpaceId: string,
   client: Pick<RecordApiClient, 'unblockOutsideAuthor'> = recordApiClient(),
 ): Promise<void> {
-  await client.unblockOutsideAuthor(userId)
+  await client.unblockOutsideAuthor(userId, destinationSpaceId)
 }
 
 export async function hideRecordSpaceRow(
   input: { message?: string; note?: string; reason: ModerationHideReason },
+  destinationSpaceId: string,
   client: Pick<RecordApiClient, 'hideRow'> = recordApiClient(),
 ): Promise<HiddenRow> {
-  return (await client.hideRow(input)).hidden
+  return (await client.hideRow(input, destinationSpaceId)).hidden
 }
 
 export async function unhideRecordSpaceRow(
   input: { message?: string; note?: string },
+  destinationSpaceId: string,
   client: Pick<RecordApiClient, 'unhideRow'> = recordApiClient(),
 ): Promise<void> {
-  await client.unhideRow(input)
+  await client.unhideRow(input, destinationSpaceId)
 }
 
 export async function listRecordSpaceHiddenRows(
