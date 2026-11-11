@@ -162,6 +162,7 @@ export async function taskApi(
     config.recordApiUrl,
     (dependencies.fetch ?? hostedApiFetch) as typeof fetch,
     honorRequestedSpace,
+    { database: config.recordDatabaseUrl },
   )
   const refusal = identityRefusal(who)
   if (refusal) return refusal

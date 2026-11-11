@@ -107,13 +107,18 @@ function destinationlessWriteDetail(
       route: row.route,
       cause: row.cause,
       occurrences: (existing?.occurrences ?? 0) + row.occurrences,
+      lastAt: !existing || row.lastAt > existing.lastAt ? row.lastAt : existing.lastAt,
     })
   }
   const rows = [...grouped.values()].sort(
     (left, right) => left.route.localeCompare(right.route) || left.cause.localeCompare(right.cause),
   )
+  const newest = rows.reduce<string | null>(
+    (lastAt, row) => (!lastAt || row.lastAt > lastAt ? row.lastAt : lastAt),
+    null,
+  )
   return [
-    `${rows.reduce((sum, row) => sum + row.occurrences, 0)} since ${report.processStartedAt}`,
+    `${rows.reduce((sum, row) => sum + row.occurrences, 0)} since ${report.windowStart}, last at ${newest ?? 'none'}`,
     ...rows.map((row) => `${row.occurrences}  ${row.route}  ${row.cause}`),
   ].join('\n')
 }
@@ -125,12 +130,19 @@ function destinationlessCheck(
   fallback: string,
 ): RecordDoctorCheck {
   return report
-    ? {
-        name,
-        status: 'pass',
-        detail: destinationlessWriteDetail(report),
-        section: 'customer',
-      }
+    ? report.unrecorded > 0
+      ? {
+          name,
+          status: 'fail',
+          detail: `${destinationlessWriteDetail(report)}\n${report.unrecorded} destination-less writes could not be recorded; check hosted record database connectivity and retry`,
+          section: 'customer',
+        }
+      : {
+          name,
+          status: 'pass',
+          detail: destinationlessWriteDetail(report),
+          section: 'customer',
+        }
     : {
         name,
         status: 'fail',

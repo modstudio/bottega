@@ -1,45 +1,41 @@
 // concern: record-no-destination-write-counter
-/** Keeps process-local destination-less write measurements and emits best-effort evidence logs. */
+/** Keeps only failed durable measurements in memory around an application-owned store port. */
 
 import type {
   NoDestinationWrite,
   NoDestinationWriteReport,
-  NoDestinationWriteReportRow,
+  NoDestinationWriteStoreReport,
 } from './record-no-destination-write-contract.ts'
 
-const processStartedAt = new Date().toISOString()
-const counts = new Map<string, NoDestinationWriteReportRow>()
+export type NoDestinationWriteCounter = {
+  record(decision: NoDestinationWrite, persist: () => Promise<void>): Promise<void>
+  read(
+    spaceIds: readonly string[],
+    load: () => Promise<NoDestinationWriteStoreReport>,
+  ): Promise<NoDestinationWriteReport>
+}
 
-export function noDestinationWriteCounter(
-  input: { record: NoDestinationWrite } | { read: readonly string[] },
-): NoDestinationWriteReport | undefined {
-  if ('read' in input) {
-    const spaces = new Set(input.read)
-    return {
-      processStartedAt,
-      counts: [...counts.values()].filter((row) => spaces.has(row.spaceId)),
-    }
-  }
-  try {
-    const row = input.record
-    const key = JSON.stringify([row.spaceId, row.route, row.cause])
-    const existing = counts.get(key)
-    counts.set(
-      key,
-      existing
-        ? { ...existing, occurrences: existing.occurrences + 1 }
-        : { ...row, occurrences: 1 },
-    )
-    queueMicrotask(() => {
+export function createNoDestinationWriteCounter(): NoDestinationWriteCounter {
+  const unrecordedBySpace = new Map<string, number>()
+  return {
+    async record(decision, persist) {
       try {
-        console.info('record-write no-destination', JSON.stringify(row))
-      } catch {}
-    })
-  } catch (error) {
-    queueMicrotask(() => {
-      try {
+        await persist()
+        console.info('record-write no-destination', JSON.stringify(decision))
+      } catch (error) {
+        unrecordedBySpace.set(decision.spaceId, (unrecordedBySpace.get(decision.spaceId) ?? 0) + 1)
         console.error('record-write no-destination recording failed', error)
-      } catch {}
-    })
+      }
+    },
+    async read(spaceIds, load) {
+      const report = await load()
+      return {
+        ...report,
+        unrecorded: spaceIds.reduce(
+          (total, spaceId) => total + (unrecordedBySpace.get(spaceId) ?? 0),
+          0,
+        ),
+      }
+    },
   }
 }

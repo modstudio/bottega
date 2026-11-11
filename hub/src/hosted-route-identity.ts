@@ -1,6 +1,11 @@
+import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { noDestinationWriteCause } from '../../shared/record-no-destination-write-contract.ts'
-import { noDestinationWriteCounter } from '../../shared/record-no-destination-write-counter.ts'
+import {
+  createNoDestinationWriteCounter,
+  type NoDestinationWriteCounter,
+} from '../../shared/record-no-destination-write-counter.ts'
+import { recordNoDestinationWrite } from '../../shared/record-no-destination-write-store.ts'
 import {
   hostedRequestSafetyStatement,
   RECORD_SIGN_IN_REMEDY,
@@ -27,6 +32,16 @@ export type TaskSpaceIdentity =
   | { kind: 'refused-space'; refusedSpace: string }
   | { kind: 'unauthenticated' }
   | { kind: 'unavailable'; cause: string }
+
+const counters = new WeakMap<SQL, NoDestinationWriteCounter>()
+
+export function hostedNoDestinationWriteCounter(client: SQL): NoDestinationWriteCounter {
+  const existing = counters.get(client)
+  if (existing) return existing
+  const counter = createNoDestinationWriteCounter()
+  counters.set(client, counter)
+  return counter
+}
 
 export function recordIdentityDecision(
   status: number,
@@ -98,7 +113,8 @@ export async function taskSpaceIdentity(
   fetchImpl: typeof fetch,
   honorRequestedSpace: boolean,
   dependencies: {
-    counter?: typeof noDestinationWriteCounter
+    counter?: NoDestinationWriteCounter
+    database?: SQL
   } = {},
 ): Promise<TaskSpaceIdentity> {
   const authorization = request.headers.get('authorization')
@@ -131,17 +147,23 @@ export async function taskSpaceIdentity(
     pathname: new URL(request.url).pathname,
   })
   if (measurement.counted) {
-    try {
-      ;(dependencies.counter ?? noDestinationWriteCounter)({
-        record: {
-          spaceId: identity.activeSpaceId,
-          route: measurement.route,
-          cause: noDestinationWriteCause(request.headers.get('user-agent')),
-        },
-      })
-    } catch (error) {
-      console.error('record-write no-destination recording failed', error)
+    const decision = {
+      spaceId: identity.activeSpaceId,
+      route: measurement.route,
+      cause: noDestinationWriteCause(request.headers.get('user-agent')),
     }
+    const counter =
+      dependencies.counter ??
+      (dependencies.database ? hostedNoDestinationWriteCounter(dependencies.database) : undefined)
+    if (!counter || !dependencies.database)
+      throw new Error('destination-less write telemetry requires the hosted record database')
+    await counter.record(decision, () =>
+      recordNoDestinationWrite(
+        dependencies.database!,
+        { userId: identity.userId, spaceId: identity.activeSpaceId },
+        decision,
+      ),
+    )
   }
   return {
     kind: 'authenticated',

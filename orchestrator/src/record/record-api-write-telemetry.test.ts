@@ -11,7 +11,18 @@ const id = '01990000-0000-7000-8000-000000000001'
 
 test('reports destination-less writes by patterned route and client cause', async () => {
   const cause = 'measurement-seams-test/1'
+  const recorded: Array<{ spaceId: string; route: string; cause: string }> = []
   const app = appWith(identity, {
+    noDestinationWriteCounter: {
+      record: async (decision: (typeof recorded)[number]) => void recorded.push(decision),
+      read: async (spaceIds: readonly string[]) => ({
+        windowStart: '2026-10-28T00:00:00.000Z',
+        unrecorded: 0,
+        counts: recorded
+          .filter((row) => spaceIds.includes(row.spaceId))
+          .map((row) => ({ ...row, occurrences: 1, lastAt: '2026-11-11T00:00:00.000Z' })),
+      }),
+    },
     postBoardMessage: async () => ({ id }),
     hideRow: async () => ({}),
     syncRecord: async (input: { request: { rows: Array<{ id: number }> } }) => ({
@@ -85,10 +96,29 @@ test('reports destination-less writes by patterned route and client cause', asyn
   const response = await app.request('/v1/health/no-destination-writes')
   expect(response.status).toBe(200)
   const report = (await response.json()) as NoDestinationWriteReport
-  expect(new Date(report.processStartedAt).toISOString()).toBe(report.processStartedAt)
+  expect(report.windowStart).toBe('2026-10-28T00:00:00.000Z')
+  expect(report.unrecorded).toBe(0)
   expect(report.counts.filter((row) => row.cause === cause)).toEqual([
-    { spaceId: 'space-a', route: '/v1/board/messages', cause, occurrences: 1 },
-    { spaceId: 'space-a', route: '/v1/runs/:id/void', cause, occurrences: 1 },
-    { spaceId: 'space-a', route: '/v1/sync', cause, occurrences: 1 },
+    {
+      spaceId: 'space-a',
+      route: '/v1/board/messages',
+      cause,
+      occurrences: 1,
+      lastAt: '2026-11-11T00:00:00.000Z',
+    },
+    {
+      spaceId: 'space-a',
+      route: '/v1/runs/:id/void',
+      cause,
+      occurrences: 1,
+      lastAt: '2026-11-11T00:00:00.000Z',
+    },
+    {
+      spaceId: 'space-a',
+      route: '/v1/sync',
+      cause,
+      occurrences: 1,
+      lastAt: '2026-11-11T00:00:00.000Z',
+    },
   ])
 })

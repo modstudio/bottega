@@ -238,10 +238,13 @@ describe('hosted destination-less write report', () => {
     const response = await hostedRequestHandler(config, {
       noDestinationWrites: {
         fetch: identityFetch,
-        counter: ((input: { read: string[] }) => {
-          reads.push(input.read)
-          return { processStartedAt: '2026-11-10T00:00:00.000Z', counts: [] }
-        }) as never,
+        counter: {
+          record: async () => undefined,
+          read: async (spaceIds) => {
+            reads.push([...spaceIds])
+            return { windowStart: '2026-10-28T00:00:00.000Z', unrecorded: 0, counts: [] }
+          },
+        },
       },
     })(
       new Request('https://hub.example.test/v1/health/no-destination-writes', {
@@ -251,7 +254,8 @@ describe('hosted destination-less write report', () => {
     expect(response.status).toBe(200)
     expect(reads).toEqual([['space-a', 'space-b']])
     expect(await response.json()).toEqual({
-      processStartedAt: '2026-11-10T00:00:00.000Z',
+      windowStart: '2026-10-28T00:00:00.000Z',
+      unrecorded: 0,
       counts: [],
     })
   })

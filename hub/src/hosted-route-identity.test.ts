@@ -39,7 +39,11 @@ describe('hosted destination-less write recording', () => {
 
   test('records headerless writes but not writes whose requested space is honored', async () => {
     const records: unknown[] = []
-    const counter = ((input: unknown) => records.push(input)) as never
+    const counter = {
+      record: async (decision: unknown) => void records.push(decision),
+      read: async () => ({ windowStart: '', unrecorded: 0, counts: [] }),
+    }
+    const database = {} as never
     const request = (headers?: HeadersInit) =>
       new Request('https://hub.example.test/v1/tasks', {
         method: 'POST',
@@ -47,8 +51,12 @@ describe('hosted destination-less write recording', () => {
       })
 
     expect(
-      (await taskSpaceIdentity(request(), 'https://api.test', identityFetch, true, { counter }))
-        .kind,
+      (
+        await taskSpaceIdentity(request(), 'https://api.test', identityFetch, true, {
+          counter,
+          database,
+        })
+      ).kind,
     ).toBe('authenticated')
     expect(
       (
@@ -57,26 +65,34 @@ describe('hosted destination-less write recording', () => {
           'https://api.test',
           identityFetch,
           true,
-          { counter },
+          { counter, database },
         )
       ).kind,
     ).toBe('authenticated')
     expect(records).toHaveLength(1)
     expect(records[0]).toEqual({
-      record: { spaceId: 'space-a', route: '/v1/tasks', cause: expect.any(String) },
+      spaceId: 'space-a',
+      route: '/v1/tasks',
+      cause: expect.any(String),
     })
   })
 
   test('a counter that throws does not fail the request', async () => {
-    const counter = (() => {
-      throw new Error('counter failed')
-    }) as never
+    const counter = {
+      record: async () => undefined,
+      read: async () => ({ windowStart: '', unrecorded: 0, counts: [] }),
+    }
     const request = new Request('https://hub.example.test/v1/tasks', {
       method: 'POST',
       headers: { authorization: 'Bearer token' },
     })
     expect(
-      (await taskSpaceIdentity(request, 'https://api.test', identityFetch, true, { counter })).kind,
+      (
+        await taskSpaceIdentity(request, 'https://api.test', identityFetch, true, {
+          counter,
+          database: {} as never,
+        })
+      ).kind,
     ).toBe('authenticated')
   })
 })

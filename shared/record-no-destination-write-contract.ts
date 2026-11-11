@@ -10,21 +10,34 @@ export function noDestinationWriteCause(userAgent: string | null | undefined): s
 
 export type NoDestinationWrite = { spaceId: string; route: string; cause: string }
 
-export type NoDestinationWriteReportRow = NoDestinationWrite & { occurrences: number }
+export type NoDestinationWriteReportRow = NoDestinationWrite & {
+  occurrences: number
+  lastAt: string
+}
 
-export type NoDestinationWriteReport = {
-  processStartedAt: string
+export type NoDestinationWriteStoreReport = {
+  windowStart: string
   counts: ReadonlyArray<NoDestinationWriteReportRow>
 }
+
+export type NoDestinationWriteReport = NoDestinationWriteStoreReport & { unrecorded: number }
 
 export function parseNoDestinationWriteReport(
   value: unknown,
   surface: string,
 ): NoDestinationWriteReport {
-  const invalid = () => new Error(`${surface} returned invalid destination-less write counts`)
+  const invalid = () =>
+    new Error(
+      `${surface} returned invalid destination-less write counts; deploy the current hosted API and hub, then retry`,
+    )
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw invalid()
   const report = value as Record<string, unknown>
-  if (typeof report.processStartedAt !== 'string' || !Array.isArray(report.counts)) throw invalid()
+  if (
+    typeof report.windowStart !== 'string' ||
+    !Number.isInteger(report.unrecorded) ||
+    !Array.isArray(report.counts)
+  )
+    throw invalid()
   const counts = report.counts.map((input) => {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw invalid()
     const row = input as Record<string, unknown>
@@ -32,10 +45,11 @@ export function parseNoDestinationWriteReport(
       typeof row.spaceId !== 'string' ||
       typeof row.route !== 'string' ||
       typeof row.cause !== 'string' ||
-      !Number.isInteger(row.occurrences)
+      !Number.isInteger(row.occurrences) ||
+      typeof row.lastAt !== 'string'
     )
       throw invalid()
     return row as NoDestinationWriteReportRow
   })
-  return { processStartedAt: report.processStartedAt, counts }
+  return { windowStart: report.windowStart, unrecorded: report.unrecorded as number, counts }
 }

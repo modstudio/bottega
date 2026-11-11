@@ -133,6 +133,7 @@ async function identityWho(
     config.recordApiUrl,
     (dependencies.fetch ?? hostedApiFetch) as typeof fetch,
     true,
+    { database: config.recordDatabaseUrl },
   )
 }
 

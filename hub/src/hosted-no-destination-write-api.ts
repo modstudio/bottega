@@ -3,18 +3,20 @@
 
 import { hostedApiFetch } from '../../shared/bounded-fetch.ts'
 import { NO_DESTINATION_WRITES_ROUTE } from '../../shared/record-no-destination-write-contract.ts'
-import { noDestinationWriteCounter } from '../../shared/record-no-destination-write-counter.ts'
+import type { NoDestinationWriteCounter } from '../../shared/record-no-destination-write-counter.ts'
+import { readNoDestinationWrites } from '../../shared/record-no-destination-write-store.ts'
 import type { HostedRouteConfig } from './hosted-route-config.ts'
 import {
   assertAuthenticatedIdentity,
   identityRefusal,
+  hostedNoDestinationWriteCounter,
   refusedSpaceResponse,
   taskSpaceIdentity,
 } from './hosted-route-identity.ts'
 
 export type HostedNoDestinationWriteDependencies = {
   fetch?: typeof fetch
-  counter?: typeof noDestinationWriteCounter
+  counter?: NoDestinationWriteCounter
 }
 
 export async function hostedNoDestinationWriteApi(
@@ -29,12 +31,20 @@ export async function hostedNoDestinationWriteApi(
     config.recordApiUrl,
     dependencies.fetch ?? hostedApiFetch,
     true,
+    { counter: dependencies.counter, database: config.recordDatabaseUrl },
   )
   const refusal = identityRefusal(identity)
   if (refusal) return refusal
   if (identity.kind === 'refused-space') return refusedSpaceResponse(identity.refusedSpace)
   assertAuthenticatedIdentity(identity)
+  const counter = dependencies.counter ?? hostedNoDestinationWriteCounter(config.recordDatabaseUrl)
   return Response.json(
-    (dependencies.counter ?? noDestinationWriteCounter)({ read: identity.spaceIds }),
+    await counter.read(identity.spaceIds, () =>
+      readNoDestinationWrites(config.recordDatabaseUrl, {
+        userId: identity.userId,
+        spaceId: identity.spaceId,
+        spaceIds: identity.spaceIds,
+      }),
+    ),
   )
 }

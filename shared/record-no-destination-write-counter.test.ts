@@ -1,27 +1,37 @@
 import { expect, test } from 'bun:test'
-import { noDestinationWriteCounter } from './record-no-destination-write-counter.ts'
+import { createNoDestinationWriteCounter } from './record-no-destination-write-counter.ts'
 
-test('counts by space, route and cause and filters reports by space', () => {
-  const cause = `counter-test-${crypto.randomUUID()}`
-  noDestinationWriteCounter({ record: { spaceId: 'space-a', route: '/a', cause } })
-  noDestinationWriteCounter({ record: { spaceId: 'space-a', route: '/a', cause } })
-  noDestinationWriteCounter({ record: { spaceId: 'space-b', route: '/b', cause } })
-
-  expect(noDestinationWriteCounter({ read: ['space-a'] })?.counts).toContainEqual({
-    spaceId: 'space-a',
-    route: '/a',
-    cause,
-    occurrences: 2,
-  })
-  expect(noDestinationWriteCounter({ read: ['space-a'] })?.counts).not.toContainEqual(
-    expect.objectContaining({ spaceId: 'space-b', cause }),
-  )
+const emptyReport = async () => ({
+  windowStart: '2026-10-28T00:00:00.000Z',
+  counts: [],
 })
 
-test('a recording failure does not escape the counter', () => {
-  expect(() =>
-    noDestinationWriteCounter({
-      record: { spaceId: 'space-a', route: '/a', cause: 1n },
-    } as never),
-  ).not.toThrow()
+test('reports durable rows supplied by the application store', async () => {
+  const counter = createNoDestinationWriteCounter()
+  const counts = [
+    {
+      spaceId: 'space-a',
+      route: '/a',
+      cause: 'cli/1',
+      occurrences: 2,
+      lastAt: '2026-11-11T00:00:00.000Z',
+    },
+  ]
+  expect(
+    await counter.read(['space-a'], async () => ({
+      windowStart: '2026-10-28T00:00:00.000Z',
+      counts,
+    })),
+  ).toEqual({ windowStart: '2026-10-28T00:00:00.000Z', unrecorded: 0, counts })
+})
+
+test('a failed insert is counted only for reports that include its space', async () => {
+  const counter = createNoDestinationWriteCounter()
+  await expect(
+    counter.record({ spaceId: 'space-a', route: '/a', cause: 'cli/1' }, async () => {
+      throw new Error('database unavailable')
+    }),
+  ).resolves.toBeUndefined()
+  expect((await counter.read(['space-a'], emptyReport)).unrecorded).toBe(1)
+  expect((await counter.read(['space-b'], emptyReport)).unrecorded).toBe(0)
 })

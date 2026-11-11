@@ -197,6 +197,28 @@ export const contention = pgTable.withRLS(
   ],
 )
 
+export const noDestinationWrite = pgTable.withRLS(
+  'no_destination_write',
+  {
+    id: recordIdentity(),
+    spaceId: spaceIdentity(),
+    route: text().notNull(),
+    cause: text().notNull(),
+    at: recordedAt('at'),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    ...tenantPolicies('no_destination_write', table.spaceId),
+    index('no_destination_write_at_idx').on(table.at),
+    pgPolicy('no_destination_write_owner_all', {
+      for: 'all',
+      to: RECORD_OWNER_ROLE,
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+)
+
 export const testFlake = pgTable.withRLS(
   'test_flake',
   {

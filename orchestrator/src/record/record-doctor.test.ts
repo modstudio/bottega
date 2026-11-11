@@ -44,8 +44,8 @@ describe('record doctor decisions', () => {
       live: 0,
     },
     quarantinedOutboxRows: [],
-    noDestinationWrites: { processStartedAt: '2026-11-09T00:00:00.000Z', counts: [] },
-    hubNoDestinationWrites: { processStartedAt: '2026-11-09T00:00:00.000Z', counts: [] },
+    noDestinationWrites: { windowStart: '2026-11-09T00:00:00.000Z', unrecorded: 0, counts: [] },
+    hubNoDestinationWrites: { windowStart: '2026-11-09T00:00:00.000Z', unrecorded: 0, counts: [] },
     operatorConnectionPresent: false,
   } as const
 
@@ -91,16 +91,29 @@ describe('record doctor decisions', () => {
     const checks = decideRecordDoctorChecks({
       ...healthyFacts,
       noDestinationWrites: {
-        processStartedAt: '2026-11-09T00:00:00.000Z',
+        windowStart: '2026-11-09T00:00:00.000Z',
+        unrecorded: 0,
         counts: [
-          { spaceId: 'space-1', route: '/v1/docs', cause: 'cli/1', occurrences: 2 },
-          { spaceId: 'space-2', route: '/v1/docs', cause: 'cli/1', occurrences: 3 },
+          {
+            spaceId: 'space-1',
+            route: '/v1/docs',
+            cause: 'cli/1',
+            occurrences: 2,
+            lastAt: '2026-11-10T00:00:00.000Z',
+          },
+          {
+            spaceId: 'space-2',
+            route: '/v1/docs',
+            cause: 'cli/1',
+            occurrences: 3,
+            lastAt: '2026-11-11T00:00:00.000Z',
+          },
         ],
       },
     })
     expect(recordDoctorExitCode(checks)).toBe(0)
     expect(checks.find((check) => check.name === 'destination-less hosted writes')?.detail).toBe(
-      '5 since 2026-11-09T00:00:00.000Z\n5  /v1/docs  cli/1',
+      '5 since 2026-11-09T00:00:00.000Z, last at 2026-11-11T00:00:00.000Z\n5  /v1/docs  cli/1',
     )
   })
 
@@ -122,14 +135,36 @@ describe('record doctor decisions', () => {
     const checks = decideRecordDoctorChecks({
       ...healthyFacts,
       hubNoDestinationWrites: {
-        processStartedAt: '2026-11-09T00:00:00.000Z',
-        counts: [{ spaceId: 'space-1', route: '/v1/tasks', cause: 'cli/1', occurrences: 2 }],
+        windowStart: '2026-11-09T00:00:00.000Z',
+        unrecorded: 0,
+        counts: [
+          {
+            spaceId: 'space-1',
+            route: '/v1/tasks',
+            cause: 'cli/1',
+            occurrences: 2,
+            lastAt: '2026-11-11T00:00:00.000Z',
+          },
+        ],
       },
     })
     expect(recordDoctorExitCode(checks)).toBe(0)
     expect(
       checks.find((check) => check.name === 'destination-less hosted hub writes')?.detail,
-    ).toBe('2 since 2026-11-09T00:00:00.000Z\n2  /v1/tasks  cli/1')
+    ).toBe(
+      '2 since 2026-11-09T00:00:00.000Z, last at 2026-11-11T00:00:00.000Z\n2  /v1/tasks  cli/1',
+    )
+  })
+
+  test('unrecorded destination-less writes fail doctor with a remedy', () => {
+    const checks = decideRecordDoctorChecks({
+      ...healthyFacts,
+      noDestinationWrites: { ...healthyFacts.noDestinationWrites, unrecorded: 2 },
+    })
+    const check = checks.find((row) => row.name === 'destination-less hosted writes')
+    expect(check).toMatchObject({ status: 'fail' })
+    expect(check?.detail).toContain('2 destination-less writes could not be recorded')
+    expect(check?.detail).toContain('check hosted record database connectivity and retry')
   })
 
   test('hosted hub destination-less failures fail doctor and never print zero', () => {
@@ -430,7 +465,7 @@ describe('hosted hub destination-less write facts', () => {
       token: 'secret-token',
       fetchImpl: (async (_url: string | URL | Request, init?: RequestInit) => {
         authorizations.push(new Headers(init?.headers as HeadersInit).get('authorization'))
-        return Response.json({ processStartedAt: '2026-11-10T00:00:00.000Z', counts: [] })
+        return Response.json({ windowStart: '2026-10-28T00:00:00.000Z', unrecorded: 0, counts: [] })
       }) as unknown as typeof fetch,
     })
     expect(authorizations).toEqual(['Bearer secret-token'])
