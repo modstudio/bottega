@@ -27,7 +27,17 @@ test('hub purge removes the target and its children while preserving a sibling',
      VALUES (?,?,?,?,?,?,?,?,?)`,
   )
   insertTask.run('task-target', 'DEV-1', 'target', 'target', 'open', 'local', 'at', 'at', TARGET)
-  insertTask.run('task-sibling', 'DEV-2', 'sibling', 'sibling', 'open', 'local', 'at', 'at', SIBLING)
+  insertTask.run(
+    'task-sibling',
+    'DEV-2',
+    'sibling',
+    'sibling',
+    'open',
+    'local',
+    'at',
+    'at',
+    SIBLING,
+  )
   database
     .query(
       `INSERT INTO task_comment(record_id,task_key,task_record_id,body,created_at)
@@ -61,7 +71,7 @@ test('hub purge removes the target and its children while preserving a sibling',
     note: 1,
     hosted_outbox: 1,
   })
-  expect(database.query("SELECT record_id FROM task ORDER BY record_id").all()).toEqual([
+  expect(database.query('SELECT record_id FROM task ORDER BY record_id').all()).toEqual([
     { record_id: 'task-sibling' },
   ])
   expect(database.query("SELECT 1 FROM note WHERE record_id='note-target'").get()).toBeNull()

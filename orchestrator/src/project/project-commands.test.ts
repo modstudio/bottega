@@ -150,7 +150,7 @@ test('project purge reports hosted and orchestrator counts before register remov
     },
   })
   expect(await runProject(['project', 'purge', 'purge-me'], { confirm: 'purge-me' })).toBe(
-    "removed\thub_task\t2\nremoved\tproject\t1",
+    'removed\thub_task\t2\nremoved\tproject\t1',
   )
   expect(calls).toEqual([[recordId, 'purge-me', { destinationSpaceId: 'space-a' }]])
   expect(projectByName('purge-me')).not.toBeNull()
@@ -207,7 +207,9 @@ test('project purge proceeds locally when no hosted project is visible', async (
     await runProject(['project', 'purge', 'purge-not-visible'], {
       confirm: 'purge-not-visible',
     }),
-  ).toBe(`the hosted record held nothing for purge-not-visible (${recordId}); proceeding with this machine's local stores`)
+  ).toBe(
+    `the hosted record held nothing for purge-not-visible (${recordId}); proceeding with this machine's local stores`,
+  )
   expect(projectByName('purge-not-visible')).not.toBeNull()
 })
 

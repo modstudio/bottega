@@ -69,6 +69,10 @@ import {
 import { type SettingsObjectMode, validateProjectInjectionSettings } from './project-injection.ts'
 import { projectPushRefusalMessage } from './project-push-refusal.ts'
 import {
+  localProjectPurgeRefusals,
+  purgeLocalOrchestratorProject,
+} from './project-purge-local.ts'
+import {
   PROJECT_REFERENCES,
   type ProjectReferenceCounts,
   projectReferenceCounts,
@@ -497,6 +501,14 @@ export function removeProject(name: string): boolean {
     throw new Error(`${refusal.join('\n')}\nreferencing tables: ${tables.join(', ')}`)
   }
   return db().query('DELETE FROM project WHERE record_id = ?').run(project.recordId).changes > 0
+}
+
+export function projectLocalPurgeRefusals(projectRecordId: string): string[] {
+  return localProjectPurgeRefusals(db(), projectRecordId)
+}
+
+export function purgeLocalProjectRows(projectRecordId: string) {
+  return purgeLocalOrchestratorProject(db(), projectRecordId)
 }
 
 export function retireProject(name: string): 'retired' | 'already-retired' {

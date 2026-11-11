@@ -4,12 +4,19 @@ import type { Database } from 'bun:sqlite'
 import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
 import type { RemovalReport } from '../../../shared/removal-report.ts'
+import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
 import { writeTransaction } from '../database/db.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 
-type ForeignKey = { table: string; id: number; seq: number; parent: string; from: string; to: string }
+type ForeignKey = {
+  table: string
+  id: number
+  seq: number
+  parent: string
+  from: string
+  to: string
+}
 type PurgeStep = { table: string; predicate: string }
 
 const ORCHESTRATOR_PROJECT_PURGE_EXCLUSIONS = {
@@ -81,7 +88,7 @@ function projectPredicate(
       .map((key) => `${quote(table)}.${quote(key.from)}=${quote(alias)}.${quote(key.to)}`)
       .join(' AND ')
     clauses.push(
-      `EXISTS (SELECT 1 FROM ${quote(parent)} AS ${quote(alias)} WHERE ${join} AND ${parentPredicate.replaceAll(quote(parent) + '.', quote(alias) + '.')})`,
+      `EXISTS (SELECT 1 FROM ${quote(parent)} AS ${quote(alias)} WHERE ${join} AND ${parentPredicate.replaceAll(`${quote(parent)}.`, `${quote(alias)}.`)})`,
     )
   }
   const predicate = clauses.length ? `(${clauses.join(' OR ')})` : null
@@ -121,8 +128,7 @@ export function orchestratorProjectPurgePlan(database: Database): PurgeStep[] {
   }
   steps.push({
     table: 'outbox',
-    predicate:
-      "synced_at IS NULL AND (payload LIKE '%' || ? || '%' OR row_id=? OR record_id=?)",
+    predicate: "synced_at IS NULL AND (payload LIKE '%' || ? || '%' OR row_id=? OR record_id=?)",
   })
   return steps
 }
@@ -153,7 +159,9 @@ export function localProjectPurgeRefusals(database: Database, projectRecordId: s
     )
     .all(projectRecordId)
   for (const run of runs)
-    refusals.push(`run ${run.number} is not terminal; clear it with \`${PLATFORM_SLUG} run stop ${run.number}\``)
+    refusals.push(
+      `run ${run.number} is not terminal; clear it with \`${PLATFORM_SLUG} run stop ${run.number}\``,
+    )
   const claims = database
     .query<{ kind: string; allocation_key: string }, [string]>(
       "SELECT kind,allocation_key FROM resource_claim WHERE project_record_id=? AND state IN ('pending','claimed','retained','stuck') ORDER BY kind,allocation_key",

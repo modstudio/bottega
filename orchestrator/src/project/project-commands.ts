@@ -16,7 +16,7 @@ import {
   pullRecordCataloguesForSpace,
   RecordCataloguePullError,
 } from '../record/record-cache-catalogues.ts'
-import { renderRemovalReport } from '../../../shared/removal-report.ts'
+import { renderRecordRemovalReport } from '../record/record-removal-report.ts'
 import { migrateCreate } from '../worktree/worktree-template.ts'
 import { declaredProjectSpace } from './declared-project-space.ts'
 import { projectAddDecision } from './project-add-record.ts'
@@ -32,10 +32,6 @@ import { formatProjectRelink, relinkProjectByName } from './project-relink.ts'
 import { persistLocalProjectSet } from './project-rename.ts'
 import { projectSetSettingsPatch } from './project-set-space.ts'
 import {
-  localProjectPurgeRefusals,
-  purgeLocalOrchestratorProject,
-} from './project-purge-local.ts'
-import {
   mergeProjectSettings,
   type SettingsPatchEffect,
   settingsPatchEffect,
@@ -48,8 +44,10 @@ import {
   type Project,
   type ProjectSettings,
   projectByName,
+  projectLocalPurgeRefusals,
   projectLifecycleForm,
   projectRowByName,
+  purgeLocalProjectRows,
   projects,
   pushProjects,
   registerBranchCheck,
@@ -857,8 +855,9 @@ async function purgeProjectCommand(
     throw new Error(
       `confirmation guard failed: --confirm must equal ${name}; run \`${PLATFORM_SLUG} project purge ${name} --confirm ${name}\``,
     )
-  const refusals = localProjectPurgeRefusals(db(), project.recordId)
-  if (refusals.length) throw new Error(`project ${name} has live local work:\n${refusals.join('\n')}`)
+  const refusals = projectLocalPurgeRefusals(project.recordId)
+  if (refusals.length)
+    throw new Error(`project ${name} has live local work:\n${refusals.join('\n')}`)
   const result = await purgeProjectInHostedRecord(
     { name: project.name, recordId: project.recordId },
     project.settings,
@@ -869,9 +868,9 @@ async function purgeProjectCommand(
       `the hosted record held nothing for ${name} (${project.recordId}); proceeding with this machine's local stores`,
     )
   } else {
-    renderRemovalReport(result.tables, (value) => presentation.log(value))
+    renderRecordRemovalReport(result.tables, (value) => presentation.log(value))
   }
-  renderRemovalReport(purgeLocalOrchestratorProject(db(), project.recordId), (value) =>
+  renderRecordRemovalReport(purgeLocalProjectRows(project.recordId), (value) =>
     presentation.log(value),
   )
 }

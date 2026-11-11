@@ -120,7 +120,6 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/agent/agent-commands.ts',
     [
       '../../../shared/brand.ts',
-      '../../../shared/removal-report.ts',
       './agent-probe.ts',
       './agent-registry.ts',
       '../cli/args.ts',
@@ -681,7 +680,6 @@ export const importBoundaries: ImportBoundary[] = [
       './project-fill-space.ts',
       './project-fill-space-decision.ts',
       './project-hosted-write.ts',
-      './project-purge-local.ts',
       './project-record-identity.ts',
       './project-relink.ts',
       './project-rename.ts',

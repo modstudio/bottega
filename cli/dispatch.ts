@@ -269,7 +269,9 @@ async function composite(
     }
   }
   if (positionals !== (route.positionals ?? 0)) {
-    console.error(`expected ${route.positionals ?? 0} composite argument(s), received ${positionals}`)
+    console.error(
+      `expected ${route.positionals ?? 0} composite argument(s), received ${positionals}`,
+    )
     return 2
   }
   let result = 0

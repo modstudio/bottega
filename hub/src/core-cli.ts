@@ -7,6 +7,7 @@ import {
   ASKED_VIA_VALUES,
   QUESTION_DELIVERY_MODE_VALUES,
 } from '../../shared/question-vocabulary.ts'
+import { renderRemovalReport } from '../../shared/removal-report.ts'
 import { withMachineUpdateLockUnlessHeld } from '../../shared/update-lock.ts'
 import {
   type CollectLegResult,
@@ -37,10 +38,9 @@ import {
   readWorkflowCursorIdentityMap,
   startDashboardCapability,
 } from './orch.ts'
-import { projects } from './projects.ts'
-import { projectRecordIdFor } from './project-record-id.ts'
 import { purgeHubProject } from './project-purge.ts'
-import { renderRemovalReport } from '../../shared/removal-report.ts'
+import { projectRecordIdFor } from './project-record-id.ts'
+import { projects } from './projects.ts'
 import { estateEngagedMs, tasksInWindow } from './query.ts'
 import { printReconcile, reconcileOpenIntervals } from './reconcile.ts'
 import {
@@ -421,6 +421,7 @@ export function registerCoreCommands(program: Command): void {
   registerRulingCommands(program)
   program
     .command('project-purge <name>')
+    .helpOption(false)
     .description('purge one project from the local hub store')
     .action((name: string) => {
       requireDatabase()

@@ -54,7 +54,9 @@ export const recordInvariantModules = [
     './record-session.ts',
     './active-space-invariant.ts',
   ]),
-  module('orchestrator/src/record/record-removal-report.ts', []),
+  module('orchestrator/src/record/record-removal-report.ts', [
+    '../../../shared/removal-report.ts',
+  ]),
   module('orchestrator/src/record/record-trial-space-contract.ts', ['./record-removal-report.ts']),
   module('orchestrator/src/record/record-trial-space.ts', []),
   module('orchestrator/src/record/record-api-trial-space-routes.ts', [
