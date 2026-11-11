@@ -5,8 +5,8 @@ import {
   JsonLineDecoder,
   MCP_SERVER_CRASH_LOOP_CEILING,
   MCP_SERVER_RESTART_BACKOFF_MS,
-  MCP_SERVER_STALE_EXIT,
   MCP_SERVER_SHUTDOWN_WAIT_MS,
+  MCP_SERVER_STALE_EXIT,
   MCP_SUPERVISOR_ID_PREFIX,
   type McpSupervisorEvent,
   type McpSupervisorState,
@@ -139,7 +139,7 @@ describe('MCP supervisor decision', () => {
 
   test('stops a crash loop and refuses every later request with the remedy', () => {
     let state = initialMcpSupervisorState()
-    for (let index = 0; index <= MCP_SERVER_CRASH_LOOP_CEILING; index += 1) {
+    for (let index = 0; index < MCP_SERVER_CRASH_LOOP_CEILING; index += 1) {
       state = transition(state, {
         type: 'child-exit',
         code: MCP_SERVER_STALE_EXIT,
@@ -147,6 +147,23 @@ describe('MCP supervisor decision', () => {
         at: index,
       }).state
     }
+
+    state = { ...state, phase: 'replaying' }
+    state = transition(state, {
+      type: 'client-message',
+      message: request('already-buffered'),
+    }).state
+    const stopped = transition(state, {
+      type: 'child-exit',
+      code: MCP_SERVER_STALE_EXIT,
+      status: `exit status ${MCP_SERVER_STALE_EXIT}`,
+      at: MCP_SERVER_CRASH_LOOP_CEILING,
+    })
+    expect(stopped.actions[0]).toMatchObject({
+      type: 'send-client',
+      message: { id: 'already-buffered', error: { code: -32000 } },
+    })
+    state = stopped.state
 
     for (const id of ['later-1', 'later-2']) {
       const refused = transition(state, { type: 'client-message', message: request(id) })

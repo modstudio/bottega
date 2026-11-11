@@ -43,7 +43,7 @@ export type McpSupervisorAction =
   | { type: 'send-client'; message: JsonRpcMessage }
   | { type: 'start-child' }
   | { type: 'close-child-input' }
-  | { type: 'signal-child'; signal: McpSupervisorSignal }
+  | { type: 'signal-child'; signal: 'SIGTERM' }
   | { type: 'schedule'; kind: 'restart' | 'shutdown'; delayMs: number; token: number }
   | { type: 'exit'; code: number }
 
@@ -134,7 +134,7 @@ function uniqueReplayId(state: McpSupervisorState): { id: string; sequence: numb
 }
 
 function sendBuffered(state: McpSupervisorState): McpSupervisorTransition {
-  let next = { ...state, phase: 'running' as const, replayId: null, buffered: [] }
+  let next: McpSupervisorState = { ...state, phase: 'running', replayId: null, buffered: [] }
   const actions: McpSupervisorAction[] = []
   for (const message of state.buffered) {
     next = trackRequest(next, message)
@@ -235,7 +235,19 @@ function childExit(
     replayId: null,
   }
   if (recentExits.length > MCP_SERVER_CRASH_LOOP_CEILING) {
-    return { state: { ...exited, phase: 'failed' }, actions }
+    actions.push(
+      ...state.buffered.flatMap((message) =>
+        isRequest(message)
+          ? [
+              {
+                type: 'send-client' as const,
+                message: crashLoopError(message.id, event.status),
+              },
+            ]
+          : [],
+      ),
+    )
+    return { state: { ...exited, phase: 'failed', buffered: [] }, actions }
   }
   if (event.code === MCP_SERVER_STALE_EXIT) {
     const restarted = startReplacement(exited)

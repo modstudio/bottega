@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
+import { PLATFORM_SLUG } from './brand.ts'
 
 const SENTINEL = 'BOTTEGA_BOUNDED_PROCESS_ENV_SENTINEL'
 const execaMock = mock(
@@ -22,7 +23,7 @@ const execaMock = mock(
 
 mock.module('execa', () => ({ execa: execaMock }))
 
-const { startBounded } = await import('./bounded-process.ts')
+const { startBounded, startParentBound } = await import('./bounded-process.ts')
 
 let previousSentinel: string | undefined
 
@@ -45,4 +46,40 @@ test('an explicit environment replaces the parent environment', async () => {
   })
 
   expect(execaMock.mock.calls[0]?.[2]).toMatchObject({ env, extendEnv: false })
+})
+
+test('a parent-bound child keeps all three relay pipes streaming', async () => {
+  const originalSpawn = Bun.spawn
+  const launches: unknown[][] = []
+  const child = { exited: Promise.resolve(0), kill: () => {} } as unknown as ReturnType<
+    typeof startParentBound
+  >
+  const executable = `/installed/${PLATFORM_SLUG}`
+  Bun.spawn = ((...args: unknown[]) => {
+    launches.push(args)
+    return child
+  }) as typeof Bun.spawn
+  try {
+    expect(
+      startParentBound([executable, 'mcp', 'serve-child'], {
+        name: 'MCP server child',
+        cwd: '/work',
+        env: { PATH: '/bin' },
+      }),
+    ).toBe(child)
+    expect(launches).toEqual([
+      [
+        [executable, 'mcp', 'serve-child'],
+        {
+          cwd: '/work',
+          env: { PATH: '/bin' },
+          stdin: 'pipe',
+          stdout: 'pipe',
+          stderr: 'pipe',
+        },
+      ],
+    ])
+  } finally {
+    Bun.spawn = originalSpawn
+  }
 })

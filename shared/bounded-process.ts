@@ -50,10 +50,7 @@ function installParentBoundHooks(): void {
 }
 
 /** Start a streaming child whose lifetime is bounded by this parent instead of a deadline. */
-export function startParentBound(
-  argv: readonly string[],
-  options: ParentBoundProcessOptions,
-) {
+export function startParentBound(argv: readonly string[], options: ParentBoundProcessOptions) {
   if (!argv.length) throw new TypeError(`${options.name} requires a non-empty argv`)
   installParentBoundHooks()
   const child = Bun.spawn([...argv], {
