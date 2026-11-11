@@ -9,6 +9,7 @@ import {
   type NoteClientOptions,
 } from './note-client.ts'
 import type { NoteRow } from './note-row.ts'
+import { noteDestinationOptions } from './note-project-space.ts'
 
 export type OutsideNoteRow = NoteRow<NoteAnchorWire>
 
@@ -40,7 +41,7 @@ export async function createOutsideProjectNote(
 ): Promise<OutsideNoteRow> {
   const created = await hostedCreateOutsideNote(
     { ...input, anchor: JSON.stringify(input.anchor) },
-    hosted,
+    await noteDestinationOptions(input.project, hosted),
   )
   const at = new Date().toISOString()
   return {

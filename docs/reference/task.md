@@ -294,7 +294,7 @@ create a task in its configured destination
 
 ## bottega task prune-foreign
 
-**Synopsis:** `bottega task prune-foreign [--dry-run] [--confirm <N>] [--project <name>] [--only-present-elsewhere] [--json]`
+**Synopsis:** `bottega task prune-foreign [--space <id>] [--dry-run] [--confirm <N>] [--project <name>] [--only-present-elsewhere] [--json]`
 
 soft-delete foreign tasks from the active hosted space
 

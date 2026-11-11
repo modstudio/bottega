@@ -1,7 +1,10 @@
 import { expect, test } from 'bun:test'
 import type { HostedTask } from './hosted-tasks.ts'
 import { confirmCount } from './hosted-tasks.ts'
-import { selectForeignHostedTasks } from './task-prune-foreign.ts'
+import { declareFixtureProjectSpace } from '../test/fixture-project-space.ts'
+import { pruneForeignHostedTasks, selectForeignHostedTasks } from './task-prune-foreign.ts'
+
+declareFixtureProjectSpace('workshop', 'workshop')
 
 const task = (key: string, project: string, source: HostedTask['source'] = 'mcp'): HostedTask => ({
   id: `id-${key}`,
@@ -49,9 +52,13 @@ test('foreign task selection shares push space rules and reports own-space prese
     { name: 'other', settings: { space: 'other' } },
     { name: 'unknown-space', settings: { space: 'not-a-membership' } },
   ]
-  const selected = selectForeignHostedTasks(tasks, registered, identity, [
-    { space_id: 'space-other', key: 'OTHER-1' },
-  ])
+  const selected = selectForeignHostedTasks(
+    tasks,
+    registered,
+    identity,
+    [{ space_id: 'space-other', key: 'OTHER-1' }],
+    'space-active',
+  )
 
   expect(selected).toEqual([
     {
@@ -101,6 +108,7 @@ test('foreign task selection shares push space rules and reports own-space prese
       registered,
       identity,
       [{ space_id: 'space-other', key: 'OTHER-1' }],
+      'space-active',
       { onlyPresentElsewhere: true },
     ),
   ).toEqual([selected[1]!])
@@ -110,4 +118,52 @@ test('foreign prune uses the strict hosted confirmation policy', () => {
   expect(() => confirmCount(1, undefined, 'exact-always')).toThrow('confirmation count 1')
   expect(() => confirmCount(1, 0, 'exact-always')).toThrow('confirmation count 1')
   expect(() => confirmCount(1, 1, 'exact-always')).not.toThrow()
+})
+
+test('foreign prune requires a space and addresses list, presence, and delete to it', async () => {
+  await expect(pruneForeignHostedTasks({ dryRun: true })).rejects.toThrow('--space <id>')
+  const requests: Array<{ path: string; space: string | null }> = []
+  const fetch = async (input: string, init?: RequestInit) => {
+    const path = new URL(input).pathname
+    requests.push({ path, space: new Headers(init?.headers).get('x-record-space') })
+    if (path === '/v1/tasks/identity')
+      return Response.json({
+        userId: 'user',
+        activeSpaceId: 'space-active',
+        memberships: [
+          { spaceId: 'space-clean', slug: 'clean', permission: 'write' },
+          { spaceId: 'space-workshop', slug: 'workshop', permission: 'write' },
+        ],
+      })
+    if (path === '/v1/tasks') {
+      if (init?.method === 'DELETE')
+        return Response.json({ tasks: 1, comments: 0, documents: 0, statusEvents: 0 })
+      return Response.json({
+        tasks: [task('DEV-1', 'workshop')],
+        comments: [],
+        documents: [],
+        statusEvents: [],
+        cursor: 'done',
+        more: false,
+      })
+    }
+    if (path === '/v1/tasks/presence')
+      return Response.json({
+        present: [{ space_id: 'space-workshop', key: 'DEV-1' }],
+        refused: [],
+      })
+    return Response.json({ error: 'unexpected' }, { status: 500 })
+  }
+  await pruneForeignHostedTasks({
+    space: 'space-clean',
+    confirmation: 1,
+    baseUrl: 'https://hub.example.test',
+    token: 'session',
+    fetch,
+  })
+  expect(requests.filter((row) => row.path !== '/v1/tasks/identity')).toEqual([
+    { path: '/v1/tasks', space: 'space-clean' },
+    { path: '/v1/tasks/presence', space: 'space-clean' },
+    { path: '/v1/tasks', space: 'space-clean' },
+  ])
 })

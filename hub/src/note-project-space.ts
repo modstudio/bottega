@@ -2,12 +2,13 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { undeclaredProjectSpaceRefusal } from '../../shared/record-remedies.ts'
 import type { NoteClientOptions } from './note-client.ts'
 import { projects } from './projects.ts'
-import { hostedTaskIdentity } from './task-client.ts'
+import { hostedPersonalSpaceId, hostedTaskIdentity } from './task-client.ts'
 import { taskProjectDestination } from './task-project-space.ts'
 export async function noteDestinationOptions(
-  project: string,
+  project: string | null,
   options: NoteClientOptions = {},
 ): Promise<NoteClientOptions> {
+  if (project === null) return { ...options, recordSpace: await hostedPersonalSpaceId(options) }
   const identity = await hostedTaskIdentity(options)
   const destination = taskProjectDestination(project, projects(), identity)
   if ('refused' in destination) {

@@ -7,6 +7,9 @@ import type { OperatorWaitingItem } from '../../shared/orch-contract.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { waiting } from './orch.ts'
 import { hostedCreateOperatorWaitingEmail, hostedSignedInUserId } from './task-client.ts'
+import { hostedPersonalSpaceId } from './task-client.ts'
+import { declaredProjectSpace } from './hosted-write-mode.ts'
+import { projects } from './projects.ts'
 import { uniqueTaskRecordIdForKey } from './task-identity.ts'
 
 const DEFAULT_OPERATOR_EMAIL_DELAY_MINUTES = 30
@@ -22,6 +25,19 @@ const waitingItemRecordId = (item: WaitingEmailLedgerKey) =>
 
 const ledgerKey = (item: WaitingEmailLedgerKey) =>
   `${item.kind}\u0000${waitingItemRecordId(item)}\u0000${item.episode}`
+
+export async function operatorWaitingEmailDestination(
+  item: Pick<OperatorWaitingItem, 'project'>,
+): Promise<string> {
+  if (!item.project) return hostedPersonalSpaceId()
+  const project = projects().find((candidate) => candidate.name === item.project)
+  const space = declaredProjectSpace(project?.settings.space)
+  if (!space)
+    throw new Error(
+      `project '${item.project}' has no declared record space; run \`bottega project set ${item.project} --space <slug>\``,
+    )
+  return space
+}
 
 /** Question text reaches the caller only after this pure decision says the episode is due. */
 export function dueOperatorWaitingEmails(
@@ -110,6 +126,7 @@ export async function deliverOperatorWaitingEmails(
     taskRecordId?: (taskKey: string | null) => string | null
     record?: (item: OperatorWaitingItem) => void
     error?: (message: string) => void
+    destination?: (item: OperatorWaitingItem) => Promise<string>
   } = {},
 ): Promise<void> {
   const error = dependencies.error ?? console.error
@@ -132,24 +149,28 @@ export async function deliverOperatorWaitingEmails(
   const port = readMachineValue('hub.port')
   for (const item of due) {
     try {
-      const result = await (dependencies.push ?? hostedCreateOperatorWaitingEmail)({
-        kind: item.kind,
-        item_id: item.id,
-        item_record_id: waitingItemRecordId(item),
-        episode: item.episode,
-        project: item.project,
-        task_key: item.task_key,
-        task_id: (dependencies.taskRecordId ?? ((key) => uniqueTaskRecordIdForKey(db(), key)))(
-          item.task_key,
-        ),
-        question: item.question,
-        options: item.options,
-        recommendation: item.recommendation,
-        why: item.why,
-        waiting_since: item.waiting_since,
-        link: `http://127.0.0.1:${port}${operatorInboxPath(item.kind, item.id)}`,
-        answer_command: item.answer_command,
-      })
+      const recordSpace = await (dependencies.destination ?? operatorWaitingEmailDestination)(item)
+      const result = await (dependencies.push ?? hostedCreateOperatorWaitingEmail)(
+        {
+          kind: item.kind,
+          item_id: item.id,
+          item_record_id: waitingItemRecordId(item),
+          episode: item.episode,
+          project: item.project,
+          task_key: item.task_key,
+          task_id: (dependencies.taskRecordId ?? ((key) => uniqueTaskRecordIdForKey(db(), key)))(
+            item.task_key,
+          ),
+          question: item.question,
+          options: item.options,
+          recommendation: item.recommendation,
+          why: item.why,
+          waiting_since: item.waiting_since,
+          link: `http://127.0.0.1:${port}${operatorInboxPath(item.kind, item.id)}`,
+          answer_command: item.answer_command,
+        },
+        { recordSpace },
+      )
       if (result.status === 'failed') throw new Error(result.reason ?? 'hosted email failed')
       if (result.status === 'sent' || result.status === 'abandoned') {
         ;(dependencies.record ?? recordPushed)(item)
@@ -159,7 +180,10 @@ export async function deliverOperatorWaitingEmails(
           )
       }
     } catch (cause) {
-      error(`hub: operator waiting email push failed: ${String(cause)}`)
+      error(
+        `hub: operator waiting email push failed for ${item.kind} ${waitingItemRecordId(item)}` +
+          `${item.project ? ` in project ${item.project}` : ''}: ${String(cause)}`,
+      )
     }
   }
 }

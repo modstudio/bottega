@@ -3,7 +3,7 @@ import { jsonBody } from '../../shared/http-json.ts'
 import type { NoteAnchorWire } from '../../shared/note-anchor.ts'
 import type { HostedAcknowledgement, HostedNote, PromoteNoteInput } from './hosted-notes.ts'
 import { type HostedRequestSafety, hostedRefusalError } from './hosted-refusal.ts'
-import { sendHostedSessionRequest } from './hosted-session-send.ts'
+import { type HostedSessionMethod, sendHostedSessionRequest } from './hosted-session-send.ts'
 import type { HostedComment, HostedTask } from './hosted-tasks.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import { MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
@@ -29,7 +29,7 @@ export const isMissingHostedNote = (cause: unknown) =>
   cause instanceof HostedNoteRequestError && cause.status === 404
 async function request<T>(
   path: string,
-  method: string,
+  method: HostedSessionMethod,
   body?: unknown,
   options: Options = {},
   safety: HostedRequestSafety = 'probe',
@@ -42,16 +42,19 @@ async function request<T>(
   if (!baseUrl) throw new Error(`hosted hub is not configured. ${REMEDY}`)
   if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
   const url = `${baseUrl.replace(/\/$/, '')}${path}`
-  const response = await sendHostedSessionRequest({
+  const common = {
     origin: baseUrl,
     url,
-    method,
     body,
     token: options.token,
-    recordSpace: options.recordSpace,
     safety,
     fetch: options.fetch ?? fetch,
-  })
+  }
+  const response = await sendHostedSessionRequest(
+    method === 'GET'
+      ? { ...common, method, recordSpace: options.recordSpace }
+      : { ...common, method, recordSpace: options.recordSpace ?? '' },
+  )
   const bodyResult = await jsonBody(response, url)
   if (!bodyResult.ok)
     throw hostedRefusalError({

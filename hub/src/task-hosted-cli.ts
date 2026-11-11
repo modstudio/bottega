@@ -10,6 +10,7 @@ export async function runHostedTaskMaintenance(
     onlyPresentElsewhere?: boolean
     project?: string
     repair?: boolean
+    space?: string
   },
 ) {
   if (command === 'push') {
@@ -20,6 +21,7 @@ export async function runHostedTaskMaintenance(
   }
   const confirmation = args.confirm
   const result = await pruneForeignHostedTasks({
+    space: args.space,
     dryRun: Boolean(args.dryRun),
     confirmation: confirmation === undefined ? undefined : Number(confirmation),
     project: args.project,

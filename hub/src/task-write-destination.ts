@@ -1,4 +1,5 @@
 import { resolveHostedUrl } from './hosted-url.ts'
+import { undeclaredProjectSpaceRefusal } from '../../shared/record-remedies.ts'
 import {
   declaredProjectSpace,
   type ProjectWriteDecision,
@@ -23,7 +24,8 @@ export function registeredTaskProject(name: string) {
 
 export function hostedTaskWriteOptions(projectName: string, options?: HostedTaskWriteOptions) {
   const recordSpace = declaredProjectSpace(registeredTaskProject(projectName).settings.space)
-  return recordSpace ? { ...options, recordSpace } : options
+  if (!recordSpace) throw new Error(undeclaredProjectSpaceRefusal(projectName))
+  return { ...options, recordSpace }
 }
 
 export function taskWriteDecision(

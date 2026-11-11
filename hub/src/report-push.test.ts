@@ -23,7 +23,9 @@ test('report push sends the existing record id', async () => {
   let sent: Record<string, unknown> | undefined
   const fetch = async (input: string, init?: RequestInit) => {
     const path = new URL(input).pathname
+    if (path === '/v1/whoami') return Response.json({ personalSpaceId: 'space-personal' })
     if (path === '/v1/sends/mirror') {
+      expect(new Headers(init?.headers).get('x-record-space')).toBe('space-personal')
       sent = (JSON.parse(String(init?.body)) as { sends: Record<string, unknown>[] }).sends[0]
       return Response.json({ upserted: 1 })
     }

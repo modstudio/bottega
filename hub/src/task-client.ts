@@ -7,7 +7,7 @@ import type {
   HostedRecordChangeResult,
 } from './hosted-record-change-wire.ts'
 import { type HostedRequestSafety, hostedRefusalError } from './hosted-refusal.ts'
-import { sendHostedSessionRequest } from './hosted-session-send.ts'
+import { type HostedSessionMethod, sendHostedSessionRequest } from './hosted-session-send.ts'
 import type { HostedTaskPresencePair } from './hosted-task-prune.ts'
 import type { HostedComment, HostedDocument, HostedTask } from './hosted-tasks.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
@@ -121,7 +121,7 @@ function assertHostedTaskWriteConfigured(options: { baseUrl?: string } = {}) {
 
 async function responseObject(
   path: string,
-  method: string,
+  method: HostedSessionMethod,
   body?: unknown,
   options: HostedRequestOptions = {},
   safety: HostedRequestSafety = 'probe',
@@ -129,16 +129,19 @@ async function responseObject(
   const baseUrl = assertHostedTaskWriteConfigured(options)
   if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
   const url = `${baseUrl.replace(/\/$/, '')}${path}`
-  const response = await sendHostedSessionRequest({
+  const common = {
     origin: baseUrl,
     url,
-    method,
     body,
     token: options.token,
-    recordSpace: options.recordSpace,
     safety,
     fetch: (input, init) => hostedFetch(input, init, options),
-  })
+  }
+  const response = await sendHostedSessionRequest(
+    method === 'GET'
+      ? { ...common, method, recordSpace: options.recordSpace }
+      : { ...common, method, recordSpace: options.recordSpace ?? '' },
+  )
   const bodyResult = await jsonBody(response, url)
   const value = bodyResult.ok ? bodyResult.value : null
   if (!bodyResult.ok || !value || typeof value !== 'object' || Array.isArray(value))
@@ -153,7 +156,7 @@ async function responseObject(
 
 async function request<T>(
   path: string,
-  method: string,
+  method: HostedSessionMethod,
   body?: unknown,
   options: HostedRequestOptions = {},
   safety: HostedRequestSafety = 'probe',
@@ -429,7 +432,7 @@ export async function hostedPushChanges(
     method: 'POST',
     body,
     token: options.token,
-    recordSpace: options.recordSpace,
+    recordSpace: options.recordSpace ?? '',
     safety: 'idempotent',
     fetch: (input, init) => hostedFetch(input, init, options),
   })
@@ -615,4 +618,15 @@ export async function hostedSignedInUser(
         id: result.value.userId as string,
         name: (result.value.userName as string | null | undefined) ?? null,
       }
+}
+
+export async function hostedPersonalSpaceId(
+  options?: Parameters<typeof request>[3],
+): Promise<string> {
+  const { value } = await responseObject('/v1/whoami', 'GET', undefined, options)
+  if (typeof value.personalSpaceId !== 'string' || !value.personalSpaceId.trim())
+    throw new Error(
+      'record user has no personal space; run `bottega record sign-in` to restore the personal space',
+    )
+  return value.personalSpaceId
 }

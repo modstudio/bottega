@@ -5,19 +5,29 @@ import {
 } from '../../shared/record-remedies.ts'
 import { sendWithStoredRecordSessionToken } from '../../shared/record-session.ts'
 
-type HostedSessionRequest = {
+type HostedSessionRequestBase = {
   origin: string
   url: string
-  method: string
   body?: unknown
   token?: string | null
-  recordSpace?: string | null
   safety: HostedRequestSafety
   fetch: (input: string, init: RequestInit) => Promise<Response>
 }
 
+export type HostedSessionMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+export type HostedSessionRequest = HostedSessionRequestBase &
+  (
+    | { method: 'GET'; recordSpace?: string | null }
+    | {
+        method: Exclude<HostedSessionMethod, 'GET'>
+        recordSpace: string
+      }
+  )
+
 /** Send one hub request with either an explicit token or the process record session. */
 export async function sendHostedSessionRequest(input: HostedSessionRequest): Promise<Response> {
+  if (input.method !== 'GET' && !input.recordSpace?.trim())
+    throw new Error(`hosted write names no destination space: ${new URL(input.url).pathname}`)
   const send = async (token: string | null) => {
     if (!token) throw new Error(RECORD_SIGN_IN_REMEDY)
     try {

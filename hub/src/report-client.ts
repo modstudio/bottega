@@ -7,7 +7,8 @@ import type {
   ReportSubscriptionWriteInput,
 } from './hosted-reports.ts'
 import { HOSTED_SEND_PAGE_SIZE } from './hosted-reports.ts'
-import { sendHostedSessionRequest } from './hosted-session-send.ts'
+import { type HostedSessionMethod, sendHostedSessionRequest } from './hosted-session-send.ts'
+import { hostedPersonalSpaceId } from './task-client.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import { MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
 
@@ -22,7 +23,7 @@ export type ReportClientOptions = {
 
 async function request<T>(
   path: string,
-  method: string,
+  method: HostedSessionMethod,
   body?: unknown,
   options: ReportClientOptions = {},
   safety: HostedRequestSafety = 'probe',
@@ -31,15 +32,23 @@ async function request<T>(
   if (!baseUrl) throw new Error(`hosted hub is not configured. ${REMEDY}`)
   if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
   const url = `${baseUrl.replace(/\/$/, '')}${path}`
-  const response = await sendHostedSessionRequest({
+  const common = {
     origin: baseUrl,
     url,
-    method,
     body,
     token: options.token,
     safety,
     fetch: options.fetch ?? fetch,
-  })
+  }
+  const response = await sendHostedSessionRequest(
+    method === 'GET'
+      ? { ...common, method }
+      : {
+          ...common,
+          method,
+          recordSpace: await hostedPersonalSpaceId(options),
+        },
+  )
   const bodyResult = await jsonBody(response, url)
   if (!bodyResult.ok)
     throw hostedRefusalError({
