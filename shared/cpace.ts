@@ -26,12 +26,12 @@ export interface CpaceParty {
 export type CpaceRefusalCause = 'undecodable-share' | 'identity-share'
 
 export class CpaceRefusal extends Error {
-  override readonly cause: CpaceRefusalCause
+  readonly reason: CpaceRefusalCause
 
-  constructor(cause: CpaceRefusalCause) {
-    super(`CPace refused the peer's ${cause}`)
+  constructor(reason: CpaceRefusalCause, options?: ErrorOptions) {
+    super(`CPace refused the peer's ${reason}`, options)
     this.name = 'CpaceRefusal'
-    this.cause = cause
+    this.reason = reason
   }
 }
 
@@ -105,8 +105,8 @@ function verifiedProduct(scalar: bigint, peerShare: Uint8Array): Uint8Array {
   let peerPoint: InstanceType<typeof ristretto255.Point>
   try {
     peerPoint = ristretto255.Point.fromBytes(peerShare)
-  } catch {
-    throw new CpaceRefusal('undecodable-share')
+  } catch (error) {
+    throw new CpaceRefusal('undecodable-share', { cause: error })
   }
   if (peerPoint.is0()) {
     throw new CpaceRefusal('identity-share')

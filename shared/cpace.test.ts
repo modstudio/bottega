@@ -57,13 +57,14 @@ function concatenate(...values: Uint8Array[]): Uint8Array {
   return Uint8Array.from(values.flatMap((value) => Array.from(value)))
 }
 
-function expectRefusal(action: () => unknown, cause: CpaceRefusalCause): void {
+function expectRefusal(action: () => unknown, reason: CpaceRefusalCause): CpaceRefusal {
   try {
     action()
     throw new Error('expected CPace refusal')
   } catch (error) {
     expect(error).toBeInstanceOf(CpaceRefusal)
-    expect((error as CpaceRefusal).cause).toBe(cause)
+    expect((error as CpaceRefusal).reason).toBe(reason)
+    return error as CpaceRefusal
   }
 }
 
@@ -127,9 +128,9 @@ describe('CPace draft vectors', () => {
     expect(party.finish(peerShare, new Uint8Array())).toEqual(expected)
   })
 
-  test('refuses the draft invalid encodings by cause', () => {
+  test('refuses the draft invalid encodings by reason', () => {
     const inputs = { ...vectorInputs, ad: bytes(B_3_9.ADa) }
-    expectRefusal(
+    const undecodableRefusal = expectRefusal(
       () =>
         startCpaceWithScalar('initiator', inputs, bytes(B_3_11_1.Valid.s)).finish(
           bytes(B_3_11_1['Invalid Y1']),
@@ -137,6 +138,7 @@ describe('CPace draft vectors', () => {
         ),
       'undecodable-share',
     )
+    expect(undecodableRefusal.cause).toBeInstanceOf(Error)
     expectRefusal(
       () =>
         startCpaceWithScalar('initiator', inputs, bytes(B_3_11_1.Valid.s)).finish(
