@@ -15,6 +15,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
   module('orchestrator/src/run/collect-change.ts', [
     '../../../shared/orch-contract.ts',
     '../database/db.ts',
+    '../workflow/task-flow-store.ts',
   ]),
   module('orchestrator/src/run/question-vocabulary.ts', ['../../../shared/question-vocabulary.ts']),
   module('orchestrator/src/run/question-mutation.ts', [
@@ -22,6 +23,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     '../../../shared/record-id.ts',
     '../caller-classification.ts',
     '../database/db.ts',
+    '../workflow/task-flow-store.ts',
     './question-number.ts',
     './question-open.ts',
     './question-outbox.ts',
@@ -41,6 +43,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
   module('orchestrator/src/run/ruling-list.ts', [
     '../../../shared/orch-contract.ts',
     '../database/db.ts',
+    '../workflow/task-flow-store.ts',
     './question-open.ts',
     './collect-change.ts',
   ]),
@@ -55,6 +58,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
   module('orchestrator/src/run/ruling-overturn.ts', [
     '../../../shared/brand.ts',
     '../database/db.ts',
+    '../workflow/task-flow-store.ts',
     './question-vocabulary.ts',
     './question-mutation.ts',
     './question-outbox.ts',
@@ -69,6 +73,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     '../caller-classification.ts',
     '../dashboard-capability.ts',
     '../database/db.ts',
+    '../workflow/task-flow-store.ts',
     './question-mutation.ts',
     './question-open.ts',
     './question-outbox.ts',
@@ -91,6 +96,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     '../run/question-outbox.ts',
     '../run/question-open.ts',
     '../workflow/autonomy-scopes.ts',
+    '../workflow/task-flow-store.ts',
   ]),
   module('orchestrator/src/operator/operator-commands.ts', [
     '../../../shared/orch-contract.ts',

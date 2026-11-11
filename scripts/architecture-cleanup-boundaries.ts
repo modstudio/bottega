@@ -231,6 +231,7 @@ export const cleanupBoundarySpecs = [
       '../run/synthetic-lifecycle-job.ts',
       '../sandbox/grok-trust.ts',
       '../ship-cleanup/ship-cleanup.ts',
+      '../workflow/task-flow-store.ts',
       '../worktree/worktree-remove.ts',
       './session-close-out-decision.ts',
       './session-close-out-obligation-adapter.ts',

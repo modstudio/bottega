@@ -538,6 +538,7 @@ export const recordModules: RecordModule[] = [
     '../record/outbox-prune-payload.ts',
     '../record/outbox-sanitize.ts',
     '../record/outbox-serialize.ts',
+    '../workflow/task-flow-store.ts',
   ]),
   module('orchestrator/src/record/outbox-sanitize.ts', [
     '../../../shared/secret-shaped.ts',
@@ -630,6 +631,7 @@ export const recordModules: RecordModule[] = [
     '../database/db.ts',
     '../postgres/postgres-migrate.ts',
     '../run/run-outbox.ts',
+    '../workflow/task-flow-store.ts',
     './machine-identity.ts',
     './outbox-quarantine.ts',
     './record-api-client.ts',

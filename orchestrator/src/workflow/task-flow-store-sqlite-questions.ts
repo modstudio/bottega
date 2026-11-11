@@ -33,7 +33,10 @@ export const waitingWorkflowQuestions = <T extends object>(database: Database): 
     )
     .all()
 
-export const cursorWorkForSession = <T extends object>(database: Database, sessionId: string): T[] =>
+export const cursorWorkForSession = <T extends object>(
+  database: Database,
+  sessionId: string,
+): T[] =>
   database
     .query<T, [string]>(
       "SELECT workflow_key key,closed FROM workflow_cursor WHERE session_id=? AND workflow_key<>''",

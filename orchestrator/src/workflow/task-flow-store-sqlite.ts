@@ -3,19 +3,22 @@
 
 import type { Database } from 'bun:sqlite'
 import { questionOpenSql } from '../run/question-open.ts'
+import * as questions from './task-flow-store-sqlite-questions.ts'
 import type {
   TaskFlowProjectionRow,
   TaskFlowStageCursorRow,
-  TaskFlowStore,
   WorkflowCursorInsert,
-} from './task-flow-store.ts'
-import * as questions from './task-flow-store-sqlite-questions.ts'
+} from './task-flow-store-types.ts'
 
 const LISTED_STAGE_COLUMNS =
   "number id,record_id,project,workflow_slug,mode_slug,workflow_key,task_record_id,task_flow_record_id,instance_id,session_id,ordinal,step_slug,state,workflow_version_record_id,catalogue_version_record_id,(SELECT n FROM workflow_version WHERE record_id=workflow_version_record_id) workflow_version,(SELECT n FROM step_catalogue_version WHERE record_id=catalogue_version_record_id) catalogue_version,args,autonomy,closed,question,total_steps,created_at,updated_at,enforcement,opened_machine_id,taken_over_from_machine_id,last_advanced_machine_id,revision,(SELECT COUNT(*) FROM workflow_cursor stage WHERE stage.task_flow_record_id=workflow_cursor.task_flow_record_id AND stage.state NOT IN ('done','abandoned')) open_stage_count"
 
-class SqliteTaskFlowStore implements TaskFlowStore {
-  constructor(private readonly database: Database) {}
+class SqliteTaskFlowStore {
+  private readonly database: Database
+
+  constructor(database: Database) {
+    this.database = database
+  }
 
   retireStageIdentity(input: {
     project: string
@@ -1038,6 +1041,6 @@ class SqliteTaskFlowStore implements TaskFlowStore {
   }
 }
 
-export function sqliteTaskFlowStore(database: Database): TaskFlowStore {
+export function sqliteTaskFlowStore(database: Database): SqliteTaskFlowStore {
   return new SqliteTaskFlowStore(database)
 }

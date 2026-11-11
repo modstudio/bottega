@@ -31,6 +31,7 @@ export const sessionLossesModules: SessionLossesModule[] = [
     '../run/run-artifacts.ts',
     '../run/run-dispatch.ts',
     '../run/run-status.ts',
+    '../workflow/task-flow-store.ts',
     './session-losses.ts',
   ]),
   module('orchestrator/src/session-losses/session-losses-format.ts', [

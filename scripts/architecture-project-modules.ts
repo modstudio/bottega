@@ -133,6 +133,7 @@ export const projectModules: ProjectModule[] = [
   module('orchestrator/src/project/project-rename.ts', [
     'bun:sqlite',
     '../database/db.ts',
+    '../workflow/task-flow-store.ts',
     './projects.ts',
   ]),
   module('orchestrator/src/project/project-retired-hosted.ts', ['../../../shared/brand.ts']),
