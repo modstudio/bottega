@@ -55,7 +55,10 @@ export const SPACE_TEARDOWN_EXCLUSIONS = {
   secret_dek: 'deleted by the trial teardown definer function; actor DELETE is revoked',
   user: 'personal_space_id and last_active_space_id are ON DELETE SET NULL',
 } as const
-export const PROJECT_PURGE_EXCLUSIONS: Readonly<Record<string, string>> = {}
+export const PROJECT_PURGE_EXCLUSIONS = {
+  public_doc_space:
+    'purge refuses a publicly listed project, so no row can remain, and record_actor holds no DELETE on the table by design',
+} as const
 
 function foreignKeyFacts(tables: readonly PgTable[] = hostedRecordTables): ForeignKeyFact[] {
   return tables.flatMap((item) =>

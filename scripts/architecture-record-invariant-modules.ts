@@ -76,8 +76,10 @@ export const recordInvariantModules = [
     '../../../shared/brand.ts',
     '../../../shared/record/tenant.ts',
     './record-pool.ts',
+    './record-project-purge-contract.ts',
     './record-space-teardown-plan.ts',
   ]),
+  module('orchestrator/src/record/record-project-purge-contract.ts', []),
   module('orchestrator/src/record/record-space-teardown-plan.ts', [
     'drizzle-orm/pg-core',
     '../../../shared/record/schema.ts',

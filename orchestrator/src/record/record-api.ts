@@ -83,7 +83,7 @@ import type {
   RecordDocOrderInput,
   RecordDocRevision,
 } from './record-docs.ts'
-import type { RecordProjectPurgeResult } from './record-project-purge.ts'
+import type { RecordProjectPurgeResult } from './record-project-purge-contract.ts'
 import type { RecordProjectUpsertInput } from './record-projects.ts'
 import type {
   PublicRecordDoc,

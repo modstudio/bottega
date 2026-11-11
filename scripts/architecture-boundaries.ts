@@ -749,6 +749,7 @@ export const importBoundaries: ImportBoundary[] = [
       'hono',
       'zod',
       './record-auth.ts',
+      './record-project-purge-contract.ts',
       './record-projects.ts',
     ],
     'Keep hosted project routes independent of SQL and local execution.',

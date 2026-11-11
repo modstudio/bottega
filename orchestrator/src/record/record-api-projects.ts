@@ -4,7 +4,7 @@ import type { Context, Hono } from 'hono'
 import { z } from 'zod'
 import type { RecordProject } from '../../../shared/record-project-contract.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import type { RecordProjectPurgeResult } from './record-project-purge.ts'
+import type { RecordProjectPurgeResult } from './record-project-purge-contract.ts'
 import type { RecordProjectUpsertInput } from './record-projects.ts'
 
 type ApiEnvironment = { Variables: { identity: RecordIdentity } }

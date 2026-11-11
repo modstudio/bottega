@@ -6,7 +6,7 @@ import {
   type RecordProject,
   RecordProjectsSchema,
 } from '../../../shared/record-project-contract.ts'
-import type { RecordProjectPurgeResult } from './record-project-purge.ts'
+import type { RecordProjectPurgeResult } from './record-project-purge-contract.ts'
 
 export type RecordRequestDestination = { destinationSpaceId?: string }
 export type RecordApiAuthentication = {

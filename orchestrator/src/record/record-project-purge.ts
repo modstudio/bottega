@@ -4,6 +4,7 @@ import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bindTenant } from '../../../shared/record/tenant.ts'
 import { recordPool } from './record-pool.ts'
+import type { RecordProjectPurgeResult } from './record-project-purge-contract.ts'
 import { PROJECT_PURGE_PLAN, type RecordTeardownReach } from './record-space-teardown-plan.ts'
 
 class RecordProjectPurgeError extends Error {
@@ -20,12 +21,6 @@ export type ProjectPurgeFacts = {
 export type ProjectPurgeDecision =
   | { allowed: true; nothing: boolean }
   | { allowed: false; refusal: string }
-export type RecordProjectPurgeResult = {
-  nothingToRemove: boolean
-  tables: Array<{ table: string; count: number }>
-  project: number
-}
-
 export function decideProjectPurge(facts: ProjectPurgeFacts): ProjectPurgeDecision {
   if (!facts.exists) return { allowed: true, nothing: true }
   if (facts.confirmation !== facts.name)
