@@ -78,6 +78,17 @@ function logRecordCacheCounts(
   if (result.purgeWarning) presentation.log(`record cache purge warning: ${result.purgeWarning}`)
 }
 
+function logHeldRows(
+  result: Awaited<ReturnType<typeof syncRecord>>,
+  presentation: { log(value: string): void },
+): void {
+  for (const line of heldOutboxLines(result.held ?? [])) presentation.log(line)
+  for (const line of routingHeldOutboxLines(result.routingHeld ?? [])) presentation.log(line)
+  for (const line of routingHeldOutboxLines(result.parentDeferred ?? [])) presentation.log(line)
+  for (const line of quarantinedParentHeldLines(result.quarantinedParentHolds ?? []))
+    presentation.log(line)
+}
+
 export function quarantinedParentHeldLines(
   rows: NonNullable<Awaited<ReturnType<typeof syncRecord>>['quarantinedParentHolds']>,
 ): string[] {
@@ -140,8 +151,5 @@ export async function syncCommand(
   for (const line of quarantinedOutboxLines(result.quarantined)) presentation.log(line)
   for (const line of blockedOutboxLines(result.blocked)) presentation.log(line)
   for (const line of readOnlyDeferredLines(result.readOnlyDeferred ?? [])) presentation.log(line)
-  for (const line of heldOutboxLines(result.held ?? [])) presentation.log(line)
-  for (const line of routingHeldOutboxLines(result.routingHeld ?? [])) presentation.log(line)
-  for (const line of quarantinedParentHeldLines(result.quarantinedParentHolds ?? []))
-    presentation.log(line)
+  logHeldRows(result, presentation)
 }
