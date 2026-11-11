@@ -14,6 +14,9 @@ test('reports destination-less writes by patterned route and client cause', asyn
   const app = appWith(identity, {
     postBoardMessage: async () => ({ id }),
     hideRow: async () => ({}),
+    syncRecord: async (input: { request: { rows: Array<{ id: number }> } }) => ({
+      results: input.request.rows.map((row) => ({ id: row.id, status: 'synced' as const })),
+    }),
   })
   const write = (
     target: typeof app,
@@ -53,7 +56,12 @@ test('reports destination-less writes by patterned route and client cause', asyn
       )
     ).status,
   ).toBe(200)
-  expect((await write(app, '/v1/sync', {})).status).toBe(501)
+  const syncRequest = (spaceHint: string | null) => ({
+    machine: { id, name: 'fixture', seenAt: '2026-11-10T12:00:00.000Z' },
+    rows: [{ id: 1, kind: 'run', payload: '{}', spaceHint }],
+  })
+  expect((await write(app, '/v1/sync', syncRequest('space-a'))).status).toBe(200)
+  expect((await write(app, '/v1/sync', syncRequest(null))).status).toBe(200)
 
   const spaceBIdentity: RecordIdentity = {
     ...identity,
