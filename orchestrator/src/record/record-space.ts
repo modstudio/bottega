@@ -73,9 +73,10 @@ export function recordMembershipsFromIdentity(identity: RecordIdentity): {
 }
 
 export async function listRecordSpaceConfigAccess(
+  destinationSpaceId?: string,
   client: Pick<RecordApiClient, 'listConfigAccess'> = recordApiClient(),
 ) {
-  return (await client.listConfigAccess()).items
+  return (await client.listConfigAccess(destinationSpaceId)).items
 }
 
 export async function grantRecordSpaceConfigAccess(
@@ -344,6 +345,14 @@ export async function inviteToRecordSpace(
     organizationId: destinationSpaceId,
   })
   return invitation.id
+}
+
+export async function removeRecordSpaceMember(
+  email: string,
+  destinationSpaceId: string,
+  client: Pick<RecordApiClient, 'removeMember'> = recordApiClient(),
+): Promise<void> {
+  await client.removeMember({ email, organizationId: destinationSpaceId })
 }
 
 export async function pendingRecordInvitations(
