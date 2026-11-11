@@ -255,10 +255,16 @@ function observeOwnedBranch(
               run.project === item.project && run.mintedBranch === item.branch && run.worktree,
           )?.worktree ?? 'checked out')
         : null,
-      remedy:
-        row.state === 'superseded'
-          ? branchVerdictRemedy(row.state, item.project, item.branch, item.taskKey)
-          : `${PLATFORM_SLUG} tree branch dispose ${item.project}:${item.branch} --reason <abandoned|superseded|throwaway> --note "<why>"`,
+      remedy: branchVerdictRemedy(
+        row.state === 'unknown'
+          ? 'unknown'
+          : row.state === 'superseded'
+            ? 'superseded'
+            : 'unlanded',
+        item.project,
+        item.branch,
+        item.taskKey,
+      ),
     },
   }
 }

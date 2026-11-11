@@ -1,7 +1,7 @@
 // concern: cleanup sweep reclamation
 /** Adapts ordinary branch and residue reclaim paths to sweep presentation. */
 import { existsSync } from 'node:fs'
-import { pruneProjectBranches } from '../branch/branches.ts'
+import { type BranchPruneReport, pruneProjectBranches } from '../branch/branches.ts'
 import { db } from '../database/db.ts'
 import type { Project } from '../project/projects.ts'
 import { reclaimResidue } from '../reclaim/reclaim-residue.ts'
@@ -81,6 +81,14 @@ export function reclaimAbsentTrustEntries(input: {
   return failed
 }
 
+function sweptBranchKeepLine(
+  project: string,
+  kept: BranchPruneReport['kept'][number],
+): string {
+  const remedy = kept.remedy ? `; remedy: ${kept.remedy}` : ''
+  return `${project} branches: kept ${kept.branch} (${kept.reason})${remedy}`
+}
+
 export function pruneSweptProjectBranches(input: {
   dryRun: boolean
   projects: readonly Project[]
@@ -94,6 +102,8 @@ export function pruneSweptProjectBranches(input: {
       input.presentation.log(
         `${project.name} branches: ${input.dryRun ? 'would delete' : 'deleted'} ${deleted}, kept ${report.kept.length}`,
       )
+      for (const kept of report.kept)
+        input.presentation.log(sweptBranchKeepLine(project.name, kept))
       for (const error of report.errors)
         input.presentation.error(`${project.name} branches: ${error}`)
       failed ||= report.errors.length > 0

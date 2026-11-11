@@ -3,6 +3,7 @@ import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
+import { branchVerdictRemedy } from '../branch/branch-prune-remedy.ts'
 import { assertBranchRefMayBeDeleted, restoreBranch } from '../branch/branch-ref-guard.ts'
 import { branchRows, type ReclaimRun, settleDeletedBranch } from '../branch/branch-settlement.ts'
 import { type BranchLanding, isPruneSafeLandingState } from '../branch/branch-state.ts'
@@ -71,6 +72,22 @@ function git(cwd: string, args: string[]): { ok: boolean; out: string } {
 
 function refuse(missing: string): ReclaimResult {
   return { ok: false, action: `refused; ${missing}` }
+}
+
+function unreachableBranchRefusal(input: {
+  state: 'superseded' | 'unlanded' | 'unknown'
+  project: string
+  branch: string
+  trunk: string
+  absent: readonly string[]
+}): ReclaimResult {
+  const remedy =
+    input.state === 'superseded'
+      ? branchVerdictRemedy('superseded', input.project, input.branch, null)
+      : `prove a landing with ${PLATFORM_SLUG} tree branch landed ${input.branch} --pr <number>, or delete it by hand with git branch -D ${input.branch}`
+  return refuse(
+    `branch classification is ${input.state}; commits unreachable from landing branch ${input.trunk}: ${input.absent.join(', ')}; ${remedy}`,
+  )
 }
 
 function runRows(path: string): ReclaimRun[] {
@@ -526,10 +543,13 @@ export function reclaimBranch(
     })
     if (!evidence.allowed) {
       return {
-        result: refuse(
-          `branch classification is ${evidence.state}; commits unreachable from landing branch ${trunk}: ${absent.join(', ')}; ` +
-            `prove a landing with ${PLATFORM_SLUG} tree branch landed ${branch} --pr <number>, or delete it by hand with git branch -D ${branch}`,
-        ),
+        result: unreachableBranchRefusal({
+          state: evidence.state,
+          project: projectName,
+          branch,
+          trunk,
+          absent,
+        }),
       }
     }
     const proof =

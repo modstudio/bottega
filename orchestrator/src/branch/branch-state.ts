@@ -242,7 +242,14 @@ export type PruneEligibility =
   | { eligible: true }
   | {
       eligible: false
-      reason: 'throwaway' | 'unlanded' | 'unknown' | 'checked-out' | 'live' | 'tip-moved'
+      reason:
+        | 'throwaway'
+        | 'superseded'
+        | 'unlanded'
+        | 'unknown'
+        | 'checked-out'
+        | 'live'
+        | 'tip-moved'
     }
 
 type PruneEligibilityReason = Extract<PruneEligibility, { eligible: false }>['reason']
@@ -266,7 +273,7 @@ export function isPruneSafeLandingState(
 export type MintedBranchVerdict =
   | { verdict: 'delete' }
   | { verdict: 'throwaway' }
-  | { verdict: 'keep'; reason: 'unlanded' | 'unknown' }
+  | { verdict: 'keep'; reason: 'superseded' | 'unlanded' | 'unknown' }
 
 export function isProbeOnlyMint(probes: readonly boolean[]): boolean {
   return probes.length > 0 && probes.every(Boolean)
@@ -279,6 +286,7 @@ export function decideMintedBranchVerdict(input: {
 }): MintedBranchVerdict {
   if (isPruneSafeLandingState(input.state)) return { verdict: 'delete' }
   if (input.probeOnly) return { verdict: 'throwaway' }
+  if (input.state === 'superseded') return { verdict: 'keep', reason: 'superseded' }
   return { verdict: 'keep', reason: input.state === 'unknown' ? 'unknown' : 'unlanded' }
 }
 

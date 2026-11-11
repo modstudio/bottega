@@ -586,18 +586,33 @@ function listOperatorBranch(
       command: `git branch -D ${row.branch}`,
     })
   }
-  report.kept.push({
-    branch: row.branch,
-    reason: eligibility.reason,
-    remedy: branchVerdictRemedy(
-      row.probeOnly ? 'throwaway' : row.state,
-      report.project,
-      row.branch,
-      key,
-    ),
-  })
+  keepTaskBranch(report, row.branch, eligibility.reason, key)
   if (row.state === 'unknown' && row.error) report.errors.push(`${row.branch}: ${row.error}`)
   return true
+}
+
+function keepTaskBranch(
+  report: BranchPruneReport,
+  branch: string,
+  reason: import('./branch-state.ts').BranchPruneKeptReason,
+  key: string | null,
+  holdingPath?: string | null,
+): void {
+  const remedyReason =
+    reason === 'throwaway' ||
+    reason === 'superseded' ||
+    reason === 'unlanded' ||
+    reason === 'unknown'
+      ? reason
+      : null
+  report.kept.push({
+    branch,
+    reason,
+    ...(holdingPath !== undefined ? { holdingPath } : {}),
+    ...(remedyReason
+      ? { remedy: branchVerdictRemedy(remedyReason, report.project, branch, key) }
+      : {}),
+  })
 }
 
 function tipStillEligible(
@@ -627,13 +642,7 @@ function tipStillEligible(
     tipMoved: currentTip !== row.tip,
   })
   if (eligibility.eligible) return true
-  report.kept.push({
-    branch: row.branch,
-    reason: eligibility.reason,
-    ...(row.state === 'superseded'
-      ? { remedy: branchVerdictRemedy('superseded', report.project, row.branch, report.key) }
-      : {}),
-  })
+  keepTaskBranch(report, row.branch, eligibility.reason, report.key)
   return false
 }
 
@@ -676,14 +685,13 @@ function deleteAndSettleBranch(
         tipMoved: currentTip !== row.tip,
       })
       if (!eligibility.eligible) {
-        report.kept.push({
-          branch: row.branch,
-          reason: eligibility.reason,
-          ...(eligibility.reason === 'checked-out' ? { holdingPath } : {}),
-          ...(row.state === 'superseded'
-            ? { remedy: branchVerdictRemedy('superseded', report.project, row.branch, report.key) }
-            : {}),
-        })
+        keepTaskBranch(
+          report,
+          row.branch,
+          eligibility.reason,
+          report.key,
+          eligibility.reason === 'checked-out' ? holdingPath : undefined,
+        )
         return
       }
       writableDb()

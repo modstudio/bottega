@@ -498,6 +498,9 @@ describe('branch prune eligibility decision', () => {
             expect(result.eligible).toBe(
               ['landed', 'empty'].includes(state) && !checkedOut && !liveRun && !tipMoved,
             )
+            if (state === 'superseded' && !checkedOut && !liveRun && !tipMoved) {
+              expect(result).toEqual({ eligible: false, reason: 'superseded' })
+            }
           })
         }
       }
