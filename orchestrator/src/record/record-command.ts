@@ -35,6 +35,7 @@ import {
   grantRecordSpaceConfigAccess,
   hideRecordSpaceRow,
   inviteToRecordSpace,
+  removeRecordSpaceMember,
   listRecordSpaceConfigAccess,
   listRecordSpaceHiddenRows,
   listRecordSpaceOutsideBlocks,
@@ -401,6 +402,18 @@ export async function recordSpaceInviteCommand(
     await recordSpaceWriteDestination('record space invite', space),
   )
   presentation.log(id)
+}
+
+export async function recordSpaceMemberRemoveCommand(
+  email: string,
+  space: string | undefined,
+  presentation: Presentation,
+): Promise<void> {
+  await removeRecordSpaceMember(
+    email,
+    await recordSpaceWriteDestination('record space member remove', space),
+  )
+  presentation.log(`removed ${email} from ${space}`)
 }
 
 async function recordSpaceWriteDestination(

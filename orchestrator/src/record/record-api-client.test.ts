@@ -24,6 +24,7 @@ import {
   recordAuthRefusal,
   recordAuthToken,
   recordIdentityResponse,
+  recordIdentityAndSpaceClient,
   recordInvitationListResponse,
 } from './record-api-client.ts'
 import { classifyBoardStreamResponse } from './record-api-client-board-stream.ts'
@@ -167,6 +168,29 @@ test('a generic client refusal retains the server remedy', () => {
     recordApiError({ error: 'the write names no space', remedy: 'retry with --space <slug>' }, 409)
       .message,
   ).toBe('the write names no space\nretry with --space <slug>')
+})
+
+test('member removal posts the email and resolved organization id', async () => {
+  const calls: Array<{ path: string; init?: RequestInit }> = []
+  const client = recordIdentityAndSpaceClient(async (path, init) => {
+    calls.push({ path, init })
+    return undefined
+  })
+
+  await client.removeMember({ email: 'member@example.test', organizationId: 'space-a' })
+
+  expect(calls).toEqual([
+    {
+      path: '/api/auth/organization/remove-member',
+      init: {
+        method: 'POST',
+        body: JSON.stringify({
+          memberIdOrEmail: 'member@example.test',
+          organizationId: 'space-a',
+        }),
+      },
+    },
+  ])
 })
 
 test('the record API base URL resolves from configured files', () => {

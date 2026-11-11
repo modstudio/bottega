@@ -346,6 +346,14 @@ export async function inviteToRecordSpace(
   return invitation.id
 }
 
+export async function removeRecordSpaceMember(
+  email: string,
+  destinationSpaceId: string,
+  client: Pick<RecordApiClient, 'removeMember'> = recordApiClient(),
+): Promise<void> {
+  await client.removeMember({ email, organizationId: destinationSpaceId })
+}
+
 export async function pendingRecordInvitations(
   client: Pick<RecordApiClient, 'listInvitations'> = recordApiClient(),
 ) {

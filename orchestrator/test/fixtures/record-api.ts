@@ -234,6 +234,7 @@ export function unusedIdentityAndSpaceClientMethods(): Pick<
   | 'listInvitations'
   | 'acceptInvitation'
   | 'inviteMember'
+  | 'removeMember'
   | 'listConfigAccess'
   | 'grantConfigAccess'
   | 'withdrawConfigAccess'
@@ -258,6 +259,7 @@ export function unusedIdentityAndSpaceClientMethods(): Pick<
     listInvitations: unusedIdentityAndSpace,
     acceptInvitation: unusedIdentityAndSpace,
     inviteMember: unusedIdentityAndSpace,
+    removeMember: unusedIdentityAndSpace,
     listConfigAccess: unusedIdentityAndSpace,
     grantConfigAccess: unusedIdentityAndSpace,
     withdrawConfigAccess: unusedIdentityAndSpace,
@@ -566,6 +568,7 @@ export function createMemoryRecordApiClient(
     async inviteMember() {
       return { id: newRecordId() }
     },
+    async removeMember() {},
     async putSnapshot() {
       return { takenAt: new Date().toISOString() }
     },

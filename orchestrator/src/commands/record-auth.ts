@@ -55,6 +55,7 @@ import {
   recordSpaceIntakeUnblockCommand,
   recordSpaceInvitationsCommand,
   recordSpaceInviteCommand,
+  recordSpaceMemberRemoveCommand,
   recordSpaceListCommand,
   recordSpaceMoveProjectCommand,
   recordSpaceSwitchCommand,
@@ -258,6 +259,18 @@ function registerSpaceCommands(record: Command): void {
           options.space,
           presentation,
         ),
+      ),
+    )
+  space
+    .command('member')
+    .description('manage hosted record space members')
+    .command('remove')
+    .description('remove a member from a hosted record space')
+    .argument('<email>')
+    .requiredOption('--space <slug>', 'record space to remove the member from')
+    .action((email, options) =>
+      hostedCommand(`${PLATFORM_SLUG} record space member remove`, () =>
+        recordSpaceMemberRemoveCommand(String(email), String(options.space), presentation),
       ),
     )
   space

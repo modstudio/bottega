@@ -3,6 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   createRecordSpace,
   pendingRecordInvitations,
+  removeRecordSpaceMember,
   recordMembershipsFromIdentity,
   recordSpaceCreateReport,
   recordSpaceRole,
@@ -11,6 +12,28 @@ import {
 } from './record-space.ts'
 
 describe('record space decisions', () => {
+  test('removes the email from the resolved destination space', async () => {
+    const calls: Array<{ email: string; organizationId: string }> = []
+    await removeRecordSpaceMember('member@example.test', 'space-a', {
+      removeMember: async (input) => {
+        calls.push(input)
+      },
+    })
+    expect(calls).toEqual([{ email: 'member@example.test', organizationId: 'space-a' }])
+  })
+
+  test('preserves a member removal refusal from the record', async () => {
+    const refusal =
+      'removing member@example.test would strand config secrets\ncleared by: transfer them'
+    await expect(
+      removeRecordSpaceMember('member@example.test', 'space-a', {
+        removeMember: async () => {
+          throw new Error(refusal)
+        },
+      }),
+    ).rejects.toThrow(refusal)
+  })
+
   test('returns active spaces from before and after creation', async () => {
     const identities = [
       {
