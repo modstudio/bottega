@@ -19,6 +19,10 @@
     "shared/record/schema-snapshots.ts": ["exports", "types"],
     // Cross-concern session API includes clear before its sign-out caller lands.
     "shared/record-session.ts": ["exports"],
+    // Pure CPace core and pairing code; the machine-join exchange slice is their caller.
+    "shared/cpace.ts": ["files"],
+    "shared/pairing-code.ts": ["files"],
+    "shared/pgp-word-list.ts": ["files"],
     // Lazy-required from transport.ts; knip does not follow that require as export use.
     "orchestrator/src/transport/ajv-validator.ts": ["exports"],
     // rehearse.sh's eval imports the export.
@@ -79,8 +83,13 @@
         "scripts/architecture.ts!"
       ],
       "drizzle": { "config": ["shared/record/drizzle.config.ts"] },
-      // Invoked through node_modules/.bin/depcruise in scripts/architecture-cruise.ts.
-      "ignoreDependencies": ["dependency-cruiser"]
+      "ignoreDependencies": [
+        // Invoked through node_modules/.bin/depcruise in scripts/architecture-cruise.ts.
+        "dependency-cruiser",
+        // Pure CPace core and pairing code; the machine-join exchange slice is their caller.
+        "@noble/curves",
+        "@noble/hashes"
+      ]
     },
     "cli": {
       "entry": ["bottega.ts!"],
