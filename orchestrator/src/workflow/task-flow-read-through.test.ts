@@ -7,8 +7,8 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
-import { rememberProjectSpace } from '../project-space-cache.ts'
 import { rememberActiveRecordSpace } from '../project-space.ts'
+import { rememberProjectSpace } from '../project-space-cache.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
 import {
   type HostedTaskFlow,
