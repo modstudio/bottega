@@ -14,10 +14,13 @@ import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { linkWorkflowQuestionsTaskReference } from '../run/question-mutation.ts'
 import { cacheAdoptedTaskFlow } from './task-flow.ts'
 import {
+  findWorkflowCursor,
+  readThroughWorkflowCursorContext,
   resolveWorkflowCursorMode,
   type SelectableCursorRow,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
+import { refuseTerminalCursor } from './workflow-cursor-result.ts'
 
 export async function linkWorkflowTaskLabel(
   database: Database,
@@ -123,17 +126,20 @@ export async function resolveLinkedWorkflowCursorMode(
   database: Database = writableDb(),
   selectedRow?: SelectableCursorRow,
 ): Promise<string> {
-  return withLinkedWorkflowTask(project, context, database, () =>
-    resolveWorkflowCursorMode(
-      slug,
-      project,
-      requested,
-      args,
-      context,
-      caller,
-      remedy,
-      database,
-      selectedRow,
-    ),
+  const mode = resolveWorkflowCursorMode(
+    slug,
+    project,
+    requested,
+    args,
+    context,
+    caller,
+    remedy,
+    database,
+    selectedRow,
   )
+  const local = selectedRow ?? findWorkflowCursor(project, slug, mode, args, context, database)
+  if (local) refuseTerminalCursor(local)
+  await readThroughWorkflowCursorContext(project, context, database)
+  await linkResolvedWorkflowTask(project, context, database)
+  return mode
 }

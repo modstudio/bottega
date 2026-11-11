@@ -19,6 +19,7 @@ import { closeOpenWorkflowQuestion } from './workflow-cursor-mutation.ts'
 import { refuseInvalidServe } from './workflow-cursor-result.ts'
 import {
   findWorkflowCursor,
+  readThroughWorkflowCursorContext,
   type SelectableCursorRow,
   selectUntouchedKeylessWorkflowCursor,
   type WorkflowCursorContext,
@@ -32,7 +33,7 @@ import {
   stepPass,
 } from './workflow-cursor-transition.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
-import { withLinkedWorkflowTask } from './workflow-task-linking.ts'
+import { linkResolvedWorkflowTask } from './workflow-task-linking.ts'
 import { withWorkflowTextFacts } from './workflow-text.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
@@ -119,9 +120,24 @@ async function prepareStepServe(
   const index = composition.steps.findIndex((step) => step.slug === resolvedStepSlug)
   if (index < 0) throw new Error(`workflow "${slug}" has no step "${resolvedStepSlug}"`)
   const requested = composition.steps[index]!
-  if (index === 0 && startDecision === 'retire')
-    row = await insertWorkflowCursor(composition, context, database, autonomy, commitCount)
   return { row, opensCursor, composition, requested, index, input, resolvedArguments }
+}
+
+function serveDecision(
+  prepared: Awaited<ReturnType<typeof prepareStepServe>>,
+  slug: string,
+  mode: string,
+  args: Record<string, string>,
+) {
+  const decision = decideCursorTransition(
+    prepared.row
+      ? cursorValue(prepared.row.ordinal, prepared.row.step_slug, prepared.row.state)
+      : null,
+    { kind: 'serve', ordinal: prepared.index, slug: prepared.requested.slug },
+  )
+  refuseInvalidServe(decision, prepared.row, prepared.composition, slug, mode, args)
+  if (decision.action !== 'serve') throw new Error('invalid serve transition')
+  return decision
 }
 
 async function applyServeTransition(
@@ -228,7 +244,7 @@ async function serveWorkflowStepWithCursor(
   live?: LiveCursorAutonomy,
   commitCount: CommitCountPort = readCommitsPastLanding,
 ) {
-  const prepared = await prepareStepServe(
+  let prepared = await prepareStepServe(
     slug,
     project,
     stepSlug,
@@ -241,14 +257,58 @@ async function serveWorkflowStepWithCursor(
     live,
     commitCount,
   )
+  if (
+    !(
+      prepared.index === 0 &&
+      prepared.row &&
+      decideCursorStart(prepared.row.state) === 'retire'
+    )
+  )
+    serveDecision(prepared, slug, mode, args)
+  await readThroughWorkflowCursorContext(project, context, database)
+  await linkResolvedWorkflowTask(project, context, database)
+  prepared = await prepareStepServe(
+    slug,
+    project,
+    stepSlug,
+    args,
+    mode,
+    context,
+    database,
+    autonomy,
+    cursor,
+    live,
+    commitCount,
+  )
+  if (
+    prepared.index === 0 &&
+    prepared.row &&
+    decideCursorStart(prepared.row.state) === 'retire'
+  ) {
+    await insertWorkflowCursor(
+      prepared.composition,
+      context,
+      database,
+      autonomy,
+      commitCount,
+    )
+    prepared = await prepareStepServe(
+      slug,
+      project,
+      stepSlug,
+      args,
+      mode,
+      context,
+      database,
+      autonomy,
+      cursor,
+      live,
+      commitCount,
+    )
+  }
   let { row } = prepared
   const { opensCursor, composition, requested, index, input, resolvedArguments } = prepared
-  const decision = decideCursorTransition(
-    row ? cursorValue(row.ordinal, row.step_slug, row.state) : null,
-    { kind: 'serve', ordinal: index, slug: requested.slug },
-  )
-  refuseInvalidServe(decision, row, composition, slug, mode, args)
-  if (decision.action !== 'serve') throw new Error('invalid serve transition')
+  const decision = serveDecision(prepared, slug, mode, args)
   if (!row) row = await insertWorkflowCursor(composition, context, database, autonomy, commitCount)
   await applyServeTransition(row, decision, context, database, resolvedArguments)
   const served = withWorkflowTextFacts(
@@ -307,19 +367,17 @@ export async function getWorkflowStepWithCursor(
   cursor?: number,
   commitCount: CommitCountPort = readCommitsPastLanding,
 ) {
-  return withLinkedWorkflowTask(project, context, database, () =>
-    serveWorkflowStepWithCursor(
-      slug,
-      project,
-      stepSlug,
-      args,
-      mode,
-      context,
-      database,
-      live.resolution,
-      cursor,
-      live,
-      commitCount,
-    ),
+  return serveWorkflowStepWithCursor(
+    slug,
+    project,
+    stepSlug,
+    args,
+    mode,
+    context,
+    database,
+    live.resolution,
+    cursor,
+    live,
+    commitCount,
   )
 }

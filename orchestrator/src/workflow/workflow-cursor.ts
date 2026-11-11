@@ -14,7 +14,11 @@ import {
 import { upsertWorkflowQuestion } from '../run/question-mutation.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
 import { decideWorkflowTakeover, workflowTakeoverNotice } from './task-flow-decision.ts'
-import { type CommitCountPort, readCommitsPastLanding } from './workflow-compose-branch.ts'
+import {
+  type CommitCountPort,
+  readCommitsPastLanding,
+  workflowComposeBranchRefusal,
+} from './workflow-compose-branch.ts'
 import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
 import { workflowKeyOf as keyOf, resolveCursorArguments } from './workflow-cursor-arguments.ts'
 import { insertWorkflowCursor } from './workflow-cursor-compose.ts'
@@ -29,6 +33,7 @@ import {
 import {
   findWorkflowCursor,
   LISTED_CURSOR_COLUMNS,
+  readThroughWorkflowCursorContext,
   type SelectableCursorRow,
   selectWorkflowCursorForClose,
   type WorkflowCursorContext,
@@ -134,6 +139,27 @@ export async function composeWorkflowWithCursor(
   const autonomy = live.resolution
   const composition = composeWorkflow(slug, project, mode, args, d, selection, autonomy)
   if (!composition.mode || composition.needs.arguments) return { ...composition, cursor: null }
+  const localExisting = keyOf(composition.arguments)
+    ? findWorkflowCursor(
+        composition.project,
+        composition.workflow.slug,
+        composition.mode.slug,
+        composition.arguments,
+        context,
+        d,
+      )
+    : null
+  if (decideCursorStart(localExisting?.state ?? null) !== 'reuse') {
+    const refusal = workflowComposeBranchRefusal({
+      workflow: composition.workflow.slug,
+      project: composition.project,
+      args: composition.arguments,
+      d,
+      commitCount,
+    })
+    if (refusal) throw new Error(refusal)
+  }
+  await readThroughWorkflowCursorContext(project, context, d)
   await linkResolvedWorkflowTask(project, context, d)
   const existing = keyOf(composition.arguments)
     ? findWorkflowCursor(

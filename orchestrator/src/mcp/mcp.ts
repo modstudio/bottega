@@ -48,6 +48,7 @@ import { awaitWorkflowRuling } from '../workflow/workflow-cursor.ts'
 import { ruleWorkflow } from '../workflow/workflow-cursor-ruling.ts'
 import {
   mcpWorkflowCursorContext,
+  readThroughWorkflowCursorContext,
   resolveMcpSelectedCursorContext,
 } from '../workflow/workflow-cursor-selection.ts'
 import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
@@ -466,7 +467,7 @@ function registerWorkflowListTool(server: McpServer): void {
 }
 
 async function abandonWorkflowWithTextCopy(cursor: number, reason: string, ports: DocsMcpPorts) {
-  const { context } = await resolveMcpSelectedCursorContext(
+  const { context, selectedRow } = await resolveMcpSelectedCursorContext(
     undefined,
     undefined,
     undefined,
@@ -474,6 +475,7 @@ async function abandonWorkflowWithTextCopy(cursor: number, reason: string, ports
     cursor,
     ports.hubTaskReader,
   )
+  await readThroughWorkflowCursorContext(selectedRow!.project, context)
   const result = await closeCursorWithTextCopy(
     {
       action: 'abandon',

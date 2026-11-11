@@ -2,6 +2,7 @@
 /** Selects one open workflow cursor by public handle or declared identity. */
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
+import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { db, sessionId } from '../database/db.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { openTaskFlowStageCursor, type TaskFlowStageCursorRow } from './task-flow.ts'
@@ -83,20 +84,29 @@ export async function resolveWorkflowCursorContext(
   const key = workflowCursorContextKey(workflowKeyOf(args) || undefined, selectedRow?.workflow_key)
   if (!key) return { ...context, workflowKey: undefined, taskRecordId: null }
   const task = await resolveHubTaskReference(project, key, reader)
-  const taskFlowRead = task?.record_id
-    ? await readThroughTaskFlow(database, {
-        project,
-        taskKey: key,
-        taskRecordId: task.record_id,
-      })
-    : undefined
   return {
     ...context,
     workflowKey: key,
     taskRecordId: task?.record_id ?? null,
     taskStatusCategory: task?.status_category ?? null,
-    taskFlowRead,
   }
+}
+
+/** Refreshes a resolved keyed context only after local-only refusals have been decided. */
+export async function readThroughWorkflowCursorContext(
+  project: string,
+  context: WorkflowCursorContext,
+  database: Database = db(),
+): Promise<WorkflowCursorContext> {
+  if (!context.workflowKey || !context.taskRecordId) return context
+  if (!recordApiConfigured(process.env)) return context
+  const taskFlowRead = await readThroughTaskFlow(database, {
+    project,
+    taskKey: context.workflowKey,
+    taskRecordId: context.taskRecordId,
+  })
+  context.taskFlowRead = taskFlowRead
+  return context
 }
 
 export const resolveMcpCursorContext = (
@@ -238,7 +248,20 @@ function selectKeyedTaskStage(
     )
       return validateIdentity(row, identity)
   }
-  return null
+  const fallback = d
+    .query(
+      `SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor
+       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+         AND workflow_slug=? AND mode_slug=? AND task_record_id=?
+         AND instance_id='' ORDER BY number DESC LIMIT 1`,
+    )
+    .get(
+      identity.project,
+      identity.workflow,
+      identity.mode,
+      taskRecordId,
+    ) as SelectableCursorRow | null
+  return fallback ? validateIdentity(fallback, identity) : null
 }
 
 export function selectWorkflowCursor(
@@ -320,13 +343,13 @@ export function resolveWorkflowCursorMode(
     .query(
       `SELECT DISTINCT mode_slug FROM workflow_cursor
        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-         AND workflow_slug=? AND ${key ? 'task_record_id=?' : "workflow_key=''"}
+         AND workflow_slug=? AND ${key ? '(task_record_id=? OR workflow_key=?)' : "workflow_key=''"}
          AND ${key ? "instance_id=''" : 'session_id=?'}
          AND state NOT IN ('done','abandoned') ORDER BY mode_slug`,
     )
     .all(
       ...(key
-        ? [project, slug, context.taskRecordId ?? null]
+        ? [project, slug, context.taskRecordId ?? null, key]
         : [project, slug, context.session ?? '']),
     ) as {
     mode_slug: string
