@@ -5,6 +5,7 @@ import { recordBindingModules } from './architecture-record-binding-modules.ts'
 import { recordChangeModules } from './architecture-record-change-modules.ts'
 import { recordInvariantModules } from './architecture-record-invariant-modules.ts'
 import { recordSyncModules } from './architecture-record-sync-modules.ts'
+import { recordTaskFlowModules } from './architecture-record-task-flow-modules.ts'
 import { storageRecordModules } from './architecture-storage-modules.ts'
 
 type RecordModule = { file: string; allowed: string[] }
@@ -22,6 +23,7 @@ export const recordModules: RecordModule[] = [
   ...recordChangeModules,
   ...recordInvariantModules,
   ...recordSyncModules,
+  ...recordTaskFlowModules,
   ...storageRecordModules,
   module('orchestrator/src/record/record-pool.ts', [
     'bun',
@@ -295,21 +297,6 @@ export const recordModules: RecordModule[] = [
     './record-api-client-task-flow.ts',
     './record-catalogue-contract.ts',
     './record-workflow-contract.ts',
-  ]),
-  module('orchestrator/src/record/record-task-flow-contract.ts', ['zod']),
-  module('orchestrator/src/record/record-task-flow.ts', [
-    '../../../shared/record-timestamp.ts',
-    '../../../shared/record/tenant.ts',
-    './record-pool.ts',
-    './record-task-flow-contract.ts',
-  ]),
-  module('orchestrator/src/record/record-api-client-task-flow.ts', [
-    '../doc/doc-revision-conflict.ts',
-    './record-auth.ts',
-    './record-api-client-response.ts',
-    './record-api-client-paths.ts',
-    './record-task-flow-contract.ts',
-    './record-task-flow-write-contract.ts',
   ]),
   module('orchestrator/src/record/record-cache-workflow.ts', [
     ...cacheDeleteImports,

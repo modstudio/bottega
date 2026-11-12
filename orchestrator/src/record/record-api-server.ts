@@ -145,6 +145,7 @@ import {
   listRecordTaskFlowStages,
   readRecordTaskFlow,
   readRecordTaskFlowObligation,
+  readRecordTaskFlowProjectReferenceCounts,
   readRecordTaskFlowStage,
   readRecordTaskFlowText,
 } from './record-task-flow.ts'
@@ -376,6 +377,7 @@ function recordProjectDependencies() {
     readTaskFlowText: readRecordTaskFlowText,
     readTaskFlowObligation: readRecordTaskFlowObligation,
     listTaskFlowStages: listRecordTaskFlowStages,
+    readTaskFlowProjectReferenceCounts: readRecordTaskFlowProjectReferenceCounts,
     writeTaskFlow: writeRecordTaskFlow,
     upsertProject: async (input: Parameters<typeof upsertRecordProject>[0]) => {
       try {

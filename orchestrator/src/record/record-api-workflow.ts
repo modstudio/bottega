@@ -15,6 +15,8 @@ import {
 import { RecordTaskFlowError } from './record-task-flow.ts'
 import {
   TASK_FLOW_STAGE_LIST_REMEDY,
+  type TaskFlowReadQueryInput,
+  taskFlowReadQuerySchema,
   taskFlowStageListQuerySchema,
 } from './record-task-flow-contract.ts'
 import {
@@ -37,13 +39,14 @@ import {
 type Environment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
 export type RecordWorkflowRouteDeps = {
-  readTaskFlow?(input: Tenant & { taskKey?: string; flowRecordId?: string }): Promise<unknown>
+  readTaskFlow?(input: Tenant & TaskFlowReadQueryInput): Promise<unknown>
   readTaskFlowStage?(input: Tenant & { id: string }): Promise<unknown>
   readTaskFlowText?(input: Tenant & { id: string }): Promise<unknown>
   readTaskFlowObligation?(input: Tenant & { id: string }): Promise<unknown>
   listTaskFlowStages?(
     input: Tenant & z.infer<typeof taskFlowStageListQuerySchema>,
   ): Promise<unknown>
+  readTaskFlowProjectReferenceCounts?(input: Tenant & { projectId: string }): Promise<unknown>
   writeTaskFlow?<K extends TaskFlowIntent>(
     intent: K,
     input: Tenant & TaskFlowIntentBody<K>,
@@ -149,6 +152,15 @@ function registerTaskFlowListRoute(
       sessionId: context.req.query('sessionId'),
       states: states.length ? states : undefined,
       taskKey: context.req.query('taskKey'),
+      workflow: context.req.query('workflow'),
+      mode: context.req.query('mode'),
+      workflowKey: context.req.query('workflowKey'),
+      keyless: context.req.query('keyless'),
+      primaryInstance: context.req.query('primaryInstance'),
+      taskId: context.req.query('taskId'),
+      unlinked: context.req.query('unlinked'),
+      order: context.req.query('order'),
+      cursor: context.req.query('cursor'),
       limit: context.req.query('limit'),
     })
     if (!query.success)
@@ -187,6 +199,45 @@ function registerTaskFlowByIdRoutes(
     })
 }
 
+function registerTaskFlowReadRoutes(
+  app: Hono<Environment>,
+  deps: RecordWorkflowRouteDeps,
+  ports: Ports,
+): void {
+  app.get('/v1/task-flow', async (context) => {
+    if (!deps.readTaskFlow)
+      return context.json({ error: 'hosted task flow read is unavailable' }, 503)
+    const active = ports.scope(context)
+    if (!active) return ports.noSpace(context)
+    const query = taskFlowReadQuerySchema.safeParse(context.req.query())
+    if (!query.success)
+      return context.json({ error: 'pass exactly one taskKey, flowRecordId, or taskId' }, 400)
+    try {
+      return context.json(await deps.readTaskFlow({ ...active, ...query.data }))
+    } catch (error) {
+      if (error instanceof RecordTaskFlowError)
+        return context.json({ error: error.message, code: error.code }, 404)
+      throw error
+    }
+  })
+  registerTaskFlowByIdRoutes(app, deps, ports)
+  registerTaskFlowListRoute(app, deps, ports)
+  app.get('/v1/task-flow/project-reference-counts', async (context) => {
+    if (!deps.readTaskFlowProjectReferenceCounts)
+      return context.json(
+        { error: 'hosted task-flow project reference counts are unavailable' },
+        503,
+      )
+    const active = ports.scope(context)
+    if (!active) return ports.noSpace(context)
+    const projectId = z.string().uuid().safeParse(context.req.query('projectId'))
+    if (!projectId.success) return context.json({ error: 'projectId is required' }, 400)
+    return context.json(
+      await deps.readTaskFlowProjectReferenceCounts({ ...active, projectId: projectId.data }),
+    )
+  })
+}
+
 export function registerRecordWorkflowRoutes(
   app: Hono<Environment>,
   deps: RecordWorkflowRouteDeps,
@@ -200,27 +251,7 @@ export function registerRecordWorkflowRoutes(
           throw error
         })()
   }
-  app.get('/v1/task-flow', async (context) => {
-    if (!deps.readTaskFlow)
-      return context.json({ error: 'hosted task flow read is unavailable' }, 503)
-    const active = ports.scope(context)
-    if (!active) return ports.noSpace(context)
-    const query = z
-      .object({ taskKey: z.string().min(1).optional(), flowRecordId: z.string().uuid().optional() })
-      .refine((value) => Number(Boolean(value.taskKey)) + Number(Boolean(value.flowRecordId)) === 1)
-      .safeParse(context.req.query())
-    if (!query.success)
-      return context.json({ error: 'pass exactly one taskKey or flowRecordId' }, 400)
-    try {
-      return context.json(await deps.readTaskFlow({ ...active, ...query.data }))
-    } catch (error) {
-      if (error instanceof RecordTaskFlowError)
-        return context.json({ error: error.message, code: error.code }, 404)
-      throw error
-    }
-  })
-  registerTaskFlowByIdRoutes(app, deps, ports)
-  registerTaskFlowListRoute(app, deps, ports)
+  registerTaskFlowReadRoutes(app, deps, ports)
   registerTaskFlowWriteRoutes(app, deps, ports)
   app.get('/v1/workflow-catalogue/:table', async (context) => {
     const active = ports.scope(context)

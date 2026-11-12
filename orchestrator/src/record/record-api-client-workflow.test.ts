@@ -53,7 +53,7 @@ test('task-flow stage lists carry combined filters and the destination space', a
   }> = []
   const client = recordTaskFlowClient(async (path, init) => {
     requests.push({ path, destinationSpaceId: init?.destinationSpaceId })
-    return { items: [], truncated: false } as never
+    return { items: [], truncated: false, nextCursor: null } as never
   })
   await client.listTaskFlowStages!(
     {

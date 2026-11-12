@@ -258,6 +258,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       './record-pending-invitations.ts',
       './record-sync-service.ts',
       './record-task-flow.ts',
+      './record-task-flow-list-query.ts',
       './record-task-flow-write.ts',
       './record-task-flow-write-contract.ts',
       './record-task-flow-write-decision.ts',

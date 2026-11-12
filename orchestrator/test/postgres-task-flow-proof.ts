@@ -23,6 +23,7 @@ import {
 import { seedWorkflows } from '../src/workflow/workflow-seeds.ts'
 import { installWorkflowStoreFixture } from '../src/workflow/workflow-store.fixture.ts'
 import { testRecordAuth } from './fixtures/record-auth-postgres.ts'
+import { proveTaskFlowRecordReads } from './postgres-task-flow-read-proof.ts'
 
 type Input = {
   urls(): { actor: string; auth: string }
@@ -356,6 +357,23 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         (await client.listTaskFlowStages!({ sessionId: 'taskless-proof-session' }, directSpace))
           .items[0],
       ).toMatchObject({ flow: { id: tasklessFlowId, taskId: null, taskKey: null } })
+
+      await proveTaskFlowRecordReads({
+        client,
+        destination: directSpace,
+        projectId: input.projectId(),
+        otherProjectId,
+        taskId,
+        flowId,
+        stage,
+        stageId,
+        secondStageId,
+        concurrentStageIds,
+        otherProjectStageId,
+        tasklessStageId,
+        workflow: WORKFLOW,
+      })
+
       const adopt = {
         requestId: tasklessRequestId,
         stage: { id: tasklessStageId, expectedRevision: 1 },
@@ -733,7 +751,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
           { taskKey: DIRECT_TASK_KEY },
           { destinationSpaceId: otherSpace.id },
         ),
-      ).toEqual({ items: [], truncated: false })
+      ).toEqual({ items: [], truncated: false, nextCursor: null })
       await expect(
         client.advanceTaskFlow!(
           {

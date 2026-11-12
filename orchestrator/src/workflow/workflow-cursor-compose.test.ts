@@ -689,6 +689,7 @@ test('keyless open-slot recovery recounts once and composes the next sibling slo
       const failed = composeCalls[0]!.stageInsert!
       return {
         truncated: false,
+        nextCursor: null,
         items: [
           {
             stage: {
