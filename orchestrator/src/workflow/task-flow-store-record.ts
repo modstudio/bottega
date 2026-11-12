@@ -2,7 +2,7 @@
 /** Converts hosted task-flow reads to the workflow read-port row shapes. */
 
 import type { Database } from 'bun:sqlite'
-import { projectByName, projectByRecordId, projects } from '../project/projects.ts'
+import { projectByName, projectByRecordId, projects } from '../project/project-read.ts'
 import { RecordApiRequestError, recordApiClient } from '../record/record-api-client.ts'
 import type { RecordRequestDestination } from '../record/record-api-client-paths.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
@@ -323,8 +323,8 @@ class RecordTaskFlowReadStore {
   }
   async listOpenStages(input: { project?: string; sessionId?: string }) {
     const local = await this.local.listOpenStages(input)
-    const selector = {
-      states: ['running', 'awaiting-ruling'] as const,
+    const selector: StageListSelector = {
+      states: ['running', 'awaiting-ruling'],
       ...(input.sessionId ? { sessionId: input.sessionId } : {}),
       ...(input.project ? { projectId: this.projectId(input.project) } : {}),
     }

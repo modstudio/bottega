@@ -568,7 +568,7 @@ export function writeSqliteTaskFlow<K extends TaskFlowIntent>(
       database,
       body,
       applied as TaskFlowIntentResult<'compose'> | null,
-    ) as TaskFlowSqliteWriteResult<K>
+    ) as unknown as TaskFlowSqliteWriteResult<K>
   if (intent === 'stage-update')
     return writeStageUpdate(database, body, revisions) as TaskFlowSqliteWriteResult<K>
   if (intent === 'advance' || intent === 'await-ruling' || intent === 'abandon')

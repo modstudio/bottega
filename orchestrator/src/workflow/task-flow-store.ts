@@ -5,6 +5,7 @@ import type { Database } from 'bun:sqlite'
 import type {
   TaskFlowIntent,
   TaskFlowIntentInput,
+  TaskFlowIntentResult,
 } from '../record/record-task-flow-write-contract.ts'
 import type {
   TaskFlowLocalOnlyReadMethod,

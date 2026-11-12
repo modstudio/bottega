@@ -19,7 +19,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
   ]),
   module('orchestrator/src/workflow/task-flow-store-record.ts', [
     'bun:sqlite',
-    '../project/projects.ts',
+    '../project/project-read.ts',
     '../record/record-api-client-paths.ts',
     '../record/record-api-client-task-flow.ts',
     '../record/record-api-client.ts',

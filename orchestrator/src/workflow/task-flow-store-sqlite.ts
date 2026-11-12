@@ -75,7 +75,7 @@ class SqliteTaskFlowStore {
     payload: TaskFlowIntentInput<K>,
     applied?: TaskFlowIntentResult<K> | null,
   ): TaskFlowSqliteWriteResult<K> {
-    return writeTransaction<TaskFlowSqliteWriteResult<K>>(() => {
+    return writeTransaction(() => {
       if (intent === 'compose') {
         const stage = (payload as TaskFlowIntentInput<'compose'>).stageInsert
         if (stage?.workflowKey && stage.instanceId === '')
@@ -90,7 +90,7 @@ class SqliteTaskFlowStore {
           })
       }
       return writeSqliteTaskFlow(this.database, intent, payload, applied)
-    }, this.database)
+    }, this.database) as TaskFlowSqliteWriteResult<K>
   }
 
   retireStageIdentity(input: {
