@@ -26,9 +26,9 @@ import { mergePullRequest, type PullRequestMergeCommandOutcome } from '../pull-r
 import { runPullRequestPostLanding } from '../pull-request/pr-post-landing.ts'
 import {
   POST_LANDING_FLAG,
+  type PullRequestPostLandingPayload,
   parsePullRequestPostLandingPayload,
   postLandingRecovery,
-  type PullRequestPostLandingPayload,
 } from '../pull-request/pr-post-landing-payload.ts'
 import { resolveReviewCommandCwd } from '../review/review-command-cwd.ts'
 import { log } from './support.ts'
