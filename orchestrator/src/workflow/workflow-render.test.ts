@@ -190,6 +190,8 @@ describe('workflow rendering', () => {
     expect(rendered).toContain('--arg key=DEV-821')
     expect(rendered).toContain('step 1, rebase')
     expect(rendered).toContain('autonomy=auto(built-in)')
+    expect(rendered).toContain('jobs=review-lens')
+    expect(rendered.split('\n').find((line) => line.startsWith('1. rebase'))).not.toContain('jobs=')
     expect(rendered).toContain('Worker questions: rulings=agent (built-in).')
     expect(rendered).toContain(
       'answer what the specification or canon settles; relay a design or product-direction question to the operator and answer it with --from-operator.',
