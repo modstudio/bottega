@@ -10,12 +10,20 @@ import {
   SESSION_CLOSE_OUT_RESIDUE_EXIT_CODE,
 } from '../session/session-close-out.ts'
 import { formatSessionHold, sessionHold } from '../session/session-hold.ts'
+import { safeStartSession } from '../session/session-start.ts'
 import { sessionLosses } from '../session-losses/session-losses-adapter.ts'
 import { formatSessionLosses } from '../session-losses/session-losses-format.ts'
 import { collect, log } from './support.ts'
 
 export function register(program: Command): void {
   const session = program.command('session').description('manage the calling architect session')
+  session
+    .command('start')
+    .description("open or reuse the calling session's explore workflow")
+    .allowExcessArguments(false)
+    .action(async () => {
+      log((await safeStartSession()).line)
+    })
   session
     .command('losses')
     .description('measure losses around Claude transcript compaction boundaries')

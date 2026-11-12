@@ -26,6 +26,7 @@ const SCRIPT_FILES = [
   'workflow-cursor-reminder.py',
   'board-ack-guard.py',
   'session-brief.py',
+  'session-start.py',
   'context-precompact.py',
   'test-substance-guard.py',
   'hub-import-guard.py',
@@ -154,6 +155,7 @@ const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
     boardEnvironment: true,
   },
   { event: 'SessionStart', script: 'session-brief.py' },
+  { event: 'SessionStart', script: 'session-start.py' },
   { event: 'SessionStart', script: 'workflow-cursor-reminder.py', boardEnvironment: true },
   { event: 'PreCompact', script: 'context-precompact.py' },
 ]
