@@ -29,10 +29,10 @@ function appendCursor(input: TaskFlowStageListQuery, result: TaskFlowStageListSq
     )
     return
   }
-  result.values.push(cursor.projectName)
-  const projectParameter = `$${result.values.length}`
-  result.values.push(cursor.number)
-  const numberParameter = `$${result.values.length}`
+  if (cursor.projectName !== null) result.values.push(cursor.projectName)
+  const projectParameter = cursor.projectName === null ? null : `$${result.values.length}`
+  if (cursor.number !== null) result.values.push(cursor.number)
+  const numberParameter = cursor.number === null ? null : `$${result.values.length}`
   result.values.push(cursor.id)
   const idParameter = `$${result.values.length}`
   const afterWithinProject =

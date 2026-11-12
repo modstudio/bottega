@@ -76,9 +76,11 @@ test('task-flow client follows every stage-list cursor and returns all items', a
   const paths: string[] = []
   const client = recordTaskFlowClient(async (path) => {
     paths.push(path)
-    return paths.length === 1
-      ? { items: [{ stage: { id: 'first' } }], truncated: true, nextCursor: 'page-2' }
-      : { items: [{ stage: { id: 'second' } }], truncated: false, nextCursor: null }
+    return (
+      paths.length === 1
+        ? { items: [{ stage: { id: 'first' } }], truncated: true, nextCursor: 'page-2' }
+        : { items: [{ stage: { id: 'second' } }], truncated: false, nextCursor: null }
+    ) as never
   })
   const items = await client.listAllTaskFlowStages!({ workflow: 'fix-defect', limit: 1 })
   expect(items.map((item) => item.stage.id)).toEqual(['first', 'second'])
