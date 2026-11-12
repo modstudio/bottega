@@ -3,7 +3,6 @@
 
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
-import { contextMomentEffect } from '../../../shared/context-moment.ts'
 import { FILING_DOC_SCOPES } from '../../../shared/docs.ts'
 import {
   AnswerWaitingResultSchema,
@@ -23,11 +22,10 @@ import { answerRun } from '../run/run-answer.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { queryInbox } from '../run/run-inbox.ts'
 import { answerRunHelpers } from '../run/run-message-commands.ts'
+import { answeredQuestionContextMoments } from '../workflow/workflow-context-moment.ts'
+import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { fileNote } from './hub-notes.ts'
-import {
-  collectContextMomentReports,
-  resultWithContextReports,
-} from './mcp-workflow-context-tools.ts'
+import { collectContextMomentReports, resultWithContextReports } from './mcp-context-reports.ts'
 
 const text = (value: unknown) => ({
   content: [
@@ -118,7 +116,10 @@ function resolveAnswerRulings(
   })
 }
 
-function registerAnswerQuestionsTool(server: McpServer): void {
+function registerAnswerQuestionsTool(
+  server: McpServer,
+  contextMomentPorts?: ContextMomentPorts,
+): void {
   server.registerTool(
     'answer_questions',
     {
@@ -149,19 +150,10 @@ function registerAnswerQuestionsTool(server: McpServer): void {
         resolved.map((ruling) => [ruling.questionId, ruling.text] as const),
       )
       const reports: string[] = []
-      for (const question of report.answeredQuestions) {
-        reports.push(
-          ...(await collectContextMomentReports({
-            taskKey: question.taskHolder,
-            effect: contextMomentEffect({
-              moment: 'question-answer',
-              taskKey: question.taskHolder,
-              questionId: question.number,
-              operatorRuled: question.fromOperator,
-              text: textByQuestion.get(question.recordId),
-            }),
-          })),
-        )
+      for (const moment of answeredQuestionContextMoments(report.answeredQuestions, (recordId) =>
+        textByQuestion.get(recordId),
+      )) {
+        reports.push(...(await collectContextMomentReports(moment, contextMomentPorts)))
       }
       return {
         ...resultWithContextReports(report.result, reports),
@@ -171,7 +163,10 @@ function registerAnswerQuestionsTool(server: McpServer): void {
   )
 }
 
-export function registerOperatorTools(server: McpServer): void {
+export function registerOperatorTools(
+  server: McpServer,
+  contextMomentPorts?: ContextMomentPorts,
+): void {
   server.registerTool(
     'list_open_questions',
     {
@@ -182,7 +177,7 @@ export function registerOperatorTools(server: McpServer): void {
     },
     async () => structured(await listOpenQuestions()),
   )
-  registerAnswerQuestionsTool(server)
+  registerAnswerQuestionsTool(server, contextMomentPorts)
 
   server.registerTool(
     'overturn_ruling',

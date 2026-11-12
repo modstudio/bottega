@@ -4,15 +4,15 @@
 import type { z } from 'zod'
 import { assertRecordShape } from '../../../shared/record-shape.ts'
 import { db } from '../database/db.ts'
-import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
+import {
+  type ContextMomentPorts,
+  workflowNextGatherFailure,
+} from '../doc/context-moment-adapter.ts'
 import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { resolveProbeArtifact } from '../workflow/probe-identifier.ts'
-import {
-  selectWorkflowContextCursor,
-  workflowNextContextMoment,
-} from '../workflow/workflow-context-moment.ts'
+import { workflowNextContextMoment } from '../workflow/workflow-context-moment.ts'
 import { workflowKeyOf } from '../workflow/workflow-cursor-arguments.ts'
 import { resolveCursorLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
 import { type HubTaskReader, resolveHubTaskReference } from '../workflow/workflow-task-reference.ts'
@@ -21,10 +21,7 @@ import {
   productionWorkflowTextDocumentPorts,
   type WorkflowTextDocumentPorts,
 } from '../workflow/workflow-text-copy.ts'
-import {
-  collectContextMomentReports,
-  resultWithContextReports,
-} from './mcp-workflow-context-tools.ts'
+import { collectContextMomentReports, resultWithContextReports } from './mcp-context-reports.ts'
 import { resolveMcpLinkedWorkflowCursor } from './mcp-workflow-cursor.ts'
 import type { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
 
@@ -74,7 +71,7 @@ export async function advanceWorkflow(
       'self_ruling_basis requires self_ruling; pass both inputs, or omit self_ruling_basis',
     )
   const workflowArgs = args ?? {}
-  const { context, effectiveMode } = await resolveMcpLinkedWorkflowCursor(
+  const { context, effectiveMode, selectedRow } = await resolveMcpLinkedWorkflowCursor(
     slug,
     project,
     mode,
@@ -93,14 +90,6 @@ export async function advanceWorkflow(
     args: workflowArgs,
     context,
     cursor,
-  })
-  const selected = selectWorkflowContextCursor({
-    project,
-    workflow: slug,
-    mode: effectiveMode,
-    args: workflowArgs,
-    cursor,
-    context: advanceContext,
   })
   const storedSelfRuling = self_ruling?.trim()
   const result = await closeCursorWithTextCopyResult(
@@ -142,7 +131,15 @@ export async function advanceWorkflow(
   )
   try {
     const moment = workflowNextContextMoment(
-      selected.record_id,
+      {
+        cursorRecordId: result.cursorRecordId,
+        workflowKey: result.workflowKey,
+        workflow: slug,
+        cursor: selectedRow?.id ?? cursor!,
+        finished: result.finished,
+        stepSlug: result.stepSlug,
+        stepTitle: result.stepTitle,
+      },
       result.selfRulingQuestionNumber,
       storedSelfRuling,
     )
@@ -151,9 +148,8 @@ export async function advanceWorkflow(
       await collectContextMomentReports(moment, contextMomentPorts),
     )
   } catch (error) {
-    const holder = selected.workflow_key || `cursor ${selected.record_id}`
     return resultWithContextReports(result.text, [
-      `context: could not write workflow-next on ${holder}: ${error instanceof Error ? error.message : String(error)}`,
+      workflowNextGatherFailure(result.workflowKey, result.cursorRecordId, error),
     ])
   }
 }

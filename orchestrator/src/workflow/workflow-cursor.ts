@@ -688,15 +688,27 @@ async function nextWorkflowStepImpl(
   return {
     text: takeoverNotice ? `${takeoverNotice}\n${rendered}` : rendered,
     selfRulingQuestionNumber: close.selfRulingQuestionNumber,
+    cursorRecordId: row.record_id,
+    workflowKey: row.workflow_key || null,
+    finished: close.advance.ordinal === null,
+    stepSlug:
+      close.advance.ordinal === null ? undefined : composition.steps[close.advance.ordinal]!.slug,
+    stepTitle:
+      close.advance.ordinal === null ? undefined : composition.steps[close.advance.ordinal]!.title,
   }
 }
 
-type WorkflowAdvanceResult = {
+export type WorkflowAdvanceResult = {
   text: string
   selfRulingQuestionNumber?: number
+  cursorRecordId: string
+  workflowKey: string | null
+  finished: boolean
+  stepSlug?: string
+  stepTitle?: string
 }
 
-async function nextWorkflowStepWithResult(
+export async function nextWorkflowStep(
   selected: SelectableCursorRow,
   project: string,
   args: Record<string, string>,
@@ -727,37 +739,6 @@ async function nextWorkflowStepWithResult(
       live,
     )
   })
-}
-
-export async function nextWorkflowStep(
-  selected: SelectableCursorRow,
-  project: string,
-  args: Record<string, string>,
-  note: string | undefined,
-  context: WorkflowCursorContext,
-  d: Database = writableDb(),
-  evidence: WorkflowEvidenceInput = {},
-  ports: FloorEvidencePorts = productionFloorPorts(),
-  selfRuling?: WorkflowSelfRulingInput,
-  outcome?: string,
-  live?: LiveCursorAutonomy,
-  detail?: { selfRulingQuestionNumber?: number },
-): Promise<string> {
-  const result = await nextWorkflowStepWithResult(
-    selected,
-    project,
-    args,
-    note,
-    context,
-    d,
-    evidence,
-    ports,
-    selfRuling,
-    outcome,
-    live,
-  )
-  if (detail) detail.selfRulingQuestionNumber = result.selfRulingQuestionNumber
-  return result.text
 }
 
 async function abandonSelectedWorkflowCursor(

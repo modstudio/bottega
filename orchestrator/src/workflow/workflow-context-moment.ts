@@ -1,16 +1,7 @@
 // concern: workflows
 /** Gathers the plain post-advance cursor values consumed by context moment policy. */
-import type { Database } from 'bun:sqlite'
 import { type ContextMomentEffect, contextMomentEffect } from '../../../shared/context-moment.ts'
-import { db } from '../database/db.ts'
-import { taskFlowStore } from './task-flow-store.ts'
-import { workflowKeyOf } from './workflow-cursor-arguments.ts'
-import {
-  type SelectableCursorRow,
-  selectWorkflowCursorForClose,
-  type WorkflowCursorContext,
-} from './workflow-cursor-selection.ts'
-import { cursorComposition } from './workflow-cursor-serve.ts'
+import type { AnswerRunReport } from '../run/run-answer.ts'
 
 export type WorkflowContextMoment = { taskKey: string | null; effect: ContextMomentEffect }
 
@@ -24,43 +15,22 @@ export function workflowQuestionContextMoment(input: {
   return { taskKey: input.taskKey ?? null, effect: contextMomentEffect(input) }
 }
 
-export function selectWorkflowContextCursor(input: {
-  project: string
-  workflow: string
-  mode: string
-  args: Record<string, string>
-  cursor?: number
-  context: WorkflowCursorContext
-}): SelectableCursorRow {
-  const row = selectWorkflowCursorForClose(
-    {
-      project: input.project,
-      workflow: input.workflow,
-      mode: input.mode,
-      key: workflowKeyOf(input.args) || undefined,
-    },
-    input.cursor,
-    input.context.session,
-    db(),
-    input.context.taskRecordId,
-    input.context.taskStatusCategory,
-  )
-  if (!row) throw new Error(`workflow ${input.workflow} has no cursor; compose the workflow first`)
-  return row
-}
-
 export function workflowNextContextMoment(
-  cursorRecordId: string,
+  input: {
+    cursorRecordId: string
+    workflowKey: string | null
+    workflow: string
+    cursor: number
+    finished: boolean
+    stepSlug?: string
+    stepTitle?: string
+  },
   selfRulingQuestionNumber?: number,
   selfRuling?: string,
-  database: Database = db(),
 ): WorkflowContextMoment {
-  const row = taskFlowStore(database).stageByRecordId(cursorRecordId) as SelectableCursorRow | null
-  if (!row) throw new Error(`workflow cursor ${cursorRecordId} no longer exists`)
-  const step = row.state === 'done' ? null : cursorComposition(row, database).steps[row.ordinal]
   if (selfRuling !== undefined && selfRulingQuestionNumber === undefined)
     throw new Error('the recorded self-ruling has no question id')
-  const taskKey = row.workflow_key || null
+  const taskKey = input.workflowKey
   return {
     taskKey,
     effect: contextMomentEffect({
@@ -69,12 +39,28 @@ export function workflowNextContextMoment(
       questionId: selfRulingQuestionNumber,
       text: selfRuling,
       cursor: {
-        workflow: row.workflow_slug,
-        number: row.id,
-        stepSlug: step?.slug,
-        stepTitle: step?.title,
-        finished: row.state === 'done',
+        workflow: input.workflow,
+        number: input.cursor,
+        stepSlug: input.stepSlug,
+        stepTitle: input.stepTitle,
+        finished: input.finished,
       },
     }),
   }
+}
+
+export function answeredQuestionContextMoments(
+  answeredQuestions: AnswerRunReport['answeredQuestions'],
+  textForQuestion: (recordId: string) => string | undefined,
+): WorkflowContextMoment[] {
+  return answeredQuestions.map((question) => ({
+    taskKey: question.taskHolder,
+    effect: contextMomentEffect({
+      moment: 'question-answer',
+      taskKey: question.taskHolder,
+      questionId: question.number,
+      operatorRuled: question.fromOperator,
+      text: textForQuestion(question.recordId),
+    }),
+  }))
 }

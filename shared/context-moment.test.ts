@@ -106,4 +106,11 @@ test('pr merge and task close retain their current prompt output', () => {
     `context: revise next-action on DEV-2225 (${PLATFORM_SLUG} agent context set --task 'DEV-2225' --kind next-action --source 'task-close' --id next '<text>')`,
   ])
   expect(stderr).toEqual([])
+
+  stdout.length = 0
+  emitContextMoment(contextMomentWrite({ moment: 'pr-merge', taskKey: 'DEV-2225' }), true, output)
+  expect(stdout).toEqual([])
+  expect(stderr).toEqual([
+    `context: revise next-action on DEV-2225 (${PLATFORM_SLUG} agent context set --task 'DEV-2225' --kind next-action --source 'pr-merge' --id next '<text>')`,
+  ])
 })

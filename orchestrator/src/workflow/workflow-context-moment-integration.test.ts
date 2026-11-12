@@ -17,6 +17,7 @@ test('await, operator rule, and next replace task context through command seams'
   const catalogue = productionStepCatalogue().definition.steps
   const steps = [
     catalogue.find(({ slug }) => slug === 'blast-radius')!.slug,
+    catalogue.find(({ slug }) => slug === 'acceptance')!.slug,
     catalogue.find(({ slug }) => slug === 'fix-defect-triage')!.slug,
   ]
   registerFixtureProject(project)
@@ -70,6 +71,24 @@ test('await, operator rule, and next replace task context through command seams'
   await command('next', '--note', 'closed after the operator ruling')
   expect(items.get('next')).toEqual({
     kind: 'next-action',
+    body: `${slug} cursor ${cursor} at acceptance: Check the task's acceptance criteria`,
+  })
+
+  await command(
+    'next',
+    '--note',
+    'accepted by the specification',
+    '--self-ruling',
+    '  The acceptance criteria are met.  ',
+    '--basis',
+    'DEV-2267 acceptance criteria',
+  )
+  const selfRulingPosition = [...items.entries()].find(
+    ([id, item]) => id.startsWith('position-q') && item.body === 'The acceptance criteria are met.',
+  )
+  expect(selfRulingPosition).toBeDefined()
+  expect(items.get('next')).toEqual({
+    kind: 'next-action',
     body: `${slug} cursor ${cursor} at fix-defect-triage: Triage findings`,
   })
 
@@ -89,6 +108,6 @@ test('await, operator rule, and next replace task context through command seams'
       .get(cursor),
   ).toEqual({ state: 'done' })
   expect(lines).toContain(
-    'context: could not write workflow-next on DEV-2267: injected gather failure',
+    'context: could not gather workflow-next on DEV-2267: injected gather failure',
   )
 })

@@ -2,7 +2,7 @@
 /** Owns answer, retry, and continuation command behavior. Must not know CLI grammar. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { type ContextMomentOutput, contextMomentEffect } from '../../../shared/context-moment.ts'
+import type { ContextMomentOutput } from '../../../shared/context-moment.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { resumePromptByteLimit } from '../agent/agents.ts'
 import {
@@ -35,6 +35,7 @@ import { rulingAttributionDecision } from './question-vocabulary.ts'
 import { rulingFileOfferLines } from './ruling-file-text.ts'
 import { type AnswerRunInput, answerRun, retryRun } from './run-answer.ts'
 import { continueRun, type RunControlPresentation, reportContinuedRun } from './run-control.ts'
+import { answeredQuestionContextMoments } from '../workflow/workflow-context-moment.ts'
 
 type Flags = { detach: boolean; follow: boolean; quiet: boolean }
 type Presentation = { printRunId(id: string): void }
@@ -222,20 +223,10 @@ export async function answerCommand(
       console.log(line)
     }
   }
-  for (const question of questions) {
-    const effect = contextMomentEffect({
-      moment: 'question-answer',
-      taskKey: question.taskHolder,
-      questionId: question.number,
-      operatorRuled: question.fromOperator,
-      text: answerByQuestion.get(question.recordId),
-    })
-    await applyContextMoment(
-      { taskKey: question.taskHolder, effect },
-      json,
-      context?.output,
-      context?.ports,
-    )
+  for (const moment of answeredQuestionContextMoments(questions, (recordId) =>
+    answerByQuestion.get(recordId),
+  )) {
+    await applyContextMoment(moment, json, context?.output, context?.ports)
   }
 }
 

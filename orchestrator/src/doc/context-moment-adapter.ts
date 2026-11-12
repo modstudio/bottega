@@ -71,3 +71,12 @@ export function applyContextMoment(
 ): Promise<void> {
   return applyContextMomentEffect(moment.taskKey, moment.effect, json, output, ports)
 }
+
+/** Renders the non-fatal report for a moment that could not be gathered after an advance. */
+export function workflowNextGatherFailure(
+  taskKey: string | null,
+  cursorRecordId: string,
+  error: unknown,
+): string {
+  return `context: could not gather workflow-next on ${taskKey ?? `cursor ${cursorRecordId}`}: ${detail(error)}`
+}

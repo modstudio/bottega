@@ -557,7 +557,7 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
 function registerCoreTools(server: McpServer, ports: DocsMcpPorts): void {
   registerWorkflowPrompts(server, ports.hubTaskReader)
   registerSearchTools(server)
-  registerOperatorTools(server)
+  registerOperatorTools(server, ports.contextMomentPorts)
   registerBoardTools(server)
   registerSetupTools(server)
   registerWorkflowListTool(server)

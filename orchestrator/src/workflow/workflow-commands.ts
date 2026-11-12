@@ -28,7 +28,6 @@ import { obligationUuid, positive } from './workflow-command-arguments.ts'
 import * as recordShape from './workflow-command-record-shape.ts'
 import type { CommitCountPort } from './workflow-compose-branch.ts'
 import {
-  selectWorkflowContextCursor,
   type WorkflowContextMoment,
   workflowQuestionContextMoment,
 } from './workflow-context-moment.ts'
@@ -464,13 +463,14 @@ export async function ruleCommand(
     undefined,
     selectedRow,
   )
+  const operatorRuled = argv.includes('--from-operator')
   const result = await ruleWorkflow(
     slug,
     project,
     mode,
     args,
     ruling,
-    argv.includes('--from-operator'),
+    operatorRuled,
     'cli',
     context,
     undefined,
@@ -481,7 +481,7 @@ export async function ruleCommand(
     moment: 'workflow-rule',
     taskKey: context.workflowKey,
     questionId: result.questionId,
-    operatorRuled: argv.includes('--from-operator'),
+    operatorRuled,
     text: ruling!,
   })
 }
@@ -630,6 +630,11 @@ export async function nextCommand(
   selfRulingQuestionNumber?: number
   selfRuling?: string
   taskKey: string | null
+  workflow: string
+  cursor: number
+  finished: boolean
+  stepSlug?: string
+  stepTitle?: string
 }> {
   const { selfRuling, basis, note, question } = recordShape.workflowNextCommandRecordShapes(argv)
   const storedSelfRuling = selfRuling?.trim()
@@ -667,14 +672,6 @@ export async function nextCommand(
     selectedRow,
   )
   const live = await resolveCursorLiveAutonomy({ slug, project, mode, args, context, cursor })
-  const selected = selectWorkflowContextCursor({
-    project,
-    workflow: slug,
-    mode,
-    args,
-    cursor,
-    context,
-  })
   const result = await closeCursorWithTextCopyResult(
     {
       action: 'next',
@@ -706,10 +703,15 @@ export async function nextCommand(
   )
   print(result.text, result.text)
   return {
-    cursorRecordId: selected.record_id,
+    cursorRecordId: result.cursorRecordId,
+    workflow: slug,
+    cursor: cursor!,
+    finished: result.finished,
+    stepSlug: result.stepSlug,
+    stepTitle: result.stepTitle,
     selfRulingQuestionNumber: result.selfRulingQuestionNumber,
     selfRuling: storedSelfRuling,
-    taskKey: selected.workflow_key || null,
+    taskKey: result.workflowKey,
   }
 }
 

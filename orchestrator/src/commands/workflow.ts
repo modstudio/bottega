@@ -5,7 +5,7 @@ import { type Command, Option, type OptionValues } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { repeatable } from '../../../shared/cli-repeat-guard.ts'
 import { db } from '../database/db.ts'
-import { applyContextMoment } from '../doc/context-moment-adapter.ts'
+import { applyContextMoment, workflowNextGatherFailure } from '../doc/context-moment-adapter.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { forkCatalogueCommand } from '../workflow/workflow-catalogue-commands.ts'
 import {
@@ -86,7 +86,7 @@ async function applyNextContextMoment(
   try {
     await applyContextMoment(
       (handlerOptions.contextMomentGather ?? workflowNextContextMoment)(
-        input.cursorRecordId,
+        { ...input, workflowKey: input.taskKey },
         input.selfRulingQuestionNumber,
         input.selfRuling,
       ),
@@ -95,8 +95,7 @@ async function applyNextContextMoment(
       handlerOptions.contextMomentPorts,
     )
   } catch (error) {
-    const holder = input.taskKey ?? `cursor ${input.cursorRecordId}`
-    const line = `context: could not write workflow-next on ${holder}: ${error instanceof Error ? error.message : String(error)}`
+    const line = workflowNextGatherFailure(input.taskKey, input.cursorRecordId, error)
     if (json) output.error(line)
     else output.log(line)
   }

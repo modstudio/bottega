@@ -177,7 +177,11 @@ test('self-ruling records the answered question and closes the step atomically',
 test('a whitespace-padded self-ruling carries its question into the context moment', async () => {
   const d = database()
   await openAtRuling(d)
-  const cursor = d.query<{ record_id: string }, []>('SELECT record_id FROM workflow_cursor').get()!
+  const cursor = d
+    .query<{ record_id: string; number: number }, []>(
+      'SELECT record_id,number FROM workflow_cursor',
+    )
+    .get()!
   const result = await closeCursorWithTextCopyResult(
     {
       action: 'next',
@@ -201,8 +205,19 @@ test('a whitespace-padded self-ruling carries its question into the context mome
 
   expect(result.selfRulingQuestionNumber).toBeNumber()
   expect(
-    workflowNextContextMoment(cursor.record_id, result.selfRulingQuestionNumber, 'Proceed.', d)
-      .effect.writes,
+    workflowNextContextMoment(
+      {
+        cursorRecordId: result.cursorRecordId,
+        workflowKey: result.workflowKey,
+        workflow: 'flow',
+        cursor: cursor.number,
+        finished: result.finished,
+        stepSlug: result.stepSlug,
+        stepTitle: result.stepTitle,
+      },
+      result.selfRulingQuestionNumber,
+      'Proceed.',
+    ).effect.writes,
   ).toContainEqual({
     kind: 'position',
     id: `position-q${result.selfRulingQuestionNumber}`,

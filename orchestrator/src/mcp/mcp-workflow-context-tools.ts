@@ -3,41 +3,18 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { assertRecordShape } from '../../../shared/record-shape.ts'
-import { applyContextMoment, type ContextMomentPorts } from '../doc/context-moment-adapter.ts'
-import {
-  type WorkflowContextMoment,
-  workflowQuestionContextMoment,
-} from '../workflow/workflow-context-moment.ts'
+import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
+import { workflowQuestionContextMoment } from '../workflow/workflow-context-moment.ts'
 import { awaitWorkflowRuling } from '../workflow/workflow-cursor.ts'
 import { ruleWorkflow } from '../workflow/workflow-cursor-ruling.ts'
 import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
 import { resolveMcpLinkedWorkflowCursor } from './mcp-workflow-cursor.ts'
+import { collectContextMomentReports, resultWithContextReports } from './mcp-context-reports.ts'
 
 export type McpWorkflowContextPorts = {
   hubTaskReader?: HubTaskReader
   contextMomentPorts?: ContextMomentPorts
 }
-
-export async function collectContextMomentReports(
-  moment: WorkflowContextMoment,
-  ports?: ContextMomentPorts,
-): Promise<string[]> {
-  const lines: string[] = []
-  await applyContextMoment(
-    moment,
-    false,
-    { log: (line) => lines.push(line), error: (line) => lines.push(line) },
-    ports,
-  )
-  return lines
-}
-
-export const resultWithContextReports = (result: unknown, reports: string[]) => ({
-  content: [
-    { type: 'text' as const, text: typeof result === 'string' ? result : JSON.stringify(result) },
-    ...reports.map((line) => ({ type: 'text' as const, text: line })),
-  ],
-})
 
 function registerAwaitWorkflowRulingTool(server: McpServer, ports: McpWorkflowContextPorts): void {
   server.registerTool(

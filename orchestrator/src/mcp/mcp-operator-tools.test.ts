@@ -4,6 +4,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { createDocsMcpServer } from './mcp.ts'
 
 const SESSION = 'mcp-operator-tools-test'
@@ -24,8 +25,11 @@ afterEach(() => {
   else process.env.BOTTEGA_RUN_ID = priorRunId
 })
 
-async function withClient<T>(run: (client: Client) => Promise<T>): Promise<T> {
-  const server = createDocsMcpServer()
+async function withClient<T>(
+  run: (client: Client) => Promise<T>,
+  contextMomentPorts?: ContextMomentPorts,
+): Promise<T> {
+  const server = createDocsMcpServer({ contextMomentPorts })
   const client = new Client({ name: 'orch-test', version: '1.0.0' })
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
   await server.connect(serverTransport)
@@ -128,26 +132,39 @@ describe('operator MCP tools', () => {
     const runRecordId = (
       db().query('SELECT record_id FROM run WHERE record_id=?').get(runId) as { record_id: string }
     ).record_id
+    db().query("UPDATE run SET launch_key='DEV-2267' WHERE record_id=?").run(runId)
     const questionRecordId = (
       db().query('SELECT record_id FROM question WHERE number=?').get(questionId) as {
         record_id: string
       }
     ).record_id
 
-    const result = await withClient((client) =>
-      client.callTool({
-        name: 'answer_questions',
-        arguments: {
-          run_record_id: runRecordId.toUpperCase(),
-          rulings: [
-            {
-              question_id: questionRecordId.toUpperCase(),
-              value: 'existing',
-              note: 'Use the existing shape.',
-            },
-          ],
+    const calls: string[] = []
+    const result = await withClient(
+      (client) =>
+        client.callTool({
+          name: 'answer_questions',
+          arguments: {
+            run_record_id: runRecordId.toUpperCase(),
+            rulings: [
+              {
+                question_id: questionRecordId.toUpperCase(),
+                value: 'existing',
+                note: 'Use the existing shape.',
+              },
+            ],
+          },
+        }),
+      {
+        set: async (input) => {
+          calls.push(`set ${input.kind} ${input.id} on ${input.task}`)
+          return { ...input, holder: `task:${input.task}`, revision: 'revision', task: input.task }
         },
-      }),
+        drop: async (input) => {
+          calls.push(`drop ${input.id} on ${input.task}`)
+          return { ...input, holder: `task:${input.task}`, task: input.task, removed: true }
+        },
+      } as ContextMomentPorts,
     )
 
     expect(result.isError).not.toBe(true)
@@ -158,6 +175,14 @@ describe('operator MCP tools', () => {
       resumed_number: null,
       resumed_record_id: null,
     })
+    expect(calls).toEqual([
+      `set position position-q${questionId} on DEV-2267`,
+      `drop open-q${questionId} on DEV-2267`,
+    ])
+    expect((result.content as { text: string }[]).slice(1).map(({ text }) => text)).toEqual([
+      `context: wrote position position-q${questionId} on DEV-2267`,
+      `context: dropped open-question open-q${questionId} on DEV-2267`,
+    ])
     expect(
       db()
         .query(

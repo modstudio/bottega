@@ -256,7 +256,15 @@ export async function closeCursorWithTextCopy(
   return (await closeCursorWithTextCopyResult(input, database, taskReader, documents)).text
 }
 
-export type WorkflowTextCloseResult = { text: string; selfRulingQuestionNumber?: number }
+export type WorkflowTextCloseResult = {
+  text: string
+  selfRulingQuestionNumber?: number
+  cursorRecordId: string
+  workflowKey: string | null
+  finished: boolean
+  stepSlug?: string
+  stepTitle?: string
+}
 
 /** Closes a cursor while retaining the question identity created by a self-ruling. */
 export async function closeCursorWithTextCopyResult(
@@ -305,26 +313,21 @@ export async function closeCursorWithTextCopyResult(
     documents,
     input.context.taskFlowClient,
   )
-  const detail: { selfRulingQuestionNumber?: number } = {}
   const result: WorkflowTextCloseResult =
     input.action === 'next'
-      ? {
-          text: await nextWorkflowStep(
-            row,
-            row.project,
-            input.args,
-            input.note!.trim(),
-            input.context,
-            database,
-            input.evidence,
-            input.floorPorts,
-            input.selfRuling,
-            input.outcome,
-            input.live,
-            detail,
-          ),
-          selfRulingQuestionNumber: detail.selfRulingQuestionNumber,
-        }
+      ? await nextWorkflowStep(
+          row,
+          row.project,
+          input.args,
+          input.note!.trim(),
+          input.context,
+          database,
+          input.evidence,
+          input.floorPorts,
+          input.selfRuling,
+          input.outcome,
+          input.live,
+        )
       : {
           text: await abandonSelectedWorkflowCursorForClose(
             row,
@@ -333,6 +336,11 @@ export async function closeCursorWithTextCopyResult(
             database,
             input.args,
           ),
+          cursorRecordId: row.record_id,
+          workflowKey: row.workflow_key || null,
+          finished: row.state === 'done',
+          stepSlug: row.step_slug,
+          stepTitle: undefined,
         }
   const warning = workflowTextUncopiedReport(copy)
   return { ...result, text: warning ? `${result.text}\n${warning}` : result.text }

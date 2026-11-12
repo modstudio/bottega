@@ -30,6 +30,10 @@ export const mcpModules: McpModule[] = [
     '../workflow/workflow-task-linking.ts',
     '../workflow/workflow-task-reference.ts',
   ]),
+  module('orchestrator/src/mcp/mcp-context-reports.ts', [
+    '../doc/context-moment-adapter.ts',
+    '../workflow/workflow-context-moment.ts',
+  ]),
   module('orchestrator/src/mcp/mcp-workflow-context-tools.ts', [
     '@modelcontextprotocol/server',
     'zod',
@@ -39,6 +43,7 @@ export const mcpModules: McpModule[] = [
     '../workflow/workflow-cursor-ruling.ts',
     '../workflow/workflow-context-moment.ts',
     '../workflow/workflow-task-reference.ts',
+    './mcp-context-reports.ts',
     './mcp-workflow-cursor.ts',
   ]),
   module('orchestrator/src/mcp/mcp-setup-tools.ts', [
@@ -86,11 +91,11 @@ export const mcpModules: McpModule[] = [
     '@modelcontextprotocol/sdk/server/mcp.js',
     'zod',
     '../../../shared/docs.ts',
-    '../../../shared/context-moment.ts',
     '../../../shared/orch-contract.ts',
     '../ask/worker-question.ts',
     '../database/db.ts',
     '../doc/docs.ts',
+    '../doc/context-moment-adapter.ts',
     '../operator/operator-waiting.ts',
     '../run/question-vocabulary.ts',
     '../run/ruling-file.ts',
@@ -100,8 +105,9 @@ export const mcpModules: McpModule[] = [
     '../run/run-inbox.ts',
     '../run/run-identifier.ts',
     '../run/run-message-commands.ts',
+    '../workflow/workflow-context-moment.ts',
     './hub-notes.ts',
-    './mcp-workflow-context-tools.ts',
+    './mcp-context-reports.ts',
   ]),
   module('orchestrator/src/mcp/mcp-tool-list.ts', [
     '@modelcontextprotocol/sdk/client/index.js',
