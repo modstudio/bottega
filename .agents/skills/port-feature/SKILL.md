@@ -144,9 +144,12 @@ no supporting files in this directory any more.
     target's differences doc immediately (`bottega doc set port-differences --scope
     project --subject <name> --title "Port differences" --file <path>`); read it
     first and append rather than overwrite. A new cross-project standard becomes
-    a doctrine rule (`bottega doc port doctrine add <number> --title TEXT --file <path>`);
-    retire a superseded one with `bottega doc port doctrine retire <number>`, which keeps
-    its number rather than reusing it. When a port deliberately improves on its
+    a doctrine rule
+    (`bottega doc port doctrine add <number> --title TEXT --file <path> --space <slug>`);
+    retire a superseded one with
+    `bottega doc port doctrine retire <number> --space <slug>`, which keeps its number
+    rather than reusing it. Doctrine belongs to no project, so a hosted install
+    refuses either verb without `--space`. When a port deliberately improves on its
     source, append that to the SOURCE project's backports doc — that is how the
     source picks the improvement up on a later run, via step 7.
 
