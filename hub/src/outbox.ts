@@ -25,8 +25,8 @@ import { acquireStoredLease, holdStoredLease, StoredLeaseLostError } from './sto
 import { persistTaskAdoptionsOn } from './task-adoption.ts'
 import { hostedPushChanges, hostedTaskIdentity } from './task-client.ts'
 import {
-  partitionProjectRows,
   type PersonalRecordSpaceResolver,
+  partitionProjectRows,
   type RegisteredTaskSpace,
 } from './task-project-space.ts'
 

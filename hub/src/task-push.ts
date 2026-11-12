@@ -24,8 +24,8 @@ import {
   type TaskFetch,
 } from './task-client.ts'
 import {
-  partitionProjectRows,
   type PersonalRecordSpaceResolver,
+  partitionProjectRows,
   type RegisteredTaskSpace,
   type TaskDestinationIdentity,
   taskPullSpaces,
