@@ -1,31 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  decideAppliedMirrorMutation,
   decideTaskFlowReadStatus,
   decideTaskFlowReadThrough,
   decideTaskStageSelection,
   decideWorkflowTakeover,
-  reconcileKeylessInstanceSlot,
   taskFlowState,
 } from './task-flow-decision.ts'
-
-test('applied mirror mutation distinguishes apply, keep, refresh, and refusal', () => {
-  expect(decideAppliedMirrorMutation(3, 3, 4)).toBe('apply')
-  expect(decideAppliedMirrorMutation(5, 3, 5)).toBe('keep')
-  expect(decideAppliedMirrorMutation(2, 3, 5)).toBe('refresh')
-  expect(decideAppliedMirrorMutation(2, 3, undefined)).toBe('refuse')
-})
-
-test.each([
-  ['local ahead', 4, 3, 4],
-  ['hosted ahead', 3, 4, 4],
-  ['equal', 4, 4, 4],
-] as const)(
-  'keyless slot reconciliation keeps the next free slot when %s',
-  (_case, local, hosted, expected) => {
-    expect(reconcileKeylessInstanceSlot(local, hosted)).toBe(expected)
-  },
-)
 
 describe('task flow state projection', () => {
   test.each([

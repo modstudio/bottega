@@ -1,7 +1,7 @@
 // concern: hosted task-flow write client
 /** Routes one task-flow intent through one service call's record write authority. */
 import type { Database } from 'bun:sqlite'
-import { projectByName } from '../project/project-read.ts'
+import { projectByName } from '../project/projects.ts'
 import { recordApiClient } from './record-api-client.ts'
 import type { RecordWriteDestination } from './record-api-client-paths.ts'
 import type { RecordTaskFlowClient } from './record-api-client-task-flow.ts'

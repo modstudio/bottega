@@ -78,23 +78,10 @@ test.each([1, TASK_FLOW_STAGE_LIST_LIMIT_MAX])(
   },
 )
 
-test('task-flow stage list refuses contradictory task-link filters', async () => {
+test('task-flow stage list passes the hosted filters, ordering, and cursor', async () => {
   const calls: TaskFlowStageListQuery[] = []
   const response = await taskFlowApp(calls).request(
-    '/v1/task-flow/stages?linked=true&unlinked=true',
-  )
-  expect(response.status).toBe(400)
-  expect(calls).toEqual([])
-  expect(await response.json()).toEqual({
-    error: 'invalid task-flow stage list query',
-    remedy: expect.stringContaining('linked'),
-  })
-})
-
-test('task-flow stage list passes the hosted filters and ordering', async () => {
-  const calls: TaskFlowStageListQuery[] = []
-  const response = await taskFlowApp(calls).request(
-    `/v1/task-flow/stages?workflow=fix-defect&mode=default&workflowKey=DEV-2234&keyless=true&primaryInstance=true&taskId=${KNOWN_ID}&linked=true&openedMachineId=${UNKNOWN_ID}&order=newest`,
+    `/v1/task-flow/stages?workflow=fix-defect&mode=default&workflowKey=DEV-2234&keyless=true&primaryInstance=true&taskId=${KNOWN_ID}&unlinked=true&order=newest`,
   )
   expect(response.status).toBe(200)
   expect(calls[0]).toMatchObject({
@@ -104,8 +91,7 @@ test('task-flow stage list passes the hosted filters and ordering', async () => 
     keyless: true,
     primaryInstance: true,
     taskId: KNOWN_ID,
-    linked: true,
-    openedMachineId: UNKNOWN_ID,
+    unlinked: true,
     order: 'newest',
   })
 })

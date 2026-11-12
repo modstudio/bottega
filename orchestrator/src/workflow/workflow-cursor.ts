@@ -99,7 +99,6 @@ async function reselectCursor(
     },
     d,
     true,
-    context.taskFlowClient,
   )) as CursorRow
   const moved =
     row.updated_at !== selected.updated_at ||
@@ -737,9 +736,7 @@ export async function nextWorkflowStep(
   await linkResolvedWorkflowTask(project, context, d)
   await reselectCursor(selected, args, context, d)
   return withReplayedFloorEvidenceAsync(ports, async (replayPorts) => {
-    const row = (await taskFlowReadStore(d, context.taskFlowClient).stageByRecordId(
-      selected.record_id,
-    )) as CursorRow
+    const row = (await taskFlowReadStore(d).stageByRecordId(selected.record_id)) as CursorRow
     adoptLinkedTask(row, args, context)
     return nextWorkflowStepImpl(
       row,

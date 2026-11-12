@@ -1,7 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { resolvedRecordOrigin } from '../../../shared/record-api-url.ts'
-import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
 import { rememberActiveRecordSpace } from '../project-space.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
@@ -10,7 +9,6 @@ import {
   type TaskFlowIntentInput,
   taskFlowRequestId,
 } from '../record/record-task-flow-write-contract.ts'
-import { taskFlowReadStore } from './task-flow-store.ts'
 import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
 import { ruleWorkflow } from './workflow-cursor-ruling.ts'
@@ -60,46 +58,29 @@ function composeClient(
     number?: number
     flowRevision?: number
     stageRevision?: number
-    enforcement?: string
-    recordCompose?: boolean
     destinations?: Array<{ destinationSpaceId?: string } | undefined>
-    projectNames?: Record<string, string>
   } = {},
 ): RecordTaskFlowClient {
-  const memory = createMemoryRecordApiClient({
-    taskFlowComposeFlowRevision: options.flowRevision ?? 4,
-    taskFlowComposeStageRevision: options.stageRevision ?? 7,
-    taskFlowComposeEnforcement: options.enforcement,
-    taskFlowProjectNames: options.projectNames,
-  })
-  const replays = new Map<
-    string,
-    { stage: { id: string; number: number }; revisions: Record<string, number> }
-  >()
+  let replay:
+    | { stage: { id: string; number: number }; revisions: Record<string, number> }
+    | undefined
   return {
-    ...memory,
     ...projectIdentityClient,
     composeTaskFlow: async (input, destination) => {
       calls.push(input)
       options.destinations?.push(destination)
       if (options.fail) throw options.fail
-      const replay = replays.get(input.requestId)
       if (replay) return replay
-      const stored =
-        options.recordCompose === false
-          ? { stage: { id: input.stageInsert!.id, number: options.number ?? 41 } }
-          : await memory.composeTaskFlow!(input, destination)
       const stage = input.stageInsert!
       const flowId = input.flowInsert?.id ?? input.flowChange!.id
-      const result = {
-        stage: { id: stage.id, number: options.number ?? stored.stage!.number },
+      replay = {
+        stage: { id: stage.id, number: options.number ?? 41 },
         revisions: {
           [flowId]: options.flowRevision ?? 4,
           [stage.id]: options.stageRevision ?? 7,
         },
       }
-      replays.set(input.requestId, result)
-      return result
+      return replay
     },
   }
 }
@@ -124,7 +105,7 @@ function installKeylessWorkflow(d: Database, slug: string): void {
   ).run(destinationSpaceId, slug, destinationSpaceId)
 }
 
-test('hosted compose prints the hosted number while caching the machine-local number', async () => {
+test('hosted compose keeps machine-local cursor numbers and caches revisions without an outbox row', async () => {
   const d = hostedDatabase()
   await composeWorkflowWithCursor(
     'flow',
@@ -161,7 +142,7 @@ test('hosted compose prints the hosted number while caching the machine-local nu
     flowInsert: { taskId: 'task-DEV-HOSTED' },
     stageInsert: { workflow: 'flow', workflowKey: 'DEV-HOSTED' },
   })
-  expect(composed.cursor?.id).toBe(1)
+  expect(composed.cursor?.id).toBe(2)
   expect(
     d.query('SELECT number,revision FROM workflow_cursor WHERE workflow_key=?').get('DEV-HOSTED'),
   ).toEqual({ number: 2, revision: 7 })
@@ -169,56 +150,6 @@ test('hosted compose prints the hosted number while caching the machine-local nu
     d.query('SELECT revision FROM task_flow WHERE task_record_id=?').get('task-DEV-HOSTED'),
   ).toEqual({ revision: 4 })
   expect(d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%'").all()).toEqual([])
-})
-
-test('hosted compose prints and resolves the per-project number across two projects', async () => {
-  const d = hostedDatabase()
-  const secondProjectId = '00000000-0000-4000-8000-000000000099'
-  const settings = d
-    .query<{ settings: string }, []>("SELECT settings FROM project WHERE name='fixture'")
-    .get()!.settings
-  d.query('INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?)').run(
-    secondProjectId,
-    'second-fixture',
-    '/second-fixture',
-    'bun',
-    settings,
-  )
-  rememberProjectSpace(d, 'second-fixture', destinationSpaceId)
-  const calls: TaskFlowIntentInput<'compose'>[] = []
-  const taskFlowClient = composeClient(calls, {
-    projectNames: {
-      '00000000-0000-4000-8000-000000000001': 'fixture',
-      [secondProjectId]: 'second-fixture',
-    },
-  })
-  await composeWorkflowWithCursor(
-    'flow',
-    'fixture',
-    'default',
-    { key: 'DEV-FIRST', branch: 'DEV-FIRST-work', worktree: '/tmp/first' },
-    { ...context, taskRecordId: 'task-DEV-FIRST', taskFlowClient },
-    d,
-    {},
-    {},
-  )
-  const second = await composeWorkflowWithCursor(
-    'flow',
-    'second-fixture',
-    'default',
-    { key: 'DEV-SECOND', branch: 'DEV-SECOND-work', worktree: '/tmp/second' },
-    { ...context, taskRecordId: 'task-DEV-SECOND', taskFlowClient },
-    d,
-    {},
-    {},
-  )
-  expect(second.cursor?.id).toBe(1)
-  expect(
-    d.query('SELECT number FROM workflow_cursor WHERE workflow_key=?').get('DEV-SECOND'),
-  ).toEqual({ number: 2 })
-  expect(
-    await taskFlowReadStore(d, taskFlowClient).stageByHandle('second-fixture', 1),
-  ).toMatchObject({ record_id: calls[1]!.stageInsert!.id, id: 1, project: 'second-fixture' })
 })
 
 test('hosted compose failure leaves no local flow or cursor', async () => {
@@ -251,7 +182,7 @@ test('hosted compose failure leaves no local flow or cursor', async () => {
 test('compose replay after a local crash reuses its request id and hosted stage', async () => {
   const d = hostedDatabase()
   const calls: TaskFlowIntentInput<'compose'>[] = []
-  const taskFlowClient = composeClient(calls, { number: 73, recordCompose: false })
+  const taskFlowClient = composeClient(calls, { number: 73 })
   d.exec(`CREATE TRIGGER fail_hosted_compose_cache BEFORE INSERT ON workflow_cursor
     WHEN NEW.workflow_key='DEV-REPLAY' BEGIN SELECT RAISE(ABORT, 'injected cache failure'); END`)
   const input = {
@@ -288,7 +219,7 @@ test('compose replay after a local crash reuses its request id and hosted stage'
 
   expect(calls).toHaveLength(2)
   expect(calls[1]!.requestId).toBe(calls[0]!.requestId)
-  expect(composed.cursor?.id).toBe(73)
+  expect(composed.cursor?.id).toBe(1)
   expect(
     d.query('SELECT record_id FROM workflow_cursor WHERE workflow_key=?').get('DEV-REPLAY'),
   ).toEqual({ record_id: calls[0]!.stageInsert!.id })
@@ -320,46 +251,41 @@ test('advance, await, rule, and abandon call the record before caching returned 
   const events: string[] = []
   let stageId = ''
   let flowId = ''
-  const memory = composeClient(composeCalls, {
-    stageRevision: 7,
-    flowRevision: 4,
-    enforcement: 'note-only',
-  })
   const taskFlowClient: RecordTaskFlowClient = {
     ...projectIdentityClient,
-    ...memory,
-    advanceTaskFlow: async (input, destination) => {
+    ...composeClient(composeCalls, { stageRevision: 7, flowRevision: 4 }),
+    advanceTaskFlow: async (input) => {
       events.push('advance')
       expect(
         d.query('SELECT revision FROM workflow_cursor WHERE record_id=?').get(input.stage.id),
       ).toEqual({ revision: 7 })
-      return memory.advanceTaskFlow!(input, destination)
+      return { revisions: { [input.stage.id]: 11, ...(input.flow ? { [input.flow.id]: 6 } : {}) } }
     },
-    awaitTaskFlowRuling: async (input, destination) => {
+    awaitTaskFlowRuling: async (input) => {
       events.push('await-ruling')
       expect(
         d.query('SELECT revision FROM workflow_cursor WHERE record_id=?').get(input.stage.id),
-      ).toEqual({ revision: 8 })
+      ).toEqual({ revision: 11 })
       expect(
         d
           .query('SELECT count(*) count FROM question WHERE workflow_cursor_record_id=?')
           .get(input.stage.id),
       ).toEqual({ count: 0 })
-      return memory.awaitTaskFlowRuling!(input, destination)
+      return { revisions: { [input.stage.id]: 12 } }
     },
-    updateTaskFlowStage: async (input, destination) => {
+    updateTaskFlowStage: async (input) => {
       events.push('stage-update')
       expect(
         d.query('SELECT revision FROM workflow_cursor WHERE record_id=?').get(input.stages[0]!.id),
-      ).toEqual({ revision: 9 })
-      return memory.updateTaskFlowStage!(input, destination)
+      ).toEqual({ revision: 12 })
+      return { revisions: { [input.stages[0]!.id]: 13 } }
     },
-    abandonTaskFlow: async (input, destination) => {
+    abandonTaskFlow: async (input) => {
       events.push('abandon')
       expect(
         d.query('SELECT state,revision FROM workflow_cursor WHERE record_id=?').get(input.stage.id),
-      ).toEqual({ state: 'running', revision: 10 })
-      return memory.abandonTaskFlow!(input, destination)
+      ).toEqual({ state: 'running', revision: 13 })
+      return { revisions: { [input.stage.id]: 14, ...(input.flow ? { [input.flow.id]: 8 } : {}) } }
     },
   }
   const hostedContext = { ...context, taskRecordId: 'task-DEV-LIFECYCLE', taskFlowClient }
@@ -396,7 +322,7 @@ test('advance, await, rule, and abandon call the record before caching returned 
     testPorts,
   )
   expect(d.query('SELECT revision FROM workflow_cursor WHERE record_id=?').get(stageId)).toEqual({
-    revision: 8,
+    revision: 11,
   })
   await awaitWorkflowRuling(
     'flow',
@@ -409,31 +335,36 @@ test('advance, await, rule, and abandon call the record before caching returned 
     () => {},
   )
   expect(d.query('SELECT revision FROM workflow_cursor WHERE record_id=?').get(stageId)).toEqual({
-    revision: 9,
+    revision: 12,
   })
   await ruleWorkflow('flow', 'fixture', 'default', args, 'Proceed.', true, 'mcp', hostedContext, d)
   expect(d.query('SELECT revision FROM workflow_cursor WHERE record_id=?').get(stageId)).toEqual({
-    revision: 10,
+    revision: 13,
   })
   await abandonCursor('flow', 'fixture', 'default', args, 'finished', hostedContext, d)
 
   expect(events).toEqual(['advance', 'await-ruling', 'stage-update', 'abandon'])
   expect(
     d.query('SELECT state,revision FROM workflow_cursor WHERE record_id=?').get(stageId),
-  ).toEqual({ state: 'abandoned', revision: 11 })
+  ).toEqual({ state: 'abandoned', revision: 14 })
   expect(d.query('SELECT revision FROM task_flow WHERE record_id=?').get(flowId)).toEqual({
-    revision: 4,
+    revision: 8,
   })
 })
 
 test("abandoning a stage that is not its flow's open stage preserves the pointer", async () => {
   const d = hostedDatabase()
+  let number = 40
   let abandoned: TaskFlowIntentInput<'abandon'> | undefined
-  const memory = createMemoryRecordApiClient()
   const taskFlowClient: RecordTaskFlowClient = {
-    ...memory,
     ...projectIdentityClient,
-    composeTaskFlow: (input, destination) => memory.composeTaskFlow!(input, destination),
+    composeTaskFlow: async (input) => ({
+      stage: { id: input.stageInsert!.id, number: number++ },
+      revisions: {
+        [input.stageInsert!.id]: 1,
+        [input.flowInsert?.id ?? input.flowChange!.id]: 1,
+      },
+    }),
     abandonTaskFlow: async (input) => {
       abandoned = input
       return { revisions: { [input.stage.id]: 2 } }
@@ -500,13 +431,10 @@ test('adoption calls adopt then stage-update and caches the hosted flow identity
   installKeylessWorkflow(d, 'hosted-adoption')
   const events: string[] = []
   let hostedFlowId = ''
-  const memory = createMemoryRecordApiClient()
   const taskFlowClient: RecordTaskFlowClient = {
-    ...memory,
     ...projectIdentityClient,
     composeTaskFlow: async (input) => {
       hostedFlowId = input.flowInsert!.id
-      await memory.composeTaskFlow!(input, { destinationSpaceId })
       return {
         stage: { id: input.stageInsert!.id, number: 81 },
         revisions: { [hostedFlowId]: 2, [input.stageInsert!.id]: 3 },
@@ -563,36 +491,35 @@ test('hosted text attach, copy, and delete happen before their local rows change
   const d = hostedDatabase()
   const composeCalls: TaskFlowIntentInput<'compose'>[] = []
   const events: string[] = []
-  const memory = composeClient(composeCalls)
   const taskFlowClient: RecordTaskFlowClient = {
     ...projectIdentityClient,
-    ...memory,
-    attachTaskFlowText: async (input, destination) => {
+    ...composeClient(composeCalls),
+    attachTaskFlowText: async (input) => {
       events.push('attach-text')
       expect(
         d
           .query('SELECT count(*) count FROM workflow_step_text WHERE record_id=?')
           .get(input.rows[0]!.id),
       ).toEqual({ count: 0 })
-      return memory.attachTaskFlowText!(input, destination)
+      return { revisions: {} }
     },
-    copyTaskFlowText: async (input, destination) => {
+    copyTaskFlowText: async (input) => {
       events.push('copy-text')
       expect(
         d
           .query('SELECT count(*) count FROM workflow_text_copy WHERE record_id=?')
           .get(input.row.id),
       ).toEqual({ count: 0 })
-      return memory.copyTaskFlowText!(input, destination)
+      return { revisions: {} }
     },
-    deleteTaskFlowText: async (input, destination) => {
+    deleteTaskFlowText: async (input) => {
       events.push('delete-text')
       expect(
         d
           .query('SELECT count(*) count FROM workflow_step_text WHERE record_id=?')
           .get(input.ids[0]!),
       ).toEqual({ count: 1 })
-      return memory.deleteTaskFlowText!(input, destination)
+      return { revisions: {} }
     },
   }
   const hostedContext = { ...context, taskRecordId: 'task-DEV-TEXT', taskFlowClient }
@@ -640,13 +567,15 @@ test('keyless hosted composes use distinct deterministic session slots', async (
   const d = hostedDatabase()
   installKeylessWorkflow(d, 'hosted-keyless-slots')
   const calls: TaskFlowIntentInput<'compose'>[] = []
-  const memory = createMemoryRecordApiClient()
   const taskFlowClient: RecordTaskFlowClient = {
-    ...memory,
     ...projectIdentityClient,
     composeTaskFlow: async (input) => {
       calls.push(input)
-      return memory.composeTaskFlow!(input, { destinationSpaceId })
+      const number = 90 + calls.length
+      return {
+        stage: { id: input.stageInsert!.id, number },
+        revisions: { [input.flowInsert!.id]: 2, [input.stageInsert!.id]: 3 },
+      }
     },
   }
   const hostedContext = { session: 'shared-keyless-session', taskFlowClient }
@@ -681,7 +610,7 @@ test('keyless hosted composes use distinct deterministic session slots', async (
   ])
 })
 
-test('keyless compose after a cache crash advances past the hosted slot', async () => {
+test('keyless compose crash recovery reuses the same request and instance slot', async () => {
   const d = hostedDatabase()
   installKeylessWorkflow(d, 'hosted-keyless-replay')
   const calls: TaskFlowIntentInput<'compose'>[] = []
@@ -716,11 +645,11 @@ test('keyless compose after a cache crash advances past the hosted slot', async 
   )
 
   expect(calls).toHaveLength(2)
-  expect(calls[1]!.requestId).not.toBe(calls[0]!.requestId)
-  expect(calls[1]!.stageInsert!.instanceId).not.toBe(calls[0]!.stageInsert!.instanceId)
+  expect(calls[1]!.requestId).toBe(calls[0]!.requestId)
+  expect(calls[1]!.stageInsert!.instanceId).toBe(calls[0]!.stageInsert!.instanceId)
   expect(d.query('SELECT number,instance_id FROM workflow_cursor').get()).toEqual({
     number: 1,
-    instance_id: calls[1]!.stageInsert!.instanceId,
+    instance_id: calls[0]!.stageInsert!.instanceId,
   })
 })
 
@@ -731,15 +660,16 @@ test('keyless open-slot recovery recounts once and composes the next sibling slo
   let setupStageId = ''
   let setupFlowId = ''
   let listCalls = 0
-  const memory = createMemoryRecordApiClient()
   const taskFlowClient: RecordTaskFlowClient = {
-    ...memory,
     ...projectIdentityClient,
     composeTaskFlow: async (input) => {
       if (!setupStageId) {
         setupStageId = input.stageInsert!.id
         setupFlowId = input.flowInsert!.id
-        return memory.composeTaskFlow!(input, { destinationSpaceId })
+        return {
+          stage: { id: setupStageId, number: 201 },
+          revisions: { [setupFlowId]: 1, [setupStageId]: 1 },
+        }
       }
       composeCalls.push(input)
       if (composeCalls.length === 1)
@@ -754,9 +684,7 @@ test('keyless open-slot recovery recounts once and composes the next sibling slo
         revisions: { [input.flowInsert!.id]: 1, [input.stageInsert!.id]: 1 },
       }
     },
-    listTaskFlowStages: async (selector, destination) => {
-      if (!composeCalls.length || selector.workflow)
-        return memory.listTaskFlowStages!(selector, destination)
+    listTaskFlowStages: async () => {
       listCalls += 1
       const failed = composeCalls[0]!.stageInsert!
       return {

@@ -28,7 +28,7 @@ test('workflow attach reads text from stdin and prints its close reference', asy
       )!
     const lines: string[] = []
     await workflowCommand(
-      ['workflow', 'attach', '--project', 'fixture', '--cursor', String(cursor.number)],
+      ['workflow', 'attach', '--cursor', String(cursor.number)],
       presentation(lines),
       {
         stdinIsTTY: () => false,

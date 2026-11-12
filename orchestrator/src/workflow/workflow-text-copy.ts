@@ -105,12 +105,8 @@ export const productionWorkflowTextDocumentPorts: WorkflowTextDocumentPorts = {
 
 const firstToken = (title: string) => title.trim().split(/\s+/, 1)[0] ?? ''
 
-async function uncopiedRows(
-  cursorId: string,
-  database: Database,
-  client?: RecordTaskFlowClient,
-): Promise<CopyRow[]> {
-  return (await taskFlowReadStore(database, client).uncopiedTextsForStage(cursorId)).map((row) => ({
+async function uncopiedRows(cursorId: string, database: Database): Promise<CopyRow[]> {
+  return (await taskFlowReadStore(database).uncopiedTextsForStage(cursorId)).map((row) => ({
     id: row.record_id,
     stepSlug: row.step_slug,
     body: row.body,
@@ -170,7 +166,7 @@ export async function copyWorkflowTextForCursor(
   documents: WorkflowTextDocumentPorts = productionWorkflowTextDocumentPorts,
   client?: RecordTaskFlowClient,
 ): Promise<WorkflowTextCopyResult> {
-  const rows = await uncopiedRows(cursor.recordId, database, client)
+  const rows = await uncopiedRows(cursor.recordId, database)
   if (!cursor.taskRecordId || rows.length === 0)
     return { cursor: cursor.number, copied: [], uncopied: [], unsupported: null }
   const target = taskFlowWriteTarget(cursor.project, database)
@@ -289,7 +285,6 @@ export async function closeCursorWithTextCopyResult(
     database,
     input.context.taskRecordId,
     input.context.taskStatusCategory,
-    input.context.taskFlowClient,
   )) as SelectableCursorRow | null
   if (!row)
     throw new Error(

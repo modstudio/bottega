@@ -8,16 +8,9 @@ import type {
   TaskFlowIntentInput,
   TaskFlowIntentResult,
 } from '../record/record-task-flow-write-contract.ts'
-import {
-  type AppliedMirrorMutationDecision,
-  decideAppliedMirrorMutation,
-} from './task-flow-decision.ts'
 
 type Mutation = { id: string; expectedRevision: number; values: Record<string, unknown> }
 type SqlRow = Record<string, SQLQueryBindings>
-type AppliedMirrorOutcome = Exclude<AppliedMirrorMutationDecision, 'refuse'>
-export type TaskFlowSqliteWriteResult<K extends TaskFlowIntent> = TaskFlowIntentResult<K> &
-  (K extends 'adopt' ? { mirror: Record<string, AppliedMirrorOutcome> } : object)
 
 const jsonValues = new Set(['arguments', 'closedStepNotes', 'satisfiedEvidence'])
 
@@ -151,15 +144,9 @@ function updateMutation(
   intent: TaskFlowIntent,
   applied: Record<string, number> | undefined,
 ): number {
+  if (revision(database, table, mutation.id) !== mutation.expectedRevision)
+    revisionRefusal(database, intent, table, mutation.id)
   const next = applied?.[mutation.id] ?? mutation.expectedRevision + 1
-  const current = revision(database, table, mutation.id)
-  const decision = decideAppliedMirrorMutation(
-    current,
-    mutation.expectedRevision,
-    applied?.[mutation.id],
-  )
-  if (decision === 'refuse') revisionRefusal(database, intent, table, mutation.id)
-  if (decision !== 'apply') return next
   if (table === 'task_flow') applyFlowValues(database, mutation, next)
   else applyStageValues(database, mutation, next)
   return next
@@ -378,18 +365,8 @@ function applyAdopt(
   applied: { revisions: Record<string, number>; flowRecordId: string } | undefined,
 ) {
   const stage = body.stage as { id: string; expectedRevision: number }
-  const stageDecision = decideAppliedMirrorMutation(
-    revision(database, 'workflow_cursor', stage.id),
-    stage.expectedRevision,
-    applied?.revisions[stage.id],
-  )
-  if (stageDecision === 'refuse') revisionRefusal(database, 'adopt', 'workflow_cursor', stage.id)
-  if (stageDecision !== 'apply')
-    return {
-      revisions: applied!.revisions,
-      flowRecordId: applied!.flowRecordId,
-      mirror: { [stage.id]: stageDecision },
-    }
+  if (revision(database, 'workflow_cursor', stage.id) !== stage.expectedRevision)
+    revisionRefusal(database, 'adopt', 'workflow_cursor', stage.id)
   const source = sourceFlowForAdopt(database, stage.id, body, applied)
   const target = database
     .query<{ record_id: string; revision: number }, [string]>(
@@ -451,7 +428,6 @@ function applyAdopt(
       [flowRecordId]: revisions[flowRecordId] ?? (target?.revision ?? source.revision) + 1,
     },
     flowRecordId,
-    mirror: { [stage.id]: stageDecision },
   }
 }
 
@@ -560,7 +536,7 @@ export function writeSqliteTaskFlow<K extends TaskFlowIntent>(
   intent: K,
   payload: TaskFlowIntentInput<K>,
   applied?: TaskFlowIntentResult<K> | null,
-): TaskFlowSqliteWriteResult<K> {
+): TaskFlowIntentResult<K> {
   const body = payload as unknown as SqlRow
   const revisions = (applied as { revisions: Record<string, number> } | null | undefined)?.revisions
   if (intent === 'compose')
@@ -568,22 +544,22 @@ export function writeSqliteTaskFlow<K extends TaskFlowIntent>(
       database,
       body,
       applied as TaskFlowIntentResult<'compose'> | null,
-    ) as unknown as TaskFlowSqliteWriteResult<K>
+    ) as TaskFlowIntentResult<K>
   if (intent === 'stage-update')
-    return writeStageUpdate(database, body, revisions) as TaskFlowSqliteWriteResult<K>
+    return writeStageUpdate(database, body, revisions) as TaskFlowIntentResult<K>
   if (intent === 'advance' || intent === 'await-ruling' || intent === 'abandon')
     return {
       revisions: applyStageMutation(database, intent, body, revisions),
-    } as TaskFlowSqliteWriteResult<K>
+    } as TaskFlowIntentResult<K>
   if (intent === 'adopt')
     return applyAdopt(
       database,
       body,
       applied as { revisions: Record<string, number>; flowRecordId: string } | undefined,
-    ) as TaskFlowSqliteWriteResult<K>
+    ) as TaskFlowIntentResult<K>
   return writeTextIntent(
     database,
     intent as 'attach-text' | 'delete-text' | 'copy-text',
     body,
-  ) as TaskFlowSqliteWriteResult<K>
+  ) as TaskFlowIntentResult<K>
 }

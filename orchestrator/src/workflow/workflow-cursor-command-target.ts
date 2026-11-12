@@ -39,7 +39,6 @@ export async function cursorCommandTarget(
       cursor,
       context.session,
       database,
-      context.taskFlowClient,
     )
     if (hasStep && (!suppliedStep || (!suppliedWorkflow && suppliedStep === row.workflow_slug)))
       step = row.step_slug
