@@ -141,7 +141,7 @@ describe('collect lease contention log', () => {
 
   test('a wait that acquires records the most recently observed holder', async () => {
     expect(acquireLease('waiting-on-watcher')).toBeTrue()
-    setTimeout(() => releaseLease('waiting-on-watcher'), 300)
+    setTimeout(() => releaseLease('waiting-on-watcher'), 100)
     const result = await withLease('acquiring-waiter', async () => {}, 2_000)
     expect(result.ran).toBeTrue()
     expect(
@@ -159,6 +159,15 @@ describe('collect lease contention log', () => {
         leaseUnreadable: false,
       },
     ])
+  })
+
+  test('a first-attempt acquire records no contention', async () => {
+    expect((await withLease('first-try', async () => {}, 0)).ran).toBeTrue()
+    expect(
+      readCollectLeaseContentionSince('1970-01-01T00:00:00.000Z').filter(
+        (entry) => entry.waiter === 'first-try',
+      ),
+    ).toEqual([])
   })
 
   test('a lost held lease records the losing and newer holders once', async () => {
