@@ -57,8 +57,8 @@ import {
 } from './pr-merge-evidence.ts'
 import {
   completePullRequestPostLanding,
-  type PullRequestMergeOutcome as PullRequestPostLandingOutcome,
   type PullRequestPostLandingAdapter,
+  type PullRequestMergeOutcome as PullRequestPostLandingOutcome,
 } from './pr-post-landing.ts'
 
 export type { PullRequestMergeFacts } from './pr-merge-evidence.ts'

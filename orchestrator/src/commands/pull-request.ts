@@ -20,7 +20,7 @@ import {
 } from '../pull-request/pr-admission.ts'
 import type { PullRequestCiCounts } from '../pull-request/pr-ci-record.ts'
 import { recordPullRequestCi } from '../pull-request/pr-ci-record.ts'
-import { mergePullRequest } from '../pull-request/pr-merge.ts'
+import { mergePullRequest, type PullRequestMergeOutcome } from '../pull-request/pr-merge.ts'
 import {
   POST_LANDING_REPORTED_EXIT_CODE,
   runPullRequestPostLanding,
@@ -135,6 +135,31 @@ export async function createPullRequestCommand(
   }
 }
 
+async function applyPullRequestContextMoment(
+  taskKey: string | null,
+  outcome: PullRequestMergeOutcome,
+): Promise<void> {
+  if (!taskKey || ![0, 20, 21].includes(outcome.exitCode)) return
+  try {
+    const context = await getContext({ task: taskKey })
+    const effect = contextMomentEffect({
+      moment: 'pr-merge',
+      taskKey,
+      pullRequest: {
+        number: outcome.pullRequestNumber,
+        mergeCommit: outcome.mergeCommit,
+      },
+      openQuestionIds: context.items
+        .filter((item) => item.kind === 'open-question')
+        .map((item) => item.id),
+    })
+    await applyContextMomentEffect(taskKey, effect, false, { log, error: console.error })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    log(`context: could not gather pr-merge on ${taskKey}: ${detail}`)
+  }
+}
+
 async function mergePullRequestCommand(
   target: string,
   options: { cwd?: string; releaseRequired?: boolean; postLanding?: boolean; depth?: string },
@@ -173,26 +198,7 @@ async function mergePullRequestCommand(
   )
   log(outcome.output)
   if (outcome.exitCode !== 0) process.exitCode = outcome.exitCode
-  if (taskKey && [0, 20, 21].includes(outcome.exitCode)) {
-    try {
-      const context = await getContext({ task: taskKey })
-      const effect = contextMomentEffect({
-        moment: 'pr-merge',
-        taskKey,
-        pullRequest: {
-          number: outcome.pullRequestNumber,
-          mergeCommit: outcome.mergeCommit,
-        },
-        openQuestionIds: context.items
-          .filter((item) => item.kind === 'open-question')
-          .map((item) => item.id),
-      })
-      await applyContextMomentEffect(taskKey, effect, false, { log, error: console.error })
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error)
-      log(`context: could not gather pr-merge on ${taskKey}: ${detail}`)
-    }
-  }
+  await applyPullRequestContextMoment(taskKey, outcome)
 }
 
 export function register(program: Command): void {

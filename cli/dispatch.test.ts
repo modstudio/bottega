@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../shared/brand.ts'
 import { type BinaryEntries, dispatchBinary, routeHelp } from './dispatch.ts'
 import { HAND_PARSED_OWNERS, ROUTES } from './routes.ts'
 
@@ -378,7 +378,7 @@ test('task close clears context only after hub close succeeds', async () => {
         'close',
         'DEV-2270',
         '--project',
-        'bottega',
+        PLATFORM_NAME,
         '--keep-branches',
         '--abandon',
         'superseded',
@@ -388,7 +388,7 @@ test('task close clears context only after hub close succeeds', async () => {
     ),
   ).toBe(0)
   expect(calls).toEqual([
-    'hub: task close DEV-2270 --project bottega --keep-branches --abandon superseded',
+    `hub: task close DEV-2270 --project ${PLATFORM_NAME} --keep-branches --abandon superseded`,
     'orchestrator: context clear --task DEV-2270',
   ])
 

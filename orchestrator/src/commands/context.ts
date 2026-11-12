@@ -30,6 +30,17 @@ export function contextClearReport(result: { removed: number; task: string }): s
   return `context: cleared ${result.removed} items on ${result.task}`
 }
 
+function registerClear(context: Command): void {
+  context
+    .command('clear')
+    .description('remove every context item from one task holder')
+    .requiredOption('--task <key>', 'select task holder')
+    .action(async (options) => {
+      const result = await clearTaskContext({ task: options.task })
+      log(contextClearReport(result))
+    })
+}
+
 export function register(program: Command): void {
   const context = program
     .command('context')
@@ -116,12 +127,5 @@ export function register(program: Command): void {
       if (!result.removed) throw new Error(`no context item ${result.holder}/${result.id}`)
       log(JSON.stringify(result))
     })
-  context
-    .command('clear')
-    .description('remove every context item from one task holder')
-    .requiredOption('--task <key>', 'select task holder')
-    .action(async (options) => {
-      const result = await clearTaskContext({ task: options.task })
-      log(contextClearReport(result))
-    })
+  registerClear(context)
 }

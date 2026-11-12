@@ -55,15 +55,16 @@ tasks and task documents
 
 ## bottega task close
 
-**Synopsis:** `bottega task close <key> [--project <X>] [--keep-branches] [--abandon <reason>]`
+**Synopsis:** `bottega task close <key> [--project <X>] [--keep-branches] [--abandon <reason>] [--task <key>]`
 
-close a task, release its claims, and prune its branches
+close a task and clear its stored context
 
 ### Options
 
 - `--project <X>`: resolve the task in this project
 - `--keep-branches`: leave the task branches unpruned
 - `--abandon <reason>`: record why unlanded work may be abandoned
+- `--task <key>`: select task holder
 
 ### Related
 

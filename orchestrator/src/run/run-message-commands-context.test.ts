@@ -21,6 +21,7 @@ afterEach(() => restoreEnvironment())
 
 const contextPorts = (calls: string[]): ContextMomentPorts =>
   ({
+    revision: async () => undefined,
     set: async (input) => {
       calls.push(`set ${input.kind} ${input.id} on ${input.task}`)
       return {
@@ -146,6 +147,7 @@ test('a context port failure leaves the answer recorded and reports without thro
     .get(root, new Date().toISOString(), 'Which shape?')!
   const lines: string[] = []
   const throwing = {
+    revision: async () => undefined,
     set: async () => {
       throw new Error('context unavailable')
     },
