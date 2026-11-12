@@ -4,14 +4,13 @@
 import { type Command, Option, type OptionValues } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { repeatable } from '../../../shared/cli-repeat-guard.ts'
-import { contextMomentWrite, emitContextMoment } from '../../../shared/context-moment.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { agentCommand, agentsCommand } from '../agent/agent-commands.ts'
 import { serveAsk } from '../ask/ask.ts'
 import { setupAskCommand } from '../ask/ask-commands.ts'
 import { writeAskServerFailure } from '../ask/ask-failure.ts'
 import { checkCommand } from '../check/check-commands.ts'
-import { flagValue, parseContinueArgs, refusedOwnerOptions } from '../cli/args.ts'
+import { parseContinueArgs, refusedOwnerOptions } from '../cli/args.ts'
 import { closeOutCommand } from '../close/close-out-command.ts'
 import { peekCommand, resultCommand, waitCommand } from '../collect/collection-commands.ts'
 import { contractCommand } from '../contract/contract-command.ts'
@@ -116,7 +115,7 @@ const tellByIdentifier = (id: string, command: Command, ping: boolean) =>
   )
 const answerByIdentifier = async (id: string, command: Command, options: OptionValues) => {
   const target = resolveAnswerIdentifier(db(), id, sessionId())
-  const writes = await answerCommand(
+  await answerCommand(
     target,
     rawArgv(command).slice(2),
     Boolean(options.recordOnly),
@@ -124,9 +123,8 @@ const answerByIdentifier = async (id: string, command: Command, options: OptionV
     runFlags(options),
     presentation,
     refusedOwnerOptions(command, 'question answer', 'question'),
+    { output: { log, error: console.error } },
   )
-  for (const write of writes)
-    emitContextMoment(write, Boolean(options.json), { log, error: console.error })
 }
 const relayByIdentifier = (id: string, command: Command, note: string) =>
   relayCommand(localRunId(id), rawArgv(command).slice(2), note, presentation, (question) =>
@@ -539,15 +537,13 @@ function registerDoCommand(program: Command): void {
       doVerb.addOption(collectedOption(option.flags, option.description))
     else doVerb.option(option.flags, option.description)
   }
-  doVerb.action(async (_job, _prompt, options, command) => {
+  doVerb.action(async (_job, _prompt, _options, command) => {
     const argv = rawArgv(command)
     await doCommand(argv, {
       error: console.error,
       printRunId: (id) => write(`${id}\n`),
       cwd: process.cwd,
     })
-    const prompt = contextMomentWrite({ moment: 'run-start', taskKey: flagValue(argv, 'key') })
-    emitContextMoment(prompt, Boolean(options.json), { log, error: console.error })
   })
 }
 

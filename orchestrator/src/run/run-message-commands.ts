@@ -2,7 +2,7 @@
 /** Owns answer, retry, and continuation command behavior. Must not know CLI grammar. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { type ContextMomentWrite, contextMomentWrite } from '../../../shared/context-moment.ts'
+import { type ContextMomentOutput, contextMomentEffect } from '../../../shared/context-moment.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { resumePromptByteLimit } from '../agent/agents.ts'
 import {
@@ -18,6 +18,7 @@ import {
   readWorkerFile,
 } from '../cli/args.ts'
 import { db } from '../database/db.ts'
+import { applyContextMomentEffect, type ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { newestTurnOutputPath } from '../evidence/evidence-query.ts'
 import { jobTakesFidelity } from '../jobs/job-fidelity.ts'
 import { JOBS } from '../jobs/jobs.ts'
@@ -199,10 +200,16 @@ export async function answerCommand(
   flags: Flags,
   presentation: Presentation,
   refusedOptions?: Readonly<Record<string, string>>,
-): Promise<ContextMomentWrite[]> {
+  context?: { ports?: ContextMomentPorts; output?: ContextMomentOutput },
+): Promise<void> {
   const helpers = answerRunHelpers(presentation)
   const input = await answerInputFromArgv(argv, recordOnly, json, flags, helpers, refusedOptions)
   const { result, answeredQuestions: questions } = await answerRun(id, input, helpers)
+  const answerByQuestion = new Map(
+    Array.isArray(input.rulings)
+      ? input.rulings.map((ruling) => [ruling.questionId, ruling.text] as const)
+      : questions.map((question) => [question.recordId, input.rulings as string] as const),
+  )
   if (json) console.log(JSON.stringify(result))
   else {
     for (const line of rulingFileOfferLines({
@@ -215,14 +222,22 @@ export async function answerCommand(
       console.log(line)
     }
   }
-  return questions.flatMap((question) => {
-    const write = contextMomentWrite({
+  for (const question of questions) {
+    const effect = contextMomentEffect({
       moment: 'question-answer',
       taskKey: question.taskHolder,
       questionId: question.number,
+      operatorRuled: question.fromOperator,
+      text: answerByQuestion.get(question.recordId),
     })
-    return write ? [write] : []
-  })
+    await applyContextMomentEffect(
+      question.taskHolder,
+      effect,
+      json,
+      context?.output,
+      context?.ports,
+    )
+  }
 }
 
 export async function continueCommand(

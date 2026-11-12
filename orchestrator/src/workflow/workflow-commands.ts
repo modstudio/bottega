@@ -3,11 +3,12 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { type ContextMomentWrite, contextMomentWrite } from '../../../shared/context-moment.ts'
+import { contextMomentEffect } from '../../../shared/context-moment.ts'
 import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
+import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { contentTree, reviewChangedPaths } from '../git/git-environment.ts'
 import { type Project, projectAt, projects } from '../project/projects.ts'
@@ -27,6 +28,7 @@ import {
 import { obligationUuid, positive } from './workflow-command-arguments.ts'
 import * as recordShape from './workflow-command-record-shape.ts'
 import type { CommitCountPort } from './workflow-compose-branch.ts'
+import { type WorkflowContextMoment, workflowNextContextMoment } from './workflow-context-moment.ts'
 import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { cursorCommandTarget } from './workflow-cursor-command-target.ts'
@@ -40,6 +42,7 @@ import { ruleWorkflow } from './workflow-cursor-ruling.ts'
 import {
   cliWorkflowCursorContext,
   resolveWorkflowCursorContext,
+  selectWorkflowCursorForClose,
 } from './workflow-cursor-selection.ts'
 import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
 import { parseWorkflowEvidencePayload, RECORD_EVIDENCE_FLAG } from './workflow-evidence-payload.ts'
@@ -119,6 +122,7 @@ export type WorkflowCommandOptions = {
   commitCount?: CommitCountPort
   hubTaskReader?: HubTaskReader
   workflowTextDocuments?: WorkflowTextDocumentPorts
+  contextMomentPorts?: ContextMomentPorts
 }
 export type WorkflowPrint = (value: unknown, line?: string) => void
 type ProbePrintRecord =
@@ -432,7 +436,7 @@ export async function ruleCommand(
   argv: string[],
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
-): Promise<ContextMomentWrite | null> {
+): Promise<WorkflowContextMoment> {
   const ruling = recordShape.workflowCommandRecordShape(argv, 'ruling', 'ruling')
   const args = workflowArgs(argv)
   let context = cliWorkflowCursorContext()
@@ -473,11 +477,16 @@ export async function ruleCommand(
     cursor,
   )
   print(result, `${result.summary} Question ${result.questionId}.`)
-  return contextMomentWrite({
-    moment: 'workflow-rule',
+  return {
     taskKey: context.workflowKey,
-    questionId: result.questionId,
-  })
+    effect: contextMomentEffect({
+      moment: 'workflow-rule',
+      taskKey: context.workflowKey,
+      questionId: result.questionId,
+      operatorRuled: argv.includes('--from-operator'),
+      text: ruling,
+    }),
+  }
 }
 
 export async function abandonCommand(
@@ -619,7 +628,7 @@ export async function nextCommand(
   argv: string[],
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
-): Promise<ContextMomentWrite | null> {
+): Promise<WorkflowContextMoment> {
   const { selfRuling, basis, note, question } = recordShape.workflowNextCommandRecordShapes(argv)
   if (basis !== undefined && selfRuling === undefined)
     throw new Error('--basis requires --self-ruling; pass both inputs, or omit --basis')
@@ -655,6 +664,15 @@ export async function nextCommand(
     selectedRow,
   )
   const live = await resolveCursorLiveAutonomy({ slug, project, mode, args, context, cursor })
+  const selected = selectWorkflowCursorForClose(
+    { project, workflow: slug, mode, key: workflowKeyOf(args) || undefined },
+    cursor,
+    context.session,
+    db(),
+    context.taskRecordId,
+    context.taskStatusCategory,
+  )
+  if (!selected) throw new Error(`workflow ${slug} has no cursor; compose the workflow first`)
   const result = await closeCursorWithTextCopy(
     {
       action: 'next',
@@ -685,7 +703,7 @@ export async function nextCommand(
     options.workflowTextDocuments ?? productionWorkflowTextDocumentPorts,
   )
   print(result, result)
-  return contextMomentWrite({ moment: 'workflow-next', taskKey: context.workflowKey })
+  return workflowNextContextMoment(selected.record_id, selfRuling)
 }
 
 export function showWorkflowTextCommand(argv: string[], print: WorkflowPrint): void {
@@ -720,7 +738,7 @@ export async function awaitCommand(
   argv: string[],
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
-): Promise<ContextMomentWrite | null> {
+): Promise<WorkflowContextMoment> {
   const question = recordShape.workflowCommandRecordShape(argv, 'question', 'open question')
   const args = workflowArgs(argv)
   let context = cliWorkflowCursorContext()
@@ -763,11 +781,15 @@ export async function awaitCommand(
     result,
     `workflow ${slug} is awaiting ruling question ${result.questionId} at step ${result.n} ${result.slug}`,
   )
-  return contextMomentWrite({
-    moment: 'workflow-await',
+  return {
     taskKey: context.workflowKey,
-    questionId: result.questionId,
-  })
+    effect: contextMomentEffect({
+      moment: 'workflow-await',
+      taskKey: context.workflowKey,
+      questionId: result.questionId,
+      text: question,
+    }),
+  }
 }
 
 export function cursorsCommand(argv: string[], print: WorkflowPrint): void {

@@ -2,8 +2,10 @@ import { McpServer } from '@modelcontextprotocol/server'
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
 import { z } from 'zod'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
+import { type ContextMomentEffect, contextMomentEffect } from '../../../shared/context-moment.ts'
 import { assertRecordShape } from '../../../shared/record-shape.ts'
 import { db, enableSchemaReload, sessionId } from '../database/db.ts'
+import { applyContextMomentEffect, type ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { registerStandardRuntime } from '../runtime/runtime-registration.ts'
 
@@ -80,6 +82,7 @@ import { registerWorkflowStepTool } from './mcp-workflow-step.ts'
 type DocsMcpPorts = LandingBranchPorts & {
   hubTaskReader?: HubTaskReader
   workflowTextDocuments?: WorkflowTextDocumentPorts
+  contextMomentPorts?: ContextMomentPorts
   registerSchemaReload?: (
     onReload: (from: number, to: number) => void,
     onRefusal?: (reason: string) => void,
@@ -103,6 +106,22 @@ const text = (value: unknown, isError = false) => ({
   ],
   ...(isError ? { isError: true } : {}),
 })
+
+async function mcpContextReports(
+  taskKey: string | null | undefined,
+  effect: ContextMomentEffect,
+  ports?: ContextMomentPorts,
+): Promise<string[]> {
+  const lines: string[] = []
+  await applyContextMomentEffect(
+    taskKey,
+    effect,
+    false,
+    { log: (line) => lines.push(line), error: (line) => lines.push(line) },
+    ports,
+  )
+  return lines
+}
 
 const requiredReportField = (field: string, belongs: string) =>
   z
@@ -539,19 +558,33 @@ function registerAwaitWorkflowRulingTool(server: McpServer, ports: DocsMcpPorts)
         'pass the mode argument',
         ports.hubTaskReader,
       )
-      return text(
-        await awaitWorkflowRuling(
-          slug,
-          project,
-          effectiveMode,
-          args ?? {},
-          shapedQuestion,
-          context,
-          undefined,
-          undefined,
-          cursor,
-        ),
+      const result = await awaitWorkflowRuling(
+        slug,
+        project,
+        effectiveMode,
+        args ?? {},
+        shapedQuestion,
+        context,
+        undefined,
+        undefined,
+        cursor,
       )
+      const reports = await mcpContextReports(
+        context.workflowKey,
+        contextMomentEffect({
+          moment: 'workflow-await',
+          taskKey: context.workflowKey,
+          questionId: result.questionId,
+          text: shapedQuestion,
+        }),
+        ports.contextMomentPorts,
+      )
+      return {
+        content: [
+          { type: 'text' as const, text: JSON.stringify(result) },
+          ...reports.map((line) => ({ type: 'text' as const, text: line })),
+        ],
+      }
     },
   )
 }
@@ -583,20 +616,35 @@ function registerRuleWorkflowTool(server: McpServer, ports: DocsMcpPorts): void 
         'pass the mode argument',
         ports.hubTaskReader,
       )
-      return text(
-        await ruleWorkflow(
-          slug,
-          project,
-          effectiveMode,
-          args ?? {},
-          shapedRuling,
-          Boolean(from_operator),
-          'mcp',
-          context,
-          undefined,
-          cursor,
-        ),
+      const result = await ruleWorkflow(
+        slug,
+        project,
+        effectiveMode,
+        args ?? {},
+        shapedRuling,
+        Boolean(from_operator),
+        'mcp',
+        context,
+        undefined,
+        cursor,
       )
+      const reports = await mcpContextReports(
+        context.workflowKey,
+        contextMomentEffect({
+          moment: 'workflow-rule',
+          taskKey: context.workflowKey,
+          questionId: result.questionId,
+          operatorRuled: Boolean(from_operator),
+          text: shapedRuling,
+        }),
+        ports.contextMomentPorts,
+      )
+      return {
+        content: [
+          { type: 'text' as const, text: JSON.stringify(result) },
+          ...reports.map((line) => ({ type: 'text' as const, text: line })),
+        ],
+      }
     },
   )
 }
@@ -694,7 +742,13 @@ function registerWorkflowActionTools(server: McpServer, ports: DocsMcpPorts): vo
         'Close the current step with a one-line note and a validated evidence reference for its floor, then fetch the next; the cursor is the record.',
       inputSchema: nextWorkflowStepInputSchema,
     },
-    (input) => advanceWorkflow(input, ports.hubTaskReader, ports.workflowTextDocuments),
+    (input) =>
+      advanceWorkflow(
+        input,
+        ports.hubTaskReader,
+        ports.workflowTextDocuments,
+        ports.contextMomentPorts,
+      ),
   )
 
   registerAwaitWorkflowRulingTool(server, ports)

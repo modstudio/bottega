@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { run } from '../cli/program.ts'
 import { db } from '../database/db.ts'
+import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { projectAt, upsertProject } from '../project/projects.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
@@ -890,6 +891,70 @@ test('mode-less cursor verbs keep using the cursor mode after the workflow defau
   expect(lines.join('\n')).toContain(
     `Workflow ${slug} for ${key} was abandoned at step 2 fix-defect-triage`,
   )
+})
+
+test('await, operator rule, and next replace task context through command seams', async () => {
+  const slug = 'cursor-context-moments'
+  const project = 'cursor-context-moments-project'
+  const key = 'DEV-2267'
+  const catalogue = productionStepCatalogue().definition.steps
+  const steps = [
+    catalogue.find(({ slug }) => slug === 'blast-radius')!.slug,
+    catalogue.find(({ slug }) => slug === 'fix-defect-triage')!.slug,
+  ]
+  registerFixtureProject(project)
+  publishCursorWorkflow(slug, [{ slug: 'report', title: 'Report', default: true, steps }])
+  const composed = await composeWorkflowWithCursor(
+    slug,
+    project,
+    'report',
+    { key },
+    {},
+    undefined,
+    {},
+    {},
+  )
+  const cursor = composed.cursor!.id
+  db().query("UPDATE workflow_cursor SET enforcement='note-only' WHERE number=?").run(cursor)
+  const items = new Map<string, { kind: string; body: string }>()
+  const ports = {
+    set: async (input) => {
+      items.set(input.id, { kind: input.kind, body: input.body })
+      return {
+        ...input,
+        holder: `task:${input.task}`,
+        revision: 'revision',
+        task: input.task ?? null,
+      }
+    },
+    drop: async (input) => {
+      const removed = items.delete(input.id)
+      if (!removed) throw new Error(`no context item task:${input.task}/${input.id}`)
+      return { holder: `task:${input.task}`, task: input.task ?? null, id: input.id, removed }
+    },
+  } as ContextMomentPorts
+  const lines: string[] = []
+  const command = (verb: string, ...tail: string[]) =>
+    workflowCommand(
+      ['workflow', verb, slug, '--cursor', String(cursor), ...tail],
+      presentation(lines),
+      { contextMomentPorts: ports },
+    )
+
+  await command('await', '--question', 'May this proceed?')
+  const openId = [...items.keys()].find((id) => id.startsWith('open-q'))!
+  const question = openId.slice('open-q'.length)
+  expect(items.get(openId)).toEqual({ kind: 'open-question', body: 'May this proceed?' })
+
+  await command('rule', '--ruling', 'Proceed.', '--from-operator')
+  expect(items.has(openId)).toBeFalse()
+  expect(items.get(`ruling-q${question}`)).toEqual({ kind: 'ruling', body: 'Proceed.' })
+
+  await command('next', '--note', 'closed after the operator ruling')
+  expect(items.get('next')).toEqual({
+    kind: 'next-action',
+    body: `${slug} cursor ${cursor} at fix-defect-triage: Triage findings`,
+  })
 })
 
 test('every CLI cursor verb routes by handle, including handle-only abandon', async () => {

@@ -4,8 +4,8 @@
 import { type Command, Option, type OptionValues } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { repeatable } from '../../../shared/cli-repeat-guard.ts'
-import { emitContextMoment } from '../../../shared/context-moment.ts'
 import { db } from '../database/db.ts'
+import { applyContextMomentEffect } from '../doc/context-moment-adapter.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { forkCatalogueCommand } from '../workflow/workflow-catalogue-commands.ts'
 import {
@@ -298,7 +298,15 @@ function registerWorkflowAdvancement({
         workflowArgv('next', slug === undefined ? [] : [slug], resolvedOptions),
         output(options),
         handlerOptions,
-      ).then((write) => emitContextMoment(write, Boolean(options.json), presentation))
+      ).then((moment) =>
+        applyContextMomentEffect(
+          moment.taskKey,
+          moment.effect,
+          Boolean(options.json),
+          presentation,
+          handlerOptions.contextMomentPorts,
+        ),
+      )
     })
 }
 
@@ -319,7 +327,15 @@ function registerWorkflowRulings({ workflow, handlerOptions, output }: WorkflowR
         workflowArgv('await', slug === undefined ? [] : [slug], options),
         output(options),
         handlerOptions,
-      ).then((write) => emitContextMoment(write, Boolean(options.json), presentation)),
+      ).then((moment) =>
+        applyContextMomentEffect(
+          moment.taskKey,
+          moment.effect,
+          Boolean(options.json),
+          presentation,
+          handlerOptions.contextMomentPorts,
+        ),
+      ),
     )
 
   jsonOption(
@@ -339,7 +355,15 @@ function registerWorkflowRulings({ workflow, handlerOptions, output }: WorkflowR
         workflowArgv('rule', slug === undefined ? [] : [slug], options),
         output(options),
         handlerOptions,
-      ).then((write) => emitContextMoment(write, Boolean(options.json), presentation)),
+      ).then((moment) =>
+        applyContextMomentEffect(
+          moment.taskKey,
+          moment.effect,
+          Boolean(options.json),
+          presentation,
+          handlerOptions.contextMomentPorts,
+        ),
+      ),
     )
 }
 

@@ -4,12 +4,15 @@
 import type { z } from 'zod'
 import { assertRecordShape } from '../../../shared/record-shape.ts'
 import { db } from '../database/db.ts'
+import { applyContextMomentEffect, type ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { resolveProbeArtifact } from '../workflow/probe-identifier.ts'
+import { workflowNextContextMoment } from '../workflow/workflow-context-moment.ts'
 import { workflowKeyOf } from '../workflow/workflow-cursor-arguments.ts'
 import { resolveCursorLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
+import { selectWorkflowCursorForClose } from '../workflow/workflow-cursor-selection.ts'
 import { type HubTaskReader, resolveHubTaskReference } from '../workflow/workflow-task-reference.ts'
 import {
   closeCursorWithTextCopy,
@@ -21,6 +24,29 @@ import type { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
 
 const workflowRunEvidence = (run: string | number | undefined) =>
   run === undefined ? undefined : resolveRunIdentifier(db(), run)
+
+async function withContextReports(
+  result: string,
+  cursorRecordId: string,
+  selfRuling: string | undefined,
+  ports: ContextMomentPorts | undefined,
+) {
+  const moment = workflowNextContextMoment(cursorRecordId, selfRuling)
+  const reports: string[] = []
+  await applyContextMomentEffect(
+    moment.taskKey,
+    moment.effect,
+    false,
+    { log: (line) => reports.push(line), error: (line) => reports.push(line) },
+    ports,
+  )
+  return {
+    content: [
+      { type: 'text' as const, text: result },
+      ...reports.map((line) => ({ type: 'text' as const, text: line })),
+    ],
+  }
+}
 
 export async function advanceWorkflow(
   {
@@ -45,6 +71,7 @@ export async function advanceWorkflow(
   }: z.infer<typeof nextWorkflowStepInputSchema>,
   hubTaskReader?: HubTaskReader,
   workflowTextDocuments: WorkflowTextDocumentPorts = productionWorkflowTextDocumentPorts,
+  contextMomentPorts?: ContextMomentPorts,
 ) {
   assertRecordShape('step note', note)
   if (self_ruling !== undefined) assertRecordShape('self-ruling', self_ruling)
@@ -75,6 +102,15 @@ export async function advanceWorkflow(
     context,
     cursor,
   })
+  const selected = selectWorkflowCursorForClose(
+    { project, workflow: slug, mode: effectiveMode, key: workflowKeyOf(workflowArgs) || undefined },
+    cursor,
+    context.session,
+    db(),
+    context.taskRecordId,
+    context.taskStatusCategory,
+  )
+  if (!selected) throw new Error(`workflow ${slug} has no cursor; compose the workflow first`)
   const result = await closeCursorWithTextCopy(
     {
       action: 'next',
@@ -112,5 +148,5 @@ export async function advanceWorkflow(
     hubTaskReader,
     workflowTextDocuments,
   )
-  return { content: [{ type: 'text' as const, text: result }] }
+  return withContextReports(result, selected.record_id, self_ruling, contextMomentPorts)
 }
