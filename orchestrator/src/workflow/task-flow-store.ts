@@ -13,7 +13,7 @@ import type {
   TaskFlowWriteMethod,
 } from './task-flow-store-methods.ts'
 import { resolveTaskFlowReadStore } from './task-flow-store-record.ts'
-import { sqliteTaskFlowLocalStore } from './task-flow-store-sqlite.ts'
+import { sqliteTaskFlowLocalStore, sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
 import type {
   TaskFlowCloseOutStageRow,
   TaskFlowCursorLifecycleRow,
@@ -236,4 +236,12 @@ export function taskFlowReadStore(
   client?: Parameters<typeof resolveTaskFlowReadStore>[1],
 ): TaskFlowReadStore {
   return resolveTaskFlowReadStore(database, client)
+}
+
+/** Reads the cache slot used to avoid colliding with a locally persisted keyless stage. */
+export function cachedKeylessInstanceSlot(
+  database: Database,
+  input: Parameters<TaskFlowReadStore['nextKeylessInstanceSlot']>[0],
+): Promise<number> {
+  return sqliteTaskFlowReadStore(database).nextKeylessInstanceSlot(input)
 }

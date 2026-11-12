@@ -807,7 +807,7 @@ describe('orch MCP', () => {
       const hostedSecondSession = hostedSecond.sessionId
       db()
         .query('UPDATE workflow_cursor SET revision=?,session_id=? WHERE number=?')
-        .run(hostedSecond.revision, hostedSecondSession, second.id)
+        .run(hostedSecond.revision, hostedSecondSession ?? null, second.id)
       const attached = await attachWorkflowTextByHandle(second.id, 'survives the failed MCP copy', {
         session: hostedSecondSession ?? secondSession,
       })

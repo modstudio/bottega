@@ -25,7 +25,11 @@ import {
   refuseTaskFlowStageConflict,
 } from './task-flow.ts'
 import { taskFlowState } from './task-flow-decision.ts'
-import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
+import {
+  cachedKeylessInstanceSlot,
+  taskFlowLocalStore,
+  taskFlowReadStore,
+} from './task-flow-store.ts'
 import type { WorkflowCursorInsert } from './task-flow-store-types.ts'
 import {
   type CommitCountPort,
@@ -87,7 +91,7 @@ async function keylessComposeOrdinal(
   }
   const [hostedSlot, localSlot] = await Promise.all([
     taskFlowReadStore(database, context.taskFlowClient).nextKeylessInstanceSlot(input),
-    taskFlowLocalStore(database).nextKeylessInstanceSlot(input),
+    cachedKeylessInstanceSlot(database, input),
   ])
   return Math.max(localSlot, hostedSlot - 1)
 }
