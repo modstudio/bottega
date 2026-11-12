@@ -23,6 +23,7 @@ import {
 import { seedWorkflows } from '../src/workflow/workflow-seeds.ts'
 import { installWorkflowStoreFixture } from '../src/workflow/workflow-store.fixture.ts'
 import { testRecordAuth } from './fixtures/record-auth-postgres.ts'
+import { proveTaskFlowRecordReads } from './postgres-task-flow-read-proof.ts'
 
 type Input = {
   urls(): { actor: string; auth: string }
@@ -357,135 +358,20 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
           .items[0],
       ).toMatchObject({ flow: { id: tasklessFlowId, taskId: null, taskKey: null } })
 
-      const keylessStageId = newRecordId()
-      const secondaryStageId = newRecordId()
-      await client.composeTaskFlow!(
-        {
-          requestId: newRecordId(),
-          stageInsert: {
-            ...stage,
-            id: keylessStageId,
-            workflowKey: '',
-            mode: 'keyless-mode',
-            sessionId: 'keyless-proof-session',
-          },
-        },
-        directSpace,
-      )
-      await client.composeTaskFlow!(
-        {
-          requestId: newRecordId(),
-          stageInsert: {
-            ...stage,
-            id: secondaryStageId,
-            workflowKey: 'instance-proof',
-            instanceId: 'secondary',
-            mode: 'alternate',
-            sessionId: 'secondary-proof-session',
-          },
-        },
-        directSpace,
-      )
-
-      const ids = (page: Awaited<ReturnType<NonNullable<typeof client.listTaskFlowStages>>>) =>
-        page.items.map((item) => item.stage.id)
-      const allStageIds = [
+      await proveTaskFlowRecordReads({
+        client,
+        destination: directSpace,
+        projectId: input.projectId(),
+        otherProjectId,
+        taskId,
+        flowId,
+        stage,
         stageId,
         secondStageId,
-        ...concurrentStageIds,
+        concurrentStageIds,
         otherProjectStageId,
         tasklessStageId,
-        keylessStageId,
-        secondaryStageId,
-      ]
-      expect(
-        ids(await client.listTaskFlowStages!({ workflow: WORKFLOW }, directSpace)).sort(),
-      ).toEqual(allStageIds.toSorted())
-      expect(ids(await client.listTaskFlowStages!({ mode: 'alternate' }, directSpace))).toEqual([
-        secondaryStageId,
-      ])
-      expect(
-        ids(await client.listTaskFlowStages!({ workflowKey: 'instance-proof' }, directSpace)),
-      ).toEqual([secondaryStageId])
-      expect(ids(await client.listTaskFlowStages!({ keyless: true }, directSpace))).toEqual([
-        keylessStageId,
-      ])
-      expect(
-        ids(await client.listTaskFlowStages!({ primaryInstance: true }, directSpace)).sort(),
-      ).toEqual(allStageIds.filter((id) => id !== secondaryStageId).toSorted())
-      expect(ids(await client.listTaskFlowStages!({ taskId }, directSpace)).sort()).toEqual(
-        [
-          stageId,
-          secondStageId,
-          ...concurrentStageIds,
-          keylessStageId,
-          secondaryStageId,
-        ].toSorted(),
-      )
-      expect(ids(await client.listTaskFlowStages!({ unlinked: true }, directSpace)).sort()).toEqual(
-        [tasklessStageId],
-      )
-      expect((await client.readTaskFlow!({ taskId }, directSpace)).flow.id).toBe(flowId)
-
-      const pageEveryStage = async (order: 'project' | 'newest') => {
-        const collected: string[] = []
-        let cursor: string | undefined
-        let lastNextCursor: string | null = null
-        do {
-          const page = await client.listTaskFlowStages!(
-            {
-              states: ['running'],
-              order,
-              limit: 2,
-              cursor,
-            },
-            directSpace,
-          )
-          collected.push(...ids(page))
-          lastNextCursor = page.nextCursor
-          cursor = page.nextCursor ?? undefined
-        } while (cursor)
-        return { collected, lastNextCursor }
-      }
-      for (const order of ['project', 'newest'] as const) {
-        const whole = await client.listTaskFlowStages!(
-          {
-            states: ['running'],
-            order,
-            limit: 100,
-          },
-          directSpace,
-        )
-        const paged = await pageEveryStage(order)
-        expect(paged.collected).toEqual(ids(whole))
-        expect(new Set(paged.collected).size).toBe(paged.collected.length)
-        expect(paged.lastNextCursor).toBeNull()
-      }
-      const newest = await client.listTaskFlowStages!(
-        {
-          states: ['running'],
-          order: 'newest',
-          limit: 100,
-        },
-        directSpace,
-      )
-      expect(newest.items.map((item) => item.stage.number)).toEqual(
-        newest.items
-          .map((item) => item.stage.number)
-          .toSorted((left, right) => (right ?? -1) - (left ?? -1)),
-      )
-      expect(
-        await client.readTaskFlowProjectReferenceCounts!(input.projectId(), directSpace),
-      ).toEqual({ stages: 9, flows: 3 })
-      expect(await client.readTaskFlowProjectReferenceCounts!(otherProjectId, directSpace)).toEqual(
-        {
-          stages: 1,
-          flows: 1,
-        },
-      )
-      expect(await client.readTaskFlowProjectReferenceCounts!(newRecordId(), directSpace)).toEqual({
-        stages: 0,
-        flows: 0,
+        workflow: WORKFLOW,
       })
 
       const adopt = {

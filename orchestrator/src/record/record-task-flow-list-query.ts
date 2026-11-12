@@ -65,8 +65,7 @@ export function taskFlowStageListSql(
     result.clauses.push(clause(`$${result.values.length}`))
   }
   if (input.projectId) add((parameter) => `s.project_id=${parameter}::uuid`, input.projectId)
-  if (input.number !== undefined)
-    add((parameter) => `s.number=${parameter}::integer`, input.number)
+  if (input.number !== undefined) add((parameter) => `s.number=${parameter}::integer`, input.number)
   if (input.sessionId) add((parameter) => `s.session_id=${parameter}`, input.sessionId)
   if (input.states) {
     const parameters = input.states.map((state) => {

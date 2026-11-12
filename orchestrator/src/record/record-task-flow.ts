@@ -17,10 +17,7 @@ import {
   RECORD_TASK_FLOW_NOT_FOUND_MESSAGE,
   type TaskFlowStageListQuery,
 } from './record-task-flow-contract.ts'
-import {
-  taskFlowStageListNextCursor,
-  taskFlowStageListSql,
-} from './record-task-flow-list-query.ts'
+import { taskFlowStageListNextCursor, taskFlowStageListSql } from './record-task-flow-list-query.ts'
 
 export class RecordTaskFlowError extends Error {
   readonly status = 404
