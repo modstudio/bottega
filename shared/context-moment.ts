@@ -1,5 +1,5 @@
 // concern: shared
-/** Pure context-item effects and the remaining legacy prompt policy. */
+/** Pure context-item effects for workflow and lifecycle verbs. */
 import { PLATFORM_SLUG } from './brand.ts'
 
 const CONTEXT_MOMENTS = [
@@ -7,6 +7,7 @@ const CONTEXT_MOMENTS = [
   'workflow-rule',
   'workflow-await',
   'question-answer',
+  'pr-merge',
 ] as const
 type ContextMoment = (typeof CONTEXT_MOMENTS)[number]
 type ContextMomentItemKind = 'next-action' | 'ruling' | 'position' | 'open-question'
@@ -29,6 +30,8 @@ export type ContextMomentInput = {
     stepTitle?: string | null
     finished?: boolean
   }
+  pullRequest?: { number: number; mergeCommit: string }
+  openQuestionIds?: readonly string[]
 }
 
 const emptyEffect = (): ContextMomentEffect => ({ writes: [], drops: [] })
@@ -52,6 +55,20 @@ export function contextMomentEffect(input: ContextMomentInput): ContextMomentEff
     }
     return { writes, drops: [] }
   }
+  if (input.moment === 'pr-merge') {
+    if (!input.pullRequest) return emptyEffect()
+    return {
+      writes: [
+        {
+          kind: 'next-action',
+          id: 'next',
+          source: 'pr-merge',
+          body: `PR ${input.pullRequest.number} landed as ${input.pullRequest.mergeCommit.slice(0, 12)}.`,
+        },
+      ],
+      drops: (input.openQuestionIds ?? []).map((id) => ({ kind: 'open-question', id })),
+    }
+  }
   if (!input.questionId || input.text === undefined) return emptyEffect()
   const source = questionSource(input.questionId)
   if (input.moment === 'workflow-await') {
@@ -65,17 +82,6 @@ export function contextMomentEffect(input: ContextMomentInput): ContextMomentEff
     writes: [{ kind, id: `${kind}-${source}`, source, body: input.text }],
     drops: [{ kind: 'open-question', id: `open-${source}` }],
   }
-}
-
-type LegacyContextMoment = 'pr-merge' | 'task-close'
-type LegacyContextMomentKind = 'next-action'
-
-export type ContextMomentWrite = {
-  holder: string
-  kind: LegacyContextMomentKind
-  command: string
-  write: string
-  line: string
 }
 
 export type ContextMomentOutput = {
@@ -97,33 +103,4 @@ export function contextSetCommand(
 
 export function contextDropCommand(taskKey: string, id: string): string {
   return `${PLATFORM_SLUG} agent context drop --task ${shellWord(taskKey)} --id ${shellWord(id)}`
-}
-
-/** Keeps the existing prompt for the lifecycle verbs owned by later work. */
-export function contextMomentWrite(input: {
-  moment: LegacyContextMoment
-  taskKey?: string | null
-}): ContextMomentWrite | null {
-  const holder = input.taskKey?.trim()
-  if (!holder) return null
-  const kind = 'next-action'
-  const command = contextSetCommand(holder, {
-    kind,
-    source: input.moment,
-    id: 'next',
-    body: '<text>',
-  })
-  const write = 'revise next-action'
-  return { holder, kind, command, write, line: `context: ${write} on ${holder} (${command})` }
-}
-
-/** Keeps JSON stdout machine-readable while making the prompt the trailing human output. */
-export function emitContextMoment(
-  write: ContextMomentWrite | null,
-  json: boolean,
-  output: ContextMomentOutput = { log: console.log, error: console.error },
-): void {
-  if (!write) return
-  if (json) output.error(write.line)
-  else output.log(write.line)
 }

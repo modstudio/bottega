@@ -369,6 +369,39 @@ test('project purge forwards its confirmation to every destructive owner part', 
   ])
 })
 
+test('task close clears context only after hub close succeeds', async () => {
+  const calls: string[] = []
+  expect(
+    await dispatchBinary(
+      [
+        'task',
+        'close',
+        'DEV-2270',
+        '--project',
+        'bottega',
+        '--keep-branches',
+        '--abandon',
+        'superseded',
+      ],
+      entries(calls),
+      () => '',
+    ),
+  ).toBe(0)
+  expect(calls).toEqual([
+    'hub: task close DEV-2270 --project bottega --keep-branches --abandon superseded',
+    'orchestrator: context clear --task DEV-2270',
+  ])
+
+  calls.length = 0
+  const dispatch = entries(calls)
+  dispatch.hub = async (argv) => {
+    calls.push(`hub: ${argv.join(' ')}`)
+    return 7
+  }
+  expect(await dispatchBinary(['task', 'close', 'DEV-2270'], dispatch, () => '')).toBe(7)
+  expect(calls).toEqual(['hub: task close DEV-2270'])
+})
+
 test('composites fail fast except for doctor and never start collect watch', async () => {
   const calls: string[] = []
   const dispatch = entries(calls)

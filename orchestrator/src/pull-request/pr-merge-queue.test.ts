@@ -146,7 +146,12 @@ test('a declared merge queue enqueues after proof and returns the eventual merge
         wait: () => calls.push('wait'),
       }),
     ),
-  ).toEqual({ output: 'queued-merge-oid', exitCode: 0 })
+  ).toEqual({
+    output: 'queued-merge-oid',
+    exitCode: 0,
+    pullRequestNumber: 42,
+    mergeCommit: 'queued-merge-oid',
+  })
   expect(calls).toEqual(['enqueue', 'wait', 'wait'])
   expect(enqueueArguments).toEqual([[cwd, 42, 'head-commit']])
 })
@@ -168,7 +173,12 @@ test('an already-queued pull request is only waited for', async () => {
         },
       }),
     ),
-  ).toEqual({ output: 'queued-merge-oid', exitCode: 0 })
+  ).toEqual({
+    output: 'queued-merge-oid',
+    exitCode: 0,
+    pullRequestNumber: 42,
+    mergeCommit: 'queued-merge-oid',
+  })
   expect(enqueued).toBe(false)
 })
 
@@ -206,6 +216,8 @@ test('a failed first observation makes one requeue call with the node id and hea
     output:
       'queued-merge-oid\nrequeued #42 at head-commit after failure merge-group run 9876 (https://github.example/actions/runs/9876)',
     exitCode: 0,
+    pullRequestNumber: 42,
+    mergeCommit: 'queued-merge-oid',
   })
 })
 
@@ -347,7 +359,12 @@ test('a pull request merged during the vanished-entry transition completes', asy
         ],
       }),
     ),
-  ).toEqual({ output: 'queued-merge-oid', exitCode: 0 })
+  ).toEqual({
+    output: 'queued-merge-oid',
+    exitCode: 0,
+    pullRequestNumber: 42,
+    mergeCommit: 'queued-merge-oid',
+  })
 })
 
 test('a closed pull request refuses immediately after an established queue', async () => {
@@ -469,6 +486,11 @@ test('a declared merge queue exempts a local-gate proof from moved landing state
         },
       }),
     ),
-  ).toEqual({ output: 'queued-merge-oid', exitCode: 0 })
+  ).toEqual({
+    output: 'queued-merge-oid',
+    exitCode: 0,
+    pullRequestNumber: 42,
+    mergeCommit: 'queued-merge-oid',
+  })
   expect(readLandingState).toBe(false)
 })

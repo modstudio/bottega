@@ -2,7 +2,12 @@
 /** Registers architect session resolution and stored context item verbs. */
 import type { Command } from 'commander'
 import { contextBrief, renderContextBrief } from '../doc/context-brief.ts'
-import { dropContextItem, getContext, setContextItem } from '../doc/context-service.ts'
+import {
+  clearTaskContext,
+  dropContextItem,
+  getContext,
+  setContextItem,
+} from '../doc/context-service.ts'
 import { staleContextForSession } from '../doc/context-stale-adapter.ts'
 import { recordSessionWorked, sessionWorkedTaskKeys } from '../doc/context-worked-adapter.ts'
 import { CONTEXT_ITEM_KINDS } from '../doc/doc-context-write.ts'
@@ -21,6 +26,10 @@ function registerWorked(context: Command): void {
     })
 }
 
+export function contextClearReport(result: { removed: number; task: string }): string {
+  return `context: cleared ${result.removed} items on ${result.task}`
+}
+
 export function register(program: Command): void {
   const context = program
     .command('context')
@@ -31,13 +40,14 @@ export function register(program: Command): void {
         '  workflow next                                writes next-action\n' +
         '  workflow await                               writes open-question\n' +
         '  workflow rule, question answer               write ruling or position\n' +
-        '  pr merge, task close                         prompt for next-action\n\n' +
+        '  pr merge                                    writes next-action\n' +
+        '  task close                                  clears the task holder\n\n' +
         'Place each item once on the narrowest holder it binds in full: task for task-only points, epic for points binding every child, and session only when no single task or epic owns it.\n',
     )
     .option('--cwd <path>', 'resolve context for this checkout path')
     .option('--json', 'write the resolved context as JSON')
     .action((options) => {
-      if (!options.cwd) throw new Error('pass --cwd or use context set|show|drop')
+      if (!options.cwd) throw new Error('pass --cwd or use context set|show|drop|clear')
       return sessionContextCommand({ cwd: options.cwd, json: Boolean(options.json) }, { log })
     })
   const holderOptions = (command: Command) =>
@@ -105,5 +115,13 @@ export function register(program: Command): void {
       })
       if (!result.removed) throw new Error(`no context item ${result.holder}/${result.id}`)
       log(JSON.stringify(result))
+    })
+  context
+    .command('clear')
+    .description('remove every context item from one task holder')
+    .requiredOption('--task <key>', 'select task holder')
+    .action(async (options) => {
+      const result = await clearTaskContext({ task: options.task })
+      log(contextClearReport(result))
     })
 }

@@ -122,6 +122,26 @@ export const ROUTES = (
     route('workflow epic', 'orch', 'epic', 'show the scoreboard for an epic and its child tasks'),
     route('workflow', 'orch', 'workflow'),
     route('task recent', 'hub', 'tasks'),
+    {
+      command: ['task', 'close'],
+      owner: 'composite',
+      description: 'close a task and clear its stored context',
+      positionals: ['key'],
+      composite: [
+        {
+          owner: 'hub',
+          argv: ['task', 'close'],
+          label: 'task close',
+          options: { '--project': true, '--keep-branches': false, '--abandon': true },
+        },
+        {
+          owner: 'orch',
+          argv: ['context', 'clear'],
+          label: 'task context clear',
+          fixedArguments: ['--task'],
+        },
+      ],
+    },
     route('task', 'hub', 'task'),
     route('note new', 'hub', 'note new'),
     route('note', 'hub', 'note'),

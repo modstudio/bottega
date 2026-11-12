@@ -119,3 +119,31 @@ export async function removeContextItemForLifecycle(
   if (!doc) return false
   return removeStoredDoc(doc, context, identity)
 }
+
+/** Task teardown removes a complete task holder without applying single-item required-kind guards. */
+export async function removeTaskContextHolder(
+  holder: string,
+  slugs: readonly string[],
+  context: DocWriteContext,
+): Promise<number> {
+  if (!holder.startsWith('task:')) {
+    throw new Error('task context clear requires a task: subject')
+  }
+  assertWorkerDocStoreWriteAllowed('removeTaskContextHolder')
+  writableDb()
+  const identity = resolvedDocWriteIdentity(context)
+  let removed = 0
+  for (const slug of slugs) {
+    const doc = getDocStore('context', holder, slug)
+    if (!doc) continue
+    if (
+      await removeStoredDoc(
+        doc,
+        { ...context, expectedRevision: doc.revision ?? undefined },
+        identity,
+      )
+    )
+      removed++
+  }
+  return removed
+}

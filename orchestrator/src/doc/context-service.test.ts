@@ -1,12 +1,20 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { contextMomentEffect } from '../../../shared/context-moment.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { removeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import type { SecretScanner } from '../secret-scan/secret-scan.ts'
 import { encodeContextItem } from './context-item-codec.ts'
-import { dropContextItem, getContext, setContextItem } from './context-service.ts'
+import { applyContextMomentEffect } from './context-moment-adapter.ts'
+import {
+  clearTaskContext,
+  decideTaskContextClear,
+  dropContextItem,
+  getContext,
+  setContextItem,
+} from './context-service.ts'
 import {
   CONTEXT_FACTS_PORTS_KEY,
   type ContextFactsPorts,
@@ -32,6 +40,108 @@ afterEach(() => {
 })
 
 describe('context document integration', () => {
+  test('a production moment set revises an existing item with its current revision', async () => {
+    upsertProject({
+      recordId: newRecordId(),
+      name: PLATFORM_SLUG,
+      path: '/tmp/context-moment',
+      settings: { keyPrefixes: ['DEV'] },
+    })
+    globals[CONTEXT_FACTS_PORTS_KEY] = tasks
+    const output = { log: () => {}, error: () => {} }
+    await applyContextMomentEffect(
+      task.key,
+      {
+        writes: [
+          { kind: 'next-action', id: 'next', source: 'workflow-next', body: 'First action.' },
+        ],
+        drops: [],
+      },
+      false,
+      output,
+    )
+    await setContextItem({
+      task: task.key,
+      id: 'ruling-q1',
+      kind: 'ruling',
+      source: 'q1',
+      body: 'Preserve the approved ruling.',
+    })
+    await setContextItem({
+      task: task.key,
+      id: 'open-q2',
+      kind: 'open-question',
+      source: 'q2',
+      body: 'Which follow-up?',
+    })
+    const beforeMerge = await getContext({ task: task.key })
+    await applyContextMomentEffect(
+      task.key,
+      contextMomentEffect({
+        moment: 'pr-merge',
+        taskKey: task.key,
+        pullRequest: { number: 314, mergeCommit: '0123456789abcdef' },
+        openQuestionIds: beforeMerge.items
+          .filter((item) => item.kind === 'open-question')
+          .map((item) => item.id),
+      }),
+      false,
+      output,
+    )
+
+    expect((await getContext({ task: task.key })).items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'next',
+          body: 'PR 314 landed as 0123456789ab.',
+          source: 'pr-merge',
+        }),
+        expect.objectContaining({
+          id: 'ruling-q1',
+          body: 'Preserve the approved ruling.',
+        }),
+      ]),
+    )
+    expect((await getContext({ task: task.key })).items).toHaveLength(2)
+  })
+
+  test('whole-holder clear includes required kinds and removes every task item', async () => {
+    upsertProject({
+      recordId: newRecordId(),
+      name: PLATFORM_SLUG,
+      path: '/tmp/context-clear',
+      settings: { keyPrefixes: ['DEV'] },
+    })
+    globals[CONTEXT_FACTS_PORTS_KEY] = tasks
+    expect(
+      decideTaskContextClear(
+        [
+          { id: 'next', kind: 'next-action' },
+          { id: 'ruling-q1', kind: 'ruling' },
+        ],
+        ['next-action'],
+      ),
+    ).toEqual(['next', 'ruling-q1'])
+    await setContextItem({
+      task: task.key,
+      id: 'next',
+      kind: 'next-action',
+      source: 'workflow-next',
+      body: 'Continue.',
+    })
+    await setContextItem({
+      task: task.key,
+      id: 'ruling-q1',
+      kind: 'ruling',
+      source: 'q1',
+      body: 'Keep this ruling until close.',
+    })
+
+    expect(await clearTaskContext({ task: task.key })).toMatchObject({ removed: 2 })
+    expect((await getContext({ task: task.key })).items).toEqual([])
+    expect(await clearTaskContext({ task: task.key })).toMatchObject({ removed: 0 })
+  })
+
   test('refuses a key whose prefix no registered project declares', async () => {
     await expect(resolveContextTask('UNKNOWN-1')).rejects.toThrow(
       `task key prefix "UNKNOWN" is not declared by exactly one registered project; inspect prefixes with ${PLATFORM_SLUG} project list --json`,

@@ -57,12 +57,15 @@ import {
 } from './pr-merge-evidence.ts'
 import {
   completePullRequestPostLanding,
-  type PullRequestMergeOutcome,
+  type PullRequestMergeOutcome as PullRequestPostLandingOutcome,
   type PullRequestPostLandingAdapter,
 } from './pr-post-landing.ts'
 
 export type { PullRequestMergeFacts } from './pr-merge-evidence.ts'
-export type { PullRequestMergeOutcome } from './pr-post-landing.ts'
+export type PullRequestMergeOutcome = PullRequestPostLandingOutcome & {
+  pullRequestNumber: number
+  mergeCommit: string
+}
 
 export type PullRequestMergeAdapter = {
   repository(project: Project): string | null
@@ -785,7 +788,7 @@ async function completeMerge(input: {
   })
   const pathSet = admittedChange!.group?.pathSet
   const workflowPromotionDue = pathSet ? mergedChangeNeedsWorkflowPromotion(pathSet) : true
-  return await completePullRequestPostLanding({
+  const outcome = await completePullRequestPostLanding({
     adapter: {
       ...(input.adapter.shipCleanup ? { cleanup: input.adapter.shipCleanup } : {}),
     },
@@ -801,6 +804,11 @@ async function completeMerge(input: {
     depth: input.depth,
     workflowPromotionDue,
   })
+  return {
+    ...outcome,
+    pullRequestNumber: pullRequest!.number,
+    mergeCommit,
+  }
 }
 
 export async function mergePullRequest(

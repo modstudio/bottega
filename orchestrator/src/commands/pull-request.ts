@@ -5,10 +5,12 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { type Command, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { contextMomentWrite, emitContextMoment } from '../../../shared/context-moment.ts'
+import { contextMomentEffect } from '../../../shared/context-moment.ts'
 import { gitAt } from '../../../shared/git.ts'
 import { taskKeyToken } from '../branch/other-branch-state.ts'
 import { writableDb } from '../database/db.ts'
+import { applyContextMomentEffect } from '../doc/context-moment-adapter.ts'
+import { getContext } from '../doc/context-service.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
 import {
@@ -171,8 +173,26 @@ async function mergePullRequestCommand(
   )
   log(outcome.output)
   if (outcome.exitCode !== 0) process.exitCode = outcome.exitCode
-  const prompt = contextMomentWrite({ moment: 'pr-merge', taskKey })
-  emitContextMoment(prompt, false, { log, error: console.error })
+  if (taskKey && [0, 20, 21].includes(outcome.exitCode)) {
+    try {
+      const context = await getContext({ task: taskKey })
+      const effect = contextMomentEffect({
+        moment: 'pr-merge',
+        taskKey,
+        pullRequest: {
+          number: outcome.pullRequestNumber,
+          mergeCommit: outcome.mergeCommit,
+        },
+        openQuestionIds: context.items
+          .filter((item) => item.kind === 'open-question')
+          .map((item) => item.id),
+      })
+      await applyContextMomentEffect(taskKey, effect, false, { log, error: console.error })
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      log(`context: could not gather pr-merge on ${taskKey}: ${detail}`)
+    }
+  }
 }
 
 export function register(program: Command): void {

@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from './brand.ts'
-import { contextMomentEffect, contextMomentWrite, emitContextMoment } from './context-moment.ts'
+import { contextMomentEffect } from './context-moment.ts'
 
 describe('context moment effect', () => {
   test('workflow await writes its open question', () => {
@@ -86,31 +85,27 @@ describe('context moment effect', () => {
       contextMomentEffect({ moment: 'workflow-await', questionId: 12, text: 'Which shape?' }),
     ).toEqual({ writes: [], drops: [] })
   })
-})
-
-test('pr merge and task close retain their current prompt output', () => {
-  const stdout: string[] = []
-  const stderr: string[] = []
-  const output = {
-    log: (line: string) => stdout.push(line),
-    error: (line: string) => stderr.push(line),
-  }
-  emitContextMoment(contextMomentWrite({ moment: 'pr-merge', taskKey: 'DEV-2225' }), false, output)
-  emitContextMoment(
-    contextMomentWrite({ moment: 'task-close', taskKey: 'DEV-2225' }),
-    false,
-    output,
-  )
-  expect(stdout).toEqual([
-    `context: revise next-action on DEV-2225 (${PLATFORM_SLUG} agent context set --task 'DEV-2225' --kind next-action --source 'pr-merge' --id next '<text>')`,
-    `context: revise next-action on DEV-2225 (${PLATFORM_SLUG} agent context set --task 'DEV-2225' --kind next-action --source 'task-close' --id next '<text>')`,
-  ])
-  expect(stderr).toEqual([])
-
-  stdout.length = 0
-  emitContextMoment(contextMomentWrite({ moment: 'pr-merge', taskKey: 'DEV-2225' }), true, output)
-  expect(stdout).toEqual([])
-  expect(stderr).toEqual([
-    `context: revise next-action on DEV-2225 (${PLATFORM_SLUG} agent context set --task 'DEV-2225' --kind next-action --source 'pr-merge' --id next '<text>')`,
-  ])
+  test('pr merge revises next and drops only the gathered open questions', () => {
+    expect(
+      contextMomentEffect({
+        moment: 'pr-merge',
+        taskKey: 'DEV-2270',
+        pullRequest: { number: 314, mergeCommit: '0123456789abcdef' },
+        openQuestionIds: ['open-q1', 'open-q2'],
+      }),
+    ).toEqual({
+      writes: [
+        {
+          kind: 'next-action',
+          id: 'next',
+          source: 'pr-merge',
+          body: 'PR 314 landed as 0123456789ab.',
+        },
+      ],
+      drops: [
+        { kind: 'open-question', id: 'open-q1' },
+        { kind: 'open-question', id: 'open-q2' },
+      ],
+    })
+  })
 })
