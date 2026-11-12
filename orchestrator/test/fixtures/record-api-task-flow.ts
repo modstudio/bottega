@@ -1,4 +1,5 @@
-import { type RecordApiClient, RecordApiRequestError } from '../../src/record/record-api-client.ts'
+import type { RecordApiClient } from '../../src/record/record-api-client.ts'
+import { recordApiError } from '../../src/record/record-api-client-error.ts'
 import type { HostedTaskFlowStageById } from '../../src/record/record-task-flow-contract.ts'
 
 export type MemoryTaskFlowInput = {
@@ -200,11 +201,9 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
             : flow.taskKey === selector.taskKey,
       )
       if (!found)
-        throw new RecordApiRequestError(
-          'hosted task flow not found',
-          'refused',
+        throw recordApiError(
+          { error: 'hosted task flow not found', code: 'task_flow_not_found' },
           404,
-          'task_flow_not_found',
         )
       const siblings = stages.filter(({ flow }) => flow.id === found.flow.id)
       const open = siblings.find(({ stage }) => stage.id === found.flow.openStageRecordId)
