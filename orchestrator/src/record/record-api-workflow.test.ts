@@ -22,7 +22,7 @@ function taskFlowApp(calls: TaskFlowStageListQuery[]) {
     {
       listTaskFlowStages: async (input) => {
         calls.push(input)
-        return { items: [], truncated: false }
+        return { items: [], truncated: false, nextCursor: null }
       },
       listWorkflowCatalogue: async () => [],
       draftWorkflow: async () => null,
@@ -77,6 +77,24 @@ test.each([1, TASK_FLOW_STAGE_LIST_LIMIT_MAX])(
     expect(calls[0]).toMatchObject({ sessionId: 'session-a', limit })
   },
 )
+
+test('task-flow stage list passes the hosted filters, ordering, and cursor', async () => {
+  const calls: TaskFlowStageListQuery[] = []
+  const response = await taskFlowApp(calls).request(
+    `/v1/task-flow/stages?workflow=fix-defect&mode=default&workflowKey=DEV-2234&keyless=true&primaryInstance=true&taskId=${KNOWN_ID}&unlinked=true&order=newest`,
+  )
+  expect(response.status).toBe(200)
+  expect(calls[0]).toMatchObject({
+    workflow: 'fix-defect',
+    mode: 'default',
+    workflowKey: 'DEV-2234',
+    keyless: true,
+    primaryInstance: true,
+    taskId: KNOWN_ID,
+    unlinked: true,
+    order: 'newest',
+  })
+})
 
 type ByIdKind = 'stage' | 'text' | 'obligation'
 const byIdRoutes = [

@@ -5,7 +5,7 @@ import { z } from 'zod'
 export const RECORD_TASK_FLOW_NOT_FOUND_MESSAGE = 'hosted task flow was not found'
 export const RECORD_TASK_FLOW_NOT_FOUND_CODE = 'task_flow_not_found'
 export const TASK_FLOW_STAGE_LIST_LIMIT_MAX = 1_000
-export const TASK_FLOW_STAGE_LIST_REMEDY = `Pass projectId, projectId with number, sessionId, one or more state values, or taskKey; limit must be from 1 through ${TASK_FLOW_STAGE_LIST_LIMIT_MAX}.`
+export const TASK_FLOW_STAGE_LIST_REMEDY = `Pass projectId, projectId with number, sessionId, states, taskKey, workflow, mode, workflowKey, keyless, primaryInstance, taskId, or unlinked; limit must be from 1 through ${TASK_FLOW_STAGE_LIST_LIMIT_MAX}. Restart the list without cursor when its cursor is invalid.`
 
 const nullableId = z.string().uuid().nullable()
 const machine = z.object({ id: z.string().uuid(), displayName: z.string().min(1) })
@@ -132,13 +132,65 @@ export const hostedTaskFlowObligationByIdSchema = z.object({
 })
 export type HostedTaskFlowObligationById = z.infer<typeof hostedTaskFlowObligationByIdSchema>
 
-export const hostedTaskFlowStageListSchema = z.object({
-  items: z.array(
-    z.object({ stage: hostedTaskFlowStageSummarySchema, flow: hostedTaskFlowSummarySchema }),
-  ),
-  truncated: z.boolean(),
-})
+export const hostedTaskFlowStageListSchema = z
+  .object({
+    items: z.array(
+      z.object({ stage: hostedTaskFlowStageSummarySchema, flow: hostedTaskFlowSummarySchema }),
+    ),
+    truncated: z.boolean(),
+    nextCursor: z.string().nullable(),
+  })
+  .refine((value) => value.truncated === (value.nextCursor !== null), {
+    message: 'nextCursor must be present exactly when the stage list is truncated',
+  })
 export type HostedTaskFlowStageList = z.infer<typeof hostedTaskFlowStageListSchema>
+
+export const hostedTaskFlowProjectReferenceCountsSchema = z.object({
+  stages: z.number().int().nonnegative(),
+  flows: z.number().int().nonnegative(),
+})
+export type HostedTaskFlowProjectReferenceCounts = z.infer<
+  typeof hostedTaskFlowProjectReferenceCountsSchema
+>
+
+export const taskFlowReadQuerySchema = z
+  .object({
+    taskKey: z.string().min(1).optional(),
+    flowRecordId: z.string().uuid().optional(),
+    taskId: z.string().uuid().optional(),
+  })
+  .refine(
+    (value) =>
+      Number(Boolean(value.taskKey)) +
+        Number(Boolean(value.flowRecordId)) +
+        Number(Boolean(value.taskId)) ===
+      1,
+  )
+
+const taskFlowStageListCursorSchema = z.discriminatedUnion('order', [
+  z.object({
+    order: z.literal('project'),
+    projectName: z.string().nullable(),
+    number: z.number().int().positive().nullable(),
+    id: z.string().uuid(),
+  }),
+  z.object({
+    order: z.literal('newest'),
+    number: z.number().int().positive().nullable(),
+    id: z.string().uuid(),
+  }),
+])
+export type TaskFlowStageListCursor = z.infer<typeof taskFlowStageListCursorSchema>
+
+export function encodeTaskFlowStageListCursor(cursor: TaskFlowStageListCursor): string {
+  return btoa(JSON.stringify(cursor)).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')
+}
+
+export function decodeTaskFlowStageListCursor(value: string): TaskFlowStageListCursor {
+  const base64 = value.replaceAll('-', '+').replaceAll('_', '/')
+  const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')
+  return taskFlowStageListCursorSchema.parse(JSON.parse(atob(padded)))
+}
 
 export const taskFlowStageListQuerySchema = z
   .object({
@@ -147,6 +199,15 @@ export const taskFlowStageListQuerySchema = z
     sessionId: z.string().min(1).optional(),
     states: z.array(stageState).min(1).optional(),
     taskKey: z.string().min(1).optional(),
+    workflow: z.string().min(1).optional(),
+    mode: z.string().min(1).optional(),
+    workflowKey: z.string().min(1).optional(),
+    keyless: z.literal(true).optional(),
+    primaryInstance: z.literal(true).optional(),
+    taskId: z.string().uuid().optional(),
+    unlinked: z.literal(true).optional(),
+    order: z.enum(['project', 'newest']).default('project'),
+    cursor: z.string().min(1).optional(),
     limit: z.coerce.number().int().min(1).max(TASK_FLOW_STAGE_LIST_LIMIT_MAX).default(200),
   })
   .superRefine((value, context) => {
@@ -161,8 +222,25 @@ export const taskFlowStageListQuerySchema = z
       value.number === undefined &&
       value.sessionId === undefined &&
       value.states === undefined &&
-      value.taskKey === undefined
+      value.taskKey === undefined &&
+      value.workflow === undefined &&
+      value.mode === undefined &&
+      value.workflowKey === undefined &&
+      value.keyless === undefined &&
+      value.primaryInstance === undefined &&
+      value.taskId === undefined &&
+      value.unlinked === undefined
     )
       context.addIssue({ code: 'custom', message: 'at least one stage filter is required' })
+    if (value.cursor !== undefined) {
+      try {
+        const cursor = decodeTaskFlowStageListCursor(value.cursor)
+        if (cursor.order !== value.order)
+          context.addIssue({ code: 'custom', message: 'cursor order does not match request order' })
+      } catch {
+        context.addIssue({ code: 'custom', message: 'invalid stage-list cursor', path: ['cursor'] })
+      }
+    }
   })
 export type TaskFlowStageListQuery = z.infer<typeof taskFlowStageListQuerySchema>
+export type TaskFlowStageListQueryInput = z.input<typeof taskFlowStageListQuerySchema>

@@ -53,7 +53,7 @@ test('task-flow stage lists carry combined filters and the destination space', a
   }> = []
   const client = recordTaskFlowClient(async (path, init) => {
     requests.push({ path, destinationSpaceId: init?.destinationSpaceId })
-    return { items: [], truncated: false } as never
+    return { items: [], truncated: false, nextCursor: null } as never
   })
   await client.listTaskFlowStages!(
     {
@@ -69,6 +69,41 @@ test('task-flow stage lists carry combined filters and the destination space', a
       path: '/v1/task-flow/stages?projectId=00000000-0000-4000-8000-000000000001&number=4&state=running&state=awaiting-ruling&limit=50',
       destinationSpaceId: '00000000-0000-4000-8000-000000000002',
     },
+  ])
+})
+
+test('task-flow client follows every stage-list cursor and returns all items', async () => {
+  const paths: string[] = []
+  const client = recordTaskFlowClient(async (path) => {
+    paths.push(path)
+    return paths.length === 1
+      ? { items: [{ stage: { id: 'first' } }], truncated: true, nextCursor: 'page-2' }
+      : { items: [{ stage: { id: 'second' } }], truncated: false, nextCursor: null }
+  })
+  const items = await client.listAllTaskFlowStages!({ workflow: 'fix-defect', limit: 1 })
+  expect(items.map((item) => item.stage.id)).toEqual(['first', 'second'])
+  expect(paths).toEqual([
+    '/v1/task-flow/stages?workflow=fix-defect&limit=1',
+    '/v1/task-flow/stages?workflow=fix-defect&cursor=page-2&limit=1',
+  ])
+})
+
+test('task-flow client sends task selectors and project-reference count reads', async () => {
+  const paths: string[] = []
+  const client = recordTaskFlowClient(async (path) => {
+    paths.push(path)
+    return path.startsWith('/v1/task-flow/project-reference-counts')
+      ? ({ stages: 2, flows: 1 } as never)
+      : ({} as never)
+  })
+  await client.readTaskFlow!({ taskId: ID })
+  await expect(client.readTaskFlowProjectReferenceCounts!(ID)).resolves.toEqual({
+    stages: 2,
+    flows: 1,
+  })
+  expect(paths).toEqual([
+    `/v1/task-flow?taskId=${ID}`,
+    `/v1/task-flow/project-reference-counts?projectId=${ID}`,
   ])
 })
 

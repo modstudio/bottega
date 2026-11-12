@@ -10,16 +10,18 @@ import type { RecordIdentity } from './record-auth.ts'
 import {
   type HostedTaskFlow,
   type HostedTaskFlowObligationById,
+  type HostedTaskFlowProjectReferenceCounts,
   type HostedTaskFlowStageById,
   type HostedTaskFlowStageList,
   type HostedTaskFlowTextById,
   hostedTaskFlowObligationByIdSchema,
+  hostedTaskFlowProjectReferenceCountsSchema,
   hostedTaskFlowSchema,
   hostedTaskFlowStageByIdSchema,
   hostedTaskFlowStageListSchema,
   hostedTaskFlowTextByIdSchema,
   RECORD_TASK_FLOW_NOT_FOUND_CODE,
-  type TaskFlowStageListQuery,
+  type TaskFlowStageListQueryInput,
 } from './record-task-flow-contract.ts'
 import {
   type TaskFlowAdoptResult,
@@ -41,13 +43,21 @@ const TASK_FLOW_WRITE_REFUSAL =
 export type RecordTaskFlowClient = {
   whoami?(): Promise<RecordIdentity>
   readTaskFlow?(
-    selector: { taskKey?: string; flowRecordId?: string },
+    selector: { taskKey?: string; flowRecordId?: string; taskId?: string },
     destination?: RecordRequestDestination,
   ): Promise<HostedTaskFlow>
   listTaskFlowStages?(
-    selector: Omit<TaskFlowStageListQuery, 'limit'> & { limit?: number },
+    selector: Omit<TaskFlowStageListQueryInput, 'limit'> & { limit?: number },
     destination?: RecordRequestDestination,
   ): Promise<HostedTaskFlowStageList>
+  listAllTaskFlowStages?(
+    selector: Omit<TaskFlowStageListQueryInput, 'limit' | 'cursor'> & { limit?: number },
+    destination?: RecordRequestDestination,
+  ): Promise<HostedTaskFlowStageList['items']>
+  readTaskFlowProjectReferenceCounts?(
+    projectId: string,
+    destination?: RecordRequestDestination,
+  ): Promise<HostedTaskFlowProjectReferenceCounts>
   readTaskFlowStage?(
     id: string,
     destination?: RecordRequestDestination,
@@ -148,6 +158,7 @@ function taskFlowReadClient(request: Request): Partial<RecordTaskFlowClient> {
       const query = new URLSearchParams()
       if (selector.taskKey) query.set('taskKey', selector.taskKey)
       if (selector.flowRecordId) query.set('flowRecordId', selector.flowRecordId)
+      if (selector.taskId) query.set('taskId', selector.taskId)
       return request(`/v1/task-flow?${query}`, {
         ...destination,
         schema: (body) => hostedTaskFlowSchema.parse(body),
@@ -160,10 +171,42 @@ function taskFlowReadClient(request: Request): Partial<RecordTaskFlowClient> {
       if (selector.sessionId) query.set('sessionId', selector.sessionId)
       for (const state of selector.states ?? []) query.append('state', state)
       if (selector.taskKey) query.set('taskKey', selector.taskKey)
+      if (selector.workflow) query.set('workflow', selector.workflow)
+      if (selector.mode) query.set('mode', selector.mode)
+      if (selector.workflowKey) query.set('workflowKey', selector.workflowKey)
+      if (selector.keyless) query.set('keyless', 'true')
+      if (selector.primaryInstance) query.set('primaryInstance', 'true')
+      if (selector.taskId) query.set('taskId', selector.taskId)
+      if (selector.unlinked) query.set('unlinked', 'true')
+      if (selector.order !== undefined) query.set('order', selector.order)
+      if (selector.cursor) query.set('cursor', selector.cursor)
       if (selector.limit !== undefined) query.set('limit', String(selector.limit))
       return request(`/v1/task-flow/stages?${query}`, {
         ...destination,
         schema: (body) => hostedTaskFlowStageListSchema.parse(body),
+      })
+    },
+    listAllTaskFlowStages: async (selector, destination) => {
+      const items: HostedTaskFlowStageList['items'] = []
+      const seen = new Set<string>()
+      let cursor: string | undefined
+      do {
+        const page = await taskFlowReadClient(request).listTaskFlowStages!(
+          { ...selector, cursor },
+          destination,
+        )
+        items.push(...page.items)
+        cursor = page.nextCursor ?? undefined
+        if (cursor && seen.has(cursor)) throw new Error('task-flow stage paging repeated a cursor')
+        if (cursor) seen.add(cursor)
+      } while (cursor)
+      return items
+    },
+    readTaskFlowProjectReferenceCounts: (projectId, destination) => {
+      const query = new URLSearchParams({ projectId })
+      return request(`/v1/task-flow/project-reference-counts?${query}`, {
+        ...destination,
+        schema: (body) => hostedTaskFlowProjectReferenceCountsSchema.parse(body),
       })
     },
     readTaskFlowStage: (id, destination) =>

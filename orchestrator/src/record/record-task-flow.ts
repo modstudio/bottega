@@ -9,6 +9,7 @@ import { recordPool } from './record-pool.ts'
 import {
   type HostedTaskFlow,
   type HostedTaskFlowObligationById,
+  type HostedTaskFlowProjectReferenceCounts,
   type HostedTaskFlowStageById,
   type HostedTaskFlowStageList,
   type HostedTaskFlowTextById,
@@ -16,6 +17,10 @@ import {
   RECORD_TASK_FLOW_NOT_FOUND_MESSAGE,
   type TaskFlowStageListQuery,
 } from './record-task-flow-contract.ts'
+import {
+  taskFlowStageListNextCursor,
+  taskFlowStageListSql,
+} from './record-task-flow-list-query.ts'
 
 export class RecordTaskFlowError extends Error {
   readonly status = 404
@@ -204,7 +209,12 @@ function withChildren(
 }
 
 export async function readRecordTaskFlow(
-  input: TenantPrincipal & { url: string; taskKey?: string; flowRecordId?: string },
+  input: TenantPrincipal & {
+    url: string
+    taskKey?: string
+    flowRecordId?: string
+    taskId?: string
+  },
 ): Promise<HostedTaskFlow> {
   const sql = recordPool(input.url)
   return sql.begin(async (tx) => {
@@ -220,9 +230,10 @@ export async function readRecordTaskFlow(
        WHERE f.space_id=$1::uuid
          AND ($2::uuid IS NULL OR f.id=$2::uuid)
          AND ($3::text IS NULL OR t.key=$3)
+         AND ($4::uuid IS NULL OR f.task_id=$4::uuid)
        ORDER BY f.open_stage_record_id IS NULL, f.revision DESC, f.updated_at DESC, f.id
        LIMIT 1`,
-      [input.spaceId, input.flowRecordId ?? null, input.taskKey ?? null],
+      [input.spaceId, input.flowRecordId ?? null, input.taskKey ?? null, input.taskId ?? null],
     )
     const row = rows[0]
     if (!row) throw new RecordTaskFlowError(RECORD_TASK_FLOW_NOT_FOUND_MESSAGE)
@@ -261,44 +272,45 @@ export async function listRecordTaskFlowStages(
 ): Promise<HostedTaskFlowStageList> {
   return recordPool(input.url).begin(async (tx) => {
     await bindTenant(tx, input)
-    const values: unknown[] = [input.spaceId]
-    const clauses = ['s.space_id=$1::uuid']
-    const add = (clause: (parameter: string) => string, value: unknown) => {
-      values.push(value)
-      clauses.push(clause(`$${values.length}`))
-    }
-    if (input.projectId) add((parameter) => `s.project_id=${parameter}::uuid`, input.projectId)
-    if (input.number !== undefined)
-      add((parameter) => `s.number=${parameter}::integer`, input.number)
-    if (input.sessionId) add((parameter) => `s.session_id=${parameter}`, input.sessionId)
-    if (input.states) {
-      const parameters = input.states.map((state) => {
-        values.push(state)
-        return `$${values.length}`
-      })
-      clauses.push(`s.state IN (${parameters.join(',')})`)
-    }
-    if (input.taskKey) add((parameter) => `t.key=${parameter}`, input.taskKey)
-    values.push(input.limit + 1)
+    const query = taskFlowStageListSql(input.spaceId, input)
+    query.values.push(input.limit + 1)
     const rows = await tx.unsafe(
       `SELECT ${STAGE_SELECT},${FLOW_SELECT}
        FROM task_flow_stage s
        JOIN task_flow f ON f.id=s.flow_record_id AND f.space_id=s.space_id
        LEFT JOIN hub_task t ON t.id=f.task_id AND t.space_id=f.space_id
        ${STAGE_JOINS}
-       WHERE ${clauses.join(' AND ')}
-       ORDER BY sp.name,s.number NULLS LAST,s.id
-       LIMIT $${values.length}::integer`,
-      values,
+       WHERE ${query.clauses.join(' AND ')}
+       ORDER BY ${query.orderBy}
+       LIMIT $${query.values.length}::integer`,
+      query.values,
     )
     const truncated = rows.length > input.limit
+    const pageRows = rows.slice(0, input.limit) as Array<Record<string, unknown>>
+    const last = pageRows.at(-1)
     return {
-      items: rows.slice(0, input.limit).map((row: Record<string, unknown>) => ({
+      items: pageRows.map((row) => ({
         stage: toHostedStageSummary(row),
         flow: toHostedFlow(row),
       })),
       truncated,
+      nextCursor: truncated ? taskFlowStageListNextCursor(input, last) : null,
     }
+  })
+}
+
+export async function readRecordTaskFlowProjectReferenceCounts(
+  input: TenantPrincipal & { url: string; projectId: string },
+): Promise<HostedTaskFlowProjectReferenceCounts> {
+  return recordPool(input.url).begin(async (tx) => {
+    await bindTenant(tx, input)
+    const rows = await tx`
+      SELECT
+        (SELECT count(*)::integer FROM task_flow_stage
+         WHERE space_id=${input.spaceId}::uuid AND project_id=${input.projectId}::uuid) stages,
+        (SELECT count(*)::integer FROM task_flow
+         WHERE space_id=${input.spaceId}::uuid AND project_id=${input.projectId}::uuid) flows`
+    return { stages: Number(rows[0]?.stages ?? 0), flows: Number(rows[0]?.flows ?? 0) }
   })
 }
 
