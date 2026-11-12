@@ -8,6 +8,7 @@ import {
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { RECORD_SHAPES } from '../../../shared/record-shape.ts'
 import {
   createMemoryRecordApiClient,
   identity,
@@ -523,30 +524,45 @@ describe('orch MCP', () => {
     }
   })
 
-  test('next_workflow_step refuses an over-limit note before writing', async () => {
-    const before = db().query('SELECT COUNT(*) AS n FROM workflow_cursor').get() as { n: number }
+  test('MCP workflow tools refuse every over-limit record before writing', async () => {
+    const cursorCount = () => db().query('SELECT COUNT(*) AS n FROM workflow_cursor').get()
+    const before = cursorCount()
     const server = createDocsMcpServer()
     const client = new Client({ name: 'orch-test', version: '1.0.0' })
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
     await server.connect(serverTransport)
     await client.connect(clientTransport)
     try {
-      const result = await client.callTool({
-        name: 'next_workflow_step',
-        arguments: {
-          slug: 'fix-defect',
-          project: 'fixture',
-          note: 'x'.repeat(301),
-        },
-      })
-      expect(result.isError).toBe(true)
-      expect((result.content as { text: string }[])[0]?.text).toContain(
-        'step note is 301 characters; the limit is 300 (STEP_NOTE_MAX_CHARS)',
-      )
-      expect(db().query('SELECT COUNT(*) AS n FROM workflow_cursor').get()).toEqual(before)
+      const next = 'next_workflow_step'
+      const over = (limit: number) => 'x'.repeat(limit + 1)
+      const cases = [
+        [next, 'note', 'step note'],
+        ['await_workflow_ruling', 'question', 'open question'],
+        ['rule_workflow', 'ruling', 'ruling'],
+        [next, 'self_ruling', 'self-ruling'],
+        [next, 'self_ruling_basis', 'basis'],
+        [next, 'question', 'open question'],
+      ] as const
+      for (const [name, field, record] of cases) {
+        const args = name === next ? { note: 'done' } : {}
+        if (field === 'self_ruling_basis') Object.assign(args, { self_ruling: 'decision' })
+        const result = await client.callTool({
+          name,
+          arguments: {
+            slug: 'fix-defect',
+            project: 'fixture',
+            ...args,
+            [field]: over(RECORD_SHAPES[record].maxChars),
+          },
+        })
+        expect(result.isError).toBe(true)
+        expect((result.content as { text: string }[])[0]?.text).toContain(
+          RECORD_SHAPES[record].constant,
+        )
+        expect(cursorCount()).toEqual(before)
+      }
     } finally {
-      await client.close()
-      await server.close()
+      await Promise.all([client.close(), server.close()])
     }
   })
 

@@ -112,7 +112,10 @@ export function contextItemShapeRefusal(item: ContextItem): string | null {
   const metadata = contextItemMetadataRefusal(item)
   if (metadata) return metadata
   const record = CONTEXT_ITEM_RECORD_NAMES[item.kind as keyof typeof CONTEXT_ITEM_RECORD_NAMES]
-  if (record !== undefined) return recordShapeRefusal(record, item.body)
+  if (record !== undefined) {
+    const refusal = recordShapeRefusal(record, item.body)
+    return refusal === null ? null : `context item ${item.id} refused: ${refusal}`
+  }
   return contextItemLengthRefusal(item)
 }
 
@@ -126,6 +129,9 @@ function contextItemMetadataRefusal(item: ContextItem): string | null {
   if (!item.source.trim()) return `${address} refused: every item requires a non-empty source`
   if (item.kind === 'ruling' && !RULING_SOURCE.test(item.source.trim())) {
     return `${address} refused: a ruling source names where it was given; write --source as q<number>, board:<id> or chat <YYYY-MM-DD>`
+  }
+  if (item.kind === 'ruling' && !item.body.trim()) {
+    return `${address} refused: a ruling requires a non-empty body`
   }
   return null
 }

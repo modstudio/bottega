@@ -1,42 +1,53 @@
 // concern: record-shape
 /** Pure shape policy for short records that carry working context. */
 
+const RECORD_LIMITS = {
+  STEP_NOTE_MAX_CHARS: 300,
+  OPEN_QUESTION_MAX_CHARS: 800,
+  RULING_MAX_CHARS: 1500,
+  SELF_RULING_MAX_CHARS: 800,
+  BASIS_MAX_CHARS: 800,
+  NEXT_ACTION_MAX_CHARS: 400,
+} as const
+
+type RecordLimitName = keyof typeof RECORD_LIMITS
+
 export const RECORD_SHAPES = {
   'step note': {
-    maxChars: 300,
-    constant: 'STEP_NOTE_MAX_CHARS',
+    maxChars: RECORD_LIMITS.STEP_NOTE_MAX_CHARS,
+    constant: 'STEP_NOTE_MAX_CHARS' as RecordLimitName,
     lineRule: 'line',
   },
   'open question': {
-    maxChars: 800,
-    constant: 'OPEN_QUESTION_MAX_CHARS',
+    maxChars: RECORD_LIMITS.OPEN_QUESTION_MAX_CHARS,
+    constant: 'OPEN_QUESTION_MAX_CHARS' as RecordLimitName,
     lineRule: 'paragraph',
   },
   ruling: {
-    maxChars: 1500,
-    constant: 'RULING_MAX_CHARS',
+    maxChars: RECORD_LIMITS.RULING_MAX_CHARS,
+    constant: 'RULING_MAX_CHARS' as RecordLimitName,
     lineRule: 'paragraph',
   },
   'self-ruling': {
-    maxChars: 800,
-    constant: 'SELF_RULING_MAX_CHARS',
+    maxChars: RECORD_LIMITS.SELF_RULING_MAX_CHARS,
+    constant: 'SELF_RULING_MAX_CHARS' as RecordLimitName,
     lineRule: 'paragraph',
   },
   basis: {
-    maxChars: 800,
-    constant: 'BASIS_MAX_CHARS',
+    maxChars: RECORD_LIMITS.BASIS_MAX_CHARS,
+    constant: 'BASIS_MAX_CHARS' as RecordLimitName,
     lineRule: 'paragraph',
   },
   'next action': {
-    maxChars: 400,
-    constant: 'NEXT_ACTION_MAX_CHARS',
+    maxChars: RECORD_LIMITS.NEXT_ACTION_MAX_CHARS,
+    constant: 'NEXT_ACTION_MAX_CHARS' as RecordLimitName,
     lineRule: 'line',
   },
 } as const
 
-export const OPEN_QUESTION_MAX_CHARS = RECORD_SHAPES['open question'].maxChars
-export const RULING_MAX_CHARS = RECORD_SHAPES.ruling.maxChars
-export const NEXT_ACTION_MAX_CHARS = RECORD_SHAPES['next action'].maxChars
+export const OPEN_QUESTION_MAX_CHARS = RECORD_LIMITS.OPEN_QUESTION_MAX_CHARS
+export const RULING_MAX_CHARS = RECORD_LIMITS.RULING_MAX_CHARS
+export const NEXT_ACTION_MAX_CHARS = RECORD_LIMITS.NEXT_ACTION_MAX_CHARS
 
 export type ContextRecordName = keyof typeof RECORD_SHAPES
 

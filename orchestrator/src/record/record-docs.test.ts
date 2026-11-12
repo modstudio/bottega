@@ -103,7 +103,15 @@ test('the hosted record refuses a context item that does not decode or breaks it
       'empty-ruling',
       encodeContextItem({ kind: 'ruling', source: 'q5282', body: '' }),
     ),
-  ).toThrow('ruling must not be empty')
+  ).toThrow('context item empty-ruling refused: a ruling requires a non-empty body')
+  expect(() =>
+    assertContextItemShape(
+      'context',
+      'restored-empty-ruling',
+      encodeContextItem({ kind: 'ruling', source: 'q5282', body: '' }),
+      true,
+    ),
+  ).toThrow('context item restored-empty-ruling refused: a ruling requires a non-empty body')
   expect(() =>
     assertContextItemShape(
       'context',

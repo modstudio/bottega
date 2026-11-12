@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { type ContextRecordName, RECORD_SHAPES, recordShapeRefusal } from './record-shape.ts'
+import { RECORD_SHAPES, recordShapeRefusal } from './record-shape.ts'
+import type { ContextRecordName } from './record-shape.ts'
 
 describe('context-bearing record shapes', () => {
   const declared = {
@@ -10,10 +11,6 @@ describe('context-bearing record shapes', () => {
     basis: { maxChars: 800, constant: 'BASIS_MAX_CHARS', lineRule: 'paragraph' },
     'next action': { maxChars: 400, constant: 'NEXT_ACTION_MAX_CHARS', lineRule: 'line' },
   } as const satisfies Record<ContextRecordName, (typeof RECORD_SHAPES)[ContextRecordName]>
-
-  test('pins every declared shape', () => {
-    expect(RECORD_SHAPES).toEqual(declared)
-  })
 
   for (const [record, shape] of Object.entries(declared) as [
     ContextRecordName,

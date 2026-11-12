@@ -249,10 +249,6 @@ function collectAnswers(input: {
 
 function validatedRuling(text: string, argvLimit: number | undefined): string {
   assertRecordShape('ruling', text)
-  if (!text.trim())
-    throw new Error(
-      `empty ruling: received ${JSON.stringify(text)}\nworking forms:\n${ANSWER_WORKING_FORMS}`,
-    )
   const nul = text.indexOf('\0')
   if (nul >= 0)
     throw new Error(
