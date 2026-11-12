@@ -206,6 +206,21 @@ export const cleanupBoundarySpecs = [
     reason: 'Keep hosted evidence delivery and residue reads behind the close-out outbox adapter.',
   },
   {
+    name: 'session-close-out-next-actions-boundary',
+    file: 'orchestrator/src/session/session-close-out-next-actions.ts',
+    allowed: [
+      'bun:sqlite',
+      '../../../shared/brand.ts',
+      '../database/db.ts',
+      '../doc/context-service.ts',
+      '../doc/context-write-adapter.ts',
+      '../doc/doc-context-write.ts',
+      '../project/projects.ts',
+    ],
+    typeOnlyAllowed: ['bun:sqlite'],
+    reason: 'Keep interactive close-out next-action reads on the session close-out side.',
+  },
+  {
     name: 'session-close-out-boundary',
     file: 'orchestrator/src/session/session-close-out.ts',
     allowed: [
@@ -237,6 +252,7 @@ export const cleanupBoundarySpecs = [
       '../workflow/task-flow-store.ts',
       '../worktree/worktree-remove.ts',
       './session-close-out-decision.ts',
+      './session-close-out-next-actions.ts',
       './session-close-out-obligation-adapter.ts',
       './session-close-out-outbox.ts',
       './session-close-out-resource-release-adapter.ts',

@@ -23,12 +23,14 @@ class ContextPreCompact(unittest.TestCase):
         stdout = io.StringIO()
         with mock.patch.object(sys, "stdin", stdin), mock.patch.object(
             sys, "stdout", stdout
-        ), mock.patch.object(context_precompact.subprocess, "run", return_value=result):
+        ), mock.patch.object(
+            context_precompact.subprocess, "run", return_value=result
+        ) as run:
             code = context_precompact.main()
-        return code, stdout.getvalue()
+        return code, stdout.getvalue(), run
 
     def test_verb_failure_prints_notice_and_exits_zero(self):
-        code, output = self.invoke(SimpleNamespace(returncode=1, stdout="", stderr="store unavailable\n"))
+        code, output, _ = self.invoke(SimpleNamespace(returncode=1, stdout="", stderr="store unavailable\n"))
         self.assertEqual(code, 0)
         self.assertEqual(
             output,
@@ -36,11 +38,12 @@ class ContextPreCompact(unittest.TestCase):
         )
 
     def test_success_prints_the_worked_list(self):
-        code, output = self.invoke(
+        code, output, run = self.invoke(
             SimpleNamespace(returncode=0, stdout="Worked: DEV-2268, DEV-1844\n", stderr="")
         )
         self.assertEqual(code, 0)
         self.assertEqual(output, "Worked: DEV-2268, DEV-1844\n")
+        self.assertEqual(run.call_args.kwargs["env"]["CLAUDE_CODE_SESSION_ID"], "session-1")
 
     def test_timeout_prints_notice_and_exits_zero(self):
         with mock.patch.object(

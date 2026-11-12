@@ -8,6 +8,7 @@ import { addRun, dir, score } from '../../test/fixtures/store.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { db } from '../database/db.ts'
 import { encodeContextItem } from '../doc/context-item-codec.ts'
+import { getContext } from '../doc/context-service.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from '../doc/context-write-adapter.ts'
 import { upsertProject } from '../project/projects.ts'
 import { closeOutSession, formatSessionCloseOut } from './session-close-out.ts'
@@ -137,21 +138,119 @@ test('--resume records and keeps worked while close-out reports missing next-act
   process.env.CLAUDE_CODE_SESSION_ID = session
   try {
     const report = await closeOutSession({ session, resume: true })
-    expect(report.owned.contextItems).toContainEqual(
+    expect((await getContext({ session })).items).toContainEqual(
       expect.objectContaining({
         id: 'worked',
         kind: 'fact',
-        source: 'precompact',
+        source: 'close-out',
         body: 'Worked: WORKEDCLOSE-1',
       }),
     )
-    expect(report.kept).toContain(`context session:${session}/worked (fact)`)
-    expect(report.missingNextActions).toEqual(['WORKEDCLOSE-1'])
+    expect(report.nextActionOutcomes).toEqual([{ key: 'WORKEDCLOSE-1', status: 'missing' }])
     expect(formatSessionCloseOut(report)).toContain('close-out: WORKEDCLOSE-1 has no next-action')
   } finally {
     if (previousSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
     else process.env.CLAUDE_CODE_SESSION_ID = previousSession
   }
+})
+
+test('--resume of another session releases work and reports the worked write refusal', async () => {
+  const session = newRecordId()
+  const taskRecordId = newRecordId()
+  const project = `foreign-worked-close-out-${newRecordId()}`
+  upsertProject({
+    recordId: newRecordId(),
+    name: project,
+    path: `/tmp/${project}`,
+    settings: { trunk: 'main', keyPrefixes: ['FOREIGNWORKED'] },
+  })
+  ;(globalThis as typeof globalThis & { [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts })[
+    CONTEXT_FACTS_PORTS_KEY
+  ] = {
+    tasks: async () => [{ key: 'FOREIGNWORKED-1', record_id: taskRecordId, project }],
+    task: async () => null,
+    pointer: async () => null,
+  }
+  const run = addRun({ agent: 'codex', job: 'implement', status: 'ok', session })
+  db().query('UPDATE run SET launch_key=? WHERE record_id=?').run('FOREIGNWORKED-1', run)
+  score(run, 'full', 'right', 'faithful')
+  const previousSession = process.env.CLAUDE_CODE_SESSION_ID
+  process.env.CLAUDE_CODE_SESSION_ID = 'different-caller'
+  try {
+    const report = await closeOutSession({ session, resume: true })
+    expect(report.mechanical).toContain(`close run ${run}`)
+    expect(report.errors).toContainEqual({
+      item: `context session:${session}/worked (fact)`,
+      detail: `context item worked refused: only owning session ${session} may write session:${session}`,
+      retry: `${PLATFORM_SLUG} session close-out --session ${session} --resume`,
+    })
+  } finally {
+    if (previousSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = previousSession
+  }
+})
+
+test('close-out distinguishes missing, unknown-prefix, and unreadable next actions', async () => {
+  const session = newRecordId()
+  const missingProject = `missing-next-action-${newRecordId()}`
+  const unreadableProject = `unreadable-next-action-${newRecordId()}`
+  upsertProject({
+    recordId: newRecordId(),
+    name: missingProject,
+    path: `/tmp/${missingProject}`,
+    settings: { trunk: 'main', keyPrefixes: ['MISSINGNEXT'] },
+  })
+  upsertProject({
+    recordId: newRecordId(),
+    name: unreadableProject,
+    path: `/tmp/${unreadableProject}`,
+    settings: { trunk: 'main', keyPrefixes: ['UNREADABLENEXT'] },
+  })
+  ;(globalThis as typeof globalThis & { [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts })[
+    CONTEXT_FACTS_PORTS_KEY
+  ] = {
+    tasks: async (project) => {
+      if (project === unreadableProject) throw new Error('hub unavailable')
+      return project === missingProject
+        ? [{ key: 'MISSINGNEXT-1', record_id: newRecordId(), project }]
+        : []
+    },
+    task: async () => null,
+    pointer: async () => null,
+  }
+  for (const [key, at] of [
+    ['MISSINGNEXT-1', '2026-11-11T13:00:00Z'],
+    ['UNKNOWNNEXT-1', '2026-11-11T12:00:00Z'],
+    ['UNREADABLENEXT-1', '2026-11-11T11:00:00Z'],
+  ] as const) {
+    const run = addRun({ agent: 'codex', job: 'implement', status: 'ok', session })
+    db().query('UPDATE run SET launch_key=?,started_at=? WHERE record_id=?').run(key, at, run)
+  }
+
+  const report = await closeOutSession({ session, dryRun: true })
+
+  expect(report.nextActionOutcomes).toEqual([
+    { key: 'MISSINGNEXT-1', status: 'missing' },
+    {
+      key: 'UNKNOWNNEXT-1',
+      status: 'unknown-prefix',
+      detail: 'no single project declares the task prefix of UNKNOWNNEXT-1',
+      remedy: `declare it in one project's keyPrefixes with ${PLATFORM_SLUG} project set <project> --settings`,
+    },
+    {
+      key: 'UNREADABLENEXT-1',
+      status: 'unreadable',
+      detail: expect.stringContaining('hub unavailable'),
+      remedy: `${PLATFORM_SLUG} record pull`,
+    },
+  ])
+  expect(formatSessionCloseOut(report)).toContain('close-out: MISSINGNEXT-1 has no next-action')
+  expect(report.errors).toContainEqual(
+    expect.objectContaining({ item: 'close-out task UNKNOWNNEXT-1' }),
+  )
+  expect(report.errors).toContainEqual(
+    expect.objectContaining({ item: 'close-out task UNREADABLENEXT-1' }),
+  )
 })
 
 test('close-out parks only an awaiting cursor with a recorded open question', async () => {

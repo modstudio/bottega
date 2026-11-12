@@ -1,7 +1,7 @@
 // concern: context-worked
 /** Pure derivation and rendering of task keys worked by one architect session. */
 
-export type WorkedTaskRow = { key: string | null; at: string }
+type WorkedTaskRow = { key: string | null; at: string }
 
 export type WorkedTaskFacts = {
   runs: readonly WorkedTaskRow[]
@@ -9,6 +9,9 @@ export type WorkedTaskFacts = {
   claims: readonly WorkedTaskRow[]
   questions: readonly WorkedTaskRow[]
 }
+
+export const WORKED_CONTEXT_ID = 'worked'
+export const WORKED_CONTEXT_KIND = 'fact'
 
 /** Return the newest occurrence of each non-empty task key, newest first. */
 export function workedTaskKeys(facts: WorkedTaskFacts): string[] {

@@ -37,10 +37,13 @@ def record_worked(payload):
         return not_recorded("session_id is missing")
     if not isinstance(cwd, str) or not cwd:
         return not_recorded("cwd is missing")
+    child_env = os.environ.copy()
+    child_env["CLAUDE_CODE_SESSION_ID"] = session
     try:
         result = subprocess.run(
             [bottega_bin(), "agent", "context", "worked", "--session", session],
             cwd=cwd,
+            env=child_env,
             capture_output=True,
             text=True,
             timeout=CLI_TIMEOUT_SECONDS,

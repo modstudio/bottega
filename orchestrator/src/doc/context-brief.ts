@@ -19,7 +19,7 @@ import {
   taskKeyMap,
   taskReferenceForProjectKey,
 } from '../workflow/workflow-task-reference.ts'
-import { parseWorkedTaskKeys } from './context-worked.ts'
+import { parseWorkedTaskKeys, WORKED_CONTEXT_ID, WORKED_CONTEXT_KIND } from './context-worked.ts'
 import { storedItems, taskProfile } from './context-write-adapter.ts'
 import type { ContextItem, ContextItemKind } from './doc-context-write.ts'
 import { taskContextHolder } from './doc-subjects.ts'
@@ -200,7 +200,7 @@ export function workingKeysForBrief(
       .map((cursor) => ({ key: cursor.workflow_key, project: cursor.project })),
   ]
   const worked = storedItems(`session:${session}`, database).find(
-    (item) => item.id === 'worked' && item.kind === 'fact',
+    (item) => item.id === WORKED_CONTEXT_ID && item.kind === WORKED_CONTEXT_KIND,
   )
   if (!worked) return current
   const registered = projects(undefined, database)

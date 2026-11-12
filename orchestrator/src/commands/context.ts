@@ -4,7 +4,7 @@ import type { Command } from 'commander'
 import { contextBrief, renderContextBrief } from '../doc/context-brief.ts'
 import { dropContextItem, getContext, setContextItem } from '../doc/context-service.ts'
 import { staleContextForSession } from '../doc/context-stale-adapter.ts'
-import { recordSessionWorked } from '../doc/context-worked-adapter.ts'
+import { recordSessionWorked, sessionWorkedTaskKeys } from '../doc/context-worked-adapter.ts'
 import { CONTEXT_ITEM_KINDS } from '../doc/doc-context-write.ts'
 import { sessionContextCommand } from '../workflow/session-context.ts'
 import { log } from './support.ts'
@@ -15,7 +15,8 @@ function registerWorked(context: Command): void {
     .description('record and print the task keys worked by an architect session')
     .requiredOption('--session <id>', 'select architect session')
     .action(async (options) => {
-      const result = await recordSessionWorked(options.session)
+      const keys = sessionWorkedTaskKeys(options.session)
+      const result = await recordSessionWorked(options.session, keys, 'precompact')
       log(result.body ?? 'worked: none')
     })
 }
