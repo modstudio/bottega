@@ -35,7 +35,16 @@ export type ContextMomentInput = {
 }
 
 const emptyEffect = (): ContextMomentEffect => ({ writes: [], drops: [] })
+const WORKFLOW_NEXT_SOURCE = 'workflow-next'
+const PULL_REQUEST_MERGE_SOURCE = 'pr-merge'
+const QUESTION_SOURCE_PATTERN = /^q\d+$/
 const questionSource = (questionId: number) => `q${questionId}`
+
+/** Whether a context source is emitted by a writing verb. */
+export const isWritingVerbContextSource = (source: string): boolean =>
+  source === WORKFLOW_NEXT_SOURCE ||
+  source === PULL_REQUEST_MERGE_SOURCE ||
+  QUESTION_SOURCE_PATTERN.test(source)
 
 /** Maps the plain values held by a successful verb to its context mutations. */
 export function contextMomentEffect(input: ContextMomentInput): ContextMomentEffect {
@@ -47,7 +56,7 @@ export function contextMomentEffect(input: ContextMomentInput): ContextMomentEff
       ? `${workflow} cursor ${number} finished`
       : `${workflow} cursor ${number} at ${stepSlug}: ${stepTitle}`
     const writes: ContextMomentEffect['writes'] = [
-      { kind: 'next-action', id: 'next', source: 'workflow-next', body },
+      { kind: 'next-action', id: 'next', source: WORKFLOW_NEXT_SOURCE, body },
     ]
     if (input.text !== undefined && input.questionId) {
       const source = questionSource(input.questionId)
@@ -91,7 +100,7 @@ export function pullRequestMergeContextMomentEffect(input: {
       {
         kind: 'next-action',
         id: 'next',
-        source: 'pr-merge',
+        source: PULL_REQUEST_MERGE_SOURCE,
         body: `PR ${input.pullRequestNumber} landed as ${input.mergeCommit.slice(0, 12)}.`,
       },
     ],
