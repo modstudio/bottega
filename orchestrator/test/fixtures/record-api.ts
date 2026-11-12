@@ -5,7 +5,6 @@ import { consumeDocBody, refuseDocWrite } from '../../src/doc/doc-write-allowed.
 import type { RecordBoardDeps } from '../../src/record/record-api-board.ts'
 import {
   type RecordApiClient,
-  RecordApiRequestError,
   type RecordCanonImportInput,
   type RecordDocImportInput,
   type RecordDocUpsertInput,
@@ -21,7 +20,10 @@ import {
 import { BOARD_PRESENCE_WRITE_INTERVAL_MS } from '../../src/record/record-board-presence.ts'
 import { createBoardStreamRegistry } from '../../src/record/record-board-stream.ts'
 import { assertRevisionWrite } from '../../src/record/record-doc-errors.ts'
-import type { HostedTaskFlowStageById } from '../../src/record/record-task-flow-contract.ts'
+import {
+  memoryTaskFlowClient,
+  type MemoryTaskFlowInput,
+} from './record-api-task-flow.ts'
 
 export const identity: RecordIdentity = {
   user: { id: 'user-a', email: 'a@example.test' },
@@ -377,12 +379,9 @@ export function installRecordApiClient(client: RecordApiClient | null): void {
 }
 
 export function createMemoryRecordApiClient(
-  input: {
+  input: MemoryTaskFlowInput & {
     boardChanges?: HostedBoardChange[]
     boardProjectIds?: Record<string, string>
-    taskFlowStages?: HostedTaskFlowStageById[]
-    taskFlowPageSize?: number
-    taskFlowFailedPage?: number
   } = {},
 ): RecordApiClient {
   const docs = new Map<string, StoredDoc>()
@@ -413,6 +412,7 @@ export function createMemoryRecordApiClient(
   return {
     ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
+    ...memoryTaskFlowClient(input),
     async listChanges() {
       return { reset: { cursor: 'fixture-change-cursor', tables: [] } }
     },
@@ -520,116 +520,6 @@ export function createMemoryRecordApiClient(
     },
     async listWorkflowCatalogue() {
       return { items: [], nextCursor: null }
-    },
-    async readTaskFlow(selector) {
-      const found = input.taskFlowStages?.find(({ flow }) =>
-        selector.taskId
-          ? flow.taskId === selector.taskId
-          : selector.flowRecordId
-            ? flow.id === selector.flowRecordId
-            : flow.taskKey === selector.taskKey,
-      )
-      if (!found)
-        throw new RecordApiRequestError(
-          'hosted task flow not found',
-          'refused',
-          404,
-          'task_flow_not_found',
-        )
-      const siblings = input.taskFlowStages?.filter(({ flow }) => flow.id === found.flow.id) ?? []
-      const open = siblings.find(({ stage }) => stage.id === found.flow.openStageRecordId)
-      return {
-        flow: found.flow,
-        stage: open
-          ? {
-              ...open.stage,
-              holder: { id: open.stage.lastAdvancedMachineId, displayName: 'Fixture' },
-            }
-          : null,
-        otherStages: siblings
-          .filter(({ stage }) => stage.id !== open?.stage.id)
-          .map(({ stage }) => stage),
-      }
-    },
-    async listTaskFlowStages(selector) {
-      let rows = [...(input.taskFlowStages ?? [])]
-      rows = rows.filter(({ stage, flow }) => {
-        if (selector.projectId !== undefined && stage.projectId !== selector.projectId) return false
-        if (selector.number !== undefined && stage.number !== selector.number) return false
-        if (selector.sessionId !== undefined && stage.sessionId !== selector.sessionId) return false
-        if (selector.states && !selector.states.includes(stage.state)) return false
-        if (selector.taskKey !== undefined && flow.taskKey !== selector.taskKey) return false
-        if (selector.workflow !== undefined && stage.workflow !== selector.workflow) return false
-        if (selector.mode !== undefined && stage.mode !== selector.mode) return false
-        if (selector.workflowKey !== undefined && stage.workflowKey !== selector.workflowKey)
-          return false
-        if (selector.keyless && stage.workflowKey !== '') return false
-        if (selector.primaryInstance && stage.instanceId !== '') return false
-        if (selector.taskId !== undefined && flow.taskId !== selector.taskId) return false
-        if (selector.unlinked && flow.taskId !== null) return false
-        if (selector.linked && flow.taskId === null) return false
-        if (
-          selector.openedMachineId !== undefined &&
-          stage.openedMachineId !== selector.openedMachineId
-        )
-          return false
-        return true
-      })
-      rows.sort((left, right) => {
-        if (selector.order === 'newest')
-          return (
-            (right.stage.number ?? -1) - (left.stage.number ?? -1) ||
-            right.stage.id.localeCompare(left.stage.id)
-          )
-        return (
-          (left.stage.projectName ?? '').localeCompare(right.stage.projectName ?? '') ||
-          (left.stage.number ?? Number.MAX_SAFE_INTEGER) -
-            (right.stage.number ?? Number.MAX_SAFE_INTEGER) ||
-          left.stage.id.localeCompare(right.stage.id)
-        )
-      })
-      const offset = Number(selector.cursor ?? 0)
-      const pageNumber = Math.floor(offset / (input.taskFlowPageSize ?? selector.limit ?? 200)) + 1
-      if (pageNumber === input.taskFlowFailedPage)
-        throw new Error('fixture task-flow page is unavailable; restore fixture access and retry')
-      const size = Math.min(
-        selector.limit ?? 200,
-        input.taskFlowPageSize ?? Number.MAX_SAFE_INTEGER,
-      )
-      const items = rows.slice(offset, offset + size)
-      const next = offset + items.length
-      return {
-        items,
-        truncated: next < rows.length,
-        nextCursor: next < rows.length ? String(next) : null,
-      }
-    },
-    async readTaskFlowStage(id) {
-      return input.taskFlowStages?.find(({ stage }) => stage.id === id) ?? null
-    },
-    async readTaskFlowText(id) {
-      for (const { stage } of input.taskFlowStages ?? []) {
-        const text = stage.stepTexts?.find((row) => row.id === id)
-        if (text)
-          return {
-            text,
-            stage: { id: stage.id, number: stage.number },
-            copy: stage.textCopies?.find((row) => row.workflowTextRecordId === id) ?? null,
-          }
-      }
-      return null
-    },
-    async readTaskFlowObligation(id) {
-      for (const { stage } of input.taskFlowStages ?? []) {
-        const obligation = stage.obligations?.find((row) => row.id === id)
-        if (obligation)
-          return { obligation, stage: { id: stage.id, number: stage.number, state: stage.state } }
-      }
-      return null
-    },
-    async readTaskFlowProjectReferenceCounts(projectId) {
-      const rows = input.taskFlowStages?.filter(({ stage }) => stage.projectId === projectId) ?? []
-      return { stages: rows.length, flows: new Set(rows.map(({ flow }) => flow.id)).size }
     },
     async draftWorkflow() {
       throw new Error('hosted workflow catalogue is unused in this fixture')

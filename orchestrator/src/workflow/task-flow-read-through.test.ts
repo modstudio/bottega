@@ -108,6 +108,9 @@ function hosted(
           number: 1,
           workflow: input.workflow ?? 'fix-defect',
           mode: 'default',
+          workflowKey: 'DEV-2098',
+          instanceId: '',
+          sessionId: null,
           workflowVersionId: input.workflowVersionId ?? ids.workflowVersionId,
           workflowVersionNumber: 1,
           catalogueVersionId: ids.catalogueVersionId,
@@ -117,6 +120,9 @@ function hosted(
           activeSlug: input.activeSlug ?? 'fix',
           state: 'running' as const,
           closedStepNotes: input.closedStepNotes ?? [],
+          question: null,
+          autonomy: null,
+          enforcement: 'floors',
           totalSteps: input.totalSteps ?? 6,
           openedMachineId: machineA,
           takenOverFromMachineId: machineA,
@@ -155,6 +161,21 @@ function installHosted(
     ...createMemoryRecordApiClient(),
     whoami,
     readTaskFlow: async () => flow,
+    listTaskFlowStages: async (selector) => {
+      const stages = [flow.stage, ...(flow.otherStages ?? [])]
+        .filter((stage): stage is NonNullable<typeof stage> => stage !== null)
+        .filter(
+          (stage) =>
+            (selector.projectId === undefined || stage.projectId === selector.projectId) &&
+            (selector.number === undefined || stage.number === selector.number),
+        )
+        .map((stage) => ({ stage, flow: flow.flow }))
+      return { items: stages, truncated: false, nextCursor: null }
+    },
+    readTaskFlowStage: async (id) => {
+      const stage = [flow.stage, ...(flow.otherStages ?? [])].find((row) => row?.id === id)
+      return stage ? { stage, flow: flow.flow } : null
+    },
     composeTaskFlow: async (input) => {
       const stageId = input.stageInsert?.id
       const revisions = Object.fromEntries([

@@ -226,10 +226,10 @@ function taskFlowStageListSearchParams(
   }
   for (const [name, value] of Object.entries(strings))
     if (value !== undefined) query.set(name, value)
+  if (selector.number !== undefined) query.set('number', String(selector.number))
   for (const state of selector.states ?? []) query.append('state', state)
   for (const name of ['keyless', 'primaryInstance', 'unlinked', 'linked'] as const)
     if (selector[name]) query.set(name, 'true')
-  if (selector.number !== undefined) query.set('number', String(selector.number))
   if (selector.limit !== undefined) query.set('limit', String(selector.limit))
   return query
 }

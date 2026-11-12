@@ -81,7 +81,7 @@ test.each([1, TASK_FLOW_STAGE_LIST_LIMIT_MAX])(
 test('task-flow stage list passes the hosted filters, ordering, and cursor', async () => {
   const calls: TaskFlowStageListQuery[] = []
   const response = await taskFlowApp(calls).request(
-    `/v1/task-flow/stages?workflow=fix-defect&mode=default&workflowKey=DEV-2234&keyless=true&primaryInstance=true&taskId=${KNOWN_ID}&unlinked=true&order=newest`,
+    `/v1/task-flow/stages?workflow=fix-defect&mode=default&workflowKey=DEV-2234&keyless=true&primaryInstance=true&taskId=${KNOWN_ID}&unlinked=true&linked=true&openedMachineId=${UNKNOWN_ID}&order=newest`,
   )
   expect(response.status).toBe(200)
   expect(calls[0]).toMatchObject({
@@ -92,6 +92,8 @@ test('task-flow stage list passes the hosted filters, ordering, and cursor', asy
     primaryInstance: true,
     taskId: KNOWN_ID,
     unlinked: true,
+    linked: true,
+    openedMachineId: UNKNOWN_ID,
     order: 'newest',
   })
 })

@@ -40,7 +40,10 @@ function required<T>(value: T | null | undefined, field: string): T {
   return value
 }
 
-function stageRow(item: ListedItem): TaskFlowStageCursorRow & { open_stage_count: number } {
+function stageRow(
+  item: ListedItem,
+  includeOpenStageCount = true,
+): TaskFlowStageCursorRow & { open_stage_count?: number } {
   const { stage, flow } = item
   return {
     id: required(stage.number, 'number'),
@@ -50,7 +53,8 @@ function stageRow(item: ListedItem): TaskFlowStageCursorRow & { open_stage_count
     mode_slug: stage.mode,
     workflow_key: stage.workflowKey ?? '',
     task_record_id: flow.taskId,
-    task_flow_record_id: stage.flowRecordId,
+    // SQLite cannot persist a taskless flow, so preserve the port's existing taskless row shape.
+    task_flow_record_id: flow.taskId === null ? null : stage.flowRecordId,
     instance_id: stage.instanceId ?? '',
     session_id: stage.sessionId ?? null,
     ordinal: stage.activeOrdinal,
@@ -75,7 +79,7 @@ function stageRow(item: ListedItem): TaskFlowStageCursorRow & { open_stage_count
     taken_over_from_machine_id: stage.takenOverFromMachineId,
     last_advanced_machine_id: stage.lastAdvancedMachineId,
     revision: stage.revision,
-    open_stage_count: flow.openStageCount,
+    ...(includeOpenStageCount ? { open_stage_count: flow.openStageCount } : {}),
   }
 }
 
@@ -216,7 +220,7 @@ class RecordTaskFlowReadStore implements TaskFlowReadStore {
 
   async openStageForTask(taskRecordId: string) {
     const flow = await this.flow({ taskId: taskRecordId })
-    return flow?.stage ? stageRow({ stage: flow.stage, flow: flow.flow }) : null
+    return flow?.stage ? stageRow({ stage: flow.stage, flow: flow.flow }, false) : null
   }
   async flowProjectionForTask(taskRecordId: string) {
     const result = await this.flow({ taskId: taskRecordId })

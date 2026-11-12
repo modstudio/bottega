@@ -144,12 +144,25 @@ function updateMutation(
   intent: TaskFlowIntent,
   applied: Record<string, number> | undefined,
 ): number {
-  if (revision(database, table, mutation.id) !== mutation.expectedRevision)
-    revisionRefusal(database, intent, table, mutation.id)
   const next = applied?.[mutation.id] ?? mutation.expectedRevision + 1
+  const current = revision(database, table, mutation.id)
+  const decision = decideAppliedMirrorMutation(current, mutation.expectedRevision, applied?.[mutation.id])
+  if (decision === 'refuse') revisionRefusal(database, intent, table, mutation.id)
+  if (decision !== 'apply') return next
   if (table === 'task_flow') applyFlowValues(database, mutation, next)
   else applyStageValues(database, mutation, next)
   return next
+}
+
+export function decideAppliedMirrorMutation(
+  localRevision: number | null,
+  expectedRevision: number,
+  appliedRevision: number | undefined,
+): 'apply' | 'keep' | 'refresh' | 'refuse' {
+  if (localRevision === expectedRevision) return 'apply'
+  if (appliedRevision === undefined) return 'refuse'
+  if (localRevision !== null && localRevision >= appliedRevision) return 'keep'
+  return 'refresh'
 }
 
 function insertFlow(database: Database, row: SqlRow, revisionValue: number): void {
@@ -365,8 +378,17 @@ function applyAdopt(
   applied: { revisions: Record<string, number>; flowRecordId: string } | undefined,
 ) {
   const stage = body.stage as { id: string; expectedRevision: number }
-  if (revision(database, 'workflow_cursor', stage.id) !== stage.expectedRevision)
-    revisionRefusal(database, 'adopt', 'workflow_cursor', stage.id)
+  const stageDecision = decideAppliedMirrorMutation(
+    revision(database, 'workflow_cursor', stage.id),
+    stage.expectedRevision,
+    applied?.revisions[stage.id],
+  )
+  if (stageDecision === 'refuse') revisionRefusal(database, 'adopt', 'workflow_cursor', stage.id)
+  if (stageDecision !== 'apply')
+    return {
+      revisions: applied!.revisions,
+      flowRecordId: applied!.flowRecordId,
+    }
   const source = sourceFlowForAdopt(database, stage.id, body, applied)
   const target = database
     .query<{ record_id: string; revision: number }, [string]>(

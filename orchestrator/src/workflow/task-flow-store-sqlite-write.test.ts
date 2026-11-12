@@ -3,7 +3,10 @@ import { expect, test } from 'bun:test'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import type { TaskFlowIntentInput } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
-import { taskFlowRevisionRefusal } from './task-flow-store-sqlite-write.ts'
+import {
+  decideAppliedMirrorMutation,
+  taskFlowRevisionRefusal,
+} from './task-flow-store-sqlite-write.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
@@ -118,6 +121,13 @@ test('revision refusal names the declared intent and stale row kind', () => {
     expect(taskFlowRevisionRefusal(intent, rowKind, identifier)).toBe(
       `${expected}; rerun the command`,
     )
+})
+
+test('applied mirror mutation distinguishes apply, keep, refresh, and refusal', () => {
+  expect(decideAppliedMirrorMutation(3, 3, 4)).toBe('apply')
+  expect(decideAppliedMirrorMutation(5, 3, 5)).toBe('keep')
+  expect(decideAppliedMirrorMutation(2, 3, 5)).toBe('refresh')
+  expect(decideAppliedMirrorMutation(2, 3, undefined)).toBe('refuse')
 })
 
 test('flow mutation preserves state when the payload omits it', async () => {
