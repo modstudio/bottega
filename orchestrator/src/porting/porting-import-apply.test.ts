@@ -284,7 +284,7 @@ describe('port importer', () => {
       }),
       importPortCatalogue: async (_input, destination) => {
         destinations.push(destination.destinationSpaceId)
-        return { imported: true }
+        return { inserted: 0, alreadyPresent: 0, skipped: [] }
       },
     })
     const plan = planImport(fixture(), registered())
