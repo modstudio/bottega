@@ -4,10 +4,7 @@
 import type { Command, OptionValues } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { ORCH_DO_OPTIONS } from '../commands/do-options.ts'
-import {
-  createPullRequestCommand,
-  mergePullRequestCommand,
-} from '../commands/pull-request.ts'
+import { createPullRequestCommand, mergePullRequestCommand } from '../commands/pull-request.ts'
 import { productArgv, write } from '../commands/support.ts'
 import { doCommand } from '../dispatch/dispatch-cli-service.ts'
 import { positive } from './workflow-command-arguments.ts'
@@ -67,7 +64,7 @@ export async function dispatchForStepCommand(
   )
 }
 
-export async function createForStepCommand(
+async function createForStepCommand(
   githubArgs: string[],
   options: StepLandCreateOptions & { cursor: string },
   ports: StepActionCommandPorts = {},
@@ -85,7 +82,7 @@ export async function createForStepCommand(
   )
 }
 
-export async function mergeForStepCommand(
+async function mergeForStepCommand(
   target: string,
   options: StepLandMergeOptions & { cursor: string },
   ports: StepActionCommandPorts = {},

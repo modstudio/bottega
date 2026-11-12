@@ -3,11 +3,11 @@
 
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
-import { cursorComposition } from './workflow-cursor-serve.ts'
 import {
   cliWorkflowCursorContext,
   selectWorkflowCursorByHandle,
 } from './workflow-cursor-selection.ts'
+import { cursorComposition } from './workflow-cursor-serve.ts'
 
 export type StepActionTarget = {
   cursor: number
@@ -53,7 +53,9 @@ export async function dispatchForStep(
 ): Promise<void> {
   const target = await (ports.read ?? stepActionTarget)(input.cursor)
   if (!target.taskKey) {
-    throw new Error(`cursor ${input.cursor} has no task key; workflow dispatch needs a keyed cursor`)
+    throw new Error(
+      `cursor ${input.cursor} has no task key; workflow dispatch needs a keyed cursor`,
+    )
   }
   if (!target.jobs.includes(input.job)) {
     const declared = target.jobs.length ? target.jobs.join(', ') : 'none'

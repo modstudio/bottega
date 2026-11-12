@@ -1,6 +1,13 @@
 import { expect, test } from 'bun:test'
 import { recordUnreachableRefusal } from '../../../shared/record-remedies.ts'
-import { dispatchForStep, landForStep, type StepActionTarget } from './workflow-step-action.ts'
+import { composeWorkflowWithCursor } from './workflow-cursor.ts'
+import { args, context, database } from './workflow-cursor-test.fixture.ts'
+import {
+  dispatchForStep,
+  landForStep,
+  type StepActionTarget,
+  stepActionTarget,
+} from './workflow-step-action.ts'
 
 const target = (overrides: Partial<StepActionTarget> = {}): StepActionTarget => ({
   cursor: 17,
@@ -10,6 +17,32 @@ const target = (overrides: Partial<StepActionTarget> = {}): StepActionTarget => 
   jobs: ['implement'],
   actions: [],
   ...overrides,
+})
+
+test('the action target selects the cursor handle and reads its composed ordinal', async () => {
+  const d = database()
+  const composition = await composeWorkflowWithCursor(
+    'flow',
+    'fixture',
+    'default',
+    args,
+    context,
+    d,
+    {},
+    {},
+  )
+  const cursor = composition.cursor!
+  const row = d
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM workflow_cursor WHERE number=?')
+    .get(cursor.id)!
+  expect(await stepActionTarget(cursor.id, d)).toEqual({
+    cursor: cursor.id,
+    cursorRecordId: row.record_id,
+    stepSlug: composition.steps[0]!.slug,
+    taskKey: args.key,
+    jobs: composition.steps[0]!.jobs,
+    actions: composition.steps[0]!.actions,
+  })
 })
 
 test('a declared job dispatches with the cursor record and current step binding', async () => {
@@ -55,9 +88,7 @@ test('a step declaring no jobs prints none in the exact refusal', async () => {
       { cursor: 17, job: 'diagnose', argv: ['do', 'diagnose'] },
       { read: async () => target({ jobs: [] }), dispatch: async () => {} },
     ),
-  ).rejects.toThrow(
-    'step implement of cursor 17 declares jobs: none; diagnose is not one of them',
-  )
+  ).rejects.toThrow('step implement of cursor 17 declares jobs: none; diagnose is not one of them')
 })
 
 test('an unreachable current-step read propagates its refusal and starts nothing', async () => {
@@ -128,13 +159,6 @@ test('declared create and merge actions preserve the PR service arguments', asyn
     },
     merge: async (...args: Parameters<Parameters<typeof landForStep>[1]['merge']>) => {
       mergeCalls.push(args)
-      return {
-        output: 'merged',
-        exitCode: 0,
-        pullRequestNumber: 42,
-        mergeCommit: 'abc',
-        headBranch: 'DEV-2283-work',
-      }
     },
   }
   const createArgs: Parameters<typeof ports.create> = [
