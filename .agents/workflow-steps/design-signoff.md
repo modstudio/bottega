@@ -10,7 +10,7 @@ reenter:
   to: design
   outcome: revise
 operatorRuling: true
-job: null
+jobs: []
 autonomy: ask
 needs: []
 ---

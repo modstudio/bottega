@@ -3,7 +3,7 @@ title: Record the finished review
 stage: review
 floor:
   - command-exit
-job: null
+jobs: []
 autonomy: auto
 needs: []
 ---

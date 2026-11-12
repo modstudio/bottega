@@ -3,7 +3,7 @@ title: Size local hardware
 stage: plan
 floor:
   - recorded-artifact
-job: null
+jobs: []
 autonomy: auto
 needs: []
 ---

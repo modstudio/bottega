@@ -3,7 +3,7 @@ title: Verify
 stage: implement
 floor:
   - command-exit
-job: null
+jobs: []
 autonomy: auto
 needs:
   - gate

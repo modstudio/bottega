@@ -19,6 +19,7 @@ const UNKNOWN_TASK_ID = '01990000-0000-7000-8000-000000001777'
 const LINKED_RUN_ID = '01990000-0000-7000-8000-000000001778'
 const UNKNOWN_RUN_ID = '01990000-0000-7000-8000-000000001779'
 const NUMBERED_RUN_ID = '01990000-0000-7000-8000-000000001783'
+const CURSOR_RECORD_ID = '01990000-0000-7000-8000-000000001784'
 const OTHER_SPACE_ID = '01990000-0000-7000-8000-000000001780'
 const OTHER_SPACE_TASK_ID = '01990000-0000-7000-8000-000000001781'
 const CROSS_SPACE_RUN_ID = '01990000-0000-7000-8000-000000001782'
@@ -95,6 +96,8 @@ function runPayload(id: string, taskId: string | null) {
     turn: 1,
     noFailover: false,
     automaticFailover: false,
+    cursorRecordId: CURSOR_RECORD_ID,
+    stepSlug: 'write',
     workPreserved: false,
     createdAt: STAMP,
     updatedAt: STAMP,
@@ -250,14 +253,31 @@ realPostgres('hosted run task references', () => {
         results: [{ id: 7, status: 'synced' }],
       })
 
-      const rows = await admin<{ id: string; task_id: string | null }[]>`
-        SELECT id::text,task_id::text FROM run
+      const rows = await admin<
+        { id: string; task_id: string | null; cursor_record_id: string; step_slug: string }[]
+      >`
+        SELECT id::text,task_id::text,cursor_record_id::text,step_slug FROM run
         WHERE id IN (${LINKED_RUN_ID}::uuid,${UNKNOWN_RUN_ID}::uuid,${CROSS_SPACE_RUN_ID}::uuid)
         ORDER BY id`
       expect([...rows]).toEqual([
-        { id: LINKED_RUN_ID, task_id: TASK_ID },
-        { id: UNKNOWN_RUN_ID, task_id: TASK_ID },
-        { id: CROSS_SPACE_RUN_ID, task_id: null },
+        {
+          id: LINKED_RUN_ID,
+          task_id: TASK_ID,
+          cursor_record_id: CURSOR_RECORD_ID,
+          step_slug: 'write',
+        },
+        {
+          id: UNKNOWN_RUN_ID,
+          task_id: TASK_ID,
+          cursor_record_id: CURSOR_RECORD_ID,
+          step_slug: 'write',
+        },
+        {
+          id: CROSS_SPACE_RUN_ID,
+          task_id: null,
+          cursor_record_id: CURSOR_RECORD_ID,
+          step_slug: 'write',
+        },
       ])
       const [numberedRun] = await admin<{ number: number | null }[]>`
         SELECT number FROM run WHERE id=${NUMBERED_RUN_ID}::uuid`

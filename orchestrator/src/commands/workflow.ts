@@ -43,6 +43,7 @@ import {
 import { workflowNextContextMoment } from '../workflow/workflow-context-moment.ts'
 import { workflowCursorIdentityMap } from '../workflow/workflow-cursor-identity.ts'
 import { RECORD_EVIDENCE_FLAG } from '../workflow/workflow-evidence-payload.ts'
+import { registerWorkflowStepActionCommands } from '../workflow/workflow-step-action-commands.ts'
 import {
   copyWorkflowTextCommand,
   showWorkflowTextCommand,
@@ -114,7 +115,7 @@ function workflowRegistration(
     .allowExcessArguments(true)
     .action(() => {
       throw new Error(
-        `unknown: ${PLATFORM_SLUG} workflow. Try list | show | set | promote | retire | fork | versions | render-check | compose | step | attach | next | await | rule | abandon | cursors | probe | exec | hydrate | import | promote-tree`,
+        `unknown: ${PLATFORM_SLUG} workflow. Try list | show | set | promote | retire | fork | versions | render-check | compose | step | attach | next | dispatch | land | await | rule | abandon | cursors | probe | exec | hydrate | import | promote-tree`,
       )
     })
   return { workflow, workflowPresentation, handlerOptions, output }
@@ -679,6 +680,7 @@ export function registerWorkflowCommands(
   registerWorkflowVersions(registration)
   registerWorkflowRendering(registration)
   registerWorkflowAdvancement(registration)
+  registerWorkflowStepActionCommands(registration.workflow)
   registerWorkflowRulings(registration)
   registerWorkflowCursorAdmin(registration)
   registerWorkflowChildCommands(registration)

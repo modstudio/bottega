@@ -6,7 +6,7 @@ floor:
 outcomes:
   - new-symptom
   - original-fix-wrong
-job: null
+jobs: []
 autonomy: auto
 needs: []
 ---

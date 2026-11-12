@@ -19,6 +19,10 @@ import { RUN_REFERENCE_REFUSAL } from './run-task-reference.ts'
 
 test('a later claim records a UUID ruling identity and never resurrects a failed reservation', async () => {
   const root = addRun({ agent: 'codex', job: 'review-lens', status: 'asking' })
+  const cursorRecordId = newRecordId()
+  db()
+    .query('UPDATE run SET cursor_record_id=?,step_slug=? WHERE record_id=?')
+    .run(cursorRecordId, 'review', root)
   const reserved = addRun({ agent: '(pending)', job: 'review-lens', status: 'running' })
   db().query("UPDATE run SET review_role='round' WHERE record_id=?").run(reserved)
   const reservedRecordId = db()
@@ -127,6 +131,11 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
     ).toEqual({ credential_payer: 'shared', credential_binding: 'project' })
     expect(
       db()
+        .query('SELECT cursor_record_id,step_slug FROM run WHERE record_id=?')
+        .get(claimed.claim.id),
+    ).toEqual({ cursor_record_id: cursorRecordId, step_slug: 'review' })
+    expect(
+      db()
         .query<{ record_id: string }, [string]>(
           'SELECT record_id FROM run_carried_ruling WHERE run_record_id=?',
         )
@@ -142,6 +151,26 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
     expect(
       db().query('SELECT transport_explicit FROM run WHERE record_id=?').get(implicit.claim.id),
     ).toEqual({ transport_explicit: 0 })
+    expect(
+      db()
+        .query('SELECT cursor_record_id,step_slug FROM run WHERE record_id=?')
+        .get(implicit.claim.id),
+    ).toEqual({ cursor_record_id: null, step_slug: null })
+
+    const boundFresh = await claimRun({
+      ...claimInput,
+      opts: {
+        job: 'review-lens',
+        binding: { cursorRecordId, stepSlug: 'write' },
+      },
+      stamp: 'bound-fresh-claim',
+      carriedQuestionIds: [],
+    })
+    expect(
+      db()
+        .query('SELECT cursor_record_id,step_slug FROM run WHERE record_id=?')
+        .get(boundFresh.claim.id),
+    ).toEqual({ cursor_record_id: cursorRecordId, step_slug: 'write' })
 
     const harness = await claimRun({
       ...claimInput,

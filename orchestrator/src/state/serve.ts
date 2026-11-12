@@ -148,7 +148,7 @@ export function runDetail(
             r.failure_kind, r.probe, r.evidence_excluded, r.error, r.input_tree, r.head_commit,
             r.credential_id, r.credential_payer, r.credential_binding,
             r.changed_paths, r.tests_ran, r.tests_passed, r.tests_claim_disagrees,
-            r.review_ref, r.doc_revisions, r.canon_sha,
+            r.review_ref, r.doc_revisions, r.canon_sha, r.cursor_record_id, r.step_slug,
             r.prompt_path, r.output_path, r.mcp, r.mcp_server, r.mcp_connected, r.mcp_error,
             r.branch_kept, r.branch_kept_tip,
             r.provisioning_kind, r.provisioning_ms, r.provisioning_phases,
@@ -169,6 +169,7 @@ export function runDetail(
       prices: {},
     },
   )
+  const { cursor_record_id: cursorRecordId, step_slug: stepSlug, ...visibleDetailRow } = detailRow
   const read = (p: unknown) =>
     typeof p === 'string' && existsSync(p) ? readFileSync(p, 'utf8') : null
   const eventsPath = runEventsPath(id)
@@ -212,7 +213,9 @@ export function runDetail(
       return { id: number, ...row }
     })
   return {
-    ...detailRow,
+    ...visibleDetailRow,
+    ...(cursorRecordId === null ? {} : { cursor: cursorRecordId }),
+    ...(stepSlug === null ? {} : { step: stepSlug }),
     requested_id: id,
     resolved_from: identity.parent_run_record_id === null ? 'root' : 'turn',
     root_id: identity.root_id,

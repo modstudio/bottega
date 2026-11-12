@@ -46,7 +46,16 @@ export function treePath(folder: WorkflowTreeFolder, slug: string): string {
 }
 
 export function normalizeWorkflowYaml(yaml: string): string {
-  return yaml.replace(/ +$/gm, '').replace(/^([ ]*[a-zA-Z0-9_-]+):\n[ ]+\[\]$/gm, '$1: []')
+  return yaml
+    .replace(/ +$/gm, '')
+    .replace(/^([ ]*[a-zA-Z0-9_-]+):\n[ ]+\[\]$/gm, '$1: []')
+    .replace(
+      /^(jobs|actions):\n((?:  - [^\n]+\n?)+)/gm,
+      (_match, field: string, entries: string) => {
+        const values = entries.match(/^  - (.+)$/gm)?.map((entry) => entry.slice(4)) ?? []
+        return `${field}: [${values.join(', ')}]\n`
+      },
+    )
 }
 
 function document(frontMatter: Record<string, unknown>, body: string): string {
@@ -77,7 +86,8 @@ function renderedFiles(store: WorkflowTreeStore): WorkflowTreeFile[] {
         ...(step.requirePullRequest ? { requirePullRequest: true } : {}),
         ...(step.operatorRuling ? { operatorRuling: true } : {}),
         ...(step.commandEvidence ? { commandEvidence: step.commandEvidence } : {}),
-        job: step.job,
+        jobs: step.jobs,
+        ...(step.actions.length ? { actions: step.actions } : {}),
         autonomy: step.autonomy,
         needs: step.needs,
       },
@@ -206,7 +216,8 @@ function parsedCatalogueStep(
     ...expectedStatusFrom(frontMatter),
     ...stepBooleanOptionsFrom(frontMatter),
     ...commandEvidenceFrom(frontMatter),
-    job: frontMatter.job as string | null,
+    jobs: frontMatter.jobs as string[],
+    actions: (frontMatter.actions ?? []) as string[],
     autonomy: frontMatter.autonomy as CatalogueStep['autonomy'],
     needs: frontMatter.needs as CatalogueStep['needs'],
     body,

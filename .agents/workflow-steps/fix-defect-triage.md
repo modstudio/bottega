@@ -3,7 +3,7 @@ title: Triage findings
 stage: review
 floor:
   - ruling
-job: null
+jobs: []
 autonomy: ask
 needs: []
 ---

@@ -25,7 +25,8 @@ const step = {
   title: 'Design',
   body: 'Design it.',
   floor: ['ruling'],
-  job: null,
+  jobs: [],
+  actions: [],
   autonomy: 'ask',
   needs: [],
 }
@@ -176,10 +177,30 @@ test('catalogue sequences reject nesting, duplicate names, and the step namespac
   )
 })
 
-test('stored legacy steps normalize without revalidation', () => {
+test('stored legacy steps normalize job fields without revalidation', () => {
+  const legacy = { ...step, jobs: undefined, actions: undefined }
   expect(
-    compatibleCatalogueStep({ ...step, autonomy: 'manual', floor: ['human-ruling'] } as never),
-  ).toMatchObject({ autonomy: 'ask', floor: ['ruling'] })
+    compatibleCatalogueStep({
+      ...legacy,
+      job: 'implement',
+      autonomy: 'manual',
+      floor: ['human-ruling'],
+    } as never),
+  ).toMatchObject({ autonomy: 'ask', floor: ['ruling'], jobs: ['implement'], actions: [] })
+  expect(compatibleCatalogueStep({ ...legacy, job: null } as never)).toMatchObject({
+    jobs: [],
+    actions: [],
+  })
+})
+
+test('step validation names unknown jobs and actions with the step slug', () => {
+  const staged = { ...step, stage: 'plan' as const }
+  expect(validateStepCatalogue({ steps: [{ ...staged, jobs: ['unknown'] }] })).toContain(
+    'step "design" names unknown job "unknown"',
+  )
+  expect(validateStepCatalogue({ steps: [{ ...staged, actions: ['publish'] }] })).toContain(
+    'step "design" names unknown action "publish"',
+  )
 })
 
 test('operatorRuling requires a ruling floor', () => {

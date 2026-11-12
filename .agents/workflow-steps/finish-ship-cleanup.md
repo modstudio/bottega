@@ -3,7 +3,7 @@ title: Finish ship cleanup
 stage: ship
 floor:
   - command-exit
-job: null
+jobs: []
 autonomy: auto
 needs: []
 ---
