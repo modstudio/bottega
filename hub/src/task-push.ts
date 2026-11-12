@@ -2,6 +2,7 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db, writeTransaction } from './db.ts'
 import { rememberHostedInstall } from './install-binding.ts'
 import { drainHostedOutbox, type HostedOutboxReport, queueHostedChange } from './outbox.ts'
+import { personalRecordSpace } from './personal-record-space.ts'
 import { projects } from './projects.ts'
 import {
   HOSTED_COMMENT_TABLE,
@@ -165,12 +166,18 @@ function outboxEntries(): AuditOutboxEntry[] {
     }))
 }
 
-function routedMachineRows(
+async function routedMachineRows(
   table: PushableHubChangeTable,
   registered: readonly RegisteredTaskSpace[],
   identity: TaskDestinationIdentity,
-): RoutedMachineRow[] {
-  const partitioned = partitionProjectRows(machineRowsFor(table), registered, identity)
+  resolvePersonalSpace: () => Promise<string>,
+): Promise<RoutedMachineRow[]> {
+  const partitioned = await partitionProjectRows(
+    machineRowsFor(table),
+    registered,
+    identity,
+    resolvePersonalSpace,
+  )
   const routed: RoutedMachineRow[] = []
   for (const [spaceId, rows] of partitioned.destinations)
     for (const row of rows) routed.push({ table, id: row.id, destinationSpaceId: spaceId })
@@ -242,9 +249,19 @@ export async function pushTasks(options: Options = {}): Promise<TaskPushReport> 
   rememberHostedInstall(identity.activeSpaceId)
   const registered = (options.registered ?? projects)()
   const spaces = taskPullSpaces(registered, identity)
-  const machine = PUSHABLE_HUB_CHANGE_TABLES.flatMap((table) =>
-    routedMachineRows(table, registered, identity),
-  )
+  let personalSpace: Promise<string> | undefined
+  const resolvePersonalSpace = () =>
+    (personalSpace ??= personalRecordSpace({
+      token: options.token,
+      fetch: options.fetch,
+    }))
+  const machine = (
+    await Promise.all(
+      PUSHABLE_HUB_CHANGE_TABLES.map((table) =>
+        routedMachineRows(table, registered, identity, resolvePersonalSpace),
+      ),
+    )
+  ).flat()
   const plan = planTaskPushAudit({
     spaces,
     tables: PUSHABLE_HUB_CHANGE_TABLES,

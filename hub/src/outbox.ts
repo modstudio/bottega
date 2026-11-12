@@ -7,6 +7,7 @@ import type { PendingHostedOutbox } from './outbox-fast-cycle.ts'
 import { decideOutboxLifecycle } from './outbox-lifecycle.ts'
 import { loadOutboxChange } from './outbox-row.ts'
 import { type OutboxProcessKind, recordOutboxTrace } from './outbox-trace.ts'
+import { personalRecordSpace } from './personal-record-space.ts'
 import { projects } from './projects.ts'
 import {
   HOSTED_COMMENT_TABLE,
@@ -95,6 +96,7 @@ type DrainDependencies = {
   registered?: () => RegisteredTaskSpace[]
   processKind?: OutboxProcessKind
   assertLock?: () => void
+  personalSpace?: () => Promise<string>
 }
 
 function idleOutboxReport(overrides: Partial<HostedOutboxReport> = {}): HostedOutboxReport {
@@ -445,7 +447,7 @@ export function parseHostedRoutingWait(
   return project ? { project, message } : null
 }
 
-function reconcileRoutingErrors(routed: ReturnType<typeof routeOutboxRows>): void {
+function reconcileRoutingErrors(routed: Awaited<ReturnType<typeof routeOutboxRows>>): void {
   writeTransaction((conn) => {
     for (const [project, refusal] of routed.refusals) {
       const reason = routingWaitMessage(project, refusal.reason)
@@ -676,10 +678,11 @@ async function removeMovedInterval(
   return 'blocked'
 }
 
-function routeOutboxRows(
+async function routeOutboxRows(
   rows: PreparedOutboxRow[],
   registered: RegisteredTaskSpace[],
   identity: Awaited<ReturnType<typeof hostedTaskIdentity>>,
+  resolvePersonalSpace: () => Promise<string> = personalRecordSpace,
 ) {
   const fixed = rows.filter(
     (row) =>
@@ -687,10 +690,11 @@ function routeOutboxRows(
       row.change.op === 'delete' &&
       row.acknowledgedSpaceId,
   )
-  const routed = partitionProjectRows(
+  const routed = await partitionProjectRows(
     rows.filter((row) => !fixed.includes(row)),
     registered,
     identity,
+    resolvePersonalSpace,
   )
   for (const row of fixed) {
     const selected = routed.destinations.get(row.acknowledgedSpaceId!) ?? []
@@ -703,7 +707,7 @@ function routeOutboxRows(
 /** Classify selected rows without acquiring the drainer lease or changing the store. */
 export async function hostedRoutingWaitForEntries(
   entries: OutboxEntry[],
-  dependencies: Pick<DrainDependencies, 'identity' | 'registered'> = {},
+  dependencies: Pick<DrainDependencies, 'identity' | 'personalSpace' | 'registered'> = {},
 ): Promise<HostedRoutingWait | null> {
   let rows = prepareOutboxRows(entries).rows
   if (!rows.length) return null
@@ -712,7 +716,12 @@ export async function hostedRoutingWaitForEntries(
     identity.capabilities?.spacePushTables ?? [HOSTED_TASK_TABLE, HOSTED_STATUS_EVENT_TABLE],
   )
   rows = rows.filter((row) => accepted.has(row.change.table))
-  const { refusals } = routeOutboxRows(rows, (dependencies.registered ?? projects)(), identity)
+  const { refusals } = await routeOutboxRows(
+    rows,
+    (dependencies.registered ?? projects)(),
+    identity,
+    dependencies.personalSpace,
+  )
   for (const [project, refusal] of refusals)
     return parseHostedRoutingWait(routingWaitMessage(project, refusal.reason))
   return null
@@ -771,7 +780,12 @@ async function drainHostedOutboxHeld(
       (report.waitingOnHostedHub![row.change.table] ?? 0) + 1
   rows = rows.filter((row) => accepted.has(row.change.table))
   if (!rows.length) return report
-  const partitioned = routeOutboxRows(rows, (dependencies.registered ?? projects)(), identity)
+  const partitioned = await routeOutboxRows(
+    rows,
+    (dependencies.registered ?? projects)(),
+    identity,
+    dependencies.personalSpace,
+  )
   reconcileRoutingErrors(partitioned)
   recordRoutingWaits(partitioned.refusals, report)
   const hostedReachable = (await removeMovedIntervals(
@@ -832,7 +846,7 @@ export function hostedOutboxLine(report: HostedOutboxReport): string {
 }
 
 export async function hostedOutboxDoctorLines(
-  dependencies: Pick<DrainDependencies, 'identity' | 'registered'> = {},
+  dependencies: Pick<DrainDependencies, 'identity' | 'personalSpace' | 'registered'> = {},
 ): Promise<string[]> {
   const count = db()
     .query<{ count: number }, []>(
@@ -859,7 +873,12 @@ export async function hostedOutboxDoctorLines(
     for (const [table, waitingCount] of [...byTable].sort(([a], [b]) => a.localeCompare(b)))
       lines.push(`hosted outbox ${waitingCount} waiting on hosted hub: ${table}`)
     rows = rows.filter((row) => accepted.has(row.change.table))
-    const { refusals } = routeOutboxRows(rows, (dependencies.registered ?? projects)(), identity)
+    const { refusals } = await routeOutboxRows(
+      rows,
+      (dependencies.registered ?? projects)(),
+      identity,
+      dependencies.personalSpace,
+    )
     const waiting: Record<string, number> = {}
     for (const refusal of refusals.values())
       waiting[refusal.reason] = (waiting[refusal.reason] ?? 0) + refusal.rows.length

@@ -7,7 +7,7 @@ export const architectureViolationBaseline: readonly ArchitectureViolationBaseli
     from: 'hub/src/hosted-write-destination.ts',
     to: 'hub/src/task-project-space.ts',
     reason:
-      'DEV-2256 owner-routed hosted write destination; it uses project memberships and never falls back to the active space',
+      'owner-routed write; project rows use their declared membership destination and project-less rows use the personal space',
   },
   {
     rule: 'no-active-space-resolver-import',
@@ -108,72 +108,75 @@ export const architectureViolationBaseline: readonly ArchitectureViolationBaseli
     rule: 'no-active-space-resolver-import',
     from: 'hub/src/task-push.ts',
     to: 'hub/src/task-project-space.ts',
-    reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
+    reason:
+      'mixed; writes route project rows to their declared space and project-less rows to the personal space, while task pulls seed a viewing read from the active space',
   },
   {
     rule: 'no-active-space-resolver-import',
     from: 'hub/src/task-prune-foreign.ts',
     to: 'hub/src/task-project-space.ts',
-    reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
+    reason:
+      'owner-routed write; the project destination comes only from declarations and memberships',
   },
   {
     rule: 'no-active-space-resolver-import',
     from: 'hub/src/outbox.ts',
     to: 'hub/src/task-project-space.ts',
-    reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
+    reason:
+      'owner-routed write; project rows use their declared membership destination and project-less rows use the personal space',
   },
   {
     rule: 'no-active-space-resolver-import',
     from: 'hub/src/note-staleness-store.ts',
     to: 'hub/src/task-project-space.ts',
-    reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
+    reason:
+      'owner-routed write; note maintenance rows carry a project and use its declared membership destination',
   },
   {
     rule: 'no-active-space-resolver-import',
     from: 'hub/src/note-push.ts',
     to: 'hub/src/task-project-space.ts',
-    reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
+    reason:
+      'owner-routed write; note and counter rows carry a project and use its declared membership destination',
   },
   {
     rule: 'no-active-space-resolver-import',
     from: 'hub/src/note-project-space.ts',
     to: 'hub/src/task-project-space.ts',
-    reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
+    reason:
+      'owner-routed write; the project destination comes only from declarations and memberships',
   },
   {
     rule: 'no-active-space-resolver-import',
     from: 'hub/src/interval-project-correction.ts',
     to: 'hub/src/task-project-space.ts',
-    reason:
-      'viewing read; reclassified when DEV-2244 splits the viewing default from the write decision',
+    reason: 'type-only import; it has no runtime active-space dependency',
   },
   {
     rule: 'no-active-space-resolver-import',
     from: 'hub/src/hosted-task-change-family.ts',
     to: 'hub/src/task-project-space.ts',
     reason:
-      'viewing read; reclassified when DEV-2244 splits the viewing default from the write decision',
+      'viewing read; task pull spaces include the active space, and project destinations classify changes without selecting a write fallback',
   },
   {
     rule: 'no-active-space-resolver-import',
     from: 'hub/src/hosted-send-change-family.ts',
     to: 'hub/src/task-project-space.ts',
-    reason:
-      'viewing read; reclassified when DEV-2244 splits the viewing default from the write decision',
+    reason: 'type-only import; it has no runtime active-space dependency',
   },
   {
     rule: 'no-active-space-resolver-import',
     from: 'hub/src/hosted-change-family.ts',
     to: 'hub/src/task-project-space.ts',
-    reason:
-      'viewing read; reclassified when DEV-2244 splits the viewing default from the write decision',
+    reason: 'type-only import; it has no runtime active-space dependency',
   },
   {
     rule: 'no-active-space-resolver-import',
     from: 'hub/src/hosted-change-cache.ts',
     to: 'hub/src/task-project-space.ts',
     reason:
-      'viewing read; reclassified when DEV-2244 splits the viewing default from the write decision',
+      'viewing read; project destinations classify cached changes from declarations and memberships without selecting a write fallback',
   },
 ]
 

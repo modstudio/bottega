@@ -5,6 +5,7 @@ import {
   type NoteClientOptions,
   type NoteWriteOptions,
 } from './note-client.ts'
+import { personalRecordSpace } from './personal-record-space.ts'
 import { projects } from './projects.ts'
 import { hostedTaskIdentity } from './task-client.ts'
 import { partitionProjectRows } from './task-project-space.ts'
@@ -99,16 +100,20 @@ export async function pushNotes(options: NoteClientOptions & { dryRun?: boolean 
 
   const requestOptions = { baseUrl: options.baseUrl, token: options.token, fetch: options.fetch }
   const identity = await hostedTaskIdentity(requestOptions)
-  const partitioned = partitionProjectRows(notes, projects(), identity)
+  let personalSpace: Promise<string> | undefined
+  const resolvePersonalSpace = () =>
+    (personalSpace ??= personalRecordSpace({ token: options.token, fetch: options.fetch }))
+  const partitioned = await partitionProjectRows(notes, projects(), identity, resolvePersonalSpace)
   const counters = db()
     .query<{ project: string; projectId: string; next: number }, []>(
       'SELECT project,project_record_id AS projectId,next FROM note_counter ORDER BY project',
     )
     .all()
-  const partitionedCounters = partitionProjectRows(
+  const partitionedCounters = await partitionProjectRows(
     counters.map((counter) => ({ ...counter, project_name: counter.project })),
     projects(),
     identity,
+    resolvePersonalSpace,
   )
   const refusals = new Map<string, string>()
   for (const [project, refusal] of partitioned.refusals)

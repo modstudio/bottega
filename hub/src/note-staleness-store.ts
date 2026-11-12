@@ -108,7 +108,7 @@ export async function applyHostedStaleness(
       project_name: row.project,
     })),
   ]
-  const partitioned = partitionProjectRows(maintenance, registered, identity)
+  const partitioned = await partitionProjectRows(maintenance, registered, identity)
   const failures = [...partitioned.refusals].map(
     ([project, refusal]) => `${project}: ${refusal.reason}`,
   )
