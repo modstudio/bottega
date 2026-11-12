@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { isOperatorSession } from '../caller-classification.ts'
 import { db } from '../database/db.ts'
 import { projectForTaskKey, projects } from '../project/projects.ts'
 import {
@@ -46,6 +47,7 @@ function censusSessions(database: Database): ContextCensusSession[] {
         GROUP BY sessions.session`,
     )
     .all()
+    .filter(({ session }) => !isOperatorSession(session))
 }
 
 async function censusWork(

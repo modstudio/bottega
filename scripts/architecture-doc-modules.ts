@@ -45,12 +45,14 @@ export const docModules: DocModule[] = [
   ]),
   module('orchestrator/src/doc/context-stale.ts', ['../workflow/task-flow-decision.ts']),
   module('orchestrator/src/doc/context-census.ts', [
+    '../caller-classification.ts',
     '../workflow/task-flow-decision.ts',
     './doc-context-write.ts',
   ]),
   module('orchestrator/src/doc/context-census-adapter.ts', [
     'bun:sqlite',
     '../../../shared/brand.ts',
+    '../caller-classification.ts',
     '../database/db.ts',
     '../project/projects.ts',
     '../workflow/workflow-task-reference.ts',

@@ -24,7 +24,7 @@ function renderCensusTask(
   const detail =
     task.status === 'unreadable'
       ? task.remedy!
-      : `worked ${task.workedAt}  next-action ${task.nextActionAt ?? 'missing'}`
+      : `first work ${task.firstWorkedAt}  last work ${task.lastWorkedAt}  next-action ${task.nextActionAt ?? 'missing'}`
   const sources = task.sources
     .map(({ source, writingVerb }) => `${source}:${writingVerb ? 'verb' : 'hand'}`)
     .join(', ')

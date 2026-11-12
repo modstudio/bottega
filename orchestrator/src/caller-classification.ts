@@ -2,10 +2,11 @@
 import {
   type CallerClassification,
   classifyCaller,
+  isOperatorSession,
   OPERATOR_SESSION_PREFIX,
 } from '../../shared/caller-classification.ts'
 
-export { type CallerClassification, classifyCaller }
+export { type CallerClassification, classifyCaller, isOperatorSession }
 
 export type CallerIdentityResolution =
   | { kind: 'identity'; session: string }

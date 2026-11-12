@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { OPERATOR_SESSION_PREFIX } from '../../../shared/caller-classification.ts'
 import { type ContextCensusTaskFact, contextCensus } from './context-census.ts'
 
 const since = '2026-11-05T00:00:00Z'
@@ -29,7 +30,7 @@ const task = (key: string, input: Partial<ContextCensusTaskFact> = {}): ContextC
 })
 
 describe('context census', () => {
-  test('covers a task only when next-action was revised at or after its latest work', () => {
+  test('covers a task when next-action was revised at or after its first work', () => {
     const result = contextCensus({
       since,
       sessions: [session],
@@ -52,6 +53,57 @@ describe('context census', () => {
       ['DEV-OLD', 'uncovered'],
     ])
     expect(result.verdict).toMatchObject({ full: false, uncovered: ['DEV-MISSING', 'DEV-OLD'] })
+  })
+
+  test('compares coverage to first work and reports the first and last work', () => {
+    const result = contextCensus({
+      since,
+      sessions: [session],
+      work: [
+        work('DEV-BETWEEN', '2026-11-10T10:00:00Z'),
+        work('DEV-BETWEEN', '2026-11-10T14:00:00Z'),
+        work('DEV-OLDER', '2026-11-10T10:00:00Z'),
+        work('DEV-OLDER', '2026-11-10T14:00:00Z'),
+      ],
+      tasks: [
+        task('DEV-BETWEEN', {
+          items: [
+            { kind: 'next-action', source: 'workflow-next', updatedAt: '2026-11-10T12:00:00Z' },
+          ],
+        }),
+        task('DEV-OLDER', {
+          items: [
+            { kind: 'next-action', source: 'workflow-next', updatedAt: '2026-11-10T09:59:59Z' },
+          ],
+        }),
+      ],
+    })
+    expect(result.projects[0]!.sessions[0]!.tasks).toMatchObject([
+      {
+        key: 'DEV-BETWEEN',
+        status: 'covered',
+        firstWorkedAt: '2026-11-10T10:00:00Z',
+        lastWorkedAt: '2026-11-10T14:00:00Z',
+      },
+      {
+        key: 'DEV-OLDER',
+        status: 'uncovered',
+        firstWorkedAt: '2026-11-10T10:00:00Z',
+        lastWorkedAt: '2026-11-10T14:00:00Z',
+      },
+    ])
+  })
+
+  test('excludes the terminal pseudo-session', () => {
+    const result = contextCensus({
+      since,
+      sessions: [session, { ...session, session: `${OPERATOR_SESSION_PREFIX}machine-id` }],
+      work: [work('DEV-1')],
+      tasks: [task('DEV-1')],
+    })
+    expect(
+      result.projects.flatMap(({ sessions }) => sessions.map(({ session }) => session)),
+    ).toEqual(['architect'])
   })
 
   test('closed is covered and unreadable is never covered', () => {

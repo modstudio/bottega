@@ -1,6 +1,7 @@
 // concern: context-census
 /** Pure coverage decision for architect-session task context. */
 
+import { isOperatorSession } from '../caller-classification.ts'
 import { taskFlowState } from '../workflow/task-flow-decision.ts'
 import type { ContextItemKind } from './doc-context-write.ts'
 
@@ -42,7 +43,8 @@ type ContextCensusTaskRow = {
   status: 'covered' | 'uncovered' | 'unreadable'
   covered: number
   total: 1
-  workedAt: string
+  firstWorkedAt: string
+  lastWorkedAt: string
   nextActionAt: string | null
   openQuestions: number
   rulings: number
@@ -81,7 +83,11 @@ const latest = (values: readonly string[]) =>
     null,
   )
 
-function taskRow(workedAt: string, fact: ContextCensusTaskFact): ContextCensusTaskRow {
+function taskRow(
+  firstWorkedAt: string,
+  lastWorkedAt: string,
+  fact: ContextCensusTaskFact,
+): ContextCensusTaskRow {
   const nextActionAt = latest(
     fact.items.filter(({ kind }) => kind === 'next-action').map(({ updatedAt }) => updatedAt),
   )
@@ -89,7 +95,7 @@ function taskRow(workedAt: string, fact: ContextCensusTaskFact): ContextCensusTa
   const closed = flowState === 'done' || flowState === 'dropped'
   const status = fact.unreadable
     ? 'unreadable'
-    : closed || (nextActionAt !== null && nextActionAt >= workedAt)
+    : closed || (nextActionAt !== null && nextActionAt >= firstWorkedAt)
       ? 'covered'
       : 'uncovered'
   return {
@@ -99,7 +105,8 @@ function taskRow(workedAt: string, fact: ContextCensusTaskFact): ContextCensusTa
     status,
     covered: status === 'covered' ? 1 : 0,
     total: 1,
-    workedAt,
+    firstWorkedAt,
+    lastWorkedAt,
     nextActionAt,
     openQuestions: fact.items.filter(({ kind }) => kind === 'open-question').length,
     rulings: fact.items.filter(({ kind }) => kind === 'ruling').length,
@@ -109,6 +116,24 @@ function taskRow(workedAt: string, fact: ContextCensusTaskFact): ContextCensusTa
     })),
     remedy: fact.unreadable,
   }
+}
+
+function taskWorkSpans(work: readonly ContextCensusWork[]) {
+  const spans = new Map<
+    string,
+    { event: ContextCensusWork; firstWorkedAt: string; lastWorkedAt: string }
+  >()
+  for (const event of work) {
+    const identity = `${event.project ?? ''}\0${event.key}`
+    const prior = spans.get(identity)
+    if (!prior) {
+      spans.set(identity, { event, firstWorkedAt: event.at, lastWorkedAt: event.at })
+      continue
+    }
+    if (event.at < prior.firstWorkedAt) prior.firstWorkedAt = event.at
+    if (event.at > prior.lastWorkedAt) prior.lastWorkedAt = event.at
+  }
+  return [...spans.values()]
 }
 
 /** Assign sessions to projects, compare work with revisions, and produce the one verdict. */
@@ -128,16 +153,10 @@ export function contextCensus(input: {
   ) => {
     const sessions = groups.get(project) ?? new Map<string, ContextCensusTaskRow[]>()
     groups.set(project, sessions)
-    const latestWork = new Map<string, ContextCensusWork>()
-    for (const event of work) {
-      const identity = `${event.project ?? ''}\0${event.key}`
-      const prior = latestWork.get(identity)
-      if (!prior || event.at > prior.at) latestWork.set(identity, event)
-    }
     sessions.set(
       session.session,
-      [...latestWork.values()]
-        .map((event) => {
+      taskWorkSpans(work)
+        .map(({ event, firstWorkedAt, lastWorkedAt }) => {
           const fact = facts.get(`${event.project ?? ''}\0${event.key}`) ?? {
             key: event.key,
             project: event.project,
@@ -146,13 +165,15 @@ export function contextCensus(input: {
             items: [],
             unreadable: 'task could not be read',
           }
-          return taskRow(event.at, fact)
+          return taskRow(firstWorkedAt, lastWorkedAt, fact)
         })
         .sort((left, right) => left.key.localeCompare(right.key)),
     )
   }
 
-  for (const session of input.sessions.filter(({ lastSeen }) => lastSeen >= input.since)) {
+  for (const session of input.sessions.filter(
+    ({ session, lastSeen }) => !isOperatorSession(session) && lastSeen >= input.since,
+  )) {
     const work = recentWork.filter((event) => event.session === session.session)
     if (session.project) addSession(session.project, session, work)
     else {
