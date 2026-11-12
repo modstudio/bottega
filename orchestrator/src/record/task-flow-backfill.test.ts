@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
+import { taskFlowLocalStore, taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { abandonWorkflowCursor } from '../workflow/workflow-cursor-mutation.ts'
 import type { SelectableCursorRow } from '../workflow/workflow-cursor-selection.ts'
 import { database } from '../workflow/workflow-cursor-test.fixture.ts'
@@ -29,6 +29,7 @@ test('task-flow backfill asks the record, enqueues absent rows in parent order, 
   const hostedTasklessStage = newRecordId()
   const doneTasklessStage = newRecordId()
   const abandonedTasklessStage = newRecordId()
+  const adoptTasklessStage = newRecordId()
   const unresolvedProject = newRecordId()
   const unresolvedFlow = newRecordId()
   d.query(
@@ -79,6 +80,7 @@ test('task-flow backfill asks the record, enqueues absent rows in parent order, 
   insertStage(hostedTasklessStage, 3, null)
   insertStage(doneTasklessStage, 4, null, 'done')
   insertStage(abandonedTasklessStage, 5, null, 'abandoned')
+  insertStage(adoptTasklessStage, 6, null)
   insertOutboxRow(d, {
     recordId: newRecordId(),
     kind: 'task_flow',
@@ -111,10 +113,10 @@ test('task-flow backfill asks the record, enqueues absent rows in parent order, 
       reason: expect.stringContaining('record space'),
     },
   ]
-  expect(await inspectTaskFlowBackfill(d, access)).toEqual({ flows: 1, stages: 3, held })
+  expect(await inspectTaskFlowBackfill(d, access)).toEqual({ flows: 1, stages: 4, held })
   expect(await backfillTaskFlowRecords(d, access)).toEqual({
-    enqueuedFlows: 3,
-    enqueuedStages: 3,
+    enqueuedFlows: 4,
+    enqueuedStages: 4,
     held,
   })
   expect(await backfillTaskFlowRecords(d, access)).toEqual({
@@ -130,6 +132,7 @@ test('task-flow backfill asks the record, enqueues absent rows in parent order, 
       hostedTasklessStage,
       doneTasklessStage,
       abandonedTasklessStage,
+      adoptTasklessStage,
     ].sort(),
     destinationSpaceId: 'space-id',
   })
@@ -145,12 +148,13 @@ test('task-flow backfill asks the record, enqueues absent rows in parent order, 
   )
   const syntheticDoneFlow = legacyTasklessFlowRecordId(doneTasklessStage)
   const syntheticAbandonedFlow = legacyTasklessFlowRecordId(abandonedTasklessStage)
+  const syntheticAdoptFlow = legacyTasklessFlowRecordId(adoptTasklessStage)
   expect(
     rows
       .filter((row) => row.kind === 'task_flow')
       .map((row) => row.row_id)
       .sort(),
-  ).toEqual([syntheticFlow, syntheticDoneFlow, syntheticAbandonedFlow].sort())
+  ).toEqual([syntheticFlow, syntheticDoneFlow, syntheticAbandonedFlow, syntheticAdoptFlow].sort())
   expect(rows.findLastIndex((row) => row.kind === 'task_flow')).toBeLessThan(
     rows.findIndex((row) => row.kind === 'task_flow_stage'),
   )
@@ -203,4 +207,31 @@ test('task-flow backfill asks the record, enqueues absent rows in parent order, 
   expect(
     d.query('SELECT state,revision FROM workflow_cursor WHERE record_id=?').get(tasklessStage),
   ).toEqual({ state: 'abandoned', revision: 2 })
+
+  const targetFlow = newRecordId()
+  const targetTask = newRecordId()
+  d.query(
+    `INSERT INTO task_flow
+     (record_id,task_record_id,project_record_id,state,open_stage_cursor_record_id,created_at,updated_at,
+      opening_machine_id,updated_machine_id,revision)
+     VALUES (?,?,?,'open',NULL,'2026-11-12','2026-11-12',?,?,1)`,
+  ).run(targetFlow, targetTask, project, machine, machine)
+  taskFlowLocalStore(d).write('adopt', {
+    requestId: newRecordId(),
+    stage: { id: adoptTasklessStage, expectedRevision: 1 },
+    taskId: targetTask,
+    updatedMachineId: machine,
+    updatedAt: '2026-11-13',
+  })
+  expect(
+    d
+      .query('SELECT task_record_id,task_flow_record_id FROM workflow_cursor WHERE record_id=?')
+      .get(adoptTasklessStage),
+  ).toEqual({ task_record_id: targetTask, task_flow_record_id: targetFlow })
+  expect(
+    d
+      .query('SELECT state,open_stage_cursor_record_id FROM task_flow WHERE record_id=?')
+      .get(syntheticAdoptFlow),
+  ).toEqual({ state: 'dropped', open_stage_cursor_record_id: null })
+  expect(d.query('PRAGMA foreign_key_check').all()).toEqual([])
 })
