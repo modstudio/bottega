@@ -852,6 +852,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../../../shared/record-api-url.ts',
       'node:os',
       '../database/db.ts',
+      '../project/declared-record-space.ts',
       './install-binding-write.ts',
       './landing-outbox.ts',
       './machine-identity.ts',

@@ -145,9 +145,12 @@ test('task-flow backfill asks the record, enqueues absent rows in parent order, 
   )
   const syntheticDoneFlow = legacyTasklessFlowRecordId(doneTasklessStage)
   const syntheticAbandonedFlow = legacyTasklessFlowRecordId(abandonedTasklessStage)
-  expect(rows.filter((row) => row.kind === 'task_flow').map((row) => row.row_id).sort()).toEqual(
-    [syntheticFlow, syntheticDoneFlow, syntheticAbandonedFlow].sort(),
-  )
+  expect(
+    rows
+      .filter((row) => row.kind === 'task_flow')
+      .map((row) => row.row_id)
+      .sort(),
+  ).toEqual([syntheticFlow, syntheticDoneFlow, syntheticAbandonedFlow].sort())
   expect(rows.findLastIndex((row) => row.kind === 'task_flow')).toBeLessThan(
     rows.findIndex((row) => row.kind === 'task_flow_stage'),
   )
@@ -173,13 +176,13 @@ test('task-flow backfill asks the record, enqueues absent rows in parent order, 
     enforcement: 'floors',
   })
   expect(
-    d
-      .query('SELECT task_flow_record_id FROM workflow_cursor WHERE record_id=?')
-      .get(tasklessStage),
+    d.query('SELECT task_flow_record_id FROM workflow_cursor WHERE record_id=?').get(tasklessStage),
   ).toEqual({ task_flow_record_id: syntheticFlow })
   expect(
     d
-      .query('SELECT task_record_id,state,open_stage_cursor_record_id FROM task_flow WHERE record_id=?')
+      .query(
+        'SELECT task_record_id,state,open_stage_cursor_record_id FROM task_flow WHERE record_id=?',
+      )
       .get(syntheticFlow),
   ).toEqual({ task_record_id: null, state: 'open', open_stage_cursor_record_id: tasklessStage })
 
@@ -197,7 +200,7 @@ test('task-flow backfill asks the record, enqueues absent rows in parent order, 
       .query('SELECT open_stage_cursor_record_id,revision FROM task_flow WHERE record_id=?')
       .get(syntheticFlow),
   ).toEqual({ open_stage_cursor_record_id: null, revision: 2 })
-  expect(d.query('SELECT state,revision FROM workflow_cursor WHERE record_id=?').get(tasklessStage)).toEqual(
-    { state: 'abandoned', revision: 2 },
-  )
+  expect(
+    d.query('SELECT state,revision FROM workflow_cursor WHERE record_id=?').get(tasklessStage),
+  ).toEqual({ state: 'abandoned', revision: 2 })
 })

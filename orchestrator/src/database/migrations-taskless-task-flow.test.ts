@@ -8,7 +8,9 @@ test('task-flow migration permits taskless flows and keeps task identity unique 
   const project = newRecordId()
   const existing = newRecordId()
   database
-    .query("INSERT INTO project(record_id,name,path,stack,settings) VALUES (?,'fixture','/fixture','bun','{}')")
+    .query(
+      "INSERT INTO project(record_id,name,path,stack,settings) VALUES (?,'fixture','/fixture','bun','{}')",
+    )
     .run(project)
   database
     .query(

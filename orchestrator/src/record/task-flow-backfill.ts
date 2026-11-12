@@ -107,7 +107,7 @@ export function legacyTasklessFlowRecordId(stageRecordId: string): string {
   return v5(JSON.stringify(['legacy-taskless-flow', stageRecordId]), LEGACY_TASKLESS_FLOW_NAMESPACE)
 }
 
-export function stageFlowRecordId(row: Pick<StageRow, 'record_id' | 'task_flow_record_id'>): string {
+function stageFlowRecordId(row: Pick<StageRow, 'record_id' | 'task_flow_record_id'>): string {
   return row.task_flow_record_id ?? legacyTasklessFlowRecordId(row.record_id)
 }
 
