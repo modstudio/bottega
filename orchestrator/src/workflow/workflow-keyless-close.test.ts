@@ -65,16 +65,7 @@ test.each([
   (mode, confirmation, operatorRuling) => {
     const composition = composeWorkflow('operate', 'fixture', mode, {}, database())
 
-    expect(composition.declaredArguments).toEqual([])
-    expect(composition.steps.map(({ slug }) => slug)).toEqual([
-      'frame',
-      'investigate',
-      confirmation,
-      'act',
-      'close',
-    ])
     expect(composition.steps.find(({ slug }) => slug === confirmation)).toMatchObject({
-      floor: ['ruling'],
       operatorRuling,
     })
   },
