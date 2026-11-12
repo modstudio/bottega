@@ -71,20 +71,11 @@ export function taskContextItems(task: ContextTaskIdentity, database: Database) 
   return holderContextItems(holder, listDocsStore({ scope: 'context', subject: holder }, database))
 }
 
-/** A whole-holder clear selects every item, including profile-required kinds. */
-export function decideTaskContextClear(
-  items: readonly { id: string; kind: ContextItemKind }[],
-  _requiredKinds: readonly ContextItemKind[],
-): string[] {
-  return items.map((item) => item.id)
-}
-
+/** Removes every item on a task holder; a whole-holder clear is not blocked by required kinds. */
 export async function clearTaskContext(input: { task: string }) {
   const { holder, task } = await resolveContextHolder(input)
   if (!task) throw new Error('task context clear requires --task')
-  const profile = await contextProfileForHolder(holder, undefined, task)
-  const items = holderContextItems(holder, listDocsStore({ scope: 'context', subject: holder }))
-  const ids = decideTaskContextClear(items, missingContextKinds([], profile))
+  const ids = listDocsStore({ scope: 'context', subject: holder }).map((doc) => doc.slug)
   const removed = await removeTaskContextHolder(holder, ids, {
     reason: `clear context holder ${task.key}`,
     contextTask: task,

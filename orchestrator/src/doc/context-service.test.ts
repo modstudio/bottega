@@ -10,7 +10,6 @@ import { encodeContextItem } from './context-item-codec.ts'
 import { applyContextMomentEffect } from './context-moment-adapter.ts'
 import {
   clearTaskContext,
-  decideTaskContextClear,
   dropContextItem,
   getContext,
   setContextItem,
@@ -113,15 +112,6 @@ describe('context document integration', () => {
       settings: { keyPrefixes: ['DEV'] },
     })
     globals[CONTEXT_FACTS_PORTS_KEY] = tasks
-    expect(
-      decideTaskContextClear(
-        [
-          { id: 'next', kind: 'next-action' },
-          { id: 'ruling-q1', kind: 'ruling' },
-        ],
-        ['next-action'],
-      ),
-    ).toEqual(['next', 'ruling-q1'])
     await setContextItem({
       task: task.key,
       id: 'next',
