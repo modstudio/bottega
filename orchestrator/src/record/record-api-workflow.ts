@@ -15,8 +15,8 @@ import {
 import { RecordTaskFlowError } from './record-task-flow.ts'
 import {
   TASK_FLOW_STAGE_LIST_REMEDY,
-  taskFlowPresenceInputSchema,
   type TaskFlowReadQueryInput,
+  taskFlowPresenceInputSchema,
   taskFlowReadQuerySchema,
   taskFlowStageListQuerySchema,
 } from './record-task-flow-contract.ts'
@@ -48,7 +48,9 @@ export type RecordWorkflowRouteDeps = {
     input: Tenant & z.infer<typeof taskFlowStageListQuerySchema>,
   ): Promise<unknown>
   readTaskFlowProjectReferenceCounts?(input: Tenant & { projectId: string }): Promise<unknown>
-  readTaskFlowPresence?(input: Tenant & z.infer<typeof taskFlowPresenceInputSchema>): Promise<unknown>
+  readTaskFlowPresence?(
+    input: Tenant & z.infer<typeof taskFlowPresenceInputSchema>,
+  ): Promise<unknown>
   writeTaskFlow?<K extends TaskFlowIntent>(
     intent: K,
     input: Tenant & TaskFlowIntentBody<K>,

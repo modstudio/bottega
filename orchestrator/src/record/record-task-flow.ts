@@ -15,9 +15,9 @@ import {
   type HostedTaskFlowTextById,
   RECORD_TASK_FLOW_NOT_FOUND_CODE,
   RECORD_TASK_FLOW_NOT_FOUND_MESSAGE,
-  type TaskFlowReadQueryInput,
   type TaskFlowPresence,
   type TaskFlowPresenceInput,
+  type TaskFlowReadQueryInput,
   type TaskFlowStageListQuery,
 } from './record-task-flow-contract.ts'
 import { taskFlowStageListNextCursor, taskFlowStageListSql } from './record-task-flow-list-query.ts'
@@ -325,8 +325,8 @@ export async function readRecordTaskFlowPresence(
           ORDER BY id`
       : []
     return {
-      stageIds: stages.map((row) => String(row.id)),
-      flowIds: flows.map((row) => String(row.id)),
+      stageIds: stages.map((row: Record<string, unknown>) => String(row.id)),
+      flowIds: flows.map((row: Record<string, unknown>) => String(row.id)),
     }
   })
 }

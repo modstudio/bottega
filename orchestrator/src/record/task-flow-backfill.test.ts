@@ -74,9 +74,7 @@ test('task-flow backfill asks the record, enqueues absent rows in parent order, 
         calls.push({ ...input, destinationSpaceId: destination.destinationSpaceId })
         return {
           flowIds: [],
-          stageIds: input.stageIds.filter(
-            (id) => id === linkedStage || id === hostedTasklessStage,
-          ),
+          stageIds: input.stageIds.filter((id) => id === linkedStage || id === hostedTasklessStage),
         }
       },
     },

@@ -4,8 +4,8 @@ import { registerRecordWorkflowRoutes } from './record-api-workflow.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { RecordTaskFlowError } from './record-task-flow.ts'
 import {
-  TASK_FLOW_STAGE_LIST_LIMIT_MAX,
   TASK_FLOW_PRESENCE_BATCH_MAX,
+  TASK_FLOW_STAGE_LIST_LIMIT_MAX,
   type TaskFlowStageListQuery,
 } from './record-task-flow-contract.ts'
 
@@ -80,7 +80,14 @@ test.each([1, TASK_FLOW_STAGE_LIST_LIMIT_MAX])(
 )
 
 test('task-flow presence is tenant-bound and validates the named batch limit', async () => {
-  const calls: Array<{ flowIds: string[]; stageIds: string[]; spaceId: string }> = []
+  const calls: Array<{
+    flowIds: string[]
+    stageIds: string[]
+    url: string
+    userId: string
+    spaceId: string
+    spaceIds: string[]
+  }> = []
   const app = new Hono<{
     Variables: { identity: RecordIdentity; destinationSpaceId?: string }
   }>()
@@ -108,12 +115,22 @@ test('task-flow presence is tenant-bound and validates the named batch limit', a
   })
   expect(response.status).toBe(200)
   expect(calls).toEqual([
-    { flowIds: [KNOWN_ID], stageIds: [UNKNOWN_ID], url: 'postgres://unused', userId: SPACE, spaceId: SPACE, spaceIds: [SPACE] },
+    {
+      flowIds: [KNOWN_ID],
+      stageIds: [UNKNOWN_ID],
+      url: 'postgres://unused',
+      userId: SPACE,
+      spaceId: SPACE,
+      spaceIds: [SPACE],
+    },
   ])
   const oversized = await app.request('/v1/task-flow/presence', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ flowIds: Array(TASK_FLOW_PRESENCE_BATCH_MAX + 1).fill(KNOWN_ID), stageIds: [] }),
+    body: JSON.stringify({
+      flowIds: Array(TASK_FLOW_PRESENCE_BATCH_MAX + 1).fill(KNOWN_ID),
+      stageIds: [],
+    }),
   })
   expect(oversized.status).toBe(400)
 })

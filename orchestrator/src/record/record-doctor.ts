@@ -46,7 +46,7 @@ import { machineId } from './machine-identity.ts'
 import { quarantinedOutboxRows } from './outbox-quarantine.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
 import { recordAttributionFailure } from './record-attribution.ts'
-import { bearerHeaders } from './record-auth.ts'
+import { bearerHeaders, type RecordIdentity } from './record-auth.ts'
 import { recordPool } from './record-pool.ts'
 import { storedRecordToken } from './record-session.ts'
 import { inspectTaskFlowBackfill, type TaskFlowBackfillInspection } from './task-flow-backfill.ts'
@@ -589,28 +589,12 @@ async function customerFacts(
       }
     }
   }
-  let taskFlowBackfill: TaskFlowBackfillInspection = {
-    flows: 0,
-    stages: 0,
-    held: [],
-    failure: apiFailure ?? sessionFailure ?? 'hosted record task-flow parity could not be measured',
-  }
-  if (identity && client) {
-    try {
-      taskFlowBackfill = await inspectTaskFlowBackfill(database, {
-        client,
-        memberships: parseRecordSpaceMemberships(identity.memberships),
-        personalSpaceId: identity.personalSpaceId,
-      })
-    } catch (error) {
-      taskFlowBackfill = {
-        flows: 0,
-        stages: 0,
-        held: [],
-        failure: `hosted task-flow parity could not be measured: ${error instanceof Error ? error.message : String(error)}; ${API_REACHABILITY_REMEDY}`,
-      }
-    }
-  }
+  const taskFlowBackfill = await customerTaskFlowParity(
+    database,
+    client,
+    identity,
+    apiFailure ?? sessionFailure,
+  )
   return {
     apiConfigured,
     apiReachable,
@@ -632,6 +616,35 @@ async function customerFacts(
       kind: row.kind,
       reason: row.error,
     })),
+  }
+}
+
+async function customerTaskFlowParity(
+  database: Database,
+  client: ReturnType<typeof recordApiClient> | null,
+  identity: RecordIdentity | null,
+  priorFailure?: string,
+): Promise<TaskFlowBackfillInspection> {
+  if (!identity || !client)
+    return {
+      flows: 0,
+      stages: 0,
+      held: [],
+      failure: priorFailure ?? 'hosted record task-flow parity could not be measured',
+    }
+  try {
+    return await inspectTaskFlowBackfill(database, {
+      client,
+      memberships: parseRecordSpaceMemberships(identity.memberships),
+      personalSpaceId: identity.personalSpaceId,
+    })
+  } catch (error) {
+    return {
+      flows: 0,
+      stages: 0,
+      held: [],
+      failure: `hosted task-flow parity could not be measured: ${error instanceof Error ? error.message : String(error)}; ${API_REACHABILITY_REMEDY}`,
+    }
   }
 }
 

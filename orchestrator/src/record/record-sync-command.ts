@@ -89,6 +89,18 @@ function logHeldRows(
     presentation.log(line)
 }
 
+function logTaskFlowBackfill(
+  taskFlows: NonNullable<Awaited<ReturnType<typeof syncRecord>>['backfill']>['taskFlows'],
+  presentation: { log(value: string): void },
+): void {
+  presentation.log(
+    `task-flow backfill enqueued ${taskFlows.enqueuedFlows} flows and ${taskFlows.enqueuedStages} stages`,
+  )
+  for (const hold of taskFlows.held)
+    presentation.log(`task-flow backfill held ${hold.rows}\t${hold.project}\t${hold.reason}`)
+  if (taskFlows.failure) presentation.log(`task-flow backfill unavailable: ${taskFlows.failure}`)
+}
+
 export function quarantinedParentHeldLines(
   rows: NonNullable<Awaited<ReturnType<typeof syncRecord>>['quarantinedParentHolds']>,
 ): string[] {
@@ -124,13 +136,7 @@ export async function syncCommand(
   }
   await automaticallyAdoptHostedBoard(presentation, dependencies.boardAdoption)
   if (result.backfill) {
-    presentation.log(
-      `task-flow backfill enqueued ${result.backfill.taskFlows.enqueuedFlows} flows and ${result.backfill.taskFlows.enqueuedStages} stages`,
-    )
-    for (const hold of result.backfill.taskFlows.held)
-      presentation.log(`task-flow backfill held ${hold.rows}\t${hold.project}\t${hold.reason}`)
-    if (result.backfill.taskFlows.failure)
-      presentation.log(`task-flow backfill unavailable: ${result.backfill.taskFlows.failure}`)
+    logTaskFlowBackfill(result.backfill.taskFlows, presentation)
     presentation.log(
       `backfill enqueued ${result.backfill.enqueued}, refreshed-links ${result.backfill.refreshedLinks}, refreshed-numbers ${result.backfill.refreshedNumbers}, refreshed-roots ${result.backfill.refreshedRoots}, skipped-released ${result.backfill.skippedReleased}, skipped-live ${result.backfill.skippedLive}`,
     )

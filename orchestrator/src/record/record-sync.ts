@@ -33,7 +33,11 @@ import {
   refreshParentDeferredOutboxRows,
 } from './outbox-dependency.ts'
 import { quarantinedOutboxRows, quarantineOutboxRow } from './outbox-quarantine.ts'
-import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
+import {
+  type RecordApiClient,
+  RecordApiRequestError,
+  recordApiClient,
+} from './record-api-client.ts'
 import { builtInsEnsured, recordBuiltInsEnsured } from './record-built-ins-identity.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { type OversizedRecordSyncRow, planRecordSyncBatch } from './record-sync-batch.ts'
@@ -699,6 +703,47 @@ function syncBackfill(
   }
 }
 
+function unconfiguredSyncResult(
+  local: Database | undefined,
+  identityId: string,
+  backfillRequested: boolean | undefined,
+): RecordSyncResult {
+  const backfill = backfillRequested
+    ? syncBackfill(local!, identityId, {
+        enqueuedFlows: 0,
+        enqueuedStages: 0,
+        held: [],
+        failure: 'hosted record API is not configured',
+      })
+    : undefined
+  return {
+    pushed: 0,
+    failed: 0,
+    pending: 0,
+    configured: false,
+    quarantined: [],
+    blocked: [],
+    ...(backfill ? { backfill } : {}),
+  }
+}
+
+async function requestedTaskFlowBackfill(input: {
+  requested: boolean | undefined
+  local: Database
+  client: Pick<RecordApiClient, 'readTaskFlowPresence'>
+  memberships: ReturnType<typeof parseRecordSpaceMemberships>
+  personalSpaceId: string | null
+  projectSpaces?: Record<string, string>
+}) {
+  if (!input.requested) return undefined
+  return backfillTaskFlowRecords(input.local, {
+    client: input.client,
+    memberships: input.memberships,
+    personalSpaceId: input.personalSpaceId,
+    projectSpaces: input.projectSpaces,
+  })
+}
+
 export async function syncRecord(options: RecordSyncOptions = {}): Promise<RecordSyncResult> {
   const configured = recordSyncConfigured(process.env) || Boolean(options.client)
   const requestedIdentity = options.identity ?? { id: machineId(), ...machineNames() }
@@ -707,38 +752,20 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     name: requestedIdentity.name ?? defaultShortName(hostname()),
   }
   const local = options.local ?? (configured || options.backfill ? db() : undefined)
-  if (!configured) {
-    const backfill = options.backfill
-      ? syncBackfill(local!, identity.id, {
-          enqueuedFlows: 0,
-          enqueuedStages: 0,
-          held: [],
-          failure: 'hosted record API is not configured',
-        })
-      : undefined
-    return {
-      pushed: 0,
-      failed: 0,
-      pending: 0,
-      configured: false,
-      quarantined: [],
-      blocked: [],
-      ...(backfill ? { backfill } : {}),
-    }
-  }
+  if (!configured) return unconfiguredSyncResult(local, identity.id, options.backfill)
   const writableLocal = local!
   const client = options.client ?? recordApiClient()
   if (!client.sync) throw new Error('record API client does not provide evidence sync')
   const session = await client.whoami()
   const memberships = parseRecordSpaceMemberships(session.memberships)
-  const taskFlowBackfill = options.backfill
-    ? await backfillTaskFlowRecords(writableLocal, {
-        client,
-        memberships,
-        personalSpaceId: session.personalSpaceId,
-        projectSpaces: options.projectSpaces,
-      })
-    : undefined
+  const taskFlowBackfill = await requestedTaskFlowBackfill({
+    requested: options.backfill,
+    local: writableLocal,
+    client,
+    memberships,
+    personalSpaceId: session.personalSpaceId,
+    projectSpaces: options.projectSpaces,
+  })
   const backfill = taskFlowBackfill
     ? syncBackfill(writableLocal, identity.id, taskFlowBackfill)
     : undefined

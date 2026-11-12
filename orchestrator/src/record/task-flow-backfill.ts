@@ -69,13 +69,13 @@ type TaskFlowBackfillHold = { project: string; rows: number; reason: string }
 export type TaskFlowBackfillResult = {
   enqueuedFlows: number
   enqueuedStages: number
-  held: TaskFlowBackfillHold[]
+  held: readonly TaskFlowBackfillHold[]
   failure?: string
 }
 export type TaskFlowBackfillInspection = {
   flows: number
   stages: number
-  held: TaskFlowBackfillHold[]
+  held: readonly TaskFlowBackfillHold[]
   failure?: string
 }
 export type TaskFlowBackfillAccess = {
@@ -227,32 +227,40 @@ function routeRows(
 ): { spaces: Map<string, SpaceRows>; held: TaskFlowBackfillHold[] } {
   const spaces = new Map<string, SpaceRows>()
   const holds = new Map<string, TaskFlowBackfillHold>()
-  for (const [kind, rows] of [
-    ['flows', flows],
-    ['stages', stages],
-  ] as const) {
-    for (const row of rows) {
-      const decision = recordWriteSpace(
-        { kind: 'project', name: row.project_name },
-        {
-          declaredSpaces: {
-            [row.project_name]: declaredSpace(row, access.projectSpaces),
-          },
-          personalSpaceId: access.personalSpaceId,
-          memberships: access.memberships,
-        },
-      )
-      if ('refused' in decision) {
-        const key = `${row.project_name}\0${decision.remedy}`
-        const hold = holds.get(key) ?? { project: row.project_name, rows: 0, reason: decision.remedy }
-        hold.rows++
-        holds.set(key, hold)
-        continue
-      }
-      const grouped = spaces.get(decision.spaceId) ?? { flows: [], stages: [] }
-      if (kind === 'flows') grouped.flows.push(row)
-      else grouped.stages.push(row)
-      spaces.set(decision.spaceId, grouped)
+  const destination = (row: FlowRow | StageRow): string | null => {
+    const decision = recordWriteSpace(
+      { kind: 'project', name: row.project_name },
+      {
+        declaredSpaces: { [row.project_name]: declaredSpace(row, access.projectSpaces) },
+        personalSpaceId: access.personalSpaceId,
+        memberships: access.memberships,
+      },
+    )
+    if (!('refused' in decision)) return decision.spaceId
+    const key = `${row.project_name}\0${decision.remedy}`
+    const hold = holds.get(key) ?? {
+      project: row.project_name,
+      rows: 0,
+      reason: decision.remedy,
+    }
+    hold.rows++
+    holds.set(key, hold)
+    return null
+  }
+  for (const row of flows) {
+    const spaceId = destination(row)
+    if (spaceId) {
+      const grouped = spaces.get(spaceId) ?? { flows: [], stages: [] }
+      grouped.flows.push(row)
+      spaces.set(spaceId, grouped)
+    }
+  }
+  for (const row of stages) {
+    const spaceId = destination(row)
+    if (spaceId) {
+      const grouped = spaces.get(spaceId) ?? { flows: [], stages: [] }
+      grouped.stages.push(row)
+      spaces.set(spaceId, grouped)
     }
   }
   return { spaces, held: [...holds.values()] }
@@ -301,7 +309,11 @@ export async function inspectTaskFlowBackfill(
   access: TaskFlowBackfillAccess,
 ): Promise<TaskFlowBackfillInspection> {
   const selected = await selectAbsentTaskFlows(database, access)
-  return { flows: selected.absentFlows.length, stages: selected.absentStages.length, held: selected.held }
+  return {
+    flows: selected.absentFlows.length,
+    stages: selected.absentStages.length,
+    held: selected.held,
+  }
 }
 
 export async function backfillTaskFlowRecords(
