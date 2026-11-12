@@ -5,9 +5,11 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { type Command, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { taskKeyToken } from '../branch/other-branch-state.ts'
 import { writableDb } from '../database/db.ts'
-import { pullRequestMergeContextMomentEffect } from '../doc/context-moment.ts'
+import {
+  pullRequestMergeContextMomentEffect,
+  pullRequestMergeContextTarget,
+} from '../doc/context-moment.ts'
 import { applyContextMomentEffect } from '../doc/context-moment-adapter.ts'
 import { getContext } from '../doc/context-service.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
@@ -19,11 +21,9 @@ import {
 } from '../pull-request/pr-admission.ts'
 import type { PullRequestCiCounts } from '../pull-request/pr-ci-record.ts'
 import { recordPullRequestCi } from '../pull-request/pr-ci-record.ts'
+import { POST_LANDING_REPORTED_EXIT_CODE } from '../pull-request/pr-landed-exit-codes.ts'
 import { mergePullRequest, type PullRequestMergeCommandOutcome } from '../pull-request/pr-merge.ts'
-import {
-  POST_LANDING_REPORTED_EXIT_CODE,
-  runPullRequestPostLanding,
-} from '../pull-request/pr-post-landing.ts'
+import { runPullRequestPostLanding } from '../pull-request/pr-post-landing.ts'
 import {
   POST_LANDING_FLAG,
   parsePullRequestPostLandingPayload,
@@ -138,12 +138,15 @@ async function applyPullRequestContextMoment(
   keyPrefixes: readonly string[],
   outcome: PullRequestMergeCommandOutcome,
 ): Promise<void> {
-  const taskKey = taskKeyToken(outcome.headBranch, keyPrefixes)
+  const taskKey = pullRequestMergeContextTarget({
+    exitCode: outcome.exitCode,
+    headBranch: outcome.headBranch,
+    keyPrefixes,
+  })
   if (!taskKey) return
   try {
     const context = await getContext({ task: taskKey })
     const effect = pullRequestMergeContextMomentEffect({
-      exitCode: outcome.exitCode,
       pullRequestNumber: outcome.pullRequestNumber,
       mergeCommit: outcome.mergeCommit,
       items: context.items,

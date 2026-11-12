@@ -1,7 +1,9 @@
 // concern: context-service
 /** Pure context-item effects for workflow and lifecycle verbs. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { LANDED_PULL_REQUEST_EXIT_CODES } from '../pull-request/pr-post-landing.ts'
+import { taskKeyToken } from '../branch/other-branch-state.ts'
+import { LANDED_PULL_REQUEST_EXIT_CODES } from '../pull-request/pr-landed-exit-codes.ts'
+import type { ContextItemKind } from './doc-context-write.ts'
 
 const CONTEXT_MOMENTS = [
   'workflow-next',
@@ -68,14 +70,22 @@ export function contextMomentEffect(input: ContextMomentInput): ContextMomentEff
   }
 }
 
-/** Decides the complete context effect of a pull request merge outcome. */
-export function pullRequestMergeContextMomentEffect(input: {
+/** Selects the task context holder for a landed pull request outcome. */
+export function pullRequestMergeContextTarget(input: {
   exitCode: number
+  headBranch: string
+  keyPrefixes: readonly string[]
+}): string | null {
+  if (!LANDED_PULL_REQUEST_EXIT_CODES.has(input.exitCode)) return null
+  return taskKeyToken(input.headBranch, input.keyPrefixes)
+}
+
+/** Decides the complete context effect of a landed pull request. */
+export function pullRequestMergeContextMomentEffect(input: {
   pullRequestNumber: number
   mergeCommit: string
-  items: readonly { id: string; kind: string }[]
+  items: readonly { id: string; kind: ContextItemKind }[]
 }): ContextMomentEffect {
-  if (!LANDED_PULL_REQUEST_EXIT_CODES.has(input.exitCode)) return emptyEffect()
   return {
     writes: [
       {

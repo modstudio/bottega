@@ -37,7 +37,11 @@ import {
   type ShipCleanupReport,
   shipCleanup,
 } from '../ship-cleanup/ship-cleanup.ts'
-import { SHIP_CLEANUP_RESIDUE_EXIT_CODE } from '../ship-cleanup/ship-cleanup-decision.ts'
+import {
+  LANDED_PULL_REQUEST_EXIT_CODES,
+  MERGED_WITH_RESIDUE_EXIT_CODE,
+  MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
+} from './pr-landed-exit-codes.ts'
 import type { PullRequestMergeFacts } from './pr-merge-evidence.ts'
 import {
   encodePullRequestPostLandingPayload,
@@ -52,15 +56,6 @@ export type WorkflowPromotionResult =
   | { ok: true; output: string }
   | { ok: false; stage: WorkflowPromotionStage; detail: string }
 
-export const MERGED_WITH_RESIDUE_EXIT_CODE = SHIP_CLEANUP_RESIDUE_EXIT_CODE
-export const MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE = 21
-export const POST_LANDING_REPORTED_EXIT_CODE = 22
-export const LANDED_PULL_REQUEST_EXIT_CODES: ReadonlySet<number> = new Set([
-  0,
-  MERGED_WITH_RESIDUE_EXIT_CODE,
-  MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
-  POST_LANDING_REPORTED_EXIT_CODE,
-])
 export type PullRequestMergeOutcome = {
   output: string
   exitCode: number

@@ -34,7 +34,9 @@ export const docModules: DocModule[] = [
   module('orchestrator/src/doc/context-item-codec.ts', ['./doc-context-write.ts']),
   module('orchestrator/src/doc/context-moment.ts', [
     '../../../shared/brand.ts',
-    '../pull-request/pr-post-landing.ts',
+    '../branch/other-branch-state.ts',
+    '../pull-request/pr-landed-exit-codes.ts',
+    './doc-context-write.ts',
   ]),
   module('orchestrator/src/doc/context-moment-adapter.ts', [
     './context-moment.ts',

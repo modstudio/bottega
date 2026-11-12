@@ -1,5 +1,9 @@
 export const pullRequestModuleSpecs = [
   {
+    file: 'orchestrator/src/pull-request/pr-landed-exit-codes.ts',
+    allowed: ['../ship-cleanup/ship-cleanup-decision.ts'],
+  },
+  {
     file: 'orchestrator/src/pull-request/pr-merge.fixture.ts',
     allowed: [
       'node:url',
@@ -48,9 +52,9 @@ export const pullRequestModuleSpecs = [
       '../release/release-entry-closure.ts',
       '../release/release-required.ts',
       '../release/ship-to-reach.ts',
-      '../ship-cleanup/ship-cleanup-decision.ts',
       '../ship-cleanup/ship-cleanup.ts',
       './pr-admission.ts',
+      './pr-landed-exit-codes.ts',
       './pr-merge-evidence.ts',
       './pr-post-landing-payload.ts',
     ],

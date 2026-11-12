@@ -72,7 +72,6 @@ describe('context document integration', () => {
     await applyContextMomentEffect(
       task.key,
       pullRequestMergeContextMomentEffect({
-        exitCode: 0,
         pullRequestNumber: 314,
         mergeCommit: '0123456789abcdef',
         items: beforeMerge.items,

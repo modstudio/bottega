@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { contextMomentEffect, pullRequestMergeContextMomentEffect } from './context-moment.ts'
+import {
+  contextMomentEffect,
+  pullRequestMergeContextMomentEffect,
+  pullRequestMergeContextTarget,
+} from './context-moment.ts'
 
 describe('context moment effect', () => {
   test('workflow await writes its open question', () => {
@@ -85,10 +89,39 @@ describe('context moment effect', () => {
       contextMomentEffect({ moment: 'workflow-await', questionId: 12, text: 'Which shape?' }),
     ).toEqual({ writes: [], drops: [] })
   })
-  test.each([0, 22])('a landed exit %i revises next and drops only open questions', (exitCode) => {
+  test.each([0, 22])('a landed exit %i selects the task key from the head branch', (exitCode) => {
+    expect(
+      pullRequestMergeContextTarget({
+        exitCode,
+        headBranch: 'feature/DEV-2270-context-moments',
+        keyPrefixes: ['DEV'],
+      }),
+    ).toBe('DEV-2270')
+  })
+
+  test('a non-landed exit does not select a context holder', () => {
+    expect(
+      pullRequestMergeContextTarget({
+        exitCode: 1,
+        headBranch: 'feature/DEV-2270-context-moments',
+        keyPrefixes: ['DEV'],
+      }),
+    ).toBeNull()
+  })
+
+  test('a head branch without a matching key prefix does not select a context holder', () => {
+    expect(
+      pullRequestMergeContextTarget({
+        exitCode: 0,
+        headBranch: 'feature/DEV-2270-context-moments',
+        keyPrefixes: ['OPS'],
+      }),
+    ).toBeNull()
+  })
+
+  test('a landed merge revises next and drops only open questions', () => {
     expect(
       pullRequestMergeContextMomentEffect({
-        exitCode,
         pullRequestNumber: 314,
         mergeCommit: '0123456789abcdef',
         items: [
@@ -112,16 +145,5 @@ describe('context moment effect', () => {
         { kind: 'open-question', id: 'open-q2' },
       ],
     })
-  })
-
-  test('a non-landed exit has no effect', () => {
-    expect(
-      pullRequestMergeContextMomentEffect({
-        exitCode: 1,
-        pullRequestNumber: 314,
-        mergeCommit: '0123456789abcdef',
-        items: [{ id: 'open-q1', kind: 'open-question' }],
-      }),
-    ).toEqual({ writes: [], drops: [] })
   })
 })
