@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { applyMigrations } from './migrations.ts'
+import { applyMigrations, canonicalSchemaHash, expectedSchemaHash } from './migrations.ts'
 import { migrationBoundaryTestDatabase } from './test-database.fixture.ts'
 
 test('task-flow migration permits taskless flows and keeps task identity unique when present', () => {
@@ -57,6 +57,7 @@ test('task-flow migration permits taskless flows and keeps task identity unique 
     .run(cursor, project, workflowVersion, catalogueVersion, existing)
 
   applyMigrations(database)
+  expect(canonicalSchemaHash(database)).toBe(expectedSchemaHash())
 
   expect(
     database.query('SELECT task_record_id FROM task_flow WHERE record_id=?').get(existing),
