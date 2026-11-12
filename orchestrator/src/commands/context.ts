@@ -2,6 +2,8 @@
 /** Registers architect session resolution and stored context item verbs. */
 import type { Command } from 'commander'
 import { contextBrief, renderContextBrief } from '../doc/context-brief.ts'
+import { CONTEXT_CENSUS_NOT_FULL_EXIT_CODE, type ContextCensus } from '../doc/context-census.ts'
+import { contextCensusReport } from '../doc/context-census-adapter.ts'
 import {
   clearTaskContext,
   dropContextItem,
@@ -13,6 +15,44 @@ import { recordSessionWorked, sessionWorkedTaskKeys } from '../doc/context-worke
 import { CONTEXT_ITEM_KINDS } from '../doc/doc-context-write.ts'
 import { sessionContextCommand } from '../workflow/session-context.ts'
 import { log } from './support.ts'
+
+const count = (covered: number, total: number) => `${covered}/${total}`
+
+export function renderContextCensus(report: ContextCensus): string {
+  const lines: string[] = []
+  for (const project of report.projects) {
+    lines.push(`${project.project ?? 'no project'}  ${count(project.covered, project.total)}`)
+    for (const session of project.sessions) {
+      lines.push(`  ${session.session}  ${count(session.covered, session.total)}`)
+      if (session.noHolder) {
+        lines.push('    no holder')
+        continue
+      }
+      for (const task of session.tasks) {
+        const detail =
+          task.status === 'unreadable'
+            ? task.remedy!
+            : `worked ${task.workedAt}  next-action ${task.nextActionAt ?? 'missing'}`
+        const sources = task.sources
+          .map(({ source, writingVerb }) => `${source}:${writingVerb ? 'verb' : 'hand'}`)
+          .join(', ')
+        lines.push(
+          `    ${task.key}  ${count(task.covered, task.total)}  ${task.status}  ${detail}  open ${task.openQuestions}  rulings ${task.rulings}  sources ${sources || 'none'}`,
+        )
+      }
+    }
+  }
+  if (report.verdict.full) lines.push('full coverage')
+  else {
+    lines.push(
+      `not full: ${report.verdict.uncovered.length} uncovered, ${report.verdict.unreadable.length} unreadable`,
+    )
+    for (const key of report.verdict.uncovered) lines.push(`  uncovered ${key}`)
+    for (const row of report.verdict.unreadable)
+      lines.push(`  unreadable ${row.task}: ${row.remedy}`)
+  }
+  return lines.join('\n')
+}
 
 function registerWorked(context: Command): void {
   context
@@ -34,6 +74,21 @@ function registerClear(context: Command): void {
     .action(async (options) => {
       const result = await clearTaskContext({ task: options.task })
       log(`context: cleared ${result.removed} items on ${result.task}`)
+    })
+}
+
+function registerCensus(context: Command): void {
+  context
+    .command('census')
+    .description('report next-action coverage for every architect session in a time window')
+    .option('--since <date>', 'include sessions and work at or after this ISO date')
+    .option('--project <name>', 'select one registered project')
+    .option('--json', 'write JSON')
+    .allowExcessArguments(false)
+    .action(async (options) => {
+      const result = await contextCensusReport({ since: options.since, project: options.project })
+      log(options.json ? JSON.stringify(result) : renderContextCensus(result))
+      if (!result.verdict.full) process.exitCode = CONTEXT_CENSUS_NOT_FULL_EXIT_CODE
     })
 }
 
@@ -78,6 +133,7 @@ export function register(program: Command): void {
       const result = await contextBrief(options.session)
       log(options.json ? JSON.stringify(result) : renderContextBrief(result))
     })
+  registerCensus(context)
   registerWorked(context)
   context
     .command('stale')

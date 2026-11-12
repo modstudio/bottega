@@ -8,6 +8,7 @@ agents, jobs, and routing
 - [bottega agent add](#bottega-agent-add)
 - [bottega agent context](#bottega-agent-context)
 - [bottega agent context brief](#bottega-agent-context-brief)
+- [bottega agent context census](#bottega-agent-context-census)
 - [bottega agent context clear](#bottega-agent-context-clear)
 - [bottega agent context drop](#bottega-agent-context-drop)
 - [bottega agent context set](#bottega-agent-context-set)
@@ -84,6 +85,7 @@ manage stored architect context or resolve checkout context
 
 - [bottega agent](./agent.md#bottega-agent)
 - [bottega agent context brief](./agent.md#bottega-agent-context-brief)
+- [bottega agent context census](./agent.md#bottega-agent-context-census)
 - [bottega agent context clear](./agent.md#bottega-agent-context-clear)
 - [bottega agent context drop](./agent.md#bottega-agent-context-drop)
 - [bottega agent context set](./agent.md#bottega-agent-context-set)
@@ -100,6 +102,22 @@ show the compact working context for an architect session
 ### Options
 
 - `--session <id>`: select architect session
+- `--json`: write JSON
+
+### Related
+
+- [bottega agent context](./agent.md#bottega-agent-context)
+
+## bottega agent context census
+
+**Synopsis:** `bottega agent context census [--since <date>] [--project <name>] [--json]`
+
+report next-action coverage for every architect session in a time window
+
+### Options
+
+- `--since <date>`: include sessions and work at or after this ISO date
+- `--project <name>`: select one registered project
 - `--json`: write JSON
 
 ### Related

@@ -44,6 +44,21 @@ export const docModules: DocModule[] = [
     './doc-context-write.ts',
   ]),
   module('orchestrator/src/doc/context-stale.ts', ['../workflow/task-flow-decision.ts']),
+  module('orchestrator/src/doc/context-census.ts', [
+    '../workflow/task-flow-decision.ts',
+    './doc-context-write.ts',
+  ]),
+  module('orchestrator/src/doc/context-census-adapter.ts', [
+    'bun:sqlite',
+    '../../../shared/brand.ts',
+    '../database/db.ts',
+    '../project/projects.ts',
+    '../workflow/workflow-task-reference.ts',
+    './context-census.ts',
+    './context-session-work-adapter.ts',
+    './context-service.ts',
+    './context-write-adapter.ts',
+  ]),
   module('orchestrator/src/doc/context-worked.ts', []),
   module('orchestrator/src/doc/context-session-work-adapter.ts', [
     'bun:sqlite',
