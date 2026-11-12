@@ -184,7 +184,7 @@ function insertStage(
   if (!project)
     throw new Error(`project ${String(row.projectId)} does not exist; register it, then retry`)
   const flow = database
-    .query<{ task_record_id: string }, [string]>(
+    .query<{ task_record_id: string | null }, [string]>(
       'SELECT task_record_id FROM task_flow WHERE record_id=?',
     )
     .get(String(row.flowRecordId))
@@ -467,8 +467,7 @@ function writeCompose(
     stage = insertStage(database, row, next)
     result[String(row.id)] = next
   }
-  // Local task_flow.task_record_id is NOT NULL (orchestrator/migrations/0198_task_flow.sql).
-  // Until the handle/schema slices, an unlinked compose keeps today's flow-less local shape.
+  // Keyless compose keeps today's flow-less local shape; legacy backfill owns the taskless insert path.
   if (flowInsert?.taskId != null) {
     const next = revisions?.[String(flowInsert.id)] ?? 1
     insertFlow(database, flowInsert, next)

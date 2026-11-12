@@ -1,6 +1,9 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { database } from '../workflow/workflow-cursor-test.fixture.ts'
+import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
+import { abandonWorkflowCursor } from '../workflow/workflow-cursor-mutation.ts'
+import type { SelectableCursorRow } from '../workflow/workflow-cursor-selection.ts'
 import { insertOutboxRow } from './outbox-enqueue.ts'
 import {
   backfillTaskFlowRecords,
@@ -24,12 +27,30 @@ test('task-flow backfill asks the record, enqueues absent rows in parent order, 
   const linkedStage = newRecordId()
   const tasklessStage = newRecordId()
   const hostedTasklessStage = newRecordId()
+  const doneTasklessStage = newRecordId()
+  const abandonedTasklessStage = newRecordId()
+  const unresolvedProject = newRecordId()
+  const unresolvedFlow = newRecordId()
+  d.query(
+    `INSERT INTO project (record_id,name,path,stack,settings)
+     VALUES (?,'unresolved','/unresolved','bun','{"trunk":"main"}')`,
+  ).run(unresolvedProject)
+  d.query(
+    `INSERT INTO task_flow
+     (record_id,task_record_id,project_record_id,state,open_stage_cursor_record_id,created_at,updated_at,
+      opening_machine_id,updated_machine_id,revision) VALUES (?,? ,?,'open',NULL,'2026-11-12','2026-11-12',?,?,1)`,
+  ).run(unresolvedFlow, 'task-unresolved', unresolvedProject, machine, machine)
   d.query(
     `INSERT INTO task_flow
      (record_id,task_record_id,project_record_id,state,open_stage_cursor_record_id,created_at,updated_at,
       opening_machine_id,updated_machine_id,revision) VALUES (?,?,?,'open',NULL,'2026-11-12','2026-11-12',?,?,1)`,
   ).run(flow, 'task-DEV-2234', project, machine, machine)
-  const insertStage = (recordId: string, number: number, flowId: string | null) =>
+  const insertStage = (
+    recordId: string,
+    number: number,
+    flowId: string | null,
+    state = 'running',
+  ) =>
     d
       .query(
         `INSERT INTO workflow_cursor
@@ -38,7 +59,7 @@ test('task-flow backfill asks the record, enqueues absent rows in parent order, 
         args,autonomy,ordinal,step_slug,state,closed,question,total_steps,created_at,updated_at,enforcement,
         opened_machine_id,taken_over_from_machine_id,last_advanced_machine_id,revision)
        VALUES (?,?,'fixture',?,'flow','default','DEV-2234',?,?,?,'session',?,?,'{}','{}',0,'build',
-        'running','[]','why?',2,'2026-11-12','2026-11-12','floors',?,NULL,?,1)`,
+        ?,'[]','why?',2,'2026-11-12','2026-11-12','floors',?,NULL,?,1)`,
       )
       .run(
         recordId,
@@ -49,12 +70,15 @@ test('task-flow backfill asks the record, enqueues absent rows in parent order, 
         flowId ? '' : `taskless-${number}`,
         workflowVersion,
         catalogueVersion,
+        state,
         machine,
         machine,
       )
   insertStage(linkedStage, 1, flow)
   insertStage(tasklessStage, 2, null)
   insertStage(hostedTasklessStage, 3, null)
+  insertStage(doneTasklessStage, 4, null, 'done')
+  insertStage(abandonedTasklessStage, 5, null, 'abandoned')
   insertOutboxRow(d, {
     recordId: newRecordId(),
     kind: 'task_flow',
@@ -80,20 +104,33 @@ test('task-flow backfill asks the record, enqueues absent rows in parent order, 
     },
   }
 
-  expect(await inspectTaskFlowBackfill(d, access)).toEqual({ flows: 1, stages: 1, held: [] })
+  const held = [
+    {
+      project: 'unresolved',
+      rows: 1,
+      reason: expect.stringContaining('record space'),
+    },
+  ]
+  expect(await inspectTaskFlowBackfill(d, access)).toEqual({ flows: 1, stages: 3, held })
   expect(await backfillTaskFlowRecords(d, access)).toEqual({
-    enqueuedFlows: 1,
-    enqueuedStages: 1,
-    held: [],
+    enqueuedFlows: 3,
+    enqueuedStages: 3,
+    held,
   })
   expect(await backfillTaskFlowRecords(d, access)).toEqual({
     enqueuedFlows: 0,
     enqueuedStages: 0,
-    held: [],
+    held,
   })
   expect(calls[0]).toMatchObject({
     flowIds: [flow],
-    stageIds: [linkedStage, tasklessStage, hostedTasklessStage].sort(),
+    stageIds: [
+      linkedStage,
+      tasklessStage,
+      hostedTasklessStage,
+      doneTasklessStage,
+      abandonedTasklessStage,
+    ].sort(),
     destinationSpaceId: 'space-id',
   })
 
@@ -106,16 +143,27 @@ test('task-flow backfill asks the record, enqueues absent rows in parent order, 
   expect(rows.some((row) => row.row_id === legacyTasklessFlowRecordId(hostedTasklessStage))).toBe(
     false,
   )
-  expect(rows.map(({ kind, row_id }) => [kind, row_id])).toEqual([
-    ['task_flow', syntheticFlow],
-    ['task_flow_stage', tasklessStage],
-  ])
-  expect(JSON.parse(rows[0]!.payload)).toMatchObject({
+  const syntheticDoneFlow = legacyTasklessFlowRecordId(doneTasklessStage)
+  const syntheticAbandonedFlow = legacyTasklessFlowRecordId(abandonedTasklessStage)
+  expect(rows.filter((row) => row.kind === 'task_flow').map((row) => row.row_id).sort()).toEqual(
+    [syntheticFlow, syntheticDoneFlow, syntheticAbandonedFlow].sort(),
+  )
+  expect(rows.findLastIndex((row) => row.kind === 'task_flow')).toBeLessThan(
+    rows.findIndex((row) => row.kind === 'task_flow_stage'),
+  )
+  expect(JSON.parse(rows.find((row) => row.row_id === syntheticFlow)!.payload)).toMatchObject({
     id: syntheticFlow,
     taskId: null,
     openStageRecordId: tasklessStage,
   })
-  expect(JSON.parse(rows[1]!.payload)).toMatchObject({
+  expect(JSON.parse(rows.find((row) => row.row_id === syntheticDoneFlow)!.payload)).toMatchObject({
+    state: 'done',
+    openStageRecordId: null,
+  })
+  expect(
+    JSON.parse(rows.find((row) => row.row_id === syntheticAbandonedFlow)!.payload),
+  ).toMatchObject({ state: 'dropped', openStageRecordId: null })
+  expect(JSON.parse(rows.find((row) => row.row_id === tasklessStage)!.payload)).toMatchObject({
     flowRecordId: syntheticFlow,
     workflowKey: 'DEV-2234',
     instanceId: 'taskless-2',
@@ -124,4 +172,32 @@ test('task-flow backfill asks the record, enqueues absent rows in parent order, 
     autonomy: '{}',
     enforcement: 'floors',
   })
+  expect(
+    d
+      .query('SELECT task_flow_record_id FROM workflow_cursor WHERE record_id=?')
+      .get(tasklessStage),
+  ).toEqual({ task_flow_record_id: syntheticFlow })
+  expect(
+    d
+      .query('SELECT task_record_id,state,open_stage_cursor_record_id FROM task_flow WHERE record_id=?')
+      .get(syntheticFlow),
+  ).toEqual({ task_record_id: null, state: 'open', open_stage_cursor_record_id: tasklessStage })
+
+  const row = (await taskFlowReadStore(d).stageByRecordId(tasklessStage)) as SelectableCursorRow
+  await abandonWorkflowCursor(
+    row,
+    'legacy stage closed',
+    {
+      session: 'session',
+    },
+    d,
+  )
+  expect(
+    d
+      .query('SELECT open_stage_cursor_record_id,revision FROM task_flow WHERE record_id=?')
+      .get(syntheticFlow),
+  ).toEqual({ open_stage_cursor_record_id: null, revision: 2 })
+  expect(d.query('SELECT state,revision FROM workflow_cursor WHERE record_id=?').get(tasklessStage)).toEqual(
+    { state: 'abandoned', revision: 2 },
+  )
 })

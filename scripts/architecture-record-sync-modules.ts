@@ -20,6 +20,7 @@ export const recordSyncModules: RecordSyncModule[] = [
     '../../../shared/record-space-membership.ts',
     '../../../shared/record-write-space.ts',
     '../database/db.ts',
+    '../project/declared-record-space.ts',
     './machine-identity.ts',
     './outbox-enqueue.ts',
     './outbox-sanitize.ts',

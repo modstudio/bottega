@@ -11,7 +11,8 @@ import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import type { RecordSpaceMembership } from '../../../shared/record-space-membership.ts'
 import { recordWriteSpace } from '../../../shared/record-write-space.ts'
-import { nowIso } from '../database/db.ts'
+import { nowIso, writeTransaction } from '../database/db.ts'
+import { declaredRecordSpace } from '../project/declared-record-space.ts'
 import { machineId } from './machine-identity.ts'
 import { insertOutboxRow } from './outbox-enqueue.ts'
 import { stringifyOutboxPayload } from './outbox-sanitize.ts'
@@ -85,8 +86,29 @@ export type TaskFlowBackfillAccess = {
   projectSpaces?: Record<string, string>
 }
 
+export function taskFlowBackfillUnavailable(
+  reason: string,
+  kind: 'backfill',
+): TaskFlowBackfillResult
+export function taskFlowBackfillUnavailable(
+  reason: string,
+  kind?: 'inspection',
+): TaskFlowBackfillInspection
+export function taskFlowBackfillUnavailable(
+  reason: string,
+  kind: 'backfill' | 'inspection' = 'inspection',
+): TaskFlowBackfillResult | TaskFlowBackfillInspection {
+  return kind === 'backfill'
+    ? { enqueuedFlows: 0, enqueuedStages: 0, held: [], failure: reason }
+    : { flows: 0, stages: 0, held: [], failure: reason }
+}
+
 export function legacyTasklessFlowRecordId(stageRecordId: string): string {
   return v5(JSON.stringify(['legacy-taskless-flow', stageRecordId]), LEGACY_TASKLESS_FLOW_NAMESPACE)
+}
+
+export function stageFlowRecordId(row: Pick<StageRow, 'record_id' | 'task_flow_record_id'>): string {
+  return row.task_flow_record_id ?? legacyTasklessFlowRecordId(row.record_id)
 }
 
 function hasPendingOutbox(database: Database, kind: string, rowId: string): boolean {
@@ -203,11 +225,14 @@ function localStages(database: Database): StageRow[] {
     .all()
 }
 
-function declaredSpace(row: FlowRow | StageRow, overrides?: Record<string, string>): string | null {
-  if (overrides?.[row.project_name]) return overrides[row.project_name]!
+function rowDeclaredSpace(
+  row: FlowRow | StageRow,
+  overrides?: Record<string, string>,
+): string | null {
+  const overridden = overrides?.[row.project_name]
+  if (overridden !== undefined) return declaredRecordSpace({ space: overridden })
   try {
-    const settings = JSON.parse(row.project_settings) as { space?: unknown }
-    return typeof settings.space === 'string' && settings.space.trim() ? settings.space : null
+    return declaredRecordSpace(JSON.parse(row.project_settings) as { space?: string })
   } catch {
     return null
   }
@@ -231,7 +256,7 @@ function routeRows(
     const decision = recordWriteSpace(
       { kind: 'project', name: row.project_name },
       {
-        declaredSpaces: { [row.project_name]: declaredSpace(row, access.projectSpaces) },
+        declaredSpaces: { [row.project_name]: rowDeclaredSpace(row, access.projectSpaces) },
         personalSpaceId: access.personalSpaceId,
         memberships: access.memberships,
       },
@@ -327,23 +352,46 @@ export async function backfillTaskFlowRecords(
   const stages = selected.absentStages.filter(
     (row) => !hasPendingOutbox(database, 'task_flow_stage', row.record_id),
   )
-  let enqueuedFlows = 0
-  for (const row of flows) {
-    enqueue(database, 'task_flow', row.record_id, flowPayload(row))
-    enqueuedFlows++
-  }
-  for (const row of stages.filter((stage) => !stage.task_flow_record_id)) {
-    const flowRecordId = row.task_flow_record_id ?? legacyTasklessFlowRecordId(row.record_id)
-    if (!hasPendingOutbox(database, 'task_flow', flowRecordId)) {
-      enqueue(database, 'task_flow', flowRecordId, tasklessFlowPayload(row, flowRecordId))
+  return writeTransaction(() => {
+    let enqueuedFlows = 0
+    for (const row of flows) {
+      enqueue(database, 'task_flow', row.record_id, flowPayload(row))
       enqueuedFlows++
     }
-  }
-  let enqueuedStages = 0
-  for (const row of stages) {
-    const flowRecordId = row.task_flow_record_id ?? legacyTasklessFlowRecordId(row.record_id)
-    enqueue(database, 'task_flow_stage', row.record_id, stagePayload(row, flowRecordId))
-    enqueuedStages++
-  }
-  return { enqueuedFlows, enqueuedStages, held: selected.held }
+    for (const row of stages.filter((stage) => !stage.task_flow_record_id)) {
+      const flowRecordId = stageFlowRecordId(row)
+      if (!hasPendingOutbox(database, 'task_flow', flowRecordId)) {
+        const payload = tasklessFlowPayload(row, flowRecordId)
+        database
+          .query(
+            `INSERT INTO task_flow
+             (record_id,task_record_id,project_record_id,state,open_stage_cursor_record_id,
+              created_at,updated_at,opening_machine_id,updated_machine_id,revision)
+             VALUES (?,NULL,?,?,?,?,?,?,?,1)`,
+          )
+          .run(
+            flowRecordId,
+            row.project_record_id,
+            payload.state as string,
+            payload.openStageRecordId as string | null,
+            row.created_at,
+            row.updated_at,
+            row.opened_machine_id,
+            row.last_advanced_machine_id,
+          )
+        database
+          .query('UPDATE workflow_cursor SET task_flow_record_id=? WHERE record_id=?')
+          .run(flowRecordId, row.record_id)
+        enqueue(database, 'task_flow', flowRecordId, payload)
+        enqueuedFlows++
+      }
+    }
+    let enqueuedStages = 0
+    for (const row of stages) {
+      const flowRecordId = stageFlowRecordId(row)
+      enqueue(database, 'task_flow_stage', row.record_id, stagePayload(row, flowRecordId))
+      enqueuedStages++
+    }
+    return { enqueuedFlows, enqueuedStages, held: selected.held }
+  }, database)
 }

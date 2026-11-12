@@ -141,15 +141,6 @@ async function pushTaskFlowStage(
   await postgres.begin(async (tx) => {
     await bindPrincipal(tx, principal)
     const values = taskFlowStageValues(row)
-    const existing = await tx`SELECT id FROM task_flow_stage WHERE id=${values.id}::uuid`
-    if (!existing[0] && !values.projectId)
-      throw new OutboxRowError(
-        'task_flow_stage projectId is required for a new hosted stage; repair the outbox payload from the current local stage and retry record push',
-        'row-validation',
-      )
-    const number = existing[0]
-      ? null
-      : await allocateRecordSequence(tx, values.spaceId, values.projectId!, 'task_flow_stage')
     const existingOwned = await existingEvidenceOwned(
       tx,
       'task_flow_stage',
@@ -158,6 +149,14 @@ async function pushTaskFlowStage(
       principal,
       { scope: 'space-principal' },
     )
+    if (!existingOwned && !values.projectId)
+      throw new OutboxRowError(
+        'task_flow_stage projectId is required for a new hosted stage; repair the outbox payload from the current local stage and retry record push',
+        'row-validation',
+      )
+    const number = existingOwned
+      ? null
+      : await allocateRecordSequence(tx, values.spaceId, values.projectId!, 'task_flow_stage')
     const written = await applyTaskFlowStageValues(drizzle({ client: tx }), values, number)
     requireOwnedUpsert(written, 'task_flow_stage', values.id, existingOwned)
   })

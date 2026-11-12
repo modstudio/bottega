@@ -12,6 +12,7 @@ import {
 import { recordSpaceAccessDecision } from '../../../shared/record-space-request.ts'
 import { recordWriteSpace } from '../../../shared/record-write-space.ts'
 import { db, nowIso } from '../database/db.ts'
+import { declaredRecordSpace } from '../project/declared-record-space.ts'
 import { backfillReleaseRecords } from '../release/release-outbox.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { backfillQuestionRecords } from '../run/question-outbox.ts'
@@ -61,7 +62,7 @@ import type {
   RecordSyncResult,
   RoutingHeldOutboxRow,
 } from './record-sync-types.ts'
-import { backfillTaskFlowRecords } from './task-flow-backfill.ts'
+import { backfillTaskFlowRecords, taskFlowBackfillUnavailable } from './task-flow-backfill.ts'
 
 export type {
   RecordSyncOptions,
@@ -150,7 +151,8 @@ function declaredProjectSpace(
   projectName: string,
   overrides?: Record<string, string>,
 ): string | null {
-  if (overrides?.[projectName]) return overrides[projectName]!
+  const overridden = overrides?.[projectName]
+  if (overridden !== undefined) return declaredRecordSpace({ space: overridden })
   const hasProjects = local
     .query<{ present: number }, []>(
       "SELECT count(*) AS present FROM sqlite_master WHERE type='table' AND name='project'",
@@ -161,8 +163,7 @@ function declaredProjectSpace(
     .query<{ settings: string }, [string]>('SELECT settings FROM project WHERE name=?')
     .get(projectName)
   if (!row) return null
-  const settings = JSON.parse(row.settings) as { space?: unknown }
-  return typeof settings.space === 'string' && settings.space.trim() ? settings.space : null
+  return declaredRecordSpace(JSON.parse(row.settings) as { space?: string })
 }
 
 function pendingCount(local: Database): number {
@@ -709,12 +710,11 @@ function unconfiguredSyncResult(
   backfillRequested: boolean | undefined,
 ): RecordSyncResult {
   const backfill = backfillRequested
-    ? syncBackfill(local!, identityId, {
-        enqueuedFlows: 0,
-        enqueuedStages: 0,
-        held: [],
-        failure: 'hosted record API is not configured',
-      })
+    ? syncBackfill(
+        local!,
+        identityId,
+        taskFlowBackfillUnavailable('hosted record API is not configured', 'backfill'),
+      )
     : undefined
   return {
     pushed: 0,
