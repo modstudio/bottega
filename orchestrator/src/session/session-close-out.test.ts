@@ -299,6 +299,25 @@ test('close-out reaches its verdict when worked-key derivation throws', async ()
   expect(report.verdict).toEqual({ clean: true, residue: 0 })
 })
 
+test('close-out closes an idle explore as answered and reports the session clean', async () => {
+  const session = newRecordId()
+  const cursor = addCursor(session, 'running')
+  db()
+    .query("UPDATE workflow_cursor SET workflow_slug='explore',total_steps=4 WHERE record_id=?")
+    .run(cursor.recordId)
+
+  const report = await closeOutSession({ session })
+
+  expect(report.process).toEqual([])
+  expect(report.verdict).toEqual({ clean: true, residue: 0 })
+  expect(report.mechanical).toContain(
+    `closed workflow cursor ${cursor.number} (explore) as answered`,
+  )
+  expect(
+    db().query('SELECT state,closed FROM workflow_cursor WHERE record_id=?').get(cursor.recordId),
+  ).toEqual({ state: 'done', closed: expect.stringContaining('"outcome":"answered"') })
+})
+
 test('close-out parks only an awaiting cursor with a recorded open question', async () => {
   const session = newRecordId()
   const parked = addCursor(session, 'awaiting-ruling')

@@ -842,7 +842,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
   }
   let cleanupFailed = archiveRetention.failed || runLeftovers.failed
   const sessionCleanupFailed = await sweepSessionState({
-    enabled: selectedProject === null,
+    project: selectedProject?.name ?? null,
     dryRun: dry,
     presentation: options.presentation,
   })
