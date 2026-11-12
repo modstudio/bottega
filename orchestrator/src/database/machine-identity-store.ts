@@ -3,6 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { machineId as sharedMachineId, storedMachineId } from '../../../shared/machine-config.ts'
+import type { SynchronousResult } from '../synchronous-result.ts'
 
 const MACHINE_ID_KEY = 'machine_id'
 
@@ -22,7 +23,7 @@ function storeMachineId(database: Database, id: string): void {
 
 export function carryMachineIdentity(
   database: Database,
-  transaction: <T>(fn: () => T) => T,
+  transaction: <T extends SynchronousResult>(fn: () => T) => T,
   env: ConfigEnvironment = process.env,
 ): string {
   const legacy = machineIdStored(database)

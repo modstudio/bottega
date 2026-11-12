@@ -7,6 +7,7 @@ import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts
 import { db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { projectByName } from '../project/projects.ts'
+import type { SynchronousResult } from '../synchronous-result.ts'
 
 type RunDiffFlags = { has(name: string): boolean }
 type ArchitectRead = { tip: string; note: string; recordedAt: string }
@@ -38,7 +39,11 @@ type RunDiffPresentation = {
   isAncestor(cwd: string, ancestor: string, descendant: string): boolean
   commitsBetween(cwd: string, since: string, tip: string): string
   exists(path: string): boolean
-  withWorktreeLease<T>(repoRoot: string, worktreePath: string, action: () => T): T
+  withWorktreeLease<T extends SynchronousResult>(
+    repoRoot: string,
+    worktreePath: string,
+    action: () => T,
+  ): T
   writesRepo(job: string): boolean
 }
 
@@ -139,11 +144,15 @@ function evidenceLowerBound(input: {
   return { since: input.baseCommit, usedRecordedFallback: true }
 }
 
-export function readRunDiffSource<T>(input: {
+export function readRunDiffSource<T extends SynchronousResult>(input: {
   repoRoot: string
   worktree: string | null
   exists(path: string): boolean
-  withWorktreeLease<T>(repoRoot: string, worktreePath: string, action: () => T): T
+  withWorktreeLease<T extends SynchronousResult>(
+    repoRoot: string,
+    worktreePath: string,
+    action: () => T,
+  ): T
   readLive(worktreePath: string): T
   readEvidence(): T
 }): T {

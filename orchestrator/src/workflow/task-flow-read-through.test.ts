@@ -646,12 +646,12 @@ test.each([
       const cursor = ids.database
         .query<{ number: number }, [string]>('SELECT number FROM workflow_cursor WHERE record_id=?')
         .get(stageId)!.number
-      const selectedRow = selectWorkflowCursor(
+      const selectedRow = (await selectWorkflowCursor(
         { project: 'read-through-fixture', workflow, mode: 'default' },
         cursor,
         null,
         ids.database,
-      )!
+      ))!
       const context = await resolveWorkflowCursorContext(
         'read-through-fixture',
         callArgs,

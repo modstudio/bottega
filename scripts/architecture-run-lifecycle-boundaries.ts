@@ -190,6 +190,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       '../route/failover.ts',
     ],
     'Keep run-dispatch independent of transports, worktrees, routing, reviews, and the CLI.',
+    ['../synchronous-result.ts'],
   ),
   boundary(
     'run-inbox-boundary',

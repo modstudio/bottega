@@ -12,6 +12,7 @@ read the output.
 import json, os, sqlite3, subprocess, sys, time
 
 sys.path.insert(0, os.path.dirname(__file__))
+from hook_paths import bottega_bin
 from registered_scope import should_hook_act
 
 from board_hook_common import marker_path, read_marker, write_marker
@@ -30,12 +31,6 @@ DB = os.environ.get("BOTTEGA_ORCHESTRATOR_DB") or subprocess.check_output(
     ["bun", "--no-env-file", os.path.join(ROOT, "shared", "state-directory.ts"), "orchestrator", "database"],
     text=True,
 ).strip()
-
-
-def bottega_bin():
-    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-    return os.path.join(root, "bin", "bottega")
-
 
 def close_out_line(payload):
     tree = f" {payload['worktree']}" if payload.get("worktree") else ""

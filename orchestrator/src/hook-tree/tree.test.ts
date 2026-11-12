@@ -22,20 +22,20 @@ test('hook-tree seed request carries the command-line seed', () => {
   ).toMatchObject({ requested: 'full', baseRef: 'main' })
 })
 
-test('tree remove directs an ordinary run through close-out', () => {
+test('tree remove directs an ordinary run through close-out', async () => {
   const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const path = `/no-such-ordinary-tree-${id}`
   db().query('UPDATE run SET worktree=?, cwd=? WHERE record_id=?').run(path, path, id)
 
-  expect(() => removeHookTree(path)).toThrow(`${PLATFORM_SLUG} run close-out ${id}`)
+  await expect(removeHookTree(path)).rejects.toThrow(`${PLATFORM_SLUG} run close-out ${id}`)
 })
 
-test('tree remove gives an unrecorded project path a git removal command', () => {
+test('tree remove gives an unrecorded project path a git removal command', async () => {
   const main = '/projects/hook-tree-removal'
   const path = `${main}/.claude/worktrees/unrecorded-tree`
   upsertProject({ recordId: newRecordId(), name: 'hook-tree-removal', path: main, settings: {} })
 
-  expect(() => removeHookTree(path)).toThrow(`git -C ${main} worktree remove ${path}`)
+  await expect(removeHookTree(path)).rejects.toThrow(`git -C ${main} worktree remove ${path}`)
 })
 
 test('an absent path is absent only when a historical worktree claim names it', () => {
@@ -50,7 +50,7 @@ test('an absent path is absent only when a historical worktree claim names it', 
   ).toBe('refuse')
 })
 
-test('a repeated removal reports an absent tree from its released claim', () => {
+test('a repeated removal reports an absent tree from its released claim', async () => {
   const id = addRun({ agent: '(hook)', job: 'hook-tree', status: 'ok' })
   const path = `/no-such-released-hook-tree-${id}`
   db()
@@ -61,5 +61,5 @@ test('a repeated removal reports an absent tree from its released claim', () => 
     )
     .run(newRecordId(), id, id, path, nowIso(), nowIso())
 
-  expect(removeHookTreeResult(path)).toEqual({ outcome: 'absent' })
+  expect(await removeHookTreeResult(path)).toEqual({ outcome: 'absent' })
 })

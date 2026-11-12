@@ -2,7 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import type { TaskFlowIntentInput } from '../record/record-task-flow-write-contract.ts'
-import { taskFlowStore } from './task-flow-store.ts'
+import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 import { taskFlowRevisionRefusal } from './task-flow-store-sqlite-write.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
@@ -36,7 +36,7 @@ async function stage(d: Database) {
     {},
     {},
   )
-  return taskFlowStore(d).stageByHandle(composed.cursor!.id)!
+  return (await taskFlowReadStore(d).stageByHandle(composed.cursor!.id))!
 }
 
 test('intent writes refuse every stale expected revision', async () => {
@@ -62,7 +62,7 @@ test('intent writes refuse every stale expected revision', async () => {
     ],
   ] as const
   for (const [intent, payload] of cases)
-    expect(() => taskFlowStore(d).write(intent, payload as never)).toThrow('rerun the command')
+    expect(() => taskFlowLocalStore(d).write(intent, payload as never)).toThrow('rerun the command')
 })
 
 test('intent writes use applied revisions and otherwise compute the next revision', async () => {
@@ -73,12 +73,11 @@ test('intent writes use applied revisions and otherwise compute the next revisio
     stages: [{ id: row.record_id, expectedRevision: 1, values: { updatedAt: row.updated_at } }],
   }
   expect(
-    taskFlowStore(d).write('stage-update', first, { revisions: { [row.record_id]: 7 } }).revisions[
-      row.record_id
-    ],
+    taskFlowLocalStore(d).write('stage-update', first, { revisions: { [row.record_id]: 7 } })
+      .revisions[row.record_id],
   ).toBe(7)
   expect(
-    taskFlowStore(d).write('stage-update', {
+    taskFlowLocalStore(d).write('stage-update', {
       ...first,
       stages: [{ ...first.stages[0]!, expectedRevision: 7 }],
     }).revisions[row.record_id],
@@ -129,7 +128,7 @@ test('flow mutation preserves state when the payload omits it', async () => {
       "UPDATE task_flow SET state='done' WHERE record_id=? RETURNING record_id,revision",
     )
     .get(row.task_flow_record_id!)!
-  taskFlowStore(d).write('stage-update', {
+  taskFlowLocalStore(d).write('stage-update', {
     requestId: row.record_id,
     flow: {
       id: flow.record_id,

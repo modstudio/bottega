@@ -7,7 +7,7 @@ import { db, sessionId } from '../database/db.ts'
 import { voidedSql } from '../evidence/evidence-query.ts'
 import { projectAt } from '../project/projects.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
-import { taskFlowStore } from '../workflow/task-flow-store.ts'
+import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 import { runQuestionGroupFooter } from './question-display.ts'
 import { displayRunQuestion } from './question-display-probe.ts'
@@ -133,13 +133,13 @@ function inboxSessionCanAnswer(
   return ownerSessionId === null || (callerSessionId !== null && ownerSessionId === callerSessionId)
 }
 
-function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
+async function workflowInboxQuestions(input: InboxQuery): Promise<WorkflowInboxQuestion[]> {
   if (input.scope === 'session') return []
   const sid = sessionId()
   const scoped = input.requestedCwd !== undefined
   const scopedProject = scoped ? projectAt(input.requestedCwd!) : null
   const defaultProject = !scoped && !input.all ? projectAt(process.cwd()) : null
-  const rows = taskFlowStore(db()).workflowInboxQuestions()
+  const rows = await taskFlowReadStore(db()).workflowInboxQuestions()
   const visible = rows.filter((row) => {
     if (scoped) return scopedProject !== null && row.project_record_id === scopedProject.recordId
     if (input.all) return true
@@ -276,7 +276,7 @@ export async function queryInbox(
           filed_at: q.filed_at,
         }),
       ),
-      ...workflowInboxQuestions(input),
+      ...(await workflowInboxQuestions(input)),
     ],
   }
 }
@@ -526,7 +526,7 @@ export async function runInboxCommand(
   // that project and questions owned by this session. Visibility does not make
   // a question owned by another session answerable.
   const rows = rowsForInboxView(allRows, scopedFilter, project, mine, sid)
-  const workflowRows = workflowInboxQuestions({
+  const workflowRows = await workflowInboxQuestions({
     scope: 'cli-default',
     all: has('all'),
     activeOnly,

@@ -80,6 +80,7 @@ import { resolveRunBase, shouldResolveRunBase } from './run-base-resolution.ts'
 import { prepareRunBoard as board, persistBoundPrompt } from './run-board-prompt.ts'
 import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
+import { acquireRunCloseOutLeaseHandle } from './run-close-out-lease-handle.ts'
 import * as runConfinement from './run-confinement.ts'
 import { prepareRunDispatchRulings } from './run-dispatch-rulings.ts'
 import { runEvidence } from './run-evidence-context.ts'
@@ -87,7 +88,7 @@ import { HARNESS_AGENT, intendedExecutor } from './run-executor.ts'
 import { assertConfiguredGitGuard, workerGitConfigEnvironment } from './run-git-guard.ts'
 import * as harness from './run-harness-launch.ts'
 import { decideRunLaunch, resolveRunTransport, runTransportPin } from './run-launch.ts'
-import { type acquireRunLease, withRunCloseOutLease } from './run-lease.ts'
+import type { acquireRunLease } from './run-lease.ts'
 import { runLive } from './run-live.ts'
 import * as mcpAttachment from './run-mcp-attachment.ts'
 import { finalWorkerMcpRuling } from './run-mcp-attachment-record.ts'
@@ -862,14 +863,13 @@ export async function run(opts: RunOptions): Promise<RunResult> {
   const frozenBefore = beforeFreeze.snapshots
   const watchedCheckouts = frozenBefore
   // The close-out lease covers both terminal recording and closeRun, even when either rejects.
-  return await withRunCloseOutLease(
-    claim.id,
-    (cause) => {
-      error = String((cause as Error).message ?? cause)
-      failureKind = 'harness'
-    },
+  const releaseCloseOutLease = acquireRunCloseOutLeaseHandle(claim.id, (cause) => {
+    error = String((cause as Error).message ?? cause)
+    failureKind = 'harness'
+  })
+  try {
     // biome-ignore lint/complexity/noExcessiveLinesPerFunction: one close-out lease encloses the lifecycle's terminal ownership boundary
-    async () => {
+    return await (async () => {
       try {
         runLease = requiredRecordedRunLease(db(), {
           ...owner,
@@ -1081,6 +1081,8 @@ export async function run(opts: RunOptions): Promise<RunResult> {
         error,
         run,
       })
-    },
-  )
+    })()
+  } finally {
+    releaseCloseOutLease()
+  }
 }

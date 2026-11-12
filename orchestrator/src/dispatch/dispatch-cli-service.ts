@@ -122,10 +122,10 @@ async function lookupTaskKey(project: string, key: string) {
   return lookupProjectTaskKey(registered, key)
 }
 
-function decisionConformanceRulings(
+async function decisionConformanceRulings(
   project: string,
   task: Extract<TaskTextRead, { available: true }>,
-): Pick<ReviewLensPackInputs, 'rulingsInput' | 'rulings'> {
+): Promise<Pick<ReviewLensPackInputs, 'rulingsInput' | 'rulings'>> {
   const comments = task.comments.map((comment) => `Task comment: ${comment}`)
   if (task.mirrorUnread) {
     return {
@@ -137,7 +137,7 @@ function decisionConformanceRulings(
   }
   const rulings = [
     renderTaskRulings(
-      taskRulingsForDispatch({
+      await taskRulingsForDispatch({
         resume: false,
         project,
         taskRecordId: task.recordId,
@@ -184,7 +184,7 @@ async function reviewLensInputs(
       'tracker get tool')
     : 'tracker get tool'
   const rulingPack = decisionConformance
-    ? decisionConformanceRulings(project.name, task)
+    ? await decisionConformanceRulings(project.name, task)
     : { rulingsInput: null, rulings: '' }
   const taskText = `${task.key} — ${task.title}${task.body.trim() ? `\n\n${task.body.trim()}` : ''}`
   return {

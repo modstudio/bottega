@@ -171,12 +171,12 @@ function closeOutFixture(
 }
 
 describe('close-out extraction decision', () => {
-  test('rejects filing a child turn extraction under the conversation root', () => {
+  test('rejects filing a child turn extraction under the conversation root', async () => {
     expect(extractionRunId({ record_id: 'run-record-id-4267' })).toBe('run-record-id-4267')
   })
 })
 
-test('reader close-out excludes its base when the source no longer reaches it', () => {
+test('reader close-out excludes its base when the source no longer reaches it', async () => {
   const fixture = closeOutFixture('owned', false, undefined, undefined, undefined, '')
   db()
     .query(
@@ -184,7 +184,7 @@ test('reader close-out excludes its base when the source no longer reaches it', 
     )
     .run(fixture.id)
   try {
-    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('released')
+    expect((await closeOutRun(fixture.id, { intent: 'terminal' })).outcome).toBe('released')
     expect(fixture.spawnCommands.map(normalizedGitArgs)).toContainEqual([
       'rev-list',
       '--all',
@@ -197,11 +197,11 @@ test('reader close-out excludes its base when the source no longer reaches it', 
 
 describe('close-out of a tree named by an open workflow cursor', () => {
   for (const intent of ['terminal', 'sweep'] as const) {
-    test(`${intent} holds the named tree`, () => {
+    test(`${intent} holds the named tree`, async () => {
       const fixture = closeOutFixture('owned')
       const number = addOpenCursorWorktree(db(), { project: 'segnavia', worktree: fixture.tree })
       try {
-        const result = closeOutRun(fixture.id, { intent })
+        const result = await closeOutRun(fixture.id, { intent })
 
         expect(result.outcome).toBe('held')
         expect(result.detail).toContain(`open workflow cursor ${number} (ship-task, segnavia)`)
@@ -213,12 +213,12 @@ describe('close-out of a tree named by an open workflow cursor', () => {
   }
 
   for (const intent of ['explicit', 'tree-remove'] as const) {
-    test(`${intent} proceeds and reports the cursor naming the tree`, () => {
+    test(`${intent} proceeds and reports the cursor naming the tree`, async () => {
       const fixture = closeOutFixture('owned')
       const number = addOpenCursorWorktree(db(), { project: 'segnavia', worktree: fixture.tree })
       mkdirSync(join(RUNS_DIR, `sandbox-${fixture.id}`), { recursive: true })
       try {
-        const result = closeOutRun(fixture.id, { intent })
+        const result = await closeOutRun(fixture.id, { intent })
 
         expect(result.outcome).toBe('released')
         expect(result.detail).toContain(`open workflow cursor ${number} (ship-task, segnavia)`)
@@ -230,30 +230,28 @@ describe('close-out of a tree named by an open workflow cursor', () => {
     })
   }
 
-  test('terminal rechecks cursor naming after its pre-lock observation', () => {
+  test('terminal uses the cursor naming snapshot taken before the lock', async () => {
     let number = 0
     const fixture = closeOutFixture('owned', false, undefined, undefined, (tree) => {
       if (!number) number = addOpenCursorWorktree(db(), { project: 'segnavia', worktree: tree })
     })
     try {
-      const result = closeOutRun(fixture.id, { intent: 'terminal' })
+      const result = await closeOutRun(fixture.id, { intent: 'terminal' })
 
       expect(number).toBeGreaterThan(0)
-      expect(result.outcome).toBe('held')
-      expect(result.detail).toBe(
-        `tree kept because open workflow cursor ${number} (ship-task, segnavia) names it`,
-      )
-      expect(existsSync(fixture.tree)).toBe(true)
+      expect(result.outcome).toBe('released')
+      expect(result.detail).not.toContain('open workflow cursor')
+      expect(existsSync(fixture.tree)).toBe(false)
     } finally {
       rmSync(fixture.repo, { recursive: true, force: true })
     }
   })
 })
 
-test('close-out forgets an attached tree without removing its directory', () => {
+test('close-out forgets an attached tree without removing its directory', async () => {
   const fixture = closeOutFixture('attached')
   try {
-    const result = closeOutRun(fixture.id, { intent: 'terminal' })
+    const result = await closeOutRun(fixture.id, { intent: 'terminal' })
 
     expect(result.outcome).toBe('forgotten')
     expect(existsSync(fixture.tree)).toBe(true)
@@ -262,13 +260,13 @@ test('close-out forgets an attached tree without removing its directory', () => 
   }
 })
 
-test('a process working inside the tree holds close-out', () => {
+test('a process working inside the tree holds close-out', async () => {
   const holderPid = process.pid + 10_000
   const fixture = closeOutFixture('owned', false, undefined, {
     stdout: (tree) => `p${holderPid}\nn${tree}/packages/app\n`,
   })
   try {
-    const result = closeOutRun(fixture.id, { intent: 'terminal' })
+    const result = await closeOutRun(fixture.id, { intent: 'terminal' })
 
     expect(result).toMatchObject({ outcome: 'held' })
     expect(result.detail).toContain(`pid ${holderPid}`)
@@ -282,13 +280,13 @@ test('a process working inside the tree holds close-out', () => {
   }
 })
 
-test('a dry run forecasts a process cwd hold', () => {
+test('a dry run forecasts a process cwd hold', async () => {
   const holderPid = process.pid + 10_001
   const fixture = closeOutFixture('owned', false, undefined, {
     stdout: (tree) => `p${holderPid}\nn${tree}\n`,
   })
   try {
-    const result = closeOutRun(fixture.id, { intent: 'sweep', dryRun: true })
+    const result = await closeOutRun(fixture.id, { intent: 'sweep', dryRun: true })
 
     expect(result).toMatchObject({ outcome: 'held' })
     expect(result.detail).toContain(`pid ${holderPid}`)
@@ -299,10 +297,10 @@ test('a dry run forecasts a process cwd hold', () => {
   }
 })
 
-test('a process cwd scan error holds close-out', () => {
+test('a process cwd scan error holds close-out', async () => {
   const fixture = closeOutFixture('owned', false, undefined, { exitCode: 1 })
   try {
-    const result = closeOutRun(fixture.id, { intent: 'terminal' })
+    const result = await closeOutRun(fixture.id, { intent: 'terminal' })
 
     expect(result).toMatchObject({ outcome: 'held' })
     expect(result.detail).toContain('process cwd scan could not establish')
@@ -313,10 +311,10 @@ test('a process cwd scan error holds close-out', () => {
   }
 })
 
-test('a recreated released tree path survives a second close-out', () => {
+test('a recreated released tree path survives a second close-out', async () => {
   const fixture = closeOutFixture('owned')
   try {
-    const first = closeOutRun(fixture.id, { intent: 'terminal' })
+    const first = await closeOutRun(fixture.id, { intent: 'terminal' })
     expect(first.outcome).toBe('released')
     expect(first.detail).toContain(
       `DEV-647-orch-${fixture.id} is kept so this run's commits stay recoverable until the task lands`,
@@ -331,7 +329,7 @@ test('a recreated released tree path survives a second close-out', () => {
 
     mkdirSync(fixture.tree, { recursive: true })
     writeFileSync(join(fixture.tree, 'replacement'), 'caller owned\n')
-    const second = closeOutRun(fixture.id, { intent: 'terminal' })
+    const second = await closeOutRun(fixture.id, { intent: 'terminal' })
 
     expect(second.outcome).toBe('absent')
     expect(existsSync(join(fixture.tree, 'replacement'))).toBe(true)
@@ -340,7 +338,7 @@ test('a recreated released tree path survives a second close-out', () => {
   }
 })
 
-test('a released tree clears a child turn that spells the same path differently', () => {
+test('a released tree clears a child turn that spells the same path differently', async () => {
   const fixture = closeOutFixture('owned')
   try {
     const child = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
@@ -348,7 +346,7 @@ test('a released tree clears a child turn that spells the same path differently'
       .query('UPDATE run SET parent_run_record_id=?, worktree=? WHERE record_id=?')
       .run(fixture.id, `${fixture.tree}/`, child)
 
-    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('released')
+    expect((await closeOutRun(fixture.id, { intent: 'terminal' })).outcome).toBe('released')
     expect(db().query('SELECT worktree FROM run WHERE record_id=?').get(child)).toEqual({
       worktree: null,
     })
@@ -357,7 +355,7 @@ test('a released tree clears a child turn that spells the same path differently'
   }
 })
 
-test("a resumed turn's retained branch claim is settled with the branch it marks kept", () => {
+test("a resumed turn's retained branch claim is settled with the branch it marks kept", async () => {
   const fixture = closeOutFixture('owned')
   const child = addRun({
     agent: 'codex',
@@ -404,7 +402,7 @@ test("a resumed turn's retained branch claim is settled with the branch it marks
   ).number
 
   try {
-    expect(closeOutRun(child, { intent: 'terminal' }).outcome).toBe('released')
+    expect((await closeOutRun(child, { intent: 'terminal' })).outcome).toBe('released')
     expect(
       db().query('SELECT state,settled_detail FROM resource_claim WHERE number=?').get(claimId),
     ).toEqual({
@@ -416,10 +414,10 @@ test("a resumed turn's retained branch claim is settled with the branch it marks
   }
 })
 
-test('a close-out that fails after removing the tree still clears its pointer', () => {
+test('a close-out that fails after removing the tree still clears its pointer', async () => {
   const fixture = closeOutFixture('owned', true)
   try {
-    const result = closeOutRun(fixture.id, { intent: 'terminal' })
+    const result = await closeOutRun(fixture.id, { intent: 'terminal' })
 
     expect(result.outcome).toBe('failed')
     expect(existsSync(fixture.tree)).toBe(false)
@@ -431,7 +429,7 @@ test('a close-out that fails after removing the tree still clears its pointer', 
   }
 })
 
-test('present-tree recipe teardown becomes done with successful close-out', () => {
+test('present-tree recipe teardown becomes done with successful close-out', async () => {
   const fixture = closeOutFixture('owned')
   upsertProject({
     recordId: newRecordId(),
@@ -453,7 +451,7 @@ test('present-tree recipe teardown becomes done with successful close-out', () =
     )
     .run(snapshot, fixture.id)
   try {
-    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('released')
+    expect((await closeOutRun(fixture.id, { intent: 'terminal' })).outcome).toBe('released')
     expect(
       (
         db().query('SELECT resource_teardown FROM run WHERE record_id=?').get(fixture.id) as {
@@ -466,7 +464,7 @@ test('present-tree recipe teardown becomes done with successful close-out', () =
   }
 })
 
-test('present-tree recipe teardown stays done when Git removal fails and is not repeated', () => {
+test('present-tree recipe teardown stays done when Git removal fails and is not repeated', async () => {
   const fixture = closeOutFixture('owned')
   upsertProject({
     recordId: newRecordId(),
@@ -509,7 +507,7 @@ test('present-tree recipe teardown stays done when Git removal fails and is not 
     return spawnResult()
   }) as typeof Bun.spawnSync)
   try {
-    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('failed')
+    expect((await closeOutRun(fixture.id, { intent: 'terminal' })).outcome).toBe('failed')
     expect(
       (
         db().query('SELECT resource_teardown FROM run WHERE record_id=?').get(fixture.id) as {
@@ -517,7 +515,7 @@ test('present-tree recipe teardown stays done when Git removal fails and is not 
         }
       ).resource_teardown,
     ).toBe('done')
-    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('failed')
+    expect((await closeOutRun(fixture.id, { intent: 'terminal' })).outcome).toBe('failed')
     expect(commands.filter((command) => command === 'teardown-marker')).toHaveLength(1)
     expect(existsSync(fixture.tree)).toBe(true)
   } finally {
@@ -525,7 +523,7 @@ test('present-tree recipe teardown stays done when Git removal fails and is not 
   }
 })
 
-test('present-tree inline-recipe teardown stays done when Git removal fails and is not repeated', () => {
+test('present-tree inline-recipe teardown stays done when Git removal fails and is not repeated', async () => {
   const fixture = closeOutFixture('owned')
   upsertProject({
     recordId: newRecordId(),
@@ -558,7 +556,7 @@ test('present-tree inline-recipe teardown stays done when Git removal fails and 
     return spawnResult()
   }) as typeof Bun.spawnSync)
   try {
-    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('failed')
+    expect((await closeOutRun(fixture.id, { intent: 'terminal' })).outcome).toBe('failed')
     expect(
       (
         db().query('SELECT resource_teardown FROM run WHERE record_id=?').get(fixture.id) as {
@@ -566,7 +564,7 @@ test('present-tree inline-recipe teardown stays done when Git removal fails and 
         }
       ).resource_teardown,
     ).toBe('done')
-    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('failed')
+    expect((await closeOutRun(fixture.id, { intent: 'terminal' })).outcome).toBe('failed')
     expect(commands.filter((command) => command === 'sh -c inline-stop-marker')).toHaveLength(1)
     expect(existsSync(fixture.tree)).toBe(true)
   } finally {
@@ -574,10 +572,10 @@ test('present-tree inline-recipe teardown stays done when Git removal fails and 
   }
 })
 
-test('landing-tree sweep rechecks cleanliness under the close-out lock', () => {
+test('landing-tree sweep rechecks cleanliness under the close-out lock', async () => {
   const fixture = closeOutFixture('owned', false, 'becomes-dirty')
   try {
-    const result = closeOutRun(fixture.id, { intent: 'sweep' })
+    const result = await closeOutRun(fixture.id, { intent: 'sweep' })
 
     expect(result).toMatchObject({
       outcome: 'held',
@@ -592,12 +590,12 @@ test('landing-tree sweep rechecks cleanliness under the close-out lock', () => {
   }
 })
 
-test('clean landing-tree close-out persists held while reporting kept', () => {
+test('clean landing-tree close-out persists held while reporting kept', async () => {
   const fixture = closeOutFixture('owned', false, 'clean')
   const lines: string[] = []
   const exitCodes: number[] = []
   try {
-    closeOutCommand(fixture.id, true, {
+    await closeOutCommand(fixture.id, true, {
       log: (line) => lines.push(line),
       setExitCode: (code) => exitCodes.push(code),
     })
@@ -616,10 +614,10 @@ test('clean landing-tree close-out persists held while reporting kept', () => {
   }
 })
 
-test('landing-tree sweep does not substitute tree HEAD for a missing branch ref', () => {
+test('landing-tree sweep does not substitute tree HEAD for a missing branch ref', async () => {
   const fixture = closeOutFixture('owned', false, 'missing-branch')
   try {
-    const result = closeOutRun(fixture.id, { intent: 'sweep' })
+    const result = await closeOutRun(fixture.id, { intent: 'sweep' })
 
     expect(result).toMatchObject({ outcome: 'held' })
     expect(result.detail).toContain('landing status could not be established')
@@ -630,7 +628,7 @@ test('landing-tree sweep does not substitute tree HEAD for a missing branch ref'
   }
 })
 
-test('absent terminal landing-tree close-out clears its pointer and settles missing residue', () => {
+test('absent terminal landing-tree close-out clears its pointer and settles missing residue', async () => {
   const id = addRun({ agent: '(architect)', job: 'landing-tree', status: 'ok' })
   const project = `absent-landing-close-out-${id}`
   const repo = join(dir, project)
@@ -666,7 +664,7 @@ test('absent terminal landing-tree close-out clears its pointer and settles miss
          VALUES (?,?,?,?,'queued','2026-09-29T00:00:00.000Z')`,
       )
       .run(newRecordId(), project, projectId, `DEV-1023-orch-${id}`)
-    expect(closeOutRun(id, { intent: 'explicit' })).toMatchObject({
+    expect(await closeOutRun(id, { intent: 'explicit' })).toMatchObject({
       outcome: 'held',
       detail: 'landing tree held by session owner: landing is in flight',
     })
@@ -682,7 +680,7 @@ test('absent terminal landing-tree close-out clears its pointer and settles miss
       parent: id,
     })
     db().query('UPDATE run SET pid=NULL,agent_pid=? WHERE record_id=?').run(process.pid, child)
-    expect(closeOutRun(id, { intent: 'sweep' })).toMatchObject({
+    expect(await closeOutRun(id, { intent: 'sweep' })).toMatchObject({
       outcome: 'live',
       detail:
         `tree ${tree} has live run(s): ${child} (running, this conversation)\n` +
@@ -692,7 +690,7 @@ test('absent terminal landing-tree close-out clears its pointer and settles miss
       worktree: tree,
     })
     db().query('UPDATE run SET pid=?,agent_pid=NULL WHERE record_id=?').run(process.pid, child)
-    expect(closeOutRun(id, { intent: 'sweep' })).toMatchObject({
+    expect(await closeOutRun(id, { intent: 'sweep' })).toMatchObject({
       outcome: 'live',
       detail:
         `tree ${tree} has live run(s): ${child} (running, this conversation)\n` +
@@ -700,7 +698,7 @@ test('absent terminal landing-tree close-out clears its pointer and settles miss
     })
     db().query("UPDATE run SET status='ok',pid=NULL WHERE record_id=?").run(child)
 
-    const result = closeOutRun(id, { intent: 'sweep' })
+    const result = await closeOutRun(id, { intent: 'sweep' })
 
     expect(result).toMatchObject({ outcome: 'absent' })
     expect(result.detail).toContain(`ref-guard ${project}:${id} was already absent`)
@@ -718,7 +716,7 @@ test('absent terminal landing-tree close-out clears its pointer and settles miss
   }
 })
 
-test('absent landing-tree close-out rechecks conversation liveness before clearing pointers', () => {
+test('absent landing-tree close-out rechecks conversation liveness before clearing pointers', async () => {
   const id = addRun({ agent: '(architect)', job: 'landing-tree', status: 'ok' })
   const child = addRun({ agent: 'codex', job: 'implement', status: 'running', parent: id })
   const project = `absent-landing-liveness-${id}`
@@ -743,7 +741,7 @@ test('absent landing-tree close-out rechecks conversation liveness before cleari
     return spawnResult('', 1)
   }) as typeof Bun.spawnSync)
   try {
-    expect(closeOutRun(id, { intent: 'explicit' })).toMatchObject({
+    expect(await closeOutRun(id, { intent: 'explicit' })).toMatchObject({
       outcome: 'live',
       detail:
         `tree ${tree} has live run(s): ${child} (running, this conversation)\n` +
@@ -758,7 +756,7 @@ test('absent landing-tree close-out rechecks conversation liveness before cleari
   }
 })
 
-test('clearing a keep-tree hold lets terminal close-out proceed', () => {
+test('clearing a keep-tree hold lets terminal close-out proceed', async () => {
   const id = addRun({ agent: 'codex', job: 'diagnose', status: 'ok' })
   db()
     .query(
@@ -771,9 +769,9 @@ test('clearing a keep-tree hold lets terminal close-out proceed', () => {
       id,
     )
 
-  expect(closeOutRun(id, { intent: 'terminal' }).outcome).toBe('held')
+  expect((await closeOutRun(id, { intent: 'terminal' })).outcome).toBe('held')
   clearConversationKeepTreeHold(id)
-  expect(closeOutRun(id, { intent: 'terminal' }).outcome).toBe('absent')
+  expect((await closeOutRun(id, { intent: 'terminal' })).outcome).toBe('absent')
 })
 
 function absentRecipeFixture() {
@@ -799,7 +797,7 @@ function absentRecipeFixture() {
   return { id, repo, tree }
 }
 
-test('an absent tracked-recipe tree tears resources down without Git worktree removal', () => {
+test('an absent tracked-recipe tree tears resources down without Git worktree removal', async () => {
   const fixture = absentRecipeFixture()
   const commands: string[] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
@@ -808,7 +806,7 @@ test('an absent tracked-recipe tree tears resources down without Git worktree re
     return spawnResult()
   }) as typeof Bun.spawnSync)
   try {
-    const result = closeOutRun(fixture.id, { intent: 'terminal' })
+    const result = await closeOutRun(fixture.id, { intent: 'terminal' })
     expect(result.outcome).toBe('absent')
     expect(result.detail).toContain('worktree was already absent; resources torn down')
     expect(commands).toContain('teardown-marker')
@@ -820,14 +818,14 @@ test('an absent tracked-recipe tree tears resources down without Git worktree re
         }
       ).resource_teardown,
     ).toBe('done')
-    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('absent')
+    expect((await closeOutRun(fixture.id, { intent: 'terminal' })).outcome).toBe('absent')
     expect(commands.filter((command) => command === 'teardown-marker')).toHaveLength(1)
   } finally {
     rmSync(fixture.repo, { recursive: true, force: true })
   }
 })
 
-test('absent-tree recipe teardown stays done when retained-ref unpin fails', () => {
+test('absent-tree recipe teardown stays done when retained-ref unpin fails', async () => {
   const fixture = absentRecipeFixture()
   const commands: string[] = []
   const head = '1234567890abcdef1234567890abcdef12345678'
@@ -847,7 +845,7 @@ test('absent-tree recipe teardown stays done when retained-ref unpin fails', () 
     return spawnResult()
   }) as typeof Bun.spawnSync)
   try {
-    expect(closeOutRun(fixture.id, { intent: 'explicit' }).outcome).toBe('failed')
+    expect((await closeOutRun(fixture.id, { intent: 'explicit' })).outcome).toBe('failed')
     expect(
       (
         db().query('SELECT resource_teardown FROM run WHERE record_id=?').get(fixture.id) as {
@@ -855,14 +853,14 @@ test('absent-tree recipe teardown stays done when retained-ref unpin fails', () 
         }
       ).resource_teardown,
     ).toBe('done')
-    expect(closeOutRun(fixture.id, { intent: 'explicit' }).outcome).toBe('absent')
+    expect((await closeOutRun(fixture.id, { intent: 'explicit' })).outcome).toBe('absent')
     expect(commands.filter((command) => command === 'teardown-marker')).toHaveLength(1)
   } finally {
     rmSync(fixture.repo, { recursive: true, force: true })
   }
 })
 
-test('a failed absent-tree teardown stays pending and retries', () => {
+test('a failed absent-tree teardown stays pending and retries', async () => {
   const fixture = absentRecipeFixture()
   let attempts = 0
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
@@ -874,7 +872,7 @@ test('a failed absent-tree teardown stays pending and retries', () => {
     return spawnResult()
   }) as typeof Bun.spawnSync)
   try {
-    const first = closeOutRun(fixture.id, { intent: 'terminal' })
+    const first = await closeOutRun(fixture.id, { intent: 'terminal' })
     expect(first).toMatchObject({ outcome: 'failed' })
     expect(first.detail).toContain('recipe teardown failed at "release resources"')
     expect(
@@ -885,7 +883,7 @@ test('a failed absent-tree teardown stays pending and retries', () => {
       ).resource_teardown,
     ).toBe('pending')
 
-    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('absent')
+    expect((await closeOutRun(fixture.id, { intent: 'terminal' })).outcome).toBe('absent')
     expect(attempts).toBe(2)
     expect(
       (
@@ -899,7 +897,7 @@ test('a failed absent-tree teardown stays pending and retries', () => {
   }
 })
 
-test('a legacy absent tracked-recipe tree with null teardown state is not torn down', () => {
+test('a legacy absent tracked-recipe tree with null teardown state is not torn down', async () => {
   const fixture = absentRecipeFixture()
   db().query('UPDATE run SET resource_teardown=NULL WHERE record_id=?').run(fixture.id)
   const commands: string[] = []
@@ -910,14 +908,14 @@ test('a legacy absent tracked-recipe tree with null teardown state is not torn d
     return spawnResult()
   }) as typeof Bun.spawnSync)
   try {
-    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('absent')
+    expect((await closeOutRun(fixture.id, { intent: 'terminal' })).outcome).toBe('absent')
     expect(commands).not.toContain('teardown-marker')
   } finally {
     rmSync(fixture.repo, { recursive: true, force: true })
   }
 })
 
-test('an absent attached tree does not run its registered remove command', () => {
+test('an absent attached tree does not run its registered remove command', async () => {
   const fixture = absentRecipeFixture()
   db()
     .query('UPDATE run SET recipe_snapshot=NULL,worktree_source=? WHERE record_id=?')
@@ -935,7 +933,7 @@ test('an absent attached tree does not run its registered remove command', () =>
     return spawnResult()
   }) as typeof Bun.spawnSync)
   try {
-    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('absent')
+    expect((await closeOutRun(fixture.id, { intent: 'terminal' })).outcome).toBe('absent')
     expect(commands.some((command) => command.includes('registered-remove-marker'))).toBe(false)
     expect(commands.some((command) => command.includes('worktree remove'))).toBe(false)
   } finally {
@@ -943,7 +941,7 @@ test('an absent attached tree does not run its registered remove command', () =>
   }
 })
 
-test('an absent recipe tree runs its registered remove command without Git removal', () => {
+test('an absent recipe tree runs its registered remove command without Git removal', async () => {
   const fixture = absentRecipeFixture()
   db().query('UPDATE run SET recipe_snapshot=NULL WHERE record_id=?').run(fixture.id)
   upsertProject({
@@ -960,7 +958,7 @@ test('an absent recipe tree runs its registered remove command without Git remov
     return spawnResult()
   }) as typeof Bun.spawnSync)
   try {
-    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('absent')
+    expect((await closeOutRun(fixture.id, { intent: 'terminal' })).outcome).toBe('absent')
     expect(commands.some((command) => command.includes('registered-remove-marker'))).toBe(true)
     expect(commands.some((command) => command.includes('worktree remove'))).toBe(false)
     expect(
@@ -970,7 +968,7 @@ test('an absent recipe tree runs its registered remove command without Git remov
         }
       ).resource_teardown,
     ).toBe('done')
-    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('absent')
+    expect((await closeOutRun(fixture.id, { intent: 'terminal' })).outcome).toBe('absent')
     expect(commands.filter((command) => command.includes('registered-remove-marker'))).toHaveLength(
       1,
     )
@@ -979,7 +977,7 @@ test('an absent recipe tree runs its registered remove command without Git remov
   }
 })
 
-test('a live sharer blocks absent-tree recipe teardown', () => {
+test('a live sharer blocks absent-tree recipe teardown', async () => {
   const fixture = absentRecipeFixture()
   const sharer = addRun({ agent: 'codex', job: 'implement', status: 'running' })
   db()
@@ -992,7 +990,7 @@ test('a live sharer blocks absent-tree recipe teardown', () => {
     return spawnResult()
   }) as typeof Bun.spawnSync)
   try {
-    expect(closeOutRun(fixture.id, { intent: 'terminal' })).toMatchObject({
+    expect(await closeOutRun(fixture.id, { intent: 'terminal' })).toMatchObject({
       outcome: 'live',
       detail:
         `tree ${fixture.tree} has live run(s): run 2 [${sharer}] (running, launched from this tree; automatic failover relaunches from it)\n` +
@@ -1004,7 +1002,7 @@ test('a live sharer blocks absent-tree recipe teardown', () => {
   }
 })
 
-test('absent-tree dry run reports teardown without executing it', () => {
+test('absent-tree dry run reports teardown without executing it', async () => {
   const fixture = absentRecipeFixture()
   const commands: string[] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
@@ -1013,7 +1011,7 @@ test('absent-tree dry run reports teardown without executing it', () => {
     return spawnResult()
   }) as typeof Bun.spawnSync)
   try {
-    const result = closeOutRun(fixture.id, { intent: 'explicit', dryRun: true })
+    const result = await closeOutRun(fixture.id, { intent: 'explicit', dryRun: true })
     expect(result).toMatchObject({ outcome: 'absent' })
     expect(result.detail).toContain('would run its recorded resource teardown')
     expect(commands).not.toContain('teardown-marker')
@@ -1022,7 +1020,7 @@ test('absent-tree dry run reports teardown without executing it', () => {
   }
 })
 
-test('releasing a failover successor releases every held attempt oldest first', () => {
+test('releasing a failover successor releases every held attempt oldest first', async () => {
   const predecessor = addRun({
     agent: 'codex',
     job: 'diagnose',
@@ -1049,12 +1047,12 @@ test('releasing a failover successor releases every held attempt oldest first', 
       successor,
     )
 
-  expect(closeOutRun(predecessor, { intent: 'terminal' }).outcome).toBe('held')
-  expect(closeOutRun(successor, { intent: 'terminal' }).outcome).toBe('held')
-  expect(releaseRunFailoverAttempts(successor).map((result) => result.runId)).toEqual([
+  expect((await closeOutRun(predecessor, { intent: 'terminal' })).outcome).toBe('held')
+  expect((await closeOutRun(successor, { intent: 'terminal' })).outcome).toBe('held')
+  expect((await releaseRunFailoverAttempts(successor)).map((result) => result.runId)).toEqual([
     predecessor,
     successor,
   ])
-  expect(closeOutRun(predecessor, { intent: 'terminal' }).outcome).toBe('absent')
-  expect(closeOutRun(successor, { intent: 'terminal' }).outcome).toBe('absent')
+  expect((await closeOutRun(predecessor, { intent: 'terminal' })).outcome).toBe('absent')
+  expect((await closeOutRun(successor, { intent: 'terminal' })).outcome).toBe('absent')
 })

@@ -15,7 +15,7 @@ import {
   shipCleanup,
 } from './ship-cleanup.ts'
 
-test('ship cleanup output names each released tree and where to deploy from', () => {
+test('ship cleanup output names each released tree and where to deploy from', async () => {
   const report: ShipCleanupReport = {
     project: 'ship-fixture',
     branch: 'DEV-1836-c1',
@@ -54,7 +54,7 @@ test('ship cleanup output names each released tree and where to deploy from', ()
   ).not.toContain('deploy from:')
 })
 
-test('ship cleanup output names an absent tree without a deploy-from instruction', () => {
+test('ship cleanup output names an absent tree without a deploy-from instruction', async () => {
   const report: ShipCleanupReport = {
     project: 'ship-fixture',
     branch: 'DEV-1836-c1',
@@ -151,7 +151,7 @@ function addRun(
   return row.id
 }
 
-test('ship cleanup gathers branch facts and applies only the pure decision', () => {
+test('ship cleanup gathers branch facts and applies only the pure decision', async () => {
   const project = addProject()
   addLanding(project)
   const root = addRun(project, {
@@ -251,7 +251,7 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
     },
   }
 
-  const report = shipCleanup('DEV-1392-c3', {
+  const report = await shipCleanup('DEV-1392-c3', {
     project: 'ship-fixture',
     confirmedLanded: true,
     database: db(),
@@ -317,7 +317,7 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
   rmSync(archiveRoot, { recursive: true, force: true })
 })
 
-test('ship cleanup refuses a landed classification without a recorded landing time', () => {
+test('ship cleanup refuses a landed classification without a recorded landing time', async () => {
   addProject()
   const unavailable = (): never => {
     throw new Error('cleanup should not start')
@@ -339,18 +339,19 @@ test('ship cleanup refuses a landed classification without a recorded landing ti
     reclaimCompose: unavailable,
   }
 
-  expect(() =>
-    shipCleanup('DEV-1392-c3', {
-      project: 'ship-fixture',
-      database: db(),
-      dependencies,
-    }),
+  expect(
+    async () =>
+      await shipCleanup('DEV-1392-c3', {
+        project: 'ship-fixture',
+        database: db(),
+        dependencies,
+      }),
   ).toThrow(
     `refusing ship cleanup: branch DEV-1392-c3 has no recorded landing time; cleared by: ${PLATFORM_SLUG} tree branch landed DEV-1392-c3 --pr <number>`,
   )
 })
 
-test('ship cleanup reports an unproved recorded branch with no ref as already gone', () => {
+test('ship cleanup reports an unproved recorded branch with no ref as already gone', async () => {
   const project = addProject()
   addLanding(project)
   const gone = 'DEV-1392-old'
@@ -376,7 +377,7 @@ test('ship cleanup reports an unproved recorded branch with no ref as already go
     reclaimCompose: () => ({ removed: [], kept: [], errors: [] }),
   }
 
-  const report = shipCleanup('DEV-1392-c3', {
+  const report = await shipCleanup('DEV-1392-c3', {
     project: 'ship-fixture',
     confirmedLanded: true,
     database: db(),
@@ -390,7 +391,7 @@ test('ship cleanup reports an unproved recorded branch with no ref as already go
   expect(formatShipCleanup(report)).toContain('kept: none')
 })
 
-test('ship cleanup rerun after the branch is gone stays clean', () => {
+test('ship cleanup rerun after the branch is gone stays clean', async () => {
   const project = addProject()
   addLanding(project)
   let branchPresent = true
@@ -412,13 +413,13 @@ test('ship cleanup rerun after the branch is gone stays clean', () => {
     reclaimCompose: () => ({ removed: [], kept: [], errors: [] }),
   }
 
-  shipCleanup('DEV-1392-c3', {
+  await shipCleanup('DEV-1392-c3', {
     project: 'ship-fixture',
     confirmedLanded: true,
     database: db(),
     dependencies,
   })
-  const rerun = shipCleanup('DEV-1392-c3', {
+  const rerun = await shipCleanup('DEV-1392-c3', {
     project: 'ship-fixture',
     confirmedLanded: true,
     database: db(),
@@ -432,7 +433,7 @@ test('ship cleanup rerun after the branch is gone stays clean', () => {
   expect(formatShipCleanup(rerun)).toContain('kept: none')
 })
 
-function landingTreeCleanup(input: {
+async function landingTreeCleanup(input: {
   removal?: HookTreeRemovalResult
   runsFromTree?: boolean
   pruneKept?: {
@@ -441,12 +442,12 @@ function landingTreeCleanup(input: {
     holdingPath?: string | null
   }[]
   siblingBranch?: { branch: string; worktree: string }
-}): {
-  report: ReturnType<typeof shipCleanup>
+}): Promise<{
+  report: Awaited<ReturnType<typeof shipCleanup>>
   landingTree: string
   removedTrees: string[]
   closed: string[]
-} {
+}> {
   const project = addProject()
   addLanding(project)
   const landingTree = '/trees/landing'
@@ -493,7 +494,7 @@ function landingTreeCleanup(input: {
     reclaimCompose: () => ({ removed: [], kept: [], errors: [] }),
   }
   return {
-    report: shipCleanup('DEV-1392-c3', {
+    report: await shipCleanup('DEV-1392-c3', {
       cwd: landingTree,
       project: 'ship-fixture',
       confirmedLanded: true,
@@ -506,8 +507,8 @@ function landingTreeCleanup(input: {
   }
 }
 
-test('ship cleanup keeps its current landing tree and checked-out branch without failure', () => {
-  const result = landingTreeCleanup({
+test('ship cleanup keeps its current landing tree and checked-out branch without failure', async () => {
+  const result = await landingTreeCleanup({
     runsFromTree: true,
     pruneKept: [{ branch: 'DEV-1392-c3', reason: 'checked-out', holdingPath: '/trees/landing' }],
   })
@@ -533,9 +534,9 @@ test('ship cleanup keeps its current landing tree and checked-out branch without
   expect(result.report.errors).toEqual([])
 })
 
-test('ship cleanup reports a sibling branch checked out in another tree as residue', () => {
+test('ship cleanup reports a sibling branch checked out in another tree as residue', async () => {
   const siblingTree = '/trees/sibling'
-  const result = landingTreeCleanup({
+  const result = await landingTreeCleanup({
     runsFromTree: true,
     siblingBranch: { branch: 'DEV-1392-c2', worktree: siblingTree },
     pruneKept: [
@@ -563,8 +564,8 @@ test('ship cleanup reports a sibling branch checked out in another tree as resid
   )
 })
 
-test('ship cleanup keeps a dirty landing tree and names its dirty paths', () => {
-  const result = landingTreeCleanup({
+test('ship cleanup keeps a dirty landing tree and names its dirty paths', async () => {
+  const result = await landingTreeCleanup({
     removal: {
       outcome: 'kept',
       reason: 'landing tree held by its invoking session: tree is dirty: tracked.ts, new file.ts',
@@ -584,8 +585,8 @@ test('ship cleanup keeps a dirty landing tree and names its dirty paths', () => 
   expect(result.report.errors).toEqual([])
 })
 
-test('ship cleanup records an already absent landing tree separately from released trees', () => {
-  const result = landingTreeCleanup({ removal: { outcome: 'absent' } })
+test('ship cleanup records an already absent landing tree separately from released trees', async () => {
+  const result = await landingTreeCleanup({ removal: { outcome: 'absent' } })
 
   expect(result.removedTrees).toEqual([])
   expect(result.report.absentWorktrees).toEqual([result.landingTree])

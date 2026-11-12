@@ -10,8 +10,8 @@ import {
 } from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
-import { refuseTaskFlowStageConflict, vacateRetiredWorkflowKeySlot } from './task-flow.ts'
-import { taskFlowStore } from './task-flow-store.ts'
+import { refuseTaskFlowStageConflictLocal, vacateRetiredWorkflowKeySlot } from './task-flow.ts'
+import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 
 type AdoptionCursor = {
   id: number
@@ -66,7 +66,7 @@ export async function adoptWorkflowTask(
       )
     return
   }
-  const conflict = conflictingAdoptionCursor(row, key, d)
+  const conflict = await conflictingAdoptionCursor(row, key, d)
   if (conflict)
     throw new Error(
       `cursor ${row.id} cannot adopt ${key}; open cursor ${conflict.id} already holds it`,
@@ -97,7 +97,7 @@ export async function adoptWorkflowTask(
     }
     const updated = await writeHostedTaskFlow('stage-update', updatePayload, target, client)
     writeTransaction(() => {
-      refuseTaskFlowStageConflict(
+      refuseTaskFlowStageConflictLocal(
         {
           taskRecordId: adoptedTaskId,
           taskKey: key,
@@ -107,8 +107,8 @@ export async function adoptWorkflowTask(
         },
         d,
       )
-      taskFlowStore(d).write('adopt', adoptPayload, adopted)
-      stageRevision = taskFlowStore(d).write('stage-update', updatePayload, updated).revisions[
+      taskFlowLocalStore(d).write('adopt', adoptPayload, adopted)
+      stageRevision = taskFlowLocalStore(d).write('stage-update', updatePayload, updated).revisions[
         row.record_id
       ]!
       assignWorkflowTaskKey(row, key, adoptedTaskId, d)
@@ -131,17 +131,17 @@ export async function adoptWorkflowTask(
     ],
   }
   writeTransaction(() => {
-    taskFlowStore(d).write('stage-update', payload)
+    taskFlowLocalStore(d).write('stage-update', payload)
     assignWorkflowTaskKey(row, key, null, d)
   }, d)
 }
 
-function conflictingAdoptionCursor(
+async function conflictingAdoptionCursor(
   row: AdoptionCursor,
   key: string,
   database: Database,
-): { id: number } | null {
-  return taskFlowStore(database).stageHoldingTaskKey({
+): Promise<{ id: number } | null> {
+  return taskFlowReadStore(database).stageHoldingTaskKey({
     project: row.project,
     workflow: row.workflow_slug,
     mode: row.mode_slug,

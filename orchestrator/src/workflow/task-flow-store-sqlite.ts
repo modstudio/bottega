@@ -1,5 +1,5 @@
 // concern: SQLite task flow persistence
-/** Carries the local task-flow SQL behind TaskFlowStore. */
+/** Carries the local task-flow SQL behind the task-flow store ports. */
 
 import type { Database } from 'bun:sqlite'
 import { writeTransaction } from '../database/db.ts'
@@ -9,6 +9,11 @@ import type {
   TaskFlowIntentResult,
 } from '../record/record-task-flow-write-contract.ts'
 import { questionOpenSql } from '../run/question-open.ts'
+import type {
+  TaskFlowLocalOnlyReadMethod,
+  TaskFlowLocalReadMethod,
+  TaskFlowWriteMethod,
+} from './task-flow-store-methods.ts'
 import * as questions from './task-flow-store-sqlite-questions.ts'
 import { writeSqliteTaskFlow } from './task-flow-store-sqlite-write.ts'
 import type {
@@ -48,9 +53,18 @@ const WORKFLOW_OBLIGATION_FLOOR_COLUMNS = `record_id AS id, floor, require_pull_
 
 class SqliteTaskFlowStore {
   private readonly database: Database
+  private readonly guardLocalReads: boolean
 
-  constructor(database: Database) {
+  constructor(database: Database, guardLocalReads = false) {
     this.database = database
+    this.guardLocalReads = guardLocalReads
+  }
+
+  private assertLocalRead(method: TaskFlowLocalReadMethod): void {
+    if (this.guardLocalReads && !this.database.inTransaction)
+      throw new Error(
+        `${method} requires a transaction; use taskFlowReadStore outside a transaction`,
+      )
   }
 
   write<K extends TaskFlowIntent>(
@@ -58,7 +72,7 @@ class SqliteTaskFlowStore {
     payload: TaskFlowIntentInput<K>,
     applied?: TaskFlowIntentResult<K> | null,
   ): TaskFlowIntentResult<K> {
-    return writeTransaction(() => {
+    return writeTransaction<TaskFlowIntentResult<K>>(() => {
       if (intent === 'compose') {
         const stage = (payload as TaskFlowIntentInput<'compose'>).stageInsert
         if (stage?.workflowKey && stage.instanceId === '')
@@ -108,6 +122,7 @@ class SqliteTaskFlowStore {
     key: string
     recordId: string
   }): { number: number; record_id: string } | null {
+    this.assertLocalRead('conflictingHostedStage')
     return this.database
       .query<{ number: number; record_id: string }, [string, string, string, string, string]>(
         `SELECT number,record_id FROM workflow_cursor
@@ -167,6 +182,7 @@ class SqliteTaskFlowStore {
   }
 
   openStageForTask(taskRecordId: string): TaskFlowStageCursorRow | null {
+    this.assertLocalRead('openStageForTask')
     return this.database
       .query<TaskFlowStageCursorRow, [string]>(
         `SELECT ${STAGE_COLUMNS}
@@ -177,6 +193,7 @@ class SqliteTaskFlowStore {
   }
 
   flowRecordIdForTask(taskRecordId: string): string | null {
+    this.assertLocalRead('flowRecordIdForTask')
     return (
       this.database
         .query<{ record_id: string }, [string]>(
@@ -232,6 +249,7 @@ class SqliteTaskFlowStore {
   }
 
   flowProjectionForTask(taskRecordId: string): TaskFlowProjectionRow | null {
+    this.assertLocalRead('flowProjectionForTask')
     return this.database
       .query<TaskFlowProjectionRow, [string]>(
         'SELECT record_id,open_stage_cursor_record_id FROM task_flow WHERE task_record_id=?',
@@ -248,6 +266,7 @@ class SqliteTaskFlowStore {
   }
 
   stageByRecordId(recordId: string): TaskFlowStageCursorRow | null {
+    this.assertLocalRead('stageByRecordId')
     return this.database
       .query<TaskFlowStageCursorRow, [string]>(
         `SELECT ${LISTED_STAGE_COLUMNS} FROM workflow_cursor cursor WHERE cursor.record_id=?`,
@@ -392,6 +411,7 @@ class SqliteTaskFlowStore {
   }
 
   stageRevision(recordId: string): number | null {
+    this.assertLocalRead('stageRevision')
     return (
       this.database
         .query<{ revision: number }, [string]>(
@@ -605,6 +625,7 @@ class SqliteTaskFlowStore {
   }
 
   waitingWorkflowQuestions(): TaskFlowWaitingQuestionRow[] {
+    this.assertLocalRead('waitingWorkflowQuestions')
     return questions.waitingWorkflowQuestions(this.database)
   }
 
@@ -642,6 +663,7 @@ class SqliteTaskFlowStore {
   }
 
   questionOutboxRow(questionId: string): TaskFlowQuestionOutboxRow | null {
+    this.assertLocalRead('questionOutboxRow')
     return questions.questionOutboxRow(this.database, questionId)
   }
 
@@ -654,6 +676,7 @@ class SqliteTaskFlowStore {
   }
 
   unlinkedWorkflowQuestionIds(project: string, workflowKey: string): string[] {
+    this.assertLocalRead('unlinkedWorkflowQuestionIds')
     return questions.unlinkedWorkflowQuestionIds(this.database, project, workflowKey)
   }
 
@@ -713,6 +736,76 @@ class SqliteTaskFlowStore {
   }
 }
 
-export function sqliteTaskFlowStore(database: Database): SqliteTaskFlowStore {
-  return new SqliteTaskFlowStore(database)
+export function sqliteTaskFlowLocalStore(database: Database): SqliteTaskFlowStore {
+  return new SqliteTaskFlowStore(database, true)
+}
+
+type SqliteTaskFlowReadMethod = Exclude<
+  keyof SqliteTaskFlowStore,
+  TaskFlowWriteMethod | TaskFlowLocalOnlyReadMethod
+>
+type SqliteTaskFlowReadStore = {
+  [K in SqliteTaskFlowReadMethod]: SqliteTaskFlowStore[K] extends (...args: infer A) => infer R
+    ? (...args: A) => Promise<R>
+    : never
+}
+
+/** Delegates async reads to the single synchronous SQLite implementation. */
+export function sqliteTaskFlowReadStore(database: Database): SqliteTaskFlowReadStore {
+  const local = new SqliteTaskFlowStore(database)
+  return {
+    openStageForTask: async (taskRecordId) => local.openStageForTask(taskRecordId),
+    flowProjectionForTask: async (taskRecordId) => local.flowProjectionForTask(taskRecordId),
+    stageByRecordId: async (recordId) => local.stageByRecordId(recordId),
+    latestStageForTask: async (input) => local.latestStageForTask(input),
+    openKeylessStages: async (input) => local.openKeylessStages(input),
+    activeStageModes: async (input) => local.activeStageModes(input),
+    listOpenStages: async (input) => local.listOpenStages(input),
+    openStageWorktrees: async () => local.openStageWorktrees(),
+    activeStageAutonomy: async (project, taskRecordId) =>
+      local.activeStageAutonomy(project, taskRecordId),
+    stageIdentityMap: async () => local.stageIdentityMap(),
+    stageByHandle: async (cursor) => local.stageByHandle(cursor),
+    stageHoldingTaskKey: async (input) => local.stageHoldingTaskKey(input),
+    waitingWorkflowQuestions: async () => local.waitingWorkflowQuestions(),
+    flowState: async (recordId) => local.flowState(recordId),
+    textsForStage: async (stageRecordId) => local.textsForStage(stageRecordId),
+    textByRecordId: async (recordId) => local.textByRecordId(recordId),
+    textAttachmentByRecordId: async (recordId) => local.textAttachmentByRecordId(recordId),
+    textRecordIdsForStage: async (stageRecordId) => local.textRecordIdsForStage(stageRecordId),
+    copiedTextRecordIdsForStage: async (stageRecordId) =>
+      local.copiedTextRecordIdsForStage(stageRecordId),
+    stageProject: async (recordId) => local.stageProject(recordId),
+    uncopiedTextsForStage: async (stageRecordId) => local.uncopiedTextsForStage(stageRecordId),
+    liveTextAttachment: async (recordId) => local.liveTextAttachment(recordId),
+    copiedTextReference: async (recordId) => local.copiedTextReference(recordId),
+    openObligationRecordIds: async (stageRecordId) => local.openObligationRecordIds(stageRecordId),
+    openObligations: async (stageRecordId) => local.openObligations(stageRecordId),
+    obligationByRecordId: async (recordId) => local.obligationByRecordId(recordId),
+    nextKeylessInstanceSlot: async (input) => local.nextKeylessInstanceSlot(input),
+    flowForTask: async (taskRecordId) => local.flowForTask(taskRecordId),
+    hasStage: async (recordId) => local.hasStage(recordId),
+    stagesNeedingTaskLink: async (project, workflowKey) =>
+      local.stagesNeedingTaskLink(project, workflowKey),
+    unlinkedLabelHolder: async (input) => local.unlinkedLabelHolder(input),
+    closeOutShipTaskStage: async (sessionId, project, branch) =>
+      local.closeOutShipTaskStage(sessionId, project, branch),
+    cursorWorkForSession: async (sessionId) => local.cursorWorkForSession(sessionId),
+    cursorLifecycleForSession: async (sessionId) => local.cursorLifecycleForSession(sessionId),
+    openStagesForSession: async (sessionId) => local.openStagesForSession(sessionId),
+    openWorkflowQuestionCountForSession: async (sessionId) =>
+      local.openWorkflowQuestionCountForSession(sessionId),
+    workflowInboxQuestions: async () => local.workflowInboxQuestions(),
+    rulingRows: async (input) => local.rulingRows(input),
+    rulingFileQuestion: async (questionId) => local.rulingFileQuestion(questionId),
+    questionCloseFacts: async (questionId) => local.questionCloseFacts(questionId),
+    overturnRulingRow: async (questionId) => local.overturnRulingRow(questionId),
+    pendingTaskLinks: async (table) => local.pendingTaskLinks(table),
+    linkedTaskReferences: async (table) => local.linkedTaskReferences(table),
+    projectReferenceCounts: async (projectRecordId) =>
+      local.projectReferenceCounts(projectRecordId),
+    taskRulingRows: async (project, taskRecordId, limit) =>
+      local.taskRulingRows(project, taskRecordId, limit),
+    localQuestionProjects: async () => local.localQuestionProjects(),
+  }
 }

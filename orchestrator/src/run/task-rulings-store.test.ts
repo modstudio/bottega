@@ -34,7 +34,7 @@ function answeredQuestion(
 }
 
 describe('task ruling candidate query', () => {
-  test('filters in SQL, orders by effective date, caps, and reports the full omitted count', () => {
+  test('filters in SQL, orders by effective date, caps, and reports the full omitted count', async () => {
     upsertProject({
       recordId: newRecordId(),
       name: PLATFORM_SLUG,
@@ -93,7 +93,7 @@ describe('task ruling candidate query', () => {
       .query("UPDATE question SET workflow_task_record_id='task-960' WHERE workflow_key='DEV-960'")
       .run()
 
-    const selected = taskRulingsForDispatch({
+    const selected = await taskRulingsForDispatch({
       resume: false,
       project: 'renamed-fixture',
       taskRecordId: 'task-960',
@@ -111,7 +111,7 @@ describe('task ruling candidate query', () => {
     expect(selected.omitted).toBe(5)
   })
 
-  test('carries the operator name, preferring the overturner of a replaced ruling', () => {
+  test('carries the operator name, preferring the overturner of a replaced ruling', async () => {
     upsertProject({
       recordId: newRecordId(),
       name: PLATFORM_SLUG,
@@ -144,7 +144,7 @@ describe('task ruling candidate query', () => {
       )
     db().query("UPDATE run SET task_record_id='task-960' WHERE launch_key='DEV-960'").run()
 
-    const selected = taskRulingsForDispatch({
+    const selected = await taskRulingsForDispatch({
       resume: false,
       project: PLATFORM_SLUG,
       taskRecordId: 'task-960',

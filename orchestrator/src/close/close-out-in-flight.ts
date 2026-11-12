@@ -14,7 +14,7 @@ import {
 } from '../landing-tree/landing-tree.ts'
 import {
   type TaskFlowCloseOutStageRow as CursorRow,
-  taskFlowStore,
+  taskFlowReadStore,
 } from '../workflow/task-flow-store.ts'
 import {
   annotateHeldTreeDetail,
@@ -61,13 +61,13 @@ function cursorArg(args: string, key: 'branch' | 'worktree'): string | null {
   }
 }
 
-function lookupShipTaskCursor(
+async function lookupShipTaskCursor(
   sessionId: string,
   project: string,
   branch: string,
   treePath: string,
-): CursorRow | null {
-  const rows = taskFlowStore(db()).closeOutShipTaskStage(sessionId, project, branch)
+): Promise<CursorRow | null> {
+  const rows = await taskFlowReadStore(db()).closeOutShipTaskStage(sessionId, project, branch)
   return rows.find((row) => cursorArg(row.args, 'worktree') === treePath) ?? null
 }
 
@@ -148,12 +148,12 @@ function cursorFacts(row: CursorRow | null) {
   }
 }
 
-function lookupCursor(run: RunLandingFacts, treePath: string): CursorRow | null {
+async function lookupCursor(run: RunLandingFacts, treePath: string): Promise<CursorRow | null> {
   if (!run.sessionId || !run.repo || !run.branch) return null
   return lookupShipTaskCursor(run.sessionId, run.repo, run.branch, treePath)
 }
 
-function inFlightForHold(
+async function inFlightForHold(
   worktree: string,
   run: RunLandingFacts,
   hold: HeldTreeHoldKind,
@@ -170,7 +170,7 @@ function inFlightForHold(
     treePath: worktree,
     project: run.repo,
     branch: run.branch,
-    cursor: cursorFacts(lookupCursor(run, worktree)),
+    cursor: cursorFacts(await lookupCursor(run, worktree)),
     hold,
   }
   // Cleanliness is measured once here and reused below: `pullRequestLookupNeeded` says whether a
@@ -197,7 +197,9 @@ function inFlightForHold(
   })
 }
 
-export function annotateHeldLandingInFlight(result: CloseOutReportResult): CloseOutReportResult {
+export async function annotateHeldLandingInFlight(
+  result: CloseOutReportResult,
+): Promise<CloseOutReportResult> {
   if ((result.reportOutcome ?? result.outcome) !== 'held' || !result.worktree) return result
   if (hasHeldInFlightAnnotation(result)) return result
   const run = lookupRun(result.runId)
@@ -205,7 +207,7 @@ export function annotateHeldLandingInFlight(result: CloseOutReportResult): Close
   const holder =
     result.leaseHolder ??
     (result.hold === 'close-out-lease' ? { number: run.number, job: run.job } : null)
-  const inFlight = inFlightForHold(result.worktree, run, result.hold ?? 'other', holder)
+  const inFlight = await inFlightForHold(result.worktree, run, result.hold ?? 'other', holder)
   const detail = annotateHeldTreeDetail(result.detail, inFlight)
   return {
     ...result,

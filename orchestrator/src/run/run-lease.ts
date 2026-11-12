@@ -7,6 +7,7 @@ import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db } from '../database/db.ts'
 import type { FilesystemIdentityPlan, FilesystemIdentityRun } from '../filesystem-identity-plan.ts'
 import { acquireKernelLease, type KernelLease, tryKernelLease } from '../project/project-lock.ts'
+import type { SynchronousResult } from '../synchronous-result.ts'
 import type { RunLeaseState } from './run-alive.ts'
 
 const leaseDirectory = () => join(resolveRunsDirectory(process.env), 'leases')
@@ -188,33 +189,22 @@ export function requiredRunLease(runId: string, failed: (cause: unknown) => void
 }
 
 /** Acquire a required close-out lease while reporting launch failure to its caller. */
-function requiredRunCloseOutLease(runId: string, failed: (cause: unknown) => void): KernelLease {
+export function requiredRunCloseOutLease(
+  runId: string,
+  failed: (cause: unknown) => void,
+): KernelLease {
   return requiredLease(runId, 'close-out', runCloseOutLeaseFileName, failed)
 }
 
-/** Hold a required close-out lease until a synchronous or asynchronous action settles. */
-export function withRunCloseOutLease<T>(
-  runId: string,
-  failed: (cause: unknown) => void,
-  action: () => Promise<T>,
-): Promise<T>
-export function withRunCloseOutLease<T>(
+/** Hold a required close-out lease until a synchronous action settles. */
+export function withRunCloseOutLease<T extends SynchronousResult>(
   runId: string,
   failed: (cause: unknown) => void,
   action: () => T,
-): T
-export function withRunCloseOutLease<T>(
-  runId: string,
-  failed: (cause: unknown) => void,
-  action: () => T | Promise<T>,
-): T | Promise<T> {
+): T {
   const lease = requiredRunCloseOutLease(runId, failed)
   try {
     const result = action()
-    // Any thenable is still running, not only a native Promise.
-    if (typeof (result as { then?: unknown } | null)?.then === 'function') {
-      return Promise.resolve(result).finally(() => releaseRunCloseOutLease(runId, lease))
-    }
     releaseRunCloseOutLease(runId, lease)
     return result
   } catch (cause) {
@@ -253,7 +243,7 @@ export function removeFreeRunCloseOutLease(runId: string): 'removed' | 'held' | 
 }
 
 /** Release a coordinator's close-out lease and remove its now-free file. */
-function releaseRunCloseOutLease(runId: string, lease: KernelLease | null): void {
+export function releaseRunCloseOutLease(runId: string, lease: KernelLease | null): void {
   try {
     lease?.release()
   } finally {

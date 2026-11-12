@@ -21,7 +21,7 @@ afterEach(() => {
   else process.env.BOTTEGA_DEPTH = priorDepth
 })
 
-test('reads valid worktree arguments only from open workflow cursors', () => {
+test('reads valid worktree arguments only from open workflow cursors', async () => {
   const d = database()
   const insert = d.query(
     `INSERT INTO workflow_cursor
@@ -42,7 +42,7 @@ test('reads valid worktree arguments only from open workflow cursors', () => {
   add('running', JSON.stringify({ worktree: '   ' }))
   add('running', '{malformed')
 
-  expect(openCursorWorktrees(d)).toEqual([
+  expect(await openCursorWorktrees(d)).toEqual([
     { number: 1, workflow: 'fixture', project: 'fixture', worktree: '/trees/running' },
     { number: 2, workflow: 'fixture', project: 'fixture', worktree: '/trees/awaiting' },
   ])

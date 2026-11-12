@@ -405,11 +405,12 @@ function registerWorkflowCursorAdmin({
     })
   jsonOption(text.command('show <reference>').description('show a workflow text attachment'))
     .allowExcessArguments(false)
-    .action((reference, options) =>
-      showWorkflowTextCommand(
-        productArgv('workflow', ['text', 'show', reference], options),
-        output(options),
-      ),
+    .action(
+      async (reference, options) =>
+        await showWorkflowTextCommand(
+          productArgv('workflow', ['text', 'show', reference], options),
+          output(options),
+        ),
     )
   jsonOption(
     text
@@ -429,7 +430,7 @@ function registerWorkflowCursorAdmin({
     .command('cursor identity-map')
     .description('print numeric workflow cursor identities and their durable record ids as JSON')
     .allowExcessArguments(false)
-    .action(() => log(JSON.stringify(workflowCursorIdentityMap(db()))))
+    .action(async () => log(JSON.stringify(await workflowCursorIdentityMap(db()))))
   jsonOption(
     reasonOption(
       workflow

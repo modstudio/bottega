@@ -14,10 +14,10 @@ type Gather = (
   extraPorts?: FloorEvidencePorts,
   cursorIdentity?: CursorIdentity,
   floors?: Floor[],
-) => ValidatedEvidence
+) => Promise<ValidatedEvidence>
 
 export const boundRulingAndGateRow = (database: () => Database, gather: Gather, cursorId: string) =>
-  function boundRulingAndGate() {
+  async function boundRulingAndGate() {
     const d = database()
     d.query(
       `INSERT INTO question
@@ -28,7 +28,7 @@ export const boundRulingAndGateRow = (database: () => Database, gather: Gather, 
       `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
        VALUES ('${newRecordId()}', NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/fixture/work','abc')`,
     ).run()
-    const gathered = gather(d, { ruling: 1, gate: 1 })
+    const gathered = await gather(d, { ruling: 1, gate: 1 })
     expect(gathered.ruling).toEqual({
       id: 1,
       answered: true,
@@ -47,7 +47,7 @@ export const boundRulingAndGateRow = (database: () => Database, gather: Gather, 
     const gateRecordId = d
       .query<{ record_id: string }, []>('SELECT record_id FROM gate_execution WHERE number=1')
       .get()!.record_id
-    expect(gather(d, { gate: gateRecordId }).gate).toEqual(gathered.gate)
+    expect((await gather(d, { gate: gateRecordId })).gate).toEqual(gathered.gate)
   }
 
 export const stepQuestionRow = (
@@ -56,7 +56,7 @@ export const stepQuestionRow = (
   cursorId: string,
   identity: CursorIdentity,
 ) =>
-  function boundStepQuestion() {
+  async function boundStepQuestion() {
     const d = database()
     d.query(
       `INSERT INTO question
@@ -81,7 +81,7 @@ export const stepQuestionRow = (
       requirePullRequest: false,
       operatorRuling: true,
     }
-    expect(gather(d, {}, {}, identity, [floor]).stepQuestion).toEqual({
+    expect((await gather(d, {}, {}, identity, [floor])).stepQuestion).toEqual({
       id: 2,
       state: 'open',
       answeredAt: null,
@@ -90,7 +90,7 @@ export const stepQuestionRow = (
 
     d.query('DELETE FROM question WHERE number=1').run()
     d.query("UPDATE question SET closed_at='2026-09-03' WHERE number=2").run()
-    expect(gather(d, {}, {}, identity, [floor]).stepQuestion).toEqual({
+    expect((await gather(d, {}, {}, identity, [floor])).stepQuestion).toEqual({
       id: 2,
       state: 'closed',
       answeredAt: null,
@@ -102,12 +102,12 @@ export const stepQuestionRow = (
         (number,record_id,workflow_cursor_record_id,asked_at,question,asked_via,answered_at,answer,answerer_kind,overturned_at,replacement,workflow_step_ordinal,workflow_step_slug)
        VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}','${cursorId}','2026-09-04','Overturned?','workflow','2026-09-04','yes','operator','2026-09-05','Use the replacement exactly.',1,'rebase')`,
     ).run()
-    expect(gather(d, { ruling: 4 }, {}, identity, [floor]).ruling).toMatchObject({
+    expect((await gather(d, { ruling: 4 }, {}, identity, [floor])).ruling).toMatchObject({
       id: 4,
       answered: false,
       answeredByOperator: false,
     })
-    expect(gather(d, {}, {}, identity, [floor]).stepQuestion).toEqual({
+    expect((await gather(d, {}, {}, identity, [floor])).stepQuestion).toEqual({
       id: 4,
       state: 'overturned',
       answeredAt: '2026-09-04',

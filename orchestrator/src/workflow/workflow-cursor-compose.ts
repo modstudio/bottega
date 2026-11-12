@@ -25,7 +25,7 @@ import {
   refuseTaskFlowStageConflict,
 } from './task-flow.ts'
 import { taskFlowState } from './task-flow-decision.ts'
-import { taskFlowStore } from './task-flow-store.ts'
+import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 import type { WorkflowCursorInsert } from './task-flow-store-types.ts'
 import {
   type CommitCountPort,
@@ -71,14 +71,14 @@ function decideKeylessComposeInstance(input: {
   ])
 }
 
-function keylessComposeOrdinal(
+async function keylessComposeOrdinal(
   composition: Composition,
   context: WorkflowCursorContext,
   projectRecordId: string,
   machine: string,
   database: Database,
-): number {
-  return taskFlowStore(database).nextKeylessInstanceSlot({
+): Promise<number> {
+  return taskFlowReadStore(database).nextKeylessInstanceSlot({
     projectRecordId,
     workflow: composition.workflow.slug,
     mode: composition.mode!.slug,
@@ -87,22 +87,22 @@ function keylessComposeOrdinal(
   })
 }
 
-function readComposeFacts(
+async function readComposeFacts(
   composition: Composition,
   context: WorkflowCursorContext,
   autonomy: AutonomyResolution | undefined,
   database: Database,
   keylessOrdinalOffset = 0,
-): ComposeFacts {
+): Promise<ComposeFacts> {
   const key = workflowKeyOf(composition.arguments)
   const projectRecordId = database
     .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
     .get(composition.project)!.record_id
   const existingFlow = context.taskRecordId
-    ? taskFlowStore(database).flowForTask(context.taskRecordId)
+    ? await taskFlowReadStore(database).flowForTask(context.taskRecordId)
     : null
   if (context.taskRecordId && key)
-    refuseTaskFlowStageConflict(
+    await refuseTaskFlowStageConflict(
       {
         taskRecordId: context.taskRecordId,
         taskKey: key,
@@ -112,7 +112,7 @@ function readComposeFacts(
       database,
     )
   if (key)
-    refuseUnlinkedCursorLabelCollision(database, {
+    await refuseUnlinkedCursorLabelCollision(database, {
       project: composition.project,
       workflow: composition.workflow.slug,
       mode: composition.mode!.slug,
@@ -124,7 +124,7 @@ function readComposeFacts(
   const owner = context.session ?? machine
   const ordinal = key
     ? 0
-    : keylessComposeOrdinal(composition, context, projectRecordId, machine, database) +
+    : (await keylessComposeOrdinal(composition, context, projectRecordId, machine, database)) +
       keylessOrdinalOffset
   const instance = decideKeylessComposeInstance({
     key,
@@ -256,8 +256,8 @@ function applyHostedCompose(
   database: Database,
 ): SelectableCursorRow {
   return writeTransaction(() => {
-    const result = taskFlowStore(database).write('compose', payload, hosted)
-    return taskFlowStore(database).stageByRecordId(result.stage!.id) as SelectableCursorRow
+    const result = taskFlowLocalStore(database).write('compose', payload, hosted)
+    return taskFlowLocalStore(database).stageByRecordId(result.stage!.id) as SelectableCursorRow
   }, database)
 }
 
@@ -307,7 +307,7 @@ function cacheComposeReplay(
         },
         database,
       )
-    return taskFlowStore(database).stageByRecordId(stored) as SelectableCursorRow
+    return taskFlowLocalStore(database).stageByRecordId(stored) as SelectableCursorRow
   }, database)
 }
 
@@ -342,7 +342,7 @@ async function recoverComposeConflict(
     throw new Error(
       `${error.message}; close or abandon the stage holding this workflow slot, then retry`,
     )
-  const alreadyCached = taskFlowStore(database).hasStage(replay.stage.id)
+  const alreadyCached = await taskFlowReadStore(database).hasStage(replay.stage.id)
   if (!alreadyCached) return cacheComposeReplay(replay, facts, composition, context, database)
   if (facts.key || keylessSiblingRetry) throw error
   return insertWorkflowCursor(composition, context, database, autonomy, commitCount, true)
@@ -364,7 +364,7 @@ export async function insertWorkflowCursor(
     commitCount,
   })
   if (refusal) throw new Error(refusal)
-  const facts = readComposeFacts(
+  const facts = await readComposeFacts(
     composition,
     context,
     autonomy,

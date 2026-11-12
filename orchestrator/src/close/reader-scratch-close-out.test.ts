@@ -15,7 +15,7 @@ import {
 
 afterEach(() => mock.restore())
 
-test('last shared reader archives committed and uncommitted changes after the creator terminates', () => {
+test('last shared reader archives committed and uncommitted changes after the creator terminates', async () => {
   const fixture = closeOutFixture()
   const attacher = addRun({ agent: 'claude', job: 'review-lens', status: 'ok' })
   try {
@@ -73,7 +73,7 @@ test('last shared reader archives committed and uncommitted changes after the cr
     )
     writeFileSync(join(fixture.worktree, 'untracked.txt'), 'escaped untracked\n')
 
-    const result = closeOutRun(attacher, { intent: 'terminal' })
+    const result = await closeOutRun(attacher, { intent: 'terminal' })
     const archive = archivedClonePath(result.detail)
     const pointer = JSON.parse(
       readFileSync(join(runArtifactsDir(attacher), 'reader-clone-archive.json'), 'utf8'),
@@ -95,7 +95,7 @@ test('last shared reader archives committed and uncommitted changes after the cr
   }
 })
 
-test('last shared reader archives a unique commit on a non-HEAD branch', () => {
+test('last shared reader archives a unique commit on a non-HEAD branch', async () => {
   const fixture = closeOutFixture()
   try {
     const base = git(['rev-parse', 'HEAD'], fixture.worktree)
@@ -129,7 +129,7 @@ test('last shared reader archives a unique commit on a non-HEAD branch', () => {
     const escapedCommit = git(['rev-parse', 'HEAD'], fixture.worktree)
     git(['checkout', '--detach', base], fixture.worktree)
 
-    const result = closeOutRun(fixture.id, { intent: 'terminal' })
+    const result = await closeOutRun(fixture.id, { intent: 'terminal' })
     const archive = archivedClonePath(result.detail)
     const bundle = join(archive, 'head.bundle')
     expect(result.outcome).toBe('released')
@@ -140,10 +140,10 @@ test('last shared reader archives a unique commit on a non-HEAD branch', () => {
   }
 })
 
-test('reader close-out releases a clean clone without nested repositories', () => {
+test('reader close-out releases a clean clone without nested repositories', async () => {
   const fixture = closeOutFixture()
   try {
-    const result = closeOutRun(fixture.id, { intent: 'terminal' })
+    const result = await closeOutRun(fixture.id, { intent: 'terminal' })
 
     expect(result).toMatchObject({ outcome: 'released' })
     expect(existsSync(fixture.worktree)).toBe(false)
@@ -152,10 +152,10 @@ test('reader close-out releases a clean clone without nested repositories', () =
   }
 })
 
-test('reader close-out releases a clean clone at its carry base instead of the trunk base', () => {
+test('reader close-out releases a clean clone at its carry base instead of the trunk base', async () => {
   const fixture = closeOutFixture({ carryBase: true })
   try {
-    const result = closeOutRun(fixture.id, { intent: 'terminal' })
+    const result = await closeOutRun(fixture.id, { intent: 'terminal' })
 
     expect(result).toMatchObject({ outcome: 'released' })
     expect(existsSync(fixture.worktree)).toBe(false)
@@ -165,12 +165,12 @@ test('reader close-out releases a clean clone at its carry base instead of the t
   }
 })
 
-test('reader close-out archives a dirty initialized submodule', () => {
+test('reader close-out archives a dirty initialized submodule', async () => {
   const fixture = closeOutFixture({ submodule: true })
   try {
     writeFileSync(join(fixture.worktree, 'nested', 'nested.txt'), 'dirty nested\n')
     writeFileSync(join(fixture.worktree, 'nested', 'untracked.txt'), 'untracked nested\n')
-    const result = closeOutRun(fixture.id, { intent: 'terminal' })
+    const result = await closeOutRun(fixture.id, { intent: 'terminal' })
     const archive = archivedClonePath(result.detail)
     expect(result.outcome).toBe('released')
     expect(readFileSync(join(archive, 'nested', 'nested.txt'), 'utf8')).toBe('dirty nested\n')
@@ -192,13 +192,13 @@ test('reader close-out archives a dirty initialized submodule', () => {
   }
 })
 
-test('reader close-out archives a clean clone with a repository in a tracked directory', () => {
+test('reader close-out archives a clean clone with a repository in a tracked directory', async () => {
   const fixture = closeOutFixture({ trackedDirectory: true })
   try {
     const nested = join(fixture.worktree, 'tracked-directory')
     git(['init', '--initial-branch=main'], nested)
 
-    const result = closeOutRun(fixture.id, { intent: 'terminal' })
+    const result = await closeOutRun(fixture.id, { intent: 'terminal' })
     const archive = archivedClonePath(result.detail)
 
     expect(result.outcome).toBe('released')
@@ -209,14 +209,14 @@ test('reader close-out archives a clean clone with a repository in a tracked dir
   }
 })
 
-test('reader close-out archives an untracked non-ignored nested repository', () => {
+test('reader close-out archives an untracked non-ignored nested repository', async () => {
   const fixture = closeOutFixture()
   try {
     const nested = join(fixture.worktree, 'untracked-repository')
     mkdirSync(nested, { recursive: true })
     git(['init', '--initial-branch=main'], nested)
 
-    const result = closeOutRun(fixture.id, { intent: 'terminal' })
+    const result = await closeOutRun(fixture.id, { intent: 'terminal' })
     const archive = archivedClonePath(result.detail)
 
     expect(result.outcome).toBe('released')
@@ -227,7 +227,7 @@ test('reader close-out archives an untracked non-ignored nested repository', () 
   }
 })
 
-test('reader close-out removes ignored paths from an archived dirty clone', () => {
+test('reader close-out removes ignored paths from an archived dirty clone', async () => {
   const fixture = closeOutFixture()
   try {
     appendFileSync(
@@ -240,7 +240,7 @@ test('reader close-out removes ignored paths from an archived dirty clone', () =
     writeFileSync(join(fixture.worktree, 'ignored-storage', '.git', 'HEAD'), 'ignored\n')
     writeFileSync(join(fixture.worktree, 'tracked.txt'), 'dirty\n')
 
-    const result = closeOutRun(fixture.id, { intent: 'terminal' })
+    const result = await closeOutRun(fixture.id, { intent: 'terminal' })
     const archive = archivedClonePath(result.detail)
     const pointer = JSON.parse(
       readFileSync(join(runArtifactsDir(fixture.id), 'reader-clone-archive.json'), 'utf8'),
@@ -256,14 +256,14 @@ test('reader close-out removes ignored paths from an archived dirty clone', () =
   }
 })
 
-test('reader close-out releases a clean clone with nested Git storage only in an ignored path', () => {
+test('reader close-out releases a clean clone with nested Git storage only in an ignored path', async () => {
   const fixture = closeOutFixture()
   try {
     appendFileSync(join(fixture.worktree, '.git', 'info', 'exclude'), 'ignored-storage/\n')
     mkdirSync(join(fixture.worktree, 'ignored-storage', '.git'), { recursive: true })
     writeFileSync(join(fixture.worktree, 'ignored-storage', '.git', 'HEAD'), 'ignored\n')
 
-    const result = closeOutRun(fixture.id, { intent: 'terminal' })
+    const result = await closeOutRun(fixture.id, { intent: 'terminal' })
 
     expect(result.outcome).toBe('released')
     expect(existsSync(fixture.worktree)).toBe(false)

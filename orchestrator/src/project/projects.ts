@@ -481,11 +481,14 @@ export function projectRemovalRefusal(
   ]
 }
 
-export function removeProject(name: string, options: { includeRetired?: boolean } = {}): boolean {
+export async function removeProject(
+  name: string,
+  options: { includeRetired?: boolean } = {},
+): Promise<boolean> {
   writableDb()
   const project = options.includeRetired ? projectRowByName(name) : projectByName(name)
   if (!project) return false
-  const counts = projectReferenceCounts(db(), project.recordId)
+  const counts = await projectReferenceCounts(db(), project.recordId)
   const refusal = projectRemovalRefusal(name, counts)
   if (refusal) {
     const tables = [

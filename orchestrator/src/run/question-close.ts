@@ -4,7 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
-import { taskFlowStore } from '../workflow/task-flow-store.ts'
+import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
 import { auditQuestionMutation } from './question-mutation.ts'
 import { questionOpenSql } from './question-open.ts'
@@ -116,14 +116,14 @@ export function retireRunChainQuestionDeliveries(
   return retired
 }
 
-export function closeQuestionByOperator(
+export async function closeQuestionByOperator(
   questionId: string,
   reasonText: string,
   database: Database = db(),
-): void {
+): Promise<void> {
   const text = reasonText.trim()
   if (!text) throw new Error('--reason must not be empty')
-  const row = taskFlowStore(database).questionCloseFacts(questionId)
+  const row = await taskFlowReadStore(database).questionCloseFacts(questionId)
   if (!row) throw new Error(`no question ${questionId}`)
   if (row.answered_at) throw new Error(`question ${questionId} is already answered`)
   if (row.closed_at) throw new Error(`question ${questionId} is already closed`)

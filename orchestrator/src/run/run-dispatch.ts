@@ -43,6 +43,7 @@ import { effectiveMcpRequest, type McpRequest, storedMcpRequest } from '../mcp/m
 import { projectByName } from '../project/projects.ts'
 import { signedInRecordUserId } from '../record/record-attribution.ts'
 import type { DetachSpec } from '../route/failover.ts'
+import type { SynchronousResult } from '../synchronous-result.ts'
 import { sha } from './prompt-sha.ts'
 import { recordedRunLivenessFacts, runAlive } from './run-alive.ts'
 import { RUNS_DIR, readDispatchState } from './run-artifacts.ts'
@@ -165,7 +166,11 @@ function assertDispatchDatabase(resume: boolean): void {
   assertMigrationDispatchAllowedAndRecord(db(), resume)
 }
 
-function claimDetachedRun<T>(beforeClaim: () => void, existingChain: boolean, claim: () => T): T {
+function claimDetachedRun<T extends SynchronousResult>(
+  beforeClaim: () => void,
+  existingChain: boolean,
+  claim: () => T,
+): T {
   beforeClaim()
   return claimWithMigrationAdmission(
     {

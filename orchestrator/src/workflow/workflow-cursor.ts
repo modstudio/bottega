@@ -15,7 +15,7 @@ import {
 import { upsertWorkflowQuestion } from '../run/question-mutation.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
 import { decideWorkflowTakeover, workflowTakeoverNotice } from './task-flow-decision.ts'
-import { taskFlowStore } from './task-flow-store.ts'
+import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 import {
   type CommitCountPort,
   readCommitsPastLanding,
@@ -36,7 +36,7 @@ import {
   findWorkflowCursor,
   readThroughWorkflowCursorContext,
   type SelectableCursorRow,
-  selectWorkflowCursorForClose,
+  selectByHandle,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
 import { cursorComposition } from './workflow-cursor-serve.ts'
@@ -83,13 +83,23 @@ import { composeWorkflow } from './workflows.ts'
 type CursorRow = SelectableCursorRow
 
 /** Re-reads, inside the close transaction, a cursor selected before its text copy. */
-function reselectCursor(
+async function reselectCursor(
   selected: SelectableCursorRow,
   args: Record<string, string>,
   context: WorkflowCursorContext,
   d: Database,
-): CursorRow {
-  const row = selectWorkflowCursorForClose({}, selected.id, null, d) as CursorRow
+): Promise<CursorRow> {
+  const row = (await selectByHandle(
+    selected.id,
+    {
+      project: selected.project,
+      workflow: selected.workflow_slug,
+      mode: selected.mode_slug,
+      key: selected.workflow_key || undefined,
+    },
+    d,
+    true,
+  )) as CursorRow
   const moved =
     row.updated_at !== selected.updated_at ||
     row.state !== selected.state ||
@@ -126,7 +136,7 @@ export type CursorSummary = {
   previousSession?: string | null
 }
 
-function refuseLocalComposeBranch(
+async function refuseLocalComposeBranch(
   composition: {
     project: string
     workflow: { slug: string }
@@ -136,9 +146,9 @@ function refuseLocalComposeBranch(
   context: WorkflowCursorContext,
   database: Database,
   commitCount: CommitCountPort,
-): void {
+): Promise<void> {
   const existing = keyOf(composition.arguments)
-    ? findWorkflowCursor(
+    ? await findWorkflowCursor(
         composition.project,
         composition.workflow.slug,
         composition.mode.slug,
@@ -172,7 +182,7 @@ export async function composeWorkflowWithCursor(
   const autonomy = live.resolution
   const composition = composeWorkflow(slug, project, mode, args, d, selection, autonomy)
   if (!composition.mode || composition.needs.arguments) return { ...composition, cursor: null }
-  refuseLocalComposeBranch(
+  await refuseLocalComposeBranch(
     {
       project: composition.project,
       workflow: composition.workflow,
@@ -186,7 +196,7 @@ export async function composeWorkflowWithCursor(
   await readThroughWorkflowCursorContext(project, context, d)
   await linkResolvedWorkflowTask(project, context, d)
   const existing = keyOf(composition.arguments)
-    ? findWorkflowCursor(
+    ? await findWorkflowCursor(
         composition.project,
         composition.workflow.slug,
         composition.mode!.slug,
@@ -196,7 +206,7 @@ export async function composeWorkflowWithCursor(
       )
     : null
   const start = decideCursorStart(existing?.state ?? null)
-  let row: CursorRow
+  let row!: CursorRow
   if (existing && start === 'reuse') {
     const resolved = resolveCursorArguments(existing, args, d, true)
     const payload: TaskFlowIntentInput<'stage-update'> = {
@@ -221,10 +231,10 @@ export async function composeWorkflowWithCursor(
       context.taskFlowClient,
     )
     writeTransaction(() => {
-      const store = taskFlowStore(d)
+      const store = taskFlowLocalStore(d)
       store.write('stage-update', payload, hosted)
+      row = store.stageByRecordId(existing.record_id) as CursorRow
     }, d)
-    row = taskFlowStore(d).stageByRecordId(existing.record_id) as CursorRow
   } else row = await insertWorkflowCursor(composition, context, d, autonomy, commitCount)
   return {
     ...cursorComposition(row, d, live),
@@ -239,7 +249,7 @@ export async function composeWorkflowWithCursor(
   }
 }
 
-function applyFloorDecision(
+async function applyFloorDecision(
   row: CursorRow,
   floors: Floor[],
   evidence: WorkflowEvidenceInput,
@@ -248,9 +258,9 @@ function applyFloorDecision(
   d: Database,
   requireRuling = false,
   selfRulingId?: number,
-): FloorDecision {
+): Promise<FloorDecision> {
   const args = JSON.parse(row.args) as Record<string, string>
-  const validated = gatherValidatedEvidence({
+  const validated = await gatherValidatedEvidence({
     cursorId: row.record_id,
     identity: {
       project: row.project,
@@ -286,7 +296,7 @@ function applyFloorDecision(
     evidence: validated,
     enforcement: row.enforcement ?? 'note-only',
     finishing,
-    openObligations: openWorkflowObligations(row.record_id, d),
+    openObligations: await openWorkflowObligations(row.record_id, d),
     ...reentryBoundFloorInput(requireRuling, row.closed, row.step_slug),
   })
 }
@@ -386,7 +396,7 @@ function appendWorkflowClose(
   return { obligationInsert, obligationUpdate }
 }
 
-function closeFloorsForStep(
+async function closeFloorsForStep(
   row: CursorRow,
   composition: ReturnType<typeof composeWorkflow>,
   evidence: WorkflowEvidenceInput,
@@ -437,7 +447,7 @@ function closeFloorsForStep(
     }
   }
   const floor = allowedCloseFloor(
-    applyFloorDecision(
+    await applyFloorDecision(
       row,
       floors,
       floorEvidence,
@@ -482,8 +492,8 @@ async function persistWorkflowAdvance(
   )
   const finishing = advance.ordinal === null
   const next = finishing ? null : composition.steps[advance.ordinal as number]!
-  const deleteTextIds = advanceTextDeletionIds(row, composition, finishing, d)
-  const flow = finishing ? selectClosingTaskFlow(row, d) : null
+  const deleteTextIds = await advanceTextDeletionIds(row, composition, finishing, d)
+  const flow = finishing ? await selectClosingTaskFlow(row, d) : null
   const closingFlow = flow?.open_stage_cursor_record_id === row.record_id ? flow : null
   const { parts, obligationInserts, obligationUpdates } = advanceRecordRows(
     row,
@@ -541,19 +551,19 @@ async function persistWorkflowAdvance(
   })
 }
 
-function selectClosingTaskFlow(row: CursorRow, database: Database) {
+async function selectClosingTaskFlow(row: CursorRow, database: Database) {
   if (!row.task_flow_record_id) return null
-  return taskFlowStore(database).flowState(row.task_flow_record_id)
+  return await taskFlowReadStore(database).flowState(row.task_flow_record_id)
 }
 
-function advanceTextDeletionIds(
+async function advanceTextDeletionIds(
   row: CursorRow,
   composition: ReturnType<typeof composeWorkflow>,
   finishing: boolean,
   database: Database,
-): string[] {
+): Promise<string[]> {
   if (!finishing && !composition.steps[row.ordinal]!.needs.includes('workflow-text')) return []
-  return workflowTextDeletionIds(row.record_id, Boolean(row.task_record_id), database)
+  return await workflowTextDeletionIds(row.record_id, Boolean(row.task_record_id), database)
 }
 
 function advanceRecordRows(
@@ -597,7 +607,7 @@ function applyWorkflowAdvanceLocally(input: {
     if (row.state === 'awaiting-ruling')
       closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, d)
     if (selfRulingPlan) recordWorkflowSelfRuling(selfRulingPlan, d)
-    taskFlowStore(d).write('advance', payload, hosted)
+    taskFlowLocalStore(d).write('advance', payload, hosted)
   }, d)
 }
 
@@ -653,12 +663,12 @@ async function nextWorkflowStepImpl(
     context.taskStatusCategory,
   )
   if (row.workflow_key !== workflowKeyBeforeAdoption) {
-    row = taskFlowStore(d).stageByRecordId(row.record_id) as CursorRow
+    row = (await taskFlowReadStore(d).stageByRecordId(row.record_id)) as CursorRow
   }
   const composition = cursorComposition(row, d, live)
   const step = composition.steps[row.ordinal]!
   refuseMissingCloseNote(note, step.n, step.slug)
-  const close = closeFloorsForStep(row, composition, evidence, ports, selfRuling, outcome, d)
+  const close = await closeFloorsForStep(row, composition, evidence, ports, selfRuling, outcome, d)
   await persistWorkflowAdvance(
     row,
     composition,
@@ -673,7 +683,7 @@ async function nextWorkflowStepImpl(
     takeoverFromMachineId,
     close.selfRulingPlan,
   )
-  const rendered = renderWorkflowAdvanceResult({
+  const rendered = await renderWorkflowAdvanceResult({
     row,
     composition,
     closed: close.closed,
@@ -724,9 +734,9 @@ export async function nextWorkflowStep(
   live?: LiveCursorAutonomy,
 ): Promise<WorkflowAdvanceResult> {
   await linkResolvedWorkflowTask(project, context, d)
-  reselectCursor(selected, args, context, d)
-  return withReplayedFloorEvidenceAsync(ports, (replayPorts) => {
-    const row = taskFlowStore(d).stageByRecordId(selected.record_id) as CursorRow
+  await reselectCursor(selected, args, context, d)
+  return withReplayedFloorEvidenceAsync(ports, async (replayPorts) => {
+    const row = (await taskFlowReadStore(d).stageByRecordId(selected.record_id)) as CursorRow
     adoptLinkedTask(row, args, context)
     return nextWorkflowStepImpl(
       row,
@@ -761,8 +771,13 @@ export async function abandonSelectedWorkflowCursorForClose(
   args: Record<string, string>,
 ): Promise<string> {
   refuseMissingAbandonReason(reason)
-  return withLinkedWorkflowTask(selected.project, context, d, () =>
-    abandonSelectedWorkflowCursor(reselectCursor(selected, args, context, d), reason, context, d),
+  return withLinkedWorkflowTask(selected.project, context, d, async () =>
+    abandonSelectedWorkflowCursor(
+      await reselectCursor(selected, args, context, d),
+      reason,
+      context,
+      d,
+    ),
   )
 }
 
@@ -777,7 +792,7 @@ async function awaitWorkflowRulingImpl(
   cursor?: number,
 ): Promise<{ summary: CursorSummary & { questionId: number }; cursorId: string }> {
   if (!question?.trim()) throw new Error('--question is required')
-  const row = findWorkflowCursor(project, slug, mode, args, context, d, cursor)
+  const row = await findWorkflowCursor(project, slug, mode, args, context, d, cursor)
   if (!row)
     throw new Error(
       `${cursorName(slug, mode, keyOf(args))} has no cursor; compose the workflow first`,
@@ -793,7 +808,7 @@ async function awaitWorkflowRulingImpl(
       values: {
         arguments: resolved.args,
         closedStepNotes: JSON.parse(resolved.closed) as unknown[],
-        state: 'awaiting-ruling',
+        state: 'awaiting-ruling' as const,
         question: question.trim(),
         sessionId: context.session ?? row.session_id,
         updatedAt: at,
@@ -807,7 +822,7 @@ async function awaitWorkflowRulingImpl(
     context.taskFlowClient,
   )
   return writeTransaction(() => {
-    const store = taskFlowStore(d)
+    const store = taskFlowLocalStore(d)
     store.write('await-ruling', payload, hosted)
     const recordedQuestion = upsertWorkflowQuestion(
       {
@@ -826,7 +841,7 @@ async function awaitWorkflowRulingImpl(
         id: row.id,
         n: row.ordinal + 1,
         slug: row.step_slug,
-        state: 'awaiting-ruling',
+        state: 'awaiting-ruling' as const,
         opened: false,
         questionId: recordedQuestion.number,
       },

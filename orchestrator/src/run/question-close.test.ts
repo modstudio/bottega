@@ -75,9 +75,9 @@ test('close service closes, audits and enqueues once', () => {
   ])
 })
 
-test('operator close accepts a terminal question and records the supplied reason', () => {
+test('operator close accepts a terminal question and records the supplied reason', async () => {
   const { database, questionId } = fixture()
-  closeQuestionByOperator(questionId, 'superseded by a later ruling', database)
+  await closeQuestionByOperator(questionId, 'superseded by a later ruling', database)
   expect(
     database.query('SELECT close_reason FROM question WHERE record_id=?').get(questionId),
   ).toEqual({
@@ -85,9 +85,9 @@ test('operator close accepts a terminal question and records the supplied reason
   })
 })
 
-test('operator close refuses live, answered and blank questions', () => {
+test('operator close refuses live, answered and blank questions', async () => {
   const live = fixture('asking')
-  expect(() => closeQuestionByOperator(live.questionId, 'obsolete', live.database)).toThrow(
+  await expect(closeQuestionByOperator(live.questionId, 'obsolete', live.database)).rejects.toThrow(
     `chain is live; use ${PLATFORM_SLUG} question answer 01990000-0000-7000-8000-000000000042`,
   )
   const answered = fixture()
@@ -96,12 +96,12 @@ test('operator close refuses live, answered and blank questions', () => {
       "UPDATE question SET answer='yes',answered_at='2026-09-29T10:02:00.000Z' WHERE record_id=?",
     )
     .run(answered.questionId)
-  expect(() => closeQuestionByOperator(answered.questionId, 'obsolete', answered.database)).toThrow(
-    'already answered',
-  )
-  expect(() => closeQuestionByOperator(answered.questionId, '   ', answered.database)).toThrow(
-    '--reason must not be empty',
-  )
+  await expect(
+    closeQuestionByOperator(answered.questionId, 'obsolete', answered.database),
+  ).rejects.toThrow('already answered')
+  await expect(
+    closeQuestionByOperator(answered.questionId, '   ', answered.database),
+  ).rejects.toThrow('--reason must not be empty')
 })
 
 test('terminal delivery retirement clears only pending state, records history and enqueues', () => {

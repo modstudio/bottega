@@ -7,7 +7,7 @@ import { db, liveRuns, nowIso } from '../database/db.ts'
 import { hookTreeHoldDecision } from '../hook-tree/hook-tree.ts'
 import { landingTreeHoldDecision } from '../landing-tree/landing-tree.ts'
 import { HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
-import { openCursorWorktrees } from '../workflow/workflow-cursor-worktrees.ts'
+import type { OpenCursorWorktree } from '../workflow/workflow-cursor-worktrees.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import type { ConversationKeepTreeHold } from './close-out-report.ts'
@@ -32,12 +32,13 @@ function realTreePath(path: string): string | null {
 function treeKeepNamers(
   path: string,
   conversationRootId: string,
+  cursorWorktrees: OpenCursorWorktree[],
   database: Database = db(),
 ): TreeNamer[] {
   const canonical = realTreePath(path)
   if (!canonical) return []
   const namers: TreeNamer[] = []
-  for (const cursor of openCursorWorktrees(database)) {
+  for (const cursor of cursorWorktrees) {
     if (realTreePath(cursor.worktree) !== canonical) continue
     namers.push({
       kind: 'cursor',
@@ -55,9 +56,13 @@ function treeKeepNamers(
 }
 
 /** Canonical paths named by an open cursor or live run for one project. */
-export function namedProjectTreePaths(project: string, database: Database = db()): Set<string> {
+export function namedProjectTreePaths(
+  project: string,
+  cursorWorktrees: OpenCursorWorktree[],
+  database: Database = db(),
+): Set<string> {
   const candidates = new Set<string>()
-  for (const cursor of openCursorWorktrees(database)) {
+  for (const cursor of cursorWorktrees) {
     if (cursor.project === project) candidates.add(cursor.worktree)
   }
   for (const run of liveRuns(database)) {
@@ -134,9 +139,10 @@ export function closeOutKeepTreeDecision(
   rootId: string,
   treePath: string | null,
   intent: CloseOutIntent,
+  cursorWorktrees: OpenCursorWorktree[],
   database: Database = db(),
 ): { hold: ConversationKeepTreeHold; naming: TreeKeepDecision } {
-  const namers = treePath ? treeKeepNamers(treePath, rootId, database) : []
+  const namers = treePath ? treeKeepNamers(treePath, rootId, cursorWorktrees, database) : []
   const naming = decideTreeKeep({ intent, namers })
   if (naming.action === 'hold') {
     return {

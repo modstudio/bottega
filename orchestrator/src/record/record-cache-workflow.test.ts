@@ -379,7 +379,7 @@ test('replace-seed preserves a pinned workflow version and composes the new gene
     definition: pinned.definition,
     superseded_at: expect.any(String),
   })
-  const selectedCursor = selectWorkflowCursor({}, cursor.number, null, local)!
+  const selectedCursor = (await selectWorkflowCursor({}, cursor.number, null, local))!
   const pinnedComposition = cursorComposition(selectedCursor, local)
   expect(pinnedComposition.workflow.title).toBe('Pinned generation one')
   expect(pinnedComposition.steps.map((step) => [step.slug, step.title])).toEqual([

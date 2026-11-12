@@ -15,7 +15,7 @@ import type {
 } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { linkWorkflowQuestionsTaskReference } from '../run/question-mutation.ts'
-import { taskFlowStore } from './task-flow-store.ts'
+import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import {
   findWorkflowCursor,
@@ -31,8 +31,10 @@ export async function linkWorkflowTaskLabel(
   input: { project: string; workflowKey: string; taskRecordId: string },
   client?: RecordTaskFlowClient,
 ): Promise<{ workflow_cursor: number; question: number }> {
-  const store = taskFlowStore(database)
-  const rows = store.stagesNeedingTaskLink(input.project, input.workflowKey)
+  const rows = await taskFlowReadStore(database).stagesNeedingTaskLink(
+    input.project,
+    input.workflowKey,
+  )
   const hosted = [] as Array<{
     row: (typeof rows)[number]
     payload: TaskFlowIntentInput<'adopt'>
@@ -50,6 +52,7 @@ export async function linkWorkflowTaskLabel(
     const result = await writeHostedTaskFlow('adopt', payload, target, client)
     hosted.push({ row, payload, result })
   }
+  const store = taskFlowLocalStore(database)
   return writeTransaction(() => {
     for (const { payload, result } of hosted) store.write('adopt', payload, result)
     const cursors = 0
@@ -94,7 +97,7 @@ export async function resolveLinkedWorkflowCursorMode(
   database: Database = writableDb(),
   selectedRow?: SelectableCursorRow,
 ): Promise<string> {
-  const mode = resolveWorkflowCursorMode(
+  const mode = await resolveWorkflowCursorMode(
     slug,
     project,
     requested,
@@ -105,7 +108,8 @@ export async function resolveLinkedWorkflowCursorMode(
     database,
     selectedRow,
   )
-  const local = selectedRow ?? findWorkflowCursor(project, slug, mode, args, context, database)
+  const local =
+    selectedRow ?? (await findWorkflowCursor(project, slug, mode, args, context, database))
   if (local && decideCursorStart(local.state) === 'retire')
     throw new Error(
       `${cursorName(local.workflow_slug, local.mode_slug, local.workflow_key)} is ${local.state}`,

@@ -2,11 +2,13 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
+import { upsertProject } from '../project/projects.ts'
 import {
   type ContextBrief,
   holderSequence,
   renderContextBrief,
   storedBriefHolders,
+  workingKeysForBrief,
 } from './context-brief.ts'
 import { encodeContextItem } from './context-item-codec.ts'
 
@@ -169,4 +171,42 @@ test('reads a working task brief from its record-id holder while retaining the t
       items: [item(`task:${recordId}`, 'next', 'next-action', 'Continue.', 'test')],
     },
   ])
+})
+
+test('includes a worked-fact task in the holder set after its claim is released', () => {
+  const session = newRecordId()
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'worked-brief-fixture',
+    path: '/tmp/worked-brief-fixture',
+    settings: { keyPrefixes: ['WORKED'] },
+  })
+  const body = encodeContextItem({
+    kind: 'fact',
+    source: 'precompact',
+    body: 'Worked: WORKED-2, WORKED-1',
+  })
+  db()
+    .query(
+      `INSERT INTO doc
+       (record_id,scope,subject,slug,title,body,delivery,audiences,created_at,updated_at)
+       VALUES (?,'context',?,'worked','worked',?,'demand','["technical"]',?,?)`,
+    )
+    .run(newRecordId(), `session:${session}`, body, '2026-11-11T10:00:00Z', '2026-11-11T10:00:00Z')
+
+  const working = workingKeysForBrief(session, [], [], db())
+  expect(working).toEqual([
+    { key: 'WORKED-2', project: 'worked-brief-fixture' },
+    { key: 'WORKED-1', project: 'worked-brief-fixture' },
+  ])
+  expect(
+    holderSequence(session, working, [
+      {
+        key: 'WORKED-2',
+        project: 'worked-brief-fixture',
+        record_id: newRecordId(),
+        title: 'Released claim task',
+      },
+    ]).map((holder) => holder.key),
+  ).toEqual([session, 'WORKED-2'])
 })

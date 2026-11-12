@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import type { ReviewReply } from '../contract/contract.ts'
 import { nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import type { SynchronousResult } from '../synchronous-result.ts'
 import { parseReviewOutput, recordReviews } from './review.ts'
 import { enqueueReview, enqueueReviewFinding, enqueueReviewLens } from './review-outbox.ts'
 import {
@@ -128,7 +129,7 @@ export function assertRunReviewFindingIntegrity(
   assertReviewFindingIntegrity({ column: 'run_record_id', id: runId }, database)
 }
 
-function atomic<T>(database: Database, operation: () => T): T {
+function atomic<T extends SynchronousResult>(database: Database, operation: () => T): T {
   return database.inTransaction ? operation() : writeTransaction(operation, database)
 }
 

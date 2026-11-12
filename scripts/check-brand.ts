@@ -65,10 +65,13 @@ const ALLOWED = new Set([
   'orchestrator/hooks/block-agent.py',
   'orchestrator/hooks/board-ack-guard.py',
   'orchestrator/hooks/board_hook_common.py',
+  'orchestrator/hooks/context-precompact.py',
   'orchestrator/hooks/git-guard.py',
   'orchestrator/hooks/heartbeat-guard.py',
   'orchestrator/hooks/heartbeat-decision.py',
   'orchestrator/hooks/heartbeat-remind.py',
+  // Shared by command-facing hooks that must locate the checkout's front-door executable.
+  'orchestrator/hooks/hook_paths.py',
   'orchestrator/hooks/hub-import-guard.py',
   'orchestrator/hooks/orch-heartbeat.sh',
   'orchestrator/hooks/protect-main-checkout.py',

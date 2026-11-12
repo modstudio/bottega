@@ -36,7 +36,7 @@ import {
   writeSessionContextCache,
 } from './session-context-cache.ts'
 import type { CatalogueStep } from './step-catalogue.ts'
-import { taskFlowStore } from './task-flow-store.ts'
+import { taskFlowReadStore } from './task-flow-store.ts'
 import { combineCursorRulings } from './workflow-cursor-autonomy.ts'
 
 export const HOSTED_AUTONOMY_TIMEOUT_MS = 2000
@@ -269,13 +269,13 @@ export async function resolveProjectAutonomy(
   }
 }
 
-function workflowRulingsSnapshot(
+async function workflowRulingsSnapshot(
   project: string,
   taskRecordId: string | null,
   d: Database = db(),
-): AutonomyResolution['rulings'] | null {
+): Promise<AutonomyResolution['rulings'] | null> {
   if (!taskRecordId) return null
-  const rows = taskFlowStore(d).activeStageAutonomy(project, taskRecordId)
+  const rows = await taskFlowReadStore(d).activeStageAutonomy(project, taskRecordId)
   return combineRulingsSnapshots(
     rows.flatMap((row) => {
       if (!row.autonomy) return []
@@ -302,7 +302,7 @@ export async function resolveAnswerRulings(
     env = process.env,
     timeoutMs = HOSTED_AUTONOMY_TIMEOUT_MS,
   } = options
-  const snapshot = workflowRulingsSnapshot(project, taskRecordId, d)
+  const snapshot = await workflowRulingsSnapshot(project, taskRecordId, d)
   try {
     const current = (
       await resolveProjectAutonomy(

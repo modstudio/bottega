@@ -128,7 +128,7 @@ export function waitForStopCloseOutLease(
   return 'still-held'
 }
 
-function stoppedReaderCloneRelease(
+async function stoppedReaderCloneRelease(
   row: StopRow,
   cleanupRow: ReturnType<typeof stopCleanupRow>,
 ): ReturnType<typeof releaseStoppedReaderClone> {
@@ -147,7 +147,7 @@ function stoppedReaderCloneRelease(
   if (decision.action === 'leave-for-sweep') {
     return keptStoppedReaderClone(decision.coordinatorPid)
   }
-  return releaseStoppedReaderClone(cleanupRow.record_id, decision.extraPids)
+  return await releaseStoppedReaderClone(cleanupRow.record_id, decision.extraPids)
 }
 
 function logStoppedRun(
@@ -155,7 +155,7 @@ function logStoppedRun(
   row: StopRow,
   cleanupRow: ReturnType<typeof stopCleanupRow>,
   dockerTeardown: TerminalDockerTeardown,
-  readerCloneRelease: ReturnType<typeof releaseStoppedReaderClone>,
+  readerCloneRelease: Awaited<ReturnType<typeof releaseStoppedReaderClone>>,
   sharedGitConfigHeader: string | null,
 ): void {
   options.presentation.log(stoppedRunLine(row.record_id))
@@ -374,7 +374,7 @@ export async function stopRun(
     )
   }
   const dockerTeardown = teardownTerminalRunResources(db(), row.record_id)
-  const readerCloneRelease = stoppedReaderCloneRelease(row, cleanupRow)
+  const readerCloneRelease = await stoppedReaderCloneRelease(row, cleanupRow)
   logStoppedRun(options, row, cleanupRow, dockerTeardown, readerCloneRelease, sharedGitConfigHeader)
 }
 

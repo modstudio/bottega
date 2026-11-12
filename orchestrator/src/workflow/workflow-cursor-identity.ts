@@ -4,8 +4,10 @@
 import type { Database } from 'bun:sqlite'
 import type { WorkflowCursorIdentityRow } from '../../../shared/orch-contract.ts'
 import { db } from '../database/db.ts'
-import { taskFlowStore } from './task-flow-store.ts'
+import { taskFlowReadStore } from './task-flow-store.ts'
 
-export function workflowCursorIdentityMap(database: Database = db()): WorkflowCursorIdentityRow[] {
-  return taskFlowStore(database).stageIdentityMap()
+export async function workflowCursorIdentityMap(
+  database: Database = db(),
+): Promise<WorkflowCursorIdentityRow[]> {
+  return await taskFlowReadStore(database).stageIdentityMap()
 }

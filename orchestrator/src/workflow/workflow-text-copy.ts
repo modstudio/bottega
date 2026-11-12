@@ -15,7 +15,7 @@ import {
 } from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
-import { taskFlowStore } from './task-flow-store.ts'
+import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 import { abandonSelectedWorkflowCursorForClose, nextWorkflowStep } from './workflow-cursor.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import {
@@ -105,15 +105,13 @@ export const productionWorkflowTextDocumentPorts: WorkflowTextDocumentPorts = {
 
 const firstToken = (title: string) => title.trim().split(/\s+/, 1)[0] ?? ''
 
-function uncopiedRows(cursorId: string, database: Database): CopyRow[] {
-  return taskFlowStore(database)
-    .uncopiedTextsForStage(cursorId)
-    .map((row) => ({
-      id: row.record_id,
-      stepSlug: row.step_slug,
-      body: row.body,
-      createdAt: row.created_at,
-    }))
+async function uncopiedRows(cursorId: string, database: Database): Promise<CopyRow[]> {
+  return (await taskFlowReadStore(database).uncopiedTextsForStage(cursorId)).map((row) => ({
+    id: row.record_id,
+    stepSlug: row.step_slug,
+    body: row.body,
+    createdAt: row.created_at,
+  }))
 }
 
 async function recordCopy(
@@ -138,7 +136,7 @@ async function recordCopy(
   }
   const hosted = await writeHostedTaskFlow('copy-text', payload, target, client)
   writeTransaction(() => {
-    taskFlowStore(database).write('copy-text', payload, hosted)
+    taskFlowLocalStore(database).write('copy-text', payload, hosted)
   }, database)
 }
 
@@ -168,7 +166,7 @@ export async function copyWorkflowTextForCursor(
   documents: WorkflowTextDocumentPorts = productionWorkflowTextDocumentPorts,
   client?: RecordTaskFlowClient,
 ): Promise<WorkflowTextCopyResult> {
-  const rows = uncopiedRows(cursor.recordId, database)
+  const rows = await uncopiedRows(cursor.recordId, database)
   if (!cursor.taskRecordId || rows.length === 0)
     return { cursor: cursor.number, copied: [], uncopied: [], unsupported: null }
   const target = taskFlowWriteTarget(cursor.project, database)
@@ -275,7 +273,7 @@ export async function closeCursorWithTextCopyResult(
   documents: WorkflowTextDocumentPorts = productionWorkflowTextDocumentPorts,
 ): Promise<WorkflowTextCloseResult> {
   if (input.action === 'next') await assertWorkflowSelfRulingProse(input.selfRuling)
-  const row = selectWorkflowCursorForClose(
+  const row = (await selectWorkflowCursorForClose(
     {
       project: input.project,
       workflow: input.workflow,
@@ -287,7 +285,7 @@ export async function closeCursorWithTextCopyResult(
     database,
     input.context.taskRecordId,
     input.context.taskStatusCategory,
-  ) as SelectableCursorRow | null
+  )) as SelectableCursorRow | null
   if (!row)
     throw new Error(
       `${cursorName(input.workflow ?? 'workflow', input.mode ?? 'default', input.key ?? '')} has no cursor; compose the workflow first`,
@@ -373,26 +371,35 @@ export function workflowTextUncopiedReport(
   return result.uncopied.map((row) => uncopiedLine(row, cursor)).join('\n')
 }
 
-export function showWorkflowText(
+export async function showWorkflowText(
   idInput: string,
   database: Database = db(),
-):
+): Promise<
   | { kind: 'live'; id: string; cursor: number; stepSlug: string; body: string }
-  | { kind: 'redirect'; id: string; documentReference: string } {
+  | { kind: 'redirect'; id: string; documentReference: string }
+> {
   const id = workflowTextAttachmentId(idInput)
-  const store = taskFlowStore(database)
-  const live = store.liveTextAttachment(id)
+  const store = taskFlowReadStore(database)
+  const live = await store.liveTextAttachment(id)
   if (live)
     return { kind: 'live', id, cursor: live.cursor, stepSlug: live.step_slug, body: live.body }
-  const copied = store.copiedTextReference(id)
+  const copied = await store.copiedTextReference(id)
   if (copied) return { kind: 'redirect', id, documentReference: copied }
   throw new Error(
     `${workflowTextAttachmentToken(id)} is not held on this machine; attachments of a cursor not linked to a task are removed when the cursor closes, and an id from another machine is readable only through its task document`,
   )
 }
 
-export function cursorForWorkflowTextCopy(cursor: number, database: Database = db()): CopyCursor {
-  const row = selectWorkflowCursorForClose({}, cursor, null, database) as SelectableCursorRow
+export async function cursorForWorkflowTextCopy(
+  cursor: number,
+  database: Database = db(),
+): Promise<CopyCursor> {
+  const row = (await selectWorkflowCursorForClose(
+    {},
+    cursor,
+    null,
+    database,
+  )) as SelectableCursorRow
   return {
     recordId: row.record_id,
     number: row.id,

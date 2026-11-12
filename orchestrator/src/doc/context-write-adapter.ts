@@ -16,6 +16,9 @@ import {
   taskKeyMap,
   taskReferenceForProjectKey,
 } from '../workflow/workflow-task-reference.ts'
+
+export { TaskNotFoundError } from '../workflow/workflow-task-reference.ts'
+
 import { productionWorkflowTextDocumentPorts } from '../workflow/workflow-text-copy.ts'
 import { decodeContextItem } from './context-item-codec.ts'
 import {
@@ -31,6 +34,26 @@ import { isScratchLocation } from './doc-resume-write.ts'
 import { isValidContextHolderSubject, taskContextHolder } from './doc-subjects.ts'
 
 export type ContextTask = HubTaskReference
+export class ContextTaskPrefixError extends Error {
+  readonly key: string
+  readonly prefix: string
+
+  constructor(key: string, prefix: string) {
+    super(
+      `task key prefix ${JSON.stringify(prefix)} is not declared by exactly one registered project; inspect prefixes with ${PLATFORM_SLUG} project list --json`,
+    )
+    this.name = 'ContextTaskPrefixError'
+    this.key = key
+    this.prefix = prefix
+  }
+}
+
+export function unknownTaskPrefixReport(key: string): { detail: string; remedy: string } {
+  return {
+    detail: `no single project declares the task prefix of ${key}`,
+    remedy: `declare it in one project's keyPrefixes with ${PLATFORM_SLUG} project set <project> --settings`,
+  }
+}
 export type ContextFactsPorts = {
   tasks: HubTaskReader
   task: HubTaskPuller
@@ -108,11 +131,7 @@ export async function resolveContextTask(
   const key = value.trim().toUpperCase()
   const prefix = taskKeyPrefix(key) ?? key.split('-', 1)[0] ?? key
   const project = projectForTaskKey(key, projects(undefined, database))
-  if (!project) {
-    throw new Error(
-      `task key prefix ${JSON.stringify(prefix)} is not declared by exactly one registered project; inspect prefixes with ${PLATFORM_SLUG} project list --json`,
-    )
-  }
+  if (!project) throw new ContextTaskPrefixError(key, prefix)
   return resolveOrPullHubTaskReference(project.name, key, ports.tasks, ports.task)
 }
 

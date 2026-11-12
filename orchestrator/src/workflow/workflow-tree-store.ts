@@ -684,7 +684,8 @@ export function importWorkflowTree(
 ): WorkflowTreeImportResult | Promise<WorkflowTreeImportResult> {
   if (!reason?.trim()) throw new Error('reason is required')
   const database = d ?? writableDb()
-  return writeTransaction(() => {
+  const hosted: { plan: ReturnType<typeof planWorkflowTreeImport> | null } = { plan: null }
+  const local = writeTransaction<WorkflowTreeImportResult | null>(() => {
     const production = productionWorkflowTree({ database, project: project ?? null })
     const spaceId = workflowReadSpaceFor(database, project ?? null)
     if (branchChangedPaths) {
@@ -705,8 +706,13 @@ export function importWorkflowTree(
       }
     const authority = currentRecordWriteDecision(database)
     throwIfRecordRefused(authority)
-    if (authority.verdict === 'hosted')
-      return writeHostedImport(plan, reason, author, database, project, destinationSpaceId)
+    if (authority.verdict === 'hosted') {
+      hosted.plan = plan
+      return null
+    }
     return writeLocalImport(plan, reason, author, database)
   }, database)
+  return hosted.plan
+    ? writeHostedImport(hosted.plan, reason, author, database, project, destinationSpaceId)
+    : local!
 }

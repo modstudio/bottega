@@ -351,7 +351,7 @@ describe('workflow text lifecycle', () => {
     )
     await abandon(abandoned, abandonedCursor, 'no longer needed')
     expect(rowCount(abandoned, abandonedCursor)).toBe(0)
-    expect(() => showWorkflowText(abandonedReference, abandoned)).toThrow(
+    await expect(showWorkflowText(abandonedReference, abandoned)).rejects.toThrow(
       `${abandonedReference} is not held on this machine; attachments of a cursor not linked to a task are removed when the cursor closes, and an id from another machine is readable only through its task document`,
     )
   })
@@ -435,7 +435,7 @@ describe('task-linked workflow text preservation', () => {
     }
 
     const result = await copyWorkflowTextForCursor(
-      cursorForWorkflowTextCopy(cursor, d),
+      await cursorForWorkflowTextCopy(cursor, d),
       d,
       async () => [
         {
@@ -456,7 +456,9 @@ describe('task-linked workflow text preservation', () => {
     expect(reports.join('\n')).not.toContain('retry:')
     expect(documentCalls).toBe(0)
     expect(rowCount(d, cursor)).toBe(2)
-    expect(references.map((reference) => showWorkflowText(reference, d))).toEqual([
+    expect(
+      await Promise.all(references.map((reference) => showWorkflowText(reference, d))),
+    ).toEqual([
       expect.objectContaining({ kind: 'live', body: 'first external text' }),
       expect.objectContaining({ kind: 'live', body: 'second external text' }),
     ])
@@ -471,7 +473,7 @@ describe('task-linked workflow text preservation', () => {
     const fake = documentFake()
 
     const result = await copyWorkflowTextForCursor(
-      cursorForWorkflowTextCopy(cursor, d),
+      await cursorForWorkflowTextCopy(cursor, d),
       d,
       async () => [
         {
@@ -525,7 +527,7 @@ describe('task-linked workflow text preservation', () => {
     expect(
       d.query<{ count: number }, []>('SELECT COUNT(*) count FROM workflow_text_copy').get()?.count,
     ).toBe(1)
-    expect(showWorkflowText(reference, d)).toMatchObject({
+    expect(await showWorkflowText(reference, d)).toMatchObject({
       kind: 'redirect',
       documentReference: 'DEV-1975/1',
     })
@@ -551,7 +553,7 @@ describe('task-linked workflow text preservation', () => {
     )
     expect(result).not.toContain('uncopied')
     expect(rowCount(d, cursor)).toBe(0)
-    expect(() => showWorkflowText(reference, d)).toThrow('is not held on this machine')
+    await expect(showWorkflowText(reference, d)).rejects.toThrow('is not held on this machine')
   })
 
   test('refused close validation makes no document-port call', async () => {
@@ -672,7 +674,7 @@ describe('task-linked workflow text preservation', () => {
           )
           references.push(reference)
           await copyWorkflowTextForCursor(
-            cursorForWorkflowTextCopy(cursor, d),
+            await cursorForWorkflowTextCopy(cursor, d),
             d,
             taskReader,
             fake.ports,
@@ -696,7 +698,7 @@ describe('task-linked workflow text preservation', () => {
           await attachWorkflowTextByHandle(cursor, `${terminal} second`, context, d),
         )
         await copyWorkflowTextForCursor(
-          cursorForWorkflowTextCopy(cursor, d),
+          await cursorForWorkflowTextCopy(cursor, d),
           d,
           taskReader,
           fake.ports,
@@ -704,7 +706,7 @@ describe('task-linked workflow text preservation', () => {
         await abandon(d, cursor, 'done')
       }
       for (const reference of references) {
-        const shown = showWorkflowText(reference, d)
+        const shown = await showWorkflowText(reference, d)
         expect(shown.kind).toBe('redirect')
       }
       expect(fake.created.map((row) => row.body)).toEqual(
@@ -725,7 +727,7 @@ describe('task-linked workflow text preservation', () => {
       throw new Error('document service unavailable')
     }
     const failed = await copyWorkflowTextForCursor(
-      cursorForWorkflowTextCopy(cursor, d),
+      await cursorForWorkflowTextCopy(cursor, d),
       d,
       taskReader,
       failing.ports,
@@ -733,17 +735,20 @@ describe('task-linked workflow text preservation', () => {
     expect(failed.uncopied).toHaveLength(1)
     await abandon(d, cursor, 'close anyway')
     expect(workflowTextUncopiedReport(failed)).toContain('workflow text copy --cursor')
-    expect(showWorkflowText(reference, d)).toMatchObject({ kind: 'live', body: 'survives failure' })
+    expect(await showWorkflowText(reference, d)).toMatchObject({
+      kind: 'live',
+      body: 'survives failure',
+    })
 
     const retry = documentFake()
     await copyWorkflowTextForCursor(
-      cursorForWorkflowTextCopy(cursor, d),
+      await cursorForWorkflowTextCopy(cursor, d),
       d,
       taskReader,
       retry.ports,
     )
     expect(rowCount(d, cursor)).toBe(0)
-    expect(showWorkflowText(reference, d)).toMatchObject({
+    expect(await showWorkflowText(reference, d)).toMatchObject({
       kind: 'redirect',
       documentReference: 'DEV-1975/1',
     })
@@ -759,7 +764,7 @@ describe('task-linked workflow text preservation', () => {
       { reference: 'DEV-1975/7', title: `attached-text:${exactId} original-step` },
     ])
     const exactResult = await copyWorkflowTextForCursor(
-      cursorForWorkflowTextCopy(exactCursor, exactDb),
+      await cursorForWorkflowTextCopy(exactCursor, exactDb),
       exactDb,
       taskReader,
       exact.ports,
@@ -783,7 +788,7 @@ describe('task-linked workflow text preservation', () => {
       { reference: 'DEV-1975/8', title: `attached-text:${prefixId}x collision` },
     ])
     const prefixResult = await copyWorkflowTextForCursor(
-      cursorForWorkflowTextCopy(prefixCursor, prefixDb),
+      await cursorForWorkflowTextCopy(prefixCursor, prefixDb),
       prefixDb,
       taskReader,
       prefix.ports,

@@ -12,6 +12,7 @@ agents, jobs, and routing
 - [bottega agent context set](#bottega-agent-context-set)
 - [bottega agent context show](#bottega-agent-context-show)
 - [bottega agent context stale](#bottega-agent-context-stale)
+- [bottega agent context worked](#bottega-agent-context-worked)
 - [bottega agent contract](#bottega-agent-contract)
 - [bottega agent cost-backtest](#bottega-agent-cost-backtest)
 - [bottega agent guide](#bottega-agent-guide)
@@ -86,6 +87,7 @@ manage stored architect context or resolve checkout context
 - [bottega agent context set](./agent.md#bottega-agent-context-set)
 - [bottega agent context show](./agent.md#bottega-agent-context-show)
 - [bottega agent context stale](./agent.md#bottega-agent-context-stale)
+- [bottega agent context worked](./agent.md#bottega-agent-context-worked)
 
 ## bottega agent context brief
 
@@ -165,6 +167,20 @@ list task holders with work in the last day after their newest next-action revis
 
 - `--session <id>`: select architect session
 - `--json`: write JSON
+
+### Related
+
+- [bottega agent context](./agent.md#bottega-agent-context)
+
+## bottega agent context worked
+
+**Synopsis:** `bottega agent context worked [--session <id>]`
+
+record and print the task keys worked by an architect session
+
+### Options
+
+- `--session <id>`: select architect session
 
 ### Related
 

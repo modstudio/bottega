@@ -64,7 +64,7 @@ const relayQuestionTool = async (input: {
 async function listOpenQuestions(): Promise<ListOpenQuestionsResult> {
   return ListOpenQuestionsResultSchema.parse({
     questions: (await queryInbox({ scope: 'session' })).questions,
-    waiting_on_operator: operatorWaiting(),
+    waiting_on_operator: await operatorWaiting(),
   })
 }
 
@@ -193,7 +193,7 @@ export function registerOperatorTools(
     },
     async ({ question_id, because, replacement, from_operator }) =>
       structured(
-        overturnRuling({
+        await overturnRuling({
           questionId: localQuestionId(question_id),
           reason: because,
           replacement: replacement ?? null,

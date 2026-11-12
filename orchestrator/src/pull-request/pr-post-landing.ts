@@ -70,7 +70,7 @@ export type PullRequestPostLandingAdapter = {
     payload: PullRequestPostLandingPayload,
     project: Project,
     movesInstallation: boolean,
-  ): PullRequestMergeOutcome
+  ): Promise<PullRequestMergeOutcome> | PullRequestMergeOutcome
 }
 
 function moveMainForPostLanding(
@@ -180,7 +180,7 @@ const cliPostLandingAdapter = guardRealPostLandingAdapter({
     })
   },
   fence: fenceStoreAfterCheckoutMove,
-  handOff(payload, project, movesInstallation) {
+  async handOff(payload, project, movesInstallation) {
     try {
       const command = postLandingHandOffInvocation(project.path, movesInstallation)
       const result = Bun.spawnSync(
@@ -221,7 +221,12 @@ export function postLandingHandOffInvocation(
  */
 
 type RemainingStageAdapter = {
-  cleanup?(project: string, branch: string, prNumber: number, database: Database): ShipCleanupReport
+  cleanup?(
+    project: string,
+    branch: string,
+    prNumber: number,
+    database: Database,
+  ): Promise<ShipCleanupReport> | ShipCleanupReport
 }
 
 function promotionOutput(input: {
@@ -249,7 +254,7 @@ function promotionOutput(input: {
   }
 }
 
-function mergedOutput(input: {
+async function mergedOutput(input: {
   adapter: Pick<RemainingStageAdapter, 'cleanup'>
   database: Database
   project: string
@@ -264,7 +269,7 @@ function mergedOutput(input: {
   depth?: string
   cleanupWasFenced?: boolean
   cleanupRecovery?: string
-}): PullRequestMergeOutcome {
+}): Promise<PullRequestMergeOutcome> {
   const addRequeue = (outcome: PullRequestMergeOutcome): PullRequestMergeOutcome => ({
     ...outcome,
     output: input.requeueOutput ? `${outcome.output}\n${input.requeueOutput}` : outcome.output,
@@ -302,7 +307,7 @@ function mergedOutput(input: {
     })
   }
   try {
-    const report = input.adapter.cleanup(
+    const report = await input.adapter.cleanup(
       input.project,
       input.branch,
       input.prNumber,
@@ -341,7 +346,7 @@ function postLandingHandOffOutcome(
   }
 }
 
-export function completePullRequestPostLanding(input: {
+export async function completePullRequestPostLanding(input: {
   adapter: RemainingStageAdapter
   postLandingAdapter?: PullRequestPostLandingAdapter
   database: Database
@@ -355,7 +360,7 @@ export function completePullRequestPostLanding(input: {
   recordingError?: string
   requeueOutput?: string
   movesInstallation?: boolean
-}): PullRequestMergeOutcome {
+}): Promise<PullRequestMergeOutcome> {
   const post = input.postLandingAdapter ?? cliPostLandingAdapter
   const decision: RequiredRungDecision =
     input.workflowPromotionDue || input.releaseRequired
@@ -424,7 +429,7 @@ export function completePullRequestPostLanding(input: {
   post.fence(
     `main checkout moved to include ${input.mergeCommit}; this process moved the main checkout and its post-landing child owns the store; ${postLandingRecovery(input.target, input.depth)}`,
   )
-  const handedOff = post.handOff(payload, input.project, movesInstallation)
+  const handedOff = await post.handOff(payload, input.project, movesInstallation)
   return postLandingHandOffOutcome(handedOff, input.target, input.depth)
 }
 
@@ -458,7 +463,12 @@ export type PullRequestPostLandingChildAdapter = {
     mergeCommit: string
     rungs: ReleaseRungPlan[]
   }): RequiredReleaseReport
-  cleanup(project: string, branch: string, prNumber: number, database: Database): ShipCleanupReport
+  cleanup(
+    project: string,
+    branch: string,
+    prNumber: number,
+    database: Database,
+  ): Promise<ShipCleanupReport> | ShipCleanupReport
 }
 
 function guardRealPostLandingChildAdapter(
@@ -520,11 +530,11 @@ function workflowPromotionResultForChild(input: {
   }
 }
 
-export function runPullRequestPostLanding(
+export async function runPullRequestPostLanding(
   payload: PullRequestPostLandingPayload,
   database: Database,
   adapter: PullRequestPostLandingChildAdapter = cliChildAdapter,
-): PullRequestMergeOutcome {
+): Promise<PullRequestMergeOutcome> {
   const project = adapter.project(payload.project, database)
   if (!project) throw new Error(`post-landing project ${payload.project} is not registered`)
   let checkoutFailure: string | null = null

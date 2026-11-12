@@ -20,8 +20,11 @@ type WorkflowTextCommandOptions = {
   workflowTextDocuments?: WorkflowTextDocumentPorts
 }
 
-export function showWorkflowTextCommand(argv: string[], print: WorkflowTextPrint): void {
-  const shown = showWorkflowText(argv[3]!)
+export async function showWorkflowTextCommand(
+  argv: string[],
+  print: WorkflowTextPrint,
+): Promise<void> {
+  const shown = await showWorkflowText(argv[3]!)
   if (shown.kind === 'live') {
     print(shown, shown.body)
     return
@@ -40,7 +43,7 @@ export async function copyWorkflowTextCommand(
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
   if (cursor === undefined) throw new Error('--cursor is required')
   const result = await copyWorkflowTextForCursor(
-    cursorForWorkflowTextCopy(cursor),
+    await cursorForWorkflowTextCopy(cursor),
     undefined,
     options.hubTaskReader,
     options.workflowTextDocuments ?? productionWorkflowTextDocumentPorts,

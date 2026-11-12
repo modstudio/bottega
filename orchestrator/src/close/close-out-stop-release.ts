@@ -78,10 +78,10 @@ export function keptStoppedReaderClone(coordinatorPid: number | null): StoppedRe
 }
 
 /** Release this conversation's tree only if it is a reader clone; otherwise do not touch it. */
-export function releaseStoppedReaderClone(
+export async function releaseStoppedReaderClone(
   runId: string,
   extraPids: number[] = [],
-): StoppedReaderCloneRelease {
+): Promise<StoppedReaderCloneRelease> {
   const clone = stoppedConversationIsReaderClone(runId)
   if (!clone) {
     return { outcome: 'not-applicable', detail: null }
@@ -90,7 +90,7 @@ export function releaseStoppedReaderClone(
   if (recordedReaderCloneRelease(rootId)) return { outcome: 'released', detail: null }
   let detail: string | null = null
   try {
-    detail = closeOutRun(rootId, { intent: 'terminal', extraPids }).detail
+    detail = (await closeOutRun(rootId, { intent: 'terminal', extraPids })).detail
   } catch (error) {
     detail = String((error as Error).message ?? error)
     // Close-out may have recorded the release before throwing.

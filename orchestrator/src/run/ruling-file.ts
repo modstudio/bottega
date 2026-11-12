@@ -16,7 +16,7 @@ import {
 } from '../database/db.ts'
 import {
   type TaskFlowRulingFileRow as QuestionRow,
-  taskFlowStore,
+  taskFlowReadStore,
 } from '../workflow/task-flow-store.ts'
 import { auditQuestionMutation, authorizeWorkflowQuestionMutation } from './question-mutation.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
@@ -176,8 +176,8 @@ function ownerRefusal(
   )
 }
 
-function loadQuestion(questionId: string): QuestionRow {
-  const row = taskFlowStore(db()).rulingFileQuestion(questionId)
+async function loadQuestion(questionId: string): Promise<QuestionRow> {
+  const row = await taskFlowReadStore(db()).rulingFileQuestion(questionId)
   if (!row)
     throw new Error(
       `no question ${questionId}; inspect question ids with ${PLATFORM_SLUG} question inbox --all`,
@@ -313,7 +313,7 @@ function recordFiling(
 
 export async function fileRuling(input: FileRulingInput, stores: RulingFileStores) {
   writableDb()
-  const row = loadQuestion(input.questionId)
+  const row = await loadQuestion(input.questionId)
   const requested = requestedKind(input.as)
   if (requested === 'doc' && (input.scope ?? 'project') !== 'canon') filingScope(input.scope)
   const actor = sessionId()

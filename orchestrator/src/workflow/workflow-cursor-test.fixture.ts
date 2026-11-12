@@ -245,14 +245,14 @@ export async function selectAndNextWorkflowStep(
   live?: LiveCursorAutonomy,
 ): Promise<string> {
   const key = workflowKeyOf(callArgs)
-  const row = selectWorkflowCursorForClose(
+  const row = (await selectWorkflowCursorForClose(
     { project, workflow: slug, mode, ...(key ? { key } : {}) },
     cursor,
     callContext.session,
     d,
     callContext.taskRecordId,
     callContext.taskStatusCategory,
-  ) as SelectableCursorRow | null
+  )) as SelectableCursorRow | null
   if (!row)
     throw new Error(`${cursorName(slug, mode, key)} has no cursor; compose the workflow first`)
   return (
@@ -284,14 +284,14 @@ export async function abandonCursor(
   cursor?: number,
 ): Promise<string> {
   const key = workflowKeyOf(callArgs)
-  const row = selectWorkflowCursorForClose(
+  const row = (await selectWorkflowCursorForClose(
     { project, workflow: slug, mode, ...(key ? { key } : {}) },
     cursor,
     callContext.session,
     d,
     callContext.taskRecordId,
     callContext.taskStatusCategory,
-  ) as SelectableCursorRow | null
+  )) as SelectableCursorRow | null
   if (!row) throw new Error(`fixture has no ${slug} cursor to abandon`)
   return await abandonSelectedWorkflowCursorForClose(row, reason, callContext, d, callArgs)
 }

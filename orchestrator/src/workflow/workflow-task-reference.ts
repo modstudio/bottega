@@ -20,6 +20,21 @@ export type HubTaskReader = (project: string) => Promise<HubTaskReference[]>
 export type HubTaskPuller = (project: string, key: string) => Promise<HubTaskReference | null>
 export type HubTaskKeyMap = ReadonlyMap<string, readonly HubTaskReference[]>
 
+export class TaskNotFoundError extends Error {
+  readonly project: string
+  readonly key: string
+  readonly remedy: string
+
+  constructor(project: string, key: string) {
+    const remedy = `${PLATFORM_SLUG} task list --project ${project} --json`
+    super(`no task ${key} in project ${project}; inspect available tasks with ${remedy}`)
+    this.name = 'TaskNotFoundError'
+    this.project = project
+    this.key = key
+    this.remedy = remedy
+  }
+}
+
 export const projectTaskKey = (project: string, key: string) => `${project}\0${key}`
 
 export function taskKeyMap(tasks: readonly HubTaskReference[]): HubTaskKeyMap {
@@ -150,9 +165,7 @@ export async function resolveOrPullHubTaskReference(
     throw taskReadRefusal(project, error instanceof Error ? error.message : String(error), retry)
   }
   if (!pulled) {
-    throw new Error(
-      `no task ${key} in project ${project}; inspect available tasks with ${PLATFORM_SLUG} task list --project ${project} --json`,
-    )
+    throw new TaskNotFoundError(project, key)
   }
   if (pulled.project !== project || pulled.key !== key) {
     throw taskReadRefusal(

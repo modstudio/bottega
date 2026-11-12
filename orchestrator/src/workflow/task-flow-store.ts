@@ -7,7 +7,12 @@ import type {
   TaskFlowIntentInput,
   TaskFlowIntentResult,
 } from '../record/record-task-flow-write-contract.ts'
-import { sqliteTaskFlowStore } from './task-flow-store-sqlite.ts'
+import type {
+  TaskFlowLocalOnlyReadMethod,
+  TaskFlowLocalReadMethod,
+  TaskFlowWriteMethod,
+} from './task-flow-store-methods.ts'
+import { sqliteTaskFlowLocalStore, sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
 import type {
   TaskFlowCloseOutStageRow,
   TaskFlowCursorLifecycleRow,
@@ -51,7 +56,7 @@ export type {
  * Migrations and their preflights write the local tables directly by design, as do the hosted-cache
  * writer in record/record-cache-workflow.ts and refresh in workflow/task-flow-read-through.ts.
  */
-export interface TaskFlowStore {
+interface TaskFlowQueries {
   write<K extends TaskFlowIntent>(
     intent: K,
     payload: TaskFlowIntentInput<K>,
@@ -201,7 +206,30 @@ export interface TaskFlowStore {
   localQuestionProjects(): Array<{ project: string | null }>
 }
 
-/** Resolves task-flow persistence to the local SQLite adapter. */
-export function taskFlowStore(database: Database): TaskFlowStore {
-  return sqliteTaskFlowStore(database)
+type TaskFlowReadMethod = Exclude<
+  keyof TaskFlowQueries,
+  TaskFlowWriteMethod | TaskFlowLocalOnlyReadMethod
+>
+
+type AsyncTaskFlowReads = {
+  [K in TaskFlowReadMethod]: TaskFlowQueries[K] extends (...args: infer A) => infer R
+    ? (...args: A) => Promise<R>
+    : never
+}
+
+/** Synchronous writes and reads that must remain atomic inside a local transaction. */
+export interface TaskFlowLocalStore
+  extends Pick<TaskFlowQueries, TaskFlowWriteMethod | TaskFlowLocalReadMethod> {}
+
+/** Async task-flow reads, implemented locally now and by the hosted record in the next slice. */
+export interface TaskFlowReadStore extends AsyncTaskFlowReads {}
+
+/** Resolves task-flow writes and transaction-bound reads to local SQLite. */
+export function taskFlowLocalStore(database: Database): TaskFlowLocalStore {
+  return sqliteTaskFlowLocalStore(database)
+}
+
+/** Resolves task-flow reads to the async SQLite adapter. */
+export function taskFlowReadStore(database: Database): TaskFlowReadStore {
+  return sqliteTaskFlowReadStore(database)
 }

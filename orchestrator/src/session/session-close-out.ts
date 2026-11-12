@@ -25,7 +25,7 @@ import { observeGrokTrustHeadings } from '../sandbox/grok-trust.ts'
 import { shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import {
   type TaskFlowOpenSessionStageRow as OpenCursor,
-  taskFlowStore,
+  taskFlowReadStore,
 } from '../workflow/task-flow-store.ts'
 import { hasAbsentTreeTeardownPlanWithRegisteredRemoveCommand } from '../worktree/worktree-remove.ts'
 import {
@@ -46,6 +46,7 @@ import {
   sessionCloseOutVerdict,
   sessionOwnedRunIds,
 } from './session-close-out-decision.ts'
+import type { TaskNextActionOutcome } from './session-close-out-next-actions.ts'
 import { sessionCloseOutObligationItems } from './session-close-out-obligation-adapter.ts'
 import { closeOutSessionOutbox } from './session-close-out-outbox.ts'
 import type {
@@ -59,6 +60,7 @@ import {
 } from './session-close-out-resource-release.ts'
 import { reclaimSessionReleasedTree } from './session-close-out-resource-release-adapter.ts'
 import { insertSessionCloseOutRecord } from './session-close-out-store.ts'
+import { appendWorkedCloseOutReport } from './session-close-out-worked.ts'
 import {
   closeOutSessionContext,
   type SessionContextLifecycleReport,
@@ -103,6 +105,7 @@ export type SessionCloseOutReport = {
     contextItems: SessionContextLifecycleReport['items']
   }
   mechanical: string[]
+  nextActionOutcomes: TaskNextActionOutcome[]
   kept: string[]
   parked: string[]
   process: SessionProcessLine[]
@@ -111,6 +114,13 @@ export type SessionCloseOutReport = {
   heldTrees: HeldTreeJson[]
   verdict: { clean: boolean; residue: number }
   recommendation: 'clear' | 'brief'
+}
+
+type ReleaseSessionResourcesOptions = {
+  session?: string
+  dryRun?: boolean
+  resume?: boolean
+  reportNextActions?: boolean
 }
 
 type RunRow = {
@@ -215,8 +225,8 @@ function incompleteReviews(database: Database, session: string): IncompleteRevie
     .all(session) as IncompleteReview[]
 }
 
-function openCursors(database: Database, session: string): OpenCursor[] {
-  return taskFlowStore(database).openStagesForSession(session)
+async function openCursors(database: Database, session: string): Promise<OpenCursor[]> {
+  return await taskFlowReadStore(database).openStagesForSession(session)
 }
 
 function observeOwnedBranch(
@@ -499,13 +509,13 @@ export function heldRunResources(
   }
 }
 
-function gather(database: Database, session: string, dryRun: boolean) {
+async function gather(database: Database, session: string, dryRun: boolean) {
   const runs = ownedRuns(database, session)
   const roots = [...new Set(runs.map((run) => run.rootRecordId))]
   const claims = ownedClaims(database, roots)
   const landings = activeLandings(database, session)
   const reviews = incompleteReviews(database, session)
-  const cursors = openCursors(database, session)
+  const cursors = await openCursors(database, session)
   const branchInventory = branchFacts(runs, dryRun)
   const held = heldRunResources(database, runs)
   const facts: SessionOwnershipFacts = {
@@ -529,6 +539,8 @@ function gather(database: Database, session: string, dryRun: boolean) {
     classification: classifySessionCloseOut(facts),
   }
 }
+
+type GatheredSessionResources = Awaited<ReturnType<typeof gather>>
 
 const silentPresentation: CleanupPresentation = {
   log: () => {},
@@ -565,8 +577,8 @@ function currentTreeOwners(database: Database, path: string): { runId: string; p
     .map((row) => ({ runId: row.record_id, path: wanted }))
 }
 
-function throwUnlessReleased(result: ReturnType<typeof closeOutRun>): void {
-  const annotated = annotateHeldLandingInFlight(result)
+async function throwUnlessReleased(result: Awaited<ReturnType<typeof closeOutRun>>): Promise<void> {
+  const annotated = await annotateHeldLandingInFlight(result)
   if (['released', 'absent'].includes(annotated.outcome)) return
   const error = new Error(`${annotated.outcome}: ${annotated.detail}`)
   const held = heldTreeJson(annotated)
@@ -589,10 +601,13 @@ function recordMechanicalFailure(
   })
 }
 
-function applyMechanicalAction(action: SessionMechanicalAction, database: Database): string | null {
+async function applyMechanicalAction(
+  action: SessionMechanicalAction,
+  database: Database,
+): Promise<string | null> {
   if (action.kind === 'close-run') {
-    const result = closeOutRun(action.runId, { intent: 'explicit' })
-    throwUnlessReleased(result)
+    const result = await closeOutRun(action.runId, { intent: 'explicit' })
+    await throwUnlessReleased(result)
     return result.runId
   }
   if (action.kind === 'remove-tree') {
@@ -601,12 +616,12 @@ function applyMechanicalAction(action: SessionMechanicalAction, database: Databa
       throw new Error(
         `planned tree ${action.path} is no longer owned only by run ${action.runId}; gather again before removing it`,
       )
-    const result = closeOutRun(action.runId, { intent: 'tree-remove' })
-    throwUnlessReleased(result)
+    const result = await closeOutRun(action.runId, { intent: 'tree-remove' })
+    await throwUnlessReleased(result)
     return result.runId
   }
   if (action.kind === 'ship-cleanup') {
-    const result = shipCleanup(action.branch, { project: action.project })
+    const result = await shipCleanup(action.branch, { project: action.project })
     if (!result.verdict.clean)
       throw new Error(
         result.errors.map((error) => error.detail).join('; ') ||
@@ -636,7 +651,7 @@ function applyMechanicalAction(action: SessionMechanicalAction, database: Databa
 
 function liveRunProcessItem(
   item: Extract<
-    ReturnType<typeof gather>['classification']['process'][number],
+    GatheredSessionResources['classification']['process'][number],
     { kind: 'live-run' }
   >,
 ): SessionProcessLine {
@@ -652,9 +667,9 @@ function liveRunProcessItem(
 }
 
 function unprovedBranchProcessItem(
-  inventory: ReturnType<typeof gather>,
+  inventory: GatheredSessionResources,
   item: Extract<
-    ReturnType<typeof gather>['classification']['process'][number],
+    GatheredSessionResources['classification']['process'][number],
     { kind: 'unproved-branch' }
   >,
 ): SessionProcessLine {
@@ -674,8 +689,8 @@ function unprovedBranchProcessItem(
 }
 
 function processReportItem(
-  inventory: ReturnType<typeof gather>,
-  item: ReturnType<typeof gather>['classification']['process'][number],
+  inventory: GatheredSessionResources,
+  item: GatheredSessionResources['classification']['process'][number],
 ): SessionProcessLine {
   switch (item.kind) {
     case 'live-run':
@@ -712,7 +727,7 @@ function processReportItem(
 
 function appendClassifiedProcessItems(
   report: SessionCloseOutReport,
-  inventory: ReturnType<typeof gather>,
+  inventory: GatheredSessionResources,
 ): void {
   for (const item of inventory.classification.process)
     report.process.push(processReportItem(inventory, item))
@@ -743,7 +758,7 @@ function appendCursorProcessItems(report: SessionCloseOutReport, cursors: readon
 
 function appendArgumentProcesses(
   report: SessionCloseOutReport,
-  inventory: ReturnType<typeof gather>,
+  inventory: GatheredSessionResources,
 ): void {
   const projectRows = [
     ...new Set(inventory.runs.flatMap((run) => (run.project ? [run.project] : []))),
@@ -765,7 +780,7 @@ function appendArgumentProcesses(
 
 function appendObservationFailures(
   report: SessionCloseOutReport,
-  inventory: ReturnType<typeof gather>,
+  inventory: GatheredSessionResources,
   errors: readonly ResourceObservationError[],
 ): void {
   for (const error of errors) {
@@ -806,13 +821,13 @@ function appendObservationFailures(
   }
 }
 
-function applySessionMechanicalActions(
+async function applySessionMechanicalActions(
   report: SessionCloseOutReport,
-  inventory: ReturnType<typeof gather>,
+  inventory: GatheredSessionResources,
   database: Database,
   session: string,
   dryRun: boolean,
-): void {
+): Promise<void> {
   const releasedRoots: string[] = []
   for (const action of inventory.classification.mechanical) {
     const label = mechanicalLabel(action)
@@ -821,7 +836,7 @@ function applySessionMechanicalActions(
       continue
     }
     try {
-      const released = applyMechanicalAction(action, database)
+      const released = await applyMechanicalAction(action, database)
       if (released) releasedRoots.push(released)
       report.mechanical.push(label)
     } catch (cause) {
@@ -842,19 +857,31 @@ function applySessionMechanicalActions(
     }
 }
 
+async function finalSessionInventory(
+  initial: Awaited<ReturnType<typeof gather>>,
+  database: Database,
+  session: string,
+  dryRun: boolean,
+): Promise<Awaited<ReturnType<typeof gather>>> {
+  return dryRun || initial.classification.mechanical.length === 0
+    ? initial
+    : await gather(database, session, false)
+}
+
 /**
  * Close-out without writing a session_close_out record. Machine sweep uses this replay path so an
  * idempotent release does not create a second close-out invocation record.
  */
 export async function releaseSessionResources(
-  options: { session?: string; dryRun?: boolean; resume?: boolean } = {},
+  options: ReleaseSessionResourcesOptions = {},
 ): Promise<SessionCloseOutReport> {
   const session = options.session ?? callingSessionId()
   if (!session) throw new Error(`session identity is unavailable; pass --session <id>`)
   const dryRun = options.dryRun ?? false
   const resume = options.resume ?? false
+  const reportNextActions = options.reportNextActions ?? false
   const database = dryRun ? db() : writableDb()
-  const initial = gather(database, session, dryRun)
+  const initial = await gather(database, session, dryRun)
   const context = await closeOutSessionContext({ session, dryRun, resume, database })
   const report: SessionCloseOutReport = {
     session,
@@ -870,6 +897,7 @@ export async function releaseSessionResources(
       contextItems: context.items,
     },
     mechanical: [...context.mechanical],
+    nextActionOutcomes: [],
     kept: context.kept,
     parked: [],
     process: context.process,
@@ -879,16 +907,20 @@ export async function releaseSessionResources(
     verdict: { clean: false, residue: 0 },
     recommendation: 'brief',
   }
-  applySessionMechanicalActions(report, initial, database, session, dryRun)
+  await applySessionMechanicalActions(report, initial, database, session, dryRun)
   const outbox = await closeOutSessionOutbox({ database, session, dryRun })
   report.mechanical.push(...outbox.mechanical)
   report.process.push(...outbox.process)
   report.warnings.push(...outbox.warnings)
   report.errors.push(...outbox.errors)
-  const final =
-    dryRun || initial.classification.mechanical.length === 0
-      ? initial
-      : gather(database, session, false)
+  await appendWorkedCloseOutReport({
+    report,
+    session,
+    database,
+    reportNextActions,
+    writeWorked: resume && !dryRun,
+  })
+  const final = await finalSessionInventory(initial, database, session, dryRun)
   appendObservationFailures(report, final, final.observationErrors)
   appendClassifiedProcessItems(report, final)
   appendCursorProcessItems(report, final.cursors)
@@ -930,9 +962,9 @@ export async function releaseSessionResources(
 }
 
 export async function closeOutSession(
-  options: { session?: string; dryRun?: boolean; resume?: boolean } = {},
+  options: Omit<ReleaseSessionResourcesOptions, 'reportNextActions'> = {},
 ): Promise<SessionCloseOutReport> {
-  const report = await releaseSessionResources(options)
+  const report = await releaseSessionResources({ ...options, reportNextActions: true })
   if (report.dryRun) return report
   const row = sessionCloseOutRecord(report)
   const database = writableDb()
@@ -940,8 +972,17 @@ export async function closeOutSession(
   return report
 }
 
+function missingNextActionLines(outcomes: readonly TaskNextActionOutcome[]): string[] {
+  return outcomes.flatMap((outcome) =>
+    outcome.status === 'missing' ? [`close-out: ${outcome.key} has no next-action`] : [],
+  )
+}
+
 export function formatSessionCloseOut(report: SessionCloseOutReport): string {
-  const lines = [`session close-out ${report.session}${report.dryRun ? ' (dry run)' : ''}`]
+  const lines = [
+    `session close-out ${report.session}${report.dryRun ? ' (dry run)' : ''}`,
+    ...missingNextActionLines(report.nextActionOutcomes),
+  ]
   for (const item of report.mechanical) lines.push(`mechanical: ${item}`)
   for (const item of report.kept) lines.push(`kept: ${item}`)
   for (const item of report.parked) lines.push(`parked: ${item}`)

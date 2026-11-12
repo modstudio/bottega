@@ -26,12 +26,19 @@ const SCRIPT_FILES = [
   'workflow-cursor-reminder.py',
   'board-ack-guard.py',
   'session-brief.py',
+  'context-precompact.py',
   'test-substance-guard.py',
   'hub-import-guard.py',
 ] as const
 
 type ScriptFile = (typeof SCRIPT_FILES)[number]
-type HookEvent = 'PreToolUse' | 'SubagentStart' | 'PostToolUse' | 'Stop' | 'SessionStart'
+type HookEvent =
+  | 'PreToolUse'
+  | 'SubagentStart'
+  | 'PostToolUse'
+  | 'Stop'
+  | 'SessionStart'
+  | 'PreCompact'
 type HookCondition = string | { absoluteBottega: 'run start' | 'board ask' | 'board post' }
 type ProductHookDeclaration = {
   event: HookEvent
@@ -148,6 +155,7 @@ const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
   },
   { event: 'SessionStart', script: 'session-brief.py' },
   { event: 'SessionStart', script: 'workflow-cursor-reminder.py', boardEnvironment: true },
+  { event: 'PreCompact', script: 'context-precompact.py' },
 ]
 
 const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`

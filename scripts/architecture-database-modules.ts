@@ -172,6 +172,7 @@ export const databaseModules: ArchitectureModule[] = [
     'bun:sqlite',
     '../../../shared/config-directory.ts',
     '../../../shared/machine-config.ts',
+    '../synchronous-result.ts',
   ]),
   module('orchestrator/src/database/storage-lifecycle.ts', [
     '../../../shared/storage-lifecycle.ts',

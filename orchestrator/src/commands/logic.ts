@@ -409,8 +409,8 @@ function registerTreeCommands(program: Command): void {
     .command('ship-cleanup <branch>')
     .description('remove ephemeral resources for a landed branch')
     .allowExcessArguments(false)
-    .action((branch) => {
-      const report = shipCleanup(branch)
+    .action(async (branch) => {
+      const report = await shipCleanup(branch)
       log(formatShipCleanup(report))
       if (!report.verdict.clean) process.exitCode = SHIP_CLEANUP_RESIDUE_EXIT_CODE
     })
@@ -547,6 +547,20 @@ function registerDoCommand(program: Command): void {
   })
 }
 
+function registerWaitingCommand(program: Command): void {
+  describedCommand(program, 'waiting', 'list questions waiting on the operator')
+    .option('--json', 'write the waiting questions as JSON')
+    .option('--claim-notifications', 'claim and include pending operator notifications')
+    .allowExcessArguments(false)
+    .action(
+      async (options) =>
+        await waitingCommand(
+          { json: Boolean(options.json), claimNotifications: Boolean(options.claimNotifications) },
+          presentation,
+        ),
+    )
+}
+
 export function register(program: Command, dependencies: LogicDependencies = {}): void {
   registerDatabaseCommands(program, presentation)
   program
@@ -653,16 +667,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .requiredOption('--note <why>', 'record why the question needs the operator')
     .allowUnknownOption(true)
     .action((id, options, command) => relayByIdentifier(id, command, options.note))
-  describedCommand(program, 'waiting', 'list questions waiting on the operator')
-    .option('--json', 'write the waiting questions as JSON')
-    .option('--claim-notifications', 'claim and include pending operator notifications')
-    .allowExcessArguments(false)
-    .action((options) =>
-      waitingCommand(
-        { json: Boolean(options.json), claimNotifications: Boolean(options.claimNotifications) },
-        presentation,
-      ),
-    )
+  registerWaitingCommand(program)
   describedCommand(program, 'peek <id>', 'show a run summary and its recent events')
     .option('--events <value>', 'include this many recent events')
     .option('--json', 'write the run summary as JSON')

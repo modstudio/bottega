@@ -18,7 +18,7 @@ import {
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { detach } from '../run/run-dispatch.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
-import { taskFlowStore } from '../workflow/task-flow-store.ts'
+import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import {
   type ClaimLifecycle,
   type CursorLifecycle,
@@ -108,8 +108,8 @@ function runFacts(sessionId: string): RunLifecycle[] {
   })
 }
 
-function cursorFacts(sessionId: string): CursorLifecycle[] {
-  const rows = taskFlowStore(db()).cursorLifecycleForSession(sessionId)
+async function cursorFacts(sessionId: string): Promise<CursorLifecycle[]> {
+  const rows = await taskFlowReadStore(db()).cursorLifecycleForSession(sessionId)
   return rows.map((row) => {
     const advancesAt = (JSON.parse(row.closed) as Array<{ at?: unknown }>).flatMap((entry) =>
       typeof entry.at === 'string' ? [entry.at] : [],
@@ -149,10 +149,10 @@ function claimFacts(sessionId: string): ClaimLifecycle[] {
   }))
 }
 
-function factsFor(sessionId: string): LifecycleFacts {
+async function factsFor(sessionId: string): Promise<LifecycleFacts> {
   return {
     runs: runFacts(sessionId),
-    cursors: cursorFacts(sessionId),
+    cursors: await cursorFacts(sessionId),
     claims: claimFacts(sessionId),
     unjudgedOwnerWindowMs: UNJUDGED_OWNER_WINDOW_MS,
   }
@@ -367,7 +367,11 @@ async function outputSession(
   rubric: JudgeRubric | null,
 ): Promise<SessionLossResult> {
   const allRows = await transcriptRowsForSession(sessionId, sources)
-  const report = measureSessionLosses(sessionId, rowsSince(allRows, since), factsFor(sessionId))
+  const report = measureSessionLosses(
+    sessionId,
+    rowsSince(allRows, since),
+    await factsFor(sessionId),
+  )
   if (!report) return { sessionId, error: 'no timestamped rows' }
   const boundaries: SessionLossOutput['boundaries'] = []
   for (const boundary of report.boundaries)

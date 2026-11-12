@@ -511,7 +511,7 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
     )
   })
 
-  test('a project with task flow history refuses removal', () => {
+  test('a project with task flow history refuses removal', async () => {
     upsertProject({ recordId: newRecordId(), name: 'kept-task-flow', path: '/w/kept-task-flow' })
     const project = projectByName('kept-task-flow')!
     writableDb()
@@ -523,18 +523,18 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
       )
       .run(newRecordId(), newRecordId(), project.recordId)
 
-    expect(() => removeProject(project.name)).toThrow(
+    await expect(removeProject(project.name)).rejects.toThrow(
       'project kept-task-flow is referenced by 1 task flow(s)',
     )
   })
 
-  test('a project with nothing referencing it still removes', () => {
+  test('a project with nothing referencing it still removes', async () => {
     upsertProject({ recordId: newRecordId(), name: 'ephemeral', path: '/w/ephemeral' })
-    expect(removeProject('ephemeral')).toBe(true)
+    expect(await removeProject('ephemeral')).toBe(true)
     expect(projectByName('ephemeral')).toBeNull()
   })
 
-  test('a retired project is removed only when retired rows are included', () => {
+  test('a retired project is removed only when retired rows are included', async () => {
     upsertProject({
       recordId: newRecordId(),
       name: 'retired-ephemeral',
@@ -542,13 +542,13 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
     })
     expect(retireProject('retired-ephemeral')).toBe('retired')
 
-    expect(removeProject('retired-ephemeral')).toBe(false)
+    expect(await removeProject('retired-ephemeral')).toBe(false)
     expect(retiredProjectByName('retired-ephemeral')).not.toBeNull()
-    expect(removeProject('retired-ephemeral', { includeRetired: true })).toBe(true)
+    expect(await removeProject('retired-ephemeral', { includeRetired: true })).toBe(true)
     expect(retiredProjectByName('retired-ephemeral')).toBeNull()
   })
 
-  test('purge removal refuses an absent register row while plain removal reports it', () => {
+  test('purge removal refuses an absent register row while plain removal reports it', async () => {
     const name = 'absent-removal'
     const logs: string[] = []
     const presentation = {
@@ -556,16 +556,16 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
       cwd: () => process.cwd(),
     }
 
-    expect(() => removeProjectCommand(name, { purged: true }, presentation)).toThrow(
+    await expect(removeProjectCommand(name, { purged: true }, presentation)).rejects.toThrow(
       `project ${name} is not in this machine's register; the purge removed its rows but found no register entry to remove — run \`${PLATFORM_SLUG} project list\` and \`${PLATFORM_SLUG} project list --retired\` to inspect the register`,
     )
     expect(logs).toEqual([])
 
-    removeProjectCommand(name, { purged: false }, presentation)
+    await removeProjectCommand(name, { purged: false }, presentation)
     expect(logs).toEqual([`no project "${name}"`])
   })
 
-  test('plain removal refuses a retired register row', () => {
+  test('plain removal refuses a retired register row', async () => {
     const name = 'retired-removal'
     const logs: string[] = []
     const presentation = {
@@ -575,7 +575,7 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
     upsertProject({ recordId: newRecordId(), name, path: `/w/${name}` })
     expect(retireProject(name)).toBe('retired')
 
-    expect(() => removeProjectCommand(name, { purged: false }, presentation)).toThrow(
+    await expect(removeProjectCommand(name, { purged: false }, presentation)).rejects.toThrow(
       retiredProjectRefusal(name),
     )
     expect(logs).toEqual([])
@@ -607,7 +607,7 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
     expect(projectByName('local-catalogue')).not.toBeNull()
   })
 
-  test('hosted catalogue rows neither block removal nor disappear with the local project', () => {
+  test('hosted catalogue rows neither block removal nor disappear with the local project', async () => {
     upsertProject({
       recordId: newRecordId(),
       name: 'hosted-catalogue',
@@ -647,7 +647,7 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
       )
       .run(newRecordId(), ref, project.recordId, space)
 
-    expect(removeProject('hosted-catalogue')).toBe(true)
+    expect(await removeProject('hosted-catalogue')).toBe(true)
     expect(projectByName('hosted-catalogue')).toBeNull()
     for (const table of ['project_lens_profile', 'port_pair', 'port_ref', 'port_ref_source'])
       expect(db().query(`SELECT COUNT(*) AS n FROM ${table} WHERE space_id=?`).get(space)).toEqual({
