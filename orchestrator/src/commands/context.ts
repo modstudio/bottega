@@ -1,6 +1,7 @@
 // concern: cli
 /** Registers architect session resolution and stored context item verbs. */
 import type { Command } from 'commander'
+import { assertRecordShape } from '../../../shared/record-shape.ts'
 import { contextBrief, renderContextBrief } from '../doc/context-brief.ts'
 import { dropContextItem, getContext, setContextItem } from '../doc/context-service.ts'
 import { staleContextForSession } from '../doc/context-stale-adapter.ts'
@@ -74,6 +75,9 @@ export function register(program: Command): void {
     .action(async (body, options) => {
       if (!CONTEXT_ITEM_KINDS.includes(options.kind))
         throw new Error(`--kind must be one of ${CONTEXT_ITEM_KINDS.join(', ')}`)
+      if (options.kind === 'ruling') assertRecordShape('ruling', body)
+      if (options.kind === 'open-question') assertRecordShape('open question', body)
+      if (options.kind === 'next-action') assertRecordShape('next action', body)
       log(
         JSON.stringify(
           await setContextItem({ ...options, expectedRevision: options.expectedRevision, body }),

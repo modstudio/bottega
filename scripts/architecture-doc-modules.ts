@@ -28,6 +28,7 @@ export const docModules: DocModule[] = [
   module('orchestrator/src/doc/doc-revision-conflict.ts', ['zod', './doc-write-allowed.ts']),
   module('orchestrator/src/doc/doc-context-write.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/record-shape.ts',
     '../workflow/workflow-task-reference.ts',
   ]),
   module('orchestrator/src/doc/context-item-codec.ts', ['./doc-context-write.ts']),

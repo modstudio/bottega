@@ -1,6 +1,12 @@
 // concern: doc-context-write
 /** Pure write policy for one structured context item. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import {
+  NEXT_ACTION_MAX_CHARS,
+  OPEN_QUESTION_MAX_CHARS,
+  recordShapeRefusal,
+  RULING_MAX_CHARS,
+} from '../../../shared/record-shape.ts'
 import type { HubTaskReference } from '../workflow/workflow-task-reference.ts'
 
 export const CONTEXT_ITEM_KINDS = [
@@ -18,12 +24,12 @@ export type ContextTaskIdentity = Pick<
 >
 
 export const CONTEXT_ITEM_MAX_CHARS = {
-  ruling: 1500,
+  ruling: RULING_MAX_CHARS,
   position: 800,
   fact: 800,
-  'open-question': 800,
+  'open-question': OPEN_QUESTION_MAX_CHARS,
   pointer: 400,
-  'next-action': 400,
+  'next-action': NEXT_ACTION_MAX_CHARS,
 } as const satisfies Record<ContextItemKind, number>
 
 /** A ruling names where Shmuel Barkin gave it: a question, a board message, or the chat on a date. */
@@ -98,12 +104,18 @@ export function contextWriteRefusal(item: ContextItem, facts: ContextWriteFacts)
 export function contextItemShapeRefusal(item: ContextItem): string | null {
   const address = `context item ${item.id}`
   if (!item.source.trim()) return `${address} refused: every item requires a non-empty source`
-  if (item.kind === 'ruling' && !item.body.trim()) {
-    return `${address} refused: a ruling requires a non-empty body`
-  }
   if (item.kind === 'ruling' && !RULING_SOURCE.test(item.source.trim())) {
     return `${address} refused: a ruling source names where it was given; write --source as q<number>, board:<id> or chat <YYYY-MM-DD>`
   }
+  const declaredShape =
+    item.kind === 'open-question'
+      ? recordShapeRefusal('open question', item.body)
+      : item.kind === 'ruling'
+        ? recordShapeRefusal('ruling', item.body)
+        : item.kind === 'next-action'
+          ? recordShapeRefusal('next action', item.body)
+          : null
+  if (declaredShape) return declaredShape
   if (item.body.length > CONTEXT_ITEM_MAX_CHARS[item.kind]) {
     return `${address} refused: ${item.kind} limit is ${CONTEXT_ITEM_MAX_CHARS[item.kind]} characters`
   }
