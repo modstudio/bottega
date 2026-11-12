@@ -4,7 +4,7 @@ import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { type CursorIdentity, docAdmissibleAsCursorEvidence } from './workflow-floor-evidence.ts'
 import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
 
-test('accepts a document in a project-less scope on any cursor', () => {
+test('accepts a document in a project-less scope on any cursor', async () => {
   expect(
     docAdmissibleAsCursorEvidence({ scope: 'global', subject: null, projectName: null }, 'fixture'),
   ).toBe(true)
@@ -16,7 +16,7 @@ test('accepts a document in a project-less scope on any cursor', () => {
   ).toBe(true)
 })
 
-test("accepts a document scoped to the cursor's own project", () => {
+test("accepts a document scoped to the cursor's own project", async () => {
   expect(
     docAdmissibleAsCursorEvidence(
       { scope: 'project', subject: 'fixture', projectName: 'fixture' },
@@ -31,7 +31,7 @@ test("accepts a document scoped to the cursor's own project", () => {
   ).toBe(true)
 })
 
-test('refuses a document scoped to another project', () => {
+test('refuses a document scoped to another project', async () => {
   expect(
     docAdmissibleAsCursorEvidence(
       { scope: 'project', subject: 'other', projectName: 'other' },
@@ -63,8 +63,8 @@ const database = testDatabaseFixture((d) => {
   ).run(newRecordId())
 })
 
-test('admits a machine-scope document with no project as evidence on another project cursor', () => {
-  const gathered = gatherValidatedEvidence({
+test('admits a machine-scope document with no project as evidence on another project cursor', async () => {
+  const gathered = await gatherValidatedEvidence({
     cursorId: newRecordId(),
     identity,
     stepOrdinal: 1,

@@ -20,6 +20,7 @@ import { resolveOperatorCredential } from '../config/operator-credential.ts'
 import { db, writeTransaction } from '../database/db.ts'
 import { type RecordApiClient, recordApiClient } from '../record/record-api-client.ts'
 import type { HostedBoardOverview } from '../record/record-board-contract.ts'
+import type { SynchronousResult } from '../synchronous-result.ts'
 import {
   decideHostedPressureAnnouncement,
   HOSTED_PRESSURE_NOTICE_PREFIX,
@@ -183,7 +184,11 @@ function cachedDecision(row: CacheRow): HostedPressureDecision {
   return { state, conditions: [] }
 }
 
-function claimTransaction<T>(database: Database, failFast: boolean | undefined, fn: () => T): T {
+function claimTransaction<T extends SynchronousResult>(
+  database: Database,
+  failFast: boolean | undefined,
+  fn: () => T,
+): T {
   if (!failFast) return writeTransaction(fn, database)
   const busyTimeout = database.query('PRAGMA busy_timeout').values()[0]?.[0]
   database.exec('PRAGMA busy_timeout = 0')

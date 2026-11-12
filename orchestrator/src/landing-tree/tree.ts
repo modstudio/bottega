@@ -112,12 +112,12 @@ function refuseExistingLandingTree(
 }
 
 /** Settle a failed landing-tree row even when its project remover already removed the directory. */
-export function releaseFailedLandingTree(runId: string): void {
+export async function releaseFailedLandingTree(runId: string): Promise<void> {
   const recorded = db().query('SELECT worktree FROM run WHERE record_id=?').get(runId) as {
     worktree: string | null
   }
   if (!recorded.worktree) return
-  const cleanup = closeOutRun(runId, { intent: 'tree-remove' })
+  const cleanup = await closeOutRun(runId, { intent: 'tree-remove' })
   if (!['released', 'absent'].includes(cleanup.outcome)) {
     throw new Error(`landing tree cleanup ${cleanup.outcome}: ${cleanup.detail}`)
   }
@@ -187,7 +187,7 @@ function finishLandingTreeOpen(
     .run(Math.max(0, Date.now() - Date.parse(startedAt)), recordId)
 }
 
-export function openLandingTree(runId: string, seed?: string): OpenedLandingTree {
+export async function openLandingTree(runId: string, seed?: string): Promise<OpenedLandingTree> {
   const retryCommand = `${PLATFORM_SLUG} tree open ${runId}${seed ? ` --seed ${seed}` : ''}`
   const { root, latest } = landingTreeSourceRun(runId),
     { project, branch, plan } = resolveLandingTarget(runId, root, latest)
@@ -357,7 +357,7 @@ export function openLandingTree(runId: string, seed?: string): OpenedLandingTree
   } catch (error) {
     recordLandingTreeFailure(inserted.record_id, startedAt, error)
     try {
-      releaseFailedLandingTree(inserted.record_id)
+      await releaseFailedLandingTree(inserted.record_id)
     } catch (cleanupError) {
       throw new Error(
         `${String((error as Error)?.message ?? error)}; ${String((cleanupError as Error)?.message ?? cleanupError)}`,

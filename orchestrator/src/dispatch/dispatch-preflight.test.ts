@@ -22,9 +22,9 @@ test('record install level refuses dispatch and full allows it', () => {
   expect(installLevelDispatchDecision('full', 'implement')).toEqual({ kind: 'allow' })
 })
 
-afterEach(() => {
+afterEach(async () => {
   for (const fixture of fixtures.splice(0)) {
-    removeProject(fixture.name)
+    await removeProject(fixture.name)
     rmSync(fixture.path, { recursive: true, force: true })
   }
 })

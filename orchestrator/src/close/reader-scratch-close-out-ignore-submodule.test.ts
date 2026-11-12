@@ -11,7 +11,7 @@ import {
 
 afterEach(() => mock.restore())
 
-test('reader close-out archives dirty submodule scratch hidden by ignore=all', () => {
+test('reader close-out archives dirty submodule scratch hidden by ignore=all', async () => {
   const fixture = closeOutFixture({ submodule: true })
   const nested = join(fixture.worktree, 'nested')
   try {
@@ -20,7 +20,7 @@ test('reader close-out archives dirty submodule scratch hidden by ignore=all', (
     writeFileSync(join(nested, 'untracked.txt'), 'scratch\n')
     expect(git(['status', '--porcelain'], fixture.worktree)).toBe('')
 
-    const result = closeOutRun(fixture.id, { intent: 'terminal' })
+    const result = await closeOutRun(fixture.id, { intent: 'terminal' })
 
     expect(result).toMatchObject({ outcome: 'released' })
     const archive = archivedClonePath(result.detail)

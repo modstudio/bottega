@@ -20,9 +20,9 @@ test('a createTree failure after recording the tree still releases it', async ()
         base.createTree(input)
         throw new Error('fixture failure after create')
       },
-      releaseRun: (id) => {
+      releaseRun: (id, preparation) => {
         released = true
-        return base.releaseRun(id)
+        return base.releaseRun(id, preparation)
       },
       releaseBranch: (project, branch, expected) => {
         releasedBranchAt = expected

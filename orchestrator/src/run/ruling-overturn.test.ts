@@ -19,7 +19,7 @@ afterEach(() => {
 })
 
 describe('overturn ruling', () => {
-  test('records the overturn, replacement, attribution, and audit without changing run state', () => {
+  test('records the overturn, replacement, attribution, and audit without changing run state', async () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'ok', session: 'owner-session' })
     const question = db()
       .query(
@@ -30,7 +30,7 @@ describe('overturn ruling', () => {
       )
       .get(run) as { record_id: string }
 
-    overturnRuling({
+    await overturnRuling({
       questionId: question.record_id,
       reason: 'New evidence contradicted it.',
       replacement: 'Use the replacement.',
@@ -57,7 +57,7 @@ describe('overturn ruling', () => {
     ).toEqual({ action: 'overturn', reason: 'New evidence contradicted it.' })
   })
 
-  test('overturns a workflow ruling with cursor authority and question audit', () => {
+  test('overturns a workflow ruling with cursor authority and question audit', async () => {
     const cursor = db()
       .query(
         `INSERT INTO workflow_cursor
@@ -78,7 +78,7 @@ describe('overturn ruling', () => {
       )
       .get(cursor.record_id) as { record_id: string }
 
-    overturnRuling({
+    await overturnRuling({
       questionId: question.record_id,
       reason: 'Changed.',
       replacement: 'New.',
@@ -90,7 +90,7 @@ describe('overturn ruling', () => {
     expect(db().query('SELECT action FROM run_mutation_audit').all()).toEqual([])
   })
 
-  test('workflow overturn requires owner authority or operator override and audits the actual actor', () => {
+  test('workflow overturn requires owner authority or operator override and audits the actual actor', async () => {
     const cursor = db()
       .query(
         `INSERT INTO workflow_cursor
@@ -113,15 +113,15 @@ describe('overturn ruling', () => {
       .run(new Date().toISOString(), cursor.record_id)
     process.env.CLAUDE_CODE_SESSION_ID = 'foreign-session'
 
-    expect(() =>
+    await expect(
       overturnRuling({
         questionId: question.record_id,
         reason: 'Changed.',
         replacement: 'New.',
         fromOperator: false,
       }),
-    ).toThrow('owned by session owner-session')
-    overturnRuling({
+    ).rejects.toThrow('owned by session owner-session')
+    await overturnRuling({
       questionId: question.record_id,
       reason: 'Changed.',
       replacement: 'New.',

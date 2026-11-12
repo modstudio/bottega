@@ -11,16 +11,16 @@ export function treeCreateCommand(
   presentation.writePath(createHookTree(options))
 }
 
-export function treeRemoveCommand(path: string): void {
-  removeHookTree(path)
+export async function treeRemoveCommand(path: string): Promise<void> {
+  await removeHookTree(path)
 }
 
-export function treeOpenCommand(
+export async function treeOpenCommand(
   runId: string,
   seed: string | undefined,
   presentation: { log(value: string): void },
-): void {
-  const opened = openLandingTree(runId, seed)
+): Promise<void> {
+  const opened = await openLandingTree(runId, seed)
   presentation.log(`tree: ${opened.path}`)
   presentation.log(`branch: ${opened.branch}`)
   presentation.log(`tip: ${opened.tip}`)

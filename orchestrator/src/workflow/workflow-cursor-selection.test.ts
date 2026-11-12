@@ -48,7 +48,7 @@ test('a keyless cursor composed in a non-default mode resolves that mode', async
   const context = { session: 'keyless-mode-session' }
   await composeWorkflowWithCursor(SLUG, 'local-mode-project', 'non-default', {}, context, d, {}, {})
   expect(
-    resolveWorkflowCursorMode(
+    await resolveWorkflowCursorMode(
       SLUG,
       'local-mode-project',
       undefined,
@@ -103,9 +103,9 @@ const database = testDatabaseFixture((d) => {
 test.each([
   ['hosted-mode-project', 'hosted'],
   ['local-mode-project', 'local'],
-] as const)('%s cursor resolves its default mode from its project space', (project, mode) => {
+] as const)('%s cursor resolves its default mode from its project space', async (project, mode) => {
   expect(
-    resolveWorkflowCursorMode(
+    await resolveWorkflowCursorMode(
       SLUG,
       project,
       undefined,

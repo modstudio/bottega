@@ -29,7 +29,7 @@ export async function staleContextForSession(
   const add = ({ key, at }: KeyAt) => {
     if (key?.trim()) work.push({ holder: key, at })
   }
-  for (const row of sessionWorkEvents(session, database)) add(row)
+  for (const row of await sessionWorkEvents(session, database)) add(row)
 
   const registered = projects(undefined, database)
   const workHolders = [...new Set(work.map(({ holder }) => holder))]

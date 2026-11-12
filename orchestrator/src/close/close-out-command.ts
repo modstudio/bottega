@@ -6,15 +6,15 @@ import { closeOutRun } from './close-out.ts'
 import { annotateHeldLandingInFlight } from './close-out-in-flight.ts'
 import { closeOutJson, formatCloseOutReport } from './close-out-report.ts'
 
-export function closeOutCommand(
+export async function closeOutCommand(
   id: string,
   nonBlocking: boolean,
   presentation: { log(value: string): void; setExitCode(code: number): void },
   json = false,
-): void {
+): Promise<void> {
   writableDb()
-  const result = annotateHeldLandingInFlight(
-    closeOutRun(id, { intent: 'explicit', lockTimeoutMs: nonBlocking ? 0 : undefined }),
+  const result = await annotateHeldLandingInFlight(
+    await closeOutRun(id, { intent: 'explicit', lockTimeoutMs: nonBlocking ? 0 : undefined }),
   )
   const reportOutcome = result.reportOutcome ?? result.outcome
   presentation.log(json ? JSON.stringify(closeOutJson(result)) : formatCloseOutReport(result))

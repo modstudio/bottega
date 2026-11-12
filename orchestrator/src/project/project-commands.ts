@@ -841,12 +841,12 @@ function removedProjectMessage(name: string, removed: boolean, purged: boolean):
     : `removed ${name} from this machine; the shared project is unchanged`
 }
 
-export function removeProjectCommand(
+export async function removeProjectCommand(
   name: string,
   options: { purged: boolean },
   presentation: ProjectPresentation,
-): void {
-  const removed = removeProject(name, { includeRetired: options.purged })
+): Promise<void> {
+  const removed = await removeProject(name, { includeRetired: options.purged })
   if (!removed && options.purged)
     throw new Error(
       `project ${name} is not in this machine's register; the purge removed its rows but found no register entry to remove — run \`${PLATFORM_SLUG} project list\` and \`${PLATFORM_SLUG} project list --retired\` to inspect the register`,
@@ -991,7 +991,7 @@ export async function projectCommand(
   if (sub === 'remove') {
     const name = argv[2]
     if (!name) throw new Error(`${PLATFORM_SLUG} project remove <name>`)
-    removeProjectCommand(name, { purged: false }, presentation)
+    await removeProjectCommand(name, { purged: false }, presentation)
     return
   }
 

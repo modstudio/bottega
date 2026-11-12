@@ -34,7 +34,7 @@ test('landing tree opening resolves a turn to its root and latest UUID', () => {
   })
 })
 
-test('failed creation settles its worktree claim after the recipe already removed the directory', () => {
+test('failed creation settles its worktree claim after the recipe already removed the directory', async () => {
   const id = addRun({ agent: '(architect)', job: 'landing-tree', status: 'failed' })
   const missing = `/no-such-landing-tree-${id}`
   db().query('UPDATE run SET worktree=?, cwd=? WHERE record_id=?').run(missing, missing, id)
@@ -46,7 +46,7 @@ test('failed creation settles its worktree claim after the recipe already remove
     )
     .run(id, id, missing, '2026-09-22T00:00:00.000Z')
 
-  releaseFailedLandingTree(id)
+  await releaseFailedLandingTree(id)
 
   expect(
     db()
@@ -57,7 +57,7 @@ test('failed creation settles its worktree claim after the recipe already remove
 
 test.each(['landing-tree', 'hook-tree'])(
   'tree remove settles an absent %s run found by its durable claim',
-  (job) => {
+  async (job) => {
     const id = addRun({ agent: '(architect)', job, status: 'ok' })
     const missing = `/no-such-${job}-${id}`
     db()
@@ -68,7 +68,7 @@ test.each(['landing-tree', 'hook-tree'])(
       )
       .run(id, id, missing, '2026-09-23T00:00:00.000Z')
 
-    removeHookTree(missing)
+    await removeHookTree(missing)
 
     expect(db().query('SELECT close_out_outcome FROM run WHERE record_id=?').get(id)).toEqual({
       close_out_outcome: 'absent',

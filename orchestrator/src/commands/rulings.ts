@@ -63,12 +63,12 @@ function registerQuestionIdentities(program: Command): void {
     .action(() => log(JSON.stringify(questionIdentityMap(db()))))
 }
 
-function printRulings(options: {
+async function printRulings(options: {
   since?: string
   changedAfter?: string
   kind: string
   json?: boolean
-}): void {
+}): Promise<void> {
   if (!['workflow', 'run', 'all'].includes(options.kind))
     throw new Error('--kind must be workflow, run, or all')
   const kind = options.kind as 'workflow' | 'run' | 'all'
@@ -78,10 +78,10 @@ function printRulings(options: {
     json: options.json,
   })
   if (changedAfter === null) {
-    log(JSON.stringify(listRulings({ since: options.since, kind })))
+    log(JSON.stringify(await listRulings({ since: options.since, kind })))
     return
   }
-  log(JSON.stringify(listRulingChanges({ since: options.since, changedAfter, kind })))
+  log(JSON.stringify(await listRulingChanges({ since: options.since, changedAfter, kind })))
 }
 
 export function register(program: Command): void {
@@ -95,7 +95,7 @@ export function register(program: Command): void {
     .action(async (id, options) => {
       const questionId = resolveQuestionIdentifier(db(), id)
       const { closeQuestionByOperator } = await import('../run/question-close.ts')
-      closeQuestionByOperator(questionId, requiredText(options.reason, '--reason'))
+      await closeQuestionByOperator(questionId, requiredText(options.reason, '--reason'))
       log(`closed question ${questionId}`)
     })
   const ruling = program.command('ruling').description('inspect and preserve recorded rulings')
@@ -116,7 +116,7 @@ export function register(program: Command): void {
     .option('--replacement-file <path>', 'read the replacement ruling from this file')
     .option('--from-operator', 'attribute the overturn to the operator')
     .allowExcessArguments(false)
-    .action((questionId, options) => {
+    .action(async (questionId, options) => {
       if (options.replacement !== undefined && options.replacementFile !== undefined) {
         throw new Error(
           'pass a replacement with either --replacement or --replacement-file, not both',
@@ -126,7 +126,7 @@ export function register(program: Command): void {
         options.replacementFile === undefined
           ? (options.replacement ?? null)
           : readFileSync(options.replacementFile, 'utf8')
-      const result = overturnRuling({
+      const result = await overturnRuling({
         questionId: resolveQuestionIdentifier(db(), questionId),
         reason: requiredText(options.because, '--because'),
         replacement: replacement === null ? null : requiredText(replacement, 'replacement'),

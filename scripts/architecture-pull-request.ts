@@ -1,5 +1,31 @@
 export const pullRequestModuleSpecs = [
   {
+    file: 'orchestrator/src/pull-request/pr-merge.fixture.ts',
+    allowed: [
+      'node:url',
+      '../database/db.ts',
+      '../project/projects.ts',
+      '../release/release-required.ts',
+      '../ship-cleanup/ship-cleanup.ts',
+      './admission-decision.ts',
+      './merge-decision.ts',
+      './pr-admission.ts',
+      './pr-merge.ts',
+      './pr-merge-required-release.fixture.ts',
+      './pr-post-landing.fixture.ts',
+      './pr-post-landing.ts',
+    ],
+    typeOnlyAllowed: [
+      '../release/release-required.ts',
+      '../ship-cleanup/ship-cleanup.ts',
+      './admission-decision.ts',
+      './merge-decision.ts',
+      './pr-admission.ts',
+      './pr-merge.ts',
+      './pr-post-landing.ts',
+    ],
+  },
+  {
     file: 'orchestrator/src/pull-request/pr-post-landing-payload.ts',
     allowed: [
       '../../../shared/brand.ts',

@@ -50,6 +50,7 @@ import {
 } from './absent-tree-close-out.ts'
 import { adoptedTreeCloseOutDecision } from './close-out-adoption.ts'
 import { withCloseOutLease } from './close-out-lease.ts'
+import { type CloseOutPreparation, prepareCloseOut } from './close-out-preparation.ts'
 import { closeTerminalChainQuestions } from './close-out-questions.ts'
 import {
   landingTreeReleaseHold,
@@ -99,6 +100,10 @@ type CloseOutOptions = {
   closeOutLeaseHeld?: boolean
 }
 
+type CloseOutPreparedOptions = CloseOutOptions & {
+  cursorWorktrees: CloseOutPreparation['cursorWorktrees']
+}
+
 type CloseOutAttemptResult = CloseOutResult & ResourceTeardownResult
 type RunIdRow = { record_id: string }
 
@@ -124,7 +129,7 @@ export function clearConversationKeepTreeHold(runId: string): void {
 }
 
 /** Release a run and every failover attempt it succeeded, oldest attempt first. */
-export function releaseRunFailoverAttempts(runId: string): CloseOutResult[] {
+export async function releaseRunFailoverAttempts(runId: string): Promise<CloseOutResult[]> {
   const attempts: string[] = []
   const seen = new Set<string>()
   let attemptId: string | null = runId
@@ -141,10 +146,12 @@ export function releaseRunFailoverAttempts(runId: string): CloseOutResult[] {
     if (!row) throw new Error(`no run ${attemptId}`)
     attemptId = row.retry_of_record_id
   }
-  return attempts.reverse().map((id) => {
+  const results: CloseOutResult[] = []
+  for (const id of attempts.reverse()) {
     clearConversationKeepTreeHold(id)
-    return closeOutRun(id, { intent: 'terminal' })
-  })
+    results.push(await closeOutRun(id, { intent: 'terminal' }))
+  }
+  return results
 }
 
 export type SandboxReleaseResult = {
@@ -385,11 +392,16 @@ function lockedCloseOutHold(
   runId: string,
   treePath: string,
   live: { record_id: string; status: string }[],
-  options: { dryRun?: boolean; intent: CloseOutIntent },
+  options: Pick<CloseOutPreparedOptions, 'dryRun' | 'intent' | 'cursorWorktrees'>,
 ): CloseOutResult | null {
   const liveHold = lockedLiveOrForgottenHold(runId, treePath, live, options.dryRun)
   if (liveHold) return liveHold
-  const keepTree = closeOutKeepTreeDecision(runId, treePath, options.intent)
+  const keepTree = closeOutKeepTreeDecision(
+    runId,
+    treePath,
+    options.intent,
+    options.cursorWorktrees,
+  )
   if (keepTree.naming.action !== 'hold') return null
   return heldConversationCloseOutResult(
     runId,
@@ -480,6 +492,7 @@ function attemptCloseOutRun(
     extraPids?: number[]
     pgid?: number | null
     keepTreeDecision: ConversationKeepTreeHold
+    cursorWorktrees: CloseOutPreparation['cursorWorktrees']
   },
 ): CloseOutAttemptResult {
   const row = db()
@@ -908,10 +921,15 @@ function appendTreeNamingDetail(
 }
 
 /** Run one close-out attempt and retain its outcome for observation and retry. */
-function closeOutRunHoldingLease(runId: string, options: CloseOutOptions): CloseOutResult {
+function closeOutRunHoldingLease(runId: string, options: CloseOutPreparedOptions): CloseOutResult {
   const root = conversationRootAndWorktree(runId)
   closeTerminalChainQuestions(root.rootRecordId, Boolean(options.dryRun))
-  const keepTree = closeOutKeepTreeDecision(root.rootRecordId, root.worktree, options.intent)
+  const keepTree = closeOutKeepTreeDecision(
+    root.rootRecordId,
+    root.worktree,
+    options.intent,
+    options.cursorWorktrees,
+  )
   // Spellings are taken while the tree still exists, because a removed
   // symlinked path no longer resolves to the identity its other rows share.
   const spellingsBefore = conversationWorktreeSpellings(db(), root.rootRecordId)
@@ -999,21 +1017,37 @@ function closeOutRunHoldingLease(runId: string, options: CloseOutOptions): Close
 }
 
 /** Run close-out under its own non-blocking lease unless the coordinator already holds it. */
-export function closeOutRun(runId: string, options: CloseOutOptions): CloseOutResult {
+export async function closeOutRun(
+  runId: string,
+  options: CloseOutOptions,
+): Promise<CloseOutResult> {
+  return closeOutRunPrepared(runId, options, await prepareCloseOut())
+}
+
+/** Closes with an open-cursor snapshot taken immediately before a caller's synchronous lock. */
+export function closeOutRunPrepared(
+  runId: string,
+  options: CloseOutOptions,
+  preparation: CloseOutPreparation,
+): CloseOutResult {
+  const preparedOptions: CloseOutPreparedOptions = {
+    ...options,
+    cursorWorktrees: preparation.cursorWorktrees,
+  }
   return withCloseOutLease(runId, Boolean(options.closeOutLeaseHeld), () =>
-    closeOutRunHoldingLease(runId, options),
+    closeOutRunHoldingLease(runId, preparedOptions),
   )
 }
 
-export function reclaimTerminalTree(
+export async function reclaimTerminalTree(
   runId: string,
   _worktree: Worktree,
   extraPids: number[] = [],
   pgid: number | null = null,
   closeOutLeaseHeld = false,
-): void {
+): Promise<void> {
   try {
-    const result = closeOutRun(runId, {
+    const result = await closeOutRun(runId, {
       intent: 'terminal',
       extraPids,
       pgid,

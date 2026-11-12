@@ -22,6 +22,7 @@ import {
   type RootAuthority,
   reauthorizeRunMutation,
 } from '../run/run-authority.ts'
+import type { SynchronousResult } from '../synchronous-result.ts'
 import { inspectTreeOwnership } from '../worktree/worktree-attribution.ts'
 import { branchTip, removeBranch, removeFor, unmergedBranch } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
@@ -201,7 +202,7 @@ export function branchDeletionProvenanceRefusal(
   return `branch ${target ?? '(none)'} cannot be deleted: ${ownership}; it was left in place`
 }
 
-export function withCleanupLock<T>(
+export function withCleanupLock<T extends SynchronousResult>(
   repoRoot: string,
   what: string,
   worktreePath: string | null | undefined,
@@ -210,7 +211,7 @@ export function withCleanupLock<T>(
   const run = () =>
     takeCleanupLock(repoRoot, { session: sessionId(), what: `cleanup ${what}` }, action, 5 * 60_000)
   if (!worktreePath) return run()
-  return withWorktreeLease(
+  return withWorktreeLease<T>(
     repoRoot,
     worktreePath,
     { session: sessionId(), what: `tree ${what}` },

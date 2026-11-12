@@ -5,7 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import {
   type TaskFlowOverturnRulingRow as OverturnRow,
-  taskFlowStore,
+  taskFlowReadStore,
 } from '../workflow/task-flow-store.ts'
 import { auditQuestionMutation, authorizeWorkflowQuestionMutation } from './question-mutation.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
@@ -33,14 +33,14 @@ function refusal(row: OverturnRow): string | null {
   return null
 }
 
-export function overturnRuling(input: {
+export async function overturnRuling(input: {
   questionId: string
   reason: string
   replacement: string | null
   fromOperator: boolean
 }) {
   writableDb()
-  const row = taskFlowStore(db()).overturnRulingRow(input.questionId)
+  const row = await taskFlowReadStore(db()).overturnRulingRow(input.questionId)
   if (!row)
     throw new Error(
       `no question ${input.questionId}; inspect question ids with ${PLATFORM_SLUG} question inbox --all`,

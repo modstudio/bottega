@@ -11,12 +11,12 @@ import {
 
 afterEach(() => mock.restore())
 
-test('reader close-out archives a reader-only detached HEAD commit', () => {
+test('reader close-out archives a reader-only detached HEAD commit', async () => {
   const fixture = closeOutFixture()
   try {
     writeFileSync(join(fixture.worktree, 'reader-only.txt'), 'committed in reader\n')
     commit(fixture.worktree, 'reader-only commit')
-    const result = closeOutRun(fixture.id, { intent: 'terminal' })
+    const result = await closeOutRun(fixture.id, { intent: 'terminal' })
     const archive = archivedClonePath(result.detail)
     expect(result.outcome).toBe('released')
     expect(readFileSync(join(archive, 'reader-only.txt'), 'utf8')).toBe('committed in reader\n')

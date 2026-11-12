@@ -244,7 +244,7 @@ test('acknowledgement prunes earlier delivered rows for that identity only', () 
   database.close()
 })
 
-test("record doctor's synced-run existence predicate survives pruning", () => {
+test("record doctor's synced-run existence predicate survives pruning", async () => {
   const database = migratedTestDatabase()
   database
     .query(
@@ -262,6 +262,6 @@ test("record doctor's synced-run existence predicate survives pruning", () => {
   addRow(database, 'doctor-run', 'delivered')
   addRow(database, 'doctor-run', 'delivered')
   expect(pruneSupersededOutboxRows(database, { limit: 100 }).deleted).toBe(1)
-  expect(localQuestionCountForSpace(database, [], { id: 'space', slug: 'space' })).toBe(1)
+  expect(await localQuestionCountForSpace(database, [], { id: 'space', slug: 'space' })).toBe(1)
   database.close()
 })

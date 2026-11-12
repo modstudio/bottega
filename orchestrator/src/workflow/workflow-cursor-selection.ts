@@ -4,13 +4,12 @@ import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
 import { db, sessionId } from '../database/db.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
-import { openTaskFlowStageCursor } from './task-flow.ts'
 import {
   readThroughTaskFlow,
   type TaskFlowReadStatus,
   taskFlowReadThroughEnabled,
 } from './task-flow-read-through.ts'
-import { taskFlowStore } from './task-flow-store.ts'
+import { taskFlowReadStore } from './task-flow-store.ts'
 import type { TaskFlowStageCursorRow } from './task-flow-store-types.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { workflowTaskBindingCommand } from './workflow-cursor-format.ts'
@@ -54,7 +53,7 @@ function workflowCursorContextKey(
   return rowKey || undefined
 }
 
-export function findWorkflowCursor(
+export async function findWorkflowCursor(
   project: string,
   workflow: string,
   mode: string,
@@ -62,7 +61,7 @@ export function findWorkflowCursor(
   context: WorkflowCursorContext,
   database: Database,
   cursor?: number,
-): SelectableCursorRow | null {
+): Promise<SelectableCursorRow | null> {
   const key = workflowKeyOf(args)
   return selectWorkflowCursor(
     { project, workflow, mode, ...(key ? { key } : {}) },
@@ -127,7 +126,7 @@ export async function resolveMcpSelectedCursorContext(
   const selectedRow =
     cursor === undefined
       ? undefined
-      : selectWorkflowCursorByHandle({ project, workflow }, cursor, null, db())
+      : await selectWorkflowCursorByHandle({ project, workflow }, cursor, null, db())
   const resolvedProject = selectedRow?.project ?? project
   if (!resolvedProject) throw new Error('project is required without --cursor')
   return {
@@ -185,13 +184,13 @@ function validateIdentity(
   return row
 }
 
-function selectByHandle(
+export async function selectByHandle(
   cursor: number,
   identity: WorkflowCursorSelector,
   d: Database,
   includeTerminal = false,
-): SelectableCursorRow {
-  const row = taskFlowStore(d).stageByHandle(cursor)
+): Promise<SelectableCursorRow> {
+  const row = await taskFlowReadStore(d).stageByHandle(cursor)
   if (!row)
     throw new Error(
       `workflow cursor ${cursor} does not exist on this machine; cursor handles are per-machine labels, so pass the task key as the workflow argument key (--arg key=<KEY> on the CLI, args.key over MCP) to read the hosted flow`,
@@ -205,39 +204,39 @@ function selectByHandle(
 }
 
 /** Selects a cursor handle using only the identity shared by CLI and MCP surfaces. */
-export function selectWorkflowCursorByHandle(
+export async function selectWorkflowCursorByHandle(
   identity: Pick<WorkflowCursorSelector, 'project' | 'workflow'>,
   cursor: number,
   ownerSession: string | null | undefined,
   database: Database,
-): SelectableCursorRow {
-  return selectWorkflowCursor(identity, cursor, ownerSession, database)!
+): Promise<SelectableCursorRow> {
+  return (await selectWorkflowCursor(identity, cursor, ownerSession, database))!
 }
 
 /** Selects the cursor a close targets while leaving terminal-state refusal to the close service. */
-export function selectWorkflowCursorForClose(
+export async function selectWorkflowCursorForClose(
   identity: WorkflowCursorSelector,
   cursor: number | undefined,
   ownerSession: string | null | undefined,
   d: Database,
   taskRecordId?: string | null,
   taskStatusCategory?: string | null,
-): SelectableCursorRow | null {
+): Promise<SelectableCursorRow | null> {
   if (cursor !== undefined) return selectByHandle(cursor, identity, d, true)
   return selectWorkflowCursor(identity, cursor, ownerSession, d, taskRecordId, taskStatusCategory)
 }
 
-function selectKeyedTaskStage(
+async function selectKeyedTaskStage(
   identity: Required<WorkflowCursorSelector>,
   cursor: number | undefined,
   d: Database,
   taskRecordId: string | null | undefined,
   _taskStatusCategory: string | null | undefined,
-): SelectableCursorRow | null {
-  const handled = cursor === undefined ? null : selectByHandle(cursor, identity, d)
+): Promise<SelectableCursorRow | null> {
+  const handled = cursor === undefined ? null : await selectByHandle(cursor, identity, d)
   if (!taskRecordId) return handled
   if (handled) return handled
-  const row = openTaskFlowStageCursor(taskRecordId, d)
+  const row = await taskFlowReadStore(d).openStageForTask(taskRecordId)
   if (row) {
     if (
       row.workflow_slug === identity.workflow &&
@@ -246,7 +245,7 @@ function selectKeyedTaskStage(
     )
       return validateIdentity(row, identity)
   }
-  const fallback = taskFlowStore(d).latestStageForTask({
+  const fallback = await taskFlowReadStore(d).latestStageForTask({
     project: identity.project,
     workflow: identity.workflow,
     mode: identity.mode,
@@ -255,14 +254,14 @@ function selectKeyedTaskStage(
   return fallback ? validateIdentity(fallback, identity) : null
 }
 
-export function selectWorkflowCursor(
+export async function selectWorkflowCursor(
   identity: WorkflowCursorSelector,
   cursor: number | undefined,
   ownerSession: string | null | undefined,
   d: Database,
   taskRecordId?: string | null,
   taskStatusCategory?: string | null,
-): SelectableCursorRow | null {
+): Promise<SelectableCursorRow | null> {
   if (identity.key && identity.project && identity.workflow && identity.mode)
     return selectKeyedTaskStage(
       identity as Required<WorkflowCursorSelector>,
@@ -274,7 +273,7 @@ export function selectWorkflowCursor(
   if (cursor !== undefined) return selectByHandle(cursor, identity, d)
   if (!identity.project || !identity.workflow || !identity.mode) return null
   if (!ownerSession) return null
-  const rows = taskFlowStore(d).openKeylessStages({
+  const rows = await taskFlowReadStore(d).openKeylessStages({
     project: identity.project,
     workflow: identity.workflow,
     mode: identity.mode,
@@ -287,28 +286,28 @@ export function selectWorkflowCursor(
   return rows[0] ?? null
 }
 
-export function selectUntouchedKeylessWorkflowCursor(
+export async function selectUntouchedKeylessWorkflowCursor(
   identity: Required<Pick<WorkflowCursorSelector, 'project' | 'workflow' | 'mode'>>,
   ownerSession: string | null | undefined,
   d: Database,
-): SelectableCursorRow | null {
+): Promise<SelectableCursorRow | null> {
   if (!ownerSession) return null
-  const rows = taskFlowStore(d)
-    .openKeylessStages({
+  const rows = (
+    await taskFlowReadStore(d).openKeylessStages({
       project: identity.project,
       workflow: identity.workflow,
       mode: identity.mode,
       sessionId: ownerSession,
       untouched: true,
     })
-    .filter(
-      (row) => !hasClosedStep((row as SelectableCursorRow & { closed: string }).closed),
-    ) as SelectableCursorRow[]
+  ).filter(
+    (row) => !hasClosedStep((row as SelectableCursorRow & { closed: string }).closed),
+  ) as SelectableCursorRow[]
   if (rows.length > 1) refuseAmbiguousKeylessCursors(rows)
   return rows[0] ?? null
 }
 
-export function resolveWorkflowCursorMode(
+export async function resolveWorkflowCursorMode(
   slug: string,
   project: string,
   requested: string | undefined,
@@ -318,7 +317,7 @@ export function resolveWorkflowCursorMode(
   remedy: string,
   d: Database = db(),
   selectedRow?: SelectableCursorRow,
-): string {
+): Promise<string> {
   const key = workflowKeyOf(args)
   const identity = {
     project,
@@ -328,7 +327,7 @@ export function resolveWorkflowCursorMode(
   }
   if (selectedRow) return validateIdentity(selectedRow, identity).mode_slug
   if (requested) return requested
-  const rows = taskFlowStore(d).activeStageModes({
+  const rows = await taskFlowReadStore(d).activeStageModes({
     project,
     workflow: slug,
     taskRecordId: context.taskRecordId ?? null,

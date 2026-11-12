@@ -5,7 +5,7 @@ import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { closeOutRun } from './close-out.ts'
 
-test('worktree settlement records the close-out caller', () => {
+test('worktree settlement records the close-out caller', async () => {
   const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const worktree = join(dir, 'absent-close-out-caller-tree')
   const claimRecordId = newRecordId()
@@ -18,7 +18,7 @@ test('worktree settlement records the close-out caller', () => {
     )
     .run(claimRecordId, runId, runId, worktree)
 
-  closeOutRun(runId, { intent: 'explicit' })
+  await closeOutRun(runId, { intent: 'explicit' })
   const caller = `close-out intent=explicit pid=${process.pid} ppid=${process.ppid}`
   const run = db()
     .query('SELECT close_out_detail detail FROM run WHERE record_id=?')

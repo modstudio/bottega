@@ -6,7 +6,6 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { stampEndedClaims } from '../board/board-claim-service.ts'
 import { reapBoardReach } from '../board/board-reach.ts'
 import { reapBoardMessages } from '../board/board-service.ts'
-import { pruneExpiredBranchDisposalArchives } from '../branch/branch-disposal.ts'
 import { closeOutRun } from '../close/close-out.ts'
 import { namedProjectTreePaths } from '../close/tree-keep.ts'
 import { treeProcessCwdHold } from '../close/tree-process-cwd-hold.ts'
@@ -50,6 +49,7 @@ import { TERMINAL_RUN_STATUS_SET, TERMINAL_RUN_STATUS_SQL } from '../run/run-sta
 import { sweepRunTaskLinks } from '../run/run-task-linking.ts'
 import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import type { GrokTrustObservation } from '../sandbox/grok-trust.ts'
+import { openCursorWorktrees } from '../workflow/workflow-cursor-worktrees.ts'
 import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
 import { inspectTreeOwnership, markedWorktreeSource } from '../worktree/worktree-attribution.ts'
 import { branchTip } from '../worktree/worktree-remove.ts'
@@ -62,6 +62,7 @@ import {
   verifyBranchOwnershipAfterCleanup,
   withCleanupLock,
 } from './cleanup.ts'
+import { pruneSweepArchives } from './cleanup-sweep-archive.ts'
 import {
   decideConversationProjectOwnership,
   decideFilesystemOrphanAfterRemoval,
@@ -93,7 +94,6 @@ import { sweepUnattendedResidue } from './cleanup-sweep-residue.ts'
 import { sweepSessionState } from './cleanup-sweep-session.ts'
 import { sweepGooseLedgers } from './goose-ledger-sweep.ts'
 import { heldProjectTrees, sweepProject } from './project-sweep.ts'
-import { pruneReaderCloneArchives } from './reader-clone-archive-retention.ts'
 import { sweepRunLeftovers } from './run-leftover-sweep.ts'
 import { sweepStrayWorktreeDirectories } from './stray-worktree-sweep.ts'
 
@@ -706,13 +706,13 @@ function landingTreeSweepRuling(
     : { approved: false, reason: decision.reason }
 }
 
-function sweepRecordedRow(
+async function sweepRecordedRow(
   r: SweepCandidate,
   dry: boolean,
   state: RecordedSweepState,
   presentation: CleanupPresentation,
   expectedProjectRecordId: string | null,
-): void {
+): Promise<void> {
   const keep = (line: string, reason: string) => state.kept.push({ line, reason })
   const projectName = r.repo ?? (r.worktree ? projectAt(r.worktree)?.name : null) ?? null
   const ownershipIssue = conversationProjectOwnershipIssue(
@@ -761,7 +761,7 @@ function sweepRecordedRow(
     )
     return
   }
-  const closed = closeOutRun(r.record_id, {
+  const closed = await closeOutRun(r.record_id, {
     intent: 'sweep',
     dryRun: dry,
   })
@@ -788,20 +788,6 @@ function sweepRecordedRow(
   applyRecordedPostInventory(r, closeRuling.closeOutcome, inventory, state, presentation)
 }
 
-function pruneArchives(options: SweepOptions): { failed: boolean } {
-  const reader = pruneReaderCloneArchives({
-    dryRun: options.dryRun,
-    presentation: options.presentation,
-  })
-  const branch = pruneExpiredBranchDisposalArchives({
-    dryRun: options.dryRun,
-    project: options.project,
-    log: options.presentation.log,
-    error: options.presentation.error,
-  })
-  return { failed: reader.failed > 0 || branch.failed }
-}
-
 /**
  * Reclaim worktrees, and the infrastructure behind them, without being asked.
  *
@@ -816,17 +802,28 @@ function pruneArchives(options: SweepOptions): { failed: boolean } {
  * is extracted before removal rather than used as a reason to keep the tree.
  */
 
-export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): Promise<void> {
-  const dry = options.dryRun
+async function sweepScope(options: SweepOptions) {
   const selectedProject = options.project === undefined ? null : projectByName(options.project)
   if (options.project !== undefined && !selectedProject)
     throw new Error(`unknown project ${options.project}`)
-  const sweepProjects = (selectedProject ? [selectedProject] : projects()).filter(
-    isProjectRepository,
-  )
-  prepareSweepWithHelpers(dry, options.presentation, helpers)
-  const archiveRetention = pruneArchives(options)
-  const trustObservation = helpers.observeGrokTrustHeadings()
+  return {
+    selectedProject,
+    sweepProjects: (selectedProject ? [selectedProject] : projects()).filter(isProjectRepository),
+  }
+}
+
+function prepareSweepContext(options: SweepOptions, helpers: SweepHelpers) {
+  prepareSweepWithHelpers(options.dryRun, options.presentation, helpers)
+  return {
+    archiveRetention: pruneSweepArchives(options),
+    trustObservation: helpers.observeGrokTrustHeadings(),
+  }
+}
+
+export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): Promise<void> {
+  const dry = options.dryRun
+  const { selectedProject, sweepProjects } = await sweepScope(options)
+  const { archiveRetention, trustObservation } = prepareSweepContext(options, helpers)
   reconcileAbsentClaims({
     dryRun: dry,
     project: options.project,
@@ -880,7 +877,13 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
   }
   sweepTerminalRunLeases(dry)
   for (const r of rows)
-    sweepRecordedRow(r, dry, recordedState, options.presentation, selectedProject?.recordId ?? null)
+    await sweepRecordedRow(
+      r,
+      dry,
+      recordedState,
+      options.presentation,
+      selectedProject?.recordId ?? null,
+    )
   cleanupFailed ||= recordedState.cleanupFailed
 
   const strayCleanupFailed = sweepStrayWorktreeDirectories({
@@ -904,7 +907,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
   for (const p of sweepProjects) {
     const root = join(p.path, '.claude', 'worktrees')
     if (!existsSync(root)) continue
-    const namedTrees = namedProjectTreePaths(p.name)
+    const namedTrees = namedProjectTreePaths(p.name, await openCursorWorktrees())
     holdNamedFilesystemOrphans(namedTrees, root, p.name, remembered, keep, addHeld)
     for (const entry of readdirSync(root, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue
@@ -1026,6 +1029,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     const outcome = sweepProject({
       project: p,
       heldPaths: heldByProject.get(p.name) ?? new Set(),
+      namedPaths: namedProjectTreePaths(p.name, await openCursorWorktrees()),
       dryRun: dry,
       presentation: options.presentation,
     })

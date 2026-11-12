@@ -78,6 +78,7 @@ export const projectModules: ProjectModule[] = [
   ]),
   module('orchestrator/src/project/project-lock.ts', [
     '../../../shared/brand.ts',
+    '../synchronous-result.ts',
     '../database/db.ts',
     '../git/git-environment.ts',
     '../../../shared/process-identity.ts',

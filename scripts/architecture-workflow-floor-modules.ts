@@ -211,6 +211,14 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-floor-evidence.ts',
     './workflow-step-question-evidence.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-floor-evidence.fixture.ts', [
+    'bun:sqlite',
+    '../../../shared/record/schema.ts',
+    '../../test/fixtures/workflow.ts',
+    '../database/test-database.fixture.ts',
+    './workflow-floor-evidence.ts',
+    './workflow-floor-evidence-gather.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-floor-operator-ruling.test.ts', [
     'bun:test',
     '../../../shared/brand.ts',

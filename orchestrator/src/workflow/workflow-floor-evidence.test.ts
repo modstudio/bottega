@@ -1,139 +1,20 @@
-import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
-import { testDatabaseFixture } from '../database/test-database.fixture.ts'
-import type { CursorIdentity, FloorEvidencePorts } from './workflow-floor-evidence.ts'
-import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
+import {
+  CURSOR_RECORD_ID,
+  database,
+  gather,
+  identity,
+  insertRun,
+  matchingCheckout,
+  planningIdentity,
+  projectId,
+  setTrackerStates,
+  unlinkedIdentity,
+} from './workflow-floor-evidence.fixture.ts'
 import { boundRulingAndGateRow, stepQuestionRow } from './workflow-floor-evidence-ruling.fixture.ts'
 import { hubTaskReadFromJson } from './workflow-floor-task-read.ts'
-
-const identityOf = (key: string, taskId: string | null, branch: string | null): CursorIdentity => ({
-  project: 'fixture',
-  workflowKey: key,
-  workflowTaskRecordId: taskId,
-  branch,
-  worktree: '/fixture/work',
-  session: 's',
-  createdAt: '2026-09-01',
-  stepActivatedAt: '2026-09-01',
-})
-
-const identity = identityOf('DEV-977', 'task-DEV-977', 'DEV-977-work')
-const unlinkedIdentity = identityOf('DEV-977', null, 'DEV-977-work')
-const planningIdentity = identityOf('', null, null)
-const matchingCheckout = {
-  project: 'fixture',
-  branch: 'DEV-977-work',
-  checkoutPath: '/fixture/work',
-  headIsTipOrAncestor: true,
-  landingBranch: 'main',
-}
-
-const ports: FloorEvidencePorts = {
-  readTask: (key) => ({
-    recordId: `task-${key}`,
-    key,
-    status: 'done',
-    statusCategory: 'done',
-    commentIds: ['4', '01a10c8d-164d-71e9-b8a9-a59f15256556'],
-    commentsVerifiable: true,
-  }),
-  runHasArtifacts: () => true,
-  resolveCheckout: () => matchingCheckout,
-  resolveTreeCommit: () => 'abc',
-  viewPullRequest: () => ({
-    state: 'MERGED',
-    mergedAt: '2026-09-01',
-    headRefName: 'DEV-977-work',
-    baseRefName: 'main',
-    url: 'https://github.com/acme/app/pull/15',
-  }),
-  readOriginUrl: () => 'git@github.com:acme/app.git',
-}
-
-const CURSOR_RECORD_ID = '00000000-0000-4000-8000-000000000001'
-
-const database = testDatabaseFixture((d) => {
-  d.query(
-    'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
-  ).run('fixture', '/fixture', 'bun', '{"trunk":"main"}')
-  d.query(
-    'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
-  ).run('other', '/other', 'bun', '{}')
-  d.query(
-    `INSERT INTO workflow_cursor
-      (record_id,number,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
-       workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,question,
-       total_steps,created_at,updated_at,enforcement)
-     VALUES ('${CURSOR_RECORD_ID}',(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),'fixture','flow','default','DEV-977','','s',?,?,'{}',0,'rebase','running','[]',NULL,
-             1,'2026-09-01','2026-09-01','floors')`,
-  ).run(workflowVersionRecordId(d), catalogueVersionRecordId(d))
-})
-
-const setTrackerStates = (d: Database, name: string, states: Record<string, string>) => {
-  d.query('UPDATE project SET settings=? WHERE name=?').run(
-    JSON.stringify({ tracker: { states } }),
-    name,
-  )
-}
-
-const projectId = (d: Database, name: string) =>
-  (
-    d
-      .query<{ id: string }, [string]>('SELECT record_id AS id FROM project WHERE name=?')
-      .get(name) as {
-      id: string
-    }
-  ).id
-
-const insertRun = (
-  d: Database,
-  input: {
-    project: string
-    launchKey?: string | null
-    branch?: string | null
-    status?: string
-    sessionId?: string | null
-    startedAt?: string
-  },
-) =>
-  (
-    d
-      .query<{ id: string }, (string | number | null)[]>(
-        `INSERT INTO run (record_id,number,started_at,agent,job,repo,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,exit_code,launch_key,task_record_id,branch,session_id)
-         VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement',?,?, 'sha',1,'p',?,0,?,?,?,?) RETURNING record_id AS id`,
-      )
-      .get(
-        input.startedAt ?? '2026-09-01',
-        input.project,
-        projectId(d, input.project),
-        input.status ?? 'ok',
-        input.launchKey ?? null,
-        input.launchKey ? `task-${input.launchKey}` : null,
-        input.branch ?? null,
-        input.sessionId ?? null,
-      ) as { id: string }
-  ).id
-
-const gather = (
-  d: Database,
-  evidence: Parameters<typeof gatherValidatedEvidence>[0]['evidence'],
-  extraPorts: FloorEvidencePorts = {},
-  cursorIdentity: CursorIdentity = identity,
-  floors: Parameters<typeof gatherValidatedEvidence>[0]['floors'] = [],
-) =>
-  gatherValidatedEvidence({
-    cursorId: CURSOR_RECORD_ID,
-    identity: cursorIdentity,
-    stepOrdinal: 1,
-    stepSlug: 'rebase',
-    floors,
-    evidence,
-    ports: { ...ports, ...extraPorts },
-    d,
-  })
 
 test(
   'gathers a bound answered ruling and a finished matching gate',
@@ -145,7 +26,7 @@ test(
   stepQuestionRow(database, gather, CURSOR_RECORD_ID, identity),
 )
 
-test('resolves probe artifacts and task comments through injected ports', () => {
+test('resolves probe artifacts and task comments through injected ports', async () => {
   const d = database()
   d.query(
     `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at)
@@ -159,7 +40,7 @@ test('resolves probe artifacts and task comments through injected ports', () => 
       (record_id,project,project_record_id,branch,tip,tree,pr_number,review_record_ids,patch_id,tier,lens_rounds,finding_count,at)
      VALUES ('snap-1','fixture',(SELECT record_id FROM project WHERE name='fixture'),'DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
   ).run()
-  const gathered = gather(d, { artifact: 'probe:1', task: 'DEV-977' })
+  const gathered = await gather(d, { artifact: 'probe:1', task: 'DEV-977' })
   expect(gathered.artifact).toEqual({ ref: `probe:${probeRecordId}`, exists: true })
   expect(gathered.probe).toEqual({ id: 1, exitCode: 0 })
   expect(gathered.task).toEqual({
@@ -171,13 +52,13 @@ test('resolves probe artifacts and task comments through injected ports', () => 
   })
 })
 
-test('a missing gate id names the flag', () => {
-  expect(() => gather(database(), { gate: 99 })).toThrow(
+test('a missing gate id names the flag', async () => {
+  expect(async () => await gather(database(), { gate: 99 })).toThrow(
     'no gate has number 99; pass a positive decimal gate number or a full gate UUID',
   )
 })
 
-test('a foreign review is refused and a matching review is allowed', () => {
+test('a foreign review is refused and a matching review is allowed', async () => {
   const d = database()
   const foreignRun = insertRun(d, {
     project: 'other',
@@ -191,7 +72,7 @@ test('a foreign review is refused and a matching review is allowed', () => {
     `INSERT INTO review_lens (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
      VALUES ('${newRecordId()}',(SELECT record_id FROM review WHERE number=1),?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
   ).run(foreignRun)
-  expect(() => gather(d, { review: '1' })).toThrow(
+  expect(async () => await gather(d, { review: '1' })).toThrow(
     "--review 1 project is other, not this cursor's fixture",
   )
 
@@ -207,7 +88,7 @@ test('a foreign review is refused and a matching review is allowed', () => {
     `INSERT INTO review_lens (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
      VALUES ('${newRecordId()}',(SELECT record_id FROM review WHERE number=2),?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
   ).run(matchingRun)
-  expect(gather(d, { review: '2' }).review).toEqual({
+  expect((await gather(d, { review: '2' })).review).toEqual({
     recordId: expect.any(String),
     number: 2,
     allFindingsDisposed: true,
@@ -215,7 +96,7 @@ test('a foreign review is refused and a matching review is allowed', () => {
   })
 })
 
-test('review evidence covers every review of the same change on the branch', () => {
+test('review evidence covers every review of the same change on the branch', async () => {
   const d = database()
   const runIds = [
     insertRun(d, { project: 'fixture', launchKey: 'DEV-977', branch: 'DEV-977-work' }),
@@ -239,7 +120,7 @@ test('review evidence covers every review of the same change on the branch', () 
   insertLens.run(newRecordId(), 2, runIds[1]!, null, null, null, null)
   insertLens.run(newRecordId(), 3, runIds[2]!, null, null, null, null)
 
-  expect(gather(d, { review: '1' }).review).toEqual({
+  expect((await gather(d, { review: '1' })).review).toEqual({
     recordId: expect.any(String),
     number: 1,
     allFindingsDisposed: true,
@@ -251,7 +132,7 @@ test('review evidence covers every review of the same change on the branch', () 
     `UPDATE review_lens SET reproduced='all',coverage='adequate',limits='named',overlap='unique'
       WHERE review_record_id=(SELECT record_id FROM review WHERE number=2)`,
   ).run()
-  expect(gather(d, { review: '1' }).review).toEqual({
+  expect((await gather(d, { review: '1' })).review).toEqual({
     recordId: expect.any(String),
     number: 1,
     allFindingsDisposed: true,
@@ -259,7 +140,7 @@ test('review evidence covers every review of the same change on the branch', () 
   })
 })
 
-test('a same-project review whose lenses miss the branch and key is refused', () => {
+test('a same-project review whose lenses miss the branch and key is refused', async () => {
   const d = database()
   const runId = insertRun(d, {
     project: 'fixture',
@@ -273,12 +154,12 @@ test('a same-project review whose lenses miss the branch and key is refused', ()
     `INSERT INTO review_lens (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
      VALUES ('${newRecordId()}',(SELECT record_id FROM review WHERE number=1),?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
   ).run(runId)
-  expect(() => gather(d, { review: '1' })).toThrow(
+  expect(async () => await gather(d, { review: '1' })).toThrow(
     '--review 1 has no lens run on branch DEV-977-work or task DEV-977',
   )
 })
 
-test('a review matches when a lens run carries the workflow key on another branch', () => {
+test('a review matches when a lens run carries the workflow key on another branch', async () => {
   const d = database()
   const runId = insertRun(d, {
     project: 'fixture',
@@ -292,10 +173,10 @@ test('a review matches when a lens run carries the workflow key on another branc
     `INSERT INTO review_lens (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
      VALUES ('${newRecordId()}',(SELECT record_id FROM review WHERE number=1),?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
   ).run(runId)
-  expect(gather(d, { review: '1' }).review?.number).toBe(1)
+  expect((await gather(d, { review: '1' })).review?.number).toBe(1)
 })
 
-test('a launch-key-bound review uses its cursor branch review round', () => {
+test('a launch-key-bound review uses its cursor branch review round', async () => {
   const d = database()
   const namedRun = insertRun(d, {
     project: 'fixture',
@@ -322,7 +203,7 @@ test('a launch-key-bound review uses its cursor branch review round', () => {
   insertLens.run(newRecordId(), 1, namedRun, 'all', 'adequate', 'named', 'unique')
   insertLens.run(newRecordId(), 2, siblingRun, null, null, null, null)
 
-  expect(gather(d, { review: '1' }).review).toEqual({
+  expect((await gather(d, { review: '1' })).review).toEqual({
     recordId: expect.any(String),
     number: 1,
     allFindingsDisposed: true,
@@ -331,14 +212,14 @@ test('a launch-key-bound review uses its cursor branch review round', () => {
   })
 })
 
-test('a foreign gate run is refused and a matching gate run is allowed', () => {
+test('a foreign gate run is refused and a matching gate run is allowed', async () => {
   const d = database()
   const foreign = insertRun(d, { project: 'other', launchKey: 'DEV-1', branch: 'other-branch' })
   d.query(
     `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code)
      VALUES ('${newRecordId()}', ?, '2026-09-01','2026-09-01','2026-09-01',0)`,
   ).run(foreign)
-  expect(() => gather(d, { gate: 1 })).toThrow(
+  expect(async () => await gather(d, { gate: 1 })).toThrow(
     "--gate 1 project is other, not this cursor's fixture",
   )
 
@@ -347,7 +228,7 @@ test('a foreign gate run is refused and a matching gate run is allowed', () => {
     `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code)
      VALUES ('${newRecordId()}', ?, '2026-09-01','2026-09-01','2026-09-01',0)`,
   ).run(matching)
-  expect(gather(d, { gate: 2 }).gate).toEqual({
+  expect((await gather(d, { gate: 2 })).gate).toEqual({
     recordId: expect.any(String),
     finished: true,
     exitCode: 0,
@@ -358,39 +239,40 @@ test('a foreign gate run is refused and a matching gate run is allowed', () => {
     `INSERT INTO gate_execution (record_id,run_record_id,requested_at,purpose)
      VALUES ('${newRecordId()}',?,'2026-09-01','worker-check')`,
   ).run(matching)
-  expect(() => gather(d, { gate: 3 })).toThrow(
+  expect(async () => await gather(d, { gate: 3 })).toThrow(
     '--gate 3 is a worker-check execution, not a landing gate; ' +
       `pass the gate recorded by the landing step (${PLATFORM_SLUG} gate run)`,
   )
 })
 
-test('a foreign architect gate is refused and a matching architect gate is allowed', () => {
+test('a foreign architect gate is refused and a matching architect gate is allowed', async () => {
   const d = database()
   d.query(
     `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
      VALUES ('${newRecordId()}', NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/other','abc')`,
   ).run()
-  expect(() =>
-    gather(
-      d,
-      { gate: 1 },
-      {
-        resolveCheckout: () => ({
-          project: 'other',
-          branch: 'other-branch',
-          checkoutPath: '/fixture/work',
-          headIsTipOrAncestor: true,
-          landingBranch: 'main',
-        }),
-      },
-    ),
+  expect(
+    async () =>
+      await gather(
+        d,
+        { gate: 1 },
+        {
+          resolveCheckout: () => ({
+            project: 'other',
+            branch: 'other-branch',
+            checkoutPath: '/fixture/work',
+            headIsTipOrAncestor: true,
+            landingBranch: 'main',
+          }),
+        },
+      ),
   ).toThrow("--gate 1 cwd project is other, not this cursor's fixture")
 
   d.query(
     `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
      VALUES ('${newRecordId()}', NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/fixture/work','abc')`,
   ).run()
-  expect(gather(d, { gate: 2 }).gate).toEqual({
+  expect((await gather(d, { gate: 2 })).gate).toEqual({
     recordId: expect.any(String),
     finished: true,
     exitCode: 0,
@@ -399,39 +281,40 @@ test('a foreign architect gate is refused and a matching architect gate is allow
   })
 })
 
-test('an architect gate whose commit is outside the change is refused', () => {
+test('an architect gate whose commit is outside the change is refused', async () => {
   const d = database()
   d.query(
     `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
      VALUES ('${newRecordId()}', NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/fixture/work','abc')`,
   ).run()
-  expect(() =>
-    gather(
-      d,
-      { gate: 1 },
-      {
-        resolveCheckout: () => ({
-          project: 'fixture',
-          branch: 'DEV-977-work',
-          checkoutPath: '/fixture/work',
-          headIsTipOrAncestor: false,
-          landingBranch: 'main',
-        }),
-      },
-    ),
+  expect(
+    async () =>
+      await gather(
+        d,
+        { gate: 1 },
+        {
+          resolveCheckout: () => ({
+            project: 'fixture',
+            branch: 'DEV-977-work',
+            checkoutPath: '/fixture/work',
+            headIsTipOrAncestor: false,
+            landingBranch: 'main',
+          }),
+        },
+      ),
   ).toThrow(
     "--gate 1 head_commit does not belong to DEV-977-work or its recorded landing; use evidence recorded from that change's checkout",
   )
 })
 
-test('a foreign run is refused and a matching run is allowed', () => {
+test('a foreign run is refused and a matching run is allowed', async () => {
   const d = database()
   const foreign = insertRun(d, {
     project: 'other',
     launchKey: 'DEV-1',
     branch: 'other-branch',
   })
-  expect(() => gather(d, { run: foreign })).toThrow(
+  expect(async () => await gather(d, { run: foreign })).toThrow(
     `--run ${foreign} project is other, not this cursor's fixture`,
   )
   const matching = insertRun(d, {
@@ -439,14 +322,14 @@ test('a foreign run is refused and a matching run is allowed', () => {
     branch: 'DEV-977-work',
     launchKey: 'DEV-1',
   })
-  expect(gather(d, { run: matching }).run).toEqual({
+  expect((await gather(d, { run: matching })).run).toEqual({
     id: String(matching),
     terminal: true,
     exitCode: 0,
   })
 })
 
-test('a bare run number or run UUID artifact resolves through the run record', () => {
+test('a bare run number or run UUID artifact resolves through the run record', async () => {
   const d = database()
   const matching = insertRun(d, {
     project: 'fixture',
@@ -456,36 +339,42 @@ test('a bare run number or run UUID artifact resolves through the run record', (
   const number = (
     d.query('SELECT number FROM run WHERE record_id=?').get(matching) as { number: number }
   ).number
-  expect(gather(d, { artifact: String(number) }).artifact).toEqual({
+  expect((await gather(d, { artifact: String(number) })).artifact).toEqual({
     ref: String(number),
     exists: true,
   })
-  expect(gather(d, { artifact: matching }).artifact).toEqual({ ref: matching, exists: true })
+  expect((await gather(d, { artifact: matching })).artifact).toEqual({
+    ref: matching,
+    exists: true,
+  })
   const foreign = insertRun(d, { project: 'other', branch: 'other-branch', launchKey: 'DEV-1' })
-  expect(() => gather(d, { artifact: foreign })).toThrow('project is other')
-  expect(() => gather(d, { artifact: newRecordId() })).toThrow('is not a run; pass --artifact <')
+  expect(async () => await gather(d, { artifact: foreign })).toThrow('project is other')
+  expect(async () => await gather(d, { artifact: newRecordId() })).toThrow(
+    'is not a run; pass --artifact <',
+  )
 })
 
-test('a foreign probe is refused and a matching probe is allowed', () => {
+test('a foreign probe is refused and a matching probe is allowed', async () => {
   const d = database()
   d.query(
     `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at)
      VALUES ('${newRecordId()}','["true"]','/other','abc',0,'','2026-09-01')`,
   ).run()
-  expect(() =>
-    gather(
-      d,
-      { artifact: 'probe:1' },
-      {
-        resolveCheckout: () => ({
-          project: 'other',
-          branch: 'other-branch',
-          checkoutPath: '/fixture/work',
-          headIsTipOrAncestor: true,
-          landingBranch: 'main',
-        }),
-      },
-    ),
+  expect(
+    async () =>
+      await gather(
+        d,
+        { artifact: 'probe:1' },
+        {
+          resolveCheckout: () => ({
+            project: 'other',
+            branch: 'other-branch',
+            checkoutPath: '/fixture/work',
+            headIsTipOrAncestor: true,
+            landingBranch: 'main',
+          }),
+        },
+      ),
   ).toThrow("--artifact probe:1 cwd project is other, not this cursor's fixture")
 
   d.query(
@@ -495,32 +384,33 @@ test('a foreign probe is refused and a matching probe is allowed', () => {
   const matchingProbeRecordId = d
     .query<{ record_id: string }, []>('SELECT record_id FROM probe WHERE number=2')
     .get()!.record_id
-  expect(gather(d, { artifact: 'probe:2' }).artifact).toEqual({
+  expect((await gather(d, { artifact: 'probe:2' })).artifact).toEqual({
     ref: `probe:${matchingProbeRecordId}`,
     exists: true,
   })
 })
 
-test('exec evidence is branch-bound and carries its exit code', () => {
+test('exec evidence is branch-bound and carries its exit code', async () => {
   const d = database()
   d.query(
     `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind)
      VALUES ('${newRecordId()}','["true"]','/other','abc',0,'','2026-09-01','exec')`,
   ).run()
-  expect(() =>
-    gather(
-      d,
-      { artifact: 'exec:1' },
-      {
-        resolveCheckout: () => ({
-          project: 'other',
-          branch: 'other-branch',
-          checkoutPath: '/fixture/work',
-          headIsTipOrAncestor: true,
-          landingBranch: 'main',
-        }),
-      },
-    ),
+  expect(
+    async () =>
+      await gather(
+        d,
+        { artifact: 'exec:1' },
+        {
+          resolveCheckout: () => ({
+            project: 'other',
+            branch: 'other-branch',
+            checkoutPath: '/fixture/work',
+            headIsTipOrAncestor: true,
+            landingBranch: 'main',
+          }),
+        },
+      ),
   ).toThrow("--artifact exec:1 cwd project is other, not this cursor's fixture")
 
   d.query(
@@ -530,11 +420,11 @@ test('exec evidence is branch-bound and carries its exit code', () => {
   const matchingExecRecordId = d
     .query<{ record_id: string }, []>('SELECT record_id FROM probe WHERE number=2')
     .get()!.record_id
-  expect(gather(d, { artifact: 'exec:2' })).toMatchObject({
+  expect(await gather(d, { artifact: 'exec:2' })).toMatchObject({
     artifact: { ref: `exec:${matchingExecRecordId}`, exists: true },
     exec: { id: 2, recordId: matchingExecRecordId, command: 'true', argv: ['true'], exitCode: 0 },
   })
-  expect(() => gather(d, { artifact: 'probe:2' })).toThrow(
+  expect(async () => await gather(d, { artifact: 'probe:2' })).toThrow(
     '--artifact probe:2 is recorded as exec:2',
   )
 
@@ -542,23 +432,23 @@ test('exec evidence is branch-bound and carries its exit code', () => {
     `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind)
      VALUES ('${newRecordId()}',?,'/fixture/work','abc',0,'','2026-09-01','exec')`,
   ).run(JSON.stringify([PLATFORM_SLUG, 'pr', 'create']))
-  expect(gather(d, { artifact: 'exec:3' })).toMatchObject({
+  expect(await gather(d, { artifact: 'exec:3' })).toMatchObject({
     exec: { id: 3, argv: [PLATFORM_SLUG, 'pr', 'create'], output: '' },
   })
-  expect(gather(d, { artifact: 'exec:3' }).pullRequest).toBeUndefined()
+  expect((await gather(d, { artifact: 'exec:3' })).pullRequest).toBeUndefined()
 
   const url = 'https://github.com/acme/app/pull/15'
   d.query(
     `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind)
      VALUES ('${newRecordId()}',?,'/fixture/work','abc',0,?,'2026-09-01','exec')`,
   ).run(JSON.stringify([PLATFORM_SLUG, 'pr', 'create']), `opened ${url}`)
-  expect(gather(d, { artifact: 'exec:4' })).toMatchObject({
+  expect(await gather(d, { artifact: 'exec:4' })).toMatchObject({
     exec: { id: 4, argv: [PLATFORM_SLUG, 'pr', 'create'], output: `opened ${url}` },
     pullRequest: { url, repository: 'acme/app', projectRepository: 'acme/app' },
   })
 })
 
-test('exec evidence uses the post-command head that belongs to the rebased branch', () => {
+test('exec evidence uses the post-command head that belongs to the rebased branch', async () => {
   const d = database()
   d.query(
     `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind)
@@ -569,49 +459,52 @@ test('exec evidence uses the post-command head that belongs to the rebased branc
     .get()!.record_id
 
   expect(
-    gather(
-      d,
-      { artifact: 'exec:1' },
-      {
-        resolveCheckout: (_cwd, headCommit) =>
-          headCommit === 'rebased-tip'
-            ? matchingCheckout
-            : { ...matchingCheckout, headIsTipOrAncestor: false },
-      },
+    (
+      await gather(
+        d,
+        { artifact: 'exec:1' },
+        {
+          resolveCheckout: (_cwd, headCommit) =>
+            headCommit === 'rebased-tip'
+              ? matchingCheckout
+              : { ...matchingCheckout, headIsTipOrAncestor: false },
+        },
+      )
     ).artifact,
   ).toEqual({ ref: `exec:${execRecordId}`, exists: true })
 })
 
-test('exec evidence refuses a post-command head outside the change', () => {
+test('exec evidence refuses a post-command head outside the change', async () => {
   const d = database()
   d.query(
     `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind)
      VALUES ('${newRecordId()}','["git","rebase","origin/main"]','/fixture/work','foreign-tip',0,'','2026-09-01','exec')`,
   ).run()
 
-  expect(() =>
-    gather(
-      d,
-      { artifact: 'exec:1' },
-      {
-        resolveCheckout: () => ({ ...matchingCheckout, headIsTipOrAncestor: false }),
-      },
-    ),
+  expect(
+    async () =>
+      await gather(
+        d,
+        { artifact: 'exec:1' },
+        {
+          resolveCheckout: () => ({ ...matchingCheckout, headIsTipOrAncestor: false }),
+        },
+      ),
   ).toThrow('--artifact exec:1 head_commit does not belong to DEV-977-work or its recorded landing')
 })
 
-test('a pr-create exec whose output URL cannot be judged is gathered as a condition', () => {
+test('a pr-create exec whose output URL cannot be judged is gathered as a condition', async () => {
   const d = database()
   const other = 'https://github.com/acme/app/pull/16'
   d.query(
     `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind)
      VALUES ('${newRecordId()}',?,'/fixture/work','abc',0,?,'2026-09-01','exec')`,
   ).run(JSON.stringify([PLATFORM_SLUG, 'pr', 'create']), `opened ${other}`)
-  const mismatched = gather(d, { artifact: 'exec:1' })
+  const mismatched = await gather(d, { artifact: 'exec:1' })
   expect(mismatched.pullRequest).toBeUndefined()
   expect(mismatched.exec?.pullRequestCondition).toContain('--artifact exec:1')
   expect(mismatched.exec?.pullRequestCondition).toContain('resolved as')
-  const failed = gather(
+  const failed = await gather(
     d,
     { artifact: 'exec:1' },
     {
@@ -625,11 +518,11 @@ test('a pr-create exec whose output URL cannot be judged is gathered as a condit
   expect(failed.exec?.pullRequestCondition).toContain('gh pr view failed')
 })
 
-test('pull-request artifacts resolve and match the cursor branch and project trunk', () => {
+test('pull-request artifacts resolve and match the cursor branch and project trunk', async () => {
   const d = database()
   const url = 'https://github.com/acme/app/pull/15'
   expect(
-    gather(
+    await gather(
       d,
       { artifact: url },
       {
@@ -656,7 +549,7 @@ test('pull-request artifacts resolve and match the cursor branch and project tru
   })
 })
 
-test("exec evidence recognizes only a cursor's recorded adopting session", () => {
+test("exec evidence recognizes only a cursor's recorded adopting session", async () => {
   const d = database()
   d.query(
     `INSERT INTO question
@@ -675,24 +568,24 @@ test("exec evidence recognizes only a cursor's recorded adopting session", () =>
             ('${newRecordId()}','["true"]','/fixture/work','abc',0,'','2026-09-02','exec','unrelated-session')`,
   ).run()
 
-  expect(gather(d, { artifact: 'exec:1' }).exec).toMatchObject({
+  expect((await gather(d, { artifact: 'exec:1' })).exec).toMatchObject({
     sessionMatches: false,
     sessionAdoptedCursor: true,
   })
-  expect(gather(d, { artifact: 'exec:2' }).exec).toMatchObject({
+  expect((await gather(d, { artifact: 'exec:2' })).exec).toMatchObject({
     sessionMatches: false,
     sessionAdoptedCursor: false,
   })
 })
 
-test('a foreign doc is refused and a matching doc is allowed', () => {
+test('a foreign doc is refused and a matching doc is allowed', async () => {
   const d = database()
   const foreignId = newRecordId()
   d.query(
     `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,project_record_id,record_id)
      VALUES ('project','other','note','t','b','inject','["technical"]','t','t',?,?)`,
   ).run(projectId(d, 'other'), foreignId)
-  expect(() => gather(d, { artifact: `doc:${foreignId}` })).toThrow(
+  expect(async () => await gather(d, { artifact: `doc:${foreignId}` })).toThrow(
     `--artifact doc:${foreignId} is scoped to other, not this cursor's fixture`,
   )
   const matchingId = newRecordId()
@@ -700,26 +593,28 @@ test('a foreign doc is refused and a matching doc is allowed', () => {
     `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,project_record_id,record_id)
      VALUES ('project','fixture','note','t','b','inject','["technical"]','t','t',?,?)`,
   ).run(projectId(d, 'fixture'), matchingId)
-  expect(gather(d, { artifact: `doc:${matchingId}` }).artifact).toEqual({
+  expect((await gather(d, { artifact: `doc:${matchingId}` })).artifact).toEqual({
     ref: 'doc:project/fixture/note',
     exists: true,
   })
 })
 
-test('a path-shaped canon slug resolves as the whole address remainder', () => {
+test('a path-shaped canon slug resolves as the whole address remainder', async () => {
   const d = database()
   const id = newRecordId()
   d.query(
     `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,project_record_id,record_id)
      VALUES ('canon','fixture','.agents/rules/10-code.md','t','b','inject','["technical"]','t','t',?,?)`,
   ).run(projectId(d, 'fixture'), id)
-  expect(gather(d, { artifact: 'doc:canon/fixture/.agents/rules/10-code.md' }).artifact).toEqual({
+  expect(
+    (await gather(d, { artifact: 'doc:canon/fixture/.agents/rules/10-code.md' })).artifact,
+  ).toEqual({
     ref: 'doc:canon/fixture/.agents/rules/10-code.md',
     exists: true,
   })
 })
 
-test('a legacy resume doc without a project id is scoped by its project subject', () => {
+test('a legacy resume doc without a project id is scoped by its project subject', async () => {
   const d = database()
   const matchingId = newRecordId()
   const foreignId = newRecordId()
@@ -729,35 +624,37 @@ test('a legacy resume doc without a project id is scoped by its project subject'
             ('resume','other','foreign-brief','t','b','demand','["technical"]','t','t',NULL,?)`,
   ).run(matchingId, foreignId)
 
-  expect(gather(d, { artifact: `doc:${matchingId}` }).artifact).toEqual({
+  expect((await gather(d, { artifact: `doc:${matchingId}` })).artifact).toEqual({
     ref: 'doc:resume/fixture/brief',
     exists: true,
   })
-  expect(() => gather(d, { artifact: `doc:${foreignId}` })).toThrow(
+  expect(async () => await gather(d, { artifact: `doc:${foreignId}` })).toThrow(
     `--artifact doc:${foreignId} is scoped to other, not this cursor's fixture`,
   )
 })
 
-test('a foreign task comment is refused and a matching comment is allowed', () => {
+test('a foreign task comment is refused and a matching comment is allowed', async () => {
   const d = database()
-  expect(() => gather(d, { artifact: 'task:DEV-1#comment:4' })).toThrow(
+  expect(async () => await gather(d, { artifact: 'task:DEV-1#comment:4' })).toThrow(
     "--artifact task:DEV-1#comment:4 task is not this cursor's DEV-977",
   )
-  expect(gather(d, { artifact: 'task:DEV-977#comment:4' }).artifact).toEqual({
+  expect((await gather(d, { artifact: 'task:DEV-977#comment:4' })).artifact).toEqual({
     ref: 'task:DEV-977#comment:4',
     exists: true,
   })
   expect(
-    gather(d, {
-      artifact: 'task:DEV-977#comment:01a10c8d-164d-71e9-b8a9-a59f15256556',
-    }).artifact,
+    (
+      await gather(d, {
+        artifact: 'task:DEV-977#comment:01a10c8d-164d-71e9-b8a9-a59f15256556',
+      })
+    ).artifact,
   ).toEqual({
     ref: 'task:DEV-977#comment:01a10c8d-164d-71e9-b8a9-a59f15256556',
     exists: true,
   })
 })
 
-test('a fresh tracker task read verifies its own comment ids and refuses another', () => {
+test('a fresh tracker task read verifies its own comment ids and refuses another', async () => {
   const d = database()
   const trackerComment = '01a16517-2274-71fc-998f-2be4a598791b'
   const trackerRead = hubTaskReadFromJson('DEV-977', {
@@ -769,9 +666,10 @@ test('a fresh tracker task read verifies its own comment ids and refuses another
   const readTask = () => trackerRead
 
   expect(
-    gather(d, { artifact: `task:DEV-977#comment:${trackerComment}` }, { readTask }).artifact,
+    (await gather(d, { artifact: `task:DEV-977#comment:${trackerComment}` }, { readTask }))
+      .artifact,
   ).toEqual({ ref: `task:DEV-977#comment:${trackerComment}`, exists: true })
-  expect(() => gather(d, { artifact: 'task:DEV-977#comment:4' }, { readTask })).toThrow(
+  expect(async () => await gather(d, { artifact: 'task:DEV-977#comment:4' }, { readTask })).toThrow(
     '--artifact task:DEV-977#comment:4 is not a comment on DEV-977',
   )
 
@@ -780,43 +678,43 @@ test('a fresh tracker task read verifies its own comment ids and refuses another
     comments: [{ id: 4 }],
   })
   expect(
-    gather(d, { artifact: 'task:DEV-977#comment:4' }, { readTask: () => hubRead }).artifact,
+    (await gather(d, { artifact: 'task:DEV-977#comment:4' }, { readTask: () => hubRead })).artifact,
   ).toEqual({ ref: 'task:DEV-977#comment:4', exists: true })
 })
 
-test('a task artifact requires the fresh task key to match the cursor', () => {
+test('a task artifact requires the fresh task key to match the cursor', async () => {
   const d = database()
-  expect(gather(d, { artifact: 'task:DEV-977' }).artifact).toEqual({
+  expect((await gather(d, { artifact: 'task:DEV-977' })).artifact).toEqual({
     ref: 'task:DEV-977',
     exists: true,
   })
-  expect(() => gather(d, { artifact: 'task:DEV-1' })).toThrow(
+  expect(async () => await gather(d, { artifact: 'task:DEV-1' })).toThrow(
     "--artifact task:DEV-1 task is not this cursor's DEV-977",
   )
 })
 
-test('an unlinked keyed cursor accepts only its own task label as task evidence', () => {
+test('an unlinked keyed cursor accepts only its own task label as task evidence', async () => {
   const d = database()
-  expect(() => gather(d, { task: 'DEV-1' }, {}, unlinkedIdentity)).toThrow(
+  expect(async () => await gather(d, { task: 'DEV-1' }, {}, unlinkedIdentity)).toThrow(
     "--task DEV-1 is not this cursor's task DEV-977",
   )
-  expect(gather(d, { task: 'DEV-977' }, {}, unlinkedIdentity).task?.key).toBe('DEV-977')
+  expect((await gather(d, { task: 'DEV-977' }, {}, unlinkedIdentity)).task?.key).toBe('DEV-977')
 })
 
-test('an unlinked keyed cursor accepts only its own task label as an artifact', () => {
+test('an unlinked keyed cursor accepts only its own task label as an artifact', async () => {
   const d = database()
-  expect(() => gather(d, { artifact: 'task:DEV-1' }, {}, unlinkedIdentity)).toThrow(
+  expect(async () => await gather(d, { artifact: 'task:DEV-1' }, {}, unlinkedIdentity)).toThrow(
     "--artifact task:DEV-1 task is not this cursor's DEV-977",
   )
-  expect(gather(d, { artifact: 'task:DEV-977' }, {}, unlinkedIdentity).artifact).toEqual({
+  expect((await gather(d, { artifact: 'task:DEV-977' }, {}, unlinkedIdentity)).artifact).toEqual({
     ref: 'task:DEV-977',
     exists: true,
   })
 })
 
-test('every workflow task read requests a fresh tracker read through its port', () => {
+test('every workflow task read requests a fresh tracker read through its port', async () => {
   const calls: Array<{ key: string; fresh: true }> = []
-  gather(
+  await gather(
     database(),
     { task: 'DEV-977' },
     {
@@ -836,48 +734,49 @@ test('every workflow task read requests a fresh tracker read through its port', 
   expect(calls).toEqual([{ key: 'DEV-977', fresh: true }])
 })
 
-test("task evidence carries the cursor project's registered tracker states", () => {
+test("task evidence carries the cursor project's registered tracker states", async () => {
   const d = database()
   setTrackerStates(d, 'fixture', { started: 'active', completed: 'done' })
   setTrackerStates(d, 'other', { Doing: 'active' })
 
-  expect(gather(d, { task: 'DEV-977' }).task?.trackerStates).toEqual({
+  expect((await gather(d, { task: 'DEV-977' })).task?.trackerStates).toEqual({
     started: 'active',
     completed: 'done',
   })
 })
 
-test('task evidence carries empty tracker states when the cursor project stores none', () => {
-  expect(gather(database(), { task: 'DEV-977' }).task?.trackerStates).toEqual({})
+test('task evidence carries empty tracker states when the cursor project stores none', async () => {
+  expect((await gather(database(), { task: 'DEV-977' })).task?.trackerStates).toEqual({})
 })
 
-test('a tracker without comment ids names the task artifact remedy', () => {
-  expect(() =>
-    gather(
-      database(),
-      { artifact: 'task:DEV-977#comment:uuid' },
-      {
-        readTask: (key) => ({
-          recordId: `task-${key}`,
-          key,
-          status: 'done',
-          statusCategory: 'done',
-          commentIds: [],
-          commentsVerifiable: false,
-        }),
-      },
-    ),
+test('a tracker without comment ids names the task artifact remedy', async () => {
+  expect(
+    async () =>
+      await gather(
+        database(),
+        { artifact: 'task:DEV-977#comment:uuid' },
+        {
+          readTask: (key) => ({
+            recordId: `task-${key}`,
+            key,
+            status: 'done',
+            statusCategory: 'done',
+            commentIds: [],
+            commentsVerifiable: false,
+          }),
+        },
+      ),
   ).toThrow('use --artifact task:DEV-977 to verify the task instead')
 })
 
-test('a snapshot plus a merged PR satisfies tracker evidence', () => {
+test('a snapshot plus a merged PR satisfies tracker evidence', async () => {
   const d = database()
   d.query(
     `INSERT INTO landing_triage_snapshot
       (record_id,project,project_record_id,branch,tip,tree,pr_number,review_record_ids,patch_id,tier,lens_rounds,finding_count,at)
      VALUES ('snap-1','fixture',(SELECT record_id FROM project WHERE name='fixture'),'DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
   ).run()
-  expect(gather(d, { task: 'DEV-977' }).task).toEqual({
+  expect((await gather(d, { task: 'DEV-977' })).task).toEqual({
     key: 'DEV-977',
     status: 'done',
     statusCategory: 'done',
@@ -886,7 +785,7 @@ test('a snapshot plus a merged PR satisfies tracker evidence', () => {
   })
 })
 
-test('an open PR is gathered as an unmerged tracker fact', () => {
+test('an open PR is gathered as an unmerged tracker fact', async () => {
   const d = database()
   d.query(
     `INSERT INTO landing_triage_snapshot
@@ -894,18 +793,20 @@ test('an open PR is gathered as an unmerged tracker fact', () => {
      VALUES ('snap-1','fixture',(SELECT record_id FROM project WHERE name='fixture'),'DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
   ).run()
   expect(
-    gather(
-      d,
-      { task: 'DEV-977' },
-      {
-        viewPullRequest: () => ({
-          state: 'OPEN',
-          mergedAt: null,
-          headRefName: 'DEV-977-work',
-          baseRefName: 'main',
-          url: 'https://github.com/acme/app/pull/12',
-        }),
-      },
+    (
+      await gather(
+        d,
+        { task: 'DEV-977' },
+        {
+          viewPullRequest: () => ({
+            state: 'OPEN',
+            mergedAt: null,
+            headRefName: 'DEV-977-work',
+            baseRefName: 'main',
+            url: 'https://github.com/acme/app/pull/12',
+          }),
+        },
+      )
     ).task,
   ).toEqual({
     key: 'DEV-977',
@@ -916,8 +817,8 @@ test('an open PR is gathered as an unmerged tracker fact', () => {
   })
 })
 
-test('no pull request record is gathered as an unavailable tracker fact', () => {
-  expect(gather(database(), { task: 'DEV-977' }).task).toEqual({
+test('no pull request record is gathered as an unavailable tracker fact', async () => {
+  expect((await gather(database(), { task: 'DEV-977' })).task).toEqual({
     key: 'DEV-977',
     status: 'done',
     statusCategory: 'done',
@@ -931,7 +832,7 @@ test('no pull request record is gathered as an unavailable tracker fact', () => 
   })
 })
 
-test('an unavailable pull request read preserves its first-line reason', () => {
+test('an unavailable pull request read preserves its first-line reason', async () => {
   const d = database()
   d.query(
     `INSERT INTO landing_triage_snapshot
@@ -939,14 +840,16 @@ test('an unavailable pull request read preserves its first-line reason', () => {
      VALUES ('snap-1','fixture',(SELECT record_id FROM project WHERE name='fixture'),'DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
   ).run()
   expect(
-    gather(
-      d,
-      { task: 'DEV-977' },
-      {
-        viewPullRequest: () => {
-          throw new Error('gh unavailable\nsecondary detail')
+    (
+      await gather(
+        d,
+        { task: 'DEV-977' },
+        {
+          viewPullRequest: () => {
+            throw new Error('gh unavailable\nsecondary detail')
+          },
         },
-      },
+      )
     ).task,
   ).toEqual({
     key: 'DEV-977',
@@ -958,16 +861,16 @@ test('an unavailable pull request read preserves its first-line reason', () => {
   })
 })
 
-test('a missing obligation is gathered as not-found without a floor', () => {
-  expect(gather(database(), { satisfies: '00000000-0000-4000-8000-000000000099' }).satisfy).toEqual(
-    {
-      id: '00000000-0000-4000-8000-000000000099',
-      found: false,
-    },
-  )
+test('a missing obligation is gathered as not-found without a floor', async () => {
+  expect(
+    (await gather(database(), { satisfies: '00000000-0000-4000-8000-000000000099' })).satisfy,
+  ).toEqual({
+    id: '00000000-0000-4000-8000-000000000099',
+    found: false,
+  })
 })
 
-test("an obligation preserves its person's ruling requirement", () => {
+test("an obligation preserves its person's ruling requirement", async () => {
   const d = database()
   d.query(
     `INSERT INTO workflow_obligation
@@ -975,51 +878,53 @@ test("an obligation preserves its person's ruling requirement", () => {
      VALUES ('${CURSOR_RECORD_ID}','${CURSOR_RECORD_ID}',1,'rebase','ruling',1,1,'operator decides','2026-09-01')`,
   ).run()
 
-  expect(gather(d, { satisfies: '00000000-0000-4000-8000-000000000001' }).satisfy).toMatchObject({
+  expect(
+    (await gather(d, { satisfies: '00000000-0000-4000-8000-000000000001' })).satisfy,
+  ).toMatchObject({
     found: true,
     floor: { kind: 'ruling', operatorRuling: true },
   })
 })
 
-test('a keyless branchless cursor accepts a same-session run created after it', () => {
+test('a keyless branchless cursor accepts a same-session run created after it', async () => {
   const d = database()
   const matching = insertRun(d, {
     project: 'fixture',
     sessionId: 's',
     startedAt: '2026-09-02',
   })
-  expect(gather(d, { run: matching }, {}, planningIdentity).run).toEqual({
+  expect((await gather(d, { run: matching }, {}, planningIdentity)).run).toEqual({
     id: String(matching),
     terminal: true,
     exitCode: 0,
   })
 })
 
-test('a keyless branchless cursor refuses a later run from another session', () => {
+test('a keyless branchless cursor refuses a later run from another session', async () => {
   const d = database()
   const foreign = insertRun(d, {
     project: 'fixture',
     sessionId: 'other',
     startedAt: '2026-09-02',
   })
-  expect(() => gather(d, { run: foreign }, {}, planningIdentity)).toThrow(
+  expect(async () => await gather(d, { run: foreign }, {}, planningIdentity)).toThrow(
     `--run ${foreign} session is other, not this cursor's owning session s; dispatch the run from the cursor's owning session after composing the workflow, or pass --key once a task exists`,
   )
 })
 
-test('a keyless branchless cursor refuses a same-session run created before it', () => {
+test('a keyless branchless cursor refuses a same-session run created before it', async () => {
   const d = database()
   const earlier = insertRun(d, {
     project: 'fixture',
     sessionId: 's',
     startedAt: '2026-08-31',
   })
-  expect(() => gather(d, { run: earlier }, {}, planningIdentity)).toThrow(
+  expect(async () => await gather(d, { run: earlier }, {}, planningIdentity)).toThrow(
     `--run ${earlier} predates this cursor; dispatch the run from the cursor's owning session after composing the workflow, or pass --key once a task exists`,
   )
 })
 
-test('a keyed cursor refuses a same-session run whose key and branch both mismatch', () => {
+test('a keyed cursor refuses a same-session run whose key and branch both mismatch', async () => {
   const d = database()
   const mismatched = insertRun(d, {
     project: 'fixture',
@@ -1028,20 +933,22 @@ test('a keyed cursor refuses a same-session run whose key and branch both mismat
     sessionId: 's',
     startedAt: '2026-09-02',
   })
-  expect(() => gather(d, { run: mismatched })).toThrow(
+  expect(async () => await gather(d, { run: mismatched })).toThrow(
     `--run ${mismatched} task reference is task-DEV-1, not this cursor's DEV-977, and branch is other-branch, not this cursor's DEV-977-work`,
   )
 })
 
-test('an explicit run artifact reaches keyless binding', () => {
+test('an explicit run artifact reaches keyless binding', async () => {
   const d = database()
   const matching = insertRun(d, {
     project: 'fixture',
     sessionId: 's',
     startedAt: '2026-09-02',
   })
-  expect(gather(d, { artifact: `run:${matching}` }, {}, planningIdentity).artifact).toEqual({
-    ref: `run:${matching}`,
-    exists: true,
-  })
+  expect((await gather(d, { artifact: `run:${matching}` }, {}, planningIdentity)).artifact).toEqual(
+    {
+      ref: `run:${matching}`,
+      exists: true,
+    },
+  )
 })

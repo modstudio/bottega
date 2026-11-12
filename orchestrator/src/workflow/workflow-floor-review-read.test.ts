@@ -27,7 +27,7 @@ const database = testDatabaseFixture((d) => {
   ).run(newRecordId())
 })
 
-test('a review read is refused with a worktree remedy when the cursor tip is unavailable', () => {
+test('a review read is refused with a worktree remedy when the cursor tip is unavailable', async () => {
   expect(decideReviewReadArtifact({ reviewedCommit: 'read-commit', branchTip: null })).toEqual({
     accepted: false,
     message:
@@ -35,19 +35,20 @@ test('a review read is refused with a worktree remedy when the cursor tip is una
   })
 })
 
-test('a missing review read is refused with the recording remedy', () => {
+test('a missing review read is refused with the recording remedy', async () => {
   const readRecordId = newRecordId()
-  expect(() =>
-    gatherValidatedEvidence({
-      cursorId: newRecordId(),
-      identity,
-      stepOrdinal: 1,
-      stepSlug: 'review-lenses',
-      floors: catalogueFloors(['recorded-artifact']),
-      evidence: { artifact: `review-read:${readRecordId}` },
-      ports: { resolveTreeCommit: () => 'tip-commit' },
-      d: database(),
-    }),
+  expect(
+    async () =>
+      await gatherValidatedEvidence({
+        cursorId: newRecordId(),
+        identity,
+        stepOrdinal: 1,
+        stepSlug: 'review-lenses',
+        floors: catalogueFloors(['recorded-artifact']),
+        evidence: { artifact: `review-read:${readRecordId}` },
+        ports: { resolveTreeCommit: () => 'tip-commit' },
+        d: database(),
+      }),
   ).toThrow(
     `record a fresh read with \`${PLATFORM_SLUG} review read --cwd <tree> --sha <tip> --note <text>\` and pass its id as \`--artifact review-read:<UUID>\``,
   )
@@ -58,7 +59,7 @@ test.each([
   ['another commit', 'other-commit', false],
 ] as const)(
   'a review read of the %s is accepted only at the cursor tip',
-  (_case, tip, accepted) => {
+  async (_case, tip, accepted) => {
     const d = database()
     const readRecordId = newRecordId()
     d.query(
@@ -67,8 +68,8 @@ test.each([
      VALUES (?,'fixture',(SELECT record_id FROM project WHERE name='fixture'),
              'DEV-2053-work',?,'patch','[]',0,'read the change','2026-11-06')`,
     ).run(readRecordId, tip)
-    const readEvidence = () =>
-      gatherValidatedEvidence({
+    const readEvidence = async () =>
+      await gatherValidatedEvidence({
         cursorId: newRecordId(),
         identity,
         stepOrdinal: 1,
@@ -79,7 +80,7 @@ test.each([
         d,
       })
     if (!accepted) {
-      expect(readEvidence).toThrow(
+      await expect(readEvidence()).rejects.toThrow(
         `review-read commit ${tip} is not this cursor's branch tip tip-commit; record a fresh read with \`${PLATFORM_SLUG} review read --cwd <tree> --sha <tip> --note <text>\` and pass its id as \`--artifact review-read:<UUID>\``,
       )
       return
@@ -87,7 +88,7 @@ test.each([
     expect(
       decideFloorSatisfaction({
         floors: catalogueFloors(['recorded-artifact']),
-        evidence: readEvidence(),
+        evidence: await readEvidence(),
         enforcement: 'floors',
         finishing: false,
         openObligations: [],

@@ -589,11 +589,11 @@ export function register(program: Command): void {
     .command('project-purge-remove <name>', { hidden: true })
     .helpOption(false)
     .option('--confirm <name>')
-    .action((name: string, options: { confirm?: string }) => {
+    .action(async (name: string, options: { confirm?: string }) => {
       if (options.confirm !== name)
         throw new Error(
           `confirmation guard failed: --confirm must equal ${name}; run \`${PLATFORM_SLUG} project purge ${name} --confirm ${name}\``,
         )
-      removeProjectCommand(name, { purged: true }, { log, cwd: process.cwd })
+      await removeProjectCommand(name, { purged: true }, { log, cwd: process.cwd })
     })
 }

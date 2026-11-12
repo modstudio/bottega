@@ -124,12 +124,12 @@ function adapter(input: {
   }
 }
 
-test('a declared merge queue enqueues after proof and returns the eventual merge commit', () => {
+test('a declared merge queue enqueues after proof and returns the eventual merge commit', async () => {
   registerProject(['ci'])
   const calls: string[] = []
   const enqueueArguments: unknown[][] = []
   expect(
-    mergePullRequest(
+    await mergePullRequest(
       '42',
       cwd,
       adapter({
@@ -151,11 +151,11 @@ test('a declared merge queue enqueues after proof and returns the eventual merge
   expect(enqueueArguments).toEqual([[cwd, 42, 'head-commit']])
 })
 
-test('an already-queued pull request is only waited for', () => {
+test('an already-queued pull request is only waited for', async () => {
   registerProject(['ci'])
   let enqueued = false
   expect(
-    mergePullRequest(
+    await mergePullRequest(
       '42',
       cwd,
       adapter({
@@ -172,11 +172,11 @@ test('an already-queued pull request is only waited for', () => {
   expect(enqueued).toBe(false)
 })
 
-test('a failed first observation makes one requeue call with the node id and head', () => {
+test('a failed first observation makes one requeue call with the node id and head', async () => {
   registerProject(['ci'])
   const requeueArguments: unknown[][] = []
   const failedRunArguments: unknown[][] = []
-  const result = mergePullRequest(
+  const result = await mergePullRequest(
     '42',
     cwd,
     adapter({
@@ -209,34 +209,35 @@ test('a failed first observation makes one requeue call with the node id and hea
   })
 })
 
-test('a persistent failed entry refuses with the failed run and both remedies', () => {
+test('a persistent failed entry refuses with the failed run and both remedies', async () => {
   registerProject(['ci'])
   let clock = 0
-  expect(() =>
-    mergePullRequest(
-      '42',
-      cwd,
-      adapter({
-        queueStates: [
-          { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'UNMERGEABLE' },
-          { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'UNMERGEABLE' },
-          { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'UNMERGEABLE' },
-        ],
-        now: () => clock,
-        wait: () => {
-          clock = MERGE_QUEUE_REQUEUE_CONFIRM_MS
-        },
-      }),
-    ),
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          queueStates: [
+            { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'UNMERGEABLE' },
+            { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'UNMERGEABLE' },
+            { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'UNMERGEABLE' },
+          ],
+          now: () => clock,
+          wait: () => {
+            clock = MERGE_QUEUE_REQUEUE_CONFIRM_MS
+          },
+        }),
+      ),
   ).toThrow(
     `failure merge-group run 9876 (https://github.example/actions/runs/9876); cleared by: push a fix if the check failure is real, or re-run ${PLATFORM_SLUG} pr merge 42 to requeue the unchanged head if it flaked`,
   )
 })
 
-test('a failed-run lookup error does not block the requeue', () => {
+test('a failed-run lookup error does not block the requeue', async () => {
   registerProject(['ci'])
   let requeues = 0
-  const result = mergePullRequest(
+  const result = await mergePullRequest(
     '42',
     cwd,
     adapter({
@@ -259,28 +260,29 @@ test('a failed-run lookup error does not block the requeue', () => {
   )
 })
 
-test('a requeue failure refuses with the requeue, failed-run evidence, and remedy', () => {
+test('a requeue failure refuses with the requeue, failed-run evidence, and remedy', async () => {
   registerProject(['ci'])
-  expect(() =>
-    mergePullRequest(
-      '42',
-      cwd,
-      adapter({
-        queueStates: [{ pullRequestState: 'OPEN', mergeCommit: null, entryState: 'UNMERGEABLE' }],
-        requeue: () => {
-          throw new Error('GraphQL mutation refused')
-        },
-      }),
-    ),
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          queueStates: [{ pullRequestState: 'OPEN', mergeCommit: null, entryState: 'UNMERGEABLE' }],
+          requeue: () => {
+            throw new Error('GraphQL mutation refused')
+          },
+        }),
+      ),
   ).toThrow(
     `refusing merge: pull request #42 could not be requeued after failure merge-group run 9876 (https://github.example/actions/runs/9876): GraphQL mutation refused; cleared by: fix the reported forge condition, then ${PLATFORM_SLUG} pr merge 42`,
   )
 })
 
-test('a failed entry without an enqueue time does not search workflow runs', () => {
+test('a failed entry without an enqueue time does not search workflow runs', async () => {
   registerProject(['ci'])
   let searched = false
-  const result = mergePullRequest(
+  const result = await mergePullRequest(
     '42',
     cwd,
     adapter({
@@ -306,34 +308,35 @@ test('a failed entry without an enqueue time does not search workflow runs', () 
   )
 })
 
-test('a pull request removed from an established queue refuses with the retry command', () => {
+test('a pull request removed from an established queue refuses with the retry command', async () => {
   registerProject(['ci'])
   let clock = 0
-  expect(() =>
-    mergePullRequest(
-      '42',
-      cwd,
-      adapter({
-        queueStates: [
-          { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' },
-          { pullRequestState: 'OPEN', mergeCommit: null, entryState: null },
-          { pullRequestState: 'OPEN', mergeCommit: null, entryState: null },
-        ],
-        now: () => clock,
-        wait: (milliseconds) => {
-          clock += milliseconds === 10_000 ? MERGE_QUEUE_DEQUEUE_CONFIRM_MS : milliseconds
-        },
-      }),
-    ),
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          queueStates: [
+            { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' },
+            { pullRequestState: 'OPEN', mergeCommit: null, entryState: null },
+            { pullRequestState: 'OPEN', mergeCommit: null, entryState: null },
+          ],
+          now: () => clock,
+          wait: (milliseconds) => {
+            clock += milliseconds === 10_000 ? MERGE_QUEUE_DEQUEUE_CONFIRM_MS : milliseconds
+          },
+        }),
+      ),
   ).toThrow(
     `left the merge queue without merging; cleared by: fix the dequeue reason, then ${PLATFORM_SLUG} pr merge 42`,
   )
 })
 
-test('a pull request merged during the vanished-entry transition completes', () => {
+test('a pull request merged during the vanished-entry transition completes', async () => {
   registerProject(['ci'])
   expect(
-    mergePullRequest(
+    await mergePullRequest(
       '42',
       cwd,
       adapter({
@@ -347,98 +350,102 @@ test('a pull request merged during the vanished-entry transition completes', () 
   ).toEqual({ output: 'queued-merge-oid', exitCode: 0 })
 })
 
-test('a closed pull request refuses immediately after an established queue', () => {
+test('a closed pull request refuses immediately after an established queue', async () => {
   registerProject(['ci'])
-  expect(() =>
-    mergePullRequest(
-      '42',
-      cwd,
-      adapter({
-        queueStates: [
-          { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' },
-          { pullRequestState: 'CLOSED', mergeCommit: null, entryState: null },
-        ],
-      }),
-    ),
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          queueStates: [
+            { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' },
+            { pullRequestState: 'CLOSED', mergeCommit: null, entryState: null },
+          ],
+        }),
+      ),
   ).toThrow('left the merge queue without merging')
 })
 
-test('an enqueue failure reports the queue operation and its specific remedy', () => {
+test('an enqueue failure reports the queue operation and its specific remedy', async () => {
   registerProject(['ci'])
-  expect(() =>
-    mergePullRequest(
-      '42',
-      cwd,
-      adapter({
-        queueStates: [{ pullRequestState: 'OPEN', mergeCommit: null, entryState: null }],
-        enqueue: () => {
-          throw new Error(
-            'Auto merge is not allowed for this repository (enablePullRequestAutoMerge)',
-          )
-        },
-      }),
-    ),
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          queueStates: [{ pullRequestState: 'OPEN', mergeCommit: null, entryState: null }],
+          enqueue: () => {
+            throw new Error(
+              'Auto merge is not allowed for this repository (enablePullRequestAutoMerge)',
+            )
+          },
+        }),
+      ),
   ).toThrow(
     `refusing merge: pull request #42 could not be added to the merge queue: Auto merge is not allowed for this repository (enablePullRequestAutoMerge); cleared by: enable auto-merge on the repository (allow_auto_merge), then ${PLATFORM_SLUG} pr merge 42`,
   )
 })
 
-test('a GitHub branch-policy enqueue refusal names pending checks and does not restore forge access', () => {
+test('a GitHub branch-policy enqueue refusal names pending checks and does not restore forge access', async () => {
   registerProject(['ci'])
-  expect(() =>
-    mergePullRequest(
-      '42',
-      cwd,
-      adapter({
-        queueStates: [{ pullRequestState: 'OPEN', mergeCommit: null, entryState: null }],
-        checks: [
-          {
-            name: 'Check',
-            bucket: 'pending',
-            state: 'IN_PROGRESS',
-            link: 'https://checks.example/check',
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          queueStates: [{ pullRequestState: 'OPEN', mergeCommit: null, entryState: null }],
+          checks: [
+            {
+              name: 'Check',
+              bucket: 'pending',
+              state: 'IN_PROGRESS',
+              link: 'https://checks.example/check',
+            },
+            {
+              name: 'ci',
+              bucket: 'pass',
+              state: 'SUCCESS',
+              link: 'https://checks.example/ci',
+            },
+          ],
+          enqueue: () => {
+            throw new Error(
+              'merge-queue enqueue failed: GraphQL: Base branch policy prohibits the merge (mergePullRequest)',
+            )
           },
-          {
-            name: 'ci',
-            bucket: 'pass',
-            state: 'SUCCESS',
-            link: 'https://checks.example/ci',
-          },
-        ],
-        enqueue: () => {
-          throw new Error(
-            'merge-queue enqueue failed: GraphQL: Base branch policy prohibits the merge (mergePullRequest)',
-          )
-        },
-      }),
-    ),
+        }),
+      ),
   ).toThrow(
     `refusing merge: GitHub's branch policy blocks the merge: Check pending; cleared by: wait for pending checks, then rerun ${PLATFORM_SLUG} pr merge 42`,
   )
 })
 
-test('a queue wait is bounded and tells the operator to rerun the merge command', () => {
+test('a queue wait is bounded and tells the operator to rerun the merge command', async () => {
   registerProject(['ci'])
   let clock = 0
-  expect(() =>
-    mergePullRequest(
-      '42',
-      cwd,
-      adapter({
-        queueStates: [
-          { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' },
-          { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' },
-        ],
-        now: () => clock,
-        wait: () => {
-          clock = MERGE_QUEUE_WAIT_MS
-        },
-      }),
-    ),
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          queueStates: [
+            { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' },
+            { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' },
+          ],
+          now: () => clock,
+          wait: () => {
+            clock = MERGE_QUEUE_WAIT_MS
+          },
+        }),
+      ),
   ).toThrow(`re-run ${PLATFORM_SLUG} pr merge 42, which will keep waiting if it is already queued`)
 })
 
-test('a declared merge queue exempts a local-gate proof from moved landing state', () => {
+test('a declared merge queue exempts a local-gate proof from moved landing state', async () => {
   registerProject([])
   db()
     .query(
@@ -449,7 +456,7 @@ test('a declared merge queue exempts a local-gate proof from moved landing state
     .run(newRecordId(), pullRequest.headCommit, cwd)
   let readLandingState = false
   expect(
-    mergePullRequest(
+    await mergePullRequest(
       '42',
       cwd,
       adapter({

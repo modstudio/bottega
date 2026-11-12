@@ -37,7 +37,7 @@ export async function appendWorkedCloseOutReport(input: {
   if (!input.reportNextActions && !input.writeWorked) return
   let workedKeys: string[]
   try {
-    workedKeys = sessionWorkedTaskKeys(input.session, input.database)
+    workedKeys = await sessionWorkedTaskKeys(input.session, input.database)
     if (input.reportNextActions) {
       input.report.nextActionOutcomes = await taskNextActionOutcomes(workedKeys, input.database)
       appendNextActionWarnings(input.report)

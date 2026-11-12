@@ -81,6 +81,7 @@ export const reviewModules: ReviewModule[] = [
   module('orchestrator/src/review/review-triage.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
+    '../synchronous-result.ts',
     '../database/db.ts',
     './review-vocabulary.ts',
     '../contract/contract.ts',

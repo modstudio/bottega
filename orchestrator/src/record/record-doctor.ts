@@ -40,7 +40,7 @@ import type { Agent } from '../agent/agents.ts'
 import { db } from '../database/db.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { inspectRunRecordBackfill, type RunRecordBackfillInspection } from '../run/run-outbox.ts'
-import { taskFlowStore } from '../workflow/task-flow-store.ts'
+import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { activeSpaceInvariant } from './active-space-invariant.ts'
 import { machineId } from './machine-identity.ts'
 import { quarantinedOutboxRows } from './outbox-quarantine.ts'
@@ -438,13 +438,13 @@ function questionCountCheck(name: string, local: number, hosted: number): Record
       }
 }
 
-export function localQuestionCountForSpace(
+export async function localQuestionCountForSpace(
   database: Database,
   projects: Array<{ name: string; space: string | null }>,
   activeSpace: { id: string; slug: string },
-): number {
+): Promise<number> {
   const projectSpaces = new Map(projects.map((project) => [project.name, project.space]))
-  const rows = taskFlowStore(database).localQuestionProjects()
+  const rows = await taskFlowReadStore(database).localQuestionProjects()
   return rows.filter((row) => {
     const space = row.project ? projectSpaces.get(row.project) : null
     const effectiveSpace = space ?? activeSpace.id
@@ -646,7 +646,7 @@ async function operatorRecordChecks(input: {
       checks.push(
         questionCountCheck(
           identityNames[1],
-          localQuestionCountForSpace(input.database, input.projects, {
+          await localQuestionCountForSpace(input.database, input.projects, {
             id: identity.activeSpaceId,
             slug: identity.activeSpaceSlug,
           }),

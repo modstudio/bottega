@@ -2,7 +2,6 @@
 /** Applies the held-tree decision to one project's declared sweep command. */
 
 import { existsSync, realpathSync } from 'node:fs'
-import { namedProjectTreePaths } from '../close/tree-keep.ts'
 import type { Project } from '../project/projects.ts'
 import { sweepWithTool } from '../worktree/worktree-remove.ts'
 import type { CleanupPresentation } from './cleanup.ts'
@@ -44,16 +43,17 @@ export function heldProjectTrees(): {
 export function sweepProject(input: {
   project: Project
   heldPaths: ReadonlySet<string>
+  namedPaths: ReadonlySet<string>
   dryRun: boolean
   presentation: CleanupPresentation
 }): ProjectSweepOutcome {
-  const { project, heldPaths, dryRun, presentation } = input
+  const { project, heldPaths, namedPaths, dryRun, presentation } = input
   const tool = project.settings.worktree!
   try {
     const outcome = withCleanupLock(project.path, `project sweep for ${project.name}`, null, () => {
       const current = heldProjectTrees()
       for (const path of heldPaths) current.add(project.name, path)
-      for (const path of namedProjectTreePaths(project.name)) current.add(project.name, path)
+      for (const path of namedPaths) current.add(project.name, path)
       const decision = decideProjectSweep({
         heldPaths: [...(current.byProject.get(project.name) ?? [])].sort(),
         honorsHeld: tool.sweep_honors_held === true,

@@ -208,6 +208,7 @@ export const importBoundaries: ImportBoundary[] = [
       './discard-worktree-absence.ts',
     ],
     'Keep cleanup independent of transports, routing, reviews, contracts, the CLI, and durable execution.',
+    ['../synchronous-result.ts'],
   ),
   ...boundaries(cleanupBoundarySpecs),
 
@@ -223,6 +224,7 @@ export const importBoundaries: ImportBoundary[] = [
       './absent-tree-close-out.ts',
       ...['./close-out-adoption.ts', './close-out-lease.ts'],
       './close-out-questions.ts',
+      './close-out-preparation.ts',
       './close-out-report.ts',
       './conversation-liveness.ts',
       './close-out-release-holds.ts',

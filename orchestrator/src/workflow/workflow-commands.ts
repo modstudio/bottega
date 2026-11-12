@@ -24,7 +24,7 @@ import {
   setStepCatalogue,
   showResolvedStepCatalogue,
 } from './step-catalogue.ts'
-import { obligationUuid, positive } from './workflow-command-arguments.ts'
+import { obligationUuid, positive, workflowArgs } from './workflow-command-arguments.ts'
 import * as recordShape from './workflow-command-record-shape.ts'
 import type { CommitCountPort } from './workflow-compose-branch.ts'
 import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
@@ -255,7 +255,7 @@ export async function attachCommand(
     project,
     workflow: slug,
     selectedRow,
-  } = cursorCommandTarget(argv, cursor, context, `${PLATFORM_SLUG} workflow attach`)
+  } = await cursorCommandTarget(argv, cursor, context, `${PLATFORM_SLUG} workflow attach`)
   const args = workflowArgs(argv)
   context = await resolveWorkflowCursorContext(
     project,
@@ -441,7 +441,7 @@ export async function ruleCommand(
     project,
     workflow: slug,
     selectedRow,
-  } = cursorCommandTarget(argv, cursor, context, `${PLATFORM_SLUG} workflow rule`)
+  } = await cursorCommandTarget(argv, cursor, context, `${PLATFORM_SLUG} workflow rule`)
   context = await resolveWorkflowCursorContext(
     project,
     args,
@@ -492,7 +492,7 @@ export async function abandonCommand(
     project,
     workflow: slug,
     selectedRow,
-  } = cursorCommandTarget(argv, cursor, context, `${PLATFORM_SLUG} workflow abandon`)
+  } = await cursorCommandTarget(argv, cursor, context, `${PLATFORM_SLUG} workflow abandon`)
   context = await resolveWorkflowCursorContext(
     project,
     args,
@@ -554,7 +554,13 @@ export async function stepCommand(
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
   const args = workflowArgs(argv)
   let context = cliWorkflowCursorContext()
-  const target = cursorCommandTarget(argv, cursor, context, `${PLATFORM_SLUG} workflow step`, true)
+  const target = await cursorCommandTarget(
+    argv,
+    cursor,
+    context,
+    `${PLATFORM_SLUG} workflow step`,
+    true,
+  )
   const { project, workflow: slug, selectedRow } = target
   context = await resolveWorkflowCursorContext(
     project,
@@ -630,7 +636,7 @@ export async function nextCommand(
     project,
     workflow: slug,
     selectedRow,
-  } = cursorCommandTarget(argv, cursor, context, `${PLATFORM_SLUG} workflow next`)
+  } = await cursorCommandTarget(argv, cursor, context, `${PLATFORM_SLUG} workflow next`)
   const evidence = evidenceFromArgv(argv)
   context = await resolveWorkflowCursorContext(
     project,
@@ -688,8 +694,8 @@ export async function nextCommand(
   return contextMomentWrite({ moment: 'workflow-next', taskKey: context.workflowKey })
 }
 
-export function showWorkflowTextCommand(argv: string[], print: WorkflowPrint): void {
-  const shown = showWorkflowText(argv[3]!)
+export async function showWorkflowTextCommand(argv: string[], print: WorkflowPrint): Promise<void> {
+  const shown = await showWorkflowText(argv[3]!)
   if (shown.kind === 'live') {
     print(shown, shown.body)
     return
@@ -708,7 +714,7 @@ export async function copyWorkflowTextCommand(
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
   if (cursor === undefined) throw new Error('--cursor is required')
   const result = await copyWorkflowTextForCursor(
-    cursorForWorkflowTextCopy(cursor),
+    await cursorForWorkflowTextCopy(cursor),
     undefined,
     options.hubTaskReader,
     options.workflowTextDocuments ?? productionWorkflowTextDocumentPorts,
@@ -729,7 +735,7 @@ export async function awaitCommand(
     project,
     workflow: slug,
     selectedRow,
-  } = cursorCommandTarget(argv, cursor, context, `${PLATFORM_SLUG} workflow await`)
+  } = await cursorCommandTarget(argv, cursor, context, `${PLATFORM_SLUG} workflow await`)
   context = await resolveWorkflowCursorContext(
     project,
     args,
@@ -770,8 +776,8 @@ export async function awaitCommand(
   })
 }
 
-export function cursorsCommand(argv: string[], print: WorkflowPrint): void {
-  const rows = listWorkflowCursors({
+export async function cursorsCommand(argv: string[], print: WorkflowPrint): Promise<void> {
+  const rows = await listWorkflowCursors({
     session: flagValue(argv, 'session'),
     project: flagValue(argv, 'project'),
     all: argv.includes('--all'),
@@ -985,16 +991,6 @@ export async function promoteTreeCommand(
       `workflow promote-tree refused: tree ${items.join(', ')} matched neither production nor the newest draft; clear with: ${PLATFORM_SLUG} workflow import --cwd ${root}, then ${PLATFORM_SLUG} workflow promote-tree --cwd ${root} --reason "${reason.trim()}"`,
     )
   }
-}
-
-function workflowArgs(argv: string[]): Record<string, string> {
-  return Object.fromEntries(
-    flagValues(argv, 'arg').map((pair) => {
-      const at = pair.indexOf('=')
-      if (at < 1) throw new Error(`invalid --arg "${pair}"; use k=v`)
-      return [pair.slice(0, at), pair.slice(at + 1)]
-    }),
-  )
 }
 
 export async function composeCommand(

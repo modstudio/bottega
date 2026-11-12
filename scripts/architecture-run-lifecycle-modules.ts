@@ -130,6 +130,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/run/run-claim-inheritance.ts', ['../database/db.ts']),
   module('orchestrator/src/run/reader-tree-sharing-claim.ts', [
+    '../synchronous-result.ts',
     '../database/db.ts',
     '../events.ts',
     '../project/project-lock.ts',
@@ -141,7 +142,11 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../worktree/worktree-preflight.ts',
     '../worktree/worktree-readonly.ts',
   ]),
-  module('orchestrator/src/run/run-claim-transaction.ts', ['../database/db.ts']),
+  module('orchestrator/src/run/run-claim-transaction.ts', [
+    '../synchronous-result.ts',
+    '../database/db.ts',
+  ]),
+  module('orchestrator/src/run/run-close-out-lease-handle.ts', ['./run-lease.ts']),
   module('orchestrator/src/run/run-retry-claim.ts', [
     '../git/git-environment.ts',
     '../worktree/worktree.ts',
@@ -381,6 +386,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     ['../review/review-target.ts'],
   ),
   module('orchestrator/src/run/run-lease.ts', [
+    '../synchronous-result.ts',
     '../filesystem-identity-plan.ts',
     '../database/database-location.ts',
     '../database/db.ts',
@@ -589,7 +595,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-confinement.ts',
     './run-executor.ts',
     './run-harness-reply.ts',
-    './run-lease.ts',
+    './run-close-out-lease-handle.ts',
     './run-reply-source.ts',
     './run-pack-prompt.ts',
     './run-terminal.ts',

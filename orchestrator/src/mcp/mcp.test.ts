@@ -117,7 +117,7 @@ describe('orch MCP', () => {
     } finally {
       await client.close()
       await server.close()
-      removeProject(project)
+      await removeProject(project)
     }
   })
 
@@ -211,7 +211,7 @@ describe('orch MCP', () => {
           'DELETE FROM task_flow WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)',
         )
         .run(project)
-      removeProject(project)
+      await removeProject(project)
     }
   })
 
@@ -418,7 +418,7 @@ describe('orch MCP', () => {
     } finally {
       await client.close()
       await server.close()
-      removeProject(project)
+      await removeProject(project)
     }
   })
 
@@ -825,7 +825,7 @@ describe('orch MCP', () => {
       expect(abandoned).toContain(
         `retry: ${PLATFORM_SLUG} workflow text copy --cursor ${second.id}`,
       )
-      expect(showWorkflowText(attached)).toMatchObject({
+      expect(await showWorkflowText(attached)).toMatchObject({
         kind: 'live',
         body: 'survives the failed MCP copy',
       })
@@ -870,7 +870,7 @@ describe('orch MCP', () => {
           'DELETE FROM task_flow WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)',
         )
         .run(project)
-      removeProject(project)
+      await removeProject(project)
     }
   })
 

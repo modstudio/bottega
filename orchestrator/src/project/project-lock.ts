@@ -22,6 +22,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive, processStartTime } from '../../../shared/process-identity.ts'
 import { tryWriteContention } from '../database/db.ts'
 import { git } from '../git/git-environment.ts'
+import type { SynchronousResult } from '../synchronous-result.ts'
 
 const WORKTREE_CREATE_LOCK_TIMEOUT_MS = 5 * 60_000
 const WORKTREE_CREATE_LOCK_POLL_MS = 100
@@ -470,7 +471,7 @@ function withKernelProjectLock<T>(
  * from overlapping one loaded after it. The legacy gate can be removed once no
  * process predating the migration commit can still be running.
  */
-function withProjectLock<T>(
+function withProjectLock<T extends SynchronousResult>(
   repoRoot: string,
   name: string,
   identity: ProjectLockIdentity,
@@ -699,7 +700,7 @@ function lockTimeout(
  * and recipes as well as orchestrator's own git calls; a fetch inside a project recipe was
  * the operation that exposed the original race.
  */
-export function withWorktreeCreateLock<T>(
+export function withWorktreeCreateLock<T extends SynchronousResult>(
   repoRoot: string,
   create: () => T,
   timeoutMs = WORKTREE_CREATE_LOCK_TIMEOUT_MS,
@@ -713,7 +714,7 @@ export function withWorktreeCreateLock<T>(
   )
 }
 
-export function withCleanupLock<T>(
+export function withCleanupLock<T extends SynchronousResult>(
   repoRoot: string,
   identity: ProjectLockIdentity,
   action: () => T,
@@ -723,7 +724,7 @@ export function withCleanupLock<T>(
 }
 
 /** Refuse rather than wait when another release already owns this project. */
-export function withReleaseLock<T>(
+export function withReleaseLock<T extends SynchronousResult>(
   repoRoot: string,
   identity: ProjectLockIdentity,
   action: () => T,
@@ -746,7 +747,7 @@ export function worktreeLeaseName(worktreePath: string): string {
  * attachment, landing and cleanup of one tree cannot interleave, and cannot
  * deadlock with the purpose locks.
  */
-export function withWorktreeLease<T>(
+export function withWorktreeLease<T extends SynchronousResult>(
   repoRoot: string,
   worktreePath: string,
   identity: ProjectLockIdentity,

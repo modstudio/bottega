@@ -10,12 +10,12 @@ import { taskRulingsForDispatch } from './task-rulings-store.ts'
 type DispatchLinks = { taskRecordId: string | null; projectRecordId: string | null }
 type TaskTextReader = NonNullable<Parameters<typeof initialRunTaskText>[1]>['readTaskText']
 
-function runDispatchRulingsSection(input: {
+async function runDispatchRulingsSection(input: {
   resume: boolean
   project: string | null
   taskRecordId: string | null
-}): { section: string; questionIds: string[] } {
-  const rulings = taskRulingsForDispatch({
+}): Promise<{ section: string; questionIds: string[] }> {
+  const rulings = await taskRulingsForDispatch({
     resume: input.resume,
     project: input.project,
     taskRecordId: input.resume ? null : input.taskRecordId,
@@ -65,11 +65,11 @@ export async function prepareRunDispatchRulings(
         })
       : null
   return {
-    ...runDispatchRulingsSection({
+    ...(await runDispatchRulingsSection({
       resume: !input.firstTurn,
       project: input.projectName ?? inherited?.projectName ?? null,
       taskRecordId: links?.taskRecordId ?? null,
-    }),
+    })),
     links,
     taskText: await initialRunTaskText(
       {

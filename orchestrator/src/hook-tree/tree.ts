@@ -216,9 +216,9 @@ export type HookTreeRemovalResult =
   | { outcome: 'kept'; reason: string }
   | { outcome: 'failed'; detail: string }
 
-export function removeHookTreeResult(requestedPath: string): HookTreeRemovalResult {
+export async function removeHookTreeResult(requestedPath: string): Promise<HookTreeRemovalResult> {
   try {
-    return removeRecordedHookTree(requestedPath)
+    return await removeRecordedHookTree(requestedPath)
   } catch (cause) {
     return { outcome: 'failed', detail: cause instanceof Error ? cause.message : String(cause) }
   }
@@ -231,7 +231,7 @@ export function absentClaimedHookTreeDecision(input: {
   return !input.pathExists && input.hasHistoricalWorktreeClaim ? 'absent' : 'refuse'
 }
 
-function removeRecordedHookTree(requestedPath: string): HookTreeRemovalResult {
+async function removeRecordedHookTree(requestedPath: string): Promise<HookTreeRemovalResult> {
   const wanted = canonicalPath(requestedPath)
   const recordedOwners = (
     db()
@@ -257,7 +257,7 @@ function removeRecordedHookTree(requestedPath: string): HookTreeRemovalResult {
     )
   }
   writableDb()
-  const result = closeOutRun(owners[0]!.record_id, { intent: 'tree-remove' })
+  const result = await closeOutRun(owners[0]!.record_id, { intent: 'tree-remove' })
   if (result.outcome === 'released') return { outcome: 'released' }
   if (result.outcome === 'absent') return { outcome: 'absent' }
   if (result.outcome === 'held') return { outcome: 'kept', reason: result.detail }
@@ -293,8 +293,8 @@ function unownedHookTreeRemovalResult(
   )
 }
 
-export function removeHookTree(requestedPath: string): void {
-  const result = removeHookTreeResult(requestedPath)
+export async function removeHookTree(requestedPath: string): Promise<void> {
+  const result = await removeHookTreeResult(requestedPath)
   if (result.outcome === 'kept') throw new Error(`tree teardown held: ${result.reason}`)
   if (result.outcome === 'failed') throw new Error(result.detail)
 }

@@ -30,7 +30,7 @@ export function inProcessPostLandingAdapter(input: {
         verify: () => {},
         promote: () => fixturePromotionResult(input.promote),
         release: () => input.release(payload.releaseRequired),
-        cleanup: input.cleanup,
+        cleanup: async () => input.cleanup(),
       }),
   }
 }

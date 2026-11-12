@@ -10,7 +10,7 @@ import { projectAt, projectForTaskKey, projects } from '../project/projects.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { LIVE_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { architectSessionContext } from '../workflow/session-context.ts'
-import { taskFlowStore } from '../workflow/task-flow-store.ts'
+import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import {
   listWorkflowCursors,
   type WorkflowCursorListRow,
@@ -234,7 +234,7 @@ export async function contextBrief(
   cwd = process.cwd(),
   database: Database = db(),
 ): Promise<ContextBrief> {
-  const cursors = listWorkflowCursors({ session }, database)
+  const cursors = await listWorkflowCursors({ session }, database)
   const liveClaims = liveClaimsOfSession(session, Date.now(), database)
   const working = workingKeysForBrief(session, liveClaims, cursors, database)
   const workingProjects = [...new Set(working.map(({ project }) => project))]
@@ -258,7 +258,7 @@ export async function contextBrief(
     )
     .get(session) as { count: number }
   const cursorQuestions = {
-    count: taskFlowStore(database).openWorkflowQuestionCountForSession(session),
+    count: await taskFlowReadStore(database).openWorkflowQuestionCountForSession(session),
   }
   const boardEnv = { ...process.env, CLAUDE_CODE_SESSION_ID: session }
   const boardRequests = claimNotices(true, boardEnv, Date.now(), database).filter(

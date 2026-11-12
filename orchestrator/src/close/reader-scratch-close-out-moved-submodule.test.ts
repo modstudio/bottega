@@ -12,7 +12,7 @@ import {
 
 afterEach(() => mock.restore())
 
-test('reader close-out archives a clean submodule moved to a reader-only commit', () => {
+test('reader close-out archives a clean submodule moved to a reader-only commit', async () => {
   const fixture = closeOutFixture({ submodule: true })
   const nested = join(fixture.worktree, 'nested')
   try {
@@ -20,7 +20,7 @@ test('reader close-out archives a clean submodule moved to a reader-only commit'
     commit(nested, 'reader-only nested commit')
     expect(git(['status', '--porcelain'], nested)).toBe('')
 
-    const result = closeOutRun(fixture.id, { intent: 'terminal' })
+    const result = await closeOutRun(fixture.id, { intent: 'terminal' })
 
     expect(result).toMatchObject({ outcome: 'released' })
     const archive = archivedClonePath(result.detail)

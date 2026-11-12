@@ -16,6 +16,7 @@ export const coreModuleSpecs = [
     allowed: ['../../shared/process-identity.ts'],
   },
   { file: 'orchestrator/src/local-listener.ts', allowed: [] },
+  { file: 'orchestrator/src/synchronous-result.ts', allowed: [] },
   { file: 'orchestrator/src/refusal-error.ts', allowed: ['../../shared/refusal.ts'] },
   {
     file: 'orchestrator/src/secret-shaped-output.ts',

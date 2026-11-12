@@ -11,7 +11,7 @@ import {
 import type { TaskFlowIntentInput } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import type { AutonomyResolution, LiveCursorAutonomy } from './autonomy.ts'
-import { taskFlowStore } from './task-flow-store.ts'
+import { taskFlowLocalStore } from './task-flow-store.ts'
 import { type CommitCountPort, readCommitsPastLanding } from './workflow-compose-branch.ts'
 import { resolveCursorArguments, workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
@@ -77,7 +77,7 @@ async function prepareStepServe(
   const handled =
     cursor === undefined
       ? null
-      : findWorkflowCursor(project, slug, mode, args, context, database, cursor)
+      : await findWorkflowCursor(project, slug, mode, args, context, database, cursor)
   const preliminary =
     handled && decideCursorStart(handled.state) === 'reuse'
       ? cursorComposition(handled, database, live)
@@ -90,12 +90,12 @@ async function prepareStepServe(
     !workflowKeyOf(args) &&
     preliminary.steps[0]?.slug === preliminaryStepSlug
   const candidate = openingKeyless
-    ? (selectUntouchedKeylessWorkflowCursor(
+    ? ((await selectUntouchedKeylessWorkflowCursor(
         { project, workflow: slug, mode },
         context.session,
         database,
-      ) as CursorRow | null)
-    : (handled ?? findWorkflowCursor(project, slug, mode, args, context, database, cursor))
+      )) as CursorRow | null)
+    : (handled ?? (await findWorkflowCursor(project, slug, mode, args, context, database, cursor)))
   const row = handled ?? candidate
   const opensCursor = row === null
   const startDecision = decideCursorStart(row?.state ?? null)
@@ -233,7 +233,7 @@ async function applyServeTransition(
     context.taskFlowClient,
   )
   writeTransaction(() => {
-    const store = taskFlowStore(database)
+    const store = taskFlowLocalStore(database)
     if ((decision.move || decision.resume) && row.state === 'awaiting-ruling')
       closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, database)
     const revision = store.write('stage-update', payload, hosted).revisions[row.record_id]!
@@ -295,8 +295,8 @@ async function serveWorkflowStepWithCursor(
   const decision = serveDecision(prepared, slug, mode, args)
   if (!row) row = await insertWorkflowCursor(composition, context, database, autonomy, commitCount)
   await applyServeTransition(row, decision, context, database, resolvedArguments)
-  const served = withWorkflowTextFacts(
-    getWorkflowStep(
+  const served = await withWorkflowTextFacts(
+    await getWorkflowStep(
       slug,
       project,
       decision.slug,

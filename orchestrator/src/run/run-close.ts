@@ -478,7 +478,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
         // this completed attempt before returning into it, otherwise this
         // frame never reaches the ordinary terminal reclaim below.
         if (artifactsPersisted && worktree && reclaimsTreeByDefault(opts.job))
-          reclaimTerminalTree(claim.id, worktree, terminalTreePids, terminalTreePgid, true)
+          await reclaimTerminalTree(claim.id, worktree, terminalTreePids, terminalTreePgid, true)
         return await run({
           job: opts.job,
           prompt: originalPrompt,
@@ -554,7 +554,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
     status !== 'running' &&
     status !== 'stopped'
   ) {
-    reclaimTerminalTree(claim.id, worktree, terminalTreePids, terminalTreePgid, true)
+    await reclaimTerminalTree(claim.id, worktree, terminalTreePids, terminalTreePgid, true)
   }
 
   if (status === 'failed') {
