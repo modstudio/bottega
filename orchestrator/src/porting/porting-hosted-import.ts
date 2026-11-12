@@ -198,12 +198,11 @@ export async function applyHostedPortImport(
   if (plan.refusals.length) throw new ImportRefusalError(plan.refusals)
   const local = db()
   const client = recordApiClient()
-  const identity = await client.whoami()
   const destination = await resolveRecordSpaceOwnerDestination(
     'port import',
     { space: options.space },
     [],
-    async () => parseRecordSpaceMemberships(identity.memberships),
+    async () => parseRecordSpaceMemberships((await client.whoami()).memberships),
   )
   if (!client.importPortCatalogue)
     throw new Error(

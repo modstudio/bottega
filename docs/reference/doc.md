@@ -524,7 +524,7 @@ manage port doctrine records
 
 ## bottega doc port doctrine add
 
-**Synopsis:** `bottega doc port doctrine add [number] [--title <value>] [--file <value>] [--json]`
+**Synopsis:** `bottega doc port doctrine add [number] [--title <value>] [--file <value>] [--space <slug>] [--json]`
 
 add a porting doctrine rule
 
@@ -532,6 +532,7 @@ add a porting doctrine rule
 
 - `--title <value>`: set the title
 - `--file <value>`: read the body from a file
+- `--space <slug>`: select a record space by id or slug
 - `--json`: print JSON output
 
 ### Related
@@ -555,12 +556,13 @@ list porting doctrine
 
 ## bottega doc port doctrine retire
 
-**Synopsis:** `bottega doc port doctrine retire [number] [--json]`
+**Synopsis:** `bottega doc port doctrine retire [number] [--space <slug>] [--json]`
 
 retire a porting doctrine rule
 
 ### Options
 
+- `--space <slug>`: select a record space by id or slug
 - `--json`: print JSON output
 
 ### Related
@@ -569,12 +571,13 @@ retire a porting doctrine rule
 
 ## bottega doc port import
 
-**Synopsis:** `bottega doc port import [dir] [--dry-run] [--replace] [--json]`
+**Synopsis:** `bottega doc port import [dir] [--space <slug>] [--dry-run] [--replace] [--json]`
 
 import a port ledger directory
 
 ### Options
 
+- `--space <slug>`: select a record space by id or slug
 - `--dry-run`: show changes without applying them
 - `--replace`: replace conflicting imported values
 - `--json`: print JSON output

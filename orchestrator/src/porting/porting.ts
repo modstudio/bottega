@@ -72,8 +72,9 @@ async function hostedSpace(
   requestedSpace?: string,
   verb = 'port write',
 ): Promise<string> {
-  const identity = await recordApiClient().whoami()
+  const client = recordApiClient()
   if (recordId) {
+    const identity = await client.whoami()
     const name = projectName(recordId)
     const project = projectRowByName(name)
     const decision = projectDestinationFromIdentity(name, project?.settings, identity)
@@ -84,7 +85,7 @@ async function hostedSpace(
     verb,
     { space: requestedSpace },
     [],
-    async () => parseRecordSpaceMemberships(identity.memberships),
+    async () => parseRecordSpaceMemberships((await client.whoami()).memberships),
   )
   return destination.spaceId
 }
@@ -586,8 +587,8 @@ export function addDoctrineRule(
   number: number,
   title: string,
   body: string,
-  createdAt = nowIso(),
   requestedSpace?: string,
+  createdAt = nowIso(),
 ) {
   assertPortWriteAllowed('add port doctrine rule')
   return applyRecordWriteAuthority({
@@ -604,7 +605,7 @@ export function addDoctrineRule(
   })
 }
 
-export function retireDoctrineRule(number: number, retiredAt = nowIso(), requestedSpace?: string) {
+export function retireDoctrineRule(number: number, requestedSpace?: string, retiredAt = nowIso()) {
   assertPortWriteAllowed('retire port doctrine rule')
   return applyRecordWriteAuthority({
     local: () => retireDoctrineRuleLocal(number, retiredAt),

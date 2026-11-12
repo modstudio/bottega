@@ -41,6 +41,17 @@ function refusePortUsage(usage: string): never {
   throw new Error(`${PLATFORM_SLUG} doc port ${usage}`)
 }
 
+const PORT_IMPORT_USAGE = 'import <dir> [--space <slug>] [--dry-run] [--replace] [--json]'
+const DOCTRINE_ADD_USAGE =
+  'doctrine add <number> --title TEXT (--file F | body on stdin) [--space <slug>] [--json]'
+const DOCTRINE_RETIRE_USAGE = 'doctrine retire <number> [--space <slug>] [--json]'
+
+const importOptions = (flags: PortFlags, sourceLabel: string) => ({
+  replace: flags.has('replace'),
+  sourceLabel,
+  space: flags.flag('space'),
+})
+
 function namedPortProject(name: string) {
   const project = projectByName(name)
   if (!project)
@@ -88,10 +99,7 @@ export async function portCommand(
 
   if (group === 'import') {
     const dir = argv[2]
-    if (!dir)
-      throw new Error(
-        `${PLATFORM_SLUG} doc port import <dir> [--space <slug>] [--dry-run] [--replace] [--json]`,
-      )
+    if (!dir) refusePortUsage(PORT_IMPORT_USAGE)
     const names = {
       doctrine: 'doctrine.md',
       differences: 'differences.md',
@@ -235,11 +243,7 @@ export async function portCommand(
       return
     }
     try {
-      await applyImport(plan, {
-        replace: has('replace'),
-        sourceLabel: dir,
-        space: flag('space'),
-      })
+      await applyImport(plan, importOptions(flags, dir))
     } catch (error) {
       if (!(error instanceof ImportRefusalError)) throw error
       plan.refusals.push(...error.refusals.filter((refusal) => !plan.refusals.includes(refusal)))
@@ -454,9 +458,7 @@ export async function portCommand(
     const number = Number(argv[3])
     const title = flag('title')
     if (!Number.isInteger(number) || number <= 0 || title === undefined) {
-      refusePortUsage(
-        'doctrine add <number> --title TEXT (--file F | body on stdin) [--space <slug>] [--json]',
-      )
+      refusePortUsage(DOCTRINE_ADD_USAGE)
     }
     const body = flag('file')
       ? readFileSync(flag('file')!, 'utf8')
@@ -465,7 +467,7 @@ export async function portCommand(
         : (() => {
             throw new Error('no body: pass --file F or pipe text on stdin')
           })()
-    const rule = await addDoctrineRule(number, title, body, undefined, flag('space'))
+    const rule = await addDoctrineRule(number, title, body, flag('space'))
     output(rule, `added doctrine ${number}: ${title}`)
     return
   }
@@ -473,11 +475,9 @@ export async function portCommand(
   if (group === 'doctrine' && action === 'retire') {
     const number = Number(argv[3])
     if (!Number.isInteger(number) || number <= 0) {
-      throw new Error(
-        `${PLATFORM_SLUG} doc port doctrine retire <number> [--space <slug>] [--json]`,
-      )
+      refusePortUsage(DOCTRINE_RETIRE_USAGE)
     }
-    const retired = await retireDoctrineRule(number, undefined, flag('space'))
+    const retired = await retireDoctrineRule(number, flag('space'))
     output({ retired }, retired ? `retired doctrine ${number}` : `no active doctrine ${number}`)
     return
   }

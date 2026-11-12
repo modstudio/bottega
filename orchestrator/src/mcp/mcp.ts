@@ -852,8 +852,7 @@ function registerDoctrineTools(server: McpServer): void {
         space: z.string().optional(),
       }),
     },
-    async ({ number, title, body, space }) =>
-      text(await addDoctrineRule(number, title, body, undefined, space)),
+    async ({ number: n, title, body, space }) => text(await addDoctrineRule(n, title, body, space)),
   )
 
   server.registerTool(
@@ -862,8 +861,7 @@ function registerDoctrineTools(server: McpServer): void {
       description: 'Retire a doctrine rule without freeing its stable number.',
       inputSchema: z.object({ number: z.number().int().positive(), space: z.string().optional() }),
     },
-    async ({ number, space }) =>
-      text({ retired: await retireDoctrineRule(number, undefined, space) }),
+    async ({ number, space }) => text({ retired: await retireDoctrineRule(number, space) }),
   )
 }
 

@@ -40,7 +40,7 @@ test('hosted port failure is inert and success adopts the hosted identity', asyn
     },
   })
   await expect(
-    addDoctrineRule(991, 'Hosted', 'Hosted body.', at, 'doctrine-space'),
+    addDoctrineRule(991, 'Hosted', 'Hosted body.', 'doctrine-space', at),
   ).rejects.toThrow('hosted doctrine failed')
   expect(db().query('SELECT 1 FROM port_doctrine WHERE number=991').get()).toBeNull()
 
@@ -64,7 +64,7 @@ test('hosted port failure is inert and success adopts the hosted identity', asyn
       }
     },
   })
-  await addDoctrineRule(991, 'Hosted', 'Hosted body.', at, 'doctrine-space')
+  await addDoctrineRule(991, 'Hosted', 'Hosted body.', 'doctrine-space', at)
   expect(
     db().query('SELECT record_id FROM port_doctrine WHERE space_id=? AND number=991').get(space),
   ).toEqual({ record_id: id })
@@ -96,14 +96,14 @@ test('project-less doctrine writes require and use an explicit space', async () 
     },
   })
 
-  await expect(addDoctrineRule(993, 'Explicit', 'Explicit body.', at)).rejects.toThrow(
+  await expect(addDoctrineRule(993, 'Explicit', 'Explicit body.', undefined, at)).rejects.toThrow(
     'port doctrine add writes to a record space and names none; pass --space <slug>',
   )
-  await addDoctrineRule(993, 'Explicit', 'Explicit body.', at, 'doctrine-space')
-  await expect(retireDoctrineRule(993, at)).rejects.toThrow(
+  await addDoctrineRule(993, 'Explicit', 'Explicit body.', 'doctrine-space', at)
+  await expect(retireDoctrineRule(993, undefined, at)).rejects.toThrow(
     'port doctrine retire writes to a record space and names none; pass --space <slug>',
   )
-  expect(await retireDoctrineRule(993, at, 'doctrine-space')).toBe(true)
+  expect(await retireDoctrineRule(993, 'doctrine-space', at)).toBe(true)
   expect(calls).toEqual([space, space])
 })
 
@@ -134,8 +134,8 @@ test('every hosted port writer refuses a worker before calling the record', () =
       }),
     () => resolveLedgerRef(target, 'DEV-1'),
     () => removeLedgerRef(target, 'DEV-1'),
-    () => addDoctrineRule(992, 'Worker', 'Worker body.', at),
-    () => retireDoctrineRule(992, at),
+    () => addDoctrineRule(992, 'Worker', 'Worker body.', undefined, at),
+    () => retireDoctrineRule(992, undefined, at),
   ]
   try {
     for (const write of writers) {
