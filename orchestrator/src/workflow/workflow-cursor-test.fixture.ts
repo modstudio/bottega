@@ -292,6 +292,7 @@ export async function abandonCursor(
     d,
     callContext.taskRecordId,
     callContext.taskStatusCategory,
+    callContext.taskFlowClient,
   )) as SelectableCursorRow | null
   if (!row) throw new Error(`fixture has no ${slug} cursor to abandon`)
   return await abandonSelectedWorkflowCursorForClose(row, reason, callContext, d, callArgs)

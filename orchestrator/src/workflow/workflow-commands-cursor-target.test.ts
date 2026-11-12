@@ -8,6 +8,7 @@ import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fi
 import { db, sessionId } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
+import { machineId } from '../record/machine-identity.ts'
 import type { HostedTaskFlow } from '../record/record-task-flow-contract.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
 import { readThroughTaskFlow } from './task-flow-read-through.ts'
@@ -86,6 +87,7 @@ test('next by cursor alone reads through the row key and links the hosted task',
       number: 1,
       workflow: slug,
       mode: 'default',
+      workflowKey: key,
       workflowVersionId: workflowVersionRecordId(db(), slug),
       workflowVersionNumber: 1,
       catalogueVersionId: catalogueVersionRecordId(db()),
@@ -106,9 +108,10 @@ test('next by cursor alone reads through the row key and links the hosted task',
               },
             ],
       totalSteps: steps.length,
+      enforcement: 'floors',
       openedMachineId: remoteMachine,
       takenOverFromMachineId: null,
-      lastAdvancedMachineId: remoteMachine,
+      lastAdvancedMachineId: revision === 1 ? remoteMachine : machineId(),
       revision,
       createdAt: '2026-11-07T10:00:00.000Z',
       updatedAt: '2026-11-07T11:00:00.000Z',
@@ -116,7 +119,9 @@ test('next by cursor alone reads through the row key and links the hosted task',
     },
   })
   installRecordApiClient({
-    ...createMemoryRecordApiClient({ taskFlowStages: [{ flow: hosted(1, 0).flow, stage: hosted(1, 0).stage! }] }),
+    ...createMemoryRecordApiClient({
+      taskFlowStages: [{ flow: hosted(1, 0).flow, stage: hosted(1, 0).stage! }],
+    }),
     whoami: async () => ({
       user: { id: 'cursor-target-user' },
       activeSpaceId: 'cursor-target-space',
@@ -133,8 +138,13 @@ test('next by cursor alone reads through the row key and links the hosted task',
   const cursor = db()
     .query<{ number: number }, [string]>('SELECT number FROM workflow_cursor WHERE record_id=?')
     .get(stageId)!.number
+  const secondClient = createMemoryRecordApiClient({
+    taskFlowStages: [
+      { flow: { ...hosted(2, 1).flow, taskId: null }, stage: hosted(2, 1).stage! },
+    ],
+  })
   installRecordApiClient({
-    ...createMemoryRecordApiClient({ taskFlowStages: [{ flow: hosted(2, 1).flow, stage: hosted(2, 1).stage! }] }),
+    ...secondClient,
     whoami: async () => ({
       user: { id: 'cursor-target-user' },
       activeSpaceId: 'cursor-target-space',
@@ -144,16 +154,8 @@ test('next by cursor alone reads through the row key and links the hosted task',
       ],
     }),
     readTaskFlow: async () => hosted(2, 1),
-    adoptTaskFlow: async (input) => ({
-      flowRecordId: flowId,
-      revisions: { [flowId]: 3, [input.stage.id]: input.stage.expectedRevision + 1 },
-    }),
-    advanceTaskFlow: async (input) => ({
-      revisions: {
-        [input.stage.id]: input.stage.expectedRevision + 1,
-        ...(input.flow ? { [input.flow.id]: input.flow.expectedRevision + 1 } : {}),
-      },
-    }),
+    adoptTaskFlow: secondClient.adoptTaskFlow,
+    advanceTaskFlow: secondClient.advanceTaskFlow,
   })
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
   const lines: string[] = []

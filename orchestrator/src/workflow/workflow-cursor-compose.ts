@@ -26,6 +26,7 @@ import {
 } from './task-flow.ts'
 import { taskFlowState } from './task-flow-decision.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
+import { sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
 import type { WorkflowCursorInsert } from './task-flow-store-types.ts'
 import {
   type CommitCountPort,
@@ -78,13 +79,18 @@ async function keylessComposeOrdinal(
   machine: string,
   database: Database,
 ): Promise<number> {
-  return taskFlowReadStore(database, context.taskFlowClient).nextKeylessInstanceSlot({
+  const input = {
     projectRecordId,
     workflow: composition.workflow.slug,
     mode: composition.mode!.slug,
     sessionId: context.session ?? null,
     machineId: machine,
-  })
+  }
+  const [hostedSlot, localSlot] = await Promise.all([
+    taskFlowReadStore(database, context.taskFlowClient).nextKeylessInstanceSlot(input),
+    sqliteTaskFlowReadStore(database).nextKeylessInstanceSlot(input),
+  ])
+  return Math.max(localSlot, hostedSlot - 1)
 }
 
 async function readComposeFacts(
@@ -342,7 +348,7 @@ async function recoverComposeConflict(
     throw new Error(
       `${error.message}; close or abandon the stage holding this workflow slot, then retry`,
     )
-  const alreadyCached = await taskFlowReadStore(database).hasStage(replay.stage.id)
+  const alreadyCached = await taskFlowReadStore(database, client).hasStage(replay.stage.id)
   if (!alreadyCached) return cacheComposeReplay(replay, facts, composition, context, database)
   if (facts.key || keylessSiblingRetry) throw error
   return insertWorkflowCursor(composition, context, database, autonomy, commitCount, true)

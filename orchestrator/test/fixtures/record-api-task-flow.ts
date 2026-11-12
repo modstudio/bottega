@@ -4,6 +4,11 @@ import type { HostedTaskFlowStageById } from '../../src/record/record-task-flow-
 export type MemoryTaskFlowInput = {
   taskFlowStages?: HostedTaskFlowStageById[]
   taskFlowProjectNames?: Record<string, string>
+  taskFlowComposeFlowRevision?: number
+  taskFlowComposeStageRevision?: number
+  taskFlowComposeEnforcement?: string
+  taskFlowWorkflowVersionNumbers?: Record<string, number>
+  taskFlowCatalogueVersionNumbers?: Record<string, number>
   taskFlowPageSize?: number
   taskFlowFailedPage?: number
 }
@@ -50,6 +55,20 @@ function compare(
 
 export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<RecordApiClient> {
   const stages = [...(input.taskFlowStages ?? [])]
+  const applyStageChange = (change: { id: string; values: object }) => {
+    const row = stages.find(({ stage }) => stage.id === change.id)
+    if (!row) throw new Error(`fixture task-flow stage ${change.id} not found`)
+    Object.assign(row.stage, change.values)
+    row.stage.revision++
+    return row.stage.revision
+  }
+  const applyFlowChange = (change: { id: string; values: object }) => {
+    const rows = stages.filter(({ flow }) => flow.id === change.id)
+    if (!rows.length) throw new Error(`fixture task flow ${change.id} not found`)
+    const revision = rows[0]!.flow.revision + 1
+    for (const row of rows) Object.assign(row.flow, change.values, { revision })
+    return revision
+  }
   return {
     async composeTaskFlow(payload) {
       const stage = payload.stageInsert!
@@ -76,15 +95,19 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
           ...flow,
           openStageRecordId: stage.id,
           openStageCount: stages.filter(({ flow: row }) => row.id === flow.id).length + 1,
+          revision: input.taskFlowComposeFlowRevision ?? flow.revision,
         },
         stage: {
           ...stage,
           projectName: input.taskFlowProjectNames?.[stage.projectId] ?? 'fixture',
           number,
           workflowKey: stage.workflowKey || null,
-          workflowVersionNumber: 1,
-          catalogueVersionNumber: 1,
-          revision: 1,
+          workflowVersionNumber:
+            input.taskFlowWorkflowVersionNumbers?.[stage.workflowVersionId] ?? 1,
+          catalogueVersionNumber:
+            input.taskFlowCatalogueVersionNumbers?.[stage.catalogueVersionId] ?? 1,
+          revision: input.taskFlowComposeStageRevision ?? 1,
+          enforcement: input.taskFlowComposeEnforcement ?? stage.enforcement,
           obligations: [],
           stepTexts: [],
           textCopies: [],
@@ -98,6 +121,70 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
         stage: { id: stage.id, number },
         revisions: { [flow.id]: stored.flow.revision, [stage.id]: stored.stage.revision },
       }
+    },
+    async updateTaskFlowStage(payload) {
+      return {
+        revisions: Object.fromEntries(
+          payload.stages.map((change) => [change.id, applyStageChange(change)]),
+        ),
+      }
+    },
+    async advanceTaskFlow(payload) {
+      return {
+        revisions: {
+          [payload.stage.id]: applyStageChange(payload.stage),
+          ...(payload.flow ? { [payload.flow.id]: applyFlowChange(payload.flow) } : {}),
+        },
+      }
+    },
+    async awaitTaskFlowRuling(payload) {
+      return { revisions: { [payload.stage.id]: applyStageChange(payload.stage) } }
+    },
+    async abandonTaskFlow(payload) {
+      return {
+        revisions: {
+          [payload.stage.id]: applyStageChange(payload.stage),
+          ...(payload.flow ? { [payload.flow.id]: applyFlowChange(payload.flow) } : {}),
+        },
+      }
+    },
+    async adoptTaskFlow(payload) {
+      const row = stages.find(({ stage }) => stage.id === payload.stage.id)
+      if (!row) throw new Error(`fixture task-flow stage ${payload.stage.id} not found`)
+      const revision = applyStageChange({
+        id: payload.stage.id,
+        values: { lastAdvancedMachineId: payload.updatedMachineId, updatedAt: payload.updatedAt },
+      })
+      const flowRevision = applyFlowChange({
+        id: row.flow.id,
+        values: { taskId: payload.taskId, updatedMachineId: payload.updatedMachineId },
+      })
+      return {
+        flowRecordId: row.flow.id,
+        revisions: { [row.flow.id]: flowRevision, [row.stage.id]: revision },
+      }
+    },
+    async attachTaskFlowText(payload) {
+      for (const text of payload.rows) {
+        const row = stages.find(({ stage }) => stage.id === text.stageRecordId)
+        if (!row) throw new Error(`fixture task-flow stage ${text.stageRecordId} not found`)
+        ;(row.stage.stepTexts ??= []).push(text)
+      }
+      return { revisions: {} }
+    },
+    async copyTaskFlowText(payload) {
+      const row = stages.find(({ stage }) => stage.id === payload.row.stageRecordId)
+      if (!row) throw new Error(`fixture task-flow stage ${payload.row.stageRecordId} not found`)
+      ;(row.stage.textCopies ??= []).push(payload.row)
+      return { revisions: {} }
+    },
+    async deleteTaskFlowText(payload) {
+      const row = stages.find(({ stage }) => stage.id === payload.stageRecordId)
+      if (!row) throw new Error(`fixture task-flow stage ${payload.stageRecordId} not found`)
+      row.stage.stepTexts = (row.stage.stepTexts ?? []).filter(
+        ({ id }) => !payload.ids.includes(id),
+      )
+      return { revisions: {} }
     },
     async readTaskFlow(selector) {
       const found = stages.find(({ flow }) =>

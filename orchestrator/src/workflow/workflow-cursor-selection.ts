@@ -71,6 +71,7 @@ export async function findWorkflowCursor(
     database,
     context.taskRecordId,
     context.taskStatusCategory,
+    context.taskFlowClient,
   )
 }
 
