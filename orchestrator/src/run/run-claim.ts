@@ -71,7 +71,7 @@ import {
   writeGeneratedSchema,
 } from './run-artifacts.ts'
 import { admitFreshRepositoryRun, type HostCapacityWaitDeps } from './run-claim-host-capacity.ts'
-import { bindingValues, inheritedRunBinding, inheritedRunFacts } from './run-claim-inheritance.ts'
+import { bindingValues, inheritedRunBinding, inheritedRunFacts, type RunWorkflowBinding } from './run-claim-inheritance.ts'
 import { executeClaimedMcpPlan } from './run-claim-mcp.ts'
 import {
   claimedRunBranch,
@@ -98,7 +98,7 @@ import { taskBranchResolution } from './run-task-branch-resolution.ts'
 import { admitNewRunReference } from './run-task-reference.ts'
 
 type ClaimOptions = {
-  binding?: import('./run-claim-inheritance.ts').RunWorkflowBinding
+  binding?: RunWorkflowBinding
   reserveId?: string
   agentExplicit?: boolean
   transport?: 'cli' | 'acp'

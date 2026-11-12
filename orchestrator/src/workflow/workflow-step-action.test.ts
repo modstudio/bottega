@@ -3,7 +3,6 @@ import { recordUnreachableRefusal } from '../../../shared/record-remedies.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { args, context, database } from './workflow-cursor-test.fixture.ts'
 import {
-  createForStep,
   dispatchForStep,
   mergeForStep,
   type StepActionTarget,
@@ -144,41 +143,4 @@ test('land refuses an undeclared action exactly and never calls its PR service',
     'step implement of cursor 17 declares actions: pr-create; pr-merge is not one of them',
   )
   expect(merges).toBe(0)
-})
-
-test('declared create and merge actions reach only their own PR service once', async () => {
-  let creates = 0
-  let merges = 0
-  const read = async () => target({ actions: ['pr-create', 'pr-merge'] })
-  const createPorts = {
-    read,
-    create: async () => {
-      creates += 1
-    },
-  }
-  const mergePorts = {
-    read,
-    merge: async () => {
-      merges += 1
-    },
-  }
-  await createForStep(
-    {
-      cursor: 17,
-      args: [
-        ['--title', 'DEV-2283 title'],
-        { cwd: '/tree', overrideTriage: 'approved', fromOperator: true },
-      ],
-    },
-    createPorts,
-  )
-  expect({ creates, merges }).toEqual({ creates: 1, merges: 0 })
-  await mergeForStep(
-    {
-      cursor: 17,
-      args: ['42', { cwd: '/tree', releaseRequired: true, depth: 'hosted-api' }],
-    },
-    mergePorts,
-  )
-  expect({ creates, merges }).toEqual({ creates: 1, merges: 1 })
 })

@@ -55,7 +55,7 @@ export const PR_MERGE_OPTIONS = [
   { flags: '--depth <rung>', description: 'bound the production release reach through this rung' },
 ] as const
 
-function addPullRequestOptions(
+export function addPullRequestOptions(
   command: Command,
   options: readonly { flags: string; description: string }[],
 ): Command {
@@ -121,14 +121,16 @@ export function githubArgsWithStdinBody(args: readonly string[], body: string): 
   return rewritten
 }
 
+export type PullRequestCreateOptions = {
+  cwd?: string
+  overrideTriage?: string
+  ceilingRuling?: string
+  fromOperator?: boolean
+}
+
 export async function createPullRequestCommand(
   githubArgs: string[],
-  options: {
-    cwd?: string
-    overrideTriage?: string
-    ceilingRuling?: string
-    fromOperator?: boolean
-  },
+  options: PullRequestCreateOptions,
   _command?: Command,
   create: typeof createPullRequest = createPullRequest,
 ): Promise<void> {

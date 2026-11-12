@@ -5,6 +5,7 @@ import type { Command, OptionValues } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { ORCH_DO_OPTIONS } from '../commands/do-options.ts'
 import {
+  addPullRequestOptions,
   createPullRequestCommand,
   mergePullRequestCommand,
   PR_CREATE_OPTIONS,
@@ -35,26 +36,18 @@ const dispatchPresentation = {
   cwd: process.cwd,
 }
 
-const dispatchOptionFlags = new Set([
-  '--file <value>',
-  '--agent <value>',
-  '--model <value>',
-  '--mcp [mode]',
-  '--detach',
-])
+const dispatchOptionNames = new Set(['file', 'agent', 'model', 'mcp', 'detach'])
+
+function optionName(option: (typeof ORCH_DO_OPTIONS)[number]): string {
+  if ('name' in option) return option.name
+  return option.flags.match(/^--([a-z0-9-]+)/)?.[1] ?? option.flags
+}
 
 function addDispatchOptions(command: Command): Command {
   for (const option of ORCH_DO_OPTIONS) {
-    if (dispatchOptionFlags.has(option.flags)) command.option(option.flags, option.description)
+    if (dispatchOptionNames.has(optionName(option)))
+      command.option(option.flags, option.description)
   }
-  return command
-}
-
-function addPullRequestOptions(
-  command: Command,
-  options: readonly { flags: string; description: string }[],
-): Command {
-  for (const option of options) command.option(option.flags, option.description)
   return command
 }
 

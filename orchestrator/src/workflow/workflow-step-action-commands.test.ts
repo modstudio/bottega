@@ -89,3 +89,59 @@ test('workflow step action surfaces expose only the ruled public options', () =>
   )
   expect(merge.options.map((option) => option.flags)).not.toContain(POST_LANDING_FLAG)
 })
+
+test('workflow land forwards create and merge options without the cursor', async () => {
+  const creates: unknown[][] = []
+  const merges: unknown[][] = []
+  const program = new Command()
+  const workflow = program.command('workflow')
+  registerWorkflowStepActionCommands(workflow, {
+    read: async () => ({
+      cursor: 7,
+      cursorRecordId: 'cursor-record-7',
+      stepSlug: 'land',
+      taskKey: 'DEV-2283',
+      jobs: [],
+      actions: ['pr-create', 'pr-merge'],
+    }),
+    create: async (...args) => {
+      creates.push(args)
+    },
+    merge: async (...args) => {
+      merges.push(args)
+    },
+  })
+
+  await program.parseAsync([
+    'node',
+    'orch',
+    'workflow',
+    'land',
+    'merge',
+    '42',
+    '--cursor',
+    '7',
+    '--release-required',
+    '--depth',
+    'hosted-api',
+  ])
+  expect(merges).toEqual([['42', { releaseRequired: true, depth: 'hosted-api' }]])
+  expect(merges[0]![1]).not.toHaveProperty('cursor')
+
+  await program.parseAsync([
+    'node',
+    'orch',
+    'workflow',
+    'land',
+    'create',
+    '--cursor',
+    '7',
+    '--override-triage',
+    'why',
+    '--from-operator',
+    '--title',
+    'T',
+  ])
+  expect(creates).toEqual([[['--title', 'T'], { overrideTriage: 'why', fromOperator: true }]])
+  expect(creates[0]![1]).not.toHaveProperty('cursor')
+})
