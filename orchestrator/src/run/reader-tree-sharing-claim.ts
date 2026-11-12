@@ -6,6 +6,7 @@ import { appendRunEvent } from '../events.ts'
 import { withWorktreeCreateLock, withWorktreeLease } from '../project/project-lock.ts'
 import { projectAt } from '../project/projects.ts'
 import { isReadonlySandboxCandidate } from '../sandbox/sandbox.ts'
+import type { SynchronousResult } from '../synchronous-result.ts'
 import { appendProvisioningPhases } from '../worktree/provisioning-measurement.ts'
 import { readerTreeSharing } from '../worktree/reader-tree-sharing.ts'
 import { readOnlyWorktreeSource } from '../worktree/worktree.ts'
@@ -64,7 +65,7 @@ export function readerTreeSharingOptions(
 }
 
 /** Take the shared-tree lease before the project creation lock and run one creation step. */
-export function withReaderCreationLocks<T>(
+export function withReaderCreationLocks<T extends SynchronousResult>(
   input: ClaimSharingInput,
   runId: string,
   repoRoot: string,

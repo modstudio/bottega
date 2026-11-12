@@ -20,7 +20,8 @@ import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from '../run/run-authority.ts'
 import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
 import {
-  taskFlowStore,
+  taskFlowLocalStore,
+  taskFlowReadStore,
   type TaskFlowWaitingQuestionRow as WorkflowWaitingRow,
 } from '../workflow/task-flow-store.ts'
 
@@ -68,7 +69,8 @@ export function claimOperatorNotifications(
   only?: { kind: OperatorInboxKind; id: string | number },
 ): ClaimedOperatorNotification[] {
   return writeTransaction(() => {
-    const items = operatorWaitingWithEpisodes(d).filter(({ item }) => {
+    const workflows = taskFlowLocalStore(d).waitingWorkflowQuestions()
+    const items = operatorWaitingWithEpisodes(d, workflows).filter(({ item }) => {
       if (!only || item.kind !== only.kind) return !only
       return item.kind === 'question'
         ? item.question_record_id === only.id
@@ -200,6 +202,7 @@ function workflowWaitingEpisode(row: WorkflowWaitingRow) {
 
 function operatorWaitingWithEpisodes(
   d: Database,
+  workflows: WorkflowWaitingRow[],
 ): Array<{ item: OperatorWaitingItem; episode: string }> {
   const questions = d
     .query(
@@ -223,7 +226,6 @@ function operatorWaitingWithEpisodes(
     root_number: number
     root_record_id: string
   }>
-  const workflows = taskFlowStore(d).waitingWorkflowQuestions()
   return [
     ...questions.map((row) => ({
       episode: row.awaiting_operator_at,
@@ -255,6 +257,7 @@ function operatorWaitingWithEpisodes(
   )
 }
 
-export function operatorWaiting(d: Database = db()): OperatorWaitingItem[] {
-  return operatorWaitingWithEpisodes(d).map(({ item }) => item)
+export async function operatorWaiting(d: Database = db()): Promise<OperatorWaitingItem[]> {
+  const workflows = await taskFlowReadStore(d).waitingWorkflowQuestions()
+  return operatorWaitingWithEpisodes(d, workflows).map(({ item }) => item)
 }

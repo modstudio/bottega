@@ -4,18 +4,21 @@
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { questionTaskHolderSql } from '../run/question-open.ts'
-import { taskFlowStore } from '../workflow/task-flow-store.ts'
+import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { type CursorTrailEntry, isClosedStep } from '../workflow/workflow-cursor-trail.ts'
 
 export type SessionWorkEvent = { key: string | null; at: string }
 
-export function sessionWorkEvents(session: string, database: Database = db()): SessionWorkEvent[] {
+export async function sessionWorkEvents(
+  session: string,
+  database: Database = db(),
+): Promise<SessionWorkEvent[]> {
   const work = database
     .query<SessionWorkEvent, [string]>(
       'SELECT launch_key key,started_at at FROM run WHERE session_id=? AND launch_key IS NOT NULL',
     )
     .all(session)
-  for (const row of taskFlowStore(database).cursorWorkForSession(session)) {
+  for (const row of await taskFlowReadStore(database).cursorWorkForSession(session)) {
     for (const entry of JSON.parse(row.closed) as CursorTrailEntry[])
       if (isClosedStep(entry)) work.push({ key: row.key, at: entry.at })
   }

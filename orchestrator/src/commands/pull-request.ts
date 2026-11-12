@@ -144,7 +144,7 @@ async function mergePullRequestCommand(
       recoveryDepth = payload.depth
       if (payload.target !== target)
         throw new Error('post-landing payload target does not match the command target')
-      const outcome = runPullRequestPostLanding(payload, writableDb())
+      const outcome = await runPullRequestPostLanding(payload, writableDb())
       log(outcome.output)
       if (outcome.exitCode !== 0) process.exitCode = outcome.exitCode
     } catch (cause) {
@@ -161,7 +161,7 @@ async function mergePullRequestCommand(
   const project = projectAt(cwd, database)
   const branch = gitAt(cwd, ['branch', '--show-current']).stdout.trim()
   const taskKey = project ? taskKeyToken(branch, project.settings.keyPrefixes ?? []) : null
-  const outcome = mergePullRequest(
+  const outcome = await mergePullRequest(
     target,
     cwd,
     undefined,

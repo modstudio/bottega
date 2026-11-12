@@ -4,7 +4,10 @@
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
-import { type TaskFlowListedStageRow as ListedCursorRow, taskFlowStore } from './task-flow-store.ts'
+import {
+  type TaskFlowListedStageRow as ListedCursorRow,
+  taskFlowReadStore,
+} from './task-flow-store.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { renderWorkflowCursorLine } from './workflow-cursor-format.ts'
 import { workflowCursorProjectScope } from './workflow-cursor-selection.ts'
@@ -20,41 +23,43 @@ export type CursorListOptions = {
 
 export type WorkflowCursorListRow = ListedCursorRow & { next_slug: string; line: string }
 
-export function listWorkflowCursors(
+export async function listWorkflowCursors(
   options: CursorListOptions = {},
   d: Database = db(),
-): WorkflowCursorListRow[] {
+): Promise<WorkflowCursorListRow[]> {
   const cwd = options.cwd ?? process.cwd()
   const cwdProject =
     options.all || options.project || options.session ? undefined : projectAt(cwd)?.name
   const project = workflowCursorProjectScope(options, cwdProject, cwd)
-  const rows = taskFlowStore(d).listOpenStages({
+  const rows = await taskFlowReadStore(d).listOpenStages({
     ...(project ? { project } : {}),
     ...(options.session ? { sessionId: options.session } : {}),
   })
-  return rows.map((row) => {
-    const composition = composeWorkflow(
-      row.workflow_slug,
-      row.project,
-      row.mode_slug,
-      JSON.parse(row.args),
-      d,
-      {
-        version: row.workflow_version,
-        versionRecordId: row.workflow_version_record_id,
-        catalogueVersion: row.catalogue_version,
-        catalogueVersionRecordId: row.catalogue_version_record_id,
-      },
-      cursorAutonomy(row),
-    )
-    const open = openWorkflowObligations(row.record_id, d)
-    const listed = {
-      ...row,
-      next_slug: composition.steps[row.ordinal + 1]?.slug ?? 'finished',
-      obligations: open
-        .map((item) => `${item.id}(${item.stepSlug}:${item.floorDefinition.kind})`)
-        .join(','),
-    }
-    return { ...listed, line: renderWorkflowCursorLine(listed) }
-  })
+  return await Promise.all(
+    rows.map(async (row) => {
+      const composition = composeWorkflow(
+        row.workflow_slug,
+        row.project,
+        row.mode_slug,
+        JSON.parse(row.args),
+        d,
+        {
+          version: row.workflow_version,
+          versionRecordId: row.workflow_version_record_id,
+          catalogueVersion: row.catalogue_version,
+          catalogueVersionRecordId: row.catalogue_version_record_id,
+        },
+        cursorAutonomy(row),
+      )
+      const open = await openWorkflowObligations(row.record_id, d)
+      const listed = {
+        ...row,
+        next_slug: composition.steps[row.ordinal + 1]?.slug ?? 'finished',
+        obligations: open
+          .map((item) => `${item.id}(${item.stepSlug}:${item.floorDefinition.kind})`)
+          .join(','),
+      }
+      return { ...listed, line: renderWorkflowCursorLine(listed) }
+    }),
+  )
 }

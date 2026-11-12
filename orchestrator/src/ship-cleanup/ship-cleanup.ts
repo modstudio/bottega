@@ -84,7 +84,9 @@ export type ShipCleanupReport = {
 export type ShipCleanupDependencies = {
   landingState(project: string, branch: string): BranchStateDecision
   observeBranchRef(projectPath: string, branch: string): GitRefObservation
-  closeOut(runId: string): { outcome: string; detail: string }
+  closeOut(
+    runId: string,
+  ): Promise<{ outcome: string; detail: string }> | { outcome: string; detail: string }
   prune(
     project: string,
     branch: string,
@@ -95,7 +97,7 @@ export type ShipCleanupDependencies = {
   }
   measure(paths: readonly string[]): { bytes: number; errors: string[]; stoppedAtLimit: boolean }
   readerCloneArchive(runId: string): string | null
-  removeLandingTree(path: string): HookTreeRemovalResult
+  removeLandingTree(path: string): Promise<HookTreeRemovalResult> | HookTreeRemovalResult
   runsFromTree(path: string): boolean
   remove(path: string): void
   reclaimProcesses(paths: readonly string[]): RemovedTreeProcessCleanup
@@ -262,7 +264,7 @@ function reportKeptRuns(
   }
 }
 
-function closeBranchWorktrees(
+async function closeBranchWorktrees(
   branch: string,
   decisions: readonly ShipCleanupRunDecision[],
   report: ShipCleanupReport,
@@ -270,7 +272,7 @@ function closeBranchWorktrees(
   removedNow: Map<string, ReadonlySet<string>>,
   runIdsByTree: ReadonlyMap<string, ReadonlySet<string>>,
   callerLandingTreePath: string | null,
-): Map<string, string> {
+): Promise<Map<string, string>> {
   const closeRows = decisions.filter(
     (decision) => decision.worktreeAction === 'close' && decision.worktree,
   )
@@ -279,7 +281,7 @@ function closeBranchWorktrees(
   for (const row of closeRows) {
     if (closedRoots.has(row.root_record_id)) continue
     closedRoots.add(row.root_record_id)
-    const remedy = closeBranchWorktree(
+    const remedy = await closeBranchWorktree(
       branch,
       row,
       report,
@@ -293,7 +295,7 @@ function closeBranchWorktrees(
   return keptLandingTrees
 }
 
-function closeBranchWorktree(
+async function closeBranchWorktree(
   branch: string,
   row: ShipCleanupRunDecision,
   report: ShipCleanupReport,
@@ -301,7 +303,7 @@ function closeBranchWorktree(
   removedNow: Map<string, ReadonlySet<string>>,
   runIdsByTree: ReadonlyMap<string, ReadonlySet<string>>,
   callerLandingTreePath: string | null,
-): string | null {
+): Promise<string | null> {
   try {
     if (row.scope === 'landing-tree' && row.worktree) {
       return releaseLandingTree(
@@ -314,7 +316,7 @@ function closeBranchWorktree(
         callerLandingTreePath,
       )
     }
-    const result = adapter.closeOut(row.record_id)
+    const result = await adapter.closeOut(row.record_id)
     if (result.outcome === 'released' || result.outcome === 'absent') {
       if (row.worktree) {
         if (result.outcome === 'released') report.removed.worktrees.push(row.worktree)
@@ -350,7 +352,7 @@ function closeBranchWorktree(
   return null
 }
 
-function releaseLandingTree(
+async function releaseLandingTree(
   branch: string,
   row: ShipCleanupRunDecision & { worktree: string },
   report: ShipCleanupReport,
@@ -358,7 +360,7 @@ function releaseLandingTree(
   removedNow: Map<string, ReadonlySet<string>>,
   runIdsByTree: ReadonlyMap<string, ReadonlySet<string>>,
   callerLandingTreePath: string | null,
-): string | null {
+): Promise<string | null> {
   const remedy = `${PLATFORM_SLUG} tree remove ${row.worktree}, then ${cleanupRetry(branch)}`
   if (adapter.runsFromTree(row.worktree)) {
     report.kept.push(
@@ -375,7 +377,7 @@ function releaseLandingTree(
     )
     return remedy
   }
-  const result = adapter.removeLandingTree(row.worktree)
+  const result = await adapter.removeLandingTree(row.worktree)
   if (result.outcome === 'released' || result.outcome === 'absent') {
     if (result.outcome === 'released') report.removed.worktrees.push(row.worktree)
     else report.absentWorktrees.push(row.worktree)
@@ -687,7 +689,10 @@ function closableWorktreePaths(decisions: readonly ShipCleanupRunDecision[]): st
   ]
 }
 
-export function shipCleanup(branch: string, options: ShipCleanupOptions = {}): ShipCleanupReport {
+export async function shipCleanup(
+  branch: string,
+  options: ShipCleanupOptions = {},
+): Promise<ShipCleanupReport> {
   const database = options.database ?? writableDb()
   const project = options.project
     ? projectByName(options.project, database)
@@ -733,7 +738,7 @@ export function shipCleanup(branch: string, options: ShipCleanupOptions = {}): S
   const beforeWorktrees = adapter.measure(worktreePaths)
   const treeRunIds = runIdsByTree(decisions)
   const removedNow = new Map<string, ReadonlySet<string>>()
-  const keptLandingTrees = closeBranchWorktrees(
+  const keptLandingTrees = await closeBranchWorktrees(
     branch,
     decisions,
     report,

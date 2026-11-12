@@ -21,8 +21,8 @@ const database = testDatabaseFixture((d) => {
   ).run(workflowVersionRecordId(d), catalogueVersionRecordId(d))
 })
 
-const gather = (d: Database) =>
-  gatherValidatedEvidence({
+const gather = async (d: Database) =>
+  await gatherValidatedEvidence({
     cursorId: '00000000-0000-4000-8000-000000000001',
     identity: {
       project: 'fixture',
@@ -57,26 +57,26 @@ const gather = (d: Database) =>
     d,
   })
 
-test('a withheld pr-create exec carries the withheld flag and no pull request', () => {
+test('a withheld pr-create exec carries the withheld flag and no pull request', async () => {
   const d = database()
   d.query(
     `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind,withheld)
      VALUES ('${newRecordId()}',?,'/fixture/work','abc',0,'[withheld: secret-shaped content]','2026-09-01','exec',1)`,
   ).run(JSON.stringify([PLATFORM_SLUG, 'pr', 'create']))
-  expect(gather(d)).toMatchObject({
+  expect(await gather(d)).toMatchObject({
     exec: { outputWithheld: true, output: '[withheld: secret-shaped content]' },
   })
-  expect(gather(d).pullRequest).toBeUndefined()
+  expect((await gather(d)).pullRequest).toBeUndefined()
 })
 
-test('a withheld command is gathered separately from readable output and names its refusal', () => {
+test('a withheld command is gathered separately from readable output and names its refusal', async () => {
   const d = database()
   const url = 'https://github.com/acme/app/pull/15'
   d.query(
     `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind,command_withheld,session_id)
      VALUES ('${newRecordId()}','[withheld: secret-shaped content]','/fixture/work','abc',0,?,'2026-09-01','exec',1,'s')`,
   ).run(`opened ${url}`)
-  const evidence = gather(d)
+  const evidence = await gather(d)
   expect(evidence).toMatchObject({
     exec: { argv: null, commandWithheld: true, outputWithheld: false, output: `opened ${url}` },
   })

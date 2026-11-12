@@ -34,11 +34,11 @@ export function relayCommand(
   presentation.log(`question ${id} is waiting on the operator`)
 }
 
-export function waitingCommand(
+export async function waitingCommand(
   options: { json: boolean; claimNotifications: boolean },
   presentation: Presentation,
-): void {
-  const rows = options.claimNotifications ? claimOperatorNotifications() : operatorWaiting()
+): Promise<void> {
+  const rows = options.claimNotifications ? claimOperatorNotifications() : await operatorWaiting()
   if (options.json) {
     presentation.log(JSON.stringify(rows))
     return

@@ -1,152 +1,27 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import { closeDatabaseForFixture, db } from '../database/db.ts'
 import { migrationJournal } from '../database/migrations.ts'
 import { projectByName } from '../project/projects.ts'
-import type { RequiredReleaseReport } from '../release/release-required.ts'
-import type { ShipCleanupReport } from '../ship-cleanup/ship-cleanup.ts'
 import type { AdmissionDecision } from './admission-decision.ts'
-import type { PullRequestCheck } from './merge-decision.ts'
 import { type PullRequestChange, recordMergeAdmission } from './pr-admission.ts'
 import {
-  mergePullRequest,
-  type PullRequestMergeAdapter,
-  type PullRequestMergeFacts,
-} from './pr-merge.ts'
-import {
-  mergeCleanupReport,
-  recordPassingMergeGate,
-  registerMergeProject,
-  requiredRelease,
-} from './pr-merge-required-release.fixture.ts'
-import { inProcessPostLandingAdapter } from './pr-post-landing.fixture.ts'
-import type { WorkflowPromotionResult } from './pr-post-landing.ts'
+  adapter,
+  cleanupReport,
+  cwd,
+  pullRequest,
+  recordPassingGate,
+  registerProject,
+} from './pr-merge.fixture.ts'
+import { mergePullRequest } from './pr-merge.ts'
+import { requiredRelease } from './pr-merge-required-release.fixture.ts'
 
-const cwd = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
-
-const registerProject = (requiredChecks: string[], mergeQueue = false) =>
-  registerMergeProject(cwd, requiredChecks, mergeQueue)
-const cleanupReport = (overrides?: Partial<Pick<ShipCleanupReport, 'kept' | 'errors'>>) =>
-  mergeCleanupReport(cwd, pullRequest.headBranch, overrides)
-
-const recordPassingGate = () => recordPassingMergeGate(pullRequest.headCommit, cwd)
-
-const pullRequest: PullRequestMergeFacts = {
-  nodeId: 'PR_node_id',
-  number: 42,
-  url: 'https://github.example/pulls/42',
-  headCommit: 'head-commit',
-  headBranch: 'DEV-1255-admission',
-  baseBranch: 'main',
-  title: 'Prove the pull request head',
-  state: 'OPEN',
-  mergeStateStatus: 'CLEAN',
-  mergeCommit: null,
-}
-
-function adapter(
-  input: {
-    view?: (target: string) => PullRequestMergeFacts
-    checks?: PullRequestCheck[] | (() => PullRequestCheck[])
-    landingState?: () => { remoteLandingTip: string; mergeBase: string }
-    hasCommit?: (cwd: string, headCommit: string) => boolean
-    merge?: (method: string, subject: string, headCommit: string) => string
-    mergeCommit?: () => string
-    admission?: (
-      cwd: string,
-      headCommit: string,
-      headBranch: string,
-      database: ReturnType<typeof db>,
-    ) => { change: PullRequestChange; decision: AdmissionDecision }
-    recordAdmission?: (
-      change: PullRequestChange,
-      decision: AdmissionDecision,
-      prNumber: number,
-      database: ReturnType<typeof db>,
-    ) => string | null
-    postMergeChange?: () => PullRequestChange
-    recordLandings?: () => void
-    moveMain?: () => void
-    promoteMergedWorkflowDrafts?: () => string | WorkflowPromotionResult
-    recordCi?: () => string | undefined
-    shipCleanup?: () => ShipCleanupReport
-    queueState?: () => ReturnType<PullRequestMergeAdapter['queueState']>
-    wait?: () => void
-    releaseRequired?: (enabled: boolean) => RequiredReleaseReport
-  } = {},
-): PullRequestMergeAdapter {
-  let mergedCommit = 'merge-commit'
-  const pathSet = input.promoteMergedWorkflowDrafts
-    ? ['.agents/workflows/fixture.md']
-    : ['orchestrator/src/pull-request/pr-merge.ts']
-  return {
-    repository: () => 'example/repository',
-    view: (_cwd, target) => input.view?.(target) ?? pullRequest,
-    checks: () => (typeof input.checks === 'function' ? input.checks() : (input.checks ?? [])),
-    landingState: input.landingState ?? (() => ({ remoteLandingTip: 'base', mergeBase: 'base' })),
-    hasCommit: input.hasCommit ?? (() => true),
-    admission:
-      input.admission ??
-      (() => ({
-        change: {
-          branch: pullRequest.headBranch,
-          group: { pathSet },
-        } as PullRequestChange,
-        decision: {
-          complete: true,
-          overrideId: null,
-          triage: { complete: true, snapshot: {} } as AdmissionDecision['triage'],
-        },
-      })),
-    recordAdmission: (change, decision, prNumber, database) =>
-      input.recordAdmission?.(change, decision, prNumber, database) ?? null,
-    postMergeChange:
-      input.postMergeChange ??
-      (() =>
-        ({
-          project: { name: 'merge-fixture', path: cwd },
-          branch: pullRequest.headBranch,
-          group: { pathSet },
-        }) as PullRequestChange),
-    ...(input.recordLandings ? { recordLandings: input.recordLandings } : {}),
-    ...(input.recordCi ? { recordCi: input.recordCi } : {}),
-    merge: (_cwd, _number, method, subject, headCommit) => {
-      mergedCommit = input.merge?.(method, subject, headCommit) ?? 'merge-commit'
-    },
-    mergeCommit: () => input.mergeCommit?.() ?? mergedCommit,
-    queueState:
-      input.queueState ??
-      (() => ({
-        pullRequestState: 'MERGED',
-        mergeCommit: 'merge-commit',
-        entryState: null,
-        enqueuedAt: null,
-      })),
-    enqueue: () => {},
-    requeue: () => {},
-    failedMergeGroupRun: () => null,
-    now: Date.now,
-    wait: () => input.wait?.(),
-    ...(input.shipCleanup ? { shipCleanup: input.shipCleanup } : {}),
-    postLanding: inProcessPostLandingAdapter({
-      database: db(),
-      project: () => projectByName('merge-fixture')!,
-      move: input.moveMain,
-      promote: input.promoteMergedWorkflowDrafts,
-      release: (enabled) =>
-        input.releaseRequired?.(enabled) ?? { required: [], releases: [], satisfied: true },
-      cleanup: () => input.shipCleanup?.() ?? cleanupReport(),
-    }),
-  }
-}
-
-test('an already-merged recovery runs landings, promotion, required release, then cleanup', () => {
+test('an already-merged recovery runs landings, promotion, required release, then cleanup', async () => {
   registerProject([])
   const calls: string[] = []
-  const outcome = mergePullRequest(
+  const outcome = await mergePullRequest(
     '42',
     cwd,
     adapter({
@@ -186,11 +61,11 @@ test('an already-merged recovery runs landings, promotion, required release, the
   expect(outcome.output).toContain('required rung hosted-api: deploy exit 7')
 })
 
-test('an already-merged pull request skips admission and resumes post-merge stages', () => {
+test('an already-merged pull request skips admission and resumes post-merge stages', async () => {
   registerProject([])
   let admitted = false
   let released = false
-  const outcome = mergePullRequest(
+  const outcome = await mergePullRequest(
     '42',
     cwd,
     adapter({
@@ -215,28 +90,33 @@ test('an already-merged pull request skips admission and resumes post-merge stag
 test.each([
   new Error('merge-commit lookup failed: forge unavailable'),
   new BoundExceededError('gh pr view 42', 'gh', 'deadline', 60_000),
-])('a merged pull request reconciles a $name merge-commit lookup failure', (failure) => {
-  registerProject([]), recordPassingGate()
+])('a merged pull request reconciles a $name merge-commit lookup failure', async (failure) => {
+  registerProject([])
+  recordPassingGate()
   const evidence: string[] = []
   let releaseReached = false
-  expect(() =>
-    mergePullRequest(
-      '42',
-      cwd,
-      adapter({
-        mergeCommit: () => {
-          throw failure
-        },
-        recordLandings: () => evidence.push('landing'),
-        recordCi: () => (evidence.push('ci'), undefined),
-        releaseRequired: () => {
-          releaseReached = true
-          throw new Error('release must not run')
-        },
-      }),
-      undefined,
-      true,
-    ),
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          mergeCommit: () => {
+            throw failure
+          },
+          recordLandings: () => evidence.push('landing'),
+          recordCi: () => {
+            evidence.push('ci')
+            return undefined
+          },
+          releaseRequired: () => {
+            releaseReached = true
+            throw new Error('release must not run')
+          },
+        }),
+        undefined,
+        true,
+      ),
   ).toThrow(
     `pull request #42 merged, but the merge commit could not be read: ${failure.message}; retry with: ${PLATFORM_SLUG} pr merge 42`,
   )
@@ -244,12 +124,12 @@ test.each([
   expect(releaseReached).toBeFalse()
 })
 
-test('a workflow promotion failure is merge residue and a required release failure wins', () => {
+test('a workflow promotion failure is merge residue and a required release failure wins', async () => {
   registerProject([])
   const failedPromotion = () => {
     throw new Error('catalogue promotion refused')
   }
-  const residue = mergePullRequest(
+  const residue = await mergePullRequest(
     '42',
     cwd,
     adapter({
@@ -263,7 +143,7 @@ test('a workflow promotion failure is merge residue and a required release failu
   )
   expect(residue.output).toContain('workflow promote-tree')
 
-  const unreleased = mergePullRequest(
+  const unreleased = await mergePullRequest(
     '42',
     cwd,
     adapter({
@@ -299,10 +179,10 @@ test.each([
     `put checkout ${cwd} on trunk main, then git -C ${cwd} merge --ff-only merge-commit, then`,
   ],
   ['fast-forward' as const, `git -C ${cwd} merge --ff-only merge-commit, then`],
-])('a %s workflow promotion failure names its stage remedy', (stage, remedy) => {
+])('a %s workflow promotion failure names its stage remedy', async (stage, remedy) => {
   registerProject([])
   recordPassingGate()
-  const outcome = mergePullRequest(
+  const outcome = await mergePullRequest(
     '42',
     cwd,
     adapter({
@@ -326,10 +206,10 @@ test.each([
   expect(outcome.output).toContain('workflow promote-tree')
 })
 
-test('an injected forge adapter merges all-passing checks with the method, subject, and proven head', () => {
+test('an injected forge adapter merges all-passing checks with the method, subject, and proven head', async () => {
   registerProject(['test'])
   const calls: [string, string, string][] = []
-  const commit = mergePullRequest(
+  const commit = await mergePullRequest(
     '42',
     cwd,
     adapter({
@@ -351,10 +231,10 @@ test('an injected forge adapter merges all-passing checks with the method, subje
   expect(calls).toEqual([['squash', 'Prove the pull request head (#42)', 'head-commit']])
 })
 
-test('an incomplete CI record is merge residue with the shared retry remedy', () => {
+test('an incomplete CI record is merge residue with the shared retry remedy', async () => {
   registerProject(['test'])
   const incomplete = `CI recording incomplete for PR #42: workflow runs unavailable; retry: ${PLATFORM_SLUG} pr ci-record 42 --project merge-fixture`
-  const outcome = mergePullRequest(
+  const outcome = await mergePullRequest(
     '42',
     cwd,
     adapter({
@@ -366,9 +246,9 @@ test('an incomplete CI record is merge residue with the shared retry remedy', ()
   expect(outcome.output).toContain(incomplete)
 })
 
-test('a thrown CI fetch failure is merge residue with the shared retry remedy', () => {
+test('a thrown CI fetch failure is merge residue with the shared retry remedy', async () => {
   registerProject(['test'])
-  const outcome = mergePullRequest(
+  const outcome = await mergePullRequest(
     '42',
     cwd,
     adapter({
@@ -384,9 +264,9 @@ test('a thrown CI fetch failure is merge residue with the shared retry remedy', 
   )
 })
 
-test('a cleanup failure reports its retry without undoing a successful merge', () => {
+test('a cleanup failure reports its retry without undoing a successful merge', async () => {
   registerProject(['test'])
-  const outcome = mergePullRequest(
+  const outcome = await mergePullRequest(
     '42',
     cwd,
     adapter({
@@ -402,9 +282,9 @@ test('a cleanup failure reports its retry without undoing a successful merge', (
   expect(outcome.exitCode).toBe(20)
 })
 
-test('a merge reports residue when cleanup keeps anything beyond its command tree', () => {
+test('a merge reports residue when cleanup keeps anything beyond its command tree', async () => {
   registerProject(['test'])
-  const outcome = mergePullRequest(
+  const outcome = await mergePullRequest(
     '42',
     cwd,
     adapter({
@@ -426,7 +306,7 @@ test('a merge reports residue when cleanup keeps anything beyond its command tre
   expect(outcome.output.startsWith('merge-commit\n')).toBe(true)
 })
 
-test('a merge succeeds when cleanup keeps only the caller landing tree and branch', () => {
+test('a merge succeeds when cleanup keeps only the caller landing tree and branch', async () => {
   registerProject(['test'])
   const kept = [
     {
@@ -442,7 +322,7 @@ test('a merge succeeds when cleanup keeps only the caller landing tree and branc
       owner: 'caller-landing-tree' as const,
     },
   ]
-  const outcome = mergePullRequest(
+  const outcome = await mergePullRequest(
     '42',
     cwd,
     adapter({
@@ -456,9 +336,9 @@ test('a merge succeeds when cleanup keeps only the caller landing tree and branc
   expect(outcome.output).toContain('kept: none')
 })
 
-test('a merge with mixed cleanup holds names only foreign items as residue', () => {
+test('a merge with mixed cleanup holds names only foreign items as residue', async () => {
   registerProject(['test'])
-  const outcome = mergePullRequest(
+  const outcome = await mergePullRequest(
     '42',
     cwd,
     adapter({
@@ -488,10 +368,10 @@ test('a merge with mixed cleanup holds names only foreign items as residue', () 
   expect(outcome.output).not.toContain('kept: run 7 worktree')
 })
 
-test('a successful merge records contained branches before cleanup can delete them', () => {
+test('a successful merge records contained branches before cleanup can delete them', async () => {
   registerProject(['test'])
   const calls: string[] = []
-  mergePullRequest(
+  await mergePullRequest(
     '42',
     cwd,
     adapter({
@@ -510,10 +390,10 @@ test('a successful merge records contained branches before cleanup can delete th
   expect(calls).toEqual(['merge', 'record-landings', 'cleanup'])
 })
 
-test('a landing-record failure preserves branches by skipping cleanup', () => {
+test('a landing-record failure preserves branches by skipping cleanup', async () => {
   registerProject(['test'])
   let cleaned = false
-  const output = mergePullRequest(
+  const output = await mergePullRequest(
     '42',
     cwd,
     adapter({
@@ -551,7 +431,7 @@ const journalVersionAfter = (tag: string): number => {
   return entry.idx + 1
 }
 
-test('an additive store advance during the merge-queue wait lets landing recording write', () => {
+test('an additive store advance during the merge-queue wait lets landing recording write', async () => {
   registerProject(['test'], true)
   const next = journalVersionAfter('0149_pull_request_ci')
   const prior = next - 1
@@ -561,7 +441,7 @@ test('an additive store advance during the merge-queue wait lets landing recordi
   let queuePolls = 0
   let recorded = false
 
-  const outcome = mergePullRequest(
+  const outcome = await mergePullRequest(
     '42',
     cwd,
     adapter({
@@ -599,7 +479,7 @@ test('an additive store advance during the merge-queue wait lets landing recordi
   expect(recorded).toBe(true)
 })
 
-test('a non-additive store advance during the merge-queue wait refuses with its remedy', () => {
+test('a non-additive store advance during the merge-queue wait refuses with its remedy', async () => {
   registerProject(['test'], true)
   const next = journalVersionAfter('0131_lens_port_uuid_key')
   const prior = next - 1
@@ -608,7 +488,7 @@ test('a non-additive store advance during the merge-queue wait refuses with its 
   migrator.exec(`PRAGMA user_version = ${prior}`)
   let queuePolls = 0
 
-  const outcome = mergePullRequest(
+  const outcome = await mergePullRequest(
     '42',
     cwd,
     adapter({
@@ -646,134 +526,138 @@ test('a non-additive store advance during the merge-queue wait refuses with its 
   )
 })
 
-test('an injected forge adapter exposes a pending required check without merging', () => {
+test('an injected forge adapter exposes a pending required check without merging', async () => {
   registerProject(['test'])
   let merged = false
-  expect(() =>
-    mergePullRequest(
-      '42',
-      cwd,
-      adapter({
-        checks: [
-          {
-            name: 'test',
-            bucket: 'pending',
-            state: 'IN_PROGRESS',
-            link: 'https://checks.example/test',
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          checks: [
+            {
+              name: 'test',
+              bucket: 'pending',
+              state: 'IN_PROGRESS',
+              link: 'https://checks.example/test',
+            },
+          ],
+          merge: () => {
+            merged = true
+            return 'unexpected'
           },
-        ],
-        merge: () => {
-          merged = true
-          return 'unexpected'
-        },
-      }),
-    ),
+        }),
+      ),
   ).toThrow('test: IN_PROGRESS (https://checks.example/test)')
   expect(merged).toBe(false)
 })
 
-test('an incomplete admission refuses with its review remedy without merging', () => {
+test('an incomplete admission refuses with its review remedy without merging', async () => {
   registerProject([])
   recordPassingGate()
   let merged = false
-  expect(() =>
-    mergePullRequest(
-      '42',
-      cwd,
-      adapter({
-        admission: () => ({
-          change: {
-            branch: pullRequest.headBranch,
-            tip: pullRequest.headCommit,
-            group: { patchId: 'patch' },
-            tier: 2,
-          } as PullRequestChange,
-          decision: {
-            complete: false,
-            overrideId: null,
-            triage: {
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          admission: () => ({
+            change: {
+              branch: pullRequest.headBranch,
+              tip: pullRequest.headCommit,
+              group: { patchId: 'patch' },
+              tier: 2,
+            } as PullRequestChange,
+            decision: {
               complete: false,
-              snapshot: {
-                reviewRecordIds: [],
-                patchId: 'patch',
-                tier: 2,
-                lensRounds: 0,
-                findingCount: 0,
-                admissionPath: 'exact_review',
-                readRecordId: null,
+              overrideId: null,
+              triage: {
+                complete: false,
+                snapshot: {
+                  reviewRecordIds: [],
+                  patchId: 'patch',
+                  tier: 2,
+                  lensRounds: 0,
+                  findingCount: 0,
+                  admissionPath: 'exact_review',
+                  readRecordId: null,
+                },
+                missingReview: true,
+                unfinishedReviewNumbers: [],
+                undisposedFindings: [],
+                missingLenses: [],
+                lensesAlreadyComplete: [],
+                missingSecondOpinion: null,
+                finalTierRaised: false,
+                architectReadRequired: false,
+                earlierReviewNumber: null,
+                earlierReviewTier: null,
+                noCompleteReviewRound: true,
               },
-              missingReview: true,
-              unfinishedReviewNumbers: [],
-              undisposedFindings: [],
-              missingLenses: [],
-              lensesAlreadyComplete: [],
-              missingSecondOpinion: null,
-              finalTierRaised: false,
-              architectReadRequired: false,
-              earlierReviewNumber: null,
-              earlierReviewTier: null,
-              noCompleteReviewRound: true,
             },
+          }),
+          merge: () => {
+            merged = true
+            return 'unexpected'
           },
         }),
-        merge: () => {
-          merged = true
-          return 'unexpected'
-        },
-      }),
-    ),
+      ),
   ).toThrow('missing review for patch patch; cleared by: run and record the tier 2 review')
   expect(merged).toBe(false)
 })
 
-test('a dirty pull request refuses with the rebase remedy without merging', () => {
+test('a dirty pull request refuses with the rebase remedy without merging', async () => {
   registerProject([])
   let merged = false
-  expect(() =>
-    mergePullRequest(
-      '42',
-      cwd,
-      adapter({
-        view: () => ({ ...pullRequest, mergeStateStatus: 'DIRTY' }),
-        merge: () => {
-          merged = true
-          return 'must-not-merge'
-        },
-      }),
-    ),
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          view: () => ({ ...pullRequest, mergeStateStatus: 'DIRTY' }),
+          merge: () => {
+            merged = true
+            return 'must-not-merge'
+          },
+        }),
+      ),
   ).toThrow(
     'refusing merge: https://github.example/pulls/42 conflicts with main: rebase it on the landing branch before merging',
   )
   expect(merged).toBe(false)
 })
 
-test('an admission lookup that cannot see the head refuses with the fetch command', () => {
+test('an admission lookup that cannot see the head refuses with the fetch command', async () => {
   registerProject(['test'])
   let merged = false
-  expect(() =>
-    mergePullRequest(
-      '42',
-      cwd,
-      adapter({
-        hasCommit: () => false,
-        admission: () => {
-          throw new Error('git rev-parse --verify head-commit failed')
-        },
-        merge: () => {
-          merged = true
-          return 'unexpected'
-        },
-      }),
-    ),
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          hasCommit: () => false,
+          admission: () => {
+            throw new Error('git rev-parse --verify head-commit failed')
+          },
+          merge: () => {
+            merged = true
+            return 'unexpected'
+          },
+        }),
+      ),
   ).toThrow(`git fetch origin pull/42/head, then ${PLATFORM_SLUG} pr merge 42`)
   expect(merged).toBe(false)
 })
 
-test('an admission error for a present head uses the general proof refusal', () => {
+test('an admission error for a present head uses the general proof refusal', async () => {
   registerProject(['test'])
   let failure = ''
   try {
-    mergePullRequest(
+    await mergePullRequest(
       '42',
       cwd,
       adapter({
@@ -791,7 +675,7 @@ test('an admission error for a present head uses the general proof refusal', () 
   expect(failure).not.toContain('git fetch origin pull/42/head')
 })
 
-test('an admitted head records a snapshot with the pull request number before merging', () => {
+test('an admitted head records a snapshot with the pull request number before merging', async () => {
   registerProject(['test'])
   const database = db()
   const project = database
@@ -813,7 +697,7 @@ test('an admitted head records a snapshot with the pull request number before me
       },
     },
   }
-  mergePullRequest(
+  await mergePullRequest(
     '42',
     cwd,
     adapter({
@@ -869,170 +753,179 @@ test('an admitted head records a snapshot with the pull request number before me
   ).toEqual({ pr_number: 42, override_record_id: null })
 })
 
-test('a failing forge call refuses because proof was not checked', () => {
+test('a failing forge call refuses because proof was not checked', async () => {
   registerProject(['test'])
-  expect(() =>
-    mergePullRequest(
-      'https://github.com/example/repo/pull/42',
-      cwd,
-      adapter({
-        view: () => {
-          throw new Error('forge unavailable')
-        },
-      }),
-    ),
+  expect(
+    async () =>
+      await mergePullRequest(
+        'https://github.com/example/repo/pull/42',
+        cwd,
+        adapter({
+          view: () => {
+            throw new Error('forge unavailable')
+          },
+        }),
+      ),
   ).toThrow('proof was not checked: forge unavailable')
 })
 
-test('a GitHub branch-policy merge refusal names pending and failing checks', () => {
+test('a GitHub branch-policy merge refusal names pending and failing checks', async () => {
   registerProject([])
   recordPassingGate()
-  expect(() =>
-    mergePullRequest(
-      '42',
-      cwd,
-      adapter({
-        checks: [
-          {
-            name: 'Check',
-            bucket: 'pending',
-            state: 'IN_PROGRESS',
-            link: 'https://checks.example/check',
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          checks: [
+            {
+              name: 'Check',
+              bucket: 'pending',
+              state: 'IN_PROGRESS',
+              link: 'https://checks.example/check',
+            },
+            {
+              name: 'Build demo',
+              bucket: 'fail',
+              state: 'FAILURE',
+              link: 'https://checks.example/demo',
+            },
+          ],
+          merge: () => {
+            throw new Error(
+              'pull-request merge failed: GraphQL: Base branch policy prohibits the merge (mergePullRequest)',
+            )
           },
-          {
-            name: 'Build demo',
-            bucket: 'fail',
-            state: 'FAILURE',
-            link: 'https://checks.example/demo',
-          },
-        ],
-        merge: () => {
-          throw new Error(
-            'pull-request merge failed: GraphQL: Base branch policy prohibits the merge (mergePullRequest)',
-          )
-        },
-      }),
-    ),
+        }),
+      ),
   ).toThrow(
     `refusing merge: GitHub's branch policy blocks the merge: Check pending, Build demo failing; cleared by: wait for pending checks, and fix failing checks with gh pr checks 42, then rerun ${PLATFORM_SLUG} pr merge 42`,
   )
 })
 
-test('a GitHub branch-policy merge refusal names another requirement when checks are not blocking', () => {
+test('a GitHub branch-policy merge refusal names another requirement when checks are not blocking', async () => {
   registerProject([])
   recordPassingGate()
-  expect(() =>
-    mergePullRequest(
-      '42',
-      cwd,
-      adapter({
-        checks: [
-          {
-            name: 'ci',
-            bucket: 'pass',
-            state: 'SUCCESS',
-            link: 'https://checks.example/ci',
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          checks: [
+            {
+              name: 'ci',
+              bucket: 'pass',
+              state: 'SUCCESS',
+              link: 'https://checks.example/ci',
+            },
+          ],
+          merge: () => {
+            throw new Error(
+              'pull-request merge failed: GraphQL: Base branch policy prohibits the merge (mergePullRequest)',
+            )
           },
-        ],
-        merge: () => {
-          throw new Error(
-            'pull-request merge failed: GraphQL: Base branch policy prohibits the merge (mergePullRequest)',
-          )
-        },
-      }),
-    ),
+        }),
+      ),
   ).toThrow(
     `refusing merge: GitHub's branch policy blocks the merge: the block is not a check, but another branch requirement such as a review approval, conversation resolution or a required deployment; cleared by: gh pr view 42 to see the unmet requirement, then rerun ${PLATFORM_SLUG} pr merge 42`,
   )
 })
 
-test('a GitHub branch-policy merge refusal names both inspect commands when the rollup cannot be read', () => {
+test('a GitHub branch-policy merge refusal names both inspect commands when the rollup cannot be read', async () => {
   registerProject([])
   recordPassingGate()
-  expect(() =>
-    mergePullRequest(
-      '42',
-      cwd,
-      adapter({
-        checks: () => {
-          throw new Error('pull-request check lookup failed: exit 1')
-        },
-        merge: () => {
-          throw new Error(
-            'pull-request merge failed: GraphQL: Base branch policy prohibits the merge (mergePullRequest)',
-          )
-        },
-      }),
-    ),
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          checks: () => {
+            throw new Error('pull-request check lookup failed: exit 1')
+          },
+          merge: () => {
+            throw new Error(
+              'pull-request merge failed: GraphQL: Base branch policy prohibits the merge (mergePullRequest)',
+            )
+          },
+        }),
+      ),
   ).toThrow(
     `refusing merge: GitHub's branch policy blocks the merge: the checks could not be listed and the block may be a check or another requirement; cleared by: gh pr checks 42, gh pr view 42, then rerun ${PLATFORM_SLUG} pr merge 42`,
   )
 })
 
-test('a non-policy merge failure still restores forge access', () => {
+test('a non-policy merge failure still restores forge access', async () => {
   registerProject([])
   recordPassingGate()
-  expect(() =>
-    mergePullRequest(
-      '42',
-      cwd,
-      adapter({
-        merge: () => {
-          throw new Error('pull-request merge failed: HTTP 401')
-        },
-      }),
-    ),
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          merge: () => {
+            throw new Error('pull-request merge failed: HTTP 401')
+          },
+        }),
+      ),
   ).toThrow(
     `proof was not checked: pull-request merge failed: HTTP 401; cleared by: restore forge and repository access, then ${PLATFORM_SLUG} pr merge 42`,
   )
 })
 
-test('a head commit that changes after checks is refused without merging', () => {
+test('a head commit that changes after checks is refused without merging', async () => {
   registerProject(['test'])
   let views = 0
   let merged = false
-  expect(() =>
-    mergePullRequest(
-      '42',
-      cwd,
-      adapter({
-        view: () => ({
-          ...pullRequest,
-          headCommit: views++ === 0 ? 'head-commit' : 'changed-head-commit',
-        }),
-        checks: [
-          {
-            name: 'test',
-            bucket: 'pass',
-            state: 'SUCCESS',
-            link: 'https://checks.example/test',
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          view: () => ({
+            ...pullRequest,
+            headCommit: views++ === 0 ? 'head-commit' : 'changed-head-commit',
+          }),
+          checks: [
+            {
+              name: 'test',
+              bucket: 'pass',
+              state: 'SUCCESS',
+              link: 'https://checks.example/test',
+            },
+          ],
+          merge: () => {
+            merged = true
+            return 'unexpected'
           },
-        ],
-        merge: () => {
-          merged = true
-          return 'unexpected'
-        },
-      }),
-    ),
+        }),
+      ),
   ).toThrow('head changed from head-commit to changed-head-commit')
   expect(merged).toBe(false)
 })
 
-test('a missing recorded local gate refuses with the gate command', () => {
+test('a missing recorded local gate refuses with the gate command', async () => {
   registerProject([])
-  expect(() => mergePullRequest('42', cwd, adapter())).toThrow(`run ${PLATFORM_SLUG} gate run`)
+  expect(async () => await mergePullRequest('42', cwd, adapter())).toThrow(
+    `run ${PLATFORM_SLUG} gate run`,
+  )
 })
 
-test('a moved landing branch refuses after reading the recorded local gate', () => {
+test('a moved landing branch refuses after reading the recorded local gate', async () => {
   registerProject([])
   recordPassingGate()
-  expect(() =>
-    mergePullRequest(
-      '42',
-      cwd,
-      adapter({
-        landingState: () => ({ remoteLandingTip: 'new-base', mergeBase: 'old-base' }),
-      }),
-    ),
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          landingState: () => ({ remoteLandingTip: 'new-base', mergeBase: 'old-base' }),
+        }),
+      ),
   ).toThrow(`bring the branch up to origin/main, run ${PLATFORM_SLUG} gate run`)
 })

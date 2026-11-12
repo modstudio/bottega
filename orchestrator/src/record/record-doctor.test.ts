@@ -352,7 +352,7 @@ describe('record doctor decisions', () => {
     expect(unattributedShare(0, 0)).toBe('0/0 (0.0%) unattributed')
   })
 
-  test('counts synced questions for projects whose effective space is active', () => {
+  test('counts synced questions for projects whose effective space is active', async () => {
     const database = new Database(':memory:')
     applyMigrations(database)
     seedWorkflows(database)
@@ -407,7 +407,7 @@ describe('record doctor decisions', () => {
       .run(newRecordId())
 
     expect(
-      localQuestionCountForSpace(
+      await localQuestionCountForSpace(
         database,
         [
           { name: 'default', space: null },
@@ -419,7 +419,7 @@ describe('record doctor decisions', () => {
     database.close()
   })
 
-  test('counts a synced question whose run has no project in the active space', () => {
+  test('counts a synced question whose run has no project in the active space', async () => {
     const database = new Database(':memory:')
     applyMigrations(database)
     database
@@ -442,7 +442,7 @@ describe('record doctor decisions', () => {
       .run(newRecordId())
 
     expect(
-      localQuestionCountForSpace(database, [], {
+      await localQuestionCountForSpace(database, [], {
         id: 'space-id',
         slug: 'active-space',
       }),

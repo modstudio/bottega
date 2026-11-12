@@ -11,12 +11,12 @@ import {
 
 afterEach(() => mock.restore())
 
-test('reader close-out archives a nested bare repository', () => {
+test('reader close-out archives a nested bare repository', async () => {
   const fixture = closeOutFixture()
   try {
     const bare = join(fixture.worktree, 'probe.git')
     git(['init', '--bare', bare], fixture.worktree)
-    const result = closeOutRun(fixture.id, { intent: 'terminal' })
+    const result = await closeOutRun(fixture.id, { intent: 'terminal' })
     const archive = archivedClonePath(result.detail)
     expect(result.outcome).toBe('released')
     expect(existsSync(join(archive, 'probe.git', 'HEAD'))).toBe(true)

@@ -9,7 +9,7 @@ import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow
 import {
   type TaskFlowLinkedTaskReferenceRow as LinkedLocalTaskReference,
   type TaskFlowPendingTaskLinkRow as LocalTaskLinkRow,
-  taskFlowStore,
+  taskFlowReadStore,
 } from '../workflow/task-flow-store.ts'
 import { linkWorkflowTaskLabel } from '../workflow/workflow-task-linking.ts'
 import {
@@ -83,8 +83,8 @@ type PendingLocalTaskLink = {
 }
 
 type LocalTaskLinkConfigBase = {
-  pendingRows(database: Database): LocalTaskLinkRow[]
-  linkedRows(database: Database): LinkedLocalTaskReference[]
+  pendingRows(database: Database): Promise<LocalTaskLinkRow[]>
+  linkedRows(database: Database): Promise<LinkedLocalTaskReference[]>
 }
 type HostedFirstTaskLinkConfig = LocalTaskLinkConfigBase & {
   regime: 'hosted-first'
@@ -103,8 +103,10 @@ type LocalTaskLinkConfig = HostedFirstTaskLinkConfig | SynchronousTaskLinkConfig
 const LOCAL_TASK_LINKS = {
   workflow_cursor: {
     regime: 'hosted-first',
-    pendingRows: (database) => taskFlowStore(database).pendingTaskLinks('workflow_cursor'),
-    linkedRows: (database) => taskFlowStore(database).linkedTaskReferences('workflow_cursor'),
+    pendingRows: async (database) =>
+      taskFlowReadStore(database).pendingTaskLinks('workflow_cursor'),
+    linkedRows: async (database) =>
+      taskFlowReadStore(database).linkedTaskReferences('workflow_cursor'),
     write: (database, update, taskFlowClient) =>
       linkWorkflowTaskLabel(
         database,
@@ -118,8 +120,8 @@ const LOCAL_TASK_LINKS = {
   },
   question: {
     regime: 'synchronous',
-    pendingRows: (database) => taskFlowStore(database).pendingTaskLinks('question'),
-    linkedRows: (database) => taskFlowStore(database).linkedTaskReferences('question'),
+    pendingRows: async (database) => taskFlowReadStore(database).pendingTaskLinks('question'),
+    linkedRows: async (database) => taskFlowReadStore(database).linkedTaskReferences('question'),
     write: (database, update) => {
       linkWorkflowQuestionsTaskReference(
         {
@@ -133,7 +135,7 @@ const LOCAL_TASK_LINKS = {
   },
   port_ref: {
     regime: 'synchronous',
-    pendingRows: (database) =>
+    pendingRows: async (database) =>
       database
         .query<
           LocalTaskLinkRow,
@@ -141,7 +143,7 @@ const LOCAL_TASK_LINKS = {
         >(`SELECT r.record_id id,r.task_key,p.name project FROM port_ref r
           JOIN project p ON p.record_id=r.target_project_record_id WHERE r.task_record_id IS NULL`)
         .all(),
-    linkedRows: (database) =>
+    linkedRows: async (database) =>
       database
         .query<LinkedLocalTaskReference, []>(`SELECT r.task_record_id,p.name project FROM port_ref r
           JOIN project p ON p.record_id=r.target_project_record_id WHERE r.task_record_id IS NOT NULL`)
@@ -154,7 +156,7 @@ const LOCAL_TASK_LINKS = {
   },
   presence: {
     regime: 'synchronous',
-    pendingRows: (database) =>
+    pendingRows: async (database) =>
       database
         .query<
           LocalTaskLinkRow,
@@ -163,7 +165,7 @@ const LOCAL_TASK_LINKS = {
           JOIN project p ON p.record_id=s.project_record_id
           WHERE s.current_task_record_id IS NULL AND s.current_task_key IS NOT NULL`)
         .all(),
-    linkedRows: (database) =>
+    linkedRows: async (database) =>
       database
         .query<
           LinkedLocalTaskReference,
@@ -546,20 +548,20 @@ export async function linkRunTasks(
   const links = deriveRunLinks(runs, tasks, registered)
   const report = emptyReport(options.dryRun)
   applyRunLinkFactsToReport(report, runs, links, tasks)
-  const pendingUpdates = deriveLocalTaskLinks(database, taskIndex, report)
+  const pendingUpdates = await deriveLocalTaskLinks(database, taskIndex, report)
   if (!options.dryRun)
     await persistRunTaskLinks(database, links, pendingUpdates, dependencies.taskFlowClient)
   return report
 }
 
-function deriveLocalTaskLinks(
+async function deriveLocalTaskLinks(
   database: Database,
   tasks: Awaited<ReturnType<typeof hubTaskMap>>,
   report: RunTaskLinkReport,
-): PendingLocalTaskLink[] {
+): Promise<PendingLocalTaskLink[]> {
   const pending: PendingLocalTaskLink[] = []
   for (const table of localTaskLinkTables()) {
-    for (const row of localTaskLinkRows(database, table)) {
+    for (const row of await localTaskLinkRows(database, table)) {
       const task = taskReferenceForProjectKey(tasks.byProjectKey, row.project, row.task_key)
       if (!task) {
         increment(report.local_task_links[table].unmatched_keys, row.task_key)
@@ -578,7 +580,10 @@ function deriveLocalTaskLinks(
   return pending
 }
 
-function localTaskLinkRows(database: Database, table: LocalTaskLinkTable): LocalTaskLinkRow[] {
+async function localTaskLinkRows(
+  database: Database,
+  table: LocalTaskLinkTable,
+): Promise<LocalTaskLinkRow[]> {
   return LOCAL_TASK_LINKS[table].pendingRows(database)
 }
 
@@ -671,15 +676,17 @@ export async function runTaskReferenceDoctorLine(): Promise<string> {
   try {
     const tasks = await hubTaskMap(projects())
     const database = db()
-    const related = localTaskLinkTables().map((table) => {
-      const rows = LOCAL_TASK_LINKS[table].linkedRows(database)
-      const invalid = rows.filter(
-        (row) =>
-          tasks.byProjectId.get(projectTaskRecordKey(row.project, row.task_record_id))
-            ?.record_id !== row.task_record_id,
-      ).length
-      return `${table} ${invalid}`
-    })
+    const related = await Promise.all(
+      localTaskLinkTables().map(async (table) => {
+        const rows = await LOCAL_TASK_LINKS[table].linkedRows(database)
+        const invalid = rows.filter(
+          (row) =>
+            tasks.byProjectId.get(projectTaskRecordKey(row.project, row.task_record_id))
+              ?.record_id !== row.task_record_id,
+        ).length
+        return `${table} ${invalid}`
+      }),
+    )
     return `run task refs  ${invalidRunTaskReferenceCount(db(), tasks.byProjectKey)} run; ${related.join(', ')} name no task in hub`
   } catch (error) {
     return `run task refs  unavailable — ${error instanceof Error ? error.message : String(error)}`

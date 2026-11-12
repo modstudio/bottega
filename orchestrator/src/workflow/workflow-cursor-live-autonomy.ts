@@ -38,7 +38,7 @@ export async function resolveCursorLiveAutonomy(
   input: CursorLiveAutonomyInput,
   d: Database = db(),
 ): Promise<LiveCursorAutonomy> {
-  const row = selectWorkflowCursor(
+  const row = await selectWorkflowCursor(
     {
       project: input.project,
       workflow: input.slug,

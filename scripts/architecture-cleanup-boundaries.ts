@@ -16,13 +16,12 @@ export const cleanupBoundarySpecs = [
       '../hook-tree/hook-tree.ts',
       '../landing-tree/landing-tree.ts',
       '../run/synthetic-lifecycle-job.ts',
-      '../workflow/workflow-cursor-worktrees.ts',
       '../worktree/keep-tree-hold.ts',
       '../worktree/worktree-attribution.ts',
       './close-out-report.ts',
       './tree-keep-decision.ts',
     ],
-    typeOnlyAllowed: [],
+    typeOnlyAllowed: ['../workflow/workflow-cursor-worktrees.ts'],
     reason:
       'Keep tree naming and keep policy in one adapter over cursor, live-run, and existing hold evidence.',
   },
@@ -375,6 +374,7 @@ export const cleanupBoundarySpecs = [
       'node:path',
       './cleanup.ts',
       './cleanup-sweep-decisions.ts',
+      './cleanup-sweep-archive.ts',
       './cleanup-sweep-context.ts',
       './cleanup-sweep-session.ts',
       './cleanup-sweep-reclaim.ts',
@@ -425,6 +425,7 @@ export const cleanupBoundarySpecs = [
       '../run/run-owner-session-liveness.ts',
       '../run/run-task-linking.ts',
       '../run/synthetic-lifecycle-job.ts',
+      '../workflow/workflow-cursor-worktrees.ts',
       '../workflow/workflow-task-reference.ts',
       '../sandbox/grok-trust.ts',
       '../worktree/worktree-attribution.ts',
@@ -434,6 +435,17 @@ export const cleanupBoundarySpecs = [
     typeOnlyAllowed: [],
     reason:
       'Keep cleanup-sweep independent of transports, routing, reviews, contracts, and the CLI; maintenance stays behind the database command and run-outbox owners.',
+  },
+  {
+    name: 'cleanup-sweep-archive-boundary',
+    file: 'orchestrator/src/cleanup/cleanup-sweep-archive.ts',
+    allowed: [
+      '../branch/branch-disposal.ts',
+      './cleanup.ts',
+      './reader-clone-archive-retention.ts',
+    ],
+    typeOnlyAllowed: ['./cleanup.ts'],
+    reason: 'Keep archive retention behind one cleanup-sweep concern.',
   },
   {
     name: 'cleanup-sweep-session-boundary',

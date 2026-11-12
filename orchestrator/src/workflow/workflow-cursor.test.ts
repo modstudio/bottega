@@ -339,10 +339,12 @@ describe('workflow cursor adapter', () => {
       d,
       {},
     )
-    expect(listWorkflowCursors({ project: 'fixture', session: 'session-one' }, d)).toHaveLength(1)
-    expect(listWorkflowCursors({ project: 'fixture', session: 'session-one' }, d)[0]!.line).toBe(
-      'cursor 1 flow default DEV-822 fixture step 1/9 rebase running next: lens',
-    )
+    expect(
+      await listWorkflowCursors({ project: 'fixture', session: 'session-one' }, d),
+    ).toHaveLength(1)
+    expect(
+      (await listWorkflowCursors({ project: 'fixture', session: 'session-one' }, d))[0]!.line,
+    ).toBe('cursor 1 flow default DEV-822 fixture step 1/9 rebase running next: lens')
     let output = ''
     for (const step of composition.steps) {
       output = await closeStep(
@@ -358,7 +360,7 @@ describe('workflow cursor adapter', () => {
     expect(output).toBe(
       `Workflow flow for DEV-822 is finished: ${composition.steps.length} steps closed.`,
     )
-    expect(listWorkflowCursors({ project: 'fixture', session: 'session-one' }, d)).toEqual([])
+    expect(await listWorkflowCursors({ project: 'fixture', session: 'session-one' }, d)).toEqual([])
     expect(d.query('SELECT state FROM workflow_cursor').get()).toEqual({
       state: 'done',
     })
@@ -443,7 +445,9 @@ describe('workflow cursor adapter', () => {
       closed_at: null,
     })
     const question = d.query<{ number: number }, []>('SELECT number FROM question').get()!
-    const listed = listWorkflowCursors({ project: 'fixture', session: 'session-one' }, d)[0]!
+    const listed = (
+      await listWorkflowCursors({ project: 'fixture', session: 'session-one' }, d)
+    )[0]!
     expect(listed.question_number).toBe(question.number)
     expect(listed.question).toBe('Which ruling?')
     expect(listed.line).toContain(`question q${question.number}:`)
@@ -661,7 +665,7 @@ describe('workflow cursor adapter', () => {
     expect(
       await abandonCursor('flow', 'fixture', 'default', args, 'operator stopped', context, d),
     ).toBe('Workflow flow for DEV-822 was abandoned at step 1 rebase.')
-    expect(listWorkflowCursors({ project: 'fixture', session: 'session-one' }, d)).toEqual([])
+    expect(await listWorkflowCursors({ project: 'fixture', session: 'session-one' }, d)).toEqual([])
     const row = d.query('SELECT state,question,closed,session_id FROM workflow_cursor').get() as {
       state: string
       question: string | null
@@ -716,7 +720,7 @@ describe('workflow cursor adapter', () => {
       question: null,
       session_id: 'session-two',
     })
-    expect(listWorkflowCursors({ project: 'fixture' }, d)).toEqual([])
+    expect(await listWorkflowCursors({ project: 'fixture' }, d)).toEqual([])
     expect(d.query('SELECT close_reason FROM question').get()).toEqual({
       close_reason: 'abandoned',
     })
@@ -849,8 +853,8 @@ describe('workflow cursor adapter', () => {
     expect(d.query('SELECT session_id FROM workflow_cursor').get()).toEqual({
       session_id: 'session-two',
     })
-    expect(listWorkflowCursors({ project: 'fixture' }, d)).toHaveLength(1)
-    expect(listWorkflowCursors({ project: 'fixture', session: 'session-one' }, d)).toEqual([])
+    expect(await listWorkflowCursors({ project: 'fixture' }, d)).toHaveLength(1)
+    expect(await listWorkflowCursors({ project: 'fixture', session: 'session-one' }, d)).toEqual([])
   })
 
   test('next uses the cursor autonomy snapshot and finish lists review steps', async () => {

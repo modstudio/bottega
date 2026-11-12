@@ -633,7 +633,7 @@ function outcomeDocument(
 
 async function release(result: Pick<RunResult, 'record_id'> | null): Promise<string | null> {
   if (!result) return null
-  const failures = releaseRunFailoverAttempts(result.record_id).filter(
+  const failures = (await releaseRunFailoverAttempts(result.record_id)).filter(
     (closed) => !['released', 'absent', 'forgotten'].includes(closed.outcome),
   )
   return failures.length

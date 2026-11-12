@@ -68,7 +68,7 @@ export const databaseBoundarySpecs: ImportBoundary[] = [
       `${source}write-commit-effects.ts`,
       `${source}write-probe.ts`,
     ],
-    typeOnlyAllowed: [],
+    typeOnlyAllowed: ['orchestrator/src/synchronous-result.ts'],
     reason: 'Enforce the database concern boundary.',
   },
   {
@@ -82,7 +82,11 @@ export const databaseBoundarySpecs: ImportBoundary[] = [
     name: 'machine-identity-store-boundary',
     file: `${source}machine-identity-store.ts`,
     allowed: ['shared/machine-config.ts'],
-    typeOnlyAllowed: ['bun:sqlite', 'shared/config-directory.ts'],
+    typeOnlyAllowed: [
+      'bun:sqlite',
+      'shared/config-directory.ts',
+      'orchestrator/src/synchronous-result.ts',
+    ],
     reason: 'Enforce the machine identity store concern boundary.',
   },
 ]

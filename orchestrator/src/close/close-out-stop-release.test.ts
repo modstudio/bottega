@@ -10,21 +10,21 @@ afterEach(() => {
   mock.restore()
 })
 
-test('a writing job is not applicable and its tree is left in place', () => {
+test('a writing job is not applicable and its tree is left in place', async () => {
   const id = addRun({ agent: 'codex', job: 'implement', status: 'stopped' })
   db().query('UPDATE run SET worktree=? WHERE record_id=?').run('/tmp/writer-tree', id)
 
-  expect(releaseStoppedReaderClone(id)).toEqual({ outcome: 'not-applicable', detail: null })
+  expect(await releaseStoppedReaderClone(id)).toEqual({ outcome: 'not-applicable', detail: null })
   expect(
     db().query('SELECT worktree, close_out_outcome FROM run WHERE record_id=?').get(id),
   ).toEqual({ worktree: '/tmp/writer-tree', close_out_outcome: null })
 })
 
-test('a reader clone is released and the pointer is cleared', () => {
+test('a reader clone is released and the pointer is cleared', async () => {
   const fixture = closeOutFixture()
   db().query("UPDATE run SET status='stopped' WHERE record_id=?").run(fixture.id)
   try {
-    expect(releaseStoppedReaderClone(fixture.id)).toEqual({
+    expect(await releaseStoppedReaderClone(fixture.id)).toEqual({
       outcome: 'released',
       detail: expect.any(String),
     })
@@ -37,7 +37,7 @@ test('a reader clone is released and the pointer is cleared', () => {
   }
 })
 
-test('a thrown close-out that still recorded a release is released', () => {
+test('a thrown close-out that still recorded a release is released', async () => {
   const fixture = closeOutFixture()
   db().query("UPDATE run SET status='stopped' WHERE record_id=?").run(fixture.id)
   spyOn(closeOut, 'closeOutRun').mockImplementation((runId: string) => {
@@ -50,7 +50,7 @@ test('a thrown close-out that still recorded a release is released', () => {
     throw new Error('close-out threw after recording')
   })
   try {
-    expect(releaseStoppedReaderClone(fixture.id)).toEqual({
+    expect(await releaseStoppedReaderClone(fixture.id)).toEqual({
       outcome: 'released',
       detail: 'close-out threw after recording',
     })
@@ -62,14 +62,14 @@ test('a thrown close-out that still recorded a release is released', () => {
   }
 })
 
-test('a thrown close-out that did not record a release is kept', () => {
+test('a thrown close-out that did not record a release is kept', async () => {
   const fixture = closeOutFixture()
   db().query("UPDATE run SET status='stopped' WHERE record_id=?").run(fixture.id)
   spyOn(closeOut, 'closeOutRun').mockImplementation(() => {
     throw new Error('close-out threw before recording')
   })
   try {
-    expect(releaseStoppedReaderClone(fixture.id)).toEqual({
+    expect(await releaseStoppedReaderClone(fixture.id)).toEqual({
       outcome: 'kept',
       detail: 'close-out threw before recording',
     })

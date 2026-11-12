@@ -9,7 +9,7 @@ import {
   type OpenTaskStage,
   taskFlowState,
 } from './task-flow-decision.ts'
-import { taskFlowStore } from './task-flow-store.ts'
+import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 import type { TaskFlowStageCursorRow, WorkflowCursorInsert } from './task-flow-store-types.ts'
 
 export function vacateRetiredWorkflowKeySlot(
@@ -20,7 +20,7 @@ export function vacateRetiredWorkflowKeySlot(
   d: Database,
   exceptRecordId: string | null = null,
 ): void {
-  taskFlowStore(d).retireStageIdentity({ project, workflow, mode, key, exceptRecordId })
+  taskFlowLocalStore(d).retireStageIdentity({ project, workflow, mode, key, exceptRecordId })
 }
 
 /** Owns the complete persisted workflow-cursor row shape for local and hosted inserts. */
@@ -40,7 +40,7 @@ export function insertWorkflowCursorRow(
       row.recordId,
     )
     if (conflict === 'hosted-record') {
-      const local = taskFlowStore(database).conflictingHostedStage({
+      const local = taskFlowLocalStore(database).conflictingHostedStage({
         projectRecordId,
         workflow: row.workflow,
         mode: row.mode,
@@ -53,15 +53,12 @@ export function insertWorkflowCursorRow(
         )
     }
   }
-  return taskFlowStore(database).insertStage(row, conflict)
+  return taskFlowLocalStore(database).insertStage(row, conflict)
 }
 
 /** Reads the open cursor projected by a task flow without creating or changing either row. */
-export function openTaskFlowStageCursor(
-  taskRecordId: string,
-  d: Database,
-): TaskFlowStageCursorRow | null {
-  return taskFlowStore(d).openStageForTask(taskRecordId)
+function openTaskFlowStageCursor(taskRecordId: string, d: Database): TaskFlowStageCursorRow | null {
+  return taskFlowLocalStore(d).openStageForTask(taskRecordId)
 }
 
 export function cacheAdoptedTaskFlow(
@@ -77,7 +74,7 @@ export function cacheAdoptedTaskFlow(
   },
   d: Database,
 ): void {
-  const store = taskFlowStore(d)
+  const store = taskFlowLocalStore(d)
   const existing = store.flowRecordIdForTask(input.taskRecordId)
   if (existing && existing !== input.flowRecordId)
     throw new Error(
@@ -91,11 +88,9 @@ export function cacheAdoptedTaskFlow(
   })
 }
 
-function openStage(
-  taskRecordId: string,
-  d: Database,
+function openStageFromCursor(
+  cursor: TaskFlowStageCursorRow | null,
 ): (OpenTaskStage & { recordId: string }) | null {
-  const cursor = openTaskFlowStageCursor(taskRecordId, d)
   return cursor
     ? {
         cursor: cursor.id,
@@ -106,15 +101,55 @@ function openStage(
     : null
 }
 
-export function refuseTaskFlowStageConflict(
-  input: { taskRecordId: string; taskKey: string; cursor?: number; workflow: string; mode: string },
+function openStage(
+  taskRecordId: string,
+  d: Database,
+): (OpenTaskStage & { recordId: string }) | null {
+  return openStageFromCursor(openTaskFlowStageCursor(taskRecordId, d))
+}
+
+type TaskFlowStageConflictInput = {
+  taskRecordId: string
+  taskKey: string
+  cursor?: number
+  workflow: string
+  mode: string
+}
+
+function taskFlowStageConflictRefusal(
+  input: TaskFlowStageConflictInput,
+  stage: OpenTaskStage,
+): string {
+  return `task ${input.taskKey} already has open stage cursor ${stage.cursor} ${stage.workflow} ${stage.mode}; finish it with ${PLATFORM_SLUG} workflow next ${stage.workflow} --cursor ${stage.cursor}, or drop it with ${PLATFORM_SLUG} workflow abandon ${stage.workflow} --cursor ${stage.cursor}`
+}
+
+function refuseTaskFlowStageConflictWithFacts(
+  input: TaskFlowStageConflictInput,
+  flow: object | null,
+  stage: (OpenTaskStage & { recordId: string }) | null,
+): void {
+  if (!flow) return
+  const decision = decideTaskStageSelection(stage, input)
+  if (decision.action === 'refuse')
+    throw new Error(taskFlowStageConflictRefusal(input, decision.stage))
+}
+
+export function refuseTaskFlowStageConflictLocal(
+  input: TaskFlowStageConflictInput,
   d: Database,
 ): void {
-  const flow = taskFlowStore(d).flowProjectionForTask(input.taskRecordId)
-  if (!flow) return
-  const decision = decideTaskStageSelection(openStage(input.taskRecordId, d), input)
-  if (decision.action === 'refuse')
-    throw new Error(
-      `task ${input.taskKey} already has open stage cursor ${decision.stage.cursor} ${decision.stage.workflow} ${decision.stage.mode}; finish it with ${PLATFORM_SLUG} workflow next ${decision.stage.workflow} --cursor ${decision.stage.cursor}, or drop it with ${PLATFORM_SLUG} workflow abandon ${decision.stage.workflow} --cursor ${decision.stage.cursor}`,
-    )
+  const flow = taskFlowLocalStore(d).flowProjectionForTask(input.taskRecordId)
+  refuseTaskFlowStageConflictWithFacts(input, flow, openStage(input.taskRecordId, d))
+}
+
+export async function refuseTaskFlowStageConflict(
+  input: TaskFlowStageConflictInput,
+  d: Database,
+): Promise<void> {
+  const store = taskFlowReadStore(d)
+  const [flow, cursor] = await Promise.all([
+    store.flowProjectionForTask(input.taskRecordId),
+    store.openStageForTask(input.taskRecordId),
+  ])
+  refuseTaskFlowStageConflictWithFacts(input, flow, openStageFromCursor(cursor))
 }

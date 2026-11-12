@@ -15,7 +15,7 @@ import {
 } from './workflow-floor-evidence.ts'
 import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
 
-test(`command identity accepts only registered ${PLATFORM_SLUG} executable paths`, () => {
+test(`command identity accepts only registered ${PLATFORM_SLUG} executable paths`, async () => {
   const root = mkdtempSync(join(tmpdir(), `workflow-${PLATFORM_SLUG}-command-`))
   const main = join(root, 'main')
   const installed = join(root, 'installed')
@@ -66,7 +66,7 @@ test(`command identity accepts only registered ${PLATFORM_SLUG} executable paths
   }
 })
 
-test(`a recorded pr-create exec accepts the registered ${PLATFORM_SLUG} path only`, () => {
+test(`a recorded pr-create exec accepts the registered ${PLATFORM_SLUG} path only`, async () => {
   const root = mkdtempSync(join(tmpdir(), `workflow-${PLATFORM_SLUG}-floor-`))
   const main = join(root, 'main')
   const mainExecutable = join(main, 'bin', PLATFORM_SLUG)
@@ -147,10 +147,10 @@ test(`a recorded pr-create exec accepts the registered ${PLATFORM_SLUG} path onl
       operatorRuling: false,
       commandEvidence: 'pull-request',
     }
-    const decideExec = (id: number) =>
+    const decideExec = async (id: number) =>
       decideFloorSatisfaction({
         floors: [floor],
-        evidence: gatherValidatedEvidence({
+        evidence: await gatherValidatedEvidence({
           cursorId: '00000000-0000-4000-8000-000000000001',
           identity,
           stepOrdinal: 1,
@@ -165,8 +165,8 @@ test(`a recorded pr-create exec accepts the registered ${PLATFORM_SLUG} path onl
         openObligations: [],
       })
 
-    expect(decideExec(insertExec(mainExecutable)).action).toBe('allow')
-    const unrelated = decideExec(insertExec(unrelatedExecutable))
+    expect((await decideExec(insertExec(mainExecutable))).action).toBe('allow')
+    const unrelated = await decideExec(insertExec(unrelatedExecutable))
     expect(unrelated.action).toBe('refuse')
     if (unrelated.action === 'refuse')
       expect(unrelated.message).toContain(`the recorded command is not ${PLATFORM_SLUG} pr create`)

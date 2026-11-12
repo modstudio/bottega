@@ -28,7 +28,7 @@ import { rulingStatus } from '../run/question-vocabulary.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { parseProbeArtifact, resolveProbeArtifact } from './probe-identifier.ts'
-import { taskFlowStore } from './task-flow-store.ts'
+import { taskFlowReadStore } from './task-flow-store.ts'
 import {
   type CheckoutResolution,
   checkoutOutsideChangeRefusal,
@@ -543,15 +543,15 @@ function resolveTaskArtifact(
   return { ref: raw, exists: true }
 }
 
-function resolveStoredArtifact(
+async function resolveStoredArtifact(
   ref: Extract<ArtifactRef, { kind: 'attached-text' | 'doc' | 'review-read' }>,
   identity: CursorIdentity,
   binding: { cursorId: string; stepOrdinal: number; stepSlug: string },
   d: Database,
   branchTip: string | null,
-): { ref: string; exists: boolean } {
+): Promise<{ ref: string; exists: boolean }> {
   if (ref.kind === 'attached-text') {
-    const row = taskFlowStore(d).textAttachmentByRecordId(ref.id)
+    const row = await taskFlowReadStore(d).textAttachmentByRecordId(ref.id)
     const attachment: WorkflowTextRow | null = row
       ? {
           id: row.id,
@@ -581,7 +581,7 @@ function resolveStoredArtifact(
   return { ref: `review-read:${ref.recordId}`, exists: true }
 }
 
-function resolveArtifact(
+async function resolveArtifact(
   ref: ArtifactRef,
   raw: string,
   identity: CursorIdentity,
@@ -590,7 +590,7 @@ function resolveArtifact(
   ports: FloorEvidencePorts,
   resolveCheckout: FloorEvidencePorts['resolveCheckout'],
   branchTip: string | null,
-): { ref: string; exists: boolean } {
+): Promise<{ ref: string; exists: boolean }> {
   if (ref.kind === 'attached-text' || ref.kind === 'doc' || ref.kind === 'review-read')
     return resolveStoredArtifact(ref, identity, binding, d, branchTip)
   if (ref.kind === 'id')
@@ -736,8 +736,12 @@ function gatherTask(
   }
 }
 
-function gatherSatisfy(id: string, cursorId: string, d: Database): ValidatedEvidence['satisfy'] {
-  const row = taskFlowStore(d).obligationByRecordId(id)
+async function gatherSatisfy(
+  id: string,
+  cursorId: string,
+  d: Database,
+): Promise<ValidatedEvidence['satisfy']> {
+  const row = await taskFlowReadStore(d).obligationByRecordId(id)
   if (!row) return { id, found: false }
   const floor = floorFromObligationRow(row)
   return {
@@ -924,9 +928,9 @@ type GatherValidatedEvidenceInput = {
   d?: Database
 }
 
-export function gatherValidatedEvidenceBase(
+export async function gatherValidatedEvidenceBase(
   input: GatherValidatedEvidenceInput,
-): ValidatedEvidence {
+): Promise<ValidatedEvidence> {
   const d = input.d ?? db()
   const ports = input.ports ?? {}
   const resolveCheckout = evidenceCheckoutResolver(input.identity, ports, d)
@@ -950,7 +954,7 @@ export function gatherValidatedEvidenceBase(
     const offeredArtifact = resolvedOfferedArtifact(d, input.evidence.artifact)
     const parsed = parseArtifactRef(offeredArtifact)
     if ('error' in parsed) throw new Error(parsed.error)
-    gathered.artifact = resolveArtifact(
+    gathered.artifact = await resolveArtifact(
       parsed,
       offeredArtifact,
       input.identity,
@@ -1007,6 +1011,6 @@ export function gatherValidatedEvidenceBase(
   if (input.evidence.task?.trim())
     gathered.task = gatherTask(input.evidence.task.trim(), input.identity, d, ports)
   if (input.evidence.defer?.trim()) gathered.deferReason = input.evidence.defer.trim()
-  if (satisfies) gathered.satisfy = gatherSatisfy(satisfies, input.cursorId, d)
+  if (satisfies) gathered.satisfy = await gatherSatisfy(satisfies, input.cursorId, d)
   return gathered
 }

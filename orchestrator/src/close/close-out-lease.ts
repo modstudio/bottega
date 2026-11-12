@@ -3,6 +3,7 @@
 
 import { db } from '../database/db.ts'
 import { withRunCloseOutLease } from '../run/run-lease.ts'
+import type { SynchronousResult } from '../synchronous-result.ts'
 
 type CloseOutLeaseRefusal = {
   runId: string
@@ -14,7 +15,7 @@ type CloseOutLeaseRefusal = {
 }
 
 /** Run an action under its close-out lease, or name the owner that kept it out. */
-export function withCloseOutLease<T>(
+export function withCloseOutLease<T extends SynchronousResult>(
   runId: string,
   alreadyHeld: boolean,
   action: () => T,

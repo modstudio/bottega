@@ -127,7 +127,7 @@ export type PullRequestMergeAdapter = {
     branch: string,
     prNumber: number,
     database: Database,
-  ): ShipCleanupReport
+  ): Promise<ShipCleanupReport> | ShipCleanupReport
   postLanding?: PullRequestPostLandingAdapter
 }
 
@@ -716,7 +716,7 @@ function admitViewedPullRequest(
   return admission.checked!.change
 }
 
-function completeMerge(input: {
+async function completeMerge(input: {
   target: string
   cwd: string
   adapter: PullRequestMergeAdapter
@@ -728,7 +728,7 @@ function completeMerge(input: {
   mergeMethod: 'squash' | 'merge' | 'rebase'
   releaseRequired: boolean
   depth?: string
-}): PullRequestMergeOutcome {
+}): Promise<PullRequestMergeOutcome> {
   let pullRequest: PullRequestMergeFacts | undefined
   let mergeCommit = ''
   let mergeCommitLookupError: unknown
@@ -785,7 +785,7 @@ function completeMerge(input: {
   })
   const pathSet = admittedChange!.group?.pathSet
   const workflowPromotionDue = pathSet ? mergedChangeNeedsWorkflowPromotion(pathSet) : true
-  return completePullRequestPostLanding({
+  return await completePullRequestPostLanding({
     adapter: {
       ...(input.adapter.shipCleanup ? { cleanup: input.adapter.shipCleanup } : {}),
     },
@@ -803,14 +803,14 @@ function completeMerge(input: {
   })
 }
 
-export function mergePullRequest(
+export async function mergePullRequest(
   target: string,
   cwd = process.cwd(),
   adapter: PullRequestMergeAdapter = cliPullRequestMergeAdapter,
   injectedDatabase?: Database,
   releaseRequired = false,
   depth?: string,
-): PullRequestMergeOutcome {
+): Promise<PullRequestMergeOutcome> {
   enableSchemaReload()
   const database = injectedDatabase ?? writableDb()
   const project = projectAt(cwd, database)
@@ -828,7 +828,7 @@ export function mergePullRequest(
   }
   const depthRefusal = shipToDepthRefusal(release.rungs, depth, project.name)
   if (depthRefusal) throw new Error(depthRefusal)
-  return completeMerge({
+  return await completeMerge({
     target,
     cwd,
     adapter,

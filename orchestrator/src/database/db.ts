@@ -21,6 +21,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { ORCHESTRATOR_DATABASE_WRITE_ENV } from '../../../shared/state-directory.ts'
 import { decideStoreAccess } from '../../../shared/store-access.ts'
 import { classifyCaller } from '../caller-classification.ts'
+import type { SynchronousResult } from '../synchronous-result.ts'
 import { appliedMigrationCompatibilities } from './applied-migration-compatibilities.ts'
 import {
   contentionTableExists,
@@ -758,7 +759,10 @@ export function liveRuns(database: Database = db()): LiveRun[] {
 }
 
 /** Open the only sanctioned multi-statement write transaction. */
-export function writeTransaction<T>(fn: () => T, database: Database = db(true)): T {
+export function writeTransaction<T extends SynchronousResult>(
+  fn: () => T,
+  database: Database = db(true),
+): T {
   refuseStoreAfterCheckoutMove()
   const conn = refuseOrReloadStaleSchema(database, true)
   // A nested call keeps its savepoint so a caught inner failure still rolls back its own writes.

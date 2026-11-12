@@ -104,7 +104,7 @@ function renderWorkflowCursorRemedy(
   )
 }
 
-export function renderWorkflowAdvanceResult(input: {
+export async function renderWorkflowAdvanceResult(input: {
   row: AdvanceRow
   composition: ReturnType<typeof composeWorkflow>
   closed: CursorTrailEntry[]
@@ -115,7 +115,7 @@ export function renderWorkflowAdvanceResult(input: {
   selfRuling?: WorkflowSelfRulingInput
   d: Database
   live?: LiveCursorAutonomy
-}): string {
+}): Promise<string> {
   const { row, composition, closed, advance, slug, project, mode, selfRuling, d, live } = input
   if (advance.ordinal === null) {
     const result = withSelfRuling(
@@ -128,8 +128,8 @@ export function renderWorkflowAdvanceResult(input: {
   const next = composition.steps[advance.ordinal]!
   const flow = closed.filter(isClosedStep)
   const rendered = renderWorkflowStep({
-    ...withWorkflowTextFacts(
-      getWorkflowStep(
+    ...(await withWorkflowTextFacts(
+      await getWorkflowStep(
         slug,
         project,
         next.slug,
@@ -146,7 +146,7 @@ export function renderWorkflowAdvanceResult(input: {
       ),
       row.record_id,
       d,
-    ),
+    )),
     cursor: row.id,
     flow,
     pass: stepPass(flow, composition.steps, advance.ordinal),

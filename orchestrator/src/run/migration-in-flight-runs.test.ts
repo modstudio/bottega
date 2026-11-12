@@ -108,10 +108,10 @@ test('a terminal run remains in flight while its coordinator is closing', async 
     )
     .run(runId, process.pid)
   try {
-    await withRunCloseOutLease(
+    withRunCloseOutLease(
       runId,
       () => {},
-      async () => {
+      () => {
         expect(heldRunLeaseIds()).not.toContain(runId)
         expect(runLeaseIds()).not.toContain(runId)
         const closing = migrationInFlightRuns(database).find((run) => run.name === runId)

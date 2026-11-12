@@ -112,8 +112,10 @@ export const modules: ArchitectureModule[] = [
     'bun:sqlite',
     '../record/record-task-flow-write-contract.ts',
     './task-flow-store-sqlite.ts',
+    './task-flow-store-methods.ts',
     './task-flow-store-types.ts',
   ]),
+  module('orchestrator/src/workflow/task-flow-store-methods.ts', []),
   module('orchestrator/src/workflow/task-flow-store-types.ts', [
     './workflow-cursor-transition.ts',
     './workflow-floor.ts',
@@ -125,7 +127,11 @@ export const modules: ArchitectureModule[] = [
     '../run/question-open.ts',
     './task-flow-store-sqlite-questions.ts',
     './task-flow-store-sqlite-write.ts',
+    './task-flow-store-methods.ts',
     './task-flow-store-types.ts',
+  ]),
+  module('orchestrator/src/close/close-out-preparation.ts', [
+    '../workflow/workflow-cursor-worktrees.ts',
   ]),
   module('orchestrator/src/workflow/task-flow-store-sqlite-write.ts', [
     'bun:sqlite',
@@ -268,7 +274,11 @@ export const modules: ArchitectureModule[] = [
     '../run/question-close.ts',
     '../run/run-status.ts',
   ]),
-  module('orchestrator/src/close/close-out-lease.ts', ['../database/db.ts', '../run/run-lease.ts']),
+  module('orchestrator/src/close/close-out-lease.ts', [
+    '../synchronous-result.ts',
+    '../database/db.ts',
+    '../run/run-lease.ts',
+  ]),
   module('orchestrator/src/close/absent-close-out-residue.ts', [
     '../database/db.ts',
     '../reclaim/reclaim-residue.ts',

@@ -22,7 +22,7 @@ const database = testDatabaseFixture((d) => {
   ).run(CURSOR_ID, workflowVersionRecordId(d), catalogueVersionRecordId(d))
 })
 
-test('open obligations round-trip every persisted floor field', () => {
+test('open obligations round-trip every persisted floor field', async () => {
   const d = database()
   d.query(
     `INSERT INTO workflow_obligation
@@ -32,7 +32,7 @@ test('open obligations round-trip every persisted floor field', () => {
              'round trip', '2026-11-01')`,
   ).run(OBLIGATION_ID, CURSOR_ID)
 
-  expect(openWorkflowObligations(CURSOR_ID, d)).toEqual([
+  expect(await openWorkflowObligations(CURSOR_ID, d)).toEqual([
     {
       id: OBLIGATION_ID,
       stepOrdinal: 1,

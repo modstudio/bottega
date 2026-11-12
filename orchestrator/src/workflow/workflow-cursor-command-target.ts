@@ -10,19 +10,19 @@ import {
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
 
-export function cursorCommandTarget(
+export async function cursorCommandTarget(
   argv: string[],
   cursor: number | undefined,
   context: WorkflowCursorContext,
   caller: string,
   hasStep = false,
   database: Database = db(),
-): {
+): Promise<{
   project: string
   workflow: string
   step?: string
   selectedRow?: SelectableCursorRow
-} {
+}> {
   const project = flagValue(argv, 'project')
   const tail = argv.slice(2)
   const flagIndex = tail.findIndex((value) => value.startsWith('--'))
@@ -34,7 +34,7 @@ export function cursorCommandTarget(
     : [positionals[0], undefined]
   let step = suppliedStep
   if (cursor !== undefined) {
-    const row = selectWorkflowCursorByHandle(
+    const row = await selectWorkflowCursorByHandle(
       { project, workflow: suppliedWorkflow },
       cursor,
       context.session,

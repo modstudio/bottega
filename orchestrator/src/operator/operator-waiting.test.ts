@@ -108,7 +108,7 @@ describe('relay', () => {
   })
 })
 
-test('waiting JSON model includes run questions and workflow rulings', () => {
+test('waiting JSON model includes run questions and workflow rulings', async () => {
   const owner = run()
   const question = db()
     .query(
@@ -138,7 +138,7 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
     )
     .run(cursor.record_id)
 
-  const waiting = operatorWaiting()
+  const waiting = await operatorWaiting()
   expect(waiting).toMatchObject([
     {
       kind: 'question',
@@ -260,7 +260,7 @@ test('notification claims return each waiting episode once', () => {
   expect(claimOperatorNotifications(db())).toEqual([])
 })
 
-test('a no-project question lists and notifies without a project label', () => {
+test('a no-project question lists and notifies without a project label', async () => {
   const owner = run()
   db().query('UPDATE run SET repo=NULL,launch_key=NULL WHERE record_id=?').run(owner.id)
   const question = db()
@@ -270,7 +270,7 @@ test('a no-project question lists and notifies without a project label', () => {
     )
     .get(owner.id) as { number: number }
 
-  expect(operatorWaiting()).toMatchObject([{ id: question.number, project: null }])
+  expect(await operatorWaiting()).toMatchObject([{ id: question.number, project: null }])
   expect(claimOperatorNotifications(db())[0]?.notification.title).toBe('Ruling needed')
 })
 

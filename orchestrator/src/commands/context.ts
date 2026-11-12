@@ -15,7 +15,7 @@ function registerWorked(context: Command): void {
     .description('record and print the task keys worked by an architect session')
     .requiredOption('--session <id>', 'select architect session')
     .action(async (options) => {
-      const keys = sessionWorkedTaskKeys(options.session)
+      const keys = await sessionWorkedTaskKeys(options.session)
       const result = await recordSessionWorked(options.session, keys, 'precompact')
       log(result.body ?? 'worked: none')
     })

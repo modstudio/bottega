@@ -2,22 +2,22 @@
 /** Loads task ruling rows for a new dispatch. Must not know prompt assembly or run claiming. */
 
 import { db } from '../database/db.ts'
-import { taskFlowStore } from '../workflow/task-flow-store.ts'
+import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import {
   selectTaskRulings,
   TASK_RULINGS_MAX_COUNT,
   type TaskRulingsSelection,
 } from './task-rulings.ts'
 
-export function taskRulingsForDispatch(input: {
+export async function taskRulingsForDispatch(input: {
   resume: boolean
   project: string | null
   taskRecordId: string | null
-}): TaskRulingsSelection {
+}): Promise<TaskRulingsSelection> {
   if (input.resume || input.project === null || input.taskRecordId === null) {
     return { rulings: [], omitted: 0 }
   }
-  const rows = taskFlowStore(db()).taskRulingRows(
+  const rows = await taskFlowReadStore(db()).taskRulingRows(
     input.project,
     input.taskRecordId,
     TASK_RULINGS_MAX_COUNT + 1,

@@ -25,6 +25,7 @@ import type { Worktree } from '../worktree/worktree-types.ts'
 import * as acpWriter from './run-acp-writer.ts'
 import { RUNS_DIR } from './run-artifacts.ts'
 import { closeRun } from './run-close.ts'
+import { acquireRunCloseOutLeaseHandle } from './run-close-out-lease-handle.ts'
 import {
   callerRemovalAtRunEnd,
   type HarnessConfinementSnapshot,
@@ -32,7 +33,6 @@ import {
 } from './run-confinement.ts'
 import { HARNESS_EXECUTOR } from './run-executor.ts'
 import { decideHarnessReply } from './run-harness-reply.ts'
-import { withRunCloseOutLease } from './run-lease.ts'
 import { checksReviewedCommit } from './run-pack-prompt.ts'
 import { replyContract } from './run-reply-source.ts'
 import type { TerminalInput, TerminalResult } from './run-terminal.ts'
@@ -215,28 +215,27 @@ function closeHarnessRun(facts: FinishFacts, terminal: TerminalResult) {
   })
 }
 
-function guardedHarnessFinish(facts: FinishFacts, localMachineId: string) {
+async function guardedHarnessFinish(facts: FinishFacts, localMachineId: string) {
   const { decision, owned } = facts
-  return withRunCloseOutLease(
-    owned.record_id,
-    () => {},
-    async () => {
-      const current = db()
-        .query('SELECT * FROM run WHERE record_id=?')
-        .get(owned.record_id) as HarnessRow | null
-      const currentRefusal = finishRefusal(current, sessionId(), owned.record_id)
-      if (currentRefusal) throw new Error(currentRefusal)
-      writeFileSync(facts.outPath, decision.output)
-      return closeHarnessRun(
-        facts,
-        await finishRunWithFallback(() => harnessTerminalInput(facts, localMachineId), {
-          runId: owned.record_id,
-          started: facts.started,
-          machineId: localMachineId,
-        }),
-      )
-    },
-  )
+  const releaseLease = acquireRunCloseOutLeaseHandle(owned.record_id, () => {})
+  try {
+    const current = db()
+      .query('SELECT * FROM run WHERE record_id=?')
+      .get(owned.record_id) as HarnessRow | null
+    const currentRefusal = finishRefusal(current, sessionId(), owned.record_id)
+    if (currentRefusal) throw new Error(currentRefusal)
+    writeFileSync(facts.outPath, decision.output)
+    return closeHarnessRun(
+      facts,
+      await finishRunWithFallback(() => harnessTerminalInput(facts, localMachineId), {
+        runId: owned.record_id,
+        started: facts.started,
+        machineId: localMachineId,
+      }),
+    )
+  } finally {
+    releaseLease()
+  }
 }
 
 export async function finishHarnessRun(id: string) {

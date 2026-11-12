@@ -3,6 +3,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
+import { flagValues } from '../cli/args.ts'
 
 export const positive = (value: string | undefined, label: string): number | undefined => {
   if (value === undefined) return undefined
@@ -18,4 +19,14 @@ export const obligationUuid = (value: string | undefined): string | undefined =>
       `--satisfies must be an obligation UUID from ${PLATFORM_SLUG} workflow cursors --json`,
     )
   return value.toLowerCase()
+}
+
+export function workflowArgs(argv: string[]): Record<string, string> {
+  return Object.fromEntries(
+    flagValues(argv, 'arg').map((pair) => {
+      const at = pair.indexOf('=')
+      if (at < 1) throw new Error(`invalid --arg "${pair}"; use k=v`)
+      return [pair.slice(0, at), pair.slice(at + 1)]
+    }),
+  )
 }

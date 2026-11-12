@@ -92,7 +92,7 @@ const remaining = (calls: string[]) => ({
   },
 })
 
-function complete(input: {
+async function complete(input: {
   post: PullRequestPostLandingAdapter
   project?: Project
   workflowPromotionDue?: boolean
@@ -101,7 +101,7 @@ function complete(input: {
   calls?: string[]
   movesInstallation?: boolean
 }) {
-  return completePullRequestPostLanding({
+  return await completePullRequestPostLanding({
     adapter: remaining(input.calls ?? []),
     postLandingAdapter: input.post,
     database: db(),
@@ -118,12 +118,12 @@ function complete(input: {
   })
 }
 
-test('a successful move fences this process and hands off the exact fixed identity', () => {
+test('a successful move fences this process and hands off the exact fixed identity', async () => {
   const received: PullRequestPostLandingPayload[] = []
   const handOffProjects: string[] = []
   const moveDecisions: boolean[] = []
   const handOffDecisions: boolean[] = []
-  const outcome = complete({
+  const outcome = await complete({
     workflowPromotionDue: true,
     movesInstallation: true,
     post: {
@@ -178,7 +178,7 @@ test('a successful move fences this process and hands off the exact fixed identi
   expect(() => writableDb()).toThrow(postLandingRecovery('42'))
 })
 
-test('another project uses the plain move and the current installation hand-off', () => {
+test('another project uses the plain move and the current installation hand-off', async () => {
   const movesInstallation = projectMovesInstallation(project)
 
   expect(movesInstallation).toBeFalse()
@@ -187,14 +187,14 @@ test('another project uses the plain move and the current installation hand-off'
   })
 })
 
-test('the post-landing child for a moved platform checkout runs through its binary', () => {
+test('the post-landing child for a moved platform checkout runs through its binary', async () => {
   expect(postLandingHandOffInvocation(project.path, true)).toEqual({
     argv: [`${project.path}/bin/${PLATFORM_SLUG}`],
     cwd: project.path,
   })
 })
 
-test('a change inside a rung entry closure requires that rung and hands it off', () => {
+test('a change inside a rung entry closure requires that rung and hands it off', async () => {
   const entryProject = {
     ...project,
     settings: {
@@ -210,7 +210,7 @@ test('a change inside a rung entry closure requires that rung and hands it off',
   } as Project
   const asked: Array<{ mergeCommit: string; entries: readonly string[] }> = []
   const received: PullRequestPostLandingPayload[] = []
-  complete({
+  await complete({
     project: entryProject,
     post: {
       changedPaths: () => ['shared/machine-label.ts'],
@@ -234,7 +234,7 @@ test('a change inside a rung entry closure requires that rung and hands it off',
   expect(received[0]?.requiredRungs).toEqual(['hosted-api', 'hosted-hub'])
 })
 
-test('the real post-landing adapter refuses before git or spawn under the test runner', () => {
+test('the real post-landing adapter refuses before git or spawn under the test runner', async () => {
   const spawnSync = Bun.spawnSync
   let spawnCount = 0
   Bun.spawnSync = ((...args: Parameters<typeof Bun.spawnSync>) => {
@@ -242,9 +242,9 @@ test('the real post-landing adapter refuses before git or spawn under the test r
     return spawnSync(...args)
   }) as typeof Bun.spawnSync
   const began = performance.now()
-  let outcome: ReturnType<typeof completePullRequestPostLanding>
+  let outcome: Awaited<ReturnType<typeof completePullRequestPostLanding>>
   try {
-    outcome = completePullRequestPostLanding({
+    outcome = await completePullRequestPostLanding({
       adapter: remaining([]),
       database: db(),
       project: { ...project, path: cwd },
@@ -266,7 +266,7 @@ test('the real post-landing adapter refuses before git or spawn under the test r
   console.log(`post-landing real-adapter class guard: ${elapsedMs.toFixed(3)}ms`)
 })
 
-test('the real child adapter refuses before spawn under the test runner', () => {
+test('the real child adapter refuses before spawn under the test runner', async () => {
   const database = db()
   database
     .query('INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?)')
@@ -284,9 +284,9 @@ test('the real child adapter refuses before spawn under the test runner', () => 
     return spawnSync(...args)
   }) as typeof Bun.spawnSync
   const began = performance.now()
-  let outcome: ReturnType<typeof runPullRequestPostLanding>
+  let outcome: Awaited<ReturnType<typeof runPullRequestPostLanding>>
   try {
-    outcome = runPullRequestPostLanding(childPayload(), database)
+    outcome = await runPullRequestPostLanding(childPayload(), database)
   } finally {
     Bun.spawnSync = spawnSync
   }
@@ -323,9 +323,9 @@ test.each([
   { name: 'no release flag and no promotion', releaseRequired: false, promotion: false },
   { name: 'an empty required set', releaseRequired: true, promotion: false },
   { name: 'a promotion without the release flag', releaseRequired: false, promotion: true },
-])('$name moves, fences, and hands off exactly once', ({ releaseRequired, promotion }) => {
+])('$name moves, fences, and hands off exactly once', async ({ releaseRequired, promotion }) => {
   const events: string[] = []
-  complete({
+  await complete({
     releaseRequired,
     workflowPromotionDue: promotion,
     project: onDemandProject,
@@ -345,8 +345,8 @@ test.each([
   expect(events).toEqual(['move', 'fence', 'hand-off'])
 })
 
-test('a move failure without a release flag or promotion reports recovery as residue', () => {
-  const outcome = complete({
+test('a move failure without a release flag or promotion reports recovery as residue', async () => {
+  const outcome = await complete({
     releaseRequired: false,
     movesInstallation: true,
     post: {
@@ -374,8 +374,8 @@ test('a move failure without a release flag or promotion reports recovery as res
   )
 })
 
-test('a move failure with an empty required set reports recovery as residue', () => {
-  const outcome = complete({
+test('a move failure with an empty required set reports recovery as residue', async () => {
+  const outcome = await complete({
     project: onDemandProject,
     releaseRequired: true,
     movesInstallation: true,
@@ -400,9 +400,9 @@ test('a move failure with an empty required set reports recovery as residue', ()
   expect(outcome.output).toContain('recover with:')
 })
 
-test('a move failure reports every rung and remedy, cleans up, and does not fence or hand off', () => {
+test('a move failure reports every rung and remedy, cleans up, and does not fence or hand off', async () => {
   const calls: string[] = []
-  const outcome = complete({
+  const outcome = await complete({
     calls,
     depth: 'staging',
     project: {
@@ -453,8 +453,8 @@ test('a move failure reports every rung and remedy, cleans up, and does not fenc
   expect(writableDb()).toBeDefined()
 })
 
-test('another-project move failure reports the plain git recovery', () => {
-  const outcome = complete({
+test('another-project move failure reports the plain git recovery', async () => {
+  const outcome = await complete({
     movesInstallation: false,
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
@@ -478,9 +478,9 @@ test('another-project move failure reports the plain git recovery', () => {
   expect(outcome.output).not.toContain(`${project.path}/bin/${PLATFORM_SLUG} machine update`)
 })
 
-test('a promotion move failure prints its recovery exactly once', () => {
+test('a promotion move failure prints its recovery exactly once', async () => {
   const recovery = `${project.path}/bin/${PLATFORM_SLUG} machine update, then ${PLATFORM_SLUG} pr merge 42 --release-required`
-  const outcome = complete({
+  const outcome = await complete({
     workflowPromotionDue: true,
     movesInstallation: true,
     post: {
@@ -506,8 +506,8 @@ test('a promotion move failure prints its recovery exactly once', () => {
   expect(promotion?.split(recovery)).toHaveLength(2)
 })
 
-test.each([0, 20, 21])('the parent propagates child output and exit %i', (exitCode) => {
-  const outcome = complete({
+test.each([0, 20, 21])('the parent propagates child output and exit %i', async (exitCode) => {
+  const outcome = await complete({
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
       entryClosure: () => new Map(),
@@ -548,8 +548,8 @@ const childAdapter = (
   ...overrides,
 })
 
-test('the child fails every declared rung when the parent could not decide', () => {
-  const outcome = runPullRequestPostLanding(
+test('the child fails every declared rung when the parent could not decide', async () => {
+  const outcome = await runPullRequestPostLanding(
     childPayload({
       requiredRungs: ['hosted-api', 'worker'],
       rungDecisionError: 'changed paths unavailable',
@@ -571,8 +571,8 @@ test('the child fails every declared rung when the parent could not decide', () 
   )
 })
 
-test('the child reports checkout verification failure with the rung remedy', () => {
-  const outcome = runPullRequestPostLanding(
+test('the child reports checkout verification failure with the rung remedy', async () => {
+  const outcome = await runPullRequestPostLanding(
     childPayload(),
     db(),
     childAdapter({
@@ -589,8 +589,8 @@ test('the child reports checkout verification failure with the rung remedy', () 
   expect(outcome.output).toContain(`remedy: ${PLATFORM_SLUG} pr merge 42 --release-required`)
 })
 
-test('the child uses the shared absent release flag report', () => {
-  const outcome = runPullRequestPostLanding(
+test('the child uses the shared absent release flag report', async () => {
+  const outcome = await runPullRequestPostLanding(
     childPayload({ releaseRequired: false }),
     db(),
     childAdapter(),
@@ -600,9 +600,9 @@ test('the child uses the shared absent release flag report', () => {
   expect(outcome.output).toContain('not released because --release-required was absent')
 })
 
-test('the child with no release and no promotion only verifies and cleans up', () => {
+test('the child with no release and no promotion only verifies and cleans up', async () => {
   const calls: string[] = []
-  const outcome = runPullRequestPostLanding(
+  const outcome = await runPullRequestPostLanding(
     childPayload({
       requiredRungs: [],
       rungPlans: [],
@@ -630,9 +630,9 @@ test('the child with no release and no promotion only verifies and cleans up', (
   expect(calls).toEqual(['verify', 'cleanup'])
 })
 
-test('the child reports a failed checkout check as residue when no release or promotion is due', () => {
+test('the child reports a failed checkout check as residue when no release or promotion is due', async () => {
   const calls: string[] = []
-  const outcome = runPullRequestPostLanding(
+  const outcome = await runPullRequestPostLanding(
     childPayload({
       requiredRungs: [],
       rungPlans: [],
@@ -662,8 +662,8 @@ test('the child reports a failed checkout check as residue when no release or pr
   expect(calls).toEqual(['cleanup'])
 })
 
-test('the child satisfies a reach-only rung when the release flag is absent', () => {
-  const outcome = runPullRequestPostLanding(
+test('the child satisfies a reach-only rung when the release flag is absent', async () => {
+  const outcome = await runPullRequestPostLanding(
     childPayload({
       releaseRequired: false,
       rungPlans: [
@@ -688,8 +688,8 @@ test('the child satisfies a reach-only rung when the release flag is absent', ()
   )
 })
 
-test('the child appends a parent decision error when the release flag is absent', () => {
-  const outcome = runPullRequestPostLanding(
+test('the child appends a parent decision error when the release flag is absent', async () => {
+  const outcome = await runPullRequestPostLanding(
     childPayload({ releaseRequired: false, rungDecisionError: 'changed paths unavailable' }),
     db(),
     childAdapter(),
@@ -701,9 +701,9 @@ test('the child appends a parent decision error when the release flag is absent'
   )
 })
 
-test('a child promote throw still runs release and cleanup', () => {
+test('a child promote throw still runs release and cleanup', async () => {
   const calls: string[] = []
-  const outcome = runPullRequestPostLanding(
+  const outcome = await runPullRequestPostLanding(
     childPayload({ promoteWorkflowDrafts: true }),
     db(),
     childAdapter({
@@ -730,9 +730,9 @@ test('a child promote throw still runs release and cleanup', () => {
   expect(outcome.output).toContain(`${PLATFORM_SLUG} workflow promote-tree`)
 })
 
-test('a recovery with a required rung moves, fences, and hands off', () => {
+test('a recovery with a required rung moves, fences, and hands off', async () => {
   const events: string[] = []
-  complete({
+  await complete({
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
       entryClosure: () => new Map(),
@@ -749,7 +749,7 @@ test('a recovery with a required rung moves, fences, and hands off', () => {
   expect(events).toEqual(['move', 'fence', 'hand-off'])
 })
 
-test('a failed required-rung decision is carried to the child with every declared rung', () => {
+test('a failed required-rung decision is carried to the child with every declared rung', async () => {
   const received: PullRequestPostLandingPayload[] = []
   const projectWithTwoRungs = {
     ...project,
@@ -765,7 +765,7 @@ test('a failed required-rung decision is carried to the child with every declare
     },
   } as Project
 
-  completePullRequestPostLanding({
+  await completePullRequestPostLanding({
     adapter: remaining([]),
     postLandingAdapter: {
       changedPaths: () => {
@@ -793,9 +793,9 @@ test('a failed required-rung decision is carried to the child with every declare
   expect(received[0]?.requiredRungs).toEqual(['hosted-api', 'worker'])
 })
 
-test('the selected depth is carried to the child and its recovery command', () => {
+test('the selected depth is carried to the child and its recovery command', async () => {
   const received: PullRequestPostLandingPayload[] = []
-  complete({
+  await complete({
     depth: 'staging',
     workflowPromotionDue: true,
     post: {
@@ -817,11 +817,11 @@ test('the selected depth is carried to the child and its recovery command', () =
   )
 })
 
-test('a move failure after main changed reports the failure and does not hand off', () => {
+test('a move failure after main changed reports the failure and does not hand off', async () => {
   const events: string[] = []
   const calls: string[] = []
   let head = 'before'
-  const outcome = complete({
+  const outcome = await complete({
     calls,
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
@@ -850,10 +850,10 @@ test('a move failure after main changed reports the failure and does not hand of
   expect(calls).toEqual([])
 })
 
-test('a bounded move failure after main changed fences and does not hand off', () => {
+test('a bounded move failure after main changed fences and does not hand off', async () => {
   const events: string[] = []
   let head = 'before'
-  const outcome = complete({
+  const outcome = await complete({
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
       entryClosure: () => new Map(),
@@ -877,10 +877,10 @@ test('a bounded move failure after main changed fences and does not hand off', (
   expect(events).toEqual(['fence'])
 })
 
-test('a failed HEAD re-read after a move failure fences and does not hand off', () => {
+test('a failed HEAD re-read after a move failure fences and does not hand off', async () => {
   const events: string[] = []
   let headReads = 0
-  const outcome = complete({
+  const outcome = await complete({
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
       entryClosure: () => new Map(),
@@ -907,8 +907,8 @@ test('a failed HEAD re-read after a move failure fences and does not hand off', 
   expect(events).toEqual(['fence'])
 })
 
-test('a non-ladder child exit keeps its code and adds the parent recovery', () => {
-  const outcome = complete({
+test('a non-ladder child exit keeps its code and adds the parent recovery', async () => {
+  const outcome = await complete({
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
       entryClosure: () => new Map(),
@@ -928,9 +928,9 @@ test('a non-ladder child exit keeps its code and adds the parent recovery', () =
   expect(outcome.output).toContain(`${PLATFORM_SLUG} pr merge 42 --release-required`)
 })
 
-test('a child-reported failure keeps its code and prints the recovery once', () => {
+test('a child-reported failure keeps its code and prints the recovery once', async () => {
   const remedy = postLandingRecovery('42')
-  const outcome = complete({
+  const outcome = await complete({
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
       entryClosure: () => new Map(),

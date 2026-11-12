@@ -5,7 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { callerIdentity, db } from '../database/db.ts'
-import { taskFlowStore } from '../workflow/task-flow-store.ts'
+import { taskFlowLocalStore } from '../workflow/task-flow-store.ts'
 import { nextQuestionNumber } from './question-number.ts'
 import { questionOpenSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
@@ -170,7 +170,7 @@ export function linkWorkflowQuestionsTaskReference(
   input: { project: string; workflowKey: string; taskRecordId: string },
   database: Database = db(),
 ): number {
-  const questions = taskFlowStore(database).unlinkedWorkflowQuestionIds(
+  const questions = taskFlowLocalStore(database).unlinkedWorkflowQuestionIds(
     input.project,
     input.workflowKey,
   )

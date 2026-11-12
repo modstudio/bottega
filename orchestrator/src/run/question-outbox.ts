@@ -3,7 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { nowIso } from '../database/db.ts'
+import { nowIso, writeTransaction } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { insertOutboxRow, refreshPendingOutboxRow } from '../record/outbox-enqueue.ts'
 import {
@@ -13,13 +13,13 @@ import {
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 import {
   type TaskFlowQuestionOutboxRow as QuestionRow,
-  taskFlowStore,
+  taskFlowLocalStore,
 } from '../workflow/task-flow-store.ts'
 
 const json = (value: unknown): unknown => (value == null ? null : JSON.parse(String(value)))
 
 function loadQuestion(database: Database, questionId: string): QuestionRow {
-  const row = taskFlowStore(database).questionOutboxRow(questionId)
+  const row = taskFlowLocalStore(database).questionOutboxRow(questionId)
   if (!row) throw new Error(`question ${questionId} does not exist and cannot be enqueued`)
   return row
 }
@@ -88,7 +88,7 @@ function questionPayload(row: QuestionRow, audits: object[], at: string): string
   })
 }
 
-export function enqueueQuestionRecord(database: Database, questionId: string): boolean {
+function enqueueQuestionRecordInTransaction(database: Database, questionId: string): boolean {
   const row = loadQuestion(database, questionId)
   const recordId = row.record_id!
   const at = nowIso()
@@ -125,6 +125,10 @@ export function enqueueQuestionRecord(database: Database, questionId: string): b
     createdAt: at,
   })
   return true
+}
+
+export function enqueueQuestionRecord(database: Database, questionId: string): boolean {
+  return writeTransaction(() => enqueueQuestionRecordInTransaction(database, questionId), database)
 }
 
 export function backfillQuestionRecords(database: Database): { enqueued: number } {

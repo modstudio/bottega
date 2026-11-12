@@ -32,7 +32,7 @@ const workflow = (
 })
 
 describe('MCP workflow space', () => {
-  test('a registered cwd project takes precedence over the remembered active space', () => {
+  test('a registered cwd project takes precedence over the remembered active space', async () => {
     const local = db()
     const project = 'prompt-space-project'
     const projectPath = process.cwd()
@@ -49,7 +49,7 @@ describe('MCP workflow space', () => {
     rememberActiveRecordSpace(local, activeSpace)
 
     expect(resolveMcpWorkflowSpace(`${projectPath}/child`, local).spaceId).toBe(projectSpace)
-    removeProject(project)
+    await removeProject(project)
   })
 
   test('an unregistered cwd uses the remembered active space', () => {
@@ -223,7 +223,7 @@ describe('workflow prompt argument binding', () => {
 })
 
 describe('workflow prompts on the wire', () => {
-  afterEach(() => {
+  afterEach(async () => {
     db()
       .query(
         "DELETE FROM workflow_cursor WHERE project_record_id=(SELECT record_id FROM project WHERE name='prompt-fixture')",
@@ -234,7 +234,7 @@ describe('workflow prompts on the wire', () => {
         "DELETE FROM task_flow WHERE project_record_id=(SELECT record_id FROM project WHERE name='prompt-fixture')",
       )
       .run()
-    removeProject('prompt-fixture')
+    await removeProject('prompt-fixture')
   })
 
   const connected = async () => {

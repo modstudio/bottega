@@ -3,7 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
-import { taskFlowStore } from './task-flow-store.ts'
+import { taskFlowReadStore } from './task-flow-store.ts'
 
 export type OpenCursorWorktree = {
   number: number
@@ -12,8 +12,10 @@ export type OpenCursorWorktree = {
   worktree: string
 }
 
-export function openCursorWorktrees(database: Database = db()): OpenCursorWorktree[] {
-  const rows = taskFlowStore(database).openStageWorktrees()
+export async function openCursorWorktrees(
+  database: Database = db(),
+): Promise<OpenCursorWorktree[]> {
+  const rows = await taskFlowReadStore(database).openStageWorktrees()
   return rows.flatMap((row) => {
     try {
       const worktree = (JSON.parse(row.args) as Record<string, unknown>).worktree

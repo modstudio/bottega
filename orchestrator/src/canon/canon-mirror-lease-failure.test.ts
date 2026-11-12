@@ -34,3 +34,28 @@ test('a lease acquisition failure terminalises the synthetic run', async () => {
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+test('a release preparation failure terminalises the synthetic run', async () => {
+  const root = mirrorRepository('cm-prepare-release-fail')
+  try {
+    await registerManagedMirror(root, 'cm-prepare-release-fail')
+    const result = await mirrorRepositoryCanon({
+      project: 'cm-prepare-release-fail',
+      dryRun: false,
+      port: mirrorFixturePort(root, {
+        prepareRelease: () => Promise.reject(new Error('fixture release preparation denied')),
+      }),
+      noteFailure: async () => {},
+    })
+    expect(result[0]?.text).toContain('fixture release preparation denied')
+    expect(
+      db()
+        .query(
+          `SELECT status,error FROM run WHERE repo=? AND job='canon-mirror' ORDER BY number DESC LIMIT 1`,
+        )
+        .get('cm-prepare-release-fail'),
+    ).toEqual({ status: 'failed', error: 'fixture release preparation denied' })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})

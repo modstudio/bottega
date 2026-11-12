@@ -302,7 +302,7 @@ export const runModuleBoundarySpecs = [
       '../git/git-environment.ts',
       '../project/projects.ts',
     ],
-    typeOnlyAllowed: [],
+    typeOnlyAllowed: ['../synchronous-result.ts'],
     reason:
       'Keep run diff independent of run control, transports, routing, the CLI, and worktrees by value.',
   },

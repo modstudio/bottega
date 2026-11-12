@@ -15,8 +15,11 @@ import {
 } from './context-worked.ts'
 import { CONTEXT_ITEM_MAX_CHARS } from './doc-context-write.ts'
 
-function workedTaskFacts(session: string, database: Database = db()): WorkedTaskFacts {
-  const events = sessionWorkEvents(session, database)
+async function workedTaskFacts(
+  session: string,
+  database: Database = db(),
+): Promise<WorkedTaskFacts> {
+  const events = await sessionWorkEvents(session, database)
   const claims = claimsOfSession(session, database)
     .filter((claim) => claim.subject.kind === 'task')
     .map((claim) => ({
@@ -27,8 +30,11 @@ function workedTaskFacts(session: string, database: Database = db()): WorkedTask
   return { events }
 }
 
-export function sessionWorkedTaskKeys(session: string, database: Database = db()): string[] {
-  return workedTaskKeys(workedTaskFacts(session, database))
+export async function sessionWorkedTaskKeys(
+  session: string,
+  database: Database = db(),
+): Promise<string[]> {
+  return workedTaskKeys(await workedTaskFacts(session, database))
 }
 
 export async function recordSessionWorked(

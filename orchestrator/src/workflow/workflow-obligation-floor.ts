@@ -3,7 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { taskFlowStore } from './task-flow-store.ts'
+import { taskFlowReadStore } from './task-flow-store.ts'
 import { type Floor, isFloorKind, type OpenObligation } from './workflow-floor.ts'
 
 export type WorkflowObligationFloorRow = {
@@ -32,8 +32,11 @@ export function floorFromObligationRow(row: WorkflowObligationFloorRow): Floor {
   }
 }
 
-export function openWorkflowObligations(cursorId: string, d: Database): OpenObligation[] {
-  const rows = taskFlowStore(d).openObligations(cursorId)
+export async function openWorkflowObligations(
+  cursorId: string,
+  d: Database,
+): Promise<OpenObligation[]> {
+  const rows = await taskFlowReadStore(d).openObligations(cursorId)
   return rows.map((row) => ({
     id: row.id,
     stepOrdinal: row.stepOrdinal,

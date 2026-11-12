@@ -20,6 +20,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
   module('orchestrator/src/workflow/workflow-command-arguments.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
+    '../cli/args.ts',
   ]),
   module('orchestrator/src/workflow/workflow-write-space.ts', [
     '../../../shared/record-space-owner-destination.ts',

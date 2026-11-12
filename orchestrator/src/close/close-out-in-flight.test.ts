@@ -101,7 +101,7 @@ function mockGitAndGh(input: {
 }
 
 describe('close-out in-flight hold annotation', () => {
-  test('kept reports are not annotated', () => {
+  test('kept reports are not annotated', async () => {
     // A run row and a cursor matched to this tree: without them the kept-outcome guard could be
     // deleted and this test would still pass, because the run-row guard would stop the annotation.
     const id = addRun({ agent: '(architect)', job: 'landing-tree', session: 'owner' })
@@ -115,17 +115,19 @@ describe('close-out in-flight hold annotation', () => {
     insertCursor({ project, session: 'owner', branch, worktree: tree })
 
     expect(
-      annotateHeldLandingInFlight({
-        runId: id,
-        worktree: tree,
-        outcome: 'held',
-        reportOutcome: 'kept',
-        detail: 'clean landing tree; branch DEV-1594 holds its work',
-      }).detail,
+      (
+        await annotateHeldLandingInFlight({
+          runId: id,
+          worktree: tree,
+          outcome: 'held',
+          reportOutcome: 'kept',
+          detail: 'clean landing tree; branch DEV-1594 holds its work',
+        })
+      ).detail,
     ).toBe('clean landing tree; branch DEV-1594 holds its work')
   })
 
-  test('a matching worktree cursor prefixes an in-flight landing hold', () => {
+  test('a matching worktree cursor prefixes an in-flight landing hold', async () => {
     const id = addRun({ agent: '(architect)', job: 'landing-tree', session: 'owner' })
     const project = `in-flight-${id}`
     const tree = `/tmp/orch-in-flight-${id}`
@@ -141,7 +143,7 @@ describe('close-out in-flight hold annotation', () => {
       worktree: tree,
     })
 
-    const annotated = annotateHeldLandingInFlight(
+    const annotated = await annotateHeldLandingInFlight(
       heldResult(id, tree, 'landing tree held by session owner: landing is in flight'),
     )
 
@@ -152,7 +154,7 @@ describe('close-out in-flight hold annotation', () => {
     expect(annotated.suppressBlock).toBe(true)
   })
 
-  test('a cursor for another tree or project does not suppress the hold', () => {
+  test('a cursor for another tree or project does not suppress the hold', async () => {
     const id = addRun({ agent: '(architect)', job: 'landing-tree', session: 'owner' })
     const project = `in-flight-other-${id}`
     const tree = `/tmp/orch-in-flight-${id}`
@@ -179,7 +181,7 @@ describe('close-out in-flight hold annotation', () => {
       worktree: tree,
     })
 
-    const annotated = annotateHeldLandingInFlight(
+    const annotated = await annotateHeldLandingInFlight(
       heldResult(id, tree, 'landing tree held by session owner: landing is in flight'),
     )
 
@@ -188,7 +190,7 @@ describe('close-out in-flight hold annotation', () => {
     expect(annotated.suppressBlock).toBe(false)
   })
 
-  test('a dirty unique-work hold keeps the matching cursor as a suffix', () => {
+  test('a dirty unique-work hold keeps the matching cursor as a suffix', async () => {
     const id = addRun({ agent: '(architect)', job: 'landing-tree', session: 'owner' })
     const project = `in-flight-dirty-${id}`
     const tree = `/tmp/orch-in-flight-dirty-${id}`
@@ -204,7 +206,7 @@ describe('close-out in-flight hold annotation', () => {
       worktree: tree,
     })
 
-    const annotated = annotateHeldLandingInFlight(
+    const annotated = await annotateHeldLandingInFlight(
       heldResult(
         id,
         tree,
@@ -221,7 +223,7 @@ describe('close-out in-flight hold annotation', () => {
     expect(annotated.suppressBlock).toBe(false)
   })
 
-  test('a complete held in-flight annotation is preserved unchanged', () => {
+  test('a complete held in-flight annotation is preserved unchanged', async () => {
     const { id, tree, project, branch } = ordinaryRunHolding()
     mockGitAndGh({ statusOutput: ' M hub/src/board.ts\n', headCommit: 'sha-head' })
     try {
@@ -237,7 +239,7 @@ describe('close-out in-flight hold annotation', () => {
         suppressBlock: true,
       }
 
-      expect(annotateHeldLandingInFlight(held)).toBe(held)
+      expect(await annotateHeldLandingInFlight(held)).toBe(held)
     } finally {
       rmSync(tree, { recursive: true, force: true })
     }
@@ -281,13 +283,13 @@ describe('close-out in-flight hold annotation', () => {
     }
   })
 
-  test('an other hold blocks at a matching cursor even with a pull request at the tree head', () => {
+  test('an other hold blocks at a matching cursor even with a pull request at the tree head', async () => {
     const { id, tree, project, branch } = ordinaryRunHolding()
     mockGitAndGh({ statusOutput: ' M hub/src/board.ts\n', headCommit: 'sha-head' })
     try {
       const cursorId = insertCursor({ project, session: 'owner', branch, worktree: tree })
 
-      const annotated = annotateHeldLandingInFlight(
+      const annotated = await annotateHeldLandingInFlight(
         heldResult(
           id,
           tree,
@@ -307,12 +309,12 @@ describe('close-out in-flight hold annotation', () => {
     }
   })
 
-  test('a dirty non-landing-progress hold makes no pull-request lookup', () => {
+  test('a dirty non-landing-progress hold makes no pull-request lookup', async () => {
     const { id, tree } = ordinaryRunHolding()
     const calls: string[][] = []
     mockGitAndGh({ statusOutput: ' M hub/src/board.ts\n', headCommit: 'sha-head', calls })
     try {
-      const annotated = annotateHeldLandingInFlight(
+      const annotated = await annotateHeldLandingInFlight(
         heldResult(
           id,
           tree,
@@ -329,11 +331,11 @@ describe('close-out in-flight hold annotation', () => {
     }
   })
 
-  test('an other hold keeps blocking when git status cannot be read', () => {
+  test('an other hold keeps blocking when git status cannot be read', async () => {
     const { id, tree } = ordinaryRunHolding()
     mockGitAndGh({ statusOutput: '', headCommit: 'sha-head', statusExitCode: 128 })
     try {
-      const annotated = annotateHeldLandingInFlight(
+      const annotated = await annotateHeldLandingInFlight(
         heldResult(id, tree, 'ordinary run tree is held', 'other'),
       )
 
@@ -345,7 +347,7 @@ describe('close-out in-flight hold annotation', () => {
     }
   })
 
-  test('a held reader clone names its close-out lease holder and does not block', () => {
+  test('a held reader clone names its close-out lease holder and does not block', async () => {
     const { id, tree } = ordinaryRunHolding('review-lens')
     try {
       const holderId = addRun({
@@ -357,7 +359,7 @@ describe('close-out in-flight hold annotation', () => {
       const holder = db().query('SELECT number FROM run WHERE record_id=?').get(holderId) as {
         number: number
       }
-      const annotated = annotateHeldLandingInFlight({
+      const annotated = await annotateHeldLandingInFlight({
         ...heldResult(
           id,
           tree,
@@ -383,7 +385,7 @@ describe('close-out in-flight hold annotation', () => {
     }
   })
 
-  test('every held-tree reason that can block Stop carries a takeable remedy', () => {
+  test('every held-tree reason that can block Stop carries a takeable remedy', async () => {
     const landing = ordinaryRunHolding('landing-tree')
     const ordinary = ordinaryRunHolding()
     const reader = ordinaryRunHolding('review-lens')
@@ -397,14 +399,14 @@ describe('close-out in-flight hold annotation', () => {
       type GuardRow = {
         reason: string
         expected: 'blocking' | 'in-flight'
-        result: ReturnType<typeof annotateHeldLandingInFlight>
+        result: Awaited<ReturnType<typeof annotateHeldLandingInFlight>>
       }
       const rows: Record<HeldTreeHoldKind, readonly GuardRow[]> = {
         'landing-progress': [
           {
             reason: 'landing progress without a current cursor',
             expected: 'in-flight',
-            result: annotateHeldLandingInFlight(
+            result: await annotateHeldLandingInFlight(
               heldResult(
                 landing.id,
                 landing.tree,
@@ -418,7 +420,7 @@ describe('close-out in-flight hold annotation', () => {
           {
             reason: 'unique work',
             expected: 'blocking',
-            result: annotateHeldLandingInFlight(
+            result: await annotateHeldLandingInFlight(
               heldResult(
                 landing.id,
                 landing.tree,
@@ -432,7 +434,7 @@ describe('close-out in-flight hold annotation', () => {
           {
             reason: 'other close-out safety hold',
             expected: 'blocking',
-            result: annotateHeldLandingInFlight(
+            result: await annotateHeldLandingInFlight(
               heldResult(
                 ordinary.id,
                 ordinary.tree,
@@ -444,7 +446,7 @@ describe('close-out in-flight hold annotation', () => {
           {
             reason: 'hook tree owner',
             expected: 'in-flight',
-            result: annotateHeldLandingInFlight({
+            result: await annotateHeldLandingInFlight({
               ...heldResult(
                 ordinary.id,
                 ordinary.tree,
@@ -460,14 +462,14 @@ describe('close-out in-flight hold annotation', () => {
           {
             reason: 'writer close-out lease',
             expected: 'blocking',
-            result: annotateHeldLandingInFlight(
+            result: await annotateHeldLandingInFlight(
               heldResult(ordinary.id, ordinary.tree, 'close-out skipped', 'close-out-lease'),
             ),
           },
           {
             reason: 'shared reader close-out lease',
             expected: 'in-flight',
-            result: annotateHeldLandingInFlight(
+            result: await annotateHeldLandingInFlight(
               heldResult(reader.id, reader.tree, 'close-out skipped', 'close-out-lease'),
             ),
           },
