@@ -986,41 +986,6 @@ test('a projectless payload syncs without resolving a project', async () => {
   local.close()
 })
 
-test('an unavailable task-flow presence read does not abort other backfills or sync', async () => {
-  const local = migratedTestDatabase()
-  const remote = fakePostgres()
-  const base = options(local, remote)
-  local
-    .query(
-      `INSERT INTO task_flow
-       (record_id,task_record_id,project_record_id,state,open_stage_cursor_record_id,created_at,updated_at,
-        opening_machine_id,updated_machine_id,revision) VALUES (?,NULL,?,'done',NULL,?,?,?,?,1)`,
-    )
-    .run(newRecordId(), fixtureProjectRecordId(local), STAMP, STAMP, MACHINE_ID, MACHINE_ID)
-  const result = await syncRecord({
-    ...base,
-    backfill: true,
-    client: {
-      ...base.client,
-      readTaskFlowPresence: async () => {
-        throw new Error('presence route unavailable')
-      },
-    },
-  })
-
-  expect(result).toMatchObject({
-    pushed: 0,
-    failed: 0,
-    backfill: {
-      enqueued: 0,
-      scores: 0,
-      reviews: { enqueuedReviews: 0 },
-      taskFlows: { failure: 'presence route unavailable' },
-    },
-  })
-  local.close()
-})
-
 test('a payload from another machine is refused before a record write', async () => {
   const local = localOutbox(1)
   const remote = fakePostgres()

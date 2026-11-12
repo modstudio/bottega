@@ -40,12 +40,12 @@ import type { Agent } from '../agent/agents.ts'
 import { db } from '../database/db.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { inspectRunRecordBackfill, type RunRecordBackfillInspection } from '../run/run-outbox.ts'
-import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import {
   inspectTaskFlowBackfill,
   type TaskFlowBackfillInspection,
   taskFlowBackfillUnavailable,
 } from '../workflow/task-flow-backfill.ts'
+import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { activeSpaceInvariant } from './active-space-invariant.ts'
 import { machineId } from './machine-identity.ts'
 import { quarantinedOutboxRows } from './outbox-quarantine.ts'

@@ -1,16 +1,16 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { insertOutboxRow } from '../record/outbox-enqueue.ts'
-import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
-import { abandonWorkflowCursor } from './workflow-cursor-mutation.ts'
-import type { SelectableCursorRow } from './workflow-cursor-selection.ts'
-import { database } from './workflow-cursor-test.fixture.ts'
 import {
   backfillTaskFlowRecords,
   inspectTaskFlowBackfill,
   legacyTaskFlowRecordId,
   legacyTasklessFlowRecordId,
 } from './task-flow-backfill.ts'
+import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
+import { abandonWorkflowCursor } from './workflow-cursor-mutation.ts'
+import type { SelectableCursorRow } from './workflow-cursor-selection.ts'
+import { database } from './workflow-cursor-test.fixture.ts'
 
 test('legacy task-flow identities are stable across machines and versions', () => {
   // Every machine and version must mint the same ids for the same legacy rows.

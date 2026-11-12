@@ -20,8 +20,8 @@ import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow
 import { TASK_FLOW_PRESENCE_BATCH_MAX } from '../record/record-task-flow-contract.ts'
 import {
   insertLegacyTaskFlow,
-  linkLegacyStageToFlow,
   type LegacyTaskFlowInsert,
+  linkLegacyStageToFlow,
 } from './task-flow-store-sqlite-write.ts'
 import type { TaskFlowStageCursorRow } from './task-flow-store-types.ts'
 
