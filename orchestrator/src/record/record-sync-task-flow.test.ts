@@ -454,6 +454,7 @@ realPostgres('hosted task flow revisions', () => {
       await admin`DELETE FROM machine WHERE id=${OTHER_MACHINE}::uuid`
       await admin`DELETE FROM machine WHERE id=${OTHER_USER_MACHINE}::uuid`
       await admin`DELETE FROM routing_evidence_head WHERE space_id=${SPACE}::uuid`
+      await admin`DELETE FROM seq WHERE space_id=${SPACE}::uuid`
       await admin`DELETE FROM project WHERE id=${PROJECT}::uuid`
       await admin`DELETE FROM membership WHERE id=${MEMBERSHIP}::uuid`
       await admin`DELETE FROM membership WHERE id=${OTHER_MEMBERSHIP}::uuid`
