@@ -89,7 +89,9 @@ class SqliteTaskFlowStore {
             exceptRecordId: stage.id,
           })
       }
-      return writeSqliteTaskFlow(this.database, intent, payload, applied)
+      return writeSqliteTaskFlow(this.database, intent, payload, applied) as unknown as {
+        readonly then?: undefined
+      }
     }, this.database) as TaskFlowSqliteWriteResult<K>
   }
 
