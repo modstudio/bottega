@@ -38,7 +38,10 @@ import {
   type HubTaskReader,
   type HubTaskReference,
   readHubTasks,
+  taskKeyMap,
   taskCommand,
+  taskReadRefusal,
+  taskReferenceForProjectKey,
 } from './workflow-task-reference.ts'
 import {
   deleteWorkflowText,
@@ -57,6 +60,7 @@ type CopyCursor = {
   recordId: string
   number: number
   project: string
+  taskKey?: string | null
   taskRecordId: string | null
   state: string
 }
@@ -222,6 +226,43 @@ export async function copyWorkflowTextForCursor(
   }
 }
 
+/** Resolves an explicit task only for a keyless cursor, then uses the ordinary copy path. */
+export async function copyWorkflowTextForTask(
+  cursor: CopyCursor,
+  taskKey: string | undefined,
+  database: Database = db(),
+  taskReader: HubTaskReader = readHubTasks,
+  documents: WorkflowTextDocumentPorts = productionWorkflowTextDocumentPorts,
+): Promise<WorkflowTextCopyResult> {
+  if (!taskKey) return copyWorkflowTextForCursor(cursor, database, taskReader, documents)
+  if (cursor.taskRecordId) {
+    const ownTask = cursor.taskKey ?? cursor.taskRecordId
+    throw new Error(
+      `cursor ${cursor.number} belongs to task ${ownTask}; --task is only for a keyless cursor, so omit --task to copy to ${ownTask}`,
+    )
+  }
+  let tasks: HubTaskReference[]
+  try {
+    tasks = await taskReader(cursor.project)
+  } catch (error) {
+    throw taskReadRefusal(cursor.project, error instanceof Error ? error.message : String(error))
+  }
+  const task = taskReferenceForProjectKey(taskKeyMap(tasks), cursor.project, taskKey)
+  if (!task) {
+    throw new Error(
+      `task ${taskKey} does not exist in project ${cursor.project}; ` +
+        `find it with ${PLATFORM_SLUG} task list --project ${cursor.project} --json ` +
+        `or create it with ${PLATFORM_SLUG} task new --project ${cursor.project}`,
+    )
+  }
+  return copyWorkflowTextForCursor(
+    { ...cursor, taskKey: task.key, taskRecordId: task.record_id },
+    database,
+    async () => tasks,
+    documents,
+  )
+}
+
 type CloseTarget = {
   project?: string
   workflow?: string
@@ -300,6 +341,7 @@ export async function closeCursorWithTextCopyResult(
       recordId: row.record_id,
       number: row.id,
       project: row.project,
+      taskKey: row.workflow_key || null,
       taskRecordId:
         row.task_record_id ??
         input.context.adoptionTaskRecordId ??
@@ -404,6 +446,7 @@ export async function cursorForWorkflowTextCopy(
     recordId: row.record_id,
     number: row.id,
     project: row.project,
+    taskKey: row.workflow_key || null,
     taskRecordId: row.task_record_id,
     state: row.state,
   }
