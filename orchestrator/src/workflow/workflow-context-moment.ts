@@ -51,23 +51,14 @@ export function selectWorkflowContextCursor(input: {
 
 export function workflowNextContextMoment(
   cursorRecordId: string,
+  selfRulingQuestionNumber?: number,
   selfRuling?: string,
   database: Database = db(),
 ): WorkflowContextMoment {
   const row = taskFlowStore(database).stageByRecordId(cursorRecordId) as SelectableCursorRow | null
   if (!row) throw new Error(`workflow cursor ${cursorRecordId} no longer exists`)
   const step = row.state === 'done' ? null : cursorComposition(row, database).steps[row.ordinal]
-  const question =
-    selfRuling === undefined
-      ? null
-      : database
-          .query<{ number: number }, [string, string]>(
-            `SELECT number FROM question
-             WHERE workflow_cursor_record_id=? AND answer=?
-             ORDER BY number DESC LIMIT 1`,
-          )
-          .get(row.record_id, selfRuling)
-  if (selfRuling !== undefined && !question)
+  if (selfRuling !== undefined && selfRulingQuestionNumber === undefined)
     throw new Error('the recorded self-ruling has no question id')
   const taskKey = row.workflow_key || null
   return {
@@ -75,7 +66,7 @@ export function workflowNextContextMoment(
     effect: contextMomentEffect({
       moment: 'workflow-next',
       taskKey,
-      questionId: question?.number,
+      questionId: selfRulingQuestionNumber,
       text: selfRuling,
       cursor: {
         workflow: row.workflow_slug,

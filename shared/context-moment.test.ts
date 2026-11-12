@@ -94,11 +94,15 @@ test('pr merge and task close retain their current prompt output', () => {
     log: (line: string) => stdout.push(line),
     error: (line: string) => stderr.push(line),
   }
-  for (const moment of ['pr-merge', 'task-close'] as const) {
-    const write = contextMomentWrite({ moment, taskKey: 'DEV-2225' })
-    emitContextMoment(write, false, output)
-    expect(write?.line).toBe(`context: revise next-action on DEV-2225 (${write?.command})`)
-  }
-  expect(stdout).toHaveLength(2)
+  emitContextMoment(contextMomentWrite({ moment: 'pr-merge', taskKey: 'DEV-2225' }), false, output)
+  emitContextMoment(
+    contextMomentWrite({ moment: 'task-close', taskKey: 'DEV-2225' }),
+    false,
+    output,
+  )
+  expect(stdout).toEqual([
+    "context: revise next-action on DEV-2225 (bottega agent context set --task 'DEV-2225' --kind next-action --source 'pr-merge' --id next '<text>')",
+    "context: revise next-action on DEV-2225 (bottega agent context set --task 'DEV-2225' --kind next-action --source 'task-close' --id next '<text>')",
+  ])
   expect(stderr).toEqual([])
 })

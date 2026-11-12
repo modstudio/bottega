@@ -83,7 +83,21 @@ export type ContextMomentOutput = {
   error(line: string): void
 }
 
-const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+const shellWord = (value: string) => `'${value.replace(/'/g, "'\\''")}'`
+
+export function contextSetCommand(
+  taskKey: string,
+  item: { kind: string; source: string; id: string; body: string },
+): string {
+  return (
+    `${PLATFORM_SLUG} agent context set --task ${shellWord(taskKey)} --kind ${item.kind} ` +
+    `--source ${shellWord(item.source)} --id ${item.id} ${shellWord(item.body)}`
+  )
+}
+
+export function contextDropCommand(taskKey: string, id: string): string {
+  return `${PLATFORM_SLUG} agent context drop --task ${shellWord(taskKey)} --id ${shellWord(id)}`
+}
 
 /** Keeps the existing prompt for the lifecycle verbs owned by later work. */
 export function contextMomentWrite(input: {
@@ -93,9 +107,12 @@ export function contextMomentWrite(input: {
   const holder = input.taskKey?.trim()
   if (!holder) return null
   const kind = 'next-action'
-  const command =
-    `${PLATFORM_SLUG} agent context set --task ${shellQuote(holder)} --kind ${kind} ` +
-    `--source ${shellQuote(input.moment)} --id next ${shellQuote('<text>')}`
+  const command = contextSetCommand(holder, {
+    kind,
+    source: input.moment,
+    id: 'next',
+    body: '<text>',
+  })
   const write = 'revise next-action'
   return { holder, kind, command, write, line: `context: ${write} on ${holder} (${command})` }
 }

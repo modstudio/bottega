@@ -30,7 +30,6 @@ import type { CommitCountPort } from './workflow-compose-branch.ts'
 import {
   selectWorkflowContextCursor,
   type WorkflowContextMoment,
-  workflowNextContextMoment,
   workflowQuestionContextMoment,
 } from './workflow-context-moment.ts'
 import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
@@ -76,6 +75,7 @@ import { type HubTaskReader, resolveHubTaskReference } from './workflow-task-ref
 import { attachWorkflowText } from './workflow-text.ts'
 import {
   closeCursorWithTextCopy,
+  closeCursorWithTextCopyResult,
   productionWorkflowTextDocumentPorts,
   type WorkflowTextDocumentPorts,
 } from './workflow-text-copy.ts'
@@ -122,6 +122,7 @@ export type WorkflowCommandOptions = {
   hubTaskReader?: HubTaskReader
   workflowTextDocuments?: WorkflowTextDocumentPorts
   contextMomentPorts?: ContextMomentPorts
+  contextMomentGather?: typeof import('./workflow-context-moment.ts').workflowNextContextMoment
 }
 export type WorkflowPrint = (value: unknown, line?: string) => void
 type ProbePrintRecord =
@@ -436,7 +437,7 @@ export async function ruleCommand(
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
 ): Promise<WorkflowContextMoment> {
-  const ruling = recordShape.workflowCommandRecordShape(argv, 'ruling', 'ruling')
+  const ruling = recordShape.workflowCommandRecordShape(argv, 'ruling', 'ruling')?.trim()
   const args = workflowArgs(argv)
   let context = cliWorkflowCursorContext()
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
@@ -624,8 +625,14 @@ export async function nextCommand(
   argv: string[],
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
-): Promise<WorkflowContextMoment> {
+): Promise<{
+  cursorRecordId: string
+  selfRulingQuestionNumber?: number
+  selfRuling?: string
+  taskKey: string | null
+}> {
   const { selfRuling, basis, note, question } = recordShape.workflowNextCommandRecordShapes(argv)
+  const storedSelfRuling = selfRuling?.trim()
   if (basis !== undefined && selfRuling === undefined)
     throw new Error('--basis requires --self-ruling; pass both inputs, or omit --basis')
   const args = workflowArgs(argv)
@@ -668,7 +675,7 @@ export async function nextCommand(
     cursor,
     context,
   })
-  const result = await closeCursorWithTextCopy(
+  const result = await closeCursorWithTextCopyResult(
     {
       action: 'next',
       project,
@@ -682,10 +689,10 @@ export async function nextCommand(
       evidence,
       floorPorts: productionFloorPorts() as FloorEvidencePorts,
       selfRuling:
-        selfRuling === undefined
+        storedSelfRuling === undefined
           ? undefined
           : {
-              ruling: selfRuling,
+              ruling: storedSelfRuling,
               basis: basis ?? '',
               question,
               channel: 'cli',
@@ -697,8 +704,13 @@ export async function nextCommand(
     options.hubTaskReader,
     options.workflowTextDocuments ?? productionWorkflowTextDocumentPorts,
   )
-  print(result, result)
-  return workflowNextContextMoment(selected.record_id, selfRuling)
+  print(result.text, result.text)
+  return {
+    cursorRecordId: selected.record_id,
+    selfRulingQuestionNumber: result.selfRulingQuestionNumber,
+    selfRuling: storedSelfRuling,
+    taskKey: selected.workflow_key || null,
+  }
 }
 
 export async function awaitCommand(

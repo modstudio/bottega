@@ -16,7 +16,10 @@ import {
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
 import { taskFlowStore } from './task-flow-store.ts'
-import { abandonSelectedWorkflowCursorForClose, nextWorkflowStep } from './workflow-cursor.ts'
+import {
+  abandonSelectedWorkflowCursorForClose,
+  nextWorkflowStepWithResult,
+} from './workflow-cursor.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import {
   refuseMissingAbandonReason,
@@ -253,6 +256,18 @@ export async function closeCursorWithTextCopy(
   taskReader: HubTaskReader = readHubTasks,
   documents: WorkflowTextDocumentPorts = productionWorkflowTextDocumentPorts,
 ): Promise<string> {
+  return (await closeCursorWithTextCopyResult(input, database, taskReader, documents)).text
+}
+
+export type WorkflowTextCloseResult = { text: string; selfRulingQuestionNumber?: number }
+
+/** Closes a cursor while retaining the question identity created by a self-ruling. */
+export async function closeCursorWithTextCopyResult(
+  input: WorkflowTextCloseInput,
+  database: Database = db(),
+  taskReader: HubTaskReader = readHubTasks,
+  documents: WorkflowTextDocumentPorts = productionWorkflowTextDocumentPorts,
+): Promise<WorkflowTextCloseResult> {
   if (input.action === 'next') await assertWorkflowSelfRulingProse(input.selfRuling)
   const row = selectWorkflowCursorForClose(
     {
@@ -293,9 +308,9 @@ export async function closeCursorWithTextCopy(
     documents,
     input.context.taskFlowClient,
   )
-  const result =
+  const result: WorkflowTextCloseResult =
     input.action === 'next'
-      ? await nextWorkflowStep(
+      ? await nextWorkflowStepWithResult(
           row,
           row.project,
           input.args,
@@ -308,15 +323,17 @@ export async function closeCursorWithTextCopy(
           input.outcome,
           input.live,
         )
-      : await abandonSelectedWorkflowCursorForClose(
-          row,
-          input.reason!.trim(),
-          input.context,
-          database,
-          input.args,
-        )
+      : {
+          text: await abandonSelectedWorkflowCursorForClose(
+            row,
+            input.reason!.trim(),
+            input.context,
+            database,
+            input.args,
+          ),
+        }
   const warning = workflowTextUncopiedReport(copy)
-  return warning ? `${result}\n${warning}` : result
+  return { ...result, text: warning ? `${result.text}\n${warning}` : result.text }
 }
 
 function uncopiedLine(row: WorkflowTextCopyResult['uncopied'][number], cursor: number): string {

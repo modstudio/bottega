@@ -72,4 +72,21 @@ test('await, operator rule, and next replace task context through command seams'
     kind: 'next-action',
     body: `${slug} cursor ${cursor} at fix-defect-triage: Triage findings`,
   })
+
+  await workflowCommand(
+    ['workflow', 'next', slug, '--cursor', String(cursor), '--note', 'finished triage'],
+    presentation(lines),
+    {
+      contextMomentPorts: ports,
+      contextMomentGather: () => {
+        throw new Error('injected gather failure')
+      },
+    },
+  )
+  expect(
+    db().query<{ state: string }, [number]>('SELECT state FROM workflow_cursor WHERE number=?').get(cursor),
+  ).toEqual({ state: 'done' })
+  expect(lines).toContain(
+    'context: could not write workflow-next on DEV-2267: injected gather failure',
+  )
 })

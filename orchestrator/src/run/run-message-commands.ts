@@ -18,7 +18,7 @@ import {
   readWorkerFile,
 } from '../cli/args.ts'
 import { db } from '../database/db.ts'
-import { applyContextMomentEffect, type ContextMomentPorts } from '../doc/context-moment-adapter.ts'
+import { applyContextMoment, type ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { newestTurnOutputPath } from '../evidence/evidence-query.ts'
 import { jobTakesFidelity } from '../jobs/job-fidelity.ts'
 import { JOBS } from '../jobs/jobs.ts'
@@ -230,9 +230,8 @@ export async function answerCommand(
       operatorRuled: question.fromOperator,
       text: answerByQuestion.get(question.recordId),
     })
-    await applyContextMomentEffect(
-      question.taskHolder,
-      effect,
+    await applyContextMoment(
+      { taskKey: question.taskHolder, effect },
       json,
       context?.output,
       context?.ports,

@@ -84,11 +84,12 @@ export function register(program: Command): void {
   holderOptions(context.command('drop').description('remove one context item'))
     .requiredOption('--id <id>', 'stable item id')
     .option('--expected-revision <revision>', 'compare-and-set revision')
-    .action(async (options) =>
-      log(
-        JSON.stringify(
-          await dropContextItem({ ...options, expectedRevision: options.expectedRevision }),
-        ),
-      ),
-    )
+    .action(async (options) => {
+      const result = await dropContextItem({
+        ...options,
+        expectedRevision: options.expectedRevision,
+      })
+      if (!result.removed) throw new Error(`no context item ${result.holder}/${result.id}`)
+      log(JSON.stringify(result))
+    })
 }

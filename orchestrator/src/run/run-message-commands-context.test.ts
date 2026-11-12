@@ -22,7 +22,7 @@ afterEach(() => restoreEnvironment())
 const contextPorts = (calls: string[]): ContextMomentPorts =>
   ({
     set: async (input) => {
-      calls.push(`set ${input.kind} ${input.id}`)
+      calls.push(`set ${input.kind} ${input.id} on ${input.task}`)
       return {
         ...input,
         holder: `task:${input.task}`,
@@ -31,7 +31,7 @@ const contextPorts = (calls: string[]): ContextMomentPorts =>
       }
     },
     drop: async (input) => {
-      calls.push(`drop ${input.id}`)
+      calls.push(`drop ${input.id} on ${input.task}`)
       return { holder: `task:${input.task}`, task: input.task ?? null, id: input.id, removed: true }
     },
   }) as ContextMomentPorts
@@ -64,8 +64,8 @@ test('answering a continuation turn question writes its root task position', asy
   )
 
   expect(calls).toEqual([
-    `set position position-q${question.number}`,
-    `drop open-q${question.number}`,
+    `set position position-q${question.number} on DEV-2225`,
+    `drop open-q${question.number} on DEV-2225`,
   ])
 })
 
@@ -94,8 +94,8 @@ test('partial record-only answer writes only the selected question position', as
   )
 
   expect(calls).toEqual([
-    `set position position-q${selected.number}`,
-    `drop open-q${selected.number}`,
+    `set position position-q${selected.number} on DEV-2225`,
+    `drop open-q${selected.number} on DEV-2225`,
   ])
   expect(
     db()
@@ -106,6 +106,33 @@ test('partial record-only answer writes only the selected question position', as
   ).toEqual([
     { record_id: first.record_id, answered_at: null },
     { record_id: selected.record_id, answered_at: expect.any(String) },
+  ])
+})
+
+test('an operator answer writes its root task ruling', async () => {
+  const root = insert('asking')
+  db().query("UPDATE run SET launch_key='DEV-2225' WHERE record_id=?").run(root)
+  const question = db()
+    .query<{ record_id: string; number: number }, [string, string, string]>(
+      `${newQuestionSql()} RETURNING record_id,number`,
+    )
+    .get(root, new Date().toISOString(), 'Which shape?')!
+  const calls: string[] = []
+
+  await answerCommand(
+    root,
+    [`--q${question.number}`, 'Use the approved shape.', '--from-operator'],
+    true,
+    false,
+    flags,
+    { printRunId: () => {} },
+    undefined,
+    { ports: contextPorts(calls), output: { log: () => {}, error: () => {} } },
+  )
+
+  expect(calls).toEqual([
+    `set ruling ruling-q${question.number} on DEV-2225`,
+    `drop open-q${question.number} on DEV-2225`,
   ])
 })
 

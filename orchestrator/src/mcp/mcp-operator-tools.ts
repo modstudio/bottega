@@ -4,6 +4,7 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { FILING_DOC_SCOPES } from '../../../shared/docs.ts'
+import { contextMomentEffect } from '../../../shared/context-moment.ts'
 import {
   AnswerWaitingResultSchema,
   FileRulingResultSchema,
@@ -23,6 +24,10 @@ import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { queryInbox } from '../run/run-inbox.ts'
 import { answerRunHelpers } from '../run/run-message-commands.ts'
 import { fileNote } from './hub-notes.ts'
+import {
+  collectContextMomentReports,
+  resultWithContextReports,
+} from './mcp-workflow-context-tools.ts'
 
 const text = (value: unknown) => ({
   content: [
@@ -128,22 +133,40 @@ function registerAnswerQuestionsTool(server: McpServer): void {
     },
     async ({ run_record_id, rulings, from_operator, record_only }) => {
       const resolved = resolveAnswerRulings(rulings, from_operator ?? false)
-      return structured(
-        (
-          await answerRun(
-            localRunId(run_record_id),
-            {
-              rulings: resolved,
-              fromOperator: false,
-              channel: 'mcp',
-              recordOnly: record_only ?? false,
-              json: true,
-              flags: { detach: true, follow: false, quiet: true },
-            },
-            answerRunHelpers(presentation),
-          )
-        ).result,
+      const report = await answerRun(
+        localRunId(run_record_id),
+        {
+          rulings: resolved,
+          fromOperator: false,
+          channel: 'mcp',
+          recordOnly: record_only ?? false,
+          json: true,
+          flags: { detach: true, follow: false, quiet: true },
+        },
+        answerRunHelpers(presentation),
       )
+      const textByQuestion = new Map(
+        resolved.map((ruling) => [ruling.questionId, ruling.text] as const),
+      )
+      const reports: string[] = []
+      for (const question of report.answeredQuestions) {
+        reports.push(
+          ...(await collectContextMomentReports({
+            taskKey: question.taskHolder,
+            effect: contextMomentEffect({
+              moment: 'question-answer',
+              taskKey: question.taskHolder,
+              questionId: question.number,
+              operatorRuled: question.fromOperator,
+              text: textByQuestion.get(question.recordId),
+            }),
+          })),
+        )
+      }
+      return {
+        ...resultWithContextReports(report.result, reports),
+        structuredContent: report.result,
+      }
     },
   )
 }

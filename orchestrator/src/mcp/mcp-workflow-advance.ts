@@ -4,49 +4,32 @@
 import type { z } from 'zod'
 import { assertRecordShape } from '../../../shared/record-shape.ts'
 import { db } from '../database/db.ts'
-import { applyContextMomentEffect, type ContextMomentPorts } from '../doc/context-moment-adapter.ts'
+import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { resolveProbeArtifact } from '../workflow/probe-identifier.ts'
-import { workflowNextContextMoment } from '../workflow/workflow-context-moment.ts'
+import {
+  selectWorkflowContextCursor,
+  workflowNextContextMoment,
+} from '../workflow/workflow-context-moment.ts'
 import { workflowKeyOf } from '../workflow/workflow-cursor-arguments.ts'
 import { resolveCursorLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
-import { selectWorkflowCursorForClose } from '../workflow/workflow-cursor-selection.ts'
 import { type HubTaskReader, resolveHubTaskReference } from '../workflow/workflow-task-reference.ts'
 import {
-  closeCursorWithTextCopy,
+  closeCursorWithTextCopyResult,
   productionWorkflowTextDocumentPorts,
   type WorkflowTextDocumentPorts,
 } from '../workflow/workflow-text-copy.ts'
 import { resolveMcpLinkedWorkflowCursor } from './mcp-workflow-cursor.ts'
 import type { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
+import {
+  collectContextMomentReports,
+  resultWithContextReports,
+} from './mcp-workflow-context-tools.ts'
 
 const workflowRunEvidence = (run: string | number | undefined) =>
   run === undefined ? undefined : resolveRunIdentifier(db(), run)
-
-async function withContextReports(
-  result: string,
-  cursorRecordId: string,
-  selfRuling: string | undefined,
-  ports: ContextMomentPorts | undefined,
-) {
-  const moment = workflowNextContextMoment(cursorRecordId, selfRuling)
-  const reports: string[] = []
-  await applyContextMomentEffect(
-    moment.taskKey,
-    moment.effect,
-    false,
-    { log: (line) => reports.push(line), error: (line) => reports.push(line) },
-    ports,
-  )
-  return {
-    content: [
-      { type: 'text' as const, text: result },
-      ...reports.map((line) => ({ type: 'text' as const, text: line })),
-    ],
-  }
-}
 
 export async function advanceWorkflow(
   {
@@ -102,16 +85,16 @@ export async function advanceWorkflow(
     context,
     cursor,
   })
-  const selected = selectWorkflowCursorForClose(
-    { project, workflow: slug, mode: effectiveMode, key: workflowKeyOf(workflowArgs) || undefined },
+  const selected = selectWorkflowContextCursor({
+    project,
+    workflow: slug,
+    mode: effectiveMode,
+    args: workflowArgs,
     cursor,
-    context.session,
-    db(),
-    context.taskRecordId,
-    context.taskStatusCategory,
-  )
-  if (!selected) throw new Error(`workflow ${slug} has no cursor; compose the workflow first`)
-  const result = await closeCursorWithTextCopy(
+    context: advanceContext,
+  })
+  const storedSelfRuling = self_ruling?.trim()
+  const result = await closeCursorWithTextCopyResult(
     {
       action: 'next',
       project,
@@ -133,10 +116,10 @@ export async function advanceWorkflow(
         satisfies,
       },
       selfRuling:
-        self_ruling === undefined
+        storedSelfRuling === undefined
           ? undefined
           : {
-              ruling: self_ruling,
+              ruling: storedSelfRuling,
               basis: self_ruling_basis ?? '',
               question,
               channel: 'mcp',
@@ -148,5 +131,20 @@ export async function advanceWorkflow(
     hubTaskReader,
     workflowTextDocuments,
   )
-  return withContextReports(result, selected.record_id, self_ruling, contextMomentPorts)
+  try {
+    const moment = workflowNextContextMoment(
+      selected.record_id,
+      result.selfRulingQuestionNumber,
+      storedSelfRuling,
+    )
+    return resultWithContextReports(
+      result.text,
+      await collectContextMomentReports(moment, contextMomentPorts),
+    )
+  } catch (error) {
+    const holder = selected.workflow_key || `cursor ${selected.record_id}`
+    return resultWithContextReports(result.text, [
+      `context: could not write workflow-next on ${holder}: ${error instanceof Error ? error.message : String(error)}`,
+    ])
+  }
 }

@@ -21,6 +21,7 @@ import { decodeContextItem } from './context-item-codec.ts'
 import {
   type ContextItem,
   type ContextProfile,
+  ContextWriteRefusalError,
   contextDropRefusal,
   contextWriteRefusal,
   holderOwnershipRefusal,
@@ -247,7 +248,7 @@ export async function assertContextSetAllowed(input: {
     body: input.body,
     contextTask: input.contextTask,
   })
-  if (refusal) throw new Error(refusal)
+  if (refusal) throw new ContextWriteRefusalError(refusal)
 }
 
 /** A context item leaves only through its owner and never as the last required item. */
@@ -273,7 +274,7 @@ export async function assertContextDropAllowed({
           await contextProfileForHolder(holder, ports, task),
         )
       : null)
-  if (refusal) throw new Error(refusal)
+  if (refusal) throw new ContextWriteRefusalError(refusal)
 }
 
 export async function contextProfileForHolder(

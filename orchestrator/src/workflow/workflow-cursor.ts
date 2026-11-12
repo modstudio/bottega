@@ -450,7 +450,7 @@ function closeFloorsForStep(
     advance.requireRuling,
     currentStep,
   )
-  return { closed, advance, floors, floor, selfRulingPlan }
+  return { closed, advance, floors, floor, selfRulingPlan, selfRulingQuestionNumber }
 }
 
 async function persistWorkflowAdvance(
@@ -612,7 +612,7 @@ async function nextWorkflowStepImpl(
   selfRuling?: WorkflowSelfRulingInput,
   outcome?: string,
   live?: LiveCursorAutonomy,
-): Promise<string> {
+): Promise<WorkflowAdvanceResult> {
   const slug = row.workflow_slug
   const project = row.project
   const mode = row.mode_slug
@@ -685,10 +685,18 @@ async function nextWorkflowStepImpl(
     d,
     live,
   })
-  return takeoverNotice ? `${takeoverNotice}\n${rendered}` : rendered
+  return {
+    text: takeoverNotice ? `${takeoverNotice}\n${rendered}` : rendered,
+    selfRulingQuestionNumber: close.selfRulingQuestionNumber,
+  }
 }
 
-export async function nextWorkflowStep(
+export type WorkflowAdvanceResult = {
+  text: string
+  selfRulingQuestionNumber?: number
+}
+
+export async function nextWorkflowStepWithResult(
   selected: SelectableCursorRow,
   project: string,
   args: Record<string, string>,
@@ -700,7 +708,7 @@ export async function nextWorkflowStep(
   selfRuling?: WorkflowSelfRulingInput,
   outcome?: string,
   live?: LiveCursorAutonomy,
-): Promise<string> {
+): Promise<WorkflowAdvanceResult> {
   await linkResolvedWorkflowTask(project, context, d)
   reselectCursor(selected, args, context, d)
   return withReplayedFloorEvidenceAsync(ports, (replayPorts) => {
@@ -719,6 +727,36 @@ export async function nextWorkflowStep(
       live,
     )
   })
+}
+
+export async function nextWorkflowStep(
+  selected: SelectableCursorRow,
+  project: string,
+  args: Record<string, string>,
+  note: string | undefined,
+  context: WorkflowCursorContext,
+  d: Database = writableDb(),
+  evidence: WorkflowEvidenceInput = {},
+  ports: FloorEvidencePorts = productionFloorPorts(),
+  selfRuling?: WorkflowSelfRulingInput,
+  outcome?: string,
+  live?: LiveCursorAutonomy,
+): Promise<string> {
+  return (
+    await nextWorkflowStepWithResult(
+      selected,
+      project,
+      args,
+      note,
+      context,
+      d,
+      evidence,
+      ports,
+      selfRuling,
+      outcome,
+      live,
+    )
+  ).text
 }
 
 async function abandonSelectedWorkflowCursor(

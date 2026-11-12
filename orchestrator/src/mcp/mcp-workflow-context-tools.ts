@@ -2,11 +2,14 @@
 /** Registers workflow ruling tools and applies their task context effects. */
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
-import { type ContextMomentEffect, contextMomentEffect } from '../../../shared/context-moment.ts'
 import { assertRecordShape } from '../../../shared/record-shape.ts'
-import { applyContextMomentEffect, type ContextMomentPorts } from '../doc/context-moment-adapter.ts'
+import { applyContextMoment, type ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { awaitWorkflowRuling } from '../workflow/workflow-cursor.ts'
 import { ruleWorkflow } from '../workflow/workflow-cursor-ruling.ts'
+import {
+  type WorkflowContextMoment,
+  workflowQuestionContextMoment,
+} from '../workflow/workflow-context-moment.ts'
 import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
 import { resolveMcpLinkedWorkflowCursor } from './mcp-workflow-cursor.ts'
 
@@ -15,15 +18,13 @@ export type McpWorkflowContextPorts = {
   contextMomentPorts?: ContextMomentPorts
 }
 
-async function contextReports(
-  taskKey: string | null | undefined,
-  effect: ContextMomentEffect,
+export async function collectContextMomentReports(
+  moment: WorkflowContextMoment,
   ports?: ContextMomentPorts,
 ): Promise<string[]> {
   const lines: string[] = []
-  await applyContextMomentEffect(
-    taskKey,
-    effect,
+  await applyContextMoment(
+    moment,
     false,
     { log: (line) => lines.push(line), error: (line) => lines.push(line) },
     ports,
@@ -31,9 +32,9 @@ async function contextReports(
   return lines
 }
 
-const resultWithReports = (result: unknown, reports: string[]) => ({
+export const resultWithContextReports = (result: unknown, reports: string[]) => ({
   content: [
-    { type: 'text' as const, text: JSON.stringify(result) },
+    { type: 'text' as const, text: typeof result === 'string' ? result : JSON.stringify(result) },
     ...reports.map((line) => ({ type: 'text' as const, text: line })),
   ],
 })
@@ -75,11 +76,10 @@ function registerAwaitWorkflowRulingTool(server: McpServer, ports: McpWorkflowCo
         undefined,
         cursor,
       )
-      return resultWithReports(
+      return resultWithContextReports(
         result,
-        await contextReports(
-          context.workflowKey,
-          contextMomentEffect({
+        await collectContextMomentReports(
+          workflowQuestionContextMoment({
             moment: 'workflow-await',
             taskKey: context.workflowKey,
             questionId: result.questionId,
@@ -131,11 +131,10 @@ function registerRuleWorkflowTool(server: McpServer, ports: McpWorkflowContextPo
         undefined,
         cursor,
       )
-      return resultWithReports(
+      return resultWithContextReports(
         result,
-        await contextReports(
-          context.workflowKey,
-          contextMomentEffect({
+        await collectContextMomentReports(
+          workflowQuestionContextMoment({
             moment: 'workflow-rule',
             taskKey: context.workflowKey,
             questionId: result.questionId,
