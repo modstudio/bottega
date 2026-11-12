@@ -121,9 +121,11 @@ describe('context census', () => {
         task('DEV-BROKEN', { statusCategory: 'done', unreadable: 'retry task list' }),
       ],
     })
-    expect(result.projects[0]!.sessions[0]!.tasks.map(({ status }) => status)).toEqual([
-      'unreadable',
-      'covered',
+    expect(
+      result.projects[0]!.sessions[0]!.tasks.map(({ status, closed }) => [status, closed]),
+    ).toEqual([
+      ['unreadable', false],
+      ['covered', true],
     ])
     expect(result.verdict.unreadable).toEqual([{ task: 'DEV-BROKEN', remedy: 'retry task list' }])
   })

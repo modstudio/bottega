@@ -21,10 +21,11 @@ const count = (covered: number, total: number) => `${covered}/${total}`
 function renderCensusTask(
   task: ContextCensus['projects'][number]['sessions'][number]['tasks'][number],
 ) {
+  const coverage = task.closed ? 'closed' : `next-action ${task.nextActionAt ?? 'missing'}`
   const detail =
     task.status === 'unreadable'
       ? task.remedy!
-      : `first work ${task.firstWorkedAt}  last work ${task.lastWorkedAt}  next-action ${task.nextActionAt ?? 'missing'}`
+      : `first work ${task.firstWorkedAt}  last work ${task.lastWorkedAt}  ${coverage}`
   const sources = task.sources
     .map(({ source, writingVerb }) => `${source}:${writingVerb ? 'verb' : 'hand'}`)
     .join(', ')

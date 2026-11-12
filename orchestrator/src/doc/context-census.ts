@@ -42,6 +42,7 @@ type ContextCensusTaskRow = {
   project: string | null
   title: string | null
   status: 'covered' | 'uncovered' | 'unreadable'
+  closed: boolean
   covered: number
   total: 1
   firstWorkedAt: string
@@ -89,10 +90,10 @@ function taskRow(
   const nextActionAt = latest(
     fact.items.filter(({ kind }) => kind === 'next-action').map(({ updatedAt }) => updatedAt),
   )
+  const closed = !fact.unreadable && taskFlowClosed(fact.statusCategory)
   const status = fact.unreadable
     ? 'unreadable'
-    : taskFlowClosed(fact.statusCategory) ||
-        (nextActionAt !== null && nextActionAt >= firstWorkedAt)
+    : closed || (nextActionAt !== null && nextActionAt >= firstWorkedAt)
       ? 'covered'
       : 'uncovered'
   return {
@@ -100,6 +101,7 @@ function taskRow(
     project: fact.project,
     title: fact.title,
     status,
+    closed,
     covered: status === 'covered' ? 1 : 0,
     total: 1,
     firstWorkedAt,
