@@ -42,7 +42,7 @@ export async function stepActionTarget(
   }
 }
 
-type StepActionRead = (cursor: number) => Promise<StepActionTarget>
+export type StepActionRead = (cursor: number) => Promise<StepActionTarget>
 
 export async function dispatchForStep(
   input: { cursor: number; job: string; argv: string[] },
@@ -82,34 +82,44 @@ export type StepLandMergeOptions = {
   depth?: string
 }
 
-export type StepLandInput =
-  | {
-      action: 'create'
-      cursor: number
-      args: [githubArgs: string[], options: StepLandCreateOptions]
-    }
-  | {
-      action: 'merge'
-      cursor: number
-      args: [target: string, options: StepLandMergeOptions]
-    }
-
-export async function landForStep(
-  input: StepLandInput,
-  ports: {
-    read?: StepActionRead
-    create(githubArgs: string[], options: StepLandCreateOptions): Promise<void>
-    merge(target: string, options: StepLandMergeOptions): Promise<void>
-  },
+async function authorizeLandAction(
+  cursor: number,
+  required: 'pr-create' | 'pr-merge',
+  read: StepActionRead = stepActionTarget,
 ): Promise<void> {
-  const target = await (ports.read ?? stepActionTarget)(input.cursor)
-  const required = input.action === 'create' ? 'pr-create' : 'pr-merge'
+  const target = await read(cursor)
   if (!target.actions.includes(required)) {
     const declared = target.actions.length ? target.actions.join(', ') : 'none'
     throw new Error(
-      `step ${target.stepSlug} of cursor ${input.cursor} declares actions: ${declared}; ${required} is not one of them`,
+      `step ${target.stepSlug} of cursor ${cursor} declares actions: ${declared}; ${required} is not one of them`,
     )
   }
-  if (input.action === 'create') await ports.create(...input.args)
-  else await ports.merge(...input.args)
+}
+
+export async function createForStep(
+  input: {
+    cursor: number
+    args: [githubArgs: string[], options: StepLandCreateOptions]
+  },
+  ports: {
+    read?: StepActionRead
+    create(githubArgs: string[], options: StepLandCreateOptions): Promise<void>
+  },
+): Promise<void> {
+  await authorizeLandAction(input.cursor, 'pr-create', ports.read)
+  await ports.create(...input.args)
+}
+
+export async function mergeForStep(
+  input: {
+    cursor: number
+    args: [target: string, options: StepLandMergeOptions]
+  },
+  ports: {
+    read?: StepActionRead
+    merge(target: string, options: StepLandMergeOptions): Promise<void>
+  },
+): Promise<void> {
+  await authorizeLandAction(input.cursor, 'pr-merge', ports.read)
+  await ports.merge(...input.args)
 }

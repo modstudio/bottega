@@ -142,10 +142,11 @@ test('a findings dispatch carries its resolved round role to the coordinator', a
   ).toEqual({ cursor_record_id: cursorRecordId, step_slug: 'review' })
 })
 
-test('a harness continuation placeholder carries its executor before coordinator claim', async () => {
+test('a harness continuation placeholder carries its executor and parent binding before claim', async () => {
   process.env.BOTTEGA_DEPTH = '0'
   const root = addRun({ agent: 'harness', job: 'review-lens', status: 'asking' })
   const cursorRecordId = newRecordId()
+  const explicitCursorRecordId = newRecordId()
   db()
     .query('UPDATE run SET cursor_record_id=?,step_slug=? WHERE record_id=?')
     .run(cursorRecordId, 'review', root)
@@ -171,6 +172,7 @@ test('a harness continuation placeholder carries its executor before coordinator
     {
       cwd: import.meta.dir,
       lens: 'correctness',
+      binding: { cursorRecordId: explicitCursorRecordId, stepSlug: 'different-step' },
       resume: {
         kind: 'continue',
         parent: root,

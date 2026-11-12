@@ -3,9 +3,11 @@
 
 import { db } from '../database/db.ts'
 
+export type RunWorkflowBinding = { cursorRecordId: string; stepSlug: string }
+
 export function inheritedRunBinding(
   parent: string | undefined,
-  binding: { cursorRecordId: string; stepSlug: string } | undefined,
+  binding: RunWorkflowBinding | undefined,
 ): { cursorRecordId: string | null; stepSlug: string | null } | null {
   if (!parent) return binding ?? null
   const facts = inheritedRunFacts(parent)

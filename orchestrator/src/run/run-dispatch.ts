@@ -47,7 +47,11 @@ import type { SynchronousResult } from '../synchronous-result.ts'
 import { sha } from './prompt-sha.ts'
 import { recordedRunLivenessFacts, runAlive } from './run-alive.ts'
 import { RUNS_DIR, readDispatchState } from './run-artifacts.ts'
-import { inheritedRunFacts, inheritedRunLinks } from './run-claim-inheritance.ts'
+import {
+  bindingValues,
+  inheritedRunBinding,
+  inheritedRunLinks,
+} from './run-claim-inheritance.ts'
 import { claimWithMigrationAdmission } from './run-claim-transaction.ts'
 import { runCoordinatorLogPath } from './run-coordinator-log.ts'
 import { EXTERNAL_EXECUTOR, HARNESS_EXECUTOR, type RunExecutor } from './run-executor.ts'
@@ -192,8 +196,7 @@ function detachedPlaceholderBindings(
   startedByUserId: string | null,
 ) {
   return [
-    binding?.cursorRecordId ?? null,
-    binding?.stepSlug ?? null,
+    ...bindingValues(binding),
     spec.resume?.session ?? null,
     startedByUserId,
     spec.resume?.continuationMessage?.sha256 ?? null,
@@ -222,9 +225,6 @@ async function detachedRunLinks(cwd: string, spec: DetachSpec) {
   const inherited = identity.parent_run_record_id
     ? inheritedRunLinks(identity.parent_run_record_id)
     : null
-  const inheritedBinding = identity.parent_run_record_id
-    ? inheritedRunFacts(identity.parent_run_record_id)
-    : null
   const detached = detachedProject(cwd, spec)
   const links = await admitNewRunReference({
     inheritedTaskRecordId: inherited?.taskRecordId,
@@ -236,14 +236,7 @@ async function detachedRunLinks(cwd: string, spec: DetachSpec) {
     launchCwd: cwd,
     probe: Boolean(spec.probe),
   })
-  const binding =
-    spec.binding ??
-    (inheritedBinding?.cursor_record_id && inheritedBinding.step_slug
-      ? {
-          cursorRecordId: inheritedBinding.cursor_record_id,
-          stepSlug: inheritedBinding.step_slug,
-        }
-      : null)
+  const binding = inheritedRunBinding(identity.parent_run_record_id ?? undefined, spec.binding)
   return { identity, pendingRecordId, detached, links, binding }
 }
 

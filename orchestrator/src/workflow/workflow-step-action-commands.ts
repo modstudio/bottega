@@ -4,20 +4,26 @@
 import type { Command, OptionValues } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { ORCH_DO_OPTIONS } from '../commands/do-options.ts'
-import { createPullRequestCommand, mergePullRequestCommand } from '../commands/pull-request.ts'
+import {
+  createPullRequestCommand,
+  mergePullRequestCommand,
+  PR_CREATE_OPTIONS,
+  PR_MERGE_OPTIONS,
+} from '../commands/pull-request.ts'
 import { productArgv, write } from '../commands/support.ts'
 import { doCommand } from '../dispatch/dispatch-cli-service.ts'
 import { positive } from './workflow-command-arguments.ts'
 import {
+  createForStep,
   dispatchForStep,
-  landForStep,
-  type StepActionTarget,
+  mergeForStep,
+  type StepActionRead,
   type StepLandCreateOptions,
   type StepLandMergeOptions,
 } from './workflow-step-action.ts'
 
 type StepActionCommandPorts = {
-  read?: (cursor: number) => Promise<StepActionTarget>
+  read?: StepActionRead
   dispatch?: typeof doCommand
   create?: typeof createPullRequestCommand
   merge?: typeof mergePullRequestCommand
@@ -41,6 +47,14 @@ function addDispatchOptions(command: Command): Command {
   for (const option of ORCH_DO_OPTIONS) {
     if (dispatchOptionFlags.has(option.flags)) command.option(option.flags, option.description)
   }
+  return command
+}
+
+function addPullRequestOptions(
+  command: Command,
+  options: readonly { flags: string; description: string }[],
+): Command {
+  for (const option of options) command.option(option.flags, option.description)
   return command
 }
 
@@ -70,14 +84,12 @@ async function createForStepCommand(
   ports: StepActionCommandPorts = {},
 ): Promise<void> {
   const { cursor, ...createOptions } = options
-  await landForStep(
-    { action: 'create', cursor: cursorNumber(cursor), args: [githubArgs, createOptions] },
+  await createForStep(
+    { cursor: cursorNumber(cursor), args: [githubArgs, createOptions] },
     {
       read: ports.read,
       create: (args, commandOptions) =>
         (ports.create ?? createPullRequestCommand)(args, commandOptions),
-      merge: (target, commandOptions) =>
-        (ports.merge ?? mergePullRequestCommand)(target, commandOptions),
     },
   )
 }
@@ -88,12 +100,10 @@ async function mergeForStepCommand(
   ports: StepActionCommandPorts = {},
 ): Promise<void> {
   const { cursor, ...mergeOptions } = options
-  await landForStep(
-    { action: 'merge', cursor: cursorNumber(cursor), args: [target, mergeOptions] },
+  await mergeForStep(
+    { cursor: cursorNumber(cursor), args: [target, mergeOptions] },
     {
       read: ports.read,
-      create: (args, commandOptions) =>
-        (ports.create ?? createPullRequestCommand)(args, commandOptions),
       merge: (numberOrUrl, commandOptions) =>
         (ports.merge ?? mergePullRequestCommand)(numberOrUrl, commandOptions),
     },
@@ -120,24 +130,23 @@ export function registerWorkflowStepActionCommands(
       throw new Error(`unknown: ${PLATFORM_SLUG} workflow land. Try create | merge`)
     })
 
-  land
-    .command('create [githubArgs...]')
-    .description('create a pull request when the current step declares pr-create')
-    .allowUnknownOption(true)
-    .requiredOption('--cursor <value>', 'select this workflow cursor')
-    .option('--cwd <tree>', 'verify and create from this worktree')
-    .option('--override-triage <reason>', 'admit incomplete review triage for this reason')
-    .option('--ceiling-ruling <reason>', 'admit remaining review gaps at the round ceiling')
-    .option('--from-operator', 'confirm the override came directly from the operator')
+  addPullRequestOptions(
+    land
+      .command('create [githubArgs...]')
+      .description('create a pull request when the current step declares pr-create')
+      .allowUnknownOption(true)
+      .requiredOption('--cursor <value>', 'select this workflow cursor'),
+    PR_CREATE_OPTIONS,
+  )
     .action((githubArgs, options) => createForStepCommand(githubArgs, options, ports))
 
-  land
-    .command('merge <number-or-url>')
-    .description('merge a pull request when the current step declares pr-merge')
-    .requiredOption('--cursor <value>', 'select this workflow cursor')
-    .option('--cwd <tree>', 'verify and merge from this worktree')
-    .option('--release-required', 'release every rung required by the merged paths')
-    .option('--depth <rung>', 'bound the production release reach through this rung')
+  addPullRequestOptions(
+    land
+      .command('merge <number-or-url>')
+      .description('merge a pull request when the current step declares pr-merge')
+      .requiredOption('--cursor <value>', 'select this workflow cursor'),
+    PR_MERGE_OPTIONS,
+  )
     .allowExcessArguments(false)
     .action((target, options) => mergeForStepCommand(target, options, ports))
 }

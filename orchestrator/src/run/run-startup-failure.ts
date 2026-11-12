@@ -2,6 +2,7 @@
 /** Records and publishes startup failures before or after a run is claimed. */
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
+import { bindingValues, type RunWorkflowBinding } from './run-claim-inheritance.ts'
 import { rollUpRootAndEnqueue } from './run-liveness.ts'
 import { nextRunNumber } from './run-number.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
@@ -90,7 +91,7 @@ export function recordNeverStartedRunFailure(input: {
   startedByUserId: string | null
   agentExplicit: number
   executor: 'external' | 'harness'
-  binding?: { cursorRecordId: string; stepSlug: string }
+  binding?: RunWorkflowBinding | { cursorRecordId: string | null; stepSlug: string | null } | null
 }): string {
   const message = input.error instanceof Error ? input.error.message : String(input.error)
   const finishedAt = nowIso()
@@ -125,8 +126,7 @@ export function recordNeverStartedRunFailure(input: {
         input.startedByUserId,
         input.agentExplicit,
         input.executor,
-        input.binding?.cursorRecordId ?? null,
-        input.binding?.stepSlug ?? null,
+        ...bindingValues(input.binding ?? null),
       )
     enqueueFailedReservedRun(input.recordId, database, localMachineId, finishedAt)
     return input.recordId

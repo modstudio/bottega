@@ -63,6 +63,7 @@ import { run } from '../run/run.ts'
 import { assertAcpPolicyAllowed } from '../run/run-acp-policy.ts'
 import { waitForAgentSelection } from '../run/run-agent-capacity.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
+import type { RunWorkflowBinding } from '../run/run-claim-inheritance.ts'
 import { follow as followRun, harnessHandoff, printHarnessHandoff } from '../run/run-control.ts'
 import { detach as dispatchDetached } from '../run/run-dispatch.ts'
 import { runEvidence } from '../run/run-evidence-context.ts'
@@ -648,7 +649,7 @@ function assertInstallLevelAllowsDispatch(jobName: string): void {
 export async function doCommand(
   argv: string[],
   presentation: Presentation,
-  binding?: { cursorRecordId: string; stepSlug: string },
+  binding?: RunWorkflowBinding,
 ): Promise<void> {
   const requestedJob = argv[1]
   if (requestedJob && JOBS[requestedJob]) assertInstallLevelAllowsDispatch(requestedJob)

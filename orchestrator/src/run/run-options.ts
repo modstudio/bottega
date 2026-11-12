@@ -11,9 +11,10 @@ import type { RoutedSelection } from '../route/route.ts'
 import type { TransportName } from '../transport/transport.ts'
 import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
+import type { RunWorkflowBinding } from './run-claim-inheritance.ts'
 
 export type RunOptions = {
-  binding?: { cursorRecordId: string; stepSlug: string }
+  binding?: RunWorkflowBinding
   job: string
   prompt: string
   agent?: string

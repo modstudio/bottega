@@ -14,6 +14,7 @@ import type { McpRequest } from '../mcp/mcp-preflight.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import type { ResolvedReviewTarget } from '../review/review-target.ts'
 import type { ContinuationMessageBinding } from '../run/continuation-message.ts'
+import type { RunWorkflowBinding } from '../run/run-claim-inheritance.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import type { ResumeTreePlan } from '../run/resume-tree.ts'
 import type { TaskBranchNominatingRun } from '../run/run-types.ts'
@@ -44,7 +45,7 @@ export type ResolvedTaskBranch = {
 }
 
 export type DetachSpec = {
-  binding?: { cursorRecordId: string; stepSlug: string }
+  binding?: RunWorkflowBinding
   agent?: string
   agentExplicit?: boolean
   /** Surface routing result; unlike agent, this is not a caller pin. */

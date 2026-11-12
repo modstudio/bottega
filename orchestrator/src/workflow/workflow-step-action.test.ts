@@ -3,8 +3,9 @@ import { recordUnreachableRefusal } from '../../../shared/record-remedies.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { args, context, database } from './workflow-cursor-test.fixture.ts'
 import {
+  createForStep,
   dispatchForStep,
-  landForStep,
+  mergeForStep,
   type StepActionTarget,
   stepActionTarget,
 } from './workflow-step-action.ts'
@@ -130,13 +131,10 @@ test('land refuses an undeclared action exactly and never calls either PR servic
   let creates = 0
   let merges = 0
   await expect(
-    landForStep(
-      { action: 'merge', cursor: 17, args: ['42', { cwd: '/tree' }] },
+    mergeForStep(
+      { cursor: 17, args: ['42', { cwd: '/tree' }] },
       {
         read: async () => target({ actions: ['pr-create'] }),
-        create: async () => {
-          creates += 1
-        },
         merge: async () => {
           merges += 1
           throw new Error('must not merge')
@@ -149,28 +147,39 @@ test('land refuses an undeclared action exactly and never calls either PR servic
   expect({ creates, merges }).toEqual({ creates: 0, merges: 0 })
 })
 
-test('declared create and merge actions preserve the PR service arguments', async () => {
-  const createCalls: unknown[][] = []
-  const mergeCalls: unknown[][] = []
-  const ports = {
-    read: async () => target({ actions: ['pr-create', 'pr-merge'] }),
-    create: async (...args: Parameters<Parameters<typeof landForStep>[1]['create']>) => {
-      createCalls.push(args)
-    },
-    merge: async (...args: Parameters<Parameters<typeof landForStep>[1]['merge']>) => {
-      mergeCalls.push(args)
+test('declared create and merge actions reach only their own PR service once', async () => {
+  let creates = 0
+  let merges = 0
+  const read = async () => target({ actions: ['pr-create', 'pr-merge'] })
+  const createPorts = {
+    read,
+    create: async () => {
+      creates += 1
     },
   }
-  const createArgs: Parameters<typeof ports.create> = [
-    ['--title', 'DEV-2283 title'],
-    { cwd: '/tree', overrideTriage: 'approved', fromOperator: true },
-  ]
-  const mergeArgs: Parameters<typeof ports.merge> = [
-    '42',
-    { cwd: '/tree', releaseRequired: true, depth: 'hosted-api' },
-  ]
-  await landForStep({ action: 'create', cursor: 17, args: createArgs }, ports)
-  await landForStep({ action: 'merge', cursor: 17, args: mergeArgs }, ports)
-  expect(createCalls).toEqual([createArgs])
-  expect(mergeCalls).toEqual([mergeArgs])
+  const mergePorts = {
+    read,
+    merge: async () => {
+      merges += 1
+    },
+  }
+  await createForStep(
+    {
+      cursor: 17,
+      args: [
+        ['--title', 'DEV-2283 title'],
+        { cwd: '/tree', overrideTriage: 'approved', fromOperator: true },
+      ],
+    },
+    createPorts,
+  )
+  expect({ creates, merges }).toEqual({ creates: 1, merges: 0 })
+  await mergeForStep(
+    {
+      cursor: 17,
+      args: ['42', { cwd: '/tree', releaseRequired: true, depth: 'hosted-api' }],
+    },
+    mergePorts,
+  )
+  expect({ creates, merges }).toEqual({ creates: 1, merges: 1 })
 })

@@ -24,6 +24,7 @@ import {
 import type { ReviewRole } from '../review/review-role.ts'
 import type { ResolvedReviewTarget } from '../review/review-target.ts'
 import type { DetachSpec } from '../route/failover.ts'
+import type { RunWorkflowBinding } from '../run/run-claim-inheritance.ts'
 import { checkoutFileReader } from '../typed-question/cited-context.ts'
 import {
   DISPATCH_SPEC_QUESTIONS,
@@ -667,7 +668,7 @@ export async function dispatchCommand(
   argv: string[],
   flags: DispatchFlags,
   presentation: DispatchPresentation,
-  binding?: { cursorRecordId: string; stepSlug: string },
+  binding?: RunWorkflowBinding,
 ): Promise<void> {
   const { has, flag, values } = flags
   const {

@@ -79,6 +79,7 @@ import { pruneRuns, RUNS_DIR, readDispatchState, unclaimedPaths } from './run-ar
 import { resolveRunBase, shouldResolveRunBase } from './run-base-resolution.ts'
 import { prepareRunBoard as board, persistBoundPrompt } from './run-board-prompt.ts'
 import { claimRun } from './run-claim.ts'
+import { inheritedRunBinding } from './run-claim-inheritance.ts'
 import { closeRun } from './run-close.ts'
 import { acquireRunCloseOutLeaseHandle } from './run-close-out-lease-handle.ts'
 import * as runConfinement from './run-confinement.ts'
@@ -312,7 +313,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
           startedByUserId,
           agentExplicit: Number(Boolean(opts.agentExplicit)),
           executor: intendedExecutor(harnessDelegation),
-          binding: opts.binding,
+          binding: inheritedRunBinding(opts.resume?.parent, opts.binding),
         })
       }
       throw Object.assign(new Error(`run ${failedId} could not start: ${message}`), {

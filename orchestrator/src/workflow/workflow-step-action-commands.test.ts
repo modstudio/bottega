@@ -1,5 +1,7 @@
 import { expect, test } from 'bun:test'
 import { Command } from 'commander'
+import { register as registerPullRequestCommands } from '../commands/pull-request.ts'
+import { POST_LANDING_FLAG } from '../pull-request/pr-post-landing-payload.ts'
 import {
   dispatchForStepCommand,
   registerWorkflowStepActionCommands,
@@ -59,6 +61,7 @@ test('workflow dispatch preserves its allowed run-start inputs and adds the curs
 
 test('workflow step action surfaces expose only the ruled public options', () => {
   const program = new Command()
+  registerPullRequestCommands(program)
   const workflow = program.command('workflow')
   registerWorkflowStepActionCommands(workflow)
   const dispatch = workflow.commands.find((command) => command.name() === 'dispatch')!
@@ -73,17 +76,16 @@ test('workflow step action surfaces expose only the ruled public options', () =>
   const land = workflow.commands.find((command) => command.name() === 'land')!
   const create = land.commands.find((command) => command.name() === 'create')!
   const merge = land.commands.find((command) => command.name() === 'merge')!
-  expect(create.options.map((option) => option.long)).toEqual([
-    '--cursor',
-    '--cwd',
-    '--override-triage',
-    '--ceiling-ruling',
-    '--from-operator',
-  ])
-  expect(merge.options.map((option) => option.long)).toEqual([
-    '--cursor',
-    '--cwd',
-    '--release-required',
-    '--depth',
-  ])
+  const pr = program.commands.find((command) => command.name() === 'pr')!
+  const prCreate = pr.commands.find((command) => command.name() === 'create')!
+  const prMerge = pr.commands.find((command) => command.name() === 'merge')!
+  const publicLongFlags = (command: Command) =>
+    command.options.filter((option) => !option.hidden).map((option) => option.long)
+  expect(publicLongFlags(create).filter((flag) => flag !== '--cursor')).toEqual(
+    publicLongFlags(prCreate),
+  )
+  expect(publicLongFlags(merge).filter((flag) => flag !== '--cursor')).toEqual(
+    publicLongFlags(prMerge),
+  )
+  expect(merge.options.map((option) => option.flags)).not.toContain(POST_LANDING_FLAG)
 })

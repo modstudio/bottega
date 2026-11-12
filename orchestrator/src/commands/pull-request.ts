@@ -33,6 +33,36 @@ import {
 import { resolveReviewCommandCwd } from '../review/review-command-cwd.ts'
 import { log } from './support.ts'
 
+export const PR_CREATE_OPTIONS = [
+  { flags: '--cwd <tree>', description: 'verify and create from this worktree' },
+  {
+    flags: '--override-triage <reason>',
+    description: 'admit incomplete review triage for this reason',
+  },
+  {
+    flags: '--ceiling-ruling <reason>',
+    description: 'admit remaining review gaps at the round ceiling',
+  },
+  { flags: '--from-operator', description: 'confirm the override came directly from the operator' },
+] as const
+
+export const PR_MERGE_OPTIONS = [
+  { flags: '--cwd <tree>', description: 'verify and merge from this worktree' },
+  {
+    flags: '--release-required',
+    description: 'release every rung required by the merged paths',
+  },
+  { flags: '--depth <rung>', description: 'bound the production release reach through this rung' },
+] as const
+
+function addPullRequestOptions(
+  command: Command,
+  options: readonly { flags: string; description: string }[],
+): Command {
+  for (const option of options) command.option(option.flags, option.description)
+  return command
+}
+
 const forbiddenGithubFlag = (value: string): string | null => {
   const long = ['--head', '--base', '--repo', '--web', '--dry-run', '--recover', '--json']
   const matchedLong = long.find((flag) => value === flag || value.startsWith(`${flag}=`))
@@ -280,20 +310,21 @@ export async function mergePullRequestCommand(
 export function register(program: Command): void {
   const pr = program.command('pr').allowExcessArguments(false)
 
-  pr.command('create [githubArgs...]')
-    .description('create a pull request after review-triage admission')
-    .allowUnknownOption(true)
-    .option('--cwd <tree>', 'verify and create from this worktree')
-    .option('--override-triage <reason>', 'admit incomplete review triage for this reason')
-    .option('--ceiling-ruling <reason>', 'admit remaining review gaps at the round ceiling')
-    .option('--from-operator', 'confirm the override came directly from the operator')
+  addPullRequestOptions(
+    pr
+      .command('create [githubArgs...]')
+      .description('create a pull request after review-triage admission')
+      .allowUnknownOption(true),
+    PR_CREATE_OPTIONS,
+  )
     .action(createPullRequestCommand)
 
-  pr.command('merge <number-or-url>')
-    .description('merge a pull request only when its head commit is proven')
-    .option('--cwd <tree>', 'verify and merge from this worktree')
-    .option('--release-required', 'release every rung required by the merged paths')
-    .option('--depth <rung>', 'bound the production release reach through this rung')
+  addPullRequestOptions(
+    pr
+      .command('merge <number-or-url>')
+      .description('merge a pull request only when its head commit is proven'),
+    PR_MERGE_OPTIONS,
+  )
     .addOption(new Option(POST_LANDING_FLAG, 'complete a moved checkout hand-off').hideHelp())
     .allowExcessArguments(false)
     .action(mergePullRequestCommand)
