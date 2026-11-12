@@ -71,7 +71,8 @@ import {
   writeGeneratedSchema,
 } from './run-artifacts.ts'
 import { admitFreshRepositoryRun, type HostCapacityWaitDeps } from './run-claim-host-capacity.ts'
-import { bindingValues, inheritedRunBinding, inheritedRunFacts, type RunWorkflowBinding } from './run-claim-inheritance.ts'
+import type { RunWorkflowBinding } from './run-claim-inheritance.ts'
+import { bindingValues, inheritedRunBinding, inheritedRunFacts } from './run-claim-inheritance.ts'
 import { executeClaimedMcpPlan } from './run-claim-mcp.ts'
 import {
   claimedRunBranch,
@@ -1032,15 +1033,14 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
 function requiredOwnerSession(
   name: string,
   opts: ClaimOptions,
-  workspaceSource: ReturnType<typeof resumeFacts>['workspaceSource'],
+  source: ReturnType<typeof resumeFacts>['workspaceSource'],
 ): string | null {
-  const ownerSession =
-    workspaceSource === 'retained' ? opts.resume!.sessionId : (opts.ownerSession ?? sessionId())
-  if (name === HARNESS_AGENT && !ownerSession)
+  const owner = source === 'retained' ? opts.resume!.sessionId : (opts.ownerSession ?? sessionId())
+  if (name === HARNESS_AGENT && !owner)
     throw new Error(
       `a harness run requires an owning agent session; remedy: run ${PLATFORM_SLUG} run start from an agent session`,
     )
-  return ownerSession
+  return owner
 }
 
 function executorClaimFacts(
