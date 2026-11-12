@@ -3,7 +3,11 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record-id.ts'
 import { hostedBoardCursor, refreshHostedBoard } from '../src/board/board-hosted-cache.ts'
 import type { RecordApiClient } from '../src/record/record-api-client.ts'
-import { notice as boardNotice, headers, json } from './postgres-board-api-values.ts'
+import {
+  notice as boardNotice,
+  json,
+  headers as requestHeaders,
+} from './postgres-board-api-values.ts'
 import { registerBoardSuccessorProofs } from './postgres-board-successor-proof.ts'
 
 /**
@@ -12,6 +16,7 @@ import { registerBoardSuccessorProofs } from './postgres-board-successor-proof.t
  */
 type ProofInput = {
   origin(): string
+  spaceIdForToken(token: string): string
   authorToken(): string
   readerToken(): string
   otherSpaceToken(): string
@@ -43,6 +48,7 @@ const resumeAdvanceRevision = `
 `
 
 export function registerBoardReceiptRevisionProofs(input: ProofInput): void {
+  const headers = (token: string) => requestHeaders(token, input.spaceIdForToken(token))
   registerBoardSuccessorProofs(input)
   const post = (token: string, body: Record<string, unknown>) =>
     fetch(`${input.origin()}/v1/board/messages`, {

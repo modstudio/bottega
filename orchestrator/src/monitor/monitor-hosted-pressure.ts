@@ -229,9 +229,9 @@ export async function announceHostedPressureActions(
         const destination = await destinationResolver(client as RecordApiClient)
         await client.withdrawBoardMessage(
           action.id,
+          destination,
           { authorSession: boardActor(env).session },
           signal,
-          destination,
         )
         continue
       }
@@ -247,7 +247,7 @@ export async function announceHostedPressureActions(
         { env, clock, cwd: dependencies.cwd },
       )
       const destination = await destinationResolver(client as RecordApiClient, input.project)
-      await client.postBoardMessage(input, signal, destination)
+      await client.postBoardMessage(input, destination, signal)
     }
   }, HOSTED_PRESSURE_ANNOUNCE_BUDGET_MS)
 }

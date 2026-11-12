@@ -139,9 +139,9 @@ describe('settings env import', () => {
     const inner = createMemoryRecordApiClient()
     installRecordApiClient({
       ...inner,
-      upsertDoc: async (input) => {
+      upsertDoc: async (input, destination) => {
         captured.push(input)
-        return inner.upsertDoc(input)
+        return inner.upsertDoc(input, destination)
       },
     })
     await seedUser()

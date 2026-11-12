@@ -1,9 +1,10 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record-id.ts'
-import { headers, json, notice } from './postgres-board-api-values.ts'
+import { json, notice, headers as requestHeaders } from './postgres-board-api-values.ts'
 
 type Input = {
   origin(): string
+  spaceIdForToken(token: string): string
   authorToken(): string
   readerToken(): string
   otherSpaceToken(): string
@@ -14,6 +15,7 @@ type Input = {
 }
 
 export function registerBoardSuccessorProofs(input: Input): void {
+  const headers = (token: string) => requestHeaders(token, input.spaceIdForToken(token))
   const presence = async (token: string, rows: Array<{ session: string; lastSeen: string }>) => {
     const value = rows.map((row) => ({
       ...row,

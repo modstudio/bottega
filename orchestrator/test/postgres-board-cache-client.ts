@@ -3,9 +3,10 @@ import { BOARD_HOSTED_ADOPTED_KEY } from '../src/board/board-mode.ts'
 import { applyMigrations } from '../src/database/migrations.ts'
 import type { RecordApiClient } from '../src/record/record-api-client.ts'
 
-const headers = (token: string) => ({
+const headers = (token: string, spaceId: string) => ({
   authorization: `Bearer ${token}`,
   'content-type': 'application/json',
+  'x-record-space': spaceId,
 })
 
 const json = async (response: Response) => (await response.json()) as Record<string, unknown>
@@ -27,23 +28,28 @@ export function postgresBoardCacheStore(session: string, project: string): Datab
   return store
 }
 
-export function postgresBoardCacheClient(origin: string, token: string): RecordApiClient {
+export function postgresBoardCacheClient(
+  origin: string,
+  token: string,
+  spaceId: string,
+): RecordApiClient {
   return {
-    whoami: async () => json(await fetch(`${origin}/v1/whoami`, { headers: headers(token) })),
+    whoami: async () =>
+      json(await fetch(`${origin}/v1/whoami`, { headers: headers(token, spaceId) })),
     listBoardChanges: async ({
       after,
       limit,
     }: Parameters<RecordApiClient['listBoardChanges']>[0]) =>
       json(
         await fetch(`${origin}/v1/board/changes?after=${after ?? '0'}&limit=${limit ?? 100}`, {
-          headers: headers(token),
+          headers: headers(token, spaceId),
         }),
       ),
     putBoardReceipt: async (body: Parameters<RecordApiClient['putBoardReceipt']>[0]) =>
       json(
         await fetch(`${origin}/v1/board/receipts`, {
           method: 'PUT',
-          headers: headers(token),
+          headers: headers(token, spaceId),
           body: JSON.stringify(body),
         }),
       ),

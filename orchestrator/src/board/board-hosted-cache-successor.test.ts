@@ -252,7 +252,10 @@ test('a demoted former holder clears its local successor bit and cannot offer th
   await refresh(old, client)
   await refresh(next, client)
   expect(
-    await client.takeBoardSuccessor({ messageId: reply.id, candidateSession: 'new-holder' }),
+    await client.takeBoardSuccessor(
+      { messageId: reply.id, candidateSession: 'new-holder' },
+      { destinationSpaceId: 'successor-space' },
+    ),
   ).toEqual(expect.objectContaining({ holder: 'new-holder' }))
   await refresh(old, client)
   expect(

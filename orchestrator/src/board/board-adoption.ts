@@ -329,7 +329,6 @@ async function uploadMessage(
       project,
       projectId,
     },
-    undefined,
     await destinationResolver(client, project),
   )
   return uploaded.id
@@ -356,7 +355,6 @@ async function uploadReceipts(
           delivered: Boolean(receipt.delivered_at),
           acknowledged: Boolean(receipt.acknowledged_at),
         },
-        undefined,
         await destinationResolver(client),
       )
       recordReceiptUpload(

@@ -243,7 +243,8 @@ async function flushReceipts(
     delivered_at: string | null
     acknowledged_at: string | null
   }[]
-  const destination = rows.length > 0 ? await destinationResolver(client) : undefined
+  if (rows.length === 0) return
+  const destination = await destinationResolver(client)
   for (const row of rows) {
     try {
       await withinHostedBoardRefreshBudget(
@@ -257,8 +258,8 @@ async function flushReceipts(
               delivered: row.delivered_at !== null,
               acknowledged: row.acknowledged_at !== null,
             },
-            signal,
             destination,
+            signal,
           ),
         deadline - now(),
       )
@@ -1006,8 +1007,8 @@ export async function syncCachedHostedReceipt(
             audienceAtPosting: posting,
             delivered: true,
           },
-          signal,
           destination,
+          signal,
         ),
       deadline - Date.now(),
     )

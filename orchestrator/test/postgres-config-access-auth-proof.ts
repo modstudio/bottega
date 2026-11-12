@@ -136,6 +136,7 @@ export function registerConfigAccessSpaceCreationProof(input: {
         headers: {
           ...Object.fromEntries(headers),
           'content-type': 'application/json',
+          'x-record-space': spaceId,
         },
         body: JSON.stringify({ project: 'outside-intake-proof' }),
       })

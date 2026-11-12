@@ -503,11 +503,7 @@ export async function boardPost(input: PostNoticeInput, inputContext?: Context) 
   const audienceRefusal = architectsPostingRefusal(audience, projectAt(c.cwd)?.name)
   if (audienceRefusal) throw new Error(audienceRefusal)
   const post = hostedBoardPostInput('notice', input, c)
-  const row = await hostedClient(c).postBoardMessage(
-    post,
-    undefined,
-    await writeDestination(c, post.project),
-  )
+  const row = await hostedClient(c).postBoardMessage(post, await writeDestination(c, post.project))
   return {
     recordId: row.id,
     number: null,
@@ -536,11 +532,7 @@ export async function boardAsk(
   const audienceRefusal = architectsPostingRefusal(audience, projectAt(c.cwd)?.name)
   if (audienceRefusal) throw new Error(audienceRefusal)
   const post = hostedBoardPostInput('question', input, c)
-  const row = await hostedClient(c).postBoardMessage(
-    post,
-    undefined,
-    await writeDestination(c, post.project),
-  )
+  const row = await hostedClient(c).postBoardMessage(post, await writeDestination(c, post.project))
   return {
     recordId: row.id,
     number: null,
@@ -633,11 +625,9 @@ async function fileHostedNote(
 ) {
   const client = hostedClient(c)
   const destination = await writeDestination(c)
-  await client.takeBoardFilingLease(
-    questionId,
-    { authorSession: boardActor(c.env).session },
-    destination,
-  )
+  await client.takeBoardFilingLease(questionId, destination, {
+    authorSession: boardActor(c.env).session,
+  })
   const reply = thread.replies.find((row) => row.id === thread.root.acceptedReplyId)
   if (!reply) throw new Error(`board question ${questionId} accepted reply is unavailable`)
   try {
@@ -752,12 +742,9 @@ export async function boardWithdraw(id: string, inputContext?: Context) {
   const resolved = resolveBoardMessageIdentifier(db(), id, c.env)
   if (resolved.source === 'local') withdrawNotice(resolved.recordId, c.env, c.clock)
   else
-    await hostedClient(c).withdrawBoardMessage(
-      resolved.recordId,
-      { authorSession: boardActor(c.env).session },
-      undefined,
-      await writeDestination(c),
-    )
+    await hostedClient(c).withdrawBoardMessage(resolved.recordId, await writeDestination(c), {
+      authorSession: boardActor(c.env).session,
+    })
   return { withdrawn: id }
 }
 
@@ -777,7 +764,6 @@ export async function boardAcknowledge(id: string, inputContext?: Context) {
           audienceAtPosting,
           acknowledged: true,
         },
-        undefined,
         await writeDestination(c),
       )
       cacheHostedBoardReceipt(receipt)
@@ -873,11 +859,9 @@ export async function boardClaimRenew(id: string, inputContext?: Context) {
   return resolved.source === 'local'
     ? claimResult(renewClaim(resolved.recordId, c.env, c.clock))
     : claimResult(
-        await hostedClient(c).renewBoardClaim(
-          resolved.recordId,
-          { holderSession: boardActor(c.env).session },
-          await writeDestination(c),
-        ),
+        await hostedClient(c).renewBoardClaim(resolved.recordId, await writeDestination(c), {
+          holderSession: boardActor(c.env).session,
+        }),
       )
 }
 export async function boardClaimRelease(id: string, inputContext?: Context) {
@@ -886,11 +870,9 @@ export async function boardClaimRelease(id: string, inputContext?: Context) {
   return resolved.source === 'local'
     ? claimResult(releaseClaim(resolved.recordId, c.env, c.clock))
     : claimResult(
-        await hostedClient(c).releaseBoardClaim(
-          resolved.recordId,
-          { holderSession: boardActor(c.env).session },
-          await writeDestination(c),
-        ),
+        await hostedClient(c).releaseBoardClaim(resolved.recordId, await writeDestination(c), {
+          holderSession: boardActor(c.env).session,
+        }),
       )
 }
 export async function boardClaimList(

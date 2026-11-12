@@ -612,11 +612,12 @@ export async function proveHostedDocs(input: {
   token: string
   otherToken: string
 }): Promise<string> {
-  const headers = {
-    Authorization: `Bearer ${input.token}`,
+  const readHeaders = { Authorization: `Bearer ${input.token}` }
+  const headers: Record<string, string> = {
+    ...readHeaders,
     'content-type': 'application/json',
   }
-  const whoami = await fetch(`${input.origin}/v1/whoami`, { headers })
+  const whoami = await fetch(`${input.origin}/v1/whoami`, { headers: readHeaders })
   expect(whoami.status).toBe(200)
   const identity = (await whoami.json()) as {
     user: { id: string }
@@ -624,6 +625,7 @@ export async function proveHostedDocs(input: {
     personalSpaceId: string
   }
   expect(identity.activeSpaceId).toBe(identity.personalSpaceId)
+  headers['x-record-space'] = identity.personalSpaceId
   const memberSpaceId = newRecordId()
   succeeds(
     'postgres',
@@ -642,6 +644,7 @@ export async function proveHostedDocs(input: {
       body: JSON.stringify({ spaceId }),
     })
     expect(response.status).toBe(200)
+    headers['x-record-space'] = spaceId
   }
   await proveRequestedProjectSpace(input.origin, headers, identity.personalSpaceId, memberSpaceId)
   await selectSpace(memberSpaceId)
@@ -768,7 +771,9 @@ export async function proveHostedDocs(input: {
     error: expect.stringContaining(`current revision ${settingsCreated.revisionId}`),
   })
   await selectSpace(identity.personalSpaceId)
-  const personalDefault = await fetch(`${input.origin}/v1/docs?scope=machine`, { headers })
+  const personalDefault = await fetch(`${input.origin}/v1/docs?scope=machine`, {
+    headers: readHeaders,
+  })
   expect(personalDefault.status).toBe(200)
   expect(
     ((await personalDefault.json()) as { items: { id: string }[] }).items.some(
@@ -777,7 +782,7 @@ export async function proveHostedDocs(input: {
   ).toBe(false)
   const personalLens = await fetch(
     `${input.origin}/v1/docs?scope=machine&acrossReadableSpaces=true`,
-    { headers },
+    { headers: readHeaders },
   )
   expect(personalLens.status).toBe(200)
   expect(
@@ -785,7 +790,9 @@ export async function proveHostedDocs(input: {
       (doc) => doc.id === created.id,
     ),
   ).toBe(true)
-  const personalDetail = await fetch(`${input.origin}/v1/docs/${created.id}`, { headers })
+  const personalDetail = await fetch(`${input.origin}/v1/docs/${created.id}`, {
+    headers: readHeaders,
+  })
   expect(personalDetail.status).toBe(200)
   await selectSpace(memberSpaceId)
 

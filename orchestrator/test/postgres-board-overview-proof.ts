@@ -4,6 +4,7 @@ import type { HostedBoardOverview } from '../src/record/record-board-contract.ts
 
 type ProofInput = {
   origin(): string
+  spaceIdForToken(token: string): string
   tokenA(): string
   tokenB(): string
   tokenC(): string
@@ -25,17 +26,17 @@ const IDS = {
 } as const
 const PROJECT = 'board-api-overview'
 
-const headers = (token: string) => ({
-  authorization: `Bearer ${token}`,
-  'content-type': 'application/json',
-})
-
 async function body<T>(response: Response): Promise<T> {
   expect(response.status).toBe(200)
   return (await response.json()) as T
 }
 
 export function registerBoardOverviewProof(input: ProofInput): void {
+  const headers = (token: string) => ({
+    authorization: `Bearer ${token}`,
+    'content-type': 'application/json',
+    'x-record-space': input.spaceIdForToken(token),
+  })
   beforeAll(() => {
     input.succeeds(
       'postgres',

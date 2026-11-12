@@ -11,6 +11,18 @@ export function recordSignInRemedy(email: string): Extract<RefusalRemedy, { kind
 export const RECORD_SIGN_IN_REMEDY = `record session is missing or expired; run \`${recordSignInRemedy('<email>').argv.join(' ')}\``
 export const RECORD_ACTIVE_SPACE_REMEDY = `record session has no active space; run \`${PLATFORM_SLUG} record space switch <slug>\``
 export const RECORD_PERSONAL_SPACE_REMEDY = `run \`${PLATFORM_SLUG} record sign-in\` to restore the personal space`
+export const RECORD_WRITE_SPACE_REMEDY =
+  'send the destination space in the x-record-space header, then retry'
+export type WriteSpaceRefusal = { refused: 'write-destination' }
+export function recordWriteSpaceRefusal() {
+  return {
+    status: 409 as const,
+    body: {
+      error: 'write request names no destination space',
+      remedy: RECORD_WRITE_SPACE_REMEDY,
+    },
+  }
+}
 export const RUN_RETRY_REMEDY = `${PLATFORM_SLUG} run retry <run>`
 
 export type HostedRequestSafety = 'probe' | 'idempotent' | 'non-idempotent'

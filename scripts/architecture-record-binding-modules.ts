@@ -85,8 +85,23 @@ export const recordBindingModules: RecordModule[] = [
     './record-auth.ts',
   ]),
   module('orchestrator/src/record/record-api-tenant.ts', [
+    '../../../shared/record-remedies.ts',
     './record-api-doc-tenant.ts',
     './record-auth.ts',
+  ]),
+  module('orchestrator/src/record/record-api-board.ts', [
+    '../../../shared/prose/prose-gate.ts',
+    '../../../shared/record-remedies.ts',
+    '../../../shared/record-space-request.ts',
+    'hono',
+    'zod',
+    '../board/board-reply-audience.ts',
+    './record-auth.ts',
+    './record-api-write-telemetry.ts',
+    './record-api-prose.ts',
+    './record-board-stream.ts',
+    './record-board-contract.ts',
+    './record-board-tx.ts',
   ]),
   module('orchestrator/src/record/install-binding.ts', ['bun:sqlite']),
   module('orchestrator/src/record/install-binding-write.ts', [

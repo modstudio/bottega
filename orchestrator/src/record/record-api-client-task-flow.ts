@@ -4,7 +4,7 @@ import {
   REVISION_CONFLICT_CODE,
   revisionConflictErrorFromRecordApiError,
 } from '../doc/doc-revision-conflict.ts'
-import type { RecordRequestDestination } from './record-api-client-paths.ts'
+import type { RecordRequestDestination, RecordWriteDestination } from './record-api-client-paths.ts'
 import { RecordApiRequestError } from './record-api-client-response.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
@@ -77,39 +77,39 @@ export type RecordTaskFlowClient = {
   ): Promise<HostedTaskFlowObligationById | null>
   composeTaskFlow?(
     input: TaskFlowIntentInput<'compose'>,
-    destination?: RecordRequestDestination,
+    destination: RecordWriteDestination,
   ): Promise<TaskFlowComposeResult>
   updateTaskFlowStage?(
     input: TaskFlowIntentInput<'stage-update'>,
-    destination?: RecordRequestDestination,
+    destination: RecordWriteDestination,
   ): Promise<TaskFlowWriteResult>
   advanceTaskFlow?(
     input: TaskFlowIntentInput<'advance'>,
-    destination?: RecordRequestDestination,
+    destination: RecordWriteDestination,
   ): Promise<TaskFlowWriteResult>
   awaitTaskFlowRuling?(
     input: TaskFlowIntentInput<'await-ruling'>,
-    destination?: RecordRequestDestination,
+    destination: RecordWriteDestination,
   ): Promise<TaskFlowWriteResult>
   abandonTaskFlow?(
     input: TaskFlowIntentInput<'abandon'>,
-    destination?: RecordRequestDestination,
+    destination: RecordWriteDestination,
   ): Promise<TaskFlowWriteResult>
   adoptTaskFlow?(
     input: TaskFlowIntentInput<'adopt'>,
-    destination?: RecordRequestDestination,
+    destination: RecordWriteDestination,
   ): Promise<TaskFlowAdoptResult>
   attachTaskFlowText?(
     input: TaskFlowIntentInput<'attach-text'>,
-    destination?: RecordRequestDestination,
+    destination: RecordWriteDestination,
   ): Promise<TaskFlowWriteResult>
   deleteTaskFlowText?(
     input: TaskFlowIntentInput<'delete-text'>,
-    destination?: RecordRequestDestination,
+    destination: RecordWriteDestination,
   ): Promise<TaskFlowWriteResult>
   copyTaskFlowText?(
     input: TaskFlowIntentInput<'copy-text'>,
-    destination?: RecordRequestDestination,
+    destination: RecordWriteDestination,
   ): Promise<TaskFlowWriteResult>
 }
 async function readById<T>(
@@ -135,7 +135,7 @@ async function write<K extends TaskFlowIntent, T>(
   intent: K,
   input: TaskFlowIntentInput<K>,
   schema: (body: unknown) => T,
-  destination?: RecordRequestDestination,
+  destination: RecordWriteDestination,
 ): Promise<T> {
   try {
     return await request(`/v1/task-flow/${intent}`, {

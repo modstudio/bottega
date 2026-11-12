@@ -271,11 +271,15 @@ describe('hosted context router', () => {
       value: 'review',
       expectedRowVersion: 3,
     })
-    expect(client.putConfigEntry).toHaveBeenCalledWith('autonomy.stage.review', {
-      scope: 'user',
-      value: 'review',
-      expectedRowVersion: 3,
-    })
+    expect(client.putConfigEntry).toHaveBeenCalledWith(
+      'autonomy.stage.review',
+      {
+        scope: 'user',
+        value: 'review',
+        expectedRowVersion: 3,
+      },
+      personalSpaceId,
+    )
   })
 
   test('autonomy.setRulings writes the versioned user rulings key', async () => {
@@ -285,11 +289,15 @@ describe('hosted context router', () => {
       value: 'user',
       expectedRowVersion: 2,
     })
-    expect(client.putConfigEntry).toHaveBeenCalledWith('autonomy.rulings', {
-      scope: 'user',
-      value: 'user',
-      expectedRowVersion: 2,
-    })
+    expect(client.putConfigEntry).toHaveBeenCalledWith(
+      'autonomy.rulings',
+      {
+        scope: 'user',
+        value: 'user',
+        expectedRowVersion: 2,
+      },
+      personalSpaceId,
+    )
   })
 
   test('autonomy.setShipTo writes a versioned user ship-to level', async () => {
@@ -299,11 +307,15 @@ describe('hosted context router', () => {
       value: 'production',
       expectedRowVersion: null,
     })
-    expect(client.putConfigEntry).toHaveBeenCalledWith('autonomy.ship-to', {
-      scope: 'user',
-      value: 'production',
-      expectedRowVersion: null,
-    })
+    expect(client.putConfigEntry).toHaveBeenCalledWith(
+      'autonomy.ship-to',
+      {
+        scope: 'user',
+        value: 'production',
+        expectedRowVersion: null,
+      },
+      personalSpaceId,
+    )
   })
 
   test('autonomy.setShipTo succeeds from an alias-only leaf and removes that row', async () => {
@@ -325,10 +337,14 @@ describe('hosted context router', () => {
       value: 'production',
       expectedRowVersion: current.user.shipTo?.rowVersion ?? null,
     })
-    expect(client.deleteConfigEntry).toHaveBeenCalledWith('autonomy.release', {
-      scope: 'user',
-      expectedRowVersion: 7,
-    })
+    expect(client.deleteConfigEntry).toHaveBeenCalledWith(
+      'autonomy.release',
+      {
+        scope: 'user',
+        expectedRowVersion: 7,
+      },
+      personalSpaceId,
+    )
   })
 
   test('autonomy.setPreset writes the preset and deletes each user stage override', async () => {
@@ -338,15 +354,23 @@ describe('hosted context router', () => {
       value: 'manual',
       expectedRowVersion: null,
     })
-    expect(client.putConfigEntry).toHaveBeenCalledWith('autonomy.preset', {
-      scope: 'user',
-      value: 'manual',
-      expectedRowVersion: null,
-    })
-    expect(client.deleteConfigEntry).toHaveBeenCalledWith('autonomy.stage.review', {
-      scope: 'user',
-      expectedRowVersion: 3,
-    })
+    expect(client.putConfigEntry).toHaveBeenCalledWith(
+      'autonomy.preset',
+      {
+        scope: 'user',
+        value: 'manual',
+        expectedRowVersion: null,
+      },
+      personalSpaceId,
+    )
+    expect(client.deleteConfigEntry).toHaveBeenCalledWith(
+      'autonomy.stage.review',
+      {
+        scope: 'user',
+        expectedRowVersion: 3,
+      },
+      personalSpaceId,
+    )
   })
 
   test('autonomy.clearStage deletes only the named override and reports absence', async () => {
@@ -358,10 +382,14 @@ describe('hosted context router', () => {
     })
     expect(result.cleared).toBe(true)
     expect(client.deleteConfigEntry).toHaveBeenCalledTimes(1)
-    expect(client.deleteConfigEntry).toHaveBeenCalledWith('autonomy.stage.review', {
-      scope: 'user',
-      expectedRowVersion: 3,
-    })
+    expect(client.deleteConfigEntry).toHaveBeenCalledWith(
+      'autonomy.stage.review',
+      {
+        scope: 'user',
+        expectedRowVersion: 3,
+      },
+      personalSpaceId,
+    )
 
     const absentClient = fakeClient({ configEntries: mock(async () => []) as never })
     await expect(
@@ -427,14 +455,22 @@ describe('hosted context router', () => {
       code: 'CONFLICT',
       message: expect.stringContaining('review'),
     })
-    expect(deleteConfigEntry).toHaveBeenCalledWith('autonomy.stage.review', {
-      scope: 'user',
-      expectedRowVersion: 4,
-    })
-    expect(deleteConfigEntry).toHaveBeenCalledWith('autonomy.stage.ship', {
-      scope: 'user',
-      expectedRowVersion: 8,
-    })
+    expect(deleteConfigEntry).toHaveBeenCalledWith(
+      'autonomy.stage.review',
+      {
+        scope: 'user',
+        expectedRowVersion: 4,
+      },
+      personalSpaceId,
+    )
+    expect(deleteConfigEntry).toHaveBeenCalledWith(
+      'autonomy.stage.ship',
+      {
+        scope: 'user',
+        expectedRowVersion: 8,
+      },
+      personalSpaceId,
+    )
   })
 
   test('settings.get returns shared summaries without hook commands or secret material', async () => {
@@ -565,6 +601,7 @@ describe('hosted context router', () => {
     })
     expect(client.settingsPermission).toHaveBeenCalledWith(
       expect.objectContaining({ target: { kind: 'project', project: 'alpha' } }),
+      personalSpaceId,
     )
   })
 

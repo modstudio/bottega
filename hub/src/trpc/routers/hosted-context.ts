@@ -160,8 +160,9 @@ async function hostedOverrideRemains(
   key: string,
   rowVersion: number,
 ): Promise<boolean> {
+  const { spaceId } = await personalSpace(client)
   try {
-    await client.deleteConfigEntry(key, { scope: 'user', expectedRowVersion: rowVersion })
+    await client.deleteConfigEntry(key, { scope: 'user', expectedRowVersion: rowVersion }, spaceId)
     return false
   } catch (error) {
     if (!hostedConfigConflict(error)) throw error
@@ -171,10 +172,14 @@ async function hostedOverrideRemains(
   )
   if (!fresh) return false
   try {
-    await client.deleteConfigEntry(key, {
-      scope: 'user',
-      expectedRowVersion: fresh.rowVersion,
-    })
+    await client.deleteConfigEntry(
+      key,
+      {
+        scope: 'user',
+        expectedRowVersion: fresh.rowVersion,
+      },
+      spaceId,
+    )
     return false
   } catch (error) {
     if (!hostedConfigConflict(error)) throw error
@@ -208,11 +213,11 @@ function parseStoredSettings(body: string): OwnedSettings {
   }
 }
 
-async function settingsRow(
+/** The space a settings address writes to: the personal space for the user, the declared space for a project. */
+async function settingsDestination(
   client: RecordClient,
   address: z.infer<typeof target>,
-): Promise<{ row: RecordDoc; destination: string | undefined }> {
-  const subject = 'user' in address ? '' : address.project
+): Promise<{ destination: string; userId: string }> {
   const identity = await client.whoami()
   const registered = await client.projects()
   if (!('user' in address) && !registered.some((project) => project.name === address.project))
@@ -232,13 +237,19 @@ async function settingsRow(
     memberships: parseRecordSpaceMemberships(identity.memberships),
   })
   if ('refused' in decision) throw new TRPCError({ code: 'CONFLICT', message: decision.remedy })
-  const destination = decision.spaceId
+  return { destination: decision.spaceId, userId: identity.user.id }
+}
+
+async function settingsRow(
+  client: RecordClient,
+  address: z.infer<typeof target>,
+): Promise<{ row: RecordDoc; destination: string }> {
+  const subject = 'user' in address ? '' : address.project
+  const { destination, userId } = await settingsDestination(client, address)
   const rows = await allDocs(client, { scope: 'settings', subject }, destination)
   const row = rows.find((candidate) =>
     'user' in address
-      ? candidate.subject === null &&
-        candidate.owner === identity.user.id &&
-        candidate.slug === 'settings'
+      ? candidate.subject === null && candidate.owner === userId && candidate.slug === 'settings'
       : candidate.subject === address.project &&
         candidate.owner === null &&
         candidate.slug === 'settings',
@@ -268,12 +279,42 @@ function putUserEntry(
   client: RecordClient,
   key: string,
   input: { value: string; expectedRowVersion: number | null },
+): Promise<RecordConfigEntry> {
+  return personalSpace(client).then(({ spaceId }) =>
+    client.putConfigEntry(
+      key,
+      {
+        scope: 'user',
+        value: input.value,
+        expectedRowVersion: input.expectedRowVersion,
+      },
+      spaceId,
+    ),
+  )
+}
+
+async function writeHostedSettingsPermission(
+  client: RecordClient,
+  input: {
+    target: z.infer<typeof target>
+    list: 'allow' | 'ask' | 'deny'
+    rule: string
+    operation: 'add' | 'remove'
+    reason: string
+    expectedRevision: string
+  },
 ) {
-  return client.putConfigEntry(key, {
-    scope: 'user',
-    value: input.value,
-    expectedRowVersion: input.expectedRowVersion,
-  })
+  const { destination } = await settingsDestination(client, input.target)
+  return client.settingsPermission(
+    {
+      ...input,
+      target:
+        'user' in input.target
+          ? { kind: 'user' as const }
+          : { kind: 'project' as const, project: input.target.project },
+    },
+    destination,
+  )
 }
 
 export function createHostedContextRouter(clientFor: ClientFactory = defaultClient) {
@@ -375,10 +416,14 @@ export function createHostedContextRouter(clientFor: ClientFactory = defaultClie
             (entry) => entry.scope === 'user' && entry.key === STORED_SHIP_TO_CONFIG_ALIAS,
           )
           if (alias)
-            await client.deleteConfigEntry(STORED_SHIP_TO_CONFIG_ALIAS, {
-              scope: 'user',
-              expectedRowVersion: alias.rowVersion,
-            })
+            await client.deleteConfigEntry(
+              STORED_SHIP_TO_CONFIG_ALIAS,
+              {
+                scope: 'user',
+                expectedRowVersion: alias.rowVersion,
+              },
+              (await personalSpace(client)).spaceId,
+            )
           return hostedAutonomy(client, input.project)
         }),
       setRulings: t.procedure
@@ -415,10 +460,14 @@ export function createHostedContextRouter(clientFor: ClientFactory = defaultClie
           if (input.expectedRowVersion === null) {
             throw new TRPCError({ code: 'CONFLICT', message: 'Current row version is not null' })
           }
-          await client.deleteConfigEntry(key, {
-            scope: 'user',
-            expectedRowVersion: input.expectedRowVersion,
-          })
+          await client.deleteConfigEntry(
+            key,
+            {
+              scope: 'user',
+              expectedRowVersion: input.expectedRowVersion,
+            },
+            (await personalSpace(client)).spaceId,
+          )
           return { ...(await hostedAutonomy(client, input.project)), cleared: true }
         }),
     }),
@@ -437,15 +486,7 @@ export function createHostedContextRouter(clientFor: ClientFactory = defaultClie
             expectedRevision: z.string().uuid(),
           }),
         )
-        .mutation(({ ctx, input }) =>
-          clientFor(ctx).settingsPermission({
-            ...input,
-            target:
-              'user' in input.target
-                ? { kind: 'user' as const }
-                : { kind: 'project' as const, project: input.target.project },
-          }),
-        ),
+        .mutation(({ ctx, input }) => writeHostedSettingsPermission(clientFor(ctx), input)),
     }),
   })
 }

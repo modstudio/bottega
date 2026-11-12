@@ -1,6 +1,6 @@
 // concern: record-api-client
 /** Implements decoded port catalogue requests outside the main client file ceiling. */
-import type { RecordRequestDestination } from './record-api-client-paths.ts'
+import type { RecordRequestDestination, RecordWriteDestination } from './record-api-client-paths.ts'
 import {
   type RecordCatalogueImportResult,
   recordCatalogueImportResultSchema,
@@ -38,11 +38,11 @@ export type RecordPortClient = {
   }>
   writePort?(
     input: RecordPortWriteInput,
-    destination?: RecordRequestDestination,
+    destination: RecordWriteDestination,
   ): Promise<RecordPortWriteResponse>
   importPortCatalogue?(
     input: RecordPortImportInput,
-    destination?: RecordRequestDestination,
+    destination: RecordWriteDestination,
   ): Promise<RecordCatalogueImportResult>
 }
 export const recordPortClient = (request: Request): RecordPortClient => ({

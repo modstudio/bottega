@@ -13,8 +13,13 @@ import { recordWriteDestination } from '../record/record-write-destination.ts'
 import { resolveContextTaskByRecordId } from './context-write-adapter.ts'
 import { docWriteProjectName } from './doc-write-allowed.ts'
 
-type HostedDocClient = Pick<
-  RecordApiClient,
+type BindWriteDestination<Method> = Method extends (
+  ...args: [...infer Args, { destinationSpaceId: string }]
+) => infer Result
+  ? (...args: Args) => Result
+  : Method
+
+type HostedDocMethod =
   | 'listDocs'
   | 'getDoc'
   | 'listRevisions'
@@ -27,7 +32,10 @@ type HostedDocClient = Pick<
   | 'restoreDoc'
   | 'applySettingsPermission'
   | 'applySettingsAutoMode'
->
+
+type HostedDocClient = {
+  [Method in HostedDocMethod]: BindWriteDestination<RecordApiClient[Method]>
+}
 
 export async function hostedDocClient(
   scope: string,

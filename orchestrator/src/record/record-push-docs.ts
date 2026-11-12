@@ -3,7 +3,7 @@
 
 import type { DocForm, DocKind, DocStatus } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
+import { RECORD_PERSONAL_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import { db, writableDb } from '../database/db.ts'
 import { decodeStoredDocAudiences } from '../doc/doc-audiences-codec.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
@@ -12,6 +12,7 @@ import type {
   RecordApiClient,
   RecordDocImportInput,
   RecordRequestDestination,
+  RecordWriteDestination,
 } from './record-api-client.ts'
 import { recordApiClient } from './record-api-client.ts'
 import { recordDocArticleCompatibilityRefusal } from './record-doc-transport-contract.ts'
@@ -532,9 +533,9 @@ export async function pushDocsCommand(
   writableDb()
   const client = recordApiClient()
   const identity = await client.whoami()
-  if (!identity.activeSpaceId) throw new Error(RECORD_ACTIVE_SPACE_REMEDY)
-  const destinations = new Map<string | null, RecordRequestDestination>([
-    [null, { destinationSpaceId: identity.activeSpaceId }],
+  if (!identity.personalSpaceId) throw new Error(RECORD_PERSONAL_SPACE_REMEDY)
+  const destinations = new Map<string | null, RecordWriteDestination>([
+    [null, { destinationSpaceId: identity.personalSpaceId }],
   ])
   const destinationFor = async (projectName: string | null) => {
     const cached = destinations.get(projectName)
@@ -574,10 +575,7 @@ export async function pushDocsCommand(
   }
   const hosted = { docs: 0, revisions: 0, scores: 0, voids: 0 }
   const uniqueDestinations = new Map(
-    [...destinations.values()].map((destination) => [
-      destination.destinationSpaceId ?? null,
-      destination,
-    ]),
+    [...destinations.values()].map((destination) => [destination.destinationSpaceId, destination]),
   )
   for (const destination of uniqueDestinations.values()) {
     const counts = await client.counts(destination)

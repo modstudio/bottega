@@ -39,13 +39,11 @@ const call = <T>(stub: T | undefined, real: T): T => {
 }
 
 function taskRouteHonorsRequestedSpace(method: string, pathname: string): boolean {
+  if (recordRequestNature(method) === 'write') return true
   if (method === 'GET' && pathname === '/v1/tasks') return true
-  if (method === 'POST' && pathname === '/v1/tasks') return true
-  if (method === 'POST' && pathname === '/v1/tasks/presence') return true
-  if (method === 'DELETE' && pathname === '/v1/tasks') return true
   if (method === 'GET')
     return /^\/v1\/tasks\/[^/]+$/.test(pathname) && pathname !== '/v1/tasks/identity'
-  return method === 'POST' && /^\/v1\/tasks\/[^/]+\/documents$/.test(pathname)
+  return false
 }
 
 type RouteContext = {

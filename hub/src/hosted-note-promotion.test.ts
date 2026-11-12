@@ -56,7 +56,11 @@ async function promoteThroughRoute(noteId: string, body: Record<string, unknown>
   return noteApi(
     new Request(`https://hub.example.test/v1/notes/${noteId}/promote`, {
       method: 'POST',
-      headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
+      headers: {
+        authorization: 'Bearer test',
+        'content-type': 'application/json',
+        'x-record-space': spaceId,
+      },
       body: JSON.stringify(body),
     }),
     hostedRouteTestConfig,

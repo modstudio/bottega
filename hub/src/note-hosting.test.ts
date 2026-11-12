@@ -33,7 +33,10 @@ describe('hosted-only note safety', () => {
     const response = await noteApi(
       new Request('https://hub.example.test/v1/notes/outside', {
         method: 'POST',
-        headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
+        headers: {
+          authorization: 'Bearer test',
+          'content-type': 'application/json',
+        },
         body: JSON.stringify({ project: 'outside', text: 'note', anchor: '{}' }),
       }),
       hostedRouteTestConfig,
@@ -59,7 +62,11 @@ describe('hosted-only note safety', () => {
     const response = await noteApi(
       new Request(`https://hub.example.test/v1/notes/${id}/promote`, {
         method: 'POST',
-        headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
+        headers: {
+          authorization: 'Bearer test',
+          'content-type': 'application/json',
+          'x-record-space': 'space-a',
+        },
         body: JSON.stringify({ title: 'The point of the note' }),
       }),
       hostedRouteTestConfig,
@@ -164,7 +171,11 @@ describe('hosted-only note safety', () => {
     const response = await noteApi(
       new Request('https://hub.example.test/v1/notes/reap', {
         method: 'POST',
-        headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
+        headers: {
+          authorization: 'Bearer test',
+          'content-type': 'application/json',
+          'x-record-space': 'space-a',
+        },
         body: JSON.stringify({
           stale: [],
           deleted: [],

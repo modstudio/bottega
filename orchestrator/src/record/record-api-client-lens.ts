@@ -2,7 +2,11 @@
 /** Implements decoded lens catalogue requests outside the main client file ceiling. */
 
 import { z } from 'zod'
-import { lensCataloguePath, type RecordRequestDestination } from './record-api-client-paths.ts'
+import {
+  lensCataloguePath,
+  type RecordRequestDestination,
+  type RecordWriteDestination,
+} from './record-api-client-paths.ts'
 import {
   type RecordCatalogueImportResult,
   recordCatalogueImportResultSchema,
@@ -28,7 +32,7 @@ type Request = <T>(
 ) => Promise<T>
 export type RecordLensClient = {
   ensureSpaceBuiltIns?(
-    destination?: RecordRequestDestination,
+    destination: RecordWriteDestination,
   ): Promise<{ inserted: number; alreadyPresent: number }>
   listLensCatalogue(
     table: RecordLensTable,
@@ -41,19 +45,19 @@ export type RecordLensClient = {
   }>
   upsertLens(
     input: RecordLensWriteInput,
-    destination?: RecordRequestDestination,
+    destination: RecordWriteDestination,
   ): Promise<RecordLensWriteResponse>
   upsertLensProfile(
     input: RecordLensProfileWriteInput,
-    destination?: RecordRequestDestination,
+    destination: RecordWriteDestination,
   ): Promise<RecordLensProfileWriteResponse>
   selectProjectLensProfile(
     input: RecordProjectLensSelectionWireInput,
-    destination?: RecordRequestDestination,
+    destination: RecordWriteDestination,
   ): Promise<RecordProjectLensSelectionResponse>
   importLensCatalogue?(
     input: RecordLensImportInput,
-    destination?: RecordRequestDestination,
+    destination: RecordWriteDestination,
   ): Promise<RecordCatalogueImportResult>
 }
 
