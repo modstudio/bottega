@@ -1674,6 +1674,14 @@
       "tag": "0218_run_workflow_binding",
       "breakpoints": true,
       "compatibility": "additive"
+    },
+    {
+      "idx": 219,
+      "version": "6",
+      "when": 1794509396001,
+      "tag": "0219_taskless_task_flow",
+      "breakpoints": true,
+      "compatibility": "fenced"
     }
   ]
 }

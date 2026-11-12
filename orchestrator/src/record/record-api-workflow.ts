@@ -16,6 +16,7 @@ import { RecordTaskFlowError } from './record-task-flow.ts'
 import {
   TASK_FLOW_STAGE_LIST_REMEDY,
   type TaskFlowReadQueryInput,
+  taskFlowPresenceInputSchema,
   taskFlowReadQuerySchema,
   taskFlowStageListQuerySchema,
 } from './record-task-flow-contract.ts'
@@ -47,6 +48,9 @@ export type RecordWorkflowRouteDeps = {
     input: Tenant & z.infer<typeof taskFlowStageListQuerySchema>,
   ): Promise<unknown>
   readTaskFlowProjectReferenceCounts?(input: Tenant & { projectId: string }): Promise<unknown>
+  readTaskFlowPresence?(
+    input: Tenant & z.infer<typeof taskFlowPresenceInputSchema>,
+  ): Promise<unknown>
   writeTaskFlow?<K extends TaskFlowIntent>(
     intent: K,
     input: Tenant & TaskFlowIntentBody<K>,
@@ -235,6 +239,15 @@ function registerTaskFlowReadRoutes(
     return context.json(
       await deps.readTaskFlowProjectReferenceCounts({ ...active, projectId: projectId.data }),
     )
+  })
+  app.post('/v1/task-flow/presence', async (context) => {
+    if (!deps.readTaskFlowPresence)
+      return context.json({ error: 'hosted task-flow presence read is unavailable' }, 503)
+    const active = ports.scope(context)
+    if (!active) return ports.noSpace(context)
+    const body = taskFlowPresenceInputSchema.safeParse(await context.req.json().catch(() => null))
+    if (!body.success) return context.json({ error: 'invalid task-flow presence request' }, 400)
+    return context.json(await deps.readTaskFlowPresence({ ...active, ...body.data }))
   })
 }
 

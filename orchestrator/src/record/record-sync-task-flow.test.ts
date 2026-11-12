@@ -43,6 +43,7 @@ const OBLIGATION = id('2119')
 const TEXT = id('2120')
 const COPY = id('2121')
 const UNKNOWN = id('2122')
+const OTHER_PROJECT = id('2123')
 
 const payload = (kind: 'task_flow' | 'task_flow_stage') =>
   Object.fromEntries(OUTBOX_PAYLOAD_CONTRACTS[kind].columns.map((column) => [column, null]))
@@ -74,6 +75,9 @@ function stagePayload(revision = 1, state = 'running') {
     flowRecordId: FLOW,
     workflow: 'proof',
     mode: 'default',
+    workflowKey: 'DEV-2234',
+    instanceId: '',
+    sessionId: 'session-proof',
     workflowVersionId: WORKFLOW_VERSION,
     catalogueVersionId: CATALOGUE_VERSION,
     arguments: { key: 'DEV-1978' },
@@ -81,6 +85,9 @@ function stagePayload(revision = 1, state = 'running') {
     activeSlug: 'build',
     state,
     closedStepNotes: [],
+    question: 'Proceed?',
+    autonomy: '{"level":"guided"}',
+    enforcement: 'floors',
     totalSteps: 2,
     openedMachineId: MACHINE,
     takenOverFromMachineId: null,
@@ -91,6 +98,18 @@ function stagePayload(revision = 1, state = 'running') {
     updatedAt: STAMP,
   })
 }
+
+test('stage payload conversion carries the complete shape', () => {
+  expect(taskFlowStageValues(stagePayload())).toMatchObject({
+    projectId: PROJECT,
+    workflowKey: 'DEV-2234',
+    instanceId: '',
+    sessionId: 'session-proof',
+    question: 'Proceed?',
+    autonomy: '{"level":"guided"}',
+    enforcement: 'floors',
+  })
+})
 
 async function push(
   actor: SQL,
@@ -150,15 +169,16 @@ test('task-flow apply is idempotent and rejects older revisions', async () => {
         database as unknown as Parameters<typeof applyTaskFlowValues>[0],
         taskFlowValues(value),
       )
-    const applyStage = (value: Record<string, unknown>) =>
+    const applyStage = (value: Record<string, unknown>, number: number | null = null) =>
       applyTaskFlowStageValues(
         database as unknown as Parameters<typeof applyTaskFlowStageValues>[0],
         taskFlowStageValues(value),
+        number,
       )
 
     await applyFlow(flowPayload())
     await applyFlow(flowPayload())
-    await applyStage(stagePayload())
+    await applyStage(stagePayload(), 7)
     await applyStage(stagePayload())
     expect(
       (
@@ -170,17 +190,37 @@ test('task-flow apply is idempotent and rejects older revisions', async () => {
 
     await applyFlow(flowPayload(2, 'done'))
     await applyStage(stagePayload(2, 'done'))
+    await applyStage(
+      {
+        ...stagePayload(3, 'done'),
+        flowRecordId: UNKNOWN,
+        projectId: OTHER_PROJECT,
+      },
+      99,
+    )
     await applyFlow(flowPayload(1, 'open'))
     await applyStage(stagePayload(1, 'running'))
     expect(
       (
         await postgres.query(
           `SELECT flow.state flow_state,flow.revision flow_revision,
-                  stage.state stage_state,stage.revision stage_revision
+                  stage.state stage_state,stage.revision stage_revision,
+                  stage.flow_record_id stage_flow_record_id,
+                  stage.project_id stage_project_id,stage.number stage_number
            FROM task_flow flow JOIN task_flow_stage stage ON stage.flow_record_id=flow.id`,
         )
       ).rows,
-    ).toEqual([{ flow_state: 'done', flow_revision: 2, stage_state: 'done', stage_revision: 2 }])
+    ).toEqual([
+      {
+        flow_state: 'done',
+        flow_revision: 2,
+        stage_state: 'done',
+        stage_revision: 3,
+        stage_flow_record_id: FLOW,
+        stage_project_id: PROJECT,
+        stage_number: 7,
+      },
+    ])
   } finally {
     await postgres.close()
   }
@@ -251,6 +291,45 @@ realPostgres('hosted task flow revisions', () => {
           SELECT (SELECT count(*)::int FROM task_flow WHERE id=${FLOW}::uuid) flows,
                  (SELECT count(*)::int FROM task_flow_stage WHERE id=${STAGE}::uuid) stages`,
       ).toEqual([{ flows: 1, stages: 1 }])
+
+      const oldStagePayload = stagePayload(2, 'done')
+      for (const field of [
+        'projectId',
+        'workflowKey',
+        'instanceId',
+        'sessionId',
+        'question',
+        'autonomy',
+        'enforcement',
+      ])
+        delete oldStagePayload[field]
+      expect(await push(actor, 12, 'task_flow_stage', oldStagePayload)).toMatchObject({
+        results: [{ id: 12, status: 'synced' }],
+      })
+      expect(
+        await admin<
+          {
+            project_id: string
+            workflow_key: string | null
+            instance_id: string | null
+            session_id: string | null
+            question: string | null
+            autonomy: string | null
+            enforcement: string | null
+          }[]
+        >`SELECT project_id,workflow_key,instance_id,session_id,question,autonomy,enforcement
+           FROM task_flow_stage WHERE id=${STAGE}::uuid`,
+      ).toEqual([
+        {
+          project_id: PROJECT,
+          workflow_key: null,
+          instance_id: null,
+          session_id: null,
+          question: null,
+          autonomy: null,
+          enforcement: null,
+        },
+      ])
 
       await push(actor, 5, 'task_flow', flowPayload(2, 'done'))
       await push(actor, 6, 'task_flow_stage', stagePayload(2, 'done'))
@@ -375,6 +454,7 @@ realPostgres('hosted task flow revisions', () => {
       await admin`DELETE FROM machine WHERE id=${OTHER_MACHINE}::uuid`
       await admin`DELETE FROM machine WHERE id=${OTHER_USER_MACHINE}::uuid`
       await admin`DELETE FROM routing_evidence_head WHERE space_id=${SPACE}::uuid`
+      await admin`DELETE FROM seq WHERE space_id=${SPACE}::uuid`
       await admin`DELETE FROM project WHERE id=${PROJECT}::uuid`
       await admin`DELETE FROM membership WHERE id=${MEMBERSHIP}::uuid`
       await admin`DELETE FROM membership WHERE id=${OTHER_MEMBERSHIP}::uuid`
