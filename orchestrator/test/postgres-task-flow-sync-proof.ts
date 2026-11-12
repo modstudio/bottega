@@ -22,7 +22,7 @@ export async function proveTaskFlowSyncPush(input: ProofInput): Promise<void> {
   const stageId = newRecordId()
   const refusedStageId = newRecordId()
   const workflowVersionId = input.database
-    .query<{ record_id: string }, []>(
+    .query<{ record_id: string }, [string]>(
       `SELECT version.record_id FROM workflow_version version JOIN workflow
          ON workflow.record_id=version.workflow_record_id
        WHERE workflow.slug=? AND workflow.space_id IS NOT NULL LIMIT 1`,
