@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { TASK_CLOSED_WITH_RESIDUE_EXIT_CODE } from '../../shared/task-close-exit.ts'
 import { ARRAY_MCP_STATUS_WRITE_CONFIRM } from '../../shared/trackers.ts'
 import { PresenceOption } from './cli-command.ts'
 import { requireDatabase } from './db.ts'
@@ -196,14 +197,14 @@ async function closeTask(key: string, options: TaskOptions): Promise<void> {
     console.error(
       `retry: ${PLATFORM_SLUG} board claim release-task ${closed.key} --project ${closed.project} --json`,
     )
-    process.exitCode = 1
+    process.exitCode = TASK_CLOSED_WITH_RESIDUE_EXIT_CODE
   }
   if (pruneError) {
     console.error(`branch prune failed: ${pruneError.message}`)
     console.error(
       `retry: ${PLATFORM_SLUG} tree branch prune --project ${closed.project} --key ${closed.key}`,
     )
-    process.exitCode = 1
+    process.exitCode = TASK_CLOSED_WITH_RESIDUE_EXIT_CODE
     return
   }
   if (!pruned) return

@@ -1,13 +1,13 @@
-// concern: shared
+// concern: context-service
 /** Pure context-item effects for workflow and lifecycle verbs. */
-import { PLATFORM_SLUG } from './brand.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { LANDED_PULL_REQUEST_EXIT_CODES } from '../pull-request/pr-post-landing.ts'
 
 const CONTEXT_MOMENTS = [
   'workflow-next',
   'workflow-rule',
   'workflow-await',
   'question-answer',
-  'pr-merge',
 ] as const
 type ContextMoment = (typeof CONTEXT_MOMENTS)[number]
 type ContextMomentItemKind = 'next-action' | 'ruling' | 'position' | 'open-question'
@@ -30,8 +30,6 @@ export type ContextMomentInput = {
     stepTitle?: string | null
     finished?: boolean
   }
-  pullRequest?: { number: number; mergeCommit: string }
-  openQuestionIds?: readonly string[]
 }
 
 const emptyEffect = (): ContextMomentEffect => ({ writes: [], drops: [] })
@@ -55,20 +53,6 @@ export function contextMomentEffect(input: ContextMomentInput): ContextMomentEff
     }
     return { writes, drops: [] }
   }
-  if (input.moment === 'pr-merge') {
-    if (!input.pullRequest) return emptyEffect()
-    return {
-      writes: [
-        {
-          kind: 'next-action',
-          id: 'next',
-          source: 'pr-merge',
-          body: `PR ${input.pullRequest.number} landed as ${input.pullRequest.mergeCommit.slice(0, 12)}.`,
-        },
-      ],
-      drops: (input.openQuestionIds ?? []).map((id) => ({ kind: 'open-question', id })),
-    }
-  }
   if (!input.questionId || input.text === undefined) return emptyEffect()
   const source = questionSource(input.questionId)
   if (input.moment === 'workflow-await') {
@@ -81,6 +65,29 @@ export function contextMomentEffect(input: ContextMomentInput): ContextMomentEff
   return {
     writes: [{ kind, id: `${kind}-${source}`, source, body: input.text }],
     drops: [{ kind: 'open-question', id: `open-${source}` }],
+  }
+}
+
+/** Decides the complete context effect of a pull request merge outcome. */
+export function pullRequestMergeContextMomentEffect(input: {
+  exitCode: number
+  pullRequestNumber: number
+  mergeCommit: string
+  items: readonly { id: string; kind: string }[]
+}): ContextMomentEffect {
+  if (!LANDED_PULL_REQUEST_EXIT_CODES.has(input.exitCode)) return emptyEffect()
+  return {
+    writes: [
+      {
+        kind: 'next-action',
+        id: 'next',
+        source: 'pr-merge',
+        body: `PR ${input.pullRequestNumber} landed as ${input.mergeCommit.slice(0, 12)}.`,
+      },
+    ],
+    drops: input.items
+      .filter((item) => item.kind === 'open-question')
+      .map((item) => ({ kind: 'open-question' as const, id: item.id })),
   }
 }
 

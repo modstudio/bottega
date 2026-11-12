@@ -5,10 +5,9 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { type Command, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { contextMomentEffect } from '../../../shared/context-moment.ts'
-import { gitAt } from '../../../shared/git.ts'
 import { taskKeyToken } from '../branch/other-branch-state.ts'
 import { writableDb } from '../database/db.ts'
+import { pullRequestMergeContextMomentEffect } from '../doc/context-moment.ts'
 import { applyContextMomentEffect } from '../doc/context-moment-adapter.ts'
 import { getContext } from '../doc/context-service.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
@@ -20,7 +19,7 @@ import {
 } from '../pull-request/pr-admission.ts'
 import type { PullRequestCiCounts } from '../pull-request/pr-ci-record.ts'
 import { recordPullRequestCi } from '../pull-request/pr-ci-record.ts'
-import { mergePullRequest, type PullRequestMergeOutcome } from '../pull-request/pr-merge.ts'
+import { mergePullRequest, type PullRequestMergeCommandOutcome } from '../pull-request/pr-merge.ts'
 import {
   POST_LANDING_REPORTED_EXIT_CODE,
   runPullRequestPostLanding,
@@ -136,22 +135,18 @@ export async function createPullRequestCommand(
 }
 
 async function applyPullRequestContextMoment(
-  taskKey: string | null,
-  outcome: PullRequestMergeOutcome,
+  keyPrefixes: readonly string[],
+  outcome: PullRequestMergeCommandOutcome,
 ): Promise<void> {
-  if (!taskKey || ![0, 20, 21].includes(outcome.exitCode)) return
+  const taskKey = taskKeyToken(outcome.headBranch, keyPrefixes)
+  if (!taskKey) return
   try {
     const context = await getContext({ task: taskKey })
-    const effect = contextMomentEffect({
-      moment: 'pr-merge',
-      taskKey,
-      pullRequest: {
-        number: outcome.pullRequestNumber,
-        mergeCommit: outcome.mergeCommit,
-      },
-      openQuestionIds: context.items
-        .filter((item) => item.kind === 'open-question')
-        .map((item) => item.id),
+    const effect = pullRequestMergeContextMomentEffect({
+      exitCode: outcome.exitCode,
+      pullRequestNumber: outcome.pullRequestNumber,
+      mergeCommit: outcome.mergeCommit,
+      items: context.items,
     })
     await applyContextMomentEffect(taskKey, effect, false, { log, error: console.error })
   } catch (error) {
@@ -186,8 +181,6 @@ async function mergePullRequestCommand(
   const cwd = resolveReviewCommandCwd(options.cwd)
   const database = writableDb()
   const project = projectAt(cwd, database)
-  const branch = gitAt(cwd, ['branch', '--show-current']).stdout.trim()
-  const taskKey = project ? taskKeyToken(branch, project.settings.keyPrefixes ?? []) : null
   const outcome = await mergePullRequest(
     target,
     cwd,
@@ -198,7 +191,7 @@ async function mergePullRequestCommand(
   )
   log(outcome.output)
   if (outcome.exitCode !== 0) process.exitCode = outcome.exitCode
-  await applyPullRequestContextMoment(taskKey, outcome)
+  await applyPullRequestContextMoment(project?.settings.keyPrefixes ?? [], outcome)
 }
 
 export function register(program: Command): void {

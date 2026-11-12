@@ -24,9 +24,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     './workflow-text.ts',
     './workflow-text-copy.ts',
   ]),
-  module('orchestrator/src/workflow/workflow-context-moment.ts', [
-    '../../../shared/context-moment.ts',
-  ]),
+  module('orchestrator/src/workflow/workflow-context-moment.ts', ['../doc/context-moment.ts']),
   module('orchestrator/src/workflow/workflow-hosted-space.ts', ['bun:sqlite']),
   module('orchestrator/src/workflow/workflow-command-arguments.ts', [
     '../../../shared/brand.ts',

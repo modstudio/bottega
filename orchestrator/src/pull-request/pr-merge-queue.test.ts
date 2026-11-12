@@ -151,6 +151,7 @@ test('a declared merge queue enqueues after proof and returns the eventual merge
     exitCode: 0,
     pullRequestNumber: 42,
     mergeCommit: 'queued-merge-oid',
+    headBranch: 'DEV-1358-queue',
   })
   expect(calls).toEqual(['enqueue', 'wait', 'wait'])
   expect(enqueueArguments).toEqual([[cwd, 42, 'head-commit']])
@@ -178,6 +179,7 @@ test('an already-queued pull request is only waited for', async () => {
     exitCode: 0,
     pullRequestNumber: 42,
     mergeCommit: 'queued-merge-oid',
+    headBranch: 'DEV-1358-queue',
   })
   expect(enqueued).toBe(false)
 })
@@ -218,6 +220,7 @@ test('a failed first observation makes one requeue call with the node id and hea
     exitCode: 0,
     pullRequestNumber: 42,
     mergeCommit: 'queued-merge-oid',
+    headBranch: 'DEV-1358-queue',
   })
 })
 
@@ -364,6 +367,7 @@ test('a pull request merged during the vanished-entry transition completes', asy
     exitCode: 0,
     pullRequestNumber: 42,
     mergeCommit: 'queued-merge-oid',
+    headBranch: 'DEV-1358-queue',
   })
 })
 
@@ -491,6 +495,7 @@ test('a declared merge queue exempts a local-gate proof from moved landing state
     exitCode: 0,
     pullRequestNumber: 42,
     mergeCommit: 'queued-merge-oid',
+    headBranch: 'DEV-1358-queue',
   })
   expect(readLandingState).toBe(false)
 })

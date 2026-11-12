@@ -294,7 +294,7 @@ async function composite(
       invocationFor(part.argv, route.command),
     )
     if (code !== 0 && result === 0) result = code
-    if (code !== 0 && !route.continueOnFailure) break
+    if (code !== 0 && !route.continueOnFailure && !part.continueOnExitCodes?.includes(code)) break
   }
   return result
 }

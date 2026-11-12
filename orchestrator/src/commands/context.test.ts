@@ -2,7 +2,6 @@ import { expect, spyOn, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { run } from '../cli/program.ts'
 import { getDoc } from '../doc/docs.ts'
-import { contextClearReport } from './context.ts'
 
 test('agent context set refuses matching record shapes without writing', async () => {
   const errors: string[] = []
@@ -53,10 +52,4 @@ test('agent context set refuses matching record shapes without writing', async (
     else process.env.CLAUDE_CODE_SESSION_ID = previous
     error.mockRestore()
   }
-})
-
-test('context clear reports an empty holder as a successful zero-item clear', () => {
-  expect(contextClearReport({ task: 'DEV-2270', removed: 0 })).toBe(
-    'context: cleared 0 items on DEV-2270',
-  )
 })

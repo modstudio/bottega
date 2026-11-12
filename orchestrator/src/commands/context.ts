@@ -26,10 +26,6 @@ function registerWorked(context: Command): void {
     })
 }
 
-export function contextClearReport(result: { removed: number; task: string }): string {
-  return `context: cleared ${result.removed} items on ${result.task}`
-}
-
 function registerClear(context: Command): void {
   context
     .command('clear')
@@ -37,7 +33,7 @@ function registerClear(context: Command): void {
     .requiredOption('--task <key>', 'select task holder')
     .action(async (options) => {
       const result = await clearTaskContext({ task: options.task })
-      log(contextClearReport(result))
+      log(`context: cleared ${result.removed} items on ${result.task}`)
     })
 }
 

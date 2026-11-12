@@ -75,8 +75,7 @@ export function taskContextItems(task: ContextTaskIdentity, database: Database) 
 export async function clearTaskContext(input: { task: string }) {
   const { holder, task } = await resolveContextHolder(input)
   if (!task) throw new Error('task context clear requires --task')
-  const ids = listDocsStore({ scope: 'context', subject: holder }).map((doc) => doc.slug)
-  const removed = await removeTaskContextHolder(holder, ids, {
+  const removed = await removeTaskContextHolder(holder, {
     reason: `clear context holder ${task.key}`,
     contextTask: task,
   })

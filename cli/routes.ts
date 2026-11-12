@@ -1,3 +1,5 @@
+import { TASK_CLOSED_WITH_RESIDUE_EXIT_CODE } from '../shared/task-close-exit.ts'
+
 type RouteOwner = 'orch' | 'hub' | 'local' | 'composite' | 'outbox' | 'storage'
 
 export const HAND_PARSED_OWNERS: ReadonlySet<RouteOwner> = new Set([
@@ -17,6 +19,7 @@ export type CommandRoute = {
     label: string
     options?: Readonly<Record<string, boolean>>
     fixedArguments?: readonly string[]
+    continueOnExitCodes?: readonly number[]
   }[]
   /** Leading non-option arguments forwarded to every composite part. */
   positionals?: readonly string[]
@@ -125,7 +128,8 @@ export const ROUTES = (
     {
       command: ['task', 'close'],
       owner: 'composite',
-      description: 'close a task and clear its stored context',
+      description:
+        'close a task, release its claims, prune its branches, and clear its stored context',
       positionals: ['key'],
       composite: [
         {
@@ -133,12 +137,14 @@ export const ROUTES = (
           argv: ['task', 'close'],
           label: 'task close',
           options: { '--project': true, '--keep-branches': false, '--abandon': true },
+          continueOnExitCodes: [TASK_CLOSED_WITH_RESIDUE_EXIT_CODE],
         },
         {
           owner: 'orch',
           argv: ['context', 'clear'],
           label: 'task context clear',
           fixedArguments: ['--task'],
+          options: {},
         },
       ],
     },

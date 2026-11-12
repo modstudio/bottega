@@ -1,19 +1,14 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { contextMomentEffect } from '../../../shared/context-moment.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { removeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import type { SecretScanner } from '../secret-scan/secret-scan.ts'
 import { encodeContextItem } from './context-item-codec.ts'
+import { pullRequestMergeContextMomentEffect } from './context-moment.ts'
 import { applyContextMomentEffect } from './context-moment-adapter.ts'
-import {
-  clearTaskContext,
-  dropContextItem,
-  getContext,
-  setContextItem,
-} from './context-service.ts'
+import { clearTaskContext, dropContextItem, getContext, setContextItem } from './context-service.ts'
 import {
   CONTEXT_FACTS_PORTS_KEY,
   type ContextFactsPorts,
@@ -76,13 +71,11 @@ describe('context document integration', () => {
     const beforeMerge = await getContext({ task: task.key })
     await applyContextMomentEffect(
       task.key,
-      contextMomentEffect({
-        moment: 'pr-merge',
-        taskKey: task.key,
-        pullRequest: { number: 314, mergeCommit: '0123456789abcdef' },
-        openQuestionIds: beforeMerge.items
-          .filter((item) => item.kind === 'open-question')
-          .map((item) => item.id),
+      pullRequestMergeContextMomentEffect({
+        exitCode: 0,
+        pullRequestNumber: 314,
+        mergeCommit: '0123456789abcdef',
+        items: beforeMerge.items,
       }),
       false,
       output,

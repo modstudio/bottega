@@ -6,7 +6,7 @@ import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
 import type { DocWriteContext } from './doc-article-fields.ts'
 import { contextTaskOwner, hostedDocClient } from './doc-hosted-client.ts'
-import { type Doc, getDocStore } from './doc-read-store.ts'
+import { type Doc, getDocStore, listDocsStore } from './doc-read-store.ts'
 import { assertLocalStoredReferenceWrite } from './doc-reference-write.ts'
 import { assertLocalRevisionWrite } from './doc-revision-store.ts'
 import { type ContextDropTarget, docWriteProjectName } from './doc-write-allowed.ts'
@@ -123,7 +123,6 @@ export async function removeContextItemForLifecycle(
 /** Task teardown removes a complete task holder without applying single-item required-kind guards. */
 export async function removeTaskContextHolder(
   holder: string,
-  slugs: readonly string[],
   context: DocWriteContext,
 ): Promise<number> {
   if (!holder.startsWith('task:')) {
@@ -133,9 +132,7 @@ export async function removeTaskContextHolder(
   writableDb()
   const identity = resolvedDocWriteIdentity(context)
   let removed = 0
-  for (const slug of slugs) {
-    const doc = getDocStore('context', holder, slug)
-    if (!doc) continue
+  for (const doc of listDocsStore({ scope: 'context', subject: holder })) {
     if (
       await removeStoredDoc(
         doc,

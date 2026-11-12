@@ -5,7 +5,7 @@ import {
   type ContextMomentOutput,
   contextDropCommand,
   contextSetCommand,
-} from '../../../shared/context-moment.ts'
+} from './context-moment.ts'
 import { contextItemRevision, dropContextItem, setContextItem } from './context-service.ts'
 import { ContextWriteRefusalError } from './doc-context-write.ts'
 

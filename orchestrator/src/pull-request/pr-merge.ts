@@ -57,14 +57,15 @@ import {
 } from './pr-merge-evidence.ts'
 import {
   completePullRequestPostLanding,
+  type PullRequestMergeOutcome,
   type PullRequestPostLandingAdapter,
-  type PullRequestMergeOutcome as PullRequestPostLandingOutcome,
 } from './pr-post-landing.ts'
 
 export type { PullRequestMergeFacts } from './pr-merge-evidence.ts'
-export type PullRequestMergeOutcome = PullRequestPostLandingOutcome & {
+export type PullRequestMergeCommandOutcome = PullRequestMergeOutcome & {
   pullRequestNumber: number
   mergeCommit: string
+  headBranch: string
 }
 
 export type PullRequestMergeAdapter = {
@@ -731,7 +732,7 @@ async function completeMerge(input: {
   mergeMethod: 'squash' | 'merge' | 'rebase'
   releaseRequired: boolean
   depth?: string
-}): Promise<PullRequestMergeOutcome> {
+}): Promise<PullRequestMergeCommandOutcome> {
   let pullRequest: PullRequestMergeFacts | undefined
   let mergeCommit = ''
   let mergeCommitLookupError: unknown
@@ -808,6 +809,7 @@ async function completeMerge(input: {
     ...outcome,
     pullRequestNumber: pullRequest!.number,
     mergeCommit,
+    headBranch: pullRequest!.headBranch,
   }
 }
 
@@ -818,7 +820,7 @@ export async function mergePullRequest(
   injectedDatabase?: Database,
   releaseRequired = false,
   depth?: string,
-): Promise<PullRequestMergeOutcome> {
+): Promise<PullRequestMergeCommandOutcome> {
   enableSchemaReload()
   const database = injectedDatabase ?? writableDb()
   const project = projectAt(cwd, database)

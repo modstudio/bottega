@@ -2,7 +2,6 @@
 /** Owns answer, retry, and continuation command behavior. Must not know CLI grammar. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { ContextMomentOutput } from '../../../shared/context-moment.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { resumePromptByteLimit } from '../agent/agents.ts'
 import {
@@ -18,6 +17,7 @@ import {
   readWorkerFile,
 } from '../cli/args.ts'
 import { db } from '../database/db.ts'
+import type { ContextMomentOutput } from '../doc/context-moment.ts'
 import { applyContextMoment, type ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { newestTurnOutputPath } from '../evidence/evidence-query.ts'
 import { jobTakesFidelity } from '../jobs/job-fidelity.ts'

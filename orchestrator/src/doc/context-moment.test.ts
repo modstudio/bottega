@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { contextMomentEffect } from './context-moment.ts'
+import { contextMomentEffect, pullRequestMergeContextMomentEffect } from './context-moment.ts'
 
 describe('context moment effect', () => {
   test('workflow await writes its open question', () => {
@@ -85,13 +85,18 @@ describe('context moment effect', () => {
       contextMomentEffect({ moment: 'workflow-await', questionId: 12, text: 'Which shape?' }),
     ).toEqual({ writes: [], drops: [] })
   })
-  test('pr merge revises next and drops only the gathered open questions', () => {
+  test.each([0, 22])('a landed exit %i revises next and drops only open questions', (exitCode) => {
     expect(
-      contextMomentEffect({
-        moment: 'pr-merge',
-        taskKey: 'DEV-2270',
-        pullRequest: { number: 314, mergeCommit: '0123456789abcdef' },
-        openQuestionIds: ['open-q1', 'open-q2'],
+      pullRequestMergeContextMomentEffect({
+        exitCode,
+        pullRequestNumber: 314,
+        mergeCommit: '0123456789abcdef',
+        items: [
+          { id: 'open-q1', kind: 'open-question' },
+          { id: 'ruling-q1', kind: 'ruling' },
+          { id: 'position-q2', kind: 'position' },
+          { id: 'open-q2', kind: 'open-question' },
+        ],
       }),
     ).toEqual({
       writes: [
@@ -107,5 +112,16 @@ describe('context moment effect', () => {
         { kind: 'open-question', id: 'open-q2' },
       ],
     })
+  })
+
+  test('a non-landed exit has no effect', () => {
+    expect(
+      pullRequestMergeContextMomentEffect({
+        exitCode: 1,
+        pullRequestNumber: 314,
+        mergeCommit: '0123456789abcdef',
+        items: [{ id: 'open-q1', kind: 'open-question' }],
+      }),
+    ).toEqual({ writes: [], drops: [] })
   })
 })

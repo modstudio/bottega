@@ -52,9 +52,15 @@ export type WorkflowPromotionResult =
   | { ok: true; output: string }
   | { ok: false; stage: WorkflowPromotionStage; detail: string }
 
-const MERGED_WITH_RESIDUE_EXIT_CODE = SHIP_CLEANUP_RESIDUE_EXIT_CODE
-const MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE = 21
+export const MERGED_WITH_RESIDUE_EXIT_CODE = SHIP_CLEANUP_RESIDUE_EXIT_CODE
+export const MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE = 21
 export const POST_LANDING_REPORTED_EXIT_CODE = 22
+export const LANDED_PULL_REQUEST_EXIT_CODES: ReadonlySet<number> = new Set([
+  0,
+  MERGED_WITH_RESIDUE_EXIT_CODE,
+  MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
+  POST_LANDING_REPORTED_EXIT_CODE,
+])
 export type PullRequestMergeOutcome = {
   output: string
   exitCode: number
@@ -333,12 +339,7 @@ function postLandingHandOffOutcome(
   target: string,
   depth?: string,
 ): PullRequestMergeOutcome {
-  const expected = [
-    0,
-    MERGED_WITH_RESIDUE_EXIT_CODE,
-    MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
-    POST_LANDING_REPORTED_EXIT_CODE,
-  ].includes(handedOff.exitCode)
+  const expected = LANDED_PULL_REQUEST_EXIT_CODES.has(handedOff.exitCode)
   if (expected) return handedOff
   return {
     output: `${handedOff.output}\npost-landing steps (promotion, rungs, cleanup) did not complete; ${postLandingRecovery(target, depth)}`,

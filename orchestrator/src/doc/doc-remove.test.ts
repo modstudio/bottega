@@ -12,7 +12,7 @@ describe('document removal', () => {
 
   test('task holder clear refuses a non-task subject', async () => {
     await expect(
-      removeTaskContextHolder('session:fixture', [], { reason: 'invalid task clear' }),
+      removeTaskContextHolder('session:fixture', { reason: 'invalid task clear' }),
     ).rejects.toThrow('task context clear requires a task: subject')
   })
 })
