@@ -35,7 +35,7 @@ export function registerRecordRequestSpace(app: Hono<ApiEnvironment>): void {
         403,
       )
     }
-    if (decision.spaceId !== null) {
+    if (requested !== null && decision.spaceId !== null) {
       const access = recordSpaceAccessDecision(
         recordRequestNature(context.req.method),
         decision.spaceId,
@@ -47,33 +47,5 @@ export function registerRecordRequestSpace(app: Hono<ApiEnvironment>): void {
       context.set('destinationSpaceId', decision.spaceId)
     await next()
   }
-  const prefixes = [
-    '/v1/projects',
-    '/v1/releases',
-    '/v1/docs',
-    '/v1/subjects',
-    '/v1/lens-catalogue',
-    '/v1/workflow-catalogue',
-    '/v1/task-flow',
-    '/v1/port-catalogue',
-    '/v1/settings/permission',
-    '/v1/settings/auto-mode',
-    '/v1/config',
-    '/v1/config-access',
-    '/v1/members',
-    '/v1/runs',
-    '/v1/board/messages',
-    '/v1/board/changes',
-    '/v1/board/successor',
-    '/v1/board/receipts',
-    '/v1/board/claims',
-    '/v1/snapshots',
-    '/v1/outside-intake',
-    '/v1/outside-blocks',
-    '/v1/moderation',
-  ] as const
-  for (const prefix of prefixes) {
-    app.use(prefix, requestedSpace)
-    app.use(`${prefix}/*`, requestedSpace)
-  }
+  app.use('/v1/*', requestedSpace)
 }

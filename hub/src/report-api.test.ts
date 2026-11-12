@@ -29,7 +29,11 @@ test('the hosted route cannot update or remove a subscription in another space',
   const update = await reportApi(
     new Request(`https://hub.example.test/v1/report-subscriptions/${subscriptionId}`, {
       method: 'PUT',
-      headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
+      headers: {
+        authorization: 'Bearer test',
+        'content-type': 'application/json',
+        'x-record-space': otherSpace,
+      },
       body: JSON.stringify({
         cadence: 'daily',
         hour: 18,
@@ -43,7 +47,7 @@ test('the hosted route cannot update or remove a subscription in another space',
   const remove = await reportApi(
     new Request(`https://hub.example.test/v1/report-subscriptions/${subscriptionId}`, {
       method: 'DELETE',
-      headers: { authorization: 'Bearer test' },
+      headers: { authorization: 'Bearer test', 'x-record-space': otherSpace },
     }),
     config,
     dependencies,
@@ -133,7 +137,11 @@ test('read-only membership refuses send creation and mirroring', async () => {
     const response = await reportApi(
       new Request(`https://hub.example.test${path}`, {
         method,
-        headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
+        headers: {
+          authorization: 'Bearer test',
+          'content-type': 'application/json',
+          'x-record-space': ownSpace,
+        },
         body: '{}',
       }),
       config,

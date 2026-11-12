@@ -5,13 +5,20 @@ import type { NoDestinationWriteTelemetry } from '../../shared/record-no-destina
 import {
   hostedRequestSafetyStatement,
   RECORD_SIGN_IN_REMEDY,
+  recordWriteSpaceRefusal,
 } from '../../shared/record-remedies.ts'
 import {
   parseRecordSpaceMemberships,
   type RecordSpaceMembership,
 } from '../../shared/record-space-membership.ts'
-import { recordSpaceRequestDecision } from '../../shared/record-space-request.ts'
-import { hostedNoDestinationWriteDecision } from './hosted-no-destination-write-decision.ts'
+import {
+  recordRequestNature,
+  recordSpaceRequestDecision,
+} from '../../shared/record-space-request.ts'
+import {
+  hostedNoDestinationWriteDecision,
+  hostedWriteIsExempt,
+} from './hosted-no-destination-write-decision.ts'
 
 type RecordIdentity = {
   userId: string
@@ -26,6 +33,7 @@ export type TaskSpaceIdentity =
       'activeSpaceId'
     >)
   | { kind: 'refused-space'; refusedSpace: string }
+  | { kind: 'refused-destination' }
   | { kind: 'unauthenticated' }
   | { kind: 'unavailable'; cause: string }
 
@@ -36,7 +44,10 @@ export function recordIdentityDecision(
   value: unknown,
 ):
   | { kind: 'authenticated'; identity: RecordIdentity }
-  | Exclude<TaskSpaceIdentity, { kind: 'authenticated' | 'refused-space' }> {
+  | Exclude<
+      TaskSpaceIdentity,
+      { kind: 'authenticated' | 'refused-space' | 'refused-destination' }
+    > {
   if (status === 401 || status === 403) return { kind: 'unauthenticated' }
   if (status < 200 || status >= 300) return { kind: 'unavailable', cause: String(status) }
   if (!value || typeof value !== 'object' || Array.isArray(value))
@@ -74,6 +85,10 @@ export function identityRefusalResponse(
 }
 
 export function identityRefusal(identity: TaskSpaceIdentity): Response | null {
+  if (identity.kind === 'refused-destination') {
+    const refusal = recordWriteSpaceRefusal()
+    return Response.json(refusal.body, { status: refusal.status })
+  }
   if (identity.kind === 'unauthenticated' || identity.kind === 'unavailable')
     return identityRefusalResponse(identity)
   return null
@@ -146,6 +161,12 @@ export async function taskSpaceIdentity(
       ),
     )
   }
+  if (
+    recordRequestNature(request.method) === 'write' &&
+    !request.headers.has('x-record-space') &&
+    !hostedWriteIsExempt(request.method, new URL(request.url).pathname)
+  )
+    return { kind: 'refused-destination' }
   return {
     kind: 'authenticated',
     userId: identity.userId,

@@ -19,9 +19,9 @@ test('project canon import refuses a tree-aware broken reference before the host
     let hostedWrites = 0
     installRecordApiClient({
       ...client,
-      importCanon: async (input) => {
+      importCanon: async (input, destination) => {
         hostedWrites++
-        return client.importCanon(input)
+        return client.importCanon(input, destination)
       },
     })
     spawnFixtureGitSync(['init'], { cwd: root })

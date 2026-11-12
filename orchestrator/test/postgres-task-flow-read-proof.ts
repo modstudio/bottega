@@ -1,6 +1,6 @@
 import { expect } from 'bun:test'
 import { newRecordId } from '../../shared/record-id.ts'
-import type { RecordRequestDestination } from '../src/record/record-api-client-paths.ts'
+import type { RecordWriteDestination } from '../src/record/record-api-client-paths.ts'
 import type { RecordTaskFlowClient } from '../src/record/record-api-client-task-flow.ts'
 import type { TaskFlowIntentInput } from '../src/record/record-task-flow-write-contract.ts'
 
@@ -8,7 +8,7 @@ type Stage = NonNullable<TaskFlowIntentInput<'compose'>['stageInsert']>
 
 export async function proveTaskFlowRecordReads(input: {
   client: RecordTaskFlowClient
-  destination: RecordRequestDestination
+  destination: RecordWriteDestination
   projectId: string
   otherProjectId: string
   taskId: string

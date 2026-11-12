@@ -202,6 +202,10 @@ export const hubModuleSpecs = [
   },
   {
     file: 'hub/src/hosted-no-destination-write-decision.ts',
+    allowed: ['../../shared/record-space-request.ts', './hosted-write-routes.ts'],
+  },
+  {
+    file: 'hub/src/hosted-write-routes.ts',
     allowed: ['../../shared/record-space-request.ts'],
   },
   {

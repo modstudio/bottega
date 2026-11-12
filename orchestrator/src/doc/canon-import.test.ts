@@ -25,9 +25,9 @@ test('a finding in one row refuses the whole canon import before either store is
   const client = createMemoryRecordApiClient()
   installRecordApiClient({
     ...client,
-    importCanon: async (input) => {
+    importCanon: async (input, destination) => {
       hostedWrites++
-      return client.importCanon(input)
+      return client.importCanon(input, destination)
     },
   })
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
@@ -163,41 +163,55 @@ describe.each([
 ])('%s canon import history', (_name, address) => {
   test('cannot regain bootstrap after every live row is deleted', async () => {
     const client = createMemoryRecordApiClient()
-    const first = await client.importCanon({
-      address,
-      rows: [{ slug: 'AGENTS.md', title: 'AGENTS.md', body: 'Current rule.' }],
-      expectedRevisions: {},
-      reason: 'first import',
-      author: 'test',
-    })
+    const destination = { destinationSpaceId: 'canon-space' }
+    const first = await client.importCanon(
+      {
+        address,
+        rows: [{ slug: 'AGENTS.md', title: 'AGENTS.md', body: 'Current rule.' }],
+        expectedRevisions: {},
+        reason: 'first import',
+        author: 'test',
+      },
+      destination,
+    )
     expect(first.bootstrap).toBe(true)
-    await client.deleteDoc(first.rows[0]!.id, {
-      reason: 'remove every row',
-      author: 'test',
-      expectedRevision: first.rows[0]!.revisionId,
-    })
+    await client.deleteDoc(
+      first.rows[0]!.id,
+      {
+        reason: 'remove every row',
+        author: 'test',
+        expectedRevision: first.rows[0]!.revisionId,
+      },
+      destination,
+    )
 
     await expect(
-      client.importCanon({
-        address,
-        rows: [{ slug: 'AGENTS.md', title: 'AGENTS.md', body: 'It used to differ.' }],
-        expectedRevisions: {},
-        reason: 'try bootstrap again',
-        author: 'test',
-      }),
+      client.importCanon(
+        {
+          address,
+          rows: [{ slug: 'AGENTS.md', title: 'AGENTS.md', body: 'It used to differ.' }],
+          expectedRevisions: {},
+          reason: 'try bootstrap again',
+          author: 'test',
+        },
+        destination,
+      ),
     ).rejects.toThrow('refusing canon write')
   })
 
   test('refuses an empty import', async () => {
     const client = createMemoryRecordApiClient()
     await expect(
-      client.importCanon({
-        address,
-        rows: [],
-        expectedRevisions: {},
-        reason: 'empty import',
-        author: 'test',
-      }),
+      client.importCanon(
+        {
+          address,
+          rows: [],
+          expectedRevisions: {},
+          reason: 'empty import',
+          author: 'test',
+        },
+        { destinationSpaceId: 'canon-space' },
+      ),
     ).rejects.toThrow('refusing empty canon import')
   })
 })

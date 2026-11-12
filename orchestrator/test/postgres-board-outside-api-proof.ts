@@ -3,7 +3,7 @@ import { SQL } from 'bun'
 import { OUTSIDE_WRITES_PER_HOUR } from '../../shared/outside-write-decision.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
-import { headers, json, notice } from './postgres-board-api-values.ts'
+import { json, notice, headers as requestHeaders } from './postgres-board-api-values.ts'
 
 const SEEDED_SUBJECTS = [
   '03990000-0000-7000-8000-000000000031',
@@ -13,6 +13,8 @@ const SEEDED_SUBJECTS = [
 
 export function registerBoardOutsideApiProof(input: {
   origin: () => string
+  spaceIdForToken(token: string): string
+  setActiveSpace(token: string, spaceId: string): void
   token: () => string
   ownerToken: () => string
   nonOwnerToken: () => string
@@ -29,6 +31,8 @@ export function registerBoardOutsideApiProof(input: {
   succeeds: (user: string, password: string, source: string) => string
   actorUrl: string
 }): void {
+  const headers = (token: string) => requestHeaders(token, input.spaceIdForToken(token))
+
   const makeOutsideAuthorEligible = () => {
     const userId = input.userId()
     const previous = input
@@ -264,6 +268,7 @@ export function registerBoardOutsideApiProof(input: {
       body: JSON.stringify({ spaceId: input.spaceId() }),
     })
     expect(switched.status).toBe(200)
+    input.setActiveSpace(input.nonOwnerToken(), input.spaceId())
     const paused = await fetch(`${input.origin()}/v1/outside-intake/pause`, {
       method: 'POST',
       headers: headers(input.nonOwnerToken()),

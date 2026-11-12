@@ -3,7 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { projectByName } from '../project/projects.ts'
 import { recordApiClient } from './record-api-client.ts'
-import type { RecordRequestDestination } from './record-api-client-paths.ts'
+import type { RecordWriteDestination } from './record-api-client-paths.ts'
 import type { RecordTaskFlowClient } from './record-api-client-task-flow.ts'
 import { requireProjectRecordDestination } from './record-project-destination-client.ts'
 import type {
@@ -16,7 +16,7 @@ import { applyRecordWriteAuthority } from './record-write-authority.ts'
 export type TaskFlowWriteTarget = {
   projectName: string
   database: Database
-  destination?: Promise<RecordRequestDestination>
+  destination?: Promise<RecordWriteDestination>
 }
 
 export const taskFlowWriteTarget = (
@@ -27,7 +27,7 @@ export const taskFlowWriteTarget = (
 export function resolveTaskFlowDestination(
   target: TaskFlowWriteTarget,
   client: RecordTaskFlowClient = recordApiClient(),
-): Promise<RecordRequestDestination> {
+): Promise<RecordWriteDestination> {
   if (!target.destination) {
     const project = projectByName(target.projectName, target.database)
     if (!project)
@@ -70,7 +70,7 @@ export async function writeHostedTaskFlow<K extends TaskFlowIntent>(
         const method = client[methodByIntent[intent]] as
           | ((
               body: TaskFlowIntentInput<K>,
-              destination?: RecordRequestDestination,
+              destination: RecordWriteDestination,
             ) => Promise<TaskFlowIntentResult<K>>)
           | undefined
         if (!method)

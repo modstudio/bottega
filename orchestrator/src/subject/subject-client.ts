@@ -4,14 +4,22 @@ import { projectRowByName } from '../project/projects.ts'
 import { type RecordApiClient, recordApiClient } from '../record/record-api-client.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 
-type SubjectClient = Pick<
-  RecordApiClient,
+type BindWriteDestination<Method> = Method extends (
+  ...args: [...infer Args, { destinationSpaceId: string }]
+) => infer Result
+  ? (...args: Args) => Result
+  : Method
+
+type SubjectMethod =
   | 'addProjectSubject'
   | 'renameProjectSubject'
   | 'defineProjectSubject'
   | 'reorderProjectSubjects'
   | 'retireProjectSubject'
->
+
+type SubjectClient = {
+  [Method in SubjectMethod]: BindWriteDestination<RecordApiClient[Method]>
+}
 
 function withProjectId<T extends { project: string }>(input: T): T & { projectId: string | null } {
   return { ...input, projectId: projectRowByName(input.project)?.recordId ?? null }

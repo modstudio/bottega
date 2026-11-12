@@ -16,6 +16,7 @@ import {
 } from './hosted-no-destination-write-api.ts'
 import type { HostedRouteConfig } from './hosted-route-config.ts'
 import { hostedVersionResponse } from './hosted-version.ts'
+import { isUnregisteredHostedWrite } from './hosted-write-routes.ts'
 import { noteApi } from './note-api.ts'
 import { operatorWaitingEmailApi } from './operator-waiting-email-api.ts'
 import { docsHtmlInsert } from './public-docs-text.ts'
@@ -91,6 +92,14 @@ export function hostedRequestHandler(
   const dist = join(resolveInstallRoot(import.meta.dir, process.env), 'hub/web/dist')
   return async (req: Request): Promise<Response> => {
     const url = new URL(req.url)
+    if (isUnregisteredHostedWrite(req.method, url.pathname))
+      return Response.json(
+        {
+          error: 'write route is not in the hosted write registry',
+          remedy: 'add it to HOSTED_WRITE_ROUTES in hub/src/hosted-write-routes.ts',
+        },
+        { status: 404 },
+      )
     const diagnostic = await hostedDiagnosticResponse(req, config, dependencies)
     if (diagnostic) return diagnostic
     const changes = await changeApi(req, config, dependencies.changes)

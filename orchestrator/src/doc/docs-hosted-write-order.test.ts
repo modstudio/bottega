@@ -52,9 +52,9 @@ test('a hosted document upsert carries the writing session', async () => {
   const requests: RecordDocUpsertInput[] = []
   installRecordApiClient({
     ...client,
-    upsertDoc: async (input) => {
+    upsertDoc: async (input, destination) => {
       requests.push(input)
-      return client.upsertDoc(input)
+      return client.upsertDoc(input, destination)
     },
   })
   try {
@@ -89,24 +89,27 @@ test('a hosted write declares requested, derived create, and derived set operati
   })
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   const client = createMemoryRecordApiClient()
-  const hostedOnly = await client.upsertDoc({
-    scope: 'global',
-    subject: null,
-    slug: 'hosted-derived-set-expected',
-    title: 'Hosted derived set expected',
-    body: 'The hosted-only row has no local prior.',
-    delivery: 'demand',
-    audiences: ['technical'],
-    position: 0,
-    reason: 'create hosted-only fixture',
-    author: 'tester',
-  })
+  const hostedOnly = await client.upsertDoc(
+    {
+      scope: 'global',
+      subject: null,
+      slug: 'hosted-derived-set-expected',
+      title: 'Hosted derived set expected',
+      body: 'The hosted-only row has no local prior.',
+      delivery: 'demand',
+      audiences: ['technical'],
+      position: 0,
+      reason: 'create hosted-only fixture',
+      author: 'tester',
+    },
+    { destinationSpaceId: 'personal-space' },
+  )
   const requests: RecordDocUpsertInput[] = []
   installRecordApiClient({
     ...client,
-    upsertDoc: async (input) => {
+    upsertDoc: async (input, destination) => {
       requests.push(input)
-      return client.upsertDoc(input)
+      return client.upsertDoc(input, destination)
     },
   })
   try {

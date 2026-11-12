@@ -4,6 +4,8 @@
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
 import { type ProseGateField, proseGate } from '../../../shared/prose/prose-gate.ts'
+import type { WriteSpaceRefusal } from '../../../shared/record-remedies.ts'
+import { recordRequestNature } from '../../../shared/record-space-request.ts'
 import { parseReplyAudienceOption } from '../board/board-reply-audience.ts'
 import { hostedProseOptions } from './record-api-prose.ts'
 import {
@@ -237,9 +239,14 @@ function boardTenant(
   }
 }
 
-function boardRequestTenant(context: BoardRouteContext, recordUrl: string): BoardTenant | null {
+type BoardRequestTenant = BoardTenant | WriteSpaceRefusal | null
+
+function boardRequestTenant(context: BoardRouteContext, recordUrl: string): BoardRequestTenant {
   recordDestinationlessWrite(context)
-  return boardTenant(recordUrl, context.get('identity'), context.get('destinationSpaceId'))
+  const destination = context.get('destinationSpaceId')
+  if (recordRequestNature(context.req.method) === 'write' && destination === undefined)
+    return { refused: 'write-destination' }
+  return boardTenant(recordUrl, context.get('identity'), destination)
 }
 
 function registerBoardStreamRoute(
@@ -280,13 +287,15 @@ async function assertHostedBoardProse(
 function registerBoardWriteRoutes(
   app: Hono<ApiEnvironment>,
   deps: RecordBoardDeps,
-  helpers: { noSpace(context: Context<ApiEnvironment>): Response },
-  tenantOf: (context: Context<ApiEnvironment>) => ReturnType<typeof boardTenant>,
+  helpers: {
+    noSpace(context: Context<ApiEnvironment>, refusal?: WriteSpaceRefusal | null): Response
+  },
+  tenantOf: (context: Context<ApiEnvironment>) => BoardRequestTenant,
   writeError: (context: Context<ApiEnvironment>, error: unknown) => Response | Promise<Response>,
 ): void {
   app.put('/v1/board/messages', async (context) => {
     const tenant = tenantOf(context)
-    if (!tenant) return helpers.noSpace(context)
+    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
     const body = postSchema.safeParse(await readJson(context))
     if (!body.success) return context.json({ error: 'invalid board message' }, 400)
     try {
@@ -301,7 +310,7 @@ function registerBoardWriteRoutes(
   })
   app.post('/v1/board/messages/:id/replies', async (context) => {
     const tenant = tenantOf(context)
-    if (!tenant) return helpers.noSpace(context)
+    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
     const id = idSchema.safeParse(context.req.param('id'))
     const body = replySchema.safeParse(await readJson(context))
     if (!id.success || !body.success) return context.json({ error: 'invalid board reply' }, 400)
@@ -319,13 +328,13 @@ function registerBoardWriteRoutes(
 function registerBoardCoordinationRoutes(
   app: Hono<ApiEnvironment>,
   deps: RecordBoardDeps,
-  helpers: { noSpace(context: BoardRouteContext): Response },
-  tenantOf: (context: BoardRouteContext) => BoardTenant | null,
+  helpers: { noSpace(context: BoardRouteContext, refusal?: WriteSpaceRefusal | null): Response },
+  tenantOf: (context: BoardRouteContext) => BoardRequestTenant,
   writeError: (context: BoardRouteContext, error: unknown) => Response | Promise<Response>,
 ): void {
   app.get('/v1/board/changes', async (context) => {
     const tenant = tenantOf(context)
-    if (!tenant) return helpers.noSpace(context)
+    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
     const query = z
       .object({
         after: z.string().regex(/^\d+$/).default('0'),
@@ -354,7 +363,7 @@ function registerBoardCoordinationRoutes(
   })
   app.put('/v1/board/successor', async (context) => {
     const tenant = tenantOf(context)
-    if (!tenant) return helpers.noSpace(context)
+    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
     const body = successorSchema.safeParse(await readJson(context))
     if (!body.success) return context.json({ error: 'invalid board successor take' }, 400)
     try {
@@ -372,7 +381,7 @@ export function registerRecordBoardRoutes(
     readSession(headers: Headers): Promise<RecordIdentity | null>
   } & RecordBoardDeps,
   helpers: {
-    noSpace(context: Context<ApiEnvironment>): Response
+    noSpace(context: Context<ApiEnvironment>, refusal?: WriteSpaceRefusal | null): Response
     writeError(context: Context<ApiEnvironment>, error: unknown): Response | Promise<Response>
   },
 ): void {
@@ -385,7 +394,7 @@ export function registerRecordBoardRoutes(
 
   app.get('/v1/board/messages', async (context) => {
     const tenant = tenantOf(context)
-    if (!tenant) return helpers.noSpace(context)
+    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
     const query = overviewQuerySchema.safeParse(context.req.query())
     if (!query.success) return context.json({ error: 'invalid board messages query' }, 400)
     try {
@@ -397,7 +406,7 @@ export function registerRecordBoardRoutes(
   registerBoardWriteRoutes(app, deps, helpers, tenantOf, writeError)
   app.post('/v1/board/messages/:id/withdraw', async (context) => {
     const tenant = tenantOf(context)
-    if (!tenant) return helpers.noSpace(context)
+    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
     const id = idSchema.safeParse(context.req.param('id'))
     const body = sessionBody.safeParse((await readJson(context)) ?? {})
     if (!id.success || !body.success) return context.json({ error: 'invalid board withdraw' }, 400)
@@ -409,7 +418,7 @@ export function registerRecordBoardRoutes(
   })
   app.post('/v1/board/messages/:id/accept', async (context) => {
     const tenant = tenantOf(context)
-    if (!tenant) return helpers.noSpace(context)
+    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
     const id = idSchema.safeParse(context.req.param('id'))
     const body = acceptSchema.safeParse(await readJson(context))
     if (!id.success || !body.success) return context.json({ error: 'invalid board accept' }, 400)
@@ -421,7 +430,7 @@ export function registerRecordBoardRoutes(
   })
   app.post('/v1/board/messages/:id/filing-lease/complete', async (context) => {
     const tenant = tenantOf(context)
-    if (!tenant) return helpers.noSpace(context)
+    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
     const id = idSchema.safeParse(context.req.param('id'))
     const body = filingCompleteSchema.safeParse(await readJson(context))
     if (!id.success || !body.success)
@@ -436,7 +445,7 @@ export function registerRecordBoardRoutes(
   })
   app.post('/v1/board/messages/:id/filing-lease/fail', async (context) => {
     const tenant = tenantOf(context)
-    if (!tenant) return helpers.noSpace(context)
+    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
     const id = idSchema.safeParse(context.req.param('id'))
     const body = filingFailSchema.safeParse(await readJson(context))
     if (!id.success || !body.success)
@@ -449,7 +458,7 @@ export function registerRecordBoardRoutes(
   })
   app.post('/v1/board/messages/:id/filing-lease', async (context) => {
     const tenant = tenantOf(context)
-    if (!tenant) return helpers.noSpace(context)
+    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
     const id = idSchema.safeParse(context.req.param('id'))
     const body = sessionBody.safeParse((await readJson(context)) ?? {})
     if (!id.success || !body.success)
@@ -462,7 +471,7 @@ export function registerRecordBoardRoutes(
   })
   app.get('/v1/board/threads/:id', async (context) => {
     const tenant = tenantOf(context)
-    if (!tenant) return helpers.noSpace(context)
+    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
     const id = idSchema.safeParse(context.req.param('id'))
     if (!id.success) return context.json({ error: 'board thread id must be a uuid' }, 400)
     try {
@@ -473,7 +482,7 @@ export function registerRecordBoardRoutes(
   })
   app.get('/v1/board/messages/:id/status', async (context) => {
     const tenant = tenantOf(context)
-    if (!tenant) return helpers.noSpace(context)
+    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
     const id = idSchema.safeParse(context.req.param('id'))
     if (!id.success) return context.json({ error: 'board message id must be a uuid' }, 400)
     try {
@@ -484,7 +493,7 @@ export function registerRecordBoardRoutes(
   })
   app.put('/v1/board/receipts', async (context) => {
     const tenant = tenantOf(context)
-    if (!tenant) return helpers.noSpace(context)
+    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
     const body = receiptSchema.safeParse(await readJson(context))
     if (!body.success) return context.json({ error: 'invalid board receipt' }, 400)
     try {
@@ -495,7 +504,7 @@ export function registerRecordBoardRoutes(
   })
   app.put('/v1/board/claims', async (context) => {
     const tenant = tenantOf(context)
-    if (!tenant) return helpers.noSpace(context)
+    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
     const body = takeClaimSchema.safeParse(await readJson(context))
     if (!body.success) return context.json({ error: 'invalid board claim take' }, 400)
     try {
@@ -506,7 +515,7 @@ export function registerRecordBoardRoutes(
   })
   app.post('/v1/board/claims/release-task', async (context) => {
     const tenant = tenantOf(context)
-    if (!tenant) return helpers.noSpace(context)
+    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
     const body = releaseTaskSchema.safeParse(await readJson(context))
     if (!body.success) return context.json({ error: 'invalid board claim release-task' }, 400)
     try {
@@ -517,7 +526,7 @@ export function registerRecordBoardRoutes(
   })
   app.post('/v1/board/claims/:id/renew', async (context) => {
     const tenant = tenantOf(context)
-    if (!tenant) return helpers.noSpace(context)
+    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
     const id = idSchema.safeParse(context.req.param('id'))
     const body = holderBody.safeParse((await readJson(context)) ?? {})
     if (!id.success || !body.success)
@@ -530,7 +539,7 @@ export function registerRecordBoardRoutes(
   })
   app.post('/v1/board/claims/:id/release', async (context) => {
     const tenant = tenantOf(context)
-    if (!tenant) return helpers.noSpace(context)
+    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
     const id = idSchema.safeParse(context.req.param('id'))
     const body = holderBody.safeParse((await readJson(context)) ?? {})
     if (!id.success || !body.success)
@@ -543,7 +552,7 @@ export function registerRecordBoardRoutes(
   })
   app.get('/v1/board/claims', async (context) => {
     const tenant = tenantOf(context)
-    if (!tenant) return helpers.noSpace(context)
+    if (!tenant || 'refused' in tenant) return helpers.noSpace(context, tenant)
     const query = claimListSchema.safeParse(context.req.query())
     if (!query.success) return context.json({ error: 'invalid board claim list query' }, 400)
     try {

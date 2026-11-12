@@ -5,22 +5,28 @@ import {
   markCachedHostedDelivered,
   refreshHostedBoard,
 } from '../src/board/board-hosted-cache.ts'
-import { expiresAt, headers, json } from './postgres-board-api-values.ts'
+import { expiresAt, json, headers as requestHeaders } from './postgres-board-api-values.ts'
 import { postgresBoardCacheClient, postgresBoardCacheStore } from './postgres-board-cache-client.ts'
 
 export function registerBoardReplyProof(input: {
   origin: () => string
+  spaceIdForToken(token: string): string
   token: () => string
   project: string
   caseSession: (label: string) => string
 }): void {
+  const headers = (token: string) => requestHeaders(token, input.spaceIdForToken(token))
   test('a reply loops a new session into the hosted thread and later participant replies', async () => {
     const rootId = newRecordId()
     const directId = newRecordId()
     const participantId = newRecordId()
     const loopedSession = input.caseSession('reply-looped')
     const store = postgresBoardCacheStore(loopedSession, input.project)
-    const client = postgresBoardCacheClient(input.origin(), input.token())
+    const client = postgresBoardCacheClient(
+      input.origin(),
+      input.token(),
+      input.spaceIdForToken(input.token()),
+    )
     const reply = (id: string, body: string, audience: string, authorSession: string) =>
       fetch(`${input.origin()}/v1/board/messages/${rootId}/replies`, {
         method: 'POST',

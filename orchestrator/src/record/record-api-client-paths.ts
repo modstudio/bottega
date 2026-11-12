@@ -9,6 +9,7 @@ import {
 import type { RecordProjectPurgeResult } from './record-project-purge-contract.ts'
 
 export type RecordRequestDestination = { destinationSpaceId?: string }
+export type RecordWriteDestination = { destinationSpaceId: string }
 export type RecordApiAuthentication = {
   token(): string | null
   tokenAsync(signal: AbortSignal): Promise<string | null>
@@ -74,14 +75,14 @@ export type ProjectIdentityClient = {
       settings: Record<string, unknown>
       retiredAt: string | null
     },
-    destination?: RecordRequestDestination,
+    destination: RecordWriteDestination,
   ): Promise<{ id: string; name: string }>
   listProjects(destination?: RecordRequestDestination): Promise<RecordProject[]>
-  retireProject(id: string, destination?: RecordRequestDestination): Promise<{ name: string }>
+  retireProject(id: string, destination: RecordWriteDestination): Promise<{ name: string }>
   purgeProject(
     id: string,
     confirmation: string,
-    destination?: RecordRequestDestination,
+    destination: RecordWriteDestination,
   ): Promise<RecordProjectPurgeResult>
 }
 

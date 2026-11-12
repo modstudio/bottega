@@ -2,33 +2,16 @@
 /** Decides whether a hosted hub request wrote through the caller's active-space fallback. */
 
 import { recordRequestNature } from '../../shared/record-space-request.ts'
+import { registeredHostedWriteRoute } from './hosted-write-routes.ts'
+
+export function hostedWriteIsExempt(method: string, pathname: string): boolean {
+  return registeredHostedWriteRoute(method, pathname)?.destination === 'exempt'
+}
 
 const UNLISTED_HOSTED_WRITE_ROUTE = '(unlisted)'
 
-const hostedWriteRoutes = [
-  ['POST', /^\/v1\/tasks$/, '/v1/tasks'],
-  ['POST', /^\/v1\/tasks\/[^/]+\/documents$/, '/v1/tasks/:key/documents'],
-  ['POST', /^\/v1\/notes$/, '/v1/notes'],
-  ['POST', /^\/v1\/notes\/[0-9a-f-]{36}\/promote$/i, '/v1/notes/:id/promote'],
-  ['POST', /^\/v1\/notes\/reap$/, '/v1/notes/reap'],
-  ['PUT', /^\/v1\/notes\/mirror$/, '/v1/notes/mirror'],
-  ['POST', /^\/v1\/changes$/, '/v1/changes'],
-  ['POST', /^\/v1\/tasks\/presence$/, '/v1/tasks/presence'],
-  ['DELETE', /^\/v1\/tasks$/, '/v1/tasks'],
-  ['POST', /^\/v1\/sends$/, '/v1/sends'],
-  ['PUT', /^\/v1\/sends\/mirror$/, '/v1/sends/mirror'],
-  ['POST', /^\/v1\/report-subscriptions$/, '/v1/report-subscriptions'],
-  ['PUT', /^\/v1\/report-subscriptions\/[^/]+$/, '/v1/report-subscriptions/:id'],
-  ['DELETE', /^\/v1\/report-subscriptions\/[^/]+$/, '/v1/report-subscriptions/:id'],
-  ['POST', /^\/v1\/operator-waiting-emails$/, '/v1/operator-waiting-emails'],
-] as const
-
 function hostedWriteRoute(method: string, pathname: string): string {
-  return (
-    hostedWriteRoutes.find(
-      ([routeMethod, pattern]) => routeMethod === method.toUpperCase() && pattern.test(pathname),
-    )?.[2] ?? UNLISTED_HOSTED_WRITE_ROUTE
-  )
+  return registeredHostedWriteRoute(method, pathname)?.path ?? UNLISTED_HOSTED_WRITE_ROUTE
 }
 
 export function hostedNoDestinationWriteDecision(input: {
@@ -40,9 +23,7 @@ export function hostedNoDestinationWriteDecision(input: {
 }): { counted: false } | { counted: true; route: string } {
   if (recordRequestNature(input.method) === 'read' || input.identityOutcome !== 'authenticated')
     return { counted: false }
-  // Outside-note intake resolves the destination from the project named in the request body.
-  if (input.method.toUpperCase() === 'POST' && input.pathname === '/v1/notes/outside')
-    return { counted: false }
+  if (hostedWriteIsExempt(input.method, input.pathname)) return { counted: false }
   if (input.requestedSpacePresent && input.routeHonorsRequestedSpace) return { counted: false }
   return { counted: true, route: hostedWriteRoute(input.method, input.pathname) }
 }

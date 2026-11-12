@@ -102,7 +102,11 @@ test('hosted endpoint binds space and user from the credential', async () => {
   }
   const request = new Request('https://hub.example.test/v1/operator-waiting-emails', {
     method: 'POST',
-    headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
+    headers: {
+      authorization: 'Bearer test',
+      'content-type': 'application/json',
+      'x-record-space': '01990000-0000-7000-8000-00000000070a',
+    },
     body: JSON.stringify(input),
   })
   expect(

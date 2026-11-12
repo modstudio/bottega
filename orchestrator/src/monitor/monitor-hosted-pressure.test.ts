@@ -194,9 +194,9 @@ test('a failed onset post preserves the state and records the announcement error
     },
     boardClient: {
       listBoardMessages: async () => ({ messages: [], truncated: false }),
-      postBoardMessage: async (input, _signal, destination) => {
+      postBoardMessage: async (input, destination) => {
         postInput = input
-        sentDestination = destination?.destinationSpaceId
+        sentDestination = destination.destinationSpaceId
         stateDuringPost = (
           database.query('SELECT state FROM hosted_pressure_cache WHERE singleton=1').get() as {
             state: string

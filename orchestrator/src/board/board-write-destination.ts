@@ -3,7 +3,7 @@
 
 import { projectAt } from '../project/projects.ts'
 import type { RecordApiClient } from '../record/record-api-client.ts'
-import type { RecordRequestDestination } from '../record/record-api-client-paths.ts'
+import type { RecordWriteDestination } from '../record/record-api-client-paths.ts'
 import { recordWriteDestination } from '../record/record-write-destination.ts'
 
 export type BoardDestinationResolver = typeof boardWriteDestination
@@ -13,7 +13,7 @@ export type BoardPresenceDestinationResolver = typeof boardPresenceDestination
 export async function boardWriteDestination(
   client: RecordApiClient,
   project?: string | null,
-): Promise<RecordRequestDestination> {
+): Promise<RecordWriteDestination> {
   return recordWriteDestination(
     client,
     project ? { kind: 'project', name: project } : { kind: 'personal' },

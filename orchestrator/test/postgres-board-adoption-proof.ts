@@ -17,9 +17,10 @@ type ProofInput = {
   succeeds(user: string, password: string, source: string): string
 }
 
-const headers = (token: string) => ({
+const headers = (token: string, spaceId: string) => ({
   authorization: `Bearer ${token}`,
   'content-type': 'application/json',
+  'x-record-space': spaceId,
 })
 
 const subjectsUnused = async (): Promise<never> => {
@@ -30,7 +31,7 @@ function adoptionClient(input: ProofInput): RecordApiClient {
   const call = async (path: string, method = 'GET', body?: unknown) => {
     const response = await fetch(`${input.origin()}${path}`, {
       method,
-      headers: headers(input.token()),
+      headers: headers(input.token(), input.spaceId()),
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
     const value = (await response.json()) as Record<string, unknown>
@@ -183,16 +184,16 @@ export function registerBoardAdoptionProof(input: ProofInput): void {
       ]),
     )
     const noticeRead = await fetch(`${input.origin()}/v1/board/threads/${notice.record_id}`, {
-      headers: headers(input.token()),
+      headers: headers(input.token(), input.spaceId()),
     })
     const questionRead = await fetch(`${input.origin()}/v1/board/threads/${question.record_id}`, {
-      headers: headers(input.token()),
+      headers: headers(input.token(), input.spaceId()),
     })
     const claimsRead = (await (
       await fetch(
         `${input.origin()}/v1/board/claims?project=${input.project}&projectId=${input.projectId}`,
         {
-          headers: headers(input.token()),
+          headers: headers(input.token(), input.spaceId()),
         },
       )
     ).json()) as { claims: Array<{ id: string; subject: { value: string } }> }
