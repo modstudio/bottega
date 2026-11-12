@@ -23,6 +23,7 @@ export type ProjectRowsRefusal<T> = {
   reason: Extract<TaskProjectDestination, { refused: string }>['refused']
   rows: T[]
 }
+export type PersonalRecordSpaceResolver = () => Promise<string>
 
 /** Spaces the task pull reads: the active space plus every registered destination. */
 export function taskPullSpaces(
@@ -55,18 +56,21 @@ export function taskProjectDestination(
 }
 
 /** Partition project-attributed rows by destination without letting one refusal block another. */
-export function partitionProjectRows<T extends { project_name: string | null }>(
+export async function partitionProjectRows<T extends { project_name: string | null }>(
   rows: readonly T[],
   registered: readonly RegisteredTaskSpace[],
   identity: TaskDestinationIdentity,
+  resolvePersonalSpace: PersonalRecordSpaceResolver,
 ) {
   const destinations = new Map<string, T[]>()
   const refusals = new Map<string, ProjectRowsRefusal<T>>()
+  let personalSpace: string | undefined
   for (const row of rows) {
     if (row.project_name === null) {
-      const selected = destinations.get(identity.activeSpaceId) ?? []
+      personalSpace ??= await resolvePersonalSpace()
+      const selected = destinations.get(personalSpace) ?? []
       selected.push(row)
-      destinations.set(identity.activeSpaceId, selected)
+      destinations.set(personalSpace, selected)
       continue
     }
     const decision = taskProjectDestination(row.project_name, registered, identity)

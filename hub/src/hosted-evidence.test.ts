@@ -168,7 +168,7 @@ test('hosted evidence accepts token totals above the 32-bit range', async () => 
       user_id: null,
     },
   })
-  await applyDayChangeInTransaction(sql, identity, {
+  const day = {
     id: dayId,
     machine_id: HOSTED_FIXTURE_MACHINE_ID,
     day: '2026-10-05',
@@ -186,7 +186,8 @@ test('hosted evidence accepts token totals above the 32-bit range', async () => 
     lines_config: 0,
     lines_generated: 0,
     collected_at: collectedAt,
-  })
+  }
+  await applyDayChangeInTransaction(sql, identity, { id: day.id, op: 'upsert', row: day })
 
   const storedDay = (
     await database.query<{
@@ -241,7 +242,13 @@ test('hosted day evidence ignores a newer collection time until content changes'
     collected_at: originalCollectedAt,
   }
   try {
-    expect(await applyDayChangeInTransaction(sql, identity, original)).toBe('applied')
+    expect(
+      await applyDayChangeInTransaction(sql, identity, {
+        id: original.id,
+        op: 'upsert',
+        row: original,
+      }),
+    ).toBe('applied')
     await database.query(`UPDATE hub_day SET updated_at=$1 WHERE id=$2`, [
       unchangedUpdatedAt,
       dayId,
@@ -249,8 +256,12 @@ test('hosted day evidence ignores a newer collection time until content changes'
 
     expect(
       await applyDayChangeInTransaction(sql, identity, {
-        ...original,
-        collected_at: '2026-10-05T21:00:00.000Z',
+        id: dayId,
+        op: 'upsert',
+        row: {
+          ...original,
+          collected_at: '2026-10-05T21:00:00.000Z',
+        },
       }),
     ).toBe('duplicate')
     expect(
@@ -267,9 +278,13 @@ test('hosted day evidence ignores a newer collection time until content changes'
 
     expect(
       await applyDayChangeInTransaction(sql, identity, {
-        ...original,
-        claude_tokens: 11,
-        collected_at: '2026-10-05T21:00:00.000Z',
+        id: dayId,
+        op: 'upsert',
+        row: {
+          ...original,
+          claude_tokens: 11,
+          collected_at: '2026-10-05T21:00:00.000Z',
+        },
       }),
     ).toBe('applied')
     expect(

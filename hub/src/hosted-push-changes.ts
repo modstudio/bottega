@@ -305,8 +305,7 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
     async apply(tx, identity, input) {
       if (input.table !== HOSTED_DAY_TABLE)
         throw new Error(`${input.table} was routed to the day handler`)
-      if (input.op === 'delete') throw new Error('hub_day does not accept delete')
-      const status = await applyDayChangeInTransaction(tx, identity, input.row)
+      const status = await applyDayChangeInTransaction(tx, identity, input)
       return { id: input.id, status }
     },
   },
