@@ -528,12 +528,12 @@ function registerAwaitWorkflowRulingTool(server: McpServer, ports: DocsMcpPorts)
       }),
     },
     async ({ slug, project, mode, args, question, cursor }) => {
-      const workflowArgs = args ?? {}
+      const shapedQuestion = assertRecordShape('open question', question)
       const { context, effectiveMode } = await resolveMcpLinkedWorkflowCursor(
         slug,
         project,
         mode,
-        workflowArgs,
+        args ?? {},
         cursor,
         'await_workflow_ruling',
         'pass the mode argument',
@@ -544,8 +544,8 @@ function registerAwaitWorkflowRulingTool(server: McpServer, ports: DocsMcpPorts)
           slug,
           project,
           effectiveMode,
-          workflowArgs,
-          assertRecordShape('open question', question),
+          args ?? {},
+          shapedQuestion,
           context,
           undefined,
           undefined,
@@ -572,12 +572,12 @@ function registerRuleWorkflowTool(server: McpServer, ports: DocsMcpPorts): void 
       }),
     },
     async ({ slug, project, mode, args, ruling, from_operator, cursor }) => {
-      const workflowArgs = args ?? {}
+      const shapedRuling = assertRecordShape('ruling', ruling)
       const { context, effectiveMode } = await resolveMcpLinkedWorkflowCursor(
         slug,
         project,
         mode,
-        workflowArgs,
+        args ?? {},
         cursor,
         'rule_workflow',
         'pass the mode argument',
@@ -588,8 +588,8 @@ function registerRuleWorkflowTool(server: McpServer, ports: DocsMcpPorts): void 
           slug,
           project,
           effectiveMode,
-          workflowArgs,
-          assertRecordShape('ruling', ruling),
+          args ?? {},
+          shapedRuling,
           Boolean(from_operator),
           'mcp',
           context,

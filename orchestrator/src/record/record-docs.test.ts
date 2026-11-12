@@ -129,6 +129,15 @@ test('the hosted record refuses a context item that does not decode or breaks it
   expect(() =>
     assertContextItemShape(
       'context',
+      'multiline-next',
+      encodeContextItem({ kind: 'next-action', source: 'run:1', body: 'first\nsecond' }),
+    ),
+  ).toThrow(
+    'context item multiline-next refused: next action must be one line. Shorten it and put detail in a task document.',
+  )
+  expect(() =>
+    assertContextItemShape(
+      'context',
       'legacy-next',
       encodeContextItem({ kind: 'next-action', source: 'run:1', body: 'first\nsecond' }),
       true,
