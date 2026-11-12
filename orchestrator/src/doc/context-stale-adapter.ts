@@ -4,9 +4,6 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { projectForTaskKey, projects } from '../project/projects.ts'
-import { questionTaskHolderSql } from '../run/question-open.ts'
-import { taskFlowStore } from '../workflow/task-flow-store.ts'
-import { type CursorTrailEntry, isClosedStep } from '../workflow/workflow-cursor-trail.ts'
 import {
   type HubTaskReader,
   readHubTasks,
@@ -14,7 +11,9 @@ import {
   taskReferenceForProjectKey,
 } from '../workflow/workflow-task-reference.ts'
 import { decodeContextItem } from './context-item-codec.ts'
+import { sessionWorkEvents } from './context-session-work-adapter.ts'
 import { type ContextWorkEvent, staleContextHolders } from './context-stale.ts'
+import { unknownTaskPrefixReport } from './context-write-adapter.ts'
 import { listDocsStore } from './doc-read-store.ts'
 import { taskContextHolder } from './doc-subjects.ts'
 
@@ -30,24 +29,7 @@ export async function staleContextForSession(
   const add = ({ key, at }: KeyAt) => {
     if (key?.trim()) work.push({ holder: key, at })
   }
-  for (const row of database
-    .query<KeyAt, [string]>(
-      'SELECT launch_key key,started_at at FROM run WHERE session_id=? AND launch_key IS NOT NULL',
-    )
-    .all(session))
-    add(row)
-  for (const row of taskFlowStore(database).cursorWorkForSession(session)) {
-    for (const entry of JSON.parse(row.closed) as CursorTrailEntry[])
-      if (isClosedStep(entry)) add({ key: row.key, at: entry.at })
-  }
-  for (const row of database
-    .query<KeyAt, [string, string]>(
-      `SELECT ${questionTaskHolderSql('q', 'r')} key,q.answered_at at
-       FROM question q LEFT JOIN run r ON r.record_id=q.run_record_id
-       WHERE q.answered_by IN (?,?) AND q.answered_at IS NOT NULL`,
-    )
-    .all(session, `operator via ${session}`))
-    add(row)
+  for (const row of sessionWorkEvents(session, database)) add(row)
 
   const registered = projects(undefined, database)
   const workHolders = [...new Set(work.map(({ holder }) => holder))]
@@ -78,10 +60,11 @@ export async function staleContextForSession(
   const unresolvedHolders = workHolders.flatMap((holder) => {
     const project = holderProjects.get(holder)
     if (!project) {
+      const unresolved = unknownTaskPrefixReport(holder)
       return [
         {
           holder,
-          reason: `no single project declares the task prefix of ${holder}; declare it in one project's keyPrefixes with ${PLATFORM_SLUG} project set <project> --settings`,
+          reason: `${unresolved.detail}; ${unresolved.remedy}`,
         },
       ]
     }

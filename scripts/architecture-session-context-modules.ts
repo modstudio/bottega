@@ -16,6 +16,7 @@ export const sessionContextModules: SessionContextModule[] = [
     '../doc/context-brief.ts',
     '../doc/context-service.ts',
     '../doc/context-stale-adapter.ts',
+    '../doc/context-worked-adapter.ts',
     '../doc/doc-context-write.ts',
     '../workflow/session-context.ts',
     './support.ts',

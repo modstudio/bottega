@@ -18,10 +18,12 @@ export type CursorListOptions = {
   cwd?: string
 }
 
+export type WorkflowCursorListRow = ListedCursorRow & { next_slug: string; line: string }
+
 export function listWorkflowCursors(
   options: CursorListOptions = {},
   d: Database = db(),
-): Array<ListedCursorRow & { next_slug: string; line: string }> {
+): WorkflowCursorListRow[] {
   const cwd = options.cwd ?? process.cwd()
   const cwdProject =
     options.all || options.project || options.session ? undefined : projectAt(cwd)?.name

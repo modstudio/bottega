@@ -46,6 +46,7 @@ import {
   sessionCloseOutVerdict,
   sessionOwnedRunIds,
 } from './session-close-out-decision.ts'
+import type { TaskNextActionOutcome } from './session-close-out-next-actions.ts'
 import { sessionCloseOutObligationItems } from './session-close-out-obligation-adapter.ts'
 import { closeOutSessionOutbox } from './session-close-out-outbox.ts'
 import type {
@@ -59,6 +60,7 @@ import {
 } from './session-close-out-resource-release.ts'
 import { reclaimSessionReleasedTree } from './session-close-out-resource-release-adapter.ts'
 import { insertSessionCloseOutRecord } from './session-close-out-store.ts'
+import { appendWorkedCloseOutReport } from './session-close-out-worked.ts'
 import {
   closeOutSessionContext,
   type SessionContextLifecycleReport,
@@ -103,6 +105,7 @@ export type SessionCloseOutReport = {
     contextItems: SessionContextLifecycleReport['items']
   }
   mechanical: string[]
+  nextActionOutcomes: TaskNextActionOutcome[]
   kept: string[]
   parked: string[]
   process: SessionProcessLine[]
@@ -111,6 +114,13 @@ export type SessionCloseOutReport = {
   heldTrees: HeldTreeJson[]
   verdict: { clean: boolean; residue: number }
   recommendation: 'clear' | 'brief'
+}
+
+type ReleaseSessionResourcesOptions = {
+  session?: string
+  dryRun?: boolean
+  resume?: boolean
+  reportNextActions?: boolean
 }
 
 type RunRow = {
@@ -842,17 +852,29 @@ function applySessionMechanicalActions(
     }
 }
 
+function finalSessionInventory(
+  initial: ReturnType<typeof gather>,
+  database: Database,
+  session: string,
+  dryRun: boolean,
+): ReturnType<typeof gather> {
+  return dryRun || initial.classification.mechanical.length === 0
+    ? initial
+    : gather(database, session, false)
+}
+
 /**
  * Close-out without writing a session_close_out record. Machine sweep uses this replay path so an
  * idempotent release does not create a second close-out invocation record.
  */
 export async function releaseSessionResources(
-  options: { session?: string; dryRun?: boolean; resume?: boolean } = {},
+  options: ReleaseSessionResourcesOptions = {},
 ): Promise<SessionCloseOutReport> {
   const session = options.session ?? callingSessionId()
   if (!session) throw new Error(`session identity is unavailable; pass --session <id>`)
   const dryRun = options.dryRun ?? false
   const resume = options.resume ?? false
+  const reportNextActions = options.reportNextActions ?? false
   const database = dryRun ? db() : writableDb()
   const initial = gather(database, session, dryRun)
   const context = await closeOutSessionContext({ session, dryRun, resume, database })
@@ -870,6 +892,7 @@ export async function releaseSessionResources(
       contextItems: context.items,
     },
     mechanical: [...context.mechanical],
+    nextActionOutcomes: [],
     kept: context.kept,
     parked: [],
     process: context.process,
@@ -885,10 +908,14 @@ export async function releaseSessionResources(
   report.process.push(...outbox.process)
   report.warnings.push(...outbox.warnings)
   report.errors.push(...outbox.errors)
-  const final =
-    dryRun || initial.classification.mechanical.length === 0
-      ? initial
-      : gather(database, session, false)
+  await appendWorkedCloseOutReport({
+    report,
+    session,
+    database,
+    reportNextActions,
+    writeWorked: resume && !dryRun,
+  })
+  const final = finalSessionInventory(initial, database, session, dryRun)
   appendObservationFailures(report, final, final.observationErrors)
   appendClassifiedProcessItems(report, final)
   appendCursorProcessItems(report, final.cursors)
@@ -930,9 +957,9 @@ export async function releaseSessionResources(
 }
 
 export async function closeOutSession(
-  options: { session?: string; dryRun?: boolean; resume?: boolean } = {},
+  options: Omit<ReleaseSessionResourcesOptions, 'reportNextActions'> = {},
 ): Promise<SessionCloseOutReport> {
-  const report = await releaseSessionResources(options)
+  const report = await releaseSessionResources({ ...options, reportNextActions: true })
   if (report.dryRun) return report
   const row = sessionCloseOutRecord(report)
   const database = writableDb()
@@ -940,8 +967,17 @@ export async function closeOutSession(
   return report
 }
 
+function missingNextActionLines(outcomes: readonly TaskNextActionOutcome[]): string[] {
+  return outcomes.flatMap((outcome) =>
+    outcome.status === 'missing' ? [`close-out: ${outcome.key} has no next-action`] : [],
+  )
+}
+
 export function formatSessionCloseOut(report: SessionCloseOutReport): string {
-  const lines = [`session close-out ${report.session}${report.dryRun ? ' (dry run)' : ''}`]
+  const lines = [
+    `session close-out ${report.session}${report.dryRun ? ' (dry run)' : ''}`,
+    ...missingNextActionLines(report.nextActionOutcomes),
+  ]
   for (const item of report.mechanical) lines.push(`mechanical: ${item}`)
   for (const item of report.kept) lines.push(`kept: ${item}`)
   for (const item of report.parked) lines.push(`parked: ${item}`)
