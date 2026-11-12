@@ -67,20 +67,20 @@ function projectName(recordId: string): string {
 function projectSpace(recordId: string): string | null {
   return effectiveProjectSpace(db(), projectName(recordId))
 }
-async function hostedSpace(
-  recordId?: string,
-  requestedSpace?: string,
-  verb = 'port write',
+async function projectHostedSpace(recordId: string): Promise<string> {
+  const client = recordApiClient()
+  const identity = await client.whoami()
+  const name = projectName(recordId)
+  const project = projectRowByName(name)
+  const decision = projectDestinationFromIdentity(name, project?.settings, identity)
+  if ('refused' in decision) throw new Error(decision.remedy)
+  return decision.spaceId
+}
+async function explicitHostedSpace(
+  requestedSpace: string | undefined,
+  verb: string,
 ): Promise<string> {
   const client = recordApiClient()
-  if (recordId) {
-    const identity = await client.whoami()
-    const name = projectName(recordId)
-    const project = projectRowByName(name)
-    const decision = projectDestinationFromIdentity(name, project?.settings, identity)
-    if ('refused' in decision) throw new Error(decision.remedy)
-    return decision.spaceId
-  }
   const destination = await resolveRecordSpaceOwnerDestination(
     verb,
     { space: requestedSpace },
@@ -438,7 +438,7 @@ export function setBaselineForProjects(
       return { pair, baseline: setBaselineLocal(pair.record_id, sourceCommit, scannedAt) }
     },
     hosted: async () => {
-      const spaceId = await hostedSpace(targetProjectId)
+      const spaceId = await projectHostedSpace(targetProjectId)
       const currentPair = pairByProjects(sourceProjectId, targetProjectId)
       const current = currentPair ? storedBaseline(currentPair.record_id) : null
       const response = await recordApiClient().writePort!(
@@ -471,7 +471,7 @@ export function addSkip(
   return applyRecordWriteAuthority({
     local: () => addSkipLocal(pairRecordId, candidate, reason, skippedAt),
     hosted: async () => {
-      const spaceId = await hostedSpace(pair.target_project_record_id)
+      const spaceId = await projectHostedSpace(pair.target_project_record_id)
       const response = await recordApiClient().writePort!(
         {
           action: 'add_skip',
@@ -510,7 +510,7 @@ export async function setLedgerRef(
   return applyRecordWriteAuthority({
     local: () => setLedgerRefLocal({ ...input, taskRecordId: task?.record_id ?? null }),
     hosted: async () => {
-      const spaceId = await hostedSpace(input.targetProjectId)
+      const spaceId = await projectHostedSpace(input.targetProjectId)
       const current = storedRef(input.targetProjectId, input.taskKey)
       const response = await recordApiClient().writePort!(
         {
@@ -540,7 +540,7 @@ export function resolveLedgerRef(targetProjectId: string, taskKey: string, resol
   return applyRecordWriteAuthority({
     local: () => resolveLedgerRefLocal(targetProjectId, taskKey, resolvedAt),
     hosted: async () => {
-      const spaceId = await hostedSpace(targetProjectId)
+      const spaceId = await projectHostedSpace(targetProjectId)
       const current = storedRef(targetProjectId, taskKey)
       if (!current?.version) return null
       const response = await recordApiClient().writePort!(
@@ -564,7 +564,7 @@ export function removeLedgerRef(targetProjectId: string, taskKey: string) {
   return applyRecordWriteAuthority({
     local: () => removeLedgerRefLocal(targetProjectId, taskKey),
     hosted: async () => {
-      const spaceId = await hostedSpace(targetProjectId)
+      const spaceId = await projectHostedSpace(targetProjectId)
       const current = storedRef(targetProjectId, taskKey)
       if (!current?.version) return false
       const response = await recordApiClient().writePort!(
@@ -594,13 +594,20 @@ export function addDoctrineRule(
   return applyRecordWriteAuthority({
     local: () => addDoctrineRuleLocal(number, title, body, createdAt),
     hosted: async () => {
-      const spaceId = await hostedSpace(undefined, requestedSpace, 'port doctrine add')
+      const spaceId = await explicitHostedSpace(requestedSpace, 'port doctrine add')
       const response = await recordApiClient().writePort!(
         { action: 'add_doctrine', number, title, body, createdAt },
         { destinationSpaceId: spaceId },
       )
       applyPortWriteResponse(db(), response)
-      return listDoctrineRules().find((row) => row.number === number)!
+      const rule = db()
+        .query<DoctrineRule, [string, number]>(
+          'SELECT number,title,body,created_at,retired_at FROM port_doctrine WHERE space_id=? AND number=?',
+        )
+        .get(spaceId, number)
+      if (!rule)
+        throw new Error(`port doctrine ${number} was not cached in space ${spaceId} after add`)
+      return rule
     },
   })
 }
@@ -610,7 +617,7 @@ export function retireDoctrineRule(number: number, requestedSpace?: string, reti
   return applyRecordWriteAuthority({
     local: () => retireDoctrineRuleLocal(number, retiredAt),
     hosted: async () => {
-      const spaceId = await hostedSpace(undefined, requestedSpace, 'port doctrine retire')
+      const spaceId = await explicitHostedSpace(requestedSpace, 'port doctrine retire')
       const current = db()
         .query<{ version: number }, [string, number]>(
           'SELECT version FROM port_doctrine WHERE space_id=? AND number=?',

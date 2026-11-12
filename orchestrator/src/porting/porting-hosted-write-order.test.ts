@@ -99,7 +99,12 @@ test('project-less doctrine writes require and use an explicit space', async () 
   await expect(addDoctrineRule(993, 'Explicit', 'Explicit body.', undefined, at)).rejects.toThrow(
     'port doctrine add writes to a record space and names none; pass --space <slug>',
   )
-  await addDoctrineRule(993, 'Explicit', 'Explicit body.', 'doctrine-space', at)
+  expect(
+    await addDoctrineRule(993, 'Explicit', 'Explicit body.', 'doctrine-space', at),
+  ).toMatchObject({
+    number: 993,
+    title: 'Explicit',
+  })
   await expect(retireDoctrineRule(993, undefined, at)).rejects.toThrow(
     'port doctrine retire writes to a record space and names none; pass --space <slug>',
   )

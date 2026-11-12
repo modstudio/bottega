@@ -132,13 +132,13 @@ export function buildHostedPortImports(
   local: Database,
   registered: Project[],
   plan: HostedImportPlan,
-  active: string,
+  doctrineSpaceId: string,
   now = new Date().toISOString(),
 ): Map<string, RecordPortImportInput> {
   const byId = new Map(registered.map((project) => [project.recordId, project]))
-  const imports = new Map<string, RecordPortImportInput>([[active, emptyImport()]])
+  const imports = new Map<string, RecordPortImportInput>([[doctrineSpaceId, emptyImport()]])
   const pairs = new Map<string, { id: string; spaceId: string }>()
-  addDoctrine(imports.get(active)!, plan.doctrine, active, now)
+  addDoctrine(imports.get(doctrineSpaceId)!, plan.doctrine, doctrineSpaceId, now)
   for (const row of plan.pairs) {
     const sourceSpace = routedSpace(local, byId.get(row.sourceId))
     const targetSpace = routedSpace(local, byId.get(row.targetId))
