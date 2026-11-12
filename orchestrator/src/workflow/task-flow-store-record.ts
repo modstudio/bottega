@@ -2,8 +2,7 @@
 /** Converts hosted task-flow reads to the workflow read-port row shapes. */
 
 import type { Database } from 'bun:sqlite'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { cachedProjectSpaces } from '../project-space-cache.ts'
+import { projectByName, projectByRecordId, projects } from '../project/projects.ts'
 import { RecordApiRequestError, recordApiClient } from '../record/record-api-client.ts'
 import type { RecordRequestDestination } from '../record/record-api-client-paths.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
@@ -18,6 +17,10 @@ import {
   currentRecordWriteDecision,
   throwIfRecordRefused,
 } from '../record/record-write-authority.ts'
+import {
+  resolveTaskFlowDestination,
+  taskFlowWriteTarget,
+} from '../record/record-task-flow-write-client.ts'
 import { sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
 import type {
   TaskFlowObligationRow,
@@ -166,36 +169,48 @@ class RecordTaskFlowReadStore {
 
   private projectId(project: string): string {
     if (!project) throw new Error('a workflow cursor handle requires a project; pass --project')
-    const row = this.database
-      .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
-      .get(project)
+    const row = projectByName(project, this.database)
     if (!row) throw new Error(`project ${project} is not registered; register it, then retry`)
-    return row.record_id
+    return row.recordId
   }
 
   private projectName(projectId: string): string {
-    const row = this.database
-      .query<{ name: string }, [string]>('SELECT name FROM project WHERE record_id=?')
-      .get(projectId)
+    const row = projectByRecordId(projectId, this.database)
     if (!row) throw new Error(`project ${projectId} is not registered; register it, then retry`)
     return row.name
   }
 
-  private destination(project: string): RecordRequestDestination {
-    const destinationSpaceId = cachedProjectSpaces(this.database)[project]
-    if (!destinationSpaceId)
-      throw new Error(
-        `project ${project} route unknown, run \`${PLATFORM_SLUG} record sync\`, then retry`,
-      )
-    return { destinationSpaceId }
+  private destination(project: string): Promise<RecordRequestDestination> {
+    return resolveTaskFlowDestination(taskFlowWriteTarget(project, this.database), this.client)
+  }
+
+  private async allDestinations(): Promise<RecordRequestDestination[]> {
+    const destinations = await Promise.all(
+      projects(undefined, this.database).map(({ name }) => this.destination(name)),
+    )
+    return [
+      ...new Map(destinations.map((destination) => [destination.destinationSpaceId, destination]))
+        .values(),
+    ]
   }
 
   private async list(selector: StageListSelector, project?: string): Promise<ListedItem[]> {
     return listAllTaskFlowStages(
       this.client,
       selector,
-      project ? this.destination(project) : undefined,
+      project ? await this.destination(project) : undefined,
     )
+  }
+
+  private async listEveryDestination(selector: StageListSelector): Promise<ListedItem[]> {
+    const destinations = await this.allDestinations()
+    return (
+      await Promise.all(
+        destinations.map((destination) =>
+          listAllTaskFlowStages(this.client, selector, destination),
+        ),
+      )
+    ).flat()
   }
 
   private async byId(id: string): Promise<HostedTaskFlowStageById | null> {
@@ -305,11 +320,30 @@ class RecordTaskFlowReadStore {
       .sort()
       .map((modeSlug) => ({ mode_slug: modeSlug }))
   }
-  listOpenStages(input: { project?: string; sessionId?: string }) {
-    return this.local.listOpenStages(input)
+  async listOpenStages(input: { project?: string; sessionId?: string }) {
+    const local = await this.local.listOpenStages(input)
+    const selector = {
+      states: ['running', 'awaiting-ruling'] as const,
+      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+      ...(input.project ? { projectId: this.projectId(input.project) } : {}),
+    }
+    const hosted = input.project
+      ? await this.list(selector, input.project)
+      : await this.listEveryDestination(selector)
+    const numberByRecordId = new Map(
+      hosted.map(({ stage }) => [stage.id, required(stage.number, 'number')]),
+    )
+    return local.map((row) => {
+      const number = numberByRecordId.get(row.record_id)
+      if (number === undefined)
+        throw new Error(
+          `local workflow stage ${row.record_id} has no hosted record counterpart; run record sync, then retry`,
+        )
+      return { ...row, id: number }
+    })
   }
   async openStageWorktrees() {
-    return (await this.list({ states: ['running', 'awaiting-ruling'] }))
+    return (await this.listEveryDestination({ states: ['running', 'awaiting-ruling'] }))
       .map((row) => stageRow(row))
       .sort((a, b) => a.id - b.id)
       .map((row) => ({
@@ -335,10 +369,7 @@ class RecordTaskFlowReadStore {
       .map(({ autonomy }) => ({ autonomy }))
   }
   async stageIdentityMap() {
-    return (await this.list({ states: ['running', 'awaiting-ruling', 'done', 'abandoned'] }))
-      .map((row) => stageRow(row))
-      .sort((a, b) => a.id - b.id)
-      .map(({ id: number, record_id }) => ({ number, record_id }))
+    return this.local.stageIdentityMap()
   }
   async stageByHandle(project: string, cursor: number) {
     const rows = await this.list({ projectId: this.projectId(project), number: cursor }, project)
@@ -548,7 +579,7 @@ class RecordTaskFlowReadStore {
   }
   async pendingTaskLinks(table: 'workflow_cursor' | 'question') {
     if (table === 'question') return this.local.pendingTaskLinks(table)
-    return (await this.list({ unlinked: true }))
+    return (await this.listEveryDestination({ unlinked: true }))
       .filter(({ stage }) => Boolean(stage.workflowKey && stage.projectName))
       .map(({ stage }) => ({
         id: stage.id,
@@ -558,7 +589,7 @@ class RecordTaskFlowReadStore {
   }
   async linkedTaskReferences(table: 'workflow_cursor' | 'question') {
     if (table === 'question') return this.local.linkedTaskReferences(table)
-    return (await this.list({ linked: true })).map(({ stage, flow }) => ({
+    return (await this.listEveryDestination({ linked: true })).map(({ stage, flow }) => ({
       task_record_id: required(flow.taskId, 'task reference'),
       project: required(stage.projectName, 'project name'),
     }))

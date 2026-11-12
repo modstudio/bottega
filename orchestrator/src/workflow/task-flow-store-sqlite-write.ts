@@ -8,6 +8,7 @@ import type {
   TaskFlowIntentInput,
   TaskFlowIntentResult,
 } from '../record/record-task-flow-write-contract.ts'
+import { decideAppliedMirrorMutation } from './task-flow-decision.ts'
 
 type Mutation = { id: string; expectedRevision: number; values: Record<string, unknown> }
 type SqlRow = Record<string, SQLQueryBindings>
@@ -156,17 +157,6 @@ function updateMutation(
   if (table === 'task_flow') applyFlowValues(database, mutation, next)
   else applyStageValues(database, mutation, next)
   return next
-}
-
-export function decideAppliedMirrorMutation(
-  localRevision: number | null,
-  expectedRevision: number,
-  appliedRevision: number | undefined,
-): 'apply' | 'keep' | 'refresh' | 'refuse' {
-  if (localRevision === expectedRevision) return 'apply'
-  if (appliedRevision === undefined) return 'refuse'
-  if (localRevision !== null && localRevision >= appliedRevision) return 'keep'
-  return 'refresh'
 }
 
 function insertFlow(database: Database, row: SqlRow, revisionValue: number): void {

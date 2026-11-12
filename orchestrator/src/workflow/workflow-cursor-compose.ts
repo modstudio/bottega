@@ -24,12 +24,9 @@ import {
   insertWorkflowCursorRow,
   refuseTaskFlowStageConflict,
 } from './task-flow.ts'
-import { taskFlowState } from './task-flow-decision.ts'
-import {
-  cachedKeylessInstanceSlot,
-  taskFlowLocalStore,
-  taskFlowReadStore,
-} from './task-flow-store.ts'
+import { reconcileKeylessInstanceSlot, taskFlowState } from './task-flow-decision.ts'
+import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
+import { sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
 import type { WorkflowCursorInsert } from './task-flow-store-types.ts'
 import {
   type CommitCountPort,
@@ -54,6 +51,14 @@ type ComposeFacts = {
   machine: string
   at: string
   autonomyJson: string | null
+}
+
+function requiredHostedStageNumber(number: number | null): number {
+  if (number === null)
+    throw new Error(
+      'hosted task-flow stage has no number; repair the hosted task-flow row, then retry',
+    )
+  return number
 }
 
 function decideKeylessComposeInstance(input: {
@@ -91,9 +96,9 @@ async function keylessComposeOrdinal(
   }
   const [hostedSlot, localSlot] = await Promise.all([
     taskFlowReadStore(database, context.taskFlowClient).nextKeylessInstanceSlot(input),
-    cachedKeylessInstanceSlot(database, input),
+    sqliteTaskFlowReadStore(database).nextKeylessInstanceSlot(input),
   ])
-  return Math.max(localSlot, hostedSlot - 1)
+  return reconcileKeylessInstanceSlot(localSlot, hostedSlot)
 }
 
 async function readComposeFacts(
@@ -266,7 +271,8 @@ function applyHostedCompose(
 ): SelectableCursorRow {
   return writeTransaction(() => {
     const result = taskFlowLocalStore(database).write('compose', payload, hosted)
-    return taskFlowLocalStore(database).stageByRecordId(result.stage!.id) as SelectableCursorRow
+    const row = taskFlowLocalStore(database).stageByRecordId(result.stage!.id) as SelectableCursorRow
+    return hosted?.stage ? { ...row, id: hosted.stage.number } : row
   }, database)
 }
 
@@ -316,7 +322,8 @@ function cacheComposeReplay(
         },
         database,
       )
-    return taskFlowLocalStore(database).stageByRecordId(stored) as SelectableCursorRow
+    const row = taskFlowLocalStore(database).stageByRecordId(stored) as SelectableCursorRow
+    return { ...row, id: requiredHostedStageNumber(stage.number) }
   }, database)
 }
 
