@@ -2,6 +2,8 @@
 /** Converts hosted task-flow reads to the workflow read-port row shapes. */
 
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { cachedProjectSpaces } from '../project-space-cache.ts'
 import { RecordApiRequestError, recordApiClient } from '../record/record-api-client.ts'
 import type { RecordRequestDestination } from '../record/record-api-client-paths.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
@@ -12,7 +14,10 @@ import {
   RECORD_TASK_FLOW_NOT_FOUND_CODE,
   TASK_FLOW_STAGE_LIST_LIMIT_MAX,
 } from '../record/record-task-flow-contract.ts'
-import type { TaskFlowReadStore } from './task-flow-store.ts'
+import {
+  currentRecordWriteDecision,
+  throwIfRecordRefused,
+} from '../record/record-write-authority.ts'
 import { sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
 import type {
   TaskFlowObligationRow,
@@ -20,7 +25,6 @@ import type {
   TaskFlowStageCursorRow,
   TaskFlowTextRow,
 } from './task-flow-store-types.ts'
-import { workflowReadSpaceFor } from './workflow-read-space.ts'
 
 type ListedItem = HostedTaskFlowStageList['items'][number]
 type HostedStage = HostedTaskFlowStageById['stage']
@@ -149,8 +153,8 @@ async function listAllTaskFlowStages(
   }
 }
 
-class RecordTaskFlowReadStore implements TaskFlowReadStore {
-  private readonly local: TaskFlowReadStore
+class RecordTaskFlowReadStore {
+  private readonly local: ReturnType<typeof sqliteTaskFlowReadStore>
   private readonly database: Database
   private readonly client: RecordTaskFlowClient
 
@@ -178,8 +182,12 @@ class RecordTaskFlowReadStore implements TaskFlowReadStore {
   }
 
   private destination(project: string): RecordRequestDestination {
-    const destinationSpaceId = workflowReadSpaceFor(this.database, project)
-    return destinationSpaceId ? { destinationSpaceId } : {}
+    const destinationSpaceId = cachedProjectSpaces(this.database)[project]
+    if (!destinationSpaceId)
+      throw new Error(
+        `project ${project} route unknown, run \`${PLATFORM_SLUG} record sync\`, then retry`,
+      )
+    return { destinationSpaceId }
   }
 
   private async list(selector: StageListSelector, project?: string): Promise<ListedItem[]> {
@@ -575,6 +583,14 @@ class RecordTaskFlowReadStore implements TaskFlowReadStore {
 export function recordTaskFlowReadStore(
   database: Database,
   client: RecordTaskFlowClient = recordApiClient(),
-): TaskFlowReadStore {
+): RecordTaskFlowReadStore {
   return new RecordTaskFlowReadStore(database, client)
+}
+
+export function resolveTaskFlowReadStore(database: Database) {
+  const decision = currentRecordWriteDecision(database)
+  throwIfRecordRefused(decision)
+  return decision.verdict === 'hosted'
+    ? recordTaskFlowReadStore(database)
+    : sqliteTaskFlowReadStore(database)
 }

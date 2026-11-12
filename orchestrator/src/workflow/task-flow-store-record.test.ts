@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
+import { rememberProjectSpace } from '../project-space-cache.ts'
 import type { HostedTaskFlowStageById } from '../record/record-task-flow-contract.ts'
 import { recordTaskFlowReadStore } from './task-flow-store-record.ts'
 import { sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
@@ -98,6 +99,7 @@ const database = testDatabaseFixture((d) => {
     '00000000-0000-4000-8000-000000000007',
     FLOW_ID,
   )
+  rememberProjectSpace(d, 'fixture', 'fixture-space')
 })
 
 function hostedStage(input: { taskless?: boolean; number?: number } = {}): HostedTaskFlowStageById {
@@ -174,6 +176,22 @@ test('record adapter matches SQLite rows and normalizes taskless stages', async 
     [hosted.stageByRecordId(stageId), local.stageByRecordId(stageId)],
     [hosted.latestStageForTask(input), local.latestStageForTask(input)],
     [
+      hosted.openKeylessStages({
+        project: 'fixture',
+        workflow: 'flow',
+        mode: 'default',
+        sessionId: 'session-a',
+        untouched: false,
+      }),
+      local.openKeylessStages({
+        project: 'fixture',
+        workflow: 'flow',
+        mode: 'default',
+        sessionId: 'session-a',
+        untouched: false,
+      }),
+    ],
+    [
       hosted.activeStageModes({ ...input, key: 'DEV-2234', sessionId: 'session-a' }),
       local.activeStageModes({ ...input, key: 'DEV-2234', sessionId: 'session-a' }),
     ],
@@ -195,12 +213,39 @@ test('record adapter matches SQLite rows and normalizes taskless stages', async 
     ],
     [hosted.flowState(FLOW_ID), local.flowState(FLOW_ID)],
     [hosted.textsForStage(stageId), local.textsForStage(stageId)],
+    [hosted.textByRecordId('missing-text'), local.textByRecordId('missing-text')],
+    [
+      hosted.textAttachmentByRecordId('missing-text'),
+      local.textAttachmentByRecordId('missing-text'),
+    ],
     [hosted.textRecordIdsForStage(stageId), local.textRecordIdsForStage(stageId)],
     [hosted.copiedTextRecordIdsForStage(stageId), local.copiedTextRecordIdsForStage(stageId)],
     [hosted.stageProject(stageId), local.stageProject(stageId)],
     [hosted.uncopiedTextsForStage(stageId), local.uncopiedTextsForStage(stageId)],
+    [hosted.liveTextAttachment('missing-text'), local.liveTextAttachment('missing-text')],
+    [hosted.copiedTextReference('missing-text'), local.copiedTextReference('missing-text')],
     [hosted.openObligationRecordIds(stageId), local.openObligationRecordIds(stageId)],
     [hosted.openObligations(stageId), local.openObligations(stageId)],
+    [
+      hosted.obligationByRecordId('missing-obligation'),
+      local.obligationByRecordId('missing-obligation'),
+    ],
+    [
+      hosted.nextKeylessInstanceSlot({
+        projectRecordId: PROJECT_ID,
+        workflow: 'flow',
+        mode: 'default',
+        sessionId: 'session-a',
+        machineId: MACHINE_ID,
+      }),
+      local.nextKeylessInstanceSlot({
+        projectRecordId: PROJECT_ID,
+        workflow: 'flow',
+        mode: 'default',
+        sessionId: 'session-a',
+        machineId: MACHINE_ID,
+      }),
+    ],
     [hosted.flowForTask(TASK_ID), local.flowForTask(TASK_ID)],
     [hosted.hasStage(stageId), local.hasStage(stageId)],
     [

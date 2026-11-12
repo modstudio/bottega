@@ -7,17 +7,13 @@ import type {
   TaskFlowIntentInput,
   TaskFlowIntentResult,
 } from '../record/record-task-flow-write-contract.ts'
-import {
-  currentRecordWriteDecision,
-  throwIfRecordRefused,
-} from '../record/record-write-authority.ts'
 import type {
   TaskFlowLocalOnlyReadMethod,
   TaskFlowLocalReadMethod,
   TaskFlowWriteMethod,
 } from './task-flow-store-methods.ts'
-import { recordTaskFlowReadStore } from './task-flow-store-record.ts'
-import { sqliteTaskFlowLocalStore, sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
+import { resolveTaskFlowReadStore } from './task-flow-store-record.ts'
+import { sqliteTaskFlowLocalStore } from './task-flow-store-sqlite.ts'
 import type {
   TaskFlowCloseOutStageRow,
   TaskFlowCursorLifecycleRow,
@@ -236,8 +232,5 @@ export function taskFlowLocalStore(database: Database): TaskFlowLocalStore {
 
 /** Resolves task-flow reads to the authoritative store for this install. */
 export function taskFlowReadStore(database: Database): TaskFlowReadStore {
-  const decision = currentRecordWriteDecision(database)
-  throwIfRecordRefused(decision)
-  if (decision.verdict === 'hosted') return recordTaskFlowReadStore(database)
-  return sqliteTaskFlowReadStore(database)
+  return resolveTaskFlowReadStore(database)
 }
