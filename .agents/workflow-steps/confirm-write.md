@@ -3,7 +3,7 @@ title: Confirm every write
 stage: implement
 floor:
   - ruling
-job: null
+jobs: []
 autonomy: ask
 needs: []
 ---

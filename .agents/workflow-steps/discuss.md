@@ -3,7 +3,7 @@ title: Discuss the findings
 stage: plan
 floor:
   - recorded-artifact
-job: null
+jobs: []
 autonomy: ask
 needs: []
 ---

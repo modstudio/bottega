@@ -3,7 +3,7 @@ title: Frame the subject
 stage: plan
 floor:
   - recorded-artifact
-job: null
+jobs: []
 autonomy: auto
 needs: []
 ---

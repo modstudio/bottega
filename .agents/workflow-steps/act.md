@@ -3,7 +3,7 @@ title: Perform the confirmed operation
 stage: implement
 floor:
   - recorded-artifact
-job: null
+jobs: []
 autonomy: auto
 needs: []
 ---

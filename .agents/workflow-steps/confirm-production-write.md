@@ -4,7 +4,7 @@ stage: implement
 floor:
   - ruling
 operatorRuling: true
-job: null
+jobs: []
 autonomy: ask
 needs: []
 ---

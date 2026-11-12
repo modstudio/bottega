@@ -8,7 +8,7 @@ outcomes:
   - graduated
   - noted
   - expired
-job: null
+jobs: []
 autonomy: auto
 needs: []
 ---
