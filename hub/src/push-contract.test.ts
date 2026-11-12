@@ -51,7 +51,7 @@ test('delete parsing follows the exhaustive pushable table declaration', () => {
   for (const table of PUSHABLE_HUB_CHANGE_TABLES) {
     const parsed = parseHostedPushItem({ table, id, op: 'delete' })
     expect(PUSHABLE_HUB_DELETE_ACCEPTANCE[table]).toBe(DELETE_ACCEPTANCE[table])
-    expect(parsed).toEqual(
+    expect(parsed as unknown).toEqual(
       DELETE_ACCEPTANCE[table]
         ? { input: { table, id, op: 'delete' } }
         : { outcome: { id, status: 'rejected', reason: `${table} does not accept delete` } },

@@ -7,7 +7,13 @@ import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
 import { acknowledgeNote, createNote, dropNote, mergeNote } from './note.ts'
 import { drainHostedOutbox } from './outbox.ts'
-import type { HostedPushChange, PushedNote, PushedNoteAcknowledgement } from './push-contract.ts'
+import type {
+  HostedPushChange,
+  ParsedHostedPushChange,
+  PushedNote,
+  PushedNoteAcknowledgement,
+} from './push-contract.ts'
+import { parseHostedPushItem } from './push-contract.ts'
 import type { HostedTaskIdentity } from './task-client.ts'
 
 const spaceId = '01990000-0000-7000-8000-000000001250'
@@ -121,12 +127,19 @@ function seedMachineNote(row: PushedNote) {
   )
 }
 
+const parseInputs = (inputs: HostedPushChange[]): ParsedHostedPushChange[] =>
+  inputs.map((input) => {
+    const parsed = parseHostedPushItem(input)
+    if ('outcome' in parsed) throw new Error(parsed.outcome.reason)
+    return parsed.input
+  })
+
 const apply = (inputs: HostedPushChange[], selectedIdentity = identity) =>
   database.transaction(async (transaction) => {
     const sql = pgliteSql(transaction as unknown as PGlite)
     sql.unsafe = (async (statement: string) =>
       (await transaction.query(statement)).rows) as SQL['unsafe']
-    return applyHostedPushChangesInTransaction(sql, selectedIdentity, inputs)
+    return applyHostedPushChangesInTransaction(sql, selectedIdentity, parseInputs(inputs))
   })
 
 beforeAll(async () => {
@@ -180,7 +193,7 @@ test('two machine sightings append once each and repeated delivery writes no cha
     last_seen_at: '2026-10-09T12:00:00.000Z',
   })
   await seedHostedNote(initial)
-  const sighting = (anchorId: string, seen: string): HostedPushChange => ({
+  const sighting = (anchorId: string, seen: string): ParsedHostedPushChange => ({
     table: 'hub_note',
     id: noteId,
     op: 'upsert',
@@ -400,7 +413,7 @@ test('keep adopts the existing hosted acknowledgement id and timestamp compariso
     updated_at: '2026-10-09T13:00:00.000Z',
     deleted_at: null,
   }
-  const change: HostedPushChange = {
+  const change: ParsedHostedPushChange = {
     table: 'hub_note_acknowledgement',
     id: machineId,
     op: 'upsert',

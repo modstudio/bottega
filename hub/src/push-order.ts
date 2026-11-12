@@ -7,6 +7,7 @@ import {
   HOSTED_STATUS_EVENT_TABLE,
   HOSTED_TASK_TABLE,
   type HostedPushChange,
+  type ParsedHostedPushChange,
 } from './push-contract.ts'
 
 function taskDepth(
@@ -22,9 +23,11 @@ function taskDepth(
   return 1 + taskDepth(parent, tasks, visiting)
 }
 
-export function orderHostedPushChanges<Change extends HostedPushChange>(
-  changes: readonly Change[],
-): Change[] {
+export function orderHostedPushChanges(
+  changes: readonly ParsedHostedPushChange[],
+): ParsedHostedPushChange[]
+export function orderHostedPushChanges(changes: readonly HostedPushChange[]): HostedPushChange[]
+export function orderHostedPushChanges(changes: readonly HostedPushChange[]): HostedPushChange[] {
   const tasks = new Map(
     changes.flatMap((change) =>
       change.table === HOSTED_TASK_TABLE && change.op === 'upsert'

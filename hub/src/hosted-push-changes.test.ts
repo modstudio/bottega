@@ -8,11 +8,13 @@ import { db, writeTransaction } from './db.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
 import { drainHostedOutbox } from './outbox.ts'
-import type {
-  HostedPushChange,
-  PushedInterval,
-  PushedStatusEvent,
-  PushedTask,
+import {
+  type HostedPushChange,
+  type ParsedHostedPushChange,
+  type PushedInterval,
+  type PushedStatusEvent,
+  type PushedTask,
+  parseHostedPushItem,
 } from './push-contract.ts'
 import { closeTask, commentTask, setTask } from './task.ts'
 import { UNATTRIBUTED } from './task-attribution.ts'
@@ -85,12 +87,19 @@ const intervalRow = (id: string, startAt = '2026-10-12T16:54:46.612Z'): PushedIn
   user_id: userId,
 })
 
+const parseInputs = (inputs: HostedPushChange[]): ParsedHostedPushChange[] =>
+  inputs.map((input) => {
+    const parsed = parseHostedPushItem(input)
+    if ('outcome' in parsed) throw new Error(parsed.outcome.reason)
+    return parsed.input
+  })
+
 const apply = (inputs: HostedPushChange[], selectedIdentity = identity) =>
   database.transaction(async (transaction) => {
     const sql = pgliteSql(transaction as unknown as PGlite)
     sql.unsafe = (async (statement: string) =>
       (await transaction.query(statement)).rows) as SQL['unsafe']
-    return applyHostedPushChangesInTransaction(sql, selectedIdentity, inputs)
+    return applyHostedPushChangesInTransaction(sql, selectedIdentity, parseInputs(inputs))
   })
 
 beforeAll(async () => {
@@ -303,7 +312,7 @@ test('keeps a pushed status event idempotent while its task is absent', async ()
     '2026-10-09T15:00:00.000Z',
     '01990000-0000-7000-8000-000000009999',
   )
-  const input: HostedPushChange = {
+  const input: ParsedHostedPushChange = {
     table: 'hub_task_status_event',
     id: event.id,
     op: 'upsert',
@@ -415,7 +424,7 @@ test('field task pushes preserve other hosted edits, deduplicate, and create an 
     updated_at: '2026-10-11T14:00:00.000Z',
     last_seen: '2026-10-11T14:00:00.000Z',
   }
-  const change: HostedPushChange = {
+  const change: ParsedHostedPushChange = {
     table: 'hub_task',
     id: taskId,
     op: 'upsert',
@@ -434,13 +443,13 @@ test('field task pushes preserve other hosted edits, deduplicate, and create an 
     updated_at: '2026-10-11T15:00:00.000Z',
     last_seen: '2026-10-11T15:00:00.000Z',
   }
-  const repeatedDoneChange: HostedPushChange = { ...change, row: repeatedDone }
+  const repeatedDoneChange: ParsedHostedPushChange = { ...change, row: repeatedDone }
   expect(await apply([repeatedDoneChange])).toEqual([{ id: taskId, status: 'duplicate' }])
   expect(
     (await database.query(`SELECT closed_at::text FROM hub_task WHERE id=$1`, [taskId])).rows,
   ).toEqual([{ closed_at: '2026-10-11 14:00:00+00' }])
 
-  const laterTitle: HostedPushChange = {
+  const laterTitle: ParsedHostedPushChange = {
     table: 'hub_task',
     id: taskId,
     op: 'upsert',
@@ -626,7 +635,7 @@ test('offline commands later drain through the real outbox into hosted task rows
 test('comment and document pushes apply their route effects and deduplicate deletes', async () => {
   const commentId = '01990000-0000-7000-8000-000000001301'
   const at = '2026-10-11T15:00:00.000Z'
-  const comment: HostedPushChange = {
+  const comment: ParsedHostedPushChange = {
     table: 'hub_task_comment',
     id: commentId,
     op: 'upsert',
@@ -674,7 +683,7 @@ test('comment and document pushes apply their route effects and deduplicate dele
   expect(taskAfterComment.updated_at.toISOString()).toBe(at)
 
   const documentId = '01990000-0000-7000-8000-000000001302'
-  const document: HostedPushChange = {
+  const document: ParsedHostedPushChange = {
     table: 'hub_task_document',
     id: documentId,
     op: 'upsert',
@@ -708,7 +717,7 @@ test('hosted comment pushes enforce authorship and permanent tombstones', async 
   const makeComment = (
     id: string,
     actorUserId: string | null,
-  ): Extract<HostedPushChange, { table: 'hub_task_comment'; op: 'upsert' }> => ({
+  ): Extract<ParsedHostedPushChange, { table: 'hub_task_comment'; op: 'upsert' }> => ({
     table: 'hub_task_comment',
     id,
     op: 'upsert',

@@ -13,6 +13,7 @@ import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
 import { loadOutboxChange } from './outbox-row.ts'
 import {
   type HostedPushChange,
+  type ParsedHostedPushChange,
   type PushedDay,
   type PushedInterval,
   parseHostedPushItem,
@@ -70,12 +71,19 @@ const day: PushedDay = {
   collected_at: '2026-10-11T23:00:00.000Z',
 }
 
+const parseInputs = (inputs: HostedPushChange[]): ParsedHostedPushChange[] =>
+  inputs.map((input) => {
+    const parsed = parseHostedPushItem(input)
+    if ('outcome' in parsed) throw new Error(parsed.outcome.reason)
+    return parsed.input
+  })
+
 const apply = (inputs: HostedPushChange[]) =>
   database.transaction(async (transaction) => {
     const sql = pgliteSql(transaction as unknown as PGlite)
     sql.unsafe = (async (statement: string) =>
       (await transaction.query(statement)).rows) as SQL['unsafe']
-    return applyHostedPushChangesInTransaction(sql, identity, inputs)
+    return applyHostedPushChangesInTransaction(sql, identity, parseInputs(inputs))
   })
 
 beforeAll(async () => {
@@ -107,7 +115,7 @@ afterAll(async () => {
 })
 
 test('the edge accepts evidence and unchanged resends append no hosted changes', async () => {
-  const inputs: HostedPushChange[] = [
+  const inputs: ParsedHostedPushChange[] = [
     { table: 'hub_interval', id: intervalId, op: 'upsert', row: interval },
     { table: 'hub_day', id: dayId, op: 'upsert', row: day },
   ]
@@ -333,7 +341,7 @@ test('real and legacy machine day timestamps serialize through the strict edge',
   )
   expect(inputs.every(Boolean)).toBeTrue()
   const changes = inputs.map((loaded) => loaded!.change)
-  expect(changes.map(parseHostedPushItem)).toEqual(changes.map((input) => ({ input })))
+  expect(changes.map(parseHostedPushItem) as unknown).toEqual(changes.map((input) => ({ input })))
   const localMachine = (changes[0] as { row: PushedDay }).row.machine_id
   await database.exec(`RESET ROLE; INSERT INTO machine(id,user_id,name,registered_at,last_seen)
     VALUES ('${localMachine}','${userId}','local',now(),now()) ON CONFLICT (id) DO NOTHING;
