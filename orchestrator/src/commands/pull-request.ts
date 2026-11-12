@@ -230,7 +230,14 @@ export async function runPullRequestPostLandingCommand(
     exitCode = POST_LANDING_REPORTED_EXIT_CODE
   }
   if (payload) {
-    const project = ports.projectByName(payload.project, database)
+    let project: ReturnType<typeof projectByName> = null
+    try {
+      project = ports.projectByName(payload.project, database)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      ports.log(`context: could not resolve project ${payload.project} for pr-merge: ${detail}`)
+      return exitCode
+    }
     await applyPullRequestContextMoment(
       project?.settings.keyPrefixes ?? [],
       {
