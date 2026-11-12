@@ -316,8 +316,7 @@ export function register(program: Command): void {
       .description('create a pull request after review-triage admission')
       .allowUnknownOption(true),
     PR_CREATE_OPTIONS,
-  )
-    .action(createPullRequestCommand)
+  ).action(createPullRequestCommand)
 
   addPullRequestOptions(
     pr

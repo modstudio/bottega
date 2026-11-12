@@ -47,11 +47,7 @@ import type { SynchronousResult } from '../synchronous-result.ts'
 import { sha } from './prompt-sha.ts'
 import { recordedRunLivenessFacts, runAlive } from './run-alive.ts'
 import { RUNS_DIR, readDispatchState } from './run-artifacts.ts'
-import {
-  bindingValues,
-  inheritedRunBinding,
-  inheritedRunLinks,
-} from './run-claim-inheritance.ts'
+import { bindingValues, inheritedRunBinding, inheritedRunLinks } from './run-claim-inheritance.ts'
 import { claimWithMigrationAdmission } from './run-claim-transaction.ts'
 import { runCoordinatorLogPath } from './run-coordinator-log.ts'
 import { EXTERNAL_EXECUTOR, HARNESS_EXECUTOR, type RunExecutor } from './run-executor.ts'
@@ -192,7 +188,7 @@ function resolvedDetachSpec(spec: DetachSpec, jobName: string): DetachSpec {
 
 function detachedPlaceholderBindings(
   spec: ResolvedDetachSpec,
-  binding: DetachSpec['binding'] | null,
+  binding: ReturnType<typeof inheritedRunBinding>,
   startedByUserId: string | null,
 ) {
   return [

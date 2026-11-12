@@ -127,8 +127,7 @@ test('a keyless cursor refuses before dispatch', async () => {
   expect(dispatches).toBe(0)
 })
 
-test('land refuses an undeclared action exactly and never calls either PR service', async () => {
-  let creates = 0
+test('land refuses an undeclared action exactly and never calls its PR service', async () => {
   let merges = 0
   await expect(
     mergeForStep(
@@ -144,7 +143,7 @@ test('land refuses an undeclared action exactly and never calls either PR servic
   ).rejects.toThrow(
     'step implement of cursor 17 declares actions: pr-create; pr-merge is not one of them',
   )
-  expect({ creates, merges }).toEqual({ creates: 0, merges: 0 })
+  expect(merges).toBe(0)
 })
 
 test('declared create and merge actions reach only their own PR service once', async () => {

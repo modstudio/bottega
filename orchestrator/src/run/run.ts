@@ -283,10 +283,9 @@ export async function run(opts: RunOptions): Promise<RunResult> {
       recordPack(pack)
     } catch (cause) {
       const message = (cause as Error).message
-      let failedId = opts.reserveId
-      if (failedId) recordRunStartupFailure(failedId, cause)
+      const failedId = opts.reserveId ?? newRecordId()
+      if (opts.reserveId) recordRunStartupFailure(failedId, cause)
       else {
-        failedId = newRecordId()
         const links = await admitNewRunReference({
           projectName: runProjectName,
           projectRecordId: runProjectId,

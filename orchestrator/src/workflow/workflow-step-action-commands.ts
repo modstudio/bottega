@@ -137,8 +137,7 @@ export function registerWorkflowStepActionCommands(
       .allowUnknownOption(true)
       .requiredOption('--cursor <value>', 'select this workflow cursor'),
     PR_CREATE_OPTIONS,
-  )
-    .action((githubArgs, options) => createForStepCommand(githubArgs, options, ports))
+  ).action((githubArgs, options) => createForStepCommand(githubArgs, options, ports))
 
   addPullRequestOptions(
     land
