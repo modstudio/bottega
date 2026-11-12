@@ -22,7 +22,9 @@ function taskDepth(
   return 1 + taskDepth(parent, tasks, visiting)
 }
 
-export function orderHostedPushChanges(changes: readonly HostedPushChange[]): HostedPushChange[] {
+export function orderHostedPushChanges<Change extends HostedPushChange>(
+  changes: readonly Change[],
+): Change[] {
   const tasks = new Map(
     changes.flatMap((change) =>
       change.table === HOSTED_TASK_TABLE && change.op === 'upsert'

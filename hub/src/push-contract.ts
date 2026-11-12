@@ -21,7 +21,7 @@ export const PUSHABLE_HUB_CHANGE_TABLES = [
 
 export type PushableHubChangeTable = (typeof PUSHABLE_HUB_CHANGE_TABLES)[number]
 
-export const PUSHABLE_HUB_DELETE_ACCEPTANCE: Record<PushableHubChangeTable, boolean> = {
+export const PUSHABLE_HUB_DELETE_ACCEPTANCE = {
   [HOSTED_TASK_TABLE]: false,
   [HOSTED_STATUS_EVENT_TABLE]: false,
   [HOSTED_COMMENT_TABLE]: false,
@@ -30,6 +30,16 @@ export const PUSHABLE_HUB_DELETE_ACCEPTANCE: Record<PushableHubChangeTable, bool
   [HOSTED_DAY_TABLE]: true,
   [HOSTED_NOTE_TABLE]: true,
   [HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE]: false,
+} as const satisfies Record<PushableHubChangeTable, boolean>
+
+type DeleteAcceptingTable = {
+  [Table in keyof typeof PUSHABLE_HUB_DELETE_ACCEPTANCE]: (typeof PUSHABLE_HUB_DELETE_ACCEPTANCE)[Table] extends true
+    ? Table
+    : never
+}[keyof typeof PUSHABLE_HUB_DELETE_ACCEPTANCE]
+
+function acceptsDelete(table: PushableHubChangeTable): table is DeleteAcceptingTable {
+  return PUSHABLE_HUB_DELETE_ACCEPTANCE[table]
 }
 
 export type PushedStatusEvent = {
@@ -254,6 +264,10 @@ export type HostedPushChange =
       row: PushedNoteAcknowledgement
     }
 
+export type ParsedHostedPushChange =
+  | Exclude<HostedPushChange, { op: 'delete' }>
+  | { table: DeleteAcceptingTable; id: string; op: 'delete' }
+
 export type HostedPushOutcome =
   | {
       id: string
@@ -265,7 +279,7 @@ export type HostedPushOutcome =
   | { id: string; status: 'rejected'; reason: string }
 
 type ParsedHostedPushItem =
-  | { input: HostedPushChange }
+  | { input: ParsedHostedPushChange }
   | { outcome: Extract<HostedPushOutcome, { status: 'rejected' }> }
 
 const object = (value: unknown): Record<string, unknown> | null =>
@@ -725,6 +739,6 @@ export function parseHostedPushItem(value: unknown): ParsedHostedPushItem {
   const table = input.table as PushableHubChangeTable
   if (input.op === 'upsert')
     return parseHostedUpsert(input as Record<string, unknown> & { id: string }, table)
-  if (!PUSHABLE_HUB_DELETE_ACCEPTANCE[table]) return rejected(id, `${table} does not accept delete`)
-  return { input: { table, id: input.id, op: 'delete' } as HostedPushChange }
+  if (!acceptsDelete(table)) return rejected(id, `${table} does not accept delete`)
+  return { input: { table, id: input.id, op: 'delete' } }
 }

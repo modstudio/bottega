@@ -27,7 +27,7 @@ import {
   HOSTED_TASK_TABLE,
   type HostedPushChange,
   type HostedPushOutcome,
-  PUSHABLE_HUB_DELETE_ACCEPTANCE,
+  type ParsedHostedPushChange,
   type PushableHubChangeTable,
   type PushedComment,
   type PushedDocument,
@@ -42,7 +42,7 @@ type PushDeclaration = {
   apply(
     tx: SQL,
     identity: TaskIdentity,
-    input: HostedPushChange,
+    input: ParsedHostedPushChange,
   ): Promise<Extract<HostedPushOutcome, { status: 'applied' | 'duplicate' }>>
 }
 
@@ -212,19 +212,15 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
     async apply(tx, identity, input) {
       if (input.table !== HOSTED_TASK_TABLE)
         throw new Error(`${input.table} was routed to the task handler`)
-      const upsert = input as Extract<
-        HostedPushChange,
-        { table: typeof HOSTED_TASK_TABLE; op: 'upsert' }
-      >
       const existing =
         (await tx`SELECT * FROM hub_task WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid`) as PushedTask[]
-      const decision = decideTaskUpsert(existing[0] ?? null, upsert.row, upsert.fields ?? null)
+      const decision = decideTaskUpsert(existing[0] ?? null, input.row, input.fields ?? null)
       if (decision.kind === 'reject') throw new Error(decision.reason)
       if (decision.kind === 'duplicate') return { id: input.id, status: 'duplicate' }
       let adoption: Awaited<ReturnType<typeof mirrorTaskRow>> = null
       if (decision.kind === 'patch')
         await applyTaskPatch(tx, identity, input.id, decision.values, decision.resolveParent)
-      else adoption = await mirrorTaskRow(tx, identity, upsert.row)
+      else adoption = await mirrorTaskRow(tx, identity, input.row)
       return {
         id: input.id,
         status: 'applied',
@@ -236,21 +232,17 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
     async apply(tx, identity, input) {
       if (input.table !== HOSTED_COMMENT_TABLE)
         throw new Error(`${input.table} was routed to the task comment handler`)
-      const upsert = input as Extract<
-        HostedPushChange,
-        { table: typeof HOSTED_COMMENT_TABLE; op: 'upsert' }
-      >
       const existing = (await tx`SELECT id::text id,task_key,body,created_at,updated_at,deleted_at,
           actor_user_id,actor_name,agent,run_id,project_name,task_id::text task_id
           FROM hub_task_comment WHERE id=${input.id}::uuid
             AND space_id=${identity.spaceId}::uuid FOR UPDATE`) as StoredCommentPushRow[]
-      const decision = decideHostedCommentPush(existing[0] ?? null, upsert.row, identity.userId)
+      const decision = decideHostedCommentPush(existing[0] ?? null, input.row, identity.userId)
       if (decision.kind === 'reject') throw new Error(decision.reason)
       if (decision.kind === 'duplicate') return { id: input.id, status: 'duplicate' }
-      await requireLiveChildTask(tx, identity, upsert.row)
-      await mirrorCommentRow(tx, identity, upsert.row)
-      const taskId = await taskIdFor(tx, identity.spaceId, upsert.row.task_key, upsert.row.task_id)
-      await tx`UPDATE hub_task SET updated_at=GREATEST(updated_at,${upsert.row.updated_at}::timestamptz),last_seen=GREATEST(last_seen,${upsert.row.updated_at}::timestamptz) WHERE id=${taskId}::uuid AND space_id=${identity.spaceId}::uuid`
+      await requireLiveChildTask(tx, identity, input.row)
+      await mirrorCommentRow(tx, identity, input.row)
+      const taskId = await taskIdFor(tx, identity.spaceId, input.row.task_key, input.row.task_id)
+      await tx`UPDATE hub_task SET updated_at=GREATEST(updated_at,${input.row.updated_at}::timestamptz),last_seen=GREATEST(last_seen,${input.row.updated_at}::timestamptz) WHERE id=${taskId}::uuid AND space_id=${identity.spaceId}::uuid`
       return { id: input.id, status: 'applied' }
     },
   },
@@ -287,12 +279,7 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
     async apply(tx, identity, input) {
       if (input.table !== HOSTED_STATUS_EVENT_TABLE)
         throw new Error(`${input.table} was routed to the status event handler`)
-      const row = (
-        input as Extract<
-          HostedPushChange,
-          { table: typeof HOSTED_STATUS_EVENT_TABLE; op: 'upsert' }
-        >
-      ).row
+      const row = input.row
       const existing = (await tx`SELECT id FROM hub_task_status_event WHERE id=${input.id}::uuid
           AND space_id=${identity.spaceId}::uuid`) as Array<{ id: string }>
       if (existing.length) {
@@ -331,12 +318,7 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
     async apply(tx, identity, input) {
       if (input.table !== HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE)
         throw new Error(`${input.table} was routed to the note acknowledgement handler`)
-      const row: PushedNoteAcknowledgement = (
-        input as Extract<
-          HostedPushChange,
-          { table: typeof HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE; op: 'upsert' }
-        >
-      ).row
+      const row: PushedNoteAcknowledgement = input.row
       const note = (await tx`SELECT id FROM hub_note WHERE id=${row.note_id}::uuid
         AND space_id=${identity.spaceId}::uuid AND deleted_at IS NULL`) as Array<{ id: string }>
       if (!note.length) throw new Error(DELETED_ON_HOSTED_RECORD_REASON)
@@ -379,7 +361,7 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
 export async function applyHostedPushChangesInTransaction(
   tx: SQL,
   identity: TaskIdentity,
-  inputs: HostedPushChange[],
+  inputs: ParsedHostedPushChange[],
 ): Promise<HostedPushOutcome[]> {
   const positions = new Map(inputs.map((input, index) => [input.id, index]))
   const ordered = orderHostedPushChanges(inputs).map((input) => ({
@@ -390,8 +372,6 @@ export async function applyHostedPushChangesInTransaction(
   for (const { input, index } of ordered) {
     await tx.unsafe('SAVEPOINT hub_push_row')
     try {
-      if (input.op === 'delete' && !PUSHABLE_HUB_DELETE_ACCEPTANCE[input.table])
-        throw new Error(`${input.table} does not accept delete`)
       const outcome = await PUSHABLE_HUB_CHANGES[input.table]!.apply(tx, identity, input)
       await tx.unsafe('RELEASE SAVEPOINT hub_push_row')
       outcomes[index] = outcome
@@ -407,7 +387,7 @@ export async function applyHostedPushChangesInTransaction(
 export async function applyHostedPushChanges(
   client: SQL,
   identity: TaskIdentity,
-  inputs: HostedPushChange[],
+  inputs: ParsedHostedPushChange[],
 ) {
   return withHostedTenant(client, identity, (tx) =>
     applyHostedPushChangesInTransaction(tx, identity, inputs),

@@ -306,12 +306,6 @@ test('day delete applies only to a row owned by the caller machine', async () =>
   )
 })
 
-test('dispatch refuses a declared upsert-only table when parsing is bypassed', async () => {
-  expect(await apply([{ table: 'hub_task', id: taskId, op: 'delete' }])).toEqual([
-    { id: taskId, status: 'rejected', reason: 'hub_task does not accept delete' },
-  ])
-})
-
 test('real and legacy machine day timestamps serialize through the strict edge', async () => {
   writeTransaction((conn) => {
     conn

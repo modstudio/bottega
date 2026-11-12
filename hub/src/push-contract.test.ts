@@ -9,6 +9,16 @@ import {
 
 const at = '2026-10-11T12:00:00.000Z'
 const id = '01990000-0000-7000-8000-000000000030'
+const DELETE_ACCEPTANCE = {
+  hub_task: false,
+  hub_task_status_event: false,
+  hub_task_comment: false,
+  hub_task_document: true,
+  hub_interval: true,
+  hub_day: true,
+  hub_note: true,
+  hub_note_acknowledgement: false,
+} as const satisfies Record<(typeof PUSHABLE_HUB_CHANGE_TABLES)[number], boolean>
 const task: HostedPushChange = {
   table: 'hub_task',
   id,
@@ -40,8 +50,9 @@ const task: HostedPushChange = {
 test('delete parsing follows the exhaustive pushable table declaration', () => {
   for (const table of PUSHABLE_HUB_CHANGE_TABLES) {
     const parsed = parseHostedPushItem({ table, id, op: 'delete' })
+    expect(PUSHABLE_HUB_DELETE_ACCEPTANCE[table]).toBe(DELETE_ACCEPTANCE[table])
     expect(parsed).toEqual(
-      PUSHABLE_HUB_DELETE_ACCEPTANCE[table]
+      DELETE_ACCEPTANCE[table]
         ? { input: { table, id, op: 'delete' } }
         : { outcome: { id, status: 'rejected', reason: `${table} does not accept delete` } },
     )

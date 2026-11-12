@@ -23,8 +23,8 @@ import {
 } from './hosted-route-identity.ts'
 import { parseIdentitySetRequest } from './identity-set-contract.ts'
 import {
-  type HostedPushChange,
   type HostedPushOutcome,
+  type ParsedHostedPushChange,
   parseHostedPushItem,
 } from './push-contract.ts'
 
@@ -85,9 +85,11 @@ function hasTestDependencies(
 
 function pushInput(
   value: unknown,
-): { inputs: HostedPushChange[]; rejected: Map<number, HostedPushOutcome> } | { error: string } {
+):
+  | { inputs: ParsedHostedPushChange[]; rejected: Map<number, HostedPushOutcome> }
+  | { error: string } {
   if (!Array.isArray(value)) return { error: 'body must be a list of pushed changes' }
-  const inputs: HostedPushChange[] = []
+  const inputs: ParsedHostedPushChange[] = []
   const rejected = new Map<number, HostedPushOutcome>()
   for (const [index, item] of value.entries()) {
     const parsed = parseHostedPushItem(item)
