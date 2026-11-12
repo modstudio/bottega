@@ -68,9 +68,9 @@ describe('normalizeWorkflowYaml', () => {
   })
 
   test('jobs and actions use stable flow lists', () => {
-    expect(normalizeWorkflowYaml('jobs:\n  - implement\n  - review-lens\nactions:\n  - pr-create\n')).toBe(
-      'jobs: [implement, review-lens]\nactions: [pr-create]\n',
-    )
+    expect(
+      normalizeWorkflowYaml('jobs:\n  - implement\n  - review-lens\nactions:\n  - pr-create\n'),
+    ).toBe('jobs: [implement, review-lens]\nactions: [pr-create]\n')
   })
 })
 

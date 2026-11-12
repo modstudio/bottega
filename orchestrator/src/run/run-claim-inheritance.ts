@@ -3,6 +3,19 @@
 
 import { db } from '../database/db.ts'
 
+export function inheritedRunBinding(
+  parent: string | undefined,
+  binding: { cursorRecordId: string; stepSlug: string } | undefined,
+): { cursorRecordId: string | null; stepSlug: string | null } | null {
+  if (!parent) return binding ?? null
+  const facts = inheritedRunFacts(parent)
+  return { cursorRecordId: facts.cursor_record_id, stepSlug: facts.step_slug }
+}
+
+export const bindingValues = (
+  binding: { cursorRecordId: string | null; stepSlug: string | null } | null,
+) => [binding?.cursorRecordId ?? null, binding?.stepSlug ?? null] as const
+
 export function inheritedRunFacts(parent: string): {
   launch_cwd: string | null
   launch_seed: string | null

@@ -12,6 +12,10 @@ const credentialRecordValues = (row: Payload) => ({
   credentialPayer: nullableString(row.credentialPayer),
   credentialBinding: nullableString(row.credentialBinding),
 })
+const runBindingValues = (row: Payload) => ({
+  cursorRecordId: nullableString(row.cursorRecordId),
+  stepSlug: nullableString(row.stepSlug),
+})
 
 export function runRecordValues(
   row: Payload,
@@ -49,8 +53,7 @@ export function runRecordValues(
     retryOf: nullableString(row.retryOf),
     parentRunId: nullableString(row.parentRunId),
     turn: Number(row.turn),
-    cursorRecordId: nullableString(row.cursorRecordId),
-    stepSlug: nullableString(row.stepSlug),
+    ...runBindingValues(row),
     filesChanged: nullableNumber(row.filesChanged),
     changedPaths: row.changedPaths,
     linesAdded: nullableNumber(row.linesAdded),

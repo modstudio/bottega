@@ -49,10 +49,13 @@ export function normalizeWorkflowYaml(yaml: string): string {
   return yaml
     .replace(/ +$/gm, '')
     .replace(/^([ ]*[a-zA-Z0-9_-]+):\n[ ]+\[\]$/gm, '$1: []')
-    .replace(/^(jobs|actions):\n((?:  - [^\n]+\n?)+)/gm, (_match, field: string, entries: string) => {
-      const values = entries.match(/^  - (.+)$/gm)?.map((entry) => entry.slice(4)) ?? []
-      return `${field}: [${values.join(', ')}]\n`
-    })
+    .replace(
+      /^(jobs|actions):\n((?:  - [^\n]+\n?)+)/gm,
+      (_match, field: string, entries: string) => {
+        const values = entries.match(/^  - (.+)$/gm)?.map((entry) => entry.slice(4)) ?? []
+        return `${field}: [${values.join(', ')}]\n`
+      },
+    )
 }
 
 function document(frontMatter: Record<string, unknown>, body: string): string {

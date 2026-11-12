@@ -807,8 +807,7 @@ export async function dispatchCommand(
   const detachByDefault = !has('follow')
   if (has('detach') || detachByDefault) {
     const id = await detach(jobName, prompt, false, {
-      binding,
-      ...{ agent, agentExplicit },
+      ...{ agent, agentExplicit, binding },
       schema,
       label: flag('label'),
       lens,
@@ -871,8 +870,7 @@ export async function dispatchCommand(
    * genuinely stuck run still returns control rather than hanging for ever.
    */
   const id = await detach(jobName, prompt, true, {
-    binding,
-    ...{ agent, agentExplicit, schema, lens },
+    ...{ agent, agentExplicit, schema, lens, binding },
     reviewRole,
     label: flag('label'),
     mcp: resolved.mcp,

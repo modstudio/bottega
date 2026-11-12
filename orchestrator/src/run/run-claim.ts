@@ -71,7 +71,7 @@ import {
   writeGeneratedSchema,
 } from './run-artifacts.ts'
 import { admitFreshRepositoryRun, type HostCapacityWaitDeps } from './run-claim-host-capacity.ts'
-import { inheritedRunFacts } from './run-claim-inheritance.ts'
+import { bindingValues, inheritedRunBinding, inheritedRunFacts } from './run-claim-inheritance.ts'
 import { executeClaimedMcpPlan } from './run-claim-mcp.ts'
 import {
   claimedRunBranch,
@@ -336,7 +336,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const head = originalPrompt.slice(0, 200).replace(/\s+/g, ' ')
   const inheritedLaunch =
     resume.workspaceSource === 'retained' ? inheritedRunFacts(opts.resume!.parent) : null
-  const inheritedBinding = opts.resume ? inheritedRunFacts(opts.resume.parent) : null
   const recordedBranch = (worktreeBranch: string | null) =>
     claimedRunBranch(
       reviewTarget?.branch ?? null,
@@ -352,12 +351,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   runProjectId = links.projectRecordId
   const launchBase = inheritedLaunch?.launch_base ?? opts.launchBase ?? opts.base ?? null
   const noFailover = inheritedLaunch ? !!inheritedLaunch.no_failover : !!opts.noFailover
-  const binding = inheritedBinding
-    ? {
-        cursorRecordId: inheritedBinding.cursor_record_id,
-        stepSlug: inheritedBinding.step_slug,
-      }
-    : (opts.binding ?? null)
+  const binding = inheritedRunBinding(opts.resume?.parent, opts.binding)
   const worktreeTool = repoJob ? toolFor(callerCwd) : null
   const resumePlan = opts.resume?.treePlan
   let resolvedTaskBranch: TaskBranchCandidate | null = null
@@ -445,8 +439,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           input.endpointKeySource,
           input.credential,
         ),
-        binding?.cursorRecordId ?? null,
-        binding?.stepSlug ?? null,
+        ...bindingValues(binding),
         opts.reserveId!,
       ) as { record_id: string; number: number }
   const insertClaimedRun = () =>
@@ -500,8 +493,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           input.endpointKeySource,
           input.credential,
         ),
-        binding?.cursorRecordId ?? null,
-        binding?.stepSlug ?? null,
+        ...bindingValues(binding),
       ) as { record_id: string; number: number }
   const claim = claimWithMigrationAdmission(input, () => {
     const claimedRow = claimableRow(opts.reserveId, updateReservedRun, insertClaimedRun)

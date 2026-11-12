@@ -312,6 +312,18 @@ function validateIdentity(
   if (typeof item.title !== 'string' || !item.title.trim())
     errors.push(`step "${slug}" title must be non-empty`)
   if (typeof item.body !== 'string') errors.push(`step "${slug}" body must be a string`)
+  validateJobsAndActions(item, slug, errors)
+  if (!(autonomyValues as readonly string[]).includes(String(item.autonomy)))
+    errors.push(`step "${slug}" has invalid autonomy "${String(item.autonomy)}"`)
+  if (!(autonomyStages as readonly string[]).includes(String(item.stage)))
+    errors.push(`step "${slug}" has invalid or missing stage "${String(item.stage)}"`)
+}
+
+function validateJobsAndActions(
+  item: Record<string, unknown>,
+  slug: string,
+  errors: string[],
+): void {
   if (!Array.isArray(item.jobs)) errors.push(`step "${slug}" jobs must be an array`)
   else
     for (const entry of item.jobs)
@@ -322,10 +334,6 @@ function validateIdentity(
     for (const entry of item.actions)
       if (entry !== 'pr-create' && entry !== 'pr-merge')
         errors.push(`step "${slug}" names unknown action "${String(entry)}"`)
-  if (!(autonomyValues as readonly string[]).includes(String(item.autonomy)))
-    errors.push(`step "${slug}" has invalid autonomy "${String(item.autonomy)}"`)
-  if (!(autonomyStages as readonly string[]).includes(String(item.stage)))
-    errors.push(`step "${slug}" has invalid or missing stage "${String(item.stage)}"`)
 }
 
 /** Stored catalogue history remains readable without being revalidated. */

@@ -186,8 +186,16 @@ function resolvedDetachSpec(spec: DetachSpec, jobName: string): DetachSpec {
   return { ...spec, reviewRole: 'round' }
 }
 
-function detachedReviewBindings(spec: ResolvedDetachSpec) {
+function detachedPlaceholderBindings(
+  spec: ResolvedDetachSpec,
+  binding: DetachSpec['binding'] | null,
+  startedByUserId: string | null,
+) {
   return [
+    binding?.cursorRecordId ?? null,
+    binding?.stepSlug ?? null,
+    spec.resume?.session ?? null,
+    startedByUserId,
     spec.resume?.continuationMessage?.sha256 ?? null,
     spec.reviewRole ?? null,
     spec.selectionReason ?? null,
@@ -364,11 +372,7 @@ async function detachResolved(
         identity.parent_run_record_id,
         identity.turn,
         storedMcpRequest(mcpRequest),
-        binding?.cursorRecordId ?? null,
-        binding?.stepSlug ?? null,
-        spec.resume?.session ?? null,
-        startedByUserId,
-        ...detachedReviewBindings(spec),
+        ...detachedPlaceholderBindings(spec, binding, startedByUserId),
         ...placeholderExecution(spec, jobName),
         identity.parent_run_record_id,
         identity.parent_run_record_id,
