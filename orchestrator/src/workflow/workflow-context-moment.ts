@@ -1,6 +1,6 @@
 // concern: workflows
 /** Gathers the plain post-advance cursor values consumed by context moment policy. */
-import { type ContextMomentEffect, contextMomentEffect } from '../../../shared/context-moment.ts'
+import { type ContextMomentEffect, contextMomentEffect } from '../doc/context-moment.ts'
 
 export type WorkflowContextMoment = { taskKey: string | null; effect: ContextMomentEffect }
 export type WorkflowNextMomentInput = {

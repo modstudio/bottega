@@ -71,6 +71,8 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/porting/porting-hosted-import.ts', [
     'bun:sqlite',
     '../../../shared/record-id.ts',
+    '../../../shared/record-space-membership.ts',
+    '../../../shared/record-space-owner-destination.ts',
     '../../../shared/record-remedies.ts',
     '../database/db.ts',
     '../doc/docs.ts',

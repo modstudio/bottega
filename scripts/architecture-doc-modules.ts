@@ -32,8 +32,14 @@ export const docModules: DocModule[] = [
     '../workflow/workflow-task-reference.ts',
   ]),
   module('orchestrator/src/doc/context-item-codec.ts', ['./doc-context-write.ts']),
+  module('orchestrator/src/doc/context-moment.ts', [
+    '../../../shared/brand.ts',
+    '../branch/other-branch-state.ts',
+    '../pull-request/pr-landed-exit-codes.ts',
+    './doc-context-write.ts',
+  ]),
   module('orchestrator/src/doc/context-moment-adapter.ts', [
-    '../../../shared/context-moment.ts',
+    './context-moment.ts',
     './context-service.ts',
     './doc-context-write.ts',
   ]),

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import type { ContextMomentEffect } from '../../../shared/context-moment.ts'
+import type { ContextMomentEffect } from './context-moment.ts'
 import { applyContextMomentEffect, type ContextMomentPorts } from './context-moment-adapter.ts'
 import { ContextWriteRefusalError } from './doc-context-write.ts'
 
@@ -12,6 +12,7 @@ test('a failed answer write keeps its open question', async () => {
   const lines: string[] = []
   let dropped = false
   const ports = {
+    revision: async () => undefined,
     set: async () => {
       throw new Error('store unavailable')
     },
@@ -37,6 +38,7 @@ test('a failed answer write keeps its open question', async () => {
 test('a context policy refusal has no retry command', async () => {
   const lines: string[] = []
   const ports = {
+    revision: async () => undefined,
     set: async () => {
       throw new ContextWriteRefusalError('context item position-q12 refused: position limit')
     },
@@ -62,6 +64,7 @@ test('a context policy refusal has no retry command', async () => {
 test('a missing drop is silent', async () => {
   const lines: string[] = []
   const ports = {
+    revision: async () => undefined,
     set: async () => {
       throw new Error('must not run')
     },

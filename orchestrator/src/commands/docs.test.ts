@@ -206,7 +206,7 @@ test('converted command families preserve trunk output and exit status without o
     [
       ['port', 'import'],
       1,
-      `${PLATFORM_SLUG} doc port import <dir> [--dry-run] [--replace] [--json]`,
+      `${PLATFORM_SLUG} doc port import <dir> [--space <slug>] [--dry-run] [--replace] [--json]`,
     ],
     [
       ['port', 'baseline', 'show'],
@@ -249,12 +249,12 @@ test('converted command families preserve trunk output and exit status without o
     [
       ['port', 'doctrine', 'add'],
       1,
-      `${PLATFORM_SLUG} doc port doctrine add <number> --title TEXT (--file F | body on stdin) [--json]`,
+      `${PLATFORM_SLUG} doc port doctrine add <number> --title TEXT (--file F | body on stdin) [--space <slug>] [--json]`,
     ],
     [
       ['port', 'doctrine', 'retire'],
       1,
-      `${PLATFORM_SLUG} doc port doctrine retire <number> [--json]`,
+      `${PLATFORM_SLUG} doc port doctrine retire <number> [--space <slug>] [--json]`,
     ],
     [['project'], 0, 'no projects registered.'],
     [['project', 'list'], 0, 'no projects registered.'],

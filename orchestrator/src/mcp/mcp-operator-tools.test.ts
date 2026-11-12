@@ -156,6 +156,7 @@ describe('operator MCP tools', () => {
           },
         }),
       {
+        revision: async () => undefined,
         set: async (input) => {
           calls.push(`set ${input.kind} ${input.id} on ${input.task}`)
           return { ...input, holder: `task:${input.task}`, revision: 'revision', task: input.task }

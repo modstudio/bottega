@@ -41,6 +41,7 @@ test('next without a cursor flag writes the selected cursor number', async () =>
   db().query("UPDATE workflow_cursor SET enforcement='note-only' WHERE number=?").run(cursor)
   const items = new Map<string, { kind: string; body: string }>()
   const ports = {
+    revision: async () => undefined,
     set: async (input) => {
       items.set(input.id, { kind: input.kind, body: input.body })
       return {
@@ -121,6 +122,7 @@ test('await, operator rule, and next replace task context through command seams'
   db().query("UPDATE workflow_cursor SET enforcement='note-only' WHERE number=?").run(cursor)
   const items = new Map<string, { kind: string; body: string }>()
   const ports = {
+    revision: async () => undefined,
     set: async (input) => {
       items.set(input.id, { kind: input.kind, body: input.body })
       return {

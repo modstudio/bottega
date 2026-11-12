@@ -10,7 +10,7 @@ import {
   missingContextKinds,
 } from './doc-context-write.ts'
 import { type Doc, listDocsBySubjectPrefixStore, listDocsStore } from './doc-read-store.ts'
-import { removeContextItemForLifecycle } from './doc-remove.ts'
+import { removeContextItemForLifecycle, removeTaskContextHolder } from './doc-remove.ts'
 import { taskContextHolder } from './doc-subjects.ts'
 import { getDoc, removeDoc, setDoc } from './docs.ts'
 
@@ -44,6 +44,14 @@ export async function getContext(selection: ContextHolderSelection) {
   }
 }
 
+/** Reads one item's current revision on a resolved holder for compare-and-set writes. */
+export async function contextItemRevision(
+  selection: ContextHolderSelection & { id: string },
+): Promise<string | undefined> {
+  const { holder } = await resolveContextHolder(selection)
+  return getDoc('context', holder, selection.id)?.revision ?? undefined
+}
+
 function holderContextItems(holder: string, docs: readonly Doc[]) {
   return docs.map((doc) => ({
     ...decodeContextItem(holder, doc.slug, doc.body),
@@ -61,6 +69,17 @@ export function sessionContextItems(session: string, database: Database) {
 export function taskContextItems(task: ContextTaskIdentity, database: Database) {
   const holder = taskContextHolder(task.record_id)
   return holderContextItems(holder, listDocsStore({ scope: 'context', subject: holder }, database))
+}
+
+/** Removes every item on a task holder; a whole-holder clear is not blocked by required kinds. */
+export async function clearTaskContext(input: { task: string }) {
+  const { holder, task } = await resolveContextHolder(input)
+  if (!task) throw new Error('task context clear requires --task')
+  const removed = await removeTaskContextHolder(holder, {
+    reason: `clear context holder ${task.key}`,
+    contextTask: task,
+  })
+  return { holder, task: task.key, removed }
 }
 
 export function sessionContextHolders(database: Database) {

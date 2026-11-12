@@ -49,6 +49,7 @@ const identity: HostedTaskIdentity = {
     ],
   },
 }
+const personalSpace = async () => 'space-personal'
 const trackerTask = (key: string, category: 'open' | 'active') => ({
   externalId: `tracker-${key}`,
   key,
@@ -220,12 +221,13 @@ describe('hosted outbox', () => {
     writeTransaction((conn) =>
       queueHostedChange(conn, HOSTED_STATUS_EVENT_TABLE, replacedId, 'delete'),
     )
-    let sent: HostedPushChange[] = []
+    const sent: HostedPushChange[] = []
     await drainHostedOutbox({
       identity: async () => identity,
+      personalSpace,
       registered: () => [project],
       push: async (changes) => {
-        sent = changes
+        sent.push(...changes)
         return changes.map(({ id }) => ({ id, status: 'applied' as const }))
       },
     })
@@ -571,12 +573,14 @@ describe('hosted outbox', () => {
     }
     await drainHostedOutbox({
       identity: async () => identity,
+      personalSpace,
       registered: () => [project],
       push,
     })
     expect(listHostedOutbox()[0]).toMatchObject({ generation: 2, attempts: 0 })
     await drainHostedOutbox({
       identity: async () => identity,
+      personalSpace,
       registered: () => [project],
       push,
     })
@@ -604,6 +608,7 @@ describe('hosted outbox', () => {
     }
     await drainHostedOutbox({
       identity: async () => identity,
+      personalSpace,
       registered: () => [project],
       push,
     })
@@ -613,6 +618,7 @@ describe('hosted outbox', () => {
     })
     await drainHostedOutbox({
       identity: async () => identity,
+      personalSpace,
       registered: () => [project],
       push,
     })

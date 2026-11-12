@@ -539,6 +539,7 @@ describe('hosted-only task safety', () => {
         noteTriageStaleness: true,
         recordChanges: true,
         spacePush: true,
+        dayDelete: true,
         spacePushTables: [
           'hub_task',
           'hub_task_status_event',

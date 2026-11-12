@@ -11,13 +11,16 @@ import { readHostedIdentitySetInTransaction } from './hosted-identity-set.ts'
 import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
 import { listHostedOutbox, queueHostedChange } from './outbox.ts'
 import {
+  HOSTED_DAY_TABLE,
   HOSTED_INTERVAL_TABLE,
   HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
   HOSTED_NOTE_TABLE,
   HOSTED_TASK_TABLE,
   type HostedPushChange,
+  type ParsedHostedPushChange,
   PUSHABLE_HUB_CHANGE_TABLES,
   type PushedInterval,
+  parseHostedPushItem,
 } from './push-contract.ts'
 import type { HostedTaskIdentity } from './task-client.ts'
 import { formatTaskPushReport, pushTasks } from './task-push.ts'
@@ -61,13 +64,20 @@ const identity: HostedTaskIdentity = {
 
 let database: PGlite
 
+const parseInputs = (inputs: HostedPushChange[]): ParsedHostedPushChange[] =>
+  inputs.map((input) => {
+    const parsed = parseHostedPushItem(input)
+    if ('outcome' in parsed) throw new Error(parsed.outcome.reason)
+    return parsed.input
+  })
+
 const applyOn = (spaceId: string, inputs: HostedPushChange[]) =>
   database.transaction(async (transaction) => {
     const sql = pgliteSql(transaction as unknown as PGlite)
     sql.unsafe = (async (statement: string) =>
       (await transaction.query(statement)).rows) as SQL['unsafe']
     await bindTenant(sql, { userId, spaceId })
-    return applyHostedPushChangesInTransaction(sql, { userId, spaceId }, inputs)
+    return applyHostedPushChangesInTransaction(sql, { userId, spaceId }, parseInputs(inputs))
   })
 
 const listIds: typeof import('./task-client.ts').hostedIdentitySet = async (
@@ -221,6 +231,7 @@ afterAll(async () => {
 const runPush = (repair = false) =>
   pushTasks({
     repair,
+    personalSpace: async () => spaceA,
     identity: async () => identity,
     listIds,
     registered: () => registered,
@@ -252,6 +263,42 @@ test('task push reports nothing missing when the sides agree', async () => {
   expect(tasks).toMatchObject({ both: 1, machineOnly: [], hostedOnly: [], inFlight: [] })
   expect(report.ok).toBeTrue()
   expect(report.drain).toBeNull()
+})
+
+test('a missing project-less row is audited and repairable in the personal space', async () => {
+  const dayId = '01990000-0000-7000-8000-000000008524'
+  const personalSpace = '01990000-0000-7000-8000-000000008525'
+  writeTransaction((conn) => {
+    conn
+      .query(`INSERT INTO day(record_id,machine_id,day,collected_at)
+        VALUES (?,'machine','2026-10-12','2026-10-12T23:00:00.000Z')`)
+      .run(dayId)
+    conn.query(`DELETE FROM hosted_outbox WHERE row_id=?`).run(dayId)
+  })
+  const report = await pushTasks({
+    repair: true,
+    identity: async () => identity,
+    personalSpace: async () => personalSpace,
+    registered: () => registered,
+    listIds: async () => ({ ids: [], more: false }),
+    drain: async () => ({
+      queued: 1,
+      sent: 0,
+      rejected: 0,
+      quarantined: 0,
+      dropped: 0,
+      waitingOnRouting: {},
+      waitingOnHostedHub: {},
+      skippedCapability: false,
+    }),
+  })
+  const days = report.spaces
+    .find((space) => space.spaceId === personalSpace)
+    ?.tables.find((table) => table.table === HOSTED_DAY_TABLE)
+  expect(days?.machineOnly).toEqual([dayId])
+  expect(listHostedOutbox()).toContainEqual(
+    expect.objectContaining({ table_name: 'hub_day', row_id: dayId }),
+  )
 })
 
 test('note and acknowledgement rows that agree are counted under both', async () => {
@@ -368,6 +415,7 @@ test('a pending outbox entry is in flight not missing', async () => {
 test('task push follows more than one identity-set page', async () => {
   const calls: Array<string | null | undefined> = []
   const report = await pushTasks({
+    personalSpace: async () => spaceA,
     identity: async () => identity,
     registered: () => registered,
     listIds: async (table, options = {}) => {
@@ -429,6 +477,7 @@ test('without --repair nothing is written', async () => {
 test('task push refuses a hub that does not advertise spaceIdentitySet', async () => {
   await expect(
     pushTasks({
+      personalSpace: async () => spaceA,
       identity: async () => ({ ...identity, capabilities: {} }),
       listIds: async () => ({ ids: [], more: false }),
       registered: () => registered,
@@ -475,6 +524,7 @@ test('repair insert-if-absent keeps a hosted title written after the audit', asy
   insertMachineTask(missingHosted, 'DEV-miss', 'workshop')
   const outcomes: Array<{ id: string; status: string }> = []
   const repaired = await pushTasks({
+    personalSpace: async () => spaceA,
     repair: true,
     identity: async () => identity,
     listIds,
@@ -534,6 +584,7 @@ test('a quarantined outbox entry is stuck, not in flight, and fails', async () =
 test('repair fails when the drain rejects a queued row', async () => {
   insertMachineTask(missingHosted, 'DEV-miss', 'workshop')
   const report = await pushTasks({
+    personalSpace: async () => spaceA,
     repair: true,
     identity: async () => identity,
     listIds,
@@ -555,6 +606,7 @@ test('repair fails when the drain rejects a queued row', async () => {
 test('repair fails and names a delivery-off drain', async () => {
   insertMachineTask(missingHosted, 'DEV-miss', 'workshop')
   const report = await pushTasks({
+    personalSpace: async () => spaceA,
     repair: true,
     identity: async () => identity,
     listIds,

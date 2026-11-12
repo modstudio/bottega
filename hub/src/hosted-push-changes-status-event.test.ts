@@ -16,8 +16,10 @@ import {
   HOSTED_STATUS_EVENT_TABLE,
   HOSTED_TASK_TABLE,
   type HostedPushChange,
+  type ParsedHostedPushChange,
   type PushedStatusEvent,
   type PushedTask,
+  parseHostedPushItem,
 } from './push-contract.ts'
 import type { HostedTaskIdentity } from './task-client.ts'
 
@@ -72,12 +74,19 @@ const eventRow = (
   ...overrides,
 })
 
+const parseInputs = (inputs: HostedPushChange[]): ParsedHostedPushChange[] =>
+  inputs.map((input) => {
+    const parsed = parseHostedPushItem(input)
+    if ('outcome' in parsed) throw new Error(parsed.outcome.reason)
+    return parsed.input
+  })
+
 const apply = (inputs: HostedPushChange[]) =>
   database.transaction(async (transaction) => {
     const sql = pgliteSql(transaction as unknown as PGlite)
     sql.unsafe = (async (statement: string) =>
       (await transaction.query(statement)).rows) as SQL['unsafe']
-    return applyHostedPushChangesInTransaction(sql, identity, inputs)
+    return applyHostedPushChangesInTransaction(sql, identity, parseInputs(inputs))
   })
 
 const registered = () => [{ name: 'workshop', settings: { keyPrefixes: ['DEV'], space: spaceId } }]

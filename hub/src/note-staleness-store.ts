@@ -108,7 +108,9 @@ export async function applyHostedStaleness(
       project_name: row.project,
     })),
   ]
-  const partitioned = partitionProjectRows(maintenance, registered, identity)
+  const partitioned = await partitionProjectRows(maintenance, registered, identity, () =>
+    Promise.reject(new Error('invariant: a note always names its project')),
+  )
   const failures = [...partitioned.refusals].map(
     ([project, refusal]) => `${project}: ${refusal.reason}`,
   )

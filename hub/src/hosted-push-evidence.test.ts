@@ -13,6 +13,7 @@ import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
 import { loadOutboxChange } from './outbox-row.ts'
 import {
   type HostedPushChange,
+  type ParsedHostedPushChange,
   type PushedDay,
   type PushedInterval,
   parseHostedPushItem,
@@ -70,12 +71,19 @@ const day: PushedDay = {
   collected_at: '2026-10-11T23:00:00.000Z',
 }
 
+const parseInputs = (inputs: HostedPushChange[]): ParsedHostedPushChange[] =>
+  inputs.map((input) => {
+    const parsed = parseHostedPushItem(input)
+    if ('outcome' in parsed) throw new Error(parsed.outcome.reason)
+    return parsed.input
+  })
+
 const apply = (inputs: HostedPushChange[]) =>
   database.transaction(async (transaction) => {
     const sql = pgliteSql(transaction as unknown as PGlite)
     sql.unsafe = (async (statement: string) =>
       (await transaction.query(statement)).rows) as SQL['unsafe']
-    return applyHostedPushChangesInTransaction(sql, identity, inputs)
+    return applyHostedPushChangesInTransaction(sql, identity, parseInputs(inputs))
   })
 
 beforeAll(async () => {
@@ -107,7 +115,7 @@ afterAll(async () => {
 })
 
 test('the edge accepts evidence and unchanged resends append no hosted changes', async () => {
-  const inputs: HostedPushChange[] = [
+  const inputs: ParsedHostedPushChange[] = [
     { table: 'hub_interval', id: intervalId, op: 'upsert', row: interval },
     { table: 'hub_day', id: dayId, op: 'upsert', row: day },
   ]
@@ -278,6 +286,34 @@ test('an absent interval delete is duplicate and a present interval delete appli
   ])
 })
 
+test('day delete applies only to a row owned by the caller machine', async () => {
+  const owned = { ...day, id: '01990000-0000-7000-8000-000000008340', day: '2026-10-24' }
+  expect(await apply([{ table: 'hub_day', id: owned.id, op: 'upsert', row: owned }])).toEqual([
+    { id: owned.id, status: 'applied' },
+  ])
+  const parsedDelete = parseHostedPushItem({ table: 'hub_day', id: owned.id, op: 'delete' })
+  expect(parsedDelete).toEqual({
+    input: { table: 'hub_day', id: owned.id, op: 'delete' },
+  })
+  if ('outcome' in parsedDelete) throw new Error(parsedDelete.outcome.reason)
+  expect(await apply([parsedDelete.input])).toEqual([{ id: owned.id, status: 'applied' }])
+
+  const foreign = '01990000-0000-7000-8000-000000008341'
+  await database.exec(`RESET ROLE; INSERT INTO hub_day
+    (id,space_id,machine_id,day,collected_at,updated_at)
+    VALUES ('${foreign}','${spaceId}','${foreignMachineId}','2026-10-25',now(),now());
+    SET ROLE record_actor;
+    SELECT set_config('app.user_id','${userId}',false);
+    SELECT set_config('app.space_id','${spaceId}',false);
+    SELECT set_config('app.space_ids','${spaceId}',false);`)
+  expect(await apply([{ table: 'hub_day', id: foreign, op: 'delete' }])).toEqual([
+    { id: foreign, status: 'duplicate' },
+  ])
+  expect((await database.query(`SELECT id FROM hub_day WHERE id=$1`, [foreign])).rows).toHaveLength(
+    1,
+  )
+})
+
 test('real and legacy machine day timestamps serialize through the strict edge', async () => {
   writeTransaction((conn) => {
     conn
@@ -305,7 +341,7 @@ test('real and legacy machine day timestamps serialize through the strict edge',
   )
   expect(inputs.every(Boolean)).toBeTrue()
   const changes = inputs.map((loaded) => loaded!.change)
-  expect(changes.map(parseHostedPushItem)).toEqual(changes.map((input) => ({ input })))
+  expect(changes.map(parseHostedPushItem) as unknown).toEqual(changes.map((input) => ({ input })))
   const localMachine = (changes[0] as { row: PushedDay }).row.machine_id
   await database.exec(`RESET ROLE; INSERT INTO machine(id,user_id,name,registered_at,last_seen)
     VALUES ('${localMachine}','${userId}','local',now(),now()) ON CONFLICT (id) DO NOTHING;

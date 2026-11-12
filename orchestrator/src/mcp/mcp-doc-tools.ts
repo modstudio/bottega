@@ -14,7 +14,12 @@ import {
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import type { CanonLintInputCollector } from '../canon/canon-files.ts'
 import { db } from '../database/db.ts'
-import { dropContextItem, getContext, setContextItem } from '../doc/context-service.ts'
+import {
+  clearTaskContext,
+  dropContextItem,
+  getContext,
+  setContextItem,
+} from '../doc/context-service.ts'
 import { CONTEXT_ITEM_KINDS } from '../doc/doc-context-write.ts'
 import { DocRevisionConflictError, REVISION_CONFLICT_CODE } from '../doc/doc-revision-conflict.ts'
 import { resolveDocRevisionIdentifier } from '../doc/doc-revision-identifier.ts'
@@ -488,6 +493,14 @@ function registerContextTools(server: McpServer): void {
       if (!result.removed) throw new Error(`no context item ${result.holder}/${result.id}`)
       return text(result)
     },
+  )
+  server.registerTool(
+    'clear_context',
+    {
+      description: 'Remove every context item from one task holder.',
+      inputSchema: z.object({ task: z.string() }),
+    },
+    async (input) => text(await clearTaskContext(input)),
   )
 }
 

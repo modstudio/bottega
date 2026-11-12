@@ -440,7 +440,7 @@ export const hubModuleSpecs = [
     file: 'hub/src/task-cli.ts',
     allowed: [
       '../../shared/brand.ts',
-      '../../shared/context-moment.ts',
+      '../../shared/task-close-exit.ts',
       '../../shared/trackers.ts',
       'node:fs',
       'commander',

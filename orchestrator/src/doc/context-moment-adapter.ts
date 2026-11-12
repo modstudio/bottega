@@ -5,16 +5,21 @@ import {
   type ContextMomentOutput,
   contextDropCommand,
   contextSetCommand,
-} from '../../../shared/context-moment.ts'
-import { dropContextItem, setContextItem } from './context-service.ts'
+} from './context-moment.ts'
+import { contextItemRevision, dropContextItem, setContextItem } from './context-service.ts'
 import { ContextWriteRefusalError } from './doc-context-write.ts'
 
 export type ContextMomentPorts = {
   set: typeof setContextItem
   drop: typeof dropContextItem
+  revision: typeof contextItemRevision
 }
 
-const productionPorts: ContextMomentPorts = { set: setContextItem, drop: dropContextItem }
+const productionPorts: ContextMomentPorts = {
+  set: setContextItem,
+  drop: dropContextItem,
+  revision: contextItemRevision,
+}
 const detail = (error: unknown) => (error instanceof Error ? error.message : String(error))
 const writeLine = (line: string, json: boolean, output: ContextMomentOutput) =>
   json ? output.error(line) : output.log(line)
@@ -33,7 +38,8 @@ export async function applyContextMomentEffect(
   const kept = effect.drops.length ? `; ${effect.drops.map((item) => item.id).join(', ')} kept` : ''
   for (const item of effect.writes) {
     try {
-      await ports.set({ task, ...item })
+      const expectedRevision = await ports.revision({ task, id: item.id })
+      await ports.set({ task, ...item, expectedRevision })
       writeLine(`context: wrote ${item.kind} ${item.id} on ${task}`, json, output)
     } catch (error) {
       writesSucceeded = false
@@ -49,7 +55,8 @@ export async function applyContextMomentEffect(
   if (effect.writes.length && !writesSucceeded) return
   for (const item of effect.drops) {
     try {
-      const result = await ports.drop({ task, id: item.id })
+      const expectedRevision = await ports.revision({ task, id: item.id })
+      const result = await ports.drop({ task, id: item.id, expectedRevision })
       if (!result.removed) continue
       writeLine(`context: dropped ${item.kind} ${item.id} on ${task}`, json, output)
     } catch (error) {

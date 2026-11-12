@@ -40,7 +40,7 @@ export const cliModules = [
     file: 'cli/storage-report.ts',
     allowed: ['shared/storage-lifecycle.ts'],
   },
-  { file: 'cli/routes.ts', allowed: [] },
+  { file: 'cli/routes.ts', allowed: ['shared/task-close-exit.ts'] },
   {
     file: 'cli/routes.test.ts',
     allowed: [

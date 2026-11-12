@@ -79,7 +79,7 @@ function configTenant(input: ConfigTenant, scope: ConfigScope): ConfigTenant {
   const spaceId = resolvePersonalItemSpace(
     {
       userId: input.userId,
-      activeSpaceId: input.spaceId,
+      nonPersonalSpaceId: input.spaceId,
       personalSpaceId: input.personalSpaceId ?? null,
     },
     { kind: 'config-entry', scope },

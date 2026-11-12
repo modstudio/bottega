@@ -27,6 +27,7 @@ import {
   HOSTED_TASK_TABLE,
   type HostedPushChange,
   type HostedPushOutcome,
+  type ParsedHostedPushChange,
   type PushableHubChangeTable,
   type PushedComment,
   type PushedDocument,
@@ -41,7 +42,7 @@ type PushDeclaration = {
   apply(
     tx: SQL,
     identity: TaskIdentity,
-    input: HostedPushChange,
+    input: ParsedHostedPushChange,
   ): Promise<Extract<HostedPushOutcome, { status: 'applied' | 'duplicate' }>>
 }
 
@@ -211,7 +212,6 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
     async apply(tx, identity, input) {
       if (input.table !== HOSTED_TASK_TABLE)
         throw new Error(`${input.table} was routed to the task handler`)
-      if (input.op === 'delete') throw new Error('hub_task does not accept delete yet')
       const existing =
         (await tx`SELECT * FROM hub_task WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid`) as PushedTask[]
       const decision = decideTaskUpsert(existing[0] ?? null, input.row, input.fields ?? null)
@@ -230,8 +230,8 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
   },
   [HOSTED_COMMENT_TABLE]: {
     async apply(tx, identity, input) {
-      if (input.table !== HOSTED_COMMENT_TABLE || input.op === 'delete')
-        throw new Error('hub_task_comment accepts upsert only')
+      if (input.table !== HOSTED_COMMENT_TABLE)
+        throw new Error(`${input.table} was routed to the task comment handler`)
       const existing = (await tx`SELECT id::text id,task_key,body,created_at,updated_at,deleted_at,
           actor_user_id,actor_name,agent,run_id,project_name,task_id::text task_id
           FROM hub_task_comment WHERE id=${input.id}::uuid
@@ -279,7 +279,6 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
     async apply(tx, identity, input) {
       if (input.table !== HOSTED_STATUS_EVENT_TABLE)
         throw new Error(`${input.table} was routed to the status event handler`)
-      if (input.op === 'delete') throw new Error('hub_task_status_event does not accept delete yet')
       const row = input.row
       const existing = (await tx`SELECT id FROM hub_task_status_event WHERE id=${input.id}::uuid
           AND space_id=${identity.spaceId}::uuid`) as Array<{ id: string }>
@@ -305,8 +304,7 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
     async apply(tx, identity, input) {
       if (input.table !== HOSTED_DAY_TABLE)
         throw new Error(`${input.table} was routed to the day handler`)
-      if (input.op === 'delete') throw new Error('hub_day does not accept delete')
-      const status = await applyDayChangeInTransaction(tx, identity, input.row)
+      const status = await applyDayChangeInTransaction(tx, identity, input)
       return { id: input.id, status }
     },
   },
@@ -318,8 +316,8 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
   },
   [HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE]: {
     async apply(tx, identity, input) {
-      if (input.table !== HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE || input.op === 'delete')
-        throw new Error('hub_note_acknowledgement accepts upsert only')
+      if (input.table !== HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE)
+        throw new Error(`${input.table} was routed to the note acknowledgement handler`)
       const row: PushedNoteAcknowledgement = input.row
       const note = (await tx`SELECT id FROM hub_note WHERE id=${row.note_id}::uuid
         AND space_id=${identity.spaceId}::uuid AND deleted_at IS NULL`) as Array<{ id: string }>
@@ -363,7 +361,7 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
 export async function applyHostedPushChangesInTransaction(
   tx: SQL,
   identity: TaskIdentity,
-  inputs: HostedPushChange[],
+  inputs: ParsedHostedPushChange[],
 ): Promise<HostedPushOutcome[]> {
   const positions = new Map(inputs.map((input, index) => [input.id, index]))
   const ordered = orderHostedPushChanges(inputs).map((input) => ({
@@ -389,7 +387,7 @@ export async function applyHostedPushChangesInTransaction(
 export async function applyHostedPushChanges(
   client: SQL,
   identity: TaskIdentity,
-  inputs: HostedPushChange[],
+  inputs: ParsedHostedPushChange[],
 ) {
   return withHostedTenant(client, identity, (tx) =>
     applyHostedPushChangesInTransaction(tx, identity, inputs),

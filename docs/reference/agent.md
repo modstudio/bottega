@@ -8,6 +8,7 @@ agents, jobs, and routing
 - [bottega agent add](#bottega-agent-add)
 - [bottega agent context](#bottega-agent-context)
 - [bottega agent context brief](#bottega-agent-context-brief)
+- [bottega agent context clear](#bottega-agent-context-clear)
 - [bottega agent context drop](#bottega-agent-context-drop)
 - [bottega agent context set](#bottega-agent-context-set)
 - [bottega agent context show](#bottega-agent-context-show)
@@ -83,6 +84,7 @@ manage stored architect context or resolve checkout context
 
 - [bottega agent](./agent.md#bottega-agent)
 - [bottega agent context brief](./agent.md#bottega-agent-context-brief)
+- [bottega agent context clear](./agent.md#bottega-agent-context-clear)
 - [bottega agent context drop](./agent.md#bottega-agent-context-drop)
 - [bottega agent context set](./agent.md#bottega-agent-context-set)
 - [bottega agent context show](./agent.md#bottega-agent-context-show)
@@ -99,6 +101,20 @@ show the compact working context for an architect session
 
 - `--session <id>`: select architect session
 - `--json`: write JSON
+
+### Related
+
+- [bottega agent context](./agent.md#bottega-agent-context)
+
+## bottega agent context clear
+
+**Synopsis:** `bottega agent context clear [--task <key>]`
+
+remove every context item from one task holder
+
+### Options
+
+- `--task <key>`: select task holder
 
 ### Related
 

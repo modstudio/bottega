@@ -1,6 +1,6 @@
 export type PersonalItemIdentity = {
   userId: string
-  activeSpaceId: string | null
+  nonPersonalSpaceId: string | null
   personalSpaceId: string | null
 }
 
@@ -13,7 +13,7 @@ export type PersonalItemTarget =
     }
   | { kind: 'config-entry'; scope: 'user' | 'space' }
 
-/** Whether the item belongs to the user's personal space rather than the active space. */
+/** Whether the item belongs to the user's personal space rather than its non-personal owner. */
 export function isPersonalItem(userId: string, target: PersonalItemTarget): boolean {
   return target.kind === 'config-entry'
     ? target.scope === 'user'
@@ -22,10 +22,12 @@ export function isPersonalItem(userId: string, target: PersonalItemTarget): bool
         target.ownerUserId === userId
 }
 
-/** Selects the record space that owns an item; callers retain active-space behavior for non-personal items. */
+/** Selects the record space that owns an item. */
 export function resolvePersonalItemSpace(
   identity: PersonalItemIdentity,
   target: PersonalItemTarget,
 ): string | null {
-  return isPersonalItem(identity.userId, target) ? identity.personalSpaceId : identity.activeSpaceId
+  return isPersonalItem(identity.userId, target)
+    ? identity.personalSpaceId
+    : identity.nonPersonalSpaceId
 }

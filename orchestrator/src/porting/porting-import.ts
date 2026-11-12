@@ -989,7 +989,7 @@ const PROJECT_PORT_DOC_SLUGS = ['port-differences', 'port-backports']
 
 export async function applyImport(
   plan: ImportPlan,
-  options: { replace?: boolean; sourceLabel?: string } = {},
+  options: { replace?: boolean; sourceLabel?: string; space?: string } = {},
 ): Promise<void> {
   const authority = portImportAuthority(Boolean(options.replace))
   if (authority === 'hosted') {

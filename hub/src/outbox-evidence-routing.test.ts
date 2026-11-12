@@ -16,6 +16,7 @@ const identity = {
   ],
   capabilities: {
     spacePush: true,
+    dayDelete: true,
     spacePushTables: [
       'hub_task' as const,
       'hub_task_status_event' as const,
@@ -84,6 +85,62 @@ test('an interval move survives failure after deleting the old-space row', async
   expect(hosted.get('space-new')).toEqual(new Set([oldId]))
   expect(db().query(`SELECT hosted_space_id FROM interval WHERE record_id=?`).get(oldId)).toEqual({
     hosted_space_id: 'space-new',
+  })
+})
+
+test('a day move deletes the old-space row before upserting to the personal space', async () => {
+  const dayId = '01990000-0000-7000-8000-000000008103'
+  writeTransaction((conn) => {
+    conn
+      .query(`INSERT INTO day(record_id,machine_id,day,collected_at,hosted_space_id)
+        VALUES (?,'machine','2026-10-11','2026-10-11T23:00:00.000Z','space-old')`)
+      .run(dayId)
+  })
+  const order: string[] = []
+  await drainHostedOutbox({
+    identity: async () => identity,
+    registered,
+    personalSpace: async () => 'space-personal',
+    push: async (changes, { recordSpace }) => {
+      order.push(...changes.map((change) => `${recordSpace}:${change.op}:${change.table}`))
+      return changes.map(({ id }) => ({ id, status: 'applied' as const }))
+    },
+  })
+  expect(order).toEqual(['space-old:delete:hub_day', 'space-personal:upsert:hub_day'])
+  expect(db().query(`SELECT hosted_space_id FROM day WHERE record_id=?`).get(dayId)).toEqual({
+    hosted_space_id: 'space-personal',
+  })
+})
+
+test('a day move waits when the hosted hub does not advertise day delete', async () => {
+  const dayId = '01990000-0000-7000-8000-000000008104'
+  writeTransaction((conn) => {
+    conn
+      .query(`INSERT INTO day(record_id,machine_id,day,collected_at,hosted_space_id)
+        VALUES (?,'machine','2026-10-12','2026-10-12T23:00:00.000Z','space-old')`)
+      .run(dayId)
+  })
+  const calls: HostedPushChange[][] = []
+  const report = await drainHostedOutbox({
+    identity: async () => ({
+      ...identity,
+      capabilities: { ...identity.capabilities, dayDelete: false },
+    }),
+    registered,
+    personalSpace: async () => 'space-personal',
+    push: async (changes) => {
+      calls.push(changes)
+      return changes.map(({ id }) => ({ id, status: 'applied' as const }))
+    },
+  })
+  expect(calls).toEqual([])
+  expect(report.skippedCapability).toBeTrue()
+  expect(report.waitingOnHostedHub).toEqual({ 'hub_day delete capability': 1 })
+  expect(db().query(`SELECT last_error FROM hosted_outbox WHERE row_id=?`).get(dayId)).toEqual({
+    last_error: 'hub_day delete capability',
+  })
+  expect(db().query(`SELECT hosted_space_id FROM day WHERE record_id=?`).get(dayId)).toEqual({
+    hosted_space_id: 'space-old',
   })
 })
 

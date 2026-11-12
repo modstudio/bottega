@@ -9,7 +9,7 @@ import { applyIntervalChangeInTransaction } from './hosted-evidence.ts'
 import { storedHubProjectId } from './hosted-project-identity.ts'
 import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
 import { mirrorTaskRow } from './hosted-tasks.ts'
-import type { HostedPushChange, PushedTask } from './push-contract.ts'
+import type { ParsedHostedPushChange, PushedTask } from './push-contract.ts'
 
 const spaceId = '01990000-0000-7000-8000-000000001250'
 const userId = '01990000-0000-7000-8000-000000001249'
@@ -123,7 +123,7 @@ const taskRow = (): PushedTask => ({
   next_document_number: 1,
 })
 
-const applyPush = (inputs: HostedPushChange[]) =>
+const applyPush = (inputs: ParsedHostedPushChange[]) =>
   database.transaction(async (transaction) => {
     const sql = pgliteSql(transaction as unknown as PGlite)
     sql.unsafe = (async (statement: string) =>

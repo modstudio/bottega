@@ -2,6 +2,7 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db, writeTransaction } from './db.ts'
 import { rememberHostedInstall } from './install-binding.ts'
 import { drainHostedOutbox, type HostedOutboxReport, queueHostedChange } from './outbox.ts'
+import { memoizedPersonalRecordSpace } from './personal-record-space.ts'
 import { projects } from './projects.ts'
 import {
   HOSTED_COMMENT_TABLE,
@@ -23,6 +24,7 @@ import {
   type TaskFetch,
 } from './task-client.ts'
 import {
+  type PersonalRecordSpaceResolver,
   partitionProjectRows,
   type RegisteredTaskSpace,
   type TaskDestinationIdentity,
@@ -51,6 +53,7 @@ type Options = {
   listIds?: typeof hostedIdentitySet
   drain?: typeof drainHostedOutbox
   registered?: () => RegisteredTaskSpace[]
+  personalSpace?: PersonalRecordSpaceResolver
 }
 
 type MachineRow = { id: string; project_name: string | null }
@@ -165,12 +168,18 @@ function outboxEntries(): AuditOutboxEntry[] {
     }))
 }
 
-function routedMachineRows(
+async function routedMachineRows(
   table: PushableHubChangeTable,
   registered: readonly RegisteredTaskSpace[],
   identity: TaskDestinationIdentity,
-): RoutedMachineRow[] {
-  const partitioned = partitionProjectRows(machineRowsFor(table), registered, identity)
+  resolvePersonalSpace: PersonalRecordSpaceResolver,
+): Promise<RoutedMachineRow[]> {
+  const partitioned = await partitionProjectRows(
+    machineRowsFor(table),
+    registered,
+    identity,
+    resolvePersonalSpace,
+  )
   const routed: RoutedMachineRow[] = []
   for (const [spaceId, rows] of partitioned.destinations)
     for (const row of rows) routed.push({ table, id: row.id, destinationSpaceId: spaceId })
@@ -241,10 +250,22 @@ export async function pushTasks(options: Options = {}): Promise<TaskPushReport> 
   assertSpaceIdentitySet(identity)
   rememberHostedInstall(identity.activeSpaceId)
   const registered = (options.registered ?? projects)()
-  const spaces = taskPullSpaces(registered, identity)
-  const machine = PUSHABLE_HUB_CHANGE_TABLES.flatMap((table) =>
-    routedMachineRows(table, registered, identity),
-  )
+  const resolvePersonalSpace =
+    options.personalSpace ??
+    memoizedPersonalRecordSpace({
+      token: options.token,
+      fetch: options.fetch,
+    })
+  const spaces = [
+    ...new Set([...taskPullSpaces(registered, identity), await resolvePersonalSpace()]),
+  ]
+  const machine = (
+    await Promise.all(
+      PUSHABLE_HUB_CHANGE_TABLES.map((table) =>
+        routedMachineRows(table, registered, identity, resolvePersonalSpace),
+      ),
+    )
+  ).flat()
   const plan = planTaskPushAudit({
     spaces,
     tables: PUSHABLE_HUB_CHANGE_TABLES,

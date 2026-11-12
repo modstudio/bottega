@@ -404,7 +404,11 @@ function registerCanon(program: Command): void {
 }
 
 const portSpecs: readonly Spec[] = [
-  ['import [dir]', 'import a port ledger directory', [o('--dry-run'), o('--replace'), ...json]],
+  [
+    'import [dir]',
+    'import a port ledger directory',
+    [o('--space <slug>'), o('--dry-run'), o('--replace'), ...json],
+  ],
   ['baseline show [source] [target]', 'show a project-pair baseline', json],
   [
     'baseline set [source] [target] [commit]',
@@ -434,9 +438,9 @@ const portSpecs: readonly Spec[] = [
   [
     'doctrine add [number]',
     'add a porting doctrine rule',
-    [o('--title <value>'), o('--file <value>'), ...json],
+    [o('--title <value>'), o('--file <value>'), o('--space <slug>'), ...json],
   ],
-  ['doctrine retire [number]', 'retire a porting doctrine rule', json],
+  ['doctrine retire [number]', 'retire a porting doctrine rule', [o('--space <slug>'), ...json]],
 ]
 
 async function runPort(path: string[], args: string[], command: Command): Promise<void> {

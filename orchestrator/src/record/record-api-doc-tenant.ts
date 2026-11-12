@@ -19,7 +19,7 @@ type RecordDocumentContext = {
 
 const identityOf = (identity: RecordIdentity) => ({
   userId: identity.user.id,
-  activeSpaceId: identity.activeSpaceId,
+  nonPersonalSpaceId: identity.activeSpaceId,
   personalSpaceId: identity.personalSpaceId,
 })
 

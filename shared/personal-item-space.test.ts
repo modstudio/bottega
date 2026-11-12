@@ -3,7 +3,7 @@ import { resolvePersonalItemSpace } from './personal-item-space.ts'
 
 const identity = {
   userId: 'user-one',
-  activeSpaceId: 'organization-space',
+  nonPersonalSpaceId: 'organization-space',
   personalSpaceId: 'personal-space',
 }
 
@@ -29,7 +29,7 @@ describe('resolvePersonalItemSpace', () => {
       { kind: 'document', scope: 'canon', subject: 'project-one', ownerUserId: null },
     ],
     ['space config', { kind: 'config-entry', scope: 'space' }],
-  ] as const)('%s retains the active space', (_label, target) => {
+  ] as const)('%s targets the non-personal owner space', (_label, target) => {
     expect(resolvePersonalItemSpace(identity, target)).toBe('organization-space')
   })
 
