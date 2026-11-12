@@ -696,7 +696,7 @@ export async function nextCommand(
   return {
     cursorRecordId: result.cursorRecordId,
     workflow: slug,
-    cursor: cursor!,
+    cursor: result.cursorNumber,
     finished: result.finished,
     stepSlug: result.stepSlug,
     stepTitle: result.stepTitle,

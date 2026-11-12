@@ -259,6 +259,7 @@ export async function closeCursorWithTextCopy(
 export type WorkflowTextCloseResult = {
   text: string
   selfRulingQuestionNumber?: number
+  cursorNumber: number
   cursorRecordId: string
   workflowKey: string | null
   finished: boolean
@@ -336,6 +337,7 @@ export async function closeCursorWithTextCopyResult(
             database,
             input.args,
           ),
+          cursorNumber: row.id,
           cursorRecordId: row.record_id,
           workflowKey: row.workflow_key || null,
           finished: row.state === 'done',

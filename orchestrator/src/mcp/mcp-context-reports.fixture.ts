@@ -2,10 +2,14 @@ import { expect } from 'bun:test'
 import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { createDocsMcpServer } from './mcp.ts'
 
-function recordingContextMomentPorts(calls: string[]): ContextMomentPorts {
+function recordingContextMomentPorts(
+  calls: string[],
+  bodies: Map<string, string>,
+): ContextMomentPorts {
   return {
     set: async (input) => {
       calls.push(`set ${input.kind} ${input.id} on ${input.task}`)
+      bodies.set(input.id, input.body)
       return {
         ...input,
         holder: `task:${input.task}`,
@@ -41,15 +45,20 @@ function expectWorkflowRulingContextReports(input: {
   ])
 }
 
-export function workflowRulingContextFixture() {
+export function workflowRulingContextFixture(
+  ports: Parameters<typeof createDocsMcpServer>[0] = {},
+) {
   const calls: string[] = []
+  const bodies = new Map<string, string>()
   return {
     server: createDocsMcpServer({
       hubTaskReader: async () => [
         { key: 'DEV-1069', record_id: 'task-DEV-1069', project: 'fixture' },
       ],
-      contextMomentPorts: recordingContextMomentPorts(calls),
+      ...ports,
+      contextMomentPorts: recordingContextMomentPorts(calls, bodies),
     }),
+    bodies,
     expectReports: (
       questionId: number,
       awaited: { content: unknown },

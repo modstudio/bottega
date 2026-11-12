@@ -688,6 +688,7 @@ async function nextWorkflowStepImpl(
   return {
     text: takeoverNotice ? `${takeoverNotice}\n${rendered}` : rendered,
     selfRulingQuestionNumber: close.selfRulingQuestionNumber,
+    cursorNumber: row.id,
     cursorRecordId: row.record_id,
     workflowKey: row.workflow_key || null,
     finished: close.advance.ordinal === null,
@@ -701,6 +702,7 @@ async function nextWorkflowStepImpl(
 export type WorkflowAdvanceResult = {
   text: string
   selfRulingQuestionNumber?: number
+  cursorNumber: number
   cursorRecordId: string
   workflowKey: string | null
   finished: boolean

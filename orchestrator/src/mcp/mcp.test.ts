@@ -596,9 +596,7 @@ describe('orch MCP', () => {
       workflowVersionRecordId(db(), 'fix-defect', fixture.n),
       catalogueVersionRecordId(db()),
       JSON.stringify(args('DEV-1082-MCP-A')),
-    ) as {
-      id: number
-    }
+    ) as { id: number }
     const firstRow = db()
       .query<
         {
@@ -619,9 +617,7 @@ describe('orch MCP', () => {
       workflowVersionRecordId(db(), 'fix-defect', fixture.n),
       catalogueVersionRecordId(db()),
       JSON.stringify(args('DEV-1082-MCP-B')),
-    ) as {
-      id: number
-    }
+    ) as { id: number }
     db()
       .query(
         `UPDATE workflow_cursor
@@ -629,7 +625,7 @@ describe('orch MCP', () => {
          WHERE number IN (?,?)`,
       )
       .run(project, first.id, second.id)
-    const server = createDocsMcpServer({
+    const { server, bodies: contextBodies } = workflowRulingContextFixture({
       hubTaskReader: async () =>
         ['DEV-1082-MCP-A', 'DEV-1082-MCP-B'].map((key) => ({
           key,
@@ -787,11 +783,13 @@ describe('orch MCP', () => {
       rememberProjectSpace(db(), project, hostedSpaceId)
       const advanced = await call('next_workflow_step', {
         ...common,
-        cursor: first.id,
+        args: args('DEV-1082-MCP-A'),
         note: 'closed through MCP handle',
         run: evidenceRunNumber,
       })
       expect(advanced).not.toContain('Took over this workflow stage from Remote MCP machine.')
+      const expectedNext = `fix-defect cursor ${first.id} at ${remoteStep}: Fix`
+      expect(contextBodies.get('next')).toBe(expectedNext)
       await call('await_workflow_ruling', {
         ...common,
         args: args('DEV-1082-MCP-B'),

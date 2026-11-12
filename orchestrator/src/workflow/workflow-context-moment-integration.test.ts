@@ -7,12 +7,77 @@ import {
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
+import { cliWorkflowCursorContext } from './workflow-cursor-selection.ts'
 import {
   workflowCommandPresentation as presentation,
   publishCursorWorkflowFixture as publishCursorWorkflow,
   registerFixtureWorkflowProject as registerFixtureProject,
   runWorkflowCommand as workflowCommand,
 } from './workflow-store.fixture.ts'
+
+test('next without a cursor flag writes the selected cursor number', async () => {
+  const slug = 'cursor-context-number'
+  const project = 'cursor-context-number-project'
+  const key = 'DEV-2267-NUMBER'
+  const catalogue = productionStepCatalogue().definition.steps
+  const steps = [
+    catalogue.find(({ slug }) => slug === 'blast-radius')!.slug,
+    catalogue.find(({ slug }) => slug === 'fix-defect-triage')!.slug,
+  ]
+  registerFixtureProject(project)
+  publishCursorWorkflow(slug, [{ slug: 'report', title: 'Report', default: true, steps }])
+  const composed = await composeWorkflowWithCursor(
+    slug,
+    project,
+    'report',
+    { key },
+    cliWorkflowCursorContext(),
+    undefined,
+    {},
+    {},
+  )
+  const cursor = composed.cursor!.id
+  db().query("UPDATE workflow_cursor SET enforcement='note-only' WHERE number=?").run(cursor)
+  const items = new Map<string, { kind: string; body: string }>()
+  const ports = {
+    set: async (input) => {
+      items.set(input.id, { kind: input.kind, body: input.body })
+      return {
+        ...input,
+        holder: `task:${input.task}`,
+        revision: 'revision',
+        task: input.task ?? null,
+      }
+    },
+    drop: async (input) => ({
+      holder: `task:${input.task}`,
+      task: input.task ?? null,
+      id: input.id,
+      removed: false,
+    }),
+  } as ContextMomentPorts
+
+  await workflowCommand(
+    [
+      'workflow',
+      'next',
+      slug,
+      '--project',
+      project,
+      '--note',
+      'advance by identity',
+      '--arg',
+      `key=${key}`,
+    ],
+    presentation([]),
+    { contextMomentPorts: ports },
+  )
+
+  expect(items.get('next')).toEqual({
+    kind: 'next-action',
+    body: `${slug} cursor ${cursor} at fix-defect-triage: Triage findings`,
+  })
+})
 
 test('await, operator rule, and next replace task context through command seams', async () => {
   const slug = 'cursor-context-moments'

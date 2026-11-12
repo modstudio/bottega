@@ -71,7 +71,7 @@ export async function advanceWorkflow(
       'self_ruling_basis requires self_ruling; pass both inputs, or omit self_ruling_basis',
     )
   const workflowArgs = args ?? {}
-  const { context, effectiveMode, selectedRow } = await resolveMcpLinkedWorkflowCursor(
+  const { context, effectiveMode } = await resolveMcpLinkedWorkflowCursor(
     slug,
     project,
     mode,
@@ -135,7 +135,7 @@ export async function advanceWorkflow(
         cursorRecordId: result.cursorRecordId,
         workflowKey: result.workflowKey,
         workflow: slug,
-        cursor: selectedRow?.id ?? cursor!,
+        cursor: result.cursorNumber,
         finished: result.finished,
         stepSlug: result.stepSlug,
         stepTitle: result.stepTitle,
