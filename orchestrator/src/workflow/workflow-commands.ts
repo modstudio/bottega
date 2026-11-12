@@ -6,7 +6,6 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type ContextMomentWrite, contextMomentWrite } from '../../../shared/context-moment.ts'
 import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
-import { assertRecordShape } from '../../../shared/record-shape.ts'
 import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
@@ -26,6 +25,7 @@ import {
   showResolvedStepCatalogue,
 } from './step-catalogue.ts'
 import { obligationUuid, positive } from './workflow-command-arguments.ts'
+import * as recordShape from './workflow-command-record-shape.ts'
 import type { CommitCountPort } from './workflow-compose-branch.ts'
 import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
@@ -433,8 +433,7 @@ export async function ruleCommand(
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
 ): Promise<ContextMomentWrite | null> {
-  const ruling = flagValue(argv, 'ruling')
-  if (ruling !== undefined) assertRecordShape('ruling', ruling)
+  recordShape.workflowCommandRecordShape(argv, 'ruling', 'ruling')
   const args = workflowArgs(argv)
   let context = cliWorkflowCursorContext()
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
@@ -466,7 +465,7 @@ export async function ruleCommand(
     project,
     mode,
     args,
-    ruling,
+    flagValue(argv, 'ruling'),
     argv.includes('--from-operator'),
     'cli',
     context,
@@ -621,12 +620,7 @@ export async function nextCommand(
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
 ): Promise<ContextMomentWrite | null> {
-  const selfRuling = flagValue(argv, 'self-ruling')
-  const basis = flagValue(argv, 'basis')
-  const note = flagValue(argv, 'note')
-  if (note !== undefined) assertRecordShape('step note', note)
-  if (selfRuling !== undefined) assertRecordShape('self-ruling', selfRuling)
-  if (basis !== undefined) assertRecordShape('basis', basis)
+  const { selfRuling, basis, note } = recordShape.workflowNextCommandRecordShapes(argv)
   if (basis !== undefined && selfRuling === undefined)
     throw new Error('--basis requires --self-ruling; pass both inputs, or omit --basis')
   const args = workflowArgs(argv)
@@ -727,8 +721,7 @@ export async function awaitCommand(
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
 ): Promise<ContextMomentWrite | null> {
-  const question = flagValue(argv, 'question')
-  if (question !== undefined) assertRecordShape('open question', question)
+  const question = recordShape.workflowCommandRecordShape(argv, 'question', 'open question')
   const args = workflowArgs(argv)
   let context = cliWorkflowCursorContext()
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')

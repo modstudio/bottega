@@ -4,8 +4,8 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   NEXT_ACTION_MAX_CHARS,
   OPEN_QUESTION_MAX_CHARS,
-  recordShapeRefusal,
   RULING_MAX_CHARS,
+  recordShapeRefusal,
 } from '../../../shared/record-shape.ts'
 import type { HubTaskReference } from '../workflow/workflow-task-reference.ts'
 

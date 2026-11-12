@@ -103,7 +103,7 @@ test('the hosted record refuses a context item that does not decode or breaks it
       'empty-ruling',
       encodeContextItem({ kind: 'ruling', source: 'q5282', body: '' }),
     ),
-  ).toThrow('non-empty body')
+  ).toThrow('ruling must not be empty')
   expect(() =>
     assertContextItemShape(
       'context',

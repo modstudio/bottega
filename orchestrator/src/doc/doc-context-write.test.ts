@@ -60,9 +60,9 @@ describe('context write refusal', () => {
     }
   })
   test('applies declared line rules to matching agent context kinds', () => {
-    expect(
-      contextWriteRefusal(item({ kind: 'next-action', body: 'first\nsecond' }), facts()),
-    ).toBe('next action must be one line. Shorten it and put detail in a task document.')
+    expect(contextWriteRefusal(item({ kind: 'next-action', body: 'first\nsecond' }), facts())).toBe(
+      'next action must be one line. Shorten it and put detail in a task document.',
+    )
     for (const kind of ['ruling', 'open-question'] as const) {
       expect(
         contextWriteRefusal(
@@ -95,9 +95,9 @@ describe('context write refusal', () => {
     }
   })
   test('refuses a ruling without a body', () => {
-    expect(
-      contextWriteRefusal(item({ kind: 'ruling', source: 'q5282', body: ' ' }), facts()),
-    ).toBe('ruling must not be empty. Shorten it and put detail in a task document.')
+    expect(contextWriteRefusal(item({ kind: 'ruling', source: 'q5282', body: ' ' }), facts())).toBe(
+      'ruling must not be empty. Shorten it and put detail in a task document.',
+    )
   })
   test('refuses an unresolved or unsafe pointer with the adapter reason', () => {
     expect(

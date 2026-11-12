@@ -1,9 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import {
-  RECORD_SHAPES,
-  recordShapeRefusal,
-  type ContextRecordName,
-} from './record-shape.ts'
+import { type ContextRecordName, RECORD_SHAPES, recordShapeRefusal } from './record-shape.ts'
 
 describe('context-bearing record shapes', () => {
   for (const [record, shape] of Object.entries(RECORD_SHAPES) as [
@@ -25,8 +21,7 @@ describe('context-bearing record shapes', () => {
 
     test(`${record} enforces its line rule`, () => {
       const invalid = shape.lineRule === 'line' ? 'first\nsecond' : 'first\n \t\nsecond'
-      const rule =
-        shape.lineRule === 'line' ? 'one line' : 'one paragraph with no blank line'
+      const rule = shape.lineRule === 'line' ? 'one line' : 'one paragraph with no blank line'
       expect(recordShapeRefusal(record, invalid)).toBe(
         `${record} must be ${rule}. Shorten it and put detail in a task document.`,
       )

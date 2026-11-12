@@ -1,11 +1,11 @@
 // concern: record-shape
 /** Pure shape policy for short records that carry working context. */
 
-export const STEP_NOTE_MAX_CHARS = 300
+const STEP_NOTE_MAX_CHARS = 300
 export const OPEN_QUESTION_MAX_CHARS = 800
 export const RULING_MAX_CHARS = 1500
-export const SELF_RULING_MAX_CHARS = 800
-export const BASIS_MAX_CHARS = 800
+const SELF_RULING_MAX_CHARS = 800
+const BASIS_MAX_CHARS = 800
 export const NEXT_ACTION_MAX_CHARS = 400
 
 export const RECORD_SHAPES = {

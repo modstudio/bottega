@@ -25,7 +25,6 @@ import { rememberSignedInRecordUser } from '../record/record-session.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { retryRun } from './run-answer.ts'
 import type { detach } from './run-dispatch.ts'
-import { packedResumePrompt } from './run-resume-prompt.ts'
 
 const trackResidue = trackedTestResidue()
 
@@ -201,7 +200,7 @@ describe('run answers', () => {
       expect.objectContaining({ answer: null, revision: 3 }),
     ])
   })
-  test('answer refuses six individually-legal --file rulings whose packed resume exceeds argv', async () => {
+  test('answer refuses an over-limit --file ruling before storing any answer', async () => {
     const id = insert('asking', 'implement')
     const spec = trackResidue(join(dir, `answer-six-large-${id}.prompt.txt`))
     writeFileSync(spec, 'original implementation spec')
@@ -220,15 +219,8 @@ describe('run answers', () => {
       writeFileSync(path, body)
       argv.push(`--q${question.number}`, '--file', path)
     }
-    const assembled = Buffer.byteLength(
-      packedResumePrompt(
-        'implement',
-        rulingPrompt(questions.map((q) => ({ question: q.question, answer: body }))),
-        id,
-      ),
-    )
     await expect(answerRun(id, { argv, recordOnly: false, flags }, helpers)).rejects.toThrow(
-      `assembled resume prompt is ${assembled} bytes`,
+      'ruling is 190000 characters; the limit is 1500 (RULING_MAX_CHARS)',
     )
     expect(db().query('SELECT answer FROM question WHERE run_record_id=?').all(id)).toEqual(
       questions.map(() => ({ answer: null })),
@@ -681,7 +673,7 @@ test('answer stdin refuses whitespace-only input', async () => {
       }),
   }
   await expect(answerRun(id, { argv: [], recordOnly: true, flags }, stdinHelpers)).rejects.toThrow(
-    'empty ruling',
+    'ruling must not be empty',
   )
 })
 
