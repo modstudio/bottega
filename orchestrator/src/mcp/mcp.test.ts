@@ -23,8 +23,8 @@ import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fi
 import { db } from '../database/db.ts'
 import { missingIssueReportFields } from '../issue/issue-report-fields.ts'
 import { type Project, removeProject, upsertProject } from '../project/projects.ts'
-import { machineId } from '../record/machine-identity.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
+import { machineId } from '../record/machine-identity.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
 import {
@@ -42,6 +42,7 @@ import {
 import { createDocsMcpServer, fileIssueTaskKey } from './mcp.ts'
 import { workflowRulingContextFixture } from './mcp-context-reports.fixture.ts'
 import { MCP_SERVER_STALE_EXIT } from './mcp-exit-status.ts'
+import { createMcpTaskFlowMemory, mcpTaskFlowStageIdentity } from './mcp-task-flow.fixture.ts'
 
 describe('orch MCP', () => {
   test('an incompatible schema reload reports the refusal and exits for supervision', () => {
@@ -551,7 +552,6 @@ describe('orch MCP', () => {
       await Promise.all([client.close(), server.close()])
     }
   })
-
   test('every MCP workflow operation routes by cursor handle', async () => {
     const project = 'mcp-cursor-handles'
     upsertProject({
@@ -626,12 +626,7 @@ describe('orch MCP', () => {
          WHERE number IN (?,?)`,
       )
       .run(project, first.id, second.id)
-    const secondRow = db()
-      .query<typeof firstRow, [number]>(
-        `SELECT record_id,workflow_version_record_id,catalogue_version_record_id
-         FROM workflow_cursor WHERE number=?`,
-      )
-      .get(second.id)!
+    const secondRow = mcpTaskFlowStageIdentity(db(), second.id)
     const { server, bodies: contextBodies } = workflowRulingContextFixture({
       hubTaskReader: async () =>
         ['DEV-1082-MCP-A', 'DEV-1082-MCP-B'].map((key) => ({
@@ -741,35 +736,21 @@ describe('orch MCP', () => {
       db()
         .query("UPDATE project SET settings=json_set(settings,'$.space',?) WHERE name=?")
         .run(hostedSpaceId, project)
-      for (const table of ['workflow', 'workflow_version', 'step_catalogue', 'step_catalogue_version'])
+      for (const table of [
+        'workflow',
+        'workflow_version',
+        'step_catalogue',
+        'step_catalogue_version',
+      ])
         db().query(`UPDATE ${table} SET space_id=? WHERE space_id IS NULL`).run(hostedSpaceId)
       const secondFlowId = newRecordId()
-      const memory = createMemoryRecordApiClient({
-        taskFlowStages: [
-          { flow: hosted.flow, stage: hosted.stage! },
-          {
-            flow: {
-              ...hosted.flow,
-              id: secondFlowId,
-              taskId: null,
-              taskKey: null,
-              openStageRecordId: secondRow.record_id,
-            },
-            stage: {
-              ...hosted.stage!,
-              id: secondRow.record_id,
-              flowRecordId: secondFlowId,
-              number: second.id,
-              workflowKey: 'DEV-1082-MCP-B',
-              workflowVersionId: secondRow.workflow_version_record_id,
-              catalogueVersionId: secondRow.catalogue_version_record_id,
-              arguments: args('DEV-1082-MCP-B'),
-              activeOrdinal: 0,
-              activeSlug: 'diagnose',
-              closedStepNotes: [],
-            },
-          },
-        ],
+      const memory = createMcpTaskFlowMemory(hosted, {
+        flowId: secondFlowId,
+        recordId: secondRow.record_id,
+        number: second.id,
+        workflowVersionId: secondRow.workflow_version_record_id,
+        catalogueVersionId: secondRow.catalogue_version_record_id,
+        args: args('DEV-1082-MCP-B'),
       })
       installRecordApiClient({
         ...memory,
@@ -789,11 +770,9 @@ describe('orch MCP', () => {
         updateTaskFlowStage: (input, destination) =>
           memory.updateTaskFlowStage!(input, destination),
         adoptTaskFlow: (input, destination) => memory.adoptTaskFlow!(input, destination),
-        attachTaskFlowText: (input, destination) =>
-          memory.attachTaskFlowText!(input, destination),
+        attachTaskFlowText: (input, destination) => memory.attachTaskFlowText!(input, destination),
         abandonTaskFlow: (input, destination) => memory.abandonTaskFlow!(input, destination),
-        deleteTaskFlowText: (input, destination) =>
-          memory.deleteTaskFlowText!(input, destination),
+        deleteTaskFlowText: (input, destination) => memory.deleteTaskFlowText!(input, destination),
       })
       process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
       rememberProjectSpace(db(), project, hostedSpaceId)
@@ -891,7 +870,6 @@ describe('orch MCP', () => {
       await removeProject(project)
     }
   })
-
   test('file_issue advertises every accepted input field', async () => {
     const server = createDocsMcpServer()
     const client = new Client({ name: 'orch-test', version: '1.0.0' })

@@ -3,7 +3,6 @@
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
 import { db, sessionId } from '../database/db.ts'
-import { projectAt } from '../project/projects.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import {
   readThroughTaskFlow,
@@ -14,6 +13,7 @@ import { taskFlowReadStore } from './task-flow-store.ts'
 import type { TaskFlowStageCursorRow } from './task-flow-store-types.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { workflowTaskBindingCommand } from './workflow-cursor-format.ts'
+import { workflowCursorProject } from './workflow-cursor-project.ts'
 import { hasClosedStep } from './workflow-cursor-trail.ts'
 import { type HubTaskReader, resolveHubTaskReference } from './workflow-task-reference.ts'
 import { resolveWorkflowMode, showResolvedWorkflow } from './workflows.ts'
@@ -193,7 +193,7 @@ export async function selectByHandle(
   includeTerminal = false,
   client?: RecordTaskFlowClient,
 ): Promise<SelectableCursorRow> {
-  const project = identity.project ?? projectAt(process.cwd(), d)?.name
+  const project = workflowCursorProject(identity.project, process.cwd(), d)
   if (!project) throw new Error('a workflow cursor handle requires a project; pass --project')
   const row = await taskFlowReadStore(d, client).stageByHandle(project, cursor)
   if (!row)

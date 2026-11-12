@@ -92,6 +92,10 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     '../database/db.ts',
     './workflow-cursor-selection.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-cursor-project.ts', [
+    'bun:sqlite',
+    '../project/projects.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-compose-branch.ts', [
     'bun:sqlite',
     '../../../shared/brand.ts',

@@ -168,14 +168,16 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
       for (const text of payload.rows) {
         const row = stages.find(({ stage }) => stage.id === text.stageRecordId)
         if (!row) throw new Error(`fixture task-flow stage ${text.stageRecordId} not found`)
-        ;(row.stage.stepTexts ??= []).push(text)
+        row.stage.stepTexts ??= []
+        row.stage.stepTexts.push(text)
       }
       return { revisions: {} }
     },
     async copyTaskFlowText(payload) {
       const row = stages.find(({ stage }) => stage.id === payload.row.stageRecordId)
       if (!row) throw new Error(`fixture task-flow stage ${payload.row.stageRecordId} not found`)
-      ;(row.stage.textCopies ??= []).push(payload.row)
+      row.stage.textCopies ??= []
+      row.stage.textCopies.push(payload.row)
       return { revisions: {} }
     },
     async deleteTaskFlowText(payload) {

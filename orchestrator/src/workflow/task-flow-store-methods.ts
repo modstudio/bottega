@@ -11,6 +11,7 @@ export type TaskFlowWriteMethod =
 
 export const taskFlowLocalReadPlacement = {
   conflictingHostedStage: 'local-only',
+  nextKeylessInstanceSlot: 'local-only',
   openStageForTask: 'shared',
   flowRecordIdForTask: 'local-only',
   flowProjectionForTask: 'shared',
