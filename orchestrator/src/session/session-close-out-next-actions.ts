@@ -5,32 +5,27 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { taskContextItems } from '../doc/context-service.ts'
-import { resolveContextTask } from '../doc/context-write-adapter.ts'
+import {
+  ContextTaskPrefixError,
+  resolveContextTask,
+  unknownTaskPrefixReport,
+} from '../doc/context-write-adapter.ts'
 import { missingContextKinds } from '../doc/doc-context-write.ts'
-import { projectForTaskKey, projects } from '../project/projects.ts'
+import { TaskNotFoundError } from '../workflow/workflow-task-reference.ts'
 
 export type TaskNextActionOutcome =
   | { key: string; status: 'present' }
   | { key: string; status: 'missing' }
   | { key: string; status: 'unknown-prefix'; detail: string; remedy: string }
+  | { key: string; status: 'absent'; detail: string; remedy: string }
   | { key: string; status: 'unreadable'; detail: string; remedy: string }
 
 export async function taskNextActionOutcomes(
   keys: readonly string[],
   database: Database = db(),
 ): Promise<TaskNextActionOutcome[]> {
-  const registered = projects(undefined, database)
   const outcomes: TaskNextActionOutcome[] = []
   for (const key of keys) {
-    if (!projectForTaskKey(key, registered)) {
-      outcomes.push({
-        key,
-        status: 'unknown-prefix',
-        detail: `no single project declares the task prefix of ${key}`,
-        remedy: `declare it in one project's keyPrefixes with ${PLATFORM_SLUG} project set <project> --settings`,
-      })
-      continue
-    }
     try {
       const task = await resolveContextTask(key, database)
       outcomes.push({
@@ -42,6 +37,14 @@ export async function taskNextActionOutcomes(
           : 'present',
       })
     } catch (cause) {
+      if (cause instanceof ContextTaskPrefixError) {
+        outcomes.push({ key, status: 'unknown-prefix', ...unknownTaskPrefixReport(key) })
+        continue
+      }
+      if (cause instanceof TaskNotFoundError) {
+        outcomes.push({ key, status: 'absent', detail: cause.message, remedy: cause.remedy })
+        continue
+      }
       outcomes.push({
         key,
         status: 'unreadable',

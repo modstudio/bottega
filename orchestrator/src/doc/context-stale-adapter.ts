@@ -13,6 +13,7 @@ import {
 import { decodeContextItem } from './context-item-codec.ts'
 import { sessionWorkEvents } from './context-session-work-adapter.ts'
 import { type ContextWorkEvent, staleContextHolders } from './context-stale.ts'
+import { unknownTaskPrefixReport } from './context-write-adapter.ts'
 import { listDocsStore } from './doc-read-store.ts'
 import { taskContextHolder } from './doc-subjects.ts'
 
@@ -59,10 +60,11 @@ export async function staleContextForSession(
   const unresolvedHolders = workHolders.flatMap((holder) => {
     const project = holderProjects.get(holder)
     if (!project) {
+      const unresolved = unknownTaskPrefixReport(holder)
       return [
         {
           holder,
-          reason: `no single project declares the task prefix of ${holder}; declare it in one project's keyPrefixes with ${PLATFORM_SLUG} project set <project> --settings`,
+          reason: `${unresolved.detail}; ${unresolved.remedy}`,
         },
       ]
     }

@@ -7,15 +7,10 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
+from hook_paths import bottega_bin
 from registered_scope import should_hook_act
 
 CLI_TIMEOUT_SECONDS = 5
-
-
-def bottega_bin():
-    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-    return os.path.join(root, "bin", "bottega")
-
 
 def first_line(value):
     for line in (value or "").splitlines():

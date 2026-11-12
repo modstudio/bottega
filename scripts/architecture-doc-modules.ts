@@ -59,6 +59,7 @@ export const docModules: DocModule[] = [
     './context-item-codec.ts',
     './context-session-work-adapter.ts',
     './context-stale.ts',
+    './context-write-adapter.ts',
     './doc-read-store.ts',
     './doc-subjects.ts',
   ]),

@@ -1,13 +1,10 @@
 // concern: context-worked
 /** Pure derivation and rendering of task keys worked by one architect session. */
 
-type WorkedTaskRow = { key: string | null; at: string }
+export type WorkedTaskRow = { key: string | null; at: string }
 
 export type WorkedTaskFacts = {
-  runs: readonly WorkedTaskRow[]
-  cursors: readonly WorkedTaskRow[]
-  claims: readonly WorkedTaskRow[]
-  questions: readonly WorkedTaskRow[]
+  events: readonly WorkedTaskRow[]
 }
 
 export const WORKED_CONTEXT_ID = 'worked'
@@ -15,9 +12,7 @@ export const WORKED_CONTEXT_KIND = 'fact'
 
 /** Return the newest occurrence of each non-empty task key, newest first. */
 export function workedTaskKeys(facts: WorkedTaskFacts): string[] {
-  const rows = [...facts.runs, ...facts.cursors, ...facts.claims, ...facts.questions].map(
-    (row, ordinal) => ({ ...row, ordinal }),
-  )
+  const rows = facts.events.map((row, ordinal) => ({ ...row, ordinal }))
   rows.sort((left, right) => right.at.localeCompare(left.at) || left.ordinal - right.ordinal)
   const emitted = new Set<string>()
   const keys: string[] = []

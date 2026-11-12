@@ -12,16 +12,11 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
+from hook_paths import bottega_bin
 from registered_scope import should_hook_act
 from board_hook_common import marker_path, read_marker, write_marker
 
 CLI_TIMEOUT_SECONDS = 5
-
-
-def bottega_bin():
-    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-    return os.path.join(root, "bin", "bottega")
-
 
 def emit(payload):
     sys.stdout.write(json.dumps(payload) + "\n")

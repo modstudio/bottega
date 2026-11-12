@@ -16,14 +16,15 @@ import {
 import { CONTEXT_ITEM_MAX_CHARS } from './doc-context-write.ts'
 
 function workedTaskFacts(session: string, database: Database = db()): WorkedTaskFacts {
-  const shared = sessionWorkEvents(session, database)
+  const events = sessionWorkEvents(session, database)
   const claims = claimsOfSession(session, database)
     .filter((claim) => claim.subject.kind === 'task')
     .map((claim) => ({
       key: claim.subject.value,
       at: claim.closedAt ?? claim.renewedAt ?? claim.takenAt,
     }))
-  return { runs: shared, cursors: [], claims, questions: [] }
+  events.push(...claims)
+  return { events }
 }
 
 export function sessionWorkedTaskKeys(session: string, database: Database = db()): string[] {
@@ -34,7 +35,7 @@ export async function recordSessionWorked(
   session: string,
   keys: readonly string[],
   source: string,
-): Promise<{ keys: string[]; body: string | null }> {
+): Promise<{ body: string | null }> {
   const body = renderWorkedTaskKeys(keys, CONTEXT_ITEM_MAX_CHARS.fact)
   if (body)
     await setContextItem({
@@ -44,5 +45,5 @@ export async function recordSessionWorked(
       source,
       body,
     })
-  return { keys: [...keys], body }
+  return { body }
 }

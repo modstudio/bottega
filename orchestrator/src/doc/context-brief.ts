@@ -2,7 +2,7 @@
 /** Gathers and renders the compact architect context brief. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { liveClaimsOfSession } from '../board/board-claim-service.ts'
+import { type ClaimView, liveClaimsOfSession } from '../board/board-claim-service.ts'
 import { claimNotices } from '../board/board-service.ts'
 import { db } from '../database/db.ts'
 import { filedIssueQueueState } from '../issue/issue-dispatch.ts'
@@ -11,7 +11,10 @@ import { questionOpenSql } from '../run/question-open.ts'
 import { LIVE_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { architectSessionContext } from '../workflow/session-context.ts'
 import { taskFlowStore } from '../workflow/task-flow-store.ts'
-import { listWorkflowCursors } from '../workflow/workflow-cursor-list.ts'
+import {
+  listWorkflowCursors,
+  type WorkflowCursorListRow,
+} from '../workflow/workflow-cursor-list.ts'
 import {
   type HubTaskReference,
   projectTaskKey,
@@ -187,8 +190,8 @@ export function storedBriefHolders(
 
 export function workingKeysForBrief(
   session: string,
-  liveClaims: readonly { project: string; subject: { kind: string; value: string } }[],
-  cursors: readonly { workflow_key: string; project: string }[],
+  liveClaims: readonly Pick<ClaimView, 'project' | 'subject'>[],
+  cursors: readonly Pick<WorkflowCursorListRow, 'workflow_key' | 'project'>[],
   database: Database,
 ): ContextBriefWorkingKey[] {
   const current: ContextBriefWorkingKey[] = [

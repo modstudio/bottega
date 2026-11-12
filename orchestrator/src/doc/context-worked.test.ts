@@ -4,13 +4,11 @@ import { parseWorkedTaskKeys, renderWorkedTaskKeys, workedTaskKeys } from './con
 test('derives every worked source newest first and deduplicates by newest occurrence', () => {
   expect(
     workedTaskKeys({
-      runs: [{ key: 'DEV-RUN', at: '2026-11-11T10:00:00Z' }],
-      cursors: [{ key: 'DEV-CURSOR', at: '2026-11-11T13:00:00Z' }],
-      claims: [
+      events: [
+        { key: 'DEV-RUN', at: '2026-11-11T10:00:00Z' },
+        { key: 'DEV-CURSOR', at: '2026-11-11T13:00:00Z' },
         { key: 'DEV-CLAIM', at: '2026-11-11T12:00:00Z' },
         { key: 'DEV-RUN', at: '2026-11-11T14:00:00Z' },
-      ],
-      questions: [
         { key: 'DEV-QUESTION', at: '2026-11-11T11:00:00Z' },
         { key: null, at: '2026-11-11T15:00:00Z' },
       ],

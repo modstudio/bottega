@@ -863,17 +863,32 @@ async function appendWorkedCloseOutReport(input: {
   writeWorked: boolean
 }): Promise<void> {
   if (!input.reportNextActions && !input.writeWorked) return
-  const workedKeys = sessionWorkedTaskKeys(input.session, input.database)
-  if (input.reportNextActions) {
-    input.report.nextActionOutcomes = await taskNextActionOutcomes(workedKeys, input.database)
-    for (const outcome of input.report.nextActionOutcomes) {
-      if (outcome.status !== 'unknown-prefix' && outcome.status !== 'unreadable') continue
-      input.report.errors.push({
-        item: `close-out task ${outcome.key}`,
-        detail: outcome.detail,
-        retry: outcome.remedy,
-      })
+  let workedKeys: string[]
+  try {
+    workedKeys = sessionWorkedTaskKeys(input.session, input.database)
+    if (input.reportNextActions) {
+      input.report.nextActionOutcomes = await taskNextActionOutcomes(workedKeys, input.database)
+      for (const outcome of input.report.nextActionOutcomes) {
+        if (
+          outcome.status !== 'unknown-prefix' &&
+          outcome.status !== 'unreadable' &&
+          outcome.status !== 'absent'
+        )
+          continue
+        input.report.warnings.push({
+          item: `close-out task ${outcome.key}`,
+          detail: outcome.detail,
+          cleanup: outcome.remedy,
+        })
+      }
     }
+  } catch (cause) {
+    input.report.warnings.push({
+      item: 'close-out worked report',
+      detail: cause instanceof Error ? cause.message : String(cause),
+      cleanup: `${PLATFORM_SLUG} session close-out --session ${input.session}`,
+    })
+    return
   }
   if (!input.writeWorked) return
   try {
@@ -992,7 +1007,7 @@ export async function releaseSessionResources(
 }
 
 export async function closeOutSession(
-  options: { session?: string; dryRun?: boolean; resume?: boolean } = {},
+  options: Omit<ReleaseSessionResourcesOptions, 'reportNextActions'> = {},
 ): Promise<SessionCloseOutReport> {
   const report = await releaseSessionResources({ ...options, reportNextActions: true })
   if (report.dryRun) return report
