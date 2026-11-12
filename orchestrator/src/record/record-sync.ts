@@ -5,7 +5,11 @@ import { hostname } from 'node:os'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { storedMachineNames, writeMachineNames } from '../../../shared/machine-config.ts'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
-import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
+import {
+  parseRecordSpaceMemberships,
+  type RecordSpaceMembership,
+} from '../../../shared/record-space-membership.ts'
+import { recordSpaceAccessDecision } from '../../../shared/record-space-request.ts'
 import { recordWriteSpace } from '../../../shared/record-write-space.ts'
 import { db, nowIso } from '../database/db.ts'
 import { backfillReleaseRecords } from '../release/release-outbox.ts'
@@ -563,6 +567,7 @@ async function ensureBatchBuiltIns(
   client: Pick<ReturnType<typeof recordApiClient>, 'ensureSpaceBuiltIns'>,
   local: Database,
   rows: readonly RecordSyncRequestRow[],
+  memberships: readonly RecordSpaceMembership[],
 ): Promise<void> {
   if (!client.ensureSpaceBuiltIns) return
   const spaces = new Set(
@@ -570,6 +575,8 @@ async function ensureBatchBuiltIns(
   )
   for (const spaceId of spaces) {
     if (builtInsEnsured(local, spaceId)) continue
+    // A space the caller only reads defers its rows; ensuring built-ins there is a refused write.
+    if (!recordSpaceAccessDecision('write', spaceId, memberships).allowed) continue
     await client.ensureSpaceBuiltIns({ destinationSpaceId: spaceId })
     recordBuiltInsEnsured(local, spaceId)
   }
@@ -741,7 +748,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     })
     failed += batch.quarantined
     if (noBatchRemaining(batch.request.rows.length, sentBatch)) break
-    await ensureBatchBuiltIns(client, writableLocal, batch.request.rows)
+    await ensureBatchBuiltIns(client, writableLocal, batch.request.rows, memberships)
     const applied = await sendSyncBatch({
       client: { sync: client.sync },
       batch,

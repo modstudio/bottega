@@ -103,9 +103,9 @@ test('canon import can drop a citer and its target after deciding the complete n
     const imports: unknown[] = []
     installRecordApiClient({
       ...client,
-      importCanon: async (input) => {
+      importCanon: async (input, destination) => {
         imports.push(input)
-        return client.importCanon(input)
+        return client.importCanon(input, destination)
       },
     })
     spawnFixtureGitSync(['init'], { cwd: root })
@@ -217,9 +217,9 @@ test('project canon import dry-run prints the plan and writes neither store', as
     let hostedWrites = 0
     installRecordApiClient({
       ...client,
-      importCanon: async (input) => {
+      importCanon: async (input, destination) => {
         hostedWrites++
-        return client.importCanon(input)
+        return client.importCanon(input, destination)
       },
     })
     spawnFixtureGitSync(['init'], { cwd: root })

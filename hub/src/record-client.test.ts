@@ -263,7 +263,7 @@ describe('record client', () => {
     })
 
     const error = await client
-      .deleteDoc(boardRootId, { reason: 'cleanup', author: 'worker' })
+      .deleteDoc(boardRootId, { reason: 'cleanup', author: 'worker' }, 'project-space')
       .catch((cause) => cause)
 
     expect(error).toBeInstanceOf(TRPCError)
@@ -696,48 +696,69 @@ describe('record client', () => {
       return jsonResponse({ id, revisionId })
     }
     const client = clientWith(fetch)
-    await client.putDoc({
-      scope: 'canon',
-      subject: null,
-      owner: id,
-      slug: 'preferences',
-      title: 'Preferences',
-      body: 'Body',
-      delivery: 'inject',
-      reason: 'updated',
-      author: 'hub-dashboard',
-      expectedRevision: revisionId,
-    })
-    await client.deleteDoc(id, {
-      reason: 'obsolete',
-      author: 'hub-dashboard',
-      expectedRevision: revisionId,
-    })
-    await client.putConfigEntry('autonomy.preset', {
-      scope: 'user',
-      value: 'manual',
-      expectedRowVersion: 1,
-    })
-    await client.deleteConfigEntry('autonomy.stage.review', {
-      scope: 'user',
-      expectedRowVersion: 3,
-    })
-    await client.settingsPermission({
-      target: { kind: 'user' },
-      list: 'allow',
-      rule: 'Bash(orch *)',
-      operation: 'add',
-      reason: 'needed',
-      expectedRevision: revisionId,
-    })
-    await client.settingsAutoMode({
-      target: { kind: 'project', project: 'starship' },
-      list: 'allow',
-      rule: 'Bash(docker compose *)',
-      operation: 'add',
-      reason: 'needed',
-      expectedRevision: revisionId,
-    })
+    await client.putDoc(
+      {
+        scope: 'canon',
+        subject: null,
+        owner: id,
+        slug: 'preferences',
+        title: 'Preferences',
+        body: 'Body',
+        delivery: 'inject',
+        reason: 'updated',
+        author: 'hub-dashboard',
+        expectedRevision: revisionId,
+      },
+      'personal-space',
+    )
+    await client.deleteDoc(
+      id,
+      {
+        reason: 'obsolete',
+        author: 'hub-dashboard',
+        expectedRevision: revisionId,
+      },
+      'personal-space',
+    )
+    await client.putConfigEntry(
+      'autonomy.preset',
+      {
+        scope: 'user',
+        value: 'manual',
+        expectedRowVersion: 1,
+      },
+      'personal-space',
+    )
+    await client.deleteConfigEntry(
+      'autonomy.stage.review',
+      {
+        scope: 'user',
+        expectedRowVersion: 3,
+      },
+      'personal-space',
+    )
+    await client.settingsPermission(
+      {
+        target: { kind: 'user' },
+        list: 'allow',
+        rule: 'Bash(orch *)',
+        operation: 'add',
+        reason: 'needed',
+        expectedRevision: revisionId,
+      },
+      'personal-space',
+    )
+    await client.settingsAutoMode(
+      {
+        target: { kind: 'project', project: 'starship' },
+        list: 'allow',
+        rule: 'Bash(docker compose *)',
+        operation: 'add',
+        reason: 'needed',
+        expectedRevision: revisionId,
+      },
+      'project-space',
+    )
 
     expect(requests.map(({ url, method }) => [url, method])).toEqual([
       ['https://api.example.test/v1/docs', 'PUT'],

@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
-import { expiresAt, headers, json, notice } from './postgres-board-api-values.ts'
+import { expiresAt, json, notice, headers as requestHeaders } from './postgres-board-api-values.ts'
 import { registerHostedProjectIdentityProof } from './postgres-sync-authorization-proof.ts'
 
 const AMBIGUOUS_PROJECT = 'board-api-ambiguous'
@@ -9,6 +9,7 @@ const AMBIGUOUS_PROJECT_B = '03990000-0000-7000-8000-000000000018'
 
 export function registerBoardPostingProjectProof(input: {
   origin: () => string
+  spaceIdForToken(token: string): string
   tokenA: () => string
   tokenB: () => string
   tokenD: () => string
@@ -22,12 +23,47 @@ export function registerBoardPostingProjectProof(input: {
   projectTwoId: string
   originProjectId: string
 }): void {
+  const headers = (token: string) => requestHeaders(token, input.spaceIdForToken(token))
+
   registerHostedProjectIdentityProof({
     origin: input.origin,
     token: input.tokenA,
     existingProjectId: input.projectId,
     admin: (statement) => input.succeeds('postgres', 'postgres', statement),
     caseSession: input.caseSession,
+  })
+
+  test('a user bound through the API sees a project in a second space', async () => {
+    const token = input.tokenA()
+    const switched = await fetch(`${input.origin()}/v1/active-space`, {
+      method: 'PUT',
+      headers: headers(token),
+      body: JSON.stringify({ spaceId: input.spaceIdForToken(token) }),
+    })
+    expect(switched.status).toBe(200)
+    const id = newRecordId()
+    const posted = await input.post(
+      token,
+      notice(id, `project:${input.projectTwo}`, input.caseSession('second-space'), {
+        projectId: input.projectTwoId,
+      }),
+    )
+    expect(posted.status).toBe(200)
+    const thread = await fetch(`${input.origin()}/v1/board/threads/${id}`, {
+      headers: headers(token),
+    })
+    expect(thread.status).toBe(200)
+  })
+
+  test('a row-level security denial is a named refusal not a server error', async () => {
+    const posted = await input.post(
+      input.tokenD(),
+      notice(newRecordId(), `project:${input.project}`, input.caseSession('rls-denial'), {
+        projectId: input.projectId,
+      }),
+    )
+    expect(posted.status).toBe(400)
+    expect(JSON.stringify(await posted.json())).toContain('row-level security')
   })
 
   test('plain architects duplicate identity includes the posting project', async () => {

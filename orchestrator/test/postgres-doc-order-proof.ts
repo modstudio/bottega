@@ -9,7 +9,15 @@ export async function proveHostedDocOrder(input: {
   const headers = {
     Authorization: `Bearer ${input.token}`,
     'content-type': 'application/json',
+    'x-record-space': '',
   }
+  const whoami = await fetch(`${input.origin}/v1/whoami`, {
+    headers: { Authorization: `Bearer ${input.token}` },
+  })
+  expect(whoami.status).toBe(200)
+  headers['x-record-space'] = String(
+    ((await whoami.json()) as { activeSpaceId: string }).activeSpaceId,
+  )
   const proof = newRecordId()
   const create = async (
     slug: string,

@@ -5,6 +5,7 @@ import {
   boardClaimListPath,
   type RecordClientRequest,
   type RecordRequestDestination,
+  type RecordWriteDestination,
 } from './record-api-client-paths.ts'
 import type {
   HostedBoardAcceptInput,
@@ -46,14 +47,14 @@ type BoardRootClient = {
   ): Promise<HostedBoardOverview>
   postBoardMessage(
     input: HostedBoardPostInput,
+    destination: RecordWriteDestination,
     signal?: AbortSignal,
-    destination?: RecordRequestDestination,
   ): Promise<HostedBoardMessage>
   withdrawBoardMessage(
     id: string,
+    destination: RecordWriteDestination,
     input?: HostedBoardSessionInput,
     signal?: AbortSignal,
-    destination?: RecordRequestDestination,
   ): Promise<HostedBoardMessage>
 }
 
@@ -80,14 +81,14 @@ function recordBoardRootClient(request: RecordClientRequest): BoardRootClient {
       const suffix = search.toString()
       return request(`/v1/board/messages${suffix ? `?${suffix}` : ''}`, { signal })
     },
-    postBoardMessage: (input, signal, destination) =>
+    postBoardMessage: (input, destination, signal) =>
       request('/v1/board/messages', {
         method: 'PUT',
         body: JSON.stringify(input),
         signal,
         ...destination,
       }),
-    withdrawBoardMessage: (id, input, signal, destination) =>
+    withdrawBoardMessage: (id, destination, input, signal) =>
       request(`/v1/board/messages/${id}/withdraw`, {
         method: 'POST',
         body: JSON.stringify(input ?? {}),
@@ -102,7 +103,7 @@ function recordBoardMessageClient(request: RecordClientRequest) {
     replyBoardMessage: (
       rootId: string,
       input: HostedBoardReplyInput,
-      destination?: RecordRequestDestination,
+      destination: RecordWriteDestination,
     ) =>
       request<HostedBoardMessage>(`/v1/board/messages/${rootId}/replies`, {
         method: 'POST',
@@ -112,7 +113,7 @@ function recordBoardMessageClient(request: RecordClientRequest) {
     acceptBoardAnswer: (
       id: string,
       input: HostedBoardAcceptInput,
-      destination?: RecordRequestDestination,
+      destination: RecordWriteDestination,
     ) =>
       request<HostedBoardThread>(`/v1/board/messages/${id}/accept`, {
         method: 'POST',
@@ -121,8 +122,8 @@ function recordBoardMessageClient(request: RecordClientRequest) {
       }),
     takeBoardFilingLease: (
       id: string,
+      destination: RecordWriteDestination,
       input?: HostedBoardSessionInput,
-      destination?: RecordRequestDestination,
     ) =>
       request<HostedBoardMessage>(`/v1/board/messages/${id}/filing-lease`, {
         method: 'POST',
@@ -132,7 +133,7 @@ function recordBoardMessageClient(request: RecordClientRequest) {
     completeBoardFilingLease: (
       id: string,
       input: HostedBoardFilingCompleteInput,
-      destination?: RecordRequestDestination,
+      destination: RecordWriteDestination,
     ) =>
       request<HostedBoardMessage>(`/v1/board/messages/${id}/filing-lease/complete`, {
         method: 'POST',
@@ -142,7 +143,7 @@ function recordBoardMessageClient(request: RecordClientRequest) {
     failBoardFilingLease: (
       id: string,
       input: HostedBoardFilingFailInput,
-      destination?: RecordRequestDestination,
+      destination: RecordWriteDestination,
     ) =>
       request<HostedBoardMessage>(`/v1/board/messages/${id}/filing-lease/fail`, {
         method: 'POST',
@@ -153,8 +154,8 @@ function recordBoardMessageClient(request: RecordClientRequest) {
     getBoardStatus: (id: string) => request<HostedBoardStatus>(`/v1/board/messages/${id}/status`),
     putBoardReceipt: (
       input: HostedBoardReceiptInput,
+      destination: RecordWriteDestination,
       signal?: AbortSignal,
-      destination?: RecordRequestDestination,
     ) =>
       request<HostedBoardReceipt>('/v1/board/receipts', {
         method: 'PUT',
@@ -167,16 +168,13 @@ function recordBoardMessageClient(request: RecordClientRequest) {
 
 function recordBoardCoordinationClient(request: RecordClientRequest) {
   return {
-    takeBoardSuccessor: (
-      input: HostedBoardSuccessorInput,
-      destination?: RecordRequestDestination,
-    ) =>
+    takeBoardSuccessor: (input: HostedBoardSuccessorInput, destination: RecordWriteDestination) =>
       request<HostedBoardSuccessorResult>('/v1/board/successor', {
         method: 'PUT',
         body: JSON.stringify(input),
         ...destination,
       }),
-    takeBoardClaim: (input: HostedBoardTakeClaimInput, destination?: RecordRequestDestination) =>
+    takeBoardClaim: (input: HostedBoardTakeClaimInput, destination: RecordWriteDestination) =>
       request<HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }>(
         '/v1/board/claims',
         {
@@ -187,8 +185,8 @@ function recordBoardCoordinationClient(request: RecordClientRequest) {
       ),
     renewBoardClaim: (
       id: string,
+      destination: RecordWriteDestination,
       input?: { holderSession?: string | null },
-      destination?: RecordRequestDestination,
     ) =>
       request<HostedBoardClaim>(`/v1/board/claims/${id}/renew`, {
         method: 'POST',
@@ -197,8 +195,8 @@ function recordBoardCoordinationClient(request: RecordClientRequest) {
       }),
     releaseBoardClaim: (
       id: string,
+      destination: RecordWriteDestination,
       input?: { holderSession?: string | null },
-      destination?: RecordRequestDestination,
     ) =>
       request<HostedBoardClaim>(`/v1/board/claims/${id}/release`, {
         method: 'POST',

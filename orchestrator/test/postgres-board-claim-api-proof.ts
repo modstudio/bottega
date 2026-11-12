@@ -1,9 +1,10 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
-import { headers, json } from './postgres-board-api-values.ts'
+import { json, headers as requestHeaders } from './postgres-board-api-values.ts'
 
 export function registerBoardClaimApiProof(input: {
   origin(): string
+  spaceIdForToken(token: string): string
   tokenA(): string
   tokenB(): string
   userA(): string
@@ -11,6 +12,8 @@ export function registerBoardClaimApiProof(input: {
   projectId: string
   succeeds(user: string, password: string, source: string): string
 }): void {
+  const headers = (token: string) => requestHeaders(token, input.spaceIdForToken(token))
+
   test('claim take, renewal, live conflict with notice, lapsed takeover, release, and release by task key', async () => {
     const take = (token: string, body: Record<string, unknown>) =>
       fetch(`${input.origin()}/v1/board/claims`, {

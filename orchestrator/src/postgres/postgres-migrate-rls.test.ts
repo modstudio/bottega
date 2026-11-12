@@ -786,6 +786,7 @@ realPostgres('RLS proof against real Postgres', () => {
     const snapshotHeaders = {
       Authorization: `Bearer ${created.token}`,
       'content-type': 'application/json',
+      'x-record-space': identity.activeSpaceId,
     }
     for (const [machineId, payload] of [
       [ids.MACHINE_A, { version: 1 }],
@@ -801,7 +802,11 @@ realPostgres('RLS proof against real Postgres', () => {
     }
     const otherSnapshot = await fetch(`${origin}/v1/snapshots/state`, {
       method: 'PUT',
-      headers: { Authorization: `Bearer ${tokenB}`, 'content-type': 'application/json' },
+      headers: {
+        Authorization: `Bearer ${tokenB}`,
+        'content-type': 'application/json',
+        'x-record-space': authSpaceB,
+      },
       body: JSON.stringify({ machineId: ids.MACHINE_A, payload: { hidden: true } }),
     })
     expect(otherSnapshot.status).toBe(200)

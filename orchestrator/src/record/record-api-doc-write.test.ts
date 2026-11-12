@@ -102,22 +102,25 @@ const appWith = (session: typeof identity | null, overrides: Record<string, unkn
 
 test('an explicit create against an existing document returns the typed 409 remedy', async () => {
   const client = createMemoryRecordApiClient()
-  const created = await client.upsertDoc({
-    scope: 'project',
-    subject: PLATFORM_NAME,
-    slug: 'existing',
-    title: 'Existing',
-    body: 'Original body.',
-    delivery: 'demand',
-    audiences: ['technical'],
-    position: 0,
-    reason: 'create route fixture',
-    author: 'tester',
-  })
+  const created = await client.upsertDoc(
+    {
+      scope: 'project',
+      subject: PLATFORM_NAME,
+      slug: 'existing',
+      title: 'Existing',
+      body: 'Original body.',
+      delivery: 'demand',
+      audiences: ['technical'],
+      position: 0,
+      reason: 'create route fixture',
+      author: 'tester',
+    },
+    { destinationSpaceId: 'space-a' },
+  )
   const app = appWith(identity, client)
   const response = await app.request('/v1/docs', {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
     body: JSON.stringify({
       scope: 'project',
       subject: PLATFORM_NAME,
@@ -167,7 +170,7 @@ afterEach(() => {
 })
 
 describe('record API doc write refusals', () => {
-  test('a destination-less user settings write uses the personal space', async () => {
+  test('a user settings write names the personal space', async () => {
     let writtenSpace = ''
     const app = appWith(personalIdentity, {
       upsertDoc: async (input: { spaceId: string }) => {
@@ -177,7 +180,7 @@ describe('record API doc write refusals', () => {
     })
     const response = await app.request('/v1/docs', {
       method: 'PUT',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-record-space': 'personal' },
       body: JSON.stringify({
         scope: 'settings',
         subject: null,
@@ -288,7 +291,7 @@ describe('record API doc write refusals', () => {
     })
     const response = await app.request('/v1/settings/permission', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-record-space': 'personal' },
       body: JSON.stringify({
         target: { kind: 'user' },
         list: 'allow',
@@ -313,7 +316,7 @@ describe('record API doc write refusals', () => {
     })
     const response = await app.request('/v1/docs', {
       method: 'PUT',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
       body: JSON.stringify({
         scope: 'global',
         subject: null,
@@ -343,7 +346,7 @@ describe('record API doc write refusals', () => {
     })
     const response = await app.request('/v1/docs', {
       method: 'PUT',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
       body: JSON.stringify({
         scope: 'settings',
         subject: null,
@@ -371,7 +374,7 @@ describe('record API doc write refusals', () => {
     })
     const response = await app.request('/v1/docs', {
       method: 'PUT',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
       body: JSON.stringify({
         scope: 'global',
         subject: null,
@@ -398,7 +401,7 @@ describe('record API doc write refusals', () => {
     const body = { scope: 'project', subject: PLATFORM_NAME, parentId: null, orderedIds: [id] }
     const response = await app.request('/v1/docs/order', {
       method: 'PUT',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
       body: JSON.stringify(body),
     })
     expect(response.status).toBe(200)
@@ -436,7 +439,7 @@ describe('record API doc write refusals', () => {
     })
     return app.request('/v1/docs', {
       method: 'PUT',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
       body: JSON.stringify({
         subject: null,
         title: 'T',

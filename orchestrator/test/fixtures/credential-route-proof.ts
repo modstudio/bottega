@@ -48,7 +48,7 @@ export async function proveCredentialRouteProjectAddressing(
     (
       await app.request(`/v1/config/secrets/${base.key}`, {
         method: 'DELETE',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
         body,
       })
     ).status,
@@ -59,7 +59,7 @@ export async function proveCredentialRouteProjectAddressing(
     (
       await app.request(`/v1/config/secrets/${base.key}?projectId=${projectId}`, {
         method: 'DELETE',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
         body,
       })
     ).status,
