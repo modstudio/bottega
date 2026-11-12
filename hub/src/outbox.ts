@@ -11,6 +11,7 @@ import { personalRecordSpace } from './personal-record-space.ts'
 import { projects } from './projects.ts'
 import {
   HOSTED_COMMENT_TABLE,
+  HOSTED_DAY_TABLE,
   HOSTED_DOCUMENT_TABLE,
   HOSTED_INTERVAL_TABLE,
   HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
@@ -23,12 +24,17 @@ import { orderHostedPushChanges } from './push-order.ts'
 import { acquireStoredLease, holdStoredLease, StoredLeaseLostError } from './store-lease.ts'
 import { persistTaskAdoptionsOn } from './task-adoption.ts'
 import { hostedPushChanges, hostedTaskIdentity } from './task-client.ts'
-import { partitionProjectRows, type RegisteredTaskSpace } from './task-project-space.ts'
+import {
+  partitionProjectRows,
+  type PersonalRecordSpaceResolver,
+  type RegisteredTaskSpace,
+} from './task-project-space.ts'
 
 const HOSTED_OUTBOX_BATCH_SIZE = 500
 const HOSTED_OUTBOX_LEASE_MS = 60_000
 const HOSTED_OUTBOX_LEASE_RENEW_MS = 20_000
 const HOSTED_OUTBOX_LEASE_KEY = 'hosted-outbox.lease'
+const DAY_MOVE_CAPABILITY_WAIT = 'hub_day delete capability'
 
 export type OutboxEntry = {
   id: string
@@ -96,7 +102,7 @@ type DrainDependencies = {
   registered?: () => RegisteredTaskSpace[]
   processKind?: OutboxProcessKind
   assertLock?: () => void
-  personalSpace?: () => Promise<string>
+  personalSpace?: PersonalRecordSpaceResolver
 }
 
 function idleOutboxReport(overrides: Partial<HostedOutboxReport> = {}): HostedOutboxReport {
@@ -336,12 +342,15 @@ function recordOutcome(
   const changed = writeTransaction((conn) => {
     if (decision.action === 'sent') {
       if (
-        item.change.table === HOSTED_INTERVAL_TABLE &&
+        (item.change.table === HOSTED_INTERVAL_TABLE || item.change.table === HOSTED_DAY_TABLE) &&
         item.change.op === 'upsert' &&
         outcome.status !== 'rejected'
       )
         conn
-          .query(`UPDATE interval SET hosted_space_id=? WHERE record_id=?`)
+          .query(
+            `UPDATE ${item.change.table === HOSTED_INTERVAL_TABLE ? 'interval' : 'day'}
+             SET hosted_space_id=? WHERE record_id=?`,
+          )
           .run(item.destinationSpaceId, item.change.id)
       const removed = conn
         .query(`DELETE FROM hosted_outbox WHERE id=? AND generation=?`)
@@ -587,10 +596,11 @@ async function deliverOutboxBatch(
   return true
 }
 
-async function removeMovedIntervals(
+async function removeMovedRows(
   destinations: Map<string, PreparedOutboxRow[]>,
   dependencies: DrainDependencies,
   report: HostedOutboxReport,
+  dayDeleteSupported: boolean,
 ): Promise<boolean> {
   const push = dependencies.push ?? hostedPushChanges
   const clock = dependencies.clock ?? nowIso
@@ -598,7 +608,7 @@ async function removeMovedIntervals(
   const blocked = new Set<PreparedOutboxRow>()
   for (const [destination, rows] of destinations) {
     for (const item of rows) {
-      const result = await removeMovedInterval(
+      const result = await removeMovedRow(
         item,
         destination,
         push,
@@ -606,6 +616,7 @@ async function removeMovedIntervals(
         processKind,
         dependencies.assertLock,
         report,
+        dayDeleteSupported,
       )
       if (result === 'failed') return false
       if (result === 'blocked') blocked.add(item)
@@ -618,7 +629,7 @@ async function removeMovedIntervals(
   return true
 }
 
-async function removeMovedInterval(
+async function removeMovedRow(
   item: PreparedOutboxRow,
   destination: string,
   push: NonNullable<DrainDependencies['push']>,
@@ -626,18 +637,38 @@ async function removeMovedInterval(
   processKind: OutboxProcessKind,
   assertLock: (() => void) | undefined,
   report: HostedOutboxReport,
+  dayDeleteSupported: boolean,
 ): Promise<'ready' | 'blocked' | 'failed'> {
   if (
-    item.change.table !== HOSTED_INTERVAL_TABLE ||
+    (item.change.table !== HOSTED_INTERVAL_TABLE && item.change.table !== HOSTED_DAY_TABLE) ||
     item.change.op !== 'upsert' ||
     !item.acknowledgedSpaceId ||
     item.acknowledgedSpaceId === destination
   )
     return 'ready'
+  if (item.change.table === HOSTED_DAY_TABLE && !dayDeleteSupported) {
+    report.skippedCapability = true
+    report.waitingOnHostedHub![DAY_MOVE_CAPABILITY_WAIT] =
+      (report.waitingOnHostedHub![DAY_MOVE_CAPABILITY_WAIT] ?? 0) + 1
+    writeTransaction((conn) =>
+      conn
+        .query(
+          `UPDATE hosted_outbox SET last_error=?
+           WHERE id=? AND generation=? AND last_error IS NOT ?`,
+        )
+        .run(
+          DAY_MOVE_CAPABILITY_WAIT,
+          item.entry.id,
+          item.entry.generation,
+          DAY_MOVE_CAPABILITY_WAIT,
+        ),
+    )
+    return 'blocked'
+  }
   let outcomes: HostedPushOutcome[]
   try {
     assertLock?.()
-    outcomes = await push([{ table: HOSTED_INTERVAL_TABLE, id: item.change.id, op: 'delete' }], {
+    outcomes = await push([{ table: item.change.table, id: item.change.id, op: 'delete' }], {
       recordSpace: item.acknowledgedSpaceId,
     })
     try {
@@ -662,7 +693,10 @@ async function removeMovedInterval(
   if (outcome.status === 'applied' || outcome.status === 'duplicate') {
     writeTransaction((conn) => {
       conn
-        .query(`UPDATE interval SET hosted_space_id=NULL WHERE record_id=? AND hosted_space_id=?`)
+        .query(
+          `UPDATE ${item.change.table === HOSTED_INTERVAL_TABLE ? 'interval' : 'day'}
+           SET hosted_space_id=NULL WHERE record_id=? AND hosted_space_id=?`,
+        )
         .run(item.change.id, item.acknowledgedSpaceId)
       traceOutcome(conn, item, outcome, clock(), processKind, 'delete', item.acknowledgedSpaceId)
     })
@@ -682,7 +716,7 @@ async function routeOutboxRows(
   rows: PreparedOutboxRow[],
   registered: RegisteredTaskSpace[],
   identity: Awaited<ReturnType<typeof hostedTaskIdentity>>,
-  resolvePersonalSpace: () => Promise<string> = personalRecordSpace,
+  resolvePersonalSpace: PersonalRecordSpaceResolver,
 ) {
   const fixed = rows.filter(
     (row) =>
@@ -720,7 +754,7 @@ export async function hostedRoutingWaitForEntries(
     rows,
     (dependencies.registered ?? projects)(),
     identity,
-    dependencies.personalSpace,
+    dependencies.personalSpace ?? personalRecordSpace,
   )
   for (const [project, refusal] of refusals)
     return parseHostedRoutingWait(routingWaitMessage(project, refusal.reason))
@@ -784,14 +818,15 @@ async function drainHostedOutboxHeld(
     rows,
     (dependencies.registered ?? projects)(),
     identity,
-    dependencies.personalSpace,
+    dependencies.personalSpace ?? personalRecordSpace,
   )
   reconcileRoutingErrors(partitioned)
   recordRoutingWaits(partitioned.refusals, report)
-  const hostedReachable = (await removeMovedIntervals(
+  const hostedReachable = (await removeMovedRows(
     partitioned.destinations,
     dependencies,
     report,
+    identity.capabilities.dayDelete === true,
   ))
     ? await drainDestinations(partitioned.destinations, dependencies, report)
     : false
@@ -877,7 +912,7 @@ export async function hostedOutboxDoctorLines(
       rows,
       (dependencies.registered ?? projects)(),
       identity,
-      dependencies.personalSpace,
+      dependencies.personalSpace ?? personalRecordSpace,
     )
     const waiting: Record<string, number> = {}
     for (const refusal of refusals.values())

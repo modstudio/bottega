@@ -2,7 +2,7 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db, writeTransaction } from './db.ts'
 import { rememberHostedInstall } from './install-binding.ts'
 import { drainHostedOutbox, type HostedOutboxReport, queueHostedChange } from './outbox.ts'
-import { personalRecordSpace } from './personal-record-space.ts'
+import { memoizedPersonalRecordSpace } from './personal-record-space.ts'
 import { projects } from './projects.ts'
 import {
   HOSTED_COMMENT_TABLE,
@@ -25,6 +25,7 @@ import {
 } from './task-client.ts'
 import {
   partitionProjectRows,
+  type PersonalRecordSpaceResolver,
   type RegisteredTaskSpace,
   type TaskDestinationIdentity,
   taskPullSpaces,
@@ -52,6 +53,7 @@ type Options = {
   listIds?: typeof hostedIdentitySet
   drain?: typeof drainHostedOutbox
   registered?: () => RegisteredTaskSpace[]
+  personalSpace?: PersonalRecordSpaceResolver
 }
 
 type MachineRow = { id: string; project_name: string | null }
@@ -170,7 +172,7 @@ async function routedMachineRows(
   table: PushableHubChangeTable,
   registered: readonly RegisteredTaskSpace[],
   identity: TaskDestinationIdentity,
-  resolvePersonalSpace: () => Promise<string>,
+  resolvePersonalSpace: PersonalRecordSpaceResolver,
 ): Promise<RoutedMachineRow[]> {
   const partitioned = await partitionProjectRows(
     machineRowsFor(table),
@@ -248,13 +250,15 @@ export async function pushTasks(options: Options = {}): Promise<TaskPushReport> 
   assertSpaceIdentitySet(identity)
   rememberHostedInstall(identity.activeSpaceId)
   const registered = (options.registered ?? projects)()
-  const spaces = taskPullSpaces(registered, identity)
-  let personalSpace: Promise<string> | undefined
-  const resolvePersonalSpace = () =>
-    (personalSpace ??= personalRecordSpace({
+  const resolvePersonalSpace =
+    options.personalSpace ??
+    memoizedPersonalRecordSpace({
       token: options.token,
       fetch: options.fetch,
-    }))
+    })
+  const spaces = [
+    ...new Set([...taskPullSpaces(registered, identity), await resolvePersonalSpace()]),
+  ]
   const machine = (
     await Promise.all(
       PUSHABLE_HUB_CHANGE_TABLES.map((table) =>

@@ -4,7 +4,6 @@ import {
   projectWriteSpace,
 } from '../../shared/record-write-space.ts'
 import { declaredProjectSpace } from './hosted-write-mode.ts'
-import { personalRecordSpace } from './personal-record-space.ts'
 
 export type RegisteredTaskSpace = {
   name: string
@@ -24,7 +23,7 @@ export type ProjectRowsRefusal<T> = {
   reason: Extract<TaskProjectDestination, { refused: string }>['refused']
   rows: T[]
 }
-type PersonalRecordSpaceResolver = () => Promise<string>
+export type PersonalRecordSpaceResolver = () => Promise<string>
 
 /** Spaces the task pull reads: the active space plus every registered destination. */
 export function taskPullSpaces(
@@ -61,7 +60,7 @@ export async function partitionProjectRows<T extends { project_name: string | nu
   rows: readonly T[],
   registered: readonly RegisteredTaskSpace[],
   identity: TaskDestinationIdentity,
-  resolvePersonalSpace: PersonalRecordSpaceResolver = personalRecordSpace,
+  resolvePersonalSpace: PersonalRecordSpaceResolver,
 ) {
   const destinations = new Map<string, T[]>()
   const refusals = new Map<string, ProjectRowsRefusal<T>>()

@@ -177,8 +177,16 @@ export async function applyIntervalChangeInTransaction(
 export async function applyDayChangeInTransaction(
   tx: SQL,
   identity: EvidenceIdentity,
-  row: DayEvidence,
+  change: { id: string; op: 'delete' } | { id: string; op: 'upsert'; row: DayEvidence },
 ): Promise<'applied' | 'duplicate'> {
+  if (change.op === 'delete') {
+    const deleted = await tx`DELETE FROM hub_day
+      WHERE space_id=${identity.spaceId}::uuid AND id=${change.id}::uuid
+        AND machine_id IN (SELECT id FROM machine WHERE user_id=${identity.userId}::uuid)
+      RETURNING id`
+    return deleted.length ? 'applied' : 'duplicate'
+  }
+  const row = change.row
   const knownMachine = await tx`SELECT 1 FROM machine
     WHERE id=${row.machine_id}::uuid AND user_id=${identity.userId}::uuid`
   if (!knownMachine.length)

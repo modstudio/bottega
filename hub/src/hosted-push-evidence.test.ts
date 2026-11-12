@@ -278,6 +278,31 @@ test('an absent interval delete is duplicate and a present interval delete appli
   ])
 })
 
+test('day delete applies only to a row owned by the caller machine', async () => {
+  const owned = { ...day, id: '01990000-0000-7000-8000-000000008340', day: '2026-10-24' }
+  expect(await apply([{ table: 'hub_day', id: owned.id, op: 'upsert', row: owned }])).toEqual([
+    { id: owned.id, status: 'applied' },
+  ])
+  expect(await apply([{ table: 'hub_day', id: owned.id, op: 'delete' }])).toEqual([
+    { id: owned.id, status: 'applied' },
+  ])
+
+  const foreign = '01990000-0000-7000-8000-000000008341'
+  await database.exec(`RESET ROLE; INSERT INTO hub_day
+    (id,space_id,machine_id,day,collected_at,updated_at)
+    VALUES ('${foreign}','${spaceId}','${foreignMachineId}','2026-10-25',now(),now());
+    SET ROLE record_actor;
+    SELECT set_config('app.user_id','${userId}',false);
+    SELECT set_config('app.space_id','${spaceId}',false);
+    SELECT set_config('app.space_ids','${spaceId}',false);`)
+  expect(await apply([{ table: 'hub_day', id: foreign, op: 'delete' }])).toEqual([
+    { id: foreign, status: 'duplicate' },
+  ])
+  expect((await database.query(`SELECT id FROM hub_day WHERE id=$1`, [foreign])).rows).toHaveLength(
+    1,
+  )
+})
+
 test('real and legacy machine day timestamps serialize through the strict edge', async () => {
   writeTransaction((conn) => {
     conn

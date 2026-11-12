@@ -54,17 +54,21 @@ function currentInterval(conn: Database, id: string): LoadedOutboxChange | null 
 
 function currentDay(conn: Database, id: string): LoadedOutboxChange | null {
   const row = conn
-    .query<PushedDay, [string]>(
+    .query<PushedDay & { hosted_space_id: string | null }, [string]>(
       `SELECT record_id id,machine_id,day,claude_tokens,cache_read,messages,tasks,canon_tokens,other_tokens,
-      commits,files,lines_product,lines_test,lines_docs,lines_config,lines_generated,collected_at
+      commits,files,lines_product,lines_test,lines_docs,lines_config,lines_generated,collected_at,hosted_space_id
      FROM day WHERE record_id=?`,
     )
     .get(id)
   if (row && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(row.collected_at))
     row.collected_at = new Date(`${row.collected_at.replace(' ', 'T')}Z`).toISOString()
-  return row
-    ? { projectName: null, change: { table: HOSTED_DAY_TABLE, id, op: 'upsert', row } }
-    : null
+  if (!row) return null
+  const { hosted_space_id, ...evidence } = row
+  return {
+    projectName: null,
+    acknowledgedSpaceId: hosted_space_id,
+    change: { table: HOSTED_DAY_TABLE, id, op: 'upsert', row: evidence },
+  }
 }
 
 function currentTask(conn: Database, id: string): LoadedOutboxChange | null {

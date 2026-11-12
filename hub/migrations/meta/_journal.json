@@ -344,6 +344,13 @@
       "when": 1793657396000,
       "tag": "0048_task_retired_reason",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1793743796000,
+      "tag": "0049_day_hosted_space",
+      "breakpoints": true
     }
   ]
 }

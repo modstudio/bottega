@@ -5,7 +5,6 @@ import {
   type NoteClientOptions,
   type NoteWriteOptions,
 } from './note-client.ts'
-import { personalRecordSpace } from './personal-record-space.ts'
 import { projects } from './projects.ts'
 import { hostedTaskIdentity } from './task-client.ts'
 import { partitionProjectRows } from './task-project-space.ts'
@@ -100,9 +99,8 @@ export async function pushNotes(options: NoteClientOptions & { dryRun?: boolean 
 
   const requestOptions = { baseUrl: options.baseUrl, token: options.token, fetch: options.fetch }
   const identity = await hostedTaskIdentity(requestOptions)
-  let personalSpace: Promise<string> | undefined
   const resolvePersonalSpace = () =>
-    (personalSpace ??= personalRecordSpace({ token: options.token, fetch: options.fetch }))
+    Promise.reject(new Error('invariant: a note always names its project'))
   const partitioned = await partitionProjectRows(notes, projects(), identity, resolvePersonalSpace)
   const counters = db()
     .query<{ project: string; projectId: string; next: number }, []>(

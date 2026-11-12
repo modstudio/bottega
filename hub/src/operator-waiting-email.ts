@@ -10,7 +10,7 @@ import {
   hostedWriteDestination,
 } from './hosted-write-destination.ts'
 import { waiting } from './orch.ts'
-import { personalRecordSpace } from './personal-record-space.ts'
+import { memoizedPersonalRecordSpace } from './personal-record-space.ts'
 import { hostedCreateOperatorWaitingEmail, hostedSignedInUserId } from './task-client.ts'
 import { uniqueTaskRecordIdForKey } from './task-identity.ts'
 
@@ -144,15 +144,13 @@ export async function deliverOperatorWaitingEmails(
     return
   }
   const port = readMachineValue('hub.port')
-  let personalSpace: Promise<string> | undefined
+  const personalSpace = memoizedPersonalRecordSpace(dependencies.destinationOptions)
   const destination =
     dependencies.destination ??
     ((item: OperatorWaitingItem) => {
-      if (item.project === null)
-        personalSpace ??= personalRecordSpace(dependencies.destinationOptions)
       return hostedWriteDestination(item.project, {
         ...dependencies.destinationOptions,
-        personalSpace,
+        ...(item.project === null ? { personalSpace: personalSpace() } : {}),
       })
     })
   for (const item of due) {

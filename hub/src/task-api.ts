@@ -185,6 +185,7 @@ export async function taskApi(
         recordChanges: true,
         spacePush: true,
         spacePushTables: PUSHABLE_HUB_CHANGE_TABLES,
+        dayDelete: true,
         spaceIdentitySet: true,
       },
     })

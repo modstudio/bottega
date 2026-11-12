@@ -28,3 +28,11 @@ export async function personalRecordSpace(
     throw new Error(`record user has no personal space; ${RECORD_PERSONAL_SPACE_REMEDY}`)
   return identity.personalSpaceId
 }
+
+/** Resolve one personal record space at most once for a multi-row operation. */
+export function memoizedPersonalRecordSpace(
+  options: PersonalRecordSpaceOptions = {},
+): () => Promise<string> {
+  let pending: Promise<string> | undefined
+  return () => (pending ??= personalRecordSpace(options))
+}
