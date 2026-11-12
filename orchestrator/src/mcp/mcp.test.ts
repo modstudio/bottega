@@ -8,6 +8,7 @@ import {
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { RECORD_SHAPES } from '../../../shared/record-shape.ts'
 import {
   createMemoryRecordApiClient,
   identity,
@@ -497,15 +498,18 @@ describe('orch MCP', () => {
     }
   })
 
-  test('next_workflow_step refuses a basis without a self-ruling at the MCP edge', async () => {
+  test('MCP workflow tools refuse invalid record shapes before writing', async () => {
+    const cursorCount = () => db().query('SELECT COUNT(*) AS n FROM workflow_cursor').get()
+    const before = cursorCount()
     const server = createDocsMcpServer()
     const client = new Client({ name: 'orch-test', version: '1.0.0' })
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
     await server.connect(serverTransport)
     await client.connect(clientTransport)
     try {
-      const result = await client.callTool({
-        name: 'next_workflow_step',
+      const next = 'next_workflow_step'
+      const missing = await client.callTool({
+        name: next,
         arguments: {
           slug: 'fix-defect',
           project: 'fixture',
@@ -513,13 +517,39 @@ describe('orch MCP', () => {
           self_ruling_basis: 'specification line 4',
         },
       })
-      expect(result.isError).toBe(true)
-      expect((result.content as { text: string }[])[0]?.text).toContain(
+      expect(missing.isError).toBe(true)
+      expect((missing.content as { text: string }[])[0]?.text).toContain(
         'self_ruling_basis requires self_ruling',
       )
+      const over = (limit: number) => 'x'.repeat(limit + 1)
+      const cases = [
+        [next, 'note', 'step note'],
+        ['await_workflow_ruling', 'question', 'open question'],
+        ['rule_workflow', 'ruling', 'ruling'],
+        [next, 'self_ruling', 'self-ruling'],
+        [next, 'self_ruling_basis', 'basis'],
+        [next, 'question', 'open question'],
+      ] as const
+      for (const [name, field, record] of cases) {
+        const args = name === next ? { note: 'done' } : {}
+        if (field === 'self_ruling_basis') Object.assign(args, { self_ruling: 'decision' })
+        const result = await client.callTool({
+          name,
+          arguments: {
+            slug: 'fix-defect',
+            project: 'fixture',
+            ...args,
+            [field]: over(RECORD_SHAPES[record].maxChars),
+          },
+        })
+        expect(result.isError).toBe(true)
+        expect((result.content as { text: string }[])[0]?.text).toContain(
+          RECORD_SHAPES[record].constant,
+        )
+        expect(cursorCount()).toEqual(before)
+      }
     } finally {
-      await client.close()
-      await server.close()
+      await Promise.all([client.close(), server.close()])
     }
   })
 

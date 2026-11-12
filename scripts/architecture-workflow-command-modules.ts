@@ -12,6 +12,10 @@ const module = (file: string, allowed: string[]): WorkflowCommandModule => ({
 })
 
 export const workflowCommandModules: WorkflowCommandModule[] = [
+  module('orchestrator/src/workflow/workflow-command-record-shape.ts', [
+    '../../../shared/record-shape.ts',
+    '../cli/args.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-hosted-space.ts', ['bun:sqlite']),
   module('orchestrator/src/workflow/workflow-command-arguments.ts', [
     '../../../shared/brand.ts',

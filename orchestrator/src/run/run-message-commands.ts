@@ -106,7 +106,7 @@ export async function answerInputFromArgv(
   let rulings: AnswerRunInput['rulings']
   let allowPartialRecordOnly = false
   const cliRuling = (text: string) => {
-    if (text) assertWorkerText(text, 'ruling', ANSWER_WORKING_FORMS)
+    assertWorkerText(text, 'ruling', ANSWER_WORKING_FORMS)
     return text
   }
   if (parsed.byId.length) {

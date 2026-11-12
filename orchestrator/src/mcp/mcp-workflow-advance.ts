@@ -2,6 +2,7 @@
 /** Resolves MCP evidence and live autonomy before closing a workflow step. */
 
 import type { z } from 'zod'
+import { assertRecordShape } from '../../../shared/record-shape.ts'
 import { db } from '../database/db.ts'
 import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
@@ -45,6 +46,10 @@ export async function advanceWorkflow(
   hubTaskReader?: HubTaskReader,
   workflowTextDocuments: WorkflowTextDocumentPorts = productionWorkflowTextDocumentPorts,
 ) {
+  assertRecordShape('step note', note)
+  if (self_ruling !== undefined) assertRecordShape('self-ruling', self_ruling)
+  if (self_ruling_basis !== undefined) assertRecordShape('basis', self_ruling_basis)
+  if (question !== undefined) assertRecordShape('open question', question)
   if (self_ruling_basis !== undefined && self_ruling === undefined)
     throw new Error(
       'self_ruling_basis requires self_ruling; pass both inputs, or omit self_ruling_basis',

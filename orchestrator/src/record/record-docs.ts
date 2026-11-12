@@ -8,7 +8,7 @@ import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { decodeContextItem } from '../doc/context-item-codec.ts'
-import { contextItemShapeRefusal } from '../doc/doc-context-write.ts'
+import { contextItemShapeRefusal, storedContextItemShapeRefusal } from '../doc/doc-context-write.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
 import { resumeFrontmatter } from '../doc/doc-resume-frontmatter.ts'
 import { resumeRestoreRefusal, resumeWriteRefusal } from '../doc/doc-resume-write.ts'
@@ -97,15 +97,21 @@ function assertRestoredRecordDoc(
   if (scope === 'resume') {
     assertWrite(resumeRestoreRefusal(resumeWriteRefusal(slug, body, resumeFrontmatter(body))))
   }
-  assertContextItemShape(scope, slug, body)
+  assertContextItemShape(scope, slug, body, true)
 }
 
 /** A context item stored in the record must decode and obey its per-item rules. */
-export function assertContextItemShape(scope: string, slug: string, body: string): void {
+export function assertContextItemShape(
+  scope: string,
+  slug: string,
+  body: string,
+  stored = false,
+): void {
   if (scope !== 'context') return
   let refusal: string | null
   try {
-    refusal = contextItemShapeRefusal(decodeContextItem('', slug, body))
+    const item = decodeContextItem('', slug, body)
+    refusal = stored ? storedContextItemShapeRefusal(item) : contextItemShapeRefusal(item)
   } catch (error) {
     refusal = (error as Error).message
   }
@@ -126,7 +132,7 @@ function assertImportedRecordDoc(
   existing: StoredDocRow | undefined,
 ): void {
   checkRecordCommands(doc, doc.kind, doc.form, recordDocAudiences(doc.audiences))
-  assertContextItemShape(doc.scope, doc.slug, doc.body)
+  assertContextItemShape(doc.scope, doc.slug, doc.body, true)
   assertWrite(
     recordDocLintRefusal(
       doc,

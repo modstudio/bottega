@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/server'
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
 import { z } from 'zod'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
+import { assertRecordShape } from '../../../shared/record-shape.ts'
 import { db, enableSchemaReload, sessionId } from '../database/db.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { registerStandardRuntime } from '../runtime/runtime-registration.ts'
@@ -527,12 +528,12 @@ function registerAwaitWorkflowRulingTool(server: McpServer, ports: DocsMcpPorts)
       }),
     },
     async ({ slug, project, mode, args, question, cursor }) => {
-      const workflowArgs = args ?? {}
+      const shapedQuestion = assertRecordShape('open question', question)
       const { context, effectiveMode } = await resolveMcpLinkedWorkflowCursor(
         slug,
         project,
         mode,
-        workflowArgs,
+        args ?? {},
         cursor,
         'await_workflow_ruling',
         'pass the mode argument',
@@ -543,8 +544,8 @@ function registerAwaitWorkflowRulingTool(server: McpServer, ports: DocsMcpPorts)
           slug,
           project,
           effectiveMode,
-          workflowArgs,
-          question,
+          args ?? {},
+          shapedQuestion,
           context,
           undefined,
           undefined,
@@ -571,12 +572,12 @@ function registerRuleWorkflowTool(server: McpServer, ports: DocsMcpPorts): void 
       }),
     },
     async ({ slug, project, mode, args, ruling, from_operator, cursor }) => {
-      const workflowArgs = args ?? {}
+      const shapedRuling = assertRecordShape('ruling', ruling)
       const { context, effectiveMode } = await resolveMcpLinkedWorkflowCursor(
         slug,
         project,
         mode,
-        workflowArgs,
+        args ?? {},
         cursor,
         'rule_workflow',
         'pass the mode argument',
@@ -587,8 +588,8 @@ function registerRuleWorkflowTool(server: McpServer, ports: DocsMcpPorts): void 
           slug,
           project,
           effectiveMode,
-          workflowArgs,
-          ruling,
+          args ?? {},
+          shapedRuling,
           Boolean(from_operator),
           'mcp',
           context,

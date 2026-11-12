@@ -44,15 +44,38 @@ describe('context write refusal', () => {
       'requires a non-empty source',
     )
   })
-  test('refuses each kind over its provisional character limit', () => {
+  test('refuses each kind over its character limit', () => {
     for (const [kind, limit] of Object.entries(CONTEXT_ITEM_MAX_CHARS)) {
       const ruling = kind === 'ruling' ? { source: 'q5282' } : {}
+      const refusal = contextWriteRefusal(
+        item({ ...ruling, kind: kind as ContextItem['kind'], body: 'x'.repeat(limit + 1) }),
+        facts(),
+      )
+      expect(refusal).toContain(`${limit}`)
+      if (['ruling', 'open-question', 'next-action'].includes(kind)) {
+        expect(refusal).toContain('Shorten it and put detail in a task document.')
+      } else {
+        expect(refusal).toContain(`${kind} limit is ${limit} characters`)
+      }
+    }
+  })
+  test('applies declared line rules to matching agent context kinds', () => {
+    expect(contextWriteRefusal(item({ kind: 'next-action', body: 'first\nsecond' }), facts())).toBe(
+      'context item state refused: next action must be one line. Shorten it and put detail in a task document.',
+    )
+    for (const kind of ['ruling', 'open-question'] as const) {
       expect(
         contextWriteRefusal(
-          item({ ...ruling, kind: kind as ContextItem['kind'], body: 'x'.repeat(limit + 1) }),
+          item({
+            kind,
+            source: kind === 'ruling' ? 'q5282' : 'run:1',
+            body: 'first\n\nsecond',
+          }),
           facts(),
         ),
-      ).toContain(`${kind} limit is ${limit} characters`)
+      ).toBe(
+        `context item state refused: ${kind === 'open-question' ? 'open question' : kind} must be one paragraph with no blank line. Shorten it and put detail in a task document.`,
+      )
     }
   })
   test('allows a ruling sourced to a question, a board message or the chat, without an objection', () => {
@@ -72,9 +95,9 @@ describe('context write refusal', () => {
     }
   })
   test('refuses a ruling without a body', () => {
-    expect(
-      contextWriteRefusal(item({ kind: 'ruling', source: 'q5282', body: ' ' }), facts()),
-    ).toContain('requires a non-empty body')
+    expect(contextWriteRefusal(item({ kind: 'ruling', source: 'q5282', body: ' ' }), facts())).toBe(
+      'context item state refused: a ruling requires a non-empty body',
+    )
   })
   test('refuses an unresolved or unsafe pointer with the adapter reason', () => {
     expect(

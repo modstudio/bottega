@@ -25,6 +25,7 @@ import {
   showResolvedStepCatalogue,
 } from './step-catalogue.ts'
 import { obligationUuid, positive } from './workflow-command-arguments.ts'
+import * as recordShape from './workflow-command-record-shape.ts'
 import type { CommitCountPort } from './workflow-compose-branch.ts'
 import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
@@ -432,6 +433,7 @@ export async function ruleCommand(
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
 ): Promise<ContextMomentWrite | null> {
+  const ruling = recordShape.workflowCommandRecordShape(argv, 'ruling', 'ruling')
   const args = workflowArgs(argv)
   let context = cliWorkflowCursorContext()
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
@@ -463,7 +465,7 @@ export async function ruleCommand(
     project,
     mode,
     args,
-    flagValue(argv, 'ruling'),
+    ruling,
     argv.includes('--from-operator'),
     'cli',
     context,
@@ -618,8 +620,7 @@ export async function nextCommand(
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
 ): Promise<ContextMomentWrite | null> {
-  const selfRuling = flagValue(argv, 'self-ruling')
-  const basis = flagValue(argv, 'basis')
+  const { selfRuling, basis, note, question } = recordShape.workflowNextCommandRecordShapes(argv)
   if (basis !== undefined && selfRuling === undefined)
     throw new Error('--basis requires --self-ruling; pass both inputs, or omit --basis')
   const args = workflowArgs(argv)
@@ -664,7 +665,7 @@ export async function nextCommand(
       cursor,
       args,
       context,
-      note: flagValue(argv, 'note'),
+      note,
       evidence,
       floorPorts: productionFloorPorts() as FloorEvidencePorts,
       selfRuling:
@@ -673,7 +674,7 @@ export async function nextCommand(
           : {
               ruling: selfRuling,
               basis: basis ?? '',
-              question: flagValue(argv, 'question'),
+              question,
               channel: 'cli',
             },
       outcome: flagValue(argv, 'outcome'),
@@ -720,6 +721,7 @@ export async function awaitCommand(
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
 ): Promise<ContextMomentWrite | null> {
+  const question = recordShape.workflowCommandRecordShape(argv, 'question', 'open question')
   const args = workflowArgs(argv)
   let context = cliWorkflowCursorContext()
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
@@ -751,7 +753,7 @@ export async function awaitCommand(
     project,
     mode,
     args,
-    flagValue(argv, 'question'),
+    question,
     context,
     undefined,
     undefined,
