@@ -523,6 +523,33 @@ describe('orch MCP', () => {
     }
   })
 
+  test('next_workflow_step refuses an over-limit note before writing', async () => {
+    const before = db().query('SELECT COUNT(*) AS n FROM workflow_cursor').get() as { n: number }
+    const server = createDocsMcpServer()
+    const client = new Client({ name: 'orch-test', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await server.connect(serverTransport)
+    await client.connect(clientTransport)
+    try {
+      const result = await client.callTool({
+        name: 'next_workflow_step',
+        arguments: {
+          slug: 'fix-defect',
+          project: 'fixture',
+          note: 'x'.repeat(301),
+        },
+      })
+      expect(result.isError).toBe(true)
+      expect((result.content as { text: string }[])[0]?.text).toContain(
+        'step note is 301 characters; the limit is 300 (STEP_NOTE_MAX_CHARS)',
+      )
+      expect(db().query('SELECT COUNT(*) AS n FROM workflow_cursor').get()).toEqual(before)
+    } finally {
+      await client.close()
+      await server.close()
+    }
+  })
+
   test('every MCP workflow operation routes by cursor handle', async () => {
     const project = 'mcp-cursor-handles'
     upsertProject({

@@ -18,5 +18,6 @@ export function workflowNextCommandRecordShapes(argv: string[]) {
     selfRuling: workflowCommandRecordShape(argv, 'self-ruling', 'self-ruling'),
     basis: workflowCommandRecordShape(argv, 'basis', 'basis'),
     note: workflowCommandRecordShape(argv, 'note', 'step note'),
+    question: workflowCommandRecordShape(argv, 'question', 'open question'),
   }
 }

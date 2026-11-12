@@ -118,6 +118,14 @@ test('the hosted record refuses a context item that does not decode or breaks it
       encodeContextItem({ kind: 'next-action', source: 'run:1', body: 'Continue.' }),
     ),
   ).not.toThrow()
+  expect(() =>
+    assertContextItemShape(
+      'context',
+      'legacy-next',
+      encodeContextItem({ kind: 'next-action', source: 'run:1', body: 'first\nsecond' }),
+      true,
+    ),
+  ).not.toThrow()
   expect(() => assertContextItemShape('machine', 'raw', 'No frontmatter.')).not.toThrow()
 })
 

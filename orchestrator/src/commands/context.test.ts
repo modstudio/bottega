@@ -1,9 +1,14 @@
 import { expect, spyOn, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { run } from '../cli/program.ts'
+import { getDoc } from '../doc/docs.ts'
 
-test('agent context set enforces matching record shapes before resolving a holder', async () => {
+test('agent context set refuses matching record shapes without writing', async () => {
   const errors: string[] = []
   const error = spyOn(console, 'error').mockImplementation((value) => errors.push(String(value)))
+  const session = newRecordId()
+  const previous = process.env.CLAUDE_CODE_SESSION_ID
+  process.env.CLAUDE_CODE_SESSION_ID = session
   try {
     const cases = [
       {
@@ -23,24 +28,28 @@ test('agent context set enforces matching record shapes before resolving a holde
       },
     ]
     for (const { kind, body, refusal } of cases) {
+      const source = kind === 'ruling' ? 'q1' : 'test'
       expect(
         await run([
           'context',
           'set',
           '--session',
-          'missing-holder',
+          session,
           '--kind',
           kind,
           '--source',
-          'test',
+          source,
           '--id',
           'shape',
           body,
         ]),
       ).toBe(1)
       expect(errors.at(-1)).toContain(refusal)
+      expect(getDoc('context', `session:${session}`, 'shape')).toBeNull()
     }
   } finally {
+    if (previous === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = previous
     error.mockRestore()
   }
 })

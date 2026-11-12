@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/server'
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
 import { z } from 'zod'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
+import { assertRecordShape } from '../../../shared/record-shape.ts'
 import { db, enableSchemaReload, sessionId } from '../database/db.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { registerStandardRuntime } from '../runtime/runtime-registration.ts'
@@ -527,6 +528,7 @@ function registerAwaitWorkflowRulingTool(server: McpServer, ports: DocsMcpPorts)
       }),
     },
     async ({ slug, project, mode, args, question, cursor }) => {
+      assertRecordShape('open question', question)
       const workflowArgs = args ?? {}
       const { context, effectiveMode } = await resolveMcpLinkedWorkflowCursor(
         slug,
@@ -571,6 +573,7 @@ function registerRuleWorkflowTool(server: McpServer, ports: DocsMcpPorts): void 
       }),
     },
     async ({ slug, project, mode, args, ruling, from_operator, cursor }) => {
+      assertRecordShape('ruling', ruling)
       const workflowArgs = args ?? {}
       const { context, effectiveMode } = await resolveMcpLinkedWorkflowCursor(
         slug,

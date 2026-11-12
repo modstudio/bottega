@@ -433,7 +433,7 @@ export async function ruleCommand(
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
 ): Promise<ContextMomentWrite | null> {
-  recordShape.workflowCommandRecordShape(argv, 'ruling', 'ruling')
+  const ruling = recordShape.workflowCommandRecordShape(argv, 'ruling', 'ruling')
   const args = workflowArgs(argv)
   let context = cliWorkflowCursorContext()
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
@@ -465,7 +465,7 @@ export async function ruleCommand(
     project,
     mode,
     args,
-    flagValue(argv, 'ruling'),
+    ruling,
     argv.includes('--from-operator'),
     'cli',
     context,
@@ -620,7 +620,7 @@ export async function nextCommand(
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
 ): Promise<ContextMomentWrite | null> {
-  const { selfRuling, basis, note } = recordShape.workflowNextCommandRecordShapes(argv)
+  const { selfRuling, basis, note, question } = recordShape.workflowNextCommandRecordShapes(argv)
   if (basis !== undefined && selfRuling === undefined)
     throw new Error('--basis requires --self-ruling; pass both inputs, or omit --basis')
   const args = workflowArgs(argv)
@@ -674,7 +674,7 @@ export async function nextCommand(
           : {
               ruling: selfRuling,
               basis: basis ?? '',
-              question: flagValue(argv, 'question'),
+              question,
               channel: 'cli',
             },
       outcome: flagValue(argv, 'outcome'),

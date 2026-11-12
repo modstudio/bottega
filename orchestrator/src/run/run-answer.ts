@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { AnswerWaitingResult } from '../../../shared/orch-contract.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
+import { assertRecordShape } from '../../../shared/record-shape.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { ANSWER_WORKING_FORMS } from '../cli/args.ts'
@@ -247,6 +248,7 @@ function collectAnswers(input: {
 }
 
 function validatedRuling(text: string, argvLimit: number | undefined): string {
+  assertRecordShape('ruling', text)
   if (!text.trim())
     throw new Error(
       `empty ruling: received ${JSON.stringify(text)}\nworking forms:\n${ANSWER_WORKING_FORMS}`,

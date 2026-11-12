@@ -96,7 +96,7 @@ describe('context write refusal', () => {
   })
   test('refuses a ruling without a body', () => {
     expect(contextWriteRefusal(item({ kind: 'ruling', source: 'q5282', body: ' ' }), facts())).toBe(
-      'ruling must not be empty. Shorten it and put detail in a task document.',
+      'ruling must not be empty. Write the record and put detail in a task document.',
     )
   })
   test('refuses an unresolved or unsafe pointer with the adapter reason', () => {

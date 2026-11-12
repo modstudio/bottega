@@ -26,6 +26,18 @@ test('workflow writing verbs enforce record shapes at the command edge', async (
         'fixture',
         '--self-ruling',
         'Proceed.',
+        '--question',
+        'x'.repeat(801),
+      ],
+      message: 'open question is 801 characters; the limit is 800 (OPEN_QUESTION_MAX_CHARS)',
+    },
+    {
+      argv: [
+        'workflow',
+        'next',
+        'fixture',
+        '--self-ruling',
+        'Proceed.',
         '--basis',
         'x'.repeat(801),
       ],

@@ -25,6 +25,7 @@ import { rememberSignedInRecordUser } from '../record/record-session.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { retryRun } from './run-answer.ts'
 import type { detach } from './run-dispatch.ts'
+import { packedResumePrompt } from './run-resume-prompt.ts'
 
 const trackResidue = trackedTestResidue()
 
@@ -228,6 +229,40 @@ describe('run answers', () => {
     expect(db().query('SELECT COUNT(*) n FROM run WHERE parent_run_record_id=?').get(id)).toEqual({
       n: 0,
     })
+  })
+
+  test('answer refuses individually legal rulings when the packed resume exceeds argv', async () => {
+    const id = insert('asking', 'implement')
+    const spec = trackResidue(join(dir, `answer-packed-large-${id}.prompt.txt`))
+    writeFileSync(spec, 's'.repeat(600))
+    db()
+      .query('UPDATE run SET vendor_session=?, prompt_path=?, session_id=? WHERE record_id=?')
+      .run('parent-session', spec, 'orch-test-session', id)
+    const body = 'x'.repeat(1500)
+    for (let i = 1; i <= 134; i++)
+      db().query(newQuestionSql()).run(id, new Date().toISOString(), `q${i}?`)
+    const questions = db()
+      .query('SELECT number, question FROM question WHERE run_record_id=? ORDER BY number')
+      .all(id) as { number: number; question: string }[]
+    const argv: string[] = []
+    for (const question of questions) {
+      const path = trackResidue(join(dir, `answer-packed-${question.number}.txt`))
+      writeFileSync(path, body)
+      argv.push(`--q${question.number}`, '--file', path)
+    }
+    const assembled = Buffer.byteLength(
+      packedResumePrompt(
+        'implement',
+        rulingPrompt(questions.map((question) => ({ question: question.question, answer: body }))),
+        id,
+      ),
+    )
+    await expect(answerRun(id, { argv, recordOnly: false, flags }, helpers)).rejects.toThrow(
+      `assembled resume prompt is ${assembled} bytes`,
+    )
+    expect(db().query('SELECT answer FROM question WHERE run_record_id=?').all(id)).toEqual(
+      questions.map(() => ({ answer: null })),
+    )
   })
 
   test('answer refuses questions split between live and stopped owners', async () => {
@@ -673,7 +708,7 @@ test('answer stdin refuses whitespace-only input', async () => {
       }),
   }
   await expect(answerRun(id, { argv: [], recordOnly: true, flags }, stdinHelpers)).rejects.toThrow(
-    'ruling must not be empty',
+    'empty ruling',
   )
 })
 

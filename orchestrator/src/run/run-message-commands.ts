@@ -3,7 +3,6 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type ContextMomentWrite, contextMomentWrite } from '../../../shared/context-moment.ts'
-import { assertRecordShape } from '../../../shared/record-shape.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { resumePromptByteLimit } from '../agent/agents.ts'
 import {
@@ -107,7 +106,6 @@ export async function answerInputFromArgv(
   let rulings: AnswerRunInput['rulings']
   let allowPartialRecordOnly = false
   const cliRuling = (text: string) => {
-    assertRecordShape('ruling', text)
     assertWorkerText(text, 'ruling', ANSWER_WORKING_FORMS)
     return text
   }

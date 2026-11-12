@@ -2,9 +2,22 @@ import { describe, expect, test } from 'bun:test'
 import { type ContextRecordName, RECORD_SHAPES, recordShapeRefusal } from './record-shape.ts'
 
 describe('context-bearing record shapes', () => {
-  for (const [record, shape] of Object.entries(RECORD_SHAPES) as [
+  const declared = {
+    'step note': { maxChars: 300, constant: 'STEP_NOTE_MAX_CHARS', lineRule: 'line' },
+    'open question': { maxChars: 800, constant: 'OPEN_QUESTION_MAX_CHARS', lineRule: 'paragraph' },
+    ruling: { maxChars: 1500, constant: 'RULING_MAX_CHARS', lineRule: 'paragraph' },
+    'self-ruling': { maxChars: 800, constant: 'SELF_RULING_MAX_CHARS', lineRule: 'paragraph' },
+    basis: { maxChars: 800, constant: 'BASIS_MAX_CHARS', lineRule: 'paragraph' },
+    'next action': { maxChars: 400, constant: 'NEXT_ACTION_MAX_CHARS', lineRule: 'line' },
+  } as const satisfies Record<ContextRecordName, (typeof RECORD_SHAPES)[ContextRecordName]>
+
+  test('pins every declared shape', () => {
+    expect(RECORD_SHAPES).toEqual(declared)
+  })
+
+  for (const [record, shape] of Object.entries(declared) as [
     ContextRecordName,
-    (typeof RECORD_SHAPES)[ContextRecordName],
+    (typeof declared)[ContextRecordName],
   ][]) {
     test(`${record} enforces its character boundary`, () => {
       expect(recordShapeRefusal(record, 'x'.repeat(shape.maxChars))).toBeNull()
@@ -15,7 +28,7 @@ describe('context-bearing record shapes', () => {
 
     test(`${record} refuses empty text`, () => {
       expect(recordShapeRefusal(record, ' \t ')).toBe(
-        `${record} must not be empty. Shorten it and put detail in a task document.`,
+        `${record} must not be empty. Write the record and put detail in a task document.`,
       )
     })
 
