@@ -190,7 +190,7 @@ test('sync presentation reports released run payloads skipped by backfill', asyn
           quarantined: [],
           blocked: [],
           backfill: {
-            taskFlows: { enqueuedFlows: 0, enqueuedStages: 0 },
+            taskFlows: { enqueuedFlows: 0, enqueuedStages: 0, held: [] },
             enqueued: 0,
             refreshedLinks: 0,
             refreshedNumbers: 0,

@@ -5,6 +5,7 @@ import type { RecordIdentity } from './record-auth.ts'
 import { RecordTaskFlowError } from './record-task-flow.ts'
 import {
   TASK_FLOW_STAGE_LIST_LIMIT_MAX,
+  TASK_FLOW_PRESENCE_BATCH_MAX,
   type TaskFlowStageListQuery,
 } from './record-task-flow-contract.ts'
 
@@ -77,6 +78,45 @@ test.each([1, TASK_FLOW_STAGE_LIST_LIMIT_MAX])(
     expect(calls[0]).toMatchObject({ sessionId: 'session-a', limit })
   },
 )
+
+test('task-flow presence is tenant-bound and validates the named batch limit', async () => {
+  const calls: Array<{ flowIds: string[]; stageIds: string[]; spaceId: string }> = []
+  const app = new Hono<{
+    Variables: { identity: RecordIdentity; destinationSpaceId?: string }
+  }>()
+  registerRecordWorkflowRoutes(
+    app,
+    {
+      readTaskFlowPresence: async (input) => {
+        calls.push(input)
+        return { flowIds: input.flowIds, stageIds: input.stageIds }
+      },
+      listWorkflowCatalogue: async () => [],
+      draftWorkflow: async () => null,
+      promoteWorkflow: async () => null,
+      retireWorkflow: async () => null,
+    },
+    {
+      scope: () => ({ url: 'postgres://unused', userId: SPACE, spaceId: SPACE, spaceIds: [SPACE] }),
+      noSpace: () => new Response(null, { status: 403 }),
+    },
+  )
+  const response = await app.request('/v1/task-flow/presence', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ flowIds: [KNOWN_ID], stageIds: [UNKNOWN_ID] }),
+  })
+  expect(response.status).toBe(200)
+  expect(calls).toEqual([
+    { flowIds: [KNOWN_ID], stageIds: [UNKNOWN_ID], url: 'postgres://unused', userId: SPACE, spaceId: SPACE, spaceIds: [SPACE] },
+  ])
+  const oversized = await app.request('/v1/task-flow/presence', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ flowIds: Array(TASK_FLOW_PRESENCE_BATCH_MAX + 1).fill(KNOWN_ID), stageIds: [] }),
+  })
+  expect(oversized.status).toBe(400)
+})
 
 test('task-flow stage list passes the hosted filters, ordering, and cursor', async () => {
   const calls: TaskFlowStageListQuery[] = []

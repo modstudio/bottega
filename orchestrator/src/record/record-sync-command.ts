@@ -127,6 +127,10 @@ export async function syncCommand(
     presentation.log(
       `task-flow backfill enqueued ${result.backfill.taskFlows.enqueuedFlows} flows and ${result.backfill.taskFlows.enqueuedStages} stages`,
     )
+    for (const hold of result.backfill.taskFlows.held)
+      presentation.log(`task-flow backfill held ${hold.rows}\t${hold.project}\t${hold.reason}`)
+    if (result.backfill.taskFlows.failure)
+      presentation.log(`task-flow backfill unavailable: ${result.backfill.taskFlows.failure}`)
     presentation.log(
       `backfill enqueued ${result.backfill.enqueued}, refreshed-links ${result.backfill.refreshedLinks}, refreshed-numbers ${result.backfill.refreshedNumbers}, refreshed-roots ${result.backfill.refreshedRoots}, skipped-released ${result.backfill.skippedReleased}, skipped-live ${result.backfill.skippedLive}`,
     )

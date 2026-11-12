@@ -16,6 +16,8 @@ import {
   RECORD_TASK_FLOW_NOT_FOUND_CODE,
   RECORD_TASK_FLOW_NOT_FOUND_MESSAGE,
   type TaskFlowReadQueryInput,
+  type TaskFlowPresence,
+  type TaskFlowPresenceInput,
   type TaskFlowStageListQuery,
 } from './record-task-flow-contract.ts'
 import { taskFlowStageListNextCursor, taskFlowStageListSql } from './record-task-flow-list-query.ts'
@@ -304,6 +306,28 @@ export async function readRecordTaskFlowProjectReferenceCounts(
         (SELECT count(*)::integer FROM task_flow
          WHERE space_id=${input.spaceId}::uuid AND project_id=${input.projectId}::uuid) flows`
     return { stages: Number(rows[0]?.stages ?? 0), flows: Number(rows[0]?.flows ?? 0) }
+  })
+}
+
+export async function readRecordTaskFlowPresence(
+  input: TenantPrincipal & { url: string } & TaskFlowPresenceInput,
+): Promise<TaskFlowPresence> {
+  return recordPool(input.url).begin(async (tx) => {
+    await bindTenant(tx, input)
+    const stages = input.stageIds.length
+      ? await tx`SELECT id FROM task_flow_stage
+          WHERE space_id=${input.spaceId}::uuid AND id=ANY(${tx.array(input.stageIds, 'uuid')})
+          ORDER BY id`
+      : []
+    const flows = input.flowIds.length
+      ? await tx`SELECT id FROM task_flow
+          WHERE space_id=${input.spaceId}::uuid AND id=ANY(${tx.array(input.flowIds, 'uuid')})
+          ORDER BY id`
+      : []
+    return {
+      stageIds: stages.map((row) => String(row.id)),
+      flowIds: flows.map((row) => String(row.id)),
+    }
   })
 }
 

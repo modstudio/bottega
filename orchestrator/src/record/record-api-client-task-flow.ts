@@ -20,6 +20,9 @@ import {
   hostedTaskFlowStageByIdSchema,
   hostedTaskFlowStageListSchema,
   hostedTaskFlowTextByIdSchema,
+  type TaskFlowPresence,
+  type TaskFlowPresenceInput,
+  taskFlowPresenceSchema,
   RECORD_TASK_FLOW_NOT_FOUND_CODE,
   type TaskFlowReadQueryInput,
   type TaskFlowStageListQueryInput,
@@ -63,6 +66,10 @@ export type RecordTaskFlowClient = {
     projectId: string,
     destination?: RecordRequestDestination,
   ): Promise<HostedTaskFlowProjectReferenceCounts>
+  readTaskFlowPresence?(
+    input: TaskFlowPresenceInput,
+    destination: RecordRequestDestination,
+  ): Promise<TaskFlowPresence>
   readTaskFlowStage?(
     id: string,
     destination?: RecordRequestDestination,
@@ -198,6 +205,13 @@ function taskFlowReadClient(request: Request): Partial<RecordTaskFlowClient> {
         schema: (body) => hostedTaskFlowProjectReferenceCountsSchema.parse(body),
       })
     },
+    readTaskFlowPresence: (input, destination) =>
+      request('/v1/task-flow/presence', {
+        method: 'POST',
+        body: JSON.stringify(input),
+        ...destination,
+        schema: (body) => taskFlowPresenceSchema.parse(body),
+      }),
     readTaskFlowStage: (id, destination) =>
       readById(
         request,

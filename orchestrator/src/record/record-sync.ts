@@ -686,10 +686,11 @@ async function pullAfterSync(
 function syncBackfill(
   local: Database,
   identityId: string,
+  taskFlows: NonNullable<RecordSyncResult['backfill']>['taskFlows'],
 ): NonNullable<RecordSyncResult['backfill']> {
   return {
     ...backfillRunRecords(local, identityId),
-    taskFlows: backfillTaskFlowRecords(local),
+    taskFlows,
     scores: backfillScoreRecords(local, identityId),
     reviews: backfillReviewRecords(local),
     landingEvidence: backfillLandingEvidenceRecords(local),
@@ -706,8 +707,15 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     name: requestedIdentity.name ?? defaultShortName(hostname()),
   }
   const local = options.local ?? (configured || options.backfill ? db() : undefined)
-  const backfill = options.backfill ? syncBackfill(local!, identity.id) : undefined
   if (!configured) {
+    const backfill = options.backfill
+      ? syncBackfill(local!, identity.id, {
+          enqueuedFlows: 0,
+          enqueuedStages: 0,
+          held: [],
+          failure: 'hosted record API is not configured',
+        })
+      : undefined
     return {
       pushed: 0,
       failed: 0,
@@ -723,6 +731,17 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   if (!client.sync) throw new Error('record API client does not provide evidence sync')
   const session = await client.whoami()
   const memberships = parseRecordSpaceMemberships(session.memberships)
+  const taskFlowBackfill = options.backfill
+    ? await backfillTaskFlowRecords(writableLocal, {
+        client,
+        memberships,
+        personalSpaceId: session.personalSpaceId,
+        projectSpaces: options.projectSpaces,
+      })
+    : undefined
+  const backfill = taskFlowBackfill
+    ? syncBackfill(writableLocal, identity.id, taskFlowBackfill)
+    : undefined
   const blocked: BlockedOutboxRow[] = []
   let pushed = 0
   let failed = 0

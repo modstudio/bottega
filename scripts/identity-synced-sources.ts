@@ -93,6 +93,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'listHidden',
     'openBoardStream',
     'readTaskFlow',
+    'readTaskFlowPresence',
     'readTaskFlowProjectReferenceCounts',
     'readTaskFlowObligation',
     'readTaskFlowStage',
@@ -106,6 +107,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
   ...readEntries('orchestrator', 'recordWorkflowClient', [
     'listTaskFlowStages',
     'readTaskFlow',
+    'readTaskFlowPresence',
     'readTaskFlowObligation',
     'readTaskFlowProjectReferenceCounts',
     'readTaskFlowStage',

@@ -76,6 +76,33 @@ test('task-flow stage lists carry combined filters and the destination space', a
   ])
 })
 
+test('task-flow presence posts both id batches to the destination space', async () => {
+  const requests: Array<{ path: string; method?: string; body?: string; destinationSpaceId?: string }> = []
+  const client = recordTaskFlowClient(async (path, init) => {
+    requests.push({
+      path,
+      method: init?.method,
+      body: init?.body as string | undefined,
+      destinationSpaceId: init?.destinationSpaceId,
+    })
+    return { flowIds: [ID], stageIds: [] } as never
+  })
+  await expect(
+    client.readTaskFlowPresence!(
+      { flowIds: [ID], stageIds: [] },
+      { destinationSpaceId: '00000000-0000-4000-8000-000000000002' },
+    ),
+  ).resolves.toEqual({ flowIds: [ID], stageIds: [] })
+  expect(requests).toEqual([
+    {
+      path: '/v1/task-flow/presence',
+      method: 'POST',
+      body: JSON.stringify({ flowIds: [ID], stageIds: [] }),
+      destinationSpaceId: '00000000-0000-4000-8000-000000000002',
+    },
+  ])
+})
+
 const ID = '00000000-0000-4000-8000-000000000010'
 test('task-flow by-id clients return null for the record ordinary not-found response', async () => {
   const paths: string[] = []

@@ -92,6 +92,7 @@ export async function applyTaskFlowStageValues(
   const {
     id: _id,
     createdAt: _createdAt,
+    flowRecordId: _flowRecordId,
     projectId: _projectId,
     number: _number,
     ...updates

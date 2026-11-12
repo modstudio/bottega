@@ -212,17 +212,27 @@ test('task-flow apply is idempotent and rejects older revisions', async () => {
 
     await applyFlow(flowPayload(2, 'done'))
     await applyStage(stagePayload(2, 'done'))
+    await applyStage({ ...stagePayload(3, 'done'), flowRecordId: UNKNOWN })
     await applyFlow(flowPayload(1, 'open'))
     await applyStage(stagePayload(1, 'running'))
     expect(
       (
         await postgres.query(
           `SELECT flow.state flow_state,flow.revision flow_revision,
-                  stage.state stage_state,stage.revision stage_revision
+                  stage.state stage_state,stage.revision stage_revision,
+                  stage.flow_record_id stage_flow_record_id
            FROM task_flow flow JOIN task_flow_stage stage ON stage.flow_record_id=flow.id`,
         )
       ).rows,
-    ).toEqual([{ flow_state: 'done', flow_revision: 2, stage_state: 'done', stage_revision: 2 }])
+    ).toEqual([
+      {
+        flow_state: 'done',
+        flow_revision: 2,
+        stage_state: 'done',
+        stage_revision: 3,
+        stage_flow_record_id: FLOW,
+      },
+    ])
   } finally {
     await postgres.close()
   }

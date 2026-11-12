@@ -259,18 +259,26 @@ function runRecordBackfillCheck(facts: RunRecordBackfillInspection): RecordDocto
 }
 
 function taskFlowBackfillCheck(facts: TaskFlowBackfillInspection): RecordDoctorCheck {
+  if (facts.failure)
+    return {
+      name: 'local task-flow parity with the record',
+      status: 'fail',
+      detail: facts.failure,
+      section: 'customer',
+    }
   const missing = facts.flows + facts.stages
-  return missing === 0
+  const held = facts.held.reduce((sum, row) => sum + row.rows, 0)
+  return missing === 0 && held === 0
     ? {
-        name: 'local task flows and stages not enqueued',
+        name: 'local task-flow parity with the record',
         status: 'pass',
         detail: '0',
         section: 'customer',
       }
     : {
-        name: 'local task flows and stages not enqueued',
+        name: 'local task-flow parity with the record',
         status: 'fail',
-        detail: `${missing}: flows ${facts.flows}, stages ${facts.stages}; run \`${PLATFORM_SLUG} record push --backfill\``,
+        detail: `${missing}: flows ${facts.flows}, stages ${facts.stages}${held ? `; held ${held}: ${facts.held.map((row) => `${row.project} ${row.rows} (${row.reason})`).join(', ')}` : ''}; run \`${PLATFORM_SLUG} record push --backfill\``,
         section: 'customer',
       }
 }
@@ -545,6 +553,7 @@ async function customerFacts(
   let apiFailure: string | undefined
   let sessionFailure: string | undefined
   let identity: Awaited<ReturnType<ReturnType<typeof recordApiClient>['whoami']>> | null = null
+  let client: ReturnType<typeof recordApiClient> | null = null
   let measurement: Awaited<ReturnType<typeof destinationlessWriteFacts>> = {}
   const hubMeasurement = token
     ? await hostedHubDestinationlessWriteFacts({
@@ -562,10 +571,11 @@ async function customerFacts(
     measurement = { noDestinationWritesFailure: apiFailure }
   } else {
     try {
-      identity = await recordApiClient().whoami()
+      client = recordApiClient()
+      identity = await client.whoami()
       apiReachable = true
       sessionAccepted = true
-      measurement = await destinationlessWriteFacts(recordApiClient())
+      measurement = await destinationlessWriteFacts(client)
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
       if (error instanceof RecordApiRequestError && error.kind === 'refused') {
@@ -576,6 +586,28 @@ async function customerFacts(
         apiFailure = `${detail}; ${API_REACHABILITY_REMEDY}`
         sessionFailure = RECORD_SIGN_IN_REMEDY
         measurement = { noDestinationWritesFailure: apiFailure }
+      }
+    }
+  }
+  let taskFlowBackfill: TaskFlowBackfillInspection = {
+    flows: 0,
+    stages: 0,
+    held: [],
+    failure: apiFailure ?? sessionFailure ?? 'hosted record task-flow parity could not be measured',
+  }
+  if (identity && client) {
+    try {
+      taskFlowBackfill = await inspectTaskFlowBackfill(database, {
+        client,
+        memberships: parseRecordSpaceMemberships(identity.memberships),
+        personalSpaceId: identity.personalSpaceId,
+      })
+    } catch (error) {
+      taskFlowBackfill = {
+        flows: 0,
+        stages: 0,
+        held: [],
+        failure: `hosted task-flow parity could not be measured: ${error instanceof Error ? error.message : String(error)}; ${API_REACHABILITY_REMEDY}`,
       }
     }
   }
@@ -594,7 +626,7 @@ async function customerFacts(
     ...hubMeasurement,
     pendingOutboxRows: pendingOutboxCount(database),
     runRecordBackfill: inspectRunRecordBackfill(database),
-    taskFlowBackfill: inspectTaskFlowBackfill(database),
+    taskFlowBackfill,
     quarantinedOutboxRows: quarantinedOutboxRows(database).map((row) => ({
       id: row.id,
       kind: row.kind,

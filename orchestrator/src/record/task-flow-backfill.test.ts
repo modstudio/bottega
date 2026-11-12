@@ -8,7 +8,7 @@ import {
   legacyTasklessFlowRecordId,
 } from './task-flow-backfill.ts'
 
-test('task-flow backfill enqueues flows before stages, mints taskless parents, and skips enqueued rows', () => {
+test('task-flow backfill asks the record, enqueues absent rows in parent order, and skips pending rows', async () => {
   const d = database()
   const project = d
     .query<{ record_id: string }, []>("SELECT record_id FROM project WHERE name='fixture'")
@@ -23,6 +23,7 @@ test('task-flow backfill enqueues flows before stages, mints taskless parents, a
   const flow = newRecordId()
   const linkedStage = newRecordId()
   const tasklessStage = newRecordId()
+  const hostedTasklessStage = newRecordId()
   d.query(
     `INSERT INTO task_flow
      (record_id,task_record_id,project_record_id,state,open_stage_cursor_record_id,created_at,updated_at,
@@ -45,7 +46,7 @@ test('task-flow backfill enqueues flows before stages, mints taskless parents, a
         project,
         flowId ? 'task-DEV-2234' : null,
         flowId,
-        flowId ? '' : 'taskless',
+        flowId ? '' : `taskless-${number}`,
         workflowVersion,
         catalogueVersion,
         machine,
@@ -53,18 +54,50 @@ test('task-flow backfill enqueues flows before stages, mints taskless parents, a
       )
   insertStage(linkedStage, 1, flow)
   insertStage(tasklessStage, 2, null)
+  insertStage(hostedTasklessStage, 3, null)
   insertOutboxRow(d, {
     recordId: newRecordId(),
-    kind: 'task_flow_stage',
-    rowId: linkedStage,
+    kind: 'task_flow',
+    rowId: flow,
     payload: '{}',
     createdAt: '2026-11-12',
   })
+  const calls: Array<{ flowIds: string[]; stageIds: string[]; destinationSpaceId?: string }> = []
+  const access = {
+    memberships: [{ spaceId: 'space-id', slug: 'fixture-space', permission: 'write' }],
+    personalSpaceId: null,
+    client: {
+      readTaskFlowPresence: async (
+        input: { flowIds: string[]; stageIds: string[] },
+        destination: { destinationSpaceId?: string },
+      ) => {
+        calls.push({ ...input, destinationSpaceId: destination.destinationSpaceId })
+        return {
+          flowIds: [],
+          stageIds: input.stageIds.filter(
+            (id) => id === linkedStage || id === hostedTasklessStage,
+          ),
+        }
+      },
+    },
+  }
 
-  expect(inspectTaskFlowBackfill(d)).toEqual({ flows: 1, stages: 1 })
-  expect(backfillTaskFlowRecords(d)).toEqual({ enqueuedFlows: 2, enqueuedStages: 1 })
-  expect(backfillTaskFlowRecords(d)).toEqual({ enqueuedFlows: 0, enqueuedStages: 0 })
-  expect(inspectTaskFlowBackfill(d)).toEqual({ flows: 0, stages: 0 })
+  expect(await inspectTaskFlowBackfill(d, access)).toEqual({ flows: 1, stages: 1, held: [] })
+  expect(await backfillTaskFlowRecords(d, access)).toEqual({
+    enqueuedFlows: 1,
+    enqueuedStages: 1,
+    held: [],
+  })
+  expect(await backfillTaskFlowRecords(d, access)).toEqual({
+    enqueuedFlows: 0,
+    enqueuedStages: 0,
+    held: [],
+  })
+  expect(calls[0]).toMatchObject({
+    flowIds: [flow],
+    stageIds: [linkedStage, tasklessStage, hostedTasklessStage].sort(),
+    destinationSpaceId: 'space-id',
+  })
 
   const rows = d
     .query<{ kind: string; row_id: string; payload: string }, []>(
@@ -72,20 +105,22 @@ test('task-flow backfill enqueues flows before stages, mints taskless parents, a
     )
     .all()
   const syntheticFlow = legacyTasklessFlowRecordId(tasklessStage)
+  expect(rows.some((row) => row.row_id === legacyTasklessFlowRecordId(hostedTasklessStage))).toBe(
+    false,
+  )
   expect(rows.map(({ kind, row_id }) => [kind, row_id])).toEqual([
-    ['task_flow', flow],
     ['task_flow', syntheticFlow],
     ['task_flow_stage', tasklessStage],
   ])
-  expect(JSON.parse(rows[1]!.payload)).toMatchObject({
+  expect(JSON.parse(rows[0]!.payload)).toMatchObject({
     id: syntheticFlow,
     taskId: null,
     openStageRecordId: tasklessStage,
   })
-  expect(JSON.parse(rows[2]!.payload)).toMatchObject({
+  expect(JSON.parse(rows[1]!.payload)).toMatchObject({
     flowRecordId: syntheticFlow,
     workflowKey: 'DEV-2234',
-    instanceId: 'taskless',
+    instanceId: 'taskless-2',
     sessionId: 'session',
     question: 'why?',
     autonomy: '{}',
