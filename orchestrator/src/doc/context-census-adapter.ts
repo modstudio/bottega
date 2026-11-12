@@ -9,6 +9,7 @@ import {
   type HubTaskKeyMap,
   type HubTaskPuller,
   type HubTaskReader,
+  type HubTaskReference,
   pullHubTask,
   readHubTasks,
   taskKeyMap,
@@ -84,6 +85,70 @@ function unreadableTask(
   return { key, project, title: null, statusCategory: null, items: [], unreadable: remedy }
 }
 
+function readableTask(task: HubTaskReference, database: Database): ContextCensusTaskFact {
+  return {
+    key: task.key,
+    project: task.project,
+    title: task.title ?? null,
+    statusCategory: task.status_category ?? null,
+    items: taskContextItems(task, database).map(({ kind, source, updatedAt }) => ({
+      kind,
+      source,
+      updatedAt,
+    })),
+    unreadable: null,
+  }
+}
+
+async function readCensusTask(
+  project: string,
+  key: string,
+  mirrored: HubTaskKeyMap,
+  database: Database,
+  taskPuller: HubTaskPuller,
+): Promise<ContextCensusTaskFact> {
+  let task = taskReferenceForProjectKey(mirrored, project, key)
+  if (!task) {
+    try {
+      task = await taskPuller(project, key)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      return unreadableTask(
+        key,
+        project,
+        `could not read task ${key}: ${detail}; retry ${PLATFORM_SLUG} task show ${key} --project ${project} --fresh --json`,
+      )
+    }
+  }
+  if (!task || task.project !== project || task.key !== key)
+    return unreadableTask(
+      key,
+      project,
+      `task ${key} is missing from project ${project}; retry ${PLATFORM_SLUG} task show ${key} --project ${project} --fresh --json`,
+    )
+  return readableTask(task, database)
+}
+
+async function readProjectCensusTasks(
+  project: string,
+  events: readonly ContextCensusWork[],
+  database: Database,
+  taskReader: HubTaskReader,
+  taskPuller: HubTaskPuller,
+): Promise<ContextCensusTaskFact[]> {
+  let mirrored: HubTaskKeyMap
+  try {
+    mirrored = taskKeyMap(await taskReader(project))
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    const remedy = `could not read project ${project}: ${detail}; retry ${PLATFORM_SLUG} task list --project ${project} --json`
+    return events.map(({ key }) => unreadableTask(key, project, remedy))
+  }
+  return Promise.all(
+    events.map(({ key }) => readCensusTask(project, key, mirrored, database, taskPuller)),
+  )
+}
+
 async function censusTasks(
   work: readonly ContextCensusWork[],
   since: string,
@@ -110,57 +175,8 @@ async function censusTasks(
     ),
     ({ project }) => project,
   )
-  for (const [project, events] of byProject) {
-    let mirrored: HubTaskKeyMap
-    try {
-      mirrored = taskKeyMap(await taskReader(project))
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error)
-      const remedy = `could not read project ${project}: ${detail}; retry ${PLATFORM_SLUG} task list --project ${project} --json`
-      tasks.push(...events.map(({ key }) => unreadableTask(key, project, remedy)))
-      continue
-    }
-    for (const { key } of events) {
-      let task = taskReferenceForProjectKey(mirrored, project, key)
-      if (!task) {
-        try {
-          task = await taskPuller(project, key)
-        } catch (error) {
-          const detail = error instanceof Error ? error.message : String(error)
-          tasks.push(
-            unreadableTask(
-              key,
-              project,
-              `could not read task ${key}: ${detail}; retry ${PLATFORM_SLUG} task show ${key} --project ${project} --fresh --json`,
-            ),
-          )
-          continue
-        }
-      }
-      if (!task || task.project !== project || task.key !== key) {
-        tasks.push(
-          unreadableTask(
-            key,
-            project,
-            `task ${key} is missing from project ${project}; retry ${PLATFORM_SLUG} task show ${key} --project ${project} --fresh --json`,
-          ),
-        )
-        continue
-      }
-      tasks.push({
-        key,
-        project,
-        title: task.title ?? null,
-        statusCategory: task.status_category ?? null,
-        items: taskContextItems(task, database).map(({ kind, source, updatedAt }) => ({
-          kind,
-          source,
-          updatedAt,
-        })),
-        unreadable: null,
-      })
-    }
-  }
+  for (const [project, events] of byProject)
+    tasks.push(...(await readProjectCensusTasks(project, events, database, taskReader, taskPuller)))
   return tasks
 }
 

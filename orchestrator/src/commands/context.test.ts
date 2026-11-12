@@ -1,4 +1,5 @@
 import { expect, spyOn, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { run } from '../cli/program.ts'
 import type { ContextCensus } from '../doc/context-census.ts'
@@ -10,7 +11,7 @@ test('context census renderer preserves grouping, counts, remedies, and one verd
     since: '2026-11-05T00:00:00Z',
     projects: [
       {
-        project: 'bottega',
+        project: PLATFORM_SLUG,
         covered: 0,
         total: 1,
         sessions: [
@@ -23,7 +24,7 @@ test('context census renderer preserves grouping, counts, remedies, and one verd
             tasks: [
               {
                 key: 'DEV-1',
-                project: 'bottega',
+                project: PLATFORM_SLUG,
                 title: 'Task',
                 status: 'unreadable',
                 covered: 0,
@@ -47,7 +48,7 @@ test('context census renderer preserves grouping, counts, remedies, and one verd
     },
   }
   expect(renderContextCensus(report).split('\n')).toEqual([
-    'bottega  0/1',
+    `${PLATFORM_SLUG}  0/1`,
     '  architect  0/1',
     '    DEV-1  0/1  unreadable  retry the task read  open 1  rulings 2  sources q9:verb',
     'not full: 0 uncovered, 1 unreadable',

@@ -18,6 +18,28 @@ import { log } from './support.ts'
 
 const count = (covered: number, total: number) => `${covered}/${total}`
 
+function renderCensusTask(
+  task: ContextCensus['projects'][number]['sessions'][number]['tasks'][number],
+) {
+  const detail =
+    task.status === 'unreadable'
+      ? task.remedy!
+      : `worked ${task.workedAt}  next-action ${task.nextActionAt ?? 'missing'}`
+  const sources = task.sources
+    .map(({ source, writingVerb }) => `${source}:${writingVerb ? 'verb' : 'hand'}`)
+    .join(', ')
+  return `    ${task.key}  ${count(task.covered, task.total)}  ${task.status}  ${detail}  open ${task.openQuestions}  rulings ${task.rulings}  sources ${sources || 'none'}`
+}
+
+function renderCensusVerdict(report: ContextCensus): string[] {
+  if (report.verdict.full) return ['full coverage']
+  return [
+    `not full: ${report.verdict.uncovered.length} uncovered, ${report.verdict.unreadable.length} unreadable`,
+    ...report.verdict.uncovered.map((key) => `  uncovered ${key}`),
+    ...report.verdict.unreadable.map((row) => `  unreadable ${row.task}: ${row.remedy}`),
+  ]
+}
+
 export function renderContextCensus(report: ContextCensus): string {
   const lines: string[] = []
   for (const project of report.projects) {
@@ -28,29 +50,10 @@ export function renderContextCensus(report: ContextCensus): string {
         lines.push('    no holder')
         continue
       }
-      for (const task of session.tasks) {
-        const detail =
-          task.status === 'unreadable'
-            ? task.remedy!
-            : `worked ${task.workedAt}  next-action ${task.nextActionAt ?? 'missing'}`
-        const sources = task.sources
-          .map(({ source, writingVerb }) => `${source}:${writingVerb ? 'verb' : 'hand'}`)
-          .join(', ')
-        lines.push(
-          `    ${task.key}  ${count(task.covered, task.total)}  ${task.status}  ${detail}  open ${task.openQuestions}  rulings ${task.rulings}  sources ${sources || 'none'}`,
-        )
-      }
+      for (const task of session.tasks) lines.push(renderCensusTask(task))
     }
   }
-  if (report.verdict.full) lines.push('full coverage')
-  else {
-    lines.push(
-      `not full: ${report.verdict.uncovered.length} uncovered, ${report.verdict.unreadable.length} unreadable`,
-    )
-    for (const key of report.verdict.uncovered) lines.push(`  uncovered ${key}`)
-    for (const row of report.verdict.unreadable)
-      lines.push(`  unreadable ${row.task}: ${row.remedy}`)
-  }
+  lines.push(...renderCensusVerdict(report))
   return lines.join('\n')
 }
 

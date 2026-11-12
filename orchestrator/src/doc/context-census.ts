@@ -20,7 +20,7 @@ export type ContextCensusWork = {
   project: string | null
 }
 
-export type ContextCensusItem = {
+type ContextCensusItem = {
   kind: ContextItemKind
   source: string
   updatedAt: string
@@ -35,7 +35,7 @@ export type ContextCensusTaskFact = {
   unreadable: string | null
 }
 
-export type ContextCensusTaskRow = {
+type ContextCensusTaskRow = {
   key: string
   project: string | null
   title: string | null

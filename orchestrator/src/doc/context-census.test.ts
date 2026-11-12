@@ -1,9 +1,18 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type ContextCensusTaskFact, contextCensus } from './context-census.ts'
 
 const since = '2026-11-05T00:00:00Z'
-const session = { session: 'architect', lastSeen: '2026-11-12T00:00:00Z', project: 'bottega' }
-const work = (key: string, at = '2026-11-10T12:00:00Z', project: string | null = 'bottega') => ({
+const session = {
+  session: 'architect',
+  lastSeen: '2026-11-12T00:00:00Z',
+  project: PLATFORM_SLUG,
+}
+const work = (
+  key: string,
+  at = '2026-11-10T12:00:00Z',
+  project: string | null = PLATFORM_SLUG,
+) => ({
   session: 'architect',
   key,
   at,
@@ -11,7 +20,7 @@ const work = (key: string, at = '2026-11-10T12:00:00Z', project: string | null =
 })
 const task = (key: string, input: Partial<ContextCensusTaskFact> = {}): ContextCensusTaskFact => ({
   key,
-  project: 'bottega',
+  project: PLATFORM_SLUG,
   title: key,
   statusCategory: 'active',
   items: [],
@@ -93,7 +102,7 @@ describe('context census', () => {
       ]),
     ).toEqual([
       ['app', ['APP-1']],
-      ['bottega', ['DEV-1']],
+      [PLATFORM_SLUG, ['DEV-1']],
     ])
   })
 
