@@ -3,7 +3,7 @@ title: Fix
 stage: implement
 floor:
   - recorded-artifact
-job: issue-worker
+jobs: [issue-worker]
 autonomy: auto
 needs: []
 ---

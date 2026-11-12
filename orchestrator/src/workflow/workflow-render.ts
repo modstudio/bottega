@@ -34,7 +34,9 @@ export function withSelfRuling(
     : result
 }
 
-const legend = `Reading a step line: autonomy=ask means the operator rules; autonomy=review means the agent rules and records it for the operator to review afterwards; autonomy=auto means the agent rules. floor names the proof that the step is done: ruling, a recorded ruling whose ruler follows the step autonomy; command-exit, the named command exited successfully and its output is recorded; recorded-artifact, a written artifact exists in the tracker or doc store; tracker-transition, the task's tracker state changed. Several floors means any one of them is enough. needs names the facts entries the step uses. job names the orchestrator job the step dispatches, or - when you do the step yourself. At every autonomy, a genuine design or product-direction decision goes to the operator: record it with \`${PLATFORM_SLUG} workflow await\` and stop.`
+const legend = `Reading a step line: autonomy=ask means the operator rules; autonomy=review means the agent rules and records it for the operator to review afterwards; autonomy=auto means the agent rules. floor names the proof that the step is done: ruling, a recorded ruling whose ruler follows the step autonomy; command-exit, the named command exited successfully and its output is recorded; recorded-artifact, a written artifact exists in the tracker or doc store; tracker-transition, the task's tracker state changed. Several floors means any one of them is enough. needs names the facts entries the step uses. jobs names the orchestrator jobs the step may dispatch; an empty list means none. At every autonomy, a genuine design or product-direction decision goes to the operator: record it with \`${PLATFORM_SLUG} workflow await\` and stop.`
+
+const renderedJobs = (jobs: string[]) => (jobs.length ? ` jobs=${jobs.join(',')}` : '')
 
 const rulingsHeader = (result: WorkflowComposition) =>
   `Worker questions: rulings=${result.rulings.value} (${result.rulings.scope}).${
@@ -90,7 +92,7 @@ function renderRunnableComposition(result: WorkflowComposition): string {
     `facts: ${JSON.stringify(result.facts)}`,
     ...result.steps.map(
       (step) =>
-        `${step.n}. ${step.slug} — ${step.title}${step.when ? `; ${conditionText(step.when)}` : ''} [job=${step.job ?? '-'} autonomy=${step.resolvedAutonomy.value}(${step.resolvedAutonomy.scope}) floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
+        `${step.n}. ${step.slug} — ${step.title}${step.when ? `; ${conditionText(step.when)}` : ''} [autonomy=${step.resolvedAutonomy.value}(${step.resolvedAutonomy.scope}) floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}${renderedJobs(step.jobs)}]`,
     ),
   ].join('\n')
 }
@@ -131,7 +133,7 @@ function renderIncompleteComposition(result: WorkflowComposition): string {
     ...facts,
     ...result.steps.map(
       (step) =>
-        `${step.n}. ${step.slug} — ${step.title}${step.when ? `; ${conditionText(step.when)}` : ''} [job=${step.job ?? '-'} autonomy=${step.resolvedAutonomy.value}(${step.resolvedAutonomy.scope}) floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
+        `${step.n}. ${step.slug} — ${step.title}${step.when ? `; ${conditionText(step.when)}` : ''} [autonomy=${step.resolvedAutonomy.value}(${step.resolvedAutonomy.scope}) floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}${renderedJobs(step.jobs)}]`,
     ),
   ].join('\n')
 }

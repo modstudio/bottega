@@ -99,7 +99,8 @@ export type SeedCatalogueStep = {
   deferrable?: FloorKind[]
   expectedStatus?: string
   requirePullRequest?: boolean
-  job: string | null
+  jobs: string[]
+  actions: string[]
   stage: AutonomyStage
   autonomy: AutonomyValue
   needs: string[]
@@ -132,7 +133,8 @@ export function catalogueDefinition() {
         body: catalogueBody(seed.slug, legacy.slug, legacy.body),
         stage: stages[seed.slug]![legacy.slug]!,
         floor: floors[seed.slug]![legacy.slug]!,
-        job: legacy.job,
+        jobs: legacy.job === null ? [] : [legacy.job],
+        actions: [],
         autonomy: legacy.autonomy as SeedCatalogueStep['autonomy'],
         needs: catalogueNeeds(seed.slug, legacy.slug, legacy.gate !== null),
       })),

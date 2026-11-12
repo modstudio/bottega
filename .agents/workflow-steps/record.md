@@ -3,7 +3,7 @@ title: Check the record
 stage: plan
 floor:
   - recorded-artifact
-job: null
+jobs: []
 autonomy: auto
 needs:
   - tracker

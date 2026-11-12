@@ -6,7 +6,7 @@ floor:
 expectedStatus: "{{shipTo.closeState}}"
 requirePullRequest: true
 operatorRuling: true
-job: null
+jobs: []
 autonomy: auto
 needs:
   - release

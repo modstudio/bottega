@@ -4,7 +4,7 @@ stage: ship
 floor:
   - command-exit
 commandEvidence: gate
-job: null
+jobs: []
 autonomy: auto
 needs:
   - gate

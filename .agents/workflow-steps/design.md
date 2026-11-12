@@ -6,7 +6,7 @@ floor:
 outcomes:
   - schema-or-names
   - neither
-job: null
+jobs: []
 autonomy: ask
 needs: []
 ---

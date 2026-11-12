@@ -3,7 +3,7 @@ title: Write the task
 stage: plan
 floor:
   - recorded-artifact
-job: null
+jobs: []
 autonomy: auto
 needs:
   - tracker

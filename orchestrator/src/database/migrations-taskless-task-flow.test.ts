@@ -4,7 +4,7 @@ import { applyMigrations } from './migrations.ts'
 import { migrationBoundaryTestDatabase } from './test-database.fixture.ts'
 
 test('task-flow migration permits taskless flows and keeps task identity unique when present', () => {
-  const database = migrationBoundaryTestDatabase('0218_taskless_task_flow')
+  const database = migrationBoundaryTestDatabase('0219_taskless_task_flow')
   const project = newRecordId()
   const existing = newRecordId()
   const cursor = newRecordId()

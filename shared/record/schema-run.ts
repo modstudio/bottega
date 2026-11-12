@@ -84,6 +84,8 @@ export const run = pgTable.withRLS(
     retryOf: uuid('retry_of').references((): AnyPgColumn => run.id),
     parentRunId: uuid('parent_run_id').references((): AnyPgColumn => run.id),
     turn: integer().notNull(),
+    cursorRecordId: uuid('cursor_record_id'),
+    stepSlug: text('step_slug'),
     filesChanged: integer('files_changed'),
     changedPaths: jsonb('changed_paths'),
     linesAdded: integer('lines_added'),

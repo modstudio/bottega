@@ -1,7 +1,4 @@
-PRAGMA defer_foreign_keys = ON;
-CREATE TEMP TABLE task_flow_copy AS SELECT * FROM task_flow;
-DROP TABLE task_flow;
-CREATE TABLE task_flow (
+CREATE TABLE task_flow_with_taskless (
   record_id TEXT NOT NULL PRIMARY KEY,
   -- Keep a conflict target for the replayable 0198 backfill; SQLite uniqueness permits many NULLs.
   task_record_id TEXT UNIQUE,
@@ -15,13 +12,14 @@ CREATE TABLE task_flow (
   revision INTEGER NOT NULL DEFAULT 1
 );
 --> statement-breakpoint
-INSERT INTO task_flow
+INSERT INTO task_flow_with_taskless
   (record_id,task_record_id,project_record_id,state,open_stage_cursor_record_id,created_at,updated_at,
    opening_machine_id,updated_machine_id,revision)
 SELECT record_id,task_record_id,project_record_id,state,open_stage_cursor_record_id,created_at,updated_at,
        opening_machine_id,updated_machine_id,revision
-FROM task_flow_copy;
-DROP TABLE task_flow_copy;
+FROM task_flow;
+DROP TABLE task_flow;
+ALTER TABLE task_flow_with_taskless RENAME TO task_flow;
 --> statement-breakpoint
 CREATE INDEX task_flow_project ON task_flow(project_record_id);
 CREATE INDEX task_flow_open_stage ON task_flow(open_stage_cursor_record_id);

@@ -111,7 +111,8 @@ title: Write
 stage: plan
 floor:
   - recorded-artifact
-job: null
+jobs: []
+actions: []
 autonomy: auto
 needs: []
 ---

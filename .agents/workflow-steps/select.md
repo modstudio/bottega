@@ -4,7 +4,7 @@ stage: plan
 floor:
   - ruling
 operatorRuling: true
-job: null
+jobs: []
 autonomy: ask
 needs: []
 ---

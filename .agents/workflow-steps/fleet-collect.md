@@ -3,7 +3,7 @@ title: Collect and verify the evidence
 stage: plan
 floor:
   - recorded-artifact
-job: null
+jobs: []
 autonomy: auto
 needs: []
 ---

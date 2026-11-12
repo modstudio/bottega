@@ -13,6 +13,7 @@ import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 
 export type RunOptions = {
+  binding?: { cursorRecordId: string; stepSlug: string }
   job: string
   prompt: string
   agent?: string

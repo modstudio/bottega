@@ -3,6 +3,21 @@
 
 import { db } from '../database/db.ts'
 
+export type RunWorkflowBinding = { cursorRecordId: string; stepSlug: string }
+
+export function inheritedRunBinding(
+  parent: string | undefined,
+  binding: RunWorkflowBinding | undefined,
+): { cursorRecordId: string | null; stepSlug: string | null } | null {
+  if (!parent) return binding ?? null
+  const facts = inheritedRunFacts(parent)
+  return { cursorRecordId: facts.cursor_record_id, stepSlug: facts.step_slug }
+}
+
+export const bindingValues = (
+  binding: { cursorRecordId: string | null; stepSlug: string | null } | null,
+) => [binding?.cursorRecordId ?? null, binding?.stepSlug ?? null] as const
+
 export function inheritedRunFacts(parent: string): {
   launch_cwd: string | null
   launch_seed: string | null
@@ -12,11 +27,13 @@ export function inheritedRunFacts(parent: string): {
   task_record_id: string | null
   project_record_id: string | null
   branch: string | null
+  cursor_record_id: string | null
+  step_slug: string | null
 } {
   return db()
     .query(
       `SELECT launch_cwd, launch_seed, launch_key, launch_base, no_failover,
-              task_record_id, project_record_id, branch
+              task_record_id, project_record_id, branch, cursor_record_id, step_slug
          FROM run WHERE record_id=?`,
     )
     .get(parent) as ReturnType<typeof inheritedRunFacts>

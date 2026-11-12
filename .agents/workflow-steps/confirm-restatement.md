@@ -3,7 +3,7 @@ title: Confirm the restatement
 stage: plan
 floor:
   - ruling
-job: null
+jobs: []
 autonomy: ask
 needs: []
 ---

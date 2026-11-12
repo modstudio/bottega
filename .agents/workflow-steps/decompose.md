@@ -3,7 +3,7 @@ title: Decompose the work
 stage: plan
 floor:
   - recorded-artifact
-job: null
+jobs: []
 autonomy: auto
 needs: []
 ---
