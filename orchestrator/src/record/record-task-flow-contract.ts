@@ -160,8 +160,7 @@ export const taskFlowPresenceInputSchema = z.object({
   flowIds: z.array(z.string().uuid()).max(TASK_FLOW_PRESENCE_BATCH_MAX),
 })
 export type TaskFlowPresenceInput = z.infer<typeof taskFlowPresenceInputSchema>
-export const taskFlowPresenceSchema = taskFlowPresenceInputSchema
-export type TaskFlowPresence = z.infer<typeof taskFlowPresenceSchema>
+export type TaskFlowPresence = z.infer<typeof taskFlowPresenceInputSchema>
 
 export const taskFlowReadQuerySchema = z
   .object({

@@ -12,7 +12,7 @@ import {
 import { recordSpaceAccessDecision } from '../../../shared/record-space-request.ts'
 import { recordWriteSpace } from '../../../shared/record-write-space.ts'
 import { db, nowIso } from '../database/db.ts'
-import { declaredRecordSpace } from '../project/declared-record-space.ts'
+import { declaredProjectRecordSpace } from '../project/declared-record-space.ts'
 import { backfillReleaseRecords } from '../release/release-outbox.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { backfillQuestionRecords } from '../run/question-outbox.ts'
@@ -62,7 +62,10 @@ import type {
   RecordSyncResult,
   RoutingHeldOutboxRow,
 } from './record-sync-types.ts'
-import { backfillTaskFlowRecords, taskFlowBackfillUnavailable } from './task-flow-backfill.ts'
+import {
+  backfillTaskFlowRecords,
+  taskFlowBackfillUnavailable,
+} from '../workflow/task-flow-backfill.ts'
 
 export type {
   RecordSyncOptions,
@@ -151,8 +154,8 @@ function declaredProjectSpace(
   projectName: string,
   overrides?: Record<string, string>,
 ): string | null {
-  const overridden = overrides?.[projectName]
-  if (overridden !== undefined) return declaredRecordSpace({ space: overridden })
+  if (overrides?.[projectName] !== undefined)
+    return declaredProjectRecordSpace(undefined, overrides[projectName])
   const hasProjects = local
     .query<{ present: number }, []>(
       "SELECT count(*) AS present FROM sqlite_master WHERE type='table' AND name='project'",
@@ -163,7 +166,7 @@ function declaredProjectSpace(
     .query<{ settings: string }, [string]>('SELECT settings FROM project WHERE name=?')
     .get(projectName)
   if (!row) return null
-  return declaredRecordSpace(JSON.parse(row.settings) as { space?: string })
+  return declaredProjectRecordSpace(row.settings, overrides?.[projectName])
 }
 
 function pendingCount(local: Database): number {
@@ -736,12 +739,19 @@ async function requestedTaskFlowBackfill(input: {
   projectSpaces?: Record<string, string>
 }) {
   if (!input.requested) return undefined
-  return backfillTaskFlowRecords(input.local, {
-    client: input.client,
-    memberships: input.memberships,
-    personalSpaceId: input.personalSpaceId,
-    projectSpaces: input.projectSpaces,
-  })
+  try {
+    return await backfillTaskFlowRecords(input.local, {
+      client: input.client,
+      memberships: input.memberships,
+      personalSpaceId: input.personalSpaceId,
+      projectSpaces: input.projectSpaces,
+    })
+  } catch (error) {
+    return taskFlowBackfillUnavailable(
+      error instanceof Error ? error.message : String(error),
+      'backfill',
+    )
+  }
 }
 
 export async function syncRecord(options: RecordSyncOptions = {}): Promise<RecordSyncResult> {

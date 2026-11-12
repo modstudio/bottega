@@ -12,12 +12,18 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import type { RecordSpaceMembership } from '../../../shared/record-space-membership.ts'
 import { recordWriteSpace } from '../../../shared/record-write-space.ts'
 import { nowIso, writeTransaction } from '../database/db.ts'
-import { declaredRecordSpace } from '../project/declared-record-space.ts'
-import { machineId } from './machine-identity.ts'
-import { insertOutboxRow } from './outbox-enqueue.ts'
-import { stringifyOutboxPayload } from './outbox-sanitize.ts'
-import type { RecordTaskFlowClient } from './record-api-client-task-flow.ts'
-import { TASK_FLOW_PRESENCE_BATCH_MAX } from './record-task-flow-contract.ts'
+import { declaredProjectRecordSpace } from '../project/declared-record-space.ts'
+import { machineId } from '../record/machine-identity.ts'
+import { insertOutboxRow } from '../record/outbox-enqueue.ts'
+import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
+import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
+import { TASK_FLOW_PRESENCE_BATCH_MAX } from '../record/record-task-flow-contract.ts'
+import {
+  insertLegacyTaskFlow,
+  linkLegacyStageToFlow,
+  type LegacyTaskFlowInsert,
+} from './task-flow-store-sqlite-write.ts'
+import type { TaskFlowStageCursorRow } from './task-flow-store-types.ts'
 
 const LEGACY_TASKLESS_FLOW_NAMESPACE = v5.URL
 
@@ -26,7 +32,7 @@ type FlowRow = {
   project_record_id: string
   project_name: string
   project_settings: string
-  task_record_id: string
+  task_record_id: string | null
   state: string
   open_stage_cursor_record_id: string | null
   opening_machine_id: string
@@ -36,34 +42,12 @@ type FlowRow = {
   updated_at: string
 }
 
-type StageRow = {
-  record_id: string
+type StageRow = TaskFlowStageCursorRow & {
   project_record_id: string
   project_name: string
   project_settings: string
-  task_flow_record_id: string | null
-  workflow_slug: string
-  mode_slug: string
-  workflow_key: string
-  instance_id: string
-  session_id: string | null
-  workflow_version_record_id: string
-  catalogue_version_record_id: string
-  args: string
-  ordinal: number
-  step_slug: string
-  state: string
-  closed: string
-  question: string | null
-  autonomy: string | null
-  enforcement: string
-  total_steps: number
   opened_machine_id: string
-  taken_over_from_machine_id: string | null
   last_advanced_machine_id: string
-  revision: number
-  created_at: string
-  updated_at: string
 }
 
 type TaskFlowBackfillHold = { project: string; rows: number; reason: string }
@@ -107,8 +91,19 @@ export function legacyTasklessFlowRecordId(stageRecordId: string): string {
   return v5(JSON.stringify(['legacy-taskless-flow', stageRecordId]), LEGACY_TASKLESS_FLOW_NAMESPACE)
 }
 
-function stageFlowRecordId(row: Pick<StageRow, 'record_id' | 'task_flow_record_id'>): string {
-  return row.task_flow_record_id ?? legacyTasklessFlowRecordId(row.record_id)
+export function legacyTaskFlowRecordId(taskRecordId: string): string {
+  return v5(JSON.stringify(['legacy-task-flow', taskRecordId]), LEGACY_TASKLESS_FLOW_NAMESPACE)
+}
+
+function stageFlowRecordId(
+  row: Pick<StageRow, 'record_id' | 'task_flow_record_id'>,
+  repaired: ReadonlyMap<string, string>,
+): string {
+  return (
+    row.task_flow_record_id ??
+    repaired.get(row.record_id) ??
+    legacyTasklessFlowRecordId(row.record_id)
+  )
 }
 
 function hasPendingOutbox(database: Database, kind: string, rowId: string): boolean {
@@ -155,22 +150,72 @@ function flowPayload(row: FlowRow): Record<string, unknown> {
   }
 }
 
-function tasklessFlowPayload(row: StageRow, id: string): Record<string, unknown> {
+function tasklessFlow(row: StageRow, id: string): LegacyTaskFlowInsert {
   const open = row.state === 'running' || row.state === 'awaiting-ruling'
   return {
     id,
-    spaceId: PLATFORM_SPACE_ID,
     projectId: row.project_record_id,
-    projectName: row.project_name,
     taskId: null,
     state: open ? 'open' : row.state === 'done' ? 'done' : 'dropped',
     openStageRecordId: open ? row.record_id : null,
     openingMachineId: row.opened_machine_id,
     updatedMachineId: row.last_advanced_machine_id,
-    machineId: machineId(),
     revision: 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  }
+}
+
+function legacyFlowPayload(
+  row: FlowRow | LegacyTaskFlowInsert,
+  projectName: string,
+): Record<string, unknown> {
+  const legacy = 'record_id' in row
+  return {
+    id: legacy ? row.record_id : row.id,
+    spaceId: PLATFORM_SPACE_ID,
+    projectId: legacy ? row.project_record_id : row.projectId,
+    projectName,
+    taskId: legacy ? row.task_record_id : row.taskId,
+    state: row.state,
+    openStageRecordId: legacy ? row.open_stage_cursor_record_id : row.openStageRecordId,
+    openingMachineId: legacy ? row.opening_machine_id : row.openingMachineId,
+    updatedMachineId: legacy ? row.updated_machine_id : row.updatedMachineId,
+    machineId: machineId(),
+    revision: row.revision,
+    createdAt: legacy ? row.created_at : row.createdAt,
+    updatedAt: legacy ? row.updated_at : row.updatedAt,
+  }
+}
+
+function taskFlowForLegacyStages(taskRecordId: string, stages: StageRow[]): LegacyTaskFlowInsert {
+  const projects = new Set(stages.map((row) => row.project_record_id))
+  if (projects.size !== 1)
+    throw new Error(
+      `legacy task ${taskRecordId} has unlinked stages in more than one project; repair the local task-flow links, then retry`,
+    )
+  const open = stages.find((row) => row.state === 'running' || row.state === 'awaiting-ruling')
+  if (open)
+    throw new Error(
+      `legacy task ${taskRecordId} has open unlinked stage ${open.record_id}; repair the local task-flow link, then retry`,
+    )
+  const created = [...stages].sort((left, right) =>
+    left.created_at.localeCompare(right.created_at),
+  )[0]!
+  const updated = [...stages].sort((left, right) =>
+    right.updated_at.localeCompare(left.updated_at),
+  )[0]!
+  return {
+    id: legacyTaskFlowRecordId(taskRecordId),
+    taskId: taskRecordId,
+    projectId: created.project_record_id,
+    state: stages.some((row) => row.state === 'done') ? 'done' : 'dropped',
+    openStageRecordId: null,
+    openingMachineId: created.opened_machine_id,
+    updatedMachineId: updated.last_advanced_machine_id,
+    revision: 1,
+    createdAt: created.created_at,
+    updatedAt: updated.updated_at,
   }
 }
 
@@ -229,13 +274,7 @@ function rowDeclaredSpace(
   row: FlowRow | StageRow,
   overrides?: Record<string, string>,
 ): string | null {
-  const overridden = overrides?.[row.project_name]
-  if (overridden !== undefined) return declaredRecordSpace({ space: overridden })
-  try {
-    return declaredRecordSpace(JSON.parse(row.project_settings) as { space?: string })
-  } catch {
-    return null
-  }
+  return declaredProjectRecordSpace(row.project_settings, overrides?.[row.project_name])
 }
 
 type SpaceRows = { flows: FlowRow[]; stages: StageRow[] }
@@ -352,43 +391,75 @@ export async function backfillTaskFlowRecords(
   const stages = selected.absentStages.filter(
     (row) => !hasPendingOutbox(database, 'task_flow_stage', row.record_id),
   )
+  const localFlowByTask = new Map(
+    localFlows(database).flatMap((row) =>
+      row.task_record_id ? [[row.task_record_id, row] as const] : [],
+    ),
+  )
+  const taskStages = new Map<string, StageRow[]>()
+  for (const stage of stages) {
+    if (
+      stage.task_flow_record_id ||
+      !stage.task_record_id ||
+      localFlowByTask.has(stage.task_record_id)
+    )
+      continue
+    const grouped = taskStages.get(stage.task_record_id) ?? []
+    grouped.push(stage)
+    taskStages.set(stage.task_record_id, grouped)
+  }
+  const mintedTaskFlows = new Map(
+    [...taskStages].map(([taskRecordId, grouped]) => [
+      taskRecordId,
+      taskFlowForLegacyStages(taskRecordId, grouped),
+    ]),
+  )
   return writeTransaction(() => {
     let enqueuedFlows = 0
     for (const row of flows) {
       enqueue(database, 'task_flow', row.record_id, flowPayload(row))
       enqueuedFlows++
     }
+    const repaired = new Map<string, string>()
+    for (const [taskRecordId, flow] of mintedTaskFlows) {
+      insertLegacyTaskFlow(database, flow)
+      const projectName = taskStages.get(taskRecordId)![0]!.project_name
+      enqueue(database, 'task_flow', flow.id, legacyFlowPayload(flow, projectName))
+      enqueuedFlows++
+      localFlowByTask.set(taskRecordId, {
+        record_id: flow.id,
+        project_record_id: flow.projectId,
+        project_name: projectName,
+        project_settings: taskStages.get(taskRecordId)![0]!.project_settings,
+        task_record_id: taskRecordId,
+        state: flow.state,
+        open_stage_cursor_record_id: null,
+        opening_machine_id: flow.openingMachineId,
+        updated_machine_id: flow.updatedMachineId,
+        revision: flow.revision,
+        created_at: flow.createdAt,
+        updated_at: flow.updatedAt,
+      })
+    }
     for (const row of stages.filter((stage) => !stage.task_flow_record_id)) {
-      const flowRecordId = stageFlowRecordId(row)
-      if (!hasPendingOutbox(database, 'task_flow', flowRecordId)) {
-        const payload = tasklessFlowPayload(row, flowRecordId)
-        database
-          .query(
-            `INSERT INTO task_flow
-             (record_id,task_record_id,project_record_id,state,open_stage_cursor_record_id,
-              created_at,updated_at,opening_machine_id,updated_machine_id,revision)
-             VALUES (?,NULL,?,?,?,?,?,?,?,1)`,
-          )
-          .run(
-            flowRecordId,
-            row.project_record_id,
-            payload.state as string,
-            payload.openStageRecordId as string | null,
-            row.created_at,
-            row.updated_at,
-            row.opened_machine_id,
-            row.last_advanced_machine_id,
-          )
-        database
-          .query('UPDATE workflow_cursor SET task_flow_record_id=? WHERE record_id=?')
-          .run(flowRecordId, row.record_id)
-        enqueue(database, 'task_flow', flowRecordId, payload)
-        enqueuedFlows++
+      let flowRecordId: string
+      if (row.task_record_id) {
+        flowRecordId = localFlowByTask.get(row.task_record_id)!.record_id
+      } else {
+        flowRecordId = legacyTasklessFlowRecordId(row.record_id)
+        const flow = tasklessFlow(row, flowRecordId)
+        insertLegacyTaskFlow(database, flow)
+        if (!hasPendingOutbox(database, 'task_flow', flowRecordId)) {
+          enqueue(database, 'task_flow', flowRecordId, legacyFlowPayload(flow, row.project_name))
+          enqueuedFlows++
+        }
       }
+      linkLegacyStageToFlow(database, row.record_id, flowRecordId)
+      repaired.set(row.record_id, flowRecordId)
     }
     let enqueuedStages = 0
     for (const row of stages) {
-      const flowRecordId = stageFlowRecordId(row)
+      const flowRecordId = stageFlowRecordId(row, repaired)
       enqueue(database, 'task_flow_stage', row.record_id, stagePayload(row, flowRecordId))
       enqueuedStages++
     }

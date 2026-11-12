@@ -9,7 +9,7 @@ import type { QuarantinedOutboxRow } from './outbox-quarantine.ts'
 import type { RecordApiClient } from './record-api-client.ts'
 import type { ProjectRegisterPullResult } from './record-cache-projects.ts'
 import type { RoutingPoolPullResult } from './record-routing-pool.ts'
-import type { TaskFlowBackfillResult } from './task-flow-backfill.ts'
+import type { TaskFlowBackfillResult } from '../workflow/task-flow-backfill.ts'
 
 export type OutboxRow = { id: number; kind: string; row_id: string; payload: string }
 export type { RecordPayload as Payload } from './record-sync-contract.ts'

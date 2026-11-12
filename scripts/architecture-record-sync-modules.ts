@@ -12,7 +12,7 @@ const module = (file: string, allowed: string[]): RecordSyncModule => ({
 })
 
 export const recordSyncModules: RecordSyncModule[] = [
-  module('orchestrator/src/record/task-flow-backfill.ts', [
+  module('orchestrator/src/workflow/task-flow-backfill.ts', [
     'bun:sqlite',
     'uuid',
     '../../../shared/record/schema.ts',
@@ -21,11 +21,13 @@ export const recordSyncModules: RecordSyncModule[] = [
     '../../../shared/record-write-space.ts',
     '../database/db.ts',
     '../project/declared-record-space.ts',
-    './machine-identity.ts',
-    './outbox-enqueue.ts',
-    './outbox-sanitize.ts',
-    './record-api-client-task-flow.ts',
-    './record-task-flow-contract.ts',
+    '../record/machine-identity.ts',
+    '../record/outbox-enqueue.ts',
+    '../record/outbox-sanitize.ts',
+    '../record/record-api-client-task-flow.ts',
+    '../record/record-task-flow-contract.ts',
+    './task-flow-store-sqlite-write.ts',
+    './task-flow-store-types.ts',
   ]),
   module('orchestrator/src/record/record-sync-batch.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/record/record-sync-contract.ts', []),
@@ -129,6 +131,7 @@ export const recordSyncModules: RecordSyncModule[] = [
     './record-pool.ts',
   ]),
   module('orchestrator/src/record/record-sync-task-flow.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/record-timestamp.ts',
     'bun',
     'drizzle-orm',

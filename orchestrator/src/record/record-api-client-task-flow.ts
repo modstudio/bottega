@@ -25,7 +25,7 @@ import {
   type TaskFlowPresenceInput,
   type TaskFlowReadQueryInput,
   type TaskFlowStageListQueryInput,
-  taskFlowPresenceSchema,
+  taskFlowPresenceInputSchema,
 } from './record-task-flow-contract.ts'
 import {
   type TaskFlowAdoptResult,
@@ -210,7 +210,7 @@ function taskFlowReadClient(request: Request): Partial<RecordTaskFlowClient> {
         method: 'POST',
         body: JSON.stringify(input),
         ...destination,
-        schema: (body) => taskFlowPresenceSchema.parse(body),
+        schema: (body) => taskFlowPresenceInputSchema.parse(body),
       }),
     readTaskFlowStage: (id, destination) =>
       readById(

@@ -4,6 +4,7 @@
 import type { SQL } from 'bun'
 import { sql as drizzleSql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   taskFlow as taskFlowRecord,
   taskFlowStage as taskFlowStageRecord,
@@ -151,7 +152,7 @@ async function pushTaskFlowStage(
     )
     if (!existingOwned && !values.projectId)
       throw new OutboxRowError(
-        'task_flow_stage projectId is required for a new hosted stage; repair the outbox payload from the current local stage and retry record push',
+        `task_flow_stage projectId is required for a new hosted stage; run ${PLATFORM_SLUG} record push --backfill to enqueue the current stage, then ${PLATFORM_SLUG} record outbox discard <id> for this entry`,
         'row-validation',
       )
     const number = existingOwned

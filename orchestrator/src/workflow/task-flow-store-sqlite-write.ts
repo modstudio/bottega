@@ -173,6 +173,35 @@ function insertFlow(database: Database, row: SqlRow, revisionValue: number): voi
     )
 }
 
+export type LegacyTaskFlowInsert = {
+  id: string
+  taskId: string | null
+  projectId: string
+  state: 'open' | 'done' | 'dropped'
+  openStageRecordId: string | null
+  createdAt: string
+  updatedAt: string
+  openingMachineId: string
+  updatedMachineId: string
+  revision: number
+}
+
+/** Persists a flow synthesized while repairing legacy stage links. */
+export function insertLegacyTaskFlow(database: Database, row: LegacyTaskFlowInsert): void {
+  insertFlow(database, row as unknown as SqlRow, row.revision)
+}
+
+/** Makes subsequent local stage mutations carry the repaired flow identity. */
+export function linkLegacyStageToFlow(
+  database: Database,
+  stageRecordId: string,
+  flowRecordId: string,
+): void {
+  database
+    .query('UPDATE workflow_cursor SET task_flow_record_id=? WHERE record_id=?')
+    .run(flowRecordId, stageRecordId)
+}
+
 function insertStage(
   database: Database,
   row: SqlRow,
