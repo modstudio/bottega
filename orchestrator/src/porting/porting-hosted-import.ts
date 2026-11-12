@@ -2,12 +2,13 @@
 /** Builds the per-space hosted bulk payloads for a legacy port import. */
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
+import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
+import { resolveRecordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
 import { db } from '../database/db.ts'
 import { importDoc } from '../doc/docs.ts'
 import type { Project } from '../project/projects.ts'
 import { projects } from '../project/projects.ts'
-import { activeRecordSpace, effectiveProjectSpace } from '../project-space.ts'
+import { effectiveProjectSpace } from '../project-space.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import type { RecordPortImportInput } from '../record/record-port-contract.ts'
 import { normalizePortBaselineScannedAt } from './porting-date.ts'
@@ -131,13 +132,13 @@ export function buildHostedPortImports(
   local: Database,
   registered: Project[],
   plan: HostedImportPlan,
-  active: string,
+  doctrineSpaceId: string,
   now = new Date().toISOString(),
 ): Map<string, RecordPortImportInput> {
   const byId = new Map(registered.map((project) => [project.recordId, project]))
-  const imports = new Map<string, RecordPortImportInput>([[active, emptyImport()]])
+  const imports = new Map<string, RecordPortImportInput>([[doctrineSpaceId, emptyImport()]])
   const pairs = new Map<string, { id: string; spaceId: string }>()
-  addDoctrine(imports.get(active)!, plan.doctrine, active, now)
+  addDoctrine(imports.get(doctrineSpaceId)!, plan.doctrine, doctrineSpaceId, now)
   for (const row of plan.pairs) {
     const sourceSpace = routedSpace(local, byId.get(row.sourceId))
     const targetSpace = routedSpace(local, byId.get(row.targetId))
@@ -192,19 +193,27 @@ function fencedSourceArtifact(body: string): string {
 
 export async function applyHostedPortImport(
   plan: HostedImportPlan,
-  options: { sourceLabel?: string },
+  options: { sourceLabel?: string; space?: string },
 ): Promise<void> {
   if (plan.refusals.length) throw new ImportRefusalError(plan.refusals)
   const local = db()
   const client = recordApiClient()
-  const identity = await client.whoami()
-  const active = identity.activeSpaceId ?? activeRecordSpace(local)
-  if (!active) throw new Error(RECORD_ACTIVE_SPACE_REMEDY)
+  const destination = await resolveRecordSpaceOwnerDestination(
+    'port import',
+    { space: options.space },
+    [],
+    async () => parseRecordSpaceMemberships((await client.whoami()).memberships),
+  )
   if (!client.importPortCatalogue)
     throw new Error(
       'record API does not support port imports; deploy the matching record API, then retry',
     )
-  for (const [spaceId, payload] of buildHostedPortImports(local, projects(), plan, active))
+  for (const [spaceId, payload] of buildHostedPortImports(
+    local,
+    projects(),
+    plan,
+    destination.spaceId,
+  ))
     await client.importPortCatalogue(payload, { destinationSpaceId: spaceId })
   const context = {
     author: 'port-import',

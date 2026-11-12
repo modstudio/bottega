@@ -846,7 +846,7 @@ const activeSpaceResolverRule: ArchitectureRule = {
   name: 'no-active-space-resolver-import',
   severity: 'error',
   comment:
-    'Production orchestrator and hub modules may not newly import active-space fallback modules; DEV-2244 replaces them with the owner-routed destination decision.',
+    'Production orchestrator and hub modules may not newly import active-space fallback modules; writes use an owner-routed destination decision.',
   from: {
     path: '^(?:orchestrator|hub)/',
     pathNot: ['(?:\\.test|\\.fixture)\\.ts$|^orchestrator/test/'],

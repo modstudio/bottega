@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import { getDoc, listDocRevisions, listDocs } from '../doc/docs.ts'
 import { projects, upsertProject } from '../project/projects.ts'
@@ -12,7 +16,7 @@ import {
   listSkips,
   type PortPair,
 } from './porting.ts'
-import { buildHostedPortImports } from './porting-hosted-import.ts'
+import { applyHostedPortImport, buildHostedPortImports } from './porting-hosted-import.ts'
 import { applyImport, planImport, sourceCoverage } from './porting-import.ts'
 import { ImportRefusalError } from './porting-import-contract.ts'
 
@@ -266,6 +270,39 @@ describe('port importer', () => {
     ])
     expect(imports.get('space-alpha')).toBeUndefined()
     expect(plan.exclusions).toEqual([])
+  })
+  test('hosted project-less doctrine import requires and uses an explicit space', async () => {
+    const doctrineSpace = newRecordId()
+    const destinations: string[] = []
+    installRecordApiClient({
+      ...createMemoryRecordApiClient(),
+      whoami: async () => ({
+        user: { id: newRecordId() },
+        activeSpaceId: newRecordId(),
+        personalSpaceId: newRecordId(),
+        memberships: [{ space_id: doctrineSpace, slug: 'doctrine-import', permission: 'write' }],
+      }),
+      importPortCatalogue: async (_input, destination) => {
+        destinations.push(destination.destinationSpaceId)
+        return { inserted: 0, alreadyPresent: 0, skipped: [] }
+      },
+    })
+    const plan = planImport(fixture(), registered())
+    plan.pairs = []
+    plan.baselines = []
+    plan.skips = []
+    plan.refs = []
+    plan.docs = []
+
+    try {
+      await expect(applyHostedPortImport(plan, {})).rejects.toThrow(
+        'port import writes to a record space and names none; pass --space <slug>',
+      )
+      await applyHostedPortImport(plan, { space: 'doctrine-import' })
+      expect(destinations).toEqual([doctrineSpace])
+    } finally {
+      installRecordApiClient(createMemoryRecordApiClient())
+    }
   })
   test('records the deliberately unimported register-derived sections as one exclusion', () => {
     const source = fixture({
