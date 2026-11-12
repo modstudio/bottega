@@ -1,7 +1,7 @@
 // concern: context-stale
 /** Pure stale-next-action decision. */
 
-import { taskFlowState } from '../workflow/task-flow-decision.ts'
+import { taskFlowClosed } from '../workflow/task-flow-decision.ts'
 
 export type ContextWorkEvent = { holder: string; at: string }
 export type ContextNextActionRevision = { holder: string; at: string }
@@ -40,10 +40,7 @@ export function staleContextHolders({
   const unresolved = new Map(unresolvedHolders.map(({ holder, reason }) => [holder, reason]))
   const closed = new Set(
     taskStatuses
-      .filter(({ statusCategory }) => {
-        const state = taskFlowState(statusCategory)
-        return state === 'done' || state === 'dropped'
-      })
+      .filter(({ statusCategory }) => taskFlowClosed(statusCategory))
       .map(({ holder }) => holder),
   )
   return [...latestWork]
