@@ -72,9 +72,10 @@ function composeClient(
     taskFlowComposeEnforcement: options.enforcement,
     taskFlowProjectNames: options.projectNames,
   })
-  let replay:
-    | { stage: { id: string; number: number }; revisions: Record<string, number> }
-    | undefined
+  const replays = new Map<
+    string,
+    { stage: { id: string; number: number }; revisions: Record<string, number> }
+  >()
   return {
     ...memory,
     ...projectIdentityClient,
@@ -82,6 +83,7 @@ function composeClient(
       calls.push(input)
       options.destinations?.push(destination)
       if (options.fail) throw options.fail
+      const replay = replays.get(input.requestId)
       if (replay) return replay
       const stored =
         options.recordCompose === false
@@ -89,14 +91,15 @@ function composeClient(
           : await memory.composeTaskFlow!(input, destination)
       const stage = input.stageInsert!
       const flowId = input.flowInsert?.id ?? input.flowChange!.id
-      replay = {
+      const result = {
         stage: { id: stage.id, number: options.number ?? stored.stage!.number },
         revisions: {
           [flowId]: options.flowRevision ?? 4,
           [stage.id]: options.stageRevision ?? 7,
         },
       }
-      return replay
+      replays.set(input.requestId, result)
+      return result
     },
   }
 }
@@ -171,12 +174,15 @@ test('hosted compose prints the hosted number while caching the machine-local nu
 test('hosted compose prints and resolves the per-project number across two projects', async () => {
   const d = hostedDatabase()
   const secondProjectId = '00000000-0000-4000-8000-000000000099'
+  const settings = d
+    .query<{ settings: string }, []>("SELECT settings FROM project WHERE name='fixture'")
+    .get()!.settings
   d.query('INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?)').run(
     secondProjectId,
     'second-fixture',
     '/second-fixture',
     'bun',
-    JSON.stringify({ space: 'fixture-space' }),
+    settings,
   )
   rememberProjectSpace(d, 'second-fixture', destinationSpaceId)
   const calls: TaskFlowIntentInput<'compose'>[] = []
