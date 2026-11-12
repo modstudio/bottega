@@ -34,6 +34,11 @@ export const mcpModules: McpModule[] = [
     '../doc/context-moment-adapter.ts',
     '../workflow/workflow-context-moment.ts',
   ]),
+  module('orchestrator/src/mcp/mcp-context-reports.fixture.ts', [
+    'bun:test',
+    '../doc/context-moment-adapter.ts',
+    './mcp.ts',
+  ]),
   module('orchestrator/src/mcp/mcp-workflow-context-tools.ts', [
     '@modelcontextprotocol/server',
     'zod',

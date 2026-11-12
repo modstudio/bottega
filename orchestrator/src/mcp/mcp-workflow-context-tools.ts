@@ -8,8 +8,8 @@ import { workflowQuestionContextMoment } from '../workflow/workflow-context-mome
 import { awaitWorkflowRuling } from '../workflow/workflow-cursor.ts'
 import { ruleWorkflow } from '../workflow/workflow-cursor-ruling.ts'
 import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
-import { resolveMcpLinkedWorkflowCursor } from './mcp-workflow-cursor.ts'
 import { collectContextMomentReports, resultWithContextReports } from './mcp-context-reports.ts'
+import { resolveMcpLinkedWorkflowCursor } from './mcp-workflow-cursor.ts'
 
 export type McpWorkflowContextPorts = {
   hubTaskReader?: HubTaskReader

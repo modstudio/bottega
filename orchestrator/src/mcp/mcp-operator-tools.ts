@@ -12,6 +12,7 @@ import {
   OverturnRulingResultSchema,
 } from '../../../shared/orch-contract.ts'
 import { db } from '../database/db.ts'
+import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { getDocRevision, setDoc } from '../doc/docs.ts'
 import { operatorWaiting, relayQuestion } from '../operator/operator-waiting.ts'
 import { resolveQuestionIdentifier } from '../run/question-identifier.ts'
@@ -23,7 +24,6 @@ import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { queryInbox } from '../run/run-inbox.ts'
 import { answerRunHelpers } from '../run/run-message-commands.ts'
 import { answeredQuestionContextMoments } from '../workflow/workflow-context-moment.ts'
-import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { fileNote } from './hub-notes.ts'
 import { collectContextMomentReports, resultWithContextReports } from './mcp-context-reports.ts'
 

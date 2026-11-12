@@ -39,6 +39,7 @@ import {
   showResolvedWorkflow,
 } from '../workflow/workflows.ts'
 import { createDocsMcpServer, fileIssueTaskKey } from './mcp.ts'
+import { workflowRulingContextFixture } from './mcp-context-reports.fixture.ts'
 import { MCP_SERVER_STALE_EXIT } from './mcp-exit-status.ts'
 
 describe('orch MCP', () => {
@@ -258,32 +259,7 @@ describe('orch MCP', () => {
         ),
       }),
     })
-    const contextCalls: string[] = []
-    const server = createDocsMcpServer({
-      hubTaskReader: async () => [
-        { key: 'DEV-1069', record_id: 'task-DEV-1069', project: 'fixture' },
-      ],
-      contextMomentPorts: {
-        set: async (input) => {
-          contextCalls.push(`set ${input.kind} ${input.id} on ${input.task}`)
-          return {
-            ...input,
-            holder: `task:${input.task}`,
-            revision: 'revision',
-            task: input.task ?? null,
-          }
-        },
-        drop: async (input) => {
-          contextCalls.push(`drop ${input.id} on ${input.task}`)
-          return {
-            ...input,
-            holder: `task:${input.task}`,
-            task: input.task ?? null,
-            removed: true,
-          }
-        },
-      },
-    })
+    const { server, expectReports } = workflowRulingContextFixture()
     const client = new Client({ name: 'orch-test', version: '1.0.0' })
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
     await server.connect(serverTransport)
@@ -318,18 +294,7 @@ describe('orch MCP', () => {
       expect(JSON.parse((ruled.content as { text: string }[])[0]!.text)).toMatchObject({
         questionId: awaitResult.questionId,
       })
-      expect(contextCalls).toEqual([
-        `set open-question open-q${awaitResult.questionId} on DEV-1069`,
-        `set ruling ruling-q${awaitResult.questionId} on DEV-1069`,
-        `drop open-q${awaitResult.questionId} on DEV-1069`,
-      ])
-      expect((awaited.content as { text: string }[])[1]?.text).toBe(
-        `context: wrote open-question open-q${awaitResult.questionId} on DEV-1069`,
-      )
-      expect((ruled.content as { text: string }[]).slice(1).map(({ text }) => text)).toEqual([
-        `context: wrote ruling ruling-q${awaitResult.questionId} on DEV-1069`,
-        `context: dropped open-question open-q${awaitResult.questionId} on DEV-1069`,
-      ])
+      expectReports(awaitResult.questionId, awaited, ruled)
     } finally {
       installRecordApiClient(createMemoryRecordApiClient())
       await client.close()

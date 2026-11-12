@@ -1,7 +1,11 @@
 import { expect, test } from 'bun:test'
 import { db } from '../database/db.ts'
 import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
-import { productionStepCatalogue } from './step-catalogue.ts'
+import {
+  productionStepCatalogue,
+  promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
+} from './step-catalogue.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import {
   workflowCommandPresentation as presentation,
@@ -14,10 +18,25 @@ test('await, operator rule, and next replace task context through command seams'
   const slug = 'cursor-context-moments'
   const project = 'cursor-context-moments-project'
   const key = 'DEV-2267'
+  const currentCatalogue = productionStepCatalogue().definition
+  const blastRadius = currentCatalogue.steps.find(({ slug }) => slug === 'blast-radius')!
+  const selfRulingStep = {
+    ...blastRadius,
+    slug: 'context-self-rule',
+    title: 'Record the self-ruling',
+    floor: ['ruling' as const],
+    autonomy: 'auto' as const,
+  }
+  const draft = setStepCatalogueLocal(
+    { ...currentCatalogue, steps: [...currentCatalogue.steps, selfRulingStep] },
+    'add context self-ruling fixture',
+    'test',
+  )
+  promoteStepCatalogueLocal(draft.n, 'publish context self-ruling fixture', 'test')
   const catalogue = productionStepCatalogue().definition.steps
   const steps = [
     catalogue.find(({ slug }) => slug === 'blast-radius')!.slug,
-    catalogue.find(({ slug }) => slug === 'acceptance')!.slug,
+    selfRulingStep.slug,
     catalogue.find(({ slug }) => slug === 'fix-defect-triage')!.slug,
   ]
   registerFixtureProject(project)
@@ -71,7 +90,7 @@ test('await, operator rule, and next replace task context through command seams'
   await command('next', '--note', 'closed after the operator ruling')
   expect(items.get('next')).toEqual({
     kind: 'next-action',
-    body: `${slug} cursor ${cursor} at acceptance: Check the task's acceptance criteria`,
+    body: `${slug} cursor ${cursor} at context-self-rule: Record the self-ruling`,
   })
 
   await command(

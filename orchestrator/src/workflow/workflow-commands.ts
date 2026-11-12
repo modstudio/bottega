@@ -29,6 +29,7 @@ import * as recordShape from './workflow-command-record-shape.ts'
 import type { CommitCountPort } from './workflow-compose-branch.ts'
 import {
   type WorkflowContextMoment,
+  type WorkflowNextCommandMoment,
   workflowQuestionContextMoment,
 } from './workflow-context-moment.ts'
 import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
@@ -625,17 +626,7 @@ export async function nextCommand(
   argv: string[],
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
-): Promise<{
-  cursorRecordId: string
-  selfRulingQuestionNumber?: number
-  selfRuling?: string
-  taskKey: string | null
-  workflow: string
-  cursor: number
-  finished: boolean
-  stepSlug?: string
-  stepTitle?: string
-}> {
+): Promise<WorkflowNextCommandMoment> {
   const { selfRuling, basis, note, question } = recordShape.workflowNextCommandRecordShapes(argv)
   const storedSelfRuling = selfRuling?.trim()
   if (basis !== undefined && selfRuling === undefined)
