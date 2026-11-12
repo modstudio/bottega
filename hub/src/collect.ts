@@ -558,7 +558,7 @@ export async function withLease<T>(
       }
       await new Promise((r) => setTimeout(r, 250))
     }
-    if (polls > 1) {
+    if (polls > 0) {
       const observation = collectLeaseWaitObservation(lastLeaseObservation, Date.now() - startedAt)
       console.error(
         `hub: collect lease wait waiter=${JSON.stringify(holder)} waited_ms=${observation.waitedMs} acquired`,
