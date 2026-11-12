@@ -27,6 +27,7 @@ test('context census renderer preserves grouping, counts, remedies, and one verd
                 project: PLATFORM_SLUG,
                 title: 'Task',
                 status: 'unreadable',
+                closed: false,
                 covered: 0,
                 total: 1,
                 firstWorkedAt: '2026-11-10T00:00:00Z',
