@@ -2,7 +2,8 @@
 /** Pure coverage decision for architect-session task context. */
 
 import { isOperatorSession } from '../caller-classification.ts'
-import { taskFlowState } from '../workflow/task-flow-decision.ts'
+import { taskFlowClosed } from '../workflow/task-flow-decision.ts'
+import { isWritingVerbContextSource } from './context-moment.ts'
 import type { ContextItemKind } from './doc-context-write.ts'
 
 export const CONTEXT_CENSUS_DEFAULT_WINDOW_MS = 7 * 24 * 60 * 60 * 1_000
@@ -74,9 +75,6 @@ export type ContextCensus = {
   }
 }
 
-const sourceFromWritingVerb = (source: string) =>
-  source === 'workflow-next' || source === 'pr-merge' || /^q\d+$/.test(source)
-
 const latest = (values: readonly string[]) =>
   values.reduce<string | null>(
     (result, value) => (!result || value > result ? value : result),
@@ -91,11 +89,10 @@ function taskRow(
   const nextActionAt = latest(
     fact.items.filter(({ kind }) => kind === 'next-action').map(({ updatedAt }) => updatedAt),
   )
-  const flowState = taskFlowState(fact.statusCategory)
-  const closed = flowState === 'done' || flowState === 'dropped'
   const status = fact.unreadable
     ? 'unreadable'
-    : closed || (nextActionAt !== null && nextActionAt >= firstWorkedAt)
+    : taskFlowClosed(fact.statusCategory) ||
+        (nextActionAt !== null && nextActionAt >= firstWorkedAt)
       ? 'covered'
       : 'uncovered'
   return {
@@ -112,10 +109,32 @@ function taskRow(
     rulings: fact.items.filter(({ kind }) => kind === 'ruling').length,
     sources: fact.items.map(({ source }) => ({
       source,
-      writingVerb: sourceFromWritingVerb(source),
+      writingVerb: isWritingVerbContextSource(source),
     })),
     remedy: fact.unreadable,
   }
+}
+
+/** Whether an event belongs to the inclusive census window. */
+export const inCensusWindow = (at: string, since: string): boolean => at >= since
+
+/** Derive the coverage verdict for exactly these project groups. */
+export function censusVerdict(projects: ContextCensus['projects']): ContextCensus['verdict'] {
+  const taskRows = projects.flatMap(({ sessions }) => sessions.flatMap(({ tasks }) => tasks))
+  const uncovered = taskRows.filter(({ status }) => status === 'uncovered').map(({ key }) => key)
+  const unreadable = taskRows
+    .filter(
+      (row): row is ContextCensusTaskRow & { remedy: string } =>
+        row.status === 'unreadable' && row.remedy !== null,
+    )
+    .map(({ key, remedy }) => ({ task: key, remedy }))
+  return { full: uncovered.length === 0 && unreadable.length === 0, uncovered, unreadable }
+}
+
+/** Narrow a completed census to one project while preserving the verdict policy. */
+export function selectCensusProject(report: ContextCensus, project: string): ContextCensus {
+  const projects = report.projects.filter((row) => row.project === project)
+  return { ...report, projects, verdict: censusVerdict(projects) }
 }
 
 function taskWorkSpans(work: readonly ContextCensusWork[]) {
@@ -143,7 +162,7 @@ export function contextCensus(input: {
   work: readonly ContextCensusWork[]
   tasks: readonly ContextCensusTaskFact[]
 }): ContextCensus {
-  const recentWork = input.work.filter(({ at }) => at >= input.since)
+  const recentWork = input.work.filter(({ at }) => inCensusWindow(at, input.since))
   const facts = new Map(input.tasks.map((task) => [`${task.project ?? ''}\0${task.key}`, task]))
   const groups = new Map<string | null, Map<string, ContextCensusTaskRow[]>>()
   const addSession = (
@@ -212,17 +231,9 @@ export function contextCensus(input: {
         sessions: rows,
       }
     })
-  const taskRows = projects.flatMap(({ sessions }) => sessions.flatMap(({ tasks }) => tasks))
-  const uncovered = taskRows.filter(({ status }) => status === 'uncovered').map(({ key }) => key)
-  const unreadable = taskRows
-    .filter(
-      (row): row is ContextCensusTaskRow & { remedy: string } =>
-        row.status === 'unreadable' && row.remedy !== null,
-    )
-    .map(({ key, remedy }) => ({ task: key, remedy }))
   return {
     since: input.since,
     projects,
-    verdict: { full: uncovered.length === 0 && unreadable.length === 0, uncovered, unreadable },
+    verdict: censusVerdict(projects),
   }
 }

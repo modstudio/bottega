@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { OPERATOR_SESSION_PREFIX } from '../../../shared/caller-classification.ts'
-import { type ContextCensusTaskFact, contextCensus } from './context-census.ts'
+import {
+  type ContextCensusTaskFact,
+  censusVerdict,
+  contextCensus,
+  selectCensusProject,
+} from './context-census.ts'
 
 const since = '2026-11-05T00:00:00Z'
 const session = {
@@ -139,6 +144,22 @@ describe('context census', () => {
     expect(result.verdict.full).toBe(true)
   })
 
+  test('keeps a task whose only in-window work is its renewal event', () => {
+    const result = contextCensus({
+      since,
+      sessions: [session],
+      work: [
+        work('DEV-RENEWED', '2026-11-04T23:59:59Z'),
+        work('DEV-RENEWED', '2026-11-06T00:00:00Z'),
+      ],
+      tasks: [task('DEV-RENEWED')],
+    })
+    expect(result.projects[0]!.sessions[0]!.tasks).toMatchObject([
+      { key: 'DEV-RENEWED', status: 'uncovered' },
+    ])
+    expect(result.verdict.full).toBe(false)
+  })
+
   test('takes projects from key prefixes and partitions a session across them', () => {
     const noPresence = { ...session, project: null }
     const result = contextCensus({
@@ -202,5 +223,39 @@ describe('context census', () => {
         { source: 'chat 2026-11-11', writingVerb: false },
       ],
     })
+  })
+
+  test('selects one project and derives its verdict from only those rows', () => {
+    const report = contextCensus({
+      since,
+      sessions: [
+        { session: 'architect-a', lastSeen: session.lastSeen, project: 'a' },
+        { session: 'architect-b', lastSeen: session.lastSeen, project: 'b' },
+      ],
+      work: [
+        { session: 'architect-a', key: 'A-UNCOVERED', at: '2026-11-10T12:00:00Z', project: 'a' },
+        { session: 'architect-a', key: 'A-UNREADABLE', at: '2026-11-10T12:00:00Z', project: 'a' },
+        { session: 'architect-b', key: 'B-COVERED', at: '2026-11-10T12:00:00Z', project: 'b' },
+      ],
+      tasks: [
+        task('A-UNCOVERED', { project: 'a' }),
+        task('A-UNREADABLE', { project: 'a', unreadable: 'retry project a' }),
+        task('B-COVERED', { project: 'b', statusCategory: 'done' }),
+      ],
+    })
+
+    expect(selectCensusProject(report, 'a')).toMatchObject({
+      projects: [{ project: 'a' }],
+      verdict: {
+        full: false,
+        uncovered: ['A-UNCOVERED'],
+        unreadable: [{ task: 'A-UNREADABLE', remedy: 'retry project a' }],
+      },
+    })
+    expect(selectCensusProject(report, 'b')).toMatchObject({
+      projects: [{ project: 'b' }],
+      verdict: { full: true, uncovered: [], unreadable: [] },
+    })
+    expect(censusVerdict(report.projects)).toEqual(report.verdict)
   })
 })

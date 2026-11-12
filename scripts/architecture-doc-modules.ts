@@ -47,11 +47,13 @@ export const docModules: DocModule[] = [
   module('orchestrator/src/doc/context-census.ts', [
     '../caller-classification.ts',
     '../workflow/task-flow-decision.ts',
+    './context-moment.ts',
     './doc-context-write.ts',
   ]),
   module('orchestrator/src/doc/context-census-adapter.ts', [
     'bun:sqlite',
     '../../../shared/brand.ts',
+    '../board/board-claim-service.ts',
     '../caller-classification.ts',
     '../database/db.ts',
     '../project/projects.ts',

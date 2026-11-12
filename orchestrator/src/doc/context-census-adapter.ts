@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { claimsOfSession } from '../board/board-claim-service.ts'
 import { isOperatorSession } from '../caller-classification.ts'
 import { db } from '../database/db.ts'
 import { projectForTaskKey, projects } from '../project/projects.ts'
@@ -22,6 +23,8 @@ import {
   type ContextCensusTaskFact,
   type ContextCensusWork,
   contextCensus,
+  inCensusWindow,
+  selectCensusProject,
 } from './context-census.ts'
 import { taskContextItems } from './context-service.ts'
 import { sessionWorkEvents } from './context-session-work-adapter.ts'
@@ -58,14 +61,12 @@ async function censusWork(
   const work: ContextCensusWork[] = []
   for (const { session } of sessions) {
     const events = await sessionWorkEvents(session, database)
-    events.push(
-      ...database
-        .query<{ key: string; at: string }, [string]>(
-          `SELECT subject_value key,taken_at at FROM board_claim
-            WHERE holder_session=? AND subject_kind='task'`,
-        )
-        .all(session),
-    )
+    for (const claim of claimsOfSession(session, database)) {
+      if (claim.subject.kind !== 'task') continue
+      events.push({ key: claim.subject.value, at: claim.takenAt })
+      const laterAt = claim.closedAt ?? claim.renewedAt
+      if (laterAt !== claim.takenAt) events.push({ key: claim.subject.value, at: laterAt })
+    }
     for (const event of events) {
       if (!event.key?.trim()) continue
       work.push({
@@ -161,7 +162,7 @@ async function censusTasks(
   const identities = [
     ...new Map(
       work
-        .filter(({ at }) => at >= since)
+        .filter(({ at }) => inCensusWindow(at, since))
         .map((event) => [`${event.project ?? ''}\0${event.key}`, event]),
     ).values(),
   ]
@@ -182,6 +183,15 @@ async function censusTasks(
   return tasks
 }
 
+/** Refuse a project filter that does not name a registered project. */
+export function assertCensusProjectRegistered(
+  project: string | undefined,
+  registered: readonly { name: string }[],
+): void {
+  if (project && !registered.some(({ name }) => name === project))
+    throw new Error(`unknown project ${project}; run ${PLATFORM_SLUG} project list --json`)
+}
+
 export async function contextCensusReport(
   input: { since?: string; project?: string; now?: string } = {},
   database: Database = db(),
@@ -193,6 +203,7 @@ export async function contextCensusReport(
     input.since ?? new Date(Date.parse(now) - CONTEXT_CENSUS_DEFAULT_WINDOW_MS).toISOString()
   if (!Number.isFinite(Date.parse(since))) throw new Error('--since must be an ISO date')
   const registered = projects(undefined, database)
+  assertCensusProjectRegistered(input.project, registered)
   const sessions = censusSessions(database)
   const work = await censusWork(sessions, registered, database)
   const report = contextCensus({
@@ -202,18 +213,5 @@ export async function contextCensusReport(
     tasks: await censusTasks(work, since, database, taskReader, taskPuller),
   })
   if (!input.project) return report
-  const selected = report.projects.filter(({ project }) => project === input.project)
-  const taskRows = selected.flatMap(({ sessions }) => sessions.flatMap(({ tasks }) => tasks))
-  const uncovered = taskRows.filter(({ status }) => status === 'uncovered').map(({ key }) => key)
-  const unreadable = taskRows
-    .filter(
-      (row): row is typeof row & { remedy: string } =>
-        row.status === 'unreadable' && row.remedy !== null,
-    )
-    .map(({ key, remedy }) => ({ task: key, remedy }))
-  return {
-    ...report,
-    projects: selected,
-    verdict: { full: uncovered.length === 0 && unreadable.length === 0, uncovered, unreadable },
-  }
+  return selectCensusProject(report, input.project)
 }
