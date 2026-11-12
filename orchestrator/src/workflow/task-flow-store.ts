@@ -2,6 +2,7 @@
 /** The task-flow persistence port and its resolver. */
 
 import type { Database } from 'bun:sqlite'
+import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import type {
   TaskFlowIntent,
   TaskFlowIntentInput,
@@ -231,6 +232,9 @@ export function taskFlowLocalStore(database: Database): TaskFlowLocalStore {
 }
 
 /** Resolves task-flow reads to the authoritative store for this install. */
-export function taskFlowReadStore(database: Database): TaskFlowReadStore {
-  return resolveTaskFlowReadStore(database)
+export function taskFlowReadStore(
+  database: Database,
+  client?: RecordTaskFlowClient,
+): TaskFlowReadStore {
+  return resolveTaskFlowReadStore(database, client)
 }

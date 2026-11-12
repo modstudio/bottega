@@ -99,6 +99,7 @@ async function reselectCursor(
     },
     d,
     true,
+    context.taskFlowClient,
   )) as CursorRow
   const moved =
     row.updated_at !== selected.updated_at ||

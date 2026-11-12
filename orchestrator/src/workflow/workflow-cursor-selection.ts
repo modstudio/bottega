@@ -3,6 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
 import { db, sessionId } from '../database/db.ts'
+import { projectAt } from '../project/projects.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import {
   readThroughTaskFlow,
@@ -189,8 +190,11 @@ export async function selectByHandle(
   identity: WorkflowCursorSelector,
   d: Database,
   includeTerminal = false,
+  client?: RecordTaskFlowClient,
 ): Promise<SelectableCursorRow> {
-  const row = await taskFlowReadStore(d).stageByHandle(identity.project ?? '', cursor)
+  const project = identity.project ?? projectAt(process.cwd(), d)?.name
+  if (!project) throw new Error('a workflow cursor handle requires a project; pass --project')
+  const row = await taskFlowReadStore(d, client).stageByHandle(project, cursor)
   if (!row)
     throw new Error(
       `workflow cursor ${cursor} does not exist on this machine; cursor handles are per-machine labels, so pass the task key as the workflow argument key (--arg key=<KEY> on the CLI, args.key over MCP) to read the hosted flow`,
@@ -209,8 +213,17 @@ export async function selectWorkflowCursorByHandle(
   cursor: number,
   ownerSession: string | null | undefined,
   database: Database,
+  client?: RecordTaskFlowClient,
 ): Promise<SelectableCursorRow> {
-  return (await selectWorkflowCursor(identity, cursor, ownerSession, database))!
+  return (await selectWorkflowCursor(
+    identity,
+    cursor,
+    ownerSession,
+    database,
+    undefined,
+    undefined,
+    client,
+  ))!
 }
 
 /** Selects the cursor a close targets while leaving terminal-state refusal to the close service. */
@@ -221,9 +234,18 @@ export async function selectWorkflowCursorForClose(
   d: Database,
   taskRecordId?: string | null,
   taskStatusCategory?: string | null,
+  client?: RecordTaskFlowClient,
 ): Promise<SelectableCursorRow | null> {
-  if (cursor !== undefined) return selectByHandle(cursor, identity, d, true)
-  return selectWorkflowCursor(identity, cursor, ownerSession, d, taskRecordId, taskStatusCategory)
+  if (cursor !== undefined) return selectByHandle(cursor, identity, d, true, client)
+  return selectWorkflowCursor(
+    identity,
+    cursor,
+    ownerSession,
+    d,
+    taskRecordId,
+    taskStatusCategory,
+    client,
+  )
 }
 
 async function selectKeyedTaskStage(
@@ -232,11 +254,13 @@ async function selectKeyedTaskStage(
   d: Database,
   taskRecordId: string | null | undefined,
   _taskStatusCategory: string | null | undefined,
+  client?: RecordTaskFlowClient,
 ): Promise<SelectableCursorRow | null> {
-  const handled = cursor === undefined ? null : await selectByHandle(cursor, identity, d)
+  const handled =
+    cursor === undefined ? null : await selectByHandle(cursor, identity, d, false, client)
   if (!taskRecordId) return handled
   if (handled) return handled
-  const row = await taskFlowReadStore(d).openStageForTask(taskRecordId)
+  const row = await taskFlowReadStore(d, client).openStageForTask(taskRecordId)
   if (row) {
     if (
       row.workflow_slug === identity.workflow &&
@@ -245,7 +269,7 @@ async function selectKeyedTaskStage(
     )
       return validateIdentity(row, identity)
   }
-  const fallback = await taskFlowReadStore(d).latestStageForTask({
+  const fallback = await taskFlowReadStore(d, client).latestStageForTask({
     project: identity.project,
     workflow: identity.workflow,
     mode: identity.mode,
@@ -261,6 +285,7 @@ export async function selectWorkflowCursor(
   d: Database,
   taskRecordId?: string | null,
   taskStatusCategory?: string | null,
+  client?: RecordTaskFlowClient,
 ): Promise<SelectableCursorRow | null> {
   if (identity.key && identity.project && identity.workflow && identity.mode)
     return selectKeyedTaskStage(
@@ -269,11 +294,12 @@ export async function selectWorkflowCursor(
       d,
       taskRecordId,
       taskStatusCategory,
+      client,
     )
-  if (cursor !== undefined) return selectByHandle(cursor, identity, d)
+  if (cursor !== undefined) return selectByHandle(cursor, identity, d, false, client)
   if (!identity.project || !identity.workflow || !identity.mode) return null
   if (!ownerSession) return null
-  const rows = await taskFlowReadStore(d).openKeylessStages({
+  const rows = await taskFlowReadStore(d, client).openKeylessStages({
     project: identity.project,
     workflow: identity.workflow,
     mode: identity.mode,

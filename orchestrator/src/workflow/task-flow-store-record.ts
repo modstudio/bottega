@@ -587,10 +587,13 @@ export function recordTaskFlowReadStore(
   return new RecordTaskFlowReadStore(database, client)
 }
 
-export function resolveTaskFlowReadStore(database: Database) {
+export function resolveTaskFlowReadStore(
+  database: Database,
+  client: RecordTaskFlowClient = recordApiClient(),
+) {
   const decision = currentRecordWriteDecision(database)
   throwIfRecordRefused(decision)
   return decision.verdict === 'hosted'
-    ? recordTaskFlowReadStore(database)
+    ? recordTaskFlowReadStore(database, client)
     : sqliteTaskFlowReadStore(database)
 }

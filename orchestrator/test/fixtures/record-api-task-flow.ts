@@ -3,6 +3,7 @@ import type { HostedTaskFlowStageById } from '../../src/record/record-task-flow-
 
 export type MemoryTaskFlowInput = {
   taskFlowStages?: HostedTaskFlowStageById[]
+  taskFlowProjectNames?: Record<string, string>
   taskFlowPageSize?: number
   taskFlowFailedPage?: number
 }
@@ -19,7 +20,7 @@ function matches({ stage, flow }: HostedTaskFlowStageById, selector: Selector): 
     selector.workflow === undefined || stage.workflow === selector.workflow,
     selector.mode === undefined || stage.mode === selector.mode,
     selector.workflowKey === undefined || stage.workflowKey === selector.workflowKey,
-    !selector.keyless || stage.workflowKey === '',
+    !selector.keyless || !stage.workflowKey,
     !selector.primaryInstance || stage.instanceId === '',
     selector.taskId === undefined || flow.taskId === selector.taskId,
     !selector.unlinked || flow.taskId === null,
@@ -48,9 +49,58 @@ function compare(
 }
 
 export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<RecordApiClient> {
+  const stages = [...(input.taskFlowStages ?? [])]
   return {
+    async composeTaskFlow(payload) {
+      const stage = payload.stageInsert!
+      const priorFlow = stages.find(({ flow }) => flow.id === stage.flowRecordId)?.flow
+      const insertedFlow = payload.flowInsert
+      const flow = priorFlow ?? {
+        id: insertedFlow!.id,
+        projectId: insertedFlow!.projectId,
+        taskId: insertedFlow!.taskId,
+        taskKey: stage.workflowKey || null,
+        state: insertedFlow!.state,
+        openStageRecordId: insertedFlow!.openStageRecordId,
+        openStageCount: 1,
+        openingMachineId: insertedFlow!.openingMachineId,
+        updatedMachineId: insertedFlow!.updatedMachineId,
+        revision: 1,
+        createdAt: insertedFlow!.createdAt,
+        updatedAt: insertedFlow!.updatedAt,
+      }
+      const number =
+        stages.reduce((highest, row) => Math.max(highest, row.stage.number ?? 0), 0) + 1
+      const stored: HostedTaskFlowStageById = {
+        flow: {
+          ...flow,
+          openStageRecordId: stage.id,
+          openStageCount: stages.filter(({ flow: row }) => row.id === flow.id).length + 1,
+        },
+        stage: {
+          ...stage,
+          projectName: input.taskFlowProjectNames?.[stage.projectId] ?? 'fixture',
+          number,
+          workflowKey: stage.workflowKey || null,
+          workflowVersionNumber: 1,
+          catalogueVersionNumber: 1,
+          revision: 1,
+          obligations: [],
+          stepTexts: [],
+          textCopies: [],
+        },
+      }
+      for (const row of stages) {
+        if (row.flow.id === flow.id) row.flow = stored.flow
+      }
+      stages.push(stored)
+      return {
+        stage: { id: stage.id, number },
+        revisions: { [flow.id]: stored.flow.revision, [stage.id]: stored.stage.revision },
+      }
+    },
     async readTaskFlow(selector) {
-      const found = input.taskFlowStages?.find(({ flow }) =>
+      const found = stages.find(({ flow }) =>
         selector.taskId
           ? flow.taskId === selector.taskId
           : selector.flowRecordId
@@ -64,7 +114,7 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
           404,
           'task_flow_not_found',
         )
-      const siblings = input.taskFlowStages?.filter(({ flow }) => flow.id === found.flow.id) ?? []
+      const siblings = stages.filter(({ flow }) => flow.id === found.flow.id)
       const open = siblings.find(({ stage }) => stage.id === found.flow.openStageRecordId)
       return {
         flow: found.flow,
@@ -80,7 +130,7 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
       }
     },
     async listTaskFlowStages(selector) {
-      const rows = [...(input.taskFlowStages ?? [])]
+      const rows = [...stages]
         .filter((row) => matches(row, selector))
         .sort((left, right) => compare(selector, left, right))
       const offset = Number(selector.cursor ?? 0)
@@ -101,10 +151,10 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
       }
     },
     async readTaskFlowStage(id) {
-      return input.taskFlowStages?.find(({ stage }) => stage.id === id) ?? null
+      return stages.find(({ stage }) => stage.id === id) ?? null
     },
     async readTaskFlowText(id) {
-      for (const { stage } of input.taskFlowStages ?? []) {
+      for (const { stage } of stages) {
         const text = stage.stepTexts?.find((row) => row.id === id)
         if (text)
           return {
@@ -116,7 +166,7 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
       return null
     },
     async readTaskFlowObligation(id) {
-      for (const { stage } of input.taskFlowStages ?? []) {
+      for (const { stage } of stages) {
         const obligation = stage.obligations?.find((row) => row.id === id)
         if (obligation)
           return { obligation, stage: { id: stage.id, number: stage.number, state: stage.state } }
@@ -124,7 +174,7 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
       return null
     },
     async readTaskFlowProjectReferenceCounts(projectId) {
-      const rows = input.taskFlowStages?.filter(({ stage }) => stage.projectId === projectId) ?? []
+      const rows = stages.filter(({ stage }) => stage.projectId === projectId)
       return { stages: rows.length, flows: new Set(rows.map(({ flow }) => flow.id)).size }
     },
   }

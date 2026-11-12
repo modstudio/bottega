@@ -78,7 +78,7 @@ async function keylessComposeOrdinal(
   machine: string,
   database: Database,
 ): Promise<number> {
-  return taskFlowReadStore(database).nextKeylessInstanceSlot({
+  return taskFlowReadStore(database, context.taskFlowClient).nextKeylessInstanceSlot({
     projectRecordId,
     workflow: composition.workflow.slug,
     mode: composition.mode!.slug,

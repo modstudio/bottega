@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { resolvedRecordOrigin } from '../../../shared/record-api-url.ts'
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
 import { rememberActiveRecordSpace } from '../project-space.ts'
@@ -61,20 +62,23 @@ function composeClient(
     destinations?: Array<{ destinationSpaceId?: string } | undefined>
   } = {},
 ): RecordTaskFlowClient {
+  const memory = createMemoryRecordApiClient()
   let replay:
     | { stage: { id: string; number: number }; revisions: Record<string, number> }
     | undefined
   return {
+    ...memory,
     ...projectIdentityClient,
     composeTaskFlow: async (input, destination) => {
       calls.push(input)
       options.destinations?.push(destination)
       if (options.fail) throw options.fail
       if (replay) return replay
+      const stored = await memory.composeTaskFlow!(input, destination)
       const stage = input.stageInsert!
       const flowId = input.flowInsert?.id ?? input.flowChange!.id
       replay = {
-        stage: { id: stage.id, number: options.number ?? 41 },
+        stage: { id: stage.id, number: options.number ?? stored.stage!.number },
         revisions: {
           [flowId]: options.flowRevision ?? 4,
           [stage.id]: options.stageRevision ?? 7,
@@ -354,17 +358,12 @@ test('advance, await, rule, and abandon call the record before caching returned 
 
 test("abandoning a stage that is not its flow's open stage preserves the pointer", async () => {
   const d = hostedDatabase()
-  let number = 40
   let abandoned: TaskFlowIntentInput<'abandon'> | undefined
+  const memory = createMemoryRecordApiClient()
   const taskFlowClient: RecordTaskFlowClient = {
+    ...memory,
     ...projectIdentityClient,
-    composeTaskFlow: async (input) => ({
-      stage: { id: input.stageInsert!.id, number: number++ },
-      revisions: {
-        [input.stageInsert!.id]: 1,
-        [input.flowInsert?.id ?? input.flowChange!.id]: 1,
-      },
-    }),
+    composeTaskFlow: (input, destination) => memory.composeTaskFlow!(input, destination),
     abandonTaskFlow: async (input) => {
       abandoned = input
       return { revisions: { [input.stage.id]: 2 } }
@@ -431,10 +430,13 @@ test('adoption calls adopt then stage-update and caches the hosted flow identity
   installKeylessWorkflow(d, 'hosted-adoption')
   const events: string[] = []
   let hostedFlowId = ''
+  const memory = createMemoryRecordApiClient()
   const taskFlowClient: RecordTaskFlowClient = {
+    ...memory,
     ...projectIdentityClient,
     composeTaskFlow: async (input) => {
       hostedFlowId = input.flowInsert!.id
+      await memory.composeTaskFlow!(input, { destinationSpaceId })
       return {
         stage: { id: input.stageInsert!.id, number: 81 },
         revisions: { [hostedFlowId]: 2, [input.stageInsert!.id]: 3 },
@@ -567,15 +569,13 @@ test('keyless hosted composes use distinct deterministic session slots', async (
   const d = hostedDatabase()
   installKeylessWorkflow(d, 'hosted-keyless-slots')
   const calls: TaskFlowIntentInput<'compose'>[] = []
+  const memory = createMemoryRecordApiClient()
   const taskFlowClient: RecordTaskFlowClient = {
+    ...memory,
     ...projectIdentityClient,
     composeTaskFlow: async (input) => {
       calls.push(input)
-      const number = 90 + calls.length
-      return {
-        stage: { id: input.stageInsert!.id, number },
-        revisions: { [input.flowInsert!.id]: 2, [input.stageInsert!.id]: 3 },
-      }
+      return memory.composeTaskFlow!(input, { destinationSpaceId })
     },
   }
   const hostedContext = { session: 'shared-keyless-session', taskFlowClient }
@@ -660,16 +660,15 @@ test('keyless open-slot recovery recounts once and composes the next sibling slo
   let setupStageId = ''
   let setupFlowId = ''
   let listCalls = 0
+  const memory = createMemoryRecordApiClient()
   const taskFlowClient: RecordTaskFlowClient = {
+    ...memory,
     ...projectIdentityClient,
     composeTaskFlow: async (input) => {
       if (!setupStageId) {
         setupStageId = input.stageInsert!.id
         setupFlowId = input.flowInsert!.id
-        return {
-          stage: { id: setupStageId, number: 201 },
-          revisions: { [setupFlowId]: 1, [setupStageId]: 1 },
-        }
+        return memory.composeTaskFlow!(input, { destinationSpaceId })
       }
       composeCalls.push(input)
       if (composeCalls.length === 1)
@@ -684,8 +683,9 @@ test('keyless open-slot recovery recounts once and composes the next sibling slo
         revisions: { [input.flowInsert!.id]: 1, [input.stageInsert!.id]: 1 },
       }
     },
-    listTaskFlowStages: async () => {
+    listTaskFlowStages: async (selector, destination) => {
       listCalls += 1
+      if (!composeCalls.length) return memory.listTaskFlowStages!(selector, destination)
       const failed = composeCalls[0]!.stageInsert!
       return {
         truncated: false,

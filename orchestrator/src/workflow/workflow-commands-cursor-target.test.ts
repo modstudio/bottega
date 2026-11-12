@@ -15,7 +15,7 @@ import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import {
   workflowCommandPresentation as presentation,
   publishCursorWorkflowFixture as publishCursorWorkflow,
-  registerFixtureWorkflowProject as registerFixtureProject,
+  registerCurrentWorkflowProject,
   runWorkflowCommand as workflowCommand,
   workflowRecordedArtifact,
 } from './workflow-store.fixture.ts'
@@ -48,7 +48,7 @@ test('next by cursor alone reads through the row key and links the hosted task',
   upsertProject({
     recordId: newRecordId(),
     name: project,
-    path: `/fixture/${project}`,
+    path: process.cwd(),
     stack: 'bun',
     settings: {
       gate: 'bun run check',
@@ -116,7 +116,7 @@ test('next by cursor alone reads through the row key and links the hosted task',
     },
   })
   installRecordApiClient({
-    ...createMemoryRecordApiClient(),
+    ...createMemoryRecordApiClient({ taskFlowStages: [{ flow: hosted(1, 0).flow, stage: hosted(1, 0).stage! }] }),
     whoami: async () => ({
       user: { id: 'cursor-target-user' },
       activeSpaceId: 'cursor-target-space',
@@ -134,7 +134,7 @@ test('next by cursor alone reads through the row key and links the hosted task',
     .query<{ number: number }, [string]>('SELECT number FROM workflow_cursor WHERE record_id=?')
     .get(stageId)!.number
   installRecordApiClient({
-    ...createMemoryRecordApiClient(),
+    ...createMemoryRecordApiClient({ taskFlowStages: [{ flow: hosted(2, 1).flow, stage: hosted(2, 1).stage! }] }),
     whoami: async () => ({
       user: { id: 'cursor-target-user' },
       activeSpaceId: 'cursor-target-space',
@@ -190,7 +190,7 @@ test('cursor verbs parse every documented positional form before flags', async (
   const currentStep = catalogue.find(({ slug }) => slug === 'blast-radius')!.slug
   const nextStep = catalogue.find(({ slug }) => slug === 'fix-defect-triage')!.slug
   const steps = [currentStep, nextStep]
-  registerFixtureProject(project)
+  registerCurrentWorkflowProject(project)
   publishCursorWorkflow(slug, [{ slug: 'default', title: 'Default', default: true, steps }])
   const opened = await composeWorkflowWithCursor(
     slug,

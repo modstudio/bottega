@@ -198,7 +198,15 @@ async function attachWorkflowTextByHandleUnchecked(
   context: WorkflowCursorContext,
   d: Database = writableDb(),
 ): Promise<string> {
-  const row = (await selectWorkflowCursor({}, cursor, undefined, d)) as AttachCursorRow
+  const row = (await selectWorkflowCursor(
+    {},
+    cursor,
+    undefined,
+    d,
+    undefined,
+    undefined,
+    context.taskFlowClient,
+  )) as AttachCursorRow
   const { recordId, createdAt, input } = attachTextIntent(row, body)
   const token = await attachSelectedWorkflowText(row, body, context, recordId, createdAt, d)
   const hosted = await writeHostedTaskFlow(
@@ -238,6 +246,9 @@ async function attachWorkflowTextUnchecked(
     cursor,
     context.session,
     d,
+    undefined,
+    undefined,
+    context.taskFlowClient,
   )) as AttachCursorRow | null
   if (!row) throw new Error('workflow has no live cursor; fetch its current step first')
   const { recordId, createdAt, input } = attachTextIntent(row, body)

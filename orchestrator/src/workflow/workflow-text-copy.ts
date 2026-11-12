@@ -285,6 +285,7 @@ export async function closeCursorWithTextCopyResult(
     database,
     input.context.taskRecordId,
     input.context.taskStatusCategory,
+    input.context.taskFlowClient,
   )) as SelectableCursorRow | null
   if (!row)
     throw new Error(
