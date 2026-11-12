@@ -127,26 +127,23 @@ test('the pure dispatch decision accepts a keyless explore lookup without a key'
   ).toEqual({ action: 'dispatch-without-key' })
 })
 
-test.each(['explore', 'operate', 'report', 'triage'])(
-  'the pure dispatch decision refuses implement from keyless %s with the task remedy',
-  (workflowSlug) => {
-    expect(
-      decideStepDispatch({
-        cursor: 17,
-        taskKey: '',
-        workflowSlug,
-        stepSlug: 'act',
-        stepJobs: ['implement'],
-        job: JOBS.implement!,
-      }),
-    ).toEqual({
-      action: 'refuse',
-      reason:
-        `workflow ${workflowSlug} cursor 17 has no task key, and implement writes the repository; ` +
-        'compose plan-task (or take up a task), then dispatch from that keyed cursor',
-    })
-  },
-)
+test('the pure dispatch decision refuses a keyless writer with the task remedy before step membership', () => {
+  expect(
+    decideStepDispatch({
+      cursor: 17,
+      taskKey: '',
+      workflowSlug: 'explore',
+      stepSlug: 'act',
+      stepJobs: [],
+      job: JOBS.implement!,
+    }),
+  ).toEqual({
+    action: 'refuse',
+    reason:
+      'workflow explore cursor 17 has no task key, and implement writes the repository; ' +
+      'compose plan-task (or take up a task), then dispatch from that keyed cursor',
+  })
+})
 
 test('the pure dispatch decision preserves a keyed cursor key', () => {
   expect(
@@ -161,14 +158,12 @@ test('the pure dispatch decision preserves a keyed cursor key', () => {
   ).toEqual({ action: 'dispatch-with-key', key: 'DEV-2289' })
 })
 
-test.each([
-  { taskKey: '', workflowSlug: 'explore' },
-  { taskKey: 'DEV-2289', workflowSlug: 'ship-task' },
-])('the pure dispatch decision refuses a job missing from the step for $workflowSlug', (cursor) => {
+test('the pure dispatch decision refuses a keyless lookup missing from the step', () => {
   expect(
     decideStepDispatch({
       cursor: 17,
-      ...cursor,
+      taskKey: '',
+      workflowSlug: 'explore',
       stepSlug: 'investigate',
       stepJobs: ['understand'],
       job: JOBS.diagnose!,

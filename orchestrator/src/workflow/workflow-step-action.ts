@@ -61,6 +61,13 @@ export function decideStepDispatch(input: {
   stepJobs: string[]
   job: Pick<Job, 'name' | 'needs'>
 }): StepDispatchDecision {
+  if (!input.taskKey && input.job.needs.writesRepo === true)
+    return {
+      action: 'refuse',
+      reason:
+        `workflow ${input.workflowSlug} cursor ${input.cursor} has no task key, and ${input.job.name} writes the repository; ` +
+        'compose plan-task (or take up a task), then dispatch from that keyed cursor',
+    }
   if (!input.stepJobs.includes(input.job.name)) {
     const declared = input.stepJobs.length ? input.stepJobs.join(', ') : 'none'
     return {
@@ -69,13 +76,7 @@ export function decideStepDispatch(input: {
     }
   }
   if (input.taskKey) return { action: 'dispatch-with-key', key: input.taskKey }
-  if (input.job.needs.writesRepo !== true) return { action: 'dispatch-without-key' }
-  return {
-    action: 'refuse',
-    reason:
-      `workflow ${input.workflowSlug} cursor ${input.cursor} has no task key, and ${input.job.name} writes the repository; ` +
-      'compose plan-task (or take up a task), then dispatch from that keyed cursor',
-  }
+  return { action: 'dispatch-without-key' }
 }
 
 export async function dispatchForStep(
