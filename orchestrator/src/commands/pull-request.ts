@@ -252,7 +252,7 @@ export async function runPullRequestPostLandingCommand(
   return exitCode
 }
 
-async function mergePullRequestCommand(
+export async function mergePullRequestCommand(
   target: string,
   options: { cwd?: string; releaseRequired?: boolean; postLanding?: boolean; depth?: string },
 ): Promise<void> {

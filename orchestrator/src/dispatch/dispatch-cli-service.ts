@@ -645,7 +645,11 @@ function assertInstallLevelAllowsDispatch(jobName: string): void {
   if (decision.kind === 'refuse') throw new Error(decision.message)
 }
 
-export async function doCommand(argv: string[], presentation: Presentation): Promise<void> {
+export async function doCommand(
+  argv: string[],
+  presentation: Presentation,
+  binding?: { cursorRecordId: string; stepSlug: string },
+): Promise<void> {
   const requestedJob = argv[1]
   if (requestedJob && JOBS[requestedJob]) assertInstallLevelAllowsDispatch(requestedJob)
   await ensureLocalHealth()
@@ -726,6 +730,7 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
         })
       },
     },
+    binding,
   )
 }
 
