@@ -16,7 +16,7 @@ export type WorkflowContextMoment = { taskKey: string | null; effect: ContextMom
 
 export function workflowQuestionContextMoment(input: {
   moment: 'workflow-await' | 'workflow-rule'
-  taskKey?: string
+  taskKey: string | null | undefined
   questionId: number
   text: string
   operatorRuled?: boolean

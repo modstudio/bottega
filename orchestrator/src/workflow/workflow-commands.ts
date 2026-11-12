@@ -481,7 +481,7 @@ export async function ruleCommand(
     taskKey: context.workflowKey,
     questionId: result.questionId,
     operatorRuled: argv.includes('--from-operator'),
-    text: ruling,
+    text: ruling!,
   })
 }
 
@@ -752,7 +752,7 @@ export async function awaitCommand(
     moment: 'workflow-await',
     taskKey: context.workflowKey,
     questionId: result.questionId,
-    text: question,
+    text: question!,
   })
 }
 
