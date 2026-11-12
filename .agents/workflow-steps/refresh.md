@@ -3,7 +3,7 @@ title: Refresh the planning environment
 stage: plan
 floor:
   - command-exit
-job: null
+jobs: []
 autonomy: auto
 needs: []
 ---

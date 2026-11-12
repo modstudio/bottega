@@ -23,7 +23,8 @@ const store: WorkflowTreeStore = {
       outcomes: ['passed', 'failed'],
       rulingOutcomes: ['failed'],
       reenter: { to: 'prepare', outcome: 'failed' },
-      job: null,
+      jobs: [],
+      actions: [],
       autonomy: 'auto',
       needs: ['docs'],
       body: 'Run the gate.',
@@ -64,6 +65,12 @@ describe('normalizeWorkflowYaml', () => {
     ['two-line empty array under another key', 'arguments: \n  []', 'arguments: []'],
   ])('%s has one stable spelling', (_label, yaml, expected) => {
     expect(normalizeWorkflowYaml(yaml)).toBe(expected)
+  })
+
+  test('jobs and actions use stable flow lists', () => {
+    expect(
+      normalizeWorkflowYaml('jobs:\n  - implement\n  - review-lens\nactions:\n  - pr-create\n'),
+    ).toBe('jobs: [implement, review-lens]\nactions: [pr-create]\n')
   })
 })
 
@@ -132,6 +139,10 @@ describe('tracked plan-task design signoff', () => {
   const tracked = parseWorkflowTree(collectWorkflowTree(repositoryRoot))
   const planTask = tracked.workflows.find(({ slug }) => slug === 'plan-task')!.definition
   const designSignoff = tracked.steps.find(({ slug }) => slug === 'design-signoff')!
+
+  test('every tracked step declares jobs', () => {
+    expect(tracked.steps.every((step) => Array.isArray(step.jobs))).toBe(true)
+  })
 
   test('operator revision reenters design', () => {
     expect(designSignoff.outcomes).toEqual(['approved', 'revise'])

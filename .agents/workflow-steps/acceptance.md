@@ -5,7 +5,7 @@ floor:
   - recorded-artifact
   - ruling
 operatorRuling: true
-job: null
+jobs: []
 autonomy: auto
 needs:
   - tracker

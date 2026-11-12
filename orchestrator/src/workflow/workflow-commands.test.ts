@@ -45,7 +45,7 @@ test('workflow preserves the unknown-verb refusal and exit status', async () => 
     error.mockRestore()
   }
   expect(errors).toEqual([
-    `unknown: ${PLATFORM_SLUG} workflow. Try list | show | set | promote | retire | fork | versions | render-check | compose | step | attach | next | await | rule | abandon | cursors | probe | exec | hydrate | import | promote-tree`,
+    `unknown: ${PLATFORM_SLUG} workflow. Try list | show | set | promote | retire | fork | versions | render-check | compose | step | attach | next | dispatch | land | await | rule | abandon | cursors | probe | exec | hydrate | import | promote-tree`,
   ])
 })
 
@@ -118,7 +118,7 @@ test('workflow inspection reads only the current project space and stays local o
           title: 'Hosted ordinal check',
           body: 'This step exists only in the hosted mode layout.',
           floor: [],
-          job: null,
+          ...{ jobs: [], actions: [] },
           stage: 'review',
           autonomy: 'auto',
           needs: [],
@@ -128,7 +128,7 @@ test('workflow inspection reads only the current project space and stays local o
           title: 'Inspection check',
           body: 'Use {{tracker.server}}.',
           floor: ['recorded-artifact'],
-          job: null,
+          ...{ jobs: [], actions: [] },
           stage: 'review',
           autonomy: 'auto',
           needs: [],
@@ -222,7 +222,7 @@ test('workflow inspection reads only the current project space and stays local o
           title: 'Second space check',
           body: 'Use {{second.only}}.',
           floor: ['recorded-artifact'],
-          job: null,
+          ...{ jobs: [], actions: [] },
           stage: 'review',
           autonomy: 'auto',
           needs: [],

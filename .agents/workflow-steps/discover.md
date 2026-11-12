@@ -3,7 +3,7 @@ title: Lock the requirements
 stage: plan
 floor:
   - ruling
-job: null
+jobs: []
 autonomy: ask
 needs: []
 ---

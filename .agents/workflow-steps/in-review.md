@@ -4,7 +4,7 @@ stage: review
 floor:
   - "{{tracker.inReview.floor}}"
 expectedStatus: "{{tracker.inReview.state}}"
-job: null
+jobs: []
 autonomy: auto
 needs:
   - tracker

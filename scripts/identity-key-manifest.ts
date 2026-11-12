@@ -831,6 +831,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'review_read.project_record_id',
     'run.record_id',
     'run.credential_id',
+    'run.cursor_record_id',
     'run.parent_run_record_id',
     'run.retry_of_record_id',
     'run.project_record_id',

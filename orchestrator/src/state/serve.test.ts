@@ -130,6 +130,8 @@ const RUN_DETAIL_INTENTIONALLY_OMITTED_COLUMNS = {
   endpoint_key_source: RUN_DETAIL_ROUTING_REASON,
   host_admission_first: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
   host_admission: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
+  cursor_record_id: RUN_DETAIL_ALIAS_REASON,
+  step_slug: RUN_DETAIL_ALIAS_REASON,
 } as const satisfies Record<string, string>
 
 const trackResidue = trackedTestResidue()
@@ -175,6 +177,18 @@ test('live child turns publish their chain root for hub badge matching', () => {
 })
 
 describe('run detail', () => {
+  test('shows workflow binding aliases only when the run is bound', () => {
+    const bound = addRun({ agent: 'codex', job: 'implement' })
+    db()
+      .query('UPDATE run SET cursor_record_id=?,step_slug=? WHERE record_id=?')
+      .run(newRecordId(), 'write', bound)
+    expect(runDetail(bound)).toMatchObject({ cursor: expect.any(String), step: 'write' })
+
+    const unbound = runDetail(addRun({ agent: 'codex', job: 'implement' }))!
+    expect(unbound).not.toHaveProperty('cursor')
+    expect(unbound).not.toHaveProperty('step')
+  })
+
   test('accounts for every run column in the detail projection', () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
     const detail = runDetail(id)!

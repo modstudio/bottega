@@ -3,7 +3,7 @@ title: Approve the plan
 stage: plan
 floor:
   - ruling
-job: null
+jobs: []
 autonomy: ask
 needs: []
 ---

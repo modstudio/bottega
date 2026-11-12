@@ -3,7 +3,7 @@ title: Observe the released cohort
 stage: ship
 floor:
   - recorded-artifact
-job: null
+jobs: []
 autonomy: auto
 needs:
   - release

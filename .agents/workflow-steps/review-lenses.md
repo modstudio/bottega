@@ -3,7 +3,7 @@ title: Run independent review lenses
 stage: review
 floor:
   - recorded-artifact
-job: review-lens
+jobs: [review-lens]
 autonomy: auto
 needs:
   - tracker

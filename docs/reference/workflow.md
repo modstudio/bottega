@@ -18,12 +18,16 @@ workflows and their cursors
 - [bottega workflow compose](#bottega-workflow-compose)
 - [bottega workflow cursor](#bottega-workflow-cursor)
 - [bottega workflow cursors](#bottega-workflow-cursors)
+- [bottega workflow dispatch](#bottega-workflow-dispatch)
 - [bottega workflow epic](#bottega-workflow-epic)
 - [bottega workflow exec](#bottega-workflow-exec)
 - [bottega workflow fix-defect](#bottega-workflow-fix-defect)
 - [bottega workflow fork](#bottega-workflow-fork)
 - [bottega workflow hydrate](#bottega-workflow-hydrate)
 - [bottega workflow import](#bottega-workflow-import)
+- [bottega workflow land](#bottega-workflow-land)
+- [bottega workflow land create](#bottega-workflow-land-create)
+- [bottega workflow land merge](#bottega-workflow-land-merge)
 - [bottega workflow list](#bottega-workflow-list)
 - [bottega workflow next](#bottega-workflow-next)
 - [bottega workflow probe](#bottega-workflow-probe)
@@ -55,12 +59,14 @@ workflows and their cursors
 - [bottega workflow compose](./workflow.md#bottega-workflow-compose)
 - [bottega workflow cursor](./workflow.md#bottega-workflow-cursor)
 - [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
+- [bottega workflow dispatch](./workflow.md#bottega-workflow-dispatch)
 - [bottega workflow epic](./workflow.md#bottega-workflow-epic)
 - [bottega workflow exec](./workflow.md#bottega-workflow-exec)
 - [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
 - [bottega workflow fork](./workflow.md#bottega-workflow-fork)
 - [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
 - [bottega workflow import](./workflow.md#bottega-workflow-import)
+- [bottega workflow land](./workflow.md#bottega-workflow-land)
 - [bottega workflow list](./workflow.md#bottega-workflow-list)
 - [bottega workflow next](./workflow.md#bottega-workflow-next)
 - [bottega workflow probe](./workflow.md#bottega-workflow-probe)
@@ -293,6 +299,20 @@ list workflow cursors
 
 - [bottega workflow](./workflow.md#bottega-workflow)
 
+## bottega workflow dispatch
+
+**Synopsis:** `bottega workflow dispatch <job> [prompt...]`
+
+dispatch a job declared by the current workflow step
+
+### Options
+
+Options are documented by `--help`.
+
+### Related
+
+- [bottega workflow](./workflow.md#bottega-workflow)
+
 ## bottega workflow epic
 
 **Synopsis:** `bottega workflow epic <key> [--json]`
@@ -388,6 +408,49 @@ import a project workflow tree as draft definitions
 ### Related
 
 - [bottega workflow](./workflow.md#bottega-workflow)
+
+## bottega workflow land
+
+**Synopsis:** `bottega workflow land`
+
+perform a pull-request action declared by the current workflow step
+
+### Related
+
+- [bottega workflow](./workflow.md#bottega-workflow)
+- [bottega workflow land create](./workflow.md#bottega-workflow-land-create)
+- [bottega workflow land merge](./workflow.md#bottega-workflow-land-merge)
+
+## bottega workflow land create
+
+**Synopsis:** `bottega workflow land create [githubArgs...]`
+
+create a pull request when the current step declares pr-create
+
+### Options
+
+Options are documented by `--help`.
+
+### Related
+
+- [bottega workflow land](./workflow.md#bottega-workflow-land)
+
+## bottega workflow land merge
+
+**Synopsis:** `bottega workflow land merge <number-or-url> [--cursor <value>] [--cwd <tree>] [--release-required] [--depth <rung>]`
+
+merge a pull request when the current step declares pr-merge
+
+### Options
+
+- `--cursor <value>`: select this workflow cursor
+- `--cwd <tree>`: verify and merge from this worktree
+- `--release-required`: release every rung required by the merged paths
+- `--depth <rung>`: bound the production release reach through this rung
+
+### Related
+
+- [bottega workflow land](./workflow.md#bottega-workflow-land)
 
 ## bottega workflow list
 

@@ -65,6 +65,7 @@ test('a post-claim startup failure records elapsed latency', () => {
 test('a never-started failure is inserted and published atomically', () => {
   const id = newRecordId()
   const projectId = newRecordId()
+  const cursorRecordId = newRecordId()
   upsertProject({ recordId: projectId, name: 'never-started', path: '/tmp/caller' })
 
   recordNeverStartedRunFailure({
@@ -85,6 +86,7 @@ test('a never-started failure is inserted and published atomically', () => {
     startedByUserId: null,
     agentExplicit: 0,
     executor: 'external',
+    binding: { cursorRecordId, stepSlug: 'write' },
   })
 
   expect(
@@ -97,6 +99,9 @@ test('a never-started failure is inserted and published atomically', () => {
   expect(db().query("SELECT row_id FROM outbox WHERE row_id=? AND kind='run'").get(id)).toEqual({
     row_id: id,
   })
+  expect(
+    db().query('SELECT cursor_record_id,step_slug FROM run WHERE record_id=?').get(id),
+  ).toEqual({ cursor_record_id: cursorRecordId, step_slug: 'write' })
 })
 
 test('a never-started failure insert rolls back when publication fails', () => {

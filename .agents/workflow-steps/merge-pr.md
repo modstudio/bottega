@@ -9,7 +9,7 @@ outcomes:
 expectedExitCodes:
   merged: 0
   merged-with-residue: 20
-job: null
+jobs: []
 autonomy: ask
 needs:
   - trunk

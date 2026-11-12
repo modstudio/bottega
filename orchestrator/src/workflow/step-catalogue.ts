@@ -312,19 +312,41 @@ function validateIdentity(
   if (typeof item.title !== 'string' || !item.title.trim())
     errors.push(`step "${slug}" title must be non-empty`)
   if (typeof item.body !== 'string') errors.push(`step "${slug}" body must be a string`)
-  if (item.job !== null && (typeof item.job !== 'string' || !(item.job in JOBS)))
-    errors.push(`step "${slug}" names unknown job "${String(item.job)}"`)
+  validateJobsAndActions(item, slug, errors)
   if (!(autonomyValues as readonly string[]).includes(String(item.autonomy)))
     errors.push(`step "${slug}" has invalid autonomy "${String(item.autonomy)}"`)
   if (!(autonomyStages as readonly string[]).includes(String(item.stage)))
     errors.push(`step "${slug}" has invalid or missing stage "${String(item.stage)}"`)
 }
 
+function validateJobsAndActions(
+  item: Record<string, unknown>,
+  slug: string,
+  errors: string[],
+): void {
+  if (!Array.isArray(item.jobs)) errors.push(`step "${slug}" jobs must be an array`)
+  else
+    for (const entry of item.jobs)
+      if (typeof entry !== 'string' || !(entry in JOBS))
+        errors.push(`step "${slug}" names unknown job "${String(entry)}"`)
+  if (!Array.isArray(item.actions)) errors.push(`step "${slug}" actions must be an array`)
+  else
+    for (const entry of item.actions)
+      if (entry !== 'pr-create' && entry !== 'pr-merge')
+        errors.push(`step "${slug}" names unknown action "${String(entry)}"`)
+}
+
 /** Stored catalogue history remains readable without being revalidated. */
 export function compatibleCatalogueStep(step: CatalogueStep): CatalogueStep {
-  const legacy = step as unknown as Omit<CatalogueStep, 'autonomy' | 'floor'> & {
+  const legacy = step as unknown as Omit<
+    CatalogueStep,
+    'autonomy' | 'floor' | 'jobs' | 'actions'
+  > & {
     autonomy: AutonomyValue | 'manual'
     floor: string[]
+    job?: string | null
+    jobs?: string[]
+    actions?: string[]
   }
   const floor: FloorEntry[] = []
   for (const kind of legacy.floor) {
@@ -333,6 +355,8 @@ export function compatibleCatalogueStep(step: CatalogueStep): CatalogueStep {
   }
   return {
     ...step,
+    jobs: legacy.jobs ?? (legacy.job === null || legacy.job === undefined ? [] : [legacy.job]),
+    actions: legacy.actions ?? [],
     autonomy: legacy.autonomy === 'manual' ? 'ask' : legacy.autonomy,
     floor,
   }

@@ -3,7 +3,7 @@ title: Rule on every documentation deviation
 stage: docs
 floor:
   - ruling
-job: null
+jobs: []
 autonomy: ask
 needs:
   - tracker

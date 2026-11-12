@@ -3,7 +3,7 @@ title: Triage every finding
 stage: review
 floor:
   - ruling
-job: null
+jobs: []
 autonomy: ask
 needs: []
 ---

@@ -82,7 +82,8 @@ describe('workflow project facts', () => {
         body: `---
 title: Synthetic
 floor: []
-job: null
+jobs: []
+actions: []
 autonomy: ask
 needs:
   - before-pull-request

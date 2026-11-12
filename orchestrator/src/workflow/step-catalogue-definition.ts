@@ -21,7 +21,8 @@ export type CatalogueStep = {
   requirePullRequest?: boolean
   operatorRuling?: boolean
   commandEvidence?: CommandEvidence
-  job: string | null
+  jobs: string[]
+  actions: string[]
   /** Optional only when reading a stored catalogue created before stages existed. */
   stage?: AutonomyStage
   autonomy: AutonomyValue

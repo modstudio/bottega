@@ -155,7 +155,12 @@ function reviewValues(row: LocalRun) {
 }
 
 function taskValues(row: LocalRun) {
-  return { taskKey: row.launch_key, taskId: row.task_record_id }
+  return {
+    taskKey: row.launch_key,
+    taskId: row.task_record_id,
+    cursorRecordId: row.cursor_record_id,
+    stepSlug: row.step_slug,
+  }
 }
 
 function credentialValues(row: LocalRun) {
