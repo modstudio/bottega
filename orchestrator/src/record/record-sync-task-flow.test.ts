@@ -74,6 +74,9 @@ function stagePayload(revision = 1, state = 'running') {
     flowRecordId: FLOW,
     workflow: 'proof',
     mode: 'default',
+    workflowKey: 'DEV-2234',
+    instanceId: '',
+    sessionId: 'session-proof',
     workflowVersionId: WORKFLOW_VERSION,
     catalogueVersionId: CATALOGUE_VERSION,
     arguments: { key: 'DEV-1978' },
@@ -81,6 +84,9 @@ function stagePayload(revision = 1, state = 'running') {
     activeSlug: 'build',
     state,
     closedStepNotes: [],
+    question: 'Proceed?',
+    autonomy: '{"level":"guided"}',
+    enforcement: 'floors',
     totalSteps: 2,
     openedMachineId: MACHINE,
     takenOverFromMachineId: null,
@@ -91,6 +97,33 @@ function stagePayload(revision = 1, state = 'running') {
     updatedAt: STAMP,
   })
 }
+
+test('stage payload conversion carries the complete shape and accepts older optional columns', () => {
+  expect(taskFlowStageValues(stagePayload())).toMatchObject({
+    projectId: PROJECT,
+    workflowKey: 'DEV-2234',
+    instanceId: '',
+    sessionId: 'session-proof',
+    question: 'Proceed?',
+    autonomy: '{"level":"guided"}',
+    enforcement: 'floors',
+  })
+  const old = stagePayload()
+  for (const field of ['workflowKey', 'instanceId', 'sessionId', 'question', 'autonomy', 'enforcement'])
+    delete old[field]
+  const parsedOld = { ...OUTBOX_PAYLOAD_CONTRACTS.task_flow_stage.laterAdded, ...old }
+  expect(Object.keys(parsedOld).sort()).toEqual(
+    [...OUTBOX_PAYLOAD_CONTRACTS.task_flow_stage.columns].sort(),
+  )
+  expect(taskFlowStageValues(parsedOld)).toMatchObject({
+    workflowKey: null,
+    instanceId: null,
+    sessionId: null,
+    question: null,
+    autonomy: null,
+    enforcement: null,
+  })
+})
 
 async function push(
   actor: SQL,

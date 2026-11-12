@@ -11,6 +11,8 @@ import { rememberProjectSpace } from '../src/project-space-cache.ts'
 import { rememberHostedRecord } from '../src/record/install-binding-write.ts'
 import { recordApiClient } from '../src/record/record-api-client.ts'
 import { bearerHeaders, setActiveRecordSpaceForSession } from '../src/record/record-auth.ts'
+import { insertOutboxRow } from '../src/record/outbox-enqueue.ts'
+import { stringifyOutboxPayload } from '../src/record/outbox-sanitize.ts'
 import { pullRecordCache } from '../src/record/record-cache.ts'
 import { syncRecord } from '../src/record/record-sync.ts'
 import { readThroughTaskFlow } from '../src/workflow/task-flow-read-through.ts'
@@ -852,6 +854,125 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         identity: { id: machineA, name: 'Machine A' },
         projectSpaces: { [PROJECT]: input.spaceId() },
       })
+      const syncFlowId = newRecordId()
+      const syncStageId = newRecordId()
+      const refusedStageId = newRecordId()
+      const workflowVersionId = databaseA
+        .query<{ record_id: string }, []>(
+          `SELECT version.record_id FROM workflow_version version JOIN workflow
+             ON workflow.record_id=version.workflow_record_id
+           WHERE workflow.slug='${WORKFLOW}' AND workflow.space_id IS NOT NULL LIMIT 1`,
+        )
+        .get()!.record_id
+      const catalogueVersionId = databaseA
+        .query<{ record_id: string }, []>(
+          `SELECT version.record_id FROM step_catalogue_version version JOIN step_catalogue catalogue
+             ON catalogue.record_id=version.catalogue_record_id
+           WHERE catalogue.slug='shared' AND catalogue.space_id IS NOT NULL LIMIT 1`,
+        )
+        .get()!.record_id
+      const stamp = new Date().toISOString()
+      const flowPayload = {
+        id: syncFlowId,
+        spaceId: input.spaceId(),
+        projectId,
+        projectName: PROJECT,
+        taskId: null,
+        state: 'open',
+        openStageRecordId: syncStageId,
+        openingMachineId: machineA,
+        updatedMachineId: machineA,
+        machineId: machineA,
+        revision: 1,
+        createdAt: stamp,
+        updatedAt: stamp,
+      }
+      const stagePayload = {
+        id: syncStageId,
+        spaceId: input.spaceId(),
+        projectId,
+        projectName: PROJECT,
+        flowRecordId: syncFlowId,
+        workflow: WORKFLOW,
+        mode: 'default',
+        workflowKey: `${TASK_KEY}-sync`,
+        instanceId: '',
+        sessionId: 'sync-proof',
+        workflowVersionId,
+        catalogueVersionId,
+        arguments: { key: `${TASK_KEY}-sync` },
+        activeOrdinal: 0,
+        activeSlug: 'diagnose',
+        state: 'running',
+        closedStepNotes: [],
+        question: null,
+        autonomy: null,
+        enforcement: 'note-only',
+        totalSteps: 3,
+        openedMachineId: machineA,
+        takenOverFromMachineId: null,
+        lastAdvancedMachineId: machineA,
+        machineId: machineA,
+        revision: 1,
+        createdAt: stamp,
+        updatedAt: stamp,
+      }
+      const enqueueProof = (kind: 'task_flow' | 'task_flow_stage', rowId: string, payload: object) =>
+        insertOutboxRow(databaseA, {
+          recordId: newRecordId(),
+          kind,
+          rowId,
+          payload: stringifyOutboxPayload(kind, payload as Record<string, unknown>),
+          createdAt: stamp,
+        })
+      enqueueProof('task_flow', syncFlowId, flowPayload)
+      enqueueProof('task_flow_stage', syncStageId, stagePayload)
+      expect(
+        await syncRecord({
+          local: databaseA,
+          identity: { id: machineA, name: 'Machine A' },
+          projectSpaces: { [PROJECT]: input.spaceId() },
+        }),
+      ).toMatchObject({ failed: 0 })
+      const firstSyncIdentity = input.admin(
+        `SELECT project_id || '|' || number FROM task_flow_stage WHERE id='${syncStageId}';`,
+      )
+      expect(firstSyncIdentity).toStartWith(`${projectId}|`)
+      enqueueProof('task_flow_stage', syncStageId, {
+        ...stagePayload,
+        state: 'done',
+        revision: 2,
+      })
+      expect(
+        await syncRecord({
+          local: databaseA,
+          identity: { id: machineA, name: 'Machine A' },
+          projectSpaces: { [PROJECT]: input.spaceId() },
+        }),
+      ).toMatchObject({ failed: 0 })
+      expect(
+        input.admin(
+          `SELECT project_id || '|' || number FROM task_flow_stage WHERE id='${syncStageId}';`,
+        ),
+      ).toBe(firstSyncIdentity)
+      enqueueProof('task_flow_stage', refusedStageId, {
+        ...stagePayload,
+        id: refusedStageId,
+        projectId: null,
+        workflowKey: `${TASK_KEY}-sync-refused`,
+      })
+      const refused = await syncRecord({
+        local: databaseA,
+        identity: { id: machineA, name: 'Machine A' },
+        projectSpaces: { [PROJECT]: input.spaceId() },
+      })
+      expect(refused.failed).toBe(1)
+      expect(refused.quarantined).toContainEqual(
+        expect.objectContaining({
+          kind: 'task_flow_stage',
+          error: expect.stringContaining('projectId is required for a new hosted stage'),
+        }),
+      )
       const opened = await composeWorkflowWithCursor(
         WORKFLOW,
         PROJECT,

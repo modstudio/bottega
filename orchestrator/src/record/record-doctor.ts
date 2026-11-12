@@ -41,6 +41,10 @@ import { db } from '../database/db.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { inspectRunRecordBackfill, type RunRecordBackfillInspection } from '../run/run-outbox.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
+import {
+  inspectTaskFlowBackfill,
+  type TaskFlowBackfillInspection,
+} from '../workflow/task-flow-backfill.ts'
 import { activeSpaceInvariant } from './active-space-invariant.ts'
 import { machineId } from './machine-identity.ts'
 import { quarantinedOutboxRows } from './outbox-quarantine.ts'
@@ -78,6 +82,7 @@ export type RecordDoctorFacts = {
   projects: ReadonlyArray<{ name: string; space: string | null }>
   pendingOutboxRows: number
   runRecordBackfill: RunRecordBackfillInspection
+  taskFlowBackfill: TaskFlowBackfillInspection
   quarantinedOutboxRows: readonly QuarantinedDoctorRow[]
   operatorConnectionPresent: boolean
   operatorChecks?: readonly RecordDoctorCheck[]
@@ -256,6 +261,23 @@ function runRecordBackfillCheck(facts: RunRecordBackfillInspection): RecordDocto
       }
 }
 
+function taskFlowBackfillCheck(facts: TaskFlowBackfillInspection): RecordDoctorCheck {
+  const missing = facts.flows + facts.stages
+  return missing === 0
+    ? {
+        name: 'local task flows and stages not enqueued',
+        status: 'pass',
+        detail: '0',
+        section: 'customer',
+      }
+    : {
+        name: 'local task flows and stages not enqueued',
+        status: 'fail',
+        detail: `${missing}: flows ${facts.flows}, stages ${facts.stages}; run \`${PLATFORM_SLUG} record push --backfill\``,
+        section: 'customer',
+      }
+}
+
 /** Turns already gathered facts into the complete, ordered doctor presentation. */
 export function decideRecordDoctorChecks(facts: RecordDoctorFacts): RecordDoctorCheck[] {
   const checks: RecordDoctorCheck[] = [
@@ -316,6 +338,7 @@ export function decideRecordDoctorChecks(facts: RecordDoctorFacts): RecordDoctor
     section: 'customer',
   })
   checks.push(runRecordBackfillCheck(facts.runRecordBackfill))
+  checks.push(taskFlowBackfillCheck(facts.taskFlowBackfill))
   checks.push(
     facts.quarantinedOutboxRows.length
       ? {
@@ -574,6 +597,7 @@ async function customerFacts(
     ...hubMeasurement,
     pendingOutboxRows: pendingOutboxCount(database),
     runRecordBackfill: inspectRunRecordBackfill(database),
+    taskFlowBackfill: inspectTaskFlowBackfill(database),
     quarantinedOutboxRows: quarantinedOutboxRows(database).map((row) => ({
       id: row.id,
       kind: row.kind,

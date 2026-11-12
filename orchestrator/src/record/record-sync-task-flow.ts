@@ -13,6 +13,8 @@ import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import type { ExistingEvidenceOwned, RequireOwnedUpsert } from './record-evidence-references.ts'
 import type { RecordPayload, RecordPrincipal } from './record-sync-contract.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
+import { OutboxRowError } from './outbox-failure.ts'
+import { allocateRecordSequence } from './record-sequence.ts'
 
 const nullableString = (value: unknown) => (value == null ? null : String(value))
 
@@ -21,7 +23,7 @@ export function taskFlowValues(row: RecordPayload) {
     id: String(row.id),
     spaceId: String(row.spaceId),
     projectId: String(row.projectId),
-    taskId: String(row.taskId),
+    taskId: nullableString(row.taskId),
     state: String(row.state),
     openStageRecordId: nullableString(row.openStageRecordId),
     openingMachineId: String(row.openingMachineId),
@@ -36,9 +38,13 @@ export function taskFlowStageValues(row: RecordPayload) {
   return {
     id: String(row.id),
     spaceId: String(row.spaceId),
+    projectId: nullableString(row.projectId),
     flowRecordId: String(row.flowRecordId),
     workflow: String(row.workflow),
     mode: String(row.mode),
+    workflowKey: nullableString(row.workflowKey),
+    instanceId: nullableString(row.instanceId),
+    sessionId: nullableString(row.sessionId),
     workflowVersionId: String(row.workflowVersionId),
     catalogueVersionId: String(row.catalogueVersionId),
     arguments: row.arguments,
@@ -46,6 +52,9 @@ export function taskFlowStageValues(row: RecordPayload) {
     activeSlug: String(row.activeSlug),
     state: String(row.state),
     closedStepNotes: row.closedStepNotes,
+    question: nullableString(row.question),
+    autonomy: nullableString(row.autonomy),
+    enforcement: nullableString(row.enforcement),
     totalSteps: Number(row.totalSteps),
     openedMachineId: String(row.openedMachineId),
     takenOverFromMachineId: nullableString(row.takenOverFromMachineId),
@@ -77,11 +86,19 @@ export async function applyTaskFlowValues(
 export async function applyTaskFlowStageValues(
   database: HostedRecordDatabase,
   values: ReturnType<typeof taskFlowStageValues>,
+  number: number | null = null,
 ) {
-  const { id: _id, createdAt: _createdAt, ...updates } = values
+  const insert = { ...values, number }
+  const {
+    id: _id,
+    createdAt: _createdAt,
+    projectId: _projectId,
+    number: _number,
+    ...updates
+  } = insert
   return database
     .insert(taskFlowStageRecord)
-    .values(values)
+    .values(insert)
     .onConflictDoUpdate({
       target: taskFlowStageRecord.id,
       set: updates,
@@ -123,6 +140,15 @@ async function pushTaskFlowStage(
   await postgres.begin(async (tx) => {
     await bindPrincipal(tx, principal)
     const values = taskFlowStageValues(row)
+    const existing = await tx`SELECT id FROM task_flow_stage WHERE id=${values.id}::uuid`
+    if (!existing[0] && !values.projectId)
+      throw new OutboxRowError(
+        'task_flow_stage projectId is required for a new hosted stage; repair the outbox payload from the current local stage and retry record push',
+        'row-validation',
+      )
+    const number = existing[0]
+      ? null
+      : await allocateRecordSequence(tx, values.spaceId, values.projectId!, 'task_flow_stage')
     const existingOwned = await existingEvidenceOwned(
       tx,
       'task_flow_stage',
@@ -131,7 +157,7 @@ async function pushTaskFlowStage(
       principal,
       { scope: 'space-principal' },
     )
-    const written = await applyTaskFlowStageValues(drizzle({ client: tx }), values)
+    const written = await applyTaskFlowStageValues(drizzle({ client: tx }), values, number)
     requireOwnedUpsert(written, 'task_flow_stage', values.id, existingOwned)
   })
 }

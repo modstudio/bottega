@@ -190,6 +190,7 @@ test('sync presentation reports released run payloads skipped by backfill', asyn
           quarantined: [],
           blocked: [],
           backfill: {
+            taskFlows: { enqueuedFlows: 0, enqueuedStages: 0 },
             enqueued: 0,
             refreshedLinks: 0,
             refreshedNumbers: 0,
@@ -218,7 +219,10 @@ test('sync presentation reports released run payloads skipped by backfill', asyn
     },
   )
 
-  expect(output[0]).toContain('skipped-released 2, skipped-live 1')
+  expect(output).toContain('task-flow backfill enqueued 0 flows and 0 stages')
+  expect(output.find((line) => line.startsWith('backfill enqueued'))).toContain(
+    'skipped-released 2, skipped-live 1',
+  )
 })
 
 test('sync presentation reports only nonzero record-cache misses and its purge warning', async () => {

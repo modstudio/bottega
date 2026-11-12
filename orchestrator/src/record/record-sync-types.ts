@@ -4,6 +4,7 @@ import type { Database } from 'bun:sqlite'
 import type { backfillReleaseRecords } from '../release/release-outbox.ts'
 import type { ReviewRecordBackfillResult } from '../review/review-outbox.ts'
 import type { RunRecordBackfillResult } from '../run/run-outbox.ts'
+import type { TaskFlowBackfillResult } from '../workflow/task-flow-backfill.ts'
 import type { LandingEvidenceBackfillResult } from './landing-outbox.ts'
 import type { QuarantinedOutboxRow } from './outbox-quarantine.ts'
 import type { RecordApiClient } from './record-api-client.ts'
@@ -55,6 +56,7 @@ export type RecordSyncResult = {
   quarantinedParentHolds?: QuarantinedParentHold[]
   readOnlyDeferred?: { spaceId: string; rows: number }[]
   backfill?: RunRecordBackfillResult & {
+    taskFlows: TaskFlowBackfillResult
     scores: number
     reviews: ReviewRecordBackfillResult
     landingEvidence: LandingEvidenceBackfillResult
