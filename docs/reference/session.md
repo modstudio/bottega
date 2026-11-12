@@ -108,7 +108,7 @@ measure losses around Claude transcript compaction boundaries
 
 **Synopsis:** `bottega session start`
 
-open or reuse the calling session's explore workflow
+open explore for a session that holds no open workflow, or name the one it holds
 
 ### Related
 

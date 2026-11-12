@@ -19,7 +19,7 @@ export function register(program: Command): void {
   const session = program.command('session').description('manage the calling architect session')
   session
     .command('start')
-    .description("open or reuse the calling session's explore workflow")
+    .description("open explore for a session that holds no open workflow, or name the one it holds")
     .allowExcessArguments(false)
     .action(async () => {
       log((await safeStartSession()).line)

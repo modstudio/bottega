@@ -15,17 +15,21 @@ describe('session start decision', () => {
         project: 'fixture',
         cursors: [{ id: 17, workflow: 'explore', state: 'active' }],
       }),
-    ).toEqual({ kind: 'reuse', cursor: 17 })
+    ).toEqual({ kind: 'reuse', cursor: 17, workflow: 'explore' })
   })
 
-  test('composes when the session holds only a closed explore cursor', () => {
+  test('keeps a task workflow the session took up after closing explore', () => {
     expect(
       decideSessionStart({
         session: 'session',
         project: 'fixture',
-        cursors: [{ id: 17, workflow: 'explore', state: 'done' }],
+        cursors: [
+          { id: 17, workflow: 'explore', state: 'done' },
+          { id: 18, workflow: 'plan-task', state: 'active' },
+          { id: 21, workflow: 'ship-task', state: 'active' },
+        ],
       }),
-    ).toEqual({ kind: 'compose' })
+    ).toEqual({ kind: 'reuse', cursor: 21, workflow: 'ship-task' })
   })
 
   test('refuses softly outside a registered project', () => {

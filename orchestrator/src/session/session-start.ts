@@ -24,7 +24,7 @@ type SessionStartDependencies = {
   session?: string | null
 }
 
-const cursorLine = (cursor: number) => `cursor ${cursor} explore`
+const cursorLine = (cursor: number, workflow = 'explore') => `cursor ${cursor} ${workflow}`
 const remediedLine = (condition: string, remedy: string) =>
   renderRefusal(refusal(condition, { kind: 'edit', text: remedy })).replace(/\s+/g, ' ')
 
@@ -61,7 +61,7 @@ export async function startSession(
       ),
     }
   if (decision.kind === 'reuse')
-    return { cursor: decision.cursor, line: cursorLine(decision.cursor) }
+    return { cursor: decision.cursor, line: cursorLine(decision.cursor, decision.workflow) }
 
   const context = await resolveWorkflowCursorContext(project!.name, {}, { session })
   const live = await resolveWorkflowLiveAutonomy(
