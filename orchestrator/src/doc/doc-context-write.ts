@@ -59,6 +59,14 @@ export type ContextWriteFacts = {
   claimedTask: string | null
 }
 
+/** A policy refusal is distinct from a storage failure that can be retried unchanged. */
+export class ContextWriteRefusalError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ContextWriteRefusalError'
+  }
+}
+
 const PROFILE = {
   epic: { allowed: CONTEXT_ITEM_KINDS, required: ['next-action'] },
   task: { allowed: CONTEXT_ITEM_KINDS, required: ['next-action'] },

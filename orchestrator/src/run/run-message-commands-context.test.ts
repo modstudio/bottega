@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   answerRunFlags as flags,
@@ -9,6 +8,7 @@ import {
 import { installRunAnswerEnvironment } from '../../test/fixtures/run-answer-environment.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { upsertProject } from '../project/projects.ts'
 import { answerCommand } from './run-message-commands.ts'
 
@@ -19,7 +19,24 @@ beforeEach(() => {
 })
 afterEach(() => restoreEnvironment())
 
-test('answering a continuation turn question returns its root task moment line', async () => {
+const contextPorts = (calls: string[]): ContextMomentPorts =>
+  ({
+    set: async (input) => {
+      calls.push(`set ${input.kind} ${input.id} on ${input.task}`)
+      return {
+        ...input,
+        holder: `task:${input.task}`,
+        revision: 'revision',
+        task: input.task ?? null,
+      }
+    },
+    drop: async (input) => {
+      calls.push(`drop ${input.id} on ${input.task}`)
+      return { holder: `task:${input.task}`, task: input.task ?? null, id: input.id, removed: true }
+    },
+  }) as ContextMomentPorts
+
+test('answering a continuation turn question writes its root task position', async () => {
   const root = insert('ok')
   db().query("UPDATE run SET launch_key='DEV-2225' WHERE record_id=?").run(root)
   const turn = addRun({
@@ -33,18 +50,26 @@ test('answering a continuation turn question returns its root task moment line',
   const question = db()
     .query<{ number: number }, [string, string, string]>(`${newQuestionSql()} RETURNING number`)
     .get(turn, new Date().toISOString(), 'Which shape?')!
+  const calls: string[] = []
 
-  const writes = await answerCommand(turn, ['Keep the approved shape.'], true, false, flags, {
-    printRunId: () => {},
-  })
-
-  expect(writes).toHaveLength(1)
-  expect(writes[0]?.line).toBe(
-    `context: write ruling on DEV-2225 (${PLATFORM_SLUG} agent context set --task 'DEV-2225' --kind ruling --source 'q${question.number}' --id ruling-q${question.number} '<text>')`,
+  await answerCommand(
+    turn,
+    ['Keep the approved shape.'],
+    true,
+    false,
+    flags,
+    { printRunId: () => {} },
+    undefined,
+    { ports: contextPorts(calls), output: { log: () => {}, error: () => {} } },
   )
+
+  expect(calls).toEqual([
+    `set position position-q${question.number} on DEV-2225`,
+    `drop open-q${question.number} on DEV-2225`,
+  ])
 })
 
-test('partial record-only answer returns one moment line for the selected question', async () => {
+test('partial record-only answer writes only the selected question position', async () => {
   const root = insert('asking')
   db().query("UPDATE run SET launch_key='DEV-2225' WHERE record_id=?").run(root)
   const addQuestion = (question: string) =>
@@ -55,20 +80,23 @@ test('partial record-only answer returns one moment line for the selected questi
       .get(root, new Date().toISOString(), question)!
   const first = addQuestion('First question?')
   const selected = addQuestion('Selected question?')
+  const calls: string[] = []
 
-  const writes = await answerCommand(
+  await answerCommand(
     root,
     [`--q${selected.record_id}`, 'Use the selected answer.'],
     true,
     false,
     flags,
     { printRunId: () => {} },
+    undefined,
+    { ports: contextPorts(calls), output: { log: () => {}, error: () => {} } },
   )
 
-  expect(writes).toHaveLength(1)
-  expect(writes[0]?.line).toBe(
-    `context: write ruling on DEV-2225 (${PLATFORM_SLUG} agent context set --task 'DEV-2225' --kind ruling --source 'q${selected.number}' --id ruling-q${selected.number} '<text>')`,
-  )
+  expect(calls).toEqual([
+    `set position position-q${selected.number} on DEV-2225`,
+    `drop open-q${selected.number} on DEV-2225`,
+  ])
   expect(
     db()
       .query<{ record_id: string; answered_at: string | null }, [string]>(
@@ -79,4 +107,72 @@ test('partial record-only answer returns one moment line for the selected questi
     { record_id: first.record_id, answered_at: null },
     { record_id: selected.record_id, answered_at: expect.any(String) },
   ])
+})
+
+test('an operator answer writes its root task ruling', async () => {
+  const root = insert('asking')
+  db().query("UPDATE run SET launch_key='DEV-2225' WHERE record_id=?").run(root)
+  const question = db()
+    .query<{ record_id: string; number: number }, [string, string, string]>(
+      `${newQuestionSql()} RETURNING record_id,number`,
+    )
+    .get(root, new Date().toISOString(), 'Which shape?')!
+  const calls: string[] = []
+
+  await answerCommand(
+    root,
+    [`--q${question.number}`, 'Use the approved shape.', '--from-operator'],
+    true,
+    false,
+    flags,
+    { printRunId: () => {} },
+    undefined,
+    { ports: contextPorts(calls), output: { log: () => {}, error: () => {} } },
+  )
+
+  expect(calls).toEqual([
+    `set ruling ruling-q${question.number} on DEV-2225`,
+    `drop open-q${question.number} on DEV-2225`,
+  ])
+})
+
+test('a context port failure leaves the answer recorded and reports without throwing', async () => {
+  const root = insert('asking')
+  db().query("UPDATE run SET launch_key='DEV-2225' WHERE record_id=?").run(root)
+  const question = db()
+    .query<{ record_id: string; number: number }, [string, string, string]>(
+      `${newQuestionSql()} RETURNING record_id,number`,
+    )
+    .get(root, new Date().toISOString(), 'Which shape?')!
+  const lines: string[] = []
+  const throwing = {
+    set: async () => {
+      throw new Error('context unavailable')
+    },
+    drop: async () => {
+      throw new Error('context unavailable')
+    },
+  } as ContextMomentPorts
+
+  await answerCommand(
+    root,
+    [`--q${question.number}`, 'Keep the approved shape.'],
+    true,
+    false,
+    flags,
+    { printRunId: () => {} },
+    undefined,
+    { ports: throwing, output: { log: (line) => lines.push(line), error: () => {} } },
+  )
+
+  expect(
+    db()
+      .query<{ answer: string }, [string]>('SELECT answer FROM question WHERE record_id=?')
+      .get(question.record_id),
+  ).toEqual({ answer: 'Keep the approved shape.' })
+  expect(lines).toContainEqual(
+    expect.stringContaining(
+      'context: could not write position on DEV-2225: context unavailable; retry:',
+    ),
+  )
 })

@@ -1,52 +1,116 @@
 import { describe, expect, test } from 'bun:test'
-import { CONTEXT_MOMENTS, contextMomentWrite, emitContextMoment } from './context-moment.ts'
+import { PLATFORM_SLUG } from './brand.ts'
+import { contextMomentEffect, contextMomentWrite, emitContextMoment } from './context-moment.ts'
 
-describe('context moment write', () => {
-  const expected = {
-    'workflow-next': 'next-action',
-    'workflow-rule': 'ruling',
-    'workflow-await': 'open-question',
-    'question-answer': 'ruling',
-    'run-start': 'next-action',
-    'pr-merge': 'next-action',
-    'task-close': 'next-action',
-  } as const
-
-  for (const moment of CONTEXT_MOMENTS) {
-    test(`${moment} maps to its task holder and kind`, () => {
-      const write = contextMomentWrite({ moment, taskKey: 'DEV-2225', questionId: 5288 })
-      expect(write).toMatchObject({ holder: 'DEV-2225', kind: expected[moment] })
-      expect(write?.line).toEndWith(`(${write?.command})`)
+describe('context moment effect', () => {
+  test('workflow await writes its open question', () => {
+    expect(
+      contextMomentEffect({
+        moment: 'workflow-await',
+        taskKey: 'DEV-2267',
+        questionId: 12,
+        text: 'Which shape?',
+      }),
+    ).toEqual({
+      writes: [{ kind: 'open-question', id: 'open-q12', source: 'q12', body: 'Which shape?' }],
+      drops: [],
     })
-  }
-
-  test('a moment without a task key has no prompt', () => {
-    expect(contextMomentWrite({ moment: 'run-start' })).toBeNull()
   })
 
-  test('question moments carry the durable question source', () => {
+  test.each(['workflow-rule', 'question-answer'] as const)(
+    '%s distinguishes operator rulings from positions and drops the question',
+    (moment) => {
+      const effect = (operatorRuled: boolean) =>
+        contextMomentEffect({
+          moment,
+          taskKey: 'DEV-2267',
+          questionId: 12,
+          operatorRuled,
+          text: 'Use the approved shape.',
+        })
+      expect(effect(true)).toEqual({
+        writes: [
+          { kind: 'ruling', id: 'ruling-q12', source: 'q12', body: 'Use the approved shape.' },
+        ],
+        drops: [{ kind: 'open-question', id: 'open-q12' }],
+      })
+      expect(effect(false).writes[0]).toMatchObject({ kind: 'position', id: 'position-q12' })
+    },
+  )
+
+  test('workflow next writes its served step and self-ruling position', () => {
     expect(
-      contextMomentWrite({ moment: 'workflow-await', taskKey: 'DEV-2225', questionId: 5288 })
-        ?.command,
-    ).toContain("--source 'q5288'")
+      contextMomentEffect({
+        moment: 'workflow-next',
+        taskKey: 'DEV-2267',
+        questionId: 13,
+        text: 'The specification settles this.',
+        cursor: {
+          workflow: 'change',
+          number: 4,
+          stepSlug: 'review',
+          stepTitle: 'Review the change',
+        },
+      }),
+    ).toEqual({
+      writes: [
+        {
+          kind: 'next-action',
+          id: 'next',
+          source: 'workflow-next',
+          body: 'change cursor 4 at review: Review the change',
+        },
+        {
+          kind: 'position',
+          id: 'position-q13',
+          source: 'q13',
+          body: 'The specification settles this.',
+        },
+      ],
+      drops: [],
+    })
+  })
+
+  test('workflow next records a finished cursor', () => {
+    expect(
+      contextMomentEffect({
+        moment: 'workflow-next',
+        taskKey: 'DEV-2267',
+        cursor: { workflow: 'change', number: 4, finished: true },
+      }).writes[0]?.body,
+    ).toBe('change cursor 4 finished')
+  })
+
+  test('a moment without a task key has no effect', () => {
+    expect(
+      contextMomentEffect({ moment: 'workflow-await', questionId: 12, text: 'Which shape?' }),
+    ).toEqual({ writes: [], drops: [] })
   })
 })
 
-test('emits moment prompts to trailing stdout for text and stderr for JSON', () => {
+test('pr merge and task close retain their current prompt output', () => {
   const stdout: string[] = []
   const stderr: string[] = []
   const output = {
     log: (line: string) => stdout.push(line),
     error: (line: string) => stderr.push(line),
   }
-  const write = contextMomentWrite({ moment: 'run-start', taskKey: 'DEV-2225' })
-
-  emitContextMoment(write, false, output)
-  expect(stdout).toEqual([write!.line])
+  emitContextMoment(contextMomentWrite({ moment: 'pr-merge', taskKey: 'DEV-2225' }), false, output)
+  emitContextMoment(
+    contextMomentWrite({ moment: 'task-close', taskKey: 'DEV-2225' }),
+    false,
+    output,
+  )
+  expect(stdout).toEqual([
+    `context: revise next-action on DEV-2225 (${PLATFORM_SLUG} agent context set --task 'DEV-2225' --kind next-action --source 'pr-merge' --id next '<text>')`,
+    `context: revise next-action on DEV-2225 (${PLATFORM_SLUG} agent context set --task 'DEV-2225' --kind next-action --source 'task-close' --id next '<text>')`,
+  ])
   expect(stderr).toEqual([])
 
   stdout.length = 0
-  emitContextMoment(write, true, output)
+  emitContextMoment(contextMomentWrite({ moment: 'pr-merge', taskKey: 'DEV-2225' }), true, output)
   expect(stdout).toEqual([])
-  expect(stderr).toEqual([write!.line])
+  expect(stderr).toEqual([
+    `context: revise next-action on DEV-2225 (${PLATFORM_SLUG} agent context set --task 'DEV-2225' --kind next-action --source 'pr-merge' --id next '<text>')`,
+  ])
 })

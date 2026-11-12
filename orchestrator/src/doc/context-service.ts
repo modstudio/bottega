@@ -169,7 +169,7 @@ export async function dropContextItem(
 ) {
   const { holder, task } = await resolveContextHolder(input)
   const doc = getDoc('context', holder, input.id)
-  if (!doc) throw new Error(`no context item ${holder}/${input.id}`)
+  if (!doc) return { holder, task: task?.key ?? null, id: input.id, removed: false }
   await removeDoc('context', holder, input.id, {
     reason: `drop context item ${input.id}`,
     expectedRevision: input.expectedRevision,

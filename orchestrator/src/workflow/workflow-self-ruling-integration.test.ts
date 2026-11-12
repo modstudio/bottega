@@ -8,6 +8,7 @@ import {
   promoteStepCatalogueLocal,
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
+import { workflowNextContextMoment } from './workflow-context-moment.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { resolveWorkflowLiveAutonomy } from './workflow-cursor-live-autonomy.ts'
 import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
@@ -15,7 +16,7 @@ import { selectAndNextWorkflowStep as nextWorkflowStep } from './workflow-cursor
 import { flagForFloor } from './workflow-floor.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
-import { closeCursorWithTextCopy } from './workflow-text-copy.ts'
+import { closeCursorWithTextCopy, closeCursorWithTextCopyResult } from './workflow-text-copy.ts'
 import { composeWorkflow } from './workflows.ts'
 
 const args = {
@@ -170,6 +171,61 @@ test('self-ruling records the answered question and closes the step atomically',
   expect(times.answered_at).toBe(times.asked_at)
   expect(d.query("SELECT count(*) count FROM outbox WHERE kind='question'").get()).toEqual({
     count: 1,
+  })
+})
+
+test('a whitespace-padded self-ruling carries its question into the context moment', async () => {
+  const d = database()
+  await openAtRuling(d)
+  const cursor = d
+    .query<{ record_id: string; number: number }, []>(
+      'SELECT record_id,number FROM workflow_cursor',
+    )
+    .get()!
+  const result = await closeCursorWithTextCopyResult(
+    {
+      action: 'next',
+      project: 'fixture',
+      workflow: 'flow',
+      mode: 'default',
+      key: 'DEV-1264',
+      args,
+      context,
+      note: 'agent ruled proceed',
+      evidence: {},
+      floorPorts: ports,
+      selfRuling: {
+        ruling: '  Proceed.  ',
+        basis: 'specification line 4',
+        channel: 'cli',
+      },
+    },
+    d,
+  )
+
+  expect(result.selfRulingQuestionNumber).toBeNumber()
+  expect(
+    workflowNextContextMoment(
+      {
+        cursorRecordId: result.cursorRecordId,
+        workflowKey: result.workflowKey,
+        workflow: 'flow',
+        cursor: cursor.number,
+        finished: result.finished,
+        stepSlug: result.stepSlug,
+        stepTitle: result.stepTitle,
+      },
+      result.selfRulingQuestionNumber,
+      'Proceed.',
+    ).effect.writes,
+  ).toContainEqual({
+    kind: 'position',
+    id: `position-q${result.selfRulingQuestionNumber}`,
+    source: `q${result.selfRulingQuestionNumber}`,
+    body: 'Proceed.',
+  })
+  expect(d.query<{ answer: string }, []>('SELECT answer FROM question').get()).toEqual({
+    answer: 'Proceed.',
   })
 })
 

@@ -483,8 +483,11 @@ function registerContextTools(server: McpServer): void {
         expected_revision: z.string().optional(),
       }),
     },
-    async ({ expected_revision, ...input }) =>
-      text(await dropContextItem({ ...input, expectedRevision: expected_revision })),
+    async ({ expected_revision, ...input }) => {
+      const result = await dropContextItem({ ...input, expectedRevision: expected_revision })
+      if (!result.removed) throw new Error(`no context item ${result.holder}/${result.id}`)
+      return text(result)
+    },
   )
 }
 

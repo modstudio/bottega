@@ -1,22 +1,78 @@
 // concern: shared
-/** Pure context-write prompt policy shared by command owners. */
+/** Pure context-item effects and the remaining legacy prompt policy. */
 import { PLATFORM_SLUG } from './brand.ts'
 
-export const CONTEXT_MOMENTS = [
+const CONTEXT_MOMENTS = [
   'workflow-next',
   'workflow-rule',
   'workflow-await',
   'question-answer',
-  'run-start',
-  'pr-merge',
-  'task-close',
 ] as const
-export type ContextMoment = (typeof CONTEXT_MOMENTS)[number]
-type ContextMomentKind = 'next-action' | 'ruling' | 'open-question'
+type ContextMoment = (typeof CONTEXT_MOMENTS)[number]
+type ContextMomentItemKind = 'next-action' | 'ruling' | 'position' | 'open-question'
+
+export type ContextMomentEffect = {
+  writes: Array<{ kind: ContextMomentItemKind; id: string; source: string; body: string }>
+  drops: Array<{ kind: ContextMomentItemKind; id: string }>
+}
+
+export type ContextMomentInput = {
+  moment: ContextMoment
+  taskKey?: string | null
+  questionId?: number | null
+  operatorRuled?: boolean
+  text?: string
+  cursor?: {
+    workflow: string
+    number: number
+    stepSlug?: string | null
+    stepTitle?: string | null
+    finished?: boolean
+  }
+}
+
+const emptyEffect = (): ContextMomentEffect => ({ writes: [], drops: [] })
+const questionSource = (questionId: number) => `q${questionId}`
+
+/** Maps the plain values held by a successful verb to its context mutations. */
+export function contextMomentEffect(input: ContextMomentInput): ContextMomentEffect {
+  if (!input.taskKey?.trim()) return emptyEffect()
+  if (input.moment === 'workflow-next') {
+    if (!input.cursor) return emptyEffect()
+    const { workflow, number, stepSlug, stepTitle, finished } = input.cursor
+    const body = finished
+      ? `${workflow} cursor ${number} finished`
+      : `${workflow} cursor ${number} at ${stepSlug}: ${stepTitle}`
+    const writes: ContextMomentEffect['writes'] = [
+      { kind: 'next-action', id: 'next', source: 'workflow-next', body },
+    ]
+    if (input.text !== undefined && input.questionId) {
+      const source = questionSource(input.questionId)
+      writes.push({ kind: 'position', id: `position-${source}`, source, body: input.text })
+    }
+    return { writes, drops: [] }
+  }
+  if (!input.questionId || input.text === undefined) return emptyEffect()
+  const source = questionSource(input.questionId)
+  if (input.moment === 'workflow-await') {
+    return {
+      writes: [{ kind: 'open-question', id: `open-${source}`, source, body: input.text }],
+      drops: [],
+    }
+  }
+  const kind = input.operatorRuled ? 'ruling' : 'position'
+  return {
+    writes: [{ kind, id: `${kind}-${source}`, source, body: input.text }],
+    drops: [{ kind: 'open-question', id: `open-${source}` }],
+  }
+}
+
+type LegacyContextMoment = 'pr-merge' | 'task-close'
+type LegacyContextMomentKind = 'next-action'
 
 export type ContextMomentWrite = {
   holder: string
-  kind: ContextMomentKind
+  kind: LegacyContextMomentKind
   command: string
   write: string
   line: string
@@ -27,36 +83,37 @@ export type ContextMomentOutput = {
   error(line: string): void
 }
 
-const MOMENT_KIND: Record<ContextMoment, ContextMomentKind> = {
-  'workflow-next': 'next-action',
-  'workflow-rule': 'ruling',
-  'workflow-await': 'open-question',
-  'question-answer': 'ruling',
-  'run-start': 'next-action',
-  'pr-merge': 'next-action',
-  'task-close': 'next-action',
+const shellWord = (value: string) => `'${value.replace(/'/g, "'\\''")}'`
+
+export function contextSetCommand(
+  taskKey: string,
+  item: { kind: string; source: string; id: string; body: string },
+): string {
+  return (
+    `${PLATFORM_SLUG} agent context set --task ${shellWord(taskKey)} --kind ${item.kind} ` +
+    `--source ${shellWord(item.source)} --id ${item.id} ${shellWord(item.body)}`
+  )
 }
 
-const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+export function contextDropCommand(taskKey: string, id: string): string {
+  return `${PLATFORM_SLUG} agent context drop --task ${shellWord(taskKey)} --id ${shellWord(id)}`
+}
 
-/** Maps one successful task-keyed verb to the context write it should prompt. */
+/** Keeps the existing prompt for the lifecycle verbs owned by later work. */
 export function contextMomentWrite(input: {
-  moment: ContextMoment
+  moment: LegacyContextMoment
   taskKey?: string | null
-  questionId?: number | null
 }): ContextMomentWrite | null {
   const holder = input.taskKey?.trim()
   if (!holder) return null
-  const kind = MOMENT_KIND[input.moment]
-  if ((kind === 'ruling' || kind === 'open-question') && !input.questionId) return null
-  const question = input.questionId ? `q${input.questionId}` : null
-  const id =
-    kind === 'next-action' ? 'next' : kind === 'ruling' ? `ruling-${question}` : `open-${question}`
-  const source = question ?? input.moment
-  const command =
-    `${PLATFORM_SLUG} agent context set --task ${shellQuote(holder)} --kind ${kind} ` +
-    `--source ${shellQuote(source)} --id ${id} ${shellQuote('<text>')}`
-  const write = kind === 'next-action' ? 'revise next-action' : `write ${kind}`
+  const kind = 'next-action'
+  const command = contextSetCommand(holder, {
+    kind,
+    source: input.moment,
+    id: 'next',
+    body: '<text>',
+  })
+  const write = 'revise next-action'
   return { holder, kind, command, write, line: `context: ${write} on ${holder} (${command})` }
 }
 

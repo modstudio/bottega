@@ -2,8 +2,8 @@ import { McpServer } from '@modelcontextprotocol/server'
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
 import { z } from 'zod'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
-import { assertRecordShape } from '../../../shared/record-shape.ts'
 import { db, enableSchemaReload, sessionId } from '../database/db.ts'
+import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { registerStandardRuntime } from '../runtime/runtime-registration.ts'
 
@@ -45,8 +45,6 @@ import {
   type LandingBranchPorts,
   workflowComposeBranchRefusal,
 } from '../workflow/workflow-compose-branch.ts'
-import { awaitWorkflowRuling } from '../workflow/workflow-cursor.ts'
-import { ruleWorkflow } from '../workflow/workflow-cursor-ruling.ts'
 import {
   mcpWorkflowCursorContext,
   resolveMcpSelectedCursorContext,
@@ -72,7 +70,7 @@ import { registerSearchTools } from './mcp-search-tools.ts'
 import { registerSetupTools } from './mcp-setup-tools.ts'
 import { registerSubjectTools } from './mcp-subject-tools.ts'
 import { advanceWorkflow } from './mcp-workflow-advance.ts'
-import { resolveMcpLinkedWorkflowCursor } from './mcp-workflow-cursor.ts'
+import { registerWorkflowContextTools } from './mcp-workflow-context-tools.ts'
 import { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
 import { resolveMcpWorkflowSpace } from './mcp-workflow-space.ts'
 import { registerWorkflowStepTool } from './mcp-workflow-step.ts'
@@ -80,6 +78,7 @@ import { registerWorkflowStepTool } from './mcp-workflow-step.ts'
 type DocsMcpPorts = LandingBranchPorts & {
   hubTaskReader?: HubTaskReader
   workflowTextDocuments?: WorkflowTextDocumentPorts
+  contextMomentPorts?: ContextMomentPorts
   registerSchemaReload?: (
     onReload: (from: number, to: number) => void,
     onRefusal?: (reason: string) => void,
@@ -513,94 +512,6 @@ async function abandonWorkflowWithTextCopy(cursor: number, reason: string, ports
   return text(result)
 }
 
-function registerAwaitWorkflowRulingTool(server: McpServer, ports: DocsMcpPorts): void {
-  server.registerTool(
-    'await_workflow_ruling',
-    {
-      description: 'Record that the workflow is paused on a question for the operator.',
-      inputSchema: z.object({
-        slug: z.string().trim().min(1),
-        project: z.string().trim().min(1),
-        mode: z.string().trim().min(1).optional(),
-        args: z.record(z.string(), z.string()).optional(),
-        question: z.string().trim().min(1),
-        cursor: z.number().int().positive().optional(),
-      }),
-    },
-    async ({ slug, project, mode, args, question, cursor }) => {
-      const shapedQuestion = assertRecordShape('open question', question)
-      const { context, effectiveMode } = await resolveMcpLinkedWorkflowCursor(
-        slug,
-        project,
-        mode,
-        args ?? {},
-        cursor,
-        'await_workflow_ruling',
-        'pass the mode argument',
-        ports.hubTaskReader,
-      )
-      return text(
-        await awaitWorkflowRuling(
-          slug,
-          project,
-          effectiveMode,
-          args ?? {},
-          shapedQuestion,
-          context,
-          undefined,
-          undefined,
-          cursor,
-        ),
-      )
-    },
-  )
-}
-
-function registerRuleWorkflowTool(server: McpServer, ports: DocsMcpPorts): void {
-  server.registerTool(
-    'rule_workflow',
-    {
-      description: 'Record a ruling and resume the workflow on the same step.',
-      inputSchema: z.object({
-        slug: z.string().trim().min(1),
-        project: z.string().trim().min(1),
-        mode: z.string().trim().min(1).optional(),
-        args: z.record(z.string(), z.string()).optional(),
-        ruling: z.string().trim().min(1),
-        from_operator: z.boolean().optional(),
-        cursor: z.number().int().positive().optional(),
-      }),
-    },
-    async ({ slug, project, mode, args, ruling, from_operator, cursor }) => {
-      const shapedRuling = assertRecordShape('ruling', ruling)
-      const { context, effectiveMode } = await resolveMcpLinkedWorkflowCursor(
-        slug,
-        project,
-        mode,
-        args ?? {},
-        cursor,
-        'rule_workflow',
-        'pass the mode argument',
-        ports.hubTaskReader,
-      )
-      return text(
-        await ruleWorkflow(
-          slug,
-          project,
-          effectiveMode,
-          args ?? {},
-          shapedRuling,
-          Boolean(from_operator),
-          'mcp',
-          context,
-          undefined,
-          cursor,
-        ),
-      )
-    },
-  )
-}
-
 export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
   const server = new McpServer({ name: MCP_SERVER_NAME, version: '0.1.0' })
   const registerSchemaReload = ports.registerSchemaReload ?? enableSchemaReload
@@ -646,7 +557,7 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
 function registerCoreTools(server: McpServer, ports: DocsMcpPorts): void {
   registerWorkflowPrompts(server, ports.hubTaskReader)
   registerSearchTools(server)
-  registerOperatorTools(server)
+  registerOperatorTools(server, ports.contextMomentPorts)
   registerBoardTools(server)
   registerSetupTools(server)
   registerWorkflowListTool(server)
@@ -694,11 +605,16 @@ function registerWorkflowActionTools(server: McpServer, ports: DocsMcpPorts): vo
         'Close the current step with a one-line note and a validated evidence reference for its floor, then fetch the next; the cursor is the record.',
       inputSchema: nextWorkflowStepInputSchema,
     },
-    (input) => advanceWorkflow(input, ports.hubTaskReader, ports.workflowTextDocuments),
+    (input) =>
+      advanceWorkflow(
+        input,
+        ports.hubTaskReader,
+        ports.workflowTextDocuments,
+        ports.contextMomentPorts,
+      ),
   )
 
-  registerAwaitWorkflowRulingTool(server, ports)
-  registerRuleWorkflowTool(server, ports)
+  registerWorkflowContextTools(server, ports)
 
   server.registerTool(
     'abandon_workflow',

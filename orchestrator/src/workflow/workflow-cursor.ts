@@ -460,7 +460,7 @@ async function closeFloorsForStep(
     advance.requireRuling,
     currentStep,
   )
-  return { closed, advance, floors, floor, selfRulingPlan }
+  return { closed, advance, floors, floor, selfRulingPlan, selfRulingQuestionNumber }
 }
 
 async function persistWorkflowAdvance(
@@ -622,7 +622,7 @@ async function nextWorkflowStepImpl(
   selfRuling?: WorkflowSelfRulingInput,
   outcome?: string,
   live?: LiveCursorAutonomy,
-): Promise<string> {
+): Promise<WorkflowAdvanceResult> {
   const slug = row.workflow_slug
   const project = row.project
   const mode = row.mode_slug
@@ -695,7 +695,29 @@ async function nextWorkflowStepImpl(
     d,
     live,
   })
-  return takeoverNotice ? `${takeoverNotice}\n${rendered}` : rendered
+  return {
+    text: takeoverNotice ? `${takeoverNotice}\n${rendered}` : rendered,
+    selfRulingQuestionNumber: close.selfRulingQuestionNumber,
+    cursorNumber: row.id,
+    cursorRecordId: row.record_id,
+    workflowKey: row.workflow_key || null,
+    finished: close.advance.ordinal === null,
+    stepSlug:
+      close.advance.ordinal === null ? undefined : composition.steps[close.advance.ordinal]!.slug,
+    stepTitle:
+      close.advance.ordinal === null ? undefined : composition.steps[close.advance.ordinal]!.title,
+  }
+}
+
+export type WorkflowAdvanceResult = {
+  text: string
+  selfRulingQuestionNumber?: number
+  cursorNumber: number
+  cursorRecordId: string
+  workflowKey: string | null
+  finished: boolean
+  stepSlug?: string
+  stepTitle?: string
 }
 
 export async function nextWorkflowStep(
@@ -710,7 +732,7 @@ export async function nextWorkflowStep(
   selfRuling?: WorkflowSelfRulingInput,
   outcome?: string,
   live?: LiveCursorAutonomy,
-): Promise<string> {
+): Promise<WorkflowAdvanceResult> {
   await linkResolvedWorkflowTask(project, context, d)
   await reselectCursor(selected, args, context, d)
   return withReplayedFloorEvidenceAsync(ports, async (replayPorts) => {

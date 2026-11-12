@@ -28,9 +28,10 @@ export function register(program: Command): void {
     .addHelpText(
       'after',
       '\nWrite context at these moments:\n' +
-        '  workflow next, run start, pr merge, task close  revise next-action\n' +
-        '  workflow await                               write open-question\n' +
-        '  workflow rule, question answer               write ruling\n\n' +
+        '  workflow next                                writes next-action\n' +
+        '  workflow await                               writes open-question\n' +
+        '  workflow rule, question answer               write ruling or position\n' +
+        '  pr merge, task close                         prompt for next-action\n\n' +
         'Place each item once on the narrowest holder it binds in full: task for task-only points, epic for points binding every child, and session only when no single task or epic owns it.\n',
     )
     .option('--cwd <path>', 'resolve context for this checkout path')
@@ -97,11 +98,12 @@ export function register(program: Command): void {
   holderOptions(context.command('drop').description('remove one context item'))
     .requiredOption('--id <id>', 'stable item id')
     .option('--expected-revision <revision>', 'compare-and-set revision')
-    .action(async (options) =>
-      log(
-        JSON.stringify(
-          await dropContextItem({ ...options, expectedRevision: options.expectedRevision }),
-        ),
-      ),
-    )
+    .action(async (options) => {
+      const result = await dropContextItem({
+        ...options,
+        expectedRevision: options.expectedRevision,
+      })
+      if (!result.removed) throw new Error(`no context item ${result.holder}/${result.id}`)
+      log(JSON.stringify(result))
+    })
 }

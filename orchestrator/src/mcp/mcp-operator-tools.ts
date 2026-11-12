@@ -12,6 +12,7 @@ import {
   OverturnRulingResultSchema,
 } from '../../../shared/orch-contract.ts'
 import { db } from '../database/db.ts'
+import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { getDocRevision, setDoc } from '../doc/docs.ts'
 import { operatorWaiting, relayQuestion } from '../operator/operator-waiting.ts'
 import { resolveQuestionIdentifier } from '../run/question-identifier.ts'
@@ -22,7 +23,9 @@ import { answerRun } from '../run/run-answer.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { queryInbox } from '../run/run-inbox.ts'
 import { answerRunHelpers } from '../run/run-message-commands.ts'
+import { answeredQuestionContextMoments } from '../workflow/workflow-context-moment.ts'
 import { fileNote } from './hub-notes.ts'
+import { collectContextMomentReports, resultWithContextReports } from './mcp-context-reports.ts'
 
 const text = (value: unknown) => ({
   content: [
@@ -113,7 +116,10 @@ function resolveAnswerRulings(
   })
 }
 
-function registerAnswerQuestionsTool(server: McpServer): void {
+function registerAnswerQuestionsTool(
+  server: McpServer,
+  contextMomentPorts?: ContextMomentPorts,
+): void {
   server.registerTool(
     'answer_questions',
     {
@@ -128,27 +134,39 @@ function registerAnswerQuestionsTool(server: McpServer): void {
     },
     async ({ run_record_id, rulings, from_operator, record_only }) => {
       const resolved = resolveAnswerRulings(rulings, from_operator ?? false)
-      return structured(
-        (
-          await answerRun(
-            localRunId(run_record_id),
-            {
-              rulings: resolved,
-              fromOperator: false,
-              channel: 'mcp',
-              recordOnly: record_only ?? false,
-              json: true,
-              flags: { detach: true, follow: false, quiet: true },
-            },
-            answerRunHelpers(presentation),
-          )
-        ).result,
+      const report = await answerRun(
+        localRunId(run_record_id),
+        {
+          rulings: resolved,
+          fromOperator: false,
+          channel: 'mcp',
+          recordOnly: record_only ?? false,
+          json: true,
+          flags: { detach: true, follow: false, quiet: true },
+        },
+        answerRunHelpers(presentation),
       )
+      const textByQuestion = new Map(
+        resolved.map((ruling) => [ruling.questionId, ruling.text] as const),
+      )
+      const reports: string[] = []
+      for (const moment of answeredQuestionContextMoments(report.answeredQuestions, (recordId) =>
+        textByQuestion.get(recordId),
+      )) {
+        reports.push(...(await collectContextMomentReports(moment, contextMomentPorts)))
+      }
+      return {
+        ...resultWithContextReports(report.result, reports),
+        structuredContent: report.result,
+      }
     },
   )
 }
 
-export function registerOperatorTools(server: McpServer): void {
+export function registerOperatorTools(
+  server: McpServer,
+  contextMomentPorts?: ContextMomentPorts,
+): void {
   server.registerTool(
     'list_open_questions',
     {
@@ -159,7 +177,7 @@ export function registerOperatorTools(server: McpServer): void {
     },
     async () => structured(await listOpenQuestions()),
   )
-  registerAnswerQuestionsTool(server)
+  registerAnswerQuestionsTool(server, contextMomentPorts)
 
   server.registerTool(
     'overturn_ruling',

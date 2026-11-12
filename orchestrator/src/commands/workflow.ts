@@ -4,8 +4,8 @@
 import { type Command, Option, type OptionValues } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { repeatable } from '../../../shared/cli-repeat-guard.ts'
-import { emitContextMoment } from '../../../shared/context-moment.ts'
 import { db } from '../database/db.ts'
+import { applyContextMoment, workflowNextGatherFailure } from '../doc/context-moment-adapter.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { forkCatalogueCommand } from '../workflow/workflow-catalogue-commands.ts'
 import {
@@ -14,7 +14,6 @@ import {
   awaitCommand,
   catalogueVersionsCommand,
   composeCommand,
-  copyWorkflowTextCommand,
   cursorsCommand,
   execCommand,
   forkWorkflowCommand,
@@ -35,15 +34,19 @@ import {
   setWorkflowCommand,
   showCatalogueCommand,
   showWorkflowCommand,
-  showWorkflowTextCommand,
   stepCommand,
   type WorkflowCommandOptions,
   type WorkflowPresentation,
   workflowPrint,
   workflowVersionsCommand,
 } from '../workflow/workflow-commands.ts'
+import { workflowNextContextMoment } from '../workflow/workflow-context-moment.ts'
 import { workflowCursorIdentityMap } from '../workflow/workflow-cursor-identity.ts'
 import { RECORD_EVIDENCE_FLAG } from '../workflow/workflow-evidence-payload.ts'
+import {
+  copyWorkflowTextCommand,
+  showWorkflowTextCommand,
+} from '../workflow/workflow-text-commands.ts'
 import { collect, log, productArgv, rawArgv } from './support.ts'
 
 const collectedOption = (flags: string, description: string) =>
@@ -72,6 +75,30 @@ type WorkflowRegistration = {
   workflowPresentation: WorkflowPresentation
   handlerOptions: WorkflowCommandOptions
   output(options: OptionValues): ReturnType<typeof workflowPrint>
+}
+
+async function applyNextContextMoment(
+  input: Awaited<ReturnType<typeof nextCommand>>,
+  json: boolean,
+  handlerOptions: WorkflowCommandOptions,
+  output: WorkflowPresentation,
+): Promise<void> {
+  try {
+    await applyContextMoment(
+      (handlerOptions.contextMomentGather ?? workflowNextContextMoment)(
+        { ...input, workflowKey: input.taskKey },
+        input.selfRulingQuestionNumber,
+        input.selfRuling,
+      ),
+      json,
+      output,
+      handlerOptions.contextMomentPorts,
+    )
+  } catch (error) {
+    const line = workflowNextGatherFailure(input.taskKey, input.cursorRecordId, error)
+    if (json) output.error(line)
+    else output.log(line)
+  }
 }
 
 function workflowRegistration(
@@ -246,6 +273,7 @@ function registerWorkflowRendering({
 
 function registerWorkflowAdvancement({
   workflow,
+  workflowPresentation,
   handlerOptions,
   output,
 }: WorkflowRegistration): void {
@@ -298,11 +326,18 @@ function registerWorkflowAdvancement({
         workflowArgv('next', slug === undefined ? [] : [slug], resolvedOptions),
         output(options),
         handlerOptions,
-      ).then((write) => emitContextMoment(write, Boolean(options.json), presentation))
+      ).then((moment) =>
+        applyNextContextMoment(moment, Boolean(options.json), handlerOptions, workflowPresentation),
+      )
     })
 }
 
-function registerWorkflowRulings({ workflow, handlerOptions, output }: WorkflowRegistration): void {
+function registerWorkflowRulings({
+  workflow,
+  workflowPresentation,
+  handlerOptions,
+  output,
+}: WorkflowRegistration): void {
   jsonOption(
     workflow
       .command('await [workflow]')
@@ -319,7 +354,14 @@ function registerWorkflowRulings({ workflow, handlerOptions, output }: WorkflowR
         workflowArgv('await', slug === undefined ? [] : [slug], options),
         output(options),
         handlerOptions,
-      ).then((write) => emitContextMoment(write, Boolean(options.json), presentation)),
+      ).then((moment) =>
+        applyContextMoment(
+          moment,
+          Boolean(options.json),
+          workflowPresentation,
+          handlerOptions.contextMomentPorts,
+        ),
+      ),
     )
 
   jsonOption(
@@ -339,7 +381,14 @@ function registerWorkflowRulings({ workflow, handlerOptions, output }: WorkflowR
         workflowArgv('rule', slug === undefined ? [] : [slug], options),
         output(options),
         handlerOptions,
-      ).then((write) => emitContextMoment(write, Boolean(options.json), presentation)),
+      ).then((moment) =>
+        applyContextMoment(
+          moment,
+          Boolean(options.json),
+          workflowPresentation,
+          handlerOptions.contextMomentPorts,
+        ),
+      ),
     )
 }
 

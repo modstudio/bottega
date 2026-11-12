@@ -458,7 +458,6 @@ export const undeclaredModulesBaseline: readonly string[] = [
   'orchestrator/src/run/run-mcp-attachment-record.ts',
   'orchestrator/src/run/run-mcp-attachment.ts',
   'orchestrator/src/run/run-mcp-grammar.ts',
-  'orchestrator/src/run/run-message-commands.ts',
   'orchestrator/src/run/run-outbox.ts',
   'orchestrator/src/run/run-pack-prompt.ts',
   'orchestrator/src/run/run-prelaunch-refusal.ts',

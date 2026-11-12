@@ -255,19 +255,21 @@ export async function selectAndNextWorkflowStep(
   )) as SelectableCursorRow | null
   if (!row)
     throw new Error(`${cursorName(slug, mode, key)} has no cursor; compose the workflow first`)
-  return await nextWorkflowStep(
-    row,
-    project,
-    callArgs,
-    note,
-    callContext,
-    d,
-    evidence,
-    ports,
-    selfRuling,
-    outcome,
-    live,
-  )
+  return (
+    await nextWorkflowStep(
+      row,
+      project,
+      callArgs,
+      note,
+      callContext,
+      d,
+      evidence,
+      ports,
+      selfRuling,
+      outcome,
+      live,
+    )
+  ).text
 }
 
 /** Abandons a cursor the way the close service does: select it, then close the selected row. */
