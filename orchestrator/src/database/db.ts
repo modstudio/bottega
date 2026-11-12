@@ -422,6 +422,11 @@ export function fenceStoreAfterCheckoutMove(reason: string): void {
   storeFenceReason = reason
 }
 
+/** Whether this process may no longer open the store after moving its executable checkout. */
+export function isStoreFencedAfterCheckoutMove(): boolean {
+  return storeFenceReason !== null
+}
+
 function refuseStoreAfterCheckoutMove(): void {
   if (storeFenceReason) {
     throw new Error(`orchestrator store is fenced after checkout move: ${storeFenceReason}`)
