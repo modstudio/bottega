@@ -27,6 +27,7 @@ import {
 const root = fileURLToPath(new URL('../../..', import.meta.url))
 const tree = parseWorkflowTree(collectWorkflowTree(root))
 const planTask = tree.workflows.find(({ slug }) => slug === 'plan-task')!
+const operate = tree.workflows.find(({ slug }) => slug === 'operate')!
 
 const database = testDatabaseFixture((d) => {
   seedWorkflows(d)
@@ -44,15 +45,40 @@ const database = testDatabaseFixture((d) => {
     d,
   )
   promoteStepCatalogueLocal(catalogue.n, 'current tree fixture', 'test', d)
-  const workflow = setWorkflowLocal(
-    planTask.slug,
-    planTask.definition,
-    'current tree fixture',
-    'test',
-    d,
-  )
-  promoteWorkflowLocal(planTask.slug, workflow.n, 'current tree fixture', 'test', d)
+  for (const trackedWorkflow of [planTask, operate]) {
+    const workflow = setWorkflowLocal(
+      trackedWorkflow.slug,
+      trackedWorkflow.definition,
+      'current tree fixture',
+      'test',
+      d,
+    )
+    promoteWorkflowLocal(trackedWorkflow.slug, workflow.n, 'current tree fixture', 'test', d)
+  }
 })
+
+test.each([
+  ['default', 'confirm-write', false],
+  ['production', 'confirm-production-write', true],
+] as const)(
+  'operate %s composes keylessly with its confirmation rule',
+  (mode, confirmation, operatorRuling) => {
+    const composition = composeWorkflow('operate', 'fixture', mode, {}, database())
+
+    expect(composition.declaredArguments).toEqual([])
+    expect(composition.steps.map(({ slug }) => slug)).toEqual([
+      'frame',
+      'investigate',
+      confirmation,
+      'act',
+      'close',
+    ])
+    expect(composition.steps.find(({ slug }) => slug === confirmation)).toMatchObject({
+      floor: ['ruling'],
+      operatorRuling,
+    })
+  },
+)
 
 test('every plan-task step renders on a keyless cursor in every mode', async () => {
   const d = database()
