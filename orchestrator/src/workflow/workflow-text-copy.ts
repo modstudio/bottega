@@ -38,8 +38,8 @@ import {
   type HubTaskReader,
   type HubTaskReference,
   readHubTasks,
-  taskKeyMap,
   taskCommand,
+  taskKeyMap,
   taskReadRefusal,
   taskReferenceForProjectKey,
 } from './workflow-task-reference.ts'

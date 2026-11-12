@@ -5,14 +5,14 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { promoteStepCatalogueLocal, setStepCatalogueLocal } from './step-catalogue.ts'
 import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
+import { seedWorkflows } from './workflow-seeds.ts'
+import { attachWorkflowTextByHandle } from './workflow-text.ts'
 import {
   copyWorkflowTextForTask,
   cursorForWorkflowTextCopy,
   type WorkflowTaskDocument,
   type WorkflowTextDocumentPorts,
 } from './workflow-text-copy.ts'
-import { attachWorkflowTextByHandle } from './workflow-text.ts'
-import { seedWorkflows } from './workflow-seeds.ts'
 import { parseWorkflowTree } from './workflow-tree.ts'
 import { collectWorkflowTree } from './workflow-tree-files.ts'
 import { composeWorkflow, promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
