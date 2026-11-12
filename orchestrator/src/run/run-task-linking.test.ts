@@ -9,6 +9,7 @@ import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import type { Project } from '../project/projects.ts'
+import { rememberProjectSpace } from '../project-space-cache.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { type HubTaskReference, taskKeyMap } from '../workflow/workflow-task-reference.ts'
 import { deriveRunLinks, linkRunTasks, type RunLinkFacts } from './run-task-linking.ts'
@@ -215,6 +216,7 @@ describe('hosted run task linking', () => {
       database.exec('PRAGMA foreign_keys=ON')
     }
     const flowId = newRecordId()
+    rememberProjectSpace(database, 'hosted-link-failure', 'hosted-link-space')
     const memory = createMemoryRecordApiClient({
       taskFlowStages: [
         {

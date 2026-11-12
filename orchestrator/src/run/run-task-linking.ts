@@ -691,7 +691,7 @@ export async function runTaskReferenceDoctorLine(): Promise<string> {
     const database = db()
     const related = await Promise.all(
       localTaskLinkTables().map(async (table) => {
-        const rows = await LOCAL_TASK_LINKS[table].linkedRows(database)
+        const rows = await LOCAL_TASK_LINKS[table].linkedRows(database, undefined)
         const invalid = rows.filter(
           (row) =>
             tasks.byProjectId.get(projectTaskRecordKey(row.project, row.task_record_id))
