@@ -10,6 +10,7 @@ expectedExitCodes:
   merged: 0
   merged-with-residue: 20
 jobs: []
+actions: [pr-merge]
 autonomy: ask
 needs:
   - trunk
