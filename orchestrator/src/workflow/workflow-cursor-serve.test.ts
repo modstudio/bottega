@@ -13,14 +13,6 @@ const destinationSpaceId = 'fixture-space'
 
 test('serving a rebound argument writes hosted-first and preserves the local row on failure', async () => {
   const d = database()
-  for (const table of ['workflow', 'workflow_version', 'step_catalogue', 'step_catalogue_version'])
-    d.query(`UPDATE ${table} SET space_id=?`).run(destinationSpaceId)
-  rememberProjectSpace(d, 'fixture', destinationSpaceId)
-  rememberActiveRecordSpace(d, destinationSpaceId)
-  d.query('INSERT INTO record_install_binding (id,bound_at,record_origin) VALUES (1,?,?)').run(
-    '2026-11-10T00:00:00.000Z',
-    resolvedRecordOrigin(),
-  )
   const current = showResolvedWorkflow('flow', undefined, 'fixture', d).definition
   const rebindable = setWorkflowLocal(
     'flow',
@@ -35,24 +27,29 @@ test('serving a rebound argument writes hosted-first and preserves the local row
     d,
   )
   promoteWorkflowLocal('flow', rebindable.n, 'serve rebound fixture', 'test', d)
-  d.query('UPDATE workflow_version SET space_id=? WHERE space_id IS NULL').run(destinationSpaceId)
+  for (const table of ['workflow', 'workflow_version', 'step_catalogue', 'step_catalogue_version'])
+    d.query(`UPDATE ${table} SET space_id=?`).run(destinationSpaceId)
+  rememberProjectSpace(d, 'fixture', destinationSpaceId)
+  rememberActiveRecordSpace(d, destinationSpaceId)
+  d.query('INSERT INTO record_install_binding (id,bound_at,record_origin) VALUES (1,?,?)').run(
+    '2026-11-10T00:00:00.000Z',
+    resolvedRecordOrigin(),
+  )
   let refusal: Error | null = null
   let expectedBranch = 'rebound-one'
   let cursor!: { record_id: string; step_slug: string; args: string; closed: string }
   let expectedLocal!: { args: string; closed: string }
   const memory = createMemoryRecordApiClient({
-    taskFlowWorkflowVersionNumbers: Object.fromEntries(
-      [
-        ...d
-          .query<{ record_id: string; n: number }, []>('SELECT record_id,n FROM workflow_version')
-          .all()
-          .map((row) => [row.record_id, row.n] as const),
-        ...d
-          .query<{ record_id: string }, []>('SELECT record_id FROM workflow')
-          .all()
-          .map((row) => [row.record_id, rebindable.n] as const),
-      ],
-    ),
+    taskFlowWorkflowVersionNumbers: Object.fromEntries([
+      ...d
+        .query<{ record_id: string; n: number }, []>('SELECT record_id,n FROM workflow_version')
+        .all()
+        .map((row) => [row.record_id, row.n] as const),
+      ...d
+        .query<{ record_id: string }, []>('SELECT record_id FROM workflow')
+        .all()
+        .map((row) => [row.record_id, rebindable.n] as const),
+    ]),
     taskFlowCatalogueVersionNumbers: Object.fromEntries(
       d
         .query<{ record_id: string; n: number }, []>(

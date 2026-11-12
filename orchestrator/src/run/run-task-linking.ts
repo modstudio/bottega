@@ -83,8 +83,14 @@ type PendingLocalTaskLink = {
 }
 
 type LocalTaskLinkConfigBase = {
-  pendingRows(database: Database): Promise<LocalTaskLinkRow[]>
-  linkedRows(database: Database): Promise<LinkedLocalTaskReference[]>
+  pendingRows(
+    database: Database,
+    taskFlowClient?: RecordTaskFlowClient,
+  ): Promise<LocalTaskLinkRow[]>
+  linkedRows(
+    database: Database,
+    taskFlowClient?: RecordTaskFlowClient,
+  ): Promise<LinkedLocalTaskReference[]>
 }
 type HostedFirstTaskLinkConfig = LocalTaskLinkConfigBase & {
   regime: 'hosted-first'
@@ -103,10 +109,10 @@ type LocalTaskLinkConfig = HostedFirstTaskLinkConfig | SynchronousTaskLinkConfig
 const LOCAL_TASK_LINKS = {
   workflow_cursor: {
     regime: 'hosted-first',
-    pendingRows: async (database) =>
-      taskFlowReadStore(database).pendingTaskLinks('workflow_cursor'),
-    linkedRows: async (database) =>
-      taskFlowReadStore(database).linkedTaskReferences('workflow_cursor'),
+    pendingRows: async (database, client) =>
+      taskFlowReadStore(database, client).pendingTaskLinks('workflow_cursor'),
+    linkedRows: async (database, client) =>
+      taskFlowReadStore(database, client).linkedTaskReferences('workflow_cursor'),
     write: (database, update, taskFlowClient) =>
       linkWorkflowTaskLabel(
         database,
@@ -548,7 +554,12 @@ export async function linkRunTasks(
   const links = deriveRunLinks(runs, tasks, registered)
   const report = emptyReport(options.dryRun)
   applyRunLinkFactsToReport(report, runs, links, tasks)
-  const pendingUpdates = await deriveLocalTaskLinks(database, taskIndex, report)
+  const pendingUpdates = await deriveLocalTaskLinks(
+    database,
+    taskIndex,
+    report,
+    dependencies.taskFlowClient,
+  )
   if (!options.dryRun)
     await persistRunTaskLinks(database, links, pendingUpdates, dependencies.taskFlowClient)
   return report
@@ -558,10 +569,11 @@ async function deriveLocalTaskLinks(
   database: Database,
   tasks: Awaited<ReturnType<typeof hubTaskMap>>,
   report: RunTaskLinkReport,
+  taskFlowClient?: RecordTaskFlowClient,
 ): Promise<PendingLocalTaskLink[]> {
   const pending: PendingLocalTaskLink[] = []
   for (const table of localTaskLinkTables()) {
-    for (const row of await localTaskLinkRows(database, table)) {
+    for (const row of await localTaskLinkRows(database, table, taskFlowClient)) {
       const task = taskReferenceForProjectKey(tasks.byProjectKey, row.project, row.task_key)
       if (!task) {
         increment(report.local_task_links[table].unmatched_keys, row.task_key)
@@ -583,8 +595,9 @@ async function deriveLocalTaskLinks(
 async function localTaskLinkRows(
   database: Database,
   table: LocalTaskLinkTable,
+  taskFlowClient?: RecordTaskFlowClient,
 ): Promise<LocalTaskLinkRow[]> {
-  return LOCAL_TASK_LINKS[table].pendingRows(database)
+  return LOCAL_TASK_LINKS[table].pendingRows(database, taskFlowClient)
 }
 
 async function writeHostedFirstTaskLink(

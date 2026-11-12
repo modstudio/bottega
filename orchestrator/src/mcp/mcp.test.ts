@@ -720,6 +720,7 @@ describe('orch MCP', () => {
             { n: 1, slug: 'diagnose', note: 'diagnosed remotely', at: '2026-10-01T10:30:00.000Z' },
           ],
           totalSteps: defaultSteps.length,
+          enforcement: 'note-only',
           openedMachineId: remoteMachine,
           takenOverFromMachineId: null,
           lastAdvancedMachineId: remoteMachine,

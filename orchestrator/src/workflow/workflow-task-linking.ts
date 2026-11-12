@@ -33,7 +33,7 @@ export async function linkWorkflowTaskLabel(
   input: { project: string; workflowKey: string; taskRecordId: string },
   client?: RecordTaskFlowClient,
 ): Promise<{ workflow_cursor: number; question: number }> {
-  const rows = await taskFlowReadStore(database).stagesNeedingTaskLink(
+  const rows = await taskFlowReadStore(database, client).stagesNeedingTaskLink(
     input.project,
     input.workflowKey,
   )

@@ -139,9 +139,7 @@ test('next by cursor alone reads through the row key and links the hosted task',
     .query<{ number: number }, [string]>('SELECT number FROM workflow_cursor WHERE record_id=?')
     .get(stageId)!.number
   const secondClient = createMemoryRecordApiClient({
-    taskFlowStages: [
-      { flow: { ...hosted(2, 1).flow, taskId: null }, stage: hosted(2, 1).stage! },
-    ],
+    taskFlowStages: [{ flow: { ...hosted(2, 1).flow, taskId: null }, stage: hosted(2, 1).stage! }],
   })
   installRecordApiClient({
     ...secondClient,
