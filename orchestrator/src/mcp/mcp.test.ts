@@ -24,6 +24,7 @@ import { db } from '../database/db.ts'
 import { missingIssueReportFields } from '../issue/issue-report-fields.ts'
 import { type Project, removeProject, upsertProject } from '../project/projects.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
+import { machineId } from '../record/machine-identity.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
 import {
@@ -41,6 +42,7 @@ import {
 import { createDocsMcpServer, fileIssueTaskKey } from './mcp.ts'
 import { workflowRulingContextFixture } from './mcp-context-reports.fixture.ts'
 import { MCP_SERVER_STALE_EXIT } from './mcp-exit-status.ts'
+import { createMcpTaskFlowMemory, mcpTaskFlowStageIdentity } from './mcp-task-flow.fixture.ts'
 
 describe('orch MCP', () => {
   test('an incompatible schema reload reports the refusal and exits for supervision', () => {
@@ -550,13 +552,12 @@ describe('orch MCP', () => {
       await Promise.all([client.close(), server.close()])
     }
   })
-
   test('every MCP workflow operation routes by cursor handle', async () => {
     const project = 'mcp-cursor-handles'
     upsertProject({
       recordId: newRecordId(),
       name: project,
-      path: '/mcp-cursor-handles',
+      path: process.cwd(),
       stack: 'bun',
       settings: {
         gate: 'bun run check',
@@ -625,6 +626,7 @@ describe('orch MCP', () => {
          WHERE number IN (?,?)`,
       )
       .run(project, first.id, second.id)
+    const secondRow = mcpTaskFlowStageIdentity(db(), second.id)
     const { server, bodies: contextBodies } = workflowRulingContextFixture({
       hubTaskReader: async () =>
         ['DEV-1082-MCP-A', 'DEV-1082-MCP-B'].map((key) => ({
@@ -647,7 +649,6 @@ describe('orch MCP', () => {
     await client.connect(clientTransport)
     const previousRecordUrl = process.env.BOTTEGA_RECORD_API_URL
     const flowId = newRecordId()
-    const adoptedFlowIds = new Map<string, string>([[firstRow.record_id, flowId]])
     const call = async (name: string, toolArgs: Record<string, unknown>) => {
       const result = await client.callTool({ name, arguments: toolArgs })
       if (result.isError)
@@ -708,6 +709,7 @@ describe('orch MCP', () => {
           number: first.id,
           workflow: 'fix-defect',
           mode: 'default',
+          workflowKey: 'DEV-1082-MCP-A',
           workflowVersionId: firstRow.workflow_version_record_id,
           workflowVersionNumber: 1,
           catalogueVersionId: firstRow.catalogue_version_record_id,
@@ -720,9 +722,10 @@ describe('orch MCP', () => {
             { n: 1, slug: 'diagnose', note: 'diagnosed remotely', at: '2026-10-01T10:30:00.000Z' },
           ],
           totalSteps: defaultSteps.length,
+          enforcement: 'note-only',
           openedMachineId: remoteMachine,
           takenOverFromMachineId: null,
-          lastAdvancedMachineId: remoteMachine,
+          lastAdvancedMachineId: machineId(),
           revision: 3,
           createdAt: '2026-10-01T10:00:00.000Z',
           updatedAt: '2026-10-01T11:00:00.000Z',
@@ -733,8 +736,24 @@ describe('orch MCP', () => {
       db()
         .query("UPDATE project SET settings=json_set(settings,'$.space',?) WHERE name=?")
         .run(hostedSpaceId, project)
+      for (const table of [
+        'workflow',
+        'workflow_version',
+        'step_catalogue',
+        'step_catalogue_version',
+      ])
+        db().query(`UPDATE ${table} SET space_id=? WHERE space_id IS NULL`).run(hostedSpaceId)
+      const secondFlowId = newRecordId()
+      const memory = createMcpTaskFlowMemory(hosted, {
+        flowId: secondFlowId,
+        recordId: secondRow.record_id,
+        number: second.id,
+        workflowVersionId: secondRow.workflow_version_record_id,
+        catalogueVersionId: secondRow.catalogue_version_record_id,
+        args: args('DEV-1082-MCP-B'),
+      })
       installRecordApiClient({
-        ...createMemoryRecordApiClient(),
+        ...memory,
         whoami: async () => ({
           user: { id: 'mcp-workflow-user' },
           activeSpaceId: hostedSpaceId,
@@ -745,39 +764,15 @@ describe('orch MCP', () => {
           if (input.taskKey !== 'DEV-1082-MCP-B') return hosted
           throw new RecordApiRequestError(RECORD_TASK_FLOW_NOT_FOUND_MESSAGE, 'refused', 404)
         },
-        advanceTaskFlow: async (input) => ({
-          revisions: {
-            [input.stage.id]: input.stage.expectedRevision + 1,
-            ...(input.flow ? { [input.flow.id]: input.flow.expectedRevision + 1 } : {}),
-          },
-        }),
-        awaitTaskFlowRuling: async (input) => ({
-          revisions: { [input.stage.id]: input.stage.expectedRevision + 1 },
-        }),
-        updateTaskFlowStage: async (input) => ({
-          revisions: Object.fromEntries(
-            input.stages.map((stage) => [stage.id, stage.expectedRevision + 1]),
-          ),
-        }),
-        adoptTaskFlow: async (input) => {
-          const adoptedFlowId = adoptedFlowIds.get(input.stage.id) ?? newRecordId()
-          adoptedFlowIds.set(input.stage.id, adoptedFlowId)
-          return {
-            flowRecordId: adoptedFlowId,
-            revisions: {
-              [adoptedFlowId]: 1,
-              [input.stage.id]: input.stage.expectedRevision + 1,
-            },
-          }
-        },
-        attachTaskFlowText: async () => ({ revisions: {} }),
-        abandonTaskFlow: async (input) => ({
-          revisions: {
-            [input.stage.id]: input.stage.expectedRevision + 1,
-            ...(input.flow ? { [input.flow.id]: input.flow.expectedRevision + 1 } : {}),
-          },
-        }),
-        deleteTaskFlowText: async () => ({ revisions: {} }),
+        advanceTaskFlow: (input, destination) => memory.advanceTaskFlow!(input, destination),
+        awaitTaskFlowRuling: (input, destination) =>
+          memory.awaitTaskFlowRuling!(input, destination),
+        updateTaskFlowStage: (input, destination) =>
+          memory.updateTaskFlowStage!(input, destination),
+        adoptTaskFlow: (input, destination) => memory.adoptTaskFlow!(input, destination),
+        attachTaskFlowText: (input, destination) => memory.attachTaskFlowText!(input, destination),
+        abandonTaskFlow: (input, destination) => memory.abandonTaskFlow!(input, destination),
+        deleteTaskFlowText: (input, destination) => memory.deleteTaskFlowText!(input, destination),
       })
       process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
       rememberProjectSpace(db(), project, hostedSpaceId)
@@ -788,7 +783,7 @@ describe('orch MCP', () => {
         run: evidenceRunNumber,
       })
       expect(advanced).not.toContain('Took over this workflow stage from Remote MCP machine.')
-      const expectedNext = `fix-defect cursor ${first.id} at ${remoteStep}: Fix`
+      const expectedNext = `fix-defect cursor ${first.id} at verify: Verify`
       expect(contextBodies.get('next')).toBe(expectedNext)
       await call('await_workflow_ruling', {
         ...common,
@@ -808,8 +803,13 @@ describe('orch MCP', () => {
           'SELECT session_id FROM workflow_cursor WHERE number=?',
         )
         .get(second.id)!.session_id
+      const hostedSecond = (await memory.readTaskFlowStage!(secondRow.record_id))!.stage
+      const hostedSecondSession = hostedSecond.sessionId
+      db()
+        .query('UPDATE workflow_cursor SET revision=?,session_id=? WHERE number=?')
+        .run(hostedSecond.revision, hostedSecondSession ?? null, second.id)
       const attached = await attachWorkflowTextByHandle(second.id, 'survives the failed MCP copy', {
-        session: secondSession,
+        session: hostedSecondSession ?? secondSession,
       })
       db()
         .query('UPDATE workflow_cursor SET task_record_id=? WHERE number=?')
@@ -830,7 +830,7 @@ describe('orch MCP', () => {
         db()
           .query('SELECT ordinal,state,task_record_id FROM workflow_cursor WHERE number=?')
           .get(first.id),
-      ).toEqual({ ordinal: 1, state: 'running', task_record_id: taskId })
+      ).toEqual({ ordinal: 2, state: 'running', task_record_id: taskId })
       expect(db().query('SELECT state FROM workflow_cursor WHERE number=?').get(second.id)).toEqual(
         {
           state: 'abandoned',
@@ -866,10 +866,10 @@ describe('orch MCP', () => {
           'DELETE FROM task_flow WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)',
         )
         .run(project)
+      db().query('DELETE FROM record_install_binding').run()
       await removeProject(project)
     }
   })
-
   test('file_issue advertises every accepted input field', async () => {
     const server = createDocsMcpServer()
     const client = new Client({ name: 'orch-test', version: '1.0.0' })

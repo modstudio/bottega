@@ -159,6 +159,8 @@ function registerTaskFlowListRoute(
       primaryInstance: context.req.query('primaryInstance'),
       taskId: context.req.query('taskId'),
       unlinked: context.req.query('unlinked'),
+      linked: context.req.query('linked'),
+      openedMachineId: context.req.query('openedMachineId'),
       order: context.req.query('order'),
       cursor: context.req.query('cursor'),
       limit: context.req.query('limit'),

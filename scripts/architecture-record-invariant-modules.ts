@@ -11,10 +11,15 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const recordInvariantModules = [
+  module('orchestrator/src/project/project-read.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    './project-settings.ts',
+  ]),
   module('orchestrator/src/record/record-task-flow-write-contract.ts', ['uuid', 'zod']),
   module('orchestrator/src/record/record-task-flow-write-client.ts', [
     'bun:sqlite',
-    '../project/projects.ts',
+    '../project/project-read.ts',
     './record-api-client.ts',
     './record-api-client-paths.ts',
     './record-api-client-task-flow.ts',

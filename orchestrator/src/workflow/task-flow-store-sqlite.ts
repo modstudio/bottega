@@ -15,7 +15,10 @@ import type {
   TaskFlowWriteMethod,
 } from './task-flow-store-methods.ts'
 import * as questions from './task-flow-store-sqlite-questions.ts'
-import { writeSqliteTaskFlow } from './task-flow-store-sqlite-write.ts'
+import {
+  type TaskFlowSqliteWriteResult,
+  writeSqliteTaskFlow,
+} from './task-flow-store-sqlite-write.ts'
 import type {
   TaskFlowCloseOutStageRow,
   TaskFlowCursorLifecycleRow,
@@ -71,8 +74,8 @@ class SqliteTaskFlowStore {
     intent: K,
     payload: TaskFlowIntentInput<K>,
     applied?: TaskFlowIntentResult<K> | null,
-  ): TaskFlowIntentResult<K> {
-    return writeTransaction<TaskFlowIntentResult<K>>(() => {
+  ): TaskFlowSqliteWriteResult<K> {
+    return writeTransaction(() => {
       if (intent === 'compose') {
         const stage = (payload as TaskFlowIntentInput<'compose'>).stageInsert
         if (stage?.workflowKey && stage.instanceId === '')
@@ -86,8 +89,10 @@ class SqliteTaskFlowStore {
             exceptRecordId: stage.id,
           })
       }
-      return writeSqliteTaskFlow(this.database, intent, payload, applied)
-    }, this.database)
+      return writeSqliteTaskFlow(this.database, intent, payload, applied) as unknown as {
+        readonly then?: undefined
+      }
+    }, this.database) as TaskFlowSqliteWriteResult<K>
   }
 
   retireStageIdentity(input: {
@@ -257,7 +262,7 @@ class SqliteTaskFlowStore {
       .get(taskRecordId)
   }
 
-  stageByHandle(cursor: number): TaskFlowStageCursorRow | null {
+  stageByHandle(_project: string, cursor: number): TaskFlowStageCursorRow | null {
     return this.database
       .query<TaskFlowStageCursorRow, [number]>(
         `SELECT ${LISTED_STAGE_COLUMNS} FROM workflow_cursor cursor WHERE cursor.number=?`,
@@ -765,7 +770,7 @@ export function sqliteTaskFlowReadStore(database: Database): SqliteTaskFlowReadS
     activeStageAutonomy: async (project, taskRecordId) =>
       local.activeStageAutonomy(project, taskRecordId),
     stageIdentityMap: async () => local.stageIdentityMap(),
-    stageByHandle: async (cursor) => local.stageByHandle(cursor),
+    stageByHandle: async (project, cursor) => local.stageByHandle(project, cursor),
     stageHoldingTaskKey: async (input) => local.stageHoldingTaskKey(input),
     waitingWorkflowQuestions: async () => local.waitingWorkflowQuestions(),
     flowState: async (recordId) => local.flowState(recordId),

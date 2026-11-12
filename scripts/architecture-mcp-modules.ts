@@ -12,6 +12,11 @@ const module = (file: string, allowed: string[]): McpModule => ({
 })
 
 export const mcpModules: McpModule[] = [
+  module('orchestrator/src/mcp/mcp-task-flow.fixture.ts', [
+    'bun:sqlite',
+    '../../test/fixtures/record-api.ts',
+    '../record/record-task-flow-contract.ts',
+  ]),
   module('orchestrator/src/mcp/mcp-exit-status.ts', []),
   module('orchestrator/src/mcp/mcp-supervisor-decision.ts', [
     '../../../shared/brand.ts',
