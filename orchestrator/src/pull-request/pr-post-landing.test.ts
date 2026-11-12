@@ -12,6 +12,8 @@ import { decideShipCleanupVerdict } from '../ship-cleanup/ship-cleanup-decision.
 import type { PullRequestMergeFacts } from './pr-merge-evidence.ts'
 import {
   completePullRequestPostLanding,
+  MERGED_WITH_RESIDUE_EXIT_CODE,
+  MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
   POST_LANDING_REPORTED_EXIT_CODE,
   type PullRequestPostLandingAdapter,
   type PullRequestPostLandingChildAdapter,
@@ -506,19 +508,22 @@ test('a promotion move failure prints its recovery exactly once', async () => {
   expect(promotion?.split(recovery)).toHaveLength(2)
 })
 
-test.each([0, 20, 21])('the parent propagates child output and exit %i', async (exitCode) => {
-  const outcome = await complete({
-    post: {
-      changedPaths: () => ['shared/record/schema.ts'],
-      entryClosure: () => new Map(),
-      mainHead: () => 'main-before',
-      moveMain: () => {},
-      fence: () => {},
-      handOff: () => ({ output: `child output ${exitCode}`, exitCode }),
-    },
-  })
-  expect(outcome).toEqual({ output: `child output ${exitCode}`, exitCode })
-})
+test.each([0, MERGED_WITH_RESIDUE_EXIT_CODE, MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE])(
+  'the parent propagates child output and exit %i',
+  async (exitCode) => {
+    const outcome = await complete({
+      post: {
+        changedPaths: () => ['shared/record/schema.ts'],
+        entryClosure: () => new Map(),
+        mainHead: () => 'main-before',
+        moveMain: () => {},
+        fence: () => {},
+        handOff: () => ({ output: `child output ${exitCode}`, exitCode }),
+      },
+    })
+    expect(outcome).toEqual({ output: `child output ${exitCode}`, exitCode })
+  },
+)
 
 const childPayload = (overrides: Partial<PullRequestPostLandingPayload> = {}) => ({
   project: PLATFORM_SLUG,
