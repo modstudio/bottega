@@ -498,33 +498,7 @@ describe('orch MCP', () => {
     }
   })
 
-  test('next_workflow_step refuses a basis without a self-ruling at the MCP edge', async () => {
-    const server = createDocsMcpServer()
-    const client = new Client({ name: 'orch-test', version: '1.0.0' })
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
-    await server.connect(serverTransport)
-    await client.connect(clientTransport)
-    try {
-      const result = await client.callTool({
-        name: 'next_workflow_step',
-        arguments: {
-          slug: 'fix-defect',
-          project: 'fixture',
-          note: 'done',
-          self_ruling_basis: 'specification line 4',
-        },
-      })
-      expect(result.isError).toBe(true)
-      expect((result.content as { text: string }[])[0]?.text).toContain(
-        'self_ruling_basis requires self_ruling',
-      )
-    } finally {
-      await client.close()
-      await server.close()
-    }
-  })
-
-  test('MCP workflow tools refuse every over-limit record before writing', async () => {
+  test('MCP workflow tools refuse invalid record shapes before writing', async () => {
     const cursorCount = () => db().query('SELECT COUNT(*) AS n FROM workflow_cursor').get()
     const before = cursorCount()
     const server = createDocsMcpServer()
@@ -534,6 +508,19 @@ describe('orch MCP', () => {
     await client.connect(clientTransport)
     try {
       const next = 'next_workflow_step'
+      const missing = await client.callTool({
+        name: next,
+        arguments: {
+          slug: 'fix-defect',
+          project: 'fixture',
+          note: 'done',
+          self_ruling_basis: 'specification line 4',
+        },
+      })
+      expect(missing.isError).toBe(true)
+      expect((missing.content as { text: string }[])[0]?.text).toContain(
+        'self_ruling_basis requires self_ruling',
+      )
       const over = (limit: number) => 'x'.repeat(limit + 1)
       const cases = [
         [next, 'note', 'step note'],

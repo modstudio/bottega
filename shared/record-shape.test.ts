@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { RECORD_SHAPES, recordShapeRefusal } from './record-shape.ts'
-import type { ContextRecordName } from './record-shape.ts'
+import type { ContextRecordName, RECORD_SHAPES } from './record-shape.ts'
+import { recordShapeRefusal } from './record-shape.ts'
 
 describe('context-bearing record shapes', () => {
   const declared = {
