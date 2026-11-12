@@ -109,6 +109,8 @@ const HOSTED_FIXTURE_IMPORTS_WITHOUT_SQL = new Set([
   // Logs slow hosted proof requests and intentionally owns no SQL.
   'orchestrator/test/postgres-proof-slow-request.ts',
   'orchestrator/test/postgres-rls-values.ts',
+  // Drives the hosted task-flow read routes through the client and owns no SQL.
+  'orchestrator/test/postgres-task-flow-read-proof.ts',
 ])
 
 function unwrap(node: ts.Expression): ts.Expression {
