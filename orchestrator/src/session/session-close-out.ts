@@ -119,6 +119,13 @@ export type SessionCloseOutReport = {
   recommendation: 'clear' | 'brief'
 }
 
+type ReleaseSessionResourcesOptions = {
+  session?: string
+  dryRun?: boolean
+  resume?: boolean
+  reportNextActions?: boolean
+}
+
 type RunRow = {
   record_id: string
   parent_run_record_id: string | null
@@ -880,17 +887,23 @@ async function appendWorkedCloseOutReport(input: {
   }
 }
 
+function finalSessionInventory(
+  initial: ReturnType<typeof gather>,
+  database: Database,
+  session: string,
+  dryRun: boolean,
+): ReturnType<typeof gather> {
+  return dryRun || initial.classification.mechanical.length === 0
+    ? initial
+    : gather(database, session, false)
+}
+
 /**
  * Close-out without writing a session_close_out record. Machine sweep uses this replay path so an
  * idempotent release does not create a second close-out invocation record.
  */
 export async function releaseSessionResources(
-  options: {
-    session?: string
-    dryRun?: boolean
-    resume?: boolean
-    reportNextActions?: boolean
-  } = {},
+  options: ReleaseSessionResourcesOptions = {},
 ): Promise<SessionCloseOutReport> {
   const session = options.session ?? callingSessionId()
   if (!session) throw new Error(`session identity is unavailable; pass --session <id>`)
@@ -937,10 +950,7 @@ export async function releaseSessionResources(
     reportNextActions,
     writeWorked: resume && !dryRun,
   })
-  const final =
-    dryRun || initial.classification.mechanical.length === 0
-      ? initial
-      : gather(database, session, false)
+  const final = finalSessionInventory(initial, database, session, dryRun)
   appendObservationFailures(report, final, final.observationErrors)
   appendClassifiedProcessItems(report, final)
   appendCursorProcessItems(report, final.cursors)
