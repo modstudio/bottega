@@ -70,6 +70,8 @@ const ALLOWED = new Set([
   'orchestrator/hooks/heartbeat-guard.py',
   'orchestrator/hooks/heartbeat-decision.py',
   'orchestrator/hooks/heartbeat-remind.py',
+  // Shared by command-facing hooks that must locate the checkout's front-door executable.
+  'orchestrator/hooks/hook_paths.py',
   'orchestrator/hooks/hub-import-guard.py',
   'orchestrator/hooks/orch-heartbeat.sh',
   'orchestrator/hooks/protect-main-checkout.py',

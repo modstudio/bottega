@@ -21,15 +21,16 @@ export type HubTaskPuller = (project: string, key: string) => Promise<HubTaskRef
 export type HubTaskKeyMap = ReadonlyMap<string, readonly HubTaskReference[]>
 
 export class TaskNotFoundError extends Error {
+  readonly project: string
+  readonly key: string
   readonly remedy: string
 
-  constructor(
-    readonly project: string,
-    readonly key: string,
-  ) {
+  constructor(project: string, key: string) {
     const remedy = `${PLATFORM_SLUG} task list --project ${project} --json`
     super(`no task ${key} in project ${project}; inspect available tasks with ${remedy}`)
     this.name = 'TaskNotFoundError'
+    this.project = project
+    this.key = key
     this.remedy = remedy
   }
 }

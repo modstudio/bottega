@@ -16,6 +16,9 @@ import {
   taskKeyMap,
   taskReferenceForProjectKey,
 } from '../workflow/workflow-task-reference.ts'
+
+export { TaskNotFoundError } from '../workflow/workflow-task-reference.ts'
+
 import { productionWorkflowTextDocumentPorts } from '../workflow/workflow-text-copy.ts'
 import { decodeContextItem } from './context-item-codec.ts'
 import {
@@ -31,14 +34,16 @@ import { isValidContextHolderSubject, taskContextHolder } from './doc-subjects.t
 
 export type ContextTask = HubTaskReference
 export class ContextTaskPrefixError extends Error {
-  constructor(
-    readonly key: string,
-    readonly prefix: string,
-  ) {
+  readonly key: string
+  readonly prefix: string
+
+  constructor(key: string, prefix: string) {
     super(
       `task key prefix ${JSON.stringify(prefix)} is not declared by exactly one registered project; inspect prefixes with ${PLATFORM_SLUG} project list --json`,
     )
     this.name = 'ContextTaskPrefixError'
+    this.key = key
+    this.prefix = prefix
   }
 }
 

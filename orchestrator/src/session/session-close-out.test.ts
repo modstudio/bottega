@@ -279,7 +279,9 @@ test('close-out reaches its verdict when worked-key derivation throws', async ()
   const session = newRecordId()
   const cursor = addCursor(session, 'running')
   db()
-    .query("UPDATE workflow_cursor SET workflow_key='BROKENWORK-1',closed='{}',state='done' WHERE record_id=?")
+    .query(
+      "UPDATE workflow_cursor SET workflow_key='BROKENWORK-1',closed='{}',state='done' WHERE record_id=?",
+    )
     .run(cursor.recordId)
 
   const report = await closeOutSession({ session, dryRun: true })

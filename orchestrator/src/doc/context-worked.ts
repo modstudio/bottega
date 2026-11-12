@@ -1,7 +1,7 @@
 // concern: context-worked
 /** Pure derivation and rendering of task keys worked by one architect session. */
 
-export type WorkedTaskRow = { key: string | null; at: string }
+type WorkedTaskRow = { key: string | null; at: string }
 
 export type WorkedTaskFacts = {
   events: readonly WorkedTaskRow[]

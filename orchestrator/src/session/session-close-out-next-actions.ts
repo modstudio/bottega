@@ -8,10 +8,10 @@ import { taskContextItems } from '../doc/context-service.ts'
 import {
   ContextTaskPrefixError,
   resolveContextTask,
+  TaskNotFoundError,
   unknownTaskPrefixReport,
 } from '../doc/context-write-adapter.ts'
 import { missingContextKinds } from '../doc/doc-context-write.ts'
-import { TaskNotFoundError } from '../workflow/workflow-task-reference.ts'
 
 export type TaskNextActionOutcome =
   | { key: string; status: 'present' }

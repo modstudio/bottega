@@ -15,7 +15,6 @@ import { closeOutRun } from '../close/close-out.ts'
 import { annotateHeldLandingInFlight } from '../close/close-out-in-flight.ts'
 import { type HeldTreeJson, heldTreeFromError, heldTreeJson } from '../close/close-out-report.ts'
 import { sessionId as callingSessionId, db, writableDb, writeTransaction } from '../database/db.ts'
-import { recordSessionWorked, sessionWorkedTaskKeys } from '../doc/context-worked-adapter.ts'
 import { gitResult, repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
 import { projectAt, projectByName, resolvedWorktreeTool } from '../project/projects.ts'
 import { currentOrphanProcesses } from '../resources/process-inventory.ts'
@@ -47,10 +46,7 @@ import {
   sessionCloseOutVerdict,
   sessionOwnedRunIds,
 } from './session-close-out-decision.ts'
-import {
-  type TaskNextActionOutcome,
-  taskNextActionOutcomes,
-} from './session-close-out-next-actions.ts'
+import type { TaskNextActionOutcome } from './session-close-out-next-actions.ts'
 import { sessionCloseOutObligationItems } from './session-close-out-obligation-adapter.ts'
 import { closeOutSessionOutbox } from './session-close-out-outbox.ts'
 import type {
@@ -64,6 +60,7 @@ import {
 } from './session-close-out-resource-release.ts'
 import { reclaimSessionReleasedTree } from './session-close-out-resource-release-adapter.ts'
 import { insertSessionCloseOutRecord } from './session-close-out-store.ts'
+import { appendWorkedCloseOutReport } from './session-close-out-worked.ts'
 import {
   closeOutSessionContext,
   type SessionContextLifecycleReport,
@@ -853,53 +850,6 @@ function applySessionMechanicalActions(
       report.mechanical.push(...release.mechanical)
       report.process.push(...release.process)
     }
-}
-
-async function appendWorkedCloseOutReport(input: {
-  report: SessionCloseOutReport
-  session: string
-  database: Database
-  reportNextActions: boolean
-  writeWorked: boolean
-}): Promise<void> {
-  if (!input.reportNextActions && !input.writeWorked) return
-  let workedKeys: string[]
-  try {
-    workedKeys = sessionWorkedTaskKeys(input.session, input.database)
-    if (input.reportNextActions) {
-      input.report.nextActionOutcomes = await taskNextActionOutcomes(workedKeys, input.database)
-      for (const outcome of input.report.nextActionOutcomes) {
-        if (
-          outcome.status !== 'unknown-prefix' &&
-          outcome.status !== 'unreadable' &&
-          outcome.status !== 'absent'
-        )
-          continue
-        input.report.warnings.push({
-          item: `close-out task ${outcome.key}`,
-          detail: outcome.detail,
-          cleanup: outcome.remedy,
-        })
-      }
-    }
-  } catch (cause) {
-    input.report.warnings.push({
-      item: 'close-out worked report',
-      detail: cause instanceof Error ? cause.message : String(cause),
-      cleanup: `${PLATFORM_SLUG} session close-out --session ${input.session}`,
-    })
-    return
-  }
-  if (!input.writeWorked) return
-  try {
-    await recordSessionWorked(input.session, workedKeys, 'close-out')
-  } catch (cause) {
-    input.report.errors.push({
-      item: `context session:${input.session}/worked (fact)`,
-      detail: cause instanceof Error ? cause.message : String(cause),
-      retry: `${PLATFORM_SLUG} session close-out --session ${input.session} --resume`,
-    })
-  }
 }
 
 function finalSessionInventory(
