@@ -33,7 +33,7 @@ export const CONTEXT_ITEM_MAX_CHARS = {
   'next-action': NEXT_ACTION_MAX_CHARS,
 } as const satisfies Record<ContextItemKind, number>
 
-export const CONTEXT_ITEM_RECORD_NAMES = {
+const CONTEXT_ITEM_RECORD_NAMES = {
   ruling: 'ruling',
   'open-question': 'open question',
   'next-action': 'next action',

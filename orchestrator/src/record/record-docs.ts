@@ -8,10 +8,7 @@ import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { decodeContextItem } from '../doc/context-item-codec.ts'
-import {
-  contextItemShapeRefusal,
-  storedContextItemShapeRefusal,
-} from '../doc/doc-context-write.ts'
+import { contextItemShapeRefusal, storedContextItemShapeRefusal } from '../doc/doc-context-write.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
 import { resumeFrontmatter } from '../doc/doc-resume-frontmatter.ts'
 import { resumeRestoreRefusal, resumeWriteRefusal } from '../doc/doc-resume-write.ts'

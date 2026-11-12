@@ -34,11 +34,8 @@ export const RECORD_SHAPES = {
   },
 } as const
 
-export const STEP_NOTE_MAX_CHARS = RECORD_SHAPES['step note'].maxChars
 export const OPEN_QUESTION_MAX_CHARS = RECORD_SHAPES['open question'].maxChars
 export const RULING_MAX_CHARS = RECORD_SHAPES.ruling.maxChars
-export const SELF_RULING_MAX_CHARS = RECORD_SHAPES['self-ruling'].maxChars
-export const BASIS_MAX_CHARS = RECORD_SHAPES.basis.maxChars
 export const NEXT_ACTION_MAX_CHARS = RECORD_SHAPES['next action'].maxChars
 
 export type ContextRecordName = keyof typeof RECORD_SHAPES
@@ -64,7 +61,8 @@ export function recordShapeRefusal(record: ContextRecordName, text: string): str
 }
 
 /** Refuse invalid record text at a writing edge. */
-export function assertRecordShape(record: ContextRecordName, text: string): void {
+export function assertRecordShape(record: ContextRecordName, text: string): string {
   const refusal = recordShapeRefusal(record, text)
   if (refusal) throw new Error(refusal)
+  return text
 }

@@ -1,10 +1,12 @@
 import { newRecordId } from '../../../shared/record-id.ts'
 import { ARGV_PROMPT_BYTES } from '../../src/agent/agents.ts'
 import { assertWorkerText, readMessageText, readWorkerFile } from '../../src/cli/args.ts'
+import { rulingPrompt } from '../../src/contract/contract.ts'
 import { db } from '../../src/database/db.ts'
 import { fixtureProjectRecordId } from '../../src/database/test-database.fixture.ts'
 import { answerRun as answerRunService, retryRun } from '../../src/run/run-answer.ts'
 import { answerInputFromArgv } from '../../src/run/run-message-commands.ts'
+import { packedResumePrompt } from '../../src/run/run-resume-prompt.ts'
 import { dir } from './store.ts'
 
 const presentation = {
@@ -63,6 +65,26 @@ export function insertRun(status: string, job = 'file-question', recordId = newR
 
 export function newQuestionSql(): string {
   return `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`
+}
+
+export function addOpenQuestions(id: string, count: number) {
+  for (let i = 1; i <= count; i++)
+    db().query(newQuestionSql()).run(id, new Date().toISOString(), `q${i}?`)
+  return db()
+    .query('SELECT number, question FROM question WHERE run_record_id=? ORDER BY number')
+    .all(id) as { number: number; question: string }[]
+}
+
+export function packedRulingResumeBytes(
+  id: string,
+  job: string,
+  questions: { question: string }[],
+  answer: string,
+) {
+  const prompt = rulingPrompt(
+    questions.map((question) => ({ question: question.question, answer })),
+  )
+  return Buffer.byteLength(packedResumePrompt(job, prompt, id))
 }
 
 export function returningQuestionSql(): string {
