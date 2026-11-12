@@ -190,24 +190,41 @@ function installHosted(
         revisions,
       }
     },
-    adoptTaskFlow: async (input) => ({
-      flowRecordId: flow.flow.id,
-      revisions: {
-        [flow.flow.id]: flow.flow.revision,
-        [input.stage.id]: input.stage.expectedRevision + 1,
-      },
-    }),
-    updateTaskFlowStage: async (input) => ({
-      revisions: Object.fromEntries(
-        input.stages.map((stage) => [stage.id, stage.expectedRevision + 1]),
-      ),
-    }),
-    advanceTaskFlow: async (input) => ({
-      revisions: {
-        [input.stage.id]: input.stage.expectedRevision + 1,
-        ...(input.flow ? { [input.flow.id]: input.flow.expectedRevision + 1 } : {}),
-      },
-    }),
+    adoptTaskFlow: async (input) => {
+      if (flow.stage?.id === input.stage.id) {
+        flow.stage.revision = input.stage.expectedRevision + 1
+        flow.flow.taskId = input.taskId
+      }
+      return {
+        flowRecordId: flow.flow.id,
+        revisions: {
+          [flow.flow.id]: flow.flow.revision,
+          [input.stage.id]: input.stage.expectedRevision + 1,
+        },
+      }
+    },
+    updateTaskFlowStage: async (input) => {
+      for (const mutation of input.stages)
+        if (flow.stage?.id === mutation.id)
+          Object.assign(flow.stage, mutation.values, { revision: mutation.expectedRevision + 1 })
+      return {
+        revisions: Object.fromEntries(
+          input.stages.map((stage) => [stage.id, stage.expectedRevision + 1]),
+        ),
+      }
+    },
+    advanceTaskFlow: async (input) => {
+      if (flow.stage?.id === input.stage.id)
+        Object.assign(flow.stage, input.stage.values, {
+          revision: input.stage.expectedRevision + 1,
+        })
+      return {
+        revisions: {
+          [input.stage.id]: input.stage.expectedRevision + 1,
+          ...(input.flow ? { [input.flow.id]: input.flow.expectedRevision + 1 } : {}),
+        },
+      }
+    },
   })
 }
 
@@ -593,7 +610,7 @@ test.each([
   ['argv key', { key: 'DEV-2098' }],
   ['cursor row key', {}],
 ] as const)(
-  'hosted advance after adoption uses the local holder with the %s',
+  'hosted advance after adoption uses the hosted holder with the %s',
   async (_label, callArgs) => {
     const ids = fixture()
     try {
@@ -724,7 +741,7 @@ test.each([
         cursor,
       )
 
-      expect(result).not.toContain('Took over this workflow stage from Machine B.')
+      expect(result).toContain('Took over this workflow stage from Machine B.')
       const closed = ids.database
         .query<{ ordinal: number; state: string; closed: string }, [string]>(
           'SELECT ordinal,state,closed FROM workflow_cursor WHERE record_id=?',

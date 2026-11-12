@@ -1,7 +1,4 @@
-import {
-  type RecordApiClient,
-  RecordApiRequestError,
-} from '../../src/record/record-api-client.ts'
+import { type RecordApiClient, RecordApiRequestError } from '../../src/record/record-api-client.ts'
 import type { HostedTaskFlowStageById } from '../../src/record/record-task-flow-contract.ts'
 
 export type MemoryTaskFlowInput = {
@@ -32,7 +29,11 @@ function matches({ stage, flow }: HostedTaskFlowStageById, selector: Selector): 
   return values.every(Boolean)
 }
 
-function compare(selector: Selector, left: HostedTaskFlowStageById, right: HostedTaskFlowStageById) {
+function compare(
+  selector: Selector,
+  left: HostedTaskFlowStageById,
+  right: HostedTaskFlowStageById,
+) {
   if (selector.order === 'newest')
     return (
       (right.stage.number ?? -1) - (left.stage.number ?? -1) ||
@@ -57,15 +58,25 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
             : flow.taskKey === selector.taskKey,
       )
       if (!found)
-        throw new RecordApiRequestError('hosted task flow not found', 'refused', 404, 'task_flow_not_found')
+        throw new RecordApiRequestError(
+          'hosted task flow not found',
+          'refused',
+          404,
+          'task_flow_not_found',
+        )
       const siblings = input.taskFlowStages?.filter(({ flow }) => flow.id === found.flow.id) ?? []
       const open = siblings.find(({ stage }) => stage.id === found.flow.openStageRecordId)
       return {
         flow: found.flow,
         stage: open
-          ? { ...open.stage, holder: { id: open.stage.lastAdvancedMachineId, displayName: 'Fixture' } }
+          ? {
+              ...open.stage,
+              holder: { id: open.stage.lastAdvancedMachineId, displayName: 'Fixture' },
+            }
           : null,
-        otherStages: siblings.filter(({ stage }) => stage.id !== open?.stage.id).map(({ stage }) => stage),
+        otherStages: siblings
+          .filter(({ stage }) => stage.id !== open?.stage.id)
+          .map(({ stage }) => stage),
       }
     },
     async listTaskFlowStages(selector) {
@@ -77,10 +88,17 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
       const pageNumber = Math.floor(offset / configuredSize) + 1
       if (pageNumber === input.taskFlowFailedPage)
         throw new Error('fixture task-flow page is unavailable; restore fixture access and retry')
-      const size = Math.min(selector.limit ?? 200, input.taskFlowPageSize ?? Number.MAX_SAFE_INTEGER)
+      const size = Math.min(
+        selector.limit ?? 200,
+        input.taskFlowPageSize ?? Number.MAX_SAFE_INTEGER,
+      )
       const items = rows.slice(offset, offset + size)
       const next = offset + items.length
-      return { items, truncated: next < rows.length, nextCursor: next < rows.length ? String(next) : null }
+      return {
+        items,
+        truncated: next < rows.length,
+        nextCursor: next < rows.length ? String(next) : null,
+      }
     },
     async readTaskFlowStage(id) {
       return input.taskFlowStages?.find(({ stage }) => stage.id === id) ?? null

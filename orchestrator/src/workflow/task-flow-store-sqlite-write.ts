@@ -146,7 +146,11 @@ function updateMutation(
 ): number {
   const next = applied?.[mutation.id] ?? mutation.expectedRevision + 1
   const current = revision(database, table, mutation.id)
-  const decision = decideAppliedMirrorMutation(current, mutation.expectedRevision, applied?.[mutation.id])
+  const decision = decideAppliedMirrorMutation(
+    current,
+    mutation.expectedRevision,
+    applied?.[mutation.id],
+  )
   if (decision === 'refuse') revisionRefusal(database, intent, table, mutation.id)
   if (decision !== 'apply') return next
   if (table === 'task_flow') applyFlowValues(database, mutation, next)

@@ -15,9 +15,9 @@ import type {
 } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { linkWorkflowQuestionsTaskReference } from '../run/question-mutation.ts'
+import { readThroughTaskFlow } from './task-flow-read-through.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 import { decideAppliedMirrorMutation } from './task-flow-store-sqlite-write.ts'
-import { readThroughTaskFlow } from './task-flow-read-through.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import {
   findWorkflowCursor,
@@ -57,9 +57,12 @@ export async function linkWorkflowTaskLabel(
   const store = taskFlowLocalStore(database)
   const refresh = hosted.filter(({ payload, result }) => {
     if (!result) return false
-    const local = database
-      .query<{ revision: number }, [string]>('SELECT revision FROM workflow_cursor WHERE record_id=?')
-      .get(payload.stage.id)?.revision ?? null
+    const local =
+      database
+        .query<{ revision: number }, [string]>(
+          'SELECT revision FROM workflow_cursor WHERE record_id=?',
+        )
+        .get(payload.stage.id)?.revision ?? null
     return (
       decideAppliedMirrorMutation(
         local,

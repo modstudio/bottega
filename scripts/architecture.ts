@@ -122,17 +122,6 @@ export const modules: ArchitectureModule[] = [
     './workflow-cursor-transition.ts',
     './workflow-floor.ts',
   ]),
-  module('orchestrator/src/workflow/task-flow-store-record.ts', [
-    'bun:sqlite',
-    '../record/record-api-client-paths.ts',
-    '../record/record-api-client-task-flow.ts',
-    '../record/record-api-client.ts',
-    '../record/record-task-flow-contract.ts',
-    '../record/record-task-flow-write-client.ts',
-    './task-flow-store-sqlite.ts',
-    './task-flow-store.ts',
-    './task-flow-store-types.ts',
-  ]),
   module('orchestrator/src/workflow/task-flow-store-sqlite.ts', [
     'bun:sqlite',
     '../database/db.ts',

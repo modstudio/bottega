@@ -12,10 +12,6 @@ import {
   RECORD_TASK_FLOW_NOT_FOUND_CODE,
   TASK_FLOW_STAGE_LIST_LIMIT_MAX,
 } from '../record/record-task-flow-contract.ts'
-import {
-  resolveTaskFlowDestination,
-  taskFlowWriteTarget,
-} from '../record/record-task-flow-write-client.ts'
 import type { TaskFlowReadStore } from './task-flow-store.ts'
 import { sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
 import type {
@@ -24,6 +20,7 @@ import type {
   TaskFlowStageCursorRow,
   TaskFlowTextRow,
 } from './task-flow-store-types.ts'
+import { workflowReadSpaceFor } from './workflow-read-space.ts'
 
 type ListedItem = HostedTaskFlowStageList['items'][number]
 type HostedStage = HostedTaskFlowStageById['stage']
@@ -164,6 +161,7 @@ class RecordTaskFlowReadStore implements TaskFlowReadStore {
   }
 
   private projectId(project: string): string {
+    if (!project) throw new Error('a workflow cursor handle requires a project; pass --project')
     const row = this.database
       .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
       .get(project)
@@ -179,15 +177,16 @@ class RecordTaskFlowReadStore implements TaskFlowReadStore {
     return row.name
   }
 
-  private destination(project: string): Promise<RecordRequestDestination> {
-    return resolveTaskFlowDestination(taskFlowWriteTarget(project, this.database), this.client)
+  private destination(project: string): RecordRequestDestination {
+    const destinationSpaceId = workflowReadSpaceFor(this.database, project)
+    return destinationSpaceId ? { destinationSpaceId } : {}
   }
 
   private async list(selector: StageListSelector, project?: string): Promise<ListedItem[]> {
     return listAllTaskFlowStages(
       this.client,
       selector,
-      project ? await this.destination(project) : undefined,
+      project ? this.destination(project) : undefined,
     )
   }
 

@@ -168,6 +168,65 @@ test('record adapter matches SQLite rows and normalizes taskless stages', async 
     await local.flowProjectionForTask(TASK_ID),
   )
   expect(await hosted.openStageWorktrees()).toEqual(await local.openStageWorktrees())
+  const stageId = hostedStage().stage.id
+  const input = { project: 'fixture', workflow: 'flow', mode: 'default', taskRecordId: TASK_ID }
+  const assertions = [
+    [hosted.stageByRecordId(stageId), local.stageByRecordId(stageId)],
+    [hosted.latestStageForTask(input), local.latestStageForTask(input)],
+    [
+      hosted.activeStageModes({ ...input, key: 'DEV-2234', sessionId: 'session-a' }),
+      local.activeStageModes({ ...input, key: 'DEV-2234', sessionId: 'session-a' }),
+    ],
+    [hosted.activeStageAutonomy('fixture', TASK_ID), local.activeStageAutonomy('fixture', TASK_ID)],
+    [hosted.stageIdentityMap(), local.stageIdentityMap()],
+    [
+      hosted.stageHoldingTaskKey({
+        project: 'fixture',
+        workflow: 'flow',
+        mode: 'default',
+        key: 'DEV-2234',
+      }),
+      local.stageHoldingTaskKey({
+        project: 'fixture',
+        workflow: 'flow',
+        mode: 'default',
+        key: 'DEV-2234',
+      }),
+    ],
+    [hosted.flowState(FLOW_ID), local.flowState(FLOW_ID)],
+    [hosted.textsForStage(stageId), local.textsForStage(stageId)],
+    [hosted.textRecordIdsForStage(stageId), local.textRecordIdsForStage(stageId)],
+    [hosted.copiedTextRecordIdsForStage(stageId), local.copiedTextRecordIdsForStage(stageId)],
+    [hosted.stageProject(stageId), local.stageProject(stageId)],
+    [hosted.uncopiedTextsForStage(stageId), local.uncopiedTextsForStage(stageId)],
+    [hosted.openObligationRecordIds(stageId), local.openObligationRecordIds(stageId)],
+    [hosted.openObligations(stageId), local.openObligations(stageId)],
+    [hosted.flowForTask(TASK_ID), local.flowForTask(TASK_ID)],
+    [hosted.hasStage(stageId), local.hasStage(stageId)],
+    [
+      hosted.stagesNeedingTaskLink('fixture', 'DEV-2234'),
+      local.stagesNeedingTaskLink('fixture', 'DEV-2234'),
+    ],
+    [
+      hosted.unlinkedLabelHolder({
+        project: 'fixture',
+        workflow: 'flow',
+        mode: 'default',
+        key: 'DEV-2234',
+      }),
+      local.unlinkedLabelHolder({
+        project: 'fixture',
+        workflow: 'flow',
+        mode: 'default',
+        key: 'DEV-2234',
+      }),
+    ],
+    [hosted.pendingTaskLinks('workflow_cursor'), local.pendingTaskLinks('workflow_cursor')],
+    [hosted.linkedTaskReferences('workflow_cursor'), local.linkedTaskReferences('workflow_cursor')],
+    [hosted.projectReferenceCounts(PROJECT_ID), local.projectReferenceCounts(PROJECT_ID)],
+  ]
+  for (const [recordAnswer, localAnswer] of assertions)
+    expect(await recordAnswer).toEqual(await localAnswer)
 
   const taskless = recordTaskFlowReadStore(
     d,
