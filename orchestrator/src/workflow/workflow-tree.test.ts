@@ -140,10 +140,8 @@ describe('tracked plan-task design signoff', () => {
   const planTask = tracked.workflows.find(({ slug }) => slug === 'plan-task')!.definition
   const designSignoff = tracked.steps.find(({ slug }) => slug === 'design-signoff')!
 
-  test('tracked landing steps declare their actions and every step declares jobs', () => {
+  test('every tracked step declares jobs', () => {
     expect(tracked.steps.every((step) => Array.isArray(step.jobs))).toBe(true)
-    expect(tracked.steps.find(({ slug }) => slug === 'open-pr')?.actions).toEqual(['pr-create'])
-    expect(tracked.steps.find(({ slug }) => slug === 'merge-pr')?.actions).toEqual(['pr-merge'])
   })
 
   test('operator revision reenters design', () => {

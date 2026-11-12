@@ -6,7 +6,6 @@ floor:
   - recorded-artifact
 commandEvidence: pull-request
 jobs: []
-actions: [pr-create]
 autonomy: ask
 needs:
   - trunk
