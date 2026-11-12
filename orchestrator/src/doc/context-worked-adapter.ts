@@ -4,7 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { claimsOfSession } from '../board/board-claim-service.ts'
 import { db } from '../database/db.ts'
-import { setContextItem } from './context-service.ts'
+import { sessionContextItems, setContextItem } from './context-service.ts'
 import { sessionWorkEvents } from './context-session-work-adapter.ts'
 import {
   renderWorkedTaskKeys,
@@ -37,6 +37,8 @@ export async function recordSessionWorked(
   source: string,
 ): Promise<{ body: string | null }> {
   const body = renderWorkedTaskKeys(keys, CONTEXT_ITEM_MAX_CHARS.fact)
+  const existing = sessionContextItems(session, db()).find((item) => item.id === WORKED_CONTEXT_ID)
+  if (body === existing?.body) return { body }
   if (body)
     await setContextItem({
       session,
@@ -44,6 +46,7 @@ export async function recordSessionWorked(
       kind: WORKED_CONTEXT_KIND,
       source,
       body,
+      expectedRevision: existing?.revision ?? undefined,
     })
   return { body }
 }

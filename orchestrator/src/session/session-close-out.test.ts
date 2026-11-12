@@ -9,6 +9,7 @@ import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fi
 import { db } from '../database/db.ts'
 import { encodeContextItem } from '../doc/context-item-codec.ts'
 import { getContext } from '../doc/context-service.ts'
+import { recordSessionWorked } from '../doc/context-worked-adapter.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from '../doc/context-write-adapter.ts'
 import { upsertProject } from '../project/projects.ts'
 import { closeOutSession, formatSessionCloseOut } from './session-close-out.ts'
@@ -137,6 +138,7 @@ test('--resume records and keeps worked while close-out reports missing next-act
   const previousSession = process.env.CLAUDE_CODE_SESSION_ID
   process.env.CLAUDE_CODE_SESSION_ID = session
   try {
+    await recordSessionWorked(session, ['WORKEDCLOSE-OLD'], 'precompact')
     const report = await closeOutSession({ session, resume: true })
     expect((await getContext({ session })).items).toContainEqual(
       expect.objectContaining({
@@ -147,6 +149,9 @@ test('--resume records and keeps worked while close-out reports missing next-act
       }),
     )
     expect(report.nextActionOutcomes).toEqual([{ key: 'WORKEDCLOSE-1', status: 'missing' }])
+    expect(report.errors).not.toContainEqual(
+      expect.objectContaining({ item: `context session:${session}/worked (fact)` }),
+    )
     expect(formatSessionCloseOut(report)).toContain('close-out: WORKEDCLOSE-1 has no next-action')
   } finally {
     if (previousSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
