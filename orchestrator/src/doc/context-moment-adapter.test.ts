@@ -1,9 +1,6 @@
 import { expect, test } from 'bun:test'
 import type { ContextMomentEffect } from '../../../shared/context-moment.ts'
-import {
-  applyContextMomentEffect,
-  type ContextMomentPorts,
-} from './context-moment-adapter.ts'
+import { applyContextMomentEffect, type ContextMomentPorts } from './context-moment-adapter.ts'
 import { ContextWriteRefusalError } from './doc-context-write.ts'
 
 const answered: ContextMomentEffect = {

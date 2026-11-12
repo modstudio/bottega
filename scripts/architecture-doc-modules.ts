@@ -33,9 +33,9 @@ export const docModules: DocModule[] = [
   ]),
   module('orchestrator/src/doc/context-item-codec.ts', ['./doc-context-write.ts']),
   module('orchestrator/src/doc/context-moment-adapter.ts', [
-    '../../../shared/brand.ts',
     '../../../shared/context-moment.ts',
     './context-service.ts',
+    './doc-context-write.ts',
   ]),
   module('orchestrator/src/doc/context-stale.ts', ['../workflow/task-flow-decision.ts']),
   module('orchestrator/src/doc/context-stale-adapter.ts', [

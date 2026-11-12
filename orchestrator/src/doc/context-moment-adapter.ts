@@ -6,8 +6,8 @@ import {
   contextDropCommand,
   contextSetCommand,
 } from '../../../shared/context-moment.ts'
-import { ContextWriteRefusalError } from './doc-context-write.ts'
 import { dropContextItem, setContextItem } from './context-service.ts'
+import { ContextWriteRefusalError } from './doc-context-write.ts'
 
 export type ContextMomentPorts = {
   set: typeof setContextItem
@@ -38,9 +38,7 @@ export async function applyContextMomentEffect(
     } catch (error) {
       writesSucceeded = false
       const retry =
-        error instanceof ContextWriteRefusalError
-          ? ''
-          : `; retry: ${contextSetCommand(task, item)}`
+        error instanceof ContextWriteRefusalError ? '' : `; retry: ${contextSetCommand(task, item)}`
       writeLine(
         `context: could not write ${item.kind} on ${task}: ${detail(error)}${retry}${kept}`,
         json,
@@ -68,7 +66,7 @@ export async function applyContextMomentEffect(
 export function applyContextMoment(
   moment: { taskKey: string | null; effect: ContextMomentEffect },
   json: boolean,
-  output: ContextMomentOutput,
+  output: ContextMomentOutput = { log: console.log, error: console.error },
   ports?: ContextMomentPorts,
 ): Promise<void> {
   return applyContextMomentEffect(moment.taskKey, moment.effect, json, output, ports)

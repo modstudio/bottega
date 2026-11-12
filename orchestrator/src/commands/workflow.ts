@@ -40,8 +40,8 @@ import {
   workflowPrint,
   workflowVersionsCommand,
 } from '../workflow/workflow-commands.ts'
-import { workflowCursorIdentityMap } from '../workflow/workflow-cursor-identity.ts'
 import { workflowNextContextMoment } from '../workflow/workflow-context-moment.ts'
+import { workflowCursorIdentityMap } from '../workflow/workflow-cursor-identity.ts'
 import { RECORD_EVIDENCE_FLAG } from '../workflow/workflow-evidence-payload.ts'
 import {
   copyWorkflowTextCommand,
@@ -81,6 +81,7 @@ async function applyNextContextMoment(
   input: Awaited<ReturnType<typeof nextCommand>>,
   json: boolean,
   handlerOptions: WorkflowCommandOptions,
+  output: WorkflowPresentation,
 ): Promise<void> {
   try {
     await applyContextMoment(
@@ -90,14 +91,14 @@ async function applyNextContextMoment(
         input.selfRuling,
       ),
       json,
-      presentation,
+      output,
       handlerOptions.contextMomentPorts,
     )
   } catch (error) {
     const holder = input.taskKey ?? `cursor ${input.cursorRecordId}`
     const line = `context: could not write workflow-next on ${holder}: ${error instanceof Error ? error.message : String(error)}`
-    if (json) presentation.error(line)
-    else presentation.log(line)
+    if (json) output.error(line)
+    else output.log(line)
   }
 }
 
@@ -273,6 +274,7 @@ function registerWorkflowRendering({
 
 function registerWorkflowAdvancement({
   workflow,
+  workflowPresentation,
   handlerOptions,
   output,
 }: WorkflowRegistration): void {
@@ -325,11 +327,18 @@ function registerWorkflowAdvancement({
         workflowArgv('next', slug === undefined ? [] : [slug], resolvedOptions),
         output(options),
         handlerOptions,
-      ).then((moment) => applyNextContextMoment(moment, Boolean(options.json), handlerOptions))
+      ).then((moment) =>
+        applyNextContextMoment(moment, Boolean(options.json), handlerOptions, workflowPresentation),
+      )
     })
 }
 
-function registerWorkflowRulings({ workflow, handlerOptions, output }: WorkflowRegistration): void {
+function registerWorkflowRulings({
+  workflow,
+  workflowPresentation,
+  handlerOptions,
+  output,
+}: WorkflowRegistration): void {
   jsonOption(
     workflow
       .command('await [workflow]')
@@ -350,7 +359,7 @@ function registerWorkflowRulings({ workflow, handlerOptions, output }: WorkflowR
         applyContextMoment(
           moment,
           Boolean(options.json),
-          presentation,
+          workflowPresentation,
           handlerOptions.contextMomentPorts,
         ),
       ),
@@ -377,7 +386,7 @@ function registerWorkflowRulings({ workflow, handlerOptions, output }: WorkflowR
         applyContextMoment(
           moment,
           Boolean(options.json),
-          presentation,
+          workflowPresentation,
           handlerOptions.contextMomentPorts,
         ),
       ),

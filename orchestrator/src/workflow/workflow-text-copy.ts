@@ -16,10 +16,7 @@ import {
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
 import { taskFlowStore } from './task-flow-store.ts'
-import {
-  abandonSelectedWorkflowCursorForClose,
-  nextWorkflowStepWithResult,
-} from './workflow-cursor.ts'
+import { abandonSelectedWorkflowCursorForClose, nextWorkflowStep } from './workflow-cursor.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import {
   refuseMissingAbandonReason,
@@ -308,21 +305,26 @@ export async function closeCursorWithTextCopyResult(
     documents,
     input.context.taskFlowClient,
   )
+  const detail: { selfRulingQuestionNumber?: number } = {}
   const result: WorkflowTextCloseResult =
     input.action === 'next'
-      ? await nextWorkflowStepWithResult(
-          row,
-          row.project,
-          input.args,
-          input.note!.trim(),
-          input.context,
-          database,
-          input.evidence,
-          input.floorPorts,
-          input.selfRuling,
-          input.outcome,
-          input.live,
-        )
+      ? {
+          text: await nextWorkflowStep(
+            row,
+            row.project,
+            input.args,
+            input.note!.trim(),
+            input.context,
+            database,
+            input.evidence,
+            input.floorPorts,
+            input.selfRuling,
+            input.outcome,
+            input.live,
+            detail,
+          ),
+          selfRulingQuestionNumber: detail.selfRulingQuestionNumber,
+        }
       : {
           text: await abandonSelectedWorkflowCursorForClose(
             row,

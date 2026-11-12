@@ -33,11 +33,11 @@ export const mcpModules: McpModule[] = [
   module('orchestrator/src/mcp/mcp-workflow-context-tools.ts', [
     '@modelcontextprotocol/server',
     'zod',
-    '../../../shared/context-moment.ts',
     '../../../shared/record-shape.ts',
     '../doc/context-moment-adapter.ts',
     '../workflow/workflow-cursor.ts',
     '../workflow/workflow-cursor-ruling.ts',
+    '../workflow/workflow-context-moment.ts',
     '../workflow/workflow-task-reference.ts',
     './mcp-workflow-cursor.ts',
   ]),
@@ -86,6 +86,7 @@ export const mcpModules: McpModule[] = [
     '@modelcontextprotocol/sdk/server/mcp.js',
     'zod',
     '../../../shared/docs.ts',
+    '../../../shared/context-moment.ts',
     '../../../shared/orch-contract.ts',
     '../ask/worker-question.ts',
     '../database/db.ts',
@@ -100,6 +101,7 @@ export const mcpModules: McpModule[] = [
     '../run/run-identifier.ts',
     '../run/run-message-commands.ts',
     './hub-notes.ts',
+    './mcp-workflow-context-tools.ts',
   ]),
   module('orchestrator/src/mcp/mcp-tool-list.ts', [
     '@modelcontextprotocol/sdk/client/index.js',

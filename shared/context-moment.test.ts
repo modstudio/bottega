@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from './brand.ts'
 import { contextMomentEffect, contextMomentWrite, emitContextMoment } from './context-moment.ts'
 
 describe('context moment effect', () => {
@@ -101,8 +102,8 @@ test('pr merge and task close retain their current prompt output', () => {
     output,
   )
   expect(stdout).toEqual([
-    "context: revise next-action on DEV-2225 (bottega agent context set --task 'DEV-2225' --kind next-action --source 'pr-merge' --id next '<text>')",
-    "context: revise next-action on DEV-2225 (bottega agent context set --task 'DEV-2225' --kind next-action --source 'task-close' --id next '<text>')",
+    `context: revise next-action on DEV-2225 (${PLATFORM_SLUG} agent context set --task 'DEV-2225' --kind next-action --source 'pr-merge' --id next '<text>')`,
+    `context: revise next-action on DEV-2225 (${PLATFORM_SLUG} agent context set --task 'DEV-2225' --kind next-action --source 'task-close' --id next '<text>')`,
   ])
   expect(stderr).toEqual([])
 })

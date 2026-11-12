@@ -4,12 +4,12 @@ import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { assertRecordShape } from '../../../shared/record-shape.ts'
 import { applyContextMoment, type ContextMomentPorts } from '../doc/context-moment-adapter.ts'
-import { awaitWorkflowRuling } from '../workflow/workflow-cursor.ts'
-import { ruleWorkflow } from '../workflow/workflow-cursor-ruling.ts'
 import {
   type WorkflowContextMoment,
   workflowQuestionContextMoment,
 } from '../workflow/workflow-context-moment.ts'
+import { awaitWorkflowRuling } from '../workflow/workflow-cursor.ts'
+import { ruleWorkflow } from '../workflow/workflow-cursor-ruling.ts'
 import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
 import { resolveMcpLinkedWorkflowCursor } from './mcp-workflow-cursor.ts'
 

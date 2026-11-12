@@ -691,12 +691,12 @@ async function nextWorkflowStepImpl(
   }
 }
 
-export type WorkflowAdvanceResult = {
+type WorkflowAdvanceResult = {
   text: string
   selfRulingQuestionNumber?: number
 }
 
-export async function nextWorkflowStepWithResult(
+async function nextWorkflowStepWithResult(
   selected: SelectableCursorRow,
   project: string,
   args: Record<string, string>,
@@ -741,22 +741,23 @@ export async function nextWorkflowStep(
   selfRuling?: WorkflowSelfRulingInput,
   outcome?: string,
   live?: LiveCursorAutonomy,
+  detail?: { selfRulingQuestionNumber?: number },
 ): Promise<string> {
-  return (
-    await nextWorkflowStepWithResult(
-      selected,
-      project,
-      args,
-      note,
-      context,
-      d,
-      evidence,
-      ports,
-      selfRuling,
-      outcome,
-      live,
-    )
-  ).text
+  const result = await nextWorkflowStepWithResult(
+    selected,
+    project,
+    args,
+    note,
+    context,
+    d,
+    evidence,
+    ports,
+    selfRuling,
+    outcome,
+    live,
+  )
+  if (detail) detail.selfRulingQuestionNumber = result.selfRulingQuestionNumber
+  return result.text
 }
 
 async function abandonSelectedWorkflowCursor(

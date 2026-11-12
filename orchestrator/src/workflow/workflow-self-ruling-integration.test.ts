@@ -8,6 +8,7 @@ import {
   promoteStepCatalogueLocal,
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
+import { workflowNextContextMoment } from './workflow-context-moment.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { resolveWorkflowLiveAutonomy } from './workflow-cursor-live-autonomy.ts'
 import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
@@ -15,11 +16,7 @@ import { selectAndNextWorkflowStep as nextWorkflowStep } from './workflow-cursor
 import { flagForFloor } from './workflow-floor.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
-import { workflowNextContextMoment } from './workflow-context-moment.ts'
-import {
-  closeCursorWithTextCopy,
-  closeCursorWithTextCopyResult,
-} from './workflow-text-copy.ts'
+import { closeCursorWithTextCopy, closeCursorWithTextCopyResult } from './workflow-text-copy.ts'
 import { composeWorkflow } from './workflows.ts'
 
 const args = {
@@ -180,9 +177,7 @@ test('self-ruling records the answered question and closes the step atomically',
 test('a whitespace-padded self-ruling carries its question into the context moment', async () => {
   const d = database()
   await openAtRuling(d)
-  const cursor = d
-    .query<{ record_id: string }, []>('SELECT record_id FROM workflow_cursor')
-    .get()!
+  const cursor = d.query<{ record_id: string }, []>('SELECT record_id FROM workflow_cursor').get()!
   const result = await closeCursorWithTextCopyResult(
     {
       action: 'next',
@@ -206,12 +201,8 @@ test('a whitespace-padded self-ruling carries its question into the context mome
 
   expect(result.selfRulingQuestionNumber).toBeNumber()
   expect(
-    workflowNextContextMoment(
-      cursor.record_id,
-      result.selfRulingQuestionNumber,
-      'Proceed.',
-      d,
-    ).effect.writes,
+    workflowNextContextMoment(cursor.record_id, result.selfRulingQuestionNumber, 'Proceed.', d)
+      .effect.writes,
   ).toContainEqual({
     kind: 'position',
     id: `position-q${result.selfRulingQuestionNumber}`,

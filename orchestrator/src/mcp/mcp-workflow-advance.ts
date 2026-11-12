@@ -21,15 +21,27 @@ import {
   productionWorkflowTextDocumentPorts,
   type WorkflowTextDocumentPorts,
 } from '../workflow/workflow-text-copy.ts'
-import { resolveMcpLinkedWorkflowCursor } from './mcp-workflow-cursor.ts'
-import type { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
 import {
   collectContextMomentReports,
   resultWithContextReports,
 } from './mcp-workflow-context-tools.ts'
+import { resolveMcpLinkedWorkflowCursor } from './mcp-workflow-cursor.ts'
+import type { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
 
 const workflowRunEvidence = (run: string | number | undefined) =>
   run === undefined ? undefined : resolveRunIdentifier(db(), run)
+
+function assertAdvanceRecordShapes(
+  note: string,
+  selfRuling?: string,
+  basis?: string,
+  question?: string,
+): void {
+  assertRecordShape('step note', note)
+  if (selfRuling !== undefined) assertRecordShape('self-ruling', selfRuling)
+  if (basis !== undefined) assertRecordShape('basis', basis)
+  if (question !== undefined) assertRecordShape('open question', question)
+}
 
 export async function advanceWorkflow(
   {
@@ -56,10 +68,7 @@ export async function advanceWorkflow(
   workflowTextDocuments: WorkflowTextDocumentPorts = productionWorkflowTextDocumentPorts,
   contextMomentPorts?: ContextMomentPorts,
 ) {
-  assertRecordShape('step note', note)
-  if (self_ruling !== undefined) assertRecordShape('self-ruling', self_ruling)
-  if (self_ruling_basis !== undefined) assertRecordShape('basis', self_ruling_basis)
-  if (question !== undefined) assertRecordShape('open question', question)
+  assertAdvanceRecordShapes(note, self_ruling, self_ruling_basis, question)
   if (self_ruling_basis !== undefined && self_ruling === undefined)
     throw new Error(
       'self_ruling_basis requires self_ruling; pass both inputs, or omit self_ruling_basis',
