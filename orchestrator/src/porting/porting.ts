@@ -1,4 +1,6 @@
 import { newRecordId } from '../../../shared/record-id.ts'
+import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
+import { resolveRecordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { projectRowByName } from '../project/projects.ts'
 import { activeRecordSpace, effectiveProjectSpace } from '../project-space.ts'
@@ -65,7 +67,11 @@ function projectName(recordId: string): string {
 function projectSpace(recordId: string): string | null {
   return effectiveProjectSpace(db(), projectName(recordId))
 }
-async function hostedSpace(recordId?: string): Promise<string> {
+async function hostedSpace(
+  recordId?: string,
+  requestedSpace?: string,
+  verb = 'port write',
+): Promise<string> {
   const identity = await recordApiClient().whoami()
   if (recordId) {
     const name = projectName(recordId)
@@ -74,9 +80,13 @@ async function hostedSpace(recordId?: string): Promise<string> {
     if ('refused' in decision) throw new Error(decision.remedy)
     return decision.spaceId
   }
-  const spaceId = identity.activeSpaceId
-  if (!spaceId) throw new Error('record session has no active space')
-  return spaceId
+  const destination = await resolveRecordSpaceOwnerDestination(
+    verb,
+    { space: requestedSpace },
+    [],
+    async () => parseRecordSpaceMemberships(identity.memberships),
+  )
+  return destination.spaceId
 }
 function assertPortWriteAllowed(operation: string): void {
   writableDb()
@@ -572,12 +582,18 @@ export function removeLedgerRef(targetProjectId: string, taskKey: string) {
   })
 }
 
-export function addDoctrineRule(number: number, title: string, body: string, createdAt = nowIso()) {
+export function addDoctrineRule(
+  number: number,
+  title: string,
+  body: string,
+  createdAt = nowIso(),
+  requestedSpace?: string,
+) {
   assertPortWriteAllowed('add port doctrine rule')
   return applyRecordWriteAuthority({
     local: () => addDoctrineRuleLocal(number, title, body, createdAt),
     hosted: async () => {
-      const spaceId = await hostedSpace()
+      const spaceId = await hostedSpace(undefined, requestedSpace, 'port doctrine add')
       const response = await recordApiClient().writePort!(
         { action: 'add_doctrine', number, title, body, createdAt },
         { destinationSpaceId: spaceId },
@@ -588,12 +604,12 @@ export function addDoctrineRule(number: number, title: string, body: string, cre
   })
 }
 
-export function retireDoctrineRule(number: number, retiredAt = nowIso()) {
+export function retireDoctrineRule(number: number, retiredAt = nowIso(), requestedSpace?: string) {
   assertPortWriteAllowed('retire port doctrine rule')
   return applyRecordWriteAuthority({
     local: () => retireDoctrineRuleLocal(number, retiredAt),
     hosted: async () => {
-      const spaceId = await hostedSpace()
+      const spaceId = await hostedSpace(undefined, requestedSpace, 'port doctrine retire')
       const current = db()
         .query<{ version: number }, [string, number]>(
           'SELECT version FROM port_doctrine WHERE space_id=? AND number=?',

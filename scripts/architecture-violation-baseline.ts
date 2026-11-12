@@ -13,96 +13,101 @@ export const architectureViolationBaseline: readonly ArchitectureViolationBaseli
     rule: 'no-active-space-resolver-import',
     from: 'orchestrator/src/workflow/workflows.ts',
     to: 'orchestrator/src/project-space.ts',
-    reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
+    reason:
+      'owner-routed workflow writes use a project declared space or an explicit project-less destination',
   },
   {
     rule: 'no-active-space-resolver-import',
     from: 'orchestrator/src/workflow/workflow-read-space.ts',
     to: 'orchestrator/src/project-space.ts',
-    reason:
-      'viewing read; reclassified when DEV-2244 splits the viewing default from the write decision',
+    reason: 'viewing read; workflow reads may default to the active space when no project is named',
   },
   {
     rule: 'no-active-space-resolver-import',
     from: 'orchestrator/src/workflow/step-catalogue.ts',
     to: 'orchestrator/src/project-space.ts',
-    reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
+    reason:
+      'owner-routed catalogue writes use a project declared space or an explicit project-less destination',
   },
   {
     rule: 'no-active-space-resolver-import',
     from: 'orchestrator/src/record/record-settings.ts',
     to: 'shared/personal-item-space.ts',
-    reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
+    reason:
+      'owner-routed settings writes use the request destination for projects and the personal space for users',
   },
   {
     rule: 'no-active-space-resolver-import',
     from: 'orchestrator/src/record/record-config.ts',
     to: 'shared/personal-item-space.ts',
-    reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
+    reason:
+      'owner-routed config writes use the request destination for space scope and the personal space for user scope',
   },
   {
     rule: 'no-active-space-resolver-import',
     from: 'orchestrator/src/record/record-cache.ts',
     to: 'orchestrator/src/project-space.ts',
-    reason:
-      'viewing read; reclassified when DEV-2244 splits the viewing default from the write decision',
+    reason: 'active-space cache producer; stores the viewing default in local schema metadata',
   },
   {
     rule: 'no-active-space-resolver-import',
     from: 'orchestrator/src/record/record-cache-feed.ts',
     to: 'orchestrator/src/project-space.ts',
-    reason:
-      'viewing read; reclassified when DEV-2244 splits the viewing default from the write decision',
+    reason: 'active-space cache producer; stores the viewing default in local schema metadata',
   },
   {
     rule: 'no-active-space-resolver-import',
     from: 'orchestrator/src/record/record-api.ts',
     to: 'shared/personal-item-space.ts',
-    reason:
-      'viewing read; reclassified when DEV-2244 splits the viewing default from the write decision',
+    reason: 'viewing read; the personal document list selects a tenant without writing it',
   },
   {
     rule: 'no-active-space-resolver-import',
     from: 'orchestrator/src/record/record-api-doc-tenant.ts',
     to: 'shared/personal-item-space.ts',
-    reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
+    reason:
+      'viewing read; destination-less document reads may use the active space while writes arrive with an explicit destination',
   },
   {
     rule: 'no-active-space-resolver-import',
     from: 'orchestrator/src/record/record-api-doc-order.ts',
     to: 'shared/personal-item-space.ts',
-    reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
+    reason:
+      'type-only import; document ordering receives its already-resolved tenant through a port',
   },
   {
     rule: 'no-active-space-resolver-import',
     from: 'orchestrator/src/project/project-commands.ts',
     to: 'orchestrator/src/project-space.ts',
-    reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
+    reason:
+      'viewing read; project commands read the project space lens catalogue to validate configured lenses',
   },
   {
     rule: 'no-active-space-resolver-import',
     from: 'orchestrator/src/porting/porting.ts',
     to: 'orchestrator/src/project-space.ts',
-    reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
+    reason:
+      'mixed read and owner-routed write; doctrine reads may use the active space, while writes use project ownership or an explicit space',
   },
   {
     rule: 'no-active-space-resolver-import',
     from: 'orchestrator/src/porting/porting-hosted-import.ts',
     to: 'orchestrator/src/project-space.ts',
-    reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
+    reason:
+      'owner-routed import; project data uses declared project spaces and project-less doctrine requires an explicit space',
   },
   {
     rule: 'no-active-space-resolver-import',
     from: 'orchestrator/src/lens/lenses.ts',
     to: 'orchestrator/src/project-space.ts',
-    reason: 'write path; DEV-2240 routes it by owner (S3 to S6)',
+    reason:
+      'viewing and local-store use; hosted lens writes resolve a project owner or receive an explicit destination',
   },
   {
     rule: 'no-active-space-resolver-import',
     from: 'orchestrator/src/database/workflow-uuid-migration-preflight.ts',
     to: 'orchestrator/src/project-space.ts',
-    reason:
-      'viewing read; reclassified when DEV-2244 splits the viewing default from the write decision',
+    reason: 'viewing read; migration preflight scans every composing space for orphaned references',
   },
   {
     rule: 'no-active-space-resolver-import',

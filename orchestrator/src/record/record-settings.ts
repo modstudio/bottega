@@ -114,7 +114,7 @@ async function applyRecordSettingsEdit<
   const spaceId = resolvePersonalItemSpace(
     {
       userId: input.userId,
-      activeSpaceId: input.spaceId,
+      nonPersonalSpaceId: input.spaceId,
       personalSpaceId: input.personalSpaceId ?? null,
     },
     { kind: 'document', scope: SETTINGS_SCOPE, subject, ownerUserId: owner },
