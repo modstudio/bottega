@@ -106,6 +106,7 @@ const TASK_FLOW_RECORD_PAYLOAD_CONTRACT = contract(
 const TASK_FLOW_STAGE_RECORD_PAYLOAD_CONTRACT = contract(
   'id spaceId projectId projectName flowRecordId workflow mode workflowKey instanceId sessionId workflowVersionId catalogueVersionId arguments activeOrdinal activeSlug state closedStepNotes question autonomy enforcement totalSteps openedMachineId takenOverFromMachineId lastAdvancedMachineId machineId revision createdAt updatedAt',
   {
+    projectId: null,
     workflowKey: null,
     instanceId: null,
     sessionId: null,

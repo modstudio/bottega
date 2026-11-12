@@ -12,6 +12,16 @@ const module = (file: string, allowed: string[]): RecordSyncModule => ({
 })
 
 export const recordSyncModules: RecordSyncModule[] = [
+  module('orchestrator/src/record/task-flow-backfill.ts', [
+    'bun:sqlite',
+    'uuid',
+    '../../../shared/record/schema.ts',
+    '../../../shared/record-id.ts',
+    '../database/db.ts',
+    './machine-identity.ts',
+    './outbox-enqueue.ts',
+    './outbox-sanitize.ts',
+  ]),
   module('orchestrator/src/record/record-sync-batch.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/record/record-sync-contract.ts', []),
   module('orchestrator/src/record/record-sync-result-decision.ts', ['./record-sync-contract.ts']),
@@ -119,10 +129,12 @@ export const recordSyncModules: RecordSyncModule[] = [
     'drizzle-orm',
     'drizzle-orm/bun-sql',
     '../../../shared/record/schema-task-flow.ts',
+    './outbox-failure.ts',
     './outbox-payload-contracts.ts',
     './record-evidence-references.ts',
     './record-sync-contract.ts',
     './record-sync-principal.ts',
+    './record-sequence.ts',
   ]),
   module('orchestrator/src/record/record-sync-pull-request-ci.ts', [
     '../../../shared/record-timestamp.ts',

@@ -41,10 +41,6 @@ import { db } from '../database/db.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { inspectRunRecordBackfill, type RunRecordBackfillInspection } from '../run/run-outbox.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
-import {
-  inspectTaskFlowBackfill,
-  type TaskFlowBackfillInspection,
-} from '../workflow/task-flow-backfill.ts'
 import { activeSpaceInvariant } from './active-space-invariant.ts'
 import { machineId } from './machine-identity.ts'
 import { quarantinedOutboxRows } from './outbox-quarantine.ts'
@@ -53,6 +49,7 @@ import { recordAttributionFailure } from './record-attribution.ts'
 import { bearerHeaders } from './record-auth.ts'
 import { recordPool } from './record-pool.ts'
 import { storedRecordToken } from './record-session.ts'
+import { inspectTaskFlowBackfill, type TaskFlowBackfillInspection } from './task-flow-backfill.ts'
 
 async function refuseOwnerConnection(postgres: SQL, operation: string): Promise<void> {
   const principals = await postgres`SELECT current_user AS principal`

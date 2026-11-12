@@ -6,9 +6,9 @@ import { v5 } from 'uuid'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso } from '../database/db.ts'
-import { machineId } from '../record/machine-identity.ts'
-import { insertOutboxRow } from '../record/outbox-enqueue.ts'
-import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
+import { machineId } from './machine-identity.ts'
+import { insertOutboxRow } from './outbox-enqueue.ts'
+import { stringifyOutboxPayload } from './outbox-sanitize.ts'
 
 const LEGACY_TASKLESS_FLOW_NAMESPACE = v5.URL
 

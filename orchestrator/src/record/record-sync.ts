@@ -17,7 +17,6 @@ import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { backfillQuestionRecords } from '../run/question-outbox.ts'
 import { backfillRunRecords } from '../run/run-outbox.ts'
 import { backfillScoreRecords } from '../score/score-outbox.ts'
-import { backfillTaskFlowRecords } from '../workflow/task-flow-backfill.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
 import { backfillLandingEvidenceRecords } from './landing-outbox.ts'
 import { machineId, machineNames } from './machine-identity.ts'
@@ -58,6 +57,7 @@ import type {
   RecordSyncResult,
   RoutingHeldOutboxRow,
 } from './record-sync-types.ts'
+import { backfillTaskFlowRecords } from './task-flow-backfill.ts'
 
 export type {
   RecordSyncOptions,

@@ -9,12 +9,12 @@ import {
   taskFlowStage as taskFlowStageRecord,
 } from '../../../shared/record/schema-task-flow.ts'
 import { recordDate } from '../../../shared/record-timestamp.ts'
+import { OutboxRowError } from './outbox-failure.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import type { ExistingEvidenceOwned, RequireOwnedUpsert } from './record-evidence-references.ts'
+import { allocateRecordSequence } from './record-sequence.ts'
 import type { RecordPayload, RecordPrincipal } from './record-sync-contract.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
-import { OutboxRowError } from './outbox-failure.ts'
-import { allocateRecordSequence } from './record-sequence.ts'
 
 const nullableString = (value: unknown) => (value == null ? null : String(value))
 

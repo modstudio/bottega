@@ -109,13 +109,22 @@ test('stage payload conversion carries the complete shape and accepts older opti
     enforcement: 'floors',
   })
   const old = stagePayload()
-  for (const field of ['workflowKey', 'instanceId', 'sessionId', 'question', 'autonomy', 'enforcement'])
+  for (const field of [
+    'projectId',
+    'workflowKey',
+    'instanceId',
+    'sessionId',
+    'question',
+    'autonomy',
+    'enforcement',
+  ])
     delete old[field]
   const parsedOld = { ...OUTBOX_PAYLOAD_CONTRACTS.task_flow_stage.laterAdded, ...old }
   expect(Object.keys(parsedOld).sort()).toEqual(
     [...OUTBOX_PAYLOAD_CONTRACTS.task_flow_stage.columns].sort(),
   )
   expect(taskFlowStageValues(parsedOld)).toMatchObject({
+    projectId: null,
     workflowKey: null,
     instanceId: null,
     sessionId: null,

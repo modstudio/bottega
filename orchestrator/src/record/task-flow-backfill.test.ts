@@ -1,12 +1,12 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { insertOutboxRow } from '../record/outbox-enqueue.ts'
+import { database } from '../workflow/workflow-cursor-test.fixture.ts'
+import { insertOutboxRow } from './outbox-enqueue.ts'
 import {
   backfillTaskFlowRecords,
   inspectTaskFlowBackfill,
   legacyTasklessFlowRecordId,
 } from './task-flow-backfill.ts'
-import { database } from './workflow-cursor-test.fixture.ts'
 
 test('task-flow backfill enqueues flows before stages, mints taskless parents, and skips enqueued rows', () => {
   const d = database()
@@ -29,26 +29,28 @@ test('task-flow backfill enqueues flows before stages, mints taskless parents, a
       opening_machine_id,updated_machine_id,revision) VALUES (?,?,?,'open',NULL,'2026-11-12','2026-11-12',?,?,1)`,
   ).run(flow, 'task-DEV-2234', project, machine, machine)
   const insertStage = (recordId: string, number: number, flowId: string | null) =>
-    d.query(
-      `INSERT INTO workflow_cursor
+    d
+      .query(
+        `INSERT INTO workflow_cursor
        (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,task_record_id,
         task_flow_record_id,instance_id,session_id,workflow_version_record_id,catalogue_version_record_id,
         args,autonomy,ordinal,step_slug,state,closed,question,total_steps,created_at,updated_at,enforcement,
         opened_machine_id,taken_over_from_machine_id,last_advanced_machine_id,revision)
        VALUES (?,?,'fixture',?,'flow','default','DEV-2234',?,?,?,'session',?,?,'{}','{}',0,'build',
         'running','[]','why?',2,'2026-11-12','2026-11-12','floors',?,NULL,?,1)`,
-    ).run(
-      recordId,
-      number,
-      project,
-      flowId ? 'task-DEV-2234' : null,
-      flowId,
-      flowId ? '' : 'taskless',
-      workflowVersion,
-      catalogueVersion,
-      machine,
-      machine,
-    )
+      )
+      .run(
+        recordId,
+        number,
+        project,
+        flowId ? 'task-DEV-2234' : null,
+        flowId,
+        flowId ? '' : 'taskless',
+        workflowVersion,
+        catalogueVersion,
+        machine,
+        machine,
+      )
   insertStage(linkedStage, 1, flow)
   insertStage(tasklessStage, 2, null)
   insertOutboxRow(d, {
@@ -66,7 +68,7 @@ test('task-flow backfill enqueues flows before stages, mints taskless parents, a
 
   const rows = d
     .query<{ kind: string; row_id: string; payload: string }, []>(
-      'SELECT kind,row_id,payload FROM outbox WHERE payload<>\'{}\' ORDER BY id',
+      "SELECT kind,row_id,payload FROM outbox WHERE payload<>'{}' ORDER BY id",
     )
     .all()
   const syntheticFlow = legacyTasklessFlowRecordId(tasklessStage)
