@@ -276,7 +276,7 @@ class RecordTaskFlowReadStore {
       },
       input.project,
     )
-    return rows.map(stageRow).filter((row) => !input.untouched || row.ordinal === 0)
+    return rows.map((row) => stageRow(row)).filter((row) => !input.untouched || row.ordinal === 0)
   }
   async activeStageModes(input: {
     project: string
@@ -285,10 +285,10 @@ class RecordTaskFlowReadStore {
     key: string
     sessionId: string
   }) {
-    const common = {
+    const common: StageListSelector = {
       projectId: this.projectId(input.project),
       workflow: input.workflow,
-      states: ['running', 'awaiting-ruling'] as const,
+      states: ['running', 'awaiting-ruling'],
     }
     const groups = input.key
       ? await Promise.all([
@@ -310,7 +310,7 @@ class RecordTaskFlowReadStore {
   }
   async openStageWorktrees() {
     return (await this.list({ states: ['running', 'awaiting-ruling'] }))
-      .map(stageRow)
+      .map((row) => stageRow(row))
       .sort((a, b) => a.id - b.id)
       .map((row) => ({
         number: row.id,
@@ -330,13 +330,13 @@ class RecordTaskFlowReadStore {
         project,
       )
     )
-      .map(stageRow)
+      .map((row) => stageRow(row))
       .sort((a, b) => b.updated_at.localeCompare(a.updated_at) || b.id - a.id)
       .map(({ autonomy }) => ({ autonomy }))
   }
   async stageIdentityMap() {
     return (await this.list({ states: ['running', 'awaiting-ruling', 'done', 'abandoned'] }))
-      .map(stageRow)
+      .map((row) => stageRow(row))
       .sort((a, b) => a.id - b.id)
       .map(({ id: number, record_id }) => ({ number, record_id }))
   }
