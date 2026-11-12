@@ -51,8 +51,8 @@ import { recordPool } from './record-pool.ts'
 import { storedRecordToken } from './record-session.ts'
 import {
   inspectTaskFlowBackfill,
-  taskFlowBackfillUnavailable,
   type TaskFlowBackfillInspection,
+  taskFlowBackfillUnavailable,
 } from './task-flow-backfill.ts'
 
 async function refuseOwnerConnection(postgres: SQL, operation: string): Promise<void> {

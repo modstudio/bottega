@@ -1,9 +1,9 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { database } from '../workflow/workflow-cursor-test.fixture.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { abandonWorkflowCursor } from '../workflow/workflow-cursor-mutation.ts'
 import type { SelectableCursorRow } from '../workflow/workflow-cursor-selection.ts'
+import { database } from '../workflow/workflow-cursor-test.fixture.ts'
 import { insertOutboxRow } from './outbox-enqueue.ts'
 import {
   backfillTaskFlowRecords,
