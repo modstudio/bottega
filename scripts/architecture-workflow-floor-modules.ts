@@ -125,6 +125,17 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-task-reference.ts',
     './workflow-text.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-explore-lifecycle-close.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    '../record/machine-identity.ts',
+    '../record/record-task-flow-write-client.ts',
+    '../record/record-task-flow-write-contract.ts',
+    '../run/question-open.ts',
+    './task-flow-store.ts',
+    './workflow-cursor-trail.ts',
+    './workflow-text.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-cursor-task-reference.ts', [
     'bun:sqlite',
     './task-flow-store.ts',

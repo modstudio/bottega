@@ -232,6 +232,25 @@ export const cleanupBoundarySpecs = [
     reason: 'Keep the best-effort worked write and report outside close-out orchestration.',
   },
   {
+    name: 'session-close-out-cursors-boundary',
+    file: 'orchestrator/src/session/session-close-out-cursors.ts',
+    allowed: [
+      'bun:sqlite',
+      '../../../shared/brand.ts',
+      '../workflow/task-flow-store.ts',
+      '../workflow/workflow-explore-lifecycle-close.ts',
+      './session-close-out-decision.ts',
+      './session-close-out-report.ts',
+    ],
+    typeOnlyAllowed: [
+      'bun:sqlite',
+      '../workflow/task-flow-store.ts',
+      './session-close-out-report.ts',
+    ],
+    reason:
+      'Keep session cursor release and remaining-work reporting outside close-out orchestration.',
+  },
+  {
     name: 'session-close-out-boundary',
     file: 'orchestrator/src/session/session-close-out.ts',
     allowed: [
@@ -263,6 +282,7 @@ export const cleanupBoundarySpecs = [
       '../workflow/task-flow-store.ts',
       '../worktree/worktree-remove.ts',
       './session-close-out-decision.ts',
+      './session-close-out-cursors.ts',
       './session-close-out-next-actions.ts',
       './session-close-out-obligation-adapter.ts',
       './session-close-out-outbox.ts',
@@ -450,9 +470,37 @@ export const cleanupBoundarySpecs = [
   {
     name: 'cleanup-sweep-session-boundary',
     file: 'orchestrator/src/cleanup/cleanup-sweep-session.ts',
-    allowed: ['./cleanup.ts', './cleanup-sweep-context.ts', './cleanup-sweep-session-close-out.ts'],
+    allowed: [
+      './cleanup.ts',
+      './cleanup-sweep-context.ts',
+      './cleanup-sweep-explore.ts',
+      './cleanup-sweep-session-close-out.ts',
+    ],
     typeOnlyAllowed: ['./cleanup.ts'],
     reason: 'Compose the machine-wide session cleanup passes without growing the main sweep.',
+  },
+  {
+    name: 'cleanup-sweep-explore-decision-boundary',
+    file: 'orchestrator/src/cleanup/cleanup-sweep-explore-decision.ts',
+    allowed: ['../../../shared/brand.ts', './cleanup-sweep-decisions.ts'],
+    typeOnlyAllowed: [],
+    reason: 'Keep orphaned session cursor policy pure over shared owner-liveness facts.',
+  },
+  {
+    name: 'cleanup-sweep-explore-boundary',
+    file: 'orchestrator/src/cleanup/cleanup-sweep-explore.ts',
+    allowed: [
+      'bun:sqlite',
+      '../database/db.ts',
+      '../run/question-open.ts',
+      '../workflow/workflow-explore-lifecycle-close.ts',
+      './cleanup.ts',
+      './cleanup-sweep-decisions.ts',
+      './cleanup-sweep-explore-decision.ts',
+      './owner-activity.ts',
+    ],
+    typeOnlyAllowed: ['bun:sqlite', './cleanup.ts'],
+    reason: 'Keep keyless cursor observation and lifecycle application behind the sweep adapter.',
   },
   {
     name: 'cleanup-sweep-session-close-out-decision-boundary',

@@ -8,6 +8,30 @@ import { closeExploreForLifecycle } from '../workflow/workflow-explore-lifecycle
 import { classifySessionCursor } from './session-close-out-decision.ts'
 import type { SessionErrorLine, SessionProcessLine } from './session-close-out-report.ts'
 
+function reportRemainingCursor(
+  cursor: OpenCursor,
+  report: { parked: string[]; process: SessionProcessLine[] },
+): void {
+  const disposition = classifySessionCursor({
+    state: cursor.state,
+    hasOpenQuestion: cursor.open_question_record_id !== null,
+  })
+  if (disposition === 'parked') {
+    report.parked.push(
+      `workflow cursor ${cursor.number}: awaiting recorded question ${cursor.open_question_record_id}`,
+    )
+    return
+  }
+  const next = `${PLATFORM_SLUG} workflow next ${cursor.workflow_slug} --cursor ${cursor.number}`
+  const abandon = `${PLATFORM_SLUG} workflow abandon ${cursor.workflow_slug} --cursor ${cursor.number} --reason "<why>"`
+  report.process.push({
+    item: `workflow cursor ${cursor.number}`,
+    reason: `cursor is ${cursor.state}`,
+    evidence: cursor.record_id,
+    remedy: `${next}, or ${abandon}`,
+  })
+}
+
 export async function releaseSessionCursors(input: {
   session: string
   dryRun: boolean
@@ -39,23 +63,6 @@ export async function releaseSessionCursors(input: {
         })
       }
     }
-    const disposition = classifySessionCursor({
-      state: cursor.state,
-      hasOpenQuestion: cursor.open_question_record_id !== null,
-    })
-    if (disposition === 'parked') {
-      input.report.parked.push(
-        `workflow cursor ${cursor.number}: awaiting recorded question ${cursor.open_question_record_id}`,
-      )
-      continue
-    }
-    const next = `${PLATFORM_SLUG} workflow next ${cursor.workflow_slug} --cursor ${cursor.number}`
-    const abandon = `${PLATFORM_SLUG} workflow abandon ${cursor.workflow_slug} --cursor ${cursor.number} --reason "<why>"`
-    input.report.process.push({
-      item: `workflow cursor ${cursor.number}`,
-      reason: `cursor is ${cursor.state}`,
-      evidence: cursor.record_id,
-      remedy: `${next}, or ${abandon}`,
-    })
+    reportRemainingCursor(cursor, input.report)
   }
 }
