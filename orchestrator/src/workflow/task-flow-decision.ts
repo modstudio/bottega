@@ -3,24 +3,6 @@
 
 export type TaskFlowState = 'open' | 'done' | 'dropped'
 
-export type AppliedMirrorMutationDecision = 'apply' | 'keep' | 'refresh' | 'refuse'
-
-export function decideAppliedMirrorMutation(
-  localRevision: number | null,
-  expectedRevision: number,
-  appliedRevision: number | undefined,
-): AppliedMirrorMutationDecision {
-  if (localRevision === expectedRevision) return 'apply'
-  if (appliedRevision === undefined) return 'refuse'
-  if (localRevision !== null && localRevision >= appliedRevision) return 'keep'
-  return 'refresh'
-}
-
-/** Reconciles the next free keyless slot observed in the mirror and hosted record. */
-export function reconcileKeylessInstanceSlot(localSlot: number, hostedSlot: number): number {
-  return Math.max(localSlot, hostedSlot)
-}
-
 export function taskFlowState(statusCategory: string | null | undefined): TaskFlowState | null {
   if (statusCategory === 'done') return 'done'
   if (statusCategory === 'dropped' || statusCategory === 'cancelled') return 'dropped'

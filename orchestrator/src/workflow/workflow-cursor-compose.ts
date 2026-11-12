@@ -24,9 +24,8 @@ import {
   insertWorkflowCursorRow,
   refuseTaskFlowStageConflict,
 } from './task-flow.ts'
-import { reconcileKeylessInstanceSlot, taskFlowState } from './task-flow-decision.ts'
+import { taskFlowState } from './task-flow-decision.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
-import { sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
 import type { WorkflowCursorInsert } from './task-flow-store-types.ts'
 import {
   type CommitCountPort,
@@ -51,14 +50,6 @@ type ComposeFacts = {
   machine: string
   at: string
   autonomyJson: string | null
-}
-
-function requiredHostedStageNumber(number: number | null): number {
-  if (number === null)
-    throw new Error(
-      'hosted task-flow stage has no number; repair the hosted task-flow row, then retry',
-    )
-  return number
 }
 
 function decideKeylessComposeInstance(input: {
@@ -87,18 +78,13 @@ async function keylessComposeOrdinal(
   machine: string,
   database: Database,
 ): Promise<number> {
-  const input = {
+  return taskFlowReadStore(database).nextKeylessInstanceSlot({
     projectRecordId,
     workflow: composition.workflow.slug,
     mode: composition.mode!.slug,
     sessionId: context.session ?? null,
     machineId: machine,
-  }
-  const [hostedSlot, localSlot] = await Promise.all([
-    taskFlowReadStore(database, context.taskFlowClient).nextKeylessInstanceSlot(input),
-    sqliteTaskFlowReadStore(database).nextKeylessInstanceSlot(input),
-  ])
-  return reconcileKeylessInstanceSlot(localSlot, hostedSlot)
+  })
 }
 
 async function readComposeFacts(
@@ -271,10 +257,7 @@ function applyHostedCompose(
 ): SelectableCursorRow {
   return writeTransaction(() => {
     const result = taskFlowLocalStore(database).write('compose', payload, hosted)
-    const row = taskFlowLocalStore(database).stageByRecordId(
-      result.stage!.id,
-    ) as SelectableCursorRow
-    return hosted?.stage ? { ...row, id: hosted.stage.number } : row
+    return taskFlowLocalStore(database).stageByRecordId(result.stage!.id) as SelectableCursorRow
   }, database)
 }
 
@@ -324,8 +307,7 @@ function cacheComposeReplay(
         },
         database,
       )
-    const row = taskFlowLocalStore(database).stageByRecordId(stored) as SelectableCursorRow
-    return { ...row, id: requiredHostedStageNumber(stage.number) }
+    return taskFlowLocalStore(database).stageByRecordId(stored) as SelectableCursorRow
   }, database)
 }
 
@@ -360,7 +342,7 @@ async function recoverComposeConflict(
     throw new Error(
       `${error.message}; close or abandon the stage holding this workflow slot, then retry`,
     )
-  const alreadyCached = await taskFlowReadStore(database, client).hasStage(replay.stage.id)
+  const alreadyCached = await taskFlowReadStore(database).hasStage(replay.stage.id)
   if (!alreadyCached) return cacheComposeReplay(replay, facts, composition, context, database)
   if (facts.key || keylessSiblingRetry) throw error
   return insertWorkflowCursor(composition, context, database, autonomy, commitCount, true)

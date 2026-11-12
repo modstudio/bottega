@@ -900,7 +900,7 @@ test('every CLI cursor verb routes by handle, including handle-only abandon', as
     catalogue.find(({ slug }) => slug === 'blast-radius')!.slug,
     catalogue.find(({ slug }) => slug === 'fix-defect-triage')!.slug,
   ]
-  registerCurrentProject(project)
+  registerFixtureProject(project)
   publishCursorWorkflow(slug, [{ slug: 'report', title: 'Report', default: true, steps }])
   const first = await composeWorkflowWithCursor(
     slug,
@@ -970,7 +970,7 @@ test('a cursor refuses a supplied workflow or project that differs from its row'
   const step = productionStepCatalogue().definition.steps.find(
     ({ slug }) => slug === 'blast-radius',
   )!
-  registerCurrentProject(project)
+  registerFixtureProject(project)
   publishCursorWorkflow(slug, [
     { slug: 'report', title: 'Report', default: true, steps: [step.slug] },
   ])

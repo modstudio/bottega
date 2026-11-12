@@ -4,12 +4,10 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolvedRecordOrigin } from '../../../shared/record-api-url.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addProject } from '../../test/fixtures/offline-branch-landing.ts'
-import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import type { Project } from '../project/projects.ts'
-import { rememberProjectSpace } from '../project-space-cache.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { type HubTaskReference, taskKeyMap } from '../workflow/workflow-task-reference.ts'
 import { deriveRunLinks, linkRunTasks, type RunLinkFacts } from './run-task-linking.ts'
@@ -215,61 +213,7 @@ describe('hosted run task linking', () => {
     } finally {
       database.exec('PRAGMA foreign_keys=ON')
     }
-    const flowId = newRecordId()
-    rememberProjectSpace(database, 'hosted-link-failure', 'hosted-link-space')
-    const memory = createMemoryRecordApiClient({
-      taskFlowStages: [
-        {
-          flow: {
-            id: flowId,
-            projectId,
-            taskId: null,
-            taskKey: null,
-            state: 'open',
-            openStageRecordId: 'cursor-hosted-failure',
-            openStageCount: 1,
-            openingMachineId: newRecordId(),
-            updatedMachineId: newRecordId(),
-            revision: 1,
-            createdAt: '2026-11-10T00:00:00.000Z',
-            updatedAt: '2026-11-10T00:00:00.000Z',
-          },
-          stage: {
-            id: 'cursor-hosted-failure',
-            flowRecordId: flowId,
-            projectId,
-            projectName: 'hosted-link-failure',
-            number: 992,
-            workflow: 'flow',
-            mode: 'default',
-            workflowKey: 'FAIL-1',
-            instanceId: '',
-            sessionId: null,
-            workflowVersionId: 'workflow-version',
-            workflowVersionNumber: 1,
-            catalogueVersionId: 'catalogue-version',
-            catalogueVersionNumber: 1,
-            arguments: {},
-            activeOrdinal: 0,
-            activeSlug: 'step',
-            state: 'running',
-            closedStepNotes: [],
-            question: null,
-            autonomy: null,
-            enforcement: 'floors',
-            totalSteps: 1,
-            openedMachineId: newRecordId(),
-            takenOverFromMachineId: null,
-            lastAdvancedMachineId: newRecordId(),
-            revision: 1,
-            createdAt: '2026-11-10T00:00:00.000Z',
-            updatedAt: '2026-11-10T00:00:00.000Z',
-          },
-        },
-      ],
-    })
     const taskFlowClient: RecordTaskFlowClient = {
-      ...memory,
       whoami: async () => ({
         user: { id: 'hosted-link-user' },
         activeSpaceId: 'hosted-link-space',

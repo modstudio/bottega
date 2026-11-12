@@ -12,9 +12,7 @@ import type {
   TaskFlowLocalReadMethod,
   TaskFlowWriteMethod,
 } from './task-flow-store-methods.ts'
-import { resolveTaskFlowReadStore } from './task-flow-store-record.ts'
-import { sqliteTaskFlowLocalStore } from './task-flow-store-sqlite.ts'
-import type { TaskFlowSqliteWriteResult } from './task-flow-store-sqlite-write.ts'
+import { sqliteTaskFlowLocalStore, sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
 import type {
   TaskFlowCloseOutStageRow,
   TaskFlowCursorLifecycleRow,
@@ -63,7 +61,7 @@ interface TaskFlowQueries {
     intent: K,
     payload: TaskFlowIntentInput<K>,
     applied?: TaskFlowIntentResult<K> | null,
-  ): TaskFlowSqliteWriteResult<K>
+  ): TaskFlowIntentResult<K>
   retireStageIdentity(input: {
     project: string
     workflow: string
@@ -93,7 +91,7 @@ interface TaskFlowQueries {
     machineId: string
   }): void
   flowProjectionForTask(taskRecordId: string): TaskFlowProjectionRow | null
-  stageByHandle(project: string, cursor: number): TaskFlowStageCursorRow | null
+  stageByHandle(cursor: number): TaskFlowStageCursorRow | null
   stageByRecordId(recordId: string): TaskFlowStageCursorRow | null
   latestStageForTask(input: {
     project: string
@@ -231,10 +229,7 @@ export function taskFlowLocalStore(database: Database): TaskFlowLocalStore {
   return sqliteTaskFlowLocalStore(database)
 }
 
-/** Resolves task-flow reads to the authoritative store for this install. */
-export function taskFlowReadStore(
-  database: Database,
-  client?: Parameters<typeof resolveTaskFlowReadStore>[1],
-): TaskFlowReadStore {
-  return resolveTaskFlowReadStore(database, client)
+/** Resolves task-flow reads to the async SQLite adapter. */
+export function taskFlowReadStore(database: Database): TaskFlowReadStore {
+  return sqliteTaskFlowReadStore(database)
 }

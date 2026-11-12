@@ -11,7 +11,6 @@ import { cliWorkflowCursorContext } from './workflow-cursor-selection.ts'
 import {
   workflowCommandPresentation as presentation,
   publishCursorWorkflowFixture as publishCursorWorkflow,
-  registerCurrentWorkflowProject as registerCurrentProject,
   registerFixtureWorkflowProject as registerFixtureProject,
   runWorkflowCommand as workflowCommand,
 } from './workflow-store.fixture.ts'
@@ -106,7 +105,7 @@ test('await, operator rule, and next replace task context through command seams'
     selfRulingStep.slug,
     catalogue.find(({ slug }) => slug === 'fix-defect-triage')!.slug,
   ]
-  registerCurrentProject(project)
+  registerFixtureProject(project)
   publishCursorWorkflow(slug, [{ slug: 'report', title: 'Report', default: true, steps }])
   const composed = await composeWorkflowWithCursor(
     slug,
