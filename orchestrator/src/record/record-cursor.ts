@@ -21,10 +21,35 @@ const RecordCursorSchema = z.object({
   id: z.string().uuid(),
 })
 
+const taskFlowStageListCursorSchema = z.discriminatedUnion('order', [
+  z.object({
+    order: z.literal('project'),
+    projectName: z.string().nullable(),
+    number: z.number().int().positive().nullable(),
+    id: z.string().uuid(),
+  }),
+  z.object({
+    order: z.literal('newest'),
+    number: z.number().int().positive().nullable(),
+    id: z.string().uuid(),
+  }),
+])
+export type TaskFlowStageListCursor = z.infer<typeof taskFlowStageListCursorSchema>
+
 export const encodeRecordCursor = (cursor: RecordCursor): string => btoa(JSON.stringify(cursor))
 
 export const decodeRecordCursor = (value: string): RecordCursor =>
   RecordCursorSchema.parse(JSON.parse(atob(value)))
+
+export function encodeTaskFlowStageListCursor(cursor: TaskFlowStageListCursor): string {
+  return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url')
+}
+
+export function decodeTaskFlowStageListCursor(value: string): TaskFlowStageListCursor {
+  return taskFlowStageListCursorSchema.parse(
+    JSON.parse(Buffer.from(value, 'base64url').toString('utf8')),
+  )
+}
 
 export const recordCursorOf = (row: RecordCursorRow | RecordListCursorRow): RecordCursor => {
   const cursorAt = row[recordCursorAt]

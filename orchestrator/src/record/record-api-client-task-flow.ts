@@ -21,6 +21,7 @@ import {
   hostedTaskFlowStageListSchema,
   hostedTaskFlowTextByIdSchema,
   RECORD_TASK_FLOW_NOT_FOUND_CODE,
+  type TaskFlowReadQueryInput,
   type TaskFlowStageListQueryInput,
 } from './record-task-flow-contract.ts'
 import {
@@ -38,22 +39,26 @@ type Request = <T>(
   path: string,
   init?: RequestInit & { schema?: (body: unknown) => T; destinationSpaceId?: string },
 ) => Promise<T>
+type TaskFlowStageListClientInput = Omit<
+  TaskFlowStageListQueryInput,
+  'keyless' | 'primaryInstance' | 'unlinked'
+> & {
+  keyless?: true
+  primaryInstance?: true
+  unlinked?: true
+}
 const TASK_FLOW_WRITE_REFUSAL =
   'record API predates task-flow writes; release hosted-api, then retry'
 export type RecordTaskFlowClient = {
   whoami?(): Promise<RecordIdentity>
   readTaskFlow?(
-    selector: { taskKey?: string; flowRecordId?: string; taskId?: string },
+    selector: TaskFlowReadQueryInput,
     destination?: RecordRequestDestination,
   ): Promise<HostedTaskFlow>
   listTaskFlowStages?(
-    selector: Omit<TaskFlowStageListQueryInput, 'limit'> & { limit?: number },
+    selector: Omit<TaskFlowStageListClientInput, 'limit'> & { limit?: number },
     destination?: RecordRequestDestination,
   ): Promise<HostedTaskFlowStageList>
-  listAllTaskFlowStages?(
-    selector: Omit<TaskFlowStageListQueryInput, 'limit' | 'cursor'> & { limit?: number },
-    destination?: RecordRequestDestination,
-  ): Promise<HostedTaskFlowStageList['items']>
   readTaskFlowProjectReferenceCounts?(
     projectId: string,
     destination?: RecordRequestDestination,
@@ -166,41 +171,25 @@ function taskFlowReadClient(request: Request): Partial<RecordTaskFlowClient> {
     },
     listTaskFlowStages: (selector, destination) => {
       const query = new URLSearchParams()
-      if (selector.projectId) query.set('projectId', selector.projectId)
+      if (selector.projectId !== undefined) query.set('projectId', selector.projectId)
       if (selector.number !== undefined) query.set('number', String(selector.number))
-      if (selector.sessionId) query.set('sessionId', selector.sessionId)
+      if (selector.sessionId !== undefined) query.set('sessionId', selector.sessionId)
       for (const state of selector.states ?? []) query.append('state', state)
-      if (selector.taskKey) query.set('taskKey', selector.taskKey)
-      if (selector.workflow) query.set('workflow', selector.workflow)
-      if (selector.mode) query.set('mode', selector.mode)
-      if (selector.workflowKey) query.set('workflowKey', selector.workflowKey)
+      if (selector.taskKey !== undefined) query.set('taskKey', selector.taskKey)
+      if (selector.workflow !== undefined) query.set('workflow', selector.workflow)
+      if (selector.mode !== undefined) query.set('mode', selector.mode)
+      if (selector.workflowKey !== undefined) query.set('workflowKey', selector.workflowKey)
       if (selector.keyless) query.set('keyless', 'true')
       if (selector.primaryInstance) query.set('primaryInstance', 'true')
-      if (selector.taskId) query.set('taskId', selector.taskId)
+      if (selector.taskId !== undefined) query.set('taskId', selector.taskId)
       if (selector.unlinked) query.set('unlinked', 'true')
       if (selector.order !== undefined) query.set('order', selector.order)
-      if (selector.cursor) query.set('cursor', selector.cursor)
+      if (selector.cursor !== undefined) query.set('cursor', selector.cursor)
       if (selector.limit !== undefined) query.set('limit', String(selector.limit))
       return request(`/v1/task-flow/stages?${query}`, {
         ...destination,
         schema: (body) => hostedTaskFlowStageListSchema.parse(body),
       })
-    },
-    listAllTaskFlowStages: async (selector, destination) => {
-      const items: HostedTaskFlowStageList['items'] = []
-      const seen = new Set<string>()
-      let cursor: string | undefined
-      do {
-        const page = await taskFlowReadClient(request).listTaskFlowStages!(
-          { ...selector, cursor },
-          destination,
-        )
-        items.push(...page.items)
-        cursor = page.nextCursor ?? undefined
-        if (cursor && seen.has(cursor)) throw new Error('task-flow stage paging repeated a cursor')
-        if (cursor) seen.add(cursor)
-      } while (cursor)
-      return items
     },
     readTaskFlowProjectReferenceCounts: (projectId, destination) => {
       const query = new URLSearchParams({ projectId })

@@ -1,6 +1,7 @@
 // concern: hosted task-flow read contract
 /** Validates the tenant-bound flow and open-stage read used by keyed workflow selection. */
 import { z } from 'zod'
+import { decodeTaskFlowStageListCursor, type TaskFlowStageListCursor } from './record-cursor.ts'
 
 export const RECORD_TASK_FLOW_NOT_FOUND_MESSAGE = 'hosted task flow was not found'
 export const RECORD_TASK_FLOW_NOT_FOUND_CODE = 'task_flow_not_found'
@@ -166,31 +167,24 @@ export const taskFlowReadQuerySchema = z
         Number(Boolean(value.taskId)) ===
       1,
   )
+export type TaskFlowReadQueryInput = z.input<typeof taskFlowReadQuerySchema>
 
-const taskFlowStageListCursorSchema = z.discriminatedUnion('order', [
-  z.object({
-    order: z.literal('project'),
-    projectName: z.string().nullable(),
-    number: z.number().int().positive().nullable(),
-    id: z.string().uuid(),
-  }),
-  z.object({
-    order: z.literal('newest'),
-    number: z.number().int().positive().nullable(),
-    id: z.string().uuid(),
-  }),
-])
-export type TaskFlowStageListCursor = z.infer<typeof taskFlowStageListCursorSchema>
+const trueFlag = z
+  .enum(['true', 'false'])
+  .optional()
+  .transform((value) => (value === 'true' ? true : undefined))
 
-export function encodeTaskFlowStageListCursor(cursor: TaskFlowStageListCursor): string {
-  return btoa(JSON.stringify(cursor)).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')
-}
-
-export function decodeTaskFlowStageListCursor(value: string): TaskFlowStageListCursor {
-  const base64 = value.replaceAll('-', '+').replaceAll('_', '/')
-  const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')
-  return taskFlowStageListCursorSchema.parse(JSON.parse(atob(padded)))
-}
+const taskFlowStageListCursor = z
+  .string()
+  .min(1)
+  .transform((value, context): TaskFlowStageListCursor => {
+    try {
+      return decodeTaskFlowStageListCursor(value)
+    } catch {
+      context.addIssue({ code: 'custom', message: 'invalid stage-list cursor' })
+      return z.NEVER
+    }
+  })
 
 export const taskFlowStageListQuerySchema = z
   .object({
@@ -202,12 +196,12 @@ export const taskFlowStageListQuerySchema = z
     workflow: z.string().min(1).optional(),
     mode: z.string().min(1).optional(),
     workflowKey: z.string().min(1).optional(),
-    keyless: z.literal(true).optional(),
-    primaryInstance: z.literal(true).optional(),
+    keyless: trueFlag,
+    primaryInstance: trueFlag,
     taskId: z.string().uuid().optional(),
-    unlinked: z.literal(true).optional(),
+    unlinked: trueFlag,
     order: z.enum(['project', 'newest']).default('project'),
-    cursor: z.string().min(1).optional(),
+    cursor: taskFlowStageListCursor.optional(),
     limit: z.coerce.number().int().min(1).max(TASK_FLOW_STAGE_LIST_LIMIT_MAX).default(200),
   })
   .superRefine((value, context) => {
@@ -233,13 +227,12 @@ export const taskFlowStageListQuerySchema = z
     )
       context.addIssue({ code: 'custom', message: 'at least one stage filter is required' })
     if (value.cursor !== undefined) {
-      try {
-        const cursor = decodeTaskFlowStageListCursor(value.cursor)
-        if (cursor.order !== value.order)
-          context.addIssue({ code: 'custom', message: 'cursor order does not match request order' })
-      } catch {
-        context.addIssue({ code: 'custom', message: 'invalid stage-list cursor', path: ['cursor'] })
-      }
+      if (value.cursor.order !== value.order)
+        context.addIssue({
+          code: 'custom',
+          message: 'cursor order does not match request order',
+          path: ['cursor'],
+        })
     }
   })
 export type TaskFlowStageListQuery = z.infer<typeof taskFlowStageListQuerySchema>

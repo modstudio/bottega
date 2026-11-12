@@ -11,8 +11,9 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 })
 
 export const recordTaskFlowModules: RecordModule[] = [
-  module('orchestrator/src/record/record-task-flow-contract.ts', ['zod']),
+  module('orchestrator/src/record/record-task-flow-contract.ts', ['zod', './record-cursor.ts']),
   module('orchestrator/src/record/record-task-flow-list-query.ts', [
+    './record-cursor.ts',
     './record-task-flow-contract.ts',
   ]),
   module('orchestrator/src/record/record-task-flow.ts', [

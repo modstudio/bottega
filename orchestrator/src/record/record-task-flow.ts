@@ -15,6 +15,7 @@ import {
   type HostedTaskFlowTextById,
   RECORD_TASK_FLOW_NOT_FOUND_CODE,
   RECORD_TASK_FLOW_NOT_FOUND_MESSAGE,
+  type TaskFlowReadQueryInput,
   type TaskFlowStageListQuery,
 } from './record-task-flow-contract.ts'
 import { taskFlowStageListNextCursor, taskFlowStageListSql } from './record-task-flow-list-query.ts'
@@ -206,12 +207,7 @@ function withChildren(
 }
 
 export async function readRecordTaskFlow(
-  input: TenantPrincipal & {
-    url: string
-    taskKey?: string
-    flowRecordId?: string
-    taskId?: string
-  },
+  input: TenantPrincipal & { url: string } & TaskFlowReadQueryInput,
 ): Promise<HostedTaskFlow> {
   const sql = recordPool(input.url)
   return sql.begin(async (tx) => {

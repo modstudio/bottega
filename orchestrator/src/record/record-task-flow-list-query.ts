@@ -1,11 +1,8 @@
 // concern: hosted task-flow stage-list query
 /** Builds bounded stage-list predicates and opaque keyset continuations. */
 
-import {
-  decodeTaskFlowStageListCursor,
-  encodeTaskFlowStageListCursor,
-  type TaskFlowStageListQuery,
-} from './record-task-flow-contract.ts'
+import { encodeTaskFlowStageListCursor } from './record-cursor.ts'
+import type { TaskFlowStageListQuery } from './record-task-flow-contract.ts'
 
 export type TaskFlowStageListSql = {
   values: unknown[]
@@ -15,7 +12,7 @@ export type TaskFlowStageListSql = {
 
 function appendCursor(input: TaskFlowStageListQuery, result: TaskFlowStageListSql): void {
   if (!input.cursor) return
-  const cursor = decodeTaskFlowStageListCursor(input.cursor)
+  const cursor = input.cursor
   if (cursor.order === 'newest') {
     if (cursor.number !== null) result.values.push(cursor.number)
     const numberParameter = cursor.number === null ? null : `$${result.values.length}`

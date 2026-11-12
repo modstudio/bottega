@@ -2,7 +2,9 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   decodeRecordCursor,
+  decodeTaskFlowStageListCursor,
   encodeRecordCursor,
+  encodeTaskFlowStageListCursor,
   pageRecordItems,
   parseStoredRecordCursor,
   recordCursorAt,
@@ -12,6 +14,11 @@ import {
 const id = newRecordId()
 const milliseconds = '2026-10-09T12:34:56.789Z'
 const microseconds = '2026-10-09T12:34:56.789123Z'
+
+test('task-flow stage-list cursor round-trips a non-Latin-1 project name', () => {
+  const cursor = { order: 'project', projectName: 'פרויקט', number: 1, id } as const
+  expect(decodeTaskFlowStageListCursor(encodeTaskFlowStageListCursor(cursor))).toEqual(cursor)
+})
 
 test('parses stored JSON cursors without migration', () => {
   expect(parseStoredRecordCursor(JSON.stringify({ at: microseconds, id }), true)).toEqual({

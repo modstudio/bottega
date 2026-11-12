@@ -15,6 +15,7 @@ import {
 import { RecordTaskFlowError } from './record-task-flow.ts'
 import {
   TASK_FLOW_STAGE_LIST_REMEDY,
+  type TaskFlowReadQueryInput,
   taskFlowReadQuerySchema,
   taskFlowStageListQuerySchema,
 } from './record-task-flow-contract.ts'
@@ -38,9 +39,7 @@ import {
 type Environment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
 export type RecordWorkflowRouteDeps = {
-  readTaskFlow?(
-    input: Tenant & { taskKey?: string; flowRecordId?: string; taskId?: string },
-  ): Promise<unknown>
+  readTaskFlow?(input: Tenant & TaskFlowReadQueryInput): Promise<unknown>
   readTaskFlowStage?(input: Tenant & { id: string }): Promise<unknown>
   readTaskFlowText?(input: Tenant & { id: string }): Promise<unknown>
   readTaskFlowObligation?(input: Tenant & { id: string }): Promise<unknown>
@@ -141,8 +140,6 @@ function registerTaskFlowListRoute(
   deps: RecordWorkflowRouteDeps,
   ports: Ports,
 ): void {
-  const trueQueryValue = (value: string | undefined): true | string | undefined =>
-    value === undefined ? undefined : value === 'true' ? true : value
   app.get('/v1/task-flow/stages', async (context) => {
     if (!deps.listTaskFlowStages)
       return context.json({ error: 'hosted task-flow stage list is unavailable' }, 503)
@@ -158,10 +155,10 @@ function registerTaskFlowListRoute(
       workflow: context.req.query('workflow'),
       mode: context.req.query('mode'),
       workflowKey: context.req.query('workflowKey'),
-      keyless: trueQueryValue(context.req.query('keyless')),
-      primaryInstance: trueQueryValue(context.req.query('primaryInstance')),
+      keyless: context.req.query('keyless'),
+      primaryInstance: context.req.query('primaryInstance'),
       taskId: context.req.query('taskId'),
-      unlinked: trueQueryValue(context.req.query('unlinked')),
+      unlinked: context.req.query('unlinked'),
       order: context.req.query('order'),
       cursor: context.req.query('cursor'),
       limit: context.req.query('limit'),
