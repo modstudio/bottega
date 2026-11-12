@@ -43,23 +43,20 @@ test('reports destination-less writes by patterned route and client cause', asyn
       headers: { 'content-type': 'application/json', 'user-agent': cause, ...headers },
       body: JSON.stringify(body),
     })
-  expect(
-    (
-      await app.request('/v1/board/messages', {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json', 'user-agent': cause },
-        body: JSON.stringify({
-          id,
-          kind: 'notice',
-          audience: 'operator',
-          title: 'Measurement notice',
-          body: 'This write exercises the board tenant seam.',
-          expiresAt: '2027-11-09T00:00:00.000Z',
-        }),
-      })
-    ).status,
-  ).toBe(200)
-  expect((await write(app, `/v1/runs/${id}/void`, { reason: 'measurement' })).status).toBe(200)
+  const boardWrite = await app.request('/v1/board/messages', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', 'user-agent': cause },
+    body: JSON.stringify({
+      id,
+      kind: 'notice',
+      audience: 'operator',
+      title: 'Measurement notice',
+      body: 'This write exercises the board tenant seam.',
+      expiresAt: '2027-11-09T00:00:00.000Z',
+    }),
+  })
+  expect(boardWrite.status).toBe(409)
+  expect((await write(app, `/v1/runs/${id}/void`, { reason: 'measurement' })).status).toBe(409)
   expect(
     (
       await write(

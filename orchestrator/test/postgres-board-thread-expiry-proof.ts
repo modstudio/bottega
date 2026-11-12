@@ -1,13 +1,15 @@
 import { expect, test } from 'bun:test'
 import { BOARD_INFORMATION_DEFAULT_EXPIRY_MS } from '../../shared/board-duration.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
-import { expiresAt, headers, json } from './postgres-board-api-values.ts'
+import { expiresAt, json, headers as requestHeaders } from './postgres-board-api-values.ts'
 
 export function registerBoardThreadExpiryProofs(input: {
   origin: () => string
+  spaceIdForToken(token: string): string
   token: () => string
   caseSession: (label: string) => string
 }): void {
+  const headers = (token: string) => requestHeaders(token, input.spaceIdForToken(token))
   const postRoot = (id: string, expiry: string, label: string) =>
     fetch(`${input.origin()}/v1/board/messages`, {
       method: 'PUT',

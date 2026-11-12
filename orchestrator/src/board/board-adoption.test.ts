@@ -136,7 +136,7 @@ test('a new adoption upload sends the row record id as the hosted id', async () 
   const base = capturingClient([]).client
   const client: RecordApiClient = {
     ...base,
-    async postBoardMessage(input) {
+    async postBoardMessage(input, destination) {
       ids.push(input.id)
       return hostedMessage(input)
     },
@@ -202,9 +202,9 @@ test('adoption uploads a reply local project name and hosted record id', async (
   const base = capturingClient([]).client
   const client: RecordApiClient = {
     ...base,
-    async replyBoardMessage(rootId, input) {
+    async replyBoardMessage(rootId, input, destination) {
       uploaded = input
-      return base.replyBoardMessage(rootId, input)
+      return base.replyBoardMessage(rootId, input, destination)
     },
   }
 
@@ -241,7 +241,7 @@ test('adoption preserves request and acknowledgement-required standing purposes'
     async listBoardChanges() {
       return { userId: '01990000-0000-7000-8000-000000000001', items: [], highestRevision: null }
     },
-    async postBoardMessage(input) {
+    async postBoardMessage(input, destination) {
       inputs.push(input)
       return hostedMessage(input)
     },
@@ -439,7 +439,7 @@ test('rate cap leaves the mark unset and reruns only the remainder with its stab
   const rateClient = capturingClient(firstCalls, 'three').client
   const firstClient: RecordApiClient = {
     ...rateClient,
-    async postBoardMessage(input) {
+    async postBoardMessage(input, destination) {
       if (input.title === 'one') {
         firstCalls.push('post:one')
         throw new RecordApiRequestError(
@@ -447,7 +447,7 @@ test('rate cap leaves the mark unset and reruns only the remainder with its stab
           'refused',
         )
       }
-      return rateClient.postBoardMessage(input)
+      return rateClient.postBoardMessage(input, destination)
     },
   }
   const stopped = await adoptHostedBoard({
@@ -580,9 +580,9 @@ test('withdrawing a pending root drops its reply from the rerun', async () => {
       postAttempts++
       throw new RecordApiRequestError('hosted policy rejected this row', 'refused')
     },
-    async replyBoardMessage(rootId, input) {
+    async replyBoardMessage(rootId, input, destination) {
       replyAttempts++
-      return base.replyBoardMessage(rootId, input)
+      return base.replyBoardMessage(rootId, input, destination)
     },
   }
 
@@ -714,9 +714,9 @@ test('keeps source record ids for roots, replies, receipts, and the ledger', asy
         threadRootId: rootId,
       }
     },
-    async putBoardReceipt(input) {
+    async putBoardReceipt(input, destination) {
       receiptIds.push(input.messageId)
-      return base.putBoardReceipt(input)
+      return base.putBoardReceipt(input, destination)
     },
   }
 
@@ -819,12 +819,12 @@ test('the plan and upload include sibling ids only for readers that are still ar
   const base = capturingClient([]).client
   const client: RecordApiClient = {
     ...base,
-    async putBoardReceipt(input) {
+    async putBoardReceipt(input, destination) {
       readers.push({
         readerSession: input.readerSession,
         readerRunRecordId: input.readerRunRecordId,
       })
-      return base.putBoardReceipt(input)
+      return base.putBoardReceipt(input, destination)
     },
   }
 
@@ -851,11 +851,11 @@ test('a receipt server failure resumes after recorded successes and sends only t
   const base = capturingClient([]).client
   const failingClient: RecordApiClient = {
     ...base,
-    async putBoardReceipt(input) {
+    async putBoardReceipt(input, destination) {
       firstRequests.push(input.readerSession)
       if (input.readerSession === 'resume-b')
         throw new RecordApiRequestError('record API 500', 'server', 500)
-      return base.putBoardReceipt(input)
+      return base.putBoardReceipt(input, destination)
     },
   }
 
@@ -870,9 +870,9 @@ test('a receipt server failure resumes after recorded successes and sends only t
   const resumedRequests: string[] = []
   const resumedClient: RecordApiClient = {
     ...base,
-    async putBoardReceipt(input) {
+    async putBoardReceipt(input, destination) {
       resumedRequests.push(input.readerSession)
-      return base.putBoardReceipt(input)
+      return base.putBoardReceipt(input, destination)
     },
   }
   const result = await adoptHostedBoard({ confirm: 1, clock: () => NOW + 1, client: resumedClient })
@@ -960,9 +960,9 @@ test('a refused receipt is recorded as skipped and is not sent again on a rerun'
   const resumedRequests: string[] = []
   const resumedClient: RecordApiClient = {
     ...base,
-    async putBoardReceipt(input) {
+    async putBoardReceipt(input, destination) {
       resumedRequests.push(input.readerSession)
-      return base.putBoardReceipt(input)
+      return base.putBoardReceipt(input, destination)
     },
   }
   const result = await adoptHostedBoard({ confirm: 1, clock: () => NOW + 1, client: resumedClient })
@@ -998,9 +998,9 @@ test('drops a claim that expires before its request and clears its pending ledge
   const base = capturingClient([]).client
   const client: RecordApiClient = {
     ...base,
-    async takeBoardClaim(input) {
+    async takeBoardClaim(input, destination) {
       claimWrites++
-      return base.takeBoardClaim(input)
+      return base.takeBoardClaim(input, destination)
     },
   }
   const clock = () => {

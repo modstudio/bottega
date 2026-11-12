@@ -11,7 +11,13 @@ import { startRecordApiServer } from '../src/record/record-api-server.ts'
 import { noSpaceBuiltIns, recordAuth } from '../src/record/record-auth.ts'
 import { SIGN_UP_AUTH } from './fixtures/record-auth-postgres.ts'
 import { registerBoardAdoptionProof } from './postgres-board-adoption-proof.ts'
-import { notice as boardNotice, expiresAt, headers, json } from './postgres-board-api-values.ts'
+import {
+  activeSpaceFixture,
+  expiresAt,
+  headers,
+  json,
+  noticeForProjects,
+} from './postgres-board-api-values.ts'
 import { postgresBoardCacheClient, postgresBoardCacheStore } from './postgres-board-cache-client.ts'
 import { registerBoardClaimApiProof } from './postgres-board-claim-api-proof.ts'
 import { registerBoardOutsideApiProof } from './postgres-board-outside-api-proof.ts'
@@ -57,19 +63,7 @@ const PROJECT_IDS: Record<string, string> = {
   [ADOPTION_PROJECT]: IDS.adoptionProject,
   [ORIGIN_PROJECT]: IDS.originProject,
 }
-const notice = (
-  id: string,
-  audience: string,
-  authorSession: string,
-  extra: Record<string, unknown> = {},
-) => {
-  const audienceProject = audience.includes(':') ? audience.slice(audience.indexOf(':') + 1) : null
-  const namedProject = typeof extra.project === 'string' ? extra.project : audienceProject
-  return boardNotice(id, audience, authorSession, {
-    ...(namedProject && PROJECT_IDS[namedProject] ? { projectId: PROJECT_IDS[namedProject] } : {}),
-    ...extra,
-  })
-}
+const notice = noticeForProjects(PROJECT_IDS)
 export function registerBoardApiProofs(input: {
   actorUrl: string
   spaceA: string
@@ -89,6 +83,7 @@ export function registerBoardApiProofs(input: {
   let spaceA = ''
   let spaceC = ''
   let spaceB = ''
+  const activeSpaces = activeSpaceFixture()
 
   beforeAll(async () => {
     input.succeeds(
@@ -147,6 +142,10 @@ export function registerBoardApiProofs(input: {
       spaceA = a.spaceId
       spaceB = b.spaceId
       spaceC = c.spaceId
+      activeSpaces.set(a.token, a.spaceId)
+      activeSpaces.set(b.token, b.spaceId)
+      activeSpaces.set(c.token, c.spaceId)
+      activeSpaces.set(d.token, d.spaceId)
     } finally {
       await auth.close()
     }
@@ -171,10 +170,14 @@ export function registerBoardApiProofs(input: {
     await server?.stop(true)
   })
 
+  const activeSpace = activeSpaces.get
+  const setActiveSpace = activeSpaces.set
+  const spaceHeaders = (token: string) => headers(token, activeSpace(token))
+
   const post = (token: string, body: Record<string, unknown>) =>
     fetch(`${origin}/v1/board/messages`, {
       method: 'PUT',
-      headers: headers(token),
+      headers: spaceHeaders(token),
       body: JSON.stringify(body),
     })
 
@@ -183,7 +186,8 @@ export function registerBoardApiProofs(input: {
 
   const cacheStore = (session: string) => postgresBoardCacheStore(session, PROJECT)
 
-  const cacheClient = (token: string): RecordApiClient => postgresBoardCacheClient(origin, token)
+  const cacheClient = (token: string): RecordApiClient =>
+    postgresBoardCacheClient(origin, token, activeSpace(token))
 
   registerBoardAdoptionProof({
     origin: () => origin,
@@ -199,6 +203,7 @@ export function registerBoardApiProofs(input: {
 
   registerBoardOverviewProof({
     origin: () => origin,
+    spaceIdForToken: activeSpace,
     tokenA: () => tokenA,
     tokenB: () => tokenB,
     tokenC: () => tokenC,
@@ -256,7 +261,7 @@ export function registerBoardApiProofs(input: {
       ).toEqual([])
       const status = await json(
         await fetch(`${origin}/v1/board/messages/${projectNotice}/status`, {
-          headers: headers(tokenA),
+          headers: spaceHeaders(tokenA),
         }),
       )
       expect(
@@ -282,6 +287,7 @@ export function registerBoardApiProofs(input: {
 
   registerBoardReceiptRevisionProofs({
     origin: () => origin,
+    spaceIdForToken: activeSpace,
     authorToken: () => tokenA,
     readerToken: () => tokenB,
     otherSpaceToken: () => tokenC,
@@ -297,17 +303,20 @@ export function registerBoardApiProofs(input: {
     () => origin,
     () => tokenD,
     () => tokenC,
+    activeSpace,
     PROJECT,
     (id) => post(tokenA, notice(id, 'spaces', caseSession('spaces-feed'))),
   )
   registerBoardReplyProof({
     origin: () => origin,
+    spaceIdForToken: activeSpace,
     token: () => tokenA,
     project: PROJECT,
     caseSession,
   })
   registerBoardThreadExpiryProofs({
     origin: () => origin,
+    spaceIdForToken: activeSpace,
     token: () => tokenA,
     caseSession,
   })
@@ -365,7 +374,9 @@ export function registerBoardApiProofs(input: {
     expect((await post(tokenA, notice(operatorA, 'operator', session))).status).toBe(200)
     expect((await post(tokenB, notice(operatorB, 'operator', session))).status).toBe(200)
     const seen = async (token: string, id: string) => {
-      const thread = await fetch(`${origin}/v1/board/threads/${id}`, { headers: headers(token) })
+      const thread = await fetch(`${origin}/v1/board/threads/${id}`, {
+        headers: spaceHeaders(token),
+      })
       return thread.status
     }
     expect(await seen(tokenA, projectId)).toBe(200)
@@ -389,12 +400,12 @@ export function registerBoardApiProofs(input: {
       (await post(tokenA, notice(id, 'operator', caseSession('operator-cursor')))).status,
     ).toBe(200)
     const outsider = await json(
-      await fetch(`${origin}/v1/board/changes?after=0`, { headers: headers(tokenC) }),
+      await fetch(`${origin}/v1/board/changes?after=0`, { headers: spaceHeaders(tokenC) }),
     )
     const outsiderItems = outsider.items as Array<{ message: { id: string } }>
     expect(outsiderItems.some((item) => item.message.id === id)).toBeFalse()
     const author = await json(
-      await fetch(`${origin}/v1/board/changes?after=0`, { headers: headers(tokenA) }),
+      await fetch(`${origin}/v1/board/changes?after=0`, { headers: spaceHeaders(tokenA) }),
     )
     expect(
       (author.items as Array<{ message: { id: string } }>).some((item) => item.message.id === id),
@@ -406,10 +417,12 @@ export function registerBoardApiProofs(input: {
     expect(
       (await post(tokenA, notice(id, `project:${PROJECT}`, caseSession('outside-space')))).status,
     ).toBe(200)
-    const thread = await fetch(`${origin}/v1/board/threads/${id}`, { headers: headers(tokenC) })
+    const thread = await fetch(`${origin}/v1/board/threads/${id}`, {
+      headers: spaceHeaders(tokenC),
+    })
     expect(thread.status).toBe(404)
     const changes = await json(
-      await fetch(`${origin}/v1/board/changes?after=0`, { headers: headers(tokenC) }),
+      await fetch(`${origin}/v1/board/changes?after=0`, { headers: spaceHeaders(tokenC) }),
     )
     const items = changes.items as Array<{ message: { id: string } }>
     expect(items.some((item) => item.message.id === id)).toBeFalse()
@@ -429,6 +442,7 @@ export function registerBoardApiProofs(input: {
 
   registerBoardPostingProjectProof({
     origin: () => origin,
+    spaceIdForToken: activeSpace,
     tokenA: () => tokenA,
     tokenB: () => tokenB,
     tokenD: () => tokenD,
@@ -450,7 +464,7 @@ export function registerBoardApiProofs(input: {
     expect(JSON.stringify(await machine.json())).toContain('machine audiences')
     const suggestion = await fetch(`${origin}/v1/board/messages`, {
       method: 'PUT',
-      headers: headers(tokenA),
+      headers: spaceHeaders(tokenA),
       body: JSON.stringify({ ...notice(newRecordId(), 'operator', session), kind: 'suggestion' }),
     })
     expect(suggestion.status).toBe(400)
@@ -461,7 +475,7 @@ export function registerBoardApiProofs(input: {
     const replyId = newRecordId()
     const asked = await fetch(`${origin}/v1/board/messages`, {
       method: 'PUT',
-      headers: headers(tokenA),
+      headers: spaceHeaders(tokenA),
       body: JSON.stringify({
         id: questionId,
         kind: 'question',
@@ -476,7 +490,7 @@ export function registerBoardApiProofs(input: {
     expect(asked.status).toBe(200)
     const replied = await fetch(`${origin}/v1/board/messages/${questionId}/replies`, {
       method: 'POST',
-      headers: headers(tokenB),
+      headers: spaceHeaders(tokenB),
       body: JSON.stringify({
         id: replyId,
         body: 'Answer',
@@ -486,13 +500,13 @@ export function registerBoardApiProofs(input: {
     expect(replied.status).toBe(200)
     const accepted = await fetch(`${origin}/v1/board/messages/${questionId}/accept`, {
       method: 'POST',
-      headers: headers(tokenA),
+      headers: spaceHeaders(tokenA),
       body: JSON.stringify({ replyId, authorSession: caseSession('reply-accept') }),
     })
     expect(accepted.status).toBe(200)
     const again = await fetch(`${origin}/v1/board/messages/${questionId}/accept`, {
       method: 'POST',
-      headers: headers(tokenA),
+      headers: spaceHeaders(tokenA),
       body: JSON.stringify({ replyId, authorSession: caseSession('reply-accept') }),
     })
     expect(again.status).toBe(400)
@@ -506,7 +520,7 @@ export function registerBoardApiProofs(input: {
       (
         await fetch(`${origin}/v1/board/messages`, {
           method: 'PUT',
-          headers: headers(tokenA),
+          headers: spaceHeaders(tokenA),
           body: JSON.stringify({
             id: questionId,
             kind: 'question',
@@ -524,7 +538,7 @@ export function registerBoardApiProofs(input: {
       (
         await fetch(`${origin}/v1/board/messages/${questionId}/replies`, {
           method: 'POST',
-          headers: headers(tokenB),
+          headers: spaceHeaders(tokenB),
           body: JSON.stringify({
             id: replyId,
             body: 'A',
@@ -537,7 +551,7 @@ export function registerBoardApiProofs(input: {
       (
         await fetch(`${origin}/v1/board/messages/${questionId}/accept`, {
           method: 'POST',
-          headers: headers(tokenA),
+          headers: spaceHeaders(tokenA),
           body: JSON.stringify({ replyId, authorSession: caseSession('filing-lease') }),
         })
       ).status,
@@ -545,7 +559,7 @@ export function registerBoardApiProofs(input: {
     const take = () =>
       fetch(`${origin}/v1/board/messages/${questionId}/filing-lease`, {
         method: 'POST',
-        headers: headers(tokenA),
+        headers: spaceHeaders(tokenA),
         body: JSON.stringify({ authorSession: caseSession('filing-lease') }),
       })
     const [first, second] = await Promise.all([take(), take()])
@@ -561,7 +575,7 @@ export function registerBoardApiProofs(input: {
     const put = (token: string, session: string) =>
       fetch(`${origin}/v1/board/receipts`, {
         method: 'PUT',
-        headers: headers(token),
+        headers: spaceHeaders(token),
         body: JSON.stringify({
           messageId: id,
           readerSession: session,
@@ -590,7 +604,7 @@ export function registerBoardApiProofs(input: {
     const receipt = (token: string, readerSession: string) =>
       fetch(`${origin}/v1/board/receipts`, {
         method: 'PUT',
-        headers: headers(token),
+        headers: spaceHeaders(token),
         body: JSON.stringify({
           messageId: id,
           readerSession,
@@ -601,7 +615,7 @@ export function registerBoardApiProofs(input: {
     expect((await receipt(tokenA, 'status-author-reader')).status).toBe(200)
     expect((await receipt(tokenB, 'status-member-reader')).status).toBe(200)
     const status = (token: string) =>
-      fetch(`${origin}/v1/board/messages/${id}/status`, { headers: headers(token) })
+      fetch(`${origin}/v1/board/messages/${id}/status`, { headers: spaceHeaders(token) })
     const author = await status(tokenA)
     const reader = await status(tokenB)
     const outsider = await status(tokenC)
@@ -622,7 +636,7 @@ export function registerBoardApiProofs(input: {
     const page = async (after: string) =>
       json(
         await fetch(`${origin}/v1/board/changes?after=${after}&limit=1`, {
-          headers: headers(tokenA),
+          headers: spaceHeaders(tokenA),
         }),
       )
     const seen = new Set<string>()
@@ -638,7 +652,7 @@ export function registerBoardApiProofs(input: {
     expect([...seen].some((entry) => entry.startsWith(`${secondId}:`))).toBeTrue()
     const withdrawn = await fetch(`${origin}/v1/board/messages/${firstId}/withdraw`, {
       method: 'POST',
-      headers: headers(tokenA),
+      headers: spaceHeaders(tokenA),
       body: JSON.stringify({}),
     })
     expect(withdrawn.status).toBe(200)
@@ -663,7 +677,9 @@ export function registerBoardApiProofs(input: {
     expect(first.status).toBe(200)
     expect(second.status).toBe(200)
     const changes = await json(
-      await fetch(`${origin}/v1/board/changes?after=0&limit=100`, { headers: headers(tokenA) }),
+      await fetch(`${origin}/v1/board/changes?after=0&limit=100`, {
+        headers: spaceHeaders(tokenA),
+      }),
     )
     const ids = (changes.items as Array<{ message: { id: string } }>).map((item) => item.message.id)
     expect(ids).toContain(left)
@@ -672,6 +688,7 @@ export function registerBoardApiProofs(input: {
 
   registerBoardClaimApiProof({
     origin: () => origin,
+    spaceIdForToken: activeSpace,
     tokenA: () => tokenA,
     tokenB: () => tokenB,
     userA: () => userA,
@@ -680,34 +697,10 @@ export function registerBoardApiProofs(input: {
     succeeds: input.succeeds,
   })
 
-  test('a user bound through the API sees a project in a second space', async () => {
-    const switched = await fetch(`${origin}/v1/active-space`, {
-      method: 'PUT',
-      headers: headers(tokenA),
-      body: JSON.stringify({ spaceId: spaceA }),
-    })
-    expect(switched.status).toBe(200)
-    const id = newRecordId()
-    const posted = await post(
-      tokenA,
-      notice(id, `project:${PROJECT_TWO}`, caseSession('second-space')),
-    )
-    expect(posted.status).toBe(200)
-    const thread = await fetch(`${origin}/v1/board/threads/${id}`, { headers: headers(tokenA) })
-    expect(thread.status).toBe(200)
-  })
-
-  test('a row-level security denial is a named refusal not a server error', async () => {
-    const posted = await post(
-      tokenD,
-      notice(newRecordId(), `project:${PROJECT}`, caseSession('rls-denial')),
-    )
-    expect(posted.status).toBe(400)
-    expect(JSON.stringify(await posted.json())).toContain('row-level security')
-  })
-
   registerBoardOutsideApiProof({
     origin: () => origin,
+    spaceIdForToken: activeSpace,
+    setActiveSpace,
     token: () => tokenC,
     ownerToken: () => tokenA,
     nonOwnerToken: () => tokenB,
@@ -746,7 +739,7 @@ export function registerBoardApiProofs(input: {
       (
         await fetch(`${origin}/v1/board/messages`, {
           method: 'PUT',
-          headers: headers(tokenA),
+          headers: spaceHeaders(tokenA),
           body: JSON.stringify({
             id: questionId,
             kind: 'question',
@@ -764,7 +757,7 @@ export function registerBoardApiProofs(input: {
       (
         await fetch(`${origin}/v1/board/messages/${questionId}/replies`, {
           method: 'POST',
-          headers: headers(tokenB),
+          headers: spaceHeaders(tokenB),
           body: JSON.stringify({ id: replyId, body: 'A', authorSession: `${session}-answer` }),
         })
       ).status,
@@ -773,7 +766,7 @@ export function registerBoardApiProofs(input: {
       (
         await fetch(`${origin}/v1/board/messages/${questionId}/accept`, {
           method: 'POST',
-          headers: headers(tokenA),
+          headers: spaceHeaders(tokenA),
           body: JSON.stringify({ replyId, authorSession: session }),
         })
       ).status,
@@ -809,7 +802,7 @@ export function registerBoardApiProofs(input: {
       (
         await fetch(`${origin}/v1/board/messages`, {
           method: 'PUT',
-          headers: headers(tokenA),
+          headers: spaceHeaders(tokenA),
           body: JSON.stringify({
             id: questionId,
             kind: 'question',
@@ -827,7 +820,7 @@ export function registerBoardApiProofs(input: {
     const reply = (body: Record<string, unknown>) =>
       fetch(`${origin}/v1/board/messages/${questionId}/replies`, {
         method: 'POST',
-        headers: headers(tokenB),
+        headers: spaceHeaders(tokenB),
         body: JSON.stringify(body),
       })
     const first = await reply(replyBody)
@@ -846,7 +839,7 @@ export function registerBoardApiProofs(input: {
       (
         await fetch(`${origin}/v1/board/messages/${questionId}/filing-lease`, {
           method: 'POST',
-          headers: headers(tokenA),
+          headers: spaceHeaders(tokenA),
           body: JSON.stringify({ authorSession: session }),
         })
       ).status,
@@ -856,13 +849,13 @@ export function registerBoardApiProofs(input: {
     const complete = (noteId: string) =>
       fetch(`${origin}/v1/board/messages/${questionId}/filing-lease/complete`, {
         method: 'POST',
-        headers: headers(tokenA),
+        headers: spaceHeaders(tokenA),
         body: JSON.stringify({ noteId, authorSession: session }),
       })
     expect((await complete(firstNote)).status).toBe(200)
     expect((await complete(secondNote)).status).toBe(409)
     const thread = await json(
-      await fetch(`${origin}/v1/board/threads/${questionId}`, { headers: headers(tokenA) }),
+      await fetch(`${origin}/v1/board/threads/${questionId}`, { headers: spaceHeaders(tokenA) }),
     )
     expect((thread.root as { noteId: string }).noteId).toBe(firstNote)
     expect((thread.root as { notePendingError: string | null }).notePendingError).toBeNull()
@@ -875,7 +868,7 @@ export function registerBoardApiProofs(input: {
       (
         await fetch(`${origin}/v1/board/messages/${questionId}/filing-lease`, {
           method: 'POST',
-          headers: headers(tokenA),
+          headers: spaceHeaders(tokenA),
           body: JSON.stringify({ authorSession: session }),
         })
       ).status,
@@ -884,24 +877,24 @@ export function registerBoardApiProofs(input: {
       (
         await fetch(`${origin}/v1/board/messages/${questionId}/filing-lease/complete`, {
           method: 'POST',
-          headers: headers(tokenA),
+          headers: spaceHeaders(tokenA),
           body: JSON.stringify({ noteId: newRecordId(), authorSession: session }),
         })
       ).status,
     ).toBe(200)
     const before = await json(
-      await fetch(`${origin}/v1/board/threads/${questionId}`, { headers: headers(tokenA) }),
+      await fetch(`${origin}/v1/board/threads/${questionId}`, { headers: spaceHeaders(tokenA) }),
     )
     const pendingBefore = (before.root as { notePendingError: string | null }).notePendingError
     expect(pendingBefore).toBeNull()
     const failed = await fetch(`${origin}/v1/board/messages/${questionId}/filing-lease/fail`, {
       method: 'POST',
-      headers: headers(tokenA),
+      headers: spaceHeaders(tokenA),
       body: JSON.stringify({ error: 'hub unavailable', authorSession: session }),
     })
     expect(failed.status).toBe(409)
     const thread = await json(
-      await fetch(`${origin}/v1/board/threads/${questionId}`, { headers: headers(tokenA) }),
+      await fetch(`${origin}/v1/board/threads/${questionId}`, { headers: spaceHeaders(tokenA) }),
     )
     expect((thread.root as { notePendingError: string | null }).notePendingError).toBe(
       pendingBefore,
@@ -912,18 +905,18 @@ export function registerBoardApiProofs(input: {
     const session = caseSession('filing-fail-without-take')
     const questionId = await askAndAnswer(session)
     const before = await json(
-      await fetch(`${origin}/v1/board/threads/${questionId}`, { headers: headers(tokenA) }),
+      await fetch(`${origin}/v1/board/threads/${questionId}`, { headers: spaceHeaders(tokenA) }),
     )
     const pendingBefore = (before.root as { notePendingError: string | null }).notePendingError
     const failed = await fetch(`${origin}/v1/board/messages/${questionId}/filing-lease/fail`, {
       method: 'POST',
-      headers: headers(tokenA),
+      headers: spaceHeaders(tokenA),
       body: JSON.stringify({ error: 'hub unavailable', authorSession: session }),
     })
     expect(failed.status).toBe(409)
     expect(JSON.stringify(await failed.json())).toContain('not held')
     const thread = await json(
-      await fetch(`${origin}/v1/board/threads/${questionId}`, { headers: headers(tokenA) }),
+      await fetch(`${origin}/v1/board/threads/${questionId}`, { headers: spaceHeaders(tokenA) }),
     )
     expect((thread.root as { notePendingError: string | null }).notePendingError).toBe(
       pendingBefore,
@@ -937,19 +930,19 @@ export function registerBoardApiProofs(input: {
       (
         await fetch(`${origin}/v1/board/messages/${questionId}/filing-lease`, {
           method: 'POST',
-          headers: headers(tokenA),
+          headers: spaceHeaders(tokenA),
           body: JSON.stringify({ authorSession: session }),
         })
       ).status,
     ).toBe(200)
     const before = await json(
-      await fetch(`${origin}/v1/board/threads/${questionId}`, { headers: headers(tokenA) }),
+      await fetch(`${origin}/v1/board/threads/${questionId}`, { headers: spaceHeaders(tokenA) }),
     )
     const pendingBefore = (before.root as { notePendingError: string | null }).notePendingError
     const secret = 'password=supersecretvalue'
     const failed = await fetch(`${origin}/v1/board/messages/${questionId}/filing-lease/fail`, {
       method: 'POST',
-      headers: headers(tokenA),
+      headers: spaceHeaders(tokenA),
       body: JSON.stringify({ error: secret, authorSession: session }),
     })
     expect(failed.status).toBe(400)
@@ -957,7 +950,7 @@ export function registerBoardApiProofs(input: {
     expect(text).toContain('secret-shaped')
     expect(text).not.toContain(secret)
     const thread = await json(
-      await fetch(`${origin}/v1/board/threads/${questionId}`, { headers: headers(tokenA) }),
+      await fetch(`${origin}/v1/board/threads/${questionId}`, { headers: spaceHeaders(tokenA) }),
     )
     const pendingAfter = (thread.root as { notePendingError: string | null }).notePendingError
     expect(pendingAfter).toBe(pendingBefore)
@@ -965,7 +958,7 @@ export function registerBoardApiProofs(input: {
     expect(JSON.stringify(thread)).not.toContain(secret)
     const retake = await fetch(`${origin}/v1/board/messages/${questionId}/filing-lease`, {
       method: 'POST',
-      headers: headers(tokenA),
+      headers: spaceHeaders(tokenA),
       body: JSON.stringify({ authorSession: session }),
     })
     expect(retake.status).toBe(409)
@@ -986,7 +979,7 @@ export function registerBoardApiProofs(input: {
     const { runId } = seedOwnedRun(userB)
     const taken = await fetch(`${origin}/v1/board/claims`, {
       method: 'PUT',
-      headers: headers(tokenA),
+      headers: spaceHeaders(tokenA),
       body: JSON.stringify({
         id: newRecordId(),
         project: PROJECT,
@@ -1013,7 +1006,7 @@ export function registerBoardApiProofs(input: {
     expect(((await posted.json()) as { origin: { runId: string } }).origin.runId).toBe(runId)
     const taken = await fetch(`${origin}/v1/board/claims`, {
       method: 'PUT',
-      headers: headers(tokenA),
+      headers: spaceHeaders(tokenA),
       body: JSON.stringify({
         id: newRecordId(),
         project: PROJECT,

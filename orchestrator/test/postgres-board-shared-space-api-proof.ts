@@ -7,6 +7,7 @@ export function registerBoardSharedSpaceApiProof(
   origin: () => string,
   sharedToken: () => string,
   unrelatedToken: () => string,
+  spaceIdForToken: (token: string) => string,
   project: string,
   post: (id: string) => Promise<Response>,
 ): void {
@@ -39,6 +40,7 @@ export function registerBoardSharedSpaceApiProof(
           headers: {
             authorization: `Bearer ${sharedToken()}`,
             'content-type': 'application/json',
+            'x-record-space': spaceIdForToken(sharedToken()),
           },
           body: JSON.stringify({ id: replyId, body: 'shared reply', authorSession: session }),
         })
@@ -74,7 +76,7 @@ export function registerBoardSharedSpaceApiProof(
         await refreshHostedBoard({
           budgetMs: 2_000,
           env: { BOTTEGA_RECORD_API_URL: origin() },
-          client: postgresBoardCacheClient(origin(), sharedToken()),
+          client: postgresBoardCacheClient(origin(), sharedToken(), spaceIdForToken(sharedToken())),
           database: store,
         }),
       ).toMatchObject({ status: 'success' })

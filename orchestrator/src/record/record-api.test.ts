@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { RECORD_WRITE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import { proveCredentialRouteProjectAddressing } from '../../test/fixtures/credential-route-proof.ts'
 import { identity, idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
 import { recordApiTestApp } from '../../test/fixtures/record-api-app.ts'
@@ -42,7 +43,7 @@ describe('record API', () => {
       (
         await app.request('/v1/workflow-catalogue/import/v2', {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
           body,
         })
       ).status,
@@ -51,7 +52,7 @@ describe('record API', () => {
       (
         await app.request('/v1/workflow-catalogue/import', {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
           body,
         })
       ).status,
@@ -96,7 +97,7 @@ describe('record API', () => {
     )
   })
 
-  test('a document destination binds a member space while no header keeps the active space', async () => {
+  test('a document destination binds its space while a headerless write is refused', async () => {
     const calls: Array<{ spaceId: string; spaceIds: string[] }> = []
     const session = {
       ...identity,
@@ -149,16 +150,17 @@ describe('record API', () => {
       )
       expect((await app.request(path)).status).toBe(200)
     }
-    expect(
-      (
-        await app.request('/v1/docs', {
-          method: 'PUT',
-          headers: { 'content-type': 'application/json' },
-          body,
-        })
-      ).status,
-    ).toBe(200)
-    expect(calls[1]).toEqual({ spaceId: 'space-a', spaceIds: ['space-a', 'space-b'] })
+    const refused = await app.request('/v1/docs', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body,
+    })
+    expect(refused.status).toBe(409)
+    expect(await refused.json()).toEqual({
+      error: 'write request names no destination space',
+      remedy: 'send the destination space in the x-record-space header, then retry',
+    })
+    expect(calls).toHaveLength(1)
   })
 
   test('a non-member project destination returns 403 before the service', async () => {
@@ -259,7 +261,7 @@ describe('record API', () => {
     const edit = (body: Record<string, unknown>) =>
       app.request('/v1/settings/permission', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
         body: JSON.stringify(body),
       })
     const base = {
@@ -369,7 +371,7 @@ describe('record API', () => {
     })
     const response = await app.request('/v1/settings/permission', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
       body: JSON.stringify({
         target: { kind: 'user' },
         list: 'allow',
@@ -395,7 +397,7 @@ describe('record API', () => {
     })
     const response = await app.request('/v1/docs/canon/import', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
       body: JSON.stringify({
         address: { kind: 'user' },
         rows: [{ slug: 'AGENTS.md', title: 'AGENTS.md', body: 'Rule.' }],
@@ -424,7 +426,7 @@ describe('record API', () => {
     })
     const response = await app.request('/v1/docs/canon/import', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
       body: JSON.stringify({
         address: {
           kind: 'project',
@@ -460,14 +462,14 @@ describe('record API', () => {
     })
     const missing = await app.request(`/v1/runs/${id}/unvoid`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
       body: JSON.stringify({}),
     })
     expect(missing.status).toBe(400)
     expect(await missing.json()).toEqual({ error: 'invalid unvoid: note is required' })
     const response = await app.request(`/v1/runs/${id}/unvoid`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
       body: JSON.stringify({ note: 'mistaken void' }),
     })
     expect(response.status).toBe(200)
@@ -486,7 +488,7 @@ describe('record API', () => {
     const score = async (scoredBy?: string) =>
       app.request(`/v1/runs/${id}/score`, {
         method: 'PUT',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
         body: JSON.stringify({
           delivery: 'none',
           quality: null,
@@ -624,6 +626,40 @@ describe('record API', () => {
     expect(refused.status).toBe(403)
   })
 
+  test('switches away from a read-only active space while tenant writes stay refused', async () => {
+    let selected = ''
+    const readOnlyIdentity = {
+      ...identity,
+      memberships: identity.memberships.map((membership) => ({
+        ...membership,
+        permission: 'read' as const,
+      })),
+    }
+    const app = appWith(readOnlyIdentity, {
+      setActiveSpace: async (_headers: Headers, spaceId: string) => {
+        selected = spaceId
+      },
+    })
+    const switched = await app.request('/v1/active-space', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ spaceId: id }),
+    })
+    expect(switched.status).toBe(200)
+    expect(selected).toBe(id)
+
+    const tenantWrite = await app.request('/v1/projects', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    })
+    expect(tenantWrite.status).toBe(409)
+    expect(await tenantWrite.json()).toEqual({
+      error: 'write request names no destination space',
+      remedy: RECORD_WRITE_SPACE_REMEDY,
+    })
+  })
+
   test('passes auth routes to Better Auth and reports shipped migrations', async () => {
     const app = appWith(identity)
     expect(await (await app.request('/api/auth/session')).json()).toEqual({ handled: true })
@@ -701,7 +737,7 @@ describe('record config API', () => {
     const envelope = 'sensitive-envelope='
     const response = await appWith(identity).request('/v1/config/secrets/token', {
       method: 'PUT',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
       body: JSON.stringify({
         environment: 'default',
         scope: 'user',
@@ -735,7 +771,7 @@ describe('record config API', () => {
       },
     }).request('/v1/config/data-keys', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
       body: JSON.stringify({ dekId: id, version: 1, wraps: [] }),
     })
     expect(response.status).toBe(200)
@@ -759,7 +795,7 @@ describe('record API presentation routes', () => {
   test('validates snapshot kinds and refuses payloads over the byte cap', async () => {
     const invalid = await appWith(identity).request('/v1/snapshots/nope', {
       method: 'PUT',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
       body: JSON.stringify({ machineId: id, payload: {} }),
     })
     expect(invalid.status).toBe(400)
@@ -767,7 +803,7 @@ describe('record API presentation routes', () => {
 
     const oversized = await appWith(identity).request('/v1/snapshots/state', {
       method: 'PUT',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
       body: JSON.stringify({ machineId: id, payload: 'x'.repeat(SNAPSHOT_MAX_BYTES) }),
     })
     expect(oversized.status).toBe(413)
@@ -894,14 +930,14 @@ describe('record API presentation routes', () => {
     })
     const invalid = await app.request('/v1/projects', {
       method: 'PUT',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
       body: '{}',
     })
     expect(invalid.status).toBe(400)
     expect(await invalid.json()).toEqual({ error: 'invalid project upsert' })
     const response = await app.request('/v1/projects', {
       method: 'PUT',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
       body: JSON.stringify({
         id,
         name: 'probe',
@@ -930,7 +966,7 @@ describe('record API presentation routes', () => {
     })
     const response = await app.request('/v1/projects', {
       method: 'PUT',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
       body: JSON.stringify({
         id,
         name: 'beta',
@@ -955,7 +991,10 @@ describe('record API presentation routes', () => {
         return { name: 'probe' }
       },
     })
-    const response = await app.request(`/v1/projects/${id}/retire`, { method: 'POST' })
+    const response = await app.request(`/v1/projects/${id}/retire`, {
+      method: 'POST',
+      headers: { 'x-record-space': 'space-a' },
+    })
     expect(response.status).toBe(200)
     expect(calls).toEqual([id])
   })

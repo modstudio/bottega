@@ -900,7 +900,7 @@ export function registerHostedProjectIdentityProof(input: {
     expect(subject.status, await subject.text()).toBe(200)
     const post = await fetch(`${input.origin()}/v1/board/messages`, {
       method: 'PUT',
-      headers: headers(input.token()),
+      headers: requestHeaders,
       body: JSON.stringify(
         notice(postId, `project:${staleName}`, input.caseSession('identity-post'), {
           project: staleName,
@@ -911,7 +911,7 @@ export function registerHostedProjectIdentityProof(input: {
     expect(post.status, await post.text()).toBe(200)
     const reply = await fetch(`${input.origin()}/v1/board/messages/${postId}/replies`, {
       method: 'POST',
-      headers: headers(input.token()),
+      headers: requestHeaders,
       body: JSON.stringify({
         id: replyId,
         body: 'UUID-selected reply author.',
@@ -923,7 +923,7 @@ export function registerHostedProjectIdentityProof(input: {
     expect(reply.status, await reply.text()).toBe(200)
     const claim = await fetch(`${input.origin()}/v1/board/claims`, {
       method: 'PUT',
-      headers: headers(input.token()),
+      headers: requestHeaders,
       body: JSON.stringify({
         id: claimId,
         project: staleName,
@@ -947,7 +947,7 @@ export function registerHostedProjectIdentityProof(input: {
     input.admin(`UPDATE project SET retired_at=now() WHERE id='${projectId}';`)
     const retiredPost = await fetch(`${input.origin()}/v1/board/messages`, {
       method: 'PUT',
-      headers: headers(input.token()),
+      headers: requestHeaders,
       body: JSON.stringify(
         notice(retiredPostId, 'operator', input.caseSession('identity-retired-author'), {
           project: staleName,
@@ -963,7 +963,7 @@ export function registerHostedProjectIdentityProof(input: {
     ).toBe('t')
     const retiredClaim = await fetch(`${input.origin()}/v1/board/claims`, {
       method: 'PUT',
-      headers: headers(input.token()),
+      headers: requestHeaders,
       body: JSON.stringify({
         id: newRecordId(),
         project: staleName,

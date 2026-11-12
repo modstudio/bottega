@@ -10,7 +10,8 @@ import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, type DocAudience } from '../../
 import { isPersonalItem } from '../../../shared/personal-item-space.ts'
 import type { RecordClientAddresses } from '../../../shared/record-client-addresses.ts'
 import type { RecordProject } from '../../../shared/record-project-contract.ts'
-import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
+import { RECORD_SIGN_IN_REMEDY, recordWriteSpaceRefusal } from '../../../shared/record-remedies.ts'
+import { recordRequestNature } from '../../../shared/record-space-request.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
 import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
@@ -302,6 +303,23 @@ function writeTelemetryDeps(deps: Deps) {
   }
 }
 
+function refusingRequestTenant(context: Context<ApiEnvironment>, recordUrl: string): Tenant | null {
+  recordDestinationlessWrite(context)
+  const tenant = requestTenant(
+    context.get('identity'),
+    context.get('destinationSpaceId'),
+    recordRequestNature(context.req.method),
+    recordUrl,
+  )
+  if (tenant && 'refused' in tenant) {
+    const refusal = recordWriteSpaceRefusal()
+    throw new HTTPException(409, {
+      res: Response.json(refusal.body, { status: refusal.status }),
+    })
+  }
+  return tenant
+}
+
 export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   const app = new Hono<ApiEnvironment>()
   app.onError((error, context) => {
@@ -320,9 +338,9 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   registerRecordIdentityMiddleware(app, deps)
   // The report route must follow the identity middleware that authenticates it.
   registerRecordWriteTelemetry(app, writeTelemetryDeps(deps))
+  registerRecordRequestSpace(app)
   registerRecordIdentityRoutes(app, deps)
   registerRecordSessionRoutes(app, deps)
-  registerRecordRequestSpace(app)
   app.put('/v1/active-space', async (context) => {
     const input = z
       .object({ spaceId: idSchema })
@@ -337,10 +355,8 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       throw error
     }
   })
-  const scope = (context: Context<ApiEnvironment>): Tenant | null => {
-    recordDestinationlessWrite(context)
-    return requestTenant(context.get('identity'), context.get('destinationSpaceId'), deps.recordUrl)
-  }
+  const scope = (context: Context<ApiEnvironment>): Tenant | null =>
+    refusingRequestTenant(context, deps.recordUrl)
   const { docScope, docIdScope } = recordDocumentScopes({ scope, readDoc: deps.readDoc })
   registerSignedDocSearchRoute(app, deps, { scope, noSpace })
   registerRecordReadRoutes(app, deps, { scope, noSpace })

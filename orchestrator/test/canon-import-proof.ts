@@ -12,6 +12,7 @@ export function registerHostedCanonProofs(
     await proveCanonImports(process.env.BOTTEGA_RECORD_API_URL!, {
       Authorization: `Bearer ${token()}`,
       'content-type': 'application/json',
+      'x-record-space': authIds().spaceId,
     })
   })
 }

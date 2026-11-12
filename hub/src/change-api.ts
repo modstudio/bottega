@@ -43,7 +43,7 @@ type Dependencies = {
 }
 type ChangeIdentity = Exclude<
   Awaited<ReturnType<typeof taskSpaceIdentity>>,
-  { kind: 'refused-space' | 'unauthenticated' | 'unavailable' }
+  { kind: 'refused-space' | 'refused-destination' | 'unauthenticated' | 'unavailable' }
 >
 
 const json = (value: unknown, status = 200) => Response.json(value, { status })

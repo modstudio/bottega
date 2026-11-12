@@ -1,6 +1,10 @@
 // concern: record-api-client
 /** Implements decoded workflow catalogue requests outside the main client file ceiling. */
-import { type RecordRequestDestination, workflowCataloguePath } from './record-api-client-paths.ts'
+import {
+  type RecordRequestDestination,
+  type RecordWriteDestination,
+  workflowCataloguePath,
+} from './record-api-client-paths.ts'
 import { type RecordTaskFlowClient, recordTaskFlowClient } from './record-api-client-task-flow.ts'
 import {
   type RecordWorkflowDraftInput,
@@ -24,7 +28,7 @@ const RECONCILED_IMPORT_REFUSAL =
 async function importWorkflowCatalogue(
   request: Request,
   input: RecordWorkflowImportInput,
-  destination?: RecordRequestDestination,
+  destination: RecordWriteDestination,
 ): Promise<RecordWorkflowImportResult> {
   try {
     return await request('/v1/workflow-catalogue/import/v2', {
@@ -56,19 +60,19 @@ export type RecordWorkflowClient = RecordTaskFlowClient & {
   }>
   draftWorkflow?(
     input: RecordWorkflowDraftInput,
-    destination?: RecordRequestDestination,
+    destination: RecordWriteDestination,
   ): Promise<RecordWorkflowWriteResponse>
   promoteWorkflow?(
     input: RecordWorkflowTransitionInput,
-    destination?: RecordRequestDestination,
+    destination: RecordWriteDestination,
   ): Promise<RecordWorkflowWriteResponse>
   retireWorkflow?(
     input: RecordWorkflowTransitionInput,
-    destination?: RecordRequestDestination,
+    destination: RecordWriteDestination,
   ): Promise<RecordWorkflowWriteResponse>
   importWorkflowCatalogue?(
     input: RecordWorkflowImportInput,
-    destination?: RecordRequestDestination,
+    destination: RecordWriteDestination,
   ): Promise<RecordWorkflowImportResult>
 }
 export const recordWorkflowClient = (request: Request): RecordWorkflowClient => ({

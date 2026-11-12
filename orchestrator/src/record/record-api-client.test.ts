@@ -366,11 +366,12 @@ test('transport failures report the request write outcome', async () => {
           (async () => new Response('{', { status: 200 })) as unknown as typeof fetch,
         ),
       )
+      const malformedInput = {
+        doc: { scope: 'project', subject: PLATFORM_SLUG },
+        revisions: [],
+      } as never
       await expect(
-        malformed.importDoc({
-          doc: { scope: 'project', subject: PLATFORM_SLUG },
-          revisions: [],
-        } as never),
+        malformed.importDoc(malformedInput, { destinationSpaceId: 'project-space' }),
       ).rejects.toThrow('the write may have been applied; check before retrying')
     } finally {
       installRecordApiClient(createMemoryRecordApiClient())
@@ -689,7 +690,7 @@ describe('record API client test safety', () => {
     }) as typeof fetch
     try {
       const order = { scope: 'project', subject: 'Product', parentId: null, orderedIds: [] }
-      await recordApiClient().reorderDocs(order)
+      await recordApiClient().reorderDocs(order, { destinationSpaceId: 'project-space' })
       expect(calls).toEqual([
         {
           url: 'https://api.example.test/v1/docs/order',
@@ -761,21 +762,28 @@ describe('record API client test safety', () => {
       await expect(client.getBoardThread(id)).rejects.toThrow(/nope/)
       await expect(client.getBoardStatus(id)).rejects.toThrow(/nope/)
       await expect(
-        client.postBoardMessage({
-          id,
-          kind: 'notice',
-          audience: 'operator',
-          title: 'T',
-          body: 'B',
-          expiresAt: '2026-10-06T00:00:00.000Z',
-        }),
+        client.postBoardMessage(
+          {
+            id,
+            kind: 'notice',
+            audience: 'operator',
+            title: 'T',
+            body: 'B',
+            expiresAt: '2026-10-06T00:00:00.000Z',
+          },
+          { destinationSpaceId: 'project-space' },
+        ),
       ).rejects.toMatchObject({ message: 'nope', kind: 'refused', status: 409 })
       await expect(
-        client.replyBoardMessage(id, {
-          id: newRecordId(),
-          body: 'Directed reply',
-          audience: { kind: 'session', sessionId: 'in-reach' },
-        }),
+        client.replyBoardMessage(
+          id,
+          {
+            id: newRecordId(),
+            body: 'Directed reply',
+            audience: { kind: 'session', sessionId: 'in-reach' },
+          },
+          { destinationSpaceId: 'project-space' },
+        ),
       ).rejects.toMatchObject({ message: 'nope', kind: 'refused', status: 409 })
       boardController.abort()
       expect(calls[0]?.signal?.aborted).toBeTrue()
@@ -836,14 +844,17 @@ describe('record API client test safety', () => {
       )) as typeof fetch
     try {
       await expect(
-        recordApiClient().postBoardMessage({
-          id: newRecordId(),
-          kind: 'notice',
-          audience: 'operator',
-          title: 'T',
-          body: 'B',
-          expiresAt: '2026-10-06T00:00:00.000Z',
-        }),
+        recordApiClient().postBoardMessage(
+          {
+            id: newRecordId(),
+            kind: 'notice',
+            audience: 'operator',
+            title: 'T',
+            body: 'B',
+            expiresAt: '2026-10-06T00:00:00.000Z',
+          },
+          { destinationSpaceId: 'project-space' },
+        ),
       ).rejects.toThrow('board post rate limit reached; retry after the ten-minute author window')
     } finally {
       globalThis.fetch = originalFetch
@@ -869,12 +880,15 @@ describe('record API client test safety', () => {
       Response.json({ error: 'claim write failed' }, { status: 500 })) as unknown as typeof fetch
     try {
       await expect(
-        recordApiClient().takeBoardClaim({
-          id: newRecordId(),
-          project: PLATFORM_SLUG,
-          projectId: newRecordId(),
-          subject: 'task:DEV-1638',
-        }),
+        recordApiClient().takeBoardClaim(
+          {
+            id: newRecordId(),
+            project: PLATFORM_SLUG,
+            projectId: newRecordId(),
+            subject: 'task:DEV-1638',
+          },
+          { destinationSpaceId: 'project-space' },
+        ),
       ).rejects.toMatchObject({
         kind: 'server',
         status: 500,

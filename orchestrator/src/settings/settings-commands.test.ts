@@ -113,9 +113,9 @@ describe('settings import', () => {
         apiCalls.push('whoami')
         throw new Error('unexpected hosted identity lookup')
       },
-      upsertDoc: async (input) => {
+      upsertDoc: async (input, destination) => {
         apiCalls.push('upsertDoc')
-        return client.upsertDoc(input)
+        return client.upsertDoc(input, destination)
       },
     })
     const metadataBefore = db()
@@ -489,9 +489,9 @@ test('setDoc refuses a sentinel before any hosted call or local row', async () =
   const inner = createMemoryRecordApiClient()
   installRecordApiClient({
     ...inner,
-    upsertDoc: async (input) => {
+    upsertDoc: async (input, destination) => {
       captured.push(input)
-      return inner.upsertDoc(input)
+      return inner.upsertDoc(input, destination)
     },
   })
   const sentinel = urlUserinfoSentinel()

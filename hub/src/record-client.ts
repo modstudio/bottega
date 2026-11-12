@@ -650,13 +650,13 @@ function reorderRecordDocs(
 function putRecordDoc(
   options: RecordClientOptions,
   input: RecordPutDocInput,
-  destinationSpaceId?: string,
+  destinationSpaceId: string,
 ) {
   return request(options, '/v1/docs', docWriteResultSchema, {
     method: 'PUT',
     headers: {
       'content-type': 'application/json',
-      ...(destinationSpaceId ? { 'x-record-space': destinationSpaceId } : {}),
+      'x-record-space': destinationSpaceId,
     },
     body: JSON.stringify(input),
   })
@@ -689,30 +689,36 @@ async function recordSubjects(
 
 function recordSettingsClient(options: RecordClientOptions) {
   return {
-    settingsPermission: (input: {
-      target: { kind: 'user' } | { kind: 'project'; project: string }
-      list: 'allow' | 'ask' | 'deny'
-      rule: string
-      operation: 'add' | 'remove'
-      reason: string
-      expectedRevision: string
-    }) =>
+    settingsPermission: (
+      input: {
+        target: { kind: 'user' } | { kind: 'project'; project: string }
+        list: 'allow' | 'ask' | 'deny'
+        rule: string
+        operation: 'add' | 'remove'
+        reason: string
+        expectedRevision: string
+      },
+      spaceId: string,
+    ) =>
       request(options, '/v1/settings/permission', settingsPermissionResultSchema, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: recordWriteDestinationHeaders(spaceId),
         body: JSON.stringify(input),
       }),
-    settingsAutoMode: (input: {
-      target: { kind: 'user' } | { kind: 'project'; project: string }
-      list: 'allow' | 'soft_deny' | 'hard_deny' | 'environment'
-      rule: string
-      operation: 'add' | 'remove'
-      reason: string
-      expectedRevision: string
-    }) =>
+    settingsAutoMode: (
+      input: {
+        target: { kind: 'user' } | { kind: 'project'; project: string }
+        list: 'allow' | 'soft_deny' | 'hard_deny' | 'environment'
+        rule: string
+        operation: 'add' | 'remove'
+        reason: string
+        expectedRevision: string
+      },
+      spaceId: string,
+    ) =>
       request(options, '/v1/settings/auto-mode', settingsAutoModeResultSchema, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: recordWriteDestinationHeaders(spaceId),
         body: JSON.stringify(input),
       }),
   }
@@ -734,15 +740,17 @@ function recordConfigClient(options: RecordClientOptions) {
         value: string
         expectedRowVersion: number | null
       },
+      spaceId: string,
     ) =>
       request(options, `/v1/config/entries/${encodeURIComponent(key)}`, configEntrySchema, {
         method: 'PUT',
-        headers: { 'content-type': 'application/json' },
+        headers: recordWriteDestinationHeaders(spaceId),
         body: JSON.stringify({ ...input, environment: DEFAULT_CONFIG_ENVIRONMENT }),
       }),
     deleteConfigEntry: (
       key: string,
       input: { scope: 'user' | 'space'; expectedRowVersion: number },
+      spaceId: string,
     ) =>
       request(
         options,
@@ -750,7 +758,7 @@ function recordConfigClient(options: RecordClientOptions) {
         z.object({ deleted: z.literal(true) }),
         {
           method: 'DELETE',
-          headers: { 'content-type': 'application/json' },
+          headers: recordWriteDestinationHeaders(spaceId),
           body: JSON.stringify({ ...input, environment: DEFAULT_CONFIG_ENVIRONMENT }),
         },
       ),
@@ -928,20 +936,20 @@ export function createRecordClient(options: RecordClientOptions) {
     docSearch: (input: RecordDocSearchInput) => recordDocSearch(options, input),
     subjects: (input: { project: string; includeRetired?: boolean }, destinationSpaceId: string) =>
       recordSubjects(options, input, destinationSpaceId),
-    putDoc: (input: RecordPutDocInput, destinationSpaceId?: string) =>
+    putDoc: (input: RecordPutDocInput, destinationSpaceId: string) =>
       putRecordDoc(options, input, destinationSpaceId),
     reorderDocs: (input: RecordDocOrderInput, destinationSpaceId: string) =>
       reorderRecordDocs(options, input, destinationSpaceId),
     deleteDoc: (
       id: string,
       input: { reason: string; author: string; expectedRevision?: string },
-      destinationSpaceId?: string,
+      destinationSpaceId: string,
     ) =>
       request(options, `/v1/docs/${encodeURIComponent(id)}`, deletedResultSchema, {
         method: 'DELETE',
         headers: {
           'content-type': 'application/json',
-          ...(destinationSpaceId ? { 'x-record-space': destinationSpaceId } : {}),
+          'x-record-space': destinationSpaceId,
         },
         body: JSON.stringify(input),
       }),

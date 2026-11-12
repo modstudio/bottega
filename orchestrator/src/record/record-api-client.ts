@@ -51,6 +51,7 @@ import {
   type RecordProjectSubjectMethod,
   type RecordRequestDestination,
   type RecordSnapshotAndPublicDocMethod,
+  type RecordWriteDestination,
   subjectMutationBody,
 } from './record-api-client-paths.ts'
 import { type RecordPortClient, recordPortClient } from './record-api-client-port.ts'
@@ -229,6 +230,7 @@ export type {
   RecordApiAuthentication,
   RecordBoardStreamOpen,
   RecordRequestDestination,
+  RecordWriteDestination,
 } from './record-api-client-paths.ts'
 
 export type RecordApiClient = ProjectIdentityClient &
@@ -265,7 +267,7 @@ export type RecordApiClient = ProjectIdentityClient &
     putSnapshot(
       kind: SnapshotKind,
       input: { machineId: string; payload: unknown },
-      destination: RecordRequestDestination,
+      destination: RecordWriteDestination,
     ): Promise<{ takenAt: string }>
     listSnapshots(): Promise<{
       items: Array<{
@@ -313,34 +315,34 @@ export type RecordApiClient = ProjectIdentityClient &
     ): Promise<Record<string, unknown>[]>
     upsertDoc(
       input: RecordDocUpsertInput,
-      destination?: RecordRequestDestination,
+      destination: RecordWriteDestination,
     ): Promise<RecordDocWriteResponse<{ id: string; revisionId: string }>>
     reorderDocs(
       input: RecordDocOrderInput,
-      destination?: RecordRequestDestination,
+      destination: RecordWriteDestination,
     ): Promise<{ orderedIds: string[] }>
     importDoc(
       input: RecordDocImportInput,
-      destination?: RecordRequestDestination,
+      destination: RecordWriteDestination,
     ): Promise<RecordDocImportResult>
     importCanon(
       input: RecordCanonImportInput,
-      destination?: RecordRequestDestination,
+      destination: RecordWriteDestination,
     ): Promise<RecordCanonImportResult>
     deleteDoc(
       id: string,
       input: RecordDocWriteContext & { generator?: DocGenerator },
-      destination?: RecordRequestDestination,
+      destination: RecordWriteDestination,
     ): Promise<{ id: string; revisionId: string }>
     consumeDoc(
       id: string,
       input: RecordDocWriteContext,
-      destination?: RecordRequestDestination,
+      destination: RecordWriteDestination,
     ): Promise<{ id: string; revisionId: string; alreadyConsumed: boolean }>
     restoreDoc(
       id: string,
       input: RecordDocWriteContext & { revisionId: string },
-      destination?: RecordRequestDestination,
+      destination: RecordWriteDestination,
     ): Promise<{ id: string; revisionId: string }>
     renameSubject(
       input: {
@@ -348,7 +350,7 @@ export type RecordApiClient = ProjectIdentityClient &
         to: string
         count: number
       },
-      destination?: RecordRequestDestination,
+      destination: RecordWriteDestination,
     ): Promise<{ docs: number; revisions: number }>
     listProjectSubjects(
       query: {
@@ -369,23 +371,23 @@ export type RecordApiClient = ProjectIdentityClient &
         name: string
         definition: string
       },
-      destination?: RecordRequestDestination,
+      destination: RecordWriteDestination,
     ): Promise<RecordSubject>
     renameProjectSubject(
       input: { project: string; projectId?: string | null; id: string; name: string },
-      destination?: RecordRequestDestination,
+      destination: RecordWriteDestination,
     ): Promise<RecordSubject>
     defineProjectSubject(
       input: { project: string; projectId?: string | null; id: string; definition: string },
-      destination?: RecordRequestDestination,
+      destination: RecordWriteDestination,
     ): Promise<RecordSubject>
     reorderProjectSubjects(
       input: { project: string; projectId?: string | null; ids: string[] },
-      destination?: RecordRequestDestination,
+      destination: RecordWriteDestination,
     ): Promise<{ items: RecordSubject[] }>
     retireProjectSubject(
       input: { project: string; projectId?: string | null; id: string },
-      destination?: RecordRequestDestination,
+      destination: RecordWriteDestination,
     ): Promise<RecordSubject>
     listScores(query: {
       updatedSince?: string
@@ -401,46 +403,46 @@ export type RecordApiClient = ProjectIdentityClient &
     ): Promise<HostedBoardOverview>
     postBoardMessage(
       input: HostedBoardPostInput,
+      destination: RecordWriteDestination,
       signal?: AbortSignal,
-      destination?: RecordRequestDestination,
     ): Promise<HostedBoardMessage>
     replyBoardMessage(
       rootId: string,
       input: HostedBoardReplyInput,
-      destination?: RecordRequestDestination,
+      destination: RecordWriteDestination,
     ): Promise<HostedBoardMessage>
     withdrawBoardMessage(
       id: string,
+      destination: RecordWriteDestination,
       input?: HostedBoardSessionInput,
       signal?: AbortSignal,
-      destination?: RecordRequestDestination,
     ): Promise<HostedBoardMessage>
     acceptBoardAnswer(
       id: string,
       input: HostedBoardAcceptInput,
-      destination?: RecordRequestDestination,
+      destination: RecordWriteDestination,
     ): Promise<HostedBoardThread>
     takeBoardFilingLease(
       id: string,
+      destination: RecordWriteDestination,
       input?: HostedBoardSessionInput,
-      destination?: RecordRequestDestination,
     ): Promise<HostedBoardMessage>
     completeBoardFilingLease(
       id: string,
       input: HostedBoardFilingCompleteInput,
-      destination?: RecordRequestDestination,
+      destination: RecordWriteDestination,
     ): Promise<HostedBoardMessage>
     failBoardFilingLease(
       id: string,
       input: HostedBoardFilingFailInput,
-      destination?: RecordRequestDestination,
+      destination: RecordWriteDestination,
     ): Promise<HostedBoardMessage>
     getBoardThread(id: string): Promise<HostedBoardThread>
     getBoardStatus(id: string): Promise<HostedBoardStatus>
     putBoardReceipt(
       input: HostedBoardReceiptInput,
+      destination: RecordWriteDestination,
       signal?: AbortSignal,
-      destination?: RecordRequestDestination,
     ): Promise<HostedBoardReceipt>
     listBoardChanges(
       query: {
@@ -454,21 +456,21 @@ export type RecordApiClient = ProjectIdentityClient &
     ): Promise<HostedBoardChanges>
     takeBoardSuccessor(
       input: HostedBoardSuccessorInput,
-      destination?: RecordRequestDestination,
+      destination: RecordWriteDestination,
     ): Promise<HostedBoardSuccessorResult>
     takeBoardClaim(
       input: HostedBoardTakeClaimInput,
-      destination?: RecordRequestDestination,
+      destination: RecordWriteDestination,
     ): Promise<HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }>
     renewBoardClaim(
       id: string,
+      destination: RecordWriteDestination,
       input?: { holderSession?: string | null },
-      destination?: RecordRequestDestination,
     ): Promise<HostedBoardClaim>
     releaseBoardClaim(
       id: string,
+      destination: RecordWriteDestination,
       input?: { holderSession?: string | null },
-      destination?: RecordRequestDestination,
     ): Promise<HostedBoardClaim>
     listBoardClaims(
       project: string,
@@ -480,7 +482,7 @@ export type RecordApiClient = ProjectIdentityClient &
         projectId?: string | null
         key: string
       },
-      destination?: RecordRequestDestination,
+      destination: RecordWriteDestination,
     ): Promise<{ released: number }>
     openBoardStream(signal?: AbortSignal): Promise<RecordBoardStreamOpen>
   }
@@ -714,20 +716,15 @@ function acceptedInvitationResponse(
 async function listDocRevisionsRequest(
   id: string,
   destination?: RecordRequestDestination,
+  request: RecordClientRequest = recordApiRequest,
 ): Promise<Record<string, unknown>[]> {
-  const body = await recordApiRequest<{ items?: Record<string, unknown>[] }>(
+  const body = await request<{ items?: Record<string, unknown>[] }>(
     `/v1/docs/${id}/revisions`,
     destination,
   )
   return Array.isArray(body) ? body : (body.items ?? [])
 }
 
-const reorderDocsRequest: RecordApiClient['reorderDocs'] = (input, destination) =>
-  recordApiRequest('/v1/docs/order', {
-    method: 'PUT',
-    body: JSON.stringify(input),
-    ...destination,
-  })
 export function authenticatedRecordApiClient(
   authentication: RecordApiAuthentication,
 ): RecordApiClient {
@@ -767,7 +764,7 @@ export function recordApiClient(request = recordApiRequest): RecordApiClient {
     },
     counts: (destination) => request('/v1/docs/counts', destination),
     ...recordBoardClient(request),
-    ...recordApiBoardWatchClient(),
+    ...recordApiBoardWatchClient(request),
   }
   return client
 }
@@ -808,7 +805,7 @@ const recordDocReadClient = (
     return request(`/v1/docs${suffix ? `?${suffix}` : ''}`, destination)
   },
   getDoc: (id, destination) => request(`/v1/docs/${id}`, destination),
-  listRevisions: listDocRevisionsRequest,
+  listRevisions: (id, destination) => listDocRevisionsRequest(id, destination, request),
 })
 
 const recordDocWriteClient = (
@@ -816,7 +813,12 @@ const recordDocWriteClient = (
 ): Pick<RecordApiClient, RecordDocWriteMethod> => ({
   upsertDoc: (input, destination) =>
     request('/v1/docs', { method: 'PUT', body: JSON.stringify(input), ...destination }).then(ids),
-  reorderDocs: reorderDocsRequest,
+  reorderDocs: (input, destination) =>
+    request('/v1/docs/order', {
+      method: 'PUT',
+      body: JSON.stringify(input),
+      ...destination,
+    }),
   applySettingsPermission: (input, destination) =>
     request('/v1/settings/permission', {
       method: 'POST',
@@ -956,10 +958,12 @@ function recordIdentityAndSpaceClient(
   }
 }
 
-function recordApiBoardWatchClient(): Pick<RecordApiClient, RecordBoardWatchMethod> {
+function recordApiBoardWatchClient(
+  request: RecordClientRequest = recordApiRequest,
+): Pick<RecordApiClient, RecordBoardWatchMethod> {
   return {
     releaseBoardTaskClaims: (input, destination) =>
-      recordApiRequest('/v1/board/claims/release-task', {
+      request('/v1/board/claims/release-task', {
         method: 'POST',
         body: JSON.stringify(input),
         ...destination,

@@ -165,9 +165,9 @@ describe('hosted-only task safety', () => {
     }
   })
 
-  test('a task write without a requested space keeps the active space', async () => {
+  test('a task write without a requested space is refused before dispatch', async () => {
     let boundSpace = ''
-    await taskApi(
+    const response = await taskApi(
       new Request('https://hub.example.test/v1/tasks', {
         method: 'POST',
         headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
@@ -187,7 +187,12 @@ describe('hosted-only task safety', () => {
         },
       },
     )
-    expect(boundSpace).toBe('space-a')
+    expect(response?.status).toBe(409)
+    expect(await response?.json()).toEqual({
+      error: 'write request names no destination space',
+      remedy: 'send the destination space in the x-record-space header, then retry',
+    })
+    expect(boundSpace).toBe('')
   })
 
   for (const route of ['presence', 'delete'] as const) {
@@ -213,13 +218,13 @@ describe('hosted-only task safety', () => {
       expect(writes).toBe(0)
     })
 
-    test(`${route} without a requested space keeps the active space`, async () => {
+    test(`${route} without a requested space is refused before dispatch`, async () => {
       let boundSpace = ''
       const response = await callBulkTaskRoute(route, null, (spaceId) => {
         boundSpace = spaceId
       })
-      expect(response?.status).toBe(200)
-      expect(boundSpace).toBe('space-a')
+      expect(response?.status).toBe(409)
+      expect(boundSpace).toBe('')
     })
   }
 
@@ -562,7 +567,11 @@ describe('hosted-only task safety', () => {
     const presence = await taskApi(
       new Request('https://hub.example.test/v1/tasks/presence', {
         method: 'POST',
-        headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
+        headers: {
+          authorization: 'Bearer test',
+          'content-type': 'application/json',
+          'x-record-space': 'space-a',
+        },
         body: JSON.stringify({ pairs: [{ space_id: 'space-b', key: 'STO-1' }] }),
       }),
       hostedRouteTestConfig,
@@ -582,7 +591,11 @@ describe('hosted-only task safety', () => {
     const deletion = await taskApi(
       new Request('https://hub.example.test/v1/tasks', {
         method: 'DELETE',
-        headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
+        headers: {
+          authorization: 'Bearer test',
+          'content-type': 'application/json',
+          'x-record-space': 'space-a',
+        },
         body: JSON.stringify({ ids: ['task-1'], confirmation: 1 }),
       }),
       hostedRouteTestConfig,
@@ -615,7 +628,11 @@ describe('hosted-only task safety', () => {
       const response = await taskApi(
         new Request(`https://hub.example.test${pathname}`, {
           method,
-          headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
+          headers: {
+            authorization: 'Bearer test',
+            'content-type': 'application/json',
+            'x-record-space': 'space-a',
+          },
           body: JSON.stringify({}),
         }),
         hostedRouteTestConfig,

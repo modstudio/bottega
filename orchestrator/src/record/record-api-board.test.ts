@@ -112,7 +112,7 @@ test('board post refuses an invalid body at the route edge', async () => {
   const app = appWith(identity)
   const response = await app.request('/v1/board/messages', {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
     body: JSON.stringify({ kind: 'notice' }),
   })
   expect(response.status).toBe(400)
@@ -130,7 +130,7 @@ test('board post refuses misspelled text without calling the hosted write', asyn
   })
   const response = await app.request('/v1/board/messages', {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
     body: JSON.stringify({
       id: newRecordId(),
       kind: 'notice',
@@ -240,12 +240,12 @@ test('board post refuses caller recipientUserIds and claimId at the route edge',
   }
   const withRecipients = await app.request('/v1/board/messages', {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
     body: JSON.stringify({ ...base, recipientUserIds: [newRecordId()] }),
   })
   const withClaim = await app.request('/v1/board/messages', {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
     body: JSON.stringify({ ...base, id: newRecordId(), claimId: newRecordId() }),
   })
   expect(withRecipients.status).toBe(400)
@@ -264,7 +264,7 @@ test('board routes bind every membership space, not only the active space', asyn
   })
   const response = await app.request('/v1/board/messages', {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
     body: JSON.stringify({
       id: newRecordId(),
       kind: 'notice',
@@ -402,6 +402,35 @@ test('a board route without a destination or personal space names the board refu
   })
 })
 
+test('a board write names its destination while a board read keeps every membership', async () => {
+  let writes = 0
+  let readSpaceIds: string[] = []
+  const app = appWith(identity, {
+    postBoardMessage: async () => {
+      writes += 1
+      return { id: newRecordId() }
+    },
+    listBoardMessages: async (input: { spaceIds: string[] }) => {
+      readSpaceIds = input.spaceIds
+      return { messages: [], truncated: false }
+    },
+  })
+  const write = await app.request('/v1/board/messages', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({}),
+  })
+  expect(write.status).toBe(409)
+  expect(await write.json()).toEqual({
+    error: 'write request names no destination space',
+    remedy: 'send the destination space in the x-record-space header, then retry',
+  })
+  expect(writes).toBe(0)
+
+  expect((await app.request('/v1/board/messages')).status).toBe(200)
+  expect(readSpaceIds).toEqual(['space-a', 'space-b'])
+})
+
 test('board presence binds a named member space and refuses a non-member space', async () => {
   const spaces: string[] = []
   const app = appWith(
@@ -498,7 +527,7 @@ test('a board trigger exception is a named refusal not a server error', async ()
   })
   const response = await app.request(`/v1/board/messages/${newRecordId()}/replies`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
     body: JSON.stringify({ id: newRecordId(), body: 'Answer' }),
   })
   expect(response.status).toBe(400)
@@ -511,7 +540,7 @@ test('board reply rejects an unsupported audience at the route edge', async () =
   const app = appWith(identity)
   const response = await app.request(`/v1/board/messages/${newRecordId()}/replies`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
     body: JSON.stringify({ id: newRecordId(), body: 'Answer', audience: 'project:other' }),
   })
   expect(response.status).toBe(400)
@@ -529,7 +558,7 @@ test('board reply refuses misspelled text without calling the hosted write', asy
   })
   const response = await app.request(`/v1/board/messages/${newRecordId()}/replies`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
     body: JSON.stringify({ id: newRecordId(), body: `We saw the ${misspelling} here.` }),
   })
   expect(response.status).toBe(400)
@@ -550,7 +579,7 @@ test('a row-level security denial is a named refusal not a server error', async 
   })
   const response = await app.request('/v1/board/messages', {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-record-space': 'space-a' },
     body: JSON.stringify({
       id: newRecordId(),
       kind: 'notice',

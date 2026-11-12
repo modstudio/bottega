@@ -6,12 +6,12 @@ import { type RecordWriteOwner, recordWriteSpace } from '../../../shared/record-
 import { declaredRecordSpace } from '../project/declared-record-space.ts'
 import { projects } from '../project/projects.ts'
 import { type RecordApiClient, RecordApiRequestError } from './record-api-client.ts'
-import type { RecordRequestDestination } from './record-api-client-paths.ts'
+import type { RecordWriteDestination } from './record-api-client-paths.ts'
 
 export async function recordWriteDestination(
   client: RecordApiClient,
   owner: RecordWriteOwner | null,
-): Promise<RecordRequestDestination> {
+): Promise<RecordWriteDestination> {
   const identity = await client.whoami()
   const registered = [...projects(), ...projects({ retired: true })]
   const decision = recordWriteSpace(owner, {

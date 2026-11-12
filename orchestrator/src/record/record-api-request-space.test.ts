@@ -1,5 +1,13 @@
 import { expect, test } from 'bun:test'
 import { Hono } from 'hono'
+import { PLATFORM_NAME } from '../../../shared/brand.ts'
+import { recordWriteSpaceRefusal } from '../../../shared/record-remedies.ts'
+import {
+  identity as fixtureIdentity,
+  idleRecordApiDeps,
+  idleSubjectDeps,
+} from '../../test/fixtures/record-api.ts'
+import { recordApiTestApp } from '../../test/fixtures/record-api-app.ts'
 import { registerRecordRequestSpace } from './record-api-request-space.ts'
 import type { RecordIdentity } from './record-auth.ts'
 
@@ -76,6 +84,25 @@ test('release routes authorize and bind a requested space', async () => {
     expect(response.status).toBe(200)
   }
   expect(destinations).toEqual(['space-b', 'space-b'])
+})
+
+test('every v1 route receives requested-space authorization', async () => {
+  const app = new Hono<ApiEnvironment>()
+  app.use('/v1/*', async (context, next) => {
+    context.set('identity', identity)
+    return next()
+  })
+  registerRecordRequestSpace(app)
+  app.post('/v1/new-write-family', (context) =>
+    context.json({ destination: context.get('destinationSpaceId') }),
+  )
+
+  const response = await app.request('/v1/new-write-family', {
+    method: 'POST',
+    headers: { 'x-record-space': 'space-a' },
+  })
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual({ destination: 'space-a' })
 })
 
 test('task-flow write routes authorize and bind a requested space', async () => {
@@ -227,7 +254,10 @@ test('read-only members are refused before remaining tenant write routes run', a
     ['/v1/outside-blocks', 'POST'],
     ['/v1/moderation/hide', 'POST'],
   ] as const) {
-    const response = await app.request(path, { method })
+    const response = await app.request(path, {
+      method,
+      headers: { 'x-record-space': 'space-a' },
+    })
     expect(response.status).toBe(403)
     expect(await response.json()).toEqual({
       error: 'record space space-a membership is read-only',
@@ -355,4 +385,280 @@ test('catalogue routes authorize and bind their requested space before services 
       { path: `/v1/${prefix}-catalogue/import`, destination: 'space-b' },
     ]),
   )
+})
+const concreteWriteMethods = new Set(['DELETE', 'PATCH', 'POST', 'PUT'])
+const recordWriteExemptions = new Map([
+  ['ALL /api/auth/*', 'Better Auth owns its user-scoped routes'],
+  ['PUT /v1/active-space', 'the active-space switcher changes only the read default'],
+  ['PUT /v1/machine/name', 'machine identity is user-scoped'],
+  ['POST /v1/machine/retire', 'machine identity is user-scoped'],
+  [
+    'POST /v1/spaces/delete-trial',
+    'the body names the deleted space and the delete service authorizes the caller against it',
+  ],
+  [
+    'POST /v1/spaces/delete',
+    'the body names the deleted space and the delete service authorizes the caller against it',
+  ],
+  ['POST /v1/sync', 'sync resolves every row destination through its S5 write-space seam'],
+])
+const recordTenantRoutes = new Set(
+  `
+PUT /v1/subjects
+POST /v1/subjects/:id/rename
+POST /v1/subjects/:id/define
+POST /v1/subjects/reorder
+POST /v1/subjects/:id/retire
+PUT /v1/projects
+POST /v1/projects/:id/retire
+POST /v1/projects/:id/purge
+POST /v1/settings/permission
+POST /v1/settings/auto-mode
+PUT /v1/board/successor
+PUT /v1/board/messages
+POST /v1/board/messages/:id/replies
+POST /v1/board/messages/:id/withdraw
+POST /v1/board/messages/:id/accept
+POST /v1/board/messages/:id/filing-lease/complete
+POST /v1/board/messages/:id/filing-lease/fail
+POST /v1/board/messages/:id/filing-lease
+PUT /v1/board/receipts
+PUT /v1/board/claims
+POST /v1/board/claims/release-task
+POST /v1/board/claims/:id/renew
+POST /v1/board/claims/:id/release
+POST /v1/config/machine-keys/:keyId/claim-challenge
+POST /v1/config/machine-keys/:keyId/claim
+POST /v1/config-access/grant
+POST /v1/config-access/withdraw
+POST /v1/members/permission
+POST /v1/outside-intake
+POST /v1/outside-intake/pause
+POST /v1/outside-intake/resume
+POST /v1/outside-blocks
+DELETE /v1/outside-blocks/:userId
+POST /v1/moderation/hide
+POST /v1/moderation/unhide
+PUT /v1/docs/order
+POST /v1/docs/rename-subject
+POST /v1/catalogues/ensure-built-ins
+PUT /v1/lens-catalogue/lenses
+POST /v1/lens-catalogue/import
+PUT /v1/lens-catalogue/profiles
+PUT /v1/lens-catalogue/selections
+POST /v1/port-catalogue/write
+POST /v1/port-catalogue/import
+POST /v1/task-flow/compose
+POST /v1/task-flow/stage-update
+POST /v1/task-flow/advance
+POST /v1/task-flow/await-ruling
+POST /v1/task-flow/abandon
+POST /v1/task-flow/adopt
+POST /v1/task-flow/attach-text
+POST /v1/task-flow/delete-text
+POST /v1/task-flow/copy-text
+POST /v1/workflow-catalogue/draft
+POST /v1/workflow-catalogue/import/v2
+POST /v1/workflow-catalogue/promote
+POST /v1/workflow-catalogue/retire
+PUT /v1/config/entries/:key
+DELETE /v1/config/entries/:key
+PUT /v1/config/secrets/:key
+DELETE /v1/config/secrets/:key
+PUT /v1/config/credential-preferences
+DELETE /v1/config/credential-preferences
+POST /v1/config/data-keys
+POST /v1/config/data-keys/:dekId/wraps
+POST /v1/config/data-keys/:dekId/retire
+DELETE /v1/config/wraps/:recipientKeyId
+PUT /v1/config/machine-keys/:keyId
+POST /v1/config/machine-keys/:keyId/revoke
+PUT /v1/docs
+POST /v1/docs/import
+POST /v1/docs/canon/import
+DELETE /v1/docs/:id
+POST /v1/docs/:id/consume
+POST /v1/docs/:id/restore
+PUT /v1/runs/:id/score
+POST /v1/runs/:id/void
+POST /v1/runs/:id/unvoid
+PUT /v1/snapshots/:kind
+`
+    .trim()
+    .split('\n'),
+)
+
+const guardId = '01990000-0000-7000-8000-000000000001'
+const guardStamp = '2026-11-11T00:00:00.000Z'
+const revision = { id: guardId, expectedRevision: 1 }
+const recordTenantRouteBodies = new Map<string, unknown>([
+  [
+    'PUT /v1/docs/order',
+    { scope: 'project', subject: PLATFORM_NAME, parentId: null, orderedIds: [guardId] },
+  ],
+  [
+    'PUT /v1/docs',
+    {
+      scope: 'project',
+      subject: PLATFORM_NAME,
+      slug: 'guard',
+      title: 'Guard',
+      body: 'Guard.',
+      reason: 'guard',
+      author: 'guard',
+    },
+  ],
+  [
+    'POST /v1/docs/import',
+    {
+      doc: {
+        scope: 'project',
+        subject: PLATFORM_NAME,
+        slug: 'guard',
+        title: 'Guard',
+        body: 'Guard.',
+        delivery: 'demand',
+        audiences: ['technical'],
+        createdAt: guardStamp,
+        updatedAt: guardStamp,
+        deletedAt: null,
+      },
+      revisions: [],
+    },
+  ],
+  [
+    'POST /v1/docs/canon/import',
+    {
+      address: { kind: 'project', subject: PLATFORM_NAME, projectId: guardId },
+      rows: [{ slug: 'AGENTS.md', title: 'AGENTS.md', body: 'Guard.' }],
+      expectedRevisions: {},
+      reason: 'guard',
+      author: 'guard',
+    },
+  ],
+  [
+    'POST /v1/task-flow/compose',
+    {
+      requestId: guardId,
+      flowChange: {
+        ...revision,
+        values: { updatedMachineId: guardId, updatedAt: guardStamp },
+      },
+    },
+  ],
+  [
+    'POST /v1/task-flow/stage-update',
+    { requestId: guardId, stages: [{ ...revision, values: {} }] },
+  ],
+  ['POST /v1/task-flow/advance', { requestId: guardId, stage: { ...revision, values: {} } }],
+  [
+    'POST /v1/task-flow/await-ruling',
+    {
+      requestId: guardId,
+      stage: { ...revision, values: { state: 'awaiting-ruling', question: 'Proceed?' } },
+    },
+  ],
+  [
+    'POST /v1/task-flow/abandon',
+    { requestId: guardId, stage: { ...revision, values: { state: 'abandoned' } } },
+  ],
+  [
+    'POST /v1/task-flow/adopt',
+    {
+      requestId: guardId,
+      stage: revision,
+      taskId: guardId,
+      updatedMachineId: guardId,
+      updatedAt: guardStamp,
+    },
+  ],
+  [
+    'POST /v1/task-flow/attach-text',
+    {
+      requestId: guardId,
+      rows: [
+        {
+          id: guardId,
+          stageRecordId: guardId,
+          stepOrdinal: 1,
+          stepSlug: 'guard',
+          body: 'Guard.',
+          createdAt: guardStamp,
+        },
+      ],
+    },
+  ],
+  [
+    'POST /v1/task-flow/delete-text',
+    { requestId: guardId, stageRecordId: guardId, ids: [guardId] },
+  ],
+  [
+    'POST /v1/task-flow/copy-text',
+    {
+      requestId: guardId,
+      row: {
+        id: guardId,
+        workflowTextRecordId: guardId,
+        stageRecordId: guardId,
+        taskDocumentReference: 'DEV-2247/3',
+        copiedAt: guardStamp,
+      },
+    },
+  ],
+])
+
+test('every registered record API write resolves a refusing tenant or names its exemption', () => {
+  const app = recordApiTestApp(fixtureIdentity, {
+    ...idleRecordApiDeps(),
+    ...idleSubjectDeps(),
+    deleteTrialSpace: async () => ({
+      nothingToRemove: true,
+      activeSpaceCleared: false,
+      tables: [],
+      neutralized: [],
+    }),
+    deleteSpace: async () => ({
+      nothingToRemove: true,
+      activeSpaceCleared: false,
+      tables: [],
+      neutralized: [],
+    }),
+  })
+  const routes = new Set(
+    app.routes
+      .filter(
+        (route) =>
+          concreteWriteMethods.has(route.method) ||
+          `${route.method} ${route.path}` === 'ALL /api/auth/*',
+      )
+      .map((route) => `${route.method} ${route.path}`),
+  )
+  const classified = new Set([...recordTenantRoutes, ...recordWriteExemptions.keys()])
+  expect(routes).toEqual(classified)
+})
+
+test('every classified record tenant write reaches its refusing seam', async () => {
+  const app = recordApiTestApp(fixtureIdentity, {
+    ...idleRecordApiDeps(),
+    ...idleSubjectDeps(),
+    writeTaskFlow: async () => ({}),
+  })
+  const refusal = recordWriteSpaceRefusal()
+  const failures: string[] = []
+  for (const route of recordTenantRoutes) {
+    const separator = route.indexOf(' ')
+    const method = route.slice(0, separator)
+    const path = route
+      .slice(separator + 1)
+      .replace(/:[^/]+/g, '01990000-0000-7000-8000-000000000001')
+    const response = await app.request(path, {
+      method,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(recordTenantRouteBodies.get(route) ?? {}),
+    })
+    const body = await response.json().catch(() => null)
+    if (response.status !== refusal.status || JSON.stringify(body) !== JSON.stringify(refusal.body))
+      failures.push(`${route}: ${response.status} ${JSON.stringify(body)}`)
+  }
+  expect(failures).toEqual([])
 })
