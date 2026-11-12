@@ -1,8 +1,10 @@
 import { expect, test } from 'bun:test'
 import { recordUnreachableRefusal } from '../../../shared/record-remedies.ts'
+import { JOBS } from '../jobs/jobs.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { args, context, database } from './workflow-cursor-test.fixture.ts'
 import {
+  decideStepDispatch,
   dispatchForStep,
   mergeForStep,
   type StepActionTarget,
@@ -12,6 +14,7 @@ import {
 const target = (overrides: Partial<StepActionTarget> = {}): StepActionTarget => ({
   cursor: 17,
   cursorRecordId: 'cursor-record-17',
+  workflowSlug: 'ship-task',
   stepSlug: 'implement',
   taskKey: 'DEV-2283',
   jobs: ['implement'],
@@ -38,6 +41,7 @@ test('the action target selects the cursor handle and reads its composed ordinal
   expect(await stepActionTarget(cursor.id, d)).toEqual({
     cursor: cursor.id,
     cursorRecordId: row.record_id,
+    workflowSlug: 'flow',
     stepSlug: composition.steps[0]!.slug,
     taskKey: args.key,
     jobs: composition.steps[0]!.jobs,
@@ -110,20 +114,94 @@ test('an unreachable current-step read propagates its refusal and starts nothing
   expect(dispatches).toBe(0)
 })
 
-test('a keyless cursor refuses before dispatch', async () => {
-  let dispatches = 0
-  await expect(
-    dispatchForStep(
-      { cursor: 17, job: 'implement', argv: ['do', 'implement'] },
-      {
-        read: async () => target({ taskKey: '' }),
-        dispatch: async () => {
-          dispatches += 1
-        },
+test('the pure dispatch decision accepts a keyless explore lookup without a key', () => {
+  expect(
+    decideStepDispatch({
+      cursor: 17,
+      taskKey: '',
+      workflowSlug: 'explore',
+      stepSlug: 'investigate',
+      stepJobs: ['understand'],
+      job: JOBS.understand!,
+    }),
+  ).toEqual({ action: 'dispatch-without-key' })
+})
+
+test.each(['explore', 'operate', 'report', 'triage'])(
+  'the pure dispatch decision refuses implement from keyless %s with the task remedy',
+  (workflowSlug) => {
+    expect(
+      decideStepDispatch({
+        cursor: 17,
+        taskKey: '',
+        workflowSlug,
+        stepSlug: 'act',
+        stepJobs: ['implement'],
+        job: JOBS.implement!,
+      }),
+    ).toEqual({
+      action: 'refuse',
+      reason:
+        `workflow ${workflowSlug} cursor 17 has no task key, and implement writes the repository; ` +
+        'compose plan-task (or take up a task), then dispatch from that keyed cursor',
+    })
+  },
+)
+
+test('the pure dispatch decision preserves a keyed cursor key', () => {
+  expect(
+    decideStepDispatch({
+      cursor: 17,
+      taskKey: 'DEV-2289',
+      workflowSlug: 'ship-task',
+      stepSlug: 'implement',
+      stepJobs: ['implement'],
+      job: JOBS.implement!,
+    }),
+  ).toEqual({ action: 'dispatch-with-key', key: 'DEV-2289' })
+})
+
+test.each([
+  { taskKey: '', workflowSlug: 'explore' },
+  { taskKey: 'DEV-2289', workflowSlug: 'ship-task' },
+])('the pure dispatch decision refuses a job missing from the step for $workflowSlug', (cursor) => {
+  expect(
+    decideStepDispatch({
+      cursor: 17,
+      ...cursor,
+      stepSlug: 'investigate',
+      stepJobs: ['understand'],
+      job: JOBS.diagnose!,
+    }),
+  ).toEqual({
+    action: 'refuse',
+    reason: 'step investigate of cursor 17 declares jobs: understand; diagnose is not one of them',
+  })
+})
+
+test('a keyless lookup dispatch preserves argv and the cursor step binding', async () => {
+  const calls: unknown[][] = []
+  await dispatchForStep(
+    { cursor: 17, job: 'understand', argv: ['do', 'understand', 'Inspect it.'] },
+    {
+      read: async () =>
+        target({
+          taskKey: '',
+          workflowSlug: 'explore',
+          stepSlug: 'investigate',
+          jobs: ['understand'],
+        }),
+      dispatch: async (...args) => {
+        calls.push(args)
       },
-    ),
-  ).rejects.toThrow('cursor 17 has no task key; workflow dispatch needs a keyed cursor')
-  expect(dispatches).toBe(0)
+    },
+  )
+  expect(calls).toEqual([
+    [
+      ['do', 'understand', 'Inspect it.'],
+      { cursorRecordId: 'cursor-record-17', stepSlug: 'investigate' },
+    ],
+  ])
 })
 
 test('land refuses an undeclared action exactly and never calls its PR service', async () => {

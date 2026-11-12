@@ -3,7 +3,11 @@ title: Investigate the subject
 stage: plan
 floor:
   - recorded-artifact
-jobs: []
+jobs:
+  - understand
+  - file-question
+  - mcp-query
+  - diagnose
 autonomy: auto
 needs: []
 ---

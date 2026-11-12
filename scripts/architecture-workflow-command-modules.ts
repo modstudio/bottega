@@ -34,6 +34,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
   module('orchestrator/src/workflow/workflow-step-action.ts', [
     'bun:sqlite',
     '../database/db.ts',
+    '../jobs/jobs.ts',
     './workflow-cursor-selection.ts',
     './workflow-cursor-serve.ts',
   ]),
