@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../shared/brand.ts'
+import { TASK_CLOSED_WITH_RESIDUE_EXIT_CODE } from '../shared/task-close-exit.ts'
 import { type BinaryEntries, dispatchBinary, routeHelp } from './dispatch.ts'
 import { HAND_PARSED_OWNERS, ROUTES } from './routes.ts'
 
@@ -367,6 +368,50 @@ test('project purge forwards its confirmation to every destructive owner part', 
     'hub: project-purge fixture --confirm fixture',
     'orchestrator: project-purge-remove fixture --confirm fixture',
   ])
+})
+
+test('task close stops on close failure, clears after residue, and clears after clean close', async () => {
+  const calls: string[] = []
+  expect(
+    await dispatchBinary(
+      [
+        'task',
+        'close',
+        'DEV-2270',
+        '--project',
+        PLATFORM_NAME,
+        '--keep-branches',
+        '--abandon',
+        'superseded',
+      ],
+      entries(calls),
+      () => '',
+    ),
+  ).toBe(0)
+  expect(calls).toEqual([
+    `hub: task close DEV-2270 --project ${PLATFORM_NAME} --keep-branches --abandon superseded`,
+    'orchestrator: context clear --task DEV-2270',
+  ])
+
+  calls.length = 0
+  const failed = entries(calls)
+  failed.hub = async (argv) => {
+    calls.push(`hub: ${argv.join(' ')}`)
+    return 7
+  }
+  expect(await dispatchBinary(['task', 'close', 'DEV-2270'], failed, () => '')).toBe(7)
+  expect(calls).toEqual(['hub: task close DEV-2270'])
+
+  calls.length = 0
+  const residue = entries(calls)
+  residue.hub = async (argv) => {
+    calls.push(`hub: ${argv.join(' ')}`)
+    return TASK_CLOSED_WITH_RESIDUE_EXIT_CODE
+  }
+  expect(await dispatchBinary(['task', 'close', 'DEV-2270'], residue, () => '')).toBe(
+    TASK_CLOSED_WITH_RESIDUE_EXIT_CODE,
+  )
+  expect(calls).toEqual(['hub: task close DEV-2270', 'orchestrator: context clear --task DEV-2270'])
 })
 
 test('composites fail fast except for doctor and never start collect watch', async () => {

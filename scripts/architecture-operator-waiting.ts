@@ -14,12 +14,12 @@ const module = (file: string, allowed: string[]): OperatorWaitingModule => ({
 export const operatorWaitingModules: OperatorWaitingModule[] = [
   module('orchestrator/src/run/run-message-commands.ts', [
     '../../../shared/brand.ts',
-    '../../../shared/context-moment.ts',
     '../agent/agent-registry.ts',
     '../agent/agents.ts',
     '../cli/args.ts',
     '../database/db.ts',
     '../doc/context-moment-adapter.ts',
+    '../doc/context-moment.ts',
     '../evidence/evidence-query.ts',
     '../jobs/job-fidelity.ts',
     '../jobs/jobs.ts',

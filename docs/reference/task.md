@@ -57,7 +57,7 @@ tasks and task documents
 
 **Synopsis:** `bottega task close <key> [--project <X>] [--keep-branches] [--abandon <reason>]`
 
-close a task, release its claims, and prune its branches
+close a task, release its claims, prune its branches, and clear its stored context
 
 ### Options
 

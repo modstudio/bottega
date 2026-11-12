@@ -7,6 +7,7 @@ function recordingContextMomentPorts(
   bodies: Map<string, string>,
 ): ContextMomentPorts {
   return {
+    revision: async () => undefined,
     set: async (input) => {
       calls.push(`set ${input.kind} ${input.id} on ${input.task}`)
       bodies.set(input.id, input.body)

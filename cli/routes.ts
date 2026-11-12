@@ -1,3 +1,5 @@
+import { TASK_CLOSED_WITH_RESIDUE_EXIT_CODE } from '../shared/task-close-exit.ts'
+
 type RouteOwner = 'orch' | 'hub' | 'local' | 'composite' | 'outbox' | 'storage'
 
 export const HAND_PARSED_OWNERS: ReadonlySet<RouteOwner> = new Set([
@@ -17,6 +19,7 @@ export type CommandRoute = {
     label: string
     options?: Readonly<Record<string, boolean>>
     fixedArguments?: readonly string[]
+    continueOnExitCodes?: readonly number[]
   }[]
   /** Leading non-option arguments forwarded to every composite part. */
   positionals?: readonly string[]
@@ -122,6 +125,29 @@ export const ROUTES = (
     route('workflow epic', 'orch', 'epic', 'show the scoreboard for an epic and its child tasks'),
     route('workflow', 'orch', 'workflow'),
     route('task recent', 'hub', 'tasks'),
+    {
+      command: ['task', 'close'],
+      owner: 'composite',
+      description:
+        'close a task, release its claims, prune its branches, and clear its stored context',
+      positionals: ['key'],
+      composite: [
+        {
+          owner: 'hub',
+          argv: ['task', 'close'],
+          label: 'task close',
+          options: { '--project': true, '--keep-branches': false, '--abandon': true },
+          continueOnExitCodes: [TASK_CLOSED_WITH_RESIDUE_EXIT_CODE],
+        },
+        {
+          owner: 'orch',
+          argv: ['context', 'clear'],
+          label: 'task context clear',
+          fixedArguments: ['--task'],
+          options: {},
+        },
+      ],
+    },
     route('task', 'hub', 'task'),
     route('note new', 'hub', 'note new'),
     route('note', 'hub', 'note'),
