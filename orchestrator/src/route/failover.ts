@@ -192,6 +192,7 @@ export function detachedRunOptions(
   spec: DetachSpec,
 ) {
   const {
+    binding,
     agent,
     mcp,
     model,
@@ -226,6 +227,7 @@ export function detachedRunOptions(
     job: jobName,
     prompt,
     reserveId,
+    binding,
     agent,
     ...detachRouting(consumed as DetachSpec),
     schemaPath: spec.schema,
