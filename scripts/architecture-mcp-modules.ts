@@ -30,6 +30,17 @@ export const mcpModules: McpModule[] = [
     '../workflow/workflow-task-linking.ts',
     '../workflow/workflow-task-reference.ts',
   ]),
+  module('orchestrator/src/mcp/mcp-workflow-context-tools.ts', [
+    '@modelcontextprotocol/server',
+    'zod',
+    '../../../shared/context-moment.ts',
+    '../../../shared/record-shape.ts',
+    '../doc/context-moment-adapter.ts',
+    '../workflow/workflow-cursor.ts',
+    '../workflow/workflow-cursor-ruling.ts',
+    '../workflow/workflow-task-reference.ts',
+    './mcp-workflow-cursor.ts',
+  ]),
   module('orchestrator/src/mcp/mcp-setup-tools.ts', [
     'node:fs',
     'node:path',

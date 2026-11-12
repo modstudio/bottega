@@ -16,6 +16,23 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     '../../../shared/record-shape.ts',
     '../cli/args.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-text-commands.ts', [
+    '../../../shared/brand.ts',
+    '../cli/args.ts',
+    './workflow-command-arguments.ts',
+    './workflow-task-reference.ts',
+    './workflow-text.ts',
+    './workflow-text-copy.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-context-moment.ts', [
+    'bun:sqlite',
+    '../../../shared/context-moment.ts',
+    '../database/db.ts',
+    './task-flow-store.ts',
+    './workflow-cursor-arguments.ts',
+    './workflow-cursor-selection.ts',
+    './workflow-cursor-serve.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-hosted-space.ts', ['bun:sqlite']),
   module('orchestrator/src/workflow/workflow-command-arguments.ts', [
     '../../../shared/brand.ts',

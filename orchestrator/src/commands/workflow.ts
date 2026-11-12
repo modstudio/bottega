@@ -14,7 +14,6 @@ import {
   awaitCommand,
   catalogueVersionsCommand,
   composeCommand,
-  copyWorkflowTextCommand,
   cursorsCommand,
   execCommand,
   forkWorkflowCommand,
@@ -35,7 +34,6 @@ import {
   setWorkflowCommand,
   showCatalogueCommand,
   showWorkflowCommand,
-  showWorkflowTextCommand,
   stepCommand,
   type WorkflowCommandOptions,
   type WorkflowPresentation,
@@ -44,6 +42,10 @@ import {
 } from '../workflow/workflow-commands.ts'
 import { workflowCursorIdentityMap } from '../workflow/workflow-cursor-identity.ts'
 import { RECORD_EVIDENCE_FLAG } from '../workflow/workflow-evidence-payload.ts'
+import {
+  copyWorkflowTextCommand,
+  showWorkflowTextCommand,
+} from '../workflow/workflow-text-commands.ts'
 import { collect, log, productArgv, rawArgv } from './support.ts'
 
 const collectedOption = (flags: string, description: string) =>

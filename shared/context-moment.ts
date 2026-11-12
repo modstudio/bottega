@@ -2,14 +2,14 @@
 /** Pure context-item effects and the remaining legacy prompt policy. */
 import { PLATFORM_SLUG } from './brand.ts'
 
-export const CONTEXT_MOMENTS = [
+const CONTEXT_MOMENTS = [
   'workflow-next',
   'workflow-rule',
   'workflow-await',
   'question-answer',
 ] as const
-export type ContextMoment = (typeof CONTEXT_MOMENTS)[number]
-export type ContextMomentItemKind = 'next-action' | 'ruling' | 'position' | 'open-question'
+type ContextMoment = (typeof CONTEXT_MOMENTS)[number]
+type ContextMomentItemKind = 'next-action' | 'ruling' | 'position' | 'open-question'
 
 export type ContextMomentEffect = {
   writes: Array<{ kind: ContextMomentItemKind; id: string; source: string; body: string }>

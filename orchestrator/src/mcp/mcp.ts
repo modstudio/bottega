@@ -2,10 +2,8 @@ import { McpServer } from '@modelcontextprotocol/server'
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
 import { z } from 'zod'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
-import { type ContextMomentEffect, contextMomentEffect } from '../../../shared/context-moment.ts'
-import { assertRecordShape } from '../../../shared/record-shape.ts'
 import { db, enableSchemaReload, sessionId } from '../database/db.ts'
-import { applyContextMomentEffect, type ContextMomentPorts } from '../doc/context-moment-adapter.ts'
+import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { registerStandardRuntime } from '../runtime/runtime-registration.ts'
 
@@ -47,8 +45,6 @@ import {
   type LandingBranchPorts,
   workflowComposeBranchRefusal,
 } from '../workflow/workflow-compose-branch.ts'
-import { awaitWorkflowRuling } from '../workflow/workflow-cursor.ts'
-import { ruleWorkflow } from '../workflow/workflow-cursor-ruling.ts'
 import {
   mcpWorkflowCursorContext,
   resolveMcpSelectedCursorContext,
@@ -74,7 +70,7 @@ import { registerSearchTools } from './mcp-search-tools.ts'
 import { registerSetupTools } from './mcp-setup-tools.ts'
 import { registerSubjectTools } from './mcp-subject-tools.ts'
 import { advanceWorkflow } from './mcp-workflow-advance.ts'
-import { resolveMcpLinkedWorkflowCursor } from './mcp-workflow-cursor.ts'
+import { registerWorkflowContextTools } from './mcp-workflow-context-tools.ts'
 import { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
 import { resolveMcpWorkflowSpace } from './mcp-workflow-space.ts'
 import { registerWorkflowStepTool } from './mcp-workflow-step.ts'
@@ -106,22 +102,6 @@ const text = (value: unknown, isError = false) => ({
   ],
   ...(isError ? { isError: true } : {}),
 })
-
-async function mcpContextReports(
-  taskKey: string | null | undefined,
-  effect: ContextMomentEffect,
-  ports?: ContextMomentPorts,
-): Promise<string[]> {
-  const lines: string[] = []
-  await applyContextMomentEffect(
-    taskKey,
-    effect,
-    false,
-    { log: (line) => lines.push(line), error: (line) => lines.push(line) },
-    ports,
-  )
-  return lines
-}
 
 const requiredReportField = (field: string, belongs: string) =>
   z
@@ -532,123 +512,6 @@ async function abandonWorkflowWithTextCopy(cursor: number, reason: string, ports
   return text(result)
 }
 
-function registerAwaitWorkflowRulingTool(server: McpServer, ports: DocsMcpPorts): void {
-  server.registerTool(
-    'await_workflow_ruling',
-    {
-      description: 'Record that the workflow is paused on a question for the operator.',
-      inputSchema: z.object({
-        slug: z.string().trim().min(1),
-        project: z.string().trim().min(1),
-        mode: z.string().trim().min(1).optional(),
-        args: z.record(z.string(), z.string()).optional(),
-        question: z.string().trim().min(1),
-        cursor: z.number().int().positive().optional(),
-      }),
-    },
-    async ({ slug, project, mode, args, question, cursor }) => {
-      const shapedQuestion = assertRecordShape('open question', question)
-      const { context, effectiveMode } = await resolveMcpLinkedWorkflowCursor(
-        slug,
-        project,
-        mode,
-        args ?? {},
-        cursor,
-        'await_workflow_ruling',
-        'pass the mode argument',
-        ports.hubTaskReader,
-      )
-      const result = await awaitWorkflowRuling(
-        slug,
-        project,
-        effectiveMode,
-        args ?? {},
-        shapedQuestion,
-        context,
-        undefined,
-        undefined,
-        cursor,
-      )
-      const reports = await mcpContextReports(
-        context.workflowKey,
-        contextMomentEffect({
-          moment: 'workflow-await',
-          taskKey: context.workflowKey,
-          questionId: result.questionId,
-          text: shapedQuestion,
-        }),
-        ports.contextMomentPorts,
-      )
-      return {
-        content: [
-          { type: 'text' as const, text: JSON.stringify(result) },
-          ...reports.map((line) => ({ type: 'text' as const, text: line })),
-        ],
-      }
-    },
-  )
-}
-
-function registerRuleWorkflowTool(server: McpServer, ports: DocsMcpPorts): void {
-  server.registerTool(
-    'rule_workflow',
-    {
-      description: 'Record a ruling and resume the workflow on the same step.',
-      inputSchema: z.object({
-        slug: z.string().trim().min(1),
-        project: z.string().trim().min(1),
-        mode: z.string().trim().min(1).optional(),
-        args: z.record(z.string(), z.string()).optional(),
-        ruling: z.string().trim().min(1),
-        from_operator: z.boolean().optional(),
-        cursor: z.number().int().positive().optional(),
-      }),
-    },
-    async ({ slug, project, mode, args, ruling, from_operator, cursor }) => {
-      const shapedRuling = assertRecordShape('ruling', ruling)
-      const { context, effectiveMode } = await resolveMcpLinkedWorkflowCursor(
-        slug,
-        project,
-        mode,
-        args ?? {},
-        cursor,
-        'rule_workflow',
-        'pass the mode argument',
-        ports.hubTaskReader,
-      )
-      const result = await ruleWorkflow(
-        slug,
-        project,
-        effectiveMode,
-        args ?? {},
-        shapedRuling,
-        Boolean(from_operator),
-        'mcp',
-        context,
-        undefined,
-        cursor,
-      )
-      const reports = await mcpContextReports(
-        context.workflowKey,
-        contextMomentEffect({
-          moment: 'workflow-rule',
-          taskKey: context.workflowKey,
-          questionId: result.questionId,
-          operatorRuled: Boolean(from_operator),
-          text: shapedRuling,
-        }),
-        ports.contextMomentPorts,
-      )
-      return {
-        content: [
-          { type: 'text' as const, text: JSON.stringify(result) },
-          ...reports.map((line) => ({ type: 'text' as const, text: line })),
-        ],
-      }
-    },
-  )
-}
-
 export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
   const server = new McpServer({ name: MCP_SERVER_NAME, version: '0.1.0' })
   const registerSchemaReload = ports.registerSchemaReload ?? enableSchemaReload
@@ -751,8 +614,7 @@ function registerWorkflowActionTools(server: McpServer, ports: DocsMcpPorts): vo
       ),
   )
 
-  registerAwaitWorkflowRulingTool(server, ports)
-  registerRuleWorkflowTool(server, ports)
+  registerWorkflowContextTools(server, ports)
 
   server.registerTool(
     'abandon_workflow',
