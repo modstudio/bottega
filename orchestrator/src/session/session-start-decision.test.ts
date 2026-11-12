@@ -3,7 +3,7 @@ import { decideSessionStart } from './session-start-decision.ts'
 
 describe('session start decision', () => {
   test('composes when the session holds no explore cursor', () => {
-    expect(decideSessionStart({ session: 'session', project: 'bottega', cursors: [] })).toEqual({
+    expect(decideSessionStart({ session: 'session', project: 'fixture', cursors: [] })).toEqual({
       kind: 'compose',
     })
   })
@@ -12,7 +12,7 @@ describe('session start decision', () => {
     expect(
       decideSessionStart({
         session: 'session',
-        project: 'bottega',
+        project: 'fixture',
         cursors: [{ id: 17, workflow: 'explore', state: 'active' }],
       }),
     ).toEqual({ kind: 'reuse', cursor: 17 })
@@ -22,7 +22,7 @@ describe('session start decision', () => {
     expect(
       decideSessionStart({
         session: 'session',
-        project: 'bottega',
+        project: 'fixture',
         cursors: [{ id: 17, workflow: 'explore', state: 'done' }],
       }),
     ).toEqual({ kind: 'compose' })

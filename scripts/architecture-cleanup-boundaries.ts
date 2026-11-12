@@ -56,6 +56,33 @@ export const cleanupBoundarySpecs = [
       'Keep process cwd observation independent of stores, routing, transports, and removal mechanics.',
   },
   {
+    name: 'session-start-decision-boundary',
+    file: 'orchestrator/src/session/session-start-decision.ts',
+    allowed: [],
+    typeOnlyAllowed: [],
+    reason: 'Keep the session explore idempotence decision pure over observed cursor facts.',
+  },
+  {
+    name: 'session-start-boundary',
+    file: 'orchestrator/src/session/session-start.ts',
+    allowed: [
+      'bun:sqlite',
+      'node:path',
+      '../../../shared/brand.ts',
+      '../../../shared/refusal.ts',
+      '../database/db.ts',
+      '../project/projects.ts',
+      '../workflow/task-flow-store.ts',
+      '../workflow/workflow-cursor-live-autonomy.ts',
+      '../workflow/workflow-cursor-selection.ts',
+      '../workflow/workflow-cursor.ts',
+      './session-start-decision.ts',
+    ],
+    typeOnlyAllowed: ['bun:sqlite'],
+    reason:
+      'Keep session-start composition in one adapter over project, cursor, and autonomy owners.',
+  },
+  {
     name: 'session-adopt-boundary',
     file: 'orchestrator/src/session/session-adopt.ts',
     allowed: [

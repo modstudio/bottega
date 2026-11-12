@@ -4,10 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
-import {
-  promoteStepCatalogueLocal,
-  setStepCatalogueLocal,
-} from '../workflow/step-catalogue.ts'
+import { promoteStepCatalogueLocal, setStepCatalogueLocal } from '../workflow/step-catalogue.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { parseWorkflowTree } from '../workflow/workflow-tree.ts'
 import { collectWorkflowTree } from '../workflow/workflow-tree-files.ts'
@@ -24,7 +21,7 @@ test('two starts for one session reuse one keyless explore cursor', async () => 
     name: project,
     path: repositoryRoot,
     stack: 'bun',
-    settings: { trunk: 'main' },
+    settings: { trunk: 'main', docs: { protocol: 'orch-docs' } },
   })
   const tree = parseWorkflowTree(collectWorkflowTree(repositoryRoot))
   const catalogue = setStepCatalogueLocal(

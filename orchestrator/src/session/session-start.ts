@@ -4,11 +4,12 @@
 import type { Database } from 'bun:sqlite'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { db, sessionId } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
-import { resolveWorkflowLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
 import { composeWorkflowWithCursor } from '../workflow/workflow-cursor.ts'
+import { resolveWorkflowLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
 import { resolveWorkflowCursorContext } from '../workflow/workflow-cursor-selection.ts'
 import { decideSessionStart } from './session-start-decision.ts'
 
@@ -24,6 +25,8 @@ type SessionStartDependencies = {
 }
 
 const cursorLine = (cursor: number) => `cursor ${cursor} explore`
+const remediedLine = (condition: string, remedy: string) =>
+  renderRefusal(refusal(condition, { kind: 'edit', text: remedy })).replace(/\s+/g, ' ')
 
 export async function startSession(
   dependencies: SessionStartDependencies = {},
@@ -36,24 +39,26 @@ export async function startSession(
     ? await taskFlowReadStore(database).listOpenStages({ sessionId: session })
     : []
   const cursors = openCursors.map((cursor) => ({
-          id: cursor.id,
-          workflow: cursor.workflow_slug,
-          state: cursor.state,
-        }))
+    id: cursor.id,
+    workflow: cursor.workflow_slug,
+    state: cursor.state,
+  }))
   const decision = decideSessionStart({ session, project: project?.name ?? null, cursors })
   if (decision.kind === 'refuse-session')
     return {
       cursor: null,
-      line:
-        `session start could not establish the current harness session id; cleared by: ` +
+      line: remediedLine(
+        'session start could not establish the current harness session id',
         `run ${PLATFORM_SLUG} session start from a supported harness SessionStart hook`,
+      ),
     }
   if (decision.kind === 'refuse-project')
     return {
       cursor: null,
-      line:
-        `no registered project contains ${cwd}; cleared by: ${PLATFORM_SLUG} project add ${cwd}, ` +
-        'or start the session in a registered checkout',
+      line: remediedLine(
+        `no registered project contains ${cwd}`,
+        `${PLATFORM_SLUG} project add ${cwd}, or start the session in a registered checkout`,
+      ),
     }
   if (decision.kind === 'reuse')
     return { cursor: decision.cursor, line: cursorLine(decision.cursor) }
@@ -73,10 +78,7 @@ export async function startSession(
     {},
     live,
   )
-  if (!composed.cursor)
-    throw new Error(
-      `explore did not open a cursor; cleared by: ${PLATFORM_SLUG} workflow compose explore --project ${project!.name}`,
-    )
+  if (!composed.cursor) throw new Error('explore did not open a cursor')
   return { cursor: composed.cursor.id, line: cursorLine(composed.cursor.id) }
 }
 
@@ -89,9 +91,10 @@ export async function safeStartSession(
     const condition = error instanceof Error ? error.message : String(error)
     return {
       cursor: null,
-      line:
-        `session start could not establish an explore cursor: ${condition}; cleared by: ` +
+      line: remediedLine(
+        `session start could not establish an explore cursor: ${condition}`,
         `clear the reported condition and run ${PLATFORM_SLUG} session start again`,
+      ),
     }
   }
 }

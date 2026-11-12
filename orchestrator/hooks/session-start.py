@@ -11,9 +11,11 @@ from hook_paths import bottega_bin
 from registered_scope import should_hook_act
 
 CLI_TIMEOUT_SECONDS = 10
+PLATFORM_SLUG = os.path.basename(bottega_bin())
 
 
 def emit(text):
+    text = " ".join(text.split())
     sys.stdout.write(
         json.dumps(
             {
@@ -62,13 +64,13 @@ def main():
             condition = (result.stderr or "").strip() or f"command exited {result.returncode}"
             line = (
                 f"session start could not establish an explore cursor: {condition}; cleared by: "
-                "clear the reported condition and run bottega session start again"
+                f"clear the reported condition and run {PLATFORM_SLUG} session start again"
             )
         emit(line)
     except Exception as error:
         emit(
             f"session start could not establish an explore cursor: {error}; cleared by: "
-            "clear the reported condition and run bottega session start again"
+            f"clear the reported condition and run {PLATFORM_SLUG} session start again"
         )
     return 0
 
