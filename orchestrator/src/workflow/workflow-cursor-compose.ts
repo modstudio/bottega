@@ -271,7 +271,9 @@ function applyHostedCompose(
 ): SelectableCursorRow {
   return writeTransaction(() => {
     const result = taskFlowLocalStore(database).write('compose', payload, hosted)
-    const row = taskFlowLocalStore(database).stageByRecordId(result.stage!.id) as SelectableCursorRow
+    const row = taskFlowLocalStore(database).stageByRecordId(
+      result.stage!.id,
+    ) as SelectableCursorRow
     return hosted?.stage ? { ...row, id: hosted.stage.number } : row
   }, database)
 }

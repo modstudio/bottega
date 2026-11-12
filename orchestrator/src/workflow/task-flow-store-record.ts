@@ -14,13 +14,13 @@ import {
   TASK_FLOW_STAGE_LIST_LIMIT_MAX,
 } from '../record/record-task-flow-contract.ts'
 import {
-  currentRecordWriteDecision,
-  throwIfRecordRefused,
-} from '../record/record-write-authority.ts'
-import {
   resolveTaskFlowDestination,
   taskFlowWriteTarget,
 } from '../record/record-task-flow-write-client.ts'
+import {
+  currentRecordWriteDecision,
+  throwIfRecordRefused,
+} from '../record/record-write-authority.ts'
 import { sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
 import type {
   TaskFlowObligationRow,
@@ -189,8 +189,9 @@ class RecordTaskFlowReadStore {
       projects(undefined, this.database).map(({ name }) => this.destination(name)),
     )
     return [
-      ...new Map(destinations.map((destination) => [destination.destinationSpaceId, destination]))
-        .values(),
+      ...new Map(
+        destinations.map((destination) => [destination.destinationSpaceId, destination]),
+      ).values(),
     ]
   }
 
@@ -477,8 +478,13 @@ class RecordTaskFlowReadStore {
   async obligationByRecordId(recordId: string): Promise<TaskFlowObligationRow | null> {
     const result = await this.client.readTaskFlowObligation?.(recordId)
     if (!result) return null
+    const {
+      stepOrdinal: _stepOrdinal,
+      stepSlug: _stepSlug,
+      ...row
+    } = openObligationRow(result.obligation, required(result.stage.number, 'number'))
     return {
-      ...openObligationRow(result.obligation, required(result.stage.number, 'number')),
+      ...row,
       cursor_record_id: result.obligation.stageRecordId,
       satisfied_at: result.obligation.satisfiedAt,
       abandoned_at: result.obligation.abandonedAt,

@@ -14,6 +14,9 @@ const WORKFLOW_VERSION_ID = '00000000-0000-4000-8000-000000000005'
 const CATALOGUE_VERSION_ID = '00000000-0000-4000-8000-000000000006'
 const WORKFLOW_ID = '00000000-0000-4000-8000-000000000010'
 const CATALOGUE_ID = '00000000-0000-4000-8000-000000000011'
+const TEXT_ID = '00000000-0000-4000-8000-000000000012'
+const COPY_ID = '00000000-0000-4000-8000-000000000013'
+const OBLIGATION_ID = '00000000-0000-4000-8000-000000000014'
 
 const database = testDatabaseFixture((d) => {
   d.query('INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?)').run(
@@ -99,16 +102,68 @@ const database = testDatabaseFixture((d) => {
     '00000000-0000-4000-8000-000000000007',
     FLOW_ID,
   )
+  d.query(
+    `INSERT INTO workflow_step_text
+     (record_id,cursor_record_id,step_ordinal,step_slug,body,created_at) VALUES (?,?,?,?,?,?)`,
+  ).run(
+    TEXT_ID,
+    '00000000-0000-4000-8000-000000000007',
+    0,
+    'plan',
+    'fixture text',
+    '2026-11-12T00:00:00.000Z',
+  )
+  d.query(
+    `INSERT INTO workflow_text_copy
+     (record_id,workflow_text_record_id,cursor_record_id,task_document_reference,copied_at)
+     VALUES (?,?,?,?,?)`,
+  ).run(
+    COPY_ID,
+    TEXT_ID,
+    '00000000-0000-4000-8000-000000000007',
+    'task:DEV-2234/doc',
+    '2026-11-12T00:00:00.000Z',
+  )
+  d.query(
+    `INSERT INTO workflow_obligation
+     (record_id,cursor_record_id,step_ordinal,step_slug,floor,require_pull_request,
+      operator_ruling,expected_exit_code,expected_status,floor_deferrable,reason,created_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+  ).run(
+    OBLIGATION_ID,
+    '00000000-0000-4000-8000-000000000007',
+    0,
+    'plan',
+    'command-exit',
+    1,
+    0,
+    0,
+    'done',
+    1,
+    'fixture obligation',
+    '2026-11-12T00:00:00.000Z',
+  )
   rememberProjectSpace(d, 'fixture', 'fixture-space')
 })
 
-function hostedStage(input: { taskless?: boolean; number?: number } = {}): HostedTaskFlowStageById {
+function hostedStage(
+  input: {
+    taskless?: boolean
+    number?: number
+    stageId?: string
+    flowId?: string
+    projectId?: string
+    projectName?: string
+  } = {},
+): HostedTaskFlowStageById {
   const number = input.number ?? 1
-  const stageId = `00000000-0000-4000-8000-00000000000${number + 6}`
+  const stageId = input.stageId ?? `00000000-0000-4000-8000-00000000000${number + 6}`
+  const flowId = input.flowId ?? (input.taskless ? '00000000-0000-4000-8000-000000000009' : FLOW_ID)
+  const projectId = input.projectId ?? PROJECT_ID
   return {
     flow: {
-      id: input.taskless ? '00000000-0000-4000-8000-000000000009' : FLOW_ID,
-      projectId: PROJECT_ID,
+      id: flowId,
+      projectId,
       taskId: input.taskless ? null : TASK_ID,
       taskKey: input.taskless ? null : 'DEV-2234',
       state: 'open',
@@ -122,9 +177,9 @@ function hostedStage(input: { taskless?: boolean; number?: number } = {}): Hoste
     },
     stage: {
       id: stageId,
-      flowRecordId: input.taskless ? '00000000-0000-4000-8000-000000000009' : FLOW_ID,
-      projectId: PROJECT_ID,
-      projectName: 'fixture',
+      flowRecordId: flowId,
+      projectId,
+      projectName: input.projectName ?? 'fixture',
       number,
       workflow: 'flow',
       mode: 'default',
@@ -150,9 +205,48 @@ function hostedStage(input: { taskless?: boolean; number?: number } = {}): Hoste
       revision: 1,
       createdAt: '2026-11-12T00:00:00.000Z',
       updatedAt: '2026-11-12T00:00:00.000Z',
-      obligations: [],
-      stepTexts: [],
-      textCopies: [],
+      obligations: [
+        {
+          id: OBLIGATION_ID,
+          stageRecordId: stageId,
+          stepOrdinal: 0,
+          stepSlug: 'plan',
+          floor: 'command-exit',
+          requirePullRequest: true,
+          expectedExitCode: 0,
+          expectedStatus: 'done',
+          floorDeferrable: true,
+          reason: 'fixture obligation',
+          sessionId: null,
+          createdAt: '2026-11-12T00:00:00.000Z',
+          satisfiedAt: null,
+          satisfiedStepOrdinal: null,
+          satisfiedStepSlug: null,
+          satisfiedEvidence: null,
+          abandonedAt: null,
+          abandonedReason: null,
+          operatorRuling: false,
+        },
+      ],
+      stepTexts: [
+        {
+          id: TEXT_ID,
+          stageRecordId: stageId,
+          stepOrdinal: 0,
+          stepSlug: 'plan',
+          body: 'fixture text',
+          createdAt: '2026-11-12T00:00:00.000Z',
+        },
+      ],
+      textCopies: [
+        {
+          id: COPY_ID,
+          workflowTextRecordId: TEXT_ID,
+          stageRecordId: stageId,
+          taskDocumentReference: 'task:DEV-2234/doc',
+          copiedAt: '2026-11-12T00:00:00.000Z',
+        },
+      ],
     },
   }
 }
@@ -213,23 +307,16 @@ test('record adapter matches SQLite rows and normalizes taskless stages', async 
     ],
     [hosted.flowState(FLOW_ID), local.flowState(FLOW_ID)],
     [hosted.textsForStage(stageId), local.textsForStage(stageId)],
-    [hosted.textByRecordId('missing-text'), local.textByRecordId('missing-text')],
-    [
-      hosted.textAttachmentByRecordId('missing-text'),
-      local.textAttachmentByRecordId('missing-text'),
-    ],
+    [hosted.textByRecordId(TEXT_ID), local.textByRecordId(TEXT_ID)],
+    [hosted.textAttachmentByRecordId(TEXT_ID), local.textAttachmentByRecordId(TEXT_ID)],
     [hosted.textRecordIdsForStage(stageId), local.textRecordIdsForStage(stageId)],
     [hosted.copiedTextRecordIdsForStage(stageId), local.copiedTextRecordIdsForStage(stageId)],
     [hosted.stageProject(stageId), local.stageProject(stageId)],
-    [hosted.uncopiedTextsForStage(stageId), local.uncopiedTextsForStage(stageId)],
-    [hosted.liveTextAttachment('missing-text'), local.liveTextAttachment('missing-text')],
-    [hosted.copiedTextReference('missing-text'), local.copiedTextReference('missing-text')],
+    [hosted.liveTextAttachment(TEXT_ID), local.liveTextAttachment(TEXT_ID)],
+    [hosted.copiedTextReference(TEXT_ID), local.copiedTextReference(TEXT_ID)],
     [hosted.openObligationRecordIds(stageId), local.openObligationRecordIds(stageId)],
     [hosted.openObligations(stageId), local.openObligations(stageId)],
-    [
-      hosted.obligationByRecordId('missing-obligation'),
-      local.obligationByRecordId('missing-obligation'),
-    ],
+    [hosted.obligationByRecordId(OBLIGATION_ID), local.obligationByRecordId(OBLIGATION_ID)],
     [
       hosted.nextKeylessInstanceSlot({
         projectRecordId: PROJECT_ID,
@@ -314,4 +401,55 @@ test('record adapter refuses a failed page without returning a prefix', async ()
   await expect(store.openStageWorktrees()).rejects.toThrow(
     'hosted task-flow stage list page 2 failed',
   )
+})
+
+test('hosted open-stage listings translate mirror handles and refuse missing counterparts', async () => {
+  const d = database()
+  const translated = recordTaskFlowReadStore(
+    d,
+    createMemoryRecordApiClient({
+      taskFlowStages: [
+        hostedStage({ number: 71, stageId: '00000000-0000-4000-8000-000000000007' }),
+      ],
+    }),
+  )
+  expect((await translated.listOpenStages({ project: 'fixture' }))[0]!.id).toBe(71)
+
+  const missing = recordTaskFlowReadStore(d, createMemoryRecordApiClient({ taskFlowStages: [] }))
+  await expect(missing.listOpenStages({ project: 'fixture' })).rejects.toThrow(
+    'has no hosted record counterpart',
+  )
+})
+
+test('machine-wide hosted reads merge every registered project space', async () => {
+  const d = database()
+  const secondProjectId = '00000000-0000-4000-8000-000000000020'
+  const firstSpace = '01990000-0000-7000-8000-000000000002'
+  const secondSpace = '01990000-0000-7000-8000-000000000003'
+  d.query('INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?)').run(
+    secondProjectId,
+    'second-fixture',
+    '/second-fixture',
+    'bun',
+    JSON.stringify({ space: 'fixture-2' }),
+  )
+  const second = hostedStage({
+    taskless: true,
+    number: 1,
+    stageId: '00000000-0000-4000-8000-000000000021',
+    flowId: '00000000-0000-4000-8000-000000000022',
+    projectId: secondProjectId,
+    projectName: 'second-fixture',
+  })
+  const store = recordTaskFlowReadStore(
+    d,
+    createMemoryRecordApiClient({
+      taskFlowStages: [hostedStage(), second],
+      taskFlowProjectSpaces: { [PROJECT_ID]: firstSpace, [secondProjectId]: secondSpace },
+    }),
+  )
+  expect(await store.openStageWorktrees()).toEqual([
+    { number: 1, workflow: 'flow', project: 'fixture', args: '{}' },
+    { number: 1, workflow: 'flow', project: 'second-fixture', args: '{}' },
+  ])
 })

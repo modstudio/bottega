@@ -541,6 +541,9 @@ export function createMemoryRecordApiClient(
     },
     async whoami() {
       const fixtureSpace = '01990000-0000-7000-8000-000000000002'
+      const taskFlowSpaces = [
+        ...new Set(Object.values(input.taskFlowProjectSpaces ?? { fixture: fixtureSpace })),
+      ]
       return {
         user: {
           id: '01990000-0000-7000-8000-000000000001',
@@ -550,15 +553,13 @@ export function createMemoryRecordApiClient(
         activeSpaceId: fixtureSpace,
         personalSpaceId: fixtureSpace,
         memberships: input.taskFlowStages
-          ? [
-              {
-                space_id: fixtureSpace,
-                name: 'Fixture',
-                slug: 'fixture',
-                role: 'owner',
-                permission: 'write',
-              },
-            ]
+          ? taskFlowSpaces.map((spaceId, index) => ({
+              space_id: spaceId,
+              name: `Fixture ${index + 1}`,
+              slug: index === 0 ? 'fixture' : `fixture-${index + 1}`,
+              role: 'owner',
+              permission: 'write',
+            }))
           : [],
       }
     },

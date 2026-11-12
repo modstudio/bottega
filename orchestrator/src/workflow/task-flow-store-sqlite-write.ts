@@ -8,10 +8,16 @@ import type {
   TaskFlowIntentInput,
   TaskFlowIntentResult,
 } from '../record/record-task-flow-write-contract.ts'
-import { decideAppliedMirrorMutation } from './task-flow-decision.ts'
+import {
+  type AppliedMirrorMutationDecision,
+  decideAppliedMirrorMutation,
+} from './task-flow-decision.ts'
 
 type Mutation = { id: string; expectedRevision: number; values: Record<string, unknown> }
 type SqlRow = Record<string, SQLQueryBindings>
+type AppliedMirrorOutcome = Exclude<AppliedMirrorMutationDecision, 'refuse'>
+export type TaskFlowSqliteWriteResult<K extends TaskFlowIntent> = TaskFlowIntentResult<K> &
+  (K extends 'adopt' ? { mirror: Record<string, AppliedMirrorOutcome> } : object)
 
 const jsonValues = new Set(['arguments', 'closedStepNotes', 'satisfiedEvidence'])
 
@@ -382,6 +388,7 @@ function applyAdopt(
     return {
       revisions: applied!.revisions,
       flowRecordId: applied!.flowRecordId,
+      mirror: { [stage.id]: stageDecision },
     }
   const source = sourceFlowForAdopt(database, stage.id, body, applied)
   const target = database
@@ -444,6 +451,7 @@ function applyAdopt(
       [flowRecordId]: revisions[flowRecordId] ?? (target?.revision ?? source.revision) + 1,
     },
     flowRecordId,
+    mirror: { [stage.id]: stageDecision },
   }
 }
 
@@ -552,7 +560,7 @@ export function writeSqliteTaskFlow<K extends TaskFlowIntent>(
   intent: K,
   payload: TaskFlowIntentInput<K>,
   applied?: TaskFlowIntentResult<K> | null,
-): TaskFlowIntentResult<K> {
+): TaskFlowSqliteWriteResult<K> {
   const body = payload as unknown as SqlRow
   const revisions = (applied as { revisions: Record<string, number> } | null | undefined)?.revisions
   if (intent === 'compose')
@@ -560,22 +568,22 @@ export function writeSqliteTaskFlow<K extends TaskFlowIntent>(
       database,
       body,
       applied as TaskFlowIntentResult<'compose'> | null,
-    ) as TaskFlowIntentResult<K>
+    ) as TaskFlowSqliteWriteResult<K>
   if (intent === 'stage-update')
-    return writeStageUpdate(database, body, revisions) as TaskFlowIntentResult<K>
+    return writeStageUpdate(database, body, revisions) as TaskFlowSqliteWriteResult<K>
   if (intent === 'advance' || intent === 'await-ruling' || intent === 'abandon')
     return {
       revisions: applyStageMutation(database, intent, body, revisions),
-    } as TaskFlowIntentResult<K>
+    } as TaskFlowSqliteWriteResult<K>
   if (intent === 'adopt')
     return applyAdopt(
       database,
       body,
       applied as { revisions: Record<string, number>; flowRecordId: string } | undefined,
-    ) as TaskFlowIntentResult<K>
+    ) as TaskFlowSqliteWriteResult<K>
   return writeTextIntent(
     database,
     intent as 'attach-text' | 'delete-text' | 'copy-text',
     body,
-  ) as TaskFlowIntentResult<K>
+  ) as TaskFlowSqliteWriteResult<K>
 }

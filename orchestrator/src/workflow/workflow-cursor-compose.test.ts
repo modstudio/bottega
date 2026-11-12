@@ -10,6 +10,7 @@ import {
   type TaskFlowIntentInput,
   taskFlowRequestId,
 } from '../record/record-task-flow-write-contract.ts'
+import { taskFlowReadStore } from './task-flow-store.ts'
 import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
 import { ruleWorkflow } from './workflow-cursor-ruling.ts'
@@ -62,12 +63,14 @@ function composeClient(
     enforcement?: string
     recordCompose?: boolean
     destinations?: Array<{ destinationSpaceId?: string } | undefined>
+    projectNames?: Record<string, string>
   } = {},
 ): RecordTaskFlowClient {
   const memory = createMemoryRecordApiClient({
     taskFlowComposeFlowRevision: options.flowRevision ?? 4,
     taskFlowComposeStageRevision: options.stageRevision ?? 7,
     taskFlowComposeEnforcement: options.enforcement,
+    taskFlowProjectNames: options.projectNames,
   })
   let replay:
     | { stage: { id: string; number: number }; revisions: Record<string, number> }
@@ -118,7 +121,7 @@ function installKeylessWorkflow(d: Database, slug: string): void {
   ).run(destinationSpaceId, slug, destinationSpaceId)
 }
 
-test('hosted compose keeps machine-local cursor numbers and caches revisions without an outbox row', async () => {
+test('hosted compose prints the hosted number while caching the machine-local number', async () => {
   const d = hostedDatabase()
   await composeWorkflowWithCursor(
     'flow',
@@ -155,7 +158,7 @@ test('hosted compose keeps machine-local cursor numbers and caches revisions wit
     flowInsert: { taskId: 'task-DEV-HOSTED' },
     stageInsert: { workflow: 'flow', workflowKey: 'DEV-HOSTED' },
   })
-  expect(composed.cursor?.id).toBe(2)
+  expect(composed.cursor?.id).toBe(1)
   expect(
     d.query('SELECT number,revision FROM workflow_cursor WHERE workflow_key=?').get('DEV-HOSTED'),
   ).toEqual({ number: 2, revision: 7 })
@@ -163,6 +166,53 @@ test('hosted compose keeps machine-local cursor numbers and caches revisions wit
     d.query('SELECT revision FROM task_flow WHERE task_record_id=?').get('task-DEV-HOSTED'),
   ).toEqual({ revision: 4 })
   expect(d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%'").all()).toEqual([])
+})
+
+test('hosted compose prints and resolves the per-project number across two projects', async () => {
+  const d = hostedDatabase()
+  const secondProjectId = '00000000-0000-4000-8000-000000000099'
+  d.query('INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?)').run(
+    secondProjectId,
+    'second-fixture',
+    '/second-fixture',
+    'bun',
+    JSON.stringify({ space: 'fixture-space' }),
+  )
+  rememberProjectSpace(d, 'second-fixture', destinationSpaceId)
+  const calls: TaskFlowIntentInput<'compose'>[] = []
+  const taskFlowClient = composeClient(calls, {
+    projectNames: {
+      '00000000-0000-4000-8000-000000000001': 'fixture',
+      [secondProjectId]: 'second-fixture',
+    },
+  })
+  await composeWorkflowWithCursor(
+    'flow',
+    'fixture',
+    'default',
+    { key: 'DEV-FIRST', branch: 'DEV-FIRST-work', worktree: '/tmp/first' },
+    { ...context, taskRecordId: 'task-DEV-FIRST', taskFlowClient },
+    d,
+    {},
+    {},
+  )
+  const second = await composeWorkflowWithCursor(
+    'flow',
+    'second-fixture',
+    'default',
+    { key: 'DEV-SECOND', branch: 'DEV-SECOND-work', worktree: '/tmp/second' },
+    { ...context, taskRecordId: 'task-DEV-SECOND', taskFlowClient },
+    d,
+    {},
+    {},
+  )
+  expect(second.cursor?.id).toBe(1)
+  expect(
+    d.query('SELECT number FROM workflow_cursor WHERE workflow_key=?').get('DEV-SECOND'),
+  ).toEqual({ number: 2 })
+  expect(
+    await taskFlowReadStore(d, taskFlowClient).stageByHandle('second-fixture', 1),
+  ).toMatchObject({ record_id: calls[1]!.stageInsert!.id, id: 1, project: 'second-fixture' })
 })
 
 test('hosted compose failure leaves no local flow or cursor', async () => {
@@ -232,7 +282,7 @@ test('compose replay after a local crash reuses its request id and hosted stage'
 
   expect(calls).toHaveLength(2)
   expect(calls[1]!.requestId).toBe(calls[0]!.requestId)
-  expect(composed.cursor?.id).toBe(1)
+  expect(composed.cursor?.id).toBe(73)
   expect(
     d.query('SELECT record_id FROM workflow_cursor WHERE workflow_key=?').get('DEV-REPLAY'),
   ).toEqual({ record_id: calls[0]!.stageInsert!.id })
@@ -625,7 +675,7 @@ test('keyless hosted composes use distinct deterministic session slots', async (
   ])
 })
 
-test('keyless compose crash recovery reuses the same request and instance slot', async () => {
+test('keyless compose after a cache crash advances past the hosted slot', async () => {
   const d = hostedDatabase()
   installKeylessWorkflow(d, 'hosted-keyless-replay')
   const calls: TaskFlowIntentInput<'compose'>[] = []
@@ -660,11 +710,11 @@ test('keyless compose crash recovery reuses the same request and instance slot',
   )
 
   expect(calls).toHaveLength(2)
-  expect(calls[1]!.requestId).toBe(calls[0]!.requestId)
-  expect(calls[1]!.stageInsert!.instanceId).toBe(calls[0]!.stageInsert!.instanceId)
+  expect(calls[1]!.requestId).not.toBe(calls[0]!.requestId)
+  expect(calls[1]!.stageInsert!.instanceId).not.toBe(calls[0]!.stageInsert!.instanceId)
   expect(d.query('SELECT number,instance_id FROM workflow_cursor').get()).toEqual({
     number: 1,
-    instance_id: calls[0]!.stageInsert!.instanceId,
+    instance_id: calls[1]!.stageInsert!.instanceId,
   })
 })
 

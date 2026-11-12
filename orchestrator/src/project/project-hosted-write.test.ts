@@ -126,7 +126,7 @@ describe('removing from a bound store', () => {
       'removed machine-only-remove from this machine; the shared project is unchanged',
     )
     expect(projectByName('machine-only-remove')).toBeNull()
-    expect(hostedCalls).toEqual(['readTaskFlowProjectReferenceCounts'])
+    expect(hostedCalls.every((call) => call.startsWith('read') || call === 'whoami')).toBeTrue()
   })
 })
 

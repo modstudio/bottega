@@ -93,7 +93,6 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './task-flow-read-through.ts',
     './task-flow.ts',
     './task-flow-store.ts',
-    './task-flow-store-sqlite-write.ts',
     './workflow-cursor-arguments.ts',
     './workflow-cursor-format.ts',
     './workflow-cursor-selection.ts',

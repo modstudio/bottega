@@ -3,10 +3,7 @@ import { expect, test } from 'bun:test'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import type { TaskFlowIntentInput } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
-import {
-  decideAppliedMirrorMutation,
-  taskFlowRevisionRefusal,
-} from './task-flow-store-sqlite-write.ts'
+import { taskFlowRevisionRefusal } from './task-flow-store-sqlite-write.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
@@ -123,13 +120,6 @@ test('revision refusal names the declared intent and stale row kind', () => {
     )
 })
 
-test('applied mirror mutation distinguishes apply, keep, refresh, and refusal', () => {
-  expect(decideAppliedMirrorMutation(3, 3, 4)).toBe('apply')
-  expect(decideAppliedMirrorMutation(5, 3, 5)).toBe('keep')
-  expect(decideAppliedMirrorMutation(2, 3, 5)).toBe('refresh')
-  expect(decideAppliedMirrorMutation(2, 3, undefined)).toBe('refuse')
-})
-
 test('flow mutation preserves state when the payload omits it', async () => {
   const d = database()
   const row = await stage(d)
@@ -157,4 +147,38 @@ test('flow mutation preserves state when the payload omits it', async () => {
       .query<{ state: string }, [string]>('SELECT state FROM task_flow WHERE record_id=?')
       .get(flow.record_id)?.state,
   ).toBe('done')
+})
+
+test('stale adopt mirror rows report refresh without partial mutation', async () => {
+  const d = database()
+  const row = await stage(d)
+  d.query('UPDATE workflow_cursor SET revision=2 WHERE record_id=?').run(row.record_id)
+  const before = d
+    .query<
+      { task_record_id: string | null; task_flow_record_id: string | null; revision: number },
+      [string]
+    >('SELECT task_record_id,task_flow_record_id,revision FROM workflow_cursor WHERE record_id=?')
+    .get(row.record_id)!
+  const result = taskFlowLocalStore(d).write(
+    'adopt',
+    {
+      requestId: row.record_id,
+      stage: { id: row.record_id, expectedRevision: 3 },
+      taskId: '00000000-0000-4000-8000-000000000099',
+      updatedMachineId: '00000000-0000-4000-8000-000000000003',
+      updatedAt: '2026-11-12T01:00:00.000Z',
+    },
+    {
+      flowRecordId: row.task_flow_record_id!,
+      revisions: { [row.record_id]: 4, [row.task_flow_record_id!]: 4 },
+    },
+  )
+  expect(result.mirror).toEqual({ [row.record_id]: 'refresh' })
+  expect(
+    d
+      .query(
+        'SELECT task_record_id,task_flow_record_id,revision FROM workflow_cursor WHERE record_id=?',
+      )
+      .get(row.record_id),
+  ).toEqual(before)
 })

@@ -4,6 +4,7 @@ import type { HostedTaskFlowStageById } from '../../src/record/record-task-flow-
 export type MemoryTaskFlowInput = {
   taskFlowStages?: HostedTaskFlowStageById[]
   taskFlowProjectNames?: Record<string, string>
+  taskFlowProjectSpaces?: Record<string, string>
   taskFlowComposeFlowRevision?: number
   taskFlowComposeStageRevision?: number
   taskFlowComposeEnforcement?: string
@@ -89,7 +90,9 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
         updatedAt: insertedFlow!.updatedAt,
       }
       const number =
-        stages.reduce((highest, row) => Math.max(highest, row.stage.number ?? 0), 0) + 1
+        stages
+          .filter((row) => row.stage.projectId === stage.projectId)
+          .reduce((highest, row) => Math.max(highest, row.stage.number ?? 0), 0) + 1
       const stored: HostedTaskFlowStageById = {
         flow: {
           ...flow,
@@ -218,8 +221,14 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
           .map(({ stage }) => stage),
       }
     },
-    async listTaskFlowStages(selector) {
+    async listTaskFlowStages(selector, destination) {
       const rows = [...stages]
+        .filter(
+          ({ stage }) =>
+            !destination ||
+            !input.taskFlowProjectSpaces ||
+            input.taskFlowProjectSpaces[stage.projectId!] === destination.destinationSpaceId,
+        )
         .filter((row) => matches(row, selector))
         .sort((left, right) => compare(selector, left, right))
       const offset = Number(selector.cursor ?? 0)

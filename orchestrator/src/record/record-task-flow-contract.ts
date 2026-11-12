@@ -207,6 +207,12 @@ export const taskFlowStageListQuerySchema = z
     limit: z.coerce.number().int().min(1).max(TASK_FLOW_STAGE_LIST_LIMIT_MAX).default(200),
   })
   .superRefine((value, context) => {
+    if (value.linked && value.unlinked)
+      context.addIssue({
+        code: 'custom',
+        message: 'linked and unlinked cannot be combined; pass only one',
+        path: ['linked'],
+      })
     if (value.number !== undefined && value.projectId === undefined)
       context.addIssue({
         code: 'custom',

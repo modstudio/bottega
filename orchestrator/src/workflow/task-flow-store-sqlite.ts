@@ -15,7 +15,10 @@ import type {
   TaskFlowWriteMethod,
 } from './task-flow-store-methods.ts'
 import * as questions from './task-flow-store-sqlite-questions.ts'
-import { writeSqliteTaskFlow } from './task-flow-store-sqlite-write.ts'
+import {
+  type TaskFlowSqliteWriteResult,
+  writeSqliteTaskFlow,
+} from './task-flow-store-sqlite-write.ts'
 import type {
   TaskFlowCloseOutStageRow,
   TaskFlowCursorLifecycleRow,
@@ -71,8 +74,8 @@ class SqliteTaskFlowStore {
     intent: K,
     payload: TaskFlowIntentInput<K>,
     applied?: TaskFlowIntentResult<K> | null,
-  ): TaskFlowIntentResult<K> {
-    return writeTransaction<TaskFlowIntentResult<K>>(() => {
+  ): TaskFlowSqliteWriteResult<K> {
+    return writeTransaction<TaskFlowSqliteWriteResult<K>>(() => {
       if (intent === 'compose') {
         const stage = (payload as TaskFlowIntentInput<'compose'>).stageInsert
         if (stage?.workflowKey && stage.instanceId === '')

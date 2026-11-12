@@ -5,7 +5,6 @@ import type { Database } from 'bun:sqlite'
 import type {
   TaskFlowIntent,
   TaskFlowIntentInput,
-  TaskFlowIntentResult,
 } from '../record/record-task-flow-write-contract.ts'
 import type {
   TaskFlowLocalOnlyReadMethod,
@@ -13,7 +12,8 @@ import type {
   TaskFlowWriteMethod,
 } from './task-flow-store-methods.ts'
 import { resolveTaskFlowReadStore } from './task-flow-store-record.ts'
-import { sqliteTaskFlowLocalStore, sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
+import { sqliteTaskFlowLocalStore } from './task-flow-store-sqlite.ts'
+import type { TaskFlowSqliteWriteResult } from './task-flow-store-sqlite-write.ts'
 import type {
   TaskFlowCloseOutStageRow,
   TaskFlowCursorLifecycleRow,
@@ -62,7 +62,7 @@ interface TaskFlowQueries {
     intent: K,
     payload: TaskFlowIntentInput<K>,
     applied?: TaskFlowIntentResult<K> | null,
-  ): TaskFlowIntentResult<K>
+  ): TaskFlowSqliteWriteResult<K>
   retireStageIdentity(input: {
     project: string
     workflow: string
@@ -237,4 +237,3 @@ export function taskFlowReadStore(
 ): TaskFlowReadStore {
   return resolveTaskFlowReadStore(database, client)
 }
-
