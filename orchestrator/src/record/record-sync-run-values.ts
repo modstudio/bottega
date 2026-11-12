@@ -49,6 +49,8 @@ export function runRecordValues(
     retryOf: nullableString(row.retryOf),
     parentRunId: nullableString(row.parentRunId),
     turn: Number(row.turn),
+    cursorRecordId: nullableString(row.cursorRecordId),
+    stepSlug: nullableString(row.stepSlug),
     filesChanged: nullableNumber(row.filesChanged),
     changedPaths: row.changedPaths,
     linesAdded: nullableNumber(row.linesAdded),

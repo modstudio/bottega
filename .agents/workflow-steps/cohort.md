@@ -3,7 +3,7 @@ title: Group by root cause
 stage: plan
 floor:
   - recorded-artifact
-job: null
+jobs: []
 autonomy: auto
 needs: []
 ---

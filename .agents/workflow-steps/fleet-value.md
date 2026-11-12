@@ -3,7 +3,7 @@ title: Value each agent by job
 stage: plan
 floor:
   - recorded-artifact
-job: null
+jobs: []
 autonomy: auto
 needs: []
 ---

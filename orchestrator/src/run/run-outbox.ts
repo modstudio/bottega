@@ -207,6 +207,8 @@ export function buildRunRecordPayload(
     retryOf: row.retry_record_id,
     parentRunId: row.parent_record_id,
     turn: row.turn,
+    cursorRecordId: row.cursor_record_id,
+    stepSlug: row.step_slug,
     filesChanged: row.files_changed,
     changedPaths: json(row.changed_paths),
     linesAdded: row.lines_added,

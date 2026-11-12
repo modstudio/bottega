@@ -312,6 +312,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
           startedByUserId,
           agentExplicit: Number(Boolean(opts.agentExplicit)),
           executor: intendedExecutor(harnessDelegation),
+          binding: opts.binding,
         })
       }
       throw Object.assign(new Error(`run ${failedId} could not start: ${message}`), {

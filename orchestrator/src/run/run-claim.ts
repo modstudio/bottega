@@ -98,6 +98,7 @@ import { taskBranchResolution } from './run-task-branch-resolution.ts'
 import { admitNewRunReference } from './run-task-reference.ts'
 
 type ClaimOptions = {
+  binding?: { cursorRecordId: string; stepSlug: string }
   reserveId?: string
   agentExplicit?: boolean
   transport?: 'cli' | 'acp'
@@ -335,6 +336,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const head = originalPrompt.slice(0, 200).replace(/\s+/g, ' ')
   const inheritedLaunch =
     resume.workspaceSource === 'retained' ? inheritedRunFacts(opts.resume!.parent) : null
+  const inheritedBinding = opts.resume ? inheritedRunFacts(opts.resume.parent) : null
   const recordedBranch = (worktreeBranch: string | null) =>
     claimedRunBranch(
       reviewTarget?.branch ?? null,
@@ -350,6 +352,12 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   runProjectId = links.projectRecordId
   const launchBase = inheritedLaunch?.launch_base ?? opts.launchBase ?? opts.base ?? null
   const noFailover = inheritedLaunch ? !!inheritedLaunch.no_failover : !!opts.noFailover
+  const binding = inheritedBinding
+    ? {
+        cursorRecordId: inheritedBinding.cursor_record_id,
+        stepSlug: inheritedBinding.step_slug,
+      }
+    : (opts.binding ?? null)
   const worktreeTool = repoJob ? toolFor(callerCwd) : null
   const resumePlan = opts.resume?.treePlan
   let resolvedTaskBranch: TaskBranchCandidate | null = null
@@ -397,7 +405,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
                         launch_cwd=?, launch_seed=?, launch_key=?, task_record_id=?, launch_base=?, no_failover=?,
                         automatic_failover=?, agent_explicit=?, transport_explicit=?, review_ref=?, review_role=?, pid=?, mcp=?, transport=?,
                         executor=?, evidence_excluded=?, harness_wall_bound_ms=?, endpoint_key_source=?,
-                        credential_id=?, credential_payer=?, credential_binding=?
+                        credential_id=?, credential_payer=?, credential_binding=?, cursor_record_id=?, step_slug=?
           WHERE record_id=? AND status='running' AND agent='(pending)' RETURNING record_id, number`,
       )
       .get(
@@ -437,6 +445,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           input.endpointKeySource,
           input.credential,
         ),
+        binding?.cursorRecordId ?? null,
+        binding?.stepSlug ?? null,
         opts.reserveId!,
       ) as { record_id: string; number: number }
   const insertClaimedRun = () =>
@@ -446,8 +456,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
                           launch_cwd, launch_seed, launch_key, task_record_id, launch_base, no_failover,
                           automatic_failover, agent_explicit, transport_explicit, review_ref, review_role, pid, mcp, transport, started_by_user_id,
                           executor, evidence_excluded, harness_wall_bound_ms, endpoint_key_source,
-                          credential_id, credential_payer, credential_binding)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id, number`,
+                          credential_id, credential_payer, credential_binding, cursor_record_id, step_slug)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id, number`,
       )
       .get(
         recordId,
@@ -490,6 +500,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           input.endpointKeySource,
           input.credential,
         ),
+        binding?.cursorRecordId ?? null,
+        binding?.stepSlug ?? null,
       ) as { record_id: string; number: number }
   const claim = claimWithMigrationAdmission(input, () => {
     const claimedRow = claimableRow(opts.reserveId, updateReservedRun, insertClaimedRun)

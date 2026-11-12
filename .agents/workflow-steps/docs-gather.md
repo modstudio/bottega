@@ -3,7 +3,7 @@ title: Gather the change and its documentation
 stage: docs
 floor:
   - recorded-artifact
-job: null
+jobs: []
 autonomy: auto
 needs:
   - tracker

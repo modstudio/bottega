@@ -47,7 +47,7 @@ import type { SynchronousResult } from '../synchronous-result.ts'
 import { sha } from './prompt-sha.ts'
 import { recordedRunLivenessFacts, runAlive } from './run-alive.ts'
 import { RUNS_DIR, readDispatchState } from './run-artifacts.ts'
-import { inheritedRunLinks } from './run-claim-inheritance.ts'
+import { inheritedRunFacts, inheritedRunLinks } from './run-claim-inheritance.ts'
 import { claimWithMigrationAdmission } from './run-claim-transaction.ts'
 import { runCoordinatorLogPath } from './run-coordinator-log.ts'
 import { EXTERNAL_EXECUTOR, HARNESS_EXECUTOR, type RunExecutor } from './run-executor.ts'
@@ -214,6 +214,9 @@ async function detachedRunLinks(cwd: string, spec: DetachSpec) {
   const inherited = identity.parent_run_record_id
     ? inheritedRunLinks(identity.parent_run_record_id)
     : null
+  const inheritedBinding = identity.parent_run_record_id
+    ? inheritedRunFacts(identity.parent_run_record_id)
+    : null
   const detached = detachedProject(cwd, spec)
   const links = await admitNewRunReference({
     inheritedTaskRecordId: inherited?.taskRecordId,
@@ -225,7 +228,15 @@ async function detachedRunLinks(cwd: string, spec: DetachSpec) {
     launchCwd: cwd,
     probe: Boolean(spec.probe),
   })
-  return { identity, pendingRecordId, detached, links }
+  const binding =
+    spec.binding ??
+    (inheritedBinding?.cursor_record_id && inheritedBinding.step_slug
+      ? {
+          cursorRecordId: inheritedBinding.cursor_record_id,
+          stepSlug: inheritedBinding.step_slug,
+        }
+      : null)
+  return { identity, pendingRecordId, detached, links, binding }
 }
 
 export async function detach(
@@ -303,7 +314,7 @@ async function detachResolved(
   const mcpDispatch = { selectedAgent, mcpRequest, firstTurn }
   const dispatchMcpPreflightedAgent = preflightDetachMcp(jobName, spec, mcpDispatch)
   const startedByUserId = await signedInRecordUserId()
-  const { identity, pendingRecordId, detached, links } = detachedLinks
+  const { identity, pendingRecordId, detached, links, binding } = detachedLinks
   mkdirSync(RUNS_DIR, { recursive: true })
   // Named by the clock alone, this collided: concurrent `bottega run start` calls for the
   // same job inside one millisecond wrote the SAME prompt file, and every one of
@@ -321,9 +332,9 @@ async function detachResolved(
     refuseLiveRetryOwner(spec)
     const inserted = db()
       .query(
-        `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, task_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, agent_explicit, parent_run_record_id, turn, mcp,
+        `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, task_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, agent_explicit, parent_run_record_id, turn, mcp, cursor_record_id, step_slug,
                       vendor_session, started_by_user_id, continuation_message_sha, review_role, selection_reason, executor, evidence_excluded, harness_wall_bound_ms)
-       SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+       SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         WHERE ? IS NULL OR (
           EXISTS (SELECT 1 FROM run root WHERE root.record_id = ? AND root.status <> 'stale')
           AND NOT EXISTS (
@@ -353,6 +364,8 @@ async function detachResolved(
         identity.parent_run_record_id,
         identity.turn,
         storedMcpRequest(mcpRequest),
+        binding?.cursorRecordId ?? null,
+        binding?.stepSlug ?? null,
         spec.resume?.session ?? null,
         startedByUserId,
         ...detachedReviewBindings(spec),

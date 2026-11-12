@@ -18,7 +18,8 @@ const step = (slug: string, body: string): CatalogueStep => ({
   stage: 'implement',
   floor: [],
   body,
-  job: null,
+  jobs: [],
+  actions: [],
   autonomy: 'auto',
   needs: [],
 })

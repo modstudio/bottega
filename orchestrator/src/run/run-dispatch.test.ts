@@ -110,6 +110,7 @@ test('detached dispatch refuses an unlinked non-probe before reserving a row', a
 
 test('a findings dispatch carries its resolved round role to the coordinator', async () => {
   process.env.BOTTEGA_DEPTH = '0'
+  const cursorRecordId = newRecordId()
   let coordinatorSpec: { reviewRole?: string } | undefined
   const spawnCoordinator = ((_executable: string, args: string[]) => {
     coordinatorSpec = JSON.parse(args.at(-1)!)
@@ -123,7 +124,11 @@ test('a findings dispatch carries its resolved round role to the coordinator', a
   const runId = await detach(
     'review-lens',
     'resolved review role fixture',
-    { cwd: import.meta.dir, lens: 'correctness' },
+    {
+      cwd: import.meta.dir,
+      lens: 'correctness',
+      binding: { cursorRecordId, stepSlug: 'review' },
+    },
     'codex',
     spawnCoordinator,
   )
@@ -132,17 +137,24 @@ test('a findings dispatch carries its resolved round role to the coordinator', a
   expect(db().query('SELECT review_role FROM run WHERE record_id=?').get(runId)).toEqual({
     review_role: 'round',
   })
+  expect(
+    db().query('SELECT cursor_record_id,step_slug FROM run WHERE record_id=?').get(runId),
+  ).toEqual({ cursor_record_id: cursorRecordId, step_slug: 'review' })
 })
 
 test('a harness continuation placeholder carries its executor before coordinator claim', async () => {
   process.env.BOTTEGA_DEPTH = '0'
   const root = addRun({ agent: 'harness', job: 'review-lens', status: 'asking' })
+  const cursorRecordId = newRecordId()
+  db()
+    .query('UPDATE run SET cursor_record_id=?,step_slug=? WHERE record_id=?')
+    .run(cursorRecordId, 'review', root)
   writeDispatchState(root, { deliverables: [], timeoutMinutes: 17 })
   let placeholder: unknown
   const spawnCoordinator = (() => {
     placeholder = db()
       .query(
-        `SELECT executor,evidence_excluded,harness_wall_bound_ms FROM run
+        `SELECT executor,evidence_excluded,harness_wall_bound_ms,cursor_record_id,step_slug FROM run
           WHERE parent_run_record_id=? ORDER BY number DESC LIMIT 1`,
       )
       .get(root)
@@ -176,6 +188,8 @@ test('a harness continuation placeholder carries its executor before coordinator
     executor: 'harness',
     evidence_excluded: null,
     harness_wall_bound_ms: 17 * 60_000,
+    cursor_record_id: cursorRecordId,
+    step_slug: 'review',
   })
 })
 

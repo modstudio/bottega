@@ -4,7 +4,7 @@ stage: plan
 floor:
   - ruling
   - recorded-artifact
-job: null
+jobs: []
 autonomy: ask
 needs:
   - tracker

@@ -12,11 +12,13 @@ export function inheritedRunFacts(parent: string): {
   task_record_id: string | null
   project_record_id: string | null
   branch: string | null
+  cursor_record_id: string | null
+  step_slug: string | null
 } {
   return db()
     .query(
       `SELECT launch_cwd, launch_seed, launch_key, launch_base, no_failover,
-              task_record_id, project_record_id, branch
+              task_record_id, project_record_id, branch, cursor_record_id, step_slug
          FROM run WHERE record_id=?`,
     )
     .get(parent) as ReturnType<typeof inheritedRunFacts>

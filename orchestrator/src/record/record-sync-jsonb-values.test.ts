@@ -95,6 +95,8 @@ const payload: RecordPayload = {
   credentialId: '01990000-0000-7000-8000-000000001887',
   credentialPayer: 'shared',
   credentialBinding: 'project',
+  cursorRecordId: OTHER_ID,
+  stepSlug: 'write',
   trunkBefore: 'trunk',
   error: null,
   requestedAt: STAMP,
@@ -242,6 +244,8 @@ test('run sync values preserve credential payment identity', () => {
     credentialId: '01990000-0000-7000-8000-000000001887',
     credentialPayer: 'shared',
     credentialBinding: 'project',
+    cursorRecordId: OTHER_ID,
+    stepSlug: 'write',
   })
 })
 
