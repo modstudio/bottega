@@ -17,8 +17,10 @@ import {
   HOSTED_NOTE_TABLE,
   HOSTED_TASK_TABLE,
   type HostedPushChange,
+  type ParsedHostedPushChange,
   PUSHABLE_HUB_CHANGE_TABLES,
   type PushedInterval,
+  parseHostedPushItem,
 } from './push-contract.ts'
 import type { HostedTaskIdentity } from './task-client.ts'
 import { formatTaskPushReport, pushTasks } from './task-push.ts'
@@ -62,13 +64,20 @@ const identity: HostedTaskIdentity = {
 
 let database: PGlite
 
+const parseInputs = (inputs: HostedPushChange[]): ParsedHostedPushChange[] =>
+  inputs.map((input) => {
+    const parsed = parseHostedPushItem(input)
+    if ('outcome' in parsed) throw new Error(parsed.outcome.reason)
+    return parsed.input
+  })
+
 const applyOn = (spaceId: string, inputs: HostedPushChange[]) =>
   database.transaction(async (transaction) => {
     const sql = pgliteSql(transaction as unknown as PGlite)
     sql.unsafe = (async (statement: string) =>
       (await transaction.query(statement)).rows) as SQL['unsafe']
     await bindTenant(sql, { userId, spaceId })
-    return applyHostedPushChangesInTransaction(sql, { userId, spaceId }, inputs)
+    return applyHostedPushChangesInTransaction(sql, { userId, spaceId }, parseInputs(inputs))
   })
 
 const listIds: typeof import('./task-client.ts').hostedIdentitySet = async (

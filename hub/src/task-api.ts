@@ -15,7 +15,11 @@ import {
 import { listHostedTasks } from './hosted-task-list.ts'
 import { hostedTaskPresence, softDeleteHostedTasks } from './hosted-task-prune.ts'
 import { createHostedDocument, createHostedTask, getHostedTask } from './hosted-tasks.ts'
-import { PUSHABLE_HUB_CHANGE_TABLES } from './push-contract.ts'
+import {
+  HOSTED_DAY_TABLE,
+  PUSHABLE_HUB_CHANGE_TABLES,
+  PUSHABLE_HUB_DELETE_ACCEPTANCE,
+} from './push-contract.ts'
 
 const TEST_REFUSAL = `${PLATFORM_SLUG} task API refuses real identity and database clients unless stubs are injected in tests`
 
@@ -185,7 +189,7 @@ export async function taskApi(
         recordChanges: true,
         spacePush: true,
         spacePushTables: PUSHABLE_HUB_CHANGE_TABLES,
-        dayDelete: true,
+        dayDelete: PUSHABLE_HUB_DELETE_ACCEPTANCE[HOSTED_DAY_TABLE],
         spaceIdentitySet: true,
       },
     })

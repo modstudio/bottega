@@ -55,7 +55,7 @@ import {
   OperatorEmailBudgetExceededError,
   sendOperatorWaitingEmail,
 } from '../src/operator-waiting-email-hosted.ts'
-import type { HostedPushChange, PushedDay } from '../src/push-contract.ts'
+import type { ParsedHostedPushChange, PushedDay } from '../src/push-contract.ts'
 import {
   hostedDeliveryRepository,
   sendHostedReportSubscriptionTest,
@@ -126,7 +126,7 @@ const FIXED_CLOCK = Date.parse('2026-09-19T20:00:00.000Z')
 async function pushEvidence(
   url: SQL,
   identity: { userId: string; spaceId: string },
-  changes: HostedPushChange[],
+  changes: ParsedHostedPushChange[],
 ) {
   const outcomes = await applyHostedPushChanges(url, identity, changes)
   const rejected = outcomes.find((outcome) => outcome.status === 'rejected')
@@ -1421,7 +1421,7 @@ try {
         },
       ].map((change) =>
         change.table === 'hub_task_status_event' ? { ...change, id: change.row.id } : change,
-      ) as HostedPushChange[],
+      ) as ParsedHostedPushChange[],
     )
     const document = await createHostedDocument(actorUrl, identity, created.key, {
       title: 'Disposable',
