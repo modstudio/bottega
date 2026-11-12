@@ -15,6 +15,11 @@ import { closeOutRun } from '../close/close-out.ts'
 import { annotateHeldLandingInFlight } from '../close/close-out-in-flight.ts'
 import { type HeldTreeJson, heldTreeFromError, heldTreeJson } from '../close/close-out-report.ts'
 import { sessionId as callingSessionId, db, writableDb, writeTransaction } from '../database/db.ts'
+import {
+  recordSessionWorked,
+  sessionWorkedTaskKeys,
+  tasksWithoutNextAction,
+} from '../doc/context-worked-adapter.ts'
 import { gitResult, repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
 import { projectAt, projectByName, resolvedWorktreeTool } from '../project/projects.ts'
 import { currentOrphanProcesses } from '../resources/process-inventory.ts'
@@ -103,6 +108,7 @@ export type SessionCloseOutReport = {
     contextItems: SessionContextLifecycleReport['items']
   }
   mechanical: string[]
+  missingNextActions: string[]
   kept: string[]
   parked: string[]
   process: SessionProcessLine[]
@@ -855,7 +861,10 @@ export async function releaseSessionResources(
   const resume = options.resume ?? false
   const database = dryRun ? db() : writableDb()
   const initial = gather(database, session, dryRun)
+  const workedKeys = sessionWorkedTaskKeys(session, database)
+  if (resume && !dryRun) await recordSessionWorked(session, database)
   const context = await closeOutSessionContext({ session, dryRun, resume, database })
+  const missingNextActions = await tasksWithoutNextAction(workedKeys, database)
   const report: SessionCloseOutReport = {
     session,
     dryRun,
@@ -870,6 +879,7 @@ export async function releaseSessionResources(
       contextItems: context.items,
     },
     mechanical: [...context.mechanical],
+    missingNextActions,
     kept: context.kept,
     parked: [],
     process: context.process,
@@ -940,8 +950,15 @@ export async function closeOutSession(
   return report
 }
 
+function missingNextActionLines(keys: readonly string[]): string[] {
+  return keys.map((key) => `close-out: ${key} has no next-action`)
+}
+
 export function formatSessionCloseOut(report: SessionCloseOutReport): string {
-  const lines = [`session close-out ${report.session}${report.dryRun ? ' (dry run)' : ''}`]
+  const lines = [
+    `session close-out ${report.session}${report.dryRun ? ' (dry run)' : ''}`,
+    ...missingNextActionLines(report.missingNextActions),
+  ]
   for (const item of report.mechanical) lines.push(`mechanical: ${item}`)
   for (const item of report.kept) lines.push(`kept: ${item}`)
   for (const item of report.parked) lines.push(`parked: ${item}`)

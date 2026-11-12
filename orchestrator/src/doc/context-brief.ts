@@ -6,7 +6,7 @@ import { liveClaimsOfSession } from '../board/board-claim-service.ts'
 import { claimNotices } from '../board/board-service.ts'
 import { db } from '../database/db.ts'
 import { filedIssueQueueState } from '../issue/issue-dispatch.ts'
-import { projectAt } from '../project/projects.ts'
+import { projectAt, projectForTaskKey, projects } from '../project/projects.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { LIVE_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { architectSessionContext } from '../workflow/session-context.ts'
@@ -19,6 +19,7 @@ import {
   taskKeyMap,
   taskReferenceForProjectKey,
 } from '../workflow/workflow-task-reference.ts'
+import { parseWorkedTaskKeys } from './context-worked.ts'
 import { storedItems, taskProfile } from './context-write-adapter.ts'
 import type { ContextItem, ContextItemKind } from './doc-context-write.ts'
 import { taskContextHolder } from './doc-subjects.ts'
@@ -184,6 +185,32 @@ export function storedBriefHolders(
     .filter((holder) => holder.kind !== 'session' || holder.items.length > 0)
 }
 
+export function workingKeysForBrief(
+  session: string,
+  liveClaims: readonly { project: string; subject: { kind: string; value: string } }[],
+  cursors: readonly { workflow_key: string; project: string }[],
+  database: Database,
+): ContextBriefWorkingKey[] {
+  const current: ContextBriefWorkingKey[] = [
+    ...liveClaims
+      .filter((claim) => claim.subject.kind === 'task')
+      .map((claim) => ({ key: claim.subject.value, project: claim.project })),
+    ...cursors
+      .filter((cursor) => Boolean(cursor.workflow_key))
+      .map((cursor) => ({ key: cursor.workflow_key, project: cursor.project })),
+  ]
+  const worked = storedItems(`session:${session}`, database).find(
+    (item) => item.id === 'worked' && item.kind === 'fact',
+  )
+  if (!worked) return current
+  const registered = projects(undefined, database)
+  for (const key of parseWorkedTaskKeys(worked.body)) {
+    const project = projectForTaskKey(key, registered)
+    if (project) current.push({ key, project: project.name })
+  }
+  return current
+}
+
 function autonomyLine(context: Awaited<ReturnType<typeof architectSessionContext>>): string {
   if (!context.registered) return 'unknown'
   const grouped: Array<{ value: string; stages: string[] }> = []
@@ -206,14 +233,7 @@ export async function contextBrief(
 ): Promise<ContextBrief> {
   const cursors = listWorkflowCursors({ session }, database)
   const liveClaims = liveClaimsOfSession(session, Date.now(), database)
-  const working: ContextBriefWorkingKey[] = [
-    ...liveClaims
-      .filter((claim) => claim.subject.kind === 'task')
-      .map((claim) => ({ key: claim.subject.value, project: claim.project })),
-    ...cursors
-      .filter((cursor) => Boolean(cursor.workflow_key))
-      .map((cursor) => ({ key: cursor.workflow_key, project: cursor.project })),
-  ]
+  const working = workingKeysForBrief(session, liveClaims, cursors, database)
   const workingProjects = [...new Set(working.map(({ project }) => project))]
   const [taskRows, autonomy, filedIssues] = await Promise.all([
     Promise.all(workingProjects.map((project) => readHubTasks(project))).then((rows) =>

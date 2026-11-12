@@ -16,6 +16,9 @@ const cleanupPaths: string[] = []
 
 afterEach(() => {
   mock.restore()
+  delete (globalThis as typeof globalThis & { [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts })[
+    CONTEXT_FACTS_PORTS_KEY
+  ]
   for (const path of cleanupPaths.splice(0)) rmSync(path, { recursive: true, force: true })
 })
 
@@ -108,6 +111,47 @@ test('dry run reports context drops and refusals while resume keeps every item',
     `context session:${session}/ruling (ruling)`,
   ])
   expect(resume.recommendation).toBe('brief')
+})
+
+test('--resume records and keeps worked while close-out reports missing next-action', async () => {
+  const session = newRecordId()
+  const taskRecordId = newRecordId()
+  const project = `worked-close-out-${newRecordId()}`
+  upsertProject({
+    recordId: newRecordId(),
+    name: project,
+    path: `/tmp/${project}`,
+    settings: { trunk: 'main', keyPrefixes: ['WORKEDCLOSE'] },
+  })
+  ;(globalThis as typeof globalThis & { [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts })[
+    CONTEXT_FACTS_PORTS_KEY
+  ] = {
+    tasks: async () => [{ key: 'WORKEDCLOSE-1', record_id: taskRecordId, project }],
+    task: async () => null,
+    pointer: async () => null,
+  }
+  const run = addRun({ agent: 'codex', job: 'implement', status: 'ok', session })
+  db().query('UPDATE run SET launch_key=? WHERE record_id=?').run('WORKEDCLOSE-1', run)
+  score(run, 'full', 'right', 'faithful')
+  const previousSession = process.env.CLAUDE_CODE_SESSION_ID
+  process.env.CLAUDE_CODE_SESSION_ID = session
+  try {
+    const report = await closeOutSession({ session, resume: true })
+    expect(report.owned.contextItems).toContainEqual(
+      expect.objectContaining({
+        id: 'worked',
+        kind: 'fact',
+        source: 'precompact',
+        body: 'Worked: WORKEDCLOSE-1',
+      }),
+    )
+    expect(report.kept).toContain(`context session:${session}/worked (fact)`)
+    expect(report.missingNextActions).toEqual(['WORKEDCLOSE-1'])
+    expect(formatSessionCloseOut(report)).toContain('close-out: WORKEDCLOSE-1 has no next-action')
+  } finally {
+    if (previousSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = previousSession
+  }
 })
 
 test('close-out parks only an awaiting cursor with a recorded open question', async () => {

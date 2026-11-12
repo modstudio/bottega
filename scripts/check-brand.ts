@@ -65,6 +65,7 @@ const ALLOWED = new Set([
   'orchestrator/hooks/block-agent.py',
   'orchestrator/hooks/board-ack-guard.py',
   'orchestrator/hooks/board_hook_common.py',
+  'orchestrator/hooks/context-precompact.py',
   'orchestrator/hooks/git-guard.py',
   'orchestrator/hooks/heartbeat-guard.py',
   'orchestrator/hooks/heartbeat-decision.py',

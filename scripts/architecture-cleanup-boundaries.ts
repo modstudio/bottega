@@ -224,6 +224,7 @@ export const cleanupBoundarySpecs = [
       '../close/close-out-in-flight.ts',
       '../close/close-out-report.ts',
       '../database/db.ts',
+      '../doc/context-worked-adapter.ts',
       '../git/git-environment.ts',
       '../project/projects.ts',
       '../resources/process-inventory.ts',
