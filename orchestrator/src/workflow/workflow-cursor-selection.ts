@@ -190,7 +190,9 @@ export async function selectByHandle(
   d: Database,
   includeTerminal = false,
 ): Promise<SelectableCursorRow> {
-  const row = await taskFlowReadStore(d).stageByHandle(cursor)
+  if (!identity.project)
+    throw new Error('a workflow cursor handle requires a project; pass --project')
+  const row = await taskFlowReadStore(d).stageByHandle(identity.project, cursor)
   if (!row)
     throw new Error(
       `workflow cursor ${cursor} does not exist on this machine; cursor handles are per-machine labels, so pass the task key as the workflow argument key (--arg key=<KEY> on the CLI, args.key over MCP) to read the hosted flow`,

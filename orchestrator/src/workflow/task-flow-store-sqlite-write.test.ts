@@ -36,7 +36,7 @@ async function stage(d: Database) {
     {},
     {},
   )
-  return (await taskFlowReadStore(d).stageByHandle(composed.cursor!.id))!
+  return (await taskFlowReadStore(d).stageByHandle('fixture', composed.cursor!.id))!
 }
 
 test('intent writes refuse every stale expected revision', async () => {

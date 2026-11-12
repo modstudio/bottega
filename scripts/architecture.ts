@@ -110,7 +110,9 @@ const concerns: ConcernManifest = {
 export const modules: ArchitectureModule[] = [
   module('orchestrator/src/workflow/task-flow-store.ts', [
     'bun:sqlite',
+    '../record/record-write-authority.ts',
     '../record/record-task-flow-write-contract.ts',
+    './task-flow-store-record.ts',
     './task-flow-store-sqlite.ts',
     './task-flow-store-methods.ts',
     './task-flow-store-types.ts',
@@ -119,6 +121,17 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/workflow/task-flow-store-types.ts', [
     './workflow-cursor-transition.ts',
     './workflow-floor.ts',
+  ]),
+  module('orchestrator/src/workflow/task-flow-store-record.ts', [
+    'bun:sqlite',
+    '../record/record-api-client-paths.ts',
+    '../record/record-api-client-task-flow.ts',
+    '../record/record-api-client.ts',
+    '../record/record-task-flow-contract.ts',
+    '../record/record-task-flow-write-client.ts',
+    './task-flow-store-sqlite.ts',
+    './task-flow-store.ts',
+    './task-flow-store-types.ts',
   ]),
   module('orchestrator/src/workflow/task-flow-store-sqlite.ts', [
     'bun:sqlite',

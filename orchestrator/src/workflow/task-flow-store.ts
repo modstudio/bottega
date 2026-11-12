@@ -7,11 +7,16 @@ import type {
   TaskFlowIntentInput,
   TaskFlowIntentResult,
 } from '../record/record-task-flow-write-contract.ts'
+import {
+  currentRecordWriteDecision,
+  throwIfRecordRefused,
+} from '../record/record-write-authority.ts'
 import type {
   TaskFlowLocalOnlyReadMethod,
   TaskFlowLocalReadMethod,
   TaskFlowWriteMethod,
 } from './task-flow-store-methods.ts'
+import { recordTaskFlowReadStore } from './task-flow-store-record.ts'
 import { sqliteTaskFlowLocalStore, sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
 import type {
   TaskFlowCloseOutStageRow,
@@ -91,7 +96,7 @@ interface TaskFlowQueries {
     machineId: string
   }): void
   flowProjectionForTask(taskRecordId: string): TaskFlowProjectionRow | null
-  stageByHandle(cursor: number): TaskFlowStageCursorRow | null
+  stageByHandle(project: string, cursor: number): TaskFlowStageCursorRow | null
   stageByRecordId(recordId: string): TaskFlowStageCursorRow | null
   latestStageForTask(input: {
     project: string
@@ -229,7 +234,10 @@ export function taskFlowLocalStore(database: Database): TaskFlowLocalStore {
   return sqliteTaskFlowLocalStore(database)
 }
 
-/** Resolves task-flow reads to the async SQLite adapter. */
+/** Resolves task-flow reads to the authoritative store for this install. */
 export function taskFlowReadStore(database: Database): TaskFlowReadStore {
+  const decision = currentRecordWriteDecision(database)
+  throwIfRecordRefused(decision)
+  if (decision.verdict === 'hosted') return recordTaskFlowReadStore(database)
   return sqliteTaskFlowReadStore(database)
 }

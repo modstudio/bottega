@@ -41,11 +41,12 @@ type Request = <T>(
 ) => Promise<T>
 type TaskFlowStageListClientInput = Omit<
   TaskFlowStageListQueryInput,
-  'keyless' | 'primaryInstance' | 'unlinked'
+  'keyless' | 'primaryInstance' | 'unlinked' | 'linked'
 > & {
   keyless?: true
   primaryInstance?: true
   unlinked?: true
+  linked?: true
 }
 const TASK_FLOW_WRITE_REFUSAL =
   'record API predates task-flow writes; release hosted-api, then retry'
@@ -170,22 +171,7 @@ function taskFlowReadClient(request: Request): Partial<RecordTaskFlowClient> {
       })
     },
     listTaskFlowStages: (selector, destination) => {
-      const query = new URLSearchParams()
-      if (selector.projectId !== undefined) query.set('projectId', selector.projectId)
-      if (selector.number !== undefined) query.set('number', String(selector.number))
-      if (selector.sessionId !== undefined) query.set('sessionId', selector.sessionId)
-      for (const state of selector.states ?? []) query.append('state', state)
-      if (selector.taskKey !== undefined) query.set('taskKey', selector.taskKey)
-      if (selector.workflow !== undefined) query.set('workflow', selector.workflow)
-      if (selector.mode !== undefined) query.set('mode', selector.mode)
-      if (selector.workflowKey !== undefined) query.set('workflowKey', selector.workflowKey)
-      if (selector.keyless) query.set('keyless', 'true')
-      if (selector.primaryInstance) query.set('primaryInstance', 'true')
-      if (selector.taskId !== undefined) query.set('taskId', selector.taskId)
-      if (selector.unlinked) query.set('unlinked', 'true')
-      if (selector.order !== undefined) query.set('order', selector.order)
-      if (selector.cursor !== undefined) query.set('cursor', selector.cursor)
-      if (selector.limit !== undefined) query.set('limit', String(selector.limit))
+      const query = taskFlowStageListSearchParams(selector)
       return request(`/v1/task-flow/stages?${query}`, {
         ...destination,
         schema: (body) => hostedTaskFlowStageListSchema.parse(body),
@@ -220,6 +206,32 @@ function taskFlowReadClient(request: Request): Partial<RecordTaskFlowClient> {
         destination,
       ),
   }
+}
+
+function taskFlowStageListSearchParams(
+  selector: Parameters<NonNullable<RecordTaskFlowClient['listTaskFlowStages']>>[0],
+): URLSearchParams {
+  const query = new URLSearchParams()
+  const strings = {
+    projectId: selector.projectId,
+    sessionId: selector.sessionId,
+    taskKey: selector.taskKey,
+    workflow: selector.workflow,
+    mode: selector.mode,
+    workflowKey: selector.workflowKey,
+    taskId: selector.taskId,
+    openedMachineId: selector.openedMachineId,
+    order: selector.order,
+    cursor: selector.cursor,
+  }
+  for (const [name, value] of Object.entries(strings))
+    if (value !== undefined) query.set(name, value)
+  for (const state of selector.states ?? []) query.append('state', state)
+  for (const name of ['keyless', 'primaryInstance', 'unlinked', 'linked'] as const)
+    if (selector[name]) query.set(name, 'true')
+  if (selector.number !== undefined) query.set('number', String(selector.number))
+  if (selector.limit !== undefined) query.set('limit', String(selector.limit))
+  return query
 }
 
 function taskFlowWriteClient(request: Request): Partial<RecordTaskFlowClient> {

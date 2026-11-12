@@ -79,6 +79,9 @@ export function taskFlowStageListSql(
   if (input.primaryInstance) result.clauses.push("s.instance_id=''")
   if (input.taskId) add((parameter) => `f.task_id=${parameter}::uuid`, input.taskId)
   if (input.unlinked) result.clauses.push('f.task_id IS NULL')
+  if (input.linked) result.clauses.push('f.task_id IS NOT NULL')
+  if (input.openedMachineId)
+    add((parameter) => `s.opened_machine_id=${parameter}::uuid`, input.openedMachineId)
   appendCursor(input, result)
   return result
 }
