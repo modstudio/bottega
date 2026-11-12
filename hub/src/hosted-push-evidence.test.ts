@@ -283,9 +283,12 @@ test('day delete applies only to a row owned by the caller machine', async () =>
   expect(await apply([{ table: 'hub_day', id: owned.id, op: 'upsert', row: owned }])).toEqual([
     { id: owned.id, status: 'applied' },
   ])
-  expect(await apply([{ table: 'hub_day', id: owned.id, op: 'delete' }])).toEqual([
-    { id: owned.id, status: 'applied' },
-  ])
+  const parsedDelete = parseHostedPushItem({ table: 'hub_day', id: owned.id, op: 'delete' })
+  expect(parsedDelete).toEqual({
+    input: { table: 'hub_day', id: owned.id, op: 'delete' },
+  })
+  if ('outcome' in parsedDelete) throw new Error(parsedDelete.outcome.reason)
+  expect(await apply([parsedDelete.input])).toEqual([{ id: owned.id, status: 'applied' }])
 
   const foreign = '01990000-0000-7000-8000-000000008341'
   await database.exec(`RESET ROLE; INSERT INTO hub_day
@@ -301,6 +304,12 @@ test('day delete applies only to a row owned by the caller machine', async () =>
   expect((await database.query(`SELECT id FROM hub_day WHERE id=$1`, [foreign])).rows).toHaveLength(
     1,
   )
+})
+
+test('dispatch refuses a declared upsert-only table when parsing is bypassed', async () => {
+  expect(await apply([{ table: 'hub_task', id: taskId, op: 'delete' }])).toEqual([
+    { id: taskId, status: 'rejected', reason: 'hub_task does not accept delete' },
+  ])
 })
 
 test('real and legacy machine day timestamps serialize through the strict edge', async () => {

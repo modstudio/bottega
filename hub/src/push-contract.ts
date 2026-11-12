@@ -21,6 +21,17 @@ export const PUSHABLE_HUB_CHANGE_TABLES = [
 
 export type PushableHubChangeTable = (typeof PUSHABLE_HUB_CHANGE_TABLES)[number]
 
+export const PUSHABLE_HUB_DELETE_ACCEPTANCE: Record<PushableHubChangeTable, boolean> = {
+  [HOSTED_TASK_TABLE]: false,
+  [HOSTED_STATUS_EVENT_TABLE]: false,
+  [HOSTED_COMMENT_TABLE]: false,
+  [HOSTED_DOCUMENT_TABLE]: true,
+  [HOSTED_INTERVAL_TABLE]: true,
+  [HOSTED_DAY_TABLE]: true,
+  [HOSTED_NOTE_TABLE]: true,
+  [HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE]: false,
+}
+
 export type PushedStatusEvent = {
   id: string
   task_key: string
@@ -714,7 +725,6 @@ export function parseHostedPushItem(value: unknown): ParsedHostedPushItem {
   const table = input.table as PushableHubChangeTable
   if (input.op === 'upsert')
     return parseHostedUpsert(input as Record<string, unknown> & { id: string }, table)
-  if (table === HOSTED_DAY_TABLE || table === HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE)
-    return rejected(id, `${table} does not accept delete`)
+  if (!PUSHABLE_HUB_DELETE_ACCEPTANCE[table]) return rejected(id, `${table} does not accept delete`)
   return { input: { table, id: input.id, op: 'delete' } as HostedPushChange }
 }

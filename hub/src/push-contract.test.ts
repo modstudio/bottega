@@ -1,6 +1,11 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { type HostedPushChange, parseHostedPushItem } from './push-contract.ts'
+import {
+  type HostedPushChange,
+  PUSHABLE_HUB_CHANGE_TABLES,
+  PUSHABLE_HUB_DELETE_ACCEPTANCE,
+  parseHostedPushItem,
+} from './push-contract.ts'
 
 const at = '2026-10-11T12:00:00.000Z'
 const id = '01990000-0000-7000-8000-000000000030'
@@ -31,6 +36,17 @@ const task: HostedPushChange = {
     next_document_number: 1,
   },
 }
+
+test('delete parsing follows the exhaustive pushable table declaration', () => {
+  for (const table of PUSHABLE_HUB_CHANGE_TABLES) {
+    const parsed = parseHostedPushItem({ table, id, op: 'delete' })
+    expect(parsed).toEqual(
+      PUSHABLE_HUB_DELETE_ACCEPTANCE[table]
+        ? { input: { table, id, op: 'delete' } }
+        : { outcome: { id, status: 'rejected', reason: `${table} does not accept delete` } },
+    )
+  }
+})
 
 test('task push validation accepts the mirror row and rejects every non-string edge shape', () => {
   expect(parseHostedPushItem(task)).toEqual({ input: task })
