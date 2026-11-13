@@ -29,6 +29,7 @@ import { runLivenessBoundarySpecs } from './architecture-run-liveness.ts'
 import { runModuleBoundarySpecs } from './architecture-run-modules.ts'
 import { runRetryModuleSpecs } from './architecture-run-retry.ts'
 import { runStopBoundarySpecs } from './architecture-run-stop.ts'
+import { sessionStartBoundarySpecs } from './architecture-session-start-modules.ts'
 import { settingsBoundarySpecs } from './architecture-settings-boundaries.ts'
 import { setupModuleSpecs } from './architecture-setup-modules.ts'
 import { manifestTypeOnlyImportBoundaries } from './architecture-type-only-boundaries.ts'
@@ -126,6 +127,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../database/db.ts',
       './model-host.ts',
       './agent-set-capacity.ts',
+      './goose-provider.ts',
     ],
     'Keep agent registry command adapters independent of the run nucleus and the CLI: they compose concern modules for one verb and own no lifecycle.',
   ),
@@ -211,6 +213,7 @@ export const importBoundaries: ImportBoundary[] = [
     ['../synchronous-result.ts'],
   ),
   ...boundaries(cleanupBoundarySpecs),
+  ...boundaries(sessionStartBoundarySpecs),
 
   boundary(
     'close-out-boundary',
@@ -852,6 +855,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../../../shared/record-api-url.ts',
       'node:os',
       '../database/db.ts',
+      '../project/declared-record-space.ts',
       './install-binding-write.ts',
       './landing-outbox.ts',
       './machine-identity.ts',
@@ -866,6 +870,7 @@ export const importBoundaries: ImportBoundary[] = [
       './record-sync-result-decision.ts',
       './record-sync-results.ts',
       './record-sync-types.ts',
+      '../workflow/task-flow-backfill.ts',
       '../review/review-outbox.ts',
       '../release/release-outbox.ts',
       '../run/run-outbox.ts',

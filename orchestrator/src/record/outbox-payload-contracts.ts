@@ -106,7 +106,16 @@ const TASK_FLOW_RECORD_PAYLOAD_CONTRACT = contract(
   'id spaceId projectId projectName taskId state openStageRecordId openingMachineId updatedMachineId machineId revision createdAt updatedAt',
 )
 const TASK_FLOW_STAGE_RECORD_PAYLOAD_CONTRACT = contract(
-  'id spaceId projectId projectName flowRecordId workflow mode workflowVersionId catalogueVersionId arguments activeOrdinal activeSlug state closedStepNotes totalSteps openedMachineId takenOverFromMachineId lastAdvancedMachineId machineId revision createdAt updatedAt',
+  'id spaceId projectId projectName flowRecordId workflow mode workflowKey instanceId sessionId workflowVersionId catalogueVersionId arguments activeOrdinal activeSlug state closedStepNotes question autonomy enforcement totalSteps openedMachineId takenOverFromMachineId lastAdvancedMachineId machineId revision createdAt updatedAt',
+  {
+    projectId: null,
+    workflowKey: null,
+    instanceId: null,
+    sessionId: null,
+    question: null,
+    autonomy: null,
+    enforcement: null,
+  },
 )
 
 const REVIEW_RECORD_PAYLOAD_CONTRACT = contract(

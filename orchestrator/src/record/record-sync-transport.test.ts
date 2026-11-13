@@ -9,7 +9,14 @@ import {
   storedMachineNames,
 } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { installOutboxPruneFixtureSchema } from '../../test/fixtures/record-sync.ts'
+import {
+  MACHINE_ID as BACKFILL_MACHINE_ID,
+  STAMP as BACKFILL_STAMP,
+  options as backfillOptions,
+  installOutboxPruneFixtureSchema,
+} from '../../test/fixtures/record-sync.ts'
+import { fakePostgres } from '../../test/fixtures/record-sync-postgres.ts'
+import { fixtureProjectRecordId, migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { defaultShortName } from './machine-name.ts'
 import { RecordApiRequestError } from './record-api-client.ts'
 import { BUILT_INS_REVALIDATE_MS } from './record-built-ins-identity.ts'
@@ -20,6 +27,48 @@ const MACHINE_ID = '01990000-0000-7000-8000-000000000099'
 const USER_ID = '01990000-0000-7000-8000-000000000002'
 const SPACE_ID = '01990000-0000-7000-8000-000000000001'
 const STAMP = '2026-09-15T01:01:00.000Z'
+
+test('an unavailable task-flow presence read does not abort other backfills or sync', async () => {
+  const local = migratedTestDatabase()
+  const remote = fakePostgres()
+  const base = backfillOptions(local, remote)
+  local
+    .query(
+      `INSERT INTO task_flow
+       (record_id,task_record_id,project_record_id,state,open_stage_cursor_record_id,created_at,updated_at,
+        opening_machine_id,updated_machine_id,revision) VALUES (?,NULL,?,'done',NULL,?,?,?,?,1)`,
+    )
+    .run(
+      newRecordId(),
+      fixtureProjectRecordId(local),
+      BACKFILL_STAMP,
+      BACKFILL_STAMP,
+      BACKFILL_MACHINE_ID,
+      BACKFILL_MACHINE_ID,
+    )
+  const result = await syncRecord({
+    ...base,
+    backfill: true,
+    client: {
+      ...base.client,
+      readTaskFlowPresence: async () => {
+        throw new Error('presence route unavailable')
+      },
+    },
+  })
+
+  expect(result).toMatchObject({
+    pushed: 0,
+    failed: 0,
+    backfill: {
+      enqueued: 0,
+      scores: 0,
+      reviews: { enqueuedReviews: 0 },
+      taskFlows: { failure: 'presence route unavailable' },
+    },
+  })
+  local.close()
+})
 
 function localOutbox(count: number): Database {
   const local = new Database(':memory:')

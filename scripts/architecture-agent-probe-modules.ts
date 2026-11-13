@@ -9,6 +9,7 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const agentProbeModules = [
+  module('orchestrator/src/agent/goose-provider.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/agent/provider-credential-routing.ts', [
     '../config/credential-service.ts',
     '../project/projects.ts',

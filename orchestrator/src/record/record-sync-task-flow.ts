@@ -2,15 +2,18 @@
 /** Applies revision-ordered task-flow and stage payloads to the hosted record. */
 
 import type { SQL } from 'bun'
-import { sql as drizzleSql } from 'drizzle-orm'
+import { and, sql as drizzleSql, eq, lt } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   taskFlow as taskFlowRecord,
   taskFlowStage as taskFlowStageRecord,
 } from '../../../shared/record/schema-task-flow.ts'
 import { recordDate } from '../../../shared/record-timestamp.ts'
+import { OutboxRowError } from './outbox-failure.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import type { ExistingEvidenceOwned, RequireOwnedUpsert } from './record-evidence-references.ts'
+import { allocateRecordSequence } from './record-sequence.ts'
 import type { RecordPayload, RecordPrincipal } from './record-sync-contract.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
 
@@ -21,7 +24,7 @@ export function taskFlowValues(row: RecordPayload) {
     id: String(row.id),
     spaceId: String(row.spaceId),
     projectId: String(row.projectId),
-    taskId: String(row.taskId),
+    taskId: nullableString(row.taskId),
     state: String(row.state),
     openStageRecordId: nullableString(row.openStageRecordId),
     openingMachineId: String(row.openingMachineId),
@@ -36,9 +39,13 @@ export function taskFlowStageValues(row: RecordPayload) {
   return {
     id: String(row.id),
     spaceId: String(row.spaceId),
+    projectId: nullableString(row.projectId),
     flowRecordId: String(row.flowRecordId),
     workflow: String(row.workflow),
     mode: String(row.mode),
+    workflowKey: nullableString(row.workflowKey),
+    instanceId: nullableString(row.instanceId),
+    sessionId: nullableString(row.sessionId),
     workflowVersionId: String(row.workflowVersionId),
     catalogueVersionId: String(row.catalogueVersionId),
     arguments: row.arguments,
@@ -46,6 +53,9 @@ export function taskFlowStageValues(row: RecordPayload) {
     activeSlug: String(row.activeSlug),
     state: String(row.state),
     closedStepNotes: row.closedStepNotes,
+    question: nullableString(row.question),
+    autonomy: nullableString(row.autonomy),
+    enforcement: nullableString(row.enforcement),
     totalSteps: Number(row.totalSteps),
     openedMachineId: String(row.openedMachineId),
     takenOverFromMachineId: nullableString(row.takenOverFromMachineId),
@@ -74,19 +84,62 @@ export async function applyTaskFlowValues(
     .returning({ id: taskFlowRecord.id })
 }
 
-export async function applyTaskFlowStageValues(
+type NewTaskFlowStageValues = ReturnType<typeof taskFlowStageValues> & { projectId: string }
+
+/** A new hosted stage takes its project's number sequence, so it cannot be written without one. */
+function requireNewStageProject(
+  values: ReturnType<typeof taskFlowStageValues>,
+): NewTaskFlowStageValues {
+  const { projectId } = values
+  if (projectId) return { ...values, projectId }
+  throw new OutboxRowError(
+    `task_flow_stage projectId is required for a new hosted stage; run ${PLATFORM_SLUG} record push --backfill to enqueue the current stage, then ${PLATFORM_SLUG} record outbox retire orch:<row-id> --reason <text> for this entry`,
+    'row-validation',
+  )
+}
+
+/**
+ * Writes a stage the record did not hold when this push looked, under its project
+ * and the number its project sequence assigned. A concurrent push may insert it
+ * first; the stage is then revised, so the newer revision applies rather than
+ * reading as a collision.
+ */
+export async function writeNewTaskFlowStageValues(
+  database: HostedRecordDatabase,
+  values: NewTaskFlowStageValues,
+  number: number,
+) {
+  const inserted = await database
+    .insert(taskFlowStageRecord)
+    .values({ ...values, number })
+    .onConflictDoNothing({ target: taskFlowStageRecord.id })
+    .returning({ id: taskFlowStageRecord.id })
+  return inserted.length > 0 ? inserted : reviseTaskFlowStageValues(database, values)
+}
+
+/**
+ * Revises a stage the record already holds, leaving the project and number the
+ * record assigned. It is an UPDATE because the stage contract makes both
+ * columns NOT NULL, and Postgres checks NOT NULL before it resolves an upsert
+ * conflict, so a revision carrying no fresh number could not upsert.
+ */
+export async function reviseTaskFlowStageValues(
   database: HostedRecordDatabase,
   values: ReturnType<typeof taskFlowStageValues>,
 ) {
-  const { id: _id, createdAt: _createdAt, ...updates } = values
+  const {
+    id: _id,
+    createdAt: _createdAt,
+    flowRecordId: _flowRecordId,
+    projectId: _projectId,
+    ...updates
+  } = values
   return database
-    .insert(taskFlowStageRecord)
-    .values(values)
-    .onConflictDoUpdate({
-      target: taskFlowStageRecord.id,
-      set: updates,
-      setWhere: drizzleSql`excluded.revision > ${taskFlowStageRecord.revision}`,
-    })
+    .update(taskFlowStageRecord)
+    .set(updates)
+    .where(
+      and(eq(taskFlowStageRecord.id, values.id), lt(taskFlowStageRecord.revision, values.revision)),
+    )
     .returning({ id: taskFlowStageRecord.id })
 }
 
@@ -131,7 +184,17 @@ async function pushTaskFlowStage(
       principal,
       { scope: 'space-principal' },
     )
-    const written = await applyTaskFlowStageValues(drizzle({ client: tx }), values)
+    const database = drizzle({ client: tx })
+    let written: { id: string }[]
+    if (existingOwned) written = await reviseTaskFlowStageValues(database, values)
+    else {
+      const stage = requireNewStageProject(values)
+      written = await writeNewTaskFlowStageValues(
+        database,
+        stage,
+        await allocateRecordSequence(tx, stage.spaceId, stage.projectId, 'task_flow_stage'),
+      )
+    }
     requireOwnedUpsert(written, 'task_flow_stage', values.id, existingOwned)
   })
 }

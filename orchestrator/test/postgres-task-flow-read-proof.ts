@@ -144,4 +144,18 @@ export async function proveTaskFlowRecordReads(input: {
   expect(
     await input.client.readTaskFlowProjectReferenceCounts!(newRecordId(), input.destination),
   ).toEqual({ stages: 0, flows: 0 })
+  const absentFlowId = newRecordId()
+  const absentStageId = newRecordId()
+  expect(
+    await input.client.readTaskFlowPresence!(
+      {
+        flowIds: [input.flowId, absentFlowId],
+        stageIds: [input.stageId, input.tasklessStageId, absentStageId],
+      },
+      input.destination,
+    ),
+  ).toEqual({
+    flowIds: [input.flowId],
+    stageIds: [input.stageId, input.tasklessStageId].toSorted(),
+  })
 }

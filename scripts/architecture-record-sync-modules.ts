@@ -12,6 +12,23 @@ const module = (file: string, allowed: string[]): RecordSyncModule => ({
 })
 
 export const recordSyncModules: RecordSyncModule[] = [
+  module('orchestrator/src/workflow/task-flow-backfill.ts', [
+    'bun:sqlite',
+    'uuid',
+    '../../../shared/record/schema.ts',
+    '../../../shared/record-id.ts',
+    '../../../shared/record-space-membership.ts',
+    '../../../shared/record-write-space.ts',
+    '../database/db.ts',
+    '../project/declared-record-space.ts',
+    '../record/machine-identity.ts',
+    '../record/outbox-enqueue.ts',
+    '../record/outbox-sanitize.ts',
+    '../record/record-api-client-task-flow.ts',
+    '../record/record-task-flow-contract.ts',
+    './task-flow-store-sqlite-write.ts',
+    './task-flow-store-types.ts',
+  ]),
   module('orchestrator/src/record/record-sync-batch.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/record/record-sync-contract.ts', []),
   module('orchestrator/src/record/record-sync-result-decision.ts', ['./record-sync-contract.ts']),
@@ -114,15 +131,18 @@ export const recordSyncModules: RecordSyncModule[] = [
     './record-pool.ts',
   ]),
   module('orchestrator/src/record/record-sync-task-flow.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/record-timestamp.ts',
     'bun',
     'drizzle-orm',
     'drizzle-orm/bun-sql',
     '../../../shared/record/schema-task-flow.ts',
+    './outbox-failure.ts',
     './outbox-payload-contracts.ts',
     './record-evidence-references.ts',
     './record-sync-contract.ts',
     './record-sync-principal.ts',
+    './record-sequence.ts',
   ]),
   module('orchestrator/src/record/record-sync-pull-request-ci.ts', [
     '../../../shared/record-timestamp.ts',

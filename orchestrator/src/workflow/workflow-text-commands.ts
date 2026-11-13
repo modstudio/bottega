@@ -6,7 +6,7 @@ import { positive } from './workflow-command-arguments.ts'
 import type { HubTaskReader } from './workflow-task-reference.ts'
 import { workflowTextAttachmentToken } from './workflow-text.ts'
 import {
-  copyWorkflowTextForCursor,
+  copyWorkflowTextForTask,
   cursorForWorkflowTextCopy,
   productionWorkflowTextDocumentPorts,
   showWorkflowText,
@@ -42,8 +42,9 @@ export async function copyWorkflowTextCommand(
 ): Promise<void> {
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
   if (cursor === undefined) throw new Error('--cursor is required')
-  const result = await copyWorkflowTextForCursor(
+  const result = await copyWorkflowTextForTask(
     await cursorForWorkflowTextCopy(cursor),
+    flagValue(argv, 'task'),
     undefined,
     options.hubTaskReader,
     options.workflowTextDocuments ?? productionWorkflowTextDocumentPorts,

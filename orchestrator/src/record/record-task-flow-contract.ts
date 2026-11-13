@@ -6,6 +6,7 @@ import { decodeTaskFlowStageListCursor, type TaskFlowStageListCursor } from './r
 export const RECORD_TASK_FLOW_NOT_FOUND_MESSAGE = 'hosted task flow was not found'
 export const RECORD_TASK_FLOW_NOT_FOUND_CODE = 'task_flow_not_found'
 export const TASK_FLOW_STAGE_LIST_LIMIT_MAX = 1_000
+export const TASK_FLOW_PRESENCE_BATCH_MAX = 500
 export const TASK_FLOW_STAGE_LIST_REMEDY = `Pass projectId, projectId with number, sessionId, states, taskKey, workflow, mode, workflowKey, keyless, primaryInstance, taskId, or unlinked; limit must be from 1 through ${TASK_FLOW_STAGE_LIST_LIMIT_MAX}. Restart the list without cursor when its cursor is invalid.`
 
 const nullableId = z.string().uuid().nullable()
@@ -153,6 +154,13 @@ export const hostedTaskFlowProjectReferenceCountsSchema = z.object({
 export type HostedTaskFlowProjectReferenceCounts = z.infer<
   typeof hostedTaskFlowProjectReferenceCountsSchema
 >
+
+export const taskFlowPresenceInputSchema = z.object({
+  stageIds: z.array(z.string().uuid()).max(TASK_FLOW_PRESENCE_BATCH_MAX),
+  flowIds: z.array(z.string().uuid()).max(TASK_FLOW_PRESENCE_BATCH_MAX),
+})
+export type TaskFlowPresenceInput = z.infer<typeof taskFlowPresenceInputSchema>
+export type TaskFlowPresence = z.infer<typeof taskFlowPresenceInputSchema>
 
 export const taskFlowReadQuerySchema = z
   .object({

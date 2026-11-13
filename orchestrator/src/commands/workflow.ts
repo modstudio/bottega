@@ -417,7 +417,8 @@ function registerWorkflowCursorAdmin({
     text
       .command('copy')
       .description('copy uncopied cursor text to task documents')
-      .requiredOption('--cursor <value>', 'select this workflow cursor'),
+      .requiredOption('--cursor <value>', 'select this workflow cursor')
+      .option('--task <key>', 'copy a keyless cursor to this task'),
   )
     .allowExcessArguments(false)
     .action((options) =>

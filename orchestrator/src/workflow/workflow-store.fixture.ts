@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Command } from 'commander'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { scrubbedGitEnv } from '../../../shared/git.ts'
@@ -22,9 +23,41 @@ import {
   type WorkflowCommandOptions,
   type WorkflowPresentation,
 } from './workflow-commands.ts'
+import { seedWorkflows } from './workflow-seeds.ts'
 import { parseWorkflowTree } from './workflow-tree.ts'
 import { collectWorkflowTree } from './workflow-tree-files.ts'
 import { promoteWorkflowLocal, setWorkflowLocal, type WorkflowDefinition } from './workflows.ts'
+
+export function seedCurrentWorkflowTreeFixture(
+  database: Database,
+  workflowSlugs: string[],
+  reason: string,
+  projectPath = '/fixture',
+): void {
+  const root = fileURLToPath(new URL('../../..', import.meta.url))
+  const tree = parseWorkflowTree(collectWorkflowTree(root))
+  seedWorkflows(database)
+  database
+    .query('INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?)')
+    .run(
+      newRecordId(),
+      'fixture',
+      projectPath,
+      'bun',
+      JSON.stringify({ tracker: { protocol: 'hub' }, docs: { protocol: 'orch-docs' } }),
+    )
+  const catalogue = setStepCatalogueLocal(
+    { steps: tree.steps, sequences: tree.sequences },
+    reason,
+    'test',
+    database,
+  )
+  promoteStepCatalogueLocal(catalogue.n, reason, 'test', database)
+  for (const tracked of tree.workflows.filter(({ slug }) => workflowSlugs.includes(slug))) {
+    const workflow = setWorkflowLocal(tracked.slug, tracked.definition, reason, 'test', database)
+    promoteWorkflowLocal(tracked.slug, workflow.n, reason, 'test', database)
+  }
+}
 
 export const workflowCommandPresentation = (lines: string[]) => ({
   log: (line: string) => lines.push(line),

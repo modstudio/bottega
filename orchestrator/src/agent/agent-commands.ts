@@ -1,7 +1,7 @@
 // concern: agent-commands
 /** Owns agent registry mutations and catalogue presentation. Must not know CLI grammar. */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { flagValue } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import { probeAgent, recordSuccessfulRegistrationProbe } from './agent-probe.ts'
@@ -16,6 +16,7 @@ import {
   removeAgent,
 } from './agent-registry.ts'
 import { setAgentWithCapacityGuard } from './agent-set-capacity.ts'
+import type { RequestSettings } from './goose-provider.ts'
 import {
   available,
   ensureLocalHealth,
@@ -90,6 +91,46 @@ function providerMutation(
   return value ? { provider: value } : {}
 }
 
+const RESERVED_REQUEST_SETTING_KEYS = new Set([
+  'model',
+  'messages',
+  'tools',
+  'stream',
+  'stream_options',
+  'max_tokens',
+  'max_completion_tokens',
+])
+
+function parseRequestSettings(value: string): RequestSettings {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(value)
+  } catch {
+    throw new Error('--request-settings must be a JSON object')
+  }
+  if (parsed === null || Array.isArray(parsed) || typeof parsed !== 'object') {
+    throw new Error('--request-settings must be a JSON object')
+  }
+  const reserved = Object.keys(parsed).find((key) => RESERVED_REQUEST_SETTING_KEYS.has(key))
+  if (reserved) {
+    throw new Error(
+      `--request-settings may not set reserved key ${JSON.stringify(reserved)}; ${PLATFORM_NAME} sets it on every Goose request, so remove it`,
+    )
+  }
+  return parsed as RequestSettings
+}
+
+function requestSettingsMutation(
+  argv: string[],
+  value: string | undefined,
+): Pick<AgentMutation, 'requestSettings'> {
+  if (value !== undefined && argv.includes('--clear-request-settings')) {
+    throw new Error('--request-settings and --clear-request-settings are mutually exclusive')
+  }
+  if (argv.includes('--clear-request-settings')) return { requestSettings: null }
+  return value === undefined ? {} : { requestSettings: parseRequestSettings(value) }
+}
+
 function booleanFlag(name: string, value: string | undefined): boolean | undefined {
   if (value === undefined) return undefined
   if (value !== 'true' && value !== 'false') throw new Error(`--${name} must be true or false`)
@@ -101,6 +142,7 @@ function mutation(argv: string[]): AgentMutation {
   const apiKeySecret = flag('api-key-secret')
   assertApiKeyFlags(argv, apiKeySecret)
   const provider = flag('provider')
+  const requestSettings = flag('request-settings')
   const enabled = booleanFlag('enabled', flag('enabled'))
   const billing = flag('billing')
   const routeMetered = booleanFlag('route-metered', flag('route-metered'))
@@ -117,6 +159,7 @@ function mutation(argv: string[]): AgentMutation {
     ...(apiKeySecret ? { apiKeySecret } : {}),
     ...(argv.includes('--clear-api-key-secret') ? { apiKeySecret: null } : {}),
     ...providerMutation(argv, provider),
+    ...requestSettingsMutation(argv, requestSettings),
     ...(billing ? { billing: billing as AgentMutation['billing'] } : {}),
     ...(routeMetered !== undefined ? { routeMetered } : {}),
     ...(trainsOnInputs !== undefined ? { trainsOnInputs } : {}),
@@ -191,6 +234,7 @@ function showCommand(name: string, presentation: Presentation): void {
     JSON.stringify(
       {
         ...row,
+        request_settings: row.request_settings ? JSON.parse(row.request_settings) : null,
         caps: JSON.parse(row.caps),
         probeResult: row.probe_result ? JSON.parse(row.probe_result) : null,
         judged,
