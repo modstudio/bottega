@@ -664,13 +664,14 @@ read and preserve workflow text attachments
 
 ## bottega workflow text copy
 
-**Synopsis:** `bottega workflow text copy [--cursor <value>] [--json]`
+**Synopsis:** `bottega workflow text copy [--cursor <value>] [--task <key>] [--json]`
 
 copy uncopied cursor text to task documents
 
 ### Options
 
 - `--cursor <value>`: select this workflow cursor
+- `--task <key>`: copy a keyless cursor to this task
 - `--json`: print JSON output
 
 ### Related
