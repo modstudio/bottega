@@ -37,17 +37,40 @@ class AssembleAdditionalContext(unittest.TestCase):
             over + "\nFull context: bottega agent context show --session session-a",
         )
 
-    def test_injection_recording_passes_final_utf8_size_and_reports_failure(self):
-        completed = SimpleNamespace(returncode=1, stdout="", stderr="store refused\n")
-        with mock.patch.object(session_brief.subprocess, "run", return_value=completed) as run:
-            errors = io.StringIO()
+    def test_injection_recording_detaches_with_final_utf8_size(self):
+        with mock.patch.object(session_brief.subprocess, "Popen") as popen:
+            session_brief._record_injection(
+                "/bin/bottega", "/tmp", {}, "session-a", "compact", "é\nfull"
+            )
+        command = popen.call_args.args[0]
+        self.assertEqual(command[-6:], ["--bytes", "7", "--lines", "2", "--chars", "6"])
+        self.assertEqual(
+            popen.call_args.kwargs,
+            {
+                "env": {},
+                "stdin": session_brief.subprocess.DEVNULL,
+                "stdout": session_brief.subprocess.DEVNULL,
+                "stderr": session_brief.subprocess.DEVNULL,
+                "start_new_session": True,
+                "cwd": "/tmp",
+            },
+        )
+
+    def test_injection_recording_launch_failure_leaves_output_unchanged(self):
+        output = "assembled hook output"
+        errors = io.StringIO()
+        with mock.patch.object(
+            session_brief.subprocess, "Popen", side_effect=OSError("cannot launch")
+        ):
             with mock.patch("sys.stderr", errors):
                 session_brief._record_injection(
-                    "/bin/bottega", "/tmp", {}, "session-a", "compact", "é\nfull"
+                    "/bin/bottega", "/tmp", {}, "session-a", "startup", output
                 )
-        command = run.call_args.args[0]
-        self.assertEqual(command[-6:], ["--bytes", "7", "--lines", "2", "--chars", "6"])
-        self.assertEqual(errors.getvalue(), "session-brief: injection recording failed: store refused\n")
+        self.assertEqual(output, "assembled hook output")
+        self.assertEqual(
+            errors.getvalue(),
+            "session-brief: injection recording failed: cannot launch\n",
+        )
 
     def test_filed_issue_sections_accept_current_uuid_run_ids(self):
         run_id = "00000000-0000-4000-8000-000000000042"

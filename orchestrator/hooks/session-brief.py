@@ -216,36 +216,33 @@ def _context_size(text):
 
 def _record_injection(bottega, cwd, env, session, source, text):
     size_bytes, lines, chars = _context_size(text)
-    completed = subprocess.run(
-        [
-            bottega,
-            "agent",
-            "context",
-            "record-injection",
-            "--session",
-            session,
-            "--source",
-            source,
-            "--bytes",
-            str(size_bytes),
-            "--lines",
-            str(lines),
-            "--chars",
-            str(chars),
-        ],
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=1,
-        check=False,
-        cwd=cwd,
-    )
-    if completed.returncode != 0:
-        detail = next(
-            (line.strip() for line in (completed.stderr or "").splitlines() if line.strip()),
-            f"exit {completed.returncode}",
+    try:
+        subprocess.Popen(
+            [
+                bottega,
+                "agent",
+                "context",
+                "record-injection",
+                "--session",
+                session,
+                "--source",
+                source,
+                "--bytes",
+                str(size_bytes),
+                "--lines",
+                str(lines),
+                "--chars",
+                str(chars),
+            ],
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            cwd=cwd,
         )
-        print(f"session-brief: injection recording failed: {detail}", file=sys.stderr)
+    except Exception as error:
+        print(f"session-brief: injection recording failed: {error}", file=sys.stderr)
 
 
 HOOK_CONTEXT_MAX_CHARS = 9000
