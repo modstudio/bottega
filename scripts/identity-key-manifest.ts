@@ -666,10 +666,12 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
   ]),
   ...manifest('orchestrator', 'identifier issued by the project task tracker', [
     'branch_disposal.task_key',
+    'review_funnel_decision.task_key',
   ]),
   ...manifest('hosted', 'identifier issued by the project task tracker', [
     'branch_disposal.task_key',
     'port_ref.task_key',
+    'review_funnel_decision.task_key',
   ]),
 ]
 
@@ -848,6 +850,8 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'review_finding.review_lens_record_id',
     'review_finding_amendment.record_id',
     'review_finding_amendment.review_finding_record_id',
+    'review_funnel_decision.record_id',
+    'review_funnel_decision.project_record_id',
     'review_lens.record_id',
     'review_lens.review_record_id',
     'review_lens.run_record_id',

@@ -182,6 +182,19 @@ function registerReviewQueries(review: Command, run: ReviewRunner): void {
     .option('--json', 'write the classification as JSON')
     .action((_target, _options, command) => run(command, tierReviewCliCommand))
 
+  registerReviewFunnel(review, run)
+
+  review
+    .command('coverage-audit')
+    .description('audit completed reviews whose evidence covered trunk')
+    .allowExcessArguments(true)
+    .option('--json', 'write the audit as JSON')
+    .action((_options, command) =>
+      run(command, (_argv, flags, output) => coverageAuditReviewCommand(flags, output)),
+    )
+}
+
+function registerReviewFunnel(review: Command, run: ReviewRunner): void {
   const funnel = review.command('funnel').description('inspect and replay review-funnel decisions')
   funnel
     .command('report')
@@ -205,15 +218,6 @@ function registerReviewQueries(review: Command, run: ReviewRunner): void {
     .option('--set <json-file>', 'validate and set a policy JSON file')
     .action((_options, command) =>
       run(command, (_argv, flags, output) => policyReviewFunnelCommand(flags, output)),
-    )
-
-  review
-    .command('coverage-audit')
-    .description('audit completed reviews whose evidence covered trunk')
-    .allowExcessArguments(true)
-    .option('--json', 'write the audit as JSON')
-    .action((_options, command) =>
-      run(command, (_argv, flags, output) => coverageAuditReviewCommand(flags, output)),
     )
 }
 

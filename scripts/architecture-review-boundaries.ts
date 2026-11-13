@@ -500,6 +500,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../project/projects.ts',
       '../review-funnel/decide-review-funnel.ts',
       '../review-funnel/gather-funnel-facts.ts',
+      '../review-funnel/review-funnel-decision-log.ts',
       '../review-funnel/review-funnel-policy.ts',
       '../run/run-identifier.ts',
       './review.ts',

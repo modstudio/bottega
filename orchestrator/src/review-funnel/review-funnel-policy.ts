@@ -81,8 +81,7 @@ export function reviewFunnelPolicyAt(version: string): VersionedReviewFunnelPoli
     return { policy: DEFAULT_REVIEW_FUNNEL_POLICY, policyVersion: 'builtin' }
   const revision = getDocRevision(version)
   if (
-    !revision ||
-    revision.scope !== 'global' ||
+    revision?.scope !== 'global' ||
     revision.subject !== null ||
     revision.slug !== 'review-funnel-policy'
   )

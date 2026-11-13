@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import type { VerdictPayload } from '../verdict/verdict-payload.ts'
 import { releaseValues } from './record-release-sync.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
-import { commonReviewRecordValues } from './record-review-values.ts'
+import { commonReviewRecordValues, reviewValues } from './record-review-values.ts'
 import { branchDisposalValues } from './record-sync-branch-disposal.ts'
 import type { RecordPayload } from './record-sync-contract.ts'
 import { pullRequestCiValues } from './record-sync-pull-request-ci.ts'
@@ -14,7 +14,6 @@ import {
   questionValues,
   reviewFindingValues,
   reviewLensValues,
-  reviewValues,
   testFlakeValues,
 } from './record-sync-service.ts'
 import { scoreValues } from './score-sync.ts'
