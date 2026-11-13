@@ -66,6 +66,7 @@ import * as evidenceLookup from './record-sync-evidence-lookup.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
 import { type ProjectResolutionCache, projectRecordId } from './record-sync-project-identity.ts'
 import { pullRequestCiRecordKind } from './record-sync-pull-request-ci.ts'
+import { reviewFunnelDecisionRecordKind } from './record-sync-review-funnel.ts'
 import {
   runProjectTaskIdentityDecision,
   runTaskIdentityDecision,
@@ -718,6 +719,7 @@ const recordKinds = {
         requireOwnedUpsert(written, 'review_read', values.id)
       }),
   },
+  review_funnel_decision: reviewFunnelDecisionRecordKind(existingEvidenceOwned, requireOwnedUpsert),
   release: {
     ...OUTBOX_PAYLOAD_CONTRACTS.release,
     push: (

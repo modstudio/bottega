@@ -57,6 +57,7 @@ export type ReviewFunnelRoundFact = {
 
 export type ReviewFunnelFacts = {
   change: ReviewFunnelChangeIdentity
+  stack: string | null
   files: ReviewTierFile[]
   review: ReviewSettings | undefined
   branchReviews: TriageReviewRow[]

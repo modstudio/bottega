@@ -32,6 +32,11 @@ import {
 import { reviewBudgetCommand } from '../review/review-round-budget.ts'
 import { scopeProposalReviewCommand } from '../review/review-scope-proposal-command.ts'
 import { restoreReviewTriageCommand } from '../review/review-triage-restore.ts'
+import {
+  policyReviewFunnelCommand,
+  replayReviewFunnelCommand,
+  reportReviewFunnelCommand,
+} from '../review-funnel/review-funnel-commands.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
 import {
@@ -176,6 +181,31 @@ function registerReviewQueries(review: Command, run: ReviewRunner): void {
     .option('--cwd <value>', 'resolve the target from this project checkout')
     .option('--json', 'write the classification as JSON')
     .action((_target, _options, command) => run(command, tierReviewCliCommand))
+
+  const funnel = review.command('funnel').description('inspect and replay review-funnel decisions')
+  funnel
+    .command('report')
+    .description('report review-funnel outcomes by project and stack')
+    .option('--json', 'write the report as JSON')
+    .action((_options, command) =>
+      run(command, (_argv, flags, output) => reportReviewFunnelCommand(flags, output)),
+    )
+  funnel
+    .command('replay')
+    .description('replay logged facts through a policy')
+    .option('--policy <version>', 'stored review-funnel-policy revision or builtin')
+    .option('--policy-file <path>', 'unsaved candidate policy JSON file')
+    .option('--json', 'write replay differences as JSON')
+    .action((_options, command) =>
+      run(command, (_argv, flags, output) => replayReviewFunnelCommand(flags, output)),
+    )
+  funnel
+    .command('policy')
+    .description('show or set the global review-funnel policy')
+    .option('--set <json-file>', 'validate and set a policy JSON file')
+    .action((_options, command) =>
+      run(command, (_argv, flags, output) => policyReviewFunnelCommand(flags, output)),
+    )
 
   review
     .command('coverage-audit')

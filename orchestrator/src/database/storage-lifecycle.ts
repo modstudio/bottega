@@ -251,6 +251,15 @@ export const orchestratorTableLifecycles: readonly TableLifecycle[] = [
   },
   {
     store: 'orchestrator',
+    table: 'review_funnel_decision',
+    class: 'cache',
+    keep: LIFECYCLE_KEEP.cache,
+    remover: null,
+    slice: 'working-set',
+    payloadColumns: ['facts', 'verdict'].map(payload),
+  },
+  {
+    store: 'orchestrator',
     table: 'review_lens',
     class: 'cache',
     keep: LIFECYCLE_KEEP.cache,

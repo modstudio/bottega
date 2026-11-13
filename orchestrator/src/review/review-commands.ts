@@ -14,6 +14,7 @@ import { formatLensProfileSource, resolveLens } from '../lens/lenses.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { decideReviewFunnel } from '../review-funnel/decide-review-funnel.ts'
 import { gatherFunnelFacts } from '../review-funnel/gather-funnel-facts.ts'
+import { recordReviewFunnelDecision } from '../review-funnel/review-funnel-decision-log.ts'
 import { activeReviewFunnelPolicy } from '../review-funnel/review-funnel-policy.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import { getReview, listReviews, parseReviewOutput, recordReviews } from './review.ts'
@@ -210,18 +211,30 @@ function reviewTierOutputForTarget({
     })
   const round = reviewPlan.round
   const activePolicy = activeReviewFunnelPolicy()
+  const funnelFacts = gatherFunnelFacts({
+    database: db(),
+    cwd: repo,
+    base: from,
+    head: to,
+    branch,
+    project,
+  })
   const funnelVerdict = decideReviewFunnel(
-    gatherFunnelFacts({
-      database: db(),
-      cwd: repo,
-      base: from,
-      head: to,
-      branch,
-      project,
-    }),
+    funnelFacts,
     activePolicy.policy,
     activePolicy.policyVersion,
   )
+  try {
+    recordReviewFunnelDecision({
+      database: db(),
+      surface: 'review-tier',
+      outcome: 'advice',
+      facts: funnelFacts,
+      verdict: funnelVerdict,
+    })
+  } catch (cause) {
+    console.error(`warning: could not record review-funnel decision: ${String(cause)}`)
+  }
   return {
     ...output,
     lenses: round.lenses,

@@ -72,6 +72,7 @@ export const hostedTableLifecycles: readonly TableLifecycle[] = [
       'rate_limit',
       'release',
       'review',
+      'review_funnel_decision',
       'review_read',
       'routing_evidence_head',
       'run_exclusion',
@@ -153,6 +154,14 @@ export const hostedTableLifecycles: readonly TableLifecycle[] = [
       'host_admission_first',
       'host_admission',
     ].map(payload),
+  },
+  {
+    store: 'hosted',
+    table: 'review_funnel_decision',
+    class: 'record',
+    keep: LIFECYCLE_KEEP.record,
+    remover: 'kept',
+    payloadColumns: ['facts', 'verdict'].map(payload),
   },
   {
     store: 'hosted',

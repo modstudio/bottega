@@ -217,6 +217,10 @@ const BRANCH_DISPOSAL_RECORD_PAYLOAD_CONTRACT = contract(
 const BRIEF_INJECTION_RECORD_PAYLOAD_CONTRACT = contract(
   'id spaceId machineId localId sessionId at source bytes lines cursors keylessCursors keylessIdleMaxMs overCap createdAt updatedAt',
 )
+const REVIEW_FUNNEL_DECISION_RECORD_PAYLOAD_CONTRACT = contract(
+  'id spaceId projectId projectName machineId localId surface taskKey branch headCommit patchId pathSet policyVersion mode factsDigest facts stack verdict outcome sessionId recordedAt withheldFields createdAt updatedAt',
+  { projectId: null, taskKey: null, stack: null, sessionId: null, withheldFields: null },
+)
 
 export const OUTBOX_PAYLOAD_CONTRACTS = {
   run: RUN_RECORD_PAYLOAD_CONTRACT,
@@ -228,6 +232,7 @@ export const OUTBOX_PAYLOAD_CONTRACTS = {
   review_lens: REVIEW_LENS_RECORD_PAYLOAD_CONTRACT,
   review_finding: REVIEW_FINDING_RECORD_PAYLOAD_CONTRACT,
   review_read: REVIEW_READ_RECORD_PAYLOAD_CONTRACT,
+  review_funnel_decision: REVIEW_FUNNEL_DECISION_RECORD_PAYLOAD_CONTRACT,
   release: RELEASE_RECORD_PAYLOAD_CONTRACT,
   landing: LANDING_RECORD_PAYLOAD_CONTRACT,
   landing_override: LANDING_OVERRIDE_RECORD_PAYLOAD_CONTRACT,

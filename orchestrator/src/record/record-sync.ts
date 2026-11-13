@@ -90,6 +90,7 @@ export function outboxOrder(kind: string, id: number): readonly [phase: number, 
     case 'review_lens':
     case 'review_finding':
     case 'review_read':
+    case 'review_funnel_decision':
     case 'contention':
       return [2, id]
     default:
@@ -309,6 +310,8 @@ function sourceProjectRecordId(local: Database, row: OutboxRow): string | null |
       LEFT JOIN project ON project.record_id=review.project_record_id WHERE review_finding.record_id=?`,
     review_read: `SELECT project.record_id FROM review_read
       LEFT JOIN project ON project.record_id=review_read.project_record_id WHERE review_read.record_id=?`,
+    review_funnel_decision: `SELECT project.record_id FROM review_funnel_decision
+      LEFT JOIN project ON project.record_id=review_funnel_decision.project_record_id WHERE review_funnel_decision.record_id=?`,
     landing: `SELECT project.record_id FROM landing
       LEFT JOIN project ON project.record_id=landing.project_record_id WHERE landing.record_id=?`,
     landing_override: `SELECT project.record_id FROM landing_override

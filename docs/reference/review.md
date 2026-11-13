@@ -13,6 +13,11 @@ review runs, lenses, tiers, and confinement
 - [bottega review confinement clear](#bottega-review-confinement-clear)
 - [bottega review confinement report](#bottega-review-confinement-report)
 - [bottega review coverage-audit](#bottega-review-coverage-audit)
+- [bottega review funnel](#bottega-review-funnel)
+- [bottega review funnel help](#bottega-review-funnel-help)
+- [bottega review funnel policy](#bottega-review-funnel-policy)
+- [bottega review funnel replay](#bottega-review-funnel-replay)
+- [bottega review funnel report](#bottega-review-funnel-report)
 - [bottega review lens](#bottega-review-lens)
 - [bottega review lens list](#bottega-review-lens-list)
 - [bottega review lens profile](#bottega-review-lens-profile)
@@ -48,6 +53,7 @@ review runs, lenses, tiers, and confinement
 - [bottega review complete](./review.md#bottega-review-complete)
 - [bottega review confinement](./review.md#bottega-review-confinement)
 - [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
+- [bottega review funnel](./review.md#bottega-review-funnel)
 - [bottega review lens](./review.md#bottega-review-lens)
 - [bottega review list](./review.md#bottega-review-list)
 - [bottega review pins](./review.md#bottega-review-pins)
@@ -175,6 +181,74 @@ audit completed reviews whose evidence covered trunk
 ### Related
 
 - [bottega review](./review.md#bottega-review)
+
+## bottega review funnel
+
+**Synopsis:** `bottega review funnel`
+
+inspect and replay review-funnel decisions
+
+### Related
+
+- [bottega review](./review.md#bottega-review)
+- [bottega review funnel help](./review.md#bottega-review-funnel-help)
+- [bottega review funnel policy](./review.md#bottega-review-funnel-policy)
+- [bottega review funnel replay](./review.md#bottega-review-funnel-replay)
+- [bottega review funnel report](./review.md#bottega-review-funnel-report)
+
+## bottega review funnel help
+
+**Synopsis:** `bottega review funnel help [command]`
+
+display help for command
+
+### Related
+
+- [bottega review funnel](./review.md#bottega-review-funnel)
+
+## bottega review funnel policy
+
+**Synopsis:** `bottega review funnel policy [--set <json-file>]`
+
+show or set the global review-funnel policy
+
+### Options
+
+- `--set <json-file>`: validate and set a policy JSON file
+
+### Related
+
+- [bottega review funnel](./review.md#bottega-review-funnel)
+
+## bottega review funnel replay
+
+**Synopsis:** `bottega review funnel replay [--policy <version>] [--policy-file <path>] [--json]`
+
+replay logged facts through a policy
+
+### Options
+
+- `--policy <version>`: stored review-funnel-policy revision or builtin
+- `--policy-file <path>`: unsaved candidate policy JSON file
+- `--json`: write replay differences as JSON
+
+### Related
+
+- [bottega review funnel](./review.md#bottega-review-funnel)
+
+## bottega review funnel report
+
+**Synopsis:** `bottega review funnel report [--json]`
+
+report review-funnel outcomes by project and stack
+
+### Options
+
+- `--json`: write the report as JSON
+
+### Related
+
+- [bottega review funnel](./review.md#bottega-review-funnel)
 
 ## bottega review lens
 

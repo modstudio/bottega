@@ -2,7 +2,7 @@
 /** Reads and validates the one global review-funnel policy document. */
 
 import { z } from 'zod'
-import { getDoc } from '../doc/docs.ts'
+import { getDoc, getDocRevision, setDoc } from '../doc/docs.ts'
 import { REVIEW_WINDOW } from '../review/review-evidence-sql.ts'
 import {
   REVIEW_FILE_COUNT_BUMP,
@@ -70,6 +70,37 @@ export type VersionedReviewFunnelPolicy = {
   policyVersion: string
 }
 
+export function parseReviewFunnelPolicy(value: unknown): ReviewFunnelPolicy {
+  const parsed = reviewFunnelPolicySchema.safeParse(value)
+  if (!parsed.success) throw new Error(`review-funnel policy is invalid: ${parsed.error.message}`)
+  return parsed.data
+}
+
+export function reviewFunnelPolicyAt(version: string): VersionedReviewFunnelPolicy {
+  if (version === 'builtin')
+    return { policy: DEFAULT_REVIEW_FUNNEL_POLICY, policyVersion: 'builtin' }
+  const revision = getDocRevision(version)
+  if (
+    !revision ||
+    revision.scope !== 'global' ||
+    revision.subject !== null ||
+    revision.slug !== 'review-funnel-policy'
+  )
+    throw new Error(`no review-funnel-policy revision ${version}`)
+  return { policy: parseReviewFunnelPolicy(JSON.parse(revision.body)), policyVersion: version }
+}
+
+export async function setReviewFunnelPolicy(policy: ReviewFunnelPolicy) {
+  return setDoc({
+    scope: 'global',
+    subject: null,
+    slug: 'review-funnel-policy',
+    title: 'Review funnel policy',
+    body: `${JSON.stringify(policy, null, 2)}\n`,
+    reason: 'Set the review funnel policy through its owning verb',
+  })
+}
+
 /** The policy document is optional so empty and freshly-created stores retain today's behavior. */
 export function activeReviewFunnelPolicy(): VersionedReviewFunnelPolicy {
   const doc = getDoc('global', null, 'review-funnel-policy')
@@ -80,9 +111,5 @@ export function activeReviewFunnelPolicy(): VersionedReviewFunnelPolicy {
   } catch (cause) {
     throw new Error(`global document review-funnel-policy is not valid JSON: ${String(cause)}`)
   }
-  const parsed = reviewFunnelPolicySchema.safeParse(body)
-  if (!parsed.success) {
-    throw new Error(`global document review-funnel-policy is invalid: ${parsed.error.message}`)
-  }
-  return { policy: parsed.data, policyVersion: doc.revision ?? 'builtin' }
+  return { policy: parseReviewFunnelPolicy(body), policyVersion: doc.revision ?? 'builtin' }
 }

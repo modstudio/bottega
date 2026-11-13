@@ -313,6 +313,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
       'workflow_cursor',
       'review',
       'review_lens',
+      'review_funnel_decision',
       'review_finding',
       'review_read',
       'release_ledger',
