@@ -60,7 +60,7 @@ async function wrapsForNamedSpace(
     client.listMachineKeys(space.destination),
   ])
   const recipientKeyIds = registered
-    .filter((item) => item.revokedAt === null && trusted[item.keyId])
+    .filter((item) => item.userId !== null && item.revokedAt === null && trusted[item.keyId])
     .map((item) => item.keyId)
   return wrapsForRecipients(
     dek,
