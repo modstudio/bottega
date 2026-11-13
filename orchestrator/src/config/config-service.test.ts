@@ -8,7 +8,7 @@ import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { writeHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import { readMachineKey, writeMachineKey } from '../../../shared/machine-key-store.ts'
-import { readMachineSigningKey } from '../../../shared/machine-signing-key.ts'
+import * as machineSigningKey from '../../../shared/machine-signing-key.ts'
 import {
   generateDataKey,
   generateMachineKeyPair,
@@ -20,6 +20,12 @@ import {
   wrapDataKey,
 } from '../../../shared/secret-envelope.ts'
 import { pinTrustedMachine, readTrustList } from '../../../shared/trust-list.ts'
+import {
+  decodeTrustLogEntry,
+  trustLogEntryHash,
+  verifyTrustLog,
+} from '../../../shared/trust-log.ts'
+import { readRememberedTrustLogHead } from '../../../shared/trust-log-head.ts'
 import {
   applyLegacyEnvironmentSecretMigration,
   claimCurrentMachineKey,
@@ -42,10 +48,14 @@ import {
   setEntry,
   setSecret,
 } from './config-service.ts'
+import {
+  machineRevokeTrustLogFixture,
+  trackedTrustLogClient,
+  trustLogFixtureSigningKey,
+} from './config-service-trust-log.fixture.ts'
 
 const roots: string[] = []
-let previousConfigHome: string | undefined
-let previousKeystore: string | undefined
+let previousConfigHome: string | undefined, previousKeystore: string | undefined
 beforeEach(() => {
   previousConfigHome = process.env.BOTTEGA_CONFIG_HOME
   previousKeystore = process.env.BOTTEGA_KEYSTORE
@@ -63,6 +73,7 @@ async function rotationFixture(
   resumeRow = false,
   sameKeyBindings = false,
   userScope = false,
+  withTrustLog = false,
 ) {
   const root = mkdtempSync(join(tmpdir(), 'config-rotation-'))
   roots.push(root)
@@ -80,6 +91,15 @@ async function rotationFixture(
   const spaceId = '01990000-0000-7000-8000-000000000001'
   const userId = '01990000-0000-7000-8000-000000000002'
   writeHostedConfigIdentity({ spaceId, userId })
+  const signing = trustLogFixtureSigningKey(31)
+  const trustLog = machineRevokeTrustLogFixture(
+    withTrustLog,
+    spaceId,
+    [keyId, pair.publicKey, signing.publicKey, 'current'],
+    [otherKeyId, other.publicKey, trustLogFixtureSigningKey(32).publicKey, 'other'],
+    signing.privateKey,
+  )
+  if (withTrustLog) machineSigningKey.writeMachineSigningKey(signing, process.env)
   const oldId = '01990000-0000-7000-8000-000000000003'
   const oldDek = generateDataKey()
   const wrapped = await wrapDataKey({
@@ -172,8 +192,8 @@ async function rotationFixture(
       revokedAt: null,
     },
   ]
-  const created: string[] = []
-  const retired: string[] = []
+  const [created, retired] = [[], []] as [string[], string[]]
+  const trustLogClient = trackedTrustLogClient(trustLog)
   let oldRetiredAt: string | null = null
   const client = {
     whoami: async () => ({ user: { id: userId }, activeSpaceId: spaceId }),
@@ -238,9 +258,11 @@ async function rotationFixture(
       current.wraps.push(...wraps)
     },
     revokeMachineKey: async (id: string) => {
+      trustLogClient.recordCallOrder.push('revokeMachineKey')
       const found = machines.find((item) => item.keyId === id)!
       found.revokedAt = '2026-06-01T00:00:00.000Z'
     },
+    ...trustLogClient.methods,
   } as unknown as ConfigClient
   return {
     client,
@@ -252,6 +274,9 @@ async function rotationFixture(
     recipientPublicKey: encode(recipient.publicKey),
     current: () => current,
     secrets: () => secrets,
+    trustLog,
+    appendedTrustLogEntry: trustLogClient.appendedTrustLogEntry,
+    recordCallOrder: trustLogClient.recordCallOrder,
   }
 }
 
@@ -281,8 +306,7 @@ test('machine delete refuses an unknown key with every accepted family and the l
 test('routing cost policy defaults to machine.toml and get reports the machine file source', async () => {
   const root = mkdtempSync(join(tmpdir(), 'config-home-'))
   roots.push(root)
-  const config = join(root, 'config')
-  const env = { HOME: root, [CONFIG_HOME_ENV]: config }
+  const env = { HOME: root, [CONFIG_HOME_ENV]: join(root, 'config') }
   const client = {
     listEntries: async () => [{ key: 'routing.cost_policy', scope: 'space' }],
     getEntry: async () => {
@@ -514,6 +538,18 @@ test('machine revoke rotates through the shared rotation operation', async () =>
   await machineRevoke(fixture.otherKeyId, fixture.client)
   expect(fixture.created).toHaveLength(1)
   expect(fixture.retired).toEqual(['01990000-0000-7000-8000-000000000003'])
+})
+
+test('machine revoke appends and remembers a verified trust log revocation before record revoke', async () => {
+  const fixture = await rotationFixture(null, false, false, false, true)
+  await machineRevoke(fixture.otherKeyId, fixture.client)
+
+  const appended = fixture.appendedTrustLogEntry()
+  expect(decodeTrustLogEntry(appended!).body).toEqual({ kind: 'revoke', keyId: fixture.otherKeyId })
+  const state = verifyTrustLog([...fixture.trustLog, appended!], { spaceId: fixture.spaceId })
+  expect(state.keys.has(fixture.otherKeyId)).toBe(false)
+  expect(readRememberedTrustLogHead(fixture.spaceId)).toEqual(trustLogEntryHash(appended!))
+  expect(fixture.recordCallOrder).toEqual(['appendTrustLogEntry', 'revokeMachineKey'])
 })
 
 test('machine revoke resumes re-sealing older rows without creating another data key', async () => {
@@ -882,13 +918,13 @@ test('machine init backs up and replaces a revoked local identity before registe
 
   const oldKeyId = await machineInit(spaceId, 'fixture', client, env)
   const oldPrivateKey = readMachineKey(env)?.privateKey
-  const oldSigningPrivateKey = readMachineSigningKey(env)?.privateKey
+  const oldSigningPrivateKey = machineSigningKey.readMachineSigningKey(env)?.privateKey
   revokedKeyId = oldKeyId
   const newKeyId = await machineInit(spaceId, 'fixture', client, env)
 
   expect(newKeyId).not.toBe(oldKeyId)
   expect(readMachineKey(env)?.privateKey).not.toEqual(oldPrivateKey)
-  expect(readMachineSigningKey(env)?.privateKey).not.toEqual(oldSigningPrivateKey)
+  expect(machineSigningKey.readMachineSigningKey(env)?.privateKey).not.toEqual(oldSigningPrivateKey)
   expect(readFileSync(join(root, 'machine-key-revoked', oldKeyId), 'utf8').trim()).toBe(
     Buffer.from(oldPrivateKey!).toString('base64url'),
   )

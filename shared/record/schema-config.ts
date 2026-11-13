@@ -312,6 +312,43 @@ export const machinePublicKey = pgTable.withRLS(
   ],
 )
 
+export const machineTrustLog = pgTable.withRLS(
+  'machine_trust_log',
+  {
+    id: identity(),
+    spaceId: spaceIdentity(),
+    seq: integer().notNull(),
+    hash: bytea().notNull(),
+    prevHash: bytea('prev_hash'),
+    entry: bytea().notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => {
+    const [selectPolicy, insertPolicy] = tenantPolicies('machine_trust_log', table.spaceId)
+    return [
+      unique('machine_trust_log_space_seq_unique').on(table.spaceId, table.seq),
+      unique('machine_trust_log_space_hash_unique').on(table.spaceId, table.hash),
+      check('machine_trust_log_hash_length_check', sql`octet_length(${table.hash}) = 32`),
+      check(
+        'machine_trust_log_prev_hash_check',
+        sql`(${table.seq} = 0 AND ${table.prevHash} IS NULL) OR (${table.seq} > 0 AND ${table.prevHash} IS NOT NULL AND octet_length(${table.prevHash}) = 32)`,
+      ),
+      selectPolicy!,
+      insertPolicy!,
+      pgPolicy('machine_trust_log_owner_select', {
+        for: 'select',
+        to: RECORD_OWNER_ROLE,
+        using: sql`true`,
+      }),
+      pgPolicy('machine_trust_log_owner_delete', {
+        for: 'delete',
+        to: RECORD_OWNER_ROLE,
+        using: sql`true`,
+      }),
+    ]
+  },
+)
+
 export const machineKeyClaimChallenge = pgTable.withRLS(
   'machine_key_claim_challenge',
   {

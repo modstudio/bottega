@@ -50,6 +50,7 @@ export const hostedTableLifecycles: readonly TableLifecycle[] = [
       'machine',
       'machine_name_claim',
       'machine_public_key',
+      'machine_trust_log',
       'membership',
       'operator_waiting_email',
       'orch_snapshot',

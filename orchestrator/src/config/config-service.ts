@@ -83,6 +83,7 @@ import {
 } from './data-key-access.ts'
 import { hostedConfigClient } from './hosted-config-call-outcome.ts'
 import { machineTrustRefusal } from './machine-trust-refusal.ts'
+import { appendTrustLogRevoke } from './trust-log-revoke.ts'
 
 export type RotationPlan = { reseal: ConfigSecret[]; retireDekIds: string[] }
 
@@ -459,6 +460,7 @@ async function revokeIfNeeded(
       },
     ])
   }
+  await appendTrustLogRevoke(client, machine.keyId, keyId, (await identity(client)).spaceId)
   await client.revokeMachineKey(keyId)
   await unpinTrustedMachine(keyId)
   return (await client.listMachineKeys()).find((item) => item.keyId === keyId)?.revokedAt

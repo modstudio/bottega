@@ -71,6 +71,20 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/hosted-secret-row.ts',
     '../record/machine-name-command.ts',
     '../record/machine-name.ts',
+    './trust-log-revoke.ts',
+  ]),
+  module('orchestrator/src/config/trust-log-revoke.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/config-client.ts',
+    '../../../shared/config-directory.ts',
+    '../../../shared/machine-signing-key.ts',
+    '../../../shared/trust-log.ts',
+    '../../../shared/trust-log-head.ts',
+  ]),
+  module('orchestrator/src/config/config-service-trust-log.fixture.ts', [
+    '@noble/curves/ed25519.js',
+    '../../../shared/machine-signing-key.ts',
+    '../../../shared/trust-log.ts',
   ]),
   module('orchestrator/src/config/data-key-access.ts', [
     '../../../shared/config-client.ts',

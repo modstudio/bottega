@@ -431,6 +431,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'listMachineKeys',
     'listSecrets',
     'listCredentialPreferences',
+    'readTrustLog',
     'whoami',
   ]),
   ...writeEntries(
@@ -449,6 +450,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
       'putSecret',
       'putCredentialPreference',
       'registerMachineKey',
+      'appendTrustLogEntry',
       'retireDataKey',
       'revokeMachineKey',
     ],

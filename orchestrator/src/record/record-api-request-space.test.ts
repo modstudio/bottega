@@ -430,6 +430,7 @@ POST /v1/board/claims/:id/renew
 POST /v1/board/claims/:id/release
 POST /v1/config/machine-keys/:keyId/claim-challenge
 POST /v1/config/machine-keys/:keyId/claim
+POST /v1/config/trust-log
 POST /v1/config-access/grant
 POST /v1/config-access/withdraw
 POST /v1/members/permission

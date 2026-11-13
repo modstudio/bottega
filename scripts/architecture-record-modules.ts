@@ -765,6 +765,12 @@ export const recordModules: RecordModule[] = [
     './record-config.ts',
     './record-machine-key-registration.ts',
   ]),
+  module('orchestrator/src/record/record-machine-trust-log.ts', [
+    '../../../shared/record/schema.ts',
+    '../../../shared/trust-log.ts',
+    './record-config.ts',
+    './record-config-error.ts',
+  ]),
   module('orchestrator/src/record/record-api-config-schema.ts', [
     '../../../shared/credential.ts',
     'zod',
