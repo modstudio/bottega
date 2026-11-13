@@ -4,6 +4,7 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   installRecordApiClient,
   unusedBoardClientMethods,
+  unusedContextItemClientMethods,
   unusedIdentityAndSpaceClientMethods,
 } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
@@ -21,6 +22,7 @@ function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
   return {
     ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
+    ...unusedContextItemClientMethods(),
     whoami: async () => ({
       user: { id: newRecordId() },
       activeSpaceId: 'space-active',

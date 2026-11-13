@@ -4,6 +4,7 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   installRecordApiClient,
   unusedBoardClientMethods,
+  unusedContextItemClientMethods,
   unusedIdentityAndSpaceClientMethods,
 } from '../../test/fixtures/record-api.ts'
 import { db, writableDb } from '../database/db.ts'
@@ -118,6 +119,7 @@ function capturingClient(overrides: Partial<RecordApiClient> = {}): {
   const client: RecordApiClient = {
     ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
+    ...unusedContextItemClientMethods(),
     listChanges: async () => ({ reset: { cursor: 'push-docs-test', tables: [] } }),
     applySettingsPermission: unused,
     applySettingsAutoMode: unused,

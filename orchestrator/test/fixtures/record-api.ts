@@ -227,6 +227,20 @@ function unusedIdentityAndSpace(): Promise<never> {
   return Promise.reject(new Error('hosted identity and space are unused in this fixture'))
 }
 
+function unusedContextItem(): Promise<never> {
+  return Promise.reject(new Error('hosted context items are unused in this fixture'))
+}
+
+export function unusedContextItemClientMethods(): Pick<
+  RecordApiClient,
+  'upsertContextItem' | 'deleteContextItem'
+> {
+  return {
+    upsertContextItem: unusedContextItem,
+    deleteContextItem: unusedContextItem,
+  }
+}
+
 function unusedSubject(): Promise<never> {
   return Promise.reject(new Error('hosted subjects are unused in this fixture'))
 }
@@ -417,6 +431,7 @@ export function createMemoryRecordApiClient(
   return {
     ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
+    ...unusedContextItemClientMethods(),
     ...memoryTaskFlowClient(input),
     async listChanges() {
       return { reset: { cursor: 'fixture-change-cursor', tables: [] } }

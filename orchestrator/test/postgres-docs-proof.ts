@@ -10,6 +10,7 @@ import {
   createMemoryRecordApiClient,
   installRecordApiClient,
   unusedBoardClientMethods,
+  unusedContextItemClientMethods,
   unusedIdentityAndSpaceClientMethods,
 } from './fixtures/record-api.ts'
 import { proveHostedCanonRefusal } from './postgres-canon-refusal-proof.ts'
@@ -38,6 +39,7 @@ function liveCacheClient(origin: string, token: string): RecordApiClient {
   return {
     ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
+    ...unusedContextItemClientMethods(),
     listChanges: async () => ({ reset: { cursor: 'postgres-docs-proof', tables: [] } }),
     whoami: () => get('/v1/whoami') as Promise<RecordIdentity>,
     inviteMember: unused,
