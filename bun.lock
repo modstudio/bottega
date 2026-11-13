@@ -14,6 +14,7 @@
         "@noble/hashes": "2.4.0",
         "@typescript-eslint/parser": "8.72.0",
         "@vitest/eslint-plugin": "^1.6.27",
+        "cbor2": "2.4.1",
         "drizzle-orm": "1.0.0-rc.4",
         "eslint": "^10.13.0",
         "eslint-plugin-jest": "^29.17.0",
@@ -522,6 +523,8 @@
     "@codemirror/streamparser": ["@codemirror/streamparser@6.0.0", "", {}, "sha512-JTFPF6xrfjt0mnfGPgzcLiMwYmvIyNaoizp8BYzv8FE8KrT6GBGDZ190rtt+O7Wke3gG/MFHyiY9YGNeimof4w=="],
 
     "@codemirror/view": ["@codemirror/view@6.43.15", "", { "dependencies": { "@codemirror/state": "^6.7.0", "crelt": "^1.0.6", "style-mod": "^4.1.0", "w3c-keyname": "^2.2.4" } }, "sha512-HHsfpqFeHyXLs983pSRe38Xajs0vFWZQ2BuX0m7Ki8w3jZ5iD8cuR3lBz2/5/X53Dhf32SBHKh6rtSTB6tKeGw=="],
+
+    "@cto.af/wtf8": ["@cto.af/wtf8@1.0.0", "", {}, "sha512-qI0XnZxcj/FmASB8XXWqG49bSIzu0I/02deAjhnTni9IZ7KMRVlh8EFLE+mmJlMA169lET6rTCFhEsZSjOwlhA=="],
 
     "@decimalturn/toml-patch": ["@decimalturn/toml-patch@3.3.1", "", {}, "sha512-bevRGAUJonKWPBEY0tmn6HxEsPS1hJquwoIRNg/WTJnN+/0J6nfomSkn4FBtGlw1dUEt8tkS97oR0wwy3bo2HQ=="],
 
@@ -1232,6 +1235,8 @@
     "cacheable": ["cacheable@2.5.0", "", { "dependencies": { "@cacheable/memory": "^2.2.0", "@cacheable/utils": "^2.5.0", "hookified": "^1.15.0", "keyv": "^5.6.0", "qified": "^0.10.1" } }, "sha512-60cyAOytib/OzBw1JNSoSV/boK1AtHryDIjvVBk7XbN4ugfkM3+Sry7fEjNgPMGgOjuaZPAp8ruZ0Cxafwyq9g=="],
 
     "caniuse-lite": ["caniuse-lite@1.0.30001818", "", {}, "sha512-XJbgo4adscw7R4MZU4/qVFkoMyPaNUAWmdNY4o/k9x7fFwmv4frIlndI9lWuaxviW9ObiZel9LuncnQPn6hQ5A=="],
+
+    "cbor2": ["cbor2@2.4.1", "", { "dependencies": { "@cto.af/wtf8": "1.0.0" } }, "sha512-h4OqPnSvIEUNCxTNb9pwMZPKjhNKO9bkPwQJOR7d5oBIrZR/CO098atrLl4AkQmB1p3opCvo2UFt4fhRSWC/vQ=="],
 
     "ccount": ["ccount@2.0.1", "", {}, "sha512-eyrF0jiFpY+3drT6383f1qhkbGsLSifNAjA61IUjZjmLCWjItY6LB9ft9YhoDgwfmclB2zhu51Lc7+95b8NRAg=="],
 

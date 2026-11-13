@@ -59,6 +59,7 @@
     "@noble/hashes": "2.4.0",
     "@typescript-eslint/parser": "8.72.0",
     "@vitest/eslint-plugin": "^1.6.27",
+    "cbor2": "2.4.1",
     "drizzle-orm": "1.0.0-rc.4",
     "eslint": "^10.13.0",
     "eslint-plugin-jest": "^29.17.0",
