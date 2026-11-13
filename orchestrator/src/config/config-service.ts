@@ -64,7 +64,11 @@ import {
   storedShipToLevel,
 } from '../../../shared/ship-to.ts'
 import { pinTrustedMachine, unpinTrustedMachine } from '../../../shared/trust-list.ts'
-import { type TrustedKeys, trustedKeysForSpace } from '../../../shared/trust-log-keys.ts'
+import {
+  type TrustedKeys,
+  trustedKeysForSpace,
+  trustForSpace,
+} from '../../../shared/trust-log-keys.ts'
 import type { MachineNamePair } from '../record/machine-name.ts'
 import { claimCurrentMachineNames } from '../record/machine-name-command.ts'
 import { LEGACY_ENVIRONMENT_SECRET_NAMES } from '../setup/environment-name-migration.ts'
@@ -76,6 +80,7 @@ import {
   encoded,
   isNotFound,
   openDataKey,
+  wrapRecipientKeyIds,
   wrapsForRecipients,
 } from './data-key-access.ts'
 import { hostedConfigClient } from './hosted-config-call-outcome.ts'
@@ -116,9 +121,10 @@ async function wrapsFor(
 ) {
   const machine = await localMachine(env)
   const spaceId = destinationSpaceId ?? (await identity(client, env)).spaceId
-  const recipientKeyIds = (await client.listMachineKeys({ destinationSpaceId: spaceId }))
-    .filter((item) => item.revokedAt === null && trust[item.keyId])
-    .map((item) => item.keyId)
+  const recipientKeyIds = wrapRecipientKeyIds(
+    await client.listMachineKeys({ destinationSpaceId: spaceId }),
+    trust,
+  )
   return wrapsForRecipients(
     dek,
     { spaceId, dekId, dekVersion: version },
@@ -259,6 +265,11 @@ export async function machineTrust(
   const registered = keys.find((item) => item.keyId === keyId)
   const refusal = machineTrustRefusal(keyId, registered, selected.slug)
   if (refusal) throw new Error(refusal)
+  const beforePin = await trustForSpace(client, selected.spaceId, env)
+  if (beforePin.anchored && !beforePin.keys[keyId])
+    throw new Error(
+      `the space's machine trust log does not list ${keyId}; add it with \`${PLATFORM_SLUG} machine approve\` from a machine the trust log already trusts`,
+    )
   await pinTrustedMachine(keyId, publicBytes, label, env)
   const machine = await localMachine(env)
   const trust = await trustedKeysForSpace(client, selected.spaceId, env)

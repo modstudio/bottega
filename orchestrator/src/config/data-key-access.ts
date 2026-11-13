@@ -5,6 +5,7 @@ import {
   ConfigClientError,
   type ConfigDestination,
   type DataKey,
+  type MachineKey,
 } from '../../../shared/config-client.ts'
 import { openClaimChallenge, unwrapDataKey, wrapDataKey } from '../../../shared/secret-envelope.ts'
 import type { TrustedKeys } from '../../../shared/trust-log-keys.ts'
@@ -15,6 +16,17 @@ export const isNotFound = (error: unknown) =>
   error instanceof ConfigClientError && error.status === 404
 
 export class DataKeyWrapAccessError extends Error {}
+
+export function wrapRecipientKeyIds(
+  registered: readonly MachineKey[],
+  trust: TrustedKeys,
+): string[] {
+  return registered
+    .filter(
+      (item) => item.userId !== null && item.revokedAt === null && trust[item.keyId] !== undefined,
+    )
+    .map((item) => item.keyId)
+}
 
 type MachineKeyPair = { publicKey: Uint8Array; privateKey: Uint8Array }
 type LocalMachine = MachineKeyPair & { keyId: string }

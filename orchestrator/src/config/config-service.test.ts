@@ -364,15 +364,6 @@ test('machine revoke converges the trust log when the record already shows the k
     kind: 'revoke',
     keyId: fixture.otherKeyId,
   })
-  expect(fixture.recordCallOrder).toEqual(['appendTrustLogEntry'])
-})
-
-test('machine revoke does not append when an already-revoked key has no trust log', async () => {
-  const fixture = await rotationFixture(roots, '2026-06-01T00:00:00.000Z')
-  await machineRevoke(fixture.otherKeyId, fixture.client)
-
-  expect(fixture.appendedTrustLogEntry()).toBeNull()
-  expect(fixture.recordCallOrder).toEqual([])
 })
 
 test('machine revoke resumes re-sealing older rows without creating another data key', async () => {
@@ -429,6 +420,7 @@ test('machine trust names machine approve when an anchored log omits the target 
   ).rejects.toThrow(
     `the space's machine trust log does not list ${fixture.recipientKeyId}; add it with \`${PLATFORM_SLUG} machine approve\` from a machine the trust log already trusts`,
   )
+  expect((await readTrustList())[fixture.recipientKeyId]).toBeUndefined()
 })
 
 test('machine trust rotation keeps a selected-space user secret bound to its user', async () => {

@@ -89,7 +89,6 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/config-directory.ts',
     '../../../shared/machine-signing-key.ts',
     '../../../shared/trust-log.ts',
-    '../../../shared/trust-log-head.ts',
     '../../../shared/trust-log-keys.ts',
   ]),
   module('orchestrator/src/config/machine-join.ts', [

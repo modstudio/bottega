@@ -22,7 +22,7 @@ import {
   unwrapDataKey,
   wrapDataKey,
 } from '../../../shared/secret-envelope.ts'
-import { pinTrustedMachine } from '../../../shared/trust-list.ts'
+import { pinTrustedMachine, readTrustList } from '../../../shared/trust-list.ts'
 import {
   machineRevokeTrustLogFixture,
   trustLogFixtureSigningKey,
@@ -396,6 +396,46 @@ test('trust in a named space refuses when the space has no data key', async () =
   expect(addWrapsCalls).toBe(0)
 })
 
+test('trust in an anchored named space refuses a target absent from the log before pinning', async () => {
+  const { env, identity, keyId, pair } = await fixture(false)
+  const signing = trustLogFixtureSigningKey(51)
+  const loggedOther = await generateMachineKeyPair()
+  const loggedOtherId = await machineKeyId(loggedOther.publicKey)
+  const log = machineRevokeTrustLogFixture(
+    true,
+    namedSpaceId,
+    [keyId, pair.publicKey, signing.publicKey, 'fixture'],
+    [
+      loggedOtherId,
+      loggedOther.publicKey,
+      trustLogFixtureSigningKey(52).publicKey,
+      'logged-other',
+    ],
+    signing.privateKey,
+  )
+  const target = await generateMachineKeyPair()
+  const targetKeyId = await machineKeyId(target.publicKey)
+  const client = {
+    readTrustLog: async () => log,
+    whoami: async () => identity,
+    listMachineKeys: async () => [{ keyId: targetKeyId, revokedAt: null }],
+  } as unknown as ConfigClient
+
+  await expect(
+    machineTrustInSpace(
+      targetKeyId,
+      Buffer.from(target.publicKey).toString('base64url'),
+      'target',
+      namedSpace,
+      client,
+      env,
+    ),
+  ).rejects.toThrow(
+    `the space's machine trust log does not list ${targetKeyId}; add it with \`${PLATFORM_SLUG} machine approve\` from a machine the trust log already trusts`,
+  )
+  expect((await readTrustList(env))[targetKeyId]).toBeUndefined()
+})
+
 test('registration uses the explicitly selected active destination and leaves pinned identity unchanged', async () => {
   const { env, identity, keyId, pair } = await fixture()
   const originalPin = readHostedConfigIdentity(env)
@@ -457,5 +497,42 @@ test("registration refuses when the data key wrap's sender is not trusted", asyn
 
   await expect(machineRegister(namedSpace, 'fixture', client, env)).rejects.toThrow(
     `data key dek-untrusted in record space named was wrapped by untrusted-sender, which this machine does not trust; pin it with \`${PLATFORM_SLUG} machine config machine trust untrusted-sender <publicKey> --space named\` using that machine's public key from \`${PLATFORM_SLUG} machine config machine show\``,
+  )
+})
+
+test("registration names machine approve when an anchored log omits the data key sender", async () => {
+  const { env, identity, keyId, pair } = await fixture(false)
+  const signing = trustLogFixtureSigningKey(61)
+  const loggedOther = await generateMachineKeyPair()
+  const loggedOtherId = await machineKeyId(loggedOther.publicKey)
+  const log = machineRevokeTrustLogFixture(
+    true,
+    namedSpaceId,
+    [keyId, pair.publicKey, signing.publicKey, 'fixture'],
+    [
+      loggedOtherId,
+      loggedOther.publicKey,
+      trustLogFixtureSigningKey(62).publicKey,
+      'logged-other',
+    ],
+    signing.privateKey,
+  )
+  const senderKeyId = 'untrusted-sender'
+  const client = {
+    readTrustLog: async () => log,
+    whoami: async () => identity,
+    listMachineKeys: async () => [{ keyId }],
+    registerMachineKey: async () => ({ userId }),
+    currentDataKey: async () => ({
+      id: 'dek-untrusted',
+      version: 1,
+      createdAt: '2026-11-09T00:00:00.000Z',
+      retiredAt: null,
+      wraps: [{ recipientKeyId: keyId, senderKeyId, enc: 'enc', ciphertext: 'ciphertext' }],
+    }),
+  } as unknown as ConfigClient
+
+  await expect(machineRegister(namedSpace, 'fixture', client, env)).rejects.toThrow(
+    `data key dek-untrusted in record space named was wrapped by untrusted-sender, which the space's machine trust log does not list; have a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve\``,
   )
 })

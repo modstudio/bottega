@@ -30,20 +30,34 @@ export async function trustedKeysForSpace(
   spaceId: string,
   env: ConfigEnvironment = process.env,
 ): Promise<TrustedKeys> {
+  return (await trustForSpace(client, spaceId, env)).keys
+}
+
+export async function trustForSpace(
+  client: Pick<ConfigClient, 'readTrustLog'>,
+  spaceId: string,
+  env: ConfigEnvironment = process.env,
+): Promise<{ keys: TrustedKeys; anchored: boolean }> {
   const { state } = await verifiedTrustLogForSpace(client, spaceId, env)
   if (!state) {
     const pinned = await readTrustList(env)
-    return Object.fromEntries(
-      Object.entries(pinned).map(([keyId, key]) => [
-        keyId,
-        { public_key: key.public_key, label: key.label },
-      ]),
-    )
+    return {
+      keys: Object.fromEntries(
+        Object.entries(pinned).map(([keyId, key]) => [
+          keyId,
+          { public_key: key.public_key, label: key.label },
+        ]),
+      ),
+      anchored: false,
+    }
   }
-  return Object.fromEntries(
-    [...state.keys].map(([keyId, key]) => [
-      keyId,
-      { public_key: Buffer.from(key.publicKey).toString('base64url'), label: key.label },
-    ]),
-  )
+  return {
+    keys: Object.fromEntries(
+      [...state.keys].map(([keyId, key]) => [
+        keyId,
+        { public_key: Buffer.from(key.publicKey).toString('base64url'), label: key.label },
+      ]),
+    ),
+    anchored: true,
+  }
 }

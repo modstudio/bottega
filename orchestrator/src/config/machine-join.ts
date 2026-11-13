@@ -31,10 +31,9 @@ import { pinTrustedMachine } from '../../../shared/trust-list.ts'
 import {
   bytesEqual,
   type TrustLogKey,
+  type TrustState,
   trustLogEntryHash,
-  type verifyTrustLog,
 } from '../../../shared/trust-log.ts'
-import { writeRememberedTrustLogHead } from '../../../shared/trust-log-head.ts'
 import { verifiedTrustLogForSpace } from '../../../shared/trust-log-keys.ts'
 import { machineTrust } from './config-service.ts'
 import { encoded } from './data-key-access.ts'
@@ -220,7 +219,7 @@ async function verifiedApprover(
   selected: SelectedSpace,
   nameplate: string,
   ownSide: string,
-  initial: ReturnType<typeof verifyTrustLog> | null,
+  initial: TrustState | null,
   ports: Ports,
 ): Promise<TrustLogKey> {
   if (
@@ -286,7 +285,6 @@ async function acceptDone(
       throw new Error(
         "the approver's trust-log head is not in the record's trust log; do not trust this record, and report it",
       )
-    writeRememberedTrustLogHead(selected.spaceId, state.head, ports.env)
   }
   await pinTrustedMachine(approver.keyId, approver.publicKey, approver.label, ports.env)
   if (!wrapped)
@@ -336,7 +334,7 @@ async function approveAndWrap(
   joiner: TrustLogKey,
   own: TrustLogKey,
   selected: SelectedSpace,
-  initial: ReturnType<typeof verifyTrustLog> | null,
+  initial: TrustState | null,
   ports: Ports,
 ): Promise<{ head: Uint8Array | null; failure: Error | null }> {
   const head = initial
