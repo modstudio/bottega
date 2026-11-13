@@ -38,6 +38,7 @@ export type Agent = {
   baseUrl?: string | null
   apiKeySecret?: string | null
   provider?: string | null
+  requestSettings?: Record<string, unknown> | null
   enabled?: boolean
   disabledReason?: string | null
   probedAt?: string | null

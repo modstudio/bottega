@@ -26,6 +26,7 @@ export type AgentRow = {
   base_url: string | null
   api_key_secret: string | null
   provider: string | null
+  request_settings: string | null
   transport: 'cli' | 'acp'
   caps: string
   billing: Agent['billing']
@@ -43,6 +44,12 @@ export type AgentRow = {
 
 /** Goose's own default context limit and the measured working budget for Goose runs. */
 export const GOOSE_CONTEXT_CEILING = 128_000
+
+/**
+ * Goose output bound above the maximum healthy call measured by the
+ * `DEV-2294 healthy output per call` measurement.
+ */
+export const GOOSE_MAX_OUTPUT_TOKENS = 32_768
 
 /**
  * Turn bound for a Goose run of a job that does not write the repository.
@@ -104,23 +111,32 @@ function rowLaunchEnvironment(
   promptBytes: number | null,
   writesRepo: boolean | null,
 ): Record<string, string> {
-  if (!row.base_url) return {}
   const stored = JSON.parse(row.caps) as Caps & { contextTokens?: number | null }
   const servedWindow = servedContextTokens(stored)
+  const contextEnvironment = gooseContextManagementEnvironment({
+    compacts: stored.compacts,
+    servedWindow,
+    jobContextTokens,
+    promptBytes,
+  })
   return {
-    BOTTEGA_MODEL_HOST_URL: row.base_url,
-    OPENAI_BASE_URL: row.base_url,
+    ...(row.base_url
+      ? { BOTTEGA_MODEL_HOST_URL: row.base_url, OPENAI_BASE_URL: row.base_url }
+      : {}),
     ...(row.harness === 'goose'
       ? {
-          GOOSE_PROVIDER: 'openai',
+          GOOSE_PROVIDER: row.request_settings ? row.name : 'openai',
           GOOSE_MODEL: row.model,
+          GOOSE_MAX_TOKENS: String(GOOSE_MAX_OUTPUT_TOKENS),
           GOOSE_TELEMETRY_ENABLED: 'false',
-          ...gooseContextManagementEnvironment({
-            compacts: stored.compacts,
-            servedWindow,
-            jobContextTokens,
-            promptBytes,
-          }),
+          ...contextEnvironment,
+          ...(row.request_settings && !contextEnvironment.GOOSE_CONTEXT_LIMIT
+            ? {
+                GOOSE_CONTEXT_LIMIT: String(
+                  Math.min(servedWindow ?? GOOSE_CONTEXT_CEILING, GOOSE_CONTEXT_CEILING),
+                ),
+              }
+            : {}),
           ...(writesRepo === false ? { GOOSE_MAX_TURNS: String(GOOSE_READING_MAX_TURNS) } : {}),
         }
       : {}),
@@ -163,6 +179,7 @@ export function rowAgent(row: AgentRow): Agent {
     baseUrl: row.base_url,
     apiKeySecret: row.api_key_secret,
     provider: row.provider,
+    requestSettings: row.request_settings ? JSON.parse(row.request_settings) : null,
     model: row.model,
     billing: row.billing,
     operatedBy: row.operated_by,
@@ -190,7 +207,7 @@ export function rowAgent(row: AgentRow): Agent {
     maxConcurrent: row.max_concurrent,
     routeMetered: Boolean(row.route_metered),
     trainsOnInputs: Boolean(row.trains_on_inputs),
-    ...(row.base_url
+    ...(row.base_url || row.harness === 'goose'
       ? {
           env: (
             jobContextTokens?: number | null,
@@ -315,6 +332,7 @@ export type AgentMutation = {
   baseUrl?: string | null
   apiKeySecret?: string | null
   provider?: string | null
+  requestSettings?: Record<string, unknown> | null
   transport?: 'cli' | 'acp'
   billing?: Agent['billing']
   contextTokens?: number
@@ -404,8 +422,8 @@ export function addAgent(name: string, input: AgentMutation): AgentRow {
   }
   writableDb()
     .query(
-      `INSERT INTO agent (record_id,name,harness,backend,model,base_url,api_key_secret,provider,transport,caps,billing,operated_by,enabled,disabled_reason,jobs,preferred_jobs,max_concurrent,route_metered,trains_on_inputs)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO agent (record_id,name,harness,backend,model,base_url,api_key_secret,provider,request_settings,transport,caps,billing,operated_by,enabled,disabled_reason,jobs,preferred_jobs,max_concurrent,route_metered,trains_on_inputs)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
       newRecordId(),
@@ -416,6 +434,7 @@ export function addAgent(name: string, input: AgentMutation): AgentRow {
       input.baseUrl ?? null,
       input.apiKeySecret ?? null,
       input.provider ?? null,
+      input.requestSettings === undefined ? null : JSON.stringify(input.requestSettings),
       input.transport ?? 'acp',
       JSON.stringify(caps),
       input.billing ??
@@ -556,7 +575,7 @@ export function setAgent(
   }
   writableDb()
     .query(
-      `UPDATE agent SET harness=?,backend=?,model=?,base_url=?,api_key_secret=?,provider=?,transport=?,caps=?,billing=?,enabled=?,disabled_reason=?,probed_at=?,probe_result=?,jobs=?,preferred_jobs=?,max_concurrent=?,route_metered=?,trains_on_inputs=? WHERE name=?`,
+      `UPDATE agent SET harness=?,backend=?,model=?,base_url=?,api_key_secret=?,provider=?,request_settings=?,transport=?,caps=?,billing=?,enabled=?,disabled_reason=?,probed_at=?,probe_result=?,jobs=?,preferred_jobs=?,max_concurrent=?,route_metered=?,trains_on_inputs=? WHERE name=?`,
     )
     .run(
       input.harness ?? current.harness,
@@ -565,6 +584,11 @@ export function setAgent(
       input.baseUrl === undefined ? current.base_url : input.baseUrl,
       storedApiKeySecret(current, input),
       storedProvider(current, input),
+      input.requestSettings === undefined
+        ? current.request_settings
+        : input.requestSettings === null
+          ? null
+          : JSON.stringify(input.requestSettings),
       input.transport ?? current.transport,
       JSON.stringify(caps),
       input.billing ?? current.billing,

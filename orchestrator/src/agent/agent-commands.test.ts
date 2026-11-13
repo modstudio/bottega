@@ -434,6 +434,48 @@ test('agent commands store and clear a credential provider slug', async () => {
   }
 })
 
+test('agent commands validate, store, show, and clear OpenRouter request settings', async () => {
+  const name = 'request-settings-test'
+  const output: string[] = []
+  const presentation = { log: (value: string) => output.push(value), setExitCode: () => {} }
+  try {
+    await agentCommand(
+      [
+        'agent',
+        'add',
+        name,
+        '--harness',
+        'goose',
+        '--backend',
+        'vendor',
+        '--model',
+        'fixture',
+        '--request-settings',
+        '{"provider":{"ignore":["Morph"]}}',
+      ],
+      presentation,
+    )
+    expect(JSON.parse(output.pop()!).request_settings).toBe('{"provider":{"ignore":["Morph"]}}')
+
+    await agentCommand(['agent', 'show', name], presentation)
+    expect(JSON.parse(output.pop()!).request_settings).toEqual({
+      provider: { ignore: ['Morph'] },
+    })
+
+    await expect(
+      agentCommand(['agent', 'set', name, '--request-settings', '{"model":"other"}'], presentation),
+    ).rejects.toThrow('--request-settings may not set reserved key "model"')
+    await expect(
+      agentCommand(['agent', 'set', name, '--request-settings', '[]'], presentation),
+    ).rejects.toThrow('--request-settings must be a JSON object')
+
+    await agentCommand(['agent', 'set', name, '--clear-request-settings'], presentation)
+    expect(JSON.parse(output.pop()!).request_settings).toBeNull()
+  } finally {
+    removeAgent(name)
+  }
+})
+
 test('a keyed add defaults to metered, stays out of automatic routing, and may be named', async () => {
   const name = 'keyed-routing-test'
   const output: string[] = []

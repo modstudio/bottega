@@ -126,6 +126,8 @@ export type TransportAgent = {
   name: string
   harness?: string
   baseUrl?: string | null
+  requestSettings?: Record<string, unknown> | null
+  model?: string
   bin: string
   defaultTransport: TransportName
   billing: AgentBilling

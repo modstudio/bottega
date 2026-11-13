@@ -1,10 +1,18 @@
 import { type ChildProcess, spawn } from 'node:child_process'
-import { appendFileSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  appendFileSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 import * as acp from '@agentclientprotocol/sdk'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
+import { gooseProviderFile } from '../agent/goose-provider.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { acpHarnessAttachesProjectServers } from '../mcp/mcp-native-attachment.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
@@ -544,6 +552,27 @@ export function acpEnvironment(opts: TransportStartOpts): Record<string, string>
   return env
 }
 
+function writeGooseProviderFile(
+  opts: TransportStartOpts,
+  environment: Record<string, string>,
+): void {
+  if (opts.agent.harness !== 'goose') return
+  const contextLimit = environment.GOOSE_CONTEXT_LIMIT
+    ? Number(environment.GOOSE_CONTEXT_LIMIT)
+    : null
+  const provider = gooseProviderFile({
+    name: opts.agent.name,
+    baseUrl: opts.agent.baseUrl,
+    model: opts.model ?? opts.agent.model ?? '',
+    contextLimit,
+    requestSettings: opts.agent.requestSettings,
+  })
+  if (!provider) return
+  const directory = join(environment.XDG_CONFIG_HOME!, 'goose', 'custom_providers')
+  mkdirSync(directory, { recursive: true })
+  writeFileSync(join(directory, `${provider.name}.json`), provider.content)
+}
+
 function acpLaunchArgv(
   opts: TransportStartOpts,
   profile: SandboxRuntimeConfig | null,
@@ -677,10 +706,12 @@ export function configuredAcpAsk(
 }
 
 function spawnAcpChild(launch: string[], opts: TransportStartOpts) {
+  const environment = acpEnvironment(opts)
+  writeGooseProviderFile(opts, environment)
   return lowerRunChildPriority(
     spawn(launch[0]!, launch.slice(1), {
       cwd: opts.cwd,
-      env: acpEnvironment(opts),
+      env: environment,
       stdio: ['pipe', 'pipe', 'pipe'],
       detached: true,
     }),

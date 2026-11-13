@@ -429,6 +429,8 @@ function registerAgentCommands(
     .option('--clear-api-key-secret', 'clear the endpoint API key reference')
     .option('--provider <slug>', 'set the credential provider')
     .option('--clear-provider', 'clear the credential provider')
+    .option('--request-settings <json>', 'set OpenRouter request settings as a JSON object')
+    .option('--clear-request-settings', 'clear OpenRouter request settings')
     .option('--context-tokens <value>', 'set the served context window')
     .option('--billing <value>', 'set the billing class')
     .option(

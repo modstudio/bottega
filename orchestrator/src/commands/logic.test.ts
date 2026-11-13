@@ -27,10 +27,14 @@ test('agent registration forwards provider mutations to the agent command', asyn
 
   await parse(['agent', 'set', 'metered', '--provider', 'openrouter'])
   await parse(['agent', 'set', 'metered', '--clear-provider'])
+  await parse(['agent', 'set', 'metered', '--request-settings', '{"reasoning":{"effort":"low"}}'])
+  await parse(['agent', 'set', 'metered', '--clear-request-settings'])
 
   expect(received).toEqual([
     ['agent', 'set', 'metered', '--provider', 'openrouter'],
     ['agent', 'set', 'metered', '--clear-provider'],
+    ['agent', 'set', 'metered', '--request-settings', '{"reasoning":{"effort":"low"}}'],
+    ['agent', 'set', 'metered', '--clear-request-settings'],
   ])
 })
 

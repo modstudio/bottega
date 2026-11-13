@@ -5,6 +5,7 @@ import {
   type AgentRow,
   addAgent,
   GOOSE_CONTEXT_CEILING,
+  GOOSE_MAX_OUTPUT_TOKENS,
   GOOSE_READING_MAX_TURNS,
   gooseContextLimit,
   gooseContextManagementEnvironment,
@@ -96,6 +97,22 @@ test('a goose row without a declared context window keeps the goose default', ()
   const env = rowAgent(gooseRow()).env?.()
   expect(env).not.toHaveProperty('GOOSE_CONTEXT_LIMIT')
   expect(env).not.toHaveProperty('GOOSE_MAX_TURNS')
+  expect(env).toMatchObject({
+    GOOSE_MAX_TOKENS: String(GOOSE_MAX_OUTPUT_TOKENS),
+    GOOSE_PROVIDER: 'openai',
+  })
+})
+
+test('a Goose row with request settings selects its per-run provider', () => {
+  const goose = rowAgent({
+    ...gooseRow(200_000),
+    request_settings: '{"provider":{"ignore":["Morph"]}}',
+  })
+  expect(goose.env?.(DEEP_JOB_TOKENS)?.GOOSE_PROVIDER).toBe('codex')
+  expect(goose.env?.()).toMatchObject({
+    GOOSE_PROVIDER: 'codex',
+    GOOSE_CONTEXT_LIMIT: String(GOOSE_CONTEXT_CEILING),
+  })
 })
 
 test('a Goose row that cannot compact uses its served window with compaction disabled', () => {
