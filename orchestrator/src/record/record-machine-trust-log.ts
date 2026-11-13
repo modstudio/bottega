@@ -52,7 +52,7 @@ export async function appendMachineTrustLogEntry(
     return await tenant(input, async (tx) => {
       const rows = await tx`
         SELECT seq, hash FROM machine_trust_log
-        WHERE space_id=${input.spaceId}::uuid ORDER BY seq DESC LIMIT 1 FOR UPDATE
+        WHERE space_id=${input.spaceId}::uuid ORDER BY seq DESC LIMIT 1
       `
       const row = rows[0] as Record<string, unknown> | undefined
       const current = row ? bytes(row.hash) : null
