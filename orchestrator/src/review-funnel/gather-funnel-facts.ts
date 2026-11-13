@@ -126,6 +126,36 @@ function overrideFacts(
   }
 }
 
+function completionFacts(
+  branchReviews: ReturnType<typeof reviewsForTriage>['branchReviews'],
+  exactReviews: ReturnType<typeof reviewsForTriage>['reviews'],
+) {
+  const incomplete = branchReviews.filter(({ completedAt }) => completedAt === null)
+  const untriaged: ReviewFunnelLensState[] = incomplete.flatMap((review) =>
+    review.lenses.flatMap((lens) =>
+      lens.lens && lens.runId
+        ? [{ lens: lens.lens, runId: lens.runId, state: 'untriaged' as const }]
+        : [],
+    ),
+  )
+  const undisposed = (rows: typeof branchReviews) =>
+    rows.flatMap((review) =>
+      review.findings.flatMap((finding) =>
+        finding.disposition === null
+          ? [{ reviewNumber: review.reviewNumber, ordinal: finding.ordinal }]
+          : [],
+      ),
+    )
+  return {
+    untriaged,
+    exactIncomplete: exactReviews.filter(({ completedAt }) => completedAt === null),
+    exactUndisposedFindings: undisposed(exactReviews),
+    hasCompletedRound: branchReviews.some(
+      ({ completedAt, tier }) => completedAt !== null && tier !== null,
+    ),
+  }
+}
+
 /** Resolve one change once, including lineage evidence and completed-landing exclusions. */
 export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts {
   const identity = measureChangeIdentity(change.cwd, change.base, change.head)
@@ -149,21 +179,7 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
     project: change.project.name,
     branch: change.branch,
   })
-  const incomplete = reviews.branchReviews.filter(({ completedAt }) => completedAt === null)
-  const untriaged: ReviewFunnelLensState[] = incomplete.flatMap((review) =>
-    review.lenses.flatMap((lens) =>
-      lens.lens && lens.runId
-        ? [{ lens: lens.lens, runId: lens.runId, state: 'untriaged' as const }]
-        : [],
-    ),
-  )
-  const undisposedFindings = reviews.branchReviews.flatMap((review) =>
-    review.findings.flatMap((finding) =>
-      finding.disposition === null
-        ? [{ reviewNumber: review.reviewNumber, ordinal: finding.ordinal }]
-        : [],
-    ),
-  )
+  const completion = completionFacts(reviews.branchReviews, reviews.reviews)
   const read = exactRead(
     change.database,
     change.project.name,
@@ -177,9 +193,6 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
     patchId: identity.patchId,
     pathSet,
   })
-  const hasCompletedRound = reviews.branchReviews.some(
-    ({ completedAt, tier }) => completedAt !== null && tier !== null,
-  )
   return {
     change: {
       project: change.project.name,
@@ -201,17 +214,21 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
     }),
     lensStates: [
       ...liveLensStates(change.database, change.project.name, change.branch),
-      ...untriaged,
+      ...completion.untriaged,
     ],
     exactRead: read,
-    readCreditsRound: read && hasCompletedRound,
+    readCreditsRound: read && completion.hasCompletedRound,
     ...overrides,
-    triageComplete: incomplete.length === 0 && undisposedFindings.length === 0,
+    triageComplete:
+      read ||
+      (reviews.reviews.length > 0 &&
+        completion.exactIncomplete.length === 0 &&
+        completion.exactUndisposedFindings.length === 0),
     admissionGap: {
-      unfinishedReviewNumbers: incomplete.map(({ reviewNumber }) => reviewNumber),
-      undisposedFindings,
+      unfinishedReviewNumbers: completion.exactIncomplete.map(({ reviewNumber }) => reviewNumber),
+      undisposedFindings: completion.exactUndisposedFindings,
       missingLenses: [],
-      architectReadRequired: hasCompletedRound && !read,
+      architectReadRequired: completion.hasCompletedRound && !read,
       nonLensGaps: [],
     },
   }
