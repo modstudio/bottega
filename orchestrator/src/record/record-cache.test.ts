@@ -4,9 +4,9 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   installRecordApiClient,
   unusedBoardClientMethods,
-  unusedContextItemClientMethods,
   unusedIdentityAndSpaceClientMethods,
 } from '../../test/fixtures/record-api.ts'
+import { unusedContextItemClientMethods } from '../../test/fixtures/record-api-context-items.ts'
 import { db } from '../database/db.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { retireProject, upsertProject } from '../project/projects.ts'

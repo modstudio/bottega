@@ -10,7 +10,6 @@ import type {
   RecordDocUpsertInput,
 } from '../../src/record/record-api-client.ts'
 import type { RecordSubjectRouteDeps } from '../../src/record/record-api-subjects.ts'
-import type { RecordIdentity } from '../../src/record/record-auth.ts'
 import {
   type HostedBoardChange,
   type HostedBoardPresenceInput,
@@ -20,16 +19,11 @@ import {
 import { BOARD_PRESENCE_WRITE_INTERVAL_MS } from '../../src/record/record-board-presence.ts'
 import { createBoardStreamRegistry } from '../../src/record/record-board-stream.ts'
 import { assertRevisionWrite } from '../../src/record/record-doc-errors.ts'
+import { unusedContextItemClientMethods } from './record-api-context-items.ts'
+import { identity } from './record-api-identity.ts'
 import { type MemoryTaskFlowInput, memoryTaskFlowClient } from './record-api-task-flow.ts'
 
-export const identity: RecordIdentity = {
-  user: { id: 'user-a', email: 'a@example.test' },
-  activeSpaceId: 'space-a',
-  personalSpaceId: 'space-a',
-  memberships: [
-    { space_id: 'space-a', name: 'Space A', slug: 'space-a', role: 'owner', permission: 'write' },
-  ],
-}
+export { identity }
 
 const idleIdentityAndSpaceDeps = () => ({ listInvitations: async () => [] })
 
@@ -225,20 +219,6 @@ function unusedBoard(): Promise<never> {
 
 function unusedIdentityAndSpace(): Promise<never> {
   return Promise.reject(new Error('hosted identity and space are unused in this fixture'))
-}
-
-function unusedContextItem(): Promise<never> {
-  return Promise.reject(new Error('hosted context items are unused in this fixture'))
-}
-
-export function unusedContextItemClientMethods(): Pick<
-  RecordApiClient,
-  'upsertContextItem' | 'deleteContextItem'
-> {
-  return {
-    upsertContextItem: unusedContextItem,
-    deleteContextItem: unusedContextItem,
-  }
 }
 
 function unusedSubject(): Promise<never> {

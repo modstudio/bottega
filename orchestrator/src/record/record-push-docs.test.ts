@@ -4,9 +4,9 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   installRecordApiClient,
   unusedBoardClientMethods,
-  unusedContextItemClientMethods,
   unusedIdentityAndSpaceClientMethods,
 } from '../../test/fixtures/record-api.ts'
+import { unusedContextItemClientMethods } from '../../test/fixtures/record-api-context-items.ts'
 import { db, writableDb } from '../database/db.ts'
 import type { RecordApiClient, RecordDocImportInput } from './record-api-client.ts'
 import { groupLocalDocsForImport, pushDocsCommand } from './record-push-docs.ts'

@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test'
 import { Hono } from 'hono'
 import { newRecordId } from '../../../shared/record-id.ts'
-import type { RecordIdentity } from './record-auth.ts'
 import { registerRecordContextItemRoutes } from './record-api-context-items.ts'
+import type { RecordIdentity } from './record-auth.ts'
 
 test('hosted context-item delete returns a named 404 when the row is absent', async () => {
   const id = newRecordId()

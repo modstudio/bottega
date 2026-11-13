@@ -10,9 +10,9 @@ import {
   createMemoryRecordApiClient,
   installRecordApiClient,
   unusedBoardClientMethods,
-  unusedContextItemClientMethods,
   unusedIdentityAndSpaceClientMethods,
 } from './fixtures/record-api.ts'
+import { unusedContextItemClientMethods } from './fixtures/record-api-context-items.ts'
 import { proveHostedCanonRefusal } from './postgres-canon-refusal-proof.ts'
 import { proveEqualTimestampDocPaging } from './postgres-doc-cursor-proof.ts'
 import { proveProjectIdentity } from './postgres-project-identity-proof.ts'
