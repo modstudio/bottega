@@ -9,6 +9,7 @@ export type MachineEvidenceTable =
   | 'review_lens'
   | 'review_finding'
   | 'review_read'
+  | 'review_funnel_decision'
   | 'landing'
   | 'landing_override'
   | 'landing_review_carry'

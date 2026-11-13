@@ -35,6 +35,7 @@ const completedReview = (lens = 'correctness'): TriageReviewRow => ({
 })
 
 const facts = (overrides: Partial<ReviewFunnelFacts> = {}): ReviewFunnelFacts => ({
+  stack: 'typescript',
   change: {
     project: PLATFORM_SLUG,
     taskKey: 'DEV-2300',

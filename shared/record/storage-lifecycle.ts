@@ -156,6 +156,14 @@ export const hostedTableLifecycles: readonly TableLifecycle[] = [
   },
   {
     store: 'hosted',
+    table: 'review_funnel_decision',
+    class: 'record',
+    keep: LIFECYCLE_KEEP.record,
+    remover: 'kept',
+    payloadColumns: ['facts', 'verdict'].map(payload),
+  },
+  {
+    store: 'hosted',
     table: 'review_lens',
     class: 'record',
     keep: LIFECYCLE_KEEP.record,

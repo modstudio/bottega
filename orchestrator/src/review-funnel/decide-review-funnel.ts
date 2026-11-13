@@ -28,7 +28,7 @@ import {
   type ReviewLensSelectionReason,
 } from '../review/review-vocabulary.ts'
 import type { ReviewFunnelLensStatus } from './review-funnel-lens-status.ts'
-import type { ReviewFunnelPolicy } from './review-funnel-policy.ts'
+import type { ReviewFunnelPolicy, ReviewFunnelPolicyMode } from './review-funnel-policy.ts'
 
 export type { ReviewFunnelLensStatus } from './review-funnel-lens-status.ts'
 
@@ -57,6 +57,7 @@ export type ReviewFunnelRoundFact = {
 
 export type ReviewFunnelFacts = {
   change: ReviewFunnelChangeIdentity
+  stack: string | null
   files: ReviewTierFile[]
   review: ReviewSettings | undefined
   branchReviews: TriageReviewRow[]
@@ -88,7 +89,7 @@ type ReviewFunnelNextAction =
 
 export type ReviewFunnelVerdict = {
   policyVersion: string
-  mode: 'evaluate' | 'enforce'
+  mode: ReviewFunnelPolicyMode
   change: ReviewFunnelChangeIdentity
   tier: {
     tier: 0 | 1 | 2 | 3
@@ -104,7 +105,7 @@ export type ReviewFunnelVerdict = {
   remedy: string
 }
 
-function mode(policy: ReviewFunnelPolicy): 'evaluate' | 'enforce' {
+function mode(policy: ReviewFunnelPolicy): ReviewFunnelPolicyMode {
   return Object.values(policy.modes).every((value) => value === 'enforce') ? 'enforce' : 'evaluate'
 }
 

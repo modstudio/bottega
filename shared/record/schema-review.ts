@@ -128,3 +128,40 @@ export const reviewRead = pgTable.withRLS(
   },
   (table) => [...tenantPolicies('review_read', table.spaceId)],
 )
+
+export const reviewFunnelDecision = pgTable.withRLS(
+  'review_funnel_decision',
+  {
+    id: recordIdentity(),
+    spaceId: spaceIdentity(),
+    projectId: uuid('project_id').references(() => project.id),
+    machineId: machineIdentity(),
+    surface: text().notNull(),
+    taskKey: text('task_key'),
+    branch: text().notNull(),
+    headCommit: text('head_commit').notNull(),
+    patchId: text('patch_id').notNull(),
+    pathSet: jsonb('path_set').notNull(),
+    policyVersion: text('policy_version').notNull(),
+    mode: text().notNull(),
+    factsDigest: text('facts_digest').notNull(),
+    facts: jsonb().notNull(),
+    stack: text(),
+    verdict: jsonb().notNull(),
+    outcome: text().notNull(),
+    sessionId: text('session_id'),
+    recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull(),
+    withheldFields: jsonb('withheld_fields'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    check('review_funnel_decision_mode_check', sql`${table.mode} IN ('evaluate','enforce')`),
+    check(
+      'review_funnel_decision_outcome_check',
+      sql`${table.outcome} IN ('advice','admit','refuse')`,
+    ),
+    index('review_funnel_decision_change_idx').on(table.projectId, table.taskKey, table.patchId),
+    ...tenantPolicies('review_funnel_decision', table.spaceId),
+  ],
+)

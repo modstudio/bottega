@@ -2,7 +2,8 @@
 /** Reads and validates the one global review-funnel policy document. */
 
 import { z } from 'zod'
-import { getDoc } from '../doc/docs.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { getDoc, getDocRevision, setDoc } from '../doc/docs.ts'
 import { REVIEW_WINDOW } from '../review/review-evidence-sql.ts'
 import {
   REVIEW_FILE_COUNT_BUMP,
@@ -12,6 +13,7 @@ import {
 import { MIN_REVIEW_TRIAGED } from '../review/review-triage.ts'
 
 const modeSchema = z.enum(['evaluate', 'enforce'])
+export type ReviewFunnelPolicyMode = z.infer<typeof modeSchema>
 
 const reviewFunnelPolicySchema = z.strictObject({
   sizeThresholds: z.tuple([
@@ -70,6 +72,47 @@ export type VersionedReviewFunnelPolicy = {
   policyVersion: string
 }
 
+export function parseReviewFunnelPolicy(value: unknown): ReviewFunnelPolicy {
+  const parsed = reviewFunnelPolicySchema.safeParse(value)
+  if (!parsed.success) throw new Error(`review-funnel policy is invalid: ${parsed.error.message}`)
+  return parsed.data
+}
+
+export function reviewFunnelPolicyAt(version: string): VersionedReviewFunnelPolicy {
+  if (version === 'builtin')
+    return { policy: DEFAULT_REVIEW_FUNNEL_POLICY, policyVersion: 'builtin' }
+  const revision = getDocRevision(version)
+  if (
+    revision?.scope !== 'global' ||
+    revision.subject !== null ||
+    revision.slug !== 'review-funnel-policy'
+  )
+    throw new Error(
+      `global document review-funnel-policy has no revision ${version}; run ${PLATFORM_SLUG} review funnel policy to inspect the active revision or use builtin`,
+    )
+  try {
+    return {
+      policy: parseReviewFunnelPolicy(JSON.parse(revision.body)),
+      policyVersion: version,
+    }
+  } catch (cause) {
+    throw new Error(
+      `global document review-funnel-policy revision ${version} is invalid: ${String(cause)}; replace it with ${PLATFORM_SLUG} review funnel policy --set <json-file>`,
+    )
+  }
+}
+
+export async function setReviewFunnelPolicy(policy: ReviewFunnelPolicy) {
+  return setDoc({
+    scope: 'global',
+    subject: null,
+    slug: 'review-funnel-policy',
+    title: 'Review funnel policy',
+    body: `${JSON.stringify(policy, null, 2)}\n`,
+    reason: 'Set the review funnel policy through its owning verb',
+  })
+}
+
 /** The policy document is optional so empty and freshly-created stores retain today's behavior. */
 export function activeReviewFunnelPolicy(): VersionedReviewFunnelPolicy {
   const doc = getDoc('global', null, 'review-funnel-policy')
@@ -78,11 +121,15 @@ export function activeReviewFunnelPolicy(): VersionedReviewFunnelPolicy {
   try {
     body = JSON.parse(doc.body)
   } catch (cause) {
-    throw new Error(`global document review-funnel-policy is not valid JSON: ${String(cause)}`)
+    throw new Error(
+      `global document review-funnel-policy is not valid JSON: ${String(cause)}; replace it with ${PLATFORM_SLUG} review funnel policy --set <json-file>`,
+    )
   }
-  const parsed = reviewFunnelPolicySchema.safeParse(body)
-  if (!parsed.success) {
-    throw new Error(`global document review-funnel-policy is invalid: ${parsed.error.message}`)
+  try {
+    return { policy: parseReviewFunnelPolicy(body), policyVersion: doc.revision ?? 'builtin' }
+  } catch (cause) {
+    throw new Error(
+      `global document review-funnel-policy is invalid: ${String(cause)}; replace it with ${PLATFORM_SLUG} review funnel policy --set <json-file>`,
+    )
   }
-  return { policy: parsed.data, policyVersion: doc.revision ?? 'builtin' }
 }

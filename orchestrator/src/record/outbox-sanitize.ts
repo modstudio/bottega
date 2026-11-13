@@ -11,6 +11,7 @@ export type OutboxSanitizeKind =
   | 'review_lens'
   | 'review_finding'
   | 'review_read'
+  | 'review_funnel_decision'
   | 'release'
   | 'landing'
   | 'landing_override'
@@ -71,6 +72,7 @@ const LEAVES: Record<OutboxSanitizeKind, readonly SecretLeaf[]> = {
     { at: 'proposedCorrection', style: 'value' },
   ],
   review_read: [{ at: 'note', style: 'value' }],
+  review_funnel_decision: [],
   release: [
     { at: 'rollbackReason', style: 'value', recordedAs: 'rollback_reason' },
     { at: 'behindTrunkReason', style: 'value', recordedAs: 'behind_trunk_reason' },
