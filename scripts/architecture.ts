@@ -219,17 +219,11 @@ export const modules: ArchitectureModule[] = [
   ...focusedTestModules,
   ...runModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
   ...runResumeModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
-  ...runRetryModuleSpecs.map((spec) =>
-    module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed]),
-  ),
-  ...runLivenessModuleSpecs.map((spec) =>
+  ...[...runRetryModuleSpecs, ...runLivenessModuleSpecs].map((spec) =>
     module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed]),
   ),
   ...coreModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
-  ...cleanupBoundarySpecs.map((spec) =>
-    module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed]),
-  ),
-  ...sessionStartBoundarySpecs.map((spec) =>
+  ...[...cleanupBoundarySpecs, ...sessionStartBoundarySpecs].map((spec) =>
     module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed]),
   ),
   module('orchestrator/src/doc/doc-search.ts', [

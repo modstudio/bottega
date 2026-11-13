@@ -3,9 +3,9 @@ import { decideSessionStart } from './session-start-decision.ts'
 
 describe('session start decision', () => {
   test('composes when the session holds no explore cursor', () => {
-    expect(
-      decideSessionStart({ session: 'session', project: 'fixture', openCursors: [] }),
-    ).toEqual({ kind: 'compose' })
+    expect(decideSessionStart({ session: 'session', project: 'fixture', openCursors: [] })).toEqual(
+      { kind: 'compose' },
+    )
   })
 
   test('reuses an open explore cursor', () => {
@@ -18,7 +18,7 @@ describe('session start decision', () => {
     ).toEqual({ kind: 'reuse', cursor: 17, workflow: 'explore' })
   })
 
-  test('composes when the store excludes the session\'s only closed explore', () => {
+  test("composes when the store excludes the session's only closed explore", () => {
     expect(
       decideSessionStart({
         session: 'session',

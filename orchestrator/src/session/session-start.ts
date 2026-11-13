@@ -7,12 +7,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { callerIdentity, db, sessionId } from '../database/db.ts'
-import {
-  projectAmong,
-  projectAt,
-  projects,
-  retiredProjectRefusal,
-} from '../project/projects.ts'
+import { projectAmong, projectAt, projects, retiredProjectRefusal } from '../project/projects.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { composeWorkflowWithCursor } from '../workflow/workflow-cursor.ts'
 import { resolveWorkflowLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
@@ -41,7 +36,10 @@ export async function startSession(
   const session = dependencies.session === undefined ? sessionId(database) : dependencies.session
   const project = projectAt(cwd, database)
   const openCursors = session
-    ? await taskFlowReadStore(database).listOpenStages({ project: project?.name, sessionId: session })
+    ? await taskFlowReadStore(database).listOpenStages({
+        project: project?.name,
+        sessionId: session,
+      })
     : []
   const cursors = openCursors.map((cursor) => ({
     id: cursor.id,
