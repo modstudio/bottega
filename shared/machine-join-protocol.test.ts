@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { encode } from 'cbor2'
 import {
   decodeMachineJoinRecord,
   encodeMachineJoinRecord,
@@ -99,40 +100,32 @@ test('tags bind roles and sides', () => {
   expect(verifyMachineJoinTag(swapped, 'approver', approverTag)).toBeFalse()
 })
 
-test('machine join records refuse wrong key sizes and extra fields', async () => {
-  const { encode } = await import('cbor2')
+test('machine join records refuse wrong key sizes and extra fields', () => {
+  const options = { dcbor: true, rejectDuplicateKeys: true, preferMap: true } as const
   expect(() =>
     decodeMachineJoinRecord(
       encode(
-        new Map([
+        new Map<number, unknown>([
           [1, 'key'],
           [2, new Uint8Array(31)],
           [3, new Uint8Array(32)],
           [4, 'label'],
         ]),
-        {
-          dcbor: true,
-          rejectDuplicateKeys: true,
-          preferMap: true,
-        },
+        options,
       ),
     ),
   ).toThrow('public key')
   expect(() =>
     decodeMachineJoinRecord(
       encode(
-        new Map([
+        new Map<number, unknown>([
           [1, 'key'],
           [2, new Uint8Array(32)],
           [3, new Uint8Array(32)],
           [4, 'label'],
           [5, 1],
         ]),
-        {
-          dcbor: true,
-          rejectDuplicateKeys: true,
-          preferMap: true,
-        },
+        options,
       ),
     ),
   ).toThrow('extra or missing')

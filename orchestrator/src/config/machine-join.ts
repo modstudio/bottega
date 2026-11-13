@@ -290,7 +290,7 @@ async function approveAndWrap(
         selected.spaceId,
         { kind: 'add', ...joiner },
         'machine approve',
-      { at: now(ports.at), env: ports.env },
+        { at: now(ports.at), env: ports.env },
       )
     : null
   try {
