@@ -12,6 +12,7 @@ export function gooseProviderFile(input: {
 }): GooseProviderFile | null {
   if (!input.requestSettings) return null
   if (!input.baseUrl) throw new Error(`Goose custom provider ${input.name} has no base URL`)
+  if (!input.model) throw new Error(`Goose custom provider ${input.name} has no model`)
   if (input.contextLimit === null) {
     throw new Error(`Goose custom provider ${input.name} has no launch context limit`)
   }

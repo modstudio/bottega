@@ -130,6 +130,8 @@ function rowLaunchEnvironment(
           GOOSE_MAX_TOKENS: String(GOOSE_MAX_OUTPUT_TOKENS),
           GOOSE_TELEMETRY_ENABLED: 'false',
           ...contextEnvironment,
+          // The per-run provider file declares a model context limit, and
+          // transport-acp.ts:writeGooseProviderFile reads it from this variable.
           ...(row.request_settings && !contextEnvironment.GOOSE_CONTEXT_LIMIT
             ? {
                 GOOSE_CONTEXT_LIMIT: String(

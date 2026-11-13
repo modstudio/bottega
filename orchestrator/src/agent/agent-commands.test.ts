@@ -469,6 +469,9 @@ test('agent commands validate, store, show, and clear OpenRouter request setting
       agentCommand(['agent', 'set', name, '--request-settings', '[]'], presentation),
     ).rejects.toThrow('--request-settings must be a JSON object')
 
+    await agentCommand(['agent', 'set', name, '--max-concurrent', '2'], presentation)
+    expect(JSON.parse(output.pop()!).request_settings).toBe('{"provider":{"ignore":["Morph"]}}')
+
     await agentCommand(['agent', 'set', name, '--clear-request-settings'], presentation)
     expect(JSON.parse(output.pop()!).request_settings).toBeNull()
   } finally {

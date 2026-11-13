@@ -18,4 +18,7 @@ test('agent request settings migrate forward without changing existing registrat
   expect(database.query("SELECT request_settings FROM agent WHERE name='codex'").get()).toEqual({
     request_settings: '{"provider":{"ignore":["Morph"]}}',
   })
+  expect(() =>
+    database.query("UPDATE agent SET request_settings='not json' WHERE name='codex'").run(),
+  ).toThrow('CHECK constraint failed')
 })

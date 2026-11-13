@@ -64,6 +64,10 @@ test('the Goose context ceiling preserves its measured pre-regression value', ()
   expect(GOOSE_CONTEXT_CEILING).toBe(128_000)
 })
 
+test('the Goose output cap preserves its measured value', () => {
+  expect(GOOSE_MAX_OUTPUT_TOKENS).toBe(32_768)
+})
+
 test('a review lens on a wide served window runs at the Goose context ceiling', () => {
   expect(gooseContextLimit(200_000, DEEP_JOB_TOKENS, null)).toBe(GOOSE_CONTEXT_CEILING)
 })
