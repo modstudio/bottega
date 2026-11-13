@@ -100,7 +100,7 @@ export async function registerMachineKey(
         !Buffer.from(bytes(row.signing_public_key)).equals(Buffer.from(input.signingPublicKey))
       ) {
         throw new ConfigServiceError(
-          `machine key ${input.keyId} is already registered with a different signing key`,
+          `machine key ${input.keyId} is already registered with a different signing key; have an owner revoke this machine key from an approved machine, then run \`${PLATFORM_SLUG} machine config machine init\` again to replace both keys`,
           409,
         )
       }

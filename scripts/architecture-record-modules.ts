@@ -839,10 +839,10 @@ export const recordModules: RecordModule[] = [
     'hono',
     'zod',
     '../../../shared/secret-envelope.ts',
+    './record-api-config-contract.ts',
     './record-api-wire.ts',
     './record-auth.ts',
     './record-config.ts',
-    './record-machine-key-registration.ts',
   ]),
   module('orchestrator/src/record/record-machine-key-registration.ts', [
     '../../../shared/brand.ts',

@@ -1,27 +1,20 @@
 // concern: record-api-machine-key-claim-routes
-/** Owns machine-key claim HTTP validation. */
+/** Owns the machine-key HTTP routes: list, register, revoke and claim. */
 
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
 import { KEY_SIZE } from '../../../shared/secret-envelope.ts'
+import type { RecordConfigRouteDeps } from './record-api-config-contract.ts'
 import { base64urlSchema, decoded, encoded, idSchema, keyIdSchema } from './record-api-wire.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import type { MachineKeyClaimChallenge } from './record-config.ts'
-import type { MachineKey } from './record-machine-key-registration.ts'
 
 type ApiEnvironment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
-type Routes = {
-  listMachineKeys(input: Tenant): Promise<MachineKey[]>
-  registerMachineKey(
-    input: Tenant & {
-      keyId: string
-      publicKey: Uint8Array
-      signingPublicKey?: Uint8Array
-      label: string
-    },
-  ): Promise<MachineKey>
-  revokeMachineKey(input: Tenant & { keyId: string }): Promise<void>
+type Routes = Pick<
+  RecordConfigRouteDeps,
+  'listMachineKeys' | 'registerMachineKey' | 'revokeMachineKey'
+> & {
   createMachineKeyClaimChallenge(
     input: Tenant & { keyId: string },
   ): Promise<MachineKeyClaimChallenge>
