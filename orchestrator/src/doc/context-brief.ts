@@ -2,6 +2,7 @@
 /** Gathers and renders the compact architect context brief. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { ContextItemKind } from '../../../shared/context-item-vocabulary.ts'
 import { type ClaimView, liveClaimsOfSession } from '../board/board-claim-service.ts'
 import { claimNotices } from '../board/board-service.ts'
 import { db } from '../database/db.ts'
@@ -24,7 +25,7 @@ import {
 } from '../workflow/workflow-task-reference.ts'
 import { parseWorkedTaskKeys, WORKED_CONTEXT_ID, WORKED_CONTEXT_KIND } from './context-worked.ts'
 import { storedItems, taskProfile } from './context-write-adapter.ts'
-import type { ContextItem, ContextItemKind } from './doc-context-write.ts'
+import type { ContextItem } from './doc-context-write.ts'
 import { taskContextHolder } from './doc-subjects.ts'
 import { listOpenResumes } from './docs.ts'
 

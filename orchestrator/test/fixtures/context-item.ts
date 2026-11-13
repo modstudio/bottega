@@ -1,4 +1,4 @@
-import type { ContextItemKind } from '../../src/doc/doc-context-write.ts'
+import type { ContextItemKind } from '../../../shared/context-item-vocabulary.ts'
 
 /** Legacy document encoding of context items, used only to seed migration fixture inputs. */
 export function encodeContextItem(input: {

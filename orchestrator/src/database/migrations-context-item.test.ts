@@ -159,7 +159,7 @@ test('four-kind migration removes retired rows and tightens the CHECK', () => {
            (record_id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
            VALUES (?,'task',?,'retired',?,'body','test','2026-11-13','2026-11-13')`,
         )
-        .run(newRecordId(), holder, retiredKinds[0]),
+        .run(newRecordId(), holder, 'next-action'),
     ).toThrow()
   } finally {
     database.close()

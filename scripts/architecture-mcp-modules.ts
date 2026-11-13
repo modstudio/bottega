@@ -100,7 +100,6 @@ export const mcpModules: McpModule[] = [
   module('orchestrator/src/mcp/mcp-operator-tools.ts', [
     '@modelcontextprotocol/sdk/server/mcp.js',
     'zod',
-    '../../../shared/context-item-vocabulary.ts',
     '../../../shared/docs.ts',
     '../../../shared/orch-contract.ts',
     '../ask/worker-question.ts',
@@ -194,6 +193,7 @@ export const mcpModules: McpModule[] = [
   module('orchestrator/src/mcp/mcp-doc-tools.ts', [
     '@modelcontextprotocol/sdk/server/mcp.js',
     'zod',
+    '../../../shared/context-item-vocabulary.ts',
     '../../../shared/docs.ts',
     '../canon/canon-files.ts',
     '../canon/canon.ts',

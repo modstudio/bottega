@@ -1,8 +1,8 @@
 // concern: session close-out
 /** Pure ownership, release classification, and final verdict for one architect session. */
 
+import type { ContextItemKind } from '../../../shared/context-item-vocabulary.ts'
 import { type BranchLanding, isPruneSafeLandingState } from '../branch/branch-state.ts'
-import type { ContextItemKind } from '../doc/doc-context-write.ts'
 import { RUN_LIVE_STATUS_SET, TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 
 export type SessionOwnedRun = {

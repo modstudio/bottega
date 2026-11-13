@@ -1,7 +1,10 @@
 // concern: context-service
 /** Owns context item reads and mutations over the document store. */
 import type { Database } from 'bun:sqlite'
-import { splitContextHolder } from '../../../shared/context-item-vocabulary.ts'
+import {
+  type ContextItemKind,
+  splitContextHolder,
+} from '../../../shared/context-item-vocabulary.ts'
 import { sessionId, writableDb } from '../database/db.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { hostedContextItemClient } from './context-item-hosted-client.ts'
@@ -21,7 +24,6 @@ import {
   resolvedPointerTarget,
 } from './context-write-adapter.ts'
 import {
-  type ContextItemKind,
   type ContextTaskIdentity,
   ContextWriteRefusalError,
   holderOwnershipRefusal,

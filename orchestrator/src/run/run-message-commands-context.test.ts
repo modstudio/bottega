@@ -64,10 +64,7 @@ test('answering a continuation turn question writes its root task position', asy
     { ports: contextPorts(calls), output: { log: () => {}, error: () => {} } },
   )
 
-  expect(calls).toEqual([
-    `set position position-q${question.number} on DEV-2225`,
-    `drop open-q${question.number} on DEV-2225`,
-  ])
+  expect(calls).toEqual([`set position position-q${question.number} on DEV-2225`])
 })
 
 test('partial record-only answer writes only the selected question position', async () => {
@@ -94,10 +91,7 @@ test('partial record-only answer writes only the selected question position', as
     { ports: contextPorts(calls), output: { log: () => {}, error: () => {} } },
   )
 
-  expect(calls).toEqual([
-    `set position position-q${selected.number} on DEV-2225`,
-    `drop open-q${selected.number} on DEV-2225`,
-  ])
+  expect(calls).toEqual([`set position position-q${selected.number} on DEV-2225`])
   expect(
     db()
       .query<{ record_id: string; answered_at: string | null }, [string]>(
@@ -131,10 +125,7 @@ test('an operator answer writes its root task ruling', async () => {
     { ports: contextPorts(calls), output: { log: () => {}, error: () => {} } },
   )
 
-  expect(calls).toEqual([
-    `set ruling ruling-q${question.number} on DEV-2225`,
-    `drop open-q${question.number} on DEV-2225`,
-  ])
+  expect(calls).toEqual([`set ruling ruling-q${question.number} on DEV-2225`])
 })
 
 test('a context port failure leaves the answer recorded and reports without throwing', async () => {

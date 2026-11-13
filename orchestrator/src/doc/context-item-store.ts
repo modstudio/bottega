@@ -3,11 +3,12 @@
 import type { Database } from 'bun:sqlite'
 import {
   type ContextHolderKind,
+  type ContextItemKind,
   splitContextHolder,
 } from '../../../shared/context-item-vocabulary.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
-import type { ContextItem, ContextItemKind } from './doc-context-write.ts'
+import type { ContextItem } from './doc-context-write.ts'
 
 type ContextItemRow = {
   record_id: string
