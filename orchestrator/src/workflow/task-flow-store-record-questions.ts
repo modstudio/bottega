@@ -6,6 +6,7 @@ import type {
   HostedTaskFlowStageById,
   HostedTaskFlowStageList,
 } from '../record/record-task-flow-contract.ts'
+import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { questionOpenSql, questionTaskHolderSql } from '../run/question-open.ts'
 import type {
   TaskFlowInboxQuestionRow,
@@ -36,6 +37,27 @@ const openQuestionRows = (database: Database) =>
   database.query<LocalQuestion, []>(`SELECT * FROM question q WHERE ${questionOpenSql('q')}`).all()
 
 const stageMap = (items: ListedItem[]) => new Map(items.map((item) => [item.stage.id, item]))
+
+export const STAGE_BY_ID_READ_LIMIT = 20
+
+async function stagesForQuestionRows(read: StageRead, rows: LocalQuestion[]) {
+  const ids = [
+    ...new Set(
+      rows.flatMap((row) => (row.workflow_cursor_record_id ? [row.workflow_cursor_record_id] : [])),
+    ),
+  ]
+  if (ids.length === 0) return new Map<string, HostedTaskFlowStageById['stage']>()
+  const stages = new Map<string, HostedTaskFlowStageById['stage']>()
+  if (ids.length <= STAGE_BY_ID_READ_LIMIT) {
+    for (const item of await Promise.all(ids.map((id) => read.byId(id))))
+      if (item) stages.set(item.stage.id, item.stage)
+    return stages
+  }
+  const wanted = new Set(ids)
+  for (const { stage } of await read.listEvery({ states: TASK_FLOW_STAGE_STATES }))
+    if (wanted.has(stage.id)) stages.set(stage.id, stage)
+  return stages
+}
 
 const questionStage = async (read: StageRead, row: LocalQuestion) =>
   row.workflow_cursor_record_id ? read.byId(row.workflow_cursor_record_id) : null
@@ -98,7 +120,7 @@ function listedStageReads(database: Database, read: StageRead) {
     },
 
     async stageIdentityMap() {
-      return (await read.listEvery({}))
+      return (await read.listEvery({ states: TASK_FLOW_STAGE_STATES }))
         .map(({ stage }) => ({ number: stage.number, record_id: stage.id }))
         .sort((a, b) => a.number - b.number)
     },
@@ -310,25 +332,26 @@ function rulingListReads(database: Database, read: StageRead) {
           ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''} ORDER BY q.number`,
         )
         .all(...values)
-      return Promise.all(
-        rows.map(async (q) => {
-          const stage = (await questionStage(read, q))?.stage
-          const {
-            run_project: _runProject,
-            run_session: _runSession,
-            workflow_cursor_record_id: _workflowCursorRecordId,
-            ...row
-          } = q
-          return {
-            ...row,
-            workflow_cursor_id: q.workflow_cursor_record_id,
-            project: (q.run_project as string | null) ?? stage?.projectName ?? null,
-            workflow_slug: stage?.workflow ?? null,
-            mode_slug: stage?.mode ?? null,
-            session_id: (q.run_session as string | null) ?? stage?.sessionId ?? null,
-          }
-        }),
-      )
+      const stages = await stagesForQuestionRows(read, rows)
+      return rows.map((q) => {
+        const stage = q.workflow_cursor_record_id
+          ? stages.get(q.workflow_cursor_record_id)
+          : undefined
+        const {
+          run_project: _runProject,
+          run_session: _runSession,
+          workflow_cursor_record_id: _workflowCursorRecordId,
+          ...row
+        } = q
+        return {
+          ...row,
+          workflow_cursor_id: q.workflow_cursor_record_id,
+          project: (q.run_project as string | null) ?? stage?.projectName ?? null,
+          workflow_slug: stage?.workflow ?? null,
+          mode_slug: stage?.mode ?? null,
+          session_id: (q.run_session as string | null) ?? stage?.sessionId ?? null,
+        }
+      })
     },
   }
 }
@@ -423,16 +446,17 @@ function questionLinkReads(database: Database, read: StageRead) {
           WHERE q.workflow_task_record_id IS NULL AND q.workflow_key IS NOT NULL`,
         )
         .all()
-      return (
-        await Promise.all(
-          rows.map(async (q) => {
-            const stage = (await questionStage(read, q))?.stage
-            return stage
-              ? { id: q.record_id, task_key: q.workflow_key as string, project: stage.projectName! }
-              : null
-          }),
-        )
-      ).filter((row) => row !== null)
+      const stages = await stagesForQuestionRows(read, rows)
+      return rows
+        .map((q) => {
+          const stage = q.workflow_cursor_record_id
+            ? stages.get(q.workflow_cursor_record_id)
+            : undefined
+          return stage
+            ? { id: q.record_id, task_key: q.workflow_key as string, project: stage.projectName! }
+            : null
+        })
+        .filter((row) => row !== null)
     },
 
     async linkedQuestionTaskReferences() {
@@ -441,16 +465,17 @@ function questionLinkReads(database: Database, read: StageRead) {
           'SELECT * FROM question q WHERE q.workflow_task_record_id IS NOT NULL',
         )
         .all()
-      return (
-        await Promise.all(
-          rows.map(async (q) => {
-            const stage = (await questionStage(read, q))?.stage
-            return stage
-              ? { task_record_id: q.workflow_task_record_id as string, project: stage.projectName! }
-              : null
-          }),
-        )
-      ).filter((row) => row !== null)
+      const stages = await stagesForQuestionRows(read, rows)
+      return rows
+        .map((q) => {
+          const stage = q.workflow_cursor_record_id
+            ? stages.get(q.workflow_cursor_record_id)
+            : undefined
+          return stage
+            ? { task_record_id: q.workflow_task_record_id as string, project: stage.projectName! }
+            : null
+        })
+        .filter((row) => row !== null)
     },
   }
 }
@@ -484,10 +509,11 @@ function taskRulingReads(database: Database, read: StageRead) {
         )
         .all(taskRecordId)
       const projectId = read.projectId(project)
+      const stages = await stagesForQuestionRows(read, workflowRows)
       const matchingWorkflow = [] as Array<TaskFlowTaskRulingRow & { effective_at: string }>
       for (const row of workflowRows) {
         const stage = row.workflow_cursor_record_id
-          ? (await read.byId(row.workflow_cursor_record_id))?.stage
+          ? stages.get(row.workflow_cursor_record_id)
           : null
         if (stage?.projectId === projectId) matchingWorkflow.push(row)
       }
@@ -519,11 +545,15 @@ function questionProjectReads(database: Database, read: StageRead) {
         )`,
         )
         .all()
-      return Promise.all(
-        rows.map(async (q) => ({
-          project: q.run_project ?? (await questionStage(read, q))?.stage.projectName ?? null,
-        })),
-      )
+      const stages = await stagesForQuestionRows(read, rows)
+      return rows.map((q) => ({
+        project:
+          q.run_project ??
+          (q.workflow_cursor_record_id
+            ? stages.get(q.workflow_cursor_record_id)?.projectName
+            : null) ??
+          null,
+      }))
     },
   }
 }

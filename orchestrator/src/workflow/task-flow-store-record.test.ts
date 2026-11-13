@@ -7,6 +7,7 @@ import type { RecordPayload } from '../record/record-sync-contract.ts'
 import type { HostedTaskFlowStageById } from '../record/record-task-flow-contract.ts'
 import { backfillTaskFlowRecords } from './task-flow-backfill.ts'
 import { recordTaskFlowReadStore } from './task-flow-store-record.ts'
+import { STAGE_BY_ID_READ_LIMIT } from './task-flow-store-record-questions.ts'
 import { sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
 
 const PROJECT_ID = '00000000-0000-4000-8000-000000000001'
@@ -528,6 +529,65 @@ test('question-joined reads match SQLite joins and ordering', async () => {
   ]
   for (const [recordAnswer, localAnswer] of assertions)
     expect(await recordAnswer).toEqual(await localAnswer)
+})
+
+test('question stage lookups preserve parity below and above the by-id batch limit', async () => {
+  for (const stageCount of [STAGE_BY_ID_READ_LIMIT, STAGE_BY_ID_READ_LIMIT + 1]) {
+    const d = database()
+    const stages: HostedTaskFlowStageById[] = []
+    for (let index = 0; index < stageCount; index++) {
+      const number = index + 2
+      const suffix = String(number).padStart(12, '0')
+      const stageId = `10000000-0000-4000-8000-${suffix}`
+      const questionId = `20000000-0000-4000-8000-${suffix}`
+      d.query(
+        `INSERT INTO workflow_cursor
+         (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,
+          task_record_id,task_flow_record_id,instance_id,session_id,workflow_version_record_id,
+          catalogue_version_record_id,args,autonomy,ordinal,step_slug,state,closed,question,total_steps,
+          created_at,updated_at,enforcement,opened_machine_id,last_advanced_machine_id,revision)
+         SELECT ?,?,'fixture',project_record_id,'flow','default','DEV-2234',task_record_id,
+                NULL,?,'session-a',workflow_version_record_id,
+                catalogue_version_record_id,'{}','guided',0,'plan','running','[]',NULL,2,
+                created_at,updated_at,enforcement,opened_machine_id,last_advanced_machine_id,1
+           FROM workflow_cursor WHERE record_id='00000000-0000-4000-8000-000000000007'`,
+      ).run(stageId, number, `#${number}`)
+      d.query(
+        `INSERT INTO question
+         (record_id,number,workflow_cursor_record_id,workflow_key,asked_at,question)
+         VALUES (?,?,?,'DEV-2234',?,'batch?')`,
+      ).run(
+        questionId,
+        index + 1,
+        stageId,
+        `2026-11-12T00:00:${String(index).padStart(2, '0')}.000Z`,
+      )
+      const stage = hostedStage({ number, stageId })
+      stage.stage.instanceId = `#${number}`
+      stages.push(stage)
+    }
+
+    const counts = { stageLists: 0, stagesById: 0 }
+    const hosted = recordTaskFlowReadStore(
+      d,
+      createMemoryRecordApiClient({
+        taskFlowStages: stages,
+        taskFlowPageSize: 7,
+        taskFlowReadCounts: counts,
+      }),
+    )
+    const local = sqliteTaskFlowReadStore(d)
+    expect(await hosted.rulingRows({ kind: 'workflow', after: null, cursor: null })).toEqual(
+      await local.rulingRows({ kind: 'workflow', after: null, cursor: null }),
+    )
+    if (stageCount === STAGE_BY_ID_READ_LIMIT) {
+      expect(counts.stagesById).toBe(STAGE_BY_ID_READ_LIMIT)
+      expect(counts.stageLists).toBe(0)
+    } else {
+      expect(counts.stagesById).toBe(0)
+      expect(counts.stageLists).toBeGreaterThan(0)
+    }
+  }
 })
 
 test('machine-wide hosted reads merge every registered project space', async () => {

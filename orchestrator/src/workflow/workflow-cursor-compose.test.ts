@@ -27,6 +27,21 @@ import { copyWorkflowTextForCursor } from './workflow-text-copy.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
 const destinationSpaceId = 'fixture-space'
+const TASK_IDS = {
+  existing: '00000000-0000-4000-8001-000000000001',
+  hosted: '00000000-0000-4000-8001-000000000002',
+  stale: '00000000-0000-4000-8001-000000000003',
+  adoptRefresh: '00000000-0000-4000-8001-000000000004',
+  advanceRefresh: '00000000-0000-4000-8001-000000000005',
+  first: '00000000-0000-4000-8001-000000000006',
+  second: '00000000-0000-4000-8001-000000000007',
+  fail: '00000000-0000-4000-8001-000000000008',
+  replay: '00000000-0000-4000-8001-000000000009',
+  local: '00000000-0000-4000-8001-000000000010',
+  lifecycle: '00000000-0000-4000-8001-000000000011',
+  adopted: '00000000-0000-4000-8001-000000000012',
+  text: '00000000-0000-4000-8001-000000000013',
+} as const
 const projectIdentityClient = {
   whoami: async () => ({
     user: { id: 'fixture-user' },
@@ -134,7 +149,7 @@ test('hosted compose prints the hosted number while caching the machine-local nu
     { key: 'DEV-EXISTING', branch: 'DEV-EXISTING-work', worktree: '/tmp/existing' },
     {
       ...context,
-      taskRecordId: 'task-DEV-EXISTING',
+      taskRecordId: TASK_IDS.existing,
       taskFlowClient: composeClient([], { number: 99 }),
     },
     d,
@@ -150,7 +165,7 @@ test('hosted compose prints the hosted number while caching the machine-local nu
     'fixture',
     'default',
     { key: 'DEV-HOSTED', branch: 'DEV-HOSTED-work', worktree: '/tmp/hosted' },
-    { ...context, taskRecordId: 'task-DEV-HOSTED', taskFlowClient },
+    { ...context, taskRecordId: TASK_IDS.hosted, taskFlowClient },
     d,
     {},
     {},
@@ -159,7 +174,7 @@ test('hosted compose prints the hosted number while caching the machine-local nu
   expect(calls).toHaveLength(1)
   expect(destinations).toEqual([{ destinationSpaceId }])
   expect(calls[0]).toMatchObject({
-    flowInsert: { taskId: 'task-DEV-HOSTED' },
+    flowInsert: { taskId: TASK_IDS.hosted },
     stageInsert: { workflow: 'flow', workflowKey: 'DEV-HOSTED' },
   })
   expect(composed.cursor?.id).toBe(1)
@@ -167,7 +182,7 @@ test('hosted compose prints the hosted number while caching the machine-local nu
     d.query('SELECT number,revision FROM workflow_cursor WHERE workflow_key=?').get('DEV-HOSTED'),
   ).toEqual({ number: 2, revision: 7 })
   expect(
-    d.query('SELECT revision FROM task_flow WHERE task_record_id=?').get('task-DEV-HOSTED'),
+    d.query('SELECT revision FROM task_flow WHERE task_record_id=?').get(TASK_IDS.hosted),
   ).toEqual({ revision: 4 })
   expect(d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%'").all()).toEqual([])
 })
@@ -177,7 +192,7 @@ test('hosted stage update presents and refreshes the record row when the mirror 
   const calls: TaskFlowIntentInput<'compose'>[] = []
   const taskFlowClient = composeClient(calls)
   const args = { key: 'DEV-STALE', branch: 'DEV-STALE-work', worktree: '/tmp/stale' }
-  const callContext = { ...context, taskRecordId: 'task-DEV-STALE', taskFlowClient }
+  const callContext = { ...context, taskRecordId: TASK_IDS.stale, taskFlowClient }
   const opened = await composeWorkflowWithCursor(
     'flow',
     'fixture',
@@ -231,7 +246,7 @@ test('task linking refreshes a stale adopted stage from the record', async () =>
     { taskKey: workflowKey },
     { destinationSpaceId },
   )
-  const taskRecordId = 'task-DEV-ADOPT-REFRESH'
+  const taskRecordId = TASK_IDS.adoptRefresh
 
   await linkWorkflowTaskLabel(d, { project: 'fixture', workflowKey, taskRecordId }, taskFlowClient)
 
@@ -255,7 +270,7 @@ test('advance refreshes a stale mirror from the record', async () => {
   const args = { key: 'DEV-ADVANCE-REFRESH', branch: 'DEV-ADVANCE-work', worktree: '/tmp/advance' }
   const hostedContext = {
     ...context,
-    taskRecordId: 'task-DEV-ADVANCE-REFRESH',
+    taskRecordId: TASK_IDS.advanceRefresh,
     taskFlowClient,
   }
   const opened = await composeWorkflowWithCursor(
@@ -319,7 +334,7 @@ test('hosted compose prints and resolves the per-project number across two proje
     'fixture',
     'default',
     { key: 'DEV-FIRST', branch: 'DEV-FIRST-work', worktree: '/tmp/first' },
-    { ...context, taskRecordId: 'task-DEV-FIRST', taskFlowClient },
+    { ...context, taskRecordId: TASK_IDS.first, taskFlowClient },
     d,
     {},
     {},
@@ -329,7 +344,7 @@ test('hosted compose prints and resolves the per-project number across two proje
     'second-fixture',
     'default',
     { key: 'DEV-SECOND', branch: 'DEV-SECOND-work', worktree: '/tmp/second' },
-    { ...context, taskRecordId: 'task-DEV-SECOND', taskFlowClient },
+    { ...context, taskRecordId: TASK_IDS.second, taskFlowClient },
     d,
     {},
     {},
@@ -354,7 +369,7 @@ test('hosted compose failure leaves no local flow or cursor', async () => {
       'fixture',
       'default',
       { key: 'DEV-FAIL', branch: 'DEV-FAIL-work', worktree: '/tmp/fail' },
-      { ...context, taskRecordId: 'task-DEV-FAIL', taskFlowClient },
+      { ...context, taskRecordId: TASK_IDS.fail, taskFlowClient },
       d,
       {},
       {},
@@ -366,7 +381,7 @@ test('hosted compose failure leaves no local flow or cursor', async () => {
     d.query("SELECT count(*) count FROM workflow_cursor WHERE workflow_key='DEV-FAIL'").get(),
   ).toEqual({ count: 0 })
   expect(
-    d.query("SELECT count(*) count FROM task_flow WHERE task_record_id='task-DEV-FAIL'").get(),
+    d.query('SELECT count(*) count FROM task_flow WHERE task_record_id=?').get(TASK_IDS.fail),
   ).toEqual({ count: 0 })
 })
 
@@ -381,7 +396,7 @@ test('compose replay after a local crash reuses its request id and hosted stage'
     project: 'fixture',
     mode: 'default',
     args: { key: 'DEV-REPLAY', branch: 'DEV-REPLAY-work', worktree: '/tmp/replay' },
-    context: { ...context, taskRecordId: 'task-DEV-REPLAY', taskFlowClient },
+    context: { ...context, taskRecordId: TASK_IDS.replay, taskFlowClient },
   }
 
   await expect(
@@ -426,7 +441,7 @@ test('local-only compose makes no client call and writes no task-flow outbox row
     'fixture',
     'default',
     { key: 'DEV-LOCAL', branch: 'DEV-LOCAL-work', worktree: '/tmp/local' },
-    { ...context, taskRecordId: 'task-DEV-LOCAL', taskFlowClient },
+    { ...context, taskRecordId: TASK_IDS.local, taskFlowClient },
     d,
     {},
     {},
@@ -484,7 +499,7 @@ test('advance, await, rule, and abandon call the record before caching returned 
       return memory.abandonTaskFlow!(input, destination)
     },
   }
-  const hostedContext = { ...context, taskRecordId: 'task-DEV-LIFECYCLE', taskFlowClient }
+  const hostedContext = { ...context, taskRecordId: TASK_IDS.lifecycle, taskFlowClient }
   const args = { key: 'DEV-LIFECYCLE', branch: 'DEV-LIFECYCLE-work', worktree: '/tmp/lifecycle' }
   const opened = await composeWorkflowWithCursor(
     'flow',
@@ -568,8 +583,8 @@ test("abandoning a stage that is not its flow's open stage preserves the pointer
         : result
     },
   }
-  const firstContext = { ...context, taskRecordId: 'task-DEV-FIRST', taskFlowClient }
-  const secondContext = { ...context, taskRecordId: 'task-DEV-SECOND', taskFlowClient }
+  const firstContext = { ...context, taskRecordId: TASK_IDS.first, taskFlowClient }
+  const secondContext = { ...context, taskRecordId: TASK_IDS.second, taskFlowClient }
   const firstArgs = { key: 'DEV-FIRST', branch: 'first', worktree: '/tmp/first' }
   const secondArgs = { key: 'DEV-SECOND', branch: 'second', worktree: '/tmp/second' }
   const first = await composeWorkflowWithCursor(
@@ -674,13 +689,13 @@ test('adoption calls adopt then stage-update and caches the hosted flow identity
     )
     .get() as Parameters<typeof adoptWorkflowTask>[0]
 
-  await adoptWorkflowTask(row, 'DEV-ADOPTED', 'task-DEV-ADOPTED', d, taskFlowClient, 'active')
+  await adoptWorkflowTask(row, 'DEV-ADOPTED', TASK_IDS.adopted, d, taskFlowClient, 'active')
 
   expect(events).toEqual(['adopt', 'stage-update'])
   expect(
     d
       .query('SELECT record_id,revision FROM task_flow WHERE task_record_id=?')
-      .get('task-DEV-ADOPTED'),
+      .get(TASK_IDS.adopted),
   ).toEqual({ record_id: hostedFlowId, revision: 5 })
   expect(d.query('SELECT task_flow_record_id,revision FROM workflow_cursor').get()).toEqual({
     task_flow_record_id: hostedFlowId,
@@ -724,7 +739,7 @@ test('hosted text attach, copy, and delete happen before their local rows change
       return memory.deleteTaskFlowText!(input, destination)
     },
   }
-  const hostedContext = { ...context, taskRecordId: 'task-DEV-TEXT', taskFlowClient }
+  const hostedContext = { ...context, taskRecordId: TASK_IDS.text, taskFlowClient }
   const textArgs = { key: 'DEV-TEXT', branch: 'DEV-TEXT-work', worktree: '/tmp/text' }
   const opened = await composeWorkflowWithCursor(
     'flow',
