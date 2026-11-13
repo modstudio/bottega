@@ -164,7 +164,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-floor-refusal.ts',
   ]),
   module('orchestrator/src/workflow/workflow-review-owed-decision.ts', [
-    '../review-funnel/decide-review-funnel.ts',
+    '../review-funnel/review-funnel-lens-status.ts',
   ]),
   module('orchestrator/src/workflow/workflow-review-owed-floor.ts', [
     'bun:sqlite',
@@ -176,6 +176,10 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../review/review-target.ts',
     './workflow-floor-evidence-checkout.ts',
     './workflow-review-owed-decision.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-production-floor-ports.ts', [
+    './workflow-floor-evidence.ts',
+    './workflow-review-owed-floor.ts',
   ]),
   module('orchestrator/src/workflow/workflow-floor-apply.ts', [
     'bun:sqlite',

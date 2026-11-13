@@ -4,10 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { nowIso } from '../database/db.ts'
 import { cursorName } from './workflow-cursor-format.ts'
-import type {
-  SelectableCursorRow,
-  WorkflowCursorContext,
-} from './workflow-cursor-selection.ts'
+import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { currentStepActivatedAt, reentryBoundFloorInput } from './workflow-cursor-trail.ts'
 import {
   decideFloorSatisfaction,

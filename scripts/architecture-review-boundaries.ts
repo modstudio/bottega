@@ -8,6 +8,10 @@ export type ReviewBoundarySpec = {
 
 export const reviewModuleSpecs = [
   {
+    file: 'orchestrator/src/review-funnel/review-funnel-lens-status.ts',
+    allowed: [],
+  },
+  {
     file: 'orchestrator/src/review-funnel/review-funnel-policy.ts',
     allowed: [
       'zod',
@@ -33,6 +37,7 @@ export const reviewModuleSpecs = [
     typeOnlyAllowed: [
       '../project/project-injection.ts',
       '../review/review-group.ts',
+      './review-funnel-lens-status.ts',
       './review-funnel-policy.ts',
     ],
   },
@@ -266,6 +271,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     typeOnlyAllowed: [
       '../project/project-injection.ts',
       '../review/review-group.ts',
+      './review-funnel-lens-status.ts',
       './review-funnel-policy.ts',
     ],
     reason: 'Keep the funnel verdict pure over gathered facts and validated policy.',

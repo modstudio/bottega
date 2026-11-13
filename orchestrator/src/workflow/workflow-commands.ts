@@ -49,11 +49,7 @@ import {
 import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
 import { parseWorkflowEvidencePayload, RECORD_EVIDENCE_FLAG } from './workflow-evidence-payload.ts'
 import { workflowExecCheckoutRefusal, workflowExecCommandCwd } from './workflow-exec-checkout.ts'
-import {
-  type FloorEvidencePorts,
-  productionFloorPorts,
-  type WorkflowEvidenceInput,
-} from './workflow-floor-evidence.ts'
+import type { WorkflowEvidenceInput } from './workflow-floor-evidence.ts'
 import { workflowImportLines } from './workflow-import-output.ts'
 import {
   type ProbeRecord,
@@ -63,13 +59,13 @@ import {
   recordWorkflowProbe,
   wrappedCommandExitCode,
 } from './workflow-probe.ts'
+import { productionWorkflowFloorPorts } from './workflow-production-floor-ports.ts'
 import { workflowReadSpaceFor } from './workflow-read-space.ts'
 import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
 import {
   checkResolvedWorkflowRendering,
   resolvedWorkflowRenderCheckLines,
 } from './workflow-render-check-store.ts'
-import { productionReviewOwedFloor } from './workflow-review-owed-floor.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { resolveLinkedWorkflowCursorMode } from './workflow-task-linking.ts'
 import { type HubTaskReader, resolveHubTaskReference } from './workflow-task-reference.ts'
@@ -682,10 +678,7 @@ export async function nextCommand(
       context,
       note,
       evidence,
-      floorPorts: {
-        ...productionFloorPorts(),
-        reviewOwed: productionReviewOwedFloor,
-      } as FloorEvidencePorts,
+      floorPorts: productionWorkflowFloorPorts(),
       selfRuling:
         storedSelfRuling === undefined
           ? undefined

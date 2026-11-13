@@ -27,7 +27,10 @@ import {
   type ReviewLensOwedReason,
   type ReviewLensSelectionReason,
 } from '../review/review-vocabulary.ts'
+import type { ReviewFunnelLensStatus } from './review-funnel-lens-status.ts'
 import type { ReviewFunnelPolicy } from './review-funnel-policy.ts'
+
+export type { ReviewFunnelLensStatus } from './review-funnel-lens-status.ts'
 
 type ReviewFunnelChangeIdentity = {
   project: string
@@ -74,16 +77,6 @@ export type ReviewFunnelFacts = {
     nonLensGaps: string[]
   }
 }
-
-export type ReviewFunnelLensStatus =
-  | 'owed'
-  | 'running'
-  | 'untriaged'
-  | 'satisfied'
-  | 'credited-by-read'
-  | 'not-applicable'
-  | 'waived-at-ceiling'
-  | 'overridden'
 
 type ReviewFunnelNextAction =
   | 'dispatch'

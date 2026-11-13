@@ -1,7 +1,7 @@
 // concern: workflow-review-owed-decision
 /** Pure review-owed floor decision. Must not know stores, processes, or clocks. */
 
-import type { ReviewFunnelLensStatus } from '../review-funnel/decide-review-funnel.ts'
+import type { ReviewFunnelLensStatus } from '../review-funnel/review-funnel-lens-status.ts'
 
 type ReviewOwedVerdict = {
   lenses: readonly {
