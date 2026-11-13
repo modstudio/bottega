@@ -1,5 +1,6 @@
 import type { RecordApiClient } from '../../src/record/record-api-client.ts'
 import { recordApiError } from '../../src/record/record-api-client-error.ts'
+import { encodeTaskFlowStageListCursor } from '../../src/record/record-cursor.ts'
 import type { RecordPayload } from '../../src/record/record-sync-contract.ts'
 import { taskFlowStageValues, taskFlowValues } from '../../src/record/record-sync-task-flow.ts'
 import {
@@ -7,7 +8,6 @@ import {
   hostedTaskFlowStageByIdSchema,
   taskFlowStageListQuerySchema,
 } from '../../src/record/record-task-flow-contract.ts'
-import { encodeTaskFlowStageListCursor } from '../../src/record/record-cursor.ts'
 
 export type MemoryTaskFlowInput = {
   taskFlowStages?: HostedTaskFlowStageById[]

@@ -83,7 +83,11 @@ test('serving a rebound argument writes hosted-first and preserves the local row
       return { revisions: { [cursor.record_id]: 17 } }
     },
   }
-  const hostedContext = { ...context, taskFlowClient }
+  const hostedContext = {
+    ...context,
+    taskRecordId: '00000000-0000-4000-8001-000000000014',
+    taskFlowClient,
+  }
   const opened = await composeWorkflowWithCursor(
     'flow',
     'fixture',
