@@ -1,6 +1,6 @@
 -- DEV-2293: context items leave the document store.
 CREATE TABLE context_item (
- id TEXT NOT NULL PRIMARY KEY,
+ record_id TEXT NOT NULL PRIMARY KEY,
  holder_kind TEXT NOT NULL CHECK (holder_kind IN ('task','session','cursor')),
  holder_id TEXT NOT NULL,
  slug TEXT NOT NULL,
@@ -28,7 +28,7 @@ WITH positions AS (
    substr(body,close_at+5) context_body
  FROM positions
 )
-INSERT INTO context_item(id,holder_kind,holder_id,slug,kind,body,source,question_number,target,created_at,updated_at)
+INSERT INTO context_item(record_id,holder_kind,holder_id,slug,kind,body,source,question_number,target,created_at,updated_at)
 SELECT record_id,
  substr(subject,1,instr(subject,':')-1), substr(subject,instr(subject,':')+1), slug, context_kind,
  context_body || CASE WHEN objection IS NULL THEN '' ELSE char(10)||char(10)||'Overrode: '||objection END,
@@ -39,13 +39,15 @@ SELECT record_id,
 FROM parsed
 WHERE true
 ON CONFLICT(holder_kind,holder_id,slug) DO NOTHING;
+CREATE TABLE doc_related_subject_context_contract_snapshot AS SELECT * FROM doc_related_subject;
+DELETE FROM doc_related_subject_context_contract_snapshot
+ WHERE doc_record_id IN (SELECT record_id FROM doc WHERE scope='context');
 DELETE FROM doc_revision WHERE scope='context';
 DELETE FROM doc_related_subject WHERE doc_record_id IN (SELECT record_id FROM doc WHERE scope='context');
 DELETE FROM doc WHERE scope='context';
 --> statement-breakpoint
 CREATE TABLE doc_context_contract_snapshot AS SELECT * FROM doc;
 CREATE TABLE doc_revision_context_contract_snapshot AS SELECT * FROM doc_revision;
-CREATE TABLE doc_related_subject_context_contract_snapshot AS SELECT * FROM doc_related_subject;
 DROP TABLE doc_revision;
 DROP TABLE doc_related_subject;
 DROP TABLE doc;

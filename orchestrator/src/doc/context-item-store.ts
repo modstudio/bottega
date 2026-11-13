@@ -6,7 +6,7 @@ import { db, nowIso, writeTransaction } from '../database/db.ts'
 import type { ContextItem, ContextItemKind } from './doc-context-write.ts'
 
 type ContextItemRow = {
-  id: string
+  record_id: string
   holder_kind: 'task' | 'session' | 'cursor'
   holder_id: string
   slug: string
@@ -40,7 +40,7 @@ function stored(row: ContextItemRow): StoredContextItem {
   return {
     holder: `${row.holder_kind}:${row.holder_id}`,
     id: row.slug,
-    recordId: row.id,
+    recordId: row.record_id,
     kind: row.kind,
     body: row.body,
     source: row.source,
@@ -123,7 +123,7 @@ export function setLocalContextItem(input: SetContextItem): StoredContextItem {
     if (current) {
       db()
         .query(
-          'UPDATE context_item SET kind=?,body=?,source=?,question_number=?,target=?,updated_at=? WHERE id=?',
+          'UPDATE context_item SET kind=?,body=?,source=?,question_number=?,target=?,updated_at=? WHERE record_id=?',
         )
         .run(
           input.kind,
@@ -137,7 +137,7 @@ export function setLocalContextItem(input: SetContextItem): StoredContextItem {
     } else {
       db()
         .query(
-          'INSERT INTO context_item(id,holder_kind,holder_id,slug,kind,body,source,question_number,target,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+          'INSERT INTO context_item(record_id,holder_kind,holder_id,slug,kind,body,source,question_number,target,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
         )
         .run(
           input.recordId ?? newRecordId(),
@@ -170,7 +170,7 @@ export function removeLocalContextItem(
         `context item ${holder}/${slug} changed; expected revision ${expectedRevision}, current revision ${current.revision}`,
       )
     }
-    db().query('DELETE FROM context_item WHERE id=?').run(current.recordId)
+    db().query('DELETE FROM context_item WHERE record_id=?').run(current.recordId)
     return true
   })
 }

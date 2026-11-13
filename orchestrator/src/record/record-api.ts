@@ -326,6 +326,16 @@ function refusingRequestTenant(context: Context<ApiEnvironment>, recordUrl: stri
   return tenant
 }
 
+function registerRecordCoreRoutes(
+  app: Hono<ApiEnvironment>,
+  deps: Deps,
+  ports: { scope(context: Context<ApiEnvironment>): Tenant | null; noSpace: typeof noSpace },
+): void {
+  registerRecordContextItemRoutes(app, deps, ports)
+  registerSignedDocSearchRoute(app, deps, ports)
+  registerRecordReadRoutes(app, deps, ports)
+}
+
 export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   const app = new Hono<ApiEnvironment>()
   app.onError((error, context) => {
@@ -363,9 +373,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   const scope = (context: Context<ApiEnvironment>): Tenant | null =>
     refusingRequestTenant(context, deps.recordUrl)
   const { docScope, docIdScope } = recordDocumentScopes({ scope, readDoc: deps.readDoc })
-  registerRecordContextItemRoutes(app, deps, { scope, noSpace })
-  registerSignedDocSearchRoute(app, deps, { scope, noSpace })
-  registerRecordReadRoutes(app, deps, { scope, noSpace })
+  registerRecordCoreRoutes(app, deps, { scope, noSpace })
   app.get('/v1/runs', async (context) => {
     const tenant = scope(context)
     if (!tenant) return noSpace(context)
