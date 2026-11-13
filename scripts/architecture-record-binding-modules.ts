@@ -27,6 +27,16 @@ export const recordBindingModules: RecordModule[] = [
     './record-auth.ts',
     './record-context-items.ts',
   ]),
+  module('orchestrator/src/record/record-machine-join-policy.ts', [
+    '../../../shared/pairing-code.ts',
+  ]),
+  module('orchestrator/src/record/record-machine-join.ts', [
+    'bun',
+    '../../../shared/record/schema.ts',
+    './record-config.ts',
+    './record-config-error.ts',
+    './record-machine-join-policy.ts',
+  ]),
   module('orchestrator/src/record/record-api-client-transport.ts', [
     '../../../shared/bounded-fetch.ts',
     '../../../shared/brand.ts',
@@ -74,6 +84,7 @@ export const recordBindingModules: RecordModule[] = [
     './record-api-doc-counts.ts',
     './record-api-doc-rename.ts',
     './record-api-machine-key-claim-routes.ts',
+    './record-api-machine-join-routes.ts',
     './record-api-machine-trust-log-routes.ts',
     './record-api-member-permission-routes.ts',
     './record-api-moderation-routes.ts',
@@ -89,6 +100,15 @@ export const recordBindingModules: RecordModule[] = [
     './record-api-config-contract.ts',
     './record-api-wire.ts',
     './record-auth.ts',
+  ]),
+  module('orchestrator/src/record/record-api-machine-join-routes.ts', [
+    '../../../shared/pairing-code.ts',
+    'hono',
+    'zod',
+    './record-api-config-contract.ts',
+    './record-api-wire.ts',
+    './record-auth.ts',
+    './record-machine-join-policy.ts',
   ]),
   module('orchestrator/src/record/record-api-doc-counts.ts', [
     'hono',

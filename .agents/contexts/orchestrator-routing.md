@@ -38,7 +38,7 @@ The architect owns design, the spec, every decision the spec did not settle, and
 
 - Every run records the session from `CLAUDE_CODE_SESSION_ID`. Only that session can judge it. `bottega score` **refuses** another session's run. `CLAUDE_CODE_BRIDGE_SESSION_ID` is shared and is never an identity: `sessionId()` returns the primary id or nothing, and a mutation that needs an owner refuses rather than proceeding under the shared id.
 - `bottega score pending` lists your own unscored runs and exits nonzero while any remain.
-- A Stop hook raises them before a session finishes, once per turn, and stands down if it has already asked.
+- The Stop summary names them once the session is idle, blocking once for each changed owed set; while work moves it names only those owed past `OWED_ITEM_OVERDUE_MS`.
 - `bottega question answer` and `bottega run continue` refuse escaped and confinement-unverified chains, naming `bottega review confinement clear`. Unread `bottega run tell` messages surface at the harness checkpoint before the final parse. Every write verb prints usage on `--help` with no side effects.
 
 **Never score a run you did not read.** A guessed verdict teaches the router something false. Nobody may score another session's runs. The refusal names the owning session.

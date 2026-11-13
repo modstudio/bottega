@@ -11,6 +11,7 @@ export default defineConfig({
     './shared/record/schema-review.ts',
     './shared/record/schema-release.ts',
     './shared/record/schema-landing.ts',
+    './shared/record/schema-session.ts',
     './shared/record/schema-docs.ts',
     './shared/record/schema-context-items.ts',
     './shared/record/schema-subjects.ts',

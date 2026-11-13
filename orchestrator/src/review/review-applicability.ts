@@ -10,6 +10,11 @@ import {
 } from './review-tier-classifier.ts'
 import type { ReviewLensOwedReason, ReviewLensSelectionReason } from './review-vocabulary.ts'
 
+export const isDecisionConformanceNotAdmittedReason = (
+  reason: ReviewLensOwedReason | ReviewLensSelectionReason,
+): reason is `decision-conformance not admitted: ${string}` =>
+  reason.startsWith('decision-conformance not admitted:')
+
 const BUILT_IN_REVIEW: ReviewSettings = {
   lenses: [{ lens: 'correctness' }, { lens: 'craft', minTier: 2 }, { lens: 'safety', minTier: 3 }],
 }

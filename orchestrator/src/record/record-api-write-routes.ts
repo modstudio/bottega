@@ -8,6 +8,7 @@ import { registerRecordConfigAccessRoutes } from './record-api-config-access-rou
 import { registerRecordDocCountsRoute } from './record-api-doc-counts.ts'
 import { registerRecordDocOrderRoute } from './record-api-doc-order.ts'
 import { registerRecordDocRenameRoute } from './record-api-doc-rename.ts'
+import { registerRecordMachineJoinRoutes } from './record-api-machine-join-routes.ts'
 import { registerRecordMachineKeyClaimRoutes } from './record-api-machine-key-claim-routes.ts'
 import { registerRecordMachineTrustLogRoutes } from './record-api-machine-trust-log-routes.ts'
 import { registerRecordMemberPermissionRoutes } from './record-api-member-permission-routes.ts'
@@ -27,6 +28,7 @@ type ApiEnvironment = {
 type Deps = Parameters<typeof registerRecordProjectRoutes>[1] & {
   renameDocSubject: Parameters<typeof registerRecordDocRenameRoute>[1]
 } & Parameters<typeof registerRecordSettingsRoutes>[1] &
+  Parameters<typeof registerRecordMachineJoinRoutes>[1] &
   Parameters<typeof registerRecordMachineTrustLogRoutes>[1] &
   Parameters<typeof registerRecordBoardRoutes>[1] &
   Parameters<typeof registerRecordMachineKeyClaimRoutes>[1] &
@@ -39,6 +41,7 @@ type Deps = Parameters<typeof registerRecordProjectRoutes>[1] & {
   Parameters<typeof registerRecordDocCountsRoute>[1]
 type Ports = Parameters<typeof registerRecordProjectRoutes>[2] &
   Parameters<typeof registerRecordSettingsRoutes>[2] &
+  Parameters<typeof registerRecordMachineJoinRoutes>[2] &
   Parameters<typeof registerRecordMachineTrustLogRoutes>[2] &
   Parameters<typeof registerRecordBoardRoutes>[2] &
   Parameters<typeof registerRecordMachineKeyClaimRoutes>[2] &
@@ -59,6 +62,7 @@ export function registerRecordWriteRoutes(
   registerRecordSettingsRoutes(app, deps, ports)
   registerRecordBoardRoutes(app, deps, { ...ports, noSpace: boardNoSpace })
   registerRecordMachineKeyClaimRoutes(app, deps, ports)
+  registerRecordMachineJoinRoutes(app, deps, ports)
   registerRecordMachineTrustLogRoutes(app, deps, ports)
   registerRecordConfigAccessRoutes(app, deps, ports)
   registerRecordMemberPermissionRoutes(app, deps, ports)

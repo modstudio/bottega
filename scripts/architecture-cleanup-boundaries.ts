@@ -1,5 +1,38 @@
 export const cleanupBoundarySpecs = [
   {
+    name: 'stop-summary-decision-boundary',
+    file: 'orchestrator/src/session/stop-summary-decision.ts',
+    allowed: ['node:crypto', '../../../shared/brand.ts'],
+    typeOnlyAllowed: [],
+    reason: 'Keep the bounded Stop presentation independent of stores, processes, and clocks.',
+  },
+  {
+    name: 'stop-summary-reviews-boundary',
+    file: 'orchestrator/src/session/stop-summary-reviews.ts',
+    allowed: ['../../../shared/brand.ts', '../run/run-status.ts'],
+    typeOnlyAllowed: ['./stop-summary-decision.ts'],
+    reason: 'Keep Stop review classification independent of stores, processes, and clocks.',
+  },
+  {
+    name: 'stop-summary-boundary',
+    file: 'orchestrator/src/session/stop-summary.ts',
+    allowed: [
+      '../../../shared/brand.ts',
+      '../close/close-out-in-flight.ts',
+      '../database/db.ts',
+      '../evidence/evidence-query.ts',
+      '../landing-tree/landing-tree.ts',
+      '../run/run-status.ts',
+      './session-close-out.ts',
+      '../workflow/workflow-cursor-list.ts',
+      '../workflow/task-flow-store.ts',
+      './stop-summary-decision.ts',
+      './stop-summary-reviews.ts',
+    ],
+    typeOnlyAllowed: ['bun:sqlite'],
+    reason: 'Keep Stop fact gathering as a read-only adapter over existing lifecycle owners.',
+  },
+  {
     name: 'tree-keep-decision-boundary',
     file: 'orchestrator/src/close/tree-keep-decision.ts',
     allowed: [],

@@ -10,6 +10,7 @@ import type {
   ConfigWrapInput,
   DataKey,
 } from './record-config.ts'
+import type { MachineJoinMailbox } from './record-machine-join.ts'
 import type { MachineKey } from './record-machine-key-registration.ts'
 
 type Tenant = Omit<ConfigTenant, 'spaceIds'> & { spaceIds: string[] }
@@ -92,4 +93,12 @@ export type RecordConfigRouteDeps = {
   appendMachineTrustLogEntry(
     input: Tenant & { expectedHead: Uint8Array | null; entry: Uint8Array },
   ): Promise<Uint8Array>
+  allocateMachineJoinNameplate(input: Tenant): Promise<{ nameplate: string; expiresAt: string }>
+  postMachineJoinMessage(
+    input: Tenant & { nameplate: string; side: string; phase: string; body: Uint8Array },
+  ): Promise<void>
+  readMachineJoinMessages(
+    input: Tenant & { nameplate: string; side: string },
+  ): Promise<MachineJoinMailbox>
+  failMachineJoinNameplate(input: Tenant & { nameplate: string; side: string }): Promise<void>
 }

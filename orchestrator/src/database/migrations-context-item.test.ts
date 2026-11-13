@@ -4,7 +4,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from './migrations.ts'
 import { migrationBoundaryTestDatabase } from './test-database.fixture.ts'
 
-const MIGRATION = '0221_context_item'
+const MIGRATION = '0222_context_item'
 const kinds = ['ruling', 'position', 'fact', 'pointer', 'next-action', 'open-question'] as const
 
 function encoded(kind: (typeof kinds)[number], source: string, body: string, objection?: string) {

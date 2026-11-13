@@ -76,7 +76,7 @@ type OwnedClaim = {
   allocation_key: string
   state: string
 }
-type ActiveLanding = { record_id: string; project: string; branch: string; status: string }
+export type ActiveLanding = { record_id: string; project: string; branch: string; status: string }
 type IncompleteReview = { record_id: string; number: number }
 type UnprovedBranchEvidence = {
   project: string
@@ -201,7 +201,7 @@ function ownedClaims(database: Database, roots: readonly string[]): OwnedClaim[]
     .all(...roots) as OwnedClaim[]
 }
 
-function activeLandings(database: Database, session: string): ActiveLanding[] {
+export function activeLandings(database: Database, session: string): ActiveLanding[] {
   return database
     .query(
       `SELECT record_id,project,branch,status FROM landing

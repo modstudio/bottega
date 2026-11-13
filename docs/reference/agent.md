@@ -11,6 +11,7 @@ agents, jobs, and routing
 - [bottega agent context census](#bottega-agent-context-census)
 - [bottega agent context clear](#bottega-agent-context-clear)
 - [bottega agent context drop](#bottega-agent-context-drop)
+- [bottega agent context record-injection](#bottega-agent-context-record-injection)
 - [bottega agent context set](#bottega-agent-context-set)
 - [bottega agent context show](#bottega-agent-context-show)
 - [bottega agent context stale](#bottega-agent-context-stale)
@@ -88,6 +89,7 @@ manage stored architect context or resolve checkout context
 - [bottega agent context census](./agent.md#bottega-agent-context-census)
 - [bottega agent context clear](./agent.md#bottega-agent-context-clear)
 - [bottega agent context drop](./agent.md#bottega-agent-context-drop)
+- [bottega agent context record-injection](./agent.md#bottega-agent-context-record-injection)
 - [bottega agent context set](./agent.md#bottega-agent-context-set)
 - [bottega agent context show](./agent.md#bottega-agent-context-show)
 - [bottega agent context stale](./agent.md#bottega-agent-context-stale)
@@ -150,6 +152,24 @@ remove one context item
 - `--session <id>`: select session holder
 - `--id <id>`: stable item id
 - `--expected-revision <revision>`: compare-and-set revision
+
+### Related
+
+- [bottega agent context](./agent.md#bottega-agent-context)
+
+## bottega agent context record-injection
+
+**Synopsis:** `bottega agent context record-injection [--session <id>] [--source <source>] [--bytes <count>] [--lines <count>] [--chars <count>]`
+
+record one SessionStart context injection
+
+### Options
+
+- `--session <id>`: select architect session
+- `--source <source>`: one of startup, resume, clear, compact, fork
+- `--bytes <count>`: UTF-8 bytes in the final additional context
+- `--lines <count>`: lines in the final additional context
+- `--chars <count>`: characters in the final additional context
 
 ### Related
 

@@ -1,10 +1,10 @@
 {
-  "id": "66886a75-6e89-4807-9281-ab21e8f2121a",
-  "prevIds": [
-    "bbd41875-e524-4118-b40a-38dc08c688bb"
-  ],
   "version": "8",
   "dialect": "postgres",
+  "id": "b041ac26-3b16-4f9a-b136-a4118df86fa8",
+  "prevIds": [
+    "38e51904-4dfa-454c-8fea-ce3096beeb05"
+  ],
   "ddl": [
     {
       "isRlsEnabled": false,
@@ -230,6 +230,12 @@
     },
     {
       "isRlsEnabled": true,
+      "name": "brief_injection",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": true,
       "name": "doc",
       "entityType": "tables",
       "schema": "public"
@@ -375,6 +381,18 @@
     {
       "isRlsEnabled": true,
       "name": "credential_payer_preference",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": true,
+      "name": "machine_join_message",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": true,
+      "name": "machine_join_nameplate",
       "entityType": "tables",
       "schema": "public"
     },
@@ -8764,6 +8782,188 @@
       "name": "id",
       "entityType": "columns",
       "schema": "public",
+      "table": "brief_injection"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "space_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "brief_injection"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "machine_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "brief_injection"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "session_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "brief_injection"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "brief_injection"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "source",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "brief_injection"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "bytes",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "brief_injection"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lines",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "brief_injection"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "cursors",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "brief_injection"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "keyless_cursors",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "brief_injection"
+    },
+    {
+      "type": "bigint",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "keyless_idle_max_ms",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "brief_injection"
+    },
+    {
+      "type": "boolean",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "over_cap",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "brief_injection"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "brief_injection"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "brief_injection"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
       "table": "doc"
     },
     {
@@ -13213,6 +13413,214 @@
       "name": "id",
       "entityType": "columns",
       "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "nameplate_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "space_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "side",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "phase",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "type": "bytea",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "body",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "posted_by",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "space_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "nameplate",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "allocated_by",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "expires_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "failed_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "failed_by",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
       "table": "machine_key_claim_challenge"
     },
     {
@@ -17606,6 +18014,34 @@
       "nameExplicit": true,
       "columns": [
         {
+          "value": "session_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "brief_injection_session_at_idx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "brief_injection"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
           "value": "space_id",
           "isExpression": false,
           "asc": true,
@@ -20928,6 +21364,40 @@
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
+      "name": "brief_injection_space_id_space_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "brief_injection"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "machine_id"
+      ],
+      "schemaTo": "public",
+      "tableTo": "machine",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "name": "brief_injection_machine_id_machine_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "brief_injection"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "space_id"
+      ],
+      "schemaTo": "public",
+      "tableTo": "space",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
       "name": "doc_space_id_space_id_fkey",
       "entityType": "fks",
       "schema": "public",
@@ -22138,6 +22608,108 @@
       "entityType": "fks",
       "schema": "public",
       "table": "credential_payer_preference"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "nameplate_id"
+      ],
+      "schemaTo": "public",
+      "tableTo": "machine_join_nameplate",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "machine_join_message_9Dn1rR023xXn_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "space_id"
+      ],
+      "schemaTo": "public",
+      "tableTo": "space",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "name": "machine_join_message_space_id_space_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "posted_by"
+      ],
+      "schemaTo": "public",
+      "tableTo": "user",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "name": "machine_join_message_posted_by_user_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "space_id"
+      ],
+      "schemaTo": "public",
+      "tableTo": "space",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "name": "machine_join_nameplate_space_id_space_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "allocated_by"
+      ],
+      "schemaTo": "public",
+      "tableTo": "user",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "name": "machine_join_nameplate_allocated_by_user_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "failed_by"
+      ],
+      "schemaTo": "public",
+      "tableTo": "user",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "name": "machine_join_nameplate_failed_by_user_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "machine_join_nameplate"
     },
     {
       "nameExplicit": false,
@@ -23880,6 +24452,16 @@
         "id"
       ],
       "nameExplicit": false,
+      "name": "brief_injection_pkey",
+      "schema": "public",
+      "table": "brief_injection",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
       "name": "doc_pkey",
       "schema": "public",
       "table": "doc",
@@ -24123,6 +24705,26 @@
       "name": "credential_payer_preference_pkey",
       "schema": "public",
       "table": "credential_payer_preference",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "machine_join_message_pkey",
+      "schema": "public",
+      "table": "machine_join_message",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "machine_join_nameplate_pkey",
+      "schema": "public",
+      "table": "machine_join_nameplate",
       "entityType": "pks"
     },
     {
@@ -24850,6 +25452,31 @@
     {
       "nameExplicit": true,
       "columns": [
+        "nameplate_id",
+        "side",
+        "phase"
+      ],
+      "nullsNotDistinct": false,
+      "name": "machine_join_message_nameplate_side_phase_unique",
+      "entityType": "uniques",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        "space_id",
+        "nameplate"
+      ],
+      "nullsNotDistinct": false,
+      "name": "machine_join_nameplate_space_nameplate_unique",
+      "entityType": "uniques",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
         "space_id",
         "key_id"
       ],
@@ -25460,7 +26087,49 @@
       "table": "landing_override"
     },
     {
-      "value": "\"scope\" IN ('project','machine','agent','job','global','stack','resume','canon','settings','context')",
+      "value": "\"source\" IN ('startup','resume','clear','compact','fork')",
+      "name": "brief_injection_source_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "brief_injection"
+    },
+    {
+      "value": "\"bytes\" >= 0",
+      "name": "brief_injection_bytes_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "brief_injection"
+    },
+    {
+      "value": "\"lines\" >= 0",
+      "name": "brief_injection_lines_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "brief_injection"
+    },
+    {
+      "value": "\"cursors\" >= 0",
+      "name": "brief_injection_cursors_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "brief_injection"
+    },
+    {
+      "value": "\"keyless_cursors\" >= 0 AND \"keyless_cursors\" <= \"cursors\"",
+      "name": "brief_injection_keyless_cursors_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "brief_injection"
+    },
+    {
+      "value": "\"keyless_idle_max_ms\" IS NULL OR \"keyless_idle_max_ms\" >= 0",
+      "name": "brief_injection_keyless_idle_max_ms_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "brief_injection"
+    },
+    {
+      "value": "\"scope\" IN ('project','machine','agent','job','global','stack','resume','canon','settings')",
       "name": "doc_scope_check",
       "entityType": "checks",
       "schema": "public",
@@ -25509,7 +26178,7 @@
       "table": "doc"
     },
     {
-      "value": "(\n  (\"owner_user_id\" IS NOT NULL AND \"scope\" IN ('canon','settings') AND \"subject\" IS NULL) OR\n  (\"owner_user_id\" IS NULL AND (\n  (\"scope\" IN ('machine','global') AND \"subject\" IS NULL) OR\n  (\"scope\" IN ('project','stack','agent','job','resume','context') AND \"subject\" IS NOT NULL) OR\n  \"scope\" IN ('canon','settings')\n  ))\n)",
+      "value": "(\n  (\"owner_user_id\" IS NOT NULL AND \"scope\" IN ('canon','settings') AND \"subject\" IS NULL) OR\n  (\"owner_user_id\" IS NULL AND (\n  (\"scope\" IN ('machine','global') AND \"subject\" IS NULL) OR\n  (\"scope\" IN ('project','stack','agent','job','resume') AND \"subject\" IS NOT NULL) OR\n  \"scope\" IN ('canon','settings')\n  ))\n)",
       "name": "doc_subject_check",
       "entityType": "checks",
       "schema": "public",
@@ -25523,7 +26192,7 @@
       "table": "doc"
     },
     {
-      "value": "\"scope\" IN ('project','machine','agent','job','global','stack','resume','canon','settings','context')",
+      "value": "\"scope\" IN ('project','machine','agent','job','global','stack','resume','canon','settings')",
       "name": "doc_revision_scope_check",
       "entityType": "checks",
       "schema": "public",
@@ -25579,7 +26248,7 @@
       "table": "doc_revision"
     },
     {
-      "value": "(\n  (\"owner_user_id\" IS NOT NULL AND \"scope\" IN ('canon','settings') AND \"subject\" IS NULL) OR\n  (\"owner_user_id\" IS NULL AND (\n  (\"scope\" IN ('machine','global') AND \"subject\" IS NULL) OR\n  (\"scope\" IN ('project','stack','agent','job','resume','context') AND \"subject\" IS NOT NULL) OR\n  \"scope\" IN ('canon','settings')\n  ))\n)",
+      "value": "(\n  (\"owner_user_id\" IS NOT NULL AND \"scope\" IN ('canon','settings') AND \"subject\" IS NULL) OR\n  (\"owner_user_id\" IS NULL AND (\n  (\"scope\" IN ('machine','global') AND \"subject\" IS NULL) OR\n  (\"scope\" IN ('project','stack','agent','job','resume') AND \"subject\" IS NOT NULL) OR\n  \"scope\" IN ('canon','settings')\n  ))\n)",
       "name": "doc_revision_subject_check",
       "entityType": "checks",
       "schema": "public",
@@ -25836,6 +26505,34 @@
       "entityType": "checks",
       "schema": "public",
       "table": "credential_payer_preference"
+    },
+    {
+      "value": "\"side\" ~ '^[0-9a-f]{32}$'",
+      "name": "machine_join_message_side_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "value": "\"phase\" ~ '^[a-z0-9-]{1,32}$'",
+      "name": "machine_join_message_phase_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "value": "octet_length(\"body\") BETWEEN 1 AND 4096",
+      "name": "machine_join_message_body_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "value": "\"nameplate\" ~ '^[1-9][0-9]{0,5}$'",
+      "name": "machine_join_nameplate_nameplate_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "machine_join_nameplate"
     },
     {
       "value": "length(\"key_id\") = 22 AND \"key_id\" ~ '^[A-Za-z0-9_-]{22}$'",
@@ -27946,6 +28643,58 @@
       "as": "PERMISSIVE",
       "for": "SELECT",
       "roles": [
+        "public"
+      ],
+      "using": "\"brief_injection\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid OR \"brief_injection\".\"space_id\" = ANY(\n    string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]\n  )",
+      "withCheck": null,
+      "name": "brief_injection_space_select",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "brief_injection"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "INSERT",
+      "roles": [
+        "public"
+      ],
+      "using": null,
+      "withCheck": "(\"brief_injection\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"brief_injection\".\"space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
+      "name": "brief_injection_space_insert",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "brief_injection"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "UPDATE",
+      "roles": [
+        "public"
+      ],
+      "using": "(\"brief_injection\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"brief_injection\".\"space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
+      "withCheck": "(\"brief_injection\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"brief_injection\".\"space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
+      "name": "brief_injection_space_update",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "brief_injection"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "DELETE",
+      "roles": [
+        "public"
+      ],
+      "using": "(\"brief_injection\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"brief_injection\".\"space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
+      "withCheck": null,
+      "name": "brief_injection_space_delete",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "brief_injection"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
         "record_public"
       ],
       "using": "'customer' = ANY(\"doc\".\"audiences\")\n        AND \"doc\".\"status\" = 'current'\n        AND \"doc\".\"owner_user_id\" IS NULL\n        AND \"doc\".\"deleted_at\" IS NULL\n        AND EXISTS (\n          SELECT 1 FROM public_doc_space public_space\n          WHERE public_space.space_id = \"doc\".\"space_id\"\n            AND public_space.project_id = \"doc\".\"project_id\"\n        )",
@@ -29378,6 +30127,123 @@
       "roles": [
         "public"
       ],
+      "using": "\"machine_join_message\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid OR \"machine_join_message\".\"space_id\" = ANY(\n    string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]\n  )",
+      "withCheck": null,
+      "name": "machine_join_message_space_select",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "INSERT",
+      "roles": [
+        "public"
+      ],
+      "using": null,
+      "withCheck": "(\"machine_join_message\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"machine_join_message\".\"space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
+      "name": "machine_join_message_space_insert",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "record_owner"
+      ],
+      "using": "true",
+      "withCheck": null,
+      "name": "machine_join_message_owner_select",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "DELETE",
+      "roles": [
+        "record_owner"
+      ],
+      "using": "true",
+      "withCheck": null,
+      "name": "machine_join_message_owner_delete",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "using": "\"machine_join_nameplate\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid OR \"machine_join_nameplate\".\"space_id\" = ANY(\n    string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]\n  )",
+      "withCheck": null,
+      "name": "machine_join_nameplate_space_select",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "INSERT",
+      "roles": [
+        "public"
+      ],
+      "using": null,
+      "withCheck": "(\"machine_join_nameplate\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"machine_join_nameplate\".\"space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
+      "name": "machine_join_nameplate_space_insert",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "UPDATE",
+      "roles": [
+        "public"
+      ],
+      "using": "(\"machine_join_nameplate\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"machine_join_nameplate\".\"space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
+      "withCheck": "(\"machine_join_nameplate\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"machine_join_nameplate\".\"space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
+      "name": "machine_join_nameplate_space_update",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "record_owner"
+      ],
+      "using": "true",
+      "withCheck": null,
+      "name": "machine_join_nameplate_owner_select",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "DELETE",
+      "roles": [
+        "record_owner"
+      ],
+      "using": "true",
+      "withCheck": null,
+      "name": "machine_join_nameplate_owner_delete",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "public"
+      ],
       "using": "\"machine_key_claim_challenge\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid OR \"machine_key_claim_challenge\".\"space_id\" = ANY(\n    string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]\n  )",
       "withCheck": null,
       "name": "machine_key_claim_challenge_space_select",
@@ -29420,6 +30286,32 @@
       "using": "(\"machine_key_claim_challenge\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"machine_key_claim_challenge\".\"space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
       "withCheck": null,
       "name": "machine_key_claim_challenge_space_delete",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "machine_key_claim_challenge"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "record_owner"
+      ],
+      "using": "true",
+      "withCheck": null,
+      "name": "machine_key_claim_challenge_owner_select",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "machine_key_claim_challenge"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "DELETE",
+      "roles": [
+        "record_owner"
+      ],
+      "using": "true",
+      "withCheck": null,
+      "name": "machine_key_claim_challenge_owner_delete",
       "entityType": "policies",
       "schema": "public",
       "table": "machine_key_claim_challenge"

@@ -6,7 +6,7 @@ import {
   RECORD_RETENTION_ADVISORY_LOCK_KEY,
 } from '../src/record/record-retention.ts'
 import { succeeds } from './fixtures/postgres-rls.ts'
-import { MACHINE_A, SPACE_A, SPACE_B } from './postgres-rls-values.ts'
+import { MACHINE_A, SPACE_A, SPACE_B, USER_A } from './postgres-rls-values.ts'
 
 export function registerRecordRetentionProof(actorUrl: string): void {
   const admin = (statement: string) => succeeds('postgres', 'postgres', statement)
@@ -31,8 +31,51 @@ export function registerRecordRetentionProof(actorUrl: string): void {
         ('${otherSpaceRecentContentionId}', '${SPACE_B}', '${MACHINE_A}', now(), now(), now(), 'store', 'other-space-recent', 'wait');
     `)
 
+    const expiredNameplateId = newRecordId()
+    const expiredMessageId = newRecordId()
+    const liveNameplateId = newRecordId()
+    const expiredWithinWindowNameplateId = newRecordId()
+    const retentionKeyId = 'RETENTIONPROOFKEY00001'
+    const expiredChallengeId = newRecordId()
+    const liveChallengeId = newRecordId()
+    admin(`
+      INSERT INTO machine_join_nameplate
+        (id, space_id, nameplate, allocated_by, created_at, expires_at) VALUES
+        ('${expiredNameplateId}', '${SPACE_A}', '888881', '${USER_A}', now() - interval '61 minutes', now() - interval '51 minutes'),
+        ('${liveNameplateId}', '${SPACE_A}', '888882', '${USER_A}', now(), now() + interval '10 minutes'),
+        ('${expiredWithinWindowNameplateId}', '${SPACE_A}', '888883', '${USER_A}', now() - interval '30 minutes', now() - interval '20 minutes');
+      INSERT INTO machine_join_message
+        (id, nameplate_id, space_id, side, phase, body, posted_by, created_at) VALUES
+        ('${expiredMessageId}', '${expiredNameplateId}', '${SPACE_A}', '11111111111111111111111111111111', 'share', decode('01', 'hex'), '${USER_A}', now() - interval '61 minutes');
+      INSERT INTO machine_public_key
+        (id, space_id, user_id, key_id, public_key, label, created_at) VALUES
+        ('${newRecordId()}', '${SPACE_A}', '${USER_A}', '${retentionKeyId}', decode(repeat('01', 32), 'hex'), 'retention proof', now());
+      INSERT INTO machine_key_claim_challenge
+        (id, space_id, key_id, user_id, nonce_hash, expires_at, created_at) VALUES
+        ('${expiredChallengeId}', '${SPACE_A}', '${retentionKeyId}', '${USER_A}', decode(repeat('02', 32), 'hex'), now() - interval '1 second', now()),
+        ('${liveChallengeId}', '${SPACE_A}', '${retentionKeyId}', '${USER_A}', decode(repeat('03', 32), 'hex'), now() + interval '1 hour', now());
+    `)
+
     // pruneRecordRetention connects as record_actor without setting app.space_id or app.user_id.
-    expect((await pruneRecordRetention(actorUrl)).acquired).toBe(true)
+    const result = await pruneRecordRetention(actorUrl)
+    expect(result.acquired).toBe(true)
+    if (!result.acquired) throw new Error('record retention lock was unexpectedly unavailable')
+    expect(Object.values(result.outcomes).every((outcome) => 'deleted' in outcome)).toBe(true)
+    expect(
+      'deleted' in result.outcomes.machineJoin && result.outcomes.machineJoin.deleted >= 1,
+    ).toBe(true)
+    expect(
+      'deleted' in result.outcomes.claimChallenge && result.outcomes.claimChallenge.deleted >= 1,
+    ).toBe(true)
+    expect(
+      admin(
+        `SELECT count(*) FROM machine_join_nameplate WHERE id='${expiredNameplateId}';
+         SELECT count(*) FROM machine_join_message WHERE id='${expiredMessageId}';
+         SELECT count(*) FROM machine_join_nameplate WHERE id IN ('${liveNameplateId}', '${expiredWithinWindowNameplateId}');
+         SELECT count(*) FROM machine_key_claim_challenge WHERE id='${expiredChallengeId}';
+         SELECT count(*) FROM machine_key_claim_challenge WHERE id='${liveChallengeId}';`,
+      ),
+    ).toBe('0\n0\n2\n0\n1')
     expect(
       admin(
         `SELECT row_id FROM record_change WHERE row_id IN ('${expiredRowId}', '${recentRowId}') ORDER BY row_id;`,
@@ -74,5 +117,10 @@ export function registerRecordRetentionProof(actorUrl: string): void {
       await transaction
       await holder.close()
     }
+    admin(`
+      DELETE FROM machine_key_claim_challenge WHERE id='${liveChallengeId}';
+      DELETE FROM machine_join_nameplate WHERE id IN ('${liveNameplateId}', '${expiredWithinWindowNameplateId}');
+      DELETE FROM machine_public_key WHERE space_id='${SPACE_A}' AND key_id='${retentionKeyId}';
+    `)
   })
 }

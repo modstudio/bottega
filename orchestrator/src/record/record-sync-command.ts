@@ -141,6 +141,7 @@ export async function syncCommand(
       `backfill enqueued ${result.backfill.enqueued}, refreshed-links ${result.backfill.refreshedLinks}, refreshed-numbers ${result.backfill.refreshedNumbers}, refreshed-roots ${result.backfill.refreshedRoots}, skipped-released ${result.backfill.skippedReleased}, skipped-live ${result.backfill.skippedLive}`,
     )
     presentation.log(`question backfill enqueued ${result.backfill.questions.enqueued}`)
+    presentation.log(`brief injection backfill enqueued ${result.backfill.briefInjections}`)
     presentation.log(`score backfill enqueued ${result.backfill.scores}`)
     presentation.log(
       `review backfill enqueued ${result.backfill.reviews.enqueuedReviews} reviews and ${result.backfill.reviews.enqueuedReads} reads`,

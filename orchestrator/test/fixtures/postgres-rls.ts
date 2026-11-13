@@ -25,6 +25,7 @@ export const postgresSchema =
     'schema-port.ts',
     'schema-record-change.ts',
     'schema-context-items.ts',
+    'schema-session.ts',
   ]
     .map((file) => readFileSync(join(recordFolder, file), 'utf8'))
     .join('\n') + readFileSync(join(recordFolder, 'schema-docs.ts'), 'utf8')

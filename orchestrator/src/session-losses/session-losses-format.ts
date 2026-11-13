@@ -17,8 +17,11 @@ export function formatSessionLosses(reports: SessionLossResult[]): string {
         `  cost/session-hour ${report.costPerSessionHour}`,
       ]
       for (const boundary of report.boundaries) {
+        const brief = boundary.brief
+          ? `${number(boundary.brief.bytes)} bytes/${number(boundary.brief.lines)} lines${boundary.brief.overCap ? ' OVER CAP' : ''}`
+          : ''
         lines.push(
-          `  boundary ${boundary.at} trigger=${boundary.trigger} pre=${number(boundary.preTokens)} post=${number(boundary.postTokens)}`,
+          `  boundary ${boundary.at} trigger=${boundary.trigger} pre=${number(boundary.preTokens)} post=${number(boundary.postTokens)} brief=${brief}`,
           `    before turns=${boundary.before.turns} mean=${number(boundary.before.mean)} p90=${number(boundary.before.p90)}; after turns=${boundary.after.turns} mean=${number(boundary.after.mean)} p90=${number(boundary.after.p90)}`,
           `    lost runs=${boundary.lost.runs.count} [${boundary.lost.runs.ids.join(', ')}] cursors=${boundary.lost.cursors.count} [${boundary.lost.cursors.ids.join(', ')}] claims=${boundary.lost.claims.count} [${boundary.lost.claims.ids.join(', ')}]`,
           `    candidates=${boundary.candidateCount} file=${boundary.candidateFile}${boundary.judge ? ` judge=${boundary.judge.runId ?? '-'} (${boundary.judge.status}, rubric=${boundary.judge.rubricRevision ?? '-'})${boundary.judge.error ? ` error=${boundary.judge.error}` : ''}` : ''}`,

@@ -3,7 +3,7 @@
 
 import { type BranchLanding, isPruneSafeLandingState } from '../branch/branch-state.ts'
 import type { ContextItemKind } from '../doc/doc-context-write.ts'
-import { RUN_LIVE_STATUSES, TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
+import { RUN_LIVE_STATUS_SET, TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 
 export type SessionOwnedRun = {
   recordId: string
@@ -241,8 +241,6 @@ export function classifySessionCloseOut(facts: SessionOwnershipFacts): {
   process.push(...owned.reviewIds.map((reviewId) => ({ kind: 'review' as const, reviewId })))
   return { mechanical, process }
 }
-
-const RUN_LIVE_STATUS_SET: ReadonlySet<string> = new Set(RUN_LIVE_STATUSES)
 
 export function isLiveSessionRun(status: string): boolean {
   return RUN_LIVE_STATUS_SET.has(status)

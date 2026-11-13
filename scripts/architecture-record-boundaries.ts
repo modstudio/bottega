@@ -222,6 +222,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       './record-machine-key-registration.ts',
       './record-context-items.ts',
       './record-machine-trust-log.ts',
+      './record-machine-join.ts',
       './record-credential.ts',
       './record-member-permission.ts',
       './record-api.ts',
@@ -816,6 +817,12 @@ export const recordSchemaBoundaries: ImportBoundary[] = [
     'shared/record/schema-landing.ts',
     ['drizzle-orm', 'drizzle-orm/pg-core', './schema.ts'],
     'Enforce the hosted landing schema concern boundary.',
+  ),
+  boundary(
+    'postgres-schema-session-boundary',
+    'shared/record/schema-session.ts',
+    ['drizzle-orm', 'drizzle-orm/pg-core', './schema.ts'],
+    'Enforce the hosted session evidence schema concern boundary.',
   ),
   boundary(
     'postgres-schema-review-boundary',

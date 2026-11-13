@@ -13,6 +13,7 @@ import {
 import { staleContextForSession } from '../doc/context-stale-adapter.ts'
 import { recordSessionWorked, sessionWorkedTaskKeys } from '../doc/context-worked-adapter.ts'
 import { CONTEXT_ITEM_KINDS } from '../doc/doc-context-write.ts'
+import { recordBriefInjection, SESSION_START_SOURCES } from '../session/brief-injection.ts'
 import { sessionContextCommand } from '../workflow/session-context.ts'
 import { log } from './support.ts'
 
@@ -96,6 +97,33 @@ function registerCensus(context: Command): void {
     })
 }
 
+function registerInjection(context: Command): void {
+  context
+    .command('record-injection')
+    .description('record one SessionStart context injection')
+    .requiredOption('--session <id>', 'select architect session')
+    .requiredOption('--source <source>', `one of ${SESSION_START_SOURCES.join(', ')}`)
+    .requiredOption('--bytes <count>', 'UTF-8 bytes in the final additional context', Number)
+    .requiredOption('--lines <count>', 'lines in the final additional context', Number)
+    .requiredOption('--chars <count>', 'characters in the final additional context', Number)
+    .allowExcessArguments(false)
+    .action(async (options) => {
+      if (!SESSION_START_SOURCES.includes(options.source))
+        throw new Error(`--source must be one of ${SESSION_START_SOURCES.join(', ')}`)
+      log(
+        JSON.stringify(
+          await recordBriefInjection({
+            sessionId: options.session,
+            source: options.source,
+            bytes: options.bytes,
+            lines: options.lines,
+            chars: options.chars,
+          }),
+        ),
+      )
+    })
+}
+
 const holderOptions = (command: Command) =>
   command
     .option('--task <key>', 'select task holder')
@@ -138,6 +166,7 @@ export function register(program: Command): void {
       const result = await contextBrief(options.session)
       log(options.json ? JSON.stringify(result) : renderContextBrief(result))
     })
+  registerInjection(context)
   registerCensus(context)
   registerWorked(context)
   context

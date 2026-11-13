@@ -95,6 +95,12 @@ import {
   upsertRecordLens,
   upsertRecordLensProfile,
 } from './record-lens-catalogue.ts'
+import {
+  allocateMachineJoinNameplate,
+  failMachineJoinNameplate,
+  postMachineJoinMessage,
+  readMachineJoinMessages,
+} from './record-machine-join.ts'
 import { listMachineKeys, registerMachineKey } from './record-machine-key-registration.ts'
 import { appendMachineTrustLogEntry, readMachineTrustLog } from './record-machine-trust-log.ts'
 import { setSpaceMemberPermission } from './record-member-permission.ts'
@@ -483,6 +489,10 @@ async function serveRecordApiWithAuth(
     registerMachineKey,
     readMachineTrustLog,
     appendMachineTrustLogEntry,
+    allocateMachineJoinNameplate,
+    postMachineJoinMessage,
+    readMachineJoinMessages,
+    failMachineJoinNameplate,
     createMachineKeyClaimChallenge,
     claimMachineKey,
     revokeMachineKey,

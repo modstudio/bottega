@@ -17,6 +17,7 @@ export type MachineEvidenceTable =
   | 'contention'
   | 'test_flake'
   | 'branch_disposal'
+  | 'brief_injection'
 
 export type SpacePrincipalEvidenceTable = 'task_flow' | 'task_flow_stage'
 export type EvidenceTable = MachineEvidenceTable | SpacePrincipalEvidenceTable

@@ -14,12 +14,18 @@ export const REVIEW_OVERLAP = ['unique', 'shared', 'none', 'alone'] as const
 export const REVIEW_SEVERITY = ['critical', 'high', 'medium', 'low'] as const
 export const REVIEW_FILE_COUNT_BUMP_REASON = 'more than 8 raises size one tier'
 const REVIEW_LENS_OWED_REASONS = ['tree-mismatch', 'commit-mismatch'] as const
-const REVIEW_LENS_SELECTION_REASON = [
+export const REVIEW_LENS_SELECTION_REASON = [
   'initial',
   'accepted-finding',
   'newly-touched-path',
   'unidentified-tip-funnel',
   'operator-ordered',
+  'rebase-changed-file',
+  'satisfied',
+  'credited-by-read',
+  'waived-at-ceiling',
+  'overridden',
+  'not-applicable',
   ...REVIEW_LENS_OWED_REASONS,
 ] as const
 export const REVIEW_GRADE_NAMES = ['reproduced', 'coverage', 'limits', 'overlap'] as const

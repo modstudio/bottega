@@ -60,6 +60,7 @@ export type RecordSyncResult = {
     scores: number
     reviews: ReviewRecordBackfillResult
     landingEvidence: LandingEvidenceBackfillResult
+    briefInjections: number
     questions: { enqueued: number }
     releases: ReturnType<typeof backfillReleaseRecords>
   }

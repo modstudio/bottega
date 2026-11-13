@@ -46,11 +46,17 @@ type JudgeState = {
 type SessionLossOutput = Omit<SessionLossReport, 'boundaries'> & {
   boundaries: Array<
     Omit<SessionLossReport['boundaries'][number], 'candidates'> & {
+      brief: BriefInjectionSummary | null
       candidateFile: string
       candidateCount: number
       judge: JudgeState | null
     }
   >
+}
+export type BriefInjectionSummary = {
+  bytes: number
+  lines: number
+  overCap: boolean
 }
 type SessionLossFailure = { sessionId: string; error: 'no timestamped rows' }
 export type SessionLossResult = SessionLossOutput | SessionLossFailure
@@ -307,6 +313,7 @@ async function sourcesBySession(root: string, selectedIds: string[] | null) {
 
 async function outputBoundary(
   boundary: SessionLossReport['boundaries'][number],
+  brief: BriefInjectionSummary | null,
   sessionId: string,
   directory: string,
   schemaPath: string,
@@ -347,10 +354,49 @@ async function outputBoundary(
   const { candidates, ...mechanical } = boundary
   return {
     ...mechanical,
+    brief,
     candidateFile,
     candidateCount: candidates.candidates.length,
     judge,
   }
+}
+
+export type BriefInjectionRow = {
+  at: string
+  bytes: number
+  lines: number
+  over_cap: number
+}
+
+export function briefsAtBoundaries(
+  boundaryAts: readonly string[],
+  injections: readonly BriefInjectionRow[],
+): Array<BriefInjectionSummary | null> {
+  return boundaryAts.map((boundaryAt, index) => {
+    const start = Date.parse(boundaryAt)
+    const end = Date.parse(boundaryAts[index + 1] ?? '9999-12-31T23:59:59.999Z')
+    const row = injections.find((candidate) => {
+      const at = Date.parse(candidate.at)
+      return at >= start && at < end
+    })
+    return row ? { bytes: row.bytes, lines: row.lines, overCap: Boolean(row.over_cap) } : null
+  })
+}
+
+function briefsForBoundaries(
+  sessionId: string,
+  boundaries: SessionLossReport['boundaries'],
+): Array<BriefInjectionSummary | null> {
+  const injections = db()
+    .query<BriefInjectionRow, [string]>(
+      `SELECT at,bytes,lines,over_cap FROM brief_injection
+       WHERE session_id=? AND source='compact' ORDER BY at,record_id`,
+    )
+    .all(sessionId)
+  return briefsAtBoundaries(
+    boundaries.map((boundary) => boundary.at),
+    injections,
+  )
 }
 
 const rowsSince = (rows: TranscriptRow[], since: number | null) =>
@@ -373,9 +419,12 @@ async function outputSession(
     await factsFor(sessionId),
   )
   if (!report) return { sessionId, error: 'no timestamped rows' }
+  const briefs = briefsForBoundaries(sessionId, report.boundaries)
   const boundaries: SessionLossOutput['boundaries'] = []
-  for (const boundary of report.boundaries)
-    boundaries.push(await outputBoundary(boundary, sessionId, directory, schemaPath, rubric))
+  for (const [index, boundary] of report.boundaries.entries())
+    boundaries.push(
+      await outputBoundary(boundary, briefs[index]!, sessionId, directory, schemaPath, rubric),
+    )
   return { ...report, boundaries }
 }
 

@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
-"""SessionStart and Stop hook: report open workflow cursors, never blocking.
+"""SessionStart hook: report open workflow cursors.
 
-Clear labels open cursors in the project, which another session may be driving. Stop
-names this session's open cursors to the operator. The reminder never emits a
-blocking decision: an awaiting-ruling cursor is a legitimate stop, and a
-blocking Stop hook loops.
+Clear labels open cursors in the project, which another session may be driving.
 """
 import json
 import os
@@ -14,7 +11,6 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 from hook_paths import bottega_bin
 from registered_scope import should_hook_act
-from board_hook_common import marker_path, read_marker, write_marker
 
 CLI_TIMEOUT_SECONDS = 5
 
@@ -34,16 +30,9 @@ def emit_session_start(text):
     )
 
 
-def emit_stop(text):
-    emit({"systemMessage": text})
-
-
-def emit_unknown(event, why):
+def emit_unknown(why):
     text = f"Workflow cursor state is unknown: {why}"
-    if event == "SessionStart":
-        emit_session_start(text)
-    else:
-        emit_stop(text)
+    emit_session_start(text)
 
 
 def payload_text(payload, key):
@@ -105,29 +94,6 @@ def query_cursors(cwd, session=None):
         return None, "unparseable JSON"
 
 
-def query_stale(cwd, session):
-    command = [bottega_bin(), "agent", "context", "stale", "--session", session, "--json"]
-    try:
-        result = subprocess.run(
-            command, cwd=cwd, capture_output=True, text=True, timeout=CLI_TIMEOUT_SECONDS
-        )
-    except subprocess.TimeoutExpired:
-        return None
-    except OSError:
-        return None
-    if result.returncode != 0:
-        return None
-    try:
-        rows = json.loads(result.stdout)
-        if not isinstance(rows, list) or any(
-            not isinstance(row, dict) or not isinstance(row.get("holder"), str) for row in rows
-        ):
-            return None
-        return rows
-    except (ValueError, json.JSONDecodeError):
-        return None
-
-
 def session_start_context(source, rows):
     if source == "clear":
         header = (
@@ -148,36 +114,6 @@ def session_start_context(source, rows):
     return "\n".join(lines)
 
 
-def stop_message(rows):
-    return "\n".join(["Open workflow cursors."] + [row["line"] for row in rows])
-
-
-def stale_message(rows):
-    holders = ", ".join(row["holder"] for row in rows)
-    return (
-        f"Stale next-action: {holders} "
-        "(bottega agent context show --task <key>)"
-    )
-
-
-def marker_warning():
-    return "Context stale reminder marker could not be written; repeats cannot be suppressed."
-
-
-def unseen_stale_rows(session, rows):
-    if not rows:
-        return [], False
-    event_set = [
-        [row["holder"], row.get("workedAt"), row.get("revisedAt")]
-        for row in rows
-    ]
-    path = marker_path("context-stale", session)
-    prior = read_marker(path)
-    if prior == event_set:
-        return [], False
-    return rows, not write_marker(path, event_set)
-
-
 def handle_session_start(payload):
     source = payload.get("source")
     if source in ("compact", "resume"):
@@ -185,45 +121,16 @@ def handle_session_start(payload):
     elif source == "clear":
         cwd = payload_text(payload, "cwd")
         if not cwd:
-            emit_unknown("SessionStart", "payload cwd is missing")
+            emit_unknown("payload cwd is missing")
             return
         rows, why = query_cursors(cwd)
     else:
         return
     if why is not None:
-        emit_unknown("SessionStart", why)
+        emit_unknown(why)
         return
     if rows:
         emit_session_start(session_start_context(source, rows))
-
-
-def handle_stop(payload):
-    if payload.get("stop_hook_active"):
-        return
-    session = payload_text(payload, "session_id")
-    cwd = payload_text(payload, "cwd")
-    if not session:
-        emit_unknown("Stop", "payload session_id is missing")
-        return
-    if not cwd:
-        emit_unknown("Stop", "payload cwd is missing")
-        return
-    rows, why = query_cursors(cwd, session=session)
-    if why is not None:
-        emit_unknown("Stop", why)
-        return
-    messages = []
-    if rows:
-        messages.append(stop_message(rows))
-    stale = query_stale(cwd, session)
-    if stale:
-        fresh, marker_failed = unseen_stale_rows(session, stale)
-        if fresh:
-            messages.append(stale_message(fresh))
-            if marker_failed:
-                messages.append(marker_warning())
-    if messages:
-        emit_stop("\n".join(messages))
 
 
 def main():
@@ -243,10 +150,8 @@ def main():
     try:
         if event == "SessionStart":
             handle_session_start(payload)
-        elif event == "Stop":
-            handle_stop(payload)
     except Exception as error:
-        emit_unknown(event, f"hook failed ({error.__class__.__name__}: {error})")
+        emit_unknown(f"hook failed ({error.__class__.__name__}: {error})")
     return 0
 
 

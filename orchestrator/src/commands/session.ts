@@ -1,8 +1,9 @@
 // concern: cli
 /** Registers session lifecycle adapters. */
 
-import { type Command, Option } from 'commander'
+import { type Command, InvalidArgumentError, Option } from 'commander'
 import { repeatable } from '../../../shared/cli-repeat-guard.ts'
+import { sessionId } from '../database/db.ts'
 import { adoptSessionRuns, formatSessionAdoption } from '../session/session-adopt.ts'
 import {
   closeOutSession,
@@ -11,12 +12,45 @@ import {
 } from '../session/session-close-out.ts'
 import { formatSessionHold, sessionHold } from '../session/session-hold.ts'
 import { safeStartSession } from '../session/session-start.ts'
+import { sessionStopSummary } from '../session/stop-summary.ts'
 import { sessionLosses } from '../session-losses/session-losses-adapter.ts'
 import { formatSessionLosses } from '../session-losses/session-losses-format.ts'
 import { collect, log } from './support.ts'
 
+function stopSummaryBlockKey(value: string): string {
+  if (!/^[0-9a-f]+$/i.test(value)) throw new InvalidArgumentError('block key must be hexadecimal')
+  return value
+}
+
+function registerStatus(session: Command): void {
+  session
+    .command('status')
+    .description('summarize what is moving and what the calling session owes')
+    .option('--stop', 'apply Stop-hook block-once state')
+    .option('--session <id>', 'select the session to summarize')
+    .addOption(
+      new Option('--block-key <hex>', 'apply the previous Stop block key').argParser(
+        stopSummaryBlockKey,
+      ),
+    )
+    .option('--json', 'write the summary as JSON')
+    .allowExcessArguments(false)
+    .action(async (options) => {
+      if (options.blockKey && !options.stop)
+        throw new Error('--block-key is only meaningful with --stop')
+      const selectedSession = options.session ?? sessionId()
+      if (!selectedSession) throw new Error('session identity is unavailable')
+      const report = await sessionStopSummary({
+        session: selectedSession,
+        previousBlockKey: options.stop ? (options.blockKey ?? null) : null,
+      })
+      log(options.json ? JSON.stringify(report) : report.lines.join('\n'))
+    })
+}
+
 export function register(program: Command): void {
   const session = program.command('session').description('manage the calling architect session')
+  registerStatus(session)
   session
     .command('start')
     .description('open explore for a session that holds no open explore, or name the one it holds')

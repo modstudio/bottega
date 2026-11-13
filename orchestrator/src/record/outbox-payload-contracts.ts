@@ -214,6 +214,9 @@ const BRANCH_DISPOSAL_RECORD_PAYLOAD_CONTRACT = contract(
   'id spaceId projectId projectName machineId localId branch tip taskKey reason note archiveRef archiveExpiresAt actorSession disposedAt withheldFields createdAt updatedAt',
   { projectId: null, taskKey: null, withheldFields: null },
 )
+const BRIEF_INJECTION_RECORD_PAYLOAD_CONTRACT = contract(
+  'id spaceId machineId localId sessionId at source bytes lines cursors keylessCursors keylessIdleMaxMs overCap createdAt updatedAt',
+)
 
 export const OUTBOX_PAYLOAD_CONTRACTS = {
   run: RUN_RECORD_PAYLOAD_CONTRACT,
@@ -234,4 +237,5 @@ export const OUTBOX_PAYLOAD_CONTRACTS = {
   contention: CONTENTION_RECORD_PAYLOAD_CONTRACT,
   test_flake: TEST_FLAKE_RECORD_PAYLOAD_CONTRACT,
   branch_disposal: BRANCH_DISPOSAL_RECORD_PAYLOAD_CONTRACT,
+  brief_injection: BRIEF_INJECTION_RECORD_PAYLOAD_CONTRACT,
 } as const

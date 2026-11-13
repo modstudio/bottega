@@ -76,7 +76,7 @@ export const openStagesForSession = (
 ): TaskFlowOpenSessionStageRow[] =>
   database
     .query<TaskFlowOpenSessionStageRow, [string]>(
-      `SELECT record_id,number,project,workflow_slug,workflow_key,state,
+      `SELECT record_id,number,project,workflow_slug,workflow_key,state,updated_at,
         (SELECT q.record_id FROM question q
           WHERE q.workflow_cursor_record_id=workflow_cursor.record_id
             AND ${questionOpenSql('q')} LIMIT 1) open_question_record_id
