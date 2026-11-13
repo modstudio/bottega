@@ -120,9 +120,9 @@ export const hostedTableLifecycles: readonly TableLifecycle[] = [
     'change-logs',
   ),
   ...entries(
-    ['machine_key_claim_challenge'],
+    ['machine_key_claim_challenge', 'machine_join_message', 'machine_join_nameplate'],
     'record',
-    'orchestrator/src/record/record-config.ts#claimMachineKey',
+    'orchestrator/src/record/record-retention.ts#pruneRecordRetention',
   ),
   ...entries(
     ['secret_dek_wrap'],

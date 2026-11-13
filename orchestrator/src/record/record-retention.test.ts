@@ -17,6 +17,8 @@ test('record retention reports both prune outcomes under an acquired lock', asyn
       pruneContention: async () => 3,
       pruneNoDestinationWrite: async () => 5,
       pruneBoardPresence: async () => 4,
+      pruneMachineJoin: async () => 6,
+      pruneClaimChallenge: async () => 7,
     }),
   ).toEqual({
     acquired: true,
@@ -25,6 +27,8 @@ test('record retention reports both prune outcomes under an acquired lock', asyn
       contention: { deleted: 3 },
       noDestinationWrite: { deleted: 5 },
       boardPresence: { deleted: 4 },
+      machineJoin: { deleted: 6 },
+      claimChallenge: { deleted: 7 },
     },
   })
 })
@@ -41,6 +45,8 @@ test('record retention pass reports both deleted counts and one duration', async
         contention: { deleted: 7 },
         noDestinationWrite: { deleted: 5 },
         boardPresence: { deleted: 2 },
+        machineJoin: { deleted: 3 },
+        claimChallenge: { deleted: 4 },
       },
     }),
     now: () => times.shift()!,
@@ -48,7 +54,7 @@ test('record retention pass reports both deleted counts and one duration', async
   })
 
   expect(lines).toEqual([
-    'record retention: record_change 12 deleted, contention 7 deleted, no_destination_write 5 deleted, board_presence 2 deleted in 27ms',
+    'record retention: record_change 12 deleted, contention 7 deleted, no_destination_write 5 deleted, board_presence 2 deleted, machine_join 3 deleted, claim_challenge 4 deleted in 27ms',
   ])
 })
 
@@ -76,14 +82,29 @@ test('record retention still prunes contention when record change pruning fails'
           calls.push('board_presence')
           return 2
         },
+        pruneMachineJoin: async () => {
+          calls.push('machine_join')
+          return 3
+        },
+        pruneClaimChallenge: async () => {
+          calls.push('claim_challenge')
+          return 4
+        },
       }),
     now: () => 1_000,
     log: (line) => lines.push(line),
   })
 
-  expect(calls).toEqual(['record_change', 'contention', 'no_destination_write', 'board_presence'])
+  expect(calls).toEqual([
+    'record_change',
+    'contention',
+    'no_destination_write',
+    'board_presence',
+    'machine_join',
+    'claim_challenge',
+  ])
   expect(lines).toEqual([
-    'record retention: record_change failed (record change unavailable), contention 7 deleted, no_destination_write 5 deleted, board_presence 2 deleted in 0ms',
+    'record retention: record_change failed (record change unavailable), contention 7 deleted, no_destination_write 5 deleted, board_presence 2 deleted, machine_join 3 deleted, claim_challenge 4 deleted in 0ms',
   ])
 })
 
@@ -110,6 +131,14 @@ test('record change prune pass skips without pruning when the transaction lock i
         pruneBoardPresence: async () => {
           pruneCalls += 1
           return 6
+        },
+        pruneMachineJoin: async () => {
+          pruneCalls += 1
+          return 8
+        },
+        pruneClaimChallenge: async () => {
+          pruneCalls += 1
+          return 9
         },
       }),
     now: () => 1_000,
@@ -156,7 +185,7 @@ test('a failing record change prune pass is logged and the interval keeps runnin
   expect(intervalMilliseconds).toEqual([RECORD_RETENTION_INTERVAL_MS])
   expect(pruneCalls).toBe(1)
   expect(lines).toEqual([
-    'record retention failed after 0ms: database unavailable; verify record database connectivity and that record_change_prune(), contention_prune(), and no_destination_write_prune() are installed; the next interval will retry',
+    'record retention failed after 0ms: database unavailable; verify record database connectivity and that record_change_prune(), contention_prune(), no_destination_write_prune(), board_presence_prune(), machine_join_prune(), and machine_key_claim_challenge_prune() are installed; the next interval will retry',
   ])
 
   intervalCallbacks[0]!()
@@ -178,6 +207,8 @@ test('stopping record retention clears its start timeout and interval', () => {
         contention: { deleted: 0 },
         noDestinationWrite: { deleted: 0 },
         boardPresence: { deleted: 0 },
+        machineJoin: { deleted: 0 },
+        claimChallenge: { deleted: 0 },
       },
     }),
     setTimeout: () => timeout,
@@ -194,6 +225,8 @@ test('stopping record retention clears its start timeout and interval', () => {
         contention: { deleted: 0 },
         noDestinationWrite: { deleted: 0 },
         boardPresence: { deleted: 0 },
+        machineJoin: { deleted: 0 },
+        claimChallenge: { deleted: 0 },
       },
     }),
     setTimeout: (callback) => {

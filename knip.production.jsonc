@@ -23,7 +23,8 @@
     "shared/trust-log.ts": ["exports"],
     // Pure CPace core and pairing code; the machine-join exchange slice is their caller.
     "shared/cpace.ts": ["files"],
-    "shared/pairing-code.ts": ["files"],
+    // The relay routes import only the nameplate pattern; the join client calls the rest.
+    "shared/pairing-code.ts": ["exports"],
     "shared/pgp-word-list.ts": ["files"],
     // Lazy-required from transport.ts; knip does not follow that require as export use.
     "orchestrator/src/transport/ajv-validator.ts": ["exports"],

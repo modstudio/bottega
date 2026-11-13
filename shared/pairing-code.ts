@@ -2,7 +2,8 @@
 
 import { PGP_EVEN_WORDS, PGP_ODD_WORDS } from './pgp-word-list.ts'
 
-const NAMEPLATE_PATTERN = /^[1-9][0-9]{0,5}$/
+export const NAMEPLATE_PATTERN = /^[1-9][0-9]{0,5}$/
+export const NAMEPLATE_MAX = 999_999
 const SECRET_SIZE = 4
 const evenWordIndexes = wordIndexes(PGP_EVEN_WORDS)
 const oddWordIndexes = wordIndexes(PGP_ODD_WORDS)

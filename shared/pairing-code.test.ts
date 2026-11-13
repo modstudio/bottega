@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import {
   formatPairingCode,
   generatePairingCode,
+  NAMEPLATE_MAX,
+  NAMEPLATE_PATTERN,
   PairingCodeRefusal,
   pairingPassword,
   parsePairingCode,
@@ -43,6 +45,13 @@ describe('pairing code word encoding', () => {
 })
 
 describe('pairing code shape', () => {
+  test('keeps the nameplate pattern aligned with the maximum', () => {
+    expect(NAMEPLATE_PATTERN.test('1')).toBe(true)
+    expect(NAMEPLATE_PATTERN.test(String(NAMEPLATE_MAX))).toBe(true)
+    expect(NAMEPLATE_PATTERN.test('0')).toBe(false)
+    expect(NAMEPLATE_PATTERN.test(String(NAMEPLATE_MAX + 1))).toBe(false)
+  })
+
   test.each(['0', '01', '1000000', 'abc', '1a'])('refuses bad nameplate %s', (nameplate) => {
     expectRefusal(
       () => parsePairingCode(`${nameplate} aardvark adroitness accrue aftermath`),

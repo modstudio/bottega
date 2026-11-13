@@ -764,6 +764,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-api-config-contract.ts', [
     './record-config.ts',
     './record-machine-key-registration.ts',
+    './record-machine-join.ts',
   ]),
   module('orchestrator/src/record/record-machine-trust-log.ts', [
     '../../../shared/record/schema.ts',
