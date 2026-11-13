@@ -96,6 +96,8 @@ const RESERVED_REQUEST_SETTING_KEYS = new Set([
   'tools',
   'stream',
   'stream_options',
+  'max_tokens',
+  'max_completion_tokens',
 ])
 
 function parseRequestSettings(value: string): Record<string, unknown> {
@@ -109,8 +111,11 @@ function parseRequestSettings(value: string): Record<string, unknown> {
     throw new Error('--request-settings must be a JSON object')
   }
   const reserved = Object.keys(parsed).find((key) => RESERVED_REQUEST_SETTING_KEYS.has(key))
-  if (reserved)
-    throw new Error(`--request-settings may not set reserved key ${JSON.stringify(reserved)}`)
+  if (reserved) {
+    throw new Error(
+      `--request-settings may not set reserved key ${JSON.stringify(reserved)}; Bottega sets it, and agent-registry.ts:GOOSE_MAX_OUTPUT_TOKENS owns the output cap`,
+    )
+  }
   return parsed as Record<string, unknown>
 }
 

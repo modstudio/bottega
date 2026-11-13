@@ -11,7 +11,11 @@ export function gooseProviderFile(input: {
   requestSettings: Record<string, unknown> | null | undefined
 }): GooseProviderFile | null {
   if (!input.requestSettings) return null
-  if (!input.baseUrl) throw new Error(`Goose custom provider ${input.name} has no base URL`)
+  if (!input.baseUrl) {
+    throw new Error(
+      `Goose custom provider ${input.name} has no base URL; set one with bottega agent set ${input.name} --base-url <url>`,
+    )
+  }
   if (!input.model) throw new Error(`Goose custom provider ${input.name} has no model`)
   if (input.contextLimit === null) {
     throw new Error(`Goose custom provider ${input.name} has no launch context limit`)

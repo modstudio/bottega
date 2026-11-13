@@ -112,6 +112,9 @@ function rowLaunchEnvironment(
   promptBytes: number | null,
   writesRepo: boolean | null,
 ): Record<string, string> {
+  if (!row.base_url) {
+    return row.harness === 'goose' ? { GOOSE_MAX_TOKENS: String(GOOSE_MAX_OUTPUT_TOKENS) } : {}
+  }
   const stored = JSON.parse(row.caps) as Caps & { contextTokens?: number | null }
   const servedWindow = servedContextTokens(stored)
   const contextEnvironment = gooseContextManagementEnvironment({
@@ -121,9 +124,8 @@ function rowLaunchEnvironment(
     promptBytes,
   })
   return {
-    ...(row.base_url
-      ? { BOTTEGA_MODEL_HOST_URL: row.base_url, OPENAI_BASE_URL: row.base_url }
-      : {}),
+    BOTTEGA_MODEL_HOST_URL: row.base_url,
+    OPENAI_BASE_URL: row.base_url,
     ...(row.harness === 'goose'
       ? {
           GOOSE_PROVIDER: row.request_settings ? row.name : 'openai',
@@ -413,6 +415,11 @@ function assertAgentMutation(input: AgentMutation, adding: boolean): void {
 
 export function addAgent(name: string, input: AgentMutation): AgentRow {
   assertAgentMutation(input, true)
+  assertRequestSettingsReachable(
+    name,
+    input.baseUrl ?? null,
+    input.requestSettings == null ? null : JSON.stringify(input.requestSettings),
+  )
   const caps = {
     readsRepo: false,
     mcp: false,
@@ -461,6 +468,18 @@ function storedApiKeySecret(current: AgentRow, input: AgentMutation): string | n
 
 function storedProvider(current: AgentRow, input: AgentMutation): string | null {
   return input.provider === undefined ? current.provider : input.provider
+}
+
+function assertRequestSettingsReachable(
+  name: string,
+  baseUrl: string | null,
+  requestSettings: string | null,
+): void {
+  if (requestSettings && !baseUrl) {
+    throw new Error(
+      `agent "${name}" has request settings but no base URL; set one with bottega agent set ${name} --base-url <url>, or drop them with --clear-request-settings`,
+    )
+  }
 }
 
 function storedRequestSettings(current: AgentRow, input: AgentMutation): string | null {
@@ -530,6 +549,11 @@ export function setAgent(
   assertAgentMutation(input, false)
   const current = agentRows().find((row) => row.name === name)
   if (!current) throw new Error(`unknown agent "${name}"`)
+  assertRequestSettingsReachable(
+    name,
+    input.baseUrl === undefined ? current.base_url : input.baseUrl,
+    storedRequestSettings(current, input),
+  )
   let caps = JSON.parse(current.caps) as Record<string, unknown>
   const { enabled, reason } = agentEnabledFields(current, input)
   const identityChanged = agentIdentityChanged(current, input)

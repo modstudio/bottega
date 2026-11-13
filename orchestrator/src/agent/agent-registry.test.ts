@@ -107,6 +107,12 @@ test('a goose row without a declared context window keeps the goose default', ()
   })
 })
 
+test('a Goose row without a base URL keeps its own provider and still carries the output cap', () => {
+  expect(rowAgent({ ...gooseRow(), base_url: null }).env?.()).toEqual({
+    GOOSE_MAX_TOKENS: String(GOOSE_MAX_OUTPUT_TOKENS),
+  })
+})
+
 test('a Goose row with request settings selects its per-run provider', () => {
   const goose = rowAgent({
     ...gooseRow(200_000),

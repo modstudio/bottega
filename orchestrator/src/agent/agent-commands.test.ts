@@ -450,6 +450,8 @@ test('agent commands validate, store, show, and clear OpenRouter request setting
         'vendor',
         '--model',
         'fixture',
+        '--base-url',
+        'http://fixture.invalid/v1',
         '--request-settings',
         '{"provider":{"ignore":["Morph"]}}',
       ],
@@ -465,6 +467,28 @@ test('agent commands validate, store, show, and clear OpenRouter request setting
     await expect(
       agentCommand(['agent', 'set', name, '--request-settings', '{"model":"other"}'], presentation),
     ).rejects.toThrow('--request-settings may not set reserved key "model"')
+    await expect(
+      agentCommand(['agent', 'set', name, '--request-settings', '{"max_tokens":7}'], presentation),
+    ).rejects.toThrow('--request-settings may not set reserved key "max_tokens"')
+    const unreachable = `${name}-no-base-url`
+    await expect(
+      agentCommand(
+        [
+          'agent',
+          'add',
+          unreachable,
+          '--harness',
+          'goose',
+          '--backend',
+          'vendor',
+          '--model',
+          'fixture',
+          '--request-settings',
+          '{}',
+        ],
+        presentation,
+      ),
+    ).rejects.toThrow(`agent "${unreachable}" has request settings but no base URL`)
     await expect(
       agentCommand(['agent', 'set', name, '--request-settings', '[]'], presentation),
     ).rejects.toThrow('--request-settings must be a JSON object')
