@@ -233,7 +233,11 @@ function reviewTierOutputForTarget({
       verdict: funnelVerdict,
     })
   } catch (cause) {
-    console.error(`warning: could not record review-funnel decision: ${String(cause)}`)
+    console.error(
+      `warning: could not record review-funnel decision for project ${funnelFacts.change.project} ` +
+        `patch ${funnelFacts.change.patchId}: ${String(cause)}; ` +
+        `${PLATFORM_SLUG} review funnel report will be missing this decision`,
+    )
   }
   return {
     ...output,

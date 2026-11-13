@@ -2,6 +2,7 @@
 /** Reads and validates the one global review-funnel policy document. */
 
 import { z } from 'zod'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { getDoc, getDocRevision, setDoc } from '../doc/docs.ts'
 import { REVIEW_WINDOW } from '../review/review-evidence-sql.ts'
 import {
@@ -12,6 +13,7 @@ import {
 import { MIN_REVIEW_TRIAGED } from '../review/review-triage.ts'
 
 const modeSchema = z.enum(['evaluate', 'enforce'])
+export type ReviewFunnelPolicyMode = z.infer<typeof modeSchema>
 
 const reviewFunnelPolicySchema = z.strictObject({
   sizeThresholds: z.tuple([
@@ -85,8 +87,19 @@ export function reviewFunnelPolicyAt(version: string): VersionedReviewFunnelPoli
     revision.subject !== null ||
     revision.slug !== 'review-funnel-policy'
   )
-    throw new Error(`no review-funnel-policy revision ${version}`)
-  return { policy: parseReviewFunnelPolicy(JSON.parse(revision.body)), policyVersion: version }
+    throw new Error(
+      `global document review-funnel-policy has no revision ${version}; run ${PLATFORM_SLUG} review funnel policy to inspect the active revision or use builtin`,
+    )
+  try {
+    return {
+      policy: parseReviewFunnelPolicy(JSON.parse(revision.body)),
+      policyVersion: version,
+    }
+  } catch (cause) {
+    throw new Error(
+      `global document review-funnel-policy revision ${version} is invalid: ${String(cause)}; replace it with ${PLATFORM_SLUG} review funnel policy --set <json-file>`,
+    )
+  }
 }
 
 export async function setReviewFunnelPolicy(policy: ReviewFunnelPolicy) {
@@ -108,7 +121,15 @@ export function activeReviewFunnelPolicy(): VersionedReviewFunnelPolicy {
   try {
     body = JSON.parse(doc.body)
   } catch (cause) {
-    throw new Error(`global document review-funnel-policy is not valid JSON: ${String(cause)}`)
+    throw new Error(
+      `global document review-funnel-policy is not valid JSON: ${String(cause)}; replace it with ${PLATFORM_SLUG} review funnel policy --set <json-file>`,
+    )
   }
-  return { policy: parseReviewFunnelPolicy(body), policyVersion: doc.revision ?? 'builtin' }
+  try {
+    return { policy: parseReviewFunnelPolicy(body), policyVersion: doc.revision ?? 'builtin' }
+  } catch (cause) {
+    throw new Error(
+      `global document review-funnel-policy is invalid: ${String(cause)}; replace it with ${PLATFORM_SLUG} review funnel policy --set <json-file>`,
+    )
+  }
 }

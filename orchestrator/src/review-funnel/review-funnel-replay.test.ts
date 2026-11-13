@@ -43,7 +43,7 @@ test('replaying logged facts through the active policy reports zero diffs', () =
   expect(
     replayReviewFunnelRows([{ recordId: 'decision', facts, verdict }], {
       policy: DEFAULT_REVIEW_FUNNEL_POLICY,
-      version: 'builtin',
+      policyVersion: 'builtin',
     }),
   ).toEqual([])
 })

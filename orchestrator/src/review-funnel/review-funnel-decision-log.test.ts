@@ -1,14 +1,12 @@
-import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import type { ReviewFunnelFacts, ReviewFunnelVerdict } from './decide-review-funnel.ts'
 import { recordReviewFunnelDecision } from './review-funnel-decision-log.ts'
 
 test('records the terminal decision and outbox row in one transaction', () => {
-  const database = new Database(':memory:')
-  applyMigrations(database)
+  const database = migratedTestDatabase()
   const project = newRecordId()
   database
     .query("INSERT INTO project(record_id,name,path,settings) VALUES (?,'fixture','/fixture','{}')")

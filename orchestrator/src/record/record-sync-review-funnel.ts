@@ -14,7 +14,7 @@ import { type ProjectResolutionCache, projectRecordId } from './record-sync-proj
 
 const nullableString = (value: unknown): string | null => (value == null ? null : String(value))
 
-function values(row: RecordPayload, projectId: string | null) {
+export function reviewFunnelDecisionValues(row: RecordPayload, projectId: string | null) {
   return {
     ...commonReviewRecordValues(row),
     projectId,
@@ -49,7 +49,10 @@ export const reviewFunnelDecisionRecordKind = (
   ) =>
     postgres.begin(async (tx) => {
       await bindPrincipal(tx, principal)
-      const mapped = values(row, await projectRecordId(tx, row, principal, projectIds))
+      const mapped = reviewFunnelDecisionValues(
+        row,
+        await projectRecordId(tx, row, principal, projectIds),
+      )
       await existingEvidenceOwned(
         tx,
         'review_funnel_decision',

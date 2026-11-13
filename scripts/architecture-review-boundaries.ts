@@ -15,6 +15,7 @@ export const reviewModuleSpecs = [
     file: 'orchestrator/src/review-funnel/review-funnel-policy.ts',
     allowed: [
       'zod',
+      '../../../shared/brand.ts',
       '../doc/docs.ts',
       '../review/review-evidence-sql.ts',
       '../review/review-tier-classifier.ts',
@@ -62,7 +63,12 @@ export const reviewModuleSpecs = [
   {
     file: 'orchestrator/src/review-funnel/review-funnel-report.ts',
     allowed: [],
-    typeOnlyAllowed: ['./decide-review-funnel.ts'],
+    typeOnlyAllowed: ['./decide-review-funnel.ts', './review-funnel-decision-log.ts'],
+  },
+  {
+    file: 'orchestrator/src/review-funnel/review-funnel-store.ts',
+    allowed: [],
+    typeOnlyAllowed: ['bun:sqlite', './decide-review-funnel.ts', './review-funnel-report.ts'],
   },
   {
     file: 'orchestrator/src/review-funnel/review-funnel-replay.ts',
@@ -91,8 +97,8 @@ export const reviewModuleSpecs = [
       './review-funnel-policy.ts',
       './review-funnel-report.ts',
       './review-funnel-replay.ts',
+      './review-funnel-store.ts',
     ],
-    typeOnlyAllowed: ['bun:sqlite'],
   },
   {
     file: 'orchestrator/src/review/review-capture-refusal.ts',
@@ -282,6 +288,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     file: 'orchestrator/src/review-funnel/review-funnel-policy.ts',
     allowed: [
       'zod',
+      '../../../shared/brand.ts',
       '../doc/docs.ts',
       '../review/review-evidence-sql.ts',
       '../review/review-tier-classifier.ts',
@@ -335,8 +342,15 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     name: 'review-funnel-report-boundary',
     file: 'orchestrator/src/review-funnel/review-funnel-report.ts',
     allowed: [],
-    typeOnlyAllowed: ['./decide-review-funnel.ts'],
+    typeOnlyAllowed: ['./decide-review-funnel.ts', './review-funnel-decision-log.ts'],
     reason: 'Keep report policy pure over plain logged rows.',
+  },
+  {
+    name: 'review-funnel-store-boundary',
+    file: 'orchestrator/src/review-funnel/review-funnel-store.ts',
+    allowed: [],
+    typeOnlyAllowed: ['bun:sqlite', './decide-review-funnel.ts', './review-funnel-report.ts'],
+    reason: 'Keep report evidence SQL in the funnel store adapter.',
   },
   {
     name: 'review-funnel-replay-boundary',
@@ -370,8 +384,8 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       './review-funnel-policy.ts',
       './review-funnel-report.ts',
       './review-funnel-replay.ts',
+      './review-funnel-store.ts',
     ],
-    typeOnlyAllowed: ['bun:sqlite'],
     reason: 'Keep command gathering and presentation outside report and replay policy.',
   },
   {

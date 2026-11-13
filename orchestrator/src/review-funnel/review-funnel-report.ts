@@ -1,6 +1,10 @@
 // concern: review-funnel-report
 /** Reduces plain logged decision and finding rows into review-funnel measurements. */
 import type { ReviewFunnelVerdict } from './decide-review-funnel.ts'
+import type {
+  ReviewFunnelDecisionOutcome,
+  ReviewFunnelDecisionSurface,
+} from './review-funnel-decision-log.ts'
 
 export type FunnelReportDecisionRow = {
   project: string
@@ -8,8 +12,8 @@ export type FunnelReportDecisionRow = {
   taskKey: string | null
   patchId: string
   pathSet: string
-  surface: string
-  outcome: 'advice' | 'admit' | 'refuse'
+  surface: ReviewFunnelDecisionSurface
+  outcome: ReviewFunnelDecisionOutcome
   verdict: ReviewFunnelVerdict
   recordedAt: string
 }

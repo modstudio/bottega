@@ -6,6 +6,7 @@ import { commonReviewRecordValues, reviewValues } from './record-review-values.t
 import { branchDisposalValues } from './record-sync-branch-disposal.ts'
 import type { RecordPayload } from './record-sync-contract.ts'
 import { pullRequestCiValues } from './record-sync-pull-request-ci.ts'
+import { reviewFunnelDecisionValues } from './record-sync-review-funnel.ts'
 import { runRecordValues } from './record-sync-run-values.ts'
 import {
   contentionValues,
@@ -129,6 +130,15 @@ const payload: RecordPayload = {
   candidateCommit: 'candidate',
   rollback: false,
   actor: 'operator',
+  surface: 'review-tier',
+  headCommit: 'head',
+  policyVersion: 'builtin',
+  mode: 'evaluate',
+  factsDigest: 'digest',
+  facts: OBJECT,
+  stack: 'typescript',
+  verdict: OBJECT,
+  outcome: 'advice',
 }
 
 const common = commonReviewRecordValues(payload)
@@ -187,6 +197,11 @@ const cases: Array<{
     name: 'review read',
     values: () => reviewReadRecordValues(payload, ID, common),
     fields: ['pathSet', 'withheldFields'],
+  },
+  {
+    name: 'review funnel decision',
+    values: () => reviewFunnelDecisionValues(payload, ID),
+    fields: ['pathSet', 'facts', 'verdict', 'withheldFields'],
   },
   {
     name: 'landing',

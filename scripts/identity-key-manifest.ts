@@ -561,6 +561,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'project_lens_profile_revision.session_id',
     'release_ledger.session_id',
     'review_read.session_id',
+    'review_funnel_decision.session_id',
     'run.session_id',
     'board_withdrawal_delivery.reader_session',
     'session_board_hold.session_id',
@@ -596,6 +597,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'landing_triage_snapshot.patch_id',
     'review.patch_id',
     'review_read.patch_id',
+    'review_funnel_decision.patch_id',
   ]),
   ...manifest('hub', 'identifier issued by the harness session system', [
     'interval.session_id',
@@ -631,6 +633,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'landing_triage_snapshot.session_id',
     'release.session_id',
     'review_read.session_id',
+    'review_funnel_decision.session_id',
     'run.session_id',
     'question_mutation_audit.actor_session',
     'lens_profile_revision.session_id',
@@ -655,6 +658,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'landing_triage_snapshot.patch_id',
     'review.patch_id',
     'review_read.patch_id',
+    'review_funnel_decision.patch_id',
   ]),
   ...manifest('hosted', 'review ref issued by Git', ['run.review_ref']),
   ...manifest('hosted', 'archive ref issued by Git', ['branch_disposal.archive_ref']),
@@ -670,10 +674,8 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
   ]),
   ...manifest('orchestrator', 'review-funnel replay identity value, not a local row reference', [
     'review_funnel_decision.head_commit',
-    'review_funnel_decision.patch_id',
     'review_funnel_decision.policy_version',
     'review_funnel_decision.facts_digest',
-    'review_funnel_decision.session_id',
   ]),
   ...manifest('hosted', 'identifier issued by the project task tracker', [
     'branch_disposal.task_key',
@@ -682,10 +684,8 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
   ]),
   ...manifest('hosted', 'review-funnel replay identity value, not a hosted row reference', [
     'review_funnel_decision.head_commit',
-    'review_funnel_decision.patch_id',
     'review_funnel_decision.policy_version',
     'review_funnel_decision.facts_digest',
-    'review_funnel_decision.session_id',
   ]),
 ]
 
