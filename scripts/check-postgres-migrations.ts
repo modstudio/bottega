@@ -15,7 +15,7 @@ type MigrationException = ForcedRlsDmlFinding & { migration: string; reasonText:
 
 const APPLIED_MIGRATION_EXCEPTIONS: readonly MigrationException[] = [
   {
-    migration: '20261113172638_dev_2299_review_funnel_json_checks',
+    migration: '20261113203534_dev_2299_review_funnel_json_checks',
     table: '*',
     operation: 'EXECUTE',
     reason: 'dynamic-sql-force-enabled',

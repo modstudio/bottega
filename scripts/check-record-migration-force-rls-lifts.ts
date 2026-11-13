@@ -67,7 +67,7 @@ const EXEMPTIONS: ReadonlyMap<string, ReadonlyMap<string, string>> = new Map([
     ]),
   ],
   [
-    '20261113172638_dev_2299_review_funnel_json_checks',
+    '20261113203534_dev_2299_review_funnel_json_checks',
     new Map([
       [
         '*',
