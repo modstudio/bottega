@@ -5,6 +5,7 @@ import * as root from '../../../shared/record/schema.ts'
 import * as a from '../../../shared/record/schema-auth.ts'
 import * as b from '../../../shared/record/schema-board.ts'
 import * as c from '../../../shared/record/schema-config.ts'
+import * as ci from '../../../shared/record/schema-context-items.ts'
 import * as d from '../../../shared/record/schema-docs.ts'
 import * as h from '../../../shared/record/schema-hub.ts'
 import * as la from '../../../shared/record/schema-landing.ts'
@@ -32,6 +33,7 @@ const schemaModules = [
   ['./shared/record/schema-landing.ts', la],
   ['./shared/record/schema-session.ts', ss],
   ['./shared/record/schema-docs.ts', d],
+  ['./shared/record/schema-context-items.ts', ci],
   ['./shared/record/schema-subjects.ts', su],
   ['./shared/record/schema-hub.ts', h],
   ['./shared/record/schema-snapshots.ts', sn],
