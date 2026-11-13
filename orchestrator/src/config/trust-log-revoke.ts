@@ -5,7 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type ConfigClient, ConfigClientError } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { readMachineSigningKey } from '../../../shared/machine-signing-key.ts'
-import { signTrustLogEntry, verifyTrustLog } from '../../../shared/trust-log.ts'
+import { bytesEqual, signTrustLogEntry, verifyTrustLog } from '../../../shared/trust-log.ts'
 import {
   readRememberedTrustLogHead,
   writeRememberedTrustLogHead,
@@ -33,7 +33,7 @@ export async function appendTrustLogRevoke(
       `machine signing key is not initialized; run \`${PLATFORM_SLUG} machine config machine init\` before retrying the revoke`,
     )
   const trustedOwnKey = state.keys.get(ownKeyId)!
-  if (!trustedOwnKey.signingPublicKey.every((value, index) => value === signing.publicKey[index]))
+  if (!bytesEqual(trustedOwnKey.signingPublicKey, signing.publicKey))
     throw new Error(
       "this machine's signing key is not the key the space machine trust log trusts for its key id; have an owner re-approve this machine from an approved machine before retrying the revoke",
     )

@@ -1,35 +1,45 @@
 import { ed25519 } from '@noble/curves/ed25519.js'
-import { writeMachineSigningKey } from '../../../shared/machine-signing-key.ts'
 import { signTrustLogEntry, trustLogEntryHash } from '../../../shared/trust-log.ts'
+
+export function trustLogFixtureSigningKey(value: number) {
+  const privateKey = new Uint8Array(32).fill(value)
+  return { privateKey, publicKey: ed25519.getPublicKey(privateKey) }
+}
+
+type FixtureKey = readonly [
+  keyId: string,
+  publicKey: Uint8Array,
+  signingPublicKey: Uint8Array,
+  label: string,
+]
+
+const fixtureKey = ([keyId, publicKey, signingPublicKey, label]: FixtureKey) => ({
+  keyId,
+  publicKey,
+  signingPublicKey,
+  label,
+})
 
 export function machineRevokeTrustLogFixture(
   enabled: boolean,
   spaceId: string,
-  own: readonly [keyId: string, publicKey: Uint8Array],
-  target: readonly [keyId: string, publicKey: Uint8Array],
+  ownMaterial: FixtureKey,
+  targetMaterial: FixtureKey,
+  ownSigningPrivateKey: Uint8Array,
 ): Uint8Array[] {
   if (!enabled) return []
-  const ownSigningPrivateKey = new Uint8Array(32).fill(31)
-  const ownSigningPublicKey = ed25519.getPublicKey(ownSigningPrivateKey)
-  writeMachineSigningKey(
-    { privateKey: ownSigningPrivateKey, publicKey: ownSigningPublicKey },
-    process.env,
-  )
+  const own = fixtureKey(ownMaterial)
+  const target = fixtureKey(targetMaterial)
   const genesis = signTrustLogEntry(
     {
       prev: null,
       space: spaceId,
       body: {
         kind: 'genesis',
-        first: {
-          keyId: own[0],
-          publicKey: own[1],
-          signingPublicKey: ownSigningPublicKey,
-          label: 'current',
-        },
+        first: own,
         recoveryPublicKey: ed25519.getPublicKey(new Uint8Array(32).fill(33)),
       },
-      signer: ownSigningPublicKey,
+      signer: own.signingPublicKey,
       at: 1,
     },
     ownSigningPrivateKey,
@@ -42,12 +52,9 @@ export function machineRevokeTrustLogFixture(
         space: spaceId,
         body: {
           kind: 'add',
-          keyId: target[0],
-          publicKey: target[1],
-          signingPublicKey: ed25519.getPublicKey(new Uint8Array(32).fill(32)),
-          label: 'other',
+          ...target,
         },
-        signer: ownSigningPublicKey,
+        signer: own.signingPublicKey,
         at: 2,
       },
       ownSigningPrivateKey,
