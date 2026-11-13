@@ -309,6 +309,11 @@ export async function readRecordTaskFlowProjectReferenceCounts(
   })
 }
 
+/**
+ * Answers which stages and flows the record already holds complete, so a backfill
+ * re-sends the rest. A stage counts only when it carries enforcement: one written
+ * before stages carried enforcement is incomplete and must be re-sent to fill it.
+ */
 export async function readRecordTaskFlowPresence(
   input: TenantPrincipal & { url: string } & TaskFlowPresenceInput,
 ): Promise<TaskFlowPresence> {
@@ -316,7 +321,9 @@ export async function readRecordTaskFlowPresence(
     await bindTenant(tx, input)
     const stages = input.stageIds.length
       ? await tx`SELECT id FROM task_flow_stage
-          WHERE space_id=${input.spaceId}::uuid AND id=ANY(${tx.array(input.stageIds, 'uuid')})
+          WHERE space_id=${input.spaceId}::uuid
+            AND id=ANY(${tx.array(input.stageIds, 'uuid')})
+            AND enforcement IS NOT NULL
           ORDER BY id`
       : []
     const flows = input.flowIds.length

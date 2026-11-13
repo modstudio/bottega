@@ -2,7 +2,7 @@
 /** Applies revision-ordered task-flow and stage payloads to the hosted record. */
 
 import type { SQL } from 'bun'
-import { and, sql as drizzleSql, eq, lt } from 'drizzle-orm'
+import { and, sql as drizzleSql, eq, isNull, lt } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
@@ -122,6 +122,11 @@ export async function writeNewTaskFlowStageValues(
  * record assigned. It is an UPDATE because the stage contract makes both
  * columns NOT NULL, and Postgres checks NOT NULL before it resolves an upsert
  * conflict, so a revision carrying no fresh number could not upsert.
+ *
+ * Only a strictly newer revision replaces the row. A stage written before stages
+ * carried enforcement holds none, and a payload at that same revision fills
+ * enforcement alone: an equal revision never replaces state, so a re-sent stage
+ * cannot override what the record holds.
  */
 export async function reviseTaskFlowStageValues(
   database: HostedRecordDatabase,
@@ -134,11 +139,23 @@ export async function reviseTaskFlowStageValues(
     projectId: _projectId,
     ...updates
   } = values
-  return database
+  const revised = await database
     .update(taskFlowStageRecord)
     .set(updates)
     .where(
       and(eq(taskFlowStageRecord.id, values.id), lt(taskFlowStageRecord.revision, values.revision)),
+    )
+    .returning({ id: taskFlowStageRecord.id })
+  if (revised.length > 0 || values.enforcement === null) return revised
+  return database
+    .update(taskFlowStageRecord)
+    .set({ enforcement: values.enforcement })
+    .where(
+      and(
+        eq(taskFlowStageRecord.id, values.id),
+        eq(taskFlowStageRecord.revision, values.revision),
+        isNull(taskFlowStageRecord.enforcement),
+      ),
     )
     .returning({ id: taskFlowStageRecord.id })
 }
