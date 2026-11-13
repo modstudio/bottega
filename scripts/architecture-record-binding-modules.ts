@@ -18,6 +18,7 @@ export const recordBindingModules: RecordModule[] = [
     '../../../shared/record-id.ts',
     '../../../shared/record-timestamp.ts',
     '../doc/doc-context-write.ts',
+    './record-doc-errors.ts',
     './record-pool.ts',
   ]),
   module('orchestrator/src/record/record-api-context-items.ts', [

@@ -25,9 +25,9 @@ import {
   type ContextTaskIdentity,
   missingContextKinds,
 } from './doc-context-write.ts'
-import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
 import { contextTaskOwner } from './doc-hosted-client.ts'
 import { taskContextHolder } from './doc-subjects.ts'
+import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
 
 export type ContextHolderSelection = { task?: string; session?: string }
 

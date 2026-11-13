@@ -111,9 +111,7 @@ test('worker environments refuse every context-item write entry point', async ()
     await expect(
       setContextItem({ task: task.key, id: 'fact', kind: 'fact', source: 'test', body: 'No.' }),
     ).rejects.toThrow('setContextItem')
-    await expect(dropContextItem({ task: task.key, id: 'fact' })).rejects.toThrow(
-      'dropContextItem',
-    )
+    await expect(dropContextItem({ task: task.key, id: 'fact' })).rejects.toThrow('dropContextItem')
     await expect(clearTaskContext({ task: task.key })).rejects.toThrow('clearTaskContext')
     expect(
       await dropSessionContextItemsForLifecycle({

@@ -122,6 +122,7 @@ export const docModules: DocModule[] = [
     './doc-hosted-client.ts',
     './doc-context-write.ts',
     './doc-subjects.ts',
+    './doc-write-guard.ts',
   ]),
   module('orchestrator/src/doc/doc-remove.ts', [
     '../canon/canon-files.ts',

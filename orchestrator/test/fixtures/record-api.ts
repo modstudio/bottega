@@ -31,9 +31,7 @@ export const identity: RecordIdentity = {
   ],
 }
 
-function idleIdentityAndSpaceDeps(): { listInvitations: () => Promise<[]> } {
-  return { listInvitations: async () => [] }
-}
+const idleIdentityAndSpaceDeps = () => ({ listInvitations: async () => [] })
 
 function idleConfigAuthorizationDeps() {
   const unused = async () => {
@@ -136,9 +134,8 @@ function idleBoardDeps(): RecordBoardDeps {
 }
 
 export function idleRecordApiDeps() {
-  const unusedContext = async () => {
-    throw new Error('hosted context items are unused in this fixture')
-  }
+  const unusedContext = async (): Promise<never> =>
+    Promise.reject(new Error('hosted context items are unused in this fixture'))
   return {
     upsertContextItem: unusedContext,
     deleteContextItem: unusedContext,

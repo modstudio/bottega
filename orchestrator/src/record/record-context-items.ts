@@ -4,10 +4,7 @@ import type { SQL } from 'bun'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { recordIso } from '../../../shared/record-timestamp.ts'
-import {
-  type ContextItemKind,
-  contextItemShapeRefusal,
-} from '../doc/doc-context-write.ts'
+import { type ContextItemKind, contextItemShapeRefusal } from '../doc/doc-context-write.ts'
 import { assertWrite } from './record-doc-errors.ts'
 import { recordPool } from './record-pool.ts'
 
