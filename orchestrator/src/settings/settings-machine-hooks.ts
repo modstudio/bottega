@@ -21,7 +21,7 @@ const SCRIPT_FILES = [
   'protect-main-checkout.py',
   'heartbeat-remind.py',
   'board-interrupt.py',
-  'score-reminder.py',
+  'stop-summary.py',
   'heartbeat-guard.py',
   'workflow-cursor-reminder.py',
   'board-ack-guard.py',
@@ -31,8 +31,10 @@ const SCRIPT_FILES = [
   'test-substance-guard.py',
   'hub-import-guard.py',
 ] as const
+const LEGACY_SCRIPT_FILES = ['score-reminder.py'] as const
 
 type ScriptFile = (typeof SCRIPT_FILES)[number]
+type RecognizedScriptFile = ScriptFile | (typeof LEGACY_SCRIPT_FILES)[number]
 type HookEvent =
   | 'PreToolUse'
   | 'SubagentStart'
@@ -53,7 +55,7 @@ type ProductHookDeclaration = {
 export type SupersededProfileHook = {
   event: string
   matcher?: string
-  script: ScriptFile
+  script: RecognizedScriptFile
 }
 
 export type MachineProductHooksResult = {
@@ -144,9 +146,8 @@ const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
     timeout: Math.ceil(BOARD_PUSH_SLOW_TIMEOUT_SECONDS + 1),
     boardEnvironment: true,
   },
-  { event: 'Stop', script: 'score-reminder.py', boardEnvironment: true },
+  { event: 'Stop', script: 'stop-summary.py', boardEnvironment: true },
   { event: 'Stop', script: 'heartbeat-guard.py' },
-  { event: 'Stop', script: 'workflow-cursor-reminder.py', boardEnvironment: true },
   {
     event: 'Stop',
     matcher: '*',
@@ -240,9 +241,9 @@ function declaredGroups(assetRoot: string, databasePath: string, globalUse: 'on'
   return groups
 }
 
-function declaredScript(command: unknown): ScriptFile | undefined {
+function declaredScript(command: unknown): RecognizedScriptFile | undefined {
   if (typeof command !== 'string') return undefined
-  return SCRIPT_FILES.find((file) => {
+  return [...SCRIPT_FILES, ...LEGACY_SCRIPT_FILES].find((file) => {
     const needle = `orchestrator/hooks/${file}`
     const index = command.indexOf(needle)
     if (index < 0) return false

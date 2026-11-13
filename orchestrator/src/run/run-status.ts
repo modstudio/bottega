@@ -3,8 +3,6 @@
  * Owns the shared run-status sets. Imports nothing, so a pure decision
  * module can depend on it without reaching a store, a clock or a process.
  *
- * orchestrator/hooks/score-reminder.py restates this list in Python, which cannot import it: that
- * copy must change with this list.
  */
 
 /** The terminal run statuses, in the order the lifecycle lists them. */

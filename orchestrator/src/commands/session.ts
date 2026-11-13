@@ -11,12 +11,27 @@ import {
 } from '../session/session-close-out.ts'
 import { formatSessionHold, sessionHold } from '../session/session-hold.ts'
 import { safeStartSession } from '../session/session-start.ts'
+import { sessionStopSummary } from '../session/stop-summary.ts'
 import { sessionLosses } from '../session-losses/session-losses-adapter.ts'
 import { formatSessionLosses } from '../session-losses/session-losses-format.ts'
 import { collect, log } from './support.ts'
 
 export function register(program: Command): void {
   const session = program.command('session').description('manage the calling architect session')
+  session
+    .command('status')
+    .description('summarize what is moving and what the calling session owes')
+    .option('--stop', 'apply Stop-hook block-once state')
+    .option('--json', 'write the summary as JSON')
+    .allowExcessArguments(false)
+    .action(async (options) => {
+      const report = await sessionStopSummary({
+        previousBlockKey: options.stop
+          ? (process.env.BOTTEGA_STOP_SUMMARY_BLOCK_KEY ?? null)
+          : null,
+      })
+      log(options.json ? JSON.stringify(report) : report.lines.join('\n'))
+    })
   session
     .command('start')
     .description('open explore for a session that holds no open explore, or name the one it holds')
