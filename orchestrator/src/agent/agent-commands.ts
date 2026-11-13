@@ -98,7 +98,7 @@ const RESERVED_REQUEST_SETTING_KEYS = new Set([
   'stream_options',
 ])
 
-export function parseRequestSettings(value: string): Record<string, unknown> {
+function parseRequestSettings(value: string): Record<string, unknown> {
   let parsed: unknown
   try {
     parsed = JSON.parse(value)

@@ -46,7 +46,7 @@ export type AgentRow = {
 export const GOOSE_CONTEXT_CEILING = 128_000
 
 /**
- * Goose output bound above the maximum healthy call measured by the
+ * Goose output bound above healthy calls' maximum output in the
  * `DEV-2294 healthy output per call` measurement.
  */
 export const GOOSE_MAX_OUTPUT_TOKENS = 32_768
@@ -434,7 +434,7 @@ export function addAgent(name: string, input: AgentMutation): AgentRow {
       input.baseUrl ?? null,
       input.apiKeySecret ?? null,
       input.provider ?? null,
-      input.requestSettings === undefined ? null : JSON.stringify(input.requestSettings),
+      input.requestSettings == null ? null : JSON.stringify(input.requestSettings),
       input.transport ?? 'acp',
       JSON.stringify(caps),
       input.billing ??
@@ -458,6 +458,11 @@ function storedApiKeySecret(current: AgentRow, input: AgentMutation): string | n
 
 function storedProvider(current: AgentRow, input: AgentMutation): string | null {
   return input.provider === undefined ? current.provider : input.provider
+}
+
+function storedRequestSettings(current: AgentRow, input: AgentMutation): string | null {
+  if (input.requestSettings === undefined) return current.request_settings
+  return input.requestSettings === null ? null : JSON.stringify(input.requestSettings)
 }
 
 function credentialIdentityChanged(current: AgentRow, input: AgentMutation): boolean {
@@ -584,11 +589,7 @@ export function setAgent(
       input.baseUrl === undefined ? current.base_url : input.baseUrl,
       storedApiKeySecret(current, input),
       storedProvider(current, input),
-      input.requestSettings === undefined
-        ? current.request_settings
-        : input.requestSettings === null
-          ? null
-          : JSON.stringify(input.requestSettings),
+      storedRequestSettings(current, input),
       input.transport ?? current.transport,
       JSON.stringify(caps),
       input.billing ?? current.billing,

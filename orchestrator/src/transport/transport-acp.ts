@@ -563,7 +563,7 @@ function writeGooseProviderFile(
   const provider = gooseProviderFile({
     name: opts.agent.name,
     baseUrl: opts.agent.baseUrl,
-    model: opts.model ?? opts.agent.model ?? '',
+    model: opts.agent.model ?? '',
     contextLimit,
     requestSettings: opts.agent.requestSettings,
   })
