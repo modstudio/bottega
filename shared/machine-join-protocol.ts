@@ -165,20 +165,7 @@ export function encodeMachineJoinRecord(record: TrustLogKey): Uint8Array {
 }
 
 export function decodeMachineJoinRecord(encoded: Uint8Array): TrustLogKey {
-  try {
-    return decodeTrustLogKey(encoded)
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    if (message.includes('key.publicKey'))
-      throw new Error('machine join record public key must be exactly 32 bytes', { cause: error })
-    if (message.includes('key.signingPublicKey'))
-      throw new Error('machine join record signing public key must be exactly 32 bytes', {
-        cause: error,
-      })
-    if (message.includes('extra field') || message.includes('is missing'))
-      throw new Error('machine join record has an extra or missing field', { cause: error })
-    throw error
-  }
+  return decodeTrustLogKey(encoded)
 }
 
 export function encodeMachineJoinDone(head: Uint8Array | null): Uint8Array {

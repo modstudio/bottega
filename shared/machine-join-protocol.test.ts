@@ -114,7 +114,7 @@ test('machine join records refuse wrong key sizes and extra fields', () => {
         options,
       ),
     ),
-  ).toThrow('public key')
+  ).toThrow('key.publicKey must be a 32-byte byte string')
   expect(() =>
     decodeMachineJoinRecord(
       encode(
@@ -128,5 +128,5 @@ test('machine join records refuse wrong key sizes and extra fields', () => {
         options,
       ),
     ),
-  ).toThrow('extra or missing')
+  ).toThrow('key has an extra field')
 })
