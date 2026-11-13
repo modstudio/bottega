@@ -12,7 +12,7 @@ import {
 } from '../session/session-close-out.ts'
 import { formatSessionHold, sessionHold } from '../session/session-hold.ts'
 import { safeStartSession } from '../session/session-start.ts'
-import { type StopSummaryHookNote, sessionStopSummary } from '../session/stop-summary.ts'
+import { sessionStopSummary } from '../session/stop-summary.ts'
 import { sessionLosses } from '../session-losses/session-losses-adapter.ts'
 import { formatSessionLosses } from '../session-losses/session-losses-format.ts'
 import { collect, log } from './support.ts'
@@ -20,38 +20,6 @@ import { collect, log } from './support.ts'
 function stopSummaryBlockKey(value: string): string {
   if (!/^[0-9a-f]+$/i.test(value)) throw new InvalidArgumentError('block key must be hexadecimal')
   return value
-}
-
-function stopSummaryNotes(value: string): StopSummaryHookNote[] {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(value)
-  } catch {
-    throw new InvalidArgumentError('notes must be a JSON array')
-  }
-  if (!Array.isArray(parsed)) throw new InvalidArgumentError('notes must be a JSON array')
-  return parsed.map((item) => {
-    if (!item || typeof item !== 'object')
-      throw new InvalidArgumentError('each note must be an object')
-    const note = item as Record<string, unknown>
-    if (typeof note.label !== 'string' || !note.label)
-      throw new InvalidArgumentError('each note must have a label')
-    if (typeof note.project !== 'string' || !note.project)
-      throw new InvalidArgumentError('each note must have a project')
-    if (
-      note.last_seen_at !== undefined &&
-      note.last_seen_at !== null &&
-      typeof note.last_seen_at !== 'string'
-    )
-      throw new InvalidArgumentError('note last_seen_at must be a string or null')
-    return {
-      label: note.label,
-      project: note.project,
-      ...(note.last_seen_at === undefined
-        ? {}
-        : { last_seen_at: note.last_seen_at as string | null }),
-    }
-  })
 }
 
 function registerStatus(session: Command): void {
@@ -65,11 +33,6 @@ function registerStatus(session: Command): void {
         stopSummaryBlockKey,
       ),
     )
-    .addOption(
-      new Option('--notes <json>', 'include actionable note rows').argParser((value) => ({
-        rows: stopSummaryNotes(value),
-      })),
-    )
     .option('--json', 'write the summary as JSON')
     .allowExcessArguments(false)
     .action(async (options) => {
@@ -80,7 +43,6 @@ function registerStatus(session: Command): void {
       const report = await sessionStopSummary({
         session: selectedSession,
         previousBlockKey: options.stop ? (options.blockKey ?? null) : null,
-        notes: options.notes?.rows ?? [],
       })
       log(options.json ? JSON.stringify(report) : report.lines.join('\n'))
     })

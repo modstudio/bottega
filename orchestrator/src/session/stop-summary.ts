@@ -17,7 +17,6 @@ import { activeLandings } from './session-close-out.ts'
 import {
   decideStopSummary,
   type StopSummaryDecision,
-  type StopSummaryNote,
   type StopSummaryOwedItem,
 } from './stop-summary-decision.ts'
 import {
@@ -44,12 +43,6 @@ export type StopSummaryHeldTreeRow = {
   close_out_attempted_at: string | null
 }
 export type StopSummaryActiveLandingRow = { project: string; branch: string }
-export type StopSummaryHookNote = {
-  label: string
-  project: string
-  last_seen_at?: string | null
-}
-
 export function landingTreeIsActive(
   tree: StopSummaryHeldTreeRow,
   cursors: readonly WorkflowCursorListRow[],
@@ -65,13 +58,6 @@ export function landingTreeIsActive(
   )
 }
 
-export function hookNotes(notes: readonly StopSummaryHookNote[]): StopSummaryNote[] {
-  return notes.map((note) => ({
-    label: `note ${note.label} not handed over`,
-    command: `${PLATFORM_SLUG} board post --audience architects:${note.project} (see ${PLATFORM_SLUG} board post --help)`,
-  }))
-}
-
 function heldWorktreeCommand(tree: StopSummaryHeldTreeRow): string {
   return `${PLATFORM_SLUG} run close-out ${tree.number}`
 }
@@ -80,7 +66,6 @@ export async function sessionStopSummary(
   options: {
     session: string
     previousBlockKey: string | null
-    notes: readonly StopSummaryHookNote[]
     now?: string
   },
   database: Database = db(),
@@ -176,7 +161,6 @@ export async function sessionStopSummary(
     incompleteReviews: reviews.incompleteReviews,
     inFlightLandings: sessionLandings.length + activeTrees.length,
     owedItems,
-    notes: hookNotes(options.notes),
     previousBlockKey: options.previousBlockKey ?? null,
   })
 }

@@ -7,7 +7,6 @@ import { db } from '../database/db.ts'
 import { LANDING_TREE_JOB } from '../landing-tree/landing-tree.ts'
 import type { WorkflowCursorListRow } from '../workflow/workflow-cursor-list.ts'
 import {
-  hookNotes,
   landingTreeIsActive,
   type StopSummaryHeldTreeRow,
   sessionStopSummary,
@@ -40,23 +39,6 @@ test('landing trees are active for a matching ship cursor or any matching active
     landingTreeIsActive(tree, [], [{ project: PLATFORM_NAME, branch: 'DEV-other' }]),
   ).toBeFalse()
   expect(landingTreeIsActive(tree, [{ ...cursor, step_slug: 'close-task' }], [])).toBeFalse()
-})
-
-test('validated hook notes become owed items with their hand-off command', () => {
-  expect(
-    hookNotes([
-      {
-        label: 'handoff-summary',
-        project: PLATFORM_NAME,
-        last_seen_at: '2026-11-13T10:00:00.000Z',
-      },
-    ]),
-  ).toEqual([
-    {
-      label: 'note handoff-summary not handed over',
-      command: `${PLATFORM_SLUG} board post --audience architects:${PLATFORM_NAME} (see ${PLATFORM_SLUG} board post --help)`,
-    },
-  ])
 })
 
 test('session summary assembles only this session owed runs, held remedies, and cursor ordinal', async () => {
@@ -103,7 +85,6 @@ test('session summary assembles only this session owed runs, held remedies, and 
     {
       session,
       previousBlockKey: null,
-      notes: [],
       now: '2026-11-13T12:00:00.000Z',
     },
     db(),
