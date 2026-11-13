@@ -189,7 +189,7 @@ export function classifySessionContextItem(
   resume: boolean,
 ): SessionContextAction {
   if (resume) return 'keep'
-  return kind === 'ruling' || kind === 'open-question' ? 'refuse' : 'drop'
+  return kind === 'ruling' ? 'refuse' : 'drop'
 }
 
 export function sessionCloseOutRecommendation(input: {

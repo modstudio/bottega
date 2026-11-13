@@ -52,7 +52,7 @@ describe('context write refusal', () => {
         facts(),
       )
       expect(refusal).toContain(`${limit}`)
-      if (['ruling', 'open-question', 'next-action'].includes(kind)) {
+      if (kind === 'ruling') {
         expect(refusal).toContain('Shorten it and put detail in a task document.')
       } else {
         expect(refusal).toContain(`${kind} limit is ${limit} characters`)
@@ -60,23 +60,14 @@ describe('context write refusal', () => {
     }
   })
   test('applies declared line rules to matching agent context kinds', () => {
-    expect(contextWriteRefusal(item({ kind: 'next-action', body: 'first\nsecond' }), facts())).toBe(
-      'context item state refused: next action must be one line. Shorten it and put detail in a task document.',
+    expect(
+      contextWriteRefusal(
+        item({ kind: 'ruling', source: 'q5282', body: 'first\n\nsecond' }),
+        facts(),
+      ),
+    ).toBe(
+      'context item state refused: ruling must be one paragraph with no blank line. Shorten it and put detail in a task document.',
     )
-    for (const kind of ['ruling', 'open-question'] as const) {
-      expect(
-        contextWriteRefusal(
-          item({
-            kind,
-            source: kind === 'ruling' ? 'q5282' : 'run:1',
-            body: 'first\n\nsecond',
-          }),
-          facts(),
-        ),
-      ).toBe(
-        `context item state refused: ${kind === 'open-question' ? 'open question' : kind} must be one paragraph with no blank line. Shorten it and put detail in a task document.`,
-      )
-    }
   })
   test('allows a ruling sourced to a question, a board message or the chat, without an objection', () => {
     for (const source of [
@@ -118,16 +109,13 @@ describe('context write refusal', () => {
     expect(pointer('4044458d5', sha)).toContain('target does not match the resolved commit')
     expect(pointer('#2005', '2006')).toContain('target does not match')
   })
-  test('refuses task-level rulings and questions on a claimed session', () => {
-    for (const kind of ['ruling', 'open-question'] as const) {
-      const ruling = kind === 'ruling' ? { source: 'q5282' } : {}
-      expect(
-        contextWriteRefusal(
-          item({ ...ruling, holder: 'session:s', kind }),
-          facts({ profile: 'session', claimedTask: 'DEV-1844' }),
-        ),
-      ).toContain(`${PLATFORM_SLUG} agent context set --task DEV-1844`)
-    }
+  test('refuses task-level rulings on a claimed session', () => {
+    expect(
+      contextWriteRefusal(
+        item({ holder: 'session:s', kind: 'ruling', source: 'q5282' }),
+        facts({ profile: 'session', claimedTask: 'DEV-1844' }),
+      ),
+    ).toContain(`${PLATFORM_SLUG} agent context set --task DEV-1844`)
   })
   test('allows session rulings when there is no live task claim', () => {
     expect(
@@ -136,14 +124,6 @@ describe('context write refusal', () => {
         facts({ profile: 'session' }),
       ),
     ).toBeNull()
-  })
-  test('refuses a second next action', () => {
-    expect(
-      contextWriteRefusal(
-        item({ kind: 'next-action' }),
-        facts({ siblings: [item({ id: 'next', kind: 'next-action' })] }),
-      ),
-    ).toContain('revise existing item task:DEV-1844/next')
   })
   test('refuses normalized equality and long contained restatements', () => {
     expect(
@@ -164,11 +144,10 @@ describe('context write refusal', () => {
   })
 })
 
-test('required next action is warned on read and protected on drop, not required on set', () => {
-  expect(missingContextKinds([], 'task')).toEqual(['next-action'])
-  expect(missingContextKinds([], 'epic')).toEqual(['next-action'])
+test('context profiles have no required item kinds', () => {
+  expect(missingContextKinds([], 'task')).toEqual([])
+  expect(missingContextKinds([], 'epic')).toEqual([])
   expect(missingContextKinds([], 'session')).toEqual([])
   expect(contextWriteRefusal(item(), facts())).toBeNull()
-  const next = item({ kind: 'next-action' })
-  expect(contextDropRefusal(next, [next], 'task')).toContain('last required next-action')
+  expect(contextDropRefusal(item(), [item()], 'task')).toBeNull()
 })

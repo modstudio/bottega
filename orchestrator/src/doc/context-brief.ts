@@ -33,6 +33,7 @@ type ContextBriefHolder = {
   title: string
   kind: 'session' | 'task' | 'epic'
   items: ContextItem[]
+  openQuestions?: Array<{ number: number; question: string }>
 }
 
 export type ContextBrief = {
@@ -57,11 +58,9 @@ export type ContextBrief = {
 }
 
 const ITEM_ORDER: readonly ContextItemKind[] = [
-  'next-action',
   'ruling',
   'position',
   'fact',
-  'open-question',
   'pointer',
 ]
 
@@ -71,13 +70,7 @@ const count = (value: number, singular: string, plural = `${singular}s`) =>
 
 function renderItem(item: ContextItem): string {
   const label =
-    item.kind === 'next-action'
-      ? 'next'
-      : item.kind === 'open-question'
-        ? 'open'
-        : item.kind === 'ruling'
-          ? `ruling ${item.source}`
-          : item.kind
+    item.kind === 'ruling' ? `ruling ${item.source}` : item.kind
   const body = firstLine(item.body)
   return `  ${label}: ${item.kind === 'ruling' ? JSON.stringify(body) : body}`
 }
@@ -97,7 +90,9 @@ export function renderContextBrief(brief: ContextBrief): string {
         left.id.localeCompare(right.id),
     )
     for (const item of items) lines.push(renderItem(item))
-    if (!items.some((item) => item.kind === 'open-question')) lines.push('  open: none')
+    for (const question of holder.openQuestions ?? [])
+      lines.push(`  open: ${firstLine(question.question)}`)
+    if (!holder.openQuestions?.length) lines.push('  open: none')
   }
   const inFlight = [
     ...brief.runs.map((run) => `run ${run.number} ${run.job} ${run.status}`),
@@ -180,9 +175,16 @@ export function storedBriefHolders(
         }
       }
       const { recordId, ...holder } = reference
+      const openQuestions = database
+        .query<{ number: number; question: string }, [string]>(
+          `SELECT number,question FROM question q
+           WHERE workflow_task_record_id=? AND ${questionOpenSql('q')} ORDER BY number`,
+        )
+        .all(recordId)
       return {
         ...holder,
         items: storedItems(taskContextHolder(recordId), database),
+        ...(openQuestions.length ? { openQuestions } : {}),
       }
     })
     .filter((holder) => holder.kind !== 'session' || holder.items.length > 0)

@@ -11,6 +11,7 @@ import { migrationBoundaryTestDatabase } from './test-database.fixture.ts'
 
 const MIGRATION = '0222_context_item'
 const kinds = ['ruling', 'position', 'fact', 'pointer', 'next-action', 'open-question'] as const
+const FOUR_KINDS_MIGRATION = '0224_context_item_four_kinds'
 
 function encoded(kind: (typeof kinds)[number], source: string, body: string, objection?: string) {
   return [
@@ -127,6 +128,39 @@ test('context-item migration requires an exact q-number source', () => {
         )
         .get()?.question_number,
     ).toBeNull()
+  } finally {
+    database.close()
+  }
+})
+
+test('four-kind migration removes retired rows and tightens the CHECK', () => {
+  const database = migrationBoundaryTestDatabase(FOUR_KINDS_MIGRATION)
+  try {
+    const holder = newRecordId()
+    const insert = database.query(
+      `INSERT INTO context_item
+       (record_id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
+       VALUES (?,'task',?,?,?,?,?,'2026-11-13','2026-11-13')`,
+    )
+    for (const kind of kinds)
+      insert.run(newRecordId(), holder, kind, kind, `${kind} body`, 'test')
+
+    expect(applyMigrations(database)).toContain(FOUR_KINDS_MIGRATION)
+    expect(
+      database
+        .query<{ kind: string }, []>('SELECT kind FROM context_item ORDER BY kind')
+        .all()
+        .map(({ kind }) => kind),
+    ).toEqual(['fact', 'pointer', 'position', 'ruling'])
+    expect(() =>
+      database
+        .query(
+          `INSERT INTO context_item
+           (record_id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
+           VALUES (?,'task',?,'retired','next-action','body','test','2026-11-13','2026-11-13')`,
+        )
+        .run(newRecordId(), holder),
+    ).toThrow()
   } finally {
     database.close()
   }

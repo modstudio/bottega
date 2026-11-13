@@ -2,19 +2,12 @@
 /** Pure write policy for one structured context item. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 
-export {
-  CONTEXT_ITEM_KINDS,
-  type ContextItemKind,
-} from '../../../shared/context-item-vocabulary.ts'
-
 import {
   CONTEXT_ITEM_KINDS,
   type ContextItemKind,
 } from '../../../shared/context-item-vocabulary.ts'
 import {
   type ContextRecordName,
-  NEXT_ACTION_MAX_CHARS,
-  OPEN_QUESTION_MAX_CHARS,
   RULING_MAX_CHARS,
   recordShapeRefusal,
 } from '../../../shared/record-shape.ts'
@@ -29,15 +22,11 @@ export const CONTEXT_ITEM_MAX_CHARS = {
   ruling: RULING_MAX_CHARS,
   position: 800,
   fact: 800,
-  'open-question': OPEN_QUESTION_MAX_CHARS,
   pointer: 400,
-  'next-action': NEXT_ACTION_MAX_CHARS,
 } as const satisfies Record<ContextItemKind, number>
 
 const CONTEXT_ITEM_RECORD_NAMES = {
   ruling: 'ruling',
-  'open-question': 'open question',
-  'next-action': 'next action',
 } as const satisfies Partial<Record<ContextItemKind, ContextRecordName>>
 
 /** A ruling names where Shmuel Barkin gave it: a question, a board message, or the chat on a date. */
@@ -70,8 +59,8 @@ export class ContextWriteRefusalError extends Error {
 }
 
 const PROFILE = {
-  epic: { allowed: CONTEXT_ITEM_KINDS, required: ['next-action'] },
-  task: { allowed: CONTEXT_ITEM_KINDS, required: ['next-action'] },
+  epic: { allowed: CONTEXT_ITEM_KINDS, required: [] },
+  task: { allowed: CONTEXT_ITEM_KINDS, required: [] },
   session: { allowed: CONTEXT_ITEM_KINDS, required: [] },
 } as const satisfies Record<
   ContextProfile,
@@ -93,19 +82,12 @@ export function contextWriteRefusal(item: ContextItem, facts: ContextWriteFacts)
   if (
     facts.profile === 'session' &&
     facts.claimedTask &&
-    ['ruling', 'open-question'].includes(item.kind)
+    item.kind === 'ruling'
   ) {
     return `${address} refused: task-level ${item.kind} written to a session; write it with ${PLATFORM_SLUG} agent context set --task ${facts.claimedTask}`
   }
   if (item.kind === 'pointer' && facts.pointerRefusal) {
     return `${address} refused: ${facts.pointerRefusal}`
-  }
-  const existingNext =
-    item.kind === 'next-action'
-      ? facts.siblings.find((sibling) => sibling.kind === 'next-action' && sibling.id !== item.id)
-      : undefined
-  if (existingNext) {
-    return `${address} refused: holder ${item.holder} allows at most one next-action item; revise existing item ${item.holder}/${existingNext.id}`
   }
   const normalized = normalizeContextBody(item.body)
   for (const other of facts.related) {

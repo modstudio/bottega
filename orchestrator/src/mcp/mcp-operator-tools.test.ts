@@ -176,13 +176,9 @@ describe('operator MCP tools', () => {
       resumed_number: null,
       resumed_record_id: null,
     })
-    expect(calls).toEqual([
-      `set position position-q${questionId} on DEV-2267`,
-      `drop open-q${questionId} on DEV-2267`,
-    ])
+    expect(calls).toEqual([`set position position-q${questionId} on DEV-2267`])
     expect((result.content as { text: string }[]).slice(1).map(({ text }) => text)).toEqual([
       `context: wrote position position-q${questionId} on DEV-2267`,
-      `context: dropped open-question open-q${questionId} on DEV-2267`,
     ])
     expect(
       db()

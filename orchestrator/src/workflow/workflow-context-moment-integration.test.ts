@@ -75,13 +75,10 @@ test('next without a cursor flag writes the selected cursor number', async () =>
     { contextMomentPorts: ports },
   )
 
-  expect(items.get('next')).toEqual({
-    kind: 'next-action',
-    body: `${slug} cursor ${cursor} at fix-defect-triage: Triage findings`,
-  })
+  expect(items).toEqual(new Map())
 })
 
-test('await, operator rule, and next replace task context through command seams', async () => {
+test('rule and self-ruling write durable decisions through command seams', async () => {
   const slug = 'cursor-context-moments'
   const project = 'cursor-context-moments-project'
   const key = 'DEV-2267'
@@ -147,19 +144,18 @@ test('await, operator rule, and next replace task context through command seams'
     )
 
   await command('await', '--question', 'May this proceed?')
-  const openId = [...items.keys()].find((id) => id.startsWith('open-q'))!
-  const question = openId.slice('open-q'.length)
-  expect(items.get(openId)).toEqual({ kind: 'open-question', body: 'May this proceed?' })
+  const question = db()
+    .query<{ number: number }, [number]>(
+      'SELECT number FROM question WHERE workflow_cursor_record_id=(SELECT record_id FROM workflow_cursor WHERE number=?)',
+    )
+    .get(cursor)!.number
+  expect(items).toEqual(new Map())
 
   await command('rule', '--ruling', 'Proceed.', '--from-operator')
-  expect(items.has(openId)).toBeFalse()
   expect(items.get(`ruling-q${question}`)).toEqual({ kind: 'ruling', body: 'Proceed.' })
 
   await command('next', '--note', 'closed after the operator ruling')
-  expect(items.get('next')).toEqual({
-    kind: 'next-action',
-    body: `${slug} cursor ${cursor} at context-self-rule: Record the self-ruling`,
-  })
+  expect(items).toHaveLength(1)
 
   await command(
     'next',
@@ -174,10 +170,7 @@ test('await, operator rule, and next replace task context through command seams'
     ([id, item]) => id.startsWith('position-q') && item.body === 'The acceptance criteria are met.',
   )
   expect(selfRulingPosition).toBeDefined()
-  expect(items.get('next')).toEqual({
-    kind: 'next-action',
-    body: `${slug} cursor ${cursor} at fix-defect-triage: Triage findings`,
-  })
+  expect(items).toHaveLength(2)
 
   await workflowCommand(
     ['workflow', 'next', slug, '--cursor', String(cursor), '--note', 'finished triage'],

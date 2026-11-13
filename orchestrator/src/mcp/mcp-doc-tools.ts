@@ -20,7 +20,7 @@ import {
   getContext,
   setContextItem,
 } from '../doc/context-service.ts'
-import { CONTEXT_ITEM_KINDS } from '../doc/doc-context-write.ts'
+import { CONTEXT_ITEM_KINDS } from '../../../shared/context-item-vocabulary.ts'
 import { DocRevisionConflictError, REVISION_CONFLICT_CODE } from '../doc/doc-revision-conflict.ts'
 import { resolveDocRevisionIdentifier } from '../doc/doc-revision-identifier.ts'
 import { type SelectedDocWriteTree, withDocWriteTreeRemedy } from '../doc/doc-write-tree.ts'

@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
@@ -82,6 +83,57 @@ test('renders the compact context layout line by line and keeps only item first 
   ])
 })
 
+test('renders one open question for its task holder', () => {
+  const database = new Database(':memory:')
+  database.run(
+    `CREATE TABLE question (
+      number INTEGER NOT NULL,
+      workflow_task_record_id TEXT,
+      question TEXT NOT NULL,
+      answered_at TEXT,
+      closed_at TEXT
+    )`,
+  )
+  database
+    .query(
+      `INSERT INTO question
+       (number,workflow_task_record_id,question,answered_at,closed_at)
+       VALUES (5277,'task-record','Which shape should the brief use?',NULL,NULL),
+              (5278,'task-record','Already answered.','2026-11-13',NULL),
+              (5279,'task-record','Closed without an answer.',NULL,'2026-11-13')`,
+    )
+    .run()
+  const brief: ContextBrief = {
+    session: '65fbe830',
+    fullCommand: `${PLATFORM_SLUG} agent context show --task DEV-1844/2`,
+    holders: [
+      {
+        key: 'DEV-1844/2',
+        title: 'Build the brief',
+        kind: 'task',
+        items: [],
+        openQuestions: database
+          .query<{ number: number; question: string }, [string]>(
+            `SELECT number,question FROM question q
+             WHERE workflow_task_record_id=? AND q.answered_at IS NULL AND q.closed_at IS NULL
+             ORDER BY number`,
+          )
+          .all('task-record'),
+      },
+    ],
+    runs: [],
+    cursors: [],
+    claims: [],
+    waiting: { boardRequests: 0, questions: 1, filedIssues: 0, resumeBriefs: 0 },
+    autonomy: 'unknown',
+  }
+
+  expect(renderContextBrief(brief)).toContain('DEV-1844/2 Build the brief\n  open: Which shape should the brief use?')
+  expect(renderContextBrief(brief)).not.toContain('Already answered')
+  expect(renderContextBrief(brief)).not.toContain('Closed without an answer')
+  database.close()
+})
+
 test('orders the session, each project-scoped working task, and its epic by task profile', () => {
   const task = (key: string, project: string, title: string, parentKey: string | null = null) => ({
     key,
@@ -153,7 +205,7 @@ test('reads a working task brief from its record-id holder while retaining the t
     .query(
       `INSERT INTO context_item
        (record_id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
-       VALUES (?,'task',?,'next','next-action','Continue.','test',?,?)`,
+       VALUES (?,'task',?,'position','position','Continue.','test',?,?)`,
     )
     .run(newRecordId(), recordId, '2026-11-09T10:00:00Z', '2026-11-09T10:00:00Z')
   const references = holderSequence(
@@ -168,7 +220,7 @@ test('reads a working task brief from its record-id holder while retaining the t
       kind: 'task',
       items: [
         expect.objectContaining(
-          item(`task:${recordId}`, 'next', 'next-action', 'Continue.', 'test'),
+          item(`task:${recordId}`, 'position', 'position', 'Continue.', 'test'),
         ),
       ],
     },
