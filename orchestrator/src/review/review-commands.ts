@@ -12,6 +12,9 @@ import { targetGitEnvironment } from '../git/git-environment.ts'
 import { job } from '../jobs/jobs.ts'
 import { formatLensProfileSource, resolveLens } from '../lens/lenses.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
+import { decideReviewFunnel } from '../review-funnel/decide-review-funnel.ts'
+import { gatherFunnelFacts } from '../review-funnel/gather-funnel-facts.ts'
+import { activeReviewFunnelPolicy } from '../review-funnel/review-funnel-policy.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import { getReview, listReviews, parseReviewOutput, recordReviews } from './review.ts'
 import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
@@ -206,6 +209,19 @@ function reviewTierOutputForTarget({
       branch,
     })
   const round = reviewPlan.round
+  const activePolicy = activeReviewFunnelPolicy()
+  const funnelVerdict = decideReviewFunnel(
+    gatherFunnelFacts({
+      database: db(),
+      cwd: repo,
+      base: from,
+      head: to,
+      branch,
+      project,
+    }),
+    activePolicy.policy,
+    activePolicy.policyVersion,
+  )
   return {
     ...output,
     lenses: round.lenses,
@@ -227,6 +243,7 @@ function reviewTierOutputForTarget({
       profiles: resolveLens(id, project.name)?.profiles ?? [],
     })),
     lensReasons: round.lensReasons,
+    funnel_verdict: funnelVerdict,
   }
 }
 
@@ -352,6 +369,11 @@ export function printReviewTier(
         `with --distinct-from <the first run of ${output.secondOpinion} on this tip>`,
     )
   }
+  for (const lens of output.funnel_verdict.lenses) {
+    log(`funnel lens ${lens.lens}: ${lens.status} (${lens.reason})`)
+  }
+  log(`next ${output.funnel_verdict.next.action}`)
+  log(`remedy ${output.funnel_verdict.remedy}`)
   output.reasons.forEach((reason, index) => {
     log(`${reason}${index === 0 ? basisLabel(output.riskBasis) : ''}`)
   })

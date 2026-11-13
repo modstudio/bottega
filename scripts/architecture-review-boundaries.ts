@@ -8,6 +8,46 @@ export type ReviewBoundarySpec = {
 
 export const reviewModuleSpecs = [
   {
+    file: 'orchestrator/src/review-funnel/review-funnel-policy.ts',
+    allowed: [
+      'zod',
+      '../doc/docs.ts',
+      '../review/review-evidence-sql.ts',
+      '../review/review-triage.ts',
+    ],
+  },
+  {
+    file: 'orchestrator/src/review-funnel/decide-review-funnel.ts',
+    allowed: [
+      '../pull-request/triage-decision.ts',
+      '../review/review-applicability.ts',
+      '../review/review-lens-provenance.ts',
+      '../review/review-post-fix.ts',
+      '../review/review-round-budget.ts',
+      '../review/review-round-lens-plan.ts',
+      '../review/review-tier-classifier.ts',
+    ],
+    typeOnlyAllowed: [
+      '../project/project-injection.ts',
+      '../review/review-group.ts',
+      './review-funnel-policy.ts',
+    ],
+  },
+  {
+    file: 'orchestrator/src/review-funnel/gather-funnel-facts.ts',
+    allowed: [
+      '../review/review-group.ts',
+      '../review/review-lineage-store.ts',
+      '../review/review-post-fix.ts',
+      '../review/review-pins.ts',
+      '../review/review-round-budget.ts',
+      '../review/review-round-identity.ts',
+      '../review/review-target.ts',
+      '../review/review-tier.ts',
+    ],
+    typeOnlyAllowed: ['bun:sqlite', '../project/projects.ts', './decide-review-funnel.ts'],
+  },
+  {
     file: 'orchestrator/src/review/review-capture-refusal.ts',
     allowed: ['../../../shared/brand.ts'],
   },
@@ -191,6 +231,52 @@ export const reviewModuleSpecs = [
 
 export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
   {
+    name: 'review-funnel-policy-boundary',
+    file: 'orchestrator/src/review-funnel/review-funnel-policy.ts',
+    allowed: [
+      'zod',
+      '../doc/docs.ts',
+      '../review/review-evidence-sql.ts',
+      '../review/review-triage.ts',
+    ],
+    reason: 'Keep global funnel policy validation at its one document read edge.',
+  },
+  {
+    name: 'review-funnel-decision-boundary',
+    file: 'orchestrator/src/review-funnel/decide-review-funnel.ts',
+    allowed: [
+      '../pull-request/triage-decision.ts',
+      '../review/review-applicability.ts',
+      '../review/review-lens-provenance.ts',
+      '../review/review-post-fix.ts',
+      '../review/review-round-budget.ts',
+      '../review/review-round-lens-plan.ts',
+      '../review/review-tier-classifier.ts',
+    ],
+    typeOnlyAllowed: [
+      '../project/project-injection.ts',
+      '../review/review-group.ts',
+      './review-funnel-policy.ts',
+    ],
+    reason: 'Keep the funnel verdict pure over gathered facts and validated policy.',
+  },
+  {
+    name: 'review-funnel-facts-boundary',
+    file: 'orchestrator/src/review-funnel/gather-funnel-facts.ts',
+    allowed: [
+      '../review/review-group.ts',
+      '../review/review-lineage-store.ts',
+      '../review/review-post-fix.ts',
+      '../review/review-pins.ts',
+      '../review/review-round-budget.ts',
+      '../review/review-round-identity.ts',
+      '../review/review-target.ts',
+      '../review/review-tier.ts',
+    ],
+    typeOnlyAllowed: ['bun:sqlite', '../project/projects.ts', './decide-review-funnel.ts'],
+    reason: 'Keep repository and review-store reads out of the pure funnel decision.',
+  },
+  {
     name: 'review-scope-proposal-boundary',
     file: 'orchestrator/src/review/review-scope-proposal.ts',
     allowed: [
@@ -328,6 +414,9 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../jobs/jobs.ts',
       '../lens/lenses.ts',
       '../project/projects.ts',
+      '../review-funnel/decide-review-funnel.ts',
+      '../review-funnel/gather-funnel-facts.ts',
+      '../review-funnel/review-funnel-policy.ts',
       '../run/run-identifier.ts',
       './review.ts',
       './review-capture-refusal.ts',
