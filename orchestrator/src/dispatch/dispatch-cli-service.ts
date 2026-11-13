@@ -25,6 +25,7 @@ import {
   taskBranchReuseNotice,
 } from '../branch/task-branch.ts'
 import { compatibleTaskBranch } from '../branch/task-branch-reuse.ts'
+import { classifyCaller, resolveCallerIdentity } from '../caller-classification.ts'
 import { flagValue, flagValues, readMessageText } from '../cli/args.ts'
 import { doPositionals } from '../commands/do-options.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
@@ -81,6 +82,7 @@ import {
   type TransportName,
 } from '../transport/transport.ts'
 import { askTypedQuestion } from '../typed-question/typed-question-service.ts'
+import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import {
   callerDrift,
   checkoutHasUncommittedWork,
@@ -97,6 +99,21 @@ type Presentation = {
   error(...values: unknown[]): void
   printRunId(id: number): void
   cwd(): string
+}
+
+function keyedRunCursorAdmission() {
+  const caller = classifyCaller(process.env)
+  const identity = caller.kind === 'harness' ? resolveCallerIdentity(caller, null) : null
+  return {
+    harnessSession: identity?.kind === 'identity' ? identity.session : null,
+    readOpenCursors: async (session: string) => {
+      const cursors = await taskFlowReadStore(db()).openStagesForSession(session)
+      return cursors.map((cursor) => ({
+        project: cursor.project,
+        workflowKey: cursor.workflow_key,
+      }))
+    },
+  }
 }
 
 function earlierReviewRejections(
@@ -706,6 +723,7 @@ export async function doCommand(
       resolveReviewTarget,
       resolveCallerCheckout: (cwd, repo) => resolveCallerCheckout(presentation.cwd(), cwd, repo),
       resolveDispatchOptions: resolveOptions,
+      keyedRunCursorAdmission,
       lookupTaskKey,
       recordRunWarning,
       earlierReviewRejections,

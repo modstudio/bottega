@@ -274,6 +274,7 @@ export const importBoundaries: ImportBoundary[] = [
       'node:fs',
       './dispatch-preflight.ts',
       './execution-requirement.ts',
+      './keyed-run-cursor-admission.ts',
       './probe-launch-overrides.ts',
       './review-lens-prompt.ts',
       '../enforcement/enforcement-resolution.ts',

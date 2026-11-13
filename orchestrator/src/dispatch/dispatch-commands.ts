@@ -34,6 +34,10 @@ import {
 import { keepTreeExemptionFromOption } from '../worktree/keep-tree-hold.ts'
 import { preflight, resolvedFindingsLens } from './dispatch-preflight.ts'
 import { executionRequirementRefusal } from './execution-requirement.ts'
+import {
+  checkKeyedRunCursorAdmission,
+  type OpenKeyedRunCursors,
+} from './keyed-run-cursor-admission.ts'
 import { decideProbeLaunchOverrides } from './probe-launch-overrides.ts'
 import { type ReviewLensPackInputs, reviewLensPrompt } from './review-lens-prompt.ts'
 import type { ReviewFindingMemory } from './review-memory.ts'
@@ -192,6 +196,10 @@ type DispatchPresentation = {
     notice: string | null
   }
   resolveDispatchOptions(jobName: string): Promise<DispatchOptions>
+  keyedRunCursorAdmission(): {
+    harnessSession: string | null
+    readOpenCursors: OpenKeyedRunCursors
+  }
   lookupTaskKey: TaskKeyLookup
   recordRunWarning(runId: string, warning: string): void
   earlierReviewRejections(
@@ -213,6 +221,46 @@ type DispatchPresentation = {
   follow(id: string, quiet: boolean): Promise<unknown>
   runNumber(id: string): number
   detachedResult(id: string, json: boolean): void
+}
+
+async function keyedRunCursorWarningForDispatch(input: {
+  key: string | undefined
+  project: string | null
+  bindingPresent: boolean
+  overrideReason: string | undefined
+  fromOperator: boolean
+  adapter: DispatchPresentation['keyedRunCursorAdmission']
+}): Promise<string | null> {
+  const { harnessSession, readOpenCursors } = input.adapter()
+  const decision = await checkKeyedRunCursorAdmission(
+    {
+      key: input.key,
+      project: input.project,
+      bindingPresent: input.bindingPresent,
+      overrideReason: input.overrideReason,
+      fromOperator: input.fromOperator,
+      harnessSession,
+    },
+    readOpenCursors,
+  )
+  if (decision.kind === 'refuse') throw new Error(decision.message)
+  return decision.kind === 'allow-with-override' ? decision.warning : null
+}
+
+async function cursorWarningFor(
+  flags: DispatchFlags,
+  presentation: DispatchPresentation,
+  binding: { cursorRecordId: string; stepSlug: string } | undefined,
+  project: string | null,
+): Promise<string | null> {
+  return keyedRunCursorWarningForDispatch({
+    key: flags.flag('key'),
+    project,
+    bindingPresent: Boolean(binding),
+    overrideReason: flags.flag('override-unbound'),
+    fromOperator: flags.has('from-operator'),
+    adapter: presentation.keyedRunCursorAdmission,
+  })
 }
 
 type SpecWarningInput = {
@@ -609,12 +657,24 @@ async function taskKeyWarningForDispatch(
   return admission.warning
 }
 
-function recordTaskKeyWarning(
+async function taskWarningFor(
+  flags: DispatchFlags,
+  presentation: DispatchPresentation,
+  project: ReturnType<typeof projectAt>,
+): Promise<string | null> {
+  return taskKeyWarningForDispatch(
+    { project, key: flags.flag('key') },
+    presentation.lookupTaskKey,
+    presentation.error,
+  )
+}
+
+function recordDispatchWarnings(
   runId: string,
-  warning: string | null,
+  warnings: Array<string | null>,
   record: (runId: string, warning: string) => void,
 ): void {
-  if (warning) record(runId, warning)
+  for (const warning of warnings) if (warning) record(runId, warning)
 }
 
 function detachedRunCollectRemedy(id: string, runNumber: (id: string) => number): string {
@@ -682,7 +742,6 @@ export async function dispatchCommand(
     implicitReviewWarning,
     resolveCallerCheckout,
     resolveDispatchOptions,
-    lookupTaskKey,
     recordRunWarning,
     detach,
     follow,
@@ -698,11 +757,11 @@ export async function dispatchCommand(
   const probeOverrides = probeLaunchOverrides(flags, resolved, Boolean(requested.findings))
   const requestedCwd = existingRequestedCwd(flag('cwd'))
   const explicitRepo = flag('repo')
-  const caller = resolveCallerCheckout(requestedCwd, explicitRepo)
-  const callerCwd = caller.callerCwd
-  reportCallerCheckoutNotice(caller.notice, porcelain, error)
+  const { callerCwd, launchCwd, notice } = resolveCallerCheckout(requestedCwd, explicitRepo)
+  reportCallerCheckoutNotice(notice, porcelain, error)
   const dispatchProject = assertDispatchableProject(explicitRepo, callerCwd, Boolean(requestedCwd))
   const dispatchProjectName = dispatchProject?.name ?? null
+  const cursorWarning = await cursorWarningFor(flags, presentation, binding, dispatchProjectName)
   // Check project-required inputs before reading the prompt so a missing key does not pay for stdin.
   const { base, reviewRef, resolvedReviewTarget, seed } = prepareDispatchTarget({
     flags,
@@ -713,11 +772,7 @@ export async function dispatchCommand(
     callerChoseCwd: Boolean(requestedCwd),
   })
   reportDefaultSeed(flag('seed'), seed, porcelain, error)
-  const taskKeyWarning = await taskKeyWarningForDispatch(
-    { project: dispatchProject, key: flag('key') },
-    lookupTaskKey,
-    error,
-  )
+  const taskKeyWarning = await taskWarningFor(flags, presentation, dispatchProject)
   const lens = flag('lens')
   reportLensDispatchNotices({
     jobName,
@@ -829,14 +884,14 @@ export async function dispatchCommand(
       carry: has('carry'),
       ...reviewDetachFields(reviewRef, resolvedReviewTarget),
       cwd: callerCwd,
-      launchCwd: caller.launchCwd,
+      launchCwd,
       deliverables,
       timeoutMinutes,
       keepTree,
       resolvedTaskBranch,
       lensInputs,
     })
-    recordTaskKeyWarning(id, taskKeyWarning, recordRunWarning)
+    recordDispatchWarnings(id, [taskKeyWarning, cursorWarning], recordRunWarning)
     presentation.detachedResult(id, json)
     if (!has('quiet') && !porcelain) {
       error(detachedRunCollectRemedy(id, presentation.runNumber))
@@ -889,13 +944,13 @@ export async function dispatchCommand(
     carry: has('carry'),
     ...reviewDetachFields(reviewRef, resolvedReviewTarget),
     cwd: callerCwd,
-    launchCwd: caller.launchCwd,
+    launchCwd,
     deliverables,
     timeoutMinutes,
     keepTree,
     resolvedTaskBranch,
     lensInputs,
   })
-  recordTaskKeyWarning(id, taskKeyWarning, recordRunWarning)
+  recordDispatchWarnings(id, [taskKeyWarning, cursorWarning], recordRunWarning)
   await follow(id, has('quiet'))
 }
