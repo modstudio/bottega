@@ -5,6 +5,7 @@ import {
   type AgentRow,
   addAgent,
   GOOSE_CONTEXT_CEILING,
+  GOOSE_MAX_OUTPUT_TOKENS,
   GOOSE_READING_MAX_TURNS,
   gooseContextLimit,
   gooseContextManagementEnvironment,
@@ -63,6 +64,10 @@ test('the Goose context ceiling preserves its measured pre-regression value', ()
   expect(GOOSE_CONTEXT_CEILING).toBe(128_000)
 })
 
+test('the Goose output cap preserves its measured value', () => {
+  expect(GOOSE_MAX_OUTPUT_TOKENS).toBe(32_768)
+})
+
 test('a review lens on a wide served window runs at the Goose context ceiling', () => {
   expect(gooseContextLimit(200_000, DEEP_JOB_TOKENS, null)).toBe(GOOSE_CONTEXT_CEILING)
 })
@@ -96,6 +101,29 @@ test('a goose row without a declared context window keeps the goose default', ()
   const env = rowAgent(gooseRow()).env?.()
   expect(env).not.toHaveProperty('GOOSE_CONTEXT_LIMIT')
   expect(env).not.toHaveProperty('GOOSE_MAX_TURNS')
+  expect(env).toMatchObject({
+    GOOSE_MAX_TOKENS: String(GOOSE_MAX_OUTPUT_TOKENS),
+    GOOSE_PROVIDER: 'openai',
+  })
+})
+
+test('a Goose row without a base URL keeps its own provider and still carries the output cap', () => {
+  expect(rowAgent({ ...gooseRow(), base_url: null }).env?.()).toEqual({
+    GOOSE_MAX_TOKENS: String(GOOSE_MAX_OUTPUT_TOKENS),
+  })
+})
+
+test('a Goose row with request settings selects its per-run provider', () => {
+  const goose = rowAgent({
+    ...gooseRow(200_000),
+    request_settings: '{"provider":{"ignore":["Morph"]}}',
+  })
+  expect(goose.env?.(DEEP_JOB_TOKENS)?.GOOSE_PROVIDER).toBe('codex')
+  expect(goose.env?.()).toMatchObject({
+    GOOSE_PROVIDER: 'codex',
+    GOOSE_CONTEXT_LIMIT: String(GOOSE_CONTEXT_CEILING),
+    GOOSE_MAX_TOKENS: String(GOOSE_MAX_OUTPUT_TOKENS),
+  })
 })
 
 test('a Goose row that cannot compact uses its served window with compaction disabled', () => {

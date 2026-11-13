@@ -127,6 +127,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../database/db.ts',
       './model-host.ts',
       './agent-set-capacity.ts',
+      './goose-provider.ts',
     ],
     'Keep agent registry command adapters independent of the run nucleus and the CLI: they compose concern modules for one verb and own no lifecycle.',
   ),

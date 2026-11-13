@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { assetPath } from '../../../shared/install-root.ts'
+import type { RequestSettings } from '../agent/goose-provider.ts'
 import {
   contractValidationFailures,
   type SchemaValidationResult,
@@ -126,6 +127,8 @@ export type TransportAgent = {
   name: string
   harness?: string
   baseUrl?: string | null
+  requestSettings?: RequestSettings | null
+  model?: string
   bin: string
   defaultTransport: TransportName
   billing: AgentBilling

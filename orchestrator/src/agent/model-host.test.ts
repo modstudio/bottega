@@ -23,6 +23,7 @@ const row = (overrides: Partial<AgentRow> = {}): AgentRow => ({
   base_url: 'http://127.0.0.1:9000/v1',
   api_key_secret: null,
   provider: null,
+  request_settings: null,
   transport: 'acp',
   caps: '{"contextTokens":98304}',
   billing: 'none',

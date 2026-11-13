@@ -9,6 +9,7 @@ import { DB_PATH, db as dbForAgents, writableDb } from '../database/db.ts'
 import { jobContextBudget, OUTPUT_RESERVE, PROMPT_BYTES_PER_TOKEN } from '../jobs/jobs.ts'
 import { type Agent, assertResumableAgent, BUILTIN_AGENTS } from './agents.ts'
 import type { Caps } from './capabilities.ts'
+import type { RequestSettings } from './goose-provider.ts'
 import type { OpenRouterRecordedBudget } from './openrouter-key-budget.ts'
 
 export const HARNESSES = ['codex', 'grok', 'opencode', 'goose', 'claude-code'] as const
@@ -26,6 +27,7 @@ export type AgentRow = {
   base_url: string | null
   api_key_secret: string | null
   provider: string | null
+  request_settings: string | null
   transport: 'cli' | 'acp'
   caps: string
   billing: Agent['billing']
@@ -45,6 +47,13 @@ export type AgentRow = {
 export const GOOSE_CONTEXT_CEILING = 128_000
 
 /**
+ * Goose output bound above the largest output a healthy Goose call produces, so
+ * runaway reasoning on any model and provider ends here instead of at the
+ * provider limit.
+ */
+export const GOOSE_MAX_OUTPUT_TOKENS = 32_768
+
+/**
  * Turn bound for a Goose run of a job that does not write the repository.
  * The ceiling sits above the p99 of OK Goose review-lens runs' model calls,
  * so it stops a runaway without cutting a normal run.
@@ -55,7 +64,8 @@ export const GOOSE_READING_MAX_TURNS = 150
  * The context limit a Goose worker runs under, bounded by the served window,
  * the job budget, and the Goose ceiling. Inline prompt material may raise the
  * ceiling enough to hold that prompt plus `OUTPUT_RESERVE`. No job means no
- * per-job limit to set, so Goose's own default applies.
+ * per-job limit to set, so Goose's own default applies, except that a row with
+ * request settings launches at the served window bounded by the ceiling.
  */
 export function gooseContextLimit(
   servedWindow: number | null,
@@ -104,23 +114,36 @@ function rowLaunchEnvironment(
   promptBytes: number | null,
   writesRepo: boolean | null,
 ): Record<string, string> {
-  if (!row.base_url) return {}
+  const outputCap: Record<string, string> =
+    row.harness === 'goose' ? { GOOSE_MAX_TOKENS: String(GOOSE_MAX_OUTPUT_TOKENS) } : {}
+  if (!row.base_url) return outputCap
   const stored = JSON.parse(row.caps) as Caps & { contextTokens?: number | null }
   const servedWindow = servedContextTokens(stored)
+  const contextEnvironment = gooseContextManagementEnvironment({
+    compacts: stored.compacts,
+    servedWindow,
+    jobContextTokens,
+    promptBytes,
+  })
   return {
     BOTTEGA_MODEL_HOST_URL: row.base_url,
     OPENAI_BASE_URL: row.base_url,
+    ...outputCap,
     ...(row.harness === 'goose'
       ? {
-          GOOSE_PROVIDER: 'openai',
+          GOOSE_PROVIDER: row.request_settings ? row.name : 'openai',
           GOOSE_MODEL: row.model,
           GOOSE_TELEMETRY_ENABLED: 'false',
-          ...gooseContextManagementEnvironment({
-            compacts: stored.compacts,
-            servedWindow,
-            jobContextTokens,
-            promptBytes,
-          }),
+          ...contextEnvironment,
+          // The per-run provider file declares a model context limit, and
+          // transport-acp.ts:writeGooseProviderFile reads it from this variable.
+          ...(row.request_settings && !contextEnvironment.GOOSE_CONTEXT_LIMIT
+            ? {
+                GOOSE_CONTEXT_LIMIT: String(
+                  Math.min(servedWindow ?? GOOSE_CONTEXT_CEILING, GOOSE_CONTEXT_CEILING),
+                ),
+              }
+            : {}),
           ...(writesRepo === false ? { GOOSE_MAX_TURNS: String(GOOSE_READING_MAX_TURNS) } : {}),
         }
       : {}),
@@ -163,6 +186,7 @@ export function rowAgent(row: AgentRow): Agent {
     baseUrl: row.base_url,
     apiKeySecret: row.api_key_secret,
     provider: row.provider,
+    requestSettings: row.request_settings ? JSON.parse(row.request_settings) : null,
     model: row.model,
     billing: row.billing,
     operatedBy: row.operated_by,
@@ -190,7 +214,7 @@ export function rowAgent(row: AgentRow): Agent {
     maxConcurrent: row.max_concurrent,
     routeMetered: Boolean(row.route_metered),
     trainsOnInputs: Boolean(row.trains_on_inputs),
-    ...(row.base_url
+    ...(row.base_url || row.harness === 'goose'
       ? {
           env: (
             jobContextTokens?: number | null,
@@ -315,6 +339,7 @@ export type AgentMutation = {
   baseUrl?: string | null
   apiKeySecret?: string | null
   provider?: string | null
+  requestSettings?: RequestSettings | null
   transport?: 'cli' | 'acp'
   billing?: Agent['billing']
   contextTokens?: number
@@ -392,6 +417,11 @@ function assertAgentMutation(input: AgentMutation, adding: boolean): void {
 
 export function addAgent(name: string, input: AgentMutation): AgentRow {
   assertAgentMutation(input, true)
+  assertRequestSettingsReachable(
+    name,
+    input.baseUrl ?? null,
+    input.requestSettings == null ? null : JSON.stringify(input.requestSettings),
+  )
   const caps = {
     readsRepo: false,
     mcp: false,
@@ -404,8 +434,8 @@ export function addAgent(name: string, input: AgentMutation): AgentRow {
   }
   writableDb()
     .query(
-      `INSERT INTO agent (record_id,name,harness,backend,model,base_url,api_key_secret,provider,transport,caps,billing,operated_by,enabled,disabled_reason,jobs,preferred_jobs,max_concurrent,route_metered,trains_on_inputs)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO agent (record_id,name,harness,backend,model,base_url,api_key_secret,provider,request_settings,transport,caps,billing,operated_by,enabled,disabled_reason,jobs,preferred_jobs,max_concurrent,route_metered,trains_on_inputs)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
       newRecordId(),
@@ -416,6 +446,7 @@ export function addAgent(name: string, input: AgentMutation): AgentRow {
       input.baseUrl ?? null,
       input.apiKeySecret ?? null,
       input.provider ?? null,
+      input.requestSettings == null ? null : JSON.stringify(input.requestSettings),
       input.transport ?? 'acp',
       JSON.stringify(caps),
       input.billing ??
@@ -439,6 +470,23 @@ function storedApiKeySecret(current: AgentRow, input: AgentMutation): string | n
 
 function storedProvider(current: AgentRow, input: AgentMutation): string | null {
   return input.provider === undefined ? current.provider : input.provider
+}
+
+function assertRequestSettingsReachable(
+  name: string,
+  baseUrl: string | null,
+  requestSettings: string | null,
+): void {
+  if (requestSettings && !baseUrl) {
+    throw new Error(
+      `agent "${name}" has request settings but no base URL; set one with ${PLATFORM_SLUG} agent set ${name} --base-url <url>, or drop them with --clear-request-settings`,
+    )
+  }
+}
+
+function storedRequestSettings(current: AgentRow, input: AgentMutation): string | null {
+  if (input.requestSettings === undefined) return current.request_settings
+  return input.requestSettings === null ? null : JSON.stringify(input.requestSettings)
 }
 
 function credentialIdentityChanged(current: AgentRow, input: AgentMutation): boolean {
@@ -495,6 +543,21 @@ export function identityChangeProbeAttempts(
   ]
 }
 
+/** The probe result that marks newly widened jobs unestablished, or null when the job change needs no probe. */
+function pendingCapabilityProbe(current: AgentRow, input: AgentMutation): string | null {
+  if (input.jobs === undefined || !current.probe_result) return null
+  const previous = JSON.parse(current.probe_result) as RegistrationProbeResult
+  const currentJobs = current.jobs ? (JSON.parse(current.jobs) as string[]) : null
+  const targetJobs = input.jobs ?? Object.keys(previous.jobs ?? {})
+  const widened = currentJobs === null ? [] : targetJobs.filter((job) => !currentJobs.includes(job))
+  const unestablished = widened.filter((job) => {
+    const observations = previous.jobs?.[job]
+    return !observations || Object.values(observations).some((value) => value !== true)
+  })
+  if (!unestablished.length) return null
+  return JSON.stringify({ ...previous, ok: null, pendingCapabilities: unestablished })
+}
+
 export function setAgent(
   name: string,
   input: AgentMutation,
@@ -503,6 +566,11 @@ export function setAgent(
   assertAgentMutation(input, false)
   const current = agentRows().find((row) => row.name === name)
   if (!current) throw new Error(`unknown agent "${name}"`)
+  assertRequestSettingsReachable(
+    name,
+    input.baseUrl === undefined ? current.base_url : input.baseUrl,
+    storedRequestSettings(current, input),
+  )
   let caps = JSON.parse(current.caps) as Record<string, unknown>
   const { enabled, reason } = agentEnabledFields(current, input)
   const identityChanged = agentIdentityChanged(current, input)
@@ -539,24 +607,14 @@ export function setAgent(
   } else if (input.contextTokens !== undefined) {
     caps.contextTokens = input.contextTokens
   }
-  if (!identityChanged && input.jobs !== undefined && current.probe_result) {
-    const previous = JSON.parse(current.probe_result) as RegistrationProbeResult
-    const currentJobs = current.jobs ? (JSON.parse(current.jobs) as string[]) : null
-    const targetJobs = input.jobs ?? Object.keys(previous.jobs ?? {})
-    const widened =
-      currentJobs === null ? [] : targetJobs.filter((job) => !currentJobs.includes(job))
-    const unestablished = widened.filter((job) => {
-      const observations = previous.jobs?.[job]
-      return !observations || Object.values(observations).some((value) => value !== true)
-    })
-    if (unestablished.length) {
-      probedAt = null
-      probeResult = JSON.stringify({ ...previous, ok: null, pendingCapabilities: unestablished })
-    }
+  const pendingCapabilities = identityChanged ? null : pendingCapabilityProbe(current, input)
+  if (pendingCapabilities) {
+    probedAt = null
+    probeResult = pendingCapabilities
   }
   writableDb()
     .query(
-      `UPDATE agent SET harness=?,backend=?,model=?,base_url=?,api_key_secret=?,provider=?,transport=?,caps=?,billing=?,enabled=?,disabled_reason=?,probed_at=?,probe_result=?,jobs=?,preferred_jobs=?,max_concurrent=?,route_metered=?,trains_on_inputs=? WHERE name=?`,
+      `UPDATE agent SET harness=?,backend=?,model=?,base_url=?,api_key_secret=?,provider=?,request_settings=?,transport=?,caps=?,billing=?,enabled=?,disabled_reason=?,probed_at=?,probe_result=?,jobs=?,preferred_jobs=?,max_concurrent=?,route_metered=?,trains_on_inputs=? WHERE name=?`,
     )
     .run(
       input.harness ?? current.harness,
@@ -565,6 +623,7 @@ export function setAgent(
       input.baseUrl === undefined ? current.base_url : input.baseUrl,
       storedApiKeySecret(current, input),
       storedProvider(current, input),
+      storedRequestSettings(current, input),
       input.transport ?? current.transport,
       JSON.stringify(caps),
       input.billing ?? current.billing,

@@ -392,7 +392,7 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/credential.ts',
     '../../../shared/record-id.ts',
     './agents.ts',
-    ...['./capabilities.ts', './openrouter-key-budget.ts'],
+    ...['./capabilities.ts', './goose-provider.ts', './openrouter-key-budget.ts'],
     '../database/db.ts',
     '../jobs/jobs.ts',
   ]),

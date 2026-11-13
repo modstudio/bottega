@@ -5,10 +5,11 @@ import { drizzle } from 'drizzle-orm/pglite'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { syncHostedRecord } from './record-sync-service.ts'
 import {
-  applyTaskFlowStageValues,
   applyTaskFlowValues,
+  reviseTaskFlowStageValues,
   taskFlowStageValues,
   taskFlowValues,
+  writeNewTaskFlowStageValues,
 } from './record-sync-task-flow.ts'
 import {
   readRecordTaskFlowObligation,
@@ -150,9 +151,10 @@ test('task-flow apply is idempotent and rejects older revisions', async () => {
         revision integer NOT NULL, last_request_id uuid,
         created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL
       );
+      -- The stage table models the stage contract, which makes project_id and number NOT NULL.
       CREATE TABLE task_flow_stage (
         id uuid PRIMARY KEY, space_id uuid NOT NULL, flow_record_id uuid NOT NULL,
-        project_id uuid, number integer, workflow_key text, instance_id text, session_id text,
+        project_id uuid NOT NULL, number integer NOT NULL, workflow_key text, instance_id text, session_id text,
         workflow text NOT NULL, mode text NOT NULL, workflow_version_id uuid NOT NULL,
         catalogue_version_id uuid NOT NULL, arguments jsonb NOT NULL,
         active_ordinal integer NOT NULL, active_slug text NOT NULL, state text NOT NULL,
@@ -169,17 +171,17 @@ test('task-flow apply is idempotent and rejects older revisions', async () => {
         database as unknown as Parameters<typeof applyTaskFlowValues>[0],
         taskFlowValues(value),
       )
-    const applyStage = (value: Record<string, unknown>, number: number | null = null) =>
-      applyTaskFlowStageValues(
-        database as unknown as Parameters<typeof applyTaskFlowStageValues>[0],
-        taskFlowStageValues(value),
-        number,
-      )
+    const stageDatabase = database as unknown as Parameters<typeof writeNewTaskFlowStageValues>[0]
+    const insertStage = (value: Record<string, unknown>, number: number) =>
+      writeNewTaskFlowStageValues(stageDatabase, taskFlowStageValues(value), number)
+    const reviseStage = (value: Record<string, unknown>) =>
+      reviseTaskFlowStageValues(stageDatabase, taskFlowStageValues(value))
 
     await applyFlow(flowPayload())
     await applyFlow(flowPayload())
-    await applyStage(stagePayload(), 7)
-    await applyStage(stagePayload())
+    await insertStage(stagePayload(), 7)
+    await insertStage(stagePayload(), 8)
+    await reviseStage(stagePayload())
     expect(
       (
         await postgres.query(
@@ -189,17 +191,19 @@ test('task-flow apply is idempotent and rejects older revisions', async () => {
     ).toEqual([{ flows: 1, stages: 1 }])
 
     await applyFlow(flowPayload(2, 'done'))
-    await applyStage(stagePayload(2, 'done'))
-    await applyStage(
+    // A stage written before stages carried a project revises with no project.
+    await reviseStage({ ...stagePayload(2, 'done'), projectId: null })
+    // A push that found the stage absent and lost the insert race still revises it.
+    await insertStage(
       {
         ...stagePayload(3, 'done'),
         flowRecordId: UNKNOWN,
         projectId: OTHER_PROJECT,
       },
-      99,
+      9,
     )
     await applyFlow(flowPayload(1, 'open'))
-    await applyStage(stagePayload(1, 'running'))
+    await reviseStage(stagePayload(1, 'running'))
     expect(
       (
         await postgres.query(
