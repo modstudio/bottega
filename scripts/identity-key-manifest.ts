@@ -499,6 +499,12 @@ const DISPLAY_LABELS: readonly DisplayLabel[] = [
 ]
 
 const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
+  ...manifest('hosted', 'identifier issued by the subsystem selected by holder_kind', [
+    'context_item.holder_id',
+  ]),
+  ...manifest('orchestrator', 'identifier issued by the subsystem selected by holder_kind', [
+    'context_item.holder_id',
+  ]),
   ...TELEMETRY_IDENTITY.externalIdentifiers,
   ...BOARD_READER_EXTERNAL_IDENTIFIERS,
   ...TYPED_QUESTION_IDENTITY.externalIdentifiers,
@@ -705,6 +711,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'contention.record_id',
     'contention.run_record_id',
     'contention.landing_record_id',
+    'context_item.record_id',
     'doc.parent_record_id',
     'doc.project_record_id',
     'doc.article_subject_id',
