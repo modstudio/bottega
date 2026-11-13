@@ -24,6 +24,7 @@ test('workflow dispatch preserves its allowed run-start inputs and adds the curs
       read: async () => ({
         cursor: 9,
         cursorRecordId: 'cursor-record-9',
+        workflowSlug: 'ship-task',
         stepSlug: 'implement',
         taskKey: 'DEV-2283',
         jobs: ['implement'],
@@ -99,6 +100,7 @@ test('workflow land forwards create and merge options without the cursor', async
     read: async () => ({
       cursor: 7,
       cursorRecordId: 'cursor-record-7',
+      workflowSlug: 'ship-task',
       stepSlug: 'land',
       taskKey: 'DEV-2283',
       jobs: [],

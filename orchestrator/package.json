@@ -37,7 +37,7 @@
     "drizzle-orm": "1.0.0-rc.4",
     "execa": "10.2.0",
     "github-slugger": "^2.0.0",
-    "hono": "4.13.13",
+    "hono": "4.13.16",
     "hono-rate-limiter": "^0.5.4",
     "package-manager-detector": "^1.9.0",
     "postgres": "3.4.9",
