@@ -30,6 +30,13 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     '../record/record-task-flow-write-client.ts',
     '../record/record-write-authority.ts',
     './task-flow-store-sqlite.ts',
+    './task-flow-store-record-questions.ts',
+    './task-flow-store-types.ts',
+  ]),
+  module('orchestrator/src/workflow/task-flow-store-record-questions.ts', [
+    'bun:sqlite',
+    '../record/record-task-flow-contract.ts',
+    '../run/question-open.ts',
     './task-flow-store-types.ts',
   ]),
   module('orchestrator/src/workflow/workflow-command-record-shape.ts', [

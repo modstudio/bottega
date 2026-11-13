@@ -23,6 +23,7 @@ import {
   currentRecordWriteDecision,
   throwIfRecordRefused,
 } from '../record/record-write-authority.ts'
+import { recordQuestionReads } from './task-flow-store-record-questions.ts'
 import { sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
 import type {
   TaskFlowObligationRow,
@@ -159,17 +160,22 @@ async function listAllTaskFlowStages(
 }
 
 class RecordTaskFlowReadStore {
-  private readonly local: ReturnType<typeof sqliteTaskFlowReadStore>
   private readonly database: Database
   private readonly client: RecordTaskFlowClient
   private identityRead?: Promise<RecordIdentity>
   private readonly destinations = new Map<string, Promise<RecordWriteDestination>>()
   private everyDestination?: Promise<RecordWriteDestination[]>
+  private readonly questions: ReturnType<typeof recordQuestionReads>
 
   constructor(database: Database, client: RecordTaskFlowClient) {
     this.database = database
     this.client = client
-    this.local = sqliteTaskFlowReadStore(database)
+    this.questions = recordQuestionReads(database, {
+      list: (selector, project) => this.list(selector, project),
+      listEvery: (selector) => this.listEveryDestination(selector),
+      byId: (id) => this.byId(id),
+      projectId: (project) => this.projectId(project),
+    })
   }
 
   // Resolved on the first read that needs a destination, so a store used only
@@ -368,24 +374,7 @@ class RecordTaskFlowReadStore {
       .map((modeSlug) => ({ mode_slug: modeSlug }))
   }
   async listOpenStages(input: { project?: string; sessionId?: string }) {
-    const local = await this.local.listOpenStages(input)
-    const selector: StageListSelector = {
-      states: ['running', 'awaiting-ruling'],
-      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
-      ...(input.project ? { projectId: this.projectId(input.project) } : {}),
-    }
-    const hosted = input.project
-      ? await this.list(selector, input.project)
-      : await this.listEveryDestination(selector)
-    const numberByRecordId = new Map(hosted.map(({ stage }) => [stage.id, stage.number]))
-    return local.map((row) => {
-      const number = numberByRecordId.get(row.record_id)
-      if (number === undefined)
-        throw new Error(
-          `local workflow stage ${row.record_id} has no hosted record counterpart; run record sync, then retry`,
-        )
-      return { ...row, id: number }
-    })
+    return this.questions.listOpenStages(input)
   }
   async openStageWorktrees() {
     return (await this.listEveryDestination({ states: ['running', 'awaiting-ruling'] }))
@@ -414,7 +403,7 @@ class RecordTaskFlowReadStore {
       .map(({ autonomy }) => ({ autonomy }))
   }
   async stageIdentityMap() {
-    return this.local.stageIdentityMap()
+    return this.questions.stageIdentityMap()
   }
   async stageByHandle(project: string | undefined, cursor: number) {
     const projectId = this.projectId(project ?? '')
@@ -439,8 +428,8 @@ class RecordTaskFlowReadStore {
     )
     return rows[0] ? { id: rows[0].stage.number } : null
   }
-  waitingWorkflowQuestions() {
-    return this.local.waitingWorkflowQuestions()
+  async waitingWorkflowQuestions() {
+    return this.questions.waitingWorkflowQuestions()
   }
   async flowState(recordId: string) {
     const result = await this.flow({ flowRecordId: recordId })
@@ -599,26 +588,26 @@ class RecordTaskFlowReadStore {
     )
     return rows[0]?.stage.number ?? null
   }
-  closeOutShipTaskStage(sessionId: string, project: string, branch: string) {
-    return this.local.closeOutShipTaskStage(sessionId, project, branch)
+  async closeOutShipTaskStage(sessionId: string, project: string, branch: string) {
+    return this.questions.closeOutShipTaskStage(sessionId, project, branch)
   }
-  cursorWorkForSession(sessionId: string) {
-    return this.local.cursorWorkForSession(sessionId)
+  async cursorWorkForSession(sessionId: string) {
+    return this.questions.cursorWorkForSession(sessionId)
   }
-  cursorLifecycleForSession(sessionId: string) {
-    return this.local.cursorLifecycleForSession(sessionId)
+  async cursorLifecycleForSession(sessionId: string) {
+    return this.questions.cursorLifecycleForSession(sessionId)
   }
-  openStagesForSession(sessionId: string) {
-    return this.local.openStagesForSession(sessionId)
+  async openStagesForSession(sessionId: string) {
+    return this.questions.openStagesForSession(sessionId)
   }
-  keylessSessionCursors(project: string | null) {
-    return this.local.keylessSessionCursors(project)
+  async keylessSessionCursors(project: string | null) {
+    return this.questions.keylessSessionCursors(project)
   }
-  openWorkflowQuestionCountForSession(sessionId: string) {
-    return this.local.openWorkflowQuestionCountForSession(sessionId)
+  async openWorkflowQuestionCountForSession(sessionId: string) {
+    return this.questions.openWorkflowQuestionCountForSession(sessionId)
   }
-  workflowInboxQuestions() {
-    return this.local.workflowInboxQuestions()
+  async workflowInboxQuestions() {
+    return this.questions.workflowInboxQuestions()
   }
   rulingRows(input: {
     kind: 'workflow' | 'run' | 'all'
@@ -626,19 +615,19 @@ class RecordTaskFlowReadStore {
     after: number | null
     cursor: number | null
   }) {
-    return this.local.rulingRows(input)
+    return this.questions.rulingRows(input)
   }
-  rulingFileQuestion(questionId: string) {
-    return this.local.rulingFileQuestion(questionId)
+  async rulingFileQuestion(questionId: string) {
+    return this.questions.rulingFileQuestion(questionId)
   }
-  questionCloseFacts(questionId: string) {
-    return this.local.questionCloseFacts(questionId)
+  async questionCloseFacts(questionId: string) {
+    return this.questions.questionCloseFacts(questionId)
   }
-  overturnRulingRow(questionId: string) {
-    return this.local.overturnRulingRow(questionId)
+  async overturnRulingRow(questionId: string) {
+    return this.questions.overturnRulingRow(questionId)
   }
   async pendingTaskLinks(table: 'workflow_cursor' | 'question') {
-    if (table === 'question') return this.local.pendingTaskLinks(table)
+    if (table === 'question') return this.questions.pendingQuestionTaskLinks()
     return (await this.listEveryDestination({ unlinked: true }))
       .filter(({ stage }) => Boolean(stage.workflowKey && stage.projectName))
       .map(({ stage }) => ({
@@ -648,7 +637,7 @@ class RecordTaskFlowReadStore {
       }))
   }
   async linkedTaskReferences(table: 'workflow_cursor' | 'question') {
-    if (table === 'question') return this.local.linkedTaskReferences(table)
+    if (table === 'question') return this.questions.linkedQuestionTaskReferences()
     return (await this.listEveryDestination({ linked: true })).map(({ stage, flow }) => ({
       task_record_id: required(flow.taskId, 'task reference'),
       project: required(stage.projectName, 'project name'),
@@ -663,11 +652,11 @@ class RecordTaskFlowReadStore {
     const result = await read(projectRecordId)
     return { workflow_cursor: result.stages, task_flow: result.flows }
   }
-  taskRulingRows(project: string, taskRecordId: string, limit: number) {
-    return this.local.taskRulingRows(project, taskRecordId, limit)
+  async taskRulingRows(project: string, taskRecordId: string, limit: number) {
+    return this.questions.taskRulingRows(project, taskRecordId, limit)
   }
-  localQuestionProjects() {
-    return this.local.localQuestionProjects()
+  async localQuestionProjects() {
+    return this.questions.localQuestionProjects()
   }
 }
 

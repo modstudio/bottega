@@ -407,7 +407,7 @@ test('record adapter refuses a failed page without returning a prefix', async ()
   )
 })
 
-test('hosted open-stage listings translate mirror handles and refuse missing counterparts', async () => {
+test('hosted open-stage listings do not depend on mirror counterparts', async () => {
   const d = database()
   const translated = recordTaskFlowReadStore(
     d,
@@ -419,10 +419,115 @@ test('hosted open-stage listings translate mirror handles and refuse missing cou
   )
   expect((await translated.listOpenStages({ project: 'fixture' }))[0]!.id).toBe(71)
 
-  const missing = recordTaskFlowReadStore(d, createMemoryRecordApiClient({ taskFlowStages: [] }))
-  await expect(missing.listOpenStages({ project: 'fixture' })).rejects.toThrow(
-    'has no hosted record counterpart',
+  const empty = recordTaskFlowReadStore(d, createMemoryRecordApiClient({ taskFlowStages: [] }))
+  expect(await empty.listOpenStages({ project: 'fixture' })).toEqual([])
+})
+
+test('question-joined reads match SQLite joins and ordering', async () => {
+  const d = database()
+  const stageOneId = hostedStage().stage.id
+  const stageTwoId = '00000000-0000-4000-8000-000000000008'
+  const stageThreeId = '00000000-0000-4000-8000-000000000009'
+  const insertStage = (recordId: string, number: number, key: string, taskless: boolean) =>
+    d
+      .query(
+        `INSERT INTO workflow_cursor
+       (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,
+        task_record_id,task_flow_record_id,instance_id,session_id,workflow_version_record_id,
+        catalogue_version_record_id,args,autonomy,ordinal,step_slug,state,closed,question,total_steps,
+        created_at,updated_at,enforcement,opened_machine_id,last_advanced_machine_id,revision)
+       SELECT ?,?,'fixture',project_record_id,'flow','default',?, ?, ?, ?, 'session-a',
+              workflow_version_record_id,catalogue_version_record_id,'{}','guided',0,'plan','running',
+              '[]',NULL,2,created_at,?,enforcement,opened_machine_id,last_advanced_machine_id,1
+         FROM workflow_cursor WHERE record_id=?`,
+      )
+      .run(
+        recordId,
+        number,
+        key,
+        taskless ? null : TASK_ID,
+        taskless ? null : FLOW_ID,
+      `#${number}`,
+        `2026-11-12T00:0${number}:00.000Z`,
+        stageOneId,
+      )
+  insertStage(stageTwoId, 2, '', true)
+  insertStage(stageThreeId, 3, '', true)
+  d.query(
+    `UPDATE workflow_cursor SET workflow_slug='ship-task',state='awaiting-ruling',
+       args='{"branch":"feature"}',updated_at='2026-11-12T00:03:00.000Z'
+     WHERE record_id=?`,
+  ).run(stageOneId)
+  d.query("UPDATE workflow_cursor SET state='awaiting-ruling' WHERE record_id=?").run(stageTwoId)
+
+  const q1 = '00000000-0000-4000-8000-000000000031'
+  const q2 = '00000000-0000-4000-8000-000000000032'
+  const q3 = '00000000-0000-4000-8000-000000000033'
+  d.query(
+    `INSERT INTO question
+     (record_id,number,workflow_cursor_record_id,workflow_key,asked_at,question)
+     VALUES (?,1,?,'DEV-2234','2026-11-12T00:02:00.000Z','first?'),
+            (?,2,?,'DEV-2234','2026-11-12T00:01:00.000Z','second?')`,
+  ).run(q1, stageOneId, q2, stageTwoId)
+  d.query(
+    `INSERT INTO question
+     (record_id,number,workflow_cursor_record_id,workflow_key,workflow_task_record_id,
+      asked_at,question,answer,answered_at)
+     VALUES (?,3,?,'DEV-2234',?,'2026-11-12T00:00:00.000Z','ruled?','yes',
+             '2026-11-12T00:04:00.000Z')`,
+  ).run(q3, stageTwoId, TASK_ID)
+
+  const first = hostedStage()
+  first.stage.workflow = 'ship-task'
+  first.stage.state = 'awaiting-ruling'
+  first.stage.arguments = { branch: 'feature' }
+  first.stage.updatedAt = '2026-11-12T00:03:00.000Z'
+  const second = hostedStage({ taskless: true, number: 2, stageId: stageTwoId })
+  second.stage.instanceId = '#2'
+  second.flow.openStageCount = 0
+  second.stage.state = 'awaiting-ruling'
+  second.stage.updatedAt = '2026-11-12T00:02:00.000Z'
+  const third = hostedStage({ taskless: true, number: 3, stageId: stageThreeId })
+  third.stage.instanceId = '#3'
+  third.flow.openStageCount = 0
+  third.stage.updatedAt = '2026-11-12T00:03:00.000Z'
+  const local = sqliteTaskFlowReadStore(d)
+  const hosted = recordTaskFlowReadStore(
+    d,
+    createMemoryRecordApiClient({ taskFlowStages: [third, second, first], taskFlowPageSize: 1 }),
   )
+
+  const assertions = [
+    [hosted.listOpenStages({}), local.listOpenStages({})],
+    [hosted.stageIdentityMap(), local.stageIdentityMap()],
+    [hosted.waitingWorkflowQuestions(), local.waitingWorkflowQuestions()],
+    [
+      hosted.closeOutShipTaskStage('session-a', 'fixture', 'feature'),
+      local.closeOutShipTaskStage('session-a', 'fixture', 'feature'),
+    ],
+    [hosted.cursorWorkForSession('session-a'), local.cursorWorkForSession('session-a')],
+    [hosted.cursorLifecycleForSession('session-a'), local.cursorLifecycleForSession('session-a')],
+    [hosted.openStagesForSession('session-a'), local.openStagesForSession('session-a')],
+    [hosted.keylessSessionCursors('fixture'), local.keylessSessionCursors('fixture')],
+    [
+      hosted.openWorkflowQuestionCountForSession('session-a'),
+      local.openWorkflowQuestionCountForSession('session-a'),
+    ],
+    [hosted.workflowInboxQuestions(), local.workflowInboxQuestions()],
+    [
+      hosted.rulingRows({ kind: 'all', after: null, cursor: null }),
+      local.rulingRows({ kind: 'all', after: null, cursor: null }),
+    ],
+    [hosted.rulingFileQuestion(q1), local.rulingFileQuestion(q1)],
+    [hosted.questionCloseFacts(q1), local.questionCloseFacts(q1)],
+    [hosted.overturnRulingRow(q3), local.overturnRulingRow(q3)],
+    [hosted.pendingTaskLinks('question'), local.pendingTaskLinks('question')],
+    [hosted.linkedTaskReferences('question'), local.linkedTaskReferences('question')],
+    [hosted.taskRulingRows('fixture', TASK_ID, 10), local.taskRulingRows('fixture', TASK_ID, 10)],
+    [hosted.localQuestionProjects(), local.localQuestionProjects()],
+  ]
+  for (const [recordAnswer, localAnswer] of assertions)
+    expect(await recordAnswer).toEqual(await localAnswer)
 })
 
 test('machine-wide hosted reads merge every registered project space', async () => {
