@@ -53,7 +53,15 @@ const profileHooks = {
       ],
     },
   ],
-  SessionStart: [{ hooks: [handler('session-brief.py'), handler('workflow-cursor-reminder.py')] }],
+  SessionStart: [
+    {
+      hooks: [
+        handler('session-brief.py'),
+        handler('session-start.py'),
+        handler('workflow-cursor-reminder.py'),
+      ],
+    },
+  ],
   PreCompact: [{ hooks: [handler('context-precompact.py')] }],
 }
 
@@ -70,15 +78,15 @@ test('typed profile hooks and an empty profile render the same canonical product
   const groups = Object.values(
     fromProfile.settings.hooks as Record<string, Array<{ hooks: unknown[] }>>,
   ).flat()
-  expect(groups.flatMap((group) => group.hooks)).toHaveLength(26)
+  expect(groups.flatMap((group) => group.hooks)).toHaveLength(27)
   expect(commands).not.toContain(OLD_ROOT)
   expect(commands.match(/git-guard\.py/g)).toHaveLength(1)
   expect(commands.match(/protect-main-checkout\.py/g)).toHaveLength(2)
   expect(commands.match(/heartbeat-remind\.py/g)).toHaveLength(9)
   expect(
     commands.match(/BOTTEGA_ORCHESTRATOR_DB='\/state\/orchestrator\/orchestrator\.db'/g),
-  ).toHaveLength(26)
-  expect(commands.match(/BOTTEGA_GLOBAL_USE=on/g)).toHaveLength(26)
+  ).toHaveLength(27)
+  expect(commands.match(/BOTTEGA_GLOBAL_USE=on/g)).toHaveLength(27)
   for (const verb of ['run start', 'board ask', 'board post']) {
     expect(commands).toContain(`Bash(${PLATFORM_SLUG} ${verb}:*)`)
     expect(commands).toContain(`Bash(./bin/${PLATFORM_SLUG} ${verb}:*)`)
@@ -140,7 +148,7 @@ test('global use off is rendered into every product hook command', () => {
   const hooks = withMachineProductHooks({ permissions: {}, hooks: {} }, ASSET_ROOT, DATABASE, 'off')
     .settings.hooks
   const commands = JSON.stringify(hooks)
-  expect(commands.match(/BOTTEGA_GLOBAL_USE=off/g)).toHaveLength(26)
+  expect(commands.match(/BOTTEGA_GLOBAL_USE=off/g)).toHaveLength(27)
 })
 
 test('superseded handlers name exactly the removed profile entries', () => {
@@ -159,6 +167,7 @@ test('superseded handlers name exactly the removed profile entries', () => {
     { event: 'Stop', script: 'heartbeat-guard.py' },
     { event: 'Stop', script: 'workflow-cursor-reminder.py' },
     { event: 'SessionStart', script: 'session-brief.py' },
+    { event: 'SessionStart', script: 'session-start.py' },
     { event: 'SessionStart', script: 'workflow-cursor-reminder.py' },
     { event: 'PreCompact', script: 'context-precompact.py' },
   ])

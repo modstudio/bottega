@@ -32,6 +32,7 @@ export function seedCurrentWorkflowTreeFixture(
   database: Database,
   workflowSlugs: string[],
   reason: string,
+  projectPath = '/fixture',
 ): void {
   const root = fileURLToPath(new URL('../../..', import.meta.url))
   const tree = parseWorkflowTree(collectWorkflowTree(root))
@@ -41,7 +42,7 @@ export function seedCurrentWorkflowTreeFixture(
     .run(
       newRecordId(),
       'fixture',
-      '/fixture',
+      projectPath,
       'bun',
       JSON.stringify({ tracker: { protocol: 'hub' }, docs: { protocol: 'orch-docs' } }),
     )

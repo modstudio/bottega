@@ -516,11 +516,24 @@ async function persistWorkflowAdvance(
     d,
     context.taskFlowClient,
   )
-  const flow = finishing ? await selectClosingTaskFlow(row, d, context.taskFlowClient) : null
-  const closingFlow = flow?.open_stage_cursor_record_id === row.record_id ? flow : null
+  if (finishing) {
+    await writeFinishingWorkflowAdvance({
+      row,
+      closed,
+      deleteTextIds,
+      obligationPlan,
+      sessionId: context.session ?? row.session_id,
+      takeoverFromMachineId,
+      database: d,
+      taskFlowClient: context.taskFlowClient,
+      selfRulingPlan,
+      at,
+    })
+    return
+  }
   const { parts, obligationInserts, obligationUpdates } = advanceRecordRows(
     row,
-    closingFlow,
+    null,
     obligationPlan,
   )
   const payload: TaskFlowIntentInput<'advance'> = {
@@ -530,13 +543,73 @@ async function persistWorkflowAdvance(
       expectedRevision: row.revision,
       values: {
         arguments: JSON.parse(row.args) as Record<string, string>,
-        activeOrdinal: next ? advance.ordinal! : row.ordinal,
-        activeSlug: next?.slug ?? row.step_slug,
-        state: finishing ? 'done' : 'running',
+        activeOrdinal: advance.ordinal!,
+        activeSlug: next!.slug,
+        state: 'running',
         closedStepNotes: closed,
         question: null,
         sessionId: context.session ?? row.session_id,
         takenOverFromMachineId: takeoverFromMachineId,
+        lastAdvancedMachineId: machineId(),
+        updatedAt: at,
+      },
+    },
+    obligationInserts,
+    obligationUpdates,
+    deleteTextIds,
+  }
+  const hosted = await writeHostedTaskFlow(
+    'advance',
+    payload,
+    taskFlowWriteTarget(row.project, d),
+    context.taskFlowClient,
+  )
+  await applyWorkflowAdvanceLocally({
+    row,
+    database: d,
+    at,
+    selfRulingPlan,
+    payload,
+    hosted,
+    client: context.taskFlowClient,
+  })
+}
+
+export async function writeFinishingWorkflowAdvance(input: {
+  row: SelectableCursorRow
+  closed: CursorTrailEntry[]
+  deleteTextIds: string[]
+  obligationPlan?: ReturnType<typeof appendWorkflowClose>
+  sessionId: string | null
+  takeoverFromMachineId?: string | null
+  database: Database
+  taskFlowClient?: WorkflowCursorContext['taskFlowClient']
+  selfRulingPlan?: Parameters<typeof recordWorkflowSelfRuling>[0]
+  at?: string
+}): Promise<void> {
+  const { row, database, closed, deleteTextIds } = input
+  const at = input.at ?? nowIso()
+  const flow = await selectClosingTaskFlow(row, database, input.taskFlowClient)
+  const closingFlow = flow?.open_stage_cursor_record_id === row.record_id ? flow : null
+  const { parts, obligationInserts, obligationUpdates } = advanceRecordRows(
+    row,
+    closingFlow,
+    input.obligationPlan ?? {},
+  )
+  const payload: TaskFlowIntentInput<'advance'> = {
+    requestId: taskFlowRequestId('advance', parts),
+    stage: {
+      id: row.record_id,
+      expectedRevision: row.revision,
+      values: {
+        arguments: JSON.parse(row.args) as Record<string, string>,
+        activeOrdinal: row.ordinal,
+        activeSlug: row.step_slug,
+        state: 'done',
+        closedStepNotes: closed,
+        question: null,
+        sessionId: input.sessionId,
+        takenOverFromMachineId: input.takeoverFromMachineId,
         lastAdvancedMachineId: machineId(),
         updatedAt: at,
       },
@@ -561,17 +634,17 @@ async function persistWorkflowAdvance(
   const hosted = await writeHostedTaskFlow(
     'advance',
     payload,
-    taskFlowWriteTarget(row.project, d),
-    context.taskFlowClient,
+    taskFlowWriteTarget(row.project, database),
+    input.taskFlowClient,
   )
   await applyWorkflowAdvanceLocally({
     row,
-    database: d,
+    database,
     at,
-    selfRulingPlan,
+    selfRulingPlan: input.selfRulingPlan,
     payload,
     hosted,
-    client: context.taskFlowClient,
+    client: input.taskFlowClient,
   })
 }
 

@@ -28,9 +28,9 @@ import {
   taskFlowReadStore,
 } from '../workflow/task-flow-store.ts'
 import { hasAbsentTreeTeardownPlanWithRegisteredRemoveCommand } from '../worktree/worktree-remove.ts'
+import { releaseSessionCursors } from './session-close-out-cursors.ts'
 import {
   classifySessionCloseOut,
-  classifySessionCursor,
   classifyUnreadableProject,
   isLiveSessionRun,
   ownsUnreadableProjectWork,
@@ -733,29 +733,6 @@ function appendClassifiedProcessItems(
     report.process.push(processReportItem(inventory, item))
 }
 
-function appendCursorProcessItems(report: SessionCloseOutReport, cursors: readonly OpenCursor[]) {
-  for (const cursor of cursors) {
-    const disposition = classifySessionCursor({
-      state: cursor.state,
-      hasOpenQuestion: cursor.open_question_record_id !== null,
-    })
-    if (disposition === 'parked') {
-      report.parked.push(
-        `workflow cursor ${cursor.number}: awaiting recorded question ${cursor.open_question_record_id}`,
-      )
-      continue
-    }
-    const next = `${PLATFORM_SLUG} workflow next ${cursor.workflow_slug} --cursor ${cursor.number}`
-    const abandon = `${PLATFORM_SLUG} workflow abandon ${cursor.workflow_slug} --cursor ${cursor.number} --reason "<why>"`
-    report.process.push({
-      item: `workflow cursor ${cursor.number}`,
-      reason: `cursor is ${cursor.state}`,
-      evidence: cursor.record_id,
-      remedy: `${next}, or ${abandon}`,
-    })
-  }
-}
-
 function appendArgumentProcesses(
   report: SessionCloseOutReport,
   inventory: GatheredSessionResources,
@@ -921,9 +898,9 @@ export async function releaseSessionResources(
     writeWorked: resume && !dryRun,
   })
   const final = await finalSessionInventory(initial, database, session, dryRun)
+  await releaseSessionCursors({ session, dryRun, cursors: final.cursors, database, report })
   appendObservationFailures(report, final, final.observationErrors)
   appendClassifiedProcessItems(report, final)
-  appendCursorProcessItems(report, final.cursors)
   report.process.push(...(await sessionCloseOutObligationItems(database, session, final.runs)))
   appendArgumentProcesses(report, final)
   const plannedRunRoots = new Set(

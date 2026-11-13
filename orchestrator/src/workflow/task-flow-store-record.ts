@@ -611,6 +611,9 @@ class RecordTaskFlowReadStore {
   openStagesForSession(sessionId: string) {
     return this.local.openStagesForSession(sessionId)
   }
+  keylessSessionCursors(project: string | null) {
+    return this.local.keylessSessionCursors(project)
+  }
   openWorkflowQuestionCountForSession(sessionId: string) {
     return this.local.openWorkflowQuestionCountForSession(sessionId)
   }
