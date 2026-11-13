@@ -4,9 +4,12 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ReviewSettings } from '../project/project-injection.ts'
 import { ceilingWaivableGaps } from '../pull-request/triage-decision.ts'
-import { applicableReview, lensesSelectingPaths } from '../review/review-applicability.ts'
+import {
+  applicableReview,
+  isDecisionConformanceNotAdmittedReason,
+  lensesSelectingPaths,
+} from '../review/review-applicability.ts'
 import type { TriageReviewRow } from '../review/review-group.ts'
-import { isDecisionConformanceNotAdmittedReason } from '../review/review-lens-dispatch-reason.ts'
 import {
   type LensProvenanceSubjectFacts,
   lensProvenanceSubject,

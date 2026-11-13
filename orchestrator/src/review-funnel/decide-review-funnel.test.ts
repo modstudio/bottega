@@ -422,7 +422,7 @@ describe('decideReviewFunnel', () => {
     const verdict = decideReviewFunnel(
       facts({
         review: {
-          ...facts().review,
+          ...facts().review!,
           secondOpinion: { lens: 'correctness', basis: 'independent evidence' },
         },
         branchReviews: [{ ...admitted, lensIdentities: ['correctness', 'craft'] }],
