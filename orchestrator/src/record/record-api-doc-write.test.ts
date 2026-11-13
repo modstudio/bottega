@@ -3,12 +3,12 @@ import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
-  identity,
   idleRecordApiDeps,
   idleSubjectDeps,
 } from '../../test/fixtures/record-api.ts'
 import { noDestinationWriteTestDeps } from '../../test/fixtures/record-api-app.ts'
 import { recordApi } from './record-api.ts'
+import { identity } from './record-api-identity.fixture.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
   applyRecordSettingsPermission,

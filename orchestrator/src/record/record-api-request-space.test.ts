@@ -2,12 +2,9 @@ import { expect, test } from 'bun:test'
 import { Hono } from 'hono'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { recordWriteSpaceRefusal } from '../../../shared/record-remedies.ts'
-import {
-  identity as fixtureIdentity,
-  idleRecordApiDeps,
-  idleSubjectDeps,
-} from '../../test/fixtures/record-api.ts'
+import { idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
 import { recordApiTestApp } from '../../test/fixtures/record-api-app.ts'
+import { identity as fixtureIdentity } from './record-api-identity.fixture.ts'
 import { registerRecordRequestSpace } from './record-api-request-space.ts'
 import type { RecordIdentity } from './record-auth.ts'
 

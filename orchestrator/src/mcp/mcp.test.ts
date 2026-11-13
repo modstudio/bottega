@@ -11,7 +11,6 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { RECORD_SHAPES } from '../../../shared/record-shape.ts'
 import {
   createMemoryRecordApiClient,
-  identity,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import {
@@ -26,6 +25,7 @@ import { type Project, removeProject, upsertProject } from '../project/projects.
 import { rememberProjectSpace } from '../project-space-cache.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
+import { identity } from '../record/record-api-identity.fixture.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
 import {
   type HostedTaskFlow,
