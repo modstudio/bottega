@@ -128,13 +128,9 @@ async function localRecord(
     !registered ||
     registered.revokedAt !== null ||
     registered.userId !== who.user.id ||
+    !registered.publicKey ||
     !registered.signingPublicKey ||
-    !bytesEqual(
-      registered.publicKey
-        ? new Uint8Array(Buffer.from(registered.publicKey, 'base64url'))
-        : pair.publicKey,
-      pair.publicKey,
-    ) ||
+    !bytesEqual(new Uint8Array(Buffer.from(registered.publicKey, 'base64url')), pair.publicKey) ||
     !bytesEqual(registered.signingPublicKey, signing.publicKey)
   )
     throw new Error(
@@ -217,22 +213,23 @@ async function acceptDone(
   const head = decodeMachineJoinDone(
     openMachineJoinMessage(session, 'approver', selected.spaceId, nameplate, 'done', done.body),
   )
+  if (head) {
+    const state = verifyTrustLog(
+      await ports.client.readTrustLog({ destinationSpaceId: selected.spaceId }),
+      { spaceId: selected.spaceId, rememberedHead: remembered },
+    )
+    const trustedOwn = state.keys.get(own.keyId)
+    if (
+      !trustedOwn ||
+      !bytesEqual(trustedOwn.publicKey, own.publicKey) ||
+      !bytesEqual(trustedOwn.signingPublicKey, own.signingPublicKey)
+    )
+      throw new Error('the approved machine is absent from the verified machine trust log')
+    if (!bytesEqual(state.head, head))
+      throw new Error('the approval head differs from the record trust-log head')
+    writeRememberedTrustLogHead(selected.spaceId, state.head, ports.env)
+  }
   await pinTrustedMachine(approver.keyId, approver.publicKey, approver.label, ports.env)
-  if (!head) return
-  const state = verifyTrustLog(
-    await ports.client.readTrustLog({ destinationSpaceId: selected.spaceId }),
-    { spaceId: selected.spaceId, rememberedHead: remembered },
-  )
-  const trustedOwn = state.keys.get(own.keyId)
-  if (
-    !trustedOwn ||
-    !bytesEqual(trustedOwn.publicKey, own.publicKey) ||
-    !bytesEqual(trustedOwn.signingPublicKey, own.signingPublicKey)
-  )
-    throw new Error('the approved machine is absent from the verified machine trust log')
-  if (!bytesEqual(state.head, head))
-    throw new Error('the approval head differs from the record trust-log head')
-  writeRememberedTrustLogHead(selected.spaceId, state.head, ports.env)
 }
 
 async function verifiedJoiner(
@@ -417,7 +414,7 @@ export async function machineApprove(
     : null
   if (initial && !initial.keys.has(record.keyId))
     throw new Error(
-      `this machine is not trusted by the space machine trust log; have an owner approve it from an approved machine before retrying \`${PLATFORM_SLUG} machine config machine revoke\``,
+      `this machine is not trusted by the space machine trust log; have an owner approve it from an approved machine before retrying \`${PLATFORM_SLUG} machine approve\``,
     )
   const side = crypto.getRandomValues(new Uint8Array(16))
   const ownSide = sideText(side)

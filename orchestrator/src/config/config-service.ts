@@ -112,8 +112,8 @@ export function planRotation(
   }
 }
 
-async function identity(client: ConfigClient) {
-  return hostedIdentity(client)
+async function identity(client: ConfigClient, env: ConfigEnvironment = process.env) {
+  return hostedIdentity(client, readHostedConfigIdentity(env))
 }
 
 async function unpinServerRevoked(client: ConfigClient, destination: ConfigDestination = {}) {
@@ -142,9 +142,10 @@ async function wrapsFor(
   trust: TrustList,
   client: ConfigClient,
   destinationSpaceId?: string,
+  env: ConfigEnvironment = process.env,
 ) {
-  const machine = await localMachine()
-  const spaceId = destinationSpaceId ?? (await identity(client)).spaceId
+  const machine = await localMachine(env)
+  const spaceId = destinationSpaceId ?? (await identity(client, env)).spaceId
   return wrapsForRecipients(
     dek,
     { spaceId, dekId, dekVersion: version },
@@ -302,6 +303,7 @@ export async function machineTrust(
       keys,
       selected.spaceId,
       destination,
+      env,
     )
     if (rotated) return
     const wrapped = await wrapDataKey({
@@ -336,6 +338,7 @@ async function rotateDataKey(
   rotate: boolean,
   selectedSpaceId?: string,
   destination: ConfigDestination = {},
+  env: ConfigEnvironment = process.env,
 ): Promise<{ key: DataKey; dek: Uint8Array; completed: string[]; rotated: boolean }> {
   let current = currentBefore
   let dek: Uint8Array
@@ -347,7 +350,7 @@ async function rotateDataKey(
       {
         dekId,
         version,
-        wraps: await wrapsFor(dek, dekId, version, trust, client, selectedSpaceId),
+        wraps: await wrapsFor(dek, dekId, version, trust, client, selectedSpaceId, env),
       },
       destination,
     )
@@ -359,7 +362,9 @@ async function rotateDataKey(
   const plan = planRotation(rows, current, await client.listDataKeys(destination))
   const completed: string[] = []
   try {
-    const who = await identity(client)
+    const who = selectedSpaceId
+      ? { spaceId: selectedSpaceId, userId: (await client.whoami()).user.id }
+      : await identity(client, env)
     for (const row of plan.reseal) {
       const plaintext = await openHostedSecretRow(
         client,
@@ -411,15 +416,17 @@ async function rotateAfterLatestRevocation(
   remote: readonly { revokedAt: string | null }[],
   selectedSpaceId?: string,
   destination: ConfigDestination = {},
+  env: ConfigEnvironment = process.env,
 ) {
   return rotateDataKey(
     client,
     machine,
     current,
-    await readTrustList(),
+    await readTrustList(env),
     shouldRotateAfterRevocation(current, remote),
     selectedSpaceId,
     destination,
+    env,
   )
 }
 

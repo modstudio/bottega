@@ -1,5 +1,39 @@
 import { expect, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { configClient, type ConfigClient } from '../../shared/config-client.ts'
+import {
+  CONFIG_HOME_ENV,
+  HARNESS_ENV_FILE_ENV,
+  type ConfigEnvironment,
+} from '../../shared/config-directory.ts'
+import { openHostedSecret } from '../../shared/hosted-secret-opening.ts'
+import { KEYSTORE_ENV } from '../../shared/key-store-constants.ts'
+import { machineKeyId } from '../../shared/machine-key-id.ts'
+import { readMachineKey } from '../../shared/machine-key-store.ts'
+import {
+  generateMachineSigningKeyPair,
+  readMachineSigningKey,
+} from '../../shared/machine-signing-key.ts'
+import {
+  formatPairingCode,
+  generatePairingCode,
+  parsePairingCode,
+} from '../../shared/pairing-code.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
+import {
+  generateDataKey,
+  generateMachineKeyPair,
+  sealValue,
+  wrapDataKey,
+} from '../../shared/secret-envelope.ts'
+import { readTrustList } from '../../shared/trust-list.ts'
+import { signTrustLogEntry, trustLogEntryHash, type TrustLogKey } from '../../shared/trust-log.ts'
+import { writeRememberedTrustLogHead } from '../../shared/trust-log-head.ts'
+import { machineInit } from '../src/config/config-service.ts'
+import { encoded } from '../src/config/data-key-access.ts'
+import { machineApprove, machineJoin } from '../src/config/machine-join.ts'
 import { bearerHeaders } from '../src/record/record-auth.ts'
 
 type ProofInput = {
@@ -9,6 +43,23 @@ type ProofInput = {
   userId(): string
   otherUserId(): string
   succeeds(source: string): string
+}
+
+type ProofMachine = {
+  client: ConfigClient
+  env: ConfigEnvironment
+  key: NonNullable<ReturnType<typeof readMachineKey>>
+  signing: NonNullable<ReturnType<typeof readMachineSigningKey>>
+  keyId: string
+  label: string
+}
+
+type ServiceFixture = {
+  approver: ProofMachine
+  joiner: ProofMachine
+  genesisHead: Uint8Array
+  selected: { spaceId: string; slug: string }
+  roots: string[]
 }
 
 const SIDE_A = '11111111111111111111111111111111'
@@ -165,6 +216,361 @@ export function registerMachineJoinProof(input: ProofInput): void {
         DELETE FROM membership WHERE space_id='${spaceId}';
         DELETE FROM space WHERE id='${spaceId}';
       `)
+    }
+  })
+
+  const machineEnv = (root: string): ConfigEnvironment => ({
+    [CONFIG_HOME_ENV]: root,
+    [HARNESS_ENV_FILE_ENV]: '',
+    [KEYSTORE_ENV]: 'file',
+    BOTTEGA_RECORD_API_URL: input.apiUrl(),
+  })
+
+  const deleteFixture = (fixture: ServiceFixture) => {
+    const { spaceId } = fixture.selected
+    input.succeeds(`
+      DELETE FROM config_secret WHERE space_id='${spaceId}';
+      DELETE FROM secret_dek_wrap WHERE space_id='${spaceId}';
+      DELETE FROM secret_dek WHERE space_id='${spaceId}';
+      DELETE FROM machine_key_claim_challenge WHERE space_id='${spaceId}';
+      DELETE FROM machine_join_message WHERE space_id='${spaceId}';
+      DELETE FROM machine_join_nameplate WHERE space_id='${spaceId}';
+      DELETE FROM machine_trust_log WHERE space_id='${spaceId}';
+      DELETE FROM machine_public_key WHERE space_id='${spaceId}';
+      DELETE FROM membership WHERE space_id='${spaceId}';
+      DELETE FROM space WHERE id='${spaceId}';
+    `)
+    for (const root of fixture.roots) rmSync(root, { recursive: true, force: true })
+  }
+
+  const setupFixture = async (suffix: string): Promise<ServiceFixture> => {
+    const spaceId = newRecordId()
+    const slug = `machine-join-service-${suffix}-${spaceId.slice(-6)}`
+    input.succeeds(`
+      INSERT INTO space (id,name,slug,created_at)
+      VALUES ('${spaceId}','Machine join service ${suffix}','${slug}',now());
+      INSERT INTO membership (id,space_id,user_id,role,permission,config_access,created_at) VALUES
+        ('${newRecordId()}','${spaceId}','${input.userId()}','owner','write',true,now()),
+        ('${newRecordId()}','${spaceId}','${input.otherUserId()}','member','write',true,now());
+    `)
+    const roots = [
+      mkdtempSync(join(tmpdir(), 'bottega-machine-approve-')),
+      mkdtempSync(join(tmpdir(), 'bottega-machine-join-')),
+    ]
+    const selected = { spaceId, slug }
+    const createMachine = async (
+      root: string,
+      token: string,
+      label: string,
+    ): Promise<ProofMachine> => {
+      const env = machineEnv(root)
+      const client = configClient(env, fetch, token)
+      const keyId = await machineInit(spaceId, label, client, env)
+      return {
+        client,
+        env,
+        key: readMachineKey(env)!,
+        signing: readMachineSigningKey(env)!,
+        keyId,
+        label,
+      }
+    }
+    const approver = await createMachine(roots[0]!, input.token(), `approver-${suffix}`)
+    const joiner = await createMachine(roots[1]!, input.otherToken(), `joiner-${suffix}`)
+    const genesis = signTrustLogEntry(
+      {
+        prev: null,
+        space: spaceId,
+        body: {
+          kind: 'genesis',
+          first: {
+            keyId: approver.keyId,
+            publicKey: approver.key.publicKey,
+            signingPublicKey: approver.signing.publicKey,
+            label: approver.label,
+          },
+          recoveryPublicKey: generateMachineSigningKeyPair().publicKey,
+        },
+        signer: approver.signing.publicKey,
+        at: 1,
+      },
+      approver.signing.privateKey,
+    )
+    const genesisHead = await approver.client.appendTrustLogEntry(null, genesis, {
+      destinationSpaceId: spaceId,
+    })
+    writeRememberedTrustLogHead(spaceId, genesisHead, approver.env)
+    return { approver, joiner, genesisHead, selected, roots }
+  }
+
+  const beginJoin = (fixture: ServiceFixture, at?: number | (() => number)) => {
+    let resolveCode!: (code: string) => void
+    const code = new Promise<string>((resolve) => {
+      resolveCode = resolve
+    })
+    let printed = false
+    const result = machineJoin(fixture.selected, {
+      client: fixture.joiner.client,
+      env: fixture.joiner.env,
+      pollMs: 10,
+      at,
+      output: (line) => {
+        if (!printed) {
+          printed = true
+          resolveCode(line)
+        }
+      },
+    })
+    return { code, result }
+  }
+
+  const approve = (fixture: ServiceFixture, code: string) =>
+    machineApprove(code, fixture.selected, {
+      client: fixture.approver.client,
+      env: fixture.approver.env,
+      pollMs: 10,
+    })
+
+  test('one machine approval lets the joining machine open an approver-sealed secret', async () => {
+    const fixture = await setupFixture('open')
+    try {
+      const destination = { destinationSpaceId: fixture.selected.spaceId }
+      const dek = generateDataKey()
+      const dekId = newRecordId()
+      const wrapped = await wrapDataKey({
+        dek,
+        wrapContext: { spaceId: fixture.selected.spaceId, dekId, dekVersion: 1 },
+        senderPrivateKey: fixture.approver.key.privateKey,
+        senderPublicKey: fixture.approver.key.publicKey,
+        recipientPublicKey: fixture.approver.key.publicKey,
+      })
+      await fixture.approver.client.createDataKey(
+        {
+          dekId,
+          version: 1,
+          wraps: [
+            {
+              recipientKeyId: fixture.approver.keyId,
+              senderKeyId: fixture.approver.keyId,
+              enc: encoded(wrapped.enc),
+              ciphertext: encoded(wrapped.ciphertext),
+            },
+          ],
+        },
+        destination,
+      )
+      const envelope = sealValue({
+        dek,
+        plaintext: new TextEncoder().encode('approved secret'),
+        valueContext: {
+          spaceId: fixture.selected.spaceId,
+          userId: null,
+          keyName: 'proof',
+          environment: 'default',
+          dekId,
+          rowVersion: 1,
+        },
+      })
+      await fixture.approver.client.putSecret('proof', {
+        ...destination,
+        scope: 'space',
+        environment: 'default',
+        dekId,
+        envelope: encoded(envelope),
+        expectedRowVersion: null,
+      })
+
+      const joining = beginJoin(fixture)
+      const code = await joining.code
+      const [joined, approved] = await Promise.all([joining.result, approve(fixture, code)])
+      expect(joined).toEqual({ label: fixture.approver.label, keyId: fixture.approver.keyId })
+      expect(approved).toEqual({ label: fixture.joiner.label, keyId: fixture.joiner.keyId })
+
+      const row = await fixture.joiner.client.getSecret('proof', 'space', 'default', destination)
+      const key = await fixture.joiner.client.getDataKey(dekId, fixture.joiner.keyId, destination)
+      const plaintext = await openHostedSecret({
+        row,
+        key,
+        machine: { ...fixture.joiner.key, keyId: fixture.joiner.keyId },
+        trust: await readTrustList(fixture.joiner.env),
+        expected: { key: 'proof', scope: 'space', environment: 'default' },
+        identity: { spaceId: fixture.selected.spaceId, userId: input.otherUserId() },
+      })
+      expect(new TextDecoder().decode(plaintext)).toBe('approved secret')
+    } finally {
+      deleteFixture(fixture)
+    }
+  })
+
+  test('an unapproved trust-log add is refused and wraps no data key', async () => {
+    const fixture = await setupFixture('untrusted-add')
+    try {
+      const untrusted = generateMachineSigningKeyPair()
+      const addedPair = await generateMachineKeyPair()
+      const added: TrustLogKey = {
+        keyId: await machineKeyId(addedPair.publicKey),
+        publicKey: addedPair.publicKey,
+        signingPublicKey: generateMachineSigningKeyPair().publicKey,
+        label: 'unapproved',
+      }
+      const entry = signTrustLogEntry(
+        {
+          prev: fixture.genesisHead,
+          space: fixture.selected.spaceId,
+          body: { kind: 'add', ...added },
+          signer: untrusted.publicKey,
+          at: 2,
+        },
+        untrusted.privateKey,
+      )
+      await fixture.approver.client.appendTrustLogEntry(fixture.genesisHead, entry, {
+        destinationSpaceId: fixture.selected.spaceId,
+      })
+      await expect(
+        machineJoin(fixture.selected, {
+          client: fixture.joiner.client,
+          env: fixture.joiner.env,
+          pollMs: 10,
+        }),
+      ).rejects.toThrow(/signer authority rule/)
+      expect(
+        input.succeeds(
+          `SELECT count(*) FROM secret_dek_wrap WHERE space_id='${fixture.selected.spaceId}' AND recipient_key_id='${fixture.joiner.keyId}';`,
+        ),
+      ).toBe('0')
+    } finally {
+      deleteFixture(fixture)
+    }
+  })
+
+  test('a wrong code rejects both machines, burns the nameplate, and pins neither peer', async () => {
+    const fixture = await setupFixture('wrong-code')
+    try {
+      const beforeApprover = await readTrustList(fixture.approver.env)
+      const beforeJoiner = await readTrustList(fixture.joiner.env)
+      const joining = beginJoin(fixture)
+      const code = await joining.code
+      const parsed = parsePairingCode(code)
+      const wrong = formatPairingCode({
+        nameplate: parsed.nameplate,
+        secret: Uint8Array.from(parsed.secret, (byte, index) => (index === 0 ? byte ^ 1 : byte)),
+      })
+      const [joinResult, approveResult] = await Promise.allSettled([
+        joining.result,
+        approve(fixture, wrong),
+      ])
+      expect(joinResult.status).toBe('rejected')
+      expect(approveResult.status).toBe('rejected')
+      if (joinResult.status === 'rejected')
+        expect(String(joinResult.reason)).toMatch(
+          /pairing exchange failed or expired|pairing code did not match/,
+        )
+      if (approveResult.status === 'rejected')
+        expect(String(approveResult.reason)).toMatch(
+          /pairing exchange failed or expired|pairing code did not match/,
+        )
+      const burned = await fetch(
+        `${input.apiUrl()}/v1/config/join/nameplates/${parsed.nameplate}/messages?side=${SIDE_C}`,
+        {
+          headers: {
+            ...Object.fromEntries(bearerHeaders(input.token())),
+            'x-record-space': fixture.selected.spaceId,
+          },
+        },
+      )
+      expect(burned.status).toBe(410)
+      expect(await readTrustList(fixture.approver.env)).toEqual(beforeApprover)
+      expect(await readTrustList(fixture.joiner.env)).toEqual(beforeJoiner)
+    } finally {
+      deleteFixture(fixture)
+    }
+  })
+
+  test('a third machine-join side is refused', async () => {
+    const fixture = await setupFixture('third-side')
+    try {
+      const destination = { destinationSpaceId: fixture.selected.spaceId }
+      const allocated = await fixture.approver.client.allocateMachineJoinNameplate(destination)
+      await fixture.approver.client.postMachineJoinMessage(
+        allocated.nameplate,
+        SIDE_A,
+        'pake-a',
+        new Uint8Array([1]),
+        destination,
+      )
+      await fixture.joiner.client.postMachineJoinMessage(
+        allocated.nameplate,
+        SIDE_B,
+        'pake-b',
+        new Uint8Array([2]),
+        destination,
+      )
+      await expect(
+        fixture.approver.client.postMachineJoinMessage(
+          allocated.nameplate,
+          SIDE_C,
+          'confirm-a',
+          new Uint8Array([3]),
+          destination,
+        ),
+      ).rejects.toMatchObject({ status: 409 })
+    } finally {
+      deleteFixture(fixture)
+    }
+  })
+
+  test('machine join refuses when its allocated nameplate is expired', async () => {
+    const fixture = await setupFixture('expired')
+    try {
+      const joining = beginJoin(fixture, Number.MAX_SAFE_INTEGER)
+      await joining.code
+      await expect(joining.result).rejects.toThrow('pairing code expired; start again')
+    } finally {
+      deleteFixture(fixture)
+    }
+  })
+
+  test('machine join refuses a trust-log fork after remembering an approved head', async () => {
+    const fixture = await setupFixture('fork')
+    try {
+      const joining = beginJoin(fixture)
+      const code = await joining.code
+      await Promise.all([joining.result, approve(fixture, code)])
+      const addedPair = await generateMachineKeyPair()
+      const replacement = signTrustLogEntry(
+        {
+          prev: fixture.genesisHead,
+          space: fixture.selected.spaceId,
+          body: {
+            kind: 'add',
+            keyId: await machineKeyId(addedPair.publicKey),
+            publicKey: addedPair.publicKey,
+            signingPublicKey: generateMachineSigningKeyPair().publicKey,
+            label: 'fork-tail',
+          },
+          signer: fixture.approver.signing.publicKey,
+          at: 3,
+        },
+        fixture.approver.signing.privateKey,
+      )
+      const replacementHash = trustLogEntryHash(replacement)
+      input.succeeds(`
+        DELETE FROM machine_trust_log WHERE space_id='${fixture.selected.spaceId}' AND seq=1;
+        INSERT INTO machine_trust_log (id,space_id,seq,hash,prev_hash,entry,created_at)
+        VALUES ('${newRecordId()}','${fixture.selected.spaceId}',1,
+          decode('${Buffer.from(replacementHash).toString('hex')}','hex'),
+          decode('${Buffer.from(fixture.genesisHead).toString('hex')}','hex'),
+          decode('${Buffer.from(replacement).toString('hex')}','hex'),now());
+      `)
+      await expect(
+        machineJoin(fixture.selected, {
+          client: fixture.approver.client,
+          env: fixture.approver.env,
+          pollMs: 10,
+        }),
+      ).rejects.toThrow(/trust log fork or rollback/)
+    } finally {
+      deleteFixture(fixture)
     }
   })
 }
