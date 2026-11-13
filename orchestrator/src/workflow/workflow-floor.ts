@@ -22,6 +22,7 @@ export const floorKinds = [
   'command-exit',
   'recorded-artifact',
   'tracker-transition',
+  'review-owed',
 ] as const
 export type FloorKind = (typeof floorKinds)[number]
 export type EnforcementMode = 'note-only' | 'floors'
@@ -33,6 +34,7 @@ export const floorGuidance = {
   'recorded-artifact':
     'record or attach the artifact and pass `--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | GitHub pull-request link>`',
   'tracker-transition': 'make the tracker transition and pass `--task <KEY>`',
+  'review-owed': `run \`${PLATFORM_SLUG} review tier <branch>\` and follow its remedy until no lens is owed`,
 } satisfies Record<FloorKind, string>
 
 export function evidenceGuidance(
@@ -201,6 +203,7 @@ export function flagForFloor(kind: FloorKind): string {
   if (kind === 'recorded-artifact')
     return '--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | GitHub pull-request link>'
   if (kind === 'tracker-transition') return '--task <KEY>'
+  if (kind === 'review-owed') return 'follow the remedy from `bottega review tier <branch>`'
   throw new Error(`unknown floor kind "${String(kind)}"`)
 }
 
@@ -969,7 +972,7 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
     return { action: 'refuse', message: bindingRefusal }
   const deferred = deferralOf(input.floors, input.evidence, met.length > 0)
   if ('action' in deferred) return deferred
-  if (met.length === 0 && !deferred.defer)
+  if (met.length === 0 && input.floors.length > 0 && !deferred.defer)
     return {
       action: 'refuse',
       message: unmetMessage(input.floors, input.evidence, input.freshRulingAfter),
