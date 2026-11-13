@@ -4,18 +4,17 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ReviewSettings } from '../project/project-injection.ts'
 import { ceilingWaivableGaps } from '../pull-request/triage-decision.ts'
-import { applicableReview, lensesSelectingPaths } from '../review/review-applicability.ts'
+import {
+  applicableReview,
+  lensesSelectingPaths,
+  selectReviewApplicability,
+} from '../review/review-applicability.ts'
 import type { TriageReviewRow } from '../review/review-group.ts'
 import {
   type LensProvenanceSubjectFacts,
   lensProvenanceSubject,
 } from '../review/review-lens-provenance.ts'
-import {
-  type PostFixReviewFacts,
-  postFixReviewDecision,
-  type RebaseFileComparison,
-  rebaseCarryDecision,
-} from '../review/review-post-fix.ts'
+import { type PostFixReviewFacts, postFixReviewDecision } from '../review/review-post-fix.ts'
 import { reviewRoundBudgetDecision } from '../review/review-round-budget.ts'
 import {
   applicableRoundLensPlan,
@@ -23,6 +22,11 @@ import {
   roundLensFacts,
 } from '../review/review-round-lens-plan.ts'
 import { classifyReviewTier, type ReviewTierFile } from '../review/review-tier-classifier.ts'
+import {
+  REVIEW_LENS_SELECTION_REASON,
+  type ReviewLensOwedReason,
+  type ReviewLensSelectionReason,
+} from '../review/review-vocabulary.ts'
 import type { ReviewFunnelPolicy } from './review-funnel-policy.ts'
 
 type ReviewFunnelChangeIdentity = {
@@ -68,10 +72,6 @@ export type ReviewFunnelFacts = {
     architectReadRequired: boolean
     nonLensGaps: string[]
   }
-  rebase?: {
-    files: RebaseFileComparison[]
-    pathsByLens: Readonly<Record<string, readonly string[]>>
-  }
 }
 
 type ReviewFunnelLensStatus =
@@ -105,7 +105,7 @@ export type ReviewFunnelVerdict = {
     reasons: string[]
   }
   budget: { roundsUsed: number; ceiling: number; atCeiling: boolean }
-  lenses: { lens: string; status: ReviewFunnelLensStatus; reason: string }[]
+  lenses: { lens: string; status: ReviewFunnelLensStatus; reason: ReviewLensSelectionReason }[]
   next: { action: ReviewFunnelNextAction; lenses?: string[] }
   remedy: string
 }
@@ -119,30 +119,39 @@ const dispatchRemedy = (change: ReviewFunnelChangeIdentity, lenses: readonly str
   return `${PLATFORM_SLUG} run start review-lens --review ${change.branch} --key ${change.taskKey ?? '<task-key>'} --lens ${lens} "Review ${change.branch} with ${lens}."`
 }
 
+const reviewFunnelReasons = new Set<string>(REVIEW_LENS_SELECTION_REASON)
+
 function reasonForLens(input: {
   lens: string
-  plannedReason: string | undefined
+  status: ReviewFunnelLensStatus
+  plannedReason: ReviewLensSelectionReason | ReviewLensOwedReason | undefined
   postFix: ReturnType<typeof postFixReviewDecision>
-  provenanceMismatch: boolean
-}): string {
-  if (input.provenanceMismatch) return 'provenance-mismatch'
+  provenanceMismatch: ReviewLensOwedReason | undefined
+}): ReviewLensSelectionReason {
+  if (input.status === 'satisfied') return 'satisfied'
+  if (input.status === 'credited-by-read') return 'credited-by-read'
+  if (input.status === 'waived-at-ceiling') return 'waived-at-ceiling'
+  if (input.status === 'overridden') return 'overridden'
+  if (input.status === 'not-applicable') return 'not-applicable'
+  if (
+    input.provenanceMismatch === 'tree-mismatch' ||
+    input.provenanceMismatch === 'commit-mismatch'
+  )
+    return input.provenanceMismatch
   if (
     input.postFix.kind === 're-lens' &&
     Object.hasOwn(input.postFix.reOwedPathsByLens ?? {}, input.lens)
   )
     return 'rebase-changed-file'
-  return input.plannedReason ?? 'initial'
+  return input.plannedReason && reviewFunnelReasons.has(input.plannedReason)
+    ? (input.plannedReason as ReviewLensSelectionReason)
+    : 'initial'
 }
 
 function funnelPlan(facts: ReviewFunnelFacts) {
   const tier = classifyReviewTier({ files: facts.files, risk: facts.review?.risk })
-  const rebase = facts.rebase ? rebaseCarryDecision(facts.rebase) : null
-  const postFixFacts =
-    rebase && facts.postFix.completed
-      ? { ...facts.postFix, fixFiles: rebase.fixFiles, reOwedPathsByLens: rebase.reOwedPathsByLens }
-      : facts.postFix
   const postFix = postFixReviewDecision({
-    facts: postFixFacts,
+    facts: facts.postFix,
     tier: tier.tier,
     review: facts.review,
   })
@@ -157,12 +166,36 @@ function funnelPlan(facts: ReviewFunnelFacts) {
   })
   const fixPaths =
     postFix.kind === 're-lens' || postFix.kind === 'comparison-failed' ? postFix.fixPaths : []
-  const unbudgeted = applicableRoundLensPlan({
+  const planned = applicableRoundLensPlan({
     relevant,
     facts: roundFacts,
     postFix,
     fixPathsByLens: lensesSelectingPaths(fixPaths, facts.review),
   })
+  const recorded = new Set(roundFacts.completedLenses)
+  const admitted = new Set(facts.branchReviews.flatMap(({ lensIdentities }) => lensIdentities))
+  const unrecordedAdmitted = relevant.lenses.filter(
+    (lens) => admitted.has(lens) && !recorded.has(lens),
+  )
+  const roundLenses = relevant.lenses.filter(
+    (lens) => planned.round.lenses.includes(lens) || unrecordedAdmitted.includes(lens),
+  )
+  const admissionLenses = relevant.lenses.filter(
+    (lens) => planned.admissionRequired.lenses.includes(lens) || unrecordedAdmitted.includes(lens),
+  )
+  const unbudgeted = unrecordedAdmitted.length
+    ? {
+        ...planned,
+        round: {
+          ...selectReviewApplicability(relevant, roundLenses),
+          lensReasons: {
+            ...planned.round.lensReasons,
+            ...Object.fromEntries(unrecordedAdmitted.map((lens) => [lens, 'initial' as const])),
+          },
+        },
+        admissionRequired: selectReviewApplicability(relevant, admissionLenses),
+      }
+    : planned
   const identities = new Set(
     facts.rounds.flatMap((round) =>
       !round.landed && round.identity && lensProvenanceSubject(round.provenance).admissible
@@ -222,11 +255,7 @@ function lensVerdicts(facts: ReviewFunnelFacts, plan: ReturnType<typeof funnelPl
     ),
     overridden: new Set(facts.overriddenLenses),
   }
-  const provenanceMismatch = new Set(
-    Object.entries(plan.roundFacts.inadmissibleLenses ?? {}).flatMap(([lens, reason]) =>
-      reason === 'tree-mismatch' || reason === 'commit-mismatch' ? [lens] : [],
-    ),
-  )
+  const provenanceMismatch = plan.roundFacts.inadmissibleLenses ?? {}
   const names = new Set([
     ...plan.relevant.lenses,
     ...plan.roundFacts.completedLenses,
@@ -235,16 +264,20 @@ function lensVerdicts(facts: ReviewFunnelFacts, plan: ReturnType<typeof funnelPl
   ])
   return {
     sets,
-    lenses: [...names].map((lens) => ({
-      lens,
-      status: lensStatus(lens, sets, facts.readCreditsRound),
-      reason: reasonForLens({
+    lenses: [...names].map((lens) => {
+      const status = lensStatus(lens, sets, facts.readCreditsRound)
+      return {
         lens,
-        plannedReason: plan.unbudgeted.round.lensReasons?.[lens],
-        postFix: plan.postFix,
-        provenanceMismatch: provenanceMismatch.has(lens),
-      }),
-    })),
+        status,
+        reason: reasonForLens({
+          lens,
+          status,
+          plannedReason: plan.unbudgeted.round.lensReasons?.[lens],
+          postFix: plan.postFix,
+          provenanceMismatch: provenanceMismatch[lens],
+        }),
+      }
+    }),
   }
 }
 
@@ -272,9 +305,10 @@ function selectNextAction(input: {
   waiting: { lens: string } | undefined
   untriaged: { lens: string } | undefined
 }): ReviewFunnelVerdict['next'] {
-  if (input.dispatch.length) return { action: 'dispatch', lenses: input.dispatch }
   if (input.waiting) return { action: 'wait' }
   if (input.untriaged) return { action: 'triage' }
+  if (input.dispatch.length) return { action: 'dispatch', lenses: input.dispatch }
+  if (input.plan.budget.atCeiling && input.facts.ceilingRuling) return { action: 'admit' }
   const readRequired = input.plan.tier.tier === 0 || input.facts.admissionGap.architectReadRequired
   if (readRequired && !input.facts.exactRead) return { action: 'record-read' }
   const ceilingGap =
@@ -318,7 +352,6 @@ export function decideReviewFunnel(
   const plan = funnelPlan(facts)
   const evidence = lensVerdicts(facts, plan)
   const { next, remedy } = nextDecision(facts, plan, evidence)
-  const lowered = plan.tier.reasons.some((reason) => reason.includes('lowered risk'))
   return {
     policyVersion,
     mode: mode(policy),
@@ -327,8 +360,8 @@ export function decideReviewFunnel(
       tier: plan.tier.tier,
       risk: plan.tier.risk,
       size: plan.tier.size,
-      firm: plan.tier.size === 0 && plan.tier.risk > 0 && !lowered,
-      lowered,
+      firm: plan.tier.firm,
+      lowered: plan.tier.lowered,
       reasons: plan.tier.reasons,
     },
     budget: {

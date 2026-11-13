@@ -4,6 +4,11 @@
 import { z } from 'zod'
 import { getDoc } from '../doc/docs.ts'
 import { REVIEW_WINDOW } from '../review/review-evidence-sql.ts'
+import {
+  REVIEW_FILE_COUNT_BUMP,
+  REVIEW_SIZE_THRESHOLDS,
+  REVIEW_UNLISTED_RISK_DEFAULT,
+} from '../review/review-tier-classifier.ts'
 import { MIN_REVIEW_TRIAGED } from '../review/review-triage.ts'
 
 const modeSchema = z.enum(['evaluate', 'enforce'])
@@ -38,9 +43,9 @@ const reviewFunnelPolicySchema = z.strictObject({
 export type ReviewFunnelPolicy = z.infer<typeof reviewFunnelPolicySchema>
 
 export const DEFAULT_REVIEW_FUNNEL_POLICY: ReviewFunnelPolicy = {
-  sizeThresholds: [10, 50, 400],
-  fileCountBump: 8,
-  unlistedRisk: 2,
+  sizeThresholds: [...REVIEW_SIZE_THRESHOLDS],
+  fileCountBump: REVIEW_FILE_COUNT_BUMP,
+  unlistedRisk: REVIEW_UNLISTED_RISK_DEFAULT,
   ceiling: 'tier',
   laterRound: {
     minTier: 3,

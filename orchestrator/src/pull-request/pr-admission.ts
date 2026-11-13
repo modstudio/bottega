@@ -145,7 +145,7 @@ export function resolvePullRequestChange(
   }
 }
 
-function triageDecision(change: PullRequestChange, database: Database): TriageDecision {
+export function triageDecision(change: PullRequestChange, database: Database): TriageDecision {
   const reviews = reviewsForAdmission(database, change.group)
   const lineage = reviewLineage(database, change.project.name, change.branch)
   const grouped = new Map<string, TriageReviewRow[]>()
@@ -221,7 +221,11 @@ export function ceilingGuidanceForTier(input: {
   }
 }
 
-function overridesForChange(change: PullRequestChange, database: Database): AdmissionOverride[] {
+export function readLandingOverridesForBranch(
+  database: Database,
+  project: string,
+  branch: string,
+): AdmissionOverride[] {
   return database
     .query<
       {
@@ -243,11 +247,15 @@ function overridesForChange(change: PullRequestChange, database: Database): Admi
        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
          AND branch=? ORDER BY at DESC,record_id DESC`,
     )
-    .all(change.project.name, change.branch)
+    .all(project, branch)
     .map((row) => ({
       ...row,
       missingLenses: JSON.parse(row.missingLenses) as string[],
     }))
+}
+
+function overridesForChange(change: PullRequestChange, database: Database): AdmissionOverride[] {
+  return readLandingOverridesForBranch(database, change.project.name, change.branch)
 }
 
 function admissionChange(change: PullRequestChange) {

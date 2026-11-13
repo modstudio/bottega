@@ -13,13 +13,20 @@ export type ReviewTier = {
   deletions: number
   reasons: string[]
   riskBasis: string | null
+  firm: boolean
+  lowered: boolean
 }
 
 export type ReviewTierFile = { path: string; insertions: number; deletions: number }
 
+export const REVIEW_SIZE_THRESHOLDS = [10, 50, 400] as const
+export const REVIEW_FILE_COUNT_BUMP = 8
+export const REVIEW_UNLISTED_RISK_DEFAULT = 2
+
 /** The size-class thresholds shared by review classification and recorded-diff reports. */
 export function reviewTierSizeClass(productLines: number): 0 | 1 | 2 | 3 {
-  return productLines <= 10 ? 0 : productLines <= 50 ? 1 : productLines <= 400 ? 2 : 3
+  const [small, medium, large] = REVIEW_SIZE_THRESHOLDS
+  return productLines <= small ? 0 : productLines <= medium ? 1 : productLines <= large ? 2 : 3
 }
 
 type CompiledReviewRiskPath = Omit<ReviewRiskMap['paths'][number], 'pattern'> & {
@@ -88,7 +95,7 @@ function fileRisk(
   if (isReviewExcluded(path)) return null
   const kind = categorizeFile(path)
   if (kind !== 'product' || isOrdinaryConfig(path)) return null
-  const tier = declaredUnlisted ?? 2
+  const tier = declaredUnlisted ?? REVIEW_UNLISTED_RISK_DEFAULT
   const applied =
     declaredUnlisted === undefined
       ? 'fail-closed default risk 2 applied'
@@ -158,7 +165,7 @@ export function classifyReviewTier(input: {
   const productLines = insertions + deletions
   let size: 0 | 1 | 2 | 3 = reviewTierSizeClass(productLines)
   const reasons = [riskReason, `size ${size}: ${productLines} product lines`]
-  if (productFiles.length > 8 && size < 3) {
+  if (productFiles.length > REVIEW_FILE_COUNT_BUMP && size < 3) {
     size = (size + 1) as 1 | 2 | 3
     reasons[1] = `size ${size}: ${productLines} product lines across ${productFiles.length} product files (${REVIEW_FILE_COUNT_BUMP_REASON})`
   }
@@ -166,7 +173,17 @@ export function classifyReviewTier(input: {
   if (combined.lowered) {
     reasons.push(`tier ${combined.tier}: size 0 lowered risk ${risk} by one`)
   }
-  return { tier: combined.tier, risk, size, insertions, deletions, reasons, riskBasis }
+  return {
+    tier: combined.tier,
+    risk,
+    size,
+    insertions,
+    deletions,
+    reasons,
+    riskBasis,
+    firm,
+    lowered: combined.lowered,
+  }
 }
 
 /**

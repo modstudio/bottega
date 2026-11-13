@@ -57,6 +57,27 @@ export function latestArchitectRead(database: Database, project: string, branch:
   return row ? { tip: row.tip, note: row.note, recordedAt: row.recorded_at } : null
 }
 
+/** Whether the branch lineage contains an architect read of this exact measured change. */
+export function hasExactArchitectRead(
+  database: Database,
+  project: string,
+  branch: string,
+  patchId: string,
+  pathSet: string,
+): boolean {
+  const lineage = reviewLineage(database, project, branch)
+  return Boolean(
+    database
+      .query<{ found: number }, string[]>(
+        `SELECT 1 AS found FROM review_read
+          WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+            AND branch IN (${lineage.map(() => '?').join(',')})
+            AND patch_id=? AND path_set=? LIMIT 1`,
+      )
+      .get(project, ...lineage, patchId, pathSet),
+  )
+}
+
 export function requireBranchRunOwner(
   database: Database,
   project: string,

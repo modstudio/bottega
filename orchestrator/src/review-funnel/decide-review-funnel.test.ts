@@ -1,16 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { TriageReviewRow } from '../review/review-group.ts'
-import type { PerPathPatch } from '../review/review-post-fix.ts'
 import { decideReviewFunnel, type ReviewFunnelFacts } from './decide-review-funnel.ts'
 import { DEFAULT_REVIEW_FUNNEL_POLICY } from './review-funnel-policy.ts'
-
-const patch = (path: string, patchId: string): PerPathPatch => ({
-  path,
-  patchId,
-  insertions: 1,
-  deletions: 0,
-})
 
 const completedReview = (lens = 'correctness'): TriageReviewRow => ({
   reviewRecordId: 'review-prior',
@@ -166,9 +158,12 @@ describe('decideReviewFunnel', () => {
     expect(verdict.lenses.find(({ lens }) => lens === 'correctness')?.status).toBe(
       'waived-at-ceiling',
     )
+    expect(verdict.lenses.find(({ lens }) => lens === 'correctness')?.reason).toBe(
+      'waived-at-ceiling',
+    )
   })
 
-  test('rebase carry keeps covered lenses satisfied and a changed covered file drops credit', () => {
+  test('post-fix carry keeps covered lenses satisfied and a changed covered file drops credit', () => {
     const base = facts({
       branchReviews: [completedReview()],
       postFix: {
@@ -183,36 +178,14 @@ describe('decideReviewFunnel', () => {
         fixFiles: [],
       },
     })
-    const carried = decideReviewFunnel(
-      {
-        ...base,
-        rebase: {
-          files: [
-            {
-              path: 'src/new.ts',
-              replayed: patch('src/new.ts', 'same'),
-              current: patch('src/new.ts', 'same'),
-              conflicted: false,
-            },
-          ],
-          pathsByLens: { correctness: ['src/new.ts'] },
-        },
-      },
-      DEFAULT_REVIEW_FUNNEL_POLICY,
-    )
+    const carried = decideReviewFunnel(base, DEFAULT_REVIEW_FUNNEL_POLICY)
     const dropped = decideReviewFunnel(
       {
         ...base,
-        rebase: {
-          files: [
-            {
-              path: 'src/new.ts',
-              replayed: patch('src/new.ts', 'before'),
-              current: patch('src/new.ts', 'after'),
-              conflicted: true,
-            },
-          ],
-          pathsByLens: { correctness: ['src/new.ts'] },
+        postFix: {
+          ...base.postFix,
+          fixFiles: [{ path: 'src/new.ts', insertions: 1, deletions: 0 }],
+          reOwedPathsByLens: { correctness: ['src/new.ts'] },
         },
       },
       DEFAULT_REVIEW_FUNNEL_POLICY,
@@ -253,5 +226,138 @@ describe('decideReviewFunnel', () => {
       'credited-by-read',
     )
     expect(verdict.next.action).toBe('admit')
+  })
+
+  test('a running lens waits for its existing run', () => {
+    const verdict = decideReviewFunnel(
+      facts({
+        review: tierOneReview,
+        lensStates: [{ lens: 'correctness', runId: 'run-live', state: 'running' }],
+      }),
+      DEFAULT_REVIEW_FUNNEL_POLICY,
+    )
+    expect(verdict.lenses.find(({ lens }) => lens === 'correctness')?.status).toBe('running')
+    expect(verdict.next.action).toBe('wait')
+    expect(verdict.remedy).toBe(`${PLATFORM_SLUG} run wait run-live`)
+  })
+
+  test('an untriaged lens asks to score its existing run', () => {
+    const verdict = decideReviewFunnel(
+      facts({
+        review: tierOneReview,
+        lensStates: [{ lens: 'correctness', runId: 'run-untriaged', state: 'untriaged' }],
+      }),
+      DEFAULT_REVIEW_FUNNEL_POLICY,
+    )
+    expect(verdict.lenses.find(({ lens }) => lens === 'correctness')?.status).toBe('untriaged')
+    expect(verdict.next.action).toBe('triage')
+    expect(verdict.remedy).toBe(`${PLATFORM_SLUG} score run-untriaged ...`)
+  })
+
+  test('an overridden lens is not dispatched', () => {
+    const verdict = decideReviewFunnel(
+      facts({ review: tierOneReview, overriddenLenses: ['correctness'] }),
+      DEFAULT_REVIEW_FUNNEL_POLICY,
+    )
+    expect(verdict.lenses.find(({ lens }) => lens === 'correctness')).toMatchObject({
+      status: 'overridden',
+      reason: 'overridden',
+    })
+    expect(verdict.next.lenses ?? []).not.toContain('correctness')
+  })
+
+  test('DEV-2250: complete triage at the ceiling admits without asking for a ruling', () => {
+    const verdict = decideReviewFunnel(
+      facts({
+        files: [{ path: 'src/new.ts', insertions: 11, deletions: 0 }],
+        review: tierOneReview,
+        triageComplete: true,
+        admissionGap: {
+          unfinishedReviewNumbers: [],
+          undisposedFindings: [],
+          missingLenses: [],
+          architectReadRequired: false,
+          nonLensGaps: [],
+        },
+        rounds: [
+          {
+            reviewRecordId: 'prior-review',
+            identity: 'prior-round',
+            provenance: {
+              recorded: false,
+              treeInspected: null,
+              runTree: null,
+              reviewedCommit: null,
+              headCommit: null,
+            },
+            landed: false,
+          },
+        ],
+      }),
+      DEFAULT_REVIEW_FUNNEL_POLICY,
+    )
+    expect(verdict.next.action).toBe('admit')
+    expect(verdict.remedy).toBe(`${PLATFORM_SLUG} pr create`)
+  })
+
+  test('a recorded ceiling ruling clears the remaining ceiling gap', () => {
+    const verdict = decideReviewFunnel(
+      facts({
+        files: [{ path: 'src/new.ts', insertions: 11, deletions: 0 }],
+        review: tierOneReview,
+        ceilingRuling: true,
+        rounds: [
+          {
+            reviewRecordId: 'prior-review',
+            identity: 'prior-round',
+            provenance: {
+              recorded: false,
+              treeInspected: null,
+              runTree: null,
+              reviewedCommit: null,
+              headCommit: null,
+            },
+            landed: false,
+          },
+        ],
+      }),
+      DEFAULT_REVIEW_FUNNEL_POLICY,
+    )
+    expect(verdict.next.action).toBe('admit')
+    expect(verdict.remedy).toBe(`${PLATFORM_SLUG} pr create`)
+  })
+
+  test('DEV-2075: a test-only fix leaves only unrecorded admitted lenses owed', () => {
+    const admittedLenses = ['correctness', 'craft', 'security', 'performance']
+    const verdict = decideReviewFunnel(
+      facts({
+        review: {
+          ...facts().review,
+          lenses: admittedLenses.map((lens) => ({ lens, paths: ['src/**'] })),
+        },
+        branchReviews: [completedReview('correctness'), completedReview('craft')].map((review) => ({
+          ...review,
+          lensIdentities: admittedLenses,
+        })),
+        postFix: {
+          completed: {
+            number: 1,
+            identity: 'prior-round',
+            launchKey: null,
+            runIds: ['run-correctness', 'run-craft'],
+            pathsByLens: {
+              correctness: ['src/new.ts'],
+              craft: ['src/new.ts'],
+              security: ['src/new.ts'],
+              performance: ['src/new.ts'],
+            },
+          },
+          reviewedTip: 'prior-tip',
+          fixFiles: [{ path: 'src/new.test.ts', insertions: 1, deletions: 0 }],
+        },
+      }),
+      DEFAULT_REVIEW_FUNNEL_POLICY,
+    )
+    expect(verdict.next).toEqual({ action: 'dispatch', lenses: ['security', 'performance'] })
   })
 })

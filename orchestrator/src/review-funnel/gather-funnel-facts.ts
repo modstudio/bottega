@@ -2,7 +2,14 @@
 /** Gathers repository and store facts for one review-funnel decision. */
 
 import type { Database } from 'bun:sqlite'
+import { readLandedReviewIds } from '../branch/branch-landing-records.ts'
 import type { Project } from '../project/projects.ts'
+import {
+  readLandingOverridesForBranch,
+  resolvePullRequestChange,
+  triageDecision,
+} from '../pull-request/pr-admission.ts'
+import { ceilingTriageFacts } from '../pull-request/triage-decision.ts'
 import {
   provenanceSubjectFacts,
   reviewsForTriage,
@@ -12,6 +19,7 @@ import {
 import { reviewLineage } from '../review/review-lineage-store.ts'
 import { measureChangeIdentity } from '../review/review-pins.ts'
 import { gatherPostFixReviewFacts } from '../review/review-post-fix.ts'
+import { hasExactArchitectRead } from '../review/review-read.ts'
 import {
   currentReviewRoundIdentity,
   eligibleReviewRoundRows,
@@ -38,29 +46,12 @@ export type ReviewFunnelChange = {
   project: Project
 }
 
-function landedReviewIds(database: Database, project: string): Set<string> {
-  const rows = database
-    .query<{ review_record_id: string }, [string]>(
-      `SELECT DISTINCT CAST(item.value AS TEXT) AS review_record_id
-         FROM landing_triage_snapshot snapshot
-         JOIN branch_landing_record landing
-           ON landing.project_record_id=snapshot.project_record_id
-          AND landing.branch=snapshot.branch
-          AND landing.pr_number=snapshot.pr_number
-         JOIN json_each(snapshot.review_record_ids) item
-        WHERE snapshot.project_record_id=(SELECT record_id FROM project WHERE name=?)
-          AND landing.merged_at IS NOT NULL`,
-    )
-    .all(project)
-  return new Set(rows.map(({ review_record_id }) => review_record_id))
-}
-
 function reviewRoundFacts(
   database: Database,
   project: string,
   branch: string,
 ): ReviewFunnelRoundFact[] {
-  const landed = landedReviewIds(database, project)
+  const landed = readLandedReviewIds(database, project)
   return eligibleReviewRoundRows(database, undefined, { project, branch }).map((row) => ({
     reviewRecordId: row.review_record_id,
     identity: reviewRoundIdentity(row).identity,
@@ -87,49 +78,21 @@ function liveLensStates(
     .map((row) => ({ lens: row.lens, runId: row.record_id, state: 'running' as const }))
 }
 
-function exactRead(
-  database: Database,
-  project: string,
-  branch: string,
-  patchId: string,
-  pathSet: string,
-): boolean {
-  const lineage = reviewLineage(database, project, branch)
-  return Boolean(
-    database
-      .query<{ found: number }, string[]>(
-        `SELECT 1 AS found FROM review_read
-          WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-            AND branch IN (${lineage.map(() => '?').join(',')})
-            AND patch_id=? AND path_set=? LIMIT 1`,
-      )
-      .get(project, ...lineage, patchId, pathSet),
-  )
-}
-
 function overrideFacts(
   database: Database,
   change: { project: string; branch: string; patchId: string; pathSet: string },
 ): { ceilingRuling: boolean; overriddenLenses: string[] } {
-  const row = database
-    .query<{ attribution: string; missing_lenses: string }, [string, string, string, string]>(
-      `SELECT attribution,missing_lenses FROM landing_override
-        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-          AND branch=? AND patch_id=? AND path_set=?
-        ORDER BY at DESC,record_id DESC LIMIT 1`,
-    )
-    .get(change.project, change.branch, change.patchId, change.pathSet)
+  const row = readLandingOverridesForBranch(database, change.project, change.branch).find(
+    ({ patchId, pathSet }) => patchId === change.patchId && pathSet === change.pathSet,
+  )
   if (!row) return { ceilingRuling: false, overriddenLenses: [] }
   return {
     ceilingRuling: row.attribution === 'architect-ceiling',
-    overriddenLenses: JSON.parse(row.missing_lenses) as string[],
+    overriddenLenses: row.missingLenses,
   }
 }
 
-function completionFacts(
-  branchReviews: ReturnType<typeof reviewsForTriage>['branchReviews'],
-  exactReviews: ReturnType<typeof reviewsForTriage>['reviews'],
-) {
+function completionFacts(branchReviews: ReturnType<typeof reviewsForTriage>['branchReviews']) {
   const incomplete = branchReviews.filter(({ completedAt }) => completedAt === null)
   const untriaged: ReviewFunnelLensState[] = incomplete.flatMap((review) =>
     review.lenses.flatMap((lens) =>
@@ -138,18 +101,8 @@ function completionFacts(
         : [],
     ),
   )
-  const undisposed = (rows: typeof branchReviews) =>
-    rows.flatMap((review) =>
-      review.findings.flatMap((finding) =>
-        finding.disposition === null
-          ? [{ reviewNumber: review.reviewNumber, ordinal: finding.ordinal }]
-          : [],
-      ),
-    )
   return {
     untriaged,
-    exactIncomplete: exactReviews.filter(({ completedAt }) => completedAt === null),
-    exactUndisposedFindings: undisposed(exactReviews),
     hasCompletedRound: branchReviews.some(
       ({ completedAt, tier }) => completedAt !== null && tier !== null,
     ),
@@ -179,8 +132,8 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
     project: change.project.name,
     branch: change.branch,
   })
-  const completion = completionFacts(reviews.branchReviews, reviews.reviews)
-  const read = exactRead(
+  const completion = completionFacts(reviews.branchReviews)
+  const read = hasExactArchitectRead(
     change.database,
     change.project.name,
     change.branch,
@@ -193,6 +146,11 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
     patchId: identity.patchId,
     pathSet,
   })
+  const admission = triageDecision(
+    resolvePullRequestChange(change.cwd, change.head, change.database, undefined, change.branch),
+    change.database,
+  )
+  const admissionGap = ceilingTriageFacts(admission)
   return {
     change: {
       project: change.project.name,
@@ -219,17 +177,13 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
     exactRead: read,
     readCreditsRound: read && completion.hasCompletedRound,
     ...overrides,
-    triageComplete:
-      read ||
-      (reviews.reviews.length > 0 &&
-        completion.exactIncomplete.length === 0 &&
-        completion.exactUndisposedFindings.length === 0),
+    triageComplete: admission.complete,
     admissionGap: {
-      unfinishedReviewNumbers: completion.exactIncomplete.map(({ reviewNumber }) => reviewNumber),
-      undisposedFindings: completion.exactUndisposedFindings,
-      missingLenses: [],
-      architectReadRequired: completion.hasCompletedRound && !read,
-      nonLensGaps: [],
+      unfinishedReviewNumbers: [...admissionGap.unfinishedReviewNumbers],
+      undisposedFindings: [...admissionGap.undisposedFindings],
+      missingLenses: [...admissionGap.missingLenses],
+      architectReadRequired: admissionGap.architectReadRequired,
+      nonLensGaps: [...admissionGap.nonLensGaps],
     },
   }
 }
