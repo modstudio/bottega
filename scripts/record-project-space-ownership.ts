@@ -146,6 +146,11 @@ export const RECORD_PROJECT_SPACE_OWNERSHIP = [
     kind: 'space',
     reason: 'space machine authorization',
   },
+  {
+    table: 'machine_trust_log',
+    kind: 'space',
+    reason: 'space machine trust history',
+  },
   { table: 'machine_name_claim', kind: 'space', reason: 'space machine name reservation' },
   { table: 'membership', kind: 'space', reason: 'space membership' },
   {

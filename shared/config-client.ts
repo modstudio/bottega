@@ -128,6 +128,24 @@ export type ConfigCallOutcomeRecorder = (observation: ConfigCallObservation) => 
 
 function configAuthorizationClient(request: Request) {
   return {
+    readTrustLog: (destination: ConfigDestination = {}) =>
+      request<{ entries: string[] }>('/v1/config/trust-log', destination).then((result) =>
+        result.entries.map((entry) => new Uint8Array(Buffer.from(entry, 'base64url'))),
+      ),
+    appendTrustLogEntry: (
+      expectedHead: Uint8Array | null,
+      entry: Uint8Array,
+      destination: ConfigDestination = {},
+    ) =>
+      request<{ hash: string }>('/v1/config/trust-log', {
+        ...destination,
+        method: 'POST',
+        body: JSON.stringify({
+          expectedHead:
+            expectedHead === null ? null : Buffer.from(expectedHead).toString('base64url'),
+          entry: Buffer.from(entry).toString('base64url'),
+        }),
+      }).then((result) => new Uint8Array(Buffer.from(result.hash, 'base64url'))),
     createMachineKeyClaimChallenge: (keyId: string, destination: ConfigDestination = {}) =>
       request<{ challengeId: string; enc: string; ciphertext: string; senderPublicKey: string }>(
         `/v1/config/machine-keys/${keyId}/claim-challenge`,

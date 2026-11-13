@@ -88,4 +88,8 @@ export type RecordConfigRouteDeps = {
     },
   ): Promise<MachineKey>
   revokeMachineKey(input: Tenant & { keyId: string }): Promise<void>
+  readMachineTrustLog(input: Tenant): Promise<Uint8Array[]>
+  appendMachineTrustLogEntry(
+    input: Tenant & { expectedHead: Uint8Array | null; entry: Uint8Array },
+  ): Promise<Uint8Array>
 }

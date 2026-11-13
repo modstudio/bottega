@@ -241,6 +241,7 @@ async function rotationFixture(
       const found = machines.find((item) => item.keyId === id)!
       found.revokedAt = '2026-06-01T00:00:00.000Z'
     },
+    readTrustLog: async () => [],
   } as unknown as ConfigClient
   return {
     client,

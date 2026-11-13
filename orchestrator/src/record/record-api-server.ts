@@ -95,6 +95,7 @@ import {
   upsertRecordLensProfile,
 } from './record-lens-catalogue.ts'
 import { listMachineKeys, registerMachineKey } from './record-machine-key-registration.ts'
+import { appendMachineTrustLogEntry, readMachineTrustLog } from './record-machine-trust-log.ts'
 import { setSpaceMemberPermission } from './record-member-permission.ts'
 import { hideRow, listHidden, unhideRow } from './record-moderation-hide.ts'
 import {
@@ -477,6 +478,8 @@ async function serveRecordApiWithAuth(
     deleteDataKeyWraps,
     listMachineKeys,
     registerMachineKey,
+    readMachineTrustLog,
+    appendMachineTrustLogEntry,
     createMachineKeyClaimChallenge,
     claimMachineKey,
     revokeMachineKey,

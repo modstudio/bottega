@@ -217,6 +217,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       '../postgres/postgres-migrate.ts',
       './record-config.ts',
       './record-machine-key-registration.ts',
+      './record-machine-trust-log.ts',
       './record-credential.ts',
       './record-member-permission.ts',
       './record-api.ts',

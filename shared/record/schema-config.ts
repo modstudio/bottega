@@ -10,6 +10,7 @@ import {
   integer,
   pgPolicy,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -310,6 +311,32 @@ export const machinePublicKey = pgTable.withRLS(
       withCheck: sql`true`,
     }),
   ],
+)
+
+export const machineTrustLog = pgTable.withRLS(
+  'machine_trust_log',
+  {
+    spaceId: spaceIdentity(),
+    seq: integer().notNull(),
+    hash: bytea().notNull(),
+    prevHash: bytea('prev_hash'),
+    entry: bytea().notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => {
+    const [selectPolicy, insertPolicy] = tenantPolicies('machine_trust_log', table.spaceId)
+    return [
+      primaryKey({ columns: [table.spaceId, table.seq] }),
+      unique('machine_trust_log_space_hash_unique').on(table.spaceId, table.hash),
+      check('machine_trust_log_hash_length_check', sql`octet_length(${table.hash}) = 32`),
+      check(
+        'machine_trust_log_prev_hash_check',
+        sql`(${table.seq} = 0 AND ${table.prevHash} IS NULL) OR (${table.seq} > 0 AND octet_length(${table.prevHash}) = 32)`,
+      ),
+      selectPolicy!,
+      insertPolicy!,
+    ]
+  },
 )
 
 export const machineKeyClaimChallenge = pgTable.withRLS(
