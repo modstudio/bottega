@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   decideStopSummary,
   OWED_ITEM_OVERDUE_MS,
@@ -15,7 +15,6 @@ const facts = (overrides: Partial<StopSummaryFacts> = {}): StopSummaryFacts => (
   incompleteReviews: 0,
   inFlightLandings: 0,
   owedItems: [],
-  notes: [],
   previousBlockKey: null,
   ...overrides,
 })
@@ -101,24 +100,5 @@ describe('Stop summary decision', () => {
     )
     expect(shrunk.block).toBe(true)
     expect(shrunk.lines.at(-1)).toContain('run 13 review DEV-2297 unscored')
-  })
-
-  test('notes print after owed lines but never block or enter the block key', () => {
-    const note = {
-      label: 'note handoff-summary not handed over',
-      command: `${PLATFORM_SLUG} board post --audience architects:${PLATFORM_NAME} (see ${PLATFORM_SLUG} board post --help)`,
-    }
-    const onlyNote = decideStopSummary(facts({ notes: [note] }))
-    expect(onlyNote).toEqual({
-      lines: ['Nothing waiting on you', `${note.label} → ${note.command}`],
-      block: false,
-      reason: null,
-      blockKey: null,
-    })
-
-    const withoutNote = decideStopSummary(facts({ owedItems: [owed()] }))
-    const withNote = decideStopSummary(facts({ owedItems: [owed()], notes: [note] }))
-    expect(withNote.blockKey).toBe(withoutNote.blockKey)
-    expect(withNote.lines.at(-1)).toBe(`${note.label} → ${note.command}`)
   })
 })

@@ -60,30 +60,6 @@ def cleanup(ids, deadline):
         )
 
 
-def actionable_notes(ids, deadline):
-    command = [bottega_bin(), "note", "list"]
-    for value in ids:
-        command.extend(["--session", value])
-    command.extend(["--actionable", "--json"])
-    try:
-        remaining = max(0, deadline - time.monotonic())
-        if remaining <= 0:
-            return []
-        result = subprocess.run(
-            command, capture_output=True, text=True, timeout=min(5, remaining), check=True
-        )
-        rows = json.loads(result.stdout)
-        return [
-            {"label": row["label"], "project": row["project"],
-             "last_seen_at": row.get("last_seen_at")}
-            for row in rows
-            if isinstance(row, dict) and isinstance(row.get("label"), str)
-            and isinstance(row.get("project"), str)
-        ]
-    except Exception:
-        return []
-
-
 def summary(payload, ids, deadline):
     sid = ids[0]
     path = marker_path("stop-summary", sid)
@@ -95,7 +71,6 @@ def summary(payload, ids, deadline):
     ]
     if isinstance(prior, str):
         command.extend(["--block-key", prior])
-    command.extend(["--notes", json.dumps(actionable_notes([sid], deadline))])
     remaining = max(0, deadline - time.monotonic())
     if remaining <= 0:
         raise subprocess.TimeoutExpired("session status", 0)
