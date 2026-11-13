@@ -55,6 +55,11 @@ import {
 } from './record-run-task-backfill-proof.ts'
 import { proofStrandedRunsMigration, seedStrandedRunsProof } from './record-stranded-runs-proof.ts'
 import {
+  proofTaskFlowStageBackfill,
+  seedTaskFlowStageBackfill,
+  taskFlowStageBackfill,
+} from './record-task-flow-stage-backfill-proof.ts'
+import {
   proofTaskChildUuidMigration,
   proofTaskLinkBackfill,
   seedTaskChildUuidBackfill,
@@ -795,6 +800,8 @@ async function applyAndProveMigration(
     await proofJsonbStringChecksValidate(transaction, PLATFORM_SPACE_ID)
   await applyHostedProjectCleanupProof(transaction, migration)
   await proofStrandedRunsMigration(transaction, migration)
+  if (migration.name === taskFlowStageBackfill)
+    await proofTaskFlowStageBackfill(transaction, migration)
 }
 
 async function seedMigrationProof(
@@ -832,6 +839,7 @@ async function seedMigrationProof(
       spaceId: PLATFORM_SPACE_ID,
       userId: platformOperatorId,
     })
+  if (name === taskFlowStageBackfill) await seedTaskFlowStageBackfill(transaction)
   await seedHostedProjectCleanupProof(transaction, name)
   await seedStrandedRunsProof(transaction, migration)
 }

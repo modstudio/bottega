@@ -2,7 +2,7 @@
 /** Applies revision-ordered task-flow and stage payloads to the hosted record. */
 
 import type { SQL } from 'bun'
-import { sql as drizzleSql } from 'drizzle-orm'
+import { and, sql as drizzleSql, eq, lt } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
@@ -84,28 +84,47 @@ export async function applyTaskFlowValues(
     .returning({ id: taskFlowRecord.id })
 }
 
-export async function applyTaskFlowStageValues(
+/**
+ * Writes a stage the record did not hold when this push looked, numbered by its
+ * project sequence. A concurrent push may insert it first; the stage is then
+ * revised, so the newer revision applies rather than reading as a collision.
+ */
+export async function writeNewTaskFlowStageValues(
   database: HostedRecordDatabase,
   values: ReturnType<typeof taskFlowStageValues>,
-  number: number | null = null,
+  number: number,
 ) {
-  const insert = { ...values, number }
+  const inserted = await database
+    .insert(taskFlowStageRecord)
+    .values({ ...values, number })
+    .onConflictDoNothing({ target: taskFlowStageRecord.id })
+    .returning({ id: taskFlowStageRecord.id })
+  return inserted.length > 0 ? inserted : reviseTaskFlowStageValues(database, values)
+}
+
+/**
+ * Revises a stage the record already holds, leaving the project and number the
+ * record assigned. It is an UPDATE because the stage contract will make both
+ * columns NOT NULL, and Postgres checks NOT NULL before it resolves an upsert
+ * conflict, so a revision carrying no fresh number could not upsert.
+ */
+export async function reviseTaskFlowStageValues(
+  database: HostedRecordDatabase,
+  values: ReturnType<typeof taskFlowStageValues>,
+) {
   const {
     id: _id,
     createdAt: _createdAt,
     flowRecordId: _flowRecordId,
     projectId: _projectId,
-    number: _number,
     ...updates
-  } = insert
+  } = values
   return database
-    .insert(taskFlowStageRecord)
-    .values(insert)
-    .onConflictDoUpdate({
-      target: taskFlowStageRecord.id,
-      set: updates,
-      setWhere: drizzleSql`excluded.revision > ${taskFlowStageRecord.revision}`,
-    })
+    .update(taskFlowStageRecord)
+    .set(updates)
+    .where(
+      and(eq(taskFlowStageRecord.id, values.id), lt(taskFlowStageRecord.revision, values.revision)),
+    )
     .returning({ id: taskFlowStageRecord.id })
 }
 
@@ -152,13 +171,17 @@ async function pushTaskFlowStage(
     )
     if (!existingOwned && !values.projectId)
       throw new OutboxRowError(
-        `task_flow_stage projectId is required for a new hosted stage; run ${PLATFORM_SLUG} record push --backfill to enqueue the current stage, then ${PLATFORM_SLUG} record outbox discard <id> for this entry`,
+        `task_flow_stage projectId is required for a new hosted stage; run ${PLATFORM_SLUG} record push --backfill to enqueue the current stage, then ${PLATFORM_SLUG} record outbox retire orch:<row-id> --reason <text> for this entry`,
         'row-validation',
       )
-    const number = existingOwned
-      ? null
-      : await allocateRecordSequence(tx, values.spaceId, values.projectId!, 'task_flow_stage')
-    const written = await applyTaskFlowStageValues(drizzle({ client: tx }), values, number)
+    const database = drizzle({ client: tx })
+    const written = existingOwned
+      ? await reviseTaskFlowStageValues(database, values)
+      : await writeNewTaskFlowStageValues(
+          database,
+          values,
+          await allocateRecordSequence(tx, values.spaceId, values.projectId!, 'task_flow_stage'),
+        )
     requireOwnedUpsert(written, 'task_flow_stage', values.id, existingOwned)
   })
 }
