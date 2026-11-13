@@ -140,6 +140,10 @@ test('every space-scoped config client call sends its destination header', async
     'revokeMachineKey',
     'readTrustLog',
     'appendTrustLogEntry',
+    'allocateMachineJoinNameplate',
+    'postMachineJoinMessage',
+    'readMachineJoinMessages',
+    'failMachineJoinNameplate',
   ] as const satisfies readonly (keyof ConfigClient)[]
   const values = [
     'listEntries',
@@ -173,7 +177,15 @@ test('every space-scoped config client call sends its destination header', async
     { BOTTEGA_RECORD_API_URL: 'https://record.test' },
     async (_input, init) => {
       headers.push(new Headers(init?.headers).get('x-record-space') ?? '')
-      return Response.json({ items: [], wraps: [], entries: [], hash: '' })
+      return Response.json({
+        items: [],
+        wraps: [],
+        entries: [],
+        hash: '',
+        nameplate: '1',
+        expiresAt: '2030-01-01T00:00:00.000Z',
+        messages: [],
+      })
     },
     'test',
   )
@@ -201,6 +213,16 @@ test('every space-scoped config client call sends its destination header', async
     client.revokeMachineKey('key', destination),
     client.readTrustLog(destination),
     client.appendTrustLogEntry(null, new Uint8Array(), destination),
+    client.allocateMachineJoinNameplate(destination),
+    client.postMachineJoinMessage(
+      '1',
+      '00000000000000000000000000000000',
+      'phase',
+      new Uint8Array(),
+      destination,
+    ),
+    client.readMachineJoinMessages('1', '00000000000000000000000000000000', destination),
+    client.failMachineJoinNameplate('1', '00000000000000000000000000000000', destination),
     client.listEntries('default', destination),
     client.getEntry('key', 'user', 'default', destination),
     client.putEntry('key', entry, destination),

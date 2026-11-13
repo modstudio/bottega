@@ -128,6 +128,58 @@ export type ConfigCallOutcomeRecorder = (observation: ConfigCallObservation) => 
 
 function configAuthorizationClient(request: Request) {
   return {
+    allocateMachineJoinNameplate: (destination: ConfigDestination = {}) =>
+      request<{ nameplate: string; expiresAt: string }>('/v1/config/join/nameplates', {
+        ...destination,
+        method: 'POST',
+        body: JSON.stringify({}),
+      }),
+    postMachineJoinMessage: (
+      nameplate: string,
+      side: string,
+      phase: string,
+      body: Uint8Array,
+      destination: ConfigDestination = {},
+    ) =>
+      request<{ stored: true }>(
+        `/v1/config/join/nameplates/${encodeURIComponent(nameplate)}/messages`,
+        {
+          ...destination,
+          method: 'POST',
+          body: JSON.stringify({ side, phase, body: Buffer.from(body).toString('base64url') }),
+        },
+      ),
+    readMachineJoinMessages: (
+      nameplate: string,
+      side: string,
+      destination: ConfigDestination = {},
+    ) =>
+      request<{
+        expiresAt: string
+        messages: Array<{ side: string; phase: string; body: string }>
+      }>(
+        `/v1/config/join/nameplates/${encodeURIComponent(nameplate)}/messages?${new URLSearchParams({ side })}`,
+        destination,
+      ).then((mailbox) => ({
+        expiresAt: mailbox.expiresAt,
+        messages: mailbox.messages.map((message) => ({
+          ...message,
+          body: new Uint8Array(Buffer.from(message.body, 'base64url')),
+        })),
+      })),
+    failMachineJoinNameplate: (
+      nameplate: string,
+      side: string,
+      destination: ConfigDestination = {},
+    ) =>
+      request<{ failed: true }>(
+        `/v1/config/join/nameplates/${encodeURIComponent(nameplate)}/failure`,
+        {
+          ...destination,
+          method: 'POST',
+          body: JSON.stringify({ side }),
+        },
+      ),
     readTrustLog: (destination: ConfigDestination = {}) =>
       request<{ entries: string[] }>('/v1/config/trust-log', destination).then((result) =>
         result.entries.map((entry) => new Uint8Array(Buffer.from(entry, 'base64url'))),

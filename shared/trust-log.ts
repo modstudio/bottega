@@ -9,7 +9,7 @@ export type TrustLogKey = {
   signingPublicKey: Uint8Array
   label: string
 }
-type TrustLogBody =
+export type TrustLogBody =
   | { kind: 'genesis'; first: TrustLogKey; recoveryPublicKey: Uint8Array }
   | ({ kind: 'add' } & TrustLogKey)
   | { kind: 'remove' | 'revoke'; keyId: string }

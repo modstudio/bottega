@@ -116,9 +116,13 @@ async function identity(client: ConfigClient) {
   return hostedIdentity(client)
 }
 
-async function unpinServerRevoked(client: ConfigClient, destination: ConfigDestination = {}) {
+async function unpinServerRevoked(
+  client: ConfigClient,
+  destination: ConfigDestination = {},
+  env: ConfigEnvironment = process.env,
+) {
   const remote = await client.listMachineKeys(destination)
-  for (const key of remote) if (key.revokedAt) await unpinTrustedMachine(key.keyId)
+  for (const key of remote) if (key.revokedAt) await unpinTrustedMachine(key.keyId, env)
   return remote
 }
 
@@ -273,19 +277,20 @@ export async function machineTrust(
   label: string,
   selected: { spaceId: string; slug: string },
   client = hostedConfigClient(),
+  env: ConfigEnvironment = process.env,
 ) {
   const selectedSpaceId = selected.spaceId
   const destination = { destinationSpaceId: selectedSpaceId }
   const publicBytes = bytes(publicKey)
   if ((await machineKeyId(publicBytes)) !== keyId)
     throw new Error('machine key id does not match public key')
-  const remote = await unpinServerRevoked(client, destination)
+  const remote = await unpinServerRevoked(client, destination, env)
   const registered = remote.find((item) => item.keyId === keyId)
   const refusal = machineTrustRefusal(keyId, registered, selected.slug)
   if (refusal) throw new Error(refusal)
-  await pinTrustedMachine(keyId, publicBytes, label)
-  const machine = await localMachine()
-  const trust = await readTrustList()
+  await pinTrustedMachine(keyId, publicBytes, label, env)
+  const machine = await localMachine(env)
+  const trust = await readTrustList(env)
   const sender = trust[machine.keyId]
   const recipient = trust[keyId]
   if (!sender || !recipient) throw new Error('machine is absent from the trust list after pinning')
