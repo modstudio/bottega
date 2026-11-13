@@ -978,6 +978,7 @@ export function registerHostedConfigProofs(
 
   test('machine registration verifies key ids and revocation atomically removes wraps', async () => {
     const publicKey = Uint8Array.from({ length: 32 }, (_, index) => index)
+    const signingPublicKey = Uint8Array.from({ length: 32 }, (_, index) => 255 - index)
     const keyId = await machineKeyId(publicKey)
     await expect(
       registerMachineKey({
@@ -992,6 +993,35 @@ export function registerHostedConfigProofs(
       keyId,
       publicKey,
       label: 'service machine',
+    })
+    const filled = await registerMachineKey({
+      ...serviceTenant,
+      keyId,
+      publicKey,
+      signingPublicKey,
+      label: 'service machine',
+    })
+    expect(filled.signingPublicKey).toEqual(signingPublicKey)
+    await expect(
+      registerMachineKey({
+        ...serviceTenant,
+        keyId,
+        publicKey,
+        signingPublicKey,
+        label: 'service machine',
+      }),
+    ).resolves.toMatchObject({ signingPublicKey })
+    await expect(
+      registerMachineKey({
+        ...serviceTenant,
+        keyId,
+        publicKey,
+        signingPublicKey: Uint8Array.from({ length: 32 }, (_, index) => index + 1),
+        label: 'service machine',
+      }),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: `machine key ${keyId} is already registered with a different signing key`,
     })
     await expect(
       registerMachineKey({

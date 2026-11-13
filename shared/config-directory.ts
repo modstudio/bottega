@@ -14,6 +14,11 @@ export function machineKeyFilePath(env: ConfigEnvironment): string {
   return join(resolveConfigRoot(env), 'machine-key')
 }
 
+/** The owner-only file holding the machine signing key when file storage is selected. */
+export function machineSigningKeyFilePath(env: ConfigEnvironment): string {
+  return join(resolveConfigRoot(env), 'machine-signing-key')
+}
+
 /** The owner-only directory holding revoked file-backed machine identities. */
 export function revokedMachineKeyDirectory(env: ConfigEnvironment): string {
   return join(resolveConfigRoot(env), 'machine-key-revoked')

@@ -2,9 +2,10 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, relative } from 'node:path'
-import { revokedMachineKeyDirectory } from './config-directory.ts'
+import { machineSigningKeyFilePath, revokedMachineKeyDirectory } from './config-directory.ts'
 import { fileBackedSecretPaths } from './file-backed-secret-paths.ts'
 import { replaceRevokedMachineKey, writeMachineKey } from './machine-key-store.ts'
+import { generateMachineSigningKeyPair, writeMachineSigningKey } from './machine-signing-key.ts'
 import { generateMachineKeyPair } from './secret-envelope.ts'
 
 const roots: string[] = []
@@ -23,11 +24,13 @@ test('revoked file-backed machine keys remain inside a denied owner-only directo
   }
   const revokedKeyId = 'revoked-key-id'
   writeMachineKey(await generateMachineKeyPair(), environment)
+  writeMachineSigningKey(generateMachineSigningKeyPair(), environment)
 
   replaceRevokedMachineKey(revokedKeyId, await generateMachineKeyPair(), environment)
 
   const backupDirectory = revokedMachineKeyDirectory(environment)
   const backupPath = join(backupDirectory, revokedKeyId)
+  expect(fileBackedSecretPaths(environment)).toContain(machineSigningKeyFilePath(environment))
   expect(statSync(backupDirectory).mode & 0o777).toBe(0o700)
   expect(statSync(backupPath).mode & 0o777).toBe(0o600)
   expect(

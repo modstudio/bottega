@@ -55,6 +55,7 @@ export type DataKey = {
 export type MachineKey = {
   keyId: string
   publicKey: Uint8Array
+  signingPublicKey: Uint8Array | null
   label: string
   createdAt: string
   revokedAt: string | null
@@ -800,13 +801,14 @@ export async function deleteDataKeyWraps(
 export async function listMachineKeys(input: ConfigTenant): Promise<MachineKey[]> {
   return tenant(input, async (tx) => {
     const rows = await tx`
-      SELECT key_id, public_key, label, created_at, revoked_at, user_id
+      SELECT key_id, public_key, signing_public_key, label, created_at, revoked_at, user_id
       FROM machine_public_key WHERE space_id=${input.spaceId}::uuid
       ORDER BY created_at, key_id
     `
     return rows.map((row: Record<string, unknown>) => ({
       keyId: String(row.key_id),
       publicKey: bytes(row.public_key),
+      signingPublicKey: row.signing_public_key == null ? null : bytes(row.signing_public_key),
       label: String(row.label),
       createdAt: recordIso(row.created_at),
       revokedAt: nullableIso(row.revoked_at),
@@ -816,7 +818,12 @@ export async function listMachineKeys(input: ConfigTenant): Promise<MachineKey[]
 }
 
 export async function registerMachineKey(
-  input: ConfigTenant & { keyId: string; publicKey: Uint8Array; label: string },
+  input: ConfigTenant & {
+    keyId: string
+    publicKey: Uint8Array
+    signingPublicKey?: Uint8Array
+    label: string
+  },
 ): Promise<MachineKey> {
   const derived = await machineKeyId(input.publicKey)
   if (derived !== input.keyId) {
@@ -826,20 +833,23 @@ export async function registerMachineKey(
     )
   }
   return tenant(input, async (tx) => {
-    const rows = await tx`
-      INSERT INTO machine_public_key (id, space_id, user_id, key_id, public_key, label, created_at)
-      VALUES (${newRecordId()}::uuid, ${input.spaceId}::uuid, ${input.userId}::uuid, ${input.keyId}, ${input.publicKey}, ${input.label}, now())
+    let rows = await tx`
+      INSERT INTO machine_public_key
+        (id, space_id, user_id, key_id, public_key, signing_public_key, label, created_at)
+      VALUES
+        (${newRecordId()}::uuid, ${input.spaceId}::uuid, ${input.userId}::uuid, ${input.keyId}, ${input.publicKey}, ${input.signingPublicKey ?? null}, ${input.label}, now())
       ON CONFLICT (space_id, key_id) DO NOTHING
-      RETURNING key_id, public_key, label, created_at, revoked_at, user_id
+      RETURNING key_id, public_key, signing_public_key, label, created_at, revoked_at, user_id
     `
-    const existing = rows[0]
-      ? rows
-      : await tx`
-          SELECT key_id, public_key, label, created_at, revoked_at, user_id
+    if (!rows[0]) {
+      rows = await tx`
+          SELECT key_id, public_key, signing_public_key, label, created_at, revoked_at, user_id
           FROM machine_public_key
           WHERE space_id=${input.spaceId}::uuid AND key_id=${input.keyId}
+          FOR UPDATE
         `
-    const row = existing[0] as Record<string, unknown>
+    }
+    let row = rows[0] as Record<string, unknown>
     if (!Buffer.from(bytes(row.public_key)).equals(Buffer.from(input.publicKey)))
       throw new ConfigServiceError(
         'machine key id is already registered with a different public key',
@@ -850,9 +860,27 @@ export async function registerMachineKey(
         `machine key ${input.keyId} belongs to another user; register from the owning user's machine, or initialize a new key on this machine with \`${PLATFORM_SLUG} machine config machine init --space <slug>\``,
         409,
       )
+    if (input.signingPublicKey) {
+      if (row.signing_public_key == null) {
+        const updated = await tx`
+          UPDATE machine_public_key SET signing_public_key=${input.signingPublicKey}
+          WHERE space_id=${input.spaceId}::uuid AND key_id=${input.keyId}
+          RETURNING key_id, public_key, signing_public_key, label, created_at, revoked_at, user_id
+        `
+        row = updated[0] as Record<string, unknown>
+      } else if (
+        !Buffer.from(bytes(row.signing_public_key)).equals(Buffer.from(input.signingPublicKey))
+      ) {
+        throw new ConfigServiceError(
+          `machine key ${input.keyId} is already registered with a different signing key`,
+          409,
+        )
+      }
+    }
     return {
       keyId: String(row.key_id),
       publicKey: bytes(row.public_key),
+      signingPublicKey: row.signing_public_key == null ? null : bytes(row.signing_public_key),
       label: String(row.label),
       createdAt: recordIso(row.created_at),
       revokedAt: nullableIso(row.revoked_at),

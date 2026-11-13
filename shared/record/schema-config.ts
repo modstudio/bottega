@@ -284,6 +284,7 @@ export const machinePublicKey = pgTable.withRLS(
     userId: uuid('user_id').references(() => user.id),
     keyId: text('key_id').notNull(),
     publicKey: bytea('public_key').notNull(),
+    signingPublicKey: bytea('signing_public_key'),
     label: text().notNull(),
     createdAt: createdAt(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
@@ -292,6 +293,10 @@ export const machinePublicKey = pgTable.withRLS(
     unique('machine_public_key_space_key_unique').on(table.spaceId, table.keyId),
     check('machine_public_key_key_id_check', keyIdCheck(table.keyId)),
     check('machine_public_key_length_check', sql`octet_length(${table.publicKey}) = 32`),
+    check(
+      'machine_public_key_signing_length_check',
+      sql`${table.signingPublicKey} IS NULL OR octet_length(${table.signingPublicKey}) = 32`,
+    ),
     ...tenantPolicies('machine_public_key', table.spaceId),
     pgPolicy('machine_public_key_owner_select', {
       for: 'select',

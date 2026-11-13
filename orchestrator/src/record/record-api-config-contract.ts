@@ -80,7 +80,12 @@ export type RecordConfigRouteDeps = {
   deleteDataKeyWraps(input: Tenant & { recipientKeyId: string }): Promise<void>
   listMachineKeys(input: Tenant): Promise<MachineKey[]>
   registerMachineKey(
-    input: Tenant & { keyId: string; publicKey: Uint8Array; label: string },
+    input: Tenant & {
+      keyId: string
+      publicKey: Uint8Array
+      signingPublicKey?: Uint8Array
+      label: string
+    },
   ): Promise<MachineKey>
   revokeMachineKey(input: Tenant & { keyId: string }): Promise<void>
 }

@@ -11,6 +11,10 @@ import {
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import { writeMachineKey } from '../../../shared/machine-key-store.ts'
 import {
+  generateMachineSigningKeyPair,
+  writeMachineSigningKey,
+} from '../../../shared/machine-signing-key.ts'
+import {
   generateDataKey,
   generateMachineKeyPair,
   KEY_SIZE,
@@ -33,13 +37,14 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-async function fixture() {
+async function fixture(withSigningKey = true) {
   const root = mkdtempSync(join(tmpdir(), 'named-space-config-'))
   roots.push(root)
   const env = { BOTTEGA_CONFIG_HOME: root, BOTTEGA_KEYSTORE: 'file' }
   const pair = await generateMachineKeyPair()
   const keyId = await machineKeyId(pair.publicKey)
   writeMachineKey(pair, env)
+  if (withSigningKey) writeMachineSigningKey(generateMachineSigningKeyPair(), env)
   await pinTrustedMachine(keyId, pair.publicKey, 'fixture', env)
   writeHostedConfigIdentity({ spaceId: activeSpaceId, userId: pinnedUserId }, env)
   const identity = {
@@ -53,6 +58,33 @@ async function fixture() {
   }
   return { env, identity, keyId, pair }
 }
+
+test('named-space registration remains compatible when no signing key is stored', async () => {
+  const { env, identity, keyId, pair } = await fixture(false)
+  const current = await wrappedDataKey(namedSpaceId, keyId, pair)
+  let signingPublicKey: string | undefined
+  const client = {
+    whoami: async () => identity,
+    listMachineKeys: async () => [],
+    registerMachineKey: async (
+      _keyId: string,
+      _publicKey: string,
+      _label: string,
+      _destination: unknown,
+      receivedSigningPublicKey?: string,
+    ) => {
+      signingPublicKey = receivedSigningPublicKey
+      return { userId }
+    },
+    currentDataKey: async () => current.key,
+  } as unknown as ConfigClient
+
+  await expect(machineRegister(namedSpace, 'fixture', client, env)).resolves.toEqual([
+    'registered',
+    'data key opened',
+  ])
+  expect(signingPublicKey).toBeUndefined()
+})
 
 async function wrappedDataKey(
   spaceId: string,

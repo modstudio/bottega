@@ -11,6 +11,7 @@ import {
 } from '../../../shared/hosted-config-space.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import { readMachineKey, writeMachineKey } from '../../../shared/machine-key-store.ts'
+import { readMachineSigningKey } from '../../../shared/machine-signing-key.ts'
 import {
   generateDataKey,
   generateMachineKeyPair,
@@ -864,37 +865,50 @@ test('a hosted ship-to write removes the stored alias with its own row version',
   ])
 })
 
-test('machine init converges with an existing key, pin, space, and registration', async () => {
+test('machine init adds a signing key to an existing X25519 identity and registers it', async () => {
   const root = mkdtempSync(join(tmpdir(), 'machine-init-'))
   roots.push(root)
   const env = { BOTTEGA_CONFIG_HOME: root, BOTTEGA_KEYSTORE: 'file' }
-  const registrations: string[] = []
+  const registrations: Array<{ keyId: string; signingPublicKey?: string }> = []
   const spaceId = '01990000-0000-7000-8000-000000000001'
   const userId = '01990000-0000-7000-8000-000000000002'
   let identity = { user: { id: userId }, activeSpaceId: spaceId }
   const client = {
     whoami: async () => identity,
-    listMachineKeys: async () => registrations.map((keyId) => ({ keyId, revokedAt: null })),
-    registerMachineKey: async (keyId: string) => {
-      registrations.push(keyId)
+    listMachineKeys: async () => registrations.map(({ keyId }) => ({ keyId, revokedAt: null })),
+    registerMachineKey: async (
+      keyId: string,
+      _publicKey: string,
+      _label: string,
+      _destination: unknown,
+      signingPublicKey?: string,
+    ) => {
+      registrations.push({ keyId, signingPublicKey })
       return {}
     },
   } as unknown as ConfigClient
 
+  const x25519Pair = await generateMachineKeyPair()
+  writeMachineKey(x25519Pair, env)
   const first = await machineInit(spaceId, 'fixture', client, env)
   const privateKey = readMachineKey(env)?.privateKey
+  const signingPair = readMachineSigningKey(env)
+  expect(registrations[0]?.signingPublicKey).toBe(
+    Buffer.from(signingPair!.publicKey).toString('base64url'),
+  )
   await expect(machineInit(spaceId, 'fixture', client, env)).resolves.toBe(first)
   expect(readMachineKey(env)?.privateKey).toEqual(privateKey)
+  expect(readMachineSigningKey(env)?.privateKey).toEqual(signingPair?.privateKey)
   expect(Object.keys(await readTrustList(env))).toEqual([first])
   expect(readHostedConfigIdentity(env)).toEqual({ spaceId, userId })
-  expect(registrations).toEqual([first, first])
+  expect(registrations.map(({ keyId }) => keyId)).toEqual([first, first])
 
   identity = { ...identity, activeSpaceId: '01990000-0000-7000-8000-000000000003' }
   await expect(machineInit(identity.activeSpaceId, 'fixture', client, env)).rejects.toThrow(
     'switch back',
   )
   expect(readHostedConfigIdentity(env)).toEqual({ spaceId, userId })
-  expect(registrations).toEqual([first, first])
+  expect(registrations.map(({ keyId }) => keyId)).toEqual([first, first])
 
   identity = {
     user: { id: '01990000-0000-7000-8000-000000000004' },
@@ -902,7 +916,7 @@ test('machine init converges with an existing key, pin, space, and registration'
   }
   await expect(machineInit(spaceId, 'fixture', client, env)).rejects.toThrow('sign back in')
   expect(readHostedConfigIdentity(env)).toEqual({ spaceId, userId })
-  expect(registrations).toEqual([first, first])
+  expect(registrations.map(({ keyId }) => keyId)).toEqual([first, first])
 })
 
 test('machine init backs up and replaces a revoked local identity before registering', async () => {
@@ -925,14 +939,19 @@ test('machine init backs up and replaces a revoked local identity before registe
 
   const oldKeyId = await machineInit(spaceId, 'fixture', client, env)
   const oldPrivateKey = readMachineKey(env)?.privateKey
+  const oldSigningPrivateKey = readMachineSigningKey(env)?.privateKey
   revokedKeyId = oldKeyId
   const newKeyId = await machineInit(spaceId, 'fixture', client, env)
 
   expect(newKeyId).not.toBe(oldKeyId)
   expect(readMachineKey(env)?.privateKey).not.toEqual(oldPrivateKey)
+  expect(readMachineSigningKey(env)?.privateKey).not.toEqual(oldSigningPrivateKey)
   expect(readFileSync(join(root, 'machine-key-revoked', oldKeyId), 'utf8').trim()).toBe(
     Buffer.from(oldPrivateKey!).toString('base64url'),
   )
+  expect(
+    readFileSync(join(root, 'machine-key-revoked', `${oldKeyId}.signing`), 'utf8').trim(),
+  ).toBe(Buffer.from(oldSigningPrivateKey!).toString('base64url'))
   expect(registrations).toEqual([oldKeyId, newKeyId])
   expect(Object.keys(await readTrustList(env))).toEqual([newKeyId])
 })
