@@ -8,7 +8,7 @@ import { decode, encode } from 'cbor2'
 import { PLATFORM_SLUG } from './brand.ts'
 import { type CpaceParty, type CpaceRole, lengthValueConcatenate, startCpace } from './cpace.ts'
 import { type PairingCode, pairingPassword } from './pairing-code.ts'
-import type { TrustLogKey } from './trust-log.ts'
+import { decodeTrustLogKey, encodeTrustLogKey, type TrustLogKey } from './trust-log.ts'
 
 const utf8 = (value: string) => new TextEncoder().encode(value)
 const concat = (...values: Uint8Array[]) => {
@@ -23,7 +23,6 @@ const concat = (...values: Uint8Array[]) => {
 const dcbor = { dcbor: true, rejectDuplicateKeys: true, preferMap: true } as const
 const PROTOCOL = `${PLATFORM_SLUG} machine join v1`
 const SIDE_BYTES = 16
-const SHARE_BYTES = 32
 const TAG_BYTES = 64
 const NONCE_BYTES = 24
 
@@ -162,43 +161,24 @@ export function openMachineJoinMessage(
 }
 
 export function encodeMachineJoinRecord(record: TrustLogKey): Uint8Array {
-  return encode(
-    new Map<number, unknown>([
-      [1, record.keyId],
-      [2, record.publicKey],
-      [3, record.signingPublicKey],
-      [4, record.label],
-    ]),
-    dcbor,
-  )
+  return encodeTrustLogKey(record)
 }
 
 export function decodeMachineJoinRecord(encoded: Uint8Array): TrustLogKey {
-  let value: unknown
   try {
-    value = decode(encoded, dcbor)
+    return decodeTrustLogKey(encoded)
   } catch (error) {
-    throw new Error(
-      `machine join record encoding is invalid: ${error instanceof Error ? error.message : String(error)}`,
-    )
+    const message = error instanceof Error ? error.message : String(error)
+    if (message.includes('key.publicKey'))
+      throw new Error('machine join record public key must be exactly 32 bytes', { cause: error })
+    if (message.includes('key.signingPublicKey'))
+      throw new Error('machine join record signing public key must be exactly 32 bytes', {
+        cause: error,
+      })
+    if (message.includes('extra field') || message.includes('is missing'))
+      throw new Error('machine join record has an extra or missing field', { cause: error })
+    throw error
   }
-  if (!(value instanceof Map)) throw new Error('machine join record must be a map')
-  if (value.size !== 4 || [...value.keys()].some((key) => ![1, 2, 3, 4].includes(key)))
-    throw new Error('machine join record has an extra or missing field')
-  const keyId = value.get(1)
-  const publicKey = value.get(2)
-  const signingPublicKey = value.get(3)
-  const label = value.get(4)
-  if (typeof keyId !== 'string' || typeof label !== 'string')
-    throw new Error('machine join record key id and label must be text')
-  if (!(publicKey instanceof Uint8Array) || publicKey.byteLength !== SHARE_BYTES)
-    throw new Error('machine join record public key must be exactly 32 bytes')
-  if (!(signingPublicKey instanceof Uint8Array) || signingPublicKey.byteLength !== SHARE_BYTES)
-    throw new Error('machine join record signing public key must be exactly 32 bytes')
-  const record = { keyId, publicKey, signingPublicKey, label }
-  if (!Buffer.from(encodeMachineJoinRecord(record)).equals(Buffer.from(encoded)))
-    throw new Error('machine join record encoding is non-canonical')
-  return record
 }
 
 export function encodeMachineJoinDone(head: Uint8Array | null): Uint8Array {

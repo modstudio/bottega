@@ -72,11 +72,7 @@ import {
 import type { MachineNamePair } from '../record/machine-name.ts'
 import { claimCurrentMachineNames } from '../record/machine-name-command.ts'
 import { LEGACY_ENVIRONMENT_SECRET_NAMES } from '../setup/environment-name-migration.ts'
-import {
-  type RotationPlan as RotationPolicyPlan,
-  shouldRotateAfterRevocation as rotationNeeded,
-  planRotation as rotationPlan,
-} from './config-service-rotation-policy.ts'
+import { planRotation, shouldRotateAfterRevocation } from './config-service-rotation-policy.ts'
 import {
   bytes,
   claimMachineKey,
@@ -89,23 +85,6 @@ import {
 import { hostedConfigClient } from './hosted-config-call-outcome.ts'
 import { machineTrustRefusal } from './machine-trust-refusal.ts'
 import { appendTrustLogRevoke } from './trust-log-revoke.ts'
-
-export type RotationPlan = RotationPolicyPlan
-
-export function shouldRotateAfterRevocation(
-  current: DataKey,
-  revocations: readonly { revokedAt: string | null }[],
-): boolean {
-  return rotationNeeded(current, revocations)
-}
-
-export function planRotation(
-  rows: ConfigSecret[],
-  current: DataKey,
-  keys: DataKey[],
-): RotationPlan {
-  return rotationPlan(rows, current, keys)
-}
 
 async function identity(client: ConfigClient, env: ConfigEnvironment = process.env) {
   return hostedIdentity(client, readHostedConfigIdentity(env))

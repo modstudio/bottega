@@ -87,7 +87,6 @@ export const recordBindingModules: RecordModule[] = [
     './record-auth.ts',
   ]),
   module('orchestrator/src/record/record-api-machine-join-routes.ts', [
-    '../../../shared/machine-join-wire.ts',
     '../../../shared/pairing-code.ts',
     'hono',
     'zod',

@@ -3,6 +3,9 @@
 
 import { NAMEPLATE_MAX } from '../../../shared/pairing-code.ts'
 
+export const MACHINE_JOIN_SIDE_PATTERN = /^[0-9a-f]{32}$/
+export const MACHINE_JOIN_PHASE_PATTERN = /^[a-z0-9-]{1,32}$/
+export const MACHINE_JOIN_MESSAGE_MAX_BYTES = 4096
 export const MACHINE_JOIN_NAMEPLATE_TTL_MS = 10 * 60_000
 export const MACHINE_JOIN_RATE_WINDOW_MS = 60 * 60_000
 export const MACHINE_JOIN_ALLOCATIONS_PER_WINDOW = 20

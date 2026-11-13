@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { planRotation, shouldRotateAfterRevocation } from './config-service.ts'
+import { planRotation, shouldRotateAfterRevocation } from './config-service-rotation-policy.ts'
 
 const row = (key: string, dekId: string) => ({
   key,

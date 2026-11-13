@@ -37,7 +37,6 @@ import {
   machineRevoke,
   machineTrust,
   migrateLegacyEnvironmentSecrets,
-  planRotation,
   restoreLegacyEnvironmentSecrets,
   sealedEmptyRefusal,
   sealSecretDecision,
@@ -48,6 +47,7 @@ import {
   setEntry,
   setSecret,
 } from './config-service.ts'
+import { planRotation } from './config-service-rotation-policy.ts'
 import {
   machineRevokeTrustLogFixture,
   trackedTrustLogClient,

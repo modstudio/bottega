@@ -73,17 +73,13 @@ export const settingsModules: SettingsModule[] = [
     '../record/machine-name-command.ts',
     '../record/machine-name.ts',
     './trust-log-revoke.ts',
-    './machine-join.ts',
   ]),
   module('orchestrator/src/config/config-service-rotation-policy.ts', [
     '../../../shared/config-client.ts',
   ]),
   module('orchestrator/src/config/trust-log-revoke.ts', [
-    '../../../shared/brand.ts',
     '../../../shared/config-client.ts',
     '../../../shared/config-directory.ts',
-    '../../../shared/trust-log.ts',
-    '../../../shared/trust-log-head.ts',
     './trust-log-append.ts',
   ]),
   module('orchestrator/src/config/trust-log-append.ts', [

@@ -10,6 +10,7 @@ import {
   encodeMachineJoinDone,
   encodeMachineJoinRecord,
   MACHINE_JOIN_TAG_BYTES,
+  type MachineJoinParty,
   type MachineJoinSession,
   makeMachineJoinTag,
   openMachineJoinMessage,
@@ -27,7 +28,12 @@ import {
   parsePairingCode,
 } from '../../../shared/pairing-code.ts'
 import { pinTrustedMachine } from '../../../shared/trust-list.ts'
-import { bytesEqual, type TrustLogKey, verifyTrustLog } from '../../../shared/trust-log.ts'
+import {
+  bytesEqual,
+  type TrustLogKey,
+  trustLogEntryHash,
+  verifyTrustLog,
+} from '../../../shared/trust-log.ts'
 import {
   readRememberedTrustLogHead,
   writeRememberedTrustLogHead,
@@ -47,6 +53,7 @@ type Ports = {
   output?: (line: string) => void
 }
 type RelayMessage = { side: string; phase: string; body: Uint8Array }
+type RegisteredKey = Awaited<ReturnType<ConfigClient['listMachineKeys']>>[number]
 
 const now = (at: Ports['at']) => (typeof at === 'function' ? at() : (at ?? Date.now()))
 
@@ -54,6 +61,17 @@ const sideText = (side: Uint8Array) => Buffer.from(side).toString('hex')
 const sideBytes = (side: string) => new Uint8Array(Buffer.from(side, 'hex'))
 const concat = (...values: Uint8Array[]) =>
   new Uint8Array(Buffer.concat(values.map((value) => Buffer.from(value))))
+
+function registeredKeyAgrees(registered: RegisteredKey | undefined, key: TrustLogKey): boolean {
+  return Boolean(
+    registered &&
+      registered.revokedAt === null &&
+      registered.publicKey &&
+      registered.signingPublicKey &&
+      bytesEqual(new Uint8Array(Buffer.from(registered.publicKey, 'base64url')), key.publicKey) &&
+      bytesEqual(registered.signingPublicKey, key.signingPublicKey),
+  )
+}
 
 function expirationRefusal(): Error {
   return new Error(`pairing code expired; start again with \`${PLATFORM_SLUG} machine join\``)
@@ -124,26 +142,19 @@ async function localRecord(
     ports.client.listMachineKeys({ destinationSpaceId: selected.spaceId }),
   ])
   const registered = machines.find((machine) => machine.keyId === keyId)
-  if (
-    !registered ||
-    registered.revokedAt !== null ||
-    registered.userId !== who.user.id ||
-    !registered.publicKey ||
-    !registered.signingPublicKey ||
-    !bytesEqual(new Uint8Array(Buffer.from(registered.publicKey, 'base64url')), pair.publicKey) ||
-    !bytesEqual(registered.signingPublicKey, signing.publicKey)
-  )
+  const record: TrustLogKey = {
+    keyId,
+    publicKey: pair.publicKey,
+    signingPublicKey: signing.publicKey,
+    label: registered?.label ?? '',
+  }
+  if (registered?.userId !== who.user.id || !registeredKeyAgrees(registered, record))
     throw new Error(
       `machine key is not registered for this user; run \`${PLATFORM_SLUG} machine config machine init --space ${selected.slug}\``,
     )
   return {
     ownUserId: who.user.id,
-    record: {
-      keyId,
-      publicKey: pair.publicKey,
-      signingPublicKey: signing.publicKey,
-      label: registered.label,
-    },
+    record,
   }
 }
 
@@ -160,6 +171,58 @@ async function burn(
 
 const mismatch = () =>
   new Error(`the pairing code did not match; start again with \`${PLATFORM_SLUG} machine join\``)
+
+async function loadVerifiedTrustLog(ports: Ports, selected: SelectedSpace) {
+  const entries = await ports.client.readTrustLog({ destinationSpaceId: selected.spaceId })
+  const remembered = readRememberedTrustLogHead(selected.spaceId, ports.env)
+  return {
+    entries,
+    remembered,
+    state: entries.length
+      ? verifyTrustLog(entries, { spaceId: selected.spaceId, rememberedHead: remembered })
+      : null,
+  }
+}
+
+async function finishMachineJoinSession(
+  party: MachineJoinParty,
+  peer: RelayMessage,
+  ports: Ports,
+  selected: SelectedSpace,
+  nameplate: string,
+  ownSide: string,
+): Promise<MachineJoinSession> {
+  try {
+    return party.finish(peer.body, sideBytes(peer.side))
+  } catch (error) {
+    if (error instanceof CpaceRefusal) {
+      await burn(ports, selected, nameplate, ownSide)
+      throw mismatch()
+    }
+    throw error
+  }
+}
+
+function taggedSealedRecord(
+  session: MachineJoinSession,
+  role: 'joiner' | 'approver',
+  spaceId: string,
+  nameplate: string,
+  phase: string,
+  record: TrustLogKey,
+): Uint8Array {
+  return concat(
+    makeMachineJoinTag(session, role),
+    sealMachineJoinMessage(
+      session,
+      role,
+      spaceId,
+      nameplate,
+      phase,
+      encodeMachineJoinRecord(record),
+    ),
+  )
+}
 
 async function verifiedApprover(
   session: MachineJoinSession,
@@ -195,7 +258,9 @@ async function verifiedApprover(
         !bytesEqual(trusted.signingPublicKey, approver.signingPublicKey)))
   ) {
     await burn(ports, selected, nameplate, ownSide)
-    throw new Error('the approving machine is not trusted by the space machine trust log')
+    throw new Error(
+      `the approving machine is not trusted by the space machine trust log; run \`${PLATFORM_SLUG} machine approve\` from a machine the trust log already trusts`,
+    )
   }
   return approver
 }
@@ -214,19 +279,24 @@ async function acceptDone(
     openMachineJoinMessage(session, 'approver', selected.spaceId, nameplate, 'done', done.body),
   )
   if (head) {
-    const state = verifyTrustLog(
-      await ports.client.readTrustLog({ destinationSpaceId: selected.spaceId }),
-      { spaceId: selected.spaceId, rememberedHead: remembered },
-    )
+    const entries = await ports.client.readTrustLog({ destinationSpaceId: selected.spaceId })
+    const state = verifyTrustLog(entries, {
+      spaceId: selected.spaceId,
+      rememberedHead: remembered,
+    })
     const trustedOwn = state.keys.get(own.keyId)
     if (
       !trustedOwn ||
       !bytesEqual(trustedOwn.publicKey, own.publicKey) ||
       !bytesEqual(trustedOwn.signingPublicKey, own.signingPublicKey)
     )
-      throw new Error('the approved machine is absent from the verified machine trust log')
-    if (!bytesEqual(state.head, head))
-      throw new Error('the approval head differs from the record trust-log head')
+      throw new Error(
+        'the approved machine is absent from the verified machine trust log; do not trust this record, and report it',
+      )
+    if (!entries.some((entry) => bytesEqual(trustLogEntryHash(entry), head)))
+      throw new Error(
+        "the approver's trust-log head is not in the record's trust log; do not trust this record, and report it",
+      )
     writeRememberedTrustLogHead(selected.spaceId, state.head, ports.env)
   }
   await pinTrustedMachine(approver.keyId, approver.publicKey, approver.label, ports.env)
@@ -259,11 +329,7 @@ async function verifiedJoiner(
   ).find((key) => key.keyId === joiner.keyId)
   if (
     (await machineKeyId(joiner.publicKey)) !== joiner.keyId ||
-    !registered ||
-    registered.revokedAt !== null ||
-    !registered.signingPublicKey ||
-    !bytesEqual(new Uint8Array(Buffer.from(registered.publicKey, 'base64url')), joiner.publicKey) ||
-    !bytesEqual(registered.signingPublicKey, joiner.signingPublicKey)
+    !registeredKeyAgrees(registered, joiner)
   ) {
     await burn(ports, selected, nameplate, ownSide)
     throw new Error(
@@ -279,14 +345,17 @@ async function approveAndWrap(
   selected: SelectedSpace,
   initial: ReturnType<typeof verifyTrustLog> | null,
   ports: Ports,
-): Promise<Uint8Array | null> {
+): Promise<{ head: Uint8Array | null; failure: Error | null }> {
   const head = initial
     ? await appendSignedTrustLogEntry(
         ports.client,
         own.keyId,
         selected.spaceId,
         { kind: 'add', ...joiner },
-        'machine approve',
+        {
+          action: `running ${PLATFORM_SLUG} machine approve`,
+          retry: `\`${PLATFORM_SLUG} machine approve\``,
+        },
         { at: now(ports.at), env: ports.env },
       )
     : null
@@ -301,13 +370,16 @@ async function approveAndWrap(
     )
   } catch (error) {
     if (head)
-      throw new Error(
-        `machine ${joiner.keyId} was approved but wrapping its data key failed; finish with \`${PLATFORM_SLUG} machine config machine trust ${joiner.keyId} ${encoded(joiner.publicKey)} --yes\``,
-        { cause: error },
-      )
+      return {
+        head,
+        failure: new Error(
+          `machine ${joiner.keyId} was approved but wrapping its data key failed; finish with \`${PLATFORM_SLUG} machine config machine trust ${joiner.keyId} ${encoded(joiner.publicKey)} --yes\``,
+          { cause: error },
+        ),
+      }
     throw error
   }
-  return head
+  return { head, failure: null }
 }
 
 export async function machineJoin(
@@ -316,11 +388,7 @@ export async function machineJoin(
 ): Promise<{ label: string; keyId: string }> {
   const { record } = await localRecord(selected, ports)
   const destination = { destinationSpaceId: selected.spaceId }
-  const entries = await ports.client.readTrustLog(destination)
-  const remembered = readRememberedTrustLogHead(selected.spaceId, ports.env)
-  const initial = entries.length
-    ? verifyTrustLog(entries, { spaceId: selected.spaceId, rememberedHead: remembered })
-    : null
+  const { remembered, state: initial } = await loadVerifiedTrustLog(ports, selected)
   if (initial?.keys.has(record.keyId)) throw new Error('this machine is already approved')
   const allocated = await ports.client.allocateMachineJoinNameplate(destination)
   const code = generatePairingCode(allocated.nameplate)
@@ -346,16 +414,14 @@ export async function machineJoin(
   )
   const pake = incoming.get('pake-b')!
   const confirmation = incoming.get('confirm-b')!
-  let session: MachineJoinSession
-  try {
-    session = party.finish(pake.body, sideBytes(pake.side))
-  } catch (error) {
-    if (error instanceof CpaceRefusal) {
-      await burn(ports, selected, allocated.nameplate, ownSide)
-      throw mismatch()
-    }
-    throw error
-  }
+  const session = await finishMachineJoinSession(
+    party,
+    pake,
+    ports,
+    selected,
+    allocated.nameplate,
+    ownSide,
+  )
   const approver = await verifiedApprover(
     session,
     confirmation,
@@ -365,16 +431,13 @@ export async function machineJoin(
     initial,
     ports,
   )
-  const confirmA = concat(
-    makeMachineJoinTag(session, 'joiner'),
-    sealMachineJoinMessage(
-      session,
-      'joiner',
-      selected.spaceId,
-      allocated.nameplate,
-      'confirm-a',
-      encodeMachineJoinRecord(record),
-    ),
+  const confirmA = taggedSealedRecord(
+    session,
+    'joiner',
+    selected.spaceId,
+    allocated.nameplate,
+    'confirm-a',
+    record,
   )
   await ports.client.postMachineJoinMessage(
     allocated.nameplate,
@@ -407,11 +470,7 @@ export async function machineApprove(
   const code: PairingCode = parsePairingCode(codeText)
   const { record } = await localRecord(selected, ports)
   const destination = { destinationSpaceId: selected.spaceId }
-  const entries = await ports.client.readTrustLog(destination)
-  const remembered = readRememberedTrustLogHead(selected.spaceId, ports.env)
-  const initial = entries.length
-    ? verifyTrustLog(entries, { spaceId: selected.spaceId, rememberedHead: remembered })
-    : null
+  const { state: initial } = await loadVerifiedTrustLog(ports, selected)
   if (initial && !initial.keys.has(record.keyId))
     throw new Error(
       `this machine is not trusted by the space machine trust log; have an owner approve it from an approved machine before retrying \`${PLATFORM_SLUG} machine approve\``,
@@ -430,16 +489,14 @@ export async function machineApprove(
       'pake-a',
     )!
   const party = startMachineJoin(code, selected.spaceId, first.expiresAt, 'approver', side)
-  let session: MachineJoinSession
-  try {
-    session = party.finish(pakeA.body, sideBytes(pakeA.side))
-  } catch (error) {
-    if (error instanceof CpaceRefusal) {
-      await burn(ports, selected, code.nameplate, ownSide)
-      throw mismatch()
-    }
-    throw error
-  }
+  const session = await finishMachineJoinSession(
+    party,
+    pakeA,
+    ports,
+    selected,
+    code.nameplate,
+    ownSide,
+  )
   await ports.client.postMachineJoinMessage(
     code.nameplate,
     ownSide,
@@ -451,24 +508,14 @@ export async function machineApprove(
     code.nameplate,
     ownSide,
     'confirm-b',
-    concat(
-      makeMachineJoinTag(session, 'approver'),
-      sealMachineJoinMessage(
-        session,
-        'approver',
-        selected.spaceId,
-        code.nameplate,
-        'confirm-b',
-        encodeMachineJoinRecord(record),
-      ),
-    ),
+    taggedSealedRecord(session, 'approver', selected.spaceId, code.nameplate, 'confirm-b', record),
     destination,
   )
   const confirm = (
     await poll(ports, code.nameplate, ownSide, first.expiresAt, ['confirm-a'], destination)
   ).get('confirm-a')!
   const joiner = await verifiedJoiner(confirm, session, selected, code.nameplate, ownSide, ports)
-  const head = await approveAndWrap(joiner, record, selected, initial, ports)
+  const approved = await approveAndWrap(joiner, record, selected, initial, ports)
   await ports.client.postMachineJoinMessage(
     code.nameplate,
     ownSide,
@@ -479,9 +526,10 @@ export async function machineApprove(
       selected.spaceId,
       code.nameplate,
       'done',
-      encodeMachineJoinDone(head),
+      encodeMachineJoinDone(approved.head),
     ),
     destination,
   )
+  if (approved.failure) throw approved.failure
   return { label: joiner.label, keyId: joiner.keyId }
 }

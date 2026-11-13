@@ -3,15 +3,15 @@
 
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
-import {
-  MACHINE_JOIN_MESSAGE_MAX_BYTES,
-  MACHINE_JOIN_PHASE_PATTERN,
-  MACHINE_JOIN_SIDE_PATTERN,
-} from '../../../shared/machine-join-wire.ts'
 import { NAMEPLATE_PATTERN } from '../../../shared/pairing-code.ts'
 import type { RecordConfigRouteDeps } from './record-api-config-contract.ts'
 import { base64urlSchema, decoded, encoded } from './record-api-wire.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import {
+  MACHINE_JOIN_MESSAGE_MAX_BYTES,
+  MACHINE_JOIN_PHASE_PATTERN,
+  MACHINE_JOIN_SIDE_PATTERN,
+} from './record-machine-join-policy.ts'
 
 type ApiEnvironment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }

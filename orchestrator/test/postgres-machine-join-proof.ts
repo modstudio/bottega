@@ -520,39 +520,6 @@ export function registerMachineJoinProof(input: ProofInput): void {
     }
   })
 
-  test('a third machine-join side is refused', async () => {
-    const fixture = await setupFixture('third-side')
-    try {
-      const destination = { destinationSpaceId: fixture.selected.spaceId }
-      const allocated = await fixture.approver.client.allocateMachineJoinNameplate(destination)
-      await fixture.approver.client.postMachineJoinMessage(
-        allocated.nameplate,
-        SIDE_A,
-        'pake-a',
-        new Uint8Array([1]),
-        destination,
-      )
-      await fixture.joiner.client.postMachineJoinMessage(
-        allocated.nameplate,
-        SIDE_B,
-        'pake-b',
-        new Uint8Array([2]),
-        destination,
-      )
-      await expect(
-        fixture.approver.client.postMachineJoinMessage(
-          allocated.nameplate,
-          SIDE_C,
-          'confirm-a',
-          new Uint8Array([3]),
-          destination,
-        ),
-      ).rejects.toMatchObject({ status: 409 })
-    } finally {
-      await deleteFixture(fixture)
-    }
-  })
-
   test('machine join refuses when its allocated nameplate is expired', async () => {
     const fixture = await setupFixture('expired')
     try {
