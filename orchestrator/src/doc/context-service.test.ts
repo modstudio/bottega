@@ -17,6 +17,7 @@ import {
   setContextItem,
 } from './context-service.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from './context-write-adapter.ts'
+import { ContextWriteRefusalError } from './doc-context-write.ts'
 
 const globals = globalThis as typeof globalThis & {
   [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts
@@ -76,15 +77,16 @@ test('context service stores structured columns and compare-and-set revisions', 
 
 test('a pointer to a nonexistent document UUID is refused before write', async () => {
   installContextFacts()
-  await expect(
-    setContextItem({
-      task: task.key,
-      id: 'missing-doc',
-      kind: 'pointer',
-      source: 'test',
-      body: `doc:${newRecordId()}`,
-    }),
-  ).rejects.toThrow('does not resolve')
+  const write = setContextItem({
+    task: task.key,
+    id: 'missing-doc',
+    kind: 'pointer',
+    source: 'test',
+    body: `doc:${newRecordId()}`,
+  })
+  // A refusal, not a retryable failure: context moments suppress their retry hint on this class.
+  await expect(write).rejects.toBeInstanceOf(ContextWriteRefusalError)
+  await expect(write).rejects.toThrow('does not resolve')
   expect((await getContext({ task: task.key })).items).toEqual([])
 })
 
