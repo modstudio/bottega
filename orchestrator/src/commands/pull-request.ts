@@ -5,13 +5,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { type Command, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { isStoreFencedAfterCheckoutMove, writableDb } from '../database/db.ts'
-import {
-  pullRequestMergeContextMomentEffect,
-  pullRequestMergeContextTarget,
-} from '../doc/context-moment.ts'
-import { applyContextMomentEffect } from '../doc/context-moment-adapter.ts'
-import { getContext } from '../doc/context-service.ts'
+import { writableDb } from '../database/db.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
 import {
@@ -22,7 +16,7 @@ import {
 import type { PullRequestCiCounts } from '../pull-request/pr-ci-record.ts'
 import { recordPullRequestCi } from '../pull-request/pr-ci-record.ts'
 import { POST_LANDING_REPORTED_EXIT_CODE } from '../pull-request/pr-landed-exit-codes.ts'
-import { mergePullRequest, type PullRequestMergeCommandOutcome } from '../pull-request/pr-merge.ts'
+import { mergePullRequest } from '../pull-request/pr-merge.ts'
 import { runPullRequestPostLanding } from '../pull-request/pr-post-landing.ts'
 import {
   POST_LANDING_FLAG,
@@ -167,77 +161,19 @@ export async function createPullRequestCommand(
   }
 }
 
-type PullRequestContextMomentInput = Pick<
-  PullRequestMergeCommandOutcome,
-  'exitCode' | 'headBranch' | 'pullRequestNumber' | 'mergeCommit'
->
-
-type PullRequestContextMomentPorts = {
-  getContext: typeof getContext
-  applyEffect: typeof applyContextMomentEffect
-  storeFenced: typeof isStoreFencedAfterCheckoutMove
-  log: typeof log
-  error: typeof console.error
-}
-
-const pullRequestContextMomentPorts: PullRequestContextMomentPorts = {
-  getContext,
-  applyEffect: applyContextMomentEffect,
-  storeFenced: isStoreFencedAfterCheckoutMove,
-  log,
-  error: console.error,
-}
-
-async function applyPullRequestContextMoment(
-  keyPrefixes: readonly string[],
-  outcome: PullRequestContextMomentInput,
-  overrides: Partial<PullRequestContextMomentPorts> = {},
-): Promise<void> {
-  const ports = { ...pullRequestContextMomentPorts, ...overrides }
-  const taskKey = pullRequestMergeContextTarget({
-    exitCode: outcome.exitCode,
-    headBranch: outcome.headBranch,
-    keyPrefixes,
-  })
-  if (!taskKey) return
-  try {
-    const context = await ports.getContext({ task: taskKey })
-    const effect = pullRequestMergeContextMomentEffect({
-      pullRequestNumber: outcome.pullRequestNumber,
-      mergeCommit: outcome.mergeCommit,
-      items: context.items,
-    })
-    await ports.applyEffect(taskKey, effect, false, { log: ports.log, error: ports.error })
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error)
-    ports.log(`context: could not gather pr-merge on ${taskKey}: ${detail}`)
-  }
-}
-
-export async function applyParentPullRequestContextMoment(
-  keyPrefixes: readonly string[],
-  outcome: PullRequestContextMomentInput,
-  overrides: Partial<PullRequestContextMomentPorts> = {},
-): Promise<void> {
-  const ports = { ...pullRequestContextMomentPorts, ...overrides }
-  if (ports.storeFenced()) return
-  await applyPullRequestContextMoment(keyPrefixes, outcome, ports)
-}
-
-type PullRequestPostLandingCommandPorts = PullRequestContextMomentPorts & {
+type PullRequestPostLandingCommandPorts = {
   readPayload: () => Promise<string>
   runPostLanding: typeof runPullRequestPostLanding
-  projectByName: typeof projectByName
+  log: typeof log
 }
 
 const pullRequestPostLandingCommandPorts: PullRequestPostLandingCommandPorts = {
-  ...pullRequestContextMomentPorts,
   readPayload: () => Bun.stdin.text(),
   runPostLanding: runPullRequestPostLanding,
-  projectByName,
+  log,
 }
 
-export async function runPullRequestPostLandingCommand(
+async function runPullRequestPostLandingCommand(
   target: string,
   database: ReturnType<typeof writableDb>,
   overrides: Partial<PullRequestPostLandingCommandPorts> = {},
@@ -261,26 +197,6 @@ export async function runPullRequestPostLandingCommand(
     )
     exitCode = POST_LANDING_REPORTED_EXIT_CODE
   }
-  if (payload) {
-    let project: ReturnType<typeof projectByName> = null
-    try {
-      project = ports.projectByName(payload.project, database)
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error)
-      ports.log(`context: could not resolve project ${payload.project} for pr-merge: ${detail}`)
-      return exitCode
-    }
-    await applyPullRequestContextMoment(
-      project?.settings.keyPrefixes ?? [],
-      {
-        exitCode,
-        headBranch: payload.headBranch,
-        pullRequestNumber: payload.prNumber,
-        mergeCommit: payload.mergeCommit,
-      },
-      ports,
-    )
-  }
   return exitCode
 }
 
@@ -294,8 +210,6 @@ export async function mergePullRequestCommand(
     return
   }
   const cwd = resolveReviewCommandCwd(options.cwd)
-  const database = writableDb()
-  const project = projectAt(cwd, database)
   const outcome = await mergePullRequest(
     target,
     cwd,
@@ -306,7 +220,6 @@ export async function mergePullRequestCommand(
   )
   log(outcome.output)
   if (outcome.exitCode !== 0) process.exitCode = outcome.exitCode
-  await applyParentPullRequestContextMoment(project?.settings.keyPrefixes ?? [], outcome)
 }
 
 export function register(program: Command): void {

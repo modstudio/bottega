@@ -476,7 +476,6 @@ export async function ruleCommand(
   )
   print(result, `${result.summary} Question ${result.questionId}.`)
   return workflowQuestionContextMoment({
-    moment: 'workflow-rule',
     taskKey: context.workflowKey,
     questionId: result.questionId,
     operatorRuled,
@@ -698,11 +697,6 @@ export async function nextCommand(
   print(result.text, result.text)
   return {
     cursorRecordId: result.cursorRecordId,
-    workflow: slug,
-    cursor: result.cursorNumber,
-    finished: result.finished,
-    stepSlug: result.stepSlug,
-    stepTitle: result.stepTitle,
     selfRulingQuestionNumber: result.selfRulingQuestionNumber,
     selfRuling: storedSelfRuling,
     taskKey: result.workflowKey,
@@ -713,7 +707,7 @@ export async function awaitCommand(
   argv: string[],
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
-): Promise<WorkflowContextMoment> {
+): Promise<void> {
   const question = recordShape.workflowCommandRecordShape(argv, 'question', 'open question')
   const args = workflowArgs(argv)
   let context = cliWorkflowCursorContext()
@@ -756,12 +750,6 @@ export async function awaitCommand(
     result,
     `workflow ${slug} is awaiting ruling question ${result.questionId} at step ${result.n} ${result.slug}`,
   )
-  return workflowQuestionContextMoment({
-    moment: 'workflow-await',
-    taskKey: context.workflowKey,
-    questionId: result.questionId,
-    text: question!,
-  })
 }
 
 export async function cursorsCommand(argv: string[], print: WorkflowPrint): Promise<void> {

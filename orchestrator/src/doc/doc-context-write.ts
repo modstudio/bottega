@@ -2,19 +2,12 @@
 /** Pure write policy for one structured context item. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 
-export {
-  CONTEXT_ITEM_KINDS,
-  type ContextItemKind,
-} from '../../../shared/context-item-vocabulary.ts'
-
 import {
   CONTEXT_ITEM_KINDS,
   type ContextItemKind,
 } from '../../../shared/context-item-vocabulary.ts'
 import {
   type ContextRecordName,
-  NEXT_ACTION_MAX_CHARS,
-  OPEN_QUESTION_MAX_CHARS,
   RULING_MAX_CHARS,
   recordShapeRefusal,
 } from '../../../shared/record-shape.ts'
@@ -29,15 +22,11 @@ export const CONTEXT_ITEM_MAX_CHARS = {
   ruling: RULING_MAX_CHARS,
   position: 800,
   fact: 800,
-  'open-question': OPEN_QUESTION_MAX_CHARS,
   pointer: 400,
-  'next-action': NEXT_ACTION_MAX_CHARS,
 } as const satisfies Record<ContextItemKind, number>
 
 const CONTEXT_ITEM_RECORD_NAMES = {
   ruling: 'ruling',
-  'open-question': 'open question',
-  'next-action': 'next action',
 } as const satisfies Partial<Record<ContextItemKind, ContextRecordName>>
 
 /** A ruling names where Shmuel Barkin gave it: a question, a board message, or the chat on a date. */
@@ -60,7 +49,6 @@ export type ContextWriteFacts = {
   pointerRefusal: string | null
   claimedTask: string | null
 }
-
 /** A policy refusal is distinct from a storage failure that can be retried unchanged. */
 export class ContextWriteRefusalError extends Error {
   constructor(message: string) {
@@ -70,13 +58,10 @@ export class ContextWriteRefusalError extends Error {
 }
 
 const PROFILE = {
-  epic: { allowed: CONTEXT_ITEM_KINDS, required: ['next-action'] },
-  task: { allowed: CONTEXT_ITEM_KINDS, required: ['next-action'] },
-  session: { allowed: CONTEXT_ITEM_KINDS, required: [] },
-} as const satisfies Record<
-  ContextProfile,
-  { allowed: readonly ContextItemKind[]; required: readonly ContextItemKind[] }
->
+  epic: CONTEXT_ITEM_KINDS,
+  task: CONTEXT_ITEM_KINDS,
+  session: CONTEXT_ITEM_KINDS,
+} as const satisfies Record<ContextProfile, readonly ContextItemKind[]>
 
 function normalizeContextBody(body: string): string {
   return body.toLowerCase().replace(/\s+/g, ' ').trim()
@@ -84,28 +69,16 @@ function normalizeContextBody(body: string): string {
 
 export function contextWriteRefusal(item: ContextItem, facts: ContextWriteFacts): string | null {
   const address = `context item ${item.id}`
-  const profile = PROFILE[facts.profile]
-  if (!(profile.allowed as readonly ContextItemKind[]).includes(item.kind)) {
+  if (!(PROFILE[facts.profile] as readonly ContextItemKind[]).includes(item.kind)) {
     return `${address} refused: ${facts.profile} profile does not allow kind ${item.kind}`
   }
   const shape = contextItemShapeRefusal(item)
   if (shape) return shape
-  if (
-    facts.profile === 'session' &&
-    facts.claimedTask &&
-    ['ruling', 'open-question'].includes(item.kind)
-  ) {
+  if (facts.profile === 'session' && facts.claimedTask && item.kind === 'ruling') {
     return `${address} refused: task-level ${item.kind} written to a session; write it with ${PLATFORM_SLUG} agent context set --task ${facts.claimedTask}`
   }
   if (item.kind === 'pointer' && facts.pointerRefusal) {
     return `${address} refused: ${facts.pointerRefusal}`
-  }
-  const existingNext =
-    item.kind === 'next-action'
-      ? facts.siblings.find((sibling) => sibling.kind === 'next-action' && sibling.id !== item.id)
-      : undefined
-  if (existingNext) {
-    return `${address} refused: holder ${item.holder} allows at most one next-action item; revise existing item ${item.holder}/${existingNext.id}`
   }
   const normalized = normalizeContextBody(item.body)
   for (const other of facts.related) {
@@ -193,28 +166,4 @@ export function holderOwnershipRefusal(
   return owner === caller
     ? null
     : `context item ${id} refused: only owning session ${owner} may write ${holder}`
-}
-
-export function contextDropRefusal(
-  item: ContextItem,
-  siblings: ContextItem[],
-  profile: ContextProfile,
-) {
-  const required = PROFILE[profile].required as readonly ContextItemKind[]
-  if (
-    required.includes(item.kind) &&
-    siblings.filter((row) => row.kind === item.kind).length === 1
-  ) {
-    return `context item ${item.id} refused: cannot remove the last required ${item.kind} item`
-  }
-  return null
-}
-
-export function missingContextKinds(
-  items: ContextItem[],
-  profile: ContextProfile,
-): ContextItemKind[] {
-  return PROFILE[profile].required.filter(
-    (kind) => !items.some((item) => item.kind === kind),
-  ) as ContextItemKind[]
 }

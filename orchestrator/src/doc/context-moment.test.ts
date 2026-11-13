@@ -1,68 +1,36 @@
 import { describe, expect, test } from 'bun:test'
-import {
-  contextMomentEffect,
-  pullRequestMergeContextMomentEffect,
-  pullRequestMergeContextTarget,
-} from './context-moment.ts'
+import { contextMomentEffect } from './context-moment.ts'
 
 describe('context moment effect', () => {
-  test('workflow await writes its open question', () => {
+  test('an operator-ruled answer writes a ruling', () => {
     expect(
       contextMomentEffect({
-        moment: 'workflow-await',
         taskKey: 'DEV-2267',
         questionId: 12,
-        text: 'Which shape?',
-      }),
-    ).toEqual({
-      writes: [{ kind: 'open-question', id: 'open-q12', source: 'q12', body: 'Which shape?' }],
-      drops: [],
-    })
-  })
-
-  test.each(['workflow-rule', 'question-answer'] as const)(
-    '%s distinguishes operator rulings from positions and drops the question',
-    (moment) => {
-      const effect = (operatorRuled: boolean) =>
-        contextMomentEffect({
-          moment,
-          taskKey: 'DEV-2267',
-          questionId: 12,
-          operatorRuled,
-          text: 'Use the approved shape.',
-        })
-      expect(effect(true)).toEqual({
-        writes: [
-          { kind: 'ruling', id: 'ruling-q12', source: 'q12', body: 'Use the approved shape.' },
-        ],
-        drops: [{ kind: 'open-question', id: 'open-q12' }],
-      })
-      expect(effect(false).writes[0]).toMatchObject({ kind: 'position', id: 'position-q12' })
-    },
-  )
-
-  test('workflow next writes its served step and self-ruling position', () => {
-    expect(
-      contextMomentEffect({
-        moment: 'workflow-next',
-        taskKey: 'DEV-2267',
-        questionId: 13,
-        text: 'The specification settles this.',
-        cursor: {
-          workflow: 'change',
-          number: 4,
-          stepSlug: 'review',
-          stepTitle: 'Review the change',
-        },
+        operatorRuled: true,
+        text: 'Use the approved shape.',
       }),
     ).toEqual({
       writes: [
         {
-          kind: 'next-action',
-          id: 'next',
-          source: 'workflow-next',
-          body: 'change cursor 4 at review: Review the change',
+          kind: 'ruling',
+          id: 'ruling-q12',
+          source: 'q12',
+          body: 'Use the approved shape.',
         },
+      ],
+    })
+  })
+
+  test('an answer not ruled by the operator writes a position', () => {
+    expect(
+      contextMomentEffect({
+        taskKey: 'DEV-2267',
+        questionId: 13,
+        text: 'The specification settles this.',
+      }),
+    ).toEqual({
+      writes: [
         {
           kind: 'position',
           id: 'position-q13',
@@ -70,80 +38,14 @@ describe('context moment effect', () => {
           body: 'The specification settles this.',
         },
       ],
-      drops: [],
     })
   })
 
-  test('workflow next records a finished cursor', () => {
-    expect(
-      contextMomentEffect({
-        moment: 'workflow-next',
-        taskKey: 'DEV-2267',
-        cursor: { workflow: 'change', number: 4, finished: true },
-      }).writes[0]?.body,
-    ).toBe('change cursor 4 finished')
-  })
-
-  test('a moment without a task key has no effect', () => {
-    expect(
-      contextMomentEffect({ moment: 'workflow-await', questionId: 12, text: 'Which shape?' }),
-    ).toEqual({ writes: [], drops: [] })
-  })
-  test.each([0, 22])('a landed exit %i selects the task key from the head branch', (exitCode) => {
-    expect(
-      pullRequestMergeContextTarget({
-        exitCode,
-        headBranch: 'feature/DEV-2270-context-moments',
-        keyPrefixes: ['DEV'],
-      }),
-    ).toBe('DEV-2270')
-  })
-
-  test('a non-landed exit does not select a context holder', () => {
-    expect(
-      pullRequestMergeContextTarget({
-        exitCode: 1,
-        headBranch: 'feature/DEV-2270-context-moments',
-        keyPrefixes: ['DEV'],
-      }),
-    ).toBeNull()
-  })
-
-  test('a head branch without a matching key prefix does not select a context holder', () => {
-    expect(
-      pullRequestMergeContextTarget({
-        exitCode: 0,
-        headBranch: 'feature/DEV-2270-context-moments',
-        keyPrefixes: ['OPS'],
-      }),
-    ).toBeNull()
-  })
-
-  test('a landed merge revises next and drops only open questions', () => {
-    expect(
-      pullRequestMergeContextMomentEffect({
-        pullRequestNumber: 314,
-        mergeCommit: '0123456789abcdef',
-        items: [
-          { id: 'open-q1', kind: 'open-question' },
-          { id: 'ruling-q1', kind: 'ruling' },
-          { id: 'position-q2', kind: 'position' },
-          { id: 'open-q2', kind: 'open-question' },
-        ],
-      }),
-    ).toEqual({
-      writes: [
-        {
-          kind: 'next-action',
-          id: 'next',
-          source: 'pr-merge',
-          body: 'PR 314 landed as 0123456789ab.',
-        },
-      ],
-      drops: [
-        { kind: 'open-question', id: 'open-q1' },
-        { kind: 'open-question', id: 'open-q2' },
-      ],
+  test('no task key, question id or text writes nothing', () => {
+    expect(contextMomentEffect({ questionId: 12, text: 'Which shape?' })).toEqual({ writes: [] })
+    expect(contextMomentEffect({ taskKey: 'DEV-2267', text: 'Which shape?' })).toEqual({
+      writes: [],
     })
+    expect(contextMomentEffect({ taskKey: 'DEV-2267', questionId: 12 })).toEqual({ writes: [] })
   })
 })

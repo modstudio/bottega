@@ -133,20 +133,12 @@ describe('session close-out decisions', () => {
 
   test('context items drop or refuse by kind and resume keeps every kind', () => {
     expect(
-      ['pointer', 'position', 'fact', 'next-action'].map((kind) =>
+      ['pointer', 'position', 'fact'].map((kind) =>
         classifySessionContextItem(kind as never, false),
       ),
-    ).toEqual(['drop', 'drop', 'drop', 'drop'])
+    ).toEqual(['drop', 'drop', 'drop'])
     expect(classifySessionContextItem('ruling', false)).toBe('refuse')
-    expect(classifySessionContextItem('open-question', false)).toBe('refuse')
-    for (const kind of [
-      'ruling',
-      'position',
-      'fact',
-      'open-question',
-      'pointer',
-      'next-action',
-    ] as const)
+    for (const kind of ['ruling', 'position', 'fact', 'pointer'] as const)
       expect(classifySessionContextItem(kind, true)).toBe('keep')
   })
 

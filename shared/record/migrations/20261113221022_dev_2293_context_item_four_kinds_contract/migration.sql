@@ -1,0 +1,1 @@
+ALTER TABLE "context_item" DROP CONSTRAINT "context_item_kind_check", ADD CONSTRAINT "context_item_kind_check" CHECK ("kind" IN ('ruling','position','fact','pointer'));

@@ -117,7 +117,7 @@ test('dry run reports context drops and refusals while resume keeps every item',
   expect(resume.recommendation).toBe('brief')
 })
 
-test('--resume records and keeps worked while close-out reports missing next-action', async () => {
+test('--resume records and keeps worked context', async () => {
   const session = newRecordId()
   const taskRecordId = newRecordId()
   const project = `worked-close-out-${newRecordId()}`
@@ -150,11 +150,9 @@ test('--resume records and keeps worked while close-out reports missing next-act
         body: 'Worked: WORKEDCLOSE-1',
       }),
     )
-    expect(report.nextActionOutcomes).toEqual([{ key: 'WORKEDCLOSE-1', status: 'missing' }])
     expect(report.errors).not.toContainEqual(
       expect.objectContaining({ item: `context session:${session}/worked (fact)` }),
     )
-    expect(formatSessionCloseOut(report)).toContain('close-out: WORKEDCLOSE-1 has no next-action')
   } finally {
     if (previousSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
     else process.env.CLAUDE_CODE_SESSION_ID = previousSession
@@ -195,110 +193,6 @@ test('--resume of another session releases work and reports the worked write ref
     if (previousSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
     else process.env.CLAUDE_CODE_SESSION_ID = previousSession
   }
-})
-
-test('close-out reports missing next action and warns on unresolved worked tasks without residue', async () => {
-  const session = newRecordId()
-  const missingProject = `missing-next-action-${newRecordId()}`
-  const unreadableProject = `unreadable-next-action-${newRecordId()}`
-  const absentProject = `absent-next-action-${newRecordId()}`
-  upsertProject({
-    recordId: newRecordId(),
-    name: missingProject,
-    path: `/tmp/${missingProject}`,
-    settings: { trunk: 'main', keyPrefixes: ['MISSINGNEXT'] },
-  })
-  upsertProject({
-    recordId: newRecordId(),
-    name: unreadableProject,
-    path: `/tmp/${unreadableProject}`,
-    settings: { trunk: 'main', keyPrefixes: ['UNREADABLENEXT'] },
-  })
-  upsertProject({
-    recordId: newRecordId(),
-    name: absentProject,
-    path: `/tmp/${absentProject}`,
-    settings: { trunk: 'main', keyPrefixes: ['ABSENTNEXT'] },
-  })
-  ;(globalThis as typeof globalThis & { [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts })[
-    CONTEXT_FACTS_PORTS_KEY
-  ] = {
-    tasks: async (project) => {
-      if (project === unreadableProject) throw new Error('hub unavailable')
-      return project === missingProject
-        ? [{ key: 'MISSINGNEXT-1', record_id: newRecordId(), project }]
-        : []
-    },
-    task: async () => null,
-    pointer: async () => null,
-  }
-  for (const [key, at] of [
-    ['MISSINGNEXT-1', '2026-11-11T13:00:00Z'],
-    ['UNKNOWNNEXT-1', '2026-11-11T12:00:00Z'],
-    ['UNREADABLENEXT-1', '2026-11-11T11:00:00Z'],
-    ['ABSENTNEXT-1', '2026-11-11T10:00:00Z'],
-  ] as const) {
-    const run = addRun({ agent: 'codex', job: 'implement', status: 'ok', session })
-    db().query('UPDATE run SET launch_key=?,started_at=? WHERE record_id=?').run(key, at, run)
-    score(run, 'full', 'right', 'faithful')
-  }
-
-  const report = await closeOutSession({ session, dryRun: true })
-
-  expect(report.nextActionOutcomes).toEqual([
-    { key: 'MISSINGNEXT-1', status: 'missing' },
-    {
-      key: 'UNKNOWNNEXT-1',
-      status: 'unknown-prefix',
-      detail: 'no single project declares the task prefix of UNKNOWNNEXT-1',
-      remedy: `declare it in one project's keyPrefixes with ${PLATFORM_SLUG} project set <project> --settings`,
-    },
-    {
-      key: 'UNREADABLENEXT-1',
-      status: 'unreadable',
-      detail: expect.stringContaining('hub unavailable'),
-      remedy: `${PLATFORM_SLUG} record pull`,
-    },
-    {
-      key: 'ABSENTNEXT-1',
-      status: 'absent',
-      detail: `no task ABSENTNEXT-1 in project ${absentProject}; inspect available tasks with ${PLATFORM_SLUG} task list --project ${absentProject} --json`,
-      remedy: `${PLATFORM_SLUG} task list --project ${absentProject} --json`,
-    },
-  ])
-  expect(formatSessionCloseOut(report)).toContain('close-out: MISSINGNEXT-1 has no next-action')
-  expect(report.warnings).toContainEqual(
-    expect.objectContaining({ item: 'close-out task UNKNOWNNEXT-1' }),
-  )
-  expect(report.warnings).toContainEqual(
-    expect.objectContaining({ item: 'close-out task UNREADABLENEXT-1' }),
-  )
-  expect(report.warnings).toContainEqual({
-    item: 'close-out task ABSENTNEXT-1',
-    detail: expect.stringContaining('no task ABSENTNEXT-1'),
-    cleanup: `${PLATFORM_SLUG} task list --project ${absentProject} --json`,
-  })
-  expect(report.errors).toEqual([])
-  expect(report.verdict.clean).toBe(true)
-})
-
-test('close-out reaches its verdict when worked-key derivation throws', async () => {
-  const session = newRecordId()
-  const cursor = addCursor(session, 'running')
-  db()
-    .query(
-      "UPDATE workflow_cursor SET workflow_key='BROKENWORK-1',closed='{}',state='done' WHERE record_id=?",
-    )
-    .run(cursor.recordId)
-
-  const report = await closeOutSession({ session, dryRun: true })
-
-  expect(report.warnings).toContainEqual({
-    item: 'close-out worked report',
-    detail: expect.any(String),
-    cleanup: `${PLATFORM_SLUG} session close-out --session ${session}`,
-  })
-  expect(report.verdict).toEqual({ clean: true, residue: 0 })
 })
 
 test('close-out closes an idle explore as answered and reports the session clean', async () => {

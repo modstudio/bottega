@@ -134,13 +134,7 @@ export async function advanceWorkflow(
   try {
     const moment = workflowNextContextMoment(
       {
-        cursorRecordId: result.cursorRecordId,
         workflowKey: result.workflowKey,
-        workflow: slug,
-        cursor: result.cursorNumber,
-        finished: result.finished,
-        stepSlug: result.stepSlug,
-        stepTitle: result.stepTitle,
       },
       result.selfRulingQuestionNumber,
       storedSelfRuling,

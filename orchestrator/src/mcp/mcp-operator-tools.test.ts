@@ -161,10 +161,6 @@ describe('operator MCP tools', () => {
           calls.push(`set ${input.kind} ${input.id} on ${input.task}`)
           return { ...input, holder: `task:${input.task}`, revision: 'revision', task: input.task }
         },
-        drop: async (input) => {
-          calls.push(`drop ${input.id} on ${input.task}`)
-          return { ...input, holder: `task:${input.task}`, task: input.task, removed: true }
-        },
       } as ContextMomentPorts,
     )
 
@@ -176,13 +172,9 @@ describe('operator MCP tools', () => {
       resumed_number: null,
       resumed_record_id: null,
     })
-    expect(calls).toEqual([
-      `set position position-q${questionId} on DEV-2267`,
-      `drop open-q${questionId} on DEV-2267`,
-    ])
+    expect(calls).toEqual([`set position position-q${questionId} on DEV-2267`])
     expect((result.content as { text: string }[]).slice(1).map(({ text }) => text)).toEqual([
       `context: wrote position position-q${questionId} on DEV-2267`,
-      `context: dropped open-question open-q${questionId} on DEV-2267`,
     ])
     expect(
       db()
@@ -312,7 +304,7 @@ describe('operator MCP tools', () => {
     })
   })
 
-  test('answer_questions returns the all-open-questions refusal as a tool error', async () => {
+  test('answer_questions returns the all questions open refusal as a tool error', async () => {
     const runId = addRun({
       agent: 'codex',
       job: 'file-question',

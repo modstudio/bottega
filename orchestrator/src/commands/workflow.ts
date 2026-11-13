@@ -355,13 +355,6 @@ function registerWorkflowRulings({
         workflowArgv('await', slug === undefined ? [] : [slug], options),
         output(options),
         handlerOptions,
-      ).then((moment) =>
-        applyContextMoment(
-          moment,
-          Boolean(options.json),
-          workflowPresentation,
-          handlerOptions.contextMomentPorts,
-        ),
       ),
     )
 

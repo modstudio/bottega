@@ -627,7 +627,7 @@ describe('orch MCP', () => {
       )
       .run(project, first.id, second.id)
     const secondRow = mcpTaskFlowStageIdentity(db(), second.id)
-    const { server, bodies: contextBodies } = workflowRulingContextFixture({
+    const { server } = workflowRulingContextFixture({
       hubTaskReader: async () =>
         ['DEV-1082-MCP-A', 'DEV-1082-MCP-B'].map((key) => ({
           key,
@@ -783,8 +783,6 @@ describe('orch MCP', () => {
         run: evidenceRunNumber,
       })
       expect(advanced).not.toContain('Took over this workflow stage from Remote MCP machine.')
-      const expectedNext = `fix-defect cursor ${first.id} at verify: Verify`
-      expect(contextBodies.get('next')).toBe(expectedNext)
       await call('await_workflow_ruling', {
         ...common,
         args: args('DEV-1082-MCP-B'),

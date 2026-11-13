@@ -2,6 +2,7 @@
 /** Gathers and renders the compact architect context brief. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { ContextItemKind } from '../../../shared/context-item-vocabulary.ts'
 import { type ClaimView, liveClaimsOfSession } from '../board/board-claim-service.ts'
 import { claimNotices } from '../board/board-service.ts'
 import { db } from '../database/db.ts'
@@ -24,7 +25,7 @@ import {
 } from '../workflow/workflow-task-reference.ts'
 import { parseWorkedTaskKeys, WORKED_CONTEXT_ID, WORKED_CONTEXT_KIND } from './context-worked.ts'
 import { storedItems, taskProfile } from './context-write-adapter.ts'
-import type { ContextItem, ContextItemKind } from './doc-context-write.ts'
+import type { ContextItem } from './doc-context-write.ts'
 import { taskContextHolder } from './doc-subjects.ts'
 import { listOpenResumes } from './docs.ts'
 
@@ -33,6 +34,7 @@ type ContextBriefHolder = {
   title: string
   kind: 'session' | 'task' | 'epic'
   items: ContextItem[]
+  openQuestions?: Array<{ number: number; question: string }>
 }
 
 export type ContextBrief = {
@@ -56,28 +58,14 @@ export type ContextBrief = {
   autonomy: string
 }
 
-const ITEM_ORDER: readonly ContextItemKind[] = [
-  'next-action',
-  'ruling',
-  'position',
-  'fact',
-  'open-question',
-  'pointer',
-]
+const ITEM_ORDER: readonly ContextItemKind[] = ['ruling', 'position', 'fact', 'pointer']
 
 const firstLine = (body: string) => body.split(/\r\n|\r|\n/, 1)[0]!.trim()
 const count = (value: number, singular: string, plural = `${singular}s`) =>
   `${value} ${value === 1 ? singular : plural}`
 
 function renderItem(item: ContextItem): string {
-  const label =
-    item.kind === 'next-action'
-      ? 'next'
-      : item.kind === 'open-question'
-        ? 'open'
-        : item.kind === 'ruling'
-          ? `ruling ${item.source}`
-          : item.kind
+  const label = item.kind === 'ruling' ? `ruling ${item.source}` : item.kind
   const body = firstLine(item.body)
   return `  ${label}: ${item.kind === 'ruling' ? JSON.stringify(body) : body}`
 }
@@ -97,7 +85,9 @@ export function renderContextBrief(brief: ContextBrief): string {
         left.id.localeCompare(right.id),
     )
     for (const item of items) lines.push(renderItem(item))
-    if (!items.some((item) => item.kind === 'open-question')) lines.push('  open: none')
+    for (const question of holder.openQuestions ?? [])
+      lines.push(`  open: ${firstLine(question.question)}`)
+    if (!holder.openQuestions?.length) lines.push('  open: none')
   }
   const inFlight = [
     ...brief.runs.map((run) => `run ${run.number} ${run.job} ${run.status}`),
@@ -180,12 +170,27 @@ export function storedBriefHolders(
         }
       }
       const { recordId, ...holder } = reference
+      const openQuestions = openTaskQuestions(recordId, database)
       return {
         ...holder,
         items: storedItems(taskContextHolder(recordId), database),
+        ...(openQuestions.length ? { openQuestions } : {}),
       }
     })
     .filter((holder) => holder.kind !== 'session' || holder.items.length > 0)
+}
+
+/** Read only unanswered, unclosed questions bound to one task record. */
+function openTaskQuestions(
+  taskRecordId: string,
+  database: Database,
+): Array<{ number: number; question: string }> {
+  return database
+    .query<{ number: number; question: string }, [string]>(
+      `SELECT number,question FROM question q
+       WHERE workflow_task_record_id=? AND ${questionOpenSql('q')} ORDER BY number`,
+    )
+    .all(taskRecordId)
 }
 
 export function workingKeysForBrief(
