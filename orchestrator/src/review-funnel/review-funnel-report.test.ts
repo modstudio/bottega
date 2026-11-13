@@ -22,7 +22,7 @@ const verdict = (next: ReviewFunnelVerdict['next']['action']): ReviewFunnelVerdi
 })
 
 const row = (
-  surface: string,
+  surface: FunnelReportDecisionRow['surface'],
   outcome: FunnelReportDecisionRow['outcome'],
   next: ReviewFunnelVerdict['next']['action'],
   recordedAt: string,
