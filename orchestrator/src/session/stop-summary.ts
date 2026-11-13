@@ -41,7 +41,6 @@ export type StopSummaryHeldTreeRow = {
   repo: string | null
   branch: string | null
   worktree: string | null
-  close_out_detail: string | null
   close_out_attempted_at: string | null
 }
 export type StopSummaryActiveLandingRow = { project: string; branch: string }
@@ -69,13 +68,12 @@ export function landingTreeIsActive(
 export function hookNotes(notes: readonly StopSummaryHookNote[]): StopSummaryNote[] {
   return notes.map((note) => ({
     label: `note ${note.label} not handed over`,
-    command: `${PLATFORM_SLUG} board post --audience architects:${note.project} ...`,
+    command: `${PLATFORM_SLUG} board post --audience architects:${note.project} (see ${PLATFORM_SLUG} board post --help)`,
   }))
 }
 
 function heldWorktreeCommand(tree: StopSummaryHeldTreeRow): string {
-  const detail = tree.close_out_detail?.split('; close-out intent=', 1)[0]?.trim()
-  return detail || `${PLATFORM_SLUG} run close-out ${tree.number}`
+  return `${PLATFORM_SLUG} run close-out ${tree.number}`
 }
 
 export async function sessionStopSummary(
@@ -135,7 +133,7 @@ export async function sessionStopSummary(
     .all(session)
   const heldTrees = database
     .query<StopSummaryHeldTreeRow, [string]>(
-      `SELECT record_id,number,job,repo,branch,worktree,close_out_detail,close_out_attempted_at
+      `SELECT record_id,number,job,repo,branch,worktree,close_out_attempted_at
          FROM run WHERE session_id=? AND parent_run_record_id IS NULL
           AND close_out_outcome='held' ORDER BY number`,
     )

@@ -106,7 +106,7 @@ describe('Stop summary decision', () => {
   test('notes print after owed lines but never block or enter the block key', () => {
     const note = {
       label: 'note handoff-summary not handed over',
-      command: `${PLATFORM_SLUG} board post --audience architects:${PLATFORM_NAME} ...`,
+      command: `${PLATFORM_SLUG} board post --audience architects:${PLATFORM_NAME} (see ${PLATFORM_SLUG} board post --help)`,
     }
     const onlyNote = decideStopSummary(facts({ notes: [note] }))
     expect(onlyNote).toEqual({

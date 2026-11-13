@@ -20,7 +20,6 @@ const tree: StopSummaryHeldTreeRow = {
   repo: PLATFORM_NAME,
   branch: 'DEV-2297-work',
   worktree: '/tmp/DEV-2297-work',
-  close_out_detail: null,
   close_out_attempted_at: null,
 }
 
@@ -55,7 +54,7 @@ test('validated hook notes become owed items with their hand-off command', () =>
   ).toEqual([
     {
       label: 'note handoff-summary not handed over',
-      command: `${PLATFORM_SLUG} board post --audience architects:${PLATFORM_NAME} ...`,
+      command: `${PLATFORM_SLUG} board post --audience architects:${PLATFORM_NAME} (see ${PLATFORM_SLUG} board post --help)`,
     },
   ])
 })
@@ -76,7 +75,7 @@ test('session summary assembles only this session owed runs, held remedies, and 
   db()
     .query(
       `UPDATE run SET worktree='/tmp/held-worktree',close_out_outcome='held',
-              close_out_detail='land the held branch; close-out intent=retain',
+              close_out_detail='tree kept because live run 01a1d552-4256-72f6-a2ea-ae19749602d2 names it; close-out intent=terminal',
               close_out_attempted_at='2026-11-13T10:00:00.000Z'
         WHERE record_id=?`,
     )
@@ -125,6 +124,7 @@ test('session summary assembles only this session owed runs, held remedies, and 
   )
   expect(result.lines.join('\n')).not.toContain(`run ${otherNumber} implement unscored`)
   expect(result.lines).toContain(
-    `worktree for run ${heldNumber} (craft) is held → land the held branch`,
+    `worktree for run ${heldNumber} (craft) is held → ${PLATFORM_SLUG} run close-out ${heldNumber}`,
   )
+  expect(result.lines.join('\n')).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/)
 })
