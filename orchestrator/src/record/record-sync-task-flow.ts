@@ -98,9 +98,10 @@ export async function insertTaskFlowStageValues(
 }
 
 /**
- * Revises a stage the record already holds. Postgres checks NOT NULL before it
- * resolves an upsert conflict, so a revision, which carries no fresh number,
- * is an UPDATE and leaves the project and number the record assigned.
+ * Revises a stage the record already holds, leaving the project and number the
+ * record assigned. It is an UPDATE because the stage contract will make both
+ * columns NOT NULL, and Postgres checks NOT NULL before it resolves an upsert
+ * conflict, so a revision carrying no fresh number could not upsert.
  */
 export async function reviseTaskFlowStageValues(
   database: HostedRecordDatabase,

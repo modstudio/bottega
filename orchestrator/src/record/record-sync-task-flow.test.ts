@@ -151,6 +151,7 @@ test('task-flow apply is idempotent and rejects older revisions', async () => {
         revision integer NOT NULL, last_request_id uuid,
         created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL
       );
+      -- The stage table models the stage contract, which makes project_id and number NOT NULL.
       CREATE TABLE task_flow_stage (
         id uuid PRIMARY KEY, space_id uuid NOT NULL, flow_record_id uuid NOT NULL,
         project_id uuid NOT NULL, number integer NOT NULL, workflow_key text, instance_id text, session_id text,
