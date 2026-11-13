@@ -27,6 +27,7 @@ export const sharedModules: ArchitectureModule[] = [
   module('shared/credential-resolution.ts', ['./brand.ts', './credential.ts']),
   module('shared/credential-value.ts', [
     './config-client.ts',
+    './config-directory.ts',
     './credential.ts',
     './credential-resolution.ts',
     './hosted-secret-row.ts',
@@ -109,6 +110,7 @@ export const sharedModules: ArchitectureModule[] = [
   module('shared/hosted-secret-row.ts', [
     './brand.ts',
     './config-client.ts',
+    './config-directory.ts',
     './hosted-secret-opening.ts',
     './machine-key-store.ts',
     './trust-list.ts',

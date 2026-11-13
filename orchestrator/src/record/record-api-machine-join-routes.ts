@@ -7,7 +7,11 @@ import { NAMEPLATE_PATTERN } from '../../../shared/pairing-code.ts'
 import type { RecordConfigRouteDeps } from './record-api-config-contract.ts'
 import { base64urlSchema, decoded, encoded } from './record-api-wire.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import { MACHINE_JOIN_MESSAGE_MAX_BYTES } from './record-machine-join-policy.ts'
+import {
+  MACHINE_JOIN_MESSAGE_MAX_BYTES,
+  MACHINE_JOIN_PHASE_PATTERN,
+  MACHINE_JOIN_SIDE_PATTERN,
+} from './record-machine-join-policy.ts'
 
 type ApiEnvironment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
@@ -25,8 +29,8 @@ type RouteContext = {
 }
 
 const nameplateSchema = z.string().regex(NAMEPLATE_PATTERN)
-const sideSchema = z.string().regex(/^[0-9a-f]{32}$/)
-const phaseSchema = z.string().regex(/^[a-z0-9-]{1,32}$/)
+const sideSchema = z.string().regex(MACHINE_JOIN_SIDE_PATTERN)
+const phaseSchema = z.string().regex(MACHINE_JOIN_PHASE_PATTERN)
 
 export function registerRecordMachineJoinRoutes(
   app: Hono<ApiEnvironment>,

@@ -72,6 +72,7 @@ import {
 import type { MachineNamePair } from '../record/machine-name.ts'
 import { claimCurrentMachineNames } from '../record/machine-name-command.ts'
 import { LEGACY_ENVIRONMENT_SECRET_NAMES } from '../setup/environment-name-migration.ts'
+import { planRotation, shouldRotateAfterRevocation } from './config-service-rotation-policy.ts'
 import {
   bytes,
   claimMachineKey,
@@ -85,35 +86,8 @@ import { hostedConfigClient } from './hosted-config-call-outcome.ts'
 import { machineTrustRefusal } from './machine-trust-refusal.ts'
 import { appendTrustLogRevoke } from './trust-log-revoke.ts'
 
-export type RotationPlan = { reseal: ConfigSecret[]; retireDekIds: string[] }
-
-export function shouldRotateAfterRevocation(
-  current: DataKey,
-  revocations: readonly { revokedAt: string | null }[],
-): boolean {
-  return revocations.some(
-    ({ revokedAt }) =>
-      revokedAt !== null && new Date(revokedAt).getTime() > new Date(current.createdAt).getTime(),
-  )
-}
-
-export function planRotation(
-  rows: ConfigSecret[],
-  current: DataKey,
-  keys: DataKey[],
-): RotationPlan {
-  const reseal = rows.filter((row) => row.dekId !== current.id)
-  return {
-    reseal,
-    retireDekIds: keys
-      .filter((key) => key.version < current.version && !key.retiredAt)
-      .map((key) => key.id)
-      .sort(),
-  }
-}
-
-async function identity(client: ConfigClient) {
-  return hostedIdentity(client)
+async function identity(client: ConfigClient, env: ConfigEnvironment = process.env) {
+  return hostedIdentity(client, readHostedConfigIdentity(env))
 }
 
 async function unpinServerRevoked(client: ConfigClient, destination: ConfigDestination = {}) {
@@ -142,9 +116,10 @@ async function wrapsFor(
   trust: TrustList,
   client: ConfigClient,
   destinationSpaceId?: string,
+  env: ConfigEnvironment = process.env,
 ) {
-  const machine = await localMachine()
-  const spaceId = destinationSpaceId ?? (await identity(client)).spaceId
+  const machine = await localMachine(env)
+  const spaceId = destinationSpaceId ?? (await identity(client, env)).spaceId
   return wrapsForRecipients(
     dek,
     { spaceId, dekId, dekVersion: version },
@@ -273,21 +248,21 @@ export async function machineTrust(
   label: string,
   selected: { spaceId: string; slug: string },
   client = hostedConfigClient(),
+  env: ConfigEnvironment = process.env,
 ) {
-  const selectedSpaceId = selected.spaceId
-  const destination = { destinationSpaceId: selectedSpaceId }
+  const destination = { destinationSpaceId: selected.spaceId }
   const publicBytes = bytes(publicKey)
   if ((await machineKeyId(publicBytes)) !== keyId)
     throw new Error('machine key id does not match public key')
-  const remote = await unpinServerRevoked(client, destination)
-  const registered = remote.find((item) => item.keyId === keyId)
+  const keys = await client.listMachineKeys(destination)
+  for (const key of keys) if (key.revokedAt) await unpinTrustedMachine(key.keyId, env)
+  const registered = keys.find((item) => item.keyId === keyId)
   const refusal = machineTrustRefusal(keyId, registered, selected.slug)
   if (refusal) throw new Error(refusal)
-  await pinTrustedMachine(keyId, publicBytes, label)
-  const machine = await localMachine()
-  const trust = await readTrustList()
-  const sender = trust[machine.keyId]
-  const recipient = trust[keyId]
+  await pinTrustedMachine(keyId, publicBytes, label, env)
+  const machine = await localMachine(env)
+  const trust = await readTrustList(env)
+  const [sender, recipient] = [trust[machine.keyId], trust[keyId]]
   if (!sender || !recipient) throw new Error('machine is absent from the trust list after pinning')
   try {
     const before = await client.currentDataKey(machine.keyId, destination)
@@ -299,14 +274,15 @@ export async function machineTrust(
       client,
       machine,
       before,
-      remote,
-      selectedSpaceId,
+      keys,
+      selected.spaceId,
       destination,
+      env,
     )
     if (rotated) return
     const wrapped = await wrapDataKey({
       dek,
-      wrapContext: { spaceId: selectedSpaceId, dekId: current.id, dekVersion: current.version },
+      wrapContext: { spaceId: selected.spaceId, dekId: current.id, dekVersion: current.version },
       senderPrivateKey: machine.privateKey,
       senderPublicKey: bytes(sender.public_key),
       recipientPublicKey: bytes(recipient.public_key),
@@ -336,6 +312,7 @@ async function rotateDataKey(
   rotate: boolean,
   selectedSpaceId?: string,
   destination: ConfigDestination = {},
+  env: ConfigEnvironment = process.env,
 ): Promise<{ key: DataKey; dek: Uint8Array; completed: string[]; rotated: boolean }> {
   let current = currentBefore
   let dek: Uint8Array
@@ -347,7 +324,7 @@ async function rotateDataKey(
       {
         dekId,
         version,
-        wraps: await wrapsFor(dek, dekId, version, trust, client, selectedSpaceId),
+        wraps: await wrapsFor(dek, dekId, version, trust, client, selectedSpaceId, env),
       },
       destination,
     )
@@ -359,7 +336,7 @@ async function rotateDataKey(
   const plan = planRotation(rows, current, await client.listDataKeys(destination))
   const completed: string[] = []
   try {
-    const who = await identity(client)
+    const who = await identity(client, env)
     for (const row of plan.reseal) {
       const plaintext = await openHostedSecretRow(
         client,
@@ -411,15 +388,17 @@ async function rotateAfterLatestRevocation(
   remote: readonly { revokedAt: string | null }[],
   selectedSpaceId?: string,
   destination: ConfigDestination = {},
+  env: ConfigEnvironment = process.env,
 ) {
   return rotateDataKey(
     client,
     machine,
     current,
-    await readTrustList(),
+    await readTrustList(env),
     shouldRotateAfterRevocation(current, remote),
     selectedSpaceId,
     destination,
+    env,
   )
 }
 

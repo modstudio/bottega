@@ -3,12 +3,13 @@
 
 import { PLATFORM_SLUG } from './brand.ts'
 import type { ConfigClient, ConfigDestination, ConfigSecret } from './config-client.ts'
+import type { ConfigEnvironment } from './config-directory.ts'
 import { hostedSecretIdentity, openHostedSecret } from './hosted-secret-opening.ts'
 import { machineKeyInfo, readMachineKey } from './machine-key-store.ts'
 import { readTrustList } from './trust-list.ts'
 
-export function localMachine() {
-  const pair = readMachineKey()
+export function localMachine(env: ConfigEnvironment = process.env) {
+  const pair = readMachineKey(env)
   if (!pair)
     throw new Error(
       `machine key is not initialized; run \`${PLATFORM_SLUG} machine config machine init --space <slug>\``,

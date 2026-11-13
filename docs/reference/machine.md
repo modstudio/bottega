@@ -5,6 +5,7 @@
 set up and maintain this machine
 
 - [bottega machine](#bottega-machine)
+- [bottega machine approve](#bottega-machine-approve)
 - [bottega machine blockers](#bottega-machine-blockers)
 - [bottega machine config](#bottega-machine-config)
 - [bottega machine config delete](#bottega-machine-config-delete)
@@ -12,8 +13,10 @@ set up and maintain this machine
 - [bottega machine config help](#bottega-machine-config-help)
 - [bottega machine config list](#bottega-machine-config-list)
 - [bottega machine config machine](#bottega-machine-config-machine)
+- [bottega machine config machine approve](#bottega-machine-config-machine-approve)
 - [bottega machine config machine help](#bottega-machine-config-machine-help)
 - [bottega machine config machine init](#bottega-machine-config-machine-init)
+- [bottega machine config machine join](#bottega-machine-config-machine-join)
 - [bottega machine config machine register](#bottega-machine-config-machine-register)
 - [bottega machine config machine revoke](#bottega-machine-config-machine-revoke)
 - [bottega machine config machine show](#bottega-machine-config-machine-show)
@@ -29,6 +32,7 @@ set up and maintain this machine
 - [bottega machine efficiency](#bottega-machine-efficiency)
 - [bottega machine gate-facts](#bottega-machine-gate-facts)
 - [bottega machine health](#bottega-machine-health)
+- [bottega machine join](#bottega-machine-join)
 - [bottega machine legacy-calls](#bottega-machine-legacy-calls)
 - [bottega machine load](#bottega-machine-load)
 - [bottega machine load sample](#bottega-machine-load-sample)
@@ -85,12 +89,14 @@ set up and maintain this machine
 
 ### Related
 
+- [bottega machine approve](./machine.md#bottega-machine-approve)
 - [bottega machine blockers](./machine.md#bottega-machine-blockers)
 - [bottega machine config](./machine.md#bottega-machine-config)
 - [bottega machine doctor](./machine.md#bottega-machine-doctor)
 - [bottega machine efficiency](./machine.md#bottega-machine-efficiency)
 - [bottega machine gate-facts](./machine.md#bottega-machine-gate-facts)
 - [bottega machine health](./machine.md#bottega-machine-health)
+- [bottega machine join](./machine.md#bottega-machine-join)
 - [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
 - [bottega machine load](./machine.md#bottega-machine-load)
 - [bottega machine migrate](./machine.md#bottega-machine-migrate)
@@ -109,6 +115,20 @@ set up and maintain this machine
 - [bottega machine storage](./machine.md#bottega-machine-storage)
 - [bottega machine sweep](./machine.md#bottega-machine-sweep)
 - [bottega machine update](./machine.md#bottega-machine-update)
+
+## bottega machine approve
+
+**Synopsis:** `bottega machine approve <code...>`
+
+approve a joining machine with its pairing code
+
+### Options
+
+Options are documented by `--help`.
+
+### Related
+
+- [bottega machine](./machine.md#bottega-machine)
 
 ## bottega machine blockers
 
@@ -208,12 +228,28 @@ manage machine encryption identity
 ### Related
 
 - [bottega machine config](./machine.md#bottega-machine-config)
+- [bottega machine config machine approve](./machine.md#bottega-machine-config-machine-approve)
 - [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
 - [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
+- [bottega machine config machine join](./machine.md#bottega-machine-config-machine-join)
 - [bottega machine config machine register](./machine.md#bottega-machine-config-machine-register)
 - [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
 - [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
 - [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
+
+## bottega machine config machine approve
+
+**Synopsis:** `bottega machine config machine approve <code...>`
+
+approve a joining machine with its pairing code
+
+### Options
+
+Options are documented by `--help`.
+
+### Related
+
+- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
 
 ## bottega machine config machine help
 
@@ -237,6 +273,20 @@ create this machine encryption identity
 - `--label <label>`: label stored for this machine identity
 - `--short-name <name>`: short machine name
 - `--display-name <name>`: display machine name
+
+### Related
+
+- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
+
+## bottega machine config machine join
+
+**Synopsis:** `bottega machine config machine join [--space <slug>]`
+
+print a pairing code and wait for an approved machine
+
+### Options
+
+- `--space <slug>`: join this record space
 
 ### Related
 
@@ -438,6 +488,20 @@ report harness failures, costs, and false verdicts
 
 - `--days <value>`: number of recent days to include
 - `--json`: write the health report as JSON
+
+### Related
+
+- [bottega machine](./machine.md#bottega-machine)
+
+## bottega machine join
+
+**Synopsis:** `bottega machine join [--space <slug>]`
+
+print a pairing code and wait for an approved machine to approve this one
+
+### Options
+
+- `--space <slug>`: join this record space
 
 ### Related
 

@@ -32,6 +32,7 @@ import {
   setSecret,
 } from '../config/config-service.ts'
 import { hostedConfigClient } from '../config/hosted-config-call-outcome.ts'
+import { machineApprove, machineJoin } from '../config/machine-join.ts'
 import { trustMachine } from '../config/machine-trust.ts'
 import { machineRegister } from '../config/named-space-config.ts'
 import { parseSecretRunArgs, runNamedSecrets } from '../config/secret-run.ts'
@@ -192,8 +193,32 @@ export const configListPresentation = (
   json: boolean,
 ) => (json ? [JSON.stringify(rows)] : rows.map((row) => `${row.scope}\t${row.key}\t${row.value}`))
 
+function registerMachineJoinCommands(machine: Command): void {
+  machine
+    .command('join')
+    .description('print a pairing code and wait for an approved machine')
+    .option('--space <slug>', 'join this record space')
+    .action(async (options) => {
+      const client = hostedConfigClient()
+      const selected = await selectedMachineSpace('machine join', options.space, client)
+      const approved = await machineJoin(selected, { client, env: process.env, output: log })
+      log(`approved by ${approved.label} (${approved.keyId})`)
+    })
+  machine
+    .command('approve <code...>')
+    .description('approve a joining machine with its pairing code')
+    .option('--space <slug>', 'approve in this record space')
+    .action(async (code: string[], options) => {
+      const client = hostedConfigClient()
+      const selected = await selectedMachineSpace('machine approve', options.space, client)
+      const approved = await machineApprove(code.join('-'), selected, { client, env: process.env })
+      log(`approved ${approved.label} (${approved.keyId})`)
+    })
+}
+
 function registerMachineCommands(config: Command): void {
   const machine = config.command('machine').description('manage machine encryption identity')
+  registerMachineJoinCommands(machine)
   machine
     .command('init')
     .description('create this machine encryption identity')

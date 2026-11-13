@@ -56,7 +56,7 @@ function prependLength(value: Uint8Array): Uint8Array {
   return concatenate(Uint8Array.from(lengthBytes), value)
 }
 
-function lengthValueConcatenate(...values: Uint8Array[]): Uint8Array {
+export function lengthValueConcatenate(...values: Uint8Array[]): Uint8Array {
   return concatenate(...values.map(prependLength))
 }
 

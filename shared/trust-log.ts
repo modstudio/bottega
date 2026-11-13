@@ -9,7 +9,7 @@ export type TrustLogKey = {
   signingPublicKey: Uint8Array
   label: string
 }
-type TrustLogBody =
+export type TrustLogBody =
   | { kind: 'genesis'; first: TrustLogKey; recoveryPublicKey: Uint8Array }
   | ({ kind: 'add' } & TrustLogKey)
   | { kind: 'remove' | 'revoke'; keyId: string }
@@ -38,6 +38,10 @@ function keyBody(key: TrustLogKey): Map<number, unknown> {
     [3, key.signingPublicKey],
     [4, key.label],
   ])
+}
+
+export function encodeTrustLogKey(key: TrustLogKey): Uint8Array {
+  return encode(keyBody(key), dcbor)
 }
 
 function entryMap(entry: UnsignedTrustLogEntry, sig?: Uint8Array): Map<number, unknown> {
@@ -110,6 +114,21 @@ function parseKey(value: unknown, name: string): TrustLogKey {
     ),
     label: text(field(map, 4, `${name}.label`), `${name}.label`),
   }
+}
+
+export function decodeTrustLogKey(encoded: Uint8Array): TrustLogKey {
+  let decoded: unknown
+  try {
+    decoded = decode(encoded, dcbor)
+  } catch (error) {
+    throw new Error(
+      `trust log key encoding is invalid: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+  const result = parseKey(decoded, 'key')
+  if (!bytesEqual(encodeTrustLogKey(result), encoded))
+    throw new Error('trust log key encoding is non-canonical')
+  return result
 }
 
 export function decodeTrustLogEntry(encoded: Uint8Array): TrustLogEntry {

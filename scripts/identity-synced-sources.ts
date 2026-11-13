@@ -433,6 +433,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'listSecrets',
     'listCredentialPreferences',
     'readTrustLog',
+    'readMachineJoinMessages',
     'whoami',
   ]),
   ...writeEntries(
@@ -452,6 +453,9 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
       'putCredentialPreference',
       'registerMachineKey',
       'appendTrustLogEntry',
+      'allocateMachineJoinNameplate',
+      'postMachineJoinMessage',
+      'failMachineJoinNameplate',
       'retireDataKey',
       'revokeMachineKey',
     ],

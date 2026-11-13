@@ -349,6 +349,18 @@ export const ROUTES = (
       'spare',
     ].map((name) => route(`machine ${name}`, 'orch', name)),
     route('machine setup', 'orch', 'setup', 'set up this machine: level and projects'),
+    route(
+      'machine join',
+      'orch',
+      'config machine join',
+      'print a pairing code and wait for an approved machine to approve this one',
+    ),
+    route(
+      'machine approve',
+      'orch',
+      'config machine approve',
+      'approve a joining machine with its pairing code',
+    ),
     route('machine reclaim-fixture-questions', 'hub', 'reclaim-fixture-questions'),
     { command: ['machine', 'journal'], owner: 'orch', argv: ['journal'], hidden: true },
     { command: ['machine', 'store-path'], owner: 'orch', argv: ['store-path'], hidden: true },
