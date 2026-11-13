@@ -77,9 +77,9 @@ async function resolveTaskDocumentPointer(pointer: string): Promise<string> {
   try {
     const docs = await productionWorkflowTextDocumentPorts.list(key, PLATFORM_SLUG)
     if (docs.some((doc) => doc.reference === pointer)) return pointer
-    throw new Error(`task document ${pointer} does not resolve`)
+    throw new ContextWriteRefusalError(`task document ${pointer} does not resolve`)
   } catch (error) {
-    if ((error as Error).message === `task document ${pointer} does not resolve`) throw error
+    if (error instanceof ContextWriteRefusalError) throw error
     throw new Error(
       `task documents of ${key} could not be read (${(error as Error).message}); retry once the task store answers`,
     )
@@ -92,12 +92,14 @@ export async function resolvedPointerTarget(
   database: Database = db(),
 ): Promise<string> {
   const pointer = value.trim()
-  if (!pointer) throw new Error('pointer must not be empty')
-  if (isScratchLocation(pointer)) throw new Error('scratch paths are not durable pointers')
+  // A pointer that cannot be a durable target is a policy refusal, not a retryable failure.
+  if (!pointer) throw new ContextWriteRefusalError('pointer must not be empty')
+  if (isScratchLocation(pointer))
+    throw new ContextWriteRefusalError('scratch paths are not durable pointers')
   if (/^[A-Z][A-Z0-9]*-\d+\/\d+$/.test(pointer)) return resolveTaskDocumentPointer(pointer)
   const stored = storedPointerRefusal(pointer, database)
   if (stored !== undefined) {
-    if (stored) throw new Error(stored)
+    if (stored) throw new ContextWriteRefusalError(stored)
     return pointer
   }
   const pr = /^#?(\d+)$/.exec(pointer)
@@ -109,7 +111,7 @@ export async function resolvedPointerTarget(
   try {
     return resolveCommitArgument(process.cwd(), pointer)
   } catch {}
-  throw new Error(
+  throw new ContextWriteRefusalError(
     `pointer ${JSON.stringify(pointer)} does not resolve as a task document, run, commit, pull request number, or doc-store record`,
   )
 }

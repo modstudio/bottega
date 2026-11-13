@@ -118,6 +118,7 @@ export const docModules: DocModule[] = [
   ]),
   module('orchestrator/src/doc/context-service.ts', [
     'bun:sqlite',
+    '../../../shared/context-item-vocabulary.ts',
     '../database/db.ts',
     '../record/record-write-authority.ts',
     './context-item-hosted-client.ts',
@@ -315,8 +316,8 @@ export const docModules: DocModule[] = [
     '../../../shared/docs.ts',
     '../agent/agent-registry.ts',
     '../database/db.ts',
+    '../../../shared/context-item-vocabulary.ts',
     '../jobs/jobs.ts',
-    './context-item-store.ts',
   ]),
   module('orchestrator/src/doc/local-doc-tree-service.ts', [
     '../../../shared/brand.ts',

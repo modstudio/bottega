@@ -2,8 +2,8 @@
 /** Owns local context-item persistence. Context policy belongs to doc-context-write. */
 import type { Database } from 'bun:sqlite'
 import {
-  CONTEXT_HOLDER_KINDS,
   type ContextHolderKind,
+  splitContextHolder,
 } from '../../../shared/context-item-vocabulary.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
@@ -28,16 +28,6 @@ export type StoredContextItem = ContextItem & {
   revision: string
   createdAt: string
   updatedAt: string
-}
-
-export function splitContextHolder(holder: string) {
-  const separator = holder.indexOf(':')
-  const holderKind = holder.slice(0, separator)
-  const holderId = holder.slice(separator + 1)
-  if (!(CONTEXT_HOLDER_KINDS as readonly string[]).includes(holderKind) || !holderId) {
-    throw new Error(`invalid context holder ${JSON.stringify(holder)}`)
-  }
-  return { holderKind: holderKind as ContextItemRow['holder_kind'], holderId }
 }
 
 function stored(row: ContextItemRow): StoredContextItem {

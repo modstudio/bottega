@@ -1,6 +1,7 @@
 // concern: context-service
 /** Owns context item reads and mutations over the document store. */
 import type { Database } from 'bun:sqlite'
+import { splitContextHolder } from '../../../shared/context-item-vocabulary.ts'
 import { sessionId, writableDb } from '../database/db.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { hostedContextItemClient } from './context-item-hosted-client.ts'
@@ -11,7 +12,6 @@ import {
   removeLocalContextHolder,
   removeLocalContextItem,
   setLocalContextItem,
-  splitContextHolder,
 } from './context-item-store.ts'
 import {
   assertContextDropAllowed,
@@ -23,6 +23,8 @@ import {
 import {
   type ContextItemKind,
   type ContextTaskIdentity,
+  ContextWriteRefusalError,
+  holderOwnershipRefusal,
   missingContextKinds,
 } from './doc-context-write.ts'
 import { contextTaskOwner } from './doc-hosted-client.ts'
@@ -202,6 +204,9 @@ export async function setContextItem(
         : null,
     target: null as string | null,
   }
+  // Ownership is refused before pointer resolution reads git or a task tracker for the caller.
+  const ownership = holderOwnershipRefusal(holder, sessionId(), input.id)
+  if (ownership) throw new ContextWriteRefusalError(ownership)
   if (input.kind === 'pointer') item.target = await resolvedPointerTarget(input.body)
   await assertContextSetAllowed({ holder, item, contextTask: task ?? undefined })
   const localInput = {

@@ -8,6 +8,7 @@ import {
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { rememberHostedRecord } from '../record/install-binding-write.ts'
+import { recordApiError } from '../record/record-api-client-error.ts'
 import {
   clearTaskContext,
   dropContextItem,
@@ -179,7 +180,10 @@ test('lifecycle drop reports an absent hosted row and keeps the local item', asy
         personalSpaceId: 'personal-space',
         memberships: [{ space_id: 'personal-space', slug: 'personal', permission: 'write' }],
       }),
-      deleteContextItem: async () => ({ removed: false }),
+      // The delete route answers an absent row with this 404, which the transport throws.
+      deleteContextItem: async (id) => {
+        throw recordApiError({ error: `context item ${id} not found` }, 404)
+      },
     })
 
     expect(
@@ -191,7 +195,7 @@ test('lifecycle drop reports an absent hosted row and keeps the local item', asy
     ).toEqual([
       expect.objectContaining({
         removed: false,
-        error: `context item ${item.recordId} not found in hosted record`,
+        error: expect.stringContaining(`context item ${item.recordId} not found`),
       }),
     ])
     expect((await getContext({ session })).items).toEqual([

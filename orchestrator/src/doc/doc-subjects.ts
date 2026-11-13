@@ -1,10 +1,11 @@
 // concern: doc-subjects
 /** Lists and renders valid document subjects from the local register and static catalogues. */
+
+import { splitContextHolder } from '../../../shared/context-item-vocabulary.ts'
 import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES, type DocScope } from '../../../shared/docs.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
-import { splitContextHolder } from './context-item-store.ts'
 
 export function taskContextHolder(recordId: string): string {
   return `task:${recordId}`
