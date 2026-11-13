@@ -6,6 +6,7 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { retireProject, upsertProject } from '../project/projects.ts'
+import { hostedContextItemClient } from './context-item-hosted-client.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from './context-write-adapter.ts'
 import { hostedDocClient } from './doc-hosted-client.ts'
 
@@ -201,6 +202,17 @@ test('a non-project document client binds every call to the personal space', asy
   expect(destinations).toEqual(['personal-space', 'personal-space'])
 })
 
+const contextInput = (holderKind: 'task' | 'session', holderId: string) => ({
+  holderKind,
+  holderId,
+  slug: 'fact',
+  kind: 'fact' as const,
+  body: 'Fact.',
+  source: 'test',
+  questionNumber: null,
+  target: null,
+})
+
 test('task context binds to its project while the personal space is active', async () => {
   upsertProject({
     recordId: newRecordId(),
@@ -221,16 +233,17 @@ test('task context binds to its project while the personal space is active', asy
         { space_id: 'context-space', slug: 'context-team', permission: 'write' },
       ],
     }),
-    getDoc: async (_id, requestDestination) => {
+    upsertContextItem: async (_input, requestDestination) => {
       destination = requestDestination?.destinationSpaceId
-      return {}
+      return { id: newRecordId(), createdAt: 'a', updatedAt: 'b' }
     },
   })
-  const client = await hostedDocClient('context', `task:${newRecordId()}`, {
+  const holderId = newRecordId()
+  const client = await hostedContextItemClient(`task:${holderId}`, {
     kind: 'task',
     projectName: 'context-project',
   })
-  await client.getDoc('doc')
+  await client.upsert(contextInput('task', holderId))
   expect(destination).toBe('context-space')
 })
 
@@ -248,9 +261,9 @@ function captureDestination(spaces: { space_id: string; slug: string }[]) {
         ...spaces.map((space) => ({ ...space, permission: 'write' })),
       ],
     }),
-    getDoc: async (_id, requestDestination) => {
+    upsertContextItem: async (_input, requestDestination) => {
       seen.destination = requestDestination?.destinationSpaceId
-      return {}
+      return { id: newRecordId(), createdAt: 'a', updatedAt: 'b' }
     },
   })
   return seen
@@ -283,11 +296,11 @@ test('a task context subject derives its project space past a project whose task
     pointer: async () => null,
   }
   const seen = captureDestination([{ space_id: 'derived-space', slug: 'derived-team' }])
-  const client = await hostedDocClient('context', `task:${recordId}`)
-  await client.getDoc('doc')
+  const client = await hostedContextItemClient(`task:${recordId}`)
+  await client.upsert(contextInput('task', recordId))
   expect(read.slice(0, 2)).toEqual(['aaa-unreadable-project', 'derived-project'])
   expect(seen.destination).toBe('derived-space')
-  await expect(hostedDocClient('context', `task:${newRecordId()}`)).rejects.toMatchObject({
+  await expect(hostedContextItemClient(`task:${newRecordId()}`)).rejects.toMatchObject({
     status: 409,
     message: expect.stringContaining('aaa-unreadable-project could not be read'),
   })
@@ -296,7 +309,7 @@ test('a task context subject derives its project space past a project whose task
     task: async () => null,
     pointer: async () => null,
   }
-  await expect(hostedDocClient('context', `task:${newRecordId()}`)).rejects.toMatchObject({
+  await expect(hostedContextItemClient(`task:${newRecordId()}`)).rejects.toMatchObject({
     status: 409,
     message: expect.stringContaining('agent context set --task <KEY>'),
   })
@@ -304,8 +317,8 @@ test('a task context subject derives its project space past a project whose task
 
 test('a session context subject writes to its checkout project space, else the personal space', async () => {
   const seen = captureDestination([{ space_id: 'checkout-space', slug: 'checkout-team' }])
-  const personal = await hostedDocClient('context', 'session:outside-checkout')
-  await personal.getDoc('doc')
+  const personal = await hostedContextItemClient('session:outside-checkout')
+  await personal.upsert(contextInput('session', 'outside-checkout'))
   expect(seen.destination).toBe('personal-space')
   upsertProject({
     recordId: newRecordId(),
@@ -313,8 +326,8 @@ test('a session context subject writes to its checkout project space, else the p
     path: process.cwd(),
     settings: { space: 'checkout-team' },
   })
-  const checkout = await hostedDocClient('context', 'session:inside-checkout')
-  await checkout.getDoc('doc')
+  const checkout = await hostedContextItemClient('session:inside-checkout')
+  await checkout.upsert(contextInput('session', 'inside-checkout'))
   expect(seen.destination).toBe('checkout-space')
 })
 

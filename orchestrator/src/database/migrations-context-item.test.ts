@@ -1,7 +1,10 @@
 import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
-import { CONTEXT_HOLDER_KINDS, CONTEXT_ITEM_KINDS } from '../../../shared/context-item-vocabulary.ts'
+import {
+  CONTEXT_HOLDER_KINDS,
+  CONTEXT_ITEM_KINDS,
+} from '../../../shared/context-item-vocabulary.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from './migrations.ts'
 import { migrationBoundaryTestDatabase } from './test-database.fixture.ts'
@@ -98,7 +101,10 @@ test('context-item migration moves every kind, folds objections, and is idempote
 })
 
 test('context-item migration CHECK vocabularies match the shared owner', () => {
-  const sql = readFileSync(new URL('../../migrations/0222_context_item.sql', import.meta.url), 'utf8')
+  const sql = readFileSync(
+    new URL('../../migrations/0222_context_item.sql', import.meta.url),
+    'utf8',
+  )
   const values = (column: string) => {
     const match = new RegExp(`(?:^|\\n) ${column} TEXT[^\\n]*${column} IN \\(([^)]+)\\)`).exec(sql)
     expect(match).not.toBeNull()
@@ -115,9 +121,11 @@ test('context-item migration requires an exact q-number source', () => {
     database.query("UPDATE doc SET body=replace(body, 'q6056', 'q6159:')").run()
     applyMigrations(database)
     expect(
-      database.query<{ question_number: number | null }, []>(
-        "SELECT question_number FROM context_item WHERE kind='position'",
-      ).get()?.question_number,
+      database
+        .query<{ question_number: number | null }, []>(
+          "SELECT question_number FROM context_item WHERE kind='position'",
+        )
+        .get()?.question_number,
     ).toBeNull()
   } finally {
     database.close()

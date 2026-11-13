@@ -23,20 +23,24 @@ export const docModules: DocModule[] = [
   module('orchestrator/src/doc/doc-revision-conflict.ts', ['zod', './doc-write-allowed.ts']),
   module('orchestrator/src/doc/doc-context-write.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/context-item-vocabulary.ts',
     '../../../shared/record-shape.ts',
     '../workflow/workflow-task-reference.ts',
   ]),
   module('orchestrator/src/doc/context-item-store.ts', [
     'bun:sqlite',
+    '../../../shared/context-item-vocabulary.ts',
     '../../../shared/record-id.ts',
     '../database/db.ts',
     './doc-context-write.ts',
   ]),
   module('orchestrator/src/doc/context-item-hosted-client.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/record-write-space.ts',
+    '../project/projects.ts',
     '../record/record-api-client.ts',
     '../record/record-write-destination.ts',
-    './doc-hosted-client.ts',
+    './context-write-adapter.ts',
   ]),
   module('orchestrator/src/doc/context-moment.ts', [
     '../../../shared/brand.ts',
@@ -263,12 +267,10 @@ export const docModules: DocModule[] = [
     '../../../shared/record-id.ts',
   ]),
   module('orchestrator/src/doc/doc-hosted-client.ts', [
-    '../../../shared/brand.ts',
     '../../../shared/record-write-space.ts',
     '../project/projects.ts',
     '../record/record-api-client.ts',
     '../record/record-write-destination.ts',
-    './context-write-adapter.ts',
     './doc-write-allowed.ts',
   ]),
   module('orchestrator/src/doc/doc-history-source.ts', []),
@@ -314,6 +316,7 @@ export const docModules: DocModule[] = [
     '../agent/agent-registry.ts',
     '../database/db.ts',
     '../jobs/jobs.ts',
+    './context-item-store.ts',
   ]),
   module('orchestrator/src/doc/local-doc-tree-service.ts', [
     '../../../shared/brand.ts',

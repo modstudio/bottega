@@ -2,7 +2,10 @@
 /** Validates and routes hosted context-item writes. */
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
-import { CONTEXT_HOLDER_KINDS, CONTEXT_ITEM_KINDS } from '../../../shared/context-item-vocabulary.ts'
+import {
+  CONTEXT_HOLDER_KINDS,
+  CONTEXT_ITEM_KINDS,
+} from '../../../shared/context-item-vocabulary.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import type { RecordContextItemInput } from './record-context-items.ts'
 

@@ -1,12 +1,12 @@
 import { getContextItem } from '../../src/doc/context-item-store.ts'
 import { setContextItem } from '../../src/doc/context-service.ts'
-import { decodeContextItem } from './context-item.ts'
 import {
   consumeDoc as consumeDocument,
   removeDoc as deleteDoc,
   importDocs as readDocs,
   setDoc as writeDoc,
 } from '../../src/doc/docs.ts'
+import { decodeContextItem } from './context-item.ts'
 
 type TestDocInput = Parameters<typeof writeDoc>[0]
 type TestDocWriteInput = Omit<TestDocInput, 'reason' | 'scope'> & {

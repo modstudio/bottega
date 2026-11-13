@@ -1,7 +1,8 @@
 // concern: context-item-hosted-client
 /** Binds hosted context-item writes to the holder's record destination. */
-import type { RecordWriteOwner } from '../../../shared/record-write-space.ts'
+
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { RecordWriteOwner } from '../../../shared/record-write-space.ts'
 import { projectAt } from '../project/projects.ts'
 import { RecordApiRequestError, recordApiClient } from '../record/record-api-client.ts'
 import { recordWriteDestination } from '../record/record-write-destination.ts'

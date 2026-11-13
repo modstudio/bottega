@@ -1,10 +1,12 @@
 // concern: doc-context-write
 /** Pure write policy for one structured context item. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+
 export {
   CONTEXT_ITEM_KINDS,
   type ContextItemKind,
 } from '../../../shared/context-item-vocabulary.ts'
+
 import {
   CONTEXT_ITEM_KINDS,
   type ContextItemKind,

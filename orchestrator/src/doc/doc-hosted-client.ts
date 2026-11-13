@@ -58,7 +58,7 @@ export async function hostedDocClient(
   }
 }
 
-export function docOwner(projectName: string | null): RecordWriteOwner {
+function docOwner(projectName: string | null): RecordWriteOwner {
   if (projectName) return { kind: 'project', name: projectName }
   return { kind: 'personal' }
 }
