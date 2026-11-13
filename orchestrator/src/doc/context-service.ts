@@ -2,10 +2,13 @@
 /** Owns context item reads and mutations over the document store. */
 import type { Database } from 'bun:sqlite'
 import { sessionId, writableDb } from '../database/db.ts'
+import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
+import { hostedContextItemClient } from './context-item-hosted-client.ts'
 import {
   assertContextDropAllowed,
   assertContextSetAllowed,
   contextProfileForHolder,
+  resolvedPointerTarget,
   resolveContextTask,
 } from './context-write-adapter.ts'
 import {
@@ -15,7 +18,9 @@ import {
   removeLocalContextHolder,
   removeLocalContextItem,
   setLocalContextItem,
+  splitContextHolder,
 } from './context-item-store.ts'
+import { contextTaskOwner } from './doc-hosted-client.ts'
 import {
   type ContextItemKind,
   type ContextTaskIdentity,
@@ -77,7 +82,19 @@ export async function clearTaskContext(input: { task: string }) {
   const { holder, task } = await resolveContextHolder(input)
   if (!task) throw new Error('task context clear requires --task')
   writableDb()
-  const removed = removeLocalContextHolder(holder)
+  const items = listContextItems(holder)
+  const removed = await applyRecordWriteAuthority({
+    local: () => removeLocalContextHolder(holder),
+    hosted: async () => {
+      const client = await hostedContextItemClient(holder, contextTaskOwner(task))
+      let count = 0
+      for (const item of items) {
+        const result = await client.remove(item.recordId, { expectedRevision: item.revision })
+        if (result.removed && removeLocalContextItem(holder, item.id, item.revision)) count++
+      }
+      return count
+    },
+  })
   return { holder, task: task.key, removed }
 }
 
@@ -98,7 +115,18 @@ async function dropSessionContextItemForLifecycle(input: {
 }) {
   const holder = `session:${input.session}`
   writableDb()
-  const removed = removeLocalContextItem(holder, input.id, input.expectedRevision)
+  const item = getContextItem(holder, input.id)
+  if (!item) return { holder, id: input.id, removed: false }
+  const removed = await applyRecordWriteAuthority({
+    local: () => removeLocalContextItem(holder, input.id, input.expectedRevision),
+    hosted: async () => {
+      const client = await hostedContextItemClient(holder)
+      const result = await client.remove(item.recordId, {
+        expectedRevision: input.expectedRevision,
+      })
+      return result.removed ? removeLocalContextItem(holder, input.id, item.revision) : false
+    },
+  })
   return { holder, id: input.id, removed }
 }
 
@@ -166,10 +194,11 @@ export async function setContextItem(
       ['ruling', 'position'].includes(input.kind) && questionNumber
         ? Number(questionNumber[1])
         : null,
-    target: input.kind === 'pointer' ? input.body.trim() : null,
+    target: null as string | null,
   }
   await assertContextSetAllowed({ holder, item, contextTask: task ?? undefined })
-  const written = setLocalContextItem({
+  if (input.kind === 'pointer') item.target = await resolvedPointerTarget(input.body)
+  const localInput = {
     holder,
     slug: input.id,
     kind: input.kind,
@@ -178,6 +207,32 @@ export async function setContextItem(
     questionNumber: item.questionNumber,
     target: item.target,
     expectedRevision: input.expectedRevision,
+  }
+  const written = await applyRecordWriteAuthority({
+    local: () => setLocalContextItem(localInput),
+    hosted: async () => {
+      const current = getContextItem(holder, input.id)
+      const client = await hostedContextItemClient(holder, contextTaskOwner(task ?? undefined))
+      const address = splitContextHolder(holder)
+      const result = await client.upsert({
+        id: current?.recordId,
+        holderKind: address.holderKind,
+        holderId: address.holderId,
+        slug: input.id,
+        kind: input.kind,
+        body: input.body,
+        source: input.source,
+        questionNumber: item.questionNumber,
+        target: item.target,
+        expectedRevision: input.expectedRevision,
+      })
+      return setLocalContextItem({
+        ...localInput,
+        recordId: result.id,
+        createdAt: result.createdAt,
+        updatedAt: result.updatedAt,
+      })
+    },
   })
   return {
     task: task?.key ?? null,
@@ -201,6 +256,15 @@ export async function dropContextItem(
   const item = getContextItem(holder, input.id)
   if (!item) return { holder, task: task?.key ?? null, id: input.id, removed: false }
   await assertContextDropAllowed({ item, task: task ?? undefined })
-  const removed = removeLocalContextItem(holder, input.id, input.expectedRevision)
+  const removed = await applyRecordWriteAuthority({
+    local: () => removeLocalContextItem(holder, input.id, input.expectedRevision),
+    hosted: async () => {
+      const client = await hostedContextItemClient(holder, contextTaskOwner(task ?? undefined))
+      const result = await client.remove(item.recordId, {
+        expectedRevision: input.expectedRevision,
+      })
+      return result.removed ? removeLocalContextItem(holder, input.id, item.revision) : false
+    },
+  })
   return { holder, task: task?.key ?? null, id: input.id, removed }
 }

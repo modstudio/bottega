@@ -5,11 +5,8 @@ import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
 import type { DocWriteContext } from './doc-article-fields.ts'
 import { contextTaskOwner, hostedDocClient } from './doc-hosted-client.ts'
-import {
-  getContextItem,
-  listContextItems,
-  removeLocalContextItem,
-} from './context-item-store.ts'
+import { getContextItem, listContextItems, removeLocalContextItem } from './context-item-store.ts'
+import { hostedContextItemClient } from './context-item-hosted-client.ts'
 import type { Doc } from './doc-read-store.ts'
 import { assertLocalStoredReferenceWrite } from './doc-reference-write.ts'
 import { assertLocalRevisionWrite } from './doc-revision-store.ts'
@@ -113,11 +110,20 @@ export async function removeContextItemForLifecycle(
   context: DocWriteContext,
 ): Promise<boolean> {
   if (!holder.startsWith('session:')) {
-    throw new Error('lifecycle context removal requires a session: holder')
+    throw new Error('lifecycle context removal requires a session: subject')
   }
   const item = getContextItem(holder, slug)
   if (!item) return false
-  return removeLocalContextItem(holder, slug, context.expectedRevision)
+  return applyRecordWriteAuthority({
+    local: () => removeLocalContextItem(holder, slug, context.expectedRevision),
+    hosted: async () => {
+      const client = await hostedContextItemClient(holder)
+      const result = await client.remove(item.recordId, {
+        expectedRevision: context.expectedRevision,
+      })
+      return result.removed ? removeLocalContextItem(holder, slug, item.revision) : false
+    },
+  })
 }
 
 /** Task teardown removes a complete holder without applying single-item required-kind guards. */
@@ -125,11 +131,24 @@ export async function removeTaskContextHolder(
   holder: string,
   _context: DocWriteContext,
 ): Promise<number> {
-  if (!holder.startsWith('task:')) throw new Error('task context clear requires a task: holder')
+  if (!holder.startsWith('task:')) throw new Error('task context clear requires a task: subject')
   let removed = 0
-  for (const item of listContextItems(holder)) {
-    if (removeLocalContextItem(holder, item.id, item.revision)) removed++
+  const items = listContextItems(holder)
+  for (const item of items) {
+    if (
+      await applyRecordWriteAuthority({
+        local: () => removeLocalContextItem(holder, item.id, item.revision),
+        hosted: async () => {
+          const client = await hostedContextItemClient(
+            holder,
+            contextTaskOwner(_context.contextTask),
+          )
+          const result = await client.remove(item.recordId, { expectedRevision: item.revision })
+          return result.removed ? removeLocalContextItem(holder, item.id, item.revision) : false
+        },
+      })
+    )
+      removed++
   }
   return removed
 }
-

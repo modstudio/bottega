@@ -10,7 +10,6 @@ import {
   storedBriefHolders,
   workingKeysForBrief,
 } from './context-brief.ts'
-import { encodeContextItem } from './context-item-codec.ts'
 
 const item = (
   holder: string,
@@ -150,14 +149,13 @@ test('orders the session, each project-scoped working task, and its epic by task
 
 test('reads a working task brief from its record-id holder while retaining the task key', () => {
   const recordId = newRecordId()
-  const body = encodeContextItem({ kind: 'next-action', source: 'test', body: 'Continue.' })
   db()
     .query(
-      `INSERT INTO doc
-       (record_id,scope,subject,slug,title,body,delivery,audiences,created_at,updated_at)
-       VALUES (?,'context',?,'next','next',?,'demand','["technical"]',?,?)`,
+      `INSERT INTO context_item
+       (id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
+       VALUES (?,'task',?,'next','next-action','Continue.','test',?,?)`,
     )
-    .run(newRecordId(), `task:${recordId}`, body, '2026-11-09T10:00:00Z', '2026-11-09T10:00:00Z')
+    .run(newRecordId(), recordId, '2026-11-09T10:00:00Z', '2026-11-09T10:00:00Z')
   const references = holderSequence(
     'session-id',
     [{ key: 'STAR-1', project: 'starship' }],
@@ -168,7 +166,11 @@ test('reads a working task brief from its record-id holder while retaining the t
       key: 'STAR-1',
       title: 'Stable holder',
       kind: 'task',
-      items: [item(`task:${recordId}`, 'next', 'next-action', 'Continue.', 'test')],
+      items: [
+        expect.objectContaining(
+          item(`task:${recordId}`, 'next', 'next-action', 'Continue.', 'test'),
+        ),
+      ],
     },
   ])
 })
@@ -181,18 +183,13 @@ test('includes a worked-fact task in the holder set after its claim is released'
     path: '/tmp/worked-brief-fixture',
     settings: { keyPrefixes: ['WORKED'] },
   })
-  const body = encodeContextItem({
-    kind: 'fact',
-    source: 'precompact',
-    body: 'Worked: WORKED-2, WORKED-1',
-  })
   db()
     .query(
-      `INSERT INTO doc
-       (record_id,scope,subject,slug,title,body,delivery,audiences,created_at,updated_at)
-       VALUES (?,'context',?,'worked','worked',?,'demand','["technical"]',?,?)`,
+      `INSERT INTO context_item
+       (id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
+       VALUES (?,'session',?,'worked','fact','Worked: WORKED-2, WORKED-1','precompact',?,?)`,
     )
-    .run(newRecordId(), `session:${session}`, body, '2026-11-11T10:00:00Z', '2026-11-11T10:00:00Z')
+    .run(newRecordId(), session, '2026-11-11T10:00:00Z', '2026-11-11T10:00:00Z')
 
   const working = workingKeysForBrief(session, [], [], db())
   expect(working).toEqual([

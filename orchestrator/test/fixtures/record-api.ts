@@ -132,7 +132,12 @@ function idleBoardDeps(): RecordBoardDeps {
 }
 
 export function idleRecordApiDeps() {
+  const unusedContext = async () => {
+    throw new Error('hosted context items are unused in this fixture')
+  }
   return {
+    upsertContextItem: unusedContext,
+    deleteContextItem: unusedContext,
     readChanges: async () => ({
       resetRequired: false as const,
       cursor: { xid: 0n, seq: 0n },

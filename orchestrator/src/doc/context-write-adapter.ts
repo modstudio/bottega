@@ -64,33 +64,52 @@ const portsHolder = globalThis as typeof globalThis & {
 }
 
 async function pointerRefusal(value: string, database: Database): Promise<string | null> {
+  try {
+    await resolvedPointerTarget(value, database)
+    return null
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error)
+  }
+}
+
+/** Resolve the durable identity stored beside a pointer after the write gate accepts it. */
+export async function resolvedPointerTarget(
+  value: string,
+  database: Database = db(),
+): Promise<string> {
   const pointer = value.trim()
-  if (!pointer) return 'pointer must not be empty'
-  if (isScratchLocation(pointer)) return 'scratch paths are not durable pointers'
+  if (!pointer) throw new Error('pointer must not be empty')
+  if (isScratchLocation(pointer)) throw new Error('scratch paths are not durable pointers')
   if (/^[A-Z][A-Z0-9]*-\d+\/\d+$/.test(pointer)) {
     const key = pointer.slice(0, pointer.indexOf('/'))
     try {
       const docs = await productionWorkflowTextDocumentPorts.list(key, PLATFORM_SLUG)
-      return docs.some((doc) => doc.reference === pointer)
-        ? null
-        : `task document ${pointer} does not resolve`
+      if (docs.some((doc) => doc.reference === pointer)) return pointer
+      throw new Error(`task document ${pointer} does not resolve`)
     } catch (error) {
-      return `task documents of ${key} could not be read (${(error as Error).message}); retry once the task store answers`
+      if ((error as Error).message === `task document ${pointer} does not resolve`) throw error
+      throw new Error(
+        `task documents of ${key} could not be read (${(error as Error).message}); retry once the task store answers`,
+      )
     }
   }
   const stored = storedPointerRefusal(pointer, database)
-  if (stored !== undefined) return stored
+  if (stored !== undefined) {
+    if (stored) throw new Error(stored)
+    return pointer
+  }
   const pr = /^#?(\d+)$/.exec(pointer)
   if (
     pr &&
     database.query('SELECT 1 FROM pull_request_ci WHERE pr_number=? LIMIT 1').get(Number(pr[1]))
   )
-    return null
+    return pr[1]!
   try {
-    resolveCommitArgument(process.cwd(), pointer)
-    return null
+    return resolveCommitArgument(process.cwd(), pointer)
   } catch {}
-  return `pointer ${JSON.stringify(pointer)} does not resolve as a task document, run, commit, pull request number, or doc-store record`
+  throw new Error(
+    `pointer ${JSON.stringify(pointer)} does not resolve as a task document, run, commit, pull request number, or doc-store record`,
+  )
 }
 
 function storedPointerRefusal(pointer: string, database: Database): string | null | undefined {

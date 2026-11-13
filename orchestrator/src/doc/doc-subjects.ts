@@ -41,7 +41,7 @@ export function validDocSubjects(scope: DocScope): string {
       ? docSubjects().project
       : subjectKind === 'stack'
         ? docSubjects().stack
-      : Object.keys(subjectKind === 'agent' ? AGENTS : JOBS).sort()
+        : Object.keys(subjectKind === 'agent' ? AGENTS : JOBS).sort()
   return values.join(', ') || '(none)'
 }
 

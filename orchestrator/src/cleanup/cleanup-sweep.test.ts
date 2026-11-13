@@ -6,9 +6,9 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { encodeContextItem } from '../doc/context-item-codec.ts'
+import { getContextItem } from '../doc/context-item-store.ts'
+import { encodeContextItem } from '../../test/fixtures/context-item.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from '../doc/context-write-adapter.ts'
-import { getDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
 import type { SessionCloseOutReport } from '../session/session-close-out.ts'
 import { markSessionCloseOutSwept } from '../session/session-close-out-store.ts'
@@ -164,8 +164,10 @@ test('session context sweep logs and drops each item for a gone owner', async ()
   if (previousSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
   else process.env.CLAUDE_CODE_SESSION_ID = previousSession
   db()
-    .query('UPDATE doc SET created_at=?,updated_at=? WHERE scope=? AND subject=?')
-    .run('2020-01-01T00:00:00.000Z', '2020-01-01T00:00:00.000Z', 'context', `session:${session}`)
+    .query(
+      "UPDATE context_item SET created_at=?,updated_at=? WHERE holder_kind='session' AND holder_id=?",
+    )
+    .run('2020-01-01T00:00:00.000Z', '2020-01-01T00:00:00.000Z', session)
   const lines: string[] = []
 
   expect(
@@ -181,8 +183,8 @@ test('session context sweep logs and drops each item for a gone owner', async ()
     `dropped context session:${session}/one (fact)`,
     `dropped context session:${session}/two (fact)`,
   ])
-  expect(getDoc('context', `session:${session}`, 'one')).toBeNull()
-  expect(getDoc('context', `session:${session}`, 'two')).toBeNull()
+  expect(getContextItem(`session:${session}`, 'one')).toBeNull()
+  expect(getContextItem(`session:${session}`, 'two')).toBeNull()
 })
 
 test.each(['session_seen', 'holder write'])(
@@ -202,8 +204,8 @@ test.each(['session_seen', 'holder write'])(
     else process.env.CLAUDE_CODE_SESSION_ID = prior
     if (activity === 'session_seen') {
       db()
-        .query('UPDATE doc SET updated_at=? WHERE scope=? AND subject=?')
-        .run('2020-01-01T00:00:00.000Z', 'context', `session:${session}`)
+        .query("UPDATE context_item SET updated_at=? WHERE holder_kind='session' AND holder_id=?")
+        .run('2020-01-01T00:00:00.000Z', session)
       db()
         .query('INSERT INTO session_seen(session_id,last_seen) VALUES (?,?)')
         .run(session, new Date().toISOString())
@@ -216,7 +218,7 @@ test.each(['session_seen', 'holder write'])(
       presentation: presentation([], () => {}),
     })
 
-    expect(getDoc('context', `session:${session}`, 'live')).not.toBeNull()
+    expect(getContextItem(`session:${session}`, 'live')).not.toBeNull()
   },
 )
 
@@ -243,8 +245,8 @@ test('session context sweep keeps items while the author has an unconsumed resum
   if (prior === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
   else process.env.CLAUDE_CODE_SESSION_ID = prior
   db()
-    .query('UPDATE doc SET updated_at=? WHERE scope=? AND subject=?')
-    .run('2020-01-01T00:00:00.000Z', 'context', `session:${session}`)
+    .query("UPDATE context_item SET updated_at=? WHERE holder_kind='session' AND holder_id=?")
+    .run('2020-01-01T00:00:00.000Z', session)
 
   await sweepSessionContext({
     enabled: true,
@@ -253,7 +255,7 @@ test('session context sweep keeps items while the author has an unconsumed resum
     presentation: presentation([], () => {}),
   })
 
-  expect(getDoc('context', `session:${session}`, 'kept-for-resume')).not.toBeNull()
+  expect(getContextItem(`session:${session}`, 'kept-for-resume')).not.toBeNull()
 })
 
 test('session context sweep resolves an open brief author past a later consume revision', async () => {
@@ -295,8 +297,8 @@ test('session context sweep resolves an open brief author past a later consume r
   if (prior === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
   else process.env.CLAUDE_CODE_SESSION_ID = prior
   db()
-    .query('UPDATE doc SET updated_at=? WHERE scope=? AND subject=?')
-    .run('2020-01-01T00:00:00.000Z', 'context', `session:${author}`)
+    .query("UPDATE context_item SET updated_at=? WHERE holder_kind='session' AND holder_id=?")
+    .run('2020-01-01T00:00:00.000Z', author)
 
   await sweepSessionContext({
     enabled: true,
@@ -305,7 +307,7 @@ test('session context sweep resolves an open brief author past a later consume r
     presentation: presentation([], () => {}),
   })
 
-  expect(getDoc('context', `session:${author}`, 'kept-for-revised-resume')).not.toBeNull()
+  expect(getContextItem(`session:${author}`, 'kept-for-revised-resume')).not.toBeNull()
 })
 
 test('an owned terminal sweep candidate reaches close-out by UUID', async () => {

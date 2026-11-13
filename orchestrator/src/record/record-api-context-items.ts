@@ -19,7 +19,10 @@ const body = z.object({
   id: z.string().uuid().optional(),
   holderKind: z.enum(['task', 'session', 'cursor']),
   holderId: z.string().min(1),
-  slug: z.string().regex(/^[a-z0-9][a-z0-9-]*$/).max(64),
+  slug: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9-]*$/)
+    .max(64),
   kind: z.enum(CONTEXT_ITEM_KINDS),
   body: z.string(),
   source: z.string().trim().min(1),

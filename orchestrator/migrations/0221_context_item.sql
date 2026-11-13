@@ -37,6 +37,7 @@ SELECT record_id,
  CASE WHEN context_kind='pointer' THEN trim(context_body) END,
  created_at,updated_at
 FROM parsed
+WHERE true
 ON CONFLICT(holder_kind,holder_id,slug) DO NOTHING;
 DELETE FROM doc_revision WHERE scope='context';
 DELETE FROM doc WHERE scope='context';
