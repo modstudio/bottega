@@ -17,6 +17,10 @@ import {
   type StopSummaryDecision,
   type StopSummaryOwedItem,
 } from './stop-summary-decision.ts'
+import {
+  classifyStopSummaryReviews,
+  type StopSummaryReviewLensRow,
+} from './stop-summary-reviews.ts'
 
 type CountRow = { count: number }
 type OwedRunRow = {
@@ -126,17 +130,23 @@ export async function sessionStopSummary(
         `SELECT COUNT(*) count FROM run WHERE session_id=? AND status IN (${livePlaceholders})`,
       )
       .get(session, ...RUN_LIVE_STATUSES)?.count ?? 0
-  const incompleteReviews =
-    database
-      .query<CountRow, [string]>(
-        `SELECT COUNT(DISTINCT review.record_id) count FROM review
-       JOIN review_lens lens ON lens.review_record_id=review.record_id
-       JOIN run ON run.record_id=lens.run_record_id
-      WHERE run.session_id=? AND (review.completed_at IS NULL OR EXISTS
-        (SELECT 1 FROM review_finding finding WHERE finding.review_record_id=review.record_id
-          AND finding.disposition IS NULL))`,
-      )
-      .get(session)?.count ?? 0
+  const reviewRows = database
+    .query<StopSummaryReviewLensRow, [string]>(
+      `SELECT review.record_id review_record_id,review.number,review.completed_at,review.outdated_at,
+              run.status run_status,
+              strftime('%Y-%m-%dT%H:%M:%fZ',julianday(run.started_at)+COALESCE(run.latency_ms,0)/86400000.0) finished_at,
+              (SELECT COUNT(*) FROM review_finding finding
+                WHERE finding.review_record_id=review.record_id AND finding.disposition IS NULL) open_findings
+         FROM review
+         JOIN review_lens lens ON lens.review_record_id=review.record_id
+         JOIN run ON run.record_id=lens.run_record_id
+        WHERE EXISTS (SELECT 1 FROM review_lens owned_lens
+          JOIN run owned_run ON owned_run.record_id=owned_lens.run_record_id
+          WHERE owned_lens.review_record_id=review.record_id AND owned_run.session_id=?)
+        ORDER BY review.number,lens.record_id`,
+    )
+    .all(session)
+  const reviews = classifyStopSummaryReviews(reviewRows)
   const activeLandings = database
     .query<ActiveLandingRow, [string]>(
       "SELECT project,branch FROM landing WHERE session_id=? AND status IN ('queued','running')",
@@ -160,6 +170,7 @@ export async function sessionStopSummary(
     .all(session)
   const activeTrees = heldTrees.filter((tree) => landingTreeIsActive(tree, cursors, activeLandings))
   const owedItems: StopSummaryOwedItem[] = [
+    ...reviews.owedItems,
     ...owedRuns.map((run) => ({
       kind: 'run' as const,
       identity: run.record_id,
@@ -195,7 +206,7 @@ export async function sessionStopSummary(
       total: cursor.total_steps,
     })),
     liveRuns,
-    incompleteReviews,
+    incompleteReviews: reviews.incompleteReviews,
     inFlightLandings: activeLandings.length + activeTrees.length,
     owedItems,
     previousBlockKey: options.previousBlockKey ?? null,

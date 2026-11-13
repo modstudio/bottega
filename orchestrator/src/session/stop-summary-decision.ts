@@ -15,7 +15,7 @@ type StopSummaryCursor = {
 }
 
 export type StopSummaryOwedItem = {
-  kind: 'run' | 'worktree' | 'landing-tree' | 'note'
+  kind: 'run' | 'worktree' | 'landing-tree' | 'note' | 'review'
   identity: string
   label: string
   command: string
@@ -33,7 +33,12 @@ export type StopSummaryFacts = {
   previousBlockKey: string | null
 }
 
-export type StopSummaryDecision = { lines: string[]; block: boolean; reason: string | null }
+export type StopSummaryDecision = {
+  lines: string[]
+  block: boolean
+  reason: string | null
+  blockKey: string | null
+}
 
 const count = (value: number, singular: string, plural = `${singular}s`) =>
   `${value} ${value === 1 ? singular : plural}`
@@ -72,18 +77,19 @@ export function decideStopSummary(facts: StopSummaryFacts): StopSummaryDecision 
   const overdue = facts.owedItems.filter(
     (item) => Number.isFinite(now) && now - Date.parse(item.owedAt) >= OWED_ITEM_OVERDUE_MS,
   )
+  const owedBlockKey = facts.owedItems.length ? blockKey(facts.owedItems.map(owedLine)) : null
   if (moving) {
     lines.push(...overdue.map(owedLine))
-    return { lines, block: false, reason: null }
+    return { lines, block: false, reason: null, blockKey: owedBlockKey }
   }
-  if (!facts.owedItems.length) return { lines, block: false, reason: null }
+  if (!facts.owedItems.length) return { lines, block: false, reason: null, blockKey: null }
 
   const detailed = facts.owedItems.map(owedLine)
   const reason = [...lines, ...detailed].join('\n')
-  if (facts.previousBlockKey === blockKey(detailed)) {
+  if (facts.previousBlockKey === owedBlockKey) {
     lines.push(`${count(facts.owedItems.length, 'item')} owed → ${PLATFORM_SLUG} score pending`)
-    return { lines, block: false, reason }
+    return { lines, block: false, reason, blockKey: owedBlockKey }
   }
   lines.push(...detailed)
-  return { lines, block: true, reason }
+  return { lines, block: true, reason, blockKey: owedBlockKey }
 }

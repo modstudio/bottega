@@ -33,6 +33,7 @@ describe('Stop summary decision', () => {
       lines: ['Nothing waiting on you'],
       block: false,
       reason: null,
+      blockKey: null,
     })
   })
 
@@ -76,12 +77,17 @@ describe('Stop summary decision', () => {
   test('idle owed items block once, then collapse until the set changes', () => {
     const first = decideStopSummary(facts({ owedItems: [owed()] }))
     expect(first.block).toBe(true)
+    expect(first.blockKey).toBeString()
     expect(first.lines.at(-1)).toContain('run 12 implement DEV-2297 unscored')
-    const key = createHash('sha256')
+    const expectedKey = createHash('sha256')
       .update(first.lines.filter((line) => line.includes(' → ')).join('\n'))
       .digest('hex')
-    const second = decideStopSummary(facts({ owedItems: [owed()], previousBlockKey: key }))
+    expect(first.blockKey).toBe(expectedKey)
+    const second = decideStopSummary(
+      facts({ owedItems: [owed()], previousBlockKey: first.blockKey }),
+    )
     expect(second.block).toBe(false)
+    expect(second.blockKey).toBe(first.blockKey)
     expect(second.lines.at(-1)).toBe(`1 item owed → ${PLATFORM_SLUG} score pending`)
   })
 

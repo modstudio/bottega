@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Stop hook: close terminal trees, then print one bounded session summary."""
-import hashlib
 import json
 import os
 import sqlite3
@@ -108,11 +107,9 @@ def summary(payload, ids, deadline):
         reason = report.get("reason")
         if not isinstance(reason, str):
             raise ValueError("blocking session status has no reason")
-        detailed = [
-            line for line in reason.splitlines()
-            if " → " in line and not line.endswith("bottega question inbox")
-        ]
-        key = hashlib.sha256("\n".join(detailed).encode()).hexdigest()
+        key = report.get("blockKey")
+        if not isinstance(key, str):
+            raise ValueError("blocking session status has no block key")
         write_marker(path, {"blockKey": key})
         return {"decision": "block", "reason": reason}
     return {"systemMessage": "\n".join(report["lines"])}

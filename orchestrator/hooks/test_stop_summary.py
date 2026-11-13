@@ -33,8 +33,8 @@ class StopSummaryHookTest(unittest.TestCase):
 
         def run(_command, **options):
             if options["env"].get("BOTTEGA_STOP_SUMMARY_BLOCK_KEY"):
-                return Result({"lines": ["Nothing waiting on you", f"1 item owed → {PRODUCT} score pending"], "block": False, "reason": f"Nothing waiting on you\nrun 12 unscored → {PRODUCT} score 12"})
-            return Result({"lines": ["Nothing waiting on you", f"run 12 unscored → {PRODUCT} score 12"], "block": True, "reason": f"Nothing waiting on you\nrun 12 unscored → {PRODUCT} score 12"})
+                return Result({"lines": ["Nothing waiting on you", f"1 item owed → {PRODUCT} score pending"], "block": False, "reason": f"Nothing waiting on you\nrun 12 unscored → {PRODUCT} score 12", "blockKey": "decision-key"})
+            return Result({"lines": ["Nothing waiting on you", f"run 12 unscored → {PRODUCT} score 12"], "block": True, "reason": f"Nothing waiting on you\nrun 12 unscored → {PRODUCT} score 12", "blockKey": "decision-key"})
 
         with tempfile.TemporaryDirectory() as state, mock.patch.dict(
             os.environ, {"BOTTEGA_BOARD_HOOK_STATE": state}, clear=False
@@ -43,7 +43,11 @@ class StopSummaryHookTest(unittest.TestCase):
         ):
             first = hook.summary(payload, ["session"], time.monotonic() + 5)
             second = hook.summary(payload, ["session"], time.monotonic() + 5)
+            stored_key = hook.read_marker(
+                hook.marker_path("stop-summary", "session")
+            )["blockKey"]
         self.assertEqual(first["decision"], "block")
+        self.assertEqual(stored_key, "decision-key")
         self.assertEqual(second["systemMessage"].splitlines()[-1], f"1 item owed → {PRODUCT} score pending")
 
     def test_cleanup_still_closes_each_terminal_worktree_root(self):
