@@ -20,10 +20,12 @@ type ReviewOwedVerdict = {
 export type ReviewOwedFloorDecision = { action: 'allow' } | { action: 'refuse'; message: string }
 
 export function decideReviewOwedFloor(verdict: ReviewOwedVerdict): ReviewOwedFloorDecision {
-  const owed = verdict.lenses.filter(({ status }) => status === 'owed').map(({ lens }) => lens)
-  if (!owed.length) return { action: 'allow' }
+  const blocking = verdict.lenses.filter(({ status }) =>
+    ['owed', 'running', 'untriaged'].includes(status),
+  )
+  if (!blocking.length) return { action: 'allow' }
   return {
     action: 'refuse',
-    message: `floor review-owed is unmet; owed lenses: ${owed.join(', ')}; remedy: \`${verdict.remedy}\``,
+    message: `floor review-owed is unmet; blocking lenses: ${blocking.map(({ lens, status }) => `${lens} (${status})`).join(', ')}; remedy: \`${verdict.remedy}\``,
   }
 }

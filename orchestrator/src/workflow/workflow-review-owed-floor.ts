@@ -25,11 +25,24 @@ function gatherReviewOwedFloor(
   if (!project) return { action: 'refuse', message: `project ${projectName} is not registered` }
   const worktree = args.worktree?.trim()
   const cwd = worktree || project.path
-  const branch = args.branch?.trim() || gitText(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'])
+  const branch = worktree
+    ? gitText(worktree, ['rev-parse', '--abbrev-ref', 'HEAD'])
+    : args.branch?.trim()
   if (!branch || branch === 'HEAD')
     return {
       action: 'refuse',
       message: `floor review-owed cannot resolve the cursor branch; ${argumentRemedy}`,
+    }
+  const trunk = project.settings.trunk?.trim()
+  if (!trunk)
+    return {
+      action: 'refuse',
+      message: `floor review-owed cannot resolve a base because project ${projectName} has no trunk configured`,
+    }
+  if (branch === trunk)
+    return {
+      action: 'refuse',
+      message: `floor review-owed cannot evaluate configured trunk ${trunk}; ${argumentRemedy}`,
     }
   const head =
     gitText(cwd, ['rev-parse', '--verify', `${branch}^{commit}`]) ??
@@ -38,12 +51,6 @@ function gatherReviewOwedFloor(
     return {
       action: 'refuse',
       message: `floor review-owed cannot resolve branch ref ${branch} in ${cwd}; pass \`--arg worktree=<path>\` naming its checkout, or fetch ${branch}`,
-    }
-  const trunk = project.settings.trunk?.trim()
-  if (!trunk)
-    return {
-      action: 'refuse',
-      message: `floor review-owed cannot resolve a base because project ${projectName} has no trunk configured`,
     }
   const base = resolveReviewBase(cwd, head, trunk)
   if (!base)
