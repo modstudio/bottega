@@ -70,10 +70,12 @@ BEGIN
     kind text NOT NULL CHECK (kind IN ('project','parent','space'))
   ) ON COMMIT DROP;
   INSERT INTO project_space_classification(name,kind) VALUES
-    ('branch_disposal','project'),('brief_injection','space'),('config_entry','space'),('config_secret','space'),('contention','parent'),
+    ('branch_disposal','project'),('board_presence','project'),('brief_injection','space'),('config_entry','space'),('config_secret','space'),('contention','parent'),
+    ('credential_payer_preference','project'),
     ('doc','project'),('doc_related_subject','parent'),('doc_revision','project'),
-    ('hub_change','space'),('hub_change_head','space'),('hub_day','space'),
+    ('hub_day','space'),
     ('routing_evidence_head','space'),
+    ('no_destination_write','space'),('record_change','space'),
     ('hub_interval','project'),('hub_note','project'),('hub_note_acknowledgement','project'),
     ('hub_report_subscription','project'),('hub_report_subscription_member','parent'),
     ('hub_report_subscription_project','space'),('hub_report_subscription_recipient','parent'),
@@ -82,7 +84,7 @@ BEGIN
     ('hub_task_status_event','project'),('invitation','space'),('landing','project'),
     ('landing_override','project'),('landing_review_carry','project'),
     ('landing_triage_snapshot','project'),('pull_request_ci','project'),('lens','space'),('lens_profile','space'),
-    ('lens_profile_revision','space'),('lens_revision','space'),('machine_name_claim','space'),('machine_public_key','space'),
+    ('lens_profile_revision','space'),('lens_revision','space'),('machine_key_claim_challenge','space'),('machine_name_claim','space'),('machine_public_key','space'),('machine_trust_log','space'),
     ('membership','space'),('operator_waiting_email','space'),('orch_snapshot','space'),
     ('port_baseline','parent'),('port_doctrine','space'),('port_pair','project'),
     ('port_ref','project'),('port_ref_source','parent'),('port_skip','parent'),
@@ -92,9 +94,10 @@ BEGIN
     ('review','project'),('review_finding','parent'),('review_lens','parent'),
     ('review_read','project'),('run','project'),('run_exclusion','parent'),
     ('run_score','parent'),('secret_dek','space'),('secret_dek_wrap','space'),
+    ('space_outside_intake','project'),('space_outside_write','space'),('space_posting_block','space'),
     ('seq','project'),('step_catalogue','space'),('step_catalogue_event','space'),
     ('step_catalogue_version','space'),('subject','project'),('task_flow','project'),('task_flow_stage','parent'),('test_flake','project'),
-    ('workflow','space'),('workflow_event','space'),('workflow_version','space');
+    ('workflow','space'),('workflow_event','space'),('workflow_obligation','parent'),('workflow_step_text','parent'),('workflow_text_copy','parent'),('workflow_version','space');
 
   SELECT string_agg(c.table_name, ', ' ORDER BY c.table_name) INTO collisions
   FROM (SELECT DISTINCT ic.table_name FROM information_schema.columns ic
@@ -116,6 +119,8 @@ BEGIN
   INSERT INTO project_ownership(name,owner_column,parent_name,parent_column,path) VALUES
     ('project','id',NULL,NULL,'project.id'),
     ('branch_disposal','project_id',NULL,NULL,'project_id'),
+    ('board_presence','project_id',NULL,NULL,'project_id'),
+    ('credential_payer_preference','project_id',NULL,NULL,'project_id'),
     ('doc','project_id',NULL,NULL,'project_id'),
     ('doc_revision','project_id',NULL,NULL,'project_id'),
     ('hub_interval','project_id',NULL,NULL,'project_id or project_name or hub_task.task_key'),
@@ -147,6 +152,7 @@ BEGIN
     ('review','project_id',NULL,NULL,'project_id'),
     ('review_read','project_id',NULL,NULL,'project_id'),
     ('run','project_id',NULL,NULL,'project_id'),
+    ('space_outside_intake','project_id',NULL,NULL,'project_id'),
     ('seq','project_id',NULL,NULL,'project_id'),
     ('subject','project_id',NULL,NULL,'project_id'),
     ('task_flow','project_id',NULL,NULL,'project_id'),
@@ -165,6 +171,9 @@ BEGIN
     ('run_exclusion',NULL,'run','run_id','run.run_id'),
     ('run_score',NULL,'run','run_id','run.run_id'),
     ('task_flow_stage',NULL,'task_flow','flow_record_id','task_flow.flow_record_id'),
+    ('workflow_obligation',NULL,'task_flow_stage','stage_record_id','task_flow_stage.stage_record_id'),
+    ('workflow_step_text',NULL,'task_flow_stage','stage_record_id','task_flow_stage.stage_record_id'),
+    ('workflow_text_copy',NULL,'task_flow_stage','stage_record_id','task_flow_stage.stage_record_id'),
     ('port_baseline',NULL,'port_pair','pair_id','port_pair.pair_id'),
     ('port_skip',NULL,'port_pair','pair_id','port_pair.pair_id'),
     ('port_ref_source',NULL,'port_ref','ref_id','port_ref.ref_id');
