@@ -1,10 +1,7 @@
 // concern: machine join relay policy
 /** Decides mailbox lifetime, occupancy, conflicts, limits and allocation without I/O. */
 
-import { MACHINE_JOIN_MESSAGE_MAX_BYTES } from '../../../shared/machine-join-wire.ts'
 import { NAMEPLATE_MAX } from '../../../shared/pairing-code.ts'
-
-export { MACHINE_JOIN_MESSAGE_MAX_BYTES }
 
 export const MACHINE_JOIN_NAMEPLATE_TTL_MS = 10 * 60_000
 export const MACHINE_JOIN_RATE_WINDOW_MS = 60 * 60_000

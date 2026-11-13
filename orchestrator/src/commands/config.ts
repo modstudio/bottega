@@ -193,8 +193,7 @@ export const configListPresentation = (
   json: boolean,
 ) => (json ? [JSON.stringify(rows)] : rows.map((row) => `${row.scope}\t${row.key}\t${row.value}`))
 
-function registerMachineCommands(config: Command): void {
-  const machine = config.command('machine').description('manage machine encryption identity')
+function registerMachineJoinCommands(machine: Command): void {
   machine
     .command('join')
     .description('print a pairing code and wait for an approved machine')
@@ -215,6 +214,11 @@ function registerMachineCommands(config: Command): void {
       const approved = await machineApprove(code.join('-'), selected, { client, env: process.env })
       log(`approved ${approved.label} (${approved.keyId})`)
     })
+}
+
+function registerMachineCommands(config: Command): void {
+  const machine = config.command('machine').description('manage machine encryption identity')
+  registerMachineJoinCommands(machine)
   machine
     .command('init')
     .description('create this machine encryption identity')

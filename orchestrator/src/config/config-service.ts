@@ -116,13 +116,9 @@ async function identity(client: ConfigClient) {
   return hostedIdentity(client)
 }
 
-async function unpinServerRevoked(
-  client: ConfigClient,
-  destination: ConfigDestination = {},
-  env: ConfigEnvironment = process.env,
-) {
+async function unpinServerRevoked(client: ConfigClient, destination: ConfigDestination = {}) {
   const remote = await client.listMachineKeys(destination)
-  for (const key of remote) if (key.revokedAt) await unpinTrustedMachine(key.keyId, env)
+  for (const key of remote) if (key.revokedAt) await unpinTrustedMachine(key.keyId)
   return remote
 }
 
@@ -279,20 +275,19 @@ export async function machineTrust(
   client = hostedConfigClient(),
   env: ConfigEnvironment = process.env,
 ) {
-  const selectedSpaceId = selected.spaceId
-  const destination = { destinationSpaceId: selectedSpaceId }
+  const destination = { destinationSpaceId: selected.spaceId }
   const publicBytes = bytes(publicKey)
   if ((await machineKeyId(publicBytes)) !== keyId)
     throw new Error('machine key id does not match public key')
-  const remote = await unpinServerRevoked(client, destination, env)
-  const registered = remote.find((item) => item.keyId === keyId)
+  const keys = await client.listMachineKeys(destination)
+  for (const key of keys) if (key.revokedAt) await unpinTrustedMachine(key.keyId, env)
+  const registered = keys.find((item) => item.keyId === keyId)
   const refusal = machineTrustRefusal(keyId, registered, selected.slug)
   if (refusal) throw new Error(refusal)
   await pinTrustedMachine(keyId, publicBytes, label, env)
   const machine = await localMachine(env)
   const trust = await readTrustList(env)
-  const sender = trust[machine.keyId]
-  const recipient = trust[keyId]
+  const [sender, recipient] = [trust[machine.keyId], trust[keyId]]
   if (!sender || !recipient) throw new Error('machine is absent from the trust list after pinning')
   try {
     const before = await client.currentDataKey(machine.keyId, destination)
@@ -304,14 +299,14 @@ export async function machineTrust(
       client,
       machine,
       before,
-      remote,
-      selectedSpaceId,
+      keys,
+      selected.spaceId,
       destination,
     )
     if (rotated) return
     const wrapped = await wrapDataKey({
       dek,
-      wrapContext: { spaceId: selectedSpaceId, dekId: current.id, dekVersion: current.version },
+      wrapContext: { spaceId: selected.spaceId, dekId: current.id, dekVersion: current.version },
       senderPrivateKey: machine.privateKey,
       senderPublicKey: bytes(sender.public_key),
       recipientPublicKey: bytes(recipient.public_key),

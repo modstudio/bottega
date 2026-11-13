@@ -45,7 +45,7 @@ export type MachineJoinParty = {
   finish(peerShare: Uint8Array, peerSide: Uint8Array): MachineJoinSession
 }
 
-export function machineJoinSid(spaceId: string, nameplate: string, expiresAt: string): Uint8Array {
+function machineJoinSid(spaceId: string, nameplate: string, expiresAt: string): Uint8Array {
   return sha256(
     lengthValueConcatenate(
       utf8(`${PROTOCOL} sid`),

@@ -21,7 +21,12 @@ test('shared signed append verifies and appends an add entry', async () => {
     true,
     spaceId,
     ['own-key', new Uint8Array(32).fill(11), signingPublicKey, 'own'],
-    ['target-key', new Uint8Array(32).fill(12), ed25519.getPublicKey(new Uint8Array(32).fill(2)), 'target'],
+    [
+      'target-key',
+      new Uint8Array(32).fill(12),
+      ed25519.getPublicKey(new Uint8Array(32).fill(2)),
+      'target',
+    ],
     signingPrivateKey,
   )
   const env = {
