@@ -172,5 +172,5 @@ async function applyWorkflowRulingLocally(input: {
       },
       input.context.taskFlowClient,
     )
-  return result
+  return { summary: result.summary, questionId: result.questionId }
 }
