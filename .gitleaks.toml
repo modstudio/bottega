@@ -8,3 +8,8 @@ description = "DEV-977 secret-shaped override-reason test fixture"
 regexTarget = "match"
 regexes = ['''ghp_123456789012345678901234567890123456''']
 
+[[allowlists]]
+description = "DEV-2249 machine-signing-key test fixture"
+regexTarget = "match"
+regexes = ['''revoked-x25519-key''']
+
