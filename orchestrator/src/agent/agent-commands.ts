@@ -1,7 +1,7 @@
 // concern: agent-commands
 /** Owns agent registry mutations and catalogue presentation. Must not know CLI grammar. */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { flagValue } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import { probeAgent, recordSuccessfulRegistrationProbe } from './agent-probe.ts'
@@ -114,7 +114,7 @@ function parseRequestSettings(value: string): RequestSettings {
   const reserved = Object.keys(parsed).find((key) => RESERVED_REQUEST_SETTING_KEYS.has(key))
   if (reserved) {
     throw new Error(
-      `--request-settings may not set reserved key ${JSON.stringify(reserved)}; Bottega sets it on every Goose request, so remove it`,
+      `--request-settings may not set reserved key ${JSON.stringify(reserved)}; ${PLATFORM_NAME} sets it on every Goose request, so remove it`,
     )
   }
   return parsed as RequestSettings

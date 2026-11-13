@@ -47,8 +47,9 @@ export type AgentRow = {
 export const GOOSE_CONTEXT_CEILING = 128_000
 
 /**
- * Goose output bound above healthy calls' maximum output in the
- * `DEV-2294 healthy output per call` measurement.
+ * Goose output bound above the largest output a healthy Goose call produces, so
+ * runaway reasoning on any model and provider ends here instead of at the
+ * provider limit.
  */
 export const GOOSE_MAX_OUTPUT_TOKENS = 32_768
 
@@ -113,7 +114,7 @@ function rowLaunchEnvironment(
   promptBytes: number | null,
   writesRepo: boolean | null,
 ): Record<string, string> {
-  const outputCap =
+  const outputCap: Record<string, string> =
     row.harness === 'goose' ? { GOOSE_MAX_TOKENS: String(GOOSE_MAX_OUTPUT_TOKENS) } : {}
   if (!row.base_url) return outputCap
   const stored = JSON.parse(row.caps) as Caps & { contextTokens?: number | null }
@@ -478,7 +479,7 @@ function assertRequestSettingsReachable(
 ): void {
   if (requestSettings && !baseUrl) {
     throw new Error(
-      `agent "${name}" has request settings but no base URL; set one with bottega agent set ${name} --base-url <url>, or drop them with --clear-request-settings`,
+      `agent "${name}" has request settings but no base URL; set one with ${PLATFORM_SLUG} agent set ${name} --base-url <url>, or drop them with --clear-request-settings`,
     )
   }
 }
@@ -542,6 +543,21 @@ export function identityChangeProbeAttempts(
   ]
 }
 
+/** The probe result that marks newly widened jobs unestablished, or null when the job change needs no probe. */
+function pendingCapabilityProbe(current: AgentRow, input: AgentMutation): string | null {
+  if (input.jobs === undefined || !current.probe_result) return null
+  const previous = JSON.parse(current.probe_result) as RegistrationProbeResult
+  const currentJobs = current.jobs ? (JSON.parse(current.jobs) as string[]) : null
+  const targetJobs = input.jobs ?? Object.keys(previous.jobs ?? {})
+  const widened = currentJobs === null ? [] : targetJobs.filter((job) => !currentJobs.includes(job))
+  const unestablished = widened.filter((job) => {
+    const observations = previous.jobs?.[job]
+    return !observations || Object.values(observations).some((value) => value !== true)
+  })
+  if (!unestablished.length) return null
+  return JSON.stringify({ ...previous, ok: null, pendingCapabilities: unestablished })
+}
+
 export function setAgent(
   name: string,
   input: AgentMutation,
@@ -591,20 +607,10 @@ export function setAgent(
   } else if (input.contextTokens !== undefined) {
     caps.contextTokens = input.contextTokens
   }
-  if (!identityChanged && input.jobs !== undefined && current.probe_result) {
-    const previous = JSON.parse(current.probe_result) as RegistrationProbeResult
-    const currentJobs = current.jobs ? (JSON.parse(current.jobs) as string[]) : null
-    const targetJobs = input.jobs ?? Object.keys(previous.jobs ?? {})
-    const widened =
-      currentJobs === null ? [] : targetJobs.filter((job) => !currentJobs.includes(job))
-    const unestablished = widened.filter((job) => {
-      const observations = previous.jobs?.[job]
-      return !observations || Object.values(observations).some((value) => value !== true)
-    })
-    if (unestablished.length) {
-      probedAt = null
-      probeResult = JSON.stringify({ ...previous, ok: null, pendingCapabilities: unestablished })
-    }
+  const pendingCapabilities = identityChanged ? null : pendingCapabilityProbe(current, input)
+  if (pendingCapabilities) {
+    probedAt = null
+    probeResult = pendingCapabilities
   }
   writableDb()
     .query(

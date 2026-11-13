@@ -1,6 +1,8 @@
 // concern: goose-provider
 /** Builds Goose custom-provider configuration without touching the filesystem. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+
 /** OpenRouter request parameters an agent row carries into its Goose provider. */
 export type RequestSettings = Record<string, unknown>
 
@@ -16,7 +18,7 @@ export function gooseProviderFile(input: {
   if (!input.requestSettings) return null
   if (!input.baseUrl) {
     throw new Error(
-      `Goose custom provider ${input.name} has no base URL; set one with bottega agent set ${input.name} --base-url <url>`,
+      `Goose custom provider ${input.name} has no base URL; set one with ${PLATFORM_SLUG} agent set ${input.name} --base-url <url>`,
     )
   }
   if (!input.model) throw new Error(`Goose custom provider ${input.name} has no model`)
