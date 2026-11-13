@@ -1,7 +1,8 @@
 import { expect, test } from 'bun:test'
 import type { NoDestinationWriteReport } from '../../../shared/record-no-destination-write-contract.ts'
-import { identity, idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
+import { idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
 import { recordApiTestApp } from '../../test/fixtures/record-api-app.ts'
+import { identity } from './record-api-identity.fixture.ts'
 import { RECORD_API_NO_DESTINATION_WRITE_SOURCE } from './record-api-write-telemetry.ts'
 import type { RecordIdentity } from './record-auth.ts'
 

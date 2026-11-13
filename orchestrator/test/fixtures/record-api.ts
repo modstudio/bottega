@@ -23,8 +23,6 @@ import { createBoardStreamRegistry } from '../../src/record/record-board-stream.
 import { assertRevisionWrite } from '../../src/record/record-doc-errors.ts'
 import { type MemoryTaskFlowInput, memoryTaskFlowClient } from './record-api-task-flow.ts'
 
-export { identity }
-
 const idleIdentityAndSpaceDeps = () => ({ listInvitations: async () => [] })
 
 function idleConfigAuthorizationDeps() {

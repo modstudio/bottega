@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'bun:test'
 import { Hono } from 'hono'
-import { identity } from '../../test/fixtures/record-api.ts'
+import { identity } from './record-api-identity.fixture.ts'
 import {
   decodeRoutingEvidenceCursor,
   type RoutingEvidenceRouteDeps,
