@@ -163,11 +163,10 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './probe-identifier.ts',
     './workflow-floor-refusal.ts',
   ]),
-  module('orchestrator/src/workflow/workflow-review-owed-decision.ts', [
-    '../review-funnel/decide-review-funnel.ts',
-  ]),
+  module('orchestrator/src/workflow/workflow-review-owed-decision.ts', []),
   module('orchestrator/src/workflow/workflow-review-owed-floor.ts', [
     'bun:sqlite',
+    '../database/db.ts',
     '../project/projects.ts',
     '../review-funnel/decide-review-funnel.ts',
     '../review-funnel/gather-funnel-facts.ts',
@@ -185,8 +184,8 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-floor.ts',
     './workflow-floor-evidence.ts',
     './workflow-floor-evidence-gather.ts',
+    './workflow-floor-evidence-replay.ts',
     './workflow-obligation-floor.ts',
-    './workflow-review-owed-floor.ts',
   ]),
   module('orchestrator/src/workflow/workflow-floor-refusal.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/workflow/workflow-obligation-floor.ts', [
@@ -218,6 +217,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../branch/pull-request-view.ts',
     './workflow-checkout-refusal.ts',
     './workflow-floor-task-read.ts',
+    './workflow-review-owed-decision.ts',
   ]),
   module('orchestrator/src/workflow/workflow-floor-task-read.ts', [
     'node:child_process',

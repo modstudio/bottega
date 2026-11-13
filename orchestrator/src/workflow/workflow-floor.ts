@@ -203,7 +203,8 @@ export function flagForFloor(kind: FloorKind): string {
   if (kind === 'recorded-artifact')
     return '--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | GitHub pull-request link>'
   if (kind === 'tracker-transition') return '--task <KEY>'
-  if (kind === 'review-owed') return 'follow the remedy from `bottega review tier <branch>`'
+  if (kind === 'review-owed')
+    return `follow the remedy from \`${PLATFORM_SLUG} review tier <branch>\``
   throw new Error(`unknown floor kind "${String(kind)}"`)
 }
 

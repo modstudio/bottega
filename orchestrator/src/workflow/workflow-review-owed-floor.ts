@@ -2,6 +2,7 @@
 /** Resolves one cursor change and applies the pure review-owed floor decision. */
 
 import type { Database } from 'bun:sqlite'
+import { db } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
 import { resolveReviewBase } from '../review/review-target.ts'
 import { decideReviewFunnel } from '../review-funnel/decide-review-funnel.ts'
@@ -15,7 +16,7 @@ import {
 
 const argumentRemedy = 'pass `--arg branch=<branch>` or `--arg worktree=<path>`'
 
-export function gatherReviewOwedFloor(
+function gatherReviewOwedFloor(
   projectName: string,
   args: Record<string, string>,
   database: Database,
@@ -59,3 +60,8 @@ export function gatherReviewOwedFloor(
     ),
   )
 }
+
+export const productionReviewOwedFloor = (
+  project: string,
+  args: Record<string, string>,
+): ReviewOwedFloorDecision => gatherReviewOwedFloor(project, args, db())

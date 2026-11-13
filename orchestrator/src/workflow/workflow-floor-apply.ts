@@ -9,8 +9,8 @@ import { currentStepActivatedAt, reentryBoundFloorInput } from './workflow-curso
 import { decideFloorSatisfaction, type Floor, type FloorDecision } from './workflow-floor.ts'
 import type { FloorEvidencePorts, WorkflowEvidenceInput } from './workflow-floor-evidence.ts'
 import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
+import { invokeFloorEvidencePort } from './workflow-floor-evidence-replay.ts'
 import { openWorkflowObligations } from './workflow-obligation-floor.ts'
-import { gatherReviewOwedFloor } from './workflow-review-owed-floor.ts'
 
 type FloorCursor = {
   record_id: string
@@ -20,7 +20,7 @@ type FloorCursor = {
   workflow_key: string
   task_record_id: string | null
   args: string
-  session_id: string
+  session_id: string | null
   created_at: string
   ordinal: number
   step_slug: string
@@ -42,7 +42,15 @@ export async function applyFloorDecision(
   const args = JSON.parse(row.args) as Record<string, string>
   const evidenceFloors = floors.filter(({ kind }) => kind !== 'review-owed')
   if (row.enforcement === 'floors' && evidenceFloors.length !== floors.length) {
-    const reviewOwed = gatherReviewOwedFloor(row.project, args, database)
+    const reviewOwed = invokeFloorEvidencePort(
+      ports,
+      'reviewOwed',
+      () => {
+        throw new Error('floor evidence port reviewOwed has no implementation')
+      },
+      row.project,
+      args,
+    )
     if (reviewOwed.action === 'refuse') return reviewOwed
   }
   const validated = await gatherValidatedEvidence({

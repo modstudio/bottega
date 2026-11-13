@@ -1,9 +1,21 @@
 // concern: workflow-review-owed-decision
 /** Pure review-owed floor decision. Must not know stores, processes, or clocks. */
 
-import type { ReviewFunnelVerdict } from '../review-funnel/decide-review-funnel.ts'
-
-type ReviewOwedVerdict = Pick<ReviewFunnelVerdict, 'lenses' | 'remedy'>
+type ReviewOwedVerdict = {
+  lenses: readonly {
+    lens: string
+    status:
+      | 'owed'
+      | 'running'
+      | 'untriaged'
+      | 'satisfied'
+      | 'credited-by-read'
+      | 'not-applicable'
+      | 'waived-at-ceiling'
+      | 'overridden'
+  }[]
+  remedy: string
+}
 
 export type ReviewOwedFloorDecision = { action: 'allow' } | { action: 'refuse'; message: string }
 

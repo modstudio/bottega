@@ -69,6 +69,7 @@ import {
   checkResolvedWorkflowRendering,
   resolvedWorkflowRenderCheckLines,
 } from './workflow-render-check-store.ts'
+import { productionReviewOwedFloor } from './workflow-review-owed-floor.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { resolveLinkedWorkflowCursorMode } from './workflow-task-linking.ts'
 import { type HubTaskReader, resolveHubTaskReference } from './workflow-task-reference.ts'
@@ -681,7 +682,10 @@ export async function nextCommand(
       context,
       note,
       evidence,
-      floorPorts: productionFloorPorts() as FloorEvidencePorts,
+      floorPorts: {
+        ...productionFloorPorts(),
+        reviewOwed: productionReviewOwedFloor,
+      } as FloorEvidencePorts,
       selfRuling:
         storedSelfRuling === undefined
           ? undefined

@@ -15,6 +15,8 @@ import { resolveProbeArtifact } from '../workflow/probe-identifier.ts'
 import { workflowNextContextMoment } from '../workflow/workflow-context-moment.ts'
 import { workflowKeyOf } from '../workflow/workflow-cursor-arguments.ts'
 import { resolveCursorLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
+import { productionFloorPorts } from '../workflow/workflow-floor-evidence.ts'
+import { productionReviewOwedFloor } from '../workflow/workflow-review-owed-floor.ts'
 import { type HubTaskReader, resolveHubTaskReference } from '../workflow/workflow-task-reference.ts'
 import {
   closeCursorWithTextCopyResult,
@@ -27,6 +29,11 @@ import type { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
 
 const workflowRunEvidence = (run: string | number | undefined) =>
   run === undefined ? undefined : resolveRunIdentifier(db(), run)
+
+const reviewFloorPorts = () => ({
+  ...productionFloorPorts(),
+  reviewOwed: productionReviewOwedFloor,
+})
 
 function assertAdvanceRecordShapes(
   note: string,
@@ -113,6 +120,7 @@ export async function advanceWorkflow(
         defer,
         satisfies,
       },
+      floorPorts: reviewFloorPorts(),
       selfRuling:
         storedSelfRuling === undefined
           ? undefined
