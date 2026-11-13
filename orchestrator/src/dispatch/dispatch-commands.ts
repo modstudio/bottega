@@ -657,6 +657,18 @@ async function taskKeyWarningForDispatch(
   return admission.warning
 }
 
+async function taskWarningFor(
+  flags: DispatchFlags,
+  presentation: DispatchPresentation,
+  project: ReturnType<typeof projectAt>,
+): Promise<string | null> {
+  return taskKeyWarningForDispatch(
+    { project, key: flags.flag('key') },
+    presentation.lookupTaskKey,
+    presentation.error,
+  )
+}
+
 function recordDispatchWarnings(
   runId: string,
   warnings: Array<string | null>,
@@ -730,7 +742,6 @@ export async function dispatchCommand(
     implicitReviewWarning,
     resolveCallerCheckout,
     resolveDispatchOptions,
-    lookupTaskKey,
     recordRunWarning,
     detach,
     follow,
@@ -746,9 +757,8 @@ export async function dispatchCommand(
   const probeOverrides = probeLaunchOverrides(flags, resolved, Boolean(requested.findings))
   const requestedCwd = existingRequestedCwd(flag('cwd'))
   const explicitRepo = flag('repo')
-  const caller = resolveCallerCheckout(requestedCwd, explicitRepo)
-  const callerCwd = caller.callerCwd
-  reportCallerCheckoutNotice(caller.notice, porcelain, error)
+  const { callerCwd, launchCwd, notice } = resolveCallerCheckout(requestedCwd, explicitRepo)
+  reportCallerCheckoutNotice(notice, porcelain, error)
   const dispatchProject = assertDispatchableProject(explicitRepo, callerCwd, Boolean(requestedCwd))
   const dispatchProjectName = dispatchProject?.name ?? null
   const cursorWarning = await cursorWarningFor(flags, presentation, binding, dispatchProjectName)
@@ -762,11 +772,7 @@ export async function dispatchCommand(
     callerChoseCwd: Boolean(requestedCwd),
   })
   reportDefaultSeed(flag('seed'), seed, porcelain, error)
-  const taskKeyWarning = await taskKeyWarningForDispatch(
-    { project: dispatchProject, key: flag('key') },
-    lookupTaskKey,
-    error,
-  )
+  const taskKeyWarning = await taskWarningFor(flags, presentation, dispatchProject)
   const lens = flag('lens')
   reportLensDispatchNotices({
     jobName,
@@ -841,8 +847,8 @@ export async function dispatchCommand(
   /**
    * EVERY JOB DETACHES BY DEFAULT.
    *
-   * In the seven days through 2026-09-02, 59 foreground runs died as "interrupted, exit 143,
-   * empty output" when the caller's shell was killed:
+   * In the seven days through 2026-09-02, 59 foreground runs died as
+   * "interrupted, exit 143, empty output" when the caller's shell was killed:
    * 24 review-lens, 24 understand, 6 file-question, and 5 other runs. Only 2
    * were writing jobs, which already detached by default. The same deaths
    * left another 35 runs stale. Claude's harness bounds foreground commands
@@ -878,7 +884,7 @@ export async function dispatchCommand(
       carry: has('carry'),
       ...reviewDetachFields(reviewRef, resolvedReviewTarget),
       cwd: callerCwd,
-      launchCwd: caller.launchCwd,
+      launchCwd,
       deliverables,
       timeoutMinutes,
       keepTree,
@@ -912,8 +918,8 @@ export async function dispatchCommand(
    * died exactly that way, and the same kill was reproduced twice while this
    * was being written.
    *
-   * Detaching first means the worker owns the row and finishes regardless. A killed caller loses
-   * only its own view of the output: the run
+   * Detaching first means the worker owns the row and finishes regardless. A killed caller
+   * loses only its own view of the output: the run
    * completes, records its verdict, and `bottega run show <id>` still has the answer. The wait
    * is bounded by the agent's own timeout plus a margin, so a
    * genuinely stuck run still returns control rather than hanging for ever.
@@ -938,7 +944,7 @@ export async function dispatchCommand(
     carry: has('carry'),
     ...reviewDetachFields(reviewRef, resolvedReviewTarget),
     cwd: callerCwd,
-    launchCwd: caller.launchCwd,
+    launchCwd,
     deliverables,
     timeoutMinutes,
     keepTree,

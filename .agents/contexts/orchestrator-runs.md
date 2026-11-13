@@ -40,9 +40,9 @@ Two lock purposes, two files. Creation and resume attachment take `project-lock.
 - **Every wait, refusal and invalidation on a shared resource is recorded where it happens** (`contention`, same transaction). `bottega machine health` prices the class. Never inferred later, never routing evidence.
 - **A reclaim removes exactly the acquisition it classified as stale, never a replacement** (`project-lock.ts:reclaimStaleProjectLock`, incarnation id after rename). Malformed or locale-dependent process output is unknown, never stale (`project-lock.ts:staleProjectLockHolder`, `project-lock.ts:processStartTime`).
 
-Detach claims a reserved id before routing; the asking session owns the run. `bottega run result` exits `2` for unfinished and `1` for failed. `bottega run wait` is bounded. `bottega run retry` re-sends the saved prompt to the same agent; the failure still counts. A writing run continues via `bottega run continue` in its worktree. **Keep both ends of a failure. Both claim paths set every meaningful column**, including `parent_run_id` and `turn`.
+Detach claims an id before routing; the asking session owns it. `bottega run result` exits `2` for unfinished and `1` for failed. `bottega run wait` is bounded. `bottega run retry` re-sends the prompt to the same agent and keeps the failure. Writing continues via `bottega run continue` in its worktree. **Keep both ends of a failure. Both claim paths set every meaningful column**, including `parent_run_id` and `turn`.
 
-A harness session's keyed run start requires an open workflow cursor for that task in that project, cleared by composing a workflow, and only Shmuel Barkin may override it with a recorded reason.
+A harness session's keyed run start needs an open workflow cursor for its project and task. Compose a workflow to clear it; only Shmuel Barkin may override with a recorded reason.
 
 # Delegating implementation
 

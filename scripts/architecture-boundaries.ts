@@ -290,12 +290,6 @@ export const importBoundaries: ImportBoundary[] = [
     ['./review-memory.ts', '../review/review-role.ts', '../review/review-target.ts'],
   ),
   boundary(
-    'keyed-run-cursor-admission-boundary',
-    'orchestrator/src/dispatch/keyed-run-cursor-admission.ts',
-    ['../../../shared/brand.ts', '../../../shared/refusal.ts'],
-    'Keep keyed run cursor admission a pure decision over caller, cursor, and override facts.',
-  ),
-  boundary(
     'task-key-admission-boundary',
     'orchestrator/src/dispatch/task-key-admission.ts',
     ['../../../shared/brand.ts'],

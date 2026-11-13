@@ -17,6 +17,10 @@ const module = (
 
 export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/dispatch/probe-launch-overrides.ts', []),
+  module('orchestrator/src/dispatch/keyed-run-cursor-admission.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/refusal.ts',
+  ]),
   module('orchestrator/src/transport/quota-readings.ts', []),
   module('orchestrator/src/transport/codex-quota.ts', ['./quota-readings.ts']),
   module('orchestrator/src/close/conversation-liveness.ts', [
