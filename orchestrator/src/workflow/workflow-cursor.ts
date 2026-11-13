@@ -274,6 +274,7 @@ async function applyFloorDecision(
   ports: FloorEvidencePorts,
   finishing: boolean,
   d: Database,
+  client?: WorkflowCursorContext['taskFlowClient'],
   requireRuling = false,
   selfRulingId?: number,
 ): Promise<FloorDecision> {
@@ -314,7 +315,7 @@ async function applyFloorDecision(
     evidence: validated,
     enforcement: row.enforcement ?? 'note-only',
     finishing,
-    openObligations: await openWorkflowObligations(row.record_id, d),
+    openObligations: await openWorkflowObligations(row.record_id, d, client),
     ...reentryBoundFloorInput(requireRuling, row.closed, row.step_slug),
   })
 }
@@ -422,6 +423,7 @@ async function closeFloorsForStep(
   selfRuling: WorkflowSelfRulingInput | undefined,
   outcome: string | undefined,
   d: Database,
+  client?: WorkflowCursorContext['taskFlowClient'],
 ) {
   const currentStep = composition.steps[row.ordinal]!
   const outcomeDecision = decideStepOutcome(currentStep.slug, currentStep.outcomes, outcome)
@@ -472,6 +474,7 @@ async function closeFloorsForStep(
       ports,
       advance.ordinal === null,
       d,
+      client,
       advance.requireRuling,
       selfRulingQuestionNumber,
     ),
@@ -510,8 +513,14 @@ async function persistWorkflowAdvance(
   )
   const finishing = advance.ordinal === null
   const next = finishing ? null : composition.steps[advance.ordinal as number]!
-  const deleteTextIds = await advanceTextDeletionIds(row, composition, finishing, d)
-  const flow = finishing ? await selectClosingTaskFlow(row, d) : null
+  const deleteTextIds = await advanceTextDeletionIds(
+    row,
+    composition,
+    finishing,
+    d,
+    context.taskFlowClient,
+  )
+  const flow = finishing ? await selectClosingTaskFlow(row, d, context.taskFlowClient) : null
   const closingFlow = flow?.open_stage_cursor_record_id === row.record_id ? flow : null
   const { parts, obligationInserts, obligationUpdates } = advanceRecordRows(
     row,
@@ -569,9 +578,13 @@ async function persistWorkflowAdvance(
   })
 }
 
-async function selectClosingTaskFlow(row: CursorRow, database: Database) {
+async function selectClosingTaskFlow(
+  row: CursorRow,
+  database: Database,
+  client?: WorkflowCursorContext['taskFlowClient'],
+) {
   if (!row.task_flow_record_id) return null
-  return await taskFlowReadStore(database).flowState(row.task_flow_record_id)
+  return await taskFlowReadStore(database, client).flowState(row.task_flow_record_id)
 }
 
 async function advanceTextDeletionIds(
@@ -579,9 +592,10 @@ async function advanceTextDeletionIds(
   composition: ReturnType<typeof composeWorkflow>,
   finishing: boolean,
   database: Database,
+  client?: WorkflowCursorContext['taskFlowClient'],
 ): Promise<string[]> {
   if (!finishing && !composition.steps[row.ordinal]!.needs.includes('workflow-text')) return []
-  return await workflowTextDeletionIds(row.record_id, Boolean(row.task_record_id), database)
+  return await workflowTextDeletionIds(row.record_id, Boolean(row.task_record_id), database, client)
 }
 
 function advanceRecordRows(
@@ -681,12 +695,23 @@ async function nextWorkflowStepImpl(
     context.taskStatusCategory,
   )
   if (row.workflow_key !== workflowKeyBeforeAdoption) {
-    row = (await taskFlowReadStore(d).stageByRecordId(row.record_id)) as CursorRow
+    row = (await taskFlowReadStore(d, context.taskFlowClient).stageByRecordId(
+      row.record_id,
+    )) as CursorRow
   }
   const composition = cursorComposition(row, d, live)
   const step = composition.steps[row.ordinal]!
   refuseMissingCloseNote(note, step.n, step.slug)
-  const close = await closeFloorsForStep(row, composition, evidence, ports, selfRuling, outcome, d)
+  const close = await closeFloorsForStep(
+    row,
+    composition,
+    evidence,
+    ports,
+    selfRuling,
+    outcome,
+    d,
+    context.taskFlowClient,
+  )
   await persistWorkflowAdvance(
     row,
     composition,
@@ -711,6 +736,7 @@ async function nextWorkflowStepImpl(
     mode,
     selfRuling,
     d,
+    client: context.taskFlowClient,
     live,
   })
   return {

@@ -320,10 +320,11 @@ export async function selectUntouchedKeylessWorkflowCursor(
   identity: Required<Pick<WorkflowCursorSelector, 'project' | 'workflow' | 'mode'>>,
   ownerSession: string | null | undefined,
   d: Database,
+  client?: RecordTaskFlowClient,
 ): Promise<SelectableCursorRow | null> {
   if (!ownerSession) return null
   const rows = (
-    await taskFlowReadStore(d).openKeylessStages({
+    await taskFlowReadStore(d, client).openKeylessStages({
       project: identity.project,
       workflow: identity.workflow,
       mode: identity.mode,
@@ -357,7 +358,7 @@ export async function resolveWorkflowCursorMode(
   }
   if (selectedRow) return validateIdentity(selectedRow, identity).mode_slug
   if (requested) return requested
-  const rows = await taskFlowReadStore(d).activeStageModes({
+  const rows = await taskFlowReadStore(d, context.taskFlowClient).activeStageModes({
     project,
     workflow: slug,
     taskRecordId: context.taskRecordId ?? null,

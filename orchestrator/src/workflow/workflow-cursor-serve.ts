@@ -95,6 +95,7 @@ async function prepareStepServe(
         { project, workflow: slug, mode },
         context.session,
         database,
+        context.taskFlowClient,
       )) as CursorRow | null)
     : (handled ?? (await findWorkflowCursor(project, slug, mode, args, context, database, cursor)))
   const row = handled ?? candidate

@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
 import { type Floor, isFloorKind, type OpenObligation } from './workflow-floor.ts'
 
@@ -35,8 +36,9 @@ export function floorFromObligationRow(row: WorkflowObligationFloorRow): Floor {
 export async function openWorkflowObligations(
   cursorId: string,
   d: Database,
+  client?: RecordTaskFlowClient,
 ): Promise<OpenObligation[]> {
-  const rows = await taskFlowReadStore(d).openObligations(cursorId)
+  const rows = await taskFlowReadStore(d, client).openObligations(cursorId)
   return rows.map((row) => ({
     id: row.id,
     stepOrdinal: row.stepOrdinal,

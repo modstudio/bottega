@@ -611,9 +611,14 @@ export function writeSqliteTaskFlow<K extends TaskFlowIntent>(
       applied as TaskFlowIntentResult<'compose'> | null,
     ) as unknown as TaskFlowSqliteWriteResult<K>
   if (intent === 'stage-update')
-    return writeStageUpdate(database, body, revisions) as TaskFlowSqliteWriteResult<K>
+    return writeStageUpdate(database, body, revisions) as unknown as TaskFlowSqliteWriteResult<K>
   if (intent === 'advance' || intent === 'await-ruling' || intent === 'abandon')
-    return applyStageMutation(database, intent, body, revisions) as TaskFlowSqliteWriteResult<K>
+    return applyStageMutation(
+      database,
+      intent,
+      body,
+      revisions,
+    ) as unknown as TaskFlowSqliteWriteResult<K>
   if (intent === 'adopt')
     return applyAdopt(
       database,

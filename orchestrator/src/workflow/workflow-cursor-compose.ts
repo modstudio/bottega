@@ -119,13 +119,17 @@ async function readComposeFacts(
       context.taskFlowClient,
     )
   if (key)
-    await refuseUnlinkedCursorLabelCollision(database, {
-      project: composition.project,
-      workflow: composition.workflow.slug,
-      mode: composition.mode!.slug,
-      key,
-      taskRecordId: context.taskRecordId,
-    })
+    await refuseUnlinkedCursorLabelCollision(
+      database,
+      {
+        project: composition.project,
+        workflow: composition.workflow.slug,
+        mode: composition.mode!.slug,
+        key,
+        taskRecordId: context.taskRecordId,
+      },
+      context.taskFlowClient,
+    )
   const at = nowIso()
   const machine = machineId()
   const owner = context.session ?? machine

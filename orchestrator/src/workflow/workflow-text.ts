@@ -102,15 +102,27 @@ export function workflowTextFacts(
 
 export async function withWorkflowTextFacts<
   Step extends { needs: readonly string[]; facts: Record<string, unknown> },
->(step: Step, cursorId: string, d: Database): Promise<Step> {
+>(
+  step: Step,
+  cursorId: string,
+  d: Database,
+  client?: WorkflowCursorContext['taskFlowClient'],
+): Promise<Step> {
   return {
     ...step,
-    facts: { ...step.facts, ...workflowTextFacts(step.needs, await workflowTextRows(cursorId, d)) },
+    facts: {
+      ...step.facts,
+      ...workflowTextFacts(step.needs, await workflowTextRows(cursorId, d, client)),
+    },
   }
 }
 
-async function workflowTextRows(cursorId: string, d: Database): Promise<WorkflowTextRow[]> {
-  return (await taskFlowReadStore(d).textsForStage(cursorId)).map((row) => ({
+async function workflowTextRows(
+  cursorId: string,
+  d: Database,
+  client?: WorkflowCursorContext['taskFlowClient'],
+): Promise<WorkflowTextRow[]> {
+  return (await taskFlowReadStore(d, client).textsForStage(cursorId)).map((row) => ({
     id: row.id,
     cursorId: row.cursor_record_id,
     stepOrdinal: row.step_ordinal,
@@ -139,7 +151,7 @@ async function attachSelectedWorkflowText(
   _createdAt: string,
   d: Database,
 ): Promise<string> {
-  const existing = await taskFlowReadStore(d).textByRecordId(recordId)
+  const existing = await taskFlowReadStore(d, context.taskFlowClient).textByRecordId(recordId)
   if (existing) {
     if (
       existing.cursor_record_id !== row.record_id ||
@@ -151,7 +163,7 @@ async function attachSelectedWorkflowText(
     return workflowTextAttachmentToken(recordId)
   }
   const attachmentBytes = Buffer.byteLength(body, 'utf8')
-  const cursorBytes = (await workflowTextRows(row.record_id, d)).reduce(
+  const cursorBytes = (await workflowTextRows(row.record_id, d, context.taskFlowClient)).reduce(
     (total, attachment) => total + Buffer.byteLength(attachment.body, 'utf8'),
     0,
   )

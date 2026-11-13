@@ -403,8 +403,8 @@ test('advance, await, rule, and abandon call the record before caching returned 
     enforcement: 'note-only',
   })
   const taskFlowClient: RecordTaskFlowClient = {
-    ...projectIdentityClient,
     ...memory,
+    ...projectIdentityClient,
     advanceTaskFlow: async (input, destination) => {
       events.push('advance')
       expect(
@@ -499,13 +499,14 @@ test('advance, await, rule, and abandon call the record before caching returned 
     d.query('SELECT state,revision FROM workflow_cursor WHERE record_id=?').get(stageId),
   ).toEqual({ state: 'abandoned', revision: 11 })
   expect(d.query('SELECT revision FROM task_flow WHERE record_id=?').get(flowId)).toEqual({
-    revision: 4,
+    revision: 5,
   })
 })
 
 test("abandoning a stage that is not its flow's open stage preserves the pointer", async () => {
   const d = hostedDatabase()
   let abandoned: TaskFlowIntentInput<'abandon'> | undefined
+  let secondStageId = ''
   const memory = createMemoryRecordApiClient()
   const taskFlowClient: RecordTaskFlowClient = {
     ...memory,
@@ -514,6 +515,12 @@ test("abandoning a stage that is not its flow's open stage preserves the pointer
     abandonTaskFlow: async (input) => {
       abandoned = input
       return { revisions: { [input.stage.id]: 2 } }
+    },
+    readTaskFlow: async (selector, destination) => {
+      const result = await memory.readTaskFlow!(selector, destination)
+      return selector.flowRecordId && secondStageId
+        ? { ...result, flow: { ...result.flow, openStageRecordId: secondStageId } }
+        : result
     },
   }
   const firstContext = { ...context, taskRecordId: 'task-DEV-FIRST', taskFlowClient }
@@ -545,7 +552,7 @@ test("abandoning a stage that is not its flow's open stage preserves the pointer
       'SELECT record_id,task_flow_record_id FROM workflow_cursor WHERE number=?',
     )
     .get(first.cursor!.id)!
-  const secondStageId = d
+  secondStageId = d
     .query<{ record_id: string }, [number]>('SELECT record_id FROM workflow_cursor WHERE number=?')
     .get(second.cursor!.id)!.record_id
   d.query('UPDATE task_flow SET open_stage_cursor_record_id=? WHERE record_id=?').run(
@@ -642,8 +649,8 @@ test('hosted text attach, copy, and delete happen before their local rows change
   const events: string[] = []
   const memory = composeClient(composeCalls)
   const taskFlowClient: RecordTaskFlowClient = {
-    ...projectIdentityClient,
     ...memory,
+    ...projectIdentityClient,
     attachTaskFlowText: async (input, destination) => {
       events.push('attach-text')
       expect(

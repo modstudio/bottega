@@ -43,9 +43,14 @@ export async function abandonWorkflowCursor(
   refuseTerminalCursor(row)
   const at = nowIso()
   const closed = abandonedCursorTrail(row, reason, at)
-  const store = taskFlowReadStore(d)
+  const store = taskFlowReadStore(d, context.taskFlowClient)
   const obligations = await store.openObligationRecordIds(row.record_id)
-  const deleteTextIds = await workflowTextDeletionIds(row.record_id, Boolean(row.task_record_id), d)
+  const deleteTextIds = await workflowTextDeletionIds(
+    row.record_id,
+    Boolean(row.task_record_id),
+    d,
+    context.taskFlowClient,
+  )
   const flow = row.task_flow_record_id ? await store.flowState(row.task_flow_record_id) : null
   const closesOpenStage = flow?.open_stage_cursor_record_id === row.record_id
   const parts = abandonmentRevisionParts(row, flow)
