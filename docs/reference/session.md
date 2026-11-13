@@ -10,6 +10,7 @@ architect session lifecycle
 - [bottega session help](#bottega-session-help)
 - [bottega session hold](#bottega-session-hold)
 - [bottega session losses](#bottega-session-losses)
+- [bottega session start](#bottega-session-start)
 
 ## bottega session
 
@@ -24,6 +25,7 @@ architect session lifecycle
 - [bottega session help](./session.md#bottega-session-help)
 - [bottega session hold](./session.md#bottega-session-hold)
 - [bottega session losses](./session.md#bottega-session-losses)
+- [bottega session start](./session.md#bottega-session-start)
 
 ## bottega session adopt
 
@@ -97,6 +99,16 @@ measure losses around Claude transcript compaction boundaries
 - `--since <date>`: include rows at or after this ISO date
 - `--json`: write the report as JSON
 - `--judge`: dispatch blind semantic-loss judges without waiting
+
+### Related
+
+- [bottega session](./session.md#bottega-session)
+
+## bottega session start
+
+**Synopsis:** `bottega session start`
+
+open explore for a session that holds no open explore, or name the one it holds
 
 ### Related
 
