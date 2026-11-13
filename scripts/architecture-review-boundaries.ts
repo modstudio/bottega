@@ -65,6 +65,11 @@ export const reviewModuleSpecs = [
     typeOnlyAllowed: ['./decide-review-funnel.ts'],
   },
   {
+    file: 'orchestrator/src/review-funnel/review-funnel-replay.ts',
+    allowed: ['./decide-review-funnel.ts'],
+    typeOnlyAllowed: ['./review-funnel-policy.ts'],
+  },
+  {
     file: 'orchestrator/src/review-funnel/review-funnel-decision-log.ts',
     allowed: [
       'node:crypto',
@@ -85,6 +90,7 @@ export const reviewModuleSpecs = [
       './decide-review-funnel.ts',
       './review-funnel-policy.ts',
       './review-funnel-report.ts',
+      './review-funnel-replay.ts',
     ],
     typeOnlyAllowed: ['bun:sqlite'],
   },
@@ -333,6 +339,13 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     reason: 'Keep report policy pure over plain logged rows.',
   },
   {
+    name: 'review-funnel-replay-boundary',
+    file: 'orchestrator/src/review-funnel/review-funnel-replay.ts',
+    allowed: ['./decide-review-funnel.ts'],
+    typeOnlyAllowed: ['./review-funnel-policy.ts'],
+    reason: 'Keep policy replay pure over logged facts and verdicts.',
+  },
+  {
     name: 'review-funnel-decision-log-boundary',
     file: 'orchestrator/src/review-funnel/review-funnel-decision-log.ts',
     allowed: [
@@ -356,6 +369,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       './decide-review-funnel.ts',
       './review-funnel-policy.ts',
       './review-funnel-report.ts',
+      './review-funnel-replay.ts',
     ],
     typeOnlyAllowed: ['bun:sqlite'],
     reason: 'Keep command gathering and presentation outside report and replay policy.',

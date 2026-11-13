@@ -3,11 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { readFileSync } from 'node:fs'
 import { db } from '../database/db.ts'
-import {
-  decideReviewFunnel,
-  type ReviewFunnelFacts,
-  type ReviewFunnelVerdict,
-} from './decide-review-funnel.ts'
+import type { ReviewFunnelFacts, ReviewFunnelVerdict } from './decide-review-funnel.ts'
 import {
   activeReviewFunnelPolicy,
   parseReviewFunnelPolicy,
@@ -15,6 +11,7 @@ import {
   reviewFunnelPolicyAt,
   setReviewFunnelPolicy,
 } from './review-funnel-policy.ts'
+import { replayReviewFunnelRows } from './review-funnel-replay.ts'
 import {
   type FunnelReportDecisionRow,
   type FunnelReportFindingRow,
@@ -106,19 +103,6 @@ function policyFromFlags(flags: Flags): { policy: ReviewFunnelPolicy; version: s
     }
   const stored = reviewFunnelPolicyAt(version!)
   return { policy: stored.policy, version: stored.policyVersion }
-}
-
-export function replayReviewFunnelRows(
-  rows: readonly { recordId: string; facts: ReviewFunnelFacts; verdict: ReviewFunnelVerdict }[],
-  candidate: { policy: ReviewFunnelPolicy; version: string },
-) {
-  return rows.flatMap((row) => {
-    const after = decideReviewFunnel(row.facts, candidate.policy, candidate.version)
-    const normalizedBefore = { ...row.verdict, policyVersion: candidate.version }
-    return JSON.stringify(normalizedBefore) === JSON.stringify(after)
-      ? []
-      : [{ recordId: row.recordId, before: row.verdict, after }]
-  })
 }
 
 export function replayReviewFunnelCommand(flags: Flags, { log }: Presentation): void {
