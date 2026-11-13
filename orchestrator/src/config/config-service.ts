@@ -63,11 +63,8 @@ import {
   STORED_SHIP_TO_CONFIG_ALIAS,
   storedShipToLevel,
 } from '../../../shared/ship-to.ts'
-import {
-  pinTrustedMachine,
-  unpinTrustedMachine,
-} from '../../../shared/trust-list.ts'
-import { trustedKeysForSpace, type TrustedKeys } from '../../../shared/trust-log-keys.ts'
+import { pinTrustedMachine, unpinTrustedMachine } from '../../../shared/trust-list.ts'
+import { type TrustedKeys, trustedKeysForSpace } from '../../../shared/trust-log-keys.ts'
 import type { MachineNamePair } from '../record/machine-name.ts'
 import { claimCurrentMachineNames } from '../record/machine-name-command.ts'
 import { LEGACY_ENVIRONMENT_SECRET_NAMES } from '../setup/environment-name-migration.ts'

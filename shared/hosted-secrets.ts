@@ -13,7 +13,7 @@ import {
 } from './hosted-secret-opening.ts'
 import { machineKeyInfo, readMachineKey } from './machine-key-store.ts'
 import { sealedValueIsEmpty } from './sealed-value.ts'
-import { trustedKeysForSpace, type TrustedKeys } from './trust-log-keys.ts'
+import { type TrustedKeys, trustedKeysForSpace } from './trust-log-keys.ts'
 
 export type HostedSecretErrorReason =
   | 'machine-key-missing'

@@ -7,11 +7,8 @@ import type { ConfigClient } from './config-client.ts'
 import { machineKeyId } from './machine-key-id.ts'
 import { generateMachineKeyPair } from './secret-envelope.ts'
 import { pinTrustedMachine } from './trust-list.ts'
-import { signTrustLogEntry, trustLogEntryHash, type TrustLogKey } from './trust-log.ts'
-import {
-  readRememberedTrustLogHead,
-  writeRememberedTrustLogHead,
-} from './trust-log-head.ts'
+import { signTrustLogEntry, type TrustLogKey, trustLogEntryHash } from './trust-log.ts'
+import { readRememberedTrustLogHead, writeRememberedTrustLogHead } from './trust-log-head.ts'
 import { trustedKeysForSpace } from './trust-log-keys.ts'
 
 const roots: string[] = []
@@ -30,7 +27,10 @@ function environment() {
 const clientWith = (entries: Uint8Array[]) =>
   ({ readTrustLog: async () => entries }) as Pick<ConfigClient, 'readTrustLog'>
 
-async function logKey(label: string, value: number): Promise<{ key: TrustLogKey; signing: Uint8Array }> {
+async function logKey(
+  label: string,
+  value: number,
+): Promise<{ key: TrustLogKey; signing: Uint8Array }> {
   const pair = await generateMachineKeyPair()
   const signing = new Uint8Array(32).fill(value)
   return {

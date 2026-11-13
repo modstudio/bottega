@@ -143,6 +143,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/record-space-membership.ts',
     '../../../shared/secret-envelope.ts',
     '../../../shared/trust-list.ts',
+    '../../../shared/trust-log-keys.ts',
     './data-key-access.ts',
     './hosted-config-call-outcome.ts',
     './machine-trust-refusal.ts',

@@ -2,10 +2,7 @@ import type { ConfigClient } from './config-client.ts'
 import type { ConfigEnvironment } from './config-directory.ts'
 import { readTrustList } from './trust-list.ts'
 import { type TrustState, verifyTrustLog } from './trust-log.ts'
-import {
-  readRememberedTrustLogHead,
-  writeRememberedTrustLogHead,
-} from './trust-log-head.ts'
+import { readRememberedTrustLogHead, writeRememberedTrustLogHead } from './trust-log-head.ts'
 
 export type TrustedKeys = Record<string, { public_key: string; label: string }>
 

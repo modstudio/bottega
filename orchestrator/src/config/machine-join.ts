@@ -32,7 +32,7 @@ import {
   bytesEqual,
   type TrustLogKey,
   trustLogEntryHash,
-  verifyTrustLog,
+  type verifyTrustLog,
 } from '../../../shared/trust-log.ts'
 import { writeRememberedTrustLogHead } from '../../../shared/trust-log-head.ts'
 import { verifiedTrustLogForSpace } from '../../../shared/trust-log-keys.ts'

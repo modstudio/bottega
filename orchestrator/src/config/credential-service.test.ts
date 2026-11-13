@@ -191,7 +191,11 @@ test('set credential gives the project access remedy for every missing wrap outc
     }),
   ]) {
     const createDataKey = mock(async () => ({ id: '', version: 1 }))
-    const client = { currentDataKey, createDataKey } as unknown as ConfigClient
+    const client = {
+      currentDataKey,
+      createDataKey,
+      readTrustLog: async () => [],
+    } as unknown as ConfigClient
     await expect(setCredential(address, 'secret', client)).rejects.toThrow(
       'machine config machine trust',
     )
@@ -243,6 +247,7 @@ test('set credential writes a project-bound row with its metadata and hint', asy
   const encode = (value: Uint8Array) => Buffer.from(value).toString('base64url')
   const putSecret = mock(async (_key: string, input: object) => input)
   const client = {
+    readTrustLog: async () => [],
     currentDataKey: async () => ({
       id: dekId,
       version: 1,
@@ -362,6 +367,7 @@ test('service and operator resolution return the selected payer row value', asyn
     return selected
   })
   const client = {
+    readTrustLog: async () => [],
     listSecrets: async () => [personal, shared],
     listCredentialPreferences: async () => preferences,
     getSecret,
