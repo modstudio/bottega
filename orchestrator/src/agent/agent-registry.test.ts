@@ -122,6 +122,7 @@ test('a Goose row with request settings selects its per-run provider', () => {
   expect(goose.env?.()).toMatchObject({
     GOOSE_PROVIDER: 'codex',
     GOOSE_CONTEXT_LIMIT: String(GOOSE_CONTEXT_CEILING),
+    GOOSE_MAX_TOKENS: String(GOOSE_MAX_OUTPUT_TOKENS),
   })
 })
 

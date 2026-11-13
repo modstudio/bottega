@@ -16,6 +16,7 @@ import {
   removeAgent,
 } from './agent-registry.ts'
 import { setAgentWithCapacityGuard } from './agent-set-capacity.ts'
+import type { RequestSettings } from './goose-provider.ts'
 import {
   available,
   ensureLocalHealth,
@@ -100,7 +101,7 @@ const RESERVED_REQUEST_SETTING_KEYS = new Set([
   'max_completion_tokens',
 ])
 
-function parseRequestSettings(value: string): Record<string, unknown> {
+function parseRequestSettings(value: string): RequestSettings {
   let parsed: unknown
   try {
     parsed = JSON.parse(value)
@@ -113,10 +114,10 @@ function parseRequestSettings(value: string): Record<string, unknown> {
   const reserved = Object.keys(parsed).find((key) => RESERVED_REQUEST_SETTING_KEYS.has(key))
   if (reserved) {
     throw new Error(
-      `--request-settings may not set reserved key ${JSON.stringify(reserved)}; Bottega sets it, and agent-registry.ts:GOOSE_MAX_OUTPUT_TOKENS owns the output cap`,
+      `--request-settings may not set reserved key ${JSON.stringify(reserved)}; Bottega sets it on every Goose request, so remove it`,
     )
   }
-  return parsed as Record<string, unknown>
+  return parsed as RequestSettings
 }
 
 function requestSettingsMutation(

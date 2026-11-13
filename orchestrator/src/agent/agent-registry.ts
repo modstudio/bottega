@@ -9,6 +9,7 @@ import { DB_PATH, db as dbForAgents, writableDb } from '../database/db.ts'
 import { jobContextBudget, OUTPUT_RESERVE, PROMPT_BYTES_PER_TOKEN } from '../jobs/jobs.ts'
 import { type Agent, assertResumableAgent, BUILTIN_AGENTS } from './agents.ts'
 import type { Caps } from './capabilities.ts'
+import type { RequestSettings } from './goose-provider.ts'
 import type { OpenRouterRecordedBudget } from './openrouter-key-budget.ts'
 
 export const HARNESSES = ['codex', 'grok', 'opencode', 'goose', 'claude-code'] as const
@@ -112,9 +113,9 @@ function rowLaunchEnvironment(
   promptBytes: number | null,
   writesRepo: boolean | null,
 ): Record<string, string> {
-  if (!row.base_url) {
-    return row.harness === 'goose' ? { GOOSE_MAX_TOKENS: String(GOOSE_MAX_OUTPUT_TOKENS) } : {}
-  }
+  const outputCap =
+    row.harness === 'goose' ? { GOOSE_MAX_TOKENS: String(GOOSE_MAX_OUTPUT_TOKENS) } : {}
+  if (!row.base_url) return outputCap
   const stored = JSON.parse(row.caps) as Caps & { contextTokens?: number | null }
   const servedWindow = servedContextTokens(stored)
   const contextEnvironment = gooseContextManagementEnvironment({
@@ -126,11 +127,11 @@ function rowLaunchEnvironment(
   return {
     BOTTEGA_MODEL_HOST_URL: row.base_url,
     OPENAI_BASE_URL: row.base_url,
+    ...outputCap,
     ...(row.harness === 'goose'
       ? {
           GOOSE_PROVIDER: row.request_settings ? row.name : 'openai',
           GOOSE_MODEL: row.model,
-          GOOSE_MAX_TOKENS: String(GOOSE_MAX_OUTPUT_TOKENS),
           GOOSE_TELEMETRY_ENABLED: 'false',
           ...contextEnvironment,
           // The per-run provider file declares a model context limit, and
@@ -337,7 +338,7 @@ export type AgentMutation = {
   baseUrl?: string | null
   apiKeySecret?: string | null
   provider?: string | null
-  requestSettings?: Record<string, unknown> | null
+  requestSettings?: RequestSettings | null
   transport?: 'cli' | 'acp'
   billing?: Agent['billing']
   contextTokens?: number

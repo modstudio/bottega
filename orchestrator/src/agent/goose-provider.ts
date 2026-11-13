@@ -1,6 +1,9 @@
 // concern: goose-provider
 /** Builds Goose custom-provider configuration without touching the filesystem. */
 
+/** OpenRouter request parameters an agent row carries into its Goose provider. */
+export type RequestSettings = Record<string, unknown>
+
 export type GooseProviderFile = { name: string; content: string }
 
 export function gooseProviderFile(input: {
@@ -8,7 +11,7 @@ export function gooseProviderFile(input: {
   baseUrl: string | null | undefined
   model: string
   contextLimit: number | null
-  requestSettings: Record<string, unknown> | null | undefined
+  requestSettings: RequestSettings | null | undefined
 }): GooseProviderFile | null {
   if (!input.requestSettings) return null
   if (!input.baseUrl) {
