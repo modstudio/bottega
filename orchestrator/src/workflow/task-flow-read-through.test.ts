@@ -108,6 +108,9 @@ function hosted(
           number: 1,
           workflow: input.workflow ?? 'fix-defect',
           mode: 'default',
+          workflowKey: 'DEV-2098',
+          instanceId: '',
+          sessionId: null,
           workflowVersionId: input.workflowVersionId ?? ids.workflowVersionId,
           workflowVersionNumber: 1,
           catalogueVersionId: ids.catalogueVersionId,
@@ -117,6 +120,9 @@ function hosted(
           activeSlug: input.activeSlug ?? 'fix',
           state: 'running' as const,
           closedStepNotes: input.closedStepNotes ?? [],
+          question: null,
+          autonomy: null,
+          enforcement: 'floors',
           totalSteps: input.totalSteps ?? 6,
           openedMachineId: machineA,
           takenOverFromMachineId: machineA,
@@ -155,6 +161,21 @@ function installHosted(
     ...createMemoryRecordApiClient(),
     whoami,
     readTaskFlow: async () => flow,
+    listTaskFlowStages: async (selector) => {
+      const stages = [flow.stage, ...(flow.otherStages ?? [])]
+        .filter((stage): stage is NonNullable<typeof stage> => stage !== null)
+        .filter(
+          (stage) =>
+            (selector.projectId === undefined || stage.projectId === selector.projectId) &&
+            (selector.number === undefined || stage.number === selector.number),
+        )
+        .map((stage) => ({ stage, flow: flow.flow }))
+      return { items: stages, truncated: false, nextCursor: null }
+    },
+    readTaskFlowStage: async (id) => {
+      const stage = [flow.stage, ...(flow.otherStages ?? [])].find((row) => row?.id === id)
+      return stage ? { stage, flow: flow.flow } : null
+    },
     composeTaskFlow: async (input) => {
       const stageId = input.stageInsert?.id
       const revisions = Object.fromEntries([
@@ -169,24 +190,41 @@ function installHosted(
         revisions,
       }
     },
-    adoptTaskFlow: async (input) => ({
-      flowRecordId: flow.flow.id,
-      revisions: {
-        [flow.flow.id]: flow.flow.revision,
-        [input.stage.id]: input.stage.expectedRevision + 1,
-      },
-    }),
-    updateTaskFlowStage: async (input) => ({
-      revisions: Object.fromEntries(
-        input.stages.map((stage) => [stage.id, stage.expectedRevision + 1]),
-      ),
-    }),
-    advanceTaskFlow: async (input) => ({
-      revisions: {
-        [input.stage.id]: input.stage.expectedRevision + 1,
-        ...(input.flow ? { [input.flow.id]: input.flow.expectedRevision + 1 } : {}),
-      },
-    }),
+    adoptTaskFlow: async (input) => {
+      if (flow.stage?.id === input.stage.id) {
+        flow.stage.revision = input.stage.expectedRevision + 1
+        flow.flow.taskId = input.taskId
+      }
+      return {
+        flowRecordId: flow.flow.id,
+        revisions: {
+          [flow.flow.id]: flow.flow.revision,
+          [input.stage.id]: input.stage.expectedRevision + 1,
+        },
+      }
+    },
+    updateTaskFlowStage: async (input) => {
+      for (const mutation of input.stages)
+        if (flow.stage?.id === mutation.id)
+          Object.assign(flow.stage, mutation.values, { revision: mutation.expectedRevision + 1 })
+      return {
+        revisions: Object.fromEntries(
+          input.stages.map((stage) => [stage.id, stage.expectedRevision + 1]),
+        ),
+      }
+    },
+    advanceTaskFlow: async (input) => {
+      if (flow.stage?.id === input.stage.id)
+        Object.assign(flow.stage, input.stage.values, {
+          revision: input.stage.expectedRevision + 1,
+        })
+      return {
+        revisions: {
+          [input.stage.id]: input.stage.expectedRevision + 1,
+          ...(input.flow ? { [input.flow.id]: input.flow.expectedRevision + 1 } : {}),
+        },
+      }
+    },
   })
 }
 
@@ -516,6 +554,33 @@ test('hosted stage updates the same retired cursor in place without vacating its
   }
 })
 
+test('a refreshed known stage takes the task key it was read under', async () => {
+  const ids = fixture()
+  try {
+    const taskId = newRecordId()
+    const flowId = newRecordId()
+    const stageId = newRecordId()
+    await cacheHostedTaskFlow(ids.database, 'DEV-2098', hosted(ids, { taskId, flowId, stageId }))
+    ids.database
+      .query("UPDATE workflow_cursor SET workflow_key='DEV-1' WHERE record_id=?")
+      .run(stageId)
+
+    await cacheHostedTaskFlow(
+      ids.database,
+      'DEV-2098',
+      hosted(ids, { taskId, flowId, stageId, stageRevision: 5 }),
+    )
+
+    expect(
+      ids.database
+        .query('SELECT workflow_key,task_flow_record_id FROM workflow_cursor WHERE record_id=?')
+        .get(stageId),
+    ).toEqual({ workflow_key: 'DEV-2098', task_flow_record_id: flowId })
+  } finally {
+    ids.database.close()
+  }
+})
+
 test('hosted stage refuses an open local cursor holding its keyed slot and rolls back', async () => {
   const ids = fixture()
   try {
@@ -572,7 +637,7 @@ test.each([
   ['argv key', { key: 'DEV-2098' }],
   ['cursor row key', {}],
 ] as const)(
-  'hosted advance after adoption uses the local holder with the %s',
+  'hosted advance after adoption uses the hosted holder with the %s',
   async (_label, callArgs) => {
     const ids = fixture()
     try {
@@ -703,7 +768,7 @@ test.each([
         cursor,
       )
 
-      expect(result).not.toContain('Took over this workflow stage from Machine B.')
+      expect(result).toContain('Took over this workflow stage from Machine B.')
       const closed = ids.database
         .query<{ ordinal: number; state: string; closed: string }, [string]>(
           'SELECT ordinal,state,closed FROM workflow_cursor WHERE record_id=?',

@@ -17,6 +17,8 @@ const task = { key: 'DEV-2289', record_id: 'task-dev-2289', project: 'fixture', 
 
 const database = testDatabaseFixture((d) => {
   seedCurrentWorkflowTreeFixture(d, ['explore'], 'graduation fixture')
+  // Cursor handles resolve their project from the working directory.
+  d.query("UPDATE project SET path=? WHERE name='fixture'").run(process.cwd())
 })
 
 function documentFake(): {

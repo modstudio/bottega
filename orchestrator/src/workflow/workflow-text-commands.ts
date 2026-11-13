@@ -43,7 +43,7 @@ export async function copyWorkflowTextCommand(
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
   if (cursor === undefined) throw new Error('--cursor is required')
   const result = await copyWorkflowTextForTask(
-    await cursorForWorkflowTextCopy(cursor),
+    await cursorForWorkflowTextCopy(cursor, undefined, flagValue(argv, 'project')),
     flagValue(argv, 'task'),
     undefined,
     options.hubTaskReader,

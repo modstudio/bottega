@@ -19,6 +19,7 @@ import {
 } from '../run/question-mutation.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { resolvedRulingPersonName } from '../run/ruling-attribution.ts'
+import { refreshStaleMirror } from './task-flow-mirror-refresh.ts'
 import { taskFlowLocalStore } from './task-flow-store.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { cursorName } from './workflow-cursor-format.ts'
@@ -122,7 +123,7 @@ export async function ruleWorkflow(
   })
 }
 
-function applyWorkflowRulingLocally(input: {
+async function applyWorkflowRulingLocally(input: {
   row: SelectableCursorRow
   question: { record_id: string; number: number }
   ruling: string
@@ -135,9 +136,9 @@ function applyWorkflowRulingLocally(input: {
   payload: TaskFlowIntentInput<'stage-update'>
   hosted: TaskFlowIntentResult<'stage-update'> | null
   database: Database
-}): { summary: string; questionId: number } {
+}): Promise<{ summary: string; questionId: number }> {
   const { row, question, database } = input
-  return writeTransaction(() => {
+  const result = writeTransaction(() => {
     const store = taskFlowLocalStore(database)
     answerWorkflowQuestion(
       {
@@ -153,10 +154,23 @@ function applyWorkflowRulingLocally(input: {
       },
       database,
     )
-    store.write('stage-update', input.payload, input.hosted)
+    const mirror = store.write('stage-update', input.payload, input.hosted).mirror[row.record_id]
     return {
       summary: `${cursorName(row.workflow_slug, row.mode_slug, row.workflow_key, true)} is running at step ${row.ordinal + 1} ${row.step_slug}.`,
       questionId: question.number,
+      mirror,
     }
   }, database)
+  if (result.mirror === 'refresh')
+    await refreshStaleMirror(
+      database,
+      {
+        recordId: row.record_id,
+        project: row.project,
+        taskKey: row.workflow_key,
+        taskRecordId: row.task_record_id,
+      },
+      input.context.taskFlowClient,
+    )
+  return { summary: result.summary, questionId: result.questionId }
 }

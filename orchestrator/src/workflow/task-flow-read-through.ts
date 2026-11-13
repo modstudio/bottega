@@ -4,8 +4,8 @@ import type { Database } from 'bun:sqlite'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { writeTransaction } from '../database/db.ts'
-import { readRecordInstallBinding } from '../record/install-binding.ts'
 import { RecordApiRequestError, recordApiClient } from '../record/record-api-client.ts'
+import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import {
   type HostedTaskFlow,
   RECORD_TASK_FLOW_NOT_FOUND_MESSAGE,
@@ -14,6 +14,10 @@ import {
   resolveTaskFlowDestination,
   taskFlowWriteTarget,
 } from '../record/record-task-flow-write-client.ts'
+import {
+  currentRecordWriteDecision,
+  throwIfRecordRefused,
+} from '../record/record-write-authority.ts'
 import { insertWorkflowCursorRow } from './task-flow.ts'
 import {
   decideTaskFlowReadStatus,
@@ -25,7 +29,9 @@ export type { TaskFlowReadStatus } from './task-flow-decision.ts'
 
 /** Whether this install has a hosted record whose task-flow cache may be refreshed. */
 export function taskFlowReadThroughEnabled(database: Database): boolean {
-  return recordApiConfigured(process.env) || readRecordInstallBinding(database).bound
+  const decision = currentRecordWriteDecision(database)
+  throwIfRecordRefused(decision)
+  return decision.verdict === 'hosted'
 }
 
 type HostedStage = NonNullable<HostedTaskFlow['otherStages']>[number]
@@ -137,8 +143,10 @@ function cacheHostedTaskFlowRows(
       )
     else
       database
-        .query('UPDATE workflow_cursor SET task_flow_record_id=? WHERE record_id=?')
-        .run(flow.id, stage.id)
+        .query(
+          'UPDATE workflow_cursor SET task_record_id=?,task_flow_record_id=?,workflow_key=? WHERE record_id=?',
+        )
+        .run(flow.taskId, flow.id, taskKey, stage.id)
     database
       .query('UPDATE task_flow SET open_stage_cursor_record_id=? WHERE record_id=?')
       .run(stage.id, flow.id)
@@ -148,10 +156,11 @@ function cacheHostedTaskFlowRows(
 export async function readThroughTaskFlow(
   database: Database,
   input: { project: string; taskKey: string; taskRecordId: string },
+  providedClient?: RecordTaskFlowClient,
 ): Promise<TaskFlowReadStatus> {
   const configured = recordApiConfigured(process.env)
   try {
-    const client = recordApiClient()
+    const client = providedClient ?? recordApiClient()
     const destination = await resolveTaskFlowDestination(
       taskFlowWriteTarget(input.project, database),
       client,

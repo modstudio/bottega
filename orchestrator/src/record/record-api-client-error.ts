@@ -59,18 +59,20 @@ export function recordApiError(
       revisionConflict.data.condition,
     )
   const response = responseMessage(body, recordApiStatus(status))
+  const code = responseCode(body)
   const remedy = responseRemedy(body)
   const message = status >= 400 && status < 500 && remedy ? `${response}\n${remedy}` : response
-  if (status === 429) return new RecordApiRequestError(message, 'refused', status)
+  if (status === 429) return new RecordApiRequestError(message, 'refused', status, code)
   if (message === RECORD_ACTIVE_SPACE_REMEDY)
-    return new RecordApiRequestError(message, 'refused', status)
+    return new RecordApiRequestError(message, 'refused', status, code)
   if (
     status === 409 &&
     revisionConflict.success &&
     revisionConflict.data.reason === 'missing-hosted-revision'
   )
-    return new RecordApiRequestError(message, 'refused', status)
-  if (status >= 400 && status < 500) return new RecordApiRequestError(message, 'refused', status)
+    return new RecordApiRequestError(message, 'refused', status, code)
+  if (status >= 400 && status < 500)
+    return new RecordApiRequestError(message, 'refused', status, code)
   return recordApiServerError(message, status)
 }
 
@@ -86,12 +88,16 @@ export function recordAuthRefusal(status: number, body: unknown, headers: Header
     return new RecordApiRequestError(
       `record credentials were refused; ${RECORD_SIGN_IN_REMEDY}`,
       'refused',
+      status,
+      responseCode(body),
     )
   if (status === 429) {
     const interval = headers.get('retry-after') ?? headers.get('x-ratelimit-reset') ?? 'later'
     return new RecordApiRequestError(
       `record sign-in is rate limited; retry after ${interval}`,
       'refused',
+      status,
+      responseCode(body),
     )
   }
   const message = responseMessage(body, recordApiStatus(status))

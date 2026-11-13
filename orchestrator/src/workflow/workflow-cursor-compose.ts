@@ -24,8 +24,9 @@ import {
   insertWorkflowCursorRow,
   refuseTaskFlowStageConflict,
 } from './task-flow.ts'
-import { taskFlowState } from './task-flow-decision.ts'
+import { reconcileKeylessInstanceSlot, taskFlowState } from './task-flow-decision.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
+import { sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
 import type { WorkflowCursorInsert } from './task-flow-store-types.ts'
 import {
   type CommitCountPort,
@@ -78,13 +79,18 @@ async function keylessComposeOrdinal(
   machine: string,
   database: Database,
 ): Promise<number> {
-  return taskFlowReadStore(database).nextKeylessInstanceSlot({
+  const input = {
     projectRecordId,
     workflow: composition.workflow.slug,
     mode: composition.mode!.slug,
     sessionId: context.session ?? null,
     machineId: machine,
-  })
+  }
+  const [hostedSlot, localSlot] = await Promise.all([
+    taskFlowReadStore(database, context.taskFlowClient).nextKeylessInstanceSlot(input),
+    sqliteTaskFlowReadStore(database).nextKeylessInstanceSlot(input),
+  ])
+  return reconcileKeylessInstanceSlot(localSlot, hostedSlot)
 }
 
 async function readComposeFacts(
@@ -99,7 +105,7 @@ async function readComposeFacts(
     .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
     .get(composition.project)!.record_id
   const existingFlow = context.taskRecordId
-    ? await taskFlowReadStore(database).flowForTask(context.taskRecordId)
+    ? await taskFlowReadStore(database, context.taskFlowClient).flowForTask(context.taskRecordId)
     : null
   if (context.taskRecordId && key)
     await refuseTaskFlowStageConflict(
@@ -110,15 +116,20 @@ async function readComposeFacts(
         mode: composition.mode!.slug,
       },
       database,
+      context.taskFlowClient,
     )
   if (key)
-    await refuseUnlinkedCursorLabelCollision(database, {
-      project: composition.project,
-      workflow: composition.workflow.slug,
-      mode: composition.mode!.slug,
-      key,
-      taskRecordId: context.taskRecordId,
-    })
+    await refuseUnlinkedCursorLabelCollision(
+      database,
+      {
+        project: composition.project,
+        workflow: composition.workflow.slug,
+        mode: composition.mode!.slug,
+        key,
+        taskRecordId: context.taskRecordId,
+      },
+      context.taskFlowClient,
+    )
   const at = nowIso()
   const machine = machineId()
   const owner = context.session ?? machine
@@ -257,7 +268,10 @@ function applyHostedCompose(
 ): SelectableCursorRow {
   return writeTransaction(() => {
     const result = taskFlowLocalStore(database).write('compose', payload, hosted)
-    return taskFlowLocalStore(database).stageByRecordId(result.stage!.id) as SelectableCursorRow
+    const row = taskFlowLocalStore(database).stageByRecordId(
+      result.stage!.id,
+    ) as SelectableCursorRow
+    return hosted?.stage ? { ...row, id: hosted.stage.number } : row
   }, database)
 }
 
@@ -307,7 +321,8 @@ function cacheComposeReplay(
         },
         database,
       )
-    return taskFlowLocalStore(database).stageByRecordId(stored) as SelectableCursorRow
+    const row = taskFlowLocalStore(database).stageByRecordId(stored) as SelectableCursorRow
+    return { ...row, id: stage.number }
   }, database)
 }
 
@@ -342,7 +357,7 @@ async function recoverComposeConflict(
     throw new Error(
       `${error.message}; close or abandon the stage holding this workflow slot, then retry`,
     )
-  const alreadyCached = await taskFlowReadStore(database).hasStage(replay.stage.id)
+  const alreadyCached = await taskFlowReadStore(database, client).hasStage(replay.stage.id)
   if (!alreadyCached) return cacheComposeReplay(replay, facts, composition, context, database)
   if (facts.key || keylessSiblingRetry) throw error
   return insertWorkflowCursor(composition, context, database, autonomy, commitCount, true)

@@ -11,6 +11,7 @@ import {
 import type { TaskFlowIntentInput } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import type { AutonomyResolution, LiveCursorAutonomy } from './autonomy.ts'
+import { refreshStaleMirror } from './task-flow-mirror-refresh.ts'
 import { taskFlowLocalStore } from './task-flow-store.ts'
 import { type CommitCountPort, readCommitsPastLanding } from './workflow-compose-branch.ts'
 import { resolveCursorArguments, workflowKeyOf } from './workflow-cursor-arguments.ts'
@@ -94,6 +95,7 @@ async function prepareStepServe(
         { project, workflow: slug, mode },
         context.session,
         database,
+        context.taskFlowClient,
       )) as CursorRow | null)
     : (handled ?? (await findWorkflowCursor(project, slug, mode, args, context, database, cursor)))
   const row = handled ?? candidate
@@ -232,11 +234,12 @@ async function applyServeTransition(
     taskFlowWriteTarget(row.project, database),
     context.taskFlowClient,
   )
-  writeTransaction(() => {
+  const mirror = writeTransaction(() => {
     const store = taskFlowLocalStore(database)
     if ((decision.move || decision.resume) && row.state === 'awaiting-ruling')
       closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, database)
-    const revision = store.write('stage-update', payload, hosted).revisions[row.record_id]!
+    const result = store.write('stage-update', payload, hosted)
+    const revision = result.revisions[row.record_id]!
     row.revision = revision
     if (resolvedArguments) {
       row.args = resolvedArguments.encoded
@@ -247,7 +250,23 @@ async function applyServeTransition(
       row.step_slug = decision.slug
       row.state = 'running'
     }
+    return result.mirror[row.record_id]
   }, database)
+  if (mirror === 'refresh') {
+    Object.assign(
+      row,
+      await refreshStaleMirror(
+        database,
+        {
+          recordId: row.record_id,
+          project: row.project,
+          taskKey: row.workflow_key,
+          taskRecordId: row.task_record_id,
+        },
+        context.taskFlowClient,
+      ),
+    )
+  }
 }
 
 async function serveWorkflowStepWithCursor(
@@ -307,6 +326,7 @@ async function serveWorkflowStepWithCursor(
     ),
     row.record_id,
     database,
+    context.taskFlowClient,
   )
   const openNotice = opensCursor
     ? formatCursorOpened({

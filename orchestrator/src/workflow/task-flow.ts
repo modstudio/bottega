@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { machineId } from '../record/machine-identity.ts'
+import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import {
   decideTaskStageSelection,
   type OpenTaskStage,
@@ -145,8 +146,9 @@ export function refuseTaskFlowStageConflictLocal(
 export async function refuseTaskFlowStageConflict(
   input: TaskFlowStageConflictInput,
   d: Database,
+  client?: RecordTaskFlowClient,
 ): Promise<void> {
-  const store = taskFlowReadStore(d)
+  const store = taskFlowReadStore(d, client)
   const [flow, cursor] = await Promise.all([
     store.flowProjectionForTask(input.taskRecordId),
     store.openStageForTask(input.taskRecordId),

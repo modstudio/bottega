@@ -7,7 +7,7 @@ export const RECORD_TASK_FLOW_NOT_FOUND_MESSAGE = 'hosted task flow was not foun
 export const RECORD_TASK_FLOW_NOT_FOUND_CODE = 'task_flow_not_found'
 export const TASK_FLOW_STAGE_LIST_LIMIT_MAX = 1_000
 export const TASK_FLOW_PRESENCE_BATCH_MAX = 500
-export const TASK_FLOW_STAGE_LIST_REMEDY = `Pass projectId, projectId with number, sessionId, states, taskKey, workflow, mode, workflowKey, keyless, primaryInstance, taskId, or unlinked; limit must be from 1 through ${TASK_FLOW_STAGE_LIST_LIMIT_MAX}. Restart the list without cursor when its cursor is invalid.`
+export const TASK_FLOW_STAGE_LIST_REMEDY = `Pass projectId, projectId with number, sessionId, states, taskKey, workflow, mode, workflowKey, keyless, primaryInstance, taskId, unlinked, linked, or openedMachineId; limit must be from 1 through ${TASK_FLOW_STAGE_LIST_LIMIT_MAX}. Restart the list without cursor when its cursor is invalid.`
 
 const nullableId = z.string().uuid().nullable()
 const machine = z.object({ id: z.string().uuid(), displayName: z.string().min(1) })
@@ -53,9 +53,9 @@ const hostedTaskFlowTextCopySchema = z.object({
 const hostedTaskFlowStageSummarySchema = z.object({
   id: z.string().uuid(),
   flowRecordId: z.string().uuid(),
-  projectId: z.string().uuid().nullable(),
+  projectId: z.string().uuid(),
   projectName: z.string().nullable(),
-  number: z.number().int().positive().nullable(),
+  number: z.number().int().positive(),
   workflow: z.string(),
   mode: z.string(),
   workflowKey: z.string().nullable().optional(),
@@ -119,7 +119,7 @@ export type HostedTaskFlowStageById = z.infer<typeof hostedTaskFlowStageByIdSche
 
 export const hostedTaskFlowTextByIdSchema = z.object({
   text: hostedTaskFlowStepTextSchema,
-  stage: z.object({ id: z.string().uuid(), number: z.number().int().positive().nullable() }),
+  stage: z.object({ id: z.string().uuid(), number: z.number().int().positive() }),
   copy: hostedTaskFlowTextCopySchema.nullable(),
 })
 export type HostedTaskFlowTextById = z.infer<typeof hostedTaskFlowTextByIdSchema>
@@ -128,7 +128,7 @@ export const hostedTaskFlowObligationByIdSchema = z.object({
   obligation: hostedTaskFlowObligationSchema,
   stage: z.object({
     id: z.string().uuid(),
-    number: z.number().int().positive().nullable(),
+    number: z.number().int().positive(),
     state: stageState,
   }),
 })
@@ -208,11 +208,19 @@ export const taskFlowStageListQuerySchema = z
     primaryInstance: trueFlag,
     taskId: z.string().uuid().optional(),
     unlinked: trueFlag,
+    linked: trueFlag,
+    openedMachineId: z.string().uuid().optional(),
     order: z.enum(['project', 'newest']).default('project'),
     cursor: taskFlowStageListCursor.optional(),
     limit: z.coerce.number().int().min(1).max(TASK_FLOW_STAGE_LIST_LIMIT_MAX).default(200),
   })
   .superRefine((value, context) => {
+    if (value.linked && value.unlinked)
+      context.addIssue({
+        code: 'custom',
+        message: 'linked and unlinked cannot be combined; pass only one',
+        path: ['linked'],
+      })
     if (value.number !== undefined && value.projectId === undefined)
       context.addIssue({
         code: 'custom',
@@ -231,7 +239,9 @@ export const taskFlowStageListQuerySchema = z
       value.keyless === undefined &&
       value.primaryInstance === undefined &&
       value.taskId === undefined &&
-      value.unlinked === undefined
+      value.unlinked === undefined &&
+      value.linked === undefined &&
+      value.openedMachineId === undefined
     )
       context.addIssue({ code: 'custom', message: 'at least one stage filter is required' })
     if (value.cursor !== undefined) {

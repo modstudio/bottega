@@ -6,8 +6,10 @@ import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixtu
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import {
   resolveWorkflowCursorMode,
+  selectByHandle,
   workflowCursorProjectScope,
 } from './workflow-cursor-selection.ts'
+import { args, context, database } from './workflow-cursor-test.fixture.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
@@ -44,7 +46,7 @@ test('listing scope honors explicit flags and refuses an unresolved cwd', () => 
 })
 
 test('a keyless cursor composed in a non-default mode resolves that mode', async () => {
-  const d = database()
+  const d = restoredDatabase()
   const context = { session: 'keyless-mode-session' }
   await composeWorkflowWithCursor(SLUG, 'local-mode-project', 'non-default', {}, context, d, {}, {})
   expect(
@@ -61,7 +63,7 @@ test('a keyless cursor composed in a non-default mode resolves that mode', async
   ).toBe('non-default')
 })
 
-const database = testDatabaseFixture((d) => {
+const restoredDatabase = testDatabaseFixture((d) => {
   seedWorkflows(d)
   for (const project of ['hosted-mode-project', 'local-mode-project'])
     d.query('INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?)').run(
@@ -113,7 +115,30 @@ test.each([
       {},
       'test caller',
       'pass a mode',
-      database(),
+      restoredDatabase(),
     ),
   ).toBe(mode)
+})
+
+test('a local cursor handle resolves outside a registered project without a project option', async () => {
+  const d = database()
+  const composed = await composeWorkflowWithCursor(
+    'flow',
+    'fixture',
+    'default',
+    args,
+    context,
+    d,
+    {},
+    {},
+  )
+  d.query('UPDATE project SET path=? WHERE name=?').run('/fixture-not-this-cwd', 'fixture')
+
+  expect((await selectByHandle(composed.cursor!.id, {}, d)).record_id).toBe(
+    d
+      .query<{ record_id: string }, [number]>(
+        'SELECT record_id FROM workflow_cursor WHERE number=?',
+      )
+      .get(composed.cursor!.id)!.record_id,
+  )
 })

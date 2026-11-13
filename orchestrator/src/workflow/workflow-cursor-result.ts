@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { workflowKeyOf as keyOf } from './workflow-cursor-arguments.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { cursorName, shellWord, workflowCursorReference } from './workflow-cursor-format.ts'
@@ -114,9 +115,11 @@ export async function renderWorkflowAdvanceResult(input: {
   mode: string
   selfRuling?: WorkflowSelfRulingInput
   d: Database
+  client?: RecordTaskFlowClient
   live?: LiveCursorAutonomy
 }): Promise<string> {
-  const { row, composition, closed, advance, slug, project, mode, selfRuling, d, live } = input
+  const { row, composition, closed, advance, slug, project, mode, selfRuling, d, client, live } =
+    input
   if (advance.ordinal === null) {
     const result = withSelfRuling(
       completedWorkflowSummary(cursorName(slug, mode, row.workflow_key, true), closed),
@@ -146,6 +149,7 @@ export async function renderWorkflowAdvanceResult(input: {
       ),
       row.record_id,
       d,
+      client,
     )),
     cursor: row.id,
     flow,

@@ -470,6 +470,7 @@ export const recordModules: RecordModule[] = [
     '../../../shared/record-space-membership.ts',
     '../../../shared/record-write-space.ts',
   ]),
+  module('orchestrator/src/record/record-space-cardinality.ts', []),
   module('orchestrator/src/record/record-project-destination-client.ts', [
     '../../../shared/record-space-membership.ts',
     '../project/declared-record-space.ts',
