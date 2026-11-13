@@ -7,7 +7,6 @@ import { ceilingWaivableGaps } from '../pull-request/triage-decision.ts'
 import {
   applicableReview,
   lensesSelectingPaths,
-  selectReviewApplicability,
 } from '../review/review-applicability.ts'
 import type { TriageReviewRow } from '../review/review-group.ts'
 import {
@@ -23,6 +22,7 @@ import {
 } from '../review/review-round-lens-plan.ts'
 import { classifyReviewTier, type ReviewTierFile } from '../review/review-tier-classifier.ts'
 import {
+  isDecisionConformanceNotAdmittedReason,
   REVIEW_LENS_SELECTION_REASON,
   type ReviewLensOwedReason,
   type ReviewLensSelectionReason,
@@ -35,6 +35,7 @@ type ReviewFunnelChangeIdentity = {
   branch: string
   head: string
   patchId: string
+  pathSet: string
   paths: string[]
 }
 
@@ -139,6 +140,11 @@ function reasonForLens(input: {
   )
     return input.provenanceMismatch
   if (
+    input.plannedReason &&
+    isDecisionConformanceNotAdmittedReason(input.plannedReason)
+  )
+    return 'operator-ordered'
+  if (
     input.postFix.kind === 're-lens' &&
     Object.hasOwn(input.postFix.reOwedPathsByLens ?? {}, input.lens)
   )
@@ -162,7 +168,7 @@ function funnelPlan(facts: ReviewFunnelFacts) {
   )
   const roundFacts = roundLensFacts(facts.branchReviews, {
     patchId: facts.change.patchId,
-    pathSet: JSON.stringify([...facts.change.paths].sort()),
+    pathSet: facts.change.pathSet,
   })
   const fixPaths =
     postFix.kind === 're-lens' || postFix.kind === 'comparison-failed' ? postFix.fixPaths : []
@@ -187,13 +193,21 @@ function funnelPlan(facts: ReviewFunnelFacts) {
     ? {
         ...planned,
         round: {
-          ...selectReviewApplicability(relevant, roundLenses),
+          ...planned.round,
+          lenses: roundLenses,
           lensReasons: {
-            ...planned.round.lensReasons,
             ...Object.fromEntries(unrecordedAdmitted.map((lens) => [lens, 'initial' as const])),
+            ...planned.round.lensReasons,
           },
         },
-        admissionRequired: selectReviewApplicability(relevant, admissionLenses),
+        admissionRequired: {
+          ...planned.admissionRequired,
+          lenses: admissionLenses,
+          lensReasons: {
+            ...Object.fromEntries(unrecordedAdmitted.map((lens) => [lens, 'initial' as const])),
+            ...planned.admissionRequired.lensReasons,
+          },
+        },
       }
     : planned
   const identities = new Set(
@@ -295,7 +309,7 @@ function nextDecision(
     : untriaged
       ? evidence.sets.untriaged.get(untriaged.lens)?.runId
       : undefined
-  return { next, remedy: remedyForNext(facts.change, next, runId) }
+  return { next, remedy: remedyForNext(facts, next, runId) }
 }
 
 function selectNextAction(input: {
@@ -305,33 +319,58 @@ function selectNextAction(input: {
   waiting: { lens: string } | undefined
   untriaged: { lens: string } | undefined
 }): ReviewFunnelVerdict['next'] {
+  if (input.dispatch.length) return { action: 'dispatch', lenses: input.dispatch }
   if (input.waiting) return { action: 'wait' }
   if (input.untriaged) return { action: 'triage' }
-  if (input.dispatch.length) return { action: 'dispatch', lenses: input.dispatch }
-  if (input.plan.budget.atCeiling && input.facts.ceilingRuling) return { action: 'admit' }
   const readRequired = input.plan.tier.tier === 0 || input.facts.admissionGap.architectReadRequired
   if (readRequired && !input.facts.exactRead) return { action: 'record-read' }
   const ceilingGap =
-    input.plan.budget.atCeiling && !input.facts.triageComplete && ceilingGapIsWaivable(input.facts)
+    input.plan.budget.atCeiling &&
+    !input.facts.ceilingRuling &&
+    hasAdmissionGap(input.facts)
   return ceilingGap ? { action: 'ask-ceiling-ruling' } : { action: 'admit' }
 }
 
 function remedyForNext(
-  change: ReviewFunnelChangeIdentity,
+  facts: ReviewFunnelFacts,
   next: ReviewFunnelVerdict['next'],
   runId: string | undefined,
 ): string {
+  const change = facts.change
   if (next.action === 'dispatch') return dispatchRemedy(change, next.lenses!)
   if (next.action === 'wait') return `${PLATFORM_SLUG} run wait ${runId}`
   if (next.action === 'triage') return `${PLATFORM_SLUG} score ${runId} ...`
   if (next.action === 'record-read')
     return `${PLATFORM_SLUG} review read --sha ${change.head} --note "<what was read and why it lands>"`
-  if (next.action === 'ask-ceiling-ruling')
-    return `${PLATFORM_SLUG} pr create --ceiling-ruling "<why the remaining review gap is safe to waive>"`
+  if (next.action === 'ask-ceiling-ruling') {
+    const ceiling = ceilingGapDecision(facts)
+    if (ceiling.waivable)
+      return `${PLATFORM_SLUG} pr create --ceiling-ruling "<why the remaining review gap is safe to waive>"`
+    if (ceiling.blocker === 'unfinished-reviews')
+      return `unfinished-reviews: finish reviews ${facts.admissionGap.unfinishedReviewNumbers.join(', ')}`
+    if (ceiling.blocker === 'undisposed-findings')
+      return `undisposed-findings: dispose findings ${facts.admissionGap.undisposedFindings
+        .map(({ reviewNumber, ordinal }) => `${reviewNumber}/${ordinal}`)
+        .join(', ')}`
+    if (ceiling.blocker === 'non-lens-gap')
+      return `non-lens-gap: clear ${facts.admissionGap.nonLensGaps.join(', ')}`
+    return `${ceiling.blocker}: clear the remaining admission gap`
+  }
   return `${PLATFORM_SLUG} pr create`
 }
 
-function ceilingGapIsWaivable(facts: ReviewFunnelFacts): boolean {
+function hasAdmissionGap(facts: ReviewFunnelFacts): boolean {
+  return (
+    !facts.triageComplete &&
+    (facts.admissionGap.unfinishedReviewNumbers.length > 0 ||
+      facts.admissionGap.undisposedFindings.length > 0 ||
+      facts.admissionGap.missingLenses.length > 0 ||
+      facts.admissionGap.architectReadRequired ||
+      facts.admissionGap.nonLensGaps.length > 0)
+  )
+}
+
+function ceilingGapDecision(facts: ReviewFunnelFacts) {
   return ceilingWaivableGaps({
     complete: facts.triageComplete,
     unfinishedReviewNumbers: facts.admissionGap.unfinishedReviewNumbers,
@@ -340,7 +379,7 @@ function ceilingGapIsWaivable(facts: ReviewFunnelFacts): boolean {
     architectReadRequired: facts.admissionGap.architectReadRequired,
     hasNonLensGap: facts.admissionGap.nonLensGaps.length > 0,
     nonLensGaps: facts.admissionGap.nonLensGaps,
-  }).waivable
+  })
 }
 
 /** Decide one verdict from plain gathered facts and one validated policy. */

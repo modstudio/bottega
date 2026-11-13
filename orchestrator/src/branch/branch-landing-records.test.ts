@@ -2,7 +2,11 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { landedTaskIdentities } from '../session/session-close-out-obligations.ts'
-import { readBranchLandingTaskRows, resolveBranchLandingTaskKey } from './branch-landing-records.ts'
+import {
+  readBranchLandingTaskRows,
+  readLandedReviewIds,
+  resolveBranchLandingTaskKey,
+} from './branch-landing-records.ts'
 
 function fixture() {
   const database = migratedTestDatabase()
@@ -58,6 +62,39 @@ test('landing task reader carries minted and branch run key relations', () => {
     mintedTaskKey: null,
     branchTaskKey: 'DEV-2',
   })
+})
+
+test('landed review ids include only snapshots for merged pull requests', () => {
+  const { database } = fixture()
+  const projectId = database
+    .query<{ record_id: string }, []>("SELECT record_id FROM project WHERE name='fixture'")
+    .get()!.record_id
+  const addSnapshot = (recordId: string, branch: string, prNumber: number, reviews: string[]) =>
+    database
+      .query(
+        `INSERT INTO landing_triage_snapshot
+         (record_id,project,project_record_id,branch,tip,tree,pr_number,review_record_ids,patch_id,
+          tier,lens_rounds,finding_count,at)
+         VALUES (?,'fixture',?,?,?,'tree',?,?,'patch',1,1,0,'2026-11-09')`,
+      )
+      .run(recordId, projectId, branch, recordId, prNumber, JSON.stringify(reviews))
+  const addPullRequest = (branch: string, prNumber: number) =>
+    database
+      .query(
+        `INSERT INTO branch_landing_record
+         (record_id,project,project_record_id,branch,tip,pr_number,merge_commit,merged_at,recorded_at)
+         VALUES (?,'fixture',?,?,'tip',?,'merge',?,'2026-11-09')`,
+      )
+      .run(newRecordId(), projectId, branch, prNumber, '2026-11-09')
+
+  addSnapshot('merged-snapshot', 'merged-branch', 1, ['review-merged-a', 'review-merged-b'])
+  addPullRequest('merged-branch', 1)
+  addSnapshot('open-snapshot', 'open-branch', 2, ['review-open'])
+  addSnapshot('other-pr-snapshot', 'merged-branch', 2, ['review-other-pr'])
+
+  expect(readLandedReviewIds(database, 'fixture')).toEqual(
+    new Set(['review-merged-a', 'review-merged-b']),
+  )
 })
 
 test('landing key resolution honors run order and registered branch prefixes', () => {

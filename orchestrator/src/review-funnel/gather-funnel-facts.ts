@@ -164,6 +164,7 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
       branch: change.branch,
       head: change.head,
       patchId: identity.patchId,
+      pathSet,
       paths: identity.paths,
     },
     files,

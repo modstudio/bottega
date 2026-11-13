@@ -20,7 +20,6 @@ export const REVIEW_LENS_SELECTION_REASON = [
   'newly-touched-path',
   'unidentified-tip-funnel',
   'operator-ordered',
-  'tier-rise',
   'rebase-changed-file',
   'satisfied',
   'credited-by-read',
@@ -51,6 +50,11 @@ export type ReviewLensSelectionReason = (typeof REVIEW_LENS_SELECTION_REASON)[nu
 export type ReviewLensOwedReason =
   | (typeof REVIEW_LENS_OWED_REASONS)[number]
   | `decision-conformance not admitted: ${string}`
+
+export const isDecisionConformanceNotAdmittedReason = (
+  reason: ReviewLensSelectionReason | ReviewLensOwedReason,
+): reason is `decision-conformance not admitted: ${string}` =>
+  reason.startsWith('decision-conformance not admitted:')
 
 const MONITOR_SEVERITY = ['informational', 'attention'] as const
 export type MonitorSeverity = (typeof MONITOR_SEVERITY)[number]
