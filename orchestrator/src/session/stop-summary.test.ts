@@ -126,5 +126,7 @@ test('session summary assembles only this session owed runs, held remedies, and 
   expect(result.lines).toContain(
     `worktree for run ${heldNumber} (craft) is held → ${PLATFORM_SLUG} run close-out ${heldNumber}`,
   )
-  expect(result.lines.join('\n')).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/)
+  expect(result.lines.join('\n')).not.toMatch(
+    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/,
+  )
 })
