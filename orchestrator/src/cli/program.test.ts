@@ -279,3 +279,8 @@ test('the session stamp skips the ask-server invocation so its broker declaratio
   expect(invocationSkipsSessionStamp(['board', 'list'])).toBeFalse()
   expect(invocationSkipsSessionStamp(['ask', '--json'])).toBeFalse()
 })
+
+test('session status is read-only lifecycle observation and skips the session stamp', () => {
+  expect(invocationSkipsSessionStamp(['session', 'status', '--json'])).toBeTrue()
+  expect(invocationSkipsSessionStamp(['session', 'close-out', '--dry-run'])).toBeFalse()
+})

@@ -3,15 +3,17 @@
  * Owns the shared run-status sets. Imports nothing, so a pure decision
  * module can depend on it without reaching a store, a clock or a process.
  *
- * orchestrator/hooks/score-reminder.py restates this list in Python, which cannot import it: that
- * copy must change with this list.
  */
 
 /** The terminal run statuses, in the order the lifecycle lists them. */
+// orchestrator/hooks/stop-summary.py restates this list because Python cannot import it.
 const TERMINAL_RUN_STATUSES = ['ok', 'failed', 'stale', 'stopped'] as const
 
 /** The live run statuses, in lifecycle order. */
 export const RUN_LIVE_STATUSES = ['queued', 'reserved', 'attached', 'running', 'asking'] as const
+
+/** The same statuses for callers that test whether a recorded run status is live. */
+export const RUN_LIVE_STATUS_SET: ReadonlySet<string> = new Set<string>(RUN_LIVE_STATUSES)
 
 /** The live statuses as the quoted, parenthesized SQL list a run `IN` test needs. */
 export const LIVE_RUN_STATUS_SQL = `(${RUN_LIVE_STATUSES.map((status) => `'${status}'`).join(',')})`

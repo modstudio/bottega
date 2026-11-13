@@ -137,6 +137,7 @@ export function invocationSkipsSessionStamp(argv: string[]): boolean {
   const readOnlySubcommands: Record<string, readonly string[]> = {
     review: ['coverage-audit', 'scope-proposal', 'yield'],
     pr: ['check'],
+    session: ['status'],
     setup: ['facts', 'plan'],
   }
   if (isTypedQuestionBacktest(argv)) return false

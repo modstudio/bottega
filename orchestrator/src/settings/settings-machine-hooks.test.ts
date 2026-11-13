@@ -78,15 +78,15 @@ test('typed profile hooks and an empty profile render the same canonical product
   const groups = Object.values(
     fromProfile.settings.hooks as Record<string, Array<{ hooks: unknown[] }>>,
   ).flat()
-  expect(groups.flatMap((group) => group.hooks)).toHaveLength(27)
+  expect(groups.flatMap((group) => group.hooks)).toHaveLength(26)
   expect(commands).not.toContain(OLD_ROOT)
   expect(commands.match(/git-guard\.py/g)).toHaveLength(1)
   expect(commands.match(/protect-main-checkout\.py/g)).toHaveLength(2)
   expect(commands.match(/heartbeat-remind\.py/g)).toHaveLength(9)
   expect(
     commands.match(/BOTTEGA_ORCHESTRATOR_DB='\/state\/orchestrator\/orchestrator\.db'/g),
-  ).toHaveLength(27)
-  expect(commands.match(/BOTTEGA_GLOBAL_USE=on/g)).toHaveLength(27)
+  ).toHaveLength(26)
+  expect(commands.match(/BOTTEGA_GLOBAL_USE=on/g)).toHaveLength(26)
   for (const verb of ['run start', 'board ask', 'board post']) {
     expect(commands).toContain(`Bash(${PLATFORM_SLUG} ${verb}:*)`)
     expect(commands).toContain(`Bash(./bin/${PLATFORM_SLUG} ${verb}:*)`)
@@ -148,7 +148,7 @@ test('global use off is rendered into every product hook command', () => {
   const hooks = withMachineProductHooks({ permissions: {}, hooks: {} }, ASSET_ROOT, DATABASE, 'off')
     .settings.hooks
   const commands = JSON.stringify(hooks)
-  expect(commands.match(/BOTTEGA_GLOBAL_USE=off/g)).toHaveLength(27)
+  expect(commands.match(/BOTTEGA_GLOBAL_USE=off/g)).toHaveLength(26)
 })
 
 test('superseded handlers name exactly the removed profile entries', () => {
@@ -182,7 +182,7 @@ test('board hook commands preserve their environment and timeout', () => {
     .flat()
     .flatMap((group) => group.hooks)
     .filter((hook) => hook.command.includes('BOARD_PUSH_REFRESH_SECONDS='))
-  expect(boardHooks).toHaveLength(5)
+  expect(boardHooks).toHaveLength(4)
   for (const hook of boardHooks) {
     expect(hook.command).toContain(`BOARD_PUSH_REFRESH_SECONDS=${BOARD_PUSH_REFRESH_SECONDS}`)
     expect(hook.command).toContain(`BOARD_PUSH_REMIND_SECONDS=${BOARD_PUSH_REMIND_SECONDS}`)
@@ -197,11 +197,22 @@ test('board hook commands preserve their environment and timeout', () => {
     if (hook.command.includes('board-interrupt.py') || hook.command.includes('board-ack-guard.py'))
       expect(hook.timeout).toBe(Math.ceil(BOARD_PUSH_SLOW_TIMEOUT_SECONDS + 1))
   }
-  const scoreReminder = boardHooks.find((hook) => hook.command.includes('score-reminder.py'))
-  expect(scoreReminder?.command).toContain('BOTTEGA_BOARD_HOOK_STATE=')
+  const stopSummary = boardHooks.find((hook) => hook.command.includes('stop-summary.py'))
+  expect(stopSummary?.command).toContain('BOTTEGA_BOARD_HOOK_STATE=')
   const cursorReminders = boardHooks.filter((hook) =>
     hook.command.includes('workflow-cursor-reminder.py'),
   )
-  expect(cursorReminders).toHaveLength(2)
+  expect(cursorReminders).toHaveLength(1)
   for (const hook of cursorReminders) expect(hook.command).toContain('BOTTEGA_BOARD_HOOK_STATE=')
+})
+
+test('Stop has one summary hook and neither superseded Stop hook', () => {
+  const hooks = render({}).settings.hooks as Record<
+    string,
+    Array<{ hooks: Array<{ command: string }> }>
+  >
+  const commands = (hooks.Stop ?? []).flatMap((group) => group.hooks).map((hook) => hook.command)
+  expect(commands.filter((value) => value.includes('stop-summary.py'))).toHaveLength(1)
+  expect(commands.some((value) => value.includes('score-reminder.py'))).toBe(false)
+  expect(commands.some((value) => value.includes('workflow-cursor-reminder.py'))).toBe(false)
 })

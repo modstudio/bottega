@@ -216,7 +216,7 @@ const AFTER_FINISH_SHIP_CLEANUP = new Set(['finish-ship-cleanup', 'promote-relea
  * `claimed` answers "does a running or awaiting-ruling ship-task cursor claim this tree?" — a
  * recorded pointer, not a measurement of whether the session that wrote it is still alive.
  */
-type HeldTreeCursorFacts = {
+export type HeldTreeCursorFacts = {
   id: number
   workflow: string | null
   step: string | null
@@ -316,6 +316,14 @@ function cursorMatchesThisTree(
       cursor.branch === tree.branch &&
       cursor.worktree === tree.treePath,
   )
+}
+
+/** Whether a claiming ship-task cursor still works this exact landing tree. */
+export function shipCursorWorksTree(
+  tree: Pick<HeldTreeInFlightFacts, 'treePath' | 'project' | 'branch'>,
+  cursor: HeldTreeCursorFacts | null,
+): boolean {
+  return cursorMatchesThisTree(tree, cursor)
 }
 
 function inFlightRef(facts: HeldTreeInFlightFacts): string | null {
