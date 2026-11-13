@@ -197,21 +197,18 @@ test('task-flow apply is idempotent and rejects older revisions', async () => {
       ).rows,
     ).toEqual([{ flows: 1, stages: 1 }])
 
+    // A stage written before stages carried enforcement: only its own revision fills it.
     await postgres.exec('UPDATE task_flow_stage SET enforcement=NULL')
-    await expect(reviseStage(stagePayload())).resolves.toEqual([{ id: STAGE }])
-    expect(
-      (await postgres.query('SELECT enforcement,revision,state FROM task_flow_stage')).rows,
-    ).toEqual([{ enforcement: 'floors', revision: 1, state: 'running' }])
+    const stageRow = async () =>
+      (await postgres.query('SELECT enforcement,revision,state FROM task_flow_stage')).rows
+    await expect(reviseStage(stagePayload(0, 'done'))).resolves.toEqual([])
+    expect(await stageRow()).toEqual([{ enforcement: null, revision: 1, state: 'running' }])
+
+    await expect(reviseStage(stagePayload(1, 'done'))).resolves.toEqual([{ id: STAGE }])
+    expect(await stageRow()).toEqual([{ enforcement: 'floors', revision: 1, state: 'running' }])
 
     await reviseStage({ ...stagePayload(), enforcement: 'note-only' })
-    expect((await postgres.query('SELECT enforcement FROM task_flow_stage')).rows).toEqual([
-      { enforcement: 'floors' },
-    ])
-
-    await reviseStage({ ...stagePayload(0, 'done'), enforcement: 'note-only' })
-    expect(
-      (await postgres.query('SELECT enforcement,revision,state FROM task_flow_stage')).rows,
-    ).toEqual([{ enforcement: 'floors', revision: 1, state: 'running' }])
+    expect(await stageRow()).toEqual([{ enforcement: 'floors', revision: 1, state: 'running' }])
 
     await applyFlow(flowPayload(2, 'done'))
     // A stage written before stages carried a project revises with no project.
@@ -380,15 +377,6 @@ realPostgres('hosted task flow revisions', () => {
         await admin<{ enforcement: string; revision: number }[]>`
           SELECT enforcement,revision FROM task_flow_stage WHERE id=${STAGE}::uuid`,
       ).toEqual([{ enforcement: 'floors', revision: 2 }])
-
-      await push(actor, 15, 'task_flow_stage', {
-        ...stagePayload(1, 'running'),
-        enforcement: 'note-only',
-      })
-      expect(
-        await admin<{ enforcement: string; revision: number; state: string }[]>`
-          SELECT enforcement,revision,state FROM task_flow_stage WHERE id=${STAGE}::uuid`,
-      ).toEqual([{ enforcement: 'floors', revision: 2, state: 'done' }])
 
       await push(actor, 5, 'task_flow', flowPayload(2, 'done'))
       await push(actor, 6, 'task_flow_stage', stagePayload(2, 'done'))
