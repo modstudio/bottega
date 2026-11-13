@@ -247,6 +247,22 @@ async function keyedRunCursorWarningForDispatch(input: {
   return decision.kind === 'allow-with-override' ? decision.warning : null
 }
 
+async function cursorWarningFor(
+  flags: DispatchFlags,
+  presentation: DispatchPresentation,
+  binding: { cursorRecordId: string; stepSlug: string } | undefined,
+  project: string | null,
+): Promise<string | null> {
+  return keyedRunCursorWarningForDispatch({
+    key: flags.flag('key'),
+    project,
+    bindingPresent: Boolean(binding),
+    overrideReason: flags.flag('override-unbound'),
+    fromOperator: flags.has('from-operator'),
+    facts: presentation.keyedRunCursorFacts,
+  })
+}
+
 type SpecWarningInput = {
   jobName: string
   continuation: boolean
@@ -641,12 +657,12 @@ async function taskKeyWarningForDispatch(
   return admission.warning
 }
 
-function recordTaskKeyWarning(
+function recordDispatchWarnings(
   runId: string,
-  warning: string | null,
+  warnings: Array<string | null>,
   record: (runId: string, warning: string) => void,
 ): void {
-  if (warning) record(runId, warning)
+  for (const warning of warnings) if (warning) record(runId, warning)
 }
 
 function detachedRunCollectRemedy(id: string, runNumber: (id: string) => number): string {
@@ -735,14 +751,7 @@ export async function dispatchCommand(
   reportCallerCheckoutNotice(caller.notice, porcelain, error)
   const dispatchProject = assertDispatchableProject(explicitRepo, callerCwd, Boolean(requestedCwd))
   const dispatchProjectName = dispatchProject?.name ?? null
-  const keyedRunCursorWarning = await keyedRunCursorWarningForDispatch({
-    key: flag('key'),
-    project: dispatchProjectName,
-    bindingPresent: Boolean(binding),
-    overrideReason: flag('override-unbound'),
-    fromOperator: has('from-operator'),
-    facts: presentation.keyedRunCursorFacts,
-  })
+  const cursorWarning = await cursorWarningFor(flags, presentation, binding, dispatchProjectName)
   // Check project-required inputs before reading the prompt so a missing key does not pay for stdin.
   const { base, reviewRef, resolvedReviewTarget, seed } = prepareDispatchTarget({
     flags,
@@ -832,8 +841,8 @@ export async function dispatchCommand(
   /**
    * EVERY JOB DETACHES BY DEFAULT.
    *
-   * In the seven days through 2026-09-02, 59 foreground runs died as
-   * "interrupted, exit 143, empty output" when the caller's shell was killed:
+   * In the seven days through 2026-09-02, 59 foreground runs died as "interrupted, exit 143,
+   * empty output" when the caller's shell was killed:
    * 24 review-lens, 24 understand, 6 file-question, and 5 other runs. Only 2
    * were writing jobs, which already detached by default. The same deaths
    * left another 35 runs stale. Claude's harness bounds foreground commands
@@ -876,8 +885,7 @@ export async function dispatchCommand(
       resolvedTaskBranch,
       lensInputs,
     })
-    recordTaskKeyWarning(id, taskKeyWarning, recordRunWarning)
-    recordTaskKeyWarning(id, keyedRunCursorWarning, recordRunWarning)
+    recordDispatchWarnings(id, [taskKeyWarning, cursorWarning], recordRunWarning)
     presentation.detachedResult(id, json)
     if (!has('quiet') && !porcelain) {
       error(detachedRunCollectRemedy(id, presentation.runNumber))
@@ -904,8 +912,8 @@ export async function dispatchCommand(
    * died exactly that way, and the same kill was reproduced twice while this
    * was being written.
    *
-   * Detaching first means the worker owns the row and finishes regardless. A killed caller
-   * loses only its own view of the output: the run
+   * Detaching first means the worker owns the row and finishes regardless. A killed caller loses
+   * only its own view of the output: the run
    * completes, records its verdict, and `bottega run show <id>` still has the answer. The wait
    * is bounded by the agent's own timeout plus a margin, so a
    * genuinely stuck run still returns control rather than hanging for ever.
@@ -937,7 +945,6 @@ export async function dispatchCommand(
     resolvedTaskBranch,
     lensInputs,
   })
-  recordTaskKeyWarning(id, taskKeyWarning, recordRunWarning)
-  recordTaskKeyWarning(id, keyedRunCursorWarning, recordRunWarning)
+  recordDispatchWarnings(id, [taskKeyWarning, cursorWarning], recordRunWarning)
   await follow(id, has('quiet'))
 }

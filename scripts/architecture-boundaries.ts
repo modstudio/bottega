@@ -274,6 +274,7 @@ export const importBoundaries: ImportBoundary[] = [
       'node:fs',
       './dispatch-preflight.ts',
       './execution-requirement.ts',
+      './keyed-run-cursor-admission.ts',
       './probe-launch-overrides.ts',
       './review-lens-prompt.ts',
       '../enforcement/enforcement-resolution.ts',
@@ -287,6 +288,12 @@ export const importBoundaries: ImportBoundary[] = [
     ],
     'Keep dispatch command adapters independent of transports, routing, worktrees, the CLI, and reviews.',
     ['./review-memory.ts', '../review/review-role.ts', '../review/review-target.ts'],
+  ),
+  boundary(
+    'keyed-run-cursor-admission-boundary',
+    'orchestrator/src/dispatch/keyed-run-cursor-admission.ts',
+    ['../../../shared/brand.ts', '../../../shared/refusal.ts'],
+    'Keep keyed run cursor admission a pure decision over caller, cursor, and override facts.',
   ),
   boundary(
     'task-key-admission-boundary',

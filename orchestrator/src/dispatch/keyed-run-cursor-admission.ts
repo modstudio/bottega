@@ -2,6 +2,7 @@
 /** Decides whether a keyed run start is held by the calling harness session. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 
 export type KeyedRunCursor = {
   project: string
@@ -62,11 +63,18 @@ export function decideKeyedRunCursorAdmission(
   const project = input.project ?? '(no registered project)'
   return {
     kind: 'refuse',
-    message:
-      `refusing keyed run start because harness session ${input.sessionId ?? '(unknown)'} does not ` +
-      `hold an open workflow cursor for project ${project} and task ${input.key}; cleared by: ` +
-      `${PLATFORM_SLUG} workflow compose ship-task --project ${project} --arg key=${input.key}; ` +
-      `${PLATFORM_SLUG} workflow list names the other workflows; override with ` +
-      '--override-unbound "<reason>" --from-operator',
+    message: renderRefusal(
+      refusal(
+        `refusing keyed run start because harness session ${input.sessionId ?? '(unknown)'} does not ` +
+          `hold an open workflow cursor for project ${project} and task ${input.key}`,
+        {
+          kind: 'edit',
+          text:
+            `${PLATFORM_SLUG} workflow compose ship-task --project ${project} --arg key=${input.key}; ` +
+            `${PLATFORM_SLUG} workflow list names the other workflows; override with ` +
+            '--override-unbound "<reason>" --from-operator',
+        },
+      ),
+    ),
   }
 }

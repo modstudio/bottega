@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { decideKeyedRunCursorAdmission } from './keyed-run-cursor-admission.ts'
 
 const base = {
   key: 'DEV-2293',
-  project: 'bottega',
+  project: PLATFORM_SLUG,
   bindingPresent: false,
   callerKind: 'harness' as const,
   sessionId: 'session-fixture',
@@ -20,7 +21,7 @@ describe('keyed run cursor admission', () => {
     ['worker caller', { callerKind: 'worker' as const }],
     [
       'harness holding the task cursor',
-      { heldCursors: [{ project: 'bottega', workflowKey: 'DEV-2293' }] },
+      { heldCursors: [{ project: PLATFORM_SLUG, workflowKey: 'DEV-2293' }] },
     ],
   ])('allows %s', (_name, change) => {
     expect(decideKeyedRunCursorAdmission({ ...base, ...change })).toEqual({ kind: 'allow' })
@@ -28,12 +29,12 @@ describe('keyed run cursor admission', () => {
 
   test.each([
     ['the key in another project', [{ project: 'segnavia', workflowKey: 'DEV-2293' }]],
-    ['only a keyless cursor', [{ project: 'bottega', workflowKey: '' }]],
+    ['only a keyless cursor', [{ project: PLATFORM_SLUG, workflowKey: '' }]],
   ])('refuses a harness holding %s', (_name, heldCursors) => {
     expect(decideKeyedRunCursorAdmission({ ...base, heldCursors })).toEqual({
       kind: 'refuse',
       message: expect.stringContaining(
-        'harness session session-fixture does not hold an open workflow cursor for project bottega and task DEV-2293',
+        `harness session session-fixture does not hold an open workflow cursor for project ${PLATFORM_SLUG} and task DEV-2293`,
       ),
     })
   })
