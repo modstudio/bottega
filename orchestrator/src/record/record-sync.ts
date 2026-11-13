@@ -18,11 +18,11 @@ import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { backfillQuestionRecords } from '../run/question-outbox.ts'
 import { backfillRunRecords } from '../run/run-outbox.ts'
 import { backfillScoreRecords } from '../score/score-outbox.ts'
-import { backfillBriefInjections } from '../session/brief-injection.ts'
 import {
   backfillTaskFlowRecords,
   taskFlowBackfillUnavailable,
 } from '../workflow/task-flow-backfill.ts'
+import { backfillBriefInjections } from './brief-injection-outbox.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
 import { backfillLandingEvidenceRecords } from './landing-outbox.ts'
 import { machineId, machineNames } from './machine-identity.ts'

@@ -11,7 +11,7 @@ import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 import { SESSION_START_CONTEXT_MAX_CHARS } from './session-start-context-limit.ts'
 
 export const SESSION_START_SOURCES = ['startup', 'resume', 'clear', 'compact'] as const
-export type SessionStartSource = (typeof SESSION_START_SOURCES)[number]
+type SessionStartSource = (typeof SESSION_START_SOURCES)[number]
 
 export type BriefInjectionInput = {
   sessionId: string
@@ -123,58 +123,4 @@ export function recordBriefInjection(
     })
   }, database)
   return row
-}
-
-export function backfillBriefInjections(database: Database, updatedAt = nowIso()): number {
-  const rows = database
-    .query<
-      {
-        record_id: string
-        session_id: string
-        at: string
-        source: SessionStartSource
-        bytes: number
-        lines: number
-        cursors: number
-        keyless_cursors: number
-        keyless_idle_max_ms: number | null
-        over_cap: number
-      },
-      []
-    >(
-      `SELECT record_id,session_id,at,source,bytes,lines,cursors,keyless_cursors,
-              keyless_idle_max_ms,over_cap
-         FROM brief_injection
-        WHERE NOT EXISTS (SELECT 1 FROM outbox
-                          WHERE kind='brief_injection' AND row_id=brief_injection.record_id)
-        ORDER BY at,record_id`,
-    )
-    .all()
-  for (const row of rows) {
-    const payload = stringifyOutboxPayload('brief_injection', {
-      id: row.record_id,
-      spaceId: PLATFORM_SPACE_ID,
-      machineId: machineId(),
-      localId: null,
-      sessionId: row.session_id,
-      at: row.at,
-      source: row.source,
-      bytes: row.bytes,
-      lines: row.lines,
-      cursors: row.cursors,
-      keylessCursors: row.keyless_cursors,
-      keylessIdleMaxMs: row.keyless_idle_max_ms,
-      overCap: Boolean(row.over_cap),
-      createdAt: row.at,
-      updatedAt,
-    })
-    insertOutboxRow(database, {
-      recordId: newRecordId(),
-      kind: 'brief_injection',
-      rowId: row.record_id,
-      payload,
-      createdAt: updatedAt,
-    })
-  }
-  return rows.length
 }

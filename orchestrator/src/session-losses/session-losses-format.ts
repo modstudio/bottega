@@ -18,7 +18,7 @@ export function formatSessionLosses(reports: SessionLossResult[]): string {
       ]
       for (const boundary of report.boundaries) {
         const brief = boundary.brief
-          ? `${boundary.brief.bytes} bytes/${boundary.brief.lines} lines${boundary.brief.overCap ? ' OVER CAP' : ''}`
+          ? `${number(boundary.brief.bytes)} bytes/${number(boundary.brief.lines)} lines${boundary.brief.overCap ? ' OVER CAP' : ''}`
           : ''
         lines.push(
           `  boundary ${boundary.at} trigger=${boundary.trigger} pre=${number(boundary.preTokens)} post=${number(boundary.postTokens)} brief=${brief}`,

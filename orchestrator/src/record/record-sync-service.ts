@@ -943,9 +943,8 @@ async function pushHostedRow(input: {
 }): Promise<RecordSyncRowResult> {
   const { postgres, row, identity } = input
   try {
-    if (!(row.kind in recordKinds)) {
+    if (!(row.kind in recordKinds))
       throw new OutboxRowError(`unknown outbox kind: ${row.kind}`, 'payload')
-    }
     const kind = row.kind as keyof typeof recordKinds
     const parsed = payload(row.payload, kind)
     const authorization = recordSyncAuthorizationDecision(identity, row.spaceHint)

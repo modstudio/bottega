@@ -1,11 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
-import {
-  backfillBriefInjections,
-  briefInjectionCursorFacts,
-  recordBriefInjection,
-} from './brief-injection.ts'
+import { briefInjectionCursorFacts, recordBriefInjection } from './brief-injection.ts'
 
 test('cursor facts count open cursors and the longest keyless idle time', () => {
   const database = new Database(':memory:')
@@ -70,6 +66,5 @@ test('recording persists the final size and matching outbox row atomically', () 
     .get()!
   expect(outbox.kind).toBe('brief_injection')
   expect(JSON.parse(outbox.payload)).toMatchObject({ bytes: 10_100, lines: 120, overCap: true })
-  expect(backfillBriefInjections(database)).toBe(0)
   database.close()
 })

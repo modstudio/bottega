@@ -19,7 +19,7 @@ const nonnegativeInteger = (value: unknown, field: string): number => {
   return number
 }
 
-export function briefInjectionValues(row: RecordPayload) {
+function briefInjectionValues(row: RecordPayload) {
   return {
     id: String(row.id),
     spaceId: String(row.spaceId),

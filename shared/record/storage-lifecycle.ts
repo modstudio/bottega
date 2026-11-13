@@ -19,6 +19,7 @@ export const hostedTableLifecycles: readonly TableLifecycle[] = [
       'board_message_tag',
       'board_receipt',
       'branch_disposal',
+      'brief_injection',
       'config_entry',
       'config_secret',
       'credential_payer_preference',

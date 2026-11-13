@@ -20,8 +20,22 @@ export const sessionContextModules: SessionContextModule[] = [
     '../doc/context-stale-adapter.ts',
     '../doc/context-worked-adapter.ts',
     '../doc/doc-context-write.ts',
+    '../session/brief-injection.ts',
     '../workflow/session-context.ts',
     './support.ts',
+  ]),
+  module('orchestrator/src/session/brief-injection.ts', [
+    'bun:sqlite',
+    '../../../shared/record/schema.ts',
+    '../../../shared/record-id.ts',
+    '../database/db.ts',
+    '../record/machine-identity.ts',
+    '../record/outbox-enqueue.ts',
+    '../record/outbox-sanitize.ts',
+    './session-start-context-limit.ts',
+  ]),
+  module('orchestrator/src/session/session-start-context-limit.ts', [
+    '../../hooks/session-start-context.json',
   ]),
   module('orchestrator/src/workflow/session-context.ts', [
     'bun:sqlite',

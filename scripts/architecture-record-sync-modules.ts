@@ -12,6 +12,15 @@ const module = (file: string, allowed: string[]): RecordSyncModule => ({
 })
 
 export const recordSyncModules: RecordSyncModule[] = [
+  module('orchestrator/src/record/brief-injection-outbox.ts', [
+    'bun:sqlite',
+    '../../../shared/record/schema.ts',
+    '../../../shared/record-id.ts',
+    '../database/db.ts',
+    './machine-identity.ts',
+    './outbox-enqueue.ts',
+    './outbox-sanitize.ts',
+  ]),
   module('orchestrator/src/workflow/task-flow-backfill.ts', [
     'bun:sqlite',
     'uuid',
@@ -80,7 +89,6 @@ export const recordSyncModules: RecordSyncModule[] = [
     './record-api-write-telemetry.ts',
     './record-sync-contract.ts',
     './record-sync-branch-disposal.ts',
-    './record-sync-brief-injection.ts',
     './record-sync-decision.ts',
   ]),
   module('orchestrator/src/record/record-sync-brief-injection.ts', [
@@ -130,6 +138,7 @@ export const recordSyncModules: RecordSyncModule[] = [
     './record-review-lens-values.ts',
     './record-review-values.ts',
     './record-sync-branch-disposal.ts',
+    './record-sync-brief-injection.ts',
     './record-sync-pull-request-ci.ts',
     './record-sync-contract.ts',
     './record-sync-decision.ts',
