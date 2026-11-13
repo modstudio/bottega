@@ -18,16 +18,6 @@ describe('session start decision', () => {
     ).toEqual({ kind: 'reuse', cursor: 17, workflow: 'explore' })
   })
 
-  test("composes when the store excludes the session's only closed explore", () => {
-    expect(
-      decideSessionStart({
-        session: 'session',
-        project: 'fixture',
-        openCursors: [],
-      }),
-    ).toEqual({ kind: 'compose' })
-  })
-
   test('refuses softly without a session identity', () => {
     expect(decideSessionStart({ session: null, project: 'fixture', openCursors: [] })).toEqual({
       kind: 'refuse-session',

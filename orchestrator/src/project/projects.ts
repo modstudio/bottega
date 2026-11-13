@@ -279,9 +279,9 @@ export function retiredProjectRefusal(name: string): string {
   return `project ${name} is retired; cleared by: ${PLATFORM_SLUG} project retire ${name} --undo`
 }
 
-export function retiredProjectAt(cwd: string): Project | null {
+export function retiredProjectAt(cwd: string, database: Database = db()): Project | null {
   let best: Project | null = null
-  for (const p of projects({ retired: true })) {
+  for (const p of projects({ retired: true }, database)) {
     if (!isProjectRepository(p)) continue
     if (cwd === p.path || cwd.startsWith(`${p.path}/`)) {
       if (!best || p.path.length > best.path.length) best = p

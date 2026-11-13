@@ -19,17 +19,21 @@ spec.loader.exec_module(session_start)
 
 
 class SessionStartHook(unittest.TestCase):
-    def run_hook(self, payload, result=None):
+    def run_hook(self, payload, result=None, environment=None):
         stdout = io.StringIO()
+        controlled_environment = dict(os.environ)
+        controlled_environment.pop("BOTTEGA_RUN_ID", None)
+        controlled_environment.update(environment or {})
         patches = [
             mock.patch.object(sys, "stdin", io.StringIO(json.dumps(payload))),
             mock.patch.object(sys, "stdout", stdout),
+            mock.patch.dict(os.environ, controlled_environment, clear=True),
         ]
         if result is not None:
             patches.append(mock.patch.object(session_start.subprocess, "run", return_value=result))
-        with patches[0], patches[1]:
-            if len(patches) > 2:
-                with patches[2]:
+        with patches[0], patches[1], patches[2]:
+            if len(patches) > 3:
+                with patches[3]:
                     code = session_start.main()
             else:
                 code = session_start.main()
@@ -67,7 +71,8 @@ class SessionStartHook(unittest.TestCase):
     def test_delegated_run_exits_without_output(self):
         with mock.patch.dict(os.environ, {"BOTTEGA_RUN_ID": "run"}, clear=True):
             code, output = self.run_hook(
-                {"cwd": "/tmp/project", "session_id": "session"}
+                {"cwd": "/tmp/project", "session_id": "session"},
+                environment={"BOTTEGA_RUN_ID": "run"},
             )
         self.assertEqual(code, 0)
         self.assertIsNone(output)

@@ -7,7 +7,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { callerIdentity, db, sessionId } from '../database/db.ts'
-import { projectAmong, projectAt, projects, retiredProjectRefusal } from '../project/projects.ts'
+import { projectAt, retiredProjectAt, retiredProjectRefusal } from '../project/projects.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { composeWorkflowWithCursor } from '../workflow/workflow-cursor.ts'
 import { resolveWorkflowLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
@@ -56,7 +56,7 @@ export async function startSession(
       line: `session start could not establish the current harness session id; ${callerIdentityRefusal(callerIdentity(database), 'start a session')}`,
     }
   if (decision.kind === 'refuse-project') {
-    const retired = projectAmong(cwd, projects({ retired: true }, database))
+    const retired = retiredProjectAt(cwd, database)
     return {
       cursor: null,
       line: retired
@@ -85,7 +85,14 @@ export async function startSession(
     {},
     live,
   )
-  if (!composed.cursor) throw new Error('explore did not open a cursor')
+  if (!composed.cursor)
+    return {
+      cursor: null,
+      line: remediedLine(
+        `project ${project!.name} has no explore default mode that opens without arguments in its workflow catalogue`,
+        `${PLATFORM_SLUG} workflow import a workflow tree that defines explore, then run ${PLATFORM_SLUG} session start again`,
+      ),
+    }
   return { cursor: composed.cursor.id, line: cursorLine(composed.cursor.id) }
 }
 
