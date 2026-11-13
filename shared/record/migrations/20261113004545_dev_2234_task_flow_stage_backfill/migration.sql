@@ -2,25 +2,6 @@ ALTER TABLE "task_flow" NO FORCE ROW LEVEL SECURITY;
 ALTER TABLE "task_flow_stage" NO FORCE ROW LEVEL SECURITY;
 ALTER TABLE "seq" NO FORCE ROW LEVEL SECURITY;
 --> statement-breakpoint
-DO $migration$
-DECLARE
-  missing_stage_id uuid;
-BEGIN
-  SELECT stage.id
-  INTO missing_stage_id
-  FROM task_flow_stage stage
-  JOIN task_flow flow ON flow.id = stage.flow_record_id
-  WHERE stage.project_id IS NULL
-    AND flow.project_id IS NULL
-  ORDER BY stage.created_at, stage.id
-  LIMIT 1;
-
-  IF missing_stage_id IS NOT NULL THEN
-    RAISE EXCEPTION 'task-flow stage % has a flow with no project', missing_stage_id;
-  END IF;
-END
-$migration$;
---> statement-breakpoint
 UPDATE task_flow_stage stage
 SET project_id = flow.project_id
 FROM task_flow flow

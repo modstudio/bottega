@@ -56,11 +56,8 @@ import {
 import { proofStrandedRunsMigration, seedStrandedRunsProof } from './record-stranded-runs-proof.ts'
 import {
   proofTaskFlowStageBackfill,
-  proofTaskFlowStageContract,
-  proofTaskFlowStageMissingProjectRefusal,
   seedTaskFlowStageBackfill,
   taskFlowStageBackfill,
-  taskFlowStageContract,
 } from './record-task-flow-stage-backfill-proof.ts'
 import {
   proofTaskChildUuidMigration,
@@ -790,8 +787,6 @@ async function applyAndProveMigration(
   if (migration.name === lensPinContractGuard)
     await proofLensPinContractGuard(transaction, migration, applyRecordMigration)
   await seedMigrationProof(transaction, migration)
-  if (migration.name === taskFlowStageBackfill)
-    await proofTaskFlowStageMissingProjectRefusal(transaction, migration)
   await applyRecordMigration(transaction, migration)
   await proofDocumentMigration(transaction, migration)
   if (migration.name === boardSharedSpacesMigration)
@@ -807,7 +802,6 @@ async function applyAndProveMigration(
   await proofStrandedRunsMigration(transaction, migration)
   if (migration.name === taskFlowStageBackfill)
     await proofTaskFlowStageBackfill(transaction, migration)
-  if (migration.name === taskFlowStageContract) await proofTaskFlowStageContract(transaction)
 }
 
 async function seedMigrationProof(

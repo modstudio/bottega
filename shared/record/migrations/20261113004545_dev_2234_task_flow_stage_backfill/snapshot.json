@@ -1,10 +1,10 @@
 {
+  "id": "dfe038b9-72c9-448b-af73-3d034808f285",
+  "prevIds": [
+    "29355d63-ae60-4d03-a919-9c2575e79787"
+  ],
   "version": "8",
   "dialect": "postgres",
-  "id": "d252e610-a0c6-4ee5-9aa2-eb359edd2c95",
-  "prevIds": [
-    "42bf2198-4169-474f-9fe4-0b4afcf2a56d"
-  ],
   "ddl": [
     {
       "isRlsEnabled": false,
@@ -2788,6 +2788,32 @@
       "table": "run"
     },
     {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "cursor_record_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "run"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "step_slug",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "run"
+    },
+    {
       "type": "integer",
       "typeSchema": null,
       "notNull": false,
@@ -4675,7 +4701,7 @@
     {
       "type": "uuid",
       "typeSchema": null,
-      "notNull": true,
+      "notNull": false,
       "dimensions": 0,
       "default": null,
       "generated": null,
@@ -4688,7 +4714,7 @@
     {
       "type": "integer",
       "typeSchema": null,
-      "notNull": true,
+      "notNull": false,
       "dimensions": 0,
       "default": null,
       "generated": null,

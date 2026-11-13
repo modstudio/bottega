@@ -58,10 +58,8 @@ export const taskFlowStage = pgTable.withRLS(
     flowRecordId: uuid('flow_record_id')
       .notNull()
       .references(() => taskFlow.id),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => project.id),
-    number: integer().notNull(),
+    projectId: uuid('project_id').references(() => project.id),
+    number: integer(),
     workflow: text().notNull(),
     mode: text().notNull(),
     workflowKey: text('workflow_key'),

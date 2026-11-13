@@ -5,8 +5,9 @@ import { drizzle } from 'drizzle-orm/pglite'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { syncHostedRecord } from './record-sync-service.ts'
 import {
-  applyTaskFlowStageValues,
   applyTaskFlowValues,
+  insertTaskFlowStageValues,
+  reviseTaskFlowStageValues,
   taskFlowStageValues,
   taskFlowValues,
 } from './record-sync-task-flow.ts'
@@ -169,17 +170,17 @@ test('task-flow apply is idempotent and rejects older revisions', async () => {
         database as unknown as Parameters<typeof applyTaskFlowValues>[0],
         taskFlowValues(value),
       )
-    const applyStage = (value: Record<string, unknown>, number: number | null = null) =>
-      applyTaskFlowStageValues(
-        database as unknown as Parameters<typeof applyTaskFlowStageValues>[0],
-        taskFlowStageValues(value),
-        number,
-      )
+    const stageDatabase = database as unknown as Parameters<typeof insertTaskFlowStageValues>[0]
+    const insertStage = (value: Record<string, unknown>, number: number) =>
+      insertTaskFlowStageValues(stageDatabase, taskFlowStageValues(value), number)
+    const reviseStage = (value: Record<string, unknown>) =>
+      reviseTaskFlowStageValues(stageDatabase, taskFlowStageValues(value))
 
     await applyFlow(flowPayload())
     await applyFlow(flowPayload())
-    await applyStage(stagePayload(), 7)
-    await applyStage(stagePayload())
+    await insertStage(stagePayload(), 7)
+    await insertStage(stagePayload(), 8)
+    await reviseStage(stagePayload())
     expect(
       (
         await postgres.query(
@@ -189,17 +190,15 @@ test('task-flow apply is idempotent and rejects older revisions', async () => {
     ).toEqual([{ flows: 1, stages: 1 }])
 
     await applyFlow(flowPayload(2, 'done'))
-    await applyStage(stagePayload(2, 'done'))
-    await applyStage(
-      {
-        ...stagePayload(3, 'done'),
-        flowRecordId: UNKNOWN,
-        projectId: OTHER_PROJECT,
-      },
-      99,
-    )
+    // A stage written before stages carried a project revises with no project.
+    await reviseStage({ ...stagePayload(2, 'done'), projectId: null })
+    await reviseStage({
+      ...stagePayload(3, 'done'),
+      flowRecordId: UNKNOWN,
+      projectId: OTHER_PROJECT,
+    })
     await applyFlow(flowPayload(1, 'open'))
-    await applyStage(stagePayload(1, 'running'))
+    await reviseStage(stagePayload(1, 'running'))
     expect(
       (
         await postgres.query(
