@@ -12,7 +12,9 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 })
 
 export const recordBindingModules: RecordModule[] = [
-  module('orchestrator/src/record/record-machine-join-policy.ts', []),
+  module('orchestrator/src/record/record-machine-join-policy.ts', [
+    '../../../shared/pairing-code.ts',
+  ]),
   module('orchestrator/src/record/record-machine-join.ts', [
     'bun',
     '../../../shared/record/schema.ts',

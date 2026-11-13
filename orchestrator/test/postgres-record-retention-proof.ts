@@ -34,6 +34,7 @@ export function registerRecordRetentionProof(actorUrl: string): void {
     const expiredNameplateId = newRecordId()
     const expiredMessageId = newRecordId()
     const liveNameplateId = newRecordId()
+    const expiredWithinWindowNameplateId = newRecordId()
     const retentionKeyId = 'RETENTIONPROOFKEY00001'
     const expiredChallengeId = newRecordId()
     const liveChallengeId = newRecordId()
@@ -41,7 +42,8 @@ export function registerRecordRetentionProof(actorUrl: string): void {
       INSERT INTO machine_join_nameplate
         (id, space_id, nameplate, allocated_by, created_at, expires_at) VALUES
         ('${expiredNameplateId}', '${SPACE_A}', '888881', '${USER_A}', now() - interval '61 minutes', now() - interval '51 minutes'),
-        ('${liveNameplateId}', '${SPACE_A}', '888882', '${USER_A}', now(), now() + interval '10 minutes');
+        ('${liveNameplateId}', '${SPACE_A}', '888882', '${USER_A}', now(), now() + interval '10 minutes'),
+        ('${expiredWithinWindowNameplateId}', '${SPACE_A}', '888883', '${USER_A}', now() - interval '30 minutes', now() - interval '20 minutes');
       INSERT INTO machine_join_message
         (id, nameplate_id, space_id, side, phase, body, posted_by, created_at) VALUES
         ('${expiredMessageId}', '${expiredNameplateId}', '${SPACE_A}', '11111111111111111111111111111111', 'share', decode('01', 'hex'), '${USER_A}', now() - interval '61 minutes');
@@ -69,11 +71,11 @@ export function registerRecordRetentionProof(actorUrl: string): void {
       admin(
         `SELECT count(*) FROM machine_join_nameplate WHERE id='${expiredNameplateId}';
          SELECT count(*) FROM machine_join_message WHERE id='${expiredMessageId}';
-         SELECT count(*) FROM machine_join_nameplate WHERE id='${liveNameplateId}';
+         SELECT count(*) FROM machine_join_nameplate WHERE id IN ('${liveNameplateId}', '${expiredWithinWindowNameplateId}');
          SELECT count(*) FROM machine_key_claim_challenge WHERE id='${expiredChallengeId}';
          SELECT count(*) FROM machine_key_claim_challenge WHERE id='${liveChallengeId}';`,
       ),
-    ).toBe('0\n0\n1\n0\n1')
+    ).toBe('0\n0\n2\n0\n1')
     expect(
       admin(
         `SELECT row_id FROM record_change WHERE row_id IN ('${expiredRowId}', '${recentRowId}') ORDER BY row_id;`,
@@ -117,7 +119,7 @@ export function registerRecordRetentionProof(actorUrl: string): void {
     }
     admin(`
       DELETE FROM machine_key_claim_challenge WHERE id='${liveChallengeId}';
-      DELETE FROM machine_join_nameplate WHERE id='${liveNameplateId}';
+      DELETE FROM machine_join_nameplate WHERE id IN ('${liveNameplateId}', '${expiredWithinWindowNameplateId}');
       DELETE FROM machine_public_key WHERE space_id='${SPACE_A}' AND key_id='${retentionKeyId}';
     `)
   })

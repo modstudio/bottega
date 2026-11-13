@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
+import { NAMEPLATE_MAX } from '../../../shared/pairing-code.ts'
 import {
   lowestFreeMachineJoinNameplate,
-  MACHINE_JOIN_NAMEPLATE_MAX,
   machineJoinAvailability,
   machineJoinIsCrowded,
   machineJoinPhaseDecision,
@@ -29,5 +29,5 @@ test('machine join phase resends only an identical body', () => {
 test('machine join allocates the lowest free positive nameplate', () => {
   expect(lowestFreeMachineJoinNameplate(new Set())).toBe(1)
   expect(lowestFreeMachineJoinNameplate(new Set([1, 3]))).toBe(2)
-  expect(lowestFreeMachineJoinNameplate(new Set([MACHINE_JOIN_NAMEPLATE_MAX]))).toBe(1)
+  expect(lowestFreeMachineJoinNameplate(new Set([NAMEPLATE_MAX]))).toBe(1)
 })

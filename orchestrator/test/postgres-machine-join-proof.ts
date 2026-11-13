@@ -152,27 +152,6 @@ export function registerMachineJoinProof(input: ProofInput): void {
           })
         ).status,
       ).toBe(429)
-
-      const oldId = newRecordId()
-      const liveChallenge = newRecordId()
-      const expiredChallenge = newRecordId()
-      const keyId = 'JOINPRUNEPROOFKEY00001'
-      input.succeeds(`
-        INSERT INTO machine_join_nameplate (id,space_id,nameplate,allocated_by,created_at,expires_at)
-        VALUES ('${oldId}','${spaceId}','999999','${input.userId()}',now() - interval '61 minutes',now() - interval '51 minutes');
-        INSERT INTO machine_public_key (id,space_id,user_id,key_id,public_key,label,created_at)
-        VALUES ('${newRecordId()}','${spaceId}','${input.userId()}','${keyId}',decode(repeat('01',32),'hex'),'join prune',now());
-        INSERT INTO machine_key_claim_challenge (id,space_id,key_id,user_id,nonce_hash,expires_at,created_at) VALUES
-          ('${expiredChallenge}','${spaceId}','${keyId}','${input.userId()}',decode(repeat('02',32),'hex'),now() - interval '1 second',now()),
-          ('${liveChallenge}','${spaceId}','${keyId}','${input.userId()}',decode(repeat('03',32),'hex'),now() + interval '1 hour',now());
-        SELECT machine_join_prune();
-        SELECT machine_key_claim_challenge_prune();
-      `)
-      expect(
-        input.succeeds(
-          `SELECT count(*) FROM machine_join_nameplate WHERE id='${oldId}'; SELECT string_agg(id::text, ',') FROM machine_key_claim_challenge WHERE id IN ('${expiredChallenge}','${liveChallenge}');`,
-        ),
-      ).toBe(`0\n${liveChallenge}`)
     } finally {
       input.succeeds(`
         DELETE FROM machine_key_claim_challenge WHERE space_id='${spaceId}';

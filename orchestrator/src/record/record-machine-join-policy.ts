@@ -1,12 +1,13 @@
 // concern: machine join relay policy
 /** Decides mailbox lifetime, occupancy, conflicts, limits and allocation without I/O. */
 
+import { NAMEPLATE_MAX } from '../../../shared/pairing-code.ts'
+
 export const MACHINE_JOIN_NAMEPLATE_TTL_MS = 10 * 60_000
 export const MACHINE_JOIN_MESSAGE_MAX_BYTES = 4096
 export const MACHINE_JOIN_RATE_WINDOW_MS = 60 * 60_000
 export const MACHINE_JOIN_ALLOCATIONS_PER_WINDOW = 20
 export const MACHINE_JOIN_FAILURES_PER_WINDOW = 5
-export const MACHINE_JOIN_NAMEPLATE_MAX = 999_999
 
 export type MachineJoinAvailability = 'active' | 'expired' | 'burned'
 
@@ -39,7 +40,7 @@ export function machineJoinRateLimited(count: number, limit: number): boolean {
 }
 
 export function lowestFreeMachineJoinNameplate(used: ReadonlySet<number>): number | null {
-  for (let value = 1; value <= MACHINE_JOIN_NAMEPLATE_MAX; value += 1) {
+  for (let value = 1; value <= NAMEPLATE_MAX; value += 1) {
     if (!used.has(value)) return value
   }
   return null

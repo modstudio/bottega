@@ -56,9 +56,11 @@ async function lockNameplate(
   await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`machine-join:${String(found.id)}`}, 0))`
   rows = await tx`
     SELECT id, expires_at, failed_at FROM machine_join_nameplate
-    WHERE space_id=${input.spaceId}::uuid AND nameplate=${input.nameplate}
+    WHERE id=${String(found.id)}::uuid
   `
-  return rows[0] as NameplateRow
+  const locked = rows[0] as NameplateRow | undefined
+  if (!locked) missingNameplate()
+  return locked
 }
 
 async function failureCount(tx: SQL, userId: string, cutoff: Date): Promise<number> {
@@ -77,6 +79,12 @@ function refuseFailureRate(): never {
     'machine join failed-exchange limit reached; wait for the one-hour rate window to pass, then start again',
     429,
   )
+}
+
+async function refuseWhenFailureLimitReached(tx: SQL, userId: string, now: number): Promise<void> {
+  const cutoff = new Date(now - MACHINE_JOIN_RATE_WINDOW_MS)
+  const count = await failureCount(tx, userId, cutoff)
+  if (machineJoinRateLimited(count, MACHINE_JOIN_FAILURES_PER_WINDOW)) refuseFailureRate()
 }
 
 export async function allocateMachineJoinNameplate(
@@ -101,13 +109,7 @@ export async function allocateMachineJoinNameplate(
           'machine join allocation limit reached; wait for the one-hour rate window to pass, then retry',
           429,
         )
-      if (
-        machineJoinRateLimited(
-          await failureCount(tx, input.userId, cutoff),
-          MACHINE_JOIN_FAILURES_PER_WINDOW,
-        )
-      )
-        refuseFailureRate()
+      await refuseWhenFailureLimitReached(tx, input.userId, now)
       const rows = await tx`
         SELECT nameplate FROM machine_join_nameplate WHERE space_id=${input.spaceId}::uuid
       `
@@ -144,18 +146,11 @@ export async function postMachineJoinMessage(
   input: ConfigTenant & { nameplate: string; side: string; phase: string; body: Uint8Array },
 ): Promise<void> {
   const now = Date.now()
-  const cutoff = new Date(now - MACHINE_JOIN_RATE_WINDOW_MS)
   try {
     await tenant(input, async (tx) => {
       const nameplate = await lockNameplate(tx, input)
       requireActive(nameplate, now)
-      if (
-        machineJoinRateLimited(
-          await failureCount(tx, input.userId, cutoff),
-          MACHINE_JOIN_FAILURES_PER_WINDOW,
-        )
-      )
-        refuseFailureRate()
+      await refuseWhenFailureLimitReached(tx, input.userId, now)
       const rows = await tx`
         SELECT side, phase, body FROM machine_join_message
         WHERE nameplate_id=${String(nameplate.id)}::uuid ORDER BY created_at, id
@@ -223,18 +218,11 @@ export async function failMachineJoinNameplate(
   input: ConfigTenant & { nameplate: string; side: string },
 ): Promise<void> {
   const now = Date.now()
-  const cutoff = new Date(now - MACHINE_JOIN_RATE_WINDOW_MS)
   await tenant(input, async (tx) => {
     const nameplate = await lockNameplate(tx, input)
     if (nameplate.failed_at != null) return
     requireActive(nameplate, now)
-    if (
-      machineJoinRateLimited(
-        await failureCount(tx, input.userId, cutoff),
-        MACHINE_JOIN_FAILURES_PER_WINDOW,
-      )
-    )
-      refuseFailureRate()
+    await refuseWhenFailureLimitReached(tx, input.userId, now)
     await tx`
       UPDATE machine_join_nameplate SET failed_at=${new Date(now)}, failed_by=${input.userId}::uuid
       WHERE id=${String(nameplate.id)}::uuid
