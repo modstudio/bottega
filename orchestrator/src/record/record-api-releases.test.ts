@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { identity } from '../../test/fixtures/record-api.ts'
 import { noDestinationWriteTestDeps } from '../../test/fixtures/record-api-app.ts'
 import { recordApi } from './record-api.ts'
+import { identity } from './record-api-identity.fixture.ts'
 
 function appWith(session: typeof identity | null, overrides: Record<string, unknown> = {}) {
   const deps = {

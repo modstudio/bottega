@@ -2,6 +2,7 @@ import { expect } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { db } from '../src/database/db.ts'
 import type { RecordApiClient } from '../src/record/record-api-client.ts'
+import { unusedContextItemClientMethods } from '../src/record/record-api-context-items.fixture.ts'
 import type { RecordIdentity } from '../src/record/record-auth.ts'
 import { pullRecordCache } from '../src/record/record-cache.ts'
 import { docImportBody } from './fixtures/doc-import.ts'
@@ -38,6 +39,7 @@ function liveCacheClient(origin: string, token: string): RecordApiClient {
   return {
     ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
+    ...unusedContextItemClientMethods(),
     listChanges: async () => ({ reset: { cursor: 'postgres-docs-proof', tables: [] } }),
     whoami: () => get('/v1/whoami') as Promise<RecordIdentity>,
     inviteMember: unused,

@@ -12,6 +12,25 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 })
 
 export const recordBindingModules: RecordModule[] = [
+  module('orchestrator/src/record/record-context-items.ts', [
+    'bun',
+    '../../../shared/context-item-vocabulary.ts',
+    '../../../shared/record/tenant.ts',
+    '../../../shared/record-id.ts',
+    '../../../shared/record-timestamp.ts',
+    '../doc/doc-context-write.ts',
+    './record-doc-errors.ts',
+    './record-pool.ts',
+  ]),
+  module('orchestrator/src/record/record-api-context-items.ts', [
+    'hono',
+    'zod',
+    '../../../shared/context-item-vocabulary.ts',
+    './record-auth.ts',
+    './record-context-items.ts',
+  ]),
+  module('orchestrator/src/record/record-api-context-items.fixture.ts', ['./record-api-client.ts']),
+  module('orchestrator/src/record/record-api-identity.fixture.ts', ['./record-auth.ts']),
   module('orchestrator/src/record/record-machine-join-policy.ts', [
     '../../../shared/pairing-code.ts',
   ]),

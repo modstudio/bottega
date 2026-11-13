@@ -419,15 +419,6 @@ function listDocsStoreWithPrefix(
     )
 }
 
-/** Read one scope by an exact-case subject prefix; this cannot be combined with subject. */
-export function listDocsBySubjectPrefixStore(
-  scope: string,
-  subjectPrefix: string,
-  database: Database = db(),
-): Doc[] {
-  return listDocsStoreWithPrefix({ scope, subjectPrefix }, database)
-}
-
 function articleSubjectQuery(
   articleSubject: string | undefined,
   where: string[],

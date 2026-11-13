@@ -9,8 +9,9 @@ import type {
   RecordDocImportInput,
   RecordDocUpsertInput,
 } from '../../src/record/record-api-client.ts'
+import { unusedContextItemClientMethods } from '../../src/record/record-api-context-items.fixture.ts'
+import { identity } from '../../src/record/record-api-identity.fixture.ts'
 import type { RecordSubjectRouteDeps } from '../../src/record/record-api-subjects.ts'
-import type { RecordIdentity } from '../../src/record/record-auth.ts'
 import {
   type HostedBoardChange,
   type HostedBoardPresenceInput,
@@ -22,18 +23,7 @@ import { createBoardStreamRegistry } from '../../src/record/record-board-stream.
 import { assertRevisionWrite } from '../../src/record/record-doc-errors.ts'
 import { type MemoryTaskFlowInput, memoryTaskFlowClient } from './record-api-task-flow.ts'
 
-export const identity: RecordIdentity = {
-  user: { id: 'user-a', email: 'a@example.test' },
-  activeSpaceId: 'space-a',
-  personalSpaceId: 'space-a',
-  memberships: [
-    { space_id: 'space-a', name: 'Space A', slug: 'space-a', role: 'owner', permission: 'write' },
-  ],
-}
-
-function idleIdentityAndSpaceDeps(): { listInvitations: () => Promise<[]> } {
-  return { listInvitations: async () => [] }
-}
+const idleIdentityAndSpaceDeps = () => ({ listInvitations: async () => [] })
 
 function idleConfigAuthorizationDeps() {
   const unused = async () => {
@@ -136,7 +126,11 @@ function idleBoardDeps(): RecordBoardDeps {
 }
 
 export function idleRecordApiDeps() {
+  const unusedContext = async (): Promise<never> =>
+    Promise.reject(new Error('hosted context items are unused in this fixture'))
   return {
+    upsertContextItem: unusedContext,
+    deleteContextItem: unusedContext,
     readChanges: async () => ({
       resetRequired: false as const,
       cursor: { xid: 0n, seq: 0n },
@@ -415,6 +409,7 @@ export function createMemoryRecordApiClient(
   return {
     ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
+    ...unusedContextItemClientMethods(),
     ...memoryTaskFlowClient(input),
     async listChanges() {
       return { reset: { cursor: 'fixture-change-cursor', tables: [] } }
@@ -976,9 +971,7 @@ export function createMemoryRecordApiClient(
     async upsertProject(input) {
       return { id: newRecordId(), name: input.name }
     },
-    async listProjects() {
-      return []
-    },
+    listProjects: async () => [],
     async retireProject(name) {
       return { name }
     },

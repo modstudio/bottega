@@ -20,7 +20,7 @@ import {
 export { TaskNotFoundError } from '../workflow/workflow-task-reference.ts'
 
 import { productionWorkflowTextDocumentPorts } from '../workflow/workflow-text-copy.ts'
-import { decodeContextItem } from './context-item-codec.ts'
+import { listContextItems } from './context-item-store.ts'
 import {
   type ContextItem,
   type ContextProfile,
@@ -29,7 +29,6 @@ import {
   contextWriteRefusal,
   holderOwnershipRefusal,
 } from './doc-context-write.ts'
-import { listDocsStore } from './doc-read-store.ts'
 import { isScratchLocation } from './doc-resume-write.ts'
 import { isValidContextHolderSubject, taskContextHolder } from './doc-subjects.ts'
 
@@ -65,33 +64,56 @@ const portsHolder = globalThis as typeof globalThis & {
 }
 
 async function pointerRefusal(value: string, database: Database): Promise<string | null> {
-  const pointer = value.trim()
-  if (!pointer) return 'pointer must not be empty'
-  if (isScratchLocation(pointer)) return 'scratch paths are not durable pointers'
-  if (/^[A-Z][A-Z0-9]*-\d+\/\d+$/.test(pointer)) {
-    const key = pointer.slice(0, pointer.indexOf('/'))
-    try {
-      const docs = await productionWorkflowTextDocumentPorts.list(key, PLATFORM_SLUG)
-      return docs.some((doc) => doc.reference === pointer)
-        ? null
-        : `task document ${pointer} does not resolve`
-    } catch (error) {
-      return `task documents of ${key} could not be read (${(error as Error).message}); retry once the task store answers`
-    }
+  try {
+    await resolvedPointerTarget(value, database)
+    return null
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error)
   }
+}
+
+async function resolveTaskDocumentPointer(pointer: string): Promise<string> {
+  const key = pointer.slice(0, pointer.indexOf('/'))
+  try {
+    const docs = await productionWorkflowTextDocumentPorts.list(key, PLATFORM_SLUG)
+    if (docs.some((doc) => doc.reference === pointer)) return pointer
+    throw new ContextWriteRefusalError(`task document ${pointer} does not resolve`)
+  } catch (error) {
+    if (error instanceof ContextWriteRefusalError) throw error
+    throw new Error(
+      `task documents of ${key} could not be read (${(error as Error).message}); retry once the task store answers`,
+    )
+  }
+}
+
+/** Resolve the durable identity stored beside a pointer after the write gate accepts it. */
+export async function resolvedPointerTarget(
+  value: string,
+  database: Database = db(),
+): Promise<string> {
+  const pointer = value.trim()
+  // A pointer that cannot be a durable target is a policy refusal, not a retryable failure.
+  if (!pointer) throw new ContextWriteRefusalError('pointer must not be empty')
+  if (isScratchLocation(pointer))
+    throw new ContextWriteRefusalError('scratch paths are not durable pointers')
+  if (/^[A-Z][A-Z0-9]*-\d+\/\d+$/.test(pointer)) return resolveTaskDocumentPointer(pointer)
   const stored = storedPointerRefusal(pointer, database)
-  if (stored !== undefined) return stored
+  if (stored !== undefined) {
+    if (stored) throw new ContextWriteRefusalError(stored)
+    return pointer
+  }
   const pr = /^#?(\d+)$/.exec(pointer)
   if (
     pr &&
     database.query('SELECT 1 FROM pull_request_ci WHERE pr_number=? LIMIT 1').get(Number(pr[1]))
   )
-    return null
+    return pr[1]!
   try {
-    resolveCommitArgument(process.cwd(), pointer)
-    return null
+    return resolveCommitArgument(process.cwd(), pointer)
   } catch {}
-  return `pointer ${JSON.stringify(pointer)} does not resolve as a task document, run, commit, pull request number, or doc-store record`
+  throw new ContextWriteRefusalError(
+    `pointer ${JSON.stringify(pointer)} does not resolve as a task document, run, commit, pull request number, or doc-store record`,
+  )
 }
 
 function storedPointerRefusal(pointer: string, database: Database): string | null | undefined {
@@ -117,9 +139,7 @@ const defaultContextFactsPorts = () =>
   portsHolder[CONTEXT_FACTS_PORTS_KEY] ?? productionContextFactsPorts
 
 export function storedItems(holder: string, database: Database): ContextItem[] {
-  return listDocsStore({ scope: 'context', subject: holder }, database).map((doc) =>
-    decodeContextItem(holder, doc.slug, doc.body),
-  )
+  return listContextItems(holder, database)
 }
 
 /** Resolve a person-facing task key once into the stable identity context stores. */
@@ -211,20 +231,20 @@ async function relatedContextTasks(input: {
 }
 
 async function contextSetRefusal(
-  input: { subject: string; slug: string; body: string; contextTask?: ContextTask },
+  input: { holder: string; item: ContextItem; contextTask?: ContextTask },
   database: Database = db(),
   ports: ContextFactsPorts = defaultContextFactsPorts(),
 ): Promise<string | null> {
-  const item = decodeContextItem(input.subject, input.slug, input.body)
-  const owner = input.subject.startsWith('session:') ? input.subject.slice(8) : null
-  const task = input.subject.startsWith('task:') ? input.contextTask : undefined
+  const item = input.item
+  const owner = input.holder.startsWith('session:') ? input.holder.slice(8) : null
+  const task = input.holder.startsWith('task:') ? input.contextTask : undefined
   if (
-    input.subject.startsWith('task:') &&
-    (!task || input.subject !== taskContextHolder(task.record_id))
+    input.holder.startsWith('task:') &&
+    (!task || input.holder !== taskContextHolder(task.record_id))
   ) {
-    return `context item ${input.slug} refused: task holder requires its resolved task identity; write task context with ${PLATFORM_SLUG} agent context set --task <KEY>`
+    return `context item ${item.id} refused: task holder requires its resolved task identity; write task context with ${PLATFORM_SLUG} agent context set --task <KEY>`
   }
-  const ownership = holderOwnershipRefusal(input.subject, sessionId(database), input.slug)
+  const ownership = holderOwnershipRefusal(input.holder, sessionId(database), item.id)
   if (ownership) return ownership
   const claims = owner
     ? liveClaimsOfSession(owner, Date.now(), database)
@@ -245,7 +265,7 @@ async function contextSetRefusal(
   ]
   const refusal = contextWriteRefusal(item, {
     profile,
-    siblings: storedItems(input.subject, database),
+    siblings: storedItems(input.holder, database),
     related: [...new Set(relatedHolders)].flatMap((holder) => storedItems(holder, database)),
     pointerRefusal: item.kind === 'pointer' ? await ports.pointer(item.body, database) : null,
     claimedTask: claims[0]?.key ?? null,
@@ -254,41 +274,32 @@ async function contextSetRefusal(
 }
 
 export async function assertContextSetAllowed(input: {
-  scope: string
-  subject: string | null
-  slug: string
-  body: string
+  holder: string
+  item: ContextItem
   contextTask?: ContextTask
 }): Promise<void> {
-  if (input.scope !== 'context') return
-  const refusal = await contextSetRefusal({
-    subject: input.subject ?? '',
-    slug: input.slug,
-    body: input.body,
-    contextTask: input.contextTask,
-  })
+  const refusal = await contextSetRefusal(input)
   if (refusal) throw new ContextWriteRefusalError(refusal)
 }
 
 /** A context item leaves only through its owner and never as the last required item. */
 export async function assertContextDropAllowed({
-  doc,
+  item,
   database = db(),
   ports = defaultContextFactsPorts(),
   task,
 }: {
-  doc: { scope: string; subject: string | null; slug: string; body: string }
+  item: ContextItem
   database?: Database
   ports?: ContextFactsPorts
   task?: ContextTask
 }): Promise<void> {
-  if (doc.scope !== 'context') return
-  const holder = doc.subject ?? ''
+  const holder = item.holder
   const refusal =
-    holderOwnershipRefusal(holder, sessionId(database), doc.slug) ??
+    holderOwnershipRefusal(holder, sessionId(database), item.id) ??
     (isValidContextHolderSubject(holder)
       ? contextDropRefusal(
-          decodeContextItem(holder, doc.slug, doc.body),
+          item,
           storedItems(holder, database),
           await contextProfileForHolder(holder, ports, task),
         )

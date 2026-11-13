@@ -3,11 +3,11 @@ import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { encodeContextItem } from '../../test/fixtures/context-item.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { addRun, dir, score } from '../../test/fixtures/store.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { db } from '../database/db.ts'
-import { encodeContextItem } from '../doc/context-item-codec.ts'
 import { getContext } from '../doc/context-service.ts'
 import { recordSessionWorked } from '../doc/context-worked-adapter.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from '../doc/context-write-adapter.ts'
@@ -456,32 +456,6 @@ describe('configured record close-out', () => {
     )
     expect(report.verdict.clean).toBe(false)
   })
-})
-
-test('close-out refuses to drop a context item whose revision is unavailable', async () => {
-  const session = newRecordId()
-  const prior = process.env.CLAUDE_CODE_SESSION_ID
-  process.env.CLAUDE_CODE_SESSION_ID = session
-  const item = await setDoc({
-    scope: 'context',
-    subject: `session:${session}`,
-    slug: 'revisionless',
-    title: 'revisionless',
-    body: encodeContextItem({ kind: 'fact', source: 'test', body: 'must survive' }),
-  })
-  if (prior === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
-  else process.env.CLAUDE_CODE_SESSION_ID = prior
-  db().query('DELETE FROM doc_revision WHERE doc_record_id=?').run(item.record_id)
-
-  const report = await closeOutSession({ session })
-
-  expect(report.errors).toContainEqual(
-    expect.objectContaining({
-      item: `context session:${session}/revisionless (fact)`,
-      detail: 'context item revision is unavailable',
-    }),
-  )
-  expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(item.record_id)).not.toBeNull()
 })
 
 test("a turn's guard or retained ref makes its terminal root planned", async () => {

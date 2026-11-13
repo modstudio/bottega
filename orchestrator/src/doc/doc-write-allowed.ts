@@ -69,9 +69,6 @@ export type DocRevisionOp =
   | 'import'
   | 'backfill'
 
-/** The holder a caller named to `agent context drop`, so its refusal can repeat that verb. */
-export type ContextDropTarget = { kind: 'task' | 'session'; value: string }
-
 export type CanonRow = { slug: string; body: string }
 export type CanonWriteTree = { project: { name: string }; root: string }
 export { composeCanonRows }
@@ -136,9 +133,9 @@ export function importedDocDelivery(scope: string): 'demand' | undefined {
   return scope === 'project' || scope === 'global' ? 'demand' : undefined
 }
 
-/** Canon, settings and context items never pack into prompts, whatever the caller asked. */
+/** Canon and settings never pack into prompts, whatever the caller asked. */
 export function forcedDocDelivery(scope: string): 'demand' | null {
-  return scope === 'canon' || scope === 'settings' || scope === 'context' ? 'demand' : null
+  return scope === 'canon' || scope === 'settings' ? 'demand' : null
 }
 
 /** Articles are discovered on demand and never participate in canon or prompt injection. */
@@ -268,7 +265,6 @@ export type DocRevisionWriteInput = {
   current: string | null
   isCreate: boolean
   op?: DocRevisionOp
-  contextDropTarget?: ContextDropTarget
   scope: string
   subject: string | null
   slug: string
@@ -308,7 +304,6 @@ export function decideDocRevisionWrite(input: DocRevisionWriteInput): DocRevisio
     !input.isCreate &&
     input.scope !== 'canon' &&
     input.scope !== 'settings' &&
-    input.scope !== 'context' &&
     input.expected === undefined
   ) {
     return { allow: true }
@@ -341,19 +336,10 @@ export function decideDocRevisionWrite(input: DocRevisionWriteInput): DocRevisio
 
 /** Every revision refusal names the write verb that owns the addressed scope. */
 function revisionRemedy(
-  input: RevisionAddress & Pick<DocRevisionWriteInput, 'op' | 'contextDropTarget'>,
+  input: RevisionAddress & Pick<DocRevisionWriteInput, 'op'>,
   current: string,
   operation: 'create' | 'update',
 ): string {
-  if (input.scope === 'context') {
-    if (input.contextDropTarget) {
-      return `${PLATFORM_SLUG} agent context drop --${input.contextDropTarget.kind} ${input.contextDropTarget.value} --id ${input.slug} --expected-revision ${current}`
-    }
-    if (input.op === 'delete') {
-      return `${PLATFORM_SLUG} doc rm ${input.slug} --scope context --subject ${input.subject} --reason <text> --expect ${current}`
-    }
-    return `read the context item with ${PLATFORM_SLUG} agent context show, then re-apply it with ${PLATFORM_SLUG} agent context set --id ${input.slug} --expected-revision ${current} (expected_revision over MCP)`
-  }
   if (input.scope === 'settings') {
     return `read the settings, then write them with ${PLATFORM_SLUG} machine settings import ${input.subject === null ? '--user' : `--project ${input.subject}`}`
   }

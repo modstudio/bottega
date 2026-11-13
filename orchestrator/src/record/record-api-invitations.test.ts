@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { Hono } from 'hono'
-import { identity } from '../../test/fixtures/record-api.ts'
+import { identity } from './record-api-identity.fixture.ts'
 import { registerRecordInvitationRoute } from './record-api-invitations.ts'
 
 test('the invitations route derives its user and email from the authenticated identity', async () => {

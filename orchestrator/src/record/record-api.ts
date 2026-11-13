@@ -20,6 +20,7 @@ import type { RecordBoardDeps } from './record-api-board.ts'
 import { type RecordChangeRouteDeps, registerRecordChangeRoute } from './record-api-changes.ts'
 import type { RecordConfigRouteDeps } from './record-api-config-contract.ts'
 import { configSecretPutBody } from './record-api-config-schema.ts'
+import { registerRecordContextItemRoutes } from './record-api-context-items.ts'
 import {
   type RecordCredentialRouteDeps,
   registerRecordCredentialRoutes,
@@ -70,6 +71,7 @@ import type { RecordIdentity } from './record-auth.ts'
 import type { RecordCanonImportInput, RecordCanonImportResult } from './record-canon-import.ts'
 import type { ConfigTenant } from './record-config.ts'
 import { CONFIG_SCOPES } from './record-config.ts'
+import type { RecordContextItemInput } from './record-context-items.ts'
 import {
   decodeRecordCursor,
   encodeRecordCursor,
@@ -118,6 +120,10 @@ type Deps = RecordSubjectRouteDeps &
   RecordApiDeps
 type RecordApiDeps = RecordSessionRouteDeps &
   RecordSettingsRouteDeps & {
+    upsertContextItem(input: Tenant & RecordContextItemInput): Promise<unknown>
+    deleteContextItem(
+      input: Tenant & { id: string; expectedRevision?: string },
+    ): Promise<{ removed: boolean }>
     clientAddresses: RecordClientAddresses
     recordUrl: string
     noDestinationWriteCounter: Parameters<typeof registerRecordWriteTelemetry>[1]['counter']
@@ -320,6 +326,16 @@ function refusingRequestTenant(context: Context<ApiEnvironment>, recordUrl: stri
   return tenant
 }
 
+function registerRecordCoreRoutes(
+  app: Hono<ApiEnvironment>,
+  deps: Deps,
+  ports: { scope(context: Context<ApiEnvironment>): Tenant | null; noSpace: typeof noSpace },
+): void {
+  registerRecordContextItemRoutes(app, deps, ports)
+  registerSignedDocSearchRoute(app, deps, ports)
+  registerRecordReadRoutes(app, deps, ports)
+}
+
 export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   const app = new Hono<ApiEnvironment>()
   app.onError((error, context) => {
@@ -358,8 +374,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   const scope = (context: Context<ApiEnvironment>): Tenant | null =>
     refusingRequestTenant(context, deps.recordUrl)
   const { docScope, docIdScope } = recordDocumentScopes({ scope, readDoc: deps.readDoc })
-  registerSignedDocSearchRoute(app, deps, { scope, noSpace })
-  registerRecordReadRoutes(app, deps, { scope, noSpace })
+  registerRecordCoreRoutes(app, deps, { scope, noSpace })
   app.get('/v1/runs', async (context) => {
     const tenant = scope(context)
     if (!tenant) return noSpace(context)

@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { SQL } from 'bun'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { identity, idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
+import { idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
 import { recordApiTestApp } from '../../test/fixtures/record-api-app.ts'
+import { identity } from './record-api-identity.fixture.ts'
 import { setOutsideIntake } from './record-outside-intake.ts'
 
 const actorUrl = process.env.BOTTEGA_TEST_CATALOGUE_IMPORT_URL

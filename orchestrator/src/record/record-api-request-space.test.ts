@@ -2,12 +2,9 @@ import { expect, test } from 'bun:test'
 import { Hono } from 'hono'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { recordWriteSpaceRefusal } from '../../../shared/record-remedies.ts'
-import {
-  identity as fixtureIdentity,
-  idleRecordApiDeps,
-  idleSubjectDeps,
-} from '../../test/fixtures/record-api.ts'
+import { idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
 import { recordApiTestApp } from '../../test/fixtures/record-api-app.ts'
+import { identity as fixtureIdentity } from './record-api-identity.fixture.ts'
 import { registerRecordRequestSpace } from './record-api-request-space.ts'
 import type { RecordIdentity } from './record-auth.ts'
 
@@ -479,9 +476,11 @@ DELETE /v1/config/wraps/:recipientKeyId
 PUT /v1/config/machine-keys/:keyId
 POST /v1/config/machine-keys/:keyId/revoke
 PUT /v1/docs
+PUT /v1/context-items
 POST /v1/docs/import
 POST /v1/docs/canon/import
 DELETE /v1/docs/:id
+DELETE /v1/context-items/:id
 POST /v1/docs/:id/consume
 POST /v1/docs/:id/restore
 PUT /v1/runs/:id/score

@@ -8,6 +8,7 @@ import {
 } from '../../test/fixtures/record-api.ts'
 import { db, writableDb } from '../database/db.ts'
 import type { RecordApiClient, RecordDocImportInput } from './record-api-client.ts'
+import { unusedContextItemClientMethods } from './record-api-context-items.fixture.ts'
 import { groupLocalDocsForImport, pushDocsCommand } from './record-push-docs.ts'
 
 const OLD = '2026-01-01T00:00:00.000Z'
@@ -118,6 +119,7 @@ function capturingClient(overrides: Partial<RecordApiClient> = {}): {
   const client: RecordApiClient = {
     ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
+    ...unusedContextItemClientMethods(),
     listChanges: async () => ({ reset: { cursor: 'push-docs-test', tables: [] } }),
     applySettingsPermission: unused,
     applySettingsAutoMode: unused,

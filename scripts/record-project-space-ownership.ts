@@ -20,6 +20,7 @@ export const RECORD_PROJECT_SPACE_OWNERSHIP = [
   { table: 'branch_disposal', kind: 'project', ownerColumns: ['project_id'] },
   { table: 'board_presence', kind: 'project', ownerColumns: ['project_id'] },
   { table: 'config_entry', kind: 'space', reason: 'space configuration' },
+  { table: 'context_item', kind: 'space', reason: 'space-scoped working context' },
   {
     table: 'contention',
     kind: 'parent',

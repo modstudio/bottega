@@ -467,7 +467,6 @@ function registerContextTools(server: McpServer): void {
           .max(64),
         kind: z.enum(CONTEXT_ITEM_KINDS),
         source: z.string().trim().min(1),
-        objection: z.string().trim().min(1).optional(),
         body: z.string(),
         expected_revision: z.string().optional(),
       }),

@@ -62,12 +62,6 @@ test('context scope rebuild keeps every doc row and the unique addresses', () =>
       { name: 'doc_address', unique: 1 },
       { name: 'doc_record_id', unique: 1 },
     ])
-    const insertContext = database.query(
-      `INSERT INTO doc(record_id,scope,subject,slug,title,body,delivery,created_at,updated_at,audiences)
-        VALUES (?,'context','task:DEV-1','next','Next','Body.','demand','a','a','["technical"]')`,
-    )
-    insertContext.run(newRecordId())
-    expect(() => insertContext.run(newRecordId())).toThrow('UNIQUE')
   } finally {
     database.close()
   }

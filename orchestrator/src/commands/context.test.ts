@@ -3,7 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { run } from '../cli/program.ts'
 import type { ContextCensus } from '../doc/context-census.ts'
-import { getDoc } from '../doc/docs.ts'
+import { getContextItem } from '../doc/context-item-store.ts'
 import { renderContextCensus } from './context.ts'
 
 test('context census renderer preserves grouping, counts, remedies, and one verdict line', () => {
@@ -100,7 +100,7 @@ test('agent context set refuses matching record shapes without writing', async (
         ]),
       ).toBe(1)
       expect(errors.at(-1)).toContain(refusal)
-      expect(getDoc('context', `session:${session}`, 'shape')).toBeNull()
+      expect(getContextItem(`session:${session}`, 'shape')).toBeNull()
     }
   } finally {
     if (previous === undefined) delete process.env.CLAUDE_CODE_SESSION_ID

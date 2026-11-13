@@ -187,9 +187,11 @@ export function register(program: Command): void {
         )
     })
   holderOptions(context.command('set').description('create or revise one context item'))
-    .requiredOption('--kind <kind>', `one of ${CONTEXT_ITEM_KINDS.join(', ')}`)
+    .requiredOption(
+      '--kind <kind>',
+      "ruling — Shmuel Barkin's decision; position — an agent's decision; fact — something learned that changes what the next agent does; pointer — where a durable artifact lives; next-action — the holder's next action; open-question — a question awaiting an answer",
+    )
     .requiredOption('--source <source>', 'item source')
-    .option('--objection <text>', 'objection overcome by a ruling')
     .requiredOption('--id <id>', 'stable item id')
     .option('--expected-revision <revision>', 'compare-and-set revision')
     .argument('<body>', 'item text')

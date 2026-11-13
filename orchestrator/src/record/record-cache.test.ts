@@ -12,6 +12,7 @@ import { retireProject, upsertProject } from '../project/projects.ts'
 import { subjectClient } from '../subject/subject-client.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import type { RecordApiClient } from './record-api-client.ts'
+import { unusedContextItemClientMethods } from './record-api-context-items.fixture.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { decodeRecordCursor, encodeRecordCursor, type RecordCursor } from './record-cursor.ts'
 
@@ -21,6 +22,7 @@ function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
   return {
     ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
+    ...unusedContextItemClientMethods(),
     whoami: async () => ({
       user: { id: newRecordId() },
       activeSpaceId: 'space-active',

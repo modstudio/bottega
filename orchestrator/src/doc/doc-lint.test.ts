@@ -39,28 +39,6 @@ const doc = (body: string, extra: Partial<Parameters<typeof lintDoc>[0]> = {}) =
 })
 
 describe('stored document lint', () => {
-  test('context items may name task keys', () => {
-    expect(
-      lintDoc(
-        doc('Dispatch DEV-2224 next.', {
-          scope: 'context',
-          subject: 'task:DEV-1844',
-          slug: 'next',
-        }),
-      ),
-    ).toEqual([])
-    const banned = lintDoc(
-      doc('TODO after DEV-2224 lands.', {
-        scope: 'context',
-        subject: 'task:DEV-1844',
-        slug: 'next',
-      }),
-    )
-    expect(banned.map((finding) => finding.message)).toEqual([
-      expect.stringContaining('matches banned issue pattern'),
-    ])
-  })
-
   test('an article without a written summary gets a non-refusing warning', () => {
     expect(lintDoc(doc('Current prose.', { kind: 'article', summary: null }))).toContainEqual({
       line: 1,
@@ -353,18 +331,6 @@ describe('stored document lint', () => {
       staleReferenceErrors: 0,
       unverifiableReferenceErrors: 0,
     })
-  })
-
-  test('a context item id beginning design does not invoke the design document shape', () => {
-    expect(
-      lintDoc(
-        doc('One current point.', {
-          scope: 'context',
-          subject: 'task:DEV-2225',
-          slug: 'design-approved',
-        }),
-      ),
-    ).toEqual([])
   })
 
   test('a global document resolves paths against any registered project', () => {

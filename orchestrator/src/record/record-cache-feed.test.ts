@@ -2,13 +2,13 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   createMemoryRecordApiClient,
-  identity,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import type { RecordApiClient } from './record-api-client.ts'
 import type { RecordChangePage } from './record-api-client-changes.ts'
+import { identity } from './record-api-identity.fixture.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { decodeRecordCursor } from './record-cursor.ts'
 

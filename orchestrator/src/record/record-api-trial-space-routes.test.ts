@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { Hono } from 'hono'
-import { identity } from '../../test/fixtures/record-api.ts'
+import { identity } from './record-api-identity.fixture.ts'
 import { registerRecordTrialSpaceRoutes } from './record-api-trial-space-routes.ts'
 
 test('the trial-space route derives the caller from identity and accepts the body slug', async () => {

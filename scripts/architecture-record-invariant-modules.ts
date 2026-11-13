@@ -97,6 +97,7 @@ export const recordInvariantModules = [
     '../../../shared/record/schema-auth.ts',
     '../../../shared/record/schema-board.ts',
     '../../../shared/record/schema-config.ts',
+    '../../../shared/record/schema-context-items.ts',
     '../../../shared/record/schema-docs.ts',
     '../../../shared/record/schema-hub.ts',
     '../../../shared/record/schema-landing.ts',

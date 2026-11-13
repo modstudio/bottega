@@ -5,7 +5,6 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { db, sessionId } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
-import { encodeContextItem } from './context-item-codec.ts'
 import { staleContextForSession } from './context-stale-adapter.ts'
 
 const setLaunchKey = (runId: string, key: string | null) =>
@@ -21,14 +20,13 @@ const registerDevPrefix = () => {
 }
 
 const insertNextAction = (recordId: string, at: string) => {
-  const body = encodeContextItem({ kind: 'next-action', source: 'test', body: 'Continue.' })
   db()
     .query(
-      `INSERT INTO doc
-     (record_id,scope,subject,slug,title,body,delivery,audiences,created_at,updated_at)
-     VALUES (?,'context',?,'next','next',?,'demand','["technical"]',?,?)`,
+      `INSERT INTO context_item
+     (record_id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
+     VALUES (?,'task',?,'next','next-action','Continue.','test',?,?)`,
     )
-    .run(newRecordId(), `task:${recordId}`, body, at, at)
+    .run(newRecordId(), recordId, at, at)
 }
 
 test('gathers run, closed-step, and both answer forms through store-backed context revisions', async () => {

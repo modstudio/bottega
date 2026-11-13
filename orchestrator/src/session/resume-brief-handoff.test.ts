@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { encodeContextItem } from '../../test/fixtures/context-item.ts'
 import { consumeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { encodeContextItem } from '../doc/context-item-codec.ts'
+import { getContextItem } from '../doc/context-item-store.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from '../doc/context-write-adapter.ts'
 import { getDoc, listDocRevisions, restoreDoc } from '../doc/docs.ts'
 import { resumeBriefAuthorSession } from '../doc/resume-brief-author.ts'
@@ -96,7 +97,7 @@ test("consuming a resume brief prints and drops the author's session context", a
   expect(handoff.lines[0]).toBe(
     `context session:${author}/handoff-fact fact (test): successor needs this`,
   )
-  expect(getDoc('context', `session:${author}`, 'handoff-fact')).toBeNull()
+  expect(getContextItem(`session:${author}`, 'handoff-fact')).toBeNull()
 })
 
 test('a resume handoff moves only owed roots while explicit adoption still moves all', async () => {
@@ -249,7 +250,7 @@ test('failed adoption preserves the author session context', async () => {
   expect(db().query('SELECT session_id FROM run WHERE record_id=?').get(root)).toEqual({
     session_id: author,
   })
-  expect(getDoc('context', `session:${author}`, 'survives-failed-adoption')).not.toBeNull()
+  expect(getContextItem(`session:${author}`, 'survives-failed-adoption')).not.toBeNull()
 })
 
 test('partial adoption keeps the author session context until the remaining run moves', async () => {
@@ -291,7 +292,7 @@ test('partial adoption keeps the author session context until the remaining run 
   expect(handoff.lines.join('\n')).toContain(
     `kept context session:${author}/survives-partial-adoption (fact): run ${PLATFORM_SLUG} session adopt ${author} --reason`,
   )
-  expect(getDoc('context', `session:${author}`, 'survives-partial-adoption')).not.toBeNull()
+  expect(getContextItem(`session:${author}`, 'survives-partial-adoption')).not.toBeNull()
 })
 
 test('hosted author preparation resolves the latest non-consume revision author', async () => {

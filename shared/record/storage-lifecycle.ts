@@ -22,6 +22,7 @@ export const hostedTableLifecycles: readonly TableLifecycle[] = [
       'brief_injection',
       'config_entry',
       'config_secret',
+      'context_item',
       'credential_payer_preference',
       'doc',
       'doc_related_subject',
