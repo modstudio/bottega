@@ -11,6 +11,7 @@ architect session lifecycle
 - [bottega session hold](#bottega-session-hold)
 - [bottega session losses](#bottega-session-losses)
 - [bottega session start](#bottega-session-start)
+- [bottega session status](#bottega-session-status)
 
 ## bottega session
 
@@ -26,6 +27,7 @@ architect session lifecycle
 - [bottega session hold](./session.md#bottega-session-hold)
 - [bottega session losses](./session.md#bottega-session-losses)
 - [bottega session start](./session.md#bottega-session-start)
+- [bottega session status](./session.md#bottega-session-status)
 
 ## bottega session adopt
 
@@ -109,6 +111,21 @@ measure losses around Claude transcript compaction boundaries
 **Synopsis:** `bottega session start`
 
 open explore for a session that holds no open explore, or name the one it holds
+
+### Related
+
+- [bottega session](./session.md#bottega-session)
+
+## bottega session status
+
+**Synopsis:** `bottega session status [--stop] [--json]`
+
+summarize what is moving and what the calling session owes
+
+### Options
+
+- `--stop`: apply Stop-hook block-once state
+- `--json`: write the summary as JSON
 
 ### Related
 

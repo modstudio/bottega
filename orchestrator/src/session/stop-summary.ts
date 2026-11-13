@@ -39,10 +39,6 @@ type HeldTreeRow = {
 type ActiveLandingRow = { project: string; branch: string }
 type HookNote = { label: string; project: string; last_seen_at?: string }
 
-function countRows(database: Database, sql: string, session: string): number {
-  return database.query<CountRow, [string]>(sql).get(session)?.count ?? 0
-}
-
 function cursorArg(row: WorkflowCursorListRow, key: 'branch' | 'worktree'): string | null {
   try {
     const value = JSON.parse(row.args) as Record<string, unknown>
@@ -130,16 +126,17 @@ export async function sessionStopSummary(
         `SELECT COUNT(*) count FROM run WHERE session_id=? AND status IN (${livePlaceholders})`,
       )
       .get(session, ...RUN_LIVE_STATUSES)?.count ?? 0
-  const incompleteReviews = countRows(
-    database,
-    `SELECT COUNT(DISTINCT review.record_id) count FROM review
+  const incompleteReviews =
+    database
+      .query<CountRow, [string]>(
+        `SELECT COUNT(DISTINCT review.record_id) count FROM review
        JOIN review_lens lens ON lens.review_record_id=review.record_id
        JOIN run ON run.record_id=lens.run_record_id
       WHERE run.session_id=? AND (review.completed_at IS NULL OR EXISTS
         (SELECT 1 FROM review_finding finding WHERE finding.review_record_id=review.record_id
           AND finding.disposition IS NULL))`,
-    session,
-  )
+      )
+      .get(session)?.count ?? 0
   const activeLandings = database
     .query<ActiveLandingRow, [string]>(
       "SELECT project,branch FROM landing WHERE session_id=? AND status IN ('queued','running')",

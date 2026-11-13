@@ -6,7 +6,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 
 export const OWED_ITEM_OVERDUE_MS = 60 * 60 * 1000
 
-export type StopSummaryCursor = {
+type StopSummaryCursor = {
   key: string | null
   workflow: string
   step: string
@@ -86,11 +86,4 @@ export function decideStopSummary(facts: StopSummaryFacts): StopSummaryDecision 
   }
   lines.push(...detailed)
   return { lines, block: true, reason }
-}
-
-export function stopSummaryBlockKey(reason: string): string {
-  const detailed = reason
-    .split('\n')
-    .filter((line) => line.includes(' → ') && !line.endsWith(`${PLATFORM_SLUG} question inbox`))
-  return blockKey(detailed)
 }

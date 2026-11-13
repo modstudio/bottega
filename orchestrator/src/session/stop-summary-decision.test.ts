@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test'
+import { createHash } from 'node:crypto'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   decideStopSummary,
   OWED_ITEM_OVERDUE_MS,
   type StopSummaryFacts,
-  stopSummaryBlockKey,
 } from './stop-summary-decision.ts'
 
 const NOW = '2026-11-13T12:00:00.000Z'
@@ -22,7 +23,7 @@ const owed = (age = 0) => ({
   kind: 'run' as const,
   identity: 'run-12',
   label: 'run 12 implement DEV-2297 unscored',
-  command: 'bottega score 12 (see bottega score --help)',
+  command: `${PLATFORM_SLUG} score 12 (see ${PLATFORM_SLUG} score --help)`,
   owedAt: new Date(Date.parse(NOW) - age).toISOString(),
 })
 
@@ -46,7 +47,7 @@ describe('Stop summary decision', () => {
       }),
     )
     expect(result.lines).toEqual([
-      '2 questions waiting on you → bottega question inbox',
+      `2 questions waiting on you → ${PLATFORM_SLUG} question inbox`,
       'DEV-2297 · plan-task · step design (6 of 11)',
       'explore · step orient (1 of 4)',
     ])
@@ -68,7 +69,7 @@ describe('Stop summary decision', () => {
     )
     expect(result.block).toBe(false)
     expect(result.lines.at(-1)).toBe(
-      'run 12 implement DEV-2297 unscored → bottega score 12 (see bottega score --help)',
+      `run 12 implement DEV-2297 unscored → ${PLATFORM_SLUG} score 12 (see ${PLATFORM_SLUG} score --help)`,
     )
   })
 
@@ -76,10 +77,11 @@ describe('Stop summary decision', () => {
     const first = decideStopSummary(facts({ owedItems: [owed()] }))
     expect(first.block).toBe(true)
     expect(first.lines.at(-1)).toContain('run 12 implement DEV-2297 unscored')
-    const second = decideStopSummary(
-      facts({ owedItems: [owed()], previousBlockKey: stopSummaryBlockKey(first.reason!) }),
-    )
+    const key = createHash('sha256')
+      .update(first.lines.filter((line) => line.includes(' → ')).join('\n'))
+      .digest('hex')
+    const second = decideStopSummary(facts({ owedItems: [owed()], previousBlockKey: key }))
     expect(second.block).toBe(false)
-    expect(second.lines.at(-1)).toBe('1 item owed → bottega score pending')
+    expect(second.lines.at(-1)).toBe(`1 item owed → ${PLATFORM_SLUG} score pending`)
   })
 })

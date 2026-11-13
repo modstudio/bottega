@@ -1,5 +1,28 @@
 export const cleanupBoundarySpecs = [
   {
+    name: 'stop-summary-decision-boundary',
+    file: 'orchestrator/src/session/stop-summary-decision.ts',
+    allowed: ['node:crypto', '../../../shared/brand.ts'],
+    typeOnlyAllowed: [],
+    reason: 'Keep the bounded Stop presentation independent of stores, processes, and clocks.',
+  },
+  {
+    name: 'stop-summary-boundary',
+    file: 'orchestrator/src/session/stop-summary.ts',
+    allowed: [
+      '../../../shared/brand.ts',
+      '../database/db.ts',
+      '../evidence/evidence-query.ts',
+      '../landing-tree/landing-tree.ts',
+      '../run/run-status.ts',
+      '../workflow/workflow-cursor-list.ts',
+      '../workflow/task-flow-store.ts',
+      './stop-summary-decision.ts',
+    ],
+    typeOnlyAllowed: ['bun:sqlite'],
+    reason: 'Keep Stop fact gathering as a read-only adapter over existing lifecycle owners.',
+  },
+  {
     name: 'tree-keep-decision-boundary',
     file: 'orchestrator/src/close/tree-keep-decision.ts',
     allowed: [],
