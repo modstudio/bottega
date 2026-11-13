@@ -1,11 +1,14 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { job } from '../jobs/jobs.ts'
 import { resolveLens } from '../lens/lenses.ts'
+import { upsertProject } from '../project/projects.ts'
 import { sha } from '../run/prompt-sha.ts'
 import { SPEC_UNSETTLED_QUESTION } from '../typed-question/spec-unsettled-question.ts'
 import {
   composeDispatchPrompt,
+  dispatchCommand,
   genericLensProfileNotices,
   lensDispatchNotices,
   reviewDetachFields,
@@ -14,6 +17,51 @@ import {
   validateContinueBranchOptions,
   warnForUnsettledSpec,
 } from './dispatch-commands.ts'
+
+test('an unbound keyed harness dispatch refuses before detach', async () => {
+  const project = `cursor-admission-${newRecordId()}`
+  upsertProject({ recordId: newRecordId(), name: project, path: import.meta.dir })
+  let detached = false
+
+  await expect(
+    dispatchCommand(
+      ['do', 'implement'],
+      {
+        has: (name) => name === 'key',
+        flag: (name) => (name === 'key' ? 'DEV-2293' : name === 'repo' ? project : undefined),
+        values: () => [],
+      },
+      {
+        resolveDispatchOptions: async () => ({
+          agent: undefined,
+          agentExplicit: false,
+          transport: 'cli',
+          transportExplicit: false,
+          avoid: [],
+          distinctModels: [],
+          mcp: undefined,
+          agentHarness: null,
+        }),
+        resolveCallerCheckout: () => ({
+          callerCwd: '/tmp',
+          launchCwd: '/tmp',
+          notice: null,
+        }),
+        keyedRunCursorFacts: async () => ({
+          callerKind: 'harness',
+          sessionId: 'session-fixture',
+          heldCursors: [],
+        }),
+        detach: async () => {
+          detached = true
+          return newRecordId()
+        },
+      } as never,
+    ),
+  ).rejects.toThrow('harness session session-fixture does not hold an open workflow cursor')
+
+  expect(detached).toBe(false)
+})
 
 const noEarlierReviewRejections = () => ({
   project: '',

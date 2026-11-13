@@ -42,6 +42,8 @@ Two lock purposes, two files. Creation and resume attachment take `project-lock.
 
 Detach claims a reserved id before routing; the asking session still owns the run. `bottega run result` exits `2` for not-finished and `1` for failed. `bottega run wait` is bounded. `bottega run retry` re-sends the prompt to the same agent; the original failure still counts; a writing run continues via `bottega run continue` in the same worktree. Retry needs the prompt on disk. **Keep both ends of a failure.** **Both claim paths must set every meaningful column**, including `parent_run_id` and `turn`.
 
+A harness session's keyed run start requires an open workflow cursor for that task in that project, cleared by composing a workflow, and only Shmuel Barkin may override it with a recorded reason.
+
 # Delegating implementation
 
 Update `$BOTTEGA_SCRATCH/progress.json` after each item. `worktree-remove.ts:changesIn` preserves the full diff against the immutable run base.

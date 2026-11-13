@@ -20,6 +20,7 @@ describe('doPositionals', () => {
     [['do', 'implement', '--keep-tree', '4', '--keep-tree-reason', 'why', 'go'], ['go']],
     [['do', 'implement', '--mcp=prefer', '--agent=grok', 'go'], ['go']],
     [['do', 'implement', '--follow', 'go'], ['go']],
+    [['do', 'implement', '--override-unbound', 'operator reason', '--from-operator', 'go'], ['go']],
     [
       ['do', 'implement', '--', '--mcp', 'prefer'],
       ['--mcp', 'prefer'],

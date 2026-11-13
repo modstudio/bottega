@@ -25,11 +25,12 @@ import {
   taskBranchReuseNotice,
 } from '../branch/task-branch.ts'
 import { compatibleTaskBranch } from '../branch/task-branch-reuse.ts'
+import { classifyCaller } from '../caller-classification.ts'
 import { flagValue, flagValues, readMessageText } from '../cli/args.ts'
 import { doPositionals } from '../commands/do-options.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { resolveReplyDialect } from '../contract/contract.ts'
-import { db, sessionId } from '../database/db.ts'
+import { callerIdentity, db, sessionId } from '../database/db.ts'
 import { unavailableStatus } from '../database/review-lens-input-artifact.ts'
 import { recordRunWarning } from '../events.ts'
 import { newestTurnOutputPath } from '../evidence/evidence-query.ts'
@@ -81,6 +82,7 @@ import {
   type TransportName,
 } from '../transport/transport.ts'
 import { askTypedQuestion } from '../typed-question/typed-question-service.ts'
+import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import {
   callerDrift,
   checkoutHasUncommittedWork,
@@ -97,6 +99,42 @@ type Presentation = {
   error(...values: unknown[]): void
   printRunId(id: number): void
   cwd(): string
+}
+
+async function keyedRunCursorFacts() {
+  const caller = classifyCaller(process.env)
+  if (caller.kind !== 'harness') {
+    return {
+      callerKind:
+        caller.kind === 'operator'
+          ? ('operator' as const)
+          : caller.kind === 'worker'
+            ? ('worker' as const)
+            : ('no-identity' as const),
+      sessionId: null,
+      heldCursors: [],
+    }
+  }
+  const identity = callerIdentity(db())
+  if (identity.kind !== 'identity') {
+    return { callerKind: 'no-identity' as const, sessionId: null, heldCursors: [] }
+  }
+  try {
+    const cursors = await taskFlowReadStore(db()).openStagesForSession(identity.session)
+    return {
+      callerKind: 'harness' as const,
+      sessionId: identity.session,
+      heldCursors: cursors.map((cursor) => ({
+        project: cursor.project,
+        workflowKey: cursor.workflow_key,
+      })),
+    }
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `refusing keyed run start because open workflow cursors for harness session ${identity.session} could not be read: ${reason}`,
+    )
+  }
 }
 
 function earlierReviewRejections(
@@ -706,6 +744,7 @@ export async function doCommand(
       resolveReviewTarget,
       resolveCallerCheckout: (cwd, repo) => resolveCallerCheckout(presentation.cwd(), cwd, repo),
       resolveDispatchOptions: resolveOptions,
+      keyedRunCursorFacts,
       lookupTaskKey,
       recordRunWarning,
       earlierReviewRejections,

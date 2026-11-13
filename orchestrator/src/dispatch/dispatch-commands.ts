@@ -34,6 +34,11 @@ import {
 import { keepTreeExemptionFromOption } from '../worktree/keep-tree-hold.ts'
 import { preflight, resolvedFindingsLens } from './dispatch-preflight.ts'
 import { executionRequirementRefusal } from './execution-requirement.ts'
+import {
+  decideKeyedRunCursorAdmission,
+  type KeyedRunCursor,
+  type KeyedRunCursorAdmissionInput,
+} from './keyed-run-cursor-admission.ts'
 import { decideProbeLaunchOverrides } from './probe-launch-overrides.ts'
 import { type ReviewLensPackInputs, reviewLensPrompt } from './review-lens-prompt.ts'
 import type { ReviewFindingMemory } from './review-memory.ts'
@@ -192,6 +197,11 @@ type DispatchPresentation = {
     notice: string | null
   }
   resolveDispatchOptions(jobName: string): Promise<DispatchOptions>
+  keyedRunCursorFacts(): Promise<{
+    callerKind: KeyedRunCursorAdmissionInput['callerKind']
+    sessionId: string | null
+    heldCursors: KeyedRunCursor[]
+  }>
   lookupTaskKey: TaskKeyLookup
   recordRunWarning(runId: string, warning: string): void
   earlierReviewRejections(
@@ -213,6 +223,28 @@ type DispatchPresentation = {
   follow(id: string, quiet: boolean): Promise<unknown>
   runNumber(id: string): number
   detachedResult(id: string, json: boolean): void
+}
+
+async function keyedRunCursorWarningForDispatch(input: {
+  key: string | undefined
+  project: string | null
+  bindingPresent: boolean
+  overrideReason: string | undefined
+  fromOperator: boolean
+  facts: DispatchPresentation['keyedRunCursorFacts']
+}): Promise<string | null> {
+  if (!input.key || input.bindingPresent) return null
+  const facts = await input.facts()
+  const decision = decideKeyedRunCursorAdmission({
+    key: input.key,
+    project: input.project,
+    bindingPresent: input.bindingPresent,
+    overrideReason: input.overrideReason,
+    fromOperator: input.fromOperator,
+    ...facts,
+  })
+  if (decision.kind === 'refuse') throw new Error(decision.message)
+  return decision.kind === 'allow-with-override' ? decision.warning : null
 }
 
 type SpecWarningInput = {
@@ -703,6 +735,14 @@ export async function dispatchCommand(
   reportCallerCheckoutNotice(caller.notice, porcelain, error)
   const dispatchProject = assertDispatchableProject(explicitRepo, callerCwd, Boolean(requestedCwd))
   const dispatchProjectName = dispatchProject?.name ?? null
+  const keyedRunCursorWarning = await keyedRunCursorWarningForDispatch({
+    key: flag('key'),
+    project: dispatchProjectName,
+    bindingPresent: Boolean(binding),
+    overrideReason: flag('override-unbound'),
+    fromOperator: has('from-operator'),
+    facts: presentation.keyedRunCursorFacts,
+  })
   // Check project-required inputs before reading the prompt so a missing key does not pay for stdin.
   const { base, reviewRef, resolvedReviewTarget, seed } = prepareDispatchTarget({
     flags,
@@ -837,6 +877,7 @@ export async function dispatchCommand(
       lensInputs,
     })
     recordTaskKeyWarning(id, taskKeyWarning, recordRunWarning)
+    recordTaskKeyWarning(id, keyedRunCursorWarning, recordRunWarning)
     presentation.detachedResult(id, json)
     if (!has('quiet') && !porcelain) {
       error(detachedRunCollectRemedy(id, presentation.runNumber))
@@ -897,5 +938,6 @@ export async function dispatchCommand(
     lensInputs,
   })
   recordTaskKeyWarning(id, taskKeyWarning, recordRunWarning)
+  recordTaskKeyWarning(id, keyedRunCursorWarning, recordRunWarning)
   await follow(id, has('quiet'))
 }
