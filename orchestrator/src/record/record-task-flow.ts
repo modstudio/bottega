@@ -316,7 +316,9 @@ export async function readRecordTaskFlowPresence(
     await bindTenant(tx, input)
     const stages = input.stageIds.length
       ? await tx`SELECT id FROM task_flow_stage
-          WHERE space_id=${input.spaceId}::uuid AND id=ANY(${tx.array(input.stageIds, 'uuid')})
+          WHERE space_id=${input.spaceId}::uuid
+            AND id=ANY(${tx.array(input.stageIds, 'uuid')})
+            AND enforcement IS NOT NULL
           ORDER BY id`
       : []
     const flows = input.flowIds.length

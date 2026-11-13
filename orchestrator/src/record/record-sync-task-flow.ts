@@ -2,7 +2,7 @@
 /** Applies revision-ordered task-flow and stage payloads to the hosted record. */
 
 import type { SQL } from 'bun'
-import { and, sql as drizzleSql, eq, lt } from 'drizzle-orm'
+import { and, sql as drizzleSql, eq, isNull, lt, or } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
@@ -138,7 +138,16 @@ export async function reviseTaskFlowStageValues(
     .update(taskFlowStageRecord)
     .set(updates)
     .where(
-      and(eq(taskFlowStageRecord.id, values.id), lt(taskFlowStageRecord.revision, values.revision)),
+      and(
+        eq(taskFlowStageRecord.id, values.id),
+        or(
+          lt(taskFlowStageRecord.revision, values.revision),
+          and(
+            eq(taskFlowStageRecord.revision, values.revision),
+            isNull(taskFlowStageRecord.enforcement),
+          ),
+        ),
+      ),
     )
     .returning({ id: taskFlowStageRecord.id })
 }

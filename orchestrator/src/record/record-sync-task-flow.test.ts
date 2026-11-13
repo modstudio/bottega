@@ -13,6 +13,7 @@ import {
 } from './record-sync-task-flow.ts'
 import {
   readRecordTaskFlowObligation,
+  readRecordTaskFlowPresence,
   readRecordTaskFlowStage,
   readRecordTaskFlowText,
 } from './record-task-flow.ts'
@@ -196,6 +197,22 @@ test('task-flow apply is idempotent and rejects older revisions', async () => {
       ).rows,
     ).toEqual([{ flows: 1, stages: 1 }])
 
+    await postgres.exec('UPDATE task_flow_stage SET enforcement=NULL')
+    await expect(reviseStage(stagePayload())).resolves.toEqual([{ id: STAGE }])
+    expect(
+      (await postgres.query('SELECT enforcement,revision,state FROM task_flow_stage')).rows,
+    ).toEqual([{ enforcement: 'floors', revision: 1, state: 'running' }])
+
+    await reviseStage({ ...stagePayload(), enforcement: 'note-only' })
+    expect((await postgres.query('SELECT enforcement FROM task_flow_stage')).rows).toEqual([
+      { enforcement: 'floors' },
+    ])
+
+    await reviseStage({ ...stagePayload(0, 'done'), enforcement: 'note-only' })
+    expect(
+      (await postgres.query('SELECT enforcement,revision,state FROM task_flow_stage')).rows,
+    ).toEqual([{ enforcement: 'floors', revision: 1, state: 'running' }])
+
     await applyFlow(flowPayload(2, 'done'))
     // A stage written before stages carried a project revises with no project.
     await reviseStage({ ...stagePayload(2, 'done'), projectId: null })
@@ -343,6 +360,36 @@ realPostgres('hosted task flow revisions', () => {
         },
       ])
 
+      const principal = { url: actorUrl!, userId: USER, spaceId: SPACE }
+      await expect(
+        readRecordTaskFlowPresence({ ...principal, stageIds: [STAGE], flowIds: [FLOW] }),
+      ).resolves.toEqual({ stageIds: [], flowIds: [FLOW] })
+
+      expect(await push(actor, 13, 'task_flow_stage', stagePayload(2, 'done'))).toMatchObject({
+        results: [{ id: 13, status: 'synced' }],
+      })
+      await expect(
+        readRecordTaskFlowPresence({ ...principal, stageIds: [STAGE], flowIds: [FLOW] }),
+      ).resolves.toEqual({ stageIds: [STAGE], flowIds: [FLOW] })
+
+      await push(actor, 14, 'task_flow_stage', {
+        ...stagePayload(2, 'done'),
+        enforcement: 'note-only',
+      })
+      expect(
+        await admin<{ enforcement: string; revision: number }[]>`
+          SELECT enforcement,revision FROM task_flow_stage WHERE id=${STAGE}::uuid`,
+      ).toEqual([{ enforcement: 'floors', revision: 2 }])
+
+      await push(actor, 15, 'task_flow_stage', {
+        ...stagePayload(1, 'running'),
+        enforcement: 'note-only',
+      })
+      expect(
+        await admin<{ enforcement: string; revision: number; state: string }[]>`
+          SELECT enforcement,revision,state FROM task_flow_stage WHERE id=${STAGE}::uuid`,
+      ).toEqual([{ enforcement: 'floors', revision: 2, state: 'done' }])
+
       await push(actor, 5, 'task_flow', flowPayload(2, 'done'))
       await push(actor, 6, 'task_flow_stage', stagePayload(2, 'done'))
       await push(actor, 7, 'task_flow', flowPayload(1, 'open'))
@@ -414,7 +461,6 @@ realPostgres('hosted task flow revisions', () => {
         (id,space_id,workflow_text_record_id,stage_record_id,task_document_reference,copied_at)
         VALUES (${COPY}::uuid,${SPACE}::uuid,${TEXT}::uuid,${STAGE}::uuid,'task:DEV-1978',${STAMP})`
 
-      const principal = { url: actorUrl!, userId: USER, spaceId: SPACE }
       await expect(readRecordTaskFlowStage({ ...principal, id: STAGE })).resolves.toMatchObject({
         stage: {
           id: STAGE,
