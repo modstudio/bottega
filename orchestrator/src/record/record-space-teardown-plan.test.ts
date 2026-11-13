@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import { getTableConfig, pgTable, uuid } from 'drizzle-orm/pg-core'
 import drizzleConfig from '../../../shared/record/drizzle.config.ts'
 import {
@@ -10,7 +11,6 @@ import {
 import {
   deriveProjectPurgePlan,
   deriveSpaceTeardownPlan,
-  HOSTED_RECORD_SCHEMA_FILES,
   HOSTED_RECORD_TABLES,
   PROJECT_PURGE_EXCLUSIONS,
   PROJECT_PURGE_PLAN,
@@ -28,7 +28,9 @@ test('teardown schema modules exactly cover the Drizzle schema files', () => {
   const configured = (
     Array.isArray(drizzleConfig.schema) ? drizzleConfig.schema : [drizzleConfig.schema]
   ).filter((file): file is string => file !== undefined)
-  const teardownFiles: string[] = [...HOSTED_RECORD_SCHEMA_FILES]
+  const source = readFileSync(new URL('./record-space-teardown-plan.ts', import.meta.url), 'utf8')
+  const moduleList = source.match(/const schemaModules = \[([\s\S]*?)\] as const/)?.[1]
+  const teardownFiles = [...(moduleList ?? '').matchAll(/\['([^']+)',/g)].map((match) => match[1])
   expect(teardownFiles).toEqual(configured)
 })
 

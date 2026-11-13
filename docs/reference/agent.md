@@ -166,7 +166,7 @@ record one SessionStart context injection
 ### Options
 
 - `--session <id>`: select architect session
-- `--source <source>`: one of startup, resume, clear, compact
+- `--source <source>`: one of startup, resume, clear, compact, fork
 - `--bytes <count>`: UTF-8 bytes in the final additional context
 - `--lines <count>`: lines in the final additional context
 - `--chars <count>`: characters in the final additional context

@@ -42,7 +42,6 @@ const schemaModules = [
   ['./shared/record/schema-port.ts', p],
   ['./shared/record/schema-record-change.ts', rc],
 ] as const
-export const HOSTED_RECORD_SCHEMA_FILES = schemaModules.map(([file]) => file)
 const modules = schemaModules.map(([, schema]) => schema)
 const table = (value: unknown): value is PgTable => {
   try {
