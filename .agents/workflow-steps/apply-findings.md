@@ -4,6 +4,7 @@ stage: review
 floor:
   - command-exit
   - recorded-artifact
+  - review-owed
 jobs: [implement]
 autonomy: ask
 needs: []
