@@ -15,6 +15,8 @@ import {
 } from 'drizzle-orm/pg-core'
 import { machine, spaceIdentity, tenantPolicies } from './schema.ts'
 
+export const SESSION_START_SOURCES = ['startup', 'resume', 'clear', 'compact', 'fork'] as const
+
 export const briefInjection = pgTable.withRLS(
   'brief_injection',
   {
@@ -40,7 +42,7 @@ export const briefInjection = pgTable.withRLS(
     index('brief_injection_session_at_idx').on(table.sessionId, table.at),
     check(
       'brief_injection_source_check',
-      sql`${table.source} IN ('startup','resume','clear','compact')`,
+      sql`${table.source} IN (${sql.raw(SESSION_START_SOURCES.map((source) => `'${source}'`).join(','))})`,
     ),
     check('brief_injection_bytes_check', sql`${table.bytes} >= 0`),
     check('brief_injection_lines_check', sql`${table.lines} >= 0`),

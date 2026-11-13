@@ -3,14 +3,17 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
+import { SESSION_START_SOURCES } from '../../../shared/record/schema-session.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { insertOutboxRow } from '../record/outbox-enqueue.ts'
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
+import { type TaskFlowOpenSessionStageRow, taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { SESSION_START_CONTEXT_MAX_CHARS } from './session-start-context-limit.ts'
 
-export const SESSION_START_SOURCES = ['startup', 'resume', 'clear', 'compact'] as const
+export { SESSION_START_SOURCES }
+
 type SessionStartSource = (typeof SESSION_START_SOURCES)[number]
 
 export type BriefInjectionInput = {
@@ -30,24 +33,15 @@ export type BriefInjection = BriefInjectionInput & {
   overCap: boolean
 }
 
-type CursorRow = { workflow_key: string; updated_at: string }
-
 function wholeNonnegative(value: number, name: string): void {
   if (!Number.isSafeInteger(value) || value < 0)
     throw new Error(`${name} must be a nonnegative integer`)
 }
 
 export function briefInjectionCursorFacts(
-  database: Database,
-  sessionId: string,
+  rows: readonly Pick<TaskFlowOpenSessionStageRow, 'workflow_key' | 'updated_at'>[],
   atMs: number,
 ): Pick<BriefInjection, 'cursors' | 'keylessCursors' | 'keylessIdleMaxMs'> {
-  const rows = database
-    .query<CursorRow, [string]>(
-      `SELECT workflow_key,updated_at FROM workflow_cursor
-       WHERE session_id=? AND state NOT IN ('done','abandoned')`,
-    )
-    .all(sessionId)
   const keyless = rows.filter((row) => row.workflow_key === '')
   const idle = keyless
     .map((row) => Math.max(0, atMs - Date.parse(row.updated_at)))
@@ -59,10 +53,10 @@ export function briefInjectionCursorFacts(
   }
 }
 
-export function recordBriefInjection(
+export async function recordBriefInjection(
   input: BriefInjectionInput,
   dependencies: { database?: Database; now?: () => string; machine?: () => string } = {},
-): BriefInjection {
+): Promise<BriefInjection> {
   if (!input.sessionId) throw new Error('session id is required')
   if (!SESSION_START_SOURCES.includes(input.source)) throw new Error('invalid SessionStart source')
   wholeNonnegative(input.bytes, 'bytes')
@@ -70,7 +64,8 @@ export function recordBriefInjection(
   wholeNonnegative(input.chars, 'chars')
   const database = dependencies.database ?? db(true)
   const at = (dependencies.now ?? nowIso)()
-  const facts = briefInjectionCursorFacts(database, input.sessionId, Date.parse(at))
+  const cursors = await taskFlowReadStore(database).openStagesForSession(input.sessionId)
+  const facts = briefInjectionCursorFacts(cursors, Date.parse(at))
   const row: BriefInjection = {
     ...input,
     id: newRecordId(),

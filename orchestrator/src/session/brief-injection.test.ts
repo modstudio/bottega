@@ -1,26 +1,37 @@
-import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
-import { briefInjectionCursorFacts, recordBriefInjection } from './brief-injection.ts'
+import {
+  briefInjectionCursorFacts,
+  recordBriefInjection,
+  SESSION_START_SOURCES,
+} from './brief-injection.ts'
 
-test('cursor facts count open cursors and the longest keyless idle time', () => {
-  const database = new Database(':memory:')
-  database.exec(`CREATE TABLE workflow_cursor (
-    session_id TEXT, state TEXT, workflow_key TEXT, updated_at TEXT
-  );
-  INSERT INTO workflow_cursor VALUES
-    ('session-a','running','DEV-1','2026-11-13T12:00:04.000Z'),
-    ('session-a','awaiting-ruling','','2026-11-13T12:00:03.000Z'),
-    ('session-a','running','','2026-11-13T12:00:01.000Z'),
-    ('session-a','done','','2026-11-13T11:00:00.000Z'),
-    ('session-b','running','','2026-11-13T11:00:00.000Z');`)
+test('cursor facts count supplied open cursors and the longest keyless idle time', () => {
   expect(
-    briefInjectionCursorFacts(database, 'session-a', Date.parse('2026-11-13T12:00:05.000Z')),
+    briefInjectionCursorFacts(
+      [
+        { workflow_key: 'DEV-1', updated_at: '2026-11-13T12:00:04.000Z' },
+        { workflow_key: '', updated_at: '2026-11-13T12:00:03.000Z' },
+        { workflow_key: '', updated_at: '2026-11-13T12:00:01.000Z' },
+      ],
+      Date.parse('2026-11-13T12:00:05.000Z'),
+    ),
   ).toEqual({ cursors: 3, keylessCursors: 2, keylessIdleMaxMs: 4_000 })
-  database.close()
 })
 
-test('recording persists the final size and matching outbox row atomically', () => {
+test('local migration SessionStart sources match the shared source vocabulary', () => {
+  const migration = readFileSync(
+    new URL('../../migrations/0221_brief_injection.sql', import.meta.url),
+    'utf8',
+  )
+  const check = migration.match(/source IN \(([^)]+)\)/)?.[1]
+  expect(check?.match(/'([^']+)'/g)?.map((source) => source.slice(1, -1))).toEqual([
+    ...SESSION_START_SOURCES,
+  ])
+})
+
+test('recording persists the final size and matching outbox row atomically', async () => {
   const database = migratedTestDatabase()
   database.exec('PRAGMA foreign_keys=OFF')
   database
@@ -32,7 +43,7 @@ test('recording persists the final size and matching outbox row atomically', () 
             '01990000-0000-7000-8000-000000000043','{}',3,
             '2026-11-13T11:59:00.000Z','2026-11-13T12:00:01.000Z')`)
     .run()
-  const recorded = recordBriefInjection(
+  const recorded = await recordBriefInjection(
     { sessionId: 'session-a', source: 'compact', bytes: 10_100, lines: 120, chars: 10_001 },
     {
       database,

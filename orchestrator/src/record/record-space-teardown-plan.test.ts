@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { getTableConfig, pgTable, uuid } from 'drizzle-orm/pg-core'
+import drizzleConfig from '../../../shared/record/drizzle.config.ts'
 import {
   project,
   RECORD_ACTOR_ROLE,
@@ -9,6 +10,7 @@ import {
 import {
   deriveProjectPurgePlan,
   deriveSpaceTeardownPlan,
+  HOSTED_RECORD_SCHEMA_FILES,
   HOSTED_RECORD_TABLES,
   PROJECT_PURGE_EXCLUSIONS,
   PROJECT_PURGE_PLAN,
@@ -21,6 +23,14 @@ import {
   unclassifiedProjectTables,
   unclassifiedSpaceTables,
 } from './record-space-teardown-plan.ts'
+
+test('teardown schema modules exactly cover the Drizzle schema files', () => {
+  const configured = (
+    Array.isArray(drizzleConfig.schema) ? drizzleConfig.schema : [drizzleConfig.schema]
+  ).filter((file): file is string => file !== undefined)
+  const teardownFiles: string[] = [...HOSTED_RECORD_SCHEMA_FILES]
+  expect(teardownFiles).toEqual(configured)
+})
 
 test('definer count reading refuses a missing declared column', () => {
   expect(() =>

@@ -107,12 +107,12 @@ function registerInjection(context: Command): void {
     .requiredOption('--lines <count>', 'lines in the final additional context', Number)
     .requiredOption('--chars <count>', 'characters in the final additional context', Number)
     .allowExcessArguments(false)
-    .action((options) => {
+    .action(async (options) => {
       if (!SESSION_START_SOURCES.includes(options.source))
         throw new Error(`--source must be one of ${SESSION_START_SOURCES.join(', ')}`)
       log(
         JSON.stringify(
-          recordBriefInjection({
+          await recordBriefInjection({
             sessionId: options.session,
             source: options.source,
             bytes: options.bytes,

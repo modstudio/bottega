@@ -1,9 +1,9 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "614a32de-5fc5-4caf-901e-2d0f6b87bf8b",
+  "id": "d0c5e924-b84b-4a03-87a9-c04ec82449a3",
   "prevIds": [
-    "7f9a3725-9053-453c-ae38-0f782c5d9f42"
+    "a75685f2-b938-470c-a1cb-19fe4f3adb03"
   ],
   "ddl": [
     {
@@ -375,6 +375,18 @@
     {
       "isRlsEnabled": true,
       "name": "credential_payer_preference",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": true,
+      "name": "machine_join_message",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": true,
+      "name": "machine_join_nameplate",
       "entityType": "tables",
       "schema": "public"
     },
@@ -13239,6 +13251,214 @@
       "name": "id",
       "entityType": "columns",
       "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "nameplate_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "space_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "side",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "phase",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "type": "bytea",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "body",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "posted_by",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "space_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "nameplate",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "allocated_by",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "expires_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "failed_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "failed_by",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
       "table": "machine_key_claim_challenge"
     },
     {
@@ -22213,6 +22433,108 @@
     {
       "nameExplicit": false,
       "columns": [
+        "nameplate_id"
+      ],
+      "schemaTo": "public",
+      "tableTo": "machine_join_nameplate",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "machine_join_message_9Dn1rR023xXn_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "space_id"
+      ],
+      "schemaTo": "public",
+      "tableTo": "space",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "name": "machine_join_message_space_id_space_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "posted_by"
+      ],
+      "schemaTo": "public",
+      "tableTo": "user",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "name": "machine_join_message_posted_by_user_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "space_id"
+      ],
+      "schemaTo": "public",
+      "tableTo": "space",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "name": "machine_join_nameplate_space_id_space_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "allocated_by"
+      ],
+      "schemaTo": "public",
+      "tableTo": "user",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "name": "machine_join_nameplate_allocated_by_user_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "failed_by"
+      ],
+      "schemaTo": "public",
+      "tableTo": "user",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "name": "machine_join_nameplate_failed_by_user_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
         "space_id"
       ],
       "schemaTo": "public",
@@ -24201,6 +24523,26 @@
         "id"
       ],
       "nameExplicit": false,
+      "name": "machine_join_message_pkey",
+      "schema": "public",
+      "table": "machine_join_message",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "machine_join_nameplate_pkey",
+      "schema": "public",
+      "table": "machine_join_nameplate",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
       "name": "machine_key_claim_challenge_pkey",
       "schema": "public",
       "table": "machine_key_claim_challenge",
@@ -24907,6 +25249,31 @@
     {
       "nameExplicit": true,
       "columns": [
+        "nameplate_id",
+        "side",
+        "phase"
+      ],
+      "nullsNotDistinct": false,
+      "name": "machine_join_message_nameplate_side_phase_unique",
+      "entityType": "uniques",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        "space_id",
+        "nameplate"
+      ],
+      "nullsNotDistinct": false,
+      "name": "machine_join_nameplate_space_nameplate_unique",
+      "entityType": "uniques",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
         "space_id",
         "key_id"
       ],
@@ -25517,7 +25884,7 @@
       "table": "landing_override"
     },
     {
-      "value": "\"source\" IN ('startup','resume','clear','compact')",
+      "value": "\"source\" IN ('startup','resume','clear','compact','fork')",
       "name": "brief_injection_source_check",
       "entityType": "checks",
       "schema": "public",
@@ -25921,6 +26288,34 @@
       "entityType": "checks",
       "schema": "public",
       "table": "credential_payer_preference"
+    },
+    {
+      "value": "\"side\" ~ '^[0-9a-f]{32}$'",
+      "name": "machine_join_message_side_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "value": "\"phase\" ~ '^[a-z0-9-]{1,32}$'",
+      "name": "machine_join_message_phase_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "value": "octet_length(\"body\") BETWEEN 1 AND 4096",
+      "name": "machine_join_message_body_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "value": "\"nameplate\" ~ '^[1-9][0-9]{0,5}$'",
+      "name": "machine_join_nameplate_nameplate_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "machine_join_nameplate"
     },
     {
       "value": "length(\"key_id\") = 22 AND \"key_id\" ~ '^[A-Za-z0-9_-]{22}$'",
@@ -29463,6 +29858,123 @@
       "roles": [
         "public"
       ],
+      "using": "\"machine_join_message\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid OR \"machine_join_message\".\"space_id\" = ANY(\n    string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]\n  )",
+      "withCheck": null,
+      "name": "machine_join_message_space_select",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "INSERT",
+      "roles": [
+        "public"
+      ],
+      "using": null,
+      "withCheck": "(\"machine_join_message\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"machine_join_message\".\"space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
+      "name": "machine_join_message_space_insert",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "record_owner"
+      ],
+      "using": "true",
+      "withCheck": null,
+      "name": "machine_join_message_owner_select",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "DELETE",
+      "roles": [
+        "record_owner"
+      ],
+      "using": "true",
+      "withCheck": null,
+      "name": "machine_join_message_owner_delete",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "machine_join_message"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "using": "\"machine_join_nameplate\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid OR \"machine_join_nameplate\".\"space_id\" = ANY(\n    string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]\n  )",
+      "withCheck": null,
+      "name": "machine_join_nameplate_space_select",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "INSERT",
+      "roles": [
+        "public"
+      ],
+      "using": null,
+      "withCheck": "(\"machine_join_nameplate\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"machine_join_nameplate\".\"space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
+      "name": "machine_join_nameplate_space_insert",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "UPDATE",
+      "roles": [
+        "public"
+      ],
+      "using": "(\"machine_join_nameplate\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"machine_join_nameplate\".\"space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
+      "withCheck": "(\"machine_join_nameplate\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"machine_join_nameplate\".\"space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
+      "name": "machine_join_nameplate_space_update",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "record_owner"
+      ],
+      "using": "true",
+      "withCheck": null,
+      "name": "machine_join_nameplate_owner_select",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "DELETE",
+      "roles": [
+        "record_owner"
+      ],
+      "using": "true",
+      "withCheck": null,
+      "name": "machine_join_nameplate_owner_delete",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "machine_join_nameplate"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "public"
+      ],
       "using": "\"machine_key_claim_challenge\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid OR \"machine_key_claim_challenge\".\"space_id\" = ANY(\n    string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]\n  )",
       "withCheck": null,
       "name": "machine_key_claim_challenge_space_select",
@@ -29505,6 +30017,32 @@
       "using": "(\"machine_key_claim_challenge\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"machine_key_claim_challenge\".\"space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
       "withCheck": null,
       "name": "machine_key_claim_challenge_space_delete",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "machine_key_claim_challenge"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "record_owner"
+      ],
+      "using": "true",
+      "withCheck": null,
+      "name": "machine_key_claim_challenge_owner_select",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "machine_key_claim_challenge"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "DELETE",
+      "roles": [
+        "record_owner"
+      ],
+      "using": "true",
+      "withCheck": null,
+      "name": "machine_key_claim_challenge_owner_delete",
       "entityType": "policies",
       "schema": "public",
       "table": "machine_key_claim_challenge"

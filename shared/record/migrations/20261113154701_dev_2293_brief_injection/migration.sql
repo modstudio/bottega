@@ -13,7 +13,7 @@ CREATE TABLE "brief_injection" (
 	"over_cap" boolean NOT NULL,
 	"created_at" timestamp with time zone NOT NULL,
 	"updated_at" timestamp with time zone NOT NULL,
-	CONSTRAINT "brief_injection_source_check" CHECK ("source" IN ('startup','resume','clear','compact')),
+	CONSTRAINT "brief_injection_source_check" CHECK ("source" IN ('startup','resume','clear','compact','fork')),
 	CONSTRAINT "brief_injection_bytes_check" CHECK ("bytes" >= 0),
 	CONSTRAINT "brief_injection_lines_check" CHECK ("lines" >= 0),
 	CONSTRAINT "brief_injection_cursors_check" CHECK ("cursors" >= 0),

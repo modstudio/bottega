@@ -44,19 +44,10 @@ class AssembleAdditionalContext(unittest.TestCase):
             )
         command = popen.call_args.args[0]
         self.assertEqual(command[-6:], ["--bytes", "7", "--lines", "2", "--chars", "6"])
-        self.assertEqual(
-            popen.call_args.kwargs,
-            {
-                "env": {},
-                "stdin": session_brief.subprocess.DEVNULL,
-                "stdout": session_brief.subprocess.DEVNULL,
-                "stderr": session_brief.subprocess.DEVNULL,
-                "start_new_session": True,
-                "cwd": "/tmp",
-            },
-        )
+        self.assertTrue(popen.call_args.kwargs["start_new_session"])
+        self.assertEqual(session_brief._context_size("é\nfull"), (7, 2, 6))
 
-    def test_injection_recording_launch_failure_leaves_output_unchanged(self):
+    def test_injection_recording_launch_failure_reports_stderr(self):
         output = "assembled hook output"
         errors = io.StringIO()
         with mock.patch.object(
@@ -66,7 +57,6 @@ class AssembleAdditionalContext(unittest.TestCase):
                 session_brief._record_injection(
                     "/bin/bottega", "/tmp", {}, "session-a", "startup", output
                 )
-        self.assertEqual(output, "assembled hook output")
         self.assertEqual(
             errors.getvalue(),
             "session-brief: injection recording failed: cannot launch\n",

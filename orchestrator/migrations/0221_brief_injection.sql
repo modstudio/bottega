@@ -2,7 +2,7 @@ CREATE TABLE brief_injection (
   record_id TEXT NOT NULL PRIMARY KEY,
   session_id TEXT NOT NULL,
   at TEXT NOT NULL,
-  source TEXT NOT NULL CHECK (source IN ('startup','resume','clear','compact')),
+  source TEXT NOT NULL CHECK (source IN ('startup','resume','clear','compact','fork')),
   bytes INTEGER NOT NULL CHECK (bytes >= 0),
   lines INTEGER NOT NULL CHECK (lines >= 0),
   cursors INTEGER NOT NULL CHECK (cursors >= 0),

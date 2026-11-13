@@ -27,11 +27,13 @@ export const sessionContextModules: SessionContextModule[] = [
   module('orchestrator/src/session/brief-injection.ts', [
     'bun:sqlite',
     '../../../shared/record/schema.ts',
+    '../../../shared/record/schema-session.ts',
     '../../../shared/record-id.ts',
     '../database/db.ts',
     '../record/machine-identity.ts',
     '../record/outbox-enqueue.ts',
     '../record/outbox-sanitize.ts',
+    '../workflow/task-flow-store.ts',
     './session-start-context-limit.ts',
   ]),
   module('orchestrator/src/session/session-start-context-limit.ts', [
