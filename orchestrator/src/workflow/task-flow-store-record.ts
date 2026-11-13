@@ -8,6 +8,7 @@ import type { RecordRequestDestination } from '../record/record-api-client-paths
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import type { RecordIdentity } from '../record/record-auth.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
+import { decideSingleRecordSpace } from '../record/record-space-cardinality.ts'
 import {
   type HostedTaskFlow,
   type HostedTaskFlowStageById,
@@ -218,16 +219,21 @@ class RecordTaskFlowReadStore {
     const answers = await Promise.all(
       destinations.map(async (destination) => ({ destination, value: await read(destination) })),
     )
-    const found = answers.filter(
-      (answer): answer is typeof answer & { value: T } => answer.value !== null,
+    const decision = decideSingleRecordSpace(
+      answers.map(({ destination, value }) => ({
+        spaceId: destination.destinationSpaceId!,
+        found: value !== null,
+      })),
     )
-    if (found.length > 1)
-      throw new Error(
-        `hosted task-flow record exists in more than one record space: ${found
-          .map(({ destination }) => destination.destinationSpaceId)
-          .join(', ')}`,
-      )
-    return found[0]?.value ?? null
+    if ('refused' in decision) throw new Error(decision.refused)
+    return decision.index === null ? null : answers[decision.index]!.value
+  }
+
+  private readText(recordId: string) {
+    const read = this.client.readTaskFlowText
+    if (!read)
+      throw new Error('record API predates task-flow text reads; release hosted-api, then retry')
+    return this.readEveryDestination((destination) => read(recordId, destination))
   }
 
   private async list(selector: StageListSelector, project?: string): Promise<ListedItem[]> {
@@ -448,10 +454,7 @@ class RecordTaskFlowReadStore {
     return (result?.stage.stepTexts ?? []).map(textRow)
   }
   async textByRecordId(recordId: string) {
-    const read = this.client.readTaskFlowText
-    const result = read
-      ? await this.readEveryDestination((destination) => read(recordId, destination))
-      : null
+    const result = await this.readText(recordId)
     return result
       ? {
           cursor_record_id: result.text.stageRecordId,
@@ -462,10 +465,7 @@ class RecordTaskFlowReadStore {
       : null
   }
   async textAttachmentByRecordId(recordId: string) {
-    const read = this.client.readTaskFlowText
-    const result = read
-      ? await this.readEveryDestination((destination) => read(recordId, destination))
-      : null
+    const result = await this.readText(recordId)
     return result ? textRow(result.text) : null
   }
   async textRecordIdsForStage(stageRecordId: string) {
@@ -494,10 +494,7 @@ class RecordTaskFlowReadStore {
       }))
   }
   async liveTextAttachment(recordId: string) {
-    const read = this.client.readTaskFlowText
-    const result = read
-      ? await this.readEveryDestination((destination) => read(recordId, destination))
-      : null
+    const result = await this.readText(recordId)
     return result
       ? {
           cursor: result.stage.number,
@@ -507,10 +504,7 @@ class RecordTaskFlowReadStore {
       : null
   }
   async copiedTextReference(recordId: string) {
-    const read = this.client.readTaskFlowText
-    const result = read
-      ? await this.readEveryDestination((destination) => read(recordId, destination))
-      : null
+    const result = await this.readText(recordId)
     return result?.copy?.taskDocumentReference ?? null
   }
   async openObligationRecordIds(stageRecordId: string) {
@@ -526,9 +520,11 @@ class RecordTaskFlowReadStore {
   }
   async obligationByRecordId(recordId: string): Promise<TaskFlowObligationRow | null> {
     const read = this.client.readTaskFlowObligation
-    const result = read
-      ? await this.readEveryDestination((destination) => read(recordId, destination))
-      : null
+    if (!read)
+      throw new Error(
+        'record API predates task-flow obligation reads; release hosted-api, then retry',
+      )
+    const result = await this.readEveryDestination((destination) => read(recordId, destination))
     if (!result) return null
     const {
       stepOrdinal: _stepOrdinal,

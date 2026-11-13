@@ -12,6 +12,7 @@ import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { closeQuestions } from '../run/question-close.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
+import { refreshStaleMirror } from './task-flow-mirror-refresh.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import { refuseTerminalCursor } from './workflow-cursor-result.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
@@ -94,12 +95,27 @@ export async function abandonWorkflowCursor(
     taskFlowWriteTarget(row.project, d),
     context.taskFlowClient,
   )
-  return writeTransaction(() => {
+  const result = writeTransaction(() => {
     if (row.state === 'awaiting-ruling')
       closeOpenWorkflowQuestion(row.record_id, 'abandoned', at, d)
-    taskFlowLocalStore(d).write('abandon', payload, hosted)
-    return `${cursorName(row.workflow_slug, row.mode_slug, row.workflow_key, true)} was abandoned at step ${row.ordinal + 1} ${row.step_slug}.`
+    const mirror = taskFlowLocalStore(d).write('abandon', payload, hosted).mirror[row.record_id]
+    return {
+      text: `${cursorName(row.workflow_slug, row.mode_slug, row.workflow_key, true)} was abandoned at step ${row.ordinal + 1} ${row.step_slug}.`,
+      mirror,
+    }
   }, d)
+  if (result.mirror === 'refresh')
+    await refreshStaleMirror(
+      d,
+      {
+        recordId: row.record_id,
+        project: row.project,
+        taskKey: row.workflow_key,
+        taskRecordId: row.task_record_id,
+      },
+      context.taskFlowClient,
+    )
+  return result.text
 }
 
 function abandonedCursorTrail(

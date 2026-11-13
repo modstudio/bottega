@@ -11,8 +11,8 @@ import {
 import type { TaskFlowIntentInput } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import type { AutonomyResolution, LiveCursorAutonomy } from './autonomy.ts'
-import { readThroughTaskFlow } from './task-flow-read-through.ts'
-import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
+import { refreshStaleMirror } from './task-flow-mirror-refresh.ts'
+import { taskFlowLocalStore } from './task-flow-store.ts'
 import { type CommitCountPort, readCommitsPastLanding } from './workflow-compose-branch.ts'
 import { resolveCursorArguments, workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
@@ -255,14 +255,17 @@ async function applyServeTransition(
   if (mirror === 'refresh') {
     Object.assign(
       row,
-      await taskFlowReadStore(database, context.taskFlowClient).stageByRecordId(row.record_id),
-    )
-    if (row.task_record_id)
-      await readThroughTaskFlow(
+      await refreshStaleMirror(
         database,
-        { project: row.project, taskKey: row.workflow_key, taskRecordId: row.task_record_id },
+        {
+          recordId: row.record_id,
+          project: row.project,
+          taskKey: row.workflow_key,
+          taskRecordId: row.task_record_id,
+        },
         context.taskFlowClient,
-      )
+      ),
+    )
   }
 }
 

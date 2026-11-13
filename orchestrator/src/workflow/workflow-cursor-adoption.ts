@@ -11,7 +11,7 @@ import {
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { refuseTaskFlowStageConflictLocal, vacateRetiredWorkflowKeySlot } from './task-flow.ts'
-import { readThroughTaskFlow } from './task-flow-read-through.ts'
+import { refreshStaleMirror } from './task-flow-mirror-refresh.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 
 type AdoptionCursor = {
@@ -117,11 +117,18 @@ export async function adoptWorkflowTask(
       return outcome
     }, d)
     if (mirror === 'refresh') {
-      Object.assign(row, await taskFlowReadStore(d, client).stageByRecordId(row.record_id))
-      await readThroughTaskFlow(
-        d,
-        { project: row.project, taskKey: key, taskRecordId: adoptedTaskId },
-        client,
+      Object.assign(
+        row,
+        await refreshStaleMirror(
+          d,
+          {
+            recordId: row.record_id,
+            project: row.project,
+            taskKey: key,
+            taskRecordId: adoptedTaskId,
+          },
+          client,
+        ),
       )
     }
     return

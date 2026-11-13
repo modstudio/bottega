@@ -238,14 +238,59 @@ test('task linking refreshes a stale adopted stage from the record', async () =>
   expect(
     d
       .query(
-        'SELECT task_record_id,task_flow_record_id,revision FROM workflow_cursor WHERE record_id=?',
+        'SELECT workflow_key,task_record_id,task_flow_record_id,revision FROM workflow_cursor WHERE record_id=?',
       )
       .get(stage.record_id),
   ).toEqual({
+    workflow_key: workflowKey,
     task_record_id: taskRecordId,
     task_flow_record_id: hosted.flow.id,
     revision: 8,
   })
+})
+
+test('advance refreshes a stale mirror from the record', async () => {
+  const d = hostedDatabase()
+  const taskFlowClient = composeClient([], { enforcement: 'note-only' })
+  const args = { key: 'DEV-ADVANCE-REFRESH', branch: 'DEV-ADVANCE-work', worktree: '/tmp/advance' }
+  const hostedContext = {
+    ...context,
+    taskRecordId: 'task-DEV-ADVANCE-REFRESH',
+    taskFlowClient,
+  }
+  const opened = await composeWorkflowWithCursor(
+    'flow',
+    'fixture',
+    'default',
+    args,
+    hostedContext,
+    d,
+    {},
+    {},
+  )
+  const stage = d
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM workflow_cursor WHERE number=?')
+    .get(opened.cursor!.id)!
+  d.query("UPDATE workflow_cursor SET revision=6,enforcement='note-only' WHERE record_id=?").run(
+    stage.record_id,
+  )
+
+  await selectAndNextWorkflowStep(
+    'flow',
+    'fixture',
+    'default',
+    args,
+    'advance',
+    hostedContext,
+    d,
+    {},
+    testPorts,
+  )
+
+  const hosted = await taskFlowClient.readTaskFlowStage!(stage.record_id, { destinationSpaceId })
+  expect(
+    d.query('SELECT revision,state FROM workflow_cursor WHERE record_id=?').get(stage.record_id),
+  ).toEqual({ revision: hosted!.stage.revision, state: hosted!.stage.state })
 })
 
 test('hosted compose prints and resolves the per-project number across two projects', async () => {

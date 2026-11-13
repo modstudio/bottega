@@ -15,8 +15,8 @@ import {
 import { upsertWorkflowQuestion } from '../run/question-mutation.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
 import { decideWorkflowTakeover, workflowTakeoverNotice } from './task-flow-decision.ts'
-import { readThroughTaskFlow } from './task-flow-read-through.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
+import { refreshStaleMirror } from './task-flow-mirror-refresh.ts'
 import {
   type CommitCountPort,
   readCommitsPastLanding,
@@ -238,21 +238,17 @@ export async function composeWorkflowWithCursor(
       row = store.stageByRecordId(existing.record_id) as CursorRow
       return result.mirror[existing.record_id]
     }, d)
-    if (mirror === 'refresh') {
-      row = (await taskFlowReadStore(d, context.taskFlowClient).stageByRecordId(
-        existing.record_id,
+    if (mirror === 'refresh')
+      row = (await refreshStaleMirror(
+        d,
+        {
+          recordId: existing.record_id,
+          project: existing.project,
+          taskKey: existing.workflow_key,
+          taskRecordId: existing.task_record_id,
+        },
+        context.taskFlowClient,
       )) as CursorRow
-      if (existing.task_record_id)
-        await readThroughTaskFlow(
-          d,
-          {
-            project: existing.project,
-            taskKey: existing.workflow_key,
-            taskRecordId: existing.task_record_id,
-          },
-          context.taskFlowClient,
-        )
-    }
   } else row = await insertWorkflowCursor(composition, context, d, autonomy, commitCount)
   return {
     ...cursorComposition(row, d, live),
@@ -568,13 +564,14 @@ async function persistWorkflowAdvance(
     taskFlowWriteTarget(row.project, d),
     context.taskFlowClient,
   )
-  applyWorkflowAdvanceLocally({
+  await applyWorkflowAdvanceLocally({
     row,
     database: d,
     at,
     selfRulingPlan,
     payload,
     hosted,
+    client: context.taskFlowClient,
   })
 }
 
@@ -626,21 +623,33 @@ function advanceRecordRows(
   }
 }
 
-function applyWorkflowAdvanceLocally(input: {
+async function applyWorkflowAdvanceLocally(input: {
   row: CursorRow
   database: Database
   at: string
   selfRulingPlan?: Parameters<typeof recordWorkflowSelfRuling>[0]
   payload: TaskFlowIntentInput<'advance'>
   hosted: TaskFlowIntentResult<'advance'> | null
-}): void {
+  client: WorkflowCursorContext['taskFlowClient']
+}): Promise<void> {
   const { row, database: d, at, selfRulingPlan, payload, hosted } = input
-  writeTransaction(() => {
+  const mirror = writeTransaction(() => {
     if (row.state === 'awaiting-ruling')
       closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, d)
     if (selfRulingPlan) recordWorkflowSelfRuling(selfRulingPlan, d)
-    taskFlowLocalStore(d).write('advance', payload, hosted)
+    return taskFlowLocalStore(d).write('advance', payload, hosted).mirror[row.record_id]
   }, d)
+  if (mirror === 'refresh')
+    await refreshStaleMirror(
+      d,
+      {
+        recordId: row.record_id,
+        project: row.project,
+        taskKey: row.workflow_key,
+        taskRecordId: row.task_record_id,
+      },
+      input.client,
+    )
 }
 
 async function adoptAndRefreshWorkflowTask(
@@ -875,9 +884,9 @@ async function awaitWorkflowRulingImpl(
     taskFlowWriteTarget(row.project, d),
     context.taskFlowClient,
   )
-  return writeTransaction(() => {
+  const result = writeTransaction(() => {
     const store = taskFlowLocalStore(d)
-    store.write('await-ruling', payload, hosted)
+    const mirror = store.write('await-ruling', payload, hosted).mirror[row.record_id]
     const recordedQuestion = upsertWorkflowQuestion(
       {
         cursorId: row.record_id,
@@ -900,8 +909,21 @@ async function awaitWorkflowRulingImpl(
         questionId: recordedQuestion.number,
       },
       cursorId: row.record_id,
+      mirror,
     }
   }, d)
+  if (result.mirror === 'refresh')
+    await refreshStaleMirror(
+      d,
+      {
+        recordId: row.record_id,
+        project: row.project,
+        taskKey: row.workflow_key,
+        taskRecordId: row.task_record_id,
+      },
+      context.taskFlowClient,
+    )
+  return result
 }
 
 export async function awaitWorkflowRuling(

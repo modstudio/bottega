@@ -13,6 +13,12 @@ const module = (file: string, allowed: string[]): WorkflowFloorModule => ({
 })
 
 export const workflowFloorModules: WorkflowFloorModule[] = [
+  module('orchestrator/src/workflow/task-flow-mirror-refresh.ts', [
+    'bun:sqlite',
+    '../record/record-api-client-task-flow.ts',
+    './task-flow-read-through.ts',
+    './task-flow-store.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-arguments.ts', ['./workflow-definition.ts']),
   module('orchestrator/src/workflow/workflow-cursor-transition.ts', []),
   module('orchestrator/src/workflow/workflow-cursor-trail.ts', []),
@@ -44,6 +50,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './task-flow.ts',
     './task-flow-read-through.ts',
     './task-flow-store.ts',
+    './task-flow-mirror-refresh.ts',
   ]),
   module('orchestrator/src/workflow/workflow-keyless-close.ts', [
     'bun:sqlite',
@@ -360,6 +367,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-text.ts',
     './task-flow.ts',
     './task-flow-read-through.ts',
+    './task-flow-mirror-refresh.ts',
     './task-flow-store.ts',
     './task-flow-decision.ts',
     './workflow-self-ruling.ts',
@@ -373,6 +381,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../run/question-close.ts',
     '../run/question-open.ts',
     './task-flow.ts',
+    './task-flow-mirror-refresh.ts',
     './task-flow-store.ts',
     './workflow-cursor-format.ts',
     './workflow-cursor-result.ts',
