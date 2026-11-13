@@ -157,7 +157,7 @@ remove one context item
 
 ## bottega agent context set
 
-**Synopsis:** `bottega agent context set <body> [--task <key>] [--session <id>] [--kind <kind>] [--source <source>] [--objection <text>] [--id <id>] [--expected-revision <revision>]`
+**Synopsis:** `bottega agent context set <body> [--task <key>] [--session <id>] [--kind <kind>] [--source <source>] [--id <id>] [--expected-revision <revision>]`
 
 create or revise one context item
 
@@ -165,9 +165,8 @@ create or revise one context item
 
 - `--task <key>`: select task holder
 - `--session <id>`: select session holder
-- `--kind <kind>`: one of ruling, position, fact, open-question, pointer, next-action
+- `--kind <kind>`: ruling — Shmuel Barkin's decision; position — an agent's decision; fact — something learned that changes what the next agent does; pointer — where a durable artifact lives; next-action — the holder's next action; open-question — a question awaiting an answer
 - `--source <source>`: item source
-- `--objection <text>`: objection overcome by a ruling
 - `--id <id>`: stable item id
 - `--expected-revision <revision>`: compare-and-set revision
 

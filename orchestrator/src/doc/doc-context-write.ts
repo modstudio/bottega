@@ -128,11 +128,6 @@ export function contextItemShapeRefusal(item: ContextItem): string | null {
   return contextItemLengthRefusal(item)
 }
 
-/** The legacy stored shape used by restore and import, without new write-time line rules. */
-export function storedContextItemShapeRefusal(item: ContextItem): string | null {
-  return contextItemMetadataRefusal(item) ?? contextItemLengthRefusal(item)
-}
-
 function contextItemMetadataRefusal(item: ContextItem): string | null {
   const address = `context item ${item.id}`
   if (!item.source.trim()) return `${address} refused: every item requires a non-empty source`

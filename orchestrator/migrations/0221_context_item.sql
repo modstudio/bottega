@@ -40,6 +40,7 @@ FROM parsed
 WHERE true
 ON CONFLICT(holder_kind,holder_id,slug) DO NOTHING;
 DELETE FROM doc_revision WHERE scope='context';
+DELETE FROM doc_related_subject WHERE doc_record_id IN (SELECT record_id FROM doc WHERE scope='context');
 DELETE FROM doc WHERE scope='context';
 --> statement-breakpoint
 CREATE TABLE doc_context_contract_snapshot AS SELECT * FROM doc;

@@ -476,9 +476,11 @@ DELETE /v1/config/wraps/:recipientKeyId
 PUT /v1/config/machine-keys/:keyId
 POST /v1/config/machine-keys/:keyId/revoke
 PUT /v1/docs
+PUT /v1/context-items
 POST /v1/docs/import
 POST /v1/docs/canon/import
 DELETE /v1/docs/:id
+DELETE /v1/context-items/:id
 POST /v1/docs/:id/consume
 POST /v1/docs/:id/restore
 PUT /v1/runs/:id/score

@@ -96,6 +96,11 @@ function registerCensus(context: Command): void {
     })
 }
 
+const holderOptions = (command: Command) =>
+  command
+    .option('--task <key>', 'select task holder')
+    .option('--session <id>', 'select session holder')
+
 export function register(program: Command): void {
   const context = program
     .command('context')
@@ -116,10 +121,6 @@ export function register(program: Command): void {
       if (!options.cwd) throw new Error('pass --cwd or use context set|show|drop|clear')
       return sessionContextCommand({ cwd: options.cwd, json: Boolean(options.json) }, { log })
     })
-  const holderOptions = (command: Command) =>
-    command
-      .option('--task <key>', 'select task holder')
-      .option('--session <id>', 'select session holder')
   holderOptions(context.command('show').description('show stored context items'))
     .option('--json', 'write JSON')
     .action(async (options) => {

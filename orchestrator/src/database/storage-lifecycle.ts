@@ -18,6 +18,7 @@ export const orchestratorTableLifecycles: readonly TableLifecycle[] = [
       'board_claim',
       'board_message_tag',
       'board_receipt',
+      'context_item',
       'doc',
       'doc_related_subject',
       'doc_revision',

@@ -1,17 +1,15 @@
 // concern: document removal
-/** Owns the single document removal path and its session-lifecycle-only entry. */
+/** Owns the single document removal path. */
 import { collectCanonLintInput as productionCanonLintInput } from '../canon/canon-files.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
 import type { DocWriteContext } from './doc-article-fields.ts'
 import { contextTaskOwner, hostedDocClient } from './doc-hosted-client.ts'
-import { getContextItem, listContextItems, removeLocalContextItem } from './context-item-store.ts'
-import { hostedContextItemClient } from './context-item-hosted-client.ts'
 import type { Doc } from './doc-read-store.ts'
 import { assertLocalStoredReferenceWrite } from './doc-reference-write.ts'
 import { assertLocalRevisionWrite } from './doc-revision-store.ts'
 import { type ContextDropTarget, docWriteProjectName } from './doc-write-allowed.ts'
-import { hostedDocWriteIdentity, resolvedDocWriteIdentity } from './doc-write-identity.ts'
+import { hostedDocWriteIdentity, type resolvedDocWriteIdentity } from './doc-write-identity.ts'
 import { assertLocalDocRemovalAllowed, localParentRecordId } from './local-doc-tree-service.ts'
 import { commitDocRemove, executeLocalDocRemove } from './local-doc-write.ts'
 
@@ -101,54 +99,4 @@ export async function removeStoredDoc(
       })
     },
   })
-}
-
-/** Session teardown bypasses only the ordinary context-drop ownership guard. */
-export async function removeContextItemForLifecycle(
-  holder: string,
-  slug: string,
-  context: DocWriteContext,
-): Promise<boolean> {
-  if (!holder.startsWith('session:')) {
-    throw new Error('lifecycle context removal requires a session: subject')
-  }
-  const item = getContextItem(holder, slug)
-  if (!item) return false
-  return applyRecordWriteAuthority({
-    local: () => removeLocalContextItem(holder, slug, context.expectedRevision),
-    hosted: async () => {
-      const client = await hostedContextItemClient(holder)
-      const result = await client.remove(item.recordId, {
-        expectedRevision: context.expectedRevision,
-      })
-      return result.removed ? removeLocalContextItem(holder, slug, item.revision) : false
-    },
-  })
-}
-
-/** Task teardown removes a complete holder without applying single-item required-kind guards. */
-export async function removeTaskContextHolder(
-  holder: string,
-  _context: DocWriteContext,
-): Promise<number> {
-  if (!holder.startsWith('task:')) throw new Error('task context clear requires a task: subject')
-  let removed = 0
-  const items = listContextItems(holder)
-  for (const item of items) {
-    if (
-      await applyRecordWriteAuthority({
-        local: () => removeLocalContextItem(holder, item.id, item.revision),
-        hosted: async () => {
-          const client = await hostedContextItemClient(
-            holder,
-            contextTaskOwner(_context.contextTask),
-          )
-          const result = await client.remove(item.recordId, { expectedRevision: item.revision })
-          return result.removed ? removeLocalContextItem(holder, item.id, item.revision) : false
-        },
-      })
-    )
-      removed++
-  }
-  return removed
 }

@@ -47,7 +47,6 @@ import {
 } from './record-catalogue-import.ts'
 import { readRecordChangeFeed } from './record-change-feed.ts'
 import { createRecordChangeWakeSource } from './record-change-wake.ts'
-import { deleteRecordContextItem, upsertRecordContextItem } from './record-context-items.ts'
 import {
   addDataKeyWraps,
   claimMachineKey,
@@ -71,6 +70,7 @@ import {
   revokeMachineKey,
   withdrawSpaceConfigAccess,
 } from './record-config.ts'
+import { deleteRecordContextItem, upsertRecordContextItem } from './record-context-items.ts'
 import {
   deleteCredentialPreference,
   listCredentialPreferences,

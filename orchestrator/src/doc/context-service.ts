@@ -5,13 +5,6 @@ import { sessionId, writableDb } from '../database/db.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { hostedContextItemClient } from './context-item-hosted-client.ts'
 import {
-  assertContextDropAllowed,
-  assertContextSetAllowed,
-  contextProfileForHolder,
-  resolvedPointerTarget,
-  resolveContextTask,
-} from './context-write-adapter.ts'
-import {
   getContextItem,
   listContextHolders,
   listContextItems,
@@ -20,12 +13,19 @@ import {
   setLocalContextItem,
   splitContextHolder,
 } from './context-item-store.ts'
-import { contextTaskOwner } from './doc-hosted-client.ts'
+import {
+  assertContextDropAllowed,
+  assertContextSetAllowed,
+  contextProfileForHolder,
+  resolveContextTask,
+  resolvedPointerTarget,
+} from './context-write-adapter.ts'
 import {
   type ContextItemKind,
   type ContextTaskIdentity,
   missingContextKinds,
 } from './doc-context-write.ts'
+import { contextTaskOwner } from './doc-hosted-client.ts'
 import { taskContextHolder } from './doc-subjects.ts'
 
 export type ContextHolderSelection = { task?: string; session?: string }

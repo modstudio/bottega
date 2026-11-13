@@ -1,14 +1,14 @@
+import { getContextItem } from '../../src/doc/context-item-store.ts'
+import { setContextItem } from '../../src/doc/context-service.ts'
+import type { ContextItemKind } from '../../src/doc/doc-context-write.ts'
 import {
   consumeDoc as consumeDocument,
   removeDoc as deleteDoc,
   importDocs as readDocs,
   setDoc as writeDoc,
 } from '../../src/doc/docs.ts'
-import { getContextItem } from '../../src/doc/context-item-store.ts'
-import { setContextItem } from '../../src/doc/context-service.ts'
-import type { ContextItemKind } from '../../src/doc/doc-context-write.ts'
 
-export type TestDocInput = Parameters<typeof writeDoc>[0]
+type TestDocInput = Parameters<typeof writeDoc>[0]
 type TestDocWriteInput = Omit<TestDocInput, 'reason' | 'scope'> & {
   scope: string
   reason?: string

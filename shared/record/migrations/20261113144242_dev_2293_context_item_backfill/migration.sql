@@ -1,4 +1,8 @@
 -- DEV-2293: migrate hosted context documents before the following contract migration.
+ALTER TABLE "doc" NO FORCE ROW LEVEL SECURITY;
+--> statement-breakpoint
+ALTER TABLE "doc_revision" NO FORCE ROW LEVEL SECURITY;
+--> statement-breakpoint
 WITH parsed AS (
   SELECT
     id,
@@ -39,4 +43,8 @@ DELETE FROM doc_revision WHERE scope = 'context';
 --> statement-breakpoint
 DELETE FROM doc WHERE scope = 'context';
 --> statement-breakpoint
-ALTER TABLE context_item FORCE ROW LEVEL SECURITY;
+ALTER TABLE "doc_revision" FORCE ROW LEVEL SECURITY;
+--> statement-breakpoint
+ALTER TABLE "doc" FORCE ROW LEVEL SECURITY;
+--> statement-breakpoint
+ALTER TABLE "context_item" FORCE ROW LEVEL SECURITY;

@@ -2,11 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { upsertProject } from '../project/projects.ts'
-import {
-  getDocForAudienceStore,
-  getDocStore,
-  listDocMetadataStore,
-} from './doc-read-store.ts'
+import { getDocForAudienceStore, getDocStore, listDocMetadataStore } from './doc-read-store.ts'
 
 describe('document read store', () => {
   test('omitted subjects resolve only a unique slug in the scope', async () => {

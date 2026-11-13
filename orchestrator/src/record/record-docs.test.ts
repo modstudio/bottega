@@ -81,4 +81,3 @@ test('hosted import refuses an unknown customer command and accepts a known one'
     ),
   ).not.toThrow()
 })
-

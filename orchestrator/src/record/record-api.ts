@@ -17,10 +17,10 @@ import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payl
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { registerRecordAccessRoutes, registerRecordCors } from './record-api-access.ts'
 import type { RecordBoardDeps } from './record-api-board.ts'
-import { registerRecordContextItemRoutes } from './record-api-context-items.ts'
 import { type RecordChangeRouteDeps, registerRecordChangeRoute } from './record-api-changes.ts'
 import type { RecordConfigRouteDeps } from './record-api-config-contract.ts'
 import { configSecretPutBody } from './record-api-config-schema.ts'
+import { registerRecordContextItemRoutes } from './record-api-context-items.ts'
 import {
   type RecordCredentialRouteDeps,
   registerRecordCredentialRoutes,
@@ -69,9 +69,9 @@ import {
 } from './record-api-write-telemetry.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import type { RecordCanonImportInput, RecordCanonImportResult } from './record-canon-import.ts'
-import type { RecordContextItemInput } from './record-context-items.ts'
 import type { ConfigTenant } from './record-config.ts'
 import { CONFIG_SCOPES } from './record-config.ts'
+import type { RecordContextItemInput } from './record-context-items.ts'
 import {
   decodeRecordCursor,
   encodeRecordCursor,
@@ -342,7 +342,6 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   })
   registerPublicDocRoutes(app, deps)
   registerRecordIdentityMiddleware(app, deps)
-  // The report route must follow the identity middleware that authenticates it.
   registerRecordWriteTelemetry(app, writeTelemetryDeps(deps))
   registerRecordRequestSpace(app)
   registerRecordIdentityRoutes(app, deps)
@@ -580,7 +579,6 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     }
   })
   registerRecordCredentialRoutes(app, deps, { scope, noSpace })
-  // The client identifies its machine key with the recipientKeyId query parameter.
   app.get('/v1/config/data-keys/current', async (context) => {
     const active = scope(context)
     if (!active) return noSpace(context)

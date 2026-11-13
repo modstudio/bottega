@@ -977,9 +977,7 @@ export function createMemoryRecordApiClient(
     async upsertProject(input) {
       return { id: newRecordId(), name: input.name }
     },
-    async listProjects() {
-      return []
-    },
+    listProjects: async () => [],
     async retireProject(name) {
       return { name }
     },

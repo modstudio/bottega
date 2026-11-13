@@ -205,6 +205,12 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
   ...writeEntries(
     'orchestrator',
     'recordApiClient',
+    ['context_item'],
+    ['deleteContextItem', 'upsertContextItem'],
+  ),
+  ...writeEntries(
+    'orchestrator',
+    'recordApiClient',
     ['doc', 'doc_revision'],
     [
       'consumeDoc',

@@ -72,6 +72,20 @@ async function pointerRefusal(value: string, database: Database): Promise<string
   }
 }
 
+async function resolveTaskDocumentPointer(pointer: string): Promise<string> {
+  const key = pointer.slice(0, pointer.indexOf('/'))
+  try {
+    const docs = await productionWorkflowTextDocumentPorts.list(key, PLATFORM_SLUG)
+    if (docs.some((doc) => doc.reference === pointer)) return pointer
+    throw new Error(`task document ${pointer} does not resolve`)
+  } catch (error) {
+    if ((error as Error).message === `task document ${pointer} does not resolve`) throw error
+    throw new Error(
+      `task documents of ${key} could not be read (${(error as Error).message}); retry once the task store answers`,
+    )
+  }
+}
+
 /** Resolve the durable identity stored beside a pointer after the write gate accepts it. */
 export async function resolvedPointerTarget(
   value: string,
@@ -80,19 +94,7 @@ export async function resolvedPointerTarget(
   const pointer = value.trim()
   if (!pointer) throw new Error('pointer must not be empty')
   if (isScratchLocation(pointer)) throw new Error('scratch paths are not durable pointers')
-  if (/^[A-Z][A-Z0-9]*-\d+\/\d+$/.test(pointer)) {
-    const key = pointer.slice(0, pointer.indexOf('/'))
-    try {
-      const docs = await productionWorkflowTextDocumentPorts.list(key, PLATFORM_SLUG)
-      if (docs.some((doc) => doc.reference === pointer)) return pointer
-      throw new Error(`task document ${pointer} does not resolve`)
-    } catch (error) {
-      if ((error as Error).message === `task document ${pointer} does not resolve`) throw error
-      throw new Error(
-        `task documents of ${key} could not be read (${(error as Error).message}); retry once the task store answers`,
-      )
-    }
-  }
+  if (/^[A-Z][A-Z0-9]*-\d+\/\d+$/.test(pointer)) return resolveTaskDocumentPointer(pointer)
   const stored = storedPointerRefusal(pointer, database)
   if (stored !== undefined) {
     if (stored) throw new Error(stored)
@@ -226,7 +228,7 @@ async function relatedContextTasks(input: {
   return related
 }
 
-export async function contextSetRefusal(
+async function contextSetRefusal(
   input: { holder: string; item: ContextItem; contextTask?: ContextTask },
   database: Database = db(),
   ports: ContextFactsPorts = defaultContextFactsPorts(),
