@@ -79,11 +79,7 @@ export function contextWriteRefusal(item: ContextItem, facts: ContextWriteFacts)
   }
   const shape = contextItemShapeRefusal(item)
   if (shape) return shape
-  if (
-    facts.profile === 'session' &&
-    facts.claimedTask &&
-    item.kind === 'ruling'
-  ) {
+  if (facts.profile === 'session' && facts.claimedTask && item.kind === 'ruling') {
     return `${address} refused: task-level ${item.kind} written to a session; write it with ${PLATFORM_SLUG} agent context set --task ${facts.claimedTask}`
   }
   if (item.kind === 'pointer' && facts.pointerRefusal) {

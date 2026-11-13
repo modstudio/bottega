@@ -8,13 +8,11 @@ agents, jobs, and routing
 - [bottega agent add](#bottega-agent-add)
 - [bottega agent context](#bottega-agent-context)
 - [bottega agent context brief](#bottega-agent-context-brief)
-- [bottega agent context census](#bottega-agent-context-census)
 - [bottega agent context clear](#bottega-agent-context-clear)
 - [bottega agent context drop](#bottega-agent-context-drop)
 - [bottega agent context record-injection](#bottega-agent-context-record-injection)
 - [bottega agent context set](#bottega-agent-context-set)
 - [bottega agent context show](#bottega-agent-context-show)
-- [bottega agent context stale](#bottega-agent-context-stale)
 - [bottega agent context worked](#bottega-agent-context-worked)
 - [bottega agent contract](#bottega-agent-contract)
 - [bottega agent cost-backtest](#bottega-agent-cost-backtest)
@@ -86,13 +84,11 @@ manage stored architect context or resolve checkout context
 
 - [bottega agent](./agent.md#bottega-agent)
 - [bottega agent context brief](./agent.md#bottega-agent-context-brief)
-- [bottega agent context census](./agent.md#bottega-agent-context-census)
 - [bottega agent context clear](./agent.md#bottega-agent-context-clear)
 - [bottega agent context drop](./agent.md#bottega-agent-context-drop)
 - [bottega agent context record-injection](./agent.md#bottega-agent-context-record-injection)
 - [bottega agent context set](./agent.md#bottega-agent-context-set)
 - [bottega agent context show](./agent.md#bottega-agent-context-show)
-- [bottega agent context stale](./agent.md#bottega-agent-context-stale)
 - [bottega agent context worked](./agent.md#bottega-agent-context-worked)
 
 ## bottega agent context brief
@@ -104,22 +100,6 @@ show the compact working context for an architect session
 ### Options
 
 - `--session <id>`: select architect session
-- `--json`: write JSON
-
-### Related
-
-- [bottega agent context](./agent.md#bottega-agent-context)
-
-## bottega agent context census
-
-**Synopsis:** `bottega agent context census [--since <date>] [--project <name>] [--json]`
-
-report next-action coverage for every architect session in a time window
-
-### Options
-
-- `--since <date>`: include sessions and work at or after this ISO date
-- `--project <name>`: select one registered project
 - `--json`: write JSON
 
 ### Related
@@ -185,7 +165,7 @@ create or revise one context item
 
 - `--task <key>`: select task holder
 - `--session <id>`: select session holder
-- `--kind <kind>`: ruling — Shmuel Barkin's decision; position — an agent's decision; fact — something learned that changes what the next agent does; pointer — where a durable artifact lives; next-action — the holder's next action; open-question — a question awaiting an answer
+- `--kind <kind>`: ruling — Shmuel Barkin's decision; position — an agent's decision; fact — something learned that changes what the next agent does; pointer — where a durable artifact lives
 - `--source <source>`: item source
 - `--id <id>`: stable item id
 - `--expected-revision <revision>`: compare-and-set revision
@@ -204,21 +184,6 @@ show stored context items
 
 - `--task <key>`: select task holder
 - `--session <id>`: select session holder
-- `--json`: write JSON
-
-### Related
-
-- [bottega agent context](./agent.md#bottega-agent-context)
-
-## bottega agent context stale
-
-**Synopsis:** `bottega agent context stale [--session <id>] [--json]`
-
-list task holders with work in the last day after their newest next-action revision
-
-### Options
-
-- `--session <id>`: select architect session
 - `--json`: write JSON
 
 ### Related

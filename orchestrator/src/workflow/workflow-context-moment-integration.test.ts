@@ -155,7 +155,7 @@ test('rule and self-ruling write durable decisions through command seams', async
   expect(items.get(`ruling-q${question}`)).toEqual({ kind: 'ruling', body: 'Proceed.' })
 
   await command('next', '--note', 'closed after the operator ruling')
-  expect(items).toHaveLength(1)
+  expect(items.size).toBe(1)
 
   await command(
     'next',
@@ -170,7 +170,7 @@ test('rule and self-ruling write durable decisions through command seams', async
     ([id, item]) => id.startsWith('position-q') && item.body === 'The acceptance criteria are met.',
   )
   expect(selfRulingPosition).toBeDefined()
-  expect(items).toHaveLength(2)
+  expect(items.size).toBe(2)
 
   await workflowCommand(
     ['workflow', 'next', slug, '--cursor', String(cursor), '--note', 'finished triage'],

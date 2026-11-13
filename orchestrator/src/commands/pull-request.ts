@@ -16,7 +16,7 @@ import {
 import type { PullRequestCiCounts } from '../pull-request/pr-ci-record.ts'
 import { recordPullRequestCi } from '../pull-request/pr-ci-record.ts'
 import { POST_LANDING_REPORTED_EXIT_CODE } from '../pull-request/pr-landed-exit-codes.ts'
-import { mergePullRequest, type PullRequestMergeCommandOutcome } from '../pull-request/pr-merge.ts'
+import { mergePullRequest } from '../pull-request/pr-merge.ts'
 import { runPullRequestPostLanding } from '../pull-request/pr-post-landing.ts'
 import {
   POST_LANDING_FLAG,
@@ -173,7 +173,7 @@ const pullRequestPostLandingCommandPorts: PullRequestPostLandingCommandPorts = {
   log,
 }
 
-export async function runPullRequestPostLandingCommand(
+async function runPullRequestPostLandingCommand(
   target: string,
   database: ReturnType<typeof writableDb>,
   overrides: Partial<PullRequestPostLandingCommandPorts> = {},
@@ -210,7 +210,6 @@ export async function mergePullRequestCommand(
     return
   }
   const cwd = resolveReviewCommandCwd(options.cwd)
-  const database = writableDb()
   const outcome = await mergePullRequest(
     target,
     cwd,

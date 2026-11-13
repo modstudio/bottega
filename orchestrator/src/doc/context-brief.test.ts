@@ -1,5 +1,5 @@
-import { expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
+import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
@@ -7,6 +7,7 @@ import { upsertProject } from '../project/projects.ts'
 import {
   type ContextBrief,
   holderSequence,
+  openTaskQuestions,
   renderContextBrief,
   storedBriefHolders,
   workingKeysForBrief,
@@ -36,7 +37,6 @@ test('renders the compact context layout line by line and keeps only item first 
         title: 'Build the brief',
         kind: 'task',
         items: [
-          item('task:DEV-1844/2', 'next', 'next-action', 'implement the renderer'),
           item('task:DEV-1844/2', 'pointer', 'pointer', 'design section 4\nignore this line'),
         ],
       },
@@ -71,7 +71,6 @@ test('renders the compact context layout line by line and keeps only item first 
     '  fact: work autonomously',
     '  open: none',
     'DEV-1844/2 Build the brief',
-    '  next: implement the renderer',
     '  pointer: design section 4',
     '  open: none',
     'DEV-1844 Architect context',
@@ -112,13 +111,7 @@ test('renders one open question for its task holder', () => {
         title: 'Build the brief',
         kind: 'task',
         items: [],
-        openQuestions: database
-          .query<{ number: number; question: string }, [string]>(
-            `SELECT number,question FROM question q
-             WHERE workflow_task_record_id=? AND q.answered_at IS NULL AND q.closed_at IS NULL
-             ORDER BY number`,
-          )
-          .all('task-record'),
+        openQuestions: openTaskQuestions('task-record', database),
       },
     ],
     runs: [],
@@ -128,7 +121,9 @@ test('renders one open question for its task holder', () => {
     autonomy: 'unknown',
   }
 
-  expect(renderContextBrief(brief)).toContain('DEV-1844/2 Build the brief\n  open: Which shape should the brief use?')
+  expect(renderContextBrief(brief)).toContain(
+    'DEV-1844/2 Build the brief\n  open: Which shape should the brief use?',
+  )
   expect(renderContextBrief(brief)).not.toContain('Already answered')
   expect(renderContextBrief(brief)).not.toContain('Closed without an answer')
   database.close()

@@ -45,9 +45,7 @@ export const RECORD_SHAPES = {
   },
 } as const
 
-export const OPEN_QUESTION_MAX_CHARS = RECORD_LIMITS.OPEN_QUESTION_MAX_CHARS
 export const RULING_MAX_CHARS = RECORD_LIMITS.RULING_MAX_CHARS
-export const NEXT_ACTION_MAX_CHARS = RECORD_LIMITS.NEXT_ACTION_MAX_CHARS
 
 export type ContextRecordName = keyof typeof RECORD_SHAPES
 

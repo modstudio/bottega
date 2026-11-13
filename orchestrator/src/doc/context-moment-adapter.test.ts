@@ -60,4 +60,3 @@ test('a context policy refusal has no retry command', async () => {
   ])
   expect(lines[0]).not.toContain('retry:')
 })
-

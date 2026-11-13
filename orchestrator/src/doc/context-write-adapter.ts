@@ -17,8 +17,6 @@ import {
   taskReferenceForProjectKey,
 } from '../workflow/workflow-task-reference.ts'
 
-export { TaskNotFoundError } from '../workflow/workflow-task-reference.ts'
-
 import { productionWorkflowTextDocumentPorts } from '../workflow/workflow-text-copy.ts'
 import { listContextItems } from './context-item-store.ts'
 import {
@@ -33,7 +31,7 @@ import { isScratchLocation } from './doc-resume-write.ts'
 import { isValidContextHolderSubject, taskContextHolder } from './doc-subjects.ts'
 
 export type ContextTask = HubTaskReference
-export class ContextTaskPrefixError extends Error {
+class ContextTaskPrefixError extends Error {
   readonly key: string
   readonly prefix: string
 
@@ -47,12 +45,6 @@ export class ContextTaskPrefixError extends Error {
   }
 }
 
-export function unknownTaskPrefixReport(key: string): { detail: string; remedy: string } {
-  return {
-    detail: `no single project declares the task prefix of ${key}`,
-    remedy: `declare it in one project's keyPrefixes with ${PLATFORM_SLUG} project set <project> --settings`,
-  }
-}
 export type ContextFactsPorts = {
   tasks: HubTaskReader
   task: HubTaskPuller

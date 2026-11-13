@@ -28,12 +28,6 @@ export function taskFlowState(statusCategory: string | null | undefined): TaskFl
   return 'open'
 }
 
-/** Whether a task status belongs to a terminal workflow state. */
-export function taskFlowClosed(statusCategory: string | null | undefined): boolean {
-  const state = taskFlowState(statusCategory)
-  return state === 'done' || state === 'dropped'
-}
-
 export type OpenTaskStage = { cursor: number; workflow: string; mode: string }
 
 export type TaskStageSelection =

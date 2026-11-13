@@ -10,11 +10,13 @@ test('agent context set refuses matching record shapes without writing', async (
   const previous = process.env.CLAUDE_CODE_SESSION_ID
   process.env.CLAUDE_CODE_SESSION_ID = session
   try {
-    const cases = [{
-      kind: 'ruling',
-      body: 'x'.repeat(1501),
-      refusal: 'ruling is 1501 characters; the limit is 1500 (RULING_MAX_CHARS)',
-    }]
+    const cases = [
+      {
+        kind: 'ruling',
+        body: 'x'.repeat(1501),
+        refusal: 'ruling is 1501 characters; the limit is 1500 (RULING_MAX_CHARS)',
+      },
+    ]
     for (const { kind, body, refusal } of cases) {
       const source = kind === 'ruling' ? 'q1' : 'test'
       expect(

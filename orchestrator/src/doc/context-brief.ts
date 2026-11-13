@@ -57,20 +57,14 @@ export type ContextBrief = {
   autonomy: string
 }
 
-const ITEM_ORDER: readonly ContextItemKind[] = [
-  'ruling',
-  'position',
-  'fact',
-  'pointer',
-]
+const ITEM_ORDER: readonly ContextItemKind[] = ['ruling', 'position', 'fact', 'pointer']
 
 const firstLine = (body: string) => body.split(/\r\n|\r|\n/, 1)[0]!.trim()
 const count = (value: number, singular: string, plural = `${singular}s`) =>
   `${value} ${value === 1 ? singular : plural}`
 
 function renderItem(item: ContextItem): string {
-  const label =
-    item.kind === 'ruling' ? `ruling ${item.source}` : item.kind
+  const label = item.kind === 'ruling' ? `ruling ${item.source}` : item.kind
   const body = firstLine(item.body)
   return `  ${label}: ${item.kind === 'ruling' ? JSON.stringify(body) : body}`
 }
@@ -175,12 +169,7 @@ export function storedBriefHolders(
         }
       }
       const { recordId, ...holder } = reference
-      const openQuestions = database
-        .query<{ number: number; question: string }, [string]>(
-          `SELECT number,question FROM question q
-           WHERE workflow_task_record_id=? AND ${questionOpenSql('q')} ORDER BY number`,
-        )
-        .all(recordId)
+      const openQuestions = openTaskQuestions(recordId, database)
       return {
         ...holder,
         items: storedItems(taskContextHolder(recordId), database),
@@ -188,6 +177,19 @@ export function storedBriefHolders(
       }
     })
     .filter((holder) => holder.kind !== 'session' || holder.items.length > 0)
+}
+
+/** Read only unanswered, unclosed questions bound to one task record. */
+export function openTaskQuestions(
+  taskRecordId: string,
+  database: Database,
+): Array<{ number: number; question: string }> {
+  return database
+    .query<{ number: number; question: string }, [string]>(
+      `SELECT number,question FROM question q
+       WHERE workflow_task_record_id=? AND ${questionOpenSql('q')} ORDER BY number`,
+    )
+    .all(taskRecordId)
 }
 
 export function workingKeysForBrief(

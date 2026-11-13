@@ -944,9 +944,7 @@ export async function closeOutSession(
 }
 
 export function formatSessionCloseOut(report: SessionCloseOutReport): string {
-  const lines = [
-    `session close-out ${report.session}${report.dryRun ? ' (dry run)' : ''}`,
-  ]
+  const lines = [`session close-out ${report.session}${report.dryRun ? ' (dry run)' : ''}`]
   for (const item of report.mechanical) lines.push(`mechanical: ${item}`)
   for (const item of report.kept) lines.push(`kept: ${item}`)
   for (const item of report.parked) lines.push(`parked: ${item}`)

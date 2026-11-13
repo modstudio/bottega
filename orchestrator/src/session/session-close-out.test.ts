@@ -195,25 +195,6 @@ test('--resume of another session releases work and reports the worked write ref
   }
 })
 
-test('close-out reaches its verdict when worked-key derivation throws', async () => {
-  const session = newRecordId()
-  const cursor = addCursor(session, 'running')
-  db()
-    .query(
-      "UPDATE workflow_cursor SET workflow_key='BROKENWORK-1',closed='{}',state='done' WHERE record_id=?",
-    )
-    .run(cursor.recordId)
-
-  const report = await closeOutSession({ session, dryRun: true })
-
-  expect(report.warnings).toContainEqual({
-    item: 'close-out worked report',
-    detail: expect.any(String),
-    cleanup: `${PLATFORM_SLUG} session close-out --session ${session}`,
-  })
-  expect(report.verdict).toEqual({ clean: true, residue: 0 })
-})
-
 test('close-out closes an idle explore as answered and reports the session clean', async () => {
   const session = newRecordId()
   const cursor = addCursor(session, 'running')

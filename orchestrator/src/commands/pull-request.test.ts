@@ -129,4 +129,3 @@ test('an incomplete CI record reports only its error and exits unsuccessfully', 
     exitCode: 1,
   })
 })
-

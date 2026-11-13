@@ -20,7 +20,7 @@ export type HubTaskReader = (project: string) => Promise<HubTaskReference[]>
 export type HubTaskPuller = (project: string, key: string) => Promise<HubTaskReference | null>
 export type HubTaskKeyMap = ReadonlyMap<string, readonly HubTaskReference[]>
 
-export class TaskNotFoundError extends Error {
+class TaskNotFoundError extends Error {
   readonly project: string
   readonly key: string
   readonly remedy: string

@@ -308,7 +308,7 @@ describe('operator MCP tools', () => {
     })
   })
 
-  test('answer_questions returns the all-open-questions refusal as a tool error', async () => {
+  test('answer_questions returns the all questions open refusal as a tool error', async () => {
     const runId = addRun({
       agent: 'codex',
       job: 'file-question',
