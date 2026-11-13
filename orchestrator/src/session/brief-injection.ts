@@ -2,10 +2,10 @@
 /** Records one SessionStart context delivery and its open-cursor facts. */
 
 import type { Database } from 'bun:sqlite'
-import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { SESSION_START_SOURCES } from '../../../shared/record/schema-session.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
+import { buildBriefInjectionPayload } from '../record/brief-injection-outbox.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { insertOutboxRow } from '../record/outbox-enqueue.ts'
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
@@ -92,23 +92,10 @@ export async function recordBriefInjection(
         row.keylessIdleMaxMs,
         row.overCap ? 1 : 0,
       )
-    const payload = stringifyOutboxPayload('brief_injection', {
-      id: row.id,
-      spaceId: PLATFORM_SPACE_ID,
-      machineId: (dependencies.machine ?? machineId)(),
-      localId: null,
-      sessionId: row.sessionId,
-      at: row.at,
-      source: row.source,
-      bytes: row.bytes,
-      lines: row.lines,
-      cursors: row.cursors,
-      keylessCursors: row.keylessCursors,
-      keylessIdleMaxMs: row.keylessIdleMaxMs,
-      overCap: row.overCap,
-      createdAt: row.at,
-      updatedAt: row.at,
-    })
+    const payload = stringifyOutboxPayload(
+      'brief_injection',
+      buildBriefInjectionPayload(row, (dependencies.machine ?? machineId)(), row.at),
+    )
     insertOutboxRow(database, {
       recordId: newRecordId(),
       kind: 'brief_injection',

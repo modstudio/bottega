@@ -26,10 +26,10 @@ export const sessionContextModules: SessionContextModule[] = [
   ]),
   module('orchestrator/src/session/brief-injection.ts', [
     'bun:sqlite',
-    '../../../shared/record/schema.ts',
     '../../../shared/record/schema-session.ts',
     '../../../shared/record-id.ts',
     '../database/db.ts',
+    '../record/brief-injection-outbox.ts',
     '../record/machine-identity.ts',
     '../record/outbox-enqueue.ts',
     '../record/outbox-sanitize.ts',

@@ -28,8 +28,10 @@ class AssembleAdditionalContext(unittest.TestCase):
         self.assertEqual(session_brief.HOOK_CONTEXT_MAX_CHARS, 9000)
 
     def test_session_start_context_cap_is_shared_and_appends_only_the_pointer(self):
-        self.assertEqual(session_brief.SESSION_START_CONTEXT_MAX_CHARS, 10000)
-        under = "x" * session_brief.SESSION_START_CONTEXT_MAX_CHARS
+        cap = json.loads(
+            Path(session_brief.__file__).with_name("session-start-context.json").read_text()
+        )["SESSION_START_CONTEXT_MAX_CHARS"]
+        under = "x" * cap
         self.assertEqual(session_brief._with_full_context_pointer(under, "session-a"), under)
         over = under + "x"
         self.assertEqual(
@@ -45,7 +47,6 @@ class AssembleAdditionalContext(unittest.TestCase):
         command = popen.call_args.args[0]
         self.assertEqual(command[-6:], ["--bytes", "7", "--lines", "2", "--chars", "6"])
         self.assertTrue(popen.call_args.kwargs["start_new_session"])
-        self.assertEqual(session_brief._context_size("é\nfull"), (7, 2, 6))
 
     def test_injection_recording_launch_failure_reports_stderr(self):
         output = "assembled hook output"

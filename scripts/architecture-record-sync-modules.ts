@@ -72,7 +72,6 @@ export const recordSyncModules: RecordSyncModule[] = [
     'drizzle-orm/bun-sql',
     '../../../shared/record-timestamp.ts',
     '../../../shared/record/schema-landing.ts',
-    '../../../shared/record/schema-session.ts',
     './outbox-failure.ts',
     './record-evidence-references.ts',
     './record-sync-contract.ts',
