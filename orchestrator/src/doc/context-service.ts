@@ -267,7 +267,7 @@ export async function dropContextItem(
   writableDb()
   const item = getContextItem(holder, input.id)
   if (!item) return { holder, task: task?.key ?? null, id: input.id, removed: false }
-  await assertContextDropAllowed({ item, task: task ?? undefined })
+  assertContextDropAllowed({ item })
   const removed = await applyRecordWriteAuthority({
     local: () => removeLocalContextItem(holder, input.id, input.expectedRevision),
     hosted: async () => {

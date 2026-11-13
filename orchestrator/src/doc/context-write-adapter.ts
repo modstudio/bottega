@@ -280,8 +280,6 @@ export function assertContextDropAllowed({
 }: {
   item: ContextItem
   database?: Database
-  ports?: ContextFactsPorts
-  task?: ContextTask
 }): void {
   const refusal = holderOwnershipRefusal(item.holder, sessionId(database), item.id)
   if (refusal) throw new ContextWriteRefusalError(refusal)

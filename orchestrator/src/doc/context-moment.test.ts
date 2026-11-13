@@ -2,30 +2,29 @@ import { describe, expect, test } from 'bun:test'
 import { contextMomentEffect } from './context-moment.ts'
 
 describe('context moment effect', () => {
-  test.each(['workflow-rule', 'question-answer'] as const)(
-    '%s distinguishes operator rulings from positions',
-    (moment) => {
-      const effect = (operatorRuled: boolean) =>
-        contextMomentEffect({
-          moment,
-          taskKey: 'DEV-2267',
-          questionId: 12,
-          operatorRuled,
-          text: 'Use the approved shape.',
-        })
-      expect(effect(true)).toEqual({
-        writes: [
-          { kind: 'ruling', id: 'ruling-q12', source: 'q12', body: 'Use the approved shape.' },
-        ],
-      })
-      expect(effect(false).writes[0]).toMatchObject({ kind: 'position', id: 'position-q12' })
-    },
-  )
-
-  test('workflow next writes only its self-ruling position', () => {
+  test('an operator-ruled answer writes a ruling', () => {
     expect(
       contextMomentEffect({
-        moment: 'workflow-next',
+        taskKey: 'DEV-2267',
+        questionId: 12,
+        operatorRuled: true,
+        text: 'Use the approved shape.',
+      }),
+    ).toEqual({
+      writes: [
+        {
+          kind: 'ruling',
+          id: 'ruling-q12',
+          source: 'q12',
+          body: 'Use the approved shape.',
+        },
+      ],
+    })
+  })
+
+  test('an answer not ruled by the operator writes a position', () => {
+    expect(
+      contextMomentEffect({
         taskKey: 'DEV-2267',
         questionId: 13,
         text: 'The specification settles this.',
@@ -42,18 +41,11 @@ describe('context moment effect', () => {
     })
   })
 
-  test('workflow next without a self-ruling stores nothing', () => {
-    expect(
-      contextMomentEffect({
-        moment: 'workflow-next',
-        taskKey: 'DEV-2267',
-      }),
-    ).toEqual({ writes: [] })
-  })
-
-  test('a moment without a task key has no effect', () => {
-    expect(
-      contextMomentEffect({ moment: 'workflow-rule', questionId: 12, text: 'Which shape?' }),
-    ).toEqual({ writes: [] })
+  test('no task key, question id or text writes nothing', () => {
+    expect(contextMomentEffect({ questionId: 12, text: 'Which shape?' })).toEqual({ writes: [] })
+    expect(contextMomentEffect({ taskKey: 'DEV-2267', text: 'Which shape?' })).toEqual({
+      writes: [],
+    })
+    expect(contextMomentEffect({ taskKey: 'DEV-2267', questionId: 12 })).toEqual({ writes: [] })
   })
 })

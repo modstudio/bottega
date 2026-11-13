@@ -2,8 +2,6 @@
 /** Pure context-item effects for workflow and lifecycle verbs. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 
-const CONTEXT_MOMENTS = ['workflow-next', 'workflow-rule', 'question-answer'] as const
-type ContextMoment = (typeof CONTEXT_MOMENTS)[number]
 type ContextMomentItemKind = 'ruling' | 'position'
 
 export type ContextMomentEffect = {
@@ -11,7 +9,6 @@ export type ContextMomentEffect = {
 }
 
 export type ContextMomentInput = {
-  moment: ContextMoment
   taskKey?: string | null
   questionId?: number | null
   operatorRuled?: boolean

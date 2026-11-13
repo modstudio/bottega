@@ -101,7 +101,6 @@ function registerRuleWorkflowTool(server: McpServer, ports: McpWorkflowContextPo
         result,
         await collectContextMomentReports(
           workflowQuestionContextMoment({
-            moment: 'workflow-rule',
             taskKey: context.workflowKey,
             questionId: result.questionId,
             operatorRuled: Boolean(from_operator),

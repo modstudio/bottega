@@ -14,7 +14,6 @@ export type WorkflowNextCommandMoment = {
 }
 
 export function workflowQuestionContextMoment(input: {
-  moment: 'workflow-rule'
   taskKey: string | null | undefined
   questionId: number
   text: string
@@ -34,7 +33,6 @@ export function workflowNextContextMoment(
   return {
     taskKey,
     effect: contextMomentEffect({
-      moment: 'workflow-next',
       taskKey,
       questionId: selfRulingQuestionNumber,
       text: selfRuling,
@@ -54,7 +52,6 @@ export function answeredQuestionContextMoments(
   return answeredQuestions.map((question) => ({
     taskKey: question.taskHolder,
     effect: contextMomentEffect({
-      moment: 'question-answer',
       taskKey: question.taskHolder,
       questionId: question.number,
       operatorRuled: question.fromOperator,
