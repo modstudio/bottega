@@ -47,10 +47,9 @@ test('an unbound keyed harness dispatch refuses before detach', async () => {
           launchCwd: '/tmp',
           notice: null,
         }),
-        keyedRunCursorFacts: async () => ({
-          callerKind: 'harness',
-          sessionId: 'session-fixture',
-          heldCursors: [],
+        keyedRunCursorAdmission: () => ({
+          harnessSession: 'session-fixture',
+          readOpenCursors: async () => [],
         }),
         detach: async () => {
           detached = true
@@ -61,6 +60,90 @@ test('an unbound keyed harness dispatch refuses before detach', async () => {
   ).rejects.toThrow('harness session session-fixture does not hold an open workflow cursor')
 
   expect(detached).toBe(false)
+})
+
+test('an attributed unbound override detaches and records its warning on the run', async () => {
+  const project = `cursor-override-${newRecordId()}`
+  upsertProject({ recordId: newRecordId(), name: project, path: import.meta.dir })
+  const runId = newRecordId()
+  const detached: string[] = []
+  const warnings: Array<{ runId: string; warning: string }> = []
+
+  await dispatchCommand(
+    ['do', 'understand'],
+    {
+      has: (name) => ['key', 'from-operator', 'porcelain'].includes(name),
+      flag: (name) =>
+        name === 'key'
+          ? 'DEV-2293'
+          : name === 'repo'
+            ? project
+            : name === 'override-unbound'
+              ? 'Emergency dispatch approved.'
+              : undefined,
+      values: () => [],
+    },
+    {
+      usage: () => {
+        throw new Error('unexpected usage')
+      },
+      doUsage: () => {
+        throw new Error('unexpected do usage')
+      },
+      error: () => {},
+      readPrompt: async () => 'Survey this task.',
+      askTypedQuestion: async () => null,
+      specIdentity: () => 'spec-fixture',
+      validateSchema: () => {},
+      warnCallerDrift: () => {},
+      warnTaskBranchBypass: () => {},
+      resolveTaskBranchForDispatch: () => null,
+      checkoutHasUncommittedWork: () => false,
+      resolveBase: (_cwd, base) => base,
+      isWorktreeRelativeRef: () => false,
+      implicitReviewWarning: () => 'unused',
+      resolveReviewTarget: () => null,
+      resolveCallerCheckout: () => ({
+        callerCwd: import.meta.dir,
+        launchCwd: import.meta.dir,
+        notice: null,
+      }),
+      resolveDispatchOptions: async () => ({
+        agent: undefined,
+        agentExplicit: false,
+        transport: 'cli',
+        transportExplicit: false,
+        avoid: [],
+        distinctModels: [],
+        mcp: undefined,
+        agentHarness: null,
+      }),
+      keyedRunCursorAdmission: () => ({
+        harnessSession: 'session-fixture',
+        readOpenCursors: async () => [],
+      }),
+      lookupTaskKey: async () => ({ state: 'found' }),
+      recordRunWarning: (recordedRunId, warning) =>
+        warnings.push({ runId: recordedRunId, warning }),
+      earlierReviewRejections: noEarlierReviewRejections,
+      reviewLensInputs: noLensInputs,
+      detach: async () => {
+        detached.push(runId)
+        return runId
+      },
+      follow: async () => {},
+      runNumber: () => 1,
+      detachedResult: () => {},
+    },
+  )
+
+  expect(detached).toEqual([runId])
+  expect(warnings).toEqual([
+    {
+      runId,
+      warning: 'unbound keyed run start overridden by Shmuel Barkin: Emergency dispatch approved.',
+    },
+  ])
 })
 
 const noEarlierReviewRejections = () => ({

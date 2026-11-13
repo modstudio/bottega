@@ -1,13 +1,15 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { decideKeyedRunCursorAdmission } from './keyed-run-cursor-admission.ts'
+import {
+  checkKeyedRunCursorAdmission,
+  decideKeyedRunCursorAdmission,
+} from './keyed-run-cursor-admission.ts'
 
 const base = {
   key: 'DEV-2293',
   project: PLATFORM_SLUG,
   bindingPresent: false,
-  callerKind: 'harness' as const,
-  sessionId: 'session-fixture',
+  harnessSession: 'session-fixture',
   heldCursors: [] as Array<{ project: string; workflowKey: string }>,
   overrideReason: undefined,
   fromOperator: false,
@@ -17,8 +19,8 @@ describe('keyed run cursor admission', () => {
   test.each([
     ['keyless', { key: undefined }],
     ['workflow-bound', { bindingPresent: true }],
-    ['operator caller', { callerKind: 'operator' as const }],
-    ['worker caller', { callerKind: 'worker' as const }],
+    ['operator caller', { harnessSession: null }],
+    ['worker caller', { harnessSession: null }],
     [
       'harness holding the task cursor',
       { heldCursors: [{ project: PLATFORM_SLUG, workflowKey: 'DEV-2293' }] },
@@ -66,7 +68,54 @@ describe('keyed run cursor admission', () => {
       decideKeyedRunCursorAdmission({ ...base, overrideReason: '   ', fromOperator: true }),
     ).toEqual({
       kind: 'refuse',
-      message: '--override-unbound requires a non-empty reason',
+      message: expect.stringContaining('--override-unbound requires a non-empty reason'),
     })
+  })
+
+  test('refuses outside every registered project with an actionable project remedy', () => {
+    expect(decideKeyedRunCursorAdmission({ ...base, project: null })).toEqual({
+      kind: 'refuse',
+      message: expect.stringMatching(
+        /outside every registered project[\s\S]*run the dispatch from inside the project's checkout or pass --repo <project>/,
+      ),
+    })
+  })
+
+  test('refuses when open cursors cannot be read and names the recovery', async () => {
+    const decision = await checkKeyedRunCursorAdmission(
+      (({ heldCursors: _heldCursors, ...input }) => input)(base),
+      async () => {
+        throw new Error('hosted store unavailable')
+      },
+    )
+
+    expect(decision.kind).toBe('refuse')
+    if (decision.kind === 'refuse') {
+      expect(decision.message).toContain(
+        'open workflow cursors for harness session session-fixture could not be read: hosted store unavailable',
+      )
+      expect(decision.message).toContain(`${PLATFORM_SLUG} machine doctor`)
+    }
+  })
+
+  test('an attributed override does not require the cursor store to be reachable', async () => {
+    let reads = 0
+    const decision = await checkKeyedRunCursorAdmission(
+      {
+        ...(({ heldCursors: _heldCursors, ...input }) => input)(base),
+        overrideReason: 'Emergency dispatch approved.',
+        fromOperator: true,
+      },
+      async () => {
+        reads += 1
+        throw new Error('hosted store unavailable')
+      },
+    )
+
+    expect(decision).toEqual({
+      kind: 'allow-with-override',
+      warning: 'unbound keyed run start overridden by Shmuel Barkin: Emergency dispatch approved.',
+    })
+    expect(reads).toBe(0)
   })
 })

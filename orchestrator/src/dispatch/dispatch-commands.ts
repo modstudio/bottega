@@ -35,9 +35,8 @@ import { keepTreeExemptionFromOption } from '../worktree/keep-tree-hold.ts'
 import { preflight, resolvedFindingsLens } from './dispatch-preflight.ts'
 import { executionRequirementRefusal } from './execution-requirement.ts'
 import {
-  decideKeyedRunCursorAdmission,
-  type KeyedRunCursor,
-  type KeyedRunCursorAdmissionInput,
+  checkKeyedRunCursorAdmission,
+  type OpenKeyedRunCursors,
 } from './keyed-run-cursor-admission.ts'
 import { decideProbeLaunchOverrides } from './probe-launch-overrides.ts'
 import { type ReviewLensPackInputs, reviewLensPrompt } from './review-lens-prompt.ts'
@@ -197,11 +196,10 @@ type DispatchPresentation = {
     notice: string | null
   }
   resolveDispatchOptions(jobName: string): Promise<DispatchOptions>
-  keyedRunCursorFacts(): Promise<{
-    callerKind: KeyedRunCursorAdmissionInput['callerKind']
-    sessionId: string | null
-    heldCursors: KeyedRunCursor[]
-  }>
+  keyedRunCursorAdmission(): {
+    harnessSession: string | null
+    readOpenCursors: OpenKeyedRunCursors
+  }
   lookupTaskKey: TaskKeyLookup
   recordRunWarning(runId: string, warning: string): void
   earlierReviewRejections(
@@ -231,18 +229,20 @@ async function keyedRunCursorWarningForDispatch(input: {
   bindingPresent: boolean
   overrideReason: string | undefined
   fromOperator: boolean
-  facts: DispatchPresentation['keyedRunCursorFacts']
+  adapter: DispatchPresentation['keyedRunCursorAdmission']
 }): Promise<string | null> {
-  if (!input.key || input.bindingPresent) return null
-  const facts = await input.facts()
-  const decision = decideKeyedRunCursorAdmission({
-    key: input.key,
-    project: input.project,
-    bindingPresent: input.bindingPresent,
-    overrideReason: input.overrideReason,
-    fromOperator: input.fromOperator,
-    ...facts,
-  })
+  const { harnessSession, readOpenCursors } = input.adapter()
+  const decision = await checkKeyedRunCursorAdmission(
+    {
+      key: input.key,
+      project: input.project,
+      bindingPresent: input.bindingPresent,
+      overrideReason: input.overrideReason,
+      fromOperator: input.fromOperator,
+      harnessSession,
+    },
+    readOpenCursors,
+  )
   if (decision.kind === 'refuse') throw new Error(decision.message)
   return decision.kind === 'allow-with-override' ? decision.warning : null
 }
@@ -259,7 +259,7 @@ async function cursorWarningFor(
     bindingPresent: Boolean(binding),
     overrideReason: flags.flag('override-unbound'),
     fromOperator: flags.has('from-operator'),
-    facts: presentation.keyedRunCursorFacts,
+    adapter: presentation.keyedRunCursorAdmission,
   })
 }
 
