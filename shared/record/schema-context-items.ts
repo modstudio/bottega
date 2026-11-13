@@ -2,6 +2,7 @@
 /** Hosted context items, tenant-bound independently from operator documents. */
 import { sql } from 'drizzle-orm'
 import { check, integer, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core'
+import { CONTEXT_HOLDER_KINDS, CONTEXT_ITEM_KINDS } from '../context-item-vocabulary.ts'
 import { spaceIdentity, tenantPolicies } from './schema.ts'
 
 export const contextItem = pgTable.withRLS(
@@ -23,11 +24,11 @@ export const contextItem = pgTable.withRLS(
   (table) => [
     check(
       'context_item_holder_kind_check',
-      sql`${table.holderKind} IN ('task','session','cursor')`,
+      sql`${table.holderKind} IN (${sql.raw(CONTEXT_HOLDER_KINDS.map((value) => `'${value}'`).join(','))})`,
     ),
     check(
       'context_item_kind_check',
-      sql`${table.kind} IN ('ruling','position','fact','pointer','next-action','open-question')`,
+      sql`${table.kind} IN (${sql.raw(CONTEXT_ITEM_KINDS.map((value) => `'${value}'`).join(','))})`,
     ),
     unique('context_item_holder_slug_unique').on(
       table.spaceId,

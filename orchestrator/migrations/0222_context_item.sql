@@ -33,7 +33,7 @@ SELECT record_id,
  substr(subject,1,instr(subject,':')-1), substr(subject,instr(subject,':')+1), slug, context_kind,
  context_body || CASE WHEN objection IS NULL THEN '' ELSE char(10)||char(10)||'Overrode: '||objection END,
  context_source,
- CASE WHEN context_kind IN ('ruling','position') AND context_source GLOB 'q[0-9]*' THEN CAST(substr(context_source,2) AS INTEGER) END,
+ CASE WHEN context_kind IN ('ruling','position') AND context_source GLOB 'q[0-9]*' AND length(context_source)>1 AND substr(context_source,2) NOT GLOB '*[^0-9]*' THEN CAST(substr(context_source,2) AS INTEGER) END,
  CASE WHEN context_kind='pointer' THEN trim(context_body) END,
  created_at,updated_at
 FROM parsed

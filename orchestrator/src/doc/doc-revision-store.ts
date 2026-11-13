@@ -10,11 +10,7 @@ import { decodeStoredDocAudiences, encodeStoredDocAudiences } from './doc-audien
 import type { DocRevision, DocRevisionMetadata } from './doc-read-store.ts'
 import { DocRevisionConflictError } from './doc-revision-conflict.ts'
 import { validateHistoricDocAddress } from './doc-subjects.ts'
-import {
-  type ContextDropTarget,
-  type DocRevisionOp,
-  decideDocRevisionWrite,
-} from './doc-write-allowed.ts'
+import { type DocRevisionOp, decideDocRevisionWrite } from './doc-write-allowed.ts'
 
 type RevisionDoc = {
   record_id: string
@@ -83,7 +79,6 @@ export function assertLocalRevisionWrite(
     slug: string
     expectedRevision?: string
     op?: DocRevisionOp
-    contextDropTarget?: ContextDropTarget
   },
   current: string | null,
   isCreate: boolean,
@@ -93,23 +88,21 @@ export function assertLocalRevisionWrite(
     current,
     isCreate,
     op: input.op,
-    contextDropTarget: input.contextDropTarget,
     scope: input.scope,
     subject: input.subject,
     slug: input.slug,
   })
   if (!decision.allow) {
     const message = renderRefusal(decision.refusal)
-    const surfaced = input.scope === 'context' ? `context item ${input.slug}: ${message}` : message
     if (decision.reason !== 'missing-hosted-revision') {
       throw new DocRevisionConflictError(
-        surfaced,
+        message,
         decision.refusal.condition,
         decision.reason,
         current,
       )
     }
-    throw new Error(surfaced)
+    throw new Error(message)
   }
 }
 

@@ -1,6 +1,14 @@
 // concern: doc-context-write
 /** Pure write policy for one structured context item. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+export {
+  CONTEXT_ITEM_KINDS,
+  type ContextItemKind,
+} from '../../../shared/context-item-vocabulary.ts'
+import {
+  CONTEXT_ITEM_KINDS,
+  type ContextItemKind,
+} from '../../../shared/context-item-vocabulary.ts'
 import {
   type ContextRecordName,
   NEXT_ACTION_MAX_CHARS,
@@ -10,15 +18,6 @@ import {
 } from '../../../shared/record-shape.ts'
 import type { HubTaskReference } from '../workflow/workflow-task-reference.ts'
 
-export const CONTEXT_ITEM_KINDS = [
-  'ruling',
-  'position',
-  'fact',
-  'open-question',
-  'pointer',
-  'next-action',
-] as const
-export type ContextItemKind = (typeof CONTEXT_ITEM_KINDS)[number]
 export type ContextTaskIdentity = Pick<
   HubTaskReference,
   'key' | 'record_id' | 'project' | 'parent_key'
@@ -137,7 +136,34 @@ function contextItemMetadataRefusal(item: ContextItem): string | null {
   if (item.kind === 'ruling' && !item.body.trim()) {
     return `${address} refused: a ruling requires a non-empty body`
   }
+  if (item.questionNumber !== undefined) {
+    const question = /^q(\d+)$/.exec(item.source.trim())
+    const expectedQuestionNumber =
+      ['ruling', 'position'].includes(item.kind) && question ? Number(question[1]) : null
+    if (item.questionNumber !== expectedQuestionNumber) {
+      return `${address} refused: question number does not match kind and source`
+    }
+  }
+  const targetRefusal = contextItemTargetRefusal(item)
+  if (targetRefusal) return `${address} refused: ${targetRefusal}`
   return null
+}
+
+function contextItemTargetRefusal(item: ContextItem): string | null {
+  if (item.target === undefined) return null
+  if (item.kind !== 'pointer') {
+    return item.target == null ? null : 'target is only valid for a pointer'
+  }
+  const pointer = item.body.trim()
+  if (!item.target) return 'a pointer requires its resolved target'
+  const pr = /^#?(\d+)$/.exec(pointer)
+  if (pr) return item.target === pr[1] ? null : 'target does not match the pointer body'
+  if (/^[0-9a-f]{4,39}$/i.test(pointer)) {
+    return /^[0-9a-f]{40}$/i.test(item.target) && item.target.startsWith(pointer)
+      ? null
+      : 'target does not match the resolved commit'
+  }
+  return item.target === pointer ? null : 'target does not match the pointer body'
 }
 
 function contextItemLengthRefusal(item: ContextItem): string | null {

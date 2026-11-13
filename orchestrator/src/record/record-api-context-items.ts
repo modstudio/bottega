@@ -2,7 +2,7 @@
 /** Validates and routes hosted context-item writes. */
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
-import { CONTEXT_ITEM_KINDS } from '../doc/doc-context-write.ts'
+import { CONTEXT_HOLDER_KINDS, CONTEXT_ITEM_KINDS } from '../../../shared/context-item-vocabulary.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import type { RecordContextItemInput } from './record-context-items.ts'
 
@@ -17,7 +17,7 @@ type Deps = {
 
 const body = z.object({
   id: z.string().uuid().optional(),
-  holderKind: z.enum(['task', 'session', 'cursor']),
+  holderKind: z.enum(CONTEXT_HOLDER_KINDS),
   holderId: z.string().min(1),
   slug: z
     .string()
@@ -55,8 +55,9 @@ export function registerRecordContextItemRoutes(
       .safeParse(await context.req.json().catch(() => ({})))
     if (!parsed.success || !request.success)
       return context.json({ error: 'invalid context item delete' }, 400)
-    return context.json(
-      await deps.deleteContextItem({ ...tenant, id: parsed.data, ...request.data }),
-    )
+    const result = await deps.deleteContextItem({ ...tenant, id: parsed.data, ...request.data })
+    return result.removed
+      ? context.json(result)
+      : context.json({ error: `context item ${parsed.data} not found` }, 404)
   })
 }

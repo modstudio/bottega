@@ -1,6 +1,6 @@
 import { getContextItem } from '../../src/doc/context-item-store.ts'
 import { setContextItem } from '../../src/doc/context-service.ts'
-import type { ContextItemKind } from '../../src/doc/doc-context-write.ts'
+import { decodeContextItem } from './context-item.ts'
 import {
   consumeDoc as consumeDocument,
   removeDoc as deleteDoc,
@@ -13,22 +13,16 @@ type TestDocWriteInput = Omit<TestDocInput, 'reason' | 'scope'> & {
   scope: string
   reason?: string
 }
-function contextValue(body: string, key: string): string | undefined {
-  const match = new RegExp(`^${key}:\\s*(.+)$`, 'm').exec(body.slice(0, body.indexOf('\n---', 4)))
-  if (!match?.[1]) return undefined
-  return JSON.parse(match[1]) as string
-}
-
 export const setDoc = async (input: TestDocWriteInput): ReturnType<typeof writeDoc> => {
   if (input.scope === 'context') {
     const holder = input.subject ?? ''
-    const kind = contextValue(input.body, 'kind') as ContextItemKind
+    const legacy = decodeContextItem(input.body)
     const written = await setContextItem({
       ...(holder.startsWith('session:') ? { session: holder.slice(8) } : {}),
       id: input.slug,
-      kind,
-      source: contextValue(input.body, 'source') ?? '',
-      body: input.body.slice(input.body.indexOf('\n---', 4) + 5),
+      kind: legacy.kind,
+      source: legacy.source,
+      body: legacy.body,
       expectedRevision: input.expectedRevision,
     })
     const stored = getContextItem(holder, input.slug)!

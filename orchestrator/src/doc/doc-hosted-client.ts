@@ -1,16 +1,10 @@
 // concern: doc-hosted-client
 /** Binds project-addressed hosted document operations to the register's destination. */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { RecordWriteOwner } from '../../../shared/record-write-space.ts'
-import { projectAt, projectRowByName } from '../project/projects.ts'
-import {
-  type RecordApiClient,
-  RecordApiRequestError,
-  recordApiClient,
-} from '../record/record-api-client.ts'
+import { projectRowByName } from '../project/projects.ts'
+import { type RecordApiClient, recordApiClient } from '../record/record-api-client.ts'
 import { recordWriteDestination } from '../record/record-write-destination.ts'
-import { resolveContextTaskByRecordId } from './context-write-adapter.ts'
 import { docWriteProjectName } from './doc-write-allowed.ts'
 
 type BindWriteDestination<Method> = Method extends (
@@ -45,7 +39,7 @@ export async function hostedDocClient(
   const client = recordApiClient()
   const projectName = docWriteProjectName(scope, subject)
   const projectId = projectName ? (projectRowByName(projectName)?.recordId ?? null) : null
-  const owner = suppliedOwner ?? (await docOwner(scope, subject, projectName))
+  const owner = suppliedOwner ?? docOwner(projectName)
   const destination = await recordWriteDestination(client, owner)
   return {
     listDocs: (query) => client.listDocs(query, destination),
@@ -64,28 +58,9 @@ export async function hostedDocClient(
   }
 }
 
-export async function docOwner(
-  scope: string,
-  subject: string | null,
-  projectName: string | null,
-): Promise<RecordWriteOwner | null> {
+export function docOwner(projectName: string | null): RecordWriteOwner {
   if (projectName) return { kind: 'project', name: projectName }
-  if (scope !== 'context') return { kind: 'personal' }
-  if (subject?.startsWith('session:')) {
-    return { kind: 'session', checkoutProject: projectAt(process.cwd())?.name ?? null }
-  }
-  if (subject?.startsWith('task:')) {
-    const { task, unreadable } = await resolveContextTaskByRecordId(subject.slice('task:'.length))
-    if (task) return { kind: 'task', projectName: task.project }
-    throw new RecordApiRequestError(
-      unreadable.length > 0
-        ? `task context owner could not be resolved because the tasks of ${unreadable.join(', ')} could not be read; run \`${PLATFORM_SLUG} record doctor\`, then retry`
-        : `task context owner could not be resolved; retry with \`${PLATFORM_SLUG} agent context set --task <KEY>\``,
-      'refused',
-      409,
-    )
-  }
-  return null
+  return { kind: 'personal' }
 }
 
 export function contextTaskOwner(

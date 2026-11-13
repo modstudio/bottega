@@ -1,13 +1,17 @@
 // concern: context-item-store
 /** Owns local context-item persistence. Context policy belongs to doc-context-write. */
 import type { Database } from 'bun:sqlite'
+import {
+  CONTEXT_HOLDER_KINDS,
+  type ContextHolderKind,
+} from '../../../shared/context-item-vocabulary.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import type { ContextItem, ContextItemKind } from './doc-context-write.ts'
 
 type ContextItemRow = {
   record_id: string
-  holder_kind: 'task' | 'session' | 'cursor'
+  holder_kind: ContextHolderKind
   holder_id: string
   slug: string
   kind: ContextItemKind
@@ -30,7 +34,7 @@ export function splitContextHolder(holder: string) {
   const separator = holder.indexOf(':')
   const holderKind = holder.slice(0, separator)
   const holderId = holder.slice(separator + 1)
-  if (!['task', 'session', 'cursor'].includes(holderKind) || !holderId) {
+  if (!(CONTEXT_HOLDER_KINDS as readonly string[]).includes(holderKind) || !holderId) {
     throw new Error(`invalid context holder ${JSON.stringify(holder)}`)
   }
   return { holderKind: holderKind as ContextItemRow['holder_kind'], holderId }

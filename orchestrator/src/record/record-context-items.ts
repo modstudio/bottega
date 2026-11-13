@@ -1,6 +1,7 @@
 // concern: record-context-items
 /** Owns tenant-bound hosted context-item mutations. */
 import type { SQL } from 'bun'
+import type { ContextHolderKind } from '../../../shared/context-item-vocabulary.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { recordIso } from '../../../shared/record-timestamp.ts'
@@ -11,7 +12,7 @@ import { recordPool } from './record-pool.ts'
 type Tenant = { url: string } & TenantPrincipal
 export type RecordContextItemInput = {
   id?: string
-  holderKind: 'task' | 'session' | 'cursor'
+  holderKind: ContextHolderKind
   holderId: string
   slug: string
   kind: ContextItemKind
@@ -54,6 +55,7 @@ export async function upsertRecordContextItem(input: Tenant & RecordContextItemI
       SELECT id,created_at,updated_at FROM context_item
       WHERE space_id=${input.spaceId}::uuid AND holder_kind=${input.holderKind}
         AND holder_id=${input.holderId} AND slug=${input.slug}
+      FOR UPDATE
     `) as Record<string, unknown>[]
     const current = rows[0]
     const currentRevision = current ? recordIso(current.updated_at) : undefined
@@ -85,6 +87,7 @@ export async function deleteRecordContextItem(
   return tenant(input, async (tx) => {
     const rows = (await tx`
       SELECT updated_at FROM context_item WHERE space_id=${input.spaceId}::uuid AND id=${input.id}::uuid
+      FOR UPDATE
     `) as Record<string, unknown>[]
     if (!rows.length) return { removed: false }
     const revision = recordIso(rows[0]!.updated_at)

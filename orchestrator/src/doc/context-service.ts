@@ -200,8 +200,8 @@ export async function setContextItem(
         : null,
     target: null as string | null,
   }
-  await assertContextSetAllowed({ holder, item, contextTask: task ?? undefined })
   if (input.kind === 'pointer') item.target = await resolvedPointerTarget(input.body)
+  await assertContextSetAllowed({ holder, item, contextTask: task ?? undefined })
   const localInput = {
     holder,
     slug: input.id,

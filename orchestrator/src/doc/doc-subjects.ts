@@ -4,13 +4,19 @@ import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES, type DocScope } from '../../../shar
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
+import { splitContextHolder } from './context-item-store.ts'
 
 export function taskContextHolder(recordId: string): string {
   return `task:${recordId}`
 }
 
 export function isValidContextHolderSubject(subject: string): boolean {
-  return /^task:[0-9a-f-]{36}$/i.test(subject) || /^session:[0-9a-f-]{36}$/i.test(subject)
+  try {
+    splitContextHolder(subject)
+    return true
+  } catch {
+    return false
+  }
 }
 
 export function docSubjects(): {

@@ -245,11 +245,11 @@ export type RecordApiClient = ProjectIdentityClient &
   ReturnType<typeof recordModerationClient> &
   ReturnType<typeof recordOutsideClient> &
   ReturnType<typeof recordConfigAccessClient> & {
-    upsertContextItem?(
+    upsertContextItem(
       input: RecordContextItemInput,
       destination: RecordWriteDestination,
     ): Promise<{ id: string; createdAt: string; updatedAt: string }>
-    deleteContextItem?(
+    deleteContextItem(
       id: string,
       input: { expectedRevision?: string },
       destination: RecordWriteDestination,

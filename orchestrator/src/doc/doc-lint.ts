@@ -241,10 +241,6 @@ export function lintDoc(doc: LintableDoc): DocLintFinding[] {
   }
   const profile = docLintProfile(doc.kind)
   const findings = lintProse(doc.body)
-    .filter(
-      (finding) =>
-        doc.scope !== 'context' || finding.rule !== 'issue' || finding.issueKind !== 'task-key',
-    )
     .filter((finding) => profile.rules[finding.rule] !== undefined)
     .map((finding) => ({
       rule: `doc/${finding.rule}`,
@@ -254,8 +250,7 @@ export function lintDoc(doc: LintableDoc): DocLintFinding[] {
       remedy: finding.remedy,
     }))
   if (doc.referenceProjects) findings.push(...referenceFindings(doc))
-  if (doc.scope !== 'context' && doc.slug.startsWith('design-'))
-    findings.push(...designHeadingFindings(doc.body))
+  if (doc.slug.startsWith('design-')) findings.push(...designHeadingFindings(doc.body))
   findings.push(...articleSummaryFindings)
   return findings.sort(
     (a, b) => a.rule.localeCompare(b.rule) || a.line - b.line || a.message.localeCompare(b.message),
