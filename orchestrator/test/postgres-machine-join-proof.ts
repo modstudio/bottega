@@ -47,6 +47,8 @@ export function registerMachineJoinProof(input: ProofInput): void {
         { method: 'POST', body: JSON.stringify({ side, phase, body }) },
         space,
       )
+    const read = (nameplate: string, side: string) =>
+      request(input.token(), `/v1/config/join/nameplates/${nameplate}/messages?side=${side}`)
     const fail = (nameplate: string, side: string, token = input.token()) =>
       request(token, `/v1/config/join/nameplates/${nameplate}/failure`, {
         method: 'POST',
@@ -89,11 +91,13 @@ export function registerMachineJoinProof(input: ProofInput): void {
         `UPDATE machine_join_nameplate SET expires_at=now() - interval '1 second' WHERE space_id='${spaceId}' AND nameplate='${expired.nameplate}';`,
       )
       expect((await post(expired.nameplate, SIDE_A, 'share', 'AQ')).status).toBe(410)
+      expect((await read(expired.nameplate, SIDE_A)).status).toBe(410)
 
       const burned = await allocate()
       expect((await fail(burned.nameplate, SIDE_A)).status).toBe(200)
       expect((await fail(burned.nameplate, SIDE_A)).status).toBe(200)
       expect((await post(burned.nameplate, SIDE_A, 'share', 'AQ')).status).toBe(410)
+      expect((await read(burned.nameplate, SIDE_A)).status).toBe(410)
 
       const otherSpace = newRecordId()
       input.succeeds(`
