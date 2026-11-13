@@ -447,7 +447,7 @@ test('question-joined reads match SQLite joins and ordering', async () => {
         key,
         taskless ? null : TASK_ID,
         taskless ? null : FLOW_ID,
-      `#${number}`,
+        `#${number}`,
         `2026-11-12T00:0${number}:00.000Z`,
         stageOneId,
       )

@@ -478,7 +478,7 @@ function taskRulingReads(database: Database, read: StageRead) {
           `SELECT q.number question_id,q.record_id question_record_id,NULL run_record_id,q.workflow_cursor_record_id,
                 q.question,q.answer,q.answer_basis,q.answered_at,q.answerer_kind,q.answered_by_name,
                 q.overturned_at,q.overturned_by_name,q.replacement,COALESCE(q.overturned_at,q.answered_at) effective_at,
-                q.number,q.record_id,0 candidate_count
+                0 candidate_count
            FROM question q WHERE q.workflow_task_record_id=? AND q.answered_at IS NOT NULL
             AND NOT (q.overturned_at IS NOT NULL AND q.replacement IS NULL)`,
         )
@@ -486,7 +486,9 @@ function taskRulingReads(database: Database, read: StageRead) {
       const projectId = read.projectId(project)
       const matchingWorkflow = [] as Array<TaskFlowTaskRulingRow & { effective_at: string }>
       for (const row of workflowRows) {
-        const stage = (await questionStage(read, row))?.stage
+        const stage = row.workflow_cursor_record_id
+          ? (await read.byId(row.workflow_cursor_record_id))?.stage
+          : null
         if (stage?.projectId === projectId) matchingWorkflow.push(row)
       }
       const rows = [...runRows, ...matchingWorkflow]
@@ -496,7 +498,7 @@ function taskRulingReads(database: Database, read: StageRead) {
           (a, b) => b.effective_at.localeCompare(a.effective_at) || b.question_id - a.question_id,
         )
         .slice(0, limit)
-        .map(({ effective_at: _effectiveAt, number: _number, record_id: _recordId, ...row }) => ({
+        .map(({ effective_at: _effectiveAt, ...row }) => ({
           ...row,
           candidate_count: candidateCount,
         }))

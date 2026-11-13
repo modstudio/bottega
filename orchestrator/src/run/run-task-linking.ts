@@ -126,8 +126,10 @@ const LOCAL_TASK_LINKS = {
   },
   question: {
     regime: 'synchronous',
-    pendingRows: async (database) => taskFlowReadStore(database).pendingTaskLinks('question'),
-    linkedRows: async (database) => taskFlowReadStore(database).linkedTaskReferences('question'),
+    pendingRows: async (database, client) =>
+      taskFlowReadStore(database, client).pendingTaskLinks('question'),
+    linkedRows: async (database, client) =>
+      taskFlowReadStore(database, client).linkedTaskReferences('question'),
     write: (database, update) => {
       linkWorkflowQuestionsTaskReference(
         {
