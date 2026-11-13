@@ -1,7 +1,10 @@
 import { afterEach, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { createMemoryRecordApiClient, installRecordApiClient } from '../../test/fixtures/record-api.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { rememberHostedRecord } from '../record/install-binding-write.ts'
