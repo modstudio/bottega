@@ -331,7 +331,7 @@ export const machineTrustLog = pgTable.withRLS(
       check('machine_trust_log_hash_length_check', sql`octet_length(${table.hash}) = 32`),
       check(
         'machine_trust_log_prev_hash_check',
-        sql`(${table.seq} = 0 AND ${table.prevHash} IS NULL) OR (${table.seq} > 0 AND octet_length(${table.prevHash}) = 32)`,
+        sql`(${table.seq} = 0 AND ${table.prevHash} IS NULL) OR (${table.seq} > 0 AND ${table.prevHash} IS NOT NULL AND octet_length(${table.prevHash}) = 32)`,
       ),
       selectPolicy!,
       insertPolicy!,

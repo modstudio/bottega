@@ -5,7 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type ConfigClient, ConfigClientError } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { readMachineSigningKey } from '../../../shared/machine-signing-key.ts'
-import { signTrustLogEntry, trustLogEntryHash, verifyTrustLog } from '../../../shared/trust-log.ts'
+import { signTrustLogEntry, verifyTrustLog } from '../../../shared/trust-log.ts'
 import {
   readRememberedTrustLogHead,
   writeRememberedTrustLogHead,
@@ -32,6 +32,11 @@ export async function appendTrustLogRevoke(
     throw new Error(
       `machine signing key is not initialized; run \`${PLATFORM_SLUG} machine config machine init\` before retrying the revoke`,
     )
+  const trustedOwnKey = state.keys.get(ownKeyId)!
+  if (!trustedOwnKey.signingPublicKey.every((value, index) => value === signing.publicKey[index]))
+    throw new Error(
+      "this machine's signing key is not the key the space machine trust log trusts for its key id; have an owner re-approve this machine from an approved machine before retrying the revoke",
+    )
   const encoded = signTrustLogEntry(
     {
       prev: state.head,
@@ -42,7 +47,10 @@ export async function appendTrustLogRevoke(
     },
     signing.privateKey,
   )
-  const nextHead = trustLogEntryHash(encoded)
+  const nextHead = verifyTrustLog([...entries, encoded], {
+    spaceId,
+    rememberedHead: remembered,
+  }).head
   try {
     await client.appendTrustLogEntry(state.head, encoded)
   } catch (error) {

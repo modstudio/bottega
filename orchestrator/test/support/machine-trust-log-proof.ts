@@ -46,6 +46,13 @@ export async function proveMachineTrustLog(
   )
   expect(mintedId[14]).toBe('7')
   expect(['8', '9', 'a', 'b']).toContain(mintedId[19]!.toLowerCase())
+  expect(() =>
+    succeeds(
+      'postgres',
+      'postgres',
+      `INSERT INTO machine_trust_log (id, space_id, seq, hash, prev_hash, entry, created_at) VALUES (gen_random_uuid(), '${spaceA}', 1, decode('${'11'.repeat(32)}', 'hex'), NULL, decode('00', 'hex'), now());`,
+    ),
+  ).toThrow(/machine_trust_log_prev_hash_check/)
   const add = signTrustLogEntry(
     {
       prev: genesisHead,

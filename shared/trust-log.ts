@@ -2,7 +2,8 @@ import { ed25519 } from '@noble/curves/ed25519.js'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { decode, encode } from 'cbor2'
 
-type TrustLogKind = 'genesis' | 'add' | 'remove' | 'revoke'
+const TRUST_LOG_KINDS = ['genesis', 'add', 'remove', 'revoke'] as const
+export type TrustLogKind = (typeof TRUST_LOG_KINDS)[number]
 export type TrustLogKey = {
   keyId: string
   publicKey: Uint8Array
@@ -27,8 +28,6 @@ export type TrustState = {
   recoveryPublicKey: Uint8Array
 }
 
-const KINDS: Record<TrustLogKind, number> = { genesis: 0, add: 1, remove: 2, revoke: 3 }
-const KIND_NAMES = ['genesis', 'add', 'remove', 'revoke'] as const
 const dcbor = { dcbor: true, rejectDuplicateKeys: true, preferMap: true } as const
 const bytesEqual = (left: Uint8Array, right: Uint8Array) =>
   left.byteLength === right.byteLength && left.every((value, index) => value === right[index])
@@ -53,7 +52,7 @@ function entryMap(entry: UnsignedTrustLogEntry, sig?: Uint8Array): Map<number, u
         ? keyBody(entry.body)
         : new Map<number, unknown>([[1, entry.body.keyId]])
   const map = new Map<number, unknown>([
-    [1, KINDS[entry.body.kind]],
+    [1, TRUST_LOG_KINDS.indexOf(entry.body.kind)],
     [2, entry.prev],
     [3, entry.space],
     [4, body],
@@ -125,7 +124,7 @@ export function decodeTrustLogEntry(encoded: Uint8Array): TrustLogEntry {
   }
   const map = exactMap(decoded, [1, 2, 3, 4, 5, 6, 7], 'entry')
   const kindNumber = uint(field(map, 1, 'kind'), 'kind')
-  const kind = KIND_NAMES[kindNumber]
+  const kind = TRUST_LOG_KINDS[kindNumber]
   if (!kind) throw new Error('trust log entry field kind is unknown')
   const prevValue = field(map, 2, 'prev')
   const prev = prevValue === null ? null : bytes(prevValue, 32, 'prev')

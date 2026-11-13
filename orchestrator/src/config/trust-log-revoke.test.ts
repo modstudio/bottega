@@ -129,3 +129,27 @@ test('fork refusal happens before append', async () => {
   ).rejects.toThrow('stop, do not trust this record, and report it')
   expect(appended).toBe(false)
 })
+
+test('local signing key must match the key trusted for this machine before append', async () => {
+  const fixture = log()
+  const env = environment()
+  const otherSigning = privateKey(8)
+  writeMachineSigningKey(
+    { privateKey: otherSigning, publicKey: ed25519.getPublicKey(otherSigning) },
+    env,
+  )
+  let appended = false
+  const client = {
+    readTrustLog: async () => fixture.entries,
+    appendTrustLogEntry: async () => {
+      appended = true
+      return new Uint8Array(32)
+    },
+  } as unknown as ConfigClient
+  await expect(
+    appendTrustLogRevoke(client, ownKeyId, targetKeyId, spaceId, { env, at: 3 }),
+  ).rejects.toThrow(
+    "this machine's signing key is not the key the space machine trust log trusts for its key id; have an owner re-approve this machine from an approved machine before retrying the revoke",
+  )
+  expect(appended).toBe(false)
+})

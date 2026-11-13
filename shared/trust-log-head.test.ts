@@ -24,5 +24,7 @@ test('remembered trust log heads refuse malformed or over-broad files', () => {
   expect(() => readRememberedTrustLogHead('space-id', env)).toThrow('lowercase hex')
   writeFileSync(path, `${'00'.repeat(32)}\n`)
   chmodSync(path, 0o644)
-  expect(() => readRememberedTrustLogHead('space-id', env)).toThrow('permissions must be 0600')
+  expect(() => readRememberedTrustLogHead('space-id', env)).toThrow(
+    'file permissions must be no wider than 0600',
+  )
 })

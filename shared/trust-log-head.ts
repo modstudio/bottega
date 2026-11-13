@@ -1,6 +1,7 @@
-import { chmodSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { type ConfigEnvironment, resolveConfigRoot } from './config-directory.ts'
+import { readOwnerOnlySecretFile } from './file-backed-secret-paths.ts'
 
 function pathFor(spaceId: string, env: ConfigEnvironment): string {
   if (!/^[A-Za-z0-9_-]+$/.test(spaceId))
@@ -13,16 +14,8 @@ export function readRememberedTrustLogHead(
   env: ConfigEnvironment = process.env,
 ): Uint8Array | null {
   const path = pathFor(spaceId, env)
-  let value: string
-  try {
-    const stat = statSync(path)
-    if (!stat.isFile() || (stat.mode & 0o077) !== 0)
-      throw new Error(`refusing remembered trust log head ${path}: permissions must be 0600`)
-    value = readFileSync(path, 'utf8')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw error
-  }
+  const value = readOwnerOnlySecretFile(path, 'remembered trust log head')
+  if (value === null) return null
   const normalized = value.trim()
   if (!/^[0-9a-f]{64}$/.test(normalized))
     throw new Error(`refusing remembered trust log head ${path}: contents must be lowercase hex`)

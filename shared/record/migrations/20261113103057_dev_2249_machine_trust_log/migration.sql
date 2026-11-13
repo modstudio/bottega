@@ -9,7 +9,7 @@ CREATE TABLE "machine_trust_log" (
 	CONSTRAINT "machine_trust_log_space_seq_unique" UNIQUE("space_id","seq"),
 	CONSTRAINT "machine_trust_log_space_hash_unique" UNIQUE("space_id","hash"),
 	CONSTRAINT "machine_trust_log_hash_length_check" CHECK (octet_length("hash") = 32),
-	CONSTRAINT "machine_trust_log_prev_hash_check" CHECK (("seq" = 0 AND "prev_hash" IS NULL) OR ("seq" > 0 AND octet_length("prev_hash") = 32))
+	CONSTRAINT "machine_trust_log_prev_hash_check" CHECK (("seq" = 0 AND "prev_hash" IS NULL) OR ("seq" > 0 AND "prev_hash" IS NOT NULL AND octet_length("prev_hash") = 32))
 );
 --> statement-breakpoint
 ALTER TABLE "machine_trust_log" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint

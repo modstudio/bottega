@@ -135,6 +135,31 @@ test('refuses duplicate add and untrusted revoke', () => {
   )
 })
 
+test('refuses an add that shares a trusted machine signing key', () => {
+  const genesis = chain()[0]!
+  const sharedSigningKey = signed(
+    { kind: 'add', ...second, signingPublicKey: first.signingPublicKey },
+    trustLogEntryHash(genesis),
+    privateKey(1),
+    2,
+  )
+  expect(() => verifyTrustLog([genesis, sharedSigningKey], { spaceId: space })).toThrow(
+    'trusted machines must not share a signing key',
+  )
+})
+
+test('refuses genesis when the signer does not match the first machine signing key', () => {
+  const wrongSigner = signed(
+    { kind: 'genesis', first, recoveryPublicKey: recoveryPublic },
+    null,
+    privateKey(2),
+    1,
+  )
+  expect(() => verifyTrustLog([wrongSigner], { spaceId: space })).toThrow(
+    'genesis signer must be the first machine signing key',
+  )
+})
+
 test('refuses the wrong space', () => {
   expect(() => verifyTrustLog(chain(), { spaceId: 'other-space' })).toThrow(
     'index 0 violates the space rule',
