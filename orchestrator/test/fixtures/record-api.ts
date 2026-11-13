@@ -42,6 +42,8 @@ function idleConfigAuthorizationDeps() {
   return {
     createMachineKeyClaimChallenge: unused,
     claimMachineKey: unused,
+    readMachineTrustLog: async () => [],
+    appendMachineTrustLogEntry: unused,
     listSpaceConfigAccess: async () => [],
     grantSpaceConfigAccess: unused,
     setSpaceMemberPermission: unused,

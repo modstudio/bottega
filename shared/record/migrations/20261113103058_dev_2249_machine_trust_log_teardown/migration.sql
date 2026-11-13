@@ -1,3 +1,5 @@
+ALTER TABLE "machine_trust_log" FORCE ROW LEVEL SECURITY;
+--> statement-breakpoint
 DROP FUNCTION public.record_delete_append_only_space_rows(uuid);
 --> statement-breakpoint
 CREATE FUNCTION public.record_delete_append_only_space_rows(target_space_id uuid)
@@ -54,18 +56,14 @@ GRANT EXECUTE ON FUNCTION public.record_delete_append_only_space_rows(uuid) TO r
 DO $migration$
 DECLARE
   definition text;
-  revised text;
+  previous text := '(''machine_public_key'',''space''),';
+  replacement text := '(''machine_public_key'',''space''),(''machine_trust_log'',''space''),';
 BEGIN
   SELECT pg_get_functiondef('record_move_project_space(text,text,text,bigint)'::regprocedure)
   INTO definition;
-  revised := replace(
-    definition,
-    '(''machine_public_key'',''space''),',
-    '(''machine_public_key'',''space''),(''machine_trust_log'',''space''),'
-  );
-  IF revised = definition THEN
+  IF position(previous IN definition) = 0 THEN
     RAISE EXCEPTION 'record_move_project_space machine_public_key classification anchor is missing';
   END IF;
-  EXECUTE revised;
+  EXECUTE replace(definition, previous, replacement);
 END
 $migration$;

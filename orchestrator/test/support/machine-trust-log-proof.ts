@@ -6,6 +6,7 @@ import {
   appendMachineTrustLogEntry,
   readMachineTrustLog,
 } from '../../src/record/record-machine-trust-log.ts'
+import { succeeds } from '../fixtures/postgres-rls.ts'
 
 export async function proveMachineTrustLog(
   tenant: ConfigTenant,
@@ -38,6 +39,13 @@ export async function proveMachineTrustLog(
     expectedHead: null,
     entry: genesis,
   })
+  const mintedId = succeeds(
+    'postgres',
+    'postgres',
+    `SELECT id::text FROM machine_trust_log WHERE space_id = '${spaceA}' AND seq = 0;`,
+  )
+  expect(mintedId[14]).toBe('7')
+  expect(['8', '9', 'a', 'b']).toContain(mintedId[19]!.toLowerCase())
   const add = signTrustLogEntry(
     {
       prev: genesisHead,

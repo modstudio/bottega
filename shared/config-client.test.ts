@@ -138,6 +138,8 @@ test('every space-scoped config client call sends its destination header', async
     'createMachineKeyClaimChallenge',
     'claimMachineKey',
     'revokeMachineKey',
+    'readTrustLog',
+    'appendTrustLogEntry',
   ] as const satisfies readonly (keyof ConfigClient)[]
   const values = [
     'listEntries',
@@ -171,7 +173,7 @@ test('every space-scoped config client call sends its destination header', async
     { BOTTEGA_RECORD_API_URL: 'https://record.test' },
     async (_input, init) => {
       headers.push(new Headers(init?.headers).get('x-record-space') ?? '')
-      return Response.json({ items: [], wraps: [] })
+      return Response.json({ items: [], wraps: [], entries: [], hash: '' })
     },
     'test',
   )
@@ -197,6 +199,8 @@ test('every space-scoped config client call sends its destination header', async
     client.createMachineKeyClaimChallenge('key', destination),
     client.claimMachineKey('key', 'challenge', 'nonce', destination),
     client.revokeMachineKey('key', destination),
+    client.readTrustLog(destination),
+    client.appendTrustLogEntry(null, new Uint8Array(), destination),
     client.listEntries('default', destination),
     client.getEntry('key', 'user', 'default', destination),
     client.putEntry('key', entry, destination),

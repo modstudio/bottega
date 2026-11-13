@@ -10,7 +10,6 @@ import {
   integer,
   pgPolicy,
   pgTable,
-  primaryKey,
   text,
   timestamp,
   unique,
@@ -316,6 +315,7 @@ export const machinePublicKey = pgTable.withRLS(
 export const machineTrustLog = pgTable.withRLS(
   'machine_trust_log',
   {
+    id: identity(),
     spaceId: spaceIdentity(),
     seq: integer().notNull(),
     hash: bytea().notNull(),
@@ -326,7 +326,7 @@ export const machineTrustLog = pgTable.withRLS(
   (table) => {
     const [selectPolicy, insertPolicy] = tenantPolicies('machine_trust_log', table.spaceId)
     return [
-      primaryKey({ columns: [table.spaceId, table.seq] }),
+      unique('machine_trust_log_space_seq_unique').on(table.spaceId, table.seq),
       unique('machine_trust_log_space_hash_unique').on(table.spaceId, table.hash),
       check('machine_trust_log_hash_length_check', sql`octet_length(${table.hash}) = 32`),
       check(
@@ -335,6 +335,16 @@ export const machineTrustLog = pgTable.withRLS(
       ),
       selectPolicy!,
       insertPolicy!,
+      pgPolicy('machine_trust_log_owner_select', {
+        for: 'select',
+        to: RECORD_OWNER_ROLE,
+        using: sql`true`,
+      }),
+      pgPolicy('machine_trust_log_owner_delete', {
+        for: 'delete',
+        to: RECORD_OWNER_ROLE,
+        using: sql`true`,
+      }),
     ]
   },
 )

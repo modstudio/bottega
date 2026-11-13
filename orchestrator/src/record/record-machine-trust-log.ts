@@ -1,6 +1,7 @@
 // concern: hosted machine trust log
 /** Appends opaque signed trust entries to a tenant-bound, serialized record log. */
 
+import { newRecordId } from '../../../shared/record/schema.ts'
 import { decodeTrustLogEntry, trustLogEntryHash } from '../../../shared/trust-log.ts'
 import type { ConfigTenant } from './record-config.ts'
 import { tenant } from './record-config.ts'
@@ -62,14 +63,14 @@ export async function appendMachineTrustLogEntry(
         )
       const seq = row ? Number(row.seq) + 1 : 0
       await tx`
-        INSERT INTO machine_trust_log (space_id, seq, hash, prev_hash, entry, created_at)
-        VALUES (${input.spaceId}::uuid, ${seq}, ${hash}, ${input.expectedHead}, ${input.entry}, now())
+        INSERT INTO machine_trust_log (id, space_id, seq, hash, prev_hash, entry, created_at)
+        VALUES (${newRecordId()}::uuid, ${input.spaceId}::uuid, ${seq}, ${hash}, ${input.expectedHead}, ${input.entry}, now())
       `
       return hash
     })
   } catch (error) {
     if (
-      isUniqueViolation(error, 'machine_trust_log_pkey') ||
+      isUniqueViolation(error, 'machine_trust_log_space_seq_unique') ||
       isUniqueViolation(error, 'machine_trust_log_space_hash_unique')
     )
       throw new ConfigServiceError(

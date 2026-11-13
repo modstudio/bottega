@@ -1,10 +1,10 @@
 {
+  "id": "7f9a3725-9053-453c-ae38-0f782c5d9f42",
+  "prevIds": [
+    "689f3666-f271-4fab-92cf-ee2e9240b559"
+  ],
   "version": "8",
   "dialect": "postgres",
-  "id": "519b32f5-fbcc-4c2f-b2fa-0a8f9fc75460",
-  "prevIds": [
-    "8d1d29b6-7c4a-4e09-b8ae-889776b5ff81"
-  ],
   "ddl": [
     {
       "isRlsEnabled": false,
@@ -13256,6 +13256,19 @@
       "default": null,
       "generated": null,
       "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "machine_trust_log"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
       "name": "space_id",
       "entityType": "columns",
       "schema": "public",
@@ -23315,17 +23328,6 @@
     },
     {
       "columns": [
-        "space_id",
-        "seq"
-      ],
-      "nameExplicit": false,
-      "name": "machine_trust_log_pkey",
-      "entityType": "pks",
-      "schema": "public",
-      "table": "machine_trust_log"
-    },
-    {
-      "columns": [
         "id"
       ],
       "nameExplicit": false,
@@ -23952,6 +23954,16 @@
       "name": "machine_public_key_pkey",
       "schema": "public",
       "table": "machine_public_key",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "machine_trust_log_pkey",
+      "schema": "public",
+      "table": "machine_trust_log",
       "entityType": "pks"
     },
     {
@@ -24643,6 +24655,18 @@
       "entityType": "uniques",
       "schema": "public",
       "table": "machine_public_key"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        "space_id",
+        "seq"
+      ],
+      "nullsNotDistinct": false,
+      "name": "machine_trust_log_space_seq_unique",
+      "entityType": "uniques",
+      "schema": "public",
+      "table": "machine_trust_log"
     },
     {
       "nameExplicit": true,
@@ -29231,6 +29255,32 @@
       "using": null,
       "withCheck": "(\"machine_trust_log\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"machine_trust_log\".\"space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
       "name": "machine_trust_log_space_insert",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "machine_trust_log"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "record_owner"
+      ],
+      "using": "true",
+      "withCheck": null,
+      "name": "machine_trust_log_owner_select",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "machine_trust_log"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "DELETE",
+      "roles": [
+        "record_owner"
+      ],
+      "using": "true",
+      "withCheck": null,
+      "name": "machine_trust_log_owner_delete",
       "entityType": "policies",
       "schema": "public",
       "table": "machine_trust_log"
