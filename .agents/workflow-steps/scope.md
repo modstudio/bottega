@@ -3,7 +3,7 @@ title: Fix the diff under review
 stage: review
 floor:
   - recorded-artifact
-job: null
+jobs: []
 autonomy: auto
 needs:
   - trunk

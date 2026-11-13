@@ -177,6 +177,8 @@ test('terminal payload maps every hosted run column and no execution-state colum
         credential_id: '01990000-0000-7000-8000-000000000124',
         credential_payer: 'shared',
         credential_binding: 'project',
+        cursor_record_id: '01990000-0000-7000-8000-000000001899',
+        step_slug: 'write',
       },
       '01990000-0000-7000-8000-000000000099',
       '2026-09-15T01:01:00.000Z',
@@ -205,6 +207,8 @@ test('terminal payload maps every hosted run column and no execution-state colum
     credentialId: '01990000-0000-7000-8000-000000000124',
     credentialPayer: 'shared',
     credentialBinding: 'project',
+    cursorRecordId: '01990000-0000-7000-8000-000000001899',
+    stepSlug: 'write',
   })
   expect(payload).not.toHaveProperty('cwd')
   expect(payload).not.toHaveProperty('outputPath')

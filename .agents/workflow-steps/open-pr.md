@@ -5,7 +5,8 @@ floor:
   - command-exit
   - recorded-artifact
 commandEvidence: pull-request
-job: null
+jobs: []
+actions: [pr-create]
 autonomy: ask
 needs:
   - trunk

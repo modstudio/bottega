@@ -7,7 +7,8 @@ const step = (title: string) => ({
   title,
   floor: [],
   body: title,
-  job: null,
+  jobs: [],
+  actions: [],
   autonomy: 'auto' as const,
   needs: [],
 })

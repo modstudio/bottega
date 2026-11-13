@@ -90,6 +90,7 @@ export function recordNeverStartedRunFailure(input: {
   startedByUserId: string | null
   agentExplicit: number
   executor: 'external' | 'harness'
+  binding?: { cursorRecordId: string | null; stepSlug: string | null } | null
 }): string {
   const message = input.error instanceof Error ? input.error.message : String(input.error)
   const finishedAt = nowIso()
@@ -101,8 +102,8 @@ export function recordNeverStartedRunFailure(input: {
         `INSERT INTO run
          (record_id,number,started_at,agent,job,repo,project_record_id,task_record_id,probe,cwd,prompt_sha,spec_sha,
           prompt_bytes,prompt_head,status,failure_kind,error,latency_ms,session_id,docs_injected,mcp,
-          started_by_user_id,agent_explicit,executor)
-         VALUES (?,?,?,'(pending)',?,?,?,?,?,?,?,?,?,?,'failed','harness',?,0,?,0,?,?,?,?)`,
+          started_by_user_id,agent_explicit,executor,cursor_record_id,step_slug)
+         VALUES (?,?,?,'(pending)',?,?,?,?,?,?,?,?,?,?,'failed','harness',?,0,?,0,?,?,?,?,?,?)`,
       )
       .run(
         input.recordId,
@@ -124,6 +125,8 @@ export function recordNeverStartedRunFailure(input: {
         input.startedByUserId,
         input.agentExplicit,
         input.executor,
+        input.binding?.cursorRecordId ?? null,
+        input.binding?.stepSlug ?? null,
       )
     enqueueFailedReservedRun(input.recordId, database, localMachineId, finishedAt)
     return input.recordId

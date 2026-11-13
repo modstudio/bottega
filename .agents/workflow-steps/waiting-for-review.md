@@ -6,7 +6,7 @@ floor:
 expectedStatus:
   - "{{tracker.waitingReview.state}}"
   - "{{tracker.inReview.state}}"
-job: null
+jobs: []
 autonomy: auto
 needs:
   - tracker

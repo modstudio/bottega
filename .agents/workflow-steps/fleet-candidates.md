@@ -3,7 +3,7 @@ title: Scout and trial OpenRouter candidates
 stage: plan
 floor:
   - recorded-artifact
-job: null
+jobs: []
 autonomy: auto
 needs: []
 ---

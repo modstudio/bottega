@@ -11,6 +11,7 @@ import {
   type CatalogueSequence,
   type CatalogueStep,
   catalogueProductionReferenceRefusal,
+  compatibleCatalogueStep,
   importableStepCatalogueErrors,
   importStepCatalogue,
   promoteStepCatalogue,
@@ -66,6 +67,11 @@ const TREE_FOLDER_BY_KIND: Record<WorkflowTreeReversion['kind'], WorkflowTreeFol
 
 const pathFor = (kind: WorkflowTreeReversion['kind'], slug: string) =>
   treePath(TREE_FOLDER_BY_KIND[kind], slug)
+
+function storedStepCatalogue(definition: string): StepCatalogueDefinition {
+  const parsed = JSON.parse(definition) as StepCatalogueDefinition
+  return { ...parsed, steps: parsed.steps.map(compatibleCatalogueStep) }
+}
 
 function matchingReversions(
   kind: WorkflowTreeReversion['kind'],
@@ -143,7 +149,7 @@ export function newestDraftWorkflowTree(
   const production = productionWorkflowTree({ database, project: input.project ?? null })
   const { catalogueRow: catalogueDraft, workflowRows: drafts } = newestDraftRows(database, spaceId)
   const catalogue = catalogueDraft
-    ? (JSON.parse(catalogueDraft.definition) as StepCatalogueDefinition)
+    ? storedStepCatalogue(catalogueDraft.definition)
     : { steps: production.steps, sequences: production.sequences }
   const workflows = new Map(production.workflows.map((item) => [item.slug, item.definition]))
   for (const row of drafts)
@@ -236,7 +242,7 @@ export async function promoteMatchingWorkflowTreeDrafts(
       ? {
           newestCatalogueDraft: {
             n: catalogueRow.n,
-            definition: JSON.parse(catalogueRow.definition) as StepCatalogueDefinition,
+            definition: storedStepCatalogue(catalogueRow.definition),
           },
         }
       : {}),
@@ -357,7 +363,7 @@ function newestDefinitions(
           (row.status === 'draft' &&
             catalogueRows.findIndex((candidate) => candidate.status === 'draft') === index),
       )
-      .map(({ definition }) => JSON.parse(definition) as unknown),
+      .map(({ definition }) => storedStepCatalogue(definition)),
     workflows,
   }
 }
@@ -402,10 +408,7 @@ export function productionHistory(
     workflows: new Map(),
   }
   for (const row of catalogues.filter(({ n }) => n !== currentCatalogue.n)) {
-    const definition = JSON.parse(row.definition) as {
-      steps: CatalogueStep[]
-      sequences?: CatalogueSequence[]
-    }
+    const definition = storedStepCatalogue(row.definition)
     for (const value of definition.steps)
       appendVersion(history.steps, value.slug, { n: row.n, value })
     for (const value of definition.sequences ?? [])

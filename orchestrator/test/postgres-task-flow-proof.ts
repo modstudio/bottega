@@ -24,6 +24,7 @@ import { seedWorkflows } from '../src/workflow/workflow-seeds.ts'
 import { installWorkflowStoreFixture } from '../src/workflow/workflow-store.fixture.ts'
 import { testRecordAuth } from './fixtures/record-auth-postgres.ts'
 import { proveTaskFlowRecordReads } from './postgres-task-flow-read-proof.ts'
+import { proveTaskFlowSyncPush } from './postgres-task-flow-sync-proof.ts'
 
 type Input = {
   urls(): { actor: string; auth: string }
@@ -851,6 +852,16 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         local: databaseA,
         identity: { id: machineA, name: 'Machine A' },
         projectSpaces: { [PROJECT]: input.spaceId() },
+      })
+      await proveTaskFlowSyncPush({
+        database: databaseA,
+        machineId: machineA,
+        spaceId: input.spaceId(),
+        projectId,
+        projectName: PROJECT,
+        workflow: WORKFLOW,
+        taskKey: TASK_KEY,
+        admin: input.admin,
       })
       const opened = await composeWorkflowWithCursor(
         WORKFLOW,

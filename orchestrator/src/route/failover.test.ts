@@ -201,6 +201,15 @@ test('the detached spec mapping forwards every field to run', () => {
   })
 })
 
+test('detached run options preserve an optional workflow binding', () => {
+  const binding = { cursorRecordId: 'cursor-record-id-1', stepSlug: 'implement' }
+
+  expect(
+    detachedRunOptions('implement', 'prompt', 'run-record-id-42', { binding }).binding,
+  ).toEqual(binding)
+  expect(detachedRunOptions('implement', 'prompt', 'run-record-id-43', {}).binding).toBeUndefined()
+})
+
 test('a changed retry agent uses its pin unless an explicit model overrides it', () => {
   expect(retryModelForAgent('grok', 'grok-4.6', 'grok')).toBe('grok-4.6')
   expect(retryModelForAgent('grok', 'grok-4.6', 'codex')).toBe(AGENTS.codex!.model)

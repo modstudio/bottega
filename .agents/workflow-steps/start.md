@@ -4,7 +4,7 @@ stage: plan
 floor:
   - tracker-transition
 expectedStatus: "{{tracker.states.active}}"
-job: null
+jobs: []
 autonomy: auto
 needs:
   - tracker

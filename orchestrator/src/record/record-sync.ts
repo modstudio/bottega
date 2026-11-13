@@ -12,11 +12,16 @@ import {
 import { recordSpaceAccessDecision } from '../../../shared/record-space-request.ts'
 import { recordWriteSpace } from '../../../shared/record-write-space.ts'
 import { db, nowIso } from '../database/db.ts'
+import { declaredProjectRecordSpace } from '../project/declared-record-space.ts'
 import { backfillReleaseRecords } from '../release/release-outbox.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { backfillQuestionRecords } from '../run/question-outbox.ts'
 import { backfillRunRecords } from '../run/run-outbox.ts'
 import { backfillScoreRecords } from '../score/score-outbox.ts'
+import {
+  backfillTaskFlowRecords,
+  taskFlowBackfillUnavailable,
+} from '../workflow/task-flow-backfill.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
 import { backfillLandingEvidenceRecords } from './landing-outbox.ts'
 import { machineId, machineNames } from './machine-identity.ts'
@@ -33,7 +38,11 @@ import {
   refreshParentDeferredOutboxRows,
 } from './outbox-dependency.ts'
 import { quarantinedOutboxRows, quarantineOutboxRow } from './outbox-quarantine.ts'
-import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
+import {
+  type RecordApiClient,
+  RecordApiRequestError,
+  recordApiClient,
+} from './record-api-client.ts'
 import { builtInsEnsured, recordBuiltInsEnsured } from './record-built-ins-identity.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { type OversizedRecordSyncRow, planRecordSyncBatch } from './record-sync-batch.ts'
@@ -145,7 +154,8 @@ function declaredProjectSpace(
   projectName: string,
   overrides?: Record<string, string>,
 ): string | null {
-  if (overrides?.[projectName]) return overrides[projectName]!
+  if (overrides?.[projectName] !== undefined)
+    return declaredProjectRecordSpace(undefined, overrides[projectName])
   const hasProjects = local
     .query<{ present: number }, []>(
       "SELECT count(*) AS present FROM sqlite_master WHERE type='table' AND name='project'",
@@ -156,8 +166,7 @@ function declaredProjectSpace(
     .query<{ settings: string }, [string]>('SELECT settings FROM project WHERE name=?')
     .get(projectName)
   if (!row) return null
-  const settings = JSON.parse(row.settings) as { space?: unknown }
-  return typeof settings.space === 'string' && settings.space.trim() ? settings.space : null
+  return declaredProjectRecordSpace(row.settings, overrides?.[projectName])
 }
 
 function pendingCount(local: Database): number {
@@ -685,14 +694,63 @@ async function pullAfterSync(
 function syncBackfill(
   local: Database,
   identityId: string,
+  taskFlows: NonNullable<RecordSyncResult['backfill']>['taskFlows'],
 ): NonNullable<RecordSyncResult['backfill']> {
   return {
     ...backfillRunRecords(local, identityId),
+    taskFlows,
     scores: backfillScoreRecords(local, identityId),
     reviews: backfillReviewRecords(local),
     landingEvidence: backfillLandingEvidenceRecords(local),
     questions: backfillQuestionRecords(local),
     releases: backfillReleaseRecords(local),
+  }
+}
+
+function unconfiguredSyncResult(
+  local: Database | undefined,
+  identityId: string,
+  backfillRequested: boolean | undefined,
+): RecordSyncResult {
+  const backfill = backfillRequested
+    ? syncBackfill(
+        local!,
+        identityId,
+        taskFlowBackfillUnavailable('hosted record API is not configured', 'backfill'),
+      )
+    : undefined
+  return {
+    pushed: 0,
+    failed: 0,
+    pending: 0,
+    configured: false,
+    quarantined: [],
+    blocked: [],
+    ...(backfill ? { backfill } : {}),
+  }
+}
+
+async function requestedTaskFlowBackfill(input: {
+  requested: boolean | undefined
+  local: Database
+  client: Pick<RecordApiClient, 'readTaskFlowPresence'>
+  memberships: ReturnType<typeof parseRecordSpaceMemberships>
+  personalSpaceId: string | null
+  projectSpaces?: Record<string, string>
+}) {
+  if (!input.requested) return undefined
+  try {
+    return await backfillTaskFlowRecords(input.local, {
+      client: input.client,
+      memberships: input.memberships,
+      personalSpaceId: input.personalSpaceId,
+      projectSpaces: input.projectSpaces,
+    })
+  } catch (error) {
+    return taskFlowBackfillUnavailable(
+      error instanceof Error ? error.message : String(error),
+      'backfill',
+    )
   }
 }
 
@@ -704,23 +762,23 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     name: requestedIdentity.name ?? defaultShortName(hostname()),
   }
   const local = options.local ?? (configured || options.backfill ? db() : undefined)
-  const backfill = options.backfill ? syncBackfill(local!, identity.id) : undefined
-  if (!configured) {
-    return {
-      pushed: 0,
-      failed: 0,
-      pending: 0,
-      configured: false,
-      quarantined: [],
-      blocked: [],
-      ...(backfill ? { backfill } : {}),
-    }
-  }
+  if (!configured) return unconfiguredSyncResult(local, identity.id, options.backfill)
   const writableLocal = local!
   const client = options.client ?? recordApiClient()
   if (!client.sync) throw new Error('record API client does not provide evidence sync')
   const session = await client.whoami()
   const memberships = parseRecordSpaceMemberships(session.memberships)
+  const taskFlowBackfill = await requestedTaskFlowBackfill({
+    requested: options.backfill,
+    local: writableLocal,
+    client,
+    memberships,
+    personalSpaceId: session.personalSpaceId,
+    projectSpaces: options.projectSpaces,
+  })
+  const backfill = taskFlowBackfill
+    ? syncBackfill(writableLocal, identity.id, taskFlowBackfill)
+    : undefined
   const blocked: BlockedOutboxRow[] = []
   let pushed = 0
   let failed = 0

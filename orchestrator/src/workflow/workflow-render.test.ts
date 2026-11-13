@@ -190,6 +190,8 @@ describe('workflow rendering', () => {
     expect(rendered).toContain('--arg key=DEV-821')
     expect(rendered).toContain('step 1, rebase')
     expect(rendered).toContain('autonomy=auto(built-in)')
+    expect(rendered).toContain('jobs=review-lens')
+    expect(rendered.split('\n').find((line) => line.startsWith('1. rebase'))).not.toContain('jobs=')
     expect(rendered).toContain('Worker questions: rulings=agent (built-in).')
     expect(rendered).toContain(
       'answer what the specification or canon settles; relay a design or product-direction question to the operator and answer it with --from-operator.',
@@ -329,7 +331,8 @@ describe('workflow rendering', () => {
       floor: ['command-exit', 'recorded-artifact'] as FloorKind[],
       expectedStatus: undefined,
       commandEvidence: undefined,
-      job: null,
+      jobs: [],
+      actions: [],
       autonomy: 'auto' as const,
       needs: [],
       resolvedAutonomy: { value: 'auto' as const, scope: 'built-in' },
@@ -382,7 +385,8 @@ describe('workflow rendering', () => {
       floor: ['command-exit', 'recorded-artifact'],
       expectedStatus: undefined,
       commandEvidence: undefined,
-      job: null,
+      jobs: [],
+      actions: [],
       autonomy: 'auto',
       needs: [],
       resolvedAutonomy: { value: 'ask', scope: 'operator' },
@@ -410,7 +414,8 @@ describe('workflow rendering', () => {
       floor: ['recorded-artifact', 'ruling'],
       expectedStatus: undefined,
       commandEvidence: undefined,
-      job: null,
+      jobs: [],
+      actions: [],
       autonomy: 'auto',
       needs: [],
       operatorRuling: true,
@@ -442,7 +447,8 @@ describe('workflow rendering', () => {
       floor: ['ruling'],
       expectedStatus: undefined,
       commandEvidence: undefined,
-      job: null,
+      jobs: [],
+      actions: [],
       autonomy: 'auto',
       needs: [],
       operatorRuling: true,
@@ -467,7 +473,8 @@ describe('workflow rendering', () => {
       floor: ['tracker-transition'],
       expectedStatus: undefined,
       commandEvidence: undefined,
-      job: null,
+      jobs: [],
+      actions: [],
       autonomy: 'auto',
       needs: [],
       operatorRuling: true,

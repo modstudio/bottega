@@ -27,6 +27,7 @@ import {
 const root = fileURLToPath(new URL('../../..', import.meta.url))
 const tree = parseWorkflowTree(collectWorkflowTree(root))
 const planTask = tree.workflows.find(({ slug }) => slug === 'plan-task')!
+const operate = tree.workflows.find(({ slug }) => slug === 'operate')!
 
 const database = testDatabaseFixture((d) => {
   seedWorkflows(d)
@@ -44,15 +45,31 @@ const database = testDatabaseFixture((d) => {
     d,
   )
   promoteStepCatalogueLocal(catalogue.n, 'current tree fixture', 'test', d)
-  const workflow = setWorkflowLocal(
-    planTask.slug,
-    planTask.definition,
-    'current tree fixture',
-    'test',
-    d,
-  )
-  promoteWorkflowLocal(planTask.slug, workflow.n, 'current tree fixture', 'test', d)
+  for (const trackedWorkflow of [planTask, operate]) {
+    const workflow = setWorkflowLocal(
+      trackedWorkflow.slug,
+      trackedWorkflow.definition,
+      'current tree fixture',
+      'test',
+      d,
+    )
+    promoteWorkflowLocal(trackedWorkflow.slug, workflow.n, 'current tree fixture', 'test', d)
+  }
 })
+
+test.each([
+  ['default', 'confirm-write', false],
+  ['production', 'confirm-production-write', true],
+] as const)(
+  'operate %s composes keylessly with its confirmation rule',
+  (mode, confirmation, operatorRuling) => {
+    const composition = composeWorkflow('operate', 'fixture', mode, {}, database())
+
+    expect(composition.steps.find(({ slug }) => slug === confirmation)).toMatchObject({
+      operatorRuling,
+    })
+  },
+)
 
 test('every plan-task step renders on a keyless cursor in every mode', async () => {
   const d = database()
@@ -79,7 +96,8 @@ test('a workflow without a key argument adopts --task and renders and closes its
           body: 'Update with {{tracker.actions.update}}.',
           stage: 'plan',
           floor: ['tracker-transition'],
-          job: null,
+          jobs: [],
+          actions: [],
           autonomy: 'auto',
           needs: ['tracker'],
         },
@@ -89,7 +107,8 @@ test('a workflow without a key argument adopts --task and renders and closes its
           body: 'Read with {{tracker.actions.get}}.',
           stage: 'plan',
           floor: ['tracker-transition'],
-          job: null,
+          jobs: [],
+          actions: [],
           autonomy: 'auto',
           needs: ['tracker'],
         },
@@ -208,7 +227,8 @@ test('a prose KEY marker without a key-bound tracker action closes keylessly', a
           body: `Document ${KEYLESS_TRACKER_ACTION_KEY} as an example.`,
           stage: 'plan',
           floor: ['ruling'],
-          job: null,
+          jobs: [],
+          actions: [],
           autonomy: 'auto',
           needs: [],
         },
@@ -283,7 +303,8 @@ test('operator-ruling cursor refusals name the bound question remedy', async () 
           stage: 'plan',
           floor: ['ruling'],
           operatorRuling: true,
-          job: null,
+          jobs: [],
+          actions: [],
           autonomy: 'auto',
           needs: [],
         },
@@ -414,7 +435,8 @@ test('next refuses an undeclared argument before storing it and a correct next s
           body: 'Close with a declared argument.',
           stage: 'plan',
           floor: ['ruling'],
-          job: null,
+          jobs: [],
+          actions: [],
           autonomy: 'auto',
           needs: [],
         },
@@ -424,7 +446,8 @@ test('next refuses an undeclared argument before storing it and a correct next s
           body: 'Rendered after valid next.',
           stage: 'plan',
           floor: ['ruling'],
-          job: null,
+          jobs: [],
+          actions: [],
           autonomy: 'auto',
           needs: [],
         },

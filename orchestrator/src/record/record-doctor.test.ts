@@ -43,6 +43,7 @@ describe('record doctor decisions', () => {
       released: 0,
       live: 0,
     },
+    taskFlowBackfill: { flows: 0, stages: 0, held: [] },
     quarantinedOutboxRows: [],
     noDestinationWrites: { windowStart: '2026-11-09T00:00:00.000Z', unrecorded: 0, counts: [] },
     hubNoDestinationWrites: { windowStart: '2026-11-09T00:00:00.000Z', unrecorded: 0, counts: [] },
@@ -79,6 +80,7 @@ describe('record doctor decisions', () => {
       `project ${PLATFORM_NAME} declared space`,
       'local outbox pending rows',
       'local runs the record does not reflect',
+      'local task-flow parity with the record',
       'local outbox quarantined rows',
       'destination-less hosted writes',
       'destination-less hosted hub writes',
@@ -220,6 +222,37 @@ describe('record doctor decisions', () => {
       name: 'local runs the record does not reflect',
       status: 'fail',
       detail: `10: enqueue 1, refresh-number 2, refresh-links 3, refresh-root 4; run \`${PLATFORM_SLUG} record push --backfill\``,
+      section: 'customer',
+    })
+  })
+
+  test('reports local task-flow rows that are absent on the record', () => {
+    const checks = decideRecordDoctorChecks({
+      ...healthyFacts,
+      taskFlowBackfill: { flows: 2, stages: 3, held: [] },
+    })
+    expect(checks).toContainEqual({
+      name: 'local task-flow parity with the record',
+      status: 'fail',
+      detail: `5: flows 2, stages 3; run \`${PLATFORM_SLUG} record push --backfill\``,
+      section: 'customer',
+    })
+  })
+
+  test('task-flow parity refuses an unreachable record instead of reporting zero', () => {
+    const checks = decideRecordDoctorChecks({
+      ...healthyFacts,
+      taskFlowBackfill: {
+        flows: 0,
+        stages: 0,
+        held: [],
+        failure: 'hosted task-flow parity could not be measured: connection refused',
+      },
+    })
+    expect(checks).toContainEqual({
+      name: 'local task-flow parity with the record',
+      status: 'fail',
+      detail: 'hosted task-flow parity could not be measured: connection refused',
       section: 'customer',
     })
   })

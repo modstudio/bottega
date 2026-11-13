@@ -667,6 +667,7 @@ export async function dispatchCommand(
   argv: string[],
   flags: DispatchFlags,
   presentation: DispatchPresentation,
+  binding?: { cursorRecordId: string; stepSlug: string },
 ): Promise<void> {
   const { has, flag, values } = flags
   const {
@@ -806,7 +807,7 @@ export async function dispatchCommand(
   const detachByDefault = !has('follow')
   if (has('detach') || detachByDefault) {
     const id = await detach(jobName, prompt, false, {
-      ...{ agent, agentExplicit },
+      ...{ agent, agentExplicit, binding },
       schema,
       label: flag('label'),
       lens,
@@ -869,7 +870,7 @@ export async function dispatchCommand(
    * genuinely stuck run still returns control rather than hanging for ever.
    */
   const id = await detach(jobName, prompt, true, {
-    ...{ agent, agentExplicit, schema, lens },
+    ...{ agent, agentExplicit, schema, lens, binding },
     reviewRole,
     label: flag('label'),
     mcp: resolved.mcp,

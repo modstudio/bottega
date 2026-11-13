@@ -4,7 +4,7 @@ stage: docs
 floor:
   - command-exit
   - recorded-artifact
-job: null
+jobs: []
 autonomy: auto
 needs:
   - tracker

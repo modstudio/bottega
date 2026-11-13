@@ -9,7 +9,7 @@ const contract = (
 ) => ({ columns: typeof names === 'string' ? columns(names) : names, laterAdded })
 
 const RUN_RECORD_PAYLOAD_COLUMNS = columns(
-  'id number spaceId projectId projectName machineId localId startedByUserId startedAt finishedAt agent job promptSha specSha promptBytes promptHead taskKey taskId label lens latencyMs exitCode outputBytes vendorTokens modelCalls peakCallTokens contextSystemChars contextToolCount contextToolSchemaChars contextCompactions contextCacheReadTokens quotaUsedPercentStart quotaUsedPercentEnd quotaWindowMinutes quotaResetsAt vendorCostUsd vendorInputTokens vendorOutputTokens vendorEstimatedCostUsd vendorCostSource resourceCpuMs resourcePeakRssBytes resourceSamples resourceSource probe failureKind status error retryOf parentRunId turn filesChanged changedPaths linesAdded linesRemoved testsRan testsPassed testsClaimDisagrees deviations escalations stack model executor evidenceExcluded evidenceUnvoid inputTree headCommit reviewRef reviewRole branch baseCommit mintedBranch docsInjected docRevisions canonSha transport sessionId routeReason credentialId credentialPayer credentialBinding noFailover automaticFailover outsideWorktreeWrites reviewProvenance provenanceStatus workPreserved closeOutOutcome closeOutDetail provisioningKind provisioningMs provisioningPhases provisioningEntries provisioningEntriesLimited provisioningHostLoad hostAdmissionFirst hostAdmission provisioningOutcome provisioningEntryRoots withheldFields createdAt updatedAt',
+  'id number spaceId projectId projectName machineId localId startedByUserId startedAt finishedAt agent job promptSha specSha promptBytes promptHead taskKey taskId label lens latencyMs exitCode outputBytes vendorTokens modelCalls peakCallTokens contextSystemChars contextToolCount contextToolSchemaChars contextCompactions contextCacheReadTokens quotaUsedPercentStart quotaUsedPercentEnd quotaWindowMinutes quotaResetsAt vendorCostUsd vendorInputTokens vendorOutputTokens vendorEstimatedCostUsd vendorCostSource resourceCpuMs resourcePeakRssBytes resourceSamples resourceSource probe failureKind status error retryOf parentRunId turn cursorRecordId stepSlug filesChanged changedPaths linesAdded linesRemoved testsRan testsPassed testsClaimDisagrees deviations escalations stack model executor evidenceExcluded evidenceUnvoid inputTree headCommit reviewRef reviewRole branch baseCommit mintedBranch docsInjected docRevisions canonSha transport sessionId routeReason credentialId credentialPayer credentialBinding noFailover automaticFailover outsideWorktreeWrites reviewProvenance provenanceStatus workPreserved closeOutOutcome closeOutDetail provisioningKind provisioningMs provisioningPhases provisioningEntries provisioningEntriesLimited provisioningHostLoad hostAdmissionFirst hostAdmission provisioningOutcome provisioningEntryRoots withheldFields createdAt updatedAt',
 )
 const RUN_RECORD_PAYLOAD_CONTRACT = contract(RUN_RECORD_PAYLOAD_COLUMNS, {
   number: null,
@@ -22,6 +22,8 @@ const RUN_RECORD_PAYLOAD_CONTRACT = contract(RUN_RECORD_PAYLOAD_COLUMNS, {
   credentialId: null,
   credentialPayer: null,
   credentialBinding: null,
+  cursorRecordId: null,
+  stepSlug: null,
   evidenceUnvoid: null,
   modelCalls: null,
   peakCallTokens: null,
@@ -104,7 +106,16 @@ const TASK_FLOW_RECORD_PAYLOAD_CONTRACT = contract(
   'id spaceId projectId projectName taskId state openStageRecordId openingMachineId updatedMachineId machineId revision createdAt updatedAt',
 )
 const TASK_FLOW_STAGE_RECORD_PAYLOAD_CONTRACT = contract(
-  'id spaceId projectId projectName flowRecordId workflow mode workflowVersionId catalogueVersionId arguments activeOrdinal activeSlug state closedStepNotes totalSteps openedMachineId takenOverFromMachineId lastAdvancedMachineId machineId revision createdAt updatedAt',
+  'id spaceId projectId projectName flowRecordId workflow mode workflowKey instanceId sessionId workflowVersionId catalogueVersionId arguments activeOrdinal activeSlug state closedStepNotes question autonomy enforcement totalSteps openedMachineId takenOverFromMachineId lastAdvancedMachineId machineId revision createdAt updatedAt',
+  {
+    projectId: null,
+    workflowKey: null,
+    instanceId: null,
+    sessionId: null,
+    question: null,
+    autonomy: null,
+    enforcement: null,
+  },
 )
 
 const REVIEW_RECORD_PAYLOAD_CONTRACT = contract(

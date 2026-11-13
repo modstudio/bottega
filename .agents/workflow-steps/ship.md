@@ -4,7 +4,7 @@ stage: ship
 floor:
   - command-exit
   - recorded-artifact
-job: null
+jobs: []
 autonomy: ask
 needs: []
 ---
