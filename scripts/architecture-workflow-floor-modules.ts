@@ -15,6 +15,7 @@ const module = (file: string, allowed: string[]): WorkflowFloorModule => ({
 export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/task-flow-mirror-refresh.ts', [
     'bun:sqlite',
+    '../../../shared/brand.ts',
     '../record/record-api-client-task-flow.ts',
     './task-flow-read-through.ts',
     './task-flow-store.ts',
