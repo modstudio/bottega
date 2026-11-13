@@ -554,6 +554,33 @@ test('hosted stage updates the same retired cursor in place without vacating its
   }
 })
 
+test('a refreshed known stage takes the task key it was read under', async () => {
+  const ids = fixture()
+  try {
+    const taskId = newRecordId()
+    const flowId = newRecordId()
+    const stageId = newRecordId()
+    await cacheHostedTaskFlow(ids.database, 'DEV-2098', hosted(ids, { taskId, flowId, stageId }))
+    ids.database
+      .query("UPDATE workflow_cursor SET workflow_key='DEV-1' WHERE record_id=?")
+      .run(stageId)
+
+    await cacheHostedTaskFlow(
+      ids.database,
+      'DEV-2098',
+      hosted(ids, { taskId, flowId, stageId, stageRevision: 5 }),
+    )
+
+    expect(
+      ids.database
+        .query('SELECT workflow_key,task_flow_record_id FROM workflow_cursor WHERE record_id=?')
+        .get(stageId),
+    ).toEqual({ workflow_key: 'DEV-2098', task_flow_record_id: flowId })
+  } finally {
+    ids.database.close()
+  }
+})
+
 test('hosted stage refuses an open local cursor holding its keyed slot and rolls back', async () => {
   const ids = fixture()
   try {

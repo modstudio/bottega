@@ -4,7 +4,10 @@
 import type { Database } from 'bun:sqlite'
 import { projectByName, projectByRecordId, projects } from '../project/project-read.ts'
 import { RecordApiRequestError, recordApiClient } from '../record/record-api-client.ts'
-import type { RecordRequestDestination } from '../record/record-api-client-paths.ts'
+import type {
+  RecordRequestDestination,
+  RecordWriteDestination,
+} from '../record/record-api-client-paths.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import type { RecordIdentity } from '../record/record-auth.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
@@ -160,8 +163,8 @@ class RecordTaskFlowReadStore {
   private readonly database: Database
   private readonly client: RecordTaskFlowClient
   private identityRead?: Promise<RecordIdentity>
-  private readonly destinations = new Map<string, Promise<RecordRequestDestination>>()
-  private everyDestination?: Promise<RecordRequestDestination[]>
+  private readonly destinations = new Map<string, Promise<RecordWriteDestination>>()
+  private everyDestination?: Promise<RecordWriteDestination[]>
 
   constructor(database: Database, client: RecordTaskFlowClient) {
     this.database = database
@@ -189,7 +192,7 @@ class RecordTaskFlowReadStore {
     return row.name
   }
 
-  private destination(project: string): Promise<RecordRequestDestination> {
+  private destination(project: string): Promise<RecordWriteDestination> {
     const cached = this.destinations.get(project)
     if (cached) return cached
     const row = projectByName(project, this.database)
@@ -201,7 +204,7 @@ class RecordTaskFlowReadStore {
     return destination
   }
 
-  private async allDestinations(): Promise<RecordRequestDestination[]> {
+  private async allDestinations(): Promise<RecordWriteDestination[]> {
     this.everyDestination ??= Promise.all(
       projects(undefined, this.database).map(({ name }) => this.destination(name)),
     ).then((destinations) => [
@@ -213,7 +216,7 @@ class RecordTaskFlowReadStore {
   }
 
   private async readEveryDestination<T>(
-    read: (destination: RecordRequestDestination) => Promise<T | null>,
+    read: (destination: RecordWriteDestination) => Promise<T | null>,
   ): Promise<T | null> {
     const destinations = await this.allDestinations()
     const answers = await Promise.all(
@@ -221,7 +224,7 @@ class RecordTaskFlowReadStore {
     )
     const decision = decideSingleRecordSpace(
       answers.map(({ destination, value }) => ({
-        spaceId: destination.destinationSpaceId!,
+        spaceId: destination.destinationSpaceId,
         found: value !== null,
       })),
     )
