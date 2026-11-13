@@ -158,7 +158,7 @@ class RecordTaskFlowReadStore {
   private readonly local: ReturnType<typeof sqliteTaskFlowReadStore>
   private readonly database: Database
   private readonly client: RecordTaskFlowClient
-  private readonly identity: Promise<RecordIdentity>
+  private identityRead?: Promise<RecordIdentity>
   private readonly destinations = new Map<string, Promise<RecordRequestDestination>>()
   private everyDestination?: Promise<RecordRequestDestination[]>
 
@@ -166,10 +166,13 @@ class RecordTaskFlowReadStore {
     this.database = database
     this.client = client
     this.local = sqliteTaskFlowReadStore(database)
-    const identityClient = client.whoami
-      ? { whoami: client.whoami.bind(client) }
-      : recordApiClient()
-    this.identity = identityClient.whoami()
+  }
+
+  // Resolved on the first read that needs a destination, so a store used only
+  // for local reads never reaches the record.
+  private identity(): Promise<RecordIdentity> {
+    this.identityRead ??= this.client.whoami ? this.client.whoami() : recordApiClient().whoami()
+    return this.identityRead
   }
 
   private projectId(project: string): string {
@@ -191,7 +194,7 @@ class RecordTaskFlowReadStore {
     const row = projectByName(project, this.database)
     if (!row) throw new Error(`project ${project} is not registered; register it, then retry`)
     const destination = requireProjectRecordDestination(project, row.settings, {
-      whoami: () => this.identity,
+      whoami: () => this.identity(),
     }).then((destinationSpaceId) => ({ destinationSpaceId }))
     this.destinations.set(project, destination)
     return destination

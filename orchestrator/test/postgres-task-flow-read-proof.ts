@@ -109,6 +109,14 @@ export async function proveTaskFlowRecordReads(input: {
     ).sort(),
   ).toEqual(allStageIds.toSorted())
   expect(
+    ids(
+      await input.client.listTaskFlowStages!(
+        { openedMachineId: '00000000-0000-4000-8000-0000000000ff' },
+        input.destination,
+      ),
+    ),
+  ).toEqual([])
+  expect(
     (await input.client.readTaskFlow!({ taskId: input.taskId }, input.destination)).flow.id,
   ).toBe(input.flowId)
 
