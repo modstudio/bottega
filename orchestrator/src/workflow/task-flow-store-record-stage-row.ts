@@ -17,8 +17,6 @@ export function required<T>(value: T | null | undefined, field: string): T {
   return value
 }
 
-export function stageRow(item: ListedItem): TaskFlowStageCursorRow & { open_stage_count: number }
-export function stageRow(item: ListedItem, includeOpenStageCount: false): TaskFlowStageCursorRow
 export function stageRow(
   item: ListedItem,
   includeOpenStageCount = true,

@@ -102,10 +102,14 @@ function listedStageReads(database: Database, read: StageRead) {
         : await read.listEvery(selector)
       const questionByStage = openQuestionByStage(database)
       return items
-        .map((item) => ({
-          ...stageRow(item),
-          question_number: questionByStage.get(item.stage.id)?.number ?? null,
-        }))
+        .map((item) => {
+          const row = stageRow(item)
+          return {
+            ...row,
+            open_stage_count: row.open_stage_count!,
+            question_number: questionByStage.get(item.stage.id)?.number ?? null,
+          }
+        })
         .sort((a, b) => a.updated_at.localeCompare(b.updated_at) || a.id - b.id)
     },
 
