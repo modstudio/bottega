@@ -10,10 +10,8 @@ import {
   type TrustLogBody,
   verifyTrustLog,
 } from '../../../shared/trust-log.ts'
-import {
-  readRememberedTrustLogHead,
-  writeRememberedTrustLogHead,
-} from '../../../shared/trust-log-head.ts'
+import { writeRememberedTrustLogHead } from '../../../shared/trust-log-head.ts'
+import { verifiedTrustLogForSpace } from '../../../shared/trust-log-keys.ts'
 
 export async function appendSignedTrustLogEntry(
   client: ConfigClient,
@@ -27,10 +25,8 @@ export async function appendSignedTrustLogEntry(
     check?: (state: ReturnType<typeof verifyTrustLog>) => boolean
   } = {},
 ): Promise<Uint8Array | null> {
-  const entries = await client.readTrustLog({ destinationSpaceId: spaceId })
-  if (entries.length === 0) return null
-  const remembered = readRememberedTrustLogHead(spaceId, ports.env)
-  const state = verifyTrustLog(entries, { spaceId, rememberedHead: remembered })
+  const { entries, state } = await verifiedTrustLogForSpace(client, spaceId, ports.env)
+  if (!state) return null
   if (!state.keys.has(ownKeyId))
     throw new Error(
       `this machine is not trusted by the space machine trust log; have an owner approve it from an approved machine before retrying ${wording.retry}`,
@@ -58,7 +54,7 @@ export async function appendSignedTrustLogEntry(
   )
   const nextHead = verifyTrustLog([...entries, encoded], {
     spaceId,
-    rememberedHead: remembered,
+    rememberedHead: state.head,
   }).head
   try {
     await client.appendTrustLogEntry(state.head, encoded, { destinationSpaceId: spaceId })

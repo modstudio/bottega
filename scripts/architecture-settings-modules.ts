@@ -65,6 +65,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/machine-config.ts',
     '../../../shared/ship-to.ts',
     '../../../shared/trust-list.ts',
+    '../../../shared/trust-log-keys.ts',
     './config-service-rotation-policy.ts',
     './hosted-config-call-outcome.ts',
     './data-key-access.ts',
@@ -89,6 +90,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/machine-signing-key.ts',
     '../../../shared/trust-log.ts',
     '../../../shared/trust-log-head.ts',
+    '../../../shared/trust-log-keys.ts',
   ]),
   module('orchestrator/src/config/machine-join.ts', [
     '../../../shared/brand.ts',
@@ -103,6 +105,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/trust-list.ts',
     '../../../shared/trust-log.ts',
     '../../../shared/trust-log-head.ts',
+    '../../../shared/trust-log-keys.ts',
     './config-service.ts',
     './data-key-access.ts',
     './trust-log-append.ts',
@@ -115,7 +118,7 @@ export const settingsModules: SettingsModule[] = [
   module('orchestrator/src/config/data-key-access.ts', [
     '../../../shared/config-client.ts',
     '../../../shared/secret-envelope.ts',
-    '../../../shared/trust-list.ts',
+    '../../../shared/trust-log-keys.ts',
   ]),
   module('orchestrator/src/config/machine-trust-refusal.ts', [
     '../../../shared/brand.ts',

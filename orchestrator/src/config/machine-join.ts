@@ -34,10 +34,8 @@ import {
   trustLogEntryHash,
   verifyTrustLog,
 } from '../../../shared/trust-log.ts'
-import {
-  readRememberedTrustLogHead,
-  writeRememberedTrustLogHead,
-} from '../../../shared/trust-log-head.ts'
+import { writeRememberedTrustLogHead } from '../../../shared/trust-log-head.ts'
+import { verifiedTrustLogForSpace } from '../../../shared/trust-log-keys.ts'
 import { machineTrust } from './config-service.ts'
 import { encoded } from './data-key-access.ts'
 import { appendSignedTrustLogEntry } from './trust-log-append.ts'
@@ -173,14 +171,7 @@ const mismatch = () =>
   new Error(`the pairing code did not match; start again with \`${PLATFORM_SLUG} machine join\``)
 
 async function loadVerifiedTrustLog(ports: Ports, selected: SelectedSpace) {
-  const entries = await ports.client.readTrustLog({ destinationSpaceId: selected.spaceId })
-  const remembered = readRememberedTrustLogHead(selected.spaceId, ports.env)
-  return {
-    entries,
-    state: entries.length
-      ? verifyTrustLog(entries, { spaceId: selected.spaceId, rememberedHead: remembered })
-      : null,
-  }
+  return verifiedTrustLogForSpace(ports.client, selected.spaceId, ports.env)
 }
 
 async function finishMachineJoinSession(

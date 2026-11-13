@@ -32,6 +32,7 @@ const pinnedUserId = userId
 const namedSpace = { spaceId: namedSpaceId, slug: 'named' }
 const activeSpace = { spaceId: activeSpaceId, slug: 'active' }
 const roots: string[] = []
+const emptyTrustLog = { readTrustLog: async () => [] }
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
@@ -64,6 +65,7 @@ test('named-space registration remains compatible when no signing key is stored'
   const current = await wrappedDataKey(namedSpaceId, keyId, pair)
   let signingPublicKey: string | undefined
   const client = {
+    ...emptyTrustLog,
     whoami: async () => identity,
     listMachineKeys: async () => [],
     registerMachineKey: async (
@@ -128,6 +130,7 @@ test('named-space registration claims an unowned key with the named space identi
   const destinations: Array<string | undefined> = []
   let claimed = false
   const client = {
+    ...emptyTrustLog,
     whoami: async () => identity,
     listMachineKeys: async (destination: { destinationSpaceId?: string }) => {
       destinations.push(destination.destinationSpaceId)
@@ -208,6 +211,7 @@ test('named-space registration creates the first data key with named-space seali
     userId,
   }
   const client = {
+    ...emptyTrustLog,
     whoami: async () => identity,
     listMachineKeys: async () => [machine],
     registerMachineKey: async () => machine,
@@ -250,6 +254,7 @@ test('named-space registration refuses a current data key without this machine w
   const { env, identity, keyId, pair } = await fixture()
   const publicKey = Buffer.from(pair.publicKey).toString('base64url')
   const client = {
+    ...emptyTrustLog,
     whoami: async () => identity,
     listMachineKeys: async () => [{ keyId }],
     registerMachineKey: async () => ({ userId }),
@@ -269,6 +274,7 @@ test('trust in a named space routes every call and posts a wrap sealed for that 
   const destinations: Array<string | undefined> = []
   let posted: Parameters<ConfigClient['addWraps']>[1] | undefined
   const client = {
+    ...emptyTrustLog,
     whoami: async () => identity,
     listMachineKeys: async (destination: { destinationSpaceId?: string }) => {
       destinations.push(destination.destinationSpaceId)
@@ -323,6 +329,7 @@ test('trust in a named space refuses when the space has no data key', async () =
   const targetKeyId = await machineKeyId(target.publicKey)
   let addWrapsCalls = 0
   const client = {
+    ...emptyTrustLog,
     whoami: async () => identity,
     listMachineKeys: async () => [{ keyId: targetKeyId, revokedAt: null }],
     currentDataKey: async () => {
@@ -354,6 +361,7 @@ test('registration uses the explicitly selected active destination and leaves pi
   const current = await wrappedDataKey(activeSpaceId, keyId, pair)
   const destinations: Array<string | undefined> = []
   const client = {
+    ...emptyTrustLog,
     whoami: async () => identity,
     listMachineKeys: async (destination: { destinationSpaceId?: string }) => {
       destinations.push(destination.destinationSpaceId)
@@ -386,6 +394,7 @@ test("registration refuses when the data key wrap's sender is not trusted", asyn
   const { env, identity, keyId } = await fixture()
   const senderKeyId = 'untrusted-sender'
   const client = {
+    ...emptyTrustLog,
     whoami: async () => identity,
     listMachineKeys: async () => [{ keyId }],
     registerMachineKey: async () => ({ userId }),

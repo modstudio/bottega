@@ -105,7 +105,7 @@ export const sharedModules: ArchitectureModule[] = [
     './record-space-request.ts',
     './record-remedies.ts',
     './secret-envelope.ts',
-    './trust-list.ts',
+    './trust-log-keys.ts',
   ]),
   module('shared/hosted-secret-row.ts', [
     './brand.ts',
@@ -113,7 +113,7 @@ export const sharedModules: ArchitectureModule[] = [
     './config-directory.ts',
     './hosted-secret-opening.ts',
     './machine-key-store.ts',
-    './trust-list.ts',
+    './trust-log-keys.ts',
   ]),
   module('shared/trust-list.ts', [
     'node:fs',
@@ -122,13 +122,20 @@ export const sharedModules: ArchitectureModule[] = [
     './config-directory.ts',
     './machine-key-id.ts',
   ]),
+  module('shared/trust-log-keys.ts', [
+    './config-client.ts',
+    './config-directory.ts',
+    './trust-list.ts',
+    './trust-log.ts',
+    './trust-log-head.ts',
+  ]),
   module('shared/hosted-secrets.ts', [
     './config-client.ts',
     './hosted-config-space.ts',
     './hosted-secret-opening.ts',
     './machine-key-store.ts',
     './sealed-value.ts',
-    './trust-list.ts',
+    './trust-log-keys.ts',
   ]),
   module('shared/sealed-value.ts', []),
   module('shared/secret-envelope.ts', [

@@ -13,7 +13,7 @@ import {
 } from './hosted-secret-opening.ts'
 import { machineKeyInfo, readMachineKey } from './machine-key-store.ts'
 import { sealedValueIsEmpty } from './sealed-value.ts'
-import { readTrustList, type TrustList } from './trust-list.ts'
+import { trustedKeysForSpace, type TrustedKeys } from './trust-log-keys.ts'
 
 export type HostedSecretErrorReason =
   | 'machine-key-missing'
@@ -45,7 +45,7 @@ export type HostedSecretResolution = {
 type Dependencies = {
   client: ConfigClient
   machine: Awaited<ReturnType<typeof machineKeyInfo>>
-  trust: TrustList
+  trust: TrustedKeys
   pinnedIdentity?: HostedConfigIdentity
 }
 
@@ -58,7 +58,12 @@ async function defaults(signal?: AbortSignal): Promise<Dependencies> {
   const client = configClient(process.env, fetch, undefined, signal)
   const pair = readMachineKey()
   if (!pair) throw new HostedSecretError('*', 'machine-key-missing')
-  return { client, machine: await machineKeyInfo(pair), trust: await readTrustList() }
+  const identity = await hostedIdentity(client)
+  return {
+    client,
+    machine: await machineKeyInfo(pair),
+    trust: await trustedKeysForSpace(client, identity.spaceId),
+  }
 }
 
 async function rowInScope(

@@ -10,7 +10,8 @@ import { readMachineKey } from '../../../shared/machine-key-store.ts'
 import { readMachineSigningKey } from '../../../shared/machine-signing-key.ts'
 import { pinnedUserMismatchRemedy } from '../../../shared/record-remedies.ts'
 import { generateDataKey } from '../../../shared/secret-envelope.ts'
-import { pinTrustedMachine, readTrustList } from '../../../shared/trust-list.ts'
+import { pinTrustedMachine } from '../../../shared/trust-list.ts'
+import { trustedKeysForSpace } from '../../../shared/trust-log-keys.ts'
 import {
   bytes,
   claimMachineKey,
@@ -55,7 +56,7 @@ async function wrapsForNamedSpace(
   env: ConfigEnvironment,
 ) {
   const [trusted, registered] = await Promise.all([
-    readTrustList(env),
+    trustedKeysForSpace(client, space.spaceId, env),
     client.listMachineKeys(space.destination),
   ])
   const recipientKeyIds = registered
@@ -110,7 +111,12 @@ export async function machineRegister(
     const current = await client.currentDataKey(keyId, space.destination)
     if (current.wraps.length === 0) throw trustRemedy(space, keyId, publicKey)
     try {
-      await openDataKey(current, space.spaceId, pair, await readTrustList(env))
+      await openDataKey(
+        current,
+        space.spaceId,
+        pair,
+        await trustedKeysForSpace(client, space.spaceId, env),
+      )
     } catch (error) {
       if (!(error instanceof DataKeyWrapAccessError)) throw error
       const wrap = current.wraps[0]
@@ -163,7 +169,7 @@ export async function machineTrustInSpace(
   const localKeyId = await machineKeyId(pair.publicKey)
   try {
     const current = await client.currentDataKey(localKeyId, space.destination)
-    const trusted = await readTrustList(env)
+    const trusted = await trustedKeysForSpace(client, space.spaceId, env)
     const dek = await openDataKey(current, space.spaceId, pair, trusted)
     const [wrapped] = await wrapsForRecipients(
       dek,

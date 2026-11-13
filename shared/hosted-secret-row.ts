@@ -6,7 +6,7 @@ import type { ConfigClient, ConfigDestination, ConfigSecret } from './config-cli
 import type { ConfigEnvironment } from './config-directory.ts'
 import { hostedSecretIdentity, openHostedSecret } from './hosted-secret-opening.ts'
 import { machineKeyInfo, readMachineKey } from './machine-key-store.ts'
-import { readTrustList } from './trust-list.ts'
+import { trustedKeysForSpace } from './trust-log-keys.ts'
 
 export function localMachine(env: ConfigEnvironment = process.env) {
   const pair = readMachineKey(env)
@@ -29,7 +29,7 @@ export async function openHostedSecretRow(
   const [full, key, trust] = await Promise.all([
     client.getSecret(row.key, row.scope, row.environment, destination),
     client.getDataKey(row.dekId, local.keyId, destination),
-    readTrustList(),
+    trustedKeysForSpace(client, identity.spaceId),
   ])
   return openHostedSecret({
     row: full,

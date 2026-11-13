@@ -65,10 +65,9 @@ import {
 } from '../../../shared/ship-to.ts'
 import {
   pinTrustedMachine,
-  readTrustList,
-  type TrustList,
   unpinTrustedMachine,
 } from '../../../shared/trust-list.ts'
+import { trustedKeysForSpace, type TrustedKeys } from '../../../shared/trust-log-keys.ts'
 import type { MachineNamePair } from '../record/machine-name.ts'
 import { claimCurrentMachineNames } from '../record/machine-name-command.ts'
 import { LEGACY_ENVIRONMENT_SECRET_NAMES } from '../setup/environment-name-migration.ts'
@@ -100,12 +99,12 @@ async function unwrap(
   client: ConfigClient,
   key: DataKey,
   machine?: Awaited<ReturnType<typeof localMachine>>,
-  trust?: TrustList,
+  trust?: TrustedKeys,
   destinationSpaceId?: string,
 ) {
   const local = machine ?? (await localMachine())
-  const trusted = trust ?? (await readTrustList())
   const spaceId = destinationSpaceId ?? (await identity(client)).spaceId
+  const trusted = trust ?? (await trustedKeysForSpace(client, spaceId))
   return openDataKey(key, spaceId, local, trusted)
 }
 
@@ -113,7 +112,7 @@ async function wrapsFor(
   dek: Uint8Array,
   dekId: string,
   version: number,
-  trust: TrustList,
+  trust: TrustedKeys,
   client: ConfigClient,
   destinationSpaceId?: string,
   env: ConfigEnvironment = process.env,
@@ -157,7 +156,8 @@ async function currentOrCreate(
     if (!isNotFound(error)) throw error
     if (!createDataKey) throw error
     await unpinServerRevoked(client)
-    const trust = await readTrustList()
+    const spaceId = (await identity(client)).spaceId
+    const trust = await trustedKeysForSpace(client, spaceId)
     const dek = generateDataKey()
     const dekId = crypto.randomUUID()
     const version = 1
@@ -261,7 +261,7 @@ export async function machineTrust(
   if (refusal) throw new Error(refusal)
   await pinTrustedMachine(keyId, publicBytes, label, env)
   const machine = await localMachine(env)
-  const trust = await readTrustList(env)
+  const trust = await trustedKeysForSpace(client, selected.spaceId, env)
   const [sender, recipient] = [trust[machine.keyId], trust[keyId]]
   if (!sender || !recipient) throw new Error('machine is absent from the trust list after pinning')
   try {
@@ -308,7 +308,7 @@ async function rotateDataKey(
   client: ConfigClient,
   machine: Awaited<ReturnType<typeof localMachine>>,
   currentBefore: DataKey,
-  trust: TrustList,
+  trust: TrustedKeys,
   rotate: boolean,
   selectedSpaceId?: string,
   destination: ConfigDestination = {},
@@ -394,7 +394,11 @@ async function rotateAfterLatestRevocation(
     client,
     machine,
     current,
-    await readTrustList(env),
+    await trustedKeysForSpace(
+      client,
+      selectedSpaceId ?? (await identity(client, env)).spaceId,
+      env,
+    ),
     shouldRotateAfterRevocation(current, remote),
     selectedSpaceId,
     destination,
@@ -412,13 +416,13 @@ async function revokeIfNeeded(
     await unpinTrustedMachine(keyId)
     return revokedAt
   }
-  const trustBefore = await readTrustList()
+  const who = await identity(client)
+  const trustBefore = await trustedKeysForSpace(client, who.spaceId)
   const currentBefore = await client.currentDataKey(machine.keyId)
   const oldDek = await unwrap(client, currentBefore, machine, trustBefore)
   if (!currentBefore.wraps.some((wrap) => wrap.senderKeyId === machine.keyId)) {
     const self = trustBefore[machine.keyId]
     if (!self) throw new Error('this machine is absent from the trust list')
-    const who = await identity(client)
     const wrapped = await wrapDataKey({
       dek: oldDek,
       wrapContext: {
