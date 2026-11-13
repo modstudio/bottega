@@ -21,6 +21,7 @@ import type {
   TaskFlowCursorLifecycleRow,
   TaskFlowCursorWorkRow,
   TaskFlowInboxQuestionRow,
+  TaskFlowKeylessSessionCursorRow,
   TaskFlowLinkedTaskReferenceRow,
   TaskFlowListedStageRow,
   TaskFlowObligationRow,
@@ -641,6 +642,10 @@ class SqliteTaskFlowStore {
     return questions.openStagesForSession(this.database, sessionId)
   }
 
+  keylessSessionCursors(project: string | null): TaskFlowKeylessSessionCursorRow[] {
+    return questions.keylessSessionCursors(this.database, project)
+  }
+
   openWorkflowQuestionCountForSession(sessionId: string): number {
     return questions.openWorkflowQuestionCountForSession(this.database, sessionId)
   }
@@ -793,6 +798,7 @@ export function sqliteTaskFlowReadStore(database: Database): SqliteTaskFlowReadS
     cursorWorkForSession: async (sessionId) => local.cursorWorkForSession(sessionId),
     cursorLifecycleForSession: async (sessionId) => local.cursorLifecycleForSession(sessionId),
     openStagesForSession: async (sessionId) => local.openStagesForSession(sessionId),
+    keylessSessionCursors: async (project) => local.keylessSessionCursors(project),
     openWorkflowQuestionCountForSession: async (sessionId) =>
       local.openWorkflowQuestionCountForSession(sessionId),
     workflowInboxQuestions: async () => local.workflowInboxQuestions(),

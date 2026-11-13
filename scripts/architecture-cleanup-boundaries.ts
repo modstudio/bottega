@@ -476,7 +476,7 @@ export const cleanupBoundarySpecs = [
       './cleanup-sweep-explore.ts',
       './cleanup-sweep-session-close-out.ts',
     ],
-    typeOnlyAllowed: ['./cleanup.ts'],
+    typeOnlyAllowed: ['bun:sqlite', './cleanup.ts'],
     reason: 'Compose the machine-wide session cleanup passes without growing the main sweep.',
   },
   {
@@ -492,7 +492,7 @@ export const cleanupBoundarySpecs = [
     allowed: [
       'bun:sqlite',
       '../database/db.ts',
-      '../run/question-open.ts',
+      '../workflow/task-flow-store.ts',
       '../workflow/workflow-explore-lifecycle-close.ts',
       './cleanup.ts',
       './cleanup-sweep-decisions.ts',

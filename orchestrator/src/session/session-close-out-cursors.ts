@@ -45,7 +45,11 @@ export async function releaseSessionCursors(input: {
   }
 }): Promise<void> {
   for (const cursor of input.cursors) {
-    if (cursor.workflow_slug === 'explore' && !cursor.open_question_record_id) {
+    if (
+      cursor.workflow_slug === 'explore' &&
+      cursor.workflow_key === '' &&
+      !cursor.open_question_record_id
+    ) {
       const label = `workflow cursor ${cursor.number} (explore) as answered`
       if (input.dryRun) {
         input.report.mechanical.push(`would close ${label}`)

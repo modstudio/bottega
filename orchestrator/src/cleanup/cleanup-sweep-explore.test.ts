@@ -8,6 +8,7 @@ import { showWorkflowText } from '../workflow/workflow-text-copy.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import { UNJUDGED_OWNER_WINDOW_MS } from './cleanup-sweep-decisions.ts'
 import { sweepSessionCursors } from './cleanup-sweep-explore.ts'
+import { sweepSessionState } from './cleanup-sweep-session.ts'
 
 function addExplore(database: Database, now: number) {
   const projectRecordId = newRecordId()
@@ -85,3 +86,25 @@ test('sweep expires an orphaned explore and keeps its attachment readable', asyn
   })
   expect(lines).toContain(`expired workflow cursor ${explore.cursor} (explore)`)
 })
+
+test('session sweep reports a cursor close failure', async () => {
+  const database = migratedTestDatabase()
+  const now = Date.parse('2026-11-12T12:00:00.000Z')
+  const explore = addExplore(database, now)
+  database.query("UPDATE workflow_cursor SET closed='not-json' WHERE record_id=?").run(
+    explore.cursorRecordId,
+  )
+  const lines: string[] = []
+  const presentation: CleanupPresentation = {
+    log: (...values) => lines.push(values.join(' ')),
+    error: (...values) => lines.push(`error: ${values.join(' ')}`),
+    setExitCode: () => {},
+    keptBranchLine: String,
+  }
+
+  expect(
+    await sweepSessionState({ project: null, dryRun: false, presentation, database, now }),
+  ).toBe(true)
+  expect(lines).toContainEqual(expect.stringContaining('could not expire workflow cursor'))
+})
+
