@@ -161,10 +161,6 @@ describe('operator MCP tools', () => {
           calls.push(`set ${input.kind} ${input.id} on ${input.task}`)
           return { ...input, holder: `task:${input.task}`, revision: 'revision', task: input.task }
         },
-        drop: async (input) => {
-          calls.push(`drop ${input.id} on ${input.task}`)
-          return { ...input, holder: `task:${input.task}`, task: input.task, removed: true }
-        },
       } as ContextMomentPorts,
     )
 

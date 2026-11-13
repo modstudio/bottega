@@ -245,11 +245,6 @@ test('review-owed is applied as the only floor and leaves no evidence floor behi
 test('a whitespace-padded self-ruling carries its question into the context moment', async () => {
   const d = database()
   await openAtRuling(d)
-  const cursor = d
-    .query<{ record_id: string; number: number }, []>(
-      'SELECT record_id,number FROM workflow_cursor',
-    )
-    .get()!
   const result = await closeCursorWithTextCopyResult(
     {
       action: 'next',

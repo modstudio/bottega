@@ -1,6 +1,10 @@
 // concern: context-service
 /** Applies a verb's context effect without coupling its primary mutation to context storage. */
-import { type ContextMomentEffect, type ContextMomentOutput, contextSetCommand } from './context-moment.ts'
+import {
+  type ContextMomentEffect,
+  type ContextMomentOutput,
+  contextSetCommand,
+} from './context-moment.ts'
 import { contextItemRevision, setContextItem } from './context-service.ts'
 import { ContextWriteRefusalError } from './doc-context-write.ts'
 

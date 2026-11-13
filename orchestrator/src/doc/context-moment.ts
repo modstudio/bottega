@@ -9,6 +9,7 @@ type ContextMomentItemKind = 'ruling' | 'position'
 export type ContextMomentEffect = {
   writes: Array<{ kind: ContextMomentItemKind; id: string; source: string; body: string }>
 }
+
 export type ContextMomentInput = {
   moment: ContextMoment
   taskKey?: string | null

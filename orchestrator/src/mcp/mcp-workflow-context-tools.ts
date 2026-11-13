@@ -53,7 +53,7 @@ function registerAwaitWorkflowRulingTool(server: McpServer, ports: McpWorkflowCo
         undefined,
         cursor,
       )
-      return result
+      return resultWithContextReports(result, [])
     },
   )
 }

@@ -274,7 +274,7 @@ export async function assertContextSetAllowed(input: {
 }
 
 /** A context item leaves only through its owner. */
-export async function assertContextDropAllowed({
+export function assertContextDropAllowed({
   item,
   database = db(),
 }: {
@@ -282,7 +282,7 @@ export async function assertContextDropAllowed({
   database?: Database
   ports?: ContextFactsPorts
   task?: ContextTask
-}): Promise<void> {
+}): void {
   const refusal = holderOwnershipRefusal(item.holder, sessionId(database), item.id)
   if (refusal) throw new ContextWriteRefusalError(refusal)
 }

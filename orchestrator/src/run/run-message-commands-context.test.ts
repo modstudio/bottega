@@ -31,10 +31,6 @@ const contextPorts = (calls: string[]): ContextMomentPorts =>
         task: input.task ?? null,
       }
     },
-    drop: async (input) => {
-      calls.push(`drop ${input.id} on ${input.task}`)
-      return { holder: `task:${input.task}`, task: input.task ?? null, id: input.id, removed: true }
-    },
   }) as ContextMomentPorts
 
 test('answering a continuation turn question writes its root task position', async () => {
@@ -140,9 +136,6 @@ test('a context port failure leaves the answer recorded and reports without thro
   const throwing = {
     revision: async () => undefined,
     set: async () => {
-      throw new Error('context unavailable')
-    },
-    drop: async () => {
       throw new Error('context unavailable')
     },
   } as ContextMomentPorts

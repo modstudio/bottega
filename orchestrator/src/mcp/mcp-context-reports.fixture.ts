@@ -18,10 +18,6 @@ function recordingContextMomentPorts(
         task: input.task ?? null,
       }
     },
-    drop: async (input) => {
-      calls.push(`drop ${input.id} on ${input.task}`)
-      return { ...input, holder: `task:${input.task}`, task: input.task ?? null, removed: true }
-    },
   }
 }
 

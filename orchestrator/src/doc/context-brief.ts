@@ -181,7 +181,7 @@ export function storedBriefHolders(
 }
 
 /** Read only unanswered, unclosed questions bound to one task record. */
-export function openTaskQuestions(
+function openTaskQuestions(
   taskRecordId: string,
   database: Database,
 ): Array<{ number: number; question: string }> {
