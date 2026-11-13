@@ -6,13 +6,13 @@ import {
   unusedBoardClientMethods,
   unusedIdentityAndSpaceClientMethods,
 } from '../../test/fixtures/record-api.ts'
-import { unusedContextItemClientMethods } from '../../test/fixtures/record-api-context-items.ts'
 import { db } from '../database/db.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { retireProject, upsertProject } from '../project/projects.ts'
 import { subjectClient } from '../subject/subject-client.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import type { RecordApiClient } from './record-api-client.ts'
+import { unusedContextItemClientMethods } from './record-api-context-items.fixture.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { decodeRecordCursor, encodeRecordCursor, type RecordCursor } from './record-cursor.ts'
 

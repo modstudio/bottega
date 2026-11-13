@@ -1,4 +1,4 @@
-import type { RecordIdentity } from '../../src/record/record-auth.ts'
+import type { RecordIdentity } from './record-auth.ts'
 
 export const identity: RecordIdentity = {
   user: { id: 'user-a', email: 'a@example.test' },

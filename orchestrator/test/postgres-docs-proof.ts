@@ -2,6 +2,7 @@ import { expect } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { db } from '../src/database/db.ts'
 import type { RecordApiClient } from '../src/record/record-api-client.ts'
+import { unusedContextItemClientMethods } from '../src/record/record-api-context-items.fixture.ts'
 import type { RecordIdentity } from '../src/record/record-auth.ts'
 import { pullRecordCache } from '../src/record/record-cache.ts'
 import { docImportBody } from './fixtures/doc-import.ts'
@@ -12,7 +13,6 @@ import {
   unusedBoardClientMethods,
   unusedIdentityAndSpaceClientMethods,
 } from './fixtures/record-api.ts'
-import { unusedContextItemClientMethods } from './fixtures/record-api-context-items.ts'
 import { proveHostedCanonRefusal } from './postgres-canon-refusal-proof.ts'
 import { proveEqualTimestampDocPaging } from './postgres-doc-cursor-proof.ts'
 import { proveProjectIdentity } from './postgres-project-identity-proof.ts'

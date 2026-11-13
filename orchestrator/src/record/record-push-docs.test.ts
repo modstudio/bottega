@@ -6,9 +6,9 @@ import {
   unusedBoardClientMethods,
   unusedIdentityAndSpaceClientMethods,
 } from '../../test/fixtures/record-api.ts'
-import { unusedContextItemClientMethods } from '../../test/fixtures/record-api-context-items.ts'
 import { db, writableDb } from '../database/db.ts'
 import type { RecordApiClient, RecordDocImportInput } from './record-api-client.ts'
+import { unusedContextItemClientMethods } from './record-api-context-items.fixture.ts'
 import { groupLocalDocsForImport, pushDocsCommand } from './record-push-docs.ts'
 
 const OLD = '2026-01-01T00:00:00.000Z'

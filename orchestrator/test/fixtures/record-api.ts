@@ -9,6 +9,8 @@ import type {
   RecordDocImportInput,
   RecordDocUpsertInput,
 } from '../../src/record/record-api-client.ts'
+import { unusedContextItemClientMethods } from '../../src/record/record-api-context-items.fixture.ts'
+import { identity } from '../../src/record/record-api-identity.fixture.ts'
 import type { RecordSubjectRouteDeps } from '../../src/record/record-api-subjects.ts'
 import {
   type HostedBoardChange,
@@ -19,8 +21,6 @@ import {
 import { BOARD_PRESENCE_WRITE_INTERVAL_MS } from '../../src/record/record-board-presence.ts'
 import { createBoardStreamRegistry } from '../../src/record/record-board-stream.ts'
 import { assertRevisionWrite } from '../../src/record/record-doc-errors.ts'
-import { unusedContextItemClientMethods } from './record-api-context-items.ts'
-import { identity } from './record-api-identity.ts'
 import { type MemoryTaskFlowInput, memoryTaskFlowClient } from './record-api-task-flow.ts'
 
 export { identity }
