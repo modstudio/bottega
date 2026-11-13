@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
+import { type Job, job } from '../jobs/jobs.ts'
 import {
   cliWorkflowCursorContext,
   selectWorkflowCursorByHandle,
@@ -12,6 +13,7 @@ import { cursorComposition } from './workflow-cursor-serve.ts'
 export type StepActionTarget = {
   cursor: number
   cursorRecordId: string
+  workflowSlug: string
   stepSlug: string
   taskKey: string
   jobs: string[]
@@ -35,6 +37,7 @@ export async function stepActionTarget(
   return {
     cursor: row.id,
     cursorRecordId: row.record_id,
+    workflowSlug: row.workflow_slug,
     stepSlug: step.slug,
     taskKey: row.workflow_key,
     jobs: step.jobs,
@@ -44,6 +47,38 @@ export async function stepActionTarget(
 
 export type StepActionRead = (cursor: number) => Promise<StepActionTarget>
 
+export type StepDispatchDecision =
+  | { action: 'dispatch-with-key'; key: string }
+  | { action: 'dispatch-without-key' }
+  | { action: 'refuse'; reason: string }
+
+/** Decide whether the current step and cursor may dispatch this declared job. */
+export function decideStepDispatch(input: {
+  cursor: number
+  taskKey: string
+  workflowSlug: string
+  stepSlug: string
+  stepJobs: string[]
+  job: Pick<Job, 'name' | 'needs'>
+}): StepDispatchDecision {
+  if (!input.taskKey && input.job.needs.writesRepo === true)
+    return {
+      action: 'refuse',
+      reason:
+        `workflow ${input.workflowSlug} cursor ${input.cursor} has no task key, and ${input.job.name} writes the repository; ` +
+        'compose plan-task (or take up a task), then dispatch from that keyed cursor',
+    }
+  if (!input.stepJobs.includes(input.job.name)) {
+    const declared = input.stepJobs.length ? input.stepJobs.join(', ') : 'none'
+    return {
+      action: 'refuse',
+      reason: `step ${input.stepSlug} of cursor ${input.cursor} declares jobs: ${declared}; ${input.job.name} is not one of them`,
+    }
+  }
+  if (input.taskKey) return { action: 'dispatch-with-key', key: input.taskKey }
+  return { action: 'dispatch-without-key' }
+}
+
 export async function dispatchForStep(
   input: { cursor: number; job: string; argv: string[] },
   ports: {
@@ -52,18 +87,18 @@ export async function dispatchForStep(
   },
 ): Promise<void> {
   const target = await (ports.read ?? stepActionTarget)(input.cursor)
-  if (!target.taskKey) {
-    throw new Error(
-      `cursor ${input.cursor} has no task key; workflow dispatch needs a keyed cursor`,
-    )
-  }
-  if (!target.jobs.includes(input.job)) {
-    const declared = target.jobs.length ? target.jobs.join(', ') : 'none'
-    throw new Error(
-      `step ${target.stepSlug} of cursor ${input.cursor} declares jobs: ${declared}; ${input.job} is not one of them`,
-    )
-  }
-  await ports.dispatch([...input.argv, '--key', target.taskKey], {
+  const decision = decideStepDispatch({
+    cursor: input.cursor,
+    taskKey: target.taskKey,
+    workflowSlug: target.workflowSlug,
+    stepSlug: target.stepSlug,
+    stepJobs: target.jobs,
+    job: job(input.job),
+  })
+  if (decision.action === 'refuse') throw new Error(decision.reason)
+  const argv =
+    decision.action === 'dispatch-with-key' ? [...input.argv, '--key', decision.key] : input.argv
+  await ports.dispatch(argv, {
     cursorRecordId: target.cursorRecordId,
     stepSlug: target.stepSlug,
   })
