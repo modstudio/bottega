@@ -89,6 +89,8 @@ const HOSTED_FIXTURE_IMPORTS_WITHOUT_SQL = new Set([
   // Serves an in-memory hosted task-flow store and intentionally owns no SQL.
   'orchestrator/test/fixtures/record-api-task-flow.ts',
   'orchestrator/test/fixtures/record-session.ts',
+  // Drives machine-key registration through its service and intentionally owns no SQL.
+  'orchestrator/test/support/machine-signing-registration-proof.ts',
   // Records gate fixture timings and intentionally owns no SQL.
   'orchestrator/test/gate-phase-timing.ts',
   'orchestrator/test/gate-timings-reporter.ts',

@@ -63,11 +63,9 @@ import {
   listConfigEntries,
   listConfigSecrets,
   listDataKeys,
-  listMachineKeys,
   listSpaceConfigAccess,
   putConfigEntry,
   putConfigSecret,
-  registerMachineKey,
   retireDataKey,
   revokeMachineKey,
   withdrawSpaceConfigAccess,
@@ -96,6 +94,7 @@ import {
   upsertRecordLens,
   upsertRecordLensProfile,
 } from './record-lens-catalogue.ts'
+import { listMachineKeys, registerMachineKey } from './record-machine-key-registration.ts'
 import { setSpaceMemberPermission } from './record-member-permission.ts'
 import { hideRow, listHidden, unhideRow } from './record-moderation-hide.ts'
 import {

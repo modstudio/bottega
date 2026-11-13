@@ -7,6 +7,7 @@ import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { readHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import { readMachineKey } from '../../../shared/machine-key-store.ts'
+import { readMachineSigningKey } from '../../../shared/machine-signing-key.ts'
 import { pinnedUserMismatchRemedy } from '../../../shared/record-remedies.ts'
 import { generateDataKey } from '../../../shared/secret-envelope.ts'
 import { pinTrustedMachine, readTrustList } from '../../../shared/trust-list.ts'
@@ -86,13 +87,20 @@ export async function machineRegister(
     throw new Error(
       `machine key is not initialized; run \`${PLATFORM_SLUG} machine config machine init --space ${selectedSpace.slug}\``,
     )
+  const signingPair = readMachineSigningKey(env)
   const keyId = await machineKeyId(pair.publicKey)
   const publicKey = encoded(pair.publicKey)
   const space = await namedSpace(selectedSpace, client, env)
   const existing = (await client.listMachineKeys(space.destination)).find(
     (item) => item.keyId === keyId,
   )
-  const registered = await client.registerMachineKey(keyId, publicKey, label, space.destination)
+  const registered = await client.registerMachineKey(
+    keyId,
+    publicKey,
+    label,
+    space.destination,
+    signingPair ? encoded(signingPair.publicKey) : undefined,
+  )
   const lines = [existing ? 'already registered' : 'registered']
   if (registered.userId === null) {
     await claimMachineKey(pair, keyId, space.spaceId, client, space.destination)

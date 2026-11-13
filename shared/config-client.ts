@@ -83,14 +83,26 @@ export type DataKey = {
   retiredAt: string | null
   wraps: DataKeyWrap[]
 }
-type MachineKey = {
+type WireMachineKey = {
   keyId: string
   publicKey: string
+  signingPublicKey?: string | null
   label: string
   createdAt: string
   revokedAt: string | null
   userId: string | null
 }
+export type MachineKey = Omit<WireMachineKey, 'signingPublicKey'> & {
+  signingPublicKey: Uint8Array | null
+}
+
+const machineKey = (value: WireMachineKey): MachineKey => ({
+  ...value,
+  signingPublicKey:
+    value.signingPublicKey == null
+      ? null
+      : new Uint8Array(Buffer.from(value.signingPublicKey, 'base64url')),
+})
 type ConfigIdentity = {
   user: { id: string }
   activeSpaceId: string | null
@@ -309,18 +321,21 @@ function configKeyClient(request: Request, query: Query) {
         method: 'POST',
       }),
     listMachineKeys: (destination: ConfigDestination = {}) =>
-      request<{ items: MachineKey[] }>('/v1/config/machine-keys', destination).then((x) => x.items),
+      request<{ items: WireMachineKey[] }>('/v1/config/machine-keys', destination).then((x) =>
+        x.items.map(machineKey),
+      ),
     registerMachineKey: (
       keyId: string,
       publicKey: string,
       label: string,
       destination: ConfigDestination = {},
+      signingPublicKey?: string,
     ) =>
-      request<MachineKey>(`/v1/config/machine-keys/${keyId}`, {
+      request<WireMachineKey>(`/v1/config/machine-keys/${keyId}`, {
         ...destination,
         method: 'PUT',
-        body: JSON.stringify({ publicKey, label }),
-      }),
+        body: JSON.stringify({ publicKey, signingPublicKey, label }),
+      }).then(machineKey),
   }
 }
 

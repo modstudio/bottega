@@ -22,14 +22,15 @@ import {
   listSpaceConfigAccess,
   putConfigEntry,
   putConfigSecret,
-  registerMachineKey,
   retireDataKey,
   revokeMachineKey,
 } from '../src/record/record-config.ts'
+import { registerMachineKey } from '../src/record/record-machine-key-registration.ts'
 import { setSpaceMemberPermission } from '../src/record/record-member-permission.ts'
 import { proveCredentialPreferencePersistence } from './fixtures/credential-preference-proof.ts'
 import { asSpace, asSpaces, succeeds } from './fixtures/postgres-rls.ts'
 import { proveCredentialSecretProjectAddressing } from './support/credential-secret-proof.ts'
+import { proveMachineSigningKeyRegistration } from './support/machine-signing-registration-proof.ts'
 
 const USER_B = '01990000-0000-7000-8000-000000000020'
 const DEK_A = '01990000-0000-7000-8000-0000000000da'
@@ -993,6 +994,7 @@ export function registerHostedConfigProofs(
       publicKey,
       label: 'service machine',
     })
+    await proveMachineSigningKeyRegistration(serviceTenant, keyId, publicKey)
     await expect(
       registerMachineKey({
         ...serviceTenant,

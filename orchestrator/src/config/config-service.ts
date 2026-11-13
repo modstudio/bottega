@@ -40,6 +40,12 @@ import {
   writeMachineKey,
 } from '../../../shared/machine-key-store.ts'
 import {
+  generateMachineSigningKeyPair,
+  readMachineSigningKey,
+  replaceRevokedMachineSigningKey,
+  writeMachineSigningKey,
+} from '../../../shared/machine-signing-key.ts'
+import {
   pinnedSpaceMismatchRemedy,
   pinnedUserMismatchRemedy,
   RECORD_ACTIVE_SPACE_REMEDY,
@@ -203,6 +209,11 @@ export async function machineInit(
     if (current.user.id !== pinned.userId) throw new Error(pinnedUserMismatchRemedy(pinned.userId))
   }
   const existing = readMachineKey(env)
+  let signingPair = readMachineSigningKey(env)
+  if (!signingPair) {
+    signingPair = generateMachineSigningKeyPair()
+    writeMachineSigningKey(signingPair, env)
+  }
   let pair = existing ?? (await generateMachineKeyPair())
   let keyId = await machineKeyId(pair.publicKey)
   const destination = { destinationSpaceId: selectedSpaceId }
@@ -212,9 +223,12 @@ export async function machineInit(
     )
     if (registered?.revokedAt) {
       const replacement = await generateMachineKeyPair()
+      const signingReplacement = generateMachineSigningKeyPair()
       replaceRevokedMachineKey(keyId, replacement, env)
+      replaceRevokedMachineSigningKey(keyId, signingReplacement, env)
       await unpinTrustedMachine(keyId, env)
       pair = replacement
+      signingPair = signingReplacement
       keyId = await machineKeyId(pair.publicKey)
     }
   } else writeMachineKey(pair, env)
@@ -225,6 +239,7 @@ export async function machineInit(
     encoded(pair.publicKey),
     label,
     destination,
+    encoded(signingPair.publicKey),
   )
   if (registered.userId === null)
     await claimMachineKey(pair, keyId, selectedSpaceId, client, destination)

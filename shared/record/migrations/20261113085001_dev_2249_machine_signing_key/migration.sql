@@ -1,0 +1,2 @@
+ALTER TABLE "machine_public_key" ADD COLUMN "signing_public_key" bytea;--> statement-breakpoint
+ALTER TABLE "machine_public_key" ADD CONSTRAINT "machine_public_key_signing_length_check" CHECK ("signing_public_key" IS NULL OR octet_length("signing_public_key") = 32);

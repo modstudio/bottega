@@ -668,53 +668,6 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     })
     return context.json({ deleted: true })
   })
-  app.get('/v1/config/machine-keys', async (context) => {
-    const active = scope(context)
-    if (!active) return noSpace(context)
-    const items = await deps.listMachineKeys(active)
-    return context.json({
-      items: items.map((item) => ({
-        ...item,
-        publicKey: encoded(item.publicKey),
-      })),
-    })
-  })
-  app.put('/v1/config/machine-keys/:keyId', async (context) => {
-    const active = scope(context)
-    if (!active) return noSpace(context)
-    const keyId = keyIdSchema.safeParse(context.req.param('keyId'))
-    const body = z
-      .object({ publicKey: base64urlSchema, label: z.string().trim().min(1) })
-      .safeParse(await context.req.json().catch(() => null))
-    if (!keyId.success || !body.success)
-      return context.json({ error: 'invalid machine key body' }, 422)
-    const publicKey = decoded(body.data.publicKey)
-    if (publicKey.byteLength !== 32)
-      return context.json({ error: 'machine public key must be 32 bytes' }, 422)
-    try {
-      const item = await deps.registerMachineKey({
-        ...active,
-        keyId: keyId.data,
-        publicKey,
-        label: body.data.label,
-      })
-      return context.json({ ...item, publicKey: encoded(item.publicKey) })
-    } catch (error) {
-      return writeError(context, error)
-    }
-  })
-  app.post('/v1/config/machine-keys/:keyId/revoke', async (context) => {
-    const active = scope(context)
-    if (!active) return noSpace(context)
-    const keyId = keyIdSchema.safeParse(context.req.param('keyId'))
-    if (!keyId.success) return context.json({ error: 'invalid machine key id' }, 422)
-    try {
-      await deps.revokeMachineKey({ ...active, keyId: keyId.data })
-      return context.json({ revoked: true })
-    } catch (error) {
-      return writeError(context, error)
-    }
-  })
   app.get('/v1/docs', async (context) => {
     const query = z
       .object({

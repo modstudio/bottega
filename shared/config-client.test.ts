@@ -71,6 +71,30 @@ test('config client preserves a JSON refusal error and remedy', async () => {
   })
 })
 
+test('config client decodes a machine signing public key', async () => {
+  const signingPublicKey = Uint8Array.from({ length: 32 }, (_, index) => index)
+  const client = configClient(
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
+    async () =>
+      Response.json({
+        items: [
+          {
+            keyId: 'machine-key',
+            publicKey: 'public-key',
+            signingPublicKey: Buffer.from(signingPublicKey).toString('base64url'),
+            label: 'fixture',
+            createdAt: '2026-11-13T00:00:00.000Z',
+            revokedAt: null,
+            userId: 'user',
+          },
+        ],
+      }),
+    'test',
+  )
+
+  await expect(client.listMachineKeys()).resolves.toMatchObject([{ signingPublicKey }])
+})
+
 test('config client refuses a non-JSON response with its source and response facts', async () => {
   const client = configClient(
     { BOTTEGA_RECORD_API_URL: 'https://record.test' },
