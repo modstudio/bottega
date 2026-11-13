@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { ensureMachineIdentity } from '../database/db.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
@@ -464,6 +465,8 @@ test('question-joined reads match SQLite joins and ordering', async () => {
   const q1 = '00000000-0000-4000-8000-000000000031'
   const q2 = '00000000-0000-4000-8000-000000000032'
   const q3 = '00000000-0000-4000-8000-000000000033'
+  const q4 = '00000000-0000-4000-8000-000000000034'
+  const q5 = '00000000-0000-4000-8000-000000000035'
   d.query(
     `INSERT INTO question
      (record_id,number,workflow_cursor_record_id,workflow_key,asked_at,question)
@@ -477,6 +480,43 @@ test('question-joined reads match SQLite joins and ordering', async () => {
      VALUES (?,3,?,'DEV-2234',?,'2026-11-12T00:00:00.000Z','ruled?','yes',
              '2026-11-12T00:04:00.000Z')`,
   ).run(q3, stageTwoId, TASK_ID)
+  d.query(
+    `INSERT INTO question
+     (record_id,number,workflow_cursor_record_id,workflow_key,asked_at,question)
+     VALUES ('00000000-0000-4000-8000-000000000036',6,?,NULL,
+             '2026-11-12T00:00:30.000Z','other open?'),
+            ('00000000-0000-4000-8000-000000000037',7,?,NULL,
+             '2026-11-12T00:00:31.000Z','another open?')`,
+  ).run(stageThreeId, stageThreeId)
+
+  const rootRun = '00000000-0000-4000-8000-000000000041'
+  const childRun = '00000000-0000-4000-8000-000000000042'
+  d.query(
+    `INSERT INTO run
+     (record_id,number,started_at,agent,job,repo,cwd,project_record_id,task_record_id,
+      prompt_sha,prompt_bytes,prompt_head,status,latency_ms,probe,turn,transport,session_id)
+     VALUES (?,41,'2026-11-12T00:00:00.000Z','codex','implement','root-repo','/root-cwd',?,?,
+             'sha',1,'root','ok',1,0,1,'cli','root-session')`,
+  ).run(rootRun, PROJECT_ID, TASK_ID)
+  d.query(
+    `INSERT INTO run
+     (record_id,number,started_at,agent,job,repo,cwd,project_record_id,
+      prompt_sha,prompt_bytes,prompt_head,status,latency_ms,probe,turn,transport,session_id,parent_run_record_id)
+     VALUES (?,42,'2026-11-12T00:01:00.000Z','codex','implement','child-repo','/child-cwd',?,
+             'sha',1,'child','ok',1,0,2,'cli','child-session',?)`,
+  ).run(childRun, PROJECT_ID, rootRun)
+  d.query(
+    `INSERT INTO question
+     (record_id,number,run_record_id,asked_at,question,answer,answered_at)
+     VALUES (?,4,?,'2026-11-12T00:04:00.000Z','run child?','yes',
+             '2026-11-12T00:05:00.000Z'),
+            (?,5,?,'2026-11-12T00:05:00.000Z','run only?','yes',
+             '2026-11-12T00:06:00.000Z')`,
+  ).run(q4, childRun, q5, childRun)
+  d.query(
+    `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,synced_at)
+     VALUES ('00000000-0000-4000-8000-000000000043','run',?,'{}','t','t')`,
+  ).run(childRun)
 
   const first = hostedStage()
   first.stage.workflow = 'ship-task'
@@ -485,12 +525,10 @@ test('question-joined reads match SQLite joins and ordering', async () => {
   first.stage.updatedAt = '2026-11-12T00:03:00.000Z'
   const second = hostedStage({ taskless: true, number: 2, stageId: stageTwoId })
   second.stage.instanceId = '#2'
-  second.flow.openStageCount = 0
   second.stage.state = 'awaiting-ruling'
   second.stage.updatedAt = '2026-11-12T00:02:00.000Z'
   const third = hostedStage({ taskless: true, number: 3, stageId: stageThreeId })
   third.stage.instanceId = '#3'
-  third.flow.openStageCount = 0
   third.stage.updatedAt = '2026-11-12T00:03:00.000Z'
   const local = sqliteTaskFlowReadStore(d)
   const hosted = recordTaskFlowReadStore(
@@ -519,16 +557,54 @@ test('question-joined reads match SQLite joins and ordering', async () => {
       hosted.rulingRows({ kind: 'all', after: null, cursor: null }),
       local.rulingRows({ kind: 'all', after: null, cursor: null }),
     ],
-    [hosted.rulingFileQuestion(q1), local.rulingFileQuestion(q1)],
+    [hosted.rulingFileQuestion(q4), local.rulingFileQuestion(q4)],
     [hosted.questionCloseFacts(q1), local.questionCloseFacts(q1)],
     [hosted.overturnRulingRow(q3), local.overturnRulingRow(q3)],
     [hosted.pendingTaskLinks('question'), local.pendingTaskLinks('question')],
     [hosted.linkedTaskReferences('question'), local.linkedTaskReferences('question')],
-    [hosted.taskRulingRows('fixture', TASK_ID, 10), local.taskRulingRows('fixture', TASK_ID, 10)],
+    [hosted.taskRulingRows('fixture', TASK_ID, 1), local.taskRulingRows('fixture', TASK_ID, 1)],
     [hosted.localQuestionProjects(), local.localQuestionProjects()],
   ]
   for (const [recordAnswer, localAnswer] of assertions)
     expect(await recordAnswer).toEqual(await localAnswer)
+  expect(
+    (await hosted.listOpenStages({})).find((row) => row.record_id === stageThreeId),
+  ).toMatchObject({ question_number: 6 })
+  expect(await hosted.rulingFileQuestion(q4)).toMatchObject({
+    root_id: rootRun,
+    repo: 'child-repo',
+    cwd: '/child-cwd',
+  })
+  expect(
+    (await hosted.rulingRows({ kind: 'all', after: null, cursor: null })).find(
+      (row) => row.record_id === q4,
+    ),
+  ).toMatchObject({ project: 'child-repo', session_id: 'child-session' })
+  expect(await hosted.taskRulingRows('fixture', TASK_ID, 1)).toMatchObject([{ candidate_count: 3 }])
+})
+
+test('question joins refuse a stage missing from the hosted record', async () => {
+  const d = database()
+  const missingStage = '00000000-0000-4000-8000-000000000099'
+  const questionId = '00000000-0000-4000-8000-000000000098'
+  d.exec('PRAGMA foreign_keys=OFF')
+  try {
+    d.query(
+      `INSERT INTO question
+       (record_id,number,workflow_cursor_record_id,workflow_key,asked_at,question)
+       VALUES (?,98,?,'DEV-2234','t','missing?')`,
+    ).run(questionId, missingStage)
+  } finally {
+    d.exec('PRAGMA foreign_keys=ON')
+  }
+  const hosted = recordTaskFlowReadStore(d, createMemoryRecordApiClient({ taskFlowStages: [] }))
+  const refusal =
+    `question 98 names workflow stage ${missingStage}, which the hosted record does not return; ` +
+    `run ${PLATFORM_NAME} record push, then retry`
+  await expect(hosted.questionCloseFacts(questionId)).rejects.toThrow(refusal)
+  await expect(hosted.rulingRows({ kind: 'workflow', after: null, cursor: null })).rejects.toThrow(
+    refusal,
+  )
 })
 
 test('question stage lookups preserve parity below and above the by-id batch limit', async () => {

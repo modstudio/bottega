@@ -2,12 +2,11 @@
 /** Joins record-owned stages to the local question, run, project, and outbox rows. */
 
 import type { Database } from 'bun:sqlite'
-import type {
-  HostedTaskFlowStageById,
-  HostedTaskFlowStageList,
-} from '../record/record-task-flow-contract.ts'
+import { PLATFORM_NAME } from '../../../shared/brand.ts'
+import type { HostedTaskFlowStageById } from '../record/record-task-flow-contract.ts'
 import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { questionOpenSql, questionTaskHolderSql } from '../run/question-open.ts'
+import { type ListedItem, stageRow } from './task-flow-store-record-stage-row.ts'
 import type {
   TaskFlowInboxQuestionRow,
   TaskFlowListedStageRow,
@@ -18,7 +17,6 @@ import type {
   TaskFlowTaskRulingRow,
 } from './task-flow-store-types.ts'
 
-type ListedItem = HostedTaskFlowStageList['items'][number]
 type StageSelector = Record<string, unknown>
 type StageRead = {
   list: (selector: StageSelector, project?: string) => Promise<ListedItem[]>
@@ -38,15 +36,24 @@ const openQuestionRows = (database: Database) =>
 
 const stageMap = (items: ListedItem[]) => new Map(items.map((item) => [item.stage.id, item]))
 
+function openQuestionByStage(database: Database) {
+  const result = new Map<string, LocalQuestion>()
+  for (const row of openQuestionRows(database).sort((a, b) => a.number - b.number)) {
+    if (row.workflow_cursor_record_id && !result.has(row.workflow_cursor_record_id))
+      result.set(row.workflow_cursor_record_id, row)
+  }
+  return result
+}
+
+function missingQuestionStage(row: LocalQuestion): never {
+  throw new Error(
+    `question ${row.number} names workflow stage ${row.workflow_cursor_record_id}, which the hosted record does not return; run ${PLATFORM_NAME} record push, then retry`,
+  )
+}
+
 export const STAGE_BY_ID_READ_LIMIT = 20
 
-async function stagesForQuestionRows(read: StageRead, rows: LocalQuestion[]) {
-  const ids = [
-    ...new Set(
-      rows.flatMap((row) => (row.workflow_cursor_record_id ? [row.workflow_cursor_record_id] : [])),
-    ),
-  ]
-  if (ids.length === 0) return new Map<string, HostedTaskFlowStageById['stage']>()
+async function readQuestionStages(read: StageRead, ids: string[]) {
   const stages = new Map<string, HostedTaskFlowStageById['stage']>()
   if (ids.length <= STAGE_BY_ID_READ_LIMIT) {
     for (const item of await Promise.all(ids.map((id) => read.byId(id))))
@@ -59,8 +66,25 @@ async function stagesForQuestionRows(read: StageRead, rows: LocalQuestion[]) {
   return stages
 }
 
-const questionStage = async (read: StageRead, row: LocalQuestion) =>
-  row.workflow_cursor_record_id ? read.byId(row.workflow_cursor_record_id) : null
+async function stagesForQuestionRows(read: StageRead, rows: LocalQuestion[]) {
+  const ids = [
+    ...new Set(
+      rows.flatMap((row) => (row.workflow_cursor_record_id ? [row.workflow_cursor_record_id] : [])),
+    ),
+  ]
+  if (ids.length === 0) return new Map<string, HostedTaskFlowStageById['stage']>()
+  const stages = await readQuestionStages(read, ids)
+  for (const row of rows)
+    if (row.workflow_cursor_record_id && !stages.has(row.workflow_cursor_record_id))
+      missingQuestionStage(row)
+  return stages
+}
+
+const questionStage = async (read: StageRead, row: LocalQuestion) => {
+  if (!row.workflow_cursor_record_id) return null
+  const stage = await read.byId(row.workflow_cursor_record_id)
+  return stage ?? missingQuestionStage(row)
+}
 
 function listedStageReads(database: Database, read: StageRead) {
   return {
@@ -76,45 +100,11 @@ function listedStageReads(database: Database, read: StageRead) {
       const items = input.project
         ? await read.list(selector, input.project)
         : await read.listEvery(selector)
-      const questions = openQuestionRows(database)
-      const questionByStage = new Map(
-        questions
-          .filter((row) => row.workflow_cursor_record_id)
-          .map((row) => [row.workflow_cursor_record_id!, row.number]),
-      )
+      const questionByStage = openQuestionByStage(database)
       return items
-        .map(({ stage, flow }) => ({
-          id: stage.number,
-          record_id: stage.id,
-          project: stage.projectName!,
-          workflow_slug: stage.workflow,
-          mode_slug: stage.mode,
-          workflow_key: stage.workflowKey ?? '',
-          task_record_id: flow.taskId,
-          task_flow_record_id: flow.taskId === null ? null : stage.flowRecordId,
-          instance_id: stage.instanceId ?? '',
-          session_id: stage.sessionId ?? null,
-          ordinal: stage.activeOrdinal,
-          step_slug: stage.activeSlug,
-          state: stage.state,
-          workflow_version_record_id: stage.workflowVersionId,
-          catalogue_version_record_id: stage.catalogueVersionId,
-          workflow_version: stage.workflowVersionNumber!,
-          catalogue_version: stage.catalogueVersionNumber!,
-          args: JSON.stringify(stage.arguments),
-          autonomy: stage.autonomy ?? null,
-          closed: JSON.stringify(stage.closedStepNotes),
-          question: stage.question ?? null,
-          total_steps: stage.totalSteps,
-          created_at: stage.createdAt,
-          updated_at: stage.updatedAt,
-          enforcement: stage.enforcement as TaskFlowListedStageRow['enforcement'],
-          opened_machine_id: stage.openedMachineId,
-          taken_over_from_machine_id: stage.takenOverFromMachineId,
-          last_advanced_machine_id: stage.lastAdvancedMachineId,
-          revision: stage.revision,
-          open_stage_count: flow.openStageCount,
-          question_number: questionByStage.get(stage.id) ?? null,
+        .map((item) => ({
+          ...stageRow(item),
+          question_number: questionByStage.get(item.stage.id)?.number ?? null,
         }))
         .sort((a, b) => a.updated_at.localeCompare(b.updated_at) || a.id - b.id)
     },
@@ -208,11 +198,7 @@ function sessionStageReads(database: Database, read: StageRead) {
         sessionId,
         states: ['running', 'awaiting-ruling'],
       })
-      const openByStage = new Map(
-        openQuestionRows(database)
-          .filter((q) => q.workflow_cursor_record_id)
-          .map((q) => [q.workflow_cursor_record_id!, q.record_id]),
-      )
+      const openByStage = openQuestionByStage(database)
       return items
         .map(({ stage }) => ({
           record_id: stage.id,
@@ -221,7 +207,7 @@ function sessionStageReads(database: Database, read: StageRead) {
           workflow_slug: stage.workflow,
           workflow_key: stage.workflowKey ?? '',
           state: stage.state,
-          open_question_record_id: openByStage.get(stage.id) ?? null,
+          open_question_record_id: openByStage.get(stage.id)?.record_id ?? null,
         }))
         .sort((a, b) => a.number - b.number)
     },
@@ -233,11 +219,7 @@ function sessionStageReads(database: Database, read: StageRead) {
         ...(project ? { projectId: read.projectId(project) } : {}),
       }
       const items = project ? await read.list(selector, project) : await read.listEvery(selector)
-      const openByStage = new Map(
-        openQuestionRows(database)
-          .filter((q) => q.workflow_cursor_record_id)
-          .map((q) => [q.workflow_cursor_record_id!, q.record_id]),
-      )
+      const openByStage = openQuestionByStage(database)
       return items
         .filter(({ stage }) => stage.sessionId !== null)
         .map(({ stage }) => ({
@@ -248,7 +230,7 @@ function sessionStageReads(database: Database, read: StageRead) {
           step_slug: stage.activeSlug,
           session_id: stage.sessionId!,
           updated_at: stage.updatedAt,
-          open_question_record_id: openByStage.get(stage.id) ?? null,
+          open_question_record_id: openByStage.get(stage.id)?.record_id ?? null,
         }))
         .sort((a, b) => a.number - b.number)
     },

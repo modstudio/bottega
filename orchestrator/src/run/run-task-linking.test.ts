@@ -165,6 +165,122 @@ describe('run link derivation', () => {
 })
 
 describe('hosted run task linking', () => {
+  test('links a record-joined question when its local workflow cursor is absent', async () => {
+    const database = migratedTestDatabase()
+    const projectId = newRecordId()
+    const stageId = newRecordId()
+    const flowId = newRecordId()
+    const questionId = newRecordId()
+    database
+      .query(
+        `INSERT INTO project (record_id,name,path,stack,settings)
+         VALUES (?,'hosted-question-link','/work/hosted-question-link','bun','{"space":"hosted-question-space","keyPrefixes":["HOSTED"]}')`,
+      )
+      .run(projectId)
+    database
+      .query('INSERT INTO record_install_binding (id,bound_at,record_origin) VALUES (1,?,?)')
+      .run('2026-11-10T00:00:00.000Z', resolvedRecordOrigin())
+    database.exec('PRAGMA foreign_keys=OFF')
+    try {
+      database
+        .query(
+          `INSERT INTO question
+           (record_id,number,workflow_cursor_record_id,workflow_key,asked_at,question,asked_via)
+           VALUES (?,991,?,'HOSTED-1','t','question','live')`,
+        )
+        .run(questionId, stageId)
+    } finally {
+      database.exec('PRAGMA foreign_keys=ON')
+    }
+    rememberProjectSpace(database, 'hosted-question-link', 'hosted-question-space')
+    const memory = createMemoryRecordApiClient({
+      taskFlowStages: [
+        {
+          flow: {
+            id: flowId,
+            projectId,
+            taskId: null,
+            taskKey: null,
+            state: 'open',
+            openStageRecordId: stageId,
+            openStageCount: 1,
+            openingMachineId: newRecordId(),
+            updatedMachineId: newRecordId(),
+            revision: 1,
+            createdAt: '2026-11-10T00:00:00.000Z',
+            updatedAt: '2026-11-10T00:00:00.000Z',
+          },
+          stage: {
+            id: stageId,
+            flowRecordId: flowId,
+            projectId,
+            projectName: 'hosted-question-link',
+            number: 991,
+            workflow: 'flow',
+            mode: 'default',
+            workflowKey: 'HOSTED-1',
+            instanceId: '',
+            sessionId: null,
+            workflowVersionId: newRecordId(),
+            workflowVersionNumber: 1,
+            catalogueVersionId: newRecordId(),
+            catalogueVersionNumber: 1,
+            arguments: {},
+            activeOrdinal: 0,
+            activeSlug: 'step',
+            state: 'running',
+            closedStepNotes: [],
+            question: null,
+            autonomy: null,
+            enforcement: 'floors',
+            totalSteps: 1,
+            openedMachineId: newRecordId(),
+            takenOverFromMachineId: null,
+            lastAdvancedMachineId: newRecordId(),
+            revision: 1,
+            createdAt: '2026-11-10T00:00:00.000Z',
+            updatedAt: '2026-11-10T00:00:00.000Z',
+          },
+        },
+      ],
+      taskFlowProjectSpaces: { [projectId]: 'hosted-question-space' },
+    })
+    const taskFlowClient: RecordTaskFlowClient = {
+      ...memory,
+      whoami: async () => ({
+        user: { id: 'hosted-question-user' },
+        activeSpaceId: 'hosted-question-space',
+        personalSpaceId: 'hosted-question-space',
+        memberships: [
+          { space_id: 'hosted-question-space', slug: 'hosted-question', permission: 'write' },
+        ],
+      }),
+    }
+
+    const report = await linkRunTasks(
+      { dryRun: false },
+      {
+        database,
+        hubReader: async () => [
+          { key: 'HOSTED-1', record_id: 'hosted-task-id', project: 'hosted-question-link' },
+        ],
+        taskFlowClient,
+      },
+    )
+
+    expect(report.local_task_links.question).toEqual({ linked: 1, unmatched_keys: {} })
+    expect(
+      database
+        .query(
+          `SELECT workflow_task_record_id task_id,revision,
+                  (SELECT COUNT(*) FROM outbox WHERE kind='question' AND row_id=question.record_id) outbox_count
+           FROM question WHERE record_id=?`,
+        )
+        .get(questionId),
+    ).toEqual({ task_id: 'hosted-task-id', revision: 2, outbox_count: 1 })
+    database.close()
+  })
+
   test('an adoption failure leaves run and other local task links unwritten', async () => {
     const database = migratedTestDatabase()
     const projectId = newRecordId()
