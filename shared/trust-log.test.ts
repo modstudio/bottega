@@ -78,7 +78,7 @@ test('refuses a body tamper that breaks the signature', () => {
   const entries = chain()
   const tampered = entries[1]!.slice()
   const index = Buffer.from(tampered).indexOf('machine-2')
-  tampered[index] ^= 1
+  tampered[index] = tampered[index]! ^ 1
   expect(() => verifyTrustLog(entries.with(1, tampered), { spaceId: space })).toThrow(
     'index 1 violates the signature rule',
   )

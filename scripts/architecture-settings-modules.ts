@@ -50,7 +50,6 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/brand.ts',
     'node:os',
     '../../../shared/config-directory.ts',
-    '../../../shared/hosted-secret-opening.ts',
     '../../../shared/config-client.ts',
     '../../../shared/credential.ts',
     '../../../shared/delegation-mode.ts',

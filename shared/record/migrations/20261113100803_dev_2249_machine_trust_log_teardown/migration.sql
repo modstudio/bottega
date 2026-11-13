@@ -50,3 +50,22 @@ ALTER FUNCTION public.record_delete_append_only_space_rows(uuid) OWNER TO record
 REVOKE ALL ON FUNCTION public.record_delete_append_only_space_rows(uuid) FROM PUBLIC;
 --> statement-breakpoint
 GRANT EXECUTE ON FUNCTION public.record_delete_append_only_space_rows(uuid) TO record_actor;
+--> statement-breakpoint
+DO $migration$
+DECLARE
+  definition text;
+  revised text;
+BEGIN
+  SELECT pg_get_functiondef('record_move_project_space(text,text,text,bigint)'::regprocedure)
+  INTO definition;
+  revised := replace(
+    definition,
+    '(''machine_public_key'',''space''),',
+    '(''machine_public_key'',''space''),(''machine_trust_log'',''space''),'
+  );
+  IF revised = definition THEN
+    RAISE EXCEPTION 'record_move_project_space machine_public_key classification anchor is missing';
+  END IF;
+  EXECUTE revised;
+END
+$migration$;

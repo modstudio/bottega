@@ -460,7 +460,7 @@ async function revokeIfNeeded(
       },
     ])
   }
-  await appendTrustLogRevoke(client, machine.keyId, keyId)
+  await appendTrustLogRevoke(client, machine.keyId, keyId, (await identity(client)).spaceId)
   await client.revokeMachineKey(keyId)
   await unpinTrustedMachine(keyId)
   return (await client.listMachineKeys()).find((item) => item.keyId === keyId)?.revokedAt

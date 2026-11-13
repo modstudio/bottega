@@ -31,6 +31,7 @@ import { proveCredentialPreferencePersistence } from './fixtures/credential-pref
 import { asSpace, asSpaces, succeeds } from './fixtures/postgres-rls.ts'
 import { proveCredentialSecretProjectAddressing } from './support/credential-secret-proof.ts'
 import { proveMachineSigningKeyRegistration } from './support/machine-signing-registration-proof.ts'
+import { proveMachineTrustLog } from './support/machine-trust-log-proof.ts'
 
 const USER_B = '01990000-0000-7000-8000-000000000020'
 const DEK_A = '01990000-0000-7000-8000-0000000000da'
@@ -1036,5 +1037,9 @@ export function registerHostedConfigProofs(
        FROM machine_public_key WHERE space_id='${spaceA}' AND key_id='${keyId}';`,
     )
     expect(facts).toBe('t|0')
+  })
+
+  test('machine trust log appends only at the current head and reads entries in order', async () => {
+    await proveMachineTrustLog(serviceTenant, spaceA, spaceB)
   })
 }

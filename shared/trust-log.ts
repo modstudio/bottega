@@ -34,7 +34,7 @@ const bytesEqual = (left: Uint8Array, right: Uint8Array) =>
   left.byteLength === right.byteLength && left.every((value, index) => value === right[index])
 
 function keyBody(key: TrustLogKey): Map<number, unknown> {
-  return new Map([
+  return new Map<number, unknown>([
     [1, key.keyId],
     [2, key.publicKey],
     [3, key.signingPublicKey],
@@ -180,6 +180,55 @@ function signerAllowed(entry: TrustLogEntry, keys: Map<string, TrustLogKey>, rec
   return [...keys.values()].some((key) => bytesEqual(key.signingPublicKey, entry.signer))
 }
 
+function verificationFailure(index: number, rule: string): never {
+  throw new Error(`trust log entry index ${index} violates ${rule}`)
+}
+
+function validSignature(entry: TrustLogEntry): boolean {
+  return ed25519.verify(entry.sig, sha256(encode(entryMap(entry), dcbor)), entry.signer)
+}
+
+function verifyGenesis(entry: TrustLogEntry, index: number, keys: Map<string, TrustLogKey>) {
+  if (entry.body.kind !== 'genesis') verificationFailure(index, 'entry 0 must be genesis')
+  if (!bytesEqual(entry.signer, entry.body.first.signingPublicKey))
+    verificationFailure(index, 'genesis signer must be the first machine signing key')
+  if (!validSignature(entry)) verificationFailure(index, 'the signature rule')
+  keys.set(entry.body.first.keyId, entry.body.first)
+  return entry.body.recoveryPublicKey
+}
+
+function verifyLaterEntry(
+  entry: TrustLogEntry,
+  index: number,
+  previousHash: Uint8Array,
+  keys: Map<string, TrustLogKey>,
+  recovery: Uint8Array,
+): void {
+  if (entry.body.kind === 'genesis')
+    verificationFailure(index, 'genesis may appear only at entry 0')
+  if (!entry.prev || !bytesEqual(entry.prev, previousHash))
+    verificationFailure(index, 'the previous hash rule')
+  if (!signerAllowed(entry, keys, recovery)) verificationFailure(index, 'the signer authority rule')
+  if (!validSignature(entry)) verificationFailure(index, 'the signature rule')
+  if (entry.body.kind === 'add') {
+    if (keys.has(entry.body.keyId))
+      verificationFailure(index, 'add keyId must not already be trusted')
+    if (
+      [...keys.values()].some((key) =>
+        bytesEqual(key.signingPublicKey, entry.body.signingPublicKey),
+      )
+    )
+      verificationFailure(index, 'trusted machines must not share a signing key')
+    keys.set(entry.body.keyId, entry.body)
+    return
+  }
+  if (bytesEqual(entry.signer, recovery))
+    verificationFailure(index, 'the recovery key may sign only add')
+  if (!keys.has(entry.body.keyId))
+    verificationFailure(index, `${entry.body.kind} keyId must be trusted`)
+  keys.delete(entry.body.keyId)
+}
+
 export function verifyTrustLog(
   encodedEntries: readonly Uint8Array[],
   options: { spaceId: string; rememberedHead?: Uint8Array | null },
@@ -195,46 +244,17 @@ export function verifyTrustLog(
     }
   })
   const hashes = encodedEntries.map(trustLogEntryHash)
-  if (options.rememberedHead && !hashes.some((hash) => bytesEqual(hash, options.rememberedHead)))
+  const rememberedHead = options.rememberedHead
+  if (rememberedHead && !hashes.some((hash) => bytesEqual(hash, rememberedHead)))
     throw new Error(
       'trust log fork or rollback: the log does not extend the head this machine last accepted; stop, do not trust this record, and report it',
     )
   const keys = new Map<string, TrustLogKey>()
   let recovery = new Uint8Array()
-  entries.forEach((entry, index) => {
-    const fail = (rule: string) => {
-      throw new Error(`trust log entry index ${index} violates ${rule}`)
-    }
-    if (entry.space !== options.spaceId) fail('the space rule')
-    if (index === 0) {
-      if (entry.body.kind !== 'genesis') fail('entry 0 must be genesis')
-      if (!bytesEqual(entry.signer, entry.body.first.signingPublicKey))
-        fail('genesis signer must be the first machine signing key')
-      if (!ed25519.verify(entry.sig, sha256(encode(entryMap(entry), dcbor)), entry.signer))
-        fail('the signature rule')
-      keys.set(entry.body.first.keyId, entry.body.first)
-      recovery = entry.body.recoveryPublicKey
-      return
-    }
-    if (entry.body.kind === 'genesis') fail('genesis may appear only at entry 0')
-    if (!entry.prev || !bytesEqual(entry.prev, hashes[index - 1])) fail('the previous hash rule')
-    if (!signerAllowed(entry, keys, recovery)) fail('the signer authority rule')
-    if (!ed25519.verify(entry.sig, sha256(encode(entryMap(entry), dcbor)), entry.signer))
-      fail('the signature rule')
-    if (entry.body.kind === 'add') {
-      if (keys.has(entry.body.keyId)) fail('add keyId must not already be trusted')
-      if (
-        [...keys.values()].some((key) =>
-          bytesEqual(key.signingPublicKey, entry.body.signingPublicKey),
-        )
-      )
-        fail('trusted machines must not share a signing key')
-      keys.set(entry.body.keyId, entry.body)
-    } else {
-      if (bytesEqual(entry.signer, recovery)) fail('the recovery key may sign only add')
-      if (!keys.has(entry.body.keyId)) fail(`${entry.body.kind} keyId must be trusted`)
-      keys.delete(entry.body.keyId)
-    }
-  })
+  for (const [index, entry] of entries.entries()) {
+    if (entry.space !== options.spaceId) verificationFailure(index, 'the space rule')
+    if (index === 0) recovery = verifyGenesis(entry, index, keys)
+    else verifyLaterEntry(entry, index, hashes[index - 1]!, keys, recovery)
+  }
   return { head: hashes.at(-1)!, keys, recoveryPublicKey: recovery }
 }

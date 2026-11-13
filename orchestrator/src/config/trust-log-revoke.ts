@@ -4,7 +4,6 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type ConfigClient, ConfigClientError } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
-import { hostedIdentity } from '../../../shared/hosted-secret-opening.ts'
 import { readMachineSigningKey } from '../../../shared/machine-signing-key.ts'
 import { signTrustLogEntry, trustLogEntryHash, verifyTrustLog } from '../../../shared/trust-log.ts'
 import {
@@ -16,9 +15,9 @@ export async function appendTrustLogRevoke(
   client: ConfigClient,
   ownKeyId: string,
   targetKeyId: string,
-  ports: { at?: number; env?: ConfigEnvironment; spaceId?: string } = {},
+  spaceId: string,
+  ports: { at?: number; env?: ConfigEnvironment } = {},
 ): Promise<Uint8Array | null> {
-  const spaceId = ports.spaceId ?? (await hostedIdentity(client)).spaceId
   const entries = await client.readTrustLog()
   if (entries.length === 0) return null
   const remembered = readRememberedTrustLogHead(spaceId, ports.env)
