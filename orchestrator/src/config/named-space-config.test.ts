@@ -23,6 +23,10 @@ import {
   wrapDataKey,
 } from '../../../shared/secret-envelope.ts'
 import { pinTrustedMachine } from '../../../shared/trust-list.ts'
+import {
+  machineRevokeTrustLogFixture,
+  trustLogFixtureSigningKey,
+} from './config-service-trust-log.fixture.ts'
 import { machineRegister, machineTrustInSpace } from './named-space-config.ts'
 
 const namedSpaceId = '01990000-0000-7000-8000-000000000101'
@@ -248,6 +252,43 @@ test('named-space registration creates the first data key with named-space seali
       trustedSenderKeyIds: new Set([keyId]),
     }),
   ).resolves.toHaveLength(32)
+})
+
+test('named-space data-key creation excludes a record-revoked key still in the trust log', async () => {
+  const { env, identity, keyId, pair } = await fixture(false)
+  const signing = trustLogFixtureSigningKey(41)
+  writeMachineSigningKey(signing, env)
+  const revoked = await generateMachineKeyPair()
+  const revokedKeyId = await machineKeyId(revoked.publicKey)
+  const log = machineRevokeTrustLogFixture(
+    true,
+    namedSpaceId,
+    [keyId, pair.publicKey, signing.publicKey, 'fixture'],
+    [revokedKeyId, revoked.publicKey, trustLogFixtureSigningKey(42).publicKey, 'revoked'],
+    signing.privateKey,
+  )
+  let wraps: Parameters<ConfigClient['createDataKey']>[0]['wraps'] = []
+  const machines = [
+    { keyId, revokedAt: null },
+    { keyId: revokedKeyId, revokedAt: '2026-11-12T00:00:00.000Z' },
+  ]
+  const client = {
+    readTrustLog: async () => log,
+    whoami: async () => identity,
+    listMachineKeys: async () => machines,
+    registerMachineKey: async () => ({ userId }),
+    currentDataKey: async () => {
+      throw new ConfigClientError('response', '/v1/config/data-keys/current', 404)
+    },
+    createDataKey: async (input: Parameters<ConfigClient['createDataKey']>[0]) => {
+      wraps = input.wraps
+      return { id: input.dekId, version: input.version }
+    },
+  } as unknown as ConfigClient
+
+  await machineRegister(namedSpace, 'fixture', client, env)
+
+  expect(wraps.map((wrap) => wrap.recipientKeyId)).toEqual([keyId])
 })
 
 test('named-space registration refuses a current data key without this machine wrap', async () => {

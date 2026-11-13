@@ -116,12 +116,15 @@ async function wrapsFor(
 ) {
   const machine = await localMachine(env)
   const spaceId = destinationSpaceId ?? (await identity(client, env)).spaceId
+  const recipientKeyIds = (await client.listMachineKeys({ destinationSpaceId: spaceId }))
+    .filter((item) => item.revokedAt === null && trust[item.keyId])
+    .map((item) => item.keyId)
   return wrapsForRecipients(
     dek,
     { spaceId, dekId, dekVersion: version },
     machine,
     trust,
-    Object.keys(trust),
+    recipientKeyIds,
   )
 }
 
@@ -260,7 +263,11 @@ export async function machineTrust(
   const machine = await localMachine(env)
   const trust = await trustedKeysForSpace(client, selected.spaceId, env)
   const [sender, recipient] = [trust[machine.keyId], trust[keyId]]
-  if (!sender || !recipient) throw new Error('machine is absent from the trust list after pinning')
+  if (!sender) throw new Error('machine is absent from the trust list after pinning')
+  if (!recipient)
+    throw new Error(
+      `the space's machine trust log does not list ${keyId}; add it with \`${PLATFORM_SLUG} machine approve\` from a machine the trust log already trusts`,
+    )
   try {
     const before = await client.currentDataKey(machine.keyId, destination)
     const {
@@ -410,6 +417,8 @@ async function revokeIfNeeded(
   client: ConfigClient,
 ): Promise<string | null | undefined> {
   if (revokedAt) {
+    const who = await identity(client)
+    await appendTrustLogRevoke(client, machine.keyId, keyId, who.spaceId)
     await unpinTrustedMachine(keyId)
     return revokedAt
   }

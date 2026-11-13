@@ -533,6 +533,16 @@ test('the next secret operation rotates once only when a machine revocation is n
   expect(older.retired).toEqual([])
 })
 
+test('rotation excludes a record-revoked key that remains in the machine trust log', async () => {
+  const fixture = await rotationFixture('2026-06-01T00:00:00.000Z', false, false, false, true)
+  await setSecret('TOKEN', 'rotated', 'space', fixture.client)
+
+  expect(fixture.current().wraps.map((wrap) => wrap.recipientKeyId)).not.toContain(
+    fixture.otherKeyId,
+  )
+  expect(fixture.current().wraps).toHaveLength(1)
+})
+
 test('machine revoke rotates through the shared rotation operation', async () => {
   const fixture = await rotationFixture(null)
   await machineRevoke(fixture.otherKeyId, fixture.client)
@@ -550,6 +560,31 @@ test('machine revoke appends and remembers a verified trust log revocation befor
   expect(state.keys.has(fixture.otherKeyId)).toBe(false)
   expect(readRememberedTrustLogHead(fixture.spaceId)).toEqual(trustLogEntryHash(appended!))
   expect(fixture.recordCallOrder).toEqual(['appendTrustLogEntry', 'revokeMachineKey'])
+})
+
+test('machine revoke converges the trust log when the record already shows the key revoked', async () => {
+  const fixture = await rotationFixture(
+    '2026-06-01T00:00:00.000Z',
+    false,
+    false,
+    false,
+    true,
+  )
+  await machineRevoke(fixture.otherKeyId, fixture.client)
+
+  expect(decodeTrustLogEntry(fixture.appendedTrustLogEntry()!).body).toEqual({
+    kind: 'revoke',
+    keyId: fixture.otherKeyId,
+  })
+  expect(fixture.recordCallOrder).toEqual(['appendTrustLogEntry'])
+})
+
+test('machine revoke does not append when an already-revoked key has no trust log', async () => {
+  const fixture = await rotationFixture('2026-06-01T00:00:00.000Z')
+  await machineRevoke(fixture.otherKeyId, fixture.client)
+
+  expect(fixture.appendedTrustLogEntry()).toBeNull()
+  expect(fixture.recordCallOrder).toEqual([])
 })
 
 test('machine revoke resumes re-sealing older rows without creating another data key', async () => {
@@ -590,6 +625,22 @@ test('machine trust after a newer revocation rotates once and does not duplicate
   expect(
     fixture.current().wraps.filter((wrap) => wrap.recipientKeyId === fixture.recipientKeyId),
   ).toHaveLength(1)
+})
+
+test('machine trust names machine approve when an anchored log omits the target key', async () => {
+  const fixture = await rotationFixture(null, false, false, false, true)
+
+  await expect(
+    machineTrust(
+      fixture.recipientKeyId,
+      fixture.recipientPublicKey,
+      'recipient',
+      { spaceId: fixture.spaceId, slug: 'fixture' },
+      fixture.client,
+    ),
+  ).rejects.toThrow(
+    `the space's machine trust log does not list ${fixture.recipientKeyId}; add it with \`${PLATFORM_SLUG} machine approve\` from a machine the trust log already trusts`,
+  )
 })
 
 test('machine trust rotation keeps a selected-space user secret bound to its user', async () => {
