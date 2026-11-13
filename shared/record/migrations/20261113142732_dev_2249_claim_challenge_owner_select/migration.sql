@@ -1,0 +1,1 @@
+CREATE POLICY "machine_key_claim_challenge_owner_select" ON "machine_key_claim_challenge" AS PERMISSIVE FOR SELECT TO "record_owner" USING (true);

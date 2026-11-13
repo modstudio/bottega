@@ -459,6 +459,11 @@ export const machineKeyClaimChallenge = pgTable.withRLS(
       sql`octet_length(${table.nonceHash}) = 32`,
     ),
     ...tenantPolicies('machine_key_claim_challenge', table.spaceId),
+    pgPolicy('machine_key_claim_challenge_owner_select', {
+      for: 'select',
+      to: RECORD_OWNER_ROLE,
+      using: sql`true`,
+    }),
     pgPolicy('machine_key_claim_challenge_owner_delete', {
       for: 'delete',
       to: RECORD_OWNER_ROLE,
