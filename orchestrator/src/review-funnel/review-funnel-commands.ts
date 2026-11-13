@@ -108,25 +108,32 @@ function policyFromFlags(flags: Flags): { policy: ReviewFunnelPolicy; version: s
   return { policy: stored.policy, version: stored.policyVersion }
 }
 
+export function replayReviewFunnelRows(
+  rows: readonly { recordId: string; facts: ReviewFunnelFacts; verdict: ReviewFunnelVerdict }[],
+  candidate: { policy: ReviewFunnelPolicy; version: string },
+) {
+  return rows.flatMap((row) => {
+    const after = decideReviewFunnel(row.facts, candidate.policy, candidate.version)
+    const normalizedBefore = { ...row.verdict, policyVersion: candidate.version }
+    return JSON.stringify(normalizedBefore) === JSON.stringify(after)
+      ? []
+      : [{ recordId: row.recordId, before: row.verdict, after }]
+  })
+}
+
 export function replayReviewFunnelCommand(flags: Flags, { log }: Presentation): void {
   const candidate = policyFromFlags(flags)
-  const diffs = db()
+  const rows = db()
     .query<{ record_id: string; facts: string; verdict: string }, []>(
       'SELECT record_id,facts,verdict FROM review_funnel_decision ORDER BY recorded_at,record_id',
     )
     .all()
-    .flatMap((row) => {
-      const before = JSON.parse(row.verdict) as ReviewFunnelVerdict
-      const after = decideReviewFunnel(
-        JSON.parse(row.facts) as ReviewFunnelFacts,
-        candidate.policy,
-        candidate.version,
-      )
-      const normalizedBefore = { ...before, policyVersion: candidate.version }
-      return JSON.stringify(normalizedBefore) === JSON.stringify(after)
-        ? []
-        : [{ recordId: row.record_id, before, after }]
-    })
+    .map((row) => ({
+      recordId: row.record_id,
+      facts: JSON.parse(row.facts) as ReviewFunnelFacts,
+      verdict: JSON.parse(row.verdict) as ReviewFunnelVerdict,
+    }))
+  const diffs = replayReviewFunnelRows(rows, candidate)
   const result = {
     policyVersion: candidate.version,
     rows: db().query('SELECT count(*) AS count FROM review_funnel_decision').get() as {

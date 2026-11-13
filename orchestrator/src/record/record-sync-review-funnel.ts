@@ -11,7 +11,8 @@ import { commonReviewRecordValues } from './record-review-values.ts'
 import type { RecordPayload, RecordPrincipal } from './record-sync-contract.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
 import { type ProjectResolutionCache, projectRecordId } from './record-sync-project-identity.ts'
-import { nullableString } from './record-value-conversions.ts'
+
+const nullableString = (value: unknown): string | null => (value == null ? null : String(value))
 
 function values(row: RecordPayload, projectId: string | null) {
   return {

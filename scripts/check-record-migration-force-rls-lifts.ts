@@ -66,6 +66,15 @@ const EXEMPTIONS: ReadonlyMap<string, ReadonlyMap<string, string>> = new Map([
       ],
     ]),
   ],
+  [
+    '20261113172638_dev_2299_review_funnel_json_checks',
+    new Map([
+      [
+        '*',
+        'EXECUTE replaces the record_move_project_space function definition and does not read or write table rows',
+      ],
+    ]),
+  ],
 ])
 
 type MigrationSource = { name: string; text: string }

@@ -28,7 +28,7 @@ export function recordReviewFunnelDecision(input: {
   const project = input.database
     .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
     .get(input.facts.change.project)
-  writeTransaction(input.database, () => {
+  writeTransaction(() => {
     input.database
       .query(
         `INSERT INTO review_funnel_decision
@@ -87,6 +87,6 @@ export function recordReviewFunnelDecision(input: {
       }),
       createdAt: at,
     })
-  })
+  }, input.database)
   return recordId
 }

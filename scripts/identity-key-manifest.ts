@@ -668,10 +668,24 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'branch_disposal.task_key',
     'review_funnel_decision.task_key',
   ]),
+  ...manifest('orchestrator', 'review-funnel replay identity value, not a local row reference', [
+    'review_funnel_decision.head_commit',
+    'review_funnel_decision.patch_id',
+    'review_funnel_decision.policy_version',
+    'review_funnel_decision.facts_digest',
+    'review_funnel_decision.session_id',
+  ]),
   ...manifest('hosted', 'identifier issued by the project task tracker', [
     'branch_disposal.task_key',
     'port_ref.task_key',
     'review_funnel_decision.task_key',
+  ]),
+  ...manifest('hosted', 'review-funnel replay identity value, not a hosted row reference', [
+    'review_funnel_decision.head_commit',
+    'review_funnel_decision.patch_id',
+    'review_funnel_decision.policy_version',
+    'review_funnel_decision.facts_digest',
+    'review_funnel_decision.session_id',
   ]),
 ]
 
