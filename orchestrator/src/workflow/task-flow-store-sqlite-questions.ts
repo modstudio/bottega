@@ -8,6 +8,7 @@ import type {
   TaskFlowCursorLifecycleRow,
   TaskFlowCursorWorkRow,
   TaskFlowInboxQuestionRow,
+  TaskFlowKeylessSessionCursorRow,
   TaskFlowLinkedTaskReferenceRow,
   TaskFlowOpenSessionStageRow,
   TaskFlowOverturnRulingRow,
@@ -75,7 +76,7 @@ export const openStagesForSession = (
 ): TaskFlowOpenSessionStageRow[] =>
   database
     .query<TaskFlowOpenSessionStageRow, [string]>(
-      `SELECT record_id,number,project,workflow_slug,state,
+      `SELECT record_id,number,project,workflow_slug,workflow_key,state,
         (SELECT q.record_id FROM question q
           WHERE q.workflow_cursor_record_id=workflow_cursor.record_id
             AND ${questionOpenSql('q')} LIMIT 1) open_question_record_id
@@ -83,6 +84,22 @@ export const openStagesForSession = (
         WHERE session_id=? AND state NOT IN ('done','abandoned') ORDER BY number`,
     )
     .all(sessionId)
+
+export const keylessSessionCursors = (
+  database: Database,
+  project: string | null,
+): TaskFlowKeylessSessionCursorRow[] => {
+  const projectClause = project ? 'AND c.project=?' : ''
+  return database
+    .query<TaskFlowKeylessSessionCursorRow, string[]>(
+      `SELECT c.record_id,c.number,c.project,c.workflow_slug,c.step_slug,c.session_id,c.updated_at,
+        (SELECT q.record_id FROM question q WHERE q.workflow_cursor_record_id=c.record_id
+          AND ${questionOpenSql('q')} LIMIT 1) open_question_record_id
+       FROM workflow_cursor c WHERE c.workflow_key='' AND c.session_id IS NOT NULL
+         AND c.state NOT IN ('done','abandoned') ${projectClause} ORDER BY c.number`,
+    )
+    .all(...(project ? [project] : []))
+}
 
 export const openWorkflowQuestionCountForSession = (
   database: Database,

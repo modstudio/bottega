@@ -145,7 +145,18 @@ export type TaskFlowOpenSessionStageRow = {
   number: number
   project: string
   workflow_slug: string
+  workflow_key: string
   state: string
+  open_question_record_id: string | null
+}
+export type TaskFlowKeylessSessionCursorRow = {
+  record_id: string
+  number: number
+  project: string
+  workflow_slug: string
+  step_slug: string
+  session_id: string
+  updated_at: string
   open_question_record_id: string | null
 }
 export type TaskFlowInboxQuestionRow = {

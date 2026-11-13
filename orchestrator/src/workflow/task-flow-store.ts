@@ -18,6 +18,7 @@ import type {
   TaskFlowCursorLifecycleRow,
   TaskFlowCursorWorkRow,
   TaskFlowInboxQuestionRow,
+  TaskFlowKeylessSessionCursorRow,
   TaskFlowLinkedTaskReferenceRow,
   TaskFlowListedStageRow,
   TaskFlowObligationRow,
@@ -178,6 +179,7 @@ interface TaskFlowQueries {
   cursorWorkForSession(sessionId: string): TaskFlowCursorWorkRow[]
   cursorLifecycleForSession(sessionId: string): TaskFlowCursorLifecycleRow[]
   openStagesForSession(sessionId: string): TaskFlowOpenSessionStageRow[]
+  keylessSessionCursors(project: string | null): TaskFlowKeylessSessionCursorRow[]
   openWorkflowQuestionCountForSession(sessionId: string): number
   workflowInboxQuestions(): TaskFlowInboxQuestionRow[]
   rulingRows(input: {
