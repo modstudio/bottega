@@ -2,10 +2,11 @@ import { expect, test } from 'bun:test'
 import type { VerdictPayload } from '../verdict/verdict-payload.ts'
 import { releaseValues } from './record-release-sync.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
-import { commonReviewRecordValues } from './record-review-values.ts'
+import { commonReviewRecordValues, reviewValues } from './record-review-values.ts'
 import { branchDisposalValues } from './record-sync-branch-disposal.ts'
 import type { RecordPayload } from './record-sync-contract.ts'
 import { pullRequestCiValues } from './record-sync-pull-request-ci.ts'
+import { reviewFunnelDecisionValues } from './record-sync-review-funnel.ts'
 import { runRecordValues } from './record-sync-run-values.ts'
 import {
   contentionValues,
@@ -14,7 +15,6 @@ import {
   questionValues,
   reviewFindingValues,
   reviewLensValues,
-  reviewValues,
   testFlakeValues,
 } from './record-sync-service.ts'
 import { scoreValues } from './score-sync.ts'
@@ -130,6 +130,15 @@ const payload: RecordPayload = {
   candidateCommit: 'candidate',
   rollback: false,
   actor: 'operator',
+  surface: 'review-tier',
+  headCommit: 'head',
+  policyVersion: 'builtin',
+  mode: 'evaluate',
+  factsDigest: 'digest',
+  facts: OBJECT,
+  stack: 'typescript',
+  verdict: OBJECT,
+  outcome: 'advice',
 }
 
 const common = commonReviewRecordValues(payload)
@@ -188,6 +197,11 @@ const cases: Array<{
     name: 'review read',
     values: () => reviewReadRecordValues(payload, ID, common),
     fields: ['pathSet', 'withheldFields'],
+  },
+  {
+    name: 'review funnel decision',
+    values: () => reviewFunnelDecisionValues(payload, ID),
+    fields: ['pathSet', 'facts', 'verdict', 'withheldFields'],
   },
   {
     name: 'landing',

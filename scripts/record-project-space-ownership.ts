@@ -210,6 +210,7 @@ export const RECORD_PROJECT_SPACE_OWNERSHIP = [
   },
   { table: 'release', kind: 'project', ownerColumns: ['project_id'] },
   { table: 'review', kind: 'project', ownerColumns: ['project_id'] },
+  { table: 'review_funnel_decision', kind: 'project', ownerColumns: ['project_id'] },
   {
     table: 'review_finding',
     kind: 'parent',

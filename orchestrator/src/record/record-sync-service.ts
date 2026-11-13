@@ -45,7 +45,7 @@ import { typedQuestionRecordValues } from './record-question-values.ts'
 import { pushReleaseRecord } from './record-release-sync.ts'
 import { nullableReviewLensValues } from './record-review-lens-values.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
-import { commonReviewRecordValues } from './record-review-values.ts'
+import { commonReviewRecordValues, reviewValues } from './record-review-values.ts'
 import { pushBranchDisposal } from './record-sync-branch-disposal.ts'
 import { briefInjectionRecordKind } from './record-sync-brief-injection.ts'
 import type {
@@ -66,6 +66,7 @@ import * as evidenceLookup from './record-sync-evidence-lookup.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
 import { type ProjectResolutionCache, projectRecordId } from './record-sync-project-identity.ts'
 import { pullRequestCiRecordKind } from './record-sync-pull-request-ci.ts'
+import { reviewFunnelDecisionRecordKind } from './record-sync-review-funnel.ts'
 import {
   runProjectTaskIdentityDecision,
   runTaskIdentityDecision,
@@ -294,29 +295,6 @@ async function pushRun(
       .returning({ id: runRecord.id })
     requireOwnedUpsert(written, 'run', values.id, existingOwned)
   })
-}
-
-export function reviewValues(row: Payload, projectId: string | null) {
-  return {
-    ...commonReviewRecordValues(row),
-    projectId,
-    recordedAt: recordDate(row.recordedAt),
-    completedAt: nullableRecordDate(row.completedAt),
-    tier: nullableNumber(row.tier),
-    tierRisk: nullableNumber(row.tierRisk),
-    tierSize: nullableNumber(row.tierSize),
-    tierInsertions: nullableNumber(row.tierInsertions),
-    tierDeletions: nullableNumber(row.tierDeletions),
-    tierReasons: row.tierReasons,
-    tierReason: nullableString(row.tierReason),
-    role: String(row.role),
-    patchId: nullableString(row.patchId),
-    pathSet: row.pathSet,
-    commitMessage: nullableString(row.commitMessage),
-    outdatedAt: nullableRecordDate(row.outdatedAt),
-    outdatedReason: nullableString(row.outdatedReason),
-    round: nullableNumber(row.round),
-  }
 }
 
 export const questionValues = (
@@ -718,6 +696,7 @@ const recordKinds = {
         requireOwnedUpsert(written, 'review_read', values.id)
       }),
   },
+  review_funnel_decision: reviewFunnelDecisionRecordKind(existingEvidenceOwned, requireOwnedUpsert),
   release: {
     ...OUTBOX_PAYLOAD_CONTRACTS.release,
     push: (

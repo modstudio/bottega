@@ -164,6 +164,7 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
   synced('orchestrator', 'duel', 'Duel outcomes', 'DEV-2234'),
   machine('orchestrator', 'entity_number_counter', 'Machine-scoped display labels', LABEL_RULING),
   synced('orchestrator', 'gate_execution', 'Gate execution outcomes', 'DEV-2234'),
+  synced('orchestrator', 'review_funnel_decision', 'Replayable review-funnel verdicts', 'DEV-2299'),
   machine('orchestrator', 'host_pressure_sample', "This machine's host telemetry", PORTABLE_RULING),
   cache(
     'orchestrator',

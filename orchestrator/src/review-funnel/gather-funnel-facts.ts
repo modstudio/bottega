@@ -171,6 +171,7 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
       pathSet,
       paths: identity.paths,
     },
+    stack: change.project.stack,
     files,
     review: change.project.settings.review,
     branchReviews: reviews.branchReviews,

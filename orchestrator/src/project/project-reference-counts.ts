@@ -11,6 +11,7 @@ export const PROJECT_REFERENCES = [
   ['landing_triage_snapshot', 'landing_triage_snapshot', 'project_record_id'],
   ['pull_request_ci', 'pull_request_ci', 'project_record_id'],
   ['review_read', 'review_read', 'project_record_id'],
+  ['review_funnel_decision', 'review funnel decision', 'project_record_id'],
   ['doc', 'doc', 'project_record_id'],
   ['doc_revision', 'doc_revision', 'project_record_id'],
   ['review', 'review', 'project_record_id'],
