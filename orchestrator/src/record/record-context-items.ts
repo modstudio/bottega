@@ -4,7 +4,11 @@ import type { SQL } from 'bun'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { recordIso } from '../../../shared/record-timestamp.ts'
-import type { ContextItemKind } from '../doc/doc-context-write.ts'
+import {
+  type ContextItemKind,
+  contextItemShapeRefusal,
+} from '../doc/doc-context-write.ts'
+import { assertWrite } from './record-doc-errors.ts'
 import { recordPool } from './record-pool.ts'
 
 type Tenant = { url: string } & TenantPrincipal
@@ -37,6 +41,17 @@ function output(row: Record<string, unknown>) {
 }
 
 export async function upsertRecordContextItem(input: Tenant & RecordContextItemInput) {
+  assertWrite(
+    contextItemShapeRefusal({
+      holder: `${input.holderKind}:${input.holderId}`,
+      id: input.slug,
+      kind: input.kind,
+      body: input.body,
+      source: input.source,
+      questionNumber: input.questionNumber,
+      target: input.target,
+    }),
+  )
   return tenant(input, async (tx) => {
     const rows = (await tx`
       SELECT id,created_at,updated_at FROM context_item

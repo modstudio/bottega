@@ -352,6 +352,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   })
   registerPublicDocRoutes(app, deps)
   registerRecordIdentityMiddleware(app, deps)
+  // The report route must follow the identity middleware that authenticates it.
   registerRecordWriteTelemetry(app, writeTelemetryDeps(deps))
   registerRecordRequestSpace(app)
   registerRecordIdentityRoutes(app, deps)
@@ -587,6 +588,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     }
   })
   registerRecordCredentialRoutes(app, deps, { scope, noSpace })
+  // The client identifies its machine key with the recipientKeyId query parameter.
   app.get('/v1/config/data-keys/current', async (context) => {
     const active = scope(context)
     if (!active) return noSpace(context)

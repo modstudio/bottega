@@ -25,6 +25,7 @@ import {
   type ContextTaskIdentity,
   missingContextKinds,
 } from './doc-context-write.ts'
+import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
 import { contextTaskOwner } from './doc-hosted-client.ts'
 import { taskContextHolder } from './doc-subjects.ts'
 
@@ -79,6 +80,7 @@ export function taskContextItems(task: ContextTaskIdentity, database: Database) 
 
 /** Removes every item on a task holder; a whole-holder clear is not blocked by required kinds. */
 export async function clearTaskContext(input: { task: string }) {
+  assertWorkerDocStoreWriteAllowed('clearTaskContext')
   const { holder, task } = await resolveContextHolder(input)
   if (!task) throw new Error('task context clear requires --task')
   writableDb()
@@ -113,6 +115,7 @@ async function dropSessionContextItemForLifecycle(input: {
   expectedRevision: string
   reason: string
 }) {
+  assertWorkerDocStoreWriteAllowed('dropSessionContextItemForLifecycle')
   const holder = `session:${input.session}`
   writableDb()
   const item = getContextItem(holder, input.id)
@@ -181,6 +184,7 @@ export async function setContextItem(
     expectedRevision?: string
   },
 ) {
+  assertWorkerDocStoreWriteAllowed('setContextItem')
   const { holder, task } = await resolveContextHolder(input)
   writableDb()
   const questionNumber = /^(?:q)(\d+)$/.exec(input.source.trim())
@@ -251,6 +255,7 @@ export async function dropContextItem(
     expectedRevision?: string
   },
 ) {
+  assertWorkerDocStoreWriteAllowed('dropContextItem')
   const { holder, task } = await resolveContextHolder(input)
   writableDb()
   const item = getContextItem(holder, input.id)
