@@ -13,7 +13,7 @@ import {
   selectAndNextWorkflowStep as nextWorkflowStep,
   testPorts,
 } from './workflow-cursor-test.fixture.ts'
-import { seedWorkflows } from './workflow-seeds.ts'
+import { seedCurrentWorkflowTreeFixture } from './workflow-store.fixture.ts'
 import { KEYLESS_TRACKER_ACTION_KEY } from './workflow-template.ts'
 import { parseWorkflowTree } from './workflow-tree.ts'
 import { collectWorkflowTree } from './workflow-tree-files.ts'
@@ -27,34 +27,9 @@ import {
 const root = fileURLToPath(new URL('../../..', import.meta.url))
 const tree = parseWorkflowTree(collectWorkflowTree(root))
 const planTask = tree.workflows.find(({ slug }) => slug === 'plan-task')!
-const operate = tree.workflows.find(({ slug }) => slug === 'operate')!
 
 const database = testDatabaseFixture((d) => {
-  seedWorkflows(d)
-  d.query('INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?)').run(
-    newRecordId(),
-    'fixture',
-    '/fixture',
-    'bun',
-    JSON.stringify({ tracker: { protocol: 'hub' }, docs: { protocol: 'orch-docs' } }),
-  )
-  const catalogue = setStepCatalogueLocal(
-    { steps: tree.steps, sequences: tree.sequences },
-    'current tree fixture',
-    'test',
-    d,
-  )
-  promoteStepCatalogueLocal(catalogue.n, 'current tree fixture', 'test', d)
-  for (const trackedWorkflow of [planTask, operate]) {
-    const workflow = setWorkflowLocal(
-      trackedWorkflow.slug,
-      trackedWorkflow.definition,
-      'current tree fixture',
-      'test',
-      d,
-    )
-    promoteWorkflowLocal(trackedWorkflow.slug, workflow.n, 'current tree fixture', 'test', d)
-  }
+  seedCurrentWorkflowTreeFixture(d, ['plan-task', 'operate'], 'current tree fixture')
 })
 
 test.each([

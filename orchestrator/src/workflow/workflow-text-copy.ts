@@ -38,10 +38,8 @@ import {
   type HubTaskReader,
   type HubTaskReference,
   readHubTasks,
+  resolveHubTaskReference,
   taskCommand,
-  taskKeyMap,
-  taskReadRefusal,
-  taskReferenceForProjectKey,
 } from './workflow-task-reference.ts'
 import {
   deleteWorkflowText,
@@ -66,6 +64,7 @@ type CopyCursor = {
 }
 export type WorkflowTextCopyResult = {
   cursor: number
+  requestedTaskKey?: string
   copied: { id: string; documentReference: string; reused: boolean }[]
   uncopied: { id: string; reason: string }[]
   unsupported: { reason: string } | null
@@ -229,38 +228,42 @@ export async function copyWorkflowTextForCursor(
 /** Resolves an explicit task only for a keyless cursor, then uses the ordinary copy path. */
 export async function copyWorkflowTextForTask(
   cursor: CopyCursor,
-  taskKey: string | undefined,
+  requestedTaskKey: string | undefined,
   database: Database = db(),
   taskReader: HubTaskReader = readHubTasks,
   documents: WorkflowTextDocumentPorts = productionWorkflowTextDocumentPorts,
 ): Promise<WorkflowTextCopyResult> {
-  if (!taskKey) return copyWorkflowTextForCursor(cursor, database, taskReader, documents)
+  if (!requestedTaskKey) {
+    if (!cursor.taskRecordId && (await uncopiedRows(cursor.recordId, database)).length > 0) {
+      throw new Error(
+        `cursor ${cursor.number} is not linked to a task; copy it with ${PLATFORM_SLUG} workflow text copy --cursor ${cursor.number} --task <KEY>`,
+      )
+    }
+    return copyWorkflowTextForCursor(cursor, database, taskReader, documents)
+  }
   if (cursor.taskRecordId) {
     const ownTask = cursor.taskKey ?? cursor.taskRecordId
     throw new Error(
       `cursor ${cursor.number} belongs to task ${ownTask}; --task is only for a keyless cursor, so omit --task to copy to ${ownTask}`,
     )
   }
-  let tasks: HubTaskReference[]
-  try {
-    tasks = await taskReader(cursor.project)
-  } catch (error) {
-    throw taskReadRefusal(cursor.project, error instanceof Error ? error.message : String(error))
-  }
-  const task = taskReferenceForProjectKey(taskKeyMap(tasks), cursor.project, taskKey)
+  let tasks: HubTaskReference[] | undefined
+  const cachedTaskReader: HubTaskReader = async (project) => (tasks ??= await taskReader(project))
+  const task = await resolveHubTaskReference(cursor.project, requestedTaskKey, cachedTaskReader)
   if (!task) {
     throw new Error(
-      `task ${taskKey} does not exist in project ${cursor.project}; ` +
+      `task ${requestedTaskKey} does not exist in project ${cursor.project}; ` +
         `find it with ${PLATFORM_SLUG} task list --project ${cursor.project} --json ` +
         `or create it with ${PLATFORM_SLUG} task new --project ${cursor.project}`,
     )
   }
-  return copyWorkflowTextForCursor(
-    { ...cursor, taskKey: task.key, taskRecordId: task.record_id },
+  const result = await copyWorkflowTextForCursor(
+    { ...cursor, taskRecordId: task.record_id },
     database,
-    async () => tasks,
+    cachedTaskReader,
     documents,
   )
+  return { ...result, requestedTaskKey: task.key }
 }
 
 type CloseTarget = {
@@ -388,8 +391,13 @@ export async function closeCursorWithTextCopyResult(
   return { ...result, text: warning ? `${result.text}\n${warning}` : result.text }
 }
 
-function uncopiedLine(row: WorkflowTextCopyResult['uncopied'][number], cursor: number): string {
-  return `${workflowTextAttachmentToken(row.id)} is still uncopied: ${row.reason}; retry: ${PLATFORM_SLUG} workflow text copy --cursor ${cursor}`
+function uncopiedLine(
+  row: WorkflowTextCopyResult['uncopied'][number],
+  cursor: number,
+  requestedTaskKey?: string,
+): string {
+  const task = requestedTaskKey ? ` --task ${requestedTaskKey}` : ''
+  return `${workflowTextAttachmentToken(row.id)} is still uncopied: ${row.reason}; retry: ${PLATFORM_SLUG} workflow text copy --cursor ${cursor}${task}`
 }
 
 export function workflowTextCopyReport(
@@ -401,7 +409,7 @@ export function workflowTextCopyReport(
     (row) =>
       `${workflowTextAttachmentToken(row.id)} ${row.reused ? 'reuses' : 'copied to'} ${row.documentReference}`,
   )
-  for (const row of result.uncopied) lines.push(uncopiedLine(row, cursor))
+  for (const row of result.uncopied) lines.push(uncopiedLine(row, cursor, result.requestedTaskKey))
   return lines.join('\n')
 }
 
@@ -410,7 +418,7 @@ export function workflowTextUncopiedReport(
   cursor = result.cursor,
 ): string {
   if (result.unsupported) return result.unsupported.reason
-  return result.uncopied.map((row) => uncopiedLine(row, cursor)).join('\n')
+  return result.uncopied.map((row) => uncopiedLine(row, cursor, result.requestedTaskKey)).join('\n')
 }
 
 export async function showWorkflowText(
