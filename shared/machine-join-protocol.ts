@@ -168,20 +168,30 @@ export function decodeMachineJoinRecord(encoded: Uint8Array): TrustLogKey {
   return decodeTrustLogKey(encoded)
 }
 
-export function encodeMachineJoinDone(head: Uint8Array | null): Uint8Array {
+type MachineJoinDone = { head: Uint8Array | null; wrapped: boolean }
+
+export function encodeMachineJoinDone(head: Uint8Array | null, wrapped: boolean): Uint8Array {
   if (head !== null && head.byteLength !== 32)
     throw new Error('machine join trust-log head must be exactly 32 bytes')
-  return encode(new Map<number, unknown>([[1, head]]), dcbor)
+  return encode(
+    new Map<number, unknown>([
+      [1, head],
+      [2, wrapped],
+    ]),
+    dcbor,
+  )
 }
 
-export function decodeMachineJoinDone(encoded: Uint8Array): Uint8Array | null {
+export function decodeMachineJoinDone(encoded: Uint8Array): MachineJoinDone {
   const value = decode(encoded, dcbor)
-  if (!(value instanceof Map) || value.size !== 1 || !value.has(1))
+  if (!(value instanceof Map) || value.size !== 2 || !value.has(1) || !value.has(2))
     throw new Error('machine join done message is invalid')
   const head = value.get(1)
   if (head !== null && (!(head instanceof Uint8Array) || head.byteLength !== 32))
     throw new Error('machine join done head must be null or exactly 32 bytes')
-  return head
+  const wrapped = value.get(2)
+  if (typeof wrapped !== 'boolean') throw new Error('machine join done wrapped must be a boolean')
+  return { head, wrapped }
 }
 
 export const MACHINE_JOIN_TAG_BYTES = TAG_BYTES

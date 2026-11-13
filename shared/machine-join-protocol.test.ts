@@ -1,7 +1,9 @@
 import { expect, test } from 'bun:test'
 import { encode } from 'cbor2'
 import {
+  decodeMachineJoinDone,
   decodeMachineJoinRecord,
+  encodeMachineJoinDone,
   encodeMachineJoinRecord,
   makeMachineJoinTag,
   openMachineJoinMessage,
@@ -129,4 +131,16 @@ test('machine join records refuse wrong key sizes and extra fields', () => {
       ),
     ),
   ).toThrow('key has an extra field')
+})
+
+test('the done message carries whether the data key was wrapped', () => {
+  const options = { dcbor: true, rejectDuplicateKeys: true, preferMap: true } as const
+  const head = new Uint8Array(32).fill(3)
+  expect(decodeMachineJoinDone(encodeMachineJoinDone(head, false))).toEqual({
+    head,
+    wrapped: false,
+  })
+  expect(() =>
+    decodeMachineJoinDone(encode(new Map<number, unknown>([[1, head]]), options)),
+  ).toThrow('machine join done message is invalid')
 })

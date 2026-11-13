@@ -177,7 +177,6 @@ async function loadVerifiedTrustLog(ports: Ports, selected: SelectedSpace) {
   const remembered = readRememberedTrustLogHead(selected.spaceId, ports.env)
   return {
     entries,
-    remembered,
     state: entries.length
       ? verifyTrustLog(entries, { spaceId: selected.spaceId, rememberedHead: remembered })
       : null,
@@ -272,20 +271,16 @@ async function acceptDone(
   nameplate: string,
   approver: TrustLogKey,
   own: TrustLogKey,
-  remembered: Uint8Array | null,
   ports: Ports,
 ): Promise<void> {
-  const head = decodeMachineJoinDone(
+  const { head, wrapped } = decodeMachineJoinDone(
     openMachineJoinMessage(session, 'approver', selected.spaceId, nameplate, 'done', done.body),
   )
   if (head) {
-    const entries = await ports.client.readTrustLog({ destinationSpaceId: selected.spaceId })
-    const state = verifyTrustLog(entries, {
-      spaceId: selected.spaceId,
-      rememberedHead: remembered,
-    })
-    const trustedOwn = state.keys.get(own.keyId)
+    const { entries, state } = await loadVerifiedTrustLog(ports, selected)
+    const trustedOwn = state?.keys.get(own.keyId)
     if (
+      !state ||
       !trustedOwn ||
       !bytesEqual(trustedOwn.publicKey, own.publicKey) ||
       !bytesEqual(trustedOwn.signingPublicKey, own.signingPublicKey)
@@ -300,6 +295,10 @@ async function acceptDone(
     writeRememberedTrustLogHead(selected.spaceId, state.head, ports.env)
   }
   await pinTrustedMachine(approver.keyId, approver.publicKey, approver.label, ports.env)
+  if (!wrapped)
+    throw new Error(
+      `${approver.label} (${approver.keyId}) approved this machine but could not wrap the data key for it; on that machine run \`${PLATFORM_SLUG} machine config machine trust ${own.keyId} ${encoded(own.publicKey)} --yes\``,
+    )
 }
 
 async function verifiedJoiner(
@@ -388,7 +387,7 @@ export async function machineJoin(
 ): Promise<{ label: string; keyId: string }> {
   const { record } = await localRecord(selected, ports)
   const destination = { destinationSpaceId: selected.spaceId }
-  const { remembered, state: initial } = await loadVerifiedTrustLog(ports, selected)
+  const { state: initial } = await loadVerifiedTrustLog(ports, selected)
   if (initial?.keys.has(record.keyId)) throw new Error('this machine is already approved')
   const allocated = await ports.client.allocateMachineJoinNameplate(destination)
   const code = generatePairingCode(allocated.nameplate)
@@ -449,16 +448,7 @@ export async function machineJoin(
   const done = (
     await poll(ports, allocated.nameplate, ownSide, allocated.expiresAt, ['done'], destination)
   ).get('done')!
-  await acceptDone(
-    done,
-    session,
-    selected,
-    allocated.nameplate,
-    approver,
-    record,
-    remembered,
-    ports,
-  )
+  await acceptDone(done, session, selected, allocated.nameplate, approver, record, ports)
   return { label: approver.label, keyId: approver.keyId }
 }
 
@@ -526,7 +516,7 @@ export async function machineApprove(
       selected.spaceId,
       code.nameplate,
       'done',
-      encodeMachineJoinDone(approved.head),
+      encodeMachineJoinDone(approved.head, approved.failure === null),
     ),
     destination,
   )
