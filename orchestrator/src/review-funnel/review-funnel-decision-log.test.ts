@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import type { ReviewFunnelFacts, ReviewFunnelVerdict } from './decide-review-funnel.ts'
@@ -30,7 +31,7 @@ test('records the terminal decision and outbox row in one transaction', () => {
     budget: { roundsUsed: 0, ceiling: 1, atCeiling: false },
     lenses: [],
     next: { action: 'admit' },
-    remedy: 'bottega pr create',
+    remedy: `${PLATFORM_SLUG} pr create`,
   } as ReviewFunnelVerdict
 
   const recordId = recordReviewFunnelDecision({

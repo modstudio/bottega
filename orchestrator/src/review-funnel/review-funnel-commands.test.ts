@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { decideReviewFunnel, type ReviewFunnelFacts } from './decide-review-funnel.ts'
 import { replayReviewFunnelRows } from './review-funnel-commands.ts'
 import { DEFAULT_REVIEW_FUNNEL_POLICY } from './review-funnel-policy.ts'
@@ -7,7 +8,7 @@ test('replaying logged facts through the active policy reports zero diffs', () =
   const facts: ReviewFunnelFacts = {
     stack: 'typescript',
     change: {
-      project: 'bottega',
+      project: PLATFORM_SLUG,
       taskKey: 'DEV-2299',
       branch: 'fixture',
       head: 'head',
