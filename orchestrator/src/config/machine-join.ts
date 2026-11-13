@@ -278,9 +278,12 @@ async function acceptDone(
   )
   if (head) {
     const { entries, state } = await loadVerifiedTrustLog(ports, selected)
-    const trustedOwn = state?.keys.get(own.keyId)
+    if (!state)
+      throw new Error(
+        "the record's machine trust log is empty although the approver named a trust-log head; do not trust this record, and report it",
+      )
+    const trustedOwn = state.keys.get(own.keyId)
     if (
-      !state ||
       !trustedOwn ||
       !bytesEqual(trustedOwn.publicKey, own.publicKey) ||
       !bytesEqual(trustedOwn.signingPublicKey, own.signingPublicKey)
