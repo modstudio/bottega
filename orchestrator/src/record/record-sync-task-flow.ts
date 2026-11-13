@@ -85,18 +85,19 @@ export async function applyTaskFlowValues(
 }
 
 /**
- * Writes a stage the record did not hold when this push looked, numbered by its
- * project sequence. A concurrent push may insert it first; the stage is then
- * revised, so the newer revision applies rather than reading as a collision.
+ * Writes a stage the record did not hold when this push looked, under its project
+ * and the number its project sequence assigned. A concurrent push may insert it
+ * first; the stage is then revised, so the newer revision applies rather than
+ * reading as a collision.
  */
 export async function writeNewTaskFlowStageValues(
   database: HostedRecordDatabase,
   values: ReturnType<typeof taskFlowStageValues>,
-  number: number,
+  assigned: { projectId: string; number: number },
 ) {
   const inserted = await database
     .insert(taskFlowStageRecord)
-    .values({ ...values, number })
+    .values({ ...values, ...assigned })
     .onConflictDoNothing({ target: taskFlowStageRecord.id })
     .returning({ id: taskFlowStageRecord.id })
   return inserted.length > 0 ? inserted : reviseTaskFlowStageValues(database, values)
@@ -104,7 +105,7 @@ export async function writeNewTaskFlowStageValues(
 
 /**
  * Revises a stage the record already holds, leaving the project and number the
- * record assigned. It is an UPDATE because the stage contract will make both
+ * record assigned. It is an UPDATE because the stage contract makes both
  * columns NOT NULL, and Postgres checks NOT NULL before it resolves an upsert
  * conflict, so a revision carrying no fresh number could not upsert.
  */
@@ -169,19 +170,20 @@ async function pushTaskFlowStage(
       principal,
       { scope: 'space-principal' },
     )
-    if (!existingOwned && !values.projectId)
+    const projectId = values.projectId
+    if (!existingOwned && !projectId)
       throw new OutboxRowError(
         `task_flow_stage projectId is required for a new hosted stage; run ${PLATFORM_SLUG} record push --backfill to enqueue the current stage, then ${PLATFORM_SLUG} record outbox retire orch:<row-id> --reason <text> for this entry`,
         'row-validation',
       )
     const database = drizzle({ client: tx })
-    const written = existingOwned
-      ? await reviseTaskFlowStageValues(database, values)
-      : await writeNewTaskFlowStageValues(
-          database,
-          values,
-          await allocateRecordSequence(tx, values.spaceId, values.projectId!, 'task_flow_stage'),
-        )
+    const written =
+      existingOwned || !projectId
+        ? await reviseTaskFlowStageValues(database, values)
+        : await writeNewTaskFlowStageValues(database, values, {
+            projectId,
+            number: await allocateRecordSequence(tx, values.spaceId, projectId, 'task_flow_stage'),
+          })
     requireOwnedUpsert(written, 'task_flow_stage', values.id, existingOwned)
   })
 }

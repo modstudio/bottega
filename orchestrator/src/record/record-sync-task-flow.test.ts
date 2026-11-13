@@ -172,8 +172,13 @@ test('task-flow apply is idempotent and rejects older revisions', async () => {
         taskFlowValues(value),
       )
     const stageDatabase = database as unknown as Parameters<typeof writeNewTaskFlowStageValues>[0]
-    const insertStage = (value: Record<string, unknown>, number: number) =>
-      writeNewTaskFlowStageValues(stageDatabase, taskFlowStageValues(value), number)
+    const insertStage = (value: Record<string, unknown>, number: number) => {
+      const values = taskFlowStageValues(value)
+      return writeNewTaskFlowStageValues(stageDatabase, values, {
+        projectId: String(values.projectId),
+        number,
+      })
+    }
     const reviseStage = (value: Record<string, unknown>) =>
       reviseTaskFlowStageValues(stageDatabase, taskFlowStageValues(value))
 
