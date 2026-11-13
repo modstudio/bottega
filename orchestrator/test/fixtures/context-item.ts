@@ -1,6 +1,6 @@
 import type { ContextItemKind } from '../../src/doc/doc-context-write.ts'
 
-/** Legacy document encoding used only to seed pre-DEV-2293 fixture inputs. */
+/** Legacy document encoding of context items, used only to seed migration fixture inputs. */
 export function encodeContextItem(input: {
   kind: ContextItemKind
   source: string
