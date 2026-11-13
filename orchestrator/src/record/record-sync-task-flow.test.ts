@@ -174,10 +174,11 @@ test('task-flow apply is idempotent and rejects older revisions', async () => {
     const stageDatabase = database as unknown as Parameters<typeof writeNewTaskFlowStageValues>[0]
     const insertStage = (value: Record<string, unknown>, number: number) => {
       const values = taskFlowStageValues(value)
-      return writeNewTaskFlowStageValues(stageDatabase, values, {
-        projectId: String(values.projectId),
+      return writeNewTaskFlowStageValues(
+        stageDatabase,
+        { ...values, projectId: String(values.projectId) },
         number,
-      })
+      )
     }
     const reviseStage = (value: Record<string, unknown>) =>
       reviseTaskFlowStageValues(stageDatabase, taskFlowStageValues(value))
@@ -319,6 +320,7 @@ realPostgres('hosted task flow revisions', () => {
         await admin<
           {
             project_id: string
+            number: number
             workflow_key: string | null
             instance_id: string | null
             session_id: string | null
@@ -326,11 +328,12 @@ realPostgres('hosted task flow revisions', () => {
             autonomy: string | null
             enforcement: string | null
           }[]
-        >`SELECT project_id,workflow_key,instance_id,session_id,question,autonomy,enforcement
+        >`SELECT project_id,number,workflow_key,instance_id,session_id,question,autonomy,enforcement
            FROM task_flow_stage WHERE id=${STAGE}::uuid`,
       ).toEqual([
         {
           project_id: PROJECT,
+          number: 1,
           workflow_key: null,
           instance_id: null,
           session_id: null,
@@ -398,7 +401,6 @@ realPostgres('hosted task flow revisions', () => {
         status: 'quarantined',
       })
 
-      await admin`UPDATE task_flow_stage SET number=7 WHERE id=${STAGE}::uuid`
       await admin`INSERT INTO workflow_obligation
         (id,space_id,stage_record_id,step_ordinal,step_slug,floor,require_pull_request,
          expected_exit_code,expected_status,floor_deferrable,reason,session_id,created_at,
@@ -416,7 +418,7 @@ realPostgres('hosted task flow revisions', () => {
       await expect(readRecordTaskFlowStage({ ...principal, id: STAGE })).resolves.toMatchObject({
         stage: {
           id: STAGE,
-          number: 7,
+          number: 1,
           obligations: [{ id: OBLIGATION }],
           stepTexts: [{ id: TEXT }],
           textCopies: [{ id: COPY }],
@@ -425,14 +427,14 @@ realPostgres('hosted task flow revisions', () => {
       })
       await expect(readRecordTaskFlowText({ ...principal, id: TEXT })).resolves.toMatchObject({
         text: { id: TEXT, stageRecordId: STAGE, stepSlug: 'build', body: 'proof text' },
-        stage: { id: STAGE, number: 7 },
+        stage: { id: STAGE, number: 1 },
         copy: { id: COPY, taskDocumentReference: 'task:DEV-1978' },
       })
       await expect(
         readRecordTaskFlowObligation({ ...principal, id: OBLIGATION }),
       ).resolves.toMatchObject({
         obligation: { id: OBLIGATION, stageRecordId: STAGE, floor: 'test' },
-        stage: { id: STAGE, number: 7, state: 'done' },
+        stage: { id: STAGE, number: 1, state: 'done' },
       })
 
       for (const [read, knownId] of [

@@ -84,6 +84,20 @@ export async function applyTaskFlowValues(
     .returning({ id: taskFlowRecord.id })
 }
 
+type NewTaskFlowStageValues = ReturnType<typeof taskFlowStageValues> & { projectId: string }
+
+/** A new hosted stage takes its project's number sequence, so it cannot be written without one. */
+function requireNewStageProject(
+  values: ReturnType<typeof taskFlowStageValues>,
+): NewTaskFlowStageValues {
+  const { projectId } = values
+  if (projectId) return { ...values, projectId }
+  throw new OutboxRowError(
+    `task_flow_stage projectId is required for a new hosted stage; run ${PLATFORM_SLUG} record push --backfill to enqueue the current stage, then ${PLATFORM_SLUG} record outbox retire orch:<row-id> --reason <text> for this entry`,
+    'row-validation',
+  )
+}
+
 /**
  * Writes a stage the record did not hold when this push looked, under its project
  * and the number its project sequence assigned. A concurrent push may insert it
@@ -92,12 +106,12 @@ export async function applyTaskFlowValues(
  */
 export async function writeNewTaskFlowStageValues(
   database: HostedRecordDatabase,
-  values: ReturnType<typeof taskFlowStageValues>,
-  assigned: { projectId: string; number: number },
+  values: NewTaskFlowStageValues,
+  number: number,
 ) {
   const inserted = await database
     .insert(taskFlowStageRecord)
-    .values({ ...values, ...assigned })
+    .values({ ...values, number })
     .onConflictDoNothing({ target: taskFlowStageRecord.id })
     .returning({ id: taskFlowStageRecord.id })
   return inserted.length > 0 ? inserted : reviseTaskFlowStageValues(database, values)
@@ -170,20 +184,17 @@ async function pushTaskFlowStage(
       principal,
       { scope: 'space-principal' },
     )
-    const projectId = values.projectId
-    if (!existingOwned && !projectId)
-      throw new OutboxRowError(
-        `task_flow_stage projectId is required for a new hosted stage; run ${PLATFORM_SLUG} record push --backfill to enqueue the current stage, then ${PLATFORM_SLUG} record outbox retire orch:<row-id> --reason <text> for this entry`,
-        'row-validation',
-      )
     const database = drizzle({ client: tx })
-    const written =
-      existingOwned || !projectId
-        ? await reviseTaskFlowStageValues(database, values)
-        : await writeNewTaskFlowStageValues(database, values, {
-            projectId,
-            number: await allocateRecordSequence(tx, values.spaceId, projectId, 'task_flow_stage'),
-          })
+    let written: { id: string }[]
+    if (existingOwned) written = await reviseTaskFlowStageValues(database, values)
+    else {
+      const stage = requireNewStageProject(values)
+      written = await writeNewTaskFlowStageValues(
+        database,
+        stage,
+        await allocateRecordSequence(tx, stage.spaceId, stage.projectId, 'task_flow_stage'),
+      )
+    }
     requireOwnedUpsert(written, 'task_flow_stage', values.id, existingOwned)
   })
 }
