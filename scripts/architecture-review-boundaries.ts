@@ -19,6 +19,7 @@ export const reviewModuleSpecs = [
   {
     file: 'orchestrator/src/review-funnel/decide-review-funnel.ts',
     allowed: [
+      '../../../shared/brand.ts',
       '../pull-request/triage-decision.ts',
       '../review/review-applicability.ts',
       '../review/review-lens-provenance.ts',
@@ -245,6 +246,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     name: 'review-funnel-decision-boundary',
     file: 'orchestrator/src/review-funnel/decide-review-funnel.ts',
     allowed: [
+      '../../../shared/brand.ts',
       '../pull-request/triage-decision.ts',
       '../review/review-applicability.ts',
       '../review/review-lens-provenance.ts',

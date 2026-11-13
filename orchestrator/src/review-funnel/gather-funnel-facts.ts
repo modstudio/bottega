@@ -10,14 +10,18 @@ import {
   serializePathSet,
 } from '../review/review-group.ts'
 import { reviewLineage } from '../review/review-lineage-store.ts'
-import { gatherPostFixReviewFacts } from '../review/review-post-fix.ts'
 import { measureChangeIdentity } from '../review/review-pins.ts'
+import { gatherPostFixReviewFacts } from '../review/review-post-fix.ts'
 import {
   currentReviewRoundIdentity,
   eligibleReviewRoundRows,
 } from '../review/review-round-budget.ts'
 import { reviewRoundIdentity } from '../review/review-round-identity.ts'
-import { reviewRemoteTrunkRefExists, reviewTrunkRef, spawnGitProbe } from '../review/review-target.ts'
+import {
+  reviewRemoteTrunkRefExists,
+  reviewTrunkRef,
+  spawnGitProbe,
+} from '../review/review-target.ts'
 import { diffNumstat } from '../review/review-tier.ts'
 import type {
   ReviewFunnelFacts,
@@ -141,10 +145,7 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
     database: change.database,
     repo: change.cwd,
     to: change.head,
-    trunkRef: reviewTrunkRef(
-      reviewRemoteTrunkRefExists(trunk, spawnGitProbe(change.cwd)),
-      trunk,
-    ),
+    trunkRef: reviewTrunkRef(reviewRemoteTrunkRefExists(trunk, spawnGitProbe(change.cwd)), trunk),
     project: change.project.name,
     branch: change.branch,
   })
@@ -198,7 +199,10 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
       patchId: identity.patchId,
       pathSet,
     }),
-    lensStates: [...liveLensStates(change.database, change.project.name, change.branch), ...untriaged],
+    lensStates: [
+      ...liveLensStates(change.database, change.project.name, change.branch),
+      ...untriaged,
+    ],
     exactRead: read,
     readCreditsRound: read && hasCompletedRound,
     ...overrides,

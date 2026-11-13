@@ -8,7 +8,7 @@ import { MIN_REVIEW_TRIAGED } from '../review/review-triage.ts'
 
 const modeSchema = z.enum(['evaluate', 'enforce'])
 
-export const reviewFunnelPolicySchema = z.strictObject({
+const reviewFunnelPolicySchema = z.strictObject({
   sizeThresholds: z.tuple([
     z.number().int().nonnegative(),
     z.number().int().nonnegative(),
@@ -59,8 +59,6 @@ export const DEFAULT_REVIEW_FUNNEL_POLICY: ReviewFunnelPolicy = {
     selection: 'evaluate',
   },
 }
-
-export const SEEDED_REVIEW_FUNNEL_POLICY_BODY = `${JSON.stringify(DEFAULT_REVIEW_FUNNEL_POLICY, null, 2)}\n`
 
 export type VersionedReviewFunnelPolicy = {
   policy: ReviewFunnelPolicy
