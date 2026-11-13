@@ -216,6 +216,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       'bun:sqlite',
       '../postgres/postgres-migrate.ts',
       './record-config.ts',
+      './record-machine-key-registration.ts',
       './record-credential.ts',
       './record-member-permission.ts',
       './record-api.ts',

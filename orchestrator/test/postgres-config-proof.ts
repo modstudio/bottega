@@ -22,14 +22,15 @@ import {
   listSpaceConfigAccess,
   putConfigEntry,
   putConfigSecret,
-  registerMachineKey,
   retireDataKey,
   revokeMachineKey,
 } from '../src/record/record-config.ts'
+import { registerMachineKey } from '../src/record/record-machine-key-registration.ts'
 import { setSpaceMemberPermission } from '../src/record/record-member-permission.ts'
 import { proveCredentialPreferencePersistence } from './fixtures/credential-preference-proof.ts'
 import { asSpace, asSpaces, succeeds } from './fixtures/postgres-rls.ts'
 import { proveCredentialSecretProjectAddressing } from './support/credential-secret-proof.ts'
+import { proveMachineSigningKeyRegistration } from './support/machine-signing-registration-proof.ts'
 
 const USER_B = '01990000-0000-7000-8000-000000000020'
 const DEK_A = '01990000-0000-7000-8000-0000000000da'
@@ -978,7 +979,6 @@ export function registerHostedConfigProofs(
 
   test('machine registration verifies key ids and revocation atomically removes wraps', async () => {
     const publicKey = Uint8Array.from({ length: 32 }, (_, index) => index)
-    const signingPublicKey = Uint8Array.from({ length: 32 }, (_, index) => 255 - index)
     const keyId = await machineKeyId(publicKey)
     await expect(
       registerMachineKey({
@@ -994,35 +994,7 @@ export function registerHostedConfigProofs(
       publicKey,
       label: 'service machine',
     })
-    const filled = await registerMachineKey({
-      ...serviceTenant,
-      keyId,
-      publicKey,
-      signingPublicKey,
-      label: 'service machine',
-    })
-    expect(filled.signingPublicKey).toEqual(signingPublicKey)
-    await expect(
-      registerMachineKey({
-        ...serviceTenant,
-        keyId,
-        publicKey,
-        signingPublicKey,
-        label: 'service machine',
-      }),
-    ).resolves.toMatchObject({ signingPublicKey })
-    await expect(
-      registerMachineKey({
-        ...serviceTenant,
-        keyId,
-        publicKey,
-        signingPublicKey: Uint8Array.from({ length: 32 }, (_, index) => index + 1),
-        label: 'service machine',
-      }),
-    ).rejects.toMatchObject({
-      status: 409,
-      message: `machine key ${keyId} is already registered with a different signing key`,
-    })
+    await proveMachineSigningKeyRegistration(serviceTenant, keyId, publicKey)
     await expect(
       registerMachineKey({
         ...serviceTenant,

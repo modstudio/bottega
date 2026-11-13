@@ -9,8 +9,8 @@ import type {
   ConfigTenant,
   ConfigWrapInput,
   DataKey,
-  MachineKey,
 } from './record-config.ts'
+import type { MachineKey } from './record-machine-key-registration.ts'
 
 type Tenant = Omit<ConfigTenant, 'spaceIds'> & { spaceIds: string[] }
 export type RecordConfigRouteDeps = {

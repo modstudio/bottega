@@ -36,6 +36,16 @@ export const keyStoreModules: KeyStoreModule[] = [
     './secret-envelope.ts',
     './keychain.ts',
   ]),
+  module('shared/machine-signing-key.ts', [
+    '@noble/curves/ed25519.js',
+    'node:fs',
+    'node:path',
+    './brand.ts',
+    './config-directory.ts',
+    './file-backed-secret-paths.ts',
+    './keychain.ts',
+    './machine-key-store.ts',
+  ]),
   module('shared/record-session.ts', [
     'node:crypto',
     'node:fs',

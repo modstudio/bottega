@@ -60,11 +60,11 @@ test('revoked replacement moves the old secret under the X25519 key id', () => {
   const replacement = generateMachineSigningKeyPair()
   writeMachineSigningKey(oldPair, env)
 
-  replaceRevokedMachineSigningKey('revoked-x25519-key', replacement, env)
+  replaceRevokedMachineSigningKey('revoked-key-id', replacement, env)
 
   expect(
     readFileSync(
-      join(env.BOTTEGA_CONFIG_HOME, 'machine-key-revoked', 'revoked-x25519-key.signing'),
+      join(env.BOTTEGA_CONFIG_HOME, 'machine-key-revoked', 'revoked-key-id.signing'),
       'utf8',
     ).trim(),
   ).toBe(Buffer.from(oldPair.privateKey).toString('base64url'))
