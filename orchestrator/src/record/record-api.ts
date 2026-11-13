@@ -17,6 +17,7 @@ import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payl
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { registerRecordAccessRoutes, registerRecordCors } from './record-api-access.ts'
 import type { RecordBoardDeps } from './record-api-board.ts'
+import { registerRecordContextItemRoutes } from './record-api-context-items.ts'
 import { type RecordChangeRouteDeps, registerRecordChangeRoute } from './record-api-changes.ts'
 import type { RecordConfigRouteDeps } from './record-api-config-contract.ts'
 import { configSecretPutBody } from './record-api-config-schema.ts'
@@ -68,6 +69,7 @@ import {
 } from './record-api-write-telemetry.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import type { RecordCanonImportInput, RecordCanonImportResult } from './record-canon-import.ts'
+import type { RecordContextItemInput } from './record-context-items.ts'
 import type { ConfigTenant } from './record-config.ts'
 import { CONFIG_SCOPES } from './record-config.ts'
 import {
@@ -118,6 +120,10 @@ type Deps = RecordSubjectRouteDeps &
   RecordApiDeps
 type RecordApiDeps = RecordSessionRouteDeps &
   RecordSettingsRouteDeps & {
+    upsertContextItem(input: Tenant & RecordContextItemInput): Promise<unknown>
+    deleteContextItem(
+      input: Tenant & { id: string; expectedRevision?: string },
+    ): Promise<{ removed: boolean }>
     clientAddresses: RecordClientAddresses
     recordUrl: string
     noDestinationWriteCounter: Parameters<typeof registerRecordWriteTelemetry>[1]['counter']
@@ -358,6 +364,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   const scope = (context: Context<ApiEnvironment>): Tenant | null =>
     refusingRequestTenant(context, deps.recordUrl)
   const { docScope, docIdScope } = recordDocumentScopes({ scope, readDoc: deps.readDoc })
+  registerRecordContextItemRoutes(app, deps, { scope, noSpace })
   registerSignedDocSearchRoute(app, deps, { scope, noSpace })
   registerRecordReadRoutes(app, deps, { scope, noSpace })
   app.get('/v1/runs', async (context) => {

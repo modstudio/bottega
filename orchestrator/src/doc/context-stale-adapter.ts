@@ -10,11 +10,10 @@ import {
   taskKeyMap,
   taskReferenceForProjectKey,
 } from '../workflow/workflow-task-reference.ts'
-import { decodeContextItem } from './context-item-codec.ts'
+import { listContextItems } from './context-item-store.ts'
 import { sessionWorkEvents } from './context-session-work-adapter.ts'
 import { type ContextWorkEvent, staleContextHolders } from './context-stale.ts'
 import { unknownTaskPrefixReport } from './context-write-adapter.ts'
-import { listDocsStore } from './doc-read-store.ts'
 import { taskContextHolder } from './doc-subjects.ts'
 
 type KeyAt = { key: string | null; at: string }
@@ -48,9 +47,9 @@ export async function staleContextForSession(
     return task ? [{ holder, task }] : []
   })
   const revisions = resolvedTasks.flatMap(({ holder, task }) =>
-    listDocsStore({ scope: 'context', subject: taskContextHolder(task.record_id) }, database)
-      .filter((doc) => decodeContextItem(doc.subject!, doc.slug, doc.body).kind === 'next-action')
-      .map((doc) => ({ holder, at: doc.updated_at })),
+    listContextItems(taskContextHolder(task.record_id), database)
+      .filter((item) => item.kind === 'next-action')
+      .map((item) => ({ holder, at: item.updatedAt })),
   )
   const taskStatuses = resolvedTasks.map(({ holder, task }) => ({
     holder,

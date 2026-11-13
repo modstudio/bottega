@@ -23,7 +23,6 @@ import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { recordDocArticleCompatibilityRefusal } from '../record/record-doc-transport-contract.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
-import { assertContextDropAllowed, assertContextSetAllowed } from './context-write-adapter.ts'
 import {
   assertLocalArticleDelivery,
   type DocWriteContext,
@@ -335,9 +334,7 @@ function assertCanonWriteAllowed(input: DocWriteInput): string[] {
   return [...new Set(decisions.flatMap(({ warnings }) => warnings))]
 }
 
-/** Every write verb reaches this check, so it carries the context item policy. */
 async function assertDocWriteAllowed(input: DocWriteAllowedInput): Promise<string[]> {
-  await assertContextSetAllowed(input)
   const inject = refuseProjectOrGlobalInject(input.scope, input.delivery)
   if (inject) throw new Error(inject)
   const settings = refuseSettingsBody(input.scope, input.body)
@@ -581,7 +578,6 @@ export async function removeDoc(
   const identity = resolvedDocWriteIdentity(context)
   const doc = getDoc(scope, subject, slug, owner)
   if (!doc) return false
-  await assertContextDropAllowed({ doc, database: db(), task: context.contextTask })
   return removeStoredDoc(doc, context, identity)
 }
 

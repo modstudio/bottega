@@ -48,8 +48,9 @@ export type ContextItem = {
   id: string
   kind: ContextItemKind
   source: string
-  objection?: string
   body: string
+  questionNumber?: number | null
+  target?: string | null
 }
 export type ContextWriteFacts = {
   profile: ContextProfile

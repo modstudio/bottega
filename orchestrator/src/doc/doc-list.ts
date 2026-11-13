@@ -18,7 +18,7 @@ function resolveListFilters(filters: DocListFilters): DocListFilters {
 /** Context items are read through their holder, so an unscoped listing leaves them out. */
 function hideContextByDefault(filters: DocListFilters): DocListFilters {
   if (filters.scope !== undefined || filters.scopes !== undefined) return filters
-  return { ...filters, scopes: DOC_SCOPES.filter((scope) => scope !== 'context') }
+  return { ...filters, scopes: [...DOC_SCOPES] }
 }
 
 export function listDocs(filters: DocListFilters = {}) {

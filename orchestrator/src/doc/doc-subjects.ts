@@ -41,9 +41,7 @@ export function validDocSubjects(scope: DocScope): string {
       ? docSubjects().project
       : subjectKind === 'stack'
         ? docSubjects().stack
-        : subjectKind === 'holder'
-          ? ['task:<uuid>', 'session:<uuid>']
-          : Object.keys(subjectKind === 'agent' ? AGENTS : JOBS).sort()
+      : Object.keys(subjectKind === 'agent' ? AGENTS : JOBS).sort()
   return values.join(', ') || '(none)'
 }
 
@@ -69,11 +67,6 @@ export function validateDocSubject(scope: DocScope, subject: string): void {
   }
   if (subjectKind === 'job' && !JOBS[subject]) {
     throw new Error(`unknown job subject "${subject}"; valid values: ${validDocSubjects(scope)}`)
-  }
-  if (subjectKind === 'holder' && !isValidContextHolderSubject(subject)) {
-    throw new Error(
-      `invalid context holder subject ${JSON.stringify(subject)}; use task:<uuid> or session:<uuid>`,
-    )
   }
 }
 

@@ -28,7 +28,6 @@ export function decodeContextItem(holder: string, id: string, storedBody: string
     id,
     kind: kind as ContextItemKind,
     source: value(storedBody, 'source') ?? '',
-    objection: value(storedBody, 'objection'),
     body: storedBody.slice(end + 4).replace(/^\r?\n/, ''),
   }
 }

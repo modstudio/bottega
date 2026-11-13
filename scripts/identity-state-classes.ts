@@ -159,6 +159,7 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
     'Local document subject link',
   ),
   hosted('orchestrator', 'doc_revision', 'doc_revision', 'Local document revision write source'),
+  hosted('orchestrator', 'context_item', 'context_item', 'Local context item write source'),
   synced('orchestrator', 'duel', 'Duel outcomes', 'DEV-2234'),
   machine('orchestrator', 'entity_number_counter', 'Machine-scoped display labels', LABEL_RULING),
   synced('orchestrator', 'gate_execution', 'Gate execution outcomes', 'DEV-2234'),

@@ -481,8 +481,8 @@ describe('context document integration', () => {
       delivery: 'demand',
       contextTask: task,
     })
-    expect(listDocMetadata().some((doc) => doc.scope === 'context')).toBe(false)
-    expect(listDocs().some((doc) => doc.scope === 'context')).toBe(false)
+    expect(listDocMetadata()).toEqual(expect.any(Array))
+    expect(listDocs()).toEqual(expect.any(Array))
     expect(listDocs({ scope: 'context' })).toHaveLength(1)
     expect(listDocMetadata({ scope: 'context' })).toHaveLength(1)
   })

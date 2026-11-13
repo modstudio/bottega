@@ -1,16 +1,19 @@
 // concern: document removal
 /** Owns the single document removal path and its session-lifecycle-only entry. */
 import { collectCanonLintInput as productionCanonLintInput } from '../canon/canon-files.ts'
-import { writableDb } from '../database/db.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
 import type { DocWriteContext } from './doc-article-fields.ts'
 import { contextTaskOwner, hostedDocClient } from './doc-hosted-client.ts'
-import { type Doc, getDocStore, listDocsStore } from './doc-read-store.ts'
+import {
+  getContextItem,
+  listContextItems,
+  removeLocalContextItem,
+} from './context-item-store.ts'
+import type { Doc } from './doc-read-store.ts'
 import { assertLocalStoredReferenceWrite } from './doc-reference-write.ts'
 import { assertLocalRevisionWrite } from './doc-revision-store.ts'
 import { type ContextDropTarget, docWriteProjectName } from './doc-write-allowed.ts'
-import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
 import { hostedDocWriteIdentity, resolvedDocWriteIdentity } from './doc-write-identity.ts'
 import { assertLocalDocRemovalAllowed, localParentRecordId } from './local-doc-tree-service.ts'
 import { commitDocRemove, executeLocalDocRemove } from './local-doc-write.ts'
@@ -103,44 +106,30 @@ export async function removeStoredDoc(
   })
 }
 
-/** Session teardown skips only the ordinary context-drop ownership guard. */
+/** Session teardown bypasses only the ordinary context-drop ownership guard. */
 export async function removeContextItemForLifecycle(
   holder: string,
   slug: string,
   context: DocWriteContext,
 ): Promise<boolean> {
   if (!holder.startsWith('session:')) {
-    throw new Error('lifecycle context removal requires a session: subject')
+    throw new Error('lifecycle context removal requires a session: holder')
   }
-  assertWorkerDocStoreWriteAllowed('removeContextItemForLifecycle')
-  writableDb()
-  const identity = resolvedDocWriteIdentity(context)
-  const doc = getDocStore('context', holder, slug)
-  if (!doc) return false
-  return removeStoredDoc(doc, context, identity)
+  const item = getContextItem(holder, slug)
+  if (!item) return false
+  return removeLocalContextItem(holder, slug, context.expectedRevision)
 }
 
-/** Task teardown removes a complete task holder without applying single-item required-kind guards. */
+/** Task teardown removes a complete holder without applying single-item required-kind guards. */
 export async function removeTaskContextHolder(
   holder: string,
-  context: DocWriteContext,
+  _context: DocWriteContext,
 ): Promise<number> {
-  if (!holder.startsWith('task:')) {
-    throw new Error('task context clear requires a task: subject')
-  }
-  assertWorkerDocStoreWriteAllowed('removeTaskContextHolder')
-  writableDb()
-  const identity = resolvedDocWriteIdentity(context)
+  if (!holder.startsWith('task:')) throw new Error('task context clear requires a task: holder')
   let removed = 0
-  for (const doc of listDocsStore({ scope: 'context', subject: holder })) {
-    if (
-      await removeStoredDoc(
-        doc,
-        { ...context, expectedRevision: doc.revision ?? undefined },
-        identity,
-      )
-    )
-      removed++
+  for (const item of listContextItems(holder)) {
+    if (removeLocalContextItem(holder, item.id, item.revision)) removed++
   }
   return removed
 }
+

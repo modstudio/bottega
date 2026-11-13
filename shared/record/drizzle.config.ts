@@ -12,6 +12,7 @@ export default defineConfig({
     './shared/record/schema-release.ts',
     './shared/record/schema-landing.ts',
     './shared/record/schema-docs.ts',
+    './shared/record/schema-context-items.ts',
     './shared/record/schema-subjects.ts',
     './shared/record/schema-hub.ts',
     './shared/record/schema-snapshots.ts',

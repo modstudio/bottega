@@ -45,7 +45,7 @@ export async function hostedDocClient(
   const client = recordApiClient()
   const projectName = docWriteProjectName(scope, subject)
   const projectId = projectName ? (projectRowByName(projectName)?.recordId ?? null) : null
-  const owner = suppliedOwner ?? (await docOwner(scope, subject, projectName))
+  const owner = suppliedOwner ?? (await contextItemOwner(scope, subject, projectName))
   const destination = await recordWriteDestination(client, owner)
   return {
     listDocs: (query) => client.listDocs(query, destination),
@@ -64,7 +64,7 @@ export async function hostedDocClient(
   }
 }
 
-async function docOwner(
+export async function contextItemOwner(
   scope: string,
   subject: string | null,
   projectName: string | null,

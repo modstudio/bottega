@@ -48,6 +48,10 @@ import {
 import { readRecordChangeFeed } from './record-change-feed.ts'
 import { createRecordChangeWakeSource } from './record-change-wake.ts'
 import {
+  deleteRecordContextItem,
+  upsertRecordContextItem,
+} from './record-context-items.ts'
+import {
   addDataKeyWraps,
   claimMachineKey,
   createDataKey,
@@ -453,6 +457,8 @@ async function serveRecordApiWithAuth(
     defineSubject: defineRecordSubject,
     reorderSubjects: reorderRecordSubjects,
     retireSubject: retireRecordSubject,
+    upsertContextItem: upsertRecordContextItem,
+    deleteContextItem: deleteRecordContextItem,
     ...recordDocDependencies(),
     ...recordSettingsDependencies(),
     ...recordScoreDependencies(),

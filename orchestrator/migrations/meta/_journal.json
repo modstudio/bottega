@@ -1690,6 +1690,14 @@
       "tag": "0220_agent_request_settings",
       "breakpoints": true,
       "compatibility": "additive"
+    },
+    {
+      "idx": 221,
+      "version": "6",
+      "when": 1794509396003,
+      "tag": "0221_context_item",
+      "breakpoints": true,
+      "compatibility": "fenced"
     }
   ]
 }

@@ -16,7 +16,6 @@ export const DOC_SCOPES = [
   'resume',
   'canon',
   'settings',
-  'context',
 ] as const
 export type DocScope = (typeof DOC_SCOPES)[number]
 export const DOC_AUDIENCES = ['technical', 'internal', 'customer'] as const
@@ -149,15 +148,14 @@ export function effectiveDocSummary(
     ? { summary: written, summarySource: 'written' }
     : { summary: docSummary(body), summarySource: 'derived' }
 }
-type UnfiledDocScope = 'canon' | 'settings' | 'context'
+type UnfiledDocScope = 'canon' | 'settings'
 /** Canon and settings have their own writers, and context items are written through their holder. */
 export const FILING_DOC_SCOPES = DOC_SCOPES.filter(
-  (scope): scope is Exclude<DocScope, UnfiledDocScope> =>
-    scope !== 'canon' && scope !== 'settings' && scope !== 'context',
+  (scope): scope is Exclude<DocScope, UnfiledDocScope> => scope !== 'canon' && scope !== 'settings',
 ) as [Exclude<DocScope, UnfiledDocScope>, ...Exclude<DocScope, UnfiledDocScope>[]]
 export type FilingDocScope = (typeof FILING_DOC_SCOPES)[number]
 
-export type DocSubjectKind = 'project' | 'stack' | 'agent' | 'job' | 'holder'
+export type DocSubjectKind = 'project' | 'stack' | 'agent' | 'job'
 
 export const DOC_SCOPE_SUBJECT_KIND = {
   project: 'project',
@@ -169,7 +167,6 @@ export const DOC_SCOPE_SUBJECT_KIND = {
   resume: 'project',
   canon: 'project',
   settings: 'project',
-  context: 'holder',
 } as const satisfies Record<DocScope, DocSubjectKind | null>
 
 export function docScopeHasProjectSubject(scope: string): boolean {
@@ -206,5 +203,4 @@ export const DOC_SCOPE_ALLOWS_OWNER = {
   resume: false,
   canon: true,
   settings: true,
-  context: false,
 } as const satisfies Record<DocScope, boolean>

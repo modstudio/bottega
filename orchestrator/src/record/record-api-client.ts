@@ -18,6 +18,7 @@ import {
 import type { TableStorageMeasurement } from '../../../shared/storage-lifecycle.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
+import type { RecordContextItemInput } from './record-context-items.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import { recordBoardClient } from './record-api-client-board.ts'
 import {
@@ -244,6 +245,15 @@ export type RecordApiClient = ProjectIdentityClient &
   ReturnType<typeof recordModerationClient> &
   ReturnType<typeof recordOutsideClient> &
   ReturnType<typeof recordConfigAccessClient> & {
+    upsertContextItem(
+      input: RecordContextItemInput,
+      destination: RecordWriteDestination,
+    ): Promise<{ id: string; createdAt: string; updatedAt: string }>
+    deleteContextItem(
+      id: string,
+      input: { expectedRevision?: string },
+      destination: RecordWriteDestination,
+    ): Promise<{ removed: boolean }>
     storage(): Promise<{ tables: TableStorageMeasurement[] }>
     listRoutingEvidence: RecordRoutingEvidenceClient['listRoutingEvidence']
     createOrganization(input: CreateOrganizationInput): Promise<{ id: string; slug: string }>
@@ -748,6 +758,18 @@ export function recordApiClient(request = recordApiRequest): RecordApiClient {
     ...recordSnapshotAndPublicDocClient(request),
     ...recordDocReadClient(request),
     ...recordDocWriteClient(request),
+    upsertContextItem: (input, destination) =>
+      request('/v1/context-items', {
+        method: 'PUT',
+        body: JSON.stringify(input),
+        ...destination,
+      }),
+    deleteContextItem: (id, input, destination) =>
+      request(`/v1/context-items/${id}`, {
+        method: 'DELETE',
+        body: JSON.stringify(input),
+        ...destination,
+      }),
     ...recordLensClient(request),
     ...recordPortClient(request),
     ...recordWorkflowClient(request),
