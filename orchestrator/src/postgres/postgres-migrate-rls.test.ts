@@ -31,6 +31,7 @@ import { registerHostedConfigProofs } from '../../test/postgres-config-proof.ts'
 import { registerConnectionBudgetProof } from '../../test/postgres-connection-budget-proof.ts'
 import { registerRecordGrantProofs } from '../../test/postgres-grant-proof.ts'
 import { registerLandingEvidenceRlsProof } from '../../test/postgres-landing-evidence-proof.ts'
+import { registerMachineJoinProof } from '../../test/postgres-machine-join-proof.ts'
 import { registerProjectSpaceProofs } from '../../test/postgres-project-space-proof.ts'
 import { registerPublicDocProofs } from '../../test/postgres-public-doc-proof.ts'
 import { registerQuestionTaskRecordSyncProof } from '../../test/postgres-question-task-proof.ts'
@@ -331,6 +332,14 @@ realPostgres('RLS proof against real Postgres', () => {
     succeeds: (source) => succeeds('postgres', 'postgres', source),
     psql: (source, user = 'postgres', password = 'postgres') => psql(user, password, source),
     apiUrl: () => `http://127.0.0.1:${apiServer.port}`,
+  })
+  registerMachineJoinProof({
+    apiUrl: () => `http://127.0.0.1:${apiServer.port}`,
+    token: () => tokenA,
+    otherToken: () => tokenB,
+    userId: () => authUserA,
+    otherUserId: () => authUserB,
+    succeeds: (source) => succeeds('postgres', 'postgres', source),
   })
   registerBoardRlsProofs({
     admin: (s) => succeeds('postgres', 'postgres', s),

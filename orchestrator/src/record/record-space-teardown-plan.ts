@@ -70,6 +70,8 @@ export const RECORD_DELETE_APPEND_ONLY_SPACE_ROWS = [
   { table: 'machine_name_claim', countColumn: 'machine_name_claim_count' },
   { table: 'board_presence', countColumn: 'board_presence_count' },
   { table: 'machine_trust_log', countColumn: 'machine_trust_log_count' },
+  { table: 'machine_join_message', countColumn: 'machine_join_message_count' },
+  { table: 'machine_join_nameplate', countColumn: 'machine_join_nameplate_count' },
 ] as const satisfies readonly RecordDefinerCount[]
 export const RECORD_DELETE_PROTECTED_SPACE_ROWS = [
   { table: 'secret_dek', countColumn: 'secret_dek_count' },
@@ -98,6 +100,16 @@ export const SPACE_TEARDOWN_EXCLUSIONS = {
       'deleted by the append-only teardown definer function; append-only record_actor holds no DELETE policy',
   },
   machine_name_claim: {
+    removedBy: 'definer',
+    reason:
+      'deleted by the append-only teardown definer function; record_actor holds no DELETE policy',
+  },
+  machine_join_message: {
+    removedBy: 'definer',
+    reason:
+      'deleted by the append-only teardown definer function; record_actor holds no DELETE policy',
+  },
+  machine_join_nameplate: {
     removedBy: 'definer',
     reason:
       'deleted by the append-only teardown definer function; record_actor holds no DELETE policy',

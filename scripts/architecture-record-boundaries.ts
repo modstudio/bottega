@@ -218,6 +218,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       './record-config.ts',
       './record-machine-key-registration.ts',
       './record-machine-trust-log.ts',
+      './record-machine-join.ts',
       './record-credential.ts',
       './record-member-permission.ts',
       './record-api.ts',

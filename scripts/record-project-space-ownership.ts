@@ -142,6 +142,16 @@ export const RECORD_PROJECT_SPACE_OWNERSHIP = [
     reason: 'space machine-key ownership proof',
   },
   {
+    table: 'machine_join_message',
+    kind: 'space',
+    reason: 'space machine-join relay messages',
+  },
+  {
+    table: 'machine_join_nameplate',
+    kind: 'space',
+    reason: 'space machine-join pairing allocation',
+  },
+  {
     table: 'machine_public_key',
     kind: 'space',
     reason: 'space machine authorization',
