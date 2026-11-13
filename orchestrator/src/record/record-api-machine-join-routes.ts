@@ -3,6 +3,7 @@
 
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
+import { NAMEPLATE_PATTERN } from '../../../shared/pairing-code.ts'
 import type { RecordConfigRouteDeps } from './record-api-config-contract.ts'
 import { base64urlSchema, decoded, encoded } from './record-api-wire.ts'
 import type { RecordIdentity } from './record-auth.ts'
@@ -23,7 +24,7 @@ type RouteContext = {
   writeError(context: Context<ApiEnvironment>, error: unknown): Response
 }
 
-const nameplateSchema = z.string().regex(/^[1-9][0-9]{0,5}$/)
+const nameplateSchema = z.string().regex(NAMEPLATE_PATTERN)
 const sideSchema = z.string().regex(/^[0-9a-f]{32}$/)
 const phaseSchema = z.string().regex(/^[a-z0-9-]{1,32}$/)
 
@@ -63,7 +64,10 @@ export function registerRecordMachineJoinRoutes(
       return context.json({ error: 'invalid machine join message' }, 400)
     const message = decoded(body.data.body)
     if (message.byteLength > MACHINE_JOIN_MESSAGE_MAX_BYTES)
-      return context.json({ error: 'machine join message body exceeds 4096 bytes' }, 400)
+      return context.json(
+        { error: `machine join message body exceeds ${MACHINE_JOIN_MESSAGE_MAX_BYTES} bytes` },
+        400,
+      )
     try {
       await deps.postMachineJoinMessage({
         ...active,

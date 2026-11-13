@@ -131,9 +131,19 @@ export function registerMachineJoinProof(input: ProofInput): void {
           INSERT INTO machine_join_nameplate (id,space_id,nameplate,allocated_by,created_at,expires_at)
           VALUES ('${newRecordId()}','${spaceId}','${nameplate}','${input.userId()}',now(),now() + interval '10 minutes');
         `)
-        expect((await post(nameplate, SIDE_B, 'share', 'AQ', input.otherToken())).status).toBe(200)
-        expect((await fail(nameplate, SIDE_A)).status).toBe(200)
+        expect((await fail(nameplate, SIDE_B, input.otherToken())).status).toBe(200)
       }
+      const refusedFailureNameplate = '100005'
+      input.succeeds(`
+        INSERT INTO machine_join_nameplate (id,space_id,nameplate,allocated_by,created_at,expires_at)
+        VALUES ('${newRecordId()}','${spaceId}','${refusedFailureNameplate}','${input.userId()}',now(),now() + interval '10 minutes');
+      `)
+      expect((await fail(refusedFailureNameplate, SIDE_B, input.otherToken())).status).toBe(429)
+      expect(
+        input.succeeds(
+          `SELECT count(*) FROM machine_join_nameplate WHERE space_id='${spaceId}' AND nameplate='${refusedFailureNameplate}' AND failed_at IS NULL;`,
+        ),
+      ).toBe('1')
       expect(
         (
           await request(input.otherToken(), '/v1/config/join/nameplates', {

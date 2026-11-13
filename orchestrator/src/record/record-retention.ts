@@ -169,7 +169,7 @@ export async function runRecordRetentionPass(
     const durationMs = adapters.now() - startedAt
     const message = error instanceof Error ? error.message : String(error)
     adapters.log(
-      `record retention failed after ${durationMs}ms: ${message}; verify record database connectivity and that record_change_prune(), contention_prune(), no_destination_write_prune(), machine_join_prune(), and machine_key_claim_challenge_prune() are installed; the next interval will retry`,
+      `record retention failed after ${durationMs}ms: ${message}; verify record database connectivity and that record_change_prune(), contention_prune(), no_destination_write_prune(), board_presence_prune(), machine_join_prune(), and machine_key_claim_challenge_prune() are installed; the next interval will retry`,
     )
   }
 }

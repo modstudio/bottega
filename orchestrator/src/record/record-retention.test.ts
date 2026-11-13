@@ -185,7 +185,7 @@ test('a failing record change prune pass is logged and the interval keeps runnin
   expect(intervalMilliseconds).toEqual([RECORD_RETENTION_INTERVAL_MS])
   expect(pruneCalls).toBe(1)
   expect(lines).toEqual([
-    'record retention failed after 0ms: database unavailable; verify record database connectivity and that record_change_prune(), contention_prune(), no_destination_write_prune(), machine_join_prune(), and machine_key_claim_challenge_prune() are installed; the next interval will retry',
+    'record retention failed after 0ms: database unavailable; verify record database connectivity and that record_change_prune(), contention_prune(), no_destination_write_prune(), board_presence_prune(), machine_join_prune(), and machine_key_claim_challenge_prune() are installed; the next interval will retry',
   ])
 
   intervalCallbacks[0]!()

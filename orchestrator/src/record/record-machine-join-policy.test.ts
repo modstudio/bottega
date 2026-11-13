@@ -5,7 +5,6 @@ import {
   machineJoinAvailability,
   machineJoinIsCrowded,
   machineJoinPhaseDecision,
-  machineJoinRateLimited,
 } from './record-machine-join-policy.ts'
 
 test('machine join availability burns before expiry and expires at the boundary', () => {
@@ -25,11 +24,6 @@ test('machine join phase resends only an identical body', () => {
   expect(machineJoinPhaseDecision(null, body)).toBe('insert')
   expect(machineJoinPhaseDecision(new Uint8Array([1, 2]), body)).toBe('resend')
   expect(machineJoinPhaseDecision(new Uint8Array([2, 1]), body)).toBe('conflict')
-})
-
-test('machine join limits at the configured boundary', () => {
-  expect(machineJoinRateLimited(4, 5)).toBe(false)
-  expect(machineJoinRateLimited(5, 5)).toBe(true)
 })
 
 test('machine join allocates the lowest free positive nameplate', () => {

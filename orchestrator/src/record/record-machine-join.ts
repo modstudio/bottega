@@ -67,7 +67,7 @@ async function failureCount(tx: SQL, userId: string, cutoff: Date): Promise<numb
     FROM machine_join_nameplate n
     LEFT JOIN machine_join_message m ON m.nameplate_id=n.id
     WHERE n.failed_at IS NOT NULL AND n.created_at >= ${cutoff}
-      AND (n.allocated_by=${userId}::uuid OR m.posted_by=${userId}::uuid)
+      AND (n.allocated_by=${userId}::uuid OR m.posted_by=${userId}::uuid OR n.failed_by=${userId}::uuid)
   `
   return Number(rows[0]?.count ?? 0)
 }
@@ -223,10 +223,18 @@ export async function failMachineJoinNameplate(
   input: ConfigTenant & { nameplate: string; side: string },
 ): Promise<void> {
   const now = Date.now()
+  const cutoff = new Date(now - MACHINE_JOIN_RATE_WINDOW_MS)
   await tenant(input, async (tx) => {
     const nameplate = await lockNameplate(tx, input)
     if (nameplate.failed_at != null) return
     requireActive(nameplate, now)
+    if (
+      machineJoinRateLimited(
+        await failureCount(tx, input.userId, cutoff),
+        MACHINE_JOIN_FAILURES_PER_WINDOW,
+      )
+    )
+      refuseFailureRate()
     await tx`
       UPDATE machine_join_nameplate SET failed_at=${new Date(now)}, failed_by=${input.userId}::uuid
       WHERE id=${String(nameplate.id)}::uuid
