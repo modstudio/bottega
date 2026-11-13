@@ -1,9 +1,10 @@
 import type { Transaction } from '@electric-sql/pglite'
 import type { MigrationMeta } from 'drizzle-orm/migrator'
 import { PLATFORM_SPACE_ID } from '../shared/record/schema.ts'
-import { CheckFailure } from './record-migration-failure.ts'
+import { CheckFailure, errorMessage } from './record-migration-failure.ts'
 
 export const taskFlowStageBackfill = '20261113004545_dev_2234_task_flow_stage_backfill'
+export const taskFlowStageContract = '20261113021045_dev_2234_task_flow_stage_contract'
 
 const id = (suffix: number) => `01990000-0000-7000-8000-${String(suffix).padStart(12, '0')}`
 const userId = id(500)
@@ -23,6 +24,7 @@ const secondExistingStageId = id(513)
 const secondEarlierStageId = id(514)
 const secondLaterStageId = id(515)
 const firstSequenceId = id(516)
+const unnumberedStageId = id(517)
 
 const stageValues = (stageId: string, flowId: string, number: number | null, createdAt: string) =>
   `('${stageId}','${PLATFORM_SPACE_ID}','${flowId}',NULL,${number ?? 'NULL'},'proof','default',
@@ -149,6 +151,59 @@ export async function proofTaskFlowStageBackfill(
   if (JSON.stringify(second) !== JSON.stringify(first)) {
     throw new CheckFailure(
       `DEV-2234 task-flow stage backfill was not idempotent: ${JSON.stringify(second)}`,
+    )
+  }
+}
+
+/** A stage left without a project or number must abort the contract, and with it the
+ * whole migration batch, rather than leave the record half constrained. */
+export async function proofTaskFlowStageContractRefusal(
+  transaction: Transaction,
+  migration: MigrationMeta,
+): Promise<void> {
+  await transaction.exec('SAVEPOINT task_flow_stage_contract_refusal')
+  await transaction.exec(`
+    ALTER TABLE task_flow_stage NO FORCE ROW LEVEL SECURITY;
+    INSERT INTO task_flow_stage
+      (id,space_id,flow_record_id,project_id,number,workflow,mode,workflow_version_id,
+       catalogue_version_id,arguments,active_ordinal,active_slug,state,closed_step_notes,total_steps,
+       opened_machine_id,last_advanced_machine_id,revision,created_at,updated_at)
+    VALUES ${stageValues(unnumberedStageId, firstFlowId, null, '2026-01-04T00:00:00Z')};
+  `)
+  let refusal: unknown
+  try {
+    for (const chunk of migration.sql) await transaction.exec(chunk)
+  } catch (error) {
+    refusal = error
+  }
+  await transaction.exec('ROLLBACK TO SAVEPOINT task_flow_stage_contract_refusal')
+  await transaction.exec('RELEASE SAVEPOINT task_flow_stage_contract_refusal')
+  const message = errorMessage(refusal)
+  if (!message.includes('task_flow_stage') || !message.includes('null values')) {
+    throw new CheckFailure(
+      `DEV-2234 task-flow stage contract accepted a stage with no project or number: ${message}`,
+    )
+  }
+}
+
+export async function proofTaskFlowStageContract(transaction: Transaction): Promise<void> {
+  const columns = await transaction.query<{ column_name: string; is_nullable: string }>(`
+    SELECT column_name, is_nullable
+    FROM information_schema.columns
+    WHERE table_schema='public'
+      AND table_name='task_flow_stage'
+      AND column_name IN ('project_id','number')
+    ORDER BY column_name
+  `)
+  if (
+    JSON.stringify(columns.rows) !==
+    JSON.stringify([
+      { column_name: 'number', is_nullable: 'NO' },
+      { column_name: 'project_id', is_nullable: 'NO' },
+    ])
+  ) {
+    throw new CheckFailure(
+      `DEV-2234 task-flow stage contract produced ${JSON.stringify(columns.rows)}`,
     )
   }
 }
