@@ -3,16 +3,12 @@
 
 import { db } from '../database/db.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
+import { isDecisionConformanceNotAdmittedReason } from './review-applicability.ts'
 import { budgetedReviewPlanForResolvedChange } from './review-round-lens-service.ts'
 import { type ResolvedReviewTarget, resolveReviewTarget } from './review-target.ts'
-import type { ReviewLensOwedReason, ReviewLensSelectionReason } from './review-vocabulary.ts'
+import type { ReviewLensSelectionReason } from './review-vocabulary.ts'
 
 const OPERATOR_ORDERED: ReviewLensSelectionReason = 'operator-ordered'
-
-const isNotAdmittedReason = (
-  reason: ReviewLensSelectionReason | ReviewLensOwedReason,
-): reason is `decision-conformance not admitted: ${string}` =>
-  reason.startsWith('decision-conformance not admitted:')
 
 export function reviewLensSelectionReasonForDispatch(input: {
   jobName: string
@@ -55,5 +51,7 @@ function funnelReasonForLens(input: {
   })
   if (!plan.identity) return OPERATOR_ORDERED
   const reason = plan.reviewPlan.round.lensReasons?.[input.lens]
-  return reason && isNotAdmittedReason(reason) ? OPERATOR_ORDERED : (reason ?? OPERATOR_ORDERED)
+  return reason && isDecisionConformanceNotAdmittedReason(reason)
+    ? OPERATOR_ORDERED
+    : (reason ?? OPERATOR_ORDERED)
 }
