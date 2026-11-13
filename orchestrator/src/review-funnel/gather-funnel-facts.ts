@@ -6,7 +6,7 @@ import { readLandedReviewIds } from '../branch/branch-landing-records.ts'
 import type { Project } from '../project/projects.ts'
 import {
   readLandingOverridesForBranch,
-  resolvePullRequestChange,
+  resolvePullRequestChangeForProject,
   triageDecision,
 } from '../pull-request/pr-admission.ts'
 import { ceilingTriageFacts } from '../pull-request/triage-decision.ts'
@@ -147,7 +147,13 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
     pathSet,
   })
   const admission = triageDecision(
-    resolvePullRequestChange(change.cwd, change.head, change.database, undefined, change.branch),
+    resolvePullRequestChangeForProject(
+      change.cwd,
+      change.project,
+      change.branch,
+      change.head,
+      change.database,
+    ),
     change.database,
   )
   const admissionGap = ceilingTriageFacts(admission)

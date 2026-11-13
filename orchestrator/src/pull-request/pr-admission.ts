@@ -99,6 +99,18 @@ export function resolvePullRequestChange(
   const branch = branchOverride ?? runGit(cwd, ['branch', '--show-current'])
   if (!branch)
     throw new Error(`${PLATFORM_SLUG} pr requires a checked-out branch, not detached HEAD`)
+  return resolvePullRequestChangeForProject(cwd, project, branch, sha, database, runGit)
+}
+
+/** Resolve admission facts when the caller already owns the project and branch identity. */
+export function resolvePullRequestChangeForProject(
+  cwd: string,
+  project: Project,
+  branch: string,
+  sha = 'HEAD',
+  database: Database = db(),
+  runGit: Git = git,
+): PullRequestChange {
   const tip = runGit(cwd, ['rev-parse', '--verify', `${sha}^{commit}`])
   const tree = runGit(cwd, ['rev-parse', '--verify', `${tip}^{tree}`])
   const measured = measureChangeGroup(cwd, project, branch, tip)

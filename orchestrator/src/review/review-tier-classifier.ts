@@ -13,9 +13,9 @@ export type ReviewTier = {
   deletions: number
   reasons: string[]
   riskBasis: string | null
-  firm: boolean
-  lowered: boolean
 }
+
+export type ClassifiedReviewTier = ReviewTier & { firm: boolean; lowered: boolean }
 
 export type ReviewTierFile = { path: string; insertions: number; deletions: number }
 
@@ -155,7 +155,7 @@ export function combineReviewTier(input: {
 export function classifyReviewTier(input: {
   files: ReviewTierFile[]
   risk?: ReviewRiskMap
-}): ReviewTier {
+}): ClassifiedReviewTier {
   const { risk, reason: riskReason, basis: riskBasis, firm } = classifyRisk(input.files, input.risk)
 
   const productFiles = input.files.filter((file) => isReviewProductPath(file.path))

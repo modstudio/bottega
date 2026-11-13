@@ -183,7 +183,14 @@ describe('decideReviewFunnel', () => {
       {
         ...base,
         postFix: {
-          ...base.postFix,
+          completed: {
+            number: 1,
+            identity: 'prior-round',
+            launchKey: null,
+            runIds: ['run-correctness'],
+            pathsByLens: { correctness: ['src/new.ts'] },
+          },
+          reviewedTip: 'prior-tip',
           fixFiles: [{ path: 'src/new.ts', insertions: 1, deletions: 0 }],
           reOwedPathsByLens: { correctness: ['src/new.ts'] },
         },
