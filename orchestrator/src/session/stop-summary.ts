@@ -8,12 +8,12 @@ import { db } from '../database/db.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { heldTreeInFlight, LANDING_TREE_JOB } from '../landing-tree/landing-tree.ts'
 import { RUN_LIVE_STATUSES } from '../run/run-status.ts'
-import { activeLandings } from './session-close-out.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import {
   listWorkflowCursors,
   type WorkflowCursorListRow,
 } from '../workflow/workflow-cursor-list.ts'
+import { activeLandings } from './session-close-out.ts'
 import {
   decideStopSummary,
   type StopSummaryDecision,
@@ -146,7 +146,7 @@ export async function sessionStopSummary(
     )
     .all(session)
   const heldTrees = database
-    .query<HeldTreeRow, [string]>(
+    .query<StopSummaryHeldTreeRow, [string]>(
       `SELECT record_id,number,job,repo,branch,worktree,close_out_attempted_at
          FROM run WHERE session_id=? AND parent_run_record_id IS NULL
           AND close_out_outcome='held' ORDER BY number`,

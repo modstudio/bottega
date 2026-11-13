@@ -12,10 +12,7 @@ import {
 } from '../session/session-close-out.ts'
 import { formatSessionHold, sessionHold } from '../session/session-hold.ts'
 import { safeStartSession } from '../session/session-start.ts'
-import {
-  sessionStopSummary,
-  type StopSummaryHookNote,
-} from '../session/stop-summary.ts'
+import { type StopSummaryHookNote, sessionStopSummary } from '../session/stop-summary.ts'
 import { sessionLosses } from '../session-losses/session-losses-adapter.ts'
 import { formatSessionLosses } from '../session-losses/session-losses-format.ts'
 import { collect, log } from './support.ts'
@@ -25,7 +22,7 @@ function stopSummaryBlockKey(value: string): string {
   return value
 }
 
-export function stopSummaryNotes(value: string): StopSummaryHookNote[] {
+function stopSummaryNotes(value: string): StopSummaryHookNote[] {
   let parsed: unknown
   try {
     parsed = JSON.parse(value)
@@ -57,8 +54,7 @@ export function stopSummaryNotes(value: string): StopSummaryHookNote[] {
   })
 }
 
-export function register(program: Command): void {
-  const session = program.command('session').description('manage the calling architect session')
+function registerStatus(session: Command): void {
   session
     .command('status')
     .description('summarize what is moving and what the calling session owes')
@@ -70,8 +66,9 @@ export function register(program: Command): void {
       ),
     )
     .addOption(
-      new Option('--notes <json>', 'include actionable note rows')
-        .argParser((value) => ({ rows: stopSummaryNotes(value) })),
+      new Option('--notes <json>', 'include actionable note rows').argParser((value) => ({
+        rows: stopSummaryNotes(value),
+      })),
     )
     .option('--json', 'write the summary as JSON')
     .allowExcessArguments(false)
@@ -87,6 +84,11 @@ export function register(program: Command): void {
       })
       log(options.json ? JSON.stringify(report) : report.lines.join('\n'))
     })
+}
+
+export function register(program: Command): void {
+  const session = program.command('session').description('manage the calling architect session')
+  registerStatus(session)
   session
     .command('start')
     .description('open explore for a session that holds no open explore, or name the one it holds')

@@ -18,10 +18,12 @@ export const cleanupBoundarySpecs = [
     file: 'orchestrator/src/session/stop-summary.ts',
     allowed: [
       '../../../shared/brand.ts',
+      '../close/close-out-in-flight.ts',
       '../database/db.ts',
       '../evidence/evidence-query.ts',
       '../landing-tree/landing-tree.ts',
       '../run/run-status.ts',
+      './session-close-out.ts',
       '../workflow/workflow-cursor-list.ts',
       '../workflow/task-flow-store.ts',
       './stop-summary-decision.ts',
