@@ -152,7 +152,7 @@ test('task-flow apply is idempotent and rejects older revisions', async () => {
       );
       CREATE TABLE task_flow_stage (
         id uuid PRIMARY KEY, space_id uuid NOT NULL, flow_record_id uuid NOT NULL,
-        project_id uuid, number integer, workflow_key text, instance_id text, session_id text,
+        project_id uuid NOT NULL, number integer NOT NULL, workflow_key text, instance_id text, session_id text,
         workflow text NOT NULL, mode text NOT NULL, workflow_version_id uuid NOT NULL,
         catalogue_version_id uuid NOT NULL, arguments jsonb NOT NULL,
         active_ordinal integer NOT NULL, active_slug text NOT NULL, state text NOT NULL,

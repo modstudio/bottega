@@ -2,7 +2,7 @@
 /** Applies revision-ordered task-flow and stage payloads to the hosted record. */
 
 import type { SQL } from 'bun'
-import { sql as drizzleSql } from 'drizzle-orm'
+import { and, sql as drizzleSql, eq, lt } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
@@ -89,18 +89,29 @@ export async function applyTaskFlowStageValues(
   values: ReturnType<typeof taskFlowStageValues>,
   number: number | null = null,
 ) {
-  const insert = { ...values, number }
   const {
     id: _id,
     createdAt: _createdAt,
     flowRecordId: _flowRecordId,
-    projectId: _projectId,
-    number: _number,
+    projectId,
     ...updates
-  } = insert
+  } = values
+  // Postgres checks NOT NULL before it resolves a conflict, so an existing
+  // stage, which carries no fresh number, is revised by UPDATE, never upsert.
+  if (number === null || projectId === null)
+    return database
+      .update(taskFlowStageRecord)
+      .set(updates)
+      .where(
+        and(
+          eq(taskFlowStageRecord.id, values.id),
+          lt(taskFlowStageRecord.revision, values.revision),
+        ),
+      )
+      .returning({ id: taskFlowStageRecord.id })
   return database
     .insert(taskFlowStageRecord)
-    .values(insert)
+    .values({ ...values, projectId, number })
     .onConflictDoUpdate({
       target: taskFlowStageRecord.id,
       set: updates,
