@@ -62,7 +62,8 @@ export const GOOSE_READING_MAX_TURNS = 150
  * The context limit a Goose worker runs under, bounded by the served window,
  * the job budget, and the Goose ceiling. Inline prompt material may raise the
  * ceiling enough to hold that prompt plus `OUTPUT_RESERVE`. No job means no
- * per-job limit to set, so Goose's own default applies.
+ * per-job limit to set, so Goose's own default applies, except that a row with
+ * request settings launches at the served window bounded by the ceiling.
  */
 export function gooseContextLimit(
   servedWindow: number | null,
