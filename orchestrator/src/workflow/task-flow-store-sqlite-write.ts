@@ -15,7 +15,7 @@ import {
 
 type Mutation = { id: string; expectedRevision: number; values: Record<string, unknown> }
 type SqlRow = Record<string, SQLQueryBindings>
-export type AppliedMirrorOutcome = Exclude<AppliedMirrorMutationDecision, 'refuse'>
+type AppliedMirrorOutcome = Exclude<AppliedMirrorMutationDecision, 'refuse'>
 type MirrorReportingIntent = 'stage-update' | 'advance' | 'await-ruling' | 'abandon' | 'adopt'
 export type TaskFlowSqliteWriteResult<K extends TaskFlowIntent> = TaskFlowIntentResult<K> &
   (K extends MirrorReportingIntent ? { mirror: Record<string, AppliedMirrorOutcome> } : object)

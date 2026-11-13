@@ -3,8 +3,8 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { machineId } from '../record/machine-identity.ts'
+import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import {
   decideTaskStageSelection,
   type OpenTaskStage,

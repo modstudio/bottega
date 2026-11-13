@@ -2,8 +2,8 @@
 /** Renders the public result of an already-persisted cursor advance. */
 
 import type { Database } from 'bun:sqlite'
-import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { workflowKeyOf as keyOf } from './workflow-cursor-arguments.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { cursorName, shellWord, workflowCursorReference } from './workflow-cursor-format.ts'

@@ -643,6 +643,27 @@ function applyWorkflowAdvanceLocally(input: {
   }, d)
 }
 
+async function adoptAndRefreshWorkflowTask(
+  row: CursorRow,
+  task: WorkflowEvidenceInput['task'],
+  context: WorkflowCursorContext,
+  database: Database,
+): Promise<CursorRow> {
+  const workflowKey = row.workflow_key
+  await adoptWorkflowTask(
+    row,
+    task,
+    context.adoptionTaskRecordId ?? context.taskRecordId,
+    database,
+    context.taskFlowClient,
+    context.taskStatusCategory,
+  )
+  if (row.workflow_key === workflowKey) return row
+  return (await taskFlowReadStore(database, context.taskFlowClient).stageByRecordId(
+    row.record_id,
+  )) as CursorRow
+}
+
 async function nextWorkflowStepImpl(
   row: CursorRow,
   args: Record<string, string>,
@@ -685,20 +706,7 @@ async function nextWorkflowStepImpl(
   row.args = resolvedArguments.encoded
   row.closed = resolvedArguments.closed
   refuseKeylessStepClose(row, evidence.task, d, live)
-  const workflowKeyBeforeAdoption = row.workflow_key
-  await adoptWorkflowTask(
-    row,
-    evidence.task,
-    context.adoptionTaskRecordId ?? context.taskRecordId,
-    d,
-    context.taskFlowClient,
-    context.taskStatusCategory,
-  )
-  if (row.workflow_key !== workflowKeyBeforeAdoption) {
-    row = (await taskFlowReadStore(d, context.taskFlowClient).stageByRecordId(
-      row.record_id,
-    )) as CursorRow
-  }
+  row = await adoptAndRefreshWorkflowTask(row, evidence.task, context, d)
   const composition = cursorComposition(row, d, live)
   const step = composition.steps[row.ordinal]!
   refuseMissingCloseNote(note, step.n, step.slug)

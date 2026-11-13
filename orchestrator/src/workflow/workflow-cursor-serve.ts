@@ -323,6 +323,7 @@ async function serveWorkflowStepWithCursor(
     ),
     row.record_id,
     database,
+    context.taskFlowClient,
   )
   const openNotice = opensCursor
     ? formatCursorOpened({

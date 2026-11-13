@@ -14,7 +14,6 @@ import { taskFlowReadStore } from './task-flow-store.ts'
 import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
 import { ruleWorkflow } from './workflow-cursor-ruling.ts'
-import { linkWorkflowTaskLabel } from './workflow-task-linking.ts'
 import {
   abandonCursor,
   context,
@@ -22,6 +21,7 @@ import {
   selectAndNextWorkflowStep,
   testPorts,
 } from './workflow-cursor-test.fixture.ts'
+import { linkWorkflowTaskLabel } from './workflow-task-linking.ts'
 import { attachWorkflowTextByHandle, deleteWorkflowText } from './workflow-text.ts'
 import { copyWorkflowTextForCursor } from './workflow-text-copy.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
