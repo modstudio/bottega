@@ -3,6 +3,7 @@ title: Run independent review lenses
 stage: review
 floor:
   - recorded-artifact
+  - review-owed
 jobs: [review-lens]
 autonomy: auto
 needs:

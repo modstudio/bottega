@@ -4,6 +4,7 @@ stage: ship
 floor:
   - command-exit
   - recorded-artifact
+  - review-owed
 commandEvidence: pull-request
 jobs: []
 actions: [pr-create]
