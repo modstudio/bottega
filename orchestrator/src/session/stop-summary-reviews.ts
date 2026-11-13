@@ -2,7 +2,7 @@
 /** Classifies review rounds from plain lens-run facts. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { RUN_LIVE_STATUSES, TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
+import { RUN_LIVE_STATUS_SET, TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import type { StopSummaryOwedItem } from './stop-summary-decision.ts'
 
 export type StopSummaryReviewLensRow = {
@@ -20,8 +20,6 @@ type ReviewClassification = {
   owedItems: StopSummaryOwedItem[]
 }
 
-const LIVE_RUN_STATUS_SET: ReadonlySet<string> = new Set(RUN_LIVE_STATUSES)
-
 export function classifyStopSummaryReviews(
   rows: readonly StopSummaryReviewLensRow[],
 ): ReviewClassification {
@@ -35,7 +33,7 @@ export function classifyStopSummaryReviews(
   let incompleteReviews = 0
   const owedItems: StopSummaryOwedItem[] = []
   for (const lenses of reviews.values()) {
-    if (lenses.some((lens) => LIVE_RUN_STATUS_SET.has(lens.run_status))) {
+    if (lenses.some((lens) => RUN_LIVE_STATUS_SET.has(lens.run_status))) {
       incompleteReviews += 1
       continue
     }

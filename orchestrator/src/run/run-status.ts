@@ -12,6 +12,9 @@ const TERMINAL_RUN_STATUSES = ['ok', 'failed', 'stale', 'stopped'] as const
 /** The live run statuses, in lifecycle order. */
 export const RUN_LIVE_STATUSES = ['queued', 'reserved', 'attached', 'running', 'asking'] as const
 
+/** The same statuses for callers that test whether a recorded run status is live. */
+export const RUN_LIVE_STATUS_SET: ReadonlySet<string> = new Set<string>(RUN_LIVE_STATUSES)
+
 /** The live statuses as the quoted, parenthesized SQL list a run `IN` test needs. */
 export const LIVE_RUN_STATUS_SQL = `(${RUN_LIVE_STATUSES.map((status) => `'${status}'`).join(',')})`
 

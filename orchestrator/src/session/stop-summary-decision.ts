@@ -20,6 +20,11 @@ export type StopSummaryOwedItem = {
   owedAt: string
 }
 
+export type StopSummaryNote = {
+  label: string
+  command: string
+}
+
 export type StopSummaryFacts = {
   now: string
   questionCount: number
@@ -28,6 +33,7 @@ export type StopSummaryFacts = {
   incompleteReviews: number
   inFlightLandings: number
   owedItems: StopSummaryOwedItem[]
+  notes: StopSummaryNote[]
   previousBlockKey: string | null
 }
 
@@ -42,6 +48,7 @@ const count = (value: number, singular: string, plural = `${singular}s`) =>
   `${value} ${value === 1 ? singular : plural}`
 
 const owedLine = (item: StopSummaryOwedItem) => `${item.label} → ${item.command}`
+const noteLine = (item: StopSummaryNote) => `${item.label} → ${item.command}`
 
 function blockKey(lines: readonly string[]): string {
   return createHash('sha256').update(lines.join('\n')).digest('hex')
@@ -78,16 +85,22 @@ export function decideStopSummary(facts: StopSummaryFacts): StopSummaryDecision 
   const owedBlockKey = facts.owedItems.length ? blockKey(facts.owedItems.map(owedLine)) : null
   if (moving) {
     lines.push(...overdue.map(owedLine))
+    lines.push(...facts.notes.map(noteLine))
     return { lines, block: false, reason: null, blockKey: owedBlockKey }
   }
-  if (!facts.owedItems.length) return { lines, block: false, reason: null, blockKey: null }
+  if (!facts.owedItems.length) {
+    lines.push(...facts.notes.map(noteLine))
+    return { lines, block: false, reason: null, blockKey: null }
+  }
 
   const detailed = facts.owedItems.map(owedLine)
-  const reason = [...lines, ...detailed].join('\n')
+  const notes = facts.notes.map(noteLine)
+  const reason = [...lines, ...detailed, ...notes].join('\n')
   if (facts.previousBlockKey === owedBlockKey) {
     lines.push(`${count(facts.owedItems.length, 'item')} owed → ${PLATFORM_SLUG} score pending`)
+    lines.push(...notes)
     return { lines, block: false, reason, blockKey: owedBlockKey }
   }
-  lines.push(...detailed)
+  lines.push(...detailed, ...notes)
   return { lines, block: true, reason, blockKey: owedBlockKey }
 }

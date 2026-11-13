@@ -95,7 +95,7 @@ def summary(payload, ids, deadline):
     ]
     if isinstance(prior, str):
         command.extend(["--block-key", prior])
-    command.extend(["--notes", json.dumps(actionable_notes(ids, deadline))])
+    command.extend(["--notes", json.dumps(actionable_notes([sid], deadline))])
     remaining = max(0, deadline - time.monotonic())
     if remaining <= 0:
         raise subprocess.TimeoutExpired("session status", 0)

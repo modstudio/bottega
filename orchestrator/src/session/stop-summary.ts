@@ -3,10 +3,10 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { cursorArg, cursorFacts } from '../close/close-out-in-flight.ts'
+import { cursorFacts } from '../close/close-out-in-flight.ts'
 import { db } from '../database/db.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
-import { heldTreeInFlight, LANDING_TREE_JOB } from '../landing-tree/landing-tree.ts'
+import { LANDING_TREE_JOB, shipCursorWorksTree } from '../landing-tree/landing-tree.ts'
 import { RUN_LIVE_STATUSES } from '../run/run-status.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import {
@@ -17,6 +17,7 @@ import { activeLandings } from './session-close-out.ts'
 import {
   decideStopSummary,
   type StopSummaryDecision,
+  type StopSummaryNote,
   type StopSummaryOwedItem,
 } from './stop-summary-decision.ts'
 import {
@@ -40,6 +41,7 @@ export type StopSummaryHeldTreeRow = {
   repo: string | null
   branch: string | null
   worktree: string | null
+  close_out_detail: string | null
   close_out_attempted_at: string | null
 }
 export type StopSummaryActiveLandingRow = { project: string; branch: string }
@@ -57,37 +59,28 @@ export function landingTreeIsActive(
   if (tree.job !== LANDING_TREE_JOB) return false
   if (landings.some((item) => item.project === tree.repo && item.branch === tree.branch))
     return true
-  const cursor = cursors.find(
-    (item) =>
-      item.workflow_slug === 'ship-task' &&
-      item.project === tree.repo &&
-      cursorArg(item.args, 'branch') === tree.branch &&
-      cursorArg(item.args, 'worktree') === tree.worktree,
-  )
-  if (!cursor || !tree.worktree) return false
-  return Boolean(
-    heldTreeInFlight({
-      treePath: tree.worktree,
-      project: tree.repo,
-      branch: tree.branch,
-      cursor: cursorFacts(cursor),
-      openPr: null,
-      hold: 'landing-progress',
-      treeClean: false,
-      treeHead: null,
-    }),
+  const treePath = tree.worktree
+  if (!treePath) return false
+  return cursors.some((cursor) =>
+    shipCursorWorksTree(
+      { treePath, project: tree.repo, branch: tree.branch },
+      cursorFacts(cursor),
+    ),
   )
 }
 
 export function hookNotes(
   notes: readonly StopSummaryHookNote[],
-  now: string,
-): StopSummaryOwedItem[] {
+): StopSummaryNote[] {
   return notes.map((note) => ({
     label: `note ${note.label} not handed over`,
     command: `${PLATFORM_SLUG} board post --audience architects:${note.project} ...`,
-    owedAt: note.last_seen_at ?? now,
   }))
+}
+
+function heldWorktreeCommand(tree: StopSummaryHeldTreeRow): string {
+  const detail = tree.close_out_detail?.split('; close-out intent=', 1)[0]?.trim()
+  return detail || `${PLATFORM_SLUG} run close-out ${tree.number}`
 }
 
 export async function sessionStopSummary(
@@ -147,7 +140,7 @@ export async function sessionStopSummary(
     .all(session)
   const heldTrees = database
     .query<StopSummaryHeldTreeRow, [string]>(
-      `SELECT record_id,number,job,repo,branch,worktree,close_out_attempted_at
+      `SELECT record_id,number,job,repo,branch,worktree,close_out_detail,close_out_attempted_at
          FROM run WHERE session_id=? AND parent_run_record_id IS NULL
           AND close_out_outcome='held' ORDER BY number`,
     )
@@ -168,14 +161,13 @@ export async function sessionStopSummary(
         label:
           tree.job === LANDING_TREE_JOB
             ? `landing tree ${tree.worktree ?? `run ${tree.number}`} is held`
-            : `worktree for run ${tree.number} is held`,
+            : `worktree for run ${tree.number} (${tree.job}) is held`,
         command:
           tree.job === LANDING_TREE_JOB && tree.worktree
             ? `${PLATFORM_SLUG} tree remove ${tree.worktree}`
-            : `${PLATFORM_SLUG} run close-out ${tree.number}`,
+            : heldWorktreeCommand(tree),
         owedAt: tree.close_out_attempted_at ?? now,
       })),
-    ...hookNotes(options.notes, now),
   ]
   return decideStopSummary({
     now,
@@ -191,6 +183,7 @@ export async function sessionStopSummary(
     incompleteReviews: reviews.incompleteReviews,
     inFlightLandings: sessionLandings.length + activeTrees.length,
     owedItems,
+    notes: hookNotes(options.notes),
     previousBlockKey: options.previousBlockKey ?? null,
   })
 }

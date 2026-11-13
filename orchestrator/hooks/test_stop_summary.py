@@ -40,11 +40,11 @@ class StopSummaryHookTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as state, mock.patch.dict(
             os.environ, {"BOTTEGA_BOARD_HOOK_STATE": state}, clear=False
-        ), mock.patch.object(hook, "actionable_notes", return_value=[]), mock.patch.object(
+        ), mock.patch.object(hook, "actionable_notes", return_value=[]) as notes, mock.patch.object(
             hook.subprocess, "run", side_effect=run
         ):
-            first = hook.summary(payload, ["session"], time.monotonic() + 5)
-            second = hook.summary(payload, ["session"], time.monotonic() + 5)
+            first = hook.summary(payload, ["session", "environment-session"], time.monotonic() + 5)
+            second = hook.summary(payload, ["session", "environment-session"], time.monotonic() + 5)
             stored_key = hook.read_marker(
                 hook.marker_path("stop-summary", "session")
             )["blockKey"]
@@ -52,6 +52,7 @@ class StopSummaryHookTest(unittest.TestCase):
         self.assertEqual(stored_key, "decision-key")
         self.assertEqual(second["systemMessage"].splitlines()[-1], f"1 item owed → {PRODUCT} score pending")
         self.assertEqual(commands[0][commands[0].index("--session") + 1], "session")
+        self.assertEqual(notes.call_args_list[0].args[0], ["session"])
         self.assertEqual(json.loads(commands[0][commands[0].index("--notes") + 1]), [])
         self.assertNotIn("--block-key", commands[0])
         self.assertEqual(commands[1][commands[1].index("--block-key") + 1], "decision-key")
