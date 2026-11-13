@@ -84,8 +84,14 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'workflow_obligation.require_pull_request',
     'workflow_obligation.floor_deferrable',
     'workflow_obligation.operator_ruling',
+    'brief_injection.over_cap',
   ]),
   ...manifest('orchestrator', 'count, ordinal, version, handle, or measurement', [
+    'brief_injection.bytes',
+    'brief_injection.lines',
+    'brief_injection.cursors',
+    'brief_injection.keyless_cursors',
+    'brief_injection.keyless_idle_max_ms',
     'collect_change_counter.value',
     'agent.max_concurrent',
     'board_claim.duration_ms',
@@ -267,6 +273,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'task_document.number',
   ]),
   ...manifest('hosted', 'boolean flag', [
+    'brief_injection.over_cap',
     'hub_report_subscription.enabled',
     'hub_send.test',
     'hub_interval.open',
@@ -277,6 +284,11 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'question.jev_order_flipped',
   ]),
   ...manifest('hosted', 'count, ordinal, version, handle, or measurement', [
+    'brief_injection.bytes',
+    'brief_injection.lines',
+    'brief_injection.cursors',
+    'brief_injection.keyless_cursors',
+    'brief_injection.keyless_idle_max_ms',
     'doc.position',
     'doc_revision.position',
     'record_change.seq',
@@ -517,6 +529,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'machine_public_key.key_id',
   ]),
   ...manifest('orchestrator', 'identifier issued by the harness session system', [
+    'brief_injection.session_id',
     'board_claim.holder_session',
     'board_message.author_session',
     'board_reach_delivery.reader_session',
@@ -596,6 +609,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'task_identity_migration_repairs.new_external_id',
   ]),
   ...manifest('hosted', 'identifier issued by the harness session system', [
+    'brief_injection.session_id',
     'board_claim.holder_session',
     'board_message.author_session',
     'contention.session_id',
@@ -655,6 +669,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
   ...TELEMETRY_IDENTITY.uuids,
   ...RECORD_CACHE_IDENTITIES,
   ...manifest('orchestrator', 'owned or referenced UUID', [
+    'brief_injection.record_id',
     'collect_change_counter.record_id',
     'agent.record_id',
     'blocker.record_id',

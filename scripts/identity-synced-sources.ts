@@ -318,6 +318,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
       'contention',
       'test_flake',
       'branch_disposal',
+      'brief_injection',
     ],
     ['sync'],
   ),

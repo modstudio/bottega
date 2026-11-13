@@ -211,6 +211,7 @@ function sessionStageReads(database: Database, read: StageRead) {
           workflow_slug: stage.workflow,
           workflow_key: stage.workflowKey ?? '',
           state: stage.state,
+          updated_at: stage.updatedAt,
           open_question_record_id: openByStage.get(stage.id)?.record_id ?? null,
         }))
         .sort((a, b) => a.number - b.number)

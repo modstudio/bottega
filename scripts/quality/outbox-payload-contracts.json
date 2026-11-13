@@ -392,6 +392,23 @@
     "createdAt",
     "updatedAt"
   ],
+  "brief_injection": [
+    "id",
+    "spaceId",
+    "machineId",
+    "localId",
+    "sessionId",
+    "at",
+    "source",
+    "bytes",
+    "lines",
+    "cursors",
+    "keylessCursors",
+    "keylessIdleMaxMs",
+    "overCap",
+    "createdAt",
+    "updatedAt"
+  ],
   "test_flake": [
     "id",
     "spaceId",

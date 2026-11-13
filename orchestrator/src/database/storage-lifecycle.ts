@@ -82,6 +82,7 @@ export const orchestratorTableLifecycles: readonly TableLifecycle[] = [
       'typed_question_answer',
       'workflow_obligation',
       'workflow_text_copy',
+      'brief_injection',
     ],
     'record',
     'kept',

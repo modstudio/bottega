@@ -12,6 +12,15 @@ const module = (file: string, allowed: string[]): RecordSyncModule => ({
 })
 
 export const recordSyncModules: RecordSyncModule[] = [
+  module('orchestrator/src/record/brief-injection-outbox.ts', [
+    'bun:sqlite',
+    '../../../shared/record/schema.ts',
+    '../../../shared/record-id.ts',
+    '../database/db.ts',
+    './machine-identity.ts',
+    './outbox-enqueue.ts',
+    './outbox-sanitize.ts',
+  ]),
   module('orchestrator/src/workflow/task-flow-backfill.ts', [
     'bun:sqlite',
     'uuid',
@@ -81,6 +90,18 @@ export const recordSyncModules: RecordSyncModule[] = [
     './record-sync-branch-disposal.ts',
     './record-sync-decision.ts',
   ]),
+  module('orchestrator/src/record/record-sync-brief-injection.ts', [
+    'bun',
+    'drizzle-orm',
+    'drizzle-orm/bun-sql',
+    '../../../shared/record/schema-session.ts',
+    '../../../shared/record-timestamp.ts',
+    './outbox-payload-contracts.ts',
+    './record-evidence-references.ts',
+    './record-sync-contract.ts',
+    './record-sync-principal.ts',
+    './record-value-conversions.ts',
+  ]),
   module('orchestrator/src/record/record-sync-decision.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-remedies.ts',
@@ -116,6 +137,7 @@ export const recordSyncModules: RecordSyncModule[] = [
     './record-review-lens-values.ts',
     './record-review-values.ts',
     './record-sync-branch-disposal.ts',
+    './record-sync-brief-injection.ts',
     './record-sync-pull-request-ci.ts',
     './record-sync-contract.ts',
     './record-sync-decision.ts',

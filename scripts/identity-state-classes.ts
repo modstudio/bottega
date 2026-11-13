@@ -97,6 +97,7 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
     DEV_2234_MACHINE_RULING,
   ),
   synced('orchestrator', 'blocker', 'Blockers observed during runs', 'DEV-2234'),
+  synced('orchestrator', 'brief_injection', 'SessionStart context delivery events', 'DEV-2293'),
   hosted('orchestrator', 'board_claim', 'board_claim', 'Local board claim mirror'),
   machine(
     'orchestrator',

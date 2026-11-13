@@ -47,6 +47,7 @@ import { nullableReviewLensValues } from './record-review-lens-values.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues } from './record-review-values.ts'
 import { pushBranchDisposal } from './record-sync-branch-disposal.ts'
+import { briefInjectionRecordKind } from './record-sync-brief-injection.ts'
 import type {
   RecordPayload as Payload,
   RecordPrincipal,
@@ -918,6 +919,7 @@ const recordKinds = {
     push: (postgres, row, principal, projectIds) =>
       pushBranchDisposal(postgres, row, principal, projectIds, existingEvidenceOwned),
   },
+  brief_injection: briefInjectionRecordKind(existingEvidenceOwned, requireOwnedUpsert),
 } as const satisfies Record<
   keyof typeof OUTBOX_PAYLOAD_CONTRACTS,
   {
@@ -941,9 +943,8 @@ async function pushHostedRow(input: {
 }): Promise<RecordSyncRowResult> {
   const { postgres, row, identity } = input
   try {
-    if (!(row.kind in recordKinds)) {
+    if (!(row.kind in recordKinds))
       throw new OutboxRowError(`unknown outbox kind: ${row.kind}`, 'payload')
-    }
     const kind = row.kind as keyof typeof recordKinds
     const parsed = payload(row.payload, kind)
     const authorization = recordSyncAuthorizationDecision(identity, row.spaceHint)

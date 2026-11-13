@@ -15,12 +15,34 @@ import * as rc from '../../../shared/record/schema-record-change.ts'
 import * as rel from '../../../shared/record/schema-release.ts'
 import * as rev from '../../../shared/record/schema-review.ts'
 import * as r from '../../../shared/record/schema-run.ts'
+import * as ss from '../../../shared/record/schema-session.ts'
 import * as sn from '../../../shared/record/schema-snapshots.ts'
 import * as su from '../../../shared/record/schema-subjects.ts'
 import * as tf from '../../../shared/record/schema-task-flow.ts'
 import * as w from '../../../shared/record/schema-workflow-catalogue.ts'
 
-const modules = [root, a, r, q, tf, rev, rel, la, d, su, h, sn, c, b, w, lc, p, rc]
+const schemaModules = [
+  ['./shared/record/schema.ts', root],
+  ['./shared/record/schema-auth.ts', a],
+  ['./shared/record/schema-run.ts', r],
+  ['./shared/record/schema-question.ts', q],
+  ['./shared/record/schema-task-flow.ts', tf],
+  ['./shared/record/schema-review.ts', rev],
+  ['./shared/record/schema-release.ts', rel],
+  ['./shared/record/schema-landing.ts', la],
+  ['./shared/record/schema-session.ts', ss],
+  ['./shared/record/schema-docs.ts', d],
+  ['./shared/record/schema-subjects.ts', su],
+  ['./shared/record/schema-hub.ts', h],
+  ['./shared/record/schema-snapshots.ts', sn],
+  ['./shared/record/schema-config.ts', c],
+  ['./shared/record/schema-board.ts', b],
+  ['./shared/record/schema-workflow-catalogue.ts', w],
+  ['./shared/record/schema-lens-catalogue.ts', lc],
+  ['./shared/record/schema-port.ts', p],
+  ['./shared/record/schema-record-change.ts', rc],
+] as const
+const modules = schemaModules.map(([, schema]) => schema)
 const table = (value: unknown): value is PgTable => {
   try {
     return Boolean(getTableConfig(value as PgTable).name)
