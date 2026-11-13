@@ -52,7 +52,7 @@ function lookupRun(runId: string): RunLandingFacts | null {
   }
 }
 
-export function cursorArg(args: string, key: 'branch' | 'worktree'): string | null {
+function cursorArg(args: string, key: 'branch' | 'worktree'): string | null {
   try {
     const value = JSON.parse(args) as Record<string, unknown>
     return typeof value[key] === 'string' ? value[key] : null

@@ -62,16 +62,11 @@ export function landingTreeIsActive(
   const treePath = tree.worktree
   if (!treePath) return false
   return cursors.some((cursor) =>
-    shipCursorWorksTree(
-      { treePath, project: tree.repo, branch: tree.branch },
-      cursorFacts(cursor),
-    ),
+    shipCursorWorksTree({ treePath, project: tree.repo, branch: tree.branch }, cursorFacts(cursor)),
   )
 }
 
-export function hookNotes(
-  notes: readonly StopSummaryHookNote[],
-): StopSummaryNote[] {
+export function hookNotes(notes: readonly StopSummaryHookNote[]): StopSummaryNote[] {
   return notes.map((note) => ({
     label: `note ${note.label} not handed over`,
     command: `${PLATFORM_SLUG} board post --audience architects:${note.project} ...`,

@@ -9,8 +9,8 @@ import type { WorkflowCursorListRow } from '../workflow/workflow-cursor-list.ts'
 import {
   hookNotes,
   landingTreeIsActive,
-  sessionStopSummary,
   type StopSummaryHeldTreeRow,
+  sessionStopSummary,
 } from './stop-summary.ts'
 
 const tree: StopSummaryHeldTreeRow = {
@@ -109,9 +109,15 @@ test('session summary assembles only this session owed runs, held remedies, and 
     },
     db(),
   )
-  const mineNumber = db().query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?').get(mine)!.number
-  const otherNumber = db().query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?').get(other)!.number
-  const heldNumber = db().query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?').get(held)!.number
+  const mineNumber = db()
+    .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
+    .get(mine)!.number
+  const otherNumber = db()
+    .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
+    .get(other)!.number
+  const heldNumber = db()
+    .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
+    .get(held)!.number
 
   expect(result.lines).toContain('DEV-2297 · fix-defect · step ship (6 of 11)')
   expect(result.lines).toContain(
