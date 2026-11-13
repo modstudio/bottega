@@ -158,14 +158,20 @@ function contextItemTargetRefusal(item: ContextItem): string | null {
   }
   const pointer = item.body.trim()
   if (!item.target) return 'a pointer requires its resolved target'
+  // A ref or an all-digit abbreviation that is not a pull request resolves to its commit.
+  const commit = /^[0-9a-f]{40}$/i.test(item.target)
   const pr = /^#?(\d+)$/.exec(pointer)
-  if (pr) return item.target === pr[1] ? null : 'target does not match the pointer body'
+  if (pr) {
+    return item.target === pr[1] || (commit && item.target.startsWith(pr[1]!))
+      ? null
+      : 'target does not match the pointer body'
+  }
   if (/^[0-9a-f]{4,39}$/i.test(pointer)) {
-    return /^[0-9a-f]{40}$/i.test(item.target) && item.target.startsWith(pointer)
+    return commit && item.target.toLowerCase().startsWith(pointer.toLowerCase())
       ? null
       : 'target does not match the resolved commit'
   }
-  return item.target === pointer ? null : 'target does not match the pointer body'
+  return item.target === pointer || commit ? null : 'target does not match the pointer body'
 }
 
 function contextItemLengthRefusal(item: ContextItem): string | null {

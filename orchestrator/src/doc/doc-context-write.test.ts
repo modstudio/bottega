@@ -107,6 +107,17 @@ describe('context write refusal', () => {
       ),
     ).toContain('scratch paths are not durable pointers')
   })
+  test('accepts a ref pointer resolved to its commit and refuses a target from another body', () => {
+    const sha = '2d7cac9ac9d18264c6539f3405834f5a42da06f7'
+    const pointer = (body: string, target: string) =>
+      contextWriteRefusal(item({ kind: 'pointer', body, target }), facts())
+    expect(pointer('origin/main', sha)).toBeNull()
+    expect(pointer('2d7cac9', sha)).toBeNull()
+    expect(pointer('#2005', '2005')).toBeNull()
+    expect(pointer('origin/main', 'origin/other')).toContain('target does not match')
+    expect(pointer('4044458d5', sha)).toContain('target does not match the resolved commit')
+    expect(pointer('#2005', '2006')).toContain('target does not match')
+  })
   test('refuses task-level rulings and questions on a claimed session', () => {
     for (const kind of ['ruling', 'open-question'] as const) {
       const ruling = kind === 'ruling' ? { source: 'q5282' } : {}
