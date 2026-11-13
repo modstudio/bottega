@@ -152,7 +152,7 @@ test('reads a working task brief from its record-id holder while retaining the t
   db()
     .query(
       `INSERT INTO context_item
-       (id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
+       (record_id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
        VALUES (?,'task',?,'next','next-action','Continue.','test',?,?)`,
     )
     .run(newRecordId(), recordId, '2026-11-09T10:00:00Z', '2026-11-09T10:00:00Z')
@@ -186,7 +186,7 @@ test('includes a worked-fact task in the holder set after its claim is released'
   db()
     .query(
       `INSERT INTO context_item
-       (id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
+       (record_id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
        VALUES (?,'session',?,'worked','fact','Worked: WORKED-2, WORKED-1','precompact',?,?)`,
     )
     .run(newRecordId(), session, '2026-11-11T10:00:00Z', '2026-11-11T10:00:00Z')

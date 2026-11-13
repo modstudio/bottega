@@ -23,7 +23,7 @@ const insertNextAction = (recordId: string, at: string) => {
   db()
     .query(
       `INSERT INTO context_item
-     (id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
+     (record_id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
      VALUES (?,'task',?,'next','next-action','Continue.','test',?,?)`,
     )
     .run(newRecordId(), recordId, at, at)
