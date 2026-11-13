@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { ensureMachineIdentity } from '../database/db.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
@@ -7,6 +8,7 @@ import type { RecordPayload } from '../record/record-sync-contract.ts'
 import type { HostedTaskFlowStageById } from '../record/record-task-flow-contract.ts'
 import { backfillTaskFlowRecords } from './task-flow-backfill.ts'
 import { recordTaskFlowReadStore } from './task-flow-store-record.ts'
+import { STAGE_BY_ID_READ_LIMIT } from './task-flow-store-record-questions.ts'
 import { sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
 
 const PROJECT_ID = '00000000-0000-4000-8000-000000000001'
@@ -407,7 +409,7 @@ test('record adapter refuses a failed page without returning a prefix', async ()
   )
 })
 
-test('hosted open-stage listings translate mirror handles and refuse missing counterparts', async () => {
+test('hosted open-stage listings do not depend on mirror counterparts', async () => {
   const d = database()
   const translated = recordTaskFlowReadStore(
     d,
@@ -419,10 +421,249 @@ test('hosted open-stage listings translate mirror handles and refuse missing cou
   )
   expect((await translated.listOpenStages({ project: 'fixture' }))[0]!.id).toBe(71)
 
-  const missing = recordTaskFlowReadStore(d, createMemoryRecordApiClient({ taskFlowStages: [] }))
-  await expect(missing.listOpenStages({ project: 'fixture' })).rejects.toThrow(
-    'has no hosted record counterpart',
+  const empty = recordTaskFlowReadStore(d, createMemoryRecordApiClient({ taskFlowStages: [] }))
+  expect(await empty.listOpenStages({ project: 'fixture' })).toEqual([])
+})
+
+test('question-joined reads match SQLite joins and ordering', async () => {
+  const d = database()
+  const stageOneId = hostedStage().stage.id
+  const stageTwoId = '00000000-0000-4000-8000-000000000008'
+  const stageThreeId = '00000000-0000-4000-8000-000000000009'
+  const insertStage = (recordId: string, number: number, key: string, taskless: boolean) =>
+    d
+      .query(
+        `INSERT INTO workflow_cursor
+       (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,
+        task_record_id,task_flow_record_id,instance_id,session_id,workflow_version_record_id,
+        catalogue_version_record_id,args,autonomy,ordinal,step_slug,state,closed,question,total_steps,
+        created_at,updated_at,enforcement,opened_machine_id,last_advanced_machine_id,revision)
+       SELECT ?,?,'fixture',project_record_id,'flow','default',?, ?, ?, ?, 'session-a',
+              workflow_version_record_id,catalogue_version_record_id,'{}','guided',0,'plan','running',
+              '[]',NULL,2,created_at,?,enforcement,opened_machine_id,last_advanced_machine_id,1
+         FROM workflow_cursor WHERE record_id=?`,
+      )
+      .run(
+        recordId,
+        number,
+        key,
+        taskless ? null : TASK_ID,
+        taskless ? null : FLOW_ID,
+        `#${number}`,
+        `2026-11-12T00:0${number}:00.000Z`,
+        stageOneId,
+      )
+  insertStage(stageTwoId, 2, '', true)
+  insertStage(stageThreeId, 3, '', true)
+  d.query(
+    `UPDATE workflow_cursor SET workflow_slug='ship-task',state='awaiting-ruling',
+       args='{"branch":"feature"}',updated_at='2026-11-12T00:03:00.000Z'
+     WHERE record_id=?`,
+  ).run(stageOneId)
+  d.query("UPDATE workflow_cursor SET state='awaiting-ruling' WHERE record_id=?").run(stageTwoId)
+
+  const q1 = '00000000-0000-4000-8000-000000000031'
+  const q2 = '00000000-0000-4000-8000-000000000032'
+  const q3 = '00000000-0000-4000-8000-000000000033'
+  const q4 = '00000000-0000-4000-8000-000000000034'
+  const q5 = '00000000-0000-4000-8000-000000000035'
+  d.query(
+    `INSERT INTO question
+     (record_id,number,workflow_cursor_record_id,workflow_key,asked_at,question)
+     VALUES (?,1,?,'DEV-2234','2026-11-12T00:02:00.000Z','first?'),
+            (?,2,?,'DEV-2234','2026-11-12T00:01:00.000Z','second?')`,
+  ).run(q1, stageOneId, q2, stageTwoId)
+  d.query(
+    `INSERT INTO question
+     (record_id,number,workflow_cursor_record_id,workflow_key,workflow_task_record_id,
+      asked_at,question,answer,answered_at)
+     VALUES (?,3,?,'DEV-2234',?,'2026-11-12T00:00:00.000Z','ruled?','yes',
+             '2026-11-12T00:04:00.000Z')`,
+  ).run(q3, stageTwoId, TASK_ID)
+  d.query(
+    `INSERT INTO question
+     (record_id,number,workflow_cursor_record_id,workflow_key,asked_at,question)
+     VALUES ('00000000-0000-4000-8000-000000000036',6,?,NULL,
+             '2026-11-12T00:00:30.000Z','other open?'),
+            ('00000000-0000-4000-8000-000000000037',7,?,NULL,
+             '2026-11-12T00:00:31.000Z','another open?')`,
+  ).run(stageThreeId, stageThreeId)
+
+  const rootRun = '00000000-0000-4000-8000-000000000041'
+  const childRun = '00000000-0000-4000-8000-000000000042'
+  d.query(
+    `INSERT INTO run
+     (record_id,number,started_at,agent,job,repo,cwd,project_record_id,task_record_id,
+      prompt_sha,prompt_bytes,prompt_head,status,latency_ms,probe,turn,transport,session_id)
+     VALUES (?,41,'2026-11-12T00:00:00.000Z','codex','implement','root-repo','/root-cwd',?,?,
+             'sha',1,'root','ok',1,0,1,'cli','root-session')`,
+  ).run(rootRun, PROJECT_ID, TASK_ID)
+  d.query(
+    `INSERT INTO run
+     (record_id,number,started_at,agent,job,repo,cwd,project_record_id,
+      prompt_sha,prompt_bytes,prompt_head,status,latency_ms,probe,turn,transport,session_id,parent_run_record_id)
+     VALUES (?,42,'2026-11-12T00:01:00.000Z','codex','implement','child-repo','/child-cwd',?,
+             'sha',1,'child','ok',1,0,2,'cli','child-session',?)`,
+  ).run(childRun, PROJECT_ID, rootRun)
+  d.query(
+    `INSERT INTO question
+     (record_id,number,run_record_id,asked_at,question,answer,answered_at)
+     VALUES (?,4,?,'2026-11-12T00:04:00.000Z','run child?','yes',
+             '2026-11-12T00:05:00.000Z'),
+            (?,5,?,'2026-11-12T00:05:00.000Z','run only?','yes',
+             '2026-11-12T00:06:00.000Z')`,
+  ).run(q4, childRun, q5, childRun)
+  d.query(
+    `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,synced_at)
+     VALUES ('00000000-0000-4000-8000-000000000043','run',?,'{}','t','t')`,
+  ).run(childRun)
+
+  const first = hostedStage()
+  first.stage.workflow = 'ship-task'
+  first.stage.state = 'awaiting-ruling'
+  first.stage.arguments = { branch: 'feature' }
+  first.stage.updatedAt = '2026-11-12T00:03:00.000Z'
+  const second = hostedStage({ taskless: true, number: 2, stageId: stageTwoId })
+  second.stage.instanceId = '#2'
+  second.stage.state = 'awaiting-ruling'
+  second.stage.updatedAt = '2026-11-12T00:02:00.000Z'
+  const third = hostedStage({ taskless: true, number: 3, stageId: stageThreeId })
+  third.stage.instanceId = '#3'
+  third.stage.updatedAt = '2026-11-12T00:03:00.000Z'
+  const local = sqliteTaskFlowReadStore(d)
+  const hosted = recordTaskFlowReadStore(
+    d,
+    createMemoryRecordApiClient({ taskFlowStages: [third, second, first], taskFlowPageSize: 1 }),
   )
+
+  const assertions = [
+    [hosted.listOpenStages({}), local.listOpenStages({})],
+    [hosted.stageIdentityMap(), local.stageIdentityMap()],
+    [hosted.waitingWorkflowQuestions(), local.waitingWorkflowQuestions()],
+    [
+      hosted.closeOutShipTaskStage('session-a', 'fixture', 'feature'),
+      local.closeOutShipTaskStage('session-a', 'fixture', 'feature'),
+    ],
+    [hosted.cursorWorkForSession('session-a'), local.cursorWorkForSession('session-a')],
+    [hosted.cursorLifecycleForSession('session-a'), local.cursorLifecycleForSession('session-a')],
+    [hosted.openStagesForSession('session-a'), local.openStagesForSession('session-a')],
+    [hosted.keylessSessionCursors('fixture'), local.keylessSessionCursors('fixture')],
+    [
+      hosted.openWorkflowQuestionCountForSession('session-a'),
+      local.openWorkflowQuestionCountForSession('session-a'),
+    ],
+    [hosted.workflowInboxQuestions(), local.workflowInboxQuestions()],
+    [
+      hosted.rulingRows({ kind: 'all', after: null, cursor: null }),
+      local.rulingRows({ kind: 'all', after: null, cursor: null }),
+    ],
+    [hosted.rulingFileQuestion(q4), local.rulingFileQuestion(q4)],
+    [hosted.questionCloseFacts(q1), local.questionCloseFacts(q1)],
+    [hosted.overturnRulingRow(q3), local.overturnRulingRow(q3)],
+    [hosted.pendingTaskLinks('question'), local.pendingTaskLinks('question')],
+    [hosted.linkedTaskReferences('question'), local.linkedTaskReferences('question')],
+    [hosted.taskRulingRows('fixture', TASK_ID, 1), local.taskRulingRows('fixture', TASK_ID, 1)],
+    [hosted.localQuestionProjects(), local.localQuestionProjects()],
+  ]
+  for (const [recordAnswer, localAnswer] of assertions)
+    expect(await recordAnswer).toEqual(await localAnswer)
+  expect(
+    (await hosted.listOpenStages({})).find((row) => row.record_id === stageThreeId),
+  ).toMatchObject({ question_number: 6 })
+  expect(await hosted.rulingFileQuestion(q4)).toMatchObject({
+    root_id: rootRun,
+    repo: 'child-repo',
+    cwd: '/child-cwd',
+  })
+  expect(
+    (await hosted.rulingRows({ kind: 'all', after: null, cursor: null })).find(
+      (row) => row.record_id === q4,
+    ),
+  ).toMatchObject({ project: 'child-repo', session_id: 'child-session' })
+  expect(await hosted.taskRulingRows('fixture', TASK_ID, 1)).toMatchObject([{ candidate_count: 3 }])
+})
+
+test('question joins refuse a stage missing from the hosted record', async () => {
+  const d = database()
+  const missingStage = '00000000-0000-4000-8000-000000000099'
+  const questionId = '00000000-0000-4000-8000-000000000098'
+  d.exec('PRAGMA foreign_keys=OFF')
+  try {
+    d.query(
+      `INSERT INTO question
+       (record_id,number,workflow_cursor_record_id,workflow_key,asked_at,question)
+       VALUES (?,98,?,'DEV-2234','t','missing?')`,
+    ).run(questionId, missingStage)
+  } finally {
+    d.exec('PRAGMA foreign_keys=ON')
+  }
+  const hosted = recordTaskFlowReadStore(d, createMemoryRecordApiClient({ taskFlowStages: [] }))
+  const refusal =
+    `question 98 names workflow stage ${missingStage}, which the hosted record does not return; ` +
+    `run ${PLATFORM_NAME} record push, then retry`
+  await expect(hosted.questionCloseFacts(questionId)).rejects.toThrow(refusal)
+  await expect(hosted.rulingRows({ kind: 'workflow', after: null, cursor: null })).rejects.toThrow(
+    refusal,
+  )
+})
+
+test('question stage lookups preserve parity below and above the by-id batch limit', async () => {
+  for (const stageCount of [STAGE_BY_ID_READ_LIMIT, STAGE_BY_ID_READ_LIMIT + 1]) {
+    const d = database()
+    const stages: HostedTaskFlowStageById[] = []
+    for (let index = 0; index < stageCount; index++) {
+      const number = index + 2
+      const suffix = String(number).padStart(12, '0')
+      const stageId = `10000000-0000-4000-8000-${suffix}`
+      const questionId = `20000000-0000-4000-8000-${suffix}`
+      d.query(
+        `INSERT INTO workflow_cursor
+         (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,
+          task_record_id,task_flow_record_id,instance_id,session_id,workflow_version_record_id,
+          catalogue_version_record_id,args,autonomy,ordinal,step_slug,state,closed,question,total_steps,
+          created_at,updated_at,enforcement,opened_machine_id,last_advanced_machine_id,revision)
+         SELECT ?,?,'fixture',project_record_id,'flow','default','DEV-2234',task_record_id,
+                NULL,?,'session-a',workflow_version_record_id,
+                catalogue_version_record_id,'{}','guided',0,'plan','running','[]',NULL,2,
+                created_at,updated_at,enforcement,opened_machine_id,last_advanced_machine_id,1
+           FROM workflow_cursor WHERE record_id='00000000-0000-4000-8000-000000000007'`,
+      ).run(stageId, number, `#${number}`)
+      d.query(
+        `INSERT INTO question
+         (record_id,number,workflow_cursor_record_id,workflow_key,asked_at,question)
+         VALUES (?,?,?,'DEV-2234',?,'batch?')`,
+      ).run(
+        questionId,
+        index + 1,
+        stageId,
+        `2026-11-12T00:00:${String(index).padStart(2, '0')}.000Z`,
+      )
+      const stage = hostedStage({ number, stageId })
+      stage.stage.instanceId = `#${number}`
+      stages.push(stage)
+    }
+
+    const counts = { stageLists: 0, stagesById: 0 }
+    const hosted = recordTaskFlowReadStore(
+      d,
+      createMemoryRecordApiClient({
+        taskFlowStages: stages,
+        taskFlowPageSize: 7,
+        taskFlowReadCounts: counts,
+      }),
+    )
+    const local = sqliteTaskFlowReadStore(d)
+    expect(await hosted.rulingRows({ kind: 'workflow', after: null, cursor: null })).toEqual(
+      await local.rulingRows({ kind: 'workflow', after: null, cursor: null }),
+    )
+    if (stageCount === STAGE_BY_ID_READ_LIMIT) {
+      expect(counts.stagesById).toBe(STAGE_BY_ID_READ_LIMIT)
+      expect(counts.stageLists).toBe(0)
+    } else {
+      expect(counts.stagesById).toBe(0)
+      expect(counts.stageLists).toBeGreaterThan(0)
+    }
+  }
 })
 
 test('machine-wide hosted reads merge every registered project space', async () => {

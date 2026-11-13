@@ -21,7 +21,7 @@ import {
   taskReadRefusal,
   taskReferenceForProjectKey,
 } from '../workflow/workflow-task-reference.ts'
-import { linkWorkflowQuestionsTaskReference } from './question-mutation.ts'
+import { linkWorkflowQuestionTaskReference } from './question-mutation.ts'
 import { enqueueRunRecord, isRunRecordEligible, runRecordFinishedAt } from './run-outbox.ts'
 
 type TaskLinkSource = 'launch_key' | 'review_ref' | 'branch' | 'turn'
@@ -126,18 +126,12 @@ const LOCAL_TASK_LINKS = {
   },
   question: {
     regime: 'synchronous',
-    pendingRows: async (database) => taskFlowReadStore(database).pendingTaskLinks('question'),
-    linkedRows: async (database) => taskFlowReadStore(database).linkedTaskReferences('question'),
-    write: (database, update) => {
-      linkWorkflowQuestionsTaskReference(
-        {
-          project: update.project,
-          workflowKey: update.taskKey,
-          taskRecordId: update.taskId,
-        },
-        database,
-      )
-    },
+    pendingRows: async (database, client) =>
+      taskFlowReadStore(database, client).pendingTaskLinks('question'),
+    linkedRows: async (database, client) =>
+      taskFlowReadStore(database, client).linkedTaskReferences('question'),
+    write: (database, update) =>
+      linkWorkflowQuestionTaskReference(update.id, update.taskId, database),
   },
   port_ref: {
     regime: 'synchronous',

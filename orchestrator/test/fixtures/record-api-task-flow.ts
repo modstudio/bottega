@@ -1,10 +1,12 @@
 import type { RecordApiClient } from '../../src/record/record-api-client.ts'
 import { recordApiError } from '../../src/record/record-api-client-error.ts'
+import { encodeTaskFlowStageListCursor } from '../../src/record/record-cursor.ts'
 import type { RecordPayload } from '../../src/record/record-sync-contract.ts'
 import { taskFlowStageValues, taskFlowValues } from '../../src/record/record-sync-task-flow.ts'
 import {
   type HostedTaskFlowStageById,
   hostedTaskFlowStageByIdSchema,
+  taskFlowStageListQuerySchema,
 } from '../../src/record/record-task-flow-contract.ts'
 
 export type MemoryTaskFlowInput = {
@@ -20,6 +22,7 @@ export type MemoryTaskFlowInput = {
   taskFlowCatalogueVersionNumbers?: Record<string, number>
   taskFlowPageSize?: number
   taskFlowFailedPage?: number
+  taskFlowReadCounts?: { stageLists: number; stagesById: number }
 }
 
 type Selector = Parameters<NonNullable<RecordApiClient['listTaskFlowStages']>>[0]
@@ -290,11 +293,21 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
       }
     },
     async listTaskFlowStages(selector, destination) {
+      if (input.taskFlowReadCounts) input.taskFlowReadCounts.stageLists++
+      const parsedSelector = taskFlowStageListQuerySchema.parse({
+        ...selector,
+        keyless: selector.keyless ? 'true' : undefined,
+        primaryInstance: selector.primaryInstance ? 'true' : undefined,
+        unlinked: selector.unlinked ? 'true' : undefined,
+        linked: selector.linked ? 'true' : undefined,
+      })
       const rows = [...stages]
         .filter((row) => inDestination(row, input, destination))
         .filter((row) => matches(row, selector))
         .sort((left, right) => compare(selector, left, right))
-      const offset = Number(selector.cursor ?? 0)
+      const offset = parsedSelector.cursor
+        ? rows.findIndex(({ stage }) => stage.id === parsedSelector.cursor!.id) + 1
+        : 0
       const configuredSize = input.taskFlowPageSize ?? selector.limit ?? 200
       const pageNumber = Math.floor(offset / configuredSize) + 1
       if (pageNumber === input.taskFlowFailedPage)
@@ -305,13 +318,27 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
       )
       const items = rows.slice(offset, offset + size)
       const next = offset + items.length
+      const last = items.at(-1)
       return {
         items,
         truncated: next < rows.length,
-        nextCursor: next < rows.length ? String(next) : null,
+        nextCursor:
+          next < rows.length && last
+            ? encodeTaskFlowStageListCursor(
+                parsedSelector.order === 'newest'
+                  ? { order: 'newest', number: last.stage.number, id: last.stage.id }
+                  : {
+                      order: 'project',
+                      projectName: last.stage.projectName,
+                      number: last.stage.number,
+                      id: last.stage.id,
+                    },
+              )
+            : null,
       }
     },
     async readTaskFlowStage(id, destination) {
+      if (input.taskFlowReadCounts) input.taskFlowReadCounts.stagesById++
       return (
         stages.find((row) => inDestination(row, input, destination) && row.stage.id === id) ?? null
       )

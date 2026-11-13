@@ -165,6 +165,23 @@ export function upsertWorkflowQuestion(
   return { recordId: inserted.record_id, number: inserted.number }
 }
 
+/** Links one workflow question through the mutation path so revision and outbox stay in sync. */
+export function linkWorkflowQuestionTaskReference(
+  questionId: string,
+  taskRecordId: string,
+  database: Database = db(),
+): boolean {
+  const changed = database
+    .query(
+      `UPDATE question SET workflow_task_record_id=?,revision=revision+1
+       WHERE record_id=? AND workflow_task_record_id IS NULL`,
+    )
+    .run(taskRecordId, questionId)
+  if (changed.changes !== 1) return false
+  enqueueQuestionRecord(database, questionId)
+  return true
+}
+
 /** Links workflow questions through the mutation path so revisions and outbox rows stay in sync. */
 export function linkWorkflowQuestionsTaskReference(
   input: { project: string; workflowKey: string; taskRecordId: string },
@@ -174,16 +191,9 @@ export function linkWorkflowQuestionsTaskReference(
     input.project,
     input.workflowKey,
   )
-  const update = database.query(
-    `UPDATE question SET workflow_task_record_id=?,revision=revision+1
-     WHERE record_id=? AND workflow_task_record_id IS NULL`,
-  )
   let linked = 0
   for (const questionId of questions) {
-    const changed = update.run(input.taskRecordId, questionId)
-    if (changed.changes !== 1) continue
-    enqueueQuestionRecord(database, questionId)
-    linked++
+    if (linkWorkflowQuestionTaskReference(questionId, input.taskRecordId, database)) linked++
   }
   return linked
 }
