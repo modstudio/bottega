@@ -32,8 +32,6 @@ test('review rounds move only for live lenses and terminal untriaged rounds beco
   expect(result.incompleteReviews).toBe(1)
   expect(result.owedItems).toEqual([
     {
-      kind: 'review',
-      identity: 'review-7',
       label: 'review 7 untriaged (2 findings open)',
       command: `${PLATFORM_SLUG} review show 7`,
       owedAt: '2026-11-13T11:00:00.000Z',

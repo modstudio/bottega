@@ -52,7 +52,7 @@ function lookupRun(runId: string): RunLandingFacts | null {
   }
 }
 
-function cursorArg(args: string, key: 'branch' | 'worktree'): string | null {
+export function cursorArg(args: string, key: 'branch' | 'worktree'): string | null {
   try {
     const value = JSON.parse(args) as Record<string, unknown>
     return typeof value[key] === 'string' ? value[key] : null
@@ -135,7 +135,7 @@ function treeHead(treePath: string): string | null {
  * Only a running or awaiting-ruling row is looked up at all, so the row that arrives claims this
  * tree rather than proving its session alive.
  */
-function cursorFacts(row: CursorRow | null) {
+export function cursorFacts(row: CursorRow | null) {
   if (!row) return null
   return {
     id: row.id,

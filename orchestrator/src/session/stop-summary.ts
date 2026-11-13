@@ -3,10 +3,12 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { db, sessionId } from '../database/db.ts'
+import { cursorArg, cursorFacts } from '../close/close-out-in-flight.ts'
+import { db } from '../database/db.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { heldTreeInFlight, LANDING_TREE_JOB } from '../landing-tree/landing-tree.ts'
 import { RUN_LIVE_STATUSES } from '../run/run-status.ts'
+import { activeLandings } from './session-close-out.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import {
   listWorkflowCursors,
@@ -31,7 +33,7 @@ type OwedRunRow = {
   label: string | null
   owed_at: string
 }
-type HeldTreeRow = {
+export type StopSummaryHeldTreeRow = {
   record_id: string
   number: number
   job: string
@@ -40,22 +42,17 @@ type HeldTreeRow = {
   worktree: string | null
   close_out_attempted_at: string | null
 }
-type ActiveLandingRow = { project: string; branch: string }
-type HookNote = { label: string; project: string; last_seen_at?: string }
-
-function cursorArg(row: WorkflowCursorListRow, key: 'branch' | 'worktree'): string | null {
-  try {
-    const value = JSON.parse(row.args) as Record<string, unknown>
-    return typeof value[key] === 'string' ? value[key] : null
-  } catch {
-    return null
-  }
+export type StopSummaryActiveLandingRow = { project: string; branch: string }
+export type StopSummaryHookNote = {
+  label: string
+  project: string
+  last_seen_at?: string | null
 }
 
-function landingTreeIsActive(
-  tree: HeldTreeRow,
+export function landingTreeIsActive(
+  tree: StopSummaryHeldTreeRow,
   cursors: readonly WorkflowCursorListRow[],
-  landings: readonly ActiveLandingRow[],
+  landings: readonly StopSummaryActiveLandingRow[],
 ): boolean {
   if (tree.job !== LANDING_TREE_JOB) return false
   if (landings.some((item) => item.project === tree.repo && item.branch === tree.branch))
@@ -64,8 +61,8 @@ function landingTreeIsActive(
     (item) =>
       item.workflow_slug === 'ship-task' &&
       item.project === tree.repo &&
-      cursorArg(item, 'branch') === tree.branch &&
-      cursorArg(item, 'worktree') === tree.worktree,
+      cursorArg(item.args, 'branch') === tree.branch &&
+      cursorArg(item.args, 'worktree') === tree.worktree,
   )
   if (!cursor || !tree.worktree) return false
   return Boolean(
@@ -73,15 +70,7 @@ function landingTreeIsActive(
       treePath: tree.worktree,
       project: tree.repo,
       branch: tree.branch,
-      cursor: {
-        id: cursor.id,
-        workflow: cursor.workflow_slug,
-        step: cursor.step_slug,
-        claimed: true,
-        project: cursor.project,
-        branch: cursorArg(cursor, 'branch'),
-        worktree: cursorArg(cursor, 'worktree'),
-      },
+      cursor: cursorFacts(cursor),
       openPr: null,
       hold: 'landing-progress',
       treeClean: false,
@@ -90,35 +79,27 @@ function landingTreeIsActive(
   )
 }
 
-function hookNotes(now: string): StopSummaryOwedItem[] {
-  try {
-    const parsed = JSON.parse(process.env.BOTTEGA_STOP_SUMMARY_NOTES ?? '[]') as unknown
-    if (!Array.isArray(parsed)) return []
-    return parsed.flatMap((value): StopSummaryOwedItem[] => {
-      if (!value || typeof value !== 'object') return []
-      const note = value as Partial<HookNote>
-      if (!note.label || !note.project) return []
-      return [
-        {
-          kind: 'note',
-          identity: note.label,
-          label: `note ${note.label} not handed over`,
-          command: `${PLATFORM_SLUG} board post --audience architects:${note.project} ...`,
-          owedAt: note.last_seen_at ?? now,
-        },
-      ]
-    })
-  } catch {
-    return []
-  }
+export function hookNotes(
+  notes: readonly StopSummaryHookNote[],
+  now: string,
+): StopSummaryOwedItem[] {
+  return notes.map((note) => ({
+    label: `note ${note.label} not handed over`,
+    command: `${PLATFORM_SLUG} board post --audience architects:${note.project} ...`,
+    owedAt: note.last_seen_at ?? now,
+  }))
 }
 
 export async function sessionStopSummary(
-  options: { now?: string; previousBlockKey?: string | null; session?: string } = {},
+  options: {
+    session: string
+    previousBlockKey: string | null
+    notes: readonly StopSummaryHookNote[]
+    now?: string
+  },
   database: Database = db(),
 ): Promise<StopSummaryDecision> {
-  const session = options.session ?? sessionId()
-  if (!session) throw new Error('session identity is unavailable')
+  const session = options.session
   const now = options.now ?? new Date().toISOString()
   const cursors = await listWorkflowCursors({ session }, database)
   const questionCount =
@@ -147,11 +128,14 @@ export async function sessionStopSummary(
     )
     .all(session)
   const reviews = classifyStopSummaryReviews(reviewRows)
-  const activeLandings = database
-    .query<ActiveLandingRow, [string]>(
-      "SELECT project,branch FROM landing WHERE session_id=? AND status IN ('queued','running')",
+  const sessionLandings = activeLandings(database, session)
+  const activeLandingTrees = database
+    .query<StopSummaryActiveLandingRow, []>(
+      `SELECT project.name project,landing.branch FROM landing
+       JOIN project ON project.record_id=landing.project_record_id
+       WHERE landing.status IN ('queued','running')`,
     )
-    .all(session)
+    .all()
   const owedRuns = database
     .query<OwedRunRow, [string]>(
       `SELECT r.record_id,r.number,r.job,r.launch_key,
@@ -168,12 +152,12 @@ export async function sessionStopSummary(
           AND close_out_outcome='held' ORDER BY number`,
     )
     .all(session)
-  const activeTrees = heldTrees.filter((tree) => landingTreeIsActive(tree, cursors, activeLandings))
+  const activeTrees = heldTrees.filter((tree) =>
+    landingTreeIsActive(tree, cursors, activeLandingTrees),
+  )
   const owedItems: StopSummaryOwedItem[] = [
     ...reviews.owedItems,
     ...owedRuns.map((run) => ({
-      kind: 'run' as const,
-      identity: run.record_id,
       label: `run ${run.number} ${run.job}${run.launch_key ? ` ${run.launch_key}` : ''} unscored`,
       command: `${PLATFORM_SLUG} score ${run.number} (see ${PLATFORM_SLUG} score --help)`,
       owedAt: run.owed_at,
@@ -181,8 +165,6 @@ export async function sessionStopSummary(
     ...heldTrees
       .filter((tree) => !activeTrees.includes(tree))
       .map((tree) => ({
-        kind: tree.job === LANDING_TREE_JOB ? ('landing-tree' as const) : ('worktree' as const),
-        identity: tree.record_id,
         label:
           tree.job === LANDING_TREE_JOB
             ? `landing tree ${tree.worktree ?? `run ${tree.number}`} is held`
@@ -193,7 +175,7 @@ export async function sessionStopSummary(
             : `${PLATFORM_SLUG} run close-out ${tree.number}`,
         owedAt: tree.close_out_attempted_at ?? now,
       })),
-    ...hookNotes(now),
+    ...hookNotes(options.notes, now),
   ]
   return decideStopSummary({
     now,
@@ -207,7 +189,7 @@ export async function sessionStopSummary(
     })),
     liveRuns,
     incompleteReviews: reviews.incompleteReviews,
-    inFlightLandings: activeLandings.length + activeTrees.length,
+    inFlightLandings: sessionLandings.length + activeTrees.length,
     owedItems,
     previousBlockKey: options.previousBlockKey ?? null,
   })

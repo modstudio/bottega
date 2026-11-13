@@ -29,6 +29,7 @@ def cleanup(ids, deadline):
         con = sqlite3.connect(f"file:{database}?mode=ro", uri=True, timeout=2)
         roots = con.execute(
             """SELECT MIN(number) FROM run WHERE session_id IN ({})
+                 -- Restates TERMINAL_RUN_STATUSES from orchestrator/src/run/run-status.ts.
                  AND worktree IS NOT NULL AND status IN ('ok','failed','stale','stopped')
                GROUP BY worktree ORDER BY 1""".format(",".join("?" for _ in ids)), ids
         ).fetchall()
@@ -88,16 +89,19 @@ def summary(payload, ids, deadline):
     path = marker_path("stop-summary", sid)
     marker = read_marker(path) if path else None
     prior = marker.get("blockKey") if isinstance(marker, dict) else None
-    environment = dict(os.environ)
+    command = [
+        bottega_bin(), "session", "status", "--stop", "--json",
+        "--session", sid,
+    ]
     if isinstance(prior, str):
-        environment["BOTTEGA_STOP_SUMMARY_BLOCK_KEY"] = prior
-    environment["BOTTEGA_STOP_SUMMARY_NOTES"] = json.dumps(actionable_notes(ids, deadline))
+        command.extend(["--block-key", prior])
+    command.extend(["--notes", json.dumps(actionable_notes(ids, deadline))])
     remaining = max(0, deadline - time.monotonic())
     if remaining <= 0:
         raise subprocess.TimeoutExpired("session status", 0)
     result = subprocess.run(
-        [bottega_bin(), "session", "status", "--stop", "--json"],
-        cwd=payload.get("cwd") or None, env=environment, capture_output=True, text=True,
+        command,
+        cwd=payload.get("cwd") or None, capture_output=True, text=True,
         timeout=remaining, check=True,
     )
     report = json.loads(result.stdout)
@@ -110,7 +114,9 @@ def summary(payload, ids, deadline):
         key = report.get("blockKey")
         if not isinstance(key, str):
             raise ValueError("blocking session status has no block key")
-        write_marker(path, {"blockKey": key})
+        if not write_marker(path, {"blockKey": key}):
+            print("bottega: block-once marker could not be recorded; Stop proceeded", file=sys.stderr)
+            return {"systemMessage": "\n".join(report["lines"])}
         return {"decision": "block", "reason": reason}
     return {"systemMessage": "\n".join(report["lines"])}
 

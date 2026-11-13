@@ -6,6 +6,7 @@
  */
 
 /** The terminal run statuses, in the order the lifecycle lists them. */
+// orchestrator/hooks/stop-summary.py restates this list because Python cannot import it.
 const TERMINAL_RUN_STATUSES = ['ok', 'failed', 'stale', 'stopped'] as const
 
 /** The live run statuses, in lifecycle order. */

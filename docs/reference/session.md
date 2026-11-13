@@ -118,13 +118,16 @@ open explore for a session that holds no open explore, or name the one it holds
 
 ## bottega session status
 
-**Synopsis:** `bottega session status [--stop] [--json]`
+**Synopsis:** `bottega session status [--stop] [--session <id>] [--block-key <hex>] [--notes <json>] [--json]`
 
 summarize what is moving and what the calling session owes
 
 ### Options
 
 - `--stop`: apply Stop-hook block-once state
+- `--session <id>`: select the session to summarize
+- `--block-key <hex>`: apply the previous Stop block key
+- `--notes <json>`: include actionable note rows
 - `--json`: write the summary as JSON
 
 ### Related

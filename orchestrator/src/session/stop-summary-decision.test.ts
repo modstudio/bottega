@@ -20,8 +20,6 @@ const facts = (overrides: Partial<StopSummaryFacts> = {}): StopSummaryFacts => (
   ...overrides,
 })
 const owed = (age = 0) => ({
-  kind: 'run' as const,
-  identity: 'run-12',
   label: 'run 12 implement DEV-2297 unscored',
   command: `${PLATFORM_SLUG} score 12 (see ${PLATFORM_SLUG} score --help)`,
   owedAt: new Date(Date.parse(NOW) - age).toISOString(),
@@ -52,8 +50,6 @@ describe('Stop summary decision', () => {
       'DEV-2297 · plan-task · step design (6 of 11)',
       'explore · step orient (1 of 4)',
     ])
-    expect(result.lines.join('\n')).not.toContain('question text')
-    expect(result.lines.join('\n')).not.toContain('workflow step')
   })
 
   test('work in motion is one line and hides fresh owed items', () => {
@@ -89,6 +85,26 @@ describe('Stop summary decision', () => {
     expect(second.block).toBe(false)
     expect(second.blockKey).toBe(first.blockKey)
     expect(second.lines.at(-1)).toBe(`1 item owed → ${PLATFORM_SLUG} score pending`)
+
+    const added = {
+      ...owed(),
+      label: 'run 13 review DEV-2297 unscored',
+      command: `${PLATFORM_SLUG} score 13 (see ${PLATFORM_SLUG} score --help)`,
+    }
+    const changed = decideStopSummary(
+      facts({ owedItems: [owed(), added], previousBlockKey: first.blockKey }),
+    )
+    expect(changed.block).toBe(true)
+    expect(changed.lines.slice(-2)).toEqual([
+      `run 12 implement DEV-2297 unscored → ${PLATFORM_SLUG} score 12 (see ${PLATFORM_SLUG} score --help)`,
+      `run 13 review DEV-2297 unscored → ${PLATFORM_SLUG} score 13 (see ${PLATFORM_SLUG} score --help)`,
+    ])
+
+    const shrunk = decideStopSummary(
+      facts({ owedItems: [added], previousBlockKey: changed.blockKey }),
+    )
+    expect(shrunk.block).toBe(true)
+    expect(shrunk.lines.at(-1)).toContain('run 13 review DEV-2297 unscored')
   })
 
   test('an active landing is motion rather than an owed landing tree', () => {
@@ -97,19 +113,8 @@ describe('Stop summary decision', () => {
     expect(result.lines.join('\n')).not.toContain('landing tree')
   })
 
-  test('item identity and lens-scoring grammar never leak into lines', () => {
-    const identity = '01a1d500-0000-7000-8000-000000000000'
-    const result = decideStopSummary(
-      facts({
-        owedItems: [
-          {
-            ...owed(),
-            identity,
-          },
-        ],
-      }),
-    )
-    expect(result.lines.join('\n')).not.toContain(identity)
+  test('lens-scoring grammar never leaks into lines', () => {
+    const result = decideStopSummary(facts({ owedItems: [owed()] }))
     expect(result.lines.join('\n')).not.toContain('--finding')
   })
 })

@@ -30,9 +30,11 @@ class Result:
 class StopSummaryHookTest(unittest.TestCase):
     def test_blocks_once_then_summarizes_the_unchanged_set(self):
         payload = {"session_id": "session", "cwd": "/tmp"}
+        commands = []
 
-        def run(_command, **options):
-            if options["env"].get("BOTTEGA_STOP_SUMMARY_BLOCK_KEY"):
+        def run(command, **_options):
+            commands.append(command)
+            if "--block-key" in command:
                 return Result({"lines": ["Nothing waiting on you", f"1 item owed → {PRODUCT} score pending"], "block": False, "reason": f"Nothing waiting on you\nrun 12 unscored → {PRODUCT} score 12", "blockKey": "decision-key"})
             return Result({"lines": ["Nothing waiting on you", f"run 12 unscored → {PRODUCT} score 12"], "block": True, "reason": f"Nothing waiting on you\nrun 12 unscored → {PRODUCT} score 12", "blockKey": "decision-key"})
 
@@ -49,6 +51,32 @@ class StopSummaryHookTest(unittest.TestCase):
         self.assertEqual(first["decision"], "block")
         self.assertEqual(stored_key, "decision-key")
         self.assertEqual(second["systemMessage"].splitlines()[-1], f"1 item owed → {PRODUCT} score pending")
+        self.assertEqual(commands[0][commands[0].index("--session") + 1], "session")
+        self.assertEqual(json.loads(commands[0][commands[0].index("--notes") + 1]), [])
+        self.assertNotIn("--block-key", commands[0])
+        self.assertEqual(commands[1][commands[1].index("--block-key") + 1], "decision-key")
+
+    def test_marker_write_failure_allows_stop_and_reports_it(self):
+        report = {
+            "lines": ["Nothing waiting on you", f"run 12 unscored → {PRODUCT} score 12"],
+            "block": True,
+            "reason": f"Nothing waiting on you\nrun 12 unscored → {PRODUCT} score 12",
+            "blockKey": "decision-key",
+        }
+        stderr = io.StringIO()
+        with mock.patch.object(hook, "actionable_notes", return_value=[]), mock.patch.object(
+            hook.subprocess, "run", return_value=Result(report)
+        ), mock.patch.object(hook, "write_marker", return_value=False), contextlib.redirect_stderr(
+            stderr
+        ):
+            result = hook.summary(
+                {"session_id": "session", "cwd": "/tmp"},
+                ["session"],
+                time.monotonic() + 5,
+            )
+        self.assertNotIn("decision", result)
+        self.assertIn("run 12 unscored", result["systemMessage"])
+        self.assertIn("block-once marker could not be recorded", stderr.getvalue())
 
     def test_cleanup_still_closes_each_terminal_worktree_root(self):
         connection = mock.Mock()

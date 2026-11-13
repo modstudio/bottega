@@ -15,8 +15,6 @@ type StopSummaryCursor = {
 }
 
 export type StopSummaryOwedItem = {
-  kind: 'run' | 'worktree' | 'landing-tree' | 'note' | 'review'
-  identity: string
   label: string
   command: string
   owedAt: string
