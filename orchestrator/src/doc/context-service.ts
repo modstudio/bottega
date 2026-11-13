@@ -27,7 +27,6 @@ import {
   type ContextTaskIdentity,
   ContextWriteRefusalError,
   holderOwnershipRefusal,
-  missingContextKinds,
 } from './doc-context-write.ts'
 import { contextTaskOwner } from './doc-hosted-client.ts'
 import { taskContextHolder } from './doc-subjects.ts'
@@ -59,7 +58,6 @@ export async function getContext(selection: ContextHolderSelection) {
     task: task?.key ?? null,
     profile,
     items,
-    missingRequired: missingContextKinds(items, profile),
   }
 }
 

@@ -1,23 +1,16 @@
 // concern: context-service
 /** Applies a verb's context effect without coupling its primary mutation to context storage. */
-import {
-  type ContextMomentEffect,
-  type ContextMomentOutput,
-  contextDropCommand,
-  contextSetCommand,
-} from './context-moment.ts'
-import { contextItemRevision, dropContextItem, setContextItem } from './context-service.ts'
+import { type ContextMomentEffect, type ContextMomentOutput, contextSetCommand } from './context-moment.ts'
+import { contextItemRevision, setContextItem } from './context-service.ts'
 import { ContextWriteRefusalError } from './doc-context-write.ts'
 
 export type ContextMomentPorts = {
   set: typeof setContextItem
-  drop: typeof dropContextItem
   revision: typeof contextItemRevision
 }
 
 const productionPorts: ContextMomentPorts = {
   set: setContextItem,
-  drop: dropContextItem,
   revision: contextItemRevision,
 }
 const detail = (error: unknown) => (error instanceof Error ? error.message : String(error))
@@ -34,34 +27,16 @@ export async function applyContextMomentEffect(
 ): Promise<void> {
   const task = taskKey?.trim()
   if (!task) return
-  let writesSucceeded = true
-  const kept = effect.drops.length ? `; ${effect.drops.map((item) => item.id).join(', ')} kept` : ''
   for (const item of effect.writes) {
     try {
       const expectedRevision = await ports.revision({ task, id: item.id })
       await ports.set({ task, ...item, expectedRevision })
       writeLine(`context: wrote ${item.kind} ${item.id} on ${task}`, json, output)
     } catch (error) {
-      writesSucceeded = false
       const retry =
         error instanceof ContextWriteRefusalError ? '' : `; retry: ${contextSetCommand(task, item)}`
       writeLine(
-        `context: could not write ${item.kind} on ${task}: ${detail(error)}${retry}${kept}`,
-        json,
-        output,
-      )
-    }
-  }
-  if (effect.writes.length && !writesSucceeded) return
-  for (const item of effect.drops) {
-    try {
-      const expectedRevision = await ports.revision({ task, id: item.id })
-      const result = await ports.drop({ task, id: item.id, expectedRevision })
-      if (!result.removed) continue
-      writeLine(`context: dropped ${item.kind} ${item.id} on ${task}`, json, output)
-    } catch (error) {
-      writeLine(
-        `context: could not drop ${item.kind} ${item.id} on ${task}: ${detail(error)}; retry: ${contextDropCommand(task, item.id)}`,
+        `context: could not write ${item.kind} on ${task}: ${detail(error)}${retry}`,
         json,
         output,
       )

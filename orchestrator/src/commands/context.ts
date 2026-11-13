@@ -92,7 +92,6 @@ export function register(program: Command): void {
       const result = await getContext(options)
       if (options.json) return log(JSON.stringify(result))
       for (const item of result.items) log(`${item.id}  ${item.kind}  ${item.revision}`)
-      for (const kind of result.missingRequired) log(`warning: missing required kind ${kind}`)
     })
   context
     .command('brief')

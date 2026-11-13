@@ -2,17 +2,6 @@ import { describe, expect, test } from 'bun:test'
 import { contextMomentEffect } from './context-moment.ts'
 
 describe('context moment effect', () => {
-  test('workflow await stores no context item', () => {
-    expect(
-      contextMomentEffect({
-        moment: 'workflow-await',
-        taskKey: 'DEV-2267',
-        questionId: 12,
-        text: 'Which shape?',
-      }),
-    ).toEqual({ writes: [], drops: [] })
-  })
-
   test.each(['workflow-rule', 'question-answer'] as const)(
     '%s distinguishes operator rulings from positions',
     (moment) => {
@@ -28,7 +17,6 @@ describe('context moment effect', () => {
         writes: [
           { kind: 'ruling', id: 'ruling-q12', source: 'q12', body: 'Use the approved shape.' },
         ],
-        drops: [],
       })
       expect(effect(false).writes[0]).toMatchObject({ kind: 'position', id: 'position-q12' })
     },
@@ -41,12 +29,6 @@ describe('context moment effect', () => {
         taskKey: 'DEV-2267',
         questionId: 13,
         text: 'The specification settles this.',
-        cursor: {
-          workflow: 'change',
-          number: 4,
-          stepSlug: 'review',
-          stepTitle: 'Review the change',
-        },
       }),
     ).toEqual({
       writes: [
@@ -57,7 +39,6 @@ describe('context moment effect', () => {
           body: 'The specification settles this.',
         },
       ],
-      drops: [],
     })
   })
 
@@ -66,14 +47,13 @@ describe('context moment effect', () => {
       contextMomentEffect({
         moment: 'workflow-next',
         taskKey: 'DEV-2267',
-        cursor: { workflow: 'change', number: 4, finished: true },
       }),
-    ).toEqual({ writes: [], drops: [] })
+    ).toEqual({ writes: [] })
   })
 
   test('a moment without a task key has no effect', () => {
     expect(
-      contextMomentEffect({ moment: 'workflow-await', questionId: 12, text: 'Which shape?' }),
-    ).toEqual({ writes: [], drops: [] })
+      contextMomentEffect({ moment: 'workflow-rule', questionId: 12, text: 'Which shape?' }),
+    ).toEqual({ writes: [] })
   })
 })

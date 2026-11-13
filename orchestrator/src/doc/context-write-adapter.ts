@@ -23,12 +23,11 @@ import {
   type ContextItem,
   type ContextProfile,
   ContextWriteRefusalError,
-  contextDropRefusal,
   contextWriteRefusal,
   holderOwnershipRefusal,
 } from './doc-context-write.ts'
 import { isScratchLocation } from './doc-resume-write.ts'
-import { isValidContextHolderSubject, taskContextHolder } from './doc-subjects.ts'
+import { taskContextHolder } from './doc-subjects.ts'
 
 export type ContextTask = HubTaskReference
 class ContextTaskPrefixError extends Error {
@@ -274,28 +273,17 @@ export async function assertContextSetAllowed(input: {
   if (refusal) throw new ContextWriteRefusalError(refusal)
 }
 
-/** A context item leaves only through its owner and never as the last required item. */
+/** A context item leaves only through its owner. */
 export async function assertContextDropAllowed({
   item,
   database = db(),
-  ports = defaultContextFactsPorts(),
-  task,
 }: {
   item: ContextItem
   database?: Database
   ports?: ContextFactsPorts
   task?: ContextTask
 }): Promise<void> {
-  const holder = item.holder
-  const refusal =
-    holderOwnershipRefusal(holder, sessionId(database), item.id) ??
-    (isValidContextHolderSubject(holder)
-      ? contextDropRefusal(
-          item,
-          storedItems(holder, database),
-          await contextProfileForHolder(holder, ports, task),
-        )
-      : null)
+  const refusal = holderOwnershipRefusal(item.holder, sessionId(database), item.id)
   if (refusal) throw new ContextWriteRefusalError(refusal)
 }
 

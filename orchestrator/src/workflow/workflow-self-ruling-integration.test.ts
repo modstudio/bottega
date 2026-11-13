@@ -275,13 +275,7 @@ test('a whitespace-padded self-ruling carries its question into the context mome
   expect(
     workflowNextContextMoment(
       {
-        cursorRecordId: result.cursorRecordId,
         workflowKey: result.workflowKey,
-        workflow: 'flow',
-        cursor: cursor.number,
-        finished: result.finished,
-        stepSlug: result.stepSlug,
-        stepTitle: result.stepTitle,
       },
       result.selfRulingQuestionNumber,
       'Proceed.',

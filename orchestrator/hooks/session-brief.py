@@ -197,8 +197,7 @@ def _context_brief_slice(completed, session):
 
 def _context_protocol():
     return (
-        "Context writes: ruling after question answer/workflow rule; open-question at workflow await; "
-        "revise next-action after workflow next, run start, pr merge, and task close.\n"
+        "Context writes: a ruling or position after a question is answered or a workflow step is ruled; a fact or pointer when learned.\n"
         "Place each item once on the narrowest task or epic it binds; session context is only for "
         "work that binds no single task or epic. Full protocol: bottega agent context --help."
     )

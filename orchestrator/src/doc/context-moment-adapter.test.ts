@@ -5,20 +5,14 @@ import { ContextWriteRefusalError } from './doc-context-write.ts'
 
 const answered: ContextMomentEffect = {
   writes: [{ kind: 'position', id: 'position-q12', source: 'q12', body: 'Use this.' }],
-  drops: [],
 }
 
 test('a failed answer write reports the failure', async () => {
   const lines: string[] = []
-  let dropped = false
   const ports = {
     revision: async () => undefined,
     set: async () => {
       throw new Error('store unavailable')
-    },
-    drop: async () => {
-      dropped = true
-      throw new Error('must not run')
     },
   } as ContextMomentPorts
 
@@ -30,7 +24,6 @@ test('a failed answer write reports the failure', async () => {
     ports,
   )
 
-  expect(dropped).toBeFalse()
   expect(lines).toHaveLength(1)
   expect(lines[0]).toContain('store unavailable')
 })
@@ -41,9 +34,6 @@ test('a context policy refusal has no retry command', async () => {
     revision: async () => undefined,
     set: async () => {
       throw new ContextWriteRefusalError('context item position-q12 refused: position limit')
-    },
-    drop: async () => {
-      throw new Error('must not run')
     },
   } as ContextMomentPorts
 

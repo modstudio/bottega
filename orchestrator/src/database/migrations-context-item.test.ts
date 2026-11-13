@@ -10,7 +10,7 @@ import { applyMigrations } from './migrations.ts'
 import { migrationBoundaryTestDatabase } from './test-database.fixture.ts'
 
 const MIGRATION = '0222_context_item'
-const retiredKinds = [['next', 'action'].join('-'), ['open', 'question'].join('-')]
+const retiredKinds = ['next-action', 'open-question']
 const kinds = [...CONTEXT_ITEM_KINDS, ...retiredKinds]
 const FOUR_KINDS_MIGRATION = '0224_context_item_four_kinds'
 
@@ -159,7 +159,7 @@ test('four-kind migration removes retired rows and tightens the CHECK', () => {
            (record_id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
            VALUES (?,'task',?,'retired',?,'body','test','2026-11-13','2026-11-13')`,
         )
-        .run(newRecordId(), holder, ['next', 'action'].join('-')),
+        .run(newRecordId(), holder, 'next-action'),
     ).toThrow()
   } finally {
     database.close()

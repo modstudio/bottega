@@ -4,9 +4,7 @@ import {
   CONTEXT_ITEM_MAX_CHARS,
   type ContextItem,
   type ContextWriteFacts,
-  contextDropRefusal,
   contextWriteRefusal,
-  missingContextKinds,
 } from './doc-context-write.ts'
 
 const item = (overrides: Partial<ContextItem> = {}): ContextItem => ({
@@ -25,7 +23,6 @@ const facts = (overrides: Partial<ContextWriteFacts> = {}): ContextWriteFacts =>
   claimedTask: null,
   ...overrides,
 })
-
 describe('context write refusal', () => {
   test('allows the complete kind table on task, epic, and session profiles', () => {
     for (const profile of ['task', 'epic', 'session'] as const) {
@@ -142,12 +139,4 @@ describe('context write refusal', () => {
       ),
     ).toContain('task:DEV-1/long')
   })
-})
-
-test('context profiles have no required item kinds', () => {
-  expect(missingContextKinds([], 'task')).toEqual([])
-  expect(missingContextKinds([], 'epic')).toEqual([])
-  expect(missingContextKinds([], 'session')).toEqual([])
-  expect(contextWriteRefusal(item(), facts())).toBeNull()
-  expect(contextDropRefusal(item(), [item()], 'task')).toBeNull()
 })

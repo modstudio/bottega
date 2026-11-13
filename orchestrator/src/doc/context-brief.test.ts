@@ -7,7 +7,6 @@ import { upsertProject } from '../project/projects.ts'
 import {
   type ContextBrief,
   holderSequence,
-  openTaskQuestions,
   renderContextBrief,
   storedBriefHolders,
   workingKeysForBrief,
@@ -84,8 +83,21 @@ test('renders the compact context layout line by line and keeps only item first 
 
 test('renders one open question for its task holder', () => {
   const database = new Database(':memory:')
-  database.run(
-    `CREATE TABLE question (
+  database.exec(
+    `CREATE TABLE context_item (
+      record_id TEXT NOT NULL,
+      holder_kind TEXT NOT NULL,
+      holder_id TEXT NOT NULL,
+      slug TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      body TEXT NOT NULL,
+      source TEXT NOT NULL,
+      question_number INTEGER,
+      target TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE question (
       number INTEGER NOT NULL,
       workflow_task_record_id TEXT,
       question TEXT NOT NULL,
@@ -102,18 +114,21 @@ test('renders one open question for its task holder', () => {
               (5279,'task-record','Closed without an answer.',NULL,'2026-11-13')`,
     )
     .run()
-  const brief: ContextBrief = {
-    session: '65fbe830',
-    fullCommand: `${PLATFORM_SLUG} agent context show --task DEV-1844/2`,
-    holders: [
+  const holders = storedBriefHolders(
+    [
       {
         key: 'DEV-1844/2',
         title: 'Build the brief',
         kind: 'task',
-        items: [],
-        openQuestions: openTaskQuestions('task-record', database),
+        recordId: 'task-record',
       },
     ],
+    database,
+  )
+  const brief: ContextBrief = {
+    session: '65fbe830',
+    fullCommand: `${PLATFORM_SLUG} agent context show --task DEV-1844/2`,
+    holders,
     runs: [],
     cursors: [],
     claims: [],

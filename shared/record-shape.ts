@@ -7,7 +7,6 @@ const RECORD_LIMITS = {
   RULING_MAX_CHARS: 1500,
   SELF_RULING_MAX_CHARS: 800,
   BASIS_MAX_CHARS: 800,
-  NEXT_ACTION_MAX_CHARS: 400,
 } as const
 
 type RecordLimitName = keyof typeof RECORD_LIMITS
@@ -37,11 +36,6 @@ export const RECORD_SHAPES = {
     maxChars: RECORD_LIMITS.BASIS_MAX_CHARS,
     constant: 'BASIS_MAX_CHARS' as RecordLimitName,
     lineRule: 'paragraph',
-  },
-  'next action': {
-    maxChars: RECORD_LIMITS.NEXT_ACTION_MAX_CHARS,
-    constant: 'NEXT_ACTION_MAX_CHARS' as RecordLimitName,
-    lineRule: 'line',
   },
 } as const
 

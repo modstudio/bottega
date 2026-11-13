@@ -49,7 +49,6 @@ export type ContextWriteFacts = {
   pointerRefusal: string | null
   claimedTask: string | null
 }
-
 /** A policy refusal is distinct from a storage failure that can be retried unchanged. */
 export class ContextWriteRefusalError extends Error {
   constructor(message: string) {
@@ -59,13 +58,10 @@ export class ContextWriteRefusalError extends Error {
 }
 
 const PROFILE = {
-  epic: { allowed: CONTEXT_ITEM_KINDS, required: [] },
-  task: { allowed: CONTEXT_ITEM_KINDS, required: [] },
-  session: { allowed: CONTEXT_ITEM_KINDS, required: [] },
-} as const satisfies Record<
-  ContextProfile,
-  { allowed: readonly ContextItemKind[]; required: readonly ContextItemKind[] }
->
+  epic: CONTEXT_ITEM_KINDS,
+  task: CONTEXT_ITEM_KINDS,
+  session: CONTEXT_ITEM_KINDS,
+} as const satisfies Record<ContextProfile, readonly ContextItemKind[]>
 
 function normalizeContextBody(body: string): string {
   return body.toLowerCase().replace(/\s+/g, ' ').trim()
@@ -73,8 +69,7 @@ function normalizeContextBody(body: string): string {
 
 export function contextWriteRefusal(item: ContextItem, facts: ContextWriteFacts): string | null {
   const address = `context item ${item.id}`
-  const profile = PROFILE[facts.profile]
-  if (!(profile.allowed as readonly ContextItemKind[]).includes(item.kind)) {
+  if (!(PROFILE[facts.profile] as readonly ContextItemKind[]).includes(item.kind)) {
     return `${address} refused: ${facts.profile} profile does not allow kind ${item.kind}`
   }
   const shape = contextItemShapeRefusal(item)
@@ -171,28 +166,4 @@ export function holderOwnershipRefusal(
   return owner === caller
     ? null
     : `context item ${id} refused: only owning session ${owner} may write ${holder}`
-}
-
-export function contextDropRefusal(
-  item: ContextItem,
-  siblings: ContextItem[],
-  profile: ContextProfile,
-) {
-  const required = PROFILE[profile].required as readonly ContextItemKind[]
-  if (
-    required.includes(item.kind) &&
-    siblings.filter((row) => row.kind === item.kind).length === 1
-  ) {
-    return `context item ${item.id} refused: cannot remove the last required ${item.kind} item`
-  }
-  return null
-}
-
-export function missingContextKinds(
-  items: ContextItem[],
-  profile: ContextProfile,
-): ContextItemKind[] {
-  return PROFILE[profile].required.filter(
-    (kind) => !items.some((item) => item.kind === kind),
-  ) as ContextItemKind[]
 }

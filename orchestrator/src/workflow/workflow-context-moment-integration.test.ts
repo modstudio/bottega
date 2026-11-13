@@ -7,76 +7,12 @@ import {
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
-import { cliWorkflowCursorContext } from './workflow-cursor-selection.ts'
 import {
   workflowCommandPresentation as presentation,
   publishCursorWorkflowFixture as publishCursorWorkflow,
   registerCurrentWorkflowProject as registerCurrentProject,
-  registerFixtureWorkflowProject as registerFixtureProject,
   runWorkflowCommand as workflowCommand,
 } from './workflow-store.fixture.ts'
-
-test('next without a cursor flag writes the selected cursor number', async () => {
-  const slug = 'cursor-context-number'
-  const project = 'cursor-context-number-project'
-  const key = 'DEV-2267-NUMBER'
-  const catalogue = productionStepCatalogue().definition.steps
-  const steps = [
-    catalogue.find(({ slug }) => slug === 'blast-radius')!.slug,
-    catalogue.find(({ slug }) => slug === 'fix-defect-triage')!.slug,
-  ]
-  registerFixtureProject(project)
-  publishCursorWorkflow(slug, [{ slug: 'report', title: 'Report', default: true, steps }])
-  const composed = await composeWorkflowWithCursor(
-    slug,
-    project,
-    'report',
-    { key },
-    cliWorkflowCursorContext(),
-    undefined,
-    {},
-    {},
-  )
-  const cursor = composed.cursor!.id
-  db().query("UPDATE workflow_cursor SET enforcement='note-only' WHERE number=?").run(cursor)
-  const items = new Map<string, { kind: string; body: string }>()
-  const ports = {
-    revision: async () => undefined,
-    set: async (input) => {
-      items.set(input.id, { kind: input.kind, body: input.body })
-      return {
-        ...input,
-        holder: `task:${input.task}`,
-        revision: 'revision',
-        task: input.task ?? null,
-      }
-    },
-    drop: async (input) => ({
-      holder: `task:${input.task}`,
-      task: input.task ?? null,
-      id: input.id,
-      removed: false,
-    }),
-  } as ContextMomentPorts
-
-  await workflowCommand(
-    [
-      'workflow',
-      'next',
-      slug,
-      '--project',
-      project,
-      '--note',
-      'advance by identity',
-      '--arg',
-      `key=${key}`,
-    ],
-    presentation([]),
-    { contextMomentPorts: ports },
-  )
-
-  expect(items).toEqual(new Map())
-})
 
 test('rule and self-ruling write durable decisions through command seams', async () => {
   const slug = 'cursor-context-moments'
@@ -129,11 +65,6 @@ test('rule and self-ruling write durable decisions through command seams', async
         task: input.task ?? null,
       }
     },
-    drop: async (input) => {
-      const removed = items.delete(input.id)
-      if (!removed) throw new Error(`no context item task:${input.task}/${input.id}`)
-      return { holder: `task:${input.task}`, task: input.task ?? null, id: input.id, removed }
-    },
   } as ContextMomentPorts
   const lines: string[] = []
   const command = (verb: string, ...tail: string[]) =>
@@ -149,8 +80,6 @@ test('rule and self-ruling write durable decisions through command seams', async
       'SELECT number FROM question WHERE workflow_cursor_record_id=(SELECT record_id FROM workflow_cursor WHERE number=?)',
     )
     .get(cursor)!.number
-  expect(items).toEqual(new Map())
-
   await command('rule', '--ruling', 'Proceed.', '--from-operator')
   expect(items.get(`ruling-q${question}`)).toEqual({ kind: 'ruling', body: 'Proceed.' })
 

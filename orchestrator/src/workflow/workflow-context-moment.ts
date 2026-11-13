@@ -4,22 +4,17 @@ import { type ContextMomentEffect, contextMomentEffect } from '../doc/context-mo
 
 export type WorkflowContextMoment = { taskKey: string | null; effect: ContextMomentEffect }
 export type WorkflowNextMomentInput = {
-  cursorRecordId: string
   workflowKey: string | null
-  workflow: string
-  cursor: number
-  finished: boolean
-  stepSlug?: string
-  stepTitle?: string
 }
-export type WorkflowNextCommandMoment = Omit<WorkflowNextMomentInput, 'workflowKey'> & {
+export type WorkflowNextCommandMoment = {
+  cursorRecordId: string
   taskKey: string | null
   selfRulingQuestionNumber?: number
   selfRuling?: string
 }
 
 export function workflowQuestionContextMoment(input: {
-  moment: 'workflow-await' | 'workflow-rule'
+  moment: 'workflow-rule'
   taskKey: string | null | undefined
   questionId: number
   text: string
@@ -43,13 +38,6 @@ export function workflowNextContextMoment(
       taskKey,
       questionId: selfRulingQuestionNumber,
       text: selfRuling,
-      cursor: {
-        workflow: input.workflow,
-        number: input.cursor,
-        stepSlug: input.stepSlug,
-        stepTitle: input.stepTitle,
-        finished: input.finished,
-      },
     }),
   }
 }
