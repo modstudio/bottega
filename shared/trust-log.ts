@@ -211,15 +211,11 @@ function verifyLaterEntry(
   if (!signerAllowed(entry, keys, recovery)) verificationFailure(index, 'the signer authority rule')
   if (!validSignature(entry)) verificationFailure(index, 'the signature rule')
   if (entry.body.kind === 'add') {
-    if (keys.has(entry.body.keyId))
-      verificationFailure(index, 'add keyId must not already be trusted')
-    if (
-      [...keys.values()].some((key) =>
-        bytesEqual(key.signingPublicKey, entry.body.signingPublicKey),
-      )
-    )
+    const added = entry.body
+    if (keys.has(added.keyId)) verificationFailure(index, 'add keyId must not already be trusted')
+    if ([...keys.values()].some((key) => bytesEqual(key.signingPublicKey, added.signingPublicKey)))
       verificationFailure(index, 'trusted machines must not share a signing key')
-    keys.set(entry.body.keyId, entry.body)
+    keys.set(added.keyId, added)
     return
   }
   if (bytesEqual(entry.signer, recovery))
@@ -250,7 +246,7 @@ export function verifyTrustLog(
       'trust log fork or rollback: the log does not extend the head this machine last accepted; stop, do not trust this record, and report it',
     )
   const keys = new Map<string, TrustLogKey>()
-  let recovery = new Uint8Array()
+  let recovery: Uint8Array = new Uint8Array()
   for (const [index, entry] of entries.entries()) {
     if (entry.space !== options.spaceId) verificationFailure(index, 'the space rule')
     if (index === 0) recovery = verifyGenesis(entry, index, keys)
