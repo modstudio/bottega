@@ -125,8 +125,7 @@ export async function pruneRecordRetention(
         return Number(result.deleted)
       },
       pruneMachineJoin: () => pruneFunction(connection, 'machine_join_prune'),
-      pruneClaimChallenge: () =>
-        pruneFunction(connection, 'machine_key_claim_challenge_prune'),
+      pruneClaimChallenge: () => pruneFunction(connection, 'machine_key_claim_challenge_prune'),
     })
   } finally {
     try {

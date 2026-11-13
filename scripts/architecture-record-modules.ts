@@ -34,14 +34,6 @@ export const recordModules: RecordModule[] = [
     './record-board-presence.ts',
     './record-pool.ts',
   ]),
-  module('orchestrator/src/record/record-machine-join-policy.ts', []),
-  module('orchestrator/src/record/record-machine-join.ts', [
-    'bun',
-    '../../../shared/record/schema.ts',
-    './record-config.ts',
-    './record-config-error.ts',
-    './record-machine-join-policy.ts',
-  ]),
   module('orchestrator/src/record/record-board-presence.ts', [
     'bun',
     '../../../shared/record-id.ts',

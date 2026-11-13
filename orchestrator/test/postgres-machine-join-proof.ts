@@ -103,11 +103,12 @@ export function registerMachineJoinProof(input: ProofInput): void {
         VALUES ('${newRecordId()}','${otherSpace}','${input.userId()}','owner','write',true,now());
       `)
       expect(
-        (
-          await post(exchange.nameplate, SIDE_A, 'other-space', 'AQ', input.token(), otherSpace)
-        ).status,
+        (await post(exchange.nameplate, SIDE_A, 'other-space', 'AQ', input.token(), otherSpace))
+          .status,
       ).toBe(404)
-      input.succeeds(`DELETE FROM membership WHERE space_id='${otherSpace}'; DELETE FROM space WHERE id='${otherSpace}';`)
+      input.succeeds(
+        `DELETE FROM membership WHERE space_id='${otherSpace}'; DELETE FROM space WHERE id='${otherSpace}';`,
+      )
 
       const allocations = Number(
         input.succeeds(
@@ -130,9 +131,7 @@ export function registerMachineJoinProof(input: ProofInput): void {
           INSERT INTO machine_join_nameplate (id,space_id,nameplate,allocated_by,created_at,expires_at)
           VALUES ('${newRecordId()}','${spaceId}','${nameplate}','${input.userId()}',now(),now() + interval '10 minutes');
         `)
-        expect(
-          (await post(nameplate, SIDE_B, 'share', 'AQ', input.otherToken())).status,
-        ).toBe(200)
+        expect((await post(nameplate, SIDE_B, 'share', 'AQ', input.otherToken())).status).toBe(200)
         expect((await fail(nameplate, SIDE_A)).status).toBe(200)
       }
       expect(

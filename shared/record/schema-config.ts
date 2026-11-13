@@ -370,7 +370,10 @@ export const machineJoinNameplate = pgTable.withRLS(
     )
     return [
       unique('machine_join_nameplate_space_nameplate_unique').on(table.spaceId, table.nameplate),
-      check('machine_join_nameplate_nameplate_check', sql`${table.nameplate} ~ '^[1-9][0-9]{0,5}$'`),
+      check(
+        'machine_join_nameplate_nameplate_check',
+        sql`${table.nameplate} ~ '^[1-9][0-9]{0,5}$'`,
+      ),
       selectPolicy!,
       insertPolicy!,
       updatePolicy!,
@@ -414,10 +417,7 @@ export const machineJoinMessage = pgTable.withRLS(
       ),
       check('machine_join_message_side_check', sql`${table.side} ~ '^[0-9a-f]{32}$'`),
       check('machine_join_message_phase_check', sql`${table.phase} ~ '^[a-z0-9-]{1,32}$'`),
-      check(
-        'machine_join_message_body_check',
-        sql`octet_length(${table.body}) BETWEEN 1 AND 4096`,
-      ),
+      check('machine_join_message_body_check', sql`octet_length(${table.body}) BETWEEN 1 AND 4096`),
       selectPolicy!,
       insertPolicy!,
       pgPolicy('machine_join_message_owner_select', {
@@ -459,5 +459,10 @@ export const machineKeyClaimChallenge = pgTable.withRLS(
       sql`octet_length(${table.nonceHash}) = 32`,
     ),
     ...tenantPolicies('machine_key_claim_challenge', table.spaceId),
+    pgPolicy('machine_key_claim_challenge_owner_delete', {
+      for: 'delete',
+      to: RECORD_OWNER_ROLE,
+      using: sql`true`,
+    }),
   ],
 )

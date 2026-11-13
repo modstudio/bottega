@@ -1,5 +1,5 @@
-ALTER TABLE public.machine_join_nameplate FORCE ROW LEVEL SECURITY;
-ALTER TABLE public.machine_join_message FORCE ROW LEVEL SECURITY;
+ALTER TABLE "machine_join_nameplate" FORCE ROW LEVEL SECURITY;
+ALTER TABLE "machine_join_message" FORCE ROW LEVEL SECURITY;
 --> statement-breakpoint
 CREATE FUNCTION public.machine_join_prune() RETURNS bigint
 LANGUAGE plpgsql

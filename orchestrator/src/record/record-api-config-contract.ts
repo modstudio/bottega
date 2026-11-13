@@ -11,7 +11,6 @@ import type {
   DataKey,
 } from './record-config.ts'
 import type { MachineKey } from './record-machine-key-registration.ts'
-import type { MachineJoinMailbox } from './record-machine-join.ts'
 
 type Tenant = Omit<ConfigTenant, 'spaceIds'> & { spaceIds: string[] }
 export type RecordConfigRouteDeps = {
@@ -97,10 +96,9 @@ export type RecordConfigRouteDeps = {
   postMachineJoinMessage(
     input: Tenant & { nameplate: string; side: string; phase: string; body: Uint8Array },
   ): Promise<void>
-  readMachineJoinMessages(
-    input: Tenant & { nameplate: string; side: string },
-  ): Promise<MachineJoinMailbox>
-  failMachineJoinNameplate(
-    input: Tenant & { nameplate: string; side: string },
-  ): Promise<void>
+  readMachineJoinMessages(input: Tenant & { nameplate: string; side: string }): Promise<{
+    expiresAt: string
+    messages: { side: string; phase: string; body: Uint8Array }[]
+  }>
+  failMachineJoinNameplate(input: Tenant & { nameplate: string; side: string }): Promise<void>
 }

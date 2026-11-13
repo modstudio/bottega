@@ -19,7 +19,7 @@ import {
 } from './record-machine-join-policy.ts'
 
 type NameplateRow = Record<string, unknown>
-export type MachineJoinMessage = { side: string; phase: string; body: Uint8Array }
+type MachineJoinMessage = { side: string; phase: string; body: Uint8Array }
 export type MachineJoinMailbox = { expiresAt: string; messages: MachineJoinMessage[] }
 
 const bytes = (value: unknown) => new Uint8Array(value as ArrayBufferLike)
@@ -27,7 +27,10 @@ const iso = (value: unknown) => new Date(value as string | number | Date).toISOS
 const restartRemedy = 'both machines must start again with a new pairing code'
 
 function missingNameplate(): never {
-  throw new ConfigServiceError('machine join nameplate was not found in this space; request a new pairing code, then retry', 404)
+  throw new ConfigServiceError(
+    'machine join nameplate was not found in this space; request a new pairing code, then retry',
+    404,
+  )
 }
 
 function requireActive(row: NameplateRow, now: number): void {
@@ -50,7 +53,7 @@ async function lockNameplate(
   `
   const found = rows[0] as NameplateRow | undefined
   if (!found) missingNameplate()
-  await tx`SELECT pg_advisory_xact_lock(hashtextextended(${'machine-join:' + String(found.id)}, 0))`
+  await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`machine-join:${String(found.id)}`}, 0))`
   rows = await tx`
     SELECT id, expires_at, failed_at FROM machine_join_nameplate
     WHERE space_id=${input.spaceId}::uuid AND nameplate=${input.nameplate}
@@ -58,11 +61,7 @@ async function lockNameplate(
   return rows[0] as NameplateRow
 }
 
-async function failureCount(
-  tx: SQL,
-  userId: string,
-  cutoff: Date,
-): Promise<number> {
+async function failureCount(tx: SQL, userId: string, cutoff: Date): Promise<number> {
   const rows = await tx`
     SELECT count(DISTINCT n.id) AS count
     FROM machine_join_nameplate n
@@ -87,22 +86,34 @@ export async function allocateMachineJoinNameplate(
   const cutoff = new Date(now - MACHINE_JOIN_RATE_WINDOW_MS)
   try {
     return await tenant(input, async (tx) => {
-      await tx`SELECT pg_advisory_xact_lock(hashtextextended(${'machine-join-space:' + input.spaceId}, 0))`
+      await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`machine-join-space:${input.spaceId}`}, 0))`
       const allocated = await tx`
         SELECT count(*) AS count FROM machine_join_nameplate
         WHERE allocated_by=${input.userId}::uuid AND created_at >= ${cutoff}
       `
-      if (machineJoinRateLimited(Number(allocated[0]?.count ?? 0), MACHINE_JOIN_ALLOCATIONS_PER_WINDOW))
+      if (
+        machineJoinRateLimited(
+          Number(allocated[0]?.count ?? 0),
+          MACHINE_JOIN_ALLOCATIONS_PER_WINDOW,
+        )
+      )
         throw new ConfigServiceError(
           'machine join allocation limit reached; wait for the one-hour rate window to pass, then retry',
           429,
         )
-      if (machineJoinRateLimited(await failureCount(tx, input.userId, cutoff), MACHINE_JOIN_FAILURES_PER_WINDOW))
+      if (
+        machineJoinRateLimited(
+          await failureCount(tx, input.userId, cutoff),
+          MACHINE_JOIN_FAILURES_PER_WINDOW,
+        )
+      )
         refuseFailureRate()
       const rows = await tx`
         SELECT nameplate FROM machine_join_nameplate WHERE space_id=${input.spaceId}::uuid
       `
-      const used = new Set(rows.map((row: Record<string, unknown>) => Number(row.nameplate)))
+      const used = new Set<number>(
+        rows.map((row: Record<string, unknown>) => Number(row.nameplate)),
+      )
       const value = lowestFreeMachineJoinNameplate(used)
       if (value === null)
         throw new ConfigServiceError(
@@ -138,13 +149,23 @@ export async function postMachineJoinMessage(
     await tenant(input, async (tx) => {
       const nameplate = await lockNameplate(tx, input)
       requireActive(nameplate, now)
-      if (machineJoinRateLimited(await failureCount(tx, input.userId, cutoff), MACHINE_JOIN_FAILURES_PER_WINDOW))
+      if (
+        machineJoinRateLimited(
+          await failureCount(tx, input.userId, cutoff),
+          MACHINE_JOIN_FAILURES_PER_WINDOW,
+        )
+      )
         refuseFailureRate()
       const rows = await tx`
         SELECT side, phase, body FROM machine_join_message
         WHERE nameplate_id=${String(nameplate.id)}::uuid ORDER BY created_at, id
       `
-      if (machineJoinIsCrowded(rows.map((row: Record<string, unknown>) => String(row.side)), input.side))
+      if (
+        machineJoinIsCrowded(
+          rows.map((row: Record<string, unknown>) => String(row.side)),
+          input.side,
+        )
+      )
         throw new ConfigServiceError(`machine join nameplate is crowded; ${restartRemedy}`, 409)
       const existing = rows.find(
         (row: Record<string, unknown>) => row.side === input.side && row.phase === input.phase,
@@ -165,10 +186,7 @@ export async function postMachineJoinMessage(
     })
   } catch (error) {
     if (isUniqueViolation(error, 'machine_join_message_nameplate_side_phase_unique'))
-      throw new ConfigServiceError(
-        `machine join phase changed concurrently; ${restartRemedy}`,
-        409,
-      )
+      throw new ConfigServiceError(`machine join phase changed concurrently; ${restartRemedy}`, 409)
     throw error
   }
 }
