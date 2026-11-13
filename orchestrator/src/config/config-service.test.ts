@@ -55,8 +55,7 @@ import {
 } from './config-service-trust-log.fixture.ts'
 
 const roots: string[] = []
-let previousConfigHome: string | undefined
-let previousKeystore: string | undefined
+let previousConfigHome: string | undefined, previousKeystore: string | undefined
 beforeEach(() => {
   previousConfigHome = process.env.BOTTEGA_CONFIG_HOME
   previousKeystore = process.env.BOTTEGA_KEYSTORE
@@ -193,8 +192,7 @@ async function rotationFixture(
       revokedAt: null,
     },
   ]
-  const created: string[] = []
-  const retired: string[] = []
+  const [created, retired] = [[], []] as [string[], string[]]
   const trustLogClient = trackedTrustLogClient(trustLog)
   let oldRetiredAt: string | null = null
   const client = {
@@ -308,8 +306,7 @@ test('machine delete refuses an unknown key with every accepted family and the l
 test('routing cost policy defaults to machine.toml and get reports the machine file source', async () => {
   const root = mkdtempSync(join(tmpdir(), 'config-home-'))
   roots.push(root)
-  const config = join(root, 'config')
-  const env = { HOME: root, [CONFIG_HOME_ENV]: config }
+  const env = { HOME: root, [CONFIG_HOME_ENV]: join(root, 'config') }
   const client = {
     listEntries: async () => [{ key: 'routing.cost_policy', scope: 'space' }],
     getEntry: async () => {
@@ -548,8 +545,7 @@ test('machine revoke appends and remembers a verified trust log revocation befor
   await machineRevoke(fixture.otherKeyId, fixture.client)
 
   const appended = fixture.appendedTrustLogEntry()
-  const body = decodeTrustLogEntry(appended!).body
-  expect(body).toEqual({ kind: 'revoke', keyId: fixture.otherKeyId })
+  expect(decodeTrustLogEntry(appended!).body).toEqual({ kind: 'revoke', keyId: fixture.otherKeyId })
   const state = verifyTrustLog([...fixture.trustLog, appended!], { spaceId: fixture.spaceId })
   expect(state.keys.has(fixture.otherKeyId)).toBe(false)
   expect(readRememberedTrustLogHead(fixture.spaceId)).toEqual(trustLogEntryHash(appended!))
