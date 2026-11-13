@@ -84,4 +84,26 @@ describe('Stop summary decision', () => {
     expect(second.block).toBe(false)
     expect(second.lines.at(-1)).toBe(`1 item owed → ${PLATFORM_SLUG} score pending`)
   })
+
+  test('an active landing is motion rather than an owed landing tree', () => {
+    const result = decideStopSummary(facts({ inFlightLandings: 1 }))
+    expect(result.lines).toEqual(['Nothing waiting on you', 'In progress: 1 landing'])
+    expect(result.lines.join('\n')).not.toContain('landing tree')
+  })
+
+  test('item identity and lens-scoring grammar never leak into lines', () => {
+    const identity = '01a1d500-0000-7000-8000-000000000000'
+    const result = decideStopSummary(
+      facts({
+        owedItems: [
+          {
+            ...owed(),
+            identity,
+          },
+        ],
+      }),
+    )
+    expect(result.lines.join('\n')).not.toContain(identity)
+    expect(result.lines.join('\n')).not.toContain('--finding')
+  })
 })
