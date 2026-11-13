@@ -508,7 +508,11 @@ async function persistWorkflowAdvance(
     })
     return
   }
-  const { parts, obligationInserts, obligationUpdates } = advanceRecordRows(row, null, obligationPlan)
+  const { parts, obligationInserts, obligationUpdates } = advanceRecordRows(
+    row,
+    null,
+    obligationPlan,
+  )
   const payload: TaskFlowIntentInput<'advance'> = {
     requestId: taskFlowRequestId('advance', parts),
     stage: {

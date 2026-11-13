@@ -91,9 +91,9 @@ test('session sweep reports a cursor close failure', async () => {
   const database = migratedTestDatabase()
   const now = Date.parse('2026-11-12T12:00:00.000Z')
   const explore = addExplore(database, now)
-  database.query("UPDATE workflow_cursor SET closed='not-json' WHERE record_id=?").run(
-    explore.cursorRecordId,
-  )
+  database
+    .query("UPDATE workflow_cursor SET closed='not-json' WHERE record_id=?")
+    .run(explore.cursorRecordId)
   const lines: string[] = []
   const presentation: CleanupPresentation = {
     log: (...values) => lines.push(values.join(' ')),
@@ -107,4 +107,3 @@ test('session sweep reports a cursor close failure', async () => {
   ).toBe(true)
   expect(lines).toContainEqual(expect.stringContaining('could not expire workflow cursor'))
 })
-
