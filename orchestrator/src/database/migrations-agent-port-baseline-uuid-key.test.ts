@@ -76,6 +76,7 @@ test('K8b-6 keys agents and port baselines by UUID without losing their values',
       max_concurrent: 7,
       api_key_secret: 'kept-secret-ref',
       provider: null,
+      request_settings: null,
       route_metered: 1,
       trains_on_inputs: 1,
     })

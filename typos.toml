@@ -19,6 +19,8 @@ analyse = "analyse"
 # The test-substance check's declared status wording is `runner not recognised`.
 recognised = "recognised"
 unrecognised = "unrecognised"
+# Relace is an OpenRouter provider named in agent request settings.
+relace = "relace"
 
 [default.extend-identifiers]
 # Generated SQL statement hashes are exact exemption keys.

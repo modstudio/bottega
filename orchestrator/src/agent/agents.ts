@@ -9,6 +9,7 @@ import type { ArgvOpts } from '../transport/transport.ts'
 import type { AgentBilling } from '../transport/vendor-usage.ts'
 import type { Caps } from './capabilities.ts'
 import { captureCliVersion, capturedCliVersion } from './cli-version.ts'
+import type { RequestSettings } from './goose-provider.ts'
 
 /**
  * What `exec` means to codex.
@@ -38,6 +39,7 @@ export type Agent = {
   baseUrl?: string | null
   apiKeySecret?: string | null
   provider?: string | null
+  requestSettings?: RequestSettings | null
   enabled?: boolean
   disabledReason?: string | null
   probedAt?: string | null
