@@ -53,9 +53,9 @@ const hostedTaskFlowTextCopySchema = z.object({
 const hostedTaskFlowStageSummarySchema = z.object({
   id: z.string().uuid(),
   flowRecordId: z.string().uuid(),
-  projectId: z.string().uuid().nullable(),
+  projectId: z.string().uuid(),
   projectName: z.string().nullable(),
-  number: z.number().int().positive().nullable(),
+  number: z.number().int().positive(),
   workflow: z.string(),
   mode: z.string(),
   workflowKey: z.string().nullable().optional(),
@@ -119,7 +119,7 @@ export type HostedTaskFlowStageById = z.infer<typeof hostedTaskFlowStageByIdSche
 
 export const hostedTaskFlowTextByIdSchema = z.object({
   text: hostedTaskFlowStepTextSchema,
-  stage: z.object({ id: z.string().uuid(), number: z.number().int().positive().nullable() }),
+  stage: z.object({ id: z.string().uuid(), number: z.number().int().positive() }),
   copy: hostedTaskFlowTextCopySchema.nullable(),
 })
 export type HostedTaskFlowTextById = z.infer<typeof hostedTaskFlowTextByIdSchema>
@@ -128,7 +128,7 @@ export const hostedTaskFlowObligationByIdSchema = z.object({
   obligation: hostedTaskFlowObligationSchema,
   stage: z.object({
     id: z.string().uuid(),
-    number: z.number().int().positive().nullable(),
+    number: z.number().int().positive(),
     state: stageState,
   }),
 })

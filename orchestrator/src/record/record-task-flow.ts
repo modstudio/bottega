@@ -60,9 +60,9 @@ function toHostedStageSummary(row: Record<string, unknown>): HostedStageSummary 
   return {
     id: String(row.stage_id),
     flowRecordId: String(row.stage_flow_record_id),
-    projectId: row.stage_project_id == null ? null : String(row.stage_project_id),
+    projectId: String(row.stage_project_id),
     projectName: row.stage_project_name == null ? null : String(row.stage_project_name),
-    number: row.stage_number == null ? null : Number(row.stage_number),
+    number: Number(row.stage_number),
     workflow: String(row.stage_workflow),
     mode: String(row.stage_mode),
     workflowKey: row.stage_workflow_key == null ? null : String(row.stage_workflow_key),
@@ -373,7 +373,7 @@ export async function readRecordTaskFlowText(
       text: toHostedStepText(row),
       stage: {
         id: String(row.stage_id),
-        number: row.stage_number == null ? null : Number(row.stage_number),
+        number: Number(row.stage_number),
       },
       copy:
         row.copy_id == null
@@ -405,7 +405,7 @@ export async function readRecordTaskFlowObligation(
       obligation: toHostedObligation(row),
       stage: {
         id: String(row.stage_id),
-        number: row.stage_number == null ? null : Number(row.stage_number),
+        number: Number(row.stage_number),
         state: String(row.stage_state) as HostedTaskFlowObligationById['stage']['state'],
       },
     }

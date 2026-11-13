@@ -552,15 +552,16 @@ export function createMemoryRecordApiClient(
         },
         activeSpaceId: fixtureSpace,
         personalSpaceId: fixtureSpace,
-        memberships: input.taskFlowStages
-          ? taskFlowSpaces.map((spaceId, index) => ({
-              space_id: spaceId,
-              name: `Fixture ${index + 1}`,
-              slug: index === 0 ? 'fixture' : `fixture-${index + 1}`,
-              role: 'owner',
-              permission: 'write',
-            }))
-          : [],
+        memberships:
+          input.taskFlowStages || input.taskFlowSyncedRows
+            ? taskFlowSpaces.map((spaceId, index) => ({
+                space_id: spaceId,
+                name: `Fixture ${index + 1}`,
+                slug: index === 0 ? 'fixture' : `fixture-${index + 1}`,
+                role: 'owner',
+                permission: 'write',
+              }))
+            : [],
       }
     },
     async createOrganization(input) {

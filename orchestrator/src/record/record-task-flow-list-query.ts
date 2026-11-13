@@ -14,29 +14,22 @@ function appendCursor(input: TaskFlowStageListQuery, result: TaskFlowStageListSq
   if (!input.cursor) return
   const cursor = input.cursor
   if (cursor.order === 'newest') {
-    if (cursor.number !== null) result.values.push(cursor.number)
-    const numberParameter = cursor.number === null ? null : `$${result.values.length}`
-    result.values.push(cursor.id)
+    result.values.push(cursor.number, cursor.id)
+    const numberParameter = `$${result.values.length - 1}`
     const idParameter = `$${result.values.length}`
     result.clauses.push(
-      cursor.number === null
-        ? `(s.number IS NULL AND s.id<${idParameter}::uuid)`
-        : `(s.number<${numberParameter}::integer OR s.number IS NULL OR
-            (s.number=${numberParameter}::integer AND s.id<${idParameter}::uuid))`,
+      `(s.number<${numberParameter}::integer OR
+        (s.number=${numberParameter}::integer AND s.id<${idParameter}::uuid))`,
     )
     return
   }
   if (cursor.projectName !== null) result.values.push(cursor.projectName)
   const projectParameter = cursor.projectName === null ? null : `$${result.values.length}`
-  if (cursor.number !== null) result.values.push(cursor.number)
-  const numberParameter = cursor.number === null ? null : `$${result.values.length}`
-  result.values.push(cursor.id)
+  result.values.push(cursor.number, cursor.id)
+  const numberParameter = `$${result.values.length - 1}`
   const idParameter = `$${result.values.length}`
-  const afterWithinProject =
-    cursor.number === null
-      ? `(s.number IS NULL AND s.id>${idParameter}::uuid)`
-      : `(s.number>${numberParameter}::integer OR s.number IS NULL OR
-          (s.number=${numberParameter}::integer AND s.id>${idParameter}::uuid))`
+  const afterWithinProject = `(s.number>${numberParameter}::integer OR
+    (s.number=${numberParameter}::integer AND s.id>${idParameter}::uuid))`
   result.clauses.push(
     cursor.projectName === null
       ? `(sp.name IS NULL AND ${afterWithinProject})`
@@ -52,10 +45,7 @@ export function taskFlowStageListSql(
   const result: TaskFlowStageListSql = {
     values: [spaceId],
     clauses: ['s.space_id=$1::uuid'],
-    orderBy:
-      input.order === 'newest'
-        ? 's.number DESC NULLS LAST,s.id DESC'
-        : 'sp.name,s.number NULLS LAST,s.id',
+    orderBy: input.order === 'newest' ? 's.number DESC,s.id DESC' : 'sp.name,s.number,s.id',
   }
   const add = (clause: (parameter: string) => string, value: unknown) => {
     result.values.push(value)
@@ -92,7 +82,7 @@ export function taskFlowStageListNextCursor(
 ): string | null {
   if (!row) return null
   const common = {
-    number: row.stage_number == null ? null : Number(row.stage_number),
+    number: Number(row.stage_number),
     id: String(row.stage_id),
   }
   return encodeTaskFlowStageListCursor(

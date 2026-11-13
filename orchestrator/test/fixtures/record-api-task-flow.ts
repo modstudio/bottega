@@ -1,9 +1,16 @@
 import type { RecordApiClient } from '../../src/record/record-api-client.ts'
 import { recordApiError } from '../../src/record/record-api-client-error.ts'
-import type { HostedTaskFlowStageById } from '../../src/record/record-task-flow-contract.ts'
+import type { RecordPayload } from '../../src/record/record-sync-contract.ts'
+import { taskFlowStageValues, taskFlowValues } from '../../src/record/record-sync-task-flow.ts'
+import {
+  type HostedTaskFlowStageById,
+  hostedTaskFlowStageByIdSchema,
+} from '../../src/record/record-task-flow-contract.ts'
 
 export type MemoryTaskFlowInput = {
   taskFlowStages?: HostedTaskFlowStageById[]
+  /** Outbox payloads seeded through the sync push's own mapping and numbering. */
+  taskFlowSyncedRows?: { flows: RecordPayload[]; stages: RecordPayload[] }
   taskFlowProjectNames?: Record<string, string>
   taskFlowProjectSpaces?: Record<string, string>
   taskFlowComposeFlowRevision?: number
@@ -37,26 +44,74 @@ function matches({ stage, flow }: HostedTaskFlowStageById, selector: Selector): 
   return values.every(Boolean)
 }
 
+const nextStageNumber = (stages: HostedTaskFlowStageById[], projectId: string) =>
+  stages
+    .filter((row) => row.stage.projectId === projectId)
+    .reduce((highest, row) => Math.max(highest, row.stage.number), 0) + 1
+
+/** Seeds stages as the sync push writes them: a new stage needs its project and takes its next number. */
+function seedSyncedStages(
+  stages: HostedTaskFlowStageById[],
+  synced: NonNullable<MemoryTaskFlowInput['taskFlowSyncedRows']>,
+  input: MemoryTaskFlowInput,
+): void {
+  for (const payload of synced.stages) {
+    const values = taskFlowStageValues(payload)
+    const { projectId } = values
+    if (!projectId)
+      throw new Error(
+        `fixture refuses synced stage ${values.id}: projectId is required for a new hosted stage`,
+      )
+    const flowPayload = synced.flows.find((row) => row.id === values.flowRecordId)
+    if (!flowPayload) throw new Error(`fixture synced stage ${values.id} has no synced flow`)
+    const flow = taskFlowValues(flowPayload)
+    // The hosted read contract parses the seeded row, so a synced shape it rejects fails here.
+    stages.push(
+      hostedTaskFlowStageByIdSchema.parse({
+        flow: {
+          ...flow,
+          taskKey: values.workflowKey || null,
+          openStageCount: synced.stages.filter((row) => row.flowRecordId === flow.id).length,
+          createdAt: flow.createdAt.toISOString(),
+          updatedAt: flow.updatedAt.toISOString(),
+        },
+        stage: {
+          ...values,
+          projectId,
+          projectName: payload.projectName == null ? null : String(payload.projectName),
+          number: nextStageNumber(stages, projectId),
+          workflowVersionNumber:
+            input.taskFlowWorkflowVersionNumbers?.[values.workflowVersionId] ?? 1,
+          catalogueVersionNumber:
+            input.taskFlowCatalogueVersionNumbers?.[values.catalogueVersionId] ?? 1,
+          createdAt: values.createdAt.toISOString(),
+          updatedAt: values.updatedAt.toISOString(),
+          obligations: [],
+          stepTexts: [],
+          textCopies: [],
+        },
+      }),
+    )
+  }
+}
+
 function compare(
   selector: Selector,
   left: HostedTaskFlowStageById,
   right: HostedTaskFlowStageById,
 ) {
   if (selector.order === 'newest')
-    return (
-      (right.stage.number ?? -1) - (left.stage.number ?? -1) ||
-      right.stage.id.localeCompare(left.stage.id)
-    )
+    return right.stage.number - left.stage.number || right.stage.id.localeCompare(left.stage.id)
   return (
     (left.stage.projectName ?? '').localeCompare(right.stage.projectName ?? '') ||
-    (left.stage.number ?? Number.MAX_SAFE_INTEGER) -
-      (right.stage.number ?? Number.MAX_SAFE_INTEGER) ||
+    left.stage.number - right.stage.number ||
     left.stage.id.localeCompare(right.stage.id)
   )
 }
 
 export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<RecordApiClient> {
   const stages = [...(input.taskFlowStages ?? [])]
+  if (input.taskFlowSyncedRows) seedSyncedStages(stages, input.taskFlowSyncedRows, input)
   const applyStageChange = (change: { id: string; values: object }) => {
     const row = stages.find(({ stage }) => stage.id === change.id)
     if (!row) throw new Error(`fixture task-flow stage ${change.id} not found`)
@@ -90,10 +145,7 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
         createdAt: insertedFlow!.createdAt,
         updatedAt: insertedFlow!.updatedAt,
       }
-      const number =
-        stages
-          .filter((row) => row.stage.projectId === stage.projectId)
-          .reduce((highest, row) => Math.max(highest, row.stage.number ?? 0), 0) + 1
+      const number = nextStageNumber(stages, stage.projectId)
       const stored: HostedTaskFlowStageById = {
         flow: {
           ...flow,
@@ -226,7 +278,7 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
           ({ stage }) =>
             !destination ||
             !input.taskFlowProjectSpaces ||
-            input.taskFlowProjectSpaces[stage.projectId!] === destination.destinationSpaceId,
+            input.taskFlowProjectSpaces[stage.projectId] === destination.destinationSpaceId,
         )
         .filter((row) => matches(row, selector))
         .sort((left, right) => compare(selector, left, right))

@@ -1,8 +1,11 @@
 import { expect, test } from 'bun:test'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
+import { ensureMachineIdentity } from '../database/db.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
+import type { RecordPayload } from '../record/record-sync-contract.ts'
 import type { HostedTaskFlowStageById } from '../record/record-task-flow-contract.ts'
+import { backfillTaskFlowRecords } from './task-flow-backfill.ts'
 import { recordTaskFlowReadStore } from './task-flow-store-record.ts'
 import { sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
 
@@ -452,4 +455,34 @@ test('machine-wide hosted reads merge every registered project space', async () 
     { number: 1, workflow: 'flow', project: 'fixture', args: '{}' },
     { number: 1, workflow: 'flow', project: 'second-fixture', args: '{}' },
   ])
+})
+
+test('record adapter resolves a stage that reached the record through the sync path', async () => {
+  const d = database()
+  ensureMachineIdentity(d)
+  const access = {
+    memberships: [{ spaceId: 'space-id', slug: 'fixture', permission: 'write' as const }],
+    personalSpaceId: null,
+    client: { readTaskFlowPresence: async () => ({ flowIds: [], stageIds: [] }) },
+  }
+  expect(await backfillTaskFlowRecords(d, access)).toMatchObject({ enqueuedStages: 1 })
+  const synced = (kind: string) =>
+    d
+      .query<{ payload: string }, [string]>('SELECT payload FROM outbox WHERE kind=? ORDER BY id')
+      .all(kind)
+      .map((row) => JSON.parse(row.payload) as RecordPayload)
+  const rows = { flows: synced('task_flow'), stages: synced('task_flow_stage') }
+  const stageId = String(rows.stages[0]!.id)
+  const hosted = recordTaskFlowReadStore(
+    d,
+    createMemoryRecordApiClient({ taskFlowSyncedRows: rows }),
+  )
+
+  expect((await hosted.stageByHandle('fixture', 1))?.record_id).toBe(stageId)
+  expect((await hosted.openStageForTask(TASK_ID))?.record_id).toBe(stageId)
+  expect(() =>
+    createMemoryRecordApiClient({
+      taskFlowSyncedRows: { ...rows, stages: [{ ...rows.stages[0]!, projectId: null }] },
+    }),
+  ).toThrow('projectId is required for a new hosted stage')
 })

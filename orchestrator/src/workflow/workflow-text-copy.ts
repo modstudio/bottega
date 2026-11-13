@@ -448,9 +448,10 @@ export async function showWorkflowText(
 export async function cursorForWorkflowTextCopy(
   cursor: number,
   database: Database = db(),
+  project?: string,
 ): Promise<CopyCursor> {
   const row = (await selectWorkflowCursorForClose(
-    {},
+    project ? { project } : {},
     cursor,
     null,
     database,

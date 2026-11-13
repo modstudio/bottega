@@ -25,12 +25,12 @@ const taskFlowStageListCursorSchema = z.discriminatedUnion('order', [
   z.object({
     order: z.literal('project'),
     projectName: z.string().nullable(),
-    number: z.number().int().positive().nullable(),
+    number: z.number().int().positive(),
     id: z.string().uuid(),
   }),
   z.object({
     order: z.literal('newest'),
-    number: z.number().int().positive().nullable(),
+    number: z.number().int().positive(),
     id: z.string().uuid(),
   }),
 ])
