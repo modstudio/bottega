@@ -7,6 +7,7 @@ const report = (brief: { bytes: number; lines: number; overCap: boolean } | null
     firstRowAt: '2026-11-13T11:00:00.000Z',
     lastRowAt: '2026-11-13T13:00:00.000Z',
     wallHours: 2,
+    tokens: { input: 2, cacheRead: 4, cacheCreation: 6, output: 8, total: 20 },
     tokensPerSessionHour: { input: 1, cacheRead: 2, cacheCreation: 3, output: 4, total: 10 },
     costPerSessionHour: 'subscription, unpriced',
     boundaries: [
