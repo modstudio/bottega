@@ -65,6 +65,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/machine-config.ts',
     '../../../shared/ship-to.ts',
     '../../../shared/trust-list.ts',
+    './config-service-rotation-policy.ts',
     './hosted-config-call-outcome.ts',
     './data-key-access.ts',
     './machine-trust-refusal.ts',
@@ -73,6 +74,9 @@ export const settingsModules: SettingsModule[] = [
     '../record/machine-name.ts',
     './trust-log-revoke.ts',
     './machine-join.ts',
+  ]),
+  module('orchestrator/src/config/config-service-rotation-policy.ts', [
+    '../../../shared/config-client.ts',
   ]),
   module('orchestrator/src/config/trust-log-revoke.ts', [
     '../../../shared/brand.ts',

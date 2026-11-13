@@ -73,6 +73,11 @@ import type { MachineNamePair } from '../record/machine-name.ts'
 import { claimCurrentMachineNames } from '../record/machine-name-command.ts'
 import { LEGACY_ENVIRONMENT_SECRET_NAMES } from '../setup/environment-name-migration.ts'
 import {
+  type RotationPlan as RotationPolicyPlan,
+  shouldRotateAfterRevocation as rotationNeeded,
+  planRotation as rotationPlan,
+} from './config-service-rotation-policy.ts'
+import {
   bytes,
   claimMachineKey,
   DataKeyWrapAccessError,
@@ -85,16 +90,13 @@ import { hostedConfigClient } from './hosted-config-call-outcome.ts'
 import { machineTrustRefusal } from './machine-trust-refusal.ts'
 import { appendTrustLogRevoke } from './trust-log-revoke.ts'
 
-export type RotationPlan = { reseal: ConfigSecret[]; retireDekIds: string[] }
+export type RotationPlan = RotationPolicyPlan
 
 export function shouldRotateAfterRevocation(
   current: DataKey,
   revocations: readonly { revokedAt: string | null }[],
 ): boolean {
-  return revocations.some(
-    ({ revokedAt }) =>
-      revokedAt !== null && new Date(revokedAt).getTime() > new Date(current.createdAt).getTime(),
-  )
+  return rotationNeeded(current, revocations)
 }
 
 export function planRotation(
@@ -102,14 +104,7 @@ export function planRotation(
   current: DataKey,
   keys: DataKey[],
 ): RotationPlan {
-  const reseal = rows.filter((row) => row.dekId !== current.id)
-  return {
-    reseal,
-    retireDekIds: keys
-      .filter((key) => key.version < current.version && !key.retiredAt)
-      .map((key) => key.id)
-      .sort(),
-  }
+  return rotationPlan(rows, current, keys)
 }
 
 async function identity(client: ConfigClient, env: ConfigEnvironment = process.env) {
@@ -362,9 +357,7 @@ async function rotateDataKey(
   const plan = planRotation(rows, current, await client.listDataKeys(destination))
   const completed: string[] = []
   try {
-    const who = selectedSpaceId
-      ? { spaceId: selectedSpaceId, userId: (await client.whoami()).user.id }
-      : await identity(client, env)
+    const who = await identity(client, env)
     for (const row of plan.reseal) {
       const plaintext = await openHostedSecretRow(
         client,

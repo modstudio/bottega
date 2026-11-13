@@ -2,11 +2,12 @@ import { expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { configClient, type ConfigClient } from '../../shared/config-client.ts'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { type ConfigClient, configClient } from '../../shared/config-client.ts'
 import {
   CONFIG_HOME_ENV,
-  HARNESS_ENV_FILE_ENV,
   type ConfigEnvironment,
+  HARNESS_ENV_FILE_ENV,
 } from '../../shared/config-directory.ts'
 import { openHostedSecret } from '../../shared/hosted-secret-opening.ts'
 import { KEYSTORE_ENV } from '../../shared/key-store-constants.ts'
@@ -16,11 +17,7 @@ import {
   generateMachineSigningKeyPair,
   readMachineSigningKey,
 } from '../../shared/machine-signing-key.ts'
-import {
-  formatPairingCode,
-  generatePairingCode,
-  parsePairingCode,
-} from '../../shared/pairing-code.ts'
+import { formatPairingCode, parsePairingCode } from '../../shared/pairing-code.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import {
   generateDataKey,
@@ -29,7 +26,7 @@ import {
   wrapDataKey,
 } from '../../shared/secret-envelope.ts'
 import { readTrustList } from '../../shared/trust-list.ts'
-import { signTrustLogEntry, trustLogEntryHash, type TrustLogKey } from '../../shared/trust-log.ts'
+import { signTrustLogEntry, type TrustLogKey, trustLogEntryHash } from '../../shared/trust-log.ts'
 import { writeRememberedTrustLogHead } from '../../shared/trust-log-head.ts'
 import { machineInit } from '../src/config/config-service.ts'
 import { encoded } from '../src/config/data-key-access.ts'
@@ -58,6 +55,7 @@ type ServiceFixture = {
   approver: ProofMachine
   joiner: ProofMachine
   genesisHead: Uint8Array
+  originalActiveSpaceIds: [string, string]
   selected: { spaceId: string; slug: string }
   roots: string[]
 }
@@ -226,8 +224,24 @@ export function registerMachineJoinProof(input: ProofInput): void {
     BOTTEGA_RECORD_API_URL: input.apiUrl(),
   })
 
-  const deleteFixture = (fixture: ServiceFixture) => {
+  const setActiveSpace = async (token: string, spaceId: string) => {
+    const response = await fetch(`${input.apiUrl()}/v1/active-space`, {
+      method: 'PUT',
+      headers: {
+        ...Object.fromEntries(bearerHeaders(token)),
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ spaceId }),
+    })
+    expect(response.status).toBe(200)
+  }
+
+  const deleteFixture = async (fixture: ServiceFixture) => {
     const { spaceId } = fixture.selected
+    await Promise.all([
+      setActiveSpace(input.token(), fixture.originalActiveSpaceIds[0]),
+      setActiveSpace(input.otherToken(), fixture.originalActiveSpaceIds[1]),
+    ])
     input.succeeds(`
       DELETE FROM config_secret WHERE space_id='${spaceId}';
       DELETE FROM secret_dek_wrap WHERE space_id='${spaceId}';
@@ -254,10 +268,23 @@ export function registerMachineJoinProof(input: ProofInput): void {
         ('${newRecordId()}','${spaceId}','${input.otherUserId()}','member','write',true,now());
     `)
     const roots = [
-      mkdtempSync(join(tmpdir(), 'bottega-machine-approve-')),
-      mkdtempSync(join(tmpdir(), 'bottega-machine-join-')),
+      mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-machine-approve-`)),
+      mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-machine-join-`)),
     ]
     const selected = { spaceId, slug }
+    const identityClients = [
+      configClient(machineEnv(roots[0]!), fetch, input.token()),
+      configClient(machineEnv(roots[1]!), fetch, input.otherToken()),
+    ] as const
+    const originalActiveSpaceIds = (await Promise.all(
+      identityClients.map(async (client) => (await client.whoami()).activeSpaceId),
+    )) as [string | null, string | null]
+    expect(originalActiveSpaceIds[0]).not.toBeNull()
+    expect(originalActiveSpaceIds[1]).not.toBeNull()
+    await Promise.all([
+      setActiveSpace(input.token(), spaceId),
+      setActiveSpace(input.otherToken(), spaceId),
+    ])
     const createMachine = async (
       root: string,
       token: string,
@@ -300,7 +327,14 @@ export function registerMachineJoinProof(input: ProofInput): void {
       destinationSpaceId: spaceId,
     })
     writeRememberedTrustLogHead(spaceId, genesisHead, approver.env)
-    return { approver, joiner, genesisHead, selected, roots }
+    return {
+      approver,
+      joiner,
+      genesisHead,
+      originalActiveSpaceIds: originalActiveSpaceIds as [string, string],
+      selected,
+      roots,
+    }
   }
 
   const beginJoin = (fixture: ServiceFixture, at?: number | (() => number)) => {
@@ -398,7 +432,7 @@ export function registerMachineJoinProof(input: ProofInput): void {
       })
       expect(new TextDecoder().decode(plaintext)).toBe('approved secret')
     } finally {
-      deleteFixture(fixture)
+      await deleteFixture(fixture)
     }
   })
 
@@ -439,7 +473,7 @@ export function registerMachineJoinProof(input: ProofInput): void {
         ),
       ).toBe('0')
     } finally {
-      deleteFixture(fixture)
+      await deleteFixture(fixture)
     }
   })
 
@@ -482,7 +516,7 @@ export function registerMachineJoinProof(input: ProofInput): void {
       expect(await readTrustList(fixture.approver.env)).toEqual(beforeApprover)
       expect(await readTrustList(fixture.joiner.env)).toEqual(beforeJoiner)
     } finally {
-      deleteFixture(fixture)
+      await deleteFixture(fixture)
     }
   })
 
@@ -515,7 +549,7 @@ export function registerMachineJoinProof(input: ProofInput): void {
         ),
       ).rejects.toMatchObject({ status: 409 })
     } finally {
-      deleteFixture(fixture)
+      await deleteFixture(fixture)
     }
   })
 
@@ -526,7 +560,7 @@ export function registerMachineJoinProof(input: ProofInput): void {
       await joining.code
       await expect(joining.result).rejects.toThrow('pairing code expired; start again')
     } finally {
-      deleteFixture(fixture)
+      await deleteFixture(fixture)
     }
   })
 
@@ -570,7 +604,7 @@ export function registerMachineJoinProof(input: ProofInput): void {
         }),
       ).rejects.toThrow(/trust log fork or rollback/)
     } finally {
-      deleteFixture(fixture)
+      await deleteFixture(fixture)
     }
   })
 }
