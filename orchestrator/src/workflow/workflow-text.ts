@@ -198,7 +198,15 @@ async function attachWorkflowTextByHandleUnchecked(
   context: WorkflowCursorContext,
   d: Database = writableDb(),
 ): Promise<string> {
-  const row = (await selectWorkflowCursor({}, cursor, undefined, d)) as AttachCursorRow
+  const row = (await selectWorkflowCursor(
+    {},
+    cursor,
+    undefined,
+    d,
+    undefined,
+    undefined,
+    context.taskFlowClient,
+  )) as AttachCursorRow
   const { recordId, createdAt, input } = attachTextIntent(row, body)
   const token = await attachSelectedWorkflowText(row, body, context, recordId, createdAt, d)
   const hosted = await writeHostedTaskFlow(
@@ -238,6 +246,9 @@ async function attachWorkflowTextUnchecked(
     cursor,
     context.session,
     d,
+    undefined,
+    undefined,
+    context.taskFlowClient,
   )) as AttachCursorRow | null
   if (!row) throw new Error('workflow has no live cursor; fetch its current step first')
   const { recordId, createdAt, input } = attachTextIntent(row, body)
@@ -290,8 +301,9 @@ export async function workflowTextDeletionIds(
   cursorId: string,
   linked: boolean,
   d: Database,
+  client?: WorkflowCursorContext['taskFlowClient'],
 ): Promise<string[]> {
-  const store = taskFlowReadStore(d)
+  const store = taskFlowReadStore(d, client)
   const rowIds = await store.textRecordIdsForStage(cursorId)
   const copiedIds = new Set(await store.copiedTextRecordIdsForStage(cursorId))
   const deletable = workflowTextIdsToDelete({ linked, rowIds, copiedIds })
@@ -304,9 +316,9 @@ export async function deleteWorkflowText(
   d: Database,
   client?: WorkflowCursorContext['taskFlowClient'],
 ): Promise<void> {
-  const ids = await workflowTextDeletionIds(cursorId, linked, d)
+  const ids = await workflowTextDeletionIds(cursorId, linked, d, client)
   if (!ids.length) return
-  const project = await taskFlowReadStore(d).stageProject(cursorId)
+  const project = await taskFlowReadStore(d, client).stageProject(cursorId)
   if (!project)
     throw new Error(`workflow cursor ${cursorId} does not exist; retry with a live cursor`)
   const payload = {

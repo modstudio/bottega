@@ -66,7 +66,7 @@ export async function adoptWorkflowTask(
       )
     return
   }
-  const conflict = await conflictingAdoptionCursor(row, key, d)
+  const conflict = await conflictingAdoptionCursor(row, key, d, client)
   if (conflict)
     throw new Error(
       `cursor ${row.id} cannot adopt ${key}; open cursor ${conflict.id} already holds it`,
@@ -140,8 +140,9 @@ async function conflictingAdoptionCursor(
   row: AdoptionCursor,
   key: string,
   database: Database,
+  client?: RecordTaskFlowClient,
 ): Promise<{ id: number } | null> {
-  return taskFlowReadStore(database).stageHoldingTaskKey({
+  return taskFlowReadStore(database, client).stageHoldingTaskKey({
     project: row.project,
     workflow: row.workflow_slug,
     mode: row.mode_slug,

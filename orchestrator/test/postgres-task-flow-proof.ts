@@ -912,6 +912,10 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         projectSpaces: { [PROJECT]: input.spaceId() },
       })
       // The built-in diagnose step has a recorded-artifact floor; this proof exercises takeover.
+      // Hosted reads use the authoritative row, so keep it and the local mirror in agreement.
+      input.admin(
+        `UPDATE task_flow_stage SET enforcement='note-only' WHERE id='${localIds.stage_id}';`,
+      )
       databaseB
         .query("UPDATE workflow_cursor SET enforcement='note-only' WHERE record_id=?")
         .run(localIds.stage_id)

@@ -12,6 +12,23 @@ const module = (file: string, allowed: string[]): WorkflowCommandModule => ({
 })
 
 export const workflowCommandModules: WorkflowCommandModule[] = [
+  module('orchestrator/src/workflow/task-flow-store-methods.ts', []),
+  module('orchestrator/src/workflow/task-flow-store-types.ts', [
+    './workflow-cursor-transition.ts',
+    './workflow-floor.ts',
+  ]),
+  module('orchestrator/src/workflow/task-flow-store-record.ts', [
+    'bun:sqlite',
+    '../project/project-read.ts',
+    '../record/record-api-client-paths.ts',
+    '../record/record-api-client-task-flow.ts',
+    '../record/record-api-client.ts',
+    '../record/record-task-flow-contract.ts',
+    '../record/record-task-flow-write-client.ts',
+    '../record/record-write-authority.ts',
+    './task-flow-store-sqlite.ts',
+    './task-flow-store-types.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-command-record-shape.ts', [
     '../../../shared/record-shape.ts',
     '../cli/args.ts',
@@ -59,8 +76,8 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     '../../../shared/record-api-url.ts',
     '../../../shared/record-remedies.ts',
     '../database/db.ts',
-    '../record/install-binding.ts',
     '../record/record-api-client.ts',
+    '../record/record-write-authority.ts',
     '../record/record-task-flow-contract.ts',
     '../record/record-task-flow-write-client.ts',
     './task-flow-decision.ts',
@@ -90,6 +107,10 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     '../database/db.ts',
     './workflow-cursor-selection.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-cursor-project.ts', [
+    'bun:sqlite',
+    '../project/projects.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-compose-branch.ts', [
     'bun:sqlite',
     '../../../shared/brand.ts',
@@ -110,6 +131,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     './task-flow.ts',
     './task-flow-decision.ts',
     './task-flow-store.ts',
+    './task-flow-store-sqlite.ts',
     './task-flow-store-types.ts',
     './workflow-compose-branch.ts',
     './workflow-cursor-arguments.ts',

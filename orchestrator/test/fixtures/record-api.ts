@@ -3,12 +3,11 @@ import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { planCanonImport } from '../../src/canon/canon-import-policy.ts'
 import { consumeDocBody, refuseDocWrite } from '../../src/doc/doc-write-allowed.ts'
 import type { RecordBoardDeps } from '../../src/record/record-api-board.ts'
-import {
-  type RecordApiClient,
-  RecordApiRequestError,
-  type RecordCanonImportInput,
-  type RecordDocImportInput,
-  type RecordDocUpsertInput,
+import type {
+  RecordApiClient,
+  RecordCanonImportInput,
+  RecordDocImportInput,
+  RecordDocUpsertInput,
 } from '../../src/record/record-api-client.ts'
 import type { RecordSubjectRouteDeps } from '../../src/record/record-api-subjects.ts'
 import type { RecordIdentity } from '../../src/record/record-auth.ts'
@@ -21,6 +20,7 @@ import {
 import { BOARD_PRESENCE_WRITE_INTERVAL_MS } from '../../src/record/record-board-presence.ts'
 import { createBoardStreamRegistry } from '../../src/record/record-board-stream.ts'
 import { assertRevisionWrite } from '../../src/record/record-doc-errors.ts'
+import { type MemoryTaskFlowInput, memoryTaskFlowClient } from './record-api-task-flow.ts'
 
 export const identity: RecordIdentity = {
   user: { id: 'user-a', email: 'a@example.test' },
@@ -376,7 +376,10 @@ export function installRecordApiClient(client: RecordApiClient | null): void {
 }
 
 export function createMemoryRecordApiClient(
-  input: { boardChanges?: HostedBoardChange[]; boardProjectIds?: Record<string, string> } = {},
+  input: MemoryTaskFlowInput & {
+    boardChanges?: HostedBoardChange[]
+    boardProjectIds?: Record<string, string>
+  } = {},
 ): RecordApiClient {
   const docs = new Map<string, StoredDoc>()
   const revisions = new Map<string, StoredRevision[]>()
@@ -406,6 +409,7 @@ export function createMemoryRecordApiClient(
   return {
     ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
+    ...memoryTaskFlowClient(input),
     async listChanges() {
       return { reset: { cursor: 'fixture-change-cursor', tables: [] } }
     },
@@ -514,9 +518,6 @@ export function createMemoryRecordApiClient(
     async listWorkflowCatalogue() {
       return { items: [], nextCursor: null }
     },
-    async readTaskFlow() {
-      throw new RecordApiRequestError('hosted task flow not found', 'refused', 404)
-    },
     async draftWorkflow() {
       throw new Error('hosted workflow catalogue is unused in this fixture')
     },
@@ -539,15 +540,27 @@ export function createMemoryRecordApiClient(
       throw new Error('settings auto-mode endpoint is not implemented by the memory fixture')
     },
     async whoami() {
+      const fixtureSpace = '01990000-0000-7000-8000-000000000002'
+      const taskFlowSpaces = [
+        ...new Set(Object.values(input.taskFlowProjectSpaces ?? { fixture: fixtureSpace })),
+      ]
       return {
         user: {
           id: '01990000-0000-7000-8000-000000000001',
           name: 'Fixture',
           email: 'fixture@example.test',
         },
-        activeSpaceId: '01990000-0000-7000-8000-000000000002',
-        personalSpaceId: '01990000-0000-7000-8000-000000000002',
-        memberships: [],
+        activeSpaceId: fixtureSpace,
+        personalSpaceId: fixtureSpace,
+        memberships: input.taskFlowStages
+          ? taskFlowSpaces.map((spaceId, index) => ({
+              space_id: spaceId,
+              name: `Fixture ${index + 1}`,
+              slug: index === 0 ? 'fixture' : `fixture-${index + 1}`,
+              role: 'owner',
+              permission: 'write',
+            }))
+          : [],
       }
     },
     async createOrganization(input) {
