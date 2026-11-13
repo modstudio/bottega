@@ -84,17 +84,22 @@ export async function applyTaskFlowValues(
     .returning({ id: taskFlowRecord.id })
 }
 
-/** Writes a stage the record does not hold yet, numbered by its project sequence. */
-export async function insertTaskFlowStageValues(
+/**
+ * Writes a stage the record did not hold when this push looked, numbered by its
+ * project sequence. A concurrent push may insert it first; the stage is then
+ * revised, so the newer revision applies rather than reading as a collision.
+ */
+export async function writeNewTaskFlowStageValues(
   database: HostedRecordDatabase,
   values: ReturnType<typeof taskFlowStageValues>,
   number: number,
 ) {
-  return database
+  const inserted = await database
     .insert(taskFlowStageRecord)
     .values({ ...values, number })
     .onConflictDoNothing({ target: taskFlowStageRecord.id })
     .returning({ id: taskFlowStageRecord.id })
+  return inserted.length > 0 ? inserted : reviseTaskFlowStageValues(database, values)
 }
 
 /**
@@ -172,7 +177,7 @@ async function pushTaskFlowStage(
     const database = drizzle({ client: tx })
     const written = existingOwned
       ? await reviseTaskFlowStageValues(database, values)
-      : await insertTaskFlowStageValues(
+      : await writeNewTaskFlowStageValues(
           database,
           values,
           await allocateRecordSequence(tx, values.spaceId, values.projectId!, 'task_flow_stage'),
