@@ -22,6 +22,7 @@ const roots: string[] = []
 const spaceId = '01990000-0000-7000-8000-000000000201'
 const userId = '01990000-0000-7000-8000-000000000202'
 const dekId = '01990000-0000-7000-8000-000000000203'
+const otherSpaceId = '01990000-0000-7000-8000-000000000204'
 let previousConfigHome: string | undefined, previousKeystore: string | undefined
 
 afterEach(() => {
@@ -39,7 +40,7 @@ async function readerFixture(logListsSender: boolean) {
   roots.push(root)
   process.env.BOTTEGA_CONFIG_HOME = root
   process.env.BOTTEGA_KEYSTORE = 'file'
-  writeHostedConfigIdentity({ spaceId, userId })
+  writeHostedConfigIdentity({ spaceId: otherSpaceId, userId })
 
   const recipient = await generateMachineKeyPair()
   const recipientKeyId = await machineKeyId(recipient.publicKey)
@@ -47,23 +48,22 @@ async function readerFixture(logListsSender: boolean) {
   const senderKeyId = await machineKeyId(sender.publicKey)
   const loggedOther = await generateMachineKeyPair()
   const loggedOtherKeyId = await machineKeyId(loggedOther.publicKey)
-  const first = logListsSender ? sender : loggedOther
-  const firstKeyId = logListsSender ? senderKeyId : loggedOtherKeyId
-  const firstSigning = trustLogFixtureSigningKey(logListsSender ? 71 : 72)
-  const added = logListsSender ? loggedOther : recipient
-  const addedKeyId = logListsSender ? loggedOtherKeyId : recipientKeyId
-  const log = machineRevokeTrustLogFixture(
-    true,
-    spaceId,
-    [firstKeyId, first.publicKey, firstSigning.publicKey, 'first'],
-    [
-      addedKeyId,
-      added.publicKey,
-      trustLogFixtureSigningKey(logListsSender ? 73 : 74).publicKey,
-      'added',
-    ],
-    firstSigning.privateKey,
-  )
+  const logForSpace = (logSpaceId: string, includesSender: boolean, signingSeed: number) => {
+    const first = includesSender ? sender : loggedOther
+    const firstKeyId = includesSender ? senderKeyId : loggedOtherKeyId
+    const added = includesSender ? loggedOther : recipient
+    const addedKeyId = includesSender ? loggedOtherKeyId : recipientKeyId
+    const firstSigning = trustLogFixtureSigningKey(signingSeed)
+    return machineRevokeTrustLogFixture(
+      true,
+      logSpaceId,
+      [firstKeyId, first.publicKey, firstSigning.publicKey, 'first'],
+      [addedKeyId, added.publicKey, trustLogFixtureSigningKey(signingSeed + 1).publicKey, 'added'],
+      firstSigning.privateKey,
+    )
+  }
+  const destinationLog = logForSpace(spaceId, logListsSender, logListsSender ? 71 : 73)
+  const otherLog = logForSpace(otherSpaceId, !logListsSender, logListsSender ? 75 : 77)
   if (!logListsSender) await pinTrustedMachine(senderKeyId, sender.publicKey, 'pinned sender')
 
   const dek = generateDataKey()
@@ -97,8 +97,18 @@ async function readerFixture(logListsSender: boolean) {
     ).toString('base64url'),
   }
   const client = {
-    whoami: async () => ({ user: { id: userId }, activeSpaceId: spaceId }),
-    readTrustLog: async () => log,
+    whoami: async () => ({
+      user: { id: userId },
+      activeSpaceId: otherSpaceId,
+      memberships: [
+        { space_id: otherSpaceId, slug: 'other', permission: 'write' },
+        { space_id: spaceId, slug: 'destination', permission: 'write' },
+      ],
+    }),
+    listMachineKeys: async ({ destinationSpaceId }: { destinationSpaceId?: string }) =>
+      destinationSpaceId === spaceId ? [{ keyId: recipientKeyId, userId, revokedAt: null }] : [],
+    readTrustLog: async ({ destinationSpaceId }: { destinationSpaceId?: string }) =>
+      destinationSpaceId === spaceId ? destinationLog : otherLog,
     getSecret: async () => row,
     getDataKey: async () => ({
       id: dekId,
@@ -122,14 +132,24 @@ test('hosted secret reader accepts a verified-log sender that was never pinned',
   const fixture = await readerFixture(true)
 
   await expect(
-    openHostedSecretRow(fixture.client, fixture.row, {}, fixture.recipient),
+    openHostedSecretRow(
+      fixture.client,
+      fixture.row,
+      { destinationSpaceId: spaceId },
+      fixture.recipient,
+    ),
   ).resolves.toEqual(new TextEncoder().encode('opened from verified log'))
 })
 
-test('hosted secret reader refuses a pinned sender omitted by the verified log', async () => {
+test('hosted secret reader refuses a sender listed only by the other space log', async () => {
   const fixture = await readerFixture(false)
 
   await expect(
-    openHostedSecretRow(fixture.client, fixture.row, {}, fixture.recipient),
+    openHostedSecretRow(
+      fixture.client,
+      fixture.row,
+      { destinationSpaceId: spaceId },
+      fixture.recipient,
+    ),
   ).rejects.toThrow('hosted secret data-key sender is not trusted')
 })

@@ -135,6 +135,7 @@ export const settingsModules: SettingsModule[] = [
   module('orchestrator/src/config/machine-trust-refusal.ts', [
     '../../../shared/brand.ts',
     '../../../shared/refusal.ts',
+    '../../../shared/trust-log-keys.ts',
   ]),
   module('orchestrator/src/config/machine-trust.ts', [
     '../../../shared/config-client.ts',

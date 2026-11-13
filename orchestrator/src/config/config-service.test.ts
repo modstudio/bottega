@@ -418,7 +418,7 @@ test('machine trust names machine approve when an anchored log omits the target 
       fixture.client,
     ),
   ).rejects.toThrow(
-    `the space's machine trust log does not list ${fixture.recipientKeyId}; add it with \`${PLATFORM_SLUG} machine approve\` from a machine the trust log already trusts`,
+    `the space's machine trust log does not list ${fixture.recipientKeyId}\ncleared by: on that machine run \`${PLATFORM_SLUG} machine join --space fixture\`, then on a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve <code>\` with the code it prints`,
   )
   expect((await readTrustList())[fixture.recipientKeyId]).toBeUndefined()
 })

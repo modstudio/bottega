@@ -23,7 +23,11 @@ import {
   wrapsForRecipients,
 } from './data-key-access.ts'
 import { hostedConfigClient } from './hosted-config-call-outcome.ts'
-import { machineTrustRefusal, missingTrustLogKeyRefusal } from './machine-trust-refusal.ts'
+import {
+  anchoredTrustRefusal,
+  anchoredWrapSenderRefusal,
+  machineTrustRefusal,
+} from './machine-trust-refusal.ts'
 
 type NamedSpace = {
   destination: ConfigDestination
@@ -117,9 +121,7 @@ export async function machineRegister(
       const wrap = current.wraps[0]
       if (!wrap) throw trustRemedy(space, keyId, publicKey)
       if (trust.anchored)
-        throw new Error(
-          `data key ${current.id} in record space ${space.slug} was wrapped by ${wrap.senderKeyId}, which the space's machine trust log does not list; have a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve\``,
-        )
+        throw new Error(anchoredWrapSenderRefusal(current.id, space.slug, wrap.senderKeyId))
       throw new Error(
         `data key ${current.id} in record space ${space.slug} was wrapped by ${wrap.senderKeyId}, which this machine does not trust; pin it with \`${PLATFORM_SLUG} machine config machine trust ${wrap.senderKeyId} <publicKey> --space ${space.slug}\` using that machine's public key from \`${PLATFORM_SLUG} machine config machine show\``,
       )
@@ -159,16 +161,20 @@ export async function machineTrustInSpace(
   const registered = remote.find((item) => item.keyId === keyId)
   const refusal = machineTrustRefusal(keyId, registered, space.slug)
   if (refusal) throw new Error(refusal)
-  const beforePin = await trustForSpace(client, space.spaceId, env)
-  if (beforePin.anchored && !beforePin.keys[keyId])
-    throw new Error(missingTrustLogKeyRefusal(keyId))
-  await pinTrustedMachine(keyId, publicBytes, label, env)
   const pair = readMachineKey(env)
   if (!pair)
     throw new Error(
       `machine key is not initialized; run \`${PLATFORM_SLUG} machine config machine init --space ${selectedSpace.slug}\``,
     )
   const localKeyId = await machineKeyId(pair.publicKey)
+  const beforePin = await trustForSpace(client, space.spaceId, env)
+  const anchoredRefusal = anchoredTrustRefusal(
+    beforePin,
+    { local: localKeyId, target: keyId },
+    space.slug,
+  )
+  if (anchoredRefusal) throw new Error(anchoredRefusal)
+  await pinTrustedMachine(keyId, publicBytes, label, env)
   try {
     const current = await client.currentDataKey(localKeyId, space.destination)
     const trusted = await trustedKeysForSpace(client, space.spaceId, env)

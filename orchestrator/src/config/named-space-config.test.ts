@@ -426,7 +426,42 @@ test('trust in an anchored named space refuses a target absent from the log befo
       env,
     ),
   ).rejects.toThrow(
-    `the space's machine trust log does not list ${targetKeyId}; add it with \`${PLATFORM_SLUG} machine approve\` from a machine the trust log already trusts`,
+    `the space's machine trust log does not list ${targetKeyId}\ncleared by: on that machine run \`${PLATFORM_SLUG} machine join --space named\`, then on a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve <code>\` with the code it prints`,
+  )
+  expect((await readTrustList(env))[targetKeyId]).toBeUndefined()
+})
+
+test("trust in an anchored named space refuses when this machine's key is absent before pinning", async () => {
+  const { env, identity, keyId } = await fixture(false)
+  const loggedOther = await generateMachineKeyPair()
+  const loggedOtherId = await machineKeyId(loggedOther.publicKey)
+  const signing = trustLogFixtureSigningKey(53)
+  const target = await generateMachineKeyPair()
+  const targetKeyId = await machineKeyId(target.publicKey)
+  const log = machineRevokeTrustLogFixture(
+    true,
+    namedSpaceId,
+    [loggedOtherId, loggedOther.publicKey, signing.publicKey, 'logged-other'],
+    [targetKeyId, target.publicKey, trustLogFixtureSigningKey(54).publicKey, 'target'],
+    signing.privateKey,
+  )
+  const client = {
+    readTrustLog: async () => log,
+    whoami: async () => identity,
+    listMachineKeys: async () => [{ keyId: targetKeyId, revokedAt: null }],
+  } as unknown as ConfigClient
+
+  await expect(
+    machineTrustInSpace(
+      targetKeyId,
+      Buffer.from(target.publicKey).toString('base64url'),
+      'target',
+      namedSpace,
+      client,
+      env,
+    ),
+  ).rejects.toThrow(
+    `this machine's key ${keyId} is not listed in the space's machine trust log\ncleared by: on this machine run \`${PLATFORM_SLUG} machine join --space named\`, then on a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve <code>\` with the code it prints`,
   )
   expect((await readTrustList(env))[targetKeyId]).toBeUndefined()
 })
@@ -523,6 +558,6 @@ test('registration names machine approve when an anchored log omits the data key
   } as unknown as ConfigClient
 
   await expect(machineRegister(namedSpace, 'fixture', client, env)).rejects.toThrow(
-    `data key dek-untrusted in record space named was wrapped by untrusted-sender, which the space's machine trust log does not list; have a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve\``,
+    `data key dek-untrusted in record space named was wrapped by untrusted-sender, which the space's machine trust log does not list\ncleared by: on this machine run \`${PLATFORM_SLUG} machine join --space named\`, then on a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve <code>\` with the code it prints`,
   )
 })

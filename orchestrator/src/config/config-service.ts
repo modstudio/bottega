@@ -84,7 +84,7 @@ import {
   wrapsForRecipients,
 } from './data-key-access.ts'
 import { hostedConfigClient } from './hosted-config-call-outcome.ts'
-import { machineTrustRefusal, missingTrustLogKeyRefusal } from './machine-trust-refusal.ts'
+import * as trustRefusal from './machine-trust-refusal.ts'
 import { appendTrustLogRevoke } from './trust-log-revoke.ts'
 
 async function identity(client: ConfigClient, env: ConfigEnvironment = process.env) {
@@ -263,17 +263,18 @@ export async function machineTrust(
   const keys = await client.listMachineKeys(destination)
   for (const key of keys) if (key.revokedAt) await unpinTrustedMachine(key.keyId, env)
   const registered = keys.find((item) => item.keyId === keyId)
-  const refusal = machineTrustRefusal(keyId, registered, selected.slug)
+  const refusal = trustRefusal.machineTrustRefusal(keyId, registered, selected.slug)
   if (refusal) throw new Error(refusal)
-  const beforePin = await trustForSpace(client, selected.spaceId, env)
-  if (beforePin.anchored && !beforePin.keys[keyId])
-    throw new Error(missingTrustLogKeyRefusal(keyId))
-  await pinTrustedMachine(keyId, publicBytes, label, env)
   const machine = await localMachine(env)
+  const beforePin = await trustForSpace(client, selected.spaceId, env)
+  const keyIds = { local: machine.keyId, target: keyId }
+  const anchoredRefusal = trustRefusal.anchoredTrustRefusal(beforePin, keyIds, selected.slug)
+  if (anchoredRefusal) throw new Error(anchoredRefusal)
+  await pinTrustedMachine(keyId, publicBytes, label, env)
   const trust = await trustedKeysForSpace(client, selected.spaceId, env)
   const [sender, recipient] = [trust[machine.keyId], trust[keyId]]
   if (!sender) throw new Error('machine is absent from the trust list after pinning')
-  if (!recipient) throw new Error(missingTrustLogKeyRefusal(keyId))
+  if (!recipient) throw new Error(trustRefusal.missingTrustLogKeyRefusal(keyId, selected.slug))
   try {
     const before = await client.currentDataKey(machine.keyId, destination)
     const {
