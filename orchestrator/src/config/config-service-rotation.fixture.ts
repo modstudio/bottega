@@ -19,6 +19,7 @@ import {
   trustLogFixtureSigningKey,
 } from './config-service-trust-log.fixture.ts'
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: one fixture keeps the mutable key, secret, and trust-log state coherent
 export async function rotationFixture(
   roots: string[],
   revokedAt: string | null,
