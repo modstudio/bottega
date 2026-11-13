@@ -1,7 +1,10 @@
 import { afterEach, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { createMemoryRecordApiClient, installRecordApiClient } from '../../test/fixtures/record-api.ts'
+import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
+import { rememberHostedRecord } from '../record/install-binding-write.ts'
 import {
   clearTaskContext,
   dropContextItem,
@@ -33,6 +36,7 @@ function installContextFacts() {
 
 afterEach(() => {
   delete globals[CONTEXT_FACTS_PORTS_KEY]
+  installRecordApiClient(null)
 })
 
 test('context service stores structured columns and compare-and-set revisions', async () => {
@@ -144,5 +148,56 @@ test('worker environments refuse every context-item write entry point', async ()
     else process.env.BOTTEGA_DEPTH = priorDepth
     if (priorRunId === undefined) delete process.env.BOTTEGA_RUN_ID
     else process.env.BOTTEGA_RUN_ID = priorRunId
+  }
+})
+
+test('lifecycle drop reports an absent hosted row and keeps the local item', async () => {
+  const session = newRecordId()
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  const priorUrl = process.env.BOTTEGA_RECORD_API_URL
+  process.env.CLAUDE_CODE_SESSION_ID = session
+  try {
+    await setContextItem({
+      session,
+      id: 'hosted-absent',
+      kind: 'fact',
+      source: 'test',
+      body: 'Keep this locally when the hosted row is absent.',
+    })
+    const item = (await getContext({ session })).items[0]!
+    process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+    rememberHostedRecord(db())
+    const memory = createMemoryRecordApiClient()
+    installRecordApiClient({
+      ...memory,
+      whoami: async () => ({
+        user: { id: 'user-a' },
+        activeSpaceId: 'personal-space',
+        personalSpaceId: 'personal-space',
+        memberships: [{ space_id: 'personal-space', slug: 'personal', permission: 'write' }],
+      }),
+      deleteContextItem: async () => ({ removed: false }),
+    })
+
+    expect(
+      await dropSessionContextItemsForLifecycle({
+        session,
+        reason: 'test absent hosted row',
+        items: [item],
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        removed: false,
+        error: `context item ${item.recordId} not found in hosted record`,
+      }),
+    ])
+    expect((await getContext({ session })).items).toEqual([
+      expect.objectContaining({ id: 'hosted-absent' }),
+    ])
+  } finally {
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+    if (priorUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = priorUrl
   }
 })

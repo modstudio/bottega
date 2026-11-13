@@ -127,7 +127,8 @@ async function dropSessionContextItemForLifecycle(input: {
       const result = await client.remove(item.recordId, {
         expectedRevision: input.expectedRevision,
       })
-      return result.removed ? removeLocalContextItem(holder, input.id, item.revision) : false
+      if (!result.removed) throw new Error(`context item ${item.recordId} not found in hosted record`)
+      return removeLocalContextItem(holder, input.id, item.revision)
     },
   })
   return { holder, id: input.id, removed }
