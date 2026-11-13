@@ -27,6 +27,28 @@ class AssembleAdditionalContext(unittest.TestCase):
     def test_budget_constant_stays_under_the_harness_cap(self):
         self.assertEqual(session_brief.HOOK_CONTEXT_MAX_CHARS, 9000)
 
+    def test_session_start_context_cap_is_shared_and_appends_only_the_pointer(self):
+        self.assertEqual(session_brief.SESSION_START_CONTEXT_MAX_CHARS, 10000)
+        under = "x" * session_brief.SESSION_START_CONTEXT_MAX_CHARS
+        self.assertEqual(session_brief._with_full_context_pointer(under, "session-a"), under)
+        over = under + "x"
+        self.assertEqual(
+            session_brief._with_full_context_pointer(over, "session-a"),
+            over + "\nFull context: bottega agent context show --session session-a",
+        )
+
+    def test_injection_recording_passes_final_utf8_size_and_reports_failure(self):
+        completed = SimpleNamespace(returncode=1, stdout="", stderr="store refused\n")
+        with mock.patch.object(session_brief.subprocess, "run", return_value=completed) as run:
+            errors = io.StringIO()
+            with mock.patch("sys.stderr", errors):
+                session_brief._record_injection(
+                    "/bin/bottega", "/tmp", {}, "session-a", "compact", "é\nfull"
+                )
+        command = run.call_args.args[0]
+        self.assertEqual(command[-6:], ["--bytes", "7", "--lines", "2", "--chars", "6"])
+        self.assertEqual(errors.getvalue(), "session-brief: injection recording failed: store refused\n")
+
     def test_filed_issue_sections_accept_current_uuid_run_ids(self):
         run_id = "00000000-0000-4000-8000-000000000042"
         self.assertTrue(

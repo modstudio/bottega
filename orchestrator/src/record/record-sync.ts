@@ -18,6 +18,7 @@ import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { backfillQuestionRecords } from '../run/question-outbox.ts'
 import { backfillRunRecords } from '../run/run-outbox.ts'
 import { backfillScoreRecords } from '../score/score-outbox.ts'
+import { backfillBriefInjections } from '../session/brief-injection.ts'
 import {
   backfillTaskFlowRecords,
   taskFlowBackfillUnavailable,
@@ -702,6 +703,7 @@ function syncBackfill(
     scores: backfillScoreRecords(local, identityId),
     reviews: backfillReviewRecords(local),
     landingEvidence: backfillLandingEvidenceRecords(local),
+    briefInjections: backfillBriefInjections(local),
     questions: backfillQuestionRecords(local),
     releases: backfillReleaseRecords(local),
   }

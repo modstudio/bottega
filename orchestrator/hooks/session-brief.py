@@ -21,6 +21,16 @@ from notice_transport import (
 )
 from registered_scope import should_hook_act
 
+with open(
+    os.path.join(os.path.dirname(__file__), "session-start-context.json"),
+    encoding="utf-8",
+) as context_limits_file:
+    SESSION_START_CONTEXT_MAX_CHARS = json.load(context_limits_file)[
+        "SESSION_START_CONTEXT_MAX_CHARS"
+    ]
+
+FULL_CONTEXT_POINTER = "Full context: bottega agent context show --session {session}"
+
 
 def _start(bottega, *args, env=None, cwd=None):
     return subprocess.Popen(
@@ -192,6 +202,50 @@ def _context_protocol():
         "Place each item once on the narrowest task or epic it binds; session context is only for "
         "work that binds no single task or epic. Full protocol: bottega agent context --help."
     )
+
+
+def _with_full_context_pointer(text, session):
+    if len(text) <= SESSION_START_CONTEXT_MAX_CHARS:
+        return text
+    return _join_sections(text, FULL_CONTEXT_POINTER.format(session=session))
+
+
+def _context_size(text):
+    return len(text.encode("utf-8")), 0 if not text else text.count("\n") + 1, len(text)
+
+
+def _record_injection(bottega, cwd, env, session, source, text):
+    size_bytes, lines, chars = _context_size(text)
+    completed = subprocess.run(
+        [
+            bottega,
+            "agent",
+            "context",
+            "record-injection",
+            "--session",
+            session,
+            "--source",
+            source,
+            "--bytes",
+            str(size_bytes),
+            "--lines",
+            str(lines),
+            "--chars",
+            str(chars),
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=1,
+        check=False,
+        cwd=cwd,
+    )
+    if completed.returncode != 0:
+        detail = next(
+            (line.strip() for line in (completed.stderr or "").splitlines() if line.strip()),
+            f"exit {completed.returncode}",
+        )
+        print(f"session-brief: injection recording failed: {detail}", file=sys.stderr)
 
 
 HOOK_CONTEXT_MAX_CHARS = 9000
@@ -545,6 +599,7 @@ def main() -> int:
     withheld_board_count = 0
     board_mode = "full"
     cwd = None
+    sid = None
     bottega = None
     monitor_notices = []
     monitor_warning = None
@@ -1002,6 +1057,26 @@ def main() -> int:
         # Emission is deliberately outside the catch-all above. Once health has been
         # assembled, no exception in supplemental notice work can swallow it.
         board_emission_id = secrets.token_hex(16)
+        if output is not None and sid:
+            context = output.get("hookSpecificOutput", {}).get("additionalContext")
+            if isinstance(context, str):
+                context = _with_full_context_pointer(context, sid)
+                output["hookSpecificOutput"]["additionalContext"] = context
+                if bottega is not None and cwd is not None and inbox_env is not None:
+                    try:
+                        _record_injection(
+                            bottega,
+                            cwd,
+                            inbox_env,
+                            sid,
+                            payload.get("source", "startup"),
+                            context,
+                        )
+                    except Exception as error:
+                        print(
+                            f"session-brief: injection recording failed: {error}",
+                            file=sys.stderr,
+                        )
         if output is not None:
             sys.stdout.write(json.dumps(output) + "\n")
             sys.stdout.flush()

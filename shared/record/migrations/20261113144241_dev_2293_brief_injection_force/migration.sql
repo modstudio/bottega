@@ -1,0 +1,1 @@
+ALTER TABLE "brief_injection" FORCE ROW LEVEL SECURITY;
