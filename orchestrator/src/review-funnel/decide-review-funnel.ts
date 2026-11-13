@@ -4,11 +4,9 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ReviewSettings } from '../project/project-injection.ts'
 import { ceilingWaivableGaps } from '../pull-request/triage-decision.ts'
-import {
-  applicableReview,
-  lensesSelectingPaths,
-} from '../review/review-applicability.ts'
+import { applicableReview, lensesSelectingPaths } from '../review/review-applicability.ts'
 import type { TriageReviewRow } from '../review/review-group.ts'
+import { isDecisionConformanceNotAdmittedReason } from '../review/review-lens-dispatch-reason.ts'
 import {
   type LensProvenanceSubjectFacts,
   lensProvenanceSubject,
@@ -22,7 +20,6 @@ import {
 } from '../review/review-round-lens-plan.ts'
 import { classifyReviewTier, type ReviewTierFile } from '../review/review-tier-classifier.ts'
 import {
-  isDecisionConformanceNotAdmittedReason,
   REVIEW_LENS_SELECTION_REASON,
   type ReviewLensOwedReason,
   type ReviewLensSelectionReason,
@@ -139,10 +136,7 @@ function reasonForLens(input: {
     input.provenanceMismatch === 'commit-mismatch'
   )
     return input.provenanceMismatch
-  if (
-    input.plannedReason &&
-    isDecisionConformanceNotAdmittedReason(input.plannedReason)
-  )
+  if (input.plannedReason && isDecisionConformanceNotAdmittedReason(input.plannedReason))
     return 'operator-ordered'
   if (
     input.postFix.kind === 're-lens' &&
@@ -325,9 +319,7 @@ function selectNextAction(input: {
   const readRequired = input.plan.tier.tier === 0 || input.facts.admissionGap.architectReadRequired
   if (readRequired && !input.facts.exactRead) return { action: 'record-read' }
   const ceilingGap =
-    input.plan.budget.atCeiling &&
-    !input.facts.ceilingRuling &&
-    hasAdmissionGap(input.facts)
+    input.plan.budget.atCeiling && !input.facts.ceilingRuling && hasAdmissionGap(input.facts)
   return ceilingGap ? { action: 'ask-ceiling-ruling' } : { action: 'admit' }
 }
 
