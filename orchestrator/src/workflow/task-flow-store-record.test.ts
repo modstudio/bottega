@@ -157,6 +157,7 @@ function hostedStage(
     flowId?: string
     projectId?: string
     projectName?: string
+    taskId?: string
   } = {},
 ): HostedTaskFlowStageById {
   const number = input.number ?? 1
@@ -167,7 +168,7 @@ function hostedStage(
     flow: {
       id: flowId,
       projectId,
-      taskId: input.taskless ? null : TASK_ID,
+      taskId: input.taskless ? null : (input.taskId ?? TASK_ID),
       taskKey: input.taskless ? null : 'DEV-2234',
       state: 'open',
       openStageRecordId: stageId,
@@ -429,6 +430,9 @@ test('machine-wide hosted reads merge every registered project space', async () 
   const secondProjectId = '00000000-0000-4000-8000-000000000020'
   const firstSpace = '01990000-0000-7000-8000-000000000002'
   const secondSpace = '01990000-0000-7000-8000-000000000003'
+  const secondTaskId = '00000000-0000-4000-8000-000000000023'
+  const secondTextId = '00000000-0000-4000-8000-000000000024'
+  const secondObligationId = '00000000-0000-4000-8000-000000000025'
   d.query('INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?)').run(
     secondProjectId,
     'second-fixture',
@@ -437,24 +441,37 @@ test('machine-wide hosted reads merge every registered project space', async () 
     JSON.stringify({ space: 'fixture-2' }),
   )
   const second = hostedStage({
-    taskless: true,
     number: 1,
     stageId: '00000000-0000-4000-8000-000000000021',
     flowId: '00000000-0000-4000-8000-000000000022',
     projectId: secondProjectId,
     projectName: 'second-fixture',
+    taskId: secondTaskId,
   })
-  const store = recordTaskFlowReadStore(
-    d,
-    createMemoryRecordApiClient({
-      taskFlowStages: [hostedStage(), second],
-      taskFlowProjectSpaces: { [PROJECT_ID]: firstSpace, [secondProjectId]: secondSpace },
-    }),
-  )
+  second.stage.stepTexts![0] = { ...second.stage.stepTexts![0]!, id: secondTextId }
+  second.stage.obligations![0] = { ...second.stage.obligations![0]!, id: secondObligationId }
+  const memory = createMemoryRecordApiClient({
+    taskFlowStages: [hostedStage(), second],
+    taskFlowProjectSpaces: { [PROJECT_ID]: firstSpace, [secondProjectId]: secondSpace },
+  })
+  let whoamiCalls = 0
+  const client = {
+    ...memory,
+    whoami: async () => {
+      whoamiCalls++
+      return memory.whoami()
+    },
+  }
+  const store = recordTaskFlowReadStore(d, client)
   expect(await store.openStageWorktrees()).toEqual([
     { number: 1, workflow: 'flow', project: 'fixture', args: '{}' },
     { number: 1, workflow: 'flow', project: 'second-fixture', args: '{}' },
   ])
+  expect((await store.stageByRecordId(second.stage.id))?.record_id).toBe(second.stage.id)
+  expect((await store.openStageForTask(secondTaskId))?.record_id).toBe(second.stage.id)
+  expect((await store.textByRecordId(secondTextId))?.body).toBe('fixture text')
+  expect((await store.obligationByRecordId(secondObligationId))?.id).toBe(secondObligationId)
+  expect(whoamiCalls).toBe(1)
 })
 
 test('record adapter resolves a stage that reached the record through the sync path', async () => {
@@ -480,9 +497,4 @@ test('record adapter resolves a stage that reached the record through the sync p
 
   expect((await hosted.stageByHandle('fixture', 1))?.record_id).toBe(stageId)
   expect((await hosted.openStageForTask(TASK_ID))?.record_id).toBe(stageId)
-  expect(() =>
-    createMemoryRecordApiClient({
-      taskFlowSyncedRows: { ...rows, stages: [{ ...rows.stages[0]!, projectId: null }] },
-    }),
-  ).toThrow('projectId is required for a new hosted stage')
 })

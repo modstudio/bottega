@@ -6,6 +6,8 @@ import { projectByName, projectByRecordId, projects } from '../project/project-r
 import { RecordApiRequestError, recordApiClient } from '../record/record-api-client.ts'
 import type { RecordRequestDestination } from '../record/record-api-client-paths.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
+import type { RecordIdentity } from '../record/record-auth.ts'
+import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import {
   type HostedTaskFlow,
   type HostedTaskFlowStageById,
@@ -13,10 +15,6 @@ import {
   RECORD_TASK_FLOW_NOT_FOUND_CODE,
   TASK_FLOW_STAGE_LIST_LIMIT_MAX,
 } from '../record/record-task-flow-contract.ts'
-import {
-  resolveTaskFlowDestination,
-  taskFlowWriteTarget,
-} from '../record/record-task-flow-write-client.ts'
 import {
   currentRecordWriteDecision,
   throwIfRecordRefused,
@@ -50,7 +48,7 @@ function stageRow(
 ): TaskFlowStageCursorRow & { open_stage_count?: number } {
   const { stage, flow } = item
   return {
-    id: required(stage.number, 'number'),
+    id: stage.number,
     record_id: stage.id,
     project: required(stage.projectName, 'project name'),
     workflow_slug: stage.workflow,
@@ -160,11 +158,18 @@ class RecordTaskFlowReadStore {
   private readonly local: ReturnType<typeof sqliteTaskFlowReadStore>
   private readonly database: Database
   private readonly client: RecordTaskFlowClient
+  private readonly identity: Promise<RecordIdentity>
+  private readonly destinations = new Map<string, Promise<RecordRequestDestination>>()
+  private everyDestination?: Promise<RecordRequestDestination[]>
 
   constructor(database: Database, client: RecordTaskFlowClient) {
     this.database = database
     this.client = client
     this.local = sqliteTaskFlowReadStore(database)
+    const identityClient = client.whoami
+      ? { whoami: client.whoami.bind(client) }
+      : recordApiClient()
+    this.identity = identityClient.whoami()
   }
 
   private projectId(project: string): string {
@@ -181,18 +186,45 @@ class RecordTaskFlowReadStore {
   }
 
   private destination(project: string): Promise<RecordRequestDestination> {
-    return resolveTaskFlowDestination(taskFlowWriteTarget(project, this.database), this.client)
+    const cached = this.destinations.get(project)
+    if (cached) return cached
+    const row = projectByName(project, this.database)
+    if (!row) throw new Error(`project ${project} is not registered; register it, then retry`)
+    const destination = requireProjectRecordDestination(project, row.settings, {
+      whoami: () => this.identity,
+    }).then((destinationSpaceId) => ({ destinationSpaceId }))
+    this.destinations.set(project, destination)
+    return destination
   }
 
   private async allDestinations(): Promise<RecordRequestDestination[]> {
-    const destinations = await Promise.all(
+    this.everyDestination ??= Promise.all(
       projects(undefined, this.database).map(({ name }) => this.destination(name)),
-    )
-    return [
+    ).then((destinations) => [
       ...new Map(
         destinations.map((destination) => [destination.destinationSpaceId, destination]),
       ).values(),
-    ]
+    ])
+    return this.everyDestination
+  }
+
+  private async readEveryDestination<T>(
+    read: (destination: RecordRequestDestination) => Promise<T | null>,
+  ): Promise<T | null> {
+    const destinations = await this.allDestinations()
+    const answers = await Promise.all(
+      destinations.map(async (destination) => ({ destination, value: await read(destination) })),
+    )
+    const found = answers.filter(
+      (answer): answer is typeof answer & { value: T } => answer.value !== null,
+    )
+    if (found.length > 1)
+      throw new Error(
+        `hosted task-flow record exists in more than one record space: ${found
+          .map(({ destination }) => destination.destinationSpaceId)
+          .join(', ')}`,
+      )
+    return found[0]?.value ?? null
   }
 
   private async list(selector: StageListSelector, project?: string): Promise<ListedItem[]> {
@@ -218,7 +250,7 @@ class RecordTaskFlowReadStore {
     const read = this.client.readTaskFlowStage
     if (!read)
       throw new Error('record API predates task-flow stage reads; release hosted-api, then retry')
-    return read(id)
+    return this.readEveryDestination((destination) => read(id, destination))
   }
 
   private async flow(selector: {
@@ -228,17 +260,19 @@ class RecordTaskFlowReadStore {
     const read = this.client.readTaskFlow
     if (!read)
       throw new Error('record API predates task-flow reads; release hosted-api, then retry')
-    try {
-      return await read(selector)
-    } catch (error) {
-      if (
-        error instanceof RecordApiRequestError &&
-        error.status === 404 &&
-        error.code === RECORD_TASK_FLOW_NOT_FOUND_CODE
-      )
-        return null
-      throw error
-    }
+    return this.readEveryDestination(async (destination) => {
+      try {
+        return await read(selector, destination)
+      } catch (error) {
+        if (
+          error instanceof RecordApiRequestError &&
+          error.status === 404 &&
+          error.code === RECORD_TASK_FLOW_NOT_FOUND_CODE
+        )
+          return null
+        throw error
+      }
+    })
   }
 
   async openStageForTask(taskRecordId: string) {
@@ -331,9 +365,7 @@ class RecordTaskFlowReadStore {
     const hosted = input.project
       ? await this.list(selector, input.project)
       : await this.listEveryDestination(selector)
-    const numberByRecordId = new Map(
-      hosted.map(({ stage }) => [stage.id, required(stage.number, 'number')]),
-    )
+    const numberByRecordId = new Map(hosted.map(({ stage }) => [stage.id, stage.number]))
     return local.map((row) => {
       const number = numberByRecordId.get(row.record_id)
       if (number === undefined)
@@ -372,8 +404,9 @@ class RecordTaskFlowReadStore {
   async stageIdentityMap() {
     return this.local.stageIdentityMap()
   }
-  async stageByHandle(project: string, cursor: number) {
-    const rows = await this.list({ projectId: this.projectId(project), number: cursor }, project)
+  async stageByHandle(project: string | undefined, cursor: number) {
+    const projectId = this.projectId(project ?? '')
+    const rows = await this.list({ projectId, number: cursor }, project)
     return rows[0] ? stageRow(rows[0]) : null
   }
   async stageHoldingTaskKey(input: {
@@ -392,7 +425,7 @@ class RecordTaskFlowReadStore {
       },
       input.project,
     )
-    return rows[0] ? { id: required(rows[0].stage.number, 'number') } : null
+    return rows[0] ? { id: rows[0].stage.number } : null
   }
   waitingWorkflowQuestions() {
     return this.local.waitingWorkflowQuestions()
@@ -412,7 +445,10 @@ class RecordTaskFlowReadStore {
     return (result?.stage.stepTexts ?? []).map(textRow)
   }
   async textByRecordId(recordId: string) {
-    const result = await this.client.readTaskFlowText?.(recordId)
+    const read = this.client.readTaskFlowText
+    const result = read
+      ? await this.readEveryDestination((destination) => read(recordId, destination))
+      : null
     return result
       ? {
           cursor_record_id: result.text.stageRecordId,
@@ -423,7 +459,10 @@ class RecordTaskFlowReadStore {
       : null
   }
   async textAttachmentByRecordId(recordId: string) {
-    const result = await this.client.readTaskFlowText?.(recordId)
+    const read = this.client.readTaskFlowText
+    const result = read
+      ? await this.readEveryDestination((destination) => read(recordId, destination))
+      : null
     return result ? textRow(result.text) : null
   }
   async textRecordIdsForStage(stageRecordId: string) {
@@ -452,17 +491,24 @@ class RecordTaskFlowReadStore {
       }))
   }
   async liveTextAttachment(recordId: string) {
-    const result = await this.client.readTaskFlowText?.(recordId)
+    const read = this.client.readTaskFlowText
+    const result = read
+      ? await this.readEveryDestination((destination) => read(recordId, destination))
+      : null
     return result
       ? {
-          cursor: required(result.stage.number, 'number'),
+          cursor: result.stage.number,
           step_slug: result.text.stepSlug,
           body: result.text.body,
         }
       : null
   }
   async copiedTextReference(recordId: string) {
-    return (await this.client.readTaskFlowText?.(recordId))?.copy?.taskDocumentReference ?? null
+    const read = this.client.readTaskFlowText
+    const result = read
+      ? await this.readEveryDestination((destination) => read(recordId, destination))
+      : null
+    return result?.copy?.taskDocumentReference ?? null
   }
   async openObligationRecordIds(stageRecordId: string) {
     return (await this.openObligations(stageRecordId)).map(({ id }) => id)
@@ -470,19 +516,22 @@ class RecordTaskFlowReadStore {
   async openObligations(stageRecordId: string) {
     const result = await this.byId(stageRecordId)
     if (!result) return []
-    const number = required(result.stage.number, 'number')
+    const number = result.stage.number
     return (result.stage.obligations ?? [])
       .filter(({ satisfiedAt, abandonedAt }) => !satisfiedAt && !abandonedAt)
       .map((row) => openObligationRow(row, number))
   }
   async obligationByRecordId(recordId: string): Promise<TaskFlowObligationRow | null> {
-    const result = await this.client.readTaskFlowObligation?.(recordId)
+    const read = this.client.readTaskFlowObligation
+    const result = read
+      ? await this.readEveryDestination((destination) => read(recordId, destination))
+      : null
     if (!result) return null
     const {
       stepOrdinal: _stepOrdinal,
       stepSlug: _stepSlug,
       ...row
-    } = openObligationRow(result.obligation, required(result.stage.number, 'number'))
+    } = openObligationRow(result.obligation, result.stage.number)
     return {
       ...row,
       cursor_record_id: result.obligation.stageRecordId,

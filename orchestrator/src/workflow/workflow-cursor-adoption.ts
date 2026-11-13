@@ -11,6 +11,7 @@ import {
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { refuseTaskFlowStageConflictLocal, vacateRetiredWorkflowKeySlot } from './task-flow.ts'
+import { readThroughTaskFlow } from './task-flow-read-through.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 
 type AdoptionCursor = {
@@ -96,7 +97,7 @@ export async function adoptWorkflowTask(
       ],
     }
     const updated = await writeHostedTaskFlow('stage-update', updatePayload, target, client)
-    writeTransaction(() => {
+    const mirror = writeTransaction(() => {
       refuseTaskFlowStageConflictLocal(
         {
           taskRecordId: adoptedTaskId,
@@ -107,12 +108,22 @@ export async function adoptWorkflowTask(
         },
         d,
       )
-      taskFlowLocalStore(d).write('adopt', adoptPayload, adopted)
-      stageRevision = taskFlowLocalStore(d).write('stage-update', updatePayload, updated).revisions[
-        row.record_id
-      ]!
-      assignWorkflowTaskKey(row, key, adoptedTaskId, d)
+      const store = taskFlowLocalStore(d)
+      store.write('adopt', adoptPayload, adopted)
+      const result = store.write('stage-update', updatePayload, updated)
+      stageRevision = result.revisions[row.record_id]!
+      const outcome = result.mirror[row.record_id]
+      if (outcome !== 'refresh') assignWorkflowTaskKey(row, key, adoptedTaskId, d)
+      return outcome
     }, d)
+    if (mirror === 'refresh') {
+      Object.assign(row, await taskFlowReadStore(d, client).stageByRecordId(row.record_id))
+      await readThroughTaskFlow(
+        d,
+        { project: row.project, taskKey: key, taskRecordId: adoptedTaskId },
+        client,
+      )
+    }
     return
   }
   const at = nowIso()

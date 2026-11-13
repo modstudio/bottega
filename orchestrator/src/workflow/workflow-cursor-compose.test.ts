@@ -14,6 +14,7 @@ import { taskFlowReadStore } from './task-flow-store.ts'
 import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
 import { ruleWorkflow } from './workflow-cursor-ruling.ts'
+import { linkWorkflowTaskLabel } from './workflow-task-linking.ts'
 import {
   abandonCursor,
   context,
@@ -169,6 +170,82 @@ test('hosted compose prints the hosted number while caching the machine-local nu
     d.query('SELECT revision FROM task_flow WHERE task_record_id=?').get('task-DEV-HOSTED'),
   ).toEqual({ revision: 4 })
   expect(d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%'").all()).toEqual([])
+})
+
+test('hosted stage update presents and refreshes the record row when the mirror is stale', async () => {
+  const d = hostedDatabase()
+  const calls: TaskFlowIntentInput<'compose'>[] = []
+  const taskFlowClient = composeClient(calls)
+  const args = { key: 'DEV-STALE', branch: 'DEV-STALE-work', worktree: '/tmp/stale' }
+  const callContext = { ...context, taskRecordId: 'task-DEV-STALE', taskFlowClient }
+  const opened = await composeWorkflowWithCursor(
+    'flow',
+    'fixture',
+    'default',
+    args,
+    callContext,
+    d,
+    {},
+    {},
+  )
+  d.query("UPDATE workflow_cursor SET revision=6,state='awaiting-ruling' WHERE number=?").run(
+    opened.cursor!.id,
+  )
+
+  const resumed = await composeWorkflowWithCursor(
+    'flow',
+    'fixture',
+    'default',
+    args,
+    callContext,
+    d,
+    {},
+    {},
+  )
+
+  expect(resumed.cursor).toMatchObject({ state: 'running', opened: false })
+  expect(
+    d.query('SELECT revision,state FROM workflow_cursor WHERE number=?').get(opened.cursor!.id),
+  ).toEqual({ revision: 8, state: 'running' })
+})
+
+test('task linking refreshes a stale adopted stage from the record', async () => {
+  const d = hostedDatabase()
+  const taskFlowClient = composeClient([])
+  const workflowKey = 'DEV-ADOPT-REFRESH'
+  const opened = await composeWorkflowWithCursor(
+    'flow',
+    'fixture',
+    'default',
+    { key: workflowKey, branch: 'DEV-ADOPT-work', worktree: '/tmp/adopt' },
+    { ...context, taskRecordId: null, taskFlowClient },
+    d,
+    {},
+    {},
+  )
+  const stage = d
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM workflow_cursor WHERE number=?')
+    .get(opened.cursor!.id)!
+  d.query('UPDATE workflow_cursor SET revision=6 WHERE record_id=?').run(stage.record_id)
+  const hosted = await taskFlowClient.readTaskFlow!(
+    { taskKey: workflowKey },
+    { destinationSpaceId },
+  )
+  const taskRecordId = 'task-DEV-ADOPT-REFRESH'
+
+  await linkWorkflowTaskLabel(d, { project: 'fixture', workflowKey, taskRecordId }, taskFlowClient)
+
+  expect(
+    d
+      .query(
+        'SELECT task_record_id,task_flow_record_id,revision FROM workflow_cursor WHERE record_id=?',
+      )
+      .get(stage.record_id),
+  ).toEqual({
+    task_record_id: taskRecordId,
+    task_flow_record_id: hosted.flow.id,
+    revision: 8,
+  })
 })
 
 test('hosted compose prints and resolves the per-project number across two projects', async () => {

@@ -53,14 +53,6 @@ type ComposeFacts = {
   autonomyJson: string | null
 }
 
-function requiredHostedStageNumber(number: number | null): number {
-  if (number === null)
-    throw new Error(
-      'hosted task-flow stage has no number; repair the hosted task-flow row, then retry',
-    )
-  return number
-}
-
 function decideKeylessComposeInstance(input: {
   key: string
   owner: string
@@ -113,7 +105,7 @@ async function readComposeFacts(
     .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
     .get(composition.project)!.record_id
   const existingFlow = context.taskRecordId
-    ? await taskFlowReadStore(database).flowForTask(context.taskRecordId)
+    ? await taskFlowReadStore(database, context.taskFlowClient).flowForTask(context.taskRecordId)
     : null
   if (context.taskRecordId && key)
     await refuseTaskFlowStageConflict(
@@ -124,6 +116,7 @@ async function readComposeFacts(
         mode: composition.mode!.slug,
       },
       database,
+      context.taskFlowClient,
     )
   if (key)
     await refuseUnlinkedCursorLabelCollision(database, {
@@ -325,7 +318,7 @@ function cacheComposeReplay(
         database,
       )
     const row = taskFlowLocalStore(database).stageByRecordId(stored) as SelectableCursorRow
-    return { ...row, id: requiredHostedStageNumber(stage.number) }
+    return { ...row, id: stage.number }
   }, database)
 }
 

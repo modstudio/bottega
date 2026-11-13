@@ -23,6 +23,21 @@ export type MemoryTaskFlowInput = {
 }
 
 type Selector = Parameters<NonNullable<RecordApiClient['listTaskFlowStages']>>[0]
+type Destination = Parameters<NonNullable<RecordApiClient['readTaskFlowStage']>>[1]
+
+const ACTIVE_SPACE_ID = '01990000-0000-7000-8000-000000000002'
+
+function inDestination(
+  row: HostedTaskFlowStageById,
+  input: MemoryTaskFlowInput,
+  destination?: Destination,
+): boolean {
+  if (!input.taskFlowProjectSpaces) return true
+  return (
+    input.taskFlowProjectSpaces[row.stage.projectId] ===
+    (destination?.destinationSpaceId ?? ACTIVE_SPACE_ID)
+  )
+}
 
 function matches({ stage, flow }: HostedTaskFlowStageById, selector: Selector): boolean {
   const values = [
@@ -244,14 +259,16 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
       )
       return { revisions: {} }
     },
-    async readTaskFlow(selector) {
-      const found = stages.find(({ flow }) =>
-        selector.taskId
-          ? flow.taskId === selector.taskId
-          : selector.flowRecordId
-            ? flow.id === selector.flowRecordId
-            : flow.taskKey === selector.taskKey,
-      )
+    async readTaskFlow(selector, destination) {
+      const found = stages
+        .filter((row) => inDestination(row, input, destination))
+        .find(({ flow }) =>
+          selector.taskId
+            ? flow.taskId === selector.taskId
+            : selector.flowRecordId
+              ? flow.id === selector.flowRecordId
+              : flow.taskKey === selector.taskKey,
+        )
       if (!found)
         throw recordApiError(
           { error: 'hosted task flow not found', code: 'task_flow_not_found' },
@@ -274,12 +291,7 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
     },
     async listTaskFlowStages(selector, destination) {
       const rows = [...stages]
-        .filter(
-          ({ stage }) =>
-            !destination ||
-            !input.taskFlowProjectSpaces ||
-            input.taskFlowProjectSpaces[stage.projectId] === destination.destinationSpaceId,
-        )
+        .filter((row) => inDestination(row, input, destination))
         .filter((row) => matches(row, selector))
         .sort((left, right) => compare(selector, left, right))
       const offset = Number(selector.cursor ?? 0)
@@ -299,11 +311,15 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
         nextCursor: next < rows.length ? String(next) : null,
       }
     },
-    async readTaskFlowStage(id) {
-      return stages.find(({ stage }) => stage.id === id) ?? null
+    async readTaskFlowStage(id, destination) {
+      return (
+        stages.find((row) => inDestination(row, input, destination) && row.stage.id === id) ?? null
+      )
     },
-    async readTaskFlowText(id) {
-      for (const { stage } of stages) {
+    async readTaskFlowText(id, destination) {
+      for (const row of stages) {
+        if (!inDestination(row, input, destination)) continue
+        const { stage } = row
         const text = stage.stepTexts?.find((row) => row.id === id)
         if (text)
           return {
@@ -314,8 +330,10 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
       }
       return null
     },
-    async readTaskFlowObligation(id) {
-      for (const { stage } of stages) {
+    async readTaskFlowObligation(id, destination) {
+      for (const row of stages) {
+        if (!inDestination(row, input, destination)) continue
+        const { stage } = row
         const obligation = stage.obligations?.find((row) => row.id === id)
         if (obligation)
           return { obligation, stage: { id: stage.id, number: stage.number, state: stage.state } }

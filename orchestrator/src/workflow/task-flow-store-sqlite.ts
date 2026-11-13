@@ -262,7 +262,7 @@ class SqliteTaskFlowStore {
       .get(taskRecordId)
   }
 
-  stageByHandle(_project: string, cursor: number): TaskFlowStageCursorRow | null {
+  stageByHandle(_project: string | undefined, cursor: number): TaskFlowStageCursorRow | null {
     return this.database
       .query<TaskFlowStageCursorRow, [number]>(
         `SELECT ${LISTED_STAGE_COLUMNS} FROM workflow_cursor cursor WHERE cursor.number=?`,

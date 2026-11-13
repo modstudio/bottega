@@ -66,11 +66,15 @@ export async function linkWorkflowTaskLabel(
   }, database)
   for (const { result } of refresh)
     if (result)
-      await readThroughTaskFlow(database, {
-        project: input.project,
-        taskKey: input.workflowKey,
-        taskRecordId: input.taskRecordId,
-      })
+      await readThroughTaskFlow(
+        database,
+        {
+          project: input.project,
+          taskKey: input.workflowKey,
+          taskRecordId: input.taskRecordId,
+        },
+        client,
+      )
   return linked
 }
 

@@ -98,6 +98,17 @@ export async function proveTaskFlowRecordReads(input: {
     ids(await input.client.listTaskFlowStages!({ unlinked: true }, input.destination)).sort(),
   ).toEqual([input.tasklessStageId])
   expect(
+    ids(await input.client.listTaskFlowStages!({ linked: true }, input.destination)).sort(),
+  ).toEqual(allStageIds.filter((id) => id !== input.tasklessStageId).toSorted())
+  expect(
+    ids(
+      await input.client.listTaskFlowStages!(
+        { openedMachineId: input.stage.openedMachineId },
+        input.destination,
+      ),
+    ).sort(),
+  ).toEqual(allStageIds.toSorted())
+  expect(
     (await input.client.readTaskFlow!({ taskId: input.taskId }, input.destination)).flow.id,
   ).toBe(input.flowId)
 

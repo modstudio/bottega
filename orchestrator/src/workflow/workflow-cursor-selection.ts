@@ -101,11 +101,15 @@ export async function readThroughWorkflowCursorContext(
 ): Promise<WorkflowCursorContext> {
   if (!context.workflowKey || !context.taskRecordId) return context
   if (!taskFlowReadThroughEnabled(database)) return context
-  const taskFlowRead = await readThroughTaskFlow(database, {
-    project,
-    taskKey: context.workflowKey,
-    taskRecordId: context.taskRecordId,
-  })
+  const taskFlowRead = await readThroughTaskFlow(
+    database,
+    {
+      project,
+      taskKey: context.workflowKey,
+      taskRecordId: context.taskRecordId,
+    },
+    context.taskFlowClient,
+  )
   context.taskFlowRead = taskFlowRead
   return context
 }
@@ -194,7 +198,6 @@ export async function selectByHandle(
   client?: RecordTaskFlowClient,
 ): Promise<SelectableCursorRow> {
   const project = workflowCursorProject(identity.project, process.cwd(), d)
-  if (!project) throw new Error('a workflow cursor handle requires a project; pass --project')
   const row = await taskFlowReadStore(d, client).stageByHandle(project, cursor)
   if (!row)
     throw new Error(

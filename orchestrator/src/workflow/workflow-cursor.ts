@@ -15,6 +15,7 @@ import {
 import { upsertWorkflowQuestion } from '../run/question-mutation.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
 import { decideWorkflowTakeover, workflowTakeoverNotice } from './task-flow-decision.ts'
+import { readThroughTaskFlow } from './task-flow-read-through.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 import {
   type CommitCountPort,
@@ -231,11 +232,27 @@ export async function composeWorkflowWithCursor(
       taskFlowWriteTarget(existing.project, d),
       context.taskFlowClient,
     )
-    writeTransaction(() => {
+    const mirror = writeTransaction(() => {
       const store = taskFlowLocalStore(d)
-      store.write('stage-update', payload, hosted)
+      const result = store.write('stage-update', payload, hosted)
       row = store.stageByRecordId(existing.record_id) as CursorRow
+      return result.mirror[existing.record_id]
     }, d)
+    if (mirror === 'refresh') {
+      row = (await taskFlowReadStore(d, context.taskFlowClient).stageByRecordId(
+        existing.record_id,
+      )) as CursorRow
+      if (existing.task_record_id)
+        await readThroughTaskFlow(
+          d,
+          {
+            project: existing.project,
+            taskKey: existing.workflow_key,
+            taskRecordId: existing.task_record_id,
+          },
+          context.taskFlowClient,
+        )
+    }
   } else row = await insertWorkflowCursor(composition, context, d, autonomy, commitCount)
   return {
     ...cursorComposition(row, d, live),

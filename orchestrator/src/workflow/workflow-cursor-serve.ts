@@ -11,7 +11,8 @@ import {
 import type { TaskFlowIntentInput } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import type { AutonomyResolution, LiveCursorAutonomy } from './autonomy.ts'
-import { taskFlowLocalStore } from './task-flow-store.ts'
+import { readThroughTaskFlow } from './task-flow-read-through.ts'
+import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 import { type CommitCountPort, readCommitsPastLanding } from './workflow-compose-branch.ts'
 import { resolveCursorArguments, workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
@@ -232,11 +233,12 @@ async function applyServeTransition(
     taskFlowWriteTarget(row.project, database),
     context.taskFlowClient,
   )
-  writeTransaction(() => {
+  const mirror = writeTransaction(() => {
     const store = taskFlowLocalStore(database)
     if ((decision.move || decision.resume) && row.state === 'awaiting-ruling')
       closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, database)
-    const revision = store.write('stage-update', payload, hosted).revisions[row.record_id]!
+    const result = store.write('stage-update', payload, hosted)
+    const revision = result.revisions[row.record_id]!
     row.revision = revision
     if (resolvedArguments) {
       row.args = resolvedArguments.encoded
@@ -247,7 +249,20 @@ async function applyServeTransition(
       row.step_slug = decision.slug
       row.state = 'running'
     }
+    return result.mirror[row.record_id]
   }, database)
+  if (mirror === 'refresh') {
+    Object.assign(
+      row,
+      await taskFlowReadStore(database, context.taskFlowClient).stageByRecordId(row.record_id),
+    )
+    if (row.task_record_id)
+      await readThroughTaskFlow(
+        database,
+        { project: row.project, taskKey: row.workflow_key, taskRecordId: row.task_record_id },
+        context.taskFlowClient,
+      )
+  }
 }
 
 async function serveWorkflowStepWithCursor(

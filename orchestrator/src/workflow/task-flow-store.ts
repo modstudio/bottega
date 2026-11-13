@@ -93,7 +93,7 @@ interface TaskFlowQueries {
     machineId: string
   }): void
   flowProjectionForTask(taskRecordId: string): TaskFlowProjectionRow | null
-  stageByHandle(project: string, cursor: number): TaskFlowStageCursorRow | null
+  stageByHandle(project: string | undefined, cursor: number): TaskFlowStageCursorRow | null
   stageByRecordId(recordId: string): TaskFlowStageCursorRow | null
   latestStageForTask(input: {
     project: string
