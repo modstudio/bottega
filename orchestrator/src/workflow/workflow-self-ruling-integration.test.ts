@@ -174,6 +174,74 @@ test('self-ruling records the answered question and closes the step atomically',
   })
 })
 
+test('review-owed is applied as the only floor and leaves no evidence floor behind', async () => {
+  const d = database()
+  const current = productionStepCatalogue(d).definition
+  const catalogue = setStepCatalogueLocal(
+    {
+      ...current,
+      steps: current.steps.map((step) =>
+        step.slug === 'rebase' ? { ...step, floor: ['review-owed' as const] } : step,
+      ),
+    },
+    'review-owed floor fixture',
+    'test',
+    d,
+  )
+  promoteStepCatalogueLocal(catalogue.n, 'publish review-owed floor fixture', 'test', d)
+  await composeWorkflowWithCursor(
+    'flow',
+    'fixture',
+    'default',
+    args,
+    context,
+    d,
+    {},
+    { resolution: resolution(d) },
+  )
+
+  let allow = false
+  let calls = 0
+  const floorPorts = {
+    ...ports,
+    reviewOwed: () => {
+      calls += 1
+      return allow
+        ? ({ action: 'allow' } as const)
+        : ({ action: 'refuse', message: 'review lens is still running' } as const)
+    },
+  }
+  const input = {
+    action: 'next' as const,
+    project: 'fixture',
+    workflow: 'flow',
+    mode: 'default',
+    key: args.key,
+    args,
+    context,
+    note: 'reviewed the change',
+    evidence: {},
+    floorPorts,
+  }
+
+  await expect(closeCursorWithTextCopyResult(input, d)).rejects.toThrow(
+    'review lens is still running',
+  )
+  expect(calls).toBe(1)
+  expect(d.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({
+    ordinal: 0,
+    step_slug: 'rebase',
+  })
+
+  allow = true
+  await closeCursorWithTextCopyResult(input, d)
+  expect(calls).toBe(2)
+  expect(d.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({
+    ordinal: 1,
+    step_slug: 'lens',
+  })
+})
+
 test('a whitespace-padded self-ruling carries its question into the context moment', async () => {
   const d = database()
   await openAtRuling(d)

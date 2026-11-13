@@ -4,6 +4,7 @@
 import type { PullRequestView } from '../branch/pull-request-view.ts'
 import type { CheckoutResolution } from './workflow-checkout-refusal.ts'
 import type { HubTaskRead } from './workflow-floor-task-read.ts'
+import type { ReviewOwedFloorDecision } from './workflow-review-owed-decision.ts'
 
 export type FloorEvidencePorts = {
   readTask?: (key: string, options: { fresh: true }) => HubTaskRead
@@ -16,6 +17,7 @@ export type FloorEvidencePorts = {
   viewPullRequest?: (project: string, reference: number | string) => PullRequestView
   readOriginUrl?: (project: string) => string | null
   resolveTreeCommit?: (worktree: string) => string | null
+  reviewOwed?: (project: string, args: Record<string, string>) => ReviewOwedFloorDecision
 }
 
 export const MAX_FLOOR_EVIDENCE_REPLAY_ROUNDS = 16
@@ -81,6 +83,7 @@ function replayingPorts(real: FloorEvidencePorts, memo: Map<string, RecordedCall
     'resolveCheckout',
     'viewPullRequest',
     'resolveTreeCommit',
+    'reviewOwed',
   ] as const) {
     if (real[port]) {
       Object.assign(wrapped, {

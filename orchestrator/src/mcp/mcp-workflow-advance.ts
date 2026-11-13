@@ -15,6 +15,7 @@ import { resolveProbeArtifact } from '../workflow/probe-identifier.ts'
 import { workflowNextContextMoment } from '../workflow/workflow-context-moment.ts'
 import { workflowKeyOf } from '../workflow/workflow-cursor-arguments.ts'
 import { resolveCursorLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
+import { productionWorkflowFloorPorts } from '../workflow/workflow-production-floor-ports.ts'
 import { type HubTaskReader, resolveHubTaskReference } from '../workflow/workflow-task-reference.ts'
 import {
   closeCursorWithTextCopyResult,
@@ -113,6 +114,7 @@ export async function advanceWorkflow(
         defer,
         satisfies,
       },
+      floorPorts: productionWorkflowFloorPorts(),
       selfRuling:
         storedSelfRuling === undefined
           ? undefined

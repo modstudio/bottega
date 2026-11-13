@@ -34,8 +34,12 @@ import { diffNumstat } from '../review/review-tier.ts'
 import type {
   ReviewFunnelFacts,
   ReviewFunnelLensState,
+  ReviewFunnelLensStatus,
   ReviewFunnelRoundFact,
 } from './decide-review-funnel.ts'
+
+const RUNNING_LENS_STATUS = 'running' satisfies ReviewFunnelLensStatus
+const UNTRIAGED_LENS_STATUS = 'untriaged' satisfies ReviewFunnelLensStatus
 
 export type ReviewFunnelChange = {
   database: Database
@@ -75,7 +79,7 @@ function liveLensStates(
         ORDER BY number`,
     )
     .all(project, ...lineage)
-    .map((row) => ({ lens: row.lens, runId: row.record_id, state: 'running' as const }))
+    .map((row) => ({ lens: row.lens, runId: row.record_id, state: RUNNING_LENS_STATUS }))
 }
 
 function overrideFacts(
@@ -97,7 +101,7 @@ function completionFacts(branchReviews: ReturnType<typeof reviewsForTriage>['bra
   const untriaged: ReviewFunnelLensState[] = incomplete.flatMap((review) =>
     review.lenses.flatMap((lens) =>
       lens.lens && lens.runId
-        ? [{ lens: lens.lens, runId: lens.runId, state: 'untriaged' as const }]
+        ? [{ lens: lens.lens, runId: lens.runId, state: UNTRIAGED_LENS_STATUS }]
         : [],
     ),
   )

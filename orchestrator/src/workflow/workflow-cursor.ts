@@ -41,13 +41,7 @@ import {
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
 import { cursorComposition } from './workflow-cursor-serve.ts'
-import {
-  type ClosedStep,
-  type CursorTrailEntry,
-  currentStepActivatedAt,
-  isClosedStep,
-  reentryBoundFloorInput,
-} from './workflow-cursor-trail.ts'
+import { type ClosedStep, type CursorTrailEntry, isClosedStep } from './workflow-cursor-trail.ts'
 import {
   type CursorState,
   decideConditionalAdvance,
@@ -59,19 +53,17 @@ import {
   DEFAULT_EXPECTED_EXIT_CODE,
   DEFAULT_EXPECTED_STATUS,
   decideCloseFloors,
-  decideFloorSatisfaction,
   type Floor,
   type FloorDecision,
 } from './workflow-floor.ts'
+import { applyFloorDecision } from './workflow-floor-apply.ts'
 import {
   type FloorEvidencePorts,
   productionFloorPorts,
   type WorkflowEvidenceInput,
 } from './workflow-floor-evidence.ts'
-import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
 import { withReplayedFloorEvidenceAsync } from './workflow-floor-evidence-replay.ts'
 import { refuseKeylessStepClose } from './workflow-keyless-close.ts'
-import { openWorkflowObligations } from './workflow-obligation-floor.ts'
 import { selfRulingRefusal } from './workflow-self-ruling.ts'
 import {
   recordWorkflowSelfRuling,
@@ -261,59 +253,6 @@ export async function composeWorkflowWithCursor(
       previousSession: start === 'reuse' ? takenOverFrom(existing, context) : null,
     } satisfies CursorSummary,
   }
-}
-
-async function applyFloorDecision(
-  row: CursorRow,
-  floors: Floor[],
-  evidence: WorkflowEvidenceInput,
-  ports: FloorEvidencePorts,
-  finishing: boolean,
-  d: Database,
-  client?: WorkflowCursorContext['taskFlowClient'],
-  requireRuling = false,
-  selfRulingId?: number,
-): Promise<FloorDecision> {
-  const args = JSON.parse(row.args) as Record<string, string>
-  const validated = await gatherValidatedEvidence({
-    cursorId: row.record_id,
-    identity: {
-      project: row.project,
-      workflowKey: row.workflow_key,
-      workflowTaskRecordId: row.task_record_id,
-      branch: args.branch?.trim() || null,
-      worktree: args.worktree?.trim() || null,
-      session: row.session_id,
-      createdAt: row.created_at,
-      stepActivatedAt: currentStepActivatedAt(
-        row,
-        cursorName(row.workflow_slug, row.mode_slug, row.workflow_key),
-      ),
-    },
-    stepOrdinal: row.ordinal + 1,
-    stepSlug: row.step_slug,
-    floors,
-    evidence,
-    ports,
-    d,
-  })
-  if (selfRulingId !== undefined)
-    validated.ruling = {
-      id: selfRulingId,
-      answered: true,
-      answeredByOperator: false,
-      boundToCursor: true,
-      boundToStep: true,
-      answeredAt: nowIso(),
-    }
-  return decideFloorSatisfaction({
-    floors,
-    evidence: validated,
-    enforcement: row.enforcement ?? 'note-only',
-    finishing,
-    openObligations: await openWorkflowObligations(row.record_id, d, client),
-    ...reentryBoundFloorInput(requireRuling, row.closed, row.step_slug),
-  })
 }
 
 function persistFloorClose(
