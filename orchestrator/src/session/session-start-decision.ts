@@ -4,7 +4,6 @@
 export type SessionStartCursor = {
   id: number
   workflow: string
-  state: string
 }
 
 export type SessionStartDecision =
@@ -13,26 +12,17 @@ export type SessionStartDecision =
   | { kind: 'refuse-session' }
   | { kind: 'refuse-project' }
 
-const isOpen = (cursor: SessionStartCursor) =>
-  cursor.state !== 'done' && cursor.state !== 'abandoned'
-
 /**
- * Does this session already work inside a workflow? Explore opens only when the session
- * holds no open cursor, so a session that closed explore to take up a task keeps that choice.
+ * Does this session already hold an open explore cursor? The store owns the definition of
+ * open, so the decision receives only open cursors and composes when none is explore.
  */
 export function decideSessionStart(input: {
   session: string | null
   project: string | null
-  cursors: readonly SessionStartCursor[]
+  openCursors: readonly SessionStartCursor[]
 }): SessionStartDecision {
   if (!input.session) return { kind: 'refuse-session' }
   if (!input.project) return { kind: 'refuse-project' }
-  const open = input.cursors.filter(isOpen)
-  const held =
-    open.find((cursor) => cursor.workflow === 'explore') ??
-    open.reduce<SessionStartCursor | undefined>(
-      (latest, cursor) => (!latest || cursor.id > latest.id ? cursor : latest),
-      undefined,
-    )
+  const held = input.openCursors.find((cursor) => cursor.workflow === 'explore')
   return held ? { kind: 'reuse', cursor: held.id, workflow: held.workflow } : { kind: 'compose' }
 }

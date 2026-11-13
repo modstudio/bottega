@@ -3,9 +3,9 @@ import { decideSessionStart } from './session-start-decision.ts'
 
 describe('session start decision', () => {
   test('composes when the session holds no explore cursor', () => {
-    expect(decideSessionStart({ session: 'session', project: 'fixture', cursors: [] })).toEqual({
-      kind: 'compose',
-    })
+    expect(
+      decideSessionStart({ session: 'session', project: 'fixture', openCursors: [] }),
+    ).toEqual({ kind: 'compose' })
   })
 
   test('reuses an open explore cursor', () => {
@@ -13,27 +13,29 @@ describe('session start decision', () => {
       decideSessionStart({
         session: 'session',
         project: 'fixture',
-        cursors: [{ id: 17, workflow: 'explore', state: 'active' }],
+        openCursors: [{ id: 17, workflow: 'explore' }],
       }),
     ).toEqual({ kind: 'reuse', cursor: 17, workflow: 'explore' })
   })
 
-  test('keeps a task workflow the session took up after closing explore', () => {
+  test('composes when the store excludes the session\'s only closed explore', () => {
     expect(
       decideSessionStart({
         session: 'session',
         project: 'fixture',
-        cursors: [
-          { id: 17, workflow: 'explore', state: 'done' },
-          { id: 18, workflow: 'plan-task', state: 'active' },
-          { id: 21, workflow: 'ship-task', state: 'active' },
-        ],
+        openCursors: [],
       }),
-    ).toEqual({ kind: 'reuse', cursor: 21, workflow: 'ship-task' })
+    ).toEqual({ kind: 'compose' })
+  })
+
+  test('refuses softly without a session identity', () => {
+    expect(decideSessionStart({ session: null, project: 'fixture', openCursors: [] })).toEqual({
+      kind: 'refuse-session',
+    })
   })
 
   test('refuses softly outside a registered project', () => {
-    expect(decideSessionStart({ session: 'session', project: null, cursors: [] })).toEqual({
+    expect(decideSessionStart({ session: 'session', project: null, openCursors: [] })).toEqual({
       kind: 'refuse-project',
     })
   })

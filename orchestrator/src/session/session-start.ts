@@ -5,12 +5,17 @@ import type { Database } from 'bun:sqlite'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
-import { db, sessionId } from '../database/db.ts'
-import { projectAt } from '../project/projects.ts'
+import { callerIdentityRefusal } from '../caller-classification.ts'
+import { callerIdentity, db, sessionId } from '../database/db.ts'
+import {
+  projectAmong,
+  projectAt,
+  projects,
+  retiredProjectRefusal,
+} from '../project/projects.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { composeWorkflowWithCursor } from '../workflow/workflow-cursor.ts'
 import { resolveWorkflowLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
-import { resolveWorkflowCursorContext } from '../workflow/workflow-cursor-selection.ts'
 import { decideSessionStart } from './session-start-decision.ts'
 
 export type SessionStartResult = {
@@ -36,34 +41,38 @@ export async function startSession(
   const session = dependencies.session === undefined ? sessionId(database) : dependencies.session
   const project = projectAt(cwd, database)
   const openCursors = session
-    ? await taskFlowReadStore(database).listOpenStages({ sessionId: session })
+    ? await taskFlowReadStore(database).listOpenStages({ project: project?.name, sessionId: session })
     : []
   const cursors = openCursors.map((cursor) => ({
     id: cursor.id,
     workflow: cursor.workflow_slug,
-    state: cursor.state,
   }))
-  const decision = decideSessionStart({ session, project: project?.name ?? null, cursors })
+  const decision = decideSessionStart({
+    session,
+    project: project?.name ?? null,
+    openCursors: cursors,
+  })
   if (decision.kind === 'refuse-session')
     return {
       cursor: null,
-      line: remediedLine(
-        'session start could not establish the current harness session id',
-        `run ${PLATFORM_SLUG} session start from a supported harness SessionStart hook`,
-      ),
+      line: `session start could not establish the current harness session id; ${callerIdentityRefusal(callerIdentity(database), 'start a session')}`,
     }
-  if (decision.kind === 'refuse-project')
+  if (decision.kind === 'refuse-project') {
+    const retired = projectAmong(cwd, projects({ retired: true }, database))
     return {
       cursor: null,
-      line: remediedLine(
-        `no registered project contains ${cwd}`,
-        `${PLATFORM_SLUG} project add ${cwd}, or start the session in a registered checkout`,
-      ),
+      line: retired
+        ? retiredProjectRefusal(retired.name)
+        : remediedLine(
+            `no registered project contains ${cwd}`,
+            `${PLATFORM_SLUG} project add ${cwd}, or start the session in a registered checkout`,
+          ),
     }
+  }
   if (decision.kind === 'reuse')
     return { cursor: decision.cursor, line: cursorLine(decision.cursor, decision.workflow) }
 
-  const context = await resolveWorkflowCursorContext(project!.name, {}, { session })
+  const context = { session }
   const live = await resolveWorkflowLiveAutonomy(
     { slug: 'explore', project: project!.name, mode: 'default', args: {}, context },
     database,

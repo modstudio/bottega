@@ -34,6 +34,8 @@ def main():
         payload = json.load(sys.stdin)
         if not isinstance(payload, dict) or not should_hook_act(payload):
             return 0
+        if os.environ.get("BOTTEGA_RUN_ID"):
+            return 0
         cwd = payload.get("cwd")
         session = payload.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID")
         if not isinstance(cwd, str) or not cwd:

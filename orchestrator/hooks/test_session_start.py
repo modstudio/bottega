@@ -33,7 +33,8 @@ class SessionStartHook(unittest.TestCase):
                     code = session_start.main()
             else:
                 code = session_start.main()
-        return code, json.loads(stdout.getvalue())
+        rendered = stdout.getvalue()
+        return code, json.loads(rendered) if rendered else None
 
     def test_passes_cursor_line_as_session_context(self):
         result = session_start.subprocess.CompletedProcess([], 0, "cursor 7 explore\n", "")
@@ -52,6 +53,24 @@ class SessionStartHook(unittest.TestCase):
         text = output["hookSpecificOutput"]["additionalContext"]
         self.assertIn("could not establish", text)
         self.assertIn("cleared by:", text)
+
+    def test_empty_command_output_is_a_nonblocking_remedied_line(self):
+        result = session_start.subprocess.CompletedProcess([], 1, "", "")
+        code, output = self.run_hook(
+            {"cwd": "/tmp/project", "session_id": "session"}, result
+        )
+        self.assertEqual(code, 0)
+        text = output["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("command exited 1", text)
+        self.assertIn("cleared by:", text)
+
+    def test_delegated_run_exits_without_output(self):
+        with mock.patch.dict(os.environ, {"BOTTEGA_RUN_ID": "run"}, clear=True):
+            code, output = self.run_hook(
+                {"cwd": "/tmp/project", "session_id": "session"}
+            )
+        self.assertEqual(code, 0)
+        self.assertIsNone(output)
 
 
 if __name__ == "__main__":

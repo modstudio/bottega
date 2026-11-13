@@ -29,6 +29,7 @@ import { runLivenessBoundarySpecs } from './architecture-run-liveness.ts'
 import { runModuleBoundarySpecs } from './architecture-run-modules.ts'
 import { runRetryModuleSpecs } from './architecture-run-retry.ts'
 import { runStopBoundarySpecs } from './architecture-run-stop.ts'
+import { sessionStartBoundarySpecs } from './architecture-session-start-modules.ts'
 import { settingsBoundarySpecs } from './architecture-settings-boundaries.ts'
 import { setupModuleSpecs } from './architecture-setup-modules.ts'
 import { manifestTypeOnlyImportBoundaries } from './architecture-type-only-boundaries.ts'
@@ -211,6 +212,7 @@ export const importBoundaries: ImportBoundary[] = [
     ['../synchronous-result.ts'],
   ),
   ...boundaries(cleanupBoundarySpecs),
+  ...boundaries(sessionStartBoundarySpecs),
 
   boundary(
     'close-out-boundary',
