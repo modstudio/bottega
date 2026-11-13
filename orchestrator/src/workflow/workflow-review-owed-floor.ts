@@ -4,7 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
-import { resolveReviewBase } from '../review/review-target.ts'
+import { emptyReviewRefusal, resolveReviewBase } from '../review/review-target.ts'
 import { decideReviewFunnel } from '../review-funnel/decide-review-funnel.ts'
 import { gatherFunnelFacts } from '../review-funnel/gather-funnel-facts.ts'
 import { activeReviewFunnelPolicy } from '../review-funnel/review-funnel-policy.ts'
@@ -58,6 +58,8 @@ function gatherReviewOwedFloor(
       action: 'refuse',
       message: `floor review-owed cannot find a merge-base between branch ${branch} and trunk ${trunk}; pass \`--arg worktree=<path>\` naming an up-to-date checkout, or fetch ${trunk}`,
     }
+  const emptyRefusal = emptyReviewRefusal(head, base, branch, trunk)
+  if (emptyRefusal) return { action: 'refuse', message: emptyRefusal }
   const activePolicy = activeReviewFunnelPolicy()
   return decideReviewOwedFloor(
     decideReviewFunnel(

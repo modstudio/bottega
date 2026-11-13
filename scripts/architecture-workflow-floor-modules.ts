@@ -163,7 +163,9 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './probe-identifier.ts',
     './workflow-floor-refusal.ts',
   ]),
-  module('orchestrator/src/workflow/workflow-review-owed-decision.ts', []),
+  module('orchestrator/src/workflow/workflow-review-owed-decision.ts', [
+    '../review-funnel/decide-review-funnel.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-review-owed-floor.ts', [
     'bun:sqlite',
     '../database/db.ts',

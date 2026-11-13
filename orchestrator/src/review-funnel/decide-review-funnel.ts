@@ -75,7 +75,7 @@ export type ReviewFunnelFacts = {
   }
 }
 
-type ReviewFunnelLensStatus =
+export type ReviewFunnelLensStatus =
   | 'owed'
   | 'running'
   | 'untriaged'

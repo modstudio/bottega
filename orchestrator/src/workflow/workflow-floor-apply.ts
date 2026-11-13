@@ -4,29 +4,37 @@
 import type { Database } from 'bun:sqlite'
 import { nowIso } from '../database/db.ts'
 import { cursorName } from './workflow-cursor-format.ts'
-import type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
+import type {
+  SelectableCursorRow,
+  WorkflowCursorContext,
+} from './workflow-cursor-selection.ts'
 import { currentStepActivatedAt, reentryBoundFloorInput } from './workflow-cursor-trail.ts'
-import { decideFloorSatisfaction, type Floor, type FloorDecision } from './workflow-floor.ts'
+import {
+  decideFloorSatisfaction,
+  type EnforcementMode,
+  type Floor,
+  type FloorDecision,
+} from './workflow-floor.ts'
 import type { FloorEvidencePorts, WorkflowEvidenceInput } from './workflow-floor-evidence.ts'
 import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
 import { invokeFloorEvidencePort } from './workflow-floor-evidence-replay.ts'
 import { openWorkflowObligations } from './workflow-obligation-floor.ts'
 
-type FloorCursor = {
-  record_id: string
-  project: string
-  workflow_slug: string
-  mode_slug: string
-  workflow_key: string
-  task_record_id: string | null
-  args: string
-  session_id: string | null
-  created_at: string
-  ordinal: number
-  step_slug: string
-  enforcement: 'note-only' | 'floors' | null
-  closed: string
-}
+type FloorCursor = Pick<
+  SelectableCursorRow,
+  | 'record_id'
+  | 'project'
+  | 'workflow_slug'
+  | 'mode_slug'
+  | 'workflow_key'
+  | 'task_record_id'
+  | 'args'
+  | 'session_id'
+  | 'created_at'
+  | 'ordinal'
+  | 'step_slug'
+  | 'closed'
+> & { enforcement: EnforcementMode | null }
 
 export async function applyFloorDecision(
   row: FloorCursor,
