@@ -25663,7 +25663,7 @@
       "table": "machine_trust_log"
     },
     {
-      "value": "(\"seq\" = 0 AND \"prev_hash\" IS NULL) OR (\"seq\" > 0 AND octet_length(\"prev_hash\") = 32)",
+      "value": "(\"seq\" = 0 AND \"prev_hash\" IS NULL) OR (\"seq\" > 0 AND \"prev_hash\" IS NOT NULL AND octet_length(\"prev_hash\") = 32)",
       "name": "machine_trust_log_prev_hash_check",
       "entityType": "checks",
       "schema": "public",

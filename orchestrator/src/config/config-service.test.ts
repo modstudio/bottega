@@ -2,17 +2,13 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ed25519 } from '@noble/curves/ed25519.js'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type ConfigClient, ConfigClientError } from '../../../shared/config-client.ts'
 import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { writeHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import { readMachineKey, writeMachineKey } from '../../../shared/machine-key-store.ts'
-import {
-  readMachineSigningKey,
-  writeMachineSigningKey,
-} from '../../../shared/machine-signing-key.ts'
+import { readMachineSigningKey } from '../../../shared/machine-signing-key.ts'
 import {
   generateDataKey,
   generateMachineKeyPair,
@@ -23,14 +19,13 @@ import {
   unwrapDataKey,
   wrapDataKey,
 } from '../../../shared/secret-envelope.ts'
+import { pinTrustedMachine, readTrustList } from '../../../shared/trust-list.ts'
 import {
   decodeTrustLogEntry,
-  signTrustLogEntry,
   trustLogEntryHash,
   verifyTrustLog,
 } from '../../../shared/trust-log.ts'
 import { readRememberedTrustLogHead } from '../../../shared/trust-log-head.ts'
-import { pinTrustedMachine, readTrustList } from '../../../shared/trust-list.ts'
 import {
   applyLegacyEnvironmentSecretMigration,
   claimCurrentMachineKey,
@@ -53,6 +48,10 @@ import {
   setEntry,
   setSecret,
 } from './config-service.ts'
+import {
+  machineRevokeTrustLogFixture,
+  trackedTrustLogClient,
+} from './config-service-trust-log.fixture.ts'
 
 const roots: string[] = []
 let previousConfigHome: string | undefined
@@ -92,54 +91,12 @@ async function rotationFixture(
   const spaceId = '01990000-0000-7000-8000-000000000001'
   const userId = '01990000-0000-7000-8000-000000000002'
   writeHostedConfigIdentity({ spaceId, userId })
-  const ownSigningPrivateKey = new Uint8Array(32).fill(31)
-  const ownSigningPublicKey = ed25519.getPublicKey(ownSigningPrivateKey)
-  const otherSigningPublicKey = ed25519.getPublicKey(new Uint8Array(32).fill(32))
-  const trustLog: Uint8Array[] = []
-  if (withTrustLog) {
-    writeMachineSigningKey(
-      { privateKey: ownSigningPrivateKey, publicKey: ownSigningPublicKey },
-      process.env,
-    )
-    const genesis = signTrustLogEntry(
-      {
-        prev: null,
-        space: spaceId,
-        body: {
-          kind: 'genesis',
-          first: {
-            keyId,
-            publicKey: pair.publicKey,
-            signingPublicKey: ownSigningPublicKey,
-            label: 'current',
-          },
-          recoveryPublicKey: ed25519.getPublicKey(new Uint8Array(32).fill(33)),
-        },
-        signer: ownSigningPublicKey,
-        at: 1,
-      },
-      ownSigningPrivateKey,
-    )
-    trustLog.push(
-      genesis,
-      signTrustLogEntry(
-        {
-          prev: trustLogEntryHash(genesis),
-          space: spaceId,
-          body: {
-            kind: 'add',
-            keyId: otherKeyId,
-            publicKey: other.publicKey,
-            signingPublicKey: otherSigningPublicKey,
-            label: 'other',
-          },
-          signer: ownSigningPublicKey,
-          at: 2,
-        },
-        ownSigningPrivateKey,
-      ),
-    )
-  }
+  const trustLog = machineRevokeTrustLogFixture(
+    withTrustLog,
+    spaceId,
+    [keyId, pair.publicKey],
+    [otherKeyId, other.publicKey],
+  )
   const oldId = '01990000-0000-7000-8000-000000000003'
   const oldDek = generateDataKey()
   const wrapped = await wrapDataKey({
@@ -234,8 +191,7 @@ async function rotationFixture(
   ]
   const created: string[] = []
   const retired: string[] = []
-  const recordCallOrder: string[] = []
-  let appendedTrustLogEntry: Uint8Array | null = null
+  const trustLogClient = trackedTrustLogClient(trustLog)
   let oldRetiredAt: string | null = null
   const client = {
     whoami: async () => ({ user: { id: userId }, activeSpaceId: spaceId }),
@@ -300,21 +256,15 @@ async function rotationFixture(
       current.wraps.push(...wraps)
     },
     revokeMachineKey: async (id: string) => {
-      recordCallOrder.push('revokeMachineKey')
+      trustLogClient.recordCallOrder.push('revokeMachineKey')
       const found = machines.find((item) => item.keyId === id)!
       found.revokedAt = '2026-06-01T00:00:00.000Z'
     },
-    readTrustLog: async () => trustLog,
-    appendTrustLogEntry: async (_expectedHead: Uint8Array, entry: Uint8Array) => {
-      recordCallOrder.push('appendTrustLogEntry')
-      appendedTrustLogEntry = entry
-      return trustLogEntryHash(entry)
-    },
+    ...trustLogClient.methods,
   } as unknown as ConfigClient
   return {
     client,
     spaceId,
-    keyId,
     created,
     retired,
     otherKeyId,
@@ -323,8 +273,8 @@ async function rotationFixture(
     current: () => current,
     secrets: () => secrets,
     trustLog,
-    appendedTrustLogEntry: () => appendedTrustLogEntry,
-    recordCallOrder,
+    appendedTrustLogEntry: trustLogClient.appendedTrustLogEntry,
+    recordCallOrder: trustLogClient.recordCallOrder,
   }
 }
 
@@ -594,11 +544,8 @@ test('machine revoke appends and remembers a verified trust log revocation befor
   await machineRevoke(fixture.otherKeyId, fixture.client)
 
   const appended = fixture.appendedTrustLogEntry()
-  expect(appended).not.toBeNull()
-  expect(decodeTrustLogEntry(appended!).body).toEqual({
-    kind: 'revoke',
-    keyId: fixture.otherKeyId,
-  })
+  const body = decodeTrustLogEntry(appended!).body
+  expect(body).toEqual({ kind: 'revoke', keyId: fixture.otherKeyId })
   const state = verifyTrustLog([...fixture.trustLog, appended!], { spaceId: fixture.spaceId })
   expect(state.keys.has(fixture.otherKeyId)).toBe(false)
   expect(readRememberedTrustLogHead(fixture.spaceId)).toEqual(trustLogEntryHash(appended!))

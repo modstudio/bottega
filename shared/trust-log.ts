@@ -3,7 +3,7 @@ import { sha256 } from '@noble/hashes/sha2.js'
 import { decode, encode } from 'cbor2'
 
 const TRUST_LOG_KINDS = ['genesis', 'add', 'remove', 'revoke'] as const
-export type TrustLogKind = (typeof TRUST_LOG_KINDS)[number]
+type TrustLogKind = (typeof TRUST_LOG_KINDS)[number]
 export type TrustLogKey = {
   keyId: string
   publicKey: Uint8Array
@@ -32,6 +32,10 @@ const dcbor = { dcbor: true, rejectDuplicateKeys: true, preferMap: true } as con
 const bytesEqual = (left: Uint8Array, right: Uint8Array) =>
   left.byteLength === right.byteLength && left.every((value, index) => value === right[index])
 
+function kindNumber(kind: TrustLogKind): number {
+  return TRUST_LOG_KINDS.indexOf(kind)
+}
+
 function keyBody(key: TrustLogKey): Map<number, unknown> {
   return new Map<number, unknown>([
     [1, key.keyId],
@@ -52,7 +56,7 @@ function entryMap(entry: UnsignedTrustLogEntry, sig?: Uint8Array): Map<number, u
         ? keyBody(entry.body)
         : new Map<number, unknown>([[1, entry.body.keyId]])
   const map = new Map<number, unknown>([
-    [1, TRUST_LOG_KINDS.indexOf(entry.body.kind)],
+    [1, kindNumber(entry.body.kind)],
     [2, entry.prev],
     [3, entry.space],
     [4, body],

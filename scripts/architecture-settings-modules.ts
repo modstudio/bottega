@@ -81,6 +81,11 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/trust-log.ts',
     '../../../shared/trust-log-head.ts',
   ]),
+  module('orchestrator/src/config/config-service-trust-log.fixture.ts', [
+    '@noble/curves/ed25519.js',
+    '../../../shared/machine-signing-key.ts',
+    '../../../shared/trust-log.ts',
+  ]),
   module('orchestrator/src/config/data-key-access.ts', [
     '../../../shared/config-client.ts',
     '../../../shared/secret-envelope.ts',
