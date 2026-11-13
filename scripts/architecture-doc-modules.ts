@@ -113,6 +113,7 @@ export const docModules: DocModule[] = [
   module('orchestrator/src/doc/context-brief.ts', [
     'bun:sqlite',
     '../../../shared/brand.ts',
+    '../../../shared/context-item-vocabulary.ts',
     '../board/board-claim-service.ts',
     '../board/board-service.ts',
     '../database/db.ts',
