@@ -23,7 +23,7 @@ import {
   wrapsForRecipients,
 } from './data-key-access.ts'
 import { hostedConfigClient } from './hosted-config-call-outcome.ts'
-import { machineTrustRefusal } from './machine-trust-refusal.ts'
+import { machineTrustRefusal, missingTrustLogKeyRefusal } from './machine-trust-refusal.ts'
 
 type NamedSpace = {
   destination: ConfigDestination
@@ -161,9 +161,7 @@ export async function machineTrustInSpace(
   if (refusal) throw new Error(refusal)
   const beforePin = await trustForSpace(client, space.spaceId, env)
   if (beforePin.anchored && !beforePin.keys[keyId])
-    throw new Error(
-      `the space's machine trust log does not list ${keyId}; add it with \`${PLATFORM_SLUG} machine approve\` from a machine the trust log already trusts`,
-    )
+    throw new Error(missingTrustLogKeyRefusal(keyId))
   await pinTrustedMachine(keyId, publicBytes, label, env)
   const pair = readMachineKey(env)
   if (!pair)

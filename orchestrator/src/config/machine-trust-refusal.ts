@@ -5,6 +5,9 @@ import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 
 type RegisteredMachineKey = { revokedAt: string | null }
 
+export const missingTrustLogKeyRefusal = (keyId: string) =>
+  `the space's machine trust log does not list ${keyId}; add it with \`${PLATFORM_SLUG} machine approve\` from a machine the trust log already trusts`
+
 export function machineTrustRefusal(
   keyId: string,
   registered: RegisteredMachineKey | undefined,

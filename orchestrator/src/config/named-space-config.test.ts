@@ -405,12 +405,7 @@ test('trust in an anchored named space refuses a target absent from the log befo
     true,
     namedSpaceId,
     [keyId, pair.publicKey, signing.publicKey, 'fixture'],
-    [
-      loggedOtherId,
-      loggedOther.publicKey,
-      trustLogFixtureSigningKey(52).publicKey,
-      'logged-other',
-    ],
+    [loggedOtherId, loggedOther.publicKey, trustLogFixtureSigningKey(52).publicKey, 'logged-other'],
     signing.privateKey,
   )
   const target = await generateMachineKeyPair()
@@ -500,7 +495,7 @@ test("registration refuses when the data key wrap's sender is not trusted", asyn
   )
 })
 
-test("registration names machine approve when an anchored log omits the data key sender", async () => {
+test('registration names machine approve when an anchored log omits the data key sender', async () => {
   const { env, identity, keyId, pair } = await fixture(false)
   const signing = trustLogFixtureSigningKey(61)
   const loggedOther = await generateMachineKeyPair()
@@ -509,12 +504,7 @@ test("registration names machine approve when an anchored log omits the data key
     true,
     namedSpaceId,
     [keyId, pair.publicKey, signing.publicKey, 'fixture'],
-    [
-      loggedOtherId,
-      loggedOther.publicKey,
-      trustLogFixtureSigningKey(62).publicKey,
-      'logged-other',
-    ],
+    [loggedOtherId, loggedOther.publicKey, trustLogFixtureSigningKey(62).publicKey, 'logged-other'],
     signing.privateKey,
   )
   const senderKeyId = 'untrusted-sender'

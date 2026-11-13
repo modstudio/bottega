@@ -3,11 +3,7 @@ import type { MachineKey } from '../../../shared/config-client.ts'
 import type { TrustedKeys } from '../../../shared/trust-log-keys.ts'
 import { wrapRecipientKeyIds } from './data-key-access.ts'
 
-const machine = (
-  keyId: string,
-  userId: string | null,
-  revokedAt: string | null,
-): MachineKey => ({
+const machine = (keyId: string, userId: string | null, revokedAt: string | null): MachineKey => ({
   keyId,
   publicKey: `${keyId}-public`,
   signingPublicKey: null,
