@@ -167,6 +167,75 @@ test('a run-derived branch with a missing main-checkout ref has no review line',
   expect(gathered).toBeFalse()
 })
 
+test('a landed run-derived branch does not gather a review verdict', () => {
+  const session = 'landed-run-branch-session'
+  const run = addRun({ agent: 'codex', job: 'implement', session })
+  const project = db()
+    .query<{ record_id: string; name: string }, [string]>(
+      'SELECT project.record_id,project.name FROM project JOIN run ON run.project_record_id=project.record_id WHERE run.record_id=?',
+    )
+    .get(run)!
+  db()
+    .query(`UPDATE run SET branch='DEV-2304-landed',launch_key='DEV-2304' WHERE record_id=?`)
+    .run(run)
+  db()
+    .query(
+      `INSERT INTO branch_landing_record
+       (record_id,project,project_record_id,branch,tip,pr_number,merge_commit,merged_at,recorded_at,recording_session)
+       VALUES (?,?,?,?,?,1,?,?,?,?)`,
+    )
+    .run(
+      newRecordId(),
+      project.name,
+      project.record_id,
+      'DEV-2304-landed',
+      'tip',
+      'merge',
+      '2026-11-15T12:00:00.000Z',
+      '2026-11-15T12:00:00.000Z',
+      session,
+    )
+  let gathered = false
+
+  const lines = sessionReviewVerdictLines(
+    session,
+    [],
+    db(),
+    () => {
+      gathered = true
+      return { branch: 'DEV-2304-landed', taskKey: 'DEV-2304', failure: 'unexpected gather' }
+    },
+    () => true,
+  )
+
+  expect(lines).toEqual([])
+  expect(gathered).toBeFalse()
+})
+
+test('an abandoned later turn excludes its root writing-run branch', () => {
+  const session = 'abandoned-run-chain-session'
+  const root = addRun({ agent: 'codex', job: 'implement', session })
+  addRun({ agent: 'codex', job: 'implement', session, parent: root, turn: 2, kind: 'abandoned' })
+  db()
+    .query(`UPDATE run SET branch='DEV-2304-retained',launch_key='DEV-2304' WHERE record_id=?`)
+    .run(root)
+  let gathered = false
+
+  const lines = sessionReviewVerdictLines(
+    session,
+    [],
+    db(),
+    () => {
+      gathered = true
+      return { branch: 'DEV-2304-retained', taskKey: 'DEV-2304', failure: 'unexpected gather' }
+    },
+    () => true,
+  )
+
+  expect(lines).toEqual([])
+  expect(gathered).toBeFalse()
+})
+
 test('an open cursor branch with a missing ref keeps its verdict failure line', () => {
   const missingCursor = {
     ...cursor,

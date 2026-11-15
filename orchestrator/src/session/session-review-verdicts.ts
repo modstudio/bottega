@@ -47,7 +47,10 @@ function cursorBranch(cursor: WorkflowCursorListRow): InFlightBranch | null {
   }
 }
 
-/** The ruled branch set: open ship cursors plus unmerged, unabandoned root writing runs. */
+/**
+ * Open ship cursors always claim their branch. A root writing-run branch counts only while its
+ * main-checkout ref exists; a missing ref means that branch was landed or disposed and gets no line.
+ */
 function sessionInFlightReviewBranches(
   session: string,
   cursors: readonly WorkflowCursorListRow[],
@@ -58,7 +61,11 @@ function sessionInFlightReviewBranches(
       `SELECT project.name project,run.branch,run.launch_key taskKey,run.worktree,run.job
          FROM run JOIN project ON project.record_id=run.project_record_id
         WHERE run.session_id=? AND run.parent_run_record_id IS NULL AND run.branch IS NOT NULL
-          AND COALESCE(run.failure_kind,'') <> 'abandoned'
+          AND NOT EXISTS (
+            SELECT 1 FROM run chain_turn
+             WHERE (chain_turn.record_id=run.record_id OR chain_turn.parent_run_record_id=run.record_id)
+               AND chain_turn.failure_kind='abandoned'
+          )
           AND NOT EXISTS (
             SELECT 1 FROM branch_landing_record landed
              WHERE landed.project_record_id=run.project_record_id AND landed.branch=run.branch
