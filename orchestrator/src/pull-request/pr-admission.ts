@@ -100,7 +100,7 @@ export function resolvePullRequestChange(
 }
 
 /** Resolve admission facts when the caller already owns the project and branch identity. */
-export function resolvePullRequestChangeForProject(
+function resolvePullRequestChangeForProject(
   cwd: string,
   project: Project,
   branch: string,
@@ -155,7 +155,7 @@ export function resolvePullRequestChangeForProject(
   }
 }
 
-export function triageDecision(change: PullRequestChange, database: Database): TriageDecision {
+function triageDecision(change: PullRequestChange, database: Database): TriageDecision {
   return gatherAdmissionEvidenceDecision(change, database)
 }
 

@@ -1,8 +1,5 @@
 import { expect, test } from 'bun:test'
-import {
-  decideTriage,
-  type TriageEvidence,
-} from '../review-funnel/review-funnel-admission-evidence.ts'
+import { decideTriage, type TriageEvidence } from './review-funnel-admission-evidence.ts'
 
 const producedNothing = (reviewId: number, patchId: string): TriageEvidence['reviews'][number] => ({
   reviewRecordId: `review-${reviewId}`,

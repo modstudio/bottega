@@ -1,8 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import {
-  decideTriage,
-  type TriageEvidence,
-} from '../review-funnel/review-funnel-admission-evidence.ts'
+import { decideTriage, type TriageEvidence } from './review-funnel-admission-evidence.ts'
 
 const review = (
   overrides: Partial<TriageEvidence['reviews'][number]> & { reviewId?: number } = {},
