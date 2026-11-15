@@ -219,6 +219,7 @@ function reviewTierOutputForTarget({
     head: to,
     branch,
     project,
+    selectionWindow: activePolicy.policy.selection.window,
   })
   const funnelVerdict = decideReviewFunnel(
     funnelFacts,

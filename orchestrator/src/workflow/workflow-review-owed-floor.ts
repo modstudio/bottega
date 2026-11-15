@@ -62,7 +62,15 @@ function gatherReviewOwedFloor(
   const emptyRefusal = emptyReviewRefusal(head, base, branch, trunk)
   if (emptyRefusal) return { action: 'refuse', message: emptyRefusal }
   const activePolicy = activeReviewFunnelPolicy()
-  const facts = gatherFunnelFacts({ database, cwd, base, head, branch, project })
+  const facts = gatherFunnelFacts({
+    database,
+    cwd,
+    base,
+    head,
+    branch,
+    project,
+    selectionWindow: activePolicy.policy.selection.window,
+  })
   const verdict = decideReviewFunnel(facts, activePolicy.policy, activePolicy.policyVersion)
   const decision = decideReviewOwedFloor(verdict)
   recordReviewFunnelDecision({

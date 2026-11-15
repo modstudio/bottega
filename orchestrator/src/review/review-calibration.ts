@@ -3,7 +3,12 @@ import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { evidenceModel, evidenceModelIdentity, evidenceModelSql } from '../route/evidence-model.ts'
 import { median } from '../state/statistics.ts'
-import { completedReviewEvidenceSql, REVIEW_WINDOW } from './review-evidence-sql.ts'
+import {
+  acceptedReviewFindingSql,
+  completedReviewEvidenceSql,
+  REVIEW_WINDOW,
+  triagedReviewFindingSql,
+} from './review-evidence-sql.ts'
 import { MIN_REVIEW_TRIAGED } from './review-triage.ts'
 import {
   REVIEW_COVERAGE,
@@ -173,8 +178,8 @@ function calibrationCell(
   const counts = database
     .query(
       `SELECT
-       SUM(CASE WHEN disposition IN ('accepted','modified') THEN 1 ELSE 0 END) AS hits,
-       SUM(CASE WHEN disposition IN ('accepted','modified','rejected') THEN 1 ELSE 0 END) AS triaged
+       SUM(CASE WHEN ${acceptedReviewFindingSql('rf')} THEN 1 ELSE 0 END) AS hits,
+       SUM(CASE WHEN ${triagedReviewFindingSql('rf')} THEN 1 ELSE 0 END) AS triaged
      FROM review_finding rf JOIN review_lens rl ON rl.record_id=rf.review_lens_record_id
      WHERE rf.review_record_id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}`,
     )

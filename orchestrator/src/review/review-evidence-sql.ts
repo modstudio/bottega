@@ -4,6 +4,22 @@ import type { ReviewSettings } from '../project/project-injection.ts'
 
 export const REVIEW_WINDOW = 50
 
+/** A finding disposition counted as accepted review evidence. */
+export function acceptedReviewFindingSql(findingAlias = 'finding'): string {
+  return `${findingAlias}.disposition IN ('accepted','modified')`
+}
+
+/** Accepted review evidence that is not recorded as a duplicate. */
+export function uniqueReviewFindingSql(findingAlias = 'finding'): string {
+  return `${acceptedReviewFindingSql(findingAlias)}
+    AND ${findingAlias}.duplicate_of_finding_record_id IS NULL`
+}
+
+/** A finding disposition counted in the denominator for reviewer precision. */
+export function triagedReviewFindingSql(findingAlias = 'finding'): string {
+  return `${findingAlias}.disposition IN ('accepted','modified','rejected')`
+}
+
 /** Parse a stored project's review declaration without inventing one on malformed data. */
 export function parseStoredReviewSettings(value: string | null): ReviewSettings | undefined {
   if (!value) return undefined
