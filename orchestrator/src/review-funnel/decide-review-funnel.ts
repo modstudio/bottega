@@ -328,6 +328,7 @@ function lensStatus(
 }
 
 function lensVerdicts(facts: ReviewFunnelFacts, plan: ReturnType<typeof funnelPlan>) {
+  const enforcedSelection = plan.selection.mode === 'enforce' ? plan.selection.lenses : []
   const sets: LensSets = {
     planned: new Set(plan.unbudgeted.round.lenses),
     completed: new Set(plan.roundFacts.completedLenses),
@@ -346,7 +347,7 @@ function lensVerdicts(facts: ReviewFunnelFacts, plan: ReturnType<typeof funnelPl
     ...plan.roundFacts.completedLenses,
     ...facts.lensStates.map(({ lens }) => lens),
     ...facts.overriddenLenses,
-    ...plan.selection.lenses.map(({ lens }) => lens),
+    ...enforcedSelection.map(({ lens }) => lens),
   ])
   return {
     sets,
@@ -356,7 +357,7 @@ function lensVerdicts(facts: ReviewFunnelFacts, plan: ReturnType<typeof funnelPl
         lens,
         status,
         reason:
-          plan.selection.lenses.find((change) => change.lens === lens)?.reason ??
+          enforcedSelection.find((change) => change.lens === lens)?.reason ??
           reasonForLens({
             lens,
             status,

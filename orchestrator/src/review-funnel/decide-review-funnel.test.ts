@@ -131,6 +131,31 @@ describe('decideReviewFunnel', () => {
     })
   })
 
+  test('evaluate mode records a demotion without changing lenses or next', () => {
+    const baseFacts = facts({
+      files: [{ path: 'src/new.ts', insertions: 11, deletions: 0 }],
+      review: tierOneReview,
+    })
+    const policy = {
+      ...selectionPolicy({ minTriaged: 5, pinned: [] }),
+      modes: { ...DEFAULT_REVIEW_FUNNEL_POLICY.modes, selection: 'evaluate' as const },
+    }
+    const baseline = decideReviewFunnel(baseFacts, policy)
+    const evaluated = decideReviewFunnel(
+      {
+        ...baseFacts,
+        yieldCells: [yieldCell('correctness', { accepted: 0, unique: 0, triaged: 5 })],
+      },
+      policy,
+    )
+
+    expect(evaluated.lenses).toEqual(baseline.lenses)
+    expect(evaluated.next).toEqual(baseline.next)
+    expect(evaluated.selection.lenses).toEqual([
+      { lens: 'correctness', selected: false, reason: 'demoted-by-yield', explored: false },
+    ])
+  })
+
   test('an accepted unique finding raises a declared lens into a lower tier', () => {
     const verdict = decideReviewFunnel(
       facts({
