@@ -13,7 +13,7 @@ import type {
 export type ReviewCoverageInput = {
   recordId: string
   patchId?: string | null
-  zeroContextPatchId?: string | null
+  zeroContextPatchId: string | null
   pathSet?: string | null
   commitMessage?: string | null
   outdatedReason?: string | null

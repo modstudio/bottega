@@ -30,7 +30,7 @@ import {
   spawnGitProbe,
 } from '../review/review-target.ts'
 import { diffNumstat } from '../review/review-tier.ts'
-import { sameChange, storedChangeFacts } from '../review/same-change.ts'
+import { sameStoredChange } from '../review/same-change.ts'
 import type {
   ReviewFunnelFacts,
   ReviewFunnelLensState,
@@ -97,7 +97,7 @@ function liveLensStates(
     .map((row) => ({ lens: row.lens, runId: row.record_id, state: RUNNING_LENS_STATUS }))
 }
 
-function overrideFacts(
+export function overrideFacts(
   database: Database,
   change: {
     project: string
@@ -109,19 +109,18 @@ function overrideFacts(
 ): { ceilingRuling: boolean; overriddenLenses: string[] } {
   const row = readLandingOverridesForBranch(database, change.project, change.branch).find(
     ({ patchId, zeroContextPatchId, pathSet }) =>
-      sameChange({
-        reviewed: storedChangeFacts({
+      sameStoredChange(
+        {
           patchId,
           zeroContextPatchId: zeroContextPatchId ?? null,
           pathSet,
-        }),
-        current: storedChangeFacts({
+        },
+        {
           patchId: change.patchId,
           zeroContextPatchId: change.zeroContextPatchId,
           pathSet: change.pathSet,
-        }),
-        replay: null,
-      }).same,
+        },
+      ),
   )
   if (!row) return { ceilingRuling: false, overriddenLenses: [] }
   return {

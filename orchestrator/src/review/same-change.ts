@@ -8,6 +8,12 @@ export type ChangeFacts = {
   message: string | null
 }
 
+export type StoredChangeRow = {
+  patchId: string | null
+  zeroContextPatchId: string | null
+  pathSet: string | null
+}
+
 type ReplayResult =
   | { kind: 'same-tree' }
   | { kind: 'different-tree' | 'conflict' }
@@ -94,4 +100,13 @@ export function sameChange(facts: SameChangeFacts): SameChangeDecision {
           ? 'change identity differs'
           : 'path set differs'
   return { same: false, basis: 'different', messageChanged, reason }
+}
+
+/** Compare two persisted change tuples without a Git replay witness. */
+export function sameStoredChange(reviewed: StoredChangeRow, current: StoredChangeRow): boolean {
+  return sameChange({
+    reviewed: storedChangeFacts(reviewed),
+    current: storedChangeFacts(current),
+    replay: null,
+  }).same
 }

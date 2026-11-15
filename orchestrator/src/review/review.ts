@@ -272,6 +272,7 @@ type ReviewListQueryRow = {
   findings_skipped: number
   project: string | null
   patch_id: string | null
+  zero_context_patch_id: string | null
   path_set: string | null
   commit_message: string | null
   outdated_reason: string | null
@@ -295,6 +296,7 @@ function listReviewCoverage(
       headCommit: lens.headCommit,
     })),
     patchId: row.patch_id,
+    zeroContextPatchId: row.zero_context_patch_id,
     pathSet: row.path_set,
     commitMessage: row.commit_message,
     outdatedReason: row.outdated_reason,
@@ -311,6 +313,7 @@ function listReviewCoverage(
       recordId: row.record_id,
       lenses,
       patchId: row.patch_id,
+      zeroContextPatchId: row.zero_context_patch_id,
       pathSet: row.path_set,
       commitMessage: row.commit_message,
       outdatedReason: row.outdated_reason,
@@ -355,7 +358,7 @@ export function listReviews(
             COUNT(DISTINCT CASE WHEN rf.disposition='modified' THEN rf.record_id END) AS findings_modified,
             COUNT(DISTINCT CASE WHEN rf.disposition='rejected' THEN rf.record_id END) AS findings_rejected,
             COUNT(DISTINCT CASE WHEN rf.disposition='skipped' THEN rf.record_id END) AS findings_skipped,
-            run.repo AS project, r.patch_id, r.path_set, r.commit_message, r.outdated_reason
+            run.repo AS project, r.patch_id, r.zero_context_patch_id, r.path_set, r.commit_message, r.outdated_reason
        FROM review r JOIN review_lens rl ON rl.review_record_id=r.record_id JOIN run ON run.record_id=rl.run_record_id
        LEFT JOIN review_finding rf ON rf.review_record_id=r.record_id
        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
@@ -427,7 +430,7 @@ export function getReview(reviewRecordId: string, database: Database = db()) {
   const review = database
     .query(
       `SELECT record_id, number, recorded_at, completed_at, tier, tier_risk, tier_size, tier_reasons, tier_reason,
-            patch_id, path_set, commit_message, outdated_at, outdated_reason FROM review WHERE record_id=?`,
+            patch_id, zero_context_patch_id, path_set, commit_message, outdated_at, outdated_reason FROM review WHERE record_id=?`,
     )
     .get(reviewRecordId) as {
     record_id: string
@@ -440,6 +443,7 @@ export function getReview(reviewRecordId: string, database: Database = db()) {
     tier_reasons: string | null
     tier_reason: string | null
     patch_id: string | null
+    zero_context_patch_id: string | null
     path_set: string | null
     commit_message: string | null
     outdated_at: string | null
@@ -495,6 +499,7 @@ export function getReview(reviewRecordId: string, database: Database = db()) {
               recordId: reviewRecordId,
               lenses,
               patchId: review.patch_id,
+              zeroContextPatchId: review.zero_context_patch_id,
               pathSet: review.path_set,
               commitMessage: review.commit_message,
               outdatedReason: review.outdated_reason,

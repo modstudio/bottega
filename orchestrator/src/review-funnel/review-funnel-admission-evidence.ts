@@ -11,7 +11,7 @@ import {
 import { reviewCountsAsRound } from '../review/review-role.ts'
 import { identifySecondOpinionRun } from '../review/review-second-opinion.ts'
 import type { ReviewLensOwedReason } from '../review/review-vocabulary.ts'
-import { sameChange, storedChangeFacts } from '../review/same-change.ts'
+import { sameStoredChange } from '../review/same-change.ts'
 
 export type TriageReviewGroup = {
   reviews: readonly TriageReviewRow[]
@@ -423,19 +423,18 @@ function matchingOwnerRead(evidence: TriageEvidence, recordedAfter?: string) {
   return evidence.reads.find(
     (read) =>
       reader(read.sessionId) &&
-      sameChange({
-        reviewed: storedChangeFacts({
+      sameStoredChange(
+        {
           patchId: read.patchId,
           zeroContextPatchId: read.zeroContextPatchId ?? null,
           pathSet: read.pathSet,
-        }),
-        current: storedChangeFacts({
+        },
+        {
           patchId: evidence.patchId,
           zeroContextPatchId: evidence.zeroContextPatchId ?? null,
           pathSet: evidence.pathSet,
-        }),
-        replay: null,
-      }).same &&
+        },
+      ) &&
       (recordedAfter === undefined || read.recordedAt > recordedAfter),
   )
 }

@@ -1,7 +1,7 @@
 // concern: pull-request-admission-decision
 /** Admits one funnel verdict, crediting an override recorded for its stable patch identity. */
 
-import { sameChange, storedChangeFacts } from '../review/same-change.ts'
+import { sameStoredChange } from '../review/same-change.ts'
 import type { ReviewFunnelVerdict } from '../review-funnel/decide-review-funnel.ts'
 import type { LandingOverrideRow } from '../review-funnel/gather-funnel-facts.ts'
 
@@ -25,19 +25,18 @@ export function decideAdmission(
     (candidate) =>
       candidate.project === change.project &&
       candidate.branch === change.branch &&
-      sameChange({
-        reviewed: storedChangeFacts({
+      sameStoredChange(
+        {
           patchId: candidate.patchId,
           zeroContextPatchId: candidate.zeroContextPatchId ?? null,
           pathSet: candidate.pathSet,
-        }),
-        current: storedChangeFacts({
+        },
+        {
           patchId: change.patchId,
           zeroContextPatchId: change.zeroContextPatchId ?? null,
           pathSet: change.pathSet,
-        }),
-        replay: null,
-      }).same,
+        },
+      ),
   )
   const override = identityMatches.find((candidate) => {
     if (candidate.attribution === 'operator') return true

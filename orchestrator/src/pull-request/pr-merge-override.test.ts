@@ -2,10 +2,14 @@ import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
 import type { ReviewFunnelVerdict } from '../review-funnel/decide-review-funnel.ts'
-import { readLandingOverridesForBranch } from '../review-funnel/gather-funnel-facts.ts'
+import {
+  overrideFacts,
+  readLandingOverridesForBranch,
+} from '../review-funnel/gather-funnel-facts.ts'
 import type { TriageDecision } from '../review-funnel/review-funnel-admission-evidence.ts'
 import { decideAdmission } from './admission-decision.ts'
 import { type PullRequestChange, recordTriageOverrideForChange } from './pr-admission.ts'
@@ -18,6 +22,7 @@ import {
 const cwd = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 const recordedHead = 'recorded-head'
 const rebasedHead = 'rebased-head'
+const changedHead = 'changed-head'
 const headBranch = 'DEV-2074-override'
 
 const pullRequest = (headCommit: string): PullRequestMergeFacts => ({
@@ -88,8 +93,8 @@ function changeAt(tip: string): PullRequestChange {
     group: {
       project: project.name,
       branch: headBranch,
-      patchId: 'patch',
-      zeroContextPatchId: 'patch',
+      patchId: tip === recordedHead ? 'pre-rebase' : 'post-rebase',
+      zeroContextPatchId: tip === changedHead ? 'zero-different' : 'zero-shared',
       pathSet: ['orchestrator/src/pull-request/pr-merge.ts'],
     },
     tier: 2,
@@ -106,8 +111,8 @@ function funnelVerdict(head: string): ReviewFunnelVerdict {
       taskKey: 'DEV-2074',
       branch: headBranch,
       head,
-      patchId: 'patch',
-      zeroContextPatchId: 'patch',
+      patchId: head === recordedHead ? 'pre-rebase' : 'post-rebase',
+      zeroContextPatchId: head === changedHead ? 'zero-different' : 'zero-shared',
       pathSet: '["orchestrator/src/pull-request/pr-merge.ts"]',
       paths: ['orchestrator/src/pull-request/pr-merge.ts'],
     },
@@ -176,6 +181,35 @@ test("merge honors create's triage override for the same patch after a rebase", 
     { overrideReason: 'Shmuel Barkin accepts the reviewed risk', fromOperator: true },
     database,
   )
+  const ceilingOverrideId = newRecordId()
+  database
+    .query(
+      `INSERT INTO landing_override
+        (record_id,project,project_record_id,branch,tip,tree,patch_id,zero_context_patch_id,path_set,reason,attribution,missing_lenses,session_id,at)
+       SELECT ?,project,project_record_id,branch,tip,tree,patch_id,zero_context_patch_id,path_set,reason,
+              'architect-ceiling','["correctness"]',session_id,'2026-11-15T23:59:59.000Z'
+         FROM landing_override WHERE project='merge-override-fixture' AND branch=?`,
+    )
+    .run(ceilingOverrideId, headBranch)
+  expect(
+    overrideFacts(database, {
+      project: 'merge-override-fixture',
+      branch: headBranch,
+      patchId: 'post-rebase',
+      zeroContextPatchId: 'zero-shared',
+      pathSet: '["orchestrator/src/pull-request/pr-merge.ts"]',
+    }),
+  ).toEqual({ ceilingRuling: false, overriddenLenses: ['correctness'] })
+  expect(
+    overrideFacts(database, {
+      project: 'merge-override-fixture',
+      branch: headBranch,
+      patchId: 'post-rebase',
+      zeroContextPatchId: 'zero-different',
+      pathSet: '["orchestrator/src/pull-request/pr-merge.ts"]',
+    }),
+  ).toEqual({ ceilingRuling: false, overriddenLenses: [] })
+  database.query('DELETE FROM landing_override WHERE record_id=?').run(ceilingOverrideId)
   const mergedHeads: string[] = []
 
   expect(() =>
@@ -186,5 +220,10 @@ test("merge honors create's triage override for the same patch after a rebase", 
   expect(() =>
     mergePullRequest('42', cwd, adapterFor(recordedHead, mergedHeads, database), database),
   ).toThrow('stop after admission')
+  expect(mergedHeads).toEqual([rebasedHead, recordedHead])
+
+  expect(() =>
+    mergePullRequest('42', cwd, adapterFor(changedHead, mergedHeads, database), database),
+  ).toThrow('review triage is incomplete')
   expect(mergedHeads).toEqual([rebasedHead, recordedHead])
 })

@@ -114,7 +114,7 @@ function compareCoverageChange(input: {
     reviewed: {
       patchId:
         input.review.patchId ?? changeIdentity(input.runner, input.oldBase, input.reviewedCommit),
-      zeroContextPatchId: input.review.zeroContextPatchId ?? null,
+      zeroContextPatchId: input.review.zeroContextPatchId,
       paths: reviewedPaths,
       message: input.review.commitMessage ?? null,
     },

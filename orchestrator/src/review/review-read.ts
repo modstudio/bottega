@@ -15,7 +15,7 @@ import { resolveReviewCommandCwd } from './review-command-cwd.ts'
 import { branchRunOwnerSession, measureChangeGroup, serializePathSet } from './review-group.ts'
 import { reviewLineage } from './review-lineage-store.ts'
 import { enqueueReviewRead } from './review-outbox.ts'
-import { sameChange, storedChangeFacts } from './same-change.ts'
+import { sameStoredChange } from './same-change.ts'
 
 type Flags = { flag(name: string): string | undefined }
 type Presentation = { log(...values: unknown[]): void }
@@ -76,21 +76,19 @@ export function hasExactArchitectRead(
           ORDER BY recorded_at DESC,record_id DESC`,
     )
     .all(project, ...lineage)
-    .some(
-      (read) =>
-        sameChange({
-          reviewed: storedChangeFacts({
-            patchId: read.patch_id,
-            zeroContextPatchId: read.zero_context_patch_id,
-            pathSet: read.path_set,
-          }),
-          current: storedChangeFacts({
-            patchId,
-            zeroContextPatchId,
-            pathSet,
-          }),
-          replay: null,
-        }).same,
+    .some((read) =>
+      sameStoredChange(
+        {
+          patchId: read.patch_id,
+          zeroContextPatchId: read.zero_context_patch_id,
+          pathSet: read.path_set,
+        },
+        {
+          patchId,
+          zeroContextPatchId,
+          pathSet,
+        },
+      ),
     )
 }
 

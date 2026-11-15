@@ -4,6 +4,7 @@ import type { CoverageGitResult, CoverageGitRunner, ReviewCoverageInput } from '
 
 const review: ReviewCoverageInput = {
   recordId: 'review-1',
+  zeroContextPatchId: null,
   lenses: [
     {
       lens: 'test',
@@ -105,5 +106,79 @@ describe('review coverage', () => {
         { skipExact: true },
       ),
     ).toMatchObject({ kind: 'carried', class: 'trivial-rebase', patchId: 'patch-a' })
+  })
+
+  const unreachableReviewedRunner = (): CoverageGitRunner => {
+    let reviewedReachabilityChecks = 0
+    return (args) => {
+      const command = args.join(' ')
+      if (command === 'rev-parse tip^{tree}') return result(true, 'tip-tree')
+      if (command === 'cat-file -e reviewed-commit^{commit}') {
+        reviewedReachabilityChecks += 1
+        return result(reviewedReachabilityChecks === 1, '', 'missing')
+      }
+      if (command === 'rev-parse reviewed-commit^{tree}') return result(true, 'reviewed-tree')
+      if (command === 'cat-file -e base-commit^{commit}') return result(true)
+      if (command === 'merge-base reviewed-commit base-commit') return result(true, 'old-base')
+      if (command === 'show-ref --verify --quiet refs/remotes/origin/main') return result(false)
+      if (command === 'merge-base tip main') return result(true, 'new-base')
+      if (command === 'diff --name-only new-base..tip -z') {
+        return result(true, 'src/shared.ts\0')
+      }
+      if (command === 'log --format=%B new-base..tip') return result(true, 'rebased change')
+      if (command === 'diff --binary --no-ext-diff --no-color new-base..tip') {
+        return { ...result(true), stdout: new TextEncoder().encode('current patch') }
+      }
+      if (command === 'patch-id --stable') return result(true, 'tip-legacy tip')
+      if (
+        command ===
+        'diff -U0 --binary --no-ext-diff --no-color --no-renames --src-prefix=a/ --dst-prefix=b/ new-base..tip'
+      ) {
+        return { ...result(true), stdout: new TextEncoder().encode('current patch') }
+      }
+      if (command === 'patch-id --verbatim') return result(true, 'tip-zero tip')
+      if (command === 'cat-file -e old-base^{commit}') return result(true)
+      throw new Error(`unexpected git call: ${command}`)
+    }
+  }
+
+  test('carries the stored zero-context identity when the reviewed commit becomes unreachable', () => {
+    expect(
+      reviewCoverageVerdict(
+        '/unused',
+        {
+          ...review,
+          patchId: 'stored-legacy',
+          zeroContextPatchId: 'tip-zero',
+          pathSet: '["src/shared.ts"]',
+        },
+        'tip',
+        'main',
+        unreachableReviewedRunner(),
+        { skipExact: true },
+      ),
+    ).toMatchObject({ kind: 'carried', class: 'trivial-rebase', patchId: 'tip-legacy' })
+  })
+
+  test('invalidates a different stored zero-context identity when the reviewed commit is unreachable', () => {
+    expect(
+      reviewCoverageVerdict(
+        '/unused',
+        {
+          ...review,
+          patchId: 'stored-legacy',
+          zeroContextPatchId: 'stored-zero-different',
+          pathSet: '["src/shared.ts"]',
+        },
+        'tip',
+        'main',
+        unreachableReviewedRunner(),
+        { skipExact: true },
+      ),
+    ).toEqual({
+      kind: 'invalid',
+      reason: 'reviewed commit reviewed-commit is missing',
+      resolution: 'pin',
+    })
   })
 })

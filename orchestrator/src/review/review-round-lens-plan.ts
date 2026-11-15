@@ -18,7 +18,7 @@ import { reviewCountsAsRound } from './review-role.ts'
 import type { ReviewRoundBudgetDecision } from './review-round-budget.ts'
 import { identifySecondOpinionRun } from './review-second-opinion.ts'
 import type { ReviewLensOwedReason, ReviewLensSelectionReason } from './review-vocabulary.ts'
-import { sameChange, storedChangeFacts } from './same-change.ts'
+import { sameStoredChange } from './same-change.ts'
 
 export type RoundLensFacts = {
   reviewedPathsByLens: Readonly<Record<string, readonly string[]>>
@@ -141,25 +141,6 @@ function withLensReasons(
   return Object.keys(reasons).length ? { ...applicable, lensReasons: reasons } : applicable
 }
 
-function sameRoundChange(
-  reviewed: Pick<TriageReviewRow, 'patchId' | 'zeroContextPatchId' | 'pathSet'>,
-  current: { patchId: string | null; zeroContextPatchId?: string | null; pathSet: string | null },
-): boolean {
-  return sameChange({
-    reviewed: storedChangeFacts({
-      patchId: reviewed.patchId,
-      zeroContextPatchId: reviewed.zeroContextPatchId,
-      pathSet: reviewed.pathSet,
-    }),
-    current: storedChangeFacts({
-      patchId: current.patchId,
-      zeroContextPatchId: current.zeroContextPatchId ?? null,
-      pathSet: current.pathSet,
-    }),
-    replay: null,
-  }).same
-}
-
 /** Gather branch-history facts without deciding which lenses the round needs. */
 export function roundLensFacts(
   branchReviews: readonly TriageReviewRow[],
@@ -199,7 +180,11 @@ export function roundLensFacts(
       review.completedAt !== null &&
       review.tier !== null &&
       reviewCountsAsRound(review.role) &&
-      !sameRoundChange(review, current),
+      !sameStoredChange(review, {
+        patchId: current.patchId,
+        zeroContextPatchId: current.zeroContextPatchId ?? null,
+        pathSet: current.pathSet,
+      }),
   )
   prior.sort((left, right) => right.reviewNumber - left.reviewNumber)
   const reviewedPathsByLens: Record<string, string[]> = {}
@@ -221,7 +206,7 @@ export function roundLensFacts(
       latestAcceptedOrModifiedLenses: [],
       ...(Object.keys(inadmissibleLenses).length ? { inadmissibleLenses } : {}),
     }
-  const latestRound = prior.filter((review) => sameRoundChange(review, latest))
+  const latestRound = prior.filter((review) => sameStoredChange(review, latest))
   const latestAcceptedOrModifiedLenses = [
     ...new Set(
       latestRound.flatMap((review) =>
