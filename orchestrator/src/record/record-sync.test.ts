@@ -638,7 +638,7 @@ test('an old-shape landing override syncs with a null change group', async () =>
     10,
   ) - 1
   expect(parameterIndex).toBeGreaterThanOrEqual(0)
-  expect(remote.parameters[statementIndex]?.[parameterIndex]).toBeNull()
+  expect(values?.[parameterIndex]).toBeNull()
   local.close()
 })
 

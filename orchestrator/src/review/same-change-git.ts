@@ -114,8 +114,8 @@ export function gatherSameChange(input: {
     'merge-tree',
     '--write-tree',
     `--merge-base=${input.oldBase}`,
-    input.reviewedCommit,
     input.newBase,
+    input.reviewedCommit,
   ])
   return {
     decision: sameChange({

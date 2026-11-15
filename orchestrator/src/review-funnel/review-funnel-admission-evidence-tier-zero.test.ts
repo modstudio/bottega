@@ -42,15 +42,18 @@ const evidence = (overrides: Partial<TriageEvidence> = {}): TriageEvidence => ({
 })
 
 describe('pull-request triage decision at tier zero', () => {
-  const ownerRead = (overrides: Partial<TriageEvidence['reads'][number]> = {}) => ({
-    recordId: 'record-9',
-    patchId: 'patch-a',
-    zeroContextPatchId: 'patch-a',
-    pathSet: '["a.ts"]',
-    recordedAt: '2026-09-25T02:00:00Z',
-    sessionId: 'owner-session',
-    ...overrides,
-  })
+  const ownerRead = (overrides: Partial<TriageEvidence['reads'][number]> = {}) => {
+    const patchId = overrides.patchId ?? 'patch-a'
+    return {
+      recordId: 'record-9',
+      patchId,
+      zeroContextPatchId: overrides.zeroContextPatchId ?? patchId,
+      pathSet: '["a.ts"]',
+      recordedAt: '2026-09-25T02:00:00Z',
+      sessionId: 'owner-session',
+      ...overrides,
+    }
+  }
 
   test('tier zero without a read refuses', () => {
     expect(
