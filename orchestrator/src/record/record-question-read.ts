@@ -68,7 +68,9 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
     if (input.since) {
       values.push(input.since)
       const at = `$${values.length}::timestamptz`
-      clauses.push(`(q.answered_at IS NULL AND q.closed_at IS NULL OR q.asked_at>=${at} OR q.answered_at>=${at} OR q.closed_at>=${at} OR q.overturned_at>=${at} OR q.filed_at>=${at})`)
+      clauses.push(
+        `(q.answered_at IS NULL AND q.closed_at IS NULL OR q.asked_at>=${at} OR q.answered_at>=${at} OR q.closed_at>=${at} OR q.overturned_at>=${at} OR q.filed_at>=${at})`,
+      )
     }
     values.push(limit)
     return (await tx.unsafe(
@@ -121,7 +123,9 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
   )) as Row[]
 }
 
-export async function readRecordQuestions(input: Tenant & QuestionReadInput): Promise<{ items: Row[] }> {
+export async function readRecordQuestions(
+  input: Tenant & QuestionReadInput,
+): Promise<{ items: Row[] }> {
   return recordPool(input.url).begin(async (tx) => {
     await bindTenant(tx, input)
     return { items: await rows(tx, input) }

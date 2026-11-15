@@ -3,8 +3,8 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { syncRecord } from '../record/record-sync.ts'
 import type { RecordQuestionClient } from '../record/record-api-client-question.ts'
+import { syncRecord } from '../record/record-sync.ts'
 import { RecordQuestionStore } from './question-store-record.ts'
 import { SqliteQuestionStore } from './question-store-sqlite.ts'
 import type { QuestionStore } from './question-store-types.ts'

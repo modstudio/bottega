@@ -10,10 +10,7 @@ import type {
   QuestionReadInput,
   QuestionWriteBody,
 } from '../record/record-question-contract.ts'
-import type {
-  QuestionReadResult,
-  QuestionStore,
-} from './question-store-types.ts'
+import type { QuestionReadResult, QuestionStore } from './question-store-types.ts'
 
 const changedAfterRefusal =
   'hosted question changed-after reads are not served yet; retry without changedAfter; DEV-2328 decides the hosted change cursor'

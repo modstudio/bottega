@@ -94,6 +94,7 @@ export function registerQuestionTaskRecordSyncProof(
     const fixture = input()
     const machineId = newRecordId()
     const at = '2026-11-15T12:00:00.000Z'
+    const directTaskId = newRecordId()
     fixture.admin(`
       INSERT INTO machine(id,user_id,name,registered_at,last_seen)
       VALUES ('${machineId}',(SELECT user_id FROM membership WHERE space_id='${fixture.spaceId}' LIMIT 1),
@@ -103,6 +104,12 @@ export function registerQuestionTaskRecordSyncProof(
          withheld_fields,created_at,updated_at)
       VALUES ('${newRecordId()}',40,'${fixture.spaceId}','${fixture.projectId}','${machineId}',1,
         '${at}','seed question','workflow','[]'::jsonb,'${at}','${at}');
+      INSERT INTO hub_task
+        (id,space_id,project_name,project_id,key,project,title,status,status_category,source,
+         first_seen,last_seen,created_at,updated_at)
+      VALUES ('${directTaskId}','${fixture.spaceId}','${fixture.projectName}','${fixture.projectId}',
+        'DEV-2331','${fixture.projectName}','direct question task','active','active','local',
+        now(),now(),now(),now());
     `)
     fixture.signIn()
     const client = recordApiClient()
@@ -178,6 +185,149 @@ export function registerQuestionTaskRecordSyncProof(
     const questions = Array.from({ length: 4 }, () => snapshot(newRecordId()))
     const written = await Promise.all(questions.map((question) => ask(question)))
     expect(written.map(({ number }) => number).sort((a, b) => a - b)).toEqual([41, 42, 43, 44])
+    expect(
+      fixture.admin(`SELECT workflow_task_id FROM question WHERE id='${questions[0]!.id}';`),
+    ).toBe(directTaskId)
+
+    await client.ensureSpaceBuiltIns!({ destinationSpaceId: fixture.spaceId })
+    const workflowVersionId = fixture.admin(
+      `SELECT version.id FROM workflow_version version JOIN workflow ON workflow.id=version.workflow_id
+       WHERE workflow.space_id='${fixture.spaceId}' ORDER BY version.n DESC LIMIT 1;`,
+    )
+    const catalogueVersionId = fixture.admin(
+      `SELECT version.id FROM step_catalogue_version version JOIN step_catalogue catalogue ON catalogue.id=version.catalogue_id
+       WHERE catalogue.space_id='${fixture.spaceId}' ORDER BY version.n DESC LIMIT 1;`,
+    )
+    const flowId = newRecordId()
+    const stageId = newRecordId()
+    await client.composeTaskFlow!(
+      {
+        requestId: newRecordId(),
+        flowInsert: {
+          id: flowId,
+          projectId: fixture.projectId,
+          taskId: directTaskId,
+          state: 'open',
+          openStageRecordId: stageId,
+          openingMachineId: machineId,
+          updatedMachineId: machineId,
+          createdAt: at,
+          updatedAt: at,
+        },
+        stageInsert: {
+          id: stageId,
+          flowRecordId: flowId,
+          projectId: fixture.projectId,
+          workflow: 'ship-task',
+          mode: 'default',
+          workflowKey: 'DEV-2331',
+          instanceId: '',
+          sessionId: 'question-proof-session',
+          workflowVersionId,
+          catalogueVersionId,
+          arguments: { key: 'DEV-2331' },
+          activeOrdinal: 0,
+          activeSlug: 'implement',
+          state: 'awaiting-ruling',
+          closedStepNotes: [],
+          question: null,
+          autonomy: null,
+          enforcement: 'note-only',
+          totalSteps: 1,
+          openedMachineId: machineId,
+          takenOverFromMachineId: null,
+          lastAdvancedMachineId: machineId,
+          createdAt: at,
+          updatedAt: at,
+        },
+      },
+      destination,
+    )
+    const runId = newRecordId()
+    fixture.admin(`INSERT INTO run
+      (id,evidence_seq,space_id,project_id,machine_id,started_by_user_id,started_at,agent,job,
+       prompt_sha,prompt_bytes,prompt_head,task_id,probe,status,turn,no_failover,automatic_failover,
+       work_preserved,created_at,updated_at,session_id)
+      VALUES ('${runId}',(SELECT COALESCE(MAX(evidence_seq),0)+1 FROM run WHERE space_id='${fixture.spaceId}'),
+       '${fixture.spaceId}','${fixture.projectId}','${machineId}',
+       (SELECT user_id FROM membership WHERE space_id='${fixture.spaceId}' LIMIT 1),'${at}',
+       'codex','proof','proof',1,'proof','${directTaskId}',false,'running',1,false,false,false,
+       '${at}','${at}','run-question-proof');`)
+    const workflowQuestion = snapshot(newRecordId())
+    workflowQuestion.workflowCursorRecordId = stageId
+    const runQuestion = snapshot(newRecordId())
+    runQuestion.runId = runId
+    runQuestion.workflowCursorRecordId = null
+    await ask(workflowQuestion)
+    await ask(runQuestion)
+    expect((await client.readQuestions!({ read: 'waiting' }, destination)).items).toContainEqual(
+      expect.objectContaining({ question_record_id: workflowQuestion.id }),
+    )
+    expect(
+      (
+        await client.readQuestions!(
+          { read: 'open-for-session', sessionId: 'question-proof-session' },
+          destination,
+        )
+      ).items,
+    ).toContainEqual(
+      expect.objectContaining({ record_id: stageId, open_question_record_id: workflowQuestion.id }),
+    )
+    const inbox = (await client.readQuestions!({ read: 'inbox' }, destination)).items
+    expect(inbox).toContainEqual(expect.objectContaining({ record_id: workflowQuestion.id }))
+    expect(inbox).toContainEqual(expect.objectContaining({ record_id: runQuestion.id }))
+    expect(
+      (await client.readQuestions!({ read: 'rulings', kind: 'workflow' }, destination)).items,
+    ).toContainEqual(expect.objectContaining({ record_id: workflowQuestion.id }))
+    expect(
+      (await client.readQuestions!({ read: 'rulings', kind: 'run' }, destination)).items,
+    ).toContainEqual(expect.objectContaining({ record_id: runQuestion.id }))
+    expect((await client.readQuestions!({ read: 'projects' }, destination)).items).toContainEqual({
+      project: fixture.projectName,
+    })
+
+    const answeredAt = '2026-11-15T12:01:00.000Z'
+    Object.assign(workflowQuestion, {
+      revision: 2,
+      answer: 'Yes',
+      answeredAt,
+      updatedAt: answeredAt,
+    })
+    await client.writeQuestion!(
+      'answer',
+      {
+        requestId: newRecordId(),
+        question: workflowQuestion,
+        audit: { action: 'answer', actorSession: null, at: answeredAt, reason: null },
+      },
+      destination,
+    )
+    expect(
+      (
+        await client.readQuestions!(
+          {
+            read: 'task-rulings',
+            projectId: fixture.projectId,
+            taskId: directTaskId,
+          },
+          destination,
+        )
+      ).items,
+    ).toContainEqual(expect.objectContaining({ question_record_id: workflowQuestion.id }))
+    const closedAt = '2026-11-15T12:02:00.000Z'
+    Object.assign(runQuestion, { revision: 2, closedAt, closeReason: 'proof', updatedAt: closedAt })
+    await client.writeQuestion!(
+      'close',
+      {
+        requestId: newRecordId(),
+        question: runQuestion,
+        audit: { action: 'close', actorSession: null, at: closedAt, reason: null },
+      },
+      destination,
+    )
+    expect((await client.readQuestions!({ read: 'inbox' }, destination)).items).not.toContainEqual(
+      expect.objectContaining({ record_id: runQuestion.id }),
+    )
     const retried = snapshot(newRecordId())
     const requestId = newRecordId()
     const retries = await Promise.all([ask(retried, requestId), ask(retried, requestId)])

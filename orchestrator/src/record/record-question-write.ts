@@ -4,12 +4,12 @@
 import type { SQL } from 'bun'
 import { and, sql as drizzleSql, eq, or } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
+import { hostedTaskIdForReference } from '../../../shared/record/hosted-task-id.ts'
 import {
   hostedQuestionWins,
   question as questionRecord,
 } from '../../../shared/record/schema-question.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
-import { hostedTaskIdForReference } from '../../../shared/record/hosted-task-id.ts'
 import { recordPool } from './record-pool.ts'
 import { pushQuestionAudits } from './record-question-audit.ts'
 import type {
@@ -17,8 +17,8 @@ import type {
   QuestionWriteBody,
   QuestionWriteResult,
 } from './record-question-contract.ts'
-import { questionValues } from './record-sync-service.ts'
 import { projectRecordId } from './record-sync-project-identity.ts'
+import { questionValues } from './record-sync-service.ts'
 
 type Tenant = { url: string } & TenantPrincipal
 

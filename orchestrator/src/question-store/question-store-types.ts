@@ -9,15 +9,15 @@ import type {
 } from '../record/record-question-contract.ts'
 import type { QueriedInboxQuestion } from '../run/run-inbox.ts'
 import type {
-  TaskFlowOpenSessionStageRow,
   TaskFlowInboxQuestionRow,
+  TaskFlowOpenSessionStageRow,
   TaskFlowRulingRow,
   TaskFlowTaskRulingRow,
   TaskFlowWaitingQuestionRow,
 } from '../workflow/task-flow-store-types.ts'
 
-export type QuestionProjectRow = { project: string | null }
-export type QuestionReadRow =
+type QuestionProjectRow = { project: string | null }
+type QuestionReadRow =
   | QueriedInboxQuestion
   | TaskFlowInboxQuestionRow
   | TaskFlowWaitingQuestionRow

@@ -32,4 +32,18 @@ CREATE POLICY "question_number_counter_space_delete" ON "question_number_counter
     WHERE m.space_id = "question_number_counter"."space_id"
       AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid
       AND m.permission = 'write'
-  )));
+  )));--> statement-breakpoint
+DO $migration$
+DECLARE
+  definition text;
+  previous text := '(''question'',''project''),(''question_mutation_audit'',''parent'')';
+  replacement text := '(''question'',''project''),(''question_number_counter'',''space''),(''question_mutation_audit'',''parent'')';
+BEGIN
+  SELECT pg_get_functiondef('record_move_project_space(text,text,text,bigint)'::regprocedure)
+    INTO definition;
+  IF position(previous IN definition) = 0 THEN
+    RAISE EXCEPTION 'record_move_project_space question classification anchor is missing';
+  END IF;
+  EXECUTE replace(definition, previous, replacement);
+END
+$migration$;
