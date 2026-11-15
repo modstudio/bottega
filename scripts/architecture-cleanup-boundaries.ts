@@ -24,9 +24,16 @@ export const cleanupBoundarySpecs = [
     reason: 'Keep session branch discovery separate from the pure review verdict presentation.',
   },
   {
+    name: 'stop-summary-time-boundary',
+    file: 'orchestrator/src/session/stop-summary-time.ts',
+    allowed: ['../../../shared/machine-config.ts'],
+    typeOnlyAllowed: [],
+    reason: 'Keep Stop time rendering independent of stores, processes, and clocks.',
+  },
+  {
     name: 'stop-summary-decision-boundary',
     file: 'orchestrator/src/session/stop-summary-decision.ts',
-    allowed: ['node:crypto', '../../../shared/brand.ts'],
+    allowed: ['node:crypto', '../../../shared/brand.ts', './stop-summary-time.ts'],
     typeOnlyAllowed: ['../run/question-inbox-counts.ts'],
     reason: 'Keep the bounded Stop presentation independent of stores, processes, and clocks.',
   },
@@ -42,6 +49,8 @@ export const cleanupBoundarySpecs = [
     file: 'orchestrator/src/session/stop-summary.ts',
     allowed: [
       '../../../shared/brand.ts',
+      '../../../shared/state-directory.ts',
+      '../config/display-timezone-cache.ts',
       '../close/close-out-in-flight.ts',
       '../database/db.ts',
       '../evidence/evidence-query.ts',

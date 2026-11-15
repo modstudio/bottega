@@ -6,7 +6,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ConfigClient, ConfigScope } from '../../../shared/config-client.ts'
 import { isDelegationKey } from '../../../shared/delegation-mode.ts'
 import { KEYSTORE_ENV } from '../../../shared/key-store-constants.ts'
-import { listMachineEntries } from '../../../shared/machine-config.ts'
+import { DISPLAY_TIMEZONE_KEY, listMachineEntries } from '../../../shared/machine-config.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { resolveRecordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
 import { recordWriteSpace } from '../../../shared/record-write-space.ts'
@@ -31,6 +31,7 @@ import {
   setConfigEntry,
   setSecret,
 } from '../config/config-service.ts'
+import { refreshDisplayTimezoneCache } from '../config/display-timezone-cache.ts'
 import { hostedConfigClient } from '../config/hosted-config-call-outcome.ts'
 import { trustMachine } from '../config/machine-trust.ts'
 import { machineRegister } from '../config/named-space-config.ts'
@@ -358,6 +359,7 @@ export function register(program: Command): void {
           )
         }
       } else await deleteEntry(key, target.scope, expected, client, target.destination)
+      if (key === DISPLAY_TIMEZONE_KEY) refreshDisplayTimezoneCache(null)
     })
 
   const secret = config.command('secret').description('manage sealed configuration values')

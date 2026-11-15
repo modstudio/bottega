@@ -1,8 +1,12 @@
 import { expect, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
+import { writeCachedDisplayTimezone } from '../config/display-timezone-cache.ts'
 import { db } from '../database/db.ts'
 import { LANDING_TREE_JOB } from '../landing-tree/landing-tree.ts'
 import type { WorkflowCursorListRow } from '../workflow/workflow-cursor-list.ts'
@@ -140,13 +144,34 @@ test('session summary assembles only this session owed runs, held remedies, and 
     `DEV-2297 review: lens correctness, craft owed → ${PLATFORM_SLUG} review tier DEV-2297-work`,
   )
   expect(result.lines).toContain('In progress: 1 run')
-  expect(result.lines.join('\n')).not.toContain(`run ${otherNumber} implement unscored`)
+  expect(result.lines.some((line) => line.includes(`(implement): ${otherNumber}`))).toBeFalse()
   expect(result.lines).toContain(
-    `worktree for run ${heldNumber} (craft) is held → ${PLATFORM_SLUG} run close-out ${heldNumber}`,
+    `1 held worktree (craft): ${heldNumber} → ${PLATFORM_SLUG} run close-out <run>`,
   )
   expect(result.lines.join('\n')).not.toMatch(
     /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/,
   )
+})
+
+test('session summary renders line one in the cached display time zone', async () => {
+  const state = mkdtempSync(join(tmpdir(), 'stop-summary-timezone-'))
+  const stateEnvironment = { BOTTEGA_STATE_HOME: state }
+  try {
+    writeCachedDisplayTimezone('America/New_York', stateEnvironment)
+    const result = await sessionStopSummary(
+      {
+        session: 'cached-timezone-session',
+        previousBlockKey: null,
+        now: '2026-11-13T12:00:00.000Z',
+        stateEnvironment,
+      },
+      db(),
+    )
+
+    expect(result.lines[0]).toMatch(/^Stop says: .+ (?:EST|EDT)$/)
+  } finally {
+    rmSync(state, { recursive: true, force: true })
+  }
 })
 
 test('a run-derived branch with a missing main-checkout ref has no review line', () => {

@@ -198,12 +198,25 @@ export function isMachineConfigKey(key: string): key is MachineConfigKey {
 
 export type ConfigHome = 'machine' | 'user' | 'space'
 
+export const DISPLAY_TIMEZONE_KEY = 'display.timezone'
+
+export function isDisplayTimezone(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value })
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function isSubscriptionPriceKey(key: string): boolean {
   return /^subscription\.[^.]+\.monthly_usd$/.test(key)
 }
 
 export function configHomes(key: string): readonly ConfigHome[] | null {
   if (isMachineConfigKey(key)) return ['machine']
+  if (key === DISPLAY_TIMEZONE_KEY) return ['user']
   if (key.startsWith('autonomy.')) return ['user', 'space', 'machine']
   if (isSubscriptionPriceKey(key)) return ['user']
   return null

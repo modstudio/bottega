@@ -10,7 +10,12 @@ import {
   configClient,
 } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
-import { readMachineAutonomy } from '../../../shared/machine-config.ts'
+import {
+  DISPLAY_TIMEZONE_KEY,
+  isDisplayTimezone,
+  readMachineAutonomy,
+} from '../../../shared/machine-config.ts'
+import { refreshDisplayTimezoneCache } from '../config/display-timezone-cache.ts'
 import { recordConfigCallOutcome } from '../config/hosted-config-call-outcome.ts'
 import { db } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
@@ -52,7 +57,13 @@ const hostedSettings = (rows: HostedEntry[], scope: 'user' | 'space') =>
   )
 
 type HostedRead =
-  | { status: 'available'; user: AutonomySettings; space: AutonomySettings; warnings: string[] }
+  | {
+      status: 'available'
+      user: AutonomySettings
+      space: AutonomySettings
+      displayTimezone: string | null
+      warnings: string[]
+    }
   | {
       status: 'not-configured'
       user: AutonomySettings
@@ -87,10 +98,14 @@ async function readHosted(
   }
   const user = hostedSettings(rows, 'user')
   const space = hostedSettings(rows, 'space')
+  const displayTimezone = rows.find(
+    (row) => row.scope === 'user' && row.key === DISPLAY_TIMEZONE_KEY,
+  )?.value
   return {
     status: 'available',
     user: user.settings,
     space: space.settings,
+    displayTimezone: isDisplayTimezone(displayTimezone) ? displayTimezone : null,
     warnings: [user.warning, space.warning].filter((warning): warning is string =>
       Boolean(warning),
     ),
@@ -102,7 +117,10 @@ function refreshHostedCache(
   hosted: Extract<HostedRead, { status: 'available' }>,
   stateEnvironment: StateEnvironment,
   now: () => Date,
-): string | null {
+): string[] {
+  const warnings: string[] = []
+  const displayWarning = refreshDisplayTimezoneCache(hosted.displayTimezone, stateEnvironment)
+  if (displayWarning) warnings.push(displayWarning)
   try {
     writeSessionContextCache(
       {
@@ -113,11 +131,11 @@ function refreshHostedCache(
       },
       stateEnvironment,
     )
-    return null
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
-    return `warning: could not refresh hosted autonomy cache: ${reason}`
+    warnings.push(`warning: could not refresh hosted autonomy cache: ${reason}`)
   }
+  return warnings
 }
 
 function withHostedWarnings(
@@ -200,14 +218,9 @@ export async function resolveProjectAutonomy(
     workflow,
     stages,
   )
-  const cacheWarning =
-    hosted.status === 'available'
-      ? refreshHostedCache(project, hosted, stateEnvironment, now)
-      : null
-  const resolution = withHostedWarnings(resolved, [
-    ...hosted.warnings,
-    ...(cacheWarning ? [cacheWarning] : []),
-  ])
+  const cacheWarnings =
+    hosted.status === 'available' ? refreshHostedCache(project, hosted, stateEnvironment, now) : []
+  const resolution = withHostedWarnings(resolved, [...hosted.warnings, ...cacheWarnings])
   if (hosted.status === 'available') {
     return {
       ...resolution,

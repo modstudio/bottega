@@ -85,6 +85,18 @@ else
 fi
 export BOTTEGA_ORCHESTRATOR_DB="$DB_PATH"
 
+display_timezone=$("$BOTTEGA" machine config get display.timezone 2>/dev/null) || display_timezone=""
+display_timezone=${display_timezone%%$'\n'*}
+unset TZ
+if [[ "$display_timezone" =~ ^[A-Za-z_+-]+(/[A-Za-z0-9_+-]+)*$ ]] &&
+   [ -f "/usr/share/zoneinfo/$display_timezone" ]; then
+  export TZ="$display_timezone"
+fi
+
+heartbeat_timestamp() {
+  date '+%I:%M:%S %p'
+}
+
 SID="${1:?session id required (Claude session_id; bottega records it on every run)}"
 INTERVAL="${2:-60}"
 MAX="${3:-60}"
@@ -211,7 +223,7 @@ command = command.replace("\t", " ").replace("\r", " ").replace("\n", " ")
 run_id = report.get("runId")
 run = str(run_id) if isinstance(run_id, int) else "none"
 print("[%s] STORE WRITE LOCK - %s; pid %s; command %s; run %s" %
-      (__import__("datetime").datetime.now().strftime("%H:%M:%S"), report["classification"], report["pid"], command, run))
+      (__import__("datetime").datetime.now().strftime("%I:%M:%S %p"), report["classification"], report["pid"], command, run))
 ' <"$lock_out"
   fi
   rm -f "$lock_out" "$lock_timed_out"
@@ -382,7 +394,7 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
       if [ "$inbox_rc" -ne 0 ] || [ "$inbox_parse_rc" -ne 0 ]; then
         observation_failure="could not read question inbox; $observation_failure"
       fi
-      echo "[$(date +%H:%M:%S)] DEGRADED - $observation_failure (inbox rc=$inbox_rc parse=$inbox_parse_rc, runs rc=$runs_rc parse=$runs_parse_rc, completion rc=$completion_rc parse=$completion_parse_rc, landings parse=$landings_parse_rc, requests rc=$requests_rc parse=$requests_parse_rc, holds parse=$holds_parse_rc). State unknown; NOT concluding clear. Inspect bottega diagnostics directly."
+      echo "[$(heartbeat_timestamp)] DEGRADED - $observation_failure (inbox rc=$inbox_rc parse=$inbox_parse_rc, runs rc=$runs_rc parse=$runs_parse_rc, completion rc=$completion_rc parse=$completion_parse_rc, landings parse=$landings_parse_rc, requests rc=$requests_rc parse=$requests_parse_rc, holds parse=$holds_parse_rc). State unknown; NOT concluding clear. Inspect bottega diagnostics directly."
       report_store_write_lock
     fi
     sleep "$INTERVAL"; continue
@@ -469,7 +481,7 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     combined_detail="$combined_detail$landing_detail"
   fi
   decision_err=$(mktemp)
-  decision_output=$(printf '%s' "$inbox_raw" | HEARTBEAT_TIMESTAMP=$(date +%H:%M:%S) \
+  decision_output=$(printf '%s' "$inbox_raw" | HEARTBEAT_TIMESTAMP=$(heartbeat_timestamp) \
     HEARTBEAT_RUNS="$n" HEARTBEAT_LANDINGS="$landing_n" \
     HEARTBEAT_STALLED="$stalled_n" HEARTBEAT_STALLED_DETAIL="$stalled_detail" \
     HEARTBEAT_WAITING_DETAIL="$combined_detail" \
@@ -485,12 +497,12 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     should_exit=0
     decision_reason=$(python3 "$ROOT/hooks/heartbeat-decision.py" <"$decision_err" 2>/dev/null)
     [ -n "$decision_reason" ] || decision_reason="stderr screening failed"
-    echo "[$(date +%H:%M:%S)] DEGRADED - heartbeat decision step failed with status $decision_rc: $decision_reason; continuing to watch."
+    echo "[$(heartbeat_timestamp)] DEGRADED - heartbeat decision step failed with status $decision_rc: $decision_reason; continuing to watch."
   fi
   rm -f "$decision_err"
   if [ "$hold_release_failed" -eq 1 ]; then
     should_exit=0
-    echo "[$(date +%H:%M:%S)] DEGRADED - a resolved board hold could not be recorded; continuing to watch."
+    echo "[$(heartbeat_timestamp)] DEGRADED - a resolved board hold could not be recorded; continuing to watch."
   fi
   if [ "$key" != "$prev_key" ] || [ "$since_emit" -ge "$KEEPALIVE_TICKS" ]; then
     prev_key="$key"; since_emit=0
@@ -593,7 +605,7 @@ for index, row in enumerate(rows):
       prev_monitor_failure_key="$monitor_failure_key"
       monitor_failure_ticks=0
       printf '[%s] DEGRADED - %s unavailable (rc=%s parse=%s reason=%s). Health state still follows inbox and runs; inspect monitor diagnostics directly.\n' \
-        "$(date +%H:%M:%S)" "$monitor_label" "$monitor_rc" "$monitor_parse_rc" "$monitor_reason"
+        "$(heartbeat_timestamp)" "$monitor_label" "$monitor_rc" "$monitor_parse_rc" "$monitor_reason"
     fi
     report_store_write_lock
   else
@@ -632,7 +644,7 @@ for index, row in enumerate(rows):
         monitor_delivery_phrase="and delivered the rest of the batch"
       fi
       printf '[%s] DEGRADED - %s refused %s notice(s) %s: %s. Inspect the notice producer.\n' \
-        "$(date +%H:%M:%S)" "$monitor_label" "$monitor_skipped_count" "$monitor_delivery_phrase" "$monitor_skipped_names"
+        "$(heartbeat_timestamp)" "$monitor_label" "$monitor_skipped_count" "$monitor_delivery_phrase" "$monitor_skipped_names"
     fi
   else
     prev_skipped_key=""
@@ -664,7 +676,7 @@ print(token)
            [ "$cap_failure_ticks" -ge "$KEEPALIVE_TICKS" ]; then
           prev_cap_failure_state="$cap_failure_state"
           cap_failure_ticks=0
-          echo "[$(date +%H:%M:%S)] DEGRADED - monitor notice delivery capability unavailable. Health state still follows inbox and runs."
+          echo "[$(heartbeat_timestamp)] DEGRADED - monitor notice delivery capability unavailable. Health state still follows inbox and runs."
         fi
       else
         prev_cap_failure_state=""
@@ -706,7 +718,7 @@ print(token)
                [ "$ack_failure_ticks" -ge "$KEEPALIVE_TICKS" ]; then
               prev_ack_failure_state="$ack_failure_state"
               ack_failure_ticks=0
-              echo "[$(date +%H:%M:%S)] DEGRADED - monitor notice acknowledgement failed; delivered notices may repeat. Health state still follows inbox and runs."
+              echo "[$(heartbeat_timestamp)] DEGRADED - monitor notice acknowledgement failed; delivered notices may repeat. Health state still follows inbox and runs."
             fi
           else
             prev_ack_failure_state=""
@@ -723,7 +735,7 @@ print(token)
                 prev_ack_refusal_report="$ack_report"
                 ack_refusal_ticks=0
                 printf '[%s] DEGRADED - %s: the acknowledgement refused %s of the %s id(s) in this batch: %s. A refused id stays undelivered and repeats; inspect the notice producer.\n' \
-                  "$(date +%H:%M:%S)" "$monitor_label" "$ack_refused_count" "$ack_sent_count" "$ack_refused_names"
+                  "$(heartbeat_timestamp)" "$monitor_label" "$ack_refused_count" "$ack_sent_count" "$ack_refused_names"
               fi
             else
               prev_ack_refusal_report=""
@@ -748,4 +760,4 @@ done
 
 # Bounded on purpose: an unbounded poll against a service whose failure mode is
 # "never satisfied" is the loop this codebase's rules forbid.
-echo "[$(date +%H:%M:%S)] HEARTBEAT ENDED - $MAX ticks elapsed; re-arm if still waiting."
+echo "[$(heartbeat_timestamp)] HEARTBEAT ENDED - $MAX ticks elapsed; re-arm if still waiting."

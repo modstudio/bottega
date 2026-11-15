@@ -103,6 +103,10 @@ export function concernStateDirectory(
   return concern === 'orchestrator' ? paths.orchestratorDirectory : paths.hubDirectory
 }
 
+export function autonomyContextDirectory(env: StateEnvironment): string {
+  return join(concernStateDirectory('orchestrator', env), 'autonomy-context')
+}
+
 /** Directory launchd watches for pending hosted-record evidence. */
 export function recordSyncQueueDirectory(env: StateEnvironment): string {
   return join(resolveStatePaths(env).orchestratorDirectory, RECORD_SYNC_QUEUE_DIRECTORY)

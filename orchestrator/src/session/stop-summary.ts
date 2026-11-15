@@ -3,7 +3,9 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { StateEnvironment } from '../../../shared/state-directory.ts'
 import { cursorFacts } from '../close/close-out-in-flight.ts'
+import { readCachedDisplayTimezone } from '../config/display-timezone-cache.ts'
 import { db } from '../database/db.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { LANDING_TREE_JOB, shipCursorWorksTree } from '../landing-tree/landing-tree.ts'
@@ -35,7 +37,6 @@ type OwedRunRow = {
   number: number
   job: string
   launch_key: string | null
-  label: string | null
   owed_at: string
 }
 export type StopSummaryHeldTreeRow = {
@@ -63,8 +64,56 @@ export function landingTreeIsActive(
   )
 }
 
-function heldWorktreeCommand(tree: StopSummaryHeldTreeRow): string {
-  return `${PLATFORM_SLUG} run close-out ${tree.number}`
+function owedItemsForStop(
+  reviewItems: readonly StopSummaryOwedItem[],
+  owedRuns: readonly OwedRunRow[],
+  heldTrees: readonly StopSummaryHeldTreeRow[],
+  activeTrees: readonly StopSummaryHeldTreeRow[],
+  now: string,
+): StopSummaryOwedItem[] {
+  return [
+    ...reviewItems,
+    ...owedRuns.map((run) => ({
+      kind: 'unscored-run',
+      noun: 'unscored run',
+      qualifier: [run.job, run.launch_key].filter(Boolean).join(', '),
+      id: String(run.number),
+      command: `${PLATFORM_SLUG} score <run>`,
+      owedAt: run.owed_at,
+    })),
+    ...heldTrees
+      .filter((tree) => !activeTrees.includes(tree))
+      .map((tree) => {
+        const landingTree = tree.job === LANDING_TREE_JOB && tree.worktree
+        const classification = landingTree
+          ? {
+              kind: 'held-landing-tree',
+              noun: 'held landing tree',
+              qualifier: null,
+              id: tree.worktree!,
+              command: `${PLATFORM_SLUG} tree remove <worktree>`,
+            }
+          : tree.job === LANDING_TREE_JOB
+            ? {
+                kind: 'held-landing-run',
+                noun: 'held landing run',
+                qualifier: null,
+                id: String(tree.number),
+                command: `${PLATFORM_SLUG} run close-out <run>`,
+              }
+            : {
+                kind: 'held-worktree',
+                noun: 'held worktree',
+                qualifier: tree.job,
+                id: String(tree.number),
+                command: `${PLATFORM_SLUG} run close-out <run>`,
+              }
+        return {
+          ...classification,
+          owedAt: tree.close_out_attempted_at ?? now,
+        }
+      }),
+  ]
 }
 
 export async function sessionStopSummary(
@@ -74,6 +123,7 @@ export async function sessionStopSummary(
     now?: string
     reviewVerdictGatherer?: SessionReviewVerdictGatherer
     reviewBranchRefExists?: SessionReviewBranchRefExists
+    stateEnvironment?: StateEnvironment
   },
   database: Database = db(),
 ): Promise<StopSummaryDecision> {
@@ -123,7 +173,6 @@ export async function sessionStopSummary(
   const owedRuns = database
     .query<OwedRunRow, [string]>(
       `SELECT r.record_id,r.number,r.job,r.launch_key,
-              substr(COALESCE(r.label,r.prompt_head),1,60) label,
               strftime('%Y-%m-%dT%H:%M:%fZ',julianday(r.started_at)+COALESCE(r.latency_ms,0)/86400000.0) owed_at
          FROM run r LEFT JOIN score s ON s.run_record_id=r.record_id
         WHERE r.session_id=? AND ${UNSCORED_WHERE} ORDER BY r.number`,
@@ -139,29 +188,10 @@ export async function sessionStopSummary(
   const activeTrees = heldTrees.filter((tree) =>
     landingTreeIsActive(tree, cursors, activeLandingTrees),
   )
-  const owedItems: StopSummaryOwedItem[] = [
-    ...reviews.owedItems,
-    ...owedRuns.map((run) => ({
-      label: `run ${run.number} ${run.job}${run.launch_key ? ` ${run.launch_key}` : ''} unscored`,
-      command: `${PLATFORM_SLUG} score ${run.number} (see ${PLATFORM_SLUG} score --help)`,
-      owedAt: run.owed_at,
-    })),
-    ...heldTrees
-      .filter((tree) => !activeTrees.includes(tree))
-      .map((tree) => ({
-        label:
-          tree.job === LANDING_TREE_JOB
-            ? `landing tree ${tree.worktree ?? `run ${tree.number}`} is held`
-            : `worktree for run ${tree.number} (${tree.job}) is held`,
-        command:
-          tree.job === LANDING_TREE_JOB && tree.worktree
-            ? `${PLATFORM_SLUG} tree remove ${tree.worktree}`
-            : heldWorktreeCommand(tree),
-        owedAt: tree.close_out_attempted_at ?? now,
-      })),
-  ]
+  const owedItems = owedItemsForStop(reviews.owedItems, owedRuns, heldTrees, activeTrees, now)
   return decideStopSummary({
     now,
+    displayTimezone: readCachedDisplayTimezone(options.stateEnvironment ?? process.env),
     questionCounts,
     cursors: cursors.map((cursor) => ({
       key: cursor.workflow_key || null,

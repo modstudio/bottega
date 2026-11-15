@@ -6,6 +6,10 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { ConfigClientError, configClient } from '../../../shared/config-client.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
+import {
+  readCachedDisplayTimezone,
+  writeCachedDisplayTimezone,
+} from '../config/display-timezone-cache.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { answerRulingRefusal, combineRulingsSnapshots, parseAutonomy } from './autonomy.ts'
 import {
@@ -160,7 +164,10 @@ test('an available hosted read refreshes the cache used by the following unavail
     {},
     () =>
       ({
-        listEntries: async () => [{ scope: 'user', key: 'autonomy.preset', value: 'autonomous' }],
+        listEntries: async () => [
+          { scope: 'user', key: 'autonomy.preset', value: 'autonomous' },
+          { scope: 'user', key: 'display.timezone', value: 'America/New_York' },
+        ],
       }) as never,
     d,
     environment,
@@ -176,6 +183,7 @@ test('an available hosted read refreshes the cache used by the following unavail
     project: 'fixture',
     hosted: { user: { preset: 'autonomous' }, space: {} },
   })
+  expect(readCachedDisplayTimezone(environment)).toBe('America/New_York')
 
   const stale = await resolveProjectAutonomy(
     'fixture',
@@ -201,6 +209,14 @@ test('an available hosted read refreshes the cache used by the following unavail
   expect(stale.note).toContain('cache age 5000 ms')
 })
 
+test('the user display cache treats missing and invalid zones as unset', () => {
+  const state = mkdtempSync(join(tmpdir(), 'display-timezone-cache-'))
+  const environment = { BOTTEGA_STATE_HOME: state }
+  expect(readCachedDisplayTimezone(environment)).toBeNull()
+  writeCachedDisplayTimezone('Mars/Olympus', environment)
+  expect(readCachedDisplayTimezone(environment)).toBeNull()
+})
+
 test('a cache write failure preserves an available resolution and adds a warning', async () => {
   const stateFile = join(mkdtempSync(join(tmpdir(), 'autonomy-cache-failure-')), 'state-file')
   writeFileSync(stateFile, 'not a directory')
@@ -220,8 +236,9 @@ test('a cache write failure preserves an available resolution and adds a warning
 
   expect(result.steps.design).toEqual({ value: 'auto', scope: 'hosted user' })
   expect(result.hosted?.status).toBe('available')
-  expect(result.warnings).toHaveLength(1)
-  expect(result.warnings?.[0]).toStartWith('warning: could not refresh hosted autonomy cache:')
+  expect(result.warnings).toHaveLength(2)
+  expect(result.warnings?.[0]).toStartWith('warning: could not refresh display time zone cache:')
+  expect(result.warnings?.[1]).toStartWith('warning: could not refresh hosted autonomy cache:')
 })
 
 test('a timed-out hosted read resolves from the cached hosted copy and names its age', async () => {

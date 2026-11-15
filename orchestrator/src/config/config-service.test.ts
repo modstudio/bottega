@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -45,6 +45,7 @@ import {
 } from './config-service.ts'
 import { rotationFixture } from './config-service-rotation.fixture.ts'
 import { planRotation } from './config-service-rotation-policy.ts'
+import { readCachedDisplayTimezone, writeCachedDisplayTimezone } from './display-timezone-cache.ts'
 
 const roots: string[] = []
 let previousConfigHome: string | undefined, previousKeystore: string | undefined
@@ -63,6 +64,8 @@ afterEach(() => {
 test('the declared home chooses machine and hosted keys and refuses an unsupported scope with its remedy', () => {
   expect(configHome('routing.cost_policy')).toBe('machine')
   expect(configHome('autonomy.preset')).toBe('user')
+  expect(configHome('display.timezone')).toBe('user')
+  expect(() => configHome('display.timezone', 'machine')).toThrow('its home is hosted user scope')
   expect(() => configHome('subscription.codex.monthly_usd', 'space')).toThrow(
     `refusing config key subscription.codex.monthly_usd in hosted space scope: its home is hosted user scope; write it with \`${PLATFORM_SLUG} machine config set subscription.codex.monthly_usd <value>\``,
   )
@@ -73,7 +76,7 @@ test('the declared home chooses machine and hosted keys and refuses an unsupport
     `${PLATFORM_SLUG} machine config get --machine routing.cost_policy`,
   )
   expect(() => configHome('unknown.key')).toThrow(
-    `accepted families are machine catalogue keys, autonomy.*, and subscription.<harness>.monthly_usd; inspect machine keys with \`${PLATFORM_SLUG} machine config list --machine\``,
+    `accepted families are machine catalogue keys, display.timezone, autonomy.*, and subscription.<harness>.monthly_usd; inspect machine keys with \`${PLATFORM_SLUG} machine config list --machine\``,
   )
 })
 
@@ -212,6 +215,97 @@ test('invalid hosted subscription and autonomy values are refused before any wri
     setConfigEntry('autonomy.preset', 'sometimes', 'user', undefined, client),
   ).rejects.toThrow('value must be one of')
   expect(calls).toEqual([])
+})
+
+test('display timezone validates before writing and a successful set refreshes the user cache', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'config-display-timezone-'))
+  roots.push(root)
+  const env = { HOME: root, BOTTEGA_STATE_HOME: join(root, 'state') }
+  const calls: string[] = []
+  const client = {
+    putEntry: async (key: string, input: { value: string }) => {
+      calls.push(`${key}=${input.value}`)
+      return {
+        key,
+        scope: 'user',
+        environment: 'default',
+        value: input.value,
+        rowVersion: 1,
+        updatedAt: '2026-11-15T12:00:00.000Z',
+      }
+    },
+  } as unknown as ConfigClient
+
+  await expect(
+    setConfigEntry('display.timezone', 'Mars/Olympus', undefined, null, client, env),
+  ).rejects.toThrow(
+    `refusing display.timezone Mars/Olympus: not an IANA time zone; e.g. ${PLATFORM_SLUG} machine config set display.timezone America/New_York`,
+  )
+  expect(calls).toEqual([])
+
+  await expect(
+    setConfigEntry('display.timezone', 'America/New_York', undefined, null, client, env),
+  ).resolves.toMatchObject({ home: 'user', value: 'America/New_York' })
+  expect(readCachedDisplayTimezone(env)).toBe('America/New_York')
+})
+
+test('display timezone get treats an invalid hosted value as unset and clears the cache', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'config-invalid-display-timezone-'))
+  roots.push(root)
+  const env = { HOME: root, BOTTEGA_STATE_HOME: join(root, 'state') }
+  writeCachedDisplayTimezone('America/New_York', env)
+  const client = {
+    getEntry: async () => ({
+      key: 'display.timezone',
+      scope: 'user',
+      environment: 'default',
+      value: 'Mars/Olympus',
+      rowVersion: 1,
+      updatedAt: '2026-11-15T12:00:00.000Z',
+    }),
+  } as unknown as ConfigClient
+
+  await expect(getConfigEntry('display.timezone', undefined, client, env)).rejects.toThrow(
+    'hosted user scope has no value for display.timezone',
+  )
+  expect(readCachedDisplayTimezone(env)).toBeNull()
+})
+
+test('display timezone cache failures warn without failing successful hosted set and get', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'config-display-cache-failure-'))
+  roots.push(root)
+  const stateFile = join(root, 'state-file')
+  writeFileSync(stateFile, 'not a directory')
+  const env = { HOME: root, BOTTEGA_STATE_HOME: stateFile }
+  const row = {
+    key: 'display.timezone',
+    scope: 'user' as const,
+    environment: 'default',
+    value: 'America/New_York',
+    rowVersion: 1,
+    updatedAt: '2026-11-15T12:00:00.000Z',
+  }
+  const client = {
+    putEntry: async () => row,
+    getEntry: async () => row,
+  } as unknown as ConfigClient
+  const warning = spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    await expect(
+      setConfigEntry('display.timezone', row.value, undefined, null, client, env),
+    ).resolves.toMatchObject({ value: row.value })
+    await expect(getConfigEntry('display.timezone', undefined, client, env)).resolves.toMatchObject(
+      {
+        value: row.value,
+      },
+    )
+    expect(warning).toHaveBeenCalledTimes(2)
+    expect(warning.mock.calls[0]?.[0]).toStartWith(
+      'warning: could not refresh display time zone cache:',
+    )
+  } finally {
+    warning.mockRestore()
+  }
 })
 
 test('hosted autonomy get reports the machine value that outranks it locally', async () => {

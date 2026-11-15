@@ -4,6 +4,7 @@
 import { createHash } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { QuestionInboxCounts } from '../run/question-inbox-counts.ts'
+import { formatStopTime } from './stop-summary-time.ts'
 
 export const OWED_ITEM_OVERDUE_MS = 60 * 60 * 1000
 
@@ -16,13 +17,18 @@ type StopSummaryCursor = {
 }
 
 export type StopSummaryOwedItem = {
-  label: string
+  kind: string
+  noun: string
+  qualifier: string | null
+  id: string
   command: string
   owedAt: string
+  openFindings?: number
 }
 
 export type StopSummaryFacts = {
   now: string
+  displayTimezone?: string | null
   questionCounts: QuestionInboxCounts | null
   cursors: StopSummaryCursor[]
   reviewVerdictLines: string[]
@@ -43,10 +49,46 @@ export type StopSummaryDecision = {
 const count = (value: number, singular: string, plural = `${singular}s`) =>
   `${value} ${value === 1 ? singular : plural}`
 
-const owedLine = (item: StopSummaryOwedItem) => `${item.label} → ${item.command}`
+type OwedGroup = {
+  kind: string
+  noun: string
+  qualifier: string | null
+  command: string
+  ids: string[]
+  openFindings: number
+}
 
-function blockKey(lines: readonly string[]): string {
-  return createHash('sha256').update(lines.join('\n')).digest('hex')
+function owedGroups(items: readonly StopSummaryOwedItem[]): OwedGroup[] {
+  const groups = new Map<string, OwedGroup>()
+  for (const item of items) {
+    const key = `${item.kind}\0${item.qualifier ?? ''}`
+    const existing = groups.get(key)
+    if (existing) {
+      existing.ids.push(item.id)
+      existing.openFindings += item.openFindings ?? 0
+      continue
+    }
+    groups.set(key, {
+      kind: item.kind,
+      noun: item.noun,
+      qualifier: item.qualifier,
+      command: item.command,
+      ids: [item.id],
+      openFindings: item.openFindings ?? 0,
+    })
+  }
+  return [...groups.values()]
+}
+
+function owedLine(group: OwedGroup): string {
+  const qualifier = group.qualifier ? ` (${group.qualifier})` : ''
+  const findings = group.openFindings ? ` (${count(group.openFindings, 'finding')} open)` : ''
+  return `${count(group.ids.length, group.noun)}${qualifier}${findings}: ${group.ids.join(', ')} → ${group.command}`
+}
+
+function blockKey(items: readonly StopSummaryOwedItem[]): string {
+  const identities = items.map((item) => `${item.kind}\0${item.id}`).sort()
+  return createHash('sha256').update(identities.join('\n')).digest('hex')
 }
 
 function cursorLine(cursor: StopSummaryCursor): string {
@@ -75,7 +117,12 @@ export function decideStopSummary(facts: StopSummaryFacts): StopSummaryDecision 
       ].filter((line): line is string => line !== null)
     : [`Could not read question inbox → ${PLATFORM_SLUG} question inbox --all --active`]
   if (facts.questionCounts && !questionLines.length) questionLines.push('Nothing waiting on you')
-  const lines = [...questionLines, ...facts.cursors.map(cursorLine), ...facts.reviewVerdictLines]
+  const lines = [
+    `Stop says: ${formatStopTime(facts.now, facts.displayTimezone)}`,
+    ...questionLines,
+    ...facts.cursors.map(cursorLine),
+    ...facts.reviewVerdictLines,
+  ]
   const moving = movingLine(facts)
   if (moving) lines.push(moving)
 
@@ -83,16 +130,16 @@ export function decideStopSummary(facts: StopSummaryFacts): StopSummaryDecision 
   const overdue = facts.owedItems.filter(
     (item) => Number.isFinite(now) && now - Date.parse(item.owedAt) >= OWED_ITEM_OVERDUE_MS,
   )
-  const owedBlockKey = facts.owedItems.length ? blockKey(facts.owedItems.map(owedLine)) : null
+  const owedBlockKey = facts.owedItems.length ? blockKey(facts.owedItems) : null
   if (moving) {
-    lines.push(...overdue.map(owedLine))
+    lines.push(...owedGroups(overdue).map(owedLine))
     return { lines, block: false, reason: null, blockKey: owedBlockKey }
   }
   if (!facts.owedItems.length) {
     return { lines, block: false, reason: null, blockKey: null }
   }
 
-  const detailed = facts.owedItems.map(owedLine)
+  const detailed = owedGroups(facts.owedItems).map(owedLine)
   const reason = [...lines, ...detailed].join('\n')
   if (facts.previousBlockKey === owedBlockKey) {
     lines.push(`${count(facts.owedItems.length, 'item')} owed → ${PLATFORM_SLUG} score pending`)
