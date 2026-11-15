@@ -152,12 +152,13 @@ class SqliteTaskFlowStore {
           task_flow_record_id,instance_id,session_id,workflow_version_record_id,catalogue_version_record_id,
           args,autonomy,ordinal,step_slug,state,closed,question,total_steps,created_at,updated_at,enforcement,
           opened_machine_id,taken_over_from_machine_id,last_advanced_machine_id,revision)
-         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor WHERE project_record_id=?),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ${conflictSql}
          RETURNING record_id`,
       )
       .get(
         row.recordId,
+        row.projectRecordId,
         row.project,
         row.projectRecordId,
         row.workflow,
@@ -263,12 +264,16 @@ class SqliteTaskFlowStore {
       .get(taskRecordId)
   }
 
-  stageByHandle(_project: string | undefined, cursor: number): TaskFlowStageCursorRow | null {
+  stageByHandle(project: string | undefined, cursor: number): TaskFlowStageCursorRow | null {
+    if (!project)
+      throw new Error(`workflow cursor ${cursor} needs a project; pass --project <PROJECT>`)
     return this.database
-      .query<TaskFlowStageCursorRow, [number]>(
-        `SELECT ${LISTED_STAGE_COLUMNS} FROM workflow_cursor cursor WHERE cursor.number=?`,
+      .query<TaskFlowStageCursorRow, [string, number]>(
+        `SELECT ${LISTED_STAGE_COLUMNS} FROM workflow_cursor cursor
+         WHERE cursor.project_record_id=(SELECT record_id FROM project WHERE name=?)
+           AND cursor.number=?`,
       )
-      .get(cursor)
+      .get(project, cursor)
   }
 
   stageByRecordId(recordId: string): TaskFlowStageCursorRow | null {

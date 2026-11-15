@@ -120,7 +120,7 @@ test.each([
   ).toBe(mode)
 })
 
-test('a local cursor handle resolves outside a registered project without a project option', async () => {
+test('a local cursor handle outside a registered project requires a project option', async () => {
   const d = database()
   const composed = await composeWorkflowWithCursor(
     'flow',
@@ -134,11 +134,25 @@ test('a local cursor handle resolves outside a registered project without a proj
   )
   d.query('UPDATE project SET path=? WHERE name=?').run('/fixture-not-this-cwd', 'fixture')
 
-  expect((await selectByHandle(composed.cursor!.id, {}, d)).record_id).toBe(
-    d
-      .query<{ record_id: string }, [number]>(
-        'SELECT record_id FROM workflow_cursor WHERE number=?',
-      )
-      .get(composed.cursor!.id)!.record_id,
+  expect(selectByHandle(composed.cursor!.id, {}, d)).rejects.toThrow(
+    'pass --project <PROJECT>',
+  )
+})
+
+test('a cursor absent from the resolved project tells the caller to list cursors again', async () => {
+  const d = database()
+  const composed = await composeWorkflowWithCursor(
+    'flow',
+    'fixture',
+    'default',
+    args,
+    context,
+    d,
+    {},
+    {},
+  )
+
+  expect(selectByHandle(composed.cursor!.id, { project: 'missing-project' }, d)).rejects.toThrow(
+    'cursor handles changed to per-project numbers, so list cursors again with bottega workflow cursors',
   )
 })

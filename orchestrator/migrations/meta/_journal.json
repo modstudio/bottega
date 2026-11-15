@@ -1730,6 +1730,14 @@
       "tag": "0225_run_stack_backfill",
       "breakpoints": true,
       "compatibility": "additive"
+    },
+    {
+      "idx": 226,
+      "version": "6",
+      "when": 1794509397007,
+      "tag": "0226_workflow_cursor_project_number",
+      "breakpoints": true,
+      "compatibility": "fenced"
     }
   ]
 }

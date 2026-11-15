@@ -2,6 +2,7 @@
 /** Selects one open workflow cursor by public handle or declared identity. */
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, sessionId } from '../database/db.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import {
@@ -201,7 +202,7 @@ export async function selectByHandle(
   const row = await taskFlowReadStore(d, client).stageByHandle(project, cursor)
   if (!row)
     throw new Error(
-      `workflow cursor ${cursor} does not exist on this machine; cursor handles are per-machine labels, so pass the task key as the workflow argument key (--arg key=<KEY> on the CLI, args.key over MCP) to read the hosted flow`,
+      `workflow cursor ${cursor} does not exist in project ${project}; cursor handles changed to per-project numbers, so list cursors again with ${PLATFORM_SLUG} workflow cursors; cursor handles are per-machine labels, so pass the task key as the workflow argument key (--arg key=<KEY> on the CLI, args.key over MCP) to read the hosted flow`,
     )
   validateIdentity(row, identity)
   if (!includeTerminal && (row.state === 'done' || row.state === 'abandoned'))
