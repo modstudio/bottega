@@ -81,7 +81,9 @@ const tierOneReview: ReviewFunnelFacts['review'] = {
   lenses: [{ lens: 'correctness' }],
 }
 
-const selectionPolicy = (overrides: Partial<(typeof DEFAULT_REVIEW_FUNNEL_POLICY)['selection']> = {}) => ({
+const selectionPolicy = (
+  overrides: Partial<(typeof DEFAULT_REVIEW_FUNNEL_POLICY)['selection']> = {},
+) => ({
   ...DEFAULT_REVIEW_FUNNEL_POLICY,
   selection: { ...DEFAULT_REVIEW_FUNNEL_POLICY.selection, explorationShare: 0, ...overrides },
   modes: { ...DEFAULT_REVIEW_FUNNEL_POLICY.modes, selection: 'enforce' as const },

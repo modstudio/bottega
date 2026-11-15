@@ -25,7 +25,13 @@ test('yield cells use run stack and the most recent eligible lens rows in the wi
         `INSERT INTO review(record_id,number,recorded_at,completed_at,tier,project_record_id)
          VALUES (?,?,?,?,1,?)`,
       )
-      .run(review, number, `2026-11-${String(number).padStart(2, '0')}`, `2026-11-${String(number).padStart(2, '0')}T01:00:00Z`, project)
+      .run(
+        review,
+        number,
+        `2026-11-${String(number).padStart(2, '0')}`,
+        `2026-11-${String(number).padStart(2, '0')}T01:00:00Z`,
+        project,
+      )
     database
       .query(
         `INSERT INTO review_lens

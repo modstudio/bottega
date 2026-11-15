@@ -163,7 +163,9 @@ function explorationSample(facts: ReviewFunnelFacts, lens: string, share: number
   if (share <= 0) return false
   if (share >= 1) return true
   let hash = 2_166_136_261
-  for (const byte of new TextEncoder().encode(`${facts.change.project}\0${facts.change.patchId}\0${lens}`)) {
+  for (const byte of new TextEncoder().encode(
+    `${facts.change.project}\0${facts.change.patchId}\0${lens}`,
+  )) {
     hash ^= byte
     hash = Math.imul(hash, 16_777_619)
   }
@@ -291,7 +293,16 @@ function funnelPlan(facts: ReviewFunnelFacts, policy: ReviewFunnelPolicy) {
     completedLenses: roundFacts.completedLenses,
     satisfiedSecondOpinionLenses: roundFacts.satisfiedSecondOpinionLenses,
   })
-  return { tier, selection: selected.selection, postFix, relevant, roundFacts, unbudgeted, budget, budgeted }
+  return {
+    tier,
+    selection: selected.selection,
+    postFix,
+    relevant,
+    roundFacts,
+    unbudgeted,
+    budget,
+    budgeted,
+  }
 }
 
 type LensSets = {

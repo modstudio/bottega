@@ -16,6 +16,7 @@ const verdict = (next: ReviewFunnelVerdict['next']['action']): ReviewFunnelVerdi
   },
   tier: { tier: 1, risk: 1, size: 1, firm: false, lowered: false, reasons: [] },
   budget: { roundsUsed: 0, ceiling: 1, atCeiling: false },
+  selection: { mode: 'evaluate', lenses: [] },
   lenses: [],
   next: { action: next },
   remedy: 'command',
