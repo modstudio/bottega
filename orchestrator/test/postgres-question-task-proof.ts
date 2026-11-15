@@ -302,18 +302,67 @@ export function registerQuestionTaskRecordSyncProof(
       },
       destination,
     )
-    expect(
-      (
-        await client.readQuestions!(
-          {
-            read: 'task-rulings',
-            projectId: fixture.projectId,
-            taskId: directTaskId,
-          },
-          destination,
-        )
-      ).items,
-    ).toContainEqual(expect.objectContaining({ question_record_id: workflowQuestion.id }))
+    const overturnedAt = '2026-11-15T12:01:30.000Z'
+    Object.assign(workflowQuestion, {
+      revision: 3,
+      overturnedAt,
+      replacement: 'No',
+      updatedAt: overturnedAt,
+    })
+    await client.writeQuestion!(
+      'overturn',
+      {
+        requestId: newRecordId(),
+        question: workflowQuestion,
+        audit: { action: 'overturn', actorSession: null, at: overturnedAt, reason: null },
+      },
+      destination,
+    )
+    const excludedQuestion = snapshot(newRecordId())
+    excludedQuestion.workflowCursorRecordId = stageId
+    await ask(excludedQuestion)
+    Object.assign(excludedQuestion, {
+      revision: 2,
+      answer: 'Old',
+      answeredAt,
+      updatedAt: answeredAt,
+    })
+    await client.writeQuestion!(
+      'answer',
+      {
+        requestId: newRecordId(),
+        question: excludedQuestion,
+        audit: { action: 'answer', actorSession: null, at: answeredAt, reason: null },
+      },
+      destination,
+    )
+    Object.assign(excludedQuestion, {
+      revision: 3,
+      overturnedAt,
+      replacement: null,
+      updatedAt: overturnedAt,
+    })
+    await client.writeQuestion!(
+      'overturn',
+      {
+        requestId: newRecordId(),
+        question: excludedQuestion,
+        audit: { action: 'overturn', actorSession: null, at: overturnedAt, reason: null },
+      },
+      destination,
+    )
+    const taskRulings = (
+      await client.readQuestions!(
+        { read: 'task-rulings', projectId: fixture.projectId, taskId: directTaskId },
+        destination,
+      )
+    ).items
+    expect(taskRulings).toContainEqual(
+      expect.objectContaining({ question_record_id: workflowQuestion.id, replacement: 'No' }),
+    )
+    expect(taskRulings).not.toContainEqual(
+      expect.objectContaining({ question_record_id: excludedQuestion.id }),
+    )
     const closedAt = '2026-11-15T12:02:00.000Z'
     Object.assign(runQuestion, { revision: 2, closedAt, closeReason: 'proof', updatedAt: closedAt })
     await client.writeQuestion!(
