@@ -513,9 +513,6 @@ def _inbox_counts(stdout):
         for item, parsed in zip(questions, parsed_questions)
         if parsed.kind == "worker"
     ]
-    workflow_questions = [
-        parsed for parsed in parsed_questions if parsed.kind == "workflow"
-    ]
     foreign_count = len(
         {item["answer_id"] for item, parsed in run_questions if not parsed.can_answer}
     )
@@ -526,18 +523,11 @@ def _inbox_counts(stdout):
             if not parsed.can_answer and item["session_liveness"] == "unknown"
         }
     )
-    foreign_workflow_count = len(
-        {
-            item.question_id
-            for item in workflow_questions
-            if not item.can_answer and item.workflow_session_id is not None
-        }
-    )
     return (
         answerable_count,
         foreign_count,
         unknown_count,
-        foreign_workflow_count,
+        inbox_decision.foreign_workflow,
         inbox_decision.unowned,
     )
 

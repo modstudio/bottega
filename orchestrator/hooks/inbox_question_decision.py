@@ -9,6 +9,7 @@ class InboxQuestionDecision(NamedTuple):
     answerable_now: int
     parked_here: int
     unowned: int
+    foreign_workflow: int
     state_key: str
 
 
@@ -57,13 +58,15 @@ def decide_parsed_inbox_questions(items):
     A worker question this session can answer is answerable now. A workflow
     question owned by this session was parked here with `workflow await`. A
     workflow question with no owning session waits on no particular session,
-    so it is only counted. A workflow question owned elsewhere counts nowhere.
+    so it is only counted. A workflow question owned elsewhere is counted as
+    foreign for the brief and never wakes the heartbeat.
     Only the answerable and parked sets enter the state key, because nothing
     the heartbeat prints depends on the unowned count.
     """
     answerable = set()
     parked = set()
     unowned = set()
+    foreign = set()
     for item in items:
         identity = (item.kind, item.question_id)
         if item.kind != "workflow":
@@ -73,11 +76,13 @@ def decide_parsed_inbox_questions(items):
             unowned.add(identity)
         elif item.can_answer:
             parked.add(identity)
+        else:
+            foreign.add(identity)
     state_key = ",".join(
         f"{kind}:{question_id}:{state}"
         for state, identities in (("answerable", answerable), ("parked", parked))
         for kind, question_id in sorted(identities)
     )
     return InboxQuestionDecision(
-        len(answerable), len(parked), len(unowned), state_key
+        len(answerable), len(parked), len(unowned), len(foreign), state_key
     )
