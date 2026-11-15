@@ -418,7 +418,11 @@ export function registerMachineJoinProof(input: ProofInput): void {
       const code = await joining.code
       const [joined, approved] = await Promise.all([joining.result, approve(fixture, code)])
       expect(joined).toEqual({ label: fixture.approver.label, keyId: fixture.approver.keyId })
-      expect(approved).toEqual({ label: fixture.joiner.label, keyId: fixture.joiner.keyId })
+      expect(approved).toEqual({
+        label: fixture.joiner.label,
+        keyId: fixture.joiner.keyId,
+        anchored: true,
+      })
 
       const row = await fixture.joiner.client.getSecret('proof', 'space', 'default', destination)
       const key = await fixture.joiner.client.getDataKey(dekId, fixture.joiner.keyId, destination)

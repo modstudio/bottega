@@ -4,11 +4,7 @@ import { createInterface } from 'node:readline/promises'
 import type { Command } from 'commander'
 import type { ConfigClient } from '../../../shared/config-client.ts'
 import { hostedConfigClient } from '../config/hosted-config-call-outcome.ts'
-import {
-  machineApprove,
-  machineJoin,
-  unanchoredApprovalNotice,
-} from '../config/machine-join.ts'
+import { machineApprove, machineJoin, unanchoredApprovalNotice } from '../config/machine-join.ts'
 import { machineAnchor, machineRecover } from '../config/trust-log-anchor.ts'
 import { promptHidden } from './hidden-prompt.ts'
 import { log } from './support.ts'
