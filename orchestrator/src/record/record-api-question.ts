@@ -29,10 +29,10 @@ export function registerRecordQuestionRoutes(
   ports: Ports,
 ): void {
   app.get('/v1/questions', async (context) => {
-    if (!deps.readQuestions)
-      return context.json({ error: 'hosted question reads are unavailable' }, 503)
     const tenant = ports.scope(context)
     if (!tenant) return ports.noSpace(context)
+    if (!deps.readQuestions)
+      return context.json({ error: 'hosted question reads are unavailable' }, 503)
     const query = questionReadSchema.safeParse(context.req.query())
     if (!query.success) return context.json({ error: 'invalid question read query' }, 400)
     if (query.data.changedAfter !== undefined)
@@ -46,10 +46,10 @@ export function registerRecordQuestionRoutes(
     return context.json(await deps.readQuestions({ ...tenant, ...query.data }))
   })
   app.post('/v1/questions/:intent', async (context) => {
-    if (!deps.writeQuestion)
-      return context.json({ error: 'hosted question writes are unavailable' }, 503)
     const tenant = ports.scope(context)
     if (!tenant) return ports.noSpace(context)
+    if (!deps.writeQuestion)
+      return context.json({ error: 'hosted question writes are unavailable' }, 503)
     const intent = questionIntentSchema.safeParse(context.req.param('intent'))
     const body = questionWriteSchema.safeParse(await context.req.json().catch(() => null))
     if (!intent.success || !body.success)

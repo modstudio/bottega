@@ -20,14 +20,16 @@ const changedAfterRefusal =
   'hosted question changed-after reads are not served yet; retry without changedAfter; DEV-2328 decides the hosted change cursor'
 
 export class RecordQuestionStore implements QuestionStore {
-  constructor(
-    private readonly input: {
-      database: Database
-      client: QuestionRouteClient
-      destinationSpaceId: string
-      pushRun?: (runId: string) => Promise<void>
-    },
-  ) {}
+  private readonly input: {
+    database: Database
+    client: QuestionRouteClient
+    destinationSpaceId: string
+    pushRun?: (runId: string) => Promise<void>
+  }
+
+  constructor(input: RecordQuestionStore['input']) {
+    this.input = input
+  }
 
   async write(intent: QuestionIntent, input: QuestionWriteBody) {
     if (!this.input.client.writeQuestion)

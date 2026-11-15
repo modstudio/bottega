@@ -13,7 +13,11 @@ import type { QuestionReadResult, QuestionStore } from './question-store-types.t
 const json = (value: unknown) => (value == null ? null : JSON.stringify(value))
 
 export class SqliteQuestionStore implements QuestionStore {
-  constructor(private readonly database: Database) {}
+  private readonly database: Database
+
+  constructor(database: Database) {
+    this.database = database
+  }
 
   async write(intent: QuestionIntent, input: QuestionWriteBody): Promise<QuestionWriteResult> {
     const q = input.question

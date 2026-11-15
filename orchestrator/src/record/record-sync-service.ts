@@ -315,6 +315,7 @@ export const questionValues = (
   projectId,
   machineId: String(row.machineId),
   revision: Number(row.revision),
+  lastRequestId: null,
   askedAt: recordDate(row.askedAt),
   question: String(row.question),
   options: row.options,

@@ -140,7 +140,9 @@ test('record ask pushes its run before writing and enriches inbox liveness local
   const store = recordQuestionStore({
     database,
     destinationSpaceId: newRecordId(),
-    pushRun: async (id) => events.push(`push:${id}`),
+    pushRun: async (id) => {
+      events.push(`push:${id}`)
+    },
     client: {
       writeQuestion: async () => {
         events.push('write')

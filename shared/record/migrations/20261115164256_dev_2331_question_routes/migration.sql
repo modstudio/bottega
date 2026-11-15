@@ -5,6 +5,7 @@ CREATE TABLE "question_number_counter" (
 );
 --> statement-breakpoint
 ALTER TABLE "question_number_counter" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "question_number_counter" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "question" ADD COLUMN "last_request_id" uuid;--> statement-breakpoint
 ALTER TABLE "question_number_counter" ADD CONSTRAINT "question_number_counter_counter_space_id_space_id_fkey" FOREIGN KEY ("counter_space_id") REFERENCES "space"("id") ON DELETE CASCADE;--> statement-breakpoint
 CREATE POLICY "question_number_counter_space_select" ON "question_number_counter" AS PERMISSIVE FOR SELECT TO public USING ("question_number_counter"."counter_space_id" = nullif(current_setting('app.space_id', true), '')::uuid OR "question_number_counter"."counter_space_id" = ANY(
