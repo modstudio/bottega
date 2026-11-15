@@ -143,6 +143,10 @@ export const reviewModuleSpecs = [
     typeOnlyAllowed: ['./review-funnel-policy.ts'],
   },
   {
+    file: 'orchestrator/src/review-funnel/review-funnel-verdict-service.ts',
+    allowed: ['./decide-review-funnel.ts', './gather-funnel-facts.ts', './review-funnel-policy.ts'],
+  },
+  {
     file: 'orchestrator/src/review-funnel/review-funnel-decision-log.ts',
     allowed: [
       'node:crypto',
@@ -613,6 +617,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       './review-round-budget.ts',
       './review-round-lens-plan.ts',
       '../review-funnel/review-funnel-plan-service.ts',
+      '../review-funnel/review-funnel-verdict-service.ts',
       './review-target.ts',
       './review-tier.ts',
       './review-tier-service.ts',

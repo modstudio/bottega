@@ -43,17 +43,24 @@ test('landing trees are active for a matching ship cursor or any matching active
 
 test('session summary assembles only this session owed runs, held remedies, and cursor ordinal', async () => {
   const session = 'stop-summary-session'
+  const projectRecordId = newRecordId()
   db()
     .query(
       `INSERT INTO project (record_id,name,path,stack,settings)
        VALUES (?,'fixture','/fixture','bun',
                '{"tracker":{"protocol":"hub"},"docs":{"protocol":"orch-docs"},"gate":"bun run check"}')`,
     )
-    .run(newRecordId())
+    .run(projectRecordId)
   const mine = addRun({ agent: 'codex', job: 'implement', session })
   const other = addRun({ agent: 'codex', job: 'implement', session: 'another-session' })
   const held = addRun({ agent: 'codex', job: 'craft', session })
   score(held, 'full', 'right')
+  db()
+    .query(
+      `UPDATE run SET project_record_id=?,repo='fixture',branch='DEV-2297-work',
+              worktree='/fixture',launch_key='DEV-2297' WHERE record_id=?`,
+    )
+    .run(projectRecordId, mine)
   db()
     .query(
       `UPDATE run SET worktree='/tmp/held-worktree',close_out_outcome='held',
@@ -86,6 +93,27 @@ test('session summary assembles only this session owed runs, held remedies, and 
       session,
       previousBlockKey: null,
       now: '2026-11-13T12:00:00.000Z',
+      reviewVerdictGatherer: (branch) => ({
+        branch: branch.branch,
+        taskKey: branch.taskKey,
+        verdict: {
+          change: {
+            project: branch.project,
+            branch: branch.branch,
+            taskKey: branch.taskKey,
+            base: 'base',
+            head: 'head',
+            patchId: 'patch',
+            pathSet: 'paths',
+            paths: ['orchestrator/src/session/stop-summary.ts'],
+          },
+          lenses: [
+            { lens: 'correctness', status: 'owed' as const, reason: 'initial' as const },
+            { lens: 'craft', status: 'owed' as const, reason: 'initial' as const },
+          ],
+          next: { action: 'dispatch' as const, lenses: ['correctness', 'craft'] },
+        },
+      }),
     },
     db(),
   )
@@ -101,7 +129,10 @@ test('session summary assembles only this session owed runs, held remedies, and 
 
   expect(result.lines).toContain('DEV-2297 · fix-defect · step ship (6 of 11)')
   expect(result.lines).toContain(
-    `run ${mineNumber} implement unscored → ${PLATFORM_SLUG} score ${mineNumber} (see ${PLATFORM_SLUG} score --help)`,
+    `DEV-2297 review: lens correctness, craft owed → ${PLATFORM_SLUG} review tier DEV-2297-work`,
+  )
+  expect(result.lines).toContain(
+    `run ${mineNumber} implement DEV-2297 unscored → ${PLATFORM_SLUG} score ${mineNumber} (see ${PLATFORM_SLUG} score --help)`,
   )
   expect(result.lines.join('\n')).not.toContain(`run ${otherNumber} implement unscored`)
   expect(result.lines).toContain(

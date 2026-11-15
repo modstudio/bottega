@@ -1,5 +1,29 @@
 export const cleanupBoundarySpecs = [
   {
+    name: 'stop-summary-review-verdict-decision-boundary',
+    file: 'orchestrator/src/session/stop-summary-review-verdict.ts',
+    allowed: ['../../../shared/brand.ts'],
+    typeOnlyAllowed: ['../review-funnel/decide-review-funnel.ts'],
+    reason: 'Keep the compact review verdict presentation independent of stores and processes.',
+  },
+  {
+    name: 'session-review-verdicts-boundary',
+    file: 'orchestrator/src/session/session-review-verdicts.ts',
+    allowed: [
+      'node:fs',
+      '../../../shared/bounded-process.ts',
+      '../git/git-environment.ts',
+      '../jobs/jobs.ts',
+      '../project/projects.ts',
+      '../review/review-target.ts',
+      '../review-funnel/review-funnel-verdict-service.ts',
+      '../workflow/workflow-cursor-list.ts',
+      './stop-summary-review-verdict.ts',
+    ],
+    typeOnlyAllowed: ['bun:sqlite'],
+    reason: 'Keep session branch discovery separate from the pure review verdict presentation.',
+  },
+  {
     name: 'stop-summary-decision-boundary',
     file: 'orchestrator/src/session/stop-summary-decision.ts',
     allowed: ['node:crypto', '../../../shared/brand.ts'],
@@ -24,6 +48,7 @@ export const cleanupBoundarySpecs = [
       '../landing-tree/landing-tree.ts',
       '../run/run-status.ts',
       './session-close-out.ts',
+      './session-review-verdicts.ts',
       '../workflow/workflow-cursor-list.ts',
       '../workflow/task-flow-store.ts',
       './stop-summary-decision.ts',

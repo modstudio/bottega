@@ -12,11 +12,9 @@ import { targetGitEnvironment } from '../git/git-environment.ts'
 import { job } from '../jobs/jobs.ts'
 import { formatLensProfileSource, resolveLens } from '../lens/lenses.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
-import { decideReviewFunnel } from '../review-funnel/decide-review-funnel.ts'
-import { gatherFunnelFacts } from '../review-funnel/gather-funnel-facts.ts'
 import { recordReviewFunnelDecision } from '../review-funnel/review-funnel-decision-log.ts'
 import { budgetedReviewPlanForResolvedChange } from '../review-funnel/review-funnel-plan-service.ts'
-import { activeReviewFunnelPolicy } from '../review-funnel/review-funnel-policy.ts'
+import { reviewFunnelVerdictForChange } from '../review-funnel/review-funnel-verdict-service.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import { getReview, listReviews, parseReviewOutput, recordReviews } from './review.ts'
 import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
@@ -211,21 +209,14 @@ function reviewTierOutputForTarget({
       branch,
     })
   const round = reviewPlan.round
-  const activePolicy = activeReviewFunnelPolicy()
-  const funnelFacts = gatherFunnelFacts({
+  const { facts: funnelFacts, verdict: funnelVerdict } = reviewFunnelVerdictForChange({
     database: db(),
     cwd: repo,
     base: from,
     head: to,
     branch,
     project,
-    selectionWindow: activePolicy.policy.selection.window,
   })
-  const funnelVerdict = decideReviewFunnel(
-    funnelFacts,
-    activePolicy.policy,
-    activePolicy.policyVersion,
-  )
   try {
     recordReviewFunnelDecision({
       database: db(),

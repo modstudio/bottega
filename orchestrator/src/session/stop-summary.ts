@@ -15,6 +15,10 @@ import {
 } from '../workflow/workflow-cursor-list.ts'
 import { activeLandings } from './session-close-out.ts'
 import {
+  type SessionReviewVerdictGatherer,
+  sessionReviewVerdictLines,
+} from './session-review-verdicts.ts'
+import {
   decideStopSummary,
   type StopSummaryDecision,
   type StopSummaryOwedItem,
@@ -67,6 +71,7 @@ export async function sessionStopSummary(
     session: string
     previousBlockKey: string | null
     now?: string
+    reviewVerdictGatherer?: SessionReviewVerdictGatherer
   },
   database: Database = db(),
 ): Promise<StopSummaryDecision> {
@@ -99,6 +104,12 @@ export async function sessionStopSummary(
     )
     .all(session)
   const reviews = classifyStopSummaryReviews(reviewRows)
+  const reviewVerdictLines = sessionReviewVerdictLines(
+    session,
+    cursors,
+    database,
+    options.reviewVerdictGatherer,
+  )
   const sessionLandings = activeLandings(database, session)
   const activeLandingTrees = database
     .query<StopSummaryActiveLandingRow, []>(
@@ -157,6 +168,7 @@ export async function sessionStopSummary(
       ordinal: cursor.ordinal + 1,
       total: cursor.total_steps,
     })),
+    reviewVerdictLines,
     liveRuns,
     incompleteReviews: reviews.incompleteReviews,
     inFlightLandings: sessionLandings.length + activeTrees.length,
