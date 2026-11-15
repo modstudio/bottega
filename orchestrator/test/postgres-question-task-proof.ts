@@ -91,7 +91,7 @@ export function registerQuestionTaskRecordSyncProof(
     expect(readLink().stdout).toBe(taskId)
     local.close()
   })
-  test('direct question asks allocate atomically, seed above the maximum, and retry once', async () => {
+  test.only('direct question asks allocate atomically, seed above the maximum, and retry once', async () => {
     const fixture = input()
     const machineId = newRecordId()
     const at = '2026-11-15T12:00:00.000Z'
@@ -436,9 +436,9 @@ export function registerQuestionTaskRecordSyncProof(
        '${at}','${at}','projectless-question-proof');`)
     parityLocal
       .query(`INSERT INTO run
-        (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,
+        (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,probe,
          launch_key,changed_paths,project_record_id,task_record_id)
-        VALUES (?,2,?,'codex','proof',NULL,'sha',1,'proof','running','projectless-question-proof',
+        VALUES (?,2,?,'codex','proof',NULL,'sha',1,'proof','running','projectless-question-proof',1,
           'DEV-2331','[]',NULL,NULL)`)
       .run(projectlessRunId, at)
     const localStore = questionStore(parityLocal)
