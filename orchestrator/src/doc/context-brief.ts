@@ -235,7 +235,13 @@ export function workingKeysForBrief(
     .map((cursor) => ({ key: cursor.workflow_key, project: cursor.project }))
 }
 
-function claimBoundToCursor(claim: ClaimView, cursors: readonly WorkflowCursorListRow[]): boolean {
+function claimBoundToCursor(
+  claim: Pick<ClaimView, 'project' | 'subject'>,
+  cursors: readonly Pick<
+    WorkflowCursorListRow,
+    'record_id' | 'project' | 'workflow_key' | 'args'
+  >[],
+): boolean {
   return cursors.some((cursor) => {
     if (
       claim.subject.kind === 'task' &&
@@ -245,6 +251,33 @@ function claimBoundToCursor(claim: ClaimView, cursors: readonly WorkflowCursorLi
       return true
     return workflowCursorClaimHandles(cursor.args).includes(claim.subject.value)
   })
+}
+
+type BriefLiveRun = ContextBrief['runs'][number] & { cursor_record_id: string | null }
+
+/** Assign live runs and claims to their cursor or unbound brief bucket. */
+export function selectBriefInFlight(
+  liveRuns: readonly BriefLiveRun[],
+  cursors: readonly Pick<
+    WorkflowCursorListRow,
+    'record_id' | 'project' | 'workflow_key' | 'args'
+  >[],
+  liveClaims: readonly Pick<ClaimView, 'project' | 'subject'>[],
+) {
+  return {
+    runs: liveRuns
+      .filter((run) => !cursors.some((cursor) => cursor.record_id === run.cursor_record_id))
+      .map(({ cursor_record_id: _, ...run }) => run),
+    cursorRuns: cursors.map((cursor) => ({
+      recordId: cursor.record_id,
+      runs: liveRuns
+        .filter((run) => run.cursor_record_id === cursor.record_id)
+        .map((run) => run.number),
+    })),
+    claims: liveClaims
+      .filter((claim) => !claimBoundToCursor(claim, cursors))
+      .map((claim) => claim.subject),
+  }
 }
 
 function autonomyLine(context: Awaited<ReturnType<typeof architectSessionContext>>): string {
@@ -301,15 +334,14 @@ export async function contextBrief(
   const references = holderSequence(session, working, taskRows, keylessCursors)
   const holders = storedBriefHolders(references, database)
   const fullHolder = holders.find((holder) => holder.kind === 'task' || holder.kind === 'epic')
+  const inFlight = selectBriefInFlight(liveRuns, cursors, liveClaims)
   return {
     session,
     fullCommand: fullHolder
       ? `${PLATFORM_SLUG} agent context show --task ${fullHolder.key}`
       : `${PLATFORM_SLUG} agent context show --session ${session}`,
     holders,
-    runs: liveRuns
-      .filter((run) => !cursors.some((cursor) => cursor.record_id === run.cursor_record_id))
-      .map(({ cursor_record_id: _, ...run }) => run),
+    runs: inFlight.runs,
     cursors: cursors.map((cursor) => ({
       recordId: cursor.record_id,
       number: cursor.id,
@@ -319,13 +351,9 @@ export async function contextBrief(
       totalSteps: cursor.total_steps,
       stepSlug: cursor.step_slug,
       questionNumber: cursor.question_number,
-      runs: liveRuns
-        .filter((run) => run.cursor_record_id === cursor.record_id)
-        .map((run) => run.number),
+      runs: inFlight.cursorRuns.find((item) => item.recordId === cursor.record_id)?.runs ?? [],
     })),
-    claims: liveClaims
-      .filter((claim) => !claimBoundToCursor(claim, cursors))
-      .map((claim) => claim.subject),
+    claims: inFlight.claims,
     waiting: {
       boardRequests,
       questions: runQuestions.count + cursorQuestions.count,

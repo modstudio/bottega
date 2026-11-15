@@ -9,7 +9,7 @@ import { RecordApiRequestError, recordApiClient } from '../record/record-api-cli
 import { recordWriteDestination } from '../record/record-write-destination.ts'
 import { contextCursorOwner, resolveContextTaskByRecordId } from './context-write-adapter.ts'
 
-async function contextItemOwner(holder: string): Promise<RecordWriteOwner | null> {
+export async function contextItemOwner(holder: string): Promise<RecordWriteOwner | null> {
   const address = splitContextHolder(holder)
   if (address.holderKind === 'session') {
     return { kind: 'session', checkoutProject: projectAt(process.cwd())?.name ?? null }

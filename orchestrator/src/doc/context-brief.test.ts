@@ -7,6 +7,7 @@ import {
   type ContextBrief,
   holderSequence,
   renderContextBrief,
+  selectBriefInFlight,
   storedBriefHolders,
   workingKeysForBrief,
 } from './context-brief.ts'
@@ -324,4 +325,32 @@ test('selects only the task on an open cursor and lets holder order add its epic
       },
     ]).map((holder) => holder.key),
   ).toEqual([session, 'DEV-2293', 'DEV-2200'])
+})
+
+test('assigns cursor-bound runs and claims while retaining only unbound work', () => {
+  const cursor = {
+    record_id: 'cursor-record',
+    project: PLATFORM_SLUG,
+    workflow_key: 'DEV-2293',
+    args: JSON.stringify({ worktree: '/tmp/dev-2293', branch: 'DEV-2293-work' }),
+  }
+  const selected = selectBriefInFlight(
+    [
+      { number: 101, job: 'implement', status: 'running', cursor_record_id: cursor.record_id },
+      { number: 102, job: 'review', status: 'asking', cursor_record_id: null },
+    ],
+    [cursor],
+    [
+      { project: PLATFORM_SLUG, subject: { kind: 'task', value: 'DEV-2293' } },
+      { project: PLATFORM_SLUG, subject: { kind: 'path', value: '/tmp/dev-2293' } },
+      { project: PLATFORM_SLUG, subject: { kind: 'resource', value: 'DEV-2293-work' } },
+      { project: PLATFORM_SLUG, subject: { kind: 'task', value: 'DEV-9999' } },
+    ],
+  )
+
+  expect(selected).toEqual({
+    runs: [{ number: 102, job: 'review', status: 'asking' }],
+    cursorRuns: [{ recordId: cursor.record_id, runs: [101] }],
+    claims: [{ kind: 'task', value: 'DEV-9999' }],
+  })
 })

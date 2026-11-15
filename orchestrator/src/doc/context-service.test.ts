@@ -171,6 +171,73 @@ test('cursor context accepts its owning session and refuses a foreign session', 
   }
 })
 
+test('session context includes open keyless cursor items and omits done cursors', async () => {
+  installContextFacts()
+  const session = newRecordId()
+  const projectRecordId = db()
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
+    .get(PLATFORM_SLUG)!.record_id
+  const insertCursor = (recordId: string, workflow: string) => {
+    db()
+      .query(
+        `INSERT INTO workflow_cursor
+         (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,
+          session_id,workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,
+          state,closed,total_steps,created_at,updated_at,enforcement)
+         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),?,?,?,'default','',
+                 ?,?,?,?,'{}',0,'question','running','[]',1,?,?, 'floors')`,
+      )
+      .run(
+        recordId,
+        PLATFORM_SLUG,
+        projectRecordId,
+        workflow,
+        recordId,
+        session,
+        workflowVersionRecordId(db()),
+        catalogueVersionRecordId(db()),
+        '2026-11-14T10:00:00Z',
+        '2026-11-14T10:00:00Z',
+      )
+  }
+  const openRecordId = newRecordId()
+  const doneRecordId = newRecordId()
+  insertCursor(openRecordId, 'explore')
+  insertCursor(doneRecordId, 'plan-task')
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  try {
+    process.env.CLAUDE_CODE_SESSION_ID = session
+    await setContextItem({
+      cursor: openRecordId,
+      id: 'open-position',
+      kind: 'position',
+      source: 'q51',
+      body: 'Keep the open cursor.',
+    })
+    await setContextItem({
+      cursor: doneRecordId,
+      id: 'done-position',
+      kind: 'position',
+      source: 'q52',
+      body: 'Hide the done cursor.',
+    })
+    db().query("UPDATE workflow_cursor SET state='done' WHERE record_id=?").run(doneRecordId)
+
+    expect((await getContext({ session })).cursorHolders).toEqual([
+      {
+        cursor: expect.any(Number),
+        workflow: 'explore',
+        mode: 'default',
+        holder: expect.stringContaining(openRecordId),
+        items: [expect.objectContaining({ id: 'open-position', body: 'Keep the open cursor.' })],
+      },
+    ])
+  } finally {
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+  }
+})
+
 test('worker environments refuse every context-item write entry point', async () => {
   const priorDepth = process.env.BOTTEGA_DEPTH
   const priorRunId = process.env.BOTTEGA_RUN_ID
