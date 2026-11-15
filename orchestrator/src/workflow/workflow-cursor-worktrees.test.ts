@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
-import { database } from './workflow-cursor-test.fixture.ts'
 import { openKeylessCursorsForSession } from './workflow-cursor-list.ts'
+import { database } from './workflow-cursor-test.fixture.ts'
 import { openCursorWorktrees, workflowCursorClaimHandles } from './workflow-cursor-worktrees.ts'
 
 let priorRunId: string | undefined
@@ -51,7 +51,9 @@ test('reads valid worktree arguments only from open workflow cursors', async () 
 
 test('cursor claim handles include worktree and branch and ignore malformed arguments', () => {
   expect(
-    workflowCursorClaimHandles(JSON.stringify({ worktree: '/trees/work', branch: 'DEV-2293-work' })),
+    workflowCursorClaimHandles(
+      JSON.stringify({ worktree: '/trees/work', branch: 'DEV-2293-work' }),
+    ),
   ).toEqual(['/trees/work', 'DEV-2293-work'])
   expect(workflowCursorClaimHandles('{malformed')).toEqual([])
 })
@@ -83,7 +85,7 @@ test('open keyless cursor reader excludes a done cursor and task-bound cursor', 
   add('', 'done')
   add('DEV-2293', 'running')
 
-  expect((await openKeylessCursorsForSession('reader-session', d)).map((row) => row.record_id)).toEqual([
-    open,
-  ])
+  expect(
+    (await openKeylessCursorsForSession('reader-session', d)).map((row) => row.record_id),
+  ).toEqual([open])
 })

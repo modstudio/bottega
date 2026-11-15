@@ -276,12 +276,15 @@ test('a whitespace-padded self-ruling carries its question into the context mome
       result.selfRulingQuestionNumber,
       'Proceed.',
     ).effect.writes,
-  ).toContainEqual({
-    kind: 'position',
-    id: `position-q${result.selfRulingQuestionNumber}`,
-    source: `q${result.selfRulingQuestionNumber}`,
-    body: 'Proceed.',
-  })
+  ).toContainEqual(
+    expect.objectContaining({
+      holder: { kind: 'task', value: 'DEV-1264' },
+      kind: 'position',
+      id: `position-q${result.selfRulingQuestionNumber}`,
+      source: `q${result.selfRulingQuestionNumber}`,
+      body: 'Proceed.',
+    }),
+  )
   expect(d.query<{ answer: string }, []>('SELECT answer FROM question').get()).toEqual({
     answer: 'Proceed.',
   })

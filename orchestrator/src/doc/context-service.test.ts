@@ -5,14 +5,11 @@ import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
+import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { rememberHostedRecord } from '../record/install-binding-write.ts'
 import { recordApiError } from '../record/record-api-client-error.ts'
-import {
-  catalogueVersionRecordId,
-  workflowVersionRecordId,
-} from '../../test/fixtures/workflow.ts'
 import {
   clearTaskContext,
   dropContextItem,
@@ -120,11 +117,9 @@ test('cursor context accepts its owning session and refuses a foreign session', 
   installContextFacts()
   const owner = 'cursor-owner-session'
   const recordId = newRecordId()
-  const projectRecordId = (
-    db().query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?').get(
-      PLATFORM_SLUG,
-    )!
-  ).record_id
+  const projectRecordId = db()
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
+    .get(PLATFORM_SLUG)!.record_id
   db()
     .query(
       `INSERT INTO workflow_cursor

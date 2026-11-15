@@ -1,9 +1,6 @@
 // concern: context-service
 /** Applies a verb's context effect without coupling its primary mutation to context storage. */
-import {
-  type ContextMomentEffect,
-  type ContextMomentOutput,
-} from './context-moment.ts'
+import type { ContextMomentEffect, ContextMomentOutput } from './context-moment.ts'
 import { contextItemRevision, setContextItem } from './context-service.ts'
 import { ContextWriteRefusalError } from './doc-context-write.ts'
 
@@ -30,11 +27,8 @@ export async function applyContextMomentEffect(
   for (const line of effect.reports) writeLine(line, json, output)
   for (const item of effect.writes) {
     const selection =
-      item.holder.kind === 'task'
-        ? { task: item.holder.value }
-        : { cursor: item.holder.value }
-    const target =
-      item.holder.kind === 'task' ? item.holder.value : `cursor ${item.holder.value}`
+      item.holder.kind === 'task' ? { task: item.holder.value } : { cursor: item.holder.value }
+    const target = item.holder.kind === 'task' ? item.holder.value : `cursor ${item.holder.value}`
     try {
       const expectedRevision = await ports.revision({ ...selection, id: item.id })
       await ports.set({ ...selection, ...item, expectedRevision })

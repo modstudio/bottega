@@ -38,15 +38,14 @@ export function contextMomentEffect(input: ContextMomentInput): ContextMomentEff
       writes: [],
       reports: [`context: did not write ${source}: no task or cursor context holder`],
     }
-  const kind = input.operatorRuled ? 'ruling' : 'position'
+  const kind: ContextMomentItemKind = input.operatorRuled ? 'ruling' : 'position'
   const item = { kind, id: `${kind}-${source}`, source, body: input.text }
   return {
     writes: [
       {
         holder: input.holder,
         ...item,
-        retry:
-          input.holder.kind === 'task' ? contextSetCommand(input.holder.value, item) : null,
+        retry: input.holder.kind === 'task' ? contextSetCommand(input.holder.value, item) : null,
       },
     ],
     reports: [],
@@ -60,7 +59,7 @@ export type ContextMomentOutput = {
 
 const shellWord = (value: string) => `'${value.replace(/'/g, "'\\''")}'`
 
-export function contextSetCommand(
+function contextSetCommand(
   taskKey: string,
   item: { kind: string; source: string; id: string; body: string },
 ): string {

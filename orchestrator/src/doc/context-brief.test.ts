@@ -269,14 +269,19 @@ test('renders an open keyless cursor item under its cursor header without an ope
     )
     .run(newRecordId(), recordId, '2026-11-14T10:00:00Z', '2026-11-14T10:00:00Z')
   const holders = storedBriefHolders(
-    holderSequence('session-id', [], [], [
-      {
-        record_id: recordId,
-        number: 42,
-        workflow_slug: 'explore',
-        mode_slug: 'default',
-      },
-    ]),
+    holderSequence(
+      'session-id',
+      [],
+      [],
+      [
+        {
+          record_id: recordId,
+          number: 42,
+          workflow_slug: 'explore',
+          mode_slug: 'default',
+        },
+      ],
+    ),
     database,
   )
 

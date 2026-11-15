@@ -76,6 +76,14 @@ function renderItem(item: ContextItem): string {
   return `  ${label}: ${item.kind === 'ruling' ? JSON.stringify(body) : body}`
 }
 
+function renderOpenQuestions(holder: ContextBriefHolder): string[] {
+  if (holder.kind === 'cursor') return []
+  const questions = (holder.openQuestions ?? []).map(
+    (question) => `  open: ${firstLine(question.question)}`,
+  )
+  return questions.length ? questions : ['  open: none']
+}
+
 /** The fixed compact/resume layout; gathering facts is deliberately separate. */
 export function renderContextBrief(brief: ContextBrief): string {
   const lines = [`Context (session ${brief.session}) · full: ${brief.fullCommand}`]
@@ -93,11 +101,7 @@ export function renderContextBrief(brief: ContextBrief): string {
         left.id.localeCompare(right.id),
     )
     for (const item of items) lines.push(renderItem(item))
-    if (holder.kind !== 'cursor') {
-      for (const question of holder.openQuestions ?? [])
-        lines.push(`  open: ${firstLine(question.question)}`)
-      if (!holder.openQuestions?.length) lines.push('  open: none')
-    }
+    lines.push(...renderOpenQuestions(holder))
   }
   const inFlight = [
     ...brief.cursors.map((cursor) => {
@@ -294,12 +298,7 @@ export async function contextBrief(
   const boardRequests = claimNotices(true, boardEnv, Date.now(), database).filter(
     (notice) => notice.purpose === 'request',
   ).length
-  const references = holderSequence(
-    session,
-    working,
-    taskRows,
-    keylessCursors,
-  )
+  const references = holderSequence(session, working, taskRows, keylessCursors)
   const holders = storedBriefHolders(references, database)
   const fullHolder = holders.find((holder) => holder.kind === 'task' || holder.kind === 'epic')
   return {

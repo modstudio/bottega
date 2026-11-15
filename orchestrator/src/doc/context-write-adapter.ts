@@ -314,8 +314,7 @@ export async function contextProfileForHolder(
   task?: ContextTask,
 ) {
   const address = splitContextHolder(subject)
-  if (address.holderKind === 'session' || address.holderKind === 'cursor')
-    return 'session' as const
+  if (address.holderKind === 'session' || address.holderKind === 'cursor') return 'session' as const
   if (!task) return 'task' as const
   return taskProfile(task.key, await ports.tasks(task.project))
 }

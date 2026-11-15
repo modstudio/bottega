@@ -23,16 +23,16 @@ Record facts and pointers when they are learned. Revise or drop context items wh
 
 ## Admit through a pull request
 
-Run `bun run check` on the reviewed branch, open the pull request with `bottega pr create`, and land it with `bottega pr merge`. Both refuse until the change's review admission holds for the head commit; an override requires the operator and is recorded. Merge also refuses until that commit is proven by every required check the project declares, or by a recorded passing gate where it declares none. Where the project declares a merge queue, merge enqueues the admitted head and waits for it to land: CI proves the commit; the merge queue admits it to trunk.
+Run `bun run check` on the reviewed branch, open the pull request with `bottega pr create`, and land it with `bottega pr merge`. Both refuse until review admission holds for the head commit; an override requires the operator and is recorded. Merge also refuses until that commit is proven by every required check the project declares, or by a recorded passing gate where it declares none. Where the project declares a merge queue, merge enqueues the admitted head and waits for it to land: CI proves the commit; the merge queue admits it to trunk.
 
 ## Keep development on the landing branch when releasing
 
-On a machine where Bottega is developed, the installed copy is the `main` checkout and stays on its registered landing branch. Run `bottega release check` before tagging, then cut a release by tagging the release commit and pushing the tag; never check out the tag in the development checkout. The pushed tag runs the same version check again before publishing. The version in `package.json` must match the tag. The per-user store migrates only forward, so a copy older than the store refuses to open it.
+Where Bottega is developed, the installed copy is the `main` checkout and stays on its landing branch. Run `bottega release check`, then tag the release commit and push the tag; never check out the tag in the development checkout. The pushed tag reruns that check before publishing. The version in `package.json` must match the tag. The per-user store migrates only forward, so a copy older than the store refuses to open it.
 
-On any other machine, install a release in its own directory and update it by replacing that directory.
+Elsewhere, install a release in its own directory and update it by replacing the directory.
 
 Deploy images run `RELEASE_BUN_VERSION`; `scripts/check-bun-versions.ts` enforces it.
 
 ## Close out the session
 
-Run `bottega session close-out` to release everything the session owns through its ordinary owner and prove that nothing remains. Dispose of unique unproved branches only through `bottega tree branch dispose`, which archives their work before recording the ruling. Close landed tasks with `bottega task` and offer a resume brief through `bottega doc`. A session with live runs, held resources, queued landings, incomplete reviews, unresolved process items, unscored runs, or unclosed landed tasks is paused rather than finished.
+Run `bottega session close-out` to release everything the session owns through its ordinary owner and prove that nothing remains. Dispose of unique unproved branches only through `bottega tree branch dispose`, which archives their work before recording the ruling. Close landed tasks with `bottega task` and offer a resume brief through `bottega doc`. A session with live runs, held resources, queued landings, incomplete reviews, unresolved process items, unscored runs, or unclosed landed tasks is paused, not finished.

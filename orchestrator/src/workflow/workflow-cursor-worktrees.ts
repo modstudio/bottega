@@ -25,8 +25,8 @@ export function workflowCursorClaimHandles(args: string): string[] {
   const parsed = workflowCursorStoredArgs(args)
   return parsed
     ? [parsed.worktree, parsed.branch].filter(
-      (value): value is string => typeof value === 'string' && Boolean(value.trim()),
-    )
+        (value): value is string => typeof value === 'string' && Boolean(value.trim()),
+      )
     : []
 }
 
@@ -36,9 +36,7 @@ export async function openCursorWorktrees(
   const rows = await taskFlowReadStore(database).openStageWorktrees()
   return rows.flatMap((row) => {
     const worktree = workflowCursorStoredArgs(row.args)?.worktree
-    return worktree
-      && typeof worktree === 'string'
-      && worktree.trim()
+    return worktree && typeof worktree === 'string' && worktree.trim()
       ? [{ number: row.number, workflow: row.workflow, project: row.project, worktree }]
       : []
   })
