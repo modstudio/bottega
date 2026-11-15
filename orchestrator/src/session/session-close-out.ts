@@ -59,7 +59,6 @@ import {
 } from './session-close-out-resource-release.ts'
 import { reclaimSessionReleasedTree } from './session-close-out-resource-release-adapter.ts'
 import { insertSessionCloseOutRecord } from './session-close-out-store.ts'
-import { appendWorkedCloseOutReport } from './session-close-out-worked.ts'
 import {
   closeOutSessionContext,
   type SessionContextLifecycleReport,
@@ -885,12 +884,6 @@ export async function releaseSessionResources(
   report.process.push(...outbox.process)
   report.warnings.push(...outbox.warnings)
   report.errors.push(...outbox.errors)
-  await appendWorkedCloseOutReport({
-    report,
-    session,
-    database,
-    writeWorked: resume && !dryRun,
-  })
   const final = await finalSessionInventory(initial, database, session, dryRun)
   await releaseSessionCursors({ session, dryRun, cursors: final.cursors, database, report })
   appendObservationFailures(report, final, final.observationErrors)

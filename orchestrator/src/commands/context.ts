@@ -9,22 +9,9 @@ import {
   getContext,
   setContextItem,
 } from '../doc/context-service.ts'
-import { recordSessionWorked, sessionWorkedTaskKeys } from '../doc/context-worked-adapter.ts'
 import { recordBriefInjection, SESSION_START_SOURCES } from '../session/brief-injection.ts'
 import { sessionContextCommand } from '../workflow/session-context.ts'
 import { log } from './support.ts'
-
-function registerWorked(context: Command): void {
-  context
-    .command('worked')
-    .description('record and print the task keys worked by an architect session')
-    .requiredOption('--session <id>', 'select architect session')
-    .action(async (options) => {
-      const keys = await sessionWorkedTaskKeys(options.session)
-      const result = await recordSessionWorked(options.session, keys, 'precompact')
-      log(result.body ?? 'worked: none')
-    })
-}
 
 function registerClear(context: Command): void {
   context
@@ -92,6 +79,10 @@ export function register(program: Command): void {
       const result = await getContext(options)
       if (options.json) return log(JSON.stringify(result))
       for (const item of result.items) log(`${item.id}  ${item.kind}  ${item.revision}`)
+      for (const cursor of result.cursorHolders) {
+        log(`Cursor ${cursor.cursor} ${cursor.workflow} ${cursor.mode}`)
+        for (const item of cursor.items) log(`  ${item.id}  ${item.kind}  ${item.revision}`)
+      }
     })
   context
     .command('brief')
@@ -103,7 +94,6 @@ export function register(program: Command): void {
       log(options.json ? JSON.stringify(result) : renderContextBrief(result))
     })
   registerInjection(context)
-  registerWorked(context)
   holderOptions(context.command('set').description('create or revise one context item'))
     .requiredOption(
       '--kind <kind>',

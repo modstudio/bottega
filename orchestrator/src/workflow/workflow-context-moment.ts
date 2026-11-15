@@ -2,9 +2,14 @@
 /** Gathers the plain post-advance cursor values consumed by context moment policy. */
 import { type ContextMomentEffect, contextMomentEffect } from '../doc/context-moment.ts'
 
-export type WorkflowContextMoment = { taskKey: string | null; effect: ContextMomentEffect }
+export type WorkflowContextMoment = {
+  taskKey: string | null
+  cursorRecordId: string | null
+  effect: ContextMomentEffect
+}
 export type WorkflowNextMomentInput = {
   workflowKey: string | null
+  cursorRecordId: string
 }
 export type WorkflowNextCommandMoment = {
   cursorRecordId: string
@@ -15,11 +20,16 @@ export type WorkflowNextCommandMoment = {
 
 export function workflowQuestionContextMoment(input: {
   taskKey: string | null | undefined
+  cursorRecordId: string
   questionId: number
   text: string
   operatorRuled?: boolean
 }): WorkflowContextMoment {
-  return { taskKey: input.taskKey ?? null, effect: contextMomentEffect(input) }
+  return {
+    taskKey: input.taskKey ?? null,
+    cursorRecordId: input.cursorRecordId,
+    effect: contextMomentEffect(input),
+  }
 }
 
 export function workflowNextContextMoment(
@@ -32,6 +42,7 @@ export function workflowNextContextMoment(
   const taskKey = input.workflowKey
   return {
     taskKey,
+    cursorRecordId: input.cursorRecordId,
     effect: contextMomentEffect({
       taskKey,
       questionId: selfRulingQuestionNumber,
@@ -51,6 +62,7 @@ export function answeredQuestionContextMoments(
 ): WorkflowContextMoment[] {
   return answeredQuestions.map((question) => ({
     taskKey: question.taskHolder,
+    cursorRecordId: null,
     effect: contextMomentEffect({
       taskKey: question.taskHolder,
       questionId: question.number,

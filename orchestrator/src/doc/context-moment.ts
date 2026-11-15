@@ -20,7 +20,6 @@ const questionSource = (questionId: number) => `q${questionId}`
 
 /** Maps the plain values held by a successful verb to its context mutations. */
 export function contextMomentEffect(input: ContextMomentInput): ContextMomentEffect {
-  if (!input.taskKey?.trim()) return emptyEffect()
   if (!input.questionId || input.text === undefined) return emptyEffect()
   const source = questionSource(input.questionId)
   const kind = input.operatorRuled ? 'ruling' : 'position'

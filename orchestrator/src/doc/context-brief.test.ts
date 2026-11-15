@@ -3,7 +3,6 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
-import { upsertProject } from '../project/projects.ts'
 import {
   type ContextBrief,
   holderSequence,
@@ -54,11 +53,20 @@ test('renders the compact context layout line by line and keeps only item first 
         ],
       },
     ],
-    runs: [
-      { number: 31110, job: 'implement', status: 'running' },
-      { number: 31111, job: 'review', status: 'asking' },
+    runs: [{ number: 31111, job: 'review', status: 'asking' }],
+    cursors: [
+      {
+        recordId: 'cursor-record',
+        number: 1369,
+        workflow: 'plan-task',
+        mode: 'design',
+        step: 3,
+        totalSteps: 7,
+        stepSlug: 'design',
+        questionNumber: 5277,
+        runs: [31110],
+      },
     ],
-    cursors: [{ number: 1369, workflow: 'plan-task', mode: 'design', questionNumber: 5277 }],
     claims: [{ kind: 'task', value: 'DEV-1844/2' }],
     waiting: { boardRequests: 2, questions: 0, filedIssues: 3, resumeBriefs: 1 },
     autonomy: 'plan review · implement, review, docs, canon auto · ship trunk',
@@ -75,7 +83,10 @@ test('renders the compact context layout line by line and keeps only item first 
     'DEV-1844 Architect context',
     '  ruling q5282: "Approved as proposed"',
     '  open: none',
-    'In flight: run 31110 implement running · run 31111 review asking · cursor 1369 plan-task design, awaiting q5277 · claim task:DEV-1844/2',
+    'In flight:',
+    '  cursor 1369 plan-task design step 3/7 design, awaiting q5277, runs 31110',
+    '  unbound run 31111 review asking',
+    '  unbound claim task:DEV-1844/2',
     `Waiting: 2 board requests (${PLATFORM_SLUG} board read) · 0 questions · 3 filed issues (${PLATFORM_SLUG} workflow fix-defect --waiting) · 1 resume brief (${PLATFORM_SLUG} doc resumes)`,
     'Autonomy: plan review · implement, review, docs, canon auto · ship trunk',
   ])
@@ -237,35 +248,28 @@ test('reads a working task brief from its record-id holder while retaining the t
   ])
 })
 
-test('includes a worked-fact task in the holder set after its claim is released', () => {
+test('selects only the task on an open cursor and lets holder order add its epic', () => {
   const session = newRecordId()
-  upsertProject({
-    recordId: newRecordId(),
-    name: 'worked-brief-fixture',
-    path: '/tmp/worked-brief-fixture',
-    settings: { keyPrefixes: ['WORKED'] },
-  })
-  db()
-    .query(
-      `INSERT INTO context_item
-       (record_id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
-       VALUES (?,'session',?,'worked','fact','Worked: WORKED-2, WORKED-1','precompact',?,?)`,
-    )
-    .run(newRecordId(), session, '2026-11-11T10:00:00Z', '2026-11-11T10:00:00Z')
-
-  const working = workingKeysForBrief(session, [], [], db())
-  expect(working).toEqual([
-    { key: 'WORKED-2', project: 'worked-brief-fixture' },
-    { key: 'WORKED-1', project: 'worked-brief-fixture' },
-  ])
+  const working = workingKeysForBrief([
+    { workflow_key: 'DEV-2293', project: PLATFORM_SLUG },
+    { workflow_key: '', project: PLATFORM_SLUG },
+  ] as never)
+  expect(working).toEqual([{ key: 'DEV-2293', project: PLATFORM_SLUG }])
   expect(
     holderSequence(session, working, [
       {
-        key: 'WORKED-2',
-        project: 'worked-brief-fixture',
+        key: 'DEV-2293',
+        project: PLATFORM_SLUG,
         record_id: newRecordId(),
-        title: 'Released claim task',
+        title: 'Open task',
+        parent_key: 'DEV-2200',
+      },
+      {
+        key: 'DEV-2200',
+        project: PLATFORM_SLUG,
+        record_id: newRecordId(),
+        title: 'Epic',
       },
     ]).map((holder) => holder.key),
-  ).toEqual([session, 'WORKED-2'])
+  ).toEqual([session, 'DEV-2293', 'DEV-2200'])
 })

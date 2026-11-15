@@ -13,7 +13,6 @@ agents, jobs, and routing
 - [bottega agent context record-injection](#bottega-agent-context-record-injection)
 - [bottega agent context set](#bottega-agent-context-set)
 - [bottega agent context show](#bottega-agent-context-show)
-- [bottega agent context worked](#bottega-agent-context-worked)
 - [bottega agent contract](#bottega-agent-contract)
 - [bottega agent cost-backtest](#bottega-agent-cost-backtest)
 - [bottega agent guide](#bottega-agent-guide)
@@ -89,7 +88,6 @@ manage stored architect context or resolve checkout context
 - [bottega agent context record-injection](./agent.md#bottega-agent-context-record-injection)
 - [bottega agent context set](./agent.md#bottega-agent-context-set)
 - [bottega agent context show](./agent.md#bottega-agent-context-show)
-- [bottega agent context worked](./agent.md#bottega-agent-context-worked)
 
 ## bottega agent context brief
 
@@ -185,20 +183,6 @@ show stored context items
 - `--task <key>`: select task holder
 - `--session <id>`: select session holder
 - `--json`: write JSON
-
-### Related
-
-- [bottega agent context](./agent.md#bottega-agent-context)
-
-## bottega agent context worked
-
-**Synopsis:** `bottega agent context worked [--session <id>]`
-
-record and print the task keys worked by an architect session
-
-### Options
-
-- `--session <id>`: select architect session
 
 ### Related
 

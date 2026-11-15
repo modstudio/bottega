@@ -5,7 +5,7 @@ import {
   type ContextItemKind,
   splitContextHolder,
 } from '../../../shared/context-item-vocabulary.ts'
-import { sessionId, writableDb } from '../database/db.ts'
+import { db, sessionId, writableDb } from '../database/db.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { hostedContextItemClient } from './context-item-hosted-client.ts'
 import {
@@ -19,6 +19,7 @@ import {
 import {
   assertContextDropAllowed,
   assertContextSetAllowed,
+  contextCursorOwner,
   contextProfileForHolder,
   resolveContextTask,
   resolvedPointerTarget,
@@ -32,7 +33,7 @@ import { contextTaskOwner } from './doc-hosted-client.ts'
 import { taskContextHolder } from './doc-subjects.ts'
 import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
 
-export type ContextHolderSelection = { task?: string; session?: string }
+export type ContextHolderSelection = { task?: string; session?: string; cursor?: string }
 
 type ResolvedContextHolder = { holder: string; task: ContextTaskIdentity | null }
 
@@ -40,6 +41,9 @@ async function resolveContextHolder(
   selection: ContextHolderSelection,
 ): Promise<ResolvedContextHolder> {
   if (selection.task && selection.session) throw new Error('use --task or --session, not both')
+  if (selection.cursor && (selection.task || selection.session))
+    throw new Error('select exactly one context holder')
+  if (selection.cursor) return { holder: `cursor:${selection.cursor}`, task: null }
   if (selection.task) {
     const task = await resolveContextTask(selection.task)
     return { holder: taskContextHolder(task.record_id), task }
@@ -53,12 +57,33 @@ export async function getContext(selection: ContextHolderSelection) {
   const { holder, task } = await resolveContextHolder(selection)
   const profile = await contextProfileForHolder(holder, undefined, task ?? undefined)
   const items = listContextItems(holder)
+  const cursorHolders = selection.session ? listOpenCursorContextHolders(selection.session) : []
   return {
     holder,
     task: task?.key ?? null,
     profile,
     items,
+    cursorHolders,
   }
+}
+
+function listOpenCursorContextHolders(session: string, database: Database = db()) {
+  return database
+    .query<
+      { record_id: string; number: number; workflow_slug: string; mode_slug: string },
+      [string]
+    >(
+      `SELECT record_id,number,workflow_slug,mode_slug FROM workflow_cursor
+       WHERE session_id=? AND workflow_key='' AND state NOT IN ('done','abandoned') ORDER BY number`,
+    )
+    .all(session)
+    .map((cursor) => ({
+      cursor: cursor.number,
+      workflow: cursor.workflow_slug,
+      mode: cursor.mode_slug,
+      holder: `cursor:${cursor.record_id}`,
+      items: listContextItems(`cursor:${cursor.record_id}`, database),
+    }))
 }
 
 /** Reads one item's current revision on a resolved holder for compare-and-set writes. */
@@ -205,7 +230,12 @@ export async function setContextItem(
     target: null as string | null,
   }
   // Ownership is refused before pointer resolution reads git or a task tracker for the caller.
-  const ownership = holderOwnershipRefusal(holder, sessionId(), input.id)
+  const ownership = holderOwnershipRefusal(
+    holder,
+    sessionId(),
+    input.id,
+    contextCursorOwner(holder)?.session_id,
+  )
   if (ownership) throw new ContextWriteRefusalError(ownership)
   if (input.kind === 'pointer') item.target = await resolvedPointerTarget(input.body)
   await assertContextSetAllowed({ holder, item, contextTask: task ?? undefined })

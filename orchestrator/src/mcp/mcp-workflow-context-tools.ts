@@ -102,6 +102,7 @@ function registerRuleWorkflowTool(server: McpServer, ports: McpWorkflowContextPo
         await collectContextMomentReports(
           workflowQuestionContextMoment({
             taskKey: context.workflowKey,
+            cursorRecordId: result.cursorRecordId,
             questionId: result.questionId,
             operatorRuled: Boolean(from_operator),
             text: shapedRuling,

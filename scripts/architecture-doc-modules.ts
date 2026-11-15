@@ -37,6 +37,7 @@ export const docModules: DocModule[] = [
   module('orchestrator/src/doc/context-item-hosted-client.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-write-space.ts',
+    '../database/db.ts',
     '../project/projects.ts',
     '../record/record-api-client.ts',
     '../record/record-write-destination.ts',
@@ -46,23 +47,6 @@ export const docModules: DocModule[] = [
   module('orchestrator/src/doc/context-moment-adapter.ts', [
     './context-moment.ts',
     './context-service.ts',
-    './doc-context-write.ts',
-  ]),
-  module('orchestrator/src/doc/context-worked.ts', []),
-  module('orchestrator/src/doc/context-session-work-adapter.ts', [
-    'bun:sqlite',
-    '../database/db.ts',
-    '../run/question-open.ts',
-    '../workflow/task-flow-store.ts',
-    '../workflow/workflow-cursor-trail.ts',
-  ]),
-  module('orchestrator/src/doc/context-worked-adapter.ts', [
-    'bun:sqlite',
-    '../board/board-claim-service.ts',
-    '../database/db.ts',
-    './context-service.ts',
-    './context-session-work-adapter.ts',
-    './context-worked.ts',
     './doc-context-write.ts',
   ]),
   module('orchestrator/src/doc/context-write-adapter.ts', [
@@ -126,7 +110,6 @@ export const docModules: DocModule[] = [
     '../workflow/workflow-cursor-list.ts',
     '../workflow/workflow-task-reference.ts',
     './context-write-adapter.ts',
-    './context-worked.ts',
     './doc-context-write.ts',
     './doc-subjects.ts',
     './docs.ts',

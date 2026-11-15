@@ -135,6 +135,7 @@ export async function advanceWorkflow(
     const moment = workflowNextContextMoment(
       {
         workflowKey: result.workflowKey,
+        cursorRecordId: result.cursorRecordId,
       },
       result.selfRulingQuestionNumber,
       storedSelfRuling,

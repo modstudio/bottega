@@ -54,7 +54,7 @@ export async function ruleWorkflow(
   context: WorkflowCursorContext,
   database: Database = writableDb(),
   cursor?: number,
-): Promise<{ summary: string; questionId: number }> {
+): Promise<{ summary: string; questionId: number; cursorRecordId: string }> {
   if (ruling?.trim())
     await assertOrchestratorProse([{ field: 'ruling text', text: ruling, prior: null }])
   if (!ruling?.trim()) throw new Error('--ruling is required')
@@ -136,7 +136,7 @@ async function applyWorkflowRulingLocally(input: {
   payload: TaskFlowIntentInput<'stage-update'>
   hosted: TaskFlowIntentResult<'stage-update'> | null
   database: Database
-}): Promise<{ summary: string; questionId: number }> {
+}): Promise<{ summary: string; questionId: number; cursorRecordId: string }> {
   const { row, question, database } = input
   const result = writeTransaction(() => {
     const store = taskFlowLocalStore(database)
@@ -172,5 +172,5 @@ async function applyWorkflowRulingLocally(input: {
       },
       input.context.taskFlowClient,
     )
-  return { summary: result.summary, questionId: result.questionId }
+  return { summary: result.summary, questionId: result.questionId, cursorRecordId: row.record_id }
 }

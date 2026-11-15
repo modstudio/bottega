@@ -5,6 +5,7 @@ import {
   type ContextItem,
   type ContextWriteFacts,
   contextWriteRefusal,
+  holderOwnershipRefusal,
 } from './doc-context-write.ts'
 
 const item = (overrides: Partial<ContextItem> = {}): ContextItem => ({
@@ -24,6 +25,13 @@ const facts = (overrides: Partial<ContextWriteFacts> = {}): ContextWriteFacts =>
   ...overrides,
 })
 describe('context write refusal', () => {
+  test('cursor holders accept only their owning session and name the remedy otherwise', () => {
+    const holder = 'cursor:01a1dcda-39fd-703c-9afc-cf3f7a85494d'
+    expect(holderOwnershipRefusal(holder, 'owner', 'decision', 'owner')).toBeNull()
+    expect(holderOwnershipRefusal(holder, 'other', 'decision', 'owner')).toBe(
+      'context item decision refused: cursor 01a1dcda-39fd-703c-9afc-cf3f7a85494d belongs to another session; write from its owning session, or on the task',
+    )
+  })
   test('allows the complete kind table on task, epic, and session profiles', () => {
     for (const profile of ['task', 'epic', 'session'] as const) {
       for (const kind of Object.keys(CONTEXT_ITEM_MAX_CHARS) as ContextItem['kind'][]) {

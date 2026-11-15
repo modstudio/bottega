@@ -8,8 +8,6 @@ import { setDoc } from '../../test/fixtures/docs.ts'
 import { addRun, dir, score } from '../../test/fixtures/store.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { db } from '../database/db.ts'
-import { getContext } from '../doc/context-service.ts'
-import { recordSessionWorked } from '../doc/context-worked-adapter.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from '../doc/context-write-adapter.ts'
 import { upsertProject } from '../project/projects.ts'
 import { workflowTextAttachmentToken } from '../workflow/workflow-text.ts'
@@ -115,84 +113,6 @@ test('dry run reports context drops and refusals while resume keeps every item',
     `context session:${session}/ruling (ruling)`,
   ])
   expect(resume.recommendation).toBe('brief')
-})
-
-test('--resume records and keeps worked context', async () => {
-  const session = newRecordId()
-  const taskRecordId = newRecordId()
-  const project = `worked-close-out-${newRecordId()}`
-  upsertProject({
-    recordId: newRecordId(),
-    name: project,
-    path: `/tmp/${project}`,
-    settings: { trunk: 'main', keyPrefixes: ['WORKEDCLOSE'] },
-  })
-  ;(globalThis as typeof globalThis & { [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts })[
-    CONTEXT_FACTS_PORTS_KEY
-  ] = {
-    tasks: async () => [{ key: 'WORKEDCLOSE-1', record_id: taskRecordId, project }],
-    task: async () => null,
-    pointer: async () => null,
-  }
-  const run = addRun({ agent: 'codex', job: 'implement', status: 'ok', session })
-  db().query('UPDATE run SET launch_key=? WHERE record_id=?').run('WORKEDCLOSE-1', run)
-  score(run, 'full', 'right', 'faithful')
-  const previousSession = process.env.CLAUDE_CODE_SESSION_ID
-  process.env.CLAUDE_CODE_SESSION_ID = session
-  try {
-    await recordSessionWorked(session, ['WORKEDCLOSE-OLD'], 'precompact')
-    const report = await closeOutSession({ session, resume: true })
-    expect((await getContext({ session })).items).toContainEqual(
-      expect.objectContaining({
-        id: 'worked',
-        kind: 'fact',
-        source: 'close-out',
-        body: 'Worked: WORKEDCLOSE-1',
-      }),
-    )
-    expect(report.errors).not.toContainEqual(
-      expect.objectContaining({ item: `context session:${session}/worked (fact)` }),
-    )
-  } finally {
-    if (previousSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
-    else process.env.CLAUDE_CODE_SESSION_ID = previousSession
-  }
-})
-
-test('--resume of another session releases work and reports the worked write refusal', async () => {
-  const session = newRecordId()
-  const taskRecordId = newRecordId()
-  const project = `foreign-worked-close-out-${newRecordId()}`
-  upsertProject({
-    recordId: newRecordId(),
-    name: project,
-    path: `/tmp/${project}`,
-    settings: { trunk: 'main', keyPrefixes: ['FOREIGNWORKED'] },
-  })
-  ;(globalThis as typeof globalThis & { [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts })[
-    CONTEXT_FACTS_PORTS_KEY
-  ] = {
-    tasks: async () => [{ key: 'FOREIGNWORKED-1', record_id: taskRecordId, project }],
-    task: async () => null,
-    pointer: async () => null,
-  }
-  const run = addRun({ agent: 'codex', job: 'implement', status: 'ok', session })
-  db().query('UPDATE run SET launch_key=? WHERE record_id=?').run('FOREIGNWORKED-1', run)
-  score(run, 'full', 'right', 'faithful')
-  const previousSession = process.env.CLAUDE_CODE_SESSION_ID
-  process.env.CLAUDE_CODE_SESSION_ID = 'different-caller'
-  try {
-    const report = await closeOutSession({ session, resume: true })
-    expect(report.mechanical).toContain(`close run ${run}`)
-    expect(report.errors).toContainEqual({
-      item: `context session:${session}/worked (fact)`,
-      detail: `context item worked refused: only owning session ${session} may write session:${session}`,
-      retry: `${PLATFORM_SLUG} session close-out --session ${session} --resume`,
-    })
-  } finally {
-    if (previousSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
-    else process.env.CLAUDE_CODE_SESSION_ID = previousSession
-  }
 })
 
 test('close-out closes an idle explore as answered and reports the session clean', async () => {

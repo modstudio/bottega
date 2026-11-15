@@ -3,6 +3,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { RecordWriteOwner } from '../../../shared/record-write-space.ts'
+import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { RecordApiRequestError, recordApiClient } from '../record/record-api-client.ts'
 import { recordWriteDestination } from '../record/record-write-destination.ts'
@@ -19,6 +20,17 @@ async function contextItemOwner(holder: string): Promise<RecordWriteOwner | null
       unreadable.length > 0
         ? `task context owner could not be resolved because the tasks of ${unreadable.join(', ')} could not be read; run \`${PLATFORM_SLUG} record doctor\`, then retry`
         : `task context owner could not be resolved; retry with \`${PLATFORM_SLUG} agent context set --task <KEY>\``,
+      'refused',
+      409,
+    )
+  }
+  if (holder.startsWith('cursor:')) {
+    const cursor = db()
+      .query<{ project: string }, [string]>('SELECT project FROM workflow_cursor WHERE record_id=?')
+      .get(holder.slice('cursor:'.length))
+    if (cursor) return { kind: 'project', name: cursor.project }
+    throw new RecordApiRequestError(
+      `cursor context owner could not be resolved; write from the cursor's owning session, or on the task`,
       'refused',
       409,
     )

@@ -7,7 +7,7 @@ always: true
 
 ## Score dispatched work
 
-Read and score every run you dispatched, and never score a run you did not read. Unscored work cannot improve routing, while a guessed verdict teaches it something false. Use `bottega score pending` to find your runs and `bottega score` to close them. An unscored run whose owner session has gone unseen past `UNJUDGED_OWNER_WINDOW_MS`, or that has no owner, is expired by `bottega machine sweep` as evidence-excluded with no verdict, because nobody remains who read it; a verdict its owner records later lifts that exclusion.
+Read and score every run you dispatched; never score one you did not read. Use `bottega score pending` to find them and `bottega score` to close them. `bottega machine sweep` expires an unscored run with no owner or one unseen past `UNJUDGED_OWNER_WINDOW_MS` as evidence-excluded; a later owner verdict lifts that exclusion.
 
 ## Arm the heartbeat
 
@@ -16,6 +16,10 @@ When you dispatch work that you will not collect immediately, run `orchestrator/
 ## Stop at unanswered questions
 
 Never continue or land a chain while its worker has an unanswered question, because resuming it would force a guess. Use `bottega question answer` before `bottega run continue`.
+
+## Keep context current while working
+
+Record facts and pointers when they are learned. Revise or drop context items when they stop being true. Session context holds live state only.
 
 ## Admit through a pull request
 

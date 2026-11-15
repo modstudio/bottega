@@ -18,6 +18,7 @@ test('a failed answer write reports the failure', async () => {
 
   await applyContextMomentEffect(
     'DEV-2267',
+    null,
     answered,
     false,
     { log: (line) => lines.push(line), error: () => {} },
@@ -39,6 +40,7 @@ test('a context policy refusal has no retry command', async () => {
 
   await applyContextMomentEffect(
     'DEV-2267',
+    null,
     answered,
     false,
     { log: (line) => lines.push(line), error: () => {} },
@@ -49,4 +51,22 @@ test('a context policy refusal has no retry command', async () => {
     'context: could not write position on DEV-2267: context item position-q12 refused: position limit',
   ])
   expect(lines[0]).not.toContain('retry:')
+})
+
+test('a keyless cursor ruling writes exactly once to its cursor holder', async () => {
+  const selections: unknown[] = []
+  const ports = {
+    revision: async (selection: unknown) => {
+      selections.push(selection)
+      return undefined
+    },
+    set: async (selection: unknown) => selections.push(selection),
+  } as ContextMomentPorts
+
+  await applyContextMomentEffect(null, 'cursor-record', answered, false, undefined, ports)
+
+  expect(selections).toHaveLength(2)
+  expect(selections[1]).toEqual(
+    expect.objectContaining({ cursor: 'cursor-record', kind: 'position', id: 'position-q12' }),
+  )
 })

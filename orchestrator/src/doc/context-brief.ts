@@ -7,7 +7,7 @@ import { type ClaimView, liveClaimsOfSession } from '../board/board-claim-servic
 import { claimNotices } from '../board/board-service.ts'
 import { db } from '../database/db.ts'
 import { filedIssueQueueState } from '../issue/issue-dispatch.ts'
-import { projectAt, projectForTaskKey, projects } from '../project/projects.ts'
+import { projectAt } from '../project/projects.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { LIVE_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { architectSessionContext } from '../workflow/session-context.ts'
@@ -23,7 +23,6 @@ import {
   taskKeyMap,
   taskReferenceForProjectKey,
 } from '../workflow/workflow-task-reference.ts'
-import { parseWorkedTaskKeys, WORKED_CONTEXT_ID, WORKED_CONTEXT_KIND } from './context-worked.ts'
 import { storedItems, taskProfile } from './context-write-adapter.ts'
 import type { ContextItem } from './doc-context-write.ts'
 import { taskContextHolder } from './doc-subjects.ts'
@@ -32,7 +31,7 @@ import { listOpenResumes } from './docs.ts'
 type ContextBriefHolder = {
   key: string
   title: string
-  kind: 'session' | 'task' | 'epic'
+  kind: 'session' | 'cursor' | 'task' | 'epic'
   items: ContextItem[]
   openQuestions?: Array<{ number: number; question: string }>
 }
@@ -43,10 +42,15 @@ export type ContextBrief = {
   holders: ContextBriefHolder[]
   runs: Array<{ number: number; job: string; status: string }>
   cursors: Array<{
+    recordId: string
     number: number
     workflow: string
     mode: string
+    step: number
+    totalSteps: number
+    stepSlug: string
     questionNumber: number | null
+    runs: number[]
   }>
   claims: Array<{ kind: string; value: string }>
   waiting: {
@@ -77,7 +81,9 @@ export function renderContextBrief(brief: ContextBrief): string {
     lines.push(
       holder.kind === 'session'
         ? `Session ${holder.key}`
-        : `${holder.key} ${holder.title}`.trimEnd(),
+        : holder.kind === 'cursor'
+          ? holder.title
+          : `${holder.key} ${holder.title}`.trimEnd(),
     )
     const items = holder.items.toSorted(
       (left, right) =>
@@ -90,15 +96,16 @@ export function renderContextBrief(brief: ContextBrief): string {
     if (!holder.openQuestions?.length) lines.push('  open: none')
   }
   const inFlight = [
-    ...brief.runs.map((run) => `run ${run.number} ${run.job} ${run.status}`),
-    ...brief.cursors.map((cursor) =>
-      cursor.questionNumber === null
-        ? `cursor ${cursor.number} ${cursor.workflow} ${cursor.mode}`
-        : `cursor ${cursor.number} ${cursor.workflow} ${cursor.mode}, awaiting q${cursor.questionNumber}`,
-    ),
-    ...brief.claims.map((claim) => `claim ${claim.kind}:${claim.value}`),
+    ...brief.cursors.map((cursor) => {
+      const question = cursor.questionNumber === null ? '' : `, awaiting q${cursor.questionNumber}`
+      const runs = cursor.runs.length ? `, runs ${cursor.runs.join(', ')}` : ''
+      return `cursor ${cursor.number} ${cursor.workflow} ${cursor.mode} step ${cursor.step}/${cursor.totalSteps} ${cursor.stepSlug}${question}${runs}`
+    }),
+    ...brief.runs.map((run) => `unbound run ${run.number} ${run.job} ${run.status}`),
+    ...brief.claims.map((claim) => `unbound claim ${claim.kind}:${claim.value}`),
   ]
-  lines.push(`In flight: ${inFlight.join(' · ') || 'none'}`)
+  if (inFlight.length) lines.push('In flight:', ...inFlight.map((line) => `  ${line}`))
+  else lines.push('In flight: none')
   lines.push(
     `Waiting: ${count(brief.waiting.boardRequests, 'board request')} (${PLATFORM_SLUG} board read) · ` +
       `${count(brief.waiting.questions, 'question')} · ` +
@@ -116,6 +123,7 @@ export type ContextBriefWorkingKey = {
 
 type ContextBriefHolderReference =
   | (Omit<ContextBriefHolder, 'items' | 'kind'> & { kind: 'session' })
+  | (Omit<ContextBriefHolder, 'items' | 'kind'> & { kind: 'cursor'; recordId: string })
   | (Omit<ContextBriefHolder, 'items' | 'kind'> & {
       kind: 'task' | 'epic'
       recordId: string
@@ -126,8 +134,20 @@ export function holderSequence(
   session: string,
   working: readonly ContextBriefWorkingKey[],
   tasks: readonly HubTaskReference[],
+  keylessCursors: readonly Pick<
+    WorkflowCursorListRow,
+    'record_id' | 'id' | 'workflow_slug' | 'mode_slug'
+  >[] = [],
 ): ContextBriefHolderReference[] {
-  const holders: ContextBriefHolderReference[] = [{ key: session, title: '', kind: 'session' }]
+  const holders: ContextBriefHolderReference[] = [
+    { key: session, title: '', kind: 'session' },
+    ...keylessCursors.map((cursor) => ({
+      key: `cursor:${cursor.record_id}`,
+      title: `Cursor ${cursor.id} ${cursor.workflow_slug} ${cursor.mode_slug}`,
+      kind: 'cursor' as const,
+      recordId: cursor.record_id,
+    })),
+  ]
   const index = taskKeyMap(tasks)
   const emitted = new Set<string>()
   const add = (task: HubTaskReference, projectTasks: readonly HubTaskReference[]) => {
@@ -169,6 +189,10 @@ export function storedBriefHolders(
           items: storedItems(`session:${reference.key}`, database),
         }
       }
+      if (reference.kind === 'cursor') {
+        const { recordId, ...holder } = reference
+        return { ...holder, items: storedItems(`cursor:${recordId}`, database) }
+      }
       const { recordId, ...holder } = reference
       const openQuestions = openTaskQuestions(recordId, database)
       return {
@@ -194,29 +218,26 @@ function openTaskQuestions(
 }
 
 export function workingKeysForBrief(
-  session: string,
-  liveClaims: readonly Pick<ClaimView, 'project' | 'subject'>[],
   cursors: readonly Pick<WorkflowCursorListRow, 'workflow_key' | 'project'>[],
-  database: Database,
 ): ContextBriefWorkingKey[] {
-  const current: ContextBriefWorkingKey[] = [
-    ...liveClaims
-      .filter((claim) => claim.subject.kind === 'task')
-      .map((claim) => ({ key: claim.subject.value, project: claim.project })),
-    ...cursors
-      .filter((cursor) => Boolean(cursor.workflow_key))
-      .map((cursor) => ({ key: cursor.workflow_key, project: cursor.project })),
-  ]
-  const worked = storedItems(`session:${session}`, database).find(
-    (item) => item.id === WORKED_CONTEXT_ID && item.kind === WORKED_CONTEXT_KIND,
-  )
-  if (!worked) return current
-  const registered = projects(undefined, database)
-  for (const key of parseWorkedTaskKeys(worked.body)) {
-    const project = projectForTaskKey(key, registered)
-    if (project) current.push({ key, project: project.name })
-  }
-  return current
+  return cursors
+    .filter((cursor) => Boolean(cursor.workflow_key))
+    .map((cursor) => ({ key: cursor.workflow_key, project: cursor.project }))
+}
+
+function claimBoundToCursor(claim: ClaimView, cursors: readonly WorkflowCursorListRow[]): boolean {
+  return cursors.some((cursor) => {
+    if (
+      claim.subject.kind === 'task' &&
+      claim.project === cursor.project &&
+      claim.subject.value === cursor.workflow_key
+    )
+      return true
+    const args = JSON.parse(cursor.args) as Record<string, unknown>
+    return [args.worktree, args.branch].some(
+      (value) => typeof value === 'string' && value === claim.subject.value,
+    )
+  })
 }
 
 function autonomyLine(context: Awaited<ReturnType<typeof architectSessionContext>>): string {
@@ -241,7 +262,7 @@ export async function contextBrief(
 ): Promise<ContextBrief> {
   const cursors = await listWorkflowCursors({ session }, database)
   const liveClaims = liveClaimsOfSession(session, Date.now(), database)
-  const working = workingKeysForBrief(session, liveClaims, cursors, database)
+  const working = workingKeysForBrief(cursors)
   const workingProjects = [...new Set(working.map(({ project }) => project))]
   const [taskRows, autonomy, filedIssues] = await Promise.all([
     Promise.all(workingProjects.map((project) => readHubTasks(project))).then((rows) =>
@@ -250,12 +271,12 @@ export async function contextBrief(
     architectSessionContext(cwd, { database }),
     filedIssueQueueState(projectAt(cwd, database)?.name ?? null),
   ])
-  const runs = database
+  const liveRuns = database
     .query(
-      `SELECT number,job,status FROM run
+      `SELECT number,job,status,cursor_record_id FROM run
        WHERE session_id=? AND status IN ${LIVE_RUN_STATUS_SQL} ORDER BY number`,
     )
-    .all(session) as ContextBrief['runs']
+    .all(session) as Array<ContextBrief['runs'][number] & { cursor_record_id: string | null }>
   const runQuestions = database
     .query(
       `SELECT COUNT(*) count FROM question q JOIN run r ON r.record_id=q.run_record_id
@@ -269,7 +290,12 @@ export async function contextBrief(
   const boardRequests = claimNotices(true, boardEnv, Date.now(), database).filter(
     (notice) => notice.purpose === 'request',
   ).length
-  const references = holderSequence(session, working, taskRows)
+  const references = holderSequence(
+    session,
+    working,
+    taskRows,
+    cursors.filter((cursor) => !cursor.workflow_key),
+  )
   const holders = storedBriefHolders(references, database)
   const fullHolder = holders.find((holder) => holder.kind !== 'session')
   return {
@@ -278,14 +304,25 @@ export async function contextBrief(
       ? `${PLATFORM_SLUG} agent context show --task ${fullHolder.key}`
       : `${PLATFORM_SLUG} agent context show --session ${session}`,
     holders,
-    runs,
+    runs: liveRuns
+      .filter((run) => !cursors.some((cursor) => cursor.record_id === run.cursor_record_id))
+      .map(({ cursor_record_id: _, ...run }) => run),
     cursors: cursors.map((cursor) => ({
+      recordId: cursor.record_id,
       number: cursor.id,
       workflow: cursor.workflow_slug,
       mode: cursor.mode_slug,
+      step: cursor.ordinal + 1,
+      totalSteps: cursor.total_steps,
+      stepSlug: cursor.step_slug,
       questionNumber: cursor.question_number,
+      runs: liveRuns
+        .filter((run) => run.cursor_record_id === cursor.record_id)
+        .map((run) => run.number),
     })),
-    claims: liveClaims.map((claim) => claim.subject),
+    claims: liveClaims
+      .filter((claim) => !claimBoundToCursor(claim, cursors))
+      .map((claim) => claim.subject),
     waiting: {
       boardRequests,
       questions: runQuestions.count + cursorQuestions.count,

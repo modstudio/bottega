@@ -133,6 +133,17 @@ export function storedItems(holder: string, database: Database): ContextItem[] {
   return listContextItems(holder, database)
 }
 
+export function contextCursorOwner(holder: string, database: Database = db()) {
+  if (!holder.startsWith('cursor:')) return null
+  return (
+    database
+      .query<{ session_id: string | null; project: string }, [string]>(
+        'SELECT session_id,project FROM workflow_cursor WHERE record_id=?',
+      )
+      .get(holder.slice('cursor:'.length)) ?? null
+  )
+}
+
 /** Resolve a person-facing task key once into the stable identity context stores. */
 export async function resolveContextTask(
   value: string,
@@ -235,7 +246,12 @@ async function contextSetRefusal(
   ) {
     return `context item ${item.id} refused: task holder requires its resolved task identity; write task context with ${PLATFORM_SLUG} agent context set --task <KEY>`
   }
-  const ownership = holderOwnershipRefusal(input.holder, sessionId(database), item.id)
+  const ownership = holderOwnershipRefusal(
+    input.holder,
+    sessionId(database),
+    item.id,
+    contextCursorOwner(input.holder, database)?.session_id,
+  )
   if (ownership) return ownership
   const claims = owner
     ? liveClaimsOfSession(owner, Date.now(), database)
@@ -281,7 +297,12 @@ export function assertContextDropAllowed({
   item: ContextItem
   database?: Database
 }): void {
-  const refusal = holderOwnershipRefusal(item.holder, sessionId(database), item.id)
+  const refusal = holderOwnershipRefusal(
+    item.holder,
+    sessionId(database),
+    item.id,
+    contextCursorOwner(item.holder, database)?.session_id,
+  )
   if (refusal) throw new ContextWriteRefusalError(refusal)
 }
 
@@ -291,6 +312,7 @@ export async function contextProfileForHolder(
   task?: ContextTask,
 ) {
   if (subject.startsWith('session:')) return 'session' as const
+  if (subject.startsWith('cursor:')) return 'session' as const
   if (!task) return 'task' as const
   return taskProfile(task.key, await ports.tasks(task.project))
 }

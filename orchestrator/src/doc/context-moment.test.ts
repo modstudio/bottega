@@ -41,8 +41,8 @@ describe('context moment effect', () => {
     })
   })
 
-  test('no task key, question id or text writes nothing', () => {
-    expect(contextMomentEffect({ questionId: 12, text: 'Which shape?' })).toEqual({ writes: [] })
+  test('a keyless cursor moment still produces a write while missing content does not', () => {
+    expect(contextMomentEffect({ questionId: 12, text: 'Which shape?' }).writes).toHaveLength(1)
     expect(contextMomentEffect({ taskKey: 'DEV-2267', text: 'Which shape?' })).toEqual({
       writes: [],
     })
