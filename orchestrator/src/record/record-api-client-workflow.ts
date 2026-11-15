@@ -6,6 +6,7 @@ import {
   workflowCataloguePath,
 } from './record-api-client-paths.ts'
 import { type RecordTaskFlowClient, recordTaskFlowClient } from './record-api-client-task-flow.ts'
+import { type RecordQuestionClient, recordQuestionClient } from './record-api-client-question.ts'
 import {
   type RecordWorkflowDraftInput,
   type RecordWorkflowImportInput,
@@ -48,7 +49,7 @@ async function importWorkflowCatalogue(
     throw error
   }
 }
-export type RecordWorkflowClient = RecordTaskFlowClient & {
+export type RecordWorkflowClient = RecordTaskFlowClient & RecordQuestionClient & {
   listWorkflowCatalogue?(
     table: RecordWorkflowTable,
     query: { limit?: number; cursor?: string },
@@ -77,6 +78,7 @@ export type RecordWorkflowClient = RecordTaskFlowClient & {
 }
 export const recordWorkflowClient = (request: Request): RecordWorkflowClient => ({
   ...recordTaskFlowClient(request),
+  ...recordQuestionClient(request),
   listWorkflowCatalogue: (table, query, destination) =>
     request(workflowCataloguePath(table, query), {
       ...destination,

@@ -69,6 +69,7 @@ export const hostedTableLifecycles: readonly TableLifecycle[] = [
       'pull_request_ci',
       'question',
       'question_mutation_audit',
+      'question_number_counter',
       'rate_limit',
       'release',
       'review',

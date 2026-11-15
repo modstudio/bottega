@@ -112,4 +112,3 @@ export const questionReadSchema = z.object({
   limit: z.coerce.number().int().positive().max(100).optional(),
 })
 export type QuestionReadInput = z.infer<typeof questionReadSchema>
-

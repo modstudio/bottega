@@ -2,21 +2,21 @@
 /** Applies direct question snapshots and their audit atomically. */
 
 import type { SQL } from 'bun'
-import { and, eq, sql as drizzleSql } from 'drizzle-orm'
+import { and, sql as drizzleSql, eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
-import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import {
   hostedQuestionWins,
   question as questionRecord,
 } from '../../../shared/record/schema-question.ts'
-import { questionValues } from './record-sync-service.ts'
-import { pushQuestionAudits } from './record-question-audit.ts'
+import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { recordPool } from './record-pool.ts'
+import { pushQuestionAudits } from './record-question-audit.ts'
 import type {
   QuestionIntent,
   QuestionWriteBody,
   QuestionWriteResult,
 } from './record-question-contract.ts'
+import { questionValues } from './record-sync-service.ts'
 
 type Tenant = { url: string } & TenantPrincipal
 
@@ -45,7 +45,11 @@ export async function writeRecordQuestion(
     const existing = (await tx`
       SELECT number,revision,last_request_id::text
         FROM question WHERE id=${input.question.id}::uuid FOR UPDATE
-    `) as Array<{ number: number | string | null; revision: number | string; last_request_id: string | null }>
+    `) as Array<{
+      number: number | string | null
+      revision: number | string
+      last_request_id: string | null
+    }>
     if (existing[0]?.last_request_id === input.requestId)
       return {
         id: input.question.id,
@@ -64,7 +68,13 @@ export async function writeRecordQuestion(
       audits: [input.audit],
     }
     const values = questionValues(payload, input.question.projectId, input.question.workflowTaskId)
-    const { id: _id, createdAt: _createdAt, number: _number, workflowTaskId: _task, ...updates } = values
+    const {
+      id: _id,
+      createdAt: _createdAt,
+      number: _number,
+      workflowTaskId: _task,
+      ...updates
+    } = values
     const written = await drizzle({ client: tx })
       .insert(questionRecord)
       .values({ ...values, lastRequestId: input.requestId })
@@ -88,7 +98,9 @@ export async function writeRecordQuestion(
       })
     const result = written[0] ?? existing[0]
     if (!result || result.number == null)
-      throw new Error(`question ${input.question.id} write did not satisfy its revision precondition`)
+      throw new Error(
+        `question ${input.question.id} write did not satisfy its revision precondition`,
+      )
     await pushQuestionAudits(tx, payload, input.question.id, input.spaceId)
     return {
       id: input.question.id,
@@ -97,4 +109,3 @@ export async function writeRecordQuestion(
     }
   })
 }
-

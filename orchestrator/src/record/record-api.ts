@@ -38,6 +38,10 @@ import { renderRecordApiRefusal } from './record-api-errors.ts'
 import { type RecordLensRouteDeps, registerRecordLensRoutes } from './record-api-lens.ts'
 import { type RecordPortRouteDeps, registerRecordPortRoutes } from './record-api-port.ts'
 import { registerPublicDocRoutes, registerSignedDocSearchRoute } from './record-api-public-docs.ts'
+import {
+  type RecordQuestionRouteDeps,
+  registerRecordQuestionRoutes,
+} from './record-api-question.ts'
 import { registerRecordReadRoutes } from './record-api-read-routes.ts'
 import type { RecordReleaseRouteDeps } from './record-api-releases.ts'
 import { registerRecordRequestSpace } from './record-api-request-space.ts'
@@ -112,6 +116,7 @@ type Deps = RecordSubjectRouteDeps &
   RecordReleaseRouteDeps &
   RecordLensRouteDeps &
   RecordPortRouteDeps &
+  RecordQuestionRouteDeps &
   RecordWorkflowRouteDeps &
   RecordChangeRouteDeps &
   RecordCredentialRouteDeps &
@@ -334,6 +339,7 @@ function registerRecordCoreRoutes(
   registerRecordContextItemRoutes(app, deps, ports)
   registerSignedDocSearchRoute(app, deps, ports)
   registerRecordReadRoutes(app, deps, ports)
+  registerRecordQuestionRoutes(app, deps, ports)
 }
 
 export function recordApi(deps: Deps): Hono<ApiEnvironment> {

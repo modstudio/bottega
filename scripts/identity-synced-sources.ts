@@ -98,6 +98,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'readTaskFlowObligation',
     'readTaskFlowStage',
     'readTaskFlowText',
+    'readQuestions',
     'searchDocs',
     'searchPublicDocs',
     'storage',
@@ -134,6 +135,12 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
       'deleteTaskFlowText',
       'updateTaskFlowStage',
     ],
+  ),
+  ...writeEntries(
+    'orchestrator',
+    'recordApiClient',
+    ['question', 'question_mutation_audit'],
+    ['writeQuestion'],
   ),
   ...writeEntries(
     'orchestrator',
