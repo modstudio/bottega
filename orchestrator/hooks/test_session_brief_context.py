@@ -65,14 +65,81 @@ class AssembleAdditionalContext(unittest.TestCase):
                     session_brief._with_compact_first_act("brief", source), "brief"
                 )
 
-    def test_compact_injection_size_includes_the_first_act(self):
-        context = session_brief._with_compact_first_act("brief", "compact")
-        with mock.patch.object(session_brief.subprocess, "Popen") as popen:
-            session_brief._record_injection(
-                "/bin/bottega", "/tmp", {}, "session-a", "compact", context
-            )
+    def test_compact_main_records_the_emitted_context_size(self):
+        stdin = io.StringIO(json.dumps({
+            "cwd": "/tmp",
+            "session_id": "session-a",
+            "source": "compact",
+        }))
+        stdout = io.StringIO()
+
+        def start(_bottega, *args, **_kwargs):
+            process = mock.Mock()
+            process.args = args
+            process.poll.return_value = 0
+            return process
+
+        def wait(process, _deadline):
+            args = process.args
+            if args[:2] == ("doc", "resumes"):
+                output = json.dumps({"open": [], "unreadable": []})
+            elif args[:2] == ("question", "inbox"):
+                output = json.dumps({
+                    "cwd_registered": True,
+                    "project": "bottega",
+                    "rows": [],
+                })
+            elif args[:3] == ("workflow", "fix-defect", "--waiting"):
+                output = json.dumps({
+                    "cwd_registered": True,
+                    "project": "bottega",
+                    "state": {
+                        "waiting": [],
+                        "unworked": [],
+                        "unscored": [],
+                        "blocked": None,
+                    },
+                })
+            elif args[:3] == ("agent", "context", "--cwd"):
+                output = json.dumps({"registered": False})
+            elif args[:3] == ("agent", "context", "brief"):
+                output = "compact context brief"
+            elif args[:2] == ("board", "read"):
+                output = json.dumps({
+                    "notices": [],
+                    "warning": None,
+                    "withheldOlderCount": 0,
+                })
+            elif args[:2] == ("machine", "monitor"):
+                output = "[]"
+            else:
+                self.fail(f"unexpected subprocess command: {args}")
+            return SimpleNamespace(returncode=0, stdout=output, stderr="")
+
+        with mock.patch.dict(session_brief.os.environ, {"HOME": "/tmp"}, clear=True):
+            with mock.patch.object(session_brief.sys, "stdin", stdin):
+                with mock.patch.object(session_brief.sys, "stdout", stdout):
+                    with mock.patch.object(session_brief, "_start", side_effect=start):
+                        with mock.patch.object(session_brief, "_wait", side_effect=wait):
+                            with mock.patch.object(
+                                session_brief,
+                                "_start_settings_apply",
+                                return_value=(None, None, None),
+                            ):
+                                with mock.patch.object(session_brief.subprocess, "run"):
+                                    with mock.patch.object(
+                                        session_brief.subprocess, "Popen"
+                                    ) as popen:
+                                        code = session_brief.main()
+
+        self.assertEqual(code, 0)
+        emitted = json.loads(stdout.getvalue())["hookSpecificOutput"][
+            "additionalContext"
+        ]
+        self.assertIn(session_brief.COMPACT_FIRST_ACT, emitted)
         command = popen.call_args.args[0]
-        self.assertEqual(command[-1], str(len(context)))
+        chars = command[command.index("--chars") + 1]
+        self.assertEqual(chars, str(len(emitted)))
 
     def test_injection_recording_detaches_with_final_utf8_size(self):
         with mock.patch.object(session_brief.subprocess, "Popen") as popen:
