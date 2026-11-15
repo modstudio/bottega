@@ -584,11 +584,20 @@ File a task for work being done now. Do not keep a speculative backlog. Plans
 live in the doc store and become tasks when implementation begins, because a
 board must show what is happening.
 
-A defect is filed as a note, not fixed alone; triage assigns it to a class or
-leaves it unassigned. Live harm is ruled case by case. A class is a task
-`Class <code>: <name>` under the class epic, with checked evidence attached by
-comment, never as a child task a board counts as open work. It is fixed once,
-after research and a build-or-buy ruling, by a root fix with a class guard.
+A defect is filed as a note, not fixed alone. Triage dedupes it and attaches
+it, as evidence, to the existing task for its class; it is fixed when its class
+is fixed. Two cases are fixed on arrival: a regression from work in flight, and
+a defect that is costing sessions now. A board request about a note follows the
+same triage.
+
+Triage drops a note whose cause goes away once its project plugs into Bottega,
+rather than Bottega plugging into the project. It promotes only a defect in
+Bottega's own code that would survive that move.
+
+A class is a task `Class <code>: <name>` under the class epic, with checked
+evidence attached by comment, never as a child task a board counts as open
+work. It is fixed once, after research and a build-or-buy ruling, by a root fix
+with a class guard.
 
 ## Suggestions are observations, not tasks
 
