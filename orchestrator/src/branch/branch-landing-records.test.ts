@@ -64,7 +64,7 @@ test('landing task reader carries minted and branch run key relations', () => {
   })
 })
 
-test('landed review ids include only snapshots for merged pull requests', () => {
+test('landed review ids include only other branches snapshots for merged pull requests', () => {
   const { database } = fixture()
   const projectId = database
     .query<{ record_id: string }, []>("SELECT record_id FROM project WHERE name='fixture'")
@@ -92,9 +92,10 @@ test('landed review ids include only snapshots for merged pull requests', () => 
   addSnapshot('open-snapshot', 'open-branch', 2, ['review-open'])
   addSnapshot('other-pr-snapshot', 'merged-branch', 2, ['review-other-pr'])
 
-  expect(readLandedReviewIds(database, 'fixture')).toEqual(
+  expect(readLandedReviewIds(database, 'fixture', 'evaluated-branch')).toEqual(
     new Set(['review-merged-a', 'review-merged-b']),
   )
+  expect(readLandedReviewIds(database, 'fixture', 'merged-branch')).toEqual(new Set())
 })
 
 test('landing key resolution honors run order and registered branch prefixes', () => {

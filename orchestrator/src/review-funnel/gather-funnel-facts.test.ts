@@ -3,8 +3,8 @@ import { resolve } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import type { Project } from '../project/projects.ts'
-import { measureChangeIdentity } from '../review/review-pins.ts'
 import { applicableReview } from '../review/review-applicability.ts'
+import { measureChangeIdentity } from '../review/review-pins.ts'
 import { gatherFunnelFacts } from './gather-funnel-facts.ts'
 
 const repo = resolve(import.meta.dir, '../../..')

@@ -15,10 +15,14 @@ export function readBranchLandingRecords(database: Database = db()): BranchLandi
     .all() as BranchLandingRecord[]
 }
 
-/** Review records captured by snapshots whose pull request has since merged. */
-export function readLandedReviewIds(database: Database, project: string): Set<string> {
+/** Review records captured by another branch's snapshot whose pull request has since merged. */
+export function readLandedReviewIds(
+  database: Database,
+  project: string,
+  evaluatedBranch: string,
+): Set<string> {
   const rows = database
-    .query<{ reviewRecordId: string }, [string]>(
+    .query<{ reviewRecordId: string }, [string, string]>(
       `SELECT DISTINCT CAST(item.value AS TEXT) AS reviewRecordId
          FROM landing_triage_snapshot snapshot
          JOIN branch_landing_record landing
@@ -27,10 +31,28 @@ export function readLandedReviewIds(database: Database, project: string): Set<st
           AND landing.pr_number=snapshot.pr_number
          JOIN json_each(snapshot.review_record_ids) item
         WHERE snapshot.project_record_id=(SELECT record_id FROM project WHERE name=?)
-          AND landing.merged_at IS NOT NULL`,
+          AND landing.merged_at IS NOT NULL
+          AND landing.branch<>?`,
     )
-    .all(project)
+    .all(project, evaluatedBranch)
   return new Set(rows.map(({ reviewRecordId }) => reviewRecordId))
+}
+
+/** The merged landing tip for one branch, when recorded. */
+export function readMergedBranchLandingTip(
+  database: Database,
+  project: string,
+  branch: string,
+): string | null {
+  return (
+    database
+      .query<{ tip: string }, [string, string]>(
+        `SELECT tip FROM branch_landing_record
+          WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+            AND branch=? AND merged_at IS NOT NULL`,
+      )
+      .get(project, branch)?.tip ?? null
+  )
 }
 
 export type BranchLandingTaskRow = {
