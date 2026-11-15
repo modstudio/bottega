@@ -61,6 +61,7 @@
         "scripts/record-rehearse.ts!",
         "scripts/affected-tests.ts!",
         "scripts/audit-hot-store-statements.ts!",
+        "scripts/measure-review-rebase-carries.ts!",
         "scripts/probe-bounded-calls.ts!",
         "scripts/test-focused.ts!",
         "!scripts/**/*.fixtures.ts",
