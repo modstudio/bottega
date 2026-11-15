@@ -4,6 +4,7 @@ import { dirname, normalize } from 'node:path'
 import { recordBindingModules } from './architecture-record-binding-modules.ts'
 import { recordChangeModules } from './architecture-record-change-modules.ts'
 import { recordInvariantModules } from './architecture-record-invariant-modules.ts'
+import { recordQuestionModules } from './architecture-record-question-modules.ts'
 import { recordSyncModules } from './architecture-record-sync-modules.ts'
 import { recordTaskFlowModules } from './architecture-record-task-flow-modules.ts'
 import { storageRecordModules } from './architecture-storage-modules.ts'
@@ -22,6 +23,7 @@ const cacheDeleteImports = ['bun:sqlite', '../database/db.ts', '../database/tole
 export const recordModules: RecordModule[] = [
   ...recordChangeModules,
   ...recordInvariantModules,
+  ...recordQuestionModules,
   ...recordSyncModules,
   ...recordTaskFlowModules,
   ...storageRecordModules,
@@ -296,6 +298,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-api-client-workflow.ts', [
     './record-api-client-paths.ts',
+    './record-api-client-question.ts',
     './record-api-client-task-flow.ts',
     './record-catalogue-contract.ts',
     './record-workflow-contract.ts',

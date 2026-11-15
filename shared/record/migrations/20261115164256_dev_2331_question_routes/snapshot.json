@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "cb0a705e-a0cc-43db-9d3c-f7e22754f2e5",
+  "id": "68ab3c04-95b0-49dc-9018-0fe4d9078107",
   "prevIds": [
     "9d731374-f0b5-4a43-8e1f-aa001d54a094"
   ],
@@ -4579,7 +4579,7 @@
       "default": null,
       "generated": null,
       "identity": null,
-      "name": "space_id",
+      "name": "counter_space_id",
       "entityType": "columns",
       "schema": "public",
       "table": "question_number_counter"
@@ -20788,7 +20788,7 @@
     {
       "nameExplicit": false,
       "columns": [
-        "space_id"
+        "counter_space_id"
       ],
       "schemaTo": "public",
       "tableTo": "space",
@@ -20796,8 +20796,8 @@
         "id"
       ],
       "onUpdate": "NO ACTION",
-      "onDelete": "NO ACTION",
-      "name": "question_number_counter_space_id_space_id_fkey",
+      "onDelete": "CASCADE",
+      "name": "question_number_counter_counter_space_id_space_id_fkey",
       "entityType": "fks",
       "schema": "public",
       "table": "question_number_counter"
@@ -25618,7 +25618,7 @@
     {
       "nameExplicit": true,
       "columns": [
-        "space_id"
+        "counter_space_id"
       ],
       "nullsNotDistinct": false,
       "name": "question_number_counter_space_unique",
@@ -28129,7 +28129,7 @@
       "roles": [
         "public"
       ],
-      "using": "\"question_number_counter\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid OR \"question_number_counter\".\"space_id\" = ANY(\n    string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]\n  )",
+      "using": "\"question_number_counter\".\"counter_space_id\" = nullif(current_setting('app.space_id', true), '')::uuid OR \"question_number_counter\".\"counter_space_id\" = ANY(\n    string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]\n  )",
       "withCheck": null,
       "name": "question_number_counter_space_select",
       "entityType": "policies",
@@ -28143,7 +28143,7 @@
         "public"
       ],
       "using": null,
-      "withCheck": "(\"question_number_counter\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"question_number_counter\".\"space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
+      "withCheck": "(\"question_number_counter\".\"counter_space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"question_number_counter\".\"counter_space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
       "name": "question_number_counter_space_insert",
       "entityType": "policies",
       "schema": "public",
@@ -28155,8 +28155,8 @@
       "roles": [
         "public"
       ],
-      "using": "(\"question_number_counter\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"question_number_counter\".\"space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
-      "withCheck": "(\"question_number_counter\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"question_number_counter\".\"space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
+      "using": "(\"question_number_counter\".\"counter_space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"question_number_counter\".\"counter_space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
+      "withCheck": "(\"question_number_counter\".\"counter_space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"question_number_counter\".\"counter_space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
       "name": "question_number_counter_space_update",
       "entityType": "policies",
       "schema": "public",
@@ -28168,7 +28168,7 @@
       "roles": [
         "public"
       ],
-      "using": "(\"question_number_counter\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"question_number_counter\".\"space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
+      "using": "(\"question_number_counter\".\"counter_space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"question_number_counter\".\"counter_space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
       "withCheck": null,
       "name": "question_number_counter_space_delete",
       "entityType": "policies",

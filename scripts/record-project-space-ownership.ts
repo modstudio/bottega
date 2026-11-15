@@ -204,11 +204,6 @@ export const RECORD_PROJECT_SPACE_OWNERSHIP = [
   { table: 'public_doc_space', kind: 'project', ownerColumns: ['project_id'] },
   { table: 'question', kind: 'project', ownerColumns: ['project_id'] },
   {
-    table: 'question_number_counter',
-    kind: 'space',
-    reason: 'numbers are unique within and remain owned by their space',
-  },
-  {
     table: 'question_mutation_audit',
     kind: 'parent',
     parents: [{ table: 'question', column: 'question_id' }],

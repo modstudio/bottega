@@ -4,21 +4,10 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { RecordQuestionClient } from '../record/record-api-client-question.ts'
-import type {
-  QuestionIntent,
-  QuestionReadInput,
-  QuestionWriteBody,
-  QuestionWriteResult,
-} from '../record/record-question-contract.ts'
 import { syncRecord } from '../record/record-sync.ts'
 import { RecordQuestionStore } from './question-store-record.ts'
 import { SqliteQuestionStore } from './question-store-sqlite.ts'
-
-export type QuestionReadResult = { items: Record<string, unknown>[] }
-export interface QuestionStore {
-  write(intent: QuestionIntent, input: QuestionWriteBody): Promise<QuestionWriteResult>
-  read(input: QuestionReadInput): Promise<QuestionReadResult>
-}
+import type { QuestionStore } from './question-store-types.ts'
 
 /** SQLite stays authoritative in every install mode for this slice. */
 export function questionStore(database: Database): QuestionStore {

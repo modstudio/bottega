@@ -8,7 +8,7 @@ import type {
   QuestionWriteBody,
   QuestionWriteResult,
 } from '../record/record-question-contract.ts'
-import type { QuestionReadResult, QuestionStore } from './question-store.ts'
+import type { QuestionReadResult, QuestionStore } from './question-store-types.ts'
 
 const json = (value: unknown) => (value == null ? null : JSON.stringify(value))
 

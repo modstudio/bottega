@@ -968,6 +968,7 @@ realPostgres('RLS proof against real Postgres', () => {
     otherSpaceId: ids.SPACE_B,
     projectName: 'auth-a-project',
     projectId: authProjectA,
+    signIn: () => recordSession.setToken(tokenA),
     asSpace,
     admin: (statement) => succeeds('postgres', 'postgres', statement),
   }))

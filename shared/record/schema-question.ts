@@ -13,7 +13,7 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core'
-import { machine, project, spaceIdentity, tenantPolicies } from './schema.ts'
+import { machine, project, space, spaceIdentity, tenantPolicies } from './schema.ts'
 import { hubTask } from './schema-hub.ts'
 import { run } from './schema-run.ts'
 
@@ -99,12 +99,14 @@ export const questionNumberCounter = pgTable.withRLS(
   'question_number_counter',
   {
     id: uuid().primaryKey().default(sql`public.record_uuid_v7()`),
-    spaceId: spaceIdentity(),
+    counterSpaceId: uuid('counter_space_id')
+      .notNull()
+      .references(() => space.id, { onDelete: 'cascade' }),
     next: bigint({ mode: 'bigint' }).notNull(),
   },
   (table) => [
-    unique('question_number_counter_space_unique').on(table.spaceId),
-    ...tenantPolicies('question_number_counter', table.spaceId),
+    unique('question_number_counter_space_unique').on(table.counterSpaceId),
+    ...tenantPolicies('question_number_counter', table.counterSpaceId),
   ],
 )
 

@@ -22,12 +22,12 @@ type Tenant = { url: string } & TenantPrincipal
 
 async function allocateQuestionNumber(tx: SQL, spaceId: string): Promise<number> {
   const rows = (await tx`
-    INSERT INTO question_number_counter (space_id,next)
+    INSERT INTO question_number_counter (counter_space_id,next)
     VALUES (
       ${spaceId}::uuid,
       COALESCE((SELECT MAX(number)::bigint + 2 FROM question WHERE space_id=${spaceId}::uuid),2)
     )
-    ON CONFLICT (space_id) DO UPDATE SET next=GREATEST(
+    ON CONFLICT (counter_space_id) DO UPDATE SET next=GREATEST(
       question_number_counter.next,
       COALESCE((SELECT MAX(number)::bigint + 1 FROM question WHERE space_id=${spaceId}::uuid),1)
     ) + 1
