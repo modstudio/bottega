@@ -12,6 +12,7 @@ import type { LensProvenanceSubjectFacts } from './review-lens-provenance.ts'
 import { reviewLineage } from './review-lineage-store.ts'
 import { measureChangeIdentity } from './review-pins.ts'
 import type { ReviewRole } from './review-role.ts'
+import { sameChange } from './same-change.ts'
 import { resolveReviewBase } from './review-target.ts'
 import { diffNumstat } from './review-tier.ts'
 import type { ReviewTier } from './review-tier-classifier.ts'
@@ -20,6 +21,7 @@ export type ChangeGroup = {
   project: string
   branch: string
   patchId: string
+  zeroContextPatchId?: string
   pathSet: string[]
 }
 
@@ -31,6 +33,7 @@ export type TriageReviewRow = {
   tier: 0 | 1 | 2 | 3 | null
   role: ReviewRole
   patchId: string | null
+  zeroContextPatchId: string | null
   pathSet: string | null
   lensIdentities: readonly string[]
   lenses: readonly {
@@ -122,6 +125,7 @@ type StoredTriageReviewRow = {
   tier: 0 | 1 | 2 | 3 | null
   role: ReviewRole
   patch_id: string | null
+  zero_context_patch_id: string | null
   path_set: string | null
   lens_id: string
   run_record_id: string
@@ -187,6 +191,7 @@ export type MeasuredChangeGroup = {
 
 export type MeasuredReviewChange = {
   patchId: string
+  zeroContextPatchId: string
   pathSet: string[]
   base: string
   tier: ReviewTier
@@ -200,7 +205,7 @@ type ChangeGroupOperations = {
     cwd: string,
     base: string,
     tip: string,
-  ): { patchId: string; paths: string[]; message: string } | null
+  ): { patchId: string; zeroContextPatchId?: string; paths: string[]; message: string } | null
   reviewPlan(
     cwd: string,
     base: string,
@@ -253,6 +258,7 @@ export function measureReviewChange(
   const plan = operations.reviewPlan(cwd, base, tip, project.settings.review)
   return {
     patchId: identity.patchId,
+    zeroContextPatchId: identity.zeroContextPatchId ?? identity.patchId,
     pathSet: identity.paths,
     base,
     tier: plan.tier,
@@ -276,6 +282,7 @@ export function measureChangeGroup(
       project: project.name,
       branch,
       patchId: measured.patchId,
+      zeroContextPatchId: measured.zeroContextPatchId,
       pathSet: measured.pathSet,
     },
     base: measured.base,
@@ -286,8 +293,27 @@ export function measureChangeGroup(
 }
 
 /** A review belongs to a round when it measured that exact patch and path set. */
-export function reviewInRound(review: TriageReviewRow, patchId: string, pathSet: string): boolean {
-  return review.patchId === patchId && review.pathSet === pathSet
+export function reviewInRound(
+  review: TriageReviewRow,
+  patchId: string,
+  pathSet: string,
+  zeroContextPatchId?: string,
+): boolean {
+  return sameChange({
+    reviewed: {
+      patchId: review.patchId,
+      zeroContextPatchId: review.zeroContextPatchId,
+      paths: review.pathSet ? (JSON.parse(review.pathSet) as string[]) : [],
+      message: null,
+    },
+    current: {
+      patchId,
+      zeroContextPatchId: zeroContextPatchId ?? null,
+      paths: JSON.parse(pathSet) as string[],
+      message: null,
+    },
+    replay: null,
+  }).same
 }
 
 function reviewsForChangeGroup(
@@ -295,7 +321,9 @@ function reviewsForChangeGroup(
   group: ChangeGroup,
 ): TriageReviewRow[] {
   const pathSet = serializePathSet(group.pathSet)
-  return branchReviews.filter((review) => reviewInRound(review, group.patchId, pathSet))
+  return branchReviews.filter((review) =>
+    reviewInRound(review, group.patchId, pathSet, group.zeroContextPatchId),
+  )
 }
 
 export function reviewsForTriage(
@@ -366,7 +394,7 @@ function reviewsForBranch(
   const lineage = reviewLineage(database, project, branch)
   const rows = database
     .query<StoredTriageReviewRow, (string | null)[]>(
-      `SELECT r.record_id review_record_id,r.number review_number,r.recorded_at,r.completed_at,r.tier,r.role,r.patch_id,r.path_set,
+      `SELECT r.record_id review_record_id,r.number review_number,r.recorded_at,r.completed_at,r.tier,r.role,r.patch_id,r.zero_context_patch_id,r.path_set,
               rl.record_id lens_id,rl.run_record_id,rl.lens,rl.model,s.delivery,rl.reproduced,rl.coverage,rl.limits,rl.overlap,
               rl.task_text_input,rl.rulings_input,
               run.review_provenance,run.worktree,run.cwd,run.head_commit,
@@ -391,6 +419,7 @@ function reviewsForBranch(
       tier: row.tier,
       role: row.role,
       patchId: row.patch_id,
+      zeroContextPatchId: row.zero_context_patch_id,
       pathSet: row.path_set,
       lensIdentities: [],
       lenses: [],

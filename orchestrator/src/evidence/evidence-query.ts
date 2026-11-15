@@ -148,7 +148,10 @@ export function sameTaskSql(leftRun: string, rightRun: string): string {
 export function sameChangeSql(leftReview: string, rightReview: string): string {
   const left = sqlAlias(leftReview)
   const right = sqlAlias(rightReview)
-  return `${left}.patch_id IS ${right}.patch_id AND ${left}.path_set IS ${right}.path_set`
+  return `((${left}.zero_context_patch_id IS NOT NULL AND ${right}.zero_context_patch_id IS NOT NULL
+           AND ${left}.zero_context_patch_id IS ${right}.zero_context_patch_id)
+          OR (${left}.zero_context_patch_id IS NULL AND ${left}.patch_id IS ${right}.patch_id))
+        AND ${left}.path_set IS ${right}.path_set`
 }
 
 export function pairReasonSql(

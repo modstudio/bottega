@@ -659,8 +659,8 @@ export function recordReviews(
     const review = database
       .query(
         `INSERT INTO review (record_id, number, recorded_at, tier, tier_risk, tier_size, tier_insertions, tier_deletions, tier_reasons, tier_reason, project_record_id, role,
-                           patch_id, path_set, commit_message, round)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
+                           patch_id, zero_context_patch_id, path_set, commit_message, round)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
       )
       .get(
         newRecordId(),
@@ -676,6 +676,7 @@ export function recordReviews(
         projectRecordId,
         role,
         measured?.patchId ?? null,
+        measured?.zeroContextPatchId ?? null,
         pathSet,
         measured?.message ?? null,
         round,

@@ -79,6 +79,7 @@ function buildLandingOverrideRecordPayload(row: LocalRow, machineId: string, at:
     tip: row.tip,
     tree: row.tree,
     patchId: row.patch_id,
+    zeroContextPatchId: row.zero_context_patch_id,
     pathSet: json(row.path_set),
     reason: row.reason,
     attribution: row.attribution,
@@ -105,6 +106,7 @@ function buildLandingReviewCarryRecordPayload(row: LocalRow, machineId: string, 
     reviewedCommit: row.reviewed_commit,
     reviewedTree: row.reviewed_tree,
     patchId: row.patch_id,
+    zeroContextPatchId: row.zero_context_patch_id,
     oldBase: row.old_base,
     newBase: row.new_base,
     sessionId: row.session_id,
@@ -135,6 +137,7 @@ function buildLandingTriageSnapshotRecordPayload(row: LocalRow, machineId: strin
     prNumber: row.pr_number,
     reviewIds: reviewRecordIds,
     patchId: row.patch_id,
+    zeroContextPatchId: row.zero_context_patch_id,
     tier: row.tier,
     lensRounds: row.lens_rounds,
     findingCount: row.finding_count,
@@ -258,7 +261,7 @@ export function enqueueLandingOverride(database: Database, recordId: string, at 
   const row = database
     .query<LocalRow, [string]>(
       `SELECT landing_override.record_id,landing_override.branch,landing_override.tip,landing_override.tree,
-              landing_override.patch_id,landing_override.path_set,landing_override.reason,
+              landing_override.patch_id,landing_override.zero_context_patch_id,landing_override.path_set,landing_override.reason,
               landing_override.attribution,landing_override.missing_lenses,
               landing_override.session_id,landing_override.at,
               project.name AS project_name, project.record_id AS project_record_id FROM landing_override
@@ -278,7 +281,7 @@ export function enqueueLandingTriageSnapshot(
   const row = database
     .query<LocalRow, [string]>(
       `SELECT snapshot.record_id,snapshot.branch,snapshot.tip,snapshot.tree,snapshot.pr_number,
-              snapshot.review_record_ids,snapshot.patch_id,snapshot.tier,snapshot.lens_rounds,
+              snapshot.review_record_ids,snapshot.patch_id,snapshot.zero_context_patch_id,snapshot.tier,snapshot.lens_rounds,
               snapshot.finding_count,snapshot.admission_path,snapshot.override_record_id,snapshot.at,
               snapshot.read_record_id,snapshot.session_id,
               project.name AS project_name, project.record_id AS project_record_id
@@ -301,7 +304,7 @@ function enqueueLandingReviewCarry(database: Database, recordId: string, at = no
   const row = database
     .query<LocalRow, [string]>(
       `SELECT carry.record_id,carry.branch,carry.tip,carry.tree,carry.review_record_id,
-              carry.reviewed_commit,carry.reviewed_tree,carry.patch_id,carry.old_base,carry.new_base,
+              carry.reviewed_commit,carry.reviewed_tree,carry.patch_id,carry.zero_context_patch_id,carry.old_base,carry.new_base,
               carry.session_id,carry.at,project.name AS project_name, project.record_id AS project_record_id
        FROM landing_review_carry carry LEFT JOIN project ON project.record_id=carry.project_record_id
        WHERE carry.record_id=?`,

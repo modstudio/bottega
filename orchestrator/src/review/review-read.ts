@@ -150,8 +150,8 @@ export function recordArchitectRead(
         ]
       >(
         `INSERT INTO review_read
-          (record_id,project,project_record_id,branch,tip,patch_id,path_set,tier,note,session_id,recorded_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
+          (record_id,project,project_record_id,branch,tip,patch_id,zero_context_patch_id,path_set,tier,note,session_id,recorded_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
       )
       .get(
         newRecordId(),
@@ -160,6 +160,7 @@ export function recordArchitectRead(
         branch,
         tip,
         measured.group.patchId,
+        measured.group.zeroContextPatchId ?? null,
         serializePathSet(measured.group.pathSet),
         measured.tier.tier,
         note,

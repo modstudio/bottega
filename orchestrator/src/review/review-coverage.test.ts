@@ -81,6 +81,13 @@ describe('review coverage', () => {
         }
       }
       if (command === 'patch-id --stable') return result(true, 'patch-a tip')
+      if (
+        command ===
+        'diff -U0 --binary --no-ext-diff --no-color --no-renames --src-prefix=a/ --dst-prefix=b/ new-base..tip'
+      ) {
+        return { ...result(true), stdout: new TextEncoder().encode('unchanged branch patch') }
+      }
+      if (command === 'patch-id --verbatim') return result(true, 'zero-patch-a tip')
       if (command === 'diff --name-only new-base..tip -z') {
         return result(true, 'src/shared.ts\0')
       }

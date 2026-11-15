@@ -32,9 +32,9 @@ export function recordReviewFunnelDecision(input: {
     input.database
       .query(
         `INSERT INTO review_funnel_decision
-         (record_id,project_record_id,surface,task_key,branch,head_commit,patch_id,path_set,
+         (record_id,project_record_id,surface,task_key,branch,head_commit,patch_id,zero_context_patch_id,path_set,
           policy_version,mode,facts_digest,facts,stack,verdict,outcome,session_id,recorded_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .run(
         recordId,
@@ -44,6 +44,7 @@ export function recordReviewFunnelDecision(input: {
         input.facts.change.branch,
         input.facts.change.head,
         input.facts.change.patchId,
+        input.facts.change.zeroContextPatchId,
         input.facts.change.pathSet,
         input.verdict.policyVersion,
         input.verdict.mode,
@@ -71,6 +72,7 @@ export function recordReviewFunnelDecision(input: {
         branch: input.facts.change.branch,
         headCommit: input.facts.change.head,
         patchId: input.facts.change.patchId,
+        zeroContextPatchId: input.facts.change.zeroContextPatchId,
         pathSet: JSON.parse(input.facts.change.pathSet),
         policyVersion: input.verdict.policyVersion,
         mode: input.verdict.mode,

@@ -305,9 +305,9 @@ function insertOverride(
       ]
     >(
       `INSERT INTO landing_override
-         (record_id,project,project_record_id,branch,tip,tree,patch_id,path_set,reason,attribution,
+         (record_id,project,project_record_id,branch,tip,tree,patch_id,zero_context_patch_id,path_set,reason,attribution,
           missing_lenses,session_id,at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
     )
     .get(
       newRecordId(),
@@ -317,6 +317,7 @@ function insertOverride(
       change.tip,
       change.tree,
       change.group.patchId,
+      change.group.zeroContextPatchId ?? null,
       serializePathSet(change.group.pathSet),
       reason,
       attribution,
@@ -400,11 +401,12 @@ export function recordTriageIntent(
   const row = database
     .query(
       `INSERT INTO landing_triage_snapshot
-         (record_id,project,project_record_id,branch,tip,tree,pr_number,review_record_ids,patch_id,tier,
+         (record_id,project,project_record_id,branch,tip,tree,pr_number,review_record_ids,patch_id,zero_context_patch_id,tier,
           lens_rounds,finding_count,admission_path,read_record_id,override_record_id,session_id,at)
-       VALUES (?,?,?,?,?,?,NULL,?,?,?,?,?,?,?,?,?,?)
+       VALUES (?,?,?,?,?,?,NULL,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(project,branch,tip) DO UPDATE SET
          tree=excluded.tree,pr_number=NULL,review_record_ids=excluded.review_record_ids,patch_id=excluded.patch_id,
+         zero_context_patch_id=excluded.zero_context_patch_id,
          tier=excluded.tier,lens_rounds=excluded.lens_rounds,
          finding_count=excluded.finding_count,admission_path=excluded.admission_path,
          read_record_id=excluded.read_record_id,override_record_id=excluded.override_record_id,
@@ -420,6 +422,7 @@ export function recordTriageIntent(
       change.tree,
       JSON.stringify(decision.snapshot.reviewRecordIds),
       decision.snapshot.patchId,
+      change.group.zeroContextPatchId ?? null,
       decision.snapshot.tier,
       decision.snapshot.lensRounds,
       decision.snapshot.findingCount,

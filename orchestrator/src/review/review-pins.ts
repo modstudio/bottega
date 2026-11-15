@@ -3,7 +3,7 @@ import type { Database } from 'bun:sqlite'
 import { startBoundedSyncBytes } from '../../../shared/bounded-process.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { db, writableDb } from '../database/db.ts'
-import { changeIdentity } from './change-identity.ts'
+import { changeIdentity, zeroContextChangeIdentity } from './change-identity.ts'
 import type { CoverageGitRunner, ReviewChangeRange, RunRow } from './review-types.ts'
 
 export const targetGitEnvironment = (repo: string) =>
@@ -54,18 +54,25 @@ export function measureChangeIdentity(
   repo: string,
   from: string,
   to: string,
-): { patchId: string; paths: string[]; message: string } | null {
+): { patchId: string; zeroContextPatchId: string; paths: string[]; message: string } | null {
   const paths = git(repo, nulPathListArgs(['diff', '--name-only', `${from}..${to}`]))
   const message = git(repo, ['log', '--format=%B', `${from}..${to}`])
   if (!paths.ok) return null
   let patchId: string
+  let zeroContextPatchId: string
   try {
     patchId = changeIdentity((args, stdin) => git(repo, args, true, stdin), from, to)
+    zeroContextPatchId = zeroContextChangeIdentity(
+      (args, stdin) => git(repo, args, true, stdin),
+      from,
+      to,
+    )
   } catch {
     return null
   }
   return {
     patchId,
+    zeroContextPatchId,
     paths: splitNulPaths(paths.out).sort(),
     message: message.ok ? message.out : '',
   }

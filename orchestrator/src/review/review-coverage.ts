@@ -3,8 +3,9 @@ import type { Database } from 'bun:sqlite'
 import { startBoundedSyncBytes } from '../../../shared/bounded-process.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { db } from '../database/db.ts'
-import { changeIdentity } from './change-identity.ts'
+import { changeIdentity, zeroContextChangeIdentity } from './change-identity.ts'
 import { git, reviewGit, targetGitEnvironment } from './review-pins.ts'
+import { gatherSameChange } from './same-change-git.ts'
 import { reviewRemoteTrunkRefExists, reviewTrunkRef } from './review-target.ts'
 import type {
   CoverageGitResult,
@@ -161,26 +162,42 @@ export function reviewCoverageVerdict(
     }
   }
   const newBase = newBaseResult.out
-  const reviewedPatch = review.patchId || changeIdentity(runner, oldBase, reviewedCommit)
-  const candidatePatch = changeIdentity(runner, newBase, tip)
-  if (!reviewedPatch || reviewedPatch !== candidatePatch) {
-    return { kind: 'invalid', reason: 'patch-id differs', resolution: resolved.resolution }
-  }
   const candidatePaths = [...changedPaths(runner, newBase, tip)].sort()
   const reviewedPaths = review.pathSet
     ? (JSON.parse(review.pathSet) as string[])
     : [...changedPaths(runner, oldBase, reviewedCommit)].sort()
-  if (JSON.stringify(reviewedPaths) !== JSON.stringify(candidatePaths)) {
-    return { kind: 'invalid', reason: 'path set differs', resolution: resolved.resolution }
-  }
   const messageResult = runner(['log', '--format=%B', `${newBase}..${tip}`])
   const message = messageResult.ok ? messageResult.out : ''
+  const comparison = gatherSameChange({
+    runner,
+    reviewed: {
+      patchId: review.patchId ?? changeIdentity(runner, oldBase, reviewedCommit),
+      zeroContextPatchId: review.zeroContextPatchId ?? null,
+      paths: reviewedPaths,
+      message: review.commitMessage ?? null,
+    },
+    reviewedCommit,
+    oldBase,
+    current: { paths: candidatePaths, message },
+    tip,
+    tipTree: tree,
+    newBase,
+  })
+  if (!comparison.same) {
+    return {
+      kind: 'invalid',
+      reason: comparison.reason ?? 'change differs',
+      resolution: resolved.resolution,
+    }
+  }
+  const candidatePatch = changeIdentity(runner, newBase, tip)
+  const candidateZeroContextPatch = zeroContextChangeIdentity(runner, newBase, tip)
   return {
     kind: 'carried',
     class:
       review.commitMessage !== null &&
       review.commitMessage !== undefined &&
-      review.commitMessage !== message
+      comparison.messageChanged
         ? 'no-code-change'
         : 'trivial-rebase',
     resolution: resolved.resolution,
@@ -190,6 +207,7 @@ export function reviewCoverageVerdict(
     reviewedCommit,
     reviewedTree,
     patchId: candidatePatch,
+    zeroContextPatchId: candidateZeroContextPatch,
     oldBase,
     newBase,
   }

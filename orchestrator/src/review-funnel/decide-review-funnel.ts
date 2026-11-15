@@ -40,6 +40,7 @@ type ReviewFunnelChangeIdentity = {
   branch: string
   head: string
   patchId: string
+  zeroContextPatchId: string
   pathSet: string
   paths: string[]
 }
