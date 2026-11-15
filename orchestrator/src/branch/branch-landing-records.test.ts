@@ -5,6 +5,7 @@ import { landedTaskIdentities } from '../session/session-close-out-obligations.t
 import {
   readBranchLandingTaskRows,
   readLandedReviewIds,
+  readMergedBranchLandingTip,
   resolveBranchLandingTaskKey,
 } from './branch-landing-records.ts'
 
@@ -96,6 +97,22 @@ test('landed review ids include only other branches snapshots for merged pull re
     new Set(['review-merged-a', 'review-merged-b']),
   )
   expect(readLandedReviewIds(database, 'fixture', 'merged-branch')).toEqual(new Set())
+})
+
+test('merged branch landing tip returns the recorded tip', () => {
+  const { database } = fixture()
+  const projectId = database
+    .query<{ record_id: string }, []>("SELECT record_id FROM project WHERE name='fixture'")
+    .get()!.record_id
+  database
+    .query(
+      `INSERT INTO branch_landing_record
+       (record_id,project,project_record_id,branch,tip,pr_number,merge_commit,merged_at,recorded_at)
+       VALUES (?,'fixture',?,'branch','latest-tip',3,'merge','2026-11-15','2026-11-15')`,
+    )
+    .run(newRecordId(), projectId)
+
+  expect(readMergedBranchLandingTip(database, 'fixture', 'branch')).toBe('latest-tip')
 })
 
 test('landing key resolution honors run order and registered branch prefixes', () => {

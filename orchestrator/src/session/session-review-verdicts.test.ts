@@ -2,7 +2,41 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import type { WorkflowCursorListRow } from '../workflow/workflow-cursor-list.ts'
-import { sessionReviewVerdictLines } from './session-review-verdicts.ts'
+import {
+  landedBranchOwesNoReviewLine,
+  sessionReviewVerdictLines,
+} from './session-review-verdicts.ts'
+
+test('landed branch review-line decisions use commit identity and ancestry', () => {
+  expect(
+    landedBranchOwesNoReviewLine({
+      head: 'landed-tip',
+      tip: 'landed-tip',
+      headIsAncestorOfTip: false,
+    }),
+  ).toBeTrue()
+  expect(
+    landedBranchOwesNoReviewLine({
+      head: 'pre-rebase-head',
+      tip: 'landed-tip',
+      headIsAncestorOfTip: true,
+    }),
+  ).toBeTrue()
+  expect(
+    landedBranchOwesNoReviewLine({
+      head: null,
+      tip: 'landed-tip',
+      headIsAncestorOfTip: false,
+    }),
+  ).toBeTrue()
+  expect(
+    landedBranchOwesNoReviewLine({
+      head: 'post-merge-head',
+      tip: 'landed-tip',
+      headIsAncestorOfTip: false,
+    }),
+  ).toBeFalse()
+})
 
 test('cursor-claimed branches skip merged heads but gather commits made after the merge', () => {
   const database = migratedTestDatabase()
@@ -26,35 +60,36 @@ test('cursor-claimed branches skip merged heads but gather commits made after th
     project: 'fixture',
     args: JSON.stringify({ branch: 'DEV-2336-merged' }),
   } as WorkflowCursorListRow
-  let gathered = false
+  let gatherCount = 0
   const gather = () => {
-    gathered = true
+    gatherCount += 1
     return { branch: 'DEV-2336-merged', taskKey: 'DEV-2336', failure: 'gathered' }
   }
-
-  expect(
+  let identity = { head: 'recorded-tip' as string | null, headIsAncestorOfTip: false }
+  const lines = () =>
     sessionReviewVerdictLines(
       'session',
       [cursor],
       database,
       gather,
       () => true,
-      () => '2026-11-15T06:00:00-05:00',
-    ),
-  ).toEqual([])
-  expect(gathered).toBeFalse()
+      () => identity,
+    )
 
-  expect(
-    sessionReviewVerdictLines(
-      'session',
-      [cursor],
-      database,
-      gather,
-      () => true,
-      () => '2026-11-15T12:00:01Z',
-    ),
-  ).toHaveLength(1)
-  expect(gathered).toBeTrue()
+  expect(lines()).toEqual([])
+  expect(gatherCount).toBe(0)
+
+  identity = { head: 'pre-rebase-head', headIsAncestorOfTip: true }
+  expect(lines()).toEqual([])
+  expect(gatherCount).toBe(0)
+
+  identity = { head: null, headIsAncestorOfTip: false }
+  expect(lines()).toEqual([])
+  expect(gatherCount).toBe(0)
+
+  identity = { head: 'post-merge-head', headIsAncestorOfTip: false }
+  expect(lines()).toHaveLength(1)
+  expect(gatherCount).toBe(1)
   database.close()
 })
 
@@ -95,7 +130,6 @@ test('run-derived branches with a merged landing do not gather a review verdict'
         return { branch: 'DEV-2336-merged', taskKey: 'DEV-2336', failure: 'gathered' }
       },
       () => true,
-      () => '2026-11-15T13:00:00Z',
     ),
   ).toEqual([])
   expect(gathered).toBeFalse()
