@@ -8,12 +8,14 @@ import type { Database } from 'bun:sqlite'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { BoundExceededError, budgetForArgv } from '../../../shared/call-budgets.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { recordMergeBranchLandings } from '../branch/branch-landing-service.ts'
 import { enableSchemaReload, writableDb } from '../database/db.ts'
 import { passingGateForCommit } from '../gate/gate-passed.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { currentProjectRepository, type Project, projectAt } from '../project/projects.ts'
 import { shipToDepthRefusal } from '../release/ship-to-reach.ts'
+import type { TriageDecision } from '../review-funnel/review-funnel-admission-evidence.ts'
 import { type ShipCleanupReport, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import { matchWorkflowTreePath } from '../workflow/workflow-tree.ts'
 import type { AdmissionDecision } from './admission-decision.ts'
@@ -49,9 +51,9 @@ import {
   resolvePullRequestChange,
   triageRefusal,
 } from './pr-admission.ts'
-import type { TriageDecision } from '../review-funnel/review-funnel-admission-evidence.ts'
 
 type MergeAdmissionDecision = AdmissionDecision & { triage: TriageDecision }
+
 import { recordPullRequestCi } from './pr-ci-record.ts'
 import {
   type PullRequestMergeFacts,
@@ -838,7 +840,12 @@ export async function mergePullRequest(
   const release = project.settings.release
   if (!landingBranch || !release) {
     throw new Error(
-      `project ${project.name} has no landing branch and release policy; cleared by: ${PLATFORM_SLUG} project set ${project.name} --settings '<settings with trunk and release>'`,
+      renderRefusal(
+        refusal(`project ${project.name} has no landing branch and release policy`, {
+          kind: 'edit',
+          text: `${PLATFORM_SLUG} project set ${project.name} --settings '<settings with trunk and release>'`,
+        }),
+      ),
     )
   }
   const depthRefusal = shipToDepthRefusal(release.rungs, depth, project.name)

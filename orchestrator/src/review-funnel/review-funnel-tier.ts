@@ -2,7 +2,7 @@
 /** Owns tier classification plus the project declaration's applicable lenses. */
 
 import type { ReviewSettings } from '../project/project-injection.ts'
-import { applicableReview, type ApplicableReview } from '../review/review-applicability.ts'
+import { type ApplicableReview, applicableReview } from '../review/review-applicability.ts'
 import {
   classifyReviewTier,
   type ReviewTier,

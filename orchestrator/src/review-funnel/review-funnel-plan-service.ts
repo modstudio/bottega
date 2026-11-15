@@ -10,8 +10,12 @@ import {
   type ReviewFunnelPlan,
   selectReviewApplicability,
 } from '../review/review-applicability.ts'
-import { type ChangeGroup, reviewsForTriage, serializePathSet } from '../review/review-group.ts'
-import { provenanceSubjectFacts } from '../review/review-group.ts'
+import {
+  type ChangeGroup,
+  provenanceSubjectFacts,
+  reviewsForTriage,
+  serializePathSet,
+} from '../review/review-group.ts'
 import { lensProvenanceSubject } from '../review/review-lens-provenance.ts'
 import { measureChangeIdentity } from '../review/review-pins.ts'
 import {
@@ -78,8 +82,8 @@ export function reviewBudgetForChange(
   branch: string,
   currentIdentity: string | null,
 ) {
-  const rows = eligibleReviewRoundRows(database, undefined, { project, branch }).filter((row) =>
-    lensProvenanceSubject(provenanceSubjectFacts(row)).admissible,
+  const rows = eligibleReviewRoundRows(database, undefined, { project, branch }).filter(
+    (row) => lensProvenanceSubject(provenanceSubjectFacts(row)).admissible,
   )
   const identities = new Set(
     rows.flatMap((row) => {

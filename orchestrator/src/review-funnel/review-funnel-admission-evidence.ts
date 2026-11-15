@@ -538,8 +538,14 @@ function incompleteTriageDecision(input: {
   newlyTouchedPathsByLens: Readonly<Record<string, string[]>>
   completedLensesOnBranch: readonly string[]
 }): Exclude<TriageDecision, { complete: true }> {
-  const { current, branchCoverage, exactRead, finalTierRaised, hasCompletedBranchReview, hasFunnelPlan } =
-    input
+  const {
+    current,
+    branchCoverage,
+    exactRead,
+    finalTierRaised,
+    hasCompletedBranchReview,
+    hasFunnelPlan,
+  } = input
   const earlierRound = branchCoverage.round
   const emptyGaps: ReviewGaps = {
     missingLenses: [],

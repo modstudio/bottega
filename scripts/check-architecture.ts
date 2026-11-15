@@ -23,6 +23,7 @@ import {
   hubViewsDocsModeLiteralLines,
   hubViewsDocsModeLiteralRuleName,
 } from './architecture-hub-data.ts'
+import { reviewFunnelPrivateDecisionImports } from './architecture-review-boundaries.ts'
 import {
   duplicateImportBoundaryNameViolations,
   missingTypeOnlyImportBoundaryViolations,
@@ -137,6 +138,16 @@ for (const root of [...CONCERNS, 'shared']) {
       if (declaration && declaration.importer !== file) {
         violations.push(
           `${file}: ${imported.name} from ${source} is private to ${declaration.importer}`,
+        )
+      }
+      const funnelDecision = reviewFunnelPrivateDecisionImports.find(
+        (entry) =>
+          (entry.source === source || entry.source === `${source}.ts`) &&
+          entry.name === imported.name,
+      )
+      if (funnelDecision && !file.startsWith('orchestrator/src/review-funnel/')) {
+        violations.push(
+          `${file}: ${imported.name} from ${source} is private to orchestrator/src/review-funnel/`,
         )
       }
     }

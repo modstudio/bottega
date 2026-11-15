@@ -2,11 +2,12 @@ import { fileURLToPath } from 'node:url'
 import { db } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
 import type { RequiredReleaseReport } from '../release/release-required.ts'
+import type { TriageDecision } from '../review-funnel/review-funnel-admission-evidence.ts'
 import type { ShipCleanupReport } from '../ship-cleanup/ship-cleanup.ts'
 import type { AdmissionDecision } from './admission-decision.ts'
-import type { TriageDecision } from './triage-decision.ts'
 
 type FixtureAdmissionDecision = AdmissionDecision & { triage: TriageDecision }
+
 import type { PullRequestCheck } from './merge-decision.ts'
 import type { PullRequestChange } from './pr-admission.ts'
 import type { PullRequestMergeAdapter, PullRequestMergeFacts } from './pr-merge.ts'

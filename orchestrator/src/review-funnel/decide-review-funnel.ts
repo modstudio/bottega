@@ -3,7 +3,6 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ReviewSettings } from '../project/project-injection.ts'
-import { ceilingWaivableGaps } from './review-funnel-admission-evidence.ts'
 import {
   applicableReview,
   isDecisionConformanceNotAdmittedReason,
@@ -27,6 +26,7 @@ import {
   type ReviewLensOwedReason,
   type ReviewLensSelectionReason,
 } from '../review/review-vocabulary.ts'
+import { ceilingWaivableGaps } from './review-funnel-admission-evidence.ts'
 import type { ReviewFunnelLensStatus } from './review-funnel-lens-status.ts'
 import type { ReviewFunnelPolicy, ReviewFunnelPolicyMode } from './review-funnel-policy.ts'
 

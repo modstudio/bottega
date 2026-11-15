@@ -5,6 +5,7 @@ import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { BoundExceededError, budgetForArgv, CALL_BUDGETS } from '../../../shared/call-budgets.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
@@ -14,7 +15,6 @@ import type { ApplicableReview, ReviewFunnelPlan } from '../review/review-applic
 import { type ChangeGroup, measureChangeGroup, serializePathSet } from '../review/review-group.ts'
 import { gatherPostFixReviewFacts, postFixReviewDecision } from '../review/review-post-fix.ts'
 import type { ReviewRoundBudgetDecision } from '../review/review-round-budget.ts'
-import { budgetedRoundApplicabilityForChange } from '../review/review-round-lens-service.ts'
 import { reviewRemoteTrunkRefExists, reviewTrunkRef } from '../review/review-target.ts'
 import {
   decideReviewFunnel,
@@ -35,6 +35,7 @@ import {
   type ReviewFunnelDecisionSurface,
   recordReviewFunnelDecision,
 } from '../review-funnel/review-funnel-decision-log.ts'
+import { budgetedRoundApplicabilityForChange } from '../review-funnel/review-funnel-plan-service.ts'
 import { activeReviewFunnelPolicy } from '../review-funnel/review-funnel-policy.ts'
 import {
   type AdmissionDecision,
@@ -187,6 +188,10 @@ function funnelVerdict(change: PullRequestChange, database: Database) {
     facts,
     verdict: decideReviewFunnel(facts, active.policy, active.policyVersion),
   }
+}
+
+function funnelRefusal(condition: string, verdict: ReviewFunnelVerdict): string {
+  return renderRefusal(refusal(condition, { kind: 'edit', text: verdict.remedy }))
 }
 
 /** The one admission evaluation used by create, merge, and pre-push. */
@@ -613,7 +618,10 @@ export function createPullRequest(
     if (!checkedAdmission.complete) {
       throw new Error(
         checkedAdmission.triage.complete
-          ? `refusing pull request for ${change.branch} at ${change.tip}: review funnel requires ${checkedAdmission.verdict.next.action}; cleared by: ${checkedAdmission.verdict.remedy}`
+          ? funnelRefusal(
+              `refusing pull request for ${change.branch} at ${change.tip}: review funnel requires ${checkedAdmission.verdict.next.action}`,
+              checkedAdmission.verdict,
+            )
           : triageRefusal(change, checkedAdmission.triage),
       )
     }
@@ -721,7 +729,7 @@ export function checkPushedTip(cwd: string, sha: string, remoteRef: string): Pus
       infrastructureError: null,
       refusal: !policy.admit
         ? checked.triage.complete
-          ? `review funnel requires ${checked.verdict.next.action}; cleared by: ${checked.verdict.remedy}`
+          ? funnelRefusal(`review funnel requires ${checked.verdict.next.action}`, checked.verdict)
           : triageRefusal(change, checked.triage)
         : null,
       pendingIntent: pendingIntent(database, project.name, branch),

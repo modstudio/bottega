@@ -9,9 +9,9 @@ import {
   migratedTestDatabase,
   prepareMigrationTestDatabases,
 } from '../database/test-database.fixture.ts'
-import { decideTriage } from '../pull-request/triage-decision.ts'
-import type { ReviewPlan } from '../review-funnel/review-funnel-tier.ts'
+import { decideTriage } from '../review-funnel/review-funnel-admission-evidence.ts'
 import { reviewBudgetForChange as reviewBudgetForBranch } from '../review-funnel/review-funnel-plan-service.ts'
+import type { ReviewPlan } from '../review-funnel/review-funnel-tier.ts'
 import {
   canonicalTreePair,
   measureChangeGroup,

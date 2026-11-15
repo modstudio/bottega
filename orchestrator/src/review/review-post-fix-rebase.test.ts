@@ -1,5 +1,8 @@
 import { expect, test } from 'bun:test'
-import { decideTriage, type TriageEvidence } from '../pull-request/triage-decision.ts'
+import {
+  decideTriage,
+  type TriageEvidence,
+} from '../review-funnel/review-funnel-admission-evidence.ts'
 import {
   type PerPathPatch,
   postFixReviewDecision,

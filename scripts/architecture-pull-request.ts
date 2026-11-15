@@ -9,6 +9,7 @@ export const pullRequestModuleSpecs = [
       'node:url',
       '../database/db.ts',
       '../project/projects.ts',
+      '../review-funnel/review-funnel-admission-evidence.ts',
       '../release/release-required.ts',
       '../ship-cleanup/ship-cleanup.ts',
       './admission-decision.ts',
@@ -20,6 +21,7 @@ export const pullRequestModuleSpecs = [
       './pr-post-landing.ts',
     ],
     typeOnlyAllowed: [
+      '../review-funnel/review-funnel-admission-evidence.ts',
       '../release/release-required.ts',
       '../ship-cleanup/ship-cleanup.ts',
       './admission-decision.ts',
@@ -80,10 +82,6 @@ export const pullRequestModuleSpecs = [
     file: 'orchestrator/src/pull-request/pr-merge-evidence.ts',
     allowed: ['bun:sqlite', '../../../shared/brand.ts', './pr-admission.ts', './pr-ci-record.ts'],
   },
-  {
-    file: 'orchestrator/src/pull-request/triage-decision.ts',
-    allowed: ['../review-funnel/review-funnel-admission-evidence.ts'],
-  },
   { file: 'orchestrator/src/pull-request/pre-push-decision.ts', allowed: [] },
   { file: 'orchestrator/src/pull-request/mergeability-decision.ts', allowed: [] },
   {
@@ -103,11 +101,7 @@ export const pullRequestModuleSpecs = [
   {
     file: 'orchestrator/src/pull-request/admission-decision.ts',
     allowed: ['../review-funnel/decide-review-funnel.ts', './override-decision.ts'],
-    typeOnlyAllowed: [
-      '../review-funnel/decide-review-funnel.ts',
-      './override-decision.ts',
-      './triage-decision.ts',
-    ],
+    typeOnlyAllowed: ['../review-funnel/decide-review-funnel.ts', './override-decision.ts'],
   },
   {
     file: 'orchestrator/src/pull-request/pr-admission.ts',
@@ -117,6 +111,7 @@ export const pullRequestModuleSpecs = [
       '../../../shared/call-budgets.ts',
       'bun:sqlite',
       '../../../shared/record/schema.ts',
+      '../../../shared/refusal.ts',
       '../../../shared/secret-shaped.ts',
       '../database/db.ts',
       '../git/git-environment.ts',
@@ -132,7 +127,7 @@ export const pullRequestModuleSpecs = [
       '../review/review-lineage-store.ts',
       '../review/review-post-fix.ts',
       '../review/review-round-budget.ts',
-      '../review/review-round-lens-service.ts',
+      '../review-funnel/review-funnel-plan-service.ts',
       '../review/review-target.ts',
       './admission-decision.ts',
       './create-outcome-decision.ts',

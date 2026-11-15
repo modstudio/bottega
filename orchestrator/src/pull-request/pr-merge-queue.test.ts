@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
+import type { TriageDecision } from '../review-funnel/review-funnel-admission-evidence.ts'
 import type { PullRequestCheck } from './merge-decision.ts'
 import {
   MERGE_QUEUE_DEQUEUE_CONFIRM_MS,
@@ -11,7 +12,6 @@ import {
   type MergeQueueObservation,
 } from './merge-queue-decision.ts'
 import type { PullRequestChange } from './pr-admission.ts'
-import type { TriageDecision } from './triage-decision.ts'
 import {
   mergePullRequest,
   type PullRequestMergeAdapter,

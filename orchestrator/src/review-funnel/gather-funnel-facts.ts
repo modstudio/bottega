@@ -4,8 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { readLandedReviewIds } from '../branch/branch-landing-records.ts'
 import type { Project } from '../project/projects.ts'
-import type { AdmissionOverride } from '../pull-request/admission-decision.ts'
-import type { TriageOverrideAttribution } from '../pull-request/override-decision.ts'
+import type { ApplicableReview, ReviewFunnelPlan } from '../review/review-applicability.ts'
 import {
   branchRunOwnerSession,
   type ChangeGroup,
@@ -57,9 +56,9 @@ export type ReviewFunnelChange = {
   project: Project
   resolved?: {
     tier: 0 | 1 | 2 | 3
-    applicability: import('../review/review-applicability.ts').ApplicableReview
-    reviewPlan?: import('../review/review-applicability.ts').ReviewFunnelPlan
-    group: import('../review/review-group.ts').ChangeGroup
+    applicability: ApplicableReview
+    reviewPlan?: ReviewFunnelPlan
+    group: ChangeGroup
   }
 }
 
@@ -113,7 +112,18 @@ export function readLandingOverridesForBranch(
   database: Database,
   project: string,
   branch: string,
-): AdmissionOverride[] {
+): Array<{
+  recordId: string
+  project: string
+  branch: string
+  tip: string
+  tree: string
+  patchId: string | null
+  pathSet: string | null
+  attribution: 'operator' | 'architect-ceiling'
+  reason: string
+  missingLenses: string[]
+}> {
   return database
     .query<
       {
@@ -124,7 +134,7 @@ export function readLandingOverridesForBranch(
         tree: string
         patchId: string | null
         pathSet: string | null
-        attribution: TriageOverrideAttribution
+        attribution: 'operator' | 'architect-ceiling'
         reason: string
         missingLenses: string
       },

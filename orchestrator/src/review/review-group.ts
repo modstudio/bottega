@@ -6,13 +6,8 @@ import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { ReviewLensInputStatus } from '../database/review-lens-input-artifact.ts'
 import type { Project } from '../project/projects.ts'
-import {
-  applicableReviewForChange,
-  type ReviewPlan,
-} from '../review-funnel/review-funnel-tier.ts'
-import {
-  type ApplicableReview,
-} from './review-applicability.ts'
+import { applicableReviewForChange, type ReviewPlan } from '../review-funnel/review-funnel-tier.ts'
+import type { ApplicableReview } from './review-applicability.ts'
 import type { LensProvenanceSubjectFacts } from './review-lens-provenance.ts'
 import { reviewLineage } from './review-lineage-store.ts'
 import { measureChangeIdentity } from './review-pins.ts'

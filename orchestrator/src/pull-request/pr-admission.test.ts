@@ -4,6 +4,11 @@ import { db } from '../database/db.ts'
 import { reviewRoundBudgetDecision } from '../review/review-round-budget.ts'
 import { applicableRoundLensPlan } from '../review/review-round-lens-plan.ts'
 import {
+  decideTriage,
+  type TriageDecision,
+  type TriageEvidence,
+} from '../review-funnel/review-funnel-admission-evidence.ts'
+import {
   createPullRequest,
   finalizeTriageIntent,
   type PullRequestChange,
@@ -12,7 +17,6 @@ import {
   recordTriageOverrideForChange,
   triageRefusal,
 } from './pr-admission.ts'
-import { decideTriage, type TriageDecision, type TriageEvidence } from './triage-decision.ts'
 
 const ceilingChange = {
   project: { name: 'ceiling-fixture' },

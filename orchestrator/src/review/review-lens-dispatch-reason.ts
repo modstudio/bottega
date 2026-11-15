@@ -3,8 +3,8 @@
 
 import { db } from '../database/db.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
+import { budgetedReviewPlanForResolvedChange } from '../review-funnel/review-funnel-plan-service.ts'
 import { isDecisionConformanceNotAdmittedReason } from './review-applicability.ts'
-import { budgetedReviewPlanForResolvedChange } from './review-round-lens-service.ts'
 import { type ResolvedReviewTarget, resolveReviewTarget } from './review-target.ts'
 import type { ReviewLensSelectionReason } from './review-vocabulary.ts'
 

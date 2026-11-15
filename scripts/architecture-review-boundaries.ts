@@ -6,6 +6,29 @@ export type ReviewBoundarySpec = {
   typeOnlyAllowed?: string[]
 }
 
+/** Decision constructors that production callers may import only through review-funnel. */
+export const reviewFunnelPrivateDecisionImports = [
+  { source: 'orchestrator/src/review/review-tier-classifier.ts', name: 'classifyReviewTier' },
+  {
+    source: 'orchestrator/src/review/review-round-budget.ts',
+    name: 'reviewRoundBudgetDecision',
+  },
+  { source: 'orchestrator/src/review/review-round-lens-plan.ts', name: 'roundLensPlan' },
+  {
+    source: 'orchestrator/src/review/review-round-lens-plan.ts',
+    name: 'reviewRoundForBudget',
+  },
+  { source: 'orchestrator/src/review/review-round-lens-plan.ts', name: 'roundLensFacts' },
+  {
+    source: 'orchestrator/src/review/review-round-lens-plan.ts',
+    name: 'applicableRoundLensPlan',
+  },
+  {
+    source: 'orchestrator/src/review/review-round-lens-plan.ts',
+    name: 'reviewPlanForBudget',
+  },
+] as const
+
 export const reviewModuleSpecs = [
   {
     file: 'orchestrator/src/review-funnel/review-funnel-lens-status.ts',
@@ -62,10 +85,12 @@ export const reviewModuleSpecs = [
     allowed: [
       '../review/review-applicability.ts',
       '../review/review-group.ts',
+      '../review/review-lens-provenance.ts',
       '../review/review-pins.ts',
       '../review/review-post-fix.ts',
       '../review/review-round-budget.ts',
       '../review/review-round-lens-plan.ts',
+      '../review/review-round-identity.ts',
       '../review/review-target.ts',
       '../review/review-tier-service.ts',
     ],
@@ -86,6 +111,7 @@ export const reviewModuleSpecs = [
       '../review/review-round-identity.ts',
       '../review/review-target.ts',
       '../review/review-tier.ts',
+      './review-funnel-plan-service.ts',
     ],
     typeOnlyAllowed: [
       'bun:sqlite',
@@ -115,6 +141,7 @@ export const reviewModuleSpecs = [
       'node:crypto',
       '../../../shared/record/schema.ts',
       '../../../shared/record-id.ts',
+      '../../../shared/refusal.ts',
       '../database/db.ts',
       '../record/machine-identity.ts',
       '../record/outbox-enqueue.ts',
@@ -190,7 +217,7 @@ export const reviewModuleSpecs = [
       './review-applicability.ts',
       './review-pins.ts',
       './review-post-fix.ts',
-      './review-round-lens-service.ts',
+      '../review-funnel/review-funnel-plan-service.ts',
       './review-target.ts',
       './review-tier-service.ts',
     ],
@@ -210,10 +237,6 @@ export const reviewModuleSpecs = [
       './review-round-budget.ts',
       './review-vocabulary.ts',
     ],
-  },
-  {
-    file: 'orchestrator/src/review/review-round-lens-service.ts',
-    allowed: ['../review-funnel/review-funnel-plan-service.ts'],
   },
   {
     file: 'orchestrator/src/review/review-yield.ts',
@@ -357,6 +380,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../review/review-round-identity.ts',
       '../review/review-target.ts',
       '../review/review-tier.ts',
+      './review-funnel-plan-service.ts',
     ],
     typeOnlyAllowed: [
       'bun:sqlite',
@@ -572,7 +596,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       './review-post-fix.ts',
       './review-round-budget.ts',
       './review-round-lens-plan.ts',
-      './review-round-lens-service.ts',
+      '../review-funnel/review-funnel-plan-service.ts',
       './review-target.ts',
       './review-tier.ts',
       './review-tier-service.ts',
@@ -638,12 +662,6 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       './review-vocabulary.ts',
     ],
     reason: 'Keep round lens selection independent of stores, repositories, processes, and clocks.',
-  },
-  {
-    name: 'review-round-lens-service-boundary',
-    file: 'orchestrator/src/review/review-round-lens-service.ts',
-    allowed: ['../review-funnel/review-funnel-plan-service.ts'],
-    reason: 'Keep the old import path as a compatibility-only pointer into the funnel owner.',
   },
   {
     name: 'review-round-budget-boundary',

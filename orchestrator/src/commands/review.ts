@@ -2,6 +2,7 @@
 /** Registers review and confinement adapters. Must not own their behavior. */
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { clearConfinement } from '../confinement/confinement-ruling.ts'
@@ -92,7 +93,15 @@ function tierReviewCliCommand(argv: string[], flags: CliFlags, { log }: ReviewPr
     : verdict.next.action === 'ask-ceiling-ruling'
       ? `review round ceiling reached: ${verdict.remedy}`
       : verdict.next.action === 'record-read' && creditsCeilingWork
-        ? `review round ceiling reached: the architect rules after reading this exact change; cleared by: ${verdict.remedy}`
+        ? renderRefusal(
+            refusal(
+              'review round ceiling reached: the architect rules after reading this exact change',
+              {
+                kind: 'edit',
+                text: verdict.remedy,
+              },
+            ),
+          )
         : null
   printReviewTier(result.output, json, ceilingGuidance, log)
 }

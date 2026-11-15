@@ -3,13 +3,13 @@ import { expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { db } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
+import type { TriageDecision } from '../review-funnel/review-funnel-admission-evidence.ts'
 import { type PullRequestChange, recordTriageOverrideForChange } from './pr-admission.ts'
 import {
   mergePullRequest,
   type PullRequestMergeAdapter,
   type PullRequestMergeFacts,
 } from './pr-merge.ts'
-import type { TriageDecision } from './triage-decision.ts'
 
 const cwd = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 const recordedHead = 'recorded-head'

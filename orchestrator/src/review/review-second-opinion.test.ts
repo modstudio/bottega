@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { decideSecondOpinion } from '../pull-request/triage-decision.ts'
+import { decideSecondOpinion } from '../review-funnel/review-funnel-admission-evidence.ts'
 import type { TriageReviewRow } from './review-group.ts'
 import { identifySecondOpinionRun, type SecondOpinionRun } from './review-second-opinion.ts'
 
