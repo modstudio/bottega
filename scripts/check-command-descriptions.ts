@@ -17,7 +17,10 @@ const REGENERATE_COMMAND = 'bun scripts/check-command-descriptions.ts --write-ba
 export type CommandRegistration = {
   declaration: string
   parentPath: string
+  owner?: keyof CommandPrograms
 }
+
+type RecordedCommandRegistration = CommandRegistration & { root: Command }
 
 function commandPath(command: Command): string {
   const names: string[] = []
@@ -29,11 +32,13 @@ function commandPath(command: Command): string {
 
 export async function recordCommandRegistrations<T>(
   build: () => T | Promise<T>,
-): Promise<{ registrations: CommandRegistration[]; value: T }> {
-  const registrations: CommandRegistration[] = []
+): Promise<{ registrations: RecordedCommandRegistration[]; value: T }> {
+  const registrations: RecordedCommandRegistration[] = []
   const original = Command.prototype.command
   Command.prototype.command = function (this: Command, declaration: string, ...rest: unknown[]) {
-    registrations.push({ declaration, parentPath: commandPath(this) })
+    let root = this
+    while (root.parent) root = root.parent
+    registrations.push({ declaration, parentPath: commandPath(this), root })
     return (original as (...values: unknown[]) => Command).apply(this, [declaration, ...rest])
   } as typeof Command.prototype.command
   try {
@@ -48,11 +53,6 @@ const commandArgumentToken = /^(?:<[^<>]+>|\[[^[\]]+\])$/
 export function commandRegistrationFailures(
   registrations: readonly CommandRegistration[],
 ): string[] {
-  if (registrations.length === 0) {
-    return [
-      'command registration check recorded zero commands; the program builders were not inspected',
-    ]
-  }
   return registrations
     .flatMap(({ declaration, parentPath }) => {
       const tokens = declaration.trim().split(/\s+/)
@@ -70,7 +70,19 @@ export function commandRegistrationFailures(
     .sort()
 }
 
-export async function buildCommandPrograms(): Promise<{
+export function commandRegistrationCaptureFailures(
+  registrations: readonly CommandRegistration[],
+): string[] {
+  return (['orch', 'hub'] as const).flatMap((owner) =>
+    registrations.some((registration) => registration.owner === owner)
+      ? []
+      : [
+          `command registration check recorded no commands under the ${owner} program root; its builder may have loaded before registration capture`,
+        ],
+  )
+}
+
+async function buildCommandPrograms(): Promise<{
   programs: CommandPrograms
   registrations: CommandRegistration[]
 }> {
@@ -81,7 +93,15 @@ export async function buildCommandPrograms(): Promise<{
     ])
     return { orch, hub } as const
   })
-  return { programs: value, registrations }
+  return {
+    programs: value,
+    registrations: registrations.map(({ root, ...registration }) => ({
+      ...registration,
+      owner: (Object.entries(value) as [keyof CommandPrograms, Command][]).find(
+        ([, program]) => program === root,
+      )?.[0],
+    })),
+  }
 }
 
 function currentInventory(programs: CommandPrograms) {
@@ -141,7 +161,10 @@ function checkBaseline(programs: CommandPrograms, registrationCount: number): bo
 }
 
 function checkCommandRegistrations(registrations: readonly CommandRegistration[]): boolean {
-  const failures = commandRegistrationFailures(registrations)
+  const failures = [
+    ...commandRegistrationCaptureFailures(registrations),
+    ...commandRegistrationFailures(registrations),
+  ]
   if (failures.length === 0) return true
   console.error('command declaration check failed:')
   for (const failure of failures) console.error(`- ${failure}`)

@@ -3,7 +3,7 @@ import { Command } from 'commander'
 import type { CommandRoute } from '../cli/routes.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import {
-  buildCommandPrograms,
+  commandRegistrationCaptureFailures,
   commandRegistrationFailures,
   recordCommandRegistrations,
 } from './check-command-descriptions.ts'
@@ -30,15 +30,20 @@ test('registered bare command words are rejected while bracketed arguments are a
 })
 
 test('an empty command registration walk is refused', () => {
-  expect(commandRegistrationFailures([])).toEqual([
-    'command registration check recorded zero commands; the program builders were not inspected',
+  const [firstOwner, secondOwner] = Object.keys(programs())
+  expect(commandRegistrationCaptureFailures([])).toEqual([
+    `command registration check recorded no commands under the ${firstOwner} program root; its builder may have loaded before registration capture`,
+    `command registration check recorded no commands under the ${secondOwner} program root; its builder may have loaded before registration capture`,
   ])
 })
 
-test('the real command builders contain no bare command words', async () => {
-  const { registrations } = await buildCommandPrograms()
-  expect(registrations.length).toBeGreaterThan(0)
-  expect(commandRegistrationFailures(registrations)).toEqual([])
+test('a partial command registration walk names the missing program root', () => {
+  const owner = Object.keys(programs())[0] as keyof ReturnType<typeof programs>
+  expect(
+    commandRegistrationCaptureFailures([{ declaration: 'status', parentPath: '', owner }]),
+  ).toEqual([
+    `command registration check recorded no commands under the ${Object.keys(programs())[1]} program root; its builder may have loaded before registration capture`,
+  ])
 })
 
 function programs() {
