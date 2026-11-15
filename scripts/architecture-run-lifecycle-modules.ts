@@ -192,7 +192,9 @@ export const runLifecycleModules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/run/run-artifact-limits.ts', []),
   module('orchestrator/src/run/run-context-profile.ts', ['bun:sqlite']),
-  module('orchestrator/src/run/question-inbox-group.ts', []),
+  module('orchestrator/src/run/question-inbox-group.ts', [
+    '../../../shared/question-vocabulary.ts',
+  ]),
   module('orchestrator/src/run/question-inbox-counts.ts', [
     'bun:sqlite',
     '../database/db.ts',

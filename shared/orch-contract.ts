@@ -8,6 +8,7 @@ import {
   ASKED_VIA_VALUES,
   QUESTION_DELIVERY_MODE_VALUES,
   QUESTION_DELIVERY_OUTCOME_VALUES,
+  QUESTION_INBOX_GROUP_VALUES,
 } from './question-vocabulary.ts'
 import {
   refuseHubActionOverrides,
@@ -160,7 +161,7 @@ const OpenQuestionSchema = z
     session_live: z.literal(true).nullable(),
     session_liveness: z.enum(['live', 'unknown']),
     can_answer: z.boolean(),
-    group: z.enum(['worker', 'user', 'foreign', 'unowned']),
+    group: z.enum(QUESTION_INBOX_GROUP_VALUES),
     question: z.string(),
     options: z.array(z.string()),
     recommendation: z.string().nullable(),

@@ -349,6 +349,18 @@ def _withheld_board_notice(count):
     )
 
 
+def _inbox_notices(inbox_decision):
+    notices = []
+    if inbox_decision.worker:
+        noun = "question" if inbox_decision.worker == 1 else "questions"
+        notices.append(f"{inbox_decision.worker} worker {noun} for this session.")
+    if inbox_decision.user:
+        notices.append(
+            f"{inbox_decision.user} waiting on you (bottega question inbox)."
+        )
+    return notices
+
+
 def _emitted_board_ids(output, board_text, board_ids):
     emitted_context = (
         output.get("hookSpecificOutput", {}).get("additionalContext", "")
@@ -804,13 +816,7 @@ def main() -> int:
         )
         if settings_notice:
             notices.append(settings_notice)
-        if inbox_decision and inbox_decision.worker:
-            noun = "question" if inbox_decision.worker == 1 else "questions"
-            message = f"{inbox_decision.worker} worker {noun} for this session."
-            notices.append(message)
-            inbox_lines.append(message)
-        if inbox_decision and inbox_decision.user:
-            message = f"{inbox_decision.user} waiting on you (bottega question inbox)."
+        for message in _inbox_notices(inbox_decision) if inbox_decision else []:
             notices.append(message)
             inbox_lines.append(message)
         if waiting_issues:

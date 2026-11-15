@@ -2,9 +2,12 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
+import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import {
   type ContextBrief,
+  contextBrief,
   holderSequence,
   renderContextBrief,
   selectBriefInFlight,
@@ -191,6 +194,42 @@ test('renders each non-empty inbox group and reports inbox read failure', () => 
   )
   expect(renderContextBrief({ ...base, waiting: { ...base.waiting, questions: null } })).toContain(
     `could not read question inbox (${PLATFORM_SLUG} question inbox --all --active)`,
+  )
+})
+
+test('contextBrief carries question groups into the waiting segment', async () => {
+  const session = 'context-brief-question-session'
+  db()
+    .query(
+      `INSERT INTO project (record_id,name,path,stack,settings)
+       VALUES (?,?,'/different-project','bun',
+               '{"tracker":{"protocol":"hub"},"docs":{"protocol":"orch-docs"},"gate":"bun run check"}')`,
+    )
+    .run(newRecordId(), PLATFORM_SLUG)
+  new Database(process.env.BOTTEGA_HUB_DB!, { create: true }).close()
+  const migration = Bun.spawnSync([...bottegaEntryArgv(PLATFORM_SLUG), 'machine', 'migrate'], {
+    env: { ...process.env, NODE_ENV: 'production' },
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  expect(migration.exitCode, migration.stderr.toString()).toBe(0)
+  const run = addRun({ agent: 'codex', job: 'implement', status: 'asking', session })
+  db()
+    .query(
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),?,?,?,'Which?')`,
+    )
+    .run(newRecordId(), run, new Date().toISOString())
+
+  const nodeEnvironment = process.env.NODE_ENV
+  process.env.NODE_ENV = 'production'
+  const brief = await contextBrief(session, '/unregistered', db()).finally(() => {
+    if (nodeEnvironment === undefined) delete process.env.NODE_ENV
+    else process.env.NODE_ENV = nodeEnvironment
+  })
+
+  expect(renderContextBrief(brief)).toContain(
+    `1 worker question (${PLATFORM_SLUG} question inbox --all --active)`,
   )
 })
 

@@ -8,12 +8,11 @@
 # whether it needs a wake or is genuinely waiting. That ambiguity is the whole
 # reason this exists: it collapses to four states, two of which are actionable.
 #
-#   BLOCKED  a live worker question this session can answer; an ownerless
-#            worker question still counts here, an unowned workflow question never
+#   BLOCKED  worker rows: this session's own unrelayed worker questions
 #   STALLED  a worker is silent and using no CPU; stop and re-dispatch or wait
-#   WAITING  runs, landings, authored requests, or board holds still live, or a workflow ruling was parked here
-#   CLEAR    no runs, landings, open requests, board holds, answerable or parked
-#            questions, or stalls -> exits SILENTLY
+#   WAITING  runs, landings, authored requests, or board holds still live, or user rows wait on you
+#   CLEAR    no runs, landings, open requests, board holds, worker or user rows,
+#            or stalls; unowned and foreign questions never hold the loop -> exits SILENTLY
 #
 # heartbeat-decision.py exits with HEARTBEAT_KEEP_LOOP_EXIT_STATUS while this
 # hook should keep watching and HEARTBEAT_CLEAR_EXIT_STATUS only for CLEAR.
@@ -28,7 +27,7 @@
 # and a lower interval is what actually gets a blocked worker noticed sooner -
 # the poll can be frequent precisely because only transitions are expensive.
 #
-# The state key is the answerable and parked inbox identities, plus sorted run ids with each run's
+# The state key is the worker and user inbox identities, plus sorted run ids with each run's
 # liveness class, sorted landing ids, authored open-request ids, and board-hold ids. A run changing
 # liveness class is a state change even when the ids are unchanged. Elapsed time
 # never enters the key.

@@ -174,7 +174,6 @@ async function workflowInboxQuestions(
       group: questionInboxGroup({
         kind: 'workflow',
         ownerSessionId: row.session_id,
-        awaitingOperator: true,
         callerSessionId: sid,
       }),
       question: row.question,

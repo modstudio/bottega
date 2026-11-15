@@ -1,12 +1,13 @@
 // concern: question inbox group decision
 /** Classifies one open question relative to the session viewing the inbox. */
+import type { QuestionInboxGroup } from '../../../shared/question-vocabulary.ts'
 
-export type QuestionInboxGroup = 'worker' | 'user' | 'foreign' | 'unowned'
+export type { QuestionInboxGroup } from '../../../shared/question-vocabulary.ts'
 
 export function questionInboxGroup(input: {
   kind: 'worker' | 'workflow'
   ownerSessionId: string | null
-  awaitingOperator: boolean
+  awaitingOperator?: boolean
   callerSessionId: string | null
 }): QuestionInboxGroup {
   if (input.ownerSessionId === null) return 'unowned'

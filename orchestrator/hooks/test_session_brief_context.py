@@ -382,6 +382,39 @@ class InboxQuestions(unittest.TestCase):
         self.assertEqual(decision.user, 0)
         self.assertEqual(decision.state_key, "")
 
+    def test_notices_render_worker_only(self):
+        self.assertEqual(
+            session_brief._inbox_notices(self.counts([{"question_id": 1, "group": "worker"}])),
+            ["1 worker question for this session."],
+        )
+
+    def test_notices_render_user_only(self):
+        self.assertEqual(
+            session_brief._inbox_notices(self.counts([{"question_id": 2, "group": "user"}])),
+            ["1 waiting on you (bottega question inbox)."],
+        )
+
+    def test_notices_render_worker_and_user(self):
+        self.assertEqual(
+            session_brief._inbox_notices(self.counts([
+                {"question_id": 1, "group": "worker"},
+                {"question_id": 2, "group": "user"},
+            ])),
+            [
+                "1 worker question for this session.",
+                "1 waiting on you (bottega question inbox).",
+            ],
+        )
+
+    def test_notices_are_empty_without_worker_or_user_groups(self):
+        self.assertEqual(
+            session_brief._inbox_notices(self.counts([
+                {"question_id": 3, "group": "foreign"},
+                {"question_id": 4, "group": "unowned"},
+            ])),
+            [],
+        )
+
     def test_malformed_run_question_invalidates_the_inbox(self):
         with self.assertRaisesRegex(ValueError, "invalid inbox JSON"):
             self.counts([
