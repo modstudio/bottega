@@ -15,7 +15,6 @@ export function replayReviewFunnelRows(
     .filter((row) => row.facts.yieldCells === undefined)
     .map(({ recordId }) => recordId)
   const diffs = rows.flatMap((row) => {
-    if (row.facts.yieldCells === undefined) return []
     const after = decideReviewFunnel(row.facts, candidate.policy, candidate.policyVersion)
     const normalizedBefore: ReviewFunnelVerdict = {
       policyVersion: candidate.policyVersion,

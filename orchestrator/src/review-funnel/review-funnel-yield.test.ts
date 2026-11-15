@@ -13,6 +13,7 @@ test('yield cells use run stack and the most recent eligible lens rows in the wi
     const run = newRecordId()
     const review = newRecordId()
     const lens = newRecordId()
+    const finding = newRecordId()
     database
       .query(
         `INSERT INTO run
@@ -45,7 +46,16 @@ test('yield cells use run stack and the most recent eligible lens rows in the wi
          (record_id,review_record_id,review_lens_record_id,ordinal,severity,location,evidence,proposed_correction,disposition)
          VALUES (?,?,?,1,'medium','a.ts:1','evidence','correction',?)`,
       )
-      .run(newRecordId(), review, lens, disposition)
+      .run(finding, review, lens, disposition)
+    if (disposition === 'accepted') {
+      database
+        .query(
+          `INSERT INTO review_finding
+           (record_id,review_record_id,review_lens_record_id,ordinal,severity,location,evidence,proposed_correction,disposition,duplicate_of_finding_record_id)
+           VALUES (?,?,?,2,'medium','a.ts:2','duplicate evidence','correction','accepted',?)`,
+        )
+        .run(newRecordId(), review, lens, finding)
+    }
   }
   addReview(1, 'accepted')
   addReview(2, 'rejected')
@@ -54,7 +64,7 @@ test('yield cells use run stack and the most recent eligible lens rows in the wi
     { lens: 'craft', stack: 'typescript', tier: 1, accepted: 0, unique: 0, triaged: 1 },
   ])
   expect(reviewFunnelYieldCells(database, 2)).toEqual([
-    { lens: 'craft', stack: 'typescript', tier: 1, accepted: 1, unique: 1, triaged: 2 },
+    { lens: 'craft', stack: 'typescript', tier: 1, accepted: 2, unique: 1, triaged: 3 },
   ])
   database.close()
 })

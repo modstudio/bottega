@@ -172,7 +172,7 @@ function explorationSample(facts: ReviewFunnelFacts, lens: string, share: number
   return (hash >>> 0) / 2 ** 32 < share
 }
 
-function yieldSelection(
+export function yieldSelection(
   facts: ReviewFunnelFacts,
   policy: ReviewFunnelPolicy,
   tier: 0 | 1 | 2 | 3,
@@ -211,7 +211,11 @@ function yieldSelection(
     changes.push({ lens, selected: true, reason: 'raised-by-yield', explored: false })
   }
   const candidate = selectReviewApplicability(
-    available,
+    {
+      ...available,
+      secondOpinion: declared.secondOpinion,
+      secondOpinionBasis: declared.secondOpinionBasis,
+    },
     available.lenses.filter((lens) => selected.has(lens)),
   )
   return {
@@ -355,12 +359,16 @@ function lensVerdicts(facts: ReviewFunnelFacts, plan: ReturnType<typeof funnelPl
     lenses: [...names].map((lens) => {
       const status = lensStatus(lens, sets, facts.readCreditsRound)
       const selectionChange = enforcedSelection.find((change) => change.lens === lens)
+      const selectionTookEffect =
+        selectionChange?.reason === 'raised-by-yield' || selectionChange?.selected === false
       return {
         lens,
         status,
         reason:
           (status === 'owed' || status === 'not-applicable'
-            ? selectionChange?.reason
+            ? selectionTookEffect
+              ? selectionChange?.reason
+              : undefined
             : undefined) ??
           reasonForLens({
             lens,
