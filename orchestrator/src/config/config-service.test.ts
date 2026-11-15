@@ -65,9 +65,7 @@ test('the declared home chooses machine and hosted keys and refuses an unsupport
   expect(configHome('routing.cost_policy')).toBe('machine')
   expect(configHome('autonomy.preset')).toBe('user')
   expect(configHome('display.timezone')).toBe('user')
-  expect(() => configHome('display.timezone', 'machine')).toThrow(
-    'its home is hosted user scope',
-  )
+  expect(() => configHome('display.timezone', 'machine')).toThrow('its home is hosted user scope')
   expect(() => configHome('subscription.codex.monthly_usd', 'space')).toThrow(
     `refusing config key subscription.codex.monthly_usd in hosted space scope: its home is hosted user scope; write it with \`${PLATFORM_SLUG} machine config set subscription.codex.monthly_usd <value>\``,
   )

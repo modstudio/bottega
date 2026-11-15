@@ -10,13 +10,13 @@ import { LANDING_TREE_JOB, shipCursorWorksTree } from '../landing-tree/landing-t
 import { questionInboxCountsForSession } from '../run/question-inbox-counts.ts'
 import { RUN_LIVE_STATUSES } from '../run/run-status.ts'
 import {
-  listWorkflowCursors,
-  type WorkflowCursorListRow,
-} from '../workflow/workflow-cursor-list.ts'
-import {
   readCachedDisplayTimezone,
   type StateEnvironment,
 } from '../workflow/session-context-cache.ts'
+import {
+  listWorkflowCursors,
+  type WorkflowCursorListRow,
+} from '../workflow/workflow-cursor-list.ts'
 import { activeLandings } from './session-close-out.ts'
 import {
   type SessionReviewBranchRefExists,
@@ -65,6 +65,49 @@ export function landingTreeIsActive(
   return cursors.some((cursor) =>
     shipCursorWorksTree({ treePath, project: tree.repo, branch: tree.branch }, cursorFacts(cursor)),
   )
+}
+
+function owedItemsForStop(
+  reviewItems: readonly StopSummaryOwedItem[],
+  owedRuns: readonly OwedRunRow[],
+  heldTrees: readonly StopSummaryHeldTreeRow[],
+  activeTrees: readonly StopSummaryHeldTreeRow[],
+  now: string,
+): StopSummaryOwedItem[] {
+  return [
+    ...reviewItems,
+    ...owedRuns.map((run) => ({
+      kind: 'unscored-run',
+      noun: 'unscored run',
+      qualifier: [run.job, run.launch_key].filter(Boolean).join(', '),
+      id: String(run.number),
+      command: `${PLATFORM_SLUG} score <run>`,
+      owedAt: run.owed_at,
+    })),
+    ...heldTrees
+      .filter((tree) => !activeTrees.includes(tree))
+      .map((tree) => {
+        const landingTree = tree.job === LANDING_TREE_JOB && tree.worktree
+        return {
+          kind: landingTree
+            ? 'held-landing-tree'
+            : tree.job === LANDING_TREE_JOB
+              ? 'held-landing-run'
+              : 'held-worktree',
+          noun: landingTree
+            ? 'held landing tree'
+            : tree.job === LANDING_TREE_JOB
+              ? 'held landing run'
+              : 'held worktree',
+          qualifier: tree.job === LANDING_TREE_JOB ? null : tree.job,
+          id: landingTree ? tree.worktree! : String(tree.number),
+          command: landingTree
+            ? `${PLATFORM_SLUG} tree remove <worktree>`
+            : `${PLATFORM_SLUG} run close-out <run>`,
+          owedAt: tree.close_out_attempted_at ?? now,
+        }
+      }),
+  ]
 }
 
 export async function sessionStopSummary(
@@ -140,43 +183,7 @@ export async function sessionStopSummary(
   const activeTrees = heldTrees.filter((tree) =>
     landingTreeIsActive(tree, cursors, activeLandingTrees),
   )
-  const owedItems: StopSummaryOwedItem[] = [
-    ...reviews.owedItems,
-    ...owedRuns.map((run) => ({
-      kind: 'unscored-run',
-      noun: 'unscored run',
-      qualifier: [run.job, run.launch_key].filter(Boolean).join(', '),
-      id: String(run.number),
-      command: `${PLATFORM_SLUG} score <run>`,
-      owedAt: run.owed_at,
-    })),
-    ...heldTrees
-      .filter((tree) => !activeTrees.includes(tree))
-      .map((tree) => ({
-        kind:
-          tree.job === LANDING_TREE_JOB && tree.worktree
-            ? 'held-landing-tree'
-            : tree.job === LANDING_TREE_JOB
-              ? 'held-landing-run'
-              : 'held-worktree',
-        noun:
-          tree.job === LANDING_TREE_JOB && tree.worktree
-            ? 'held landing tree'
-            : tree.job === LANDING_TREE_JOB
-              ? 'held landing run'
-              : 'held worktree',
-        qualifier: tree.job === LANDING_TREE_JOB ? null : tree.job,
-        id:
-          tree.job === LANDING_TREE_JOB && tree.worktree
-            ? tree.worktree
-            : String(tree.number),
-        command:
-          tree.job === LANDING_TREE_JOB && tree.worktree
-            ? `${PLATFORM_SLUG} tree remove <worktree>`
-            : `${PLATFORM_SLUG} run close-out <run>`,
-        owedAt: tree.close_out_attempted_at ?? now,
-      })),
-  ]
+  const owedItems = owedItemsForStop(reviews.owedItems, owedRuns, heldTrees, activeTrees, now)
   return decideStopSummary({
     now,
     displayTimezone: readCachedDisplayTimezone(options.stateEnvironment ?? process.env),

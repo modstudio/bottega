@@ -73,7 +73,13 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/hosted-secret-row.ts',
     '../record/machine-name-command.ts',
     '../record/machine-name.ts',
+    '../workflow/session-context-cache.ts',
+    './config-entry-policy.ts',
     './trust-log-revoke.ts',
+  ]),
+  module('orchestrator/src/config/config-entry-policy.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/machine-config.ts',
   ]),
   module('orchestrator/src/config/config-service-rotation-policy.ts', [
     '../../../shared/config-client.ts',

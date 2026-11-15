@@ -82,9 +82,7 @@ function owedGroups(items: readonly StopSummaryOwedItem[]): OwedGroup[] {
 
 function owedLine(group: OwedGroup): string {
   const qualifier = group.qualifier ? ` (${group.qualifier})` : ''
-  const findings = group.openFindings
-    ? ` (${count(group.openFindings, 'finding')} open)`
-    : ''
+  const findings = group.openFindings ? ` (${count(group.openFindings, 'finding')} open)` : ''
   return `${count(group.ids.length, group.noun)}${qualifier}${findings}: ${group.ids.join(', ')} → ${group.command}`
 }
 

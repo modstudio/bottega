@@ -5,8 +5,8 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from './brand.ts'
 import { CONFIG_HOME_ENV } from './config-directory.ts'
 import {
-  deleteMachineValue,
   configHomes,
+  deleteMachineValue,
   editMachinePermission,
   editMachinePermissionTable,
   listMachineEntries,
