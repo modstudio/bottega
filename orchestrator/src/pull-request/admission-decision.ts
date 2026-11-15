@@ -1,5 +1,5 @@
 // concern: pull-request-admission-decision
-/** Admits one funnel verdict, crediting only an override recorded for its exact identity. */
+/** Admits one funnel verdict, crediting an override recorded for its stable patch identity. */
 
 import type { ReviewFunnelVerdict } from '../review-funnel/decide-review-funnel.ts'
 import type { LandingOverrideRow } from '../review-funnel/gather-funnel-facts.ts'
@@ -24,7 +24,6 @@ export function decideAdmission(
     (candidate) =>
       candidate.project === change.project &&
       candidate.branch === change.branch &&
-      candidate.tip === change.head &&
       candidate.patchId === change.patchId &&
       candidate.pathSet === change.pathSet,
   )

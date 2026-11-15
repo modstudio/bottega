@@ -72,11 +72,11 @@ describe('pull-request admission decision', () => {
     })
   })
 
-  test('a stale operator override does not admit while the funnel still owes work', () => {
+  test('an operator override survives a content-neutral rebase of the same patch', () => {
     expect(decideAdmission(verdict('dispatch'), [override({ tip: 'tip-old' })])).toEqual({
-      complete: false,
-      overrideId: null,
-      overrideReason: null,
+      complete: true,
+      overrideId: 'override-17',
+      overrideReason: 'operator accepted this exact head',
     })
   })
 
@@ -120,9 +120,8 @@ describe('pull-request admission decision', () => {
     })
   })
 
-  test('an override survives another tree when the exact head is unchanged', () => {
-    const values = { tree: 'tree-old' }
-    expect(decideAdmission(verdict('admit'), [override(values)])).toEqual({
+  test('an override survives another tree when the patch identity is unchanged', () => {
+    expect(decideAdmission(verdict('admit'), [override({ tree: 'tree-old' })])).toEqual({
       complete: true,
       overrideId: 'override-17',
       overrideReason: 'operator accepted this exact head',
