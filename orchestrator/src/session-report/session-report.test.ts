@@ -10,6 +10,7 @@ import {
   selectReportSessions,
   sessionReportDelta,
 } from './session-report.ts'
+import { formatSessionReport } from './session-report-format.ts'
 
 const window = { since: '2026-11-15T12:00:00.000Z', until: '2026-11-15T13:00:00.000Z' }
 const facts = (runs: SessionReportFacts['runs']): SessionReportFacts => ({
@@ -85,9 +86,18 @@ describe('session report policy', () => {
       facts([]),
       comparisonWindow('2026-11-15T10:00:00Z..2026-11-15T11:00:00Z'),
     )
-    expect(sessionReportDelta(current, prior)).toEqual({
+    const delta = sessionReportDelta(current, prior)
+    expect(delta).toEqual({
       runsWithoutCursor: { total: 1, keyless: 1, keyedOverridden: 0 },
       residueAtWindowEnd: { unscoredRuns: 0, heldTrees: 0, openCursors: 0, unansweredQuestions: 0 },
     })
+    const rendered = formatSessionReport({
+      generatedAt: window.until,
+      sessions: [{ sessionId: 'session-a', current, comparison: prior, delta }],
+    })
+    expect(rendered).toContain(
+      'comparison window: 2026-11-15T10:00:00.000Z to 2026-11-15T11:00:00.000Z',
+    )
+    expect(rendered).toContain('delta (current - comparison):')
   })
 })
