@@ -171,6 +171,26 @@ class HeartbeatDecisionTest(unittest.TestCase):
         self.assertIn("WAITING", decision.lines[0])
         self.assertIn("1 parked workflow ruling(s)", decision.lines[0])
         self.assertNotIn("BLOCKED", decision.lines[0])
+    def test_unowned_workflow_question_is_recorded_without_blocking(self):
+        inbox = [
+            {
+                "kind": "workflow",
+                "question_id": 4608,
+                "session_id": None,
+                "can_answer": True,
+            }
+        ]
+        inbox_decision = heartbeat_decision.decide_inbox_questions(inbox)
+        self.assertEqual(inbox_decision.answerable_now, 0)
+        self.assertEqual(inbox_decision.parked_here, 0)
+        self.assertEqual(inbox_decision.unowned, 1)
+        self.assertEqual(inbox_decision.state_key, "workflow:4608:unowned")
+
+        decision = heartbeat_decision.heartbeat_decision(
+            "12:34:56", inbox, 0, 0, 0, "", ""
+        )
+        self.assertTrue(decision.should_exit)
+        self.assertEqual(decision.lines, [])
     def test_foreign_workflow_question_is_not_blocked(self):
         decision = heartbeat_decision.heartbeat_decision(
             "12:34:56",
