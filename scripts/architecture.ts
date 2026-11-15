@@ -54,6 +54,7 @@ import { runResumeModuleSpecs } from './architecture-run-resume-modules.ts'
 import { runRetryModuleSpecs } from './architecture-run-retry.ts'
 import { sessionContextModules } from './architecture-session-context-modules.ts'
 import { sessionLossesModules } from './architecture-session-losses-modules.ts'
+import { sessionReportModules } from './architecture-session-report-modules.ts'
 import { sessionStartBoundarySpecs } from './architecture-session-start-modules.ts'
 import { settingsModules } from './architecture-settings-modules.ts'
 import { setupModuleSpecs } from './architecture-setup-modules.ts'
@@ -233,6 +234,7 @@ export const modules: ArchitectureModule[] = [
   ...subjectModules,
   ...metricModules,
   ...sessionLossesModules,
+  ...sessionReportModules,
   module('orchestrator/src/doc/doc-write-tree.ts', [
     'node:fs',
     '../../../shared/git.ts',

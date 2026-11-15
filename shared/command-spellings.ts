@@ -407,6 +407,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'session help',
   'session hold',
   'session losses',
+  'session report',
   'session start',
   'session status',
   'task',
