@@ -10,6 +10,7 @@ architect session lifecycle
 - [bottega session help](#bottega-session-help)
 - [bottega session hold](#bottega-session-hold)
 - [bottega session losses](#bottega-session-losses)
+- [bottega session report](#bottega-session-report)
 - [bottega session start](#bottega-session-start)
 - [bottega session status](#bottega-session-status)
 
@@ -26,6 +27,7 @@ architect session lifecycle
 - [bottega session help](./session.md#bottega-session-help)
 - [bottega session hold](./session.md#bottega-session-hold)
 - [bottega session losses](./session.md#bottega-session-losses)
+- [bottega session report](./session.md#bottega-session-report)
 - [bottega session start](./session.md#bottega-session-start)
 - [bottega session status](./session.md#bottega-session-status)
 
@@ -101,6 +103,25 @@ measure losses around Claude transcript compaction boundaries
 - `--since <date>`: include rows at or after this ISO date
 - `--json`: write the report as JSON
 - `--judge`: dispatch blind semantic-loss judges without waiting
+
+### Related
+
+- [bottega session](./session.md#bottega-session)
+
+## bottega session report
+
+**Synopsis:** `bottega session report [--session <id>] [--all] [--since <date>] [--until <date>] [--compare <since>] [--json]`
+
+measure task-cursor attribution and residue over a session window
+
+### Options
+
+- `--session <id>`: select one session; repeat to select more
+- `--all`: select every recorded session
+- `--since <date>`: start the current window at this ISO date
+- `--until <date>`: end the current window at this ISO date
+- `--compare <since>..<until>`: compare against this second window
+- `--json`: write the report as JSON
 
 ### Related
 

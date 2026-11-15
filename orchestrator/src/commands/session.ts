@@ -15,6 +15,8 @@ import { safeStartSession } from '../session/session-start.ts'
 import { sessionStopSummary } from '../session/stop-summary.ts'
 import { sessionLosses } from '../session-losses/session-losses-adapter.ts'
 import { formatSessionLosses } from '../session-losses/session-losses-format.ts'
+import { sessionReport } from '../session-report/session-report-adapter.ts'
+import { formatSessionReport } from '../session-report/session-report-format.ts'
 import { collect, log } from './support.ts'
 
 function stopSummaryBlockKey(value: string): string {
@@ -48,9 +50,39 @@ function registerStatus(session: Command): void {
     })
 }
 
+function registerReport(session: Command): void {
+  session
+    .command('report')
+    .description('measure task-cursor attribution and residue over a session window')
+    .addOption(
+      repeatable(
+        new Option('--session <id>', 'select one session; repeat to select more')
+          .argParser(collect)
+          .default([]),
+      ),
+    )
+    .option('--all', 'select every recorded session')
+    .option('--since <date>', 'start the current window at this ISO date')
+    .option('--until <date>', 'end the current window at this ISO date')
+    .option('--compare <since>..<until>', 'compare against this second window')
+    .option('--json', 'write the report as JSON')
+    .allowExcessArguments(false)
+    .action(async (options) => {
+      const report = await sessionReport({
+        sessions: options.session,
+        all: Boolean(options.all),
+        since: options.since,
+        until: options.until,
+        compare: options.compare,
+      })
+      log(options.json ? JSON.stringify(report) : formatSessionReport(report))
+    })
+}
+
 export function register(program: Command): void {
   const session = program.command('session').description('manage the calling architect session')
   registerStatus(session)
+  registerReport(session)
   session
     .command('start')
     .description('open explore for a session that holds no open explore, or name the one it holds')
