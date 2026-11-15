@@ -34,7 +34,7 @@ export async function recordCommandRegistrations<T>(
   const original = Command.prototype.command
   Command.prototype.command = function (this: Command, declaration: string, ...rest: unknown[]) {
     registrations.push({ declaration, parentPath: commandPath(this) })
-    return original.call(this, declaration, ...rest)
+    return (original as (...values: unknown[]) => Command).apply(this, [declaration, ...rest])
   } as typeof Command.prototype.command
   try {
     return { registrations, value: await build() }
