@@ -180,7 +180,8 @@ export function registerQuestionTaskRecordSyncProof(
     expect(written.map(({ number }) => number).sort((a, b) => a - b)).toEqual([41, 42, 43, 44])
     const retried = snapshot(newRecordId())
     const requestId = newRecordId()
-    expect(await ask(retried, requestId)).toEqual(await ask(retried, requestId))
+    const retries = await Promise.all([ask(retried, requestId), ask(retried, requestId)])
+    expect(retries[0]).toEqual(retries[1])
     expect(
       fixture.admin(
         `SELECT count(*) FROM question_mutation_audit WHERE question_id='${retried.id}';`,

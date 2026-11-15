@@ -10,6 +10,7 @@ import { OutboxRowError } from './outbox-failure.ts'
 import type { RecordPayload as Payload } from './record-sync-contract.ts'
 
 type QuestionAuditPayload = {
+  id?: unknown
   action: unknown
   actorSession: unknown
   at: unknown
@@ -35,7 +36,7 @@ export async function pushQuestionAudits(
     await drizzle({ client: tx })
       .insert(questionMutationAuditRecord)
       .values({
-        id: newRecordId(),
+        id: nullableString(audit.id) ?? newRecordId(),
         questionId,
         spaceId,
         action: String(audit.action),

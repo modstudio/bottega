@@ -2,7 +2,7 @@
 /** Applies direct question snapshots and their audit atomically. */
 
 import type { SQL } from 'bun'
-import { and, sql as drizzleSql, eq } from 'drizzle-orm'
+import { and, sql as drizzleSql, eq, or } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import {
   hostedQuestionWins,
@@ -65,7 +65,7 @@ export async function writeRecordQuestion(
       ...input.question,
       number,
       spaceId: input.spaceId,
-      audits: [input.audit],
+      audits: [{ ...input.audit, id: input.requestId }],
     }
     const values = questionValues(payload, input.question.projectId, input.question.workflowTaskId)
     const {
@@ -88,7 +88,10 @@ export async function writeRecordQuestion(
         },
         setWhere: and(
           eq(questionRecord.machineId, values.machineId),
-          hostedQuestionWins(drizzleSql`excluded.revision`, questionRecord.revision),
+          or(
+            eq(questionRecord.lastRequestId, input.requestId),
+            hostedQuestionWins(drizzleSql`excluded.revision`, questionRecord.revision),
+          ),
         ),
       })
       .returning({
