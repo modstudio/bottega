@@ -103,6 +103,7 @@ export const pullRequestModuleSpecs = [
     allowed: [
       '../review-funnel/decide-review-funnel.ts',
       '../review-funnel/gather-funnel-facts.ts',
+      '../review/same-change.ts',
     ],
     typeOnlyAllowed: [
       '../review-funnel/decide-review-funnel.ts',
@@ -156,6 +157,7 @@ export const pullRequestModuleSpecs = [
       './review-lineage-store.ts',
       './review-pins.ts',
       './review-role.ts',
+      './same-change.ts',
       './review-target.ts',
       './review-tier-classifier.ts',
       './review-tier.ts',

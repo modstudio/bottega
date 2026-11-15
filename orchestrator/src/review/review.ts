@@ -272,6 +272,7 @@ type ReviewListQueryRow = {
   findings_skipped: number
   project: string | null
   patch_id: string | null
+  zero_context_patch_id: string | null
   path_set: string | null
   commit_message: string | null
   outdated_reason: string | null
@@ -295,6 +296,7 @@ function listReviewCoverage(
       headCommit: lens.headCommit,
     })),
     patchId: row.patch_id,
+    zeroContextPatchId: row.zero_context_patch_id,
     pathSet: row.path_set,
     commitMessage: row.commit_message,
     outdatedReason: row.outdated_reason,
@@ -311,6 +313,7 @@ function listReviewCoverage(
       recordId: row.record_id,
       lenses,
       patchId: row.patch_id,
+      zeroContextPatchId: row.zero_context_patch_id,
       pathSet: row.path_set,
       commitMessage: row.commit_message,
       outdatedReason: row.outdated_reason,
@@ -355,7 +358,7 @@ export function listReviews(
             COUNT(DISTINCT CASE WHEN rf.disposition='modified' THEN rf.record_id END) AS findings_modified,
             COUNT(DISTINCT CASE WHEN rf.disposition='rejected' THEN rf.record_id END) AS findings_rejected,
             COUNT(DISTINCT CASE WHEN rf.disposition='skipped' THEN rf.record_id END) AS findings_skipped,
-            run.repo AS project, r.patch_id, r.path_set, r.commit_message, r.outdated_reason
+            run.repo AS project, r.patch_id, r.zero_context_patch_id, r.path_set, r.commit_message, r.outdated_reason
        FROM review r JOIN review_lens rl ON rl.review_record_id=r.record_id JOIN run ON run.record_id=rl.run_record_id
        LEFT JOIN review_finding rf ON rf.review_record_id=r.record_id
        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
@@ -423,28 +426,31 @@ function reviewProjects(reviewRecordId: string, database: Database): string[] {
   ]
 }
 
+type ReviewDetailRow = {
+  record_id: string
+  number: number
+  recorded_at: string
+  completed_at: string | null
+  tier: number | null
+  tier_risk: number | null
+  tier_size: number | null
+  tier_reasons: string | null
+  tier_reason: string | null
+  patch_id: string | null
+  zero_context_patch_id: string | null
+  path_set: string | null
+  commit_message: string | null
+  outdated_at: string | null
+  outdated_reason: string | null
+}
+
 export function getReview(reviewRecordId: string, database: Database = db()) {
   const review = database
     .query(
       `SELECT record_id, number, recorded_at, completed_at, tier, tier_risk, tier_size, tier_reasons, tier_reason,
-            patch_id, path_set, commit_message, outdated_at, outdated_reason FROM review WHERE record_id=?`,
+            patch_id, zero_context_patch_id, path_set, commit_message, outdated_at, outdated_reason FROM review WHERE record_id=?`,
     )
-    .get(reviewRecordId) as {
-    record_id: string
-    number: number
-    recorded_at: string
-    completed_at: string | null
-    tier: number | null
-    tier_risk: number | null
-    tier_size: number | null
-    tier_reasons: string | null
-    tier_reason: string | null
-    patch_id: string | null
-    path_set: string | null
-    commit_message: string | null
-    outdated_at: string | null
-    outdated_reason: string | null
-  } | null
+    .get(reviewRecordId) as ReviewDetailRow | null
   if (!review) throw new Error(`no review ${reviewRecordId}`)
   const lenses = reviewReadLenses(reviewRecordId, database)
   const projects = reviewProjects(reviewRecordId, database)
@@ -495,6 +501,7 @@ export function getReview(reviewRecordId: string, database: Database = db()) {
               recordId: reviewRecordId,
               lenses,
               patchId: review.patch_id,
+              zeroContextPatchId: review.zero_context_patch_id,
               pathSet: review.path_set,
               commitMessage: review.commit_message,
               outdatedReason: review.outdated_reason,
@@ -622,18 +629,22 @@ function measuredReviewForRuns(runs: readonly RunRow[], database: Database) {
   )
 }
 
-export function recordReviews(
-  entries: { runId: string; output: ReviewReply }[],
-  database: Database = writableDb(),
-): string {
-  if (!entries.length) throw new Error('a review requires at least one lens run')
-  const runs = loadFindingsRuns(entries, database)
+function requireOneReviewProject(runs: readonly RunRow[]): void {
   const projects = [...new Set(runs.map((run) => run.project_record_id))]
   if (projects.length > 1) {
     throw new Error(
       `review lens runs belong to different projects: ${projects.map((project) => project ?? '(none)').join(', ')}`,
     )
   }
+}
+
+export function recordReviews(
+  entries: { runId: string; output: ReviewReply }[],
+  database: Database = writableDb(),
+): string {
+  if (!entries.length) throw new Error('a review requires at least one lens run')
+  const runs = loadFindingsRuns(entries, database)
+  requireOneReviewProject(runs)
   const measuredTrees = runs.filter((run) => run.input_tree !== null)
   const distinctTrees = new Set(measuredTrees.map((run) => run.input_tree))
   if (distinctTrees.size > 1) {
@@ -659,8 +670,8 @@ export function recordReviews(
     const review = database
       .query(
         `INSERT INTO review (record_id, number, recorded_at, tier, tier_risk, tier_size, tier_insertions, tier_deletions, tier_reasons, tier_reason, project_record_id, role,
-                           patch_id, path_set, commit_message, round)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
+                           patch_id, zero_context_patch_id, path_set, commit_message, round)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
       )
       .get(
         newRecordId(),
@@ -676,6 +687,7 @@ export function recordReviews(
         projectRecordId,
         role,
         measured?.patchId ?? null,
+        measured?.zeroContextPatchId ?? null,
         pathSet,
         measured?.message ?? null,
         round,

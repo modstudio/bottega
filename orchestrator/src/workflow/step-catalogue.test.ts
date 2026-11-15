@@ -203,6 +203,22 @@ test('step validation names unknown jobs and actions with the step slug', () => 
   )
 })
 
+test('steps must declare every job their bodies prescribe', () => {
+  const staged = { ...step, stage: 'review' as const }
+  for (const command of [
+    `${PLATFORM_SLUG} run start review-lens --key DEV-1 "Review it."`,
+    `${PLATFORM_SLUG} workflow dispatch review-lens --cursor 17 "Review it."`,
+  ]) {
+    const body = `Dispatch \`${command}\`.`
+    expect(validateStepCatalogue({ steps: [{ ...staged, body }] })).toContain(
+      'step "design" prescribes job "review-lens" but does not declare it in jobs; add "review-lens" to the step\'s jobs',
+    )
+    expect(validateStepCatalogue({ steps: [{ ...staged, body, jobs: ['review-lens'] }] })).toEqual(
+      [],
+    )
+  }
+})
+
 test('operatorRuling requires a ruling floor', () => {
   expect(
     validateStepCatalogue({
@@ -313,7 +329,9 @@ test('pull-request commandEvidence requires a capable floor and cannot defer com
 })
 
 test(`${PLATFORM_SLUG} run start dispatches require a prompt or file`, () => {
-  const definition = (body: string) => ({ steps: [{ ...step, stage: 'implement', body }] })
+  const definition = (body: string) => ({
+    steps: [{ ...step, stage: 'implement', body, jobs: ['implement', 'review-lens'] }],
+  })
 
   expect(
     validateStepCatalogue(

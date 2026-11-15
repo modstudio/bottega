@@ -1,6 +1,7 @@
 import { BOARD_READER_EXTERNAL_IDENTIFIERS } from './identity-board-reader-manifest.ts'
 import { INFRASTRUCTURE_IDENTITIES } from './identity-infrastructure-manifest.ts'
 import type { DisplayLabel, KeyManifests, KeyStore, ManifestColumn } from './identity-inventory.ts'
+import { PATCH_IDENTIFIERS } from './identity-patch-manifest.ts'
 import { RECORD_CACHE_IDENTITIES } from './identity-record-cache-manifest.ts'
 import { ROUTING_POOL_IDENTITY } from './identity-routing-pool-manifest.ts'
 import { RULED_REFERENCES } from './identity-ruled-reference-manifest.ts'
@@ -591,14 +592,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
   ]),
   ...manifest('orchestrator', 'archive ref issued by Git', ['branch_disposal.archive_ref']),
   ...manifest('orchestrator', 'review ref issued by Git', ['run.review_ref']),
-  ...manifest('orchestrator', "identifier issued by Git's patch-id system", [
-    'landing_override.patch_id',
-    'landing_review_carry.patch_id',
-    'landing_triage_snapshot.patch_id',
-    'review.patch_id',
-    'review_read.patch_id',
-    'review_funnel_decision.patch_id',
-  ]),
+  ...PATCH_IDENTIFIERS.filter(({ store }) => store === 'orchestrator'),
   ...manifest('hub', 'identifier issued by the harness session system', [
     'interval.session_id',
     'note_acknowledgement.session_id',
@@ -652,14 +646,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'workflow_text_copy.task_document_reference',
   ]),
   ...manifest('hosted', 'identifier issued by GitHub Actions', ['pull_request_ci.workflow_run_id']),
-  ...manifest('hosted', "identifier issued by Git's patch-id system", [
-    'landing_override.patch_id',
-    'landing_review_carry.patch_id',
-    'landing_triage_snapshot.patch_id',
-    'review.patch_id',
-    'review_read.patch_id',
-    'review_funnel_decision.patch_id',
-  ]),
+  ...PATCH_IDENTIFIERS.filter(({ store }) => store === 'hosted'),
   ...manifest('hosted', 'review ref issued by Git', ['run.review_ref']),
   ...manifest('hosted', 'archive ref issued by Git', ['branch_disposal.archive_ref']),
   ...manifest('hosted', 'identifier issued by the authentication provider', [

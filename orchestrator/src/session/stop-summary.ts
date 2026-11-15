@@ -7,8 +7,8 @@ import { cursorFacts } from '../close/close-out-in-flight.ts'
 import { db } from '../database/db.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { LANDING_TREE_JOB, shipCursorWorksTree } from '../landing-tree/landing-tree.ts'
+import { questionInboxCountsForSession } from '../run/question-inbox-counts.ts'
 import { RUN_LIVE_STATUSES } from '../run/run-status.ts'
-import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import {
   listWorkflowCursors,
   type WorkflowCursorListRow,
@@ -80,8 +80,7 @@ export async function sessionStopSummary(
   const session = options.session
   const now = options.now ?? new Date().toISOString()
   const cursors = await listWorkflowCursors({ session }, database)
-  const questionCount =
-    await taskFlowReadStore(database).openWorkflowQuestionCountForSession(session)
+  const questionCounts = await questionInboxCountsForSession(session, database)
   const livePlaceholders = RUN_LIVE_STATUSES.map(() => '?').join(',')
   const liveRuns =
     database
@@ -163,7 +162,7 @@ export async function sessionStopSummary(
   ]
   return decideStopSummary({
     now,
-    questionCount,
+    questionCounts,
     cursors: cursors.map((cursor) => ({
       key: cursor.workflow_key || null,
       workflow: cursor.workflow_slug,

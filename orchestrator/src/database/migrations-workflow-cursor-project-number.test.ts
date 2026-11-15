@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { applyMigrations } from './migrations.ts'
 import { migrationBoundaryTestDatabase } from './test-database.fixture.ts'
 
-const MIGRATION = '0226_workflow_cursor_project_number'
+const MIGRATION = '0227_workflow_cursor_project_number'
 
 test('workflow cursor project-number migration preserves identities and renumbers each project densely', () => {
   const database = migrationBoundaryTestDatabase(MIGRATION)

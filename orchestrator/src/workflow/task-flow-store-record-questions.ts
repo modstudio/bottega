@@ -245,13 +245,6 @@ function sessionStageReads(database: Database, read: StageRead) {
 
 function inboxStageReads(database: Database, read: StageRead) {
   return {
-    async openWorkflowQuestionCountForSession(sessionId: string) {
-      const ids = new Set((await read.listEvery({ sessionId })).map(({ stage }) => stage.id))
-      return openQuestionRows(database).filter(
-        (q) => q.workflow_cursor_record_id && ids.has(q.workflow_cursor_record_id),
-      ).length
-    },
-
     async workflowInboxQuestions(): Promise<TaskFlowInboxQuestionRow[]> {
       const items = await read.listEvery({ states: ['awaiting-ruling'] })
       const stages = stageMap(items)

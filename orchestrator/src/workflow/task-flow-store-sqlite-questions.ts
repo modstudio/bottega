@@ -101,17 +101,6 @@ export const keylessSessionCursors = (
     .all(...(project ? [project] : []))
 }
 
-export const openWorkflowQuestionCountForSession = (
-  database: Database,
-  sessionId: string,
-): number =>
-  database
-    .query<{ count: number }, [string]>(
-      `SELECT COUNT(*) count FROM question q JOIN workflow_cursor c
-       ON c.record_id=q.workflow_cursor_record_id WHERE c.session_id=? AND ${questionOpenSql('q')}`,
-    )
-    .get(sessionId)!.count
-
 export const workflowInboxQuestions = (database: Database): TaskFlowInboxQuestionRow[] =>
   database
     .query<TaskFlowInboxQuestionRow, []>(

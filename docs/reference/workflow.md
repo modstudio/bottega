@@ -17,6 +17,8 @@ workflows and their cursors
 - [bottega workflow catalogue versions](#bottega-workflow-catalogue-versions)
 - [bottega workflow compose](#bottega-workflow-compose)
 - [bottega workflow cursor](#bottega-workflow-cursor)
+- [bottega workflow cursor help](#bottega-workflow-cursor-help)
+- [bottega workflow cursor identity-map](#bottega-workflow-cursor-identity-map)
 - [bottega workflow cursors](#bottega-workflow-cursors)
 - [bottega workflow dispatch](#bottega-workflow-dispatch)
 - [bottega workflow epic](#bottega-workflow-epic)
@@ -274,13 +276,35 @@ compose a workflow for a project and create its cursor when ready
 
 ## bottega workflow cursor
 
-**Synopsis:** `bottega workflow cursor <identity-map>`
+**Synopsis:** `bottega workflow cursor`
+
+inspect workflow cursor identities
+
+### Related
+
+- [bottega workflow](./workflow.md#bottega-workflow)
+- [bottega workflow cursor help](./workflow.md#bottega-workflow-cursor-help)
+- [bottega workflow cursor identity-map](./workflow.md#bottega-workflow-cursor-identity-map)
+
+## bottega workflow cursor help
+
+**Synopsis:** `bottega workflow cursor help [command]`
+
+display help for command
+
+### Related
+
+- [bottega workflow cursor](./workflow.md#bottega-workflow-cursor)
+
+## bottega workflow cursor identity-map
+
+**Synopsis:** `bottega workflow cursor identity-map`
 
 print numeric workflow cursor identities and their durable record ids as JSON
 
 ### Related
 
-- [bottega workflow](./workflow.md#bottega-workflow)
+- [bottega workflow cursor](./workflow.md#bottega-workflow-cursor)
 
 ## bottega workflow cursors
 

@@ -345,7 +345,7 @@ test('workflow UUID-key migration preserves a rich cursor and rewrites only stru
        VALUES (?,91,77,'DEV-1214','a','open?','workflow',1,'proof')`,
     ).run(questionRecordId)
 
-    applyMigrationsBefore(d, '0226_workflow_cursor_project_number')
+    applyMigrationsBefore(d, '0227_workflow_cursor_project_number')
 
     const row = d
       .query<
@@ -593,7 +593,7 @@ test('bound workflow UUID-key migration keeps a cursor routed through the cached
     ).run(newRecordId())
     d.exec("INSERT INTO record_install_binding(id,bound_at) VALUES (1,'a')")
 
-    applyMigrationsBefore(d, '0226_workflow_cursor_project_number')
+    applyMigrationsBefore(d, '0227_workflow_cursor_project_number')
     expect(d.query('SELECT number FROM workflow_cursor').get()).toEqual({ number: 79 })
   } finally {
     d.close()

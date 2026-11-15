@@ -15,6 +15,7 @@ import { resolveReviewCommandCwd } from './review-command-cwd.ts'
 import { branchRunOwnerSession, measureChangeGroup, serializePathSet } from './review-group.ts'
 import { reviewLineage } from './review-lineage-store.ts'
 import { enqueueReviewRead } from './review-outbox.ts'
+import { sameStoredChange } from './same-change.ts'
 
 type Flags = { flag(name: string): string | undefined }
 type Presentation = { log(...values: unknown[]): void }
@@ -63,19 +64,32 @@ export function hasExactArchitectRead(
   project: string,
   branch: string,
   patchId: string,
+  zeroContextPatchId: string,
   pathSet: string,
 ): boolean {
   const lineage = reviewLineage(database, project, branch)
-  return Boolean(
-    database
-      .query<{ found: number }, string[]>(
-        `SELECT 1 AS found FROM review_read
+  return database
+    .query<{ patch_id: string; zero_context_patch_id: string | null; path_set: string }, string[]>(
+      `SELECT patch_id,zero_context_patch_id,path_set FROM review_read
           WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
             AND branch IN (${lineage.map(() => '?').join(',')})
-            AND patch_id=? AND path_set=? LIMIT 1`,
-      )
-      .get(project, ...lineage, patchId, pathSet),
-  )
+          ORDER BY recorded_at DESC,record_id DESC`,
+    )
+    .all(project, ...lineage)
+    .some((read) =>
+      sameStoredChange(
+        {
+          patchId: read.patch_id,
+          zeroContextPatchId: read.zero_context_patch_id,
+          pathSet: read.path_set,
+        },
+        {
+          patchId,
+          zeroContextPatchId,
+          pathSet,
+        },
+      ),
+    )
 }
 
 export function requireBranchRunOwner(
@@ -142,6 +156,7 @@ export function recordArchitectRead(
           string,
           string,
           string,
+          string | null,
           string,
           number,
           string,
@@ -150,8 +165,8 @@ export function recordArchitectRead(
         ]
       >(
         `INSERT INTO review_read
-          (record_id,project,project_record_id,branch,tip,patch_id,path_set,tier,note,session_id,recorded_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
+          (record_id,project,project_record_id,branch,tip,patch_id,zero_context_patch_id,path_set,tier,note,session_id,recorded_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
       )
       .get(
         newRecordId(),
@@ -160,6 +175,7 @@ export function recordArchitectRead(
         branch,
         tip,
         measured.group.patchId,
+        measured.group.zeroContextPatchId,
         serializePathSet(measured.group.pathSet),
         measured.tier.tier,
         note,

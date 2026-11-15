@@ -73,6 +73,7 @@ export const reviewModuleSpecs = [
       '../review/review-lens-provenance.ts',
       '../review/review-role.ts',
       '../review/review-second-opinion.ts',
+      '../review/same-change.ts',
     ],
     typeOnlyAllowed: ['../review/review-group.ts', '../review/review-vocabulary.ts'],
   },
@@ -112,6 +113,7 @@ export const reviewModuleSpecs = [
       '../review/review-round-identity.ts',
       '../review/review-target.ts',
       '../review/review-tier.ts',
+      '../review/same-change.ts',
       './review-funnel-plan-service.ts',
       './review-funnel-yield.ts',
     ],
@@ -134,7 +136,7 @@ export const reviewModuleSpecs = [
   },
   {
     file: 'orchestrator/src/review-funnel/review-funnel-store.ts',
-    allowed: ['../review/review-evidence-sql.ts'],
+    allowed: ['../evidence/evidence-query.ts', '../review/review-evidence-sql.ts'],
     typeOnlyAllowed: ['bun:sqlite', './decide-review-funnel.ts', './review-funnel-report.ts'],
   },
   {
@@ -241,6 +243,7 @@ export const reviewModuleSpecs = [
       './review-lens-provenance.ts',
       './review-role.ts',
       './review-second-opinion.ts',
+      './same-change.ts',
     ],
     typeOnlyAllowed: [
       './review-group.ts',
@@ -392,6 +395,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../review/review-round-identity.ts',
       '../review/review-target.ts',
       '../review/review-tier.ts',
+      '../review/same-change.ts',
       './review-funnel-plan-service.ts',
       './review-funnel-yield.ts',
     ],
@@ -420,7 +424,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
   {
     name: 'review-funnel-store-boundary',
     file: 'orchestrator/src/review-funnel/review-funnel-store.ts',
-    allowed: ['../review/review-evidence-sql.ts'],
+    allowed: ['../evidence/evidence-query.ts', '../review/review-evidence-sql.ts'],
     typeOnlyAllowed: ['bun:sqlite', './decide-review-funnel.ts', './review-funnel-report.ts'],
     reason: 'Keep report evidence SQL in the funnel store adapter.',
   },
@@ -639,6 +643,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       './review-lineage-store.ts',
       './review-pins.ts',
       './review-round-identity.ts',
+      './same-change.ts',
       './review-tier.ts',
       './review-tier-classifier.ts',
     ],
@@ -672,6 +677,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       './review-lens-provenance.ts',
       './review-role.ts',
       './review-second-opinion.ts',
+      './same-change.ts',
     ],
     typeOnlyAllowed: [
       './review-group.ts',
@@ -774,6 +780,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       './review-group.ts',
       './review-lineage-store.ts',
       './review-outbox.ts',
+      './same-change.ts',
       '../../../shared/bounded-process.ts',
     ],
     reason: 'Keep architect review reads inside the review evidence concern.',

@@ -8,7 +8,7 @@ import { closeTerminalChainQuestions } from '../close/close-out-questions.ts'
 import { db } from '../database/db.ts'
 import { VOIDED_SQL, voidedSql } from '../evidence/evidence-query.ts'
 import { upsertProject } from '../project/projects.ts'
-import { rowsForInboxProject, runInboxCommand } from './run-inbox.ts'
+import { queryInbox, rowsForInboxProject, runInboxCommand } from './run-inbox.ts'
 
 const normalize = (sql: string) => sql.replace(/\s+/g, ' ').trim()
 
@@ -221,6 +221,19 @@ test('inbox keeps own questions in their existing format outside a registered pr
   expect(shown).toContain(`run ${runNumber(id)} · codex/implement`)
   expect(shown).toContain('existing format?')
 })
+test('inbox JSON classifies worker questions relative to the viewing session', async () => {
+  const id = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'asking',
+    session: 'orch-test-session',
+  })
+  question(id, 'worker group?')
+
+  expect((await queryInbox({ scope: 'cli-default', all: true })).questions).toContainEqual(
+    expect.objectContaining({ question: 'worker group?', group: 'worker' }),
+  )
+})
 test('inbox lists workflow questions with their identity and answer command', async () => {
   const cursor = db()
     .query(
@@ -256,6 +269,7 @@ test('inbox lists workflow questions with their identity and answer command', as
       mode: 'default',
       step: { n: 3, slug: 'fix' },
       can_answer: true,
+      group: 'user',
       session_id: 'orch-test-session',
       answer_command: `${PLATFORM_SLUG} workflow rule fixture-workflow --project fixture --mode default --cursor 1 --arg key=DEV-1069 --ruling "<ruling>"`,
       ownership_notice: null,

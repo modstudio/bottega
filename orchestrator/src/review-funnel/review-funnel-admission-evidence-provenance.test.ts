@@ -5,6 +5,7 @@ const evidence = (
   provenance?: NonNullable<TriageEvidence['reviews'][number]['lenses'][number]['provenance']>,
 ): TriageEvidence => ({
   patchId: 'patch-a',
+  zeroContextPatchId: 'patch-a',
   pathSet: '["a.ts"]',
   tier: 1,
   applicableReview: { lenses: ['correctness'] },
@@ -18,6 +19,7 @@ const evidence = (
       tier: 1,
       role: 'round',
       patchId: 'patch-a',
+      zeroContextPatchId: 'patch-a',
       pathSet: '["a.ts"]',
       lensIdentities: ['correctness'],
       lenses: [
@@ -121,6 +123,7 @@ test('composed coverage reports the mismatch found on an exact completed review'
           reviewRecordId: 'review-3',
           reviewNumber: 3,
           patchId: 'older-patch',
+          zeroContextPatchId: 'older-patch',
           lensIdentities: ['safety'],
           lenses: [
             {
