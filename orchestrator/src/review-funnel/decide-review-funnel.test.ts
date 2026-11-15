@@ -157,6 +157,24 @@ describe('decideReviewFunnel', () => {
     expect(verdict.lenses.find(({ lens }) => lens === 'correctness')?.status).toBe('owed')
   })
 
+  test('yield selection uses the same no-renames file paths as tier selection', () => {
+    const verdict = decideReviewFunnel(
+      facts({
+        change: { ...facts().change, paths: ['docs/renamed-away.md'] },
+        files: [{ path: 'src/new.ts', insertions: 11, deletions: 0 }],
+        review: {
+          ...tierOneReview,
+          lenses: [{ lens: 'correctness', paths: ['src/**'] }],
+        },
+        yieldCells: [yieldCell('correctness', { accepted: 0, unique: 0, triaged: 5 })],
+      }),
+      selectionPolicy({ minTriaged: 5, pinned: [] }),
+    )
+    expect(verdict.selection.lenses).toEqual([
+      { lens: 'correctness', selected: false, reason: 'demoted-by-yield', explored: false },
+    ])
+  })
+
   test('evaluate mode records a demotion without changing lenses or next', () => {
     const baseFacts = facts({
       files: [{ path: 'src/new.ts', insertions: 11, deletions: 0 }],
