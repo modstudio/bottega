@@ -30,6 +30,11 @@ with open(
     ]
 
 FULL_CONTEXT_POINTER = "Full context: bottega agent context show --session {session}"
+COMPACT_FIRST_ACT = (
+    "First act: store each line of the summary's 'Unstored facts and pointers' section "
+    "with `bottega agent context set --kind fact|pointer` on the narrowest task, before "
+    "any other work."
+)
 
 
 def _start(bottega, *args, env=None, cwd=None):
@@ -209,6 +214,14 @@ def _with_full_context_pointer(text, session):
     return _join_sections(text, FULL_CONTEXT_POINTER.format(session=session))
 
 
+def _with_compact_first_act(text, source):
+    if source != "compact":
+        return text
+    if len(text) > SESSION_START_CONTEXT_MAX_CHARS:
+        return _join_sections(COMPACT_FIRST_ACT, text)
+    return _join_sections(text, COMPACT_FIRST_ACT)
+
+
 def _context_size(text):
     return len(text.encode("utf-8")), 0 if not text else text.count("\n") + 1, len(text)
 
@@ -353,7 +366,10 @@ def _inbox_notices(inbox_decision):
     notices = []
     if inbox_decision.worker:
         noun = "question" if inbox_decision.worker == 1 else "questions"
-        notices.append(f"{inbox_decision.worker} worker {noun} for this session.")
+        notices.append(
+            f"{inbox_decision.worker} worker {noun} for this session "
+            "(bottega question inbox)."
+        )
     if inbox_decision.user:
         notices.append(
             f"{inbox_decision.user} waiting on you (bottega question inbox)."
@@ -986,6 +1002,7 @@ def main() -> int:
             context = output.get("hookSpecificOutput", {}).get("additionalContext")
             if isinstance(context, str):
                 context = _with_full_context_pointer(context, sid)
+                context = _with_compact_first_act(context, payload.get("source"))
                 output["hookSpecificOutput"]["additionalContext"] = context
                 if bottega is not None and cwd is not None and inbox_env is not None:
                     try:

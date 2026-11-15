@@ -39,6 +39,38 @@ class AssembleAdditionalContext(unittest.TestCase):
             over + "\nFull context: bottega agent context show --session session-a",
         )
 
+    def test_compact_first_act_is_last_when_context_fits(self):
+        text = session_brief._with_compact_first_act("brief", "compact")
+        self.assertEqual(text, "brief\n" + session_brief.COMPACT_FIRST_ACT)
+
+    def test_compact_first_act_is_first_after_over_cap_pointer_is_applied(self):
+        brief = "x" * (session_brief.SESSION_START_CONTEXT_MAX_CHARS + 1)
+        with_pointer = session_brief._with_full_context_pointer(brief, "session-a")
+        text = session_brief._with_compact_first_act(with_pointer, "compact")
+        self.assertEqual(
+            text,
+            session_brief.COMPACT_FIRST_ACT + "\n" + with_pointer,
+        )
+        self.assertIn(
+            "Full context: bottega agent context show --session session-a", text
+        )
+
+    def test_compact_first_act_is_absent_for_other_session_start_sources(self):
+        for source in ("resume", "startup", "clear"):
+            with self.subTest(source=source):
+                self.assertEqual(
+                    session_brief._with_compact_first_act("brief", source), "brief"
+                )
+
+    def test_compact_injection_size_includes_the_first_act(self):
+        context = session_brief._with_compact_first_act("brief", "compact")
+        with mock.patch.object(session_brief.subprocess, "Popen") as popen:
+            session_brief._record_injection(
+                "/bin/bottega", "/tmp", {}, "session-a", "compact", context
+            )
+        command = popen.call_args.args[0]
+        self.assertEqual(command[-1], str(len(context)))
+
     def test_injection_recording_detaches_with_final_utf8_size(self):
         with mock.patch.object(session_brief.subprocess, "Popen") as popen:
             session_brief._record_injection(
@@ -385,7 +417,7 @@ class InboxQuestions(unittest.TestCase):
     def test_notices_render_worker_only(self):
         self.assertEqual(
             session_brief._inbox_notices(self.counts([{"question_id": 1, "group": "worker"}])),
-            ["1 worker question for this session."],
+            ["1 worker question for this session (bottega question inbox)."],
         )
 
     def test_notices_render_user_only(self):
@@ -401,7 +433,7 @@ class InboxQuestions(unittest.TestCase):
                 {"question_id": 2, "group": "user"},
             ])),
             [
-                "1 worker question for this session.",
+                "1 worker question for this session (bottega question inbox).",
                 "1 waiting on you (bottega question inbox).",
             ],
         )
