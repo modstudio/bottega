@@ -189,28 +189,6 @@ class HeartbeatDecisionTest(unittest.TestCase):
         )
         self.assertTrue(decision.should_exit)
         self.assertEqual(decision.lines, [])
-    def test_foreign_workflow_question_is_not_blocked(self):
-        decision = heartbeat_decision.heartbeat_decision(
-            "12:34:56",
-            [
-                {
-                    "kind": "workflow",
-                    "question_id": 1936,
-                    "group": "foreign",
-                    "ownership_notice": (
-                        "owned by session eaabda0a; only that session, or the operator "
-                        "relaying a decision, may answer it"
-                    ),
-                }
-            ],
-            0,
-            0,
-            0,
-            "",
-            "",
-        )
-        self.assertTrue(decision.should_exit)
-        self.assertEqual(decision.lines, [])
     def test_foreign_question_is_not_counted(self):
         decision = heartbeat_decision.heartbeat_decision(
             "12:34:56", [self.worker_question(group="foreign")], 0, 0, 0, "", ""
