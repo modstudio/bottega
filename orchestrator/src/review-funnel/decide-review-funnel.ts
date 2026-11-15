@@ -8,6 +8,7 @@ import {
   applicableReview,
   isDecisionConformanceNotAdmittedReason,
   lensesSelectingPaths,
+  selectReviewApplicability,
 } from '../review/review-applicability.ts'
 import type { TriageReviewRow } from '../review/review-group.ts'
 import {
@@ -29,6 +30,7 @@ import {
 } from '../review/review-vocabulary.ts'
 import type { ReviewFunnelLensStatus } from './review-funnel-lens-status.ts'
 import type { ReviewFunnelPolicy, ReviewFunnelPolicyMode } from './review-funnel-policy.ts'
+import type { ReviewFunnelYieldCell } from './review-funnel-yield.ts'
 
 export type { ReviewFunnelLensStatus } from './review-funnel-lens-status.ts'
 
@@ -58,6 +60,7 @@ export type ReviewFunnelRoundFact = {
 export type ReviewFunnelFacts = {
   change: ReviewFunnelChangeIdentity
   stack: string | null
+  yieldCells?: ReviewFunnelYieldCell[]
   files: ReviewTierFile[]
   review: ReviewSettings | undefined
   branchReviews: TriageReviewRow[]
@@ -100,6 +103,15 @@ export type ReviewFunnelVerdict = {
     reasons: string[]
   }
   budget: { roundsUsed: number; ceiling: number; atCeiling: boolean }
+  selection: {
+    mode: ReviewFunnelPolicyMode
+    lenses: {
+      lens: string
+      selected: boolean
+      reason: Extract<ReviewLensSelectionReason, 'demoted-by-yield' | 'raised-by-yield'>
+      explored: boolean
+    }[]
+  }
   lenses: { lens: string; status: ReviewFunnelLensStatus; reason: ReviewLensSelectionReason }[]
   next: { action: ReviewFunnelNextAction; lenses?: string[] }
   remedy: string
@@ -145,18 +157,82 @@ function reasonForLens(input: {
     : 'initial'
 }
 
-function funnelPlan(facts: ReviewFunnelFacts) {
+type YieldSelection = ReviewFunnelVerdict['selection']
+
+function explorationSample(facts: ReviewFunnelFacts, lens: string, share: number): boolean {
+  if (share <= 0) return false
+  if (share >= 1) return true
+  let hash = 2_166_136_261
+  for (const byte of new TextEncoder().encode(
+    `${facts.change.project}\0${facts.change.patchId}\0${lens}`,
+  )) {
+    hash ^= byte
+    hash = Math.imul(hash, 16_777_619)
+  }
+  return (hash >>> 0) / 2 ** 32 < share
+}
+
+export function yieldSelection(
+  facts: ReviewFunnelFacts,
+  policy: ReviewFunnelPolicy,
+  tier: 0 | 1 | 2 | 3,
+): { selection: YieldSelection; effective: ReturnType<typeof applicableReview> } {
+  const paths = facts.files.map(({ path }) => path)
+  const declared = applicableReview(tier, paths, facts.review)
+  if (tier === 0 || !facts.stack)
+    return { selection: { mode: policy.modes.selection, lenses: [] }, effective: declared }
+  const available = applicableReview(3, paths, facts.review)
+  const cells = new Map(
+    (facts.yieldCells ?? [])
+      .filter((cell) => cell.stack === facts.stack && cell.tier === tier)
+      .map((cell) => [cell.lens, cell]),
+  )
+  const changes: YieldSelection['lenses'] = []
+  const selected = new Set(declared.lenses)
+  for (const lens of declared.lenses) {
+    const cell = cells.get(lens)
+    if (
+      !cell ||
+      policy.selection.pinned.includes(lens) ||
+      cell.triaged < policy.selection.minTriaged ||
+      cell.accepted > 0 ||
+      cell.unique > 0
+    )
+      continue
+    const explored = explorationSample(facts, lens, policy.selection.explorationShare)
+    changes.push({ lens, selected: explored, reason: 'demoted-by-yield', explored })
+    if (!explored) selected.delete(lens)
+  }
+  for (const lens of available.lenses) {
+    if (selected.has(lens) || declared.lenses.includes(lens)) continue
+    const cell = cells.get(lens)
+    if (!cell || cell.unique === 0) continue
+    selected.add(lens)
+    changes.push({ lens, selected: true, reason: 'raised-by-yield', explored: false })
+  }
+  const candidate = selectReviewApplicability(
+    {
+      ...available,
+      secondOpinion: declared.secondOpinion,
+      secondOpinionBasis: declared.secondOpinionBasis,
+    },
+    available.lenses.filter((lens) => selected.has(lens)),
+  )
+  return {
+    selection: { mode: policy.modes.selection, lenses: changes },
+    effective: policy.modes.selection === 'enforce' ? candidate : declared,
+  }
+}
+
+function funnelPlan(facts: ReviewFunnelFacts, policy: ReviewFunnelPolicy) {
   const tier = classifyReviewTier({ files: facts.files, risk: facts.review?.risk })
   const postFix = postFixReviewDecision({
     facts: facts.postFix,
     tier: tier.tier,
     review: facts.review,
   })
-  const relevant = applicableReview(
-    tier.tier,
-    facts.files.map(({ path }) => path),
-    facts.review,
-  )
+  const selected = yieldSelection(facts, policy, tier.tier)
+  const relevant = selected.effective
   const roundFacts = roundLensFacts(facts.branchReviews, {
     patchId: facts.change.patchId,
     pathSet: facts.change.pathSet,
@@ -222,7 +298,16 @@ function funnelPlan(facts: ReviewFunnelFacts) {
     completedLenses: roundFacts.completedLenses,
     satisfiedSecondOpinionLenses: roundFacts.satisfiedSecondOpinionLenses,
   })
-  return { tier, postFix, relevant, roundFacts, unbudgeted, budget, budgeted }
+  return {
+    tier,
+    selection: selected.selection,
+    postFix,
+    relevant,
+    roundFacts,
+    unbudgeted,
+    budget,
+    budgeted,
+  }
 }
 
 type LensSets = {
@@ -248,6 +333,7 @@ function lensStatus(
 }
 
 function lensVerdicts(facts: ReviewFunnelFacts, plan: ReturnType<typeof funnelPlan>) {
+  const enforcedSelection = plan.selection.mode === 'enforce' ? plan.selection.lenses : []
   const sets: LensSets = {
     planned: new Set(plan.unbudgeted.round.lenses),
     completed: new Set(plan.roundFacts.completedLenses),
@@ -266,21 +352,31 @@ function lensVerdicts(facts: ReviewFunnelFacts, plan: ReturnType<typeof funnelPl
     ...plan.roundFacts.completedLenses,
     ...facts.lensStates.map(({ lens }) => lens),
     ...facts.overriddenLenses,
+    ...enforcedSelection.map(({ lens }) => lens),
   ])
   return {
     sets,
     lenses: [...names].map((lens) => {
       const status = lensStatus(lens, sets, facts.readCreditsRound)
+      const selectionChange = enforcedSelection.find((change) => change.lens === lens)
+      const selectionTookEffect =
+        selectionChange?.reason === 'raised-by-yield' || selectionChange?.selected === false
       return {
         lens,
         status,
-        reason: reasonForLens({
-          lens,
-          status,
-          plannedReason: plan.unbudgeted.round.lensReasons?.[lens],
-          postFix: plan.postFix,
-          provenanceMismatch: provenanceMismatch[lens],
-        }),
+        reason:
+          (status === 'owed' || status === 'not-applicable'
+            ? selectionTookEffect
+              ? selectionChange?.reason
+              : undefined
+            : undefined) ??
+          reasonForLens({
+            lens,
+            status,
+            plannedReason: plan.unbudgeted.round.lensReasons?.[lens],
+            postFix: plan.postFix,
+            provenanceMismatch: provenanceMismatch[lens],
+          }),
       }
     }),
   }
@@ -377,7 +473,7 @@ export function decideReviewFunnel(
   policy: ReviewFunnelPolicy,
   policyVersion = 'builtin',
 ): ReviewFunnelVerdict {
-  const plan = funnelPlan(facts)
+  const plan = funnelPlan(facts, policy)
   const evidence = lensVerdicts(facts, plan)
   const { next, remedy } = nextDecision(facts, plan, evidence)
   return {
@@ -397,6 +493,7 @@ export function decideReviewFunnel(
       ceiling: plan.budget.ceiling,
       atCeiling: plan.budget.atCeiling,
     },
+    selection: plan.selection,
     lenses: evidence.lenses,
     next,
     remedy,

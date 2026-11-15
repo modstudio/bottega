@@ -77,19 +77,25 @@ export function replayReviewFunnelCommand(flags: Flags, { log }: Presentation): 
       facts: JSON.parse(row.facts) as ReviewFunnelFacts,
       verdict: JSON.parse(row.verdict) as ReviewFunnelVerdict,
     }))
-  const diffs = replayReviewFunnelRows(rows, candidate)
+  const replay = replayReviewFunnelRows(rows, candidate)
   const result = {
     policyVersion: candidate.policyVersion,
     rows: db().query('SELECT count(*) AS count FROM review_funnel_decision').get() as {
       count: number
     },
-    diffCount: diffs.length,
-    diffs,
+    diffCount: replay.diffs.length,
+    diffs: replay.diffs,
+    selectionNotExercised: {
+      count: replay.selectionNotExercised.length,
+      recordIds: replay.selectionNotExercised,
+    },
   }
   log(
     flags.has('json')
       ? JSON.stringify(result)
-      : `Replay ${candidate.policyVersion}: ${result.rows.count} row(s), ${diffs.length} diff(s).`,
+      : `Replay ${candidate.policyVersion}: ${result.rows.count} row(s), ${replay.diffs.length} diff(s); ` +
+          `selection not exercised for ${replay.selectionNotExercised.length} row(s)` +
+          `${replay.selectionNotExercised.length ? ` (${replay.selectionNotExercised.join(', ')})` : ''}.`,
   )
 }
 

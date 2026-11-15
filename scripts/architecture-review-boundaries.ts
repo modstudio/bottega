@@ -40,6 +40,7 @@ export const reviewModuleSpecs = [
       '../review/review-group.ts',
       './review-funnel-lens-status.ts',
       './review-funnel-policy.ts',
+      './review-funnel-yield.ts',
     ],
   },
   {
@@ -57,8 +58,14 @@ export const reviewModuleSpecs = [
       '../review/review-round-identity.ts',
       '../review/review-target.ts',
       '../review/review-tier.ts',
+      './review-funnel-yield.ts',
     ],
     typeOnlyAllowed: ['bun:sqlite', '../project/projects.ts', './decide-review-funnel.ts'],
+  },
+  {
+    file: 'orchestrator/src/review-funnel/review-funnel-yield.ts',
+    allowed: ['../review/review-evidence-sql.ts'],
+    typeOnlyAllowed: ['bun:sqlite'],
   },
   {
     file: 'orchestrator/src/review-funnel/review-funnel-report.ts',
@@ -67,7 +74,7 @@ export const reviewModuleSpecs = [
   },
   {
     file: 'orchestrator/src/review-funnel/review-funnel-store.ts',
-    allowed: [],
+    allowed: ['../review/review-evidence-sql.ts'],
     typeOnlyAllowed: ['bun:sqlite', './decide-review-funnel.ts', './review-funnel-report.ts'],
   },
   {
@@ -315,6 +322,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../review/review-group.ts',
       './review-funnel-lens-status.ts',
       './review-funnel-policy.ts',
+      './review-funnel-yield.ts',
     ],
     reason: 'Keep the funnel verdict pure over gathered facts and validated policy.',
   },
@@ -334,9 +342,17 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../review/review-round-identity.ts',
       '../review/review-target.ts',
       '../review/review-tier.ts',
+      './review-funnel-yield.ts',
     ],
     typeOnlyAllowed: ['bun:sqlite', '../project/projects.ts', './decide-review-funnel.ts'],
     reason: 'Keep repository and review-store reads out of the pure funnel decision.',
+  },
+  {
+    name: 'review-funnel-yield-boundary',
+    file: 'orchestrator/src/review-funnel/review-funnel-yield.ts',
+    allowed: ['../review/review-evidence-sql.ts'],
+    typeOnlyAllowed: ['bun:sqlite'],
+    reason: 'Keep yield evidence SQL separate from the pure funnel selection rule.',
   },
   {
     name: 'review-funnel-report-boundary',
@@ -348,7 +364,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
   {
     name: 'review-funnel-store-boundary',
     file: 'orchestrator/src/review-funnel/review-funnel-store.ts',
-    allowed: [],
+    allowed: ['../review/review-evidence-sql.ts'],
     typeOnlyAllowed: ['bun:sqlite', './decide-review-funnel.ts', './review-funnel-report.ts'],
     reason: 'Keep report evidence SQL in the funnel store adapter.',
   },

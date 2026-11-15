@@ -26,6 +26,8 @@ export const REVIEW_LENS_SELECTION_REASON = [
   'waived-at-ceiling',
   'overridden',
   'not-applicable',
+  'demoted-by-yield',
+  'raised-by-yield',
   ...REVIEW_LENS_OWED_REASONS,
 ] as const
 export const REVIEW_GRADE_NAMES = ['reproduced', 'coverage', 'limits', 'overlap'] as const

@@ -11,11 +11,28 @@ export function replayReviewFunnelRows(
   rows: readonly { recordId: string; facts: ReviewFunnelFacts; verdict: ReviewFunnelVerdict }[],
   candidate: VersionedReviewFunnelPolicy,
 ) {
-  return rows.flatMap((row) => {
+  const selectionNotExercised = rows
+    .filter((row) => row.facts.yieldCells === undefined)
+    .map(({ recordId }) => recordId)
+  const diffs = rows.flatMap((row) => {
     const after = decideReviewFunnel(row.facts, candidate.policy, candidate.policyVersion)
-    const normalizedBefore = { ...row.verdict, policyVersion: candidate.policyVersion }
+    const normalizedBefore: ReviewFunnelVerdict = {
+      policyVersion: candidate.policyVersion,
+      mode: row.verdict.mode,
+      change: row.verdict.change,
+      tier: row.verdict.tier,
+      budget: row.verdict.budget,
+      selection: row.verdict.selection ?? {
+        mode: candidate.policy.modes.selection,
+        lenses: [],
+      },
+      lenses: row.verdict.lenses,
+      next: row.verdict.next,
+      remedy: row.verdict.remedy,
+    }
     return JSON.stringify(normalizedBefore) === JSON.stringify(after)
       ? []
       : [{ recordId: row.recordId, before: row.verdict, after }]
   })
+  return { diffs, selectionNotExercised }
 }
