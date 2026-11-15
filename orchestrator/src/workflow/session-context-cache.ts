@@ -3,7 +3,10 @@
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { concernStateDirectory, type StateEnvironment } from '../../../shared/state-directory.ts'
+import {
+  autonomyContextDirectory,
+  type StateEnvironment,
+} from '../../../shared/state-directory.ts'
 import { writeCacheFile } from '../config/atomic-cache-file.ts'
 
 export type { StateEnvironment } from '../../../shared/state-directory.ts'
@@ -21,12 +24,9 @@ export type CachedSessionContext = {
   hosted: { user: AutonomySettings; space: AutonomySettings }
 }
 
-const cacheDirectory = (env: StateEnvironment) =>
-  join(concernStateDirectory('orchestrator', env), 'autonomy-context')
-
 // Base64url has no ".", so a project cache name cannot collide with user.display.json.
 const cachePath = (project: string, env: StateEnvironment) =>
-  join(cacheDirectory(env), `${Buffer.from(project).toString('base64url')}.json`)
+  join(autonomyContextDirectory(env), `${Buffer.from(project).toString('base64url')}.json`)
 
 function object(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)

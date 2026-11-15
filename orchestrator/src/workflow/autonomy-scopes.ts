@@ -15,7 +15,7 @@ import {
   isDisplayTimezone,
   readMachineAutonomy,
 } from '../../../shared/machine-config.ts'
-import { writeCachedDisplayTimezone } from '../config/display-timezone-cache.ts'
+import { refreshDisplayTimezoneCache } from '../config/display-timezone-cache.ts'
 import { recordConfigCallOutcome } from '../config/hosted-config-call-outcome.ts'
 import { db } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
@@ -117,9 +117,11 @@ function refreshHostedCache(
   hosted: Extract<HostedRead, { status: 'available' }>,
   stateEnvironment: StateEnvironment,
   now: () => Date,
-): string | null {
+): string[] {
+  const warnings: string[] = []
+  const displayWarning = refreshDisplayTimezoneCache(hosted.displayTimezone, stateEnvironment)
+  if (displayWarning) warnings.push(displayWarning)
   try {
-    writeCachedDisplayTimezone(hosted.displayTimezone, stateEnvironment)
     writeSessionContextCache(
       {
         version: 1,
@@ -129,11 +131,11 @@ function refreshHostedCache(
       },
       stateEnvironment,
     )
-    return null
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
-    return `warning: could not refresh hosted autonomy cache: ${reason}`
+    warnings.push(`warning: could not refresh hosted autonomy cache: ${reason}`)
   }
+  return warnings
 }
 
 function withHostedWarnings(
@@ -216,13 +218,13 @@ export async function resolveProjectAutonomy(
     workflow,
     stages,
   )
-  const cacheWarning =
+  const cacheWarnings =
     hosted.status === 'available'
       ? refreshHostedCache(project, hosted, stateEnvironment, now)
-      : null
+      : []
   const resolution = withHostedWarnings(resolved, [
     ...hosted.warnings,
-    ...(cacheWarning ? [cacheWarning] : []),
+    ...cacheWarnings,
   ])
   if (hosted.status === 'available') {
     return {

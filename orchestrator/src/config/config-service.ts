@@ -84,7 +84,7 @@ import {
   wrapRecipientKeyIds,
   wrapsForRecipients,
 } from './data-key-access.ts'
-import { writeCachedDisplayTimezone } from './display-timezone-cache.ts'
+import { refreshDisplayTimezoneCache } from './display-timezone-cache.ts'
 import { hostedConfigClient } from './hosted-config-call-outcome.ts'
 import * as trustRefusal from './machine-trust-refusal.ts'
 import { appendTrustLogRevoke } from './trust-log-revoke.ts'
@@ -806,18 +806,6 @@ export type ConfigReadResult = {
   ignoredHostedScopes: ConfigScope[]
   outrankingMachineValue?: string
   row?: Awaited<ReturnType<typeof getEntry>>
-}
-
-export function refreshDisplayTimezoneCache(
-  displayTimezone: string | null,
-  env: ConfigEnvironment = process.env,
-): void {
-  try {
-    writeCachedDisplayTimezone(displayTimezone, env)
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
-    console.error(`warning: could not refresh display time zone cache: ${reason}`)
-  }
 }
 
 export async function setConfigEntry(

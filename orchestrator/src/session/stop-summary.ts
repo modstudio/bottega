@@ -37,7 +37,6 @@ type OwedRunRow = {
   number: number
   job: string
   launch_key: string | null
-  label: string | null
   owed_at: string
 }
 export type StopSummaryHeldTreeRow = {
@@ -174,7 +173,6 @@ export async function sessionStopSummary(
   const owedRuns = database
     .query<OwedRunRow, [string]>(
       `SELECT r.record_id,r.number,r.job,r.launch_key,
-              substr(COALESCE(r.label,r.prompt_head),1,60) label,
               strftime('%Y-%m-%dT%H:%M:%fZ',julianday(r.started_at)+COALESCE(r.latency_ms,0)/86400000.0) owed_at
          FROM run r LEFT JOIN score s ON s.run_record_id=r.record_id
         WHERE r.session_id=? AND ${UNSCORED_WHERE} ORDER BY r.number`,

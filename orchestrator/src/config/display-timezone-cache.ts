@@ -4,7 +4,10 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { isDisplayTimezone } from '../../../shared/machine-config.ts'
-import { concernStateDirectory, type StateEnvironment } from '../../../shared/state-directory.ts'
+import {
+  autonomyContextDirectory,
+  type StateEnvironment,
+} from '../../../shared/state-directory.ts'
 import { writeCacheFile } from './atomic-cache-file.ts'
 
 type CachedUserDisplay = {
@@ -13,7 +16,7 @@ type CachedUserDisplay = {
 }
 
 const displayTimezoneCachePath = (env: StateEnvironment) =>
-  join(concernStateDirectory('orchestrator', env), 'autonomy-context', 'user.display.json')
+  join(autonomyContextDirectory(env), 'user.display.json')
 
 function object(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -35,4 +38,19 @@ export function writeCachedDisplayTimezone(
 ): void {
   const value: CachedUserDisplay = { version: 1, displayTimezone }
   writeCacheFile(displayTimezoneCachePath(env), value)
+}
+
+export function refreshDisplayTimezoneCache(
+  displayTimezone: string | null,
+  env: StateEnvironment = process.env,
+): string | null {
+  try {
+    writeCachedDisplayTimezone(displayTimezone, env)
+    return null
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    const warning = `warning: could not refresh display time zone cache: ${reason}`
+    console.error(warning)
+    return warning
+  }
 }

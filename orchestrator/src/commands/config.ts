@@ -27,11 +27,11 @@ import {
   machineInit,
   machineRevoke,
   machineShow,
-  refreshDisplayTimezoneCache,
   sealSecretDecision,
   setConfigEntry,
   setSecret,
 } from '../config/config-service.ts'
+import { refreshDisplayTimezoneCache } from '../config/display-timezone-cache.ts'
 import { hostedConfigClient } from '../config/hosted-config-call-outcome.ts'
 import { trustMachine } from '../config/machine-trust.ts'
 import { machineRegister } from '../config/named-space-config.ts'

@@ -236,8 +236,9 @@ test('a cache write failure preserves an available resolution and adds a warning
 
   expect(result.steps.design).toEqual({ value: 'auto', scope: 'hosted user' })
   expect(result.hosted?.status).toBe('available')
-  expect(result.warnings).toHaveLength(1)
-  expect(result.warnings?.[0]).toStartWith('warning: could not refresh hosted autonomy cache:')
+  expect(result.warnings).toHaveLength(2)
+  expect(result.warnings?.[0]).toStartWith('warning: could not refresh display time zone cache:')
+  expect(result.warnings?.[1]).toStartWith('warning: could not refresh hosted autonomy cache:')
 })
 
 test('a timed-out hosted read resolves from the cached hosted copy and names its age', async () => {

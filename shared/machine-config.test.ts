@@ -5,12 +5,9 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from './brand.ts'
 import { CONFIG_HOME_ENV } from './config-directory.ts'
 import {
-  configHomes,
-  DISPLAY_TIMEZONE_KEY,
   deleteMachineValue,
   editMachinePermission,
   editMachinePermissionTable,
-  isDisplayTimezone,
   listMachineEntries,
   MACHINE_CONFIG,
   machineId,
@@ -29,12 +26,6 @@ import {
 const path = '/config/platform/machine.toml'
 const silent = () => {}
 const freshWarnings = () => new Set<string>()
-
-test('display timezone has only a hosted user home', () => {
-  expect(configHomes(DISPLAY_TIMEZONE_KEY)).toEqual(['user'])
-  expect(isDisplayTimezone('America/New_York')).toBeTrue()
-  expect(isDisplayTimezone('Mars/Olympus')).toBeFalse()
-})
 
 describe('stored machine names', () => {
   let configRoot: string

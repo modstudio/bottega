@@ -247,6 +247,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/record-write-space.ts',
     '../../../shared/ship-to.ts',
     '../config/config-service.ts',
+    '../config/display-timezone-cache.ts',
     '../config/hosted-config-call-outcome.ts',
     '../config/machine-trust.ts',
     '../config/named-space-config.ts',
