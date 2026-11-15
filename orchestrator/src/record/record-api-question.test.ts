@@ -3,7 +3,8 @@ import { Hono } from 'hono'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { renderRecordApiRefusal } from './record-api-errors.ts'
 import { registerRecordQuestionRoutes } from './record-api-question.ts'
-import { RecordQuestionError, type QuestionWriteBody } from './record-question-contract.ts'
+import type { RecordIdentity } from './record-auth.ts'
+import { type QuestionWriteBody, RecordQuestionError } from './record-question-contract.ts'
 
 const stamp = '2026-11-15T12:00:00.000Z'
 
@@ -74,7 +75,7 @@ function questionWrite(): QuestionWriteBody {
 test('a direct question write refusal renders its status and message', async () => {
   const refusal = new RecordQuestionError('question already holds hosted revision 2', 409)
   const app = new Hono<{
-    Variables: { identity: { user: { id: string } }; destinationSpaceId?: string }
+    Variables: { identity: RecordIdentity; destinationSpaceId?: string }
   }>()
   app.onError((error, context) => renderRecordApiRefusal(context, error) ?? context.text('', 500))
   registerRecordQuestionRoutes(

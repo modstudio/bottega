@@ -1,6 +1,7 @@
 // concern: architecture-manifest
 /** The hosted-record command module allowlists, kept beside the root manifest so it stays within its file ceiling. */
 import { dirname, normalize } from 'node:path'
+import { recordApiErrorModules } from './architecture-record-api-error-modules.ts'
 import { recordBindingModules } from './architecture-record-binding-modules.ts'
 import { recordChangeModules } from './architecture-record-change-modules.ts'
 import { recordInvariantModules } from './architecture-record-invariant-modules.ts'
@@ -21,6 +22,7 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 const cacheDeleteImports = ['bun:sqlite', '../database/db.ts', '../database/tolerant-delete.ts']
 
 export const recordModules: RecordModule[] = [
+  ...recordApiErrorModules,
   ...recordChangeModules,
   ...recordInvariantModules,
   ...recordQuestionModules,
@@ -675,17 +677,6 @@ export const recordModules: RecordModule[] = [
     'hono/cors',
     'zod',
     '../../../shared/record-client-addresses.ts',
-  ]),
-  module('orchestrator/src/record/record-api-errors.ts', [
-    '../doc/doc-revision-conflict.ts',
-    './record-board-contract.ts',
-    './record-config-error.ts',
-    './record-docs.ts',
-    './record-projects.ts',
-    './record-project-purge-contract.ts',
-    './record-project-space-contract.ts',
-    './record-trial-space-contract.ts',
-    './record-verdicts.ts',
   ]),
   module('orchestrator/src/record/record-project-space-contract.ts', [
     '../../../shared/brand.ts',
