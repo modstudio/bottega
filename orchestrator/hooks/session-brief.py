@@ -217,7 +217,10 @@ def _with_full_context_pointer(text, session):
 def _with_compact_first_act(text, source):
     if source != "compact":
         return text
-    if len(text) > SESSION_START_CONTEXT_MAX_CHARS:
+    if (
+        len(text) + 1 + len(COMPACT_FIRST_ACT)
+        > SESSION_START_CONTEXT_MAX_CHARS
+    ):
         return _join_sections(COMPACT_FIRST_ACT, text)
     return _join_sections(text, COMPACT_FIRST_ACT)
 

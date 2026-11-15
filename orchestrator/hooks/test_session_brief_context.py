@@ -43,6 +43,17 @@ class AssembleAdditionalContext(unittest.TestCase):
         text = session_brief._with_compact_first_act("brief", "compact")
         self.assertEqual(text, "brief\n" + session_brief.COMPACT_FIRST_ACT)
 
+    def test_compact_first_act_is_first_when_joined_context_exceeds_cap(self):
+        brief = "x" * (
+            session_brief.SESSION_START_CONTEXT_MAX_CHARS
+            - len(session_brief.COMPACT_FIRST_ACT)
+        )
+        text = session_brief._with_compact_first_act(brief, "compact")
+        self.assertEqual(
+            text,
+            session_brief.COMPACT_FIRST_ACT + "\n" + brief,
+        )
+
     def test_compact_first_act_is_first_after_over_cap_pointer_is_applied(self):
         brief = "x" * (session_brief.SESSION_START_CONTEXT_MAX_CHARS + 1)
         with_pointer = session_brief._with_full_context_pointer(brief, "session-a")
