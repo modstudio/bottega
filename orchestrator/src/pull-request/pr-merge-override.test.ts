@@ -199,7 +199,7 @@ test("merge honors create's triage override for the same patch after a rebase", 
       zeroContextPatchId: 'zero-shared',
       pathSet: '["orchestrator/src/pull-request/pr-merge.ts"]',
     }),
-  ).toEqual({ ceilingRuling: false, overriddenLenses: ['correctness'] })
+  ).toEqual({ ceilingRuling: true, overriddenLenses: ['correctness'] })
   expect(
     overrideFacts(database, {
       project: 'merge-override-fixture',

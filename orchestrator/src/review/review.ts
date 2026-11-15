@@ -426,29 +426,31 @@ function reviewProjects(reviewRecordId: string, database: Database): string[] {
   ]
 }
 
+type ReviewDetailRow = {
+  record_id: string
+  number: number
+  recorded_at: string
+  completed_at: string | null
+  tier: number | null
+  tier_risk: number | null
+  tier_size: number | null
+  tier_reasons: string | null
+  tier_reason: string | null
+  patch_id: string | null
+  zero_context_patch_id: string | null
+  path_set: string | null
+  commit_message: string | null
+  outdated_at: string | null
+  outdated_reason: string | null
+}
+
 export function getReview(reviewRecordId: string, database: Database = db()) {
   const review = database
     .query(
       `SELECT record_id, number, recorded_at, completed_at, tier, tier_risk, tier_size, tier_reasons, tier_reason,
             patch_id, zero_context_patch_id, path_set, commit_message, outdated_at, outdated_reason FROM review WHERE record_id=?`,
     )
-    .get(reviewRecordId) as {
-    record_id: string
-    number: number
-    recorded_at: string
-    completed_at: string | null
-    tier: number | null
-    tier_risk: number | null
-    tier_size: number | null
-    tier_reasons: string | null
-    tier_reason: string | null
-    patch_id: string | null
-    zero_context_patch_id: string | null
-    path_set: string | null
-    commit_message: string | null
-    outdated_at: string | null
-    outdated_reason: string | null
-  } | null
+    .get(reviewRecordId) as ReviewDetailRow | null
   if (!review) throw new Error(`no review ${reviewRecordId}`)
   const lenses = reviewReadLenses(reviewRecordId, database)
   const projects = reviewProjects(reviewRecordId, database)

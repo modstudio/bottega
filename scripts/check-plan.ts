@@ -194,6 +194,7 @@ export const CHECK_LEGS = [
 ] as const
 
 export const ROOT_TEST_FILES = [
+  'scripts/check-review-change-comparisons.test.ts',
   'scripts/check-refusal-remedy.test.ts',
   'scripts/check-hook-binary.test.ts',
   'scripts/check-install-paths.test.ts',
