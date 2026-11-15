@@ -134,7 +134,7 @@ export const reviewModuleSpecs = [
   },
   {
     file: 'orchestrator/src/review-funnel/review-funnel-store.ts',
-    allowed: ['../review/review-evidence-sql.ts'],
+    allowed: ['../evidence/evidence-query.ts', '../review/review-evidence-sql.ts'],
     typeOnlyAllowed: ['bun:sqlite', './decide-review-funnel.ts', './review-funnel-report.ts'],
   },
   {
@@ -420,7 +420,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
   {
     name: 'review-funnel-store-boundary',
     file: 'orchestrator/src/review-funnel/review-funnel-store.ts',
-    allowed: ['../review/review-evidence-sql.ts'],
+    allowed: ['../evidence/evidence-query.ts', '../review/review-evidence-sql.ts'],
     typeOnlyAllowed: ['bun:sqlite', './decide-review-funnel.ts', './review-funnel-report.ts'],
     reason: 'Keep report evidence SQL in the funnel store adapter.',
   },

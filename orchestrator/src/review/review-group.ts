@@ -12,10 +12,10 @@ import type { LensProvenanceSubjectFacts } from './review-lens-provenance.ts'
 import { reviewLineage } from './review-lineage-store.ts'
 import { measureChangeIdentity } from './review-pins.ts'
 import type { ReviewRole } from './review-role.ts'
-import { sameChange } from './same-change.ts'
 import { resolveReviewBase } from './review-target.ts'
 import { diffNumstat } from './review-tier.ts'
 import type { ReviewTier } from './review-tier-classifier.ts'
+import { sameChange } from './same-change.ts'
 
 export type ChangeGroup = {
   project: string
@@ -33,7 +33,7 @@ export type TriageReviewRow = {
   tier: 0 | 1 | 2 | 3 | null
   role: ReviewRole
   patchId: string | null
-  zeroContextPatchId: string | null
+  zeroContextPatchId?: string | null
   pathSet: string | null
   lensIdentities: readonly string[]
   lenses: readonly {
@@ -302,7 +302,7 @@ export function reviewInRound(
   return sameChange({
     reviewed: {
       patchId: review.patchId,
-      zeroContextPatchId: review.zeroContextPatchId,
+      zeroContextPatchId: review.zeroContextPatchId ?? null,
       paths: review.pathSet ? (JSON.parse(review.pathSet) as string[]) : [],
       message: null,
     },
@@ -364,14 +364,14 @@ export function reviewsForAdmission(
   const taskKey = reviewTaskKeyForBranch(database, group.project, group.branch)
   if (!taskKey) return { branchReviews, reviews: reviewsForChangeGroup(branchReviews, group) }
   const exactReviewIds = database
-    .query<{ record_id: string }, [string, string, string, string]>(
-      `SELECT DISTINCT r.record_id FROM review r INDEXED BY review_project_patch
+    .query<{ record_id: string }, [string, string]>(
+      `SELECT DISTINCT r.record_id FROM review r
          JOIN review_lens rl ON rl.review_record_id=r.record_id
          JOIN run ON run.record_id=rl.run_record_id
         WHERE r.project_record_id=(SELECT record_id FROM project WHERE name=?)
-          AND r.patch_id=? AND r.path_set=? AND upper(trim(run.launch_key))=?`,
+          AND upper(trim(run.launch_key))=?`,
     )
-    .all(group.project, group.patchId, serializePathSet(group.pathSet), taskKey.toUpperCase())
+    .all(group.project, taskKey.toUpperCase())
     .map(({ record_id }) => record_id)
   const candidates = reviewsForBranch(
     database,

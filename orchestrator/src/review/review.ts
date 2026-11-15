@@ -622,18 +622,22 @@ function measuredReviewForRuns(runs: readonly RunRow[], database: Database) {
   )
 }
 
-export function recordReviews(
-  entries: { runId: string; output: ReviewReply }[],
-  database: Database = writableDb(),
-): string {
-  if (!entries.length) throw new Error('a review requires at least one lens run')
-  const runs = loadFindingsRuns(entries, database)
+function requireOneReviewProject(runs: readonly RunRow[]): void {
   const projects = [...new Set(runs.map((run) => run.project_record_id))]
   if (projects.length > 1) {
     throw new Error(
       `review lens runs belong to different projects: ${projects.map((project) => project ?? '(none)').join(', ')}`,
     )
   }
+}
+
+export function recordReviews(
+  entries: { runId: string; output: ReviewReply }[],
+  database: Database = writableDb(),
+): string {
+  if (!entries.length) throw new Error('a review requires at least one lens run')
+  const runs = loadFindingsRuns(entries, database)
+  requireOneReviewProject(runs)
   const measuredTrees = runs.filter((run) => run.input_tree !== null)
   const distinctTrees = new Set(measuredTrees.map((run) => run.input_tree))
   if (distinctTrees.size > 1) {

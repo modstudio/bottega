@@ -3,6 +3,7 @@
 
 import type { ReviewFunnelVerdict } from '../review-funnel/decide-review-funnel.ts'
 import type { LandingOverrideRow } from '../review-funnel/gather-funnel-facts.ts'
+import { sameChange } from '../review/same-change.ts'
 
 export type AdmissionOverride = LandingOverrideRow
 
@@ -24,8 +25,21 @@ export function decideAdmission(
     (candidate) =>
       candidate.project === change.project &&
       candidate.branch === change.branch &&
-      candidate.patchId === change.patchId &&
-      candidate.pathSet === change.pathSet,
+      sameChange({
+        reviewed: {
+          patchId: candidate.patchId,
+          zeroContextPatchId: candidate.zeroContextPatchId,
+          paths: candidate.pathSet ? (JSON.parse(candidate.pathSet) as string[]) : [],
+          message: null,
+        },
+        current: {
+          patchId: change.patchId,
+          zeroContextPatchId: change.zeroContextPatchId ?? null,
+          paths: JSON.parse(change.pathSet) as string[],
+          message: null,
+        },
+        replay: null,
+      }).same,
   )
   const override = identityMatches.find((candidate) => {
     if (candidate.attribution === 'operator') return true

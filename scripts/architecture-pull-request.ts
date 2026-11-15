@@ -103,6 +103,7 @@ export const pullRequestModuleSpecs = [
     allowed: [
       '../review-funnel/decide-review-funnel.ts',
       '../review-funnel/gather-funnel-facts.ts',
+      '../review/same-change.ts',
     ],
     typeOnlyAllowed: [
       '../review-funnel/decide-review-funnel.ts',

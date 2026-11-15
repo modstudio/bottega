@@ -1,14 +1,14 @@
 // concern: review-same-change
 /** Decides whether two observed ranges represent the same reviewable change. */
 
-export type ChangeFacts = {
+type ChangeFacts = {
   patchId: string | null
   zeroContextPatchId: string | null
   paths: readonly string[]
   message: string | null
 }
 
-export type ReplayResult =
+type ReplayResult =
   | { kind: 'same-tree' }
   | { kind: 'different-tree' | 'conflict' }
   | { kind: 'unavailable'; reason: string }
@@ -44,7 +44,7 @@ export function sameChange(facts: SameChangeFacts): SameChangeDecision {
   }
   if (
     pathsMatch &&
-    facts.reviewed.zeroContextPatchId === null &&
+    (facts.reviewed.zeroContextPatchId === null || facts.current.zeroContextPatchId === null) &&
     facts.reviewed.patchId !== null &&
     facts.reviewed.patchId === facts.current.patchId
   ) {
@@ -62,9 +62,4 @@ export function sameChange(facts: SameChangeFacts): SameChangeDecision {
           ? 'change identity differs'
           : 'path set differs'
   return { same: false, basis: 'different', messageChanged, reason }
-}
-
-/** SQL equivalent for comparisons that cannot gather replay facts. */
-export function sameChangeSql(left: string, right: string): string {
-  return `((${left}.zero_context_patch_id IS NOT NULL AND ${right}.zero_context_patch_id IS NOT NULL AND ${left}.zero_context_patch_id=${right}.zero_context_patch_id) OR (${left}.zero_context_patch_id IS NULL AND ${left}.patch_id=${right}.patch_id)) AND ${left}.path_set=${right}.path_set`
 }

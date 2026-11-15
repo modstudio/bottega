@@ -5,7 +5,6 @@ import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts
 import { db } from '../database/db.ts'
 import { changeIdentity, zeroContextChangeIdentity } from './change-identity.ts'
 import { git, reviewGit, targetGitEnvironment } from './review-pins.ts'
-import { gatherSameChange } from './same-change-git.ts'
 import { reviewRemoteTrunkRefExists, reviewTrunkRef } from './review-target.ts'
 import type {
   CoverageGitResult,
@@ -14,6 +13,7 @@ import type {
   ReviewCoverageInput,
   ReviewListRow,
 } from './review-types.ts'
+import { gatherSameChange } from './same-change-git.ts'
 
 function coverageGit(repoRoot: string): CoverageGitRunner {
   return (args, stdin) => {
@@ -94,6 +94,45 @@ function changedPaths(runner: CoverageGitRunner, from: string, to: string): Set<
   return new Set(splitNulPaths(output))
 }
 
+function compareCoverageChange(input: {
+  runner: CoverageGitRunner
+  review: ReviewCoverageInput
+  oldBase: string
+  reviewedCommit: string
+  newBase: string
+  tip: string
+  tipTree: string
+}) {
+  const candidatePaths = [...changedPaths(input.runner, input.newBase, input.tip)].sort()
+  const reviewedPaths = input.review.pathSet
+    ? (JSON.parse(input.review.pathSet) as string[])
+    : [...changedPaths(input.runner, input.oldBase, input.reviewedCommit)].sort()
+  const messageResult = input.runner(['log', '--format=%B', `${input.newBase}..${input.tip}`])
+  const message = messageResult.ok ? messageResult.out : ''
+  return gatherSameChange({
+    runner: input.runner,
+    reviewed: {
+      patchId:
+        input.review.patchId ?? changeIdentity(input.runner, input.oldBase, input.reviewedCommit),
+      zeroContextPatchId: input.review.zeroContextPatchId ?? null,
+      paths: reviewedPaths,
+      message: input.review.commitMessage ?? null,
+    },
+    reviewedCommit: input.reviewedCommit,
+    oldBase: input.oldBase,
+    current: { paths: candidatePaths, message },
+    tip: input.tip,
+    tipTree: input.tipTree,
+    newBase: input.newBase,
+  })
+}
+
+const invalidCoverage = (reason: string, resolution: 'pin' | 'walk'): CoverageVerdict => ({
+  kind: 'invalid',
+  reason,
+  resolution,
+})
+
 export function reviewCoverageVerdict(
   repoRoot: string,
   review: ReviewCoverageInput,
@@ -134,20 +173,19 @@ export function reviewCoverageVerdict(
   const resolved = commitForTree(runner, review, reviewedTree)
   const reviewedCommit = resolved.commit
   if (!reviewedCommit) {
-    return { kind: 'invalid', reason: 'reviewed commit not found', resolution: resolved.resolution }
+    return invalidCoverage('reviewed commit not found', resolved.resolution)
   }
   const baseCommit = review.lenses[0]!.baseCommit!
   if (!runner(['cat-file', '-e', `${baseCommit}^{commit}`]).ok) {
-    return { kind: 'invalid', reason: 'reviewed commit not found', resolution: resolved.resolution }
+    return invalidCoverage('reviewed commit not found', resolved.resolution)
   }
   const oldBaseArgs = ['merge-base', reviewedCommit, baseCommit]
   const oldBaseResult = runner(oldBaseArgs)
   if (!oldBaseResult.ok) {
-    return {
-      kind: 'invalid',
-      reason: `git ${oldBaseArgs.join(' ')} failed: ${oldBaseResult.err}`,
-      resolution: resolved.resolution,
-    }
+    return invalidCoverage(
+      `git ${oldBaseArgs.join(' ')} failed: ${oldBaseResult.err}`,
+      resolved.resolution,
+    )
   }
   const oldBase = oldBaseResult.out
   const remoteTrackingRefExists = reviewRemoteTrunkRefExists(trunk, (args) => runner(args).ok)
@@ -155,40 +193,23 @@ export function reviewCoverageVerdict(
   const newBaseDisplayArgs = ['merge-base', tip, trunk]
   const newBaseResult = runner(newBaseArgs)
   if (!newBaseResult.ok) {
-    return {
-      kind: 'invalid',
-      reason: `git ${newBaseDisplayArgs.join(' ')} failed: ${newBaseResult.err}`,
-      resolution: resolved.resolution,
-    }
+    return invalidCoverage(
+      `git ${newBaseDisplayArgs.join(' ')} failed: ${newBaseResult.err}`,
+      resolved.resolution,
+    )
   }
   const newBase = newBaseResult.out
-  const candidatePaths = [...changedPaths(runner, newBase, tip)].sort()
-  const reviewedPaths = review.pathSet
-    ? (JSON.parse(review.pathSet) as string[])
-    : [...changedPaths(runner, oldBase, reviewedCommit)].sort()
-  const messageResult = runner(['log', '--format=%B', `${newBase}..${tip}`])
-  const message = messageResult.ok ? messageResult.out : ''
-  const comparison = gatherSameChange({
+  const comparison = compareCoverageChange({
     runner,
-    reviewed: {
-      patchId: review.patchId ?? changeIdentity(runner, oldBase, reviewedCommit),
-      zeroContextPatchId: review.zeroContextPatchId ?? null,
-      paths: reviewedPaths,
-      message: review.commitMessage ?? null,
-    },
+    review,
     reviewedCommit,
     oldBase,
-    current: { paths: candidatePaths, message },
     tip,
     tipTree: tree,
     newBase,
   })
   if (!comparison.same) {
-    return {
-      kind: 'invalid',
-      reason: comparison.reason ?? 'change differs',
-      resolution: resolved.resolution,
-    }
+    return invalidCoverage(comparison.reason ?? 'change differs', resolved.resolution)
   }
   const candidatePatch = changeIdentity(runner, newBase, tip)
   const candidateZeroContextPatch = zeroContextChangeIdentity(runner, newBase, tip)

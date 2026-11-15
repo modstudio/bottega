@@ -23,6 +23,7 @@ export function reviewFunnelDecisionValues(row: RecordPayload, projectId: string
     branch: String(row.branch),
     headCommit: String(row.headCommit),
     patchId: String(row.patchId),
+    zeroContextPatchId: nullableString(row.zeroContextPatchId),
     pathSet: row.pathSet,
     policyVersion: String(row.policyVersion),
     mode: String(row.mode),

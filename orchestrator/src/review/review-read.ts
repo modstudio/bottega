@@ -15,6 +15,7 @@ import { resolveReviewCommandCwd } from './review-command-cwd.ts'
 import { branchRunOwnerSession, measureChangeGroup, serializePathSet } from './review-group.ts'
 import { reviewLineage } from './review-lineage-store.ts'
 import { enqueueReviewRead } from './review-outbox.ts'
+import { sameChange } from './same-change.ts'
 
 type Flags = { flag(name: string): string | undefined }
 type Presentation = { log(...values: unknown[]): void }
@@ -63,19 +64,38 @@ export function hasExactArchitectRead(
   project: string,
   branch: string,
   patchId: string,
+  zeroContextPatchId: string,
   pathSet: string,
 ): boolean {
   const lineage = reviewLineage(database, project, branch)
-  return Boolean(
-    database
-      .query<{ found: number }, string[]>(
-        `SELECT 1 AS found FROM review_read
+  return database
+    .query<
+      { patch_id: string; zero_context_patch_id: string | null; path_set: string },
+      string[]
+    >(
+      `SELECT patch_id,zero_context_patch_id,path_set FROM review_read
           WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
             AND branch IN (${lineage.map(() => '?').join(',')})
-            AND patch_id=? AND path_set=? LIMIT 1`,
-      )
-      .get(project, ...lineage, patchId, pathSet),
-  )
+          ORDER BY recorded_at DESC,record_id DESC`,
+    )
+    .all(project, ...lineage)
+    .some((read) =>
+      sameChange({
+        reviewed: {
+          patchId: read.patch_id,
+          zeroContextPatchId: read.zero_context_patch_id,
+          paths: JSON.parse(read.path_set) as string[],
+          message: null,
+        },
+        current: {
+          patchId,
+          zeroContextPatchId,
+          paths: JSON.parse(pathSet) as string[],
+          message: null,
+        },
+        replay: null,
+      }).same,
+    )
 }
 
 export function requireBranchRunOwner(

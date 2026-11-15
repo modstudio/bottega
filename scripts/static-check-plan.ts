@@ -206,6 +206,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
   script('scripts/check-storybook.ts', run),
   script('scripts/check-architecture.ts', run, { extra: (qualityBase) => [qualityBase] }),
   script('scripts/check-review-boundary.ts', run),
+  script('scripts/check-review-change-comparisons.ts', run),
   script('scripts/check-outcome-boundary.ts', run),
   script('scripts/check-contract-boundary.ts', run),
   script('scripts/check-evidence-boundary.ts', run),

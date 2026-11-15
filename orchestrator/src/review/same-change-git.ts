@@ -3,7 +3,7 @@
 
 import { changeIdentity, zeroContextChangeIdentity } from './change-identity.ts'
 import type { CoverageGitRunner } from './review-types.ts'
-import { sameChange, type SameChangeDecision } from './same-change.ts'
+import { type SameChangeDecision, sameChange } from './same-change.ts'
 
 type StoredChange = {
   patchId: string | null
@@ -45,8 +45,12 @@ export function gatherSameChange(input: {
     paths: input.current.paths,
     message: input.current.message,
   }
-  const legacyDecision = sameChange({ reviewed: input.reviewed, current: currentLegacy, replay: null })
-  if (legacyDecision.same) return legacyDecision
+  const legacyDecision = sameChange({
+    reviewed: input.reviewed,
+    current: currentLegacy,
+    replay: null,
+  })
+  if (input.reviewed.zeroContextPatchId === null && legacyDecision.same) return legacyDecision
   const reviewedReachable = reachable(input.runner, input.reviewedCommit)
   const oldBaseReachable = reachable(input.runner, input.oldBase)
   const reviewed =
@@ -75,7 +79,11 @@ export function gatherSameChange(input: {
       replay: { kind: 'unavailable', reason: `reviewed commit ${input.reviewedCommit} is missing` },
     })
   }
-  if (!oldBaseReachable || !reachable(input.runner, input.newBase) || !reachable(input.runner, input.tip)) {
+  if (
+    !oldBaseReachable ||
+    !reachable(input.runner, input.newBase) ||
+    !reachable(input.runner, input.tip)
+  ) {
     return sameChange({
       reviewed,
       current,

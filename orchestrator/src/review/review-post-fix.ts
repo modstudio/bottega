@@ -21,6 +21,7 @@ import { reviewLineage } from './review-lineage-store.ts'
 import { git, measureChangeIdentity, pinRef } from './review-pins.ts'
 import { type ReviewRole, reviewCountsAsRound } from './review-role.ts'
 import { reviewRoundIdentity } from './review-round-identity.ts'
+import { sameChange } from './same-change.ts'
 import { diffNumstat } from './review-tier.ts'
 import {
   type ReviewTier,
@@ -92,13 +93,36 @@ export type RebaseCarryDecision = {
   reOwedPathsByLens: Readonly<Record<string, readonly string[]>>
 }
 
+function samePerPathPatch(
+  path: string,
+  reviewed: PerPathPatch | null | undefined,
+  current: PerPathPatch | null | undefined,
+): boolean {
+  return sameChange({
+    reviewed: {
+      patchId: reviewed?.patchId ?? null,
+      zeroContextPatchId: reviewed?.patchId ?? null,
+      paths: [path],
+      message: null,
+    },
+    current: {
+      patchId: current?.patchId ?? null,
+      zeroContextPatchId: current?.patchId ?? null,
+      paths: [path],
+      message: null,
+    },
+    replay: null,
+  }).same
+}
+
 /** Decide review carry from per-file replay facts and recorded lens coverage. */
 export function rebaseCarryDecision(input: {
   files: readonly RebaseFileComparison[]
   pathsByLens: Readonly<Record<string, readonly string[]>>
 }): RebaseCarryDecision {
   const changed = input.files.filter(
-    ({ replayed, current, conflicted }) => conflicted || replayed?.patchId !== current?.patchId,
+    ({ path, replayed, current, conflicted }) =>
+      conflicted || !samePerPathPatch(path, replayed, current),
   )
   const fixFiles = changed.map(({ path, replayed, current }) => {
     const source = current ?? replayed
@@ -250,7 +274,7 @@ export function fixFilesFromPatches(
   return [...paths].sort().flatMap((path) => {
     const before = reviewedByPath.get(path)
     const after = currentByPath.get(path)
-    if (before?.patchId === after?.patchId && !overlapped.has(path)) return []
+    if (samePerPathPatch(path, before, after) && !overlapped.has(path)) return []
     const source = after ?? before
     return source ? [{ path, insertions: source.insertions, deletions: source.deletions }] : []
   })

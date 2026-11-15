@@ -18,6 +18,7 @@ import { reviewCountsAsRound } from './review-role.ts'
 import type { ReviewRoundBudgetDecision } from './review-round-budget.ts'
 import { identifySecondOpinionRun } from './review-second-opinion.ts'
 import type { ReviewLensOwedReason, ReviewLensSelectionReason } from './review-vocabulary.ts'
+import { sameChange } from './same-change.ts'
 
 export type RoundLensFacts = {
   reviewedPathsByLens: Readonly<Record<string, readonly string[]>>
@@ -143,7 +144,7 @@ function withLensReasons(
 /** Gather branch-history facts without deciding which lenses the round needs. */
 export function roundLensFacts(
   branchReviews: readonly TriageReviewRow[],
-  current: { patchId: string; pathSet: string },
+  current: { patchId: string; zeroContextPatchId?: string; pathSet: string },
 ): RoundLensFacts {
   const completedReviews = branchReviews.filter(
     (review) => review.completedAt !== null && review.tier !== null,
@@ -179,7 +180,21 @@ export function roundLensFacts(
       review.completedAt !== null &&
       review.tier !== null &&
       reviewCountsAsRound(review.role) &&
-      (review.patchId !== current.patchId || review.pathSet !== current.pathSet),
+      !sameChange({
+        reviewed: {
+          patchId: review.patchId,
+          zeroContextPatchId: review.zeroContextPatchId ?? null,
+          paths: review.pathSet ? (JSON.parse(review.pathSet) as string[]) : [],
+          message: null,
+        },
+        current: {
+          patchId: current.patchId,
+          zeroContextPatchId: current.zeroContextPatchId ?? null,
+          paths: JSON.parse(current.pathSet) as string[],
+          message: null,
+        },
+        replay: null,
+      }).same,
   )
   prior.sort((left, right) => right.reviewNumber - left.reviewNumber)
   const reviewedPathsByLens: Record<string, string[]> = {}
@@ -201,8 +216,22 @@ export function roundLensFacts(
       latestAcceptedOrModifiedLenses: [],
       ...(Object.keys(inadmissibleLenses).length ? { inadmissibleLenses } : {}),
     }
-  const latestRound = prior.filter(
-    (review) => review.patchId === latest.patchId && review.pathSet === latest.pathSet,
+  const latestRound = prior.filter((review) =>
+    sameChange({
+      reviewed: {
+        patchId: review.patchId,
+        zeroContextPatchId: review.zeroContextPatchId ?? null,
+        paths: review.pathSet ? (JSON.parse(review.pathSet) as string[]) : [],
+        message: null,
+      },
+      current: {
+        patchId: latest.patchId,
+        zeroContextPatchId: latest.zeroContextPatchId ?? null,
+        paths: latest.pathSet ? (JSON.parse(latest.pathSet) as string[]) : [],
+        message: null,
+      },
+      replay: null,
+    }).same,
   )
   const latestAcceptedOrModifiedLenses = [
     ...new Set(

@@ -40,7 +40,7 @@ type ReviewFunnelChangeIdentity = {
   branch: string
   head: string
   patchId: string
-  zeroContextPatchId: string
+  zeroContextPatchId?: string
   pathSet: string
   paths: string[]
 }
@@ -236,6 +236,7 @@ function funnelPlan(facts: ReviewFunnelFacts, policy: ReviewFunnelPolicy) {
   const relevant = selected.effective
   const roundFacts = roundLensFacts(facts.branchReviews, {
     patchId: facts.change.patchId,
+    zeroContextPatchId: facts.change.zeroContextPatchId,
     pathSet: facts.change.pathSet,
   })
   const fixPaths =
