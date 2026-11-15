@@ -57,7 +57,8 @@ export function registerQuestionNumberMigrationProof(input: { admin(statement: s
       VALUES ('${ids.spaceA}',31),('${ids.spaceB}',15);
     `
     const assertions = `
-      WITH allocated AS (
+      CREATE TEMP TABLE allocated AS
+      WITH allocated_number AS (
         INSERT INTO question_number_counter (space_id,next)
         VALUES (
           '${ids.spaceA}',
@@ -69,6 +70,8 @@ export function registerQuestionNumberMigrationProof(input: { admin(statement: s
         ) + 1
         RETURNING next - 1 AS number
       )
+      SELECT number FROM allocated_number;
+
       SELECT json_build_object(
         'rowCount',(SELECT count(*) FROM question),
         'aKeeper',(SELECT number FROM question WHERE id='${ids.aKeeper}'),
