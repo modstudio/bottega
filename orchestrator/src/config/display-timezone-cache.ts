@@ -7,12 +7,12 @@ import { isDisplayTimezone } from '../../../shared/machine-config.ts'
 import { concernStateDirectory, type StateEnvironment } from '../../../shared/state-directory.ts'
 import { writeCacheFile } from './atomic-cache-file.ts'
 
-export type CachedUserDisplay = {
+type CachedUserDisplay = {
   version: 1
   displayTimezone: string | null
 }
 
-export const displayTimezoneCachePath = (env: StateEnvironment) =>
+const displayTimezoneCachePath = (env: StateEnvironment) =>
   join(concernStateDirectory('orchestrator', env), 'autonomy-context', 'user.display.json')
 
 function object(value: unknown): value is Record<string, unknown> {

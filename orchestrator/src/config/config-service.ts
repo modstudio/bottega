@@ -21,9 +21,9 @@ import { localMachine, openHostedSecretRow } from '../../../shared/hosted-secret
 import {
   type ConfigHome,
   configHomes,
+  DISPLAY_TIMEZONE_KEY,
   deleteMachineAutonomy,
   deleteMachineValue,
-  DISPLAY_TIMEZONE_KEY,
   isDisplayTimezone,
   isMachineConfigKey,
   listMachineAutonomy,
@@ -73,7 +73,6 @@ import type { MachineNamePair } from '../record/machine-name.ts'
 import { claimCurrentMachineNames } from '../record/machine-name-command.ts'
 import { LEGACY_ENVIRONMENT_SECRET_NAMES } from '../setup/environment-name-migration.ts'
 import { configHome, setRemedy, validateHostedValue } from './config-entry-policy.ts'
-import { writeCachedDisplayTimezone } from './display-timezone-cache.ts'
 import { planRotation, shouldRotateAfterRevocation } from './config-service-rotation-policy.ts'
 import {
   bytes,
@@ -85,6 +84,7 @@ import {
   wrapRecipientKeyIds,
   wrapsForRecipients,
 } from './data-key-access.ts'
+import { writeCachedDisplayTimezone } from './display-timezone-cache.ts'
 import { hostedConfigClient } from './hosted-config-call-outcome.ts'
 import * as trustRefusal from './machine-trust-refusal.ts'
 import { appendTrustLogRevoke } from './trust-log-revoke.ts'

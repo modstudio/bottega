@@ -6,14 +6,14 @@ import { PLATFORM_SLUG } from './brand.ts'
 import { CONFIG_HOME_ENV } from './config-directory.ts'
 import {
   configHomes,
-  deleteMachineValue,
   DISPLAY_TIMEZONE_KEY,
+  deleteMachineValue,
   editMachinePermission,
   editMachinePermissionTable,
+  isDisplayTimezone,
   listMachineEntries,
   MACHINE_CONFIG,
   machineId,
-  isDisplayTimezone,
   parseFormerShortNames,
   readDelegationSettings,
   readMachinePermissions,

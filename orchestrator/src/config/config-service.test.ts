@@ -22,7 +22,6 @@ import {
   verifyTrustLog,
 } from '../../../shared/trust-log.ts'
 import { readRememberedTrustLogHead } from '../../../shared/trust-log-head.ts'
-import { readCachedDisplayTimezone, writeCachedDisplayTimezone } from './display-timezone-cache.ts'
 import {
   applyLegacyEnvironmentSecretMigration,
   claimCurrentMachineKey,
@@ -46,6 +45,7 @@ import {
 } from './config-service.ts'
 import { rotationFixture } from './config-service-rotation.fixture.ts'
 import { planRotation } from './config-service-rotation-policy.ts'
+import { readCachedDisplayTimezone, writeCachedDisplayTimezone } from './display-timezone-cache.ts'
 
 const roots: string[] = []
 let previousConfigHome: string | undefined, previousKeystore: string | undefined
