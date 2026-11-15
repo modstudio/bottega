@@ -9,8 +9,9 @@ import {
   migratedTestDatabase,
   prepareMigrationTestDatabases,
 } from '../database/test-database.fixture.ts'
-import { decideTriage } from '../pull-request/triage-decision.ts'
-import type { ReviewPlan } from './review-applicability.ts'
+import { decideTriage } from '../review-funnel/review-funnel-admission-evidence.ts'
+import { reviewBudgetForChange as reviewBudgetForBranch } from '../review-funnel/review-funnel-plan-service.ts'
+import type { ReviewPlan } from '../review-funnel/review-funnel-tier.ts'
 import {
   canonicalTreePair,
   measureChangeGroup,
@@ -22,7 +23,7 @@ import {
   type TriageReviewRow,
   treeInspectedPath,
 } from './review-group.ts'
-import { reviewBudgetForBranch, reviewRoundBudgetDecision } from './review-round-budget.ts'
+import { reviewRoundBudgetDecision } from './review-round-budget.ts'
 import type { ReviewTier } from './review-tier-classifier.ts'
 
 let canonicalTreeRoot: string

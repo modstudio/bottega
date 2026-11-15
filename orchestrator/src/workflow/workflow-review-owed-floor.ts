@@ -7,6 +7,7 @@ import { projectByName } from '../project/projects.ts'
 import { emptyReviewRefusal, resolveReviewBase } from '../review/review-target.ts'
 import { decideReviewFunnel } from '../review-funnel/decide-review-funnel.ts'
 import { gatherFunnelFacts } from '../review-funnel/gather-funnel-facts.ts'
+import { recordReviewFunnelDecision } from '../review-funnel/review-funnel-decision-log.ts'
 import { activeReviewFunnelPolicy } from '../review-funnel/review-funnel-policy.ts'
 import { gitText } from './workflow-floor-evidence-checkout.ts'
 import {
@@ -61,21 +62,25 @@ function gatherReviewOwedFloor(
   const emptyRefusal = emptyReviewRefusal(head, base, branch, trunk)
   if (emptyRefusal) return { action: 'refuse', message: emptyRefusal }
   const activePolicy = activeReviewFunnelPolicy()
-  return decideReviewOwedFloor(
-    decideReviewFunnel(
-      gatherFunnelFacts({
-        database,
-        cwd,
-        base,
-        head,
-        branch,
-        project,
-        selectionWindow: activePolicy.policy.selection.window,
-      }),
-      activePolicy.policy,
-      activePolicy.policyVersion,
-    ),
-  )
+  const facts = gatherFunnelFacts({
+    database,
+    cwd,
+    base,
+    head,
+    branch,
+    project,
+    selectionWindow: activePolicy.policy.selection.window,
+  })
+  const verdict = decideReviewFunnel(facts, activePolicy.policy, activePolicy.policyVersion)
+  const decision = decideReviewOwedFloor(verdict)
+  recordReviewFunnelDecision({
+    database,
+    surface: 'workflow',
+    outcome: decision.action === 'allow' ? 'admit' : 'refuse',
+    facts,
+    verdict,
+  })
+  return decision
 }
 
 export const productionReviewOwedFloor = (

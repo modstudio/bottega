@@ -5,6 +5,7 @@ import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import { closeDatabaseForFixture, db } from '../database/db.ts'
 import { migrationJournal } from '../database/migrations.ts'
 import { projectByName } from '../project/projects.ts'
+import type { TriageDecision } from '../review-funnel/review-funnel-admission-evidence.ts'
 import type { AdmissionDecision } from './admission-decision.ts'
 import { type PullRequestChange, recordMergeAdmission } from './pr-admission.ts'
 import {
@@ -573,6 +574,7 @@ test('an incomplete admission refuses with its review remedy without merging', a
             decision: {
               complete: false,
               overrideId: null,
+              overrideReason: null,
               triage: {
                 complete: false,
                 snapshot: {
@@ -681,9 +683,10 @@ test('an admitted head records a snapshot with the pull request number before me
   const project = database
     .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
     .get('merge-fixture')!
-  const decision: AdmissionDecision = {
+  const decision: AdmissionDecision & { triage: TriageDecision } = {
     complete: true,
     overrideId: null,
+    overrideReason: null,
     triage: {
       complete: true,
       snapshot: {

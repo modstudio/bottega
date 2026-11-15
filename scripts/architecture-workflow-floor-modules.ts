@@ -172,6 +172,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../project/projects.ts',
     '../review-funnel/decide-review-funnel.ts',
     '../review-funnel/gather-funnel-facts.ts',
+    '../review-funnel/review-funnel-decision-log.ts',
     '../review-funnel/review-funnel-policy.ts',
     '../review/review-target.ts',
     './workflow-floor-evidence-checkout.ts',

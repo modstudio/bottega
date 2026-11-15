@@ -2,12 +2,12 @@
 /** Registers review and confinement adapters. Must not own their behavior. */
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { clearConfinement } from '../confinement/confinement-ruling.ts'
 import { db } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
-import { ceilingGuidanceForTier } from '../pull-request/pr-admission.ts'
 import { resolveReviewCommandCwd } from '../review/review-command-cwd.ts'
 import {
   calibrationReviewCommand,
@@ -84,14 +84,24 @@ function tierReviewCliCommand(argv: string[], flags: CliFlags, { log }: ReviewPr
   if (!value) throw new Error(`${PLATFORM_SLUG} review tier <branch|run-id|from..to> [--json]`)
   const result = reviewTierCommandOutput(value, resolveReviewCommandCwd(flags.flag('cwd')))
   const json = flags.has('json')
-  const ceilingGuidance = json
-    ? null
-    : ceilingGuidanceForTier({
-        cwd: result.cwd,
-        tip: result.tip,
-        branch: result.branch,
-        reviewBudget: result.output.review_budget,
-      })
+  const verdict = result.output.funnel_verdict
+  const creditsCeilingWork =
+    result.output.credited_by_architect_read.lenses.length > 0 ||
+    result.output.credited_by_architect_read.secondOpinion !== undefined
+  const ceilingGuidance =
+    json || !verdict.budget.atCeiling
+      ? null
+      : verdict.next.action === 'record-read' && creditsCeilingWork
+        ? renderRefusal(
+            refusal(
+              'review round ceiling reached: the architect rules after reading this exact change',
+              {
+                kind: 'edit',
+                text: verdict.remedy,
+              },
+            ),
+          )
+        : `review round ceiling reached: ${verdict.remedy}`
   printReviewTier(result.output, json, ceilingGuidance, log)
 }
 

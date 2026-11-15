@@ -1,5 +1,8 @@
 // concern: pull-request-override-decision
-import { type CeilingTriageFacts, ceilingWaivableGaps } from './triage-decision.ts'
+import {
+  type CeilingTriageFacts,
+  ceilingWaivableGaps,
+} from '../review-funnel/review-funnel-admission-evidence.ts'
 
 export type TriageOverrideAttribution = 'operator' | 'architect-ceiling'
 
@@ -22,15 +25,6 @@ type TriageOverrideInput = {
   triage?: CeilingTriageFacts
   overrideOption?: string
 }
-
-type CeilingRulingGuidanceInput = {
-  reviewBudget: NonNullable<TriageOverrideInput['reviewBudget']>
-  triage?: CeilingTriageFacts
-  commandName: string
-}
-
-const CEILING_GUIDANCE_REASON = 'remaining findings cannot cause harm'
-export const REVIEW_CEILING_REACHED = 'the review round ceiling is reached'
 
 function decideCeilingRuling(input: TriageOverrideInput, reason: string): TriageOverrideDecision {
   if (!reason) return { kind: 'refuse', reason: '--ceiling-ruling requires a non-empty reason' }
@@ -125,34 +119,4 @@ export function decideTriageOverride(input: TriageOverrideInput): TriageOverride
     }
   }
   return { kind: 'accept', reason, attribution: 'operator', missingLenses: [] }
-}
-
-/** Describe ceiling-ruling eligibility using the same decision that guards admission. */
-export function ceilingRulingGuidance(input: CeilingRulingGuidanceInput): string | null {
-  if (!input.reviewBudget.atCeiling) return null
-  const decision = decideTriageOverride({
-    ceilingRuling: CEILING_GUIDANCE_REASON,
-    fromOperator: false,
-    commandName: input.commandName,
-    reviewBudget: input.reviewBudget,
-    triage: input.triage,
-  })
-  if (decision.kind === 'accept') {
-    return (
-      `${REVIEW_CEILING_REACHED}; the architect rules under ` +
-      '`.agents/rules/20-build-and-buy.md` “Review rounds are a funnel”. Read the fix with ' +
-      `\`${input.commandName} review read\` and, when no remaining finding can cause harm, record ` +
-      `the ruling with \`${input.commandName} pr create ... --ceiling-ruling "<reason>"\``
-    )
-  }
-  if (input.triage?.complete) {
-    return `${REVIEW_CEILING_REACHED}; triage is complete, and ${input.commandName} pr create needs no ruling`
-  }
-  const reason =
-    decision.kind === 'refuse' ? decision.reason : 'ceiling ruling eligibility was not decided'
-  const clearing = reason.includes('cleared by:')
-    ? ''
-    : `; cleared by: run the round named by \`${input.commandName} review tier <branch>\`, then ` +
-      `\`${input.commandName} pr create\` names each remaining admission gap and its command`
-  return `${REVIEW_CEILING_REACHED}; a ceiling ruling is not available yet: ${reason}${clearing}`
 }

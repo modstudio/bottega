@@ -1,22 +1,23 @@
 import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
-import {
-  admissionDecision,
-  type PullRequestChange,
-  recordTriageOverrideForChange,
-} from './pr-admission.ts'
+import type { ReviewFunnelVerdict } from '../review-funnel/decide-review-funnel.ts'
+import { readLandingOverridesForBranch } from '../review-funnel/gather-funnel-facts.ts'
+import type { TriageDecision } from '../review-funnel/review-funnel-admission-evidence.ts'
+import { decideAdmission } from './admission-decision.ts'
+import { type PullRequestChange, recordTriageOverrideForChange } from './pr-admission.ts'
 import {
   mergePullRequest,
   type PullRequestMergeAdapter,
   type PullRequestMergeFacts,
 } from './pr-merge.ts'
-import type { TriageDecision } from './triage-decision.ts'
 
 const cwd = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 const recordedHead = 'recorded-head'
+const rebasedHead = 'rebased-head'
 const headBranch = 'DEV-2074-override'
 
 const pullRequest = (headCommit: string): PullRequestMergeFacts => ({
@@ -95,6 +96,28 @@ function changeAt(tip: string): PullRequestChange {
   }
 }
 
+function funnelVerdict(head: string): ReviewFunnelVerdict {
+  return {
+    policyVersion: 'builtin',
+    mode: 'evaluate',
+    change: {
+      project: 'merge-override-fixture',
+      taskKey: 'DEV-2074',
+      branch: headBranch,
+      head,
+      patchId: 'patch',
+      pathSet: '["orchestrator/src/pull-request/pr-merge.ts"]',
+      paths: ['orchestrator/src/pull-request/pr-merge.ts'],
+    },
+    tier: { tier: 2, risk: 2, size: 1, firm: false, lowered: false, reasons: [] },
+    budget: { roundsUsed: 0, ceiling: 2, atCeiling: false },
+    selection: { mode: 'evaluate', lenses: [] },
+    lenses: [{ lens: 'correctness', status: 'owed', reason: 'initial' }],
+    next: { action: 'dispatch', lenses: ['correctness'] },
+    remedy: `${PLATFORM_SLUG} review lens correctness ${headBranch}`,
+  }
+}
+
 function adapterFor(
   headCommit: string,
   mergedHeads: string[],
@@ -115,9 +138,11 @@ function adapterFor(
     hasCommit: () => true,
     admission: (_cwd, admittedHead) => {
       const change = changeAt(admittedHead)
+      const verdict = funnelVerdict(admittedHead)
+      const overrides = readLandingOverridesForBranch(database, change.project.name, change.branch)
       return {
         change,
-        decision: admissionDecision(change, database, incompleteTriage),
+        decision: { ...decideAdmission(verdict, overrides), verdict, triage: incompleteTriage },
       }
     },
     recordAdmission: () => null,
@@ -146,18 +171,18 @@ test("merge honors create's triage override for the same patch after a rebase", 
   const database = db()
   recordTriageOverrideForChange(
     changeAt(recordedHead),
-    { overrideReason: 'operator accepts the reviewed risk', fromOperator: true },
+    { overrideReason: 'Shmuel Barkin accepts the reviewed risk', fromOperator: true },
     database,
   )
   const mergedHeads: string[] = []
 
   expect(() =>
-    mergePullRequest('42', cwd, adapterFor('changed-head', mergedHeads, database), database),
+    mergePullRequest('42', cwd, adapterFor(rebasedHead, mergedHeads, database), database),
   ).toThrow('stop after admission')
-  expect(mergedHeads).toEqual(['changed-head'])
+  expect(mergedHeads).toEqual([rebasedHead])
 
   expect(() =>
     mergePullRequest('42', cwd, adapterFor(recordedHead, mergedHeads, database), database),
   ).toThrow('stop after admission')
-  expect(mergedHeads).toEqual(['changed-head', recordedHead])
+  expect(mergedHeads).toEqual([rebasedHead, recordedHead])
 })

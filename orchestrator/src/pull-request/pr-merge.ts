@@ -8,6 +8,7 @@ import type { Database } from 'bun:sqlite'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { BoundExceededError, budgetForArgv } from '../../../shared/call-budgets.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { recordMergeBranchLandings } from '../branch/branch-landing-service.ts'
 import { enableSchemaReload, writableDb } from '../database/db.ts'
 import { passingGateForCommit } from '../gate/gate-passed.ts'
@@ -16,7 +17,6 @@ import { currentProjectRepository, type Project, projectAt } from '../project/pr
 import { shipToDepthRefusal } from '../release/ship-to-reach.ts'
 import { type ShipCleanupReport, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import { matchWorkflowTreePath } from '../workflow/workflow-tree.ts'
-import type { AdmissionDecision } from './admission-decision.ts'
 import {
   decideMergeAdmission,
   decideMergeProof,
@@ -43,12 +43,14 @@ import {
 } from './merge-queue-forge.ts'
 import { decideMergeability, type MergeabilityFacts } from './mergeability-decision.ts'
 import {
+  type AdmissionWithTriage,
   admissionDecision,
   type PullRequestChange,
   recordMergeAdmission,
   resolvePullRequestChange,
   triageRefusal,
 } from './pr-admission.ts'
+
 import { recordPullRequestCi } from './pr-ci-record.ts'
 import {
   type PullRequestMergeFacts,
@@ -83,10 +85,10 @@ export type PullRequestMergeAdapter = {
     headCommit: string,
     headBranch: string,
     database: Database,
-  ): { change: PullRequestChange; decision: AdmissionDecision }
+  ): { change: PullRequestChange; decision: AdmissionWithTriage }
   recordAdmission(
     change: PullRequestChange,
-    decision: AdmissionDecision,
+    decision: AdmissionWithTriage,
     prNumber: number,
     database: Database,
   ): string | null
@@ -278,7 +280,8 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
   },
   admission(cwd, headCommit, headBranch, database) {
     const change = resolvePullRequestChange(cwd, headCommit, database, undefined, headBranch)
-    return { change, decision: admissionDecision(change, database) }
+    const evaluated = admissionDecision(change, database)
+    return { change, decision: evaluated }
   },
   recordAdmission(change, decision, prNumber, database) {
     return recordMergeAdmission(change, decision, prNumber, database)
@@ -651,14 +654,15 @@ function collectMergeAdmission(
     }
   }
   const triage = checked.decision.triage
-  if (triage.complete) throw new Error('incomplete admission returned complete review triage')
   return {
     checked,
     decision: decideMergeAdmission({
       checked: true,
       number: pullRequest.number,
       complete: false,
-      triageRefusal: triageRefusal(checked.change, triage),
+      triageRefusal: triage.complete
+        ? `review funnel refused this change; cleared by: run ${PLATFORM_SLUG} review tier for the pull-request head`
+        : triageRefusal(checked.change, triage),
     }),
   }
 }
@@ -833,7 +837,12 @@ export async function mergePullRequest(
   const release = project.settings.release
   if (!landingBranch || !release) {
     throw new Error(
-      `project ${project.name} has no landing branch and release policy; cleared by: ${PLATFORM_SLUG} project set ${project.name} --settings '<settings with trunk and release>'`,
+      renderRefusal(
+        refusal(`project ${project.name} has no landing branch and release policy`, {
+          kind: 'edit',
+          text: `${PLATFORM_SLUG} project set ${project.name} --settings '<settings with trunk and release>'`,
+        }),
+      ),
     )
   }
   const depthRefusal = shipToDepthRefusal(release.rungs, depth, project.name)

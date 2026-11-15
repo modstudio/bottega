@@ -1,45 +1,25 @@
 // concern: pull-request-admission-decision
-/** Admits review triage or an override recorded for the exact change identity. */
+/** Admits one funnel verdict, crediting an override recorded for its stable patch identity. */
 
-import type { TriageOverrideAttribution } from './override-decision.ts'
-import {
-  ceilingTriageFacts,
-  ceilingWaivableGaps,
-  normalizeMissingLensNames,
-  type TriageDecision,
-} from './triage-decision.ts'
+import type { ReviewFunnelVerdict } from '../review-funnel/decide-review-funnel.ts'
+import type { LandingOverrideRow } from '../review-funnel/gather-funnel-facts.ts'
 
-export type AdmissionChange = {
-  project: string
-  branch: string
-  patchId: string
-  pathSet: string
-}
-
-export type AdmissionOverride = {
-  recordId: string
-  project: string
-  branch: string
-  tip: string
-  tree: string
-  patchId: string | null
-  pathSet: string | null
-  attribution: TriageOverrideAttribution
-  missingLenses: string[]
-}
+export type AdmissionOverride = LandingOverrideRow
 
 export type AdmissionDecision = {
   complete: boolean
   overrideId: string | null
-  triage: TriageDecision
+  overrideReason: string | null
 }
 
-/** One pure decision over triage evidence and recorded change-bound overrides. */
+const normalized = (values: readonly string[]) => [...new Set(values)].sort()
+
+/** One pure decision over the shared verdict and recorded change-bound overrides. */
 export function decideAdmission(
-  change: AdmissionChange,
-  triage: TriageDecision,
+  verdict: ReviewFunnelVerdict,
   overrides: readonly AdmissionOverride[],
 ): AdmissionDecision {
+  const change = verdict.change
   const identityMatches = overrides.filter(
     (candidate) =>
       candidate.project === change.project &&
@@ -49,16 +29,17 @@ export function decideAdmission(
   )
   const override = identityMatches.find((candidate) => {
     if (candidate.attribution === 'operator') return true
-    const waivable = ceilingWaivableGaps(ceilingTriageFacts(triage))
-    if (!waivable.waivable) return false
+    const overridden = verdict.lenses
+      .filter(({ status }) => status === 'overridden')
+      .map(({ lens }) => lens)
     return (
-      JSON.stringify(normalizeMissingLensNames(candidate.missingLenses)) ===
-      JSON.stringify(waivable.missingLenses)
+      verdict.next.action === 'admit' &&
+      JSON.stringify(normalized(candidate.missingLenses)) === JSON.stringify(normalized(overridden))
     )
   })
   return {
-    complete: triage.complete || override !== undefined,
+    complete: verdict.next.action === 'admit' || override?.attribution === 'operator',
     overrideId: override?.recordId ?? null,
-    triage,
+    overrideReason: override?.reason ?? null,
   }
 }

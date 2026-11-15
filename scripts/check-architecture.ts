@@ -23,6 +23,7 @@ import {
   hubViewsDocsModeLiteralLines,
   hubViewsDocsModeLiteralRuleName,
 } from './architecture-hub-data.ts'
+import { reviewFunnelPrivateDecisionImports } from './architecture-review-boundaries.ts'
 import {
   duplicateImportBoundaryNameViolations,
   missingTypeOnlyImportBoundaryViolations,
@@ -139,6 +140,16 @@ for (const root of [...CONCERNS, 'shared']) {
           `${file}: ${imported.name} from ${source} is private to ${declaration.importer}`,
         )
       }
+      const funnelDecision = reviewFunnelPrivateDecisionImports.find(
+        (entry) =>
+          (entry.source === source || entry.source === `${source}.ts`) &&
+          entry.name === imported.name,
+      )
+      if (funnelDecision && !file.startsWith('orchestrator/src/review-funnel/')) {
+        violations.push(
+          `${file}: ${imported.name} from ${source} is private to orchestrator/src/review-funnel/`,
+        )
+      }
     }
     for (const specifier of imports.moduleImports) {
       const source = specifier.startsWith('.')
@@ -150,7 +161,17 @@ for (const root of [...CONCERNS, 'shared']) {
       for (const declaration of declarations) {
         if (declaration.importer === file) continue
         violations.push(
-          `${file}: whole-module import of ${source} exposes private ${declaration.name} to ${declaration.importer}`,
+          `${file}: whole-module import or re-export of ${source} exposes private ${declaration.name} to ${declaration.importer}`,
+        )
+      }
+      if (
+        !file.startsWith('orchestrator/src/review-funnel/') &&
+        reviewFunnelPrivateDecisionImports.some(
+          (entry) => entry.source === source || entry.source === `${source}.ts`,
+        )
+      ) {
+        violations.push(
+          `${file}: whole-module import or re-export of ${source} exposes review-funnel-private decisions`,
         )
       }
     }

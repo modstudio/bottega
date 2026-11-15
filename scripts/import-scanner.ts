@@ -4,6 +4,7 @@ export type ImportScan = {
   specifiers: string[]
   typeOnlySpecifiers: string[]
   namedImports: { specifier: string; name: string }[]
+  /** Specifiers whose whole module this file reaches: namespace imports, dynamic imports and `export *` re-exports. */
   moduleImports: string[]
   unresolvedRelative: string[]
 }
@@ -89,8 +90,13 @@ function recordExportBindings(
   node: ts.ExportDeclaration,
   specifier: string,
   namedImports: ImportScan['namedImports'],
+  moduleImports: string[],
 ): void {
-  if (!node.exportClause || !ts.isNamedExports(node.exportClause)) return
+  if (!node.exportClause || ts.isNamespaceExport(node.exportClause)) {
+    moduleImports.push(specifier)
+    return
+  }
+  if (!ts.isNamedExports(node.exportClause)) return
   for (const element of node.exportClause.elements) {
     if (!element.isTypeOnly)
       namedImports.push({ name: (element.propertyName ?? element.name).text, specifier })
@@ -170,7 +176,7 @@ export function importSpecifiers(source: string): ImportScan {
     if (typeOnly) return
     if (ts.isImportDeclaration(node))
       recordImportBindings(node, node.moduleSpecifier.text, namedImports, moduleImports)
-    else recordExportBindings(node, node.moduleSpecifier.text, namedImports)
+    else recordExportBindings(node, node.moduleSpecifier.text, namedImports, moduleImports)
   }
 
   function visit(node: ts.Node): void {

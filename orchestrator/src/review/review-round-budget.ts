@@ -85,10 +85,36 @@ type BranchEvidence = {
 }
 
 type ReviewBudgetEvidenceRow = ReviewRoundEvidenceRow
-type ReviewBudgetProvenanceRow = ReviewBudgetEvidenceRow & {
+export type ReviewBudgetProvenanceRow = ReviewBudgetEvidenceRow & {
   review_provenance: string | null
   worktree: string | null
   cwd: string | null
+}
+
+export type ReviewBudgetEvidence = {
+  rows: ReviewBudgetProvenanceRow[]
+  rounds: Map<string, string>
+  eligibleReviews: Set<string>
+  unclassifiableReviews: Set<string>
+}
+
+/** Apply the one admissibility and round-identity rule used by funnel and reporting. */
+export function aggregateReviewBudgetEvidence(
+  candidates: readonly ReviewBudgetProvenanceRow[],
+): ReviewBudgetEvidence {
+  const rows = candidates.filter(
+    (row) => lensProvenanceSubject(provenanceSubjectFacts(row)).admissible,
+  )
+  const rounds = new Map<string, string>()
+  const eligibleReviews = new Set<string>()
+  const unclassifiableReviews = new Set<string>()
+  for (const row of rows) {
+    eligibleReviews.add(row.review_record_id)
+    const round = reviewRoundIdentity(row).identity
+    if (round) rounds.set(round, rounds.get(round) ?? row.recorded_at)
+    else unclassifiableReviews.add(row.review_record_id)
+  }
+  return { rows, rounds, eligibleReviews, unclassifiableReviews }
 }
 
 export function eligibleReviewRoundRows(
@@ -143,66 +169,39 @@ function lineageRoot(
   return root
 }
 
-function branchEvidence(
+function reviewBudgetReportEvidence(
   database: Database,
   since?: string,
-  target?: { project: string; branch: string },
 ): Map<string, BranchEvidence> {
   const branches = new Map<string, BranchEvidence>()
   const lineageRoots = new Map<string, string>()
-  const rows = eligibleReviewRoundRows(database, since, target).filter(
-    (row) => lensProvenanceSubject(provenanceSubjectFacts(row)).admissible,
-  )
-  for (const row of rows) {
+  const grouped = new Map<string, ReviewBudgetProvenanceRow[]>()
+  for (const row of eligibleReviewRoundRows(database, since)) {
     if (!row.branch) continue
-    const evidenceBranch =
-      target?.branch ?? lineageRoot(database, lineageRoots, row.run_repo, row.branch)
+    const evidenceBranch = lineageRoot(database, lineageRoots, row.run_repo, row.branch)
     const key = branchKey(row.run_repo, evidenceBranch)
-    const branch = branches.get(key) ?? {
-      firstReviewAt: row.recorded_at,
-      tier: null,
-      rounds: new Map<string, string>(),
-      eligibleReviews: new Set<string>(),
-      unclassifiableReviews: new Set<string>(),
-    }
-    branch.eligibleReviews.add(row.review_record_id)
-    if (row.tier !== null && (branch.tier === null || row.tier > branch.tier)) {
-      branch.tier = row.tier
-    }
-    const round = reviewRoundIdentity(row).identity
-    if (round && !branch.rounds.has(round)) branch.rounds.set(round, row.recorded_at)
-    if (!round) branch.unclassifiableReviews.add(row.review_record_id)
-    branches.set(key, branch)
+    grouped.set(key, [...(grouped.get(key) ?? []), row])
+  }
+  for (const [key, candidates] of grouped) {
+    const evidence = aggregateReviewBudgetEvidence(candidates)
+    const first = evidence.rows[0]
+    if (!first) continue
+    branches.set(key, {
+      firstReviewAt: first.recorded_at,
+      tier: evidence.rows.reduce<ReviewTierNumber | null>(
+        (tier, row) => (row.tier !== null && (tier === null || row.tier > tier) ? row.tier : tier),
+        null,
+      ),
+      rounds: evidence.rounds,
+      eligibleReviews: evidence.eligibleReviews,
+      unclassifiableReviews: evidence.unclassifiableReviews,
+    })
   }
   return branches
 }
 
-export function reviewBudgetForBranch(
-  database: Database,
-  project: string,
-  branch: string,
-  currentRoundIdentity: string | null,
-): {
-  roundsUsed: number
-  currentChangeCounted: boolean
-  eligibleReviewCount: number
-  unclassifiableReviewCount: number
-} {
-  const evidence = branchEvidence(database, undefined, { project, branch }).get(
-    branchKey(project, branch),
-  )
-  return {
-    roundsUsed: evidence?.rounds.size ?? 0,
-    currentChangeCounted: Boolean(
-      currentRoundIdentity && evidence?.rounds.has(currentRoundIdentity),
-    ),
-    eligibleReviewCount: evidence?.eligibleReviews.size ?? 0,
-    unclassifiableReviewCount: evidence?.unclassifiableReviews.size ?? 0,
-  }
-}
-
 export function reviewBudgetReport(database: Database, since?: string): ReviewBudgetReport {
-  const evidence = branchEvidence(database, since)
+  const evidence = reviewBudgetReportEvidence(database, since)
   const classified = [...evidence.entries()].filter(
     (entry): entry is [string, BranchEvidence & { tier: ReviewTierNumber }] =>
       entry[1].tier !== null,

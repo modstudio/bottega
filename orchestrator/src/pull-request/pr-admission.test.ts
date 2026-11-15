@@ -4,7 +4,11 @@ import { db } from '../database/db.ts'
 import { reviewRoundBudgetDecision } from '../review/review-round-budget.ts'
 import { applicableRoundLensPlan } from '../review/review-round-lens-plan.ts'
 import {
-  admissionDecision,
+  decideTriage,
+  type TriageDecision,
+  type TriageEvidence,
+} from '../review-funnel/review-funnel-admission-evidence.ts'
+import {
   createPullRequest,
   finalizeTriageIntent,
   type PullRequestChange,
@@ -13,7 +17,6 @@ import {
   recordTriageOverrideForChange,
   triageRefusal,
 } from './pr-admission.ts'
-import { decideTriage, type TriageDecision, type TriageEvidence } from './triage-decision.ts'
 
 const ceilingChange = {
   project: { name: 'ceiling-fixture' },
@@ -130,7 +133,7 @@ test('an undisposed finding at the ceiling refuses without recording a ruling', 
   })
 })
 
-test('a ceiling ruling records and admits an emptied-round architect-read posture', () => {
+test('a ceiling ruling records an emptied-round architect-read posture', () => {
   const database = db()
   const project = database
     .query<{ record_id: string }, []>(
@@ -206,10 +209,9 @@ test('a ceiling ruling records and admits an emptied-round architect-read postur
   )
 
   expect(overrideId).not.toBeNull()
-  expect(admissionDecision(change, database, triage)).toMatchObject({
-    complete: true,
-    overrideId,
-  })
+  expect(
+    database.query('SELECT record_id FROM landing_override WHERE record_id=?').get(overrideId!),
+  ).toEqual({ record_id: overrideId })
 })
 
 test('a ceiling ruling below the completed-round ceiling refuses in process', () => {
@@ -413,7 +415,12 @@ test('merge admission leaves an existing snapshot unchanged', () => {
   finalizeTriageIntent(change.project.name, change.branch, 40, database)
 
   expect(
-    recordMergeAdmission(change, { complete: true, overrideId: null, triage }, 42, database),
+    recordMergeAdmission(
+      change,
+      { complete: true, overrideId: null, overrideReason: null, triage },
+      42,
+      database,
+    ),
   ).toBeNull()
   expect(
     database.query('SELECT pr_number FROM landing_triage_snapshot WHERE record_id=?').get(id),

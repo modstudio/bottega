@@ -5,30 +5,38 @@ import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { BoundExceededError, budgetForArgv, CALL_BUDGETS } from '../../../shared/call-budgets.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { type Project, projectAt } from '../project/projects.ts'
 import { enqueueLandingOverride, enqueueLandingTriageSnapshot } from '../record/landing-outbox.ts'
 import type { ApplicableReview, ReviewFunnelPlan } from '../review/review-applicability.ts'
-import {
-  branchRunOwnerSession,
-  type ChangeGroup,
-  measureChangeGroup,
-  reviewsForAdmission,
-  serializePathSet,
-  type TriageReviewRow,
-} from '../review/review-group.ts'
-import { reviewLineage } from '../review/review-lineage-store.ts'
+import { type ChangeGroup, measureChangeGroup, serializePathSet } from '../review/review-group.ts'
 import { gatherPostFixReviewFacts, postFixReviewDecision } from '../review/review-post-fix.ts'
-import {
-  currentReviewRoundIdentity,
-  type ReviewRoundBudgetDecision,
-  reviewBudgetForBranch,
-  reviewRoundBudgetDecision,
-} from '../review/review-round-budget.ts'
-import { budgetedRoundApplicabilityForChange } from '../review/review-round-lens-service.ts'
+import type { ReviewRoundBudgetDecision } from '../review/review-round-budget.ts'
 import { reviewRemoteTrunkRefExists, reviewTrunkRef } from '../review/review-target.ts'
+import {
+  decideReviewFunnel,
+  type ReviewFunnelVerdict,
+} from '../review-funnel/decide-review-funnel.ts'
+import {
+  gatherAdmissionEvidenceDecision,
+  gatherFunnelFacts,
+  type ReviewFunnelChange,
+  readLandingOverridesForBranch as readFunnelLandingOverridesForBranch,
+} from '../review-funnel/gather-funnel-facts.ts'
+import {
+  ceilingTriageFacts,
+  type MissingLens,
+  type TriageDecision,
+} from '../review-funnel/review-funnel-admission-evidence.ts'
+import {
+  type ReviewFunnelDecisionSurface,
+  recordReviewFunnelDecision,
+} from '../review-funnel/review-funnel-decision-log.ts'
+import { budgetedRoundApplicabilityForChange } from '../review-funnel/review-funnel-plan-service.ts'
+import { activeReviewFunnelPolicy } from '../review-funnel/review-funnel-policy.ts'
 import {
   type AdmissionDecision,
   type AdmissionOverride,
@@ -40,20 +48,8 @@ import {
   type MergeabilityDecision,
   type MergeabilityFacts,
 } from './mergeability-decision.ts'
-import {
-  ceilingRulingGuidance,
-  decideTriageOverride,
-  REVIEW_CEILING_REACHED,
-  type TriageOverrideAttribution,
-} from './override-decision.ts'
+import { decideTriageOverride, type TriageOverrideAttribution } from './override-decision.ts'
 import { decidePrePush, destinationBranch } from './pre-push-decision.ts'
-import {
-  ceilingTriageFacts,
-  decideTriage,
-  type MissingLens,
-  type TriageDecision,
-  type TriageReviewGroup,
-} from './triage-decision.ts'
 
 export const REVIEW_READ_VERB = `${PLATFORM_SLUG} review read`
 
@@ -64,6 +60,7 @@ export type PullRequestChange = {
   branch: string
   tip: string
   tree: string
+  base?: string
   group: ChangeGroup
   tier: 0 | 1 | 2 | 3
   applicability: ApplicableReview
@@ -103,7 +100,7 @@ export function resolvePullRequestChange(
 }
 
 /** Resolve admission facts when the caller already owns the project and branch identity. */
-export function resolvePullRequestChangeForProject(
+function resolvePullRequestChangeForProject(
   cwd: string,
   project: Project,
   branch: string,
@@ -150,6 +147,7 @@ export function resolvePullRequestChangeForProject(
     branch,
     tip,
     tree,
+    base: measured.base,
     group: measured.group,
     tier: measured.tier.tier,
     applicability: measured.applicability,
@@ -157,134 +155,69 @@ export function resolvePullRequestChangeForProject(
   }
 }
 
-export function triageDecision(change: PullRequestChange, database: Database): TriageDecision {
-  const reviews = reviewsForAdmission(database, change.group)
-  const lineage = reviewLineage(database, change.project.name, change.branch)
-  const grouped = new Map<string, TriageReviewRow[]>()
-  for (const review of reviews.branchReviews) {
-    if (review.patchId === null || review.pathSet === null) continue
-    const key = JSON.stringify([review.patchId, review.pathSet])
-    const group = grouped.get(key) ?? []
-    group.push(review)
-    grouped.set(key, group)
-  }
-  const branchReviewGroups: TriageReviewGroup[] = [...grouped.values()].map((reviews) => ({
-    reviews,
-  }))
-  return decideTriage({
-    patchId: change.group.patchId,
-    pathSet: serializePathSet(change.group.pathSet),
-    tier: change.tier,
-    applicableReview: change.applicability,
-    reviewPlan: change.reviewPlan,
-    branchOwnerSession: branchRunOwnerSession(database, change.project.name, change.branch),
-    reviews: reviews.reviews,
-    branchReviewGroups,
-    reads: database
-      .query<
-        {
-          record_id: string
-          patch_id: string
-          path_set: string
-          recorded_at: string
-          session_id: string | null
-        },
-        string[]
-      >(
-        `SELECT record_id,patch_id,path_set,recorded_at,session_id FROM review_read
-        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-          AND branch IN (${lineage.map(() => '?').join(',')})
-        ORDER BY recorded_at DESC,record_id DESC`,
-      )
-      .all(change.project.name, ...lineage)
-      .map((row) => ({
-        recordId: row.record_id,
-        patchId: row.patch_id,
-        pathSet: row.path_set,
-        recordedAt: row.recorded_at,
-        sessionId: row.session_id,
-      })),
-  })
-}
-
-/** Resolve admission facts and describe ceiling-ruling eligibility for review tier. */
-export function ceilingGuidanceForTier(input: {
-  cwd: string
-  tip: string
-  branch: string
-  reviewBudget: Pick<ReviewRoundBudgetDecision, 'atCeiling' | 'roundsUsed' | 'ceiling'>
-}): string | null {
-  if (!input.reviewBudget.atCeiling) return null
-  try {
-    const database = db()
-    const change = resolvePullRequestChange(input.cwd, input.tip, database, undefined, input.branch)
-    return ceilingRulingGuidance({
-      reviewBudget: input.reviewBudget,
-      triage: ceilingTriageFacts(triageDecision(change, database)),
-      commandName: PLATFORM_SLUG,
-    })
-  } catch (cause) {
-    if (cause instanceof BoundExceededError) throw cause
-    const message = cause instanceof Error ? cause.message : String(cause)
-    return (
-      `${REVIEW_CEILING_REACHED}; ruling eligibility could not be established: ` +
-      `"${message}"; \`${PLATFORM_SLUG} pr create\` is the authority`
-    )
-  }
-}
-
-export function readLandingOverridesForBranch(
-  database: Database,
-  project: string,
-  branch: string,
-): AdmissionOverride[] {
-  return database
-    .query<
-      {
-        recordId: string
-        project: string
-        branch: string
-        tip: string
-        tree: string
-        patchId: string | null
-        pathSet: string | null
-        attribution: TriageOverrideAttribution
-        missingLenses: string
-      },
-      [string, string]
-    >(
-      `SELECT record_id AS recordId,project,branch,tip,tree,patch_id AS patchId,path_set AS pathSet,
-              attribution,missing_lenses AS missingLenses
-       FROM landing_override
-       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-         AND branch=? ORDER BY at DESC,record_id DESC`,
-    )
-    .all(project, branch)
-    .map((row) => ({
-      ...row,
-      missingLenses: JSON.parse(row.missingLenses) as string[],
-    }))
+function triageDecision(change: PullRequestChange, database: Database): TriageDecision {
+  return gatherAdmissionEvidenceDecision(change, database)
 }
 
 function overridesForChange(change: PullRequestChange, database: Database): AdmissionOverride[] {
-  return readLandingOverridesForBranch(database, change.project.name, change.branch)
+  return readFunnelLandingOverridesForBranch(database, change.project.name, change.branch)
 }
 
-function admissionChange(change: PullRequestChange) {
+export type AdmissionWithTriage = AdmissionDecision & {
+  triage: TriageDecision
+}
+
+export type EvaluatedAdmission = AdmissionWithTriage & {
+  verdict: ReviewFunnelVerdict
+}
+
+function funnelChange(
+  change: PullRequestChange,
+  database: Database,
+  selectionWindow: number,
+): ReviewFunnelChange {
   return {
-    project: change.project.name,
+    database,
+    cwd: change.project.path,
+    base: change.base ?? change.tip,
+    head: change.tip,
     branch: change.branch,
-    patchId: change.group.patchId,
-    pathSet: serializePathSet(change.group.pathSet),
+    project: change.project,
+    resolved: change,
+    selectionWindow,
   }
 }
 
+function funnelVerdict(change: PullRequestChange, database: Database) {
+  const active = activeReviewFunnelPolicy()
+  const facts = gatherFunnelFacts(funnelChange(change, database, active.policy.selection.window))
+  return {
+    facts,
+    verdict: decideReviewFunnel(facts, active.policy, active.policyVersion),
+  }
+}
+
+function funnelRefusal(condition: string, verdict: ReviewFunnelVerdict): string {
+  return renderRefusal(refusal(condition, { kind: 'edit', text: verdict.remedy }))
+}
+
+/** The one admission evaluation used by create, merge, and pre-push. */
 export function admissionDecision(
   change: PullRequestChange,
   database: Database,
-  triage: TriageDecision = triageDecision(change, database),
-): AdmissionDecision {
-  return decideAdmission(admissionChange(change), triage, overridesForChange(change, database))
+  surface: Extract<ReviewFunnelDecisionSurface, 'admission' | 'pre-push'> = 'admission',
+): EvaluatedAdmission {
+  const triage = triageDecision(change, database)
+  const { facts, verdict } = funnelVerdict(change, database)
+  const decision = decideAdmission(verdict, overridesForChange(change, database))
+  recordReviewFunnelDecision({
+    database,
+    surface,
+    outcome: decision.complete ? 'admit' : 'refuse',
+    facts,
+    verdict,
+  })
+  return { ...decision, verdict, triage }
 }
 
 /** The line refusing one applicable lens, naming the path a fix used to bring it into scope. */
@@ -549,7 +482,7 @@ function finalizeTriageIntentWrite(
 
 export function recordMergeAdmission(
   change: PullRequestChange,
-  decision: AdmissionDecision,
+  decision: AdmissionWithTriage,
   prNumber: number,
   database: Database,
 ): string | null {
@@ -675,39 +608,31 @@ export function createPullRequest(
   const database = writableDb()
   const checked = writeTransaction(() => {
     const triage = triageDecision(change, database)
-    const currentRoundIdentity = currentReviewRoundIdentity({
-      branch: change.branch,
-      patchId: change.group.patchId,
-      pathSet: serializePathSet(change.group.pathSet),
-    })
-    const budget = reviewBudgetForBranch(
-      database,
-      change.project.name,
-      change.branch,
-      currentRoundIdentity,
-    )
-    const reviewBudget = reviewRoundBudgetDecision({
-      tier: change.tier,
-      roundsUsed: budget.roundsUsed,
-      currentChangeCounted: budget.currentChangeCounted,
-    })
+    const beforeOverride = funnelVerdict(change, database)
     recordTriageOverrideForChange(
       change,
       {
         overrideReason: options.overrideReason,
         ceilingRuling: options.ceilingRuling,
         fromOperator: Boolean(options.fromOperator),
-        reviewBudget,
+        reviewBudget: beforeOverride.verdict.budget,
         triage,
       },
       database,
     )
-    const decision = admissionDecision(change, database, triage)
-    if (!decision.complete && !decision.triage.complete) {
-      throw new Error(triageRefusal(change, decision.triage))
+    const checkedAdmission = admissionDecision(change, database)
+    if (!checkedAdmission.complete) {
+      throw new Error(
+        checkedAdmission.triage.complete
+          ? funnelRefusal(
+              `refusing pull request for ${change.branch} at ${change.tip}: review funnel requires ${checkedAdmission.verdict.next.action}`,
+              checkedAdmission.verdict,
+            )
+          : triageRefusal(change, checkedAdmission.triage),
+      )
     }
-    recordTriageIntent(change, decision.triage, decision.overrideId, database)
-    return decision
+    recordTriageIntent(change, checkedAdmission.triage, checkedAdmission.overrideId, database)
+    return checkedAdmission
   }, database)
 
   let createResult: PullRequestCreateResult | null = null
@@ -797,7 +722,8 @@ export function checkPushedTip(cwd: string, sha: string, remoteRef: string): Pus
     }
     const tip = git(cwd, ['rev-parse', '--verify', `${sha}^{commit}`])
     const change = resolvePullRequestChange(cwd, tip, database, git, branch)
-    const decision = admissionDecision(change, database)
+    const checked = admissionDecision(change, database, 'pre-push')
+    const decision = checked
     const policy = decidePrePush({
       remoteRef,
       recordedBranches,
@@ -807,8 +733,11 @@ export function checkPushedTip(cwd: string, sha: string, remoteRef: string): Pus
       known: true,
       complete: policy.admit,
       infrastructureError: null,
-      refusal:
-        !policy.admit && !decision.triage.complete ? triageRefusal(change, decision.triage) : null,
+      refusal: !policy.admit
+        ? checked.triage.complete
+          ? funnelRefusal(`review funnel requires ${checked.verdict.next.action}`, checked.verdict)
+          : triageRefusal(change, checked.triage)
+        : null,
       pendingIntent: pendingIntent(database, project.name, branch),
       overrideId: decision.overrideId,
     }

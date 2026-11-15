@@ -2,7 +2,7 @@
 /** Computes the tier and declared lenses for an already-resolved change range. */
 
 import type { ReviewSettings } from '../project/project-injection.ts'
-import { applicableReviewForChange } from './review-applicability.ts'
+import { applicableReviewForChange } from '../review-funnel/review-funnel-tier.ts'
 import { diffNumstat } from './review-tier.ts'
 
 export function reviewTierForRange(

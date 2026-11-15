@@ -49,7 +49,7 @@
     "orchestrator/src/project/projects.ts": 7,
     "orchestrator/src/pull-request/merge-decision.ts": 7,
     "orchestrator/src/pull-request/merge-policy-decision.ts": 3,
-    "orchestrator/src/pull-request/override-decision.ts": 5,
+    "orchestrator/src/pull-request/override-decision.ts": 3,
     "orchestrator/src/pull-request/pr-admission.ts": 9,
     "orchestrator/src/pull-request/pr-merge.ts": 5,
     "orchestrator/src/record/outbox-redaction.ts": 1,

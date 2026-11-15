@@ -821,7 +821,7 @@ test('review tier re-lenses a tier-three branch commit after a trunk merge', asy
   }
 })
 
-test('review tier prints architect ceiling guidance after three completed rounds', async () => {
+test('review tier prints the verdicts single architect-read remedy after three rounds', async () => {
   const { repo, branch } = postFixFixture({
     fixPath: 'critical/fix.ts',
     priorRounds: 2,
@@ -834,8 +834,9 @@ test('review tier prints architect ceiling guidance after three completed rounds
     await runReview(['review', 'tier', branch, '--cwd', repo], output)
 
     expect(output).toContain('rounds 3/3')
-    expect(output.some((line) => line.includes('--ceiling-ruling'))).toBeTrue()
-    expect(output.some((line) => line.includes('.agents/rules/20-build-and-buy.md'))).toBeTrue()
+    expect(output.some((line) => line.includes(`${PLATFORM_SLUG} review read`))).toBeTrue()
+    expect(output.some((line) => line.includes('--ceiling-ruling'))).toBeFalse()
+    expect(output).toContain('next record-read')
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }

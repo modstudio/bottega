@@ -1,4 +1,4 @@
-// concern: review-round-lens-service
+// concern: review-funnel-plan-service
 /** Gathers stored review facts and applies the pure round lens plan. */
 
 import type { Database } from 'bun:sqlite'
@@ -9,28 +9,33 @@ import {
   lensesSelectingPaths,
   type ReviewFunnelPlan,
   selectReviewApplicability,
-} from './review-applicability.ts'
-import { type ChangeGroup, reviewsForTriage, serializePathSet } from './review-group.ts'
-import { measureChangeIdentity } from './review-pins.ts'
+} from '../review/review-applicability.ts'
+import { type ChangeGroup, reviewsForTriage, serializePathSet } from '../review/review-group.ts'
+import { measureChangeIdentity } from '../review/review-pins.ts'
 import {
   gatherPostFixReviewFacts,
   type PostFixReviewDecision,
   postFixReviewDecision,
-} from './review-post-fix.ts'
+} from '../review/review-post-fix.ts'
 import {
+  aggregateReviewBudgetEvidence,
   currentReviewRoundIdentity,
+  eligibleReviewRoundRows,
   type ReviewRoundBudgetDecision,
   type ReviewTierNumber,
-  reviewBudgetForBranch,
   reviewRoundBudgetDecision,
-} from './review-round-budget.ts'
+} from '../review/review-round-budget.ts'
 import {
   applicableRoundLensPlan,
   reviewPlanForBudget,
   roundLensFacts,
-} from './review-round-lens-plan.ts'
-import { reviewRemoteTrunkRefExists, reviewTrunkRef, spawnGitProbe } from './review-target.ts'
-import { reviewTierForRange } from './review-tier-service.ts'
+} from '../review/review-round-lens-plan.ts'
+import {
+  reviewRemoteTrunkRefExists,
+  reviewTrunkRef,
+  spawnGitProbe,
+} from '../review/review-target.ts'
+import { reviewTierForRange } from '../review/review-tier-service.ts'
 
 /** Assemble the round plan from the current change, branch review history, and project declaration. */
 export function roundApplicabilityForChange(input: {
@@ -62,6 +67,23 @@ export type BudgetedReviewPlan = {
   reviewBudget: ReviewRoundBudgetDecision & {
     eligibleReviewCount: number
     unclassifiableReviewCount: number
+  }
+}
+
+export function reviewBudgetForChange(
+  database: Database,
+  project: string,
+  branch: string,
+  currentIdentity: string | null,
+) {
+  const evidence = aggregateReviewBudgetEvidence(
+    eligibleReviewRoundRows(database, undefined, { project, branch }),
+  )
+  return {
+    roundsUsed: evidence.rounds.size,
+    currentChangeCounted: Boolean(currentIdentity && evidence.rounds.has(currentIdentity)),
+    eligibleReviewCount: evidence.eligibleReviews.size,
+    unclassifiableReviewCount: evidence.unclassifiableReviews.size,
   }
 }
 
@@ -111,7 +133,7 @@ export function budgetedRoundApplicabilityForChange(
         pathSet: serializePathSet(input.group.pathSet),
       })
     : null
-  const branchBudget = reviewBudgetForBranch(input.database, project, branch, currentRoundIdentity)
+  const branchBudget = reviewBudgetForChange(input.database, project, branch, currentRoundIdentity)
   const reviewBudget = reviewRoundBudgetDecision({
     tier: input.tier,
     ...branchBudget,
@@ -181,5 +203,5 @@ export function budgetedReviewPlanForResolvedChange(input: {
         relevant,
         tier: output.tier,
       })
-  return { output, identity, postFix, ...plan }
+  return { output, identity, postFix, relevant, ...plan }
 }

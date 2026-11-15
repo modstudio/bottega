@@ -2,11 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import {
-  reviewBudgetForBranch,
-  reviewBudgetReport,
-  reviewRoundBudgetDecision,
-} from './review-round-budget.ts'
+import { reviewBudgetForChange as reviewBudgetForBranch } from '../review-funnel/review-funnel-plan-service.ts'
+import { reviewBudgetReport, reviewRoundBudgetDecision } from './review-round-budget.ts'
 
 describe('review round budget decision', () => {
   test.each([
