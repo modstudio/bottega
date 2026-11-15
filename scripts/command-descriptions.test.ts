@@ -3,7 +3,11 @@ import { Command } from 'commander'
 import type { CommandRoute } from '../cli/routes.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import {
-  bareCommandArgumentDeclarations,
+  buildCommandPrograms,
+  commandRegistrationFailures,
+  recordCommandRegistrations,
+} from './check-command-descriptions.ts'
+import {
   descriptionBaselineFailures,
   descriptionFindings,
   documentationInventory,
@@ -11,15 +15,30 @@ import {
 
 const groups = [['run', 'dispatch and inspect runs']] as const
 
-test('bare command words are rejected while arguments and single verbs are accepted', () => {
-  const source = `
+test('registered bare command words are rejected while bracketed arguments are accepted', async () => {
+  const { registrations } = await recordCommandRegistrations(() => {
+    const program = new Command('fixture')
     program.command('cursor identity-map')
     program.command('show <x>')
     program.command('list [x]')
     program.command('collect <x...>')
     program.command('status')
-  `
-  expect(bareCommandArgumentDeclarations(source)).toEqual(['cursor identity-map'])
+  })
+  expect(commandRegistrationFailures(registrations)).toEqual([
+    'fixture: .command("cursor identity-map") has a bare argument token; make each literal word a nested command or bracket the argument',
+  ])
+})
+
+test('an empty command registration walk is refused', () => {
+  expect(commandRegistrationFailures([])).toEqual([
+    'command registration check recorded zero commands; the program builders were not inspected',
+  ])
+})
+
+test('the real command builders contain no bare command words', async () => {
+  const { registrations } = await buildCommandPrograms()
+  expect(registrations.length).toBeGreaterThan(0)
+  expect(commandRegistrationFailures(registrations)).toEqual([])
 })
 
 function programs() {
