@@ -13,9 +13,9 @@ describe('question inbox group', () => {
   ] as const)(
     '%s question owned by %s with operator wait %s for %s is %s',
     (kind, ownerSessionId, awaitingOperator, callerSessionId, expected) => {
-      expect(
-        questionInboxGroup({ kind, ownerSessionId, awaitingOperator, callerSessionId }),
-      ).toBe(expected)
+      expect(questionInboxGroup({ kind, ownerSessionId, awaitingOperator, callerSessionId })).toBe(
+        expected,
+      )
     },
   )
 })

@@ -189,9 +189,7 @@ test('renders each non-empty inbox group and reports inbox read failure', () => 
   expect(renderContextBrief(base)).toContain(
     `2 worker questions · 1 on you · 3 other sessions' · 1 unowned (${PLATFORM_SLUG} question inbox --all --active)`,
   )
-  expect(
-    renderContextBrief({ ...base, waiting: { ...base.waiting, questions: null } }),
-  ).toContain(
+  expect(renderContextBrief({ ...base, waiting: { ...base.waiting, questions: null } })).toContain(
     `could not read question inbox (${PLATFORM_SLUG} question inbox --all --active)`,
   )
 })

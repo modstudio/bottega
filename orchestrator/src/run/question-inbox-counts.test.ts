@@ -19,9 +19,19 @@ function addQuestion(run: string, awaitingOperator = false) {
 }
 
 test('counts only live inbox rows through their shared groups', async () => {
-  const worker = addRun({ agent: 'codex', job: 'implement', status: 'asking', session: 'session-a' })
+  const worker = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'asking',
+    session: 'session-a',
+  })
   const user = addRun({ agent: 'codex', job: 'implement', status: 'asking', session: 'session-a' })
-  const foreign = addRun({ agent: 'codex', job: 'implement', status: 'asking', session: 'session-b' })
+  const foreign = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'asking',
+    session: 'session-b',
+  })
   const unowned = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
   const dead = addRun({ agent: 'codex', job: 'implement', status: 'stopped', session: 'session-a' })
   addQuestion(worker)

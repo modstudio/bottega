@@ -9,8 +9,8 @@ import { db } from '../database/db.ts'
 import { filedIssueQueueState } from '../issue/issue-dispatch.ts'
 import { projectAt } from '../project/projects.ts'
 import {
-  questionInboxCountsForSession,
   type QuestionInboxCounts,
+  questionInboxCountsForSession,
 } from '../run/question-inbox-counts.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { LIVE_RUN_STATUS_SQL } from '../run/run-status.ts'

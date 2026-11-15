@@ -54,17 +54,15 @@ describe('Stop summary decision', () => {
 
   test('worker and operator questions use their own lines while other groups stay quiet', () => {
     expect(
-      decideStopSummary(
-        facts({ questionCounts: { worker: 1, user: 1, foreign: 2, unowned: 3 } }),
-      ).lines,
+      decideStopSummary(facts({ questionCounts: { worker: 1, user: 1, foreign: 2, unowned: 3 } }))
+        .lines,
     ).toEqual([
       `1 worker question for this session → ${PLATFORM_SLUG} question inbox`,
       `1 ruling waiting on you → ${PLATFORM_SLUG} question inbox`,
     ])
     expect(
-      decideStopSummary(
-        facts({ questionCounts: { worker: 0, user: 0, foreign: 2, unowned: 3 } }),
-      ).lines,
+      decideStopSummary(facts({ questionCounts: { worker: 0, user: 0, foreign: 2, unowned: 3 } }))
+        .lines,
     ).toEqual(['Nothing waiting on you'])
   })
 

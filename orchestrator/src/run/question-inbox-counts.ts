@@ -3,8 +3,8 @@
 
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
-import { queryInbox } from './run-inbox.ts'
 import type { QuestionInboxGroup } from './question-inbox-group.ts'
+import { queryInbox } from './run-inbox.ts'
 
 export type QuestionInboxCounts = Record<QuestionInboxGroup, number>
 
