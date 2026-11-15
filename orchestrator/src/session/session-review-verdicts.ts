@@ -99,9 +99,14 @@ function sessionInFlightReviewBranches(
   return [...branches.values()]
 }
 
-function branchRefExistsInMainCheckout(branch: InFlightBranch, database: Database): boolean {
+function registeredBranchProject(branch: InFlightBranch, database: Database) {
   const project = projectByName(branch.project, database)
   if (!project) throw new Error(`project ${branch.project} is not registered`)
+  return project
+}
+
+function branchRefExistsInMainCheckout(branch: InFlightBranch, database: Database): boolean {
+  const project = registeredBranchProject(branch, database)
   const result = startBoundedSync(
     ['git', 'rev-parse', '--verify', '--quiet', `refs/heads/${branch.branch}`],
     {
@@ -122,8 +127,7 @@ function gatherBranchReviewVerdict(
   database: Database,
 ): StopSummaryReviewVerdictFact {
   try {
-    const project = projectByName(branch.project, database)
-    if (!project) throw new Error(`project ${branch.project} is not registered`)
+    const project = registeredBranchProject(branch, database)
     const trunk = project.settings.trunk?.trim()
     if (!trunk) throw new Error(`project ${branch.project} has no trunk configured`)
     const cwd = branch.worktree && existsSync(branch.worktree) ? branch.worktree : project.path
