@@ -1,9 +1,9 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "063b0f96-b14e-4d31-988a-8ef83b41f6d6",
+  "id": "06bfdf8e-bb49-4959-bd2f-21fbbfd05c4a",
   "prevIds": [
-    "9d731374-f0b5-4a43-8e1f-aa001d54a094"
+    "258e6bbb-db95-42cc-bdb0-6fe76642ed21"
   ],
   "ddl": [
     {
@@ -5742,6 +5742,19 @@
       "table": "review"
     },
     {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "zero_context_patch_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "review"
+    },
+    {
       "type": "jsonb",
       "typeSchema": null,
       "notNull": false,
@@ -6192,6 +6205,19 @@
       "generated": null,
       "identity": null,
       "name": "patch_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "review_funnel_decision"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "zero_context_patch_id",
       "entityType": "columns",
       "schema": "public",
       "table": "review_funnel_decision"
@@ -6803,6 +6829,19 @@
       "generated": null,
       "identity": null,
       "name": "patch_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "review_read"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "zero_context_patch_id",
       "entityType": "columns",
       "schema": "public",
       "table": "review_read"
@@ -8004,6 +8043,19 @@
       "table": "landing_override"
     },
     {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "zero_context_patch_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "landing_override"
+    },
+    {
       "type": "jsonb",
       "typeSchema": null,
       "notNull": false,
@@ -8266,6 +8318,19 @@
     {
       "type": "text",
       "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "zero_context_patch_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "landing_review_carry"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
       "notNull": true,
       "dimensions": 0,
       "default": null,
@@ -8467,6 +8532,19 @@
       "generated": null,
       "identity": null,
       "name": "patch_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "landing_triage_snapshot"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "zero_context_patch_id",
       "entityType": "columns",
       "schema": "public",
       "table": "landing_triage_snapshot"
