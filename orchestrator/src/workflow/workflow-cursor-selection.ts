@@ -12,7 +12,7 @@ import {
 import { taskFlowReadStore } from './task-flow-store.ts'
 import type { TaskFlowStageCursorRow } from './task-flow-store-types.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
-import { workflowTaskBindingCommand } from './workflow-cursor-format.ts'
+import { workflowCursorListCommand, workflowTaskBindingCommand } from './workflow-cursor-format.ts'
 import { workflowCursorProject } from './workflow-cursor-project.ts'
 import { hasClosedStep } from './workflow-cursor-trail.ts'
 import { type HubTaskReader, resolveHubTaskReference } from './workflow-task-reference.ts'
@@ -201,7 +201,7 @@ export async function selectByHandle(
   const row = await taskFlowReadStore(d, client).stageByHandle(project, cursor)
   if (!row)
     throw new Error(
-      `workflow cursor ${cursor} does not exist on this machine; cursor handles are per-machine labels, so pass the task key as the workflow argument key (--arg key=<KEY> on the CLI, args.key over MCP) to read the hosted flow`,
+      `workflow cursor ${cursor} does not exist in project ${project}; cursor handles changed to per-project numbers, so list cursors again with ${workflowCursorListCommand}; a local handle need not exist in the hosted flow, so pass the task key as the workflow argument key (--arg key=<KEY> on the CLI, args.key over MCP) to read it`,
     )
   validateIdentity(row, identity)
   if (!includeTerminal && (row.state === 'done' || row.state === 'abandoned'))

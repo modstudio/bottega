@@ -4,6 +4,7 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 
 export const WORKFLOW_CURSOR_QUESTION_SUMMARY_CHARS = 120
+export const workflowCursorListCommand = `${PLATFORM_SLUG} workflow cursors`
 
 export function workflowCursorReference(cursor: number): { cli: string; mcp: string } {
   return { cli: ` --cursor ${cursor}`, mcp: `cursor ${cursor}` }

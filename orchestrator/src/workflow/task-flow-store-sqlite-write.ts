@@ -234,8 +234,10 @@ function insertStage(
     )
     .get(String(row.flowRecordId))
   const number = database
-    .query<{ n: number }, []>('SELECT COALESCE(MAX(number),0)+1 n FROM workflow_cursor')
-    .get()!.n
+    .query<{ n: number }, [string]>(
+      'SELECT COALESCE(MAX(number),0)+1 n FROM workflow_cursor WHERE project_record_id=?',
+    )
+    .get(String(row.projectId))!.n
   database
     .query(`INSERT INTO workflow_cursor
       (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,task_record_id,
@@ -542,7 +544,6 @@ function writeCompose(
     result[flowChange.id] = updateMutation(database, 'task_flow', flowChange, 'compose', revisions)
   for (const change of (body.stageChanges as Mutation[] | undefined) ?? [])
     result[change.id] = updateMutation(database, 'workflow_cursor', change, 'compose', revisions)
-  // The record number is per project while SQLite handles remain machine-wide until 2c-2d.
   return { revisions: result, stage }
 }
 

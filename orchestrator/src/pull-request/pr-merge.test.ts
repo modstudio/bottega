@@ -733,6 +733,7 @@ test('an admitted head records a snapshot with the pull request number before me
               project: 'merge-fixture',
               branch: headBranch,
               patchId: 'patch',
+              zeroContextPatchId: 'patch',
               pathSet: ['orchestrator/src/pull-request/pr-merge.ts'],
             },
             tier: 2 as const,

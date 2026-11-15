@@ -84,6 +84,7 @@ test('round triage accepts settled delivery-none lenses but not unscored lenses'
     tier: 1,
     role: 'round',
     patchId: 'patch',
+    zeroContextPatchId: 'patch',
     pathSet: '["change.ts"]',
     lensIdentities: ['correctness', 'craft'],
     lenses: [
@@ -170,6 +171,7 @@ test('change-group lookup carries the same patch after rebase and rejects a diff
     project: 'renamed-fixture',
     branch: 'DEV-977',
     patchId: 'stable-patch',
+    zeroContextPatchId: 'stable-patch',
     pathSet: ['a.ts'],
   }).reviews
   expect(matched).toHaveLength(1)
@@ -179,6 +181,7 @@ test('change-group lookup carries the same patch after rebase and rejects a diff
       project: 'renamed-fixture',
       branch: 'DEV-977',
       patchId: 'changed-patch',
+      zeroContextPatchId: 'changed-patch',
       pathSet: ['a.ts'],
     }).reviews,
   ).toEqual([])
@@ -226,6 +229,7 @@ test('a rebase credits the complete round from the same branch and never another
     project: 'fixture',
     branch: 'DEV-977',
     patchId: 'post-rebase',
+    zeroContextPatchId: 'post-rebase',
     pathSet: ['a.ts'],
   })
   expect(selected.reviews).toEqual([])
@@ -233,6 +237,7 @@ test('a rebase credits the complete round from the same branch and never another
   expect(
     decideTriage({
       patchId: 'post-rebase',
+      zeroContextPatchId: 'post-rebase',
       pathSet: '["a.ts"]',
       tier: 2,
       applicableReview: { lenses: ['correctness', 'craft'] },
@@ -247,6 +252,7 @@ test('a rebase credits the complete round from the same branch and never another
         {
           recordId: 'read-30',
           patchId: 'post-rebase',
+          zeroContextPatchId: 'post-rebase',
           pathSet: '["a.ts"]',
           recordedAt: '2026-09-25T02:00:00Z',
           sessionId: 'owner',
@@ -305,6 +311,7 @@ test("admission counts an identical change from the same task but not another ta
     project: 'fixture',
     branch: 'target-branch',
     patchId: 'same-change',
+    zeroContextPatchId: 'same-change',
     pathSet: ['a.ts'],
   })
   expect(selected.reviews).toHaveLength(1)
@@ -357,6 +364,7 @@ test('a fix branch inherits its parent review and starts at round two', () => {
     project: 'fixture',
     branch: 'branch-b',
     patchId: 'fixed-patch',
+    zeroContextPatchId: 'fixed-patch',
     pathSet: ['a.ts'],
   })
   expect(inherited.branchReviews.map(({ reviewNumber }) => reviewNumber)).toEqual([1])
@@ -388,6 +396,7 @@ test('a moved remote trunk is the shared base for review and admission despite s
     },
     identity: (_cwd: string, base: string, tip: string) => ({
       patchId: tip === 'rebased-tip' ? 'reviewed-patch' : 'changed-patch',
+      zeroContextPatchId: tip === 'rebased-tip' ? 'reviewed-patch' : 'changed-patch',
       paths: ['src/change.ts'],
       message: `${base}:${tip}`,
     }),
@@ -451,10 +460,12 @@ test('recorded review tree paths are extracted, normalized, and confined to the 
       project: 'fixture',
       branch: 'DEV-2157',
       patchId: 'patch',
+      zeroContextPatchId: 'patch',
       pathSet: ['a.ts'],
     })
     return decideTriage({
       patchId: 'patch',
+      zeroContextPatchId: 'patch',
       pathSet: '["a.ts"]',
       tier: 1,
       applicableReview: { lenses: ['correctness'] },

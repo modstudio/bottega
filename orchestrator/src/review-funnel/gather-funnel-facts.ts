@@ -30,6 +30,7 @@ import {
   spawnGitProbe,
 } from '../review/review-target.ts'
 import { diffNumstat } from '../review/review-tier.ts'
+import { sameStoredChange } from '../review/same-change.ts'
 import type {
   ReviewFunnelFacts,
   ReviewFunnelLensState,
@@ -96,12 +97,30 @@ function liveLensStates(
     .map((row) => ({ lens: row.lens, runId: row.record_id, state: RUNNING_LENS_STATUS }))
 }
 
-function overrideFacts(
+export function overrideFacts(
   database: Database,
-  change: { project: string; branch: string; patchId: string; pathSet: string },
+  change: {
+    project: string
+    branch: string
+    patchId: string
+    zeroContextPatchId: string
+    pathSet: string
+  },
 ): { ceilingRuling: boolean; overriddenLenses: string[] } {
   const row = readLandingOverridesForBranch(database, change.project, change.branch).find(
-    ({ patchId, pathSet }) => patchId === change.patchId && pathSet === change.pathSet,
+    ({ patchId, zeroContextPatchId, pathSet }) =>
+      sameStoredChange(
+        {
+          patchId,
+          zeroContextPatchId: zeroContextPatchId ?? null,
+          pathSet,
+        },
+        {
+          patchId: change.patchId,
+          zeroContextPatchId: change.zeroContextPatchId,
+          pathSet: change.pathSet,
+        },
+      ),
   )
   if (!row) return { ceilingRuling: false, overriddenLenses: [] }
   return {
@@ -117,6 +136,7 @@ export type LandingOverrideRow = {
   tip: string
   tree: string
   patchId: string | null
+  zeroContextPatchId?: string | null
   pathSet: string | null
   attribution: 'operator' | 'architect-ceiling'
   reason: string
@@ -137,6 +157,7 @@ export function readLandingOverridesForBranch(
         tip: string
         tree: string
         patchId: string | null
+        zeroContextPatchId: string | null
         pathSet: string | null
         attribution: 'operator' | 'architect-ceiling'
         reason: string
@@ -144,7 +165,8 @@ export function readLandingOverridesForBranch(
       },
       [string, string]
     >(
-      `SELECT record_id AS recordId,project,branch,tip,tree,patch_id AS patchId,path_set AS pathSet,
+      `SELECT record_id AS recordId,project,branch,tip,tree,patch_id AS patchId,
+              zero_context_patch_id AS zeroContextPatchId,path_set AS pathSet,
               attribution,reason,missing_lenses AS missingLenses
        FROM landing_override
        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
@@ -196,6 +218,7 @@ export function gatherAdmissionEvidenceDecision(
   }))
   return decideTriage({
     patchId: change.group.patchId,
+    zeroContextPatchId: change.group.zeroContextPatchId,
     pathSet: serializePathSet(change.group.pathSet),
     tier: change.tier,
     applicableReview: change.applicability,
@@ -208,13 +231,14 @@ export function gatherAdmissionEvidenceDecision(
         {
           record_id: string
           patch_id: string
+          zero_context_patch_id: string | null
           path_set: string
           recorded_at: string
           session_id: string | null
         },
         string[]
       >(
-        `SELECT record_id,patch_id,path_set,recorded_at,session_id FROM review_read
+        `SELECT record_id,patch_id,zero_context_patch_id,path_set,recorded_at,session_id FROM review_read
         WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
           AND branch IN (${lineage.map(() => '?').join(',')})
         ORDER BY recorded_at DESC,record_id DESC`,
@@ -223,6 +247,7 @@ export function gatherAdmissionEvidenceDecision(
       .map((row) => ({
         recordId: row.record_id,
         patchId: row.patch_id,
+        zeroContextPatchId: row.zero_context_patch_id,
         pathSet: row.path_set,
         recordedAt: row.recorded_at,
         sessionId: row.session_id,
@@ -264,6 +289,7 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
     project: change.project.name,
     branch: change.branch,
     patchId: identity.patchId,
+    zeroContextPatchId: identity.zeroContextPatchId,
     pathSet: identity.paths,
   }
   const reviews = reviewsForTriage(change.database, group)
@@ -284,12 +310,14 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
     change.project.name,
     change.branch,
     identity.patchId,
+    identity.zeroContextPatchId,
     pathSet,
   )
   const overrides = overrideFacts(change.database, {
     project: change.project.name,
     branch: change.branch,
     patchId: identity.patchId,
+    zeroContextPatchId: identity.zeroContextPatchId,
     pathSet,
   })
   const admission = gatheredTriage(change, group)
@@ -301,6 +329,7 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
       branch: change.branch,
       head: change.head,
       patchId: identity.patchId,
+      zeroContextPatchId: identity.zeroContextPatchId,
       pathSet,
       paths: identity.paths,
     },

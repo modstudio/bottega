@@ -63,6 +63,7 @@ test('a second opinion requires two completed runs on different models', () => {
       tier: 1,
       role: 'round',
       patchId: 'patch',
+      zeroContextPatchId: 'patch',
       pathSet: '["a.ts"]',
       lensIdentities: ['correctness'],
       lenses: opinions.map((row) => ({ ...row, settled: row.graded })),

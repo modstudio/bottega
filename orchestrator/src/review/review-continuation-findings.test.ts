@@ -13,6 +13,7 @@ const group = {
   project: 'fixture',
   branch: 'DEV-1258',
   patchId: 'current-patch',
+  zeroContextPatchId: 'current-patch',
   pathSet: ['one.ts'],
 }
 
@@ -37,7 +38,12 @@ function addReview(
     severity?: string
     triagedSeverity?: string | null
   }>,
-  options: { patchId?: string | null; pathSet?: string[] | null; headCommit?: string | null } = {},
+  options: {
+    patchId?: string | null
+    zeroContextPatchId?: string | null
+    pathSet?: string[] | null
+    headCommit?: string | null
+  } = {},
 ): void {
   const reviewRecordId = newRecordId()
   const run = database
@@ -54,13 +60,16 @@ function addReview(
     .run(options.headCommit ?? null, run.id)
   database
     .query(
-      `INSERT INTO review (number,record_id,recorded_at,completed_at,patch_id,path_set,tier)
-       VALUES (?,?,'2026-10-12','2026-10-12',?,?,2)`,
+      `INSERT INTO review (number,record_id,recorded_at,completed_at,patch_id,zero_context_patch_id,path_set,tier)
+       VALUES (?,?,'2026-10-12','2026-10-12',?,?,?,2)`,
     )
     .run(
       reviewId,
       reviewRecordId,
       options.patchId === undefined ? 'current-patch' : options.patchId,
+      options.zeroContextPatchId === undefined
+        ? (options.patchId ?? 'current-patch')
+        : options.zeroContextPatchId,
       options.pathSet === null ? null : JSON.stringify(options.pathSet ?? ['one.ts']),
     )
   const reviewLens = database
@@ -183,6 +192,7 @@ test('delivers the latest lineage round after the branch change group moves', ()
   const database = fixture()
   addReview(database, 40, 'correctness', [{ ordinal: 1, disposition: 'accepted' }], {
     patchId: 'reviewed-patch',
+    zeroContextPatchId: 'reviewed-patch',
     headCommit: '1234567890abcdef',
   })
 
@@ -205,6 +215,7 @@ test('delivers the newest complete round, not an older one matching the current 
   addReview(database, 43, 'correctness', [{ ordinal: 1, disposition: 'accepted' }])
   addReview(database, 44, 'safety', [{ ordinal: 2, disposition: 'accepted' }], {
     patchId: 'newer-patch',
+    zeroContextPatchId: 'newer-patch',
   })
 
   const rendered = continuationFindings(database, group, undefined)
@@ -217,6 +228,7 @@ test('a newest review with no change measurement is not a round to deliver', () 
   addReview(database, 45, 'correctness', [{ ordinal: 1, disposition: 'accepted' }])
   addReview(database, 46, 'safety', [{ ordinal: 2, disposition: 'accepted' }], {
     patchId: null,
+    zeroContextPatchId: null,
     pathSet: null,
   })
 
@@ -278,6 +290,7 @@ test('a newer incomplete round refuses instead of falling back to an older compl
   const database = fixture()
   addReview(database, 41, 'correctness', [{ ordinal: 1, disposition: 'accepted' }], {
     patchId: 'older-patch',
+    zeroContextPatchId: 'older-patch',
   })
   addReview(database, 42, 'safety', [{ ordinal: 2, disposition: null }])
 

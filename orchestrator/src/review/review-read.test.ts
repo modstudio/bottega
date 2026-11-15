@@ -9,6 +9,7 @@ import { db } from '../database/db.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { upsertProject } from '../project/projects.ts'
 import {
+  hasExactArchitectRead,
   latestArchitectRead,
   recordArchitectRead,
   recordArchitectReadCommand,
@@ -134,6 +135,41 @@ test('the latest architect read is selected for one project branch', () => {
     recordedAt: '2026-10-12T12:00:00.000Z',
   })
   expect(latestArchitectRead(d, 'fixture', 'missing')).toBeNull()
+})
+
+test('an architect read follows the zero-context identity across a rebase', () => {
+  const d = new Database(':memory:')
+  applyMigrations(d)
+  const projectRecordId = newRecordId()
+  d.query(
+    `INSERT INTO project (record_id,name,path,canon,settings) VALUES (?,'fixture','/fixture',1,'{}')`,
+  ).run(projectRecordId)
+  d.query(
+    `INSERT INTO review_read
+      (record_id,project,project_record_id,branch,tip,patch_id,zero_context_patch_id,path_set,tier,note,recorded_at)
+     VALUES (?, 'fixture', ?, 'DEV-2307-work', 'reviewed-tip', 'pre-rebase', 'zero-shared', '["src/change.ts"]', 1, 'read it', '2026-11-15T12:00:00.000Z')`,
+  ).run(newRecordId(), projectRecordId)
+
+  expect(
+    hasExactArchitectRead(
+      d,
+      'fixture',
+      'DEV-2307-work',
+      'post-rebase',
+      'zero-shared',
+      '["src/change.ts"]',
+    ),
+  ).toBe(true)
+  expect(
+    hasExactArchitectRead(
+      d,
+      'fixture',
+      'DEV-2307-work',
+      'post-rebase',
+      'zero-different',
+      '["src/change.ts"]',
+    ),
+  ).toBe(false)
 })
 
 test('the read command records the branch and tip from --cwd', () => {

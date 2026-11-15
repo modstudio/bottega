@@ -197,11 +197,12 @@ function gatherReview(
         number: number
         project_name: string | null
         patch_id: string | null
+        zero_context_patch_id: string | null
         path_set: string | null
       },
       [string]
     >(
-      `SELECT r.record_id,r.number, p.name AS project_name, r.patch_id, r.path_set
+      `SELECT r.record_id,r.number, p.name AS project_name, r.patch_id,r.zero_context_patch_id,r.path_set
          FROM review r LEFT JOIN project p ON p.record_id=r.project_record_id
         WHERE r.record_id=?`,
     )
@@ -233,6 +234,7 @@ function gatherReview(
       project: identity.project,
       branch: branch ?? '',
       patchId: review.patch_id ?? '',
+      zeroContextPatchId: review.zero_context_patch_id,
       pathSet: review.path_set === null ? [] : (JSON.parse(review.path_set) as string[]),
     },
     recordId,

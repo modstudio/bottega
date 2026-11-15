@@ -287,6 +287,7 @@ test('project review store detects completed same-task rounds outside the search
     project: 'fixture',
     branch: 'current-fix',
     patchId: 'current-patch',
+    zeroContextPatchId: 'current-patch',
     pathSet: ['src/a.ts'],
   })
   expect(selected.rows).toEqual([])
@@ -359,6 +360,7 @@ test('selects every review round on the branch and requires every selected lens 
     project: 'fixture',
     branch: 'DEV-1246',
     patchId: 'target-patch',
+    zeroContextPatchId: 'target-patch',
     pathSet: ['src/a.ts'],
   }
   const selected = readProjectReview(database, group)

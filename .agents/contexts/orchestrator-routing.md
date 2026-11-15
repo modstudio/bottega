@@ -81,7 +81,7 @@ A failing behavioral canon eval closes exploration for the default eval agent un
 
 `bottega score recalibrate` blindly re-scores old outputs and reports quadratic-weighted kappa per axis without changing the original score.
 
-**The vocabulary lives in `score.ts` and every prompt is generated from it.** A level that is not offered does not exist. Evidence identity is the caller prompt (`spec_sha`), the change (`patch_id` and path set), the lens, and the effective model.
+**The vocabulary lives in `score.ts` and every prompt is generated from it.** A level that is not offered does not exist. Evidence identity is the caller prompt (`spec_sha`), the change (its identity and path set), the lens, and the effective model.
 
 **Calibration runs are marked `--probe` and never count as evidence.** `bottega score pending` and the Stop hook skip them. A probe is excluded from every query that judges, ranks or reports. A subscription quota reading is a fact about the account, not about an agent's quality, so pacing counts it from any finished run, a registration probe included.
 
