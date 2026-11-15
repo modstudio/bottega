@@ -219,13 +219,8 @@ export async function resolveProjectAutonomy(
     stages,
   )
   const cacheWarnings =
-    hosted.status === 'available'
-      ? refreshHostedCache(project, hosted, stateEnvironment, now)
-      : []
-  const resolution = withHostedWarnings(resolved, [
-    ...hosted.warnings,
-    ...cacheWarnings,
-  ])
+    hosted.status === 'available' ? refreshHostedCache(project, hosted, stateEnvironment, now) : []
+  const resolution = withHostedWarnings(resolved, [...hosted.warnings, ...cacheWarnings])
   if (hosted.status === 'available') {
     return {
       ...resolution,

@@ -4,10 +4,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { isDisplayTimezone } from '../../../shared/machine-config.ts'
-import {
-  autonomyContextDirectory,
-  type StateEnvironment,
-} from '../../../shared/state-directory.ts'
+import { autonomyContextDirectory, type StateEnvironment } from '../../../shared/state-directory.ts'
 import { writeCacheFile } from './atomic-cache-file.ts'
 
 type CachedUserDisplay = {

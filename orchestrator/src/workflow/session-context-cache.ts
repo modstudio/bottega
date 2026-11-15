@@ -3,10 +3,7 @@
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import {
-  autonomyContextDirectory,
-  type StateEnvironment,
-} from '../../../shared/state-directory.ts'
+import { autonomyContextDirectory, type StateEnvironment } from '../../../shared/state-directory.ts'
 import { writeCacheFile } from '../config/atomic-cache-file.ts'
 
 export type { StateEnvironment } from '../../../shared/state-directory.ts'
