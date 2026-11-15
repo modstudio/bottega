@@ -183,10 +183,8 @@ export async function machineAnchor(selected: SelectedSpace, ports: AnchorPorts)
       seed = ports.randomSeed?.() ?? crypto.getRandomValues(new Uint8Array(32))
       if (seed.byteLength !== 32) throw new Error('recovery seed source must return 32 bytes')
       ports.output(entropyToMnemonic(seed, wordlist))
-      if (!(await ports.confirm())) {
-        ports.output('recovery words were not confirmed; nothing was changed')
-        return
-      }
+      if (!(await ports.confirm()))
+        throw new Error('recovery words were not confirmed; nothing was changed')
       const appended = await append(
         selected,
         ports,
@@ -245,6 +243,8 @@ export async function machineRecover(selected: SelectedSpace, ports: RecoverPort
     throw new Error('recovery words have an invalid BIP39 checksum')
   const seed = mnemonicToEntropy(words, wordlist)
   try {
+    if (seed.byteLength !== 32)
+      throw new Error("recovery words do not match this space's recovery key")
     const recoveryPublicKey = ed25519.getPublicKey(seed)
     if (!bytesEqual(recoveryPublicKey, state.recoveryPublicKey))
       throw new Error("recovery words do not match this space's recovery key")

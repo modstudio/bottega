@@ -108,7 +108,9 @@ test('anchor refuses non-terminals and a declined confirmation appends nothing a
     `space fixture is not anchored; run \`${PLATFORM_SLUG} machine anchor --space fixture\``,
   )
   const seed = new Uint8Array(32).fill(7)
-  await machineAnchor(space, { ...common, ...tty, randomSeed: () => seed })
+  await expect(machineAnchor(space, { ...common, ...tty, randomSeed: () => seed })).rejects.toThrow(
+    'recovery words were not confirmed; nothing was changed',
+  )
   expect(record.appendCount()).toBe(0)
   expect([...seed]).toEqual(new Array(32).fill(0))
 })
@@ -239,6 +241,16 @@ test('recover adds this machine with the recovery signature and rejects invalid 
       promptWords: async () => 'abandon '.repeat(24),
     }),
   ).rejects.toThrow('recovery words have an invalid BIP39 checksum')
+  await expect(
+    machineRecover(space, {
+      client: recoverClient.value,
+      env: recoverEnv,
+      ...tty,
+      output: () => undefined,
+      promptWords: async () => entropyToMnemonic(new Uint8Array(16).fill(13), wordlist),
+    }),
+  ).rejects.toThrow("recovery words do not match this space's recovery key")
+  expect(recoverClient.appendCount()).toBe(0)
   await expect(
     machineRecover(space, {
       client: recoverClient.value,
