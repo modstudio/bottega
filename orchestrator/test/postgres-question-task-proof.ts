@@ -95,25 +95,36 @@ export function registerQuestionTaskRecordSyncProof(
     const machineId = newRecordId()
     const at = '2026-11-15T12:00:00.000Z'
     const directTaskId = newRecordId()
+    const directSpaceId = newRecordId()
+    const directProjectId = newRecordId()
+    const directProjectName = `direct-question-proof-${directProjectId.slice(-8)}`
     fixture.admin(`
+      INSERT INTO space(id,name,slug,metadata,created_at)
+      VALUES ('${directSpaceId}','${directProjectName}','${directProjectName}','{}'::jsonb,now());
+      INSERT INTO membership(id,space_id,user_id,role,permission,created_at)
+      VALUES ('${newRecordId()}','${directSpaceId}',
+        (SELECT user_id FROM membership WHERE space_id='${fixture.spaceId}' LIMIT 1),
+        'member','write',now());
       INSERT INTO machine(id,user_id,name,registered_at,last_seen)
-      VALUES ('${machineId}',(SELECT user_id FROM membership WHERE space_id='${fixture.spaceId}' LIMIT 1),
+      VALUES ('${machineId}',(SELECT user_id FROM membership WHERE space_id='${directSpaceId}' LIMIT 1),
         'direct-question-proof',now(),now());
+      INSERT INTO project(id,space_id,name,created_at)
+      VALUES ('${directProjectId}','${directSpaceId}','${directProjectName}',now());
       INSERT INTO question
         (id,number,space_id,project_id,machine_id,revision,asked_at,question,asked_via,
          withheld_fields,created_at,updated_at)
-      VALUES ('${newRecordId()}',40,'${fixture.spaceId}','${fixture.projectId}','${machineId}',1,
+      VALUES ('${newRecordId()}',40,'${directSpaceId}','${directProjectId}','${machineId}',1,
         '${at}','seed question','workflow','[]'::jsonb,'${at}','${at}');
       INSERT INTO hub_task
         (id,space_id,project_name,project_id,key,project,title,status,status_category,source,
          first_seen,last_seen,created_at,updated_at)
-      VALUES ('${directTaskId}','${fixture.spaceId}','${fixture.projectName}','${fixture.projectId}',
-        'DEV-2331','${fixture.projectName}','direct question task','active','active','local',
+      VALUES ('${directTaskId}','${directSpaceId}','${directProjectName}','${directProjectId}',
+        'DEV-2331','${directProjectName}','direct question task','active','active','local',
         now(),now(),now(),now());
     `)
     fixture.signIn()
     const client = recordApiClient()
-    const destination = { destinationSpaceId: fixture.spaceId }
+    const destination = { destinationSpaceId: directSpaceId }
     type QuestionSnapshot = QuestionWriteBody['question']
     const snapshot = (id: string): QuestionSnapshot => ({
       id,
@@ -122,7 +133,7 @@ export function registerQuestionTaskRecordSyncProof(
       workflowKey: 'DEV-2331',
       workflowTaskId: null,
       workflowCursorRecordId: newRecordId(),
-      projectId: fixture.projectId,
+      projectId: directProjectId,
       machineId,
       revision: 1,
       askedAt: at,
@@ -189,14 +200,14 @@ export function registerQuestionTaskRecordSyncProof(
       fixture.admin(`SELECT workflow_task_id FROM question WHERE id='${questions[0]!.id}';`),
     ).toBe(directTaskId)
 
-    await client.ensureSpaceBuiltIns!({ destinationSpaceId: fixture.spaceId })
+    await client.ensureSpaceBuiltIns!({ destinationSpaceId: directSpaceId })
     const workflowVersionId = fixture.admin(
       `SELECT version.id FROM workflow_version version JOIN workflow ON workflow.id=version.workflow_id
-       WHERE workflow.space_id='${fixture.spaceId}' ORDER BY version.n DESC LIMIT 1;`,
+       WHERE workflow.space_id='${directSpaceId}' ORDER BY version.n DESC LIMIT 1;`,
     )
     const catalogueVersionId = fixture.admin(
       `SELECT version.id FROM step_catalogue_version version JOIN step_catalogue catalogue ON catalogue.id=version.catalogue_id
-       WHERE catalogue.space_id='${fixture.spaceId}' ORDER BY version.n DESC LIMIT 1;`,
+       WHERE catalogue.space_id='${directSpaceId}' ORDER BY version.n DESC LIMIT 1;`,
     )
     const flowId = newRecordId()
     const stageId = newRecordId()
@@ -205,7 +216,7 @@ export function registerQuestionTaskRecordSyncProof(
         requestId: newRecordId(),
         flowInsert: {
           id: flowId,
-          projectId: fixture.projectId,
+          projectId: directProjectId,
           taskId: directTaskId,
           state: 'open',
           openStageRecordId: stageId,
@@ -217,7 +228,7 @@ export function registerQuestionTaskRecordSyncProof(
         stageInsert: {
           id: stageId,
           flowRecordId: flowId,
-          projectId: fixture.projectId,
+          projectId: directProjectId,
           workflow: 'ship-task',
           mode: 'default',
           workflowKey: 'DEV-2331',
@@ -248,9 +259,9 @@ export function registerQuestionTaskRecordSyncProof(
       (id,evidence_seq,space_id,project_id,machine_id,started_by_user_id,started_at,agent,job,
        prompt_sha,prompt_bytes,prompt_head,task_id,probe,status,turn,no_failover,automatic_failover,
        work_preserved,created_at,updated_at,session_id)
-      VALUES ('${runId}',(SELECT COALESCE(MAX(evidence_seq),0)+1 FROM run WHERE space_id='${fixture.spaceId}'),
-       '${fixture.spaceId}','${fixture.projectId}','${machineId}',
-       (SELECT user_id FROM membership WHERE space_id='${fixture.spaceId}' LIMIT 1),'${at}',
+      VALUES ('${runId}',(SELECT COALESCE(MAX(evidence_seq),0)+1 FROM run WHERE space_id='${directSpaceId}'),
+       '${directSpaceId}','${directProjectId}','${machineId}',
+       (SELECT user_id FROM membership WHERE space_id='${directSpaceId}' LIMIT 1),'${at}',
        'codex','proof','proof',1,'proof','${directTaskId}',false,'running',1,false,false,false,
        '${at}','${at}','run-question-proof');`)
     const workflowQuestion = snapshot(newRecordId())
@@ -283,7 +294,7 @@ export function registerQuestionTaskRecordSyncProof(
       (await client.readQuestions!({ read: 'rulings', kind: 'run' }, destination)).items,
     ).toContainEqual(expect.objectContaining({ record_id: runQuestion.id }))
     expect((await client.readQuestions!({ read: 'projects' }, destination)).items).toContainEqual({
-      project: fixture.projectName,
+      project: directProjectName,
     })
 
     const answeredAt = '2026-11-15T12:01:00.000Z'
@@ -353,7 +364,7 @@ export function registerQuestionTaskRecordSyncProof(
     )
     const taskRulings = (
       await client.readQuestions!(
-        { read: 'task-rulings', projectId: fixture.projectId, taskId: directTaskId },
+        { read: 'task-rulings', projectId: directProjectId, taskId: directTaskId },
         destination,
       )
     ).items
