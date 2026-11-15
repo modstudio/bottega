@@ -76,7 +76,7 @@ export type TriageDecision =
     }
 
 /** The one normalization for missing-lens evidence stored or compared by admission. */
-export function normalizeMissingLensNames(lenses: readonly string[]): string[] {
+function normalizeMissingLensNames(lenses: readonly string[]): string[] {
   return [...new Set(lenses)].sort()
 }
 

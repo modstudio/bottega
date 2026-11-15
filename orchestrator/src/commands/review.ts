@@ -7,7 +7,6 @@ import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { clearConfinement } from '../confinement/confinement-ruling.ts'
 import { db } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
-import { ceilingGuidanceForTier } from '../pull-request/pr-admission.ts'
 import { resolveReviewCommandCwd } from '../review/review-command-cwd.ts'
 import {
   calibrationReviewCommand,
@@ -86,12 +85,9 @@ function tierReviewCliCommand(argv: string[], flags: CliFlags, { log }: ReviewPr
   const json = flags.has('json')
   const ceilingGuidance = json
     ? null
-    : ceilingGuidanceForTier({
-        cwd: result.cwd,
-        tip: result.tip,
-        branch: result.branch,
-        reviewBudget: result.output.review_budget,
-      })
+    : result.output.funnel_verdict.next.action === 'ask-ceiling-ruling'
+      ? `review round ceiling reached: ${result.output.funnel_verdict.remedy}`
+      : null
   printReviewTier(result.output, json, ceilingGuidance, log)
 }
 

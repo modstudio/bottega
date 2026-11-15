@@ -58,7 +58,12 @@ export const reviewModuleSpecs = [
       '../review/review-target.ts',
       '../review/review-tier.ts',
     ],
-    typeOnlyAllowed: ['bun:sqlite', '../project/projects.ts', './decide-review-funnel.ts'],
+    typeOnlyAllowed: [
+      'bun:sqlite',
+      '../project/projects.ts',
+      '../review/review-applicability.ts',
+      './decide-review-funnel.ts',
+    ],
   },
   {
     file: 'orchestrator/src/review-funnel/review-funnel-report.ts',
@@ -335,7 +340,12 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../review/review-target.ts',
       '../review/review-tier.ts',
     ],
-    typeOnlyAllowed: ['bun:sqlite', '../project/projects.ts', './decide-review-funnel.ts'],
+    typeOnlyAllowed: [
+      'bun:sqlite',
+      '../project/projects.ts',
+      '../review/review-applicability.ts',
+      './decide-review-funnel.ts',
+    ],
     reason: 'Keep repository and review-store reads out of the pure funnel decision.',
   },
   {

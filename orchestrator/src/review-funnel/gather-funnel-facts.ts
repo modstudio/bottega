@@ -48,6 +48,12 @@ export type ReviewFunnelChange = {
   head: string
   branch: string
   project: Project
+  resolved?: {
+    tier: 0 | 1 | 2 | 3
+    applicability: import('../review/review-applicability.ts').ApplicableReview
+    reviewPlan?: import('../review/review-applicability.ts').ReviewFunnelPlan
+    group: import('../review/review-group.ts').ChangeGroup
+  }
 }
 
 function reviewRoundFacts(
@@ -113,6 +119,31 @@ function completionFacts(branchReviews: ReturnType<typeof reviewsForTriage>['bra
   }
 }
 
+function gatheredTriage(change: ReviewFunnelChange) {
+  if (!change.resolved) {
+    return triageDecision(
+      resolvePullRequestChangeForProject(
+        change.cwd,
+        change.project,
+        change.branch,
+        change.head,
+        change.database,
+      ),
+      change.database,
+    )
+  }
+  return triageDecision(
+    {
+      ...change.resolved,
+      project: change.project,
+      branch: change.branch,
+      tip: change.head,
+      tree: '',
+    },
+    change.database,
+  )
+}
+
 /** Resolve one change once, including lineage evidence and completed-landing exclusions. */
 export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts {
   const identity = measureChangeIdentity(change.cwd, change.base, change.head)
@@ -150,16 +181,7 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
     patchId: identity.patchId,
     pathSet,
   })
-  const admission = triageDecision(
-    resolvePullRequestChangeForProject(
-      change.cwd,
-      change.project,
-      change.branch,
-      change.head,
-      change.database,
-    ),
-    change.database,
-  )
+  const admission = gatheredTriage(change)
   const admissionGap = ceilingTriageFacts(admission)
   return {
     change: {

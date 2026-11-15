@@ -110,7 +110,12 @@ export const pullRequestModuleSpecs = [
   },
   {
     file: 'orchestrator/src/pull-request/admission-decision.ts',
-    allowed: ['./override-decision.ts', './triage-decision.ts'],
+    allowed: ['../review-funnel/decide-review-funnel.ts', './override-decision.ts'],
+    typeOnlyAllowed: [
+      '../review-funnel/decide-review-funnel.ts',
+      './override-decision.ts',
+      './triage-decision.ts',
+    ],
   },
   {
     file: 'orchestrator/src/pull-request/pr-admission.ts',
@@ -125,6 +130,10 @@ export const pullRequestModuleSpecs = [
       '../git/git-environment.ts',
       '../project/projects.ts',
       '../record/landing-outbox.ts',
+      '../review-funnel/decide-review-funnel.ts',
+      '../review-funnel/gather-funnel-facts.ts',
+      '../review-funnel/review-funnel-decision-log.ts',
+      '../review-funnel/review-funnel-policy.ts',
       '../review/review-group.ts',
       '../review/review-applicability.ts',
       '../review/review-lineage-store.ts',

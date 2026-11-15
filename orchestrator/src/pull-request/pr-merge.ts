@@ -49,6 +49,9 @@ import {
   resolvePullRequestChange,
   triageRefusal,
 } from './pr-admission.ts'
+import type { TriageDecision } from './triage-decision.ts'
+
+type MergeAdmissionDecision = AdmissionDecision & { triage: TriageDecision }
 import { recordPullRequestCi } from './pr-ci-record.ts'
 import {
   type PullRequestMergeFacts,
@@ -83,10 +86,10 @@ export type PullRequestMergeAdapter = {
     headCommit: string,
     headBranch: string,
     database: Database,
-  ): { change: PullRequestChange; decision: AdmissionDecision }
+  ): { change: PullRequestChange; decision: MergeAdmissionDecision }
   recordAdmission(
     change: PullRequestChange,
-    decision: AdmissionDecision,
+    decision: MergeAdmissionDecision,
     prNumber: number,
     database: Database,
   ): string | null
@@ -278,10 +281,11 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
   },
   admission(cwd, headCommit, headBranch, database) {
     const change = resolvePullRequestChange(cwd, headCommit, database, undefined, headBranch)
-    return { change, decision: admissionDecision(change, database) }
+    const evaluated = admissionDecision(change, database)
+    return { change, decision: evaluated }
   },
   recordAdmission(change, decision, prNumber, database) {
-    return recordMergeAdmission(change, decision, prNumber, database)
+    return recordMergeAdmission(change, decision, decision.triage, prNumber, database)
   },
   postMergeChange(cwd, headCommit, headBranch, database) {
     return resolvePullRequestChange(cwd, headCommit, database, undefined, headBranch)

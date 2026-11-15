@@ -1,119 +1,54 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { ReviewFunnelVerdict } from '../review-funnel/decide-review-funnel.ts'
 import { type AdmissionOverride, decideAdmission } from './admission-decision.ts'
-import type { TriageDecision } from './triage-decision.ts'
-
-const incomplete: TriageDecision = {
-  complete: false,
-  snapshot: {
-    reviewRecordIds: [],
-    patchId: 'patch-a',
-    tier: 1,
-    lensRounds: 0,
-    findingCount: 0,
-    admissionPath: 'exact_review',
-    readRecordId: null,
-  },
-  missingReview: true,
-  unfinishedReviewNumbers: [],
-  undisposedFindings: [],
-  missingLenses: [{ lens: 'correctness', recordedOnBranch: false, newlyTouchedPaths: [] }],
-  lensesAlreadyComplete: [],
-  missingSecondOpinion: null,
-  architectReadRequired: false,
-  earlierReviewNumber: null,
-  earlierReviewTier: null,
-  finalTierRaised: false,
-  noCompleteReviewRound: true,
-}
 
 const change = {
-  project: 'fixture',
-  branch: 'DEV-977-fixture',
-  patchId: 'patch-new',
-  pathSet: '["a.ts"]',
+  project: 'fixture', taskKey: 'DEV-977', branch: 'DEV-977-fixture', head: 'tip-new',
+  patchId: 'patch-new', pathSet: '["a.ts"]', paths: ['a.ts'],
 }
 
+const verdict = (action: ReviewFunnelVerdict['next']['action'], overridden: string[] = []): ReviewFunnelVerdict => ({
+  policyVersion: 'builtin', mode: 'evaluate', change,
+  tier: { tier: 1, risk: 1, size: 1, firm: false, lowered: false, reasons: [] },
+  budget: { roundsUsed: 1, ceiling: 1, atCeiling: true },
+  lenses: overridden.map((lens) => ({ lens, status: 'overridden', reason: 'overridden' })),
+  next: { action }, remedy: `${PLATFORM_SLUG} pr create`,
+})
+
 const override = (values: Partial<AdmissionOverride> = {}): AdmissionOverride => ({
-  recordId: 'override-17',
-  attribution: 'operator',
-  missingLenses: [],
-  ...change,
-  tip: 'tip-new',
-  tree: 'tree-new',
-  ...values,
+  recordId: 'override-17', attribution: 'operator', missingLenses: [],
+  project: change.project, branch: change.branch, patchId: change.patchId, pathSet: change.pathSet,
+  tip: change.head, tree: 'tree-new', ...values,
 })
 
 describe('pull-request admission decision', () => {
-  test('an override for the exact patch and path set admits', () => {
-    expect(decideAdmission(change, incomplete, [override()])).toEqual({
-      complete: true,
-      overrideId: 'override-17',
-      triage: incomplete,
+  test('the funnel verdict is the admission answer', () => {
+    expect(decideAdmission(verdict('dispatch'), [])).toEqual({ complete: false, overrideId: null })
+    expect(decideAdmission(verdict('admit'), [])).toEqual({ complete: true, overrideId: null })
+  })
+
+  test('an operator override for the exact patch and path set is credited', () => {
+    expect(decideAdmission(verdict('admit'), [override()])).toEqual({
+      complete: true, overrideId: 'override-17',
     })
   })
 
-  test('an architect ruling admits only the exact recorded missing-lens gap', () => {
+  test('an architect ruling is credited only for the exact overridden-lens gap', () => {
     const ceiling = override({
-      recordId: 'ceiling-ruling',
-      attribution: 'architect-ceiling',
-      missingLenses: ['correctness'],
+      recordId: 'ceiling-ruling', attribution: 'architect-ceiling', missingLenses: ['correctness'],
     })
-    const ceilingGap = { ...incomplete, noCompleteReviewRound: false }
-    expect(decideAdmission(change, ceilingGap, [ceiling]).overrideId).toBe('ceiling-ruling')
-    expect(
-      decideAdmission(
-        change,
-        {
-          ...ceilingGap,
-          missingLenses: [
-            ...incomplete.missingLenses,
-            { lens: 'craft', recordedOnBranch: false, newlyTouchedPaths: [] },
-          ],
-        },
-        [ceiling],
-      ).overrideId,
-    ).toBeNull()
-    expect(
-      decideAdmission(change, ceilingGap, [
-        { ...ceiling, tip: 'different-head', tree: 'different-tree' },
-      ]).overrideId,
-    ).toBe('ceiling-ruling')
-    expect(
-      decideAdmission(
-        change,
-        {
-          ...ceilingGap,
-          undisposedFindings: [{ reviewNumber: 4, ordinal: 1 }],
-        },
-        [ceiling],
-      ).overrideId,
-    ).toBeNull()
+    expect(decideAdmission(verdict('admit', ['correctness']), [ceiling]).overrideId).toBe('ceiling-ruling')
+    expect(decideAdmission(verdict('admit', ['correctness', 'craft']), [ceiling]).overrideId).toBeNull()
+    expect(decideAdmission(verdict('admit', ['craft']), [ceiling]).overrideId).toBeNull()
   })
 
-  test('a missing second-opinion ruling does not admit a missing primary lens', () => {
+  test('a missing second-opinion ruling does not credit a missing primary lens', () => {
     const ceiling = override({
-      recordId: 'ceiling-ruling',
-      attribution: 'architect-ceiling',
-      missingLenses: ['second-opinion:correctness'],
+      attribution: 'architect-ceiling', missingLenses: ['second-opinion:correctness'],
     })
-    const ceilingGap = {
-      ...incomplete,
-      noCompleteReviewRound: false,
-      missingLenses: [],
-      missingSecondOpinion: { lens: 'correctness', firstRunId: 'run-1' },
-    }
-    expect(decideAdmission(change, ceilingGap, [ceiling]).overrideId).toBe('ceiling-ruling')
-    expect(
-      decideAdmission(
-        change,
-        {
-          ...ceilingGap,
-          missingLenses: [{ lens: 'correctness', recordedOnBranch: false, newlyTouchedPaths: [] }],
-          missingSecondOpinion: null,
-        },
-        [ceiling],
-      ).overrideId,
-    ).toBeNull()
+    expect(decideAdmission(verdict('admit', ['second-opinion:correctness']), [ceiling]).overrideId).toBe('override-17')
+    expect(decideAdmission(verdict('admit', ['correctness']), [ceiling]).overrideId).toBeNull()
   })
 
   test.each([
@@ -122,38 +57,16 @@ describe('pull-request admission decision', () => {
     ['another patch', { patchId: 'patch-old' }],
     ['another path set', { pathSet: '["b.ts"]' }],
     ['a null change group from an old-shape payload', { patchId: null, pathSet: null }],
-  ])('an override for %s does not admit', (_label, values) => {
-    expect(decideAdmission(change, incomplete, [override(values)])).toEqual({
-      complete: false,
-      overrideId: null,
-      triage: incomplete,
-    })
+  ])('an override for %s is not credited', (_label, values) => {
+    expect(decideAdmission(verdict('admit'), [override(values)])).toEqual({ complete: true, overrideId: null })
   })
 
   test.each([
     ['another tip', { tip: 'tip-old' }],
     ['another tree', { tree: 'tree-old' }],
   ])('an override survives %s when the patch identity is unchanged', (_label, values) => {
-    expect(decideAdmission(change, incomplete, [override(values)])).toMatchObject({
-      complete: true,
-      overrideId: 'override-17',
-    })
-  })
-
-  test('without an override the triage result is unchanged', () => {
-    expect(decideAdmission(change, incomplete, [])).toEqual({
-      complete: false,
-      overrideId: null,
-      triage: incomplete,
-    })
-    const complete: TriageDecision = {
-      complete: true,
-      snapshot: { ...incomplete.snapshot, reviewRecordIds: ['review-4'], lensRounds: 1 },
-    }
-    expect(decideAdmission(change, complete, [])).toEqual({
-      complete: true,
-      overrideId: null,
-      triage: complete,
+    expect(decideAdmission(verdict('admit'), [override(values)])).toEqual({
+      complete: true, overrideId: 'override-17',
     })
   })
 })
