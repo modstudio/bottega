@@ -167,7 +167,7 @@ export class SqliteQuestionStore implements QuestionStore {
             since: input.since,
             after: null,
             cursor: null,
-          }),
+          }) as QuestionReadResult['items'],
           input.limit,
         ),
       }

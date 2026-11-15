@@ -71,7 +71,8 @@ export class RecordQuestionStore implements QuestionStore {
     return {
       items: items.map((row) => {
         if (!('run_record_id' in row)) return row
-        const sessionId = typeof row.session_id === 'string' ? row.session_id : null
+        const inboxRow = row as QuestionReadRow & { session_id?: unknown }
+        const sessionId = typeof inboxRow.session_id === 'string' ? inboxRow.session_id : null
         const recent = sessionId
           ? (this.input.database
               .query<{ recent: number }, [string, string]>(
