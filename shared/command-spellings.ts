@@ -457,6 +457,8 @@ export const PLATFORM_COMMAND_WORDS = [
   'workflow catalogue versions',
   'workflow compose',
   'workflow cursor',
+  'workflow cursor help',
+  'workflow cursor identity-map',
   'workflow cursors',
   'workflow dispatch',
   'workflow epic',

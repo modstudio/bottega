@@ -3,12 +3,24 @@ import { Command } from 'commander'
 import type { CommandRoute } from '../cli/routes.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import {
+  bareCommandArgumentDeclarations,
   descriptionBaselineFailures,
   descriptionFindings,
   documentationInventory,
 } from './command-descriptions.ts'
 
 const groups = [['run', 'dispatch and inspect runs']] as const
+
+test('bare command words are rejected while arguments and single verbs are accepted', () => {
+  const source = `
+    program.command('cursor identity-map')
+    program.command('show <x>')
+    program.command('list [x]')
+    program.command('collect <x...>')
+    program.command('status')
+  `
+  expect(bareCommandArgumentDeclarations(source)).toEqual(['cursor identity-map'])
+})
 
 function programs() {
   return { orch: new Command('orch'), hub: new Command('hub') }

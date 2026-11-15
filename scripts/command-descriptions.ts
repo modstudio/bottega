@@ -1,4 +1,5 @@
 import type { Command, Option } from 'commander'
+import ts from 'typescript'
 import type { CommandRoute } from '../cli/routes.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { takesVariadicArgument } from '../shared/commander-public-path.ts'
@@ -58,6 +59,37 @@ export type DocumentationCommand = {
 export type DescriptionFinding = Pick<DocumentationUnit, 'kind' | 'spelling' | 'group' | 'source'>
 
 type CommandBook = Map<string, DocumentationCommand>
+
+const commandArgumentToken = /^(?:<[^<>]+>|\[[^[\]]+\])$/
+
+/** Find command declarations that Commander would misread as a verb with a required argument. */
+export function bareCommandArgumentDeclarations(sourceText: string): string[] {
+  const source = ts.createSourceFile('commands.ts', sourceText, ts.ScriptTarget.Latest, true)
+  const findings: string[] = []
+
+  function visit(node: ts.Node): void {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.text === 'command'
+    ) {
+      const declaration = node.arguments[0]
+      if (declaration && ts.isStringLiteralLike(declaration)) {
+        const tokens = declaration.text.trim().split(/\s+/)
+        if (
+          tokens.length > 1 &&
+          !tokens.slice(1).every((token) => commandArgumentToken.test(token))
+        ) {
+          findings.push(declaration.text)
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+
+  visit(source)
+  return findings
+}
 
 const ownerSource = (owner: 'orch' | 'hub') =>
   owner === 'orch' ? 'orchestrator/src/cli/program.ts' : 'hub/src/cli-program.ts'
