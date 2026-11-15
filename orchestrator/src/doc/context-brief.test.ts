@@ -248,12 +248,59 @@ test('reads a working task brief from its record-id holder while retaining the t
   ])
 })
 
+test('renders an open keyless cursor item under its cursor header without an open line', () => {
+  const database = new Database(':memory:')
+  database.exec(
+    `CREATE TABLE context_item (
+      record_id TEXT NOT NULL, holder_kind TEXT NOT NULL, holder_id TEXT NOT NULL,
+      slug TEXT NOT NULL, kind TEXT NOT NULL, body TEXT NOT NULL, source TEXT NOT NULL,
+      question_number INTEGER, target TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    ); CREATE TABLE question (
+      number INTEGER NOT NULL, workflow_task_record_id TEXT, question TEXT NOT NULL,
+      answered_at TEXT, closed_at TEXT
+    )`,
+  )
+  const recordId = newRecordId()
+  database
+    .query(
+      `INSERT INTO context_item
+       (record_id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
+       VALUES (?,'cursor',?,'decision','position','Continue here.','q42',?,?)`,
+    )
+    .run(newRecordId(), recordId, '2026-11-14T10:00:00Z', '2026-11-14T10:00:00Z')
+  const holders = storedBriefHolders(
+    holderSequence('session-id', [], [], [
+      {
+        record_id: recordId,
+        number: 42,
+        workflow_slug: 'explore',
+        mode_slug: 'default',
+      },
+    ]),
+    database,
+  )
+
+  const rendered = renderContextBrief({
+    session: 'session-id',
+    fullCommand: `${PLATFORM_SLUG} agent context show --session session-id`,
+    holders,
+    runs: [],
+    cursors: [],
+    claims: [],
+    waiting: { boardRequests: 0, questions: 0, filedIssues: 0, resumeBriefs: 0 },
+    autonomy: 'unknown',
+  })
+  expect(rendered).toContain('Cursor 42 explore default\n  position: Continue here.')
+  expect(rendered).not.toContain('Cursor 42 explore default\n  position: Continue here.\n  open:')
+  database.close()
+})
+
 test('selects only the task on an open cursor and lets holder order add its epic', () => {
   const session = newRecordId()
   const working = workingKeysForBrief([
     { workflow_key: 'DEV-2293', project: PLATFORM_SLUG },
     { workflow_key: '', project: PLATFORM_SLUG },
-  ] as never)
+  ])
   expect(working).toEqual([{ key: 'DEV-2293', project: PLATFORM_SLUG }])
   expect(
     holderSequence(session, working, [

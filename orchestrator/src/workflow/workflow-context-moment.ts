@@ -1,6 +1,10 @@
 // concern: workflows
 /** Gathers the plain post-advance cursor values consumed by context moment policy. */
-import { type ContextMomentEffect, contextMomentEffect } from '../doc/context-moment.ts'
+import {
+  type ContextMomentEffect,
+  type ContextMomentHolder,
+  contextMomentEffect,
+} from '../doc/context-moment.ts'
 
 export type WorkflowContextMoment = {
   taskKey: string | null
@@ -18,6 +22,16 @@ export type WorkflowNextCommandMoment = {
   selfRuling?: string
 }
 
+const contextHolder = (
+  taskKey: string | null | undefined,
+  cursorRecordId: string | null | undefined,
+): ContextMomentHolder | null => {
+  const task = taskKey?.trim()
+  if (task) return { kind: 'task', value: task }
+  const cursor = cursorRecordId?.trim()
+  return cursor ? { kind: 'cursor', value: cursor } : null
+}
+
 export function workflowQuestionContextMoment(input: {
   taskKey: string | null | undefined
   cursorRecordId: string
@@ -28,7 +42,12 @@ export function workflowQuestionContextMoment(input: {
   return {
     taskKey: input.taskKey ?? null,
     cursorRecordId: input.cursorRecordId,
-    effect: contextMomentEffect(input),
+    effect: contextMomentEffect({
+      holder: contextHolder(input.taskKey, input.cursorRecordId),
+      questionId: input.questionId,
+      operatorRuled: input.operatorRuled,
+      text: input.text,
+    }),
   }
 }
 
@@ -44,7 +63,7 @@ export function workflowNextContextMoment(
     taskKey,
     cursorRecordId: input.cursorRecordId,
     effect: contextMomentEffect({
-      taskKey,
+      holder: contextHolder(taskKey, input.cursorRecordId),
       questionId: selfRulingQuestionNumber,
       text: selfRuling,
     }),
@@ -64,7 +83,7 @@ export function answeredQuestionContextMoments(
     taskKey: question.taskHolder,
     cursorRecordId: null,
     effect: contextMomentEffect({
-      taskKey: question.taskHolder,
+      holder: contextHolder(question.taskHolder, null),
       questionId: question.number,
       operatorRuled: question.fromOperator,
       text: textForQuestion(question.recordId),

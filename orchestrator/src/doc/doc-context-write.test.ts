@@ -7,6 +7,7 @@ import {
   contextWriteRefusal,
   holderOwnershipRefusal,
 } from './doc-context-write.ts'
+import { cursorContextHolder } from './doc-subjects.ts'
 
 const item = (overrides: Partial<ContextItem> = {}): ContextItem => ({
   holder: 'task:DEV-1844',
@@ -26,9 +27,12 @@ const facts = (overrides: Partial<ContextWriteFacts> = {}): ContextWriteFacts =>
 })
 describe('context write refusal', () => {
   test('cursor holders accept only their owning session and name the remedy otherwise', () => {
-    const holder = 'cursor:01a1dcda-39fd-703c-9afc-cf3f7a85494d'
+    const holder = cursorContextHolder('01a1dcda-39fd-703c-9afc-cf3f7a85494d')
     expect(holderOwnershipRefusal(holder, 'owner', 'decision', 'owner')).toBeNull()
     expect(holderOwnershipRefusal(holder, 'other', 'decision', 'owner')).toBe(
+      'context item decision refused: cursor 01a1dcda-39fd-703c-9afc-cf3f7a85494d belongs to another session; write from its owning session, or on the task',
+    )
+    expect(holderOwnershipRefusal(holder, null, 'decision', null)).toBe(
       'context item decision refused: cursor 01a1dcda-39fd-703c-9afc-cf3f7a85494d belongs to another session; write from its owning session, or on the task',
     )
   })

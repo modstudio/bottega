@@ -3,7 +3,6 @@
 import {
   type ContextMomentEffect,
   type ContextMomentOutput,
-  contextSetCommand,
 } from './context-moment.ts'
 import { contextItemRevision, setContextItem } from './context-service.ts'
 import { ContextWriteRefusalError } from './doc-context-write.ts'
@@ -23,28 +22,26 @@ const writeLine = (line: string, json: boolean, output: ContextMomentOutput) =>
 
 /** Applies each mutation independently and reports storage failures without throwing. */
 export async function applyContextMomentEffect(
-  taskKey: string | null | undefined,
-  cursorRecordId: string | null | undefined,
   effect: ContextMomentEffect,
   json: boolean,
   output: ContextMomentOutput = { log: console.log, error: console.error },
   ports: ContextMomentPorts = productionPorts,
 ): Promise<void> {
-  const task = taskKey?.trim()
-  const cursor = cursorRecordId?.trim()
-  if (!task && !cursor) return
-  const selection = task ? { task } : { cursor: cursor! }
-  const target = task ?? `cursor:${cursor}`
+  for (const line of effect.reports) writeLine(line, json, output)
   for (const item of effect.writes) {
+    const selection =
+      item.holder.kind === 'task'
+        ? { task: item.holder.value }
+        : { cursor: item.holder.value }
+    const target =
+      item.holder.kind === 'task' ? item.holder.value : `cursor ${item.holder.value}`
     try {
       const expectedRevision = await ports.revision({ ...selection, id: item.id })
       await ports.set({ ...selection, ...item, expectedRevision })
       writeLine(`context: wrote ${item.kind} ${item.id} on ${target}`, json, output)
     } catch (error) {
       const retry =
-        error instanceof ContextWriteRefusalError || !task
-          ? ''
-          : `; retry: ${contextSetCommand(task, item)}`
+        error instanceof ContextWriteRefusalError || !item.retry ? '' : `; retry: ${item.retry}`
       writeLine(
         `context: could not write ${item.kind} on ${target}: ${detail(error)}${retry}`,
         json,
@@ -61,14 +58,7 @@ export function applyContextMoment(
   output: ContextMomentOutput = { log: console.log, error: console.error },
   ports?: ContextMomentPorts,
 ): Promise<void> {
-  return applyContextMomentEffect(
-    moment.taskKey,
-    moment.cursorRecordId,
-    moment.effect,
-    json,
-    output,
-    ports,
-  )
+  return applyContextMomentEffect(moment.effect, json, output, ports)
 }
 
 /** Renders the non-fatal report for a moment that could not be gathered after an advance. */

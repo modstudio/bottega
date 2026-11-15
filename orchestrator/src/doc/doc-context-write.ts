@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   CONTEXT_ITEM_KINDS,
   type ContextItemKind,
+  splitContextHolder,
 } from '../../../shared/context-item-vocabulary.ts'
 import {
   type ContextRecordName,
@@ -168,9 +169,9 @@ export function holderOwnershipRefusal(
       ? null
       : `context item ${id} refused: only owning session ${owner} may write ${holder}`
   }
-  if (!holder.startsWith('cursor:')) return null
-  const cursor = holder.slice('cursor:'.length)
-  return cursorOwner === caller
+  const address = splitContextHolder(holder)
+  if (address.holderKind !== 'cursor') return null
+  return cursorOwner && cursorOwner === caller
     ? null
-    : `context item ${id} refused: cursor ${cursor} belongs to another session; write from its owning session, or on the task`
+    : `context item ${id} refused: cursor ${address.holderId} belongs to another session; write from its owning session, or on the task`
 }

@@ -14,8 +14,10 @@ import { architectSessionContext } from '../workflow/session-context.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import {
   listWorkflowCursors,
+  openKeylessCursorsForSession,
   type WorkflowCursorListRow,
 } from '../workflow/workflow-cursor-list.ts'
+import { workflowCursorClaimHandles } from '../workflow/workflow-cursor-worktrees.ts'
 import {
   type HubTaskReference,
   projectTaskKey,
@@ -25,7 +27,7 @@ import {
 } from '../workflow/workflow-task-reference.ts'
 import { storedItems, taskProfile } from './context-write-adapter.ts'
 import type { ContextItem } from './doc-context-write.ts'
-import { taskContextHolder } from './doc-subjects.ts'
+import { cursorContextHolder, taskContextHolder } from './doc-subjects.ts'
 import { listOpenResumes } from './docs.ts'
 
 type ContextBriefHolder = {
@@ -91,9 +93,11 @@ export function renderContextBrief(brief: ContextBrief): string {
         left.id.localeCompare(right.id),
     )
     for (const item of items) lines.push(renderItem(item))
-    for (const question of holder.openQuestions ?? [])
-      lines.push(`  open: ${firstLine(question.question)}`)
-    if (!holder.openQuestions?.length) lines.push('  open: none')
+    if (holder.kind !== 'cursor') {
+      for (const question of holder.openQuestions ?? [])
+        lines.push(`  open: ${firstLine(question.question)}`)
+      if (!holder.openQuestions?.length) lines.push('  open: none')
+    }
   }
   const inFlight = [
     ...brief.cursors.map((cursor) => {
@@ -134,16 +138,18 @@ export function holderSequence(
   session: string,
   working: readonly ContextBriefWorkingKey[],
   tasks: readonly HubTaskReference[],
-  keylessCursors: readonly Pick<
-    WorkflowCursorListRow,
-    'record_id' | 'id' | 'workflow_slug' | 'mode_slug'
-  >[] = [],
+  keylessCursors: readonly {
+    record_id: string
+    number: number
+    workflow_slug: string
+    mode_slug: string
+  }[] = [],
 ): ContextBriefHolderReference[] {
   const holders: ContextBriefHolderReference[] = [
     { key: session, title: '', kind: 'session' },
     ...keylessCursors.map((cursor) => ({
-      key: `cursor:${cursor.record_id}`,
-      title: `Cursor ${cursor.id} ${cursor.workflow_slug} ${cursor.mode_slug}`,
+      key: cursorContextHolder(cursor.record_id),
+      title: `Cursor ${cursor.number} ${cursor.workflow_slug} ${cursor.mode_slug}`,
       kind: 'cursor' as const,
       recordId: cursor.record_id,
     })),
@@ -191,7 +197,7 @@ export function storedBriefHolders(
       }
       if (reference.kind === 'cursor') {
         const { recordId, ...holder } = reference
-        return { ...holder, items: storedItems(`cursor:${recordId}`, database) }
+        return { ...holder, items: storedItems(cursorContextHolder(recordId), database) }
       }
       const { recordId, ...holder } = reference
       const openQuestions = openTaskQuestions(recordId, database)
@@ -233,10 +239,7 @@ function claimBoundToCursor(claim: ClaimView, cursors: readonly WorkflowCursorLi
       claim.subject.value === cursor.workflow_key
     )
       return true
-    const args = JSON.parse(cursor.args) as Record<string, unknown>
-    return [args.worktree, args.branch].some(
-      (value) => typeof value === 'string' && value === claim.subject.value,
-    )
+    return workflowCursorClaimHandles(cursor.args).includes(claim.subject.value)
   })
 }
 
@@ -261,6 +264,7 @@ export async function contextBrief(
   database: Database = db(),
 ): Promise<ContextBrief> {
   const cursors = await listWorkflowCursors({ session }, database)
+  const keylessCursors = await openKeylessCursorsForSession(session, database)
   const liveClaims = liveClaimsOfSession(session, Date.now(), database)
   const working = workingKeysForBrief(cursors)
   const workingProjects = [...new Set(working.map(({ project }) => project))]
@@ -294,10 +298,10 @@ export async function contextBrief(
     session,
     working,
     taskRows,
-    cursors.filter((cursor) => !cursor.workflow_key),
+    keylessCursors,
   )
   const holders = storedBriefHolders(references, database)
-  const fullHolder = holders.find((holder) => holder.kind !== 'session')
+  const fullHolder = holders.find((holder) => holder.kind === 'task' || holder.kind === 'epic')
   return {
     session,
     fullCommand: fullHolder

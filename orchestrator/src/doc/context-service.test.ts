@@ -10,6 +10,10 @@ import { upsertProject } from '../project/projects.ts'
 import { rememberHostedRecord } from '../record/install-binding-write.ts'
 import { recordApiError } from '../record/record-api-client-error.ts'
 import {
+  catalogueVersionRecordId,
+  workflowVersionRecordId,
+} from '../../test/fixtures/workflow.ts'
+import {
   clearTaskContext,
   dropContextItem,
   dropSessionContextItemsForLifecycle,
@@ -110,6 +114,66 @@ test('whole-holder clear removes every context item', async () => {
     expect.objectContaining({ removed: 2 }),
   )
   expect((await getContext({ task: task.key })).items).toEqual([])
+})
+
+test('cursor context accepts its owning session and refuses a foreign session', async () => {
+  installContextFacts()
+  const owner = 'cursor-owner-session'
+  const recordId = newRecordId()
+  const projectRecordId = (
+    db().query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?').get(
+      PLATFORM_SLUG,
+    )!
+  ).record_id
+  db()
+    .query(
+      `INSERT INTO workflow_cursor
+       (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,
+        session_id,workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,
+        state,closed,total_steps,created_at,updated_at,enforcement)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),?,?, 'ship-task','default','',
+               ?,?,?,?,'{}',0,'plan','running','[]',1,?,?, 'floors')`,
+    )
+    .run(
+      recordId,
+      PLATFORM_SLUG,
+      projectRecordId,
+      recordId,
+      owner,
+      workflowVersionRecordId(db()),
+      catalogueVersionRecordId(db()),
+      '2026-11-14T10:00:00Z',
+      '2026-11-14T10:00:00Z',
+    )
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  try {
+    process.env.CLAUDE_CODE_SESSION_ID = owner
+    await expect(
+      setContextItem({
+        cursor: recordId,
+        id: 'decision',
+        kind: 'position',
+        source: 'q42',
+        body: 'Continue.',
+      }),
+    ).resolves.toEqual(expect.objectContaining({ holder: expect.stringContaining(recordId) }))
+
+    process.env.CLAUDE_CODE_SESSION_ID = 'foreign-session'
+    await expect(
+      setContextItem({
+        cursor: recordId,
+        id: 'foreign',
+        kind: 'position',
+        source: 'q43',
+        body: 'Do not write this.',
+      }),
+    ).rejects.toThrow(
+      `cursor ${recordId} belongs to another session; write from its owning session, or on the task`,
+    )
+  } finally {
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+  }
 })
 
 test('worker environments refuse every context-item write entry point', async () => {

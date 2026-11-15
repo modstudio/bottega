@@ -2,19 +2,20 @@
 /** Binds hosted context-item writes to the holder's record destination. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { splitContextHolder } from '../../../shared/context-item-vocabulary.ts'
 import type { RecordWriteOwner } from '../../../shared/record-write-space.ts'
-import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { RecordApiRequestError, recordApiClient } from '../record/record-api-client.ts'
 import { recordWriteDestination } from '../record/record-write-destination.ts'
-import { resolveContextTaskByRecordId } from './context-write-adapter.ts'
+import { contextCursorOwner, resolveContextTaskByRecordId } from './context-write-adapter.ts'
 
 async function contextItemOwner(holder: string): Promise<RecordWriteOwner | null> {
-  if (holder.startsWith('session:')) {
+  const address = splitContextHolder(holder)
+  if (address.holderKind === 'session') {
     return { kind: 'session', checkoutProject: projectAt(process.cwd())?.name ?? null }
   }
-  if (holder.startsWith('task:')) {
-    const { task, unreadable } = await resolveContextTaskByRecordId(holder.slice('task:'.length))
+  if (address.holderKind === 'task') {
+    const { task, unreadable } = await resolveContextTaskByRecordId(address.holderId)
     if (task) return { kind: 'task', projectName: task.project }
     throw new RecordApiRequestError(
       unreadable.length > 0
@@ -24,10 +25,8 @@ async function contextItemOwner(holder: string): Promise<RecordWriteOwner | null
       409,
     )
   }
-  if (holder.startsWith('cursor:')) {
-    const cursor = db()
-      .query<{ project: string }, [string]>('SELECT project FROM workflow_cursor WHERE record_id=?')
-      .get(holder.slice('cursor:'.length))
+  if (address.holderKind === 'cursor') {
+    const cursor = contextCursorOwner(holder)
     if (cursor) return { kind: 'project', name: cursor.project }
     throw new RecordApiRequestError(
       `cursor context owner could not be resolved; write from the cursor's owning session, or on the task`,

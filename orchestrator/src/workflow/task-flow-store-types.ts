@@ -145,6 +145,7 @@ export type TaskFlowOpenSessionStageRow = {
   number: number
   project: string
   workflow_slug: string
+  mode_slug: string
   workflow_key: string
   state: string
   updated_at: string

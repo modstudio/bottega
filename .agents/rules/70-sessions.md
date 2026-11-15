@@ -7,7 +7,7 @@ always: true
 
 ## Score dispatched work
 
-Read and score every run you dispatched; never score one you did not read. Use `bottega score pending` to find them and `bottega score` to close them. `bottega machine sweep` expires an unscored run with no owner or one unseen past `UNJUDGED_OWNER_WINDOW_MS` as evidence-excluded; a later owner verdict lifts that exclusion.
+Read and score every run you dispatched; never score one you did not read. Unscored work cannot improve routing, while a guessed verdict teaches it something false. Use `bottega score pending` to find them and `bottega score` to close them. `bottega machine sweep` expires an unscored run with no owner or one unseen past `UNJUDGED_OWNER_WINDOW_MS` as evidence-excluded because nobody remains who read it; a later owner verdict lifts that exclusion.
 
 ## Arm the heartbeat
 

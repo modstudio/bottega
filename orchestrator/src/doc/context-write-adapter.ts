@@ -2,6 +2,7 @@
 /** Gathers store, task, claim, and pointer facts for the pure context write policy. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { splitContextHolder } from '../../../shared/context-item-vocabulary.ts'
 import { liveClaimsOfSession } from '../board/board-claim-service.ts'
 import { db, sessionId } from '../database/db.ts'
 import { resolveCommitArgument } from '../git/commit-resolution.ts'
@@ -134,13 +135,14 @@ export function storedItems(holder: string, database: Database): ContextItem[] {
 }
 
 export function contextCursorOwner(holder: string, database: Database = db()) {
-  if (!holder.startsWith('cursor:')) return null
+  const address = splitContextHolder(holder)
+  if (address.holderKind !== 'cursor') return null
   return (
     database
       .query<{ session_id: string | null; project: string }, [string]>(
         'SELECT session_id,project FROM workflow_cursor WHERE record_id=?',
       )
-      .get(holder.slice('cursor:'.length)) ?? null
+      .get(address.holderId) ?? null
   )
 }
 
@@ -311,8 +313,9 @@ export async function contextProfileForHolder(
   ports = defaultContextFactsPorts(),
   task?: ContextTask,
 ) {
-  if (subject.startsWith('session:')) return 'session' as const
-  if (subject.startsWith('cursor:')) return 'session' as const
+  const address = splitContextHolder(subject)
+  if (address.holderKind === 'session' || address.holderKind === 'cursor')
+    return 'session' as const
   if (!task) return 'task' as const
   return taskProfile(task.key, await ports.tasks(task.project))
 }
