@@ -22,6 +22,7 @@ const verdict = (
   change,
   tier: { tier: 1, risk: 1, size: 1, firm: false, lowered: false, reasons: [] },
   budget: { roundsUsed: 1, ceiling: 1, atCeiling: true },
+  selection: { mode: 'evaluate', lenses: [] },
   lenses: overridden.map((lens) => ({ lens, status: 'overridden', reason: 'overridden' })),
   next: { action },
   remedy: `${PLATFORM_SLUG} pr create`,
