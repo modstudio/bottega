@@ -681,7 +681,7 @@ test('an admitted head records a snapshot with the pull request number before me
   const project = database
     .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
     .get('merge-fixture')!
-  const decision: AdmissionDecision = {
+  const decision: AdmissionDecision & { triage: NonNullable<AdmissionDecision['triage']> } = {
     complete: true,
     overrideId: null,
     triage: {
@@ -739,7 +739,13 @@ test('an admitted head records a snapshot with the pull request number before me
         }
       },
       recordAdmission: (admittedChange, admittedDecision, number, admittedDatabase) =>
-        recordMergeAdmission(admittedChange, admittedDecision, number, admittedDatabase),
+        recordMergeAdmission(
+          admittedChange,
+          admittedDecision,
+          admittedDecision.triage!,
+          number,
+          admittedDatabase,
+        ),
     }),
     database,
   )

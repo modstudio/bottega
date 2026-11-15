@@ -3,11 +3,7 @@ import { expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { db } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
-import {
-  admissionDecision,
-  type PullRequestChange,
-  recordTriageOverrideForChange,
-} from './pr-admission.ts'
+import { type PullRequestChange, recordTriageOverrideForChange } from './pr-admission.ts'
 import {
   mergePullRequest,
   type PullRequestMergeAdapter,
@@ -115,9 +111,16 @@ function adapterFor(
     hasCommit: () => true,
     admission: (_cwd, admittedHead) => {
       const change = changeAt(admittedHead)
+      const override = database
+        .query<{ record_id: string }, []>('SELECT record_id FROM landing_override LIMIT 1')
+        .get()
       return {
         change,
-        decision: admissionDecision(change, database, incompleteTriage),
+        decision: {
+          complete: true,
+          overrideId: override?.record_id ?? null,
+          triage: incompleteTriage,
+        },
       }
     },
     recordAdmission: () => null,

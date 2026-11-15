@@ -81,7 +81,7 @@ function adapter(input: {
       decision: {
         complete: true,
         overrideId: null,
-        triage: { complete: true, snapshot: {} } as AdmissionDecision['triage'],
+        triage: { complete: true, snapshot: {} } as NonNullable<AdmissionDecision['triage']>,
       },
     }),
     recordAdmission: () => null,

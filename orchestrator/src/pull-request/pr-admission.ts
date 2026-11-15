@@ -10,7 +10,10 @@ import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { type Project, projectAt } from '../project/projects.ts'
 import { enqueueLandingOverride, enqueueLandingTriageSnapshot } from '../record/landing-outbox.ts'
-import { decideReviewFunnel, type ReviewFunnelVerdict } from '../review-funnel/decide-review-funnel.ts'
+import {
+  decideReviewFunnel,
+  type ReviewFunnelVerdict,
+} from '../review-funnel/decide-review-funnel.ts'
 import { gatherFunnelFacts, type ReviewFunnelChange } from '../review-funnel/gather-funnel-facts.ts'
 import {
   recordReviewFunnelDecision,
@@ -42,10 +45,7 @@ import {
   type MergeabilityDecision,
   type MergeabilityFacts,
 } from './mergeability-decision.ts'
-import {
-  decideTriageOverride,
-  type TriageOverrideAttribution,
-} from './override-decision.ts'
+import { decideTriageOverride, type TriageOverrideAttribution } from './override-decision.ts'
 import { decidePrePush, destinationBranch } from './pre-push-decision.ts'
 import {
   ceilingTriageFacts,
@@ -697,12 +697,7 @@ export function createPullRequest(
     if (!checkedAdmission.complete && !checkedAdmission.triage.complete) {
       throw new Error(triageRefusal(change, checkedAdmission.triage))
     }
-    recordTriageIntent(
-      change,
-      checkedAdmission.triage,
-      checkedAdmission.overrideId,
-      database,
-    )
+    recordTriageIntent(change, checkedAdmission.triage, checkedAdmission.overrideId, database)
     return checkedAdmission
   }, database)
 
