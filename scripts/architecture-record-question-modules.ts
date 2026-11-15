@@ -11,7 +11,7 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 })
 
 export const recordQuestionModules: RecordModule[] = [
-  module('orchestrator/src/record/record-question-contract.ts', ['uuid', 'zod']),
+  module('orchestrator/src/record/record-question-contract.ts', ['zod']),
   module('orchestrator/src/record/record-api-client-question.ts', [
     './record-api-client-paths.ts',
     './record-question-contract.ts',
@@ -41,7 +41,6 @@ export const recordQuestionModules: RecordModule[] = [
   module('orchestrator/src/question-store/question-store.ts', [
     'bun:sqlite',
     '../../../shared/brand.ts',
-    '../record/record-api-client-question.ts',
     '../record/record-question-contract.ts',
     '../record/record-sync.ts',
     './question-store-record.ts',
@@ -57,7 +56,6 @@ export const recordQuestionModules: RecordModule[] = [
     'bun:sqlite',
     '../../../shared/brand.ts',
     '../../../shared/session-liveness.ts',
-    '../record/record-api-client-question.ts',
     '../record/record-api-client-response.ts',
     '../record/record-question-contract.ts',
     './question-store-types.ts',

@@ -26,6 +26,11 @@
     // The relay routes import only the nameplate pattern; the join client calls the rest.
     "shared/pairing-code.ts": ["exports"],
     "shared/pgp-word-list.ts": ["files"],
+    // DEV-2331 lands the question port and adapters; DEV-2328 selects them in callers.
+    "orchestrator/src/question-store/question-store.ts": ["files"],
+    "orchestrator/src/question-store/question-store-types.ts": ["files"],
+    "orchestrator/src/question-store/question-store-sqlite.ts": ["files"],
+    "orchestrator/src/question-store/question-store-record.ts": ["files"],
     // Lazy-required from transport.ts; knip does not follow that require as export use.
     "orchestrator/src/transport/ajv-validator.ts": ["exports"],
     // rehearse.sh's eval imports the export.

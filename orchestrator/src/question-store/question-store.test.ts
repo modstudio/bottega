@@ -1,13 +1,13 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
-import type { QuestionSnapshot } from '../record/record-question-contract.ts'
-import { questionRequestId } from '../record/record-question-contract.ts'
+import type { QuestionWriteBody } from '../record/record-question-contract.ts'
 import { questionStore, recordQuestionStore } from './question-store.ts'
 import type { QuestionStore } from './question-store-types.ts'
 
 const STAMP = '2026-11-15T12:00:00.000Z'
 
+type QuestionSnapshot = QuestionWriteBody['question']
 function snapshot(overrides: Partial<QuestionSnapshot> = {}): QuestionSnapshot {
   return {
     id: newRecordId(),
@@ -70,7 +70,7 @@ function snapshot(overrides: Partial<QuestionSnapshot> = {}): QuestionSnapshot {
 }
 
 async function questionStoreContract(store: QuestionStore, question: QuestionSnapshot) {
-  const requestId = questionRequestId('ask', [question.id])
+  const requestId = newRecordId()
   const ask = {
     requestId,
     question,
@@ -82,7 +82,7 @@ async function questionStoreContract(store: QuestionStore, question: QuestionSna
   expect((await store.read({ read: 'waiting' })).items).toHaveLength(1)
   const answeredAt = '2026-11-15T12:01:00.000Z'
   await store.write('answer', {
-    requestId: questionRequestId('answer', [question.id, answeredAt]),
+    requestId: newRecordId(),
     question: {
       ...question,
       revision: 2,

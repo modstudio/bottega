@@ -1,7 +1,6 @@
 // concern: hosted-question-contract
 /** Declares validated direct question commands and reads. */
 
-import { v5 } from 'uuid'
 import { z } from 'zod'
 
 const id = z.string().uuid()
@@ -19,17 +18,14 @@ export const questionIntentSchema = z.enum([
 ])
 export type QuestionIntent = z.infer<typeof questionIntentSchema>
 
-export const questionRequestId = (intent: QuestionIntent, parts: readonly string[]) =>
-  v5(JSON.stringify([intent, ...parts]), v5.URL)
-
-export const questionAuditSchema = z.object({
+const questionAuditSchema = z.object({
   action: z.string().min(1),
   actorSession: nullableText,
   at: stamp,
   reason: nullableText,
 })
 
-export const questionSnapshotSchema = z.object({
+const questionSnapshotSchema = z.object({
   id,
   number: z.number().int().positive().nullable().default(null),
   runId: nullableId,
@@ -93,7 +89,6 @@ export const questionWriteSchema = z.object({
   audit: questionAuditSchema,
 })
 export type QuestionWriteBody = z.infer<typeof questionWriteSchema>
-export type QuestionSnapshot = z.infer<typeof questionSnapshotSchema>
 export const questionWriteResultSchema = z.object({
   id,
   number: z.number().int().positive(),

@@ -4,8 +4,7 @@ import { newRecordId } from '../../shared/record-id.ts'
 import { applyMigrations } from '../src/database/migrations.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from '../src/record/outbox-payload-contracts.ts'
 import { recordApiClient } from '../src/record/record-api-client.ts'
-import type { QuestionSnapshot } from '../src/record/record-question-contract.ts'
-import { questionRequestId } from '../src/record/record-question-contract.ts'
+import type { QuestionWriteBody } from '../src/record/record-question-contract.ts'
 import { syncRecord } from '../src/record/record-sync.ts'
 import { registerHostedTaskLinkConvergenceProof } from './postgres-task-link-convergence-proof.ts'
 
@@ -108,6 +107,7 @@ export function registerQuestionTaskRecordSyncProof(
     fixture.signIn()
     const client = recordApiClient()
     const destination = { destinationSpaceId: fixture.spaceId }
+    type QuestionSnapshot = QuestionWriteBody['question']
     const snapshot = (id: string): QuestionSnapshot => ({
       id,
       number: null,
@@ -165,7 +165,7 @@ export function registerQuestionTaskRecordSyncProof(
       createdAt: at,
       updatedAt: at,
     })
-    const ask = (question: QuestionSnapshot, requestId = questionRequestId('ask', [question.id])) =>
+    const ask = (question: QuestionSnapshot, requestId = newRecordId()) =>
       client.writeQuestion!(
         'ask',
         {
@@ -179,7 +179,7 @@ export function registerQuestionTaskRecordSyncProof(
     const written = await Promise.all(questions.map((question) => ask(question)))
     expect(written.map(({ number }) => number).sort((a, b) => a - b)).toEqual([41, 42, 43, 44])
     const retried = snapshot(newRecordId())
-    const requestId = questionRequestId('ask', [retried.id])
+    const requestId = newRecordId()
     expect(await ask(retried, requestId)).toEqual(await ask(retried, requestId))
     expect(
       fixture.admin(

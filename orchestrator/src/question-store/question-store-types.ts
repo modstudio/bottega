@@ -13,3 +13,15 @@ export interface QuestionStore {
   write(intent: QuestionIntent, input: QuestionWriteBody): Promise<QuestionWriteResult>
   read(input: QuestionReadInput): Promise<QuestionReadResult>
 }
+
+export type QuestionRouteClient = {
+  readQuestions?(
+    input: QuestionReadInput,
+    destination?: { destinationSpaceId?: string },
+  ): Promise<QuestionReadResult>
+  writeQuestion?(
+    intent: QuestionIntent,
+    input: QuestionWriteBody,
+    destination: { destinationSpaceId: string },
+  ): Promise<QuestionWriteResult>
+}

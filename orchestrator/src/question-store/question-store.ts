@@ -3,11 +3,10 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { RecordQuestionClient } from '../record/record-api-client-question.ts'
 import { syncRecord } from '../record/record-sync.ts'
 import { RecordQuestionStore } from './question-store-record.ts'
 import { SqliteQuestionStore } from './question-store-sqlite.ts'
-import type { QuestionStore } from './question-store-types.ts'
+import type { QuestionRouteClient, QuestionStore } from './question-store-types.ts'
 
 /** SQLite stays authoritative in every install mode for this slice. */
 export function questionStore(database: Database): QuestionStore {
@@ -16,7 +15,7 @@ export function questionStore(database: Database): QuestionStore {
 
 export function recordQuestionStore(input: {
   database: Database
-  client: RecordQuestionClient
+  client: QuestionRouteClient
   destinationSpaceId: string
   pushRun?: (runId: string) => Promise<void>
 }): QuestionStore {
