@@ -96,6 +96,15 @@ export const questionWriteResultSchema = z.object({
 })
 export type QuestionWriteResult = z.infer<typeof questionWriteResultSchema>
 
+export class RecordQuestionError extends Error {
+  status: 404 | 409
+  constructor(message: string, status: 404 | 409) {
+    super(message)
+    this.name = 'RecordQuestionError'
+    this.status = status
+  }
+}
+
 export const questionChangedAfterRefusal = {
   message: 'hosted question changed-after reads are not served yet',
   remedy: 'retry without changedAfter; DEV-2328 decides the hosted change cursor',

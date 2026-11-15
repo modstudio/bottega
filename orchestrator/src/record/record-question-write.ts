@@ -17,6 +17,7 @@ import type {
   QuestionWriteBody,
   QuestionWriteResult,
 } from './record-question-contract.ts'
+import { RecordQuestionError } from './record-question-contract.ts'
 import { projectRecordId } from './record-sync-project-identity.ts'
 import { questionValues } from './record-sync-service.ts'
 
@@ -58,7 +59,8 @@ export async function writeRecordQuestion(
         number: Number(existing[0].number),
         revision: Number(existing[0].revision),
       }
-    if (intent !== 'ask' && !existing[0]) throw new Error(`question ${input.question.id} not found`)
+    if (intent !== 'ask' && !existing[0])
+      throw new RecordQuestionError(`question ${input.question.id} not found`, 404)
     const number =
       existing[0]?.number == null
         ? await allocateQuestionNumber(tx, input.spaceId)
@@ -108,12 +110,14 @@ export async function writeRecordQuestion(
       })
     const result = written[0]
     if (!result && existing[0])
-      throw new Error(
+      throw new RecordQuestionError(
         `question ${input.question.id} already holds hosted revision ${existing[0].revision}; re-read the question, then retry`,
+        409,
       )
     if (!result || result.number == null)
-      throw new Error(
+      throw new RecordQuestionError(
         `question ${input.question.id} write did not satisfy its revision precondition`,
+        409,
       )
     await pushQuestionAudits(tx, payload, input.question.id, input.spaceId)
     return {
