@@ -43,28 +43,20 @@ class AssembleAdditionalContext(unittest.TestCase):
         text = session_brief._with_compact_first_act("brief", "compact")
         self.assertEqual(text, "brief\n" + session_brief.COMPACT_FIRST_ACT)
 
-    def test_compact_first_act_is_first_when_joined_context_exceeds_cap(self):
-        brief = "x" * (
-            session_brief.SESSION_START_CONTEXT_MAX_CHARS
-            - len(session_brief.COMPACT_FIRST_ACT)
-        )
-        text = session_brief._with_compact_first_act(brief, "compact")
-        self.assertEqual(
-            text,
-            session_brief.COMPACT_FIRST_ACT + "\n" + brief,
-        )
+    def test_compact_first_act_and_pointer_cover_the_cap_boundary(self):
+        cap = session_brief.SESSION_START_CONTEXT_MAX_CHARS
+        first_act = session_brief.COMPACT_FIRST_ACT
+        pointer = "Full context: bottega agent context show --session session-a"
 
-    def test_compact_first_act_is_first_after_over_cap_pointer_is_applied(self):
-        brief = "x" * (session_brief.SESSION_START_CONTEXT_MAX_CHARS + 1)
-        with_pointer = session_brief._with_full_context_pointer(brief, "session-a")
-        text = session_brief._with_compact_first_act(with_pointer, "compact")
-        self.assertEqual(
-            text,
-            session_brief.COMPACT_FIRST_ACT + "\n" + with_pointer,
-        )
-        self.assertIn(
-            "Full context: bottega agent context show --session session-a", text
-        )
+        for brief_length in range(cap - len(first_act) - 2, cap + 2):
+            with self.subTest(brief_length=brief_length):
+                brief = "x" * brief_length
+                text = session_brief._with_full_context_pointer(
+                    session_brief._with_compact_first_act(brief, "compact"),
+                    "session-a",
+                )
+                self.assertTrue(len(text) <= cap or pointer in text)
+                self.assertEqual(text.startswith(first_act + "\n"), len(text) > cap)
 
     def test_compact_first_act_is_absent_for_other_session_start_sources(self):
         for source in ("resume", "startup", "clear"):

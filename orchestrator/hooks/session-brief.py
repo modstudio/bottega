@@ -208,6 +208,7 @@ def _context_protocol():
     )
 
 
+# An over-cap brief is previewed only at its head, so a line that must be acted on goes first, while the full-context pointer stays last.
 def _with_full_context_pointer(text, session):
     if len(text) <= SESSION_START_CONTEXT_MAX_CHARS:
         return text
@@ -217,12 +218,10 @@ def _with_full_context_pointer(text, session):
 def _with_compact_first_act(text, source):
     if source != "compact":
         return text
-    if (
-        len(text) + 1 + len(COMPACT_FIRST_ACT)
-        > SESSION_START_CONTEXT_MAX_CHARS
-    ):
+    joined = _join_sections(text, COMPACT_FIRST_ACT)
+    if len(joined) > SESSION_START_CONTEXT_MAX_CHARS:
         return _join_sections(COMPACT_FIRST_ACT, text)
-    return _join_sections(text, COMPACT_FIRST_ACT)
+    return joined
 
 
 def _context_size(text):
@@ -1004,8 +1003,9 @@ def main() -> int:
         if output is not None and sid:
             context = output.get("hookSpecificOutput", {}).get("additionalContext")
             if isinstance(context, str):
-                context = _with_full_context_pointer(context, sid)
-                context = _with_compact_first_act(context, payload.get("source"))
+                context = _with_full_context_pointer(
+                    _with_compact_first_act(context, payload.get("source")), sid
+                )
                 output["hookSpecificOutput"]["additionalContext"] = context
                 if bottega is not None and cwd is not None and inbox_env is not None:
                     try:
