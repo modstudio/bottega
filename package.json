@@ -57,6 +57,7 @@
     "@noble/ciphers": "2.4.0",
     "@noble/curves": "2.4.0",
     "@noble/hashes": "2.4.0",
+    "@scure/bip39": "2.4.0",
     "@typescript-eslint/parser": "8.72.0",
     "@vitest/eslint-plugin": "^1.6.27",
     "cbor2": "2.4.1",
