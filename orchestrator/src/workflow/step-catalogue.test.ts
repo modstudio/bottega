@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { resolveTrackerAgentActions, TRACKER_PROTOCOLS } from '../../../shared/tracker-actions.ts'
@@ -18,7 +19,11 @@ import {
 } from './step-catalogue.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
+import { parseWorkflowTree } from './workflow-tree.ts'
+import { collectWorkflowTree } from './workflow-tree-files.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
+
+const repositoryRoot = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 
 const step = {
   slug: 'design',
@@ -203,6 +208,27 @@ test('step validation names unknown jobs and actions with the step slug', () => 
   )
 })
 
+test('steps must declare every job their bodies prescribe', () => {
+  const staged = { ...step, stage: 'review' as const }
+  for (const command of [
+    `${PLATFORM_SLUG} run start review-lens --key DEV-1 "Review it."`,
+    `${PLATFORM_SLUG} workflow dispatch review-lens --cursor 17 "Review it."`,
+  ]) {
+    const body = `Dispatch \`${command}\`.`
+    expect(validateStepCatalogue({ steps: [{ ...staged, body }] })).toContain(
+      'step "design" prescribes job "review-lens" but does not declare it in jobs; add "review-lens" to the step\'s jobs',
+    )
+    expect(
+      validateStepCatalogue({ steps: [{ ...staged, body, jobs: ['review-lens'] }] }),
+    ).toEqual([])
+  }
+})
+
+test('every tracked workflow step declares its prescribed jobs', () => {
+  const tracked = parseWorkflowTree(collectWorkflowTree(repositoryRoot))
+  expect(validateStepCatalogue({ steps: tracked.steps, sequences: tracked.sequences })).toEqual([])
+})
+
 test('operatorRuling requires a ruling floor', () => {
   expect(
     validateStepCatalogue({
@@ -313,7 +339,9 @@ test('pull-request commandEvidence requires a capable floor and cannot defer com
 })
 
 test(`${PLATFORM_SLUG} run start dispatches require a prompt or file`, () => {
-  const definition = (body: string) => ({ steps: [{ ...step, stage: 'implement', body }] })
+  const definition = (body: string) => ({
+    steps: [{ ...step, stage: 'implement', body, jobs: ['implement', 'review-lens'] }],
+  })
 
   expect(
     validateStepCatalogue(

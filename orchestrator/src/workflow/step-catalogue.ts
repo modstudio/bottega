@@ -134,6 +134,7 @@ export function validateStepCatalogue(value: unknown): string[] {
     validateFloor(item, errors)
     validateNeeds(item, errors)
     validateDispatchPrompts(item, errors)
+    validatePrescribedJobs(item, errors)
   }
   errors.push(
     ...validateCatalogueSequences(
@@ -226,6 +227,27 @@ function validateDispatchPrompts(item: Record<string, unknown>, errors: string[]
     if (!dispatchHasPromptOrFile(command))
       errors.push(
         `step "${slug}" dispatch "${command}" must include --file or a double-quoted argument`,
+      )
+  }
+}
+
+function prescribedJob(command: string): string | undefined {
+  return command.match(
+    new RegExp(
+      `^(?:${PLATFORM_SLUG}|\\S*\\/bin\\/${PLATFORM_SLUG})\\s+(?:run\\s+start|workflow\\s+dispatch)\\s+(\\S+)`,
+    ),
+  )?.[1]
+}
+
+function validatePrescribedJobs(item: Record<string, unknown>, errors: string[]): void {
+  if (typeof item.body !== 'string') return
+  const slug = String(item.slug ?? ''),
+    declared = new Set(Array.isArray(item.jobs) ? item.jobs.map(String) : [])
+  for (const match of item.body.matchAll(/`([^`\n]+)`/g)) {
+    const job = prescribedJob(match[1]!.trim())
+    if (job && !declared.has(job))
+      errors.push(
+        `step "${slug}" prescribes job "${job}" but does not declare it in jobs; add "${job}" to the step's jobs`,
       )
   }
 }
