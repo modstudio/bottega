@@ -89,9 +89,37 @@ test('workflow cursor project-number migration preserves identities and renumber
       '2026-11-15T01:00:00Z',
     )
 
+    database.exec(`
+      INSERT INTO workflow_obligation
+        (record_id,cursor_record_id,step_ordinal,step_slug,floor,reason,created_at)
+        VALUES ('obligation-id','stage-a-first',1,'build','test','fixture','2026-11-15');
+      INSERT INTO workflow_step_text
+        (record_id,cursor_record_id,step_ordinal,step_slug,body,created_at)
+        VALUES ('text-id','stage-a-first',1,'build','proof text','2026-11-15');
+      INSERT INTO workflow_text_copy
+        (record_id,workflow_text_record_id,cursor_record_id,task_document_reference,copied_at)
+        VALUES ('copy-id','text-id','stage-a-first','task:DEV-2329','2026-11-15');
+      INSERT INTO question
+        (record_id,number,workflow_cursor_record_id,asked_at,question)
+        VALUES ('question-id',1,'stage-a-first','2026-11-15','Which?');
+      INSERT INTO task_flow
+        (record_id,task_record_id,project_record_id,state,open_stage_cursor_record_id,created_at,updated_at)
+        VALUES ('flow-id','task-id','project-a','open','stage-a-first','2026-11-15','2026-11-15');
+    `)
+
     const recordIds = database
       .query<{ record_id: string }, []>('SELECT record_id FROM workflow_cursor ORDER BY record_id')
       .all()
+    const dependents = [
+      'workflow_obligation',
+      'workflow_step_text',
+      'workflow_text_copy',
+      'question',
+      'task_flow',
+    ] as const
+    const dependentRows = new Map(
+      dependents.map((table) => [table, database.query(`SELECT * FROM ${table}`).all()]),
+    )
     expect(applyMigrations(database)).toContain(MIGRATION)
     expect(
       database
@@ -113,6 +141,9 @@ test('workflow cursor project-number migration preserves identities and renumber
       { project: 'project-b', record_id: 'stage-b-first', number: 1 },
       { project: 'project-b', record_id: 'stage-b-second', number: 2 },
     ])
+    for (const table of dependents) {
+      expect(database.query(`SELECT * FROM ${table}`).all()).toEqual(dependentRows.get(table))
+    }
     expect(database.query('PRAGMA foreign_key_check').all()).toEqual([])
     expect(() =>
       database.query("UPDATE workflow_cursor SET number=1 WHERE record_id='stage-b-second'").run(),
