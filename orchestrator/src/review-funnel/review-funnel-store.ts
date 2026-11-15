@@ -1,6 +1,7 @@
 // concern: review-funnel-store
 /** Reads the local evidence rows used by review-funnel reports. */
 import type { Database } from 'bun:sqlite'
+import { sameChangeSql } from '../evidence/evidence-query.ts'
 import { acceptedReviewFindingSql, uniqueReviewFindingSql } from '../review/review-evidence-sql.ts'
 import type { ReviewFunnelVerdict } from './decide-review-funnel.ts'
 import type { FunnelReportDecisionRow, FunnelReportFindingRow } from './review-funnel-report.ts'
@@ -34,7 +35,7 @@ export function reviewFunnelFindingRows(database: Database): FunnelReportFinding
       `SELECT project.name AS project,
             (SELECT decision.stack FROM review_funnel_decision decision
               WHERE decision.project_record_id=review.project_record_id
-                AND decision.patch_id=review.patch_id AND decision.path_set=review.path_set
+                AND ${sameChangeSql('decision', 'review')}
               ORDER BY decision.recorded_at DESC LIMIT 1) AS stack,
             review.tier,review.round,
             SUM(CASE WHEN ${acceptedReviewFindingSql()} THEN 1 ELSE 0 END) AS accepted,

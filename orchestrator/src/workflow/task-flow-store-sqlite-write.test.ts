@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import type { TaskFlowIntentInput } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
@@ -84,10 +85,32 @@ test('intent writes use applied revisions and otherwise compute the next revisio
   ).toBe(8)
 })
 
-test('local compose returns the machine-wide number it minted', async () => {
+test('local compose mints stage numbers independently per project', async () => {
   const d = database()
   const first = await stage(d)
-  const second = await composeWorkflowWithCursor(
+  d.query('INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?)').run(
+    newRecordId(),
+    'second-project',
+    '/second-project',
+    'bun',
+    JSON.stringify({
+      gate: 'bun run check',
+      trunk: 'main',
+      docs: { protocol: 'orch-docs' },
+      tracker: { protocol: 'hub' },
+    }),
+  )
+  const otherProject = await composeWorkflowWithCursor(
+    'flow',
+    'second-project',
+    'default',
+    { key: 'DEV-2234-OTHER', branch: 'DEV-2234-other', worktree: '/tmp/DEV-2234-other' },
+    { session: 'session-one', taskRecordId: 'task-DEV-2234-OTHER' },
+    d,
+    {},
+    {},
+  )
+  const sameProject = await composeWorkflowWithCursor(
     'flow',
     'fixture',
     'default',
@@ -97,7 +120,9 @@ test('local compose returns the machine-wide number it minted', async () => {
     {},
     {},
   )
-  expect(second.cursor!.id).toBe(first.id + 1)
+  expect(first.id).toBe(1)
+  expect(otherProject.cursor!.id).toBe(1)
+  expect(sameProject.cursor!.id).toBe(2)
 })
 
 test('revision refusal names the declared intent and stale row kind', () => {

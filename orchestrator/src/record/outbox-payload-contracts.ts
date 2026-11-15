@@ -119,7 +119,7 @@ const TASK_FLOW_STAGE_RECORD_PAYLOAD_CONTRACT = contract(
 )
 
 const REVIEW_RECORD_PAYLOAD_CONTRACT = contract(
-  'id spaceId projectId projectName machineId localId recordedAt completedAt tier tierRisk tierSize tierInsertions tierDeletions tierReasons tierReason role patchId pathSet commitMessage outdatedAt outdatedReason round withheldFields createdAt updatedAt',
+  'id spaceId projectId projectName machineId localId recordedAt completedAt tier tierRisk tierSize tierInsertions tierDeletions tierReasons tierReason role patchId zeroContextPatchId pathSet commitMessage outdatedAt outdatedReason round withheldFields createdAt updatedAt',
   {
     projectId: null,
     role: 'round',
@@ -127,6 +127,7 @@ const REVIEW_RECORD_PAYLOAD_CONTRACT = contract(
     withheldFields: null,
     tierInsertions: null,
     tierDeletions: null,
+    zeroContextPatchId: null,
   },
 )
 const REVIEW_LENS_RECORD_PAYLOAD_CONTRACT = contract(
@@ -145,8 +146,8 @@ const REVIEW_FINDING_RECORD_PAYLOAD_CONTRACT = contract(
   { projectId: null, projectName: null, duplicateOfFindingId: null, withheldFields: null },
 )
 const REVIEW_READ_RECORD_PAYLOAD_CONTRACT = contract(
-  'id spaceId projectId projectName machineId localId branch tip patchId pathSet tier note sessionId recordedAt withheldFields createdAt updatedAt',
-  { projectId: null, projectName: null, withheldFields: null },
+  'id spaceId projectId projectName machineId localId branch tip patchId zeroContextPatchId pathSet tier note sessionId recordedAt withheldFields createdAt updatedAt',
+  { projectId: null, projectName: null, zeroContextPatchId: null, withheldFields: null },
 )
 
 const RELEASE_RECORD_PAYLOAD_CONTRACT = contract(
@@ -168,29 +169,30 @@ const LANDING_RECORD_PAYLOAD_CONTRACT = contract(LANDING_RECORD_PAYLOAD_COLUMNS,
   withheldFields: null,
 })
 const LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS = columns(
-  'id spaceId projectId projectName machineId localId branch tip tree patchId pathSet reason attribution missingLenses sessionId at withheldFields createdAt updatedAt',
+  'id spaceId projectId projectName machineId localId branch tip tree patchId zeroContextPatchId pathSet reason attribution missingLenses sessionId at withheldFields createdAt updatedAt',
 )
 const LANDING_OVERRIDE_RECORD_PAYLOAD_CONTRACT = contract(LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS, {
   projectId: null,
   patchId: null,
+  zeroContextPatchId: null,
   pathSet: null,
   attribution: 'operator',
   missingLenses: [],
   withheldFields: null,
 })
 const LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS = columns(
-  'id spaceId projectId projectName machineId localId branch tip tree reviewId reviewedCommit reviewedTree patchId oldBase newBase sessionId at createdAt updatedAt',
+  'id spaceId projectId projectName machineId localId branch tip tree reviewId reviewedCommit reviewedTree patchId zeroContextPatchId oldBase newBase sessionId at createdAt updatedAt',
 )
 const LANDING_REVIEW_CARRY_RECORD_PAYLOAD_CONTRACT = contract(
   LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS,
-  { projectId: null },
+  { projectId: null, zeroContextPatchId: null },
 )
 const LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS = columns(
-  'id spaceId projectId projectName machineId localId branch tip tree prNumber reviewIds patchId tier lensRounds findingCount admissionPath readId overrideId sessionId at createdAt updatedAt',
+  'id spaceId projectId projectName machineId localId branch tip tree prNumber reviewIds patchId zeroContextPatchId tier lensRounds findingCount admissionPath readId overrideId sessionId at createdAt updatedAt',
 )
 const LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_CONTRACT = contract(
   LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS,
-  { projectId: null, admissionPath: 'exact_review', readId: null },
+  { projectId: null, zeroContextPatchId: null, admissionPath: 'exact_review', readId: null },
 )
 const PULL_REQUEST_CI_RECORD_PAYLOAD_CONTRACT = contract(
   'id spaceId projectId projectName machineId localId prNumber recordKind complete error workflowRunId runAttempt workflowName event headCommit conclusion failedJobs workflowCreatedAt workflowCompletedAt recordedAt withheldFields createdAt updatedAt',
@@ -218,8 +220,15 @@ const BRIEF_INJECTION_RECORD_PAYLOAD_CONTRACT = contract(
   'id spaceId machineId localId sessionId at source bytes lines cursors keylessCursors keylessIdleMaxMs overCap createdAt updatedAt',
 )
 const REVIEW_FUNNEL_DECISION_RECORD_PAYLOAD_CONTRACT = contract(
-  'id spaceId projectId projectName machineId localId surface taskKey branch headCommit patchId pathSet policyVersion mode factsDigest facts stack verdict outcome sessionId recordedAt withheldFields createdAt updatedAt',
-  { projectId: null, taskKey: null, stack: null, sessionId: null, withheldFields: null },
+  'id spaceId projectId projectName machineId localId surface taskKey branch headCommit patchId zeroContextPatchId pathSet policyVersion mode factsDigest facts stack verdict outcome sessionId recordedAt withheldFields createdAt updatedAt',
+  {
+    projectId: null,
+    taskKey: null,
+    zeroContextPatchId: null,
+    stack: null,
+    sessionId: null,
+    withheldFields: null,
+  },
 )
 
 export const OUTBOX_PAYLOAD_CONTRACTS = {

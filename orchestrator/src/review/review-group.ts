@@ -15,11 +15,13 @@ import type { ReviewRole } from './review-role.ts'
 import { resolveReviewBase } from './review-target.ts'
 import { diffNumstat } from './review-tier.ts'
 import type { ReviewTier } from './review-tier-classifier.ts'
+import { type ChangeFacts, sameChange, storedChangeFacts } from './same-change.ts'
 
 export type ChangeGroup = {
   project: string
   branch: string
   patchId: string
+  zeroContextPatchId: string | null
   pathSet: string[]
 }
 
@@ -31,6 +33,7 @@ export type TriageReviewRow = {
   tier: 0 | 1 | 2 | 3 | null
   role: ReviewRole
   patchId: string | null
+  zeroContextPatchId: string | null
   pathSet: string | null
   lensIdentities: readonly string[]
   lenses: readonly {
@@ -122,6 +125,7 @@ type StoredTriageReviewRow = {
   tier: 0 | 1 | 2 | 3 | null
   role: ReviewRole
   patch_id: string | null
+  zero_context_patch_id: string | null
   path_set: string | null
   lens_id: string
   run_record_id: string
@@ -187,6 +191,7 @@ export type MeasuredChangeGroup = {
 
 export type MeasuredReviewChange = {
   patchId: string
+  zeroContextPatchId: string
   pathSet: string[]
   base: string
   tier: ReviewTier
@@ -200,7 +205,7 @@ type ChangeGroupOperations = {
     cwd: string,
     base: string,
     tip: string,
-  ): { patchId: string; paths: string[]; message: string } | null
+  ): { patchId: string; zeroContextPatchId: string; paths: string[]; message: string } | null
   reviewPlan(
     cwd: string,
     base: string,
@@ -253,6 +258,7 @@ export function measureReviewChange(
   const plan = operations.reviewPlan(cwd, base, tip, project.settings.review)
   return {
     patchId: identity.patchId,
+    zeroContextPatchId: identity.zeroContextPatchId,
     pathSet: identity.paths,
     base,
     tier: plan.tier,
@@ -276,6 +282,7 @@ export function measureChangeGroup(
       project: project.name,
       branch,
       patchId: measured.patchId,
+      zeroContextPatchId: measured.zeroContextPatchId,
       pathSet: measured.pathSet,
     },
     base: measured.base,
@@ -286,16 +293,29 @@ export function measureChangeGroup(
 }
 
 /** A review belongs to a round when it measured that exact patch and path set. */
-export function reviewInRound(review: TriageReviewRow, patchId: string, pathSet: string): boolean {
-  return review.patchId === patchId && review.pathSet === pathSet
+export function reviewInRound(review: TriageReviewRow, current: ChangeFacts): boolean {
+  return sameChange({
+    reviewed: storedChangeFacts({
+      patchId: review.patchId,
+      zeroContextPatchId: review.zeroContextPatchId,
+      pathSet: review.pathSet,
+    }),
+    current,
+    replay: null,
+  }).same
 }
 
 function reviewsForChangeGroup(
   branchReviews: readonly TriageReviewRow[],
   group: ChangeGroup,
 ): TriageReviewRow[] {
-  const pathSet = serializePathSet(group.pathSet)
-  return branchReviews.filter((review) => reviewInRound(review, group.patchId, pathSet))
+  const current: ChangeFacts = {
+    patchId: group.patchId,
+    zeroContextPatchId: group.zeroContextPatchId,
+    paths: group.pathSet,
+    message: null,
+  }
+  return branchReviews.filter((review) => reviewInRound(review, current))
 }
 
 export function reviewsForTriage(
@@ -336,14 +356,14 @@ export function reviewsForAdmission(
   const taskKey = reviewTaskKeyForBranch(database, group.project, group.branch)
   if (!taskKey) return { branchReviews, reviews: reviewsForChangeGroup(branchReviews, group) }
   const exactReviewIds = database
-    .query<{ record_id: string }, [string, string, string, string]>(
-      `SELECT DISTINCT r.record_id FROM review r INDEXED BY review_project_patch
+    .query<{ record_id: string }, [string, string]>(
+      `SELECT DISTINCT r.record_id FROM review r
          JOIN review_lens rl ON rl.review_record_id=r.record_id
          JOIN run ON run.record_id=rl.run_record_id
         WHERE r.project_record_id=(SELECT record_id FROM project WHERE name=?)
-          AND r.patch_id=? AND r.path_set=? AND upper(trim(run.launch_key))=?`,
+          AND upper(trim(run.launch_key))=?`,
     )
-    .all(group.project, group.patchId, serializePathSet(group.pathSet), taskKey.toUpperCase())
+    .all(group.project, taskKey.toUpperCase())
     .map(({ record_id }) => record_id)
   const candidates = reviewsForBranch(
     database,
@@ -366,7 +386,7 @@ function reviewsForBranch(
   const lineage = reviewLineage(database, project, branch)
   const rows = database
     .query<StoredTriageReviewRow, (string | null)[]>(
-      `SELECT r.record_id review_record_id,r.number review_number,r.recorded_at,r.completed_at,r.tier,r.role,r.patch_id,r.path_set,
+      `SELECT r.record_id review_record_id,r.number review_number,r.recorded_at,r.completed_at,r.tier,r.role,r.patch_id,r.zero_context_patch_id,r.path_set,
               rl.record_id lens_id,rl.run_record_id,rl.lens,rl.model,s.delivery,rl.reproduced,rl.coverage,rl.limits,rl.overlap,
               rl.task_text_input,rl.rulings_input,
               run.review_provenance,run.worktree,run.cwd,run.head_commit,
@@ -391,6 +411,7 @@ function reviewsForBranch(
       tier: row.tier,
       role: row.role,
       patchId: row.patch_id,
+      zeroContextPatchId: row.zero_context_patch_id,
       pathSet: row.path_set,
       lensIdentities: [],
       lenses: [],

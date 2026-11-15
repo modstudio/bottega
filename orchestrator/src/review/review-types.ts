@@ -13,6 +13,7 @@ import type {
 export type ReviewCoverageInput = {
   recordId: string
   patchId?: string | null
+  zeroContextPatchId: string | null
   pathSet?: string | null
   commitMessage?: string | null
   outdatedReason?: string | null
@@ -36,6 +37,7 @@ type ReviewCarry = {
   reviewedCommit: string
   reviewedTree: string
   patchId: string
+  zeroContextPatchId: string
   oldBase: string
   newBase: string
 }

@@ -34,11 +34,18 @@ export const reviewModules: ReviewModule[] = [
     './change-identity.ts',
     './review-evidence-sql.ts',
     './review-pins.ts',
+    './same-change-git.ts',
     './review-target.ts',
     './review-types.ts',
     '../../../shared/bounded-process.ts',
   ]),
   module('orchestrator/src/review/review-coverage-match.ts', []),
+  module('orchestrator/src/review/same-change.ts', []),
+  module('orchestrator/src/review/same-change-git.ts', [
+    './change-identity.ts',
+    './review-types.ts',
+    './same-change.ts',
+  ]),
   module('orchestrator/src/review/review-declared-globs.ts', []),
   module('orchestrator/src/review/review-finding-location.ts', []),
   module('orchestrator/src/review/review-evidence-sql.ts', [
@@ -68,6 +75,7 @@ export const reviewModules: ReviewModule[] = [
     './review-group.ts',
     './review-lineage-store.ts',
     './review-outbox.ts',
+    './same-change.ts',
     '../../../shared/bounded-process.ts',
   ]),
   module('orchestrator/src/review/review-pins.ts', [

@@ -352,7 +352,7 @@ test('hosted compose prints and resolves the per-project number across two proje
   expect(second.cursor?.id).toBe(1)
   expect(
     d.query('SELECT number FROM workflow_cursor WHERE workflow_key=?').get('DEV-SECOND'),
-  ).toEqual({ number: 2 })
+  ).toEqual({ number: 1 })
   expect(
     await taskFlowReadStore(d, taskFlowClient).stageByHandle('second-fixture', 1),
   ).toMatchObject({ record_id: calls[1]!.stageInsert!.id, id: 1, project: 'second-fixture' })
