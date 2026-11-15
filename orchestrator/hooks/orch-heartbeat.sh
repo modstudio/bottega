@@ -8,12 +8,12 @@
 # whether it needs a wake or is genuinely waiting. That ambiguity is the whole
 # reason this exists: it collapses to four states, two of which are actionable.
 #
-#   BLOCKED  an answerable worker question waits on this session; unowned
-#            workflow questions do not count
+#   BLOCKED  a live worker question this session can answer; an ownerless
+#            worker question still counts here, an unowned workflow question never
 #   STALLED  a worker is silent and using no CPU; stop and re-dispatch or wait
 #   WAITING  runs, landings, authored requests, or board holds still live, or a workflow ruling was parked here
-#   CLEAR    no runs, landings, open requests, board holds, session-owned questions,
-#            or stalls -> exits SILENTLY
+#   CLEAR    no runs, landings, open requests, board holds, answerable or parked
+#            questions, or stalls -> exits SILENTLY
 #
 # heartbeat-decision.py exits with HEARTBEAT_KEEP_LOOP_EXIT_STATUS while this
 # hook should keep watching and HEARTBEAT_CLEAR_EXIT_STATUS only for CLEAR.
