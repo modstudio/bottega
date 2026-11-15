@@ -53,7 +53,7 @@ import {
   type MissingLens,
   type TriageDecision,
   type TriageReviewGroup,
-} from './triage-decision.ts'
+} from '../review-funnel/review-funnel-admission-evidence.ts'
 
 export const REVIEW_READ_VERB = `${PLATFORM_SLUG} review read`
 

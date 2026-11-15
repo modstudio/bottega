@@ -858,6 +858,27 @@ const activeSpaceResolverRule: ArchitectureRule = {
   },
 }
 
+const reviewFunnelDecisionOwnershipRule: ArchitectureRule = {
+  name: 'review-funnel-owns-tier-budget-and-round-plan-decisions',
+  severity: 'error',
+  comment:
+    'Only review-funnel modules assemble tier classification, round budget, and round lens plan decisions.',
+  from: {
+    path: '^orchestrator/src/',
+    pathNot: ['^orchestrator/src/review-funnel/'],
+  },
+  to: {
+    path: [
+      'orchestrator/src/review/review-tier-classifier.ts',
+      'orchestrator/src/review/review-round-budget.ts',
+      'orchestrator/src/review/review-round-lens-plan.ts',
+    ]
+      .map(exactArchitecturePath)
+      .join('|'),
+    dependencyTypesNot: ['type-only'],
+  },
+}
+
 const architectureCycleFiles = [
   ...new Set(allowedCycles.flatMap(({ cycle }) => cycle.slice(0, -1))),
 ]
@@ -934,6 +955,7 @@ export function architectureRules() {
       to: { path: exactArchitecturePath('orchestrator/src/run/run.ts') },
     },
     activeSpaceResolverRule,
+    reviewFunnelDecisionOwnershipRule,
     {
       name: 'import-record-api-server-transitive-boundary',
       severity: 'error',

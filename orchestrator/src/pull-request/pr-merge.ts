@@ -49,7 +49,7 @@ import {
   resolvePullRequestChange,
   triageRefusal,
 } from './pr-admission.ts'
-import type { TriageDecision } from './triage-decision.ts'
+import type { TriageDecision } from '../review-funnel/review-funnel-admission-evidence.ts'
 
 type MergeAdmissionDecision = AdmissionDecision & { triage: TriageDecision }
 import { recordPullRequestCi } from './pr-ci-record.ts'

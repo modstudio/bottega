@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
+import { applicableReviewForChange } from '../review-funnel/review-funnel-tier.ts'
 import {
   applicablePostFixReview,
   applicableReview,
-  applicableReviewForChange,
   lensesSelectingPaths,
 } from './review-applicability.ts'
 

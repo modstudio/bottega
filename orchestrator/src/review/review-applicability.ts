@@ -3,11 +3,6 @@
 
 import type { ReviewSettings } from '../project/project-injection.ts'
 import { declaredGlobsMatch } from './review-declared-globs.ts'
-import {
-  classifyReviewTier,
-  type ReviewTier,
-  type ReviewTierFile,
-} from './review-tier-classifier.ts'
 import type { ReviewLensOwedReason, ReviewLensSelectionReason } from './review-vocabulary.ts'
 
 export const isDecisionConformanceNotAdmittedReason = (
@@ -49,11 +44,6 @@ export type ReviewFunnelPlan = {
   completedLensesOnBranch?: string[]
 }
 
-export type ReviewPlan = {
-  tier: ReviewTier
-  applicability: ApplicableReview
-}
-
 /** Keep only selected lenses and their attached applicability metadata. */
 export function selectReviewApplicability(
   applicable: ApplicableReview,
@@ -78,22 +68,6 @@ export function selectReviewApplicability(
       ? { secondOpinionBasis: applicable.secondOpinionBasis }
       : {}),
     ...(Object.keys(lensReasons).length ? { lensReasons } : {}),
-  }
-}
-
-/** Classify one change and select its review lenses from those same file facts. */
-export function applicableReviewForChange(
-  files: ReviewTierFile[],
-  review: ReviewSettings | undefined,
-): ReviewPlan {
-  const tier = classifyReviewTier({ files, risk: review?.risk })
-  return {
-    tier,
-    applicability: applicableReview(
-      tier.tier,
-      files.map(({ path }) => path),
-      review,
-    ),
   }
 }
 

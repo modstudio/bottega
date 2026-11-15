@@ -3,7 +3,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ReviewSettings } from '../project/project-injection.ts'
-import { ceilingWaivableGaps } from '../pull-request/triage-decision.ts'
+import { ceilingWaivableGaps } from './review-funnel-admission-evidence.ts'
 import {
   applicableReview,
   isDecisionConformanceNotAdmittedReason,
@@ -61,8 +61,6 @@ export type ReviewFunnelFacts = {
   files: ReviewTierFile[]
   review: ReviewSettings | undefined
   branchReviews: TriageReviewRow[]
-  /** Lenses completed on this exact change identity, independent of branch-history credit. */
-  exactCompletedLenses?: string[]
   postFix: PostFixReviewFacts
   rounds: ReviewFunnelRoundFact[]
   currentRoundIdentity: string | null
@@ -296,14 +294,13 @@ function nextDecision(
   const dispatch = evidence.lenses.filter(({ status }) => status === 'owed').map(({ lens }) => lens)
   const waiting = evidence.lenses.find(({ status }) => status === 'running')
   const untriaged = evidence.lenses.find(({ status }) => status === 'untriaged')
-  const readRequired = architectReadRequired(facts, plan, evidence)
-  const next = selectNextAction({ facts, plan, dispatch, waiting, untriaged, readRequired })
+  const next = selectNextAction({ facts, plan, dispatch, waiting, untriaged })
   const runId = waiting
     ? evidence.sets.running.get(waiting.lens)?.runId
     : untriaged
       ? evidence.sets.untriaged.get(untriaged.lens)?.runId
       : undefined
-  return { next, remedy: remedyForNext(facts, plan, next, runId) }
+  return { next, remedy: remedyForNext(facts, next, runId) }
 }
 
 function selectNextAction(input: {
@@ -312,22 +309,19 @@ function selectNextAction(input: {
   dispatch: string[]
   waiting: { lens: string } | undefined
   untriaged: { lens: string } | undefined
-  readRequired: boolean
 }): ReviewFunnelVerdict['next'] {
   if (input.dispatch.length) return { action: 'dispatch', lenses: input.dispatch }
   if (input.waiting) return { action: 'wait' }
   if (input.untriaged) return { action: 'triage' }
-  if (input.readRequired && !input.facts.exactRead) return { action: 'record-read' }
+  const readRequired = input.plan.tier.tier === 0 || input.facts.admissionGap.architectReadRequired
+  if (readRequired && !input.facts.exactRead) return { action: 'record-read' }
   const ceilingGap =
-    input.plan.budget.atCeiling &&
-    !input.facts.ceilingRuling &&
-    hasAdmissionGap(input.facts, input.plan)
+    input.plan.budget.atCeiling && !input.facts.ceilingRuling && hasAdmissionGap(input.facts)
   return ceilingGap ? { action: 'ask-ceiling-ruling' } : { action: 'admit' }
 }
 
 function remedyForNext(
   facts: ReviewFunnelFacts,
-  plan: ReturnType<typeof funnelPlan>,
   next: ReviewFunnelVerdict['next'],
   runId: string | undefined,
 ): string {
@@ -338,7 +332,7 @@ function remedyForNext(
   if (next.action === 'record-read')
     return `${PLATFORM_SLUG} review read --sha ${change.head} --note "<what was read and why it lands>"`
   if (next.action === 'ask-ceiling-ruling') {
-    const ceiling = ceilingGapDecision(facts, plan)
+    const ceiling = ceilingGapDecision(facts)
     if (ceiling.waivable)
       return `${PLATFORM_SLUG} pr create --ceiling-ruling "<why the remaining review gap is safe to waive>"`
     if (ceiling.blocker === 'unfinished-reviews')
@@ -354,56 +348,23 @@ function remedyForNext(
   return `${PLATFORM_SLUG} pr create`
 }
 
-function architectReadRequired(
-  facts: ReviewFunnelFacts,
-  plan: ReturnType<typeof funnelPlan>,
-  evidence: ReturnType<typeof lensVerdicts>,
-): boolean {
-  if (plan.tier.tier === 0) return true
-  if (facts.admissionGap.architectReadRequired) return true
-  if (facts.exactRead) return false
-  if (
-    facts.admissionGap.missingLenses.length > 0 ||
-    plan.budgeted.creditedByArchitectRead.lenses.length > 0 ||
-    plan.budgeted.creditedByArchitectRead.secondOpinion !== undefined
-  )
-    return false
-  const exact = new Set(facts.exactCompletedLenses ?? [])
-  const round = plan.unbudgeted.round.lenses
-  if (round.length > 0 && round.every((lens) => exact.has(lens))) return false
-  return evidence.lenses.some(({ lens, status }) => status === 'satisfied' && !exact.has(lens))
-}
-
-function hasAdmissionGap(
-  facts: ReviewFunnelFacts,
-  plan: ReturnType<typeof funnelPlan>,
-): boolean {
-  if (facts.exactCompletedLenses === undefined && facts.triageComplete) return false
-  const ceilingCreditOwed =
-    !facts.exactRead &&
-    (plan.budgeted.creditedByArchitectRead.lenses.length > 0 ||
-      plan.budgeted.creditedByArchitectRead.secondOpinion !== undefined)
+function hasAdmissionGap(facts: ReviewFunnelFacts): boolean {
   return (
-    ceilingCreditOwed ||
-    facts.admissionGap.unfinishedReviewNumbers.length > 0 ||
-    facts.admissionGap.undisposedFindings.length > 0 ||
-    facts.admissionGap.missingLenses.length > 0 ||
-    facts.admissionGap.architectReadRequired ||
-    facts.admissionGap.nonLensGaps.length > 0
+    !facts.triageComplete &&
+    (facts.admissionGap.unfinishedReviewNumbers.length > 0 ||
+      facts.admissionGap.undisposedFindings.length > 0 ||
+      facts.admissionGap.missingLenses.length > 0 ||
+      facts.admissionGap.architectReadRequired ||
+      facts.admissionGap.nonLensGaps.length > 0)
   )
 }
 
-function ceilingGapDecision(facts: ReviewFunnelFacts, plan: ReturnType<typeof funnelPlan>) {
-  const credited = plan.budgeted.creditedByArchitectRead
+function ceilingGapDecision(facts: ReviewFunnelFacts) {
   return ceilingWaivableGaps({
     complete: facts.triageComplete,
     unfinishedReviewNumbers: facts.admissionGap.unfinishedReviewNumbers,
     undisposedFindings: facts.admissionGap.undisposedFindings,
-    missingLenses: [
-      ...facts.admissionGap.missingLenses,
-      ...credited.lenses,
-      ...(credited.secondOpinion ? [`second-opinion:${credited.secondOpinion}`] : []),
-    ],
+    missingLenses: facts.admissionGap.missingLenses,
     architectReadRequired: facts.admissionGap.architectReadRequired,
     hasNonLensGap: facts.admissionGap.nonLensGaps.length > 0,
     nonLensGaps: facts.admissionGap.nonLensGaps,

@@ -1,5 +1,8 @@
 // concern: pull-request-override-decision
-import { type CeilingTriageFacts, ceilingWaivableGaps } from './triage-decision.ts'
+import {
+  type CeilingTriageFacts,
+  ceilingWaivableGaps,
+} from '../review-funnel/review-funnel-admission-evidence.ts'
 
 export type TriageOverrideAttribution = 'operator' | 'architect-ceiling'
 

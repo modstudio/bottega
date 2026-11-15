@@ -143,20 +143,18 @@ function lineageRoot(
   return root
 }
 
-function branchEvidence(
+function reviewBudgetReportEvidence(
   database: Database,
   since?: string,
-  target?: { project: string; branch: string },
 ): Map<string, BranchEvidence> {
   const branches = new Map<string, BranchEvidence>()
   const lineageRoots = new Map<string, string>()
-  const rows = eligibleReviewRoundRows(database, since, target).filter(
+  const rows = eligibleReviewRoundRows(database, since).filter(
     (row) => lensProvenanceSubject(provenanceSubjectFacts(row)).admissible,
   )
   for (const row of rows) {
     if (!row.branch) continue
-    const evidenceBranch =
-      target?.branch ?? lineageRoot(database, lineageRoots, row.run_repo, row.branch)
+    const evidenceBranch = lineageRoot(database, lineageRoots, row.run_repo, row.branch)
     const key = branchKey(row.run_repo, evidenceBranch)
     const branch = branches.get(key) ?? {
       firstReviewAt: row.recorded_at,
@@ -177,32 +175,8 @@ function branchEvidence(
   return branches
 }
 
-export function reviewBudgetForBranch(
-  database: Database,
-  project: string,
-  branch: string,
-  currentRoundIdentity: string | null,
-): {
-  roundsUsed: number
-  currentChangeCounted: boolean
-  eligibleReviewCount: number
-  unclassifiableReviewCount: number
-} {
-  const evidence = branchEvidence(database, undefined, { project, branch }).get(
-    branchKey(project, branch),
-  )
-  return {
-    roundsUsed: evidence?.rounds.size ?? 0,
-    currentChangeCounted: Boolean(
-      currentRoundIdentity && evidence?.rounds.has(currentRoundIdentity),
-    ),
-    eligibleReviewCount: evidence?.eligibleReviews.size ?? 0,
-    unclassifiableReviewCount: evidence?.unclassifiableReviews.size ?? 0,
-  }
-}
-
 export function reviewBudgetReport(database: Database, since?: string): ReviewBudgetReport {
-  const evidence = branchEvidence(database, since)
+  const evidence = reviewBudgetReportEvidence(database, since)
   const classified = [...evidence.entries()].filter(
     (entry): entry is [string, BranchEvidence & { tier: ReviewTierNumber }] =>
       entry[1].tier !== null,

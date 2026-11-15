@@ -43,6 +43,32 @@ export const reviewModuleSpecs = [
     ],
   },
   {
+    file: 'orchestrator/src/review-funnel/review-funnel-tier.ts',
+    allowed: [
+      '../review/review-applicability.ts',
+      '../review/review-tier-classifier.ts',
+    ],
+    typeOnlyAllowed: ['../project/project-injection.ts'],
+  },
+  {
+    file: 'orchestrator/src/review-funnel/review-funnel-plan-service.ts',
+    allowed: [
+      '../review/review-applicability.ts',
+      '../review/review-group.ts',
+      '../review/review-pins.ts',
+      '../review/review-post-fix.ts',
+      '../review/review-round-budget.ts',
+      '../review/review-round-lens-plan.ts',
+      '../review/review-target.ts',
+      '../review/review-tier-service.ts',
+    ],
+    typeOnlyAllowed: [
+      'bun:sqlite',
+      '../project/project-injection.ts',
+      '../project/projects.ts',
+    ],
+  },
+  {
     file: 'orchestrator/src/review-funnel/gather-funnel-facts.ts',
     allowed: [
       '../branch/branch-landing-records.ts',
@@ -184,18 +210,7 @@ export const reviewModuleSpecs = [
   },
   {
     file: 'orchestrator/src/review/review-round-lens-service.ts',
-    allowed: [
-      './review-applicability.ts',
-      './review-group.ts',
-      './review-pins.ts',
-      './review-post-fix.ts',
-      './review-round-budget.ts',
-      './review-round-lens-plan.ts',
-      './review-round-identity.ts',
-      './review-target.ts',
-      './review-tier-service.ts',
-    ],
-    typeOnlyAllowed: ['bun:sqlite', '../project/project-injection.ts', '../project/projects.ts'],
+    allowed: ['../review-funnel/review-funnel-plan-service.ts'],
   },
   {
     file: 'orchestrator/src/review/review-yield.ts',
@@ -471,7 +486,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
   {
     name: 'review-applicability-boundary',
     file: 'orchestrator/src/review/review-applicability.ts',
-    allowed: ['./review-declared-globs.ts', './review-tier-classifier.ts'],
+    allowed: ['./review-declared-globs.ts'],
     typeOnlyAllowed: ['../project/project-injection.ts', './review-vocabulary.ts'],
     reason:
       'Keep change classification and project lens selection independent of stores, processes, and clocks.',
@@ -624,19 +639,8 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
   {
     name: 'review-round-lens-service-boundary',
     file: 'orchestrator/src/review/review-round-lens-service.ts',
-    allowed: [
-      './review-applicability.ts',
-      './review-group.ts',
-      './review-pins.ts',
-      './review-post-fix.ts',
-      './review-round-budget.ts',
-      './review-round-lens-plan.ts',
-      './review-round-identity.ts',
-      './review-target.ts',
-      './review-tier-service.ts',
-    ],
-    typeOnlyAllowed: ['bun:sqlite', '../project/project-injection.ts', '../project/projects.ts'],
-    reason: 'Keep round lens fact gathering in one review service around the pure plan.',
+    allowed: ['../review-funnel/review-funnel-plan-service.ts'],
+    reason: 'Keep the old import path as a compatibility-only pointer into the funnel owner.',
   },
   {
     name: 'review-round-budget-boundary',

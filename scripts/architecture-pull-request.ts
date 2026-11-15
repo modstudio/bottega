@@ -157,6 +157,7 @@ export const pullRequestModuleSpecs = [
       'node:path',
       '../database/review-lens-input-artifact.ts',
       '../project/projects.ts',
+      '../review-funnel/review-funnel-tier.ts',
       './review-applicability.ts',
       './review-lens-provenance.ts',
       './review-lineage-store.ts',

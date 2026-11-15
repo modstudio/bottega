@@ -187,7 +187,8 @@ function resolveTierTarget(
   if (!from) throw new Error(`cannot find merge-base between branch ${value} and trunk ${trunk}`)
   return {
     repo,
-    ...resolveTierRangeInRepo(repo, from, value, trunk),
+    from,
+    to: value,
     branch: value,
     project,
   }
