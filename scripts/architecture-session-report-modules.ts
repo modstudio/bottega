@@ -21,6 +21,7 @@ export const sessionReportModules: SessionReportModule[] = [
     './session-report.ts',
   ]),
   module('orchestrator/src/session-report/session-report-format.ts', [
+    '../commands/support.ts',
     './session-report-adapter.ts',
     './session-report.ts',
   ]),

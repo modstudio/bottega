@@ -16,10 +16,10 @@ const window = { since: '2026-11-15T12:00:00.000Z', until: '2026-11-15T13:00:00.
 const facts = (runs: SessionReportFacts['runs']): SessionReportFacts => ({
   sessionId: 'session-a',
   runs,
-  unscoredRunIds: [],
+  unscoredRuns: [],
   heldTreeRunIds: [],
-  openCursors: [],
-  unansweredQuestionIds: [],
+  cursors: [],
+  questions: [],
 })
 
 describe('session report policy', () => {
@@ -49,6 +49,7 @@ describe('session report policy', () => {
         },
       ]),
       window,
+      window.until,
     )
     expect(report.runsWithoutCursor).toEqual({
       total: 1,
@@ -81,15 +82,22 @@ describe('session report policy', () => {
         },
       ]),
       window,
+      window.until,
     )
     const prior = buildSessionWindowReport(
       facts([]),
-      comparisonWindow('2026-11-15T10:00:00Z..2026-11-15T11:00:00Z'),
+      comparisonWindow('2026-11-15T10:00:00Z..2026-11-15T11:00:00Z', window.until),
+      window.until,
     )
     const delta = sessionReportDelta(current, prior)
     expect(delta).toEqual({
       runsWithoutCursor: { total: 1, keyless: 1, keyedOverridden: 0 },
-      residueAtWindowEnd: { unscoredRuns: 0, heldTrees: 0, openCursors: 0, unansweredQuestions: 0 },
+      residueAtWindowEnd: {
+        unscoredRuns: 0,
+        heldTrees: null,
+        openCursors: 0,
+        unansweredQuestions: 0,
+      },
     })
     const rendered = formatSessionReport({
       generatedAt: window.until,
@@ -99,5 +107,105 @@ describe('session report policy', () => {
       'comparison window: 2026-11-15T10:00:00.000Z to 2026-11-15T11:00:00.000Z',
     )
     expect(rendered).toContain('delta (current - comparison):')
+    expect(rendered).toContain('held trees: n/a')
+  })
+
+  test('reconstructs run, question, and cursor residue at each window end', () => {
+    const lifecycleFacts: SessionReportFacts = {
+      ...facts([]),
+      unscoredRuns: [
+        {
+          id: 'scored-later',
+          startedAt: '2026-11-15T11:00:00.000Z',
+          unscoredToday: false,
+          scoredAt: '2026-11-15T12:30:00.000Z',
+        },
+      ],
+      questions: [
+        {
+          id: 'answered-later',
+          askedAt: '2026-11-15T11:00:00.000Z',
+          answeredAt: '2026-11-15T12:30:00.000Z',
+          closedAt: null,
+        },
+      ],
+      cursors: [
+        {
+          id: 'cursor-later',
+          number: 42,
+          workflow: 'ship-task',
+          taskKey: 'DEV-1',
+          createdAt: '2026-11-15T11:00:00.000Z',
+          updatedAt: '2026-11-15T12:30:00.000Z',
+          openToday: false,
+        },
+      ],
+    }
+    const beforeClosures = buildSessionWindowReport(
+      lifecycleFacts,
+      { since: window.since, until: '2026-11-15T12:00:00.000Z' },
+      window.until,
+    )
+    const afterClosures = buildSessionWindowReport(lifecycleFacts, window, window.until)
+
+    expect(beforeClosures.residueAtWindowEnd).toMatchObject({
+      unscoredRuns: { count: 1 },
+      unansweredQuestions: { count: 1 },
+      openCursors: {
+        count: 1,
+        cursors: [{ id: 'cursor-later', idleMs: 60 * 60_000 }],
+      },
+    })
+    expect(afterClosures.residueAtWindowEnd).toMatchObject({
+      unscoredRuns: { count: 0 },
+      unansweredQuestions: { count: 0 },
+      openCursors: { count: 0 },
+    })
+  })
+
+  test('marks historical held-tree state and keeps identifiers out of human output', () => {
+    const report = buildSessionWindowReport(
+      {
+        ...facts([
+          {
+            id: 'run-secret',
+            job: 'implement',
+            startedAt: '2026-11-15T12:30:00Z',
+            launchKey: null,
+            cursorId: null,
+          },
+        ]),
+        heldTreeRunIds: ['held-secret'],
+        cursors: [
+          {
+            id: 'cursor-secret',
+            number: 42,
+            workflow: 'ship-task',
+            taskKey: 'DEV-1',
+            createdAt: '2026-11-15T10:00:00Z',
+            updatedAt: '2026-11-15T11:06:00Z',
+            openToday: true,
+          },
+        ],
+      },
+      window,
+      '2026-11-15T14:00:00.000Z',
+    )
+    const rendered = formatSessionReport({
+      generatedAt: '2026-11-15T14:00:00.000Z',
+      sessions: [{ sessionId: 'session-a', current: report, comparison: null, delta: null }],
+    })
+
+    expect(report.residueAtWindowEnd.heldTrees).toEqual({
+      count: 1,
+      runIds: ['held-secret'],
+      asOf: 'now',
+    })
+    expect(rendered).toContain('held trees (current): 1')
+    expect(rendered).toContain('42 ship-task DEV-1: idle 1h 54m')
+    expect(rendered).toContain('implement: 1')
+    expect(rendered).not.toContain('run-secret')
+    expect(rendered).not.toContain('held-secret')
+    expect(rendered).not.toContain('cursor-secret')
   })
 })

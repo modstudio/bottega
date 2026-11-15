@@ -14,10 +14,28 @@ export type SessionReportFacts = {
     launchKey: string | null
     cursorId: string | null
   }>
-  unscoredRunIds: string[]
+  unscoredRuns: Array<{
+    id: string
+    startedAt: string
+    unscoredToday: boolean
+    scoredAt: string | null
+  }>
   heldTreeRunIds: string[]
-  openCursors: Array<{ id: string; updatedAt: string }>
-  unansweredQuestionIds: string[]
+  cursors: Array<{
+    id: string
+    number: number
+    workflow: string
+    taskKey: string | null
+    createdAt: string
+    updatedAt: string
+    openToday: boolean
+  }>
+  questions: Array<{
+    id: string
+    askedAt: string
+    answeredAt: string | null
+    closedAt: string | null
+  }>
 }
 
 export type SessionWindowReport = {
@@ -30,8 +48,17 @@ export type SessionWindowReport = {
   }
   residueAtWindowEnd: {
     unscoredRuns: { count: number; runIds: string[] }
-    heldTrees: { count: number; runIds: string[] }
-    openCursors: { count: number; cursors: Array<{ id: string; idleMs: number }> }
+    heldTrees: { count: number; runIds: string[]; asOf?: 'now' }
+    openCursors: {
+      count: number
+      cursors: Array<{
+        id: string
+        number: number
+        workflow: string
+        taskKey: string | null
+        idleMs: number
+      }>
+    }
     unansweredQuestions: { count: number; questionIds: string[] }
   }
   hookOutput: { recorded: false; message: string }
@@ -41,7 +68,7 @@ export type SessionReportDelta = {
   runsWithoutCursor: { total: number; keyless: number; keyedOverridden: number }
   residueAtWindowEnd: {
     unscoredRuns: number
-    heldTrees: number
+    heldTrees: null
     openCursors: number
     unansweredQuestions: number
   }
@@ -65,15 +92,11 @@ export function reportWindow(
   return { since: new Date(startMs).toISOString(), until: new Date(endMs).toISOString() }
 }
 
-export function comparisonWindow(value: string): SessionReportWindow {
+export function comparisonWindow(value: string, now: string): SessionReportWindow {
   const separator = value.indexOf('..')
   if (separator < 1 || separator === value.length - 2)
     throw new Error(`invalid --compare window ${value}; use <since>..<until>`)
-  return reportWindow(
-    value.slice(0, separator),
-    value.slice(separator + 2),
-    new Date().toISOString(),
-  )
+  return reportWindow(value.slice(0, separator), value.slice(separator + 2), now)
 }
 
 export function selectReportSessions(
@@ -100,6 +123,7 @@ const groupByJob = (rows: SessionReportFacts['runs']) =>
 export function buildSessionWindowReport(
   facts: SessionReportFacts,
   window: SessionReportWindow,
+  generatedAt: string,
 ): SessionWindowReport {
   const since = Date.parse(window.since)
   const until = Date.parse(window.until)
@@ -109,9 +133,44 @@ export function buildSessionWindowReport(
   })
   const keyless = withoutCursor.filter((run) => run.launchKey === null)
   const keyed = withoutCursor.filter((run) => run.launchKey !== null)
-  const cursors = facts.openCursors
-    .map((cursor) => ({ id: cursor.id, idleMs: Math.max(0, until - Date.parse(cursor.updatedAt)) }))
+  const unscoredRunIds = facts.unscoredRuns
+    .filter(
+      (run) =>
+        Date.parse(run.startedAt) <= until &&
+        (run.unscoredToday || Date.parse(run.scoredAt ?? '') > until),
+    )
+    .map((run) => run.id)
+  const questionIds = facts.questions
+    .filter(
+      (question) =>
+        Date.parse(question.askedAt) <= until &&
+        ((question.answeredAt === null && question.closedAt === null) ||
+          Date.parse(question.answeredAt ?? question.closedAt ?? '') > until),
+    )
+    .map((question) => question.id)
+  const cursors = facts.cursors
+    .filter(
+      (cursor) =>
+        Date.parse(cursor.createdAt) <= until &&
+        (cursor.openToday || Date.parse(cursor.updatedAt) > until),
+    )
+    .map((cursor) => {
+      const updatedAt = Date.parse(cursor.updatedAt)
+      const idleSince = updatedAt <= until ? updatedAt : Date.parse(cursor.createdAt)
+      return {
+        id: cursor.id,
+        number: cursor.number,
+        workflow: cursor.workflow,
+        taskKey: cursor.taskKey,
+        idleMs: Math.max(0, until - idleSince),
+      }
+    })
     .filter((cursor) => Number.isFinite(cursor.idleMs))
+  const heldTrees = {
+    count: facts.heldTreeRunIds.length,
+    runIds: facts.heldTreeRunIds,
+    ...(until < Date.parse(generatedAt) ? ({ asOf: 'now' } as const) : {}),
+  }
   return {
     sessionId: facts.sessionId,
     window,
@@ -121,12 +180,12 @@ export function buildSessionWindowReport(
       keyedOverridden: groupByJob(keyed),
     },
     residueAtWindowEnd: {
-      unscoredRuns: { count: facts.unscoredRunIds.length, runIds: facts.unscoredRunIds },
-      heldTrees: { count: facts.heldTreeRunIds.length, runIds: facts.heldTreeRunIds },
+      unscoredRuns: { count: unscoredRunIds.length, runIds: unscoredRunIds },
+      heldTrees,
       openCursors: { count: cursors.length, cursors },
       unansweredQuestions: {
-        count: facts.unansweredQuestionIds.length,
-        questionIds: facts.unansweredQuestionIds,
+        count: questionIds.length,
+        questionIds,
       },
     },
     hookOutput: { recorded: false, message: 'no hook emissions are recorded yet' },
@@ -154,8 +213,7 @@ export function sessionReportDelta(
       unscoredRuns:
         current.residueAtWindowEnd.unscoredRuns.count -
         comparison.residueAtWindowEnd.unscoredRuns.count,
-      heldTrees:
-        current.residueAtWindowEnd.heldTrees.count - comparison.residueAtWindowEnd.heldTrees.count,
+      heldTrees: null,
       openCursors:
         current.residueAtWindowEnd.openCursors.count -
         comparison.residueAtWindowEnd.openCursors.count,

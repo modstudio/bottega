@@ -1,13 +1,14 @@
 // concern: session-report
 /** Human-readable session report presentation. */
 
+import { duration } from '../commands/support.ts'
 import type { SessionReportDelta, SessionWindowReport } from './session-report.ts'
 import type { SessionReport } from './session-report-adapter.ts'
 
 const signed = (value: number) => (value > 0 ? `+${value}` : String(value))
 const groupLines = (label: string, groups: SessionWindowReport['runsWithoutCursor']['keyless']) => [
   `  ${label}: ${groups.reduce((sum, group) => sum + group.count, 0)}`,
-  ...groups.map((group) => `    ${group.job}: ${group.count} (${group.runIds.join(', ')})`),
+  ...groups.map((group) => `    ${group.job}: ${group.count}`),
 ]
 
 function windowLines(label: string, report: SessionWindowReport): string[] {
@@ -20,9 +21,12 @@ function windowLines(label: string, report: SessionWindowReport): string[] {
     ...groupLines('keyed-overridden', report.runsWithoutCursor.keyedOverridden),
     'residue at window end:',
     `  unscored runs: ${residue.unscoredRuns.count}`,
-    `  held trees: ${residue.heldTrees.count}`,
+    `  held trees${residue.heldTrees.asOf === 'now' ? ' (current)' : ''}: ${residue.heldTrees.count}`,
     `  open cursors: ${residue.openCursors.count}`,
-    ...residue.openCursors.cursors.map((cursor) => `    ${cursor.id}: idle ${cursor.idleMs}ms`),
+    ...residue.openCursors.cursors.map(
+      (cursor) =>
+        `    ${cursor.number || cursor.id} ${cursor.workflow}${cursor.taskKey ? ` ${cursor.taskKey}` : ''}: idle ${duration(cursor.idleMs)}`,
+    ),
     `  unanswered questions: ${residue.unansweredQuestions.count}`,
     `hook output: ${report.hookOutput.message}`,
   ]
@@ -33,7 +37,7 @@ function deltaLines(delta: SessionReportDelta): string[] {
     'delta (current - comparison):',
     `  runs without a cursor: ${signed(delta.runsWithoutCursor.total)} (keyless ${signed(delta.runsWithoutCursor.keyless)}, keyed-overridden ${signed(delta.runsWithoutCursor.keyedOverridden)})`,
     `  unscored runs: ${signed(delta.residueAtWindowEnd.unscoredRuns)}`,
-    `  held trees: ${signed(delta.residueAtWindowEnd.heldTrees)}`,
+    '  held trees: n/a',
     `  open cursors: ${signed(delta.residueAtWindowEnd.openCursors)}`,
     `  unanswered questions: ${signed(delta.residueAtWindowEnd.unansweredQuestions)}`,
   ]
