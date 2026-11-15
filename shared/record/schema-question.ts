@@ -2,6 +2,7 @@
 /** Knows the hosted question evidence shape. Must not know local execution or synchronization. */
 import { type SQLWrapper, sql } from 'drizzle-orm'
 import {
+  bigint,
   doublePrecision,
   index,
   integer,
@@ -37,6 +38,7 @@ export const question = pgTable.withRLS(
       .notNull()
       .references(() => machine.id),
     revision: integer().notNull(),
+    lastRequestId: uuid('last_request_id'),
     askedAt: timestamp('asked_at', { withTimezone: true }).notNull(),
     question: text().notNull(),
     options: jsonb(),
@@ -90,6 +92,19 @@ export const question = pgTable.withRLS(
       .on(table.spaceId, table.workflowKey)
       .where(sql`${table.workflowTaskId} IS NULL AND ${table.workflowKey} IS NOT NULL`),
     ...tenantPolicies('question', table.spaceId),
+  ],
+)
+
+export const questionNumberCounter = pgTable.withRLS(
+  'question_number_counter',
+  {
+    id: uuid().primaryKey().default(sql`public.record_uuid_v7()`),
+    spaceId: spaceIdentity(),
+    next: bigint({ mode: 'bigint' }).notNull(),
+  },
+  (table) => [
+    unique('question_number_counter_space_unique').on(table.spaceId),
+    ...tenantPolicies('question_number_counter', table.spaceId),
   ],
 )
 
