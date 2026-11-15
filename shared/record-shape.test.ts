@@ -9,7 +9,6 @@ describe('context-bearing record shapes', () => {
     ruling: { maxChars: 1500, constant: 'RULING_MAX_CHARS', lineRule: 'paragraph' },
     'self-ruling': { maxChars: 800, constant: 'SELF_RULING_MAX_CHARS', lineRule: 'paragraph' },
     basis: { maxChars: 800, constant: 'BASIS_MAX_CHARS', lineRule: 'paragraph' },
-    'next action': { maxChars: 400, constant: 'NEXT_ACTION_MAX_CHARS', lineRule: 'line' },
   } as const satisfies Record<ContextRecordName, (typeof RECORD_SHAPES)[ContextRecordName]>
 
   for (const [record, shape] of Object.entries(declared) as [

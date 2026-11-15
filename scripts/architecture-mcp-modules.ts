@@ -193,6 +193,7 @@ export const mcpModules: McpModule[] = [
   module('orchestrator/src/mcp/mcp-doc-tools.ts', [
     '@modelcontextprotocol/sdk/server/mcp.js',
     'zod',
+    '../../../shared/context-item-vocabulary.ts',
     '../../../shared/docs.ts',
     '../canon/canon-files.ts',
     '../canon/canon.ts',
@@ -200,7 +201,6 @@ export const mcpModules: McpModule[] = [
     '../doc/doc-revision-identifier.ts',
     '../doc/doc-revision-conflict.ts',
     '../doc/context-service.ts',
-    '../doc/doc-context-write.ts',
     '../doc/doc-write-tree.ts',
     '../doc/doc-write-allowed.ts',
     '../doc/docs.ts',

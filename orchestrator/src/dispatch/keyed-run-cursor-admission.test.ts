@@ -29,6 +29,24 @@ describe('keyed run cursor admission', () => {
     expect(decideKeyedRunCursorAdmission({ ...base, ...change })).toEqual({ kind: 'allow' })
   })
 
+  test('the refusal names both workflow remedies before the override', () => {
+    const decision = decideKeyedRunCursorAdmission(base)
+    expect(decision.kind).toBe('refuse')
+    if (decision.kind !== 'refuse') return
+    expect(decision.message).toContain(
+      `${PLATFORM_SLUG} workflow compose plan-task --project ${PLATFORM_SLUG} --arg key=DEV-2293`,
+    )
+    expect(decision.message).toContain(
+      `${PLATFORM_SLUG} workflow compose ship-task --project ${PLATFORM_SLUG} --arg key=DEV-2293 --arg branch=<branch> --arg worktree=<worktree>`,
+    )
+    expect(decision.message.indexOf('plan-task')).toBeLessThan(
+      decision.message.indexOf('ship-task'),
+    )
+    expect(decision.message.indexOf('ship-task')).toBeLessThan(
+      decision.message.indexOf('--override-unbound'),
+    )
+  })
+
   test.each([
     ['the key in another project', [{ project: 'segnavia', workflowKey: 'DEV-2293' }]],
     ['only a keyless cursor', [{ project: PLATFORM_SLUG, workflowKey: '' }]],

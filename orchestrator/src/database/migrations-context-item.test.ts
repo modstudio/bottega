@@ -10,9 +10,11 @@ import { applyMigrations } from './migrations.ts'
 import { migrationBoundaryTestDatabase } from './test-database.fixture.ts'
 
 const MIGRATION = '0222_context_item'
-const kinds = ['ruling', 'position', 'fact', 'pointer', 'next-action', 'open-question'] as const
+const retiredKinds = ['next-action', 'open-question']
+const kinds = [...CONTEXT_ITEM_KINDS, ...retiredKinds]
+const FOUR_KINDS_MIGRATION = '0224_context_item_four_kinds'
 
-function encoded(kind: (typeof kinds)[number], source: string, body: string, objection?: string) {
+function encoded(kind: string, source: string, body: string, objection?: string) {
   return [
     '---',
     `kind: ${JSON.stringify(kind)}`,
@@ -23,7 +25,7 @@ function encoded(kind: (typeof kinds)[number], source: string, body: string, obj
   ].join('\n')
 }
 
-function seed(database: Database, holder: string, kind: (typeof kinds)[number]) {
+function seed(database: Database, holder: string, kind: string) {
   const source = kind === 'ruling' ? 'q6165' : kind === 'position' ? 'q6056' : 'test'
   const body = kind === 'pointer' ? 'doc:01990000-0000-7000-8000-000000000001' : `${kind} body`
   database
@@ -66,7 +68,7 @@ test('context-item migration moves every kind, folds objections, and is idempote
         'SELECT holder_kind,holder_id,kind,body,question_number,target FROM context_item ORDER BY holder_kind,kind',
       )
       .all()
-    expect(rows).toHaveLength(12)
+    expect(rows).toHaveLength(8)
     expect(new Set(rows.map((row) => `${row.holder_kind}:${row.holder_id}`))).toEqual(
       new Set(holders),
     )
@@ -94,7 +96,7 @@ test('context-item migration moves every kind, folds objections, and is idempote
     expect(applyMigrations(database)).toEqual([])
     expect(
       database.query<{ count: number }, []>('SELECT COUNT(*) count FROM context_item').get()!.count,
-    ).toBe(12)
+    ).toBe(8)
   } finally {
     database.close()
   }
@@ -102,7 +104,7 @@ test('context-item migration moves every kind, folds objections, and is idempote
 
 test('context-item migration CHECK vocabularies match the shared owner', () => {
   const sql = readFileSync(
-    new URL('../../migrations/0222_context_item.sql', import.meta.url),
+    new URL('../../migrations/0224_context_item_four_kinds.sql', import.meta.url),
     'utf8',
   )
   const values = (column: string) => {
@@ -127,6 +129,38 @@ test('context-item migration requires an exact q-number source', () => {
         )
         .get()?.question_number,
     ).toBeNull()
+  } finally {
+    database.close()
+  }
+})
+
+test('four-kind migration removes retired rows and tightens the CHECK', () => {
+  const database = migrationBoundaryTestDatabase(FOUR_KINDS_MIGRATION)
+  try {
+    const holder = newRecordId()
+    const insert = database.query(
+      `INSERT INTO context_item
+       (record_id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
+       VALUES (?,'task',?,?,?,?,?,'2026-11-13','2026-11-13')`,
+    )
+    for (const kind of kinds) insert.run(newRecordId(), holder, kind, kind, `${kind} body`, 'test')
+
+    expect(applyMigrations(database)).toContain(FOUR_KINDS_MIGRATION)
+    expect(
+      database
+        .query<{ kind: string }, []>('SELECT kind FROM context_item ORDER BY kind')
+        .all()
+        .map(({ kind }) => kind),
+    ).toEqual(['fact', 'pointer', 'position', 'ruling'])
+    expect(() =>
+      database
+        .query(
+          `INSERT INTO context_item
+           (record_id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
+           VALUES (?,'task',?,'retired',?,'body','test','2026-11-13','2026-11-13')`,
+        )
+        .run(newRecordId(), holder, 'next-action'),
+    ).toThrow()
   } finally {
     database.close()
   }

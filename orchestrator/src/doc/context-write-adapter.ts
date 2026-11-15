@@ -17,23 +17,20 @@ import {
   taskReferenceForProjectKey,
 } from '../workflow/workflow-task-reference.ts'
 
-export { TaskNotFoundError } from '../workflow/workflow-task-reference.ts'
-
 import { productionWorkflowTextDocumentPorts } from '../workflow/workflow-text-copy.ts'
 import { listContextItems } from './context-item-store.ts'
 import {
   type ContextItem,
   type ContextProfile,
   ContextWriteRefusalError,
-  contextDropRefusal,
   contextWriteRefusal,
   holderOwnershipRefusal,
 } from './doc-context-write.ts'
 import { isScratchLocation } from './doc-resume-write.ts'
-import { isValidContextHolderSubject, taskContextHolder } from './doc-subjects.ts'
+import { taskContextHolder } from './doc-subjects.ts'
 
 export type ContextTask = HubTaskReference
-export class ContextTaskPrefixError extends Error {
+class ContextTaskPrefixError extends Error {
   readonly key: string
   readonly prefix: string
 
@@ -47,12 +44,6 @@ export class ContextTaskPrefixError extends Error {
   }
 }
 
-export function unknownTaskPrefixReport(key: string): { detail: string; remedy: string } {
-  return {
-    detail: `no single project declares the task prefix of ${key}`,
-    remedy: `declare it in one project's keyPrefixes with ${PLATFORM_SLUG} project set <project> --settings`,
-  }
-}
 export type ContextFactsPorts = {
   tasks: HubTaskReader
   task: HubTaskPuller
@@ -282,28 +273,15 @@ export async function assertContextSetAllowed(input: {
   if (refusal) throw new ContextWriteRefusalError(refusal)
 }
 
-/** A context item leaves only through its owner and never as the last required item. */
-export async function assertContextDropAllowed({
+/** A context item leaves only through its owner. */
+export function assertContextDropAllowed({
   item,
   database = db(),
-  ports = defaultContextFactsPorts(),
-  task,
 }: {
   item: ContextItem
   database?: Database
-  ports?: ContextFactsPorts
-  task?: ContextTask
-}): Promise<void> {
-  const holder = item.holder
-  const refusal =
-    holderOwnershipRefusal(holder, sessionId(database), item.id) ??
-    (isValidContextHolderSubject(holder)
-      ? contextDropRefusal(
-          item,
-          storedItems(holder, database),
-          await contextProfileForHolder(holder, ports, task),
-        )
-      : null)
+}): void {
+  const refusal = holderOwnershipRefusal(item.holder, sessionId(database), item.id)
   if (refusal) throw new ContextWriteRefusalError(refusal)
 }
 

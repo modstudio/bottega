@@ -91,9 +91,9 @@ export function decideKeyedRunCursorAdmission(
         {
           kind: 'edit',
           text:
-            `${PLATFORM_SLUG} workflow compose ship-task --project ${input.project} --arg key=${input.key}; ` +
-            `${PLATFORM_SLUG} workflow list names the other workflows; override with ` +
-            OVERRIDE_REMEDY,
+            `for work not yet built, run ${PLATFORM_SLUG} workflow compose plan-task --project ${input.project} --arg key=${input.key}; ` +
+            `for a built branch, run ${PLATFORM_SLUG} workflow compose ship-task --project ${input.project} --arg key=${input.key} --arg branch=<branch> --arg worktree=<worktree>; ` +
+            `override with ${OVERRIDE_REMEDY}`,
         },
       ),
     ),

@@ -13,13 +13,10 @@ const module = (file: string, allowed: string[]): SessionContextModule => ({
 
 export const sessionContextModules: SessionContextModule[] = [
   module('orchestrator/src/commands/context.ts', [
+    '../../../shared/context-item-vocabulary.ts',
     '../doc/context-brief.ts',
-    '../doc/context-census-adapter.ts',
-    '../doc/context-census.ts',
     '../doc/context-service.ts',
-    '../doc/context-stale-adapter.ts',
     '../doc/context-worked-adapter.ts',
-    '../doc/doc-context-write.ts',
     '../session/brief-injection.ts',
     '../workflow/session-context.ts',
     './support.ts',

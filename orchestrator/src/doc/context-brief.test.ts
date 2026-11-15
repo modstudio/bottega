@@ -1,3 +1,4 @@
+import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
@@ -35,7 +36,6 @@ test('renders the compact context layout line by line and keeps only item first 
         title: 'Build the brief',
         kind: 'task',
         items: [
-          item('task:DEV-1844/2', 'next', 'next-action', 'implement the renderer'),
           item('task:DEV-1844/2', 'pointer', 'pointer', 'design section 4\nignore this line'),
         ],
       },
@@ -70,7 +70,6 @@ test('renders the compact context layout line by line and keeps only item first 
     '  fact: work autonomously',
     '  open: none',
     'DEV-1844/2 Build the brief',
-    '  next: implement the renderer',
     '  pointer: design section 4',
     '  open: none',
     'DEV-1844 Architect context',
@@ -80,6 +79,69 @@ test('renders the compact context layout line by line and keeps only item first 
     `Waiting: 2 board requests (${PLATFORM_SLUG} board read) · 0 questions · 3 filed issues (${PLATFORM_SLUG} workflow fix-defect --waiting) · 1 resume brief (${PLATFORM_SLUG} doc resumes)`,
     'Autonomy: plan review · implement, review, docs, canon auto · ship trunk',
   ])
+})
+
+test('renders one open question for its task holder', () => {
+  const database = new Database(':memory:')
+  database.exec(
+    `CREATE TABLE context_item (
+      record_id TEXT NOT NULL,
+      holder_kind TEXT NOT NULL,
+      holder_id TEXT NOT NULL,
+      slug TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      body TEXT NOT NULL,
+      source TEXT NOT NULL,
+      question_number INTEGER,
+      target TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE question (
+      number INTEGER NOT NULL,
+      workflow_task_record_id TEXT,
+      question TEXT NOT NULL,
+      answered_at TEXT,
+      closed_at TEXT
+    )`,
+  )
+  database
+    .query(
+      `INSERT INTO question
+       (number,workflow_task_record_id,question,answered_at,closed_at)
+       VALUES (5277,'task-record','Which shape should the brief use?',NULL,NULL),
+              (5278,'task-record','Already answered.','2026-11-13',NULL),
+              (5279,'task-record','Closed without an answer.',NULL,'2026-11-13')`,
+    )
+    .run()
+  const holders = storedBriefHolders(
+    [
+      {
+        key: 'DEV-1844/2',
+        title: 'Build the brief',
+        kind: 'task',
+        recordId: 'task-record',
+      },
+    ],
+    database,
+  )
+  const brief: ContextBrief = {
+    session: '65fbe830',
+    fullCommand: `${PLATFORM_SLUG} agent context show --task DEV-1844/2`,
+    holders,
+    runs: [],
+    cursors: [],
+    claims: [],
+    waiting: { boardRequests: 0, questions: 1, filedIssues: 0, resumeBriefs: 0 },
+    autonomy: 'unknown',
+  }
+
+  expect(renderContextBrief(brief)).toContain(
+    'DEV-1844/2 Build the brief\n  open: Which shape should the brief use?',
+  )
+  expect(renderContextBrief(brief)).not.toContain('Already answered')
+  expect(renderContextBrief(brief)).not.toContain('Closed without an answer')
+  database.close()
 })
 
 test('orders the session, each project-scoped working task, and its epic by task profile', () => {
@@ -153,7 +215,7 @@ test('reads a working task brief from its record-id holder while retaining the t
     .query(
       `INSERT INTO context_item
        (record_id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
-       VALUES (?,'task',?,'next','next-action','Continue.','test',?,?)`,
+       VALUES (?,'task',?,'position','position','Continue.','test',?,?)`,
     )
     .run(newRecordId(), recordId, '2026-11-09T10:00:00Z', '2026-11-09T10:00:00Z')
   const references = holderSequence(
@@ -168,7 +230,7 @@ test('reads a working task brief from its record-id holder while retaining the t
       kind: 'task',
       items: [
         expect.objectContaining(
-          item(`task:${recordId}`, 'next', 'next-action', 'Continue.', 'test'),
+          item(`task:${recordId}`, 'position', 'position', 'Continue.', 'test'),
         ),
       ],
     },

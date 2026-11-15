@@ -53,18 +53,7 @@ function registerAwaitWorkflowRulingTool(server: McpServer, ports: McpWorkflowCo
         undefined,
         cursor,
       )
-      return resultWithContextReports(
-        result,
-        await collectContextMomentReports(
-          workflowQuestionContextMoment({
-            moment: 'workflow-await',
-            taskKey: context.workflowKey,
-            questionId: result.questionId,
-            text: shapedQuestion,
-          }),
-          ports.contextMomentPorts,
-        ),
-      )
+      return resultWithContextReports(result, [])
     },
   )
 }
@@ -112,7 +101,6 @@ function registerRuleWorkflowTool(server: McpServer, ports: McpWorkflowContextPo
         result,
         await collectContextMomentReports(
           workflowQuestionContextMoment({
-            moment: 'workflow-rule',
             taskKey: context.workflowKey,
             questionId: result.questionId,
             operatorRuled: Boolean(from_operator),

@@ -1,7 +1,10 @@
 // concern: context-service
 /** Owns context item reads and mutations over the document store. */
 import type { Database } from 'bun:sqlite'
-import { splitContextHolder } from '../../../shared/context-item-vocabulary.ts'
+import {
+  type ContextItemKind,
+  splitContextHolder,
+} from '../../../shared/context-item-vocabulary.ts'
 import { sessionId, writableDb } from '../database/db.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { hostedContextItemClient } from './context-item-hosted-client.ts'
@@ -21,11 +24,9 @@ import {
   resolvedPointerTarget,
 } from './context-write-adapter.ts'
 import {
-  type ContextItemKind,
   type ContextTaskIdentity,
   ContextWriteRefusalError,
   holderOwnershipRefusal,
-  missingContextKinds,
 } from './doc-context-write.ts'
 import { contextTaskOwner } from './doc-hosted-client.ts'
 import { taskContextHolder } from './doc-subjects.ts'
@@ -57,7 +58,6 @@ export async function getContext(selection: ContextHolderSelection) {
     task: task?.key ?? null,
     profile,
     items,
-    missingRequired: missingContextKinds(items, profile),
   }
 }
 
@@ -267,7 +267,7 @@ export async function dropContextItem(
   writableDb()
   const item = getContextItem(holder, input.id)
   if (!item) return { holder, task: task?.key ?? null, id: input.id, removed: false }
-  await assertContextDropAllowed({ item, task: task ?? undefined })
+  assertContextDropAllowed({ item })
   const removed = await applyRecordWriteAuthority({
     local: () => removeLocalContextItem(holder, input.id, input.expectedRevision),
     hosted: async () => {

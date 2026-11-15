@@ -1,11 +1,11 @@
 // concern: record-context-items
 /** Owns tenant-bound hosted context-item mutations. */
 import type { SQL } from 'bun'
-import type { ContextHolderKind } from '../../../shared/context-item-vocabulary.ts'
+import type { ContextHolderKind, ContextItemKind } from '../../../shared/context-item-vocabulary.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { recordIso } from '../../../shared/record-timestamp.ts'
-import { type ContextItemKind, contextItemShapeRefusal } from '../doc/doc-context-write.ts'
+import { contextItemShapeRefusal } from '../doc/doc-context-write.ts'
 import { assertWrite } from './record-doc-errors.ts'
 import { recordPool } from './record-pool.ts'
 

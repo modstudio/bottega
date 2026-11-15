@@ -94,8 +94,8 @@ test('whole-holder clear removes every context item', async () => {
   installContextFacts()
   await setContextItem({
     task: task.key,
-    id: 'next',
-    kind: 'next-action',
+    id: 'position',
+    kind: 'position',
     source: 'test',
     body: 'Continue.',
   })
