@@ -3,12 +3,48 @@ import { Command } from 'commander'
 import type { CommandRoute } from '../cli/routes.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import {
+  commandRegistrationCaptureFailures,
+  commandRegistrationFailures,
+  recordCommandRegistrations,
+} from './check-command-descriptions.ts'
+import {
   descriptionBaselineFailures,
   descriptionFindings,
   documentationInventory,
 } from './command-descriptions.ts'
 
 const groups = [['run', 'dispatch and inspect runs']] as const
+
+test('registered bare command words are rejected while bracketed arguments are accepted', async () => {
+  const { registrations } = await recordCommandRegistrations(() => {
+    const program = new Command('fixture')
+    program.command('cursor identity-map')
+    program.command('show <x>')
+    program.command('list [x]')
+    program.command('collect <x...>')
+    program.command('status')
+  })
+  expect(commandRegistrationFailures(registrations)).toEqual([
+    'fixture: .command("cursor identity-map") has a bare argument token; make each literal word a nested command or bracket the argument',
+  ])
+})
+
+test('an empty command registration walk is refused', () => {
+  const [firstOwner, secondOwner] = Object.keys(programs())
+  expect(commandRegistrationCaptureFailures([])).toEqual([
+    `command registration check recorded no commands under the ${firstOwner} program root; its builder may have loaded before registration capture`,
+    `command registration check recorded no commands under the ${secondOwner} program root; its builder may have loaded before registration capture`,
+  ])
+})
+
+test('a partial command registration walk names the missing program root', () => {
+  const owner = Object.keys(programs())[0] as keyof ReturnType<typeof programs>
+  expect(
+    commandRegistrationCaptureFailures([{ declaration: 'status', parentPath: '', owner }]),
+  ).toEqual([
+    `command registration check recorded no commands under the ${Object.keys(programs())[1]} program root; its builder may have loaded before registration capture`,
+  ])
+})
 
 function programs() {
   return { orch: new Command('orch'), hub: new Command('hub') }
