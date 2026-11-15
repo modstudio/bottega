@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "question_space_number_unique" ON "question" ("space_id","number");

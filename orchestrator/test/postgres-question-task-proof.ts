@@ -91,7 +91,7 @@ export function registerQuestionTaskRecordSyncProof(
     expect(readLink().stdout).toBe(taskId)
     local.close()
   })
-  test('direct question asks allocate atomically, seed above the maximum, and retry once', async () => {
+  test('concurrent direct question asks allocate distinct numbers above the maximum', async () => {
     const fixture = input()
     const machineId = newRecordId()
     const at = '2026-11-15T12:00:00.000Z'
@@ -210,6 +210,18 @@ export function registerQuestionTaskRecordSyncProof(
     const questions = Array.from({ length: 4 }, () => snapshot(newRecordId()))
     const written = await Promise.all(questions.map((question) => ask(question)))
     expect(written.map(({ number }) => number).sort((a, b) => a - b)).toEqual([41, 42, 43, 44])
+    const duplicate = fixture.asSpace(
+      fixture.actorRole,
+      'actor-password',
+      directSpaceId,
+      `INSERT INTO question
+        (id,number,space_id,project_id,machine_id,revision,asked_at,question,asked_via,
+         withheld_fields,created_at,updated_at)
+       VALUES ('${newRecordId()}',${written[0]!.number},'${directSpaceId}','${directProjectId}',
+         '${machineId}',1,'${at}','duplicate question number','workflow','[]'::jsonb,'${at}','${at}');`,
+    )
+    expect(duplicate.code).not.toBe(0)
+    expect(duplicate.stderr).toContain('question_space_number_unique')
     expect(
       fixture.admin(`SELECT workflow_task_id FROM question WHERE id='${questions[0]!.id}';`),
     ).toBe(directTaskId)
