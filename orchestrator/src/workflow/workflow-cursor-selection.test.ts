@@ -4,6 +4,7 @@ import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
+import { workflowCursorListCommand } from './workflow-cursor-format.ts'
 import {
   resolveWorkflowCursorMode,
   selectByHandle,
@@ -151,6 +152,6 @@ test('a cursor absent from the resolved project tells the caller to list cursors
   )
 
   expect(selectByHandle(composed.cursor!.id, { project: 'missing-project' }, d)).rejects.toThrow(
-    'cursor handles changed to per-project numbers, so list cursors again with',
+    `cursor handles changed to per-project numbers, so list cursors again with ${workflowCursorListCommand}`,
   )
 })

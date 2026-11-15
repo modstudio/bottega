@@ -43,8 +43,7 @@ WITH ranked AS (
   FROM workflow_cursor
 )
 UPDATE workflow_cursor
-SET number=-(SELECT next_number FROM ranked WHERE ranked.record_id=workflow_cursor.record_id);
-UPDATE workflow_cursor SET number=-number;
+SET number=(SELECT next_number FROM ranked WHERE ranked.record_id=workflow_cursor.record_id);
 --> statement-breakpoint
 CREATE INDEX workflow_cursor_session ON workflow_cursor(session_id,state);
 CREATE INDEX workflow_cursor_workflow_version ON workflow_cursor(workflow_version_record_id);
