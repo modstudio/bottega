@@ -237,9 +237,7 @@ function validateDispatchPrompts(item: Record<string, unknown>, errors: string[]
 
 function prescribedJob(command: string): string | undefined {
   return command.match(
-    new RegExp(
-      `^${PLATFORM_INVOCATION}\\s+(?:run\\s+start|workflow\\s+dispatch)\\s+(\\S+)`,
-    ),
+    new RegExp(`^${PLATFORM_INVOCATION}\\s+(?:run\\s+start|workflow\\s+dispatch)\\s+(\\S+)`),
   )?.[1]
 }
 
