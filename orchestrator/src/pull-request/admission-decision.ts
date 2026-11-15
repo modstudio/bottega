@@ -14,12 +14,14 @@ export type AdmissionOverride = {
   patchId: string | null
   pathSet: string | null
   attribution: TriageOverrideAttribution
+  reason: string
   missingLenses: string[]
 }
 
 export type AdmissionDecision = {
   complete: boolean
   overrideId: string | null
+  overrideReason: string | null
   /** Snapshot evidence carried by admission adapters, never consulted by decideAdmission. */
   triage?: TriageDecision
 }
@@ -36,6 +38,7 @@ export function decideAdmission(
     (candidate) =>
       candidate.project === change.project &&
       candidate.branch === change.branch &&
+      candidate.tip === change.head &&
       candidate.patchId === change.patchId &&
       candidate.pathSet === change.pathSet,
   )
@@ -50,7 +53,8 @@ export function decideAdmission(
     )
   })
   return {
-    complete: verdict.next.action === 'admit',
+    complete: verdict.next.action === 'admit' || override?.attribution === 'operator',
     overrideId: override?.recordId ?? null,
+    overrideReason: override?.reason ?? null,
   }
 }

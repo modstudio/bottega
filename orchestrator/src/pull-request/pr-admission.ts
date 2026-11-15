@@ -225,12 +225,13 @@ export function readLandingOverridesForBranch(
         patchId: string | null
         pathSet: string | null
         attribution: TriageOverrideAttribution
+        reason: string
         missingLenses: string
       },
       [string, string]
     >(
       `SELECT record_id AS recordId,project,branch,tip,tree,patch_id AS patchId,path_set AS pathSet,
-              attribution,missing_lenses AS missingLenses
+              attribution,reason,missing_lenses AS missingLenses
        FROM landing_override
        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
          AND branch=? ORDER BY at DESC,record_id DESC`,

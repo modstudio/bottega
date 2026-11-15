@@ -30,6 +30,7 @@ const verdict = (
 const override = (values: Partial<AdmissionOverride> = {}): AdmissionOverride => ({
   recordId: 'override-17',
   attribution: 'operator',
+  reason: 'operator accepted this exact head',
   missingLenses: [],
   project: change.project,
   branch: change.branch,
@@ -42,14 +43,39 @@ const override = (values: Partial<AdmissionOverride> = {}): AdmissionOverride =>
 
 describe('pull-request admission decision', () => {
   test('the funnel verdict is the admission answer', () => {
-    expect(decideAdmission(verdict('dispatch'), [])).toEqual({ complete: false, overrideId: null })
-    expect(decideAdmission(verdict('admit'), [])).toEqual({ complete: true, overrideId: null })
+    expect(decideAdmission(verdict('dispatch'), [])).toEqual({
+      complete: false,
+      overrideId: null,
+      overrideReason: null,
+    })
+    expect(decideAdmission(verdict('admit'), [])).toEqual({
+      complete: true,
+      overrideId: null,
+      overrideReason: null,
+    })
   })
 
   test('an operator override for the exact patch and path set is credited', () => {
     expect(decideAdmission(verdict('admit'), [override()])).toEqual({
       complete: true,
       overrideId: 'override-17',
+      overrideReason: 'operator accepted this exact head',
+    })
+  })
+
+  test('an exact operator override admits while the funnel still owes work', () => {
+    expect(decideAdmission(verdict('dispatch'), [override()])).toEqual({
+      complete: true,
+      overrideId: 'override-17',
+      overrideReason: 'operator accepted this exact head',
+    })
+  })
+
+  test('a stale operator override does not admit while the funnel still owes work', () => {
+    expect(decideAdmission(verdict('dispatch'), [override({ tip: 'tip-old' })])).toEqual({
+      complete: false,
+      overrideId: null,
+      overrideReason: null,
     })
   })
 
@@ -89,16 +115,16 @@ describe('pull-request admission decision', () => {
     expect(decideAdmission(verdict('admit'), [override(values)])).toEqual({
       complete: true,
       overrideId: null,
+      overrideReason: null,
     })
   })
 
-  test.each([
-    ['another tip', { tip: 'tip-old' }],
-    ['another tree', { tree: 'tree-old' }],
-  ])('an override survives %s when the patch identity is unchanged', (_label, values) => {
+  test('an override survives another tree when the exact head is unchanged', () => {
+    const values = { tree: 'tree-old' }
     expect(decideAdmission(verdict('admit'), [override(values)])).toEqual({
       complete: true,
       overrideId: 'override-17',
+      overrideReason: 'operator accepted this exact head',
     })
   })
 })
