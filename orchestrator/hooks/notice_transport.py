@@ -1,4 +1,6 @@
-"""The notice-id transport rules every monitor-notice delivery hook shares.
+"""The rules both monitor-notice delivery hooks share.
+
+Those shared rules are notice-id transport and MONITOR delivery-line rendering.
 
 The notice-id grammar belongs to the acknowledgement validator
 (`markMonitorNoticesDelivered` in `orchestrator/src/monitor/monitor-notices.ts`),
@@ -38,6 +40,11 @@ EMPTY_NOTICE_ID_NAME = "(empty notice id)"
 MONITOR_GROUP_LABEL_LIMIT = 8
 
 
+def groups_together(kind, notice):
+    """Whether a notice participates in a grouped MONITOR delivery line."""
+    return not kind.startswith("landing-") and not notice.get("suppressed", False)
+
+
 def monitor_lines(notices):
     """Render one delivery entry per notice, folding repeated MONITOR kinds.
 
@@ -48,7 +55,7 @@ def monitor_lines(notices):
     grouped = {}
     for notice in notices:
         kind = notice["kind"]
-        if kind.startswith("landing-") or notice.get("suppressed", False):
+        if not groups_together(kind, notice):
             continue
         grouped.setdefault(kind, []).append(notice)
 
@@ -56,13 +63,10 @@ def monitor_lines(notices):
     lines = []
     for notice in notices:
         kind = notice["kind"]
-        if notice.get("suppressed", False):
-            lines.append("")
-        elif kind.startswith("landing-"):
-            lines.append(notice["detail"])
-        elif kind in rendered_kinds:
-            lines.append("")
-        else:
+        if groups_together(kind, notice):
+            if kind in rendered_kinds:
+                lines.append("")
+                continue
             rendered_kinds.add(kind)
             rows = grouped[kind]
             if len(rows) == 1:
@@ -78,6 +82,10 @@ def monitor_lines(notices):
                 f"MONITOR {kind} for {len(rows)}: {labels}{more}. "
                 f'{notice["label"]}: {notice["detail"]}'
             )
+        elif notice.get("suppressed", False):
+            lines.append("")
+        else:
+            lines.append(notice["detail"])
     return lines
 
 

@@ -548,8 +548,9 @@ import sys, json, os
 # (markMonitorNoticesDelivered in orchestrator/src/monitor/monitor-notices.ts),
 # which accepts what it accepts and names every id it refuses. Copies of that rule
 # drift, so this parser passes ids through and lets the acknowledgement judge them.
-# The one rule it does own, transport, lives with the other delivery hook in
-# $ROOT/hooks/notice_transport.py, so the two cannot disagree about it.
+# The rules it does own, transport and MONITOR delivery-line rendering, live with
+# the other delivery hook in $ROOT/hooks/notice_transport.py, so the two cannot
+# disagree about them.
 sys.path.insert(0, os.environ["HOOKS_DIR"])
 import notice_transport
 
