@@ -209,6 +209,7 @@ function sessionStageReads(database: Database, read: StageRead) {
           number: stage.number,
           project: stage.projectName!,
           workflow_slug: stage.workflow,
+          mode_slug: stage.mode,
           workflow_key: stage.workflowKey ?? '',
           state: stage.state,
           updated_at: stage.updatedAt,

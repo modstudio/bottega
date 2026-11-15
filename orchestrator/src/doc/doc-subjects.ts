@@ -10,6 +10,10 @@ export function taskContextHolder(recordId: string): string {
   return `task:${recordId}`
 }
 
+export function cursorContextHolder(recordId: string): string {
+  return `cursor:${recordId}`
+}
+
 export function docSubjects(): {
   project: string[]
   stack: string[]

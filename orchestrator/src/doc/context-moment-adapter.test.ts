@@ -1,11 +1,13 @@
 import { expect, test } from 'bun:test'
-import type { ContextMomentEffect } from './context-moment.ts'
+import { contextMomentEffect } from './context-moment.ts'
 import { applyContextMomentEffect, type ContextMomentPorts } from './context-moment-adapter.ts'
 import { ContextWriteRefusalError } from './doc-context-write.ts'
 
-const answered: ContextMomentEffect = {
-  writes: [{ kind: 'position', id: 'position-q12', source: 'q12', body: 'Use this.' }],
-}
+const answered = contextMomentEffect({
+  holder: { kind: 'task', value: 'DEV-2267' },
+  questionId: 12,
+  text: 'Use this.',
+})
 
 test('a failed answer write reports the failure', async () => {
   const lines: string[] = []
@@ -17,7 +19,6 @@ test('a failed answer write reports the failure', async () => {
   } as ContextMomentPorts
 
   await applyContextMomentEffect(
-    'DEV-2267',
     answered,
     false,
     { log: (line) => lines.push(line), error: () => {} },
@@ -38,7 +39,6 @@ test('a context policy refusal has no retry command', async () => {
   } as ContextMomentPorts
 
   await applyContextMomentEffect(
-    'DEV-2267',
     answered,
     false,
     { log: (line) => lines.push(line), error: () => {} },
@@ -49,4 +49,30 @@ test('a context policy refusal has no retry command', async () => {
     'context: could not write position on DEV-2267: context item position-q12 refused: position limit',
   ])
   expect(lines[0]).not.toContain('retry:')
+})
+
+test('a keyless cursor ruling writes exactly once to its cursor holder', async () => {
+  const selections: unknown[] = []
+  const ports = {
+    revision: async (selection: unknown) => {
+      selections.push(selection)
+      return undefined
+    },
+    set: async (selection: unknown) => {
+      selections.push(selection)
+      return {} as Awaited<ReturnType<ContextMomentPorts['set']>>
+    },
+  } as ContextMomentPorts
+
+  const cursorEffect = contextMomentEffect({
+    holder: { kind: 'cursor', value: 'cursor-record' },
+    questionId: 12,
+    text: 'Use this.',
+  })
+  await applyContextMomentEffect(cursorEffect, false, undefined, ports)
+
+  expect(selections).toHaveLength(2)
+  expect(selections[1]).toEqual(
+    expect.objectContaining({ cursor: 'cursor-record', kind: 'position', id: 'position-q12' }),
+  )
 })

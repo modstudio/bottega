@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   CONTEXT_ITEM_KINDS,
   type ContextItemKind,
+  splitContextHolder,
 } from '../../../shared/context-item-vocabulary.ts'
 import {
   type ContextRecordName,
@@ -155,15 +156,22 @@ function contextItemLengthRefusal(item: ContextItem): string | null {
   return null
 }
 
-/** Only the session a session holder names may write or drop its items. */
+/** Only the session owning a session or cursor holder may write or drop its items. */
 export function holderOwnershipRefusal(
   holder: string,
   caller: string | null,
   id: string,
+  cursorOwner?: string | null,
 ): string | null {
-  if (!holder.startsWith('session:')) return null
-  const owner = holder.slice('session:'.length)
-  return owner === caller
+  if (holder.startsWith('session:')) {
+    const owner = holder.slice('session:'.length)
+    return owner === caller
+      ? null
+      : `context item ${id} refused: only owning session ${owner} may write ${holder}`
+  }
+  const address = splitContextHolder(holder)
+  if (address.holderKind !== 'cursor') return null
+  return cursorOwner && cursorOwner === caller
     ? null
-    : `context item ${id} refused: only owning session ${owner} may write ${holder}`
+    : `context item ${id} refused: cursor ${address.holderId} belongs to another session; write from its owning session, or on the task`
 }

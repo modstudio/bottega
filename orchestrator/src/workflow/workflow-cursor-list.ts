@@ -23,6 +23,13 @@ export type CursorListOptions = {
 
 export type WorkflowCursorListRow = ListedCursorRow & { next_slug: string; line: string }
 
+/** The one workflow-owned read defining open keyless context holders for a session. */
+export async function openKeylessCursorsForSession(session: string, d: Database = db()) {
+  return (await taskFlowReadStore(d).openStagesForSession(session)).filter(
+    (cursor) => !cursor.workflow_key,
+  )
+}
+
 export async function listWorkflowCursors(
   options: CursorListOptions = {},
   d: Database = db(),

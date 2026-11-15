@@ -477,6 +477,7 @@ export async function ruleCommand(
   print(result, `${result.summary} Question ${result.questionId}.`)
   return workflowQuestionContextMoment({
     taskKey: context.workflowKey,
+    cursorRecordId: result.cursorRecordId,
     questionId: result.questionId,
     operatorRuled,
     text: ruling!,

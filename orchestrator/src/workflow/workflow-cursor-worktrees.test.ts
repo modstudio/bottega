@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
+import { openKeylessCursorsForSession } from './workflow-cursor-list.ts'
 import { database } from './workflow-cursor-test.fixture.ts'
-import { openCursorWorktrees } from './workflow-cursor-worktrees.ts'
+import { openCursorWorktrees, workflowCursorClaimHandles } from './workflow-cursor-worktrees.ts'
 
 let priorRunId: string | undefined
 let priorDepth: string | undefined
@@ -46,4 +47,45 @@ test('reads valid worktree arguments only from open workflow cursors', async () 
     { number: 1, workflow: 'fixture', project: 'fixture', worktree: '/trees/running' },
     { number: 2, workflow: 'fixture', project: 'fixture', worktree: '/trees/awaiting' },
   ])
+})
+
+test('cursor claim handles include worktree and branch and ignore malformed arguments', () => {
+  expect(
+    workflowCursorClaimHandles(
+      JSON.stringify({ worktree: '/trees/work', branch: 'DEV-2293-work' }),
+    ),
+  ).toEqual(['/trees/work', 'DEV-2293-work'])
+  expect(workflowCursorClaimHandles('{malformed')).toEqual([])
+})
+
+test('open keyless cursor reader excludes a done cursor and task-bound cursor', async () => {
+  const d = database()
+  const insert = d.query(
+    `INSERT INTO workflow_cursor
+      (record_id,number,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+       workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,
+       question,total_steps,created_at,updated_at,enforcement)
+     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),'fixture','fixture','default',
+             ?, ?, 'reader-session', ?, ?, '{}',0,'research',?,'[]',NULL,1,
+             '2026-10-27','2026-10-27','floors')`,
+  )
+  const add = (key: string, state: string) => {
+    const recordId = newRecordId()
+    insert.run(
+      recordId,
+      key,
+      key ? 'primary' : recordId,
+      workflowVersionRecordId(d),
+      catalogueVersionRecordId(d),
+      state,
+    )
+    return recordId
+  }
+  const open = add('', 'running')
+  add('', 'done')
+  add('DEV-2293', 'running')
+
+  expect(
+    (await openKeylessCursorsForSession('reader-session', d)).map((row) => row.record_id),
+  ).toEqual([open])
 })

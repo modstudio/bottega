@@ -238,13 +238,6 @@ export const cleanupBoundarySpecs = [
     reason: 'Keep hosted evidence delivery and residue reads behind the close-out outbox adapter.',
   },
   {
-    name: 'session-close-out-worked-boundary',
-    file: 'orchestrator/src/session/session-close-out-worked.ts',
-    allowed: ['bun:sqlite', '../../../shared/brand.ts', '../doc/context-worked-adapter.ts'],
-    typeOnlyAllowed: ['bun:sqlite', './session-close-out-report.ts'],
-    reason: 'Keep the best-effort worked write and report outside close-out orchestration.',
-  },
-  {
     name: 'session-close-out-cursors-boundary',
     file: 'orchestrator/src/session/session-close-out-cursors.ts',
     allowed: [
@@ -282,7 +275,6 @@ export const cleanupBoundarySpecs = [
       '../close/close-out-in-flight.ts',
       '../close/close-out-report.ts',
       '../database/db.ts',
-      '../doc/context-worked-adapter.ts',
       '../git/git-environment.ts',
       '../project/projects.ts',
       '../resources/process-inventory.ts',
@@ -301,7 +293,6 @@ export const cleanupBoundarySpecs = [
       './session-close-out-resource-release-adapter.ts',
       './session-close-out-resource-release.ts',
       './session-close-out-store.ts',
-      './session-close-out-worked.ts',
       './session-context-lifecycle.ts',
     ],
     typeOnlyAllowed: ['./session-close-out-report.ts'],
