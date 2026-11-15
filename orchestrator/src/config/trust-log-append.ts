@@ -45,8 +45,7 @@ export async function appendTrustLogEntryWithSigner(
       destinationSpaceId: spaceId,
     })
   } catch (error) {
-    if (error instanceof ConfigClientError && error.status === 409)
-      throw new Error(conflictMessage)
+    if (error instanceof ConfigClientError && error.status === 409) throw new Error(conflictMessage)
     throw error
   }
   writeRememberedTrustLogHead(spaceId, nextState.head, ports.env)
