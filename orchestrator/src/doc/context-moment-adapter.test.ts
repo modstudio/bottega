@@ -60,7 +60,10 @@ test('a keyless cursor ruling writes exactly once to its cursor holder', async (
       selections.push(selection)
       return undefined
     },
-    set: async (selection: unknown) => selections.push(selection),
+    set: async (selection: unknown) => {
+      selections.push(selection)
+      return {} as Awaited<ReturnType<ContextMomentPorts['set']>>
+    },
   } as ContextMomentPorts
 
   await applyContextMomentEffect(null, 'cursor-record', answered, false, undefined, ports)
