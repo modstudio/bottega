@@ -72,7 +72,12 @@ test('renders the compact context layout line by line and keeps only item first 
     reviewVerdictLines: [
       `DEV-1844 review: lens correctness owed → ${PLATFORM_SLUG} review tier DEV-1844-work`,
     ],
-    waiting: { boardRequests: 2, questions: 0, filedIssues: 3, resumeBriefs: 1 },
+    waiting: {
+      boardRequests: 2,
+      questions: { worker: 0, user: 0, foreign: 0, unowned: 0 },
+      filedIssues: 3,
+      resumeBriefs: 1,
+    },
     autonomy: 'plan review · implement, review, docs, canon auto · ship trunk',
   }
 
@@ -148,7 +153,12 @@ test('renders one open question for its task holder', () => {
     runs: [],
     cursors: [],
     claims: [],
-    waiting: { boardRequests: 0, questions: 1, filedIssues: 0, resumeBriefs: 0 },
+    waiting: {
+      boardRequests: 0,
+      questions: { worker: 1, user: 0, foreign: 0, unowned: 0 },
+      filedIssues: 0,
+      resumeBriefs: 0,
+    },
     autonomy: 'unknown',
   }
 
@@ -158,6 +168,32 @@ test('renders one open question for its task holder', () => {
   expect(renderContextBrief(brief)).not.toContain('Already answered')
   expect(renderContextBrief(brief)).not.toContain('Closed without an answer')
   database.close()
+})
+
+test('renders each non-empty inbox group and reports inbox read failure', () => {
+  const base: ContextBrief = {
+    session: 'session-a',
+    fullCommand: `${PLATFORM_SLUG} agent context show --session session-a`,
+    holders: [],
+    runs: [],
+    cursors: [],
+    claims: [],
+    waiting: {
+      boardRequests: 0,
+      questions: { worker: 2, user: 1, foreign: 3, unowned: 1 },
+      filedIssues: 0,
+      resumeBriefs: 0,
+    },
+    autonomy: 'unknown',
+  }
+  expect(renderContextBrief(base)).toContain(
+    `2 worker questions · 1 on you · 3 other sessions' · 1 unowned (${PLATFORM_SLUG} question inbox --all --active)`,
+  )
+  expect(
+    renderContextBrief({ ...base, waiting: { ...base.waiting, questions: null } }),
+  ).toContain(
+    `could not read question inbox (${PLATFORM_SLUG} question inbox --all --active)`,
+  )
 })
 
 test('orders the session, each project-scoped working task, and its epic by task profile', () => {
@@ -297,7 +333,12 @@ test('renders an open keyless cursor item under its cursor header without an ope
     runs: [],
     cursors: [],
     claims: [],
-    waiting: { boardRequests: 0, questions: 0, filedIssues: 0, resumeBriefs: 0 },
+    waiting: {
+      boardRequests: 0,
+      questions: { worker: 0, user: 0, foreign: 0, unowned: 0 },
+      filedIssues: 0,
+      resumeBriefs: 0,
+    },
     autonomy: 'unknown',
   })
   expect(rendered).toContain('Cursor 42 explore default\n  position: Continue here.')

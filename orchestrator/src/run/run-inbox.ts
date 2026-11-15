@@ -1,4 +1,5 @@
 // concern: run-inbox
+import type { Database } from 'bun:sqlite'
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 /** Knows asking-run and ruling inbox. Must not know run control, transports, routing, the CLI, or worktrees. */
 
@@ -11,6 +12,7 @@ import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 import { runQuestionGroupFooter } from './question-display.ts'
 import { displayRunQuestion } from './question-display-probe.ts'
+import { questionInboxGroup, type QuestionInboxGroup } from './question-inbox-group.ts'
 import { questionOpenSql } from './question-open.ts'
 import { rulingStatus } from './question-vocabulary.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
@@ -36,6 +38,7 @@ type InboxQuestion = {
   session_live: true | null
   session_liveness: 'live' | 'unknown'
   can_answer: boolean
+  group: QuestionInboxGroup
   question: string
   options: string[]
   recommendation: string | null
@@ -69,6 +72,7 @@ type WorkflowInboxQuestion = {
   asked_at: string
   session_id: string | null
   can_answer: boolean
+  group: QuestionInboxGroup
   question: string
   answer_command: string | null
   ownership_notice: string | null
@@ -105,6 +109,7 @@ type QueriedInboxQuestion = {
   project_record_id: string | null
   status: string
   session_id: string | null
+  awaiting_operator_at: string | null
   root_status: string
   root_voided: number
   root_id: string
@@ -133,13 +138,16 @@ function inboxSessionCanAnswer(
   return ownerSessionId === null || (callerSessionId !== null && ownerSessionId === callerSessionId)
 }
 
-async function workflowInboxQuestions(input: InboxQuery): Promise<WorkflowInboxQuestion[]> {
+async function workflowInboxQuestions(
+  input: InboxQuery,
+  database: Database = db(),
+  sid: string | null = sessionId(),
+): Promise<WorkflowInboxQuestion[]> {
   if (input.scope === 'session') return []
-  const sid = sessionId()
   const scoped = input.requestedCwd !== undefined
   const scopedProject = scoped ? projectAt(input.requestedCwd!) : null
   const defaultProject = !scoped && !input.all ? projectAt(process.cwd()) : null
-  const rows = await taskFlowReadStore(db()).workflowInboxQuestions()
+  const rows = await taskFlowReadStore(database).workflowInboxQuestions()
   const visible = rows.filter((row) => {
     if (scoped) return scopedProject !== null && row.project_record_id === scopedProject.recordId
     if (input.all) return true
@@ -163,6 +171,12 @@ async function workflowInboxQuestions(input: InboxQuery): Promise<WorkflowInboxQ
       asked_at: row.asked_at,
       session_id: row.session_id,
       can_answer: canAnswer,
+      group: questionInboxGroup({
+        kind: 'workflow',
+        ownerSessionId: row.session_id,
+        awaitingOperator: true,
+        callerSessionId: sid,
+      }),
       question: row.question,
       answer_command: canAnswer
         ? `${PLATFORM_SLUG} workflow rule ${shellWord(row.workflow_slug)} --project ${shellWord(row.project)} ` +
@@ -191,8 +205,10 @@ function scopedProjectFilter(
 
 export async function queryInbox(
   input: InboxQuery,
+  database: Database = db(),
+  callerSessionId: string | null = sessionId(),
 ): Promise<{ questions: Array<InboxQuestion | WorkflowInboxQuestion> }> {
-  const sid = sessionId()
+  const sid = callerSessionId
   const mine = input.scope === 'session' || !input.all
   const scoped = input.scope === 'cli-default' && input.requestedCwd !== undefined
   const scopedProject = scoped ? projectAt(input.requestedCwd!) : null
@@ -203,14 +219,14 @@ export async function queryInbox(
   const seenJoin = 'LEFT JOIN session_seen seen ON seen.session_id = r.session_id'
   const sessionRecent =
     'CASE WHEN r.session_id IS NOT NULL AND seen.last_seen >= ? THEN 1 ELSE 0 END'
-  const queriedRows = db()
+  const queriedRows = database
     .query(
       `SELECT q.number,q.record_id,q.run_record_id,r.number AS run_number,
             q.asked_at, q.question, q.options, q.recommendation, q.why,q.kind,
             q.jev_pick,q.jev_confidence,q.jev_probabilities,q.jev_error,
             q.answered_at, q.overturned_at, q.overturned_by, q.overturn_reason, q.replacement,
             q.filed_as, q.filed_ref, q.filed_record_id, q.filed_label, q.filed_at,
-            r.agent, r.job, r.repo, root.project_record_id, r.status, r.session_id,
+            r.agent, r.job, r.repo, root.project_record_id, r.status, r.session_id,q.awaiting_operator_at,
             root.status root_status, root.record_id root_record_id, root.number root_number,
             ${voidedSql('root')} root_voided,
             COALESCE(r.parent_run_record_id, r.record_id) root_id, ${sessionRecent} session_recent
@@ -254,6 +270,12 @@ export async function queryInbox(
           session_live: q.session_recent ? true : null,
           session_liveness: q.session_recent ? 'live' : 'unknown',
           can_answer: isLive(q) && inboxSessionCanAnswer(q.session_id, sid),
+          group: questionInboxGroup({
+            kind: 'worker',
+            ownerSessionId: q.session_id,
+            awaitingOperator: q.awaiting_operator_at !== null,
+            callerSessionId: sid,
+          }),
           question: displayRunQuestion(q.run_record_id, q.question),
           options: q.options ? (JSON.parse(q.options) as string[]) : [],
           recommendation: q.recommendation,
@@ -276,7 +298,7 @@ export async function queryInbox(
           filed_at: q.filed_at,
         }),
       ),
-      ...(await workflowInboxQuestions(input)),
+      ...(await workflowInboxQuestions(input, database, sid)),
     ],
   }
 }

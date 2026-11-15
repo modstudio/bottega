@@ -8,11 +8,14 @@ import { claimNotices } from '../board/board-service.ts'
 import { db } from '../database/db.ts'
 import { filedIssueQueueState } from '../issue/issue-dispatch.ts'
 import { projectAt } from '../project/projects.ts'
+import {
+  questionInboxCountsForSession,
+  type QuestionInboxCounts,
+} from '../run/question-inbox-counts.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { LIVE_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { sessionReviewVerdictLines } from '../session/session-review-verdicts.ts'
 import { architectSessionContext } from '../workflow/session-context.ts'
-import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import {
   listWorkflowCursors,
   openKeylessCursorsForSession,
@@ -59,7 +62,7 @@ export type ContextBrief = {
   reviewVerdictLines?: string[]
   waiting: {
     boardRequests: number
-    questions: number
+    questions: QuestionInboxCounts | null
     filedIssues: number
     resumeBriefs: number
   }
@@ -71,6 +74,19 @@ const ITEM_ORDER: readonly ContextItemKind[] = ['ruling', 'position', 'fact', 'p
 const firstLine = (body: string) => body.split(/\r\n|\r|\n/, 1)[0]!.trim()
 const count = (value: number, singular: string, plural = `${singular}s`) =>
   `${value} ${value === 1 ? singular : plural}`
+
+function waitingQuestionLine(counts: QuestionInboxCounts | null): string {
+  if (counts === null)
+    return `could not read question inbox (${PLATFORM_SLUG} question inbox --all --active)`
+  const groups = [
+    counts.worker ? count(counts.worker, 'worker question') : null,
+    counts.user ? `${counts.user} on you` : null,
+    counts.foreign ? `${counts.foreign} other sessions'` : null,
+    counts.unowned ? `${counts.unowned} unowned` : null,
+  ].filter((group): group is string => group !== null)
+  if (!groups.length) return '0 questions'
+  return `${groups.join(' · ')} (${PLATFORM_SLUG} question inbox --all --active)`
+}
 
 function renderItem(item: ContextItem): string {
   const label = item.kind === 'ruling' ? `ruling ${item.source}` : item.kind
@@ -119,7 +135,7 @@ export function renderContextBrief(brief: ContextBrief): string {
   lines.push(...(brief.reviewVerdictLines ?? []))
   lines.push(
     `Waiting: ${count(brief.waiting.boardRequests, 'board request')} (${PLATFORM_SLUG} board read) · ` +
-      `${count(brief.waiting.questions, 'question')} · ` +
+      `${waitingQuestionLine(brief.waiting.questions)} · ` +
       `${count(brief.waiting.filedIssues, 'filed issue')} (${PLATFORM_SLUG} workflow fix-defect --waiting) · ` +
       `${count(brief.waiting.resumeBriefs, 'resume brief')} (${PLATFORM_SLUG} doc resumes)`,
   )
@@ -321,15 +337,7 @@ export async function contextBrief(
        WHERE session_id=? AND status IN ${LIVE_RUN_STATUS_SQL} ORDER BY number`,
     )
     .all(session) as Array<ContextBrief['runs'][number] & { cursor_record_id: string | null }>
-  const runQuestions = database
-    .query(
-      `SELECT COUNT(*) count FROM question q JOIN run r ON r.record_id=q.run_record_id
-       WHERE r.session_id=? AND ${questionOpenSql('q')}`,
-    )
-    .get(session) as { count: number }
-  const cursorQuestions = {
-    count: await taskFlowReadStore(database).openWorkflowQuestionCountForSession(session),
-  }
+  const questionCounts = await questionInboxCountsForSession(session, database)
   const boardEnv = { ...process.env, CLAUDE_CODE_SESSION_ID: session }
   const boardRequests = claimNotices(true, boardEnv, Date.now(), database).filter(
     (notice) => notice.purpose === 'request',
@@ -360,7 +368,7 @@ export async function contextBrief(
     reviewVerdictLines: sessionReviewVerdictLines(session, cursors, database),
     waiting: {
       boardRequests,
-      questions: runQuestions.count + cursorQuestions.count,
+      questions: questionCounts,
       filedIssues: filedIssues.waiting.length,
       resumeBriefs: listOpenResumes(cwd).open.length,
     },

@@ -9,7 +9,7 @@ import {
 const NOW = '2026-11-13T12:00:00.000Z'
 const facts = (overrides: Partial<StopSummaryFacts> = {}): StopSummaryFacts => ({
   now: NOW,
-  questionCount: 0,
+  questionCounts: { worker: 0, user: 0, foreign: 0, unowned: 0 },
   cursors: [],
   reviewVerdictLines: [],
   liveRuns: 0,
@@ -38,7 +38,7 @@ describe('Stop summary decision', () => {
   test('questions lead and cursors stay short, including keyless explore', () => {
     const result = decideStopSummary(
       facts({
-        questionCount: 2,
+        questionCounts: { worker: 0, user: 2, foreign: 0, unowned: 0 },
         cursors: [
           { key: 'DEV-2297', workflow: 'plan-task', step: 'design', ordinal: 6, total: 11 },
           { key: null, workflow: 'explore', step: 'orient', ordinal: 1, total: 4 },
@@ -46,9 +46,31 @@ describe('Stop summary decision', () => {
       }),
     )
     expect(result.lines).toEqual([
-      `2 questions waiting on you → ${PLATFORM_SLUG} question inbox`,
+      `2 rulings waiting on you → ${PLATFORM_SLUG} question inbox`,
       'DEV-2297 · plan-task · step design (6 of 11)',
       'explore · step orient (1 of 4)',
+    ])
+  })
+
+  test('worker and operator questions use their own lines while other groups stay quiet', () => {
+    expect(
+      decideStopSummary(
+        facts({ questionCounts: { worker: 1, user: 1, foreign: 2, unowned: 3 } }),
+      ).lines,
+    ).toEqual([
+      `1 worker question for this session → ${PLATFORM_SLUG} question inbox`,
+      `1 ruling waiting on you → ${PLATFORM_SLUG} question inbox`,
+    ])
+    expect(
+      decideStopSummary(
+        facts({ questionCounts: { worker: 0, user: 0, foreign: 2, unowned: 3 } }),
+      ).lines,
+    ).toEqual(['Nothing waiting on you'])
+  })
+
+  test('an unreadable inbox is never presented as empty', () => {
+    expect(decideStopSummary(facts({ questionCounts: null })).lines).toEqual([
+      `Could not read question inbox → ${PLATFORM_SLUG} question inbox --all --active`,
     ])
   })
 
