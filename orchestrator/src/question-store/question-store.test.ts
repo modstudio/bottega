@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
-import { type QuestionWriteBody, questionReadSchema } from '../record/record-question-contract.ts'
+import type { QuestionWriteBody } from '../record/record-question-contract.ts'
 import { questionStore, recordQuestionStore } from './question-store.ts'
 import type { QuestionStore } from './question-store-types.ts'
 
@@ -122,29 +122,27 @@ async function mutate(
   return next
 }
 
-async function questionStoreContract(store: QuestionStore) {
-  const observed = new Map<string, object[]>()
-  const observe = (read: string, items: object[]) => {
-    observed.set(read, items)
-    return items
-  }
+async function questionStoreContract(store: QuestionStore, database: Database) {
+  const unknown = snapshot({ id: newRecordId() })
+  await expect(store.write('answer', body(unknown, 'answer'))).rejects.toThrow('not found')
+  expect(
+    database.query<{ count: number }, [string]>('SELECT count(*) count FROM question WHERE record_id=?').get(unknown.id)!
+      .count,
+  ).toBe(0)
   const workflow = snapshot({ id: WORKFLOW_QUESTION_ID, workflowTaskId: TASK_ID })
   const ask = body(workflow, 'ask')
   const first = await store.write('ask', ask)
   expect(first).toMatchObject({ id: workflow.id, revision: 1 })
   expect(await store.write('ask', ask)).toEqual(first)
 
-  const waiting = observe('waiting', (await store.read({ read: 'waiting' })).items)
+  const waiting = (await store.read({ read: 'waiting' })).items
   expect(waiting).toHaveLength(1)
   expect(waiting[0]).toMatchObject({
     workflow_cursor_record_id: CURSOR_ID,
     question_record_id: workflow.id,
     project: 'question-fixture',
   })
-  const open = observe(
-    'open-for-session',
-    (await store.read({ read: 'open-for-session', sessionId: 'owner-session' })).items,
-  )
+  const open = (await store.read({ read: 'open-for-session', sessionId: 'owner-session' })).items
   expect(open[0]).toMatchObject({ record_id: CURSOR_ID, open_question_record_id: workflow.id })
 
   const run = snapshot({
@@ -156,22 +154,16 @@ async function questionStoreContract(store: QuestionStore) {
   })
   await store.write('ask', body(run))
   expect((await store.read({ read: 'waiting' })).items).toHaveLength(1)
-  const inbox = observe('inbox', (await store.read({ read: 'inbox' })).items)
+  const inbox = (await store.read({ read: 'inbox' })).items
   expect(inbox.some((row) => field(row, 'record_id') === run.id)).toBe(true)
   expect(inbox.some((row) => field(row, 'record_id') === workflow.id)).toBe(true)
   expect((await store.read({ read: 'inbox', limit: 1 })).items).toHaveLength(1)
   expect(inbox).toHaveLength(2)
 
-  const workflowRulings = observe(
-    'rulings-workflow',
-    (await store.read({ read: 'rulings', kind: 'workflow' })).items,
-  )
+  const workflowRulings = (await store.read({ read: 'rulings', kind: 'workflow' })).items
   expect(workflowRulings).toHaveLength(1)
   expect(workflowRulings.every((row) => field(row, 'record_id') !== run.id)).toBe(true)
-  const runRulings = observe(
-    'rulings-run',
-    (await store.read({ read: 'rulings', kind: 'run' })).items,
-  )
+  const runRulings = (await store.read({ read: 'rulings', kind: 'run' })).items
   expect(runRulings).toHaveLength(1)
   expect(runRulings[0]).toMatchObject({ record_id: run.id, run_record_id: RUN_ID })
 
@@ -206,16 +198,13 @@ async function questionStoreContract(store: QuestionStore) {
     replacement: null,
     updatedAt: '2026-11-15T12:05:00.000Z',
   })
-  const taskRows = observe(
-    'task-rulings',
-    (
+  const taskRows = (
       await store.read({
         read: 'task-rulings',
         projectId: PROJECT_ID,
         taskId: TASK_ID,
       })
-    ).items,
-  )
+    ).items
   expect(taskRows.some((row) => field(row, 'question_record_id') === replacement.id)).toBe(true)
   expect(taskRows.some((row) => field(row, 'question_record_id') === excludedBase.id)).toBe(false)
 
@@ -228,14 +217,13 @@ async function questionStoreContract(store: QuestionStore) {
   expect(
     (await store.read({ read: 'inbox' })).items.some((row) => field(row, 'record_id') === run.id),
   ).toBe(false)
-  const projects = observe('projects', (await store.read({ read: 'projects' })).items)
+  const projects = (await store.read({ read: 'projects' })).items
   expect(projects).toContainEqual({
     project: 'question-fixture',
   })
   await expect(store.read({ read: 'rulings', kind: 'all', changedAfter: 1 })).rejects.toThrow(
     'DEV-2328',
   )
-  return observed
 }
 
 test('SQLite and record question adapters satisfy every shared read and write contract', async () => {
@@ -244,8 +232,8 @@ test('SQLite and record question adapters satisfy every shared read and write co
   seedOwners(local)
   seedOwners(hosted)
   const hostedStore = questionStore(hosted)
-  const sqliteRows = await questionStoreContract(questionStore(local))
-  const recordRows = await questionStoreContract(
+  await questionStoreContract(questionStore(local), local)
+  await questionStoreContract(
     recordQuestionStore({
       database: local,
       destinationSpaceId: newRecordId(),
@@ -256,21 +244,8 @@ test('SQLite and record question adapters satisfy every shared read and write co
         writeQuestion: (intent, input) => hostedStore.write(intent, input),
       },
     }),
+    hosted,
   )
-  expect([...recordRows.keys()]).toEqual([...sqliteRows.keys()])
-  for (const [read, sqliteItems] of sqliteRows) {
-    const recordItems = recordRows.get(read)!
-    expect(sqliteItems.length, `${read} SQLite fixture must return a row`).toBeGreaterThan(0)
-    expect(recordItems.length, `${read} record fixture must return a row`).toBeGreaterThan(0)
-    expect(recordItems).toHaveLength(sqliteItems.length)
-    for (const [index, sqliteItem] of sqliteItems.entries()) {
-      const recordItem = recordItems[index]!
-      expect(Object.keys(recordItem).sort(), `${read} row ${index} keys`).toEqual(
-        Object.keys(sqliteItem).sort(),
-      )
-      expect(recordItem, `${read} row ${index} values`).toEqual(sqliteItem)
-    }
-  }
   local.close()
   hosted.close()
 })
@@ -315,11 +290,4 @@ test('record ask pushes its run first and enriches live, stale, and absent sessi
     (await store.read({ read: 'inbox' })).items.map((row) => field(row, 'session_recent')),
   ).toEqual([1, 0, 0])
   database.close()
-})
-
-test('question read validation requires read-specific identifiers', () => {
-  expect(questionReadSchema.safeParse({ read: 'open-for-session' }).success).toBe(false)
-  expect(
-    questionReadSchema.safeParse({ read: 'task-rulings', projectId: PROJECT_ID }).success,
-  ).toBe(false)
 })

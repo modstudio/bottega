@@ -18,12 +18,13 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
         q.jev_probabilities::text,q.jev_error,q.answered_at::text,q.overturned_at::text,q.overturned_by,
         q.overturn_reason,q.replacement,q.filed_as,q.filed_ref,q.filed_record_id::text,q.filed_label,q.filed_at::text,
         owner.agent,owner.job,root_project.name repo,root.project_id::text project_record_id,owner.status,owner.session_id,
+        q.awaiting_operator_at::text,
         root.status root_status,root.id::text root_record_id,root.number root_number,
         CASE WHEN root.evidence_excluded IS NULL THEN 0 ELSE 1 END root_voided,
         COALESCE(owner.parent_run_id,owner.id)::text root_id
        FROM question q JOIN run owner ON owner.id=q.run_id
        JOIN run root ON root.id=COALESCE(owner.parent_run_id,owner.id)
-       JOIN project root_project ON root_project.id=root.project_id
+       LEFT JOIN project root_project ON root_project.id=root.project_id
        WHERE q.closed_at IS NULL ORDER BY q.run_id,q.number`,
       [],
     )) as Row[]
