@@ -218,9 +218,9 @@ test('steps must declare every job their bodies prescribe', () => {
     expect(validateStepCatalogue({ steps: [{ ...staged, body }] })).toContain(
       'step "design" prescribes job "review-lens" but does not declare it in jobs; add "review-lens" to the step\'s jobs',
     )
-    expect(
-      validateStepCatalogue({ steps: [{ ...staged, body, jobs: ['review-lens'] }] }),
-    ).toEqual([])
+    expect(validateStepCatalogue({ steps: [{ ...staged, body, jobs: ['review-lens'] }] })).toEqual(
+      [],
+    )
   }
 })
 
