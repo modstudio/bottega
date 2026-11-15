@@ -14,6 +14,7 @@ export async function proveMachineTrustLog(
   spaceB: string,
 ): Promise<void> {
   const privateKey = new Uint8Array(32).fill(7)
+  const recoveryPrivateKey = new Uint8Array(32).fill(8)
   const signingPublicKey = ed25519.getPublicKey(privateKey)
   const genesis = signTrustLogEntry(
     {
@@ -27,7 +28,7 @@ export async function proveMachineTrustLog(
           signingPublicKey,
           label: 'proof',
         },
-        recoveryPublicKey: ed25519.getPublicKey(new Uint8Array(32).fill(8)),
+        recoveryPublicKey: ed25519.getPublicKey(recoveryPrivateKey),
       },
       signer: signingPublicKey,
       at: 1,
@@ -83,5 +84,28 @@ export async function proveMachineTrustLog(
       entry: genesis,
     }),
   ).rejects.toMatchObject({ status: 400 })
-  await expect(readMachineTrustLog(tenant)).resolves.toEqual([genesis, add])
+  const recoveryAdd = signTrustLogEntry(
+    {
+      prev: trustLogEntryHash(add),
+      space: spaceA,
+      body: {
+        kind: 'add',
+        keyId: 'recovered-proof-key',
+        publicKey: new Uint8Array(32).fill(3),
+        signingPublicKey: ed25519.getPublicKey(new Uint8Array(32).fill(10)),
+        label: 'recovered-proof',
+      },
+      signer: ed25519.getPublicKey(recoveryPrivateKey),
+      at: 3,
+    },
+    recoveryPrivateKey,
+  )
+  await expect(
+    appendMachineTrustLogEntry({
+      ...tenant,
+      expectedHead: trustLogEntryHash(add),
+      entry: recoveryAdd,
+    }),
+  ).resolves.toEqual(trustLogEntryHash(recoveryAdd))
+  await expect(readMachineTrustLog(tenant)).resolves.toEqual([genesis, add, recoveryAdd])
 }

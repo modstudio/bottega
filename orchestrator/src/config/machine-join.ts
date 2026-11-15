@@ -59,7 +59,10 @@ const sideBytes = (side: string) => new Uint8Array(Buffer.from(side, 'hex'))
 const concat = (...values: Uint8Array[]) =>
   new Uint8Array(Buffer.concat(values.map((value) => Buffer.from(value))))
 
-function registeredKeyAgrees(registered: RegisteredKey | undefined, key: TrustLogKey): boolean {
+export function registeredKeyAgrees(
+  registered: RegisteredKey | undefined,
+  key: TrustLogKey,
+): boolean {
   return Boolean(
     registered &&
       registered.revokedAt === null &&
@@ -68,6 +71,14 @@ function registeredKeyAgrees(registered: RegisteredKey | undefined, key: TrustLo
       bytesEqual(new Uint8Array(Buffer.from(registered.publicKey, 'base64url')), key.publicKey) &&
       bytesEqual(registered.signingPublicKey, key.signingPublicKey),
   )
+}
+
+function wrapFailureRemedy(key: TrustLogKey): string {
+  return `\`${PLATFORM_SLUG} machine config machine trust ${key.keyId} ${encoded(key.publicKey)} --yes\``
+}
+
+export function unanchoredApprovalNotice(slug: string): string {
+  return `space ${slug} is not anchored; run \`${PLATFORM_SLUG} machine anchor --space ${slug}\` from your own terminal`
 }
 
 function expirationRefusal(): Error {
@@ -123,10 +134,15 @@ async function poll(
   return found
 }
 
-async function localRecord(
+export async function localRecord(
   selected: SelectedSpace,
   ports: Ports,
-): Promise<{ record: TrustLogKey; ownUserId: string }> {
+): Promise<{
+  own: TrustLogKey
+  ownUserId: string
+  signingPrivateKey: Uint8Array
+  registered: RegisteredKey[]
+}> {
   const pair = readMachineKey(ports.env)
   const signing = readMachineSigningKey(ports.env)
   if (!pair || !signing)
@@ -134,24 +150,26 @@ async function localRecord(
       `machine key is not initialized; run \`${PLATFORM_SLUG} machine config machine init --space ${selected.slug}\``,
     )
   const keyId = await machineKeyId(pair.publicKey)
-  const [who, machines] = await Promise.all([
+  const [who, registered] = await Promise.all([
     ports.client.whoami(),
     ports.client.listMachineKeys({ destinationSpaceId: selected.spaceId }),
   ])
-  const registered = machines.find((machine) => machine.keyId === keyId)
-  const record: TrustLogKey = {
+  const listed = registered.find((machine) => machine.keyId === keyId)
+  const own: TrustLogKey = {
     keyId,
     publicKey: pair.publicKey,
     signingPublicKey: signing.publicKey,
-    label: registered?.label ?? '',
+    label: listed?.label ?? '',
   }
-  if (registered?.userId !== who.user.id || !registeredKeyAgrees(registered, record))
+  if (listed?.userId !== who.user.id || !registeredKeyAgrees(listed, own))
     throw new Error(
       `machine key is not registered for this user; run \`${PLATFORM_SLUG} machine config machine init --space ${selected.slug}\``,
     )
   return {
     ownUserId: who.user.id,
-    record,
+    own,
+    signingPrivateKey: signing.privateKey,
+    registered,
   }
 }
 
@@ -289,7 +307,7 @@ async function acceptDone(
   await pinTrustedMachine(approver.keyId, approver.publicKey, approver.label, ports.env)
   if (!wrapped)
     throw new Error(
-      `${approver.label} (${approver.keyId}) approved this machine but could not wrap the data key for it; on that machine run \`${PLATFORM_SLUG} machine config machine trust ${own.keyId} ${encoded(own.publicKey)} --yes\``,
+      `${approver.label} (${approver.keyId}) approved this machine but could not wrap the data key for it; on that machine run ${wrapFailureRemedy(own)}`,
     )
 }
 
@@ -364,7 +382,7 @@ async function approveAndWrap(
       return {
         head,
         failure: new Error(
-          `machine ${joiner.keyId} was approved but wrapping its data key failed; finish with \`${PLATFORM_SLUG} machine config machine trust ${joiner.keyId} ${encoded(joiner.publicKey)} --yes\``,
+          `machine ${joiner.keyId} was approved but wrapping its data key failed; finish with ${wrapFailureRemedy(joiner)}`,
           { cause: error },
         ),
       }
@@ -377,7 +395,7 @@ export async function machineJoin(
   selected: SelectedSpace,
   ports: Ports,
 ): Promise<{ label: string; keyId: string }> {
-  const { record } = await localRecord(selected, ports)
+  const { own: record } = await localRecord(selected, ports)
   const destination = { destinationSpaceId: selected.spaceId }
   const { state: initial } = await loadVerifiedTrustLog(ports, selected)
   if (initial?.keys.has(record.keyId)) throw new Error('this machine is already approved')
@@ -448,9 +466,9 @@ export async function machineApprove(
   codeText: string,
   selected: SelectedSpace,
   ports: Ports,
-): Promise<{ label: string; keyId: string }> {
+): Promise<{ label: string; keyId: string; anchored: boolean }> {
   const code: PairingCode = parsePairingCode(codeText)
-  const { record } = await localRecord(selected, ports)
+  const { own: record } = await localRecord(selected, ports)
   const destination = { destinationSpaceId: selected.spaceId }
   const { state: initial } = await loadVerifiedTrustLog(ports, selected)
   if (initial && !initial.keys.has(record.keyId))
@@ -508,10 +526,10 @@ export async function machineApprove(
       selected.spaceId,
       code.nameplate,
       'done',
-      encodeMachineJoinDone(approved.head, approved.failure === null),
+      encodeMachineJoinDone({ head: approved.head, wrapped: approved.failure === null }),
     ),
     destination,
   )
   if (approved.failure) throw approved.failure
-  return { label: joiner.label, keyId: joiner.keyId }
+  return { label: joiner.label, keyId: joiner.keyId, anchored: initial !== null }
 }

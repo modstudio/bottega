@@ -136,7 +136,7 @@ test('machine join records refuse wrong key sizes and extra fields', () => {
 test('the done message carries whether the data key was wrapped', () => {
   const options = { dcbor: true, rejectDuplicateKeys: true, preferMap: true } as const
   const head = new Uint8Array(32).fill(3)
-  expect(decodeMachineJoinDone(encodeMachineJoinDone(head, false))).toEqual({
+  expect(decodeMachineJoinDone(encodeMachineJoinDone({ head, wrapped: false }))).toEqual({
     head,
     wrapped: false,
   })

@@ -5,6 +5,7 @@
 set up and maintain this machine
 
 - [bottega machine](#bottega-machine)
+- [bottega machine anchor](#bottega-machine-anchor)
 - [bottega machine approve](#bottega-machine-approve)
 - [bottega machine blockers](#bottega-machine-blockers)
 - [bottega machine config](#bottega-machine-config)
@@ -13,10 +14,12 @@ set up and maintain this machine
 - [bottega machine config help](#bottega-machine-config-help)
 - [bottega machine config list](#bottega-machine-config-list)
 - [bottega machine config machine](#bottega-machine-config-machine)
+- [bottega machine config machine anchor](#bottega-machine-config-machine-anchor)
 - [bottega machine config machine approve](#bottega-machine-config-machine-approve)
 - [bottega machine config machine help](#bottega-machine-config-machine-help)
 - [bottega machine config machine init](#bottega-machine-config-machine-init)
 - [bottega machine config machine join](#bottega-machine-config-machine-join)
+- [bottega machine config machine recover](#bottega-machine-config-machine-recover)
 - [bottega machine config machine register](#bottega-machine-config-machine-register)
 - [bottega machine config machine revoke](#bottega-machine-config-machine-revoke)
 - [bottega machine config machine show](#bottega-machine-config-machine-show)
@@ -43,6 +46,7 @@ set up and maintain this machine
 - [bottega machine reclaim-fixture-questions](#bottega-machine-reclaim-fixture-questions)
 - [bottega machine reclassify-failures](#bottega-machine-reclassify-failures)
 - [bottega machine reconcile](#bottega-machine-reconcile)
+- [bottega machine recover](#bottega-machine-recover)
 - [bottega machine rename](#bottega-machine-rename)
 - [bottega machine retire](#bottega-machine-retire)
 - [bottega machine settings](#bottega-machine-settings)
@@ -89,6 +93,7 @@ set up and maintain this machine
 
 ### Related
 
+- [bottega machine anchor](./machine.md#bottega-machine-anchor)
 - [bottega machine approve](./machine.md#bottega-machine-approve)
 - [bottega machine blockers](./machine.md#bottega-machine-blockers)
 - [bottega machine config](./machine.md#bottega-machine-config)
@@ -106,6 +111,7 @@ set up and maintain this machine
 - [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
 - [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
 - [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
+- [bottega machine recover](./machine.md#bottega-machine-recover)
 - [bottega machine rename](./machine.md#bottega-machine-rename)
 - [bottega machine retire](./machine.md#bottega-machine-retire)
 - [bottega machine settings](./machine.md#bottega-machine-settings)
@@ -115,6 +121,20 @@ set up and maintain this machine
 - [bottega machine storage](./machine.md#bottega-machine-storage)
 - [bottega machine sweep](./machine.md#bottega-machine-sweep)
 - [bottega machine update](./machine.md#bottega-machine-update)
+
+## bottega machine anchor
+
+**Synopsis:** `bottega machine anchor [--space <slug>]`
+
+anchor this record space machine trust log
+
+### Options
+
+- `--space <slug>`: anchor this record space
+
+### Related
+
+- [bottega machine](./machine.md#bottega-machine)
 
 ## bottega machine approve
 
@@ -228,14 +248,30 @@ manage machine encryption identity
 ### Related
 
 - [bottega machine config](./machine.md#bottega-machine-config)
+- [bottega machine config machine anchor](./machine.md#bottega-machine-config-machine-anchor)
 - [bottega machine config machine approve](./machine.md#bottega-machine-config-machine-approve)
 - [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
 - [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
 - [bottega machine config machine join](./machine.md#bottega-machine-config-machine-join)
+- [bottega machine config machine recover](./machine.md#bottega-machine-config-machine-recover)
 - [bottega machine config machine register](./machine.md#bottega-machine-config-machine-register)
 - [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
 - [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
 - [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
+
+## bottega machine config machine anchor
+
+**Synopsis:** `bottega machine config machine anchor [--space <slug>]`
+
+anchor this record space machine trust log
+
+### Options
+
+- `--space <slug>`: anchor this record space
+
+### Related
+
+- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
 
 ## bottega machine config machine approve
 
@@ -287,6 +323,20 @@ print a pairing code and wait for an approved machine
 ### Options
 
 - `--space <slug>`: join this record space
+
+### Related
+
+- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
+
+## bottega machine config machine recover
+
+**Synopsis:** `bottega machine config machine recover [--space <slug>]`
+
+recover this machine into a record space machine trust log
+
+### Options
+
+- `--space <slug>`: recover into this record space
 
 ### Related
 
@@ -655,6 +705,20 @@ close open intervals whose orchestrator runs are terminal using exact run ids
 ### Options
 
 - `--dry-run`: report interval closures without writing them
+
+### Related
+
+- [bottega machine](./machine.md#bottega-machine)
+
+## bottega machine recover
+
+**Synopsis:** `bottega machine recover [--space <slug>]`
+
+recover this machine into a record space machine trust log
+
+### Options
+
+- `--space <slug>`: recover into this record space
 
 ### Related
 

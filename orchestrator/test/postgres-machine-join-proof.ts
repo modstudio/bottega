@@ -26,11 +26,17 @@ import {
   wrapDataKey,
 } from '../../shared/secret-envelope.ts'
 import { readTrustList } from '../../shared/trust-list.ts'
-import { signTrustLogEntry, type TrustLogKey, trustLogEntryHash } from '../../shared/trust-log.ts'
+import {
+  signTrustLogEntry,
+  type TrustLogKey,
+  trustLogEntryHash,
+  verifyTrustLog,
+} from '../../shared/trust-log.ts'
 import { writeRememberedTrustLogHead } from '../../shared/trust-log-head.ts'
 import { machineInit } from '../src/config/config-service.ts'
 import { encoded } from '../src/config/data-key-access.ts'
 import { machineApprove, machineJoin } from '../src/config/machine-join.ts'
+import { machineAnchor, machineRecover } from '../src/config/trust-log-anchor.ts'
 import { bearerHeaders } from '../src/record/record-auth.ts'
 
 type ProofInput = {
@@ -365,6 +371,82 @@ export function registerMachineJoinProof(input: ProofInput): void {
       pollMs: 10,
     })
 
+  test('machine anchor then recover appends through the real record', async () => {
+    const spaceId = newRecordId()
+    const slug = `machine-recover-service-${spaceId.slice(-6)}`
+    input.succeeds(`
+      INSERT INTO space (id,name,slug,created_at)
+      VALUES ('${spaceId}','Machine recover service','${slug}',now());
+      INSERT INTO membership (id,space_id,user_id,role,permission,config_access,created_at) VALUES
+        ('${newRecordId()}','${spaceId}','${input.userId()}','owner','write',true,now()),
+        ('${newRecordId()}','${spaceId}','${input.otherUserId()}','member','write',true,now());
+    `)
+    const roots = [
+      mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-machine-anchor-`)),
+      mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-machine-recover-`)),
+    ]
+    const anchorEnv = machineEnv(roots[0]!)
+    const recoverEnv = machineEnv(roots[1]!)
+    const anchorClient = configClient(anchorEnv, fetch, input.token())
+    const recoverClient = configClient(recoverEnv, fetch, input.otherToken())
+    const originalActiveSpaceIds = await Promise.all([
+      anchorClient.whoami().then((who) => who.activeSpaceId),
+      recoverClient.whoami().then((who) => who.activeSpaceId),
+    ])
+    expect(originalActiveSpaceIds[0]).not.toBeNull()
+    expect(originalActiveSpaceIds[1]).not.toBeNull()
+    try {
+      await Promise.all([
+        setActiveSpace(input.token(), spaceId),
+        setActiveSpace(input.otherToken(), spaceId),
+      ])
+      const anchorKeyId = await machineInit(spaceId, 'anchor-proof', anchorClient, anchorEnv)
+      const recoveredKeyId = await machineInit(spaceId, 'recover-proof', recoverClient, recoverEnv)
+      const output: string[] = []
+      await machineAnchor(
+        { spaceId, slug },
+        {
+          client: anchorClient,
+          env: anchorEnv,
+          inputIsTTY: true,
+          outputIsTTY: true,
+          output: (line) => output.push(line),
+          confirm: async () => true,
+          randomSeed: () => new Uint8Array(32).fill(21),
+          at: 1,
+        },
+      )
+      expect(output).toHaveLength(1)
+      await machineRecover(
+        { spaceId, slug },
+        {
+          client: recoverClient,
+          env: recoverEnv,
+          inputIsTTY: true,
+          outputIsTTY: true,
+          output: () => undefined,
+          promptWords: async () => output[0]!,
+          at: 2,
+        },
+      )
+      const entries = await recoverClient.readTrustLog({ destinationSpaceId: spaceId })
+      const state = verifyTrustLog(entries, { spaceId })
+      expect([...state.keys.keys()].sort()).toEqual([anchorKeyId, recoveredKeyId].sort())
+    } finally {
+      await Promise.all([
+        setActiveSpace(input.token(), originalActiveSpaceIds[0]!),
+        setActiveSpace(input.otherToken(), originalActiveSpaceIds[1]!),
+      ])
+      input.succeeds(`
+        DELETE FROM machine_trust_log WHERE space_id='${spaceId}';
+        DELETE FROM machine_public_key WHERE space_id='${spaceId}';
+        DELETE FROM membership WHERE space_id='${spaceId}';
+        DELETE FROM space WHERE id='${spaceId}';
+      `)
+      for (const root of roots) rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   test('one machine approval lets the joining machine open an approver-sealed secret', async () => {
     const fixture = await setupFixture('open')
     try {
@@ -418,7 +500,11 @@ export function registerMachineJoinProof(input: ProofInput): void {
       const code = await joining.code
       const [joined, approved] = await Promise.all([joining.result, approve(fixture, code)])
       expect(joined).toEqual({ label: fixture.approver.label, keyId: fixture.approver.keyId })
-      expect(approved).toEqual({ label: fixture.joiner.label, keyId: fixture.joiner.keyId })
+      expect(approved).toEqual({
+        label: fixture.joiner.label,
+        keyId: fixture.joiner.keyId,
+        anchored: true,
+      })
 
       const row = await fixture.joiner.client.getSecret('proof', 'space', 'default', destination)
       const key = await fixture.joiner.client.getDataKey(dekId, fixture.joiner.keyId, destination)
