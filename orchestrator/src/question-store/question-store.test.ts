@@ -126,8 +126,9 @@ async function questionStoreContract(store: QuestionStore, database: Database) {
   const unknown = snapshot({ id: newRecordId() })
   await expect(store.write('answer', body(unknown, 'answer'))).rejects.toThrow('not found')
   expect(
-    database.query<{ count: number }, [string]>('SELECT count(*) count FROM question WHERE record_id=?').get(unknown.id)!
-      .count,
+    database
+      .query<{ count: number }, [string]>('SELECT count(*) count FROM question WHERE record_id=?')
+      .get(unknown.id)!.count,
   ).toBe(0)
   const workflow = snapshot({ id: WORKFLOW_QUESTION_ID, workflowTaskId: TASK_ID })
   const ask = body(workflow, 'ask')
@@ -199,12 +200,12 @@ async function questionStoreContract(store: QuestionStore, database: Database) {
     updatedAt: '2026-11-15T12:05:00.000Z',
   })
   const taskRows = (
-      await store.read({
-        read: 'task-rulings',
-        projectId: PROJECT_ID,
-        taskId: TASK_ID,
-      })
-    ).items
+    await store.read({
+      read: 'task-rulings',
+      projectId: PROJECT_ID,
+      taskId: TASK_ID,
+    })
+  ).items
   expect(taskRows.some((row) => field(row, 'question_record_id') === replacement.id)).toBe(true)
   expect(taskRows.some((row) => field(row, 'question_record_id') === excludedBase.id)).toBe(false)
 

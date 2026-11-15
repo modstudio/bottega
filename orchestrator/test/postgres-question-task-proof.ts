@@ -91,7 +91,7 @@ export function registerQuestionTaskRecordSyncProof(
     expect(readLink().stdout).toBe(taskId)
     local.close()
   })
-  test.only('direct question asks allocate atomically, seed above the maximum, and retry once', async () => {
+  test('direct question asks allocate atomically, seed above the maximum, and retry once', async () => {
     const fixture = input()
     const machineId = newRecordId()
     const at = '2026-11-15T12:00:00.000Z'
@@ -416,7 +416,15 @@ export function registerQuestionTaskRecordSyncProof(
          closed,question,total_steps,created_at,updated_at)
         VALUES (?,1,?,?,'ship-task','default','DEV-2331','fixture','question-proof-session',
           ?,?,'{}',0,'implement','awaiting-ruling','[]',NULL,1,?,?)`)
-      .run(stageId, directProjectName, directProjectId, workflowVersionId, catalogueVersionId, at, at)
+      .run(
+        stageId,
+        directProjectName,
+        directProjectId,
+        workflowVersionId,
+        catalogueVersionId,
+        at,
+        at,
+      )
     parityLocal
       .query(`INSERT INTO run
         (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,
@@ -442,12 +450,16 @@ export function registerQuestionTaskRecordSyncProof(
           'DEV-2331','[]',NULL,NULL)`)
       .run(projectlessRunId, at)
     const localStore = questionStore(parityLocal)
-    for (const question of [workflowQuestion, excludedQuestion, runQuestion])
+    for (const question of [workflowQuestion, excludedQuestion, runQuestion]) {
+      const localQuestion = question.workflowCursorRecordId
+        ? { ...question, workflowTaskId: directTaskId }
+        : question
       await localStore.write('ask', {
         requestId: newRecordId(),
-        question,
+        question: localQuestion,
         audit: { action: 'ask', actorSession: null, at: question.updatedAt, reason: null },
       })
+    }
     const parityWorkflow = snapshot(newRecordId())
     parityWorkflow.workflowCursorRecordId = stageId
     const parityRun = snapshot(newRecordId())
@@ -484,9 +496,7 @@ export function registerQuestionTaskRecordSyncProof(
         localInbox.find((row) => 'record_id' in row && row.record_id === question.id),
       )
     expect(
-      hostedInbox.find(
-        (row) => 'record_id' in row && row.record_id === projectlessQuestion.id,
-      ),
+      hostedInbox.find((row) => 'record_id' in row && row.record_id === projectlessQuestion.id),
     ).toMatchObject({ repo: null })
     const hostedWaiting = (await hostedStore.read({ read: 'waiting' })).items
     const localWaiting = (await localStore.read({ read: 'waiting' })).items
@@ -533,12 +543,10 @@ export function registerQuestionTaskRecordSyncProof(
     sameKeys(
       'task-rulings',
       hostedTaskRulings.find(
-        (row) =>
-          'question_record_id' in row && row.question_record_id === workflowQuestion.id,
+        (row) => 'question_record_id' in row && row.question_record_id === workflowQuestion.id,
       ),
       localTaskRulings.find(
-        (row) =>
-          'question_record_id' in row && row.question_record_id === workflowQuestion.id,
+        (row) => 'question_record_id' in row && row.question_record_id === workflowQuestion.id,
       ),
     )
     const hostedProjects = (await hostedStore.read({ read: 'projects' })).items
