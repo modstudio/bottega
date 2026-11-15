@@ -22,6 +22,7 @@ export function reviewReadRecordValues(
     branch: String(row.branch),
     tip: String(row.tip),
     patchId: String(row.patchId),
+    zeroContextPatchId: row.zeroContextPatchId == null ? null : String(row.zeroContextPatchId),
     pathSet: row.pathSet,
     tier: Number(row.tier),
     note: String(row.note),

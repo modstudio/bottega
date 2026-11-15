@@ -70,12 +70,12 @@ function pinCursor(
   local
     .query(
       `INSERT INTO workflow_cursor
-       (record_id,number,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+       (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
         workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,
         question,total_steps,created_at,updated_at,enforcement)
-       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),?,'fix-defect','default','DEV-1728',?,NULL,?,?,'{}',0,'design','running','[]',NULL,1,?,?,'note-only')`,
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),?,(SELECT record_id FROM project WHERE name=?),'fix-defect','default','DEV-1728',?,NULL,?,?,'{}',0,'design','running','[]',NULL,1,?,?,'note-only')`,
     )
-    .run(cursorId, project, newRecordId(), workflowVersionId, catalogueVersionId, at, at)
+    .run(cursorId, project, project, newRecordId(), workflowVersionId, catalogueVersionId, at, at)
   const row = local
     .query<{ number: number }, [string]>('SELECT number FROM workflow_cursor WHERE record_id=?')
     .get(cursorId)!
@@ -329,10 +329,6 @@ test('replace-seed preserves a pinned workflow version and composes the new gene
   applyWorkflowCatalogueRow(local, 'workflow_version', unpinned)
   applyWorkflowCatalogueRow(local, 'workflow_event', pinnedEvent)
   applyWorkflowCatalogueRow(local, 'workflow_event', unpinnedEvent)
-  const cursor = pinCursor(local, pinned.id, catalogueVersion.id, project)
-  local
-    .query('UPDATE workflow_cursor SET args=? WHERE record_id=?')
-    .run(JSON.stringify({ key: 'DEV-1728' }), cursor.recordId)
   upsertProject({
     recordId: newRecordId(),
     name: project,
@@ -341,6 +337,10 @@ test('replace-seed preserves a pinned workflow version and composes the new gene
     settings: { docs: { protocol: 'orch-docs' } },
   })
   rememberProjectSpace(local, project, space)
+  const cursor = pinCursor(local, pinned.id, catalogueVersion.id, project)
+  local
+    .query('UPDATE workflow_cursor SET args=? WHERE record_id=?')
+    .run(JSON.stringify({ key: 'DEV-1728' }), cursor.recordId)
 
   installRecordApiClient({
     ...createMemoryRecordApiClient(),

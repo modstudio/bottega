@@ -422,8 +422,9 @@ function registerWorkflowCursorAdmin({
         handlerOptions,
       ),
     )
-  workflow
-    .command('cursor identity-map')
+  const cursor = workflow.command('cursor').description('inspect workflow cursor identities')
+  cursor
+    .command('identity-map')
     .description('print numeric workflow cursor identities and their durable record ids as JSON')
     .allowExcessArguments(false)
     .action(async () => log(JSON.stringify(await workflowCursorIdentityMap(db()))))

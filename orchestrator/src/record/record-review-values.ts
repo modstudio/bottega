@@ -31,6 +31,7 @@ export function reviewValues(row: Payload, projectId: string | null) {
     tierReason: nullableString(row.tierReason),
     role: String(row.role),
     patchId: nullableString(row.patchId),
+    zeroContextPatchId: nullableString(row.zeroContextPatchId),
     pathSet: row.pathSet,
     commitMessage: nullableString(row.commitMessage),
     outdatedAt: nullableRecordDate(row.outdatedAt),

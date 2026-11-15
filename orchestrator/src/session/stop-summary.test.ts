@@ -53,9 +53,16 @@ test('session summary assembles only this session owed runs, held remedies, and 
     )
     .run(projectRecordId)
   const mine = addRun({ agent: 'codex', job: 'implement', session })
+  const worker = addRun({ agent: 'codex', job: 'implement', status: 'asking', session })
   const other = addRun({ agent: 'codex', job: 'implement', session: 'another-session' })
   const held = addRun({ agent: 'codex', job: 'craft', session })
   score(held, 'full', 'right')
+  db()
+    .query(
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),?,?,?,'Which?')`,
+    )
+    .run(newRecordId(), worker, new Date().toISOString())
   db()
     .query(
       `UPDATE run SET project_record_id=?,repo='fixture',branch='DEV-2297-work',
@@ -118,9 +125,6 @@ test('session summary assembles only this session owed runs, held remedies, and 
     },
     db(),
   )
-  const mineNumber = db()
-    .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
-    .get(mine)!.number
   const otherNumber = db()
     .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
     .get(other)!.number
@@ -130,11 +134,12 @@ test('session summary assembles only this session owed runs, held remedies, and 
 
   expect(result.lines).toContain('DEV-2297 · fix-defect · step ship (6 of 11)')
   expect(result.lines).toContain(
-    `DEV-2297 review: lens correctness, craft owed → ${PLATFORM_SLUG} review tier DEV-2297-work`,
+    `1 worker question for this session → ${PLATFORM_SLUG} question inbox`,
   )
   expect(result.lines).toContain(
-    `run ${mineNumber} implement DEV-2297 unscored → ${PLATFORM_SLUG} score ${mineNumber} (see ${PLATFORM_SLUG} score --help)`,
+    `DEV-2297 review: lens correctness, craft owed → ${PLATFORM_SLUG} review tier DEV-2297-work`,
   )
+  expect(result.lines).toContain('In progress: 1 run')
   expect(result.lines.join('\n')).not.toContain(`run ${otherNumber} implement unscored`)
   expect(result.lines).toContain(
     `worktree for run ${heldNumber} (craft) is held → ${PLATFORM_SLUG} run close-out ${heldNumber}`,

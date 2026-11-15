@@ -3,6 +3,7 @@
 
 import { createHash } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { QuestionInboxCounts } from '../run/question-inbox-counts.ts'
 
 export const OWED_ITEM_OVERDUE_MS = 60 * 60 * 1000
 
@@ -22,7 +23,7 @@ export type StopSummaryOwedItem = {
 
 export type StopSummaryFacts = {
   now: string
-  questionCount: number
+  questionCounts: QuestionInboxCounts | null
   cursors: StopSummaryCursor[]
   reviewVerdictLines: string[]
   liveRuns: number
@@ -63,13 +64,18 @@ function movingLine(facts: StopSummaryFacts): string | null {
 }
 
 export function decideStopSummary(facts: StopSummaryFacts): StopSummaryDecision {
-  const lines = [
-    facts.questionCount
-      ? `${count(facts.questionCount, 'question')} waiting on you → ${PLATFORM_SLUG} question inbox`
-      : 'Nothing waiting on you',
-    ...facts.cursors.map(cursorLine),
-    ...facts.reviewVerdictLines,
-  ]
+  const questionLines = facts.questionCounts
+    ? [
+        facts.questionCounts.worker
+          ? `${count(facts.questionCounts.worker, 'worker question')} for this session → ${PLATFORM_SLUG} question inbox`
+          : null,
+        facts.questionCounts.user
+          ? `${count(facts.questionCounts.user, 'ruling')} waiting on you → ${PLATFORM_SLUG} question inbox`
+          : null,
+      ].filter((line): line is string => line !== null)
+    : [`Could not read question inbox → ${PLATFORM_SLUG} question inbox --all --active`]
+  if (facts.questionCounts && !questionLines.length) questionLines.push('Nothing waiting on you')
+  const lines = [...questionLines, ...facts.cursors.map(cursorLine), ...facts.reviewVerdictLines]
   const moving = movingLine(facts)
   if (moving) lines.push(moving)
 

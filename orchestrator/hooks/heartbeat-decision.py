@@ -169,7 +169,7 @@ def heartbeat_decision(
     product = "bottega"
     lines = []
     inbox_decision = decide_inbox_questions(inbox)
-    asking = inbox_decision.answerable_now
+    asking = inbox_decision.worker
     if asking > 0 and stalled_count > 0:
         state = HeartbeatState.BLOCKED_STALLED
     elif asking > 0:
@@ -179,7 +179,7 @@ def heartbeat_decision(
     elif (
         run_count > 0
         or landing_count > 0
-        or inbox_decision.parked_here > 0
+        or inbox_decision.user > 0
         or open_request_count > 0
         or open_hold_count > 0
     ):
@@ -189,17 +189,12 @@ def heartbeat_decision(
 
     if state in (HeartbeatState.BLOCKED, HeartbeatState.BLOCKED_STALLED):
         lines.append(
-            f"[{timestamp}] BLOCKED - {asking} question(s) waiting on you: run '{product} question inbox', "
-            f"then '{product} question answer <id>'. {run_count} run(s) and {landing_count} landing(s) live."
+            f"[{timestamp}] BLOCKED - {asking} worker question(s) for this session: "
+            f"run '{product} question inbox'. {run_count} run(s) and {landing_count} landing(s) live."
         )
     if state in (HeartbeatState.STALLED, HeartbeatState.BLOCKED_STALLED):
         lines.append(f"[{timestamp}] STALLED - {stalled_count} run(s): {stalled_detail}")
     elif state == HeartbeatState.WAITING:
-        parked = (
-            f" and {inbox_decision.parked_here} parked workflow ruling(s)"
-            if inbox_decision.parked_here
-            else ""
-        )
         details = [detail for detail in (waiting_detail, open_request_detail, open_hold_detail) if detail]
         detail = f": {' | '.join(details)}" if details else ""
         requests = (
@@ -208,10 +203,17 @@ def heartbeat_decision(
             else ""
         )
         holds = f" and {open_hold_count} board hold(s)" if open_hold_count else ""
-        lines.append(
-            f"[{timestamp}] WAITING - {run_count} run(s) and {landing_count} landing(s){parked}{requests}{holds}, "
-            f"nothing needed from you{detail}"
-        )
+        if inbox_decision.user:
+            lines.append(
+                f"[{timestamp}] WAITING - {inbox_decision.user} waiting on you: "
+                f"run '{product} question inbox'. {run_count} run(s) and "
+                f"{landing_count} landing(s){requests}{holds} live{detail}"
+            )
+        else:
+            lines.append(
+                f"[{timestamp}] WAITING - {run_count} run(s) and {landing_count} landing(s)"
+                f"{requests}{holds}, nothing needed from you{detail}"
+            )
     return HeartbeatDecision(lines=lines, should_exit=state == HeartbeatState.CLEAR)
 
 

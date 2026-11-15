@@ -40,7 +40,7 @@ export function enqueueReview(database: Database, reviewRecordId: string): void 
     .query<Record<string, unknown>, [string]>(
       `SELECT review.record_id,review.number,review.recorded_at,review.completed_at,review.tier,
               review.tier_risk,review.tier_size,review.tier_insertions,review.tier_deletions,
-              review.tier_reasons,review.tier_reason,review.patch_id,
+              review.tier_reasons,review.tier_reason,review.patch_id,review.zero_context_patch_id,
               review.path_set,review.commit_message,review.outdated_at,review.outdated_reason,review.role,review.round,
               project.name AS project_name, project.record_id AS project_record_id FROM review
       LEFT JOIN project ON project.record_id=review.project_record_id WHERE review.record_id=?`,
@@ -70,6 +70,7 @@ export function enqueueReview(database: Database, reviewRecordId: string): void 
       role: row.role,
       round: row.round,
       patchId: row.patch_id,
+      zeroContextPatchId: row.zero_context_patch_id,
       pathSet: json(row.path_set),
       commitMessage: row.commit_message,
       outdatedAt: row.outdated_at,
@@ -209,7 +210,7 @@ export function enqueueReviewRead(database: Database, readRecordId: string): voi
   const at = nowIso()
   const row = database
     .query<Record<string, unknown>, [string]>(
-      `SELECT review_read.record_id,review_read.branch,review_read.tip,review_read.patch_id,
+      `SELECT review_read.record_id,review_read.branch,review_read.tip,review_read.patch_id,review_read.zero_context_patch_id,
               review_read.path_set,review_read.tier,review_read.note,review_read.session_id,review_read.recorded_at,
               project.name AS project_name, project.record_id AS project_record_id FROM review_read
      LEFT JOIN project ON project.record_id=review_read.project_record_id WHERE review_read.record_id=?`,
@@ -230,6 +231,7 @@ export function enqueueReviewRead(database: Database, readRecordId: string): voi
       branch: row.branch,
       tip: row.tip,
       patchId: row.patch_id,
+      zeroContextPatchId: row.zero_context_patch_id,
       pathSet: json(row.path_set),
       tier: row.tier,
       note: row.note,

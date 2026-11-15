@@ -20,7 +20,7 @@ class HeartbeatDecisionTest(unittest.TestCase):
             "12:34:56", [self.worker_question()], 2, 0, 1, "run 7 idle", "ignored"
         )
         self.assertEqual(len(decision.lines), 2)
-        self.assertIn("BLOCKED - 1 question(s)", decision.lines[0])
+        self.assertIn("BLOCKED - 1 worker question(s) for this session", decision.lines[0])
         self.assertEqual(decision.lines[1], "[12:34:56] STALLED - 1 run(s): run 7 idle")
     def test_live_runs_keep_looping(self):
         decision = heartbeat_decision.heartbeat_decision(
@@ -39,7 +39,7 @@ class HeartbeatDecisionTest(unittest.TestCase):
             "12:34:56", [self.worker_question()], 0, 0, 0, "", ""
         )
         self.assertFalse(decision.should_exit)
-        self.assertIn("BLOCKED - 1 question(s)", decision.lines[0])
+        self.assertIn("BLOCKED - 1 worker question(s) for this session", decision.lines[0])
     def test_stalled_keeps_looping(self):
         decision = heartbeat_decision.heartbeat_decision(
             "12:34:56", [], 0, 0, 1, "run 7 idle", ""
@@ -149,41 +149,39 @@ class HeartbeatDecisionTest(unittest.TestCase):
         }
     @staticmethod
     def worker_question(**overrides):
-        question = {"question_id": 7, "can_answer": True}
+        question = {"question_id": 7, "group": "worker"}
         question.update(overrides)
         return question
-    def test_own_worker_question_is_blocked(self):
-        decision = heartbeat_decision.heartbeat_decision(
-            "12:34:56", [self.worker_question()], 1, 0, 0, "", "run 7 asking"
-        )
-        self.assertIn("BLOCKED - 1 question(s)", decision.lines[0])
     def test_own_parked_workflow_question_is_waiting(self):
         decision = heartbeat_decision.heartbeat_decision(
             "12:34:56",
-            [{"kind": "workflow", "question_id": 8, "session_id": "own", "can_answer": True}],
+            [{"kind": "workflow", "question_id": 8, "group": "user"}],
             0,
             0,
             0,
             "",
             "",
+            open_request_count=2,
+            open_hold_count=3,
         )
         self.assertFalse(decision.should_exit)
         self.assertIn("WAITING", decision.lines[0])
-        self.assertIn("1 parked workflow ruling(s)", decision.lines[0])
+        self.assertIn("1 waiting on you", decision.lines[0])
+        self.assertIn("2 open request(s)", decision.lines[0])
+        self.assertIn("3 board hold(s)", decision.lines[0])
         self.assertNotIn("BLOCKED", decision.lines[0])
-    def test_unowned_workflow_question_is_recorded_without_blocking(self):
+    def test_unowned_worker_and_workflow_questions_do_not_block_or_change_state(self):
         inbox = [
+            {"question_id": 4607, "group": "unowned"},
             {
                 "kind": "workflow",
                 "question_id": 4608,
-                "session_id": None,
-                "can_answer": True,
+                "group": "unowned",
             }
         ]
         inbox_decision = heartbeat_decision.decide_inbox_questions(inbox)
-        self.assertEqual(inbox_decision.answerable_now, 0)
-        self.assertEqual(inbox_decision.parked_here, 0)
-        self.assertEqual(inbox_decision.unowned, 1)
+        self.assertEqual(inbox_decision.worker, 0)
+        self.assertEqual(inbox_decision.user, 0)
         self.assertEqual(inbox_decision.state_key, "")
 
         decision = heartbeat_decision.heartbeat_decision(
@@ -191,32 +189,9 @@ class HeartbeatDecisionTest(unittest.TestCase):
         )
         self.assertTrue(decision.should_exit)
         self.assertEqual(decision.lines, [])
-    def test_foreign_workflow_question_is_not_blocked(self):
-        decision = heartbeat_decision.heartbeat_decision(
-            "12:34:56",
-            [
-                {
-                    "kind": "workflow",
-                    "question_id": 1936,
-                    "session_id": "eaabda0a",
-                    "can_answer": False,
-                    "ownership_notice": (
-                        "owned by session eaabda0a; only that session, or the operator "
-                        "relaying a decision, may answer it"
-                    ),
-                }
-            ],
-            0,
-            0,
-            0,
-            "",
-            "",
-        )
-        self.assertTrue(decision.should_exit)
-        self.assertEqual(decision.lines, [])
     def test_foreign_question_is_not_counted(self):
         decision = heartbeat_decision.heartbeat_decision(
-            "12:34:56", [self.worker_question(can_answer=False)], 0, 0, 0, "", ""
+            "12:34:56", [self.worker_question(group="foreign")], 0, 0, 0, "", ""
         )
         self.assertTrue(decision.should_exit)
         self.assertEqual(decision.lines, [])
@@ -228,8 +203,7 @@ class HeartbeatDecisionTest(unittest.TestCase):
                 {
                     "kind": "workflow",
                     "question_id": 1936,
-                    "session_id": "eaabda0a",
-                    "can_answer": False,
+                    "group": "foreign",
                 },
             ],
             0,
@@ -238,13 +212,13 @@ class HeartbeatDecisionTest(unittest.TestCase):
             "",
             "",
         )
-        self.assertIn("BLOCKED - 1 question(s)", decision.lines[0])
+        self.assertIn("BLOCKED - 1 worker question(s) for this session", decision.lines[0])
     def test_duplicate_question_rows_count_once(self):
         question = self.worker_question()
         decision = heartbeat_decision.heartbeat_decision(
             "12:34:56", [question, question], 0, 0, 0, "", ""
         )
-        self.assertIn("BLOCKED - 1 question(s)", decision.lines[0])
+        self.assertIn("BLOCKED - 1 worker question(s) for this session", decision.lines[0])
     def test_failure_reason_is_bounded_to_the_first_printable_line(self):
         reason = heartbeat_decision.monitor_failure_reason(
             b"hosted\tnotice query unavailable\nignored second line\n"

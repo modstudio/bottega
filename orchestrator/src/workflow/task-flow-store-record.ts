@@ -552,9 +552,6 @@ class RecordTaskFlowReadStore {
   async keylessSessionCursors(project: string | null) {
     return this.questions.keylessSessionCursors(project)
   }
-  async openWorkflowQuestionCountForSession(sessionId: string) {
-    return this.questions.openWorkflowQuestionCountForSession(sessionId)
-  }
   async workflowInboxQuestions() {
     return this.questions.workflowInboxQuestions()
   }

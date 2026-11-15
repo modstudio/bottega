@@ -2,9 +2,12 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
+import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import {
   type ContextBrief,
+  contextBrief,
   holderSequence,
   renderContextBrief,
   selectBriefInFlight,
@@ -72,7 +75,12 @@ test('renders the compact context layout line by line and keeps only item first 
     reviewVerdictLines: [
       `DEV-1844 review: lens correctness owed → ${PLATFORM_SLUG} review tier DEV-1844-work`,
     ],
-    waiting: { boardRequests: 2, questions: 0, filedIssues: 3, resumeBriefs: 1 },
+    waiting: {
+      boardRequests: 2,
+      questions: { worker: 0, user: 0, foreign: 0, unowned: 0 },
+      filedIssues: 3,
+      resumeBriefs: 1,
+    },
     autonomy: 'plan review · implement, review, docs, canon auto · ship trunk',
   }
 
@@ -148,7 +156,12 @@ test('renders one open question for its task holder', () => {
     runs: [],
     cursors: [],
     claims: [],
-    waiting: { boardRequests: 0, questions: 1, filedIssues: 0, resumeBriefs: 0 },
+    waiting: {
+      boardRequests: 0,
+      questions: { worker: 1, user: 0, foreign: 0, unowned: 0 },
+      filedIssues: 0,
+      resumeBriefs: 0,
+    },
     autonomy: 'unknown',
   }
 
@@ -158,6 +171,66 @@ test('renders one open question for its task holder', () => {
   expect(renderContextBrief(brief)).not.toContain('Already answered')
   expect(renderContextBrief(brief)).not.toContain('Closed without an answer')
   database.close()
+})
+
+test('renders each non-empty inbox group and reports inbox read failure', () => {
+  const base: ContextBrief = {
+    session: 'session-a',
+    fullCommand: `${PLATFORM_SLUG} agent context show --session session-a`,
+    holders: [],
+    runs: [],
+    cursors: [],
+    claims: [],
+    waiting: {
+      boardRequests: 0,
+      questions: { worker: 2, user: 1, foreign: 3, unowned: 1 },
+      filedIssues: 0,
+      resumeBriefs: 0,
+    },
+    autonomy: 'unknown',
+  }
+  expect(renderContextBrief(base)).toContain(
+    `2 worker questions · 1 on you · 3 other sessions' · 1 unowned (${PLATFORM_SLUG} question inbox --all --active)`,
+  )
+  expect(renderContextBrief({ ...base, waiting: { ...base.waiting, questions: null } })).toContain(
+    `could not read question inbox (${PLATFORM_SLUG} question inbox --all --active)`,
+  )
+})
+
+test('contextBrief carries question groups into the waiting segment', async () => {
+  const session = 'context-brief-question-session'
+  db()
+    .query(
+      `INSERT INTO project (record_id,name,path,stack,settings)
+       VALUES (?,?,'/different-project','bun',
+               '{"tracker":{"protocol":"hub"},"docs":{"protocol":"orch-docs"},"gate":"bun run check"}')`,
+    )
+    .run(newRecordId(), PLATFORM_SLUG)
+  new Database(process.env.BOTTEGA_HUB_DB!, { create: true }).close()
+  const migration = Bun.spawnSync([...bottegaEntryArgv(PLATFORM_SLUG), 'machine', 'migrate'], {
+    env: { ...process.env, NODE_ENV: 'production' },
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  expect(migration.exitCode, migration.stderr.toString()).toBe(0)
+  const run = addRun({ agent: 'codex', job: 'implement', status: 'asking', session })
+  db()
+    .query(
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),?,?,?,'Which?')`,
+    )
+    .run(newRecordId(), run, new Date().toISOString())
+
+  const nodeEnvironment = process.env.NODE_ENV
+  process.env.NODE_ENV = 'production'
+  const brief = await contextBrief(session, '/unregistered', db()).finally(() => {
+    if (nodeEnvironment === undefined) delete process.env.NODE_ENV
+    else process.env.NODE_ENV = nodeEnvironment
+  })
+
+  expect(renderContextBrief(brief)).toContain(
+    `1 worker question (${PLATFORM_SLUG} question inbox --all --active)`,
+  )
 })
 
 test('orders the session, each project-scoped working task, and its epic by task profile', () => {
@@ -297,7 +370,12 @@ test('renders an open keyless cursor item under its cursor header without an ope
     runs: [],
     cursors: [],
     claims: [],
-    waiting: { boardRequests: 0, questions: 0, filedIssues: 0, resumeBriefs: 0 },
+    waiting: {
+      boardRequests: 0,
+      questions: { worker: 0, user: 0, foreign: 0, unowned: 0 },
+      filedIssues: 0,
+      resumeBriefs: 0,
+    },
     autonomy: 'unknown',
   })
   expect(rendered).toContain('Cursor 42 explore default\n  position: Continue here.')

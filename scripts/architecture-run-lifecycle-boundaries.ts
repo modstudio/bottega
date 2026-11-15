@@ -198,6 +198,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
     [
       '../../../shared/brand.ts',
       '../../../shared/session-liveness.ts',
+      'bun:sqlite',
       '../database/db.ts',
       '../evidence/evidence-query.ts',
       '../project/projects.ts',
@@ -206,6 +207,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       '../workflow/workflow-cursor-format.ts',
       './question-display.ts',
       './question-display-probe.ts',
+      './question-inbox-group.ts',
       './question-vocabulary.ts',
       './question-open.ts',
       './run-answer-liveness.ts',

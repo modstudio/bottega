@@ -144,6 +144,7 @@ const completedReview: TriageEvidence['reviews'][number] = {
   tier: 3,
   role: 'round',
   patchId: 'patch-before',
+  zeroContextPatchId: 'patch-before',
   pathSet: '["src/a.ts","src/b.ts"]',
   lensIdentities: ['lens-a', 'lens-b'],
   lenses: [
@@ -158,6 +159,7 @@ test.each([
     name: 'an unchanged patch keeps every review',
     files: [comparison('src/a.ts', 'same', 'same')],
     patchId: 'patch-before',
+    zeroContextPatchId: 'patch-before',
     exactReviews: [completedReview],
     expectedRound: [],
     expectedComplete: true,
@@ -167,6 +169,7 @@ test.each([
     name: 'a conflict resolution reopens only the lens covering its changed file',
     files: [comparison('src/a.ts', 'replayed', 'resolved', true)],
     patchId: 'patch-after-conflict',
+    zeroContextPatchId: 'patch-after-conflict',
     exactReviews: [],
     expectedRound: ['lens-a'],
     expectedComplete: false,
@@ -176,6 +179,7 @@ test.each([
     name: 'a changed file outside lens coverage reopens no lens',
     files: [comparison('generated/output.json', 'before', 'after')],
     patchId: 'patch-after-uncovered-file',
+    zeroContextPatchId: 'patch-after-uncovered-file',
     exactReviews: [],
     expectedRound: [],
     expectedComplete: false,
@@ -218,6 +222,7 @@ test.each([
 
   const triage = decideTriage({
     patchId: scenario.patchId,
+    zeroContextPatchId: scenario.patchId,
     pathSet: '["src/a.ts","src/b.ts"]',
     tier: 3,
     applicableReview: relevant,

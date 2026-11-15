@@ -54,6 +54,7 @@ export function roundApplicabilityForChange(input: {
     relevant: input.relevant,
     facts: roundLensFacts(reviewsForTriage(input.database, input.group).branchReviews, {
       patchId: input.group.patchId,
+      zeroContextPatchId: input.group.zeroContextPatchId,
       pathSet: serializePathSet(input.group.pathSet),
     }),
     postFix: input.postFix,
@@ -103,6 +104,7 @@ export function budgetedRoundApplicabilityForChange(
   const facts = knownIdentity
     ? roundLensFacts(reviewsForTriage(input.database, input.group).branchReviews, {
         patchId: input.group.patchId,
+        zeroContextPatchId: input.group.zeroContextPatchId,
         pathSet: serializePathSet(input.group.pathSet),
       })
     : {
@@ -189,6 +191,7 @@ export function budgetedReviewPlanForResolvedChange(input: {
           project: input.project.name,
           branch: input.branch,
           patchId: identity.patchId,
+          zeroContextPatchId: identity.zeroContextPatchId,
           pathSet: identity.paths,
         },
         relevant,
