@@ -105,6 +105,42 @@ test('renders the compact context layout line by line and keeps only item first 
   ])
 })
 
+test('renders a keyless cursor with its idle age and close command', () => {
+  const brief: ContextBrief = {
+    session: 'session-a',
+    fullCommand: `${PLATFORM_SLUG} agent context show --session session-a`,
+    holders: [],
+    runs: [],
+    cursors: [
+      {
+        recordId: 'explore-record',
+        number: 845,
+        workflow: 'explore',
+        mode: 'default',
+        step: 1,
+        totalSteps: 4,
+        stepSlug: 'orient',
+        questionNumber: null,
+        runs: [],
+        key: null,
+        idle: 'idle 2h 10m',
+      },
+    ],
+    claims: [],
+    waiting: {
+      boardRequests: 0,
+      questions: { worker: 0, user: 0, foreign: 0, unowned: 0 },
+      filedIssues: 0,
+      resumeBriefs: 0,
+    },
+    autonomy: 'unknown',
+  }
+
+  expect(renderContextBrief(brief)).toContain(
+    `cursor 845 explore · idle 2h 10m → ${PLATFORM_SLUG} workflow abandon --cursor 845`,
+  )
+})
+
 test('renders one open question for its task holder', () => {
   const database = new Database(':memory:')
   database.exec(

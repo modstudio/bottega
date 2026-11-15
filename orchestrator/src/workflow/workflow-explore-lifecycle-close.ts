@@ -15,6 +15,7 @@ export async function closeExploreForLifecycle(
   cursorRecordId: string,
   outcome: ExploreLifecycleOutcome,
   database: Database,
+  noteSuffix?: string,
 ): Promise<void> {
   const row = await taskFlowReadStore(database).stageByRecordId(cursorRecordId)
   if (!row || row.state === 'done' || row.state === 'abandoned') return
@@ -36,7 +37,7 @@ export async function closeExploreForLifecycle(
   closed.push({
     n: row.ordinal + 1,
     slug: row.step_slug,
-    note: `session lifecycle closed explore as ${outcome}`,
+    note: `session lifecycle closed explore as ${outcome}${noteSuffix ? `: ${noteSuffix}` : ''}`,
     outcome,
     at,
   })

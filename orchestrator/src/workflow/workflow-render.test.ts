@@ -38,6 +38,31 @@ const database = testDatabaseFixture((d) => {
 const args = { key: 'DEV-821', branch: 'DEV-821-work', worktree: '/tmp/work' }
 
 describe('workflow rendering', () => {
+  test('renders successful and failed explore graduation lines', () => {
+    const composition = composeWorkflow('flow', 'fixture', 'default', args, database())
+    const cursor = {
+      id: 884,
+      n: 1,
+      slug: composition.steps[0]!.slug,
+      state: 'running',
+      opened: true,
+    }
+    expect(
+      renderWorkflowComposition({
+        ...composition,
+        cursor,
+        graduated: { cursor: 845, closed: true },
+      }),
+    ).toContain('Closed explore cursor 845: replaced by cursor 884.')
+    expect(
+      renderWorkflowComposition({
+        ...composition,
+        cursor,
+        graduated: { cursor: 845, closed: false, reason: 'close failed' },
+      }),
+    ).toContain('Explore cursor 845 stays open: close failed.')
+  })
+
   test('renders looser live autonomy differences and resolution failures', () => {
     const d = database()
     const step = getWorkflowStep('flow', 'fixture', 'rebase', args, d, { mode: 'default' })

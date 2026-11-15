@@ -250,7 +250,9 @@ export function idleLabel(
   if (!Number.isFinite(since)) return null
   const idleMs = Math.max(0, now - since)
   if (idleMs < thresholdMs) return null
-  return `idle ${Math.floor(idleMs / 60_000)}m`
+  const minutes = Math.floor(idleMs / 60_000)
+  if (minutes < 60) return `idle ${minutes}m`
+  return `idle ${Math.floor(minutes / 60)}h ${minutes % 60}m`
 }
 
 export function idleMsSince(

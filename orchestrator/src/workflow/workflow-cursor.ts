@@ -24,7 +24,11 @@ import {
 } from './workflow-compose-branch.ts'
 import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
 import { workflowKeyOf as keyOf, resolveCursorArguments } from './workflow-cursor-arguments.ts'
-import { insertWorkflowCursor } from './workflow-cursor-compose.ts'
+import {
+  type ExploreGraduationDependencies,
+  graduateExploreAfterCompose,
+  insertWorkflowCursor,
+} from './workflow-cursor-compose.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import { abandonWorkflowCursor, closeOpenWorkflowQuestion } from './workflow-cursor-mutation.ts'
 import {
@@ -172,6 +176,7 @@ export async function composeWorkflowWithCursor(
   selection: { version?: number; catalogueVersion?: number } = {},
   live: LiveCursorAutonomy,
   commitCount: CommitCountPort = readCommitsPastLanding,
+  graduationDependencies: ExploreGraduationDependencies = {},
 ) {
   const autonomy = live.resolution
   const composition = composeWorkflow(slug, project, mode, args, d, selection, autonomy)
@@ -242,16 +247,29 @@ export async function composeWorkflowWithCursor(
         context.taskFlowClient,
       )) as CursorRow
   } else row = await insertWorkflowCursor(composition, context, d, autonomy, commitCount)
+  const cursor = {
+    id: row.id,
+    n: row.ordinal + 1,
+    slug: row.step_slug,
+    state: row.state,
+    opened: start !== 'reuse',
+    previousSession: start === 'reuse' ? takenOverFrom(existing, context) : null,
+  } satisfies CursorSummary
+  const graduated = await graduateExploreAfterCompose(
+    {
+      project: composition.project,
+      session: context.session,
+      taskBound: Boolean(keyOf(composition.arguments)),
+      replacingCursor: cursor.id,
+      database: d,
+      taskFlowClient: context.taskFlowClient,
+    },
+    graduationDependencies,
+  )
   return {
     ...cursorComposition(row, d, live),
-    cursor: {
-      id: row.id,
-      n: row.ordinal + 1,
-      slug: row.step_slug,
-      state: row.state,
-      opened: start !== 'reuse',
-      previousSession: start === 'reuse' ? takenOverFrom(existing, context) : null,
-    } satisfies CursorSummary,
+    cursor,
+    ...(graduated ? { graduated } : {}),
   }
 }
 

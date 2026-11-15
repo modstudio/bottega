@@ -19,6 +19,7 @@ import {
   taskFlowRequestId,
 } from '../record/record-task-flow-write-contract.ts'
 import type { AutonomyResolution } from './autonomy.ts'
+import { exploreGraduation } from './explore-graduation.ts'
 import {
   cacheAdoptedTaskFlow,
   insertWorkflowCursorRow,
@@ -36,11 +37,18 @@ import {
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { storedCursorAutonomyJson } from './workflow-cursor-autonomy.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
+import { closeExploreForLifecycle } from './workflow-explore-lifecycle-close.ts'
 import { refuseUnlinkedCursorLabelCollision } from './workflow-cursor-task-reference.ts'
 import type { composeWorkflow } from './workflows.ts'
 
 type Composition = ReturnType<typeof composeWorkflow>
 type ExistingFlow = { record_id: string; revision: number } | null
+export type GraduatedExplore =
+  | { cursor: number; closed: true }
+  | { cursor: number; closed: false; reason: string }
+export type ExploreGraduationDependencies = {
+  closeExplore?: typeof closeExploreForLifecycle
+}
 type ComposeFacts = {
   rowInput: WorkflowCursorInsert
   existingFlow: ExistingFlow
@@ -70,6 +78,53 @@ function decideKeylessComposeInstance(input: {
     input.mode,
     String(input.ordinal),
   ])
+}
+
+export async function graduateExploreAfterCompose(
+  input: {
+    project: string
+    session: string | null | undefined
+    taskBound: boolean
+    replacingCursor: number
+    database: Database
+    taskFlowClient?: WorkflowCursorContext['taskFlowClient']
+  },
+  dependencies: ExploreGraduationDependencies = {},
+): Promise<GraduatedExplore | undefined> {
+  if (!input.session || !input.taskBound) return undefined
+  const rows = await taskFlowReadStore(input.database, input.taskFlowClient).listOpenStages({
+    project: input.project,
+    sessionId: input.session,
+  })
+  const row = rows.find((cursor) => cursor.workflow_slug === 'explore' && !cursor.workflow_key)
+  const explore = row
+    ? {
+        cursor: row.id,
+        recordId: row.record_id,
+        closedSteps: JSON.parse(row.closed).length,
+        hasOpenQuestion: row.question_number !== null,
+        attachedText: (
+          await taskFlowReadStore(input.database, input.taskFlowClient).textsForStage(row.record_id)
+        ).length,
+      }
+    : null
+  const decision = exploreGraduation({ taskBound: input.taskBound, explore })
+  if (decision.action === 'keep') return undefined
+  try {
+    await (dependencies.closeExplore ?? closeExploreForLifecycle)(
+      decision.recordId,
+      'answered',
+      input.database,
+      `replaced by cursor ${input.replacingCursor}`,
+    )
+    return { cursor: decision.cursor, closed: true }
+  } catch (error) {
+    return {
+      cursor: decision.cursor,
+      closed: false,
+      reason: error instanceof Error ? error.message : String(error),
+    }
+  }
 }
 
 async function keylessComposeOrdinal(

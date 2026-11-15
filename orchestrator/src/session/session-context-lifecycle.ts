@@ -67,6 +67,16 @@ export async function closeOutSessionContext(input: {
         retry: `${PLATFORM_SLUG} session close-out --session ${input.session}`,
       })
   }
+  if (!input.dryRun && !input.resume) {
+    const remaining = sessionContextItems(input.session, input.database)
+    if (remaining.length)
+      report.process.push({
+        item: `context session:${input.session}`,
+        reason: `session close-out left ${remaining.length} context ${remaining.length === 1 ? 'item' : 'items'} on the session holder`,
+        evidence: remaining.map((item) => `${item.id} (${item.kind})`).join(', '),
+        remedy: `${PLATFORM_SLUG} agent context show --session ${input.session}`,
+      })
+  }
   return report
 }
 

@@ -68,3 +68,17 @@ test('refuses a keyed explore without changing it', async () => {
   )
   expect(cursorState(database, cursorRecordId)).toEqual({ state: 'running', closed: '[]' })
 })
+
+test('adds the replacing cursor to the existing lifecycle note', async () => {
+  const database = migratedTestDatabase()
+  const cursorRecordId = addExplore(database)
+
+  await closeExploreForLifecycle(cursorRecordId, 'answered', database, 'replaced by cursor 884')
+
+  expect(JSON.parse(cursorState(database, cursorRecordId)!.closed)).toContainEqual(
+    expect.objectContaining({
+      note: 'session lifecycle closed explore as answered: replaced by cursor 884',
+      outcome: 'answered',
+    }),
+  )
+})
