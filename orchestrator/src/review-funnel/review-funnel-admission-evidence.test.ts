@@ -16,6 +16,7 @@ const review = (
     tier: 1 as const,
     role: 'round' as const,
     patchId: 'patch-old',
+    zeroContextPatchId: 'patch-old',
     pathSet: '["a.ts"]',
     lensIdentities,
     lenses: lensIdentities.map((lens, index) => ({
@@ -32,6 +33,7 @@ const branchGroup = (reviews: TriageEvidence['reviews']) => ({ reviews })
 
 const evidence = (overrides: Partial<TriageEvidence> = {}): TriageEvidence => ({
   patchId: 'patch-a',
+  zeroContextPatchId: 'patch-a',
   pathSet: '["a.ts"]',
   tier: 1,
   applicableReview: { lenses: ['correctness'] },
@@ -88,6 +90,7 @@ describe('pull-request triage decision', () => {
             {
               recordId: 'record-9',
               patchId: 'patch-a',
+              zeroContextPatchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T02:00:00Z',
               sessionId: 'owner-session',
@@ -127,6 +130,7 @@ describe('pull-request triage decision', () => {
             {
               recordId: 'record-inline',
               patchId: 'patch-a',
+              zeroContextPatchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T02:00:00Z',
               sessionId: 'owner-session',
@@ -191,6 +195,7 @@ describe('pull-request triage decision', () => {
             {
               recordId: 'record-9',
               patchId: 'patch-a',
+              zeroContextPatchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T02:00:00Z',
               sessionId: 'owner-session',
@@ -215,6 +220,7 @@ describe('pull-request triage decision', () => {
       completedAt: '2026-09-25T01:00:00Z',
       tier: 3,
       patchId: 'patch-first',
+      zeroContextPatchId: 'patch-first',
       lensIdentities: ['correctness', 'craft', 'safety'],
       lenses: [
         { recordId: 'lens-correctness', lens: 'correctness', ...gradedLens },
@@ -227,6 +233,7 @@ describe('pull-request triage decision', () => {
       completedAt: '2026-09-25T02:00:00Z',
       tier: 3,
       patchId: 'patch-second',
+      zeroContextPatchId: 'patch-second',
       lensIdentities: ['boundaries', 'tests'],
       lenses: [
         { recordId: 'lens-boundaries', lens: 'boundaries', ...gradedLens },
@@ -246,6 +253,7 @@ describe('pull-request triage decision', () => {
             {
               recordId: 'record-9',
               patchId: 'patch-a',
+              zeroContextPatchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T03:00:00Z',
               sessionId: 'owner-session',
@@ -269,6 +277,7 @@ describe('pull-request triage decision', () => {
       reviewId: 2,
       completedAt: null,
       patchId: 'patch-first',
+      zeroContextPatchId: 'patch-first',
       lensIdentities: ['correctness'],
       findings: [],
     })
@@ -277,6 +286,7 @@ describe('pull-request triage decision', () => {
       tier: 2,
       completedAt: '2026-09-25T01:00:00Z',
       patchId: 'patch-second',
+      zeroContextPatchId: 'patch-second',
       lensIdentities: ['correctness'],
       findings: [],
     })
@@ -285,6 +295,7 @@ describe('pull-request triage decision', () => {
       tier: 2,
       completedAt: '2026-09-25T01:30:00Z',
       patchId: 'patch-second',
+      zeroContextPatchId: 'patch-second',
       lensIdentities: ['craft'],
       findings: [],
     })
@@ -300,6 +311,7 @@ describe('pull-request triage decision', () => {
             {
               recordId: 'record-9',
               patchId: 'patch-a',
+              zeroContextPatchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T02:00:00Z',
               sessionId: 'owner-session',
@@ -363,6 +375,7 @@ describe('pull-request triage decision', () => {
   test('a completed lens with an undisposed finding reports the finding, not a missing lens', () => {
     const incomplete = review({
       patchId: 'patch-a',
+      zeroContextPatchId: 'patch-a',
       completedAt: '2026-09-25T01:00:00Z',
       findings: [{ recordId: 'finding-1', ordinal: 1, disposition: null }],
     })
@@ -379,12 +392,14 @@ describe('pull-request triage decision', () => {
       reviewId: 3,
       completedAt: '2026-09-25T01:00:00Z',
       patchId: 'patch-first',
+      zeroContextPatchId: 'patch-first',
       findings: [],
     })
     const latestUndisposed = review({
       reviewId: 4,
       completedAt: '2026-09-25T02:00:00Z',
       patchId: 'patch-second',
+      zeroContextPatchId: 'patch-second',
       findings: [{ recordId: 'finding-latest', ordinal: 1, disposition: null }],
     })
     expect(
@@ -396,6 +411,7 @@ describe('pull-request triage decision', () => {
             {
               recordId: 'record-9',
               patchId: 'patch-a',
+              zeroContextPatchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T03:00:00Z',
               sessionId: 'owner-session',
@@ -418,6 +434,7 @@ describe('pull-request triage decision', () => {
             {
               recordId: 'read-1',
               patchId: 'patch-a',
+              zeroContextPatchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T03:00:00Z',
               sessionId: 'owner-session',
@@ -443,6 +460,7 @@ describe('pull-request triage decision', () => {
       reviewId: 4,
       completedAt: '2026-09-25T02:00:00Z',
       patchId: 'patch-second',
+      zeroContextPatchId: 'patch-second',
       lensIdentities: ['craft'],
       findings: [],
     })
@@ -456,6 +474,7 @@ describe('pull-request triage decision', () => {
             {
               recordId: 'record-9',
               patchId: 'patch-a',
+              zeroContextPatchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T01:30:00Z',
               sessionId: 'owner-session',
@@ -477,6 +496,7 @@ describe('pull-request triage decision', () => {
       reviewId: 4,
       tier: 1,
       patchId: 'patch-second',
+      zeroContextPatchId: 'patch-second',
       lensIdentities: ['craft'],
       findings: [],
     })
@@ -491,6 +511,7 @@ describe('pull-request triage decision', () => {
             {
               recordId: 'record-9',
               patchId: 'patch-a',
+              zeroContextPatchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T03:00:00Z',
               sessionId: 'owner-session',
@@ -516,12 +537,14 @@ describe('pull-request triage decision', () => {
       tier: 2,
       lensIdentities: ['correctness'],
       patchId: 'patch-a',
+      zeroContextPatchId: 'patch-a',
     })
     const second = review({
       reviewId: 4,
       tier: 2,
       lensIdentities: ['correctness'],
       patchId: 'patch-a',
+      zeroContextPatchId: 'patch-a',
     })
 
     expect(
@@ -544,6 +567,7 @@ describe('pull-request triage decision', () => {
       tier: 1,
       lensIdentities: ['correctness'],
       patchId: 'patch-a',
+      zeroContextPatchId: 'patch-a',
     })
     const unfinished = review({
       reviewId: 4,
@@ -553,6 +577,7 @@ describe('pull-request triage decision', () => {
       tier: 1,
       lensIdentities: ['safety'],
       patchId: 'patch-a',
+      zeroContextPatchId: 'patch-a',
     })
 
     expect(decideTriage(evidence({ reviews: [complete, unfinished] }))).toMatchObject({
@@ -569,6 +594,7 @@ describe('pull-request triage decision', () => {
         {
           recordId: 'record-9',
           patchId: 'other',
+          zeroContextPatchId: 'other',
           pathSet: '["a.ts"]',
           recordedAt: '2026-09-25T02:00:00Z',
           sessionId: 'owner-session',
@@ -581,6 +607,7 @@ describe('pull-request triage decision', () => {
         {
           recordId: 'record-9',
           patchId: 'patch-a',
+          zeroContextPatchId: 'patch-a',
           pathSet: '["a.ts"]',
           recordedAt: '2026-09-25T00:30:00Z',
           sessionId: 'owner-session',
@@ -612,6 +639,7 @@ describe('pull-request triage decision', () => {
             {
               recordId: 'record-9',
               patchId: 'patch-a',
+              zeroContextPatchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T02:00:00Z',
               sessionId: 'owner-session',
@@ -632,6 +660,7 @@ describe('pull-request triage decision', () => {
             {
               recordId: 'record-9',
               patchId: 'patch-a',
+              zeroContextPatchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T02:00:00Z',
               sessionId: 'foreign-session',
@@ -653,6 +682,7 @@ describe('pull-request triage decision', () => {
             {
               recordId: 'record-9',
               patchId: 'patch-a',
+              zeroContextPatchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T02:00:00Z',
               sessionId: 'owner-session',
@@ -696,6 +726,7 @@ describe('pull-request triage decision', () => {
     const required = review({
       lensIdentities: ['correctness', 'migration-safety'],
       patchId: 'patch-a',
+      zeroContextPatchId: 'patch-a',
     })
     expect(
       decideTriage(
@@ -723,6 +754,7 @@ describe('pull-request triage decision', () => {
       reviewId: 3,
       tier: 3,
       patchId: 'patch-before-fix',
+      zeroContextPatchId: 'patch-before-fix',
       lensIdentities: ['correctness', 'craft', 'test-quality', 'architecture'],
       lenses: [
         { recordId: 'lens-correctness-old', lens: 'correctness', ...gradedLens },
@@ -735,6 +767,7 @@ describe('pull-request triage decision', () => {
       reviewId: 4,
       tier: 3,
       patchId: 'patch-a',
+      zeroContextPatchId: 'patch-a',
       lensIdentities: ['correctness', 'craft', 'test-quality'],
       lenses: [
         { recordId: 'lens-correctness-new', lens: 'correctness', ...gradedLens },
@@ -772,6 +805,7 @@ describe('pull-request triage decision', () => {
   test('a second opinion is enforced on exact and earlier credited review rounds', () => {
     const twoModels = review({
       patchId: 'patch-a',
+      zeroContextPatchId: 'patch-a',
       lenses: [
         {
           recordId: 'record-1',
@@ -808,6 +842,7 @@ describe('pull-request triage decision', () => {
             {
               recordId: 'record-9',
               patchId: 'patch-a',
+              zeroContextPatchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T02:00:00Z',
               sessionId: 'owner-session',
@@ -822,6 +857,7 @@ describe('pull-request triage decision', () => {
 
     const sameModel = review({
       patchId: 'patch-a',
+      zeroContextPatchId: 'patch-a',
       lenses: [
         {
           recordId: 'record-1',
@@ -861,6 +897,7 @@ describe('pull-request triage decision', () => {
             {
               recordId: 'record-9',
               patchId: 'patch-a',
+              zeroContextPatchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T02:00:00Z',
               sessionId: 'owner-session',
@@ -891,6 +928,7 @@ describe('pull-request triage decision', () => {
       completedAt: '2026-09-25T02:00:00Z',
       tier: 3,
       patchId: 'patch-second',
+      zeroContextPatchId: 'patch-second',
       lenses: [
         {
           recordId: 'record-2',
@@ -913,6 +951,7 @@ describe('pull-request triage decision', () => {
             {
               recordId: 'record-9',
               patchId: 'patch-a',
+              zeroContextPatchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T03:00:00Z',
               sessionId: 'owner-session',
@@ -953,6 +992,7 @@ describe('pull-request triage decision', () => {
       reviewId: 4,
       completedAt: '2026-09-25T02:00:00Z',
       patchId: 'patch-second',
+      zeroContextPatchId: 'patch-second',
       lenses: [
         {
           recordId: 'record-2',
@@ -975,6 +1015,7 @@ describe('pull-request triage decision', () => {
             {
               recordId: 'record-9',
               patchId: 'patch-a',
+              zeroContextPatchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T03:00:00Z',
               sessionId: 'owner-session',
@@ -989,6 +1030,7 @@ describe('pull-request triage decision', () => {
     const unfinished = review({
       reviewId: 5,
       patchId: 'patch-a',
+      zeroContextPatchId: 'patch-a',
       completedAt: null,
       findings: [{ recordId: 'finding-1', ordinal: 1, disposition: null }],
     })
@@ -1001,6 +1043,7 @@ describe('pull-request triage decision', () => {
             {
               recordId: 'record-9',
               patchId: 'patch-a',
+              zeroContextPatchId: 'patch-a',
               pathSet: '["a.ts"]',
               recordedAt: '2026-09-25T03:00:00Z',
               sessionId: 'owner-session',

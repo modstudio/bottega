@@ -16,6 +16,7 @@ const completedReview = (lens = 'correctness'): TriageReviewRow => ({
   tier: 3,
   role: 'round',
   patchId: 'prior-patch',
+  zeroContextPatchId: 'prior-patch',
   pathSet: '["src/old.ts"]',
   lensIdentities: [lens],
   lenses: [
@@ -46,6 +47,7 @@ const facts = (overrides: Partial<ReviewFunnelFacts> = {}): ReviewFunnelFacts =>
     branch: 'DEV-2300-fixture',
     head: 'abc1234',
     patchId: 'current-patch',
+    zeroContextPatchId: 'current-patch',
     pathSet: '["src/new.ts"]',
     paths: ['src/new.ts'],
   },
@@ -282,6 +284,7 @@ describe('decideReviewFunnel', () => {
     const completed = {
       ...completedReview(),
       patchId: 'current-patch',
+      zeroContextPatchId: 'current-patch',
       pathSet: '["src/new.ts"]',
     }
     const verdict = decideReviewFunnel(

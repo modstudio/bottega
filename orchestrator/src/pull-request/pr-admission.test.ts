@@ -87,6 +87,7 @@ test('an undisposed finding at the ceiling refuses without recording a ruling', 
       project: 'ceiling-fixture',
       branch: 'DEV-1641-ceiling',
       patchId: 'patch',
+      zeroContextPatchId: 'patch',
       pathSet: ['a.ts'],
     },
     tier: 3,
@@ -94,6 +95,7 @@ test('an undisposed finding at the ceiling refuses without recording a ruling', 
   }
   const triage = decideTriage({
     patchId: 'patch',
+    zeroContextPatchId: 'patch',
     pathSet: '["a.ts"]',
     tier: 3,
     applicableReview: { lenses: ['correctness', 'craft'] },
@@ -107,6 +109,7 @@ test('an undisposed finding at the ceiling refuses without recording a ruling', 
         tier: 3,
         role: 'round',
         patchId: 'patch',
+        zeroContextPatchId: 'patch',
         pathSet: '["a.ts"]',
         lensIdentities: ['correctness'],
         lenses: [{ recordId: 'lens-3', lens: 'correctness', graded: true, settled: true }],
@@ -159,6 +162,7 @@ test('a ceiling ruling records an emptied-round architect-read posture', () => {
       project: 'ceiling-read-fixture',
       branch: 'DEV-1641-ceiling-read',
       patchId: 'patch',
+      zeroContextPatchId: 'patch',
       pathSet: ['a.ts'],
     },
     tier: 3,
@@ -172,6 +176,7 @@ test('a ceiling ruling records an emptied-round architect-read posture', () => {
     tier: 3 as const,
     role: 'round' as const,
     patchId: 'earlier-patch',
+    zeroContextPatchId: 'earlier-patch',
     pathSet: '["a.ts"]',
     lensIdentities: ['correctness'],
     lenses: [{ recordId: 'lens-3', lens: 'correctness', graded: true, settled: true }],
@@ -179,6 +184,7 @@ test('a ceiling ruling records an emptied-round architect-read posture', () => {
   }
   const triage = decideTriage({
     patchId: 'patch',
+    zeroContextPatchId: 'patch',
     pathSet: '["a.ts"]',
     tier: 3,
     applicableReview: { lenses: ['correctness'] },
@@ -298,6 +304,7 @@ test('records the exact triage snapshot and outboxes it', () => {
       project: 'snapshot-fixture',
       branch: 'DEV-977-fixture',
       patchId: 'patch',
+      zeroContextPatchId: 'patch',
       pathSet: ['a.ts'],
     },
     tier: 2,
@@ -394,6 +401,7 @@ test('merge admission leaves an existing snapshot unchanged', () => {
       project: 'existing-snapshot',
       branch: 'DEV-1255-existing',
       patchId: 'patch',
+      zeroContextPatchId: 'patch',
       pathSet: ['a.ts'],
     },
     tier: 1,
@@ -474,6 +482,7 @@ test('a lens recorded on the branch is refused as missing for this change, not a
     tier: 2 as const,
     role: 'round' as const,
     patchId: 'patch-before',
+    zeroContextPatchId: 'patch-before',
     pathSet: '["a.ts"]',
     lensIdentities: ['correctness', 'craft'],
     lenses: [
@@ -484,6 +493,7 @@ test('a lens recorded on the branch is refused as missing for this change, not a
   }
   const decision = decideTriage({
     patchId: 'patch',
+    zeroContextPatchId: 'patch',
     pathSet: '["a.ts"]',
     tier: 2,
     applicableReview: { lenses: ['correctness', 'craft'] },
@@ -531,6 +541,7 @@ test('a lens a fix brought into scope names that path and the lenses already com
     tier: 3 as const,
     role: 'round' as const,
     patchId: 'patch-before-fix',
+    zeroContextPatchId: 'patch-before-fix',
     pathSet: '["src/a.ts"]',
     lensIdentities: ['correctness'],
     lenses: [{ recordId: 'lens-1', lens: 'correctness', graded: true, settled: true }],
@@ -560,6 +571,7 @@ test('a lens a fix brought into scope names that path and the lenses already com
   })
   const decision = decideTriage({
     patchId: 'patch',
+    zeroContextPatchId: 'patch',
     pathSet: '["branch/tree.ts","src/a.ts"]',
     tier: 3,
     applicableReview: { lenses: ['correctness', 'teardown-safety'] },
@@ -612,6 +624,7 @@ test('a lens the round asks to run again is not also reported as already complet
     tier: 3 as const,
     role: 'round' as const,
     patchId: 'patch-before-fix',
+    zeroContextPatchId: 'patch-before-fix',
     pathSet: '["src/a.ts"]',
     lensIdentities: ['correctness', 'craft'],
     lenses: [
@@ -645,6 +658,7 @@ test('a lens the round asks to run again is not also reported as already complet
   expect(reviewPlan.completedLensesOnBranch).toEqual(['correctness', 'craft'])
   const decision = decideTriage({
     patchId: 'patch',
+    zeroContextPatchId: 'patch',
     pathSet: '["branch/tree.ts","src/a.ts"]',
     tier: 3,
     applicableReview: { lenses: ['correctness', 'craft', 'teardown-safety'] },
@@ -693,6 +707,7 @@ test('a lens owed as a second opinion is not also reported as already complete',
     tier: 3 as const,
     role: 'round' as const,
     patchId: 'patch-before-fix',
+    zeroContextPatchId: 'patch-before-fix',
     pathSet: '["src/a.ts"]',
     lensIdentities: ['correctness', 'safety'],
     lenses: [
@@ -746,6 +761,7 @@ test('a lens owed as a second opinion is not also reported as already complete',
   expect(reviewPlan.completedLensesOnBranch).toEqual(['correctness', 'safety'])
   const decision = decideTriage({
     patchId: 'patch',
+    zeroContextPatchId: 'patch',
     pathSet: '["src/a.ts"]',
     tier: 3,
     applicableReview: { lenses: ['correctness', 'safety'] },
@@ -787,6 +803,7 @@ test('a generic no-round refusal prints beside the unfinished-review remedy, wit
     tier: null,
     role: 'round',
     patchId: 'patch',
+    zeroContextPatchId: 'patch',
     pathSet: '["a.ts"]',
     lensIdentities: ['correctness'],
     lenses: [{ recordId: 'lens-2', lens: 'correctness', graded: false, settled: false }],
@@ -794,6 +811,7 @@ test('a generic no-round refusal prints beside the unfinished-review remedy, wit
   }
   const decision = decideTriage({
     patchId: 'patch',
+    zeroContextPatchId: 'patch',
     pathSet: '["a.ts"]',
     tier: 1,
     applicableReview: { lenses: [] },
@@ -828,6 +846,7 @@ test('tier zero without a read names the architect-read command', () => {
   } as PullRequestChange
   const decision = decideTriage({
     patchId: 'patch-a',
+    zeroContextPatchId: 'patch-a',
     pathSet: '["a.ts"]',
     tier: 0,
     applicableReview: { lenses: [] },
@@ -860,6 +879,7 @@ test('a creditable composed round refusal names only the architect read', () => 
     tier: 2,
     role: 'round',
     patchId: 'patch-old',
+    zeroContextPatchId: 'patch-old',
     pathSet: '["a.ts"]',
     lensIdentities: ['correctness', 'craft'],
     lenses: [
@@ -870,6 +890,7 @@ test('a creditable composed round refusal names only the architect read', () => 
   }
   const decision = decideTriage({
     patchId: 'patch',
+    zeroContextPatchId: 'patch',
     pathSet: '["a.ts"]',
     tier: 2,
     applicableReview: { lenses: ['correctness', 'craft'] },

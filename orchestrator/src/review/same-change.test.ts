@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { type SameChangeFacts, sameChange, storedChangeFacts } from './same-change.ts'
+import {
+  type SameChangeDecision,
+  type SameChangeFacts,
+  sameChange,
+  storedChangeFacts,
+} from './same-change.ts'
 
 const change = (zero: string | null, paths: string[] | null = ['src/a.ts'], patch = 'legacy') => ({
   patchId: patch,
@@ -11,11 +16,20 @@ const change = (zero: string | null, paths: string[] | null = ['src/a.ts'], patc
 const cases: Array<{
   name: string
   facts: SameChangeFacts
-  expected: { same: boolean; basis: string; reason: string | null; messageChanged?: boolean }
+  expected: {
+    same: boolean
+    basis: SameChangeDecision['basis']
+    reason: string | null
+    messageChanged?: boolean
+  }
 }> = [
   {
     name: 'matching zero-context identities',
-    facts: { reviewed: change('same'), current: change('same', ['src/a.ts'], 'different'), replay: null },
+    facts: {
+      reviewed: change('same'),
+      current: change('same', ['src/a.ts'], 'different'),
+      replay: null,
+    },
     expected: { same: true, basis: 'zero-context', reason: null },
   },
   {

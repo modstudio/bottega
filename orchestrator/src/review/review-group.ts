@@ -293,10 +293,7 @@ export function measureChangeGroup(
 }
 
 /** A review belongs to a round when it measured that exact patch and path set. */
-export function reviewInRound(
-  review: TriageReviewRow,
-  current: ChangeFacts,
-): boolean {
+export function reviewInRound(review: TriageReviewRow, current: ChangeFacts): boolean {
   return sameChange({
     reviewed: storedChangeFacts({
       patchId: review.patchId,

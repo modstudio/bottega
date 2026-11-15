@@ -14,6 +14,7 @@ const review = (
     tier: 1 as const,
     role: 'round' as const,
     patchId: 'patch-old',
+    zeroContextPatchId: 'patch-old',
     pathSet: '["a.ts"]',
     lensIdentities,
     lenses: lensIdentities.map((lens, index) => ({
@@ -29,6 +30,7 @@ const review = (
 
 const evidence = (overrides: Partial<TriageEvidence> = {}): TriageEvidence => ({
   patchId: 'patch-a',
+  zeroContextPatchId: 'patch-a',
   pathSet: '["a.ts"]',
   tier: 1,
   applicableReview: { lenses: ['correctness'] },
@@ -43,6 +45,7 @@ describe('pull-request triage decision at tier zero', () => {
   const ownerRead = (overrides: Partial<TriageEvidence['reads'][number]> = {}) => ({
     recordId: 'record-9',
     patchId: 'patch-a',
+    zeroContextPatchId: 'patch-a',
     pathSet: '["a.ts"]',
     recordedAt: '2026-09-25T02:00:00Z',
     sessionId: 'owner-session',

@@ -9,7 +9,13 @@ import { gatherSameChange } from './same-change-git.ts'
 
 const encoder = new TextEncoder()
 
-function fixtureCommit(ref: string, mark: number, parent: number | null, message: string, body: string) {
+function fixtureCommit(
+  ref: string,
+  mark: number,
+  parent: number | null,
+  message: string,
+  body: string,
+) {
   return `commit refs/heads/${ref}
 mark :${mark}
 author Fixture <fixture@example.com> 1700000000 +0000
@@ -102,6 +108,7 @@ test('gatherSameChange recomputes old identities and falls back to a real trivia
       [`${refs.get('base')}..${refs.get('c-tip')}`, 'edited c diff'],
     ])
     const cache = new Map<string, CoverageGitResult>()
+    const mergeTreeCalls: string[][] = []
     const runner: CoverageGitRunner = (args, stdin) => {
       if (args[0] === 'cat-file') {
         const missing = args[2]?.startsWith('0000000000000000000000000000000000000000')
@@ -127,6 +134,7 @@ test('gatherSameChange recomputes old identities and falls back to a real trivia
       const key = `${JSON.stringify(args)}\0${hashBytes(stdin ?? new Uint8Array())}`
       const existing = cache.get(key)
       if (existing) return existing
+      if (args[0] === 'merge-tree') mergeTreeCalls.push(args)
       const result = spawnFixtureGitSync(args, { cwd: repo, stdin })
       spawns += 1
       const ok = result.exitCode === 0
@@ -225,6 +233,13 @@ test('gatherSameChange recomputes old identities and falls back to a real trivia
       basis: 'zero-context',
       reason: null,
     })
+    expect(mergeTreeCalls[0]).toEqual([
+      'merge-tree',
+      '--write-tree',
+      `--merge-base=${ref('base')}`,
+      ref('a-new-base'),
+      ref('a-reviewed'),
+    ])
     expect(spawns).toBeLessThanOrEqual(20)
   } finally {
     rmSync(repo, { recursive: true, force: true })

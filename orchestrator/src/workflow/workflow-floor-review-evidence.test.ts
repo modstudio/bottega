@@ -10,6 +10,7 @@ const review = (number: number, graded: boolean): TriageReviewRow => ({
   tier: 1,
   role: 'round',
   patchId: 'patch',
+  zeroContextPatchId: 'patch',
   pathSet: '["change.ts"]',
   lensIdentities: ['correctness'],
   lenses: [{ recordId: `lens-${number}`, graded, settled: true }],

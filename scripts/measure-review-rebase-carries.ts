@@ -72,10 +72,10 @@ for (const row of rows) {
     newBase: row.new_base,
   })
   evaluated += 1
-  if (!legacySame && decision.same) legacyReOwedCurrentCarries += 1
-  if (legacySame && !decision.same) legacyCarriedCurrentReOwes += 1
-  if (!decision.same && decision.reason?.includes('missing')) {
-    unavailable.push({ recordId: row.record_id, reason: decision.reason })
+  if (!legacySame && decision.decision.same) legacyReOwedCurrentCarries += 1
+  if (legacySame && !decision.decision.same) legacyCarriedCurrentReOwes += 1
+  if (!decision.decision.same && decision.decision.reason?.includes('missing')) {
+    unavailable.push({ recordId: row.record_id, reason: decision.decision.reason })
   }
 }
 

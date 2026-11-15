@@ -113,6 +113,7 @@ describe('round lens plan', () => {
     const newer = reviewRow({ reviewNumber: 2 })
     const lensFacts = roundLensFacts([newer, older], {
       patchId: 'patch',
+      zeroContextPatchId: 'patch',
       pathSet: '["a.ts"]',
     })
 
@@ -207,6 +208,7 @@ describe('round lens plan', () => {
       project: 'fixture',
       branch: 'DEV-2157',
       patchId: 'patch',
+      zeroContextPatchId: 'patch',
       pathSet: ['a.ts'],
     }).branchReviews
 
@@ -533,6 +535,7 @@ describe('round lens plan', () => {
       project: 'fixture',
       branch: 'DEV-1563',
       patchId: 'current',
+      zeroContextPatchId: 'current',
       pathSet: ['a.ts'],
     }).branchReviews
     expect(roundLensFacts(branchReviews, { patchId: 'current', pathSet: '["a.ts"]' })).toEqual({
@@ -553,6 +556,7 @@ describe('round lens plan', () => {
     const supplementary = reviewRow({
       reviewNumber: 1,
       patchId: 'prior',
+      zeroContextPatchId: 'prior',
       pathSet: '["a.ts"]',
       lensIdentities: ['issue-blast-radius'],
       findings: [finding('issue-blast-radius', 'accepted')],
@@ -560,6 +564,7 @@ describe('round lens plan', () => {
     })
     const result = roundLensFacts([supplementary], {
       patchId: 'current',
+      zeroContextPatchId: 'current',
       pathSet: '["a.ts"]',
     })
     expect(result).toEqual({

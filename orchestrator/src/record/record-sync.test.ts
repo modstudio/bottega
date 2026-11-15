@@ -625,13 +625,20 @@ test('an old-shape landing override syncs with a null change group', async () =>
   const statementIndex = remote.statements.findIndex((statement) =>
     statement.includes('insert into "landing_override"'),
   )
+  const statement = remote.statements[statementIndex] ?? ''
   const columns = /insert into "landing_override" \(([^)]+)\)/
-    .exec(remote.statements[statementIndex] ?? '')?.[1]
+    .exec(statement)?.[1]
     ?.split(',')
     .map((column) => column.trim().replaceAll('"', ''))
   const zeroContextIndex = columns?.indexOf('zero_context_patch_id') ?? -1
   expect(zeroContextIndex).toBeGreaterThanOrEqual(0)
-  expect(remote.parameters[statementIndex]?.[zeroContextIndex]).toBeNull()
+  const valueExpressions = /values \(([^)]+)\)/i.exec(statement)?.[1]?.split(',') ?? []
+  const parameterIndex = Number.parseInt(
+    /^\$(\d+)$/.exec(valueExpressions[zeroContextIndex]?.trim() ?? '')?.[1] ?? '0',
+    10,
+  ) - 1
+  expect(parameterIndex).toBeGreaterThanOrEqual(0)
+  expect(remote.parameters[statementIndex]?.[parameterIndex]).toBeNull()
   local.close()
 })
 
