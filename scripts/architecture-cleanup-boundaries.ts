@@ -12,6 +12,7 @@ export const cleanupBoundarySpecs = [
     allowed: [
       'node:fs',
       '../../../shared/bounded-process.ts',
+      '../branch/branch-landing-records.ts',
       '../git/git-environment.ts',
       '../jobs/jobs.ts',
       '../project/projects.ts',

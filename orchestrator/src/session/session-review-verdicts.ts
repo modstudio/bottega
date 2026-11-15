@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { readMergedBranchLandingTip } from '../branch/branch-landing-records.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { job } from '../jobs/jobs.ts'
 import { projectByName } from '../project/projects.ts'
@@ -31,6 +32,25 @@ export type SessionReviewVerdictGatherer = (
 ) => StopSummaryReviewVerdictFact
 
 export type SessionReviewBranchRefExists = (branch: InFlightBranch, database: Database) => boolean
+
+type LandedBranchIdentity = {
+  head: string | null
+  headIsAncestorOfTip: boolean
+}
+
+export type SessionReviewBranchLandingIdentity = (
+  branch: InFlightBranch,
+  tip: string,
+  database: Database,
+) => LandedBranchIdentity
+
+export function landedBranchOwesNoReviewLine(identity: {
+  head: string | null
+  tip: string
+  headIsAncestorOfTip: boolean
+}): boolean {
+  return identity.head === null || identity.head === identity.tip || identity.headIsAncestorOfTip
+}
 
 function cursorBranch(cursor: WorkflowCursorListRow): InFlightBranch | null {
   if (cursor.workflow_slug !== 'ship-task') return null
@@ -122,6 +142,39 @@ function branchRefExistsInMainCheckout(branch: InFlightBranch, database: Databas
   )
 }
 
+function branchLandingIdentity(
+  branch: InFlightBranch,
+  tip: string,
+  database: Database,
+): LandedBranchIdentity {
+  const project = registeredBranchProject(branch, database)
+  const cwd = branch.worktree && existsSync(branch.worktree) ? branch.worktree : project.path
+  const headResult = startBoundedSync(
+    ['git', 'rev-parse', '--verify', '--quiet', `${branch.branch}^{commit}`],
+    {
+      budget: 'git-plumbing',
+      cwd,
+      env: targetGitEnvironment(cwd),
+    },
+  )
+  if (headResult.exitCode === 1) return { head: null, headIsAncestorOfTip: false }
+  if (headResult.exitCode !== 0) {
+    throw new Error(headResult.stderr.trim() || `git could not resolve branch ${branch.branch}`)
+  }
+  const head = headResult.stdout.toString().trim()
+  if (head === tip) return { head, headIsAncestorOfTip: false }
+  const ancestorResult = startBoundedSync(['git', 'merge-base', '--is-ancestor', head, tip], {
+    budget: 'git-plumbing',
+    cwd,
+    env: targetGitEnvironment(cwd),
+  })
+  if (ancestorResult.exitCode === 0) return { head, headIsAncestorOfTip: true }
+  if (ancestorResult.exitCode === 1) return { head, headIsAncestorOfTip: false }
+  throw new Error(
+    ancestorResult.stderr.trim() || `git could not compare branch ${branch.branch} with ${tip}`,
+  )
+}
+
 function gatherBranchReviewVerdict(
   branch: InFlightBranch,
   database: Database,
@@ -164,6 +217,7 @@ export function sessionReviewVerdictLines(
   database: Database,
   gather: SessionReviewVerdictGatherer = gatherBranchReviewVerdict,
   refExists: SessionReviewBranchRefExists = branchRefExistsInMainCheckout,
+  landingIdentity: SessionReviewBranchLandingIdentity = branchLandingIdentity,
 ): string[] {
   return stopSummaryReviewVerdictLines(
     sessionInFlightReviewBranches(session, cursors, database).flatMap((branch) => {
@@ -178,6 +232,20 @@ export function sessionReviewVerdictLines(
               failure: String(cause),
             },
           ]
+        }
+      }
+      const landedTip = readMergedBranchLandingTip(database, branch.project, branch.branch)
+      if (landedTip !== null) {
+        try {
+          if (
+            landedBranchOwesNoReviewLine({
+              ...landingIdentity(branch, landedTip, database),
+              tip: landedTip,
+            })
+          )
+            return []
+        } catch {
+          // Gathering owns the user-visible remedy when the git comparison fails.
         }
       }
       return [gather(branch, database)]

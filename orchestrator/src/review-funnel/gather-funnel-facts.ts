@@ -70,7 +70,7 @@ function reviewRoundFacts(
   project: string,
   branch: string,
 ): ReviewFunnelRoundFact[] {
-  const landed = readLandedReviewIds(database, project)
+  const landed = readLandedReviewIds(database, project, branch)
   return eligibleReviewRoundRows(database, undefined, { project, branch }).map((row) => ({
     reviewRecordId: row.review_record_id,
     identity: reviewRoundIdentity(row).identity,
