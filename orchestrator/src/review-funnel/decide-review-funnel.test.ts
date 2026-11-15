@@ -131,6 +131,32 @@ describe('decideReviewFunnel', () => {
     })
   })
 
+  test('accepted evidence at the floor keeps a declared lens selected', () => {
+    const verdict = decideReviewFunnel(
+      facts({
+        files: [{ path: 'src/new.ts', insertions: 11, deletions: 0 }],
+        review: tierOneReview,
+        yieldCells: [yieldCell('correctness', { accepted: 1, unique: 0, triaged: 5 })],
+      }),
+      selectionPolicy({ minTriaged: 5, pinned: [] }),
+    )
+    expect(verdict.selection.lenses).toEqual([])
+    expect(verdict.lenses.find(({ lens }) => lens === 'correctness')?.status).toBe('owed')
+  })
+
+  test('unique evidence at the floor keeps a declared lens selected', () => {
+    const verdict = decideReviewFunnel(
+      facts({
+        files: [{ path: 'src/new.ts', insertions: 11, deletions: 0 }],
+        review: tierOneReview,
+        yieldCells: [yieldCell('correctness', { accepted: 0, unique: 1, triaged: 5 })],
+      }),
+      selectionPolicy({ minTriaged: 5, pinned: [] }),
+    )
+    expect(verdict.selection.lenses).toEqual([])
+    expect(verdict.lenses.find(({ lens }) => lens === 'correctness')?.status).toBe('owed')
+  })
+
   test('evaluate mode records a demotion without changing lenses or next', () => {
     const baseFacts = facts({
       files: [{ path: 'src/new.ts', insertions: 11, deletions: 0 }],
@@ -187,21 +213,43 @@ describe('decideReviewFunnel', () => {
     expect(verdict.lenses.find(({ lens }) => lens === 'correctness')?.status).toBe('owed')
   })
 
-  test('the deterministic exploration share keeps a demoted lens sampled', () => {
+  test('the fractional exploration share is deterministic and samples roughly its share', () => {
+    const policy = selectionPolicy({ minTriaged: 5, pinned: [], explorationShare: 0.2 })
+    const explored = Array.from({ length: 200 }, (_, index) => {
+      const sampleFacts = facts({
+        change: { ...facts().change, patchId: `patch-${index}` },
+        files: [{ path: 'src/new.ts', insertions: 11, deletions: 0 }],
+        review: tierOneReview,
+        yieldCells: [yieldCell('correctness', { accepted: 0, unique: 0, triaged: 5 })],
+      })
+      const first = decideReviewFunnel(sampleFacts, policy).selection.lenses[0]?.explored
+      const second = decideReviewFunnel(sampleFacts, policy).selection.lenses[0]?.explored
+      expect(second).toBe(first)
+      return first === true
+    }).filter(Boolean).length
+
+    expect(explored / 200).toBeGreaterThan(0.1)
+    expect(explored / 200).toBeLessThan(0.3)
+  })
+
+  test('yield reason does not replace the evidence reason of a satisfied lens', () => {
+    const completed = {
+      ...completedReview(),
+      patchId: 'current-patch',
+      pathSet: '["src/new.ts"]',
+    }
     const verdict = decideReviewFunnel(
       facts({
         files: [{ path: 'src/new.ts', insertions: 11, deletions: 0 }],
         review: tierOneReview,
+        branchReviews: [completed],
         yieldCells: [yieldCell('correctness', { accepted: 0, unique: 0, triaged: 5 })],
       }),
-      selectionPolicy({ minTriaged: 5, pinned: [], explorationShare: 1 }),
+      selectionPolicy({ minTriaged: 5, pinned: [] }),
     )
-    expect(verdict.selection.lenses).toEqual([
-      { lens: 'correctness', selected: true, reason: 'demoted-by-yield', explored: true },
-    ])
     expect(verdict.lenses.find(({ lens }) => lens === 'correctness')).toMatchObject({
-      status: 'owed',
-      reason: 'demoted-by-yield',
+      status: 'satisfied',
+      reason: 'satisfied',
     })
   })
 

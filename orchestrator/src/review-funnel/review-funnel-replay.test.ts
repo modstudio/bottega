@@ -38,6 +38,7 @@ test('replaying logged facts through the active policy reports zero diffs', () =
       architectReadRequired: false,
       nonLensGaps: [],
     },
+    yieldCells: [],
   }
   const verdict = decideReviewFunnel(facts, DEFAULT_REVIEW_FUNNEL_POLICY, 'builtin')
   expect(
@@ -45,5 +46,46 @@ test('replaying logged facts through the active policy reports zero diffs', () =
       policy: DEFAULT_REVIEW_FUNNEL_POLICY,
       policyVersion: 'builtin',
     }),
-  ).toEqual([])
+  ).toEqual({ diffs: [], selectionNotExercised: [] })
+})
+
+test('replay names logged rows whose facts lack selection evidence', () => {
+  const facts: ReviewFunnelFacts = {
+    stack: null,
+    change: {
+      project: PLATFORM_SLUG,
+      taskKey: null,
+      branch: 'legacy',
+      head: 'head',
+      patchId: 'patch',
+      pathSet: '[]',
+      paths: [],
+    },
+    files: [],
+    review: undefined,
+    branchReviews: [],
+    postFix: { completed: null },
+    rounds: [],
+    currentRoundIdentity: null,
+    lensStates: [],
+    exactRead: true,
+    readCreditsRound: false,
+    ceilingRuling: false,
+    overriddenLenses: [],
+    triageComplete: true,
+    admissionGap: {
+      unfinishedReviewNumbers: [],
+      undisposedFindings: [],
+      missingLenses: [],
+      architectReadRequired: false,
+      nonLensGaps: [],
+    },
+  }
+  const verdict = decideReviewFunnel(facts, DEFAULT_REVIEW_FUNNEL_POLICY, 'builtin')
+  expect(
+    replayReviewFunnelRows([{ recordId: 'legacy-decision', facts, verdict }], {
+      policy: DEFAULT_REVIEW_FUNNEL_POLICY,
+      policyVersion: 'builtin',
+    }),
+  ).toEqual({ diffs: [], selectionNotExercised: ['legacy-decision'] })
 })

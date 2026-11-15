@@ -28,8 +28,8 @@ test('run stack backfill fills only unknown rows from a nonblank registered stac
 
   expect(applyMigrations(database)).toContain('0225_run_stack_backfill')
   expect(database.query('SELECT number,stack FROM run ORDER BY number').all()).toEqual([
-    { number: 1, stack: 'bun' },
-    { number: 2, stack: 'bun' },
+    { number: 1, stack: ' bun ' },
+    { number: 2, stack: ' bun ' },
     { number: 3, stack: 'typescript' },
     { number: 4, stack: null },
   ])

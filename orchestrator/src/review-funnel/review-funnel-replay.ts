@@ -11,7 +11,11 @@ export function replayReviewFunnelRows(
   rows: readonly { recordId: string; facts: ReviewFunnelFacts; verdict: ReviewFunnelVerdict }[],
   candidate: VersionedReviewFunnelPolicy,
 ) {
-  return rows.flatMap((row) => {
+  const selectionNotExercised = rows
+    .filter((row) => row.facts.yieldCells === undefined)
+    .map(({ recordId }) => recordId)
+  const diffs = rows.flatMap((row) => {
+    if (row.facts.yieldCells === undefined) return []
     const after = decideReviewFunnel(row.facts, candidate.policy, candidate.policyVersion)
     const normalizedBefore: ReviewFunnelVerdict = {
       policyVersion: candidate.policyVersion,
@@ -31,4 +35,5 @@ export function replayReviewFunnelRows(
       ? []
       : [{ recordId: row.recordId, before: row.verdict, after }]
   })
+  return { diffs, selectionNotExercised }
 }

@@ -1,7 +1,7 @@
 -- BACKFILL
 UPDATE run
 SET stack=(
-  SELECT TRIM(project.stack)
+  SELECT project.stack
   FROM project
   WHERE project.record_id=run.project_record_id
 )

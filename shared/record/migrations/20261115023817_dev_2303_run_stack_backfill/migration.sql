@@ -3,7 +3,7 @@ ALTER TABLE "run" NO FORCE ROW LEVEL SECURITY;
 ALTER TABLE "project" NO FORCE ROW LEVEL SECURITY;
 --> statement-breakpoint
 UPDATE "run"
-SET "stack"=btrim("project"."stack")
+SET "stack"="project"."stack"
 FROM "project"
 WHERE "run"."project_id"="project"."id"
   AND ("run"."stack" IS NULL OR btrim("run"."stack")='')

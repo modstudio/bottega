@@ -108,7 +108,7 @@ export type ReviewFunnelVerdict = {
     lenses: {
       lens: string
       selected: boolean
-      reason: 'demoted-by-yield' | 'raised-by-yield'
+      reason: Extract<ReviewLensSelectionReason, 'demoted-by-yield' | 'raised-by-yield'>
       explored: boolean
     }[]
   }
@@ -177,10 +177,11 @@ function yieldSelection(
   policy: ReviewFunnelPolicy,
   tier: 0 | 1 | 2 | 3,
 ): { selection: YieldSelection; effective: ReturnType<typeof applicableReview> } {
-  const declared = applicableReview(tier, facts.change.paths, facts.review)
+  const paths = facts.files.map(({ path }) => path)
+  const declared = applicableReview(tier, paths, facts.review)
   if (tier === 0 || !facts.stack)
     return { selection: { mode: policy.modes.selection, lenses: [] }, effective: declared }
-  const available = applicableReview(3, facts.change.paths, facts.review)
+  const available = applicableReview(3, paths, facts.review)
   const cells = new Map(
     (facts.yieldCells ?? [])
       .filter((cell) => cell.stack === facts.stack && cell.tier === tier)
@@ -353,11 +354,14 @@ function lensVerdicts(facts: ReviewFunnelFacts, plan: ReturnType<typeof funnelPl
     sets,
     lenses: [...names].map((lens) => {
       const status = lensStatus(lens, sets, facts.readCreditsRound)
+      const selectionChange = enforcedSelection.find((change) => change.lens === lens)
       return {
         lens,
         status,
         reason:
-          enforcedSelection.find((change) => change.lens === lens)?.reason ??
+          (status === 'owed' || status === 'not-applicable'
+            ? selectionChange?.reason
+            : undefined) ??
           reasonForLens({
             lens,
             status,
