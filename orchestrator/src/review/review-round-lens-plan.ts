@@ -18,7 +18,7 @@ import { reviewCountsAsRound } from './review-role.ts'
 import type { ReviewRoundBudgetDecision } from './review-round-budget.ts'
 import { identifySecondOpinionRun } from './review-second-opinion.ts'
 import type { ReviewLensOwedReason, ReviewLensSelectionReason } from './review-vocabulary.ts'
-import { sameChange } from './same-change.ts'
+import { sameChange, storedChangeFacts } from './same-change.ts'
 
 export type RoundLensFacts = {
   reviewedPathsByLens: Readonly<Record<string, readonly string[]>>
@@ -146,18 +146,16 @@ function sameRoundChange(
   current: { patchId: string | null; zeroContextPatchId?: string | null; pathSet: string | null },
 ): boolean {
   return sameChange({
-    reviewed: {
+    reviewed: storedChangeFacts({
       patchId: reviewed.patchId,
-      zeroContextPatchId: reviewed.zeroContextPatchId ?? null,
-      paths: reviewed.pathSet ? (JSON.parse(reviewed.pathSet) as string[]) : [],
-      message: null,
-    },
-    current: {
+      zeroContextPatchId: reviewed.zeroContextPatchId,
+      pathSet: reviewed.pathSet,
+    }),
+    current: storedChangeFacts({
       patchId: current.patchId,
       zeroContextPatchId: current.zeroContextPatchId ?? null,
-      paths: current.pathSet ? (JSON.parse(current.pathSet) as string[]) : [],
-      message: null,
-    },
+      pathSet: current.pathSet,
+    }),
     replay: null,
   }).same
 }

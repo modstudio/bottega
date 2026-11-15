@@ -30,7 +30,7 @@ import {
   spawnGitProbe,
 } from '../review/review-target.ts'
 import { diffNumstat } from '../review/review-tier.ts'
-import { sameChange } from '../review/same-change.ts'
+import { sameChange, storedChangeFacts } from '../review/same-change.ts'
 import type {
   ReviewFunnelFacts,
   ReviewFunnelLensState,
@@ -110,18 +110,16 @@ function overrideFacts(
   const row = readLandingOverridesForBranch(database, change.project, change.branch).find(
     ({ patchId, zeroContextPatchId, pathSet }) =>
       sameChange({
-        reviewed: {
+        reviewed: storedChangeFacts({
           patchId,
           zeroContextPatchId: zeroContextPatchId ?? null,
-          paths: pathSet ? (JSON.parse(pathSet) as string[]) : [],
-          message: null,
-        },
-        current: {
+          pathSet,
+        }),
+        current: storedChangeFacts({
           patchId: change.patchId,
           zeroContextPatchId: change.zeroContextPatchId,
-          paths: JSON.parse(change.pathSet) as string[],
-          message: null,
-        },
+          pathSet: change.pathSet,
+        }),
         replay: null,
       }).same,
   )

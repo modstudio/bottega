@@ -1,10 +1,10 @@
 // concern: review-same-change
 /** Decides whether two observed ranges represent the same reviewable change. */
 
-type ChangeFacts = {
+export type ChangeFacts = {
   patchId: string | null
   zeroContextPatchId: string | null
-  paths: readonly string[]
+  paths: readonly string[] | null
   message: string | null
 }
 
@@ -30,10 +30,42 @@ export type SameChangeDecision = {
 const samePaths = (left: readonly string[], right: readonly string[]) =>
   JSON.stringify([...left].sort()) === JSON.stringify([...right].sort())
 
+/** Turn one persisted change tuple into facts without letting malformed path data match. */
+export function storedChangeFacts(row: {
+  patchId: string | null
+  zeroContextPatchId: string | null
+  pathSet: string | null
+  message?: string | null
+}): ChangeFacts {
+  let paths: readonly string[] | null = null
+  if (row.pathSet !== null) {
+    try {
+      const parsed: unknown = JSON.parse(row.pathSet)
+      if (Array.isArray(parsed) && parsed.every((path) => typeof path === 'string')) paths = parsed
+    } catch {
+      // An unreadable stored path set cannot establish review coverage.
+    }
+  }
+  return {
+    patchId: row.patchId,
+    zeroContextPatchId: row.zeroContextPatchId,
+    paths,
+    message: row.message ?? null,
+  }
+}
+
 /** The only in-memory decision for comparing persisted and current change identities. */
 export function sameChange(facts: SameChangeFacts): SameChangeDecision {
-  const pathsMatch = samePaths(facts.reviewed.paths, facts.current.paths)
   const messageChanged = facts.reviewed.message !== facts.current.message
+  if (facts.reviewed.paths === null || facts.current.paths === null) {
+    return {
+      same: false,
+      basis: 'different',
+      messageChanged,
+      reason: 'path set unavailable',
+    }
+  }
+  const pathsMatch = samePaths(facts.reviewed.paths, facts.current.paths)
   if (
     pathsMatch &&
     facts.reviewed.zeroContextPatchId !== null &&

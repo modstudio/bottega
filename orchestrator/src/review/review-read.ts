@@ -15,7 +15,7 @@ import { resolveReviewCommandCwd } from './review-command-cwd.ts'
 import { branchRunOwnerSession, measureChangeGroup, serializePathSet } from './review-group.ts'
 import { reviewLineage } from './review-lineage-store.ts'
 import { enqueueReviewRead } from './review-outbox.ts'
-import { sameChange } from './same-change.ts'
+import { sameChange, storedChangeFacts } from './same-change.ts'
 
 type Flags = { flag(name: string): string | undefined }
 type Presentation = { log(...values: unknown[]): void }
@@ -79,18 +79,16 @@ export function hasExactArchitectRead(
     .some(
       (read) =>
         sameChange({
-          reviewed: {
+          reviewed: storedChangeFacts({
             patchId: read.patch_id,
             zeroContextPatchId: read.zero_context_patch_id,
-            paths: JSON.parse(read.path_set) as string[],
-            message: null,
-          },
-          current: {
+            pathSet: read.path_set,
+          }),
+          current: storedChangeFacts({
             patchId,
             zeroContextPatchId,
-            paths: JSON.parse(pathSet) as string[],
-            message: null,
-          },
+            pathSet,
+          }),
           replay: null,
         }).same,
     )
@@ -179,7 +177,7 @@ export function recordArchitectRead(
         branch,
         tip,
         measured.group.patchId,
-        measured.group.zeroContextPatchId ?? null,
+        measured.group.zeroContextPatchId,
         serializePathSet(measured.group.pathSet),
         measured.tier.tier,
         note,

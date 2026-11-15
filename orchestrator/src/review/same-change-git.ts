@@ -3,13 +3,22 @@
 
 import { changeIdentity, zeroContextChangeIdentity } from './change-identity.ts'
 import type { CoverageGitRunner } from './review-types.ts'
-import { type SameChangeDecision, sameChange } from './same-change.ts'
+import { type ChangeFacts, type SameChangeDecision, sameChange } from './same-change.ts'
 
 type StoredChange = {
   patchId: string | null
   zeroContextPatchId: string | null
   paths: readonly string[]
   message: string | null
+}
+
+export type GatheredSameChange = {
+  decision: SameChangeDecision
+  current: ChangeFacts & {
+    patchId: string
+    zeroContextPatchId: string
+    paths: readonly string[]
+  }
 }
 
 const reachable = (runner: CoverageGitRunner, commit: string) =>
@@ -21,7 +30,7 @@ const measured = (
   to: string,
   paths: readonly string[],
   message: string | null,
-): StoredChange => ({
+): StoredChange & { patchId: string; zeroContextPatchId: string; paths: readonly string[] } => ({
   patchId: changeIdentity(runner, from, to),
   zeroContextPatchId: zeroContextChangeIdentity(runner, from, to),
   paths,
@@ -38,7 +47,7 @@ export function gatherSameChange(input: {
   tip: string
   tipTree: string
   newBase: string
-}): SameChangeDecision {
+}): GatheredSameChange {
   const currentLegacy: StoredChange = {
     patchId: changeIdentity(input.runner, input.newBase, input.tip),
     zeroContextPatchId: null,
@@ -50,7 +59,16 @@ export function gatherSameChange(input: {
     current: currentLegacy,
     replay: null,
   })
-  if (input.reviewed.zeroContextPatchId === null && legacyDecision.same) return legacyDecision
+  const current = measured(
+    input.runner,
+    input.newBase,
+    input.tip,
+    input.current.paths,
+    input.current.message,
+  )
+  if (input.reviewed.zeroContextPatchId === null && legacyDecision.same) {
+    return { decision: legacyDecision, current }
+  }
   const reviewedReachable = reachable(input.runner, input.reviewedCommit)
   const oldBaseReachable = reachable(input.runner, input.oldBase)
   const reviewed =
@@ -63,32 +81,34 @@ export function gatherSameChange(input: {
           input.reviewed.message,
         )
       : input.reviewed
-  const current = measured(
-    input.runner,
-    input.newBase,
-    input.tip,
-    input.current.paths,
-    input.current.message,
-  )
   const identityDecision = sameChange({ reviewed, current, replay: null })
-  if (identityDecision.same) return identityDecision
+  if (identityDecision.same) return { decision: identityDecision, current }
   if (!reviewedReachable) {
-    return sameChange({
-      reviewed,
+    return {
+      decision: sameChange({
+        reviewed,
+        current,
+        replay: {
+          kind: 'unavailable',
+          reason: `reviewed commit ${input.reviewedCommit} is missing`,
+        },
+      }),
       current,
-      replay: { kind: 'unavailable', reason: `reviewed commit ${input.reviewedCommit} is missing` },
-    })
+    }
   }
   if (
     !oldBaseReachable ||
     !reachable(input.runner, input.newBase) ||
     !reachable(input.runner, input.tip)
   ) {
-    return sameChange({
-      reviewed,
+    return {
+      decision: sameChange({
+        reviewed,
+        current,
+        replay: { kind: 'unavailable', reason: 'change replay commit is missing' },
+      }),
       current,
-      replay: { kind: 'unavailable', reason: 'change replay commit is missing' },
-    })
+    }
   }
   const replay = input.runner([
     'merge-tree',
@@ -97,13 +117,16 @@ export function gatherSameChange(input: {
     input.newBase,
     input.reviewedCommit,
   ])
-  return sameChange({
-    reviewed,
+  return {
+    decision: sameChange({
+      reviewed,
+      current,
+      replay: replay.ok
+        ? replay.out.split('\n')[0] === input.tipTree
+          ? { kind: 'same-tree' }
+          : { kind: 'different-tree' }
+        : { kind: 'conflict' },
+    }),
     current,
-    replay: replay.ok
-      ? replay.out.split('\n')[0] === input.tipTree
-        ? { kind: 'same-tree' }
-        : { kind: 'different-tree' }
-      : { kind: 'conflict' },
-  })
+  }
 }

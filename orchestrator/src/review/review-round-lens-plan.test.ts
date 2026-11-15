@@ -38,6 +38,7 @@ const reviewRow = (
     tier: 2,
     role: 'round',
     patchId: 'patch',
+    zeroContextPatchId: null,
     pathSet: '["a.ts"]',
     lensIdentities,
     lenses: lensIdentities.map((lens, index) => ({

@@ -3,7 +3,7 @@ import type { Database } from 'bun:sqlite'
 import { startBoundedSyncBytes } from '../../../shared/bounded-process.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { db } from '../database/db.ts'
-import { changeIdentity, zeroContextChangeIdentity } from './change-identity.ts'
+import { changeIdentity } from './change-identity.ts'
 import { git, reviewGit, targetGitEnvironment } from './review-pins.ts'
 import { reviewRemoteTrunkRefExists, reviewTrunkRef } from './review-target.ts'
 import type {
@@ -206,17 +206,15 @@ export function reviewCoverageVerdict(
     tipTree: tree,
     newBase,
   })
-  if (!comparison.same) {
-    return invalidCoverage(comparison.reason ?? 'change differs', resolved.resolution)
+  if (!comparison.decision.same) {
+    return invalidCoverage(comparison.decision.reason ?? 'change differs', resolved.resolution)
   }
-  const candidatePatch = changeIdentity(runner, newBase, tip)
-  const candidateZeroContextPatch = zeroContextChangeIdentity(runner, newBase, tip)
   return {
     kind: 'carried',
     class:
       review.commitMessage !== null &&
       review.commitMessage !== undefined &&
-      comparison.messageChanged
+      comparison.decision.messageChanged
         ? 'no-code-change'
         : 'trivial-rebase',
     resolution: resolved.resolution,
@@ -225,8 +223,8 @@ export function reviewCoverageVerdict(
     reviewRecordId: review.recordId,
     reviewedCommit,
     reviewedTree,
-    patchId: candidatePatch,
-    zeroContextPatchId: candidateZeroContextPatch,
+    patchId: comparison.current.patchId,
+    zeroContextPatchId: comparison.current.zeroContextPatchId,
     oldBase,
     newBase,
   }

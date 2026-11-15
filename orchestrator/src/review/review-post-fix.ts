@@ -101,13 +101,13 @@ function samePerPathPatch(
   return sameChange({
     reviewed: {
       patchId: reviewed?.patchId ?? null,
-      zeroContextPatchId: reviewed?.patchId ?? null,
+      zeroContextPatchId: null,
       paths: [path],
       message: null,
     },
     current: {
       patchId: current?.patchId ?? null,
-      zeroContextPatchId: current?.patchId ?? null,
+      zeroContextPatchId: null,
       paths: [path],
       message: null,
     },

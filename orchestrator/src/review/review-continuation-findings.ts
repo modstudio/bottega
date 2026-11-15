@@ -10,9 +10,9 @@ import {
   reviewInRound,
   reviewRoundTriageComplete,
   reviewsForTriage,
-  serializePathSet,
   type TriageReviewRow,
 } from './review-group.ts'
+import { type ChangeFacts, storedChangeFacts } from './same-change.ts'
 
 export type ContinuationFinding = {
   reviewNumber: number
@@ -64,9 +64,20 @@ function selectContinuationReviewRound(
     )
   }
   const { patchId, pathSet } = newest
+  const newestFacts = storedChangeFacts({
+    patchId,
+    zeroContextPatchId: newest.zeroContextPatchId,
+    pathSet,
+  })
+  const currentFacts: ChangeFacts = {
+    patchId: group.patchId,
+    zeroContextPatchId: group.zeroContextPatchId,
+    paths: group.pathSet,
+    message: null,
+  }
   return {
-    reviews: branchReviews.filter((review) => reviewInRound(review, patchId, pathSet)),
-    matchesCurrentGroup: reviewInRound(newest, group.patchId, serializePathSet(group.pathSet)),
+    reviews: branchReviews.filter((review) => reviewInRound(review, newestFacts)),
+    matchesCurrentGroup: reviewInRound(newest, currentFacts),
   }
 }
 

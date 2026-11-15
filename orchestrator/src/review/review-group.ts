@@ -15,13 +15,13 @@ import type { ReviewRole } from './review-role.ts'
 import { resolveReviewBase } from './review-target.ts'
 import { diffNumstat } from './review-tier.ts'
 import type { ReviewTier } from './review-tier-classifier.ts'
-import { sameChange } from './same-change.ts'
+import { type ChangeFacts, sameChange, storedChangeFacts } from './same-change.ts'
 
 export type ChangeGroup = {
   project: string
   branch: string
   patchId: string
-  zeroContextPatchId?: string
+  zeroContextPatchId: string
   pathSet: string[]
 }
 
@@ -33,7 +33,7 @@ export type TriageReviewRow = {
   tier: 0 | 1 | 2 | 3 | null
   role: ReviewRole
   patchId: string | null
-  zeroContextPatchId?: string | null
+  zeroContextPatchId: string | null
   pathSet: string | null
   lensIdentities: readonly string[]
   lenses: readonly {
@@ -205,7 +205,7 @@ type ChangeGroupOperations = {
     cwd: string,
     base: string,
     tip: string,
-  ): { patchId: string; zeroContextPatchId?: string; paths: string[]; message: string } | null
+  ): { patchId: string; zeroContextPatchId: string; paths: string[]; message: string } | null
   reviewPlan(
     cwd: string,
     base: string,
@@ -258,7 +258,7 @@ export function measureReviewChange(
   const plan = operations.reviewPlan(cwd, base, tip, project.settings.review)
   return {
     patchId: identity.patchId,
-    zeroContextPatchId: identity.zeroContextPatchId ?? identity.patchId,
+    zeroContextPatchId: identity.zeroContextPatchId,
     pathSet: identity.paths,
     base,
     tier: plan.tier,
@@ -295,23 +295,15 @@ export function measureChangeGroup(
 /** A review belongs to a round when it measured that exact patch and path set. */
 export function reviewInRound(
   review: TriageReviewRow,
-  patchId: string,
-  pathSet: string,
-  zeroContextPatchId?: string,
+  current: ChangeFacts,
 ): boolean {
   return sameChange({
-    reviewed: {
+    reviewed: storedChangeFacts({
       patchId: review.patchId,
-      zeroContextPatchId: review.zeroContextPatchId ?? null,
-      paths: review.pathSet ? (JSON.parse(review.pathSet) as string[]) : [],
-      message: null,
-    },
-    current: {
-      patchId,
-      zeroContextPatchId: zeroContextPatchId ?? null,
-      paths: JSON.parse(pathSet) as string[],
-      message: null,
-    },
+      zeroContextPatchId: review.zeroContextPatchId,
+      pathSet: review.pathSet,
+    }),
+    current,
     replay: null,
   }).same
 }
@@ -320,10 +312,13 @@ function reviewsForChangeGroup(
   branchReviews: readonly TriageReviewRow[],
   group: ChangeGroup,
 ): TriageReviewRow[] {
-  const pathSet = serializePathSet(group.pathSet)
-  return branchReviews.filter((review) =>
-    reviewInRound(review, group.patchId, pathSet, group.zeroContextPatchId),
-  )
+  const current: ChangeFacts = {
+    patchId: group.patchId,
+    zeroContextPatchId: group.zeroContextPatchId,
+    paths: group.pathSet,
+    message: null,
+  }
+  return branchReviews.filter((review) => reviewInRound(review, current))
 }
 
 export function reviewsForTriage(

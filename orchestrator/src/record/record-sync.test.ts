@@ -622,7 +622,16 @@ test('an old-shape landing override syncs with a null change group', async () =>
   const values = remote.parameters.find((parameters) => parameters.includes('legacy override'))
   expect(values).toContain('operator')
   expect(values).toContainEqual([])
-  expect(values?.filter((value) => value === null)).toHaveLength(8)
+  const statementIndex = remote.statements.findIndex((statement) =>
+    statement.includes('insert into "landing_override"'),
+  )
+  const columns = /insert into "landing_override" \(([^)]+)\)/
+    .exec(remote.statements[statementIndex] ?? '')?.[1]
+    ?.split(',')
+    .map((column) => column.trim().replaceAll('"', ''))
+  const zeroContextIndex = columns?.indexOf('zero_context_patch_id') ?? -1
+  expect(zeroContextIndex).toBeGreaterThanOrEqual(0)
+  expect(remote.parameters[statementIndex]?.[zeroContextIndex]).toBeNull()
   local.close()
 })
 

@@ -145,6 +145,11 @@ export function sameTaskSql(leftRun: string, rightRun: string): string {
         AND (${left}.lens IS ${right}.lens)`
 }
 
+/**
+ * Do two runs' evidence describe the same change for duel and funnel pairing?
+ * Two unmeasured changes deliberately pair here through null-safe `IS`. This differs from
+ * sameChange, where an unmeasured review never covers a measured change.
+ */
 export function sameChangeSql(leftReview: string, rightReview: string): string {
   const left = sqlAlias(leftReview)
   const right = sqlAlias(rightReview)
