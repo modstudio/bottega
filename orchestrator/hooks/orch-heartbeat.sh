@@ -28,7 +28,7 @@
 # and a lower interval is what actually gets a blocked worker noticed sooner -
 # the poll can be frequent precisely because only transitions are expensive.
 #
-# The state key is the inbox identity set, plus sorted run ids with each run's
+# The state key is the answerable and parked inbox identities, plus sorted run ids with each run's
 # liveness class, sorted landing ids, authored open-request ids, and board-hold ids. A run changing
 # liveness class is a state change even when the ids are unchanged. Elapsed time
 # never enters the key.

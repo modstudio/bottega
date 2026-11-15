@@ -184,7 +184,7 @@ class HeartbeatDecisionTest(unittest.TestCase):
         self.assertEqual(inbox_decision.answerable_now, 0)
         self.assertEqual(inbox_decision.parked_here, 0)
         self.assertEqual(inbox_decision.unowned, 1)
-        self.assertEqual(inbox_decision.state_key, "workflow:4608:unowned")
+        self.assertEqual(inbox_decision.state_key, "")
 
         decision = heartbeat_decision.heartbeat_decision(
             "12:34:56", inbox, 0, 0, 0, "", ""

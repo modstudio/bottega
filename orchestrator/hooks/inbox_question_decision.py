@@ -47,42 +47,35 @@ def parse_inbox_questions(items):
     return parsed
 
 
-def question_is_answerable_now(item):
-    """Whether this session must act on this inbox question now."""
-    if item.kind != "workflow":
-        return item.can_answer
-    # A workflow question never waits on this session as an answerable worker
-    # question. An owned one is parked; an unowned one is reported separately.
-    return False
-
-
 def decide_inbox_questions(items):
     return decide_parsed_inbox_questions(parse_inbox_questions(items))
 
 
 def decide_parsed_inbox_questions(items):
+    """Partition inbox questions by what this session must do about them.
+
+    A worker question this session can answer is answerable now. A workflow
+    question owned by this session was parked here with `workflow await`. A
+    workflow question with no owning session waits on no particular session,
+    so it is only counted. A workflow question owned elsewhere counts nowhere.
+    Only the answerable and parked sets enter the state key, because nothing
+    the heartbeat prints depends on the unowned count.
+    """
     answerable = set()
     parked = set()
     unowned = set()
     for item in items:
         identity = (item.kind, item.question_id)
-        if item.kind == "workflow" and item.workflow_session_id is None:
+        if item.kind != "workflow":
+            if item.can_answer:
+                answerable.add(identity)
+        elif item.workflow_session_id is None:
             unowned.add(identity)
-        elif question_is_answerable_now(item):
-            answerable.add(identity)
-        elif (
-            item.kind == "workflow"
-            and item.can_answer
-            and item.workflow_session_id is not None
-        ):
+        elif item.can_answer:
             parked.add(identity)
     state_key = ",".join(
         f"{kind}:{question_id}:{state}"
-        for state, identities in (
-            ("answerable", answerable),
-            ("parked", parked),
-            ("unowned", unowned),
-        )
+        for state, identities in (("answerable", answerable), ("parked", parked))
         for kind, question_id in sorted(identities)
     )
     return InboxQuestionDecision(
