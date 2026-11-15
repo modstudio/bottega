@@ -96,14 +96,31 @@ export const questionWriteResultSchema = z.object({
 })
 export type QuestionWriteResult = z.infer<typeof questionWriteResultSchema>
 
-export const questionReadSchema = z.object({
-  read: z.enum(['inbox', 'waiting', 'open-for-session', 'rulings', 'task-rulings', 'projects']),
-  sessionId: z.string().optional(),
-  kind: z.enum(['workflow', 'run', 'all']).optional(),
-  since: stamp.optional(),
-  changedAfter: z.coerce.number().int().nonnegative().optional(),
-  projectId: id.optional(),
-  taskId: id.optional(),
-  limit: z.coerce.number().int().positive().max(100).optional(),
-})
+const readLimit = z.coerce.number().int().positive().max(100).optional()
+const changedAfter = z.coerce.number().int().nonnegative().optional()
+export const questionReadSchema = z.discriminatedUnion('read', [
+  z.object({ read: z.literal('inbox'), limit: readLimit, changedAfter }),
+  z.object({ read: z.literal('waiting'), limit: readLimit, changedAfter }),
+  z.object({
+    read: z.literal('open-for-session'),
+    sessionId: z.string().min(1, 'sessionId is required'),
+    limit: readLimit,
+    changedAfter,
+  }),
+  z.object({
+    read: z.literal('rulings'),
+    kind: z.enum(['workflow', 'run', 'all']).default('all'),
+    since: stamp.optional(),
+    limit: readLimit,
+    changedAfter,
+  }),
+  z.object({
+    read: z.literal('task-rulings'),
+    projectId: id,
+    taskId: id,
+    limit: readLimit,
+    changedAfter,
+  }),
+  z.object({ read: z.literal('projects'), limit: readLimit, changedAfter }),
+])
 export type QuestionReadInput = z.infer<typeof questionReadSchema>

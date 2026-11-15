@@ -8,7 +8,19 @@ import type {
   QuestionWriteBody,
   QuestionWriteResult,
 } from '../record/record-question-contract.ts'
+import { runInboxQuestionRows } from '../run/run-inbox.ts'
+import {
+  localQuestionProjects,
+  openStagesForSession,
+  rulingRows,
+  taskRulingRows,
+  waitingWorkflowQuestions,
+  workflowInboxQuestions,
+} from '../workflow/task-flow-store-sqlite-questions.ts'
 import type { QuestionReadResult, QuestionStore } from './question-store-types.ts'
+
+const changedAfterRefusal =
+  'hosted question changed-after reads are not served yet; retry without changedAfter; DEV-2328 decides the hosted change cursor'
 
 const json = (value: unknown) => (value == null ? null : JSON.stringify(value))
 
@@ -130,61 +142,39 @@ export class SqliteQuestionStore implements QuestionStore {
   }
 
   async read(input: QuestionReadInput): Promise<QuestionReadResult> {
-    if (input.changedAfter !== undefined && input.read === 'rulings') {
-      const rows = this.database
-        .query<Record<string, unknown>, [number]>(
-          'SELECT * FROM question WHERE change_seq>? ORDER BY number',
-        )
-        .all(input.changedAfter)
-      return { items: rows }
-    }
-    const clauses: string[] = []
-    const values: (string | number)[] = []
-    if (input.read === 'waiting' || input.read === 'open-for-session')
-      clauses.push('q.answered_at IS NULL', 'q.closed_at IS NULL')
-    if (input.read === 'open-for-session') {
-      clauses.push('(r.session_id=? OR c.session_id=?)')
-      values.push(input.sessionId!, input.sessionId!)
-    }
-    if (input.read === 'rulings' && input.since) {
-      clauses.push(
-        '(q.answered_at>=? OR q.closed_at>=? OR q.overturned_at>=? OR q.filed_at>=? OR (q.answered_at IS NULL AND q.closed_at IS NULL))',
-      )
-      values.push(input.since, input.since, input.since, input.since)
-    }
-    if (input.read === 'task-rulings') {
-      clauses.push('(root.project_record_id=? OR c.project_record_id=?)')
-      clauses.push('(root.task_record_id=? OR q.workflow_task_record_id=?)')
-      clauses.push('q.answered_at IS NOT NULL')
-      values.push(input.projectId!, input.projectId!, input.taskId!, input.taskId!)
-    }
-    if (input.read === 'projects')
+    if (input.changedAfter !== undefined) throw new Error(changedAfterRefusal)
+    if (input.read === 'inbox')
       return {
-        items: this.database
-          .query(`SELECT DISTINCT COALESCE(root.project_record_id,c.project_record_id) owner_project_id,
-          COALESCE(rp.name,c.project) project FROM question q
-          LEFT JOIN run r ON r.record_id=q.run_record_id
-          LEFT JOIN run root ON root.record_id=COALESCE(r.parent_run_record_id,r.record_id)
-          LEFT JOIN project rp ON rp.record_id=root.project_record_id
-          LEFT JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id ORDER BY project`)
-          .all() as Record<string, unknown>[],
+        items: [
+          ...runInboxQuestionRows(this.database),
+          ...workflowInboxQuestions(this.database),
+        ].slice(0, input.limit ?? 100),
       }
-    values.push(input.limit ?? 100)
-    return {
-      items: this.database
-        .query<Record<string, unknown>, (string | number)[]>(`SELECT q.*,
-        r.number run_number,r.parent_run_record_id parent_run_id,r.agent,r.job,r.status run_status,r.session_id run_session_id,
-        root.record_id root_run_id,root.number root_run_number,root.status root_run_status,
-        c.number workflow_cursor_number,c.project_record_id stage_project_id,c.workflow_slug workflow,c.mode_slug mode,
-        c.args arguments,c.ordinal active_ordinal,c.step_slug active_slug,c.state stage_state,c.session_id stage_session_id,
-        COALESCE(root.project_record_id,c.project_record_id) owner_project_id,COALESCE(rp.name,c.project) project
-        FROM question q LEFT JOIN run r ON r.record_id=q.run_record_id
-        LEFT JOIN run root ON root.record_id=COALESCE(r.parent_run_record_id,r.record_id)
-        LEFT JOIN project rp ON rp.record_id=root.project_record_id
-        LEFT JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
-        ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
-        ORDER BY q.number DESC LIMIT ?`)
-        .all(...values),
+    if (input.read === 'waiting')
+      return { items: waitingWorkflowQuestions(this.database).slice(0, input.limit ?? 100) }
+    if (input.read === 'open-for-session')
+      return {
+        items: openStagesForSession(this.database, input.sessionId).slice(0, input.limit ?? 100),
+      }
+    if (input.read === 'rulings')
+      return {
+        items: rulingRows(this.database, {
+          kind: input.kind,
+          since: input.since,
+          after: null,
+          cursor: null,
+        }).slice(0, input.limit ?? 100),
+      }
+    if (input.read === 'task-rulings') {
+      const project = this.database
+        .query<{ name: string }, [string]>('SELECT name FROM project WHERE record_id=?')
+        .get(input.projectId)
+      return {
+        items: project
+          ? taskRulingRows(this.database, project.name, input.taskId, input.limit ?? 100)
+          : [],
+      }
     }
+    return { items: localQuestionProjects(this.database).slice(0, input.limit ?? 100) }
   }
 }

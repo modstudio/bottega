@@ -74,7 +74,7 @@ type WorkflowInboxQuestion = {
   ownership_notice: string | null
 }
 
-type QueriedInboxQuestion = {
+export type QueriedInboxQuestion = {
   number: number
   record_id: string
   run_record_id: string
@@ -111,6 +111,33 @@ type QueriedInboxQuestion = {
   root_number: number
   root_record_id: string
   session_recent: number
+}
+
+export function runInboxQuestionRows(
+  database: ReturnType<typeof db>,
+  cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString(),
+): QueriedInboxQuestion[] {
+  const seenJoin = 'LEFT JOIN session_seen seen ON seen.session_id = r.session_id'
+  const sessionRecent =
+    'CASE WHEN r.session_id IS NOT NULL AND seen.last_seen >= ? THEN 1 ELSE 0 END'
+  return database
+    .query(
+      `SELECT q.number,q.record_id,q.run_record_id,r.number AS run_number,
+            q.asked_at, q.question, q.options, q.recommendation, q.why,q.kind,
+            q.jev_pick,q.jev_confidence,q.jev_probabilities,q.jev_error,
+            q.answered_at, q.overturned_at, q.overturned_by, q.overturn_reason, q.replacement,
+            q.filed_as, q.filed_ref, q.filed_record_id, q.filed_label, q.filed_at,
+            r.agent, r.job, r.repo, root.project_record_id, r.status, r.session_id,
+            root.status root_status, root.record_id root_record_id, root.number root_number,
+            ${voidedSql('root')} root_voided,
+            COALESCE(r.parent_run_record_id, r.record_id) root_id, ${sessionRecent} session_recent
+       FROM question q JOIN run r ON r.record_id = q.run_record_id
+       JOIN run root ON root.record_id = COALESCE(r.parent_run_record_id, r.record_id)
+       ${seenJoin}
+      WHERE q.closed_at IS NULL
+      ORDER BY q.run_record_id,q.number`,
+    )
+    .all(cutoff) as QueriedInboxQuestion[]
 }
 
 type RecoverableInboxRow = {
@@ -199,28 +226,7 @@ export async function queryInbox(
   const scopedFilter = scopedProjectFilter(scoped, scopedProject)
   const defaultProject =
     input.scope === 'cli-default' && !scoped && mine ? projectAt(process.cwd()) : null
-  const cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString()
-  const seenJoin = 'LEFT JOIN session_seen seen ON seen.session_id = r.session_id'
-  const sessionRecent =
-    'CASE WHEN r.session_id IS NOT NULL AND seen.last_seen >= ? THEN 1 ELSE 0 END'
-  const queriedRows = db()
-    .query(
-      `SELECT q.number,q.record_id,q.run_record_id,r.number AS run_number,
-            q.asked_at, q.question, q.options, q.recommendation, q.why,q.kind,
-            q.jev_pick,q.jev_confidence,q.jev_probabilities,q.jev_error,
-            q.answered_at, q.overturned_at, q.overturned_by, q.overturn_reason, q.replacement,
-            q.filed_as, q.filed_ref, q.filed_record_id, q.filed_label, q.filed_at,
-            r.agent, r.job, r.repo, root.project_record_id, r.status, r.session_id,
-            root.status root_status, root.record_id root_record_id, root.number root_number,
-            ${voidedSql('root')} root_voided,
-            COALESCE(r.parent_run_record_id, r.record_id) root_id, ${sessionRecent} session_recent
-       FROM question q JOIN run r ON r.record_id = q.run_record_id
-       JOIN run root ON root.record_id = COALESCE(r.parent_run_record_id, r.record_id)
-       ${seenJoin}
-      WHERE q.closed_at IS NULL
-      ORDER BY q.run_record_id,q.number`,
-    )
-    .all(cutoff) as QueriedInboxQuestion[]
+  const queriedRows = runInboxQuestionRows(db())
   const isLive = (question: (typeof queriedRows)[number]) =>
     answerRunLivenessRefusal(
       { status: question.root_status, voided: Boolean(question.root_voided) },

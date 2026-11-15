@@ -99,14 +99,14 @@ export const questionNumberCounter = pgTable.withRLS(
   'question_number_counter',
   {
     id: uuid().primaryKey().default(sql`public.record_uuid_v7()`),
-    counterSpaceId: uuid('counter_space_id')
+    spaceId: uuid('space_id')
       .notNull()
       .references(() => space.id, { onDelete: 'cascade' }),
     next: bigint({ mode: 'bigint' }).notNull(),
   },
   (table) => [
-    unique('question_number_counter_space_unique').on(table.counterSpaceId),
-    ...tenantPolicies('question_number_counter', table.counterSpaceId),
+    unique('question_number_counter_space_unique').on(table.spaceId),
+    ...tenantPolicies('question_number_counter', table.spaceId),
   ],
 )
 

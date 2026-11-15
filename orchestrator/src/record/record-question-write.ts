@@ -9,6 +9,7 @@ import {
   question as questionRecord,
 } from '../../../shared/record/schema-question.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import { hostedTaskIdForReference } from '../../../shared/record/hosted-task-id.ts'
 import { recordPool } from './record-pool.ts'
 import { pushQuestionAudits } from './record-question-audit.ts'
 import type {
@@ -17,17 +18,18 @@ import type {
   QuestionWriteResult,
 } from './record-question-contract.ts'
 import { questionValues } from './record-sync-service.ts'
+import { projectRecordId } from './record-sync-project-identity.ts'
 
 type Tenant = { url: string } & TenantPrincipal
 
 async function allocateQuestionNumber(tx: SQL, spaceId: string): Promise<number> {
   const rows = (await tx`
-    INSERT INTO question_number_counter (counter_space_id,next)
+    INSERT INTO question_number_counter (space_id,next)
     VALUES (
       ${spaceId}::uuid,
       COALESCE((SELECT MAX(number)::bigint + 2 FROM question WHERE space_id=${spaceId}::uuid),2)
     )
-    ON CONFLICT (counter_space_id) DO UPDATE SET next=GREATEST(
+    ON CONFLICT (space_id) DO UPDATE SET next=GREATEST(
       question_number_counter.next,
       COALESCE((SELECT MAX(number)::bigint + 1 FROM question WHERE space_id=${spaceId}::uuid),1)
     ) + 1
@@ -67,7 +69,12 @@ export async function writeRecordQuestion(
       spaceId: input.spaceId,
       audits: [{ ...input.audit, id: input.requestId }],
     }
-    const values = questionValues(payload, input.question.projectId, input.question.workflowTaskId)
+    const workflowTaskId = await hostedTaskIdForReference(tx, input.spaceId, {
+      id: input.question.workflowTaskId,
+      key: input.question.workflowKey,
+    })
+    const projectId = await projectRecordId(tx, input.question, input)
+    const values = questionValues(payload, projectId, workflowTaskId)
     const {
       id: _id,
       createdAt: _createdAt,
