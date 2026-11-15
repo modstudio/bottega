@@ -506,14 +506,12 @@ def _inbox_counts(stdout):
         ):
             raise ValueError("invalid inbox JSON")
 
-    answerable_count = decide_parsed_inbox_questions(parsed_questions).answerable_now
+    inbox_decision = decide_parsed_inbox_questions(parsed_questions)
+    answerable_count = inbox_decision.answerable_now
     run_questions = [
         (item, parsed)
         for item, parsed in zip(questions, parsed_questions)
         if parsed.kind == "worker"
-    ]
-    workflow_questions = [
-        parsed for parsed in parsed_questions if parsed.kind == "workflow"
     ]
     foreign_count = len(
         {item["answer_id"] for item, parsed in run_questions if not parsed.can_answer}
@@ -525,14 +523,13 @@ def _inbox_counts(stdout):
             if not parsed.can_answer and item["session_liveness"] == "unknown"
         }
     )
-    foreign_workflow_count = len(
-        {
-            item.question_id
-            for item in workflow_questions
-            if not item.can_answer
-        }
+    return (
+        answerable_count,
+        foreign_count,
+        unknown_count,
+        inbox_decision.foreign_workflow,
+        inbox_decision.unowned,
     )
-    return answerable_count, foreign_count, unknown_count, foreign_workflow_count
 
 
 def _foreign_workflow_notice(count):
@@ -544,6 +541,18 @@ def _foreign_workflow_notice(count):
     return (
         f"{count} workflows started by other sessions are waiting on rulings. "
         "Only those sessions, or the operator relaying decisions, can answer them."
+    )
+
+
+def _unowned_workflow_notice(count):
+    if count == 1:
+        return (
+            "1 workflow question has no owning session; any session in this project "
+            "may answer it (bottega question inbox)."
+        )
+    return (
+        f"{count} workflow questions have no owning session; any session in this project "
+        "may answer them (bottega question inbox)."
     )
 
 
@@ -754,6 +763,7 @@ def main() -> int:
             )
 
         answerable_count = foreign_count = unknown_count = foreign_workflow_count = 0
+        unowned_workflow_count = 0
         inbox_failure = None
         if inbox.returncode == 0:
             try:
@@ -762,6 +772,7 @@ def main() -> int:
                     foreign_count,
                     unknown_count,
                     foreign_workflow_count,
+                    unowned_workflow_count,
                 ) = _inbox_counts(inbox.stdout)
             except Exception:
                 inbox_failure = "Inbox response was invalid; question state is unknown."
@@ -888,6 +899,10 @@ def main() -> int:
             inbox_lines.append(message)
         if foreign_workflow_count:
             message = _foreign_workflow_notice(foreign_workflow_count)
+            notices.append(message)
+            inbox_lines.append(message)
+        if unowned_workflow_count:
+            message = _unowned_workflow_notice(unowned_workflow_count)
             notices.append(message)
             inbox_lines.append(message)
         if waiting_issues:

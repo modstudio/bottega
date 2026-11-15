@@ -375,8 +375,28 @@ class InboxQuestions(unittest.TestCase):
                     "ownership_notice": None,
                 }
             ]),
-            (0, 0, 0, 0),
+            (0, 0, 0, 0, 0),
         )
+
+    def test_unowned_workflow_question_has_its_own_notice(self):
+        counts = self.counts([
+            {
+                "kind": "workflow",
+                "question_id": 4608,
+                "workflow": "plan-task",
+                "session_id": None,
+                "can_answer": True,
+                "ownership_notice": None,
+            }
+        ])
+        self.assertEqual(counts, (0, 0, 0, 0, 1))
+        notice = session_brief._unowned_workflow_notice(counts[-1])
+        self.assertEqual(
+            notice,
+            "1 workflow question has no owning session; any session in this project "
+            "may answer it (bottega question inbox).",
+        )
+        self.assertNotIn("waiting on your ruling", notice)
 
     def test_foreign_workflow_questions_are_counted_by_distinct_question_id(self):
         row = {
@@ -387,7 +407,7 @@ class InboxQuestions(unittest.TestCase):
             "can_answer": False,
             "ownership_notice": "another session owns this workflow",
         }
-        self.assertEqual(self.counts([row, row]), (0, 0, 0, 1))
+        self.assertEqual(self.counts([row, row]), (0, 0, 0, 1, 0))
         self.assertEqual(
             session_brief._foreign_workflow_notice(1),
             "1 workflow started by another session is waiting on a ruling. "
@@ -399,6 +419,13 @@ class InboxQuestions(unittest.TestCase):
             session_brief._foreign_workflow_notice(2),
             "2 workflows started by other sessions are waiting on rulings. "
             "Only those sessions, or the operator relaying decisions, can answer them.",
+        )
+
+    def test_unowned_workflow_notice_has_a_plural_form(self):
+        self.assertEqual(
+            session_brief._unowned_workflow_notice(2),
+            "2 workflow questions have no owning session; any session in this project "
+            "may answer them (bottega question inbox).",
         )
 
     def test_mixed_run_and_workflow_questions_keep_their_separate_counts(self):
@@ -433,7 +460,7 @@ class InboxQuestions(unittest.TestCase):
                     "ownership_notice": "owned by session session-2",
                 },
             ]),
-            (1, 1, 1, 1),
+            (1, 1, 1, 1, 0),
         )
 
     def test_malformed_run_question_invalidates_the_inbox(self):
