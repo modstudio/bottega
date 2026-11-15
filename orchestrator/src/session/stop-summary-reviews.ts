@@ -50,9 +50,12 @@ export function classifyStopSummaryReviews(
       review.finished_at,
     )
     owedItems.push({
-      label: `review ${review.number} untriaged (${review.open_findings} findings open)`,
-      command: `${PLATFORM_SLUG} review show ${review.number}`,
+      kind: 'untriaged review',
+      qualifier: null,
+      id: String(review.number),
+      command: `${PLATFORM_SLUG} review show <review>`,
       owedAt,
+      openFindings: review.open_findings,
     })
   }
   return { incompleteReviews, owedItems }

@@ -204,6 +204,7 @@ export function isSubscriptionPriceKey(key: string): boolean {
 
 export function configHomes(key: string): readonly ConfigHome[] | null {
   if (isMachineConfigKey(key)) return ['machine']
+  if (key === 'display.timezone') return ['user']
   if (key.startsWith('autonomy.')) return ['user', 'space', 'machine']
   if (isSubscriptionPriceKey(key)) return ['user']
   return null

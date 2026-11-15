@@ -72,6 +72,7 @@ import {
 import type { MachineNamePair } from '../record/machine-name.ts'
 import { claimCurrentMachineNames } from '../record/machine-name-command.ts'
 import { LEGACY_ENVIRONMENT_SECRET_NAMES } from '../setup/environment-name-migration.ts'
+import { writeCachedDisplayTimezone } from '../workflow/session-context-cache.ts'
 import { planRotation, shouldRotateAfterRevocation } from './config-service-rotation-policy.ts'
 import {
   bytes,
@@ -809,7 +810,7 @@ function acceptedHomes(key: string): readonly ConfigHome[] {
   const homes = configHomes(key)
   if (homes) return homes
   throw new Error(
-    `refusing config key ${key}: accepted families are machine catalogue keys, autonomy.*, and subscription.<harness>.monthly_usd; inspect machine keys with \`${PLATFORM_SLUG} machine config list --machine\``,
+    `refusing config key ${key}: accepted families are machine catalogue keys, display.timezone, autonomy.*, and subscription.<harness>.monthly_usd; inspect machine keys with \`${PLATFORM_SLUG} machine config list --machine\``,
   )
 }
 
@@ -855,6 +856,16 @@ export function configHome(
 }
 
 function validateHostedValue(key: string, value: string): void {
+  if (key === 'display.timezone') {
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: value })
+    } catch {
+      throw new Error(
+        `refusing display.timezone ${value}: not an IANA time zone; e.g. ${PLATFORM_SLUG} machine config set display.timezone America/New_York`,
+      )
+    }
+    return
+  }
   if (key.startsWith('autonomy.')) {
     validateAutonomyEntry(key, value)
     return
@@ -894,6 +905,7 @@ export async function setConfigEntry(
     client ?? clientFactory(),
     destination,
   )
+  if (key === 'display.timezone') writeCachedDisplayTimezone(value, env)
   return { key: row.key, value: row.value, home, row }
 }
 
@@ -967,6 +979,7 @@ export async function getConfigEntry(
     }
   }
   const row = await getEntry(key, home, client ?? clientFactory())
+  if (key === 'display.timezone') writeCachedDisplayTimezone(row.value, env)
   const machineRow = key.startsWith('autonomy.')
     ? listMachineAutonomy(env).find((candidate) => candidate.key === key)
     : undefined

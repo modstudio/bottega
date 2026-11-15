@@ -13,7 +13,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { concernStateDirectory, type StateEnvironment } from '../../../shared/state-directory.ts'
 
 export type { StateEnvironment } from '../../../shared/state-directory.ts'
@@ -31,11 +31,19 @@ export type CachedSessionContext = {
   hosted: { user: AutonomySettings; space: AutonomySettings }
 }
 
+type CachedUserDisplay = {
+  version: 1
+  displayTimezone: string | null
+}
+
 const cacheDirectory = (env: StateEnvironment) =>
   join(concernStateDirectory('orchestrator', env), 'autonomy-context')
 
 const cachePath = (project: string, env: StateEnvironment) =>
   join(cacheDirectory(env), `${Buffer.from(project).toString('base64url')}.json`)
+
+const userDisplayCachePath = (env: StateEnvironment) =>
+  join(cacheDirectory(env), 'user.display.json')
 
 function object(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -83,10 +91,29 @@ export function readSessionContextCache(
   }
 }
 
-export function writeSessionContextCache(value: CachedSessionContext, env: StateEnvironment): void {
-  const directory = cacheDirectory(env)
+function validTimezone(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value })
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function readCachedDisplayTimezone(env: StateEnvironment): string | null {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(userDisplayCachePath(env), 'utf8'))
+    if (!object(parsed) || parsed.version !== 1) return null
+    return validTimezone(parsed.displayTimezone) ? parsed.displayTimezone : null
+  } catch {
+    return null
+  }
+}
+
+function writeCacheFile(target: string, value: unknown): void {
+  const directory = dirname(target)
   mkdirSync(directory, { recursive: true, mode: 0o700 })
-  const target = cachePath(value.project, env)
   const temporary = join(directory, `.${basename(target)}.tmp-${process.pid}-${randomUUID()}`)
   let descriptor: number | null = null
   try {
@@ -95,14 +122,7 @@ export function writeSessionContextCache(value: CachedSessionContext, env: State
       constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
       0o600,
     )
-    const stored = {
-      ...value,
-      hosted: {
-        user: autonomySettingsForStorage(value.hosted.user),
-        space: autonomySettingsForStorage(value.hosted.space),
-      },
-    }
-    writeFileSync(descriptor, `${JSON.stringify(stored)}\n`)
+    writeFileSync(descriptor, `${JSON.stringify(value)}\n`)
     fsyncSync(descriptor)
     closeSync(descriptor)
     descriptor = null
@@ -117,4 +137,24 @@ export function writeSessionContextCache(value: CachedSessionContext, env: State
     if (descriptor !== null) closeSync(descriptor)
     rmSync(temporary, { force: true })
   }
+}
+
+export function writeCachedDisplayTimezone(
+  displayTimezone: string | null,
+  env: StateEnvironment,
+): void {
+  const value: CachedUserDisplay = { version: 1, displayTimezone }
+  writeCacheFile(userDisplayCachePath(env), value)
+}
+
+export function writeSessionContextCache(value: CachedSessionContext, env: StateEnvironment): void {
+  const target = cachePath(value.project, env)
+  const stored = {
+    ...value,
+    hosted: {
+      user: autonomySettingsForStorage(value.hosted.user),
+      space: autonomySettingsForStorage(value.hosted.space),
+    },
+  }
+  writeCacheFile(target, stored)
 }

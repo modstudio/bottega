@@ -142,7 +142,7 @@ test('session summary assembles only this session owed runs, held remedies, and 
   expect(result.lines).toContain('In progress: 1 run')
   expect(result.lines.join('\n')).not.toContain(`run ${otherNumber} implement unscored`)
   expect(result.lines).toContain(
-    `worktree for run ${heldNumber} (craft) is held → ${PLATFORM_SLUG} run close-out ${heldNumber}`,
+    `1 held worktree (craft): ${heldNumber} → ${PLATFORM_SLUG} run close-out <run>`,
   )
   expect(result.lines.join('\n')).not.toMatch(
     /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/,

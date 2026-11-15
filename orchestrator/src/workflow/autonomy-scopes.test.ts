@@ -13,7 +13,12 @@ import {
   resolveAnswerRulings,
   resolveProjectAutonomy,
 } from './autonomy-scopes.ts'
-import { readSessionContextCache, writeSessionContextCache } from './session-context-cache.ts'
+import {
+  readCachedDisplayTimezone,
+  readSessionContextCache,
+  writeCachedDisplayTimezone,
+  writeSessionContextCache,
+} from './session-context-cache.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 
 const steps = [
@@ -160,7 +165,10 @@ test('an available hosted read refreshes the cache used by the following unavail
     {},
     () =>
       ({
-        listEntries: async () => [{ scope: 'user', key: 'autonomy.preset', value: 'autonomous' }],
+        listEntries: async () => [
+          { scope: 'user', key: 'autonomy.preset', value: 'autonomous' },
+          { scope: 'user', key: 'display.timezone', value: 'America/New_York' },
+        ],
       }) as never,
     d,
     environment,
@@ -176,6 +184,7 @@ test('an available hosted read refreshes the cache used by the following unavail
     project: 'fixture',
     hosted: { user: { preset: 'autonomous' }, space: {} },
   })
+  expect(readCachedDisplayTimezone(environment)).toBe('America/New_York')
 
   const stale = await resolveProjectAutonomy(
     'fixture',
@@ -199,6 +208,14 @@ test('an available hosted read refreshes the cache used by the following unavail
   expect(stale.steps.design).toEqual({ value: 'review', scope: 'hosted user (stale)' })
   expect(stale.note).toContain('resolved from cached hosted autonomy settings')
   expect(stale.note).toContain('cache age 5000 ms')
+})
+
+test('the user display cache treats missing and invalid zones as unset', () => {
+  const state = mkdtempSync(join(tmpdir(), 'display-timezone-cache-'))
+  const environment = { BOTTEGA_STATE_HOME: state }
+  expect(readCachedDisplayTimezone(environment)).toBeNull()
+  writeCachedDisplayTimezone('Mars/Olympus', environment)
+  expect(readCachedDisplayTimezone(environment)).toBeNull()
 })
 
 test('a cache write failure preserves an available resolution and adds a warning', async () => {

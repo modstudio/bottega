@@ -6,6 +6,7 @@ import { PLATFORM_SLUG } from './brand.ts'
 import { CONFIG_HOME_ENV } from './config-directory.ts'
 import {
   deleteMachineValue,
+  configHomes,
   editMachinePermission,
   editMachinePermissionTable,
   listMachineEntries,
@@ -26,6 +27,10 @@ import {
 const path = '/config/platform/machine.toml'
 const silent = () => {}
 const freshWarnings = () => new Set<string>()
+
+test('display timezone has only a hosted user home', () => {
+  expect(configHomes('display.timezone')).toEqual(['user'])
+})
 
 describe('stored machine names', () => {
   let configRoot: string

@@ -13,6 +13,10 @@ import {
   listWorkflowCursors,
   type WorkflowCursorListRow,
 } from '../workflow/workflow-cursor-list.ts'
+import {
+  readCachedDisplayTimezone,
+  type StateEnvironment,
+} from '../workflow/session-context-cache.ts'
 import { activeLandings } from './session-close-out.ts'
 import {
   type SessionReviewBranchRefExists,
@@ -63,10 +67,6 @@ export function landingTreeIsActive(
   )
 }
 
-function heldWorktreeCommand(tree: StopSummaryHeldTreeRow): string {
-  return `${PLATFORM_SLUG} run close-out ${tree.number}`
-}
-
 export async function sessionStopSummary(
   options: {
     session: string
@@ -74,6 +74,7 @@ export async function sessionStopSummary(
     now?: string
     reviewVerdictGatherer?: SessionReviewVerdictGatherer
     reviewBranchRefExists?: SessionReviewBranchRefExists
+    stateEnvironment?: StateEnvironment
   },
   database: Database = db(),
 ): Promise<StopSummaryDecision> {
@@ -142,26 +143,28 @@ export async function sessionStopSummary(
   const owedItems: StopSummaryOwedItem[] = [
     ...reviews.owedItems,
     ...owedRuns.map((run) => ({
-      label: `run ${run.number} ${run.job}${run.launch_key ? ` ${run.launch_key}` : ''} unscored`,
-      command: `${PLATFORM_SLUG} score ${run.number} (see ${PLATFORM_SLUG} score --help)`,
+      kind: 'unscored run',
+      qualifier: [run.job, run.launch_key].filter(Boolean).join(', '),
+      id: String(run.number),
+      command: `${PLATFORM_SLUG} score <run>`,
       owedAt: run.owed_at,
     })),
     ...heldTrees
       .filter((tree) => !activeTrees.includes(tree))
       .map((tree) => ({
-        label:
-          tree.job === LANDING_TREE_JOB
-            ? `landing tree ${tree.worktree ?? `run ${tree.number}`} is held`
-            : `worktree for run ${tree.number} (${tree.job}) is held`,
+        kind: tree.job === LANDING_TREE_JOB ? 'held landing tree' : 'held worktree',
+        qualifier: tree.job === LANDING_TREE_JOB ? null : tree.job,
+        id: tree.worktree ?? String(tree.number),
         command:
           tree.job === LANDING_TREE_JOB && tree.worktree
-            ? `${PLATFORM_SLUG} tree remove ${tree.worktree}`
-            : heldWorktreeCommand(tree),
+            ? `${PLATFORM_SLUG} tree remove <worktree>`
+            : `${PLATFORM_SLUG} run close-out <run>`,
         owedAt: tree.close_out_attempted_at ?? now,
       })),
   ]
   return decideStopSummary({
     now,
+    displayTimezone: readCachedDisplayTimezone(options.stateEnvironment ?? process.env),
     questionCounts,
     cursors: cursors.map((cursor) => ({
       key: cursor.workflow_key || null,

@@ -22,6 +22,7 @@ import {
   verifyTrustLog,
 } from '../../../shared/trust-log.ts'
 import { readRememberedTrustLogHead } from '../../../shared/trust-log-head.ts'
+import { readCachedDisplayTimezone } from '../workflow/session-context-cache.ts'
 import {
   applyLegacyEnvironmentSecretMigration,
   claimCurrentMachineKey,
@@ -63,6 +64,10 @@ afterEach(() => {
 test('the declared home chooses machine and hosted keys and refuses an unsupported scope with its remedy', () => {
   expect(configHome('routing.cost_policy')).toBe('machine')
   expect(configHome('autonomy.preset')).toBe('user')
+  expect(configHome('display.timezone')).toBe('user')
+  expect(() => configHome('display.timezone', 'machine')).toThrow(
+    'its home is hosted user scope',
+  )
   expect(() => configHome('subscription.codex.monthly_usd', 'space')).toThrow(
     `refusing config key subscription.codex.monthly_usd in hosted space scope: its home is hosted user scope; write it with \`${PLATFORM_SLUG} machine config set subscription.codex.monthly_usd <value>\``,
   )
@@ -73,7 +78,7 @@ test('the declared home chooses machine and hosted keys and refuses an unsupport
     `${PLATFORM_SLUG} machine config get --machine routing.cost_policy`,
   )
   expect(() => configHome('unknown.key')).toThrow(
-    `accepted families are machine catalogue keys, autonomy.*, and subscription.<harness>.monthly_usd; inspect machine keys with \`${PLATFORM_SLUG} machine config list --machine\``,
+    `accepted families are machine catalogue keys, display.timezone, autonomy.*, and subscription.<harness>.monthly_usd; inspect machine keys with \`${PLATFORM_SLUG} machine config list --machine\``,
   )
 })
 
@@ -212,6 +217,38 @@ test('invalid hosted subscription and autonomy values are refused before any wri
     setConfigEntry('autonomy.preset', 'sometimes', 'user', undefined, client),
   ).rejects.toThrow('value must be one of')
   expect(calls).toEqual([])
+})
+
+test('display timezone validates before writing and a successful set refreshes the user cache', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'config-display-timezone-'))
+  roots.push(root)
+  const env = { HOME: root, BOTTEGA_STATE_HOME: join(root, 'state') }
+  const calls: string[] = []
+  const client = {
+    putEntry: async (key: string, input: { value: string }) => {
+      calls.push(`${key}=${input.value}`)
+      return {
+        key,
+        scope: 'user',
+        environment: 'default',
+        value: input.value,
+        rowVersion: 1,
+        updatedAt: '2026-11-15T12:00:00.000Z',
+      }
+    },
+  } as unknown as ConfigClient
+
+  await expect(
+    setConfigEntry('display.timezone', 'Mars/Olympus', undefined, null, client, env),
+  ).rejects.toThrow(
+    `refusing display.timezone Mars/Olympus: not an IANA time zone; e.g. ${PLATFORM_SLUG} machine config set display.timezone America/New_York`,
+  )
+  expect(calls).toEqual([])
+
+  await expect(
+    setConfigEntry('display.timezone', 'America/New_York', undefined, null, client, env),
+  ).resolves.toMatchObject({ home: 'user', value: 'America/New_York' })
+  expect(readCachedDisplayTimezone(env)).toBe('America/New_York')
 })
 
 test('hosted autonomy get reports the machine value that outranks it locally', async () => {

@@ -33,6 +33,7 @@ import {
   type CachedSessionContext,
   readSessionContextCache,
   type StateEnvironment,
+  writeCachedDisplayTimezone,
   writeSessionContextCache,
 } from './session-context-cache.ts'
 import type { CatalogueStep } from './step-catalogue.ts'
@@ -52,7 +53,13 @@ const hostedSettings = (rows: HostedEntry[], scope: 'user' | 'space') =>
   )
 
 type HostedRead =
-  | { status: 'available'; user: AutonomySettings; space: AutonomySettings; warnings: string[] }
+  | {
+      status: 'available'
+      user: AutonomySettings
+      space: AutonomySettings
+      displayTimezone: string | null
+      warnings: string[]
+    }
   | {
       status: 'not-configured'
       user: AutonomySettings
@@ -91,6 +98,8 @@ async function readHosted(
     status: 'available',
     user: user.settings,
     space: space.settings,
+    displayTimezone:
+      rows.find((row) => row.scope === 'user' && row.key === 'display.timezone')?.value ?? null,
     warnings: [user.warning, space.warning].filter((warning): warning is string =>
       Boolean(warning),
     ),
@@ -104,6 +113,7 @@ function refreshHostedCache(
   now: () => Date,
 ): string | null {
   try {
+    writeCachedDisplayTimezone(hosted.displayTimezone, stateEnvironment)
     writeSessionContextCache(
       {
         version: 1,
