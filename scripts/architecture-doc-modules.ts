@@ -107,6 +107,7 @@ export const docModules: DocModule[] = [
     '../project/projects.ts',
     '../run/question-open.ts',
     '../run/run-status.ts',
+    '../session/session-review-verdicts.ts',
     '../workflow/session-context.ts',
     '../workflow/task-flow-store.ts',
     '../workflow/workflow-cursor-list.ts',

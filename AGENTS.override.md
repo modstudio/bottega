@@ -377,27 +377,20 @@ Separate novel product behavior from its ordinary internal machinery because
 the halves usually have different build-or-buy answers. Record negative
 results in the specification so later work does not repeat the search.
 
-## Review rounds are a funnel
+## Review rounds follow the funnel
 
-`review-tier-classifier.ts:classifyReviewTier` sets the tier from path risk
-and size, one lower at size `0` unless `firm`; the project's declaration
-selects its lenses; tier `0` runs none. Check the tier before every round.
+`bottega review tier` names the lenses a change still owes and whether another
+round may run; the review funnel policy
+(`review-funnel/review-funnel-policy.ts`) decides it. Dispatch exactly what it
+lists. When it lists none, the architect reads the fix and lands it. Fix real
+findings in their round; drop speculation in triage.
 
-The initial review is the only full review. A later round runs only when a
-tier `3` fix touched a tier `3` path, as a regression check: only the lenses
-with accepted findings, plus any whose paths it newly touched. A clean lens
-drops out for good; a round with no accepted findings ends the ladder.
-Dispatch only what the funnel admits, not all `bottega review tier` lists.
-Otherwise the architect reads the fix and lands it. Fix real findings in
-their round; drop speculation in triage.
+At the round ceiling the architect rules: if no finding left can cause harm,
+land with test-only fixes and file the rest.
 
-A well-sized change leaves by its third round. At the ceiling the architect
-rules: if no finding left can cause harm, land with test-only fixes and file
-the rest.
-
-Respect the orchestration policy's review concurrency ceiling.
-When a gate cannot run, record why and land on the evidence available; do not
-spend another turn re-presenting an unchanged recommendation.
+Respect the orchestration policy's review concurrency ceiling. When a gate
+cannot run, record why and land on the evidence available; do not spend
+another turn re-presenting an unchanged recommendation.
 
 ## Measure the class before fixing an instance
 

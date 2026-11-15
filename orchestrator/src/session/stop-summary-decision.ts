@@ -24,6 +24,7 @@ export type StopSummaryFacts = {
   now: string
   questionCount: number
   cursors: StopSummaryCursor[]
+  reviewVerdictLines: string[]
   liveRuns: number
   incompleteReviews: number
   inFlightLandings: number
@@ -67,6 +68,7 @@ export function decideStopSummary(facts: StopSummaryFacts): StopSummaryDecision 
       ? `${count(facts.questionCount, 'question')} waiting on you → ${PLATFORM_SLUG} question inbox`
       : 'Nothing waiting on you',
     ...facts.cursors.map(cursorLine),
+    ...facts.reviewVerdictLines,
   ]
   const moving = movingLine(facts)
   if (moving) lines.push(moving)

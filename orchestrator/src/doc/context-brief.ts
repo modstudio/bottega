@@ -10,6 +10,7 @@ import { filedIssueQueueState } from '../issue/issue-dispatch.ts'
 import { projectAt } from '../project/projects.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { LIVE_RUN_STATUS_SQL } from '../run/run-status.ts'
+import { sessionReviewVerdictLines } from '../session/session-review-verdicts.ts'
 import { architectSessionContext } from '../workflow/session-context.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import {
@@ -55,6 +56,7 @@ export type ContextBrief = {
     runs: number[]
   }>
   claims: Array<{ kind: string; value: string }>
+  reviewVerdictLines?: string[]
   waiting: {
     boardRequests: number
     questions: number
@@ -114,6 +116,7 @@ export function renderContextBrief(brief: ContextBrief): string {
   ]
   if (inFlight.length) lines.push('In flight:', ...inFlight.map((line) => `  ${line}`))
   else lines.push('In flight: none')
+  lines.push(...(brief.reviewVerdictLines ?? []))
   lines.push(
     `Waiting: ${count(brief.waiting.boardRequests, 'board request')} (${PLATFORM_SLUG} board read) · ` +
       `${count(brief.waiting.questions, 'question')} · ` +
@@ -354,6 +357,7 @@ export async function contextBrief(
       runs: inFlight.cursorRuns.find((item) => item.recordId === cursor.record_id)?.runs ?? [],
     })),
     claims: inFlight.claims,
+    reviewVerdictLines: sessionReviewVerdictLines(session, cursors, database),
     waiting: {
       boardRequests,
       questions: runQuestions.count + cursorQuestions.count,

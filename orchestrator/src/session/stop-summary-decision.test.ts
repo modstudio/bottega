@@ -11,6 +11,7 @@ const facts = (overrides: Partial<StopSummaryFacts> = {}): StopSummaryFacts => (
   now: NOW,
   questionCount: 0,
   cursors: [],
+  reviewVerdictLines: [],
   liveRuns: 0,
   incompleteReviews: 0,
   inFlightLandings: 0,

@@ -69,6 +69,9 @@ test('renders the compact context layout line by line and keeps only item first 
       },
     ],
     claims: [{ kind: 'task', value: 'DEV-1844/2' }],
+    reviewVerdictLines: [
+      `DEV-1844 review: lens correctness owed → ${PLATFORM_SLUG} review tier DEV-1844-work`,
+    ],
     waiting: { boardRequests: 2, questions: 0, filedIssues: 3, resumeBriefs: 1 },
     autonomy: 'plan review · implement, review, docs, canon auto · ship trunk',
   }
@@ -88,6 +91,7 @@ test('renders the compact context layout line by line and keeps only item first 
     '  cursor 1369 plan-task design step 3/7 design, awaiting q5277, runs 31110',
     '  unbound run 31111 review asking',
     '  unbound claim task:DEV-1844/2',
+    `DEV-1844 review: lens correctness owed → ${PLATFORM_SLUG} review tier DEV-1844-work`,
     `Waiting: 2 board requests (${PLATFORM_SLUG} board read) · 0 questions · 3 filed issues (${PLATFORM_SLUG} workflow fix-defect --waiting) · 1 resume brief (${PLATFORM_SLUG} doc resumes)`,
     'Autonomy: plan review · implement, review, docs, canon auto · ship trunk',
   ])

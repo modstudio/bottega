@@ -16,14 +16,9 @@ import { type ChangeGroup, measureChangeGroup, serializePathSet } from '../revie
 import { gatherPostFixReviewFacts, postFixReviewDecision } from '../review/review-post-fix.ts'
 import type { ReviewRoundBudgetDecision } from '../review/review-round-budget.ts'
 import { reviewRemoteTrunkRefExists, reviewTrunkRef } from '../review/review-target.ts'
-import {
-  decideReviewFunnel,
-  type ReviewFunnelVerdict,
-} from '../review-funnel/decide-review-funnel.ts'
+import type { ReviewFunnelVerdict } from '../review-funnel/decide-review-funnel.ts'
 import {
   gatherAdmissionEvidenceDecision,
-  gatherFunnelFacts,
-  type ReviewFunnelChange,
   readLandingOverridesForBranch as readFunnelLandingOverridesForBranch,
 } from '../review-funnel/gather-funnel-facts.ts'
 import {
@@ -36,7 +31,7 @@ import {
   recordReviewFunnelDecision,
 } from '../review-funnel/review-funnel-decision-log.ts'
 import { budgetedRoundApplicabilityForChange } from '../review-funnel/review-funnel-plan-service.ts'
-import { activeReviewFunnelPolicy } from '../review-funnel/review-funnel-policy.ts'
+import { reviewFunnelVerdictForChange } from '../review-funnel/review-funnel-verdict-service.ts'
 import {
   type AdmissionDecision,
   type AdmissionOverride,
@@ -171,11 +166,7 @@ export type EvaluatedAdmission = AdmissionWithTriage & {
   verdict: ReviewFunnelVerdict
 }
 
-function funnelChange(
-  change: PullRequestChange,
-  database: Database,
-  selectionWindow: number,
-): ReviewFunnelChange {
+function funnelChange(change: PullRequestChange, database: Database) {
   return {
     database,
     cwd: change.project.path,
@@ -184,17 +175,11 @@ function funnelChange(
     branch: change.branch,
     project: change.project,
     resolved: change,
-    selectionWindow,
   }
 }
 
 function funnelVerdict(change: PullRequestChange, database: Database) {
-  const active = activeReviewFunnelPolicy()
-  const facts = gatherFunnelFacts(funnelChange(change, database, active.policy.selection.window))
-  return {
-    facts,
-    verdict: decideReviewFunnel(facts, active.policy, active.policyVersion),
-  }
+  return reviewFunnelVerdictForChange(funnelChange(change, database))
 }
 
 function funnelRefusal(condition: string, verdict: ReviewFunnelVerdict): string {
