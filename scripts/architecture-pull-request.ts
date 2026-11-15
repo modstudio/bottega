@@ -82,15 +82,7 @@ export const pullRequestModuleSpecs = [
   },
   {
     file: 'orchestrator/src/pull-request/triage-decision.ts',
-    allowed: [
-      '../review/review-applicability.ts',
-      '../review/review-group.ts',
-      '../review/review-lens-provenance.ts',
-      '../review/review-role.ts',
-      '../review/review-second-opinion.ts',
-      '../review/review-vocabulary.ts',
-    ],
-    typeOnlyAllowed: ['../review/review-group.ts', '../review/review-vocabulary.ts'],
+    allowed: ['../review-funnel/review-funnel-admission-evidence.ts'],
   },
   { file: 'orchestrator/src/pull-request/pre-push-decision.ts', allowed: [] },
   { file: 'orchestrator/src/pull-request/mergeability-decision.ts', allowed: [] },
@@ -106,7 +98,7 @@ export const pullRequestModuleSpecs = [
   },
   {
     file: 'orchestrator/src/pull-request/override-decision.ts',
-    allowed: ['./triage-decision.ts'],
+    allowed: ['../review-funnel/review-funnel-admission-evidence.ts'],
   },
   {
     file: 'orchestrator/src/pull-request/admission-decision.ts',
@@ -132,6 +124,7 @@ export const pullRequestModuleSpecs = [
       '../record/landing-outbox.ts',
       '../review-funnel/decide-review-funnel.ts',
       '../review-funnel/gather-funnel-facts.ts',
+      '../review-funnel/review-funnel-admission-evidence.ts',
       '../review-funnel/review-funnel-decision-log.ts',
       '../review-funnel/review-funnel-policy.ts',
       '../review/review-group.ts',
@@ -146,7 +139,6 @@ export const pullRequestModuleSpecs = [
       './mergeability-decision.ts',
       './override-decision.ts',
       './pre-push-decision.ts',
-      './triage-decision.ts',
     ],
   },
   {

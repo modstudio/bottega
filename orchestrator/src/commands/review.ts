@@ -83,11 +83,17 @@ function tierReviewCliCommand(argv: string[], flags: CliFlags, { log }: ReviewPr
   if (!value) throw new Error(`${PLATFORM_SLUG} review tier <branch|run-id|from..to> [--json]`)
   const result = reviewTierCommandOutput(value, resolveReviewCommandCwd(flags.flag('cwd')))
   const json = flags.has('json')
+  const verdict = result.output.funnel_verdict
+  const creditsCeilingWork =
+    result.output.credited_by_architect_read.lenses.length > 0 ||
+    result.output.credited_by_architect_read.secondOpinion !== undefined
   const ceilingGuidance = json
     ? null
-    : result.output.funnel_verdict.next.action === 'ask-ceiling-ruling'
-      ? `review round ceiling reached: ${result.output.funnel_verdict.remedy}`
-      : null
+    : verdict.next.action === 'ask-ceiling-ruling'
+      ? `review round ceiling reached: ${verdict.remedy}`
+      : verdict.next.action === 'record-read' && creditsCeilingWork
+        ? `review round ceiling reached: the architect rules after reading this exact change; cleared by: ${verdict.remedy}`
+        : null
   printReviewTier(result.output, json, ceilingGuidance, log)
 }
 

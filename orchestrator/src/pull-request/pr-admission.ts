@@ -10,30 +10,32 @@ import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { type Project, projectAt } from '../project/projects.ts'
 import { enqueueLandingOverride, enqueueLandingTriageSnapshot } from '../record/landing-outbox.ts'
-import {
-  decideReviewFunnel,
-  type ReviewFunnelVerdict,
-} from '../review-funnel/decide-review-funnel.ts'
-import { gatherFunnelFacts, type ReviewFunnelChange } from '../review-funnel/gather-funnel-facts.ts'
-import {
-  recordReviewFunnelDecision,
-  type ReviewFunnelDecisionSurface,
-} from '../review-funnel/review-funnel-decision-log.ts'
-import { activeReviewFunnelPolicy } from '../review-funnel/review-funnel-policy.ts'
 import type { ApplicableReview, ReviewFunnelPlan } from '../review/review-applicability.ts'
-import {
-  branchRunOwnerSession,
-  type ChangeGroup,
-  measureChangeGroup,
-  reviewsForAdmission,
-  serializePathSet,
-  type TriageReviewRow,
-} from '../review/review-group.ts'
-import { reviewLineage } from '../review/review-lineage-store.ts'
+import { type ChangeGroup, measureChangeGroup, serializePathSet } from '../review/review-group.ts'
 import { gatherPostFixReviewFacts, postFixReviewDecision } from '../review/review-post-fix.ts'
 import type { ReviewRoundBudgetDecision } from '../review/review-round-budget.ts'
 import { budgetedRoundApplicabilityForChange } from '../review/review-round-lens-service.ts'
 import { reviewRemoteTrunkRefExists, reviewTrunkRef } from '../review/review-target.ts'
+import {
+  decideReviewFunnel,
+  type ReviewFunnelVerdict,
+} from '../review-funnel/decide-review-funnel.ts'
+import {
+  gatherAdmissionEvidenceDecision,
+  gatherFunnelFacts,
+  type ReviewFunnelChange,
+  readLandingOverridesForBranch as readFunnelLandingOverridesForBranch,
+} from '../review-funnel/gather-funnel-facts.ts'
+import {
+  ceilingTriageFacts,
+  type MissingLens,
+  type TriageDecision,
+} from '../review-funnel/review-funnel-admission-evidence.ts'
+import {
+  type ReviewFunnelDecisionSurface,
+  recordReviewFunnelDecision,
+} from '../review-funnel/review-funnel-decision-log.ts'
+import { activeReviewFunnelPolicy } from '../review-funnel/review-funnel-policy.ts'
 import {
   type AdmissionDecision,
   type AdmissionOverride,
@@ -47,13 +49,6 @@ import {
 } from './mergeability-decision.ts'
 import { decideTriageOverride, type TriageOverrideAttribution } from './override-decision.ts'
 import { decidePrePush, destinationBranch } from './pre-push-decision.ts'
-import {
-  ceilingTriageFacts,
-  decideTriage,
-  type MissingLens,
-  type TriageDecision,
-  type TriageReviewGroup,
-} from '../review-funnel/review-funnel-admission-evidence.ts'
 
 export const REVIEW_READ_VERB = `${PLATFORM_SLUG} review read`
 
@@ -160,91 +155,11 @@ export function resolvePullRequestChangeForProject(
 }
 
 export function triageDecision(change: PullRequestChange, database: Database): TriageDecision {
-  const reviews = reviewsForAdmission(database, change.group)
-  const lineage = reviewLineage(database, change.project.name, change.branch)
-  const grouped = new Map<string, TriageReviewRow[]>()
-  for (const review of reviews.branchReviews) {
-    if (review.patchId === null || review.pathSet === null) continue
-    const key = JSON.stringify([review.patchId, review.pathSet])
-    const group = grouped.get(key) ?? []
-    group.push(review)
-    grouped.set(key, group)
-  }
-  const branchReviewGroups: TriageReviewGroup[] = [...grouped.values()].map((reviews) => ({
-    reviews,
-  }))
-  return decideTriage({
-    patchId: change.group.patchId,
-    pathSet: serializePathSet(change.group.pathSet),
-    tier: change.tier,
-    applicableReview: change.applicability,
-    reviewPlan: change.reviewPlan,
-    branchOwnerSession: branchRunOwnerSession(database, change.project.name, change.branch),
-    reviews: reviews.reviews,
-    branchReviewGroups,
-    reads: database
-      .query<
-        {
-          record_id: string
-          patch_id: string
-          path_set: string
-          recorded_at: string
-          session_id: string | null
-        },
-        string[]
-      >(
-        `SELECT record_id,patch_id,path_set,recorded_at,session_id FROM review_read
-        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-          AND branch IN (${lineage.map(() => '?').join(',')})
-        ORDER BY recorded_at DESC,record_id DESC`,
-      )
-      .all(change.project.name, ...lineage)
-      .map((row) => ({
-        recordId: row.record_id,
-        patchId: row.patch_id,
-        pathSet: row.path_set,
-        recordedAt: row.recorded_at,
-        sessionId: row.session_id,
-      })),
-  })
-}
-
-export function readLandingOverridesForBranch(
-  database: Database,
-  project: string,
-  branch: string,
-): AdmissionOverride[] {
-  return database
-    .query<
-      {
-        recordId: string
-        project: string
-        branch: string
-        tip: string
-        tree: string
-        patchId: string | null
-        pathSet: string | null
-        attribution: TriageOverrideAttribution
-        reason: string
-        missingLenses: string
-      },
-      [string, string]
-    >(
-      `SELECT record_id AS recordId,project,branch,tip,tree,patch_id AS patchId,path_set AS pathSet,
-              attribution,reason,missing_lenses AS missingLenses
-       FROM landing_override
-       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-         AND branch=? ORDER BY at DESC,record_id DESC`,
-    )
-    .all(project, branch)
-    .map((row) => ({
-      ...row,
-      missingLenses: JSON.parse(row.missingLenses) as string[],
-    }))
+  return gatherAdmissionEvidenceDecision(change, database)
 }
 
 function overridesForChange(change: PullRequestChange, database: Database): AdmissionOverride[] {
-  return readLandingOverridesForBranch(database, change.project.name, change.branch)
+  return readFunnelLandingOverridesForBranch(database, change.project.name, change.branch)
 }
 
 export type EvaluatedAdmission = AdmissionDecision & {
@@ -804,12 +719,11 @@ export function checkPushedTip(cwd: string, sha: string, remoteRef: string): Pus
       known: true,
       complete: policy.admit,
       infrastructureError: null,
-      refusal:
-        !policy.admit
-          ? checked.triage.complete
-            ? `review funnel requires ${checked.verdict.next.action}; cleared by: ${checked.verdict.remedy}`
-            : triageRefusal(change, checked.triage)
-          : null,
+      refusal: !policy.admit
+        ? checked.triage.complete
+          ? `review funnel requires ${checked.verdict.next.action}; cleared by: ${checked.verdict.remedy}`
+          : triageRefusal(change, checked.triage)
+        : null,
       pendingIntent: pendingIntent(database, project.name, branch),
       overrideId: decision.overrideId,
     }

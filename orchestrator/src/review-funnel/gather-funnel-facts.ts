@@ -4,17 +4,17 @@
 import type { Database } from 'bun:sqlite'
 import { readLandedReviewIds } from '../branch/branch-landing-records.ts'
 import type { Project } from '../project/projects.ts'
+import type { AdmissionOverride } from '../pull-request/admission-decision.ts'
+import type { TriageOverrideAttribution } from '../pull-request/override-decision.ts'
 import {
-  readLandingOverridesForBranch,
-  resolvePullRequestChangeForProject,
-  triageDecision,
-} from '../pull-request/pr-admission.ts'
-import { ceilingTriageFacts } from './review-funnel-admission-evidence.ts'
-import {
+  branchRunOwnerSession,
+  type ChangeGroup,
   provenanceSubjectFacts,
+  reviewsForAdmission,
   reviewsForTriage,
   reviewTaskKeyForBranch,
   serializePathSet,
+  type TriageReviewRow,
 } from '../review/review-group.ts'
 import { reviewLineage } from '../review/review-lineage-store.ts'
 import { measureChangeIdentity } from '../review/review-pins.ts'
@@ -37,6 +37,13 @@ import type {
   ReviewFunnelLensStatus,
   ReviewFunnelRoundFact,
 } from './decide-review-funnel.ts'
+import {
+  ceilingTriageFacts,
+  decideTriage,
+  type TriageDecision,
+  type TriageReviewGroup,
+} from './review-funnel-admission-evidence.ts'
+import { budgetedReviewPlanForResolvedChange } from './review-funnel-plan-service.ts'
 
 const RUNNING_LENS_STATUS = 'running' satisfies ReviewFunnelLensStatus
 const UNTRIAGED_LENS_STATUS = 'untriaged' satisfies ReviewFunnelLensStatus
@@ -102,6 +109,40 @@ function overrideFacts(
   }
 }
 
+export function readLandingOverridesForBranch(
+  database: Database,
+  project: string,
+  branch: string,
+): AdmissionOverride[] {
+  return database
+    .query<
+      {
+        recordId: string
+        project: string
+        branch: string
+        tip: string
+        tree: string
+        patchId: string | null
+        pathSet: string | null
+        attribution: TriageOverrideAttribution
+        reason: string
+        missingLenses: string
+      },
+      [string, string]
+    >(
+      `SELECT record_id AS recordId,project,branch,tip,tree,patch_id AS patchId,path_set AS pathSet,
+              attribution,reason,missing_lenses AS missingLenses
+       FROM landing_override
+       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+         AND branch=? ORDER BY at DESC,record_id DESC`,
+    )
+    .all(project, branch)
+    .map((row) => ({
+      ...row,
+      missingLenses: JSON.parse(row.missingLenses) as string[],
+    }))
+}
+
 function completionFacts(branchReviews: ReturnType<typeof reviewsForTriage>['branchReviews']) {
   const incomplete = branchReviews.filter(({ completedAt }) => completedAt === null)
   const untriaged: ReviewFunnelLensState[] = incomplete.flatMap((review) =>
@@ -119,27 +160,90 @@ function completionFacts(branchReviews: ReturnType<typeof reviewsForTriage>['bra
   }
 }
 
-function gatheredTriage(change: ReviewFunnelChange) {
-  if (!change.resolved) {
-    return triageDecision(
-      resolvePullRequestChangeForProject(
-        change.cwd,
-        change.project,
-        change.branch,
-        change.head,
-        change.database,
-      ),
-      change.database,
-    )
+type AdmissionEvidenceChange = NonNullable<ReviewFunnelChange['resolved']> & {
+  project: Project
+  branch: string
+}
+
+export function gatherAdmissionEvidenceDecision(
+  change: AdmissionEvidenceChange,
+  database: Database,
+): TriageDecision {
+  const reviews = reviewsForAdmission(database, change.group)
+  const lineage = reviewLineage(database, change.project.name, change.branch)
+  const grouped = new Map<string, TriageReviewRow[]>()
+  for (const review of reviews.branchReviews) {
+    if (review.patchId === null || review.pathSet === null) continue
+    const key = JSON.stringify([review.patchId, review.pathSet])
+    grouped.set(key, [...(grouped.get(key) ?? []), review])
   }
-  return triageDecision(
-    {
-      ...change.resolved,
-      project: change.project,
-      branch: change.branch,
-      tip: change.head,
-      tree: '',
-    },
+  const branchReviewGroups: TriageReviewGroup[] = [...grouped.values()].map((rows) => ({
+    reviews: rows,
+  }))
+  return decideTriage({
+    patchId: change.group.patchId,
+    pathSet: serializePathSet(change.group.pathSet),
+    tier: change.tier,
+    applicableReview: change.applicability,
+    reviewPlan: change.reviewPlan,
+    branchOwnerSession: branchRunOwnerSession(database, change.project.name, change.branch),
+    reviews: reviews.reviews,
+    branchReviewGroups,
+    reads: database
+      .query<
+        {
+          record_id: string
+          patch_id: string
+          path_set: string
+          recorded_at: string
+          session_id: string | null
+        },
+        string[]
+      >(
+        `SELECT record_id,patch_id,path_set,recorded_at,session_id FROM review_read
+        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+          AND branch IN (${lineage.map(() => '?').join(',')})
+        ORDER BY recorded_at DESC,record_id DESC`,
+      )
+      .all(change.project.name, ...lineage)
+      .map((row) => ({
+        recordId: row.record_id,
+        patchId: row.patch_id,
+        pathSet: row.path_set,
+        recordedAt: row.recorded_at,
+        sessionId: row.session_id,
+      })),
+  })
+}
+
+function gatheredTriage(change: ReviewFunnelChange, group: ChangeGroup) {
+  const resolved =
+    change.resolved ??
+    (() => {
+      const plan = budgetedReviewPlanForResolvedChange({
+        database: change.database,
+        cwd: change.cwd,
+        base: change.base,
+        commit: change.head,
+        branch: change.branch,
+        project: change.project,
+      })
+      return {
+        tier: plan.output.tier,
+        applicability: {
+          lenses: plan.output.lenses,
+          ...(plan.output.secondOpinion ? { secondOpinion: plan.output.secondOpinion } : {}),
+          ...(plan.output.lensBases ? { lensBases: plan.output.lensBases } : {}),
+          ...(plan.output.secondOpinionBasis
+            ? { secondOpinionBasis: plan.output.secondOpinionBasis }
+            : {}),
+        },
+        reviewPlan: plan.reviewPlan,
+        group,
+      }
+    })()
+  return gatherAdmissionEvidenceDecision(
+    { ...resolved, project: change.project, branch: change.branch },
     change.database,
   )
 }
@@ -181,7 +285,7 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
     patchId: identity.patchId,
     pathSet,
   })
-  const admission = gatheredTriage(change)
+  const admission = gatheredTriage(change, group)
   const admissionGap = ceilingTriageFacts(admission)
   return {
     change: {

@@ -26,7 +26,7 @@ export const reviewModuleSpecs = [
     file: 'orchestrator/src/review-funnel/decide-review-funnel.ts',
     allowed: [
       '../../../shared/brand.ts',
-      '../pull-request/triage-decision.ts',
+      './review-funnel-admission-evidence.ts',
       '../review/review-applicability.ts',
       '../review/review-lens-provenance.ts',
       '../review/review-post-fix.ts',
@@ -43,11 +43,18 @@ export const reviewModuleSpecs = [
     ],
   },
   {
-    file: 'orchestrator/src/review-funnel/review-funnel-tier.ts',
+    file: 'orchestrator/src/review-funnel/review-funnel-admission-evidence.ts',
     allowed: [
       '../review/review-applicability.ts',
-      '../review/review-tier-classifier.ts',
+      '../review/review-lens-provenance.ts',
+      '../review/review-role.ts',
+      '../review/review-second-opinion.ts',
     ],
+    typeOnlyAllowed: ['../review/review-group.ts', '../review/review-vocabulary.ts'],
+  },
+  {
+    file: 'orchestrator/src/review-funnel/review-funnel-tier.ts',
+    allowed: ['../review/review-applicability.ts', '../review/review-tier-classifier.ts'],
     typeOnlyAllowed: ['../project/project-injection.ts'],
   },
   {
@@ -62,18 +69,14 @@ export const reviewModuleSpecs = [
       '../review/review-target.ts',
       '../review/review-tier-service.ts',
     ],
-    typeOnlyAllowed: [
-      'bun:sqlite',
-      '../project/project-injection.ts',
-      '../project/projects.ts',
-    ],
+    typeOnlyAllowed: ['bun:sqlite', '../project/project-injection.ts', '../project/projects.ts'],
   },
   {
     file: 'orchestrator/src/review-funnel/gather-funnel-facts.ts',
     allowed: [
       '../branch/branch-landing-records.ts',
       '../pull-request/pr-admission.ts',
-      '../pull-request/triage-decision.ts',
+      './review-funnel-admission-evidence.ts',
       '../review/review-group.ts',
       '../review/review-lineage-store.ts',
       '../review/review-post-fix.ts',
@@ -321,7 +324,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     file: 'orchestrator/src/review-funnel/decide-review-funnel.ts',
     allowed: [
       '../../../shared/brand.ts',
-      '../pull-request/triage-decision.ts',
+      './review-funnel-admission-evidence.ts',
       '../review/review-applicability.ts',
       '../review/review-lens-provenance.ts',
       '../review/review-post-fix.ts',
@@ -344,7 +347,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     allowed: [
       '../branch/branch-landing-records.ts',
       '../pull-request/pr-admission.ts',
-      '../pull-request/triage-decision.ts',
+      './review-funnel-admission-evidence.ts',
       '../review/review-group.ts',
       '../review/review-lineage-store.ts',
       '../review/review-post-fix.ts',
