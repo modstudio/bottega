@@ -5,6 +5,8 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type ConfigHome,
   configHomes,
+  DISPLAY_TIMEZONE_KEY,
+  isDisplayTimezone,
   isSubscriptionPriceKey,
   validateAutonomyEntry,
 } from '../../../shared/machine-config.ts'
@@ -59,12 +61,10 @@ export function configHome(
 }
 
 export function validateHostedValue(key: string, value: string): void {
-  if (key === 'display.timezone') {
-    try {
-      new Intl.DateTimeFormat('en-US', { timeZone: value })
-    } catch {
+  if (key === DISPLAY_TIMEZONE_KEY) {
+    if (!isDisplayTimezone(value)) {
       throw new Error(
-        `refusing display.timezone ${value}: not an IANA time zone; e.g. ${PLATFORM_SLUG} machine config set display.timezone America/New_York`,
+        `refusing ${DISPLAY_TIMEZONE_KEY} ${value}: not an IANA time zone; e.g. ${PLATFORM_SLUG} machine config set ${DISPLAY_TIMEZONE_KEY} America/New_York`,
       )
     }
     return

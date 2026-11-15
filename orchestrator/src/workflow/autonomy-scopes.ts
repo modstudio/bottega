@@ -10,7 +10,12 @@ import {
   configClient,
 } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
-import { readMachineAutonomy } from '../../../shared/machine-config.ts'
+import {
+  DISPLAY_TIMEZONE_KEY,
+  isDisplayTimezone,
+  readMachineAutonomy,
+} from '../../../shared/machine-config.ts'
+import { writeCachedDisplayTimezone } from '../config/display-timezone-cache.ts'
 import { recordConfigCallOutcome } from '../config/hosted-config-call-outcome.ts'
 import { db } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
@@ -33,7 +38,6 @@ import {
   type CachedSessionContext,
   readSessionContextCache,
   type StateEnvironment,
-  writeCachedDisplayTimezone,
   writeSessionContextCache,
 } from './session-context-cache.ts'
 import type { CatalogueStep } from './step-catalogue.ts'
@@ -94,12 +98,14 @@ async function readHosted(
   }
   const user = hostedSettings(rows, 'user')
   const space = hostedSettings(rows, 'space')
+  const displayTimezone = rows.find(
+    (row) => row.scope === 'user' && row.key === DISPLAY_TIMEZONE_KEY,
+  )?.value
   return {
     status: 'available',
     user: user.settings,
     space: space.settings,
-    displayTimezone:
-      rows.find((row) => row.scope === 'user' && row.key === 'display.timezone')?.value ?? null,
+    displayTimezone: isDisplayTimezone(displayTimezone) ? displayTimezone : null,
     warnings: [user.warning, space.warning].filter((warning): warning is string =>
       Boolean(warning),
     ),

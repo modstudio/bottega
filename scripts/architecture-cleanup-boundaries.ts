@@ -26,7 +26,7 @@ export const cleanupBoundarySpecs = [
   {
     name: 'stop-summary-time-boundary',
     file: 'orchestrator/src/session/stop-summary-time.ts',
-    allowed: [],
+    allowed: ['../../../shared/machine-config.ts'],
     typeOnlyAllowed: [],
     reason: 'Keep Stop time rendering independent of stores, processes, and clocks.',
   },
@@ -49,6 +49,8 @@ export const cleanupBoundarySpecs = [
     file: 'orchestrator/src/session/stop-summary.ts',
     allowed: [
       '../../../shared/brand.ts',
+      '../../../shared/state-directory.ts',
+      '../config/display-timezone-cache.ts',
       '../close/close-out-in-flight.ts',
       '../database/db.ts',
       '../evidence/evidence-query.ts',
@@ -58,7 +60,6 @@ export const cleanupBoundarySpecs = [
       './session-close-out.ts',
       './session-review-verdicts.ts',
       '../workflow/workflow-cursor-list.ts',
-      '../workflow/session-context-cache.ts',
       './stop-summary-decision.ts',
       './stop-summary-reviews.ts',
     ],

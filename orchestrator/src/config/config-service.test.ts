@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -22,7 +22,7 @@ import {
   verifyTrustLog,
 } from '../../../shared/trust-log.ts'
 import { readRememberedTrustLogHead } from '../../../shared/trust-log-head.ts'
-import { readCachedDisplayTimezone } from '../workflow/session-context-cache.ts'
+import { readCachedDisplayTimezone, writeCachedDisplayTimezone } from './display-timezone-cache.ts'
 import {
   applyLegacyEnvironmentSecretMigration,
   claimCurrentMachineKey,
@@ -247,6 +247,65 @@ test('display timezone validates before writing and a successful set refreshes t
     setConfigEntry('display.timezone', 'America/New_York', undefined, null, client, env),
   ).resolves.toMatchObject({ home: 'user', value: 'America/New_York' })
   expect(readCachedDisplayTimezone(env)).toBe('America/New_York')
+})
+
+test('display timezone get treats an invalid hosted value as unset and clears the cache', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'config-invalid-display-timezone-'))
+  roots.push(root)
+  const env = { HOME: root, BOTTEGA_STATE_HOME: join(root, 'state') }
+  writeCachedDisplayTimezone('America/New_York', env)
+  const client = {
+    getEntry: async () => ({
+      key: 'display.timezone',
+      scope: 'user',
+      environment: 'default',
+      value: 'Mars/Olympus',
+      rowVersion: 1,
+      updatedAt: '2026-11-15T12:00:00.000Z',
+    }),
+  } as unknown as ConfigClient
+
+  await expect(getConfigEntry('display.timezone', undefined, client, env)).rejects.toThrow(
+    'hosted user scope has no value for display.timezone',
+  )
+  expect(readCachedDisplayTimezone(env)).toBeNull()
+})
+
+test('display timezone cache failures warn without failing successful hosted set and get', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'config-display-cache-failure-'))
+  roots.push(root)
+  const stateFile = join(root, 'state-file')
+  writeFileSync(stateFile, 'not a directory')
+  const env = { HOME: root, BOTTEGA_STATE_HOME: stateFile }
+  const row = {
+    key: 'display.timezone',
+    scope: 'user' as const,
+    environment: 'default',
+    value: 'America/New_York',
+    rowVersion: 1,
+    updatedAt: '2026-11-15T12:00:00.000Z',
+  }
+  const client = {
+    putEntry: async () => row,
+    getEntry: async () => row,
+  } as unknown as ConfigClient
+  const warning = spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    await expect(
+      setConfigEntry('display.timezone', row.value, undefined, null, client, env),
+    ).resolves.toMatchObject({ value: row.value })
+    await expect(getConfigEntry('display.timezone', undefined, client, env)).resolves.toMatchObject(
+      {
+        value: row.value,
+      },
+    )
+    expect(warning).toHaveBeenCalledTimes(2)
+    expect(warning.mock.calls[0]?.[0]).toStartWith(
+      'warning: could not refresh display time zone cache:',
+    )
+  } finally {
+    warning.mockRestore()
+  }
 })
 
 test('hosted autonomy get reports the machine value that outranks it locally', async () => {

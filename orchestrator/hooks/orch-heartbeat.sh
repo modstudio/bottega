@@ -87,7 +87,11 @@ export BOTTEGA_ORCHESTRATOR_DB="$DB_PATH"
 
 display_timezone=$("$BOTTEGA" machine config get display.timezone 2>/dev/null) || display_timezone=""
 display_timezone=${display_timezone%%$'\n'*}
-if [ -n "$display_timezone" ]; then export TZ="$display_timezone"; fi
+unset TZ
+if [[ "$display_timezone" =~ ^[A-Za-z_+-]+(/[A-Za-z0-9_+-]+)*$ ]] &&
+   [ -f "/usr/share/zoneinfo/$display_timezone" ]; then
+  export TZ="$display_timezone"
+fi
 
 heartbeat_timestamp() {
   date '+%I:%M:%S %p'

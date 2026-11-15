@@ -142,7 +142,6 @@ describe('Stop summary decision', () => {
     expect(result.lines.at(-1)).toBe(
       `12 unscored runs (review-lens, DEV-2304): ${reviewLensRuns.map((item) => item.id).join(', ')} → ${PLATFORM_SLUG} score <run>`,
     )
-    expect(result.lines.at(-1)?.match(/score <run>/g)).toHaveLength(1)
   })
 
   test('keeps different kinds and different job qualifiers on separate lines', () => {

@@ -23,6 +23,8 @@ import {
   configHomes,
   deleteMachineAutonomy,
   deleteMachineValue,
+  DISPLAY_TIMEZONE_KEY,
+  isDisplayTimezone,
   isMachineConfigKey,
   listMachineAutonomy,
   type MachineConfigKey,
@@ -70,8 +72,8 @@ import {
 import type { MachineNamePair } from '../record/machine-name.ts'
 import { claimCurrentMachineNames } from '../record/machine-name-command.ts'
 import { LEGACY_ENVIRONMENT_SECRET_NAMES } from '../setup/environment-name-migration.ts'
-import { writeCachedDisplayTimezone } from '../workflow/session-context-cache.ts'
 import { configHome, setRemedy, validateHostedValue } from './config-entry-policy.ts'
+import { writeCachedDisplayTimezone } from './display-timezone-cache.ts'
 import { planRotation, shouldRotateAfterRevocation } from './config-service-rotation-policy.ts'
 import {
   bytes,
@@ -806,6 +808,18 @@ export type ConfigReadResult = {
   row?: Awaited<ReturnType<typeof getEntry>>
 }
 
+export function refreshDisplayTimezoneCache(
+  displayTimezone: string | null,
+  env: ConfigEnvironment = process.env,
+): void {
+  try {
+    writeCachedDisplayTimezone(displayTimezone, env)
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    console.error(`warning: could not refresh display time zone cache: ${reason}`)
+  }
+}
+
 export async function setConfigEntry(
   key: string,
   value: string,
@@ -834,7 +848,7 @@ export async function setConfigEntry(
     client ?? clientFactory(),
     destination,
   )
-  if (key === 'display.timezone') writeCachedDisplayTimezone(value, env)
+  if (key === DISPLAY_TIMEZONE_KEY) refreshDisplayTimezoneCache(value, env)
   return { key: row.key, value: row.value, home, row }
 }
 
@@ -908,7 +922,15 @@ export async function getConfigEntry(
     }
   }
   const row = await getEntry(key, home, client ?? clientFactory())
-  if (key === 'display.timezone') writeCachedDisplayTimezone(row.value, env)
+  if (key === DISPLAY_TIMEZONE_KEY) {
+    if (!isDisplayTimezone(row.value)) {
+      refreshDisplayTimezoneCache(null, env)
+      throw new Error(
+        `hosted user scope has no value for ${DISPLAY_TIMEZONE_KEY}; write it with \`${setRemedy(DISPLAY_TIMEZONE_KEY, 'user')}\``,
+      )
+    }
+    refreshDisplayTimezoneCache(row.value, env)
+  }
   const machineRow = key.startsWith('autonomy.')
     ? listMachineAutonomy(env).find((candidate) => candidate.key === key)
     : undefined

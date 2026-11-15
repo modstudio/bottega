@@ -7,11 +7,13 @@ import { CONFIG_HOME_ENV } from './config-directory.ts'
 import {
   configHomes,
   deleteMachineValue,
+  DISPLAY_TIMEZONE_KEY,
   editMachinePermission,
   editMachinePermissionTable,
   listMachineEntries,
   MACHINE_CONFIG,
   machineId,
+  isDisplayTimezone,
   parseFormerShortNames,
   readDelegationSettings,
   readMachinePermissions,
@@ -29,7 +31,9 @@ const silent = () => {}
 const freshWarnings = () => new Set<string>()
 
 test('display timezone has only a hosted user home', () => {
-  expect(configHomes('display.timezone')).toEqual(['user'])
+  expect(configHomes(DISPLAY_TIMEZONE_KEY)).toEqual(['user'])
+  expect(isDisplayTimezone('America/New_York')).toBeTrue()
+  expect(isDisplayTimezone('Mars/Olympus')).toBeFalse()
 })
 
 describe('stored machine names', () => {

@@ -9,10 +9,8 @@ import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { LANDING_TREE_JOB, shipCursorWorksTree } from '../landing-tree/landing-tree.ts'
 import { questionInboxCountsForSession } from '../run/question-inbox-counts.ts'
 import { RUN_LIVE_STATUSES } from '../run/run-status.ts'
-import {
-  readCachedDisplayTimezone,
-  type StateEnvironment,
-} from '../workflow/session-context-cache.ts'
+import { readCachedDisplayTimezone } from '../config/display-timezone-cache.ts'
+import type { StateEnvironment } from '../../../shared/state-directory.ts'
 import {
   listWorkflowCursors,
   type WorkflowCursorListRow,
@@ -88,22 +86,31 @@ function owedItemsForStop(
       .filter((tree) => !activeTrees.includes(tree))
       .map((tree) => {
         const landingTree = tree.job === LANDING_TREE_JOB && tree.worktree
+        const classification = landingTree
+          ? {
+              kind: 'held-landing-tree',
+              noun: 'held landing tree',
+              qualifier: null,
+              id: tree.worktree!,
+              command: `${PLATFORM_SLUG} tree remove <worktree>`,
+            }
+          : tree.job === LANDING_TREE_JOB
+            ? {
+                kind: 'held-landing-run',
+                noun: 'held landing run',
+                qualifier: null,
+                id: String(tree.number),
+                command: `${PLATFORM_SLUG} run close-out <run>`,
+              }
+            : {
+                kind: 'held-worktree',
+                noun: 'held worktree',
+                qualifier: tree.job,
+                id: String(tree.number),
+                command: `${PLATFORM_SLUG} run close-out <run>`,
+              }
         return {
-          kind: landingTree
-            ? 'held-landing-tree'
-            : tree.job === LANDING_TREE_JOB
-              ? 'held-landing-run'
-              : 'held-worktree',
-          noun: landingTree
-            ? 'held landing tree'
-            : tree.job === LANDING_TREE_JOB
-              ? 'held landing run'
-              : 'held worktree',
-          qualifier: tree.job === LANDING_TREE_JOB ? null : tree.job,
-          id: landingTree ? tree.worktree! : String(tree.number),
-          command: landingTree
-            ? `${PLATFORM_SLUG} tree remove <worktree>`
-            : `${PLATFORM_SLUG} run close-out <run>`,
+          ...classification,
           owedAt: tree.close_out_attempted_at ?? now,
         }
       }),
