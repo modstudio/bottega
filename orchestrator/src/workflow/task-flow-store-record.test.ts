@@ -548,10 +548,6 @@ test('question-joined reads match SQLite joins and ordering', async () => {
     [hosted.cursorLifecycleForSession('session-a'), local.cursorLifecycleForSession('session-a')],
     [hosted.openStagesForSession('session-a'), local.openStagesForSession('session-a')],
     [hosted.keylessSessionCursors('fixture'), local.keylessSessionCursors('fixture')],
-    [
-      hosted.openWorkflowQuestionCountForSession('session-a'),
-      local.openWorkflowQuestionCountForSession('session-a'),
-    ],
     [hosted.workflowInboxQuestions(), local.workflowInboxQuestions()],
     [
       hosted.rulingRows({ kind: 'all', after: null, cursor: null }),

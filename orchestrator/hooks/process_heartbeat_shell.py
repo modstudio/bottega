@@ -813,6 +813,7 @@ esac
         completed = self.run_failover_fixture(None, SUCCESSOR, degraded_inbox_call=3)
         self.assertEqual(completed.count("FAILED 8/fixture"), 1, completed)
         self.assertIn("DEGRADED", completed)
+        self.assertIn("could not read question inbox", completed)
         self.assertEqual(
             completed.count(
                 "FAILOVER 8/fixture contract; automatic failover started run 900 on grok"

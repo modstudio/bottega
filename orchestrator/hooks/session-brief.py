@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(__file__))
-from inbox_question_decision import decide_parsed_inbox_questions, parse_inbox_questions
+from inbox_question_decision import decide_inbox_questions
 from notice_transport import (
     acknowledgement_refusals,
     refused_notice_name,
@@ -349,6 +349,18 @@ def _withheld_board_notice(count):
     )
 
 
+def _inbox_notices(inbox_decision):
+    notices = []
+    if inbox_decision.worker:
+        noun = "question" if inbox_decision.worker == 1 else "questions"
+        notices.append(f"{inbox_decision.worker} worker {noun} for this session.")
+    if inbox_decision.user:
+        notices.append(
+            f"{inbox_decision.user} waiting on you (bottega question inbox)."
+        )
+    return notices
+
+
 def _emitted_board_ids(output, board_text, board_ids):
     emitted_context = (
         output.get("hookSpecificOutput", {}).get("additionalContext", "")
@@ -498,62 +510,7 @@ def _inbox_counts(stdout):
     ):
         raise ValueError("invalid scoped inbox JSON")
     questions = inbox_result.get("rows")
-    parsed_questions = parse_inbox_questions(questions)
-    for item, parsed in zip(questions, parsed_questions):
-        if parsed.kind == "worker" and not (
-            item.get("session_liveness") in ("live", "unknown")
-            and isinstance(item.get("answer_id"), int)
-        ):
-            raise ValueError("invalid inbox JSON")
-
-    inbox_decision = decide_parsed_inbox_questions(parsed_questions)
-    answerable_count = inbox_decision.answerable_now
-    run_questions = [
-        (item, parsed)
-        for item, parsed in zip(questions, parsed_questions)
-        if parsed.kind == "worker"
-    ]
-    foreign_count = len(
-        {item["answer_id"] for item, parsed in run_questions if not parsed.can_answer}
-    )
-    unknown_count = len(
-        {
-            item["answer_id"]
-            for item, parsed in run_questions
-            if not parsed.can_answer and item["session_liveness"] == "unknown"
-        }
-    )
-    return (
-        answerable_count,
-        foreign_count,
-        unknown_count,
-        inbox_decision.foreign_workflow,
-        inbox_decision.unowned,
-    )
-
-
-def _foreign_workflow_notice(count):
-    if count == 1:
-        return (
-            "1 workflow started by another session is waiting on a ruling. "
-            "Only that session, or the operator relaying a decision, can answer it."
-        )
-    return (
-        f"{count} workflows started by other sessions are waiting on rulings. "
-        "Only those sessions, or the operator relaying decisions, can answer them."
-    )
-
-
-def _unowned_workflow_notice(count):
-    if count == 1:
-        return (
-            "1 workflow question has no owning session; any session in this project "
-            "may answer it (bottega question inbox)."
-        )
-    return (
-        f"{count} workflow questions have no owning session; any session in this project "
-        "may answer them (bottega question inbox)."
-    )
+    return decide_inbox_questions(questions)
 
 
 def _settings_apply_notice(completed):
@@ -762,18 +719,11 @@ def main() -> int:
                 "brief state is unknown."
             )
 
-        answerable_count = foreign_count = unknown_count = foreign_workflow_count = 0
-        unowned_workflow_count = 0
+        inbox_decision = None
         inbox_failure = None
         if inbox.returncode == 0:
             try:
-                (
-                    answerable_count,
-                    foreign_count,
-                    unknown_count,
-                    foreign_workflow_count,
-                    unowned_workflow_count,
-                ) = _inbox_counts(inbox.stdout)
+                inbox_decision = _inbox_counts(inbox.stdout)
             except Exception:
                 inbox_failure = "Inbox response was invalid; question state is unknown."
         elif inbox.returncode == -1:
@@ -866,43 +816,7 @@ def main() -> int:
         )
         if settings_notice:
             notices.append(settings_notice)
-        if answerable_count:
-            noun = "question" if answerable_count == 1 else "questions"
-            message = f"{answerable_count} {noun} waiting on your ruling."
-            notices.append(message)
-            inbox_lines.append(message)
-        if foreign_count:
-            if foreign_count == 1:
-                message = (
-                    "1 worker dispatched by another session is waiting on an answer. "
-                    "Only the session that dispatched it can answer it."
-                )
-            else:
-                message = (
-                    f"{foreign_count} workers dispatched by other sessions are waiting on an "
-                    "answer. Only the session that dispatched each one can answer it."
-                )
-            notices.append(message)
-            inbox_lines.append(message)
-        if unknown_count:
-            if unknown_count == 1:
-                message = (
-                    "1 of those is from a session not seen recently. It may be closed, and that "
-                    "worker may never get an answer."
-                )
-            else:
-                message = (
-                    f"{unknown_count} of those are from a session not seen recently. They may be "
-                    "closed, and those workers may never get an answer."
-                )
-            notices.append(message)
-            inbox_lines.append(message)
-        if foreign_workflow_count:
-            message = _foreign_workflow_notice(foreign_workflow_count)
-            notices.append(message)
-            inbox_lines.append(message)
-        if unowned_workflow_count:
-            message = _unowned_workflow_notice(unowned_workflow_count)
+        for message in _inbox_notices(inbox_decision) if inbox_decision else []:
             notices.append(message)
             inbox_lines.append(message)
         if waiting_issues:

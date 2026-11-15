@@ -363,110 +363,62 @@ class InboxQuestions(unittest.TestCase):
             json.dumps({"cwd_registered": True, "project": "bottega", "rows": rows})
         )
 
-    def test_own_parked_workflow_question_is_not_waiting_on_your_ruling(self):
-        self.assertEqual(
-            self.counts([
-                {
-                    "kind": "workflow",
-                    "question_id": 11,
-                    "workflow": "release",
-                    "session_id": "session-1",
-                    "can_answer": True,
-                    "ownership_notice": None,
-                }
-            ]),
-            (0, 0, 0, 0, 0),
-        )
-
-    def test_unowned_workflow_question_has_its_own_notice(self):
-        counts = self.counts([
-            {
-                "kind": "workflow",
-                "question_id": 4608,
-                "workflow": "plan-task",
-                "session_id": None,
-                "can_answer": True,
-                "ownership_notice": None,
-            }
+    def test_reads_worker_and_user_groups_without_reclassifying_rows(self):
+        decision = self.counts([
+            {"question_id": 21, "group": "worker"},
+            {"kind": "workflow", "question_id": 23, "group": "user"},
+            {"question_id": 22, "group": "foreign"},
+            {"kind": "workflow", "question_id": 24, "group": "unowned"},
         ])
-        self.assertEqual(counts, (0, 0, 0, 0, 1))
-        notice = session_brief._unowned_workflow_notice(counts[-1])
-        self.assertEqual(
-            notice,
-            "1 workflow question has no owning session; any session in this project "
-            "may answer it (bottega question inbox).",
-        )
-        self.assertNotIn("waiting on your ruling", notice)
+        self.assertEqual(decision.worker, 1)
+        self.assertEqual(decision.user, 1)
 
-    def test_foreign_workflow_questions_are_counted_by_distinct_question_id(self):
-        row = {
-            "kind": "workflow",
-            "question_id": 12,
-            "workflow": "release",
-            "session_id": "session-2",
-            "can_answer": False,
-            "ownership_notice": "another session owns this workflow",
-        }
-        self.assertEqual(self.counts([row, row]), (0, 0, 0, 1, 0))
+    def test_foreign_and_unowned_groups_do_not_enter_the_state_key(self):
+        decision = self.counts([
+            {"question_id": 12, "group": "foreign"},
+            {"kind": "workflow", "question_id": 13, "group": "unowned"},
+        ])
+        self.assertEqual(decision.worker, 0)
+        self.assertEqual(decision.user, 0)
+        self.assertEqual(decision.state_key, "")
+
+    def test_notices_render_worker_only(self):
         self.assertEqual(
-            session_brief._foreign_workflow_notice(1),
-            "1 workflow started by another session is waiting on a ruling. "
-            "Only that session, or the operator relaying a decision, can answer it.",
+            session_brief._inbox_notices(self.counts([{"question_id": 1, "group": "worker"}])),
+            ["1 worker question for this session."],
         )
 
-    def test_foreign_workflow_notice_has_a_plural_form(self):
+    def test_notices_render_user_only(self):
         self.assertEqual(
-            session_brief._foreign_workflow_notice(2),
-            "2 workflows started by other sessions are waiting on rulings. "
-            "Only those sessions, or the operator relaying decisions, can answer them.",
+            session_brief._inbox_notices(self.counts([{"question_id": 2, "group": "user"}])),
+            ["1 waiting on you (bottega question inbox)."],
         )
 
-    def test_unowned_workflow_notice_has_a_plural_form(self):
+    def test_notices_render_worker_and_user(self):
         self.assertEqual(
-            session_brief._unowned_workflow_notice(2),
-            "2 workflow questions have no owning session; any session in this project "
-            "may answer them (bottega question inbox).",
+            session_brief._inbox_notices(self.counts([
+                {"question_id": 1, "group": "worker"},
+                {"question_id": 2, "group": "user"},
+            ])),
+            [
+                "1 worker question for this session.",
+                "1 waiting on you (bottega question inbox).",
+            ],
         )
 
-    def test_mixed_run_and_workflow_questions_keep_their_separate_counts(self):
+    def test_notices_are_empty_without_worker_or_user_groups(self):
         self.assertEqual(
-            self.counts([
-                {
-                    "question_id": 21,
-                    "answer_id": 21,
-                    "session_liveness": "live",
-                    "can_answer": True,
-                },
-                {
-                    "question_id": 22,
-                    "answer_id": 22,
-                    "session_liveness": "unknown",
-                    "can_answer": False,
-                },
-                {
-                    "kind": "workflow",
-                    "question_id": 23,
-                    "workflow": "release",
-                    "session_id": "session-1",
-                    "can_answer": True,
-                    "ownership_notice": None,
-                },
-                {
-                    "kind": "workflow",
-                    "question_id": 24,
-                    "workflow": "release",
-                    "session_id": "session-2",
-                    "can_answer": False,
-                    "ownership_notice": "owned by session session-2",
-                },
-            ]),
-            (1, 1, 1, 1, 0),
+            session_brief._inbox_notices(self.counts([
+                {"question_id": 3, "group": "foreign"},
+                {"question_id": 4, "group": "unowned"},
+            ])),
+            [],
         )
 
     def test_malformed_run_question_invalidates_the_inbox(self):
         with self.assertRaisesRegex(ValueError, "invalid inbox JSON"):
             self.counts([
-                {"question_id": 31, "answer_id": 31, "session_liveness": "gone", "can_answer": True}
+                {"question_id": 31, "can_answer": True}
             ])
 
     def test_malformed_workflow_question_invalidates_the_inbox(self):
