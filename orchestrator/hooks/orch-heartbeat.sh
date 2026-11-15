@@ -548,8 +548,9 @@ import sys, json, os
 # (markMonitorNoticesDelivered in orchestrator/src/monitor/monitor-notices.ts),
 # which accepts what it accepts and names every id it refuses. Copies of that rule
 # drift, so this parser passes ids through and lets the acknowledgement judge them.
-# The one rule it does own, transport, lives with the other delivery hook in
-# $ROOT/hooks/notice_transport.py, so the two cannot disagree about it.
+# The rules it does own, transport and MONITOR delivery-line rendering, live with
+# the other delivery hook in $ROOT/hooks/notice_transport.py, so the two cannot
+# disagree about them.
 sys.path.insert(0, os.environ["HOOKS_DIR"])
 import notice_transport
 
@@ -571,30 +572,39 @@ if not isinstance(rows, list) or (warning is not None and not isinstance(warning
     raise SystemExit(2)
 if warning:
     print("warning\t" + warning.replace("\t", " ").replace("\r", " ").replace("\n", " "))
+entries = []
+notices = []
 for index, row in enumerate(rows):
     # A notice this parser cannot carry unchanged is named and skipped; it never
     # costs the batch its other notices, and it is never acknowledged. Every other
     # id is passed through for the acknowledgement to judge. Only the envelope
     # above turns a whole batch into a failure.
     if not isinstance(row, dict) or not isinstance(row.get("noticeId"), str):
-        print("degraded\t" + notice_transport.refused_notice_name(row, index) + " (notice id is missing or not a string)")
+        entries.append(("degraded", notice_transport.refused_notice_name(row, index) + " (notice id is missing or not a string)"))
         continue
     if not notice_transport.transportable_notice_id(row["noticeId"]):
-        print("degraded\t" + notice_transport.refused_notice_name(row, index) + " (notice id cannot be transported unchanged)")
+        entries.append(("degraded", notice_transport.refused_notice_name(row, index) + " (notice id cannot be transported unchanged)"))
         continue
     if not all(isinstance(row.get(key), str) for key in FIELDS):
-        print("degraded\t" + notice_transport.refused_notice_name(row, index) + " (notice fields are incomplete)")
+        entries.append(("degraded", notice_transport.refused_notice_name(row, index) + " (notice fields are incomplete)"))
         continue
     if row.get("ownerSession") != os.environ["SID"]:
-        print("degraded\t" + notice_transport.refused_notice_name(row, index) + " (notice belongs to another session)")
+        entries.append(("degraded", notice_transport.refused_notice_name(row, index) + " (notice belongs to another session)"))
         continue
     values = [row[key].replace("\t", " ").replace("\r", " ").replace("\n", " ")
               for key in FIELDS]
     directly_reported = set(filter(None, os.environ["STALLED_SUBJECTS"].split(",")))
-    message = "" if values[0] == "stalled-run" and values[1] in directly_reported else (values[3] if values[0].startswith("landing-") else (
-        "MONITOR " + values[0] + " " + values[2] + ": " + values[3]
-    ))
-    print(str(row["noticeId"]) + "\t" + message)
+    notice = dict(zip(FIELDS, values))
+    notice["noticeId"] = row["noticeId"]
+    notice["suppressed"] = values[0] == "stalled-run" and values[1] in directly_reported
+    entries.append(("notice", len(notices)))
+    notices.append(notice)
+messages = notice_transport.monitor_lines(notices)
+for entry_kind, value in entries:
+    if entry_kind == "degraded":
+        print("degraded\t" + value)
+    else:
+        print(str(notices[value]["noticeId"]) + "\t" + messages[value])
 ' 2>/dev/null); monitor_parse_rc=$?
 
   if [ "$monitor_rc" -ne 0 ] || [ "$monitor_parse_rc" -ne 0 ]; then

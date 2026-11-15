@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from inbox_question_decision import decide_inbox_questions
 from notice_transport import (
     acknowledgement_refusals,
+    monitor_lines,
     refused_notice_name,
     transportable_notice_id,
 )
@@ -962,10 +963,7 @@ def main() -> int:
             notices.append(monitor_failure)
         if monitor_notices or monitor_warning:
             monitor_text = "\n".join([
-                *(
-                    f'MONITOR {item["kind"]} {item["label"]}: {item["detail"]}'
-                    for item in monitor_notices
-                ),
+                *(line for line in monitor_lines(monitor_notices) if line),
                 *([monitor_warning] if monitor_warning else []),
             ])
             if not brief_source:

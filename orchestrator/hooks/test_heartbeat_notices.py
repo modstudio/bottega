@@ -123,6 +123,33 @@ esac
 
 
 class HeartbeatNoticeTest(unittest.TestCase):
+    def test_a_multi_kind_batch_groups_lines_but_acknowledges_every_id(self):
+        groups = (
+            ("terminal-close-out-held", 16),
+            ("unscored-run", 16),
+            ("worker-gate-tooling-change", 2),
+        )
+        rows = []
+        ids = []
+        for kind, count in groups:
+            for index in range(count):
+                notice_id = f"condition:{len(ids) + 1}"
+                ids.append(notice_id)
+                rows.append(notice(notice_id, kind, f"run {index + 1}", f"{kind} detail"))
+
+        lines, acked = run_heartbeat(rows)
+
+        monitor = [line for line in lines if line.startswith("MONITOR ")]
+        self.assertEqual(len(monitor), 3, lines)
+        self.assertEqual(
+            [line.split()[1] for line in monitor],
+            [kind for kind, _count in groups],
+        )
+        self.assertEqual(
+            acked,
+            ["machine monitor --ack-notices " + ",".join(ids) + " --json"],
+        )
+
     def test_condition_landing_and_board_notices_are_delivered_and_acknowledged(self):
         condition_detail = (
             "detected (age unknown, status ok, project fixture); inspect the run deliberately."
