@@ -54,7 +54,7 @@ test('workflow cursor project-number migration preserves identities and renumber
     )
     insert.run(
       'stage-a-first',
-      3,
+      5,
       'project-a',
       'project-a',
       'fixture',
@@ -78,7 +78,7 @@ test('workflow cursor project-number migration preserves identities and renumber
     )
     insert.run(
       'stage-a-second',
-      5,
+      3,
       'project-a',
       'project-a',
       'fixture',
@@ -135,8 +135,8 @@ test('workflow cursor project-number migration preserves identities and renumber
         )
         .all(),
     ).toEqual([
-      { project: 'project-a', record_id: 'stage-a-first', number: 1 },
-      { project: 'project-a', record_id: 'stage-a-second', number: 2 },
+      { project: 'project-a', record_id: 'stage-a-second', number: 1 },
+      { project: 'project-a', record_id: 'stage-a-first', number: 2 },
       { project: 'project-a', record_id: 'stage-a-late', number: 3 },
       { project: 'project-b', record_id: 'stage-b-first', number: 1 },
       { project: 'project-b', record_id: 'stage-b-second', number: 2 },
@@ -148,6 +148,30 @@ test('workflow cursor project-number migration preserves identities and renumber
     expect(() =>
       database.query("UPDATE workflow_cursor SET number=1 WHERE record_id='stage-b-second'").run(),
     ).toThrow()
+
+    database
+      .query(
+        `INSERT INTO workflow_cursor
+         (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,
+          workflow_version_record_id,catalogue_version_record_id,args,total_steps,created_at,updated_at)
+         VALUES ('stage-a-backdated',4,'project-a','project-a','fixture','default','A-BACKDATED','',
+                 'workflow-version-id','catalogue-version-id','{}',1,
+                 '2026-11-15T00:00:00Z','2026-11-15T04:00:00Z')`,
+      )
+      .run()
+    const numbersBeforeRerun = database
+      .query<{ record_id: string; number: number }, []>(
+        'SELECT record_id,number FROM workflow_cursor ORDER BY record_id',
+      )
+      .all()
+    applyMigrations(database)
+    expect(
+      database
+        .query<{ record_id: string; number: number }, []>(
+          'SELECT record_id,number FROM workflow_cursor ORDER BY record_id',
+        )
+        .all(),
+    ).toEqual(numbersBeforeRerun)
   } finally {
     database.close()
   }

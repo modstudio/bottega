@@ -201,7 +201,7 @@ export async function selectByHandle(
   const row = await taskFlowReadStore(d, client).stageByHandle(project, cursor)
   if (!row)
     throw new Error(
-      `workflow cursor ${cursor} does not exist in project ${project}; cursor handles changed to per-project numbers, so list cursors again with ${workflowCursorListCommand}; cursor handles are per-machine labels, so pass the task key as the workflow argument key (--arg key=<KEY> on the CLI, args.key over MCP) to read the hosted flow`,
+      `workflow cursor ${cursor} does not exist in project ${project}; cursor handles changed to per-project numbers, so list cursors again with ${workflowCursorListCommand}; a local handle need not exist in the hosted flow, so pass the task key as the workflow argument key (--arg key=<KEY> on the CLI, args.key over MCP) to read it`,
     )
   validateIdentity(row, identity)
   if (!includeTerminal && (row.state === 'done' || row.state === 'abandoned'))
