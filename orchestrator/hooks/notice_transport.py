@@ -40,9 +40,9 @@ EMPTY_NOTICE_ID_NAME = "(empty notice id)"
 MONITOR_GROUP_LABEL_LIMIT = 8
 
 
-def groups_together(kind, notice):
+def groups_together(notice):
     """Whether a notice participates in a grouped MONITOR delivery line."""
-    return not kind.startswith("landing-") and not notice.get("suppressed", False)
+    return not notice["kind"].startswith("landing-") and not notice.get("suppressed", False)
 
 
 def monitor_lines(notices):
@@ -55,7 +55,7 @@ def monitor_lines(notices):
     grouped = {}
     for notice in notices:
         kind = notice["kind"]
-        if not groups_together(kind, notice):
+        if not groups_together(notice):
             continue
         grouped.setdefault(kind, []).append(notice)
 
@@ -63,7 +63,7 @@ def monitor_lines(notices):
     lines = []
     for notice in notices:
         kind = notice["kind"]
-        if groups_together(kind, notice):
+        if groups_together(notice):
             if kind in rendered_kinds:
                 lines.append("")
                 continue
