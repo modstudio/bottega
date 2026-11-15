@@ -387,6 +387,35 @@ export function registerQuestionTaskRecordSyncProof(
       ),
     ).toBe('1')
 
+    const answerTarget = snapshot(newRecordId())
+    await ask(answerTarget)
+    const answerSnapshot = {
+      ...answerTarget,
+      revision: 2,
+      answer: 'first answer',
+      answeredAt,
+      updatedAt: answeredAt,
+    }
+    const answerWrite = (requestId: string) =>
+      client.writeQuestion!(
+        'answer',
+        {
+          requestId,
+          question: answerSnapshot,
+          audit: { action: 'answer', actorSession: null, at: answeredAt, reason: null },
+        },
+        destination,
+      )
+    await answerWrite(newRecordId())
+    await expect(answerWrite(newRecordId())).rejects.toThrow(
+      `question ${answerTarget.id} already holds hosted revision 2; re-read the question, then retry`,
+    )
+    expect(
+      fixture.admin(
+        `SELECT count(*) FROM question_mutation_audit WHERE question_id='${answerTarget.id}' AND action='answer';`,
+      ),
+    ).toBe('1')
+
     const rolledBack = snapshot(newRecordId())
     fixture.admin(`
       CREATE OR REPLACE FUNCTION reject_question_audit() RETURNS trigger LANGUAGE plpgsql AS $$

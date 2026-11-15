@@ -96,6 +96,11 @@ export const questionWriteResultSchema = z.object({
 })
 export type QuestionWriteResult = z.infer<typeof questionWriteResultSchema>
 
+export const questionChangedAfterRefusal = {
+  message: 'hosted question changed-after reads are not served yet',
+  remedy: 'retry without changedAfter; DEV-2328 decides the hosted change cursor',
+} as const
+
 const readLimit = z.coerce.number().int().positive().max(100).optional()
 const changedAfter = z.coerce.number().int().nonnegative().optional()
 export const questionReadSchema = z.discriminatedUnion('read', [

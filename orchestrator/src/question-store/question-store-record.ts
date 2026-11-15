@@ -10,12 +10,10 @@ import type {
   QuestionReadInput,
   QuestionWriteBody,
 } from '../record/record-question-contract.ts'
-import type { QuestionReadResult, QuestionStore } from './question-store-types.ts'
+import { questionChangedAfterRefusal } from '../record/record-question-contract.ts'
+import type { QuestionReadResult, QuestionReadRow, QuestionStore } from './question-store-types.ts'
 
-const changedAfterRefusal =
-  'hosted question changed-after reads are not served yet; retry without changedAfter; DEV-2328 decides the hosted change cursor'
-
-function localQuestionRow(row: Record<string, unknown>): Record<string, unknown> {
+function localQuestionRow(row: Record<string, unknown>): QuestionReadRow {
   const mapped = { ...row }
   if (mapped.record_id === undefined && typeof mapped.id === 'string') {
     mapped.record_id = mapped.id
@@ -25,14 +23,9 @@ function localQuestionRow(row: Record<string, unknown>): Record<string, unknown>
     mapped.run_record_id = mapped.run_id
   if (mapped.workflow_task_record_id === undefined && typeof mapped.workflow_task_id === 'string')
     mapped.workflow_task_record_id = mapped.workflow_task_id
-  if (
-    mapped.workflow_cursor_record_id === undefined &&
-    typeof mapped.workflow_cursor_id === 'string'
-  )
-    mapped.workflow_cursor_record_id = mapped.workflow_cursor_id
   delete mapped.run_id
   delete mapped.workflow_task_id
-  return mapped
+  return mapped as QuestionReadRow
 }
 
 export class RecordQuestionStore implements QuestionStore {
@@ -63,7 +56,10 @@ export class RecordQuestionStore implements QuestionStore {
   }
 
   async read(input: QuestionReadInput): Promise<QuestionReadResult> {
-    if (input.changedAfter !== undefined) throw new Error(changedAfterRefusal)
+    if (input.changedAfter !== undefined)
+      throw new Error(
+        `${questionChangedAfterRefusal.message}; ${questionChangedAfterRefusal.remedy}`,
+      )
     if (!this.input.client.readQuestions)
       throw new Error('record API predates direct question reads; release hosted-api, then retry')
     const result = await this.input.client.readQuestions(input, {
@@ -74,6 +70,7 @@ export class RecordQuestionStore implements QuestionStore {
     const cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString()
     return {
       items: items.map((row) => {
+        if (!('run_record_id' in row)) return row
         const sessionId = typeof row.session_id === 'string' ? row.session_id : null
         const recent = sessionId
           ? (this.input.database

@@ -7,6 +7,7 @@ import {
   type QuestionIntent,
   type QuestionReadInput,
   type QuestionWriteBody,
+  questionChangedAfterRefusal,
   questionIntentSchema,
   questionReadSchema,
   questionWriteSchema,
@@ -38,8 +39,8 @@ export function registerRecordQuestionRoutes(
     if (query.data.changedAfter !== undefined)
       return context.json(
         {
-          error: 'hosted question changed-after reads are not served yet',
-          remedy: 'retry without changedAfter; DEV-2328 decides the hosted change cursor',
+          error: questionChangedAfterRefusal.message,
+          remedy: questionChangedAfterRefusal.remedy,
         },
         422,
       )

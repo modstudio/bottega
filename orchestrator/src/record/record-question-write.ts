@@ -106,7 +106,11 @@ export async function writeRecordQuestion(
         number: questionRecord.number,
         revision: questionRecord.revision,
       })
-    const result = written[0] ?? existing[0]
+    const result = written[0]
+    if (!result && existing[0])
+      throw new Error(
+        `question ${input.question.id} already holds hosted revision ${existing[0].revision}; re-read the question, then retry`,
+      )
     if (!result || result.number == null)
       throw new Error(
         `question ${input.question.id} write did not satisfy its revision precondition`,

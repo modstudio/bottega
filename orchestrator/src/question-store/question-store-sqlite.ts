@@ -8,6 +8,7 @@ import type {
   QuestionWriteBody,
   QuestionWriteResult,
 } from '../record/record-question-contract.ts'
+import { questionChangedAfterRefusal } from '../record/record-question-contract.ts'
 import { runInboxQuestionRows } from '../run/run-inbox.ts'
 import {
   localQuestionProjects,
@@ -19,10 +20,9 @@ import {
 } from '../workflow/task-flow-store-sqlite-questions.ts'
 import type { QuestionReadResult, QuestionStore } from './question-store-types.ts'
 
-const changedAfterRefusal =
-  'hosted question changed-after reads are not served yet; retry without changedAfter; DEV-2328 decides the hosted change cursor'
-
 const json = (value: unknown) => (value == null ? null : JSON.stringify(value))
+const limited = <Row>(rows: Row[], limit?: number): Row[] =>
+  limit === undefined ? rows : rows.slice(0, limit)
 
 export class SqliteQuestionStore implements QuestionStore {
   private readonly database: Database
@@ -142,28 +142,34 @@ export class SqliteQuestionStore implements QuestionStore {
   }
 
   async read(input: QuestionReadInput): Promise<QuestionReadResult> {
-    if (input.changedAfter !== undefined) throw new Error(changedAfterRefusal)
+    if (input.changedAfter !== undefined)
+      throw new Error(
+        `${questionChangedAfterRefusal.message}; ${questionChangedAfterRefusal.remedy}`,
+      )
     if (input.read === 'inbox')
       return {
-        items: [
-          ...runInboxQuestionRows(this.database),
-          ...workflowInboxQuestions(this.database),
-        ].slice(0, input.limit ?? 100),
+        items: limited(
+          [...runInboxQuestionRows(this.database), ...workflowInboxQuestions(this.database)],
+          input.limit,
+        ),
       }
     if (input.read === 'waiting')
-      return { items: waitingWorkflowQuestions(this.database).slice(0, input.limit ?? 100) }
+      return { items: limited(waitingWorkflowQuestions(this.database), input.limit) }
     if (input.read === 'open-for-session')
       return {
-        items: openStagesForSession(this.database, input.sessionId).slice(0, input.limit ?? 100),
+        items: limited(openStagesForSession(this.database, input.sessionId), input.limit),
       }
     if (input.read === 'rulings')
       return {
-        items: rulingRows(this.database, {
-          kind: input.kind,
-          since: input.since,
-          after: null,
-          cursor: null,
-        }).slice(0, input.limit ?? 100),
+        items: limited(
+          rulingRows(this.database, {
+            kind: input.kind,
+            since: input.since,
+            after: null,
+            cursor: null,
+          }),
+          input.limit,
+        ),
       }
     if (input.read === 'task-rulings') {
       const project = this.database
@@ -175,6 +181,6 @@ export class SqliteQuestionStore implements QuestionStore {
           : [],
       }
     }
-    return { items: localQuestionProjects(this.database).slice(0, input.limit ?? 100) }
+    return { items: limited(localQuestionProjects(this.database), input.limit) }
   }
 }
