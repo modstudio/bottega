@@ -18,7 +18,11 @@ function windowLines(label: string, report: SessionWindowReport): string[] {
     'runs without a cursor:',
     `  total: ${report.runsWithoutCursor.total}`,
     ...groupLines('keyless', report.runsWithoutCursor.keyless),
-    ...groupLines('keyed-overridden', report.runsWithoutCursor.keyedOverridden),
+    ...groupLines('keyed, no open task cursor', report.runsWithoutCursor.keyedUncovered),
+    ...groupLines(
+      `on a task cursor but not bound${report.runsWithoutCursor.admitted.asOf === 'approximate' ? ' (approximate)' : ''}`,
+      report.runsWithoutCursor.admitted.byJob,
+    ),
     'residue at window end:',
     `  unscored runs${residue.unscoredRuns.asOf === 'approximate' ? ' (approximate)' : ''}: ${residue.unscoredRuns.count}`,
     `  held trees${residue.heldTrees.asOf === 'now' ? ' (current)' : ''}: ${residue.heldTrees.count}`,
@@ -35,7 +39,8 @@ function windowLines(label: string, report: SessionWindowReport): string[] {
 function deltaLines(delta: SessionReportDelta): string[] {
   return [
     'delta (current - comparison):',
-    `  runs without a cursor: ${signed(delta.runsWithoutCursor.total)} (keyless ${signed(delta.runsWithoutCursor.keyless)}, keyed-overridden ${signed(delta.runsWithoutCursor.keyedOverridden)})`,
+    `  runs without a cursor: ${signed(delta.runsWithoutCursor.total)} (keyless ${signed(delta.runsWithoutCursor.keyless)}, keyed, no open task cursor ${signed(delta.runsWithoutCursor.keyedUncovered)})`,
+    `  on a task cursor but not bound: ${signed(delta.runsWithoutCursor.admitted)}`,
     `  unscored runs: ${signed(delta.residueAtWindowEnd.unscoredRuns)}`,
     '  held trees: n/a',
     `  open cursors: ${signed(delta.residueAtWindowEnd.openCursors)}`,

@@ -44,7 +44,12 @@ export type SessionWindowReport = {
   runsWithoutCursor: {
     total: number
     keyless: Array<{ job: string; count: number; runIds: string[] }>
-    keyedOverridden: Array<{ job: string; count: number; runIds: string[] }>
+    keyedUncovered: Array<{ job: string; count: number; runIds: string[] }>
+    admitted: {
+      count: number
+      byJob: Array<{ job: string; count: number; runIds: string[] }>
+      asOf?: 'approximate'
+    }
   }
   residueAtWindowEnd: {
     unscoredRuns: { count: number; runIds: string[]; asOf?: 'approximate' }
@@ -66,7 +71,7 @@ export type SessionWindowReport = {
 }
 
 export type SessionReportDelta = {
-  runsWithoutCursor: { total: number; keyless: number; keyedOverridden: number }
+  runsWithoutCursor: { total: number; keyless: number; keyedUncovered: number; admitted: number }
   residueAtWindowEnd: {
     unscoredRuns: number
     heldTrees: null
@@ -121,6 +126,18 @@ const groupByJob = (rows: SessionReportFacts['runs']) =>
     .map(([job, grouped]) => ({ job, count: grouped.length, runIds: grouped.map((row) => row.id) }))
     .sort((left, right) => left.job.localeCompare(right.job))
 
+const admittedByTaskCursor = (
+  run: SessionReportFacts['runs'][number],
+  cursors: SessionReportFacts['cursors'],
+) =>
+  run.launchKey !== null &&
+  cursors.some(
+    (cursor) =>
+      cursor.taskKey === run.launchKey &&
+      Date.parse(cursor.createdAt) <= Date.parse(run.startedAt) &&
+      (cursor.openToday || Date.parse(cursor.updatedAt) >= Date.parse(run.startedAt)),
+  )
+
 export function buildSessionWindowReport(
   facts: SessionReportFacts,
   window: SessionReportWindow,
@@ -128,12 +145,15 @@ export function buildSessionWindowReport(
 ): SessionWindowReport {
   const since = Date.parse(window.since)
   const until = Date.parse(window.until)
-  const withoutCursor = facts.runs.filter((run) => {
+  const runsInWindow = facts.runs.filter((run) => {
     const started = Date.parse(run.startedAt)
-    return started >= since && started <= until && run.cursorId === null
+    return started >= since && started <= until
   })
-  const keyless = withoutCursor.filter((run) => run.launchKey === null)
-  const keyed = withoutCursor.filter((run) => run.launchKey !== null)
+  const unbound = runsInWindow.filter((run) => run.cursorId === null)
+  const keyless = unbound.filter((run) => run.launchKey === null)
+  const admitted = unbound.filter((run) => admittedByTaskCursor(run, facts.cursors))
+  const admittedIds = new Set(admitted.map((run) => run.id))
+  const keyedUncovered = unbound.filter((run) => run.launchKey !== null && !admittedIds.has(run.id))
   const unscoredRunIds = facts.unscoredRuns
     .filter(
       (run) =>
@@ -177,9 +197,14 @@ export function buildSessionWindowReport(
     sessionId: facts.sessionId,
     window,
     runsWithoutCursor: {
-      total: withoutCursor.length,
+      total: keyless.length + keyedUncovered.length,
       keyless: groupByJob(keyless),
-      keyedOverridden: groupByJob(keyed),
+      keyedUncovered: groupByJob(keyedUncovered),
+      admitted: {
+        count: admitted.length,
+        byJob: groupByJob(admitted),
+        ...(historical ? ({ asOf: 'approximate' } as const) : {}),
+      },
     },
     residueAtWindowEnd: {
       unscoredRuns: {
@@ -215,9 +240,11 @@ export function sessionReportDelta(
       keyless:
         categoryCount(current.runsWithoutCursor.keyless) -
         categoryCount(comparison.runsWithoutCursor.keyless),
-      keyedOverridden:
-        categoryCount(current.runsWithoutCursor.keyedOverridden) -
-        categoryCount(comparison.runsWithoutCursor.keyedOverridden),
+      keyedUncovered:
+        categoryCount(current.runsWithoutCursor.keyedUncovered) -
+        categoryCount(comparison.runsWithoutCursor.keyedUncovered),
+      admitted:
+        current.runsWithoutCursor.admitted.count - comparison.runsWithoutCursor.admitted.count,
     },
     residueAtWindowEnd: {
       unscoredRuns:

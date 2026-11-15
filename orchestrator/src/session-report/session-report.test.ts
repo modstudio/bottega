@@ -54,30 +54,91 @@ describe('session report policy', () => {
     expect(report.runsWithoutCursor).toEqual({
       total: 1,
       keyless: [{ job: 'implement', count: 1, runIds: ['keyless'] }],
-      keyedOverridden: [],
+      keyedUncovered: [],
+      admitted: { count: 0, byJob: [] },
     })
   })
 
-  test('reports keyed overrides separately from keyless runs', () => {
-    const report = buildSessionWindowReport(
-      facts([
+  test('classifies bound, admitted, and uncovered keyed runs from cursor state at start', () => {
+    const classificationFacts: SessionReportFacts = {
+      ...facts([
         {
-          id: 'overridden',
+          id: 'admitted',
           job: 'implement',
           startedAt: '2026-11-15T12:30:00Z',
           launchKey: 'DEV-1',
           cursorId: null,
         },
+        {
+          id: 'created-too-late',
+          job: 'implement',
+          startedAt: '2026-11-15T12:30:00Z',
+          launchKey: 'DEV-2',
+          cursorId: null,
+        },
+        {
+          id: 'closed-before-start',
+          job: 'review',
+          startedAt: '2026-11-15T12:30:00Z',
+          launchKey: 'DEV-3',
+          cursorId: null,
+        },
+        {
+          id: 'bound',
+          job: 'implement',
+          startedAt: '2026-11-15T12:30:00Z',
+          launchKey: 'DEV-1',
+          cursorId: 'cursor-open',
+        },
       ]),
-      window,
-      window.until,
-    )
+      cursors: [
+        {
+          id: 'cursor-open',
+          number: 1,
+          workflow: 'ship-task',
+          taskKey: 'DEV-1',
+          createdAt: '2026-11-15T12:00:00Z',
+          updatedAt: '2026-11-15T12:20:00Z',
+          openToday: true,
+        },
+        {
+          id: 'cursor-late',
+          number: 2,
+          workflow: 'ship-task',
+          taskKey: 'DEV-2',
+          createdAt: '2026-11-15T12:31:00Z',
+          updatedAt: '2026-11-15T12:40:00Z',
+          openToday: true,
+        },
+        {
+          id: 'cursor-closed',
+          number: 3,
+          workflow: 'ship-task',
+          taskKey: 'DEV-3',
+          createdAt: '2026-11-15T12:00:00Z',
+          updatedAt: '2026-11-15T12:29:00Z',
+          openToday: false,
+        },
+      ],
+    }
+    const report = buildSessionWindowReport(classificationFacts, window, '2026-11-15T14:00:00Z')
 
     expect(report.runsWithoutCursor).toEqual({
-      total: 1,
+      total: 2,
       keyless: [],
-      keyedOverridden: [{ job: 'implement', count: 1, runIds: ['overridden'] }],
+      keyedUncovered: [
+        { job: 'implement', count: 1, runIds: ['created-too-late'] },
+        { job: 'review', count: 1, runIds: ['closed-before-start'] },
+      ],
+      admitted: {
+        count: 1,
+        byJob: [{ job: 'implement', count: 1, runIds: ['admitted'] }],
+        asOf: 'approximate',
+      },
     })
+
+    const currentReport = buildSessionWindowReport(classificationFacts, window, window.until)
+    expect(currentReport.runsWithoutCursor.admitted).not.toHaveProperty('asOf')
   })
 
   test('refuses a reversed window and names both bounds', () => {
@@ -113,7 +174,7 @@ describe('session report policy', () => {
     )
     const delta = sessionReportDelta(current, prior)
     expect(delta).toEqual({
-      runsWithoutCursor: { total: 1, keyless: 1, keyedOverridden: 0 },
+      runsWithoutCursor: { total: 1, keyless: 1, keyedUncovered: 0, admitted: 0 },
       residueAtWindowEnd: {
         unscoredRuns: 0,
         heldTrees: null,

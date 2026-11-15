@@ -54,7 +54,7 @@ function registerReport(session: Command): void {
   session
     .command('report')
     .description(
-      'measure task-cursor attribution and residue over a session window\n\nUnanswered questions use the durable open-question predicate: neither answered nor closed. This differs from question inbox, which lists its needs-attention subset. Past-window unscored runs and open cursors are marked approximate.',
+      'measure task-cursor attribution and residue over a session window\n\nRuns in the window fall into four classes: bound runs carry a cursor id; admitted runs are unbound keyed runs whose task had an open cursor when the run started; keyless runs have no launch key; and keyed-uncovered runs had no matching open task cursor when they started. Bound and admitted runs count as on a cursor, while the "runs without a cursor" total is keyless plus keyed-uncovered. The report shows admitted runs separately as "on a task cursor but not bound" so the binding gap remains visible.\n\nUnanswered questions use the durable open-question predicate: neither answered nor closed. This differs from question inbox, which lists its needs-attention subset. Past-window admitted runs, unscored runs, and open cursors are marked approximate.',
     )
     .addOption(
       repeatable(
