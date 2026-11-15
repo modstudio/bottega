@@ -38,7 +38,7 @@ type AnchorPorts = CommonPorts & {
 }
 type RecoverPorts = CommonPorts & { promptWords: () => Promise<string> }
 
-export type AnchorDecision =
+type AnchorDecision =
   | { action: 'refuse'; message: string }
   | { action: 'already' }
   | { action: 'append'; keys: TrustLogKey[] }
@@ -53,7 +53,7 @@ function registeredTrustKey(registered: RegisteredKey, label: string): TrustLogK
   }
 }
 
-export function decideAnchor(
+function decideAnchor(
   slug: string,
   state: TrustState | null,
   own: TrustLogKey,

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { ed25519 } from '@noble/curves/ed25519.js'
 import { entropyToMnemonic, mnemonicToEntropy } from '@scure/bip39'
 import { wordlist } from '@scure/bip39/wordlists/english.js'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type ConfigClient, ConfigClientError } from '../../../shared/config-client.ts'
 import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
@@ -95,6 +96,17 @@ test('anchor refuses non-terminals and a declined confirmation appends nothing a
   ).rejects.toThrow(
     'machine recover requires stdin and stdout to be terminals; run it in your own terminal, not through an agent',
   )
+  await expect(
+    machineRecover(space, {
+      client: record.value,
+      env,
+      ...tty,
+      output: () => undefined,
+      promptWords: async () => '',
+    }),
+  ).rejects.toThrow(
+    `space fixture is not anchored; run \`${PLATFORM_SLUG} machine anchor --space fixture\``,
+  )
   const seed = new Uint8Array(32).fill(7)
   await machineAnchor(space, { ...common, ...tty, randomSeed: () => seed })
   expect(record.appendCount()).toBe(0)
@@ -150,7 +162,7 @@ test('anchor reports genesis contention, follows an existing log, and refuses an
       randomSeed: () => new Uint8Array(32).fill(8),
     }),
   ).rejects.toThrow(
-    'another machine anchored this space; discard the words shown and run `bottega machine anchor` again to add your pinned keys',
+    `another machine anchored this space; discard the words shown and run \`${PLATFORM_SLUG} machine anchor\` again to add your pinned keys`,
   )
 
   const entries: Uint8Array[] = []
@@ -174,6 +186,15 @@ test('anchor reports genesis contention, follows an existing log, and refuses an
     confirm: async () => true,
   })
   expect(verifyTrustLog(entries, { spaceId: space.spaceId }).keys.has(follower.keyId)).toBe(true)
+  const noOpOutput: string[] = []
+  await machineAnchor(space, {
+    client: record.value,
+    env,
+    ...tty,
+    output: (line) => noOpOutput.push(line),
+    confirm: async () => true,
+  })
+  expect(noOpOutput).toEqual(['space fixture is already anchored; nothing was added'])
 
   const outsiderEnv = environment()
   const outsider = await identity(outsiderEnv, 7, 'outsider')
@@ -187,7 +208,7 @@ test('anchor reports genesis contention, follows an existing log, and refuses an
       confirm: async () => true,
     }),
   ).rejects.toThrow(
-    'this machine is not trusted by the space machine trust log; run `bottega machine join --space fixture`',
+    `this machine is not trusted by the space machine trust log; run \`${PLATFORM_SLUG} machine join --space fixture\``,
   )
 })
 
@@ -237,4 +258,15 @@ test('recover adds this machine with the recovery signature and rejects invalid 
   const state = verifyTrustLog(entries, { spaceId: space.spaceId })
   expect(state.keys.has(recovered.keyId)).toBe(true)
   expect(decodeTrustLogEntry(entries.at(-1)!).signer).toEqual(state.recoveryPublicKey)
+  const output: string[] = []
+  await machineRecover(space, {
+    client: recoverClient.value,
+    env: recoverEnv,
+    ...tty,
+    output: (line) => output.push(line),
+    promptWords: async () => '',
+  })
+  expect(output).toEqual([
+    'this machine is already trusted by the space machine trust log; nothing was added',
+  ])
 })

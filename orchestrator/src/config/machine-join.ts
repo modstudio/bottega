@@ -77,6 +77,10 @@ function wrapFailureRemedy(key: TrustLogKey): string {
   return `\`${PLATFORM_SLUG} machine config machine trust ${key.keyId} ${encoded(key.publicKey)} --yes\``
 }
 
+export function unanchoredApprovalNotice(slug: string): string {
+  return `space ${slug} is not anchored; run \`${PLATFORM_SLUG} machine anchor --space ${slug}\` from your own terminal`
+}
+
 function expirationRefusal(): Error {
   return new Error(`pairing code expired; start again with \`${PLATFORM_SLUG} machine join\``)
 }
@@ -455,7 +459,7 @@ export async function machineApprove(
   codeText: string,
   selected: SelectedSpace,
   ports: Ports,
-): Promise<{ label: string; keyId: string }> {
+): Promise<{ label: string; keyId: string; anchored: boolean }> {
   const code: PairingCode = parsePairingCode(codeText)
   const { record } = await localRecord(selected, ports)
   const destination = { destinationSpaceId: selected.spaceId }
@@ -520,9 +524,5 @@ export async function machineApprove(
     destination,
   )
   if (approved.failure) throw approved.failure
-  if (!initial)
-    ports.output?.(
-      `space ${selected.slug} is not anchored; run \`${PLATFORM_SLUG} machine anchor --space ${selected.slug}\` from your own terminal`,
-    )
-  return { label: joiner.label, keyId: joiner.keyId }
+  return { label: joiner.label, keyId: joiner.keyId, anchored: initial !== null }
 }
