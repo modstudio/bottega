@@ -10,7 +10,6 @@ const verdict = (
     project: PLATFORM_NAME,
     branch: 'DEV-1234-work',
     taskKey: 'DEV-1234',
-    base: 'base',
     head: 'head-sha',
     patchId: 'patch',
     pathSet: 'paths',

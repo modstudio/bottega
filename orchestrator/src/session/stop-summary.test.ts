@@ -101,7 +101,6 @@ test('session summary assembles only this session owed runs, held remedies, and 
             project: branch.project,
             branch: branch.branch,
             taskKey: branch.taskKey,
-            base: 'base',
             head: 'head',
             patchId: 'patch',
             pathSet: 'paths',
