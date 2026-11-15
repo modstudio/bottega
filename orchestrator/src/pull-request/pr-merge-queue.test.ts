@@ -3,7 +3,6 @@ import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
-import type { AdmissionDecision } from './admission-decision.ts'
 import type { PullRequestCheck } from './merge-decision.ts'
 import {
   MERGE_QUEUE_DEQUEUE_CONFIRM_MS,
@@ -12,6 +11,7 @@ import {
   type MergeQueueObservation,
 } from './merge-queue-decision.ts'
 import type { PullRequestChange } from './pr-admission.ts'
+import type { TriageDecision } from './triage-decision.ts'
 import {
   mergePullRequest,
   type PullRequestMergeAdapter,
@@ -81,7 +81,8 @@ function adapter(input: {
       decision: {
         complete: true,
         overrideId: null,
-        triage: { complete: true, snapshot: {} } as NonNullable<AdmissionDecision['triage']>,
+        overrideReason: null,
+        triage: { complete: true, snapshot: {} } as TriageDecision,
       },
     }),
     recordAdmission: () => null,

@@ -6,18 +6,16 @@ import { readLandedReviewIds } from '../branch/branch-landing-records.ts'
 import type { Project } from '../project/projects.ts'
 import {
   readLandingOverridesForBranch,
-  resolvePullRequestChangeForProject,
-  triageDecision,
 } from '../pull-request/pr-admission.ts'
-import { ceilingTriageFacts } from '../pull-request/triage-decision.ts'
 import {
   provenanceSubjectFacts,
-  reviewsForTriage,
+  reviewsForAdmission,
   reviewTaskKeyForBranch,
   serializePathSet,
 } from '../review/review-group.ts'
 import { reviewLineage } from '../review/review-lineage-store.ts'
 import { measureChangeIdentity } from '../review/review-pins.ts'
+import { countsAsLensEvidence } from '../review/review-lens-provenance.ts'
 import { gatherPostFixReviewFacts } from '../review/review-post-fix.ts'
 import { hasExactArchitectRead } from '../review/review-read.ts'
 import {
@@ -119,31 +117,6 @@ function completionFacts(branchReviews: ReturnType<typeof reviewsForTriage>['bra
   }
 }
 
-function gatheredTriage(change: ReviewFunnelChange) {
-  if (!change.resolved) {
-    return triageDecision(
-      resolvePullRequestChangeForProject(
-        change.cwd,
-        change.project,
-        change.branch,
-        change.head,
-        change.database,
-      ),
-      change.database,
-    )
-  }
-  return triageDecision(
-    {
-      ...change.resolved,
-      project: change.project,
-      branch: change.branch,
-      tip: change.head,
-      tree: '',
-    },
-    change.database,
-  )
-}
-
 /** Resolve one change once, including lineage evidence and completed-landing exclusions. */
 export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts {
   const identity = measureChangeIdentity(change.cwd, change.base, change.head)
@@ -155,7 +128,7 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
     patchId: identity.patchId,
     pathSet: identity.paths,
   }
-  const reviews = reviewsForTriage(change.database, group)
+  const reviews = reviewsForAdmission(change.database, group)
   const files = diffNumstat(change.cwd, change.base, change.head)
   const trunk = change.project.settings.trunk?.trim()
   if (!trunk) throw new Error(`project ${change.project.name} has no trunk configured`)
@@ -181,8 +154,26 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
     patchId: identity.patchId,
     pathSet,
   })
-  const admission = gatheredTriage(change)
-  const admissionGap = ceilingTriageFacts(admission)
+  const exactCompletedLenses = [
+    ...new Set(
+      reviews.reviews
+        .filter(({ completedAt }) => completedAt !== null)
+        .flatMap(({ lenses }) =>
+          lenses.flatMap((lens) => (countsAsLensEvidence(lens) ? [lens.lens] : [])),
+        ),
+    ),
+  ]
+  const unfinishedReviewNumbers = reviews.reviews
+    .filter(({ completedAt }) => completedAt === null)
+    .map(({ reviewNumber }) => reviewNumber)
+    .sort((left, right) => left - right)
+  const undisposedFindings = reviews.reviews
+    .flatMap((review) =>
+      review.findings
+        .filter(({ disposition }) => disposition === null)
+        .map(({ ordinal }) => ({ reviewNumber: review.reviewNumber, ordinal })),
+    )
+    .sort((left, right) => left.reviewNumber - right.reviewNumber || left.ordinal - right.ordinal)
   return {
     change: {
       project: change.project.name,
@@ -197,6 +188,7 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
     files,
     review: change.project.settings.review,
     branchReviews: reviews.branchReviews,
+    exactCompletedLenses,
     postFix,
     rounds: reviewRoundFacts(change.database, change.project.name, change.branch),
     currentRoundIdentity: currentReviewRoundIdentity({
@@ -211,13 +203,13 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
     exactRead: read,
     readCreditsRound: read && completion.hasCompletedRound,
     ...overrides,
-    triageComplete: admission.complete,
+    triageComplete: unfinishedReviewNumbers.length === 0 && undisposedFindings.length === 0,
     admissionGap: {
-      unfinishedReviewNumbers: [...admissionGap.unfinishedReviewNumbers],
-      undisposedFindings: [...admissionGap.undisposedFindings],
-      missingLenses: [...admissionGap.missingLenses],
-      architectReadRequired: admissionGap.architectReadRequired,
-      nonLensGaps: [...admissionGap.nonLensGaps],
+      unfinishedReviewNumbers,
+      undisposedFindings,
+      missingLenses: [],
+      architectReadRequired: false,
+      nonLensGaps: [],
     },
   }
 }

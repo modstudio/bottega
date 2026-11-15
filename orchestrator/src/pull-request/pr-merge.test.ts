@@ -17,6 +17,7 @@ import {
 } from './pr-merge.fixture.ts'
 import { mergePullRequest } from './pr-merge.ts'
 import { requiredRelease } from './pr-merge-required-release.fixture.ts'
+import type { TriageDecision } from './triage-decision.ts'
 
 test('an already-merged recovery runs landings, promotion, required release, then cleanup', async () => {
   registerProject([])
@@ -573,6 +574,7 @@ test('an incomplete admission refuses with its review remedy without merging', a
             decision: {
               complete: false,
               overrideId: null,
+              overrideReason: null,
               triage: {
                 complete: false,
                 snapshot: {
@@ -681,9 +683,10 @@ test('an admitted head records a snapshot with the pull request number before me
   const project = database
     .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
     .get('merge-fixture')!
-  const decision: AdmissionDecision & { triage: NonNullable<AdmissionDecision['triage']> } = {
+  const decision: AdmissionDecision & { triage: TriageDecision } = {
     complete: true,
     overrideId: null,
+    overrideReason: null,
     triage: {
       complete: true,
       snapshot: {

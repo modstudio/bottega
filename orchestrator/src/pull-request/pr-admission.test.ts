@@ -411,7 +411,13 @@ test('merge admission leaves an existing snapshot unchanged', () => {
   finalizeTriageIntent(change.project.name, change.branch, 40, database)
 
   expect(
-    recordMergeAdmission(change, { complete: true, overrideId: null }, triage, 42, database),
+    recordMergeAdmission(
+      change,
+      { complete: true, overrideId: null, overrideReason: null },
+      triage,
+      42,
+      database,
+    ),
   ).toBeNull()
   expect(
     database.query('SELECT pr_number FROM landing_triage_snapshot WHERE record_id=?').get(id),

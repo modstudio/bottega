@@ -3,7 +3,6 @@
 
 import type { ReviewFunnelVerdict } from '../review-funnel/decide-review-funnel.ts'
 import type { TriageOverrideAttribution } from './override-decision.ts'
-import type { TriageDecision } from './triage-decision.ts'
 
 export type AdmissionOverride = {
   recordId: string
@@ -22,8 +21,6 @@ export type AdmissionDecision = {
   complete: boolean
   overrideId: string | null
   overrideReason: string | null
-  /** Snapshot evidence carried by admission adapters, never consulted by decideAdmission. */
-  triage?: TriageDecision
 }
 
 const normalized = (values: readonly string[]) => [...new Set(values)].sort()

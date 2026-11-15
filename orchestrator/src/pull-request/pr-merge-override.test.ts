@@ -119,6 +119,7 @@ function adapterFor(
         decision: {
           complete: true,
           overrideId: override?.record_id ?? null,
+          overrideReason: override ? 'operator override' : null,
           triage: incompleteTriage,
         },
       }

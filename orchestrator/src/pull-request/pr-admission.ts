@@ -695,8 +695,12 @@ export function createPullRequest(
       database,
     )
     const checkedAdmission = admissionDecision(change, database)
-    if (!checkedAdmission.complete && !checkedAdmission.triage.complete) {
-      throw new Error(triageRefusal(change, checkedAdmission.triage))
+    if (!checkedAdmission.complete) {
+      throw new Error(
+        checkedAdmission.triage.complete
+          ? `refusing pull request for ${change.branch} at ${change.tip}: review funnel requires ${checkedAdmission.verdict.next.action}; cleared by: ${checkedAdmission.verdict.remedy}`
+          : triageRefusal(change, checkedAdmission.triage),
+      )
     }
     recordTriageIntent(change, checkedAdmission.triage, checkedAdmission.overrideId, database)
     return checkedAdmission
@@ -801,7 +805,11 @@ export function checkPushedTip(cwd: string, sha: string, remoteRef: string): Pus
       complete: policy.admit,
       infrastructureError: null,
       refusal:
-        !policy.admit && !checked.triage.complete ? triageRefusal(change, checked.triage) : null,
+        !policy.admit
+          ? checked.triage.complete
+            ? `review funnel requires ${checked.verdict.next.action}; cleared by: ${checked.verdict.remedy}`
+            : triageRefusal(change, checked.triage)
+          : null,
       pendingIntent: pendingIntent(database, project.name, branch),
       overrideId: decision.overrideId,
     }

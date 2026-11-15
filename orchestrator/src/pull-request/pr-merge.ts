@@ -655,14 +655,15 @@ function collectMergeAdmission(
     }
   }
   const triage = checked.decision.triage
-  if (triage.complete) throw new Error('incomplete admission returned complete review triage')
   return {
     checked,
     decision: decideMergeAdmission({
       checked: true,
       number: pullRequest.number,
       complete: false,
-      triageRefusal: triageRefusal(checked.change, triage),
+      triageRefusal: triage.complete
+        ? `review funnel refused this change; cleared by: run ${PLATFORM_SLUG} review tier for the pull-request head`
+        : triageRefusal(checked.change, triage),
     }),
   }
 }

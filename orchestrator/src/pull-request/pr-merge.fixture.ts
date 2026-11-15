@@ -4,6 +4,9 @@ import { projectByName } from '../project/projects.ts'
 import type { RequiredReleaseReport } from '../release/release-required.ts'
 import type { ShipCleanupReport } from '../ship-cleanup/ship-cleanup.ts'
 import type { AdmissionDecision } from './admission-decision.ts'
+import type { TriageDecision } from './triage-decision.ts'
+
+type FixtureAdmissionDecision = AdmissionDecision & { triage: TriageDecision }
 import type { PullRequestCheck } from './merge-decision.ts'
 import type { PullRequestChange } from './pr-admission.ts'
 import type { PullRequestMergeAdapter, PullRequestMergeFacts } from './pr-merge.ts'
@@ -51,10 +54,10 @@ export function adapter(
       headCommit: string,
       headBranch: string,
       database: ReturnType<typeof db>,
-    ) => { change: PullRequestChange; decision: AdmissionDecision }
+    ) => { change: PullRequestChange; decision: FixtureAdmissionDecision }
     recordAdmission?: (
       change: PullRequestChange,
-      decision: AdmissionDecision,
+      decision: FixtureAdmissionDecision,
       prNumber: number,
       database: ReturnType<typeof db>,
     ) => string | null
@@ -89,7 +92,8 @@ export function adapter(
         decision: {
           complete: true,
           overrideId: null,
-          triage: { complete: true, snapshot: {} } as NonNullable<AdmissionDecision['triage']>,
+          overrideReason: null,
+          triage: { complete: true, snapshot: {} } as TriageDecision,
         },
       })),
     recordAdmission: (change, decision, prNumber, database) =>
