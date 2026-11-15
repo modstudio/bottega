@@ -20,14 +20,17 @@ type InFlightBranch = {
   branch: string
   taskKey: string | null
   worktree: string | null
+  claimedByCursor: boolean
 }
 
-type RootRunBranchRow = InFlightBranch & { job: string }
+type RootRunBranchRow = Omit<InFlightBranch, 'claimedByCursor'> & { job: string }
 
 export type SessionReviewVerdictGatherer = (
   branch: InFlightBranch,
   database: Database,
 ) => StopSummaryReviewVerdictFact
+
+export type SessionReviewBranchRefExists = (branch: InFlightBranch, database: Database) => boolean
 
 function cursorBranch(cursor: WorkflowCursorListRow): InFlightBranch | null {
   if (cursor.workflow_slug !== 'ship-task') return null
@@ -40,6 +43,7 @@ function cursorBranch(cursor: WorkflowCursorListRow): InFlightBranch | null {
     branch,
     taskKey: cursor.workflow_key?.trim() || null,
     worktree: worktree || null,
+    claimedByCursor: true,
   }
 }
 
@@ -73,15 +77,37 @@ function sessionInFlightReviewBranches(
   const branches = new Map<string, InFlightBranch>()
   for (const branch of [
     ...cursors.map(cursorBranch).filter((item): item is InFlightBranch => item !== null),
-    ...runs,
+    ...runs.map((run) => ({ ...run, claimedByCursor: false })),
   ]) {
     const identity = `${branch.project}\0${branch.branch}`
     const existing = branches.get(identity)
     if (!existing) branches.set(identity, branch)
-    else if (!existing.taskKey && branch.taskKey)
-      branches.set(identity, { ...existing, taskKey: branch.taskKey })
+    else
+      branches.set(identity, {
+        ...existing,
+        taskKey: existing.taskKey ?? branch.taskKey,
+        claimedByCursor: existing.claimedByCursor || branch.claimedByCursor,
+      })
   }
   return [...branches.values()]
+}
+
+function branchRefExistsInMainCheckout(branch: InFlightBranch, database: Database): boolean {
+  const project = projectByName(branch.project, database)
+  if (!project) throw new Error(`project ${branch.project} is not registered`)
+  const result = startBoundedSync(
+    ['git', 'rev-parse', '--verify', '--quiet', `refs/heads/${branch.branch}`],
+    {
+      budget: 'git-plumbing',
+      cwd: project.path,
+      env: targetGitEnvironment(project.path),
+    },
+  )
+  if (result.exitCode === 0) return true
+  if (result.exitCode === 1) return false
+  throw new Error(
+    result.stderr.trim() || `git could not check branch ${branch.branch} in ${project.path}`,
+  )
 }
 
 function gatherBranchReviewVerdict(
@@ -126,10 +152,24 @@ export function sessionReviewVerdictLines(
   cursors: readonly WorkflowCursorListRow[],
   database: Database,
   gather: SessionReviewVerdictGatherer = gatherBranchReviewVerdict,
+  refExists: SessionReviewBranchRefExists = branchRefExistsInMainCheckout,
 ): string[] {
   return stopSummaryReviewVerdictLines(
-    sessionInFlightReviewBranches(session, cursors, database).map((branch) =>
-      gather(branch, database),
-    ),
+    sessionInFlightReviewBranches(session, cursors, database).flatMap((branch) => {
+      if (!branch.claimedByCursor) {
+        try {
+          if (!refExists(branch, database)) return []
+        } catch (cause) {
+          return [
+            {
+              branch: branch.branch,
+              taskKey: branch.taskKey,
+              failure: String(cause),
+            },
+          ]
+        }
+      }
+      return [gather(branch, database)]
+    }),
   )
 }

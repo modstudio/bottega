@@ -6,6 +6,7 @@ import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fi
 import { db } from '../database/db.ts'
 import { LANDING_TREE_JOB } from '../landing-tree/landing-tree.ts'
 import type { WorkflowCursorListRow } from '../workflow/workflow-cursor-list.ts'
+import { sessionReviewVerdictLines } from './session-review-verdicts.ts'
 import {
   landingTreeIsActive,
   type StopSummaryHeldTreeRow,
@@ -113,6 +114,7 @@ test('session summary assembles only this session owed runs, held remedies, and 
           next: { action: 'dispatch' as const, lenses: ['correctness', 'craft'] },
         },
       }),
+      reviewBranchRefExists: () => true,
     },
     db(),
   )
@@ -140,4 +142,57 @@ test('session summary assembles only this session owed runs, held remedies, and 
   expect(result.lines.join('\n')).not.toMatch(
     /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/,
   )
+})
+
+test('a run-derived branch with a missing main-checkout ref has no review line', () => {
+  const session = 'missing-run-branch-session'
+  const run = addRun({ agent: 'codex', job: 'implement', session })
+  db()
+    .query(`UPDATE run SET branch='DEV-2304-gone',launch_key='DEV-2304' WHERE record_id=?`)
+    .run(run)
+  let gathered = false
+
+  const lines = sessionReviewVerdictLines(
+    session,
+    [],
+    db(),
+    () => {
+      gathered = true
+      return { branch: 'DEV-2304-gone', taskKey: 'DEV-2304', failure: 'unexpected gather' }
+    },
+    () => false,
+  )
+
+  expect(lines).toEqual([])
+  expect(gathered).toBeFalse()
+})
+
+test('an open cursor branch with a missing ref keeps its verdict failure line', () => {
+  const missingCursor = {
+    ...cursor,
+    project: PLATFORM_NAME,
+    workflow_key: 'DEV-2304',
+    args: JSON.stringify({ branch: 'DEV-2304-gone' }),
+  } as WorkflowCursorListRow
+  let checked = false
+
+  const lines = sessionReviewVerdictLines(
+    'missing-cursor-branch-session',
+    [missingCursor],
+    db(),
+    (branch) => ({
+      branch: branch.branch,
+      taskKey: branch.taskKey,
+      failure: 'Error: git could not resolve branch DEV-2304-gone',
+    }),
+    () => {
+      checked = true
+      return false
+    },
+  )
+
+  expect(lines).toEqual([
+    `DEV-2304 review: verdict unavailable (Error: git could not resolve branch DEV-2304-gone) → ${PLATFORM_SLUG} review tier DEV-2304-gone`,
+  ])
+  expect(checked).toBeFalse()
 })
