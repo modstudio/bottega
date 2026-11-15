@@ -4,23 +4,18 @@ import { ed25519 } from '@noble/curves/ed25519.js'
 import { entropyToMnemonic, mnemonicToEntropy, validateMnemonic } from '@scure/bip39'
 import { wordlist } from '@scure/bip39/wordlists/english.js'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { type ConfigClient, ConfigClientError } from '../../../shared/config-client.ts'
+import type { ConfigClient } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
-import { machineKeyId } from '../../../shared/machine-key-id.ts'
-import { readMachineKey } from '../../../shared/machine-key-store.ts'
-import { readMachineSigningKey } from '../../../shared/machine-signing-key.ts'
 import { readTrustList, type TrustList } from '../../../shared/trust-list.ts'
 import {
   bytesEqual,
-  signTrustLogEntry,
   type TrustLogBody,
   type TrustLogKey,
   type TrustState,
-  verifyTrustLog,
 } from '../../../shared/trust-log.ts'
-import { writeRememberedTrustLogHead } from '../../../shared/trust-log-head.ts'
 import { verifiedTrustLogForSpace } from '../../../shared/trust-log-keys.ts'
-import { registeredKeyAgrees } from './machine-join.ts'
+import { localRecord, registeredKeyAgrees } from './machine-join.ts'
+import { appendTrustLogEntryWithSigner } from './trust-log-append.ts'
 
 type SelectedSpace = { spaceId: string; slug: string }
 type RegisteredKey = Awaited<ReturnType<ConfigClient['listMachineKeys']>>[number]
@@ -88,35 +83,6 @@ function requireTerminal(verb: 'anchor' | 'recover', ports: CommonPorts): void {
     )
 }
 
-async function localRecord(
-  selected: SelectedSpace,
-  ports: CommonPorts,
-): Promise<{ own: TrustLogKey; signingPrivateKey: Uint8Array; registered: RegisteredKey[] }> {
-  const pair = readMachineKey(ports.env)
-  const signing = readMachineSigningKey(ports.env)
-  if (!pair || !signing)
-    throw new Error(
-      `machine key is not initialized; run \`${PLATFORM_SLUG} machine config machine init --space ${selected.slug}\``,
-    )
-  const keyId = await machineKeyId(pair.publicKey)
-  const [who, registered] = await Promise.all([
-    ports.client.whoami(),
-    ports.client.listMachineKeys({ destinationSpaceId: selected.spaceId }),
-  ])
-  const listed = registered.find((candidate) => candidate.keyId === keyId)
-  const own: TrustLogKey = {
-    keyId,
-    publicKey: pair.publicKey,
-    signingPublicKey: signing.publicKey,
-    label: listed?.label ?? '',
-  }
-  if (listed?.userId !== who.user.id || !registeredKeyAgrees(listed, own))
-    throw new Error(
-      `machine key is not registered for this user; run \`${PLATFORM_SLUG} machine config machine init --space ${selected.slug}\``,
-    )
-  return { own, signingPrivateKey: signing.privateKey, registered }
-}
-
 async function append(
   selected: SelectedSpace,
   ports: CommonPorts,
@@ -127,39 +93,28 @@ async function append(
   privateKey: Uint8Array,
   action: 'genesis' | 'anchor' | 'recover',
 ): Promise<{ entries: Uint8Array[]; state: TrustState }> {
-  const encoded = signTrustLogEntry(
-    {
-      prev: state?.head ?? null,
-      space: selected.spaceId,
-      body,
-      signer,
-      at: ports.at ?? Date.now(),
-    },
+  const conflictMessage =
+    action === 'genesis'
+      ? `another machine anchored this space; discard the words shown and run \`${PLATFORM_SLUG} machine anchor\` again to add your pinned keys`
+      : `machine trust log changed while running ${PLATFORM_SLUG} machine ${action}; retry \`${PLATFORM_SLUG} machine ${action}\``
+  return appendTrustLogEntryWithSigner(
+    ports.client,
+    selected.spaceId,
+    entries,
+    state,
+    body,
+    signer,
     privateKey,
+    conflictMessage,
+    ports,
   )
-  const nextEntries = [...entries, encoded]
-  const nextState = verifyTrustLog(nextEntries, {
-    spaceId: selected.spaceId,
-    rememberedHead: state?.head ?? null,
-  })
-  try {
-    await ports.client.appendTrustLogEntry(state?.head ?? null, encoded, {
-      destinationSpaceId: selected.spaceId,
-    })
-  } catch (error) {
-    if (error instanceof ConfigClientError && error.status === 409) {
-      if (action === 'genesis')
-        throw new Error(
-          `another machine anchored this space; discard the words shown and run \`${PLATFORM_SLUG} machine anchor\` again to add your pinned keys`,
-        )
-      throw new Error(
-        `machine trust log changed while running ${PLATFORM_SLUG} machine ${action}; retry \`${PLATFORM_SLUG} machine ${action}\``,
-      )
-    }
-    throw error
-  }
-  writeRememberedTrustLogHead(selected.spaceId, nextState.head, ports.env)
-  return { entries: nextEntries, state: nextState }
+}
+
+export const RECOVERY_WORDS_CONFIRMATION_PROMPT =
+  'Type WRITTEN to confirm the recovery words are written down: '
+
+export function recoveryWordsConfirmed(answer: string): boolean {
+  return answer.trim().toLowerCase() === 'written'
 }
 
 export async function machineAnchor(selected: SelectedSpace, ports: AnchorPorts): Promise<void> {

@@ -18,7 +18,12 @@ import {
   trustLogEntryHash,
   verifyTrustLog,
 } from '../../../shared/trust-log.ts'
-import { machineAnchor, machineRecover } from './trust-log-anchor.ts'
+import {
+  machineAnchor,
+  machineRecover,
+  RECOVERY_WORDS_CONFIRMATION_PROMPT,
+  recoveryWordsConfirmed,
+} from './trust-log-anchor.ts'
 
 const space = { spaceId: '01990000-0000-7000-8000-000000000001', slug: 'fixture' }
 
@@ -73,6 +78,15 @@ function client(entries: Uint8Array[], registered: ReturnType<typeof listed>[], 
 }
 
 const tty = { inputIsTTY: true, outputIsTTY: true }
+
+test('recovery-word confirmation keeps the ruled prompt and answer policy', () => {
+  expect(RECOVERY_WORDS_CONFIRMATION_PROMPT).toBe(
+    'Type WRITTEN to confirm the recovery words are written down: ',
+  )
+  expect(recoveryWordsConfirmed('  Written ')).toBe(true)
+  expect(recoveryWordsConfirmed('yes')).toBe(false)
+  expect(recoveryWordsConfirmed('')).toBe(false)
+})
 
 test('anchor refuses non-terminals and a declined confirmation appends nothing and wipes the seed', async () => {
   const env = environment()
@@ -180,13 +194,15 @@ test('anchor reports genesis contention, follows an existing log, and refuses an
   const follower = { ...(await identity(environment(), 6, 'follower')) }
   await pinTrustedMachine(follower.keyId, follower.publicKey, follower.label, env)
   record.value.listMachineKeys = async () => [listed(own), listed(follower)]
+  const followerOutput: string[] = []
   await machineAnchor(space, {
     client: record.value,
     env,
     ...tty,
-    output: () => undefined,
+    output: (line) => followerOutput.push(line),
     confirm: async () => true,
   })
+  expect(followerOutput).toEqual([])
   expect(verifyTrustLog(entries, { spaceId: space.spaceId }).keys.has(follower.keyId)).toBe(true)
   const noOpOutput: string[] = []
   await machineAnchor(space, {

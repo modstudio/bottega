@@ -99,14 +99,11 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/config-client.ts',
     '../../../shared/config-directory.ts',
-    '../../../shared/machine-key-id.ts',
-    '../../../shared/machine-key-store.ts',
-    '../../../shared/machine-signing-key.ts',
     '../../../shared/trust-list.ts',
     '../../../shared/trust-log.ts',
-    '../../../shared/trust-log-head.ts',
     '../../../shared/trust-log-keys.ts',
     './machine-join.ts',
+    './trust-log-append.ts',
   ]),
   module('orchestrator/src/config/machine-join.ts', [
     '../../../shared/brand.ts',
@@ -224,6 +221,7 @@ export const settingsModules: SettingsModule[] = [
     '../hosted-call-outcome.ts',
   ]),
   module('orchestrator/src/commands/config.ts', [
+    'node:readline/promises',
     '../../../shared/brand.ts',
     'commander',
     '../../../shared/config-client.ts',

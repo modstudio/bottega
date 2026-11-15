@@ -8,10 +8,50 @@ import {
   bytesEqual,
   signTrustLogEntry,
   type TrustLogBody,
+  type TrustState,
   verifyTrustLog,
 } from '../../../shared/trust-log.ts'
 import { writeRememberedTrustLogHead } from '../../../shared/trust-log-head.ts'
 import { verifiedTrustLogForSpace } from '../../../shared/trust-log-keys.ts'
+
+export async function appendTrustLogEntryWithSigner(
+  client: ConfigClient,
+  spaceId: string,
+  entries: Uint8Array[],
+  state: TrustState | null,
+  body: TrustLogBody,
+  signer: Uint8Array,
+  privateKey: Uint8Array,
+  conflictMessage: string,
+  ports: { at?: number; env?: ConfigEnvironment } = {},
+): Promise<{ entries: Uint8Array[]; state: TrustState }> {
+  const encoded = signTrustLogEntry(
+    {
+      prev: state?.head ?? null,
+      space: spaceId,
+      body,
+      signer,
+      at: ports.at ?? Date.now(),
+    },
+    privateKey,
+  )
+  const nextEntries = [...entries, encoded]
+  const nextState = verifyTrustLog(nextEntries, {
+    spaceId,
+    rememberedHead: state?.head ?? null,
+  })
+  try {
+    await client.appendTrustLogEntry(state?.head ?? null, encoded, {
+      destinationSpaceId: spaceId,
+    })
+  } catch (error) {
+    if (error instanceof ConfigClientError && error.status === 409)
+      throw new Error(conflictMessage)
+    throw error
+  }
+  writeRememberedTrustLogHead(spaceId, nextState.head, ports.env)
+  return { entries: nextEntries, state: nextState }
+}
 
 export async function appendSignedTrustLogEntry(
   client: ConfigClient,
@@ -42,27 +82,16 @@ export async function appendSignedTrustLogEntry(
     throw new Error(
       `this machine's signing key is not the key the space machine trust log trusts for its key id; have an owner re-approve this machine from an approved machine before retrying ${wording.retry}`,
     )
-  const encoded = signTrustLogEntry(
-    {
-      prev: state.head,
-      space: spaceId,
-      body,
-      signer: signing.publicKey,
-      at: ports.at ?? Date.now(),
-    },
-    signing.privateKey,
-  )
-  const nextHead = verifyTrustLog([...entries, encoded], {
+  const appended = await appendTrustLogEntryWithSigner(
+    client,
     spaceId,
-    rememberedHead: state.head,
-  }).head
-  try {
-    await client.appendTrustLogEntry(state.head, encoded, { destinationSpaceId: spaceId })
-  } catch (error) {
-    if (error instanceof ConfigClientError && error.status === 409)
-      throw new Error(`machine trust log changed while ${wording.action}; retry ${wording.retry}`)
-    throw error
-  }
-  writeRememberedTrustLogHead(spaceId, nextHead, ports.env)
-  return nextHead
+    entries,
+    state,
+    body,
+    signing.publicKey,
+    signing.privateKey,
+    `machine trust log changed while ${wording.action}; retry ${wording.retry}`,
+    ports,
+  )
+  return appended.state.head
 }

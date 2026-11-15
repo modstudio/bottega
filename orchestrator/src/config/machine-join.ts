@@ -134,10 +134,15 @@ async function poll(
   return found
 }
 
-async function localRecord(
+export async function localRecord(
   selected: SelectedSpace,
   ports: Ports,
-): Promise<{ record: TrustLogKey; ownUserId: string }> {
+): Promise<{
+  own: TrustLogKey
+  ownUserId: string
+  signingPrivateKey: Uint8Array
+  registered: RegisteredKey[]
+}> {
   const pair = readMachineKey(ports.env)
   const signing = readMachineSigningKey(ports.env)
   if (!pair || !signing)
@@ -145,24 +150,26 @@ async function localRecord(
       `machine key is not initialized; run \`${PLATFORM_SLUG} machine config machine init --space ${selected.slug}\``,
     )
   const keyId = await machineKeyId(pair.publicKey)
-  const [who, machines] = await Promise.all([
+  const [who, registered] = await Promise.all([
     ports.client.whoami(),
     ports.client.listMachineKeys({ destinationSpaceId: selected.spaceId }),
   ])
-  const registered = machines.find((machine) => machine.keyId === keyId)
-  const record: TrustLogKey = {
+  const listed = registered.find((machine) => machine.keyId === keyId)
+  const own: TrustLogKey = {
     keyId,
     publicKey: pair.publicKey,
     signingPublicKey: signing.publicKey,
-    label: registered?.label ?? '',
+    label: listed?.label ?? '',
   }
-  if (registered?.userId !== who.user.id || !registeredKeyAgrees(registered, record))
+  if (listed?.userId !== who.user.id || !registeredKeyAgrees(listed, own))
     throw new Error(
       `machine key is not registered for this user; run \`${PLATFORM_SLUG} machine config machine init --space ${selected.slug}\``,
     )
   return {
     ownUserId: who.user.id,
-    record,
+    own,
+    signingPrivateKey: signing.privateKey,
+    registered,
   }
 }
 
@@ -388,7 +395,7 @@ export async function machineJoin(
   selected: SelectedSpace,
   ports: Ports,
 ): Promise<{ label: string; keyId: string }> {
-  const { record } = await localRecord(selected, ports)
+  const { own: record } = await localRecord(selected, ports)
   const destination = { destinationSpaceId: selected.spaceId }
   const { state: initial } = await loadVerifiedTrustLog(ports, selected)
   if (initial?.keys.has(record.keyId)) throw new Error('this machine is already approved')
@@ -461,7 +468,7 @@ export async function machineApprove(
   ports: Ports,
 ): Promise<{ label: string; keyId: string; anchored: boolean }> {
   const code: PairingCode = parsePairingCode(codeText)
-  const { record } = await localRecord(selected, ports)
+  const { own: record } = await localRecord(selected, ports)
   const destination = { destinationSpaceId: selected.spaceId }
   const { state: initial } = await loadVerifiedTrustLog(ports, selected)
   if (initial && !initial.keys.has(record.keyId))
