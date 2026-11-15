@@ -177,7 +177,7 @@ export class SqliteQuestionStore implements QuestionStore {
         .get(input.projectId)
       return {
         items: project
-          ? taskRulingRows(this.database, project.name, input.taskId, input.limit ?? 100)
+          ? taskRulingRows(this.database, project.name, input.taskId, input.limit ?? -1)
           : [],
       }
     }
