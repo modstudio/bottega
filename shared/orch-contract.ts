@@ -160,6 +160,7 @@ const OpenQuestionSchema = z
     session_live: z.literal(true).nullable(),
     session_liveness: z.enum(['live', 'unknown']),
     can_answer: z.boolean(),
+    group: z.enum(['worker', 'user', 'foreign', 'unowned']),
     question: z.string(),
     options: z.array(z.string()),
     recommendation: z.string().nullable(),

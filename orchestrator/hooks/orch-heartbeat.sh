@@ -379,7 +379,11 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     since_emit=$((since_emit + 1))
     if [ "$key" != "$prev_key" ] || [ "$since_emit" -ge "$KEEPALIVE_TICKS" ]; then
       prev_key="$key"; since_emit=0
-      echo "[$(date +%H:%M:%S)] DEGRADED - bottega observation failed (inbox rc=$inbox_rc parse=$inbox_parse_rc, runs rc=$runs_rc parse=$runs_parse_rc, completion rc=$completion_rc parse=$completion_parse_rc, landings parse=$landings_parse_rc, requests rc=$requests_rc parse=$requests_parse_rc, holds parse=$holds_parse_rc). State unknown; NOT concluding clear. Inspect bottega diagnostics directly."
+      observation_failure="bottega observation failed"
+      if [ "$inbox_rc" -ne 0 ] || [ "$inbox_parse_rc" -ne 0 ]; then
+        observation_failure="could not read question inbox; $observation_failure"
+      fi
+      echo "[$(date +%H:%M:%S)] DEGRADED - $observation_failure (inbox rc=$inbox_rc parse=$inbox_parse_rc, runs rc=$runs_rc parse=$runs_parse_rc, completion rc=$completion_rc parse=$completion_parse_rc, landings parse=$landings_parse_rc, requests rc=$requests_rc parse=$requests_parse_rc, holds parse=$holds_parse_rc). State unknown; NOT concluding clear. Inspect bottega diagnostics directly."
       report_store_write_lock
     fi
     sleep "$INTERVAL"; continue
