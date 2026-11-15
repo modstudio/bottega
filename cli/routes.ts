@@ -361,6 +361,18 @@ export const ROUTES = (
       'config machine approve',
       'approve a joining machine with its pairing code',
     ),
+    route(
+      'machine anchor',
+      'orch',
+      'config machine anchor',
+      'anchor this record space machine trust log',
+    ),
+    route(
+      'machine recover',
+      'orch',
+      'config machine recover',
+      'recover this machine into a record space machine trust log',
+    ),
     route('machine reclaim-fixture-questions', 'hub', 'reclaim-fixture-questions'),
     { command: ['machine', 'journal'], owner: 'orch', argv: ['journal'], hidden: true },
     { command: ['machine', 'store-path'], owner: 'orch', argv: ['store-path'], hidden: true },

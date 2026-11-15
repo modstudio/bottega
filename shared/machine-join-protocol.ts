@@ -168,9 +168,9 @@ export function decodeMachineJoinRecord(encoded: Uint8Array): TrustLogKey {
   return decodeTrustLogKey(encoded)
 }
 
-type MachineJoinDone = { head: Uint8Array | null; wrapped: boolean }
+export type MachineJoinDone = { head: Uint8Array | null; wrapped: boolean }
 
-export function encodeMachineJoinDone(head: Uint8Array | null, wrapped: boolean): Uint8Array {
+export function encodeMachineJoinDone({ head, wrapped }: MachineJoinDone): Uint8Array {
   if (head !== null && head.byteLength !== 32)
     throw new Error('machine join trust-log head must be exactly 32 bytes')
   return encode(

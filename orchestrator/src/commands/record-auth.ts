@@ -1,7 +1,5 @@
 // concern: cli
 /** Registers record authentication grammar. Must not own authentication behavior. */
-import { createInterface } from 'node:readline/promises'
-import { Writable } from 'node:stream'
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
@@ -66,6 +64,7 @@ import { pushCataloguesCommand } from '../record/record-push-catalogues.ts'
 import { pushDocsCommand } from '../record/record-push-docs.ts'
 import { useHostedRecord } from '../record/record-use.ts'
 import { recordPublishAvailability, requireHostedRecord } from '../record/record-write-authority.ts'
+import { promptHidden } from './hidden-prompt.ts'
 import { requestedMachineNames } from './machine-name-options.ts'
 import { log } from './support.ts'
 
@@ -90,32 +89,7 @@ export async function promptPassword(
   if (decision.action === 'use-environment') return decision.password
   if (decision.action === 'refuse') throw new Error(decision.message)
 
-  let muted = false
-  const mutedOutput = new Writable({
-    write(chunk, _encoding, callback) {
-      if (!muted) output.write(chunk)
-      callback()
-    },
-  }) as Writable & { isTTY: boolean }
-  mutedOutput.isTTY = true
-  const terminal = createInterface({ input, output: mutedOutput, terminal: true })
-  try {
-    const answer = terminal.question('Record password: ')
-    muted = true
-    const password = await Promise.race([
-      answer,
-      new Promise<never>((_resolve, reject) => {
-        terminal.once('close', () => {
-          reject(new Error(PASSWORD_PROMPT_EOF_REFUSAL))
-        })
-      }),
-    ])
-    muted = false
-    output.write('\n')
-    return password
-  } finally {
-    terminal.close()
-  }
+  return promptHidden('Record password: ', PASSWORD_PROMPT_EOF_REFUSAL, input, output)
 }
 
 function hostedCommand<T>(command: string, action: () => T): T {

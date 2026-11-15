@@ -59,7 +59,10 @@ const sideBytes = (side: string) => new Uint8Array(Buffer.from(side, 'hex'))
 const concat = (...values: Uint8Array[]) =>
   new Uint8Array(Buffer.concat(values.map((value) => Buffer.from(value))))
 
-function registeredKeyAgrees(registered: RegisteredKey | undefined, key: TrustLogKey): boolean {
+export function registeredKeyAgrees(
+  registered: RegisteredKey | undefined,
+  key: TrustLogKey,
+): boolean {
   return Boolean(
     registered &&
       registered.revokedAt === null &&
@@ -68,6 +71,10 @@ function registeredKeyAgrees(registered: RegisteredKey | undefined, key: TrustLo
       bytesEqual(new Uint8Array(Buffer.from(registered.publicKey, 'base64url')), key.publicKey) &&
       bytesEqual(registered.signingPublicKey, key.signingPublicKey),
   )
+}
+
+function wrapFailureRemedy(key: TrustLogKey): string {
+  return `\`${PLATFORM_SLUG} machine config machine trust ${key.keyId} ${encoded(key.publicKey)} --yes\``
 }
 
 function expirationRefusal(): Error {
@@ -289,7 +296,7 @@ async function acceptDone(
   await pinTrustedMachine(approver.keyId, approver.publicKey, approver.label, ports.env)
   if (!wrapped)
     throw new Error(
-      `${approver.label} (${approver.keyId}) approved this machine but could not wrap the data key for it; on that machine run \`${PLATFORM_SLUG} machine config machine trust ${own.keyId} ${encoded(own.publicKey)} --yes\``,
+      `${approver.label} (${approver.keyId}) approved this machine but could not wrap the data key for it; on that machine run ${wrapFailureRemedy(own)}`,
     )
 }
 
@@ -364,7 +371,7 @@ async function approveAndWrap(
       return {
         head,
         failure: new Error(
-          `machine ${joiner.keyId} was approved but wrapping its data key failed; finish with \`${PLATFORM_SLUG} machine config machine trust ${joiner.keyId} ${encoded(joiner.publicKey)} --yes\``,
+          `machine ${joiner.keyId} was approved but wrapping its data key failed; finish with ${wrapFailureRemedy(joiner)}`,
           { cause: error },
         ),
       }
@@ -508,10 +515,14 @@ export async function machineApprove(
       selected.spaceId,
       code.nameplate,
       'done',
-      encodeMachineJoinDone(approved.head, approved.failure === null),
+      encodeMachineJoinDone({ head: approved.head, wrapped: approved.failure === null }),
     ),
     destination,
   )
   if (approved.failure) throw approved.failure
+  if (!initial)
+    ports.output?.(
+      `space ${selected.slug} is not anchored; run \`${PLATFORM_SLUG} machine anchor --space ${selected.slug}\` from your own terminal`,
+    )
   return { label: joiner.label, keyId: joiner.keyId }
 }
