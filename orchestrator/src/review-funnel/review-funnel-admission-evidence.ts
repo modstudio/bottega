@@ -19,7 +19,7 @@ export type TriageReviewGroup = {
 
 export type TriageEvidence = {
   patchId: string
-  zeroContextPatchId?: string
+  zeroContextPatchId?: string | null
   pathSet: string
   tier: 0 | 1 | 2 | 3
   applicableReview: ApplicableReview

@@ -234,7 +234,7 @@ function gatherReview(
       project: identity.project,
       branch: branch ?? '',
       patchId: review.patch_id ?? '',
-      zeroContextPatchId: review.zero_context_patch_id ?? '',
+      zeroContextPatchId: review.zero_context_patch_id,
       pathSet: review.path_set === null ? [] : (JSON.parse(review.path_set) as string[]),
     },
     recordId,

@@ -21,7 +21,7 @@ export type ChangeGroup = {
   project: string
   branch: string
   patchId: string
-  zeroContextPatchId: string
+  zeroContextPatchId: string | null
   pathSet: string[]
 }
 

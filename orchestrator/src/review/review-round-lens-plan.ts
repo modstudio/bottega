@@ -163,7 +163,7 @@ function sameRoundChange(
 /** Gather branch-history facts without deciding which lenses the round needs. */
 export function roundLensFacts(
   branchReviews: readonly TriageReviewRow[],
-  current: { patchId: string; zeroContextPatchId?: string; pathSet: string },
+  current: { patchId: string; zeroContextPatchId?: string | null; pathSet: string },
 ): RoundLensFacts {
   const completedReviews = branchReviews.filter(
     (review) => review.completedAt !== null && review.tier !== null,
