@@ -38,20 +38,22 @@ export function readLandedReviewIds(
   return new Set(rows.map(({ reviewRecordId }) => reviewRecordId))
 }
 
-/** The merged landing tip for one branch, when recorded. */
-export function readMergedBranchLandingTip(
+/** The latest merged landing time for one branch, when recorded. */
+export function readLatestMergedBranchLandingAt(
   database: Database,
   project: string,
   branch: string,
 ): string | null {
   return (
     database
-      .query<{ tip: string }, [string, string]>(
-        `SELECT tip FROM branch_landing_record
+      .query<{ mergedAt: string }, [string, string]>(
+        `SELECT merged_at mergedAt FROM branch_landing_record
           WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-            AND branch=? AND merged_at IS NOT NULL`,
+            AND branch=? AND merged_at IS NOT NULL
+          ORDER BY merged_at DESC
+          LIMIT 1`,
       )
-      .get(project, branch)?.tip ?? null
+      .get(project, branch)?.mergedAt ?? null
   )
 }
 

@@ -211,7 +211,6 @@ test('a landed run-derived branch does not gather a review verdict', () => {
       return { branch: 'DEV-2304-landed', taskKey: 'DEV-2304', failure: 'unexpected gather' }
     },
     () => true,
-    () => 'tip',
   )
 
   expect(lines).toEqual([])

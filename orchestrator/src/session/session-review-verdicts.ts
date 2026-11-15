@@ -4,7 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
-import { readMergedBranchLandingTip } from '../branch/branch-landing-records.ts'
+import { readLatestMergedBranchLandingAt } from '../branch/branch-landing-records.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { job } from '../jobs/jobs.ts'
 import { projectByName } from '../project/projects.ts'
@@ -33,7 +33,10 @@ export type SessionReviewVerdictGatherer = (
 
 export type SessionReviewBranchRefExists = (branch: InFlightBranch, database: Database) => boolean
 
-export type SessionReviewBranchHead = (branch: InFlightBranch, database: Database) => string
+export type SessionReviewBranchHeadCommitTime = (
+  branch: InFlightBranch,
+  database: Database,
+) => string
 
 function cursorBranch(cursor: WorkflowCursorListRow): InFlightBranch | null {
   if (cursor.workflow_slug !== 'ship-task') return null
@@ -68,6 +71,11 @@ function sessionInFlightReviewBranches(
             SELECT 1 FROM run chain_turn
              WHERE (chain_turn.record_id=run.record_id OR chain_turn.parent_run_record_id=run.record_id)
                AND chain_turn.failure_kind='abandoned'
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM branch_landing_record landed
+             WHERE landed.project_record_id=run.project_record_id AND landed.branch=run.branch
+               AND landed.merged_at IS NOT NULL
           )
         ORDER BY run.number`,
     )
@@ -120,16 +128,16 @@ function branchRefExistsInMainCheckout(branch: InFlightBranch, database: Databas
   )
 }
 
-function branchHeadCommit(branch: InFlightBranch, database: Database): string {
+function branchHeadCommitTime(branch: InFlightBranch, database: Database): string {
   const project = registeredBranchProject(branch, database)
   const cwd = branch.worktree && existsSync(branch.worktree) ? branch.worktree : project.path
-  const result = startBoundedSync(['git', 'rev-parse', '--verify', `${branch.branch}^{commit}`], {
+  const result = startBoundedSync(['git', 'log', '-1', '--format=%cI', branch.branch], {
     budget: 'git-plumbing',
     cwd,
     env: targetGitEnvironment(cwd),
   })
   if (result.exitCode === 0) return result.stdout.toString().trim()
-  throw new Error(result.stderr.trim() || `git could not resolve branch ${branch.branch}`)
+  throw new Error(result.stderr.trim() || `git could not read branch ${branch.branch}`)
 }
 
 function gatherBranchReviewVerdict(
@@ -174,7 +182,7 @@ export function sessionReviewVerdictLines(
   database: Database,
   gather: SessionReviewVerdictGatherer = gatherBranchReviewVerdict,
   refExists: SessionReviewBranchRefExists = branchRefExistsInMainCheckout,
-  headCommit: SessionReviewBranchHead = branchHeadCommit,
+  headCommitTime: SessionReviewBranchHeadCommitTime = branchHeadCommitTime,
 ): string[] {
   return stopSummaryReviewVerdictLines(
     sessionInFlightReviewBranches(session, cursors, database).flatMap((branch) => {
@@ -191,10 +199,14 @@ export function sessionReviewVerdictLines(
           ]
         }
       }
-      const mergedTip = readMergedBranchLandingTip(database, branch.project, branch.branch)
-      if (mergedTip !== null) {
+      const latestMergedAt = readLatestMergedBranchLandingAt(
+        database,
+        branch.project,
+        branch.branch,
+      )
+      if (latestMergedAt !== null) {
         try {
-          if (headCommit(branch, database) === mergedTip) return []
+          if (Date.parse(headCommitTime(branch, database)) <= Date.parse(latestMergedAt)) return []
         } catch {
           // Gathering owns the user-visible remedy when the branch head cannot be resolved.
         }
