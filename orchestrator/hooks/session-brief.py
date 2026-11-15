@@ -30,6 +30,11 @@ with open(
     ]
 
 FULL_CONTEXT_POINTER = "Full context: bottega agent context show --session {session}"
+COMPACT_FIRST_ACT = (
+    "First act: store each line of the summary's 'Unstored facts and pointers' section "
+    "with `bottega agent context set --kind fact|pointer` on the narrowest task, before "
+    "any other work."
+)
 
 
 def _start(bottega, *args, env=None, cwd=None):
@@ -203,10 +208,20 @@ def _context_protocol():
     )
 
 
+# An over-cap brief is previewed only at its head, so a line that must be acted on goes first, while the full-context pointer stays last.
 def _with_full_context_pointer(text, session):
     if len(text) <= SESSION_START_CONTEXT_MAX_CHARS:
         return text
     return _join_sections(text, FULL_CONTEXT_POINTER.format(session=session))
+
+
+def _with_compact_first_act(text, source):
+    if source != "compact":
+        return text
+    joined = _join_sections(text, COMPACT_FIRST_ACT)
+    if len(joined) > SESSION_START_CONTEXT_MAX_CHARS:
+        return _join_sections(COMPACT_FIRST_ACT, text)
+    return joined
 
 
 def _context_size(text):
@@ -353,7 +368,10 @@ def _inbox_notices(inbox_decision):
     notices = []
     if inbox_decision.worker:
         noun = "question" if inbox_decision.worker == 1 else "questions"
-        notices.append(f"{inbox_decision.worker} worker {noun} for this session.")
+        notices.append(
+            f"{inbox_decision.worker} worker {noun} for this session "
+            "(bottega question inbox)."
+        )
     if inbox_decision.user:
         notices.append(
             f"{inbox_decision.user} waiting on you (bottega question inbox)."
@@ -985,7 +1003,9 @@ def main() -> int:
         if output is not None and sid:
             context = output.get("hookSpecificOutput", {}).get("additionalContext")
             if isinstance(context, str):
-                context = _with_full_context_pointer(context, sid)
+                context = _with_full_context_pointer(
+                    _with_compact_first_act(context, payload.get("source")), sid
+                )
                 output["hookSpecificOutput"]["additionalContext"] = context
                 if bottega is not None and cwd is not None and inbox_env is not None:
                     try:

@@ -39,6 +39,108 @@ class AssembleAdditionalContext(unittest.TestCase):
             over + "\nFull context: bottega agent context show --session session-a",
         )
 
+    def test_compact_first_act_is_last_when_context_fits(self):
+        text = session_brief._with_compact_first_act("brief", "compact")
+        self.assertEqual(text, "brief\n" + session_brief.COMPACT_FIRST_ACT)
+
+    def test_compact_first_act_and_pointer_cover_the_cap_boundary(self):
+        cap = session_brief.SESSION_START_CONTEXT_MAX_CHARS
+        first_act = session_brief.COMPACT_FIRST_ACT
+        pointer = "Full context: bottega agent context show --session session-a"
+
+        for brief_length in range(cap - len(first_act) - 2, cap + 2):
+            with self.subTest(brief_length=brief_length):
+                brief = "x" * brief_length
+                text = session_brief._with_full_context_pointer(
+                    session_brief._with_compact_first_act(brief, "compact"),
+                    "session-a",
+                )
+                self.assertTrue(len(text) <= cap or pointer in text)
+                self.assertEqual(text.startswith(first_act + "\n"), len(text) > cap)
+
+    def test_compact_first_act_is_absent_for_other_session_start_sources(self):
+        for source in ("resume", "startup", "clear"):
+            with self.subTest(source=source):
+                self.assertEqual(
+                    session_brief._with_compact_first_act("brief", source), "brief"
+                )
+
+    def test_compact_main_records_the_emitted_context_size(self):
+        stdin = io.StringIO(json.dumps({
+            "cwd": "/tmp",
+            "session_id": "session-a",
+            "source": "compact",
+        }))
+        stdout = io.StringIO()
+
+        def start(_bottega, *args, **_kwargs):
+            process = mock.Mock()
+            process.args = args
+            process.poll.return_value = 0
+            return process
+
+        def wait(process, _deadline):
+            args = process.args
+            if args[:2] == ("doc", "resumes"):
+                output = json.dumps({"open": [], "unreadable": []})
+            elif args[:2] == ("question", "inbox"):
+                output = json.dumps({
+                    "cwd_registered": True,
+                    "project": "bottega",
+                    "rows": [],
+                })
+            elif args[:3] == ("workflow", "fix-defect", "--waiting"):
+                output = json.dumps({
+                    "cwd_registered": True,
+                    "project": "bottega",
+                    "state": {
+                        "waiting": [],
+                        "unworked": [],
+                        "unscored": [],
+                        "blocked": None,
+                    },
+                })
+            elif args[:3] == ("agent", "context", "--cwd"):
+                output = json.dumps({"registered": False})
+            elif args[:3] == ("agent", "context", "brief"):
+                output = "compact context brief"
+            elif args[:2] == ("board", "read"):
+                output = json.dumps({
+                    "notices": [],
+                    "warning": None,
+                    "withheldOlderCount": 0,
+                })
+            elif args[:2] == ("machine", "monitor"):
+                output = "[]"
+            else:
+                self.fail(f"unexpected subprocess command: {args}")
+            return SimpleNamespace(returncode=0, stdout=output, stderr="")
+
+        with mock.patch.dict(session_brief.os.environ, {"HOME": "/tmp"}, clear=True):
+            with mock.patch.object(session_brief.sys, "stdin", stdin):
+                with mock.patch.object(session_brief.sys, "stdout", stdout):
+                    with mock.patch.object(session_brief, "_start", side_effect=start):
+                        with mock.patch.object(session_brief, "_wait", side_effect=wait):
+                            with mock.patch.object(
+                                session_brief,
+                                "_start_settings_apply",
+                                return_value=(None, None, None),
+                            ):
+                                with mock.patch.object(session_brief.subprocess, "run"):
+                                    with mock.patch.object(
+                                        session_brief.subprocess, "Popen"
+                                    ) as popen:
+                                        code = session_brief.main()
+
+        self.assertEqual(code, 0)
+        emitted = json.loads(stdout.getvalue())["hookSpecificOutput"][
+            "additionalContext"
+        ]
+        self.assertIn(session_brief.COMPACT_FIRST_ACT, emitted)
+        command = popen.call_args.args[0]
+        chars = command[command.index("--chars") + 1]
+        self.assertEqual(chars, str(len(emitted)))
+
     def test_injection_recording_detaches_with_final_utf8_size(self):
         with mock.patch.object(session_brief.subprocess, "Popen") as popen:
             session_brief._record_injection(
@@ -385,7 +487,7 @@ class InboxQuestions(unittest.TestCase):
     def test_notices_render_worker_only(self):
         self.assertEqual(
             session_brief._inbox_notices(self.counts([{"question_id": 1, "group": "worker"}])),
-            ["1 worker question for this session."],
+            ["1 worker question for this session (bottega question inbox)."],
         )
 
     def test_notices_render_user_only(self):
@@ -401,7 +503,7 @@ class InboxQuestions(unittest.TestCase):
                 {"question_id": 2, "group": "user"},
             ])),
             [
-                "1 worker question for this session.",
+                "1 worker question for this session (bottega question inbox).",
                 "1 waiting on you (bottega question inbox).",
             ],
         )
