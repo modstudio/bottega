@@ -53,9 +53,10 @@ def decide_inbox_questions(items):
 
 
 def decide_parsed_inbox_questions(items):
-    """Partition inbox questions by what this session must do about them.
+    """Partition workflow questions by owner and count answerable worker ones.
 
-    A worker question this session can answer is answerable now. A workflow
+    Worker questions this session cannot answer are split further by the
+    session brief, which alone reads their liveness. A worker question this session can answer is answerable now. A workflow
     question owned by this session was parked here with `workflow await`. A
     workflow question with no owning session waits on no particular session,
     so it is only counted. A workflow question owned elsewhere is counted as
