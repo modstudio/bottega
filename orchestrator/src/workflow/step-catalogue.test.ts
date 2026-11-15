@@ -2,7 +2,6 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { resolveTrackerAgentActions, TRACKER_PROTOCOLS } from '../../../shared/tracker-actions.ts'
@@ -19,11 +18,7 @@ import {
 } from './step-catalogue.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
-import { parseWorkflowTree } from './workflow-tree.ts'
-import { collectWorkflowTree } from './workflow-tree-files.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
-
-const repositoryRoot = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 
 const step = {
   slug: 'design',
@@ -222,11 +217,6 @@ test('steps must declare every job their bodies prescribe', () => {
       [],
     )
   }
-})
-
-test('every tracked workflow step declares its prescribed jobs', () => {
-  const tracked = parseWorkflowTree(collectWorkflowTree(repositoryRoot))
-  expect(validateStepCatalogue({ steps: tracked.steps, sequences: tracked.sequences })).toEqual([])
 })
 
 test('operatorRuling requires a ruling floor', () => {

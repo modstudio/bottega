@@ -55,6 +55,7 @@ export type {
 } from './step-catalogue-definition.ts'
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
+const PLATFORM_INVOCATION = `(?:${PLATFORM_SLUG}|\\S*\\/bin\\/${PLATFORM_SLUG})`
 const object = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
@@ -213,14 +214,17 @@ function validateReenter(item: Record<string, unknown>, errors: string[]): void 
     errors.push(`step "${slug}" reenter.outcome must be one of the step's outcomes`)
 }
 
+function* backtickedCommands(body: string): Generator<string> {
+  for (const match of body.matchAll(/`([^`\n]+)`/g)) yield match[1]!.trim()
+}
+
 function validateDispatchPrompts(item: Record<string, unknown>, errors: string[]): void {
   if (typeof item.body !== 'string') return
   const slug = String(item.slug ?? '')
-  for (const match of item.body.matchAll(/`([^`\n]+)`/g)) {
-    const command = match[1]!.trim()
+  for (const command of backtickedCommands(item.body)) {
     if (
       !new RegExp(
-        `^(?:(?:orch|\\S*\\/bin\\/orch)\\s+do|(?:${PLATFORM_SLUG}|\\S*\\/bin\\/${PLATFORM_SLUG})\\s+run\\s+start)\\s+\\S+`,
+        `^(?:(?:orch|\\S*\\/bin\\/orch)\\s+do|${PLATFORM_INVOCATION}\\s+run\\s+start)\\s+\\S+`,
       ).test(command)
     )
       continue
@@ -234,7 +238,7 @@ function validateDispatchPrompts(item: Record<string, unknown>, errors: string[]
 function prescribedJob(command: string): string | undefined {
   return command.match(
     new RegExp(
-      `^(?:${PLATFORM_SLUG}|\\S*\\/bin\\/${PLATFORM_SLUG})\\s+(?:run\\s+start|workflow\\s+dispatch)\\s+(\\S+)`,
+      `^${PLATFORM_INVOCATION}\\s+(?:run\\s+start|workflow\\s+dispatch)\\s+(\\S+)`,
     ),
   )?.[1]
 }
@@ -243,8 +247,8 @@ function validatePrescribedJobs(item: Record<string, unknown>, errors: string[])
   if (typeof item.body !== 'string') return
   const slug = String(item.slug ?? ''),
     declared = new Set(Array.isArray(item.jobs) ? item.jobs.map(String) : [])
-  for (const match of item.body.matchAll(/`([^`\n]+)`/g)) {
-    const job = prescribedJob(match[1]!.trim())
+  for (const command of backtickedCommands(item.body)) {
+    const job = prescribedJob(command)
     if (job && !declared.has(job))
       errors.push(
         `step "${slug}" prescribes job "${job}" but does not declare it in jobs; add "${job}" to the step's jobs`,

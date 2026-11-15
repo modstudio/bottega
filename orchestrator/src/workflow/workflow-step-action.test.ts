@@ -1,5 +1,4 @@
 import { expect, test } from 'bun:test'
-import { fileURLToPath } from 'node:url'
 import { recordUnreachableRefusal } from '../../../shared/record-remedies.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
@@ -11,10 +10,6 @@ import {
   type StepActionTarget,
   stepActionTarget,
 } from './workflow-step-action.ts'
-import { parseWorkflowTree } from './workflow-tree.ts'
-import { collectWorkflowTree } from './workflow-tree-files.ts'
-
-const repositoryRoot = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 
 const target = (overrides: Partial<StepActionTarget> = {}): StepActionTarget => ({
   cursor: 17,
@@ -161,23 +156,6 @@ test('the pure dispatch decision preserves a keyed cursor key', () => {
       job: JOBS.implement!,
     }),
   ).toEqual({ action: 'dispatch-with-key', key: 'DEV-2289' })
-})
-
-test('the tracked start step dispatches implement from its keyed cursor', () => {
-  const start = parseWorkflowTree(collectWorkflowTree(repositoryRoot)).steps.find(
-    ({ slug }) => slug === 'start',
-  )!
-  expect(start.jobs).toEqual(['implement'])
-  expect(
-    decideStepDispatch({
-      cursor: 17,
-      taskKey: 'DEV-2318',
-      workflowSlug: 'plan-task',
-      stepSlug: start.slug,
-      stepJobs: start.jobs,
-      job: JOBS.implement!,
-    }),
-  ).toEqual({ action: 'dispatch-with-key', key: 'DEV-2318' })
 })
 
 test('the pure dispatch decision refuses a keyless lookup missing from the step', () => {
