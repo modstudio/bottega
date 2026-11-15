@@ -32,7 +32,13 @@ function windowLines(label: string, report: SessionWindowReport): string[] {
         `    ${cursor.number || cursor.id} ${cursor.workflow}${cursor.taskKey ? ` ${cursor.taskKey}` : ''}: idle ${duration(cursor.idleMs)}`,
     ),
     `  unanswered questions: ${residue.unansweredQuestions.count}`,
-    `hook output: ${report.hookOutput.message}`,
+    'hook output:',
+    ...(report.hookOutput.length
+      ? report.hookOutput.map(
+          (row) =>
+            `  ${row.event} ${row.kind}: ${row.count}, ${row.characters} chars, mean ${row.meanSize.toFixed(1)}, repeated ${(row.repeatedShare * 100).toFixed(1)}%`,
+        )
+      : ['  none']),
   ]
 }
 
@@ -45,6 +51,7 @@ function deltaLines(delta: SessionReportDelta): string[] {
     '  held trees: n/a',
     `  open cursors: ${signed(delta.residueAtWindowEnd.openCursors)}`,
     `  unanswered questions: ${signed(delta.residueAtWindowEnd.unansweredQuestions)}`,
+    `  hook output: count ${signed(delta.hookOutput.count)}, characters ${signed(delta.hookOutput.characters)}`,
   ]
 }
 

@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from board_hook_common import marker_path, read_marker, write_marker
 from hook_paths import bottega_bin
 from registered_scope import should_hook_act
+from hook_emission import record_emission
 
 GLOBAL_BUDGET_SECONDS = 20
 
@@ -112,9 +113,14 @@ def main():
     deadline = time.monotonic() + GLOBAL_BUDGET_SECONDS
     cleanup(ids, deadline)
     try:
-        print(json.dumps(summary(payload, ids, deadline)))
+        output = summary(payload, ids, deadline)
     except Exception as error:
-        print(json.dumps({"systemMessage": f"Session status unavailable; Stop proceeded ({error.__class__.__name__})."}))
+        output = {"systemMessage": f"Session status unavailable; Stop proceeded ({error.__class__.__name__})."}
+    if "reason" in output:
+        record_emission(payload, "stop-summary", "blockReason", output["reason"])
+    elif "systemMessage" in output:
+        record_emission(payload, "stop-summary", "systemMessage", output["systemMessage"])
+    print(json.dumps(output))
     return 0
 
 

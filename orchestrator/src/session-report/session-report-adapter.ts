@@ -47,6 +47,7 @@ function knownSessions(database: Database): string[] {
       `SELECT session_id FROM session_seen
        UNION SELECT session_id FROM run WHERE session_id IS NOT NULL
        UNION SELECT session_id FROM workflow_cursor WHERE session_id IS NOT NULL
+       UNION SELECT session_id FROM hook_emission
        ORDER BY session_id`,
     )
     .all()
@@ -144,7 +145,16 @@ async function factsForSession(
       answeredAt: row.answered_at,
       closedAt: row.closed_at,
     }))
-  return { sessionId, runs, unscoredRuns, heldTreeRunIds, cursors, questions }
+  const hookEmissions = database
+    .query<
+      { at: string; event: string; kind: string; chars: number; text_hash: string },
+      [string, string]
+    >(
+      `SELECT at,event,kind,chars,text_hash FROM hook_emission WHERE session_id=? AND at<=? ORDER BY at,record_id`,
+    )
+    .all(sessionId, end)
+    .map((row) => ({ ...row, textHash: row.text_hash }))
+  return { sessionId, runs, unscoredRuns, heldTreeRunIds, cursors, questions, hookEmissions }
 }
 
 export async function sessionReport(

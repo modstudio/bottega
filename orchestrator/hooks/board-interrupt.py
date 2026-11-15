@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(__file__))
 from registered_scope import should_hook_act
+from hook_emission import record_emission
 
 from board_hook_common import (
     board_bin,
@@ -399,6 +400,7 @@ def main() -> int:
                     "additionalContext": context,
                 }
             }
+            record_emission(payload, "board-interrupt", "additionalContext", context)
             sys.stdout.write(json.dumps(output) + "\n")
             sys.stdout.flush()
             mark_delivered(

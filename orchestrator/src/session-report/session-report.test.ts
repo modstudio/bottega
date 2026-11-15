@@ -20,6 +20,7 @@ const facts = (runs: SessionReportFacts['runs']): SessionReportFacts => ({
   heldTreeRunIds: [],
   cursors: [],
   questions: [],
+  hookEmissions: [],
 })
 
 describe('session report policy', () => {
@@ -181,6 +182,7 @@ describe('session report policy', () => {
         openCursors: 0,
         unansweredQuestions: 0,
       },
+      hookOutput: { count: 0, characters: 0 },
     })
     const rendered = formatSessionReport({
       generatedAt: window.until,
@@ -191,6 +193,59 @@ describe('session report policy', () => {
     )
     expect(rendered).toContain('delta (current - comparison):')
     expect(rendered).toContain('held trees: n/a')
+  })
+
+  test('aggregates hook output by event and kind and deltas count and characters', () => {
+    const current = buildSessionWindowReport(
+      {
+        ...facts([]),
+        hookEmissions: [
+          {
+            at: '2026-11-15T12:10:00Z',
+            event: 'Stop',
+            kind: 'systemMessage',
+            chars: 12,
+            textHash: 'same',
+          },
+          {
+            at: '2026-11-15T12:11:00Z',
+            event: 'Stop',
+            kind: 'systemMessage',
+            chars: 8,
+            textHash: 'same',
+          },
+          {
+            at: '2026-11-15T12:12:00Z',
+            event: 'PreToolUse',
+            kind: 'denyReason',
+            chars: 10,
+            textHash: 'other',
+          },
+        ],
+      },
+      window,
+      window.until,
+    )
+    const prior = buildSessionWindowReport(facts([]), window, window.until)
+    expect(current.hookOutput).toEqual([
+      {
+        event: 'PreToolUse',
+        kind: 'denyReason',
+        count: 1,
+        characters: 10,
+        meanSize: 10,
+        repeatedShare: 0,
+      },
+      {
+        event: 'Stop',
+        kind: 'systemMessage',
+        count: 2,
+        characters: 20,
+        meanSize: 10,
+        repeatedShare: 0.5,
+      },
+    ])
+    expect(sessionReportDelta(current, prior).hookOutput).toEqual({ count: 3, characters: 30 })
   })
 
   test('reconstructs run, question, and cursor residue at each window end', () => {

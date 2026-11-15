@@ -48,6 +48,7 @@ import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues, reviewValues } from './record-review-values.ts'
 import { pushBranchDisposal } from './record-sync-branch-disposal.ts'
 import { briefInjectionRecordKind } from './record-sync-brief-injection.ts'
+import { hookEmissionRecordKind } from './record-sync-hook-emission.ts'
 import type {
   RecordPayload as Payload,
   RecordPrincipal,
@@ -903,6 +904,7 @@ const recordKinds = {
       pushBranchDisposal(postgres, row, principal, projectIds, existingEvidenceOwned),
   },
   brief_injection: briefInjectionRecordKind(existingEvidenceOwned, requireOwnedUpsert),
+  hook_emission: hookEmissionRecordKind(existingEvidenceOwned, requireOwnedUpsert),
 } as const satisfies Record<
   keyof typeof OUTBOX_PAYLOAD_CONTRACTS,
   {

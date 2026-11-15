@@ -17,6 +17,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 from registered_scope import should_hook_act
+from hook_emission import record_emission
 
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
@@ -113,7 +114,8 @@ UNSAFE = ("&&", "||", ";", "|", "\n", "\r", "`", "$(", "${", ">", "<", "&")
 WORKFLOW_EXEC_PREFIXES = (("bottega", "workflow", "exec"), ("orch", "workflow", "exec"))
 
 
-def decide(decision, reason):
+def decide(payload, decision, reason):
+    record_emission(payload, "git-guard", f"{decision}Reason", reason)
     json.dump(
         {
             "hookSpecificOutput": {
@@ -564,16 +566,16 @@ def main():
         head_branch = resolve_head_branch(directory) if push_has_bare_head(argv) else None
         verdict = push_verdict(argv, protected_names(project), head_branch)
         if verdict == "ask":
-            return decide("ask", "push can destroy refs on the shared remote")
+            return decide(payload, "ask", "push can destroy refs on the shared remote")
         if verdict == "safe":
-            return decide("allow", "lease-guarded or feature-branch push")
+            return decide(payload, "allow", "lease-guarded or feature-branch push")
 
         worktree_root = os.path.join(root, WORKTREE_DIRECTORY) if root else None
         if (
             is_throwaway_worktree(directory, worktree_root)
             and worktree_command_allowed(argv)
         ):
-            return decide("allow", f"git confined to throwaway worktree {directory}")
+            return decide(payload, "allow", f"git confined to throwaway worktree {directory}")
         return 0
     except Exception:
         return 0

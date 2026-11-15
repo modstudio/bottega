@@ -9,6 +9,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(__file__))
 from registered_scope import should_hook_act
+from hook_emission import record_emission
 
 
 JUDGE_TIMEOUT_SECONDS = 8
@@ -53,12 +54,13 @@ def judge_environment():
     return {key: os.environ[key] for key in JUDGE_ENVIRONMENT_KEYS if key in os.environ}
 
 
-def deny(findings):
+def deny(payload, findings):
     details = [
         f"{finding.get('rule', '<unknown rule>')}: {finding.get('dependency', '<unknown import>')}"
         for finding in findings
     ]
     reason = "refusing hub edit because it violates an import boundary:\n" + "\n".join(details)
+    record_emission(payload, "hub-import-guard", "denyReason", reason)
     print(
         json.dumps(
             {
@@ -117,7 +119,7 @@ def main():
     except json.JSONDecodeError as error:
         return unchecked(path, f"judge returned invalid JSON ({error})")
     if judgment.get("status") == "refused":
-        return deny(judgment.get("findings", []))
+        return deny(payload, judgment.get("findings", []))
     if judgment.get("status") == "ok":
         return 0
     return unchecked(path, judgment.get("reason") or "judge returned no decision")

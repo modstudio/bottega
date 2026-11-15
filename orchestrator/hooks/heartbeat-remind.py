@@ -16,6 +16,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 from registered_scope import should_hook_act
+from hook_emission import record_emission
 
 PROCESS_LIST_PS_TIMEOUT_SECONDS = 2
 
@@ -131,10 +132,12 @@ def main() -> int:
         if armed is not False:
             return 0
         arm = f"{heartbeat_path()} {sid}"
+        context = f"Arm under Monitor from the main checkout: {arm}"
+        record_emission(payload, "heartbeat-remind", "additionalContext", context)
         sys.stdout.write(json.dumps({
             "hookSpecificOutput": {
                 "hookEventName": "PostToolUse",
-                "additionalContext": f"Arm under Monitor from the main checkout: {arm}",
+                "additionalContext": context,
             }
         }) + "\n")
     except Exception:

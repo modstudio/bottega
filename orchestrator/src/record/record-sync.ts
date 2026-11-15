@@ -23,6 +23,7 @@ import {
   taskFlowBackfillUnavailable,
 } from '../workflow/task-flow-backfill.ts'
 import { backfillBriefInjections } from './brief-injection-outbox.ts'
+import { backfillHookEmissions } from './hook-emission-outbox.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
 import { backfillLandingEvidenceRecords } from './landing-outbox.ts'
 import { machineId, machineNames } from './machine-identity.ts'
@@ -707,6 +708,7 @@ function syncBackfill(
     reviews: backfillReviewRecords(local),
     landingEvidence: backfillLandingEvidenceRecords(local),
     briefInjections: backfillBriefInjections(local),
+    hookEmissions: backfillHookEmissions(local),
     questions: backfillQuestionRecords(local),
     releases: backfillReleaseRecords(local),
   }

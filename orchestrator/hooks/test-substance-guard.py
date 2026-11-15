@@ -9,6 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 from registered_scope import should_hook_act
+from hook_emission import record_emission
 
 
 JUDGE_TIMEOUT_SECONDS = 2
@@ -40,7 +41,7 @@ def unchecked(file, reason):
     return 0
 
 
-def deny(findings):
+def deny(payload, findings):
     lines = ["refusing test edit because it introduces test-substance findings:"]
     for finding in findings:
         lines.append(
@@ -54,13 +55,15 @@ def deny(findings):
             "add a waiver comment `test-substance-allow: <rule> <reason>` above it.",
         ]
     )
+    reason = "\n".join(lines)
+    record_emission(payload, "test-substance-guard", "denyReason", reason)
     print(
         json.dumps(
             {
                 "hookSpecificOutput": {
                     "hookEventName": "PreToolUse",
                     "permissionDecision": "deny",
-                    "permissionDecisionReason": "\n".join(lines),
+                    "permissionDecisionReason": reason,
                 }
             }
         )
@@ -114,7 +117,7 @@ def main():
     except json.JSONDecodeError as error:
         return unchecked(path, f"judge returned invalid JSON ({error})")
     if judgment.get("status") == "refused":
-        return deny(judgment.get("findings", []))
+        return deny(payload, judgment.get("findings", []))
     if judgment.get("status") == "ok":
         return 0
     return unchecked(path, judgment.get("reason") or "judge returned no decision")

@@ -58,6 +58,7 @@ import json, os, re, sqlite3, subprocess, sys, time, uuid
 
 sys.path.insert(0, os.path.dirname(__file__))
 from registered_scope import should_hook_act
+from hook_emission import record_emission
 
 ALLOW = {"claude-code-guide"}
 
@@ -259,7 +260,7 @@ def main() -> int:
     # recorded act. So a URL is now only noted in the reason.
     log("denied", "delegable-with-url" if URL.search(blob) else "delegable", inp, event, payload)
     desc = (inp.get("description") or "").strip() or "this work"
-    print(json.dumps({
+    output = {
         "hookSpecificOutput": {
             # Always PreToolUse: this is the only event that reaches here now,
             # and it is the only one whose schema accepts a permissionDecision.
@@ -289,7 +290,10 @@ def main() -> int:
                 "and declaring web work that is not web work is visible in the log."
             ),
         }
-    }))
+    }
+    reason = output["hookSpecificOutput"]["permissionDecisionReason"]
+    record_emission(payload, "block-agent", "denyReason", reason)
+    print(json.dumps(output))
     return 0
 
 

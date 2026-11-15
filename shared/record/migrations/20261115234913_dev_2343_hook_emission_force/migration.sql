@@ -1,0 +1,1 @@
+ALTER TABLE "hook_emission" FORCE ROW LEVEL SECURITY;

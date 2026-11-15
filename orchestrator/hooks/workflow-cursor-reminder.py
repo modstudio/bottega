@@ -11,28 +11,32 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 from hook_paths import bottega_bin
 from registered_scope import should_hook_act
+from hook_emission import record_emission
 
 CLI_TIMEOUT_SECONDS = 5
 
-def emit(payload):
-    sys.stdout.write(json.dumps(payload) + "\n")
+def emit(hook_payload, output, text):
+    record_emission(hook_payload, "workflow-cursor-reminder", "additionalContext", text)
+    sys.stdout.write(json.dumps(output) + "\n")
     sys.stdout.flush()
 
 
-def emit_session_start(text):
+def emit_session_start(payload, text):
     emit(
+        payload,
         {
             "hookSpecificOutput": {
                 "hookEventName": "SessionStart",
                 "additionalContext": text,
             }
-        }
+        },
+        text,
     )
 
 
-def emit_unknown(why):
+def emit_unknown(payload, why):
     text = f"Workflow cursor state is unknown: {why}"
-    emit_session_start(text)
+    emit_session_start(payload, text)
 
 
 def payload_text(payload, key):
@@ -121,16 +125,16 @@ def handle_session_start(payload):
     elif source == "clear":
         cwd = payload_text(payload, "cwd")
         if not cwd:
-            emit_unknown("payload cwd is missing")
+            emit_unknown(payload, "payload cwd is missing")
             return
         rows, why = query_cursors(cwd)
     else:
         return
     if why is not None:
-        emit_unknown(why)
+        emit_unknown(payload, why)
         return
     if rows:
-        emit_session_start(session_start_context(source, rows))
+        emit_session_start(payload, session_start_context(source, rows))
 
 
 def main():
@@ -151,7 +155,7 @@ def main():
         if event == "SessionStart":
             handle_session_start(payload)
     except Exception as error:
-        emit_unknown(f"hook failed ({error.__class__.__name__}: {error})")
+        emit_unknown(payload, f"hook failed ({error.__class__.__name__}: {error})")
     return 0
 
 

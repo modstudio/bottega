@@ -7,6 +7,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 from registered_scope import should_hook_act
+from hook_emission import record_emission
 
 CAPTURE_INSTRUCTION = (
     "In the summary, add a section headed 'Unstored facts and pointers'. List each "
@@ -21,6 +22,7 @@ def main():
     try:
         payload = json.load(sys.stdin)
         if should_hook_act(payload):
+            record_emission(payload, "context-precompact", "additionalContext", CAPTURE_INSTRUCTION)
             print(CAPTURE_INSTRUCTION)
     except Exception:
         pass

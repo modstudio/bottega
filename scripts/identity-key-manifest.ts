@@ -95,6 +95,8 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'brief_injection.cursors',
     'brief_injection.keyless_cursors',
     'brief_injection.keyless_idle_max_ms',
+    'hook_emission.chars',
+    'hook_emission.lines',
     'collect_change_counter.value',
     'agent.max_concurrent',
     'board_claim.duration_ms',
@@ -540,6 +542,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
   ]),
   ...manifest('orchestrator', 'identifier issued by the harness session system', [
     'brief_injection.session_id',
+    'hook_emission.session_id',
     'board_claim.holder_session',
     'board_message.author_session',
     'board_reach_delivery.reader_session',
@@ -581,6 +584,9 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'review_finding_amendment.actor_session',
     'run_message.sender_session',
     'run_mutation_audit.actor_session',
+  ]),
+  ...manifest('orchestrator', 'content fingerprint, not a row reference', [
+    'hook_emission.text_hash',
   ]),
   ...manifest('orchestrator', 'identifier issued by an external subsystem', [
     'monitor_condition.issue_key',
@@ -682,6 +688,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
   ...RECORD_CACHE_IDENTITIES,
   ...manifest('orchestrator', 'owned or referenced UUID', [
     'brief_injection.record_id',
+    'hook_emission.record_id',
     'collect_change_counter.record_id',
     'agent.record_id',
     'blocker.record_id',

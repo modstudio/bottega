@@ -1746,6 +1746,14 @@
       "tag": "0227_workflow_cursor_project_number",
       "breakpoints": true,
       "compatibility": "fenced"
+    },
+    {
+      "idx": 228,
+      "version": "6",
+      "when": 1794758400002,
+      "tag": "0228_hook_emission",
+      "breakpoints": true,
+      "compatibility": "additive"
     }
   ]
 }

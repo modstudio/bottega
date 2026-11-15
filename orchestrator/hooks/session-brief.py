@@ -21,6 +21,7 @@ from notice_transport import (
     transportable_notice_id,
 )
 from registered_scope import should_hook_act
+from hook_emission import launch_detached, record_emission
 
 with open(
     os.path.join(os.path.dirname(__file__), "session-start-context.json"),
@@ -232,9 +233,9 @@ def _context_size(text):
 def _record_injection(bottega, cwd, env, session, source, text):
     size_bytes, lines, chars = _context_size(text)
     try:
-        subprocess.Popen(
+        launch_detached(
+            bottega,
             [
-                bottega,
                 "agent",
                 "context",
                 "record-injection",
@@ -249,12 +250,8 @@ def _record_injection(bottega, cwd, env, session, source, text):
                 "--chars",
                 str(chars),
             ],
-            env=env,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-            cwd=cwd,
+            env,
+            cwd,
         )
     except Exception as error:
         print(f"session-brief: injection recording failed: {error}", file=sys.stderr)
@@ -1021,6 +1018,13 @@ def main() -> int:
                             file=sys.stderr,
                         )
         if output is not None:
+            specific = output.get("hookSpecificOutput", {})
+            context = specific.get("additionalContext")
+            if isinstance(context, str):
+                record_emission(payload, "session-brief", "additionalContext", context)
+            message = output.get("systemMessage")
+            if isinstance(message, str):
+                record_emission(payload, "session-brief", "systemMessage", message)
             sys.stdout.write(json.dumps(output) + "\n")
             sys.stdout.flush()
         emitted_board_ids = (
