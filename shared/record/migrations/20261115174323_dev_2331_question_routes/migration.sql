@@ -33,6 +33,7 @@ CREATE POLICY "question_number_counter_space_delete" ON "question_number_counter
       AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid
       AND m.permission = 'write'
   )));--> statement-breakpoint
+ALTER TABLE "question_number_counter" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 DO $migration$
 DECLARE
   definition text;
