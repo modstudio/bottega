@@ -1,3 +1,10 @@
+CREATE TEMP TABLE workflow_obligation_project_number_snapshot AS SELECT * FROM workflow_obligation;
+CREATE TEMP TABLE workflow_step_text_project_number_snapshot AS SELECT * FROM workflow_step_text;
+CREATE TEMP TABLE workflow_text_copy_project_number_snapshot AS SELECT * FROM workflow_text_copy;
+DELETE FROM workflow_text_copy;
+DELETE FROM workflow_step_text;
+DELETE FROM workflow_obligation;
+--> statement-breakpoint
 CREATE TABLE workflow_cursor_project_number (
   record_id TEXT NOT NULL PRIMARY KEY, number INTEGER NOT NULL,
   project TEXT NOT NULL, project_record_id TEXT REFERENCES project(record_id) ON UPDATE CASCADE ON DELETE RESTRICT,
@@ -23,6 +30,12 @@ SELECT record_id,number,project,project_record_id,workflow_slug,mode_slug,workfl
 FROM workflow_cursor;
 DROP TABLE workflow_cursor;
 ALTER TABLE workflow_cursor_project_number RENAME TO workflow_cursor;
+INSERT INTO workflow_obligation SELECT * FROM workflow_obligation_project_number_snapshot;
+INSERT INTO workflow_step_text SELECT * FROM workflow_step_text_project_number_snapshot;
+INSERT INTO workflow_text_copy SELECT * FROM workflow_text_copy_project_number_snapshot;
+DROP TABLE workflow_obligation_project_number_snapshot;
+DROP TABLE workflow_step_text_project_number_snapshot;
+DROP TABLE workflow_text_copy_project_number_snapshot;
 --> statement-breakpoint
 -- BACKFILL
 WITH ranked AS (

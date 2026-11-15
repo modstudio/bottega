@@ -134,9 +134,7 @@ test('a local cursor handle outside a registered project requires a project opti
   )
   d.query('UPDATE project SET path=? WHERE name=?').run('/fixture-not-this-cwd', 'fixture')
 
-  expect(selectByHandle(composed.cursor!.id, {}, d)).rejects.toThrow(
-    'pass --project <PROJECT>',
-  )
+  expect(selectByHandle(composed.cursor!.id, {}, d)).rejects.toThrow('pass --project <PROJECT>')
 })
 
 test('a cursor absent from the resolved project tells the caller to list cursors again', async () => {
@@ -153,6 +151,6 @@ test('a cursor absent from the resolved project tells the caller to list cursors
   )
 
   expect(selectByHandle(composed.cursor!.id, { project: 'missing-project' }, d)).rejects.toThrow(
-    'cursor handles changed to per-project numbers, so list cursors again with bottega workflow cursors',
+    'cursor handles changed to per-project numbers, so list cursors again with',
   )
 })

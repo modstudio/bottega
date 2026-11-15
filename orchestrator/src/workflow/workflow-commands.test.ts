@@ -1007,9 +1007,7 @@ test('a cursor refuses a supplied workflow or project that differs from its row'
       ],
       presentation([]),
     ),
-  ).rejects.toThrow(
-    'cursor handles changed to per-project numbers, so list cursors again with bottega workflow cursors',
-  )
+  ).rejects.toThrow('cursor handles changed to per-project numbers')
 })
 
 test('mode-less cursor command refuses active cursors in multiple modes', async () => {

@@ -95,7 +95,9 @@ test('workflow cursor project-number migration preserves identities and renumber
     expect(applyMigrations(database)).toContain(MIGRATION)
     expect(
       database
-        .query<{ record_id: string }, []>('SELECT record_id FROM workflow_cursor ORDER BY record_id')
+        .query<{ record_id: string }, []>(
+          'SELECT record_id FROM workflow_cursor ORDER BY record_id',
+        )
         .all(),
     ).toEqual(recordIds)
     expect(
@@ -113,9 +115,7 @@ test('workflow cursor project-number migration preserves identities and renumber
     ])
     expect(database.query('PRAGMA foreign_key_check').all()).toEqual([])
     expect(() =>
-      database
-        .query("UPDATE workflow_cursor SET number=1 WHERE record_id='stage-b-second'")
-        .run(),
+      database.query("UPDATE workflow_cursor SET number=1 WHERE record_id='stage-b-second'").run(),
     ).toThrow()
   } finally {
     database.close()
