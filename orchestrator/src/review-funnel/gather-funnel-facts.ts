@@ -244,14 +244,7 @@ function gatheredTriage(change: ReviewFunnelChange, group: ChangeGroup) {
       })
       return {
         tier: plan.output.tier,
-        applicability: {
-          lenses: plan.output.lenses,
-          ...(plan.output.secondOpinion ? { secondOpinion: plan.output.secondOpinion } : {}),
-          ...(plan.output.lensBases ? { lensBases: plan.output.lensBases } : {}),
-          ...(plan.output.secondOpinionBasis
-            ? { secondOpinionBasis: plan.output.secondOpinionBasis }
-            : {}),
-        },
+        applicability: plan.relevant,
         reviewPlan: plan.reviewPlan,
         group,
       }

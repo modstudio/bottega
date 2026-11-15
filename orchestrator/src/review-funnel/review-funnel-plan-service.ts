@@ -203,5 +203,5 @@ export function budgetedReviewPlanForResolvedChange(input: {
         relevant,
         tier: output.tier,
       })
-  return { output, identity, postFix, ...plan }
+  return { output, identity, postFix, relevant, ...plan }
 }

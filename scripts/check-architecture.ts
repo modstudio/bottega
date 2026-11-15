@@ -161,7 +161,7 @@ for (const root of [...CONCERNS, 'shared']) {
       for (const declaration of declarations) {
         if (declaration.importer === file) continue
         violations.push(
-          `${file}: whole-module import of ${source} exposes private ${declaration.name} to ${declaration.importer}`,
+          `${file}: whole-module import or re-export of ${source} exposes private ${declaration.name} to ${declaration.importer}`,
         )
       }
       if (
@@ -171,7 +171,7 @@ for (const root of [...CONCERNS, 'shared']) {
         )
       ) {
         violations.push(
-          `${file}: whole-module import of ${source} exposes review-funnel-private decisions`,
+          `${file}: whole-module import or re-export of ${source} exposes review-funnel-private decisions`,
         )
       }
     }

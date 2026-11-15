@@ -4,6 +4,7 @@ export type ImportScan = {
   specifiers: string[]
   typeOnlySpecifiers: string[]
   namedImports: { specifier: string; name: string }[]
+  /** Specifiers whose whole module this file reaches: namespace imports, dynamic imports and `export *` re-exports. */
   moduleImports: string[]
   unresolvedRelative: string[]
 }
