@@ -1,5 +1,5 @@
 // concern: question-store-port
-/** Defines the question persistence boundary. Callers remain on SQLite until DEV-2328. */
+/** Defines the question persistence boundary. */
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
