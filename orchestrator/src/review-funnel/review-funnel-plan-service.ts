@@ -10,13 +10,7 @@ import {
   type ReviewFunnelPlan,
   selectReviewApplicability,
 } from '../review/review-applicability.ts'
-import {
-  type ChangeGroup,
-  provenanceSubjectFacts,
-  reviewsForTriage,
-  serializePathSet,
-} from '../review/review-group.ts'
-import { lensProvenanceSubject } from '../review/review-lens-provenance.ts'
+import { type ChangeGroup, reviewsForTriage, serializePathSet } from '../review/review-group.ts'
 import { measureChangeIdentity } from '../review/review-pins.ts'
 import {
   gatherPostFixReviewFacts,
@@ -24,13 +18,13 @@ import {
   postFixReviewDecision,
 } from '../review/review-post-fix.ts'
 import {
+  aggregateReviewBudgetEvidence,
   currentReviewRoundIdentity,
   eligibleReviewRoundRows,
   type ReviewRoundBudgetDecision,
   type ReviewTierNumber,
   reviewRoundBudgetDecision,
 } from '../review/review-round-budget.ts'
-import { reviewRoundIdentity } from '../review/review-round-identity.ts'
 import {
   applicableRoundLensPlan,
   reviewPlanForBudget,
@@ -82,24 +76,14 @@ export function reviewBudgetForChange(
   branch: string,
   currentIdentity: string | null,
 ) {
-  const rows = eligibleReviewRoundRows(database, undefined, { project, branch }).filter(
-    (row) => lensProvenanceSubject(provenanceSubjectFacts(row)).admissible,
-  )
-  const identities = new Set(
-    rows.flatMap((row) => {
-      const identity = reviewRoundIdentity(row).identity
-      return identity ? [identity] : []
-    }),
-  )
-  const eligibleReviews = new Set(rows.map(({ review_record_id }) => review_record_id))
-  const unclassifiableReviews = new Set(
-    rows.flatMap((row) => (reviewRoundIdentity(row).identity ? [] : [row.review_record_id])),
+  const evidence = aggregateReviewBudgetEvidence(
+    eligibleReviewRoundRows(database, undefined, { project, branch }),
   )
   return {
-    roundsUsed: identities.size,
-    currentChangeCounted: Boolean(currentIdentity && identities.has(currentIdentity)),
-    eligibleReviewCount: eligibleReviews.size,
-    unclassifiableReviewCount: unclassifiableReviews.size,
+    roundsUsed: evidence.rounds.size,
+    currentChangeCounted: Boolean(currentIdentity && evidence.rounds.has(currentIdentity)),
+    eligibleReviewCount: evidence.eligibleReviews.size,
+    unclassifiableReviewCount: evidence.unclassifiableReviews.size,
   }
 }
 

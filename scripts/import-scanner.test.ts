@@ -59,6 +59,13 @@ describe('import scanner', () => {
     ])
   })
 
+  test('reports star and namespace re-exports as whole-module imports', () => {
+    expect(importSpecifiers("export * from './named.ts'").moduleImports).toEqual(['./named.ts'])
+    expect(importSpecifiers("export * as values from './named.ts'").moduleImports).toEqual([
+      './named.ts',
+    ])
+  })
+
   test('skips type-only imports when reporting private import routes', () => {
     const scan = importSpecifiers("import type * as values from './named.ts'")
     expect(scan.typeOnlySpecifiers).toEqual(['./named.ts'])

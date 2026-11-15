@@ -90,19 +90,21 @@ function tierReviewCliCommand(argv: string[], flags: CliFlags, { log }: ReviewPr
     result.output.credited_by_architect_read.secondOpinion !== undefined
   const ceilingGuidance = json
     ? null
-    : verdict.next.action === 'ask-ceiling-ruling'
-      ? `review round ceiling reached: ${verdict.remedy}`
-      : verdict.next.action === 'record-read' && creditsCeilingWork
-        ? renderRefusal(
-            refusal(
-              'review round ceiling reached: the architect rules after reading this exact change',
-              {
-                kind: 'edit',
-                text: verdict.remedy,
-              },
-            ),
-          )
-        : null
+    : !result.output.review_budget.atCeiling
+      ? null
+      : verdict.next.action === 'ask-ceiling-ruling'
+        ? `review round ceiling reached: ${verdict.remedy}`
+        : verdict.next.action === 'record-read' && creditsCeilingWork
+          ? renderRefusal(
+              refusal(
+                'review round ceiling reached: the architect rules after reading this exact change',
+                {
+                  kind: 'edit',
+                  text: verdict.remedy,
+                },
+              ),
+            )
+          : `review round ceiling reached: ${verdict.remedy}`
   printReviewTier(result.output, json, ceilingGuidance, log)
 }
 

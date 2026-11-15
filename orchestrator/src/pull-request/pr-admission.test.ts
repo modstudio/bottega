@@ -133,7 +133,7 @@ test('an undisposed finding at the ceiling refuses without recording a ruling', 
   })
 })
 
-test('a ceiling ruling records and admits an emptied-round architect-read posture', () => {
+test('a ceiling ruling records an emptied-round architect-read posture', () => {
   const database = db()
   const project = database
     .query<{ record_id: string }, []>(
@@ -417,8 +417,7 @@ test('merge admission leaves an existing snapshot unchanged', () => {
   expect(
     recordMergeAdmission(
       change,
-      { complete: true, overrideId: null, overrideReason: null },
-      triage,
+      { complete: true, overrideId: null, overrideReason: null, triage },
       42,
       database,
     ),

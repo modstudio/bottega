@@ -742,13 +742,7 @@ test('an admitted head records a snapshot with the pull request number before me
         }
       },
       recordAdmission: (admittedChange, admittedDecision, number, admittedDatabase) =>
-        recordMergeAdmission(
-          admittedChange,
-          admittedDecision,
-          admittedDecision.triage!,
-          number,
-          admittedDatabase,
-        ),
+        recordMergeAdmission(admittedChange, admittedDecision, number, admittedDatabase),
     }),
     database,
   )

@@ -4,12 +4,8 @@ import { projectByName } from '../project/projects.ts'
 import type { RequiredReleaseReport } from '../release/release-required.ts'
 import type { TriageDecision } from '../review-funnel/review-funnel-admission-evidence.ts'
 import type { ShipCleanupReport } from '../ship-cleanup/ship-cleanup.ts'
-import type { AdmissionDecision } from './admission-decision.ts'
-
-type FixtureAdmissionDecision = AdmissionDecision & { triage: TriageDecision }
-
 import type { PullRequestCheck } from './merge-decision.ts'
-import type { PullRequestChange } from './pr-admission.ts'
+import type { AdmissionWithTriage, PullRequestChange } from './pr-admission.ts'
 import type { PullRequestMergeAdapter, PullRequestMergeFacts } from './pr-merge.ts'
 import {
   mergeCleanupReport,
@@ -55,10 +51,10 @@ export function adapter(
       headCommit: string,
       headBranch: string,
       database: ReturnType<typeof db>,
-    ) => { change: PullRequestChange; decision: FixtureAdmissionDecision }
+    ) => { change: PullRequestChange; decision: AdmissionWithTriage }
     recordAdmission?: (
       change: PullRequestChange,
-      decision: FixtureAdmissionDecision,
+      decision: AdmissionWithTriage,
       prNumber: number,
       database: ReturnType<typeof db>,
     ) => string | null

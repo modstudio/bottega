@@ -2,20 +2,9 @@
 /** Admits one funnel verdict, crediting only an override recorded for its exact identity. */
 
 import type { ReviewFunnelVerdict } from '../review-funnel/decide-review-funnel.ts'
-import type { TriageOverrideAttribution } from './override-decision.ts'
+import type { LandingOverrideRow } from '../review-funnel/gather-funnel-facts.ts'
 
-export type AdmissionOverride = {
-  recordId: string
-  project: string
-  branch: string
-  tip: string
-  tree: string
-  patchId: string | null
-  pathSet: string | null
-  attribution: TriageOverrideAttribution
-  reason: string
-  missingLenses: string[]
-}
+export type AdmissionOverride = LandingOverrideRow
 
 export type AdmissionDecision = {
   complete: boolean

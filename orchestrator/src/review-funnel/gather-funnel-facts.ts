@@ -110,11 +110,7 @@ function overrideFacts(
   }
 }
 
-export function readLandingOverridesForBranch(
-  database: Database,
-  project: string,
-  branch: string,
-): Array<{
+export type LandingOverrideRow = {
   recordId: string
   project: string
   branch: string
@@ -125,7 +121,13 @@ export function readLandingOverridesForBranch(
   attribution: 'operator' | 'architect-ceiling'
   reason: string
   missingLenses: string[]
-}> {
+}
+
+export function readLandingOverridesForBranch(
+  database: Database,
+  project: string,
+  branch: string,
+): LandingOverrideRow[] {
   return database
     .query<
       {

@@ -1,18 +1,22 @@
 import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { fileURLToPath } from 'node:url'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { db } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
-import type { TriageDecision } from '../review-funnel/review-funnel-admission-evidence.ts'
-import { type PullRequestChange, recordTriageOverrideForChange } from './pr-admission.ts'
+import { measureChangeIdentity } from '../review/review-pins.ts'
+import {
+  admissionDecision,
+  type PullRequestChange,
+  recordTriageOverrideForChange,
+} from './pr-admission.ts'
 import {
   mergePullRequest,
   type PullRequestMergeAdapter,
   type PullRequestMergeFacts,
 } from './pr-merge.ts'
 
-const cwd = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
-const recordedHead = 'recorded-head'
 const headBranch = 'DEV-2074-override'
 
 const pullRequest = (headCommit: string): PullRequestMergeFacts => ({
@@ -28,38 +32,20 @@ const pullRequest = (headCommit: string): PullRequestMergeFacts => ({
   mergeCommit: null,
 })
 
-const incompleteTriage: TriageDecision = {
-  complete: false,
-  snapshot: {
-    reviewRecordIds: [],
-    patchId: 'patch',
-    tier: 2,
-    lensRounds: 0,
-    findingCount: 0,
-    admissionPath: 'exact_review',
-    readRecordId: null,
-  },
-  missingReview: true,
-  unfinishedReviewNumbers: [],
-  undisposedFindings: [],
-  missingLenses: [{ lens: 'correctness', recordedOnBranch: false, newlyTouchedPaths: [] }],
-  lensesAlreadyComplete: [],
-  missingSecondOpinion: null,
-  architectReadRequired: false,
-  earlierReviewNumber: null,
-  earlierReviewTier: null,
-  finalTierRaised: false,
-  noCompleteReviewRound: true,
+function git(repo: string, ...args: string[]): string {
+  const result = Bun.spawnSync(['git', ...args], { cwd: repo, stdout: 'pipe', stderr: 'pipe' })
+  if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+  return result.stdout.toString().trim()
 }
 
-function registerProject(): void {
+function registerProject(path: string): void {
   db()
     .query(
       'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
     )
     .run(
       'merge-override-fixture',
-      cwd,
+      path,
       'bun',
       JSON.stringify({
         trunk: 'main',
@@ -73,18 +59,21 @@ function registerProject(): void {
     )
 }
 
-function changeAt(tip: string): PullRequestChange {
+function changeAt(repo: string, base: string, tip: string): PullRequestChange {
   const project = projectByName('merge-override-fixture')!
+  const identity = measureChangeIdentity(repo, base, tip)
+  if (!identity) throw new Error(`could not measure ${base}..${tip}`)
   return {
     project,
     branch: headBranch,
     tip,
-    tree: 'head-tree',
+    tree: git(repo, 'rev-parse', `${tip}^{tree}`),
+    base,
     group: {
       project: project.name,
       branch: headBranch,
-      patchId: 'patch',
-      pathSet: ['orchestrator/src/pull-request/pr-merge.ts'],
+      patchId: identity.patchId,
+      pathSet: identity.paths,
     },
     tier: 2,
     applicability: { lenses: ['correctness'] },
@@ -92,6 +81,8 @@ function changeAt(tip: string): PullRequestChange {
 }
 
 function adapterFor(
+  repo: string,
+  base: string,
   headCommit: string,
   mergedHeads: string[],
   database: Database,
@@ -110,22 +101,11 @@ function adapterFor(
     landingState: () => ({ remoteLandingTip: 'base', mergeBase: 'base' }),
     hasCommit: () => true,
     admission: (_cwd, admittedHead) => {
-      const change = changeAt(admittedHead)
-      const override = database
-        .query<{ record_id: string }, []>('SELECT record_id FROM landing_override LIMIT 1')
-        .get()
-      return {
-        change,
-        decision: {
-          complete: true,
-          overrideId: override?.record_id ?? null,
-          overrideReason: override ? 'operator override' : null,
-          triage: incompleteTriage,
-        },
-      }
+      const change = changeAt(repo, base, admittedHead)
+      return { change, decision: admissionDecision(change, database) }
     },
     recordAdmission: () => null,
-    postMergeChange: () => changeAt(headCommit),
+    postMergeChange: () => changeAt(repo, base, headCommit),
     merge: (_cwd, _number, _method, _subject, admittedHead) => {
       mergedHeads.push(admittedHead)
       throw new Error('stop after admission')
@@ -146,22 +126,57 @@ function adapterFor(
 }
 
 test("merge honors create's triage override for the same patch after a rebase", () => {
-  registerProject()
-  const database = db()
-  recordTriageOverrideForChange(
-    changeAt(recordedHead),
-    { overrideReason: 'operator accepts the reviewed risk', fromOperator: true },
-    database,
-  )
-  const mergedHeads: string[] = []
+  const repo = mkdtempSync(join(tmpdir(), 'pr-merge-override-'))
+  try {
+    git(repo, 'init', '-q', '-b', 'main')
+    git(repo, 'config', 'user.email', 'fixture@example.test')
+    git(repo, 'config', 'user.name', 'Fixture')
+    writeFileSync(join(repo, 'base.txt'), 'base\n')
+    git(repo, 'add', 'base.txt')
+    git(repo, 'commit', '-qm', 'base')
+    const recordedBase = git(repo, 'rev-parse', 'HEAD')
+    git(repo, 'checkout', '-qb', headBranch)
+    writeFileSync(join(repo, 'feature.txt'), 'reviewed change\n')
+    git(repo, 'add', 'feature.txt')
+    git(repo, 'commit', '-qm', 'feature')
+    const recordedHead = git(repo, 'rev-parse', 'HEAD')
+    git(repo, 'checkout', '-q', 'main')
+    writeFileSync(join(repo, 'unrelated.txt'), 'new base\n')
+    git(repo, 'add', 'unrelated.txt')
+    git(repo, 'commit', '-qm', 'new base')
+    const changedBase = git(repo, 'rev-parse', 'HEAD')
+    git(repo, 'cherry-pick', recordedHead)
+    const changedHead = git(repo, 'rev-parse', 'HEAD')
 
-  expect(() =>
-    mergePullRequest('42', cwd, adapterFor('changed-head', mergedHeads, database), database),
-  ).toThrow('stop after admission')
-  expect(mergedHeads).toEqual(['changed-head'])
+    registerProject(repo)
+    const database = db()
+    recordTriageOverrideForChange(
+      changeAt(repo, recordedBase, recordedHead),
+      { overrideReason: 'operator accepts the reviewed risk', fromOperator: true },
+      database,
+    )
+    const mergedHeads: string[] = []
 
-  expect(() =>
-    mergePullRequest('42', cwd, adapterFor(recordedHead, mergedHeads, database), database),
-  ).toThrow('stop after admission')
-  expect(mergedHeads).toEqual(['changed-head', recordedHead])
+    expect(() =>
+      mergePullRequest(
+        '42',
+        repo,
+        adapterFor(repo, changedBase, changedHead, mergedHeads, database),
+        database,
+      ),
+    ).toThrow('review triage is incomplete')
+    expect(mergedHeads).toEqual([])
+
+    expect(() =>
+      mergePullRequest(
+        '42',
+        repo,
+        adapterFor(repo, recordedBase, recordedHead, mergedHeads, database),
+        database,
+      ),
+    ).toThrow('stop after admission')
+    expect(mergedHeads).toEqual([recordedHead])
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
 })

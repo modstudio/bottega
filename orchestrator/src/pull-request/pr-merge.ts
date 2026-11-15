@@ -15,10 +15,8 @@ import { passingGateForCommit } from '../gate/gate-passed.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { currentProjectRepository, type Project, projectAt } from '../project/projects.ts'
 import { shipToDepthRefusal } from '../release/ship-to-reach.ts'
-import type { TriageDecision } from '../review-funnel/review-funnel-admission-evidence.ts'
 import { type ShipCleanupReport, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import { matchWorkflowTreePath } from '../workflow/workflow-tree.ts'
-import type { AdmissionDecision } from './admission-decision.ts'
 import {
   decideMergeAdmission,
   decideMergeProof,
@@ -45,14 +43,13 @@ import {
 } from './merge-queue-forge.ts'
 import { decideMergeability, type MergeabilityFacts } from './mergeability-decision.ts'
 import {
+  type AdmissionWithTriage,
   admissionDecision,
   type PullRequestChange,
   recordMergeAdmission,
   resolvePullRequestChange,
   triageRefusal,
 } from './pr-admission.ts'
-
-type MergeAdmissionDecision = AdmissionDecision & { triage: TriageDecision }
 
 import { recordPullRequestCi } from './pr-ci-record.ts'
 import {
@@ -88,10 +85,10 @@ export type PullRequestMergeAdapter = {
     headCommit: string,
     headBranch: string,
     database: Database,
-  ): { change: PullRequestChange; decision: MergeAdmissionDecision }
+  ): { change: PullRequestChange; decision: AdmissionWithTriage }
   recordAdmission(
     change: PullRequestChange,
-    decision: MergeAdmissionDecision,
+    decision: AdmissionWithTriage,
     prNumber: number,
     database: Database,
   ): string | null
@@ -287,7 +284,7 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
     return { change, decision: evaluated }
   },
   recordAdmission(change, decision, prNumber, database) {
-    return recordMergeAdmission(change, decision, decision.triage, prNumber, database)
+    return recordMergeAdmission(change, decision, prNumber, database)
   },
   postMergeChange(cwd, headCommit, headBranch, database) {
     return resolvePullRequestChange(cwd, headCommit, database, undefined, headBranch)

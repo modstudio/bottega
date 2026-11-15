@@ -100,8 +100,14 @@ export const pullRequestModuleSpecs = [
   },
   {
     file: 'orchestrator/src/pull-request/admission-decision.ts',
-    allowed: ['../review-funnel/decide-review-funnel.ts', './override-decision.ts'],
-    typeOnlyAllowed: ['../review-funnel/decide-review-funnel.ts', './override-decision.ts'],
+    allowed: [
+      '../review-funnel/decide-review-funnel.ts',
+      '../review-funnel/gather-funnel-facts.ts',
+    ],
+    typeOnlyAllowed: [
+      '../review-funnel/decide-review-funnel.ts',
+      '../review-funnel/gather-funnel-facts.ts',
+    ],
   },
   {
     file: 'orchestrator/src/pull-request/pr-admission.ts',

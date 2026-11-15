@@ -164,6 +164,16 @@ for (const root of [...CONCERNS, 'shared']) {
           `${file}: whole-module import of ${source} exposes private ${declaration.name} to ${declaration.importer}`,
         )
       }
+      if (
+        !file.startsWith('orchestrator/src/review-funnel/') &&
+        reviewFunnelPrivateDecisionImports.some(
+          (entry) => entry.source === source || entry.source === `${source}.ts`,
+        )
+      ) {
+        violations.push(
+          `${file}: whole-module import of ${source} exposes review-funnel-private decisions`,
+        )
+      }
     }
   }
 }

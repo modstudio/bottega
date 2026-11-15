@@ -163,13 +163,19 @@ function overridesForChange(change: PullRequestChange, database: Database): Admi
   return readFunnelLandingOverridesForBranch(database, change.project.name, change.branch)
 }
 
-export type EvaluatedAdmission = AdmissionDecision & {
-  facts: ReturnType<typeof gatherFunnelFacts>
-  verdict: ReviewFunnelVerdict
+export type AdmissionWithTriage = AdmissionDecision & {
   triage: TriageDecision
 }
 
-function funnelChange(change: PullRequestChange, database: Database): ReviewFunnelChange {
+export type EvaluatedAdmission = AdmissionWithTriage & {
+  verdict: ReviewFunnelVerdict
+}
+
+function funnelChange(
+  change: PullRequestChange,
+  database: Database,
+  selectionWindow: number,
+): ReviewFunnelChange {
   return {
     database,
     cwd: change.project.path,
@@ -178,12 +184,13 @@ function funnelChange(change: PullRequestChange, database: Database): ReviewFunn
     branch: change.branch,
     project: change.project,
     resolved: change,
+    selectionWindow,
   }
 }
 
 function funnelVerdict(change: PullRequestChange, database: Database) {
   const active = activeReviewFunnelPolicy()
-  const facts = gatherFunnelFacts(funnelChange(change, database))
+  const facts = gatherFunnelFacts(funnelChange(change, database, active.policy.selection.window))
   return {
     facts,
     verdict: decideReviewFunnel(facts, active.policy, active.policyVersion),
@@ -210,7 +217,7 @@ export function admissionDecision(
     facts,
     verdict,
   })
-  return { ...decision, facts, verdict, triage }
+  return { ...decision, verdict, triage }
 }
 
 /** The line refusing one applicable lens, naming the path a fix used to bring it into scope. */
@@ -475,8 +482,7 @@ function finalizeTriageIntentWrite(
 
 export function recordMergeAdmission(
   change: PullRequestChange,
-  decision: AdmissionDecision,
-  triage: TriageDecision,
+  decision: AdmissionWithTriage,
   prNumber: number,
   database: Database,
 ): string | null {
@@ -489,7 +495,7 @@ export function recordMergeAdmission(
       )
       .get(change.project.name, change.branch, change.tip)
     if (existing) return null
-    recordTriageIntent(change, triage, decision.overrideId, database)
+    recordTriageIntent(change, decision.triage, decision.overrideId, database)
     return finalizeTriageIntentWrite(change.project.name, change.branch, prNumber, database)
   }, database)
 }
