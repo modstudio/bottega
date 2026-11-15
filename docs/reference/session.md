@@ -114,6 +114,8 @@ measure losses around Claude transcript compaction boundaries
 
 measure task-cursor attribution and residue over a session window
 
+Unanswered questions use the durable open-question predicate: neither answered nor closed. This differs from question inbox, which lists its needs-attention subset. Past-window unscored runs and open cursors are marked approximate.
+
 ### Options
 
 - `--session <id>`: select one session; repeat to select more

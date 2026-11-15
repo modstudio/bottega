@@ -53,7 +53,9 @@ function registerStatus(session: Command): void {
 function registerReport(session: Command): void {
   session
     .command('report')
-    .description('measure task-cursor attribution and residue over a session window')
+    .description(
+      'measure task-cursor attribution and residue over a session window\n\nUnanswered questions use the durable open-question predicate: neither answered nor closed. This differs from question inbox, which lists its needs-attention subset. Past-window unscored runs and open cursors are marked approximate.',
+    )
     .addOption(
       repeatable(
         new Option('--session <id>', 'select one session; repeat to select more')

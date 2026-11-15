@@ -58,6 +58,28 @@ describe('session report policy', () => {
     })
   })
 
+  test('reports keyed overrides separately from keyless runs', () => {
+    const report = buildSessionWindowReport(
+      facts([
+        {
+          id: 'overridden',
+          job: 'implement',
+          startedAt: '2026-11-15T12:30:00Z',
+          launchKey: 'DEV-1',
+          cursorId: null,
+        },
+      ]),
+      window,
+      window.until,
+    )
+
+    expect(report.runsWithoutCursor).toEqual({
+      total: 1,
+      keyless: [],
+      keyedOverridden: [{ job: 'implement', count: 1, runIds: ['overridden'] }],
+    })
+  })
+
   test('refuses a reversed window and names both bounds', () => {
     expect(() =>
       reportWindow('2026-11-15T13:00:00Z', '2026-11-15T12:00:00Z', '2026-11-15T14:00:00Z'),
@@ -115,6 +137,12 @@ describe('session report policy', () => {
       ...facts([]),
       unscoredRuns: [
         {
+          id: 'still-unscored',
+          startedAt: '2026-11-15T11:00:00.000Z',
+          unscoredToday: true,
+          scoredAt: null,
+        },
+        {
           id: 'scored-later',
           startedAt: '2026-11-15T11:00:00.000Z',
           unscoredToday: false,
@@ -149,18 +177,25 @@ describe('session report policy', () => {
     const afterClosures = buildSessionWindowReport(lifecycleFacts, window, window.until)
 
     expect(beforeClosures.residueAtWindowEnd).toMatchObject({
-      unscoredRuns: { count: 1 },
+      unscoredRuns: {
+        count: 2,
+        runIds: ['still-unscored', 'scored-later'],
+        asOf: 'approximate',
+      },
       unansweredQuestions: { count: 1 },
       openCursors: {
         count: 1,
+        asOf: 'approximate',
         cursors: [{ id: 'cursor-later', idleMs: 60 * 60_000 }],
       },
     })
     expect(afterClosures.residueAtWindowEnd).toMatchObject({
-      unscoredRuns: { count: 0 },
+      unscoredRuns: { count: 1, runIds: ['still-unscored'] },
       unansweredQuestions: { count: 0 },
       openCursors: { count: 0 },
     })
+    expect(afterClosures.residueAtWindowEnd.unscoredRuns).not.toHaveProperty('asOf')
+    expect(afterClosures.residueAtWindowEnd.openCursors).not.toHaveProperty('asOf')
   })
 
   test('marks historical held-tree state and keeps identifiers out of human output', () => {
@@ -202,6 +237,8 @@ describe('session report policy', () => {
       asOf: 'now',
     })
     expect(rendered).toContain('held trees (current): 1')
+    expect(rendered).toContain('unscored runs (approximate): 0')
+    expect(rendered).toContain('open cursors (approximate): 1')
     expect(rendered).toContain('42 ship-task DEV-1: idle 1h 54m')
     expect(rendered).toContain('implement: 1')
     expect(rendered).not.toContain('run-secret')

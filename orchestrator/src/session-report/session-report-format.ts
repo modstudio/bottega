@@ -20,9 +20,9 @@ function windowLines(label: string, report: SessionWindowReport): string[] {
     ...groupLines('keyless', report.runsWithoutCursor.keyless),
     ...groupLines('keyed-overridden', report.runsWithoutCursor.keyedOverridden),
     'residue at window end:',
-    `  unscored runs: ${residue.unscoredRuns.count}`,
+    `  unscored runs${residue.unscoredRuns.asOf === 'approximate' ? ' (approximate)' : ''}: ${residue.unscoredRuns.count}`,
     `  held trees${residue.heldTrees.asOf === 'now' ? ' (current)' : ''}: ${residue.heldTrees.count}`,
-    `  open cursors: ${residue.openCursors.count}`,
+    `  open cursors${residue.openCursors.asOf === 'approximate' ? ' (approximate)' : ''}: ${residue.openCursors.count}`,
     ...residue.openCursors.cursors.map(
       (cursor) =>
         `    ${cursor.number || cursor.id} ${cursor.workflow}${cursor.taskKey ? ` ${cursor.taskKey}` : ''}: idle ${duration(cursor.idleMs)}`,

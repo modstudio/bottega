@@ -47,10 +47,11 @@ export type SessionWindowReport = {
     keyedOverridden: Array<{ job: string; count: number; runIds: string[] }>
   }
   residueAtWindowEnd: {
-    unscoredRuns: { count: number; runIds: string[] }
+    unscoredRuns: { count: number; runIds: string[]; asOf?: 'approximate' }
     heldTrees: { count: number; runIds: string[]; asOf?: 'now' }
     openCursors: {
       count: number
+      asOf?: 'approximate'
       cursors: Array<{
         id: string
         number: number
@@ -171,6 +172,7 @@ export function buildSessionWindowReport(
     runIds: facts.heldTreeRunIds,
     ...(until < Date.parse(generatedAt) ? ({ asOf: 'now' } as const) : {}),
   }
+  const historical = until < Date.parse(generatedAt)
   return {
     sessionId: facts.sessionId,
     window,
@@ -180,9 +182,17 @@ export function buildSessionWindowReport(
       keyedOverridden: groupByJob(keyed),
     },
     residueAtWindowEnd: {
-      unscoredRuns: { count: unscoredRunIds.length, runIds: unscoredRunIds },
+      unscoredRuns: {
+        count: unscoredRunIds.length,
+        runIds: unscoredRunIds,
+        ...(historical ? ({ asOf: 'approximate' } as const) : {}),
+      },
       heldTrees,
-      openCursors: { count: cursors.length, cursors },
+      openCursors: {
+        count: cursors.length,
+        cursors,
+        ...(historical ? ({ asOf: 'approximate' } as const) : {}),
+      },
       unansweredQuestions: {
         count: questionIds.length,
         questionIds,

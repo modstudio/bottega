@@ -4,7 +4,6 @@
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
-import { questionOpenSql } from '../run/question-open.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import {
   buildSessionWindowReport,
@@ -80,14 +79,14 @@ async function factsForSession(
         scored_at: string | null
         unscored_today: number
       },
-      [string, string, string]
+      [string, string]
     >(
       `SELECT r.record_id,r.started_at,s.scored_at,(${UNSCORED_WHERE}) unscored_today
        FROM run r LEFT JOIN score s ON s.run_record_id=r.record_id
-       WHERE r.session_id=? AND r.started_at<=? AND ((${UNSCORED_WHERE}) OR s.scored_at>?)
+       WHERE r.session_id=? AND r.started_at<=?
        ORDER BY r.number`,
     )
-    .all(sessionId, end, end)
+    .all(sessionId, end)
     .map((row) => ({
       id: row.record_id,
       startedAt: row.started_at,
@@ -96,7 +95,9 @@ async function factsForSession(
     }))
   const heldTreeRunIds = database
     .query<{ record_id: string }, [string]>(
-      `SELECT record_id FROM run WHERE session_id=? AND close_out_outcome='held' ORDER BY number`,
+      `SELECT record_id FROM run
+       WHERE session_id=? AND parent_run_record_id IS NULL AND close_out_outcome='held'
+       ORDER BY number`,
     )
     .all(sessionId)
     .map((row) => row.record_id)
@@ -104,16 +105,13 @@ async function factsForSession(
     (await taskFlowReadStore(database).openStagesForSession(sessionId)).map((row) => row.record_id),
   )
   const cursors = database
-    .query<CursorRow, [string, string, string]>(
+    .query<CursorRow, [string, string]>(
       `SELECT record_id,number,workflow_slug,workflow_key,created_at,updated_at
        FROM workflow_cursor
-       WHERE session_id=? AND created_at<=? AND (updated_at>? OR state NOT IN ('done','abandoned'))
+       WHERE session_id=? AND created_at<=?
        ORDER BY number`,
     )
-    .all(sessionId, end, end)
-    .filter(
-      (row) => openCursorIds.has(row.record_id) || Date.parse(row.updated_at) > Date.parse(end),
-    )
+    .all(sessionId, end)
     .map((row) => ({
       id: row.record_id,
       number: row.number,
@@ -131,16 +129,15 @@ async function factsForSession(
         answered_at: string | null
         closed_at: string | null
       },
-      [string, string, string, string]
+      [string, string]
     >(
       `SELECT q.record_id,q.asked_at,q.answered_at,q.closed_at FROM question q
        LEFT JOIN run r ON r.record_id=q.run_record_id
        LEFT JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
        WHERE COALESCE(r.session_id,c.session_id)=? AND q.asked_at<=?
-         AND (${questionOpenSql('q')} OR q.answered_at>? OR q.closed_at>?)
        ORDER BY q.asked_at,q.number`,
     )
-    .all(sessionId, end, end, end)
+    .all(sessionId, end)
     .map((row) => ({
       id: row.record_id,
       askedAt: row.asked_at,
