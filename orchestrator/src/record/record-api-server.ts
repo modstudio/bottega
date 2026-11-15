@@ -129,6 +129,8 @@ import {
   searchPublicRecordDocs,
   searchRecordDocs,
 } from './record-public-docs.ts'
+import { readRecordQuestions } from './record-question-read.ts'
+import { writeRecordQuestion } from './record-question-write.ts'
 import { recordReleaseCheck } from './record-release-check.ts'
 import { listRecordReleases, readLatestRecordReleases } from './record-releases.ts'
 import { pruneRecordRetention, startRecordRetention } from './record-retention.ts'
@@ -405,6 +407,10 @@ function recordProjectDependencies() {
   }
 }
 
+function recordQuestionDependencies() {
+  return { readQuestions: readRecordQuestions, writeQuestion: writeRecordQuestion }
+}
+
 function recordBoardDependencies() {
   return {
     listBoardMessages: listHostedBoardOverview,
@@ -453,6 +459,7 @@ async function serveRecordApiWithAuth(
     readReleases: listRecordReleases,
     readLatestReleases: readLatestRecordReleases,
     ...recordProjectDependencies(),
+    ...recordQuestionDependencies(),
     ...recordLensDependencies(),
     listSubjects: listRecordSubjects,
     addSubject: addRecordSubject,

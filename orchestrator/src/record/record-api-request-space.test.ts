@@ -450,6 +450,7 @@ PUT /v1/lens-catalogue/profiles
 PUT /v1/lens-catalogue/selections
 POST /v1/port-catalogue/write
 POST /v1/port-catalogue/import
+POST /v1/questions/:intent
 POST /v1/task-flow/compose
 POST /v1/task-flow/stage-update
 POST /v1/task-flow/advance

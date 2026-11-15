@@ -12,6 +12,7 @@ import {
   RecordProjectSpaceConflictError,
 } from './record-project-space-contract.ts'
 import { RecordProjectError } from './record-projects.ts'
+import { RecordQuestionError } from './record-question-contract.ts'
 import { SpaceDeleteError } from './record-trial-space-contract.ts'
 import { RecordVerdictError } from './record-verdicts.ts'
 
@@ -25,6 +26,7 @@ export function renderRecordApiRefusal(context: Context, error: unknown): Respon
     error instanceof RecordVerdictError ||
     error instanceof ConfigServiceError ||
     error instanceof RecordProjectError ||
+    error instanceof RecordQuestionError ||
     error instanceof RecordBoardError ||
     error instanceof SpaceDeleteError ||
     error instanceof RecordProjectPurgeError

@@ -5,6 +5,7 @@ import {
   type RecordWriteDestination,
   workflowCataloguePath,
 } from './record-api-client-paths.ts'
+import { type RecordQuestionClient, recordQuestionClient } from './record-api-client-question.ts'
 import { type RecordTaskFlowClient, recordTaskFlowClient } from './record-api-client-task-flow.ts'
 import {
   type RecordWorkflowDraftInput,
@@ -48,35 +49,37 @@ async function importWorkflowCatalogue(
     throw error
   }
 }
-export type RecordWorkflowClient = RecordTaskFlowClient & {
-  listWorkflowCatalogue?(
-    table: RecordWorkflowTable,
-    query: { limit?: number; cursor?: string },
-    destination?: RecordRequestDestination,
-  ): Promise<{
-    items: Record<string, unknown>[]
-    nextCursor: string | null
-    endCursor?: string | null
-  }>
-  draftWorkflow?(
-    input: RecordWorkflowDraftInput,
-    destination: RecordWriteDestination,
-  ): Promise<RecordWorkflowWriteResponse>
-  promoteWorkflow?(
-    input: RecordWorkflowTransitionInput,
-    destination: RecordWriteDestination,
-  ): Promise<RecordWorkflowWriteResponse>
-  retireWorkflow?(
-    input: RecordWorkflowTransitionInput,
-    destination: RecordWriteDestination,
-  ): Promise<RecordWorkflowWriteResponse>
-  importWorkflowCatalogue?(
-    input: RecordWorkflowImportInput,
-    destination: RecordWriteDestination,
-  ): Promise<RecordWorkflowImportResult>
-}
+export type RecordWorkflowClient = RecordTaskFlowClient &
+  RecordQuestionClient & {
+    listWorkflowCatalogue?(
+      table: RecordWorkflowTable,
+      query: { limit?: number; cursor?: string },
+      destination?: RecordRequestDestination,
+    ): Promise<{
+      items: Record<string, unknown>[]
+      nextCursor: string | null
+      endCursor?: string | null
+    }>
+    draftWorkflow?(
+      input: RecordWorkflowDraftInput,
+      destination: RecordWriteDestination,
+    ): Promise<RecordWorkflowWriteResponse>
+    promoteWorkflow?(
+      input: RecordWorkflowTransitionInput,
+      destination: RecordWriteDestination,
+    ): Promise<RecordWorkflowWriteResponse>
+    retireWorkflow?(
+      input: RecordWorkflowTransitionInput,
+      destination: RecordWriteDestination,
+    ): Promise<RecordWorkflowWriteResponse>
+    importWorkflowCatalogue?(
+      input: RecordWorkflowImportInput,
+      destination: RecordWriteDestination,
+    ): Promise<RecordWorkflowImportResult>
+  }
 export const recordWorkflowClient = (request: Request): RecordWorkflowClient => ({
   ...recordTaskFlowClient(request),
+  ...recordQuestionClient(request),
   listWorkflowCatalogue: (table, query, destination) =>
     request(workflowCataloguePath(table, query), {
       ...destination,

@@ -75,6 +75,15 @@ const EXEMPTIONS: ReadonlyMap<string, ReadonlyMap<string, string>> = new Map([
       ],
     ]),
   ],
+  [
+    '20261115203645_dev_2331_question_routes',
+    new Map([
+      [
+        '*',
+        'EXECUTE replaces the record_move_project_space function definition and does not read or write table rows',
+      ],
+    ]),
+  ],
 ])
 
 type MigrationSource = { name: string; text: string }

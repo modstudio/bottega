@@ -315,6 +315,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'release.exit_code',
     'release.commits_behind_trunk',
     'question.revision',
+    'question_number_counter.next',
     'question.jev_input_tokens',
     'question.jev_question_version',
     ...taskIdentity.HOSTED_TASK_IDENTITY_INTEGER_COLUMNS,
