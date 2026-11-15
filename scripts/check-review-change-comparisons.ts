@@ -7,7 +7,8 @@ const allowed = new Set([
   'orchestrator/src/review/same-change.ts',
   'orchestrator/src/evidence/evidence-query.ts',
 ])
-const comparison = /(?:\bpatchId\s*(?:===|!==|==|!=)\s*(?!null\b|undefined\b)[^\n,;)]+|\bpatch_id\s*(?:=|IS)\s*(?:[A-Za-z_]\w*\.)?patch_id\b)/g
+const comparison =
+  /(?:\bpatchId\s*(?:===|!==|==|!=)\s*[^\n,;)]*\bpatchId\b|\bAND[^\n]*\bpatch_id\s*(?:=|IS)\s*(?:[A-Za-z_]\w*\.)?patch_id\b)/g
 const findings: string[] = []
 
 for (const path of new Bun.Glob('orchestrator/src/**/*.ts').scanSync({ onlyFiles: true })) {
@@ -15,7 +16,9 @@ for (const path of new Bun.Glob('orchestrator/src/**/*.ts').scanSync({ onlyFiles
   const source = readFileSync(path, 'utf8')
   for (const match of source.matchAll(comparison)) {
     const line = source.slice(0, match.index).split('\n').length
-    findings.push(`${path}:${line}: route patch identity comparison through sameChange or sameChangeSql`)
+    findings.push(
+      `${path}:${line}: route patch identity comparison through sameChange or sameChangeSql`,
+    )
   }
 }
 

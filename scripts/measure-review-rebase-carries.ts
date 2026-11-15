@@ -1,7 +1,7 @@
 // concern: review-rebase-carry-measurement
 /** Compares legacy and current same-change decisions over recorded rebase carries. */
 
-import { db } from '../orchestrator/src/database/db.ts'
+import { Database } from 'bun:sqlite'
 import { git, measureChangeIdentity, reviewGit } from '../orchestrator/src/review/review-pins.ts'
 import { gatherSameChange } from '../orchestrator/src/review/same-change-git.ts'
 
@@ -18,12 +18,21 @@ type CarryRow = {
   review_message: string | null
 }
 
-const database = db()
+const store = process.env.BOTTEGA_ORCHESTRATOR_DB?.trim()
+if (!store) throw new Error('BOTTEGA_ORCHESTRATOR_DB must name the store to measure')
+const database = new Database(store, { readonly: true, strict: true })
+const hasZeroContext = Boolean(
+  database
+    .query<{ found: number }, []>(
+      "SELECT 1 AS found FROM pragma_table_info('review') WHERE name='zero_context_patch_id'",
+    )
+    .get(),
+)
 const rows = database
   .query<CarryRow, []>(
     `SELECT carry.record_id,project.path,carry.tip,carry.reviewed_commit,carry.old_base,carry.new_base,
             review.patch_id AS review_patch_id,
-            review.zero_context_patch_id AS review_zero_context_patch_id,
+            ${hasZeroContext ? 'review.zero_context_patch_id' : 'NULL'} AS review_zero_context_patch_id,
             review.path_set AS review_path_set,review.commit_message AS review_message
        FROM landing_review_carry carry
        JOIN project ON project.record_id=carry.project_record_id
@@ -43,9 +52,7 @@ for (const row of rows) {
     unavailable.push({ recordId: row.record_id, reason: 'current range is unreachable' })
     continue
   }
-  const reviewedPaths = row.review_path_set
-    ? (JSON.parse(row.review_path_set) as string[])
-    : []
+  const reviewedPaths = row.review_path_set ? (JSON.parse(row.review_path_set) as string[]) : []
   const legacySame =
     row.review_patch_id === current.patchId &&
     JSON.stringify([...reviewedPaths].sort()) === JSON.stringify([...current.paths].sort())
@@ -85,3 +92,4 @@ console.log(
     2,
   ),
 )
+database.close()

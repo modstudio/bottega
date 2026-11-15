@@ -24,13 +24,13 @@ import {
   eligibleReviewRoundRows,
 } from '../review/review-round-budget.ts'
 import { reviewRoundIdentity } from '../review/review-round-identity.ts'
-import { sameChange } from '../review/same-change.ts'
 import {
   reviewRemoteTrunkRefExists,
   reviewTrunkRef,
   spawnGitProbe,
 } from '../review/review-target.ts'
 import { diffNumstat } from '../review/review-tier.ts'
+import { sameChange } from '../review/same-change.ts'
 import type {
   ReviewFunnelFacts,
   ReviewFunnelLensState,
@@ -112,7 +112,7 @@ function overrideFacts(
       sameChange({
         reviewed: {
           patchId,
-          zeroContextPatchId,
+          zeroContextPatchId: zeroContextPatchId ?? null,
           paths: pathSet ? (JSON.parse(pathSet) as string[]) : [],
           message: null,
         },
@@ -139,7 +139,7 @@ export type LandingOverrideRow = {
   tip: string
   tree: string
   patchId: string | null
-  zeroContextPatchId: string | null
+  zeroContextPatchId?: string | null
   pathSet: string | null
   attribution: 'operator' | 'architect-ceiling'
   reason: string

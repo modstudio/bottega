@@ -69,32 +69,30 @@ export function hasExactArchitectRead(
 ): boolean {
   const lineage = reviewLineage(database, project, branch)
   return database
-    .query<
-      { patch_id: string; zero_context_patch_id: string | null; path_set: string },
-      string[]
-    >(
+    .query<{ patch_id: string; zero_context_patch_id: string | null; path_set: string }, string[]>(
       `SELECT patch_id,zero_context_patch_id,path_set FROM review_read
           WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
             AND branch IN (${lineage.map(() => '?').join(',')})
           ORDER BY recorded_at DESC,record_id DESC`,
     )
     .all(project, ...lineage)
-    .some((read) =>
-      sameChange({
-        reviewed: {
-          patchId: read.patch_id,
-          zeroContextPatchId: read.zero_context_patch_id,
-          paths: JSON.parse(read.path_set) as string[],
-          message: null,
-        },
-        current: {
-          patchId,
-          zeroContextPatchId,
-          paths: JSON.parse(pathSet) as string[],
-          message: null,
-        },
-        replay: null,
-      }).same,
+    .some(
+      (read) =>
+        sameChange({
+          reviewed: {
+            patchId: read.patch_id,
+            zeroContextPatchId: read.zero_context_patch_id,
+            paths: JSON.parse(read.path_set) as string[],
+            message: null,
+          },
+          current: {
+            patchId,
+            zeroContextPatchId,
+            paths: JSON.parse(pathSet) as string[],
+            message: null,
+          },
+          replay: null,
+        }).same,
     )
 }
 
@@ -162,6 +160,7 @@ export function recordArchitectRead(
           string,
           string,
           string,
+          string | null,
           string,
           number,
           string,

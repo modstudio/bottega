@@ -1,9 +1,9 @@
 // concern: pull-request-admission-decision
 /** Admits one funnel verdict, crediting an override recorded for its stable patch identity. */
 
+import { sameChange } from '../review/same-change.ts'
 import type { ReviewFunnelVerdict } from '../review-funnel/decide-review-funnel.ts'
 import type { LandingOverrideRow } from '../review-funnel/gather-funnel-facts.ts'
-import { sameChange } from '../review/same-change.ts'
 
 export type AdmissionOverride = LandingOverrideRow
 
@@ -28,7 +28,7 @@ export function decideAdmission(
       sameChange({
         reviewed: {
           patchId: candidate.patchId,
-          zeroContextPatchId: candidate.zeroContextPatchId,
+          zeroContextPatchId: candidate.zeroContextPatchId ?? null,
           paths: candidate.pathSet ? (JSON.parse(candidate.pathSet) as string[]) : [],
           message: null,
         },

@@ -157,6 +157,7 @@ export const pullRequestModuleSpecs = [
       './review-lineage-store.ts',
       './review-pins.ts',
       './review-role.ts',
+      './same-change.ts',
       './review-target.ts',
       './review-tier-classifier.ts',
       './review-tier.ts',

@@ -75,6 +75,7 @@ export const reviewModules: ReviewModule[] = [
     './review-group.ts',
     './review-lineage-store.ts',
     './review-outbox.ts',
+    './same-change.ts',
     '../../../shared/bounded-process.ts',
   ]),
   module('orchestrator/src/review/review-pins.ts', [

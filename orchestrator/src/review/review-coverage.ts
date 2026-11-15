@@ -172,9 +172,7 @@ export function reviewCoverageVerdict(
   if (bases.size !== 1) return { kind: 'invalid', reason: 'lens bases disagree' }
   const resolved = commitForTree(runner, review, reviewedTree)
   const reviewedCommit = resolved.commit
-  if (!reviewedCommit) {
-    return invalidCoverage('reviewed commit not found', resolved.resolution)
-  }
+  if (!reviewedCommit) return invalidCoverage('reviewed commit not found', resolved.resolution)
   const baseCommit = review.lenses[0]!.baseCommit!
   if (!runner(['cat-file', '-e', `${baseCommit}^{commit}`]).ok) {
     return invalidCoverage('reviewed commit not found', resolved.resolution)
