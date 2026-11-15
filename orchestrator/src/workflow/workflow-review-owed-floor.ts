@@ -63,7 +63,15 @@ function gatherReviewOwedFloor(
   const activePolicy = activeReviewFunnelPolicy()
   return decideReviewOwedFloor(
     decideReviewFunnel(
-      gatherFunnelFacts({ database, cwd, base, head, branch, project }),
+      gatherFunnelFacts({
+        database,
+        cwd,
+        base,
+        head,
+        branch,
+        project,
+        selectionWindow: activePolicy.policy.selection.window,
+      }),
       activePolicy.policy,
       activePolicy.policyVersion,
     ),

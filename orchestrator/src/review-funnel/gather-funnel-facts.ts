@@ -37,6 +37,7 @@ import type {
   ReviewFunnelLensStatus,
   ReviewFunnelRoundFact,
 } from './decide-review-funnel.ts'
+import { reviewFunnelYieldCells } from './review-funnel-yield.ts'
 
 const RUNNING_LENS_STATUS = 'running' satisfies ReviewFunnelLensStatus
 const UNTRIAGED_LENS_STATUS = 'untriaged' satisfies ReviewFunnelLensStatus
@@ -48,6 +49,7 @@ export type ReviewFunnelChange = {
   head: string
   branch: string
   project: Project
+  selectionWindow: number
 }
 
 function reviewRoundFacts(
@@ -172,6 +174,7 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
       paths: identity.paths,
     },
     stack: change.project.stack,
+    yieldCells: reviewFunnelYieldCells(change.database, change.selectionWindow),
     files,
     review: change.project.settings.review,
     branchReviews: reviews.branchReviews,
