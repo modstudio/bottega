@@ -65,14 +65,16 @@ export function machineRevokeTrustLogFixture(
 export function trackedTrustLogClient(entries: Uint8Array[]) {
   const recordCallOrder: string[] = []
   let appendedTrustLogEntry: Uint8Array | null = null
+  const currentEntries = [...entries]
   return {
     recordCallOrder,
     appendedTrustLogEntry: () => appendedTrustLogEntry,
     methods: {
-      readTrustLog: async () => entries,
+      readTrustLog: async () => currentEntries,
       appendTrustLogEntry: async (_expectedHead: Uint8Array, entry: Uint8Array) => {
         recordCallOrder.push('appendTrustLogEntry')
         appendedTrustLogEntry = entry
+        currentEntries.push(entry)
         return trustLogEntryHash(entry)
       },
     },

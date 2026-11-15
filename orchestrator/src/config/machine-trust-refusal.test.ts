@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { machineTrustRefusal } from './machine-trust-refusal.ts'
+import { anchoredTrustRefusal, machineTrustRefusal } from './machine-trust-refusal.ts'
 
 const keyId = 'machine-key-id'
 
@@ -18,4 +18,39 @@ test('named-space repair keeps registration and trust in that space', () => {
 
 test('active machine registration proceeds', () => {
   expect(machineTrustRefusal(keyId, { revokedAt: null }, 'named-space')).toBeNull()
+})
+
+test('anchored trust checks the local key before the target key', () => {
+  const local = 'local-key'
+  const target = 'target-key'
+  const key = { public_key: 'public-key', label: 'fixture' }
+
+  expect(
+    anchoredTrustRefusal({ anchored: false, keys: {} }, { local, target }, 'named-space'),
+  ).toBeNull()
+  expect(
+    anchoredTrustRefusal(
+      { anchored: true, keys: { [target]: key } },
+      { local, target },
+      'named-space',
+    ),
+  ).toBe(
+    `this machine's key ${local} is not listed in the space's machine trust log\ncleared by: on this machine run \`${PLATFORM_SLUG} machine join --space named-space\`, then on a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve <code>\` with the code it prints`,
+  )
+  expect(
+    anchoredTrustRefusal(
+      { anchored: true, keys: { [local]: key } },
+      { local, target },
+      'named-space',
+    ),
+  ).toBe(
+    `the space's machine trust log does not list ${target}\ncleared by: on that machine run \`${PLATFORM_SLUG} machine join --space named-space\`, then on a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve <code>\` with the code it prints`,
+  )
+  expect(
+    anchoredTrustRefusal(
+      { anchored: true, keys: { [local]: key, [target]: key } },
+      { local, target },
+      'named-space',
+    ),
+  ).toBeNull()
 })

@@ -22,7 +22,11 @@ import {
   unwrapDataKey,
   wrapDataKey,
 } from '../../../shared/secret-envelope.ts'
-import { pinTrustedMachine } from '../../../shared/trust-list.ts'
+import { pinTrustedMachine, readTrustList } from '../../../shared/trust-list.ts'
+import {
+  machineRevokeTrustLogFixture,
+  trustLogFixtureSigningKey,
+} from './config-service-trust-log.fixture.ts'
 import { machineRegister, machineTrustInSpace } from './named-space-config.ts'
 
 const namedSpaceId = '01990000-0000-7000-8000-000000000101'
@@ -32,6 +36,7 @@ const pinnedUserId = userId
 const namedSpace = { spaceId: namedSpaceId, slug: 'named' }
 const activeSpace = { spaceId: activeSpaceId, slug: 'active' }
 const roots: string[] = []
+const emptyTrustLog = { readTrustLog: async () => [] }
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
@@ -64,6 +69,7 @@ test('named-space registration remains compatible when no signing key is stored'
   const current = await wrappedDataKey(namedSpaceId, keyId, pair)
   let signingPublicKey: string | undefined
   const client = {
+    ...emptyTrustLog,
     whoami: async () => identity,
     listMachineKeys: async () => [],
     registerMachineKey: async (
@@ -128,6 +134,7 @@ test('named-space registration claims an unowned key with the named space identi
   const destinations: Array<string | undefined> = []
   let claimed = false
   const client = {
+    ...emptyTrustLog,
     whoami: async () => identity,
     listMachineKeys: async (destination: { destinationSpaceId?: string }) => {
       destinations.push(destination.destinationSpaceId)
@@ -208,6 +215,7 @@ test('named-space registration creates the first data key with named-space seali
     userId,
   }
   const client = {
+    ...emptyTrustLog,
     whoami: async () => identity,
     listMachineKeys: async () => [machine],
     registerMachineKey: async () => machine,
@@ -246,10 +254,48 @@ test('named-space registration creates the first data key with named-space seali
   ).resolves.toHaveLength(32)
 })
 
+test('named-space data-key creation excludes a record-revoked key still in the trust log', async () => {
+  const { env, identity, keyId, pair } = await fixture(false)
+  const signing = trustLogFixtureSigningKey(41)
+  writeMachineSigningKey(signing, env)
+  const revoked = await generateMachineKeyPair()
+  const revokedKeyId = await machineKeyId(revoked.publicKey)
+  const log = machineRevokeTrustLogFixture(
+    true,
+    namedSpaceId,
+    [keyId, pair.publicKey, signing.publicKey, 'fixture'],
+    [revokedKeyId, revoked.publicKey, trustLogFixtureSigningKey(42).publicKey, 'revoked'],
+    signing.privateKey,
+  )
+  let wraps: Parameters<ConfigClient['createDataKey']>[0]['wraps'] = []
+  const machines = [
+    { keyId, revokedAt: null },
+    { keyId: revokedKeyId, revokedAt: '2026-11-12T00:00:00.000Z' },
+  ]
+  const client = {
+    readTrustLog: async () => log,
+    whoami: async () => identity,
+    listMachineKeys: async () => machines,
+    registerMachineKey: async () => ({ userId }),
+    currentDataKey: async () => {
+      throw new ConfigClientError('response', '/v1/config/data-keys/current', 404)
+    },
+    createDataKey: async (input: Parameters<ConfigClient['createDataKey']>[0]) => {
+      wraps = input.wraps
+      return { id: input.dekId, version: input.version }
+    },
+  } as unknown as ConfigClient
+
+  await machineRegister(namedSpace, 'fixture', client, env)
+
+  expect(wraps.map((wrap) => wrap.recipientKeyId)).toEqual([keyId])
+})
+
 test('named-space registration refuses a current data key without this machine wrap', async () => {
   const { env, identity, keyId, pair } = await fixture()
   const publicKey = Buffer.from(pair.publicKey).toString('base64url')
   const client = {
+    ...emptyTrustLog,
     whoami: async () => identity,
     listMachineKeys: async () => [{ keyId }],
     registerMachineKey: async () => ({ userId }),
@@ -269,6 +315,7 @@ test('trust in a named space routes every call and posts a wrap sealed for that 
   const destinations: Array<string | undefined> = []
   let posted: Parameters<ConfigClient['addWraps']>[1] | undefined
   const client = {
+    ...emptyTrustLog,
     whoami: async () => identity,
     listMachineKeys: async (destination: { destinationSpaceId?: string }) => {
       destinations.push(destination.destinationSpaceId)
@@ -323,6 +370,7 @@ test('trust in a named space refuses when the space has no data key', async () =
   const targetKeyId = await machineKeyId(target.publicKey)
   let addWrapsCalls = 0
   const client = {
+    ...emptyTrustLog,
     whoami: async () => identity,
     listMachineKeys: async () => [{ keyId: targetKeyId, revokedAt: null }],
     currentDataKey: async () => {
@@ -348,12 +396,83 @@ test('trust in a named space refuses when the space has no data key', async () =
   expect(addWrapsCalls).toBe(0)
 })
 
+test('trust in an anchored named space refuses a target absent from the log before pinning', async () => {
+  const { env, identity, keyId, pair } = await fixture(false)
+  const signing = trustLogFixtureSigningKey(51)
+  const loggedOther = await generateMachineKeyPair()
+  const loggedOtherId = await machineKeyId(loggedOther.publicKey)
+  const log = machineRevokeTrustLogFixture(
+    true,
+    namedSpaceId,
+    [keyId, pair.publicKey, signing.publicKey, 'fixture'],
+    [loggedOtherId, loggedOther.publicKey, trustLogFixtureSigningKey(52).publicKey, 'logged-other'],
+    signing.privateKey,
+  )
+  const target = await generateMachineKeyPair()
+  const targetKeyId = await machineKeyId(target.publicKey)
+  const client = {
+    readTrustLog: async () => log,
+    whoami: async () => identity,
+    listMachineKeys: async () => [{ keyId: targetKeyId, revokedAt: null }],
+  } as unknown as ConfigClient
+
+  await expect(
+    machineTrustInSpace(
+      targetKeyId,
+      Buffer.from(target.publicKey).toString('base64url'),
+      'target',
+      namedSpace,
+      client,
+      env,
+    ),
+  ).rejects.toThrow(
+    `the space's machine trust log does not list ${targetKeyId}\ncleared by: on that machine run \`${PLATFORM_SLUG} machine join --space named\`, then on a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve <code>\` with the code it prints`,
+  )
+  expect((await readTrustList(env))[targetKeyId]).toBeUndefined()
+})
+
+test("trust in an anchored named space refuses when this machine's key is absent before pinning", async () => {
+  const { env, identity, keyId } = await fixture(false)
+  const loggedOther = await generateMachineKeyPair()
+  const loggedOtherId = await machineKeyId(loggedOther.publicKey)
+  const signing = trustLogFixtureSigningKey(53)
+  const target = await generateMachineKeyPair()
+  const targetKeyId = await machineKeyId(target.publicKey)
+  const log = machineRevokeTrustLogFixture(
+    true,
+    namedSpaceId,
+    [loggedOtherId, loggedOther.publicKey, signing.publicKey, 'logged-other'],
+    [targetKeyId, target.publicKey, trustLogFixtureSigningKey(54).publicKey, 'target'],
+    signing.privateKey,
+  )
+  const client = {
+    readTrustLog: async () => log,
+    whoami: async () => identity,
+    listMachineKeys: async () => [{ keyId: targetKeyId, revokedAt: null }],
+  } as unknown as ConfigClient
+
+  await expect(
+    machineTrustInSpace(
+      targetKeyId,
+      Buffer.from(target.publicKey).toString('base64url'),
+      'target',
+      namedSpace,
+      client,
+      env,
+    ),
+  ).rejects.toThrow(
+    `this machine's key ${keyId} is not listed in the space's machine trust log\ncleared by: on this machine run \`${PLATFORM_SLUG} machine join --space named\`, then on a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve <code>\` with the code it prints`,
+  )
+  expect((await readTrustList(env))[targetKeyId]).toBeUndefined()
+})
+
 test('registration uses the explicitly selected active destination and leaves pinned identity unchanged', async () => {
   const { env, identity, keyId, pair } = await fixture()
   const originalPin = readHostedConfigIdentity(env)
   const current = await wrappedDataKey(activeSpaceId, keyId, pair)
   const destinations: Array<string | undefined> = []
   const client = {
+    ...emptyTrustLog,
     whoami: async () => identity,
     listMachineKeys: async (destination: { destinationSpaceId?: string }) => {
       destinations.push(destination.destinationSpaceId)
@@ -386,6 +505,7 @@ test("registration refuses when the data key wrap's sender is not trusted", asyn
   const { env, identity, keyId } = await fixture()
   const senderKeyId = 'untrusted-sender'
   const client = {
+    ...emptyTrustLog,
     whoami: async () => identity,
     listMachineKeys: async () => [{ keyId }],
     registerMachineKey: async () => ({ userId }),
@@ -407,5 +527,37 @@ test("registration refuses when the data key wrap's sender is not trusted", asyn
 
   await expect(machineRegister(namedSpace, 'fixture', client, env)).rejects.toThrow(
     `data key dek-untrusted in record space named was wrapped by untrusted-sender, which this machine does not trust; pin it with \`${PLATFORM_SLUG} machine config machine trust untrusted-sender <publicKey> --space named\` using that machine's public key from \`${PLATFORM_SLUG} machine config machine show\``,
+  )
+})
+
+test('registration names machine approve when an anchored log omits the data key sender', async () => {
+  const { env, identity, keyId, pair } = await fixture(false)
+  const signing = trustLogFixtureSigningKey(61)
+  const loggedOther = await generateMachineKeyPair()
+  const loggedOtherId = await machineKeyId(loggedOther.publicKey)
+  const log = machineRevokeTrustLogFixture(
+    true,
+    namedSpaceId,
+    [keyId, pair.publicKey, signing.publicKey, 'fixture'],
+    [loggedOtherId, loggedOther.publicKey, trustLogFixtureSigningKey(62).publicKey, 'logged-other'],
+    signing.privateKey,
+  )
+  const senderKeyId = 'untrusted-sender'
+  const client = {
+    readTrustLog: async () => log,
+    whoami: async () => identity,
+    listMachineKeys: async () => [{ keyId }],
+    registerMachineKey: async () => ({ userId }),
+    currentDataKey: async () => ({
+      id: 'dek-untrusted',
+      version: 1,
+      createdAt: '2026-11-09T00:00:00.000Z',
+      retiredAt: null,
+      wraps: [{ recipientKeyId: keyId, senderKeyId, enc: 'enc', ciphertext: 'ciphertext' }],
+    }),
+  } as unknown as ConfigClient
+
+  await expect(machineRegister(namedSpace, 'fixture', client, env)).rejects.toThrow(
+    `data key dek-untrusted in record space named was wrapped by untrusted-sender, which the space's machine trust log does not list\ncleared by: on this machine run \`${PLATFORM_SLUG} machine join --space named\`, then on a machine the trust log already trusts run \`${PLATFORM_SLUG} machine approve <code>\` with the code it prints`,
   )
 })

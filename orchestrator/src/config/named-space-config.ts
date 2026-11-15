@@ -10,7 +10,8 @@ import { readMachineKey } from '../../../shared/machine-key-store.ts'
 import { readMachineSigningKey } from '../../../shared/machine-signing-key.ts'
 import { pinnedUserMismatchRemedy } from '../../../shared/record-remedies.ts'
 import { generateDataKey } from '../../../shared/secret-envelope.ts'
-import { pinTrustedMachine, readTrustList } from '../../../shared/trust-list.ts'
+import { pinTrustedMachine } from '../../../shared/trust-list.ts'
+import { trustedKeysForSpace, trustForSpace } from '../../../shared/trust-log-keys.ts'
 import {
   bytes,
   claimMachineKey,
@@ -18,10 +19,15 @@ import {
   encoded,
   isNotFound,
   openDataKey,
+  wrapRecipientKeyIds,
   wrapsForRecipients,
 } from './data-key-access.ts'
 import { hostedConfigClient } from './hosted-config-call-outcome.ts'
-import { machineTrustRefusal } from './machine-trust-refusal.ts'
+import {
+  anchoredTrustRefusal,
+  anchoredWrapSenderRefusal,
+  machineTrustRefusal,
+} from './machine-trust-refusal.ts'
 
 type NamedSpace = {
   destination: ConfigDestination
@@ -55,12 +61,10 @@ async function wrapsForNamedSpace(
   env: ConfigEnvironment,
 ) {
   const [trusted, registered] = await Promise.all([
-    readTrustList(env),
+    trustedKeysForSpace(client, space.spaceId, env),
     client.listMachineKeys(space.destination),
   ])
-  const recipientKeyIds = registered
-    .filter((item) => item.userId !== null && item.revokedAt === null && trusted[item.keyId])
-    .map((item) => item.keyId)
+  const recipientKeyIds = wrapRecipientKeyIds(registered, trusted)
   return wrapsForRecipients(
     dek,
     { spaceId: space.spaceId, dekId, dekVersion: 1 },
@@ -109,12 +113,15 @@ export async function machineRegister(
   try {
     const current = await client.currentDataKey(keyId, space.destination)
     if (current.wraps.length === 0) throw trustRemedy(space, keyId, publicKey)
+    const trust = await trustForSpace(client, space.spaceId, env)
     try {
-      await openDataKey(current, space.spaceId, pair, await readTrustList(env))
+      await openDataKey(current, space.spaceId, pair, trust.keys)
     } catch (error) {
       if (!(error instanceof DataKeyWrapAccessError)) throw error
       const wrap = current.wraps[0]
       if (!wrap) throw trustRemedy(space, keyId, publicKey)
+      if (trust.anchored)
+        throw new Error(anchoredWrapSenderRefusal(current.id, space.slug, wrap.senderKeyId))
       throw new Error(
         `data key ${current.id} in record space ${space.slug} was wrapped by ${wrap.senderKeyId}, which this machine does not trust; pin it with \`${PLATFORM_SLUG} machine config machine trust ${wrap.senderKeyId} <publicKey> --space ${space.slug}\` using that machine's public key from \`${PLATFORM_SLUG} machine config machine show\``,
       )
@@ -154,16 +161,23 @@ export async function machineTrustInSpace(
   const registered = remote.find((item) => item.keyId === keyId)
   const refusal = machineTrustRefusal(keyId, registered, space.slug)
   if (refusal) throw new Error(refusal)
-  await pinTrustedMachine(keyId, publicBytes, label, env)
   const pair = readMachineKey(env)
   if (!pair)
     throw new Error(
       `machine key is not initialized; run \`${PLATFORM_SLUG} machine config machine init --space ${selectedSpace.slug}\``,
     )
   const localKeyId = await machineKeyId(pair.publicKey)
+  const beforePin = await trustForSpace(client, space.spaceId, env)
+  const anchoredRefusal = anchoredTrustRefusal(
+    beforePin,
+    { local: localKeyId, target: keyId },
+    space.slug,
+  )
+  if (anchoredRefusal) throw new Error(anchoredRefusal)
+  await pinTrustedMachine(keyId, publicBytes, label, env)
   try {
     const current = await client.currentDataKey(localKeyId, space.destination)
-    const trusted = await readTrustList(env)
+    const trusted = await trustedKeysForSpace(client, space.spaceId, env)
     const dek = await openDataKey(current, space.spaceId, pair, trusted)
     const [wrapped] = await wrapsForRecipients(
       dek,

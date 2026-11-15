@@ -12,7 +12,7 @@ import { parseRecordSpaceMemberships } from './record-space-membership.ts'
 import { recordSpaceRequestDecision } from './record-space-request.ts'
 import type { MachineKeyPair } from './secret-envelope.ts'
 import { openValue, SecretEnvelopeError, unwrapDataKey } from './secret-envelope.ts'
-import type { TrustList } from './trust-list.ts'
+import type { TrustedKeys } from './trust-log-keys.ts'
 
 export const HOSTED_CONFIG_ENVIRONMENT = 'default'
 
@@ -118,7 +118,7 @@ export async function hostedSecretIdentity(
 
 function trustedWrap(input: {
   key: DataKey
-  trust: TrustList
+  trust: TrustedKeys
   identity: HostedConfigIdentity
 }): DataKey['wraps'][number] {
   const wrap = input.key.wraps.find((candidate) => input.trust[candidate.senderKeyId])
@@ -133,7 +133,7 @@ export async function openHostedSecret(input: {
   row: ConfigSecret & { envelope: string }
   key: DataKey
   machine: MachineKeyPair & { keyId: string }
-  trust: TrustList
+  trust: TrustedKeys
   expected: { key: string; scope: ConfigSecret['scope']; environment: string }
   identity: HostedConfigIdentity
 }): Promise<Uint8Array> {

@@ -31,13 +31,10 @@ import { pinTrustedMachine } from '../../../shared/trust-list.ts'
 import {
   bytesEqual,
   type TrustLogKey,
+  type TrustState,
   trustLogEntryHash,
-  verifyTrustLog,
 } from '../../../shared/trust-log.ts'
-import {
-  readRememberedTrustLogHead,
-  writeRememberedTrustLogHead,
-} from '../../../shared/trust-log-head.ts'
+import { verifiedTrustLogForSpace } from '../../../shared/trust-log-keys.ts'
 import { machineTrust } from './config-service.ts'
 import { encoded } from './data-key-access.ts'
 import { appendSignedTrustLogEntry } from './trust-log-append.ts'
@@ -173,14 +170,7 @@ const mismatch = () =>
   new Error(`the pairing code did not match; start again with \`${PLATFORM_SLUG} machine join\``)
 
 async function loadVerifiedTrustLog(ports: Ports, selected: SelectedSpace) {
-  const entries = await ports.client.readTrustLog({ destinationSpaceId: selected.spaceId })
-  const remembered = readRememberedTrustLogHead(selected.spaceId, ports.env)
-  return {
-    entries,
-    state: entries.length
-      ? verifyTrustLog(entries, { spaceId: selected.spaceId, rememberedHead: remembered })
-      : null,
-  }
+  return verifiedTrustLogForSpace(ports.client, selected.spaceId, ports.env)
 }
 
 async function finishMachineJoinSession(
@@ -229,7 +219,7 @@ async function verifiedApprover(
   selected: SelectedSpace,
   nameplate: string,
   ownSide: string,
-  initial: ReturnType<typeof verifyTrustLog> | null,
+  initial: TrustState | null,
   ports: Ports,
 ): Promise<TrustLogKey> {
   if (
@@ -295,7 +285,6 @@ async function acceptDone(
       throw new Error(
         "the approver's trust-log head is not in the record's trust log; do not trust this record, and report it",
       )
-    writeRememberedTrustLogHead(selected.spaceId, state.head, ports.env)
   }
   await pinTrustedMachine(approver.keyId, approver.publicKey, approver.label, ports.env)
   if (!wrapped)
@@ -345,7 +334,7 @@ async function approveAndWrap(
   joiner: TrustLogKey,
   own: TrustLogKey,
   selected: SelectedSpace,
-  initial: ReturnType<typeof verifyTrustLog> | null,
+  initial: TrustState | null,
   ports: Ports,
 ): Promise<{ head: Uint8Array | null; failure: Error | null }> {
   const head = initial
