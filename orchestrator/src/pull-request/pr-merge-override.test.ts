@@ -187,7 +187,7 @@ test("merge honors create's triage override for the same patch after a rebase", 
       `INSERT INTO landing_override
         (record_id,project,project_record_id,branch,tip,tree,patch_id,zero_context_patch_id,path_set,reason,attribution,missing_lenses,session_id,at)
        SELECT ?,project,project_record_id,branch,tip,tree,patch_id,zero_context_patch_id,path_set,reason,
-              'architect-ceiling','["correctness"]',session_id,'2026-11-15T23:59:59.000Z'
+              'architect-ceiling','["correctness"]',session_id,strftime('%Y-%m-%dT%H:%M:%fZ',at,'+1 second')
          FROM landing_override WHERE project='merge-override-fixture' AND branch=?`,
     )
     .run(ceilingOverrideId, headBranch)
