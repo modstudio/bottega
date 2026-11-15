@@ -1738,6 +1738,14 @@
       "tag": "0226_zero_context_patch_id",
       "breakpoints": true,
       "compatibility": "additive"
+    },
+    {
+      "idx": 227,
+      "version": "6",
+      "when": 1794758400001,
+      "tag": "0227_workflow_cursor_project_number",
+      "breakpoints": true,
+      "compatibility": "fenced"
     }
   ]
 }

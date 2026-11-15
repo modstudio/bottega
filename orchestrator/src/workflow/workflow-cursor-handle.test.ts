@@ -488,7 +488,7 @@ test('a handle validates supplied identity and serves the active step for an ear
       {},
       opened.cursor,
     ),
-  ).rejects.toThrow(`cursor ${opened.cursor} project mismatch`)
+  ).rejects.toThrow('cursor handles changed to per-project numbers')
 })
 
 test('closing with task adopts a key once and rekeys cursor questions', async () => {
