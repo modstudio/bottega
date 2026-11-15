@@ -18,6 +18,7 @@ type StopSummaryCursor = {
 
 export type StopSummaryOwedItem = {
   kind: string
+  noun: string
   qualifier: string | null
   id: string
   command: string
@@ -50,6 +51,7 @@ const count = (value: number, singular: string, plural = `${singular}s`) =>
 
 type OwedGroup = {
   kind: string
+  noun: string
   qualifier: string | null
   command: string
   ids: string[]
@@ -68,6 +70,7 @@ function owedGroups(items: readonly StopSummaryOwedItem[]): OwedGroup[] {
     }
     groups.set(key, {
       kind: item.kind,
+      noun: item.noun,
       qualifier: item.qualifier,
       command: item.command,
       ids: [item.id],
@@ -82,7 +85,7 @@ function owedLine(group: OwedGroup): string {
   const findings = group.openFindings
     ? ` (${count(group.openFindings, 'finding')} open)`
     : ''
-  return `${count(group.ids.length, group.kind)}${qualifier}${findings}: ${group.ids.join(', ')} → ${group.command}`
+  return `${count(group.ids.length, group.noun)}${qualifier}${findings}: ${group.ids.join(', ')} → ${group.command}`
 }
 
 function blockKey(items: readonly StopSummaryOwedItem[]): string {

@@ -22,7 +22,8 @@ const facts = (overrides: Partial<StopSummaryFacts> = {}): StopSummaryFacts => (
   ...overrides,
 })
 const owed = (age = 0) => ({
-  kind: 'unscored run',
+  kind: 'unscored-run',
+  noun: 'unscored run',
   qualifier: 'implement, DEV-2297',
   id: '12',
   command: `${PLATFORM_SLUG} score <run>`,
@@ -152,7 +153,8 @@ describe('Stop summary decision', () => {
           { ...owed(), id: '13', qualifier: 'review-lens, DEV-2297' },
           {
             ...owed(),
-            kind: 'held worktree',
+            kind: 'held-worktree',
+            noun: 'held worktree',
             qualifier: 'implement',
             id: '14',
             command: `${PLATFORM_SLUG} run close-out <run>`,
@@ -167,11 +169,44 @@ describe('Stop summary decision', () => {
     ])
   })
 
+  test('grouped reviews include the total open findings', () => {
+    const reviews = [
+      {
+        ...owed(),
+        kind: 'untriaged-review',
+        noun: 'untriaged review',
+        qualifier: null,
+        id: '7',
+        command: `${PLATFORM_SLUG} review show <review>`,
+        openFindings: 2,
+      },
+      {
+        ...owed(),
+        kind: 'untriaged-review',
+        noun: 'untriaged review',
+        qualifier: null,
+        id: '8',
+        command: `${PLATFORM_SLUG} review show <review>`,
+        openFindings: 3,
+      },
+    ]
+    expect(decideStopSummary(facts({ owedItems: reviews })).lines.at(-1)).toBe(
+      `2 untriaged reviews (5 findings open): 7, 8 → ${PLATFORM_SLUG} review show <review>`,
+    )
+  })
+
   test('block identity ignores wording but changes when an id is added', () => {
     const first = decideStopSummary(facts({ owedItems: [owed()] }))
     const reworded = decideStopSummary(
       facts({
-        owedItems: [{ ...owed(), qualifier: 'different words', command: 'different command' }],
+        owedItems: [
+          {
+            ...owed(),
+            noun: 'rewritten run wording',
+            qualifier: 'different words',
+            command: 'different command',
+          },
+        ],
         previousBlockKey: first.blockKey,
       }),
     )

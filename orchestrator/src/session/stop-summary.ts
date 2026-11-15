@@ -143,7 +143,8 @@ export async function sessionStopSummary(
   const owedItems: StopSummaryOwedItem[] = [
     ...reviews.owedItems,
     ...owedRuns.map((run) => ({
-      kind: 'unscored run',
+      kind: 'unscored-run',
+      noun: 'unscored run',
       qualifier: [run.job, run.launch_key].filter(Boolean).join(', '),
       id: String(run.number),
       command: `${PLATFORM_SLUG} score <run>`,
@@ -152,9 +153,23 @@ export async function sessionStopSummary(
     ...heldTrees
       .filter((tree) => !activeTrees.includes(tree))
       .map((tree) => ({
-        kind: tree.job === LANDING_TREE_JOB ? 'held landing tree' : 'held worktree',
+        kind:
+          tree.job === LANDING_TREE_JOB && tree.worktree
+            ? 'held-landing-tree'
+            : tree.job === LANDING_TREE_JOB
+              ? 'held-landing-run'
+              : 'held-worktree',
+        noun:
+          tree.job === LANDING_TREE_JOB && tree.worktree
+            ? 'held landing tree'
+            : tree.job === LANDING_TREE_JOB
+              ? 'held landing run'
+              : 'held worktree',
         qualifier: tree.job === LANDING_TREE_JOB ? null : tree.job,
-        id: tree.worktree ?? String(tree.number),
+        id:
+          tree.job === LANDING_TREE_JOB && tree.worktree
+            ? tree.worktree
+            : String(tree.number),
         command:
           tree.job === LANDING_TREE_JOB && tree.worktree
             ? `${PLATFORM_SLUG} tree remove <worktree>`

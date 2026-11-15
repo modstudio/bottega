@@ -50,7 +50,8 @@ export function classifyStopSummaryReviews(
       review.finished_at,
     )
     owedItems.push({
-      kind: 'untriaged review',
+      kind: 'untriaged-review',
+      noun: 'untriaged review',
       qualifier: null,
       id: String(review.number),
       command: `${PLATFORM_SLUG} review show <review>`,

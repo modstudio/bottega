@@ -32,7 +32,8 @@ test('review rounds move only for live lenses and terminal untriaged rounds beco
   expect(result.incompleteReviews).toBe(1)
   expect(result.owedItems).toEqual([
     {
-      kind: 'untriaged review',
+      kind: 'untriaged-review',
+      noun: 'untriaged review',
       qualifier: null,
       id: '7',
       command: `${PLATFORM_SLUG} review show <review>`,
