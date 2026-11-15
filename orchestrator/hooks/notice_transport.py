@@ -33,6 +33,53 @@ REFUSED_NAME_MAX_CHARS = 80
 # What an id that renders to nothing is called, matching `refusedNoticeName`.
 EMPTY_NOTICE_ID_NAME = "(empty notice id)"
 
+# A grouped MONITOR line stays bounded while naming enough subjects to make the
+# condition recognizable.
+MONITOR_GROUP_LABEL_LIMIT = 8
+
+
+def monitor_lines(notices):
+    """Render one delivery entry per notice, folding repeated MONITOR kinds.
+
+    Landing rows are already complete operator-facing lines. A heartbeat row it
+    reported directly is marked suppressed by that hook and keeps its empty
+    delivery entry so its notice id is still acknowledged.
+    """
+    grouped = {}
+    for notice in notices:
+        kind = notice["kind"]
+        if kind.startswith("landing-") or notice.get("suppressed", False):
+            continue
+        grouped.setdefault(kind, []).append(notice)
+
+    rendered_kinds = set()
+    lines = []
+    for notice in notices:
+        kind = notice["kind"]
+        if notice.get("suppressed", False):
+            lines.append("")
+        elif kind.startswith("landing-"):
+            lines.append(notice["detail"])
+        elif kind in rendered_kinds:
+            lines.append("")
+        else:
+            rendered_kinds.add(kind)
+            rows = grouped[kind]
+            if len(rows) == 1:
+                lines.append(
+                    f'MONITOR {kind} {notice["label"]}: {notice["detail"]}'
+                )
+                continue
+            shown = rows[:MONITOR_GROUP_LABEL_LIMIT]
+            labels = ", ".join(row["label"] for row in shown)
+            omitted = len(rows) - len(shown)
+            more = f" and {omitted} more" if omitted else ""
+            lines.append(
+                f"MONITOR {kind} for {len(rows)}: {labels}{more}. "
+                f'{notice["label"]}: {notice["detail"]}'
+            )
+    return lines
+
 
 def transportable_notice_id(value):
     """Whether the notice row and the comma-separated acknowledgement list can carry this id."""

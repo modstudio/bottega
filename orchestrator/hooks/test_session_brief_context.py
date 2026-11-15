@@ -150,6 +150,99 @@ class AssembleAdditionalContext(unittest.TestCase):
         self.assertEqual(command[-6:], ["--bytes", "7", "--lines", "2", "--chars", "6"])
         self.assertTrue(popen.call_args.kwargs["start_new_session"])
 
+    def test_session_start_groups_a_multi_kind_monitor_batch(self):
+        groups = (
+            ("terminal-close-out-held", 16),
+            ("unscored-run", 16),
+            ("worker-gate-tooling-change", 2),
+        )
+        monitor_notices = []
+        for kind, count in groups:
+            for index in range(count):
+                monitor_notices.append({
+                    "noticeId": f"condition:{len(monitor_notices) + 1}",
+                    "kind": kind,
+                    "subject": f"run:{index + 1}",
+                    "label": f"run {index + 1}",
+                    "detail": f"{kind} detail",
+                    "ownerSession": "session-a",
+                })
+        stdin = io.StringIO(json.dumps({
+            "cwd": "/tmp",
+            "session_id": "session-a",
+            "source": "startup",
+        }))
+        stdout = io.StringIO()
+
+        def start(_bottega, *args, **_kwargs):
+            process = mock.Mock()
+            process.args = args
+            process.poll.return_value = 0
+            return process
+
+        def wait(process, _deadline):
+            args = process.args
+            if args[:2] == ("doc", "resumes"):
+                output = json.dumps({"open": [], "unreadable": []})
+            elif args[:2] == ("question", "inbox"):
+                output = json.dumps({
+                    "cwd_registered": True,
+                    "project": "bottega",
+                    "rows": [],
+                })
+            elif args[:3] == ("workflow", "fix-defect", "--waiting"):
+                output = json.dumps({
+                    "cwd_registered": True,
+                    "project": "bottega",
+                    "state": {
+                        "waiting": [],
+                        "unworked": [],
+                        "unscored": [],
+                        "blocked": None,
+                    },
+                })
+            elif args[:3] == ("agent", "context", "--cwd"):
+                output = json.dumps({"registered": False})
+            elif args[:2] == ("board", "read"):
+                output = json.dumps({
+                    "notices": [],
+                    "warning": None,
+                    "withheldOlderCount": 0,
+                })
+            elif args[:2] == ("machine", "monitor"):
+                output = json.dumps(monitor_notices)
+            else:
+                self.fail(f"unexpected subprocess command: {args}")
+            return SimpleNamespace(returncode=0, stdout=output, stderr="")
+
+        completed = SimpleNamespace(returncode=0, stdout="", stderr="")
+        with mock.patch.dict(session_brief.os.environ, {"HOME": "/tmp"}, clear=True):
+            with mock.patch.object(session_brief.sys, "stdin", stdin):
+                with mock.patch.object(session_brief.sys, "stdout", stdout):
+                    with mock.patch.object(session_brief, "_start", side_effect=start):
+                        with mock.patch.object(session_brief, "_wait", side_effect=wait):
+                            with mock.patch.object(
+                                session_brief,
+                                "_start_settings_apply",
+                                return_value=(None, None, None),
+                            ):
+                                with mock.patch.object(
+                                    session_brief.subprocess, "run", return_value=completed
+                                ):
+                                    with mock.patch.object(session_brief.subprocess, "Popen"):
+                                        code = session_brief.main()
+
+        self.assertEqual(code, 0)
+        context = json.loads(stdout.getvalue())["hookSpecificOutput"]["additionalContext"]
+        monitor_lines = [
+            line for line in context.splitlines() if line.startswith("MONITOR ")
+        ]
+        self.assertEqual(len(monitor_lines), 3, context)
+        self.assertEqual(
+            [line.split()[1] for line in monitor_lines],
+            [kind for kind, _count in groups],
+        )
+
     def test_injection_recording_launch_failure_reports_stderr(self):
         output = "assembled hook output"
         errors = io.StringIO()

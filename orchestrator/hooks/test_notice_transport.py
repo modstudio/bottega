@@ -13,6 +13,78 @@ SPEC.loader.exec_module(notice_transport)
 HOSTED_ID = "01990000-0000-7000-8000-000000000099"
 
 
+def monitor_notice(kind, label, detail=None, **extra):
+    return {
+        "kind": kind,
+        "label": label,
+        "detail": detail or f"detail for {label}",
+        **extra,
+    }
+
+
+class MonitorLines(unittest.TestCase):
+    def test_a_single_notice_keeps_its_existing_line(self):
+        self.assertEqual(
+            notice_transport.monitor_lines([
+                monitor_notice("unscored-run", "run 7", "read and score it")
+            ]),
+            ["MONITOR unscored-run run 7: read and score it"],
+        )
+
+    def test_repeated_kinds_render_at_their_first_positions(self):
+        notices = [
+            monitor_notice("unscored-run", "run 1"),
+            monitor_notice("terminal-close-out-held", "run 2"),
+            monitor_notice("unscored-run", "run 3"),
+            monitor_notice("terminal-close-out-held", "run 4"),
+        ]
+
+        self.assertEqual(
+            notice_transport.monitor_lines(notices),
+            [
+                "MONITOR unscored-run for 2: run 1, run 3. run 1: detail for run 1",
+                (
+                    "MONITOR terminal-close-out-held for 2: run 2, run 4. "
+                    "run 2: detail for run 2"
+                ),
+                "",
+                "",
+            ],
+        )
+
+    def test_group_labels_are_capped_and_name_the_omitted_count(self):
+        notices = [
+            monitor_notice("unscored-run", f"run {index}")
+            for index in range(notice_transport.MONITOR_GROUP_LABEL_LIMIT + 3)
+        ]
+
+        lines = notice_transport.monitor_lines(notices)
+
+        labels = ", ".join(
+            f"run {index}" for index in range(notice_transport.MONITOR_GROUP_LABEL_LIMIT)
+        )
+        self.assertEqual(
+            lines[0],
+            (
+                f"MONITOR unscored-run for 11: {labels} and 3 more. "
+                "run 0: detail for run 0"
+            ),
+        )
+        self.assertEqual(lines[1:], [""] * 10)
+
+    def test_non_monitor_rows_are_not_grouped(self):
+        notices = [
+            monitor_notice("landing-refused", "landing:1", "LANDING-REFUSED one"),
+            monitor_notice("landing-refused", "landing:2", "LANDING-REFUSED two"),
+            monitor_notice("stalled-run", "run 3", suppressed=True),
+        ]
+
+        self.assertEqual(
+            notice_transport.monitor_lines(notices),
+            ["LANDING-REFUSED one", "LANDING-REFUSED two", ""],
+        )
+
+
 class TransportableNoticeId(unittest.TestCase):
     def test_an_ordinary_id_is_accepted(self):
         for notice_id in (
