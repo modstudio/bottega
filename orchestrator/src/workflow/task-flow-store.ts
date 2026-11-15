@@ -182,7 +182,6 @@ interface TaskFlowQueries {
   cursorLifecycleForSession(sessionId: string): TaskFlowCursorLifecycleRow[]
   openStagesForSession(sessionId: string): TaskFlowOpenSessionStageRow[]
   keylessSessionCursors(project: string | null): TaskFlowKeylessSessionCursorRow[]
-  openWorkflowQuestionCountForSession(sessionId: string): number
   workflowInboxQuestions(): TaskFlowInboxQuestionRow[]
   rulingRows(input: {
     kind: 'workflow' | 'run' | 'all'

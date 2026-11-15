@@ -207,7 +207,7 @@ def heartbeat_decision(
             lines.append(
                 f"[{timestamp}] WAITING - {inbox_decision.user} waiting on you: "
                 f"run '{product} question inbox'. {run_count} run(s) and "
-                f"{landing_count} landing(s) live{detail}"
+                f"{landing_count} landing(s){requests}{holds} live{detail}"
             )
         else:
             lines.append(

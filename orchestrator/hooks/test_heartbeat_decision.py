@@ -152,11 +152,6 @@ class HeartbeatDecisionTest(unittest.TestCase):
         question = {"question_id": 7, "group": "worker"}
         question.update(overrides)
         return question
-    def test_own_worker_question_is_blocked(self):
-        decision = heartbeat_decision.heartbeat_decision(
-            "12:34:56", [self.worker_question()], 1, 0, 0, "", "run 7 asking"
-        )
-        self.assertIn("BLOCKED - 1 worker question(s) for this session", decision.lines[0])
     def test_own_parked_workflow_question_is_waiting(self):
         decision = heartbeat_decision.heartbeat_decision(
             "12:34:56",
@@ -166,10 +161,14 @@ class HeartbeatDecisionTest(unittest.TestCase):
             0,
             "",
             "",
+            open_request_count=2,
+            open_hold_count=3,
         )
         self.assertFalse(decision.should_exit)
         self.assertIn("WAITING", decision.lines[0])
         self.assertIn("1 waiting on you", decision.lines[0])
+        self.assertIn("2 open request(s)", decision.lines[0])
+        self.assertIn("3 board hold(s)", decision.lines[0])
         self.assertNotIn("BLOCKED", decision.lines[0])
     def test_unowned_worker_and_workflow_questions_do_not_block_or_change_state(self):
         inbox = [

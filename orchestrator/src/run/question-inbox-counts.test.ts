@@ -1,4 +1,5 @@
 import { beforeEach, expect, test } from 'bun:test'
+import { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -46,4 +47,8 @@ test('counts only live inbox rows through their shared groups', async () => {
     foreign: 1,
     unowned: 1,
   })
+})
+
+test('returns null when the inbox cannot be read', async () => {
+  expect(await questionInboxCountsForSession('session-a', new Database(':memory:'))).toBeNull()
 })
