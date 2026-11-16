@@ -107,22 +107,3 @@ describe('run listing hosted change cursor', () => {
   })
 })
 
-describe('run listing local change cursor', () => {
-  let previousRecordApiUrl: string | undefined
-
-  beforeEach(() => {
-    previousRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
-    delete process.env.BOTTEGA_RECORD_API_URL
-  })
-
-  afterEach(() => {
-    if (previousRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
-    else process.env.BOTTEGA_RECORD_API_URL = previousRecordApiUrl
-  })
-
-  test('collection probe returns the current local question position without rows', async () => {
-    const lines = await probe()
-    expect(lines.slice(0, -1).map(runJson)).toEqual([])
-    expect(decodeRunCursor(lines.at(-1)!)).toEqual({ run: 0, questions: '0' })
-  })
-})

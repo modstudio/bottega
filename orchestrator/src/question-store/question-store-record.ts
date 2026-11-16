@@ -81,15 +81,17 @@ function decodeSpaceCursors(value: string): SpaceCursors {
   }
 }
 
+const SINGLE_SPACE_READ_KINDS = ['by-id', 'by-number', 'for-run', 'for-cursor'] as const
+
 export class RecordQuestionStore implements QuestionStore {
   private readonly input: {
     database: Database
     client: RecordQuestionClient
-    pushRun?: (runId: string) => Promise<void>
   }
   private identityRead?: Promise<RecordIdentity>
   private readonly destinations = new Map<string, Promise<RecordWriteDestination>>()
   private everyDestination?: Promise<RecordWriteDestination[]>
+  private readonly questionSpaces = new Map<string, RecordWriteDestination>()
 
   constructor(input: RecordQuestionStore['input']) {
     this.input = input
@@ -126,11 +128,6 @@ export class RecordQuestionStore implements QuestionStore {
     return { destinationSpaceId: identity.personalSpaceId }
   }
 
-  private async pushRun(runId: string): Promise<void> {
-    if (this.input.pushRun) return this.input.pushRun(runId)
-    await resolveQuestionRunPusher()(this.input.database, runId)
-  }
-
   private allDestinations(): Promise<RecordWriteDestination[]> {
     this.everyDestination ??= this.identity().then((identity) => {
       const ids = new Set(
@@ -165,7 +162,13 @@ export class RecordQuestionStore implements QuestionStore {
       throw new Error(
         `${decision.refused}; remove the duplicate question from all but its authoritative space, then retry`,
       )
-    return decision.index === null ? { items: [] } : answers[decision.index]!.value
+    if (decision.index === null) return { items: [] }
+    const answer = answers[decision.index]!
+    for (const row of answer.value.items) {
+      const id = row.record_id ?? row.id
+      if (typeof id === 'string') this.questionSpaces.set(id, answer.destination)
+    }
+    return answer.value
   }
 
   private async listRead(input: QuestionReadInput): Promise<QuestionReadResult> {
@@ -179,7 +182,12 @@ export class RecordQuestionStore implements QuestionStore {
                 limit: undefined,
                 changedAfter: positions[destination.destinationSpaceId],
               }
-            : input
+            : input.read === 'inbox' && positions
+              ? {
+                  ...input,
+                  changedAfter: positions[destination.destinationSpaceId] ?? '0',
+                }
+              : input
         return { destination, value: await this.readAt(request, destination) }
       }),
     )
@@ -200,12 +208,26 @@ export class RecordQuestionStore implements QuestionStore {
     if (!this.input.client.writeQuestion)
       throw new Error('record API predates direct question writes; release hosted-api, then retry')
     if (intent === 'ask' && input.question.runId) {
-      await this.pushRun(input.question.runId)
+      await resolveQuestionRunPusher()(this.input.database, input.question.runId)
+    }
+    let destination: RecordWriteDestination
+    if (intent === 'ask') destination = await this.writeDestination(input.question.projectId)
+    else {
+      let found = this.questionSpaces.get(input.question.id)
+      if (!found) {
+        await this.singleSpaceRead({ read: 'by-id', ids: [input.question.id] })
+        found = this.questionSpaces.get(input.question.id)
+      }
+      if (!found)
+        throw new Error(
+          `question ${input.question.id} was not found in any reachable record space; rerun the command, then retry`,
+        )
+      destination = found
     }
     return await this.input.client.writeQuestion(
       intent,
       input,
-      await this.writeDestination(input.question.projectId),
+      destination,
     )
   }
 
@@ -214,10 +236,10 @@ export class RecordQuestionStore implements QuestionStore {
       throw new Error(
         `${questionChangedAfterRefusal.message}; ${questionChangedAfterRefusal.remedy}`,
       )
-    const result = ['by-id', 'by-number', 'for-run', 'for-cursor'].includes(input.read)
+    const result = (SINGLE_SPACE_READ_KINDS as readonly string[]).includes(input.read)
       ? await this.singleSpaceRead(input)
       : await this.listRead(input)
-    const enrichMachineFields = ['by-id', 'for-run', 'for-cursor', 'by-number'].includes(input.read)
+    const enrichMachineFields = (SINGLE_SPACE_READ_KINDS as readonly string[]).includes(input.read)
     const items = result.items.map((row) =>
       localQuestionRow(this.input.database, row, enrichMachineFields),
     )
@@ -243,6 +265,9 @@ export class RecordQuestionStore implements QuestionStore {
           : 0
         return { ...row, session_recent: recent }
       }),
+      ...(result.cursor === undefined ? {} : { cursor: result.cursor }),
+      ...(result.more === undefined ? {} : { more: result.more }),
+      ...(result.reset === undefined ? {} : { reset: result.reset }),
     } as QuestionReadResult
   }
 }

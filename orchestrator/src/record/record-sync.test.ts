@@ -30,6 +30,23 @@ const LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS =
   OUTBOX_PAYLOAD_CONTRACTS.landing_triage_snapshot.columns
 const PULL_REQUEST_CI_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.pull_request_ci.columns
 
+test('retired question outbox rows remain pending and untouched by sync', async () => {
+  const local = migratedTestDatabase()
+  local
+    .query(
+      "INSERT INTO outbox(record_id,kind,row_id,payload,created_at) VALUES (?,'question',?,?,?)",
+    )
+    .run(newRecordId(), newRecordId(), '{}', STAMP)
+  const result = await syncRecord(options(local, fakePostgres()))
+  expect(result).toMatchObject({ pushed: 0, failed: 0, pending: 1, quarantined: [] })
+  expect(
+    local
+      .query('SELECT synced_at,quarantined_at,retired_at,attempts FROM outbox')
+      .get(),
+  ).toEqual({ synced_at: null, quarantined_at: null, retired_at: null, attempts: 0 })
+  local.close()
+})
+
 function localPullRequestCiOutbox(): Database {
   const local = new Database(':memory:')
   local.exec(`CREATE TABLE outbox (

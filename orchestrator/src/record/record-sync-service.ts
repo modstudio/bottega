@@ -515,6 +515,8 @@ export function testFlakeValues(row: Payload) {
   }
 }
 
+export const RETIRED_OUTBOX_KINDS = new Set(['question'] as const)
+
 const recordKinds = {
   run: {
     ...OUTBOX_PAYLOAD_CONTRACTS.run,

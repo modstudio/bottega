@@ -1,10 +1,13 @@
-import { expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
-import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
+import { guardHostedTables } from '../database/hosted-table-guard.ts'
 import { ensureMachineIdentity } from '../database/db.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
-import { STAGE_BY_ID_READ_LIMIT } from '../question-store/question-store-record-task-flow-compat.ts'
 import type { RecordPayload } from '../record/record-sync-contract.ts'
 import type { HostedTaskFlowStageById } from '../record/record-task-flow-contract.ts'
 import { backfillTaskFlowRecords } from './task-flow-backfill.ts'
@@ -601,65 +604,6 @@ test('question joins refuse a stage missing from the hosted record', async () =>
   )
 })
 
-test('question stage lookups preserve parity below and above the by-id batch limit', async () => {
-  for (const stageCount of [STAGE_BY_ID_READ_LIMIT, STAGE_BY_ID_READ_LIMIT + 1]) {
-    const d = database()
-    const stages: HostedTaskFlowStageById[] = []
-    for (let index = 0; index < stageCount; index++) {
-      const number = index + 2
-      const suffix = String(number).padStart(12, '0')
-      const stageId = `10000000-0000-4000-8000-${suffix}`
-      const questionId = `20000000-0000-4000-8000-${suffix}`
-      d.query(
-        `INSERT INTO workflow_cursor
-         (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,
-          task_record_id,task_flow_record_id,instance_id,session_id,workflow_version_record_id,
-          catalogue_version_record_id,args,autonomy,ordinal,step_slug,state,closed,question,total_steps,
-          created_at,updated_at,enforcement,opened_machine_id,last_advanced_machine_id,revision)
-         SELECT ?,?,'fixture',project_record_id,'flow','default','DEV-2234',task_record_id,
-                NULL,?,'session-a',workflow_version_record_id,
-                catalogue_version_record_id,'{}','guided',0,'plan','running','[]',NULL,2,
-                created_at,updated_at,enforcement,opened_machine_id,last_advanced_machine_id,1
-           FROM workflow_cursor WHERE record_id='00000000-0000-4000-8000-000000000007'`,
-      ).run(stageId, number, `#${number}`)
-      d.query(
-        `INSERT INTO question
-         (record_id,number,workflow_cursor_record_id,workflow_key,asked_at,question)
-         VALUES (?,?,?,'DEV-2234',?,'batch?')`,
-      ).run(
-        questionId,
-        index + 1,
-        stageId,
-        `2026-11-12T00:00:${String(index).padStart(2, '0')}.000Z`,
-      )
-      const stage = hostedStage({ number, stageId })
-      stage.stage.instanceId = `#${number}`
-      stages.push(stage)
-    }
-
-    const counts = { stageLists: 0, stagesById: 0 }
-    const hosted = recordTaskFlowReadStore(
-      d,
-      createMemoryRecordApiClient({
-        taskFlowStages: stages,
-        taskFlowPageSize: 7,
-        taskFlowReadCounts: counts,
-      }),
-    )
-    const local = sqliteTaskFlowReadStore(d)
-    expect(await hosted.rulingRows({ kind: 'workflow', after: null, cursor: null })).toEqual(
-      await local.rulingRows({ kind: 'workflow', after: null, cursor: null }),
-    )
-    if (stageCount === STAGE_BY_ID_READ_LIMIT) {
-      expect(counts.stagesById).toBe(STAGE_BY_ID_READ_LIMIT)
-      expect(counts.stageLists).toBe(0)
-    } else {
-      expect(counts.stagesById).toBe(0)
-      expect(counts.stageLists).toBeGreaterThan(0)
-    }
-  }
-})
-
 test('machine-wide hosted reads merge every registered project space', async () => {
   const d = database()
   const secondProjectId = '00000000-0000-4000-8000-000000000020'
@@ -732,4 +676,47 @@ test('record adapter resolves a stage that reached the record through the sync p
 
   expect((await hosted.stageByHandle('fixture', 1))?.record_id).toBe(stageId)
   expect((await hosted.openStageForTask(TASK_ID))?.record_id).toBe(stageId)
+})
+
+describe('hosted task-flow question decorations', () => {
+  let previousRecordApiUrl: string | undefined
+
+  beforeEach(() => {
+    previousRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+    process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  })
+
+  afterEach(() => {
+    installRecordApiClient(null)
+    if (previousRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = previousRecordApiUrl
+  })
+
+  test('question-decorated reads never access the local question table', async () => {
+    const d = guardHostedTables(database(), ['question'])
+    const stage = hostedStage()
+    stage.stage.workflowKey = null
+    const client = createMemoryRecordApiClient({
+      taskFlowStages: [stage],
+      questions: [
+        {
+          id: '00000000-0000-4000-8000-000000000090',
+          number: 90,
+          workflowCursorRecordId: stage.stage.id,
+          workflowTaskId: TASK_ID,
+          askedAt: '2026-11-12T00:04:00.000Z',
+          question: 'Hosted?',
+          answer: 'yes',
+          answeredAt: '2026-11-12T00:05:00.000Z',
+          closedAt: null,
+        },
+      ],
+    })
+    installRecordApiClient(client)
+    const hosted = recordTaskFlowReadStore(d, client)
+    await hosted.listOpenStages({})
+    await hosted.keylessSessionCursors(null)
+    await hosted.rulingRows({ kind: 'all', after: null, cursor: null })
+    await hosted.taskRulingRows('fixture', TASK_ID, 10)
+  })
 })

@@ -10,13 +10,14 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const PRODUCTION_ROOT = 'orchestrator/src'
 const QUESTION_SQL = /\b(?:FROM|JOIN|INTO|UPDATE|DELETE\s+FROM)\s+question\b/g
 const EXACT_ADAPTERS = new Set([
+  'orchestrator/src/question-store/question-store-sqlite.ts',
+  'orchestrator/src/question-store/question-store-sqlite-reads.ts',
   'orchestrator/src/record/record-question-read.ts',
   'orchestrator/src/record/record-question-write.ts',
   'orchestrator/src/record/record-question-number.ts',
   // Retired record-sync question sender exemptions.
   'orchestrator/src/record/record-sync-service.ts',
   'orchestrator/src/record/record-sync.ts',
-  // Retired question outbox producer and backfill exemption.
   // Machine-local pending delivery marker exemption.
   'orchestrator/src/run/question-delivery-pending.ts',
   // Migration validation and the generic local number allocator are persistence adapters.
@@ -25,7 +26,6 @@ const EXACT_ADAPTERS = new Set([
 ])
 
 const allowed = (file: string): boolean =>
-  file.startsWith('orchestrator/src/question-store/') ||
   file.startsWith('orchestrator/src/database/migration') ||
   file.endsWith('.fixture.ts') ||
   EXACT_ADAPTERS.has(file)

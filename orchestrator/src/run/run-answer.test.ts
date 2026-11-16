@@ -168,26 +168,6 @@ describe('run answers', () => {
     })
   })
 
-  test('failed resume writes no retired question outbox rows', async () => {
-    const id = insert('asking', 'file-question', '01990000-0000-7000-8000-000000000043')
-    db()
-      .query('UPDATE run SET session_id=?,vendor_session=? WHERE record_id=?')
-      .run('orch-test-session', 'vendor', id)
-    db().query(newQuestionSql()).run(id, new Date().toISOString(), 'which shape?')
-    const dispatch: typeof detach = async () => {
-      throw new Error('fixture dispatch failed after sync')
-    }
-
-    await expect(
-      answerRun(
-        id,
-        { argv: ['use the existing shape'], recordOnly: false, flags },
-        { ...helpers, dispatch },
-      ),
-    ).rejects.toThrow('Resume failed: fixture dispatch failed after sync')
-
-    expect(db().query("SELECT payload FROM outbox WHERE kind='question'").all()).toEqual([])
-  })
   test('answer refuses questions split between live and stopped owners', async () => {
     const root = addRun({
       agent: 'codex',

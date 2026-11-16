@@ -874,6 +874,7 @@ export const importBoundaries: ImportBoundary[] = [
       './record-sync-contract.ts',
       './record-sync-result-decision.ts',
       './record-sync-results.ts',
+      './record-sync-service.ts',
       './record-sync-types.ts',
       '../workflow/task-flow-backfill.ts',
       '../review/review-outbox.ts',

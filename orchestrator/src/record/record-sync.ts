@@ -58,6 +58,7 @@ import {
 } from './record-sync-contract.ts'
 import type { RecordSyncBatchDependency } from './record-sync-result-decision.ts'
 import { applyRecordSyncBatchResults } from './record-sync-results.ts'
+import { RETIRED_OUTBOX_KINDS } from './record-sync-service.ts'
 import type {
   BlockedOutboxRow,
   HeldRecordSyncRows,
@@ -86,7 +87,6 @@ export function outboxOrder(kind: string, id: number): readonly [phase: number, 
   if (kind === 'landing_review_carry' || kind === 'landing_triage_snapshot') return [3, id]
   switch (kind) {
     case 'score':
-    case 'question':
     case 'review':
     case 'review_lens':
     case 'review_finding':
@@ -271,9 +271,11 @@ function preparePendingRows(local: Database): Set<PreparedOutboxRow> {
   const rows = local
     .query<OutboxRow, []>(
       `SELECT id, kind, row_id, payload FROM outbox
-       WHERE synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL ORDER BY id`,
+       WHERE synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL
+         AND kind NOT IN (${[...RETIRED_OUTBOX_KINDS].map(() => '?').join(',')})
+       ORDER BY id`,
     )
-    .all()
+    .all(...RETIRED_OUTBOX_KINDS)
     .sort((left, right) => {
       const [leftPhase, leftId] = outboxOrder(left.kind, left.id)
       const [rightPhase, rightId] = outboxOrder(right.kind, right.id)
@@ -298,9 +300,6 @@ function sourceProjectRecordId(local: Database, row: OutboxRow): string | null |
       LEFT JOIN project ON project.record_id=run.project_record_id WHERE run.record_id=?`,
     score: `SELECT project.record_id FROM run
       LEFT JOIN project ON project.record_id=run.project_record_id WHERE run.record_id=?`,
-    question: `SELECT project.record_id FROM question
-      LEFT JOIN run ON run.record_id=question.run_record_id
-      LEFT JOIN project ON project.record_id=run.project_record_id WHERE question.record_id=?`,
     review: `SELECT project.record_id FROM review
       LEFT JOIN project ON project.record_id=review.project_record_id WHERE review.record_id=?`,
     review_lens: `SELECT project.record_id FROM review_lens

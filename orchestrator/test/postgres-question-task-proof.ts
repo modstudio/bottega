@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record-id.ts'
 import { applyMigrations } from '../src/database/migrations.ts'
 import { writeProjectRegisterRow } from '../src/database/project-register-store.ts'
-import { recordQuestionStore } from '../src/question-store/question-store-record-factory.ts'
+import { RecordQuestionStore } from '../src/question-store/question-store-record.ts'
 import { SqliteQuestionStore } from '../src/question-store/question-store-sqlite.ts'
 import { recordApiClient } from '../src/record/record-api-client.ts'
 import type { QuestionWriteBody } from '../src/record/record-question-contract.ts'
@@ -525,10 +525,9 @@ export function registerQuestionTaskRecordSyncProof(
         audit: { action: 'ask', actorSession: null, at, reason: null },
       })
     }
-    const hostedStore = recordQuestionStore({
+    const hostedStore = new RecordQuestionStore({
       database: parityLocal,
       client,
-      pushRun: async () => {},
     })
     const sameKeys = (label: string, hosted: object | undefined, local: object | undefined) => {
       expect(hosted, `${label} hosted row`).toBeDefined()

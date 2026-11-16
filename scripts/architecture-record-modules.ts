@@ -615,7 +615,7 @@ export const recordModules: RecordModule[] = [
     '../agent/agent-registry.ts',
     '../agent/agents.ts',
     '../database/db.ts',
-    '../question-store/question-store-record-factory.ts',
+    '../question-store/question-store-record.ts',
     '../record/record-api-client-question.ts',
     '../postgres/postgres-migrate.ts',
     '../run/run-outbox.ts',

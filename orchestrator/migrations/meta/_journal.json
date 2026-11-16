@@ -1777,7 +1777,7 @@
       "when": 1794758400005,
       "tag": "0231_question_delivery_pending",
       "breakpoints": true,
-      "compatibility": "additive"
+      "compatibility": "fenced"
     }
   ]
 }
