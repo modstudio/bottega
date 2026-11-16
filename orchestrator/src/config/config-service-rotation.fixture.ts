@@ -128,6 +128,7 @@ export async function rotationFixture(
   }
   const projectId = '01990000-0000-7000-8000-000000000005'
   let secrets = sameKeyBindings ? [baseSecret, { ...baseSecret, projectId }] : [baseSecret]
+  const putSecretDestinations: Array<{ destinationSpaceId: string; projectId?: string | null }> = []
   const machines = [
     { keyId, publicKey: encode(pair.publicKey), label: 'current', createdAt: '', revokedAt: null },
     {
@@ -185,7 +186,9 @@ export async function rotationFixture(
     putSecret: async (
       _key: string,
       input: { dekId: string; envelope: string; projectId?: string | null },
+      destination: { destinationSpaceId: string; projectId?: string | null },
     ) => {
+      putSecretDestinations.push(destination)
       const index = secrets.findIndex((row) => row.projectId === (input.projectId ?? null))
       const secret = secrets[index]!
       const updated = {
@@ -227,6 +230,7 @@ export async function rotationFixture(
     recipientPublicKey: encode(recipient.publicKey),
     current: () => current,
     secrets: () => secrets,
+    putSecretDestinations,
     trustLog,
     appendedTrustLogEntry: trustLogClient.appendedTrustLogEntry,
     recordCallOrder: trustLogClient.recordCallOrder,

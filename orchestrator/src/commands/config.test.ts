@@ -43,6 +43,7 @@ test('config list --json presents the structured rows', () => {
 
 test('config set JSON for hosted and machine homes parses with the hub consumer contracts', async () => {
   const client = {
+    whoami: async () => ({ personalSpaceId: 'space-personal', memberships: [] }),
     putEntry: async () => ({ ...row, rowVersion: 4 }),
   } as unknown as ConfigClient
   const hosted = await setConfigEntry('autonomy.stage.review', 'review', 'user', null, client)

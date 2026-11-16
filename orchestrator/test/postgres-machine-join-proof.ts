@@ -487,14 +487,17 @@ export function registerMachineJoinProof(input: ProofInput): void {
           rowVersion: 1,
         },
       })
-      await fixture.approver.client.putSecret('proof', {
-        ...destination,
-        scope: 'space',
-        environment: 'default',
-        dekId,
-        envelope: encoded(envelope),
-        expectedRowVersion: null,
-      })
+      await fixture.approver.client.putSecret(
+        'proof',
+        {
+          scope: 'space',
+          environment: 'default',
+          dekId,
+          envelope: encoded(envelope),
+          expectedRowVersion: null,
+        },
+        destination,
+      )
 
       const joining = beginJoin(fixture)
       const code = await joining.code
