@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { exploreGraduation, type ExploreGraduationCandidate } from './explore-graduation.ts'
+import { type ExploreGraduationCandidate, exploreGraduation } from './explore-graduation.ts'
 
 const untouched = (overrides: Partial<ExploreGraduationCandidate> = {}) => ({
   cursor: 845,

@@ -34,7 +34,12 @@ export const cleanupBoundarySpecs = [
   {
     name: 'stop-summary-decision-boundary',
     file: 'orchestrator/src/session/stop-summary-decision.ts',
-    allowed: ['node:crypto', '../../../shared/brand.ts', './stop-summary-time.ts'],
+    allowed: [
+      'node:crypto',
+      '../../../shared/brand.ts',
+      './keyless-cursor-idle.ts',
+      './stop-summary-time.ts',
+    ],
     typeOnlyAllowed: ['../run/question-inbox-counts.ts'],
     reason: 'Keep the bounded Stop presentation independent of stores, processes, and clocks.',
   },

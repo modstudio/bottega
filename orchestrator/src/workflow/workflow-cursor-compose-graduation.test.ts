@@ -1,3 +1,4 @@
+import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
@@ -12,8 +13,7 @@ const taskArgs = {
   worktree: '/tmp/DEV-2323-work',
 }
 
-async function openExplore(session: string) {
-  const d = database()
+function openExplore(d: Database, session: string) {
   return d
     .query<{ id: number }, (string | number)[]>(
       `INSERT INTO workflow_cursor
@@ -31,7 +31,7 @@ async function openExplore(session: string) {
 test('task-bound composition closes the session untouched explore cursor', async () => {
   const d = database()
   const session = 'graduation-success'
-  const explore = await openExplore(session)
+  const explore = openExplore(d, session)
 
   const composed = await composeWorkflowWithCursor(
     'flow',
@@ -59,7 +59,7 @@ test('task-bound composition closes the session untouched explore cursor', async
 test('a close failure leaves the task-bound composition succeeded with its reason', async () => {
   const d = database()
   const session = 'graduation-close-failure'
-  const explore = await openExplore(session)
+  const explore = openExplore(d, session)
 
   const composed = await composeWorkflowWithCursor(
     'flow',

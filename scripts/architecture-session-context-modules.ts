@@ -30,8 +30,10 @@ export const sessionContextModules: SessionContextModule[] = [
     '../record/outbox-enqueue.ts',
     '../record/outbox-sanitize.ts',
     '../workflow/task-flow-store.ts',
+    './keyless-cursor-idle.ts',
     './session-start-context-limit.ts',
   ]),
+  module('orchestrator/src/session/keyless-cursor-idle.ts', ['../events.ts']),
   module('orchestrator/src/session/session-start-context-limit.ts', [
     '../../hooks/session-start-context.json',
   ]),

@@ -37,8 +37,8 @@ import {
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { storedCursorAutonomyJson } from './workflow-cursor-autonomy.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
-import { closeExploreForLifecycle } from './workflow-explore-lifecycle-close.ts'
 import { refuseUnlinkedCursorLabelCollision } from './workflow-cursor-task-reference.ts'
+import { closeExploreForLifecycle } from './workflow-explore-lifecycle-close.ts'
 import type { composeWorkflow } from './workflows.ts'
 
 type Composition = ReturnType<typeof composeWorkflow>
