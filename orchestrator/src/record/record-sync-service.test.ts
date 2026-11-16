@@ -300,7 +300,7 @@ realPostgres('hosted run task references', () => {
 })
 
 realPostgres('hosted question revisions', () => {
-  test('a lower revision carrying a number does not change a newer unnumbered row', async () => {
+  test('a lower revision allocates a number without changing newer hosted fields', async () => {
     await withQuestionFixture(async (admin, actor) => {
       expect(await pushQuestion(actor, 1, questionPayload())).toEqual({
         results: [{ id: 1, status: 'synced' }],
@@ -310,11 +310,11 @@ realPostgres('hosted question revisions', () => {
         { number: number | null; revision: number; question: string }[]
       >`
         SELECT number,revision,question FROM question WHERE id=${QUESTION_ID}::uuid`
-      expect(question).toEqual({ number: null, revision: 2, question: 'Newer question' })
+      expect(question).toEqual({ number: 1, revision: 2, question: 'Newer question' })
     })
   })
 
-  test('an equal revision carrying a number fills the hosted number', async () => {
+  test('an equal revision allocates a number without changing hosted fields', async () => {
     await withQuestionFixture(async (admin, actor) => {
       const payload = questionPayload()
       payload.revision = 2
@@ -328,7 +328,7 @@ realPostgres('hosted question revisions', () => {
         { number: number | null; revision: number; question: string }[]
       >`
         SELECT number,revision,question FROM question WHERE id=${QUESTION_ID}::uuid`
-      expect(question).toEqual({ number: 7, revision: 2, question: 'Equal revision question' })
+      expect(question).toEqual({ number: 1, revision: 2, question: 'Newer question' })
     })
   })
 

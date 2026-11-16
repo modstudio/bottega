@@ -43,6 +43,11 @@ import {
   verifyMigrationSessionBounds,
 } from './record-migration-session.ts'
 import {
+  proofQuestionNumberDedupe,
+  questionNumberDedupe,
+  seedQuestionNumberDedupe,
+} from './record-question-number-dedupe-proof.ts'
+import {
   proofRunOwnerRequired,
   runOwnerBackfill,
   runOwnerRequired,
@@ -814,6 +819,7 @@ async function applyAndProveMigration(
   if (migration.name === taskFlowStageBackfill)
     await proofTaskFlowStageBackfill(transaction, migration)
   if (migration.name === taskFlowStageContract) await proofTaskFlowStageContract(transaction)
+  if (migration.name === questionNumberDedupe) await proofQuestionNumberDedupe(transaction)
 }
 
 async function seedMigrationProof(
@@ -847,6 +853,7 @@ async function seedMigrationProof(
     await seedTaskChildUuidBackfill(transaction, { spaceId: PLATFORM_SPACE_ID })
   if (name === runOwnerBackfill) await seedRunOwnerBackfill(transaction, PLATFORM_SPACE_ID)
   if (name === runStackBackfill) await seedRunStackBackfill(transaction, PLATFORM_SPACE_ID)
+  if (name === questionNumberDedupe) await seedQuestionNumberDedupe(transaction)
   if (name === jsonbStringChecksValidate)
     await seedJsonbStringChecksValidate(transaction, {
       spaceId: PLATFORM_SPACE_ID,

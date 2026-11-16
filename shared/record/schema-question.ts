@@ -11,6 +11,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
 import { machine, project, space, spaceIdentity, tenantPolicies } from './schema.ts'
@@ -87,6 +88,7 @@ export const question = pgTable.withRLS(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
   (table) => [
+    uniqueIndex('question_space_number_unique').on(table.spaceId, table.number),
     index('question_workflow_task_id_idx').on(table.workflowTaskId),
     index('question_unlinked_workflow_key_idx')
       .on(table.spaceId, table.workflowKey)
