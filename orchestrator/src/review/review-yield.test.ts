@@ -507,6 +507,68 @@ describe('review yield', () => {
     expect(report.notRecorded[0]?.needed).toContain('only reviews with explicit')
   })
 
+  test('does not credit one OpenRouter model under two routing variants as a second opinion', () => {
+    const projectId = newRecordId()
+    db()
+      .query('INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,?)')
+      .run(
+        projectId,
+        'variant-project',
+        '/variant-project',
+        JSON.stringify({
+          review: {
+            lenses: [{ lens: 'correctness' }],
+            secondOpinion: { lens: 'correctness', minTier: 3 },
+          },
+        }),
+      )
+    db()
+      .query(
+        `INSERT INTO agent
+           (record_id,name,harness,backend,model,base_url,transport,caps,billing,operated_by)
+         VALUES (?,'openrouter-yield','codex','vendor','x/y','https://openrouter.ai/api/v1','cli','{}','subscription','vendor')`,
+      )
+      .run(newRecordId())
+    const lenses = ['x/y:floor', 'x/y'].map((model, index) => {
+      const reviewId = addReview(`2026-09-08T17:0${index}:00Z`, 'variant', true, '["a.ts"]')
+      db()
+        .query('UPDATE review SET project_record_id=?,tier=3 WHERE record_id=?')
+        .run(projectId, reviewId)
+      return addLens(reviewId, {
+        lens: 'correctness',
+        agent: 'openrouter-yield',
+        model,
+        minutes: 10,
+        branch: 'DEV-YIELD-variants',
+        overlap: 'shared',
+      })
+    })
+    for (const lensId of lenses) {
+      db()
+        .query(
+          `UPDATE review_lens SET reproduced='all',coverage='adequate',limits='named'
+            WHERE record_id=?`,
+        )
+        .run(lensId)
+      db()
+        .query(
+          `UPDATE run SET project_record_id=?,repo='variant-project'
+            WHERE record_id=(SELECT run_record_id FROM review_lens WHERE record_id=?)`,
+        )
+        .run(projectId, lensId)
+      db()
+        .query(
+          `INSERT INTO score (record_id,run_record_id,delivery,quality,scored_at)
+           SELECT ?,run_record_id,'full','right','2026-09-08T17:02:00Z'
+             FROM review_lens WHERE record_id=?`,
+        )
+        .run(newRecordId(), lensId)
+    }
+
+    const report = reviewYield({ project: 'variant-project' }, db(), NO_SUBSCRIPTION_COST)
+    expect(report.lenses.map((row) => row.key)).toEqual(['correctness'])
+  })
+
   test('groups each lens by size, risk and declared path area with medium-plus yield', () => {
     const projectId = newRecordId()
     db()

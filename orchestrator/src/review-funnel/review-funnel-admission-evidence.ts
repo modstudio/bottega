@@ -195,9 +195,9 @@ type SecondOpinionSelection =
   | { complete: false; lens: string; firstRunId: string | null }
 
 /**
- * The one rule for a second opinion: two completed, graded runs of the lens with distinct
- * recorded effective models. A complete selection names the reviews holding the two credited
- * runs, the earliest run with a model and the earliest with a different one.
+ * The one rule for a second opinion: two completed, graded runs of the lens whose evidence
+ * models differ, as identifySecondOpinionRun decides. A complete selection names the reviews
+ * holding the two credited runs.
  */
 function selectSecondOpinion(
   reviews: readonly TriageReviewRow[],
