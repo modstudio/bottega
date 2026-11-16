@@ -76,7 +76,12 @@ export async function applyQuestionAnswer(input: {
   })
   if (!mutation.applied) return false
   if (input.deliveryPendingAt)
-    markQuestionDeliveryPending(input.database, input.questionId, input.deliveryPendingAt)
+    markQuestionDeliveryPending(
+      input.database,
+      input.questionId,
+      mutation.question.runId,
+      input.deliveryPendingAt,
+    )
   else clearQuestionDeliveryPending(input.database, [input.questionId])
   if (input.delivery)
     appendQuestionDeliveries(

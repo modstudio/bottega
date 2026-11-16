@@ -833,6 +833,8 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'question_delivery.record_id',
     'question_delivery.question_record_id',
     'question_delivery.run_record_id',
+    'question_delivery_pending.question_record_id',
+    'question_delivery_pending.run_record_id',
     'question_mutation_audit.record_id',
     'question_mutation_audit.question_record_id',
     'release_ledger.record_id',

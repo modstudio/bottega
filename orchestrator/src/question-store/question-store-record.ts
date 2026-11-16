@@ -3,8 +3,14 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
+import { projectByRecordId } from '../project/project-read.ts'
 import type { RecordQuestionClient } from '../record/record-api-client-question.ts'
+import type { RecordWriteDestination } from '../record/record-api-client-paths.ts'
+import type { RecordIdentity } from '../record/record-auth.ts'
+import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
+import { decideSingleRecordSpace } from '../record/record-space-cardinality.ts'
 import type {
   QuestionIntent,
   QuestionReadInput,
@@ -48,16 +54,123 @@ function localQuestionRow(
   return mapped as QuestionReadRow
 }
 
+type SpaceCursors = Record<string, string>
+const encodeSpaceCursors = (spaces: SpaceCursors) =>
+  Buffer.from(JSON.stringify({ version: 1, spaces })).toString('base64url')
+function decodeSpaceCursors(value: string): SpaceCursors {
+  if (value === '0') return {}
+  try {
+    const parsed = JSON.parse(Buffer.from(value, 'base64url').toString()) as {
+      version?: unknown
+      spaces?: unknown
+    }
+    if (parsed.version !== 1 || !parsed.spaces || typeof parsed.spaces !== 'object') throw null
+    if (Object.values(parsed.spaces).some((cursor) => typeof cursor !== 'string' || !cursor))
+      throw null
+    return parsed.spaces as SpaceCursors
+  } catch {
+    throw new Error('question change cursor is malformed; retry without changedAfter for a fresh cursor')
+  }
+}
+
 export class RecordQuestionStore implements QuestionStore {
   private readonly input: {
     database: Database
     client: RecordQuestionClient
-    destinationSpaceId: string
     pushRun?: (runId: string) => Promise<void>
   }
+  private identityRead?: Promise<RecordIdentity>
+  private readonly destinations = new Map<string, Promise<RecordWriteDestination>>()
+  private everyDestination?: Promise<RecordWriteDestination[]>
 
   constructor(input: RecordQuestionStore['input']) {
     this.input = input
+  }
+
+  private identity(): Promise<RecordIdentity> {
+    this.identityRead ??= this.input.client.whoami
+      ? this.input.client.whoami()
+      : Promise.reject(new Error('record API predates identity reads; release hosted-api, then retry'))
+    return this.identityRead
+  }
+
+  private destination(projectId: string): Promise<RecordWriteDestination> {
+    const cached = this.destinations.get(projectId)
+    if (cached) return cached
+    const project = projectByRecordId(projectId, this.input.database)
+    if (!project) throw new Error(`project ${projectId} is not registered; register it, then retry`)
+    const result = requireProjectRecordDestination(project.name, project.settings, {
+      whoami: () => this.identity(),
+    }).then((destinationSpaceId) => ({ destinationSpaceId }))
+    this.destinations.set(projectId, result)
+    return result
+  }
+
+  private async writeDestination(projectId: string | null): Promise<RecordWriteDestination> {
+    if (projectId) return this.destination(projectId)
+    const identity = await this.identity()
+    if (!identity.personalSpaceId)
+      throw new Error('the signed-in user has no personal record space; repair record identity, then retry')
+    return { destinationSpaceId: identity.personalSpaceId }
+  }
+
+  private allDestinations(): Promise<RecordWriteDestination[]> {
+    this.everyDestination ??= this.identity().then((identity) => {
+      const ids = new Set(parseRecordSpaceMemberships(identity.memberships).map(({ spaceId }) => spaceId))
+      if (identity.personalSpaceId) ids.add(identity.personalSpaceId)
+      return [...ids].map((destinationSpaceId) => ({ destinationSpaceId }))
+    })
+    return this.everyDestination
+  }
+
+  private async readAt(input: QuestionReadInput, destination: RecordWriteDestination) {
+    if (!this.input.client.readQuestions)
+      throw new Error('record API predates direct question reads; release hosted-api, then retry')
+    return this.input.client.readQuestions(input, destination)
+  }
+
+  private async singleSpaceRead(input: QuestionReadInput): Promise<QuestionReadResult> {
+    const answers = await Promise.all(
+      (await this.allDestinations()).map(async (destination) => ({
+        destination,
+        value: await this.readAt(input, destination),
+      })),
+    )
+    const decision = decideSingleRecordSpace(
+      answers.map(({ destination, value }) => ({
+        spaceId: destination.destinationSpaceId,
+        found: value.items.length > 0,
+      })),
+    )
+    if ('refused' in decision)
+      throw new Error(
+        `${decision.refused}; remove the duplicate question from all but its authoritative space, then retry`,
+      )
+    return decision.index === null ? { items: [] } : answers[decision.index]!.value
+  }
+
+  private async listRead(input: QuestionReadInput): Promise<QuestionReadResult> {
+    const positions = input.changedAfter ? decodeSpaceCursors(input.changedAfter) : null
+    const answers = await Promise.all(
+      (await this.allDestinations()).map(async (destination) => {
+        const request =
+          input.read === 'rulings' && positions
+            ? { ...input, limit: undefined, changedAfter: positions[destination.destinationSpaceId] }
+            : input
+        return { destination, value: await this.readAt(request, destination) }
+      }),
+    )
+    const cursors = Object.fromEntries(
+      answers.flatMap(({ destination, value }) =>
+        value.cursor ? [[destination.destinationSpaceId, value.cursor] as const] : [],
+      ),
+    )
+    return {
+      items: answers.flatMap(({ value }) => value.items),
+      ...(Object.keys(cursors).length ? { cursor: encodeSpaceCursors(cursors) } : {}),
+      ...(answers.some(({ value }) => value.more) ? { more: true } : {}),
+      ...(answers.some(({ value }) => value.reset) ? { reset: true } : {}),
+    }
   }
 
   async write(intent: QuestionIntent, input: QuestionWriteBody) {
@@ -70,9 +183,11 @@ export class RecordQuestionStore implements QuestionStore {
         )
       await this.input.pushRun(input.question.runId)
     }
-    return await this.input.client.writeQuestion(intent, input, {
-      destinationSpaceId: this.input.destinationSpaceId,
-    })
+    return await this.input.client.writeQuestion(
+      intent,
+      input,
+      await this.writeDestination(input.question.projectId),
+    )
   }
 
   async read(input: QuestionReadInput): Promise<QuestionReadResult> {
@@ -80,11 +195,9 @@ export class RecordQuestionStore implements QuestionStore {
       throw new Error(
         `${questionChangedAfterRefusal.message}; ${questionChangedAfterRefusal.remedy}`,
       )
-    if (!this.input.client.readQuestions)
-      throw new Error('record API predates direct question reads; release hosted-api, then retry')
-    const result = await this.input.client.readQuestions(input, {
-      destinationSpaceId: this.input.destinationSpaceId,
-    })
+    const result = ['by-id', 'by-number', 'for-run', 'for-cursor'].includes(input.read)
+      ? await this.singleSpaceRead(input)
+      : await this.listRead(input)
     const enrichMachineFields = ['by-id', 'for-run', 'for-cursor', 'by-number'].includes(input.read)
     const items = result.items.map((row) =>
       localQuestionRow(this.input.database, row, enrichMachineFields),

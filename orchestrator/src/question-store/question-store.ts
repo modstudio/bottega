@@ -2,10 +2,16 @@
 /** Defines the question persistence boundary. */
 
 import type { Database } from 'bun:sqlite'
+import { recordApiClient } from '../record/record-api-client.ts'
+import { currentRecordWriteDecision, throwIfRecordRefused } from '../record/record-write-authority.ts'
+import { recordQuestionStore } from './question-store-record-factory.ts'
 import { SqliteQuestionStore } from './question-store-sqlite.ts'
 import type { QuestionStore } from './question-store-types.ts'
 
-/** SQLite stays authoritative in every install mode for this slice. */
 export function questionStore(database: Database): QuestionStore {
-  return new SqliteQuestionStore(database)
+  const decision = currentRecordWriteDecision(database)
+  throwIfRecordRefused(decision)
+  return decision.verdict === 'hosted'
+    ? recordQuestionStore({ database, client: recordApiClient() })
+    : new SqliteQuestionStore(database)
 }

@@ -6,12 +6,15 @@ import type { Database } from 'bun:sqlite'
 export function markQuestionDeliveryPending(
   database: Database,
   questionId: string,
+  runId: string | null,
   at: string,
 ): boolean {
   return (
     database
-      .query('UPDATE question SET delivery_pending_at=? WHERE record_id=?')
-      .run(at, questionId).changes === 1
+      .query(`INSERT INTO question_delivery_pending(question_record_id,run_record_id,pending_at)
+        VALUES (?,?,?) ON CONFLICT(question_record_id) DO UPDATE SET
+        run_record_id=excluded.run_record_id,pending_at=excluded.pending_at`)
+      .run(questionId, runId, at).changes === 1
   )
 }
 
@@ -22,8 +25,8 @@ export function clearQuestionDeliveryPending(
   if (questionIds.length === 0) return 0
   return database
     .query(
-      `UPDATE question SET delivery_pending_at=NULL
-       WHERE delivery_pending_at IS NOT NULL AND record_id IN (${questionIds.map(() => '?').join(',')})`,
+      `DELETE FROM question_delivery_pending
+       WHERE question_record_id IN (${questionIds.map(() => '?').join(',')})`,
     )
     .run(...questionIds).changes
 }
@@ -35,8 +38,8 @@ export function clearQuestionDeliveryPendingForRuns(
   if (runIds.length === 0) return 0
   return database
     .query(
-      `UPDATE question SET delivery_pending_at=NULL
-       WHERE delivery_pending_at IS NOT NULL AND run_record_id IN (${runIds.map(() => '?').join(',')})`,
+      `DELETE FROM question_delivery_pending
+       WHERE run_record_id IN (${runIds.map(() => '?').join(',')})`,
     )
     .run(...runIds).changes
 }
@@ -45,11 +48,11 @@ export function pendingQuestionIds(
   database: Database,
   input: { questionIds?: readonly string[]; runIds?: readonly string[] },
 ): string[] {
-  const clauses = ['delivery_pending_at IS NOT NULL']
+  const clauses: string[] = []
   const values: string[] = []
   if (input.questionIds) {
     if (input.questionIds.length === 0) return []
-    clauses.push(`record_id IN (${input.questionIds.map(() => '?').join(',')})`)
+    clauses.push(`question_record_id IN (${input.questionIds.map(() => '?').join(',')})`)
     values.push(...input.questionIds)
   }
   if (input.runIds) {
@@ -59,8 +62,9 @@ export function pendingQuestionIds(
   }
   return database
     .query<{ record_id: string }, string[]>(
-      `SELECT record_id FROM question WHERE ${clauses.join(' AND ')} ORDER BY number`,
+      `SELECT question_record_id FROM question_delivery_pending${clauses.length ? ` WHERE ${clauses.join(' AND ')}` : ''}
+       ORDER BY pending_at,question_record_id`,
     )
     .all(...values)
-    .map(({ record_id }) => record_id)
+    .map(({ question_record_id }) => question_record_id)
 }

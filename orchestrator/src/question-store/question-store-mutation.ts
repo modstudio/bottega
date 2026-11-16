@@ -118,7 +118,7 @@ export async function mutateQuestion(
     },
   })
   enqueueQuestionRecord(database, input.id)
-  return result
+  return { ...result, question: { ...current, ...input.changes } }
 }
 
 export function requireQuestionMutationApplied(

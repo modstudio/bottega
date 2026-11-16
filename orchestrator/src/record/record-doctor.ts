@@ -752,7 +752,6 @@ async function operatorRecordChecks(input: {
       const questionStore = recordQuestionStore({
         database: input.database,
         client: recordQuestionClient(recordApiRequest),
-        destinationSpaceId: identity.activeSpaceId,
       })
       const questionIds = (await questionStore.read({ read: 'rulings', kind: 'all' })).items.map(
         (row) => String((row as Record<string, unknown>).record_id),

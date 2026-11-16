@@ -11,7 +11,6 @@ import type { QuestionStore } from './question-store-types.ts'
 export function recordQuestionStore(input: {
   database: Database
   client: RecordQuestionClient
-  destinationSpaceId: string
   pushRun?: (runId: string) => Promise<void>
 }): QuestionStore {
   return new RecordQuestionStore({

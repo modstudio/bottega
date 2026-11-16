@@ -12,7 +12,7 @@ import { questionRulings } from '../question-store/question-store-read.ts'
 
 type RulingListOptions = {
   since?: string
-  changedAfter?: number | null
+  changedAfter?: string | null
   kind: 'workflow' | 'run' | 'all'
 }
 
@@ -22,7 +22,7 @@ export async function listRulings(options: RulingListOptions): Promise<RulingLis
 
 /** The rows changed after the cursor, with the snapshot the query was bounded by. */
 export async function listRulingChanges(
-  options: RulingListOptions & { changedAfter: number },
+  options: RulingListOptions & { changedAfter: string },
 ): Promise<RulingChanges> {
   const result = await queryRulings(options)
   if (result.cursor === null) throw new Error('unreachable: a changed-after query has a cursor')
@@ -30,7 +30,7 @@ export async function listRulingChanges(
 }
 
 async function queryRulings(options: RulingListOptions): Promise<{
-  cursor: number | null
+  cursor: string | null
   rows: RulingListRow[]
 }> {
   if (options.since) {
@@ -43,7 +43,7 @@ async function queryRulings(options: RulingListOptions): Promise<{
     ...(after === null ? {} : { changedAfter: String(after) }),
   })
   const rows = result.items
-  const cursor = result.cursor === undefined ? null : Number(result.cursor)
+  const cursor = result.cursor ?? null
   const parsed = z.array(RulingListSchema.element.strip()).parse(
     rows.map(({ number, ...row }) => ({
       id: number,

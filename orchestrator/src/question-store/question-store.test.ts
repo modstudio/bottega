@@ -16,8 +16,15 @@ const RUN_ID = '00000000-0000-4000-8000-000000000104'
 const WORKFLOW_QUESTION_ID = '00000000-0000-4000-8000-000000000105'
 const RUN_QUESTION_ID = '00000000-0000-4000-8000-000000000106'
 const EXCLUDED_QUESTION_ID = '00000000-0000-4000-8000-000000000108'
+const SPACE_ID = '00000000-0000-4000-8000-000000000109'
 type QuestionSnapshot = QuestionWriteBody['question']
 const field = (row: object, key: string): unknown => (row as Record<string, unknown>)[key]
+const whoami = async () => ({
+  user: { id: newRecordId() },
+  activeSpaceId: SPACE_ID,
+  personalSpaceId: SPACE_ID,
+  memberships: [{ space_id: SPACE_ID, name: 'Fixture', slug: 'fixture' }],
+})
 
 function snapshot(overrides: Partial<QuestionSnapshot> = {}): QuestionSnapshot {
   return {
@@ -284,9 +291,9 @@ test('SQLite and record question adapters satisfy every shared read and write co
   await questionStoreContract(
     recordQuestionStore({
       database: local,
-      destinationSpaceId: newRecordId(),
       pushRun: async () => {},
       client: {
+        whoami,
         readQuestions: async (input) =>
           (await hostedStore.read(input)) as { items: Record<string, unknown>[] },
         writeQuestion: (intent, input) => hostedStore.write(intent, input),
@@ -305,8 +312,8 @@ test('only the record adapter passes a rulings feed cursor through', async () =>
   ).rejects.toThrow('changedAfter is served only on a hosted install')
   const store = recordQuestionStore({
     database,
-    destinationSpaceId: newRecordId(),
     client: {
+      whoami,
       readQuestions: async (input) => ({
         items: [{ number: 1, record_id: WORKFLOW_QUESTION_ID }],
         cursor: input.changedAfter === 'cursor-7' ? 'cursor-11' : undefined,
@@ -362,11 +369,11 @@ test('record ask pushes its run first and enriches live, stale, and absent sessi
     )
   const store = recordQuestionStore({
     database,
-    destinationSpaceId: newRecordId(),
     pushRun: async (id) => {
       events.push(`push:${id}`)
     },
     client: {
+      whoami,
       writeQuestion: async () => {
         events.push('write')
         return { id: question.id, number: 1, revision: 1, applied: true }
@@ -396,8 +403,8 @@ test('record detail reads enrich machine-owned run and project fields locally', 
   const unregisteredRepoOwnerId = newRecordId()
   const store = recordQuestionStore({
     database,
-    destinationSpaceId: newRecordId(),
     client: {
+      whoami,
       readQuestions: async () => ({
         items: [
           { record_id: RUN_QUESTION_ID, owner_id: RUN_ID, repo: 'question-fixture' },

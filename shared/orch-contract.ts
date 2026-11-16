@@ -356,7 +356,7 @@ export const RulingListSchema = z.array(RulingListRowSchema)
 export type RulingListRow = z.infer<typeof RulingListRowSchema>
 
 export const RulingChangesSchema = z
-  .object({ cursor: z.number().int().nonnegative(), rows: RulingListSchema })
+  .object({ cursor: z.string().min(1), rows: RulingListSchema })
   .strict()
 export type RulingChanges = z.infer<typeof RulingChangesSchema>
 
@@ -440,13 +440,13 @@ export const OrchChangeCursorEnvelopeSchema = z
   .object({
     schema_version: z.literal(2),
     kind: z.literal('cursor'),
-    data: z.object({ cursor: z.number().int().nonnegative() }).strict(),
+    data: z.object({ cursor: z.string().min(1) }).strict(),
   })
   .strict()
 export type OrchChangeCursorEnvelope = z.infer<typeof OrchChangeCursorEnvelopeSchema>
 
 /** A cursor at or past every change returns no rows and only the current cursor. */
-export const COLLECT_CHANGE_CURSOR_PROBE = Number.MAX_SAFE_INTEGER
+export const COLLECT_CHANGE_CURSOR_PROBE = String(Number.MAX_SAFE_INTEGER)
 
 const RunIdentitySchema = z
   .object({

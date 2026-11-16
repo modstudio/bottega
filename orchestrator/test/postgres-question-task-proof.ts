@@ -626,7 +626,6 @@ export function registerQuestionTaskRecordSyncProof(
     }
     const hostedStore = recordQuestionStore({
       database: parityLocal,
-      destinationSpaceId: directSpaceId,
       client,
       pushRun: async () => {},
     })
