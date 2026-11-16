@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import type { WorkflowCursorListRow } from '../workflow/workflow-cursor-list.ts'
@@ -36,6 +37,42 @@ test('landed branch review-line decisions use commit identity and ancestry', () 
       headIsAncestorOfTip: false,
     }),
   ).toBeFalse()
+})
+
+test('empty branches produce no review line while non-empty branches still do', () => {
+  const database = migratedTestDatabase()
+  const projectId = newRecordId()
+  database
+    .query(
+      `INSERT INTO project (record_id,name,path,stack,canon,settings)
+       VALUES (?,'fixture','/fixture','typescript',0,'{"trunk":"main"}')`,
+    )
+    .run(projectId)
+  const cursors = ['DEV-2350-empty', 'DEV-2350-built'].map(
+    (branch) =>
+      ({
+        workflow_slug: 'ship-task',
+        workflow_key: 'DEV-2350',
+        project: 'fixture',
+        args: JSON.stringify({ branch }),
+      }) as WorkflowCursorListRow,
+  )
+
+  expect(
+    sessionReviewVerdictLines(
+      'session',
+      cursors,
+      database,
+      (branch) =>
+        branch.branch === 'DEV-2350-empty'
+          ? null
+          : { branch: branch.branch, taskKey: branch.taskKey, failure: 'measured failure' },
+      () => true,
+    ),
+  ).toEqual([
+    `DEV-2350 review: verdict unavailable (measured failure) → ${PLATFORM_SLUG} review tier DEV-2350-built`,
+  ])
+  database.close()
 })
 
 test('cursor-claimed branches skip merged heads but gather commits made after the merge', () => {

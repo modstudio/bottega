@@ -29,7 +29,7 @@ type RootRunBranchRow = Omit<InFlightBranch, 'claimedByCursor'> & { job: string 
 export type SessionReviewVerdictGatherer = (
   branch: InFlightBranch,
   database: Database,
-) => StopSummaryReviewVerdictFact
+) => StopSummaryReviewVerdictFact | null
 
 export type SessionReviewBranchRefExists = (branch: InFlightBranch, database: Database) => boolean
 
@@ -178,7 +178,7 @@ function branchLandingIdentity(
 function gatherBranchReviewVerdict(
   branch: InFlightBranch,
   database: Database,
-): StopSummaryReviewVerdictFact {
+): StopSummaryReviewVerdictFact | null {
   try {
     const project = registeredBranchProject(branch, database)
     const trunk = project.settings.trunk?.trim()
@@ -197,7 +197,7 @@ function gatherBranchReviewVerdict(
     const headCommit = head.stdout.toString().trim()
     const base = resolveReviewBase(cwd, headCommit, trunk)
     if (!base) throw new Error(`cannot find merge-base with trunk ${trunk}`)
-    const { verdict } = reviewFunnelVerdictForChange({
+    const result = reviewFunnelVerdictForChange({
       database,
       cwd,
       base,
@@ -205,7 +205,8 @@ function gatherBranchReviewVerdict(
       branch: branch.branch,
       project,
     })
-    return { branch: branch.branch, taskKey: branch.taskKey, verdict }
+    if (result.kind === 'empty') return null
+    return { branch: branch.branch, taskKey: branch.taskKey, verdict: result.verdict }
   } catch (cause) {
     return { branch: branch.branch, taskKey: branch.taskKey, failure: String(cause) }
   }
@@ -248,7 +249,8 @@ export function sessionReviewVerdictLines(
           // Gathering owns the user-visible remedy when the git comparison fails.
         }
       }
-      return [gather(branch, database)]
+      const fact = gather(branch, database)
+      return fact === null ? [] : [fact]
     }),
   )
 }

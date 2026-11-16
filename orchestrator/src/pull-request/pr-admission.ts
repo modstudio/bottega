@@ -15,7 +15,11 @@ import type { ApplicableReview, ReviewFunnelPlan } from '../review/review-applic
 import { type ChangeGroup, measureChangeGroup, serializePathSet } from '../review/review-group.ts'
 import { gatherPostFixReviewFacts, postFixReviewDecision } from '../review/review-post-fix.ts'
 import type { ReviewRoundBudgetDecision } from '../review/review-round-budget.ts'
-import { reviewRemoteTrunkRefExists, reviewTrunkRef } from '../review/review-target.ts'
+import {
+  emptyReviewRefusal,
+  reviewRemoteTrunkRefExists,
+  reviewTrunkRef,
+} from '../review/review-target.ts'
 import type { ReviewFunnelVerdict } from '../review-funnel/decide-review-funnel.ts'
 import {
   gatherAdmissionEvidenceDecision,
@@ -178,8 +182,21 @@ function funnelChange(change: PullRequestChange, database: Database) {
   }
 }
 
+class EmptyReviewError extends Error {}
+
 function funnelVerdict(change: PullRequestChange, database: Database) {
-  return reviewFunnelVerdictForChange(funnelChange(change, database))
+  const result = reviewFunnelVerdictForChange(funnelChange(change, database))
+  if (result.kind === 'empty') {
+    throw new EmptyReviewError(
+      emptyReviewRefusal(
+        result.commit,
+        result.base,
+        change.branch,
+        change.project.settings.trunk!.trim(),
+      )!,
+    )
+  }
+  return result
 }
 
 function funnelRefusal(condition: string, verdict: ReviewFunnelVerdict): string {
@@ -732,6 +749,16 @@ export function checkPushedTip(cwd: string, sha: string, remoteRef: string): Pus
     }
   } catch (cause) {
     if (cause instanceof BoundExceededError) throw cause
+    if (cause instanceof EmptyReviewError) {
+      return {
+        known: true,
+        complete: false,
+        infrastructureError: null,
+        refusal: cause.message,
+        pendingIntent: false,
+        overrideId: null,
+      }
+    }
     return {
       known: true,
       complete: true,

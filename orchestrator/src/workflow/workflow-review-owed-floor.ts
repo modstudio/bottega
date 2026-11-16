@@ -57,9 +57,7 @@ function gatherReviewOwedFloor(
       action: 'refuse',
       message: `floor review-owed cannot find a merge-base between branch ${branch} and trunk ${trunk}; pass \`--arg worktree=<path>\` naming an up-to-date checkout, or fetch ${trunk}`,
     }
-  const emptyRefusal = emptyReviewRefusal(head, base, branch, trunk)
-  if (emptyRefusal) return { action: 'refuse', message: emptyRefusal }
-  const { facts, verdict } = reviewFunnelVerdictForChange({
+  const result = reviewFunnelVerdictForChange({
     database,
     cwd,
     base,
@@ -67,6 +65,13 @@ function gatherReviewOwedFloor(
     branch,
     project,
   })
+  if (result.kind === 'empty') {
+    return {
+      action: 'refuse',
+      message: emptyReviewRefusal(result.commit, result.base, branch, trunk)!,
+    }
+  }
+  const { facts, verdict } = result
   const decision = decideReviewOwedFloor(verdict)
   recordReviewFunnelDecision({
     database,
