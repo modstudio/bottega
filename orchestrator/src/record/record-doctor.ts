@@ -781,9 +781,9 @@ async function operatorRecordChecks(input: {
         await tx`SELECT set_config('app.user_id', ${identity.record.user.id}, true)`
         await tx`SELECT set_config('app.space_id', ${identity.record.activeSpaceId}, true)`
         const runs =
-          await tx`SELECT count(*)::int AS total, count(*) FILTER (WHERE started_by_user_id IS NULL)::int AS missing FROM run WHERE space_id=${identity.activeSpaceId}::uuid`
+          await tx`SELECT count(*)::int AS total, count(*) FILTER (WHERE started_by_user_id IS NULL)::int AS missing FROM run WHERE space_id=${identity.record.activeSpaceId}::uuid`
         const intervals =
-          await tx`SELECT count(*)::int AS total, count(*) FILTER (WHERE session_id IS NULL)::int AS missing FROM hub_interval WHERE space_id=${identity.activeSpaceId}::uuid AND source='claude'`
+          await tx`SELECT count(*)::int AS total, count(*) FILTER (WHERE session_id IS NULL)::int AS missing FROM hub_interval WHERE space_id=${identity.record.activeSpaceId}::uuid AND source='claude'`
         return {
           runs: runs[0]!,
           intervals: intervals[0]!,

@@ -70,11 +70,13 @@ describe('run listing hosted change cursor', () => {
         personalSpaceId,
         memberships: [],
       }),
-      readQuestions: async (input) => {
+      readQuestions: async (
+        input: Parameters<NonNullable<RecordApiClient['readQuestions']>>[0],
+      ) => {
         changedAfter.push(input.changedAfter)
         return { items: [], cursor: `record-position-${changedAfter.length}` }
       },
-    } as RecordApiClient)
+    } as unknown as RecordApiClient)
 
     const initialLines = await probe()
     expect(initialLines.slice(0, -1).map(runJson)).toEqual([])

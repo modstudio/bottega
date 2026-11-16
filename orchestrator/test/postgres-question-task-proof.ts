@@ -3,8 +3,8 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record-id.ts'
 import { applyMigrations } from '../src/database/migrations.ts'
 import { writeProjectRegisterRow } from '../src/database/project-register-store.ts'
-import { questionStore } from '../src/question-store/question-store.ts'
 import { recordQuestionStore } from '../src/question-store/question-store-record-factory.ts'
+import { SqliteQuestionStore } from '../src/question-store/question-store-sqlite.ts'
 import { recordApiClient } from '../src/record/record-api-client.ts'
 import type { QuestionWriteBody } from '../src/record/record-question-contract.ts'
 import { registerHostedTaskLinkConvergenceProof } from './postgres-task-link-convergence-proof.ts'
@@ -498,7 +498,7 @@ export function registerQuestionTaskRecordSyncProof(
         VALUES (?,2,?,'codex','proof',NULL,'sha',1,'proof','running','projectless-question-proof',1,
           'DEV-2331','[]',NULL,NULL)`)
       .run(projectlessRunId, at)
-    const localStore = questionStore(parityLocal)
+    const localStore = new SqliteQuestionStore(parityLocal)
     for (const question of [workflowQuestion, excludedQuestion, runQuestion]) {
       const localQuestion = question.workflowCursorRecordId
         ? { ...question, workflowTaskId: directTaskId }
