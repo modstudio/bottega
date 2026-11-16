@@ -50,6 +50,15 @@ class HeartbeatDecisionTest(unittest.TestCase):
         decision = heartbeat_decision.heartbeat_decision("12:34:56", [], 0, 0, 0, "", "")
         self.assertTrue(decision.should_exit)
         self.assertEqual(decision.lines, [])
+    def test_heartbeat_off_line_groups_pluralized_counts(self):
+        self.assertEqual(
+            heartbeat_decision.heartbeat_off_line(1, 0, 1, "arm command"),
+            "Heartbeat off: 1 run · 0 landings · 1 worker question. Arm: arm command",
+        )
+        self.assertEqual(
+            heartbeat_decision.heartbeat_off_line(2, None, 2, "arm command"),
+            "Heartbeat off: 2 runs · landings unknown · 2 worker questions. Arm: arm command",
+        )
     def test_unreleased_live_hold_keeps_looping(self):
         decision = heartbeat_decision.heartbeat_decision(
             "12:34:56", [], 0, 0, 0, "", "", open_hold_count=1,
@@ -169,7 +178,19 @@ class HeartbeatDecisionTest(unittest.TestCase):
         self.assertIn("1 waiting on you", decision.lines[0])
         self.assertIn("2 open request(s)", decision.lines[0])
         self.assertIn("3 board hold(s)", decision.lines[0])
+        self.assertNotIn("request title", decision.lines[0])
         self.assertNotIn("BLOCKED", decision.lines[0])
+    def test_waiting_request_count_omits_request_title(self):
+        decision = heartbeat_decision.heartbeat_decision(
+            "12:34:56", [], 0, 0, 0, "", "", open_request_count=1
+        )
+        self.assertEqual(
+            decision.lines,
+            [
+                "[12:34:56] WAITING - 0 run(s) and 0 landing(s) and "
+                "1 open request(s), nothing needed from you"
+            ],
+        )
     def test_unowned_worker_and_workflow_questions_do_not_block_or_change_state(self):
         inbox = [
             {"question_id": 4607, "group": "unowned"},

@@ -27,6 +27,11 @@ def observe_board_requests(path: str, session_id: str, redact_secret_shaped) -> 
                 (session_id,),
             )
         }
+        local_task_keys: dict[str, set[str]] = {}
+        for message_id, value in connection.execute(
+            "SELECT message_record_id,value FROM board_message_tag WHERE kind='task'"
+        ):
+            local_task_keys.setdefault(message_id, set()).add(value)
         roots, replies = [], []
         for row in connection.execute(
             "SELECT record_id,number,kind,purpose,author_session,title,expires_at,withdrawn_at,"
@@ -46,6 +51,7 @@ def observe_board_requests(path: str, session_id: str, redact_secret_shaped) -> 
                         "expires_at": expires,
                         "withdrawn_at": withdrawn,
                         "created_at": created,
+                        "task_keys": sorted(local_task_keys.get(record_id, set())),
                     }
                 )
             else:
@@ -64,6 +70,11 @@ def observe_board_requests(path: str, session_id: str, redact_secret_shaped) -> 
                 (session_id,),
             )
         }
+        hosted_task_keys: dict[str, set[str]] = {}
+        for message_id, value in connection.execute(
+            "SELECT message_id,value FROM hosted_board_message_tag_cache WHERE kind='task'"
+        ):
+            hosted_task_keys.setdefault(message_id, set()).add(value)
         for message_id, kind, root_id, payload in connection.execute(
             "SELECT id,kind,thread_root_id,payload FROM hosted_board_message_cache"
         ):
@@ -83,6 +94,7 @@ def observe_board_requests(path: str, session_id: str, redact_secret_shaped) -> 
                         "expires_at": message.get("expiresAt"),
                         "withdrawn_at": message.get("withdrawnAt"),
                         "created_at": message.get("createdAt"),
+                        "task_keys": sorted(hosted_task_keys.get(message_id, set())),
                     }
                 )
             else:

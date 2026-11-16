@@ -124,7 +124,7 @@ def live_landing_ids(session_id: str):
         return None
 
 
-def live_run_ids(session_id: str):
+def live_runs(session_id: str):
     try:
         result = subprocess.run(
             [bottega_path(), "run", "list", "--limit", "200", "--json"],
@@ -133,7 +133,7 @@ def live_run_ids(session_id: str):
             timeout=5,
             check=True,
         )
-        ids = []
+        runs = []
         for raw in result.stdout.splitlines():
             if not raw.strip():
                 continue
@@ -147,21 +147,8 @@ def live_run_ids(session_id: str):
                 run_id = data.get("record_id")
                 if not uuid_string(run_id):
                     raise ValueError("live run has no UUID record_id")
-                ids.append(run_id)
-        return sorted(set(ids))
-    except Exception:
-        return None
-
-
-def open_request_threads(session_id: str, board_observation, heartbeat_decision):
-    """Open requests authored here, [] if none, None if the store cannot answer."""
-    try:
-        rows = board_observation.observe_board_requests(
-            DB, session_id, heartbeat_decision.redact_secret_shaped
-        )
-        return heartbeat_decision.open_board_requests(
-            rows["roots"], rows["replies"], session_id, __import__("time").time()
-        )
+                runs.append((run_id, data["status"]))
+        return sorted(set(runs))
     except Exception:
         return None
 
@@ -190,28 +177,17 @@ def main() -> int:
         payload = json.load(sys.stdin)
         if not should_hook_act(payload):
             return 0
-        try:
-            heartbeat_decision = load_hook_module("heartbeat_decision", "heartbeat-decision.py")
-            board_observation = load_hook_module(
-                "heartbeat_board_observation", "heartbeat-board-observation.py"
-            )
-        except Exception:
-            heartbeat_decision = board_observation = None
+        heartbeat_decision = load_hook_module("heartbeat_decision", "heartbeat-decision.py")
         sid = payload.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID")
         if not isinstance(sid, str) or not sid:
             return 0
-        run_ids = live_run_ids(sid) or []
+        run_rows = live_runs(sid) or []
+        run_ids = [run_id for run_id, _ in run_rows]
         landing_ids = live_landing_ids(sid)
-        request_rows = (
-            None
-            if board_observation is None or heartbeat_decision is None
-            else open_request_threads(sid, board_observation, heartbeat_decision)
-        )
         # None from the landing query is uncertainty, not absence: count it as
         # live so an unreadable store cannot be reported as quiescence.
         landings = ["unknown"] if landing_ids is None else [str(i) for i in landing_ids]
-        requests = [] if request_rows is None else request_rows
-        if not run_ids and not landings and not requests and request_rows is not None:
+        if not run_ids and not landings:
             return 0
 
         arm = f"{heartbeat_path()} {sid}"
@@ -219,45 +195,24 @@ def main() -> int:
         armed = heartbeat_armed(sid)
         if armed is not False:
             return 0
-        count = len(run_ids)
-        landing_count = len(landings)
-        request_count = len(requests)
-        work = (
-            f"{count} live bottega run{'s' if count != 1 else ''}"
-            f" and {landing_count} landing{'s' if landing_count != 1 else ''}"
-            f" and {request_count} open request{'s' if request_count != 1 else ''}"
+        count = sum(status == "running" for _, status in run_rows)
+        question_count = sum(status == "asking" for _, status in run_rows)
+        line = heartbeat_decision.heartbeat_off_line(
+            count,
+            None if landing_ids is None else len(landing_ids),
+            question_count,
+            arm,
         )
-        if landing_ids is None:
-            work += " (landing store unreadable; assuming live)"
-        if request_rows is None:
-            work += " (board store unreadable; open requests unknown)"
-        elif requests:
-            work += ": " + " | ".join(str(row["label"]) for row in requests)
         observed = [
             *run_ids,
             *[f"landing:{item}" for item in landings],
-            *[f"request:{row['id']}" for row in requests],
         ]
-        blocking_work = bool(run_ids or landings)
-        if blocking_work and first_observation(sid, observed):
-            reason = (
-                f"{work} for this session have no heartbeat. "
-                f"Arm under Monitor from the main checkout: {arm}"
-            )
-            record_emission(payload, "blockReason", reason)
-            sys.stdout.write(json.dumps({"decision": "block", "reason": reason}) + "\n")
+        if first_observation(sid, observed):
+            record_emission(payload, "blockReason", line)
+            sys.stdout.write(json.dumps({"decision": "block", "reason": line}) + "\n")
         else:
-            prefix = (
-                "Allowing stop after the one-shot heartbeat guard: "
-                if blocking_work
-                else "Allowing stop: "
-            )
-            warning = (
-                f"{prefix}{work} remain unarmed. "
-                f"Arm under Monitor: {arm}"
-            )
-            record_emission(payload, "systemMessage", warning)
-            sys.stdout.write(json.dumps({"systemMessage": warning}) + "\n")
+            record_emission(payload, "systemMessage", line)
+            sys.stdout.write(json.dumps({"systemMessage": line}) + "\n")
     except Exception:
         pass
     return 0

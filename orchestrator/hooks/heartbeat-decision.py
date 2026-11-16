@@ -9,8 +9,9 @@ import os
 import sys
 import json
 import datetime
+import subprocess
 from enum import Enum, auto
-from typing import NamedTuple
+from typing import Callable, NamedTuple
 
 from inbox_question_decision import decide_inbox_questions
 from secret_shaped import redact_secret_shaped
@@ -45,7 +46,8 @@ def _timestamp(value: str) -> float:
 
 
 def open_board_requests(
-    roots: list[dict], replies: list[dict], author_session: str, now: float
+    roots: list[dict], replies: list[dict], author_session: str, now: float,
+    task_done: Callable[[str], bool | None],
 ) -> list[dict]:
     """Return authored request roots still waiting for a delivered external reply."""
     answered = {
@@ -67,8 +69,62 @@ def open_board_requests(
             or root.get("id") in answered
         ):
             continue
+        task_keys = root.get("task_keys")
+        if (
+            isinstance(task_keys, list)
+            and task_keys
+            and all(task_done(key) is True for key in task_keys if isinstance(key, str))
+            and all(isinstance(key, str) for key in task_keys)
+        ):
+            continue
         open_roots.append(root)
     return sorted(open_roots, key=lambda root: str(root.get("id")))
+
+
+def heartbeat_off_line(
+    run_count: int,
+    landing_count: int | None,
+    worker_question_count: int,
+    arm_command: str,
+) -> str:
+    """Render the single stop-hook reminder without exposing work identifiers."""
+    runs = f"{run_count} run{'s' if run_count != 1 else ''}"
+    landings = (
+        "landings unknown"
+        if landing_count is None
+        else f"{landing_count} landing{'s' if landing_count != 1 else ''}"
+    )
+    questions = (
+        f"{worker_question_count} worker question"
+        f"{'s' if worker_question_count != 1 else ''}"
+    )
+    return f"Heartbeat off: {runs} · {landings} · {questions}. Arm: {arm_command}"
+
+
+def task_done_resolver(bottega: str) -> Callable[[str], bool | None]:
+    """Resolve task completion once per key through the task owner's CLI."""
+    cache: dict[str, bool | None] = {}
+
+    def task_done(key: str) -> bool | None:
+        if key not in cache:
+            try:
+                result = subprocess.run(
+                    [bottega, "task", "show", key, "--json"],
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
+                    check=True,
+                )
+                payload = json.loads(result.stdout)
+                task = payload.get("task") if isinstance(payload, dict) else None
+                cache[key] = (
+                    task.get("status_category") == "done" if isinstance(task, dict) else None
+                )
+            except Exception:
+                cache[key] = None
+        return cache[key]
+
+    return task_done
 
 
 def _superseding_root(held_root: dict, roots: list[dict], now: float) -> dict | None:
@@ -162,7 +218,6 @@ def heartbeat_decision(
     stalled_detail: str,
     waiting_detail: str,
     open_request_count: int = 0,
-    open_request_detail: str = "",
     open_hold_count: int = 0,
     open_hold_detail: str = "",
 ) -> HeartbeatDecision:
@@ -195,7 +250,7 @@ def heartbeat_decision(
     if state in (HeartbeatState.STALLED, HeartbeatState.BLOCKED_STALLED):
         lines.append(f"[{timestamp}] STALLED - {stalled_count} run(s): {stalled_detail}")
     elif state == HeartbeatState.WAITING:
-        details = [detail for detail in (waiting_detail, open_request_detail, open_hold_detail) if detail]
+        details = [detail for detail in (waiting_detail, open_hold_detail) if detail]
         detail = f": {' | '.join(details)}" if details else ""
         requests = (
             f" and {open_request_count} open request(s)"
@@ -240,7 +295,6 @@ if __name__ == "__main__":
             os.environ["HEARTBEAT_STALLED_DETAIL"],
             os.environ["HEARTBEAT_WAITING_DETAIL"],
             int(os.environ.get("HEARTBEAT_OPEN_REQUESTS", "0")),
-            os.environ.get("HEARTBEAT_OPEN_REQUEST_DETAIL", ""),
             int(os.environ.get("HEARTBEAT_OPEN_HOLDS", "0")),
             os.environ.get("HEARTBEAT_OPEN_HOLD_DETAIL", ""),
         )
@@ -255,18 +309,19 @@ if __name__ == "__main__":
     elif sys.argv[1:] == ["inbox"]:
         decision = decide_inbox_questions(json.load(sys.stdin))
         print(decision.state_key)
-    elif sys.argv[1:] and sys.argv[1] == "requests" and len(sys.argv) == 3:
+    elif sys.argv[1:] and sys.argv[1] == "requests" and len(sys.argv) == 4:
         rows = json.load(sys.stdin)
         requests = open_board_requests(
             rows["roots"],
             rows["replies"],
             sys.argv[2],
             datetime.datetime.now(datetime.timezone.utc).timestamp(),
+            task_done_resolver(sys.argv[3]),
         )
         print(
             "STATE",
             len(requests),
-            " | ".join(str(root.get("label")) for root in requests),
+            "",
             ",".join(str(root.get("id")) for root in requests),
             sep="\t",
         )
