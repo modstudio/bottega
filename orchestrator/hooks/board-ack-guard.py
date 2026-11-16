@@ -15,6 +15,7 @@ from board_hook_common import (
     write_marker,
 )
 from registered_scope import should_hook_act
+from hook_emission import record_emission
 
 
 def stop_state(session: str) -> tuple[str, int | None]:
@@ -72,10 +73,14 @@ def main() -> int:
             return 0
 
         if acknowledgement_block:
-            value = {"decision": "block", "reason": notice_summary(notices)}
+            reason = notice_summary(notices)
+            value = {"decision": "block", "reason": reason}
+            record_emission(payload, "blockReason", reason)
             sys.stdout.write(json.dumps(value) + "\n")
         elif notices:
-            value = {"systemMessage": notice_summary(notices, True)}
+            warning = notice_summary(notices, True)
+            value = {"systemMessage": warning}
+            record_emission(payload, "systemMessage", warning)
             sys.stdout.write(json.dumps(value) + "\n")
     except Exception:
         pass

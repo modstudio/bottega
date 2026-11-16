@@ -17,6 +17,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 from registered_scope import should_hook_act
+from hook_emission import record_emission
 from registered_scope_decision import path_is_within
 
 from protect_main_checkout import (
@@ -360,39 +361,43 @@ def shell_quote(value):
     return "'" + value.replace("'", "'\\''") + "'"
 
 
-def deny(project, path):
+def deny(payload, project, path):
     hint = os.path.join(project["path"], ".claude", "worktrees")
     rel = os.path.relpath(path, project["path"])
+    reason = (
+        f"{project['name']}: refusing edit to tracked file {rel} in main checkout {project['path']}\n"
+        f"work from a worktree under {hint} instead\n"
+        f"invariant: {INVARIANT}\n"
+        f"cleared by: bottega run start --cwd {shell_quote(hint + '/<tree>')}"
+    )
+    record_emission(payload, "denyReason", reason)
     print(json.dumps({
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "deny",
-            "permissionDecisionReason": (
-                f"{project['name']}: refusing edit to tracked file {rel} in main checkout {project['path']}\n"
-                f"work from a worktree under {hint} instead\n"
-                f"invariant: {INVARIANT}\n"
-                f"cleared by: bottega run start --cwd {shell_quote(hint + '/<tree>')}"
-            ),
+            "permissionDecisionReason": reason,
         }
     }))
     return 0
 
 
-def deny_git_mutation(decision):
+def deny_git_mutation(payload, decision):
     project = decision["project"]
     root = decision["root"]
     subcommand = decision["subcommand"]
     hint = os.path.join(project["path"], ".claude", "worktrees")
+    reason = (
+        f"{project['name']}: refusing git {subcommand} in registered main checkout {root}\n"
+        f"run it from a worktree under {hint} instead\n"
+        f"invariant: {INVARIANT}\n"
+        f"cleared by: bottega run start --cwd {shell_quote(hint + '/<tree>')}"
+    )
+    record_emission(payload, "denyReason", reason)
     print(json.dumps({
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "deny",
-            "permissionDecisionReason": (
-                f"{project['name']}: refusing git {subcommand} in registered main checkout {root}\n"
-                f"run it from a worktree under {hint} instead\n"
-                f"invariant: {INVARIANT}\n"
-                f"cleared by: bottega run start --cwd {shell_quote(hint + '/<tree>')}"
-            ),
+            "permissionDecisionReason": reason,
         }
     }))
     return 0
@@ -449,7 +454,7 @@ def main() -> int:
             return fail_open(error)
         projects = normalized_projects(projects)
         decision = decision_for_mutations(mutations, projects)
-        return deny_git_mutation(decision) if decision else fail_open()
+        return deny_git_mutation(payload, decision) if decision else fail_open()
     if tool_name not in EDITOR_TOOLS:
         return fail_open()
     path = target_path(payload)
@@ -467,7 +472,7 @@ def main() -> int:
         return fail_open()
     if not tracked_in_main(root, path):
         return fail_open()
-    return deny(project, path)
+    return deny(payload, project, path)
 
 
 if __name__ == "__main__":

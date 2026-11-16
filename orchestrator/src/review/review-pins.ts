@@ -1,9 +1,10 @@
 // concern: review-pins
 import type { Database } from 'bun:sqlite'
+import { closeSync, openSync, readSync } from 'node:fs'
 import { startBoundedSyncBytes } from '../../../shared/bounded-process.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { db, writableDb } from '../database/db.ts'
-import { changeIdentity, zeroContextChangeIdentity } from './change-identity.ts'
+import { changeIdentity, withGitDiffFile, zeroContextChangeIdentity } from './change-identity.ts'
 import type { CoverageGitRunner, ReviewChangeRange, RunRow } from './review-types.ts'
 
 export const targetGitEnvironment = (repo: string) =>
@@ -50,26 +51,24 @@ export function storedChangePathSet(runId: string, database: Database): string[]
   return parsed
 }
 
-export function measureChangeIdentity(
+export function requireChangeIdentity(
   repo: string,
   from: string,
   to: string,
-): { patchId: string; zeroContextPatchId: string; paths: string[]; message: string } | null {
+): { patchId: string; zeroContextPatchId: string; paths: string[]; message: string } {
   const paths = git(repo, nulPathListArgs(['diff', '--name-only', `${from}..${to}`]))
   const message = git(repo, ['log', '--format=%B', `${from}..${to}`])
-  if (!paths.ok) return null
-  let patchId: string
-  let zeroContextPatchId: string
-  try {
-    patchId = changeIdentity((args, stdin) => git(repo, args, true, stdin), from, to)
-    zeroContextPatchId = zeroContextChangeIdentity(
-      (args, stdin) => git(repo, args, true, stdin),
-      from,
-      to,
-    )
-  } catch {
-    return null
-  }
+  if (!paths.ok) throw new Error(`git diff --name-only ${from}..${to} failed: ${paths.err}`)
+  const patchId = changeIdentity(
+    (args, stdin, stdinFile) => git(repo, args, true, stdin, stdinFile),
+    from,
+    to,
+  )
+  const zeroContextPatchId = zeroContextChangeIdentity(
+    (args, stdin, stdinFile) => git(repo, args, true, stdin, stdinFile),
+    from,
+    to,
+  )
   return {
     patchId,
     zeroContextPatchId,
@@ -78,17 +77,31 @@ export function measureChangeIdentity(
   }
 }
 
+export function measureChangeIdentity(
+  repo: string,
+  from: string,
+  to: string,
+): { patchId: string; zeroContextPatchId: string; paths: string[]; message: string } | null {
+  try {
+    return requireChangeIdentity(repo, from, to)
+  } catch {
+    return null
+  }
+}
+
 export function git(
   repo: string,
   args: string[],
   _hermetic = false,
   stdin?: Uint8Array,
+  stdinFile?: string,
 ): { ok: boolean; out: string; err: string; stdout: Uint8Array } {
   const p = startBoundedSyncBytes(['git', ...args], {
     budget: 'git-plumbing',
     cwd: repo,
     env: targetGitEnvironment(repo),
     stdin,
+    stdinFile,
   })
   return {
     ok: p.exitCode === 0,
@@ -98,10 +111,55 @@ export function git(
   }
 }
 
+export function mapGitDiffSections<T>(
+  repo: string,
+  args: string[],
+  map: (section: string) => T,
+): T[] {
+  return withGitDiffFile(
+    (diffArgs) => git(repo, diffArgs),
+    args,
+    (diffPath) => {
+      const mapped: T[] = []
+      const decoder = new TextDecoder()
+      const bytes = new Uint8Array(64 * 1024)
+      const fd = openSync(diffPath, 'r')
+      let pending = ''
+      let section = ''
+      const accept = (line: string) => {
+        if (section && line.startsWith('diff --git ')) {
+          mapped.push(map(section))
+          section = ''
+        }
+        section += line
+      }
+      try {
+        while (true) {
+          const count = readSync(fd, bytes)
+          if (count === 0) break
+          pending += decoder.decode(bytes.subarray(0, count), { stream: true })
+          let newline = pending.indexOf('\n')
+          while (newline >= 0) {
+            accept(pending.slice(0, newline + 1))
+            pending = pending.slice(newline + 1)
+            newline = pending.indexOf('\n')
+          }
+        }
+        pending += decoder.decode()
+        if (pending) accept(pending)
+        if (section) mapped.push(map(section))
+        return mapped
+      } finally {
+        closeSync(fd)
+      }
+    },
+  )
+}
+
 export const reviewGit =
   (repo: string): CoverageGitRunner =>
-  (args, stdin) =>
-    git(repo, args, true, stdin)
+  (args, stdin, stdinFile) =>
+    git(repo, args, true, stdin, stdinFile)
 
 export function projectPath(database: Database, name: string): string | null {
   return (

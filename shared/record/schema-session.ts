@@ -57,3 +57,42 @@ export const briefInjection = pgTable.withRLS(
     ),
   ],
 )
+
+export const HOOK_EMISSION_KINDS = [
+  'additionalContext',
+  'systemMessage',
+  'blockReason',
+  'denyReason',
+  'allowReason',
+  'askReason',
+] as const
+export const hookEmission = pgTable.withRLS(
+  'hook_emission',
+  {
+    id: uuid().primaryKey(),
+    spaceId: spaceIdentity(),
+    machineId: uuid('machine_id')
+      .notNull()
+      .references(() => machine.id),
+    sessionId: text('session_id').notNull(),
+    at: timestamp({ withTimezone: true }).notNull(),
+    event: text().notNull(),
+    hook: text().notNull(),
+    kind: text().notNull(),
+    chars: integer().notNull(),
+    lines: integer().notNull(),
+    textHash: text('text_hash').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    ...tenantPolicies('hook_emission', table.spaceId),
+    index('hook_emission_session_at_idx').on(table.sessionId, table.at),
+    check(
+      'hook_emission_kind_check',
+      sql`${table.kind} IN (${sql.raw(HOOK_EMISSION_KINDS.map((kind) => `'${kind}'`).join(','))})`,
+    ),
+    check('hook_emission_chars_check', sql`${table.chars} >= 0`),
+    check('hook_emission_lines_check', sql`${table.lines} >= 0`),
+  ],
+)

@@ -8,6 +8,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 from registered_scope import should_hook_act
+from hook_emission import record_emission
 
 
 BUN_CACHE_COMMAND = re.compile(
@@ -40,6 +41,7 @@ def main() -> int:
             BUN_CACHE_COMMAND.search(command) or RECURSIVE_CACHE_REMOVAL.search(command)
         ):
             return 0
+        record_emission(payload, "denyReason", REASON)
         json.dump(
             {
                 "hookSpecificOutput": {

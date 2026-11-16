@@ -36,6 +36,7 @@ export type SessionReportFacts = {
     answeredAt: string | null
     closedAt: string | null
   }>
+  hookEmissions: Array<{ at: string; event: string; kind: string; chars: number; textHash: string }>
 }
 
 export type SessionWindowReport = {
@@ -67,7 +68,14 @@ export type SessionWindowReport = {
     }
     unansweredQuestions: { count: number; questionIds: string[] }
   }
-  hookOutput: { recorded: false; message: string }
+  hookOutput: Array<{
+    event: string
+    kind: string
+    count: number
+    characters: number
+    meanSize: number
+    repeatedShare: number
+  }>
 }
 
 export type SessionReportDelta = {
@@ -78,6 +86,7 @@ export type SessionReportDelta = {
     openCursors: number
     unansweredQuestions: number
   }
+  hookOutput: { count: number; characters: number }
 }
 
 export function reportWindow(
@@ -138,6 +147,43 @@ const admittedByTaskCursor = (
       (cursor.openToday || Date.parse(cursor.updatedAt) >= Date.parse(run.startedAt)),
   )
 
+const aggregateHookOutput = (
+  emissions: SessionReportFacts['hookEmissions'],
+  since: number,
+  until: number,
+): SessionWindowReport['hookOutput'] => {
+  const seenHashes = new Map<string, Set<string>>()
+  const inWindow = [...emissions]
+    .sort((left, right) => Date.parse(left.at) - Date.parse(right.at))
+    .flatMap((row) => {
+      const key = `${row.event}\0${row.kind}`
+      const seen = seenHashes.get(key) ?? new Set<string>()
+      const repeated = seen.has(row.textHash)
+      seen.add(row.textHash)
+      seenHashes.set(key, seen)
+      const at = Date.parse(row.at)
+      return at >= since && at <= until ? [{ ...row, repeated }] : []
+    })
+  return [...Map.groupBy(inWindow, (row) => `${row.event}\0${row.kind}`)]
+    .map(([key, rows]) => {
+      const separator = key.indexOf('\0')
+      const event = key.slice(0, separator)
+      const kind = key.slice(separator + 1)
+      const characters = rows.reduce((sum, row) => sum + row.chars, 0)
+      return {
+        event,
+        kind,
+        count: rows.length,
+        characters,
+        meanSize: characters / rows.length,
+        repeatedShare: rows.filter((row) => row.repeated).length / rows.length,
+      }
+    })
+    .sort(
+      (left, right) => left.event.localeCompare(right.event) || left.kind.localeCompare(right.kind),
+    )
+}
+
 export function buildSessionWindowReport(
   facts: SessionReportFacts,
   window: SessionReportWindow,
@@ -193,6 +239,7 @@ export function buildSessionWindowReport(
     ...(until < Date.parse(generatedAt) ? ({ asOf: 'now' } as const) : {}),
   }
   const historical = until < Date.parse(generatedAt)
+  const hookOutput = aggregateHookOutput(facts.hookEmissions, since, until)
   return {
     sessionId: facts.sessionId,
     window,
@@ -223,7 +270,7 @@ export function buildSessionWindowReport(
         questionIds,
       },
     },
-    hookOutput: { recorded: false, message: 'no hook emissions are recorded yet' },
+    hookOutput,
   }
 }
 
@@ -257,6 +304,14 @@ export function sessionReportDelta(
       unansweredQuestions:
         current.residueAtWindowEnd.unansweredQuestions.count -
         comparison.residueAtWindowEnd.unansweredQuestions.count,
+    },
+    hookOutput: {
+      count:
+        current.hookOutput.reduce((sum, row) => sum + row.count, 0) -
+        comparison.hookOutput.reduce((sum, row) => sum + row.count, 0),
+      characters:
+        current.hookOutput.reduce((sum, row) => sum + row.characters, 0) -
+        comparison.hookOutput.reduce((sum, row) => sum + row.characters, 0),
     },
   }
 }

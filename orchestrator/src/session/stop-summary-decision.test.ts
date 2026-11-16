@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   decideStopSummary,
+  KEYLESS_CURSOR_IDLE_MS,
   OWED_ITEM_OVERDUE_MS,
   type StopSummaryFacts,
 } from './stop-summary-decision.ts'
@@ -45,8 +46,24 @@ describe('Stop summary decision', () => {
       facts({
         questionCounts: { worker: 0, user: 2, foreign: 0, unowned: 0 },
         cursors: [
-          { key: 'DEV-2297', workflow: 'plan-task', step: 'design', ordinal: 6, total: 11 },
-          { key: null, workflow: 'explore', step: 'orient', ordinal: 1, total: 4 },
+          {
+            number: 10,
+            key: 'DEV-2297',
+            workflow: 'plan-task',
+            step: 'design',
+            ordinal: 6,
+            total: 11,
+            updatedAt: NOW,
+          },
+          {
+            number: 11,
+            key: null,
+            workflow: 'explore',
+            step: 'orient',
+            ordinal: 1,
+            total: 4,
+            updatedAt: NOW,
+          },
         ],
       }),
     )
@@ -56,6 +73,53 @@ describe('Stop summary decision', () => {
       'DEV-2297 · plan-task · step design (6 of 11)',
       'explore · step orient (1 of 4)',
     ])
+  })
+
+  test('an idle keyless cursor adds one non-blocking line without changing block identity', () => {
+    const idleCursor = {
+      number: 845,
+      key: null,
+      workflow: 'explore',
+      step: 'orient',
+      ordinal: 1,
+      total: 4,
+      updatedAt: new Date(Date.parse(NOW) - KEYLESS_CURSOR_IDLE_MS).toISOString(),
+    }
+    const baseline = decideStopSummary(facts({ owedItems: [owed()] }))
+    const result = decideStopSummary(facts({ cursors: [idleCursor], owedItems: [owed()] }))
+
+    expect(result.lines.filter((line) => line.startsWith('Explore cursor 845 idle'))).toEqual([
+      `Explore cursor 845 idle 1h 0m → ${PLATFORM_SLUG} workflow abandon --cursor 845`,
+    ])
+    expect(result.block).toBeTrue()
+    expect(result.blockKey).toBe(baseline.blockKey)
+  })
+
+  test('fresh and task-bound cursors never add an idle close line', () => {
+    const old = new Date(Date.parse(NOW) - KEYLESS_CURSOR_IDLE_MS).toISOString()
+    const cursors = [
+      {
+        number: 845,
+        key: null,
+        workflow: 'explore',
+        step: 'orient',
+        ordinal: 1,
+        total: 4,
+        updatedAt: NOW,
+      },
+      {
+        number: 884,
+        key: 'DEV-2323',
+        workflow: 'plan-task',
+        step: 'build',
+        ordinal: 1,
+        total: 4,
+        updatedAt: old,
+      },
+    ]
+    expect(decideStopSummary(facts({ cursors })).lines).not.toContainEqual(
+      expect.stringContaining('workflow abandon --cursor'),
+    )
   })
 
   test('worker and operator questions use their own lines while other groups stay quiet', () => {

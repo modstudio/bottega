@@ -401,7 +401,11 @@ describe('review discipline', () => {
       else if (args[0] === 'patch-id') stdout = 'same-patch commit'
       else if (args[0] === 'diff' && args.includes('--name-only')) stdout = 'src/change.ts'
       else if (args[0] === 'diff' && args.includes('--numstat')) stdout = '1\t0\tsrc/change.ts'
-      else if (args[0] === 'diff') stdout = 'fixture patch'
+      else if (args[0] === 'diff') {
+        stdout = 'fixture patch'
+        const output = args.find((arg) => arg.startsWith('--output='))?.slice('--output='.length)
+        if (output) writeFileSync(output, stdout)
+      }
       return {
         exitCode,
         stdout: Buffer.from(stdout),

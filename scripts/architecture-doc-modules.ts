@@ -108,6 +108,7 @@ export const docModules: DocModule[] = [
     '../run/question-inbox-counts.ts',
     '../run/question-open.ts',
     '../run/run-status.ts',
+    '../session/keyless-cursor-idle.ts',
     '../session/session-review-verdicts.ts',
     '../workflow/session-context.ts',
     '../workflow/workflow-cursor-list.ts',

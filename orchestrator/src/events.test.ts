@@ -596,6 +596,7 @@ describe('vendor event log', () => {
     const now = Date.parse('2026-09-07T00:06:00.000Z')
     expect(idleLabel(last, started, now, 5 * 60_000)).toBe('idle 5m')
     expect(idleLabel(last, started, now, 6 * 60_000)).toBeNull()
+    expect(idleLabel(last, started, now + 125 * 60_000, 5 * 60_000)).toBe('idle 2h 10m')
   })
 })
 

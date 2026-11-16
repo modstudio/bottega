@@ -21,6 +21,8 @@ from notice_transport import (
     transportable_notice_id,
 )
 from registered_scope import should_hook_act
+from hook_emission import launch_detached, record_emission, text_stats
+from hook_paths import state_root as _state_root
 
 with open(
     os.path.join(os.path.dirname(__file__), "session-start-context.json"),
@@ -74,26 +76,6 @@ def _valid_blocked_issue_tree(item):
         and isinstance(item.get("path"), str)
         and isinstance(item.get("why"), str)
     )
-
-
-def _state_root(env=None):
-    environment = env if env is not None else os.environ
-    override = environment.get("BOTTEGA_STATE_HOME")
-    state_slug = "BOTTEGA_STATE_HOME".removesuffix("_STATE_HOME").lower()
-    if override:
-        if not os.path.isabs(override):
-            raise RuntimeError(
-                "BOTTEGA_STATE_HOME must be an absolute state root; "
-                "set it to an absolute path"
-            )
-        return override
-    xdg = environment.get("XDG_STATE_HOME")
-    if xdg and os.path.isabs(xdg):
-        return os.path.join(xdg, state_slug)
-    home = environment.get("HOME")
-    if not home:
-        raise RuntimeError("cannot resolve platform state directory")
-    return os.path.join(home, ".local", "state", state_slug)
 
 
 def _start_settings_apply(bottega, env=None):
@@ -226,15 +208,15 @@ def _with_compact_first_act(text, source):
 
 
 def _context_size(text):
-    return len(text.encode("utf-8")), 0 if not text else text.count("\n") + 1, len(text)
+    return text_stats(text)
 
 
 def _record_injection(bottega, cwd, env, session, source, text):
     size_bytes, lines, chars = _context_size(text)
     try:
-        subprocess.Popen(
+        launch_detached(
+            bottega,
             [
-                bottega,
                 "agent",
                 "context",
                 "record-injection",
@@ -249,12 +231,8 @@ def _record_injection(bottega, cwd, env, session, source, text):
                 "--chars",
                 str(chars),
             ],
-            env=env,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-            cwd=cwd,
+            env,
+            cwd,
         )
     except Exception as error:
         print(f"session-brief: injection recording failed: {error}", file=sys.stderr)
@@ -1021,6 +999,13 @@ def main() -> int:
                             file=sys.stderr,
                         )
         if output is not None:
+            specific = output.get("hookSpecificOutput", {})
+            context = specific.get("additionalContext")
+            if isinstance(context, str):
+                record_emission(payload, "additionalContext", context)
+            message = output.get("systemMessage")
+            if isinstance(message, str):
+                record_emission(payload, "systemMessage", message)
             sys.stdout.write(json.dumps(output) + "\n")
             sys.stdout.flush()
         emitted_board_ids = (

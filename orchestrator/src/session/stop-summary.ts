@@ -194,11 +194,13 @@ export async function sessionStopSummary(
     displayTimezone: readCachedDisplayTimezone(options.stateEnvironment ?? process.env),
     questionCounts,
     cursors: cursors.map((cursor) => ({
+      number: cursor.id,
       key: cursor.workflow_key || null,
       workflow: cursor.workflow_slug,
       step: cursor.step_slug,
       ordinal: cursor.ordinal + 1,
       total: cursor.total_steps,
+      updatedAt: cursor.updated_at,
     })),
     reviewVerdictLines,
     liveRuns,

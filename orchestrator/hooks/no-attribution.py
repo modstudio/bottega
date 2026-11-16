@@ -16,6 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
 from registered_scope import should_hook_act
+from hook_emission import record_emission
 
 MARKER_FILE = Path(__file__).resolve().parents[2] / "shared" / "attribution-markers.json"
 WRITES = re.compile(
@@ -26,7 +27,8 @@ WRITES = re.compile(
 FILE_FLAG = re.compile(r"(?:-F|--file|--body-file|--notes-file|--message-file)[= ]+(\S+)")
 
 
-def deny(reason: str) -> None:
+def deny(payload, reason: str) -> None:
+    record_emission(payload, "denyReason", reason)
     print(json.dumps({
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
@@ -36,7 +38,7 @@ def deny(reason: str) -> None:
     }))
 
 
-def load_markers():
+def load_markers(payload=None):
     try:
         with MARKER_FILE.open(encoding="utf-8") as marker_file:
             patterns = json.load(marker_file)
@@ -44,7 +46,7 @@ def load_markers():
             raise ValueError("expected a JSON array of strings")
         return re.compile("|".join(patterns), re.IGNORECASE)
     except (OSError, UnicodeError, json.JSONDecodeError, re.error, ValueError) as error:
-        deny(f"Cannot enforce AI attribution: {MARKER_FILE}: {error}")
+        deny(payload, f"Cannot enforce AI attribution: {MARKER_FILE}: {error}")
         return None
 
 
@@ -60,7 +62,7 @@ def main() -> int:
     command = str(payload.get("tool_input", {}).get("command", ""))
     if not WRITES.search(command):
         return 0
-    markers = load_markers()
+    markers = load_markers(payload)
     if markers is None:
         return 0
     text = command
@@ -81,7 +83,7 @@ def main() -> int:
             unreadable_paths.append(f"{path}: {detail}")
     hit = markers.search(text)
     if hit:
-        deny(
+        deny(payload,
             "AI attribution is not allowed in commits or pull requests "
             f"(matched: {hit.group(0)!r}). Remove the trailer and retry."
         )
@@ -91,6 +93,7 @@ def main() -> int:
             "Allowing command, but the text in these message files was not checked for attribution: "
             + "; ".join(unreadable_paths)
         )
+        record_emission(payload, "systemMessage", warning)
         print(json.dumps({"systemMessage": warning}))
     return 0
 

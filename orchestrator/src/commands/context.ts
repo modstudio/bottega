@@ -10,8 +10,18 @@ import {
   setContextItem,
 } from '../doc/context-service.ts'
 import { recordBriefInjection, SESSION_START_SOURCES } from '../session/brief-injection.ts'
+import { HOOK_EMISSION_KINDS, recordHookEmission } from '../session/hook-emission.ts'
 import { sessionContextCommand } from '../workflow/session-context.ts'
 import { log } from './support.ts'
+
+const required = (value: string, name: string) => {
+  if (!value) throw new Error(`${name} is required`)
+}
+
+const wholeNonnegative = (value: number, name: string) => {
+  if (!Number.isSafeInteger(value) || value < 0)
+    throw new Error(`${name} must be a nonnegative integer`)
+}
 
 function registerClear(context: Command): void {
   context
@@ -45,6 +55,43 @@ function registerInjection(context: Command): void {
             bytes: options.bytes,
             lines: options.lines,
             chars: options.chars,
+          }),
+        ),
+      )
+    })
+}
+
+function registerEmission(context: Command): void {
+  context
+    .command('record-emission')
+    .description('record one product-hook output')
+    .requiredOption('--session <id>', 'select architect session')
+    .requiredOption('--event <event>', 'hook event name')
+    .requiredOption('--hook <hook>', 'product hook name')
+    .requiredOption('--kind <kind>', `one of ${HOOK_EMISSION_KINDS.join(', ')}`)
+    .requiredOption('--chars <count>', 'characters in the output', Number)
+    .requiredOption('--lines <count>', 'lines in the output', Number)
+    .requiredOption('--hash <sha256>', 'normalized output sha256')
+    .allowExcessArguments(false)
+    .action((options) => {
+      required(options.session, 'session id')
+      required(options.event, 'event')
+      required(options.hook, 'hook')
+      if (!HOOK_EMISSION_KINDS.includes(options.kind))
+        throw new Error(`--kind must be one of ${HOOK_EMISSION_KINDS.join(', ')}`)
+      wholeNonnegative(options.chars, 'chars')
+      wholeNonnegative(options.lines, 'lines')
+      if (!/^[0-9a-f]{64}$/.test(options.hash)) throw new Error('--hash must be a lowercase sha256')
+      log(
+        JSON.stringify(
+          recordHookEmission({
+            sessionId: options.session,
+            event: options.event,
+            hook: options.hook,
+            kind: options.kind,
+            chars: options.chars,
+            lines: options.lines,
+            textHash: options.hash,
           }),
         ),
       )
@@ -94,6 +141,7 @@ export function register(program: Command): void {
       log(options.json ? JSON.stringify(result) : renderContextBrief(result))
     })
   registerInjection(context)
+  registerEmission(context)
   holderOptions(context.command('set').description('create or revise one context item'))
     .requiredOption(
       '--kind <kind>',

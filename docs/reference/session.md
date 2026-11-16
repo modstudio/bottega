@@ -116,6 +116,8 @@ measure task-cursor attribution and residue over a session window
 
 Runs in the window fall into four classes: bound runs carry a cursor id; admitted runs are unbound keyed runs whose task had an open cursor when the run started; keyless runs have no launch key; and keyed-uncovered runs had no matching open task cursor when they started. Bound and admitted runs count as on a cursor, while the "runs without a cursor" total is keyless plus keyed-uncovered. The report shows admitted runs separately as "on a task cursor but not bound" so the binding gap remains visible.
 
+Hook output is grouped by event and kind. Its repeated-unchanged share compares each in-window fingerprint with every earlier fingerprint in the same session, event and kind, including emissions before the window. Detached recording child failures are appended to the per-user state file `orchestrator/hook-emission.log`.
+
 Unanswered questions use the durable open-question predicate: neither answered nor closed. This differs from question inbox, which lists its needs-attention subset. Past-window admitted runs, unscored runs, and open cursors are marked approximate.
 
 ### Options
@@ -135,7 +137,7 @@ Unanswered questions use the durable open-question predicate: neither answered n
 
 **Synopsis:** `bottega session start`
 
-open explore for a session that holds no open explore, or name the one it holds
+open explore for a session that holds no open cursor, name the explore it holds, or name its open task cursor and open none
 
 ### Related
 

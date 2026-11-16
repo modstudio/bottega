@@ -1,14 +1,48 @@
 import { expect, test } from 'bun:test'
-import { resolve } from 'node:path'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import type { Project } from '../project/projects.ts'
 import { applicableReview } from '../review/review-applicability.ts'
-import { measureChangeIdentity } from '../review/review-pins.ts'
-import { gatherFunnelFacts } from './gather-funnel-facts.ts'
+import { measureChangeIdentity, requireChangeIdentity } from '../review/review-pins.ts'
+import { gatherFunnelFacts, requireFunnelChangeIdentity } from './gather-funnel-facts.ts'
 
 const repo = resolve(import.meta.dir, '../../..')
 const branch = 'DEV-2336-fixture'
+
+test('review-funnel identity refusal includes the failed git command and stderr', () => {
+  const fixtureRepo = mkdtempSync(join(tmpdir(), 'orch-funnel-identity-'))
+  const fixtureGit = (...args: string[]) => {
+    const result = spawnFixtureGitSync(args, { cwd: fixtureRepo })
+    if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+    return result.stdout.toString().trim()
+  }
+  try {
+    fixtureGit('init', '-b', 'main')
+    fixtureGit('config', 'user.email', 'fixture@example.com')
+    fixtureGit('config', 'user.name', 'Fixture')
+    writeFileSync(join(fixtureRepo, 'app.txt'), 'fixture\n')
+    fixtureGit('add', 'app.txt')
+    fixtureGit('commit', '-m', 'fixture')
+
+    let message = ''
+    try {
+      requireFunnelChangeIdentity('DEV-2352-large', () =>
+        requireChangeIdentity(fixtureRepo, 'HEAD', 'refs/heads/absent'),
+      )
+    } catch (cause) {
+      message = cause instanceof Error ? cause.message : String(cause)
+    }
+    expect(message).toContain('could not measure review-funnel change DEV-2352-large:')
+    expect(message).toContain('git diff --name-only HEAD..refs/heads/absent failed:')
+    expect(message).toContain('fatal:')
+  } finally {
+    rmSync(fixtureRepo, { recursive: true, force: true })
+  }
+})
 
 function fixture(landingBranch: string) {
   const database = migratedTestDatabase()

@@ -44,6 +44,7 @@ export async function startSession(
   const cursors = openCursors.map((cursor) => ({
     id: cursor.id,
     workflow: cursor.workflow_slug,
+    workflowKey: cursor.workflow_key,
   }))
   const decision = decideSessionStart({
     session,
@@ -69,6 +70,11 @@ export async function startSession(
   }
   if (decision.kind === 'reuse')
     return { cursor: decision.cursor, line: cursorLine(decision.cursor, decision.workflow) }
+  if (decision.kind === 'none')
+    return {
+      cursor: null,
+      line: `${cursorLine(decision.cursor, decision.workflow)} ${decision.key} is open; session start composed no explore cursor`,
+    }
 
   const context = { session }
   const live = await resolveWorkflowLiveAutonomy(

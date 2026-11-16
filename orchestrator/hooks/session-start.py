@@ -9,13 +9,15 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 from hook_paths import bottega_bin
 from registered_scope import should_hook_act
+from hook_emission import record_emission
 
 CLI_TIMEOUT_SECONDS = 10
 PLATFORM_SLUG = os.path.basename(bottega_bin())
 
 
-def emit(text):
+def emit(payload, text):
     text = " ".join(text.split())
+    record_emission(payload, "additionalContext", text)
     sys.stdout.write(
         json.dumps(
             {
@@ -39,13 +41,13 @@ def main():
         cwd = payload.get("cwd")
         session = payload.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID")
         if not isinstance(cwd, str) or not cwd:
-            emit(
+            emit(payload,
                 "session start could not establish the hook cwd; cleared by: "
                 "start the session in a registered checkout"
             )
             return 0
         if not isinstance(session, str) or not session:
-            emit(
+            emit(payload,
                 "session start could not establish the current harness session id; cleared by: "
                 "start a new supported harness session"
             )
@@ -68,9 +70,9 @@ def main():
                 f"session start could not establish an explore cursor: {condition}; cleared by: "
                 f"clear the reported condition and run {PLATFORM_SLUG} session start again"
             )
-        emit(line)
+        emit(payload, line)
     except Exception as error:
-        emit(
+        emit(payload,
             f"session start could not establish an explore cursor: {error}; cleared by: "
             f"clear the reported condition and run {PLATFORM_SLUG} session start again"
         )
