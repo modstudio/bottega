@@ -19,13 +19,12 @@ import {
   emptyReviewCondition,
   reviewRemoteTrunkRefExists,
   reviewTrunkRef,
-  spawnGitProbe,
 } from '../review/review-target.ts'
-import type { ReviewFunnelVerdict } from '../review-funnel/decide-review-funnel.ts'
 import {
   type ExactChangeReplayContext,
   exactChangeReplayContext,
 } from '../review/same-change-git.ts'
+import type { ReviewFunnelVerdict } from '../review-funnel/decide-review-funnel.ts'
 import {
   gatherAdmissionEvidenceDecision,
   landingOverridesWithReplay,

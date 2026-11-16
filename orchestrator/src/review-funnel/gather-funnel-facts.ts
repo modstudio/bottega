@@ -16,7 +16,7 @@ import {
   type TriageReviewRow,
 } from '../review/review-group.ts'
 import { reviewLineage } from '../review/review-lineage-store.ts'
-import { git, requireChangeIdentity } from '../review/review-pins.ts'
+import { requireChangeIdentity } from '../review/review-pins.ts'
 import { gatherPostFixReviewFacts } from '../review/review-post-fix.ts'
 import { hasExactArchitectRead } from '../review/review-read.ts'
 import {

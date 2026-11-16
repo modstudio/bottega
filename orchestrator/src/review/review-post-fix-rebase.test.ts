@@ -109,8 +109,8 @@ test('a one-to-one rename with identical content is unchanged', () => {
 
 test('trunk-changed paths include modifications, additions, and both rename names', () => {
   expect(
-    [...
-      trunkChangedPathSet({
+    [
+      ...trunkChangedPathSet({
         changedPaths: ['src/modified.ts', 'src/renamed.ts', 'src/added.ts'],
         renames: new Map([['src/original.ts', 'src/renamed.ts']]),
       }),

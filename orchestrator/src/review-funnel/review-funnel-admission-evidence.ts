@@ -426,7 +426,7 @@ export function matchingOwnerRead(evidence: TriageEvidence, recordedAfter?: stri
     (read) =>
       reader(read.sessionId) &&
       sameStoredChangeOrWitness(
-        read,
+        { ...read, zeroContextPatchId: read.zeroContextPatchId ?? null },
         {
           patchId: evidence.patchId,
           zeroContextPatchId: evidence.zeroContextPatchId ?? null,

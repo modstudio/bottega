@@ -3,11 +3,7 @@
 
 import { changeIdentity, zeroContextChangeIdentity } from './change-identity.ts'
 import { git } from './review-pins.ts'
-import {
-  reviewRemoteTrunkRefExists,
-  reviewTrunkRef,
-  spawnGitProbe,
-} from './review-target.ts'
+import { reviewRemoteTrunkRefExists, reviewTrunkRef, spawnGitProbe } from './review-target.ts'
 import type { CoverageGitRunner } from './review-types.ts'
 import {
   type ChangeFacts,
@@ -99,8 +95,10 @@ export function exactChangeReplayContext(
 }
 
 /** Adapt the review Git probe to a shared exact-change replay context. */
-export const exactChangeReplayRunner = (context: ExactChangeReplayContext): CoverageGitRunner =>
-  (args, stdin, stdinFile) => git(context.repo, args, true, stdin, stdinFile)
+export const exactChangeReplayRunner =
+  (context: ExactChangeReplayContext): CoverageGitRunner =>
+  (args, stdin, stdinFile) =>
+    git(context.repo, args, true, stdin, stdinFile)
 
 const parsedPaths = (pathSet: string): string[] => {
   const paths = JSON.parse(pathSet) as unknown
@@ -114,10 +112,7 @@ const parsedPaths = (pathSet: string): string[] => {
  * Witness a clean replay. When the old and current bases are equal, a differing stored
  * identity cannot replay to the current change; every moved-base case uses sameChange.
  */
-export function replayWitnessForCurrent(
-  input: ReplayWitnessInput,
-  row: ReplayWitnessRow,
-): boolean {
+function replayWitnessForCurrent(input: ReplayWitnessInput, row: ReplayWitnessRow): boolean {
   const oldBase = input.runner(['merge-base', row.tip, input.trunk])
   if (!oldBase.ok) return false
   if (oldBase.out === input.current.base) return false

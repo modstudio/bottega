@@ -28,7 +28,8 @@ const current = {
   tree: 'current-tree',
 }
 
-const replayingRunner = (calls: string[][], oldBase = 'reviewed-base'): CoverageGitRunner =>
+const replayingRunner =
+  (calls: string[][], oldBase = 'reviewed-base'): CoverageGitRunner =>
   (args, _stdin, stdinFile) => {
     calls.push(args)
     if (args[0] === 'rev-parse') return result(true, current.tree)

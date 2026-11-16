@@ -25,14 +25,11 @@ export function decideAdmission(
     (candidate) =>
       candidate.project === change.project &&
       candidate.branch === change.branch &&
-      sameStoredChangeOrWitness(
-        candidate,
-        {
-          patchId: change.patchId,
-          zeroContextPatchId: change.zeroContextPatchId ?? null,
-          pathSet: change.pathSet,
-        },
-      ),
+      sameStoredChangeOrWitness(candidate, {
+        patchId: change.patchId,
+        zeroContextPatchId: change.zeroContextPatchId ?? null,
+        pathSet: change.pathSet,
+      }),
   )
   const override = identityMatches.find((candidate) => {
     if (candidate.attribution === 'operator') return true
