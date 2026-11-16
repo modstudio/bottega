@@ -23,7 +23,7 @@ import { coverageAudit } from './review-coverage.ts'
 import { REVIEW_WINDOW } from './review-evidence-sql.ts'
 import { resolveReviewIdentifier } from './review-identifier.ts'
 import { reviewPins } from './review-pins.ts'
-import { emptyReviewRefusal, resolveReviewBase } from './review-target.ts'
+import { emptyReviewCondition, resolveReviewBase } from './review-target.ts'
 import { parseTierRange, resolveTierRange, type TierRangeEndpoint } from './review-tier.ts'
 import { completeReview, MIN_REVIEW_TRIAGED, triageFinding } from './review-triage.ts'
 import { DISPOSITIONS, type Disposition, REVIEW_SEVERITY } from './review-vocabulary.ts'
@@ -223,7 +223,10 @@ function reviewTierOutputForTarget({
   })
   if (funnelResult.kind === 'empty') {
     const trunk = project.settings.trunk!.trim()
-    throw new Error(emptyReviewRefusal(funnelResult.commit, funnelResult.base, branch, trunk)!)
+    const condition = emptyReviewCondition(funnelResult.commit, funnelResult.base, branch, trunk)
+    throw new Error(
+      `refused: ${condition}; cleared by: commit the change to ${branch}, then ${PLATFORM_SLUG} review tier ${branch}`,
+    )
   }
   const { facts: funnelFacts, verdict: funnelVerdict } = funnelResult
   const { output, postFix, reviewPlan, reviewBudget, creditedByArchitectRead } =
