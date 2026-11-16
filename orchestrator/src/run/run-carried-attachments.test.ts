@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  CARRIED_ATTACHMENT_MAX_BYTES,
+  CARRIED_ATTACHMENTS_MAX_BYTES,
   carriedAttachmentsSection,
   carriedAttachmentTokens,
   resolveCarriedAttachments,
 } from './run-carried-attachments.ts'
-import { CARRIED_ATTACHMENT_MAX_BYTES, CARRIED_ATTACHMENTS_MAX_BYTES } from './run-pack-prompt.ts'
+import { WorkflowTextNotHeldError } from '../workflow/workflow-text-copy.ts'
 
 const FIRST = 'attached-text:11111111-1111-4111-8111-111111111111'
 const SECOND = 'attached-text:22222222-2222-4222-8222-222222222222'
@@ -84,11 +86,24 @@ test('an unknown token refuses with its condition and remedy', async () => {
   await expect(
     resolveCarriedAttachments([`spec ${FIRST}`], {
       readAttachment: async () => {
-        throw new Error(`${FIRST} is not held on this machine`)
+        throw new WorkflowTextNotHeldError(FIRST)
       },
     }),
   ).rejects.toThrow(
     `carried attachments could not be resolved before dispatch:\n- ${FIRST}: not held on this machine\n` +
-      `remedy: re-attach the text with ${PLATFORM_SLUG} workflow attach or paste the body into the spec`,
+      `  remedy: re-attach the text with ${PLATFORM_SLUG} workflow attach or paste the body into the spec`,
+  )
+})
+
+test('a store failure carries its cause and a store remedy', async () => {
+  await expect(
+    resolveCarriedAttachments([`spec ${FIRST}`], {
+      readAttachment: async () => {
+        throw new Error('record service timed out')
+      },
+    }),
+  ).rejects.toThrow(
+    `- ${FIRST}: the workflow text store could not be read: record service timed out\n` +
+      '  remedy: restore access to the workflow text store and retry dispatch, or paste the body into the spec',
   )
 })

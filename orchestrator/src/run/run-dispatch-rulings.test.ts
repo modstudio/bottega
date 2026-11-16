@@ -116,3 +116,42 @@ test('task text is carried only on the first turn of a keyed writing job', async
   }
   expect(reads).toEqual(['DEV-2222'])
 })
+
+test('resolves an attachment token carried only by task text', async () => {
+  const token = `attached-text:${newRecordId()}`
+  const projectRecordId = addProject('task-text-attachment', '/work/task-text-attachment')
+  const prepared = await prepareRunDispatchRulings(
+    {
+      firstTurn: true,
+      workspaceSource: 'none',
+      parentRunRecordId: null,
+      projectName: 'task-text-attachment',
+      projectRecordId,
+      key: 'DEV-2357',
+      repoJob: true,
+      callerCwd: '/work/task-text-attachment',
+      probe: false,
+      writesJob: true,
+      spec: 'spec without an attachment token',
+    },
+    {
+      taskTextReader: async (_project, key) => ({
+        available: true,
+        recordId: null,
+        key,
+        title: 'Attached design',
+        body: `Read ${token}`,
+        comments: [],
+      }),
+      attachmentReader: async () => ({
+        kind: 'live',
+        id: token.slice('attached-text:'.length),
+        cursor: 7,
+        stepSlug: 'design',
+        body: 'Design body from the task text attachment.',
+      }),
+    },
+  )
+
+  expect(prepared.carriedAttachments).toContain('Design body from the task text attachment.')
+})

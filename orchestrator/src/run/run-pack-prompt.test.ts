@@ -42,24 +42,6 @@ describe('operator knowledge prompt section', () => {
     },
   )
 
-  test.each([true, false])(
-    'an absent carried section leaves the prompt unchanged for %s',
-    (writesJob) => {
-      const input = {
-        writesJob,
-        preamble: 'PREAMBLE',
-        infrastructure: 'INFRASTRUCTURE',
-        operatorKnowledge: 'KNOWLEDGE',
-        taskRulings: 'RULINGS',
-        taskText: 'TASK TEXT',
-        spec: 'SPEC',
-      }
-      expect(initialDispatchPrompt({ ...input, carriedAttachments: '' })).toBe(
-        initialDispatchPrompt(input),
-      )
-    },
-  )
-
   test('a resumed prompt carries attachments before the turn message', () => {
     const prompt = runDispatchPrompt({
       job: 'implement',

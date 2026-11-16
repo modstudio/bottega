@@ -5,16 +5,21 @@ import { resolveLens } from '../lens/lenses.ts'
 import { type ResolvedReviewTarget, reviewArtifactBlock } from '../review/review-target.ts'
 
 export const TASK_TEXT_MAX_BYTES = 16 * 1024
-export const CARRIED_ATTACHMENT_MAX_BYTES = TASK_TEXT_MAX_BYTES
-export const CARRIED_ATTACHMENTS_MAX_BYTES = TASK_TEXT_MAX_BYTES * 2
 
 function fitUtf8(value: string, bytes: number): string {
+  if (bytes <= 0) return ''
   const encoded = Buffer.from(value)
   if (encoded.byteLength <= bytes) return value
   return encoded
     .subarray(0, bytes)
     .toString('utf8')
     .replace(/\uFFFD$/u, '')
+}
+
+export function boundUtf8(value: string, bytes: number, marker: string): string {
+  if (Buffer.byteLength(value) <= bytes) return value
+  if (Buffer.byteLength(marker) >= bytes) return fitUtf8(marker, bytes)
+  return `${fitUtf8(value, bytes - Buffer.byteLength(marker))}${marker}`
 }
 
 export function taskTextReadRemedy(input: {
@@ -29,9 +34,8 @@ export function taskTextReadRemedy(input: {
 }
 
 export function boundTaskText(value: string, remedy: string): string {
-  if (Buffer.byteLength(value) <= TASK_TEXT_MAX_BYTES) return value
   const suffix = `\n\nTask text was truncated; read the full task with ${remedy}.`
-  return `${fitUtf8(value, TASK_TEXT_MAX_BYTES - Buffer.byteLength(suffix))}${suffix}`
+  return boundUtf8(value, TASK_TEXT_MAX_BYTES, suffix)
 }
 
 export function taskTextSection(input: {

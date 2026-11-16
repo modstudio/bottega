@@ -2,12 +2,15 @@
 /** Resolves workflow text references before a prompt enters the worker sandbox. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { workflowTextAttachmentToken } from '../workflow/workflow-text.ts'
-import { showWorkflowText } from '../workflow/workflow-text-copy.ts'
-import { CARRIED_ATTACHMENT_MAX_BYTES, CARRIED_ATTACHMENTS_MAX_BYTES } from './run-pack-prompt.ts'
+import {
+  workflowTextAttachmentToken,
+  workflowTextAttachmentTokens,
+} from '../workflow/workflow-text.ts'
+import { showWorkflowText, WorkflowTextNotHeldError } from '../workflow/workflow-text-copy.ts'
+import { boundUtf8, TASK_TEXT_MAX_BYTES } from './run-pack-prompt.ts'
 
-const ATTACHED_TEXT_PATTERN =
-  /attached-text:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/giu
+export const CARRIED_ATTACHMENT_MAX_BYTES = TASK_TEXT_MAX_BYTES
+export const CARRIED_ATTACHMENTS_MAX_BYTES = TASK_TEXT_MAX_BYTES * 2
 
 export type CarriedAttachment = Awaited<ReturnType<typeof showWorkflowText>>
 type AttachmentReader = (token: string) => Promise<CarriedAttachment>
@@ -15,19 +18,9 @@ type AttachmentReader = (token: string) => Promise<CarriedAttachment>
 export function carriedAttachmentTokens(...sections: readonly string[]): string[] {
   const tokens = new Set<string>()
   for (const section of sections) {
-    for (const match of section.matchAll(ATTACHED_TEXT_PATTERN)) tokens.add(match[0].toLowerCase())
+    for (const token of workflowTextAttachmentTokens(section)) tokens.add(token)
   }
   return [...tokens]
-}
-
-function fitUtf8(value: string, bytes: number): string {
-  if (bytes <= 0) return ''
-  const encoded = Buffer.from(value)
-  if (encoded.byteLength <= bytes) return value
-  return encoded
-    .subarray(0, bytes)
-    .toString('utf8')
-    .replace(/\uFFFD$/u, '')
 }
 
 function truncationMarker(token: string, scope: 'attachment' | 'section'): string {
@@ -37,23 +30,17 @@ function truncationMarker(token: string, scope: 'attachment' | 'section'): strin
   )
 }
 
-function bound(value: string, bytes: number, marker: string): string {
-  if (Buffer.byteLength(value) <= bytes) return value
-  if (Buffer.byteLength(marker) >= bytes) return fitUtf8(marker, bytes)
-  return `${fitUtf8(value, bytes - Buffer.byteLength(marker))}${marker}`
-}
-
 function attachmentEntry(attachment: CarriedAttachment): string {
   const token = workflowTextAttachmentToken(attachment.id)
   if (attachment.kind === 'redirect') {
-    return bound(
+    return boundUtf8(
       `${token} — task document ${attachment.documentReference}\n\nread it with ${PLATFORM_SLUG} task doc show ${attachment.documentReference}`,
       CARRIED_ATTACHMENT_MAX_BYTES,
       truncationMarker(token, 'attachment'),
     )
   }
   const heading = `${token} — cursor ${attachment.cursor}, step ${attachment.stepSlug}`
-  return bound(
+  return boundUtf8(
     `${heading}\n\n${attachment.body}`,
     CARRIED_ATTACHMENT_MAX_BYTES,
     truncationMarker(token, 'attachment'),
@@ -77,17 +64,18 @@ export function carriedAttachmentsSection(attachments: readonly CarriedAttachmen
     }
     const token = workflowTextAttachmentToken(attachments[index]!.id)
     const marker = truncationMarker(token, 'section')
-    return bound(candidate, CARRIED_ATTACHMENTS_MAX_BYTES, marker)
+    return boundUtf8(candidate, CARRIED_ATTACHMENTS_MAX_BYTES, marker)
   }
   return section
 }
 
-function attachmentRefusal(failures: Array<{ token: string; condition: string }>): Error {
-  const details = failures.map(({ token, condition }) => `- ${token}: ${condition}`).join('\n')
-  return new Error(
-    `carried attachments could not be resolved before dispatch:\n${details}\n` +
-      `remedy: re-attach the text with ${PLATFORM_SLUG} workflow attach or paste the body into the spec`,
-  )
+type AttachmentFailure = { token: string; condition: string; remedy: string }
+
+function attachmentRefusal(failures: AttachmentFailure[]): Error {
+  const details = failures
+    .map(({ token, condition, remedy }) => `- ${token}: ${condition}\n  remedy: ${remedy}`)
+    .join('\n')
+  return new Error(`carried attachments could not be resolved before dispatch:\n${details}`)
 }
 
 export async function resolveCarriedAttachments(
@@ -98,18 +86,26 @@ export async function resolveCarriedAttachments(
   if (tokens.length === 0) return ''
   const readAttachment = dependencies.readAttachment ?? showWorkflowText
   const resolved: CarriedAttachment[] = []
-  const failures: Array<{ token: string; condition: string }> = []
+  const failures: AttachmentFailure[] = []
   for (const token of tokens) {
     try {
       resolved.push(await readAttachment(token))
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : ''
-      failures.push({
-        token,
-        condition: message.includes('is not held on this machine')
-          ? 'not held on this machine'
-          : 'the workflow text store is unreachable',
-      })
+      if (cause instanceof WorkflowTextNotHeldError) {
+        failures.push({
+          token,
+          condition: 'not held on this machine',
+          remedy: `re-attach the text with ${PLATFORM_SLUG} workflow attach or paste the body into the spec`,
+        })
+      } else {
+        const message = cause instanceof Error ? cause.message : String(cause)
+        failures.push({
+          token,
+          condition: `the workflow text store could not be read: ${message}`,
+          remedy:
+            'restore access to the workflow text store and retry dispatch, or paste the body into the spec',
+        })
+      }
     }
   }
   if (failures.length > 0) throw attachmentRefusal(failures)
