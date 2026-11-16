@@ -2,15 +2,15 @@
 /** Records one SessionStart context delivery and its open-cursor facts. */
 
 import type { Database } from 'bun:sqlite'
-import { openQuestionStages } from '../question-store/question-store-read.ts'
 import { SESSION_START_SOURCES } from '../../../shared/record/schema-session.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
+import { openQuestionStages } from '../question-store/question-store-read.ts'
 import { buildBriefInjectionPayload } from '../record/brief-injection-outbox.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { insertOutboxRow } from '../record/outbox-enqueue.ts'
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
-import { type TaskFlowOpenSessionStageRow, taskFlowReadStore } from '../workflow/task-flow-store.ts'
+import type { TaskFlowOpenSessionStageRow } from '../workflow/task-flow-store.ts'
 import { keylessCursorIdle } from './keyless-cursor-idle.ts'
 import { SESSION_START_CONTEXT_MAX_CHARS } from './session-start-context-limit.ts'
 

@@ -4,11 +4,13 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
-import { callerIdentity, db } from '../database/db.ts'
-import { taskFlowLocalStore } from '../workflow/task-flow-store.ts'
-import { nextQuestionNumber } from './question-number.ts'
-import { questionOpenSql } from './question-open.ts'
-import { enqueueQuestionRecord } from './question-outbox.ts'
+import { callerIdentity, db, sessionId } from '../database/db.ts'
+import {
+  askQuestion,
+  mutateQuestion,
+  questionById,
+} from '../question-store/question-store-mutation.ts'
+import { questionRulings, waitingQuestions } from '../question-store/question-store-read.ts'
 import { rulingActor } from './question-vocabulary.ts'
 import { adoptedMutationReason } from './run-authority.ts'
 import {
@@ -105,7 +107,7 @@ export function auditQuestionMutation(
     )
 }
 
-export function upsertWorkflowQuestion(
+export async function upsertWorkflowQuestion(
   input: {
     cursorId: string
     workflowKey: string
@@ -116,89 +118,78 @@ export function upsertWorkflowQuestion(
     at: string
   },
   database: Database = db(),
-): { recordId: string; number: number } {
-  const open = database
-    .query<{ record_id: string; number: number }, [string]>(
-      `SELECT record_id,number FROM question
-       WHERE workflow_cursor_record_id=? AND ${questionOpenSql('question')}`,
-    )
-    .get(input.cursorId)
+): Promise<{ recordId: string; number: number }> {
+  const open = (await waitingQuestions(database)).find(
+    ({ workflow_cursor_record_id }) => workflow_cursor_record_id === input.cursorId,
+  )
   if (open) {
-    database
-      .query(
-        `UPDATE question SET question=?,workflow_key=?,workflow_task_record_id=?,workflow_step_ordinal=?,workflow_step_slug=?,
-         revision=revision+1 WHERE record_id=?`,
-      )
-      .run(
-        input.question,
-        input.workflowKey || null,
-        input.workflowTaskRecordId,
-        input.stepOrdinal,
-        input.stepSlug,
-        open.record_id,
-      )
-    enqueueQuestionRecord(database, open.record_id)
-    return { recordId: open.record_id, number: open.number }
+    await mutateQuestion(database, {
+      id: open.question_record_id,
+      intent: 'link',
+      at: input.at,
+      actorSession: sessionId(),
+      reason: null,
+      changes: {
+        question: input.question,
+        workflowKey: input.workflowKey || null,
+        workflowTaskId: input.workflowTaskRecordId,
+      },
+    })
+    const row = await questionById(database, open.question_record_id)
+    return { recordId: open.question_record_id, number: Number(row!.number) }
   }
-  const recordId = newRecordId()
-  const inserted = database
-    .query<{ record_id: string; number: number }, (string | number | null)[]>(
-      `INSERT INTO question
-        (record_id,number,workflow_cursor_record_id,workflow_key,workflow_task_record_id,asked_at,question,asked_via,awaiting_operator_at,
-         workflow_step_ordinal,workflow_step_slug)
-       VALUES (?,?,?,?,?,?,?, 'workflow', ?,?,?) RETURNING record_id,number`,
-    )
-    .get(
-      recordId,
-      nextQuestionNumber(database),
-      input.cursorId,
-      input.workflowKey || null,
-      input.workflowTaskRecordId,
-      input.at,
-      input.question,
-      input.at,
-      input.stepOrdinal,
-      input.stepSlug,
-    )
-  if (!inserted) throw new Error('workflow question was not recorded')
-  enqueueQuestionRecord(database, inserted.record_id)
-  return { recordId: inserted.record_id, number: inserted.number }
+  const inserted = await askQuestion(database, {
+    workflowCursorRecordId: input.cursorId,
+    workflowKey: input.workflowKey || null,
+    workflowTaskId: input.workflowTaskRecordId,
+    askedAt: input.at,
+    question: input.question,
+    askedVia: 'workflow',
+    awaitingOperatorAt: input.at,
+  })
+  return { recordId: inserted.id, number: inserted.number }
 }
 
 /** Links one workflow question through the mutation path so revision and outbox stay in sync. */
-export function linkWorkflowQuestionTaskReference(
+export async function linkWorkflowQuestionTaskReference(
   questionId: string,
   taskRecordId: string,
   database: Database = db(),
-): boolean {
-  const changed = database
-    .query(
-      `UPDATE question SET workflow_task_record_id=?,revision=revision+1
-       WHERE record_id=? AND workflow_task_record_id IS NULL`,
-    )
-    .run(taskRecordId, questionId)
-  if (changed.changes !== 1) return false
-  enqueueQuestionRecord(database, questionId)
+): Promise<boolean> {
+  const row = await questionById(database, questionId)
+  if (!row || row.workflow_task_record_id !== null) return false
+  await mutateQuestion(database, {
+    id: questionId,
+    intent: 'link',
+    at: new Date().toISOString(),
+    actorSession: sessionId(),
+    reason: null,
+    changes: { workflowTaskId: taskRecordId },
+  })
   return true
 }
 
 /** Links workflow questions through the mutation path so revisions and outbox rows stay in sync. */
-export function linkWorkflowQuestionsTaskReference(
+export async function linkWorkflowQuestionsTaskReference(
   input: { project: string; workflowKey: string; taskRecordId: string },
   database: Database = db(),
-): number {
-  const questions = taskFlowLocalStore(database).unlinkedWorkflowQuestionIds(
-    input.project,
-    input.workflowKey,
-  )
+): Promise<number> {
+  const questions = (await questionRulings(database, { kind: 'workflow' })).items
+    .filter(
+      (row) =>
+        row.project === input.project &&
+        row.workflow_key === input.workflowKey &&
+        row.workflow_task_record_id == null,
+    )
+    .map((row) => String(row.record_id))
   let linked = 0
   for (const questionId of questions) {
-    if (linkWorkflowQuestionTaskReference(questionId, input.taskRecordId, database)) linked++
+    if (await linkWorkflowQuestionTaskReference(questionId, input.taskRecordId, database)) linked++
   }
   return linked
 }
 
-export function answerWorkflowQuestion(
+export async function answerWorkflowQuestion(
   input: {
     questionId: string
     cursorId: string
@@ -212,35 +203,29 @@ export function answerWorkflowQuestion(
     adoptionReason?: string | null
   },
   database: Database = db(),
-): void {
-  const changed = database
-    .query(
-      `UPDATE question SET answer=?,answer_basis=?,answered_at=?,answered_by=?,answered_by_name=?,answerer_kind=?,answer_channel=?,
-        revision=revision+1
-       WHERE record_id=? AND workflow_cursor_record_id=? AND ${questionOpenSql('question')}`,
-    )
-    .run(
-      input.ruling,
-      input.basis ?? null,
-      input.at,
-      rulingActor(input.fromOperator, input.actor),
-      input.personName,
-      input.fromOperator ? 'operator' : 'agent',
-      input.channel,
-      input.questionId,
-      input.cursorId,
-    )
-  if (changed.changes !== 1) throw new Error(`question ${input.questionId} is not open`)
-  auditQuestionMutation(
-    {
-      questionId: input.questionId,
-      action: 'rule',
-      actor: input.actor,
-      at: input.at,
-      reason: input.ruling,
-      adoptionReason: input.adoptionReason,
-    },
-    database,
+): Promise<void> {
+  const row = await questionById(database, input.questionId)
+  if (
+    !row ||
+    row.workflow_cursor_record_id !== input.cursorId ||
+    row.answer !== null ||
+    row.closed_at !== null
   )
-  enqueueQuestionRecord(database, input.questionId)
+    throw new Error(`question ${input.questionId} is not open`)
+  await mutateQuestion(database, {
+    id: input.questionId,
+    intent: 'answer',
+    at: input.at,
+    actorSession: input.actor,
+    reason: joinMutationReason(input.ruling, input.adoptionReason ?? null),
+    changes: {
+      answer: input.ruling,
+      answerBasis: input.basis ?? null,
+      answeredAt: input.at,
+      answeredBy: rulingActor(input.fromOperator, input.actor),
+      answeredByName: input.personName,
+      answererKind: input.fromOperator ? 'operator' : 'agent',
+      answerChannel: input.channel,
+    },
+  })
 }

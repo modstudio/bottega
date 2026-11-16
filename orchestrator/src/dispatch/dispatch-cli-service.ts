@@ -45,6 +45,7 @@ import {
   requiredMcpServer,
 } from '../mcp/mcp-preflight.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
+import { openQuestionStages } from '../question-store/question-store-read.ts'
 import { reviewFindingMemoryRows } from '../review/rejected-finding-memory.ts'
 import { reviewLensSelectionReasonForDispatch } from '../review/review-lens-dispatch-reason.ts'
 import { reviewLineage } from '../review/review-lineage-store.ts'
@@ -83,7 +84,6 @@ import {
   type TransportName,
 } from '../transport/transport.ts'
 import { askTypedQuestion } from '../typed-question/typed-question-service.ts'
-import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import {
   callerDrift,
   checkoutHasUncommittedWork,
@@ -93,7 +93,6 @@ import {
 import { dispatchCommand, reviewMemoryBranch } from './dispatch-commands.ts'
 import { callerCheckoutFacts, installLevelDispatchDecision } from './dispatch-preflight.ts'
 import type { ReviewLensPackInputs } from './review-lens-prompt.ts'
-import { openQuestionStages } from '../question-store/question-store-read.ts'
 import type { ReviewFindingMemory } from './review-memory.ts'
 import { lookupProjectTaskKey, readTaskText, type TaskTextRead } from './task-key-lookup.ts'
 

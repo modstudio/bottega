@@ -1,15 +1,14 @@
 // concern: run-inbox
 import type { Database } from 'bun:sqlite'
-import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 /** Knows asking-run and ruling inbox. Must not know run control, transports, routing, the CLI, or worktrees. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, sessionId } from '../database/db.ts'
 import { voidedSql } from '../evidence/evidence-query.ts'
 import { projectAt } from '../project/projects.ts'
-import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
-import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { inboxWorkflowQuestions } from '../question-store/question-store-read.ts'
+import { runInboxQuestionRows as sqliteRunInboxQuestionRows } from '../question-store/question-store-sqlite-reads.ts'
+import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 import { runQuestionGroupFooter } from './question-display.ts'
 import { displayRunQuestion } from './question-display-probe.ts'
@@ -108,6 +107,7 @@ export type QueriedInboxQuestion = {
   agent: string
   job: string
   repo: string | null
+  task_key: string | null
   project_record_id: string | null
   status: string
   session_id: string | null
@@ -122,29 +122,9 @@ export type QueriedInboxQuestion = {
 
 export function runInboxQuestionRows(
   database: ReturnType<typeof db>,
-  cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString(),
+  cutoff?: string,
 ): QueriedInboxQuestion[] {
-  const seenJoin = 'LEFT JOIN session_seen seen ON seen.session_id = r.session_id'
-  const sessionRecent =
-    'CASE WHEN r.session_id IS NOT NULL AND seen.last_seen >= ? THEN 1 ELSE 0 END'
-  return database
-    .query(
-      `SELECT q.number,q.record_id,q.run_record_id,r.number AS run_number,
-            q.asked_at, q.question, q.options, q.recommendation, q.why,q.kind,
-            q.jev_pick,q.jev_confidence,q.jev_probabilities,q.jev_error,
-            q.answered_at, q.overturned_at, q.overturned_by, q.overturn_reason, q.replacement,
-            q.filed_as, q.filed_ref, q.filed_record_id, q.filed_label, q.filed_at,
-            r.agent, r.job, r.repo,COALESCE(r.launch_key,root.launch_key) task_key, root.project_record_id, r.status, r.session_id,q.awaiting_operator_at,
-            root.status root_status, root.record_id root_record_id, root.number root_number,
-            ${voidedSql('root')} root_voided,
-            COALESCE(r.parent_run_record_id, r.record_id) root_id, ${sessionRecent} session_recent
-       FROM question q JOIN run r ON r.record_id = q.run_record_id
-       JOIN run root ON root.record_id = COALESCE(r.parent_run_record_id, r.record_id)
-       ${seenJoin}
-      WHERE q.closed_at IS NULL
-      ORDER BY q.run_record_id,q.number`,
-    )
-    .all(cutoff) as QueriedInboxQuestion[]
+  return sqliteRunInboxQuestionRows(database, cutoff)
 }
 
 type RecoverableInboxRow = {
@@ -273,6 +253,7 @@ export async function queryInbox(
           job: q.job,
           agent: q.agent,
           repo: q.repo,
+          task_key: q.task_key,
           asked_at: q.asked_at,
           session_live: q.session_recent ? true : null,
           session_liveness: q.session_recent ? 'live' : 'unknown',

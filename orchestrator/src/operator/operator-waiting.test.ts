@@ -71,9 +71,9 @@ describe('relay', () => {
          VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'2026-09-25','Which?','This.','2026-09-25') RETURNING record_id`,
       )
       .get(owner.id) as { record_id: string }
-    await expect(relayQuestion(owner.id, question.record_id, 'operator must decide')).rejects.toThrow(
-      `question ${question.record_id} is already answered`,
-    )
+    await expect(
+      relayQuestion(owner.id, question.record_id, 'operator must decide'),
+    ).rejects.toThrow(`question ${question.record_id} is already answered`)
   })
 
   test('is idempotent and audits the caller session', async () => {

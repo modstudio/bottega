@@ -2,7 +2,6 @@
 /** Gathers one session's lifecycle inventory and delegates release to each existing owner. */
 
 import type { Database } from 'bun:sqlite'
-import { openQuestionStages } from '../question-store/question-store-read.ts'
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -18,16 +17,14 @@ import { type HeldTreeJson, heldTreeFromError, heldTreeJson } from '../close/clo
 import { sessionId as callingSessionId, db, writableDb, writeTransaction } from '../database/db.ts'
 import { gitResult, repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
 import { projectAt, projectByName, resolvedWorktreeTool } from '../project/projects.ts'
+import { openQuestionStages } from '../question-store/question-store-read.ts'
 import { currentOrphanProcesses } from '../resources/process-inventory.ts'
 import { refGuardDirectory } from '../resources/ref-guard.ts'
 import { parseRetainedRef } from '../resources/resource-inventory.ts'
 import { isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { observeGrokTrustHeadings } from '../sandbox/grok-trust.ts'
 import { shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
-import {
-  type TaskFlowOpenSessionStageRow as OpenCursor,
-  taskFlowReadStore,
-} from '../workflow/task-flow-store.ts'
+import type { TaskFlowOpenSessionStageRow as OpenCursor } from '../workflow/task-flow-store.ts'
 import { hasAbsentTreeTeardownPlanWithRegisteredRemoveCommand } from '../worktree/worktree-remove.ts'
 import { releaseSessionCursors } from './session-close-out-cursors.ts'
 import {

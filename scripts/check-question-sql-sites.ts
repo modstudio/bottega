@@ -15,8 +15,13 @@ const EXACT_ADAPTERS = new Set([
   'orchestrator/src/record/record-question-number.ts',
   // DEV-2349 S5d2 deletes the retired question sender.
   'orchestrator/src/record/record-sync-service.ts',
+  // DEV-2349 S5d2 deletes the retired question outbox producer and backfill.
+  'orchestrator/src/run/question-outbox.ts',
   // DEV-2349 S5d2 moves this machine-local marker off the question table.
   'orchestrator/src/run/question-delivery-pending.ts',
+  // Migration validation and the generic local number allocator are persistence adapters.
+  'orchestrator/src/database/workflow-uuid-migration-preflight.ts',
+  'orchestrator/src/database/entity-number.ts',
 ])
 
 const allowed = (file: string): boolean =>

@@ -2,7 +2,6 @@
 /** Diagnoses customer record access, agent credentials, and optional operator connections. */
 
 import type { Database } from 'bun:sqlite'
-import { questionProjects } from '../question-store/question-store-read.ts'
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readEnvValues, resolveEnvValuesWithHosted } from '../../../shared/env-source.ts'
@@ -40,13 +39,13 @@ import { AGENTS } from '../agent/agent-registry.ts'
 import type { Agent } from '../agent/agents.ts'
 import { db } from '../database/db.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
+import { questionProjects } from '../question-store/question-store-read.ts'
 import { inspectRunRecordBackfill, type RunRecordBackfillInspection } from '../run/run-outbox.ts'
 import {
   inspectTaskFlowBackfill,
   type TaskFlowBackfillInspection,
   taskFlowBackfillUnavailable,
 } from '../workflow/task-flow-backfill.ts'
-import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { activeSpaceInvariant } from './active-space-invariant.ts'
 import { machineId } from './machine-identity.ts'
 import { quarantinedOutboxRows } from './outbox-quarantine.ts'

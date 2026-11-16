@@ -968,15 +968,15 @@ export async function answerRun(
     }
   })
   await applyArchitectQuestionAnswers({
-      database: db(),
-      answers,
-      attributions,
-      answeredAt: now,
-      channel: input.channel,
-      ownersLive,
-      skipResume,
-      open,
-      refusal: (questionId) => namedQuestionRefusal(questionId, id),
+    database: db(),
+    answers,
+    attributions,
+    answeredAt: now,
+    channel: input.channel,
+    ownersLive,
+    skipResume,
+    open,
+    refusal: (questionId) => namedQuestionRefusal(questionId, id),
   })
   writeTransaction(() => {
     if (skipResume) db().query("UPDATE run SET status='asking' WHERE record_id=?").run(id)

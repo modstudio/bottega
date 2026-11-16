@@ -525,6 +525,7 @@ export const recordModules: RecordModule[] = [
     '../database/db.ts',
     './question-vocabulary.ts',
   ]),
+  module('orchestrator/src/run/question-delivery-pending.ts', ['bun:sqlite']),
   module('orchestrator/src/run/question-outbox.ts', [
     'bun:sqlite',
     '../../../shared/record-id.ts',

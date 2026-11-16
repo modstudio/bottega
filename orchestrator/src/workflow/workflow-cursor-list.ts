@@ -26,9 +26,7 @@ export type WorkflowCursorListRow = ListedCursorRow & { next_slug: string; line:
 
 /** The one workflow-owned read defining open keyless context holders for a session. */
 export async function openKeylessCursorsForSession(session: string, d: Database = db()) {
-  return (await openQuestionStages(d, session)).filter(
-    (cursor) => !cursor.workflow_key,
-  )
+  return (await openQuestionStages(d, session)).filter((cursor) => !cursor.workflow_key)
 }
 
 export async function listWorkflowCursors(

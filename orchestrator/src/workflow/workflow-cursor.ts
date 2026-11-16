@@ -662,10 +662,10 @@ async function applyWorkflowAdvanceLocally(input: {
   client: WorkflowCursorContext['taskFlowClient']
 }): Promise<void> {
   const { row, database: d, at, selfRulingPlan, payload, hosted } = input
+  if (row.state === 'awaiting-ruling')
+    await closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, d)
+  if (selfRulingPlan) await recordWorkflowSelfRuling(selfRulingPlan, d)
   const mirror = writeTransaction(() => {
-    if (row.state === 'awaiting-ruling')
-      closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, d)
-    if (selfRulingPlan) recordWorkflowSelfRuling(selfRulingPlan, d)
     return taskFlowLocalStore(d).write('advance', payload, hosted).mirror[row.record_id]
   }, d)
   if (mirror === 'refresh')
@@ -913,35 +913,35 @@ async function awaitWorkflowRulingImpl(
     taskFlowWriteTarget(row.project, d),
     context.taskFlowClient,
   )
-  const result = writeTransaction(() => {
+  const mirror = writeTransaction(() => {
     const store = taskFlowLocalStore(d)
-    const mirror = store.write('await-ruling', payload, hosted).mirror[row.record_id]
-    const recordedQuestion = upsertWorkflowQuestion(
-      {
-        cursorId: row.record_id,
-        workflowKey: row.workflow_key,
-        workflowTaskRecordId: row.task_record_id,
-        stepOrdinal: row.ordinal + 1,
-        stepSlug: row.step_slug,
-        question: question.trim(),
-        at,
-      },
-      d,
-    )
-    return {
-      summary: {
-        id: row.id,
-        n: row.ordinal + 1,
-        slug: row.step_slug,
-        state: 'awaiting-ruling' as const,
-        opened: false,
-        questionId: recordedQuestion.number,
-      },
-      cursorId: row.record_id,
-      mirror,
-    }
+    return store.write('await-ruling', payload, hosted).mirror[row.record_id]
   }, d)
-  if (result.mirror === 'refresh')
+  const recordedQuestion = await upsertWorkflowQuestion(
+    {
+      cursorId: row.record_id,
+      workflowKey: row.workflow_key,
+      workflowTaskRecordId: row.task_record_id,
+      stepOrdinal: row.ordinal + 1,
+      stepSlug: row.step_slug,
+      question: question.trim(),
+      at,
+    },
+    d,
+  )
+  const result = {
+    summary: {
+      id: row.id,
+      n: row.ordinal + 1,
+      slug: row.step_slug,
+      state: 'awaiting-ruling' as const,
+      opened: false,
+      questionId: recordedQuestion.number,
+    },
+    cursorId: row.record_id,
+    mirror,
+  }
+  if (mirror === 'refresh')
     await refreshStaleMirror(
       d,
       {
@@ -963,12 +963,14 @@ export async function awaitWorkflowRuling(
   question: string | undefined,
   context: WorkflowCursorContext,
   d: Database = writableDb(),
-  notify: typeof notifyWaitingItem = notifyWaitingItem,
+  notify: (
+    ...args: Parameters<typeof notifyWaitingItem>
+  ) => void | Promise<void> = notifyWaitingItem,
   cursor?: number,
 ): Promise<CursorSummary & { questionId: number }> {
   const result = await withLinkedWorkflowTask(project, context, d, () =>
     awaitWorkflowRulingImpl(slug, project, mode, args, question, context, d, cursor),
   )
-  notify('workflow', result.cursorId, d)
+  await notify('workflow', result.cursorId, d)
   return result.summary
 }

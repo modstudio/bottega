@@ -4,10 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { machineId } from '../record/machine-identity.ts'
-import type {
-  QuestionIntent,
-  QuestionWriteBody,
-} from '../record/record-question-contract.ts'
+import type { QuestionIntent, QuestionWriteBody } from '../record/record-question-contract.ts'
 import { questionStore } from './question-store.ts'
 
 type Snapshot = QuestionWriteBody['question']
@@ -21,7 +18,7 @@ const json = (value: unknown): unknown => {
   }
 }
 
-export function questionSnapshotFromRow(row: Record<string, unknown>): Snapshot {
+function questionSnapshotFromRow(row: Record<string, unknown>): Snapshot {
   const askedAt = String(row.asked_at)
   return {
     id: String(row.record_id),
@@ -59,8 +56,7 @@ export function questionSnapshotFromRow(row: Record<string, unknown>): Snapshot 
     jevInputTokens: row.jev_input_tokens == null ? null : Number(row.jev_input_tokens),
     jevError: nullable(row.jev_error),
     jevAgreed: row.jev_agreed == null ? null : Number(row.jev_agreed),
-    jevQuestionVersion:
-      row.jev_question_version == null ? null : Number(row.jev_question_version),
+    jevQuestionVersion: row.jev_question_version == null ? null : Number(row.jev_question_version),
     jevFits: row.jev_fits == null ? null : Number(row.jev_fits),
     jevOrderFlipped: row.jev_order_flipped == null ? null : Number(row.jev_order_flipped),
     awaitingOperatorAt: nullable(row.awaiting_operator_at),
@@ -83,10 +79,15 @@ export function questionSnapshotFromRow(row: Record<string, unknown>): Snapshot 
   }
 }
 
-export async function questionById(database: Database, id: string): Promise<Record<string, unknown> | null> {
-  return ((await questionStore(database).read({ read: 'by-id', ids: [id] })).items[0] as
-    | Record<string, unknown>
-    | undefined) ?? null
+export async function questionById(
+  database: Database,
+  id: string,
+): Promise<Record<string, unknown> | null> {
+  return (
+    ((await questionStore(database).read({ read: 'by-id', ids: [id] })).items[0] as
+      | Record<string, unknown>
+      | undefined) ?? null
+  )
 }
 
 export async function mutateQuestion(

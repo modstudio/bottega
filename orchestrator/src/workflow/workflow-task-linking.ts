@@ -55,15 +55,15 @@ export async function linkWorkflowTaskLabel(
   }
   const store = taskFlowLocalStore(database)
   const refresh: typeof hosted = []
-  const linked = writeTransaction(() => {
+  const linkedCursors = writeTransaction(() => {
     for (const row of hosted) {
       const outcome = store.write('adopt', row.payload, row.result).mirror[row.payload.stage.id]
       if (outcome === 'refresh') refresh.push(row)
     }
-    const cursors = 0
-    const questions = linkWorkflowQuestionsTaskReference(input, database)
-    return { workflow_cursor: cursors + hosted.length, question: questions }
+    return hosted.length
   }, database)
+  const linkedQuestions = await linkWorkflowQuestionsTaskReference(input, database)
+  const linked = { workflow_cursor: linkedCursors, question: linkedQuestions }
   for (const { result } of refresh)
     if (result)
       await readThroughTaskFlow(

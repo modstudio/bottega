@@ -15,17 +15,15 @@ import type {
 } from '../../../shared/orch-contract.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
-import { inboxRunQuestions, questionsForRun, waitingQuestions } from '../question-store/question-store-read.ts'
 import { mutateQuestion } from '../question-store/question-store-mutation.ts'
-import { questionOpenSql } from '../run/question-open.ts'
-import { enqueueQuestionRecord } from '../run/question-outbox.ts'
+import {
+  inboxRunQuestions,
+  questionsForRun,
+  waitingQuestions,
+} from '../question-store/question-store-read.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from '../run/run-authority.ts'
 import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
-import {
-  taskFlowLocalStore,
-  taskFlowReadStore,
-  type TaskFlowWaitingQuestionRow as WorkflowWaitingRow,
-} from '../workflow/task-flow-store.ts'
+import type { TaskFlowWaitingQuestionRow as WorkflowWaitingRow } from '../workflow/task-flow-store.ts'
 
 type WaitingCause = { rulings: 'agent' | 'user'; relayed: boolean; answered: boolean }
 export const questionAwaitingOperator = (cause: WaitingCause): boolean =>
@@ -138,7 +136,11 @@ export async function relayQuestion(
   questionId: string | undefined,
   note: string,
   d: Database = db(),
-  notify: (kind: OperatorInboxKind, id: string | number, d: Database) => void | Promise<void> = notifyWaitingItem,
+  notify: (
+    kind: OperatorInboxKind,
+    id: string | number,
+    d: Database,
+  ) => void | Promise<void> = notifyWaitingItem,
 ): Promise<{ id: number; recordId: string }> {
   let { authority, rows } = await openQuestions(runId, d)
   if (questionId !== undefined) {
@@ -166,7 +168,10 @@ export async function relayQuestion(
     at,
     actorSession: authority.actor,
     reason: note,
-    changes: { awaitingOperatorAt: selected.awaiting_operator_at ?? at, relayedBy: authority.actor },
+    changes: {
+      awaitingOperatorAt: selected.awaiting_operator_at ?? at,
+      relayedBy: authority.actor,
+    },
   })
   writeTransaction(() => {
     auditRunMutation(authority, 'relay', note, d)

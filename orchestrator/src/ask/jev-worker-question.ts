@@ -12,7 +12,6 @@ import type { TypedQuestion } from '../../../shared/typed-question/registry.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { mutateQuestion, questionById } from '../question-store/question-store-mutation.ts'
 import { applyQuestionAnswer } from '../run/question-answer.ts'
-import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import {
   type AnswerChannel,
   QUESTION_DELIVERY_MODE_LIVE,
@@ -246,32 +245,36 @@ async function routeAndStore(
     )
     let applied = false
     if (decision.action === 'apply') {
-        applied = await applyQuestionAnswer({
+      applied = await applyQuestionAnswer({
+        database,
+        questionId: input.recordId,
+        answer: String(decision.value),
+        value: decision.value,
+        answeredAt: nowIso(),
+        answeredBy: 'jev',
+        answeredByName: null,
+        answeredByKind: 'jev',
+        answererKind: 'agent',
+        channel: input.answerChannel,
+        deliveryPendingAt: null,
+        delivery: {
+          runId: input.runId,
+          mode: QUESTION_DELIVERY_MODE_LIVE,
+          outcome: QUESTION_DELIVERY_OUTCOME_DELIVERED,
+        },
+      })
+      if (applied) {
+        writeTransaction(
+          () =>
+            auditRunMutation(
+              runMutationAuthority(database, input.runId),
+              'answer',
+              'Jev auto-ruling',
+              database,
+            ),
           database,
-          questionId: input.recordId,
-          answer: String(decision.value),
-          value: decision.value,
-          answeredAt: nowIso(),
-          answeredBy: 'jev',
-          answeredByName: null,
-          answeredByKind: 'jev',
-          answererKind: 'agent',
-          channel: input.answerChannel,
-          deliveryPendingAt: null,
-          delivery: {
-            runId: input.runId,
-            mode: QUESTION_DELIVERY_MODE_LIVE,
-            outcome: QUESTION_DELIVERY_OUTCOME_DELIVERED,
-          },
-        })
-        if (applied) {
-          writeTransaction(() => auditRunMutation(
-            runMutationAuthority(database, input.runId),
-            'answer',
-            'Jev auto-ruling',
-            database,
-          ), database)
-        }
+        )
+      }
     }
     if (decision.action === 'apply' && !applied) {
       await storeJevError(
@@ -325,11 +328,13 @@ export async function preAnswerWorkerQuestions(input: BatchInput): Promise<PreAn
           .get(root.rootRunId)?.prompt_path ?? null)
       : null
     const run: RunContext = { ...current, root_prompt_path: rootPrompt }
-    const numbered = await Promise.all(eligible.map(async ({ question, index }) => {
-      const row = await questionById(database, question.recordId)
-      if (!row) throw new Error(`question ${question.recordId} was not found`)
-      return { question, index, number: Number(row.number) }
-    }))
+    const numbered = await Promise.all(
+      eligible.map(async ({ question, index }) => {
+        const row = await questionById(database, question.recordId)
+        if (!row) throw new Error(`question ${question.recordId} was not found`)
+        return { question, index, number: Number(row.number) }
+      }),
+    )
     const state: Record<string, unknown> = {
       worker: {
         why: Object.fromEntries(

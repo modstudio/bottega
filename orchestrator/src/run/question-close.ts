@@ -3,14 +3,12 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
-import { questionById } from '../question-store/question-store-mutation.ts'
+import { db, nowIso, sessionId } from '../database/db.ts'
+import { mutateQuestion, questionById } from '../question-store/question-store-mutation.ts'
+import { questionsForRun } from '../question-store/question-store-read.ts'
 import type { TaskFlowQuestionCloseRow } from '../workflow/task-flow-store-types.ts'
-import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
-import { auditQuestionMutation } from './question-mutation.ts'
-import { questionOpenSql } from './question-open.ts'
-import { enqueueQuestionRecord } from './question-outbox.ts'
+import { clearQuestionDeliveryPending, pendingQuestionIds } from './question-delivery-pending.ts'
 export const QUESTION_CLOSE_CHAIN_STOPPED = 'chain-stopped'
 export const QUESTION_CLOSE_CHAIN_VOIDED = 'chain-voided'
 export const QUESTION_CLOSE_CHAIN_STALE = 'chain-stale'
@@ -28,55 +26,65 @@ export type QuestionCloseReason =
   | 'advanced-without-ruling'
   | 'abandoned'
 
-function questionIdsForRunChain(database: Database, rootId: string): string[] {
-  return database
+async function questionIdsForRunChain(database: Database, rootId: string): Promise<string[]> {
+  const runIds = database
     .query<{ record_id: string }, [string, string]>(
-      `SELECT q.record_id FROM question q JOIN run owner ON owner.record_id=q.run_record_id
-       WHERE (owner.record_id=? OR owner.parent_run_record_id=?) AND ${questionOpenSql('q')}
-       ORDER BY q.number`,
+      'SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=? ORDER BY number',
     )
     .all(rootId, rootId)
-    .map((row) => row.record_id)
+    .map(({ record_id }) => record_id)
+  const rows = (await Promise.all(runIds.map((id) => questionsForRun(database, id)))).flat()
+  return rows
+    .filter((row) => row.answered_at === null && row.closed_at === null)
+    .sort((a, b) => Number(a.number) - Number(b.number))
+    .map((row) => String(row.record_id))
 }
 
-export function closeQuestions(
+export async function closeQuestions(
   database: Database,
   questionIds: readonly string[],
   reason: QuestionCloseReason,
   actor: string | null = sessionId(),
   at: string = nowIso(),
-): number {
-  const update = database.query(
-    `UPDATE question SET closed_at=?,close_reason=?,revision=revision+1
-     WHERE record_id=? AND ${questionOpenSql('question')}`,
-  )
+): Promise<number> {
   let closed = 0
   for (const questionId of questionIds) {
-    if (update.run(at, reason, questionId).changes !== 1) continue
-    auditQuestionMutation({ questionId, action: 'close', actor, at, reason }, database)
-    enqueueQuestionRecord(database, questionId)
+    const row = await questionById(database, questionId)
+    if (!row || row.answered_at !== null || row.closed_at !== null) continue
+    await mutateQuestion(database, {
+      id: questionId,
+      intent: 'close',
+      at,
+      actorSession: actor,
+      reason,
+      changes: { closedAt: at, closeReason: reason },
+    })
     closed += 1
   }
   return closed
 }
 
-export function closeRunChainQuestions(
+export async function closeRunChainQuestions(
   database: Database,
   rootId: string,
   reason: QuestionCloseReason,
-): number {
-  const closed = closeQuestions(database, questionIdsForRunChain(database, rootId), reason)
-  retireRunChainQuestionDeliveries(database, rootId, reason)
+): Promise<number> {
+  const closed = await closeQuestions(
+    database,
+    await questionIdsForRunChain(database, rootId),
+    reason,
+  )
+  await retireRunChainQuestionDeliveries(database, rootId, reason)
   return closed
 }
 
 /** Retires rulings that can no longer be delivered because their chain has ended. */
-export function retireRunChainQuestionDeliveries(
+export async function retireRunChainQuestionDeliveries(
   database: Database,
   rootId: string,
   reason: QuestionCloseReason,
   at: string = nowIso(),
-): number {
+): Promise<number> {
   const live = database
     .query(
       `SELECT 1 FROM run
@@ -85,22 +93,28 @@ export function retireRunChainQuestionDeliveries(
     )
     .get(rootId, rootId)
   if (live) return 0
-  const questionIds = database
+  const runIds = database
     .query<{ record_id: string }, [string, string]>(
-      `SELECT q.record_id FROM question q JOIN run owner ON owner.record_id=q.run_record_id
-       WHERE (owner.record_id=? OR owner.parent_run_record_id=?)
-         AND q.answered_at IS NOT NULL AND q.delivery_pending_at IS NOT NULL
-       ORDER BY q.number`,
+      'SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=? ORDER BY number',
     )
     .all(rootId, rootId)
-    .map((row) => row.record_id)
-  const update = database.query(
-    `UPDATE question SET delivery_pending_at=NULL,revision=revision+1
-     WHERE record_id=? AND answered_at IS NOT NULL AND delivery_pending_at IS NOT NULL`,
-  )
+    .map(({ record_id }) => record_id)
+  const rows = (await Promise.all(runIds.map((id) => questionsForRun(database, id)))).flat()
+  const answeredIds = rows
+    .filter((row) => row.answered_at !== null)
+    .map((row) => String(row.record_id))
+  const questionIds = pendingQuestionIds(database, { questionIds: answeredIds })
   let retired = 0
   for (const questionId of questionIds) {
-    if (update.run(questionId).changes !== 1) continue
+    if (clearQuestionDeliveryPending(database, [questionId]) !== 1) continue
+    await mutateQuestion(database, {
+      id: questionId,
+      intent: 'link',
+      at,
+      actorSession: sessionId(),
+      reason,
+      changes: {},
+    })
     appendQuestionDeliveries(
       [questionId],
       {
@@ -112,7 +126,6 @@ export function retireRunChainQuestionDeliveries(
       },
       database,
     )
-    enqueueQuestionRecord(database, questionId)
     retired += 1
   }
   return retired
@@ -142,9 +155,7 @@ export async function closeQuestionByOperator(
       `question ${questionId}'s chain is live; use ${PLATFORM_SLUG} question answer ${row.root_id}`,
     )
   }
-  writeTransaction(() => {
-    if (closeQuestions(database, [questionId], `${QUESTION_CLOSE_OPERATOR}: ${text}`) !== 1) {
-      throw new Error(`question ${questionId} is no longer open`)
-    }
-  }, database)
+  if ((await closeQuestions(database, [questionId], `${QUESTION_CLOSE_OPERATOR}: ${text}`)) !== 1) {
+    throw new Error(`question ${questionId} is no longer open`)
+  }
 }

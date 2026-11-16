@@ -30,7 +30,10 @@ export function parseQuestionIdentifier(input: string | number): ParsedQuestionI
   )
 }
 
-export async function resolveQuestionIdentifier(database: Database, input: string | number): Promise<string> {
+export async function resolveQuestionIdentifier(
+  database: Database,
+  input: string | number,
+): Promise<string> {
   const parsed = parseQuestionIdentifier(input)
   if (parsed.kind === 'number') {
     const row = (await questionIdentityMap(database)).find(({ number }) => number === parsed.id)

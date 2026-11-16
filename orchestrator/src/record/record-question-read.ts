@@ -44,7 +44,7 @@ async function recordQuestionRulingRows(
   }
   return (await tx.unsafe(
     `SELECT q.number,q.id::text record_id,q.run_id::text run_record_id,owner.number run_number,
-      q.workflow_cursor_record_id::text workflow_cursor_id,q.workflow_key,
+      q.workflow_cursor_record_id::text workflow_cursor_id,q.workflow_key,q.workflow_task_id::text workflow_task_record_id,
       COALESCE(run_project.name,stage_project.name) project,stage.workflow workflow_slug,stage.mode mode_slug,
       COALESCE(owner.session_id,stage.session_id) session_id,q.asked_at::text,q.question,q.answer,q.answer_basis,
       q.answered_at::text,q.answered_by,q.answered_by_name,q.asked_via,q.answerer_kind,q.answer_channel,

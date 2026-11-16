@@ -138,22 +138,22 @@ async function applyWorkflowRulingLocally(input: {
   database: Database
 }): Promise<{ summary: string; questionId: number; cursorRecordId: string }> {
   const { row, question, database } = input
+  await answerWorkflowQuestion(
+    {
+      questionId: question.record_id,
+      cursorId: row.record_id,
+      ruling: input.ruling,
+      at: input.at,
+      actor: input.actor,
+      fromOperator: input.fromOperator,
+      personName: resolvedRulingPersonName(input.fromOperator),
+      channel: input.channel,
+      adoptionReason: input.adoptionReason,
+    },
+    database,
+  )
   const result = writeTransaction(() => {
     const store = taskFlowLocalStore(database)
-    answerWorkflowQuestion(
-      {
-        questionId: question.record_id,
-        cursorId: row.record_id,
-        ruling: input.ruling,
-        at: input.at,
-        actor: input.actor,
-        fromOperator: input.fromOperator,
-        personName: resolvedRulingPersonName(input.fromOperator),
-        channel: input.channel,
-        adoptionReason: input.adoptionReason,
-      },
-      database,
-    )
     const mirror = store.write('stage-update', input.payload, input.hosted).mirror[row.record_id]
     return {
       summary: `${cursorName(row.workflow_slug, row.mode_slug, row.workflow_key, true)} is running at step ${row.ordinal + 1} ${row.step_slug}.`,

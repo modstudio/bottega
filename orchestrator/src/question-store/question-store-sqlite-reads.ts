@@ -2,6 +2,9 @@
 /** Carries the unchanged cross-table reads used before questions move to the record. */
 
 import type { Database } from 'bun:sqlite'
+import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
+import { voidedSql } from '../evidence/evidence-query.ts'
+import type { QueriedInboxQuestion } from '../run/run-inbox.ts'
 import { questionOpenSql, questionTaskHolderSql } from '../run/question-open.ts'
 import type {
   TaskFlowCloseOutStageRow,
@@ -112,6 +115,31 @@ export const workflowInboxQuestions = (database: Database): TaskFlowInboxQuestio
     )
     .all()
 
+export function runInboxQuestionRows(
+  database: Database,
+  cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString(),
+): QueriedInboxQuestion[] {
+  return database
+    .query(
+      `SELECT q.number,q.record_id,q.run_record_id,r.number AS run_number,
+            q.asked_at,q.question,q.options,q.recommendation,q.why,q.kind,
+            q.jev_pick,q.jev_confidence,q.jev_probabilities,q.jev_error,
+            q.answered_at,q.overturned_at,q.overturned_by,q.overturn_reason,q.replacement,
+            q.filed_as,q.filed_ref,q.filed_record_id,q.filed_label,q.filed_at,
+            r.agent,r.job,r.repo,COALESCE(r.launch_key,root.launch_key) task_key,
+            root.project_record_id,r.status,r.session_id,q.awaiting_operator_at,
+            root.status root_status,root.record_id root_record_id,root.number root_number,
+            ${voidedSql('root')} root_voided,
+            COALESCE(r.parent_run_record_id,r.record_id) root_id,
+            CASE WHEN r.session_id IS NOT NULL AND seen.last_seen>=? THEN 1 ELSE 0 END session_recent
+       FROM question q JOIN run r ON r.record_id=q.run_record_id
+       JOIN run root ON root.record_id=COALESCE(r.parent_run_record_id,r.record_id)
+       LEFT JOIN session_seen seen ON seen.session_id=r.session_id
+      WHERE q.closed_at IS NULL ORDER BY q.run_record_id,q.number`,
+    )
+    .all(cutoff) as QueriedInboxQuestion[]
+}
+
 export function rulingRows(
   database: Database,
   input: {
@@ -138,7 +166,7 @@ export function rulingRows(
   return database
     .query<TaskFlowRulingRow, string[]>(
       `SELECT q.number,q.record_id,q.run_record_id,r.number AS run_number,
-              q.workflow_cursor_record_id workflow_cursor_id,q.workflow_key,
+              q.workflow_cursor_record_id workflow_cursor_id,q.workflow_key,q.workflow_task_record_id,
               COALESCE(r.repo,c.project) project,c.workflow_slug,c.mode_slug,
               COALESCE(r.session_id,c.session_id) session_id,
               q.asked_at,q.question,q.answer,q.answer_basis,q.answered_at,
@@ -362,7 +390,10 @@ const QUESTION_PORT_COLUMNS = `q.*,owner.number run_number,
   COALESCE(run_project.name,cursor.project) project_name,
   COALESCE(run_project.record_id,project.record_id) project_record_id`
 
-export const questionsById = (database: Database, ids: readonly string[]): Record<string, unknown>[] => {
+export const questionsById = (
+  database: Database,
+  ids: readonly string[],
+): Record<string, unknown>[] => {
   if (ids.length === 0) return []
   return database
     .query(

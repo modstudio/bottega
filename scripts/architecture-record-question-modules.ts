@@ -61,7 +61,8 @@ export const recordQuestionModules: RecordModule[] = [
     'bun:sqlite',
     '../record/record-question-contract.ts',
     '../run/run-inbox.ts',
-    '../workflow/task-flow-store-sqlite-questions.ts',
+    '../run/question-outbox.ts',
+    './question-store-sqlite-reads.ts',
     './question-store-types.ts',
   ]),
   module('orchestrator/src/question-store/question-store-record.ts', [
@@ -75,6 +76,34 @@ export const recordQuestionModules: RecordModule[] = [
   module('orchestrator/src/question-store/question-store-types.ts', [
     '../record/record-question-contract.ts',
     '../run/run-inbox.ts',
+    '../workflow/task-flow-store-types.ts',
+  ]),
+  module('orchestrator/src/question-store/question-store-mutation.ts', [
+    'bun:sqlite',
+    '../../../shared/record-id.ts',
+    '../record/machine-identity.ts',
+    '../record/record-question-contract.ts',
+    './question-store.ts',
+  ]),
+  module('orchestrator/src/question-store/question-store-read.ts', [
+    'bun:sqlite',
+    '../workflow/task-flow-store-types.ts',
+    './question-store.ts',
+  ]),
+  module('orchestrator/src/question-store/question-store-sqlite-reads.ts', [
+    'bun:sqlite',
+    '../../../shared/session-liveness.ts',
+    '../evidence/evidence-query.ts',
+    '../run/run-inbox.ts',
+    '../run/question-open.ts',
+    '../workflow/task-flow-store-types.ts',
+  ]),
+  module('orchestrator/src/question-store/question-store-record-task-flow-compat.ts', [
+    'bun:sqlite',
+    '../../../shared/brand.ts',
+    '../record/record-task-flow-contract.ts',
+    '../run/question-open.ts',
+    '../workflow/task-flow-store-record-stage-row.ts',
     '../workflow/task-flow-store-types.ts',
   ]),
 ]

@@ -9,19 +9,19 @@ import type {
   QuestionWriteResult,
 } from '../record/record-question-contract.ts'
 import { questionChangedAfterRefusal } from '../record/record-question-contract.ts'
-import { runInboxQuestionRows } from '../run/run-inbox.ts'
+import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import {
   localQuestionProjects,
   openStagesForSession,
+  questionsById,
+  questionsForRun,
+  runInboxQuestionRows,
   rulingRows,
   taskRulingRows,
   waitingWorkflowQuestions,
   workflowInboxQuestions,
-  questionsById,
-  questionsForRun,
 } from './question-store-sqlite-reads.ts'
 import type { QuestionReadResult, QuestionStore } from './question-store-types.ts'
-import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 
 const json = (value: unknown) => (value == null ? null : JSON.stringify(value))
 const limited = <Row>(rows: Row[], limit?: number): Row[] =>
@@ -177,16 +177,15 @@ export class SqliteQuestionStore implements QuestionStore {
       return {
         items: limited(openStagesForSession(this.database, input.sessionId), input.limit),
       }
-    if (input.read === 'rulings')
-      {
-        const after = input.changedAfter === undefined ? null : Number(input.changedAfter)
-        const cursor =
-          after === null
-            ? null
-            : (this.database
-                .query<{ value: number }, []>('SELECT value FROM collect_change_counter')
-                .get()?.value ?? 0)
-        return {
+    if (input.read === 'rulings') {
+      const after = input.changedAfter === undefined ? null : Number(input.changedAfter)
+      const cursor =
+        after === null
+          ? null
+          : (this.database
+              .query<{ value: number }, []>('SELECT value FROM collect_change_counter')
+              .get()?.value ?? 0)
+      return {
         items: limited(
           rulingRows(this.database, {
             kind: input.kind,
@@ -196,9 +195,9 @@ export class SqliteQuestionStore implements QuestionStore {
           }) as QuestionReadResult['items'],
           input.limit,
         ),
-          ...(cursor === null ? {} : { cursor: String(cursor) }),
-        }
+        ...(cursor === null ? {} : { cursor: String(cursor) }),
       }
+    }
     if (input.read === 'task-rulings') {
       const project = this.database
         .query<{ name: string }, [string]>('SELECT name FROM project WHERE record_id=?')

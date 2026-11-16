@@ -35,7 +35,6 @@ import { McpServer, WebStandardStreamableHTTPServerTransport } from '@modelconte
 import { StdioServerTransport, serveStdio } from '@modelcontextprotocol/server/stdio'
 import { z } from 'zod'
 import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
 import {
   BOARD_ASK_REFRESH_BUDGET_MS,
   claimRunBoardNotices,
@@ -68,8 +67,8 @@ import { LOCAL_LISTENER_IDLE_TIMEOUT_SECONDS } from '../local-listener.ts'
 import { checkMessages, messageArchitect } from '../mailbox/mailbox.ts'
 import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
 import { orchestratorProseGate } from '../prose-service.ts'
-import { machineId } from '../record/machine-identity.ts'
 import { askQuestion, questionById } from '../question-store/question-store-mutation.ts'
+import { machineId } from '../record/machine-identity.ts'
 import { ASKED_VIA_LIVE, ASKED_VIA_REPLY, type AskedVia } from '../run/question-vocabulary.ts'
 import { runScratchDir } from '../run/run-artifacts.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
@@ -155,15 +154,15 @@ export async function recordReplyQuestions(input: {
   for (const question of input.questions) {
     const typed = WorkerQuestionSchema.parse(question)
     const recordId = await recordQuestion({
-        runId: input.runId,
-        askedAt: input.askedAt,
-        question: typed.question,
-        options: typed.kind === 'choice' ? typed.options.map(({ name }) => name) : undefined,
-        recommendation: typed.kind === 'choice' ? typed.recommendation : undefined,
-        why: typed.why,
-        askedVia: ASKED_VIA_REPLY,
-        awaitingOperatorAt: input.awaitingOperatorAt,
-        typed,
+      runId: input.runId,
+      askedAt: input.askedAt,
+      question: typed.question,
+      options: typed.kind === 'choice' ? typed.options.map(({ name }) => name) : undefined,
+      recommendation: typed.kind === 'choice' ? typed.recommendation : undefined,
+      why: typed.why,
+      askedVia: ASKED_VIA_REPLY,
+      awaitingOperatorAt: input.awaitingOperatorAt,
+      typed,
     })
     rows.push({ recordId, question: typed })
   }
@@ -500,7 +499,11 @@ export async function ask(
         type: 'text',
         text: 'ruling delivered; worker resumed',
       })
-      return { answered: true, answer: typeof row.answer === 'string' ? row.answer : '', notice: proseNotice }
+      return {
+        answered: true,
+        answer: typeof row.answer === 'string' ? row.answer : '',
+        notice: proseNotice,
+      }
     }
     if (Date.now() >= deadline) {
       // The question STAYS OPEN. The architect may still want to see what was

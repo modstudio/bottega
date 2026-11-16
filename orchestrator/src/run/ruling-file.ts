@@ -14,14 +14,10 @@ import {
   writableDb,
   writeTransaction,
 } from '../database/db.ts'
-import { questionForFiling } from '../question-store/question-store-read.ts'
 import { mutateQuestion } from '../question-store/question-store-mutation.ts'
-import {
-  type TaskFlowRulingFileRow as QuestionRow,
-  taskFlowReadStore,
-} from '../workflow/task-flow-store.ts'
-import { auditQuestionMutation, authorizeWorkflowQuestionMutation } from './question-mutation.ts'
-import { enqueueQuestionRecord } from './question-outbox.ts'
+import { questionForFiling } from '../question-store/question-store-read.ts'
+import type { TaskFlowRulingFileRow as QuestionRow } from '../workflow/task-flow-store.ts'
+import { authorizeWorkflowQuestionMutation } from './question-mutation.ts'
 import { questionRulingRemedy } from './question-ruling-remedy.ts'
 import {
   effectiveRuling,
@@ -41,7 +37,7 @@ import {
   type RootAuthority,
   runMutationActor,
 } from './run-authority.ts'
-import { RUN_MUTATION_WINDOW_MS } from './run-mutation-owner.ts'
+import { joinMutationReason, RUN_MUTATION_WINDOW_MS } from './run-mutation-owner.ts'
 
 type RulingFileAs = 'doc' | 'canon'
 
@@ -283,6 +279,7 @@ async function recordFiling(
   requested: FiledRulingKind,
   reference: FilingReference,
   at: string,
+  adoptionReason: string | null,
 ) {
   if (row.filed_as) {
     throw new Error(
@@ -295,7 +292,7 @@ async function recordFiling(
     intent: 'file',
     at,
     actorSession: sessionId(),
-    reason: `as ${requested}`,
+    reason: joinMutationReason(`as ${requested}`, adoptionReason),
     expectedRevision: Number((row as unknown as { revision: number }).revision),
     changes: {
       filedAs: requested,
@@ -383,7 +380,7 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
   writeTransaction(() => {
     if (row.run_record_id !== null) authority = adoptRunMutation(authority!, 'file')
   })
-  await recordFiling(row, requested, reference, at)
+  await recordFiling(row, requested, reference, at, adoptionReason)
   writeTransaction(() => {
     if (row.run_record_id !== null) auditRunMutation(authority!, 'file', `as ${requested}`)
   })

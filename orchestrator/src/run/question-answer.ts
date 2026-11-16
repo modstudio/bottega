@@ -3,9 +3,11 @@
 
 import type { Database } from 'bun:sqlite'
 import { mutateQuestion, questionById } from '../question-store/question-store-mutation.ts'
-import { clearQuestionDeliveryPending, markQuestionDeliveryPending } from './question-delivery-pending.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
-import { questionOpenSql } from './question-open.ts'
+import {
+  clearQuestionDeliveryPending,
+  markQuestionDeliveryPending,
+} from './question-delivery-pending.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import type {
   AnswerChannel,
