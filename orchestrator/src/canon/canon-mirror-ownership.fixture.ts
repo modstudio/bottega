@@ -62,7 +62,7 @@ export function mirrorFixturePort(
       headSha: 'different-head',
       checks: 'passed',
     }),
-    releaseRun: async () => {
+    releaseRun: () => {
       const tree = join(root, '.claude', 'worktrees', 'canon-mirror')
       if (existsSync(join(tree, '.git')))
         spawnFixtureGitSync(['worktree', 'remove', '--force', tree], { cwd: root })

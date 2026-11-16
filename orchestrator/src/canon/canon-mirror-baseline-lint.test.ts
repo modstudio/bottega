@@ -69,7 +69,7 @@ test('a pre-existing canon lint finding does not stop publication', async () => 
           checks: 'passed',
         }),
         releaseBranch: () => {},
-        releaseRun: async () => ({ outcome: 'released', detail: 'fixture release' }),
+        releaseRun: () => ({ outcome: 'released', detail: 'fixture release' }),
       },
       noteFailure: async () => {},
     })

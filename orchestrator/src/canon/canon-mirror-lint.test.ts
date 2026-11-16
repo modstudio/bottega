@@ -63,7 +63,7 @@ test('a hydration that introduces a canon lint finding stops publication before 
         push: () => {
           pushed = true
         },
-        releaseRun: async () => {
+        releaseRun: () => {
           const tree = join(root, '.claude/worktrees/canon-mirror')
           if (existsSync(tree))
             spawnFixtureGitSync(['worktree', 'remove', '--force', tree], { cwd: root })

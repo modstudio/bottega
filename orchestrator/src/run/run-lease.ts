@@ -7,6 +7,7 @@ import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db } from '../database/db.ts'
 import type { FilesystemIdentityPlan, FilesystemIdentityRun } from '../filesystem-identity-plan.ts'
 import { acquireKernelLease, type KernelLease, tryKernelLease } from '../project/project-lock.ts'
+import type { SynchronousResult } from '../synchronous-result.ts'
 import type { RunLeaseState } from './run-alive.ts'
 
 const leaseDirectory = () => join(resolveRunsDirectory(process.env), 'leases')
@@ -195,8 +196,8 @@ export function requiredRunCloseOutLease(
   return requiredLease(runId, 'close-out', runCloseOutLeaseFileName, failed)
 }
 
-/** Hold a required close-out lease until an action settles. */
-export function withRunCloseOutLease<T>(
+/** Hold a required close-out lease until a synchronous action settles. */
+export function withRunCloseOutLease<T extends SynchronousResult>(
   runId: string,
   failed: (cause: unknown) => void,
   action: () => T,
@@ -204,8 +205,6 @@ export function withRunCloseOutLease<T>(
   const lease = requiredRunCloseOutLease(runId, failed)
   try {
     const result = action()
-    if (result instanceof Promise)
-      return result.finally(() => releaseRunCloseOutLease(runId, lease)) as T
     releaseRunCloseOutLease(runId, lease)
     return result
   } catch (cause) {

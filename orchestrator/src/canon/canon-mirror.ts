@@ -14,12 +14,12 @@ import {
   assertBranchRefMayBeCreated,
   assertBranchRefMayBeDeleted,
 } from '../branch/branch-ref-guard.ts'
-import { closeOutRunPrepared } from '../close/close-out.ts'
+import { closeOutRunPrepared, closeTerminalChainQuestions } from '../close/close-out.ts'
 import { type CloseOutPreparation, prepareCloseOut } from '../close/close-out-preparation.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { fileNote, listHubNotes } from '../mcp/hub-notes.ts'
-import { withWorktreeCreateLockAsync } from '../project/project-lock.ts'
+import { withWorktreeCreateLock } from '../project/project-lock.ts'
 import { type Project, projects, stackAt } from '../project/projects.ts'
 import { createPullRequest } from '../pull-request/pr-admission.ts'
 import { recordCreatedWorktreeClaims, settleClaims } from '../resources/resource-claims.ts'
@@ -106,7 +106,7 @@ export type CanonMirrorPort = {
   releaseRun(
     runId: string,
     preparation: CloseOutPreparation,
-  ): Promise<{ outcome: string; detail: string }>
+  ): { outcome: string; detail: string; questionRootIds?: readonly string[] }
 }
 
 export function screenCanonMirrorError(
@@ -364,13 +364,15 @@ function setRunTerminal(runId: string, started: number, error?: string): void {
     .query(`UPDATE run SET status=?,latency_ms=?,exit_code=?,error=?,pid=NULL WHERE record_id=?`)
     .run(safe ? 'failed' : 'ok', Date.now() - started, safe ? 1 : 0, safe, runId)
 }
-async function releaseLifecycle(
+function releaseLifecycle(
   port: CanonMirrorPort,
   runId: string,
   preparation: CloseOutPreparation,
-): Promise<string | null> {
+  questionRootIds: string[],
+): string | null {
   try {
-    const closed = await port.releaseRun(runId, preparation)
+    const closed = port.releaseRun(runId, preparation)
+    questionRootIds.push(...(closed.questionRootIds ?? []))
     return ['released', 'absent'].includes(closed.outcome)
       ? null
       : screenCanonMirrorError(`canon mirror cleanup ${closed.outcome}: ${closed.detail}`)
@@ -400,12 +402,13 @@ function previousPublication(project: Project, branch: string, runId: string): P
     )
     .get(runId, CANON_MIRROR_JOB, branch, project.recordId) as Publication | null
 }
-async function releaseOwnedLeftover(
+function releaseOwnedLeftover(
   project: Project,
   path: string,
   port: CanonMirrorPort,
   preparation: CloseOutPreparation,
-): Promise<void> {
+  questionRootIds: string[],
+): void {
   if (!existsSync(path)) return
   const owners = db()
     .query<{ record_id: string }, [string, string, string]>(
@@ -434,7 +437,8 @@ async function releaseOwnedLeftover(
     )
   }
   if (markerRun === null) return
-  const closed = await port.releaseRun(markerRun, preparation)
+  const closed = port.releaseRun(markerRun, preparation)
+  questionRootIds.push(...(closed.questionRootIds ?? []))
   if (!['released', 'absent'].includes(closed.outcome) || existsSync(path)) {
     throw new Error(
       `owned canon mirror worktree ${path} could not be released: ${closed.outcome}: ${closed.detail}`,
@@ -472,6 +476,7 @@ type MirrorExecution = {
   base: string | null
   commit: string | null
   knownCommits: string[]
+  questionRootIds: string[]
 }
 
 function mirrorOwnership(
@@ -496,7 +501,14 @@ function mirrorOwnership(
 }
 
 function emptyMirrorExecution(): MirrorExecution {
-  return { treeCreated: false, pushed: false, base: null, commit: null, knownCommits: [] }
+  return {
+    treeCreated: false,
+    pushed: false,
+    base: null,
+    commit: null,
+    knownCommits: [],
+    questionRootIds: [],
+  }
 }
 
 function recordPushedTip(runId: string, commit: string): void {
@@ -508,7 +520,7 @@ function refuseEmptyStoreHydration(projectRowCount: number, deleteCount: number)
     throw new Error(EMPTY_PROJECT_CANON_STORE_REFUSAL)
 }
 
-async function performMirrorPublication(input: {
+function performMirrorPublication(input: {
   project: Project
   dryRun: boolean
   port: CanonMirrorPort
@@ -521,7 +533,7 @@ async function performMirrorPublication(input: {
   shipLevel: string
   execution: MirrorExecution
   releasePreparation: CloseOutPreparation
-}): Promise<MirrorResult> {
+}): MirrorResult {
   const { project, dryRun, port, runId, key, trunk, branch, path, started, execution } = input
   port.fetch(project)
   const ref = `origin/${trunk}`
@@ -546,7 +558,7 @@ async function performMirrorPublication(input: {
     rows.filter((row) => row.subject === project.name).length,
     plan.deletes.length,
   )
-  await releaseOwnedLeftover(project, path, port, input.releasePreparation)
+  releaseOwnedLeftover(project, path, port, input.releasePreparation, execution.questionRootIds)
   const { previous, remoteTip } = mirrorOwnership(project, branch, runId, port, execution)
   port.createTree({
     project,
@@ -655,6 +667,95 @@ function failedMirrorResult(
   return { project: project.name, failed: true, text: `failed, ${reason}` }
 }
 
+async function closeMirrorQuestions(rootIds: readonly string[]): Promise<string | null> {
+  try {
+    for (const rootId of new Set(rootIds)) await closeTerminalChainQuestions(rootId, false)
+    return null
+  } catch (cause) {
+    return screenCanonMirrorError(
+      `canon mirror question cleanup failed: ${screenCanonMirrorError(cause)}`,
+    )
+  }
+}
+
+async function finishMirrorQuestionCleanup(
+  runId: string,
+  started: number,
+  outcome: MirrorResult,
+  rootIds: readonly string[],
+): Promise<MirrorResult> {
+  const failure = await closeMirrorQuestions(rootIds)
+  if (!failure) return outcome
+  setRunTerminal(runId, started, failure)
+  outcome.failed = true
+  outcome.text = `failed, ${failure}`
+  return outcome
+}
+
+function runMirrorLocked(input: {
+  project: Project
+  dryRun: boolean
+  port: CanonMirrorPort
+  runId: string
+  key: string
+  trunk: string
+  branch: string
+  path: string
+  started: number
+  shipLevel: string
+  execution: MirrorExecution
+  releasePreparation: CloseOutPreparation
+}): MirrorResult {
+  const { project, port, runId, branch, execution, releasePreparation } = input
+  let lease: ReturnType<typeof acquireRunLease> | null = null
+  let outcome: MirrorResult = {
+    project: project.name,
+    failed: true,
+    text: 'failed, mirror did not finish',
+  }
+  return withWorktreeCreateLock(project.path, () => {
+    try {
+      lease = port.acquireLease(runId)
+      outcome = performMirrorPublication(input)
+      return outcome
+    } catch (cause) {
+      outcome = failedMirrorResult(project, runId, input.started, cause, execution.knownCommits)
+      return outcome
+    } finally {
+      lease?.release()
+      const cleanupFailure = releaseLifecycle(
+        port,
+        runId,
+        releasePreparation,
+        execution.questionRootIds,
+      )
+      if (cleanupFailure) {
+        setRunTerminal(runId, input.started, cleanupFailure)
+        outcome.failed = true
+        outcome.text = `failed, ${cleanupFailure}`
+      }
+      const releasableTip = execution.pushed
+        ? execution.commit
+        : execution.commit
+          ? null
+          : execution.base
+      if (releasableTip && !cleanupFailure) {
+        try {
+          port.releaseBranch(project, branch, releasableTip)
+          settleReleasedBranch(runId, branch)
+        } catch (cause) {
+          const reason = screenCanonMirrorError(cause, execution.knownCommits)
+          setRunTerminal(runId, input.started, reason)
+          outcome.failed = true
+          outcome.text = `failed, local branch ${branch} could not be released: ${reason}`
+        }
+      } else if (execution.treeCreated && !execution.pushed) {
+        outcome.text += `; local branch ${branch} retained because no remote copy was proven`
+      }
+    }
+  })
+}
+
 async function mirrorProject(
   project: Project,
   dryRun: boolean,
@@ -673,12 +774,6 @@ async function mirrorProject(
   const runId = createLifecycleRun(project, key)
   const branch = `${key}-canon-mirror`
   const path = join(project.path, '.claude', 'worktrees', 'canon-mirror')
-  let lease: ReturnType<typeof acquireRunLease> | null = null
-  let outcome: MirrorResult = {
-    project: project.name,
-    failed: true,
-    text: 'failed, mirror did not finish',
-  }
   const execution = emptyMirrorExecution()
   let releasePreparation: CloseOutPreparation | null = null
   try {
@@ -698,62 +793,33 @@ async function mirrorProject(
           undefined,
           ['ship'],
         )
-    return await withWorktreeCreateLockAsync(project.path, async () => {
-      try {
-        lease = port.acquireLease(runId)
-        outcome = await performMirrorPublication({
-          project,
-          dryRun,
-          port,
-          runId,
-          key,
-          trunk,
-          branch,
-          path,
-          started,
-          shipLevel: autonomy?.stages?.ship?.value ?? 'ask',
-          execution,
-          releasePreparation: preparedRelease,
-        })
-        return outcome
-      } catch (cause) {
-        outcome = failedMirrorResult(project, runId, started, cause, execution.knownCommits)
-        return outcome
-      } finally {
-        lease?.release()
-        const cleanupFailure = await releaseLifecycle(port, runId, preparedRelease)
-        if (cleanupFailure) {
-          setRunTerminal(runId, started, cleanupFailure)
-          outcome.failed = true
-          outcome.text = `failed, ${cleanupFailure}`
-        }
-        const releasableTip = execution.pushed
-          ? execution.commit
-          : execution.commit
-            ? null
-            : execution.base
-        if (releasableTip && !cleanupFailure) {
-          try {
-            port.releaseBranch(project, branch, releasableTip)
-            settleReleasedBranch(runId, branch)
-          } catch (cause) {
-            const reason = screenCanonMirrorError(cause, execution.knownCommits)
-            setRunTerminal(runId, started, reason)
-            outcome.failed = true
-            outcome.text = `failed, local branch ${branch} could not be released: ${reason}`
-          }
-        } else if (execution.treeCreated && !execution.pushed) {
-          outcome.text += `; local branch ${branch} retained because no remote copy was proven`
-        }
-      }
+    const lockedOutcome = runMirrorLocked({
+      project,
+      dryRun,
+      port,
+      runId,
+      key,
+      trunk,
+      branch,
+      path,
+      started,
+      shipLevel: autonomy?.stages?.ship?.value ?? 'ask',
+      execution,
+      releasePreparation: preparedRelease,
     })
+    return await finishMirrorQuestionCleanup(
+      runId,
+      started,
+      lockedOutcome,
+      execution.questionRootIds,
+    )
   } catch (cause) {
-    outcome = failedMirrorResult(project, runId, started, cause, execution.knownCommits)
+    const outcome = failedMirrorResult(project, runId, started, cause, execution.knownCommits)
     const cleanupFailure = releasePreparation
-      ? await releaseLifecycle(port, runId, releasePreparation)
+      ? releaseLifecycle(port, runId, releasePreparation, execution.questionRootIds)
       : null
     if (cleanupFailure) outcome.text = `failed, ${cleanupFailure}`
-    return outcome
+    return await finishMirrorQuestionCleanup(runId, started, outcome, execution.questionRootIds)
   }
 }
 

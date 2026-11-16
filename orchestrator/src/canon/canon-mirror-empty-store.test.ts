@@ -46,7 +46,7 @@ test('an empty project canon store refuses publication and leaves other projects
         fetch: () => {},
         localBranch: () => false,
         remoteBranchTip: () => null,
-        releaseRun: async () => ({ outcome: 'released', detail: 'fixture release' }),
+        releaseRun: () => ({ outcome: 'released', detail: 'fixture release' }),
       },
       noteFailure: async () => {},
     })
