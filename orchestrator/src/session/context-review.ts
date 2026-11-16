@@ -22,14 +22,16 @@ type ReviewHolder = {
   kind: 'session' | 'cursor' | 'task' | 'epic'
 }
 
-export type ContextReviewResult = {
-  due: boolean
-  next_due_at: string
-  interval_ms: number
-  review: string | null
-  items: number
-  flagged: number
-}
+export type ContextReviewResult =
+  | { next_due_at: string }
+  | {
+      due: true
+      next_due_at: string
+      interval_ms: number
+      review: string
+      items: number
+      flagged: number
+    }
 
 function compactionGaps(database: Database, now: number) {
   const rows = database
@@ -82,6 +84,14 @@ function selector(holder: string, holders: readonly ReviewHolder[]): string {
   return `--task ${shellQuote(reference.key)}`
 }
 
+function holderLabel(holder: string, holders: readonly ReviewHolder[]): string {
+  const reference = holders.find((candidate) => candidate.holder === holder)
+  if (!reference) return holder
+  return reference.kind === 'task' || reference.kind === 'epic'
+    ? reference.key
+    : `${reference.kind}:${reference.key}`
+}
+
 function itemLine(
   item: ContextReviewOrderedItem,
   holders: readonly ReviewHolder[],
@@ -92,7 +102,7 @@ function itemLine(
   const reason = item.reason ?? 'not flagged'
   const revise = `${PLATFORM_SLUG} agent context set ${selected} --kind ${item.kind} --source ${shellQuote('context-review')} --id ${shellQuote(item.id)} '<revised body>'`
   const drop = `${PLATFORM_SLUG} agent context drop ${selected} --id ${shellQuote(item.id)}`
-  return `${item.flagged ? 'FLAGGED ' : ''}${item.holder} ${item.id} ${item.kind} ${ageMinutes}m · ${reason}\n  revise: ${revise}\n  drop: ${drop}`
+  return `${item.flagged ? 'FLAGGED ' : ''}${holderLabel(item.holder, holders)} ${item.id} ${item.kind} ${ageMinutes}m · ${reason}\n  revise: ${revise}\n  drop: ${drop}`
 }
 
 function renderContextReview(
@@ -172,12 +182,7 @@ export async function reviewContext(
   const flagged = decision.items.filter((item) => item.flagged).length
   if (!decision.due)
     return {
-      due: false,
       next_due_at: new Date(decision.nextDueAt).toISOString(),
-      interval_ms: decision.intervalMs,
-      review: null,
-      items: decision.items.length,
-      flagged,
     }
   const review = renderContextReview(decision.intervalMs, decision.items, holders, now)
   const event = recordContextReview(

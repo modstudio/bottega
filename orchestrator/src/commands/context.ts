@@ -156,7 +156,7 @@ export function register(program: Command): void {
     .action(async (options) => {
       const result = await reviewContext(options.session)
       if (options.json) return log(JSON.stringify(result))
-      if (result.review) log(result.review)
+      if ('review' in result) log(result.review)
     })
   registerInjection(context)
   registerEmission(context)

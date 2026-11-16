@@ -5,6 +5,7 @@ import { PATCH_IDENTIFIERS } from './identity-patch-manifest.ts'
 import { RECORD_CACHE_IDENTITIES } from './identity-record-cache-manifest.ts'
 import { ROUTING_POOL_IDENTITY } from './identity-routing-pool-manifest.ts'
 import { RULED_REFERENCES } from './identity-ruled-reference-manifest.ts'
+import { SESSION_EVENT_IDENTITY } from './identity-session-event-manifest.ts'
 import { SYNCED_SOURCE_DECLARATIONS } from './identity-synced-sources.ts'
 import { TASK_CHILD_DISPLAY_LABELS } from './identity-task-child-manifest.ts'
 import * as taskIdentity from './identity-task-identity-manifest.ts'
@@ -19,6 +20,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
   ...manifest('hosted', 'source question display number', ['context_item.question_number']),
   ...manifest('orchestrator', 'source question display number', ['context_item.question_number']),
   ...TELEMETRY_IDENTITY.values,
+  ...SESSION_EVENT_IDENTITY.values,
   ...manifest('hub', 'file size measurement', ['transcript_fingerprint.size']),
   ...manifest('orchestrator', 'host capacity measurement', ['host_pressure_sample.ncpu']),
   ...manifest('orchestrator', 'display snapshot of a project name', [
@@ -90,16 +92,6 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'brief_injection.over_cap',
   ]),
   ...manifest('orchestrator', 'count, ordinal, version, handle, or measurement', [
-    'brief_injection.bytes',
-    'brief_injection.lines',
-    'brief_injection.cursors',
-    'brief_injection.keyless_cursors',
-    'brief_injection.keyless_idle_max_ms',
-    'context_review.interval_ms',
-    'context_review.items',
-    'context_review.flagged',
-    'hook_emission.chars',
-    'hook_emission.lines',
     'collect_change_counter.value',
     'agent.max_concurrent',
     'board_claim.duration_ms',
@@ -296,14 +288,6 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'question.jev_order_flipped',
   ]),
   ...manifest('hosted', 'count, ordinal, version, handle, or measurement', [
-    'brief_injection.bytes',
-    'brief_injection.lines',
-    'brief_injection.cursors',
-    'brief_injection.keyless_cursors',
-    'brief_injection.keyless_idle_max_ms',
-    'context_review.interval_ms',
-    'context_review.items',
-    'context_review.flagged',
     'doc.position',
     'doc_revision.position',
     'record_change.seq',
@@ -532,6 +516,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'context_item.holder_id',
   ]),
   ...TELEMETRY_IDENTITY.externalIdentifiers,
+  ...SESSION_EVENT_IDENTITY.externalIdentifiers,
   ...BOARD_READER_EXTERNAL_IDENTIFIERS,
   ...TYPED_QUESTION_IDENTITY.externalIdentifiers,
   ...manifest('hosted', 'workflow instance discriminator, not a row reference', [
@@ -551,9 +536,6 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'machine_public_key.key_id',
   ]),
   ...manifest('orchestrator', 'identifier issued by the harness session system', [
-    'brief_injection.session_id',
-    'context_review.session_id',
-    'hook_emission.session_id',
     'board_claim.holder_session',
     'board_message.author_session',
     'board_reach_delivery.reader_session',
@@ -631,9 +613,6 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'task_identity_migration_repairs.new_external_id',
   ]),
   ...manifest('hosted', 'identifier issued by the harness session system', [
-    'brief_injection.session_id',
-    'context_review.session_id',
-    'hook_emission.session_id',
     'board_claim.holder_session',
     'board_message.author_session',
     'contention.session_id',
@@ -699,11 +678,9 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
 
 const UUID_COLUMNS: readonly ManifestColumn[] = [
   ...TELEMETRY_IDENTITY.uuids,
+  ...SESSION_EVENT_IDENTITY.uuids,
   ...RECORD_CACHE_IDENTITIES,
   ...manifest('orchestrator', 'owned or referenced UUID', [
-    'brief_injection.record_id',
-    'context_review.record_id',
-    'hook_emission.record_id',
     'collect_change_counter.record_id',
     'agent.record_id',
     'blocker.record_id',

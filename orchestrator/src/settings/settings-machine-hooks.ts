@@ -11,7 +11,6 @@ import {
   BOARD_PUSH_RETRY_SECONDS,
   BOARD_PUSH_SLOW_TIMEOUT_SECONDS,
 } from '../board/board-delivery.ts'
-import { CONTEXT_REVIEW_HOOK_TIMEOUT_SECONDS } from '../session/context-review-decision.ts'
 import { isPlainObject, type OwnedSettings } from './settings.ts'
 
 const SCRIPT_FILES = [
@@ -152,7 +151,7 @@ const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
     event: 'PostToolUse',
     matcher: 'Bash',
     script: 'context-review.py',
-    timeout: CONTEXT_REVIEW_HOOK_TIMEOUT_SECONDS + 1,
+    timeout: 6,
     boardEnvironment: true,
   },
   { event: 'Stop', script: 'stop-summary.py', boardEnvironment: true },
@@ -211,7 +210,7 @@ function boardCommand(
     `BOARD_ACK_STOP_BLOCKS=${BOARD_ACK_STOP_BLOCKS}`,
     `BOARD_PUSH_SLOW_TIMEOUT_SECONDS=${BOARD_PUSH_SLOW_TIMEOUT_SECONDS}`,
     `BOTTEGA_BOARD_HOOK_STATE=${shellQuote(join(dirname(databasePath), 'board-hook-state'))}`,
-    `CONTEXT_REVIEW_HOOK_TIMEOUT_SECONDS=${CONTEXT_REVIEW_HOOK_TIMEOUT_SECONDS}`,
+    'CONTEXT_REVIEW_HOOK_TIMEOUT_SECONDS=5',
   ])
 }
 
