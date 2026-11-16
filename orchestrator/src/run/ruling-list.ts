@@ -1,6 +1,7 @@
 // concern: ruling-list
 /** Reads ruling history for adapters. Must not know CLI grammar or printing. */
 
+import { z } from 'zod'
 import {
   type RulingChanges,
   type RulingListRow,
@@ -43,7 +44,7 @@ async function queryRulings(options: RulingListOptions): Promise<{
   })
   const rows = result.items
   const cursor = result.cursor === undefined ? null : Number(result.cursor)
-  const parsed = RulingListSchema.parse(
+  const parsed = z.array(RulingListSchema.element.strip()).parse(
     rows.map(({ number, ...row }) => ({
       id: number,
       ...row,
