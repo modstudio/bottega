@@ -537,7 +537,7 @@ function ingestRunSourceRows(
 }
 
 export const RUN_CHANGE_CURSOR_SETTING = 'collect.runs.change_seq'
-const RULING_CHANGE_CURSOR_SETTING = 'collect.rulings.change_cursor'
+export const RULING_CHANGE_CURSOR_SETTING = 'collect.rulings.change_cursor'
 
 function storedChangeCursor(key: string): string | null {
   return (

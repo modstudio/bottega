@@ -8,7 +8,12 @@ import {
 import { collectFast, deliverOperatorNotifications, runsSince } from './collect.ts'
 import * as dbMod from './db.ts'
 import { db, writeTransaction } from './db.ts'
-import { ingestRunChanges, ingestRuns, RUN_CHANGE_CURSOR_SETTING } from './ingest/runs.ts'
+import {
+  ingestRunChanges,
+  ingestRuns,
+  RULING_CHANGE_CURSOR_SETTING,
+  RUN_CHANGE_CURSOR_SETTING,
+} from './ingest/runs.ts'
 import type { claimWaitingNotifications } from './orch.ts'
 import { listOpenRulings } from './rulings.ts'
 import { clearOrchCache } from './serve.ts'
@@ -120,8 +125,8 @@ describe('run ingest', () => {
   test('run changes ingest rows after the stored cursor and write nothing once caught up', async () => {
     writeTransaction((conn) =>
       conn
-        .query('INSERT OR REPLACE INTO setting(key,value) VALUES (?,?)')
-        .run(RUN_CHANGE_CURSOR_SETTING, '5'),
+        .query('INSERT OR REPLACE INTO setting(key,value) VALUES (?,?),(?,?)')
+        .run(RUN_CHANGE_CURSOR_SETTING, '5', RULING_CHANGE_CURSOR_SETTING, '5'),
     )
     const changedRun = runFixture({ id: 9911 })
     const runs = () =>
