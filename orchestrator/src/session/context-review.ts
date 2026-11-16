@@ -10,9 +10,9 @@ import { listWorkflowCursors } from '../workflow/workflow-cursor-list.ts'
 import { readHubTasks } from '../workflow/workflow-task-reference.ts'
 import {
   CONTEXT_REVIEW_WINDOW_MS,
-  decideContextReview,
   type ContextReviewFacts,
   type ContextReviewOrderedItem,
+  decideContextReview,
 } from './context-review-decision.ts'
 import { recordContextReview } from './context-review-store.ts'
 
@@ -48,10 +48,16 @@ function compactionGaps(database: Database, now: number) {
   })
 }
 
-function latestAt(database: Database, table: 'context_review' | 'brief_injection', session: string) {
-  const row = database
-    .query<{ at: string | null }, [string]>(`SELECT MAX(at) at FROM ${table} WHERE session_id=?`)
-    .get(session)
+function latestAt(
+  database: Database,
+  table: 'context_review' | 'brief_injection',
+  session: string,
+) {
+  const statement =
+    table === 'context_review'
+      ? 'SELECT MAX(at) at FROM context_review WHERE session_id=?'
+      : 'SELECT MAX(at) at FROM brief_injection WHERE session_id=?'
+  const row = database.query<{ at: string | null }, [string]>(statement).get(session)
   return row?.at ? Date.parse(row.at) : null
 }
 
@@ -89,7 +95,7 @@ function itemLine(
   return `${item.flagged ? 'FLAGGED ' : ''}${item.holder} ${item.id} ${item.kind} ${ageMinutes}m · ${reason}\n  revise: ${revise}\n  drop: ${drop}`
 }
 
-export function renderContextReview(
+function renderContextReview(
   intervalMs: number,
   items: readonly ContextReviewOrderedItem[],
   holders: readonly ReviewHolder[],
@@ -116,7 +122,8 @@ export async function reviewContext(
   const projects = [...new Set(cursors.map((cursor) => cursor.project))]
   const tasks = (await Promise.all(projects.map(readHubTasks))).flat()
   const holders: ReviewHolder[] = brief.holders.map((holder) => ({
-    key: holder.kind === 'cursor' ? holder.items[0]?.holder.split(':')[1] ?? holder.key : holder.key,
+    key:
+      holder.kind === 'cursor' ? (holder.items[0]?.holder.split(':')[1] ?? holder.key) : holder.key,
     holder:
       holder.items[0]?.holder ??
       (holder.kind === 'session'
@@ -142,6 +149,7 @@ export async function reviewContext(
   })
   const items = brief.holders.flatMap((holder) =>
     (holder.items as StoredContextItem[]).map((item) => ({
+      recordId: item.recordId,
       id: item.id,
       kind: item.kind,
       holder: item.holder,
@@ -157,9 +165,7 @@ export async function reviewContext(
     compactionGaps: compactionGaps(database, now),
     items,
     openCursors,
-    doneTaskKeys: tasks
-      .filter((task) => task.status_category === 'done')
-      .map((task) => task.key),
+    doneTaskKeys: tasks.filter((task) => task.status_category === 'done').map((task) => task.key),
     holdersWithOpenCursor: openCursors.map((cursor) => cursor.holder),
   }
   const decision = decideContextReview(facts)
@@ -180,7 +186,7 @@ export async function reviewContext(
       intervalMs: decision.intervalMs,
       items: decision.items.length,
       flagged,
-      itemIds: decision.items.map((item) => item.id),
+      itemIds: decision.items.map((item) => item.recordId),
     },
     { database },
   )

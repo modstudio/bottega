@@ -95,6 +95,9 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'brief_injection.cursors',
     'brief_injection.keyless_cursors',
     'brief_injection.keyless_idle_max_ms',
+    'context_review.interval_ms',
+    'context_review.items',
+    'context_review.flagged',
     'hook_emission.chars',
     'hook_emission.lines',
     'collect_change_counter.value',
@@ -298,6 +301,9 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'brief_injection.cursors',
     'brief_injection.keyless_cursors',
     'brief_injection.keyless_idle_max_ms',
+    'context_review.interval_ms',
+    'context_review.items',
+    'context_review.flagged',
     'doc.position',
     'doc_revision.position',
     'record_change.seq',
@@ -546,6 +552,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
   ]),
   ...manifest('orchestrator', 'identifier issued by the harness session system', [
     'brief_injection.session_id',
+    'context_review.session_id',
     'hook_emission.session_id',
     'board_claim.holder_session',
     'board_message.author_session',
@@ -625,6 +632,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
   ]),
   ...manifest('hosted', 'identifier issued by the harness session system', [
     'brief_injection.session_id',
+    'context_review.session_id',
     'hook_emission.session_id',
     'board_claim.holder_session',
     'board_message.author_session',
@@ -694,6 +702,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
   ...RECORD_CACHE_IDENTITIES,
   ...manifest('orchestrator', 'owned or referenced UUID', [
     'brief_injection.record_id',
+    'context_review.record_id',
     'hook_emission.record_id',
     'collect_change_counter.record_id',
     'agent.record_id',

@@ -12,10 +12,20 @@ test('recording a context review writes its row and outbox mutation atomically',
       machine: () => '01990000-0000-7000-8000-000000000099',
     },
   )
-  expect(database.query('SELECT session_id,interval_ms,items,flagged,item_ids FROM context_review').get()).toEqual({
-    session_id: 'session-a', interval_ms: 1_000, items: 2, flagged: 1, item_ids: '["a","b"]',
+  expect(
+    database
+      .query('SELECT session_id,interval_ms,items,flagged,item_ids FROM context_review')
+      .get(),
+  ).toEqual({
+    session_id: 'session-a',
+    interval_ms: 1_000,
+    items: 2,
+    flagged: 1,
+    item_ids: '["a","b"]',
   })
-  const outbox = database.query<{ kind: string; payload: string }, []>('SELECT kind,payload FROM outbox').get()!
+  const outbox = database
+    .query<{ kind: string; payload: string }, []>('SELECT kind,payload FROM outbox')
+    .get()!
   expect(outbox.kind).toBe('context_review')
   expect(JSON.parse(outbox.payload)).toMatchObject({ intervalMs: 1_000, itemIds: '["a","b"]' })
   database.close()

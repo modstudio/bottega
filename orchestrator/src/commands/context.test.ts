@@ -51,16 +51,33 @@ test('agent context set and drop expose cursor holders', async () => {
   const previous = process.env.CLAUDE_CODE_SESSION_ID
   process.env.CLAUDE_CODE_SESSION_ID = session
   db().exec('PRAGMA foreign_keys=OFF')
-  db().query(`INSERT INTO workflow_cursor
+  db()
+    .query(`INSERT INTO workflow_cursor
     (record_id,number,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
      workflow_version_record_id,catalogue_version_record_id,args,total_steps,created_at,updated_at)
     VALUES (?,999,'fixture','explore','default','','instance',?,?,?,'{}',3,?,?)`)
-    .run(cursor, session, newRecordId(), newRecordId(), new Date().toISOString(), new Date().toISOString())
+    .run(
+      cursor,
+      session,
+      newRecordId(),
+      newRecordId(),
+      new Date().toISOString(),
+      new Date().toISOString(),
+    )
   try {
     expect(
       await run([
-        'context', 'set', '--cursor', cursor, '--kind', 'fact', '--source', 'test', '--id',
-        'cursor-item', 'cursor fact',
+        'context',
+        'set',
+        '--cursor',
+        cursor,
+        '--kind',
+        'fact',
+        '--source',
+        'test',
+        '--id',
+        'cursor-item',
+        'cursor fact',
       ]),
     ).toBe(0)
     expect(getContextItem(`cursor:${cursor}`, 'cursor-item')?.body).toBe('cursor fact')

@@ -12,6 +12,7 @@ agents, jobs, and routing
 - [bottega agent context drop](#bottega-agent-context-drop)
 - [bottega agent context record-emission](#bottega-agent-context-record-emission)
 - [bottega agent context record-injection](#bottega-agent-context-record-injection)
+- [bottega agent context review](#bottega-agent-context-review)
 - [bottega agent context set](#bottega-agent-context-set)
 - [bottega agent context show](#bottega-agent-context-show)
 - [bottega agent contract](#bottega-agent-contract)
@@ -88,6 +89,7 @@ manage stored architect context or resolve checkout context
 - [bottega agent context drop](./agent.md#bottega-agent-context-drop)
 - [bottega agent context record-emission](./agent.md#bottega-agent-context-record-emission)
 - [bottega agent context record-injection](./agent.md#bottega-agent-context-record-injection)
+- [bottega agent context review](./agent.md#bottega-agent-context-review)
 - [bottega agent context set](./agent.md#bottega-agent-context-set)
 - [bottega agent context show](./agent.md#bottega-agent-context-show)
 
@@ -122,7 +124,7 @@ remove every context item from one task holder
 
 ## bottega agent context drop
 
-**Synopsis:** `bottega agent context drop [--task <key>] [--session <id>] [--id <id>] [--expected-revision <revision>]`
+**Synopsis:** `bottega agent context drop [--task <key>] [--session <id>] [--cursor <record-id>] [--id <id>] [--expected-revision <revision>]`
 
 remove one context item
 
@@ -130,6 +132,7 @@ remove one context item
 
 - `--task <key>`: select task holder
 - `--session <id>`: select session holder
+- `--cursor <record-id>`: select cursor holder
 - `--id <id>`: stable item id
 - `--expected-revision <revision>`: compare-and-set revision
 
@@ -175,9 +178,24 @@ record one SessionStart context injection
 
 - [bottega agent context](./agent.md#bottega-agent-context)
 
+## bottega agent context review
+
+**Synopsis:** `bottega agent context review [--session <id>] [--json]`
+
+review stored context items when the measured interval is due
+
+### Options
+
+- `--session <id>`: select architect session
+- `--json`: write JSON
+
+### Related
+
+- [bottega agent context](./agent.md#bottega-agent-context)
+
 ## bottega agent context set
 
-**Synopsis:** `bottega agent context set <body> [--task <key>] [--session <id>] [--kind <kind>] [--source <source>] [--id <id>] [--expected-revision <revision>]`
+**Synopsis:** `bottega agent context set <body> [--task <key>] [--session <id>] [--cursor <record-id>] [--kind <kind>] [--source <source>] [--id <id>] [--expected-revision <revision>]`
 
 create or revise one context item
 
@@ -185,6 +203,7 @@ create or revise one context item
 
 - `--task <key>`: select task holder
 - `--session <id>`: select session holder
+- `--cursor <record-id>`: select cursor holder
 - `--kind <kind>`: ruling — Shmuel Barkin's decision; position — an agent's decision; fact — something learned that changes what the next agent does; pointer — where a durable artifact lives
 - `--source <source>`: item source
 - `--id <id>`: stable item id
@@ -196,7 +215,7 @@ create or revise one context item
 
 ## bottega agent context show
 
-**Synopsis:** `bottega agent context show [--task <key>] [--session <id>] [--json]`
+**Synopsis:** `bottega agent context show [--task <key>] [--session <id>] [--cursor <record-id>] [--json]`
 
 show stored context items
 
@@ -204,6 +223,7 @@ show stored context items
 
 - `--task <key>`: select task holder
 - `--session <id>`: select session holder
+- `--cursor <record-id>`: select cursor holder
 - `--json`: write JSON
 
 ### Related

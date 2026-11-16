@@ -7,7 +7,8 @@ export const CONTEXT_REVIEW_MAX_MS = 60 * 60_000
 export const CONTEXT_REVIEW_MIN_SAMPLES = 5
 export const CONTEXT_REVIEW_HOOK_TIMEOUT_SECONDS = 5
 
-export type ContextReviewItem = {
+type ContextReviewItem = {
+  recordId: string
   id: string
   kind: 'ruling' | 'position' | 'fact' | 'pointer'
   holder: string
@@ -15,7 +16,7 @@ export type ContextReviewItem = {
   body: string
 }
 
-export type ContextReviewCursor = {
+type ContextReviewCursor = {
   holder: string
   stepStartedAt: number
 }
@@ -73,10 +74,7 @@ function namedDoneTask(body: string, doneTaskKeys: readonly string[]): string | 
 
 function staleReason(
   item: ContextReviewItem,
-  facts: Pick<
-    ContextReviewFacts,
-    'openCursors' | 'doneTaskKeys' | 'holdersWithOpenCursor'
-  >,
+  facts: Pick<ContextReviewFacts, 'openCursors' | 'doneTaskKeys' | 'holdersWithOpenCursor'>,
 ): string | null {
   if (item.kind === 'ruling' || item.kind === 'position') return null
   const cursor = facts.openCursors.find((candidate) => candidate.holder === item.holder)

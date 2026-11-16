@@ -1,10 +1,31 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  measureContextReviewLosses,
   measureSessionLosses,
   structuredToolNamesRun,
   type TranscriptRow,
 } from './session-losses.ts'
+
+test('context review losses count revised, dropped, and compaction-captured items', () => {
+  const measured = measureContextReviewLosses(
+    [
+      { at: stamp(2), items: 3, flagged: 2, itemIds: ['revised', 'dropped', 'late'] },
+      { at: stamp(8), items: 1, flagged: 0, itemIds: ['late'] },
+    ],
+    [
+      { id: 'revised', createdAt: stamp(0), updatedAt: stamp(4), source: 'test' },
+      { id: 'late', createdAt: stamp(0), updatedAt: stamp(9), source: 'test' },
+      { id: 'captured', createdAt: stamp(7), updatedAt: stamp(7), source: 'compaction' },
+    ],
+    [stamp(1), stamp(6), stamp(12)],
+  )
+  expect(measured.reviews).toEqual([
+    { at: stamp(2), listed: 3, flagged: 2, revised: 1, dropped: 1 },
+    { at: stamp(8), listed: 1, flagged: 0, revised: 1, dropped: 0 },
+  ])
+  expect(measured.captured).toEqual([0, 1, 0])
+})
 
 const stamp = (second: number) => new Date(Date.UTC(2026, 9, 28, 12, 0, second)).toISOString()
 const usage = (input = 1, cacheRead = 2, cacheCreation = 3, output = 4) => ({
