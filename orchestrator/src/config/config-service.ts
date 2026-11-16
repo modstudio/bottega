@@ -8,8 +8,8 @@ import {
   type ConfigDestination,
   type ConfigScope,
   type ConfigSecret,
-  type ConfigWriteDestination as WriteDestination,
   type DataKey,
+  type ConfigWriteDestination as WriteDestination,
 } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import type { CredentialMetadataFields, CredentialMode } from '../../../shared/credential.ts'
@@ -973,8 +973,8 @@ export async function setEntry(
   key: string,
   value: string,
   scope: ConfigScope,
-  expectedRowVersion?: number | null,
-  client = hostedConfigClient(),
+  expectedRowVersion: number | null | undefined,
+  client: ConfigClient,
   destination: WriteDestination,
 ) {
   const shipTo = isShipToConfigKey(key)
@@ -1020,8 +1020,8 @@ export async function listEntries(
 export async function deleteEntry(
   key: string,
   scope: ConfigScope,
-  expectedRowVersion?: number,
-  client = hostedConfigClient(),
+  expectedRowVersion: number | undefined,
+  client: ConfigClient,
   destination: WriteDestination,
 ) {
   const version = expectedRowVersion ?? (await getEntry(key, scope, client, destination)).rowVersion

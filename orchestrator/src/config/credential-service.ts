@@ -4,7 +4,7 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   ConfigClientError,
-  type ConfigDestination,
+  type ConfigWriteDestination,
   configClient,
 } from '../../../shared/config-client.ts'
 import {
@@ -141,7 +141,7 @@ export function operatorProjectCredentialAddress(
   return { ...address, ...identity }
 }
 
-const destination = (address: CredentialAddress): ConfigDestination => ({
+const destination = (address: CredentialAddress): ConfigWriteDestination => ({
   destinationSpaceId: address.destinationSpaceId,
   projectId: address.projectId,
 })
