@@ -33,7 +33,10 @@ with open(
         "SESSION_START_CONTEXT_MAX_CHARS"
     ]
 
-FULL_CONTEXT_POINTER = "Full context: bottega agent context show --session {session}"
+CONTEXT_SHOW_COMMAND = "bottega agent context show{session_option}"
+FULL_CONTEXT_POINTER = "Full context: " + CONTEXT_SHOW_COMMAND.format(
+    session_option=" --session {session}"
+)
 COMPACT_FIRST_ACT = (
     "First act: store each line of the summary's 'Unstored facts and pointers' section "
     "with `bottega agent context set --kind fact|pointer` on the narrowest task, before "
@@ -563,6 +566,8 @@ def main() -> int:
     notice_timeout = 1.0
     acknowledgement_timeout = 1.0
     notice_deadline = None
+    stage = "initialize"
+    failure_without_assembled_brief = False
     try:
         cwd = payload.get("cwd")
         if not cwd:
@@ -580,15 +585,19 @@ def main() -> int:
                 "systemMessage": message,
             }
             return 0
+        stage = "start command batch"
         resumes_p = _start(bottega, "doc", "resumes", "--cwd", cwd, "--json")
         inbox_env = os.environ.copy()
         if sid:
             inbox_env["CLAUDE_CODE_SESSION_ID"] = sid
-            subprocess.run(
-                [bottega, "board", "presence", "--started-at", session_started_at],
-                env=inbox_env, stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL, timeout=1, check=False, cwd=cwd
-            )
+            try:
+                subprocess.run(
+                    [bottega, "board", "presence", "--started-at", session_started_at],
+                    env=inbox_env, stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL, timeout=1, check=False, cwd=cwd
+                )
+            except Exception:
+                pass
             board_p = _start(bottega, "board", "read", "--claim", env=inbox_env, cwd=cwd)
         inbox_p = _start(
             bottega, "question", "inbox", "--all", "--active", "--cwd", cwd, "--json", env=inbox_env
@@ -620,6 +629,7 @@ def main() -> int:
                 notice_deadline = time.monotonic() + notice_timeout
             except Exception:
                 monitor_failure = "Monitor notice delivery failed; addressed condition state is unknown."
+        stage = "collect command results"
         deadline = time.monotonic() + 10
         resumes = _wait(resumes_p, deadline)
         inbox = _wait(inbox_p, deadline)
@@ -641,6 +651,7 @@ def main() -> int:
                     settings_log_path, error
                 )
 
+        stage = "parse command results"
         resume_table = ""
         resume_offer = ""
         extra_section = ""
@@ -872,6 +883,7 @@ def main() -> int:
         # Health is complete and retained before notice work begins. Notice delivery is
         # supplemental: no failure in minting, fetching, parsing, or acknowledging may
         # cost the SessionStart object that carries brief and question state.
+        stage = "assemble health context"
         health_sections = {
             "autonomy": autonomy_section,
             "resume_offer": resume_offer,
@@ -902,6 +914,7 @@ def main() -> int:
             }
             if health_notices:
                 output["systemMessage"] = " ".join(health_notices)
+        stage = "deliver monitor notices"
         if monitor_p is not None:
             try:
                 monitor = _wait(monitor_p, notice_deadline)
@@ -967,8 +980,28 @@ def main() -> int:
             }
             if notices:
                 output["systemMessage"] = " ".join(notices)
-    except Exception:
-        pass
+    except Exception as error:
+        failure_without_assembled_brief = output is None
+        command = CONTEXT_SHOW_COMMAND.format(
+            session_option=f" --session {sid}" if sid else ""
+        )
+        failure = (
+            f"brief failed: {type(error).__name__} at {stage}; "
+            f"re-read with {command}."
+        )
+        if output is None:
+            output = {
+                "hookSpecificOutput": {
+                    "hookEventName": "SessionStart",
+                    "additionalContext": failure,
+                }
+            }
+        else:
+            specific = output["hookSpecificOutput"]
+            context = specific.get("additionalContext")
+            specific["additionalContext"] = _join_sections(
+                context if isinstance(context, str) else "", failure
+            )
     finally:
         # Emission is deliberately outside the catch-all above. Once health has been
         # assembled, no exception in supplemental notice work can swallow it.
@@ -980,7 +1013,12 @@ def main() -> int:
                     _with_compact_first_act(context, payload.get("source")), sid
                 )
                 output["hookSpecificOutput"]["additionalContext"] = context
-                if bottega is not None and cwd is not None and inbox_env is not None:
+                if (
+                    not failure_without_assembled_brief
+                    and bottega is not None
+                    and cwd is not None
+                    and inbox_env is not None
+                ):
                     try:
                         _record_injection(
                             bottega,
