@@ -8,7 +8,7 @@ import {
 } from './stop-summary-decision.ts'
 
 const NOW = '2026-11-13T12:00:00.000Z'
-const SAID = 'Stop says: 7:00 AM EST'
+const SAID = '7:00 AM EST'
 const facts = (overrides: Partial<StopSummaryFacts> = {}): StopSummaryFacts => ({
   now: NOW,
   displayTimezone: 'America/New_York',
