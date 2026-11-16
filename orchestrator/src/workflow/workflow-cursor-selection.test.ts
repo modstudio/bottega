@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
@@ -208,10 +208,31 @@ test('CLI abandon refuses another sessions cursor until its owner is acknowledge
   expect(db().query('SELECT state FROM workflow_cursor WHERE number=?').get(cursor)).toEqual({
     state: 'abandoned',
   })
+})
 
-  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
-  process.env.CLAUDE_CODE_SESSION_ID = 'own-session'
-  try {
+describe('CLI abandon for the owning session', () => {
+  let priorSession: string | undefined
+
+  beforeEach(() => {
+    priorSession = process.env.CLAUDE_CODE_SESSION_ID
+    process.env.CLAUDE_CODE_SESSION_ID = 'own-session'
+  })
+
+  afterEach(() => {
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+  })
+
+  test('abandons its own cursor without an owner-session flag', async () => {
+    const project = 'cursor-abandon-own-session-project'
+    const slug = 'cursor-abandon-own-session'
+    const step = productionStepCatalogue().definition.steps.find(
+      ({ slug }) => slug === 'blast-radius',
+    )!.slug
+    registerCurrentProject(project)
+    publishCursorWorkflow(slug, [
+      { slug: 'default', title: 'Default', default: true, steps: [step] },
+    ])
     const own = await composeWorkflowWithCursor(
       slug,
       project,
@@ -222,12 +243,21 @@ test('CLI abandon refuses another sessions cursor until its owner is acknowledge
       {},
       {},
     )
-    await abandon(own.cursor!.id)
+    await workflowCommand(
+      [
+        'workflow',
+        'abandon',
+        '--cursor',
+        String(own.cursor!.id),
+        '--project',
+        project,
+        '--reason',
+        'test',
+      ],
+      presentation([]),
+    )
     expect(
       db().query('SELECT state FROM workflow_cursor WHERE number=?').get(own.cursor!.id),
     ).toEqual({ state: 'abandoned' })
-  } finally {
-    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
-    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
-  }
+  })
 })
