@@ -36,7 +36,7 @@ function windowLines(label: string, report: SessionWindowReport): string[] {
     ...(report.hookOutput.length
       ? report.hookOutput.map(
           (row) =>
-            `  ${row.event} ${row.kind}: ${row.count}, ${row.characters} chars, mean ${row.meanSize.toFixed(1)}, repeated ${(row.repeatedShare * 100).toFixed(1)}%`,
+            `  ${row.event} ${row.kind}: ${row.count}, ${row.characters} chars, mean ${row.meanSize.toFixed(1)}, repeated unchanged since session start ${(row.repeatedShare * 100).toFixed(1)}%`,
         )
       : ['  none']),
   ]

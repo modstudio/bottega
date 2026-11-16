@@ -2,6 +2,7 @@
 /** Records one product-hook output without retaining its text. */
 
 import type { Database } from 'bun:sqlite'
+import { HOOK_EMISSION_KINDS } from '../../../shared/record/schema-session.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { buildHookEmissionPayload } from '../record/hook-emission-outbox.ts'
@@ -9,14 +10,8 @@ import { machineId } from '../record/machine-identity.ts'
 import { insertOutboxRow } from '../record/outbox-enqueue.ts'
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 
-export const HOOK_EMISSION_KINDS = [
-  'additionalContext',
-  'systemMessage',
-  'blockReason',
-  'denyReason',
-  'allowReason',
-  'askReason',
-] as const
+export { HOOK_EMISSION_KINDS }
+
 type HookEmissionKind = (typeof HOOK_EMISSION_KINDS)[number]
 
 export type HookEmissionInput = {

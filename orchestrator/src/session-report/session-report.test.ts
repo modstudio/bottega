@@ -248,6 +248,43 @@ describe('session report policy', () => {
     expect(sessionReportDelta(current, prior).hookOutput).toEqual({ count: 3, characters: 30 })
   })
 
+  test('counts an in-window emission as repeated when its prior copy predates since', () => {
+    const report = buildSessionWindowReport(
+      {
+        ...facts([]),
+        hookEmissions: [
+          {
+            at: '2026-11-15T11:59:00Z',
+            event: 'Stop',
+            kind: 'systemMessage',
+            chars: 12,
+            textHash: 'same',
+          },
+          {
+            at: '2026-11-15T12:01:00Z',
+            event: 'Stop',
+            kind: 'systemMessage',
+            chars: 8,
+            textHash: 'same',
+          },
+        ],
+      },
+      window,
+      window.until,
+    )
+
+    expect(report.hookOutput).toEqual([
+      {
+        event: 'Stop',
+        kind: 'systemMessage',
+        count: 1,
+        characters: 8,
+        meanSize: 8,
+        repeatedShare: 1,
+      },
+    ])
+  })
+
   test('reconstructs run, question, and cursor residue at each window end', () => {
     const lifecycleFacts: SessionReportFacts = {
       ...facts([]),

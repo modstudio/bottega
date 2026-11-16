@@ -1,6 +1,10 @@
 import contextlib
 import io
+import os
+import subprocess
+import tempfile
 import unittest
+from unittest import mock
 
 from hook_emission import record_emission, text_hash
 
@@ -14,10 +18,31 @@ class HookEmissionTest(unittest.TestCase):
         def fail(*_args, **_kwargs):
             raise OSError("no launch")
         stdout, stderr = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+        with tempfile.TemporaryDirectory() as state, mock.patch.dict(
+            os.environ, {"BOTTEGA_STATE_HOME": state}, clear=False
+        ), contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
             record_emission({"session_id":"s", "hook_event_name":"Stop"}, "stop-summary", "systemMessage", "same", launch=fail)
         self.assertEqual(stdout.getvalue(), "")
         self.assertEqual(stderr.getvalue().count("\n"), 1)
+
+    def test_detached_launch_sends_child_stderr_to_state_log(self):
+        launched = {}
+
+        def capture(*args, **kwargs):
+            launched.update(kwargs)
+
+        with tempfile.TemporaryDirectory() as state, mock.patch.dict(
+            os.environ, {"BOTTEGA_STATE_HOME": state}, clear=False
+        ):
+            record_emission(
+                {"session_id": "s", "hook_event_name": "Stop"},
+                "stop-summary", "systemMessage", "same", launch=capture,
+            )
+            self.assertIsNot(launched["stderr"], subprocess.DEVNULL)
+            self.assertTrue(hasattr(launched["stderr"], "write"))
+            self.assertTrue(
+                os.path.isfile(os.path.join(state, "orchestrator", "hook-emission.log"))
+            )
 
 
 if __name__ == "__main__":

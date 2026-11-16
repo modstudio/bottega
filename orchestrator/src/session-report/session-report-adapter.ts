@@ -153,7 +153,13 @@ async function factsForSession(
       `SELECT at,event,kind,chars,text_hash FROM hook_emission WHERE session_id=? AND at<=? ORDER BY at,record_id`,
     )
     .all(sessionId, end)
-    .map((row) => ({ ...row, textHash: row.text_hash }))
+    .map((row) => ({
+      at: row.at,
+      event: row.event,
+      kind: row.kind,
+      chars: row.chars,
+      textHash: row.text_hash,
+    }))
   return { sessionId, runs, unscoredRuns, heldTreeRunIds, cursors, questions, hookEmissions }
 }
 

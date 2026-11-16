@@ -35,6 +35,7 @@ export const sessionContextModules: SessionContextModule[] = [
   ]),
   module('orchestrator/src/session/hook-emission.ts', [
     'bun:sqlite',
+    '../../../shared/record/schema-session.ts',
     '../../../shared/record-id.ts',
     '../database/db.ts',
     '../record/hook-emission-outbox.ts',

@@ -6,7 +6,7 @@ import re
 import subprocess
 import sys
 
-from hook_paths import bottega_bin
+from hook_paths import bottega_bin, state_root
 
 NORMALIZATIONS = [
     (re.compile(r"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b"), "<time>"),
@@ -31,11 +31,11 @@ def text_hash(text):
     return hashlib.sha256(normalized_text(text).encode("utf-8")).hexdigest()
 
 
-def launch_detached(executable, args, env, cwd, *, launch=None):
+def launch_detached(executable, args, env, cwd, *, launch=None, stderr=subprocess.DEVNULL):
     launcher = launch or subprocess.Popen
     return launcher(
         [executable, *args], env=env, stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL, stderr=stderr,
         start_new_session=True, cwd=cwd,
     )
 
@@ -47,11 +47,19 @@ def record_emission(payload, hook, kind, text, *, launch=None):
         event = payload.get("hook_event_name")
         if not isinstance(session, str) or not session or not isinstance(event, str) or not event:
             return
-        launch_detached(
-            bottega_bin(), ["agent", "context", "record-emission",
-             "--session", session, "--event", event, "--hook", hook, "--kind", kind,
-             "--chars", str(len(text)), "--lines", str(0 if not text else text.count("\n") + 1),
-             "--hash", text_hash(text)], os.environ.copy(), payload.get("cwd") or None, launch=launch,
+        environment = os.environ.copy()
+        log_path = os.path.join(state_root(environment), "orchestrator", "hook-emission.log")
+        os.makedirs(os.path.dirname(log_path), mode=0o700, exist_ok=True)
+        descriptor = os.open(
+            log_path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600
         )
+        with os.fdopen(descriptor, "a", encoding="utf-8") as log:
+            launch_detached(
+                bottega_bin(), ["agent", "context", "record-emission",
+                 "--session", session, "--event", event, "--hook", hook, "--kind", kind,
+                 "--chars", str(len(text)), "--lines", str(0 if not text else text.count("\n") + 1),
+                 "--hash", text_hash(text)], environment, payload.get("cwd") or None,
+                launch=launch, stderr=log,
+            )
     except Exception as error:
         print(f"{hook}: emission recording failed: {error}", file=sys.stderr)
