@@ -66,6 +66,18 @@ function hostedTaskResult(
   return matches.map(({ id }) => ({ id }))
 }
 
+function machineOrCounterResult(
+  source: string,
+  values: unknown[],
+  questionNumbers: { last: number },
+) {
+  if (source.includes('INSERT INTO machine')) return [{ user_id: values[1] }]
+  if (source.includes('SELECT user_id FROM machine')) return [{ user_id: values[0] }]
+  if (!source.includes('INSERT INTO question_number_counter')) return null
+  questionNumbers.last++
+  return [{ number: questionNumbers.last }]
+}
+
 export function fakePostgres(
   failFirstRun: false | Error = false,
   principal: string = RECORD_ACTOR_ROLE,
@@ -102,7 +114,7 @@ export function fakePostgres(
   let scoreWritten = false
   let runWrites = 0
   let runReferenceAvailable = true
-  let questionNumbers = 0
+  const questionNumbers = { last: 0 }
   const transactionSpaceIds: string[] = []
   const boundSpaceIds: string[] = []
   const tx = (async (parts: TemplateStringsArray, ...values: unknown[]) => {
@@ -147,12 +159,8 @@ export function fakePostgres(
     const exclusionResult = hostedExclusionResult(source, hostedExclusion)
     if (exclusionResult) return exclusionResult
     if (source.includes('SELECT reason FROM run_exclusion')) return []
-    if (source.includes('INSERT INTO machine')) return [{ user_id: values[1] }]
-    if (source.includes('SELECT user_id FROM machine')) return [{ user_id: values[0] }]
-    if (source.includes('INSERT INTO question_number_counter')) {
-      questionNumbers++
-      return [{ number: questionNumbers }]
-    }
+    const machineOrCounter = machineOrCounterResult(source, values, questionNumbers)
+    if (machineOrCounter) return machineOrCounter
     const hostedTask = hostedTaskResult(source, values, hostedTasks)
     if (hostedTask) return hostedTask
     return source.includes('FROM project')
