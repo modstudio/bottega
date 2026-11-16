@@ -948,7 +948,7 @@ async function gatherArtifactEvidence(
     d,
     ports,
     resolveCheckout,
-    gathered.tree.commit,
+    gathered.tree!.commit,
   )
   Object.assign(gathered, offeredArtifactRunEvidence(parsed, d))
   if (parsed.kind === 'pull-request')

@@ -595,7 +595,16 @@ function publishHumanListing(
     )
     if (lifecycle.detail) log(`      ${lifecycle.detail}`)
     if (FAILURE_KINDS_WITH_LISTED_ERROR.has(String(row.failure_kind)))
-      log(`      ${failureReason(row as OutcomeRow)}`)
+      log(
+        `      ${failureReason(
+          row as {
+            status: string
+            error: string | null
+            failure_kind: string | null
+            exit_code: number | null
+          },
+        )}`,
+      )
     if (row.failure_kind === 'idle') {
       const reclaimed = row.reclaimed_ms as number | null
       log(`      idle-killed` + (reclaimed != null ? `; reclaimed ${dur(reclaimed)} of wall` : ''))
