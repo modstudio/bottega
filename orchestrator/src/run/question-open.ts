@@ -3,7 +3,6 @@
 
 import type { Database } from 'bun:sqlite'
 import { questionsForChain } from '../question-store/question-store-read.ts'
-export { questionOpenSql, questionTaskHolderSql } from '../question-store/question-store-sql.ts'
 
 export async function openChainQuestions<T>(
   database: Database,

@@ -4,7 +4,6 @@
 import type { Database } from 'bun:sqlite'
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { voidedSql } from '../evidence/evidence-query.ts'
-import { questionOpenSql, questionTaskHolderSql } from './question-store-sql.ts'
 import type {
   TaskFlowCloseOutStageRow,
   TaskFlowCursorLifecycleRow,
@@ -22,6 +21,7 @@ import type {
   TaskFlowTaskRulingRow,
   TaskFlowWaitingQuestionRow,
 } from '../workflow/task-flow-store-types.ts'
+import { questionOpenSql, questionTaskHolderSql } from './question-store-sql.ts'
 
 export type QueriedInboxQuestion = {
   number: number

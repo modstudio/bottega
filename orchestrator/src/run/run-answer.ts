@@ -18,8 +18,8 @@ import { successorReviewLensInputStatusesFromPrompt } from '../database/review-l
 import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
-import { mutateQuestion } from '../question-store/question-store-mutation.ts'
 import { questionsById, questionsForChain } from '../question-store/question-store-read.ts'
+import { questionTaskHolderSql } from '../question-store/question-store-sql.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import { chainTransport, retryModelForAgent, transportTurns } from '../route/failover.ts'
 import { answerRulingRefusal } from '../workflow/autonomy.ts'
@@ -31,9 +31,10 @@ import {
   continuationCheckoutForRetry,
 } from './continuation-checkout-service.ts'
 import { applyArchitectQuestionAnswers } from './question-answer.ts'
+import { restoreOpenQuestionsAfterResumeFailure } from './question-answer-resume-failure.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
-import { clearQuestionDeliveryPending, pendingQuestionIds } from './question-delivery-pending.ts'
-import { openChainQuestions, questionTaskHolderSql } from './question-open.ts'
+import { pendingQuestionIds } from './question-delivery-pending.ts'
+import { openChainQuestions } from './question-open.ts'
 import {
   type AnswerChannel,
   QUESTION_DELIVERY_MODE_RESUME,
@@ -1038,43 +1039,7 @@ export async function answerRun(
     })
   } catch (e) {
     const error = (e as Error).message
-    writeTransaction(() => {
-      appendQuestionDeliveries(
-        open.map((question) => question.record_id),
-        {
-          runId: null,
-          mode: QUESTION_DELIVERY_MODE_RESUME,
-          outcome: QUESTION_DELIVERY_OUTCOME_FAILED,
-          at: new Date(Date.now()).toISOString(),
-          error,
-        },
-      )
-    })
-    clearQuestionDeliveryPending(
-      db(),
-      open.map(({ record_id }) => record_id),
-    )
-    for (const q of open) {
-      await mutateQuestion(db(), {
-        id: q.record_id,
-        intent: 'answer',
-        at: new Date(Date.now()).toISOString(),
-        actorSession: answerAuthority.actor,
-        reason: 'resume failed',
-        changes: {
-          answer: null,
-          answerValue: null,
-          answeredByKind: null,
-          jevAgreed: null,
-          answeredAt: null,
-          answeredBy: null,
-          answeredByName: null,
-          answererKind: null,
-          answerChannel: null,
-          awaitingOperatorAt: q.awaiting_operator_at,
-        },
-      })
-    }
+    await restoreOpenQuestionsAfterResumeFailure(open, answerAuthority.actor, error)
     throw new Error(
       `Resume failed: ${error}\nThe ruling was rolled back and the question is still open.`,
     )

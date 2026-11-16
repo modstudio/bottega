@@ -74,10 +74,17 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/question-answer.ts', [
     'bun:sqlite',
     './question-delivery.ts',
+    './question-delivery-pending.ts',
     './question-open.ts',
     './question-outbox.ts',
     './run-answer-typed-value.ts',
     './ruling-attribution.ts',
+    './question-vocabulary.ts',
+  ]),
+  module('orchestrator/src/run/question-answer-resume-failure.ts', [
+    '../database/db.ts',
+    './question-delivery.ts',
+    './question-delivery-pending.ts',
     './question-vocabulary.ts',
   ]),
   module('orchestrator/src/resources/resource-claims.ts', [
@@ -135,6 +142,8 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-claim-inheritance.ts', [
     '../../../shared/record-id.ts',
     '../database/db.ts',
+    '../route/failover.ts',
+    './question-close.ts',
   ]),
   module('orchestrator/src/run/reader-tree-sharing-claim.ts', [
     '../synchronous-result.ts',
@@ -333,6 +342,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-host-capacity.ts',
   ]),
   module('orchestrator/src/run/run-claim-plan.ts', [
+    '../git/git-environment.ts',
     '../project/branch-name.ts',
     './resume-tree.ts',
     './synthetic-lifecycle-job.ts',
@@ -366,6 +376,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/task-rulings.ts', ['./question-vocabulary.ts']),
   module('orchestrator/src/run/task-rulings-store.ts', [
     '../database/db.ts',
+    '../project/projects.ts',
     '../workflow/task-flow-store.ts',
     './task-rulings.ts',
   ]),

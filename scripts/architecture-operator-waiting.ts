@@ -85,6 +85,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     './question-outbox.ts',
     './ruling-attribution.ts',
     './ruling-overturn-authority.ts',
+    './run-mutation-owner.ts',
     './run-authority.ts',
   ]),
   module('orchestrator/src/run/ruling-file.ts', [

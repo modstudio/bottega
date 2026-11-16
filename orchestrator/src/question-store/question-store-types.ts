@@ -7,13 +7,13 @@ import type {
   QuestionWriteBody,
   QuestionWriteResult,
 } from '../record/record-question-contract.ts'
-import type { QueriedInboxQuestion } from './question-store-sqlite-reads.ts'
 import type {
   TaskFlowInboxQuestionRow,
   TaskFlowOpenSessionStageRow,
   TaskFlowTaskRulingRow,
   TaskFlowWaitingQuestionRow,
 } from '../workflow/task-flow-store-types.ts'
+import type { QueriedInboxQuestion } from './question-store-sqlite-reads.ts'
 
 type QuestionInboxRow = QueriedInboxQuestion | TaskFlowInboxQuestionRow
 type QuestionWaitingRow = TaskFlowWaitingQuestionRow

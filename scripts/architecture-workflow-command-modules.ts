@@ -39,7 +39,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     'bun:sqlite',
     '../../../shared/brand.ts',
     '../record/record-task-flow-contract.ts',
-    '../run/question-open.ts',
+    '../question-store/question-store-record-task-flow-compat.ts',
     './task-flow-store-types.ts',
     './task-flow-store-record-stage-row.ts',
   ]),

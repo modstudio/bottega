@@ -45,6 +45,23 @@ export class SqliteQuestionStore implements QuestionStore {
     this.database = database
   }
 
+  private readRulings(input: Extract<QuestionReadInput, { read: 'rulings' }>): QuestionReadResult {
+    const after = input.changedAfter === undefined ? null : Number(input.changedAfter)
+    const cursor =
+      after === null
+        ? null
+        : (this.database
+            .query<{ value: number }, []>('SELECT value FROM collect_change_counter')
+            .get()?.value ?? 0)
+    return {
+      items: limited(
+        rulingRows(this.database, { kind: input.kind, since: input.since, after, cursor }),
+        input.limit,
+      ),
+      ...(cursor === null ? {} : { cursor: String(cursor) }),
+    }
+  }
+
   async write(intent: QuestionIntent, input: QuestionWriteBody): Promise<QuestionWriteResult> {
     const q = input.question
     const workflowStep = q.workflowCursorRecordId
@@ -181,27 +198,7 @@ export class SqliteQuestionStore implements QuestionStore {
       return {
         items: limited(openStagesForSession(this.database, input.sessionId), input.limit),
       }
-    if (input.read === 'rulings') {
-      const after = input.changedAfter === undefined ? null : Number(input.changedAfter)
-      const cursor =
-        after === null
-          ? null
-          : (this.database
-              .query<{ value: number }, []>('SELECT value FROM collect_change_counter')
-              .get()?.value ?? 0)
-      return {
-        items: limited(
-          rulingRows(this.database, {
-            kind: input.kind,
-            since: input.since,
-            after,
-            cursor,
-          }) as QuestionReadResult['items'],
-          input.limit,
-        ),
-        ...(cursor === null ? {} : { cursor: String(cursor) }),
-      }
-    }
+    if (input.read === 'rulings') return this.readRulings(input)
     if (input.read === 'task-rulings') {
       const project = this.database
         .query<{ name: string }, [string]>('SELECT name FROM project WHERE record_id=?')

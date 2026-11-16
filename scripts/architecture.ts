@@ -39,6 +39,7 @@ import { monitorModules } from './architecture-monitor-modules.ts'
 import { operatorWaitingModules } from './architecture-operator-waiting.ts'
 import { projectModules } from './architecture-project-modules.ts'
 import { pullRequestModuleSpecs } from './architecture-pull-request.ts'
+import { questionCallerModules, questionPortPublicModules } from './architecture-question-port.ts'
 import { ratchetModules } from './architecture-ratchet-modules.ts'
 import { recipeModules } from './architecture-recipe-modules.ts'
 import { recordModules } from './architecture-record-modules.ts'
@@ -110,6 +111,7 @@ const concerns: ConcernManifest = {
 }
 
 export const modules: ArchitectureModule[] = [
+  ...questionCallerModules,
   module('orchestrator/src/workflow/task-flow-store.ts', [
     'bun:sqlite',
     '../record/record-task-flow-write-contract.ts',
@@ -137,11 +139,6 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/record-id.ts',
     '../record/record-task-flow-write-contract.ts',
     './task-flow-decision.ts',
-  ]),
-  module('orchestrator/src/workflow/task-flow-store-sqlite-questions.ts', [
-    'bun:sqlite',
-    '../run/question-open.ts',
-    './task-flow-store-types.ts',
   ]),
   module('orchestrator/src/machine-journal.ts', [
     'zod',
@@ -258,15 +255,6 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/git/commit-resolution.ts', ['./git-environment.ts']),
   module('orchestrator/src/run/question-open.ts', []),
-  module('orchestrator/src/run/question-close.ts', [
-    '../../../shared/brand.ts',
-    '../database/db.ts',
-    '../workflow/task-flow-store.ts',
-    './question-delivery.ts',
-    './question-mutation.ts',
-    './question-open.ts',
-    './question-outbox.ts',
-  ]),
   module('orchestrator/src/close/close-out-questions.ts', [
     '../database/db.ts',
     '../run/question-close.ts',
@@ -902,7 +890,11 @@ export function architectureRules() {
       from: { path: exactArchitecturePath(entry.file) },
       to: {
         dependencyTypes: ['local'],
-        pathNot: [...entry.allowed, ...(entry.typeOnlyAllowed ?? [])].map(exactArchitecturePath),
+        pathNot: [
+          ...entry.allowed,
+          ...(entry.typeOnlyAllowed ?? []),
+          ...questionPortPublicModules,
+        ].map(exactArchitecturePath),
       },
     })),
     ...importBoundaries.map((entry) => ({
@@ -911,7 +903,9 @@ export function architectureRules() {
       comment: entry.reason,
       from: { path: exactArchitecturePath(entry.file) },
       to: {
-        pathNot: [...entry.allowed, ...entry.typeOnlyAllowed].map(architectureDependencyPath),
+        pathNot: [...entry.allowed, ...entry.typeOnlyAllowed, ...questionPortPublicModules].map(
+          architectureDependencyPath,
+        ),
       },
     })),
     ...importBoundaries.flatMap((entry) =>

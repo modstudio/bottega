@@ -1,8 +1,10 @@
 // concern: run-claim-inheritance
 /** Reads the root facts a retained turn inherits while it is claimed. */
 
-import { db } from '../database/db.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { db } from '../database/db.ts'
+import { supersededTurnQuestionState } from '../route/failover.ts'
+import { closeRunChainQuestions, QUESTION_CLOSE_ATTEMPT_FAILED_OVER } from './question-close.ts'
 
 export type RunWorkflowBinding = { cursorRecordId: string; stepSlug: string }
 
@@ -24,6 +26,30 @@ export function recordCarriedRulings(runId: string, questionIds: readonly string
     'INSERT INTO run_carried_ruling (record_id,run_record_id,question_record_id) VALUES (?,?,?)',
   )
   for (const id of questionIds) insert.run(newRecordId(), runId, id)
+}
+
+export function claimRecordId(reserveId: string | undefined): string {
+  if (!reserveId) return newRecordId()
+  const reservation = db()
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
+    .get(reserveId)
+  if (!reservation) throw new Error(`reserved run ${reserveId} does not exist`)
+  return reserveId
+}
+
+export async function prepareClaimQuestionState(input: {
+  resolveSuperseded: boolean
+  parent: string
+  turn: number
+  automaticFailover: boolean
+  retryOf?: string
+}) {
+  const state = input.resolveSuperseded
+    ? await supersededTurnQuestionState(db(), input.parent, input.turn - 1)
+    : null
+  if (input.automaticFailover && input.retryOf !== undefined)
+    await closeRunChainQuestions(db(), input.retryOf, QUESTION_CLOSE_ATTEMPT_FAILED_OVER)
+  return state
 }
 
 export function inheritedRunFacts(parent: string): {
