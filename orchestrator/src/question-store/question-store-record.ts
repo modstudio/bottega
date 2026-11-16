@@ -39,12 +39,12 @@ function localQuestionRow(
         .get(ownerId)
     : null
   mapped.owner_pid = owner?.pid ?? null
-  mapped.cwd = owner?.cwd ?? null
   const repo = typeof mapped.repo === 'string' ? mapped.repo : null
   mapped.project_path = repo
     ? (database.query<{ path: string }, [string]>('SELECT path FROM project WHERE name=?').get(repo)
         ?.path ?? null)
     : null
+  mapped.cwd = owner?.cwd ?? mapped.project_path
   return mapped as QuestionReadRow
 }
 

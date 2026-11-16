@@ -393,6 +393,7 @@ test('record detail reads enrich machine-owned run and project fields locally', 
   seedOwners(database)
   database.query('UPDATE run SET pid=?,cwd=? WHERE record_id=?').run(4321, '/local-run', RUN_ID)
   const absentOwnerId = newRecordId()
+  const unregisteredRepoOwnerId = newRecordId()
   const store = recordQuestionStore({
     database,
     destinationSpaceId: newRecordId(),
@@ -401,12 +402,14 @@ test('record detail reads enrich machine-owned run and project fields locally', 
         items: [
           { record_id: RUN_QUESTION_ID, owner_id: RUN_ID, repo: 'question-fixture' },
           { record_id: newRecordId(), owner_id: absentOwnerId, repo: 'question-fixture' },
+          { record_id: newRecordId(), owner_id: unregisteredRepoOwnerId, repo: 'unregistered' },
         ],
       }),
     },
   })
   const rows = (await store.read({ read: 'by-id', ids: [RUN_QUESTION_ID, newRecordId()] })).items
   expect(rows[0]).toMatchObject({ owner_pid: 4321, cwd: '/local-run', project_path: '/fixture' })
-  expect(rows[1]).toMatchObject({ owner_pid: null, cwd: null, project_path: '/fixture' })
+  expect(rows[1]).toMatchObject({ owner_pid: null, cwd: '/fixture', project_path: '/fixture' })
+  expect(rows[2]).toMatchObject({ owner_pid: null, cwd: null, project_path: null })
   database.close()
 })
