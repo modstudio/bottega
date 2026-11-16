@@ -2,8 +2,9 @@
 /** Pure context-item effects for workflow and lifecycle verbs. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { answerRecordShape } from '../../../shared/record-shape.ts'
+import { ANSWER_CONTEXT_KINDS } from './doc-context-write.ts'
 
-type ContextMomentItemKind = 'ruling' | 'position'
+type ContextMomentItemKind = (typeof ANSWER_CONTEXT_KINDS)[keyof typeof ANSWER_CONTEXT_KINDS]
 export type ContextMomentHolder =
   | { kind: 'task'; value: string }
   | { kind: 'cursor'; value: string }
@@ -29,10 +30,6 @@ export type ContextMomentInput = {
 
 const emptyEffect = (): ContextMomentEffect => ({ writes: [], reports: [] })
 const questionSource = (questionId: number) => `q${questionId}`
-const ANSWER_CONTEXT_KINDS = {
-  ruling: 'ruling',
-  'self-ruling': 'position',
-} as const satisfies Record<ReturnType<typeof answerRecordShape>, ContextMomentItemKind>
 
 /** Maps the plain values held by a successful verb to its context mutations. */
 export function contextMomentEffect(input: ContextMomentInput): ContextMomentEffect {

@@ -66,6 +66,12 @@ describe('context write refusal', () => {
       } else {
         expect(refusal).toContain(`${kind} limit is ${limit} characters`)
       }
+      expect(
+        contextWriteRefusal(
+          item({ ...ruling, kind: kind as ContextItem['kind'], body: 'x'.repeat(limit) }),
+          facts(),
+        ),
+      ).toBeNull()
     }
   })
   test('applies declared line rules to matching agent context kinds', () => {
@@ -76,6 +82,14 @@ describe('context write refusal', () => {
       ),
     ).toBe(
       'context item state refused: ruling must be one paragraph with no blank line. Shorten it and put detail in a task document.',
+    )
+    expect(
+      contextWriteRefusal(
+        item({ kind: 'position', source: 'q5282', body: 'first\n\nsecond' }),
+        facts(),
+      ),
+    ).toBe(
+      'context item state refused: self-ruling must be one paragraph with no blank line. Shorten it and put detail in a task document.',
     )
   })
   test('allows a ruling sourced to a question, a board message or the chat, without an objection', () => {

@@ -56,6 +56,32 @@ test('answer shape is checked before storage using its operator attribution', as
   })
 })
 
+test('multi-question self-ruling refusal leaves every answer unstored', async () => {
+  const id = insert('asking')
+  const questions = addOpenQuestions(id, 2)
+  const answer = 'x'.repeat(801)
+
+  await expect(
+    answerRun(
+      id,
+      {
+        argv: [
+          `--q${questions[0]!.number}`,
+          'first answer',
+          `--q${questions[1]!.number}`,
+          answer,
+        ],
+        recordOnly: true,
+        flags,
+      },
+      helpers,
+    ),
+  ).rejects.toThrow('self-ruling is 801 characters; the limit is 800')
+  expect(
+    db().query('SELECT answer FROM question WHERE run_record_id=? ORDER BY number').all(id),
+  ).toEqual(questions.map(() => ({ answer: null })))
+})
+
 test('answer refuses an over-limit --file ruling before storing any answer', async () => {
   const id = insert('asking', 'implement')
   const spec = trackResidue(join(dir, `answer-six-large-${id}.prompt.txt`))

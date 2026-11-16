@@ -1,33 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { RECORD_SHAPES } from '../../../shared/record-shape.ts'
 import { contextMomentEffect } from './context-moment.ts'
-import { contextItemShapeRefusal } from './doc-context-write.ts'
 
 describe('context moment effect', () => {
-  test('a position obeys the self-ruling record shape', () => {
-    expect(
-      contextItemShapeRefusal({
-        holder: 'task:DEV-2345',
-        id: 'position-q12',
-        kind: 'position',
-        source: 'q12',
-        body: 'first paragraph\n\nsecond paragraph',
-      }),
-    ).toBe(
-      'context item position-q12 refused: self-ruling must be one paragraph with no blank line. Shorten it and put detail in a task document.',
-    )
-
-    expect(
-      contextItemShapeRefusal({
-        holder: 'task:DEV-2345',
-        id: 'position-q12',
-        kind: 'position',
-        source: 'q12',
-        body: 'x'.repeat(RECORD_SHAPES['self-ruling'].maxChars),
-      }),
-    ).toBeNull()
-  })
-
   test('an operator-ruled answer writes a ruling', () => {
     expect(
       contextMomentEffect({
