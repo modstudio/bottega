@@ -67,7 +67,14 @@ class ContextReviewHook(unittest.TestCase):
             code, output = self.run_hook()
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(output)["hookSpecificOutput"]["additionalContext"], "Context review")
-        write.assert_called_once()
+        write.assert_called_once_with(
+            mock.ANY,
+            {
+                "next_due_at": context_review.iso_seconds(
+                    "2026-11-16T13:00:00.000Z"
+                )
+            },
+        )
 
     def test_timeout_writes_backoff_and_next_invocation_stays_on_fast_path(self):
         with tempfile.TemporaryDirectory() as state, mock.patch.object(

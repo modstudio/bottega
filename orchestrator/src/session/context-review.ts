@@ -3,9 +3,11 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { splitContextHolder } from '../../../shared/context-item-vocabulary.ts'
 import { db } from '../database/db.ts'
 import { contextBrief } from '../doc/context-brief.ts'
 import type { StoredContextItem } from '../doc/context-item-store.ts'
+import { cursorContextHolder, taskContextHolder } from '../doc/doc-subjects.ts'
 import { listWorkflowCursors } from '../workflow/workflow-cursor-list.ts'
 import { readHubTasks } from '../workflow/workflow-task-reference.ts'
 import {
@@ -19,7 +21,7 @@ import { recordContextReview } from './context-review-store.ts'
 type ReviewHolder = {
   key: string
   holder: string
-  kind: 'session' | 'cursor' | 'task' | 'epic'
+  kind: 'session' | 'cursor' | 'task'
 }
 
 export type ContextReviewResult =
@@ -87,9 +89,7 @@ function selector(holder: string, holders: readonly ReviewHolder[]): string {
 function holderLabel(holder: string, holders: readonly ReviewHolder[]): string {
   const reference = holders.find((candidate) => candidate.holder === holder)
   if (!reference) return holder
-  return reference.kind === 'task' || reference.kind === 'epic'
-    ? reference.key
-    : `${reference.kind}:${reference.key}`
+  return reference.kind === 'task' ? reference.key : `${reference.kind}:${reference.key}`
 }
 
 function itemLine(
@@ -131,18 +131,18 @@ export async function reviewContext(
   ])
   const projects = [...new Set(cursors.map((cursor) => cursor.project))]
   const tasks = (await Promise.all(projects.map(readHubTasks))).flat()
-  const holders: ReviewHolder[] = brief.holders.map((holder) => ({
-    key:
-      holder.kind === 'cursor' ? (holder.items[0]?.holder.split(':')[1] ?? holder.key) : holder.key,
-    holder:
-      holder.items[0]?.holder ??
-      (holder.kind === 'session'
-        ? `session:${holder.key}`
-        : holder.kind === 'cursor'
-          ? `cursor:${holder.key}`
-          : `task:${holder.key}`),
-    kind: holder.kind,
-  }))
+  const holders: ReviewHolder[] = brief.holders.flatMap((holder) => {
+    const address = holder.items[0]?.holder
+    if (!address) return []
+    const { holderKind, holderId } = splitContextHolder(address)
+    return [
+      {
+        key: holderKind === 'task' ? holder.key : holderId,
+        holder: address,
+        kind: holderKind,
+      },
+    ]
+  })
   const taskByKey = new Map(tasks.map((task) => [`${task.project}\0${task.key}`, task]))
   const openCursors = cursors.flatMap((cursor) => {
     const holder = cursor.workflow_key
@@ -151,7 +151,7 @@ export async function reviewContext(
     return holder
       ? [
           {
-            holder: `${cursor.workflow_key ? 'task' : 'cursor'}:${holder}`,
+            holder: cursor.workflow_key ? taskContextHolder(holder) : cursorContextHolder(holder),
             stepStartedAt: Date.parse(cursor.updated_at),
           },
         ]
@@ -176,7 +176,6 @@ export async function reviewContext(
     items,
     openCursors,
     doneTaskKeys: tasks.filter((task) => task.status_category === 'done').map((task) => task.key),
-    holdersWithOpenCursor: openCursors.map((cursor) => cursor.holder),
   }
   const decision = decideContextReview(facts)
   const flagged = decision.items.filter((item) => item.flagged).length
@@ -184,7 +183,6 @@ export async function reviewContext(
     return {
       next_due_at: new Date(decision.nextDueAt).toISOString(),
     }
-  const review = renderContextReview(decision.intervalMs, decision.items, holders, now)
   const event = recordContextReview(
     {
       sessionId: session,
@@ -195,9 +193,12 @@ export async function reviewContext(
     },
     { database },
   )
+  const nextDueAt = new Date(Date.parse(event.at) + decision.intervalMs).toISOString()
+  if (decision.items.length === 0) return { next_due_at: nextDueAt }
+  const review = renderContextReview(decision.intervalMs, decision.items, holders, now)
   return {
     due: true,
-    next_due_at: new Date(Date.parse(event.at) + decision.intervalMs).toISOString(),
+    next_due_at: nextDueAt,
     interval_ms: decision.intervalMs,
     review,
     items: decision.items.length,

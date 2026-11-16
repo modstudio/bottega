@@ -30,7 +30,6 @@ export type ContextReviewFacts = {
   items: readonly ContextReviewItem[]
   openCursors: readonly ContextReviewCursor[]
   doneTaskKeys: readonly string[]
-  holdersWithOpenCursor: readonly string[]
 }
 
 export type ContextReviewOrderedItem = ContextReviewItem & {
@@ -74,14 +73,15 @@ function namedDoneTask(body: string, doneTaskKeys: readonly string[]): string | 
 
 function staleReason(
   item: ContextReviewItem,
-  facts: Pick<ContextReviewFacts, 'openCursors' | 'doneTaskKeys' | 'holdersWithOpenCursor'>,
+  facts: Pick<ContextReviewFacts, 'openCursors' | 'doneTaskKeys'>,
 ): string | null {
   if (item.kind === 'ruling' || item.kind === 'position') return null
   const cursor = facts.openCursors.find((candidate) => candidate.holder === item.holder)
   if (cursor && item.updatedAt < cursor.stepStartedAt) return 'older than the current step'
   const doneTask = namedDoneTask(item.body, facts.doneTaskKeys)
   if (doneTask) return `names done task ${doneTask}`
-  if (item.holder.startsWith('task:') && !facts.holdersWithOpenCursor.includes(item.holder))
+  const holdersWithOpenCursor = new Set(facts.openCursors.map((openCursor) => openCursor.holder))
+  if (item.holder.startsWith('task:') && !holdersWithOpenCursor.has(item.holder))
     return 'holder has no open cursor'
   return null
 }

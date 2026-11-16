@@ -20,7 +20,6 @@ function facts(overrides: Partial<ContextReviewFacts> = {}): ContextReviewFacts 
     items: [],
     openCursors: [],
     doneTaskKeys: [],
-    holdersWithOpenCursor: [],
     ...overrides,
   }
 }
@@ -117,7 +116,6 @@ test('flags only stale facts and pointers and orders flagged items first', () =>
     facts({
       items,
       openCursors: [{ holder: 'task:open', stepStartedAt: now - 1_000 }],
-      holdersWithOpenCursor: ['task:open'],
       doneTaskKeys: ['DEV-1'],
     }),
   )
@@ -132,8 +130,12 @@ test('flags only stale facts and pointers and orders flagged items first', () =>
   expect(decision.items.find(({ id }) => id === 'old')?.reason).toBe('older than the current step')
   expect(decision.items.find(({ id }) => id === 'done')?.reason).toBe('names done task DEV-1')
   expect(decision.items.find(({ id }) => id === 'closed')?.reason).toBe('holder has no open cursor')
-  expect(decision.items.filter(({ id }) => id === 'ruling' || id === 'position')).toEqual([
-    { ...items[1]!, flagged: false, reason: null },
-    { ...items[5]!, flagged: false, reason: null },
+  expect(
+    decision.items
+      .filter(({ id }) => id === 'ruling' || id === 'position')
+      .map(({ id, flagged, reason }) => [id, flagged, reason]),
+  ).toEqual([
+    ['ruling', false, null],
+    ['position', false, null],
   ])
 })

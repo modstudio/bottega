@@ -108,18 +108,23 @@ export function measureContextReviewLosses(
   reviews: readonly ContextReviewLossRow[],
   items: readonly ContextItemLossRow[],
   boundaryAts: readonly string[],
+  captureSource: string,
 ): { reviews: ContextReviewLoss[]; captured: number[] } {
-  const orderedReviews = [...reviews].sort((left, right) => left.at.localeCompare(right.at))
-  const orderedBoundaries = [...boundaryAts].sort()
+  const orderedReviews = [...reviews].sort(
+    (left, right) => Date.parse(left.at) - Date.parse(right.at),
+  )
+  const boundaryTimes = boundaryAts.map(Date.parse)
   const current = new Map(items.map((item) => [item.id, item]))
   return {
     reviews: orderedReviews.map((review, index) => {
       const start = Date.parse(review.at)
       const nextReview = orderedReviews[index + 1]?.at
-      const nextBoundary = orderedBoundaries.find((at) => Date.parse(at) > start)
+      const nextBoundary = boundaryTimes
+        .filter((at) => at > start)
+        .sort((left, right) => left - right)[0]
       const end = Math.min(
         nextReview ? Date.parse(nextReview) : Number.POSITIVE_INFINITY,
-        nextBoundary ? Date.parse(nextBoundary) : Number.POSITIVE_INFINITY,
+        nextBoundary ?? Number.POSITIVE_INFINITY,
       )
       const present = review.itemIds.flatMap((id) => (current.has(id) ? [current.get(id)!] : []))
       return {
@@ -133,13 +138,14 @@ export function measureContextReviewLosses(
         dropped: review.itemIds.filter((id) => !current.has(id)).length,
       }
     }),
-    captured: orderedBoundaries.map((at, index) => {
-      const start = Date.parse(at)
-      const end = Date.parse(orderedBoundaries[index + 1] ?? '9999-12-31T23:59:59.999Z')
+    captured: boundaryTimes.map((start) => {
+      const end =
+        boundaryTimes.filter((at) => at > start).sort((left, right) => left - right)[0] ??
+        Number.POSITIVE_INFINITY
       return items.filter(
         (item) =>
-          item.source === 'compaction' &&
-          Date.parse(item.createdAt) > start &&
+          item.source === captureSource &&
+          Date.parse(item.createdAt) >= start &&
           Date.parse(item.createdAt) < end,
       ).length
     }),

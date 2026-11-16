@@ -15,6 +15,13 @@ export function nullableRoundedBigint(value: unknown, column: string): bigint | 
 
 export const nullableNumber = (value: unknown) => (value == null ? null : Number(value))
 
+export function nonnegativeInteger(value: unknown, field: string): number {
+  const number = Number(value)
+  if (!Number.isSafeInteger(number) || number < 0)
+    throw new Error(`${field} must be a nonnegative integer`)
+  return number
+}
+
 export function nullableUuid(value: unknown, field: string): string | null {
   if (value == null) return null
   const id = String(value)

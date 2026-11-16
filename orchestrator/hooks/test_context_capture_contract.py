@@ -23,7 +23,8 @@ class ContextCaptureContract(unittest.TestCase):
             r"section headed '([^']+)'", context_precompact.CAPTURE_INSTRUCTION
         )
         first_act_heading = re.search(
-            r"summary's '([^']+)' section", session_brief.COMPACT_FIRST_ACT
+            r"summary's '([^']+)' section",
+            session_brief.COMPACT_FIRST_ACT.format(session="session-a"),
         )
 
         self.assertIsNotNone(capture_heading)

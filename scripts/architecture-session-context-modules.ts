@@ -48,9 +48,11 @@ export const sessionContextModules: SessionContextModule[] = [
   module('orchestrator/src/session/context-review.ts', [
     'bun:sqlite',
     '../../../shared/brand.ts',
+    '../../../shared/context-item-vocabulary.ts',
     '../database/db.ts',
     '../doc/context-brief.ts',
     '../doc/context-item-store.ts',
+    '../doc/doc-subjects.ts',
     '../workflow/workflow-cursor-list.ts',
     '../workflow/workflow-task-reference.ts',
     './context-review-decision.ts',

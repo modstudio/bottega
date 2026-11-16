@@ -10,13 +10,7 @@ import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import type { ExistingEvidenceOwned, RequireOwnedUpsert } from './record-evidence-references.ts'
 import type { RecordPayload, RecordPrincipal } from './record-sync-contract.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
-
-const nonnegativeInteger = (value: unknown, field: string): number => {
-  const number = Number(value)
-  if (!Number.isSafeInteger(number) || number < 0)
-    throw new Error(`${field} must be a nonnegative integer`)
-  return number
-}
+import { nonnegativeInteger } from './record-value-conversions.ts'
 
 export const contextReviewRecordKind = (
   existingEvidenceOwned: ExistingEvidenceOwned<SQL>,

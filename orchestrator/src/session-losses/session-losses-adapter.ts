@@ -75,7 +75,7 @@ function contextReviewMeasurements(sessionId: string, boundaries: SessionLossRep
       }),
     )
   const reviewedIds = new Set(reviews.flatMap((review) => review.itemIds))
-  const items = db()
+  const reviewedItems = db()
     .query<{ record_id: string; created_at: string; updated_at: string; source: string }, []>(
       'SELECT record_id,created_at,updated_at,source FROM context_item',
     )
@@ -87,10 +87,26 @@ function contextReviewMeasurements(sessionId: string, boundaries: SessionLossRep
       updatedAt: item.updated_at,
       source: item.source,
     }))
+  const captureSource = `compaction ${sessionId}`
+  const capturedItems = db()
+    .query<{ record_id: string; created_at: string; updated_at: string; source: string }, [string]>(
+      'SELECT record_id,created_at,updated_at,source FROM context_item WHERE source=?',
+    )
+    .all(captureSource)
+    .map((item) => ({
+      id: item.record_id,
+      createdAt: item.created_at,
+      updatedAt: item.updated_at,
+      source: item.source,
+    }))
+  const items = [
+    ...new Map([...reviewedItems, ...capturedItems].map((item) => [item.id, item])).values(),
+  ]
   return measureContextReviewLosses(
     reviews,
     items,
     boundaries.map((boundary) => boundary.at),
+    captureSource,
   )
 }
 export type BriefInjectionSummary = {

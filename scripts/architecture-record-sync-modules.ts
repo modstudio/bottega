@@ -130,6 +130,7 @@ export const recordSyncModules: RecordSyncModule[] = [
     './record-evidence-references.ts',
     './record-sync-contract.ts',
     './record-sync-principal.ts',
+    './record-value-conversions.ts',
   ]),
   module('orchestrator/src/record/record-sync-hook-emission.ts', [
     'bun',

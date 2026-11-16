@@ -87,19 +87,22 @@ class AssembleAdditionalContext(unittest.TestCase):
         )
 
     def test_compact_first_act_is_last_when_context_fits(self):
-        text = session_brief._with_compact_first_act("brief", "compact")
-        self.assertEqual(text, "brief\n" + session_brief.COMPACT_FIRST_ACT)
+        text = session_brief._with_compact_first_act("brief", "compact", "session-a")
+        self.assertEqual(
+            text,
+            "brief\n" + session_brief.COMPACT_FIRST_ACT.format(session="session-a"),
+        )
 
     def test_compact_first_act_and_pointer_cover_the_cap_boundary(self):
         cap = session_brief.SESSION_START_CONTEXT_MAX_CHARS
-        first_act = session_brief.COMPACT_FIRST_ACT
+        first_act = session_brief.COMPACT_FIRST_ACT.format(session="session-a")
         pointer = "Full context: bottega agent context show --session session-a"
 
         for brief_length in range(cap - len(first_act) - 2, cap + 2):
             with self.subTest(brief_length=brief_length):
                 brief = "x" * brief_length
                 text = session_brief._with_full_context_pointer(
-                    session_brief._with_compact_first_act(brief, "compact"),
+                    session_brief._with_compact_first_act(brief, "compact", "session-a"),
                     "session-a",
                 )
                 self.assertTrue(len(text) <= cap or pointer in text)
@@ -109,7 +112,7 @@ class AssembleAdditionalContext(unittest.TestCase):
         for source in ("resume", "startup", "clear"):
             with self.subTest(source=source):
                 self.assertEqual(
-                    session_brief._with_compact_first_act("brief", source), "brief"
+                    session_brief._with_compact_first_act("brief", source, "session-a"), "brief"
                 )
 
     def test_compact_main_records_the_emitted_context_size(self):
@@ -144,7 +147,9 @@ class AssembleAdditionalContext(unittest.TestCase):
         emitted = json.loads(stdout.getvalue())["hookSpecificOutput"][
             "additionalContext"
         ]
-        self.assertIn(session_brief.COMPACT_FIRST_ACT, emitted)
+        self.assertIn(
+            session_brief.COMPACT_FIRST_ACT.format(session="session-a"), emitted
+        )
         command = popen.call_args.args[0]
         chars = command[command.index("--chars") + 1]
         self.assertEqual(chars, str(len(emitted)))

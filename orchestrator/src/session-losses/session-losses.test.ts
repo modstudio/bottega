@@ -16,15 +16,27 @@ test('context review losses count revised, dropped, and compaction-captured item
     [
       { id: 'revised', createdAt: stamp(0), updatedAt: stamp(4), source: 'test' },
       { id: 'late', createdAt: stamp(0), updatedAt: stamp(9), source: 'test' },
-      { id: 'captured', createdAt: stamp(7), updatedAt: stamp(7), source: 'compaction' },
+      {
+        id: 'captured',
+        createdAt: stamp(6),
+        updatedAt: stamp(6),
+        source: 'compaction session',
+      },
+      {
+        id: 'other-session',
+        createdAt: stamp(7),
+        updatedAt: stamp(7),
+        source: 'compaction other-session',
+      },
     ],
-    [stamp(1), stamp(6), stamp(12)],
+    [stamp(12), stamp(1), stamp(6)],
+    'compaction session',
   )
   expect(measured.reviews).toEqual([
     { at: stamp(2), listed: 3, flagged: 2, revised: 1, dropped: 1 },
     { at: stamp(8), listed: 1, flagged: 0, revised: 1, dropped: 0 },
   ])
-  expect(measured.captured).toEqual([0, 1, 0])
+  expect(measured.captured).toEqual([0, 0, 1])
 })
 
 const stamp = (second: number) => new Date(Date.UTC(2026, 9, 28, 12, 0, second)).toISOString()
