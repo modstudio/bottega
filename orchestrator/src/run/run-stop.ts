@@ -19,7 +19,6 @@ import {
 } from '../close/close-out-stop-release.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { mutateQuestion } from '../question-store/question-store-mutation.ts'
-import { openChainQuestions } from './question-open.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   type TerminalDockerTeardown,
@@ -33,6 +32,7 @@ import {
   retireRunChainQuestionDeliveries,
 } from './question-close.ts'
 import { clearQuestionDeliveryPending } from './question-delivery-pending.ts'
+import { openChainQuestions } from './question-open.ts'
 import { ANSWER_CHANNEL_CLI, ANSWERER_KIND_AGENT } from './question-vocabulary.ts'
 import {
   adoptRunMutation,

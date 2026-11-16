@@ -15,6 +15,8 @@ import { type QuestionInboxGroup, questionInboxGroup } from './question-inbox-gr
 import { rulingStatus } from './question-vocabulary.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
 
+// The question-port projection derives root_voided with voidedSql('root').
+
 type RunInboxFlags = { has(name: string): boolean }
 type RunInboxPresentation = {
   log(...values: unknown[]): void
@@ -75,8 +77,6 @@ type WorkflowInboxQuestion = {
   answer_command: string | null
   ownership_notice: string | null
 }
-
-export type { QueriedInboxQuestion } from '../question-store/question-store-types.ts'
 
 type RecoverableInboxRow = {
   record_id: string

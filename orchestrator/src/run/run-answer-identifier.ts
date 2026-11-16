@@ -5,8 +5,8 @@ import type { Database } from 'bun:sqlite'
 import { storedMachineNames } from '../../../shared/machine-config.ts'
 import { questionRulings, questionsById } from '../question-store/question-store-read.ts'
 import { type MachineIdentifierNames, stripMachineLabel } from '../record/machine-name.ts'
-import { classifyBareRunIdentifier } from './run-identifier-grammar.ts'
 import { questionsForRunChain } from './question-open.ts'
+import { classifyBareRunIdentifier } from './run-identifier-grammar.ts'
 
 export type ParsedAnswerIdentifier =
   | { kind: 'question-number'; number: number }

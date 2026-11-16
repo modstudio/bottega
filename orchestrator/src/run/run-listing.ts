@@ -15,9 +15,9 @@ import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { failureReason, type OutcomeRow, outcomeOf } from '../outcome.ts'
 import type { ProcessSample } from '../process-resource-sampler.ts'
 import { questionRulings } from '../question-store/question-store-read.ts'
-import { questionsForRunChain } from './question-open.ts'
 import { publishChangeCursor } from './collect-change.ts'
 import { currentRunMemberJoin, liveMemberStall } from './live-run-member.ts'
+import { questionsForRunChain } from './question-open.ts'
 import type {
   AnswerChannel,
   AnswererKind,
@@ -420,7 +420,7 @@ async function applySinceListingFilter(
   args.push(since, ...questionRootIds)
 }
 
-export async function applyChangedAfterFilter(
+async function applyChangedAfterFilter(
   after: number | null,
   where: string[],
   args: Array<string | number>,

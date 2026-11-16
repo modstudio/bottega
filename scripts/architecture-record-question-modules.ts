@@ -63,6 +63,7 @@ export const recordQuestionModules: RecordModule[] = [
   module('orchestrator/src/question-store/question-store-sql.ts', []),
   module('orchestrator/src/question-store/question-store-sqlite.ts', [
     'bun:sqlite',
+    '../database/entity-number.ts',
     '../record/record-question-contract.ts',
     '../run/question-outbox.ts',
     './question-store-sqlite-reads.ts',

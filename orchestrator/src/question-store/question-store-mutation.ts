@@ -6,8 +6,8 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { machineId } from '../record/machine-identity.ts'
 import type { QuestionIntent, QuestionWriteBody } from '../record/record-question-contract.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
-import { questionById } from './question-store-read.ts'
 import { questionStore } from './question-store.ts'
+import { questionById } from './question-store-read.ts'
 
 type Snapshot = QuestionWriteBody['question']
 const nullable = (value: unknown): string | null => (typeof value === 'string' ? value : null)

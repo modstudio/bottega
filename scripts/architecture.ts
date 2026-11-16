@@ -254,7 +254,11 @@ const declaredModules: ArchitectureModule[] = [
     '../project/projects.ts',
   ]),
   module('orchestrator/src/git/commit-resolution.ts', ['./git-environment.ts']),
-  module('orchestrator/src/run/question-open.ts', []),
+  module('orchestrator/src/run/question-open.ts', [
+    'bun:sqlite',
+    '../question-store/question-store-read.ts',
+    './run-chain.ts',
+  ]),
   module('orchestrator/src/close/close-out-questions.ts', [
     '../database/db.ts',
     '../run/question-close.ts',

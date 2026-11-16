@@ -4,8 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import type { QuestionIdentity } from '../../../shared/orch-contract.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
-import { questionById } from '../question-store/question-store-read.ts'
-import { questionRulings } from '../question-store/question-store-read.ts'
+import { questionById, questionRulings } from '../question-store/question-store-read.ts'
 
 export type ParsedQuestionIdentifier =
   | { kind: 'number'; id: number }

@@ -18,7 +18,6 @@ import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { outcomeOf } from '../outcome.ts'
 import { type Project, resolvedWorktreeTool } from '../project/projects.ts'
-import { openChainQuestions } from './question-open.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import { chainTransport } from '../route/failover.ts'
 import { requireContinuationCheckout } from './continuation-checkout-service.ts'
@@ -35,6 +34,7 @@ import {
   requireContinuationTree,
 } from './continuation-tree-service.ts'
 import { displayRunQuestion } from './question-display-probe.ts'
+import { openChainQuestions } from './question-open.ts'
 import {
   continuationBranchAvailability,
   continuationBranchPlan,

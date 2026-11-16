@@ -110,10 +110,7 @@ async function recordQuestionDetails(
   )) as Row[]
 }
 
-async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
-  if (input.read === 'by-id') return limited(await recordQuestionDetails(tx, input), input.limit)
-  if (input.read === 'for-run')
-    return limited(await recordQuestionDetails(tx, { runId: input.runId }), input.limit)
+async function boundedIdentityRows(tx: SQL, input: QuestionReadInput): Promise<Row[] | null> {
   if (input.read === 'max-number')
     return (await tx.unsafe('SELECT COALESCE(MAX(number),0) number FROM question', [])) as Row[]
   if (input.read === 'by-number')
@@ -129,17 +126,25 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
       )) as Row[],
       input.limit,
     )
-  if (input.read === 'open-for-cursors')
-    return limited(
-      (await tx.unsafe(
-        `SELECT workflow_cursor_record_id::text,MIN(number) number FROM question
-         WHERE workflow_cursor_record_id IN (${input.workflowCursorRecordIds.map((_, index) => `$${index + 1}::uuid`).join(',')})
-           AND answered_at IS NULL AND closed_at IS NULL
-         GROUP BY workflow_cursor_record_id ORDER BY number`,
-        input.workflowCursorRecordIds,
-      )) as Row[],
-      input.limit,
-    )
+  if (input.read !== 'open-for-cursors') return null
+  return limited(
+    (await tx.unsafe(
+      `SELECT workflow_cursor_record_id::text,MIN(number) number FROM question
+       WHERE workflow_cursor_record_id IN (${input.workflowCursorRecordIds.map((_, index) => `$${index + 1}::uuid`).join(',')})
+         AND answered_at IS NULL AND closed_at IS NULL
+       GROUP BY workflow_cursor_record_id ORDER BY number`,
+      input.workflowCursorRecordIds,
+    )) as Row[],
+    input.limit,
+  )
+}
+
+async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
+  if (input.read === 'by-id') return limited(await recordQuestionDetails(tx, input), input.limit)
+  if (input.read === 'for-run')
+    return limited(await recordQuestionDetails(tx, { runId: input.runId }), input.limit)
+  const identityRows = await boundedIdentityRows(tx, input)
+  if (identityRows !== null) return identityRows
   if (input.read === 'for-cursor')
     return limited(
       await recordQuestionDetails(tx, {

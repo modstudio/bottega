@@ -13,8 +13,8 @@ import { questionChangedAfterRefusal } from '../record/record-question-contract.
 import {
   localQuestionProjects,
   maxQuestionNumber,
-  openStagesForSession,
   openQuestionsForCursors,
+  openStagesForSession,
   questionByNumberRow,
   questionsByIdRows,
   questionsForCursor,
@@ -64,6 +64,13 @@ export class SqliteQuestionStore implements QuestionStore {
       ),
       ...(cursor === null ? {} : { cursor: String(cursor) }),
     }
+  }
+
+  private readInbox(input: Extract<QuestionReadInput, { read: 'inbox' }>): QuestionReadResult {
+    const rows = [...runInboxQuestionRows(this.database), ...workflowInboxQuestions(this.database)]
+    const offset = input.changedAfter === undefined ? 0 : Number(input.changedAfter)
+    const end = input.limit === undefined ? rows.length : offset + input.limit
+    return { items: rows.slice(offset, end), cursor: String(end), more: end < rows.length }
   }
 
   async write(intent: QuestionIntent, input: QuestionWriteBody): Promise<QuestionWriteResult> {
@@ -187,19 +194,7 @@ export class SqliteQuestionStore implements QuestionStore {
 
   async read(input: QuestionReadInput): Promise<QuestionReadResult> {
     assertLocalChangedAfter(input)
-    if (input.read === 'inbox') {
-      const rows = [
-        ...runInboxQuestionRows(this.database),
-        ...workflowInboxQuestions(this.database),
-      ]
-      const offset = input.changedAfter === undefined ? 0 : Number(input.changedAfter)
-      const end = input.limit === undefined ? rows.length : offset + input.limit
-      return {
-        items: rows.slice(offset, end),
-        cursor: String(end),
-        more: end < rows.length,
-      }
-    }
+    if (input.read === 'inbox') return this.readInbox(input)
     if (input.read === 'waiting')
       return { items: limited(waitingWorkflowQuestions(this.database), input.limit) }
     if (input.read === 'open-for-session')

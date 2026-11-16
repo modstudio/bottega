@@ -209,6 +209,8 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       'bun:sqlite',
       '../database/db.ts',
       '../project/projects.ts',
+      '../question-store/question-store-read.ts',
+      '../question-store/question-store-types.ts',
       '../workflow/autonomy-scopes.ts',
       '../workflow/task-flow-store.ts',
       '../workflow/workflow-cursor-format.ts',

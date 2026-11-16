@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { writeTransaction } from '../database/db.ts'
 import { openQuestionsForCursors } from '../question-store/question-store-read.ts'
+import * as questions from '../question-store/question-store-sqlite-reads.ts'
 import type {
   TaskFlowIntent,
   TaskFlowIntentInput,
@@ -14,7 +15,6 @@ import type {
   TaskFlowLocalReadMethod,
   TaskFlowWriteMethod,
 } from './task-flow-store-methods.ts'
-import * as questions from '../question-store/question-store-sqlite-reads.ts'
 import {
   type TaskFlowSqliteWriteResult,
   writeSqliteTaskFlow,
