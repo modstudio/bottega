@@ -8,6 +8,10 @@ import sys
 from registered_scope_decision import PROCESS_CWD, hook_acts, invocation_directory
 
 
+def orch_worker_session(env=None):
+    return bool((env if env is not None else os.environ).get("BOTTEGA_RUN_ID"))
+
+
 def should_hook_act(payload: dict) -> bool:
     """Answer whether a product hook should act for this parsed payload."""
     global_use = os.environ.get("BOTTEGA_GLOBAL_USE")

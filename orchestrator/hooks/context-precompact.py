@@ -6,6 +6,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
+from registered_scope import orch_worker_session
 from registered_scope import should_hook_act
 from hook_emission import record_emission
 
@@ -21,6 +22,8 @@ CAPTURE_INSTRUCTION = (
 def main():
     try:
         payload = json.load(sys.stdin)
+        if orch_worker_session():
+            return 0
         if should_hook_act(payload):
             record_emission(payload, "additionalContext", CAPTURE_INSTRUCTION)
             print(CAPTURE_INSTRUCTION)
