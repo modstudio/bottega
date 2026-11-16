@@ -51,8 +51,6 @@ import {
   pinnedUserMismatchRemedy,
   RECORD_ACTIVE_SPACE_REMEDY,
 } from '../../../shared/record-remedies.ts'
-import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
-import { recordWriteSpace } from '../../../shared/record-write-space.ts'
 import { sealedValueIsEmpty, stripTrailingNewline } from '../../../shared/sealed-value.ts'
 import {
   generateDataKey,
@@ -90,27 +88,14 @@ import {
 import { refreshDisplayTimezoneCache } from './display-timezone-cache.ts'
 import { hostedConfigClient } from './hosted-config-call-outcome.ts'
 import * as trustRefusal from './machine-trust-refusal.ts'
+import { personalConfigWriteDestination } from './personal-config-write-destination.ts'
 import { appendTrustLogRevoke } from './trust-log-revoke.ts'
 
 async function identity(client: ConfigClient, env: ConfigEnvironment = process.env) {
   return hostedIdentity(client, readHostedConfigIdentity(env))
 }
 
-export async function personalConfigWriteDestination(
-  client = hostedConfigClient(),
-): Promise<WriteDestination> {
-  const who = await client.whoami()
-  const decision = recordWriteSpace(
-    { kind: 'personal' },
-    {
-      declaredSpaces: {},
-      personalSpaceId: who.personalSpaceId,
-      memberships: parseRecordSpaceMemberships(who.memberships),
-    },
-  )
-  if ('refused' in decision) throw new Error(decision.remedy)
-  return { destinationSpaceId: decision.spaceId }
-}
+export { personalConfigWriteDestination }
 
 async function unpinServerRevoked(client: ConfigClient, destination: ConfigDestination = {}) {
   const remote = await client.listMachineKeys(destination)
