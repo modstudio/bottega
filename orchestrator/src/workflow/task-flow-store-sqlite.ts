@@ -3,18 +3,18 @@
 
 import type { Database } from 'bun:sqlite'
 import { writeTransaction } from '../database/db.ts'
+import { openQuestionsForCursors } from '../question-store/question-store-read.ts'
+import * as questions from '../question-store/question-store-sqlite-reads.ts'
 import type {
   TaskFlowIntent,
   TaskFlowIntentInput,
   TaskFlowIntentResult,
 } from '../record/record-task-flow-write-contract.ts'
-import { questionOpenSql } from '../run/question-open.ts'
 import type {
   TaskFlowLocalOnlyReadMethod,
   TaskFlowLocalReadMethod,
   TaskFlowWriteMethod,
 } from './task-flow-store-methods.ts'
-import * as questions from './task-flow-store-sqlite-questions.ts'
 import {
   type TaskFlowSqliteWriteResult,
   writeSqliteTaskFlow,
@@ -361,10 +361,7 @@ class SqliteTaskFlowStore {
     }
     return this.database
       .query<TaskFlowListedStageRow, string[]>(
-        `SELECT ${LISTED_STAGE_COLUMNS},
-         (SELECT q.number FROM question q
-          WHERE q.workflow_cursor_record_id=cursor.record_id
-            AND ${questionOpenSql('q')} LIMIT 1) question_number
+        `SELECT ${LISTED_STAGE_COLUMNS},NULL question_number
          FROM workflow_cursor cursor WHERE ${clauses.join(' AND ')}
          ORDER BY cursor.updated_at,cursor.number`,
       )
@@ -771,7 +768,21 @@ export function sqliteTaskFlowReadStore(database: Database): SqliteTaskFlowReadS
     latestStageForTask: async (input) => local.latestStageForTask(input),
     openKeylessStages: async (input) => local.openKeylessStages(input),
     activeStageModes: async (input) => local.activeStageModes(input),
-    listOpenStages: async (input) => local.listOpenStages(input),
+    listOpenStages: async (input) => {
+      const rows = local.listOpenStages(input)
+      const openByCursor = new Map<string, number>()
+      for (const row of await openQuestionsForCursors(
+        database,
+        rows.map(({ record_id }) => record_id),
+      )) {
+        const cursorId = row.workflow_cursor_record_id
+        if (!openByCursor.has(cursorId)) openByCursor.set(cursorId, row.number)
+      }
+      return rows.map((row) => ({
+        ...row,
+        question_number: openByCursor.get(row.record_id) ?? null,
+      }))
+    },
     openStageWorktrees: async () => local.openStageWorktrees(),
     activeStageAutonomy: async (project, taskRecordId) =>
       local.activeStageAutonomy(project, taskRecordId),

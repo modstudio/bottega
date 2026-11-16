@@ -35,7 +35,6 @@ import { McpServer, WebStandardStreamableHTTPServerTransport } from '@modelconte
 import { StdioServerTransport, serveStdio } from '@modelcontextprotocol/server/stdio'
 import { z } from 'zod'
 import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
 import {
   BOARD_ASK_REFRESH_BUDGET_MS,
   claimRunBoardNotices,
@@ -68,9 +67,9 @@ import { LOCAL_LISTENER_IDLE_TIMEOUT_SECONDS } from '../local-listener.ts'
 import { checkMessages, messageArchitect } from '../mailbox/mailbox.ts'
 import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
 import { orchestratorProseGate } from '../prose-service.ts'
+import { askQuestion } from '../question-store/question-store-mutation.ts'
+import { questionById } from '../question-store/question-store-read.ts'
 import { machineId } from '../record/machine-identity.ts'
-import { nextQuestionNumber } from '../run/question-number.ts'
-import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { ASKED_VIA_LIVE, ASKED_VIA_REPLY, type AskedVia } from '../run/question-vocabulary.ts'
 import { runScratchDir } from '../run/run-artifacts.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
@@ -114,7 +113,7 @@ function boundedTimeout(): number {
   return Number.isFinite(raw) && raw > 0 ? raw : 10 * 60_000
 }
 const ASK_TIMEOUT_MS = boundedTimeout()
-function recordQuestion(input: {
+async function recordQuestion(input: {
   runId: string
   askedAt: string
   question: string
@@ -124,34 +123,23 @@ function recordQuestion(input: {
   askedVia: AskedVia
   awaitingOperatorAt: string | null
   typed?: WorkerQuestion
-}): string {
-  const recordId = newRecordId()
+}): Promise<string> {
   const stored = input.typed ? encodeWorkerQuestion(input.typed) : null
-  const inserted = db()
-    .query<{ record_id: string }, (string | number | null)[]>(
-      `INSERT INTO question
-       (record_id,number,run_record_id,asked_at,question,options,recommendation,why,asked_via,awaiting_operator_at,kind,typed_options,criteria,levels)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
-    )
-    .get(
-      recordId,
-      nextQuestionNumber(db()),
-      input.runId,
-      input.askedAt,
-      input.question,
-      input.options?.length ? JSON.stringify(input.options) : null,
-      input.recommendation ?? null,
-      input.why ?? null,
-      input.askedVia,
-      input.awaitingOperatorAt,
-      stored?.kind ?? (input.options?.length ? 'choice' : 'text'),
-      stored?.typedOptions ?? null,
-      stored?.criteria ?? null,
-      stored?.levels ?? null,
-    )
-  if (!inserted) throw new Error('question was not recorded')
-  enqueueQuestionRecord(db(), inserted.record_id)
-  return inserted.record_id
+  const result = await askQuestion(db(), {
+    runId: input.runId,
+    askedAt: input.askedAt,
+    question: input.question,
+    options: input.options?.length ? input.options : null,
+    recommendation: input.recommendation ?? null,
+    why: input.why ?? null,
+    askedVia: input.askedVia,
+    awaitingOperatorAt: input.awaitingOperatorAt,
+    kind: stored?.kind ?? (input.options?.length ? 'choice' : 'text'),
+    typedOptions: stored?.typedOptions ?? null,
+    criteria: stored?.criteria ?? null,
+    levels: stored?.levels ?? null,
+  })
+  return result.id
 }
 
 export async function recordReplyQuestions(input: {
@@ -160,27 +148,26 @@ export async function recordReplyQuestions(input: {
   askedAt: string
   awaitingOperatorAt: string | null
 }): Promise<Array<{ recordId: string; question: WorkerQuestion }>> {
-  const recorded = writeTransaction(() => {
-    const rows: Array<{ recordId: string; question: WorkerQuestion }> = []
+  const rows: Array<{ recordId: string; question: WorkerQuestion }> = []
+  writeTransaction(() => {
     enqueueRunRecord(db(), input.runId, machineId(), input.askedAt)
-    for (const question of input.questions) {
-      const typed = WorkerQuestionSchema.parse(question)
-      const recordId = recordQuestion({
-        runId: input.runId,
-        askedAt: input.askedAt,
-        question: typed.question,
-        options: typed.kind === 'choice' ? typed.options.map(({ name }) => name) : undefined,
-        recommendation: typed.kind === 'choice' ? typed.recommendation : undefined,
-        why: typed.why,
-        askedVia: ASKED_VIA_REPLY,
-        awaitingOperatorAt: input.awaitingOperatorAt,
-        typed,
-      })
-      rows.push({ recordId, question: typed })
-    }
-    return rows
   })
-  return recorded
+  for (const question of input.questions) {
+    const typed = WorkerQuestionSchema.parse(question)
+    const recordId = await recordQuestion({
+      runId: input.runId,
+      askedAt: input.askedAt,
+      question: typed.question,
+      options: typed.kind === 'choice' ? typed.options.map(({ name }) => name) : undefined,
+      recommendation: typed.kind === 'choice' ? typed.recommendation : undefined,
+      why: typed.why,
+      askedVia: ASKED_VIA_REPLY,
+      awaitingOperatorAt: input.awaitingOperatorAt,
+      typed,
+    })
+    rows.push({ recordId, question: typed })
+  }
+  return rows
 }
 
 export async function preAnswerReplyQuestions(
@@ -476,20 +463,20 @@ export async function ask(
   const askedAt = nowIso()
   const typed = WorkerQuestionSchema.parse(o)
   const awaitingOperatorAt = await initialQuestionWaitingAt(o.runId, askedAt)
-  const id = writeTransaction(() => {
+  writeTransaction(() => {
     db().query("UPDATE run SET status='asking' WHERE record_id=? AND status='running'").run(o.runId)
     enqueueRunRecord(db(), o.runId, machineId(), askedAt)
-    return recordQuestion({
-      runId: o.runId,
-      askedAt,
-      question: o.question,
-      options: typed.kind === 'choice' ? typed.options.map(({ name }) => name) : undefined,
-      recommendation: typed.kind === 'choice' ? typed.recommendation : undefined,
-      why: typed.why,
-      askedVia: ASKED_VIA_LIVE,
-      awaitingOperatorAt,
-      typed,
-    })
+  })
+  const id = await recordQuestion({
+    runId: o.runId,
+    askedAt,
+    question: o.question,
+    options: typed.kind === 'choice' ? typed.options.map(({ name }) => name) : undefined,
+    recommendation: typed.kind === 'choice' ? typed.recommendation : undefined,
+    why: typed.why,
+    askedVia: ASKED_VIA_LIVE,
+    awaitingOperatorAt,
+    typed,
   })
   await preAnswerWorkerQuestion({
     recordId: id,
@@ -499,16 +486,12 @@ export async function ask(
     answerChannel: 'mcp',
   })
   const deadline = Date.now() + (o.timeoutMs ?? ASK_TIMEOUT_MS)
-  const q = db().query(
-    'SELECT answer FROM question WHERE record_id = ? AND answered_at IS NOT NULL',
-  )
-
   // BOUNDED BY CONSTRUCTION, like `bottega run wait`. An unbounded poll against a
   // question nobody will ever answer is the failure this is meant to remove
   // rather than relocate.
   for (;;) {
-    const row = q.get(id) as { answer: string | null } | null
-    if (row) {
+    const row = await questionById(db(), id)
+    if (row?.answered_at) {
       db()
         .query("UPDATE run SET status='running' WHERE record_id=? AND status='asking'")
         .run(o.runId)
@@ -517,7 +500,11 @@ export async function ask(
         type: 'text',
         text: 'ruling delivered; worker resumed',
       })
-      return { answered: true, answer: row.answer ?? '', notice: proseNotice }
+      return {
+        answered: true,
+        answer: typeof row.answer === 'string' ? row.answer : '',
+        notice: proseNotice,
+      }
     }
     if (Date.now() >= deadline) {
       // The question STAYS OPEN. The architect may still want to see what was

@@ -130,10 +130,10 @@ function recordIdleDetectorSubjects(
   }
 }
 
-function currentAddressedSubjects(
+async function currentAddressedSubjects(
   kinds: Set<string>,
   database: Database,
-): Map<string, Set<string>> {
+): Promise<Map<string, Set<string>>> {
   for (const kind of kinds) {
     if (!(kind in MONITOR_NOTICE_DELIVERY_POLICY)) {
       throw new Error(`monitor notice kind ${kind} has no delivery-currentness policy`)
@@ -146,7 +146,7 @@ function currentAddressedSubjects(
   if (kinds.has('asking-run')) {
     record(
       'asking-run',
-      askingRuns(database).map((run) => `run:${run.record_id}`),
+      (await askingRuns(database)).map((run) => `run:${run.record_id}`),
     )
   }
   if (kinds.has('dead-running-process')) {
@@ -187,10 +187,10 @@ function currentAddressedSubjects(
 }
 
 /** Read addressed findings without consuming them. A failed consumer gets them again. */
-export function claimMonitorNotices(
+export async function claimMonitorNotices(
   ownerSession: string,
   database: Database = db(),
-): MonitorNotice[] {
+): Promise<MonitorNotice[]> {
   requireRealSession(ownerSession, 'monitor notices')
   const rows = database
     .query(
@@ -228,7 +228,7 @@ export function claimMonitorNotices(
     run_project: string | null
   }[]
   const kinds = new Set(rows.map((row) => row.kind))
-  const current = currentAddressedSubjects(kinds, database)
+  const current = await currentAddressedSubjects(kinds, database)
   const conditions = rows
     .filter(
       (row) =>
@@ -298,7 +298,7 @@ async function claimMonitorNoticesWithHosted(
     const overflow = board.delivery.length ? board.overflow : null
     return {
       notices: [
-        ...claimMonitorNotices(ownerSession, database),
+        ...(await claimMonitorNotices(ownerSession, database)),
         ...board.delivery.map(
           (notice): MonitorNotice => ({
             noticeId: `board:${notice.id}`,

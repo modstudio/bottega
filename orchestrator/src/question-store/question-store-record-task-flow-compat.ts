@@ -5,8 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import type { HostedTaskFlowStageById } from '../record/record-task-flow-contract.ts'
 import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
-import { questionOpenSql, questionTaskHolderSql } from '../run/question-open.ts'
-import { type ListedItem, stageRow } from './task-flow-store-record-stage-row.ts'
+import { type ListedItem, stageRow } from '../workflow/task-flow-store-record-stage-row.ts'
 import type {
   TaskFlowInboxQuestionRow,
   TaskFlowListedStageRow,
@@ -15,7 +14,8 @@ import type {
   TaskFlowRulingFileRow,
   TaskFlowRulingRow,
   TaskFlowTaskRulingRow,
-} from './task-flow-store-types.ts'
+} from '../workflow/task-flow-store-types.ts'
+import { questionOpenSql, questionTaskHolderSql } from './question-store-sql.ts'
 
 type StageSelector = Record<string, unknown>
 type StageRead = {
@@ -303,8 +303,11 @@ function rulingListReads(database: Database, read: StageRead) {
       const rows = database
         .query<LocalQuestion, string[]>(
           `SELECT q.number,q.record_id,q.run_record_id,r.number AS run_number,
-                  q.workflow_cursor_record_id,q.workflow_key,r.repo run_project,r.session_id run_session,
+                  q.workflow_cursor_record_id,q.workflow_key,q.workflow_task_record_id,
+                  r.repo run_project,r.session_id run_session,
                   q.asked_at,q.question,q.answer,q.answer_basis,q.answered_at,
+                  q.kind,q.jev_model,q.jev_pick,q.jev_probabilities,q.jev_agreed,
+                  q.jev_question_version,q.jev_fits,q.jev_order_flipped,
                   q.answered_by,q.answered_by_name,q.asked_via,q.answerer_kind,q.answer_channel,
                   q.closed_at,q.close_reason,q.overturned_at,q.overturned_by,q.overturned_by_name,
                   q.overturn_reason,q.replacement,q.filed_as,q.filed_ref,q.filed_record_id,

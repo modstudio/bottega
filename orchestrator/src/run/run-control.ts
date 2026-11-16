@@ -34,7 +34,7 @@ import {
   requireContinuationTree,
 } from './continuation-tree-service.ts'
 import { displayRunQuestion } from './question-display-probe.ts'
-import { questionOpenSql } from './question-open.ts'
+import { openChainQuestions } from './question-open.ts'
 import {
   continuationBranchAvailability,
   continuationBranchPlan,
@@ -49,7 +49,7 @@ import {
   reauthorizeRunMutation,
 } from './run-authority.ts'
 import { detach } from './run-dispatch.ts'
-import { RUN_FOLLOW_TIMEOUT_MS, reapStale } from './run-liveness.ts'
+import { closeStaleChainQuestions, RUN_FOLLOW_TIMEOUT_MS, reapStale } from './run-liveness.ts'
 import { continuationResumeKind } from './run-resume-kind.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
 import { type ContinuationInstruction, renderCheckpointContinuationPrompt } from './run-retry.ts'
@@ -241,16 +241,10 @@ export async function follow(
        * the file this was looking at.
        */
       if (row.status === 'asking') {
-        const open = db()
-          .query(
-            `SELECT q.run_record_id,q.question FROM question q JOIN run r ON r.record_id = q.run_record_id
-            WHERE (r.record_id = ? OR r.parent_run_record_id = ?) AND ${questionOpenSql('q')}
-            ORDER BY q.number`,
-          )
-          .all(
-            row.parent_run_record_id ?? chain.finalId,
-            row.parent_run_record_id ?? chain.finalId,
-          ) as {
+        const open = (await openChainQuestions(
+          db(),
+          row.parent_run_record_id ?? chain.finalId,
+        )) as unknown as {
           run_record_id: string
           question: string
         }[]
@@ -298,6 +292,7 @@ export async function follow(
       process.exit(2)
     }
     const observed = reapStale(db(), terminalSharedGitConfigForRecordedRun)
+    await closeStaleChainQuestions(db())
     if (Array.isArray(observed) && observed.some((dead) => dead.record_id === chain.finalId)) {
       console.error(
         `run ${chain.finalId}: process gone, not terminalised (read-only linked worktree)`,
@@ -741,17 +736,12 @@ export async function continueRun(
     )
     .get(id, id) as { record_id: string; turn: number } | null
   if (running) throw new Error(runningTurnRefusal(id, running))
-  const open = db()
-    .query(
-      `SELECT COUNT(*) n FROM question q JOIN run r ON r.record_id = q.run_record_id
-      WHERE (r.record_id = ? OR r.parent_run_record_id = ?) AND ${questionOpenSql('q')}`,
-    )
-    .get(id, id) as { n: number }
+  const open = await openChainQuestions(db(), id)
   // A worker waiting on a ruling must be RULED ON, not talked past. Continuing
   // one would resume it with its question unanswered, and a worker resumed
   // with an open question guesses — the single thing this design exists to
   // prevent.
-  if (open.n) throw new Error(openQuestionContinueRemedy(id, open.n))
+  if (open.length) throw new Error(openQuestionContinueRemedy(id, open.length))
   const continuationMessage = producedContinuationMessage(message, produceMessage)
   const messageBinding = optionalContinuationMessageBinding(continuationMessage)
   const { latest, nextTurn } = continuationTurn(

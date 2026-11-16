@@ -10,11 +10,11 @@ import { pullRequestNumberForBranch } from '../branch/task-key-pull-request.ts'
 import { db } from '../database/db.ts'
 import { filedIssueQueueState } from '../issue/issue-dispatch.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
+import { questionRulings } from '../question-store/question-store-read.ts'
 import {
   type QuestionInboxCounts,
   questionInboxCountsForSession,
 } from '../run/question-inbox-counts.ts'
-import { questionOpenSql } from '../run/question-open.ts'
 import { LIVE_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { keylessCursorIdle } from '../session/keyless-cursor-idle.ts'
 import { sessionReviewVerdictLines } from '../session/session-review-verdicts.ts'
@@ -213,44 +213,48 @@ export function holderSequence(
   return holders
 }
 
-export function storedBriefHolders(
+export async function storedBriefHolders(
   references: readonly ContextBriefHolderReference[],
   database: Database,
-): ContextBriefHolder[] {
-  return references
-    .map((reference) => {
-      if (reference.kind === 'session') {
-        return {
-          ...reference,
-          items: storedItems(`session:${reference.key}`, database),
+): Promise<ContextBriefHolder[]> {
+  return (
+    await Promise.all(
+      references.map(async (reference) => {
+        if (reference.kind === 'session') {
+          return {
+            ...reference,
+            items: storedItems(`session:${reference.key}`, database),
+          }
         }
-      }
-      if (reference.kind === 'cursor') {
+        if (reference.kind === 'cursor') {
+          const { recordId, ...holder } = reference
+          return { ...holder, items: storedItems(cursorContextHolder(recordId), database) }
+        }
         const { recordId, ...holder } = reference
-        return { ...holder, items: storedItems(cursorContextHolder(recordId), database) }
-      }
-      const { recordId, ...holder } = reference
-      const openQuestions = openTaskQuestions(recordId, database)
-      return {
-        ...holder,
-        items: storedItems(taskContextHolder(recordId), database),
-        ...(openQuestions.length ? { openQuestions } : {}),
-      }
-    })
-    .filter((holder) => holder.kind !== 'session' || holder.items.length > 0)
+        const openQuestions = await openTaskQuestions(recordId, database)
+        return {
+          ...holder,
+          items: storedItems(taskContextHolder(recordId), database),
+          ...(openQuestions.length ? { openQuestions } : {}),
+        }
+      }),
+    )
+  ).filter((holder) => holder.kind !== 'session' || holder.items.length > 0)
 }
 
 /** Read only unanswered, unclosed questions bound to one task record. */
-function openTaskQuestions(
+async function openTaskQuestions(
   taskRecordId: string,
   database: Database,
-): Array<{ number: number; question: string }> {
-  return database
-    .query<{ number: number; question: string }, [string]>(
-      `SELECT number,question FROM question q
-       WHERE workflow_task_record_id=? AND ${questionOpenSql('q')} ORDER BY number`,
+): Promise<Array<{ number: number; question: string }>> {
+  return (await questionRulings(database, { kind: 'all' })).items
+    .filter(
+      (row) =>
+        row.workflow_task_record_id === taskRecordId &&
+        row.answered_at === null &&
+        row.closed_at === null,
     )
-    .all(taskRecordId)
+    .map((row) => ({ number: Number(row.number), question: String(row.question) }))
 }
 
 export function workingKeysForBrief(
@@ -367,7 +371,7 @@ export async function contextBrief(
     (notice) => notice.purpose === 'request',
   ).length
   const references = holderSequence(session, working, taskRows, keylessCursors)
-  const holders = storedBriefHolders(references, database)
+  const holders = await storedBriefHolders(references, database)
   const fullHolder = holders.find((holder) => holder.kind === 'task' || holder.kind === 'epic')
   const inFlight = selectBriefInFlight(liveRuns, cursors, liveClaims)
   return {

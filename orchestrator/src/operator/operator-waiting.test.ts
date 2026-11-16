@@ -63,7 +63,7 @@ describe('operator waiting decision', () => {
 })
 
 describe('relay', () => {
-  test('refuses an answered question', () => {
+  test('refuses an answered question', async () => {
     const owner = run()
     const question = db()
       .query(
@@ -71,12 +71,12 @@ describe('relay', () => {
          VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'2026-09-25','Which?','This.','2026-09-25') RETURNING record_id`,
       )
       .get(owner.id) as { record_id: string }
-    expect(() => relayQuestion(owner.id, question.record_id, 'operator must decide')).toThrow(
-      `question ${question.record_id} is already answered`,
-    )
+    await expect(
+      relayQuestion(owner.id, question.record_id, 'operator must decide'),
+    ).rejects.toThrow(`question ${question.record_id} is already answered`)
   })
 
-  test('is idempotent and audits the caller session', () => {
+  test('is idempotent and audits the caller session', async () => {
     const owner = run()
     const question = db()
       .query(
@@ -85,11 +85,11 @@ describe('relay', () => {
       )
       .get(owner.id) as { record_id: string }
     const noNotification = () => {}
-    relayQuestion(owner.id, question.record_id, 'operator must decide', db(), noNotification)
+    await relayQuestion(owner.id, question.record_id, 'operator must decide', db(), noNotification)
     const first = db()
       .query('SELECT awaiting_operator_at,relayed_by FROM question WHERE record_id=?')
       .get(question.record_id)
-    relayQuestion(owner.id, question.record_id, 'still needs operator', db(), noNotification)
+    await relayQuestion(owner.id, question.record_id, 'still needs operator', db(), noNotification)
     expect(
       db()
         .query('SELECT awaiting_operator_at,relayed_by FROM question WHERE record_id=?')
@@ -181,7 +181,7 @@ test('waiting JSON model includes run questions and workflow rulings', async () 
   )
 })
 
-test('notification claims return each waiting episode once', () => {
+test('notification claims return each waiting episode once', async () => {
   const owner = run()
   const question = db()
     .query(
@@ -208,7 +208,7 @@ test('notification claims return each waiting episode once', () => {
      VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'DEV-943','2026-09-25','Workflow?','workflow','2026-09-25')`,
     )
     .run(cursor.record_id)
-  const first = claimOperatorNotifications(db())
+  const first = await claimOperatorNotifications(db())
   expect(first.map(({ kind, id }) => ({ kind, id }))).toEqual([
     { kind: 'question', id: question.number },
     { kind: 'workflow', id: cursor.number },
@@ -225,7 +225,7 @@ test('notification claims return each waiting episode once', () => {
   expect(
     notificationIds.every(({ record_id }) => /^[0-9a-f]{8}-[0-9a-f]{4}-7/.test(record_id)),
   ).toBe(true)
-  expect(claimOperatorNotifications(db())).toEqual([])
+  expect(await claimOperatorNotifications(db())).toEqual([])
   expect(
     db()
       .query<{ record_id: string }, []>('SELECT record_id FROM operator_notification ORDER BY kind')
@@ -251,13 +251,13 @@ test('notification claims return each waiting episode once', () => {
     )
     .run(cursor.record_id)
   expect(
-    claimOperatorNotifications(db()).map(({ kind, id, waiting_since }) => ({
+    (await claimOperatorNotifications(db())).map(({ kind, id, waiting_since }) => ({
       kind,
       id,
       waiting_since,
     })),
   ).toEqual([{ kind: 'workflow', id: cursor.number, waiting_since: '2026-09-27' }])
-  expect(claimOperatorNotifications(db())).toEqual([])
+  expect(await claimOperatorNotifications(db())).toEqual([])
 })
 
 test('a no-project question lists and notifies without a project label', async () => {
@@ -271,7 +271,7 @@ test('a no-project question lists and notifies without a project label', async (
     .get(owner.id) as { number: number }
 
   expect(await operatorWaiting()).toMatchObject([{ id: question.number, project: null }])
-  expect(claimOperatorNotifications(db())[0]?.notification.title).toBe('Ruling needed')
+  expect((await claimOperatorNotifications(db()))[0]?.notification.title).toBe('Ruling needed')
 })
 
 test('notification command prefers the platform adapter without spawning', () => {

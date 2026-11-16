@@ -12,7 +12,7 @@ export async function finishRunWithFallback(
     return await finishRun(build())
   } catch (error) {
     if (!isTerminalRecorded(error)) {
-      recordRunFinishFailure({
+      await recordRunFinishFailure({
         runId: fallback.runId,
         error,
         started: fallback.started,

@@ -10,7 +10,7 @@ import { AGENTS } from '../agent/agent-registry.ts'
 import { providerCredentialRoutingAt } from '../agent/provider-credential-routing.ts'
 import { reclaimTerminalTree } from '../close/close-out.ts'
 import type { WorkerReply } from '../contract/contract.ts'
-import { db, writeTransaction } from '../database/db.ts'
+import { db } from '../database/db.ts'
 import {
   type ReviewLensInputStatuses,
   successorReviewLensInputStatusesFromPrompt,
@@ -541,9 +541,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
     // A successor claim closes the retired attempt with the failover reason.
     // Reaching here means no successor was created, so the failed chain itself
     // is terminal and needs the ordinary terminal close instead.
-    writeTransaction(() => {
-      closeRunChainQuestions(db(), claim.id, QUESTION_CLOSE_CHAIN_TERMINAL)
-    })
+    await closeRunChainQuestions(db(), claim.id, QUESTION_CLOSE_CHAIN_TERMINAL)
   }
 
   if (

@@ -250,10 +250,10 @@ describe('run listing', () => {
         concurrency: 6,
       },
     })
-    expect(runDetail(waiting)).toMatchObject({
+    expect(await runDetail(waiting)).toMatchObject({
       live_status_detail: 'waiting for capacity since 2026-10-21T12:00:00.000Z',
     })
-    expect(runDetail(throttled)).toMatchObject({
+    expect(await runDetail(throttled)).toMatchObject({
       live_status_detail: 'throttled (429), retry 1/5 at 2026-10-21T12:04:45.000Z',
       throttled: {
         attempt: 1,
@@ -282,7 +282,7 @@ describe('run listing', () => {
     }
 
     expect(runJson((await command({ json: true, id: [String(id)] }))[0]!)).toMatchObject(expected)
-    expect(runDetail(id)).toMatchObject(expected)
+    expect(await runDetail(id)).toMatchObject(expected)
   })
 
   test('runs JSON evaluates whether the host-capacity wait is fresh', async () => {
@@ -607,7 +607,7 @@ describe('run listing', () => {
     expect(runJson((await command({ json: true, id: [String(id)] }))[0]!).evidence_excluded).toBe(
       'operator void',
     )
-    expect(runDetail(id)).toBeTruthy()
+    expect(await runDetail(id)).toBeTruthy()
   })
 
   test('runs, runs --json, and --follow report the same failover chain', async () => {
@@ -876,7 +876,7 @@ describe('run listing', () => {
       vendor_cost_usd: null,
       vendor_estimated_cost_usd: 23.5,
     })
-    expect(runDetail(id, false, { subscriptionCost })).toMatchObject({
+    expect(await runDetail(id, false, { subscriptionCost })).toMatchObject({
       cost_usd: 25,
       cost_source: 'subscription, amortized',
       vendor_cost_usd: null,

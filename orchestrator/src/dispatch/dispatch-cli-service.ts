@@ -45,6 +45,7 @@ import {
   requiredMcpServer,
 } from '../mcp/mcp-preflight.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
+import { openQuestionStages } from '../question-store/question-store-read.ts'
 import { reviewFindingMemoryRows } from '../review/rejected-finding-memory.ts'
 import { reviewLensSelectionReasonForDispatch } from '../review/review-lens-dispatch-reason.ts'
 import { reviewLineage } from '../review/review-lineage-store.ts'
@@ -83,7 +84,6 @@ import {
   type TransportName,
 } from '../transport/transport.ts'
 import { askTypedQuestion } from '../typed-question/typed-question-service.ts'
-import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import {
   callerDrift,
   checkoutHasUncommittedWork,
@@ -108,7 +108,7 @@ function keyedRunCursorAdmission() {
   return {
     harnessSession: identity?.kind === 'identity' ? identity.session : null,
     readOpenCursors: async (session: string) => {
-      const cursors = await taskFlowReadStore(db()).openStagesForSession(session)
+      const cursors = await openQuestionStages(db(), session)
       return cursors.map((cursor) => ({
         project: cursor.project,
         workflowKey: cursor.workflow_key,

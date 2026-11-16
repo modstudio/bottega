@@ -7,7 +7,7 @@ import { fixtureProjectRecordId, migrationBoundaryTestDatabase } from './test-da
 
 const MIGRATION = '0208_worker_question_jev'
 
-test('legacy choice questions are backfilled once and remain answerable', () => {
+test('legacy choice questions are backfilled once and remain answerable', async () => {
   const database = migrationBoundaryTestDatabase(MIGRATION)
   try {
     const runId = newRecordId()
@@ -40,7 +40,7 @@ test('legacy choice questions are backfilled once and remain answerable', () => 
       )
       .get(questionId) as TypedAnswerQuestion
     const answer = answeredQuestion(stored, 'new', true)
-    applyQuestionAnswer({
+    await applyQuestionAnswer({
       database,
       questionId,
       answer: answer.answer,

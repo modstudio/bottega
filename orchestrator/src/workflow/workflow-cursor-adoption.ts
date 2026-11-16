@@ -2,6 +2,11 @@
 /** Atomically adopts a task key and republishes every cursor-bound question. */
 import type { Database } from 'bun:sqlite'
 import { nowIso, writeTransaction } from '../database/db.ts'
+import {
+  mutateQuestion,
+  requireQuestionMutationApplied,
+} from '../question-store/question-store-mutation.ts'
+import { questionsForWorkflowCursor } from '../question-store/question-store-read.ts'
 import { machineId } from '../record/machine-identity.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import {
@@ -9,7 +14,6 @@ import {
   writeHostedTaskFlow,
 } from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
-import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { refuseTaskFlowStageConflictLocal, vacateRetiredWorkflowKeySlot } from './task-flow.ts'
 import { refreshStaleMirror } from './task-flow-mirror-refresh.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
@@ -37,16 +41,26 @@ function assignWorkflowTaskKey(
   row.workflow_key = key
   row.task_record_id = taskRecordId
   row.args = JSON.stringify(adoptedArgs)
-  const questions = d
-    .query<{ record_id: string }, [string]>(
-      'SELECT record_id FROM question WHERE workflow_cursor_record_id=? ORDER BY number',
-    )
-    .all(row.record_id)
-  for (const question of questions) {
-    d.query(
-      'UPDATE question SET workflow_key=?,workflow_task_record_id=?,revision=revision+1 WHERE record_id=?',
-    ).run(key, taskRecordId, question.record_id)
-    enqueueQuestionRecord(d, question.record_id)
+}
+
+async function linkCursorQuestions(
+  d: Database,
+  cursorId: string,
+  workflowKey: string,
+  workflowTaskId: string | null,
+  at: string,
+): Promise<void> {
+  for (const question of await questionsForWorkflowCursor(d, cursorId)) {
+    const mutation = await mutateQuestion(d, {
+      id: String(question.record_id),
+      intent: 'link',
+      at,
+      actorSession: null,
+      reason: null,
+      expectedRevision: Number(question.revision),
+      changes: { workflowKey, workflowTaskId },
+    })
+    requireQuestionMutationApplied(mutation, question)
   }
 }
 
@@ -130,6 +144,8 @@ export async function adoptWorkflowTask(
           client,
         ),
       )
+    } else {
+      await linkCursorQuestions(d, row.record_id, key, adoptedTaskId, at)
     }
     return
   }
@@ -152,6 +168,7 @@ export async function adoptWorkflowTask(
     taskFlowLocalStore(d).write('stage-update', payload)
     assignWorkflowTaskKey(row, key, null, d)
   }, d)
+  await linkCursorQuestions(d, row.record_id, key, null, at)
 }
 
 async function conflictingAdoptionCursor(

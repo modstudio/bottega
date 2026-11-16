@@ -45,6 +45,7 @@ import { signedInRecordUserId } from '../record/record-attribution.ts'
 import type { DetachSpec } from '../route/failover.ts'
 import type { SynchronousResult } from '../synchronous-result.ts'
 import { sha } from './prompt-sha.ts'
+import { clearQuestionDeliveryPendingForRuns } from './question-delivery-pending.ts'
 import { recordedRunLivenessFacts, runAlive } from './run-alive.ts'
 import { RUNS_DIR, readDispatchState } from './run-artifacts.ts'
 import { bindingValues, inheritedRunBinding, inheritedRunLinks } from './run-claim-inheritance.ts'
@@ -282,6 +283,31 @@ function detachedSeed(
   )
 }
 
+function clearResumedQuestionDelivery(
+  inserted: { record_id: string; number: number } | null,
+  spec: ResolvedDetachSpec,
+): void {
+  const deliveryRoot =
+    spec.resume?.parent ??
+    (spec.retryOf
+      ? (
+          db()
+            .query(
+              'SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run WHERE record_id=?',
+            )
+            .get(spec.retryOf) as { root_id: string } | null
+        )?.root_id
+      : undefined)
+  if (!inserted || !deliveryRoot) return
+  const runIds = db()
+    .query<{ record_id: string }, [string, string]>(
+      'SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=?',
+    )
+    .all(deliveryRoot, deliveryRoot)
+    .map(({ record_id }) => record_id)
+  clearQuestionDeliveryPendingForRuns(db(), runIds)
+}
+
 /**
  * The depth check happens HERE TOO, before a row exists.
  *
@@ -368,26 +394,7 @@ async function detachResolved(
         identity.parent_run_record_id,
         identity.parent_run_record_id,
       ) as { record_id: string; number: number } | null
-    const deliveryRoot =
-      spec.resume?.parent ??
-      (spec.retryOf
-        ? (
-            db()
-              .query(
-                'SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run WHERE record_id=?',
-              )
-              .get(spec.retryOf) as { root_id: string } | null
-          )?.root_id
-        : undefined)
-    if (inserted && deliveryRoot) {
-      db()
-        .query(
-          `UPDATE question SET delivery_pending_at=NULL
-          WHERE delivery_pending_at IS NOT NULL AND run_record_id IN
-            (SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=?)`,
-        )
-        .run(deliveryRoot, deliveryRoot)
-    }
+    clearResumedQuestionDelivery(inserted, spec)
     if (inserted && spec.resume?.kind === 'retry-root' && spec.resume.retireAsking) {
       db()
         .query(

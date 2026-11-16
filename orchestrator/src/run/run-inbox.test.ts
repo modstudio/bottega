@@ -507,7 +507,7 @@ test('close-out retires a stale chain pending delivery from the inbox', async ()
     )
   expect(await inbox()).toContain(`stranded — ${PLATFORM_SLUG} run retry ${id} --agent`)
 
-  closeTerminalChainQuestions(id, false)
+  await closeTerminalChainQuestions(id, false)
 
   expect(await inbox()).not.toContain(`run ${id}`)
   expect(

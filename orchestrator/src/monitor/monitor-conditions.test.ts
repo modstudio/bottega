@@ -878,21 +878,21 @@ describe('operational monitor conditions', () => {
     }
   })
 
-  test('answered asking root with a running later turn is not reported', () => {
+  test('answered asking root with a running later turn is not reported', async () => {
     const root = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
     insertAnsweredQuestion(root)
     addRun({ agent: 'codex', job: 'implement', status: 'running', parent: root, turn: 2 })
-    expect(askingRuns().map((run) => run.record_id)).toEqual([])
+    expect((await askingRuns()).map((run) => run.record_id)).toEqual([])
   })
 
-  test('answered asking root whose latest turn is also asking with no open question is reported once under the root id', () => {
+  test('answered asking root whose latest turn is also asking with no open question is reported once under the root id', async () => {
     const root = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
     insertAnsweredQuestion(root)
     addRun({ agent: 'codex', job: 'implement', status: 'asking', parent: root, turn: 2 })
-    expect(askingRuns().map((run) => run.record_id)).toEqual([root])
+    expect((await askingRuns()).map((run) => run.record_id)).toEqual([root])
   })
 
-  test('an open question on a later turn suppresses the report', () => {
+  test('an open question on a later turn suppresses the report', async () => {
     const root = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
     insertAnsweredQuestion(root)
     const child = addRun({
@@ -907,10 +907,10 @@ describe('operational monitor conditions', () => {
         `INSERT INTO question (number,record_id,run_record_id, asked_at, question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`,
       )
       .run(child, nowIso(), 'and now what?')
-    expect(askingRuns().map((run) => run.record_id)).toEqual([])
+    expect((await askingRuns()).map((run) => run.record_id)).toEqual([])
   })
 
-  test('a stuck-host-wait notice is claimed while current and dropped after admission', () => {
+  test('a stuck-host-wait notice is claimed while current and dropped after admission', async () => {
     const owner = 'stuck-host-wait-owner'
     const since = new Date(
       Date.now() - RUN_HOST_WAIT_MAX_MS - RUN_HOST_WAIT_POLL_MS - 1,
@@ -924,7 +924,7 @@ describe('operational monitor conditions', () => {
     db().query('UPDATE run SET host_wait_since=? WHERE record_id=?').run(since, runId)
     persistAddressedCondition('stuck-host-wait', `run:${runId}`, owner, since)
 
-    expect(claimMonitorNotices(owner)).toEqual([
+    expect(await claimMonitorNotices(owner)).toEqual([
       expect.objectContaining({
         kind: 'stuck-host-wait',
         subject: `run:${runId}`,
@@ -933,27 +933,27 @@ describe('operational monitor conditions', () => {
 
     db().query('UPDATE run SET host_wait_since=NULL WHERE record_id=?').run(runId)
 
-    expect(claimMonitorNotices(owner)).toEqual([])
+    expect(await claimMonitorNotices(owner)).toEqual([])
   })
 
-  test('does not deliver an asking-run condition after the run resumes', () => {
+  test('does not deliver an asking-run condition after the run resumes', async () => {
     const owner = 'resolved-asking-owner'
     const runId = addRun({ agent: 'codex', job: 'implement', status: 'asking', session: owner })
     persistAddressedCondition('asking-run', `run:${runId}`, owner)
 
     db().query("UPDATE run SET status='ok' WHERE record_id=?").run(runId)
 
-    expect(claimMonitorNotices(owner)).toEqual([])
+    expect(await claimMonitorNotices(owner)).toEqual([])
   })
 
-  test('does not deliver an unscored-run condition after the run is scored', () => {
+  test('does not deliver an unscored-run condition after the run is scored', async () => {
     const owner = 'resolved-unscored-owner'
     const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok', session: owner })
     persistAddressedCondition('unscored-run', `run:${runId}`, owner)
 
     score(runId, 'full', 'right', 'faithful')
 
-    expect(claimMonitorNotices(owner)).toEqual([])
+    expect(await claimMonitorNotices(owner)).toEqual([])
   })
 
   // Residual, untested here: claimMonitorNotices re-validates and returns synchronously,
@@ -961,7 +961,7 @@ describe('operational monitor conditions', () => {
   // still delivered. That window lives at the heartbeat emission boundary, not inside
   // the claim, and no assertion on the claim's returned array can observe it.
 
-  test('append-only event and terminal-fact notices still deliver after current state moves on', () => {
+  test('append-only event and terminal-fact notices still deliver after current state moves on', async () => {
     const owner = 'append-only-owner'
     const runId = addRun({ agent: 'codex', job: 'implement', status: 'stale', session: owner })
     persistAddressedCondition('ghost-open-interval', 'interval:already-closed', owner)
@@ -970,14 +970,14 @@ describe('operational monitor conditions', () => {
 
     db().query("UPDATE run SET status='ok' WHERE record_id=?").run(runId)
 
-    expect(
-      claimMonitorNotices(owner)
-        .map((notice) => notice.kind)
-        .sort(),
-    ).toEqual(['ghost-open-interval', 'observation-error', 'stale-run'])
+    expect((await claimMonitorNotices(owner)).map((notice) => notice.kind).sort()).toEqual([
+      'ghost-open-interval',
+      'observation-error',
+      'stale-run',
+    ])
   })
 
-  test('claims an addressed worker gate tooling change as an append-only notice', () => {
+  test('claims an addressed worker gate tooling change as an append-only notice', async () => {
     const owner = 'worker-gate-tooling-owner'
     const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok', session: owner })
     const runNumber = (
@@ -985,7 +985,7 @@ describe('operational monitor conditions', () => {
     ).number
     persistAddressedCondition('worker-gate-tooling-change', `run:${runId}`, owner)
 
-    expect(claimMonitorNotices(owner)).toEqual([
+    expect(await claimMonitorNotices(owner)).toEqual([
       expect.objectContaining({
         kind: 'worker-gate-tooling-change',
         subject: `run:${runId}`,

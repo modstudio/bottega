@@ -39,6 +39,7 @@ import { monitorModules } from './architecture-monitor-modules.ts'
 import { operatorWaitingModules } from './architecture-operator-waiting.ts'
 import { projectModules } from './architecture-project-modules.ts'
 import { pullRequestModuleSpecs } from './architecture-pull-request.ts'
+import { questionCallerModules, questionPortPublicModules } from './architecture-question-port.ts'
 import { ratchetModules } from './architecture-ratchet-modules.ts'
 import { recipeModules } from './architecture-recipe-modules.ts'
 import { recordModules } from './architecture-record-modules.ts'
@@ -109,7 +110,8 @@ const concerns: ConcernManifest = {
   ],
 }
 
-export const modules: ArchitectureModule[] = [
+const declaredModules: ArchitectureModule[] = [
+  ...questionCallerModules,
   module('orchestrator/src/workflow/task-flow-store.ts', [
     'bun:sqlite',
     '../record/record-task-flow-write-contract.ts',
@@ -124,7 +126,7 @@ export const modules: ArchitectureModule[] = [
     '../database/db.ts',
     '../record/record-task-flow-write-contract.ts',
     '../run/question-open.ts',
-    './task-flow-store-sqlite-questions.ts',
+    '../question-store/question-store-sqlite-reads.ts',
     './task-flow-store-sqlite-write.ts',
     './task-flow-store-methods.ts',
     './task-flow-store-types.ts',
@@ -137,11 +139,6 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/record-id.ts',
     '../record/record-task-flow-write-contract.ts',
     './task-flow-decision.ts',
-  ]),
-  module('orchestrator/src/workflow/task-flow-store-sqlite-questions.ts', [
-    'bun:sqlite',
-    '../run/question-open.ts',
-    './task-flow-store-types.ts',
   ]),
   module('orchestrator/src/machine-journal.ts', [
     'zod',
@@ -257,15 +254,10 @@ export const modules: ArchitectureModule[] = [
     '../project/projects.ts',
   ]),
   module('orchestrator/src/git/commit-resolution.ts', ['./git-environment.ts']),
-  module('orchestrator/src/run/question-open.ts', []),
-  module('orchestrator/src/run/question-close.ts', [
-    '../../../shared/brand.ts',
-    '../database/db.ts',
-    '../workflow/task-flow-store.ts',
-    './question-delivery.ts',
-    './question-mutation.ts',
-    './question-open.ts',
-    './question-outbox.ts',
+  module('orchestrator/src/run/question-open.ts', [
+    'bun:sqlite',
+    '../question-store/question-store-read.ts',
+    './run-chain.ts',
   ]),
   module('orchestrator/src/close/close-out-questions.ts', [
     '../database/db.ts',
@@ -698,6 +690,11 @@ export const modules: ArchitectureModule[] = [
   ...worktreeModules,
 ]
 
+export const modules: ArchitectureModule[] = declaredModules.map((entry) => ({
+  ...entry,
+  allowed: [...entry.allowed, ...questionPortPublicModules],
+}))
+
 export const inversions: { from: string; to: string }[] = [
   { from: 'orchestrator/src/jobs/jobs.ts', to: 'orchestrator/src/agent/agents.ts' },
   { from: 'orchestrator/src/route/route.ts', to: 'orchestrator/src/review/review.ts' },
@@ -864,6 +861,42 @@ const architectureCycleFiles = [
   ...new Set(allowedCycles.flatMap(({ cycle }) => cycle.slice(0, -1))),
 ]
 
+const declaredModuleRules: ArchitectureRule[] = modules.map((entry) => ({
+  name: `module-${entry.file.replace(/[^a-z0-9]+/gi, '-')}`,
+  severity: 'error' as const,
+  from: { path: exactArchitecturePath(entry.file) },
+  to: {
+    dependencyTypes: ['local'],
+    pathNot: [...entry.allowed, ...(entry.typeOnlyAllowed ?? [])].map(exactArchitecturePath),
+  },
+}))
+
+const declaredImportBoundaryRules: ArchitectureRule[] = [
+  ...importBoundaries.map((entry) => ({
+    name: `import-${entry.name}`,
+    severity: 'error' as const,
+    comment: entry.reason,
+    from: { path: exactArchitecturePath(entry.file) },
+    to: {
+      pathNot: [...entry.allowed, ...entry.typeOnlyAllowed, ...questionPortPublicModules].map(
+        architectureDependencyPath,
+      ),
+    },
+  })),
+  ...importBoundaries.flatMap((entry) =>
+    entry.typeOnlyAllowed.map((target) => ({
+      name: `import-${entry.name}-${target.replace(/[^a-z0-9]+/gi, '-')}-is-type-only`,
+      severity: 'error' as const,
+      comment: entry.reason,
+      from: { path: exactArchitecturePath(entry.file) },
+      to: {
+        path: architectureDependencyPath(target),
+        dependencyTypesNot: ['type-only'],
+      },
+    })),
+  ),
+]
+
 export function architectureRules() {
   const forbidden: ArchitectureRule[] = [
     concernIsolationRule(concerns.roots),
@@ -896,36 +929,8 @@ export function architectureRules() {
         dependencyTypesNot: hubWebRouterException.dependencyTypes,
       },
     },
-    ...modules.map((entry) => ({
-      name: `module-${entry.file.replace(/[^a-z0-9]+/gi, '-')}`,
-      severity: 'error' as const,
-      from: { path: exactArchitecturePath(entry.file) },
-      to: {
-        dependencyTypes: ['local'],
-        pathNot: [...entry.allowed, ...(entry.typeOnlyAllowed ?? [])].map(exactArchitecturePath),
-      },
-    })),
-    ...importBoundaries.map((entry) => ({
-      name: `import-${entry.name}`,
-      severity: 'error' as const,
-      comment: entry.reason,
-      from: { path: exactArchitecturePath(entry.file) },
-      to: {
-        pathNot: [...entry.allowed, ...entry.typeOnlyAllowed].map(architectureDependencyPath),
-      },
-    })),
-    ...importBoundaries.flatMap((entry) =>
-      entry.typeOnlyAllowed.map((target) => ({
-        name: `import-${entry.name}-${target.replace(/[^a-z0-9]+/gi, '-')}-is-type-only`,
-        severity: 'error' as const,
-        comment: entry.reason,
-        from: { path: exactArchitecturePath(entry.file) },
-        to: {
-          path: architectureDependencyPath(target),
-          dependencyTypesNot: ['type-only'],
-        },
-      })),
-    ),
+    ...declaredModuleRules,
+    ...declaredImportBoundaryRules,
     ...writeTimeArchitectureRules(),
     {
       name: 'import-cli-boundary',

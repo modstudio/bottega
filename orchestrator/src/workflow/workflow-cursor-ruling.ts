@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
+import { questionsForWorkflowCursor } from '../question-store/question-store-read.ts'
 import {
   taskFlowWriteTarget,
   writeHostedTaskFlow,
@@ -17,7 +18,6 @@ import {
   answerWorkflowQuestion,
   authorizeWorkflowQuestionMutation,
 } from '../run/question-mutation.ts'
-import { questionOpenSql } from '../run/question-open.ts'
 import { resolvedRulingPersonName } from '../run/ruling-attribution.ts'
 import { refreshStaleMirror } from './task-flow-mirror-refresh.ts'
 import { taskFlowLocalStore } from './task-flow-store.ts'
@@ -31,16 +31,14 @@ import {
 import { decideWorkflowRuleAnswer, pinnedWorkflowRuleStep } from './workflow-rule-answer.ts'
 import { linkResolvedWorkflowTask } from './workflow-task-linking.ts'
 
-function selectOpenWorkflowQuestion(
+async function selectOpenWorkflowQuestion(
   cursorRecordId: string,
   database: Database,
-): { record_id: string; number: number } | null {
-  return database
-    .query<{ record_id: string; number: number }, [string]>(
-      `SELECT record_id,number FROM question
-       WHERE workflow_cursor_record_id=? AND ${questionOpenSql('question')}`,
-    )
-    .get(cursorRecordId)
+): Promise<{ record_id: string; number: number } | null> {
+  const row = (await questionsForWorkflowCursor(database, cursorRecordId)).find(
+    (question) => question.answered_at === null && question.closed_at === null,
+  )
+  return row ? { record_id: String(row.record_id), number: Number(row.number) } : null
 }
 
 export async function ruleWorkflow(
@@ -83,7 +81,7 @@ export async function ruleWorkflow(
     database,
   })
   const at = nowIso()
-  const question = selectOpenWorkflowQuestion(row.record_id, database)
+  const question = await selectOpenWorkflowQuestion(row.record_id, database)
   if (!question)
     throw new Error(`${cursorName(slug, mode, row.workflow_key)} has no open question to rule on`)
   const payload: TaskFlowIntentInput<'stage-update'> = {
@@ -138,22 +136,22 @@ async function applyWorkflowRulingLocally(input: {
   database: Database
 }): Promise<{ summary: string; questionId: number; cursorRecordId: string }> {
   const { row, question, database } = input
+  await answerWorkflowQuestion(
+    {
+      questionId: question.record_id,
+      cursorId: row.record_id,
+      ruling: input.ruling,
+      at: input.at,
+      actor: input.actor,
+      fromOperator: input.fromOperator,
+      personName: resolvedRulingPersonName(input.fromOperator),
+      channel: input.channel,
+      adoptionReason: input.adoptionReason,
+    },
+    database,
+  )
   const result = writeTransaction(() => {
     const store = taskFlowLocalStore(database)
-    answerWorkflowQuestion(
-      {
-        questionId: question.record_id,
-        cursorId: row.record_id,
-        ruling: input.ruling,
-        at: input.at,
-        actor: input.actor,
-        fromOperator: input.fromOperator,
-        personName: resolvedRulingPersonName(input.fromOperator),
-        channel: input.channel,
-        adoptionReason: input.adoptionReason,
-      },
-      database,
-    )
     const mirror = store.write('stage-update', input.payload, input.hosted).mirror[row.record_id]
     return {
       summary: `${cursorName(row.workflow_slug, row.mode_slug, row.workflow_key, true)} is running at step ${row.ordinal + 1} ${row.step_slug}.`,

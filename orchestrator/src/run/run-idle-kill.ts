@@ -18,6 +18,7 @@ import {
 } from '../idle-kill.ts'
 import { jobIdleKillMs } from '../jobs/jobs.ts'
 import type { ProcessSample } from '../process-resource-sampler.ts'
+import { questionsForRun } from '../question-store/question-store-read.ts'
 import {
   EMPTY_VENDOR_USAGE,
   type TransportHandle,
@@ -29,7 +30,6 @@ import {
   recordFailedIdlePreservation,
 } from './checkpoint.ts'
 import type { CheckpointSchedule } from './checkpoint-schedule.ts'
-import { questionOpenSql } from './question-open.ts'
 
 /** The idle-kill outcome the caller carries into terminalisation. */
 export type IdleKillState = {
@@ -54,13 +54,9 @@ function idleRunRow(runId: string): {
   } | null
 }
 
-function runHasOpenQuestion(runId: string): boolean {
-  return Boolean(
-    db()
-      .query(
-        `SELECT 1 n FROM question WHERE run_record_id=? AND ${questionOpenSql('question')} LIMIT 1`,
-      )
-      .get(runId),
+async function runHasOpenQuestion(runId: string): Promise<boolean> {
+  return (await questionsForRun(db(), runId)).some(
+    ({ answered_at, closed_at }) => answered_at === null && closed_at === null,
   )
 }
 
@@ -112,7 +108,7 @@ export async function performIdleKill(input: {
   const { state } = input
   const row = idleRunRow(input.runId)
   if (!row) return
-  const openQuestion = runHasOpenQuestion(input.runId)
+  const openQuestion = await runHasOpenQuestion(input.runId)
   const idleThresholdMs = jobIdleKillMs(input.job, process.env, input.boundMs)
   const decision = shouldIdleKill({
     lastEventAt: row.last_event_at,

@@ -8,6 +8,7 @@ import { thinOutputWarning } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
 import { resolveRecordedRunJob } from '../jobs/jobs.ts'
 import { sampleProcesses } from '../process-resource-sampler.ts'
+import { pendingQuestionIds } from '../run/question-delivery-pending.ts'
 import {
   classifyRunIdentifier,
   resolveRunIdentifier,
@@ -18,15 +19,13 @@ import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
 import { collect, duration, log, optionFlags, parseChangedAfter } from './support.ts'
 
 function chainHasPendingDelivery(rootId: string): boolean {
-  return Boolean(
-    db()
-      .query(
-        `SELECT 1 FROM question q JOIN run owner ON owner.record_id=q.run_record_id
-      WHERE (owner.record_id=? OR owner.parent_run_record_id=?)
-        AND q.answered_at IS NOT NULL AND q.delivery_pending_at IS NOT NULL LIMIT 1`,
-      )
-      .get(rootId, rootId),
-  )
+  const runIds = db()
+    .query<{ record_id: string }, [string, string]>(
+      'SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=?',
+    )
+    .all(rootId, rootId)
+    .map(({ record_id }) => record_id)
+  return pendingQuestionIds(db(), { runIds }).length > 0
 }
 
 const strandedRecovery = (id: string) => {
@@ -51,7 +50,7 @@ export function register(program: Command): void {
     .action(async (id, options) => {
       const { runDetail } = await import('../state/serve.ts')
       const runId = resolveRunIdentifier(db(), id)
-      const detail = runDetail(runId, Boolean(options.receipt), {
+      const detail = await runDetail(runId, Boolean(options.receipt), {
         subscriptionCost: await loadSubscriptionCostContext(),
       })
       if (!detail) throw new Error(`no run ${runId}`)

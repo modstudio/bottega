@@ -11,10 +11,10 @@ import { db } from '../database/db.ts'
 import type { ReviewLensInputStatuses } from '../database/review-lens-input-artifact.ts'
 import type { ProbeContextLimit } from '../dispatch/probe-launch-overrides.ts'
 import type { McpRequest } from '../mcp/mcp-preflight.ts'
+import { questionsForRun } from '../question-store/question-store-read.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import type { ResolvedReviewTarget } from '../review/review-target.ts'
 import type { ContinuationMessageBinding } from '../run/continuation-message.ts'
-import { questionOpenSql } from '../run/question-open.ts'
 import type { ResumeTreePlan } from '../run/resume-tree.ts'
 import type { TaskBranchNominatingRun } from '../run/run-types.ts'
 import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
@@ -271,19 +271,37 @@ export function failoverAttemptLimit(failureKind: string): number {
     : MAX_FAILOVER_ATTEMPTS
 }
 
-export function resolveSupersededTurn(database: Database, rootId: string, turn: number): number {
+export async function supersededTurnQuestionState(
+  database: Database,
+  rootId: string,
+  turn: number,
+): Promise<{ answered: boolean; open: boolean }> {
+  const prior = database
+    .query<{ record_id: string }, [string, number]>(
+      "SELECT record_id FROM run WHERE parent_run_record_id=? AND turn=? AND status='asking'",
+    )
+    .get(rootId, turn)
+  if (!prior) return { answered: false, open: false }
+  const questions = await questionsForRun(database, prior.record_id)
+  return {
+    answered: questions.some((question) => question.answered_at !== null),
+    open: questions.some(
+      (question) => question.answered_at === null && question.closed_at === null,
+    ),
+  }
+}
+
+export function resolveSupersededTurn(
+  database: Database,
+  rootId: string,
+  turn: number,
+  questionState: { answered: boolean; open: boolean },
+): number {
+  if (!questionState.answered || questionState.open) return 0
   return database
     .query(
       `UPDATE run AS prior SET status='ok'
       WHERE prior.parent_run_record_id=? AND prior.turn=? AND prior.status='asking'
-        AND EXISTS (
-          SELECT 1 FROM question q
-           WHERE q.run_record_id=prior.record_id AND q.answered_at IS NOT NULL
-        )
-        AND NOT EXISTS (
-          SELECT 1 FROM question q
-           WHERE q.run_record_id=prior.record_id AND ${questionOpenSql('q')}
-        )
         AND EXISTS (
           SELECT 1 FROM run later
            WHERE later.parent_run_record_id=prior.parent_run_record_id AND later.turn>prior.turn

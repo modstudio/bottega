@@ -241,9 +241,8 @@ export async function typedQuestionBacktest(
   presentation.log(
     `asked ${pending.length}; already answered ${sourced.alreadyAnswered}; unreadable ${sourced.unreadable}; errors ${errors}`,
   )
-  const blocks = typedQuestionReport(
-    { question: declaration.id, job: options.job },
-    database,
+  const blocks = (
+    await typedQuestionReport({ question: declaration.id, job: options.job }, database)
   ).filter((candidate) => candidate.questionVersion === declaration.version)
   for (const block of blocks) renderTypedQuestionBlock(block, presentation)
 }

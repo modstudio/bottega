@@ -4,7 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { formatPeek, peekRun } from '../events.ts'
 import { resolveRecordedRunJob } from '../jobs/jobs.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
-import { reapStale } from '../run/run-liveness.ts'
+import { closeStaleChainQuestions, reapStale } from '../run/run-liveness.ts'
 import { focusedTestObservations } from '../run/run-test-outcome.ts'
 import { terminalSharedGitConfigForRecordedRun } from '../run/shared-git-config-run.ts'
 import { isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
@@ -47,7 +47,7 @@ export async function resultCommand(
   scoreSuffix: (jobName: string) => string,
   presentation: Presentation,
 ): Promise<void> {
-  collectResult(
+  await collectResult(
     database,
     argv,
     scoreSuffix,
@@ -83,7 +83,9 @@ export async function resultCommand(
 }
 
 export async function waitCommand(database: Database, argv: string[]): Promise<void> {
-  await collectWait(database, argv, () =>
-    reapStale(database, terminalSharedGitConfigForRecordedRun),
-  )
+  await collectWait(database, argv, async () => {
+    const observed = reapStale(database, terminalSharedGitConfigForRecordedRun)
+    await closeStaleChainQuestions(database)
+    return observed
+  })
 }

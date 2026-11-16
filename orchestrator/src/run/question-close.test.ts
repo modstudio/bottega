@@ -42,10 +42,10 @@ function fixture(status = 'ok'): { database: Database; questionId: string } {
   return { database, questionId: question.record_id }
 }
 
-test('close service closes, audits and enqueues once', () => {
+test('close service closes, audits and enqueues once', async () => {
   const { database, questionId } = fixture()
   expect(
-    closeQuestions(
+    await closeQuestions(
       database,
       [questionId],
       QUESTION_CLOSE_CHAIN_TERMINAL,
@@ -53,7 +53,7 @@ test('close service closes, audits and enqueues once', () => {
       '2026-09-29T10:02:00.000Z',
     ),
   ).toBe(1)
-  expect(closeQuestions(database, [questionId], QUESTION_CLOSE_CHAIN_TERMINAL)).toBe(0)
+  expect(await closeQuestions(database, [questionId], QUESTION_CLOSE_CHAIN_TERMINAL)).toBe(0)
   expect(
     database
       .query('SELECT closed_at,close_reason,revision FROM question WHERE record_id=?')
@@ -104,7 +104,7 @@ test('operator close refuses live, answered and blank questions', async () => {
   ).rejects.toThrow('--reason must not be empty')
 })
 
-test('terminal delivery retirement clears only pending state, records history and enqueues', () => {
+test('terminal delivery retirement clears only pending state, records history and enqueues', async () => {
   const { database, questionId } = fixture('stale')
   database
     .query(
@@ -115,7 +115,7 @@ test('terminal delivery retirement clears only pending state, records history an
     .run(questionId)
 
   expect(
-    retireRunChainQuestionDeliveries(
+    await retireRunChainQuestionDeliveries(
       database,
       '01990000-0000-7000-8000-000000000042',
       QUESTION_CLOSE_CHAIN_TERMINAL,
@@ -153,7 +153,7 @@ test('terminal delivery retirement clears only pending state, records history an
   ])
 })
 
-test('delivery retirement leaves an asking chain untouched', () => {
+test('delivery retirement leaves an asking chain untouched', async () => {
   const { database, questionId } = fixture('asking')
   database
     .query(
@@ -163,7 +163,7 @@ test('delivery retirement leaves an asking chain untouched', () => {
     .run(questionId)
 
   expect(
-    retireRunChainQuestionDeliveries(
+    await retireRunChainQuestionDeliveries(
       database,
       '01990000-0000-7000-8000-000000000042',
       QUESTION_CLOSE_CHAIN_TERMINAL,

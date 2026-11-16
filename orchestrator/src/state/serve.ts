@@ -23,13 +23,14 @@ import { JOBS } from '../jobs/jobs.ts'
 import { messagesForRun, receiptMessagesForArchitect } from '../mailbox/mailbox.ts'
 import { summary as metricSummary } from '../metric/metric.ts'
 import { projectAt } from '../project/projects.ts'
+import { questionsForRun } from '../question-store/question-store-read.ts'
 import { reviewCalibration } from '../review/review-calibration.ts'
 import { evidenceModel } from '../route/evidence-model.ts'
 import { candidates, scoreboard } from '../route/route.ts'
-import { questionOpenSql } from '../run/question-open.ts'
+import { questionsForRunChain } from '../run/question-open.ts'
 import { rulingStatus } from '../run/question-vocabulary.ts'
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
-import { reapStale } from '../run/run-liveness.ts'
+import { closeStaleChainQuestions, reapStale } from '../run/run-liveness.ts'
 import { type SubscriptionCostContext, withReportedCost } from '../run/run-subscription-cost.ts'
 import { subscriptionCostFacts } from '../run/run-subscription-cost-store.ts'
 import { terminalSharedGitConfigForRecordedRun } from '../run/shared-git-config-run.ts'
@@ -137,7 +138,7 @@ function reviewsForRun(runId: string): RunDetailReviewLens[] {
 }
 
 /** Full detail for one run: the whole prompt and the whole reply, read from disk. */
-export function runDetail(
+export async function runDetail(
   id: string,
   receipt = false,
   options: { subscriptionCost?: SubscriptionCostContext } = {},
@@ -198,20 +199,13 @@ export function runDetail(
        WHERE audit.root_run_record_id=? ORDER BY at, audit.rowid`,
     )
     .all(rootId)
-  const questions = db()
-    .query(
-      `SELECT q.number,q.record_id,owner.number AS run_id,owner.record_id AS run_record_id,
-              q.asked_at,q.question,q.answer,q.answered_at,q.answered_by,
-              q.overturned_at,q.overturned_by,q.overturn_reason,q.replacement,
-              q.filed_as,q.filed_ref,q.filed_record_id,q.filed_label,q.filed_at
-         FROM question q JOIN run owner ON owner.record_id=q.run_record_id
-        WHERE owner.record_id=? OR owner.parent_run_record_id=? ORDER BY q.number`,
-    )
-    .all(rootId, rootId)
-    .map((question) => {
-      const { number, ...row } = question as Record<string, unknown> & { number: number }
-      return { id: number, ...row }
-    })
+  const questions = (await questionsForRunChain(db(), rootId)).map((question) => {
+    const { number, run_number, ...row } = question as Record<string, unknown> & {
+      number: number
+      run_number: number
+    }
+    return { id: number, run_id: run_number, ...row }
+  })
   return {
     ...visibleDetailRow,
     ...(cursorRecordId === null ? {} : { cursor: cursorRecordId }),
@@ -257,6 +251,40 @@ export function runDetail(
   }
 }
 
+async function liveRunState(database: ReturnType<typeof db>) {
+  const rows = database
+    .query(
+      `SELECT run.number id, run.record_id,
+            root.number root_id,
+            root.record_id root_record_id,
+            run.agent, run.job, run.repo, run.cwd, run.started_at,
+            COALESCE(run.label, run.prompt_head) AS prompt_head, run.status
+       FROM run JOIN run root ON root.record_id=COALESCE(run.parent_run_record_id,run.record_id)
+       WHERE run.status IN ('running','asking') ORDER BY run.number DESC`,
+    )
+    .all() as Array<
+    Record<string, unknown> & {
+      id: number
+      root_id: number
+      record_id: string
+      status: string
+    }
+  >
+  const live = await Promise.all(
+    rows.map(async (run) => {
+      const openQuestions = (await questionsForRun(database, run.record_id)).filter(
+        ({ answered_at, closed_at }) => answered_at === null && closed_at === null,
+      ).length
+      return {
+        ...run,
+        open_questions: openQuestions,
+        waiting: run.status === 'asking' && openQuestions > 0,
+      }
+    }),
+  )
+  return live.sort((a, b) => Number(b.waiting) - Number(a.waiting) || Number(b.id) - Number(a.id))
+}
+
 /**
  * How far back the activity counters look. Null means all of it.
  *
@@ -267,7 +295,7 @@ export function runDetail(
  * twenty-six of them. They also live on a different tab, so the control cannot
  * imply otherwise.
  */
-export function state(sinceDays: number | null = null) {
+export async function state(sinceDays: number | null = null) {
   // Hub refreshes this snapshot on its minute tick. Make that the explicit
   // boundary at which a long-lived process adopts registry changes.
   refreshAgents()
@@ -279,6 +307,7 @@ export function state(sinceDays: number | null = null) {
   // its pid was alive, and then the view hid it. Sweep first, then show
   // whatever is still marked running.
   reapStale(d, terminalSharedGitConfigForRecordedRun)
+  await closeStaleChainQuestions(d)
 
   /**
    * ASKING RUNS ARE LIVE, and are the ones most worth seeing.
@@ -302,21 +331,7 @@ export function state(sinceDays: number | null = null) {
    * So a row waits only while something is genuinely unanswered, and the count
    * is carried beside it so the page can say how many.
    */
-  const live = d
-    .query(
-      `SELECT run.number id, run.record_id,
-            root.number root_id,
-            root.record_id root_record_id,
-            run.agent, run.job, run.repo, run.cwd, run.started_at,
-            COALESCE(run.label, run.prompt_head) AS prompt_head, run.status,
-            (SELECT COUNT(*) FROM question q
-              WHERE q.run_record_id = run.record_id AND ${questionOpenSql('q')}) AS open_questions,
-            (run.status = 'asking' AND (SELECT COUNT(*) FROM question q
-              WHERE q.run_record_id = run.record_id AND ${questionOpenSql('q')}) > 0) AS waiting
-       FROM run JOIN run root ON root.record_id=COALESCE(run.parent_run_record_id,run.record_id)
-       WHERE run.status IN ('running','asking') ORDER BY waiting DESC, run.number DESC`,
-    )
-    .all()
+  const live = await liveRunState(d)
 
   const stale = (d.query(`SELECT COUNT(*) n FROM run WHERE status='stale'`).get() as { n: number })
     .n

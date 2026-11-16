@@ -185,6 +185,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
   script('scripts/check-record-sql-pool.ts', run),
   script('scripts/check-outbox-serialization.ts', run),
   script('scripts/check-outbox-insert-site.ts', run),
+  script('scripts/check-question-sql-sites.ts', run),
   script('scripts/check-outbox-payload-contracts.ts', run),
   script(
     'scripts/check-record-migrations-apply.ts',

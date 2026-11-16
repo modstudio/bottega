@@ -60,7 +60,7 @@ function registerQuestionIdentities(program: Command): void {
     .command('question-identities')
     .description('print numeric question identities and their durable record ids as JSON')
     .allowExcessArguments(false)
-    .action(() => log(JSON.stringify(questionIdentityMap(db()))))
+    .action(async () => log(JSON.stringify(await questionIdentityMap(db()))))
 }
 
 async function printRulings(options: {
@@ -93,7 +93,7 @@ export function register(program: Command): void {
     .requiredOption('--reason <text>', 'record why the question is closed')
     .allowExcessArguments(false)
     .action(async (id, options) => {
-      const questionId = resolveQuestionIdentifier(db(), id)
+      const questionId = await resolveQuestionIdentifier(db(), id)
       const { closeQuestionByOperator } = await import('../run/question-close.ts')
       await closeQuestionByOperator(questionId, requiredText(options.reason, '--reason'))
       log(`closed question ${questionId}`)
@@ -127,7 +127,7 @@ export function register(program: Command): void {
           ? (options.replacement ?? null)
           : readFileSync(options.replacementFile, 'utf8')
       const result = await overturnRuling({
-        questionId: resolveQuestionIdentifier(db(), questionId),
+        questionId: await resolveQuestionIdentifier(db(), questionId),
         reason: requiredText(options.because, '--because'),
         replacement: replacement === null ? null : requiredText(replacement, 'replacement'),
         fromOperator: Boolean(options.fromOperator),
@@ -156,7 +156,7 @@ export function register(program: Command): void {
     .action(async (questionId, options) => {
       const result = await fileRuling(
         {
-          questionId: resolveQuestionIdentifier(db(), questionId),
+          questionId: await resolveQuestionIdentifier(db(), questionId),
           as: rulingFileAs(options.as),
           scope: filingScope(options.scope),
           subject: options.subject,

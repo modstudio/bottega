@@ -9,7 +9,6 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
 import type { Agent } from '../agent/agents.ts'
 import { settleCreateTimeBranchCleanup } from '../branch/create-time-settlement.ts'
 import { type TaskBranchCandidate, taskBranchLandingTreeRefusal } from '../branch/task-branch.ts'
@@ -22,7 +21,7 @@ import { namesRecordedRunTree } from '../dispatch/dispatch-preflight.ts'
 import { retargetRepositoryPromptForDispatch } from '../dispatch/prompt-retarget.ts'
 import { appendRunEvent } from '../events.ts'
 import { checkoutAliases, realpathOrSpelled } from '../git/checkout-identity.ts'
-import { branchOf, gitContext, repoRootOf } from '../git/git-environment.ts'
+import { branchOf, gitContext } from '../git/git-environment.ts'
 import { job, jobBoundInstruction } from '../jobs/jobs.ts'
 import {
   type DeferredCwdMcpStep,
@@ -61,7 +60,6 @@ import { removeFor } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { assertBranchHasNoAliveOwner } from './branch-owner-guard.ts'
 import { sha } from './prompt-sha.ts'
-import { closeRunChainQuestions, QUESTION_CLOSE_ATTEMPT_FAILED_OVER } from './question-close.ts'
 import { withReaderCreationLocks } from './reader-tree-sharing-claim.ts'
 import { resumeCreationOptions } from './resume-tree.ts'
 import {
@@ -72,11 +70,19 @@ import {
 } from './run-artifacts.ts'
 import { admitFreshRepositoryRun, type HostCapacityWaitDeps } from './run-claim-host-capacity.ts'
 import type { RunWorkflowBinding } from './run-claim-inheritance.ts'
-import { bindingValues, inheritedRunBinding, inheritedRunFacts } from './run-claim-inheritance.ts'
+import {
+  bindingValues,
+  claimRecordId,
+  inheritedRunBinding,
+  inheritedRunFacts,
+  prepareClaimQuestionState,
+  recordCarriedRulings,
+} from './run-claim-inheritance.ts'
 import { executeClaimedMcpPlan } from './run-claim-mcp.ts'
 import {
   claimedRunBranch,
   claimTreePlanForCandidate,
+  requiredRepositoryRoot,
   resumeCreationLifecycle,
   resumeCreationTool,
   retryRootTreeValidation,
@@ -206,21 +212,6 @@ function sandboxRootForRun(runId: string): { record_id: string } {
        WHERE member.record_id=?`,
     )
     .get(runId)!
-}
-
-function claimRecordId(reserveId: string | undefined): string {
-  if (!reserveId) return newRecordId()
-  const reservation = db()
-    .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
-    .get(reserveId)
-  if (!reservation) throw new Error(`reserved run ${reserveId} does not exist`)
-  return reserveId
-}
-
-function requiredRepositoryRoot(cwd: string): string {
-  const root = repoRootOf(cwd)
-  if (!root) throw new Error(`not a git repository: ${cwd}`)
-  return root
 }
 
 function claimableRow<T>(
@@ -496,6 +487,13 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         ),
         ...bindingValues(binding),
       ) as { record_id: string; number: number }
+  const supersededQuestionState = await prepareClaimQuestionState({
+    resolveSuperseded: identity.resolveSupersededTurn,
+    parent: opts.resume?.parent ?? '',
+    turn: opts.resume?.turn ?? 0,
+    automaticFailover: Boolean(opts.automaticFailover),
+    retryOf: opts.retryOf,
+  })
   const claim = claimWithMigrationAdmission(input, () => {
     const claimedRow = claimableRow(opts.reserveId, updateReservedRun, insertClaimedRun)
     const claimed = { id: claimedRow.record_id, number: claimedRow.number }
@@ -517,15 +515,14 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
      * run() is called directly.
      */
     if (identity.resolveSupersededTurn) {
-      resolveSupersededTurn(db(), opts.resume!.parent, opts.resume!.turn - 1)
+      resolveSupersededTurn(
+        db(),
+        opts.resume!.parent,
+        opts.resume!.turn - 1,
+        supersededQuestionState!,
+      )
     }
-    if (opts.automaticFailover && opts.retryOf !== undefined) {
-      closeRunChainQuestions(db(), opts.retryOf, QUESTION_CLOSE_ATTEMPT_FAILED_OVER)
-    }
-    const recordCarry = db().query(
-      'INSERT INTO run_carried_ruling (record_id,run_record_id,question_record_id) VALUES (?,?,?)',
-    )
-    for (const id of carriedQuestionIds) recordCarry.run(newRecordId(), claimed.id, id)
+    recordCarriedRulings(claimed.id, carriedQuestionIds)
     return claimed
   })
   const runToken = randomUUID()

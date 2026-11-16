@@ -43,35 +43,35 @@ function ask(runRecordId: string): void {
     .run(newRecordId(), runRecordId, new Date().toISOString())
 }
 
-test('labels a question asked on the implement root positive', () => {
+test('labels a question asked on the implement root positive', async () => {
   const root = run({ spec: 'asked-root', status: 'ok' })
   ask(root)
-  expect(specUnsettledLabel(db(), 'asked-root', 'spec')).toBeTrue()
+  expect(await specUnsettledLabel(db(), 'asked-root', 'spec')).toBeTrue()
 })
 
-test('labels a question asked on a later turn positive', () => {
+test('labels a question asked on a later turn positive', async () => {
   const root = run({ spec: 'asked-turn', status: 'ok' })
   const turn = run({ spec: 'asked-turn', status: 'ok', parent: root })
   ask(turn)
-  expect(specUnsettledLabel(db(), 'asked-turn', 'spec')).toBeTrue()
+  expect(await specUnsettledLabel(db(), 'asked-turn', 'spec')).toBeTrue()
 })
 
-test('labels a terminal chain without a question negative', () => {
+test('labels a terminal chain without a question negative', async () => {
   const root = run({ spec: 'terminal', status: 'ok' })
   run({ spec: 'terminal', status: 'failed', parent: root })
-  expect(specUnsettledLabel(db(), 'terminal', 'spec')).toBeFalse()
+  expect(await specUnsettledLabel(db(), 'terminal', 'spec')).toBeFalse()
 })
 
-test('leaves a running chain pending', () => {
+test('leaves a running chain pending', async () => {
   run({ spec: 'running', status: 'running' })
-  expect(specUnsettledLabel(db(), 'running', 'spec')).toBeNull()
+  expect(await specUnsettledLabel(db(), 'running', 'spec')).toBeNull()
 })
 
-test('ignores non-implement roots and non-root implement runs with the same spec', () => {
+test('ignores non-implement roots and non-root implement runs with the same spec', async () => {
   run({ spec: 'ignored', status: 'ok', job: 'file-question' })
   const root = run({ spec: 'different', status: 'ok' })
   run({ spec: 'ignored', status: 'ok', parent: root })
-  expect(specUnsettledLabel(db(), 'ignored', 'spec')).toBeNull()
+  expect(await specUnsettledLabel(db(), 'ignored', 'spec')).toBeNull()
 })
 
 function duplicateFixture(dispositions: [string | null, string | null]): [string, string] {
@@ -153,7 +153,7 @@ function answer(input: {
     )
 }
 
-test('reports each version on its own and joins outcomes only for a declared question', () => {
+test('reports each version on its own and joins outcomes only for a declared question', async () => {
   const current = SPEC_UNSETTLED_QUESTION.version
   ask(run({ spec: 'report-asked', status: 'ok' }))
   run({ spec: 'report-settled', status: 'ok' })
@@ -177,7 +177,7 @@ test('reports each version on its own and joins outcomes only for a declared que
   })
   answer({ question: 'undeclared', version: 1, subject: 'report-asked', noul: 0.9 })
 
-  const report = typedQuestionReport({})
+  const report = await typedQuestionReport({})
   const declared = report.find(
     (block) => block.questionId === SPEC_UNSETTLED_QUESTION.id && block.questionVersion === current,
   )!
@@ -197,14 +197,14 @@ test('reports each version on its own and joins outcomes only for a declared que
   expect(undeclared).toMatchObject({ recorded: 1, threshold: null, labeled: null, auc: null })
 })
 
-test('labels spec answers against the job in subject kind and maps legacy spec to implement', () => {
+test('labels spec answers against the job in subject kind and maps legacy spec to implement', async () => {
   ask(run({ spec: 'job-specific', status: 'ok', job: 'review-lens' }))
   run({ spec: 'job-specific', status: 'ok', job: 'implement' })
-  expect(specUnsettledLabel(db(), 'job-specific', 'spec:review-lens')).toBeTrue()
-  expect(specUnsettledLabel(db(), 'job-specific', 'spec')).toBeFalse()
+  expect(await specUnsettledLabel(db(), 'job-specific', 'spec:review-lens')).toBeTrue()
+  expect(await specUnsettledLabel(db(), 'job-specific', 'spec')).toBeFalse()
 })
 
-test('groups answers separately by version and subject kind', () => {
+test('groups answers separately by version and subject kind', async () => {
   answer({
     question: SPEC_UNSETTLED_QUESTION.id,
     version: 1,
@@ -226,42 +226,41 @@ test('groups answers separately by version and subject kind', () => {
     subjectKind: 'spec:review-lens',
     noul: 0.1,
   })
-  const groups = typedQuestionReport({ question: SPEC_UNSETTLED_QUESTION.id }).map((block) => [
-    block.questionVersion,
-    block.subjectKind,
-  ])
+  const groups = (await typedQuestionReport({ question: SPEC_UNSETTLED_QUESTION.id })).map(
+    (block) => [block.questionVersion, block.subjectKind],
+  )
   expect(groups).toContainEqual([1, 'spec:implement'])
   expect(groups).toContainEqual([2, 'spec:implement'])
   expect(groups).toContainEqual([2, 'spec:review-lens'])
 })
 
-test('groups answers separately by served model', () => {
+test('groups answers separately by served model', async () => {
   const question = `model-groups-${newRecordId()}`
   answer({ question, version: 1, subject: 'first', noul: 0.1, model: 'jev-1.13.0' })
   answer({ question, version: 1, subject: 'second', noul: 0.2, model: 'jev-1.14.0' })
   answer({ question, version: 1, subject: 'third', noul: 0.3, model: null })
-  const groups = typedQuestionReport({ question })
+  const groups = await typedQuestionReport({ question })
   expect(groups).toHaveLength(3)
   expect(groups.map((block) => block.model)).toEqual(['jev-1.13.0', 'jev-1.14.0', null])
   expect(groups.every((block) => block.recorded === 1)).toBeTrue()
 })
 
-test('a job filter on implement keeps legacy spec answers and drops other jobs', () => {
+test('a job filter on implement keeps legacy spec answers and drops other jobs', async () => {
   const question = `legacy-filter-${newRecordId()}`
   for (const subjectKind of ['spec', 'spec:implement', 'spec:review-lens'])
     answer({ question, version: 1, subject: subjectKind, noul: 0.5, subjectKind })
-  const kinds = typedQuestionReport({ question, job: 'implement' }).map(
+  const kinds = (await typedQuestionReport({ question, job: 'implement' })).map(
     (block) => block.subjectKind,
   )
   expect(kinds.sort()).toEqual(['spec', 'spec:implement'])
 })
 
-test('question and job filters omit the Jev worker-question report', () => {
+test('question and job filters omit the Jev worker-question report', async () => {
   const question = `filtered-command-${newRecordId()}`
   answer({ question, version: 1, subject: 'filtered', noul: 0.5 })
   for (const options of [{ question }, { job: 'implement' }]) {
     const output: string[] = []
-    typedQuestionCommand({ ...options, json: true }, { log: (value) => output.push(value) })
+    await typedQuestionCommand({ ...options, json: true }, { log: (value) => output.push(value) })
     expect(JSON.parse(output.join('\n'))).toMatchObject({ jevWorkerQuestions: null })
   }
 })

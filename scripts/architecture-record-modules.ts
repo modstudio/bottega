@@ -525,6 +525,7 @@ export const recordModules: RecordModule[] = [
     '../database/db.ts',
     './question-vocabulary.ts',
   ]),
+  module('orchestrator/src/run/question-delivery-pending.ts', ['bun:sqlite']),
   module('orchestrator/src/run/question-outbox.ts', [
     'bun:sqlite',
     '../../../shared/record-id.ts',
@@ -626,6 +627,8 @@ export const recordModules: RecordModule[] = [
     '../agent/agent-registry.ts',
     '../agent/agents.ts',
     '../database/db.ts',
+    '../question-store/question-store-record-factory.ts',
+    '../record/record-api-client-question.ts',
     '../postgres/postgres-migrate.ts',
     '../run/run-outbox.ts',
     '../workflow/task-flow-store.ts',

@@ -15,15 +15,12 @@ import type {
 } from '../../../shared/orch-contract.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
-import { questionOpenSql } from '../run/question-open.ts'
-import { enqueueQuestionRecord } from '../run/question-outbox.ts'
+import { mutateQuestion } from '../question-store/question-store-mutation.ts'
+import { inboxRunQuestions, waitingQuestions } from '../question-store/question-store-read.ts'
+import { questionsForRunChain } from '../run/question-open.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from '../run/run-authority.ts'
 import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
-import {
-  taskFlowLocalStore,
-  taskFlowReadStore,
-  type TaskFlowWaitingQuestionRow as WorkflowWaitingRow,
-} from '../workflow/task-flow-store.ts'
+import type { TaskFlowWaitingQuestionRow as WorkflowWaitingRow } from '../workflow/task-flow-store.ts'
 
 type WaitingCause = { rulings: 'agent' | 'user'; relayed: boolean; answered: boolean }
 export const questionAwaitingOperator = (cause: WaitingCause): boolean =>
@@ -64,13 +61,13 @@ function notificationDetails(item: OperatorWaitingItem): OperatorNotification {
 }
 
 /** Atomically claim each currently waiting episode once, optionally narrowed for direct delivery. */
-export function claimOperatorNotifications(
+export async function claimOperatorNotifications(
   d: Database = db(),
   only?: { kind: OperatorInboxKind; id: string | number },
-): ClaimedOperatorNotification[] {
+): Promise<ClaimedOperatorNotification[]> {
+  const [workflows, runQuestions] = await Promise.all([waitingQuestions(d), inboxRunQuestions(d)])
   return writeTransaction(() => {
-    const workflows = taskFlowLocalStore(d).waitingWorkflowQuestions()
-    const items = operatorWaitingWithEpisodes(d, workflows).filter(({ item }) => {
+    const items = operatorWaitingWithEpisodes(workflows, runQuestions).filter(({ item }) => {
       if (!only || item.kind !== only.kind) return !only
       return item.kind === 'question'
         ? item.question_record_id === only.id
@@ -100,43 +97,43 @@ export function claimOperatorNotifications(
 }
 
 /** Claim and send from trusted in-process paths; delivery failure cannot fail the mutation. */
-export function notifyWaitingItem(
+export async function notifyWaitingItem(
   kind: OperatorInboxKind,
   id: string | number,
   d: Database,
   send: typeof sendOperatorNotification = sendOperatorNotification,
-): void {
+): Promise<void> {
   try {
-    for (const item of claimOperatorNotifications(d, { kind, id })) send(item.notification)
+    for (const item of await claimOperatorNotifications(d, { kind, id })) send(item.notification)
   } catch (error) {
     console.error(`orch: desktop notification failed: ${String(error)}`)
   }
 }
 
-function openQuestions(runId: string, d: Database) {
+async function openQuestions(runId: string, d: Database) {
   const authority = authorizeRunMutation(runId, 'relay')
-  const rows = d
-    .query(
-      `SELECT q.record_id,q.number,q.answered_at,q.closed_at FROM question q JOIN run owner ON owner.record_id=q.run_record_id
-       WHERE (owner.record_id=? OR owner.parent_run_record_id=?) ORDER BY q.number`,
-    )
-    .all(authority.rootId, authority.rootId) as {
+  const rows = (await questionsForRunChain(d, authority.rootId)) as {
     record_id: string
     number: number
     answered_at: string | null
     closed_at: string | null
+    awaiting_operator_at: string | null
   }[]
   return { authority, rows }
 }
 
-export function relayQuestion(
+export async function relayQuestion(
   runId: string,
   questionId: string | undefined,
   note: string,
   d: Database = db(),
-  notify: (kind: OperatorInboxKind, id: string | number, d: Database) => void = notifyWaitingItem,
-): { id: number; recordId: string } {
-  let { authority, rows } = openQuestions(runId, d)
+  notify: (
+    kind: OperatorInboxKind,
+    id: string | number,
+    d: Database,
+  ) => void | Promise<void> = notifyWaitingItem,
+): Promise<{ id: number; recordId: string }> {
+  let { authority, rows } = await openQuestions(runId, d)
   if (questionId !== undefined) {
     const named = rows.find((row) => row.record_id === questionId)
     if (!named) throw new Error(`question ${questionId} does not belong to run ${authority.rootId}`)
@@ -154,19 +151,25 @@ export function relayQuestion(
   const selected = rows[0]!
   writeTransaction(() => {
     authority = adoptRunMutation(authority, 'relay', d)
-    const at = nowIso()
-    const changed = d
-      .query(
-        `UPDATE question SET awaiting_operator_at=COALESCE(awaiting_operator_at,?), relayed_by=?,
-          revision=revision+1
-         WHERE record_id=? AND ${questionOpenSql('question')}`,
-      )
-      .run(at, authority.actor, selected.record_id)
-    if (changed.changes !== 1) throw new Error(`question ${selected.number} is already answered`)
-    auditRunMutation(authority, 'relay', note, d)
-    enqueueQuestionRecord(d, selected.record_id)
   }, d)
-  notify('question', selected.record_id, d)
+  const at = nowIso()
+  const mutation = await mutateQuestion(d, {
+    id: selected.record_id,
+    intent: 'relay',
+    at,
+    actorSession: authority.actor,
+    reason: note,
+    requireOpen: true,
+    changes: {
+      awaitingOperatorAt: selected.awaiting_operator_at ?? at,
+      relayedBy: authority.actor,
+    },
+  })
+  if (!mutation.applied) return { id: selected.number, recordId: selected.record_id }
+  writeTransaction(() => {
+    auditRunMutation(authority, 'relay', note, d)
+  }, d)
+  await notify('question', selected.record_id, d)
   return { id: selected.number, recordId: selected.record_id }
 }
 
@@ -201,42 +204,33 @@ function workflowWaitingEpisode(row: WorkflowWaitingRow) {
 }
 
 function operatorWaitingWithEpisodes(
-  d: Database,
   workflows: WorkflowWaitingRow[],
+  questions: Record<string, unknown>[],
 ): Array<{ item: OperatorWaitingItem; episode: string }> {
-  const questions = d
-    .query(
-      `SELECT q.number,q.record_id question_record_id,q.question,q.options,q.recommendation,q.why,q.awaiting_operator_at,
-              r.repo project,r.launch_key task_key,root.number root_number,
-              root.record_id root_record_id
-       FROM question q JOIN run r ON r.record_id=q.run_record_id
-       JOIN run root ON root.record_id=COALESCE(r.parent_run_record_id,r.record_id)
-       WHERE q.awaiting_operator_at IS NOT NULL AND ${questionOpenSql('q')}`,
-    )
-    .all() as Array<{
+  const waiting = questions.filter((row) => row.awaiting_operator_at && !row.answered_at) as Array<{
     number: number
-    question_record_id: string
+    record_id: string
     question: string
     options: string | null
     recommendation: string | null
     why: string | null
     awaiting_operator_at: string
-    project: string | null
+    repo: string | null
     task_key: string | null
     root_number: number
     root_record_id: string
   }>
   return [
-    ...questions.map((row) => ({
+    ...waiting.map((row) => ({
       episode: row.awaiting_operator_at,
       item: {
         kind: 'question' as const,
         id: row.number,
         workflow_cursor_record_id: null,
-        question_record_id: row.question_record_id,
+        question_record_id: row.record_id,
         run_number: row.root_number,
         run_record_id: row.root_record_id,
-        project: row.project,
+        project: row.repo,
         task_key: row.task_key,
         session_id: null,
         question: row.question,
@@ -258,6 +252,6 @@ function operatorWaitingWithEpisodes(
 }
 
 export async function operatorWaiting(d: Database = db()): Promise<OperatorWaitingItem[]> {
-  const workflows = await taskFlowReadStore(d).waitingWorkflowQuestions()
-  return operatorWaitingWithEpisodes(d, workflows).map(({ item }) => item)
+  const [workflows, runQuestions] = await Promise.all([waitingQuestions(d), inboxRunQuestions(d)])
+  return operatorWaitingWithEpisodes(workflows, runQuestions).map(({ item }) => item)
 }

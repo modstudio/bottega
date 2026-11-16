@@ -2,6 +2,7 @@
 /** Adapts the existing SQLite question rows to the question port. */
 
 import type { Database } from 'bun:sqlite'
+import { nextEntityNumber } from '../database/entity-number.ts'
 import type {
   QuestionIntent,
   QuestionReadInput,
@@ -9,20 +10,51 @@ import type {
   QuestionWriteResult,
 } from '../record/record-question-contract.ts'
 import { questionChangedAfterRefusal } from '../record/record-question-contract.ts'
-import { runInboxQuestionRows } from '../run/run-inbox.ts'
 import {
   localQuestionProjects,
+  maxQuestionNumber,
+  openQuestionsForCursors,
   openStagesForSession,
+  questionByNumberRow,
+  questionsByIdRows,
+  questionsForCursor,
+  questionsForRun,
+  ruleAuditReasons,
   rulingRows,
+  runInboxQuestionRows,
   taskRulingRows,
   waitingWorkflowQuestions,
   workflowInboxQuestions,
-} from '../workflow/task-flow-store-sqlite-questions.ts'
+} from './question-store-sqlite-reads.ts'
 import type { QuestionReadResult, QuestionStore } from './question-store-types.ts'
 
 const json = (value: unknown) => (value == null ? null : JSON.stringify(value))
 const limited = <Row>(rows: Row[], limit?: number): Row[] =>
   limit === undefined ? rows : rows.slice(0, limit)
+
+function assertLocalChangedAfter(input: QuestionReadInput): void {
+  if (
+    input.changedAfter !== undefined &&
+    ((input.read !== 'rulings' && input.read !== 'inbox') || !/^\d+$/.test(input.changedAfter))
+  )
+    throw new Error(
+      `${questionChangedAfterRefusal.local.message}; ${questionChangedAfterRefusal.local.remedy}`,
+    )
+}
+
+function recordAppliedMutation(database: Database, input: QuestionWriteBody): void {
+  database
+    .query(`INSERT OR IGNORE INTO question_mutation_audit
+      (record_id,question_record_id,action,actor_session,at,reason) VALUES (?,?,?,?,?,?)`)
+    .run(
+      input.requestId,
+      input.question.id,
+      input.audit.action,
+      input.audit.actorSession,
+      input.audit.at,
+      input.audit.reason,
+    )
+}
 
 export class SqliteQuestionStore implements QuestionStore {
   private readonly database: Database
@@ -31,20 +63,47 @@ export class SqliteQuestionStore implements QuestionStore {
     this.database = database
   }
 
+  private readRulings(input: Extract<QuestionReadInput, { read: 'rulings' }>): QuestionReadResult {
+    const after = input.changedAfter === undefined ? null : Number(input.changedAfter)
+    const cursor =
+      after === null
+        ? null
+        : (this.database
+            .query<{ value: number }, []>('SELECT value FROM collect_change_counter')
+            .get()?.value ?? 0)
+    return {
+      items: limited(
+        rulingRows(this.database, { kind: input.kind, since: input.since, after, cursor }),
+        input.limit,
+      ),
+      ...(cursor === null ? {} : { cursor: String(cursor) }),
+    }
+  }
+
+  private readInbox(input: Extract<QuestionReadInput, { read: 'inbox' }>): QuestionReadResult {
+    const rows = [...runInboxQuestionRows(this.database), ...workflowInboxQuestions(this.database)]
+    const offset = input.changedAfter === undefined ? 0 : Number(input.changedAfter)
+    const end = input.limit === undefined ? rows.length : offset + input.limit
+    return { items: rows.slice(offset, end), cursor: String(end), more: end < rows.length }
+  }
+
   async write(intent: QuestionIntent, input: QuestionWriteBody): Promise<QuestionWriteResult> {
     const q = input.question
+    const workflowStep = q.workflowCursorRecordId
+      ? this.database
+          .query<{ ordinal: number; step_slug: string }, [string]>(
+            'SELECT ordinal,step_slug FROM workflow_cursor WHERE record_id=?',
+          )
+          .get(q.workflowCursorRecordId)
+      : null
     const existing = this.database
       .query<{ number: number; revision: number }, [string]>(
         'SELECT number,revision FROM question WHERE record_id=?',
       )
       .get(q.id)
     if (intent !== 'ask' && !existing) throw new Error(`question ${q.id} not found`)
-    const number =
-      existing?.number ??
-      this.database
-        .query<{ number: number }, []>('SELECT COALESCE(MAX(number),0)+1 number FROM question')
-        .get()!.number
-    this.database
+    const number = existing?.number ?? nextEntityNumber(this.database, 'question')
+    const write = this.database
       .query(
         `INSERT INTO question
           (record_id,number,run_record_id,workflow_cursor_record_id,workflow_key,workflow_task_record_id,
@@ -53,8 +112,8 @@ export class SqliteQuestionStore implements QuestionStore {
            replacement,filed_as,filed_ref,filed_at,closed_at,close_reason,revision,filed_record_id,filed_label,
            answer_basis,answered_by_name,overturned_by_name,kind,typed_options,criteria,levels,answer_value,
            answered_by_kind,jev_pick,jev_confidence,jev_probabilities,jev_model,jev_input_tokens,jev_error,
-           jev_agreed,jev_question_version,jev_fits,jev_order_flipped)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+           jev_agreed,jev_question_version,jev_fits,jev_order_flipped,workflow_step_ordinal,workflow_step_slug)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(record_id) DO UPDATE SET
            workflow_key=excluded.workflow_key,workflow_task_record_id=excluded.workflow_task_record_id,
            question=excluded.question,options=excluded.options,recommendation=excluded.recommendation,why=excluded.why,
@@ -72,7 +131,9 @@ export class SqliteQuestionStore implements QuestionStore {
            jev_confidence=excluded.jev_confidence,jev_probabilities=excluded.jev_probabilities,
            jev_model=excluded.jev_model,jev_input_tokens=excluded.jev_input_tokens,jev_error=excluded.jev_error,
            jev_agreed=excluded.jev_agreed,jev_question_version=excluded.jev_question_version,
-           jev_fits=excluded.jev_fits,jev_order_flipped=excluded.jev_order_flipped
+           jev_fits=excluded.jev_fits,jev_order_flipped=excluded.jev_order_flipped,
+           workflow_step_ordinal=COALESCE(excluded.workflow_step_ordinal,question.workflow_step_ordinal),
+           workflow_step_slug=COALESCE(excluded.workflow_step_slug,question.workflow_step_slug)
          WHERE excluded.revision > question.revision`,
       )
       .run(
@@ -126,51 +187,24 @@ export class SqliteQuestionStore implements QuestionStore {
         q.jevQuestionVersion,
         q.jevFits,
         q.jevOrderFlipped,
+        workflowStep === null ? null : workflowStep.ordinal + 1,
+        workflowStep?.step_slug ?? null,
       )
-    this.database
-      .query(`INSERT OR IGNORE INTO question_mutation_audit
-        (record_id,question_record_id,action,actor_session,at,reason) VALUES (?,?,?,?,?,?)`)
-      .run(
-        input.requestId,
-        q.id,
-        input.audit.action,
-        input.audit.actorSession,
-        input.audit.at,
-        input.audit.reason,
-      )
-    return { id: q.id, number, revision: Math.max(existing?.revision ?? 0, q.revision) }
+    const applied = write.changes === 1
+    if (applied) recordAppliedMutation(this.database, input)
+    return { id: q.id, number, revision: Math.max(existing?.revision ?? 0, q.revision), applied }
   }
 
   async read(input: QuestionReadInput): Promise<QuestionReadResult> {
-    if (input.changedAfter !== undefined)
-      throw new Error(
-        `${questionChangedAfterRefusal.local.message}; ${questionChangedAfterRefusal.local.remedy}`,
-      )
-    if (input.read === 'inbox')
-      return {
-        items: limited(
-          [...runInboxQuestionRows(this.database), ...workflowInboxQuestions(this.database)],
-          input.limit,
-        ),
-      }
+    assertLocalChangedAfter(input)
+    if (input.read === 'inbox') return this.readInbox(input)
     if (input.read === 'waiting')
       return { items: limited(waitingWorkflowQuestions(this.database), input.limit) }
     if (input.read === 'open-for-session')
       return {
         items: limited(openStagesForSession(this.database, input.sessionId), input.limit),
       }
-    if (input.read === 'rulings')
-      return {
-        items: limited(
-          rulingRows(this.database, {
-            kind: input.kind,
-            since: input.since,
-            after: null,
-            cursor: null,
-          }) as QuestionReadResult['items'],
-          input.limit,
-        ),
-      }
+    if (input.read === 'rulings') return this.readRulings(input)
     if (input.read === 'task-rulings') {
       const project = this.database
         .query<{ name: string }, [string]>('SELECT name FROM project WHERE record_id=?')
@@ -181,6 +215,35 @@ export class SqliteQuestionStore implements QuestionStore {
           : [],
       }
     }
+    if (input.read === 'by-id')
+      return { items: limited(questionsByIdRows(this.database, input.ids), input.limit) }
+    if (input.read === 'for-run')
+      return { items: limited(questionsForRun(this.database, input.runId), input.limit) }
+    if (input.read === 'max-number')
+      return { items: limited(maxQuestionNumber(this.database), input.limit) }
+    if (input.read === 'by-number')
+      return { items: limited(questionByNumberRow(this.database, input.number), input.limit) }
+    if (input.read === 'open-for-cursors')
+      return {
+        items: limited(
+          openQuestionsForCursors(this.database, input.workflowCursorRecordIds),
+          input.limit,
+        ),
+      }
+    if (input.read === 'for-cursor')
+      return {
+        items: limited(
+          questionsForCursor(this.database, input.workflowCursorRecordId),
+          input.limit,
+        ),
+      }
+    if (input.read === 'rule-audit-reasons')
+      return {
+        items: limited(
+          ruleAuditReasons(this.database, input.workflowCursorRecordId, input.actorSession),
+          input.limit,
+        ),
+      }
     return { items: limited(localQuestionProjects(this.database), input.limit) }
   }
 }

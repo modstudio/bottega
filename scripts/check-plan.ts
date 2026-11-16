@@ -265,6 +265,7 @@ export const ROOT_TEST_FILES = [
   'scripts/check-record-sql-pool.test.ts',
   'scripts/check-outbox-serialization.test.ts',
   'scripts/check-outbox-insert-site.test.ts',
+  'scripts/check-question-sql-sites.test.ts',
   'orchestrator/scripts/time-wait-guard.test.ts',
   'scripts/check-self-spawn.test.ts',
   'scripts/check-source-root.test.ts',

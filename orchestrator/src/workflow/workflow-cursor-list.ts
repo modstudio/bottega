@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
+import { openQuestionStages } from '../question-store/question-store-read.ts'
 import {
   type TaskFlowListedStageRow as ListedCursorRow,
   taskFlowReadStore,
@@ -25,9 +26,7 @@ export type WorkflowCursorListRow = ListedCursorRow & { next_slug: string; line:
 
 /** The one workflow-owned read defining open keyless context holders for a session. */
 export async function openKeylessCursorsForSession(session: string, d: Database = db()) {
-  return (await taskFlowReadStore(d).openStagesForSession(session)).filter(
-    (cursor) => !cursor.workflow_key,
-  )
+  return (await openQuestionStages(d, session)).filter((cursor) => !cursor.workflow_key)
 }
 
 export async function listWorkflowCursors(

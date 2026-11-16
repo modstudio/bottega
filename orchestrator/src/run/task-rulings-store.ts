@@ -2,7 +2,8 @@
 /** Loads task ruling rows for a new dispatch. Must not know prompt assembly or run claiming. */
 
 import { db } from '../database/db.ts'
-import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
+import { projectByName } from '../project/projects.ts'
+import { questionTaskRulings } from '../question-store/question-store-read.ts'
 import {
   selectTaskRulings,
   TASK_RULINGS_MAX_COUNT,
@@ -17,8 +18,11 @@ export async function taskRulingsForDispatch(input: {
   if (input.resume || input.project === null || input.taskRecordId === null) {
     return { rulings: [], omitted: 0 }
   }
-  const rows = await taskFlowReadStore(db()).taskRulingRows(
-    input.project,
+  const project = projectByName(input.project)
+  if (!project) return { rulings: [], omitted: 0 }
+  const rows = await questionTaskRulings(
+    db(),
+    project.recordId,
     input.taskRecordId,
     TASK_RULINGS_MAX_COUNT + 1,
   )

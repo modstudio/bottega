@@ -6,7 +6,7 @@ import { JOBS } from '../jobs/jobs.ts'
 import { guide, guideRouteDecision } from './guide.ts'
 import { state } from './serve.ts'
 
-test('guide and state keep one unroutable job without dropping other jobs', () => {
+test('guide and state keep one unroutable job without dropping other jobs', async () => {
   const rows = db().query('SELECT name,jobs FROM agent ORDER BY name').all() as {
     name: string
     jobs: string | null
@@ -18,7 +18,7 @@ test('guide and state keep one unroutable job without dropping other jobs', () =
     refreshAgents()
 
     const guideRows = guide()
-    const snapshotRows = state(null).guide
+    const snapshotRows = (await state(null)).guide
     const expected = {
       routesTo: null,
       unroutable: true,
@@ -48,7 +48,7 @@ test('the unroutable guide decision is pure over a refusal headline', () => {
   })
 })
 
-test('guide and state report an all-agents-at-capacity job as a capacity wait', () => {
+test('guide and state report an all-agents-at-capacity job as a capacity wait', async () => {
   const rows = db().query('SELECT name,jobs,max_concurrent FROM agent ORDER BY name').all() as {
     name: string
     jobs: string | null
@@ -68,7 +68,10 @@ test('guide and state report an all-agents-at-capacity job as a capacity wait', 
     running.push(addRun({ agent: 'codex', job: 'craft', status: 'running' }))
     db().query('UPDATE run SET pid=? WHERE record_id=?').run(process.pid, running[0]!)
 
-    for (const row of [guide('craft')[0], state(null).guide.find(({ job }) => job === 'craft')]) {
+    for (const row of [
+      guide('craft')[0],
+      (await state(null)).guide.find(({ job }) => job === 'craft'),
+    ]) {
       expect(row).toMatchObject({ routesTo: null, unroutable: false })
       expect(row?.reason).toStartWith(
         'waiting for capacity: agent codex is at capacity (1 running:',

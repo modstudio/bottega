@@ -564,7 +564,7 @@ describe('operational monitor conditions', () => {
           action: 'reported; it does not answer',
         }),
       ])
-      const notices = claimMonitorNotices('sess-1')
+      const notices = await claimMonitorNotices('sess-1')
       expect(notices).toEqual([
         expect.objectContaining({
           kind: 'task-waiting-on-ruling',
@@ -572,13 +572,13 @@ describe('operational monitor conditions', () => {
           ownerSession: 'sess-1',
         }),
       ])
-      expect(claimMonitorNotices('sess-1')).toEqual(notices)
+      expect(await claimMonitorNotices('sess-1')).toEqual(notices)
       markMonitorNoticesDelivered(
         'sess-1',
         notices.map((notice) => notice.noticeId),
         '2026-09-04T20:01:00.000Z',
       )
-      expect(claimMonitorNotices('sess-1')).toEqual([])
+      expect(await claimMonitorNotices('sess-1')).toEqual([])
     } finally {
       young.mockRestore()
     }
@@ -597,7 +597,7 @@ describe('operational monitor conditions', () => {
           action: 'reported; it does not answer',
         }),
       ])
-      expect(claimMonitorNotices('sess-1')).toEqual([])
+      expect(await claimMonitorNotices('sess-1')).toEqual([])
     } finally {
       late.mockRestore()
     }
@@ -689,12 +689,10 @@ describe('operational monitor conditions', () => {
         }),
       )
       expect(
-        claimMonitorNotices('run-reader')
-          .map((condition) => condition.subject)
-          .sort(),
+        (await claimMonitorNotices('run-reader')).map((condition) => condition.subject).sort(),
       ).toEqual([`run:${stale}`, `run:${unscored}`].sort())
-      expect(claimMonitorNotices('somebody-else')).toEqual([])
-      expect(() => claimMonitorNotices('operator')).toThrow(/real session id/)
+      expect(await claimMonitorNotices('somebody-else')).toEqual([])
+      await expect(claimMonitorNotices('operator')).rejects.toThrow(/real session id/)
       expect(() =>
         markMonitorNoticesDelivered('operator', ['condition:1'], '2026-09-04T20:01:00.000Z'),
       ).toThrow(/real session id/)

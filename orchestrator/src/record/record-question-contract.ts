@@ -14,8 +14,10 @@ export const questionIntentSchema = z.enum([
   'ask',
   'answer',
   'close',
+  'file',
   'link',
   'overturn',
+  'relay',
   'abandon',
 ])
 export type QuestionIntent = z.infer<typeof questionIntentSchema>
@@ -95,6 +97,7 @@ export const questionWriteResultSchema = z.object({
   id,
   number: z.number().int().positive(),
   revision: z.number().int().positive(),
+  applied: z.boolean(),
 })
 export type QuestionWriteResult = z.infer<typeof questionWriteResultSchema>
 
@@ -119,6 +122,14 @@ export const questionChangedAfterRefusal = {
 
 const readLimit = z.coerce.number().int().positive().max(100).optional()
 const changedAfter = z.string().min(1).optional()
+const questionIds = z.preprocess(
+  (value) => (typeof value === 'string' ? value.split(',').filter(Boolean) : value),
+  z.array(id).min(1).max(100),
+)
+const workflowCursorRecordIds = z.preprocess(
+  (value) => (typeof value === 'string' ? value.split(',').filter(Boolean) : value),
+  z.array(id).min(1).max(100),
+)
 export const questionReadSchema = z.discriminatedUnion('read', [
   z.object({ read: z.literal('inbox'), limit: readLimit, changedAfter }),
   z.object({ read: z.literal('waiting'), limit: readLimit, changedAfter }),
@@ -143,6 +154,39 @@ export const questionReadSchema = z.discriminatedUnion('read', [
     changedAfter,
   }),
   z.object({ read: z.literal('projects'), limit: readLimit, changedAfter }),
+  z.object({
+    read: z.literal('by-id'),
+    ids: questionIds,
+    limit: readLimit,
+    changedAfter,
+  }),
+  z.object({ read: z.literal('for-run'), runId: id, limit: readLimit, changedAfter }),
+  z.object({ read: z.literal('max-number'), limit: readLimit, changedAfter }),
+  z.object({
+    read: z.literal('by-number'),
+    number: z.coerce.number().int().positive(),
+    limit: readLimit,
+    changedAfter,
+  }),
+  z.object({
+    read: z.literal('open-for-cursors'),
+    workflowCursorRecordIds,
+    limit: readLimit,
+    changedAfter,
+  }),
+  z.object({
+    read: z.literal('for-cursor'),
+    workflowCursorRecordId: id,
+    limit: readLimit,
+    changedAfter,
+  }),
+  z.object({
+    read: z.literal('rule-audit-reasons'),
+    workflowCursorRecordId: id,
+    actorSession: z.string().min(1),
+    limit: readLimit,
+    changedAfter,
+  }),
 ])
 export type QuestionReadInput = z.infer<typeof questionReadSchema>
 type RulingReadInput = Extract<QuestionReadInput, { read: 'rulings' }>

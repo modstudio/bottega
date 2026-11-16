@@ -30,7 +30,7 @@ export async function assertWorkflowSelfRulingProse(
   await assertOrchestratorProse(fields)
 }
 
-export function recordWorkflowSelfRuling(
+export async function recordWorkflowSelfRuling(
   input: {
     cursorId: string
     workflowKey: string
@@ -43,7 +43,7 @@ export function recordWorkflowSelfRuling(
     selfRuling: WorkflowSelfRulingInput
   },
   database: Database,
-): { questionId: number } {
+): Promise<{ questionId: number }> {
   const ruling = input.selfRuling.ruling.trim()
   if (!ruling) throw new Error('--self-ruling is required')
   const basis = input.selfRuling.basis.trim()
@@ -56,7 +56,7 @@ export function recordWorkflowSelfRuling(
   )
   if (refusal) throw new Error(refusal)
   const at = nowIso()
-  const question = upsertWorkflowQuestion(
+  const question = await upsertWorkflowQuestion(
     {
       cursorId: input.cursorId,
       workflowKey: input.workflowKey,
@@ -68,7 +68,7 @@ export function recordWorkflowSelfRuling(
     },
     database,
   )
-  answerWorkflowQuestion(
+  await answerWorkflowQuestion(
     {
       questionId: question.recordId,
       cursorId: input.cursorId,

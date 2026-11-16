@@ -5,6 +5,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import {
   type ContextBrief,
   contextBrief,
@@ -193,40 +194,19 @@ test('keeps an awaiting question on a keyless cursor and omits its abandon remed
   expect(line).not.toContain('workflow abandon')
 })
 
-test('renders one open question for its task holder', () => {
-  const database = new Database(':memory:')
-  database.exec(
-    `CREATE TABLE context_item (
-      record_id TEXT NOT NULL,
-      holder_kind TEXT NOT NULL,
-      holder_id TEXT NOT NULL,
-      slug TEXT NOT NULL,
-      kind TEXT NOT NULL,
-      body TEXT NOT NULL,
-      source TEXT NOT NULL,
-      question_number INTEGER,
-      target TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-    CREATE TABLE question (
-      number INTEGER NOT NULL,
-      workflow_task_record_id TEXT,
-      question TEXT NOT NULL,
-      answered_at TEXT,
-      closed_at TEXT
-    )`,
-  )
+test('renders one open question for its task holder', async () => {
+  const database = migratedTestDatabase()
+  database.exec('PRAGMA foreign_keys=OFF')
   database
     .query(
       `INSERT INTO question
-       (number,workflow_task_record_id,question,answered_at,closed_at)
-       VALUES (5277,'task-record','Which shape should the brief use?',NULL,NULL),
-              (5278,'task-record','Already answered.','2026-11-13',NULL),
-              (5279,'task-record','Closed without an answer.',NULL,'2026-11-13')`,
+       (record_id,number,workflow_cursor_record_id,workflow_task_record_id,asked_at,question,answered_at,closed_at)
+       VALUES ('question-5277',5277,'cursor-record','task-record','2026-11-13','Which shape should the brief use?',NULL,NULL),
+              ('question-5278',5278,'cursor-record','task-record','2026-11-13','Already answered.','2026-11-13',NULL),
+              ('question-5279',5279,'cursor-record','task-record','2026-11-13','Closed without an answer.',NULL,'2026-11-13')`,
     )
     .run()
-  const holders = storedBriefHolders(
+  const holders = await storedBriefHolders(
     [
       {
         key: 'DEV-1844/2',
@@ -391,7 +371,7 @@ test('orders the session, each project-scoped working task, and its epic by task
   ])
 })
 
-test('reads a working task brief from its record-id holder while retaining the task key', () => {
+test('reads a working task brief from its record-id holder while retaining the task key', async () => {
   const recordId = newRecordId()
   db()
     .query(
@@ -405,7 +385,7 @@ test('reads a working task brief from its record-id holder while retaining the t
     [{ key: 'STAR-1', project: 'starship' }],
     [{ key: 'STAR-1', project: 'starship', record_id: recordId, title: 'Stable holder' }],
   )
-  expect(storedBriefHolders(references, db())).toEqual([
+  expect(await storedBriefHolders(references, db())).toEqual([
     {
       key: 'STAR-1',
       title: 'Stable holder',
@@ -419,7 +399,7 @@ test('reads a working task brief from its record-id holder while retaining the t
   ])
 })
 
-test('renders an open keyless cursor item under its cursor header without an open line', () => {
+test('renders an open keyless cursor item under its cursor header without an open line', async () => {
   const database = new Database(':memory:')
   database.exec(
     `CREATE TABLE context_item (
@@ -439,7 +419,7 @@ test('renders an open keyless cursor item under its cursor header without an ope
        VALUES (?,'cursor',?,'decision','position','Continue here.','q42',?,?)`,
     )
     .run(newRecordId(), recordId, '2026-11-14T10:00:00Z', '2026-11-14T10:00:00Z')
-  const holders = storedBriefHolders(
+  const holders = await storedBriefHolders(
     holderSequence(
       'session-id',
       [],

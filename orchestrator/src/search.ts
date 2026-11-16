@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
+import { questionRulings } from './question-store/question-store-read.ts'
 
 type RecordSource = 'score' | 'ruling' | 'review' | 'output'
 
@@ -45,22 +46,20 @@ function matchedResult(row: Candidate, query: string, includeFull: boolean): Rec
   }
 }
 
-function rulingCandidates(d: Database): Record<string, unknown>[] {
-  return d
-    .query(
-      `SELECT q.number,turn.number AS run_number,turn.record_id AS run_record_id,
-          root.number AS root_run_number,root.record_id AS root_run_record_id,
-          root.launch_key AS task_key,turn.started_at,q.question,q.options,
-          q.recommendation,q.why,q.answer
-       FROM question q
-       JOIN run turn ON turn.record_id=q.run_record_id
-       JOIN run root ON root.record_id=COALESCE(turn.parent_run_record_id,turn.record_id)
-      WHERE q.answer IS NOT NULL`,
-    )
-    .all()
+async function rulingCandidates(d: Database): Promise<Record<string, unknown>[]> {
+  return (await questionRulings(d, { kind: 'run' })).items
+    .filter(({ answer }) => answer !== null)
     .map((row) => {
       const { number, ...rest } = row as Record<string, unknown> & { number: number }
-      return { id: number, ...rest }
+      const run = d
+        .query<Record<string, unknown>, [string]>(
+          `SELECT turn.number run_number,turn.record_id run_record_id,root.number root_run_number,
+             root.record_id root_run_record_id,root.launch_key task_key,turn.started_at
+           FROM run turn JOIN run root ON root.record_id=COALESCE(turn.parent_run_record_id,turn.record_id)
+           WHERE turn.record_id=?`,
+        )
+        .get(String(row.run_record_id))
+      return { id: number, ...rest, ...run }
     })
 }
 
@@ -94,12 +93,12 @@ export function searchSnippet(text: string, query: string, directlyLinked: boole
  * only a literal text match: useful evidence that the record mentions the query, but
  * deliberately not a claim that the result is relevant.
  */
-export function searchRecords(
+export async function searchRecords(
   d: Database,
   rawQuery: string,
   limit = 20,
   includeFull = false,
-): RecordSearch {
+): Promise<RecordSearch> {
   const query = rawQuery.trim()
   if (!query) throw new Error('search query must not be empty')
   if (!Number.isInteger(limit) || limit < 1)
@@ -128,7 +127,7 @@ export function searchRecords(
 
   add('score', scoreCandidates(d), (row) => String(row.note))
 
-  add('ruling', rulingCandidates(d), (row) =>
+  add('ruling', await rulingCandidates(d), (row) =>
     [row.question, row.options, row.recommendation, row.why, row.answer]
       .filter((value) => value !== null)
       .join('\n'),

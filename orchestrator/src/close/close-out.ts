@@ -52,6 +52,7 @@ import { adoptedTreeCloseOutDecision } from './close-out-adoption.ts'
 import { withCloseOutLease } from './close-out-lease.ts'
 import { type CloseOutPreparation, prepareCloseOut } from './close-out-preparation.ts'
 import { closeTerminalChainQuestions } from './close-out-questions.ts'
+
 import {
   landingTreeReleaseHold,
   orderedCloseOutHold,
@@ -923,7 +924,6 @@ function appendTreeNamingDetail(
 /** Run one close-out attempt and retain its outcome for observation and retry. */
 function closeOutRunHoldingLease(runId: string, options: CloseOutPreparedOptions): CloseOutResult {
   const root = conversationRootAndWorktree(runId)
-  closeTerminalChainQuestions(root.rootRecordId, Boolean(options.dryRun))
   const keepTree = closeOutKeepTreeDecision(
     root.rootRecordId,
     root.worktree,
@@ -1021,7 +1021,10 @@ export async function closeOutRun(
   runId: string,
   options: CloseOutOptions,
 ): Promise<CloseOutResult> {
-  return closeOutRunPrepared(runId, options, await prepareCloseOut())
+  const preparation = await prepareCloseOut()
+  const { questionRootIds, ...result } = closeOutRunPrepared(runId, options, preparation)
+  for (const rootId of questionRootIds) await closeTerminalChainQuestions(rootId, !!options.dryRun)
+  return result
 }
 
 /** Closes with an open-cursor snapshot taken immediately before a caller's synchronous lock. */
@@ -1029,14 +1032,17 @@ export function closeOutRunPrepared(
   runId: string,
   options: CloseOutOptions,
   preparation: CloseOutPreparation,
-): CloseOutResult {
+): CloseOutResult & { questionRootIds: string[] } {
   const preparedOptions: CloseOutPreparedOptions = {
     ...options,
     cursorWorktrees: preparation.cursorWorktrees,
   }
-  return withCloseOutLease(runId, Boolean(options.closeOutLeaseHeld), () =>
+  const rootId = conversationRootAndWorktree(runId).rootRecordId
+  const result = withCloseOutLease(runId, Boolean(options.closeOutLeaseHeld), () =>
     closeOutRunHoldingLease(runId, preparedOptions),
   )
+  const leaseRefused = 'hold' in result && result.hold === 'close-out-lease'
+  return { ...result, questionRootIds: leaseRefused ? [] : [rootId] }
 }
 
 export async function reclaimTerminalTree(

@@ -3,8 +3,9 @@
 
 import type { Database } from 'bun:sqlite'
 import { storedMachineNames } from '../../../shared/machine-config.ts'
+import { questionRulings, questionsById } from '../question-store/question-store-read.ts'
 import { type MachineIdentifierNames, stripMachineLabel } from '../record/machine-name.ts'
-import { questionOpenSql } from './question-open.ts'
+import { questionsForRunChain } from './question-open.ts'
 import { classifyBareRunIdentifier } from './run-identifier-grammar.ts'
 
 export type ParsedAnswerIdentifier =
@@ -152,24 +153,18 @@ export function answerIdentifierDecision(facts: AnswerIdentifierFacts): AnswerId
     : explicitQuestionDecision(identifier, run, question)
 }
 
-function openQuestionNumbers(database: Database, rootRecordId: string): number[] {
-  return database
-    .query<{ number: number }, [string, string]>(
-      `SELECT q.number
-         FROM question q
-         JOIN run owner ON owner.record_id=q.run_record_id
-        WHERE (owner.record_id=? OR owner.parent_run_record_id=?) AND ${questionOpenSql('q')}
-        ORDER BY q.number`,
-    )
-    .all(rootRecordId, rootRecordId)
-    .map((row) => row.number)
+async function openQuestionNumbers(database: Database, rootRecordId: string): Promise<number[]> {
+  return (await questionsForRunChain(database, rootRecordId))
+    .filter(({ answered_at, closed_at }) => answered_at === null && closed_at === null)
+    .map(({ number }) => Number(number))
+    .sort((a, b) => a - b)
 }
 
-function readRunFacts(
+async function readRunFacts(
   database: Database,
   identifier: ParsedAnswerIdentifier,
   callerSessionId: string | null,
-): AnswerRunFacts | null {
+): Promise<AnswerRunFacts | null> {
   if (identifier.kind === 'question-number') return null
   const row =
     database
@@ -195,48 +190,47 @@ function readRunFacts(
     rootRecordId: row.root_record_id,
     status: row.status,
     ownedByCaller: callerSessionId !== null && row.owner_session_id === callerSessionId,
-    openQuestionNumbers: openQuestionNumbers(database, row.root_record_id),
+    openQuestionNumbers: await openQuestionNumbers(database, row.root_record_id),
   }
 }
 
-function readQuestionFacts(
+async function readQuestionFacts(
   database: Database,
   identifier: ParsedAnswerIdentifier,
-): AnswerQuestionFacts | null {
-  const byRecordId = identifier.kind === 'record-id'
-  const value = byRecordId ? identifier.recordId : identifier.number
+): Promise<AnswerQuestionFacts | null> {
   const row =
-    database
-      .query<
-        { root_record_id: string; open: number; answered_at: string | null },
-        [number | string]
-      >(
-        `SELECT root.record_id root_record_id, (${questionOpenSql('q')}) open, q.answered_at
-           FROM question q
-           JOIN run owner ON owner.record_id=q.run_record_id
-           JOIN run root ON root.record_id=COALESCE(owner.parent_run_record_id,owner.record_id)
-          WHERE ${byRecordId ? 'q.record_id' : 'q.number'}=?`,
-      )
-      .get(value) ?? null
+    identifier.kind === 'record-id'
+      ? (await questionsById(database, [identifier.recordId]))[0]
+      : (await questionRulings(database, { kind: 'all' })).items.find(
+          ({ number }) => Number(number) === identifier.number,
+        )
   if (!row) return null
+  const runId = String(row.run_record_id)
+  const rootRecordId =
+    database
+      .query<{ root_id: string }, [string]>(
+        'SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run WHERE record_id=?',
+      )
+      .get(runId)?.root_id ?? runId
+  const open = row.answered_at === null && row.closed_at === null
   return {
-    rootRecordId: row.root_record_id,
-    open: Boolean(row.open),
-    state: row.open ? 'open' : row.answered_at ? 'ruled' : 'closed',
-    openQuestionNumbers: openQuestionNumbers(database, row.root_record_id),
+    rootRecordId,
+    open,
+    state: open ? 'open' : row.answered_at ? 'ruled' : 'closed',
+    openQuestionNumbers: await openQuestionNumbers(database, rootRecordId),
   }
 }
 
-export function resolveAnswerIdentifier(
+export async function resolveAnswerIdentifier(
   database: Database,
   input: string | number,
   callerSessionId: string | null,
-): string {
+): Promise<string> {
   const identifier = parseAnswerIdentifier(input)
   const decision = answerIdentifierDecision({
     identifier,
-    run: readRunFacts(database, identifier, callerSessionId),
-    question: readQuestionFacts(database, identifier),
+    run: await readRunFacts(database, identifier, callerSessionId),
+    question: await readQuestionFacts(database, identifier),
   })
   if (decision.kind === 'refuse') throw new Error(decision.reason)
   return decision.runRecordId

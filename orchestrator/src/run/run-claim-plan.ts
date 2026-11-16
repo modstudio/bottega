@@ -4,6 +4,7 @@
  * lifecycle facts. Must not create trees, touch stores, or run processes.
  */
 
+import { repoRootOf } from '../git/git-environment.ts'
 import { isCommitShapedBranch } from '../project/branch-name.ts'
 import type { ResumeCreationLifecycle } from './resume-tree.ts'
 import { isSyntheticLifecycleJob } from './synthetic-lifecycle-job.ts'
@@ -30,6 +31,12 @@ export type ClaimTreePlanRuling =
 type AcceptedClaimTreePlan = Exclude<ClaimTreePlanRuling, { mode: 'refuse' }>
 
 export type RetryRootTreeValidation = { branch: string; tip: string }
+
+export function requiredRepositoryRoot(cwd: string): string {
+  const root = repoRootOf(cwd)
+  if (!root) throw new Error(`not a git repository: ${cwd}`)
+  return root
+}
 
 /** Decide whether recording a retry tree must revalidate a writing branch and tip. */
 export function retryRootTreeValidation(input: {

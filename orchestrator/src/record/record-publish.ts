@@ -12,7 +12,7 @@ import { recordWriteDestination } from './record-write-destination.ts'
 export async function buildSnapshotPayload(kind: SnapshotKind): Promise<unknown> {
   switch (kind) {
     case 'state':
-      return state()
+      return await state()
     case 'blockers':
       return blockersPayload()
     case 'health':

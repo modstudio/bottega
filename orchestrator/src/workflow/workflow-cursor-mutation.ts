@@ -2,6 +2,7 @@
 /** Persists terminal cursor mutations and their task-flow projection. */
 import type { Database } from 'bun:sqlite'
 import { nowIso, sessionId, writeTransaction } from '../database/db.ts'
+import { waitingQuestions } from '../question-store/question-store-read.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   taskFlowWriteTarget,
@@ -10,7 +11,6 @@ import {
 import type { TaskFlowIntentInput } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { closeQuestions } from '../run/question-close.ts'
-import { questionOpenSql } from '../run/question-open.ts'
 import { refreshStaleMirror } from './task-flow-mirror-refresh.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 import { cursorName } from './workflow-cursor-format.ts'
@@ -19,20 +19,16 @@ import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-curs
 import type { CursorTrailEntry } from './workflow-cursor-trail.ts'
 import { workflowTextDeletionIds } from './workflow-text.ts'
 
-export function closeOpenWorkflowQuestion(
+export async function closeOpenWorkflowQuestion(
   cursorId: string,
   reason: 'advanced-without-ruling' | 'abandoned',
   at: string,
   d: Database,
-): void {
-  const ids = d
-    .query<{ record_id: string }, [string]>(
-      `SELECT record_id FROM question
-       WHERE workflow_cursor_record_id=? AND ${questionOpenSql('question')}`,
-    )
-    .all(cursorId)
-    .map((question) => question.record_id)
-  closeQuestions(d, ids, reason, sessionId(), at)
+): Promise<void> {
+  const ids = (await waitingQuestions(d))
+    .filter(({ workflow_cursor_record_id }) => workflow_cursor_record_id === cursorId)
+    .map(({ question_record_id }) => question_record_id)
+  await closeQuestions(d, ids, reason, sessionId(), at)
 }
 
 export async function abandonWorkflowCursor(
@@ -95,9 +91,9 @@ export async function abandonWorkflowCursor(
     taskFlowWriteTarget(row.project, d),
     context.taskFlowClient,
   )
+  if (row.state === 'awaiting-ruling')
+    await closeOpenWorkflowQuestion(row.record_id, 'abandoned', at, d)
   const result = writeTransaction(() => {
-    if (row.state === 'awaiting-ruling')
-      closeOpenWorkflowQuestion(row.record_id, 'abandoned', at, d)
     const mirror = taskFlowLocalStore(d).write('abandon', payload, hosted).mirror[row.record_id]
     return {
       text: `${cursorName(row.workflow_slug, row.mode_slug, row.workflow_key, true)} was abandoned at step ${row.ordinal + 1} ${row.step_slug}.`,

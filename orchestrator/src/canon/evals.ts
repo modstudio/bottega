@@ -22,9 +22,12 @@ import {
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
+import {
+  mutateQuestion,
+  requireQuestionMutationApplied,
+} from '../question-store/question-store-mutation.ts'
+import { questionsForRun } from '../question-store/question-store-read.ts'
 import { parseReviewOutput, parseReviewReply } from '../review/review.ts'
-import { questionOpenSql } from '../run/question-open.ts'
-import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { ANSWER_CHANNEL_CLI, ANSWERER_KIND_EVAL } from '../run/question-vocabulary.ts'
 import { run } from '../run/run.ts'
 import { auditRunMutation, runMutationActor } from '../run/run-authority.ts'
@@ -524,30 +527,37 @@ async function releaseEvalOwnedScratchWorktree(repo: string, runId: string | nul
  * successfully delivered. `probe=1` keeps that `ok` row out of routing and
  * pending-score evidence; pass/fail belongs to canon_eval.
  */
-function terminaliseJudgedProbe(runId: string): void {
+async function terminaliseJudgedProbe(runId: string): Promise<void> {
   const answeredAt = nowIso()
-  const questions = db()
-    .query<{ record_id: string }, [string]>(
-      `SELECT record_id FROM question WHERE run_record_id=? AND ${questionOpenSql('question')}`,
-    )
-    .all(runId)
-  const answered = db()
-    .query(
-      `UPDATE question
-        SET answer='(answered by canon eval)', answered_at=?, answered_by='canon-eval',
-            answerer_kind=?, answer_channel=?, awaiting_operator_at=NULL, revision=revision+1
-      WHERE run_record_id=? AND ${questionOpenSql('question')}`,
-    )
-    .run(answeredAt, ANSWERER_KIND_EVAL, ANSWER_CHANNEL_CLI, runId)
+  const questions = (await questionsForRun(db(), runId)).filter(
+    ({ answered_at, closed_at }) => answered_at === null && closed_at === null,
+  )
+  for (const question of questions) {
+    const mutation = await mutateQuestion(db(), {
+      id: String(question.record_id),
+      intent: 'answer',
+      at: answeredAt,
+      actorSession: null,
+      reason: 'canon-eval',
+      changes: {
+        answer: '(answered by canon eval)',
+        answeredAt,
+        answeredBy: 'canon-eval',
+        answererKind: ANSWERER_KIND_EVAL,
+        answerChannel: ANSWER_CHANNEL_CLI,
+        awaitingOperatorAt: null,
+      },
+    })
+    requireQuestionMutationApplied(mutation, question)
+  }
   const terminalised = db()
     .query(
       `UPDATE run SET status='ok', error=NULL, failure_kind=NULL
       WHERE record_id=? AND status='asking' AND probe=1`,
     )
     .run(runId)
-  if (answered.changes || terminalised.changes) {
+  if (questions.length || terminalised.changes) {
     auditRunMutation(runMutationActor(runId), 'canon-eval')
-    for (const question of questions) enqueueQuestionRecord(db(), question.record_id)
   }
 }
 
@@ -620,8 +630,8 @@ export async function runCanonEvals(opts: {
           model: string | null
           canon_sha: string | null
         }
+        await terminaliseJudgedProbe(result.record_id)
         writeTransaction(() => {
-          terminaliseJudgedProbe(result.record_id)
           insertEval({
             slug: ev.slug,
             runId: result.record_id,

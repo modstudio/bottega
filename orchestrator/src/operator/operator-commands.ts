@@ -13,13 +13,13 @@ const hasNotification = (
   row: OperatorWaitingItem | ClaimedOperatorNotification,
 ): row is ClaimedOperatorNotification => 'notification' in row
 
-export function relayCommand(
+export async function relayCommand(
   runId: string,
   args: string[],
   note: string | undefined,
   presentation: Presentation,
-  resolveQuestion: (identifier: string) => string,
-): void {
+  resolveQuestion: (identifier: string) => string | Promise<string>,
+): Promise<void> {
   if (!note?.trim()) throw new Error('--note is required')
   const accepted = new Set([`--note=${note}`, '--note', note])
   const selectors = args.filter((arg) => !accepted.has(arg))
@@ -29,8 +29,8 @@ export function relayCommand(
     return question
   })
   if (questions.length > 1) throw new Error('pass at most one --q<id>')
-  const question = questions[0] === undefined ? undefined : resolveQuestion(questions[0])
-  const { id } = relayQuestion(runId, question, note.trim())
+  const question = questions[0] === undefined ? undefined : await resolveQuestion(questions[0])
+  const { id } = await relayQuestion(runId, question, note.trim())
   presentation.log(`question ${id} is waiting on the operator`)
 }
 
@@ -38,7 +38,9 @@ export async function waitingCommand(
   options: { json: boolean; claimNotifications: boolean },
   presentation: Presentation,
 ): Promise<void> {
-  const rows = options.claimNotifications ? claimOperatorNotifications() : await operatorWaiting()
+  const rows = options.claimNotifications
+    ? await claimOperatorNotifications()
+    : await operatorWaiting()
   if (options.json) {
     presentation.log(JSON.stringify(rows))
     return

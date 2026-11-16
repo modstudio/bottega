@@ -8,6 +8,7 @@ import {
 } from '../../../shared/typed-question/typed-question-blocks.ts'
 import type { TypedQuestionReportBlock } from '../../../shared/typed-question/typed-question-render.ts'
 import { db } from '../database/db.ts'
+import { questionsForRunChain } from '../run/question-open.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { FINDING_DUPLICATE_QUESTION } from './finding-duplicate-question.ts'
 import {
@@ -31,11 +32,11 @@ function declaredThreshold(questionId: string, questionVersion: number): number 
   return declared ? declared.threshold : null
 }
 
-export function specUnsettledLabel(
+export async function specUnsettledLabel(
   database: Database,
   subjectRef: string,
   subjectKind: string,
-): boolean | null {
+): Promise<boolean | null> {
   const job = specSubjectKindJob(subjectKind)
   if (!job) return null
   const result = database
@@ -49,13 +50,21 @@ export function specUnsettledLabel(
          SELECT chain.root_id,child.record_id,child.status FROM chain
          JOIN run child ON child.parent_run_record_id=chain.record_id
        )
-       SELECT
-         (SELECT COUNT(*) FROM matched_root) AS roots,
-         EXISTS(SELECT 1 FROM question JOIN chain ON chain.record_id=question.run_record_id) AS asked,
+       SELECT (SELECT COUNT(*) FROM matched_root) AS roots,
          NOT EXISTS(SELECT 1 FROM chain WHERE status NOT IN ${TERMINAL_RUN_STATUS_SQL}) AS terminal`,
     )
-    .get(job, subjectRef) as { roots: number; asked: number; terminal: number }
-  if (result.asked) return true
+    .get(job, subjectRef) as { roots: number; terminal: number }
+  const roots = database
+    .query<{ record_id: string }, [string, string]>(
+      'SELECT record_id FROM run WHERE job=? AND parent_run_record_id IS NULL AND spec_sha=?',
+    )
+    .all(job, subjectRef)
+  if (
+    (
+      await Promise.all(roots.map(({ record_id }) => questionsForRunChain(database, record_id)))
+    ).some((questions) => questions.length > 0)
+  )
+    return true
   if (result.roots > 0 && result.terminal) return false
   return null
 }
@@ -85,17 +94,10 @@ export function findingDuplicateLabel(database: Database, subjectRef: string): b
   return findings.every((finding) => finding.disposition !== null) ? false : null
 }
 
-const labelers: Readonly<
-  Record<string, (database: Database, subjectRef: string, subjectKind: string) => boolean | null>
-> = {
-  [SPEC_UNSETTLED_QUESTION.id]: specUnsettledLabel,
-  [FINDING_DUPLICATE_QUESTION.id]: findingDuplicateLabel,
-}
-
-export function typedQuestionReport(
+export async function typedQuestionReport(
   options: { question?: string; days?: number; job?: string },
   database: Database = db(),
-): TypedQuestionReportBlock[] {
+): Promise<TypedQuestionReportBlock[]> {
   const clauses: string[] = []
   const parameters: (string | number)[] = []
   if (options.question) {
@@ -118,12 +120,21 @@ export function typedQuestionReport(
        ORDER BY question_id,question_version,created_at`,
     )
     .all(...parameters) as TypedQuestionAnswerRow[]
+  const labels = new Map<string, boolean | null>()
+  for (const row of rows) {
+    if (row.question_id !== SPEC_UNSETTLED_QUESTION.id) continue
+    const key = `${row.subject_kind}\u0000${row.subject_ref}`
+    if (!labels.has(key))
+      labels.set(key, await specUnsettledLabel(database, row.subject_ref, row.subject_kind))
+  }
   return typedQuestionBlocks(rows, (questionId, questionVersion) => {
-    const labeler = labelers[questionId]
     return {
-      label: labeler
-        ? (subjectRef, subjectKind) => labeler(database, subjectRef, subjectKind)
-        : null,
+      label:
+        questionId === SPEC_UNSETTLED_QUESTION.id
+          ? (subjectRef, subjectKind) => labels.get(`${subjectKind}\u0000${subjectRef}`) ?? null
+          : questionId === FINDING_DUPLICATE_QUESTION.id
+            ? (subjectRef) => findingDuplicateLabel(database, subjectRef)
+            : null,
       threshold: declaredThreshold(questionId, questionVersion),
     }
   })

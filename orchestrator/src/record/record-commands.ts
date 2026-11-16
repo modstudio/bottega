@@ -47,16 +47,16 @@ export async function fixDefectCommand(
   if (await dispatchFiledIssues(key)) presentation.setExitCode(1)
 }
 
-export function stateCommand(days: number | null, presentation: Presentation): void {
-  presentation.log(JSON.stringify(state(days)))
+export async function stateCommand(days: number | null, presentation: Presentation): Promise<void> {
+  presentation.log(JSON.stringify(await state(days)))
 }
 
-export function searchCommand(
+export async function searchCommand(
   query: string,
   options: { limit: number; full: boolean; json: boolean },
   presentation: Presentation,
-): void {
-  const found = searchRecords(db(), query, options.limit, options.full)
+): Promise<void> {
+  const found = await searchRecords(db(), query, options.limit, options.full)
   if (options.json) {
     presentation.log(
       JSON.stringify({
@@ -74,7 +74,7 @@ export function searchCommand(
 }
 
 function renderSearchResults(
-  found: ReturnType<typeof searchRecords>,
+  found: Awaited<ReturnType<typeof searchRecords>>,
   presentation: Presentation,
 ): void {
   if (!found.results.length) {

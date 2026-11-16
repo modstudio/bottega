@@ -101,10 +101,12 @@ export async function answerInputFromArgv(
   const channelArgs = parseAnswerChannelArgs(valueArgs.argv)
   const parsed = parseAnswerTextSources(channelArgs.argv, refusedOptions)
   const fromOperator = channelArgs.argv.includes('--from-operator')
-  const operatorQuestionIds = (parsed.fromOperatorIds ?? []).map((identifier) => ({
-    identifier,
-    questionId: resolveQuestionIdentifier(db(), identifier),
-  }))
+  const operatorQuestionIds = await Promise.all(
+    (parsed.fromOperatorIds ?? []).map(async (identifier) => ({
+      identifier,
+      questionId: await resolveQuestionIdentifier(db(), identifier),
+    })),
+  )
   let rulings: AnswerRunInput['rulings']
   let allowPartialRecordOnly = false
   const cliRuling = (text: string) => {
@@ -118,30 +120,32 @@ export async function answerInputFromArgv(
           `working forms:\n${ANSWER_WORKING_FORMS}`,
       )
     }
-    rulings = parsed.byId.map((source) => {
-      const parsedIdentifier = parseQuestionIdentifier(source.identifier)
-      if (parsedIdentifier.kind === 'record-id') allowPartialRecordOnly = true
-      const questionId = resolveQuestionIdentifier(db(), source.identifier)
-      const perQuestion = operatorQuestionIds.some(
-        (operatorQuestion) => operatorQuestion.questionId === questionId,
-      )
-      const attribution = rulingAttributionDecision(fromOperator, perQuestion)
-      if (attribution.kind === 'conflict') {
-        throw new Error(
-          `--from-operator cannot be combined with ${questionOperatorFlag(source.identifier)}; use --from-operator for every ruling or ${questionOperatorFlag('<id>')} for individual rulings`,
+    rulings = await Promise.all(
+      parsed.byId.map(async (source) => {
+        const parsedIdentifier = parseQuestionIdentifier(source.identifier)
+        if (parsedIdentifier.kind === 'record-id') allowPartialRecordOnly = true
+        const questionId = await resolveQuestionIdentifier(db(), source.identifier)
+        const perQuestion = operatorQuestionIds.some(
+          (operatorQuestion) => operatorQuestion.questionId === questionId,
         )
-      }
-      return {
-        questionId,
-        text: cliRuling(
-          source.file !== undefined ? helpers.readWorkerFile(source.file) : source.text!,
-        ),
-        ...(source.identifier === valueArgs.questionIdentifier
-          ? { typedValue: valueArgs.raw }
-          : {}),
-        fromOperator: attribution.kind === 'operator',
-      }
-    })
+        const attribution = rulingAttributionDecision(fromOperator, perQuestion)
+        if (attribution.kind === 'conflict') {
+          throw new Error(
+            `--from-operator cannot be combined with ${questionOperatorFlag(source.identifier)}; use --from-operator for every ruling or ${questionOperatorFlag('<id>')} for individual rulings`,
+          )
+        }
+        return {
+          questionId,
+          text: cliRuling(
+            source.file !== undefined ? helpers.readWorkerFile(source.file) : source.text!,
+          ),
+          ...(source.identifier === valueArgs.questionIdentifier
+            ? { typedValue: valueArgs.raw }
+            : {}),
+          fromOperator: attribution.kind === 'operator',
+        }
+      }),
+    )
   } else if (
     parsed.commandFile !== undefined ||
     (!parsed.positionals.length && !process.stdin.isTTY)

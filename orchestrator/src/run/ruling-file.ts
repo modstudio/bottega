@@ -15,11 +15,12 @@ import {
   writeTransaction,
 } from '../database/db.ts'
 import {
-  type TaskFlowRulingFileRow as QuestionRow,
-  taskFlowReadStore,
-} from '../workflow/task-flow-store.ts'
-import { auditQuestionMutation, authorizeWorkflowQuestionMutation } from './question-mutation.ts'
-import { enqueueQuestionRecord } from './question-outbox.ts'
+  mutateQuestion,
+  requireQuestionMutationApplied,
+} from '../question-store/question-store-mutation.ts'
+import { questionById } from '../question-store/question-store-read.ts'
+import type { TaskFlowRulingFileRow as QuestionRow } from '../workflow/task-flow-store.ts'
+import { authorizeWorkflowQuestionMutation } from './question-mutation.ts'
 import { questionRulingRemedy } from './question-ruling-remedy.ts'
 import {
   effectiveRuling,
@@ -39,7 +40,7 @@ import {
   type RootAuthority,
   runMutationActor,
 } from './run-authority.ts'
-import { RUN_MUTATION_WINDOW_MS } from './run-mutation-owner.ts'
+import { joinMutationReason, RUN_MUTATION_WINDOW_MS } from './run-mutation-owner.ts'
 
 type RulingFileAs = 'doc' | 'canon'
 
@@ -177,7 +178,7 @@ function ownerRefusal(
 }
 
 async function loadQuestion(questionId: string): Promise<QuestionRow> {
-  const row = await taskFlowReadStore(db()).rulingFileQuestion(questionId)
+  const row = (await questionById(db(), questionId)) as QuestionRow | null
   if (!row)
     throw new Error(
       `no question ${questionId}; inspect question ids with ${PLATFORM_SLUG} question inbox --all`,
@@ -276,39 +277,35 @@ function filingDisplay(row: FilingReference): string {
   return row.filed_ref ?? 'unknown filing'
 }
 
-function recordFiling(
+async function recordFiling(
   row: QuestionRow,
   requested: FiledRulingKind,
   reference: FilingReference,
   at: string,
+  adoptionReason: string | null,
 ) {
-  const changed = db()
-    .query(
-      `UPDATE question SET filed_as=?, filed_ref=?, filed_record_id=?, filed_label=?,
-         filed_at=?, revision=revision+1
-        WHERE record_id=? AND filed_as IS NULL`,
-    )
-    .run(
-      requested,
-      reference.filed_ref,
-      reference.filed_record_id,
-      reference.filed_label,
-      at,
-      row.record_id,
-    )
-  if (changed.changes === 1) return
-  const current = db()
-    .query(
-      'SELECT filed_as, filed_ref, filed_record_id, filed_label FROM question WHERE record_id=?',
-    )
-    .get(row.record_id) as (FilingReference & { filed_as: string | null }) | null
-  if (current?.filed_as) {
+  if (row.filed_as) {
     throw new Error(
-      `question ${row.number} is already filed as ${current.filed_as} at ${filingDisplay(current)}; ` +
+      `question ${row.number} is already filed as ${row.filed_as} at ${filingDisplay(row)}; ` +
         `inspect that filing rather than filing again`,
     )
   }
-  throw new Error(`question ${row.number} changed before it was filed`)
+  const mutation = await mutateQuestion(db(), {
+    id: row.record_id,
+    intent: 'file',
+    at,
+    actorSession: sessionId(),
+    reason: joinMutationReason(`as ${requested}`, adoptionReason),
+    expectedRevision: Number((row as unknown as { revision: number }).revision),
+    changes: {
+      filedAs: requested,
+      filedRef: reference.filed_ref,
+      filedRecordId: reference.filed_record_id,
+      filedLabel: reference.filed_label,
+      filedAt: at,
+    },
+  })
+  requireQuestionMutationApplied(mutation, row as unknown as Record<string, unknown>)
 }
 
 export async function fileRuling(input: FileRulingInput, stores: RulingFileStores) {
@@ -386,18 +383,10 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
       : await writeDocFiling(input, row, body, stores)
   writeTransaction(() => {
     if (row.run_record_id !== null) authority = adoptRunMutation(authority!, 'file')
-    recordFiling(row, requested, reference, at)
+  })
+  await recordFiling(row, requested, reference, at, adoptionReason)
+  writeTransaction(() => {
     if (row.run_record_id !== null) auditRunMutation(authority!, 'file', `as ${requested}`)
-    else
-      auditQuestionMutation({
-        questionId: row.record_id,
-        action: 'file',
-        actor,
-        at,
-        reason: `as ${requested}`,
-        adoptionReason,
-      })
-    enqueueQuestionRecord(db(), row.record_id)
   })
   return filingResult(row, requested, reference, at)
 }

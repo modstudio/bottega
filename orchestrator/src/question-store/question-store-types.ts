@@ -7,13 +7,15 @@ import type {
   QuestionWriteBody,
   QuestionWriteResult,
 } from '../record/record-question-contract.ts'
-import type { QueriedInboxQuestion } from '../run/run-inbox.ts'
 import type {
   TaskFlowInboxQuestionRow,
   TaskFlowOpenSessionStageRow,
   TaskFlowTaskRulingRow,
   TaskFlowWaitingQuestionRow,
 } from '../workflow/task-flow-store-types.ts'
+import type { QueriedInboxQuestion } from './question-store-sqlite-reads.ts'
+
+export type { QueriedInboxQuestion } from './question-store-sqlite-reads.ts'
 
 type QuestionInboxRow = QueriedInboxQuestion | TaskFlowInboxQuestionRow
 type QuestionWaitingRow = TaskFlowWaitingQuestionRow
@@ -61,6 +63,7 @@ export type QuestionReadRow =
   | QuestionRulingRow
   | QuestionTaskRulingRow
   | QuestionProjectRow
+  | Record<string, unknown>
 export type QuestionReadResult = {
   items: QuestionReadRow[]
   cursor?: string

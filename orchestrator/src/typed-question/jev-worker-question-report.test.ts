@@ -100,7 +100,7 @@ test('counts unreadable advice instead of dropping it', () => {
   expect(metrics.agreementAtThreshold).toBeNull()
 })
 
-test('reads advised questions from the store and filters days by asked_at', () => {
+test('reads advised questions from the store and filters days by asked_at', async () => {
   const database = db()
   const runId = newRecordId()
   database
@@ -151,18 +151,18 @@ test('reads advised questions from the store and filters days by asked_at', () =
     null,
   )
 
-  expect(jevWorkerQuestionReport({}, database)[0]).toMatchObject({
+  expect((await jevWorkerQuestionReport({}, database))[0]).toMatchObject({
     advised: 2,
     ruledByArchitect: 1,
   })
-  expect(jevWorkerQuestionReport({ days: 1 }, database)[0]).toMatchObject({
+  expect((await jevWorkerQuestionReport({ days: 1 }, database))[0]).toMatchObject({
     advised: 1,
     ruledByArchitect: 1,
   })
 })
 
-test('refuses an invalid configured threshold with the remedy', () => {
-  expect(() => jevWorkerQuestionReport({}, db(), () => 'invalid')).toThrow(
+test('refuses an invalid configured threshold with the remedy', async () => {
+  await expect(jevWorkerQuestionReport({}, db(), () => 'invalid')).rejects.toThrow(
     `invalid jev.confidence_threshold "invalid"; run ${PLATFORM_SLUG} machine config set jev.confidence_threshold <0-1>`,
   )
 })

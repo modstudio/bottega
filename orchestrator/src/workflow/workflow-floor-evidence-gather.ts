@@ -9,6 +9,9 @@ export async function gatherValidatedEvidence(
   input: Parameters<typeof gatherValidatedEvidenceBase>[0],
 ): ReturnType<typeof gatherValidatedEvidenceBase> {
   const gathered = await gatherValidatedEvidenceBase(input)
-  Object.assign(gathered, gatherStepQuestionEvidence(input, input.d ?? db(), questionRowToFacts))
+  Object.assign(
+    gathered,
+    await gatherStepQuestionEvidence(input, input.d ?? db(), questionRowToFacts),
+  )
   return gathered
 }

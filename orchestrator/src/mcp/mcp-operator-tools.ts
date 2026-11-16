@@ -42,14 +42,14 @@ const identifier = z.union([z.number().int().positive(), z.string().min(1)])
 const localRunId = (input: string | number) => resolveRunIdentifier(db(), input)
 const localQuestionId = (input: string | number) => resolveQuestionIdentifier(db(), input)
 
-function relayByIdentifier(
+async function relayByIdentifier(
   run: string | number,
   question: string | number | undefined,
   note: string,
 ) {
-  const relayed = relayQuestion(
+  const relayed = await relayQuestion(
     localRunId(run),
-    question === undefined ? undefined : localQuestionId(question),
+    question === undefined ? undefined : await localQuestionId(question),
     note,
   )
   return text({ question_id: relayed.id, record_id: relayed.recordId })
@@ -96,24 +96,29 @@ const answerRulingSchema = z
   )
   .strict()
 
-function resolveAnswerRulings(
+async function resolveAnswerRulings(
   rulings: z.infer<typeof answerRulingSchema>[],
   commandFromOperator: boolean,
 ) {
-  return rulings.map(({ question_id, ruling, value, note, from_operator: rulingFromOperator }) => {
-    const attribution = rulingAttributionDecision(commandFromOperator, rulingFromOperator ?? false)
-    if (attribution.kind === 'conflict') {
-      throw new Error(
-        'from_operator cannot be combined with rulings[].from_operator; use the top-level field for every ruling or the per-ruling field for individual rulings',
+  return Promise.all(
+    rulings.map(async ({ question_id, ruling, value, note, from_operator: rulingFromOperator }) => {
+      const attribution = rulingAttributionDecision(
+        commandFromOperator,
+        rulingFromOperator ?? false,
       )
-    }
-    return {
-      questionId: localQuestionId(question_id),
-      text: note ?? ruling ?? String(value),
-      typedValue: value,
-      fromOperator: attribution.kind === 'operator',
-    }
-  })
+      if (attribution.kind === 'conflict') {
+        throw new Error(
+          'from_operator cannot be combined with rulings[].from_operator; use the top-level field for every ruling or the per-ruling field for individual rulings',
+        )
+      }
+      return {
+        questionId: await localQuestionId(question_id),
+        text: note ?? ruling ?? String(value),
+        typedValue: value,
+        fromOperator: attribution.kind === 'operator',
+      }
+    }),
+  )
 }
 
 function registerAnswerQuestionsTool(
@@ -133,7 +138,7 @@ function registerAnswerQuestionsTool(
       outputSchema: z.object(AnswerWaitingResultSchema.shape).strict(),
     },
     async ({ run_record_id, rulings, from_operator, record_only }) => {
-      const resolved = resolveAnswerRulings(rulings, from_operator ?? false)
+      const resolved = await resolveAnswerRulings(rulings, from_operator ?? false)
       const report = await answerRun(
         localRunId(run_record_id),
         {
@@ -194,7 +199,7 @@ export function registerOperatorTools(
     async ({ question_id, because, replacement, from_operator }) =>
       structured(
         await overturnRuling({
-          questionId: localQuestionId(question_id),
+          questionId: await localQuestionId(question_id),
           reason: because,
           replacement: replacement ?? null,
           fromOperator: from_operator ?? false,
@@ -220,7 +225,7 @@ export function registerOperatorTools(
       structured(
         await fileRuling(
           {
-            questionId: localQuestionId(question_id),
+            questionId: await localQuestionId(question_id),
             as,
             scope,
             subject,

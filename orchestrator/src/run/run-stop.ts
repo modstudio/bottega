@@ -18,6 +18,7 @@ import {
   stoppedConversationIsReaderClone,
 } from '../close/close-out-stop-release.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
+import { mutateQuestion } from '../question-store/question-store-mutation.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   type TerminalDockerTeardown,
@@ -30,8 +31,8 @@ import {
   QUESTION_CLOSE_CHAIN_STOPPED,
   retireRunChainQuestionDeliveries,
 } from './question-close.ts'
-import { questionOpenSql } from './question-open.ts'
-import { enqueueQuestionRecord } from './question-outbox.ts'
+import { clearQuestionDeliveryPending } from './question-delivery-pending.ts'
+import { openChainQuestions } from './question-open.ts'
 import { ANSWER_CHANNEL_CLI, ANSWERER_KIND_AGENT } from './question-vocabulary.ts'
 import {
   adoptRunMutation,
@@ -58,6 +59,36 @@ import { stoppedWorktreeLine } from './stopped-worktree-decision.ts'
 
 export function stoppedRunLine(id: string): string {
   return `stopped run ${id}`
+}
+
+async function answerAbandonedQuestions(
+  questions: Record<string, unknown>[],
+  at: string,
+  callerSession: string | null,
+): Promise<void> {
+  clearQuestionDeliveryPending(
+    db(),
+    questions.map(({ record_id }) => String(record_id)),
+  )
+  for (const question of questions) {
+    const mutation = await mutateQuestion(db(), {
+      id: String(question.record_id),
+      intent: 'answer',
+      at,
+      actorSession: callerSession,
+      reason: 'abandoned',
+      requireOpen: true,
+      changes: {
+        answeredBy: callerSession ?? 'anonymous (no session id)',
+        answeredAt: at,
+        answer: '(abandoned)',
+        answererKind: ANSWERER_KIND_AGENT,
+        answerChannel: ANSWER_CHANNEL_CLI,
+        awaitingOperatorAt: null,
+      },
+    })
+    if (!mutation.applied) continue
+  }
 }
 
 export function stopTerminationRefusal(
@@ -219,12 +250,6 @@ function finishAbandonedRun(
   if (header) options.presentation.log(header)
 }
 
-function enqueueAbandonedChain(rowId: string, rootId: string, at: string): void {
-  const localMachineId = machineId()
-  enqueueRunRecord(db(), rowId, localMachineId, at)
-  rollUpRootAndEnqueue(db(), rootId, null, localMachineId, at)
-}
-
 type StopRow = {
   record_id: string
   status: string
@@ -324,7 +349,6 @@ function commitStoppedRun(
       .run(next.rootId)
   }
   auditRunMutation(next, 'stop', auditReason)
-  closeRunChainQuestions(db(), next.rootId, QUESTION_CLOSE_CHAIN_STOPPED)
   return { row, cleanupRow }
 }
 
@@ -353,6 +377,7 @@ export async function stopRun(
   const { row, cleanupRow } = writeTransaction(() =>
     commitStoppedRun(authority, id, options.auditReason),
   )
+  await closeRunChainQuestions(db(), authority.rootId, QUESTION_CLOSE_CHAIN_STOPPED)
   if (plan.outcome === 'verified') {
     const termination = helpers.terminateRunProcesses(plan)
     const refusal = stopTerminationRefusal(row, termination)
@@ -416,6 +441,8 @@ export async function abandonRun(
       .map((turn) => `${turn.record_id} turn ${turn.turn} ${turn.status}`)
       .join('; ')
 
+  const openQuestions = await openChainQuestions<Record<string, unknown>>(db(), authority.rootId)
+
   const abandoned = writeTransaction(() => {
     const chain = readChain()
     const row = chain[0]
@@ -442,12 +469,6 @@ export async function abandonRun(
     }
     authority = reauthorizeRunMutation(authority, 'abandon')
     authority = adoptRunMutation(authority, 'abandon')
-    const openQuestions = db()
-      .query<{ record_id: string }, [string, string]>(
-        `SELECT record_id FROM question WHERE ${questionOpenSql('question')} AND run_record_id IN
-          (SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=?)`,
-      )
-      .all(authority.rootId, authority.rootId)
     const changed = db()
       .query(
         "UPDATE run SET status='stale', error=?, failure_kind='abandoned', host_wait_since=NULL WHERE record_id=? AND status='asking'",
@@ -459,28 +480,13 @@ export async function abandonRun(
         `run ${id}'s chain changed before it could be abandoned: ${describe(current)}`,
       )
     }
-    db()
-      .query(
-        `UPDATE question SET answered_by=?, answered_at=?, answer='(abandoned)', revision=revision+1,
-            answerer_kind=?, answer_channel=?, delivery_pending_at=NULL,
-            awaiting_operator_at=NULL
-          WHERE ${questionOpenSql('question')} AND run_record_id IN
-            (SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=?)`,
-      )
-      .run(
-        callerSession ?? 'anonymous (no session id)',
-        at,
-        ANSWERER_KIND_AGENT,
-        ANSWER_CHANNEL_CLI,
-        authority.rootId,
-        authority.rootId,
-      )
-    enqueueAbandonedChain(row.record_id, authority.rootId, at)
-    for (const question of openQuestions) enqueueQuestionRecord(db(), question.record_id)
-    retireRunChainQuestionDeliveries(db(), authority.rootId, 'abandoned', at)
+    enqueueRunRecord(db(), row.record_id, machineId(), at)
     auditRunMutation(authority, 'abandon', note ?? null)
     return { row, cleanupRow }
   })
+  await answerAbandonedQuestions(openQuestions, at, callerSession)
+  await retireRunChainQuestionDeliveries(db(), authority.rootId, 'abandoned', at)
+  rollUpRootAndEnqueue(db(), authority.rootId, null, machineId(), at, false)
   const { cleanupRow } = abandoned
   finishAbandonedRun(abandoned, helpers, options)
 

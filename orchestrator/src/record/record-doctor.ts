@@ -39,17 +39,19 @@ import { AGENTS } from '../agent/agent-registry.ts'
 import type { Agent } from '../agent/agents.ts'
 import { db } from '../database/db.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
+import { questionProjects } from '../question-store/question-store-read.ts'
+import { recordQuestionStore } from '../question-store/question-store-record-factory.ts'
 import { inspectRunRecordBackfill, type RunRecordBackfillInspection } from '../run/run-outbox.ts'
 import {
   inspectTaskFlowBackfill,
   type TaskFlowBackfillInspection,
   taskFlowBackfillUnavailable,
 } from '../workflow/task-flow-backfill.ts'
-import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { activeSpaceInvariant } from './active-space-invariant.ts'
 import { machineId } from './machine-identity.ts'
 import { quarantinedOutboxRows } from './outbox-quarantine.ts'
-import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
+import { RecordApiRequestError, recordApiClient, recordApiRequest } from './record-api-client.ts'
+import { recordQuestionClient } from './record-api-client-question.ts'
 import { recordAttributionFailure } from './record-attribution.ts'
 import { bearerHeaders, type RecordIdentity } from './record-auth.ts'
 import { recordPool } from './record-pool.ts'
@@ -476,7 +478,7 @@ export async function localQuestionCountForSpace(
   activeSpace: { id: string; slug: string },
 ): Promise<number> {
   const projectSpaces = new Map(projects.map((project) => [project.name, project.space]))
-  const rows = await taskFlowReadStore(database).localQuestionProjects()
+  const rows = await questionProjects(database)
   return rows.filter((row) => {
     const space = row.project ? projectSpaces.get(row.project) : null
     const effectiveSpace = space ?? activeSpace.id
@@ -651,6 +653,61 @@ async function customerTaskFlowParity(
   }
 }
 
+async function recordOwnerChecks(migrateUrl: string, urls: string[]): Promise<RecordDoctorCheck[]> {
+  const checks: RecordDoctorCheck[] = []
+  const run = async (name: string, action: () => Promise<unknown>): Promise<void> => {
+    try {
+      await action()
+      checks.push({ name, status: 'pass' })
+    } catch (error) {
+      checks.push({ name, status: 'fail', detail: failureDetail(error, urls) })
+    }
+  }
+  const names = [
+    'record roles exist',
+    'schema public owned by record_owner',
+    'applied migrations equal shipped migrations',
+    'record_actor representative grants',
+  ]
+  const owner = recordPool(migrateUrl)
+  await run(names[0]!, async () => {
+    const rows =
+      await owner`SELECT rolname FROM pg_roles WHERE rolname IN (${RECORD_OWNER_ROLE},${RECORD_ACTOR_ROLE},${RECORD_READER_ROLE})`
+    if (rows.length !== 3) throw new Error('one or more record roles are absent')
+  })
+  await run(names[1]!, async () => {
+    const rows =
+      await owner`SELECT pg_get_userbyid(nspowner) AS owner FROM pg_namespace WHERE nspname='public'`
+    if (rows[0]?.owner !== RECORD_OWNER_ROLE)
+      throw new Error(`schema public is not owned by ${RECORD_OWNER_ROLE}`)
+  })
+  await run(names[2]!, async () => {
+    const applied = await appliedRecordMigrationCount(migrateUrl)
+    const shipped = recordMigrationCount()
+    if (applied !== shipped) throw new Error(`applied ${applied}; shipped ${shipped}`)
+  })
+  await run(names[3]!, async () => {
+    const rows = await owner`
+        SELECT CASE table_name WHEN '"user"' THEN 'user' ELSE table_name END AS table_name, privilege
+        FROM (VALUES
+          ('project', 'SELECT'), ('project', 'INSERT'), ('project', 'UPDATE'), ('project', 'DELETE'),
+          ('invitation', 'SELECT'), ('invitation', 'INSERT'), ('invitation', 'UPDATE'), ('invitation', 'DELETE'),
+          ('"user"', 'SELECT'), ('"user"', 'INSERT'), ('"user"', 'UPDATE')
+        ) AS required(table_name, privilege)
+        WHERE NOT has_table_privilege(${RECORD_ACTOR_ROLE}, table_name, privilege)
+        ORDER BY table_name, privilege`
+    if (rows.length)
+      throw new Error(
+        rows
+          .map(
+            (row: Record<string, unknown>) => `${String(row.table_name)} ${String(row.privilege)}`,
+          )
+          .join(', '),
+      )
+  })
+  return checks
+}
+
 async function operatorRecordChecks(input: {
   recordUrl: string
   migrateUrl?: string
@@ -692,6 +749,27 @@ async function operatorRecordChecks(input: {
   } else {
     const identity = input.identity
     try {
+      const questionStore = recordQuestionStore({
+        database: input.database,
+        client: recordQuestionClient(recordApiRequest),
+        destinationSpaceId: identity.activeSpaceId,
+      })
+      const questionIds = (await questionStore.read({ read: 'rulings', kind: 'all' })).items.map(
+        (row) => String((row as Record<string, unknown>).record_id),
+      )
+      const hostedQuestions = (
+        await Promise.all(
+          Array.from({ length: Math.ceil(questionIds.length / 100) }, (_, index) =>
+            questionStore.read({
+              read: 'by-id',
+              ids: questionIds.slice(index * 100, index * 100 + 100),
+            }),
+          ),
+        )
+      ).flatMap(({ items }) => items)
+      const machineQuestions = hostedQuestions.filter(
+        (question) => (question as Record<string, unknown>).machine_id === machineId(),
+      ).length
       const attribution = await actor.begin(async (tx) => {
         await tx`SELECT set_config('app.user_id', ${identity.userId}, true)`
         await tx`SELECT set_config('app.space_id', ${identity.activeSpaceId}, true)`
@@ -699,12 +777,10 @@ async function operatorRecordChecks(input: {
           await tx`SELECT count(*)::int AS total, count(*) FILTER (WHERE started_by_user_id IS NULL)::int AS missing FROM run WHERE space_id=${identity.activeSpaceId}::uuid`
         const intervals =
           await tx`SELECT count(*)::int AS total, count(*) FILTER (WHERE session_id IS NULL)::int AS missing FROM hub_interval WHERE space_id=${identity.activeSpaceId}::uuid AND source='claude'`
-        const questions =
-          await tx`SELECT count(*)::int AS total FROM question WHERE space_id=${identity.activeSpaceId}::uuid AND machine_id=${machineId()}::uuid`
         return {
           runs: runs[0]!,
           intervals: intervals[0]!,
-          questions: questions[0]!,
+          questions: { total: machineQuestions },
         }
       })
       checks.push({
@@ -751,42 +827,7 @@ async function operatorRecordChecks(input: {
       })
     return checks
   }
-  const owner = recordPool(input.migrateUrl)
-  await run(ownerNames[0]!, async () => {
-    const rows =
-      await owner`SELECT rolname FROM pg_roles WHERE rolname IN (${RECORD_OWNER_ROLE},${RECORD_ACTOR_ROLE},${RECORD_READER_ROLE})`
-    if (rows.length !== 3) throw new Error('one or more record roles are absent')
-  })
-  await run(ownerNames[1]!, async () => {
-    const rows =
-      await owner`SELECT pg_get_userbyid(nspowner) AS owner FROM pg_namespace WHERE nspname='public'`
-    if (rows[0]?.owner !== RECORD_OWNER_ROLE)
-      throw new Error(`schema public is not owned by ${RECORD_OWNER_ROLE}`)
-  })
-  await run(ownerNames[2]!, async () => {
-    const applied = await appliedRecordMigrationCount(input.migrateUrl!)
-    const shipped = recordMigrationCount()
-    if (applied !== shipped) throw new Error(`applied ${applied}; shipped ${shipped}`)
-  })
-  await run(ownerNames[3]!, async () => {
-    const rows = await owner`
-        SELECT CASE table_name WHEN '"user"' THEN 'user' ELSE table_name END AS table_name, privilege
-        FROM (VALUES
-          ('project', 'SELECT'), ('project', 'INSERT'), ('project', 'UPDATE'), ('project', 'DELETE'),
-          ('invitation', 'SELECT'), ('invitation', 'INSERT'), ('invitation', 'UPDATE'), ('invitation', 'DELETE'),
-          ('"user"', 'SELECT'), ('"user"', 'INSERT'), ('"user"', 'UPDATE')
-        ) AS required(table_name, privilege)
-        WHERE NOT has_table_privilege(${RECORD_ACTOR_ROLE}, table_name, privilege)
-        ORDER BY table_name, privilege`
-    if (rows.length)
-      throw new Error(
-        rows
-          .map(
-            (row: Record<string, unknown>) => `${String(row.table_name)} ${String(row.privilege)}`,
-          )
-          .join(', '),
-      )
-  })
+  checks.push(...(await recordOwnerChecks(input.migrateUrl, urls)))
   return checks
 }
 

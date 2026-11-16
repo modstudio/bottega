@@ -4,7 +4,8 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import type { QuestionWriteBody } from '../record/record-question-contract.ts'
-import { questionStore, recordQuestionStore } from './question-store.ts'
+import { questionStore } from './question-store.ts'
+import { recordQuestionStore } from './question-store-record-factory.ts'
 import type { QuestionStore } from './question-store-types.ts'
 
 const STAMP = '2026-11-15T12:00:00.000Z'
@@ -133,8 +134,8 @@ async function questionStoreContract(store: QuestionStore, database: Database) {
   const workflow = snapshot({ id: WORKFLOW_QUESTION_ID, workflowTaskId: TASK_ID })
   const ask = body(workflow, 'ask')
   const first = await store.write('ask', ask)
-  expect(first).toMatchObject({ id: workflow.id, revision: 1 })
-  expect(await store.write('ask', ask)).toEqual(first)
+  expect(first).toMatchObject({ id: workflow.id, revision: 1, applied: true })
+  expect(await store.write('ask', ask)).toEqual({ ...first, applied: false })
 
   const waiting = (await store.read({ read: 'waiting' })).items
   expect(waiting).toHaveLength(1)
@@ -145,6 +146,13 @@ async function questionStoreContract(store: QuestionStore, database: Database) {
   })
   const open = (await store.read({ read: 'open-for-session', sessionId: 'owner-session' })).items
   expect(open[0]).toMatchObject({ record_id: CURSOR_ID, open_question_record_id: workflow.id })
+  expect((await store.read({ read: 'max-number' })).items).toEqual([{ number: 1 }])
+  expect((await store.read({ read: 'by-number', number: 1 })).items[0]).toMatchObject({
+    record_id: workflow.id,
+  })
+  expect(
+    (await store.read({ read: 'open-for-cursors', workflowCursorRecordIds: [CURSOR_ID] })).items,
+  ).toEqual([{ workflow_cursor_record_id: CURSOR_ID, number: 1 }])
 
   const run = snapshot({
     id: RUN_QUESTION_ID,
@@ -154,6 +162,17 @@ async function questionStoreContract(store: QuestionStore, database: Database) {
     askedVia: 'live',
   })
   await store.write('ask', body(run))
+  expect((await store.read({ read: 'max-number' })).items).toEqual([{ number: 2 }])
+  expect((await store.read({ read: 'by-id', ids: [run.id] })).items).toHaveLength(1)
+  expect((await store.read({ read: 'for-run', runId: RUN_ID })).items).toHaveLength(1)
+  expect(
+    (
+      await store.read({
+        read: 'for-cursor',
+        workflowCursorRecordId: CURSOR_ID,
+      })
+    ).items,
+  ).toHaveLength(1)
   expect((await store.read({ read: 'waiting' })).items).toHaveLength(1)
   const inbox = (await store.read({ read: 'inbox' })).items
   expect(inbox.some((row) => field(row, 'record_id') === run.id)).toBe(true)
@@ -178,11 +197,42 @@ async function questionStoreContract(store: QuestionStore, database: Database) {
     answerChannel: 'mcp',
     updatedAt: answeredAt,
   })
-  const replacement = await mutate(store, 'overturn', answered, {
+  const ruled = { ...answered, revision: answered.revision + 1 }
+  const rule = body(ruled, 'rule')
+  rule.audit.reason = 'adopted cursor'
+  await store.write('link', rule)
+  expect(
+    (
+      await store.read({
+        read: 'rule-audit-reasons',
+        workflowCursorRecordId: CURSOR_ID,
+        actorSession: 'session-a',
+      })
+    ).items,
+  ).toEqual([{ reason: 'adopted cursor' }])
+  const relayed = { ...run, revision: run.revision + 1, awaitingOperatorAt: answeredAt }
+  await store.write('relay', body(relayed, 'relay'))
+  expect((await store.read({ read: 'by-id', ids: [run.id] })).items[0]).toMatchObject({
+    awaiting_operator_at: answeredAt,
+  })
+  const replacement = await mutate(store, 'overturn', ruled, {
     overturnedAt: '2026-11-15T12:02:00.000Z',
     replacement: 'No',
     updatedAt: '2026-11-15T12:02:00.000Z',
   })
+  await store.write(
+    'file',
+    body(
+      {
+        ...replacement,
+        revision: replacement.revision + 1,
+        filedAs: 'doc',
+        filedRef: 'ruling-doc',
+        filedAt: '2026-11-15T12:02:30.000Z',
+      },
+      'file',
+    ),
+  )
   const excludedBase = snapshot({
     id: EXCLUDED_QUESTION_ID,
     workflowTaskId: TASK_ID,
@@ -209,7 +259,7 @@ async function questionStoreContract(store: QuestionStore, database: Database) {
   expect(taskRows.some((row) => field(row, 'question_record_id') === replacement.id)).toBe(true)
   expect(taskRows.some((row) => field(row, 'question_record_id') === excludedBase.id)).toBe(false)
 
-  const closed = await mutate(store, 'close', run, {
+  const closed = await mutate(store, 'close', relayed, {
     closedAt: '2026-11-15T12:06:00.000Z',
     closeReason: 'done',
     updatedAt: '2026-11-15T12:06:00.000Z',
@@ -279,6 +329,23 @@ test('only the record adapter passes a rulings feed cursor through', async () =>
   database.close()
 })
 
+test('SQLite question writes report a lost revision race without replacing the winner', async () => {
+  const database = migratedTestDatabase()
+  seedOwners(database)
+  const store = questionStore(database)
+  const original = snapshot({ id: WORKFLOW_QUESTION_ID })
+  await store.write('ask', body(original))
+  const first = { ...original, revision: 2, question: 'First mutation wins' }
+  const second = { ...original, revision: 2, question: 'Second mutation loses' }
+  expect(await store.write('link', body(first, 'link'))).toMatchObject({ applied: true })
+  expect(await store.write('link', body(second, 'link'))).toMatchObject({ applied: false })
+  expect((await store.read({ read: 'by-id', ids: [original.id] })).items[0]).toMatchObject({
+    question: 'First mutation wins',
+    revision: 2,
+  })
+  database.close()
+})
+
 test('record ask pushes its run first and enriches live, stale, and absent sessions', async () => {
   const database = migratedTestDatabase()
   database.exec('PRAGMA foreign_keys=OFF')
@@ -302,7 +369,7 @@ test('record ask pushes its run first and enriches live, stale, and absent sessi
     client: {
       writeQuestion: async () => {
         events.push('write')
-        return { id: question.id, number: 1, revision: 1 }
+        return { id: question.id, number: 1, revision: 1, applied: true }
       },
       readQuestions: async () => ({
         items: [
@@ -318,5 +385,31 @@ test('record ask pushes its run first and enriches live, stale, and absent sessi
   expect(
     (await store.read({ read: 'inbox' })).items.map((row) => field(row, 'session_recent')),
   ).toEqual([1, 0, 0])
+  database.close()
+})
+
+test('record detail reads enrich machine-owned run and project fields locally', async () => {
+  const database = migratedTestDatabase()
+  seedOwners(database)
+  database.query('UPDATE run SET pid=?,cwd=? WHERE record_id=?').run(4321, '/local-run', RUN_ID)
+  const absentOwnerId = newRecordId()
+  const unregisteredRepoOwnerId = newRecordId()
+  const store = recordQuestionStore({
+    database,
+    destinationSpaceId: newRecordId(),
+    client: {
+      readQuestions: async () => ({
+        items: [
+          { record_id: RUN_QUESTION_ID, owner_id: RUN_ID, repo: 'question-fixture' },
+          { record_id: newRecordId(), owner_id: absentOwnerId, repo: 'question-fixture' },
+          { record_id: newRecordId(), owner_id: unregisteredRepoOwnerId, repo: 'unregistered' },
+        ],
+      }),
+    },
+  })
+  const rows = (await store.read({ read: 'by-id', ids: [RUN_QUESTION_ID, newRecordId()] })).items
+  expect(rows[0]).toMatchObject({ owner_pid: 4321, cwd: '/local-run', project_path: '/fixture' })
+  expect(rows[1]).toMatchObject({ owner_pid: null, cwd: '/fixture', project_path: '/fixture' })
+  expect(rows[2]).toMatchObject({ owner_pid: null, cwd: null, project_path: null })
   database.close()
 })

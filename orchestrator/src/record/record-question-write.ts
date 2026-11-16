@@ -42,6 +42,7 @@ export async function writeRecordQuestion(
         id: input.question.id,
         number: Number(existing[0].number),
         revision: Number(existing[0].revision),
+        applied: true,
       }
     if (intent !== 'ask' && !existing[0])
       throw new RecordQuestionError(`question ${input.question.id} not found`, 404)
@@ -93,11 +94,13 @@ export async function writeRecordQuestion(
         revision: questionRecord.revision,
       })
     const result = written[0]
-    if (!result && existing[0])
-      throw new RecordQuestionError(
-        `question ${input.question.id} already holds hosted revision ${existing[0].revision}; re-read the question, then retry`,
-        409,
-      )
+    if (!result && existing[0] && existing[0].number !== null)
+      return {
+        id: input.question.id,
+        number: Number(existing[0].number),
+        revision: Number(existing[0].revision),
+        applied: false,
+      }
     if (!result || result.number == null)
       throw new RecordQuestionError(
         `question ${input.question.id} write did not satisfy its revision precondition`,
@@ -108,6 +111,7 @@ export async function writeRecordQuestion(
       id: input.question.id,
       number: Number(result.number),
       revision: Number(result.revision),
+      applied: true,
     }
   })
 }

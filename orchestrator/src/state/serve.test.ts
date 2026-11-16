@@ -140,7 +140,7 @@ const runNumber = (recordId: string) =>
     .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
     .get(recordId)!.number
 describe('probes are excluded from every query that reports', () => {
-  test('byRepo leaves calibration traffic out', () => {
+  test('byRepo leaves calibration traffic out', async () => {
     // The rule is stated in AGENTS.md and this was the one aggregate that had
     // no test holding it: byRepo counted probes until it was noticed by eye.
     const real = addRun({ agent: 'grok', job: 'craft' })
@@ -148,14 +148,14 @@ describe('probes are excluded from every query that reports', () => {
     for (const id of [real, probe]) {
       db().query("UPDATE run SET repo='devbox', vendor_tokens=100 WHERE record_id=?").run(id)
     }
-    const rows = state(null).byRepo as { repo: string; runs: number; toks: number }[]
+    const rows = (await state(null)).byRepo as { repo: string; runs: number; toks: number }[]
     const devbox = rows.find((r) => r.repo === 'devbox')!
     expect(devbox.runs).toBe(1)
     expect(devbox.toks).toBe(100)
   })
 })
 
-test('live child turns publish their chain root for hub badge matching', () => {
+test('live child turns publish their chain root for hub badge matching', async () => {
   const root = addRun({ agent: 'codex', job: 'craft', status: 'ok' })
   const child = addRun({
     agent: 'codex',
@@ -169,7 +169,7 @@ test('live child turns publish their chain root for hub badge matching', () => {
       `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`,
     )
     .run(child, nowIso(), 'Which?')
-  const live = state(null).live as { id: number; root_id: number }[]
+  const live = (await state(null)).live as { id: number; root_id: number }[]
   expect(live.find((row) => row.id === runNumber(child))).toMatchObject({
     id: runNumber(child),
     root_id: runNumber(root),
@@ -177,21 +177,21 @@ test('live child turns publish their chain root for hub badge matching', () => {
 })
 
 describe('run detail', () => {
-  test('shows workflow binding aliases only when the run is bound', () => {
+  test('shows workflow binding aliases only when the run is bound', async () => {
     const bound = addRun({ agent: 'codex', job: 'implement' })
     db()
       .query('UPDATE run SET cursor_record_id=?,step_slug=? WHERE record_id=?')
       .run(newRecordId(), 'write', bound)
-    expect(runDetail(bound)).toMatchObject({ cursor: expect.any(String), step: 'write' })
+    expect(await runDetail(bound)).toMatchObject({ cursor: expect.any(String), step: 'write' })
 
-    const unbound = runDetail(addRun({ agent: 'codex', job: 'implement' }))!
+    const unbound = (await runDetail(addRun({ agent: 'codex', job: 'implement' })))!
     expect(unbound).not.toHaveProperty('cursor')
     expect(unbound).not.toHaveProperty('step')
   })
 
-  test('accounts for every run column in the detail projection', () => {
+  test('accounts for every run column in the detail projection', async () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
-    const detail = runDetail(id)!
+    const detail = (await runDetail(id))!
     const columns = db().query<{ name: string }, []>('PRAGMA table_info(run)').all()
     const unexplained = columns
       .map((column) => column.name)
@@ -207,7 +207,7 @@ describe('run detail', () => {
     expect(displayedButDeclaredOmitted).toEqual([])
   })
 
-  test('returns a stored writer reply from before change guides', () => {
+  test('returns a stored writer reply from before change guides', async () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
     const outputPath = trackResidue(join(dir, `old-writer-reply-${id}.txt`))
     const oldReply = JSON.stringify({
@@ -221,12 +221,12 @@ describe('run detail', () => {
     })
     writeFileSync(outputPath, oldReply)
     db().query('UPDATE run SET output_path=? WHERE record_id=?').run(outputPath, id)
-    expect(runDetail(id)?.output).toBe(oldReply)
+    expect((await runDetail(id))?.output).toBe(oldReply)
   })
 
-  test('publishes ask lifecycle evidence and distinguishes a missing log', () => {
+  test('publishes ask lifecycle evidence and distinguishes a missing log', async () => {
     const missing = addRun({ agent: 'codex', job: 'implement' })
-    expect(runDetail(missing)!.ask_server).toMatchObject({
+    expect((await runDetail(missing))!.ask_server).toMatchObject({
       expected: 'not_recorded',
       started: 'not_recorded',
     })
@@ -237,7 +237,7 @@ describe('run detail', () => {
       transport: 'srt',
       command: ['orch', 'ask-proxy'],
     })
-    expect(runDetail(id)!.ask_server).toMatchObject({
+    expect((await runDetail(id))!.ask_server).toMatchObject({
       expected: 'seen',
       started: 'not_seen',
       transport: 'srt',
@@ -245,19 +245,21 @@ describe('run detail', () => {
     })
   })
 
-  test('reads an ask startup failure while live and after scratch is persisted', () => {
+  test('reads an ask startup failure while live and after scratch is persisted', async () => {
     const live = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     mkdirSync(runScratchDir(live), { recursive: true })
     writeAskServerFailure(new Error('live startup failed'), runScratchDir(live))
-    expect(runDetail(live)!.ask_server).toMatchObject({ failure: 'live startup failed' })
+    expect((await runDetail(live))!.ask_server).toMatchObject({ failure: 'live startup failed' })
 
     const finished = addRun({ agent: 'codex', job: 'implement' })
     mkdirSync(runArtifactsDir(finished), { recursive: true })
     writeAskServerFailure(new Error('persisted startup failed'), runArtifactsDir(finished))
-    expect(runDetail(finished)!.ask_server).toMatchObject({ failure: 'persisted startup failed' })
+    expect((await runDetail(finished))!.ask_server).toMatchObject({
+      failure: 'persisted startup failed',
+    })
   })
 
-  test('publishes overturned questions with their reason', () => {
+  test('publishes overturned questions with their reason', async () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
     db()
       .query(
@@ -266,7 +268,7 @@ describe('run detail', () => {
          VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'2026-09-20','Which?','Old','2026-09-21','2026-09-22','owner','Wrong evidence')`,
       )
       .run(id)
-    expect(runDetail(id)!.questions).toEqual([
+    expect((await runDetail(id))!.questions).toEqual([
       expect.objectContaining({
         question: 'Which?',
         overturned_at: '2026-09-22',
@@ -276,7 +278,7 @@ describe('run detail', () => {
     ])
   })
 
-  test('publishes a filed ruling identity', () => {
+  test('publishes a filed ruling identity', async () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
     db()
       .query(
@@ -286,7 +288,7 @@ describe('run detail', () => {
                  '11111111-1111-4111-8111-111111111111','${PLATFORM_SLUG}#44','2026-09-22')`,
       )
       .run(id)
-    expect(runDetail(id)!.questions).toEqual([
+    expect((await runDetail(id))!.questions).toEqual([
       expect.objectContaining({
         question: 'Which?',
         filed_as: 'canon-proposal',
@@ -298,11 +300,11 @@ describe('run detail', () => {
     ])
   })
 
-  test('publishes local review lenses and findings in hosted detail shape', () => {
+  test('publishes local review lenses and findings in hosted detail shape', async () => {
     const id = addRun({ agent: 'codex', job: 'review-lens' })
     db().query("UPDATE run SET lens='correctness', model='gpt' WHERE record_id=?").run(id)
     recordReview(id, reviewReply(1), db())
-    expect(runDetail(id)!.reviews).toMatchObject([
+    expect((await runDetail(id))!.reviews).toMatchObject([
       {
         id: expect.any(String),
         reviewId: expect.any(String),
@@ -326,7 +328,7 @@ describe('run detail', () => {
     ])
   })
 
-  test('publishes every field hub reads without publishing the ask credential', () => {
+  test('publishes every field hub reads without publishing the ask credential', async () => {
     const id = addRun({ agent: 'grok', job: 'craft', status: 'failed', latency: 1234, probe: 1 })
     const promptPath = trackResidue(join(dir, 'detail-prompt.txt'))
     const outputPath = trackResidue(join(dir, 'detail-output.txt'))
@@ -351,7 +353,7 @@ describe('run detail', () => {
       )
     score(id, 'partial', 'mixed')
     db().query('UPDATE score SET note=? WHERE run_record_id=?').run('read by hub', id)
-    const detail = runDetail(id)!
+    const detail = (await runDetail(id))!
     expect(detail).toMatchObject({
       id: runNumber(id),
       record_id: id,
@@ -377,7 +379,7 @@ describe('run detail', () => {
     })
     expect(detail).not.toHaveProperty('run_token')
   })
-  test('publishes ordered chain audit and renders a missing actor explicitly', () => {
+  test('publishes ordered chain audit and renders a missing actor explicitly', async () => {
     const root = addRun({ agent: 'codex', job: 'implement' })
     const child = addRun({ agent: 'codex', job: 'implement' })
     db().query('UPDATE run SET parent_run_record_id=?, turn=2 WHERE record_id=?').run(root, child)
@@ -395,7 +397,7 @@ describe('run detail', () => {
       '2026-09-05T02:00:00.000Z',
       'ruled',
     )
-    expect(runDetail(child)!.audit).toMatchObject([
+    expect((await runDetail(child))!.audit).toMatchObject([
       {
         run_record_id: root,
         root_id: runNumber(root),
@@ -413,7 +415,7 @@ describe('run detail', () => {
         reason: 'ruled',
       },
     ])
-    expect(runDetail(child)).toMatchObject({
+    expect(await runDetail(child)).toMatchObject({
       id: runNumber(child),
       record_id: child,
       requested_id: child,

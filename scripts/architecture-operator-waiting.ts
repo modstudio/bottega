@@ -45,7 +45,6 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     '../caller-classification.ts',
     '../database/db.ts',
     '../workflow/task-flow-store.ts',
-    './question-number.ts',
     './question-open.ts',
     './question-outbox.ts',
     './question-vocabulary.ts',
@@ -85,6 +84,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     './question-outbox.ts',
     './ruling-attribution.ts',
     './ruling-overturn-authority.ts',
+    './run-mutation-owner.ts',
     './run-authority.ts',
   ]),
   module('orchestrator/src/run/ruling-file.ts', [

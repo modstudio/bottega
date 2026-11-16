@@ -44,14 +44,14 @@ function renderJevWorkerQuestions(
   }
 }
 
-export function typedQuestionCommand(
+export async function typedQuestionCommand(
   options: { question?: string; days?: string; job?: string; json: boolean },
   presentation: Presentation,
-): void {
+): Promise<void> {
   const days = typedQuestionDays(options.days)
-  const report = typedQuestionReport({ question: options.question, days, job: options.job })
+  const report = await typedQuestionReport({ question: options.question, days, job: options.job })
   const jevWorkerQuestions =
-    options.question || options.job ? null : jevWorkerQuestionReport({ days })
+    options.question || options.job ? null : await jevWorkerQuestionReport({ days })
   if (options.json) {
     presentation.log(JSON.stringify({ typedQuestions: report, jevWorkerQuestions }, null, 2))
     return

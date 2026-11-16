@@ -10,8 +10,12 @@ import {
 } from '../../../shared/typed-question/client.ts'
 import type { TypedQuestion } from '../../../shared/typed-question/registry.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
+import {
+  mutateQuestion,
+  requireQuestionMutationApplied,
+} from '../question-store/question-store-mutation.ts'
+import { questionById } from '../question-store/question-store-read.ts'
 import { applyQuestionAnswer } from '../run/question-answer.ts'
-import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import {
   type AnswerChannel,
   QUESTION_DELIVERY_MODE_LIVE,
@@ -69,13 +73,19 @@ function cappedFile(path: string | null): string | undefined {
     return undefined
   }
 }
-function storeJevError(database: Database, recordId: string, error: string): void {
-  writeTransaction(() => {
-    database
-      .query('UPDATE question SET jev_question_version=?,jev_error=? WHERE record_id=?')
-      .run(JEV_WORKER_QUESTION_VERSION, error, recordId)
-    enqueueQuestionRecord(database, recordId)
-  }, database)
+async function storeJevError(database: Database, recordId: string, error: string): Promise<void> {
+  const at = nowIso()
+  const question = await questionById(database, recordId)
+  if (!question) throw new Error(`question ${recordId} not found`)
+  const mutation = await mutateQuestion(database, {
+    id: recordId,
+    intent: 'link',
+    at,
+    actorSession: null,
+    reason: error,
+    changes: { jevQuestionVersion: JEV_WORKER_QUESTION_VERSION, jevError: error },
+  })
+  requireQuestionMutationApplied(mutation, question)
 }
 function choiceAnswerIds(recordId: string) {
   return {
@@ -156,7 +166,7 @@ function expectedAnswerIds(recordId: string, question: WorkerQuestion): string[]
   const ids = choiceAnswerIds(recordId)
   return [ids.forward, ids.reversed, ids.fits]
 }
-function storeAdvice(
+async function storeAdvice(
   database: Database,
   input: PreAnswerInput,
   decision: ReturnType<typeof routeJevAnswer>,
@@ -165,23 +175,29 @@ function storeAdvice(
   fits: number | null,
   orderFlipped: boolean | null,
   error: string | null,
-): void {
-  database
-    .query(
-      `UPDATE question SET jev_question_version=?,jev_pick=?,jev_confidence=?,jev_probabilities=?,jev_model=?,jev_input_tokens=?,jev_fits=?,jev_order_flipped=?,jev_error=? WHERE record_id=?`,
-    )
-    .run(
-      JEV_WORKER_QUESTION_VERSION,
-      decision.pick === null ? null : JSON.stringify(decision.pick),
-      decision.confidence,
-      decision.probabilities === null ? null : JSON.stringify(decision.probabilities),
-      result.model,
-      inputTokens,
-      fits,
-      orderFlipped === null ? null : Number(orderFlipped),
-      error,
-      input.recordId,
-    )
+): Promise<void> {
+  const at = nowIso()
+  const question = await questionById(database, input.recordId)
+  if (!question) throw new Error(`question ${input.recordId} not found`)
+  const mutation = await mutateQuestion(database, {
+    id: input.recordId,
+    intent: 'link',
+    at,
+    actorSession: null,
+    reason: error,
+    changes: {
+      jevQuestionVersion: JEV_WORKER_QUESTION_VERSION,
+      jevPick: decision.pick === null ? null : JSON.stringify(decision.pick),
+      jevConfidence: decision.confidence,
+      jevProbabilities: decision.probabilities,
+      jevModel: result.model,
+      jevInputTokens: inputTokens,
+      jevFits: fits,
+      jevOrderFlipped: orderFlipped === null ? null : Number(orderFlipped),
+      jevError: error,
+    },
+  })
+  requireQuestionMutationApplied(mutation, question)
 }
 async function resolvedRulings(
   input: PreAnswerInput,
@@ -227,48 +243,51 @@ async function routeAndStore(
       autoRule: !jevError && readMachine('jev.auto_rule') === 'on',
       canResume: input.canResume,
     })
+    await storeAdvice(
+      database,
+      input,
+      decision,
+      result,
+      inputTokens,
+      combined.fits,
+      input.question.kind === 'choice' ? combined.orderFlipped : null,
+      jevError,
+    )
     let applied = false
-    writeTransaction(() => {
-      storeAdvice(
+    if (decision.action === 'apply') {
+      applied = await applyQuestionAnswer({
         database,
-        input,
-        decision,
-        result,
-        inputTokens,
-        combined.fits,
-        input.question.kind === 'choice' ? combined.orderFlipped : null,
-        jevError,
-      )
-      if (decision.action === 'apply') {
-        applied = applyQuestionAnswer({
+        questionId: input.recordId,
+        answer: String(decision.value),
+        value: decision.value,
+        answeredAt: nowIso(),
+        answeredBy: 'jev',
+        answeredByName: null,
+        answeredByKind: 'jev',
+        answererKind: 'agent',
+        channel: input.answerChannel,
+        deliveryPendingAt: null,
+        delivery: {
+          runId: input.runId,
+          mode: QUESTION_DELIVERY_MODE_LIVE,
+          outcome: QUESTION_DELIVERY_OUTCOME_DELIVERED,
+        },
+      })
+      if (applied) {
+        writeTransaction(
+          () =>
+            auditRunMutation(
+              runMutationAuthority(database, input.runId),
+              'answer',
+              'Jev auto-ruling',
+              database,
+            ),
           database,
-          questionId: input.recordId,
-          answer: String(decision.value),
-          value: decision.value,
-          answeredAt: nowIso(),
-          answeredBy: 'jev',
-          answeredByName: null,
-          answeredByKind: 'jev',
-          answererKind: 'agent',
-          channel: input.answerChannel,
-          deliveryPendingAt: null,
-          delivery: {
-            runId: input.runId,
-            mode: QUESTION_DELIVERY_MODE_LIVE,
-            outcome: QUESTION_DELIVERY_OUTCOME_DELIVERED,
-          },
-        })
-        if (applied)
-          auditRunMutation(
-            runMutationAuthority(database, input.runId),
-            'answer',
-            'Jev auto-ruling',
-            database,
-          )
-      } else enqueueQuestionRecord(database, input.recordId)
-    }, database)
+        )
+      }
+    }
     if (decision.action === 'apply' && !applied) {
-      storeJevError(
+      await storeJevError(
         database,
         input.recordId,
         'question was answered or closed while Jev was deciding',
@@ -279,7 +298,7 @@ async function routeAndStore(
       ? { applied: true, value: decision.value }
       : { applied: false }
   } catch (error) {
-    storeJevError(database, input.recordId, String(error))
+    await storeJevError(database, input.recordId, String(error))
     return { applied: false }
   }
 }
@@ -291,10 +310,10 @@ export async function preAnswerWorkerQuestions(input: BatchInput): Promise<PreAn
     .filter(({ question }) => question.question.kind !== 'text')
   if (!eligible.length) return results
   const database = input.database ?? db()
-  const storeBatchError = (error: string) => {
+  const storeBatchError = async (error: string) => {
     for (const { question } of eligible) {
       try {
-        storeJevError(database, question.recordId, error)
+        await storeJevError(database, question.recordId, error)
       } catch {
         // A missing question row cannot be annotated, but must not block escalation.
       }
@@ -307,7 +326,7 @@ export async function preAnswerWorkerQuestions(input: BatchInput): Promise<PreAn
       )
       .get(input.runId)
     if (!current) {
-      storeBatchError(`run ${input.runId} was not found while preparing Jev advice`)
+      await storeBatchError(`run ${input.runId} was not found while preparing Jev advice`)
       return results
     }
     const root = runRootRecord(input.runId, database)
@@ -319,13 +338,13 @@ export async function preAnswerWorkerQuestions(input: BatchInput): Promise<PreAn
           .get(root.rootRunId)?.prompt_path ?? null)
       : null
     const run: RunContext = { ...current, root_prompt_path: rootPrompt }
-    const numbered = eligible.map(({ question, index }) => {
-      const row = database
-        .query('SELECT number FROM question WHERE record_id=?')
-        .get(question.recordId) as { number: number } | null
-      if (!row) throw new Error(`question ${question.recordId} was not found`)
-      return { question, index, number: row.number }
-    })
+    const numbered = await Promise.all(
+      eligible.map(async ({ question, index }) => {
+        const row = await questionById(database, question.recordId)
+        if (!row) throw new Error(`question ${question.recordId} was not found`)
+        return { question, index, number: Number(row.number) }
+      }),
+    )
     const state: Record<string, unknown> = {
       worker: {
         why: Object.fromEntries(
@@ -343,7 +362,7 @@ export async function preAnswerWorkerQuestions(input: BatchInput): Promise<PreAn
     )
     const response = await (input.client ?? askTypedQuestionsClient)(questions, state)
     if (response.kind !== 'answer') {
-      storeBatchError(
+      await storeBatchError(
         response.kind === 'missing-key'
           ? `skipped: the TypeSafe credential is not configured; run ${TYPESAFE_CREDENTIAL_SET_COMMAND}`
           : response.error,
@@ -367,7 +386,7 @@ export async function preAnswerWorkerQuestions(input: BatchInput): Promise<PreAn
     })
     return results
   } catch (error) {
-    storeBatchError(error instanceof Error ? error.message : String(error))
+    await storeBatchError(error instanceof Error ? error.message : String(error))
     return results
   }
 }

@@ -2,7 +2,8 @@
 /** Carries the unchanged cross-table reads used before questions move to the record. */
 
 import type { Database } from 'bun:sqlite'
-import { questionOpenSql, questionTaskHolderSql } from '../run/question-open.ts'
+import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
+import { voidedSql } from '../evidence/evidence-query.ts'
 import type {
   TaskFlowCloseOutStageRow,
   TaskFlowCursorLifecycleRow,
@@ -19,7 +20,49 @@ import type {
   TaskFlowRulingRow,
   TaskFlowTaskRulingRow,
   TaskFlowWaitingQuestionRow,
-} from './task-flow-store-types.ts'
+} from '../workflow/task-flow-store-types.ts'
+import { questionOpenSql, questionTaskHolderSql } from './question-store-sql.ts'
+
+export type QueriedInboxQuestion = {
+  number: number
+  record_id: string
+  run_record_id: string
+  run_number: number
+  asked_at: string
+  question: string
+  answered_at: string | null
+  overturned_at: string | null
+  overturned_by: string | null
+  overturn_reason: string | null
+  replacement: string | null
+  filed_as: 'doc' | 'canon-proposal' | null
+  filed_ref: string | null
+  filed_record_id: string | null
+  filed_label: string | null
+  filed_at: string | null
+  options: string | null
+  recommendation: string | null
+  why: string | null
+  kind: 'choice' | 'yesno' | 'score' | 'text'
+  jev_pick: string | null
+  jev_confidence: number | null
+  jev_probabilities: string | null
+  jev_error: string | null
+  agent: string
+  job: string
+  repo: string | null
+  task_key: string | null
+  project_record_id: string | null
+  status: string
+  session_id: string | null
+  awaiting_operator_at: string | null
+  root_status: string
+  root_voided: number
+  root_id: string
+  root_number: number
+  root_record_id: string
+  session_recent: number
+}
 
 export const closeOutShipTaskStage = (
   database: Database,
@@ -112,6 +155,31 @@ export const workflowInboxQuestions = (database: Database): TaskFlowInboxQuestio
     )
     .all()
 
+export function runInboxQuestionRows(
+  database: Database,
+  cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString(),
+): QueriedInboxQuestion[] {
+  return database
+    .query(
+      `SELECT q.number,q.record_id,q.run_record_id,r.number AS run_number,
+            q.asked_at,q.question,q.options,q.recommendation,q.why,q.kind,
+            q.jev_pick,q.jev_confidence,q.jev_probabilities,q.jev_error,
+            q.answered_at,q.overturned_at,q.overturned_by,q.overturn_reason,q.replacement,
+            q.filed_as,q.filed_ref,q.filed_record_id,q.filed_label,q.filed_at,
+            r.agent,r.job,r.repo,COALESCE(r.launch_key,root.launch_key) task_key,
+            root.project_record_id,r.status,r.session_id,q.awaiting_operator_at,
+            root.status root_status,root.record_id root_record_id,root.number root_number,
+            ${voidedSql('root')} root_voided,
+            COALESCE(r.parent_run_record_id,r.record_id) root_id,
+            CASE WHEN r.session_id IS NOT NULL AND seen.last_seen>=? THEN 1 ELSE 0 END session_recent
+       FROM question q JOIN run r ON r.record_id=q.run_record_id
+       JOIN run root ON root.record_id=COALESCE(r.parent_run_record_id,r.record_id)
+       LEFT JOIN session_seen seen ON seen.session_id=r.session_id
+      WHERE q.closed_at IS NULL ORDER BY q.run_record_id,q.number`,
+    )
+    .all(cutoff) as QueriedInboxQuestion[]
+}
+
 export function rulingRows(
   database: Database,
   input: {
@@ -138,10 +206,11 @@ export function rulingRows(
   return database
     .query<TaskFlowRulingRow, string[]>(
       `SELECT q.number,q.record_id,q.run_record_id,r.number AS run_number,
-              q.workflow_cursor_record_id workflow_cursor_id,q.workflow_key,
+              q.workflow_cursor_record_id workflow_cursor_id,q.workflow_key,q.workflow_task_record_id,
               COALESCE(r.repo,c.project) project,c.workflow_slug,c.mode_slug,
               COALESCE(r.session_id,c.session_id) session_id,
-              q.asked_at,q.question,q.answer,q.answer_basis,q.answered_at,
+              q.asked_at,q.question,q.answer,q.answer_basis,q.answered_at,q.kind,q.jev_model,q.jev_pick,
+              q.jev_probabilities,q.jev_agreed,q.jev_question_version,q.jev_fits,q.jev_order_flipped,
               q.answered_by,q.answered_by_name,q.asked_via,
               q.answerer_kind,q.answer_channel,q.closed_at,q.close_reason,
               q.overturned_at,q.overturned_by,q.overturned_by_name,q.overturn_reason,q.replacement,
@@ -347,3 +416,113 @@ export const localQuestionProjects = (database: Database): Array<{ project: stri
       )`,
     )
     .all()
+
+const QUESTION_PORT_COLUMNS = `q.*,owner.number run_number,owner.record_id owner_id,
+  owner.status owner_status,owner.pid owner_pid,
+  COALESCE(owner.parent_run_record_id,owner.record_id) root_id,
+  cursor.number workflow_cursor_number,cursor.workflow_slug,cursor.mode_slug,
+  cursor.session_id workflow_owner,cursor.updated_at workflow_updated_at,cursor.state cursor_state,
+  cursor.args,COALESCE(owner.repo,cursor.project) repo,COALESCE(owner.cwd,project.path) cwd,
+  project.path project_path,
+  ${questionTaskHolderSql('q', 'owner')} launch_key,
+  ${questionTaskHolderSql('q', 'owner')} taskHolder,
+  (SELECT latest.status FROM run latest
+    WHERE latest.record_id=COALESCE(owner.parent_run_record_id,owner.record_id)
+       OR latest.parent_run_record_id=COALESCE(owner.parent_run_record_id,owner.record_id)
+    ORDER BY latest.turn DESC,latest.number DESC LIMIT 1) latest_status,
+  COALESCE(run_project.name,cursor.project) project_name,
+  COALESCE(run_project.record_id,project.record_id) project_record_id`
+
+export const questionsByIdRows = (
+  database: Database,
+  ids: readonly string[],
+): Record<string, unknown>[] => {
+  if (ids.length === 0) return []
+  return database
+    .query(
+      `SELECT ${QUESTION_PORT_COLUMNS} FROM question q
+       LEFT JOIN run owner ON owner.record_id=q.run_record_id
+       LEFT JOIN project run_project ON run_project.record_id=owner.project_record_id
+       LEFT JOIN workflow_cursor cursor ON cursor.record_id=q.workflow_cursor_record_id
+       LEFT JOIN project ON project.record_id=cursor.project_record_id
+       WHERE q.record_id IN (${ids.map(() => '?').join(',')}) ORDER BY q.number`,
+    )
+    .all(...ids) as Record<string, unknown>[]
+}
+
+export const maxQuestionNumber = (database: Database): Array<{ number: number }> => [
+  database
+    .query<{ number: number }, []>('SELECT COALESCE(MAX(number),0) number FROM question')
+    .get()!,
+]
+
+export const questionByNumberRow = (
+  database: Database,
+  number: number,
+): Record<string, unknown>[] =>
+  database
+    .query(
+      `SELECT ${QUESTION_PORT_COLUMNS} FROM question q
+       LEFT JOIN run owner ON owner.record_id=q.run_record_id
+       LEFT JOIN project run_project ON run_project.record_id=owner.project_record_id
+       LEFT JOIN workflow_cursor cursor ON cursor.record_id=q.workflow_cursor_record_id
+       LEFT JOIN project ON project.record_id=cursor.project_record_id
+       WHERE q.number=?`,
+    )
+    .all(number) as Record<string, unknown>[]
+
+export const openQuestionsForCursors = (
+  database: Database,
+  cursorIds: readonly string[],
+): Array<{ workflow_cursor_record_id: string; number: number }> => {
+  if (!cursorIds.length) return []
+  return database
+    .query<{ workflow_cursor_record_id: string; number: number }, string[]>(
+      `SELECT workflow_cursor_record_id,MIN(number) number FROM question
+       WHERE workflow_cursor_record_id IN (${cursorIds.map(() => '?').join(',')})
+         AND answered_at IS NULL AND closed_at IS NULL
+       GROUP BY workflow_cursor_record_id ORDER BY number`,
+    )
+    .all(...cursorIds)
+}
+
+export const questionsForCursor = (
+  database: Database,
+  workflowCursorRecordId: string,
+): Record<string, unknown>[] =>
+  database
+    .query(
+      `SELECT ${QUESTION_PORT_COLUMNS} FROM question q
+       LEFT JOIN run owner ON owner.record_id=q.run_record_id
+       LEFT JOIN project run_project ON run_project.record_id=owner.project_record_id
+       LEFT JOIN workflow_cursor cursor ON cursor.record_id=q.workflow_cursor_record_id
+       LEFT JOIN project ON project.record_id=cursor.project_record_id
+       WHERE q.workflow_cursor_record_id=? ORDER BY q.number`,
+    )
+    .all(workflowCursorRecordId) as Record<string, unknown>[]
+
+export const ruleAuditReasons = (
+  database: Database,
+  workflowCursorRecordId: string,
+  actorSession: string,
+): Array<{ reason: string | null }> =>
+  database
+    .query<{ reason: string | null }, [string, string]>(
+      `SELECT audit.reason FROM question_mutation_audit audit
+       JOIN question q ON q.record_id=audit.question_record_id
+       WHERE q.workflow_cursor_record_id=? AND audit.action='rule' AND audit.actor_session=?
+       ORDER BY audit.at,audit.record_id`,
+    )
+    .all(workflowCursorRecordId, actorSession)
+
+export const questionsForRun = (database: Database, runId: string): Record<string, unknown>[] =>
+  database
+    .query(
+      `SELECT ${QUESTION_PORT_COLUMNS} FROM question q
+       LEFT JOIN run owner ON owner.record_id=q.run_record_id
+       LEFT JOIN project run_project ON run_project.record_id=owner.project_record_id
+       LEFT JOIN workflow_cursor cursor ON cursor.record_id=q.workflow_cursor_record_id
+       LEFT JOIN project ON project.record_id=cursor.project_record_id
+       WHERE q.run_record_id=? ORDER BY q.number`,
+    )
+    .all(runId) as Record<string, unknown>[]

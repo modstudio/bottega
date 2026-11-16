@@ -100,7 +100,7 @@ describe('Jev worker-question apply path', () => {
     const architectQuestion = storedQuestion(runId)
     db().query('UPDATE question SET jev_pick=? WHERE record_id=?').run('"a"', architectQuestion)
     expect(
-      applyQuestionAnswer({
+      await applyQuestionAnswer({
         database: db(),
         questionId: architectQuestion,
         answer: 'a',
@@ -324,7 +324,7 @@ describe('Jev worker-question apply path', () => {
       answerChannel: 'mcp',
       client: async () => {
         expect(
-          applyQuestionAnswer({
+          await applyQuestionAnswer({
             database: db(),
             questionId: recordId,
             answer: 'b',

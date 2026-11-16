@@ -35,6 +35,7 @@ import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
 import { finalizeWorkerReply, type OutcomeStatus } from '../outcome.ts'
 import type { RunResourceObserver, RunResourceUsage } from '../process-resource-sampler.ts'
 import { projectByName, projects } from '../project/projects.ts'
+import { questionsForRun } from '../question-store/question-store-read.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { cleanReviewEvidence } from '../review/review.ts'
 import { resetSandbox } from '../sandbox/sandbox.ts'
@@ -63,6 +64,14 @@ import { rollUpRootAndEnqueue } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
 import { checkpointRoot, claimIdentity } from './run-resume-kind.ts'
+import { type BlockerRow, blockersToRecord } from './run-terminal-blockers.ts'
+import { finalizeTerminalChain, settleTerminalQuestionState } from './run-terminal-chain.ts'
+import { terminalTurnChanged } from './run-terminal-change.ts'
+import { applyConfinementPrecedence, applyVendorTermination } from './run-terminal-precedence.ts'
+import {
+  applyPrematureFinalFailure,
+  terminalPrematureFinalRefusal,
+} from './run-terminal-premature.ts'
 import {
   type ObservedTestOutcome,
   observedTestOutcome,
@@ -77,17 +86,6 @@ import {
   shouldSnapshotSharedGitConfig,
   terminalSharedGitConfigHeader,
 } from './shared-git-config.ts'
-
-const TERMINAL_STATUS_SQL = 'SELECT status, failure_kind FROM run WHERE record_id=?'
-
-import { type BlockerRow, blockersToRecord } from './run-terminal-blockers.ts'
-import { finalizeTerminalChain } from './run-terminal-chain.ts'
-import { terminalTurnChanged } from './run-terminal-change.ts'
-import { applyConfinementPrecedence, applyVendorTermination } from './run-terminal-precedence.ts'
-import {
-  applyPrematureFinalFailure,
-  terminalPrematureFinalRefusal,
-} from './run-terminal-premature.ts'
 
 type TerminalOptions = {
   job: string
@@ -161,7 +159,14 @@ export function recordArtifactPersistenceFailure(
       .run(input.error, input.runId)
     enqueueRunRecord(database, input.runId, input.machineId, input.finishedAt)
     if (input.parentRunId !== null) {
-      rollUpRootAndEnqueue(database, input.parentRunId, null, input.machineId, input.finishedAt)
+      rollUpRootAndEnqueue(
+        database,
+        input.parentRunId,
+        null,
+        input.machineId,
+        input.finishedAt,
+        false,
+      )
     }
   }, database)
 }
@@ -674,11 +679,9 @@ async function recordTerminalQuestions(
   if (!questions.length) return []
   // A live question that timed out is repeated in the final answer; recording it twice
   // would make `bottega question answer` demand two rulings for one question.
-  const existingQuestionTexts = (
-    db().query('SELECT question FROM question WHERE run_record_id = ?').all(runId) as {
-      question: string
-    }[]
-  ).map((row) => row.question)
+  const existingQuestionTexts = (await questionsForRun(db(), runId)).map((row) =>
+    String(row.question),
+  )
   const askedAt = nowIso()
   return recordReplyQuestions({
     runId,
@@ -686,6 +689,12 @@ async function recordTerminalQuestions(
     askedAt,
     awaitingOperatorAt: await initialQuestionWaitingAt(runId, askedAt),
   })
+}
+
+function forgetTerminalProcess(proc: TerminalInput['proc']): void {
+  if (!proc) return
+  live.delete(proc)
+  liveCheckpoints.delete(proc)
 }
 
 export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
@@ -737,10 +746,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   } = input
   clearRunTimers(timer, checkpointTimer)
   const resourceUsage = resourceObserver?.stop() ?? null
-  if (proc) {
-    live.delete(proc)
-    liveCheckpoints.delete(proc)
-  }
+  forgetTerminalProcess(proc)
   if (proc?.pid && proc.pid !== process.pid) await terminateProcessGroup(proc.pid, { direct: proc })
   if (askLoopback) await askLoopback.close()
   await resetSandbox()
@@ -1069,14 +1075,14 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       console.error(`orch: run ${claim.id} left unreconciled: ${detail}`)
     }
   }
-  await preAnswerReplyQuestions(claim.id, recordedQuestions)
-  const recorded = db().query(TERMINAL_STATUS_SQL).get(claim.id) as {
-    status: string
-    failure_kind: string | null
-  } | null
-  if (!recorded) {
-    throw new Error(`run ${claim.id} disappeared before terminalisation`)
-  }
+  const recorded = await settleTerminalQuestionState({
+    database: db(),
+    runId: claim.id,
+    rootId: claimIdentity(opts.resume).parent_run_record_id ?? claim.id,
+    status,
+    failureKind,
+    preAnswer: () => preAnswerReplyQuestions(claim.id, recordedQuestions),
+  })
   return completeRecordedRun({
     runId: claim.id,
     recordedFailureKind: recorded.failure_kind,

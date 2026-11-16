@@ -21,10 +21,10 @@ import {
   unfinishedResultMessage,
 } from './collect.ts'
 
-const recordedResult = (recordId: string, writingJob: () => boolean = () => false) => {
+const recordedResult = async (recordId: string, writingJob: () => boolean = () => false) => {
   const logs: string[] = []
   const errors: string[] = []
-  collectResult(
+  await collectResult(
     db(),
     ['result', recordId],
     () => '',
@@ -165,7 +165,7 @@ describe('thin output warning', () => {
 })
 
 describe('collection records', () => {
-  test('result leaves an unparseable reply untouched and shows the observed disagreement', () => {
+  test('result leaves an unparseable reply untouched and shows the observed disagreement', async () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
     const output = join(dir, `unparseable-test-claim-${id}.txt`)
     const reply = '{"status":"done","tests":{"ran":true'
@@ -176,7 +176,7 @@ describe('collection records', () => {
           'UPDATE run SET output_path=?,tests_ran=0,tests_passed=NULL,tests_claim_disagrees=1 WHERE record_id=?',
         )
         .run(output, id)
-      const shown = recordedResult(id)
+      const shown = await recordedResult(id)
       expect(shown.logs).toContain(reply)
       expect(shown.errors).toContain(
         'tests observed: {"ran":false,"passed":null}; tests_claim_disagrees: true',
@@ -186,7 +186,7 @@ describe('collection records', () => {
     }
   })
 
-  test('result returns a stored writer reply from before change guides', () => {
+  test('result returns a stored writer reply from before change guides', async () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
     const output = join(dir, `old-writer-reply-${id}.txt`)
     const oldReply = JSON.stringify({
@@ -201,7 +201,7 @@ describe('collection records', () => {
     try {
       writeFileSync(output, oldReply)
       db().query('UPDATE run SET output_path=? WHERE record_id=?').run(output, id)
-      expect(recordedResult(id).logs.join('\n')).toContain(oldReply)
+      expect((await recordedResult(id)).logs.join('\n')).toContain(oldReply)
     } finally {
       rmSync(output, { force: true })
     }
@@ -331,7 +331,7 @@ describe('collection records', () => {
     })
   })
 
-  test('result shows an ok outcome note directly before the score hint', () => {
+  test('result shows an ok outcome note directly before the score hint', async () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
     const number = (
       db().query('SELECT number FROM run WHERE record_id=?').get(id) as {
@@ -339,13 +339,13 @@ describe('collection records', () => {
       }
     ).number
     db().query('UPDATE run SET error=? WHERE record_id=?').run('this turn changed nothing', id)
-    const shown = recordedResult(id).errors.join('\n')
+    const shown = (await recordedResult(id)).errors.join('\n')
     expect(shown).toContain(
       `— run ${number} · codex · 1.0s · vendor tokens not reported\n  this turn changed nothing\n  score it:`,
     )
   })
 
-  test('result rendering is byte-identical when an ok run has no outcome note', () => {
+  test('result rendering is byte-identical when an ok run has no outcome note', async () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
     const number = (
       db().query('SELECT number FROM run WHERE record_id=?').get(id) as {
@@ -355,12 +355,12 @@ describe('collection records', () => {
     const recordId = db()
       .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
       .get(id)!.record_id
-    expect(recordedResult(id).errors).toEqual([
+    expect((await recordedResult(id)).errors).toEqual([
       `\n— run ${number} · codex · 1.0s · vendor tokens not reported\n  score it:  ${PLATFORM_SLUG} score ${id} <none|partial|full> [wrong|mixed|right] --note "..."\n  record_id: ${recordId}`,
     ])
   })
 
-  test('a refusal hint quotes its first summary line and includes writing fidelity', () => {
+  test('a refusal hint quotes its first summary line and includes writing fidelity', async () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
     const output = join(dir, `refused-${id}.txt`)
     writeFileSync(
@@ -378,7 +378,7 @@ describe('collection records', () => {
     )
     db().query('UPDATE run SET output_path=? WHERE record_id=?').run(output, id)
     try {
-      const hint = recordedResult(id, () => true).errors.join('\n')
+      const hint = (await recordedResult(id, () => true)).errors.join('\n')
       expect(hint).toContain('refused: "evidence at outcome.ts:4"')
       expect(hint).toContain('correct with evidence: full right faithful')
     } finally {
@@ -404,7 +404,7 @@ describe('collection records', () => {
     expect(branchNote(db(), id)).toContain('feature/DEV-498')
   })
 
-  test('every score hint names the ROOT, never the turn it printed after', () => {
+  test('every score hint names the ROOT, never the turn it printed after', async () => {
     const root = addRun({ agent: 'codex', job: 'implement' })
     const child = addRun({ agent: 'codex', job: 'implement', parent: root, turn: 2 })
     const errors: string[] = []
@@ -412,7 +412,7 @@ describe('collection records', () => {
       errors.push(parts.join(' '))
     })
     try {
-      collectResult(db(), ['result', String(child)])
+      await collectResult(db(), ['result', String(child)])
     } finally {
       spy.mockRestore()
     }
@@ -537,7 +537,7 @@ describe('collection records', () => {
     expect(logs.join('\n')).toContain(`recoverable: ${PLATFORM_SLUG} run continue ${root}`)
   })
 
-  test('result on an asking run succeeds, prints its reply, and points to the inbox', () => {
+  test('result on an asking run succeeds, prints its reply, and points to the inbox', async () => {
     const id = addRun({ agent: 'codex', job: 'file-question', status: 'asking' })
     const output = join(dir, `asking-${id}.txt`)
     writeFileSync(output, 'partial answer')
@@ -556,7 +556,7 @@ describe('collection records', () => {
       errors.push(parts.join(' '))
     })
     try {
-      collectResult(db(), ['result', String(id)])
+      await collectResult(db(), ['result', String(id)])
       expect(logs.join('\n')).toContain('partial answer')
       expect(errors.join('\n')).toContain(`${PLATFORM_SLUG} question answer ${id}`)
     } finally {
@@ -566,7 +566,7 @@ describe('collection records', () => {
     }
   })
 
-  test('result surfaces the recorded base commit for a writing run', () => {
+  test('result surfaces the recorded base commit for a writing run', async () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
     db().query('UPDATE run SET base_commit=? WHERE record_id=?').run('base-commit-123', id)
     const errors: string[] = []
@@ -574,14 +574,14 @@ describe('collection records', () => {
       errors.push(parts.join(' '))
     })
     try {
-      collectResult(db(), ['result', String(id)])
+      await collectResult(db(), ['result', String(id)])
     } finally {
       error.mockRestore()
     }
     expect(errors.join('\n')).toContain('base:      base-commit-123')
   })
 
-  test('a failed run wraps partial JSON so it cannot parse as a completed review', () => {
+  test('a failed run wraps partial JSON so it cannot parse as a completed review', async () => {
     const id = addRun({ agent: 'codex', job: 'review-lens', status: 'failed' })
     const output = join(dir, `failed-partial-${id}.txt`)
     const partial = { findings: [], provenance: { tree_inspected: 'two invalidators' } }
@@ -599,7 +599,7 @@ describe('collection records', () => {
       throw new Error(`EXIT:${code}`)
     }) as never)
     try {
-      expect(() => collectResult(db(), ['result', String(id)])).toThrow('EXIT:1')
+      await expect(collectResult(db(), ['result', String(id)])).rejects.toThrow('EXIT:1')
       const shown = JSON.parse(logs.join('\n'))
       expect(shown.run).toMatchObject({ record_id: id, status: 'failed', complete: false })
       expect(shown.run.record_id).toBe(id)
@@ -636,15 +636,15 @@ describe('collection records', () => {
     expect(logs.join('\n')).toContain('harness, exit 17: worktree creation failed')
   })
 
-  test(`${PLATFORM_SLUG} run result says so on the record a person would score from`, () => {
+  test(`${PLATFORM_SLUG} run result says so on the record a person would score from`, async () => {
     const id = addRun({ agent: 'codex', job: 'review-lens' })
     db().query("UPDATE run SET evidence_excluded='shared an output file' WHERE record_id=?").run(id)
-    expect(recordedResult(id).errors.join('\n')).toContain(
+    expect((await recordedResult(id)).errors.join('\n')).toContain(
       'not routing evidence: shared an output file',
     )
   })
 
-  test(`${PLATFORM_SLUG} run result lists omissions from the last worker check`, () => {
+  test(`${PLATFORM_SLUG} run result lists omissions from the last worker check`, async () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
     const gateRecordId = newRecordId()
     db()
@@ -662,12 +662,12 @@ describe('collection records', () => {
       )
       .run(newRecordId(), gateRecordId, 'scripts typecheck', 0, 0, 'no matching files')
 
-    expect(recordedResult(id).errors.join('\n')).toContain(
+    expect((await recordedResult(id)).errors.join('\n')).toContain(
       'Last worker check:\nnot run:\n- scripts typecheck (no matching files)',
     )
   })
 
-  test(`${PLATFORM_SLUG} run result ignores legacy numeric note events`, () => {
+  test(`${PLATFORM_SLUG} run result ignores legacy numeric note events`, async () => {
     const id = addRun({ agent: 'codex', job: 'review-lens' })
     const eventsPath = runEventsPath(id)
     mkdirSync(dirname(eventsPath), { recursive: true })
@@ -675,10 +675,10 @@ describe('collection records', () => {
       eventsPath,
       `${JSON.stringify({ ts: new Date().toISOString(), type: 'note', noteId: 71, candidateIds: [8, 13] })}\n`,
     )
-    expect(recordedResult(id).errors.join('\n')).not.toContain('notes:')
+    expect((await recordedResult(id)).errors.join('\n')).not.toContain('notes:')
   })
 
-  test(`${PLATFORM_SLUG} run result lists labels from new worker note events`, () => {
+  test(`${PLATFORM_SLUG} run result lists labels from new worker note events`, async () => {
     const id = addRun({ agent: 'codex', job: 'review-lens' })
     appendRunEvent(id, {
       ts: new Date().toISOString(),
@@ -687,24 +687,24 @@ describe('collection records', () => {
       noteLabel: 'workshop#71',
       candidates: [{ recordId: '01990000-0000-7000-8000-000000000008', label: 'workshop#8' }],
     })
-    expect(recordedResult(id).errors.join('\n')).toContain(
+    expect((await recordedResult(id)).errors.join('\n')).toContain(
       'notes:     workshop#71 (near workshop#8)',
     )
   })
 
-  test(`${PLATFORM_SLUG} run result exposes degradation and the explicit trust command`, () => {
+  test(`${PLATFORM_SLUG} run result exposes degradation and the explicit trust command`, async () => {
     const id = addRun({ agent: 'grok', job: 'review-lens' })
     db()
       .query(
         "UPDATE run SET cwd='/tmp/a lens tree',mcp=1,mcp_server='starship',mcp_connected=0,mcp_error='folder untrusted: repo-local server not started' WHERE record_id=?",
       )
       .run(id)
-    const shown = recordedResult(id).errors.join('\n')
+    const shown = (await recordedResult(id)).errors.join('\n')
     expect(shown).toContain('mcp:       starship NOT CONNECTED')
     expect(shown).toContain("trust:     grok --cwd '/tmp/a lens tree' --trust")
   })
 
-  test(`${PLATFORM_SLUG} run result names an unverified attach distinctly from a confirmed one`, () => {
+  test(`${PLATFORM_SLUG} run result names an unverified attach distinctly from a confirmed one`, async () => {
     const unverified = addRun({ agent: 'codex', job: 'review-lens' })
     db()
       .query(
@@ -715,8 +715,8 @@ describe('collection records', () => {
     db()
       .query("UPDATE run SET mcp=1,mcp_server='fixture-project',mcp_connected=1 WHERE record_id=?")
       .run(confirmed)
-    const unknown = recordedResult(unverified).errors.join('\n')
-    const known = recordedResult(confirmed).errors.join('\n')
+    const unknown = (await recordedResult(unverified)).errors.join('\n')
+    const known = (await recordedResult(confirmed)).errors.join('\n')
     expect(unknown).toContain('mcp:       fixture-project UNVERIFIED')
     expect(unknown).not.toContain('connected')
     expect(known).toContain('mcp:       fixture-project connected')

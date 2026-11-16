@@ -49,6 +49,7 @@ export const typedQuestionModules = [
     '../../../shared/typed-question/typed-question-blocks.ts',
     '../../../shared/typed-question/typed-question-render.ts',
     '../database/db.ts',
+    '../run/question-open.ts',
     '../run/run-status.ts',
     './finding-duplicate-question.ts',
     './spec-unsettled-question.ts',

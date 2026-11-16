@@ -125,7 +125,7 @@ const LOCAL_TASK_LINKS = {
       ),
   },
   question: {
-    regime: 'synchronous',
+    regime: 'hosted-first',
     pendingRows: async (database, client) =>
       taskFlowReadStore(database, client).pendingTaskLinks('question'),
     linkedRows: async (database, client) =>

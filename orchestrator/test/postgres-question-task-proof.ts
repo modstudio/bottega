@@ -2,7 +2,8 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record-id.ts'
 import { applyMigrations } from '../src/database/migrations.ts'
-import { questionStore, recordQuestionStore } from '../src/question-store/question-store.ts'
+import { questionStore } from '../src/question-store/question-store.ts'
+import { recordQuestionStore } from '../src/question-store/question-store-record-factory.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from '../src/record/outbox-payload-contracts.ts'
 import { recordApiClient } from '../src/record/record-api-client.ts'
 import type { QuestionWriteBody } from '../src/record/record-question-contract.ts'
@@ -342,8 +343,58 @@ export function registerQuestionTaskRecordSyncProof(
     const runQuestion = snapshot(newRecordId())
     runQuestion.runId = runId
     runQuestion.workflowCursorRecordId = null
-    await ask(workflowQuestion)
-    await ask(runQuestion)
+    const workflowWrite = await ask(workflowQuestion)
+    const runWrite = await ask(runQuestion)
+    const byId = (
+      await client.readQuestions!(
+        { read: 'by-id', ids: [workflowQuestion.id, runQuestion.id] },
+        destination,
+      )
+    ).items
+    expect(byId).toHaveLength(2)
+    expect(byId).toContainEqual(
+      expect.objectContaining({
+        record_id: workflowQuestion.id,
+        withheld_fields: [],
+        created_at: expect.any(String),
+        updated_at: expect.any(String),
+      }),
+    )
+    expect(byId).toContainEqual(expect.objectContaining({ record_id: runQuestion.id }))
+    expect((await client.readQuestions!({ read: 'for-run', runId }, destination)).items).toEqual([
+      expect.objectContaining({ record_id: runQuestion.id }),
+    ])
+    expect(
+      (
+        await client.readQuestions!(
+          { read: 'for-cursor', workflowCursorRecordId: stageId },
+          destination,
+        )
+      ).items,
+    ).toEqual([expect.objectContaining({ record_id: workflowQuestion.id })])
+    expect((await client.readQuestions!({ read: 'max-number' }, destination)).items).toEqual([
+      { number: Math.max(workflowWrite.number, runWrite.number) },
+    ])
+    expect(
+      (
+        await client.readQuestions!(
+          { read: 'by-number', number: workflowWrite.number },
+          destination,
+        )
+      ).items,
+    ).toEqual([expect.objectContaining({ record_id: workflowQuestion.id })])
+    expect(
+      (await client.readQuestions!({ read: 'by-number', number: 2_147_483_647 }, destination))
+        .items,
+    ).toEqual([])
+    expect(
+      (
+        await client.readQuestions!(
+          { read: 'open-for-cursors', workflowCursorRecordIds: [stageId] },
+          destination,
+        )
+      ).items,
+    ).toEqual([{ workflow_cursor_record_id: stageId, number: workflowWrite.number }])
     expect((await client.readQuestions!({ read: 'waiting' }, destination)).items).toContainEqual(
       expect.objectContaining({ question_record_id: workflowQuestion.id }),
     )
@@ -404,7 +455,15 @@ export function registerQuestionTaskRecordSyncProof(
     )
     const excludedQuestion = snapshot(newRecordId())
     excludedQuestion.workflowCursorRecordId = stageId
-    await ask(excludedQuestion)
+    const excludedWrite = await ask(excludedQuestion)
+    expect(
+      (
+        await client.readQuestions!(
+          { read: 'open-for-cursors', workflowCursorRecordIds: [stageId] },
+          destination,
+        )
+      ).items,
+    ).toEqual([{ workflow_cursor_record_id: stageId, number: excludedWrite.number }])
     Object.assign(excludedQuestion, {
       revision: 2,
       answer: 'Old',
@@ -447,6 +506,36 @@ export function registerQuestionTaskRecordSyncProof(
     expect(taskRulings).not.toContainEqual(
       expect.objectContaining({ question_record_id: excludedQuestion.id }),
     )
+    const auditQuestion = snapshot(newRecordId())
+    auditQuestion.workflowCursorRecordId = stageId
+    await ask(auditQuestion)
+    Object.assign(auditQuestion, { revision: 2, updatedAt: answeredAt })
+    await client.writeQuestion!(
+      'link',
+      {
+        requestId: newRecordId(),
+        question: auditQuestion,
+        audit: {
+          action: 'rule',
+          actorSession: 'postgres-question-proof',
+          at: answeredAt,
+          reason: 'record audit proof',
+        },
+      },
+      destination,
+    )
+    expect(
+      (
+        await client.readQuestions!(
+          {
+            read: 'rule-audit-reasons',
+            workflowCursorRecordId: stageId,
+            actorSession: 'postgres-question-proof',
+          },
+          destination,
+        )
+      ).items,
+    ).toEqual([{ reason: 'record audit proof' }])
     const closedAt = '2026-11-15T12:02:00.000Z'
     Object.assign(runQuestion, { revision: 2, closedAt, closeReason: 'proof', updatedAt: closedAt })
     await client.writeQuestion!(
@@ -646,12 +735,73 @@ export function registerQuestionTaskRecordSyncProof(
         destination,
       )
     await answerWrite(newRecordId())
-    await expect(answerWrite(newRecordId())).rejects.toThrow(
-      `question ${answerTarget.id} already holds hosted revision 2; re-read the question, then retry`,
-    )
+    expect(await answerWrite(newRecordId())).toMatchObject({ applied: false, revision: 2 })
     expect(
       fixture.admin(
         `SELECT count(*) FROM question_mutation_audit WHERE question_id='${answerTarget.id}' AND action='answer';`,
+      ),
+    ).toBe('1')
+
+    const filedQuestion = snapshot(newRecordId())
+    await ask(filedQuestion)
+    Object.assign(filedQuestion, {
+      revision: 2,
+      filedAs: 'doc',
+      filedRef: 'postgres-file-proof',
+      filedAt: answeredAt,
+      updatedAt: answeredAt,
+    })
+    expect(
+      await client.writeQuestion!(
+        'file',
+        {
+          requestId: newRecordId(),
+          question: filedQuestion,
+          audit: { action: 'file', actorSession: null, at: answeredAt, reason: 'file proof' },
+        },
+        destination,
+      ),
+    ).toMatchObject({ applied: true, revision: 2 })
+    expect(
+      (await client.readQuestions!({ read: 'by-id', ids: [filedQuestion.id] }, destination)).items,
+    ).toEqual([expect.objectContaining({ filed_as: 'doc', filed_ref: 'postgres-file-proof' })])
+    expect(
+      fixture.admin(
+        `SELECT count(*) FROM question_mutation_audit WHERE question_id='${filedQuestion.id}' AND action='file';`,
+      ),
+    ).toBe('1')
+
+    const relayedQuestion = snapshot(newRecordId())
+    await ask(relayedQuestion)
+    Object.assign(relayedQuestion, {
+      revision: 2,
+      awaitingOperatorAt: answeredAt,
+      relayedBy: 'postgres-proof',
+      updatedAt: answeredAt,
+    })
+    expect(
+      await client.writeQuestion!(
+        'relay',
+        {
+          requestId: newRecordId(),
+          question: relayedQuestion,
+          audit: { action: 'relay', actorSession: null, at: answeredAt, reason: 'relay proof' },
+        },
+        destination,
+      ),
+    ).toMatchObject({ applied: true, revision: 2 })
+    expect(
+      (await client.readQuestions!({ read: 'by-id', ids: [relayedQuestion.id] }, destination))
+        .items,
+    ).toEqual([
+      expect.objectContaining({
+        awaiting_operator_at: expect.any(String),
+        relayed_by: 'postgres-proof',
+      }),
+    ])
+    expect(
+      fixture.admin(
+        `SELECT count(*) FROM question_mutation_audit WHERE question_id='${relayedQuestion.id}' AND action='relay';`,
       ),
     ).toBe('1')
 

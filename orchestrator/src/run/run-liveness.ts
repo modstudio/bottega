@@ -7,17 +7,17 @@ import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import type { Database } from 'bun:sqlite'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { storeWritesRefused, writeTransaction } from '../database/db.ts'
+import { inboxRunQuestionPage } from '../question-store/question-store-read.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   liveWorktreeSharers,
   teardownTerminalRunResources,
 } from '../resources/resource-ownership.ts'
 import {
-  closeRunChainQuestions,
+  closeQuestions,
   QUESTION_CLOSE_CHAIN_STALE,
   retireRunChainQuestionDeliveries,
 } from './question-close.ts'
-import { questionOpenSql } from './question-open.ts'
 import { recordedRunLivenessFacts, runAlive } from './run-alive.ts'
 import { auditRunMutation, runMutationAuthority } from './run-authority.ts'
 import { abandonedBootstrap, coordinatorSetupDeath, PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
@@ -88,7 +88,9 @@ function resolveRootFromLastTurnPreserving(
   database: Database,
   rootId: string,
   preserveFailureKindForTurnId: string | null,
+  hasOpenQuestions: boolean,
 ): number {
+  if (hasOpenQuestions) return 0
   return database
     .query(
       `UPDATE run AS root
@@ -148,11 +150,6 @@ function resolveRootFromLastTurnPreserving(
       WHERE root.record_id = ?
         AND root.parent_run_record_id IS NULL
         AND root.status IN ('asking', 'ok', 'failed')
-        AND NOT EXISTS (
-          SELECT 1 FROM question q JOIN run owner ON owner.record_id = q.run_record_id
-           WHERE (owner.record_id = root.record_id OR owner.parent_run_record_id = root.record_id)
-             AND ${questionOpenSql('q')}
-        )
         AND (
           SELECT last.status FROM run last
            WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
@@ -169,8 +166,14 @@ export function rollUpRootAndEnqueue(
   preserveFailureKindForTurnId: string | null,
   machine: string,
   finishedAt: string,
+  hasOpenQuestions: boolean,
 ): number {
-  const changes = resolveRootFromLastTurnPreserving(database, rootId, preserveFailureKindForTurnId)
+  const changes = resolveRootFromLastTurnPreserving(
+    database,
+    rootId,
+    preserveFailureKindForTurnId,
+    hasOpenQuestions,
+  )
   enqueueRunRecord(database, rootId, machine, finishedAt)
   return changes
 }
@@ -214,8 +217,8 @@ function rollUpReapedRoots(
         preservedFailureKindTurnId(setupDeathIds, last_record_id),
         machine,
         finishedAt,
+        false,
       )
-      retireRunChainQuestionDeliveries(database, root_record_id, QUESTION_CLOSE_CHAIN_STALE)
     }, database)
   }
 }
@@ -378,7 +381,6 @@ function terminalizeHarnessFailures(
       if (update.run(error, id).changes !== 1) return
       const authority = runMutationAuthority(database, id)
       auditRunMutation(authority, 'reap', error, database)
-      closeRunChainQuestions(database, authority.rootId, QUESTION_CLOSE_CHAIN_STALE)
       enqueueRunRecord(database, id, localMachineId, finishedAt)
     }, database)
   }
@@ -449,7 +451,6 @@ export function reapStale(
         if (update.run(error, id).changes !== 1) return
         const authority = runMutationAuthority(d, id)
         auditRunMutation(authority, 'reap', error, d)
-        closeRunChainQuestions(d, authority.rootId, QUESTION_CLOSE_CHAIN_STALE)
         enqueueRunRecord(d, id, localMachineId, finishedAt)
       }, d)
     }
@@ -488,6 +489,33 @@ export function reapStale(
   return dead.length + abandonedBootstraps.length + setupDeaths.length + recordedCauseDeaths.length
 }
 
+/** Completes the question-side half of synchronous stale-run reaping. */
+export async function closeStaleChainQuestions(database: Database): Promise<number> {
+  const terminal = new Set(['ok', 'failed', 'stale', 'stopped'])
+  const terminalQuestions: Record<string, unknown>[] = []
+  let changedAfter: string | undefined
+  while (true) {
+    const page = await inboxRunQuestionPage(database, { limit: 100, changedAfter })
+    terminalQuestions.push(
+      ...page.items.filter((question) => terminal.has(String(question.root_status))),
+    )
+    if (!page.more) break
+    changedAfter = page.cursor
+  }
+  const open = terminalQuestions.filter(
+    (question) => question.answered_at === null && question.closed_at === null,
+  )
+  const closed = await closeQuestions(
+    database,
+    open.map((question) => String(question.record_id)),
+    QUESTION_CLOSE_CHAIN_STALE,
+  )
+  const roots = [...new Set(terminalQuestions.map((question) => String(question.root_id)))]
+  for (const rootId of roots)
+    await retireRunChainQuestionDeliveries(database, rootId, QUESTION_CLOSE_CHAIN_STALE)
+  return closed
+}
+
 function reapDeadRun(
   d: Database,
   row: RunningRow,
@@ -508,7 +536,6 @@ function reapDeadRun(
     if (update.run(baseError, id).changes !== 1) return false
     const authority = runMutationAuthority(d, id)
     auditRunMutation(authority, 'reap', reason, d)
-    closeRunChainQuestions(d, authority.rootId, QUESTION_CLOSE_CHAIN_STALE)
     enqueueRunRecord(d, id, localMachineId, finishedAt)
     return true
   }, d)

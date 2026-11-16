@@ -17,7 +17,14 @@ function enqueueFailedReservedRun(
     .get(reserveId) as { parent_run_record_id: string | null } | null
   enqueueRunRecord(database, reserveId, localMachineId, finishedAt)
   if (reserved?.parent_run_record_id)
-    rollUpRootAndEnqueue(database, reserved.parent_run_record_id, null, localMachineId, finishedAt)
+    rollUpRootAndEnqueue(
+      database,
+      reserved.parent_run_record_id,
+      null,
+      localMachineId,
+      finishedAt,
+      false,
+    )
 }
 
 export function publishFailedReservedRun(reserveId: string): void {

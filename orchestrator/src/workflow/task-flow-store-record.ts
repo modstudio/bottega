@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { projectByName, projectByRecordId, projects } from '../project/project-read.ts'
+import { recordQuestionReads } from '../question-store/question-store-record-task-flow-compat.ts'
 import { RecordApiRequestError, recordApiClient } from '../record/record-api-client.ts'
 import type {
   RecordRequestDestination,
@@ -23,7 +24,6 @@ import {
   currentRecordWriteDecision,
   throwIfRecordRefused,
 } from '../record/record-write-authority.ts'
-import { recordQuestionReads } from './task-flow-store-record-questions.ts'
 import {
   type ListedItem,
   required,

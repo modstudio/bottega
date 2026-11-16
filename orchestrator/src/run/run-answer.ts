@@ -18,6 +18,7 @@ import { successorReviewLensInputStatusesFromPrompt } from '../database/review-l
 import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
+import { questionsById } from '../question-store/question-store-read.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import { chainTransport, retryModelForAgent, transportTurns } from '../route/failover.ts'
 import { answerRulingRefusal } from '../workflow/autonomy.ts'
@@ -29,9 +30,10 @@ import {
   continuationCheckoutForRetry,
 } from './continuation-checkout-service.ts'
 import { applyArchitectQuestionAnswers } from './question-answer.ts'
+import { restoreOpenQuestionsAfterResumeFailure } from './question-answer-resume-failure.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
-import { openChainQuestions, questionOpenSql, questionTaskHolderSql } from './question-open.ts'
-import { enqueueQuestionRecord } from './question-outbox.ts'
+import { pendingQuestionIds } from './question-delivery-pending.ts'
+import { openChainQuestions, questionsForRunChain } from './question-open.ts'
 import {
   type AnswerChannel,
   QUESTION_DELIVERY_MODE_RESUME,
@@ -187,30 +189,22 @@ function wrongQuestionChain(questionId: string, rootRecordId: string): string {
   return `--q${questionId} belongs to run ${rootRecordId}, not this chain`
 }
 
-function namedQuestionRefusal(questionId: string, runId: string): string {
-  const named = db()
-    .query(
-      `SELECT q.answered_at,r.record_id AS run_record_id,
-          COALESCE(r.parent_run_record_id, r.record_id) AS root_record_id
-     FROM question q JOIN run r ON r.record_id=q.run_record_id WHERE q.record_id=?`,
-    )
-    .get(questionId) as {
-    answered_at: string | null
-    run_record_id: string
-    root_record_id: string
-  } | null
+async function namedQuestionRefusal(questionId: string, runId: string): Promise<string> {
+  const named = (await questionsById(db(), [questionId]))[0] as
+    | { answered_at: string | null; run_record_id: string; root_id: string }
+    | undefined
   if (!named) return `--q${questionId} names no question`
-  if (named.root_record_id !== runId) return wrongQuestionChain(questionId, named.root_record_id)
+  if (named.root_id !== runId) return wrongQuestionChain(questionId, named.root_id)
   if (named.answered_at) return `--q${questionId} on run ${named.run_record_id} is already closed`
   return `--q${questionId} is not open on this chain`
 }
 
-function collectAnswers(input: {
+async function collectAnswers(input: {
   runId: string
   open: OpenQuestion[]
   answer: AnswerRunInput
   argvLimit: number | undefined
-}): AnsweredQuestion[] {
+}): Promise<AnsweredQuestion[]> {
   const rulings = input.answer.rulings
   if (!Array.isArray(rulings)) {
     if (!rulings)
@@ -232,7 +226,7 @@ function collectAnswers(input: {
     if (seen.has(ruling.questionId)) invalid.push(`--q${ruling.questionId} given more than once`)
     seen.add(ruling.questionId)
     if (input.open.some((question) => question.record_id === ruling.questionId)) continue
-    invalid.push(namedQuestionRefusal(ruling.questionId, input.runId))
+    invalid.push(await namedQuestionRefusal(ruling.questionId, input.runId))
   }
   if (invalid.length)
     throw new Error(
@@ -337,23 +331,12 @@ function requireAnswerAuthority(
   )
 }
 
-function readOpenQuestions(id: string, status: string): OpenQuestion[] {
-  const open = openChainQuestions<OpenQuestion>(
-    db(),
-    id,
-    `q.record_id,q.number,q.question,q.awaiting_operator_at,q.why,q.kind,q.options,q.typed_options,q.criteria,q.levels,
-     r.record_id owner_id,r.status owner_status,r.pid owner_pid,
-     ${questionTaskHolderSql('q', 'r')} taskHolder`,
-  )
+async function readOpenQuestions(id: string, status: string): Promise<OpenQuestion[]> {
+  const open = await openChainQuestions<OpenQuestion>(db(), id)
   if (open.length) return open
-  const asked = db()
-    .query(
-      `SELECT COUNT(*) n FROM question q JOIN run r ON r.record_id = q.run_record_id
-      WHERE r.record_id = ? OR r.parent_run_record_id = ?`,
-    )
-    .get(id, id) as { n: number }
+  const asked = (await questionsForRunChain(db(), id)).length
   throw new Error(
-    asked.n
+    asked
       ? `run ${id} has already been ruled on; its current status is ${status}`
       : `run ${id} has no questions to answer; its current status is ${status}`,
   )
@@ -441,23 +424,20 @@ function requireAnswerRun<Row>(row: Row | null, requestedId: string): Row {
   return row
 }
 
-function latestRetryTurn(
+async function latestRetryTurn(
   id: string,
   rootId: string,
   hasRecordedRulings: boolean,
-): { record_id: string; status: string } {
+): Promise<{ record_id: string; status: string }> {
   const latest = db()
     .query(
       `SELECT record_id,status FROM run WHERE record_id=? OR parent_run_record_id=? ORDER BY turn DESC,number DESC LIMIT 1`,
     )
     .get(rootId, rootId) as { record_id: string; status: string }
   if (latest.status !== 'asking' || hasRecordedRulings) return latest
-  const questions = db()
-    .query(
-      `SELECT q.number,q.question FROM question q JOIN run r ON r.record_id=q.run_record_id
-       WHERE (r.record_id=? OR r.parent_run_record_id=?) AND ${questionOpenSql('q')} ORDER BY q.number`,
-    )
-    .all(rootId, rootId) as { number: number; question: string }[]
+  const questions = (await questionsForRunChain(db(), rootId)).filter(
+    ({ answered_at, closed_at }) => answered_at === null && closed_at === null,
+  ) as { number: number; question: string }[]
   throw new Error(
     `run ${id} is asking with open questions: ${questions.map((q) => `q${q.number}: ${q.question}`).join('; ')}. ` +
       `Answer them, or ${PLATFORM_SLUG} run abandon ${id}`,
@@ -567,6 +547,18 @@ function retryKeepTree(row: RetryRunRow) {
   )
 }
 
+async function recordedRulingsForRetry(rootId: string): Promise<RecordedRuling[]> {
+  const chainQuestions = await questionsForRunChain(db(), rootId)
+  const pendingIds = new Set(
+    pendingQuestionIds(db(), {
+      questionIds: chainQuestions.map(({ record_id }) => String(record_id)),
+    }),
+  )
+  return chainQuestions
+    .filter(({ record_id, answer }) => pendingIds.has(String(record_id)) && answer !== null)
+    .sort((a, b) => Number(a.number) - Number(b.number)) as RecordedRuling[]
+}
+
 export async function retryRun(
   id: string,
   options: { agent?: string; model?: string; flags: RunFlags },
@@ -591,15 +583,7 @@ export async function retryRun(
   // A writing job already has a worktree and a vendor session. Retry would
   // wrap the prompt again and cut a fresh tree beside the one holding the
   // partial edit. Continue the same conversation in the same tree instead.
-  const recordedRulings = db()
-    .query(
-      `SELECT q.number,q.record_id,q.question,q.answer
-     FROM question q JOIN run owner ON owner.record_id = q.run_record_id
-    WHERE (owner.record_id = ? OR owner.parent_run_record_id = ?)
-      AND q.delivery_pending_at IS NOT NULL AND q.answer IS NOT NULL
-    ORDER BY q.number`,
-    )
-    .all(row.root_record_id, row.root_record_id) as RecordedRuling[]
+  const recordedRulings = await recordedRulingsForRetry(row.root_record_id)
   const writesRepo = Boolean(job(row.job).needs.writesRepo)
   const readsRepo = Boolean(job(row.job).needs.readsRepo)
   const bindings = retryAgentBindings(row, options)
@@ -629,7 +613,7 @@ export async function retryRun(
         `after ${KEEP_RUN_FILES_DAYS} days. Nothing to re-send.`,
     )
   }
-  const latestTurn = latestRetryTurn(id, row.root_record_id, recordedRulings.length > 0)
+  const latestTurn = await latestRetryTurn(id, row.root_record_id, recordedRulings.length > 0)
   const latestCheckout = db()
     .query(
       `SELECT cwd,worktree,base_commit FROM run
@@ -812,7 +796,7 @@ export async function answerRun(
    * all. Found in review, and it is the shape every multi-turn escalation
    * takes after the first.
    */
-  const open = readOpenQuestions(id, row.status)
+  const open = await readOpenQuestions(id, row.status)
 
   // A ruling resumes a live chain. Stopped, failed, stale and voided roots
   // used to record the answer and spawn a new turn, which is retry's job.
@@ -907,7 +891,7 @@ export async function answerRun(
   // The CLI adapter resolves positional, file, and stdin sources before the
   // service boundary. Other adapters supply validated ruling text directly.
   const argvLimit = ownersLive ? undefined : helpers.argvResumeLimit(resumeAgent)
-  const answers = collectAnswers({ runId: id, open, answer: input, argvLimit })
+  const answers = await collectAnswers({ runId: id, open, answer: input, argvLimit })
   await assertAnswersReady(open.length, answers, input, ownersLive)
   if (
     answerResumeUnavailable({
@@ -966,17 +950,19 @@ export async function answerRun(
       answerAuthority = reauthorizeRunMutation(answerAuthority, 'answer')
       answerAuthority = adoptRunMutation(answerAuthority, 'answer')
     }
-    applyArchitectQuestionAnswers({
-      database: db(),
-      answers,
-      attributions,
-      answeredAt: now,
-      channel: input.channel,
-      ownersLive,
-      skipResume,
-      open,
-      refusal: (questionId) => namedQuestionRefusal(questionId, id),
-    })
+  })
+  await applyArchitectQuestionAnswers({
+    database: db(),
+    answers,
+    attributions,
+    answeredAt: now,
+    channel: input.channel,
+    ownersLive,
+    skipResume,
+    open,
+    refusal: (questionId) => `--q${questionId} is no longer open on this chain`,
+  })
+  writeTransaction(() => {
     if (skipResume) db().query("UPDATE run SET status='asking' WHERE record_id=?").run(id)
     if (skipResume || ownersLive) auditRunMutation(answerAuthority, 'answer')
   })
@@ -1050,31 +1036,7 @@ export async function answerRun(
     })
   } catch (e) {
     const error = (e as Error).message
-    writeTransaction(() => {
-      appendQuestionDeliveries(
-        open.map((question) => question.record_id),
-        {
-          runId: null,
-          mode: QUESTION_DELIVERY_MODE_RESUME,
-          outcome: QUESTION_DELIVERY_OUTCOME_FAILED,
-          at: new Date(Date.now()).toISOString(),
-          error,
-        },
-      )
-      for (const q of open) {
-        db()
-          .query(
-            `UPDATE question
-            SET answer=NULL, answer_value=NULL, answered_by_kind=NULL, jev_agreed=NULL,
-                answered_at=NULL, answered_by=NULL, answered_by_name=NULL, answerer_kind=NULL,
-                revision=revision+1,
-                answer_channel=NULL, delivery_pending_at=NULL, awaiting_operator_at=?
-          WHERE record_id=?`,
-          )
-          .run(q.awaiting_operator_at, q.record_id)
-        enqueueQuestionRecord(db(), q.record_id)
-      }
-    })
+    await restoreOpenQuestionsAfterResumeFailure(open, answerAuthority.actor, error)
     throw new Error(
       `Resume failed: ${error}\nThe ruling was rolled back and the question is still open.`,
     )

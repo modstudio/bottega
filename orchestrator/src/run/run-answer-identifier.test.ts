@@ -139,7 +139,7 @@ function addQuestion(runRecordId: string, number: number, recordId = newRecordId
   return recordId
 }
 
-test('question number and UUID resolve an open question asked by a real turn to its root', () => {
+test('question number and UUID resolve an open question asked by a real turn to its root', async () => {
   const root = addRun({ agent: 'codex', job: 'file-question', status: 'asking' })
   const turn = addRun({
     agent: 'codex',
@@ -150,11 +150,11 @@ test('question number and UUID resolve an open question asked by a real turn to 
   })
   const questionId = addQuestion(turn, 73)
 
-  expect(resolveAnswerIdentifier(db(), 'q73', null)).toBe(root)
-  expect(resolveAnswerIdentifier(db(), questionId, null)).toBe(root)
+  expect(await resolveAnswerIdentifier(db(), 'q73', null)).toBe(root)
+  expect(await resolveAnswerIdentifier(db(), questionId, null)).toBe(root)
 })
 
-test('an answered question target refuses instead of selecting another open question', () => {
+test('an answered question target refuses instead of selecting another open question', async () => {
   const root = addRun({ agent: 'codex', job: 'file-question', status: 'asking' })
   const answeredId = addQuestion(root, 81)
   addQuestion(root, 82)
@@ -162,15 +162,15 @@ test('an answered question target refuses instead of selecting another open ques
     .query("UPDATE question SET answered_at='2026-10-15',answer='yes' WHERE record_id=?")
     .run(answeredId)
 
-  expect(() => resolveAnswerIdentifier(db(), 'q81', null)).toThrow(
+  await expect(resolveAnswerIdentifier(db(), 'q81', null)).rejects.toThrow(
     `q81 is already ruled on; run ${root} is waiting on q82`,
   )
-  expect(() => resolveAnswerIdentifier(db(), answeredId, null)).toThrow(
+  await expect(resolveAnswerIdentifier(db(), answeredId, null)).rejects.toThrow(
     `${answeredId} is already ruled on; run ${root} is waiting on q82`,
   )
 })
 
-test('bare-number resolution uses real run, question, ownership, and chain facts', () => {
+test('bare-number resolution uses real run, question, ownership, and chain facts', async () => {
   const session = 'answer-session'
   const asking = addRun({ agent: 'codex', job: 'file-question', status: 'asking', session })
   const other = addRun({ agent: 'codex', job: 'file-question', status: 'asking', session })
@@ -183,8 +183,8 @@ test('bare-number resolution uses real run, question, ownership, and chain facts
     .run(collidingQuestion)
   addQuestion(asking, runNumber + 1000)
 
-  expect(() => resolveAnswerIdentifier(db(), runNumber, session)).toThrow(
+  await expect(resolveAnswerIdentifier(db(), runNumber, session)).rejects.toThrow(
     `bare identifier ${runNumber} is ambiguous between run:${runNumber} (${asking}) and q${runNumber}`,
   )
-  expect(resolveAnswerIdentifier(db(), asking, session)).toBe(asking)
+  expect(await resolveAnswerIdentifier(db(), asking, session)).toBe(asking)
 })

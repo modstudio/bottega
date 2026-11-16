@@ -114,7 +114,7 @@ const tellByIdentifier = (id: string, command: Command, ping: boolean) =>
     refusedOwnerOptions(command, 'run tell', 'run'),
   )
 const answerByIdentifier = async (id: string, command: Command, options: OptionValues) => {
-  const target = resolveAnswerIdentifier(db(), id, sessionId())
+  const target = await resolveAnswerIdentifier(db(), id, sessionId())
   await answerCommand(
     target,
     rawArgv(command).slice(2),
@@ -126,7 +126,7 @@ const answerByIdentifier = async (id: string, command: Command, options: OptionV
     { output: { log, error: console.error } },
   )
 }
-const relayByIdentifier = (id: string, command: Command, note: string) =>
+const relayByIdentifier = async (id: string, command: Command, note: string) =>
   relayCommand(localRunId(id), rawArgv(command).slice(2), note, presentation, (question) =>
     resolveQuestionIdentifier(db(), question),
   )
