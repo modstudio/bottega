@@ -193,7 +193,7 @@ test('keeps an awaiting question on a keyless cursor and omits its abandon remed
   expect(line).not.toContain('workflow abandon')
 })
 
-test('renders one open question for its task holder', () => {
+test('renders one open question for its task holder', async () => {
   const database = new Database(':memory:')
   database.exec(
     `CREATE TABLE context_item (
@@ -226,7 +226,7 @@ test('renders one open question for its task holder', () => {
               (5279,'task-record','Closed without an answer.',NULL,'2026-11-13')`,
     )
     .run()
-  const holders = storedBriefHolders(
+  const holders = await storedBriefHolders(
     [
       {
         key: 'DEV-1844/2',
@@ -391,7 +391,7 @@ test('orders the session, each project-scoped working task, and its epic by task
   ])
 })
 
-test('reads a working task brief from its record-id holder while retaining the task key', () => {
+test('reads a working task brief from its record-id holder while retaining the task key', async () => {
   const recordId = newRecordId()
   db()
     .query(
@@ -405,7 +405,7 @@ test('reads a working task brief from its record-id holder while retaining the t
     [{ key: 'STAR-1', project: 'starship' }],
     [{ key: 'STAR-1', project: 'starship', record_id: recordId, title: 'Stable holder' }],
   )
-  expect(storedBriefHolders(references, db())).toEqual([
+  expect(await storedBriefHolders(references, db())).toEqual([
     {
       key: 'STAR-1',
       title: 'Stable holder',
@@ -419,7 +419,7 @@ test('reads a working task brief from its record-id holder while retaining the t
   ])
 })
 
-test('renders an open keyless cursor item under its cursor header without an open line', () => {
+test('renders an open keyless cursor item under its cursor header without an open line', async () => {
   const database = new Database(':memory:')
   database.exec(
     `CREATE TABLE context_item (
@@ -439,7 +439,7 @@ test('renders an open keyless cursor item under its cursor header without an ope
        VALUES (?,'cursor',?,'decision','position','Continue here.','q42',?,?)`,
     )
     .run(newRecordId(), recordId, '2026-11-14T10:00:00Z', '2026-11-14T10:00:00Z')
-  const holders = storedBriefHolders(
+  const holders = await storedBriefHolders(
     holderSequence(
       'session-id',
       [],

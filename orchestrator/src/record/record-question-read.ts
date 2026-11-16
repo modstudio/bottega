@@ -48,6 +48,8 @@ async function recordQuestionRulingRows(
       COALESCE(run_project.name,stage_project.name) project,stage.workflow workflow_slug,stage.mode mode_slug,
       COALESCE(owner.session_id,stage.session_id) session_id,q.asked_at::text,q.question,q.answer,q.answer_basis,
       q.answered_at::text,q.answered_by,q.answered_by_name,q.asked_via,q.answerer_kind,q.answer_channel,
+      q.kind,q.jev_model,q.jev_pick,q.jev_probabilities::text,q.jev_agreed,q.jev_question_version,
+      q.jev_fits,q.jev_order_flipped,
       q.closed_at::text,q.close_reason,q.overturned_at::text,q.overturned_by,q.overturned_by_name,
       q.overturn_reason,q.replacement,q.filed_as,q.filed_ref,q.filed_record_id::text,q.filed_label,q.filed_at::text
      FROM question q LEFT JOIN run owner ON owner.id=q.run_id
@@ -70,12 +72,14 @@ const QUESTION_DETAIL_COLUMNS = `q.id::text record_id,q.number,q.run_id::text ru
   q.jev_agreed,q.jev_question_version,q.jev_fits,q.jev_order_flipped,q.awaiting_operator_at::text,
   q.relayed_by,q.overturned_at::text,q.overturned_by,q.overturned_by_name,q.overturn_reason,q.replacement,
   q.filed_as,q.filed_ref,q.filed_record_id::text,q.filed_label,q.filed_at::text,q.closed_at::text,q.close_reason,
-  owner.number run_number,COALESCE(owner.parent_run_id,owner.id)::text root_id,
+  owner.number run_number,owner.id::text owner_id,owner.status owner_status,owner.pid owner_pid,
+  COALESCE(owner.parent_run_id,owner.id)::text root_id,
   stage.number workflow_cursor_number,stage.workflow workflow_slug,stage.mode mode_slug,
   stage.session_id workflow_owner,stage.updated_at::text workflow_updated_at,stage.state cursor_state,
   stage.arguments::text args,COALESCE(owner.repo,stage_project.name) repo,
   COALESCE(owner.cwd,stage_project.path) cwd,COALESCE(run_project.name,stage_project.name) project_name,
   stage_project.path project_path,COALESCE(owner.launch_key,q.workflow_key) launch_key,
+  COALESCE(owner.launch_key,q.workflow_key) "taskHolder",
   (SELECT latest.status FROM run latest
     WHERE latest.id=COALESCE(owner.parent_run_id,owner.id)
        OR latest.parent_run_id=COALESCE(owner.parent_run_id,owner.id)

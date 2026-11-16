@@ -4,16 +4,14 @@ import type { Database } from 'bun:sqlite'
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, sessionId } from '../database/db.ts'
-import { voidedSql } from '../evidence/evidence-query.ts'
 import { projectAt } from '../project/projects.ts'
-import { inboxWorkflowQuestions } from '../question-store/question-store-read.ts'
+import { inboxRunQuestions, inboxWorkflowQuestions } from '../question-store/question-store-read.ts'
 import { runInboxQuestionRows as sqliteRunInboxQuestionRows } from '../question-store/question-store-sqlite-reads.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 import { runQuestionGroupFooter } from './question-display.ts'
 import { displayRunQuestion } from './question-display-probe.ts'
 import { type QuestionInboxGroup, questionInboxGroup } from './question-inbox-group.ts'
-import { questionOpenSql } from './question-open.ts'
 import { rulingStatus } from './question-vocabulary.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
 
@@ -135,6 +133,7 @@ type RecoverableInboxRow = {
   repo: string | null
   project_record_id: string | null
   session_id: string | null
+  status: string
 }
 
 const shellWord = (value: string) =>
@@ -461,64 +460,7 @@ export async function runInboxCommand(
   const scopedFilter = scopedProjectFilter(scoped, scopedProject)
   const project = scoped ? scopedProject : mine ? projectAt(process.cwd()) : null
   const header = await rulingsHeader(project)
-  const cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString()
-  const seenJoin = 'LEFT JOIN session_seen seen ON seen.session_id = r.session_id'
-  const sessionRecent =
-    'CASE WHEN r.session_id IS NOT NULL AND seen.last_seen >= ? THEN 1 ELSE 0 END'
-  const queriedRows = db()
-    .query(
-      `SELECT q.number,q.run_record_id,r.number AS run_number,q.asked_at,q.question,q.options,q.recommendation,q.why,
-            q.jev_pick,q.jev_confidence,q.jev_probabilities,q.jev_error,
-            q.answered_at,
-            q.answer, q.overturned_at, q.overturned_by, q.overturn_reason, q.replacement,
-            q.filed_as, q.filed_ref, q.filed_record_id, q.filed_label, q.filed_at,
-            r.agent, r.job, r.repo, root.project_record_id, r.status, r.session_id,
-            root.status root_status, root.number root_number,
-            ${voidedSql('root')} root_voided,
-            COALESCE(r.parent_run_record_id, r.record_id) root_id,
-            ${sessionRecent} session_recent
-       FROM question q JOIN run r ON r.record_id = q.run_record_id
-       JOIN run root ON root.record_id = COALESCE(r.parent_run_record_id, r.record_id)
-       ${seenJoin}
-      WHERE q.closed_at IS NULL
-      ORDER BY q.run_record_id,q.number`,
-    )
-    .all(cutoff) as {
-    number: number
-    run_record_id: string
-    run_number: number
-    asked_at: string
-    question: string
-    answered_at: string | null
-    answer: string | null
-    overturned_at: string | null
-    overturned_by: string | null
-    overturn_reason: string | null
-    replacement: string | null
-    filed_as: string | null
-    filed_ref: string | null
-    filed_record_id: string | null
-    filed_label: string | null
-    filed_at: string | null
-    options: string | null
-    recommendation: string | null
-    why: string | null
-    jev_pick: string | null
-    jev_confidence: number | null
-    jev_probabilities: string | null
-    jev_error: string | null
-    agent: string
-    job: string
-    repo: string | null
-    project_record_id: string | null
-    status: string
-    session_id: string | null
-    root_status: string
-    root_voided: number
-    root_id: string
-    root_number: number
-    session_recent: number
-  }[]
+  const queriedRows = (await inboxRunQuestions(db())) as QueriedInboxQuestion[]
   const isLive = (question: (typeof queriedRows)[number]) =>
     answerRunLivenessRefusal(
       {
@@ -549,32 +491,29 @@ export async function runInboxCommand(
   const visible = active.filter((q) => !canAnswer(q.session_id))
   presentLines(presentHeader(header), log)
 
-  const queriedRecoverable = db()
-    .query(
-      `SELECT root.record_id, root.number, root.agent, root.job, root.repo, root.project_record_id, root.session_id
+  const queriedRecoverable = (
+    db()
+      .query(
+        `SELECT root.record_id, root.number, root.agent, root.job, root.repo, root.project_record_id, root.session_id, root.status
        FROM run root
       WHERE root.parent_run_record_id IS NULL
-        AND (root.status = 'asking' OR EXISTS (
-          SELECT 1 FROM question pending JOIN run owner ON owner.record_id=pending.run_record_id
-           WHERE (owner.record_id=root.record_id OR owner.parent_run_record_id=root.record_id)
-             AND pending.answered_at IS NOT NULL
-             AND pending.delivery_pending_at IS NOT NULL
-        ))
         ${!scoped && mine ? (project ? 'AND (root.project_record_id = ? OR root.session_id = ?)' : 'AND root.session_id = ?') : ''}
-        AND NOT EXISTS (
-          SELECT 1 FROM question q JOIN run owner ON owner.record_id = q.run_record_id
-           WHERE (owner.record_id = root.record_id OR owner.parent_run_record_id = root.record_id)
-             AND ${questionOpenSql('q')}
-        )
         AND NOT EXISTS (
           SELECT 1 FROM run active
            WHERE active.parent_run_record_id = root.record_id AND active.status = 'running'
         )
       ORDER BY root.number`,
-    )
-    .all(
-      ...(!scoped && mine ? (project ? [project.recordId, sid] : [sid]) : []),
-    ) as RecoverableInboxRow[]
+      )
+      .all(
+        ...(!scoped && mine ? (project ? [project.recordId, sid] : [sid]) : []),
+      ) as RecoverableInboxRow[]
+  ).filter(
+    (root) =>
+      (root.status === 'asking' || chainHasPendingDelivery(root.record_id)) &&
+      !queriedRows.some(
+        (question) => question.root_id === root.record_id && question.answered_at === null,
+      ),
+  )
   const recoverable = rowsForInboxView(queriedRecoverable, scopedFilter, null, false, sid)
 
   if (!rows.length && !recoverable.length && !workflowRows.length) {

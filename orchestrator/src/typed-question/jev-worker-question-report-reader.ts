@@ -5,29 +5,28 @@ import type { Database } from 'bun:sqlite'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import { jevThresholds } from '../ask/jev-routing.ts'
 import { db } from '../database/db.ts'
+import { questionRulings } from '../question-store/question-store-read.ts'
 import {
   type JevWorkerQuestionMetrics,
   type JevWorkerQuestionRow,
   jevWorkerQuestionMetrics,
 } from './jev-worker-question-report.ts'
 
-export function jevWorkerQuestionReport(
+export async function jevWorkerQuestionReport(
   options: { days?: number },
   database: Database = db(),
   readMachine: (
     key: 'jev.confidence_threshold' | 'jev.fit_threshold',
   ) => string | number = readMachineValue,
-): JevWorkerQuestionMetrics[] {
-  const rows = database
-    .query(
-      `SELECT kind,jev_model,jev_pick,jev_probabilities,jev_agreed,jev_question_version,jev_fits,jev_order_flipped
-         FROM question
-        WHERE jev_pick IS NOT NULL
-          AND kind IN ('choice','yesno','score')
-          ${options.days === undefined ? '' : "AND datetime(asked_at) >= datetime('now', '-' || ? || ' days')"}
-        ORDER BY asked_at`,
-    )
-    .all(...(options.days === undefined ? [] : [options.days])) as JevWorkerQuestionRow[]
+): Promise<JevWorkerQuestionMetrics[]> {
+  const since =
+    options.days === undefined
+      ? undefined
+      : new Date(Date.now() - options.days * 24 * 60 * 60 * 1000).toISOString()
+  const rows = (await questionRulings(database, { kind: 'all', since })).items.filter(
+    (row) =>
+      row.jev_pick !== null && ['choice', 'yesno', 'score'].includes(String(row.kind)),
+  ) as unknown as JevWorkerQuestionRow[]
   const thresholds = jevThresholds(readMachine)
   if (!thresholds.ok) throw new Error(thresholds.error)
   return jevWorkerQuestionMetrics(rows, thresholds.threshold, thresholds.fitThreshold)

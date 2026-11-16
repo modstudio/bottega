@@ -56,7 +56,7 @@ export function searchCommand(
   options: { limit: number; full: boolean; json: boolean },
   presentation: Presentation,
 ): void {
-  const found = searchRecords(db(), query, options.limit, options.full)
+  const found = await searchRecords(db(), query, options.limit, options.full)
   if (options.json) {
     presentation.log(
       JSON.stringify({

@@ -35,6 +35,7 @@ import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
 import { finalizeWorkerReply, type OutcomeStatus } from '../outcome.ts'
 import type { RunResourceObserver, RunResourceUsage } from '../process-resource-sampler.ts'
 import { projectByName, projects } from '../project/projects.ts'
+import { questionsForRun } from '../question-store/question-store-read.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { cleanReviewEvidence } from '../review/review.ts'
 import { resetSandbox } from '../sandbox/sandbox.ts'
@@ -674,11 +675,9 @@ async function recordTerminalQuestions(
   if (!questions.length) return []
   // A live question that timed out is repeated in the final answer; recording it twice
   // would make `bottega question answer` demand two rulings for one question.
-  const existingQuestionTexts = (
-    db().query('SELECT question FROM question WHERE run_record_id = ?').all(runId) as {
-      question: string
-    }[]
-  ).map((row) => row.question)
+  const existingQuestionTexts = (await questionsForRun(db(), runId)).map((row) =>
+    String(row.question),
+  )
   const askedAt = nowIso()
   return recordReplyQuestions({
     runId,

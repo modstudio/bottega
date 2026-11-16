@@ -45,6 +45,7 @@ import { signedInRecordUserId } from '../record/record-attribution.ts'
 import type { DetachSpec } from '../route/failover.ts'
 import type { SynchronousResult } from '../synchronous-result.ts'
 import { sha } from './prompt-sha.ts'
+import { clearQuestionDeliveryPendingForRuns } from './question-delivery-pending.ts'
 import { recordedRunLivenessFacts, runAlive } from './run-alive.ts'
 import { RUNS_DIR, readDispatchState } from './run-artifacts.ts'
 import { bindingValues, inheritedRunBinding, inheritedRunLinks } from './run-claim-inheritance.ts'
@@ -380,13 +381,13 @@ async function detachResolved(
           )?.root_id
         : undefined)
     if (inserted && deliveryRoot) {
-      db()
-        .query(
-          `UPDATE question SET delivery_pending_at=NULL
-          WHERE delivery_pending_at IS NOT NULL AND run_record_id IN
-            (SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=?)`,
+      const runIds = db()
+        .query<{ record_id: string }, [string, string]>(
+          'SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=?',
         )
-        .run(deliveryRoot, deliveryRoot)
+        .all(deliveryRoot, deliveryRoot)
+        .map(({ record_id }) => record_id)
+      clearQuestionDeliveryPendingForRuns(db(), runIds)
     }
     if (inserted && spec.resume?.kind === 'retry-root' && spec.resume.retireAsking) {
       db()

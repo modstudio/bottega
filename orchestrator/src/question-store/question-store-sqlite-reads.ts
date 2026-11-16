@@ -4,8 +4,8 @@
 import type { Database } from 'bun:sqlite'
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { voidedSql } from '../evidence/evidence-query.ts'
-import type { QueriedInboxQuestion } from '../run/run-inbox.ts'
 import { questionOpenSql, questionTaskHolderSql } from '../run/question-open.ts'
+import type { QueriedInboxQuestion } from '../run/run-inbox.ts'
 import type {
   TaskFlowCloseOutStageRow,
   TaskFlowCursorLifecycleRow,
@@ -169,7 +169,8 @@ export function rulingRows(
               q.workflow_cursor_record_id workflow_cursor_id,q.workflow_key,q.workflow_task_record_id,
               COALESCE(r.repo,c.project) project,c.workflow_slug,c.mode_slug,
               COALESCE(r.session_id,c.session_id) session_id,
-              q.asked_at,q.question,q.answer,q.answer_basis,q.answered_at,
+              q.asked_at,q.question,q.answer,q.answer_basis,q.answered_at,q.kind,q.jev_model,q.jev_pick,
+              q.jev_probabilities,q.jev_agreed,q.jev_question_version,q.jev_fits,q.jev_order_flipped,
               q.answered_by,q.answered_by_name,q.asked_via,
               q.answerer_kind,q.answer_channel,q.closed_at,q.close_reason,
               q.overturned_at,q.overturned_by,q.overturned_by_name,q.overturn_reason,q.replacement,
@@ -376,13 +377,15 @@ export const localQuestionProjects = (database: Database): Array<{ project: stri
     )
     .all()
 
-const QUESTION_PORT_COLUMNS = `q.*,owner.number run_number,
+const QUESTION_PORT_COLUMNS = `q.*,owner.number run_number,owner.record_id owner_id,
+  owner.status owner_status,owner.pid owner_pid,
   COALESCE(owner.parent_run_record_id,owner.record_id) root_id,
   cursor.number workflow_cursor_number,cursor.workflow_slug,cursor.mode_slug,
   cursor.session_id workflow_owner,cursor.updated_at workflow_updated_at,cursor.state cursor_state,
   cursor.args,COALESCE(owner.repo,cursor.project) repo,COALESCE(owner.cwd,project.path) cwd,
   project.path project_path,
   ${questionTaskHolderSql('q', 'owner')} launch_key,
+  ${questionTaskHolderSql('q', 'owner')} taskHolder,
   (SELECT latest.status FROM run latest
     WHERE latest.record_id=COALESCE(owner.parent_run_record_id,owner.record_id)
        OR latest.parent_run_record_id=COALESCE(owner.parent_run_record_id,owner.record_id)

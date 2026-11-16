@@ -2,8 +2,8 @@
 /** Persists terminal cursor mutations and their task-flow projection. */
 import type { Database } from 'bun:sqlite'
 import { nowIso, sessionId, writeTransaction } from '../database/db.ts'
-import { machineId } from '../record/machine-identity.ts'
 import { waitingQuestions } from '../question-store/question-store-read.ts'
+import { machineId } from '../record/machine-identity.ts'
 import {
   taskFlowWriteTarget,
   writeHostedTaskFlow,
@@ -11,7 +11,6 @@ import {
 import type { TaskFlowIntentInput } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { closeQuestions } from '../run/question-close.ts'
-import { questionOpenSql } from '../run/question-open.ts'
 import { refreshStaleMirror } from './task-flow-mirror-refresh.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 import { cursorName } from './workflow-cursor-format.ts'

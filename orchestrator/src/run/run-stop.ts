@@ -18,6 +18,8 @@ import {
   stoppedConversationIsReaderClone,
 } from '../close/close-out-stop-release.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
+import { mutateQuestion } from '../question-store/question-store-mutation.ts'
+import { questionsForChain } from '../question-store/question-store-read.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   type TerminalDockerTeardown,
@@ -30,8 +32,7 @@ import {
   QUESTION_CLOSE_CHAIN_STOPPED,
   retireRunChainQuestionDeliveries,
 } from './question-close.ts'
-import { questionOpenSql } from './question-open.ts'
-import { enqueueQuestionRecord } from './question-outbox.ts'
+import { clearQuestionDeliveryPending } from './question-delivery-pending.ts'
 import { ANSWER_CHANNEL_CLI, ANSWERER_KIND_AGENT } from './question-vocabulary.ts'
 import {
   adoptRunMutation,
@@ -324,7 +325,6 @@ function commitStoppedRun(
       .run(next.rootId)
   }
   auditRunMutation(next, 'stop', auditReason)
-  closeRunChainQuestions(db(), next.rootId, QUESTION_CLOSE_CHAIN_STOPPED)
   return { row, cleanupRow }
 }
 
@@ -353,6 +353,7 @@ export async function stopRun(
   const { row, cleanupRow } = writeTransaction(() =>
     commitStoppedRun(authority, id, options.auditReason),
   )
+  await closeRunChainQuestions(db(), authority.rootId, QUESTION_CLOSE_CHAIN_STOPPED)
   if (plan.outcome === 'verified') {
     const termination = helpers.terminateRunProcesses(plan)
     const refusal = stopTerminationRefusal(row, termination)
@@ -416,6 +417,10 @@ export async function abandonRun(
       .map((turn) => `${turn.record_id} turn ${turn.turn} ${turn.status}`)
       .join('; ')
 
+  const openQuestions = (await questionsForChain(db(), authority.rootId)).filter(
+    ({ answered_at, closed_at }) => answered_at === null && closed_at === null,
+  )
+
   const abandoned = writeTransaction(() => {
     const chain = readChain()
     const row = chain[0]
@@ -442,12 +447,6 @@ export async function abandonRun(
     }
     authority = reauthorizeRunMutation(authority, 'abandon')
     authority = adoptRunMutation(authority, 'abandon')
-    const openQuestions = db()
-      .query<{ record_id: string }, [string, string]>(
-        `SELECT record_id FROM question WHERE ${questionOpenSql('question')} AND run_record_id IN
-          (SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=?)`,
-      )
-      .all(authority.rootId, authority.rootId)
     const changed = db()
       .query(
         "UPDATE run SET status='stale', error=?, failure_kind='abandoned', host_wait_since=NULL WHERE record_id=? AND status='asking'",
@@ -459,28 +458,32 @@ export async function abandonRun(
         `run ${id}'s chain changed before it could be abandoned: ${describe(current)}`,
       )
     }
-    db()
-      .query(
-        `UPDATE question SET answered_by=?, answered_at=?, answer='(abandoned)', revision=revision+1,
-            answerer_kind=?, answer_channel=?, delivery_pending_at=NULL,
-            awaiting_operator_at=NULL
-          WHERE ${questionOpenSql('question')} AND run_record_id IN
-            (SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=?)`,
-      )
-      .run(
-        callerSession ?? 'anonymous (no session id)',
-        at,
-        ANSWERER_KIND_AGENT,
-        ANSWER_CHANNEL_CLI,
-        authority.rootId,
-        authority.rootId,
-      )
     enqueueAbandonedChain(row.record_id, authority.rootId, at)
-    for (const question of openQuestions) enqueueQuestionRecord(db(), question.record_id)
-    retireRunChainQuestionDeliveries(db(), authority.rootId, 'abandoned', at)
     auditRunMutation(authority, 'abandon', note ?? null)
     return { row, cleanupRow }
   })
+  clearQuestionDeliveryPending(
+    db(),
+    openQuestions.map(({ record_id }) => String(record_id)),
+  )
+  for (const question of openQuestions) {
+    await mutateQuestion(db(), {
+      id: String(question.record_id),
+      intent: 'answer',
+      at,
+      actorSession: callerSession,
+      reason: 'abandoned',
+      changes: {
+        answeredBy: callerSession ?? 'anonymous (no session id)',
+        answeredAt: at,
+        answer: '(abandoned)',
+        answererKind: ANSWERER_KIND_AGENT,
+        answerChannel: ANSWER_CHANNEL_CLI,
+        awaitingOperatorAt: null,
+      },
+    })
+  }
+  await retireRunChainQuestionDeliveries(db(), authority.rootId, 'abandoned', at)
   const { cleanupRow } = abandoned
   finishAbandonedRun(abandoned, helpers, options)
 

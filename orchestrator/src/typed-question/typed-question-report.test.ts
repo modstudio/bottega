@@ -256,12 +256,12 @@ test('a job filter on implement keeps legacy spec answers and drops other jobs',
   expect(kinds.sort()).toEqual(['spec', 'spec:implement'])
 })
 
-test('question and job filters omit the Jev worker-question report', () => {
+test('question and job filters omit the Jev worker-question report', async () => {
   const question = `filtered-command-${newRecordId()}`
   answer({ question, version: 1, subject: 'filtered', noul: 0.5 })
   for (const options of [{ question }, { job: 'implement' }]) {
     const output: string[] = []
-    typedQuestionCommand({ ...options, json: true }, { log: (value) => output.push(value) })
+    await typedQuestionCommand({ ...options, json: true }, { log: (value) => output.push(value) })
     expect(JSON.parse(output.join('\n'))).toMatchObject({ jevWorkerQuestions: null })
   }
 })

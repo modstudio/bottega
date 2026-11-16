@@ -114,7 +114,7 @@ const tellByIdentifier = (id: string, command: Command, ping: boolean) =>
     refusedOwnerOptions(command, 'run tell', 'run'),
   )
 const answerByIdentifier = async (id: string, command: Command, options: OptionValues) => {
-  const target = resolveAnswerIdentifier(db(), id, sessionId())
+  const target = await resolveAnswerIdentifier(db(), id, sessionId())
   await answerCommand(
     target,
     rawArgv(command).slice(2),

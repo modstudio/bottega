@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
+import { waitingQuestions } from '../question-store/question-store-read.ts'
 import {
   taskFlowWriteTarget,
   writeHostedTaskFlow,
@@ -17,7 +18,6 @@ import {
   answerWorkflowQuestion,
   authorizeWorkflowQuestionMutation,
 } from '../run/question-mutation.ts'
-import { questionOpenSql } from '../run/question-open.ts'
 import { resolvedRulingPersonName } from '../run/ruling-attribution.ts'
 import { refreshStaleMirror } from './task-flow-mirror-refresh.ts'
 import { taskFlowLocalStore } from './task-flow-store.ts'
@@ -31,16 +31,14 @@ import {
 import { decideWorkflowRuleAnswer, pinnedWorkflowRuleStep } from './workflow-rule-answer.ts'
 import { linkResolvedWorkflowTask } from './workflow-task-linking.ts'
 
-function selectOpenWorkflowQuestion(
+async function selectOpenWorkflowQuestion(
   cursorRecordId: string,
   database: Database,
-): { record_id: string; number: number } | null {
-  return database
-    .query<{ record_id: string; number: number }, [string]>(
-      `SELECT record_id,number FROM question
-       WHERE workflow_cursor_record_id=? AND ${questionOpenSql('question')}`,
-    )
-    .get(cursorRecordId)
+): Promise<{ record_id: string; number: number } | null> {
+  const row = (await waitingQuestions(database)).find(
+    ({ workflow_cursor_record_id }) => workflow_cursor_record_id === cursorRecordId,
+  )
+  return row ? { record_id: row.question_record_id, number: row.id } : null
 }
 
 export async function ruleWorkflow(
@@ -83,7 +81,7 @@ export async function ruleWorkflow(
     database,
   })
   const at = nowIso()
-  const question = selectOpenWorkflowQuestion(row.record_id, database)
+  const question = await selectOpenWorkflowQuestion(row.record_id, database)
   if (!question)
     throw new Error(`${cursorName(slug, mode, row.workflow_key)} has no open question to rule on`)
   const payload: TaskFlowIntentInput<'stage-update'> = {

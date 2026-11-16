@@ -46,6 +46,30 @@ export async function questionsForRun(
   >[]
 }
 
+export async function questionsForChain(
+  database: Database,
+  rootId: string,
+): Promise<Record<string, unknown>[]> {
+  const runIds = database
+    .query<{ record_id: string }, [string, string]>(
+      'SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=? ORDER BY number',
+    )
+    .all(rootId, rootId)
+    .map(({ record_id }) => record_id)
+  return (await Promise.all(runIds.map((runId) => questionsForRun(database, runId)))).flat()
+}
+
+export async function questionsById(
+  database: Database,
+  ids: string[],
+): Promise<Record<string, unknown>[]> {
+  if (!ids.length) return []
+  return (await questionStore(database).read({ read: 'by-id', ids })).items as Record<
+    string,
+    unknown
+  >[]
+}
+
 export async function questionRulings(
   database: Database,
   input: {
