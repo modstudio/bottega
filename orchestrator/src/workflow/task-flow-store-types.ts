@@ -217,17 +217,6 @@ export type TaskFlowRulingFileRow = {
   project_path: string | null
   args: string | null
 }
-export type TaskFlowQuestionOutboxRow = Record<string, unknown> & {
-  record_id: string
-  number: number
-  run_record_id: string | null
-  project_name: string | null
-  project_record_id: string | null
-  workflow_cursor_record_id: string | null
-  workflow_task_record_id: string | null
-  answered_by_name: string | null
-  overturned_by_name: string | null
-}
 export type TaskFlowQuestionCloseRow = {
   answered_at: string | null
   closed_at: string | null

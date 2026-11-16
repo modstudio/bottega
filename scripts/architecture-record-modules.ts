@@ -526,18 +526,6 @@ export const recordModules: RecordModule[] = [
     './question-vocabulary.ts',
   ]),
   module('orchestrator/src/run/question-delivery-pending.ts', ['bun:sqlite']),
-  module('orchestrator/src/run/question-outbox.ts', [
-    'bun:sqlite',
-    '../../../shared/record-id.ts',
-    '../../../shared/record/schema.ts',
-    '../database/db.ts',
-    '../record/machine-identity.ts',
-    '../record/outbox-enqueue.ts',
-    '../record/outbox-prune-payload.ts',
-    '../record/outbox-sanitize.ts',
-    '../record/outbox-serialize.ts',
-    '../workflow/task-flow-store.ts',
-  ]),
   module('orchestrator/src/record/outbox-sanitize.ts', [
     '../../../shared/secret-shaped.ts',
     './outbox-serialize.ts',

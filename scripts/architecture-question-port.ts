@@ -15,7 +15,6 @@ export const questionCallerModules = [
       'orchestrator/src/run/question-delivery.ts',
       'orchestrator/src/run/question-mutation.ts',
       'orchestrator/src/run/question-open.ts',
-      'orchestrator/src/run/question-outbox.ts',
     ],
   },
 ]

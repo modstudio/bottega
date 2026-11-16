@@ -17,7 +17,6 @@ export const taskFlowLocalReadPlacement = {
   stageByRecordId: 'shared',
   stageRevision: 'local-only',
   waitingWorkflowQuestions: 'shared',
-  questionOutboxRow: 'local-only',
   unlinkedWorkflowQuestionIds: 'local-only',
 } as const
 

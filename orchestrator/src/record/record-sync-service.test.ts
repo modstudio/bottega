@@ -41,12 +41,6 @@ const CLAIM_RUN_ID = '01990000-0000-7000-8000-000000001899'
 const FOREIGN_USER_ID = '01990000-0000-7000-8000-000000001900'
 const FOREIGN_MACHINE_ID = '01990000-0000-7000-8000-000000001901'
 const FOREIGN_RUN_ID = '01990000-0000-7000-8000-000000001902'
-const QUESTION_SPACE_ID = '01990000-0000-7000-8000-000000001903'
-const QUESTION_USER_ID = '01990000-0000-7000-8000-000000001904'
-const QUESTION_MEMBERSHIP_ID = '01990000-0000-7000-8000-000000001905'
-const QUESTION_PROJECT_ID = '01990000-0000-7000-8000-000000001906'
-const QUESTION_MACHINE_ID = '01990000-0000-7000-8000-000000001907'
-const QUESTION_ID = '01990000-0000-7000-8000-000000001908'
 const STAMP = '2026-10-26T06:00:00.000Z'
 
 test('a sync session without a personal space is refused with the sign-in remedy', async () => {
@@ -104,28 +98,6 @@ function runPayload(id: string, taskId: string | null) {
   })
 }
 
-function questionPayload() {
-  const payload = Object.fromEntries(
-    OUTBOX_PAYLOAD_CONTRACTS.question.columns.map((column) => [column, null]),
-  )
-  return Object.assign(payload, {
-    id: QUESTION_ID,
-    number: 7,
-    spaceId: QUESTION_SPACE_ID,
-    projectId: QUESTION_PROJECT_ID,
-    projectName: 'question-revision-proof',
-    machineId: QUESTION_MACHINE_ID,
-    localId: 7,
-    revision: 1,
-    askedAt: STAMP,
-    question: 'Older question',
-    withheldFields: [],
-    audits: [],
-    createdAt: STAMP,
-    updatedAt: STAMP,
-  })
-}
-
 async function push(client: SQL, id: number, payload: Record<string, unknown>) {
   return syncHostedRecord({
     url: actorUrl!,
@@ -141,64 +113,6 @@ async function push(client: SQL, id: number, payload: Record<string, unknown>) {
       rows: [{ id, kind: 'run', payload: JSON.stringify(payload), spaceHint: null }],
     },
   })
-}
-
-async function pushQuestion(client: SQL, id: number, payload: Record<string, unknown>) {
-  return syncHostedRecord({
-    url: actorUrl!,
-    postgres: client,
-    identity: {
-      user: { id: QUESTION_USER_ID },
-      activeSpaceId: QUESTION_SPACE_ID,
-      personalSpaceId: QUESTION_SPACE_ID,
-      memberships: [
-        { space_id: QUESTION_SPACE_ID, slug: 'question-revision-proof', permission: 'write' },
-      ],
-    },
-    request: {
-      machine: { id: QUESTION_MACHINE_ID, name: 'question-proof', seenAt: STAMP },
-      rows: [{ id, kind: 'question', payload: JSON.stringify(payload), spaceHint: null }],
-    },
-  })
-}
-
-async function withQuestionFixture(
-  testCase: (admin: SQL, actor: SQL) => Promise<void>,
-): Promise<void> {
-  const admin = new SQL(adminUrl!)
-  const actor = new SQL(actorUrl!)
-  try {
-    await admin`INSERT INTO space (id,name,slug,created_at)
-      VALUES (${QUESTION_SPACE_ID}::uuid,'Question revision proof','question-revision-proof',now())`
-    await admin`INSERT INTO "user" (id,email,name,created_at)
-      VALUES (${QUESTION_USER_ID}::uuid,'question-revision-proof@example.test','Question Revision Proof',now())`
-    await admin`INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
-      VALUES (${QUESTION_MEMBERSHIP_ID}::uuid,${QUESTION_SPACE_ID}::uuid,${QUESTION_USER_ID}::uuid,
-        'member','write',now())`
-    await admin`INSERT INTO project (id,space_id,name,key_prefixes,created_at)
-      VALUES (${QUESTION_PROJECT_ID}::uuid,${QUESTION_SPACE_ID}::uuid,'question-revision-proof',ARRAY['DEV'],now())`
-    await admin`INSERT INTO machine (id,user_id,name,registered_at,last_seen)
-      VALUES (${QUESTION_MACHINE_ID}::uuid,${QUESTION_USER_ID}::uuid,'question-proof',
-        ${STAMP}::timestamptz,${STAMP}::timestamptz)`
-    await admin`INSERT INTO question
-      (id,number,space_id,project_id,machine_id,revision,asked_at,question,withheld_fields,created_at,updated_at)
-      VALUES (${QUESTION_ID}::uuid,NULL,${QUESTION_SPACE_ID}::uuid,${QUESTION_PROJECT_ID}::uuid,
-        ${QUESTION_MACHINE_ID}::uuid,2,${STAMP}::timestamptz,'Newer question','[]'::jsonb,
-        ${STAMP}::timestamptz,${STAMP}::timestamptz)`
-
-    await testCase(admin, actor)
-  } finally {
-    await admin`DELETE FROM question_mutation_audit WHERE question_id=${QUESTION_ID}::uuid`
-    await admin`DELETE FROM question WHERE id=${QUESTION_ID}::uuid`
-    await admin`DELETE FROM project WHERE id=${QUESTION_PROJECT_ID}::uuid`
-    await admin`DELETE FROM machine_name_claim WHERE machine_id=${QUESTION_MACHINE_ID}::uuid`
-    await admin`DELETE FROM machine WHERE id=${QUESTION_MACHINE_ID}::uuid`
-    await admin`DELETE FROM routing_evidence_head WHERE space_id=${QUESTION_SPACE_ID}::uuid`
-    await admin`DELETE FROM membership WHERE id=${QUESTION_MEMBERSHIP_ID}::uuid`
-    await admin`DELETE FROM space WHERE id=${QUESTION_SPACE_ID}::uuid`
-    await admin`DELETE FROM "user" WHERE id=${QUESTION_USER_ID}::uuid`
-    await Promise.all([actor.close(), admin.close()])
-  }
 }
 
 realPostgres('hosted run task references', () => {
@@ -296,60 +210,6 @@ realPostgres('hosted run task references', () => {
       await admin`DELETE FROM "user" WHERE id=${USER_ID}::uuid`
       await Promise.all([actor.close(), admin.close()])
     }
-  })
-})
-
-realPostgres('hosted question revisions', () => {
-  test('a lower revision allocates a number without changing newer hosted fields', async () => {
-    await withQuestionFixture(async (admin, actor) => {
-      expect(await pushQuestion(actor, 1, questionPayload())).toEqual({
-        results: [{ id: 1, status: 'synced' }],
-      })
-
-      const [question] = await admin<
-        { number: number | null; revision: number; question: string }[]
-      >`
-        SELECT number,revision,question FROM question WHERE id=${QUESTION_ID}::uuid`
-      expect(question).toEqual({ number: 1, revision: 2, question: 'Newer question' })
-    })
-  })
-
-  test('an equal revision allocates a number without changing hosted fields', async () => {
-    await withQuestionFixture(async (admin, actor) => {
-      const payload = questionPayload()
-      payload.revision = 2
-      payload.question = 'Equal revision question'
-
-      expect(await pushQuestion(actor, 1, payload)).toEqual({
-        results: [{ id: 1, status: 'synced' }],
-      })
-
-      const [question] = await admin<
-        { number: number | null; revision: number; question: string }[]
-      >`
-        SELECT number,revision,question FROM question WHERE id=${QUESTION_ID}::uuid`
-      expect(question).toEqual({ number: 1, revision: 2, question: 'Newer question' })
-    })
-  })
-
-  test('a newer revision without a number preserves the hosted number', async () => {
-    await withQuestionFixture(async (admin, actor) => {
-      await admin`UPDATE question SET number=7 WHERE id=${QUESTION_ID}::uuid`
-      const payload = questionPayload()
-      payload.revision = 3
-      payload.question = 'Newest question'
-      Reflect.deleteProperty(payload, 'number')
-
-      expect(await pushQuestion(actor, 1, payload)).toEqual({
-        results: [{ id: 1, status: 'synced' }],
-      })
-
-      const [question] = await admin<
-        { number: number | null; revision: number; question: string }[]
-      >`
-        SELECT number,revision,question FROM question WHERE id=${QUESTION_ID}::uuid`
-      expect(question).toEqual({ number: 7, revision: 3, question: 'Newest question' })
-    })
   })
 })
 

@@ -6,17 +6,17 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { projectByRecordId } from '../project/project-read.ts'
-import type { RecordQuestionClient } from '../record/record-api-client-question.ts'
 import type { RecordWriteDestination } from '../record/record-api-client-paths.ts'
+import type { RecordQuestionClient } from '../record/record-api-client-question.ts'
 import type { RecordIdentity } from '../record/record-auth.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
-import { decideSingleRecordSpace } from '../record/record-space-cardinality.ts'
 import type {
   QuestionIntent,
   QuestionReadInput,
   QuestionWriteBody,
 } from '../record/record-question-contract.ts'
 import { questionChangedAfterRefusal } from '../record/record-question-contract.ts'
+import { decideSingleRecordSpace } from '../record/record-space-cardinality.ts'
 import type { QuestionReadResult, QuestionReadRow, QuestionStore } from './question-store-types.ts'
 
 function localQuestionRow(
@@ -69,7 +69,9 @@ function decodeSpaceCursors(value: string): SpaceCursors {
       throw null
     return parsed.spaces as SpaceCursors
   } catch {
-    throw new Error('question change cursor is malformed; retry without changedAfter for a fresh cursor')
+    throw new Error(
+      'question change cursor is malformed; retry without changedAfter for a fresh cursor',
+    )
   }
 }
 
@@ -90,7 +92,9 @@ export class RecordQuestionStore implements QuestionStore {
   private identity(): Promise<RecordIdentity> {
     this.identityRead ??= this.input.client.whoami
       ? this.input.client.whoami()
-      : Promise.reject(new Error('record API predates identity reads; release hosted-api, then retry'))
+      : Promise.reject(
+          new Error('record API predates identity reads; release hosted-api, then retry'),
+        )
     return this.identityRead
   }
 
@@ -110,13 +114,32 @@ export class RecordQuestionStore implements QuestionStore {
     if (projectId) return this.destination(projectId)
     const identity = await this.identity()
     if (!identity.personalSpaceId)
-      throw new Error('the signed-in user has no personal record space; repair record identity, then retry')
+      throw new Error(
+        'the signed-in user has no personal record space; repair record identity, then retry',
+      )
     return { destinationSpaceId: identity.personalSpaceId }
+  }
+
+  private async pushRun(runId: string): Promise<void> {
+    if (this.input.pushRun) return this.input.pushRun(runId)
+    const { syncRecord } = await import('../record/record-sync.ts')
+    await syncRecord({ local: this.input.database })
+    const synced = this.input.database
+      .query<{ synced_at: string | null }, [string]>(
+        `SELECT synced_at FROM outbox WHERE kind='run' AND row_id=? ORDER BY id DESC LIMIT 1`,
+      )
+      .get(runId)
+    if (!synced?.synced_at)
+      throw new Error(
+        `run ${runId} did not reach the hosted record; run \`${PLATFORM_SLUG} record sync\`, inspect the outbox refusal, then retry`,
+      )
   }
 
   private allDestinations(): Promise<RecordWriteDestination[]> {
     this.everyDestination ??= this.identity().then((identity) => {
-      const ids = new Set(parseRecordSpaceMemberships(identity.memberships).map(({ spaceId }) => spaceId))
+      const ids = new Set(
+        parseRecordSpaceMemberships(identity.memberships).map(({ spaceId }) => spaceId),
+      )
       if (identity.personalSpaceId) ids.add(identity.personalSpaceId)
       return [...ids].map((destinationSpaceId) => ({ destinationSpaceId }))
     })
@@ -155,7 +178,11 @@ export class RecordQuestionStore implements QuestionStore {
       (await this.allDestinations()).map(async (destination) => {
         const request =
           input.read === 'rulings' && positions
-            ? { ...input, limit: undefined, changedAfter: positions[destination.destinationSpaceId] }
+            ? {
+                ...input,
+                limit: undefined,
+                changedAfter: positions[destination.destinationSpaceId],
+              }
             : input
         return { destination, value: await this.readAt(request, destination) }
       }),
@@ -177,11 +204,7 @@ export class RecordQuestionStore implements QuestionStore {
     if (!this.input.client.writeQuestion)
       throw new Error('record API predates direct question writes; release hosted-api, then retry')
     if (intent === 'ask' && input.question.runId) {
-      if (!this.input.pushRun)
-        throw new Error(
-          `run outbox push is unavailable; run \`${PLATFORM_SLUG} record sync\`, then retry`,
-        )
-      await this.input.pushRun(input.question.runId)
+      await this.pushRun(input.question.runId)
     }
     return await this.input.client.writeQuestion(
       intent,

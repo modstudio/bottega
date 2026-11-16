@@ -69,39 +69,6 @@ const SCORE_RECORD_PAYLOAD_CONTRACT = contract(SCORE_RECORD_PAYLOAD_COLUMNS, {
   withheldFields: null,
 })
 
-const QUESTION_RECORD_PAYLOAD_COLUMNS = columns(
-  // workflowCursorId is accepted and ignored because queued payloads are frozen.
-  'id number spaceId runId workflowKey workflowTaskId workflowCursorId workflowCursorRecordId projectId projectName machineId localId revision askedAt question options recommendation why askedVia kind typedOptions criteria levels answer answerValue answerBasis answeredAt answeredBy answeredByName answeredByKind answererKind answerChannel jevPick jevConfidence jevProbabilities jevModel jevInputTokens jevError jevAgreed jevQuestionVersion jevFits jevOrderFlipped awaitingOperatorAt relayedBy overturnedAt overturnedBy overturnedByName overturnReason replacement filedAs filedRef filedRecordId filedLabel filedAt closedAt closeReason withheldFields audits createdAt updatedAt',
-)
-const QUESTION_RECORD_PAYLOAD_CONTRACT = contract(QUESTION_RECORD_PAYLOAD_COLUMNS, {
-  number: null,
-  workflowTaskId: null,
-  workflowCursorRecordId: null,
-  workflowCursorId: null,
-  projectId: null,
-  filedRecordId: null,
-  filedLabel: null,
-  answerBasis: null,
-  answeredByName: null,
-  overturnedByName: null,
-  kind: 'text',
-  typedOptions: null,
-  criteria: null,
-  levels: null,
-  answerValue: null,
-  answeredByKind: null,
-  jevPick: null,
-  jevConfidence: null,
-  jevProbabilities: null,
-  jevModel: null,
-  jevInputTokens: null,
-  jevError: null,
-  jevAgreed: null,
-  jevQuestionVersion: null,
-  jevFits: null,
-  jevOrderFlipped: null,
-})
-
 const TASK_FLOW_RECORD_PAYLOAD_CONTRACT = contract(
   'id spaceId projectId projectName taskId state openStageRecordId openingMachineId updatedMachineId machineId revision createdAt updatedAt',
 )
@@ -240,7 +207,6 @@ const REVIEW_FUNNEL_DECISION_RECORD_PAYLOAD_CONTRACT = contract(
 export const OUTBOX_PAYLOAD_CONTRACTS = {
   run: RUN_RECORD_PAYLOAD_CONTRACT,
   score: SCORE_RECORD_PAYLOAD_CONTRACT,
-  question: QUESTION_RECORD_PAYLOAD_CONTRACT,
   task_flow: TASK_FLOW_RECORD_PAYLOAD_CONTRACT,
   task_flow_stage: TASK_FLOW_STAGE_RECORD_PAYLOAD_CONTRACT,
   review: REVIEW_RECORD_PAYLOAD_CONTRACT,

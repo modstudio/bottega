@@ -5,7 +5,6 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { machineId } from '../record/machine-identity.ts'
 import type { QuestionIntent, QuestionWriteBody } from '../record/record-question-contract.ts'
-import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { questionStore } from './question-store.ts'
 import { questionById } from './question-store-read.ts'
 
@@ -117,7 +116,6 @@ export async function mutateQuestion(
       reason: input.reason,
     },
   })
-  enqueueQuestionRecord(database, input.id)
   return { ...result, question: { ...current, ...input.changes } }
 }
 
@@ -214,6 +212,5 @@ export async function askQuestion(
     question,
     audit: { action: 'ask', actorSession: null, at: input.askedAt, reason: null },
   })
-  enqueueQuestionRecord(database, id)
   return result
 }

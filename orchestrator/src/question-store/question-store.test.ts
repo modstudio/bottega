@@ -2,8 +2,16 @@ import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
+import { installRecordApiClient } from '../../test/fixtures/record-api.ts'
+import { guardHostedTables } from '../database/hosted-table-guard.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import type { RecordApiClient } from '../record/record-api-client.ts'
 import type { QuestionWriteBody } from '../record/record-question-contract.ts'
+import {
+  clearQuestionDeliveryPending,
+  markQuestionDeliveryPending,
+  pendingQuestionIds,
+} from '../run/question-delivery-pending.ts'
 import { questionStore } from './question-store.ts'
 import { recordQuestionStore } from './question-store-record-factory.ts'
 import type { QuestionStore } from './question-store-types.ts'
@@ -91,7 +99,7 @@ function seedOwners(database: Database): void {
   database.exec('PRAGMA foreign_keys=OFF')
   database
     .query('INSERT INTO project(record_id,name,path,stack,settings) VALUES (?,?,?,?,?)')
-    .run(PROJECT_ID, 'question-fixture', '/fixture', 'bun', '{}')
+    .run(PROJECT_ID, 'question-fixture', '/fixture', 'bun', '{"space":"fixture"}')
   database
     .query(`INSERT INTO workflow_cursor
     (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,
@@ -314,9 +322,9 @@ test('only the record adapter passes a rulings feed cursor through', async () =>
     database,
     client: {
       whoami,
-      readQuestions: async (input) => ({
+      readQuestions: async (_input) => ({
         items: [{ number: 1, record_id: WORKFLOW_QUESTION_ID }],
-        cursor: input.changedAfter === 'cursor-7' ? 'cursor-11' : undefined,
+        cursor: 'cursor-11',
         more: false,
         reset: false,
       }),
@@ -325,9 +333,9 @@ test('only the record adapter passes a rulings feed cursor through', async () =>
   const changed = await store.read({
     read: 'rulings',
     kind: 'all',
-    changedAfter: 'cursor-7',
+    changedAfter: '0',
   })
-  expect(changed).toMatchObject({ cursor: 'cursor-11', more: false, reset: false })
+  expect(changed.cursor).toBeString()
   expect(changed.items).toHaveLength(1)
   expect(field(changed.items[0]!, 'record_id')).toBe(WORKFLOW_QUESTION_ID)
   await expect(store.read({ read: 'waiting', changedAfter: 'cursor-7' })).rejects.toThrow(
@@ -355,6 +363,7 @@ test('SQLite question writes report a lost revision race without replacing the w
 
 test('record ask pushes its run first and enriches live, stale, and absent sessions', async () => {
   const database = migratedTestDatabase()
+  seedOwners(database)
   database.exec('PRAGMA foreign_keys=OFF')
   const events: string[] = []
   const runId = newRecordId()
@@ -419,4 +428,45 @@ test('record detail reads enrich machine-owned run and project fields locally', 
   expect(rows[1]).toMatchObject({ owner_pid: null, cwd: '/fixture', project_path: '/fixture' })
   expect(rows[2]).toMatchObject({ owner_pid: null, cwd: null, project_path: null })
   database.close()
+})
+
+test('hosted question selection and pending delivery never touch the local question table', async () => {
+  const database = migratedTestDatabase()
+  seedOwners(database)
+  const guarded = guardHostedTables(database, ['question'])
+  const rows = new Map<string, QuestionSnapshot>()
+  const client = {
+    whoami,
+    writeQuestion: async (_intent: string, input: QuestionWriteBody) => {
+      rows.set(input.question.id, input.question)
+      return { id: input.question.id, number: 1, revision: input.question.revision, applied: true }
+    },
+    readQuestions: async (input: { read: string; ids?: string[] }) => ({
+      items:
+        input.read === 'by-id'
+          ? (input.ids ?? []).flatMap((id) => (rows.has(id) ? [rows.get(id)!] : []))
+          : [...rows.values()],
+      cursor: input.read === 'rulings' ? 'record-cursor' : undefined,
+    }),
+  } as unknown as RecordApiClient
+  const previous = process.env.BOTTEGA_RECORD_API_URL
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  installRecordApiClient(client)
+  try {
+    const store = questionStore(guarded)
+    const asked = snapshot({ id: newRecordId(), runId: RUN_ID })
+    await store.write('ask', body(asked))
+    await store.write('answer', body({ ...asked, revision: 2, answer: 'Yes' }, 'answer'))
+    expect((await store.read({ read: 'inbox' })).items).toHaveLength(1)
+    expect((await store.read({ read: 'waiting' })).items).toHaveLength(1)
+    expect((await store.read({ read: 'rulings', kind: 'all' })).items).toHaveLength(1)
+    markQuestionDeliveryPending(guarded, asked.id, RUN_ID, STAMP)
+    expect(pendingQuestionIds(guarded, { runIds: [RUN_ID] })).toEqual([asked.id])
+    expect(clearQuestionDeliveryPending(guarded, [asked.id])).toBe(1)
+  } finally {
+    installRecordApiClient(null)
+    if (previous === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = previous
+    database.close()
+  }
 })

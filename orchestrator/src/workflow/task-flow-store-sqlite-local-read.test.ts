@@ -24,7 +24,6 @@ const callLocalRead = {
   stageByRecordId: (store) => store.stageByRecordId(''),
   stageRevision: (store) => store.stageRevision(''),
   waitingWorkflowQuestions: (store) => store.waitingWorkflowQuestions(),
-  questionOutboxRow: (store) => store.questionOutboxRow(''),
   unlinkedWorkflowQuestionIds: (store) => store.unlinkedWorkflowQuestionIds('', ''),
 } satisfies Record<TaskFlowLocalReadMethod, (store: TaskFlowLocalStore) => unknown>
 

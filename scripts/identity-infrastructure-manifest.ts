@@ -22,8 +22,7 @@ export const INFRASTRUCTURE_IDENTITIES: readonly InfrastructureIdentity[] = [
   {
     store: 'orchestrator',
     table: 'question_delivery',
-    reason:
-      'machine-local delivery ledger; orchestrator/src/run/question-outbox.ts carries question_mutation_audit rather than deliveries, and the integer id is only an output label',
+    reason: 'machine-local delivery ledger; the integer id is only an output label',
   },
   {
     store: 'orchestrator',

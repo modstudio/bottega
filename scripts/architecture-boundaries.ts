@@ -879,7 +879,6 @@ export const importBoundaries: ImportBoundary[] = [
       '../review/review-outbox.ts',
       '../release/release-outbox.ts',
       '../run/run-outbox.ts',
-      '../run/question-outbox.ts',
       '../score/score-outbox.ts',
       'bun:sqlite',
     ],

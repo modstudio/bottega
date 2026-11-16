@@ -537,25 +537,24 @@ function ingestRunSourceRows(
 }
 
 export const RUN_CHANGE_CURSOR_SETTING = 'collect.runs.change_seq'
-export const RULING_CHANGE_CURSOR_SETTING = 'collect.rulings.change_cursor'
+const RULING_CHANGE_CURSOR_SETTING = 'collect.rulings.change_cursor'
 
 function storedChangeCursor(key: string): string | null {
-  return db()
-    .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
-    .get(key)?.value ?? null
+  return (
+    db().query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?').get(key)
+      ?.value ?? null
+  )
 }
 
 function stampChangeCursors(runCursor: string, rulingCursor: string): void {
-  writeTransaction((conn) =>
-    {
-      const statement = conn.query(
-        `INSERT INTO setting(key,value) VALUES (?,?)
+  writeTransaction((conn) => {
+    const statement = conn.query(
+      `INSERT INTO setting(key,value) VALUES (?,?)
          ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-      )
-      statement.run(RUN_CHANGE_CURSOR_SETTING, runCursor)
-      statement.run(RULING_CHANGE_CURSOR_SETTING, rulingCursor)
-    },
-  )
+    )
+    statement.run(RUN_CHANGE_CURSOR_SETTING, runCursor)
+    statement.run(RULING_CHANGE_CURSOR_SETTING, rulingCursor)
+  })
 }
 
 /** Read exactly the source changes after the last successful fast pass. */

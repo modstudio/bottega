@@ -393,13 +393,15 @@ function rootIdsForQuestionRows(rows: Record<string, unknown>[]): string[] {
   if (!runIds.length) return [...new Set(suppliedRoots)]
   return [
     ...new Set(
-      suppliedRoots.concat(db()
-        .query<{ root_id: string }, string[]>(
-          `SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run
+      suppliedRoots.concat(
+        db()
+          .query<{ root_id: string }, string[]>(
+            `SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run
              WHERE record_id IN (${runIds.map(() => '?').join(',')})`,
-        )
-        .all(...runIds)
-        .map(({ root_id }) => root_id)),
+          )
+          .all(...runIds)
+          .map(({ root_id }) => root_id),
+      ),
     ),
   ]
 }
@@ -629,7 +631,7 @@ function publishHumanListing(
       )
     if (row.failure_kind === 'idle') {
       const reclaimed = row.reclaimed_ms as number | null
-      log(`      idle-killed` + (reclaimed != null ? `; reclaimed ${dur(reclaimed)} of wall` : ''))
+      log(`      idle-killed${reclaimed != null ? `; reclaimed ${dur(reclaimed)} of wall` : ''}`)
     }
     reportRouteAndExecutor(row, log)
     const warning = agentWorkValue(String(row.job), () =>

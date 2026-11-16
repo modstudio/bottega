@@ -61,7 +61,7 @@ export function pendingQuestionIds(
     values.push(...input.runIds)
   }
   return database
-    .query<{ record_id: string }, string[]>(
+    .query<{ question_record_id: string }, string[]>(
       `SELECT question_record_id FROM question_delivery_pending${clauses.length ? ` WHERE ${clauses.join(' AND ')}` : ''}
        ORDER BY pending_at,question_record_id`,
     )
