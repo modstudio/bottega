@@ -37,12 +37,20 @@ test('store lock refusals append, filter by time, and rotate to one previous fil
     `SQLiteError: database is locked\n` +
     `    at write (${resolve(import.meta.dir, '../hub/src/db.ts')}:100:2)\n` +
     `    at apply (${resolve(import.meta.dir, '../hub/src/tasks.ts')}:200:4)`
-  appendStoreLockRefusal(facts, ['task', 'set', 'DEV-1'], snapshotError, hubStoreAdapterFile, {
-    now: new Date('2026-10-28T10:00:00.000Z'),
-  })
-  appendStoreLockRefusal(facts, ['note', 'new', 'words'], snapshotError, hubStoreAdapterFile, {
-    now: new Date('2026-10-28T10:01:00.000Z'),
-  })
+  appendStoreLockRefusal(
+    facts,
+    ['task', 'set', 'DEV-1'],
+    snapshotError,
+    { files: [hubStoreAdapterFile] },
+    { now: new Date('2026-10-28T10:00:00.000Z') },
+  )
+  appendStoreLockRefusal(
+    facts,
+    ['note', 'new', 'words'],
+    snapshotError,
+    { files: [hubStoreAdapterFile] },
+    { now: new Date('2026-10-28T10:01:00.000Z') },
+  )
 
   expect(readStoreLockRefusalsSince('2026-10-28T10:00:30.000Z')).toEqual([
     {
@@ -58,10 +66,13 @@ test('store lock refusals append, filter by time, and rotate to one previous fil
     },
   ])
 
-  appendStoreLockRefusal(facts, ['task', 'close'], snapshotError, hubStoreAdapterFile, {
-    maxBytes: 1,
-    now: new Date('2026-10-28T10:02:00.000Z'),
-  })
+  appendStoreLockRefusal(
+    facts,
+    ['task', 'close'],
+    snapshotError,
+    { files: [hubStoreAdapterFile] },
+    { maxBytes: 1, now: new Date('2026-10-28T10:02:00.000Z') },
+  )
   expect(readdirSync(stateHome).sort()).toEqual([
     'store-lock-refusals.jsonl',
     'store-lock-refusals.previous.jsonl',
@@ -74,7 +85,7 @@ test('an unavailable holder round-trips its reason and an older row defaults it 
     { store: '/state/hub/hub.db', holder: { unavailable: 'process inspection denied' } },
     ['task', 'set'],
     { code: 'SQLITE_LOCKED', errno: 6 },
-    hubStoreAdapterFile,
+    { files: [hubStoreAdapterFile] },
     { now: new Date('2026-10-28T10:00:00.000Z') },
   )
   appendFileSync(
@@ -121,7 +132,7 @@ test('an append failure in an unwritable state directory does not throw', () => 
       { store: '/state/orchestrator/orchestrator.db', holder: { unavailable: 'not sampled' } },
       ['run', 'start'],
       { code: 'SQLITE_BUSY' },
-      resolve(import.meta.dir, '../orchestrator/src/database/db.ts'),
+      { files: [resolve(import.meta.dir, '../orchestrator/src/database/db.ts')] },
     ),
   ).not.toThrow()
 })

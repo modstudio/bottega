@@ -15,6 +15,7 @@ import { writeCallerFromStack } from './write-caller-from-stack.ts'
 const STORE_LOCK_REFUSAL_LOG_MAX_BYTES = 1_048_576
 const LOG_NAME = 'store-lock-refusals'
 const refusalLogSourcePath = fileURLToPath(import.meta.url)
+// Shared frames are logging plumbing; the first concern frame above them owns the write.
 const refusalLogDirectory = dirname(refusalLogSourcePath)
 
 export type StoreLockRefusalEntry = {
@@ -34,11 +35,16 @@ type AppendOptions = {
   now?: Date
 }
 
+export type StoreAdapterFrames = {
+  files?: readonly string[]
+  directories?: readonly string[]
+}
+
 function refusalEntry(
   facts: DatabaseLockRefusalFacts,
   argv: readonly string[],
   error: unknown,
-  storeAdapterFile: string,
+  storeAdapterFrames: StoreAdapterFrames,
   now: Date,
 ): StoreLockRefusalEntry {
   const identity = sqliteErrorIdentity(error)
@@ -51,8 +57,8 @@ function refusalEntry(
     caller:
       typeof stack === 'string'
         ? writeCallerFromStack(stack, {
-            excludedFiles: [storeAdapterFile],
-            excludedDirectories: [refusalLogDirectory],
+            excludedFiles: storeAdapterFrames.files,
+            excludedDirectories: [refusalLogDirectory, ...(storeAdapterFrames.directories ?? [])],
           })
         : null,
     code: identity.code,
@@ -73,12 +79,13 @@ export function appendStoreLockRefusal(
   facts: DatabaseLockRefusalFacts,
   argv: readonly string[],
   error: unknown,
-  storeAdapterFile: string,
+  /** The concern's own store-adapter frames, skipped to reach the writing caller. */
+  storeAdapterFrames: StoreAdapterFrames,
   options: AppendOptions = {},
 ): void {
   try {
     appendBoundedJsonLine(
-      refusalEntry(facts, argv, error, storeAdapterFile, options.now ?? new Date()),
+      refusalEntry(facts, argv, error, storeAdapterFrames, options.now ?? new Date()),
       {
         maxBytes: options.maxBytes ?? STORE_LOCK_REFUSAL_LOG_MAX_BYTES,
         name: LOG_NAME,
@@ -94,9 +101,10 @@ export function recordDatabaseLockRefusal(
   facts: DatabaseLockRefusalFacts,
   argv: readonly string[],
   error: unknown,
-  storeAdapterFile: string,
+  /** The concern's own store-adapter frames, skipped to reach the writing caller. */
+  storeAdapterFrames: StoreAdapterFrames,
 ): string {
-  appendStoreLockRefusal(facts, argv, error, storeAdapterFile)
+  appendStoreLockRefusal(facts, argv, error, storeAdapterFrames)
   return formatDatabaseLockRefusal(facts)
 }
 
