@@ -126,6 +126,7 @@ export const recordSyncModules: RecordSyncModule[] = [
     'drizzle-orm/bun-sql',
     '../../../shared/record/schema-session.ts',
     '../../../shared/record-timestamp.ts',
+    './outbox-failure.ts',
     './outbox-payload-contracts.ts',
     './record-evidence-references.ts',
     './record-sync-contract.ts',
@@ -142,6 +143,7 @@ export const recordSyncModules: RecordSyncModule[] = [
     './record-evidence-references.ts',
     './record-sync-contract.ts',
     './record-sync-principal.ts',
+    './record-value-conversions.ts',
   ]),
   module('orchestrator/src/record/record-sync-review-funnel.ts', [
     'bun',

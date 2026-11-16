@@ -59,7 +59,9 @@ export function contextReviewInterval(
     .filter((gap) => gap.at >= now - CONTEXT_REVIEW_WINDOW_MS)
     .map((gap) => gap.gapMs)
   if (recent.length < CONTEXT_REVIEW_MIN_SAMPLES) return CONTEXT_REVIEW_MAX_MS
-  return Math.min(CONTEXT_REVIEW_MAX_MS, Math.max(CONTEXT_REVIEW_MIN_MS, median(recent)))
+  return Math.round(
+    Math.min(CONTEXT_REVIEW_MAX_MS, Math.max(CONTEXT_REVIEW_MIN_MS, median(recent))),
+  )
 }
 
 function namedDoneTask(body: string, doneTaskKeys: readonly string[]): string | null {

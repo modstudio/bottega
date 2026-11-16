@@ -10,13 +10,7 @@ import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import type { ExistingEvidenceOwned, RequireOwnedUpsert } from './record-evidence-references.ts'
 import type { RecordPayload, RecordPrincipal } from './record-sync-contract.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
-
-const count = (value: unknown, field: string) => {
-  const number = Number(value)
-  if (!Number.isSafeInteger(number) || number < 0)
-    throw new Error(`${field} must be a nonnegative integer`)
-  return number
-}
+import { nonnegativeInteger } from './record-value-conversions.ts'
 
 export const hookEmissionRecordKind = (
   existingEvidenceOwned: ExistingEvidenceOwned<SQL>,
@@ -35,8 +29,8 @@ export const hookEmissionRecordKind = (
         event: String(row.event),
         hook: String(row.hook),
         kind: String(row.kind),
-        chars: count(row.chars, 'hook_emission.chars'),
-        lines: count(row.lines, 'hook_emission.lines'),
+        chars: nonnegativeInteger(row.chars, 'hook_emission.chars'),
+        lines: nonnegativeInteger(row.lines, 'hook_emission.lines'),
         textHash: String(row.textHash),
         createdAt: recordDate(row.createdAt),
         updatedAt: recordDate(row.updatedAt),

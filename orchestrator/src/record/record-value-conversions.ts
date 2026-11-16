@@ -18,8 +18,16 @@ export const nullableNumber = (value: unknown) => (value == null ? null : Number
 export function nonnegativeInteger(value: unknown, field: string): number {
   const number = Number(value)
   if (!Number.isSafeInteger(number) || number < 0)
-    throw new Error(`${field} must be a nonnegative integer`)
+    throw new OutboxRowError(`${field} must be a nonnegative integer`, 'row-validation')
   return number
+}
+
+export function nonnegativeRoundedInteger(value: unknown, field: string): number {
+  const number = Number(value)
+  if (!Number.isFinite(number) || number < 0) {
+    throw new OutboxRowError(`${field} must be a finite nonnegative number`, 'row-validation')
+  }
+  return Math.round(number)
 }
 
 export function nullableUuid(value: unknown, field: string): string | null {
