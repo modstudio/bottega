@@ -85,7 +85,7 @@ export async function resultCommand(
 export async function waitCommand(database: Database, argv: string[]): Promise<void> {
   await collectWait(database, argv, async () => {
     const observed = reapStale(database, terminalSharedGitConfigForRecordedRun)
-    await closeStaleChainQuestions(database)
+    await closeStaleChainQuestions(database, { throttled: true })
     return observed
   })
 }

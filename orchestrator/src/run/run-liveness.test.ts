@@ -6,6 +6,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
+import * as questionStoreRead from '../question-store/question-store-read.ts'
 import * as resourceOwnership from '../resources/resource-ownership.ts'
 import { candidates } from '../route/route.ts'
 import { PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
@@ -396,6 +397,14 @@ describe('reapStale', () => {
         .get(root),
     ).toEqual({ outcome: 'retired', error: 'chain-stale' })
     expect(await inbox()).not.toContain(`run ${root}`)
+  })
+
+  test('a throttled question sweep skips the record read inside the interval', async () => {
+    const reads = spyOn(questionStoreRead, 'inboxRunQuestions')
+    await closeStaleChainQuestions(db())
+    await closeStaleChainQuestions(db(), { throttled: true })
+    await closeStaleChainQuestions(db(), { throttled: true })
+    expect(reads).toHaveBeenCalledTimes(1)
   })
 
   test('a pid-less (pending) row older than the bootstrap bound is failed/harness', () => {

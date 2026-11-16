@@ -46,17 +46,6 @@ export async function inboxRunQuestions(database: Database): Promise<Record<stri
   return items.filter((row) => 'run_record_id' in row) as Record<string, unknown>[]
 }
 
-export async function inboxRunQuestionPage(
-  database: Database,
-  input: { limit: number; changedAfter?: string },
-) {
-  const result = await questionStore(database).read({ read: 'inbox', ...input })
-  return {
-    ...result,
-    items: result.items.filter((row) => 'run_record_id' in row) as Record<string, unknown>[],
-  }
-}
-
 export async function questionsForRun(
   database: Database,
   runId: string,

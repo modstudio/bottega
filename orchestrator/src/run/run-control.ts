@@ -292,7 +292,7 @@ export async function follow(
       process.exit(2)
     }
     const observed = reapStale(db(), terminalSharedGitConfigForRecordedRun)
-    await closeStaleChainQuestions(db())
+    await closeStaleChainQuestions(db(), { throttled: true })
     if (Array.isArray(observed) && observed.some((dead) => dead.record_id === chain.finalId)) {
       console.error(
         `run ${chain.finalId}: process gone, not terminalised (read-only linked worktree)`,

@@ -307,7 +307,7 @@ export async function state(sinceDays: number | null = null) {
   // its pid was alive, and then the view hid it. Sweep first, then show
   // whatever is still marked running.
   reapStale(d, terminalSharedGitConfigForRecordedRun)
-  await closeStaleChainQuestions(d)
+  await closeStaleChainQuestions(d, { throttled: true })
 
   /**
    * ASKING RUNS ARE LIVE, and are the ones most worth seeing.
