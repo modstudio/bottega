@@ -590,12 +590,6 @@ const declaredModules: ArchitectureModule[] = [
   ]),
   ...runLifecycleModules,
   ...reviewModules,
-  module('orchestrator/src/runtime/runtime-registration.ts', [
-    './standard-calibration.ts',
-    './standard-question-run-pusher.ts',
-    './store-hooks.ts',
-    './standard-transports.ts',
-  ]),
   module('orchestrator/src/transport/ajv-validator.ts', []),
   module('orchestrator/src/transport/ajv-validator-loader.ts', ['./ajv-validator.ts']),
   module('orchestrator/src/transport/acp-trace.ts', [

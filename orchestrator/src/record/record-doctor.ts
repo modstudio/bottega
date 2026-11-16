@@ -710,6 +710,13 @@ async function recordOwnerChecks(migrateUrl: string, urls: string[]): Promise<Re
   return checks
 }
 
+function questionClientWithIdentity(identity: RecordIdentity) {
+  return {
+    ...recordQuestionClient(recordApiRequest),
+    whoami: async () => identity,
+  }
+}
+
 async function operatorRecordChecks(input: {
   recordUrl: string
   migrateUrl?: string
@@ -752,10 +759,7 @@ async function operatorRecordChecks(input: {
     try {
       const questionStore = recordQuestionStore({
         database: input.database,
-        client: {
-          ...recordQuestionClient(recordApiRequest),
-          whoami: async () => identity.record,
-        },
+        client: questionClientWithIdentity(identity.record),
       })
       const questionIds = (await questionStore.read({ read: 'rulings', kind: 'all' })).items.map(
         (row) => String((row as Record<string, unknown>).record_id),
