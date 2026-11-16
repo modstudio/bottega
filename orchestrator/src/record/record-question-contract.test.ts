@@ -2,9 +2,9 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   QUESTION_JSON_FIELDS,
+  type QuestionWriteBody,
   questionJsonFieldStructuredMessage,
   questionWriteSchema,
-  type QuestionWriteBody,
 } from './record-question-contract.ts'
 
 const STAMP = '2026-11-16T12:00:00.000Z'
