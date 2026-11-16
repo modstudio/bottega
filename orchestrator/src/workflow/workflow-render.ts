@@ -73,7 +73,9 @@ function renderRunnableComposition(result: WorkflowComposition): string {
       ? `${formatCursorOpened({ cursor: result.cursor.id, workflow: result.workflow.slug, mode: mode.slug, key: result.arguments.key ?? '', step: 1, stepSlug: first.slug })}${takeover}`
       : `${formatCursorResumed({ cursor: result.cursor.id, key: result.arguments.key ?? '', step: result.cursor.n, stepSlug: result.cursor.slug })}${takeover}`
     : `Begin now by fetching step 1, ${first.slug}.${takeover}`
-  const reference = result.cursor ? workflowCursorReference(result.cursor.id) : null
+  const reference = result.cursor
+    ? workflowCursorReference(result.cursor.id, result.project)
+    : null
   const cursor = reference?.cli ?? ''
   const nextCommand = `${PLATFORM_SLUG} workflow next ${result.workflow.slug} --project ${result.project} --mode ${mode.slug}${cursor}${args} --note "<how the floor was met>"`
   const awaitCommand = `${PLATFORM_SLUG} workflow await ${result.workflow.slug} --project ${result.project} --mode ${mode.slug}${cursor}${args} --question "..."`
@@ -187,7 +189,7 @@ function autonomyInstruction(step: WorkflowStep): string {
 }
 
 function closeContract(step: WorkflowStep): string {
-  const reference = step.cursor ? workflowCursorReference(step.cursor) : null
+  const reference = step.cursor ? workflowCursorReference(step.cursor, step.project) : null
   const cursor = reference ? ` with ${reference.mcp}` : ''
   const cliCursor = reference?.cli ?? ''
   const outcome = step.outcomes?.length
@@ -237,7 +239,7 @@ export function cursorAutonomyLines(value: CursorAutonomyNotice): string[] {
     ...(command
       ? (value.autonomyDifferences ?? []).map(
           ({ subject, pinned, live }) =>
-            `${subject}: pinned ${pinned}; your current setting is ${live}; it takes effect when this workflow next starts; to adopt it now: ${PLATFORM_SLUG} workflow abandon --cursor ${value.autonomyCursor} --reason "<why>"; then ${command}`,
+            `${subject}: pinned ${pinned}; your current setting is ${live}; it takes effect when this workflow next starts; to adopt it now: ${PLATFORM_SLUG} workflow abandon${workflowCursorReference(value.autonomyCursor!, value.autonomyProject!).cli} --reason "<why>"; then ${command}`,
         )
       : []),
   ]

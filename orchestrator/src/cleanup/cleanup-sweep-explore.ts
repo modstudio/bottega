@@ -28,6 +28,7 @@ export async function sweepSessionCursors(input: {
     const decision = decideSessionCursorSweep({
       ...activity,
       cursor: cursor.number,
+      project: cursor.project,
       workflowSlug: cursor.workflow_slug,
       stepSlug: cursor.step_slug,
       openQuestionRecordId: cursor.open_question_record_id,

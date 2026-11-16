@@ -817,10 +817,12 @@ describe('orch MCP', () => {
         .run('task-DEV-1082-MCP-B', second.id)
       const abandoned = await call('abandon_workflow', {
         cursor: second.id,
+        project,
         reason: 'stopped through MCP handle',
+        owner_session: hostedSecondSession ?? secondSession,
       })
       expect(abandoned).toContain(
-        `retry: ${PLATFORM_SLUG} workflow text copy --cursor ${second.id}`,
+        `retry: ${PLATFORM_SLUG} workflow text copy --cursor ${second.id} --project ${project}`,
       )
       expect(await showWorkflowText(attached)).toMatchObject({
         kind: 'live',

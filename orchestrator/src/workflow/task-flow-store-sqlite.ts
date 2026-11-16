@@ -52,7 +52,8 @@ const LISTED_STAGE_COLUMNS = `${STAGE_COLUMNS},(SELECT COUNT(*) FROM workflow_cu
 
 const WORKFLOW_OBLIGATION_FLOOR_COLUMNS = `record_id AS id, floor, require_pull_request,
   operator_ruling, expected_exit_code, expected_status, floor_deferrable,
-  (SELECT number FROM workflow_cursor WHERE workflow_cursor.record_id=workflow_obligation.cursor_record_id) AS cursor_number`
+  (SELECT number FROM workflow_cursor WHERE workflow_cursor.record_id=workflow_obligation.cursor_record_id) AS cursor_number,
+  (SELECT project FROM workflow_cursor WHERE workflow_cursor.record_id=workflow_obligation.cursor_record_id) AS cursor_project`
 
 class SqliteTaskFlowStore {
   private readonly database: Database

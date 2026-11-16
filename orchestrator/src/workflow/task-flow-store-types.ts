@@ -107,6 +107,7 @@ type TaskFlowObligationFloorRow = {
   expected_status: string
   floor_deferrable: boolean | number
   cursor_number: number
+  cursor_project: string
 }
 export type TaskFlowOpenObligationRow = TaskFlowObligationFloorRow & {
   stepOrdinal: number

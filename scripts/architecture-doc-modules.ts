@@ -79,6 +79,7 @@ export const docModules: DocModule[] = [
     '../database/db.ts',
     '../record/record-write-authority.ts',
     '../workflow/workflow-cursor-list.ts',
+    '../workflow/workflow-cursor-format.ts',
     '../workflow/task-flow-store.ts',
     '../workflow/workflow-task-reference.ts',
     './context-cursor-warning-decision.ts',

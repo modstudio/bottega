@@ -436,6 +436,7 @@ function registerWorkflowCursorAdmin({
         .option('--cursor <value>', 'select this workflow cursor')
         .option('--mode <value>', 'select this workflow mode')
         .option('--project <value>', 'select this registered project')
+        .option('--owner-session <value>', 'state intent to abandon a cursor owned by this session')
         .addOption(collectedOption('--arg <value>', 'supply a workflow argument as name=value')),
     ),
   )

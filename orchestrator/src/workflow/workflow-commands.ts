@@ -45,6 +45,7 @@ import {
 import { ruleWorkflow } from './workflow-cursor-ruling.ts'
 import {
   cliWorkflowCursorContext,
+  refuseForeignCursorAbandon,
   resolveWorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
 import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
@@ -500,6 +501,13 @@ export async function abandonCommand(
     workflow: slug,
     selectedRow,
   } = await cursorCommandTarget(argv, cursor, context, `${PLATFORM_SLUG} workflow abandon`)
+  if (selectedRow)
+    refuseForeignCursorAbandon(
+      selectedRow,
+      context.session,
+      flagValue(argv, 'owner-session'),
+      'cli',
+    )
   context = await resolveWorkflowCursorContext(
     project,
     args,

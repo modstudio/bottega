@@ -57,6 +57,7 @@ function textRow(text: NonNullable<HostedStage['stepTexts']>[number]): TaskFlowT
 function openObligationRow(
   obligation: NonNullable<HostedStage['obligations']>[number],
   cursorNumber: number,
+  cursorProject: string,
 ): TaskFlowOpenObligationRow {
   return {
     id: obligation.id,
@@ -67,6 +68,7 @@ function openObligationRow(
     expected_status: obligation.expectedStatus,
     floor_deferrable: Number(obligation.floorDeferrable),
     cursor_number: cursorNumber,
+    cursor_project: cursorProject,
     stepOrdinal: obligation.stepOrdinal,
     stepSlug: obligation.stepSlug,
   }
@@ -458,7 +460,7 @@ class RecordTaskFlowReadStore {
     const number = result.stage.number
     return (result.stage.obligations ?? [])
       .filter(({ satisfiedAt, abandonedAt }) => !satisfiedAt && !abandonedAt)
-      .map((row) => openObligationRow(row, number))
+      .map((row) => openObligationRow(row, number, this.projectName(result.stage.projectId)))
   }
   async obligationByRecordId(recordId: string): Promise<TaskFlowObligationRow | null> {
     const read = this.client.readTaskFlowObligation
@@ -472,7 +474,11 @@ class RecordTaskFlowReadStore {
       stepOrdinal: _stepOrdinal,
       stepSlug: _stepSlug,
       ...row
-    } = openObligationRow(result.obligation, result.stage.number)
+    } = openObligationRow(
+      result.obligation,
+      result.stage.number,
+      this.projectName(result.stage.projectId),
+    )
     return {
       ...row,
       cursor_record_id: result.obligation.stageRecordId,

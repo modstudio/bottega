@@ -69,13 +69,14 @@ describe('workflow rendering', () => {
     const rendered = renderWorkflowStep({
       ...step,
       autonomyCursor: 17,
+      autonomyProject: 'fixture',
       autonomyComposeCommand: `${PLATFORM_SLUG} workflow compose flow`,
       autonomyDifferences: [{ subject: 'steps.rebase', pinned: 'ask', live: 'auto' }],
       autonomyUnavailableReason: 'hosted settings timed out',
     })
 
     expect(rendered).toContain(
-      `steps.rebase: pinned ask; your current setting is auto; it takes effect when this workflow next starts; to adopt it now: ${PLATFORM_SLUG} workflow abandon --cursor 17 --reason "<why>"; then ${PLATFORM_SLUG} workflow compose flow`,
+      `steps.rebase: pinned ask; your current setting is auto; it takes effect when this workflow next starts; to adopt it now: ${PLATFORM_SLUG} workflow abandon --cursor 17 --project fixture --reason "<why>"; then ${PLATFORM_SLUG} workflow compose flow`,
     )
     expect(rendered).toContain(
       'Current autonomy settings could not be resolved; using pinned settings: hosted settings timed out',

@@ -964,6 +964,40 @@ test('every CLI cursor verb routes by handle, including handle-only abandon', as
   })
 })
 
+test('CLI abandon requires explicit intent for another sessions cursor', async () => {
+  const slug = 'cursor-abandon-owner'
+  const project = 'cursor-abandon-owner-project'
+  const step = productionStepCatalogue().definition.steps.find(
+    ({ slug }) => slug === 'blast-radius',
+  )!.slug
+  registerCurrentProject(project)
+  publishCursorWorkflow(slug, [{ slug: 'default', title: 'Default', default: true, steps: [step] }])
+  const foreign = await composeWorkflowWithCursor(
+    slug,
+    project,
+    'default',
+    { key: 'DEV-2365-foreign' },
+    {},
+    undefined,
+    {},
+    {},
+  )
+  db().query('UPDATE workflow_cursor SET session_id=? WHERE number=?').run('foreign-session', foreign.cursor!.id)
+  const abandon = (...tail: string[]) =>
+    workflowCommand(
+      ['workflow', 'abandon', '--cursor', String(foreign.cursor!.id), '--project', project, '--reason', 'test', ...tail],
+      presentation([]),
+    )
+
+  await expect(abandon()).rejects.toThrow(
+    'owned by session foreign-session; rerun with --owner-session foreign-session',
+  )
+  await abandon('--owner-session', 'foreign-session')
+  expect(db().query('SELECT state FROM workflow_cursor WHERE number=?').get(foreign.cursor!.id)).toEqual({
+    state: 'abandoned',
+  })
+})
+
 test('a cursor refuses a supplied workflow or project that differs from its row', async () => {
   const slug = 'cursor-identity-mismatch'
   const project = 'cursor-identity-mismatch-project'

@@ -80,6 +80,7 @@ export type LiveCursorAutonomy = {
 }
 export type CursorAutonomyNotice = {
   autonomyCursor?: number
+  autonomyProject?: string
   autonomyComposeCommand?: string
   autonomyDifferences?: CursorAutonomyDifference[]
   autonomyUnavailableReason?: string

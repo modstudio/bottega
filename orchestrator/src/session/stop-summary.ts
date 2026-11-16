@@ -195,6 +195,7 @@ export async function sessionStopSummary(
     questionCounts,
     cursors: cursors.map((cursor) => ({
       number: cursor.id,
+      project: cursor.project,
       key: cursor.workflow_key || null,
       workflow: cursor.workflow_slug,
       step: cursor.step_slug,

@@ -6,6 +6,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { workflowCursorReference } from './workflow-cursor-format.ts'
 import { db, writeTransaction } from '../database/db.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import {
@@ -64,6 +65,7 @@ type CopyCursor = {
 }
 export type WorkflowTextCopyResult = {
   cursor: number
+  project: string
   requestedTaskKey?: string
   copied: { id: string; documentReference: string; reused: boolean }[]
   uncopied: { id: string; reason: string }[]
@@ -151,11 +153,13 @@ function unsupportedCopyResult(
   task: HubTaskReference,
   rows: CopyRow[],
   cursor: number,
+  project: string,
 ): WorkflowTextCopyResult | null {
   if (!task.source || task.source === 'local') return null
   const references = rows.map((row) => workflowTextAttachmentToken(row.id)).join(', ')
   return {
     cursor,
+    project,
     copied: [],
     uncopied: [],
     unsupported: {
@@ -175,7 +179,7 @@ export async function copyWorkflowTextForCursor(
 ): Promise<WorkflowTextCopyResult> {
   const rows = await uncopiedRows(cursor.recordId, database, client)
   if (!cursor.taskRecordId || rows.length === 0)
-    return { cursor: cursor.number, copied: [], uncopied: [], unsupported: null }
+    return { cursor: cursor.number, project: cursor.project, copied: [], uncopied: [], unsupported: null }
   const target = taskFlowWriteTarget(cursor.project, database)
   try {
     const task = (await taskReader(cursor.project)).find(
@@ -185,7 +189,7 @@ export async function copyWorkflowTextForCursor(
       throw new Error(
         `task record ${cursor.taskRecordId} is not readable in project ${cursor.project}`,
       )
-    const unsupported = unsupportedCopyResult(task, rows, cursor.number)
+    const unsupported = unsupportedCopyResult(task, rows, cursor.number, cursor.project)
     if (unsupported) return unsupported
     const existing = await documents.list(task.key, cursor.project)
     const copied: WorkflowTextCopyResult['copied'] = []
@@ -217,11 +221,12 @@ export async function copyWorkflowTextForCursor(
     }
     if (cursor.state === 'done' || cursor.state === 'abandoned')
       await deleteWorkflowText(cursor.recordId, true, database, client)
-    return { cursor: cursor.number, copied, uncopied, unsupported: null }
+    return { cursor: cursor.number, project: cursor.project, copied, uncopied, unsupported: null }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
     return {
       cursor: cursor.number,
+      project: cursor.project,
       copied: [],
       uncopied: rows.map((row) => ({ id: row.id, reason })),
       unsupported: null,
@@ -240,7 +245,7 @@ export async function copyWorkflowTextForTask(
   if (!requestedTaskKey) {
     if (!cursor.taskRecordId && (await uncopiedRows(cursor.recordId, database)).length > 0) {
       throw new Error(
-        `cursor ${cursor.number} is not linked to a task; copy it with ${PLATFORM_SLUG} workflow text copy --cursor ${cursor.number} --task <KEY>`,
+        `cursor ${cursor.number} is not linked to a task; copy it with ${PLATFORM_SLUG} workflow text copy${workflowCursorReference(cursor.number, cursor.project).cli} --task <KEY>`,
       )
     }
     return copyWorkflowTextForCursor(cursor, database, taskReader, documents)
@@ -399,10 +404,11 @@ export async function closeCursorWithTextCopyResult(
 function uncopiedLine(
   row: WorkflowTextCopyResult['uncopied'][number],
   cursor: number,
+  project: string,
   requestedTaskKey?: string,
 ): string {
   const task = requestedTaskKey ? ` --task ${requestedTaskKey}` : ''
-  return `${workflowTextAttachmentToken(row.id)} is still uncopied: ${row.reason}; retry: ${PLATFORM_SLUG} workflow text copy --cursor ${cursor}${task}`
+  return `${workflowTextAttachmentToken(row.id)} is still uncopied: ${row.reason}; retry: ${PLATFORM_SLUG} workflow text copy${workflowCursorReference(cursor, project).cli}${task}`
 }
 
 export function workflowTextCopyReport(
@@ -414,7 +420,8 @@ export function workflowTextCopyReport(
     (row) =>
       `${workflowTextAttachmentToken(row.id)} ${row.reused ? 'reuses' : 'copied to'} ${row.documentReference}`,
   )
-  for (const row of result.uncopied) lines.push(uncopiedLine(row, cursor, result.requestedTaskKey))
+  for (const row of result.uncopied)
+    lines.push(uncopiedLine(row, cursor, result.project, result.requestedTaskKey))
   return lines.join('\n')
 }
 
@@ -423,7 +430,9 @@ export function workflowTextUncopiedReport(
   cursor = result.cursor,
 ): string {
   if (result.unsupported) return result.unsupported.reason
-  return result.uncopied.map((row) => uncopiedLine(row, cursor, result.requestedTaskKey)).join('\n')
+  return result.uncopied
+    .map((row) => uncopiedLine(row, cursor, result.project, result.requestedTaskKey))
+    .join('\n')
 }
 
 export class WorkflowTextNotHeldError extends Error {

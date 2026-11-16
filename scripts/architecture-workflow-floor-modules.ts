@@ -19,6 +19,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../record/record-api-client-task-flow.ts',
     './task-flow-read-through.ts',
     './task-flow-store.ts',
+    './workflow-cursor-format.ts',
   ]),
   module('orchestrator/src/workflow/workflow-arguments.ts', ['./workflow-definition.ts']),
   module('orchestrator/src/workflow/workflow-cursor-transition.ts', []),

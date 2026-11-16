@@ -138,7 +138,7 @@ export function resolveCursorArguments(
   const decision = decideCursorArguments(stored, supplied, rebindable, composing)
   if (decision.action === 'refuse') {
     if ('kind' in decision) {
-      const cursor = workflowCursorReference(row.id).cli
+      const cursor = workflowCursorReference(row.id, row.project).cli
       throw new Error(
         `workflow compose cannot rebind open cursor ${row.id} from stored branch "${decision.storedBranch}" ` +
           `at step ${row.ordinal + 1} ${row.step_slug}; finish it with ` +
@@ -149,7 +149,7 @@ export function resolveCursorArguments(
       )
     }
     throw new Error(
-      `${decision.reason}; ${PLATFORM_SLUG} workflow abandon${workflowCursorReference(row.id).cli} --reason "<why>"`,
+      `${decision.reason}; ${PLATFORM_SLUG} workflow abandon${workflowCursorReference(row.id, row.project).cli} --reason "<why>"`,
     )
   }
   const encoded = JSON.stringify(decision.args)

@@ -154,6 +154,23 @@ export function workflowCursorProjectScope(
 
 export type SelectableCursorRow = TaskFlowStageCursorRow
 
+/** Requires an explicit owner-session acknowledgement before a public abandon crosses sessions. */
+export function refuseForeignCursorAbandon(
+  row: Pick<SelectableCursorRow, 'id' | 'session_id'>,
+  callerSession: string | null | undefined,
+  ownerSession: string | undefined,
+  surface: 'cli' | 'mcp',
+): void {
+  if (!row.session_id || row.session_id === callerSession || ownerSession === row.session_id) return
+  const remedy =
+    surface === 'cli'
+      ? `rerun with --owner-session ${row.session_id}`
+      : `retry with owner_session ${JSON.stringify(row.session_id)}`
+  throw new Error(
+    `workflow cursor ${row.id} is owned by session ${row.session_id}; ${remedy} to state intent to abandon it`,
+  )
+}
+
 const mismatch = (
   row: Pick<SelectableCursorRow, 'id' | 'workflow_slug'>,
   name: string,

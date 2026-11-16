@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 import {
   isKeylessExplore,
   type TaskFlowOpenSessionStageRow as OpenCursor,
@@ -26,8 +27,9 @@ function reportRemainingCursor(
     )
     return
   }
-  const next = `${PLATFORM_SLUG} workflow next ${cursor.workflow_slug} --cursor ${cursor.number}`
-  const abandon = `${PLATFORM_SLUG} workflow abandon ${cursor.workflow_slug} --cursor ${cursor.number} --reason "<why>"`
+  const reference = workflowCursorReference(cursor.number, cursor.project).cli
+  const next = `${PLATFORM_SLUG} workflow next ${cursor.workflow_slug}${reference}`
+  const abandon = `${PLATFORM_SLUG} workflow abandon ${cursor.workflow_slug}${reference} --reason "<why>"`
   report.process.push({
     item: `workflow cursor ${cursor.number}`,
     reason: `cursor is ${cursor.state}`,

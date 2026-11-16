@@ -122,6 +122,7 @@ test('renders a keyless cursor with its idle age and close command', () => {
       {
         recordId: 'explore-record',
         number: 845,
+        project: PLATFORM_SLUG,
         key: null,
         workflow: 'explore',
         mode: 'default',
@@ -135,6 +136,7 @@ test('renders a keyless cursor with its idle age and close command', () => {
         questionNumber: null,
         runs: [],
         keylessIdle: 'idle 2h 10m',
+        keylessIdleMs: 7_800_000,
       },
     ],
     claims: [],
@@ -148,7 +150,7 @@ test('renders a keyless cursor with its idle age and close command', () => {
   }
 
   expect(renderContextBrief(brief)).toContain(
-    `cursor 845 explore · idle 2h 10m → ${PLATFORM_SLUG} workflow abandon --cursor 845`,
+    `cursor 845 explore · idle 2h 10m → ${PLATFORM_SLUG} workflow abandon --cursor 845 --project ${PLATFORM_SLUG}`,
   )
 })
 
@@ -162,6 +164,7 @@ test('keeps an awaiting question on a keyless cursor and omits its abandon remed
       {
         recordId: 'explore-record',
         number: 845,
+        project: PLATFORM_SLUG,
         key: null,
         workflow: 'explore',
         mode: 'default',
@@ -430,6 +433,7 @@ test('renders an open keyless cursor item under its cursor header without an ope
           number: 42,
           workflow_slug: 'explore',
           mode_slug: 'default',
+          project: PLATFORM_SLUG,
         },
       ],
     ),
@@ -451,8 +455,8 @@ test('renders an open keyless cursor item under its cursor header without an ope
     },
     autonomy: 'unknown',
   })
-  expect(rendered).toContain('Cursor 42 explore default\n  position: Continue here.')
-  expect(rendered).not.toContain('Cursor 42 explore default\n  position: Continue here.\n  open:')
+  expect(rendered).toContain(`Cursor 42 explore default (${PLATFORM_SLUG})\n  position: Continue here.`)
+  expect(rendered).not.toContain(`Cursor 42 explore default (${PLATFORM_SLUG})\n  position: Continue here.\n  open:`)
   database.close()
 })
 

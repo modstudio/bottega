@@ -47,6 +47,7 @@ import {
 } from '../workflow/workflow-compose-branch.ts'
 import {
   mcpWorkflowCursorContext,
+  refuseForeignCursorAbandon,
   resolveMcpSelectedCursorContext,
 } from '../workflow/workflow-cursor-selection.ts'
 import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
@@ -488,19 +489,27 @@ function registerWorkflowListTool(server: McpServer): void {
   )
 }
 
-async function abandonWorkflowWithTextCopy(cursor: number, reason: string, ports: DocsMcpPorts) {
-  const { context } = await resolveMcpSelectedCursorContext(
-    undefined,
+async function abandonWorkflowWithTextCopy(
+  cursor: number,
+  project: string,
+  reason: string,
+  ownerSession: string | undefined,
+  ports: DocsMcpPorts,
+) {
+  const { context, selectedRow } = await resolveMcpSelectedCursorContext(
+    project,
     undefined,
     undefined,
     {},
     cursor,
     ports.hubTaskReader,
   )
+  refuseForeignCursorAbandon(selectedRow!, context.session, ownerSession, 'mcp')
   const result = await closeCursorWithTextCopy(
     {
       action: 'abandon',
       cursor,
+      project,
       args: {},
       context,
       reason,
@@ -622,10 +631,13 @@ function registerWorkflowActionTools(server: McpServer, ports: DocsMcpPorts): vo
       description: 'Abandon one workflow run by cursor handle.',
       inputSchema: z.object({
         cursor: z.number().int().positive(),
+        project: z.string().trim().min(1),
         reason: z.string().trim().min(1),
+        owner_session: z.string().trim().min(1).optional(),
       }),
     },
-    async ({ cursor, reason }) => abandonWorkflowWithTextCopy(cursor, reason, ports),
+    async ({ cursor, project, reason, owner_session }) =>
+      abandonWorkflowWithTextCopy(cursor, project, reason, owner_session, ports),
   )
 }
 

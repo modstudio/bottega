@@ -48,6 +48,7 @@ describe('Stop summary decision', () => {
         cursors: [
           {
             number: 10,
+            project: PLATFORM_SLUG,
             key: 'DEV-2297',
             workflow: 'plan-task',
             step: 'design',
@@ -57,6 +58,7 @@ describe('Stop summary decision', () => {
           },
           {
             number: 11,
+            project: PLATFORM_SLUG,
             key: null,
             workflow: 'explore',
             step: 'orient',
@@ -78,6 +80,7 @@ describe('Stop summary decision', () => {
   test('an idle keyless cursor adds one non-blocking line without changing block identity', () => {
     const idleCursor = {
       number: 845,
+      project: PLATFORM_SLUG,
       key: null,
       workflow: 'explore',
       step: 'orient',
@@ -89,7 +92,7 @@ describe('Stop summary decision', () => {
     const result = decideStopSummary(facts({ cursors: [idleCursor], owedItems: [owed()] }))
 
     expect(result.lines.filter((line) => line.startsWith('Explore cursor 845 idle'))).toEqual([
-      `Explore cursor 845 idle 1h 0m → ${PLATFORM_SLUG} workflow abandon --cursor 845`,
+      `Explore cursor 845 idle 1h 0m → ${PLATFORM_SLUG} workflow abandon --cursor 845 --project ${PLATFORM_SLUG}`,
     ])
     expect(result.block).toBeTrue()
     expect(result.blockKey).toBe(baseline.blockKey)
@@ -100,6 +103,7 @@ describe('Stop summary decision', () => {
     const cursors = [
       {
         number: 845,
+        project: PLATFORM_SLUG,
         key: null,
         workflow: 'explore',
         step: 'orient',
@@ -109,6 +113,7 @@ describe('Stop summary decision', () => {
       },
       {
         number: 884,
+        project: PLATFORM_SLUG,
         key: 'DEV-2323',
         workflow: 'plan-task',
         step: 'build',

@@ -16,14 +16,14 @@ import {
   questionInboxCountsForSession,
 } from '../run/question-inbox-counts.ts'
 import { LIVE_RUN_STATUS_SQL } from '../run/run-status.ts'
-import { keylessCursorIdle } from '../session/keyless-cursor-idle.ts'
+import { KEYLESS_CURSOR_IDLE_MS, keylessCursorIdle } from '../session/keyless-cursor-idle.ts'
 import { sessionReviewVerdictLines } from '../session/session-review-verdicts.ts'
 import { architectSessionContext } from '../workflow/session-context.ts'
 import {
   listWorkflowCursors,
-  openKeylessCursorsForSession,
   type WorkflowCursorListRow,
 } from '../workflow/workflow-cursor-list.ts'
+import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 import {
   workflowCursorBranchAndWorktree,
   workflowCursorClaimHandles,
@@ -62,7 +62,9 @@ export type ContextBrief = {
   cursors: Array<
     ContextBriefCursorLine & {
       recordId: string
+      project: string
       keylessIdle?: string | null
+      keylessIdleMs?: number | null
     }
   >
   claims: Array<{ kind: string; value: string }>
@@ -131,7 +133,7 @@ export function renderContextBrief(brief: ContextBrief): string {
   const inFlight = [
     ...brief.cursors.map((cursor) => {
       if (cursor.keylessIdle !== undefined)
-        return `cursor ${cursor.number} ${cursor.workflow} · ${cursor.keylessIdle ?? 'idle unknown'}${cursor.questionNumber === null ? ` → ${PLATFORM_SLUG} workflow abandon --cursor ${cursor.number}` : `, awaiting q${cursor.questionNumber}`}`
+        return `cursor ${cursor.number} ${cursor.workflow} · ${cursor.keylessIdle ?? 'idle unknown'}${cursor.questionNumber === null && cursor.keylessIdleMs !== null && cursor.keylessIdleMs !== undefined && cursor.keylessIdleMs >= KEYLESS_CURSOR_IDLE_MS ? ` → ${PLATFORM_SLUG} workflow abandon${workflowCursorReference(cursor.number, cursor.project).cli}` : cursor.questionNumber === null ? '' : `, awaiting q${cursor.questionNumber}`}`
       return formatContextBriefCursorLine(cursor)
     }),
     ...brief.runs.map(formatContextBriefRunLine),
@@ -173,13 +175,14 @@ export function holderSequence(
     number: number
     workflow_slug: string
     mode_slug: string
+    project: string
   }[] = [],
 ): ContextBriefHolderReference[] {
   const holders: ContextBriefHolderReference[] = [
     { key: session, title: '', kind: 'session' },
     ...keylessCursors.map((cursor) => ({
       key: cursorContextHolder(cursor.record_id),
-      title: `Cursor ${cursor.number} ${cursor.workflow_slug} ${cursor.mode_slug}`,
+      title: `Cursor ${cursor.number} ${cursor.workflow_slug} ${cursor.mode_slug} (${cursor.project})`,
       kind: 'cursor' as const,
       recordId: cursor.record_id,
     })),
@@ -348,7 +351,7 @@ export async function contextBrief(
   database: Database = db(),
 ): Promise<ContextBrief> {
   const cursors = await listWorkflowCursors({ session }, database)
-  const keylessCursors = await openKeylessCursorsForSession(session, database)
+  const keylessCursors = cursors.filter((cursor) => !cursor.workflow_key)
   const liveClaims = liveClaimsOfSession(session, Date.now(), database)
   const working = workingKeysForBrief(cursors)
   const workingProjects = [...new Set(working.map(({ project }) => project))]
@@ -381,11 +384,14 @@ export async function contextBrief(
       : `${PLATFORM_SLUG} agent context show --session ${session}`,
     holders,
     runs: inFlight.runs,
-    cursors: cursors.map((cursor) => ({
+    cursors: cursors.map((cursor) => {
+      const idle = cursor.workflow_key ? null : keylessCursorIdle(cursor.updated_at)
+      return {
       recordId: cursor.record_id,
       number: cursor.id,
       ...contextBriefCursorHandles(cursor, database),
       workflow: cursor.workflow_slug,
+      project: cursor.project,
       mode: cursor.mode_slug,
       step: cursor.ordinal + 1,
       totalSteps: cursor.total_steps,
@@ -394,8 +400,9 @@ export async function contextBrief(
       runs: inFlight.cursorRuns.find((item) => item.recordId === cursor.record_id)?.runs ?? [],
       ...(cursor.workflow_key
         ? {}
-        : { keylessIdle: keylessCursorIdle(cursor.updated_at)?.label ?? null }),
-    })),
+        : { keylessIdle: idle?.label ?? null, keylessIdleMs: idle?.ms ?? null }),
+      }
+    }),
     claims: inFlight.claims,
     reviewVerdictLines: sessionReviewVerdictLines(session, cursors, database),
     waiting: {
