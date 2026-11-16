@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite'
-import { questionRulings } from './question-store/question-store-read.ts'
 import { existsSync, readFileSync } from 'node:fs'
+import { questionRulings } from './question-store/question-store-read.ts'
 
 type RecordSource = 'score' | 'ruling' | 'review' | 'output'
 

@@ -24,8 +24,7 @@ export async function jevWorkerQuestionReport(
       ? undefined
       : new Date(Date.now() - options.days * 24 * 60 * 60 * 1000).toISOString()
   const rows = (await questionRulings(database, { kind: 'all', since })).items.filter(
-    (row) =>
-      row.jev_pick !== null && ['choice', 'yesno', 'score'].includes(String(row.kind)),
+    (row) => row.jev_pick !== null && ['choice', 'yesno', 'score'].includes(String(row.kind)),
   ) as unknown as JevWorkerQuestionRow[]
   const thresholds = jevThresholds(readMachine)
   if (!thresholds.ok) throw new Error(thresholds.error)

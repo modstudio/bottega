@@ -39,8 +39,8 @@ import { AGENTS } from '../agent/agent-registry.ts'
 import type { Agent } from '../agent/agents.ts'
 import { db } from '../database/db.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
-import { questionProjects } from '../question-store/question-store-read.ts'
 import { recordQuestionStore } from '../question-store/question-store.ts'
+import { questionProjects } from '../question-store/question-store-read.ts'
 import { inspectRunRecordBackfill, type RunRecordBackfillInspection } from '../run/run-outbox.ts'
 import {
   inspectTaskFlowBackfill,
@@ -50,11 +50,7 @@ import {
 import { activeSpaceInvariant } from './active-space-invariant.ts'
 import { machineId } from './machine-identity.ts'
 import { quarantinedOutboxRows } from './outbox-quarantine.ts'
-import {
-  RecordApiRequestError,
-  recordApiClient,
-  recordApiRequest,
-} from './record-api-client.ts'
+import { RecordApiRequestError, recordApiClient, recordApiRequest } from './record-api-client.ts'
 import { recordQuestionClient } from './record-api-client-question.ts'
 import { recordAttributionFailure } from './record-attribution.ts'
 import { bearerHeaders, type RecordIdentity } from './record-auth.ts'
@@ -704,7 +700,7 @@ async function operatorRecordChecks(input: {
         destinationSpaceId: identity.activeSpaceId,
       })
       const questionIds = (await questionStore.read({ read: 'rulings', kind: 'all' })).items.map(
-        (row) => String(row.record_id),
+        (row) => String((row as Record<string, unknown>).record_id),
       )
       const hostedQuestions = (
         await Promise.all(
@@ -717,7 +713,7 @@ async function operatorRecordChecks(input: {
         )
       ).flatMap(({ items }) => items)
       const machineQuestions = hostedQuestions.filter(
-        (question) => question.machine_id === machineId(),
+        (question) => (question as Record<string, unknown>).machine_id === machineId(),
       ).length
       const attribution = await actor.begin(async (tx) => {
         await tx`SELECT set_config('app.user_id', ${identity.userId}, true)`

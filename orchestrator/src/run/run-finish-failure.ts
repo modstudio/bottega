@@ -3,7 +3,10 @@
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { TERMINAL_RUN_STATUS_SET } from './run-status.ts'
-import { finalizeTerminalChain } from './run-terminal-chain.ts'
+import {
+  closeTerminalChainQuestions,
+  finalizeTerminalChain,
+} from './run-terminal-chain.ts'
 
 export function shouldWriteFinishFailure(
   currentStatus: string,
@@ -12,16 +15,16 @@ export function shouldWriteFinishFailure(
   return !terminalRecorded && !TERMINAL_RUN_STATUS_SET.has(currentStatus)
 }
 
-export function recordRunFinishFailure(input: {
+export async function recordRunFinishFailure(input: {
   runId: string
   error: unknown
   started: number
   machineId: string
   terminalRecorded: boolean
-}): void {
+}): Promise<void> {
   const detail = input.error instanceof Error ? input.error.message : String(input.error)
   const finishedAt = nowIso()
-  writeTransaction(() => {
+  const chain = writeTransaction(() => {
     const database = db()
     const row = database
       .query('SELECT status,parent_run_record_id FROM run WHERE record_id=?')
@@ -47,5 +50,8 @@ export function recordRunFinishFailure(input: {
       record: [input.machineId, finishedAt],
     })
     enqueueRunRecord(database, input.runId, input.machineId, finishedAt)
+    return { rootId: row.parent_run_record_id ?? input.runId, failureKind: 'harness' as const }
   })
+  if (chain)
+    await closeTerminalChainQuestions(db(), chain.rootId, 'failed', chain.failureKind)
 }

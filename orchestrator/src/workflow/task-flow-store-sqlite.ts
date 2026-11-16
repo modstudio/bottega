@@ -3,12 +3,12 @@
 
 import type { Database } from 'bun:sqlite'
 import { writeTransaction } from '../database/db.ts'
+import { allQuestions } from '../question-store/question-store-read.ts'
 import type {
   TaskFlowIntent,
   TaskFlowIntentInput,
   TaskFlowIntentResult,
 } from '../record/record-task-flow-write-contract.ts'
-import { allQuestions } from '../question-store/question-store-read.ts'
 import type {
   TaskFlowLocalOnlyReadMethod,
   TaskFlowLocalReadMethod,

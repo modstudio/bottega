@@ -41,10 +41,7 @@ import {
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import { attributedLaunchKey, type ResolvedReviewTarget } from '../review/review-target.ts'
-import {
-  resolveSupersededTurn,
-  supersededTurnQuestionState,
-} from '../route/failover.ts'
+import { resolveSupersededTurn, supersededTurnQuestionState } from '../route/failover.ts'
 import { runOwnedPaths } from '../run-owned-paths.ts'
 import { type KeepTreeExemption, recordedKeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { writerTreeBaseRef } from '../worktree/trunk-base-choice.ts'

@@ -2,9 +2,9 @@
 /** Atomically adopts a task key and republishes every cursor-bound question. */
 import type { Database } from 'bun:sqlite'
 import { nowIso, writeTransaction } from '../database/db.ts'
-import { machineId } from '../record/machine-identity.ts'
 import { mutateQuestion } from '../question-store/question-store-mutation.ts'
 import { questionsForWorkflowCursor } from '../question-store/question-store-read.ts'
+import { machineId } from '../record/machine-identity.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import {
   taskFlowWriteTarget,

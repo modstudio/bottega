@@ -14,10 +14,7 @@ import { liveOperationalStatusFromEvents, readEventLog, runEventsPath } from '..
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { failureReason, type OutcomeRow, outcomeOf } from '../outcome.ts'
 import type { ProcessSample } from '../process-resource-sampler.ts'
-import {
-  questionRulings,
-  questionsForChain,
-} from '../question-store/question-store-read.ts'
+import { questionRulings, questionsForChain } from '../question-store/question-store-read.ts'
 import { publishChangeCursor } from './collect-change.ts'
 import { currentRunMemberJoin, liveMemberStall } from './live-run-member.ts'
 import type {
@@ -143,7 +140,8 @@ function reportRouteAndExecutor(row: Record<string, unknown>, log: (...values: u
 
 async function listingQuestions(recordId: string, json: boolean) {
   if (!json) return undefined
-  return ((await questionsForChain(db(), recordId)) as unknown as {
+  return (
+    (await questionsForChain(db(), recordId)) as unknown as {
       number: number
       record_id: string
       run_record_id: string
@@ -156,7 +154,8 @@ async function listingQuestions(recordId: string, json: boolean) {
       overturned_at: string | null
       closed_at: string | null
       close_reason: string | null
-  }[]).map((q) => ({
+    }[]
+  ).map((q) => ({
     id: q.number,
     record_id: q.record_id,
     run_record_id: q.run_record_id,
@@ -384,22 +383,19 @@ function applyRequestedRunFilter(
 function rootIdsForQuestionRows(rows: Record<string, unknown>[]): string[] {
   const runIds = [
     ...new Set(
-      rows.flatMap((row) =>
-        typeof row.run_record_id === 'string' ? [row.run_record_id] : [],
-      ),
+      rows.flatMap((row) => (typeof row.run_record_id === 'string' ? [row.run_record_id] : [])),
     ),
   ]
   if (!runIds.length) return []
   return [
     ...new Set(
-      (
-        db()
-          .query<{ root_id: string }, string[]>(
-            `SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run
+      db()
+        .query<{ root_id: string }, string[]>(
+          `SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run
              WHERE record_id IN (${runIds.map(() => '?').join(',')})`,
-          )
-          .all(...runIds)
-      ).map(({ root_id }) => root_id),
+        )
+        .all(...runIds)
+        .map(({ root_id }) => root_id),
     ),
   ]
 }

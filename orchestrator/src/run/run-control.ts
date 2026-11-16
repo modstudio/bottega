@@ -49,7 +49,7 @@ import {
   reauthorizeRunMutation,
 } from './run-authority.ts'
 import { detach } from './run-dispatch.ts'
-import { RUN_FOLLOW_TIMEOUT_MS, reapStale } from './run-liveness.ts'
+import { closeStaleChainQuestions, RUN_FOLLOW_TIMEOUT_MS, reapStale } from './run-liveness.ts'
 import { continuationResumeKind } from './run-resume-kind.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
 import { type ContinuationInstruction, renderCheckpointContinuationPrompt } from './run-retry.ts'
@@ -292,6 +292,7 @@ export async function follow(
       process.exit(2)
     }
     const observed = reapStale(db(), terminalSharedGitConfigForRecordedRun)
+    await closeStaleChainQuestions(db())
     if (Array.isArray(observed) && observed.some((dead) => dead.record_id === chain.finalId)) {
       console.error(
         `run ${chain.finalId}: process gone, not terminalised (read-only linked worktree)`,

@@ -82,7 +82,10 @@ import {
 const TERMINAL_STATUS_SQL = 'SELECT status, failure_kind FROM run WHERE record_id=?'
 
 import { type BlockerRow, blockersToRecord } from './run-terminal-blockers.ts'
-import { finalizeTerminalChain } from './run-terminal-chain.ts'
+import {
+  closeTerminalChainQuestions,
+  finalizeTerminalChain,
+} from './run-terminal-chain.ts'
 import { terminalTurnChanged } from './run-terminal-change.ts'
 import { applyConfinementPrecedence, applyVendorTermination } from './run-terminal-precedence.ts'
 import {
@@ -1075,6 +1078,12 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       console.error(`orch: run ${claim.id} left unreconciled: ${detail}`)
     }
   }
+  await closeTerminalChainQuestions(
+    db(),
+    claimIdentity(opts.resume).parent_run_record_id ?? claim.id,
+    status,
+    failureKind,
+  )
   await preAnswerReplyQuestions(claim.id, recordedQuestions)
   const recorded = db().query(TERMINAL_STATUS_SQL).get(claim.id) as {
     status: string

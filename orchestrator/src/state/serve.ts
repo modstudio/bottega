@@ -29,7 +29,7 @@ import { evidenceModel } from '../route/evidence-model.ts'
 import { candidates, scoreboard } from '../route/route.ts'
 import { rulingStatus } from '../run/question-vocabulary.ts'
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
-import { reapStale } from '../run/run-liveness.ts'
+import { closeStaleChainQuestions, reapStale } from '../run/run-liveness.ts'
 import { type SubscriptionCostContext, withReportedCost } from '../run/run-subscription-cost.ts'
 import { subscriptionCostFacts } from '../run/run-subscription-cost-store.ts'
 import { terminalSharedGitConfigForRecordedRun } from '../run/shared-git-config-run.ts'
@@ -272,6 +272,7 @@ export async function state(sinceDays: number | null = null) {
   // its pid was alive, and then the view hid it. Sweep first, then show
   // whatever is still marked running.
   reapStale(d, terminalSharedGitConfigForRecordedRun)
+  await closeStaleChainQuestions(d)
 
   /**
    * ASKING RUNS ARE LIVE, and are the ones most worth seeing.
@@ -313,18 +314,20 @@ export async function state(sinceDays: number | null = null) {
       status: string
     }
   >
-  const live = (await Promise.all(
-    liveRows.map(async (run) => {
-      const openQuestions = (await questionsForRun(d, run.record_id)).filter(
-        ({ answered_at, closed_at }) => answered_at === null && closed_at === null,
-      ).length
-      return {
-        ...run,
-        open_questions: openQuestions,
-        waiting: run.status === 'asking' && openQuestions > 0,
-      }
-    }),
-  )).sort((a, b) => Number(b.waiting) - Number(a.waiting) || Number(b.id) - Number(a.id))
+  const live = (
+    await Promise.all(
+      liveRows.map(async (run) => {
+        const openQuestions = (await questionsForRun(d, run.record_id)).filter(
+          ({ answered_at, closed_at }) => answered_at === null && closed_at === null,
+        ).length
+        return {
+          ...run,
+          open_questions: openQuestions,
+          waiting: run.status === 'asking' && openQuestions > 0,
+        }
+      }),
+    )
+  ).sort((a, b) => Number(b.waiting) - Number(a.waiting) || Number(b.id) - Number(a.id))
 
   const stale = (d.query(`SELECT COUNT(*) n FROM run WHERE status='stale'`).get() as { n: number })
     .n

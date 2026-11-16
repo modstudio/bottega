@@ -839,7 +839,7 @@ export type CollectWaitServiceResult =
 
 type CollectWaitServiceOptions = {
   timeoutMs?: number
-  beforePoll?: () => void | number | ObservedDeadRun[]
+  beforePoll?: () => void | number | ObservedDeadRun[] | Promise<void | number | ObservedDeadRun[]>
   onObservedDead?: (run: ObservedDeadRun) => void
   readOutput?: (path: string) => string
   now?: () => number
@@ -866,40 +866,42 @@ export async function collectWaitForRuns(
   const deadline = now() + timeoutMs
   const observedTerminal = new Set<string>()
   for (;;) {
-    const observation = beforePoll()
-    const outcomes = await Promise.all(ids.map(async (requestedId) => {
-      const chain = resolveFailover(database, requestedId)
-      const row = database
-        .query(
-          'SELECT record_id, status, output_path, error, failure_kind, exit_code FROM run WHERE record_id=?',
-        )
-        .get(chain.finalId) as {
-        record_id: string
-        status: string
-        output_path: string | null
-        error: string | null
-        failure_kind: string | null
-        exit_code: number | null
-      }
-      const asking = row.status === 'asking' ? await resolveAsking(database, row.record_id) : null
-      const outcome =
-        asking?.state === 'running'
-          ? { terminal: false, ok: false, line: 'running' }
-          : asking?.state === 'open'
-            ? {
-                terminal: true,
-                ok: true,
-                line: `asking - ${PLATFORM_SLUG} question inbox (or ${PLATFORM_SLUG} question answer ${asking.rootId})`,
-              }
-            : asking?.state === 'recoverable'
+    const observation = await beforePoll()
+    const outcomes = await Promise.all(
+      ids.map(async (requestedId) => {
+        const chain = resolveFailover(database, requestedId)
+        const row = database
+          .query(
+            'SELECT record_id, status, output_path, error, failure_kind, exit_code FROM run WHERE record_id=?',
+          )
+          .get(chain.finalId) as {
+          record_id: string
+          status: string
+          output_path: string | null
+          error: string | null
+          failure_kind: string | null
+          exit_code: number | null
+        }
+        const asking = row.status === 'asking' ? await resolveAsking(database, row.record_id) : null
+        const outcome =
+          asking?.state === 'running'
+            ? { terminal: false, ok: false, line: 'running' }
+            : asking?.state === 'open'
               ? {
                   terminal: true,
                   ok: true,
-                  line: `asking - recoverable: ${PLATFORM_SLUG} run continue ${asking.rootId}`,
+                  line: `asking - ${PLATFORM_SLUG} question inbox (or ${PLATFORM_SLUG} question answer ${asking.rootId})`,
                 }
-              : outcomeOf(row)
-      return { requestedId, row, chain, outcome }
-    }))
+              : asking?.state === 'recoverable'
+                ? {
+                    terminal: true,
+                    ok: true,
+                    line: `asking - recoverable: ${PLATFORM_SLUG} run continue ${asking.rootId}`,
+                  }
+                : outcomeOf(row)
+        return { requestedId, row, chain, outcome }
+      }),
+    )
     if (Array.isArray(observation)) {
       const requestedRows = new Set(outcomes.map(({ row }) => row.record_id))
       for (const dead of observation) {
@@ -939,7 +941,11 @@ export async function collectWaitForRuns(
 export async function collectWait(
   database: Database,
   argv: string[],
-  beforePoll: () => void | number | ObservedDeadRun[] = () => {},
+  beforePoll: () =>
+    | void
+    | number
+    | ObservedDeadRun[]
+    | Promise<void | number | ObservedDeadRun[]> = () => {},
 ): Promise<void> {
   const rest = argv.slice(1)
   for (let i = 0; i < rest.length; i++) {

@@ -92,9 +92,7 @@ async function recordQuestionDetails(
   input: { ids?: readonly string[]; runId?: string; workflowCursorRecordId?: string },
 ): Promise<Row[]> {
   if (input.ids?.length === 0) return []
-  const values = input.ids
-    ? [...input.ids]
-    : [input.runId ?? input.workflowCursorRecordId]
+  const values = input.ids ? [...input.ids] : [input.runId ?? input.workflowCursorRecordId]
   const predicate = input.ids
     ? `q.id IN (${input.ids.map((_, index) => `$${index + 1}::uuid`).join(',')})`
     : input.runId

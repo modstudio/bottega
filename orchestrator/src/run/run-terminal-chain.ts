@@ -5,19 +5,18 @@ import { type classify, FAILS_OVER } from '../failure/failure.ts'
 import {
   closeRunChainQuestions,
   QUESTION_CLOSE_CHAIN_TERMINAL,
-  retireRunChainQuestionDeliveries,
 } from './question-close.ts'
 import { rollUpRootAndEnqueue } from './run-liveness.ts'
 
-function closeTerminalQuestions(
+export async function closeTerminalChainQuestions(
   database: Database,
   rootId: string,
   status: string,
   failureKind: ReturnType<typeof classify> | null,
-): void {
+): Promise<void> {
   if (status === 'asking' || status === 'running') return
   if (failureKind && FAILS_OVER.includes(failureKind)) return
-  closeRunChainQuestions(database, rootId, QUESTION_CLOSE_CHAIN_TERMINAL)
+  await closeRunChainQuestions(database, rootId, QUESTION_CLOSE_CHAIN_TERMINAL)
 }
 
 export function finalizeTerminalChain(
@@ -31,7 +30,6 @@ export function finalizeTerminalChain(
     record: [machineId: string, finishedAt: string]
   },
 ): void {
-  const rootId = input.parentRunId ?? input.runId
   if (input.parentRunId !== null && input.status === 'asking') {
     database
       .query(
@@ -40,15 +38,7 @@ export function finalizeTerminalChain(
       )
       .run(input.error, input.parentRunId)
   }
-  closeTerminalQuestions(database, rootId, input.status, input.failureKind)
   if (input.parentRunId !== null) {
     rollUpRootAndEnqueue(database, input.parentRunId, null, ...input.record, false)
-  }
-  if (
-    input.status !== 'asking' &&
-    input.status !== 'running' &&
-    !(input.failureKind && FAILS_OVER.includes(input.failureKind))
-  ) {
-    retireRunChainQuestionDeliveries(database, rootId, QUESTION_CLOSE_CHAIN_TERMINAL)
   }
 }

@@ -60,9 +60,9 @@ export async function specUnsettledLabel(
     )
     .all(job, subjectRef)
   if (
-    (
-      await Promise.all(roots.map(({ record_id }) => questionsForChain(database, record_id)))
-    ).some((questions) => questions.length > 0)
+    (await Promise.all(roots.map(({ record_id }) => questionsForChain(database, record_id)))).some(
+      (questions) => questions.length > 0,
+    )
   )
     return true
   if (result.roots > 0 && result.terminal) return false
@@ -125,10 +125,7 @@ export async function typedQuestionReport(
     if (row.question_id !== SPEC_UNSETTLED_QUESTION.id) continue
     const key = `${row.subject_kind}\u0000${row.subject_ref}`
     if (!labels.has(key))
-      labels.set(
-        key,
-        await specUnsettledLabel(database, row.subject_ref, row.subject_kind),
-      )
+      labels.set(key, await specUnsettledLabel(database, row.subject_ref, row.subject_kind))
   }
   return typedQuestionBlocks(rows, (questionId, questionVersion) => {
     return {

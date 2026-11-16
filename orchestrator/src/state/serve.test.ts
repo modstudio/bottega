@@ -254,7 +254,9 @@ describe('run detail', () => {
     const finished = addRun({ agent: 'codex', job: 'implement' })
     mkdirSync(runArtifactsDir(finished), { recursive: true })
     writeAskServerFailure(new Error('persisted startup failed'), runArtifactsDir(finished))
-    expect((await runDetail(finished))!.ask_server).toMatchObject({ failure: 'persisted startup failed' })
+    expect((await runDetail(finished))!.ask_server).toMatchObject({
+      failure: 'persisted startup failed',
+    })
   })
 
   test('publishes overturned questions with their reason', async () => {

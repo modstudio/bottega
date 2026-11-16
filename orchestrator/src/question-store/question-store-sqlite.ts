@@ -222,11 +222,7 @@ export class SqliteQuestionStore implements QuestionStore {
     if (input.read === 'rule-audit-reasons')
       return {
         items: limited(
-          ruleAuditReasons(
-            this.database,
-            input.workflowCursorRecordId,
-            input.actorSession,
-          ),
+          ruleAuditReasons(this.database, input.workflowCursorRecordId, input.actorSession),
           input.limit,
         ),
       }
