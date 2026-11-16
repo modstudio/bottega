@@ -219,6 +219,9 @@ export async function holdStoredLease<T>(options: {
   trackSince?: boolean
   work: (guard: StoredLeaseGuard) => Promise<T>
   lostMessage: (heldBy: string | null, afterLeg?: string) => string
+  onError: (error: Error) => void
+  renewLease?: () => boolean
+  releaseLease?: () => void
 }): Promise<HeldStoredLeaseResult<T>> {
   let lostBy: string | null | undefined
   const markLost = () => {
@@ -232,11 +235,15 @@ export async function holdStoredLease<T>(options: {
     },
   }
   const renewal = setInterval(() => {
-    if (
-      lostBy === undefined &&
-      !acquireStoredLease(options.key, options.holder, options.durationMs, options.trackSince)
-    )
-      markLost()
+    if (lostBy !== undefined) return
+    try {
+      const renewed = options.renewLease
+        ? options.renewLease()
+        : acquireStoredLease(options.key, options.holder, options.durationMs, options.trackSince)
+      if (!renewed) markLost()
+    } catch (error) {
+      options.onError(error as Error)
+    }
   }, options.renewEveryMs)
   try {
     const value = await options.work(guard)
@@ -259,6 +266,11 @@ export async function holdStoredLease<T>(options: {
     throw error
   } finally {
     clearInterval(renewal)
-    releaseStoredLease(options.key, options.holder)
+    try {
+      if (options.releaseLease) options.releaseLease()
+      else releaseStoredLease(options.key, options.holder)
+    } catch (error) {
+      options.onError(error as Error)
+    }
   }
 }
