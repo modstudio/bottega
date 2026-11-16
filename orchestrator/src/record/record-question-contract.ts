@@ -27,13 +27,9 @@ const nullableJsonValue = (field: QuestionJsonField) =>
     .refine((value) => typeof value !== 'string', {
       message: questionJsonFieldStructuredMessage(field),
     })
-const questionJsonFieldSchemas = {
-  options: nullableJsonValue('options'),
-  typedOptions: nullableJsonValue('typedOptions'),
-  criteria: nullableJsonValue('criteria'),
-  levels: nullableJsonValue('levels'),
-  jevProbabilities: nullableJsonValue('jevProbabilities'),
-} satisfies Record<(typeof QUESTION_JSON_FIELDS)[number], z.ZodType>
+const questionJsonFieldSchemas = Object.fromEntries(
+  QUESTION_JSON_FIELDS.map((field) => [field, nullableJsonValue(field)]),
+) as Record<QuestionJsonField, ReturnType<typeof nullableJsonValue>>
 
 export function assertQuestionJsonFieldsStructured(
   question: Record<(typeof QUESTION_JSON_FIELDS)[number], unknown>,

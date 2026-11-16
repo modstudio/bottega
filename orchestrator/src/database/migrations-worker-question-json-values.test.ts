@@ -13,8 +13,10 @@ test('repairs only double-encoded question JSON values and pending question payl
   const brokenQuestionId = newRecordId()
   const correctQuestionId = newRecordId()
   const malformedQuestionId = newRecordId()
+  const rawQuestionId = newRecordId()
   const brokenPayloadId = newRecordId()
   const malformedPayloadId = newRecordId()
+  const rawPayloadId = newRecordId()
   const syncedPayloadId = newRecordId()
   database
     .query(
@@ -65,6 +67,30 @@ test('repairs only double-encoded question JSON values and pending question payl
        VALUES (?,93,?,?,?,'choice',?)`,
     )
     .run(malformedQuestionId, runId, STAMP, 'Malformed?', malformedTypedOptions)
+  const rawQuestionValues = {
+    typed_options: 'Option A, Option B',
+    criteria: 'yes/no',
+    levels: 'low, high',
+    options: 'Option A, Option B',
+    jev_probabilities: 'Option A: 1',
+  }
+  database
+    .query(
+      `INSERT INTO question
+       (record_id,number,run_record_id,asked_at,question,kind,typed_options,criteria,levels,options,jev_probabilities)
+       VALUES (?,94,?,?,?,'choice',?,?,?,?,?)`,
+    )
+    .run(
+      rawQuestionId,
+      runId,
+      STAMP,
+      'Raw?',
+      rawQuestionValues.typed_options,
+      rawQuestionValues.criteria,
+      rawQuestionValues.levels,
+      rawQuestionValues.options,
+      rawQuestionValues.jev_probabilities,
+    )
   const brokenPayload = {
     typedOptions: JSON.stringify([{ name: 'one' }, { name: 'two' }]),
     criteria: JSON.stringify({ yes: 'go', no: 'stop' }),
@@ -99,6 +125,12 @@ test('repairs only double-encoded question JSON values and pending question payl
       }),
       STAMP,
     )
+  database
+    .query(
+      `INSERT INTO outbox (record_id,kind,row_id,payload,created_at)
+       VALUES (?,'question',?,?,?)`,
+    )
+    .run(rawPayloadId, rawQuestionId, '', STAMP)
 
   expect(applyMigrations(database)).toContain(MIGRATION)
   const repaired = database
@@ -127,6 +159,13 @@ test('repairs only double-encoded question JSON values and pending question payl
       )
       .get(malformedQuestionId)!.typed_options,
   ).toBe(malformedTypedOptions)
+  expect(
+    database
+      .query<typeof rawQuestionValues, [string]>(
+        'SELECT typed_options,criteria,levels,options,jev_probabilities FROM question WHERE record_id=?',
+      )
+      .get(rawQuestionId),
+  ).toEqual(rawQuestionValues)
 
   const pending = database
     .query<
@@ -160,6 +199,11 @@ test('repairs only double-encoded question JSON values and pending question payl
       .query<{ payload: string }, [string]>('SELECT payload FROM outbox WHERE record_id=?')
       .get(syncedPayloadId)!.payload,
   ).toBe(JSON.stringify(brokenPayload))
+  expect(
+    database
+      .query<{ payload: string }, [string]>('SELECT payload FROM outbox WHERE record_id=?')
+      .get(rawPayloadId)!.payload,
+  ).toBe('')
 
   const correctBefore = database
     .query<{ typed_options: string; criteria: string; levels: string; options: string }, [string]>(
@@ -179,5 +223,17 @@ test('repairs only double-encoded question JSON values and pending question payl
       )
       .get(malformedQuestionId)!.typed_options,
   ).toBe(malformedTypedOptions)
+  expect(
+    database
+      .query<typeof rawQuestionValues, [string]>(
+        'SELECT typed_options,criteria,levels,options,jev_probabilities FROM question WHERE record_id=?',
+      )
+      .get(rawQuestionId),
+  ).toEqual(rawQuestionValues)
+  expect(
+    database
+      .query<{ payload: string }, [string]>('SELECT payload FROM outbox WHERE record_id=?')
+      .get(rawPayloadId)!.payload,
+  ).toBe('')
   database.close()
 })
