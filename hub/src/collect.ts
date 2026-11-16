@@ -385,6 +385,7 @@ async function holdAndRenewLease(
   holder: string,
   fn: (guard: LeaseGuard) => Promise<CollectCycleResult>,
   renewEveryMs: number,
+  onError: (error: Error) => void = (error) => console.error(`hub: ${error.message}`),
 ) {
   const startedAt = Date.now()
   let legs: CollectLegResult[] = []
@@ -397,6 +398,7 @@ async function holdAndRenewLease(
       renewEveryMs,
       trackSince: true,
       work: fn,
+      onError,
       lostMessage: (heldBy, afterLeg) => {
         const observation = collectLeaseWaitObservation(collectLease(), 0, heldBy)
         if (!lossRecorded) {
@@ -640,35 +642,31 @@ function deleteWatcherAlive(holder: WatcherAlive['holder']) {
   releaseStoredLease(WATCH_ALIVE_KEY, holder)
 }
 
-function attemptWatcherStoreAccess(action: () => void, onError: (error: Error) => void) {
-  try {
-    action()
-  } catch (e) {
-    onError(e as Error)
-  }
-}
-
-function attemptWatcherLeaseAcquisition(
-  action: () => boolean,
+function attemptWatcherStoreAccess<T>(
+  action: () => T,
+  fallback: T,
   onError: (error: Error) => void,
-): boolean {
+): T {
   try {
     return action()
   } catch (e) {
     onError(e as Error)
-    return false
+    return fallback
   }
 }
 
 function refreshWatcherAliveIfHeld(
-  enabled: boolean,
   holder: string,
   onError: (error: Error) => void,
+  currentLeaseHolder: () => string | null = leaseHolder,
 ) {
-  if (!enabled) return
-  attemptWatcherStoreAccess(() => {
-    if (leaseHolder() === holder) writeWatcherAlive(holder)
-  }, onError)
+  attemptWatcherStoreAccess(
+    () => {
+      if (currentLeaseHolder() === holder) writeWatcherAlive(holder)
+    },
+    undefined,
+    onError,
+  )
 }
 
 /**
@@ -996,6 +994,8 @@ export async function collectOnce(
  */
 type WatchDependencies = {
   acquireLease?: (holder: string) => boolean
+  releaseLease?: (holder: string) => void
+  leaseHolder?: () => string | null
   initial?: (
     guard: LeaseGuard,
     outboxSchedule: HostedOutboxDrainSchedule<HostedOutboxReport> | null,
@@ -1012,6 +1012,14 @@ type WatchDependencies = {
   pendingOutbox?: () => PendingHostedOutbox
   outboxClock?: () => string
   renewEveryMs?: number
+}
+
+function watchLeaseDependencies(dependencies: WatchDependencies) {
+  return [
+    dependencies.acquireLease ?? acquireLease,
+    dependencies.releaseLease ?? releaseLease,
+    dependencies.leaseHolder ?? leaseHolder,
+  ] as const
 }
 
 function watchOutboxSchedule(
@@ -1058,7 +1066,7 @@ export function watch(
   let slowOwed = false
   let stopping = false
   let reportedDeliveryOff = false
-  const acquire = dependencies.acquireLease ?? acquireLease
+  const [acquire, release, currentLeaseHolder] = watchLeaseDependencies(dependencies)
   let dispatch = (_tick: WatchTick) => {}
   const startCycle = (
     work: (
@@ -1069,9 +1077,9 @@ export function watch(
     heartbeat = false,
   ) => {
     if (stopping || running !== null) return false
-    if (!attemptWatcherLeaseAcquisition(() => acquire(holder), onError)) return false
+    if (!attemptWatcherStoreAccess(() => acquire(holder), false, onError)) return false
     running = cycle
-    if (heartbeat) attemptWatcherStoreAccess(() => writeWatcherAlive(holder), onError)
+    if (heartbeat) attemptWatcherStoreAccess(() => writeWatcherAlive(holder), undefined, onError)
     void (async () => {
       // A failed collect must not stop the loop or take the server down: the
       // stored data is still the last good reading, which is the point of having
@@ -1081,6 +1089,7 @@ export function watch(
           holder,
           (guard) => work(guard, outboxSchedule),
           dependencies.renewEveryMs ?? LEASE_RENEW_MS,
+          onError,
         )
         if (!result.ran) onError(result.error)
         else if (!reportedDeliveryOff)
@@ -1122,7 +1131,8 @@ export function watch(
     const decision = watchCycleDecision({ running, slowOwed, tick, stopping })
     slowOwed = decision.slowOwed
     if (!decision.run) {
-      if (running !== null && tick === 'fast') refreshWatcherAliveIfHeld(true, holder, onError)
+      if (running !== null && tick === 'fast')
+        refreshWatcherAliveIfHeld(holder, onError, currentLeaseHolder)
       return
     }
     const started = startCycle(
@@ -1132,7 +1142,7 @@ export function watch(
     )
     if (!started && decision.run === 'slow') slowOwed = true
   }
-  startCycle(initial, 'initial', true)
+  if (!startCycle(initial, 'initial', true)) slowOwed = true
   const a = setInterval(() => dispatch('fast'), FAST_MS)
   const b = setInterval(() => dispatch('slow'), SLOW_MS)
 
@@ -1141,8 +1151,8 @@ export function watch(
     clearInterval(a)
     clearInterval(b)
     while (running !== null) await Bun.sleep(10)
-    attemptWatcherStoreAccess(() => releaseLease(holder), onError)
-    attemptWatcherStoreAccess(() => deleteWatcherAlive(holder), onError)
+    attemptWatcherStoreAccess(() => release(holder), undefined, onError)
+    attemptWatcherStoreAccess(() => deleteWatcherAlive(holder), undefined, onError)
   }
   for (const sig of ['SIGINT', 'SIGTERM'] as const) {
     process.on(sig, async () => {
