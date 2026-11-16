@@ -20,6 +20,7 @@ export const hostedTableLifecycles: readonly TableLifecycle[] = [
       'board_receipt',
       'branch_disposal',
       'brief_injection',
+      'context_review',
       'hook_emission',
       'config_entry',
       'config_secret',

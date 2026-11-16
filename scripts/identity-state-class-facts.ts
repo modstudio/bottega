@@ -37,6 +37,7 @@ export const OUTBOX_KIND_SOURCES: Readonly<
   test_flake: { source: 'test_flake' },
   branch_disposal: { source: 'branch_disposal' },
   brief_injection: { source: 'brief_injection' },
+  context_review: { source: 'context_review' },
   hook_emission: { source: 'hook_emission' },
 }
 
