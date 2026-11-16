@@ -33,7 +33,10 @@ with open(
         "SESSION_START_CONTEXT_MAX_CHARS"
     ]
 
-FULL_CONTEXT_POINTER = "Full context: bottega agent context show --session {session}"
+CONTEXT_SHOW_COMMAND = "bottega agent context show{session_option}"
+FULL_CONTEXT_POINTER = "Full context: " + CONTEXT_SHOW_COMMAND.format(
+    session_option=" --session {session}"
+)
 COMPACT_FIRST_ACT = (
     "First act: store each line of the summary's 'Unstored facts and pointers' section "
     "with `bottega agent context set --kind fact|pointer` on the narrowest task, before "
@@ -564,7 +567,7 @@ def main() -> int:
     acknowledgement_timeout = 1.0
     notice_deadline = None
     stage = "initialize"
-    failed = False
+    failure_without_assembled_brief = False
     try:
         cwd = payload.get("cwd")
         if not cwd:
@@ -978,25 +981,27 @@ def main() -> int:
             if notices:
                 output["systemMessage"] = " ".join(notices)
     except Exception as error:
-        failed = True
-        command = "bottega agent context show"
-        if sid:
-            command += f" --session {sid}"
+        failure_without_assembled_brief = output is None
+        command = CONTEXT_SHOW_COMMAND.format(
+            session_option=f" --session {sid}" if sid else ""
+        )
         failure = (
             f"brief failed: {type(error).__name__} at {stage}; "
             f"re-read with {command}."
         )
-        context = ""
-        if output is not None:
-            existing = output.get("hookSpecificOutput", {}).get("additionalContext")
-            if isinstance(existing, str):
-                context = existing
-        output = {
-            "hookSpecificOutput": {
-                "hookEventName": "SessionStart",
-                "additionalContext": _join_sections(context, failure),
+        if output is None:
+            output = {
+                "hookSpecificOutput": {
+                    "hookEventName": "SessionStart",
+                    "additionalContext": failure,
+                }
             }
-        }
+        else:
+            specific = output["hookSpecificOutput"]
+            context = specific.get("additionalContext")
+            specific["additionalContext"] = _join_sections(
+                context if isinstance(context, str) else "", failure
+            )
     finally:
         # Emission is deliberately outside the catch-all above. Once health has been
         # assembled, no exception in supplemental notice work can swallow it.
@@ -1009,7 +1014,7 @@ def main() -> int:
                 )
                 output["hookSpecificOutput"]["additionalContext"] = context
                 if (
-                    not failed
+                    not failure_without_assembled_brief
                     and bottega is not None
                     and cwd is not None
                     and inbox_env is not None

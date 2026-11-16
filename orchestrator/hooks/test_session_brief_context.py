@@ -220,6 +220,59 @@ class AssembleAdditionalContext(unittest.TestCase):
         self.assertIn("bottega agent context show --session session-a", context)
         record_injection.assert_not_called()
 
+    def test_failure_after_assembly_preserves_output_and_records_injection(self):
+        stdin = io.StringIO(json.dumps({
+            "cwd": "/tmp",
+            "session_id": "session-a",
+            "source": "startup",
+        }))
+        stdout = io.StringIO()
+        monitor_notice = {
+            "kind": "board-notice",
+            "subject": "board:7",
+            "label": "board:7",
+            "detail": "notice",
+            "noticeId": "board:7",
+            "ownerSession": "session-a",
+        }
+        start, wait = stubbed_session_brief_commands(self, {
+            ("agent", "context", "--cwd"): "invalid context response",
+            ("machine", "monitor"): json.dumps([monitor_notice]),
+        })
+
+        with mock.patch.dict(session_brief.os.environ, {"HOME": "/tmp"}, clear=True):
+            with mock.patch.object(session_brief.sys, "stdin", stdin):
+                with mock.patch.object(session_brief.sys, "stdout", stdout):
+                    with mock.patch.object(session_brief, "_start", side_effect=start):
+                        with mock.patch.object(session_brief, "_wait", side_effect=wait):
+                            with mock.patch.object(
+                                session_brief,
+                                "_start_settings_apply",
+                                return_value=(None, None, None),
+                            ):
+                                with mock.patch.object(session_brief.subprocess, "run"):
+                                    with mock.patch.object(
+                                        session_brief,
+                                        "monitor_lines",
+                                        side_effect=RuntimeError("broken"),
+                                    ):
+                                        with mock.patch.object(
+                                            session_brief, "_record_injection"
+                                        ) as record_injection:
+                                            code = session_brief.main()
+
+        self.assertEqual(code, 0)
+        emitted = json.loads(stdout.getvalue())
+        self.assertEqual(
+            emitted["systemMessage"],
+            "Autonomy response was invalid; autonomy state is unknown.",
+        )
+        context = emitted["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("Context writes:", context)
+        self.assertIn("brief failed: RuntimeError at deliver monitor notices", context)
+        self.assertIn("bottega agent context show --session session-a", context)
+        record_injection.assert_called_once()
+
     def test_injection_recording_detaches_with_final_utf8_size(self):
         with mock.patch.object(session_brief.subprocess, "Popen") as popen:
             session_brief._record_injection(
