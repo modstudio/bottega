@@ -1,3 +1,4 @@
+import { closeSync, openSync } from 'node:fs'
 import { execa } from 'execa'
 import { BoundExceededError, CALL_BUDGETS, type CallBudgetName } from './call-budgets.ts'
 
@@ -18,7 +19,7 @@ type BoundedProcessOptions = {
   signal?: AbortSignal
 }
 
-type BoundedSyncOptions = Omit<BoundedProcessOptions, 'signal'>
+type BoundedSyncOptions = Omit<BoundedProcessOptions, 'signal'> & { stdinFile?: string }
 
 type ParentBoundProcessOptions = {
   name: string
@@ -126,17 +127,26 @@ export function startBoundedSyncBytes(
 ): BoundedBytesResult {
   if (argv.length === 0) throw new TypeError('startBoundedSync requires a non-empty argv')
   const budget = CALL_BUDGETS[options.budget]
-  const result = Bun.spawnSync([...argv], {
-    cwd: options.cwd,
-    env: options.env,
-    stdin: stdinInput(options.stdin),
-    stdout: 'pipe',
-    stderr: 'pipe',
-    timeout: budget.deadlineMs,
-    maxBuffer: budget.outputBytes,
-    killSignal: 'SIGKILL',
-    detached: true,
-  })
+  if (options.stdin !== undefined && options.stdinFile !== undefined) {
+    throw new TypeError('startBoundedSync accepts either stdin or stdinFile, not both')
+  }
+  const stdinFd = options.stdinFile === undefined ? undefined : openSync(options.stdinFile, 'r')
+  let result: ReturnType<typeof Bun.spawnSync>
+  try {
+    result = Bun.spawnSync([...argv], {
+      cwd: options.cwd,
+      env: options.env,
+      stdin: stdinFd ?? stdinInput(options.stdin),
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: budget.deadlineMs,
+      maxBuffer: budget.outputBytes,
+      killSignal: 'SIGKILL',
+      detached: true,
+    })
+  } finally {
+    if (stdinFd !== undefined) closeSync(stdinFd)
+  }
   if (result.exitedDueToTimeout) {
     killProcessGroup(result.pid)
     throw new BoundExceededError(commandText(argv), options.budget, 'deadline', budget.deadlineMs)

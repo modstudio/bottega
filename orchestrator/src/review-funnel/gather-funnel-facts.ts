@@ -282,8 +282,9 @@ function gatheredTriage(change: ReviewFunnelChange, group: ChangeGroup) {
 
 /** Resolve one change once, including lineage evidence and completed-landing exclusions. */
 export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts {
-  const identity = measureChangeIdentity(change.cwd, change.base, change.head)
-  if (!identity) throw new Error(`could not measure review-funnel change ${change.branch}`)
+  const identity = requireFunnelChangeIdentity(change.branch, () =>
+    measureChangeIdentity(change.cwd, change.base, change.head, { throwOnFailure: true }),
+  )
   const pathSet = serializePathSet(identity.paths)
   const group = {
     project: change.project.name,
@@ -360,5 +361,16 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
       architectReadRequired: admissionGap.architectReadRequired,
       nonLensGaps: [...admissionGap.nonLensGaps],
     },
+  }
+}
+
+export function requireFunnelChangeIdentity<T>(branch: string, measure: () => T | null): T {
+  try {
+    const identity = measure()
+    if (identity) return identity
+    throw new Error('identity was unavailable')
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause)
+    throw new Error(`could not measure review-funnel change ${branch}: ${detail}`)
   }
 }

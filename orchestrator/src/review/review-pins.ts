@@ -54,20 +54,31 @@ export function measureChangeIdentity(
   repo: string,
   from: string,
   to: string,
+  options: { throwOnFailure?: boolean } = {},
 ): { patchId: string; zeroContextPatchId: string; paths: string[]; message: string } | null {
   const paths = git(repo, nulPathListArgs(['diff', '--name-only', `${from}..${to}`]))
   const message = git(repo, ['log', '--format=%B', `${from}..${to}`])
-  if (!paths.ok) return null
+  if (!paths.ok) {
+    if (options.throwOnFailure) {
+      throw new Error(`git diff --name-only ${from}..${to} failed: ${paths.err}`)
+    }
+    return null
+  }
   let patchId: string
   let zeroContextPatchId: string
   try {
-    patchId = changeIdentity((args, stdin) => git(repo, args, true, stdin), from, to)
-    zeroContextPatchId = zeroContextChangeIdentity(
-      (args, stdin) => git(repo, args, true, stdin),
+    patchId = changeIdentity(
+      (args, stdin, stdinFile) => git(repo, args, true, stdin, stdinFile),
       from,
       to,
     )
-  } catch {
+    zeroContextPatchId = zeroContextChangeIdentity(
+      (args, stdin, stdinFile) => git(repo, args, true, stdin, stdinFile),
+      from,
+      to,
+    )
+  } catch (cause) {
+    if (options.throwOnFailure) throw cause
     return null
   }
   return {
@@ -83,12 +94,14 @@ export function git(
   args: string[],
   _hermetic = false,
   stdin?: Uint8Array,
+  stdinFile?: string,
 ): { ok: boolean; out: string; err: string; stdout: Uint8Array } {
   const p = startBoundedSyncBytes(['git', ...args], {
     budget: 'git-plumbing',
     cwd: repo,
     env: targetGitEnvironment(repo),
     stdin,
+    stdinFile,
   })
   return {
     ok: p.exitCode === 0,
@@ -100,8 +113,8 @@ export function git(
 
 export const reviewGit =
   (repo: string): CoverageGitRunner =>
-  (args, stdin) =>
-    git(repo, args, true, stdin)
+  (args, stdin, stdinFile) =>
+    git(repo, args, true, stdin, stdinFile)
 
 export function projectPath(database: Database, name: string): string | null {
   return (

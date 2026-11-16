@@ -5,10 +5,20 @@ import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import type { Project } from '../project/projects.ts'
 import { applicableReview } from '../review/review-applicability.ts'
 import { measureChangeIdentity } from '../review/review-pins.ts'
-import { gatherFunnelFacts } from './gather-funnel-facts.ts'
+import { gatherFunnelFacts, requireFunnelChangeIdentity } from './gather-funnel-facts.ts'
 
 const repo = resolve(import.meta.dir, '../../..')
 const branch = 'DEV-2336-fixture'
+
+test('review-funnel identity refusal includes the failed git command and stderr', () => {
+  expect(() =>
+    requireFunnelChangeIdentity('DEV-2352-large', () => {
+      throw new Error('git diff --binary base..head failed: fixture stderr')
+    }),
+  ).toThrow(
+    'could not measure review-funnel change DEV-2352-large: git diff --binary base..head failed: fixture stderr',
+  )
+})
 
 function fixture(landingBranch: string) {
   const database = migratedTestDatabase()

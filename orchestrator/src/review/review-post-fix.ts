@@ -2,6 +2,9 @@
 /** Finds a completed round's reviewed tip and decides whether its fix needs a narrow re-lens. */
 
 import type { Database } from 'bun:sqlite'
+import { closeSync, mkdtempSync, openSync, readSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   nulPathListArgs,
   splitNulNameStatus,
@@ -317,8 +320,39 @@ export function pathNeutralContentIdentity(section: string): string {
   return new Bun.CryptoHasher('sha256').update(normalized).digest('hex')
 }
 
-function diffSections(diff: string): string[] {
-  return diff ? diff.split(/(?=^diff --git )/m).filter(Boolean) : []
+function diffSectionIdentities(path: string): string[] {
+  const identities: string[] = []
+  const decoder = new TextDecoder()
+  const bytes = new Uint8Array(64 * 1024)
+  const fd = openSync(path, 'r')
+  let pending = ''
+  let section = ''
+  const accept = (line: string) => {
+    if (section && line.startsWith('diff --git ')) {
+      identities.push(pathNeutralContentIdentity(section))
+      section = ''
+    }
+    section += line
+  }
+  try {
+    while (true) {
+      const count = readSync(fd, bytes)
+      if (count === 0) break
+      pending += decoder.decode(bytes.subarray(0, count), { stream: true })
+      let newline = pending.indexOf('\n')
+      while (newline >= 0) {
+        accept(pending.slice(0, newline + 1))
+        pending = pending.slice(newline + 1)
+        newline = pending.indexOf('\n')
+      }
+    }
+    pending += decoder.decode()
+    if (pending) accept(pending)
+    if (section) identities.push(pathNeutralContentIdentity(section))
+    return identities
+  } finally {
+    closeSync(fd)
+  }
 }
 
 function changePatches(
@@ -333,26 +367,30 @@ function changePatches(
 
 function patchesForRange(repo: string, base: string, tip: string): PerPathPatch[] {
   const files = diffNumstat(repo, base, tip)
-  const diff = git(repo, [
-    'diff',
-    '--binary',
-    '--no-ext-diff',
-    '--no-color',
-    '--no-renames',
-    '--unified=0',
-    `${base}..${tip}`,
-  ])
-  if (!diff.ok) throw new Error(diff.err)
-  const sections = diffSections(new TextDecoder().decode(diff.stdout))
-  if (sections.length !== files.length) {
-    throw new Error(
-      `git diff section count ${sections.length} did not match numstat count ${files.length}`,
-    )
+  const directory = mkdtempSync(join(tmpdir(), 'bottega-post-fix-'))
+  const diffPath = join(directory, 'change.diff')
+  try {
+    const diffArgs = [
+      'diff',
+      '--binary',
+      '--no-ext-diff',
+      '--no-color',
+      '--no-renames',
+      '--unified=0',
+      `${base}..${tip}`,
+    ]
+    const diff = git(repo, [...diffArgs, `--output=${diffPath}`])
+    if (!diff.ok) throw new Error(`git ${diffArgs.join(' ')} failed: ${diff.err}`)
+    const identities = diffSectionIdentities(diffPath)
+    if (identities.length !== files.length) {
+      throw new Error(
+        `git diff section count ${identities.length} did not match numstat count ${files.length}`,
+      )
+    }
+    return files.map((file, index) => ({ ...file, patchId: identities[index]! }))
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
   }
-  return files.map((file, index) => ({
-    ...file,
-    patchId: pathNeutralContentIdentity(sections[index]!),
-  }))
 }
 
 function mergeTreeReplay(input: {

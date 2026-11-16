@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
+import { changeIdentity, zeroContextChangeIdentity } from './change-identity.ts'
 import { measureChangeIdentity } from './review-pins.ts'
 
 const git = (repo: string, ...args: string[]) => {
@@ -10,6 +11,27 @@ const git = (repo: string, ...args: string[]) => {
   if (result.exitCode !== 0) throw new Error(result.stderr.toString())
   return result.stdout.toString().trim()
 }
+
+test('change identities pass a temporary file to patch-id instead of diff bytes', () => {
+  const calls: { args: string[]; stdin?: Uint8Array; stdinFile?: string }[] = []
+  const runner = (args: string[], stdin?: Uint8Array, stdinFile?: string) => {
+    calls.push({ args, stdin, stdinFile })
+    if (args[0] === 'diff') {
+      const output = args.find((arg) => arg.startsWith('--output='))?.slice('--output='.length)
+      expect(output).toBeTruthy()
+      writeFileSync(output!, 'diff payload that must not return through the runner')
+      return { ok: true, out: '', err: '', stdout: new Uint8Array() }
+    }
+    expect(args[0]).toBe('patch-id')
+    expect(stdin).toBeUndefined()
+    expect(stdinFile).toBeTruthy()
+    return { ok: true, out: 'identity fixture', err: '', stdout: new Uint8Array() }
+  }
+
+  expect(changeIdentity(runner, 'base', 'head')).toBe('identity')
+  expect(zeroContextChangeIdentity(runner, 'base', 'head')).toBe('identity')
+  expect(calls.filter((call) => call.args[0] === 'diff').every((call) => !call.stdin)).toBe(true)
+})
 
 test('zero-context identity ignores nearby trunk context and pins Git diff configuration', () => {
   const repo = mkdtempSync(join(tmpdir(), 'orch-change-identity-'))
