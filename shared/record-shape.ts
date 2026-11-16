@@ -39,9 +39,6 @@ export const RECORD_SHAPES = {
   },
 } as const
 
-export const RULING_MAX_CHARS = RECORD_LIMITS.RULING_MAX_CHARS
-export const SELF_RULING_MAX_CHARS = RECORD_LIMITS.SELF_RULING_MAX_CHARS
-
 export type ContextRecordName = keyof typeof RECORD_SHAPES
 
 /** The record shape for an answer, based on whether Shmuel Barkin gave it. */

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { SELF_RULING_MAX_CHARS } from '../../../shared/record-shape.ts'
+import { RECORD_SHAPES } from '../../../shared/record-shape.ts'
 import { contextMomentEffect } from './context-moment.ts'
 import { contextItemShapeRefusal } from './doc-context-write.ts'
 
@@ -23,7 +23,7 @@ describe('context moment effect', () => {
         id: 'position-q12',
         kind: 'position',
         source: 'q12',
-        body: 'x'.repeat(SELF_RULING_MAX_CHARS),
+        body: 'x'.repeat(RECORD_SHAPES['self-ruling'].maxChars),
       }),
     ).toBeNull()
   })
