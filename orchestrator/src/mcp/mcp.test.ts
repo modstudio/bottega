@@ -525,26 +525,29 @@ describe('orch MCP', () => {
       const cases = [
         [next, 'note', 'step note'],
         ['await_workflow_ruling', 'question', 'open question'],
-        ['rule_workflow', 'ruling', 'ruling'],
+        ['rule_workflow', 'ruling', 'ruling', true],
+        ['rule_workflow', 'ruling', 'self-ruling'],
         [next, 'self_ruling', 'self-ruling'],
         [next, 'self_ruling_basis', 'basis'],
         [next, 'question', 'open question'],
       ] as const
-      for (const [name, field, record] of cases) {
+      for (const [name, field, record, fromOperator] of cases) {
         const args = name === next ? { note: 'done' } : {}
         if (field === 'self_ruling_basis') Object.assign(args, { self_ruling: 'decision' })
+        if (fromOperator) Object.assign(args, { from_operator: true })
+        const text = over(RECORD_SHAPES[record].maxChars)
         const result = await client.callTool({
           name,
           arguments: {
             slug: 'fix-defect',
             project: 'fixture',
             ...args,
-            [field]: over(RECORD_SHAPES[record].maxChars),
+            [field]: text,
           },
         })
         expect(result.isError).toBe(true)
         expect((result.content as { text: string }[])[0]?.text).toContain(
-          RECORD_SHAPES[record].constant,
+          `${record} is ${text.length} characters; the limit is ${RECORD_SHAPES[record].maxChars} (${RECORD_SHAPES[record].constant})`,
         )
         expect(cursorCount()).toEqual(before)
       }

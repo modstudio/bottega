@@ -8,8 +8,9 @@ import {
   splitContextHolder,
 } from '../../../shared/context-item-vocabulary.ts'
 import {
+  type answerRecordShape,
   type ContextRecordName,
-  RULING_MAX_CHARS,
+  RECORD_SHAPES,
   recordShapeRefusal,
 } from '../../../shared/record-shape.ts'
 import type { HubTaskReference } from '../workflow/workflow-task-reference.ts'
@@ -20,15 +21,38 @@ export type ContextTaskIdentity = Pick<
 >
 
 export const CONTEXT_ITEM_MAX_CHARS = {
-  ruling: RULING_MAX_CHARS,
-  position: 800,
+  ruling: RECORD_SHAPES.ruling.maxChars,
+  position: RECORD_SHAPES['self-ruling'].maxChars,
   fact: 800,
   pointer: 400,
 } as const satisfies Record<ContextItemKind, number>
 
 const CONTEXT_ITEM_RECORD_NAMES = {
   ruling: 'ruling',
+  position: 'self-ruling',
 } as const satisfies Partial<Record<ContextItemKind, ContextRecordName>>
+
+type InvertedRecordNames<Mapping extends Record<string, ContextRecordName>> = {
+  [RecordName in Mapping[keyof Mapping]]: {
+    [Kind in keyof Mapping]: Mapping[Kind] extends RecordName ? Kind : never
+  }[keyof Mapping]
+}
+
+function invertAnswerContextKinds<
+  const Mapping extends Record<string, ReturnType<typeof answerRecordShape>>,
+>(
+  mapping: Mapping &
+    (Exclude<ReturnType<typeof answerRecordShape>, Mapping[keyof Mapping]> extends never
+      ? unknown
+      : never),
+): InvertedRecordNames<Mapping> {
+  return Object.fromEntries(
+    Object.entries(mapping).map(([kind, record]) => [record, kind]),
+  ) as InvertedRecordNames<Mapping>
+}
+
+/** The context kind written for each answer shape, derived from the store's shape policy. */
+export const ANSWER_CONTEXT_KINDS = invertAnswerContextKinds(CONTEXT_ITEM_RECORD_NAMES)
 
 /** A ruling names where Shmuel Barkin gave it: a question, a board message, or the chat on a date. */
 const RULING_SOURCE = /^(q\d+|board:[0-9a-f-]{36}|chat \d{4}-\d{2}-\d{2})$/

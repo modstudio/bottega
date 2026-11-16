@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
+import { answerRecordShape } from '../../../shared/record-shape.ts'
 import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
@@ -434,7 +435,10 @@ export async function ruleCommand(
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
 ): Promise<WorkflowContextMoment> {
-  const ruling = recordShape.workflowCommandRecordShape(argv, 'ruling', 'ruling')?.trim()
+  const operatorRuled = argv.includes('--from-operator')
+  const ruling = recordShape
+    .workflowCommandRecordShape(argv, 'ruling', answerRecordShape(operatorRuled))
+    ?.trim()
   const args = workflowArgs(argv)
   let context = cliWorkflowCursorContext()
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
@@ -461,7 +465,6 @@ export async function ruleCommand(
     undefined,
     selectedRow,
   )
-  const operatorRuled = argv.includes('--from-operator')
   const result = await ruleWorkflow(
     slug,
     project,
