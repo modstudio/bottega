@@ -19,11 +19,13 @@ import {
   emptyReviewCondition,
   reviewRemoteTrunkRefExists,
   reviewTrunkRef,
+  spawnGitProbe,
 } from '../review/review-target.ts'
 import type { ReviewFunnelVerdict } from '../review-funnel/decide-review-funnel.ts'
 import {
+  type ExactChangeReplayContext,
   gatherAdmissionEvidenceDecision,
-  readLandingOverridesForBranch as readFunnelLandingOverridesForBranch,
+  landingOverridesWithReplay,
 } from '../review-funnel/gather-funnel-facts.ts'
 import {
   ceilingTriageFacts,
@@ -154,12 +156,36 @@ function resolvePullRequestChangeForProject(
   }
 }
 
+function exactChangeReplayContext(change: PullRequestChange): ExactChangeReplayContext {
+  const trunk = change.project.settings.trunk!.trim()
+  return {
+    repo: change.project.path,
+    base: change.base,
+    tip: change.tip,
+    tree: change.tree,
+    trunk: reviewTrunkRef(
+      reviewRemoteTrunkRefExists(trunk, spawnGitProbe(change.project.path)),
+      trunk,
+    ),
+  }
+}
+
 function triageDecision(change: PullRequestChange, database: Database): TriageDecision {
-  return gatherAdmissionEvidenceDecision(change, database)
+  return gatherAdmissionEvidenceDecision(change, database, exactChangeReplayContext(change))
 }
 
 function overridesForChange(change: PullRequestChange, database: Database): AdmissionOverride[] {
-  return readFunnelLandingOverridesForBranch(database, change.project.name, change.branch)
+  return landingOverridesWithReplay(
+    database,
+    {
+      project: change.project.name,
+      branch: change.branch,
+      patchId: change.group.patchId,
+      zeroContextPatchId: change.group.zeroContextPatchId,
+      pathSet: serializePathSet(change.group.pathSet),
+    },
+    exactChangeReplayContext(change),
+  )
 }
 
 export type AdmissionWithTriage = AdmissionDecision & {

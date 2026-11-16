@@ -80,6 +80,20 @@ describe('pull-request admission decision', () => {
     })
   })
 
+  test('an operator override with another identity requires a matching replay witness', () => {
+    const other = { patchId: 'patch-old', zeroContextPatchId: 'zero-old' }
+    expect(
+      decideAdmission(verdict('dispatch'), [
+        override({ ...other, replayMatchesCurrent: true }),
+      ]).overrideId,
+    ).toBe('override-17')
+    expect(
+      decideAdmission(verdict('dispatch'), [
+        override({ ...other, replayMatchesCurrent: false }),
+      ]).overrideId,
+    ).toBeNull()
+  })
+
   test('an architect ruling is credited only for the exact overridden-lens gap', () => {
     const ceiling = override({
       recordId: 'ceiling-ruling',

@@ -25,7 +25,7 @@ export function decideAdmission(
     (candidate) =>
       candidate.project === change.project &&
       candidate.branch === change.branch &&
-      sameStoredChange(
+      (sameStoredChange(
         {
           patchId: candidate.patchId,
           zeroContextPatchId: candidate.zeroContextPatchId ?? null,
@@ -36,7 +36,8 @@ export function decideAdmission(
           zeroContextPatchId: change.zeroContextPatchId ?? null,
           pathSet: change.pathSet,
         },
-      ),
+      ) ||
+        candidate.replayMatchesCurrent === true),
   )
   const override = identityMatches.find((candidate) => {
     if (candidate.attribution === 'operator') return true

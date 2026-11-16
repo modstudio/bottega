@@ -3,7 +3,12 @@
 
 import { changeIdentity, zeroContextChangeIdentity } from './change-identity.ts'
 import type { CoverageGitRunner } from './review-types.ts'
-import { type ChangeFacts, type SameChangeDecision, sameChange } from './same-change.ts'
+import {
+  type ChangeFacts,
+  type SameChangeDecision,
+  sameChange,
+  sameStoredChange,
+} from './same-change.ts'
 
 type StoredChange = {
   patchId: string | null
@@ -19,6 +24,78 @@ export type GatheredSameChange = {
     zeroContextPatchId: string
     paths: readonly string[]
   }
+}
+
+export type ReplayWitnessRow = {
+  tip: string
+  patchId: string | null
+  zeroContextPatchId?: string | null
+  pathSet: string | null
+  replayMatchesCurrent?: boolean
+}
+
+type CurrentReplayChange = {
+  patchId: string
+  zeroContextPatchId: string
+  pathSet: string
+  base: string
+  tip: string
+  tree: string
+}
+
+const parsedPaths = (pathSet: string): string[] => {
+  const paths = JSON.parse(pathSet) as unknown
+  if (!Array.isArray(paths) || paths.some((path) => typeof path !== 'string')) {
+    throw new Error('stored change path_set is not a JSON array of paths')
+  }
+  return paths
+}
+
+/** Add a clean-replay witness only to rows whose stored identity does not match. */
+export function replayWitnessesForCurrent<T extends ReplayWitnessRow>(input: {
+  runner: CoverageGitRunner
+  rows: readonly T[]
+  current: CurrentReplayChange
+  trunk: string
+}): (T & { replayMatchesCurrent?: boolean })[] {
+  const currentStored = {
+    patchId: input.current.patchId,
+    zeroContextPatchId: input.current.zeroContextPatchId,
+    pathSet: input.current.pathSet,
+  }
+  const byTip = new Map<string, boolean>()
+  return input.rows.map((row) => {
+    if (sameStoredChange(row, currentStored)) return row
+    let replayMatchesCurrent = byTip.get(row.tip)
+    if (replayMatchesCurrent === undefined) {
+      const oldBase = input.runner(['merge-base', row.tip, input.trunk])
+      if (!oldBase.ok) {
+        replayMatchesCurrent = false
+      } else {
+        try {
+          replayMatchesCurrent = gatherSameChange({
+            runner: input.runner,
+            reviewed: {
+              patchId: row.patchId,
+              zeroContextPatchId: row.zeroContextPatchId ?? null,
+              paths: row.pathSet === null ? [] : parsedPaths(row.pathSet),
+              message: null,
+            },
+            reviewedCommit: row.tip,
+            oldBase: oldBase.out,
+            current: { paths: parsedPaths(input.current.pathSet), message: null },
+            tip: input.current.tip,
+            tipTree: input.current.tree,
+            newBase: input.current.base,
+          }).decision.same
+        } catch {
+          replayMatchesCurrent = false
+        }
+      }
+      byTip.set(row.tip, replayMatchesCurrent)
+    }
+    return { ...row, replayMatchesCurrent }
+  })
 }
 
 const reachable = (runner: CoverageGitRunner, commit: string) =>

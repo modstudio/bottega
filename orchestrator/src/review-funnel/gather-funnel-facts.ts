@@ -16,7 +16,7 @@ import {
   type TriageReviewRow,
 } from '../review/review-group.ts'
 import { reviewLineage } from '../review/review-lineage-store.ts'
-import { requireChangeIdentity } from '../review/review-pins.ts'
+import { git, requireChangeIdentity } from '../review/review-pins.ts'
 import { gatherPostFixReviewFacts } from '../review/review-post-fix.ts'
 import { hasExactArchitectRead } from '../review/review-read.ts'
 import {
@@ -31,6 +31,7 @@ import {
 } from '../review/review-target.ts'
 import { diffNumstat } from '../review/review-tier.ts'
 import { sameStoredChange } from '../review/same-change.ts'
+import { replayWitnessesForCurrent } from '../review/same-change-git.ts'
 import type {
   ReviewFunnelFacts,
   ReviewFunnelLensState,
@@ -48,6 +49,18 @@ import { reviewFunnelYieldCells } from './review-funnel-yield.ts'
 
 const RUNNING_LENS_STATUS = 'running' satisfies ReviewFunnelLensStatus
 const UNTRIAGED_LENS_STATUS = 'untriaged' satisfies ReviewFunnelLensStatus
+
+export type ExactChangeReplayContext = {
+  repo: string
+  base: string
+  tip: string
+  tree: string
+  trunk: string
+}
+
+const replayRunner = (context: ExactChangeReplayContext) =>
+  (args: string[], stdin?: Uint8Array, stdinFile?: string) =>
+    git(context.repo, args, true, stdin, stdinFile)
 
 export type ReviewFunnelChange = {
   database: Database
@@ -106,21 +119,10 @@ export function overrideFacts(
     zeroContextPatchId: string
     pathSet: string
   },
+  replay?: ExactChangeReplayContext,
 ): { ceilingRuling: boolean; overriddenLenses: string[] } {
-  const row = readLandingOverridesForBranch(database, change.project, change.branch).find(
-    ({ patchId, zeroContextPatchId, pathSet }) =>
-      sameStoredChange(
-        {
-          patchId,
-          zeroContextPatchId: zeroContextPatchId ?? null,
-          pathSet,
-        },
-        {
-          patchId: change.patchId,
-          zeroContextPatchId: change.zeroContextPatchId,
-          pathSet: change.pathSet,
-        },
-      ),
+  const row = landingOverridesWithReplay(database, change, replay).find((candidate) =>
+    landingOverrideMatches(candidate, change),
   )
   if (!row) return { ceilingRuling: false, overriddenLenses: [] }
   return {
@@ -141,6 +143,42 @@ export type LandingOverrideRow = {
   attribution: 'operator' | 'architect-ceiling'
   reason: string
   missingLenses: string[]
+  replayMatchesCurrent?: boolean
+}
+
+export function landingOverrideMatches(
+  candidate: LandingOverrideRow,
+  current: { patchId: string; zeroContextPatchId: string; pathSet: string },
+): boolean {
+  return sameStoredChange(candidate, current) || candidate.replayMatchesCurrent === true
+}
+
+export function landingOverridesWithReplay(
+  database: Database,
+  change: {
+    project: string
+    branch: string
+    patchId: string
+    zeroContextPatchId: string
+    pathSet: string
+  },
+  replay?: ExactChangeReplayContext,
+): LandingOverrideRow[] {
+  const rows = readLandingOverridesForBranch(database, change.project, change.branch)
+  if (!replay) return rows
+  return replayWitnessesForCurrent({
+    runner: replayRunner(replay),
+    rows,
+    current: {
+      patchId: change.patchId,
+      zeroContextPatchId: change.zeroContextPatchId,
+      pathSet: change.pathSet,
+      base: replay.base,
+      tip: replay.tip,
+      tree: replay.tree,
+    },
+    trunk: replay.trunk,
+  })
 }
 
 export function readLandingOverridesForBranch(
@@ -204,6 +242,7 @@ type AdmissionEvidenceChange = NonNullable<ReviewFunnelChange['resolved']> & {
 export function gatherAdmissionEvidenceDecision(
   change: AdmissionEvidenceChange,
   database: Database,
+  replay?: ExactChangeReplayContext,
 ): TriageDecision {
   const reviews = reviewsForAdmission(database, change.group)
   const lineage = reviewLineage(database, change.project.name, change.branch)
@@ -216,6 +255,49 @@ export function gatherAdmissionEvidenceDecision(
   const branchReviewGroups: TriageReviewGroup[] = [...grouped.values()].map((rows) => ({
     reviews: rows,
   }))
+  const readRows = database
+    .query<
+      {
+        record_id: string
+        tip: string
+        patch_id: string
+        zero_context_patch_id: string | null
+        path_set: string
+        recorded_at: string
+        session_id: string | null
+      },
+      string[]
+    >(
+      `SELECT record_id,tip,patch_id,zero_context_patch_id,path_set,recorded_at,session_id FROM review_read
+      WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+        AND branch IN (${lineage.map(() => '?').join(',')})
+      ORDER BY recorded_at DESC,record_id DESC`,
+    )
+    .all(change.project.name, ...lineage)
+    .map((row) => ({
+      recordId: row.record_id,
+      tip: row.tip,
+      patchId: row.patch_id,
+      zeroContextPatchId: row.zero_context_patch_id,
+      pathSet: row.path_set,
+      recordedAt: row.recorded_at,
+      sessionId: row.session_id,
+    }))
+  const witnessedReads = replay
+    ? replayWitnessesForCurrent({
+        runner: replayRunner(replay),
+        rows: readRows,
+        current: {
+          patchId: change.group.patchId,
+          zeroContextPatchId: change.group.zeroContextPatchId,
+          pathSet: serializePathSet(change.group.pathSet),
+          base: replay.base,
+          tip: replay.tip,
+          tree: replay.tree,
+        },
+        trunk: replay.trunk,
+      })
+    : readRows
   return decideTriage({
     patchId: change.group.patchId,
     zeroContextPatchId: change.group.zeroContextPatchId,
@@ -226,32 +308,7 @@ export function gatherAdmissionEvidenceDecision(
     branchOwnerSession: branchRunOwnerSession(database, change.project.name, change.branch),
     reviews: reviews.reviews,
     branchReviewGroups,
-    reads: database
-      .query<
-        {
-          record_id: string
-          patch_id: string
-          zero_context_patch_id: string | null
-          path_set: string
-          recorded_at: string
-          session_id: string | null
-        },
-        string[]
-      >(
-        `SELECT record_id,patch_id,zero_context_patch_id,path_set,recorded_at,session_id FROM review_read
-        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-          AND branch IN (${lineage.map(() => '?').join(',')})
-        ORDER BY recorded_at DESC,record_id DESC`,
-      )
-      .all(change.project.name, ...lineage)
-      .map((row) => ({
-        recordId: row.record_id,
-        patchId: row.patch_id,
-        zeroContextPatchId: row.zero_context_patch_id,
-        pathSet: row.path_set,
-        recordedAt: row.recorded_at,
-        sessionId: row.session_id,
-      })),
+    reads: witnessedReads.map(({ tip: _tip, ...read }) => read),
   })
 }
 
@@ -274,10 +331,21 @@ function gatheredTriage(change: ReviewFunnelChange, group: ChangeGroup) {
         group,
       }
     })()
+  const replay = exactChangeReplayContext(change)
   return gatherAdmissionEvidenceDecision(
     { ...resolved, project: change.project, branch: change.branch },
     change.database,
+    replay,
   )
+}
+
+function exactChangeReplayContext(change: ReviewFunnelChange): ExactChangeReplayContext {
+  const trunk = change.project.settings.trunk?.trim()
+  if (!trunk) throw new Error(`project ${change.project.name} has no trunk configured`)
+  const trunkRef = reviewTrunkRef(reviewRemoteTrunkRefExists(trunk, spawnGitProbe(change.cwd)), trunk)
+  const tree = git(change.cwd, ['rev-parse', '--verify', `${change.head}^{tree}`])
+  if (!tree.ok) throw new Error(`could not resolve tree for ${change.head}: ${tree.err}`)
+  return { repo: change.cwd, base: change.base, tip: change.head, tree: tree.out, trunk: trunkRef }
 }
 
 /** Resolve one change once, including lineage evidence and completed-landing exclusions. */
@@ -295,13 +363,12 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
   }
   const reviews = reviewsForTriage(change.database, group)
   const files = diffNumstat(change.cwd, change.base, change.head)
-  const trunk = change.project.settings.trunk?.trim()
-  if (!trunk) throw new Error(`project ${change.project.name} has no trunk configured`)
+  const replay = exactChangeReplayContext(change)
   const postFix = gatherPostFixReviewFacts({
     database: change.database,
     repo: change.cwd,
     to: change.head,
-    trunkRef: reviewTrunkRef(reviewRemoteTrunkRefExists(trunk, spawnGitProbe(change.cwd)), trunk),
+    trunkRef: replay.trunk,
     project: change.project.name,
     branch: change.branch,
   })
@@ -313,6 +380,7 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
     identity.patchId,
     identity.zeroContextPatchId,
     pathSet,
+    replay,
   )
   const overrides = overrideFacts(change.database, {
     project: change.project.name,
@@ -320,7 +388,7 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
     patchId: identity.patchId,
     zeroContextPatchId: identity.zeroContextPatchId,
     pathSet,
-  })
+  }, replay)
   const admission = gatheredTriage(change, group)
   const admissionGap = ceilingTriageFacts(admission)
   return {

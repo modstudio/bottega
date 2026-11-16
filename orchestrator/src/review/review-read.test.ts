@@ -9,6 +9,7 @@ import { db } from '../database/db.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { upsertProject } from '../project/projects.ts'
 import {
+  architectReadMatches,
   hasExactArchitectRead,
   latestArchitectRead,
   recordArchitectRead,
@@ -170,6 +171,21 @@ test('an architect read follows the zero-context identity across a rebase', () =
       '["src/change.ts"]',
     ),
   ).toBe(false)
+})
+
+test('an architect read matcher accepts only a matching replay witness for another identity', () => {
+  const current = {
+    patchId: 'current',
+    zeroContextPatchId: 'current-zero',
+    pathSet: '["src/change.ts"]',
+  }
+  const read = {
+    patchId: 'old',
+    zeroContextPatchId: 'old-zero',
+    pathSet: '["src/change.ts"]',
+  }
+  expect(architectReadMatches({ ...read, replayMatchesCurrent: true }, current)).toBe(true)
+  expect(architectReadMatches({ ...read, replayMatchesCurrent: false }, current)).toBe(false)
 })
 
 test('the read command records the branch and tip from --cwd', () => {

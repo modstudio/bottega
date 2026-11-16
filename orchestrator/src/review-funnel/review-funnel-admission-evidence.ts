@@ -34,6 +34,7 @@ export type TriageEvidence = {
     pathSet: string
     recordedAt: string
     sessionId: string | null
+    replayMatchesCurrent?: boolean
   }[]
 }
 
@@ -414,7 +415,7 @@ function architectReadSnapshot(
  * owner's, or any identified caller's on a branch no run owns. A read crediting an earlier
  * round at a higher tier matches the branch owner exactly, as it did before tier `0` reads.
  */
-function matchingOwnerRead(evidence: TriageEvidence, recordedAfter?: string) {
+export function matchingOwnerRead(evidence: TriageEvidence, recordedAfter?: string) {
   const reader =
     recordedAfter === undefined
       ? (session: string | null) =>
@@ -424,7 +425,7 @@ function matchingOwnerRead(evidence: TriageEvidence, recordedAfter?: string) {
   return evidence.reads.find(
     (read) =>
       reader(read.sessionId) &&
-      sameStoredChange(
+      (sameStoredChange(
         {
           patchId: read.patchId,
           zeroContextPatchId: read.zeroContextPatchId ?? null,
@@ -435,7 +436,8 @@ function matchingOwnerRead(evidence: TriageEvidence, recordedAfter?: string) {
           zeroContextPatchId: evidence.zeroContextPatchId ?? null,
           pathSet: evidence.pathSet,
         },
-      ) &&
+      ) ||
+        read.replayMatchesCurrent === true) &&
       (recordedAfter === undefined || read.recordedAt > recordedAfter),
   )
 }
