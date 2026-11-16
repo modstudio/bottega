@@ -75,6 +75,8 @@ export const reviewModules: ReviewModule[] = [
     './review-group.ts',
     './review-lineage-store.ts',
     './review-outbox.ts',
+    './review-pins.ts',
+    './same-change-git.ts',
     './same-change.ts',
     '../../../shared/bounded-process.ts',
   ]),

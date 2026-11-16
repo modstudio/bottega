@@ -40,6 +40,8 @@ const override = (values: Partial<AdmissionOverride> = {}): AdmissionOverride =>
   tip: change.head,
   tree: 'tree-new',
   ...values,
+  zeroContextPatchId:
+    values.zeroContextPatchId === undefined ? change.patchId : values.zeroContextPatchId,
 })
 
 describe('pull-request admission decision', () => {
@@ -83,14 +85,12 @@ describe('pull-request admission decision', () => {
   test('an operator override with another identity requires a matching replay witness', () => {
     const other = { patchId: 'patch-old', zeroContextPatchId: 'zero-old' }
     expect(
-      decideAdmission(verdict('dispatch'), [
-        override({ ...other, replayMatchesCurrent: true }),
-      ]).overrideId,
+      decideAdmission(verdict('dispatch'), [override({ ...other, replayMatchesCurrent: true })])
+        .overrideId,
     ).toBe('override-17')
     expect(
-      decideAdmission(verdict('dispatch'), [
-        override({ ...other, replayMatchesCurrent: false }),
-      ]).overrideId,
+      decideAdmission(verdict('dispatch'), [override({ ...other, replayMatchesCurrent: false })])
+        .overrideId,
     ).toBeNull()
   })
 

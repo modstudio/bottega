@@ -58,8 +58,8 @@ export type ExactChangeReplayContext = {
   trunk: string
 }
 
-const replayRunner = (context: ExactChangeReplayContext) =>
-  (args: string[], stdin?: Uint8Array, stdinFile?: string) =>
+const replayRunner =
+  (context: ExactChangeReplayContext) => (args: string[], stdin?: Uint8Array, stdinFile?: string) =>
     git(context.repo, args, true, stdin, stdinFile)
 
 export type ReviewFunnelChange = {
@@ -138,7 +138,7 @@ export type LandingOverrideRow = {
   tip: string
   tree: string
   patchId: string | null
-  zeroContextPatchId?: string | null
+  zeroContextPatchId: string | null
   pathSet: string | null
   attribution: 'operator' | 'architect-ceiling'
   reason: string
@@ -148,7 +148,7 @@ export type LandingOverrideRow = {
 
 export function landingOverrideMatches(
   candidate: LandingOverrideRow,
-  current: { patchId: string; zeroContextPatchId: string; pathSet: string },
+  current: { patchId: string; zeroContextPatchId: string | null; pathSet: string },
 ): boolean {
   return sameStoredChange(candidate, current) || candidate.replayMatchesCurrent === true
 }
@@ -159,7 +159,7 @@ export function landingOverridesWithReplay(
     project: string
     branch: string
     patchId: string
-    zeroContextPatchId: string
+    zeroContextPatchId: string | null
     pathSet: string
   },
   replay?: ExactChangeReplayContext,
@@ -342,7 +342,10 @@ function gatheredTriage(change: ReviewFunnelChange, group: ChangeGroup) {
 function exactChangeReplayContext(change: ReviewFunnelChange): ExactChangeReplayContext {
   const trunk = change.project.settings.trunk?.trim()
   if (!trunk) throw new Error(`project ${change.project.name} has no trunk configured`)
-  const trunkRef = reviewTrunkRef(reviewRemoteTrunkRefExists(trunk, spawnGitProbe(change.cwd)), trunk)
+  const trunkRef = reviewTrunkRef(
+    reviewRemoteTrunkRefExists(trunk, spawnGitProbe(change.cwd)),
+    trunk,
+  )
   const tree = git(change.cwd, ['rev-parse', '--verify', `${change.head}^{tree}`])
   if (!tree.ok) throw new Error(`could not resolve tree for ${change.head}: ${tree.err}`)
   return { repo: change.cwd, base: change.base, tip: change.head, tree: tree.out, trunk: trunkRef }
@@ -382,13 +385,17 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
     pathSet,
     replay,
   )
-  const overrides = overrideFacts(change.database, {
-    project: change.project.name,
-    branch: change.branch,
-    patchId: identity.patchId,
-    zeroContextPatchId: identity.zeroContextPatchId,
-    pathSet,
-  }, replay)
+  const overrides = overrideFacts(
+    change.database,
+    {
+      project: change.project.name,
+      branch: change.branch,
+      patchId: identity.patchId,
+      zeroContextPatchId: identity.zeroContextPatchId,
+      pathSet,
+    },
+    replay,
+  )
   const admission = gatheredTriage(change, group)
   const admissionGap = ceilingTriageFacts(admission)
   return {

@@ -198,10 +198,7 @@ test('six post-round author fixes after a clean replay need only an architect re
   const carry = rebaseCarryDecision({
     files,
     pathsByLens: Object.fromEntries(
-      ['correctness', 'craft', 'test-quality'].map((lens) => [
-        lens,
-        files.map(({ path }) => path),
-      ]),
+      ['correctness', 'craft', 'test-quality'].map((lens) => [lens, files.map(({ path }) => path)]),
     ),
   })
   expect(carry.fixFiles).toHaveLength(6)

@@ -16,8 +16,8 @@ import { branchRunOwnerSession, measureChangeGroup, serializePathSet } from './r
 import { reviewLineage } from './review-lineage-store.ts'
 import { enqueueReviewRead } from './review-outbox.ts'
 import { git as reviewGit } from './review-pins.ts'
-import { replayWitnessesForCurrent } from './same-change-git.ts'
 import { sameStoredChange } from './same-change.ts'
+import { replayWitnessesForCurrent } from './same-change-git.ts'
 
 type Flags = { flag(name: string): string | undefined }
 type Presentation = { log(...values: unknown[]): void }
@@ -100,7 +100,7 @@ export function hasExactArchitectRead(
 export function architectReadMatches(
   read: {
     patchId: string | null
-    zeroContextPatchId?: string | null
+    zeroContextPatchId: string | null
     pathSet: string | null
     replayMatchesCurrent?: boolean
   },

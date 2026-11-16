@@ -105,9 +105,7 @@ describe('pull-request triage decision at tier zero', () => {
   test('the owner-read matcher accepts only a matching replay witness for another identity', () => {
     const other = ownerRead({ patchId: 'other', zeroContextPatchId: 'other-zero' })
     expect(
-      matchingOwnerRead(
-        evidence({ reads: [{ ...other, replayMatchesCurrent: true }] }),
-      )?.recordId,
+      matchingOwnerRead(evidence({ reads: [{ ...other, replayMatchesCurrent: true }] }))?.recordId,
     ).toBe('record-9')
     expect(
       matchingOwnerRead(evidence({ reads: [{ ...other, replayMatchesCurrent: false }] })),

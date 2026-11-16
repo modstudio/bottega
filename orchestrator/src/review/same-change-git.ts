@@ -29,14 +29,14 @@ export type GatheredSameChange = {
 export type ReplayWitnessRow = {
   tip: string
   patchId: string | null
-  zeroContextPatchId?: string | null
+  zeroContextPatchId: string | null
   pathSet: string | null
   replayMatchesCurrent?: boolean
 }
 
 type CurrentReplayChange = {
   patchId: string
-  zeroContextPatchId: string
+  zeroContextPatchId: string | null
   pathSet: string
   base: string
   tip: string

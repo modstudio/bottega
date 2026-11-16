@@ -138,8 +138,7 @@ export function rebaseCarryDecision(input: {
   }
   const changed = input.files.filter(
     ({ path, replayed, current, conflicted }) =>
-      !pairedRenamePaths.has(path) &&
-      (conflicted || !samePerPathPatch(path, replayed, current)),
+      !pairedRenamePaths.has(path) && (conflicted || !samePerPathPatch(path, replayed, current)),
   )
   const fixFiles = changed.map(({ path, replayed, current }) => {
     const source = current ?? replayed

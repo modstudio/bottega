@@ -7,8 +7,8 @@ import { db } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
 import type { ReviewFunnelVerdict } from '../review-funnel/decide-review-funnel.ts'
 import {
-  overrideFacts,
   landingOverrideMatches,
+  overrideFacts,
   readLandingOverridesForBranch,
 } from '../review-funnel/gather-funnel-facts.ts'
 import type { TriageDecision } from '../review-funnel/review-funnel-admission-evidence.ts'
