@@ -165,6 +165,7 @@ export function roundLensFacts(
               runId: opinion.runId,
               lens: opinion.lens,
               model: opinion.model ?? null,
+              baseUrl: opinion.baseUrl ?? null,
               graded: opinion.graded,
               completed: review.completedAt !== null,
             },

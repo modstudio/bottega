@@ -30,6 +30,7 @@ import {
   billingKeyHoldRefusal,
   decideBillingKeyHolds,
 } from './billing-key-hold.ts'
+import { evidenceModel } from './evidence-model.ts'
 import { assertExternalDelegation, harnessSelection } from './harness-delegation.ts'
 import {
   PROMPT_SIZE_BOUNDARY,
@@ -707,6 +708,13 @@ function effectiveModel(
   return constraints.model ?? AGENTS[candidate.agent]!.model
 }
 
+function canonicalEffectiveModel(
+  candidate: Pick<Candidate, 'agent'>,
+  constraints: RouteConstraints,
+): string {
+  return evidenceModel(effectiveModel(candidate, constraints), AGENTS[candidate.agent]!.baseUrl)
+}
+
 function admittedCandidates(
   jobName: string,
   candidates: Candidate[],
@@ -744,7 +752,7 @@ function admittedCandidates(
       (candidate) =>
         candidate.why.startsWith('at capacity') &&
         !requested.has(candidate.agent) &&
-        !models.has(effectiveModel(candidate, constraints)),
+        !models.has(canonicalEffectiveModel(candidate, constraints)),
     )
     if (capacityBlocked.length)
       throw new AgentCapacityError(
@@ -764,7 +772,8 @@ function admittedCandidates(
   }
   const constrained = eligible.filter(
     (candidate) =>
-      !requested.has(candidate.agent) && !models.has(effectiveModel(candidate, constraints)),
+      !requested.has(candidate.agent) &&
+      !models.has(canonicalEffectiveModel(candidate, constraints)),
   )
   if (constrained.length || (!requested.size && !models.size))
     return routeSurfaceSelection(constrained, constraints.routed, promptBytes)
@@ -772,7 +781,8 @@ function admittedCandidates(
     const model = effectiveModel(candidate, constraints)
     const reasons = []
     if (requested.has(candidate.agent)) reasons.push(`--avoid named ${candidate.agent}`)
-    if (models.has(model)) reasons.push(`model ${model} was excluded`)
+    if (models.has(canonicalEffectiveModel(candidate, constraints)))
+      reasons.push(`model ${model} was excluded`)
     return `${candidate.agent}: ${reasons.join(' and ')}`
   })
   throw new RoutingRefusalError(

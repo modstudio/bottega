@@ -53,6 +53,28 @@ test('does not credit an earlier delivery-none run as a distinct-model opinion',
   ).toBeNull()
 })
 
+test('compares OpenRouter opinions by canonical model identity', () => {
+  const openRouter = 'https://openrouter.ai/api/v1'
+  expect(
+    identifySecondOpinionRun(
+      [
+        opinion('lens-1', 'run-1', 'x/y:floor', { baseUrl: openRouter }),
+        opinion('lens-2', 'run-2', 'x/y', { baseUrl: openRouter }),
+      ],
+      'correctness',
+    ),
+  ).toBeNull()
+  expect(
+    identifySecondOpinionRun(
+      [
+        opinion('lens-1', 'run-1', 'x/y', { baseUrl: openRouter }),
+        opinion('lens-2', 'run-2', 'x/z', { baseUrl: openRouter }),
+      ],
+      'correctness',
+    ),
+  ).toEqual({ firstRunId: 'run-1', secondRunId: 'run-2' })
+})
+
 test('a second opinion requires two completed runs on different models', () => {
   const reviews = (...opinions: SecondOpinionRun[]): TriageReviewRow[] => [
     {

@@ -1,6 +1,7 @@
 // concern: filed-issue review adapter
 /** Resolves review tier, dispatches its lenses, and gathers results without judging them. */
 
+import { AGENTS } from '../agent/agent-registry.ts'
 import { type CollectedWaitRun, collectWaitForRuns } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
 import type { Project } from '../project/projects.ts'
@@ -8,6 +9,7 @@ import { parseReviewOutput } from '../review/review.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import { resolveReviewBase } from '../review/review-target.ts'
 import { reviewTierForRange } from '../review/review-tier-service.ts'
+import { evidenceModel } from '../route/evidence-model.ts'
 import { detach } from '../run/run-dispatch.ts'
 import { RUN_FOLLOW_TIMEOUT_MS } from '../run/run-liveness.ts'
 import type { RunResult } from '../run/run-types.ts'
@@ -195,12 +197,13 @@ export async function runIssueFixReviews(input: {
   return { tier: tier.tier, selectedLenses: tier.lenses, reviewNotStarted: null, results }
 }
 
-function modelForRun(runId: string): string {
-  const row = db().query('SELECT model FROM run WHERE record_id=?').get(runId) as {
+export function modelForRun(runId: string): string {
+  const row = db().query('SELECT agent, model FROM run WHERE record_id=?').get(runId) as {
+    agent: string
     model: string | null
   } | null
   if (!row?.model) throw new Error(`run ${runId} recorded no model for second opinion to exclude`)
-  return row.model
+  return evidenceModel(row.model, AGENTS[row.agent]?.baseUrl)
 }
 
 function reviewPrompt(issue: FiledIssue, lens: string, tier: 0 | 1 | 2 | 3): string {
