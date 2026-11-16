@@ -1,10 +1,47 @@
 import { afterAll, beforeEach, expect, spyOn, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
-import { leaseHolder, watch } from './collect.ts'
+import { acquireLease, leaseHolder, watch } from './collect.ts'
 import { FAST_MS, SLOW_MS } from './collect-cadence.ts'
 
 beforeEach(resetFixtureStore)
 afterAll(resetFixtureStore)
+
+test('a failed lease acquisition is reported and retried on a later tick', async () => {
+  const intervals: Array<{ callback: () => void; delay: number }> = []
+  const interval = spyOn(globalThis, 'setInterval').mockImplementation(((
+    callback: () => void,
+    delay?: number,
+  ) => {
+    intervals.push({ callback, delay: delay ?? 0 })
+    return intervals.length as unknown as ReturnType<typeof setInterval>
+  }) as typeof setInterval)
+  const lockError = new Error('database is locked')
+  const errors: Error[] = []
+  let acquisitionCalls = 0
+  let fastRan!: () => void
+  const fastFinished = new Promise<void>((resolve) => (fastRan = resolve))
+  const stop = watch('acquisition-retry-watch', (error) => errors.push(error), {
+    acquireLease: (holder) => {
+      acquisitionCalls++
+      if (acquisitionCalls === 1) throw lockError
+      return acquireLease(holder)
+    },
+    fast: async () => {
+      fastRan()
+      return undefined
+    },
+  })
+  try {
+    const fastTick = intervals.find((entry) => entry.delay === FAST_MS)!.callback
+    expect(fastTick).not.toThrow()
+    await fastFinished
+    expect(errors).toEqual([lockError])
+    expect(acquisitionCalls).toBe(2)
+  } finally {
+    await stop()
+    interval.mockRestore()
+  }
+})
 
 test('a slow tick during a busy fast cycle runs once as soon as fast finishes', async () => {
   const intervals: Array<{ callback: () => void; delay: number }> = []

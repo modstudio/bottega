@@ -640,11 +640,23 @@ function deleteWatcherAlive(holder: WatcherAlive['holder']) {
   releaseStoredLease(WATCH_ALIVE_KEY, holder)
 }
 
-function attemptWatcherAliveWrite(action: () => void, onError: (error: Error) => void) {
+function attemptWatcherStoreAccess(action: () => void, onError: (error: Error) => void) {
   try {
     action()
   } catch (e) {
     onError(e as Error)
+  }
+}
+
+function attemptWatcherLeaseAcquisition(
+  action: () => boolean,
+  onError: (error: Error) => void,
+): boolean {
+  try {
+    return action()
+  } catch (e) {
+    onError(e as Error)
+    return false
   }
 }
 
@@ -653,8 +665,10 @@ function refreshWatcherAliveIfHeld(
   holder: string,
   onError: (error: Error) => void,
 ) {
-  if (enabled && leaseHolder() === holder)
-    attemptWatcherAliveWrite(() => writeWatcherAlive(holder), onError)
+  if (!enabled) return
+  attemptWatcherStoreAccess(() => {
+    if (leaseHolder() === holder) writeWatcherAlive(holder)
+  }, onError)
 }
 
 /**
@@ -981,6 +995,7 @@ export async function collectOnce(
  * other waits without duplicating it.
  */
 type WatchDependencies = {
+  acquireLease?: (holder: string) => boolean
   initial?: (
     guard: LeaseGuard,
     outboxSchedule: HostedOutboxDrainSchedule<HostedOutboxReport> | null,
@@ -1043,6 +1058,7 @@ export function watch(
   let slowOwed = false
   let stopping = false
   let reportedDeliveryOff = false
+  const acquire = dependencies.acquireLease ?? acquireLease
   let dispatch = (_tick: WatchTick) => {}
   const startCycle = (
     work: (
@@ -1052,9 +1068,10 @@ export function watch(
     cycle: Exclude<WatchRunningCycle, null>,
     heartbeat = false,
   ) => {
-    if (stopping || running !== null || !acquireLease(holder)) return false
+    if (stopping || running !== null) return false
+    if (!attemptWatcherLeaseAcquisition(() => acquire(holder), onError)) return false
     running = cycle
-    if (heartbeat) attemptWatcherAliveWrite(() => writeWatcherAlive(holder), onError)
+    if (heartbeat) attemptWatcherStoreAccess(() => writeWatcherAlive(holder), onError)
     void (async () => {
       // A failed collect must not stop the loop or take the server down: the
       // stored data is still the last good reading, which is the point of having
@@ -1124,8 +1141,8 @@ export function watch(
     clearInterval(a)
     clearInterval(b)
     while (running !== null) await Bun.sleep(10)
-    releaseLease(holder)
-    attemptWatcherAliveWrite(() => deleteWatcherAlive(holder), onError)
+    attemptWatcherStoreAccess(() => releaseLease(holder), onError)
+    attemptWatcherStoreAccess(() => deleteWatcherAlive(holder), onError)
   }
   for (const sig of ['SIGINT', 'SIGTERM'] as const) {
     process.on(sig, async () => {
