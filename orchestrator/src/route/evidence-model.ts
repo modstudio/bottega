@@ -1,7 +1,6 @@
 // concern: routing evidence model
 /** Decides which effective model identity owns routing evidence. */
 
-import { AGENTS } from '../agent/agent-registry.ts'
 import { isOpenRouterBaseUrl } from '../agent/openrouter.ts'
 
 const ROUTING_VARIANTS = ['floor', 'nitro', 'exacto'] as const
@@ -32,8 +31,11 @@ export function evidenceModel(model: string, baseUrl: string | null | undefined)
 }
 
 /** Resolves a prior run's canonical model, preserving raw identity for retired agents. */
-export function evidenceModelForRun(agent: string, model: string): string {
-  return evidenceModel(model, AGENTS[agent]?.baseUrl)
+export function evidenceModelForRun(
+  run: { agent: string; model: string },
+  agents: Readonly<Record<string, { baseUrl?: string | null } | undefined>>,
+): string {
+  return evidenceModel(run.model, agents[run.agent]?.baseUrl)
 }
 
 /** SQL form of evidenceModel for persisted run models already scoped by an OpenRouter agent row. */

@@ -324,7 +324,7 @@ async function modelForDistinct(id: string): Promise<string> {
       status: string
     } | null
     if (!row) throw new Error(`no run ${id} named by --distinct-from`)
-    if (row.model) return evidenceModelForRun(row.agent, row.model)
+    if (row.model) return evidenceModelForRun({ agent: row.agent, model: row.model }, AGENTS)
     if (row.status !== 'running' || Date.now() >= until)
       throw new Error(`run ${id} recorded no model for --distinct-from to exclude`)
     await new Promise((resolve) => setTimeout(resolve, 25))
