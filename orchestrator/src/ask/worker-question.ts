@@ -186,16 +186,15 @@ export type StoredWorkerQuestion = {
 
 export function encodeWorkerQuestion(question: WorkerQuestion): {
   kind: WorkerQuestion['kind']
-  typedOptions: string | null
-  criteria: string | null
-  levels: string | null
+  typedOptions: Extract<WorkerQuestion, { kind: 'choice' }>['options'] | null
+  criteria: Extract<WorkerQuestion, { kind: 'yesno' }>['criteria'] | null
+  levels: Extract<WorkerQuestion, { kind: 'score' }>['levels'] | null
 } {
   return {
     kind: question.kind,
-    typedOptions: question.kind === 'choice' ? JSON.stringify(question.options) : null,
-    criteria:
-      question.kind === 'yesno' && question.criteria ? JSON.stringify(question.criteria) : null,
-    levels: question.kind === 'score' ? JSON.stringify(question.levels) : null,
+    typedOptions: question.kind === 'choice' ? question.options : null,
+    criteria: question.kind === 'yesno' && question.criteria ? question.criteria : null,
+    levels: question.kind === 'score' ? question.levels : null,
   }
 }
 

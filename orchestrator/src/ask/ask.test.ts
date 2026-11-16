@@ -16,10 +16,13 @@ import { BOARD_HOSTED_ADOPTED_KEY } from '../board/board-mode.ts'
 import { postNotice } from '../board/board-service.ts'
 import { db } from '../database/db.ts'
 import { readEventLog, runEventsPath } from '../events.ts'
+import { identity } from '../record/record-api-identity.fixture.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
+import type { QuestionWriteBody } from '../record/record-question-contract.ts'
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
-import { ask, createAskHttpHandler, createAskMcpServer } from './ask.ts'
+import { ask, createAskHttpHandler, createAskMcpServer, recordReplyQuestions } from './ask.ts'
 import { observeAskTransport } from './ask-lifecycle.ts'
+import { decodeWorkerQuestion } from './worker-question.ts'
 
 async function askClient(
   runId: string,
@@ -51,6 +54,100 @@ beforeEach(() => {
 afterEach(() => {
   installRecordApiClient(null)
   delete process.env.BOTTEGA_RECORD_API_URL
+})
+
+test('reply questions store and send structured typed values', async () => {
+  const runId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+  const questions = [
+    {
+      kind: 'choice' as const,
+      question: 'Which implementation?',
+      why: 'The implementation depends on the choice.',
+      options: [
+        { name: 'First', criteria: 'Use the first path.' },
+        { name: 'Second', criteria: 'Use the second path.' },
+      ],
+    },
+    {
+      kind: 'yesno' as const,
+      question: 'Proceed?',
+      why: 'The next step depends on the ruling.',
+      criteria: { yes: 'Proceed with the change.', no: 'Stop the change.' },
+    },
+  ]
+  const askedAt = '2026-11-16T12:00:00.000Z'
+  const recorded = await recordReplyQuestions({
+    runId,
+    askedAt,
+    awaitingOperatorAt: askedAt,
+    questions,
+  })
+
+  const rows = db()
+    .query<
+      {
+        record_id: string
+        question: string
+        why: string | null
+        kind: string
+        options: string | null
+        typed_options: string | null
+        criteria: string | null
+        levels: string | null
+      },
+      [string, string]
+    >(
+      'SELECT record_id,question,why,kind,options,typed_options,criteria,levels FROM question WHERE record_id IN (?,?) ORDER BY number',
+    )
+    .all(recorded[0]!.recordId, recorded[1]!.recordId)
+  expect(decodeWorkerQuestion(rows[0]!)).toMatchObject({
+    kind: 'choice',
+    options: [
+      { name: 'First', criteria: 'Use the first path.' },
+      { name: 'Second', criteria: 'Use the second path.' },
+    ],
+  })
+  expect(decodeWorkerQuestion(rows[1]!)).toMatchObject({
+    kind: 'yesno',
+    criteria: { yes: 'Proceed with the change.', no: 'Stop the change.' },
+  })
+
+  const hostedWrites: QuestionWriteBody[] = []
+  const client = createMemoryRecordApiClient()
+  db().query("UPDATE project SET settings=json_set(settings,'$.space','space-a')").run()
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
+  installRecordApiClient({
+    ...client,
+    whoami: async () => identity,
+    writeQuestion: async (_intent, body) => {
+      hostedWrites.push(body)
+      return {
+        id: body.question.id,
+        number: hostedWrites.length,
+        revision: body.question.revision,
+        applied: true,
+      }
+    },
+  })
+  const hostedRunId = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'running',
+  })
+  await recordReplyQuestions({
+    runId: hostedRunId,
+    askedAt,
+    awaitingOperatorAt: askedAt,
+    questions,
+  })
+  expect(hostedWrites[0]!.question.typedOptions).toEqual([
+    { name: 'First', criteria: 'Use the first path.' },
+    { name: 'Second', criteria: 'Use the second path.' },
+  ])
+  expect(hostedWrites[1]!.question.criteria).toEqual({
+    yes: 'Proceed with the change.',
+    no: 'Stop the change.',
+  })
 })
 
 describe('the live ask channel always answers', () => {

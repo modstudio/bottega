@@ -6,12 +6,18 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
+import * as questionStoreRead from '../question-store/question-store-read.ts'
 import * as resourceOwnership from '../resources/resource-ownership.ts'
 import { candidates } from '../route/route.ts'
 import { PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
 import { recordCoordinatorCause, runCoordinatorLogPath } from './run-coordinator-log.ts'
 import { runInboxCommand } from './run-inbox.ts'
-import { closeStaleChainQuestions, reapStale } from './run-liveness.ts'
+import {
+  closeStaleChainQuestions,
+  reapStale,
+  STALE_QUESTION_SWEEP_INTERVAL_MS,
+  staleQuestionSweepDue,
+} from './run-liveness.ts'
 import { STALE_AFTER_MS } from './run-liveness-policy.ts'
 import { sharedGitConfigCheckSkipReason } from './shared-git-config-check.ts'
 
@@ -396,6 +402,22 @@ describe('reapStale', () => {
         .get(root),
     ).toEqual({ outcome: 'retired', error: 'chain-stale' })
     expect(await inbox()).not.toContain(`run ${root}`)
+  })
+
+  test('a throttled question sweep skips the record read inside the interval', async () => {
+    const reads = spyOn(questionStoreRead, 'inboxRunQuestions')
+    await closeStaleChainQuestions(db())
+    await closeStaleChainQuestions(db(), { throttled: true })
+    await closeStaleChainQuestions(db(), { throttled: true })
+    expect(reads).toHaveBeenCalledTimes(1)
+  })
+
+  test('a throttled sweep runs first in a process and again only after the interval', () => {
+    const interval = STALE_QUESTION_SWEEP_INTERVAL_MS
+    expect(staleQuestionSweepDue(undefined, 0, true)).toBe(true)
+    expect(staleQuestionSweepDue(0, interval - 1, true)).toBe(false)
+    expect(staleQuestionSweepDue(0, interval, true)).toBe(true)
+    expect(staleQuestionSweepDue(0, 1, false)).toBe(true)
   })
 
   test('a pid-less (pending) row older than the bootstrap bound is failed/harness', () => {

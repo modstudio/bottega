@@ -7,6 +7,7 @@ import { guardHostedTables } from '../database/hosted-table-guard.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import type { RecordApiClient } from '../record/record-api-client.ts'
 import type { QuestionWriteBody } from '../record/record-question-contract.ts'
+import { QUESTION_JSON_FIELDS } from '../record/record-question-contract.ts'
 import {
   clearQuestionDeliveryPending,
   markQuestionDeliveryPending,
@@ -328,6 +329,15 @@ test('SQLite and record question adapters satisfy every shared read and write co
   hosted.close()
 })
 
+test.each(QUESTION_JSON_FIELDS)('SQLite question writes refuse string-valued %s', async (field) => {
+  const database = migratedTestDatabase()
+  seedOwners(database)
+  const question = snapshot()
+  ;(question as unknown as Record<string, unknown>)[field] = '[]'
+  await expect(questionStore(database).write('ask', body(question))).rejects.toThrow(field)
+  database.close()
+})
+
 test('only the record adapter passes a rulings feed cursor through', async () => {
   const database = migratedTestDatabase()
   await expect(
@@ -398,6 +408,26 @@ test('record inbox paging advances independently across every reachable space', 
   }
   expect(seen.sort()).toEqual([...rows[SPACE_ID], ...rows[OTHER_SPACE_ID]].sort())
   expect(new Set(seen).size).toBe(seen.length)
+  database.close()
+})
+
+test('a reused record store retries identity after a failed read', async () => {
+  const database = migratedTestDatabase()
+  let identityReads = 0
+  const store = new RecordQuestionStore({
+    database,
+    client: {
+      whoami: async () => {
+        identityReads += 1
+        if (identityReads === 1) throw new Error('record API unavailable')
+        return whoami()
+      },
+      readQuestions: async () => ({ items: [], more: false }),
+    },
+  })
+  await expect(store.read({ read: 'inbox' })).rejects.toThrow('record API unavailable')
+  expect((await store.read({ read: 'inbox' })).items).toEqual([])
+  expect(identityReads).toBe(2)
   database.close()
 })
 

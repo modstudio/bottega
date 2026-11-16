@@ -9,6 +9,36 @@ const id = z.string().uuid()
 const stamp = z.string().datetime()
 const nullableText = z.string().nullable()
 const nullableId = id.nullable()
+export const QUESTION_JSON_FIELDS = [
+  'options',
+  'typedOptions',
+  'criteria',
+  'levels',
+  'jevProbabilities',
+] as const
+type QuestionJsonField = (typeof QUESTION_JSON_FIELDS)[number]
+export function questionJsonFieldStructuredMessage(field: QuestionJsonField): string {
+  return `${field} must be a structured JSON value, not a string; pass the array or object itself, not its JSON encoding`
+}
+const nullableJsonValue = (field: QuestionJsonField) =>
+  z
+    .unknown()
+    .nullable()
+    .refine((value) => typeof value !== 'string', {
+      message: questionJsonFieldStructuredMessage(field),
+    })
+const questionJsonFieldSchemas = Object.fromEntries(
+  QUESTION_JSON_FIELDS.map((field) => [field, nullableJsonValue(field)]),
+) as Record<QuestionJsonField, ReturnType<typeof nullableJsonValue>>
+
+export function assertQuestionJsonFieldsStructured(
+  question: Record<(typeof QUESTION_JSON_FIELDS)[number], unknown>,
+): void {
+  for (const field of QUESTION_JSON_FIELDS) {
+    if (typeof question[field] === 'string')
+      throw new Error(questionJsonFieldStructuredMessage(field))
+  }
+}
 
 export const questionIntentSchema = z.enum([
   'ask',
@@ -41,14 +71,14 @@ const questionSnapshotSchema = z.object({
   revision: z.number().int().positive(),
   askedAt: stamp,
   question: z.string(),
-  options: z.unknown().nullable(),
+  options: questionJsonFieldSchemas.options,
   recommendation: nullableText,
   why: nullableText,
   askedVia: nullableText,
   kind: nullableText,
-  typedOptions: z.unknown().nullable(),
-  criteria: z.unknown().nullable(),
-  levels: z.unknown().nullable(),
+  typedOptions: questionJsonFieldSchemas.typedOptions,
+  criteria: questionJsonFieldSchemas.criteria,
+  levels: questionJsonFieldSchemas.levels,
   answer: nullableText,
   answerValue: nullableText,
   answerBasis: nullableText,
@@ -60,7 +90,7 @@ const questionSnapshotSchema = z.object({
   answerChannel: nullableText,
   jevPick: nullableText,
   jevConfidence: z.number().nullable(),
-  jevProbabilities: z.unknown().nullable(),
+  jevProbabilities: questionJsonFieldSchemas.jevProbabilities,
   jevModel: nullableText,
   jevInputTokens: z.number().int().nullable(),
   jevError: nullableText,

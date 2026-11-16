@@ -11,8 +11,13 @@ import {
 import { questionById } from '../question-store/question-store-read.ts'
 import type { TaskFlowQuestionCloseRow } from '../workflow/task-flow-store-types.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
-import { clearQuestionDeliveryPending, pendingQuestionIds } from './question-delivery-pending.ts'
+import {
+  clearQuestionDeliveryPending,
+  pendingDeliveryRunIds,
+  pendingQuestionIds,
+} from './question-delivery-pending.ts'
 import { openChainQuestions, questionsForRunChain } from './question-open.ts'
+import { runRootRecord } from './run-root-record.ts'
 export const QUESTION_CLOSE_CHAIN_STOPPED = 'chain-stopped'
 export const QUESTION_CLOSE_CHAIN_VOIDED = 'chain-voided'
 export const QUESTION_CLOSE_CHAIN_STALE = 'chain-stale'
@@ -73,6 +78,18 @@ export async function closeRunChainQuestions(
   )
   await retireRunChainQuestionDeliveries(database, rootId, reason)
   return closed
+}
+
+/**
+ * Names the chain roots that still hold a pending ruling delivery on this
+ * machine. Retirement does nothing for any other chain, so a sweep asks only
+ * these; the pending marker carries its run, so this reads nothing hosted.
+ */
+export function rootsWithPendingDelivery(database: Database): string[] {
+  const roots = pendingDeliveryRunIds(database).map(
+    (runId) => runRootRecord(runId, database)?.rootRunId ?? runId,
+  )
+  return [...new Set(roots)]
 }
 
 /** Retires rulings that can no longer be delivered because their chain has ended. */
