@@ -18,6 +18,8 @@ export type OutboxFailureFacts = {
 
 export type OutboxFailureDisposition = 'pass-fatal' | 'row-fatal'
 
+export class RecordSyncWiringError extends Error {}
+
 export class OutboxRowError extends Error {
   readonly errorClass: Exclude<OutboxFailureFacts['errorClass'], 'unknown' | 'verdict-rule'>
   readonly blockedProject: string | null

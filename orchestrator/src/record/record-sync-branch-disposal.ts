@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { branchDisposal } from '../../../shared/record/schema-landing.ts'
 import { recordDate } from '../../../shared/record-timestamp.ts'
-import { OutboxRowError } from './outbox-failure.ts'
+import { OutboxRowError, RecordSyncWiringError } from './outbox-failure.ts'
 import type { ExistingEvidenceOwned } from './record-evidence-references.ts'
 import type { RecordPayload, RecordPrincipal } from './record-sync-contract.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
@@ -40,7 +40,9 @@ export async function pushBranchDisposal(
   projectIds?: ProjectResolutionCache,
   existingEvidenceOwned?: ExistingEvidenceOwned<SQL>,
 ): Promise<void> {
-  if (!existingEvidenceOwned) throw new Error('branch disposal sync requires collision ownership')
+  if (!existingEvidenceOwned) {
+    throw new RecordSyncWiringError('branch disposal sync requires collision ownership')
+  }
   await postgres.begin(async (tx) => {
     await bindPrincipal(tx, principal)
     const write = branchDisposalValues(row, await projectRecordId(tx, row, principal, projectIds))
