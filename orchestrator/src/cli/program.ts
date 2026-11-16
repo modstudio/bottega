@@ -184,13 +184,13 @@ export async function lockedStoreMessage(
           sampled.supported && sampled.holderPid !== null ? commandOf(sampled.holderPid) : null,
       }),
     }
-    return recordDatabaseLockRefusal(facts, argv)
+    return recordDatabaseLockRefusal(facts, argv, error)
   } catch (inspectionError) {
     const facts = {
       store: DB_PATH,
       holder: databaseLockHolder({ failed: inspectionError }),
     }
-    return recordDatabaseLockRefusal(facts, argv)
+    return recordDatabaseLockRefusal(facts, argv, error)
   }
 }
 

@@ -91,6 +91,9 @@ function contentionHealth(
     .filter((entry) => entry.outcome === 'refused')
     .map((entry) => ({
       at: entry.at,
+      caller: null,
+      code: null,
+      errno: null,
       store: 'collect lease',
       holderCommand: entry.holder,
       holderUnavailable: entry.leaseUnreadable ? COLLECT_LEASE_UNREADABLE_CAUSE : null,

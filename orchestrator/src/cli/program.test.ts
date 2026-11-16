@@ -234,6 +234,9 @@ test("a locked orchestrator store refusal names the sampled holder's pid and sum
   ).toEqual([
     {
       at: expect.any(String),
+      caller: null,
+      code: 'SQLITE_BUSY',
+      errno: null,
       store: expect.any(String),
       holderCommand: 'bun orch.ts',
       holderUnavailable: null,

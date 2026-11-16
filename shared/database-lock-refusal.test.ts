@@ -5,6 +5,7 @@ import {
   databaseLockHolderCommandSummary,
   formatDatabaseLockRefusal,
   isDatabaseLocked,
+  sqliteErrorIdentity,
 } from './database-lock-refusal.ts'
 import type { WalWriteLockSampleResult } from './store-write-lock.ts'
 
@@ -22,6 +23,8 @@ test('a database lock refusal names the store, holder, and remedy', () => {
   )
   expect(isDatabaseLocked({ code: 'SQLITE_BUSY' })).toBeTrue()
   expect(isDatabaseLocked({ code: 'SQLITE_LOCKED' })).toBeTrue()
+  expect(isDatabaseLocked({ code: 'SQLITE_BUSY_SNAPSHOT', errno: 517, message: 'x' })).toBeTrue()
+  expect(isDatabaseLocked({ code: 'SQLITE_CONSTRAINT', errno: 19 })).toBeFalse()
   expect(isDatabaseLocked({ message: 'database table is locked' })).toBeTrue()
   expect(
     formatDatabaseLockRefusal({
@@ -29,6 +32,15 @@ test('a database lock refusal names the store, holder, and remedy', () => {
       holder: { unavailable: 'inspection unavailable' },
     }),
   ).toContain('holder: unknown (inspection unavailable)')
+})
+
+test('SQLite identity reads only an error own string code and integer errno', () => {
+  const inherited = Object.create({ code: 'SQLITE_BUSY', errno: 5 })
+  expect(sqliteErrorIdentity(inherited)).toEqual({ code: null, errno: null })
+  expect(sqliteErrorIdentity({ code: 'SQLITE_BUSY_SNAPSHOT', errno: 517 })).toEqual({
+    code: 'SQLITE_BUSY_SNAPSHOT',
+    errno: 517,
+  })
 })
 
 test('the holder summary skips executable options before the script', () => {

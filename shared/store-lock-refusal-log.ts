@@ -1,18 +1,34 @@
 /** Best-effort file adapter for store lock refusals that cannot be written to either store. */
 
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { appendBoundedJsonLine, readBoundedJsonLinesSince } from './bounded-json-lines-log.ts'
 import {
   type DatabaseLockRefusalFacts,
   databaseLockHolderCommandSummary,
   formatDatabaseLockRefusal,
+  sqliteErrorIdentity,
 } from './database-lock-refusal.ts'
 import type { StateEnvironment } from './state-directory.ts'
+import { writeCallerFromStack } from './write-caller-from-stack.ts'
 
 const STORE_LOCK_REFUSAL_LOG_MAX_BYTES = 1_048_576
 const LOG_NAME = 'store-lock-refusals'
+const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const refusalCallerOptions = {
+  repositoryRoot,
+  excludedFiles: [
+    join(repositoryRoot, 'hub/src/db.ts'),
+    join(repositoryRoot, 'orchestrator/src/database/db.ts'),
+  ],
+  excludedDirectories: [join(repositoryRoot, 'shared')],
+}
 
 export type StoreLockRefusalEntry = {
   at: string
+  caller: string | null
+  code: string | null
+  errno: number | null
   store: string
   holderCommand: string | null
   holderUnavailable: string | null
@@ -28,10 +44,18 @@ type AppendOptions = {
 function refusalEntry(
   facts: DatabaseLockRefusalFacts,
   argv: readonly string[],
+  error: unknown,
   now: Date,
 ): StoreLockRefusalEntry {
+  const identity = sqliteErrorIdentity(error)
+  const stack =
+    error && (typeof error === 'object' || typeof error === 'function')
+      ? (error as { stack?: unknown }).stack
+      : null
   return {
     at: now.toISOString(),
+    caller: typeof stack === 'string' ? writeCallerFromStack(stack, refusalCallerOptions) : null,
+    ...identity,
     store: facts.store,
     holderCommand:
       'pid' in facts.holder && facts.holder.command
@@ -47,20 +71,26 @@ function refusalEntry(
 export function appendStoreLockRefusal(
   facts: DatabaseLockRefusalFacts,
   argv: readonly string[],
+  error: unknown,
   options: AppendOptions = {},
 ): void {
-  appendBoundedJsonLine(refusalEntry(facts, argv, options.now ?? new Date()), {
-    maxBytes: options.maxBytes ?? STORE_LOCK_REFUSAL_LOG_MAX_BYTES,
-    name: LOG_NAME,
-  })
+  try {
+    appendBoundedJsonLine(refusalEntry(facts, argv, error, options.now ?? new Date()), {
+      maxBytes: options.maxBytes ?? STORE_LOCK_REFUSAL_LOG_MAX_BYTES,
+      name: LOG_NAME,
+    })
+  } catch {
+    // Measurement must never change the refusal's result or message.
+  }
 }
 
 /** Record one refusal best-effort and return the message presented to the caller. */
 export function recordDatabaseLockRefusal(
   facts: DatabaseLockRefusalFacts,
   argv: readonly string[],
+  error: unknown,
 ): string {
-  appendStoreLockRefusal(facts, argv)
+  appendStoreLockRefusal(facts, argv, error)
   return formatDatabaseLockRefusal(facts)
 }
 
@@ -70,6 +100,9 @@ function parsedEntry(value: unknown): StoreLockRefusalEntry | null {
   if (
     typeof row.at !== 'string' ||
     !Number.isFinite(Date.parse(row.at)) ||
+    (row.caller !== undefined && row.caller !== null && typeof row.caller !== 'string') ||
+    (row.code !== undefined && row.code !== null && typeof row.code !== 'string') ||
+    (row.errno !== undefined && row.errno !== null && !Number.isInteger(row.errno)) ||
     typeof row.store !== 'string' ||
     (row.holderCommand !== null && typeof row.holderCommand !== 'string') ||
     (row.holderUnavailable !== undefined &&
@@ -80,8 +113,15 @@ function parsedEntry(value: unknown): StoreLockRefusalEntry | null {
   )
     return null
   return {
-    ...(row as Omit<StoreLockRefusalEntry, 'holderUnavailable'>),
+    at: row.at,
+    caller: typeof row.caller === 'string' ? row.caller : null,
+    code: typeof row.code === 'string' ? row.code : null,
+    errno: typeof row.errno === 'number' ? row.errno : null,
+    store: row.store,
+    holderCommand: typeof row.holderCommand === 'string' ? row.holderCommand : null,
     holderUnavailable: typeof row.holderUnavailable === 'string' ? row.holderUnavailable : null,
+    holderPid: typeof row.holderPid === 'number' ? row.holderPid : null,
+    verb: row.verb,
   }
 }
 

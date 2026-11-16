@@ -127,7 +127,8 @@ export function summarizeStoreLockRefusals(
     meanDurationMs: 0,
     topKeys: topKeys(
       entries,
-      (entry) => `${storeLabel(entry.store)} held by ${entry.holderCommand ?? 'unknown'}`,
+      (entry) =>
+        `${storeLabel(entry.store)} held by ${entry.holderCommand ?? 'unknown'}${entry.code ? ` (${entry.code})` : ''}`,
     ),
   }
 }

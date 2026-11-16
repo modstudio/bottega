@@ -78,7 +78,7 @@ function literalHelp(argv: string[]): string[] {
 async function cliErrorMessage(error: unknown, argv: readonly string[]): Promise<string> {
   if (!isDatabaseLocked(error)) return error instanceof Error ? error.message : String(error)
   const facts = { store: DB_PATH, holder: await hubDatabaseLockHolder() }
-  return recordDatabaseLockRefusal(facts, argv)
+  return recordDatabaseLockRefusal(facts, argv, error)
 }
 
 export async function run(

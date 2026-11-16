@@ -1,7 +1,7 @@
 import { constants, Database } from 'bun:sqlite'
 import { existsSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, relative, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
 import { classifyCaller } from '../../shared/caller-classification.ts'
@@ -28,6 +28,7 @@ import { decideStoreAccess, type StoreAccessDecision } from '../../shared/store-
 import { appendStoreWriteHold } from '../../shared/store-write-hold-log.ts'
 import { sampleWalWriteLock, type WalWriteLockSampleResult } from '../../shared/store-write-lock.ts'
 import { assertTestHubDatabasePath } from '../../shared/test-hub-database.ts'
+import { writeCallerFromStack } from '../../shared/write-caller-from-stack.ts'
 import {
   applyMigrations,
   migrationRefusal,
@@ -229,31 +230,11 @@ export function closeDatabaseForFixture(): void {
   schemaReload = null
 }
 
-export function writeCallerFromStack(stack: string, sourcePath = dbSourcePath): string | null {
-  const repositoryRoot = resolve(dirname(sourcePath), '../..')
-  for (const line of stack.split('\n').slice(1)) {
-    const suffix = line.match(/:(\d+):\d+\)?\s*$/)
-    if (!suffix?.[1] || suffix.index === undefined) continue
-    let framedPath = line.slice(0, suffix.index).trim()
-    const wrapped = framedPath.match(/^at\s+.+?\s+\((.*)$/)
-    framedPath = wrapped?.[1] ?? framedPath.replace(/^at\s+/, '')
-    let path: string
-    try {
-      path = framedPath.startsWith('file://') ? fileURLToPath(framedPath) : framedPath
-    } catch {
-      continue
-    }
-    if (!path.startsWith('/')) continue
-    if (resolve(path) === resolve(sourcePath)) continue
-    const fromRepository = relative(repositoryRoot, path)
-    if (fromRepository.startsWith('..')) continue
-    return `${fromRepository}:${suffix[1]}`
-  }
-  return null
-}
-
 function writeCaller(): string | null {
-  return writeCallerFromStack(new Error().stack ?? '')
+  return writeCallerFromStack(new Error().stack ?? '', {
+    repositoryRoot: resolve(dirname(dbSourcePath), '../..'),
+    excludedFiles: [dbSourcePath],
+  })
 }
 
 function databasePath(conn: Database): string {
