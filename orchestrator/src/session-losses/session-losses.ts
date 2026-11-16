@@ -103,6 +103,8 @@ export type ContextReviewLoss = {
   dropped: number
 }
 
+export const compactionCaptureSource = (sessionId: string): string => `compaction ${sessionId}`
+
 /** Measure review effects from event snapshots and the current context-item rows. */
 export function measureContextReviewLosses(
   reviews: readonly ContextReviewLossRow[],
@@ -114,17 +116,17 @@ export function measureContextReviewLosses(
     (left, right) => Date.parse(left.at) - Date.parse(right.at),
   )
   const boundaryTimes = boundaryAts.map(Date.parse)
+  const nextBoundaryAfter = (from: number) =>
+    boundaryTimes.filter((at) => at > from).sort((left, right) => left - right)[0] ??
+    Number.POSITIVE_INFINITY
   const current = new Map(items.map((item) => [item.id, item]))
   return {
     reviews: orderedReviews.map((review, index) => {
       const start = Date.parse(review.at)
       const nextReview = orderedReviews[index + 1]?.at
-      const nextBoundary = boundaryTimes
-        .filter((at) => at > start)
-        .sort((left, right) => left - right)[0]
       const end = Math.min(
         nextReview ? Date.parse(nextReview) : Number.POSITIVE_INFINITY,
-        nextBoundary ?? Number.POSITIVE_INFINITY,
+        nextBoundaryAfter(start),
       )
       const present = review.itemIds.flatMap((id) => (current.has(id) ? [current.get(id)!] : []))
       return {
@@ -139,9 +141,7 @@ export function measureContextReviewLosses(
       }
     }),
     captured: boundaryTimes.map((start) => {
-      const end =
-        boundaryTimes.filter((at) => at > start).sort((left, right) => left - right)[0] ??
-        Number.POSITIVE_INFINITY
+      const end = nextBoundaryAfter(start)
       return items.filter(
         (item) =>
           item.source === captureSource &&

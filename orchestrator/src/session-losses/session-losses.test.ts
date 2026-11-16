@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  compactionCaptureSource,
   measureContextReviewLosses,
   measureSessionLosses,
   structuredToolNamesRun,
@@ -8,6 +9,7 @@ import {
 } from './session-losses.ts'
 
 test('context review losses count revised, dropped, and compaction-captured items', () => {
+  const captureSource = compactionCaptureSource('session-a')
   const measured = measureContextReviewLosses(
     [
       { at: stamp(2), items: 3, flagged: 2, itemIds: ['revised', 'dropped', 'late'] },
@@ -20,23 +22,27 @@ test('context review losses count revised, dropped, and compaction-captured item
         id: 'captured',
         createdAt: stamp(6),
         updatedAt: stamp(6),
-        source: 'compaction session',
+        source: captureSource,
       },
       {
         id: 'other-session',
         createdAt: stamp(7),
         updatedAt: stamp(7),
-        source: 'compaction other-session',
+        source: compactionCaptureSource('other-session'),
       },
     ],
     [stamp(12), stamp(1), stamp(6)],
-    'compaction session',
+    captureSource,
   )
   expect(measured.reviews).toEqual([
     { at: stamp(2), listed: 3, flagged: 2, revised: 1, dropped: 1 },
     { at: stamp(8), listed: 1, flagged: 0, revised: 1, dropped: 0 },
   ])
   expect(measured.captured).toEqual([0, 0, 1])
+})
+
+test('compaction capture source includes the session id', () => {
+  expect(compactionCaptureSource('session-a')).toBe('compaction session-a')
 })
 
 const stamp = (second: number) => new Date(Date.UTC(2026, 9, 28, 12, 0, second)).toISOString()
