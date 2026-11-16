@@ -43,7 +43,10 @@ export const docModules: DocModule[] = [
     '../record/record-write-destination.ts',
     './context-write-adapter.ts',
   ]),
-  module('orchestrator/src/doc/context-moment.ts', ['../../../shared/brand.ts']),
+  module('orchestrator/src/doc/context-moment.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/record-shape.ts',
+  ]),
   module('orchestrator/src/doc/context-moment-adapter.ts', [
     './context-moment.ts',
     './context-service.ts',

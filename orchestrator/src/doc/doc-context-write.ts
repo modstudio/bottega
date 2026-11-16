@@ -10,8 +10,8 @@ import {
 import {
   type ContextRecordName,
   RULING_MAX_CHARS,
-  SELF_RULING_MAX_CHARS,
   recordShapeRefusal,
+  SELF_RULING_MAX_CHARS,
 } from '../../../shared/record-shape.ts'
 import type { HubTaskReference } from '../workflow/workflow-task-reference.ts'
 

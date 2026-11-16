@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { RECORD_SHAPES, answerRecordShape } from '../../../shared/record-shape.ts'
+import { answerRecordShape, RECORD_SHAPES } from '../../../shared/record-shape.ts'
 import { contextMomentEffect } from './context-moment.ts'
 import { CONTEXT_ITEM_MAX_CHARS } from './doc-context-write.ts'
 
