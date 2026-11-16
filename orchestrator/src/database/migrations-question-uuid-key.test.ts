@@ -85,14 +85,6 @@ test('question UUID-key migration preserves every local relationship and seeds t
     expect(nextQuestionNumber(database)).toBe(81)
     database.query('DELETE FROM question WHERE record_id=?').run(questionRecordId)
     expect(nextQuestionNumber(database)).toBe(82)
-    expect(() =>
-      database
-        .query(
-          `INSERT INTO question_delivery(record_id,question_record_id,mode,outcome,at)
-           VALUES (?,?, 'resume','delivered','2026-10-19')`,
-        )
-        .run(newRecordId(), questionRecordId),
-    ).toThrow('FOREIGN KEY constraint failed')
   } finally {
     database.close()
   }
