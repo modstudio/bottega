@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import { writeFinishingWorkflowAdvance } from './workflow-cursor.ts'
 import { closeExploreForLifecycle } from './workflow-explore-lifecycle-close.ts'
 
 function addExplore(database: Database, workflowKey = ''): string {
@@ -53,9 +54,9 @@ test('refuses an explore with an open question without changing it', async () =>
     )
     .run(questionRecordId, cursorRecordId)
 
-  await expect(closeExploreForLifecycle(cursorRecordId, 'expired', database)).rejects.toThrow(
-    `workflow question ${questionRecordId} is still open`,
-  )
+  await expect(
+    closeExploreForLifecycle(cursorRecordId, 'expired', database, writeFinishingWorkflowAdvance),
+  ).rejects.toThrow(`workflow question ${questionRecordId} is still open`)
   expect(cursorState(database, cursorRecordId)).toEqual({ state: 'running', closed: '[]' })
 })
 
@@ -63,9 +64,9 @@ test('refuses a keyed explore without changing it', async () => {
   const database = migratedTestDatabase()
   const cursorRecordId = addExplore(database, 'DEV-2289')
 
-  await expect(closeExploreForLifecycle(cursorRecordId, 'answered', database)).rejects.toThrow(
-    'workflow cursor 1 is not a keyless explore',
-  )
+  await expect(
+    closeExploreForLifecycle(cursorRecordId, 'answered', database, writeFinishingWorkflowAdvance),
+  ).rejects.toThrow('workflow cursor 1 is not a keyless explore')
   expect(cursorState(database, cursorRecordId)).toEqual({ state: 'running', closed: '[]' })
 })
 
@@ -73,7 +74,13 @@ test('adds the replacing cursor to the existing lifecycle note', async () => {
   const database = migratedTestDatabase()
   const cursorRecordId = addExplore(database)
 
-  await closeExploreForLifecycle(cursorRecordId, 'answered', database, 'replaced by cursor 884')
+  await closeExploreForLifecycle(
+    cursorRecordId,
+    'answered',
+    database,
+    writeFinishingWorkflowAdvance,
+    'replaced by cursor 884',
+  )
 
   expect(JSON.parse(cursorState(database, cursorRecordId)!.closed)).toContainEqual(
     expect.objectContaining({

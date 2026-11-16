@@ -178,9 +178,9 @@ export async function composeWorkflowWithCursor(
   commitCount: CommitCountPort = readCommitsPastLanding,
   graduationDependencies: ExploreGraduationDependencies = {},
 ) {
-  const autonomy = live.resolution
-  const composition = composeWorkflow(slug, project, mode, args, d, selection, autonomy)
-  if (!composition.mode || composition.needs.arguments) return { ...composition, cursor: null }
+  const composition = composeWorkflow(slug, project, mode, args, d, selection, live.resolution)
+  if (!composition.mode || composition.needs.arguments)
+    return { ...composition, cursor: null, graduated: undefined }
   await refuseLocalComposeBranch(
     {
       project: composition.project,
@@ -246,7 +246,7 @@ export async function composeWorkflowWithCursor(
         },
         context.taskFlowClient,
       )) as CursorRow
-  } else row = await insertWorkflowCursor(composition, context, d, autonomy, commitCount)
+  } else row = await insertWorkflowCursor(composition, context, d, live.resolution, commitCount)
   const cursor = {
     id: row.id,
     n: row.ordinal + 1,
@@ -262,6 +262,7 @@ export async function composeWorkflowWithCursor(
       taskBound: Boolean(keyOf(composition.arguments)),
       replacingCursor: cursor.id,
       database: d,
+      finishExplore: writeFinishingWorkflowAdvance,
       taskFlowClient: context.taskFlowClient,
     },
     graduationDependencies,

@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { TaskFlowOpenSessionStageRow as OpenCursor } from '../workflow/task-flow-store.ts'
+import { writeFinishingWorkflowAdvance } from '../workflow/workflow-cursor.ts'
 import { closeExploreForLifecycle } from '../workflow/workflow-explore-lifecycle-close.ts'
 import { classifySessionCursor } from './session-close-out-decision.ts'
 import type { SessionErrorLine, SessionProcessLine } from './session-close-out-report.ts'
@@ -56,7 +57,12 @@ export async function releaseSessionCursors(input: {
         continue
       }
       try {
-        await closeExploreForLifecycle(cursor.record_id, 'answered', input.database)
+        await closeExploreForLifecycle(
+          cursor.record_id,
+          'answered',
+          input.database,
+          writeFinishingWorkflowAdvance,
+        )
         input.report.mechanical.push(`closed ${label}`)
         continue
       } catch (cause) {

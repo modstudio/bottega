@@ -5,16 +5,25 @@ import type { Database } from 'bun:sqlite'
 import { nowIso } from '../database/db.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
-import { writeFinishingWorkflowAdvance } from './workflow-cursor.ts'
+import type { TaskFlowStageCursorRow } from './task-flow-store-types.ts'
 import type { CursorTrailEntry } from './workflow-cursor-trail.ts'
 import { workflowTextDeletionIds } from './workflow-text.ts'
 
 export type ExploreLifecycleOutcome = 'answered' | 'expired'
+export type FinishExploreLifecycle = (input: {
+  row: TaskFlowStageCursorRow
+  closed: CursorTrailEntry[]
+  deleteTextIds: string[]
+  sessionId: string | null
+  database: Database
+  at: string
+}) => Promise<void>
 
 export async function closeExploreForLifecycle(
   cursorRecordId: string,
   outcome: ExploreLifecycleOutcome,
   database: Database,
+  finish: FinishExploreLifecycle,
   noteSuffix?: string,
 ): Promise<void> {
   const row = await taskFlowReadStore(database).stageByRecordId(cursorRecordId)
@@ -45,7 +54,7 @@ export async function closeExploreForLifecycle(
     outcome === 'expired'
       ? []
       : await workflowTextDeletionIds(row.record_id, Boolean(row.task_record_id), database)
-  await writeFinishingWorkflowAdvance({
+  await finish({
     row,
     closed,
     deleteTextIds,

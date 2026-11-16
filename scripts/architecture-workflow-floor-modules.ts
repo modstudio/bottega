@@ -140,7 +140,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../database/db.ts',
     '../run/question-open.ts',
     './task-flow-store.ts',
-    './workflow-cursor.ts',
+    './task-flow-store-types.ts',
     './workflow-cursor-trail.ts',
     './workflow-text.ts',
   ]),

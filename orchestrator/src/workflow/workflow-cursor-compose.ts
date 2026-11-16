@@ -38,7 +38,10 @@ import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { storedCursorAutonomyJson } from './workflow-cursor-autonomy.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { refuseUnlinkedCursorLabelCollision } from './workflow-cursor-task-reference.ts'
-import { closeExploreForLifecycle } from './workflow-explore-lifecycle-close.ts'
+import {
+  closeExploreForLifecycle,
+  type FinishExploreLifecycle,
+} from './workflow-explore-lifecycle-close.ts'
 import type { composeWorkflow } from './workflows.ts'
 
 type Composition = ReturnType<typeof composeWorkflow>
@@ -87,6 +90,7 @@ export async function graduateExploreAfterCompose(
     taskBound: boolean
     replacingCursor: number
     database: Database
+    finishExplore: FinishExploreLifecycle
     taskFlowClient?: WorkflowCursorContext['taskFlowClient']
   },
   dependencies: ExploreGraduationDependencies = {},
@@ -115,6 +119,7 @@ export async function graduateExploreAfterCompose(
       decision.recordId,
       'answered',
       input.database,
+      input.finishExplore,
       `replaced by cursor ${input.replacingCursor}`,
     )
     return { cursor: decision.cursor, closed: true }
