@@ -9,6 +9,7 @@ from registered_scope_decision import PROCESS_CWD, hook_acts, invocation_directo
 
 
 def orch_worker_session(env=None):
+    """Answer whether this hook runs inside a delegated Bottega run, which skips session-only hooks."""
     return bool((env if env is not None else os.environ).get("BOTTEGA_RUN_ID"))
 
 

@@ -22,11 +22,12 @@ CAPTURE_INSTRUCTION = (
 def main():
     try:
         payload = json.load(sys.stdin)
+        if not should_hook_act(payload):
+            return 0
         if orch_worker_session():
             return 0
-        if should_hook_act(payload):
-            record_emission(payload, "additionalContext", CAPTURE_INSTRUCTION)
-            print(CAPTURE_INSTRUCTION)
+        record_emission(payload, "additionalContext", CAPTURE_INSTRUCTION)
+        print(CAPTURE_INSTRUCTION)
     except Exception:
         pass
     return 0
