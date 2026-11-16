@@ -162,7 +162,7 @@ async function currentOrCreate(
         throw missingDestinationAccessRefusal()
       throw error
     }
-    const remote = await unpinServerRevoked(client)
+    const remote = await unpinServerRevoked(client, destination)
     const rotated = await rotateAfterLatestRevocation(
       client,
       machine,
@@ -175,18 +175,21 @@ async function currentOrCreate(
   } catch (error) {
     if (!isNotFound(error)) throw error
     if (!createDataKey) throw error
-    await unpinServerRevoked(client)
-    const spaceId = (await identity(client)).spaceId
+    await unpinServerRevoked(client, destination)
+    const spaceId = destination.destinationSpaceId
     const trust = await trustedKeysForSpace(client, spaceId)
     const dek = generateDataKey()
     const dekId = crypto.randomUUID()
     const version = 1
-    await client.createDataKey({
-      dekId,
-      version,
-      wraps: await wrapsFor(dek, dekId, version, trust, client),
-    })
-    return { key: await client.getDataKey(dekId, machine.keyId), dek }
+    await client.createDataKey(
+      {
+        dekId,
+        version,
+        wraps: await wrapsFor(dek, dekId, version, trust, client, spaceId),
+      },
+      destination,
+    )
+    return { key: await client.getDataKey(dekId, machine.keyId, destination), dek }
   }
 }
 

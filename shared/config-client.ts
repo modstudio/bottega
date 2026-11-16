@@ -378,7 +378,7 @@ function configKeyClient(request: Request, query: Query) {
       ),
     createDataKey: (
       input: { dekId: string; version: number; wraps: DataKeyWrap[] },
-      destination: ConfigDestination = {},
+      destination: ConfigWriteDestination,
     ) =>
       request<{ id: string; version: number }>('/v1/config/data-keys', {
         ...destination,
