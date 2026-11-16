@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test'
+import { addRun } from '../../test/fixtures/store.ts'
+import { refreshAgents } from '../agent/agent-registry.ts'
+import { db } from '../database/db.ts'
 import {
   dispatchThenGatherIssueReviews,
   issueReviewRole,
+  modelForRun,
   runIssueFixReviews,
 } from './issue-review-run.ts'
 
@@ -137,6 +141,26 @@ describe('filed issue review adapter', () => {
       'correctness:14',
       'craft:13',
     ])
+  })
+
+  test('canonicalizes an OpenRouter run model before excluding a second opinion', () => {
+    const original = db().query("SELECT base_url FROM agent WHERE name='grok'").get() as {
+      base_url: string | null
+    }
+    try {
+      db().query("UPDATE agent SET base_url='https://openrouter.ai/api/v1' WHERE name='grok'").run()
+      refreshAgents()
+      const runId = addRun({
+        agent: 'grok',
+        job: 'review-lens',
+        model: 'x/y:floor',
+      })
+
+      expect(modelForRun(runId)).toBe('x/y')
+    } finally {
+      db().query("UPDATE agent SET base_url=? WHERE name='grok'").run(original.base_url)
+      refreshAgents()
+    }
   })
 
   test('returns review-not-started when the fix has no worktree', async () => {

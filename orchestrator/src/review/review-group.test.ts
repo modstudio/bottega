@@ -74,6 +74,58 @@ test('a review lens is settled by delivery none or all four review grades', () =
   ).toBe(true)
 })
 
+test('review rows carry the run agent base URL', () => {
+  const database = new Database(':memory:')
+  applyMigrations(database)
+  const projectId = newRecordId()
+  const agentId = newRecordId()
+  const runId = newRecordId()
+  const reviewId = newRecordId()
+  database
+    .query(
+      "INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture','/fixture','{}')",
+    )
+    .run(projectId)
+  database
+    .query(
+      `INSERT INTO agent
+         (record_id,name,harness,backend,model,base_url,transport,caps,billing,operated_by)
+       VALUES (?,'openrouter-review','codex','vendor','x/y','https://openrouter.ai/api/v1','cli','{}','subscription','vendor')`,
+    )
+    .run(agentId)
+  database
+    .query(
+      `INSERT INTO run
+         (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_record_id,branch)
+       VALUES (?,1,'2026-11-15','openrouter-review','review-lens','sha',1,'head','ok','fixture',?,'DEV-2340')`,
+    )
+    .run(runId, projectId)
+  database
+    .query(
+      `INSERT INTO review
+         (record_id,number,recorded_at,completed_at,patch_id,path_set,tier)
+       VALUES (?,1,'2026-11-15','2026-11-15','patch','["a.ts"]',1)`,
+    )
+    .run(reviewId)
+  database
+    .query(
+      `INSERT INTO review_lens
+         (record_id,review_record_id,run_record_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify)
+       VALUES (?,?,?,'correctness','openrouter-review','x/y','[]','["a.ts"]','[]','[]')`,
+    )
+    .run(newRecordId(), reviewId, runId)
+
+  const reviews = reviewsForTriage(database, {
+    project: 'fixture',
+    branch: 'DEV-2340',
+    patchId: 'patch',
+    zeroContextPatchId: 'patch',
+    pathSet: ['a.ts'],
+  }).reviews
+
+  expect(reviews[0]?.lenses[0]?.baseUrl).toBe('https://openrouter.ai/api/v1')
+})
+
 test('round triage accepts settled delivery-none lenses but not unscored lenses', () => {
   const grades = { reproduced: null, coverage: null, limits: null, overlap: null }
   const review: TriageReviewRow = {

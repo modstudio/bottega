@@ -133,6 +133,7 @@ export type ReviewRoundEvidenceRow = {
   lens: string
   agent: string
   model: string | null
+  base_url: string | null
   latency_ms: number | null
   started_at: string
   run_agent: string
@@ -244,7 +245,7 @@ export function reviewYield(
     .query(
       `SELECT rl.record_id AS lens_id, run.record_id AS run_id, r.record_id AS review_record_id, r.recorded_at, r.completed_at, r.tier, r.role, r.tier_risk, r.tier_size, r.tier_insertions, r.tier_deletions, r.tier_reasons, r.patch_id, r.path_set, p.name AS project,
             run.repo AS run_repo, run.launch_key, run.branch, rl.lens, rl.agent,
-            rl.model, run.latency_ms, run.started_at, run.agent AS run_agent, run.vendor_tokens,
+            rl.model, agent.base_url, run.latency_ms, run.started_at, run.agent AS run_agent, run.vendor_tokens,
             run.vendor_cost_usd, run.vendor_estimated_cost_usd, run.vendor_cost_source,
             run.input_tree, run.head_commit, rl.overlap,s.delivery,rl.reproduced,
             rl.coverage,rl.limits,p.settings AS project_settings,r.round AS stored_round,
@@ -252,6 +253,7 @@ export function reviewYield(
        FROM review_lens rl
        JOIN review r ON r.record_id=rl.review_record_id
        JOIN run ON run.record_id=rl.run_record_id
+       LEFT JOIN agent ON agent.name=run.agent
        LEFT JOIN score s ON s.run_record_id=run.record_id
        LEFT JOIN project p ON p.record_id=r.project_record_id
       WHERE ${reviewRunEvidenceSql('run', 'rl')}
@@ -369,6 +371,7 @@ function classifySecondOpinions(rows: ReviewRoundEvidenceRow[]): Set<string> {
         runId: row.run_id,
         lens: row.lens,
         model: row.model,
+        baseUrl: row.base_url,
         graded: reviewLensGraded(row),
         completed: row.completed_at !== null,
       })),

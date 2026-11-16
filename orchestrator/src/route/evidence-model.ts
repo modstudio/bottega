@@ -30,6 +30,14 @@ export function evidenceModel(model: string, baseUrl: string | null | undefined)
   return evidenceModelIdentity(model, baseUrl).model
 }
 
+/** Resolves a prior run's canonical model, preserving raw identity for retired agents. */
+export function evidenceModelForRun(
+  run: { agent: string; model: string },
+  agents: Readonly<Record<string, { baseUrl?: string | null } | undefined>>,
+): string {
+  return evidenceModel(run.model, agents[run.agent]?.baseUrl)
+}
+
 /** SQL form of evidenceModel for persisted run models already scoped by an OpenRouter agent row. */
 export function evidenceModelSql(model: string, openRouter: string | number): string {
   const jsonSegments = `'["' || replace(substr(json_quote(${model}), 2, length(json_quote(${model})) - 2), ':', '","') || '"]'`

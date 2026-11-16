@@ -192,7 +192,7 @@ export const reviewModuleSpecs = [
   },
   {
     file: 'orchestrator/src/review/review-second-opinion.ts',
-    allowed: [],
+    allowed: ['../route/evidence-model.ts'],
   },
   {
     file: 'orchestrator/src/review/review-role.ts',

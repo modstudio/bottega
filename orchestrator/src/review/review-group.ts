@@ -41,6 +41,7 @@ export type TriageReviewRow = {
     runId?: string
     lens?: string
     model?: string | null
+    baseUrl?: string | null
     graded: boolean
     settled: boolean
     provenance?: LensProvenanceSubjectFacts
@@ -131,6 +132,7 @@ type StoredTriageReviewRow = {
   run_record_id: string
   lens: string
   model: string | null
+  base_url: string | null
   delivery: string | null
   reproduced: string | null
   coverage: string | null
@@ -389,10 +391,11 @@ function reviewsForBranch(
       `SELECT r.record_id review_record_id,r.number review_number,r.recorded_at,r.completed_at,r.tier,r.role,r.patch_id,r.zero_context_patch_id,r.path_set,
               rl.record_id lens_id,rl.run_record_id,rl.lens,rl.model,s.delivery,rl.reproduced,rl.coverage,rl.limits,rl.overlap,
               rl.task_text_input,rl.rulings_input,
-              run.review_provenance,run.worktree,run.cwd,run.head_commit,
+              agent.base_url,run.review_provenance,run.worktree,run.cwd,run.head_commit,
               rf.record_id finding_id,rf.ordinal,rf.disposition
          FROM review r JOIN review_lens rl ON rl.review_record_id=r.record_id
          JOIN run ON run.record_id=rl.run_record_id
+         LEFT JOIN agent ON agent.name=run.agent
          LEFT JOIN score s ON s.run_record_id=run.record_id
          LEFT JOIN review_finding rf ON rf.review_lens_record_id=rl.record_id
         WHERE run.project_record_id=(SELECT record_id FROM project WHERE name=?)
@@ -427,6 +430,7 @@ function reviewsForBranch(
           runId: string
           lens: string
           model: string | null
+          baseUrl: string | null
           graded: boolean
           settled: boolean
           provenance: LensProvenanceSubjectFacts
@@ -438,6 +442,7 @@ function reviewsForBranch(
         runId: row.run_record_id,
         lens: row.lens,
         model: row.model,
+        baseUrl: row.base_url,
         graded: reviewLensGraded(row),
         settled: reviewLensSettled(row),
         provenance: provenanceSubjectFacts(row),
