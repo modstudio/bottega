@@ -19,11 +19,11 @@ import { LIVE_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { KEYLESS_CURSOR_IDLE_MS, keylessCursorIdle } from '../session/keyless-cursor-idle.ts'
 import { sessionReviewVerdictLines } from '../session/session-review-verdicts.ts'
 import { architectSessionContext } from '../workflow/session-context.ts'
+import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 import {
   listWorkflowCursors,
   type WorkflowCursorListRow,
 } from '../workflow/workflow-cursor-list.ts'
-import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 import {
   workflowCursorBranchAndWorktree,
   workflowCursorClaimHandles,
@@ -387,20 +387,20 @@ export async function contextBrief(
     cursors: cursors.map((cursor) => {
       const idle = cursor.workflow_key ? null : keylessCursorIdle(cursor.updated_at)
       return {
-      recordId: cursor.record_id,
-      number: cursor.id,
-      ...contextBriefCursorHandles(cursor, database),
-      workflow: cursor.workflow_slug,
-      project: cursor.project,
-      mode: cursor.mode_slug,
-      step: cursor.ordinal + 1,
-      totalSteps: cursor.total_steps,
-      stepSlug: cursor.step_slug,
-      questionNumber: cursor.question_number,
-      runs: inFlight.cursorRuns.find((item) => item.recordId === cursor.record_id)?.runs ?? [],
-      ...(cursor.workflow_key
-        ? {}
-        : { keylessIdle: idle?.label ?? null, keylessIdleMs: idle?.ms ?? null }),
+        recordId: cursor.record_id,
+        number: cursor.id,
+        ...contextBriefCursorHandles(cursor, database),
+        workflow: cursor.workflow_slug,
+        project: cursor.project,
+        mode: cursor.mode_slug,
+        step: cursor.ordinal + 1,
+        totalSteps: cursor.total_steps,
+        stepSlug: cursor.step_slug,
+        questionNumber: cursor.question_number,
+        runs: inFlight.cursorRuns.find((item) => item.recordId === cursor.record_id)?.runs ?? [],
+        ...(cursor.workflow_key
+          ? {}
+          : { keylessIdle: idle?.label ?? null, keylessIdleMs: idle?.ms ?? null }),
       }
     }),
     claims: inFlight.claims,

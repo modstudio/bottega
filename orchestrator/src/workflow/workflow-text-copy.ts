@@ -6,7 +6,6 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { workflowCursorReference } from './workflow-cursor-format.ts'
 import { db, writeTransaction } from '../database/db.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import {
@@ -18,7 +17,7 @@ import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 import { abandonSelectedWorkflowCursorForClose, nextWorkflowStep } from './workflow-cursor.ts'
-import { cursorName } from './workflow-cursor-format.ts'
+import { cursorName, workflowCursorReference } from './workflow-cursor-format.ts'
 import {
   refuseMissingAbandonReason,
   refuseMissingCloseNote,
@@ -179,7 +178,13 @@ export async function copyWorkflowTextForCursor(
 ): Promise<WorkflowTextCopyResult> {
   const rows = await uncopiedRows(cursor.recordId, database, client)
   if (!cursor.taskRecordId || rows.length === 0)
-    return { cursor: cursor.number, project: cursor.project, copied: [], uncopied: [], unsupported: null }
+    return {
+      cursor: cursor.number,
+      project: cursor.project,
+      copied: [],
+      uncopied: [],
+      unsupported: null,
+    }
   const target = taskFlowWriteTarget(cursor.project, database)
   try {
     const task = (await taskReader(cursor.project)).find(

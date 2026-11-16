@@ -154,7 +154,7 @@ test('renders a keyless cursor with its idle age and close command', () => {
   )
 })
 
-test('keeps an awaiting question on a keyless cursor and omits its abandon remedy', () => {
+test('keeps a fresh keyless cursor visible without an abandon remedy', () => {
   const brief: ContextBrief = {
     session: 'session-a',
     fullCommand: `${PLATFORM_SLUG} agent context show --session session-a`,
@@ -175,9 +175,10 @@ test('keeps an awaiting question on a keyless cursor and omits its abandon remed
         worktree: null,
         tip: null,
         pr: null,
-        questionNumber: 6600,
+        questionNumber: null,
         runs: [],
-        keylessIdle: null,
+        keylessIdle: 'idle 10m',
+        keylessIdleMs: 600_000,
       },
     ],
     claims: [],
@@ -193,7 +194,7 @@ test('keeps an awaiting question on a keyless cursor and omits its abandon remed
   const line = renderContextBrief(brief)
     .split('\n')
     .find((entry) => entry.includes('cursor 845'))
-  expect(line).toBe('  cursor 845 explore · idle unknown, awaiting q6600')
+  expect(line).toBe('  cursor 845 explore · idle 10m')
   expect(line).not.toContain('workflow abandon')
 })
 
@@ -455,8 +456,12 @@ test('renders an open keyless cursor item under its cursor header without an ope
     },
     autonomy: 'unknown',
   })
-  expect(rendered).toContain(`Cursor 42 explore default (${PLATFORM_SLUG})\n  position: Continue here.`)
-  expect(rendered).not.toContain(`Cursor 42 explore default (${PLATFORM_SLUG})\n  position: Continue here.\n  open:`)
+  expect(rendered).toContain(
+    `Cursor 42 explore default (${PLATFORM_SLUG})\n  position: Continue here.`,
+  )
+  expect(rendered).not.toContain(
+    `Cursor 42 explore default (${PLATFORM_SLUG})\n  position: Continue here.\n  open:`,
+  )
   database.close()
 })
 

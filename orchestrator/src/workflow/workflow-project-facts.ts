@@ -3,7 +3,6 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { workflowCursorReference } from './workflow-cursor-format.ts'
 import { db } from '../database/db.ts'
 import {
   composeIndexSources,
@@ -24,6 +23,7 @@ import {
 } from '../release/ship-to-reach.ts'
 import type { WorkflowAutonomyResolution } from './autonomy.ts'
 import { checkoutLanding } from './workflow-checkout-landing.ts'
+import { workflowCursorReference } from './workflow-cursor-format.ts'
 
 export type WorkflowFactProject = Pick<Project, 'name' | 'stack' | 'settings'>
 

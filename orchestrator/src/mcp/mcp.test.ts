@@ -819,7 +819,6 @@ describe('orch MCP', () => {
         cursor: second.id,
         project,
         reason: 'stopped through MCP handle',
-        owner_session: hostedSecondSession ?? secondSession,
       })
       expect(abandoned).toContain(
         `retry: ${PLATFORM_SLUG} workflow text copy --cursor ${second.id} --project ${project}`,

@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { KEYLESS_CURSOR_IDLE_MS } from './keyless-cursor-idle.ts'
 import {
   decideStopSummary,
-  KEYLESS_CURSOR_IDLE_MS,
   OWED_ITEM_OVERDUE_MS,
   type StopSummaryFacts,
 } from './stop-summary-decision.ts'

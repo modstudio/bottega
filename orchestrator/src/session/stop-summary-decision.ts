@@ -4,12 +4,11 @@
 import { createHash } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { QuestionInboxCounts } from '../run/question-inbox-counts.ts'
-import { KEYLESS_CURSOR_IDLE_MS, keylessCursorIdle } from './keyless-cursor-idle.ts'
 import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
+import { KEYLESS_CURSOR_IDLE_MS, keylessCursorIdle } from './keyless-cursor-idle.ts'
 import { formatStopTime } from './stop-summary-time.ts'
 
 export const OWED_ITEM_OVERDUE_MS = 60 * 60 * 1000
-export { KEYLESS_CURSOR_IDLE_MS } from './keyless-cursor-idle.ts'
 
 type StopSummaryCursor = {
   number: number

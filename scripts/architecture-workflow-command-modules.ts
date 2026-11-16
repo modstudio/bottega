@@ -34,7 +34,6 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     '../question-store/question-store-record-task-flow-compat.ts',
     './task-flow-store-record-stage-row.ts',
     './task-flow-store-types.ts',
-    './workflow-cursor-format.ts',
   ]),
   module('orchestrator/src/workflow/task-flow-store-record-stage-row.ts', [
     '../record/record-task-flow-contract.ts',
@@ -105,6 +104,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     './task-flow-decision.ts',
     './task-flow-store.ts',
     './task-flow-store-types.ts',
+    './workflow-cursor-format.ts',
     './workflow-cursor-transition.ts',
     './workflow-floor.ts',
   ]),

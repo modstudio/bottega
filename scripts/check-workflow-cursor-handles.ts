@@ -15,7 +15,9 @@ export function bareWorkflowCursorHandles(root = ROOT): string[] {
     readFileSync(`${root}/${path}`, 'utf8')
       .split('\n')
       .flatMap((line, index) =>
-        line.includes(BARE_HANDLE) ? [`${path}:${index + 1}: route cursor handles through workflowCursorReference`] : [],
+        line.includes(BARE_HANDLE)
+          ? [`${path}:${index + 1}: route cursor handles through workflowCursorReference`]
+          : [],
       ),
   )
 }

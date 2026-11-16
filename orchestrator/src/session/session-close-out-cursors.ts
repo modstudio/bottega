@@ -3,12 +3,12 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 import {
   isKeylessExplore,
   type TaskFlowOpenSessionStageRow as OpenCursor,
 } from '../workflow/task-flow-store.ts'
 import { writeFinishingWorkflowAdvance } from '../workflow/workflow-cursor.ts'
+import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 import { closeExploreForLifecycle } from '../workflow/workflow-explore-lifecycle-close.ts'
 import { classifySessionCursor } from './session-close-out-decision.ts'
 import type { SessionErrorLine, SessionProcessLine } from './session-close-out-report.ts'
