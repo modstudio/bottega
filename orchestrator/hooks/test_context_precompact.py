@@ -20,7 +20,9 @@ spec.loader.exec_module(hook)
 class ContextPrecompactHook(unittest.TestCase):
     def invoke(self, scope_decision=True):
         output = io.StringIO()
-        with mock.patch.object(hook.sys, "stdin", io.StringIO(json.dumps({"cwd": "/tmp"}))):
+        with mock.patch.dict(hook.os.environ, {}, clear=True), mock.patch.object(
+            hook.sys, "stdin", io.StringIO(json.dumps({"cwd": "/tmp"}))
+        ):
             with mock.patch.object(
                 hook, "should_hook_act", return_value=scope_decision
             ), contextlib.redirect_stdout(output):
@@ -35,7 +37,7 @@ class ContextPrecompactHook(unittest.TestCase):
 
     def test_exception_prints_nothing_and_allows_compaction(self):
         output = io.StringIO()
-        with mock.patch.object(
+        with mock.patch.dict(hook.os.environ, {}, clear=True), mock.patch.object(
             hook.sys, "stdin", io.StringIO(json.dumps({"cwd": "/tmp"}))
         ):
             with mock.patch.object(
@@ -49,6 +51,20 @@ class ContextPrecompactHook(unittest.TestCase):
         code, output = self.invoke(scope_decision=False)
         self.assertEqual(code, 0)
         self.assertEqual(output, "")
+
+    def test_worker_session_prints_and_records_nothing_and_allows_compaction(self):
+        output = io.StringIO()
+        with mock.patch.dict(
+            hook.os.environ, {"BOTTEGA_RUN_ID": "12"}, clear=True
+        ), mock.patch.object(
+            hook.sys, "stdin", io.StringIO(json.dumps({"cwd": "/tmp"}))
+        ), mock.patch.object(
+            hook, "record_emission"
+        ) as record_emission, contextlib.redirect_stdout(output):
+            code = hook.main()
+        self.assertEqual(code, 0)
+        self.assertEqual(output.getvalue(), "")
+        record_emission.assert_not_called()
 
 
 if __name__ == "__main__":

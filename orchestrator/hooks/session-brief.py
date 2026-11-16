@@ -20,6 +20,7 @@ from notice_transport import (
     refused_notice_name,
     transportable_notice_id,
 )
+from registered_scope import orch_worker_session
 from registered_scope import should_hook_act
 from hook_emission import launch_detached, record_emission, text_stats
 from hook_paths import state_root as _state_root
@@ -527,10 +528,6 @@ def _settings_apply_notice(completed):
     if any(": applied;" in line for line in lines):
         return "settings applied; they take effect in the next session"
     return None
-
-
-def orch_worker_session(env=None):
-    return bool((env if env is not None else os.environ).get("BOTTEGA_RUN_ID"))
 
 
 def main() -> int:

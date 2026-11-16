@@ -11,6 +11,8 @@ from types import SimpleNamespace
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent))
+import registered_scope
+
 spec = importlib.util.spec_from_file_location(
     "session_brief", Path(__file__).with_name("session-brief.py")
 )
@@ -600,9 +602,9 @@ class InboxQuestions(unittest.TestCase):
 
 class WorkerSessionSkip(unittest.TestCase):
     def test_orch_run_id_marks_a_worker_session(self):
-        self.assertTrue(session_brief.orch_worker_session({"BOTTEGA_RUN_ID": "12"}))
-        self.assertFalse(session_brief.orch_worker_session({}))
-        self.assertFalse(session_brief.orch_worker_session({"BOTTEGA_RUN_ID": ""}))
+        self.assertTrue(registered_scope.orch_worker_session({"BOTTEGA_RUN_ID": "12"}))
+        self.assertFalse(registered_scope.orch_worker_session({}))
+        self.assertFalse(registered_scope.orch_worker_session({"BOTTEGA_RUN_ID": ""}))
 
     def test_main_emits_no_context_when_orch_run_id_is_set(self):
         stdin = io.StringIO(json.dumps({"cwd": "/tmp", "session_id": "s"}))
