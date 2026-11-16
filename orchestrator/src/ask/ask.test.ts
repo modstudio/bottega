@@ -46,7 +46,7 @@ function resultText(result: Awaited<ReturnType<Client['callTool']>>): string {
 }
 
 beforeEach(() => {
-  process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
+  delete process.env.BOTTEGA_RECORD_API_URL
 })
 afterEach(() => {
   installRecordApiClient(null)
@@ -181,6 +181,7 @@ describe('the live ask channel always answers', () => {
   })
 
   test('check_orchestrator_messages emits hosted beside local once with the failed-refresh warning', async () => {
+    process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running', repo: 'ask-project' })
     const startedAt = (
       db().query('SELECT started_at FROM run WHERE record_id=?').get(run) as { started_at: string }
@@ -708,10 +709,7 @@ describe('the live ask channel always answers', () => {
       )
       .get(run)
     expect(open).toEqual({ asked_via: 'live', record_id: expect.stringMatching(/^[0-9a-f-]{36}$/) })
-    expect(db().query('SELECT kind FROM outbox ORDER BY id').all()).toEqual([
-      { kind: 'run' },
-      { kind: 'question' },
-    ])
+    expect(db().query('SELECT kind FROM outbox ORDER BY id').all()).toEqual([{ kind: 'run' }])
   })
 
   test('a misspelled question is recorded verbatim and returned with a refusal notice', async () => {

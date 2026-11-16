@@ -126,8 +126,11 @@ describe('run ingest', () => {
     const changedRun = runFixture({ id: 9911 })
     const runs = () =>
       ingestRunChanges(runsSince(), {
-        runChangeReader: async (after) => ({ rows: after < 7 ? [changedRun] : [], cursor: 7 }),
-        rulingChangeReader: async () => ({ rows: [], cursor: 7 }),
+        runChangeReader: async (after) => ({
+          rows: Number(after) < 7 ? [changedRun] : [],
+          cursor: '7',
+        }),
+        rulingChangeReader: async () => ({ rows: [], cursor: '7' }),
       })
     try {
       const first = await collectFast({

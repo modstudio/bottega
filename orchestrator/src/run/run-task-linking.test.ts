@@ -13,6 +13,7 @@ import { db } from '../database/db.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import type { Project } from '../project/projects.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
+import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { type HubTaskReference, taskKeyMap } from '../workflow/workflow-task-reference.ts'
 import { deriveRunLinks, linkRunTasks, type RunLinkFacts } from './run-task-linking.ts'
 
