@@ -9,6 +9,13 @@ const id = z.string().uuid()
 const stamp = z.string().datetime()
 const nullableText = z.string().nullable()
 const nullableId = id.nullable()
+const nullableJsonValue = (field: string) =>
+  z
+    .unknown()
+    .nullable()
+    .refine((value) => typeof value !== 'string', {
+      message: `${field} must be a structured JSON value, not a string`,
+    })
 
 export const questionIntentSchema = z.enum([
   'ask',
@@ -41,14 +48,14 @@ const questionSnapshotSchema = z.object({
   revision: z.number().int().positive(),
   askedAt: stamp,
   question: z.string(),
-  options: z.unknown().nullable(),
+  options: nullableJsonValue('options'),
   recommendation: nullableText,
   why: nullableText,
   askedVia: nullableText,
   kind: nullableText,
-  typedOptions: z.unknown().nullable(),
-  criteria: z.unknown().nullable(),
-  levels: z.unknown().nullable(),
+  typedOptions: nullableJsonValue('typedOptions'),
+  criteria: nullableJsonValue('criteria'),
+  levels: nullableJsonValue('levels'),
   answer: nullableText,
   answerValue: nullableText,
   answerBasis: nullableText,
@@ -60,7 +67,7 @@ const questionSnapshotSchema = z.object({
   answerChannel: nullableText,
   jevPick: nullableText,
   jevConfidence: z.number().nullable(),
-  jevProbabilities: z.unknown().nullable(),
+  jevProbabilities: nullableJsonValue('jevProbabilities'),
   jevModel: nullableText,
   jevInputTokens: z.number().int().nullable(),
   jevError: nullableText,

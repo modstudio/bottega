@@ -18,8 +18,9 @@ import { db } from '../database/db.ts'
 import { readEventLog, runEventsPath } from '../events.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
-import { ask, createAskHttpHandler, createAskMcpServer } from './ask.ts'
+import { ask, createAskHttpHandler, createAskMcpServer, recordReplyQuestions } from './ask.ts'
 import { observeAskTransport } from './ask-lifecycle.ts'
+import { decodeWorkerQuestion } from './worker-question.ts'
 
 async function askClient(
   runId: string,
@@ -51,6 +52,78 @@ beforeEach(() => {
 afterEach(() => {
   installRecordApiClient(null)
   delete process.env.BOTTEGA_RECORD_API_URL
+})
+
+test('reply questions store and enqueue structured typed values', async () => {
+  const runId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+  const recorded = await recordReplyQuestions({
+    runId,
+    askedAt: '2026-11-16T12:00:00.000Z',
+    awaitingOperatorAt: '2026-11-16T12:00:00.000Z',
+    questions: [
+      {
+        kind: 'choice',
+        question: 'Which implementation?',
+        why: 'The implementation depends on the choice.',
+        options: [
+          { name: 'First', criteria: 'Use the first path.' },
+          { name: 'Second', criteria: 'Use the second path.' },
+        ],
+      },
+      {
+        kind: 'yesno',
+        question: 'Proceed?',
+        why: 'The next step depends on the ruling.',
+        criteria: { yes: 'Proceed with the change.', no: 'Stop the change.' },
+      },
+    ],
+  })
+
+  const rows = db()
+    .query<
+      {
+        record_id: string
+        question: string
+        why: string | null
+        kind: string
+        options: string | null
+        typed_options: string | null
+        criteria: string | null
+        levels: string | null
+      },
+      [string, string]
+    >(
+      'SELECT record_id,question,why,kind,options,typed_options,criteria,levels FROM question WHERE record_id IN (?,?) ORDER BY number',
+    )
+    .all(recorded[0]!.recordId, recorded[1]!.recordId)
+  expect(decodeWorkerQuestion(rows[0]!)).toMatchObject({
+    kind: 'choice',
+    options: [
+      { name: 'First', criteria: 'Use the first path.' },
+      { name: 'Second', criteria: 'Use the second path.' },
+    ],
+  })
+  expect(decodeWorkerQuestion(rows[1]!)).toMatchObject({
+    kind: 'yesno',
+    criteria: { yes: 'Proceed with the change.', no: 'Stop the change.' },
+  })
+
+  const payloads = db()
+    .query<{ payload: string }, [string, string]>(
+      "SELECT payload FROM outbox WHERE kind='question' AND row_id IN (?,?) ORDER BY id",
+    )
+    .all(recorded[0]!.recordId, recorded[1]!.recordId)
+    .map(({ payload }) => JSON.parse(payload) as Record<string, unknown>)
+  expect(payloads[0]!.typedOptions).toEqual([
+    { name: 'First', criteria: 'Use the first path.' },
+    { name: 'Second', criteria: 'Use the second path.' },
+  ])
+  expect(Array.isArray(payloads[0]!.typedOptions)).toBe(true)
+  expect(payloads[1]!.criteria).toEqual({
+    yes: 'Proceed with the change.',
+    no: 'Stop the change.',
+  })
+  expect(typeof payloads[1]!.criteria).toBe('object')
 })
 
 describe('the live ask channel always answers', () => {

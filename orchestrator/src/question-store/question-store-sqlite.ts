@@ -9,7 +9,10 @@ import type {
   QuestionWriteBody,
   QuestionWriteResult,
 } from '../record/record-question-contract.ts'
-import { questionChangedAfterRefusal } from '../record/record-question-contract.ts'
+import {
+  questionChangedAfterRefusal,
+  questionWriteSchema,
+} from '../record/record-question-contract.ts'
 import {
   localQuestionProjects,
   maxQuestionNumber,
@@ -88,7 +91,8 @@ export class SqliteQuestionStore implements QuestionStore {
   }
 
   async write(intent: QuestionIntent, input: QuestionWriteBody): Promise<QuestionWriteResult> {
-    const q = input.question
+    const validated = questionWriteSchema.parse(input)
+    const q = validated.question
     const workflowStep = q.workflowCursorRecordId
       ? this.database
           .query<{ ordinal: number; step_slug: string }, [string]>(
@@ -191,7 +195,7 @@ export class SqliteQuestionStore implements QuestionStore {
         workflowStep?.step_slug ?? null,
       )
     const applied = write.changes === 1
-    if (applied) recordAppliedMutation(this.database, input)
+    if (applied) recordAppliedMutation(this.database, validated)
     return { id: q.id, number, revision: Math.max(existing?.revision ?? 0, q.revision), applied }
   }
 
