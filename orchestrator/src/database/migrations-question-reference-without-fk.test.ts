@@ -10,10 +10,7 @@ const TABLES = ['question_delivery', 'run_carried_ruling', 'operator_notificatio
 type Table = (typeof TABLES)[number]
 type ForeignKey = { id: number; table: string } & Record<string, unknown>
 
-function normalizedTableSql(database: Database, table: Table): string {
-  const { sql } = database
-    .query<{ sql: string }, [string]>("SELECT sql FROM sqlite_master WHERE type='table' AND name=?")
-    .get(table)!
+function normalizedSql(sql: string): string {
   return sql
     .replace(
       /\breferences\s+question\s*\(\s*record_id\s*\)(?:\s+on\s+(?:update|delete)\s+cascade)*/gi,
@@ -26,16 +23,31 @@ function normalizedTableSql(database: Database, table: Table): string {
     .toLowerCase()
 }
 
+function normalizedTableSql(database: Database, table: Table): string {
+  const { sql } = database
+    .query<{ sql: string }, [string]>("SELECT sql FROM sqlite_master WHERE type='table' AND name=?")
+    .get(table)!
+  return normalizedSql(sql)
+}
+
 function tableSchema(database: Database, table: Table) {
   const indexes = database
     .query<{ name: string; unique: number; partial: number }, []>(
       `SELECT name,"unique",partial FROM pragma_index_list('${table}')`,
     )
     .all()
-    .map((index) => ({
-      ...index,
-      columns: database.query(`PRAGMA index_info('${index.name}')`).all(),
-    }))
+    .map((index) => {
+      const sql = database
+        .query<{ sql: string | null }, [string]>(
+          "SELECT sql FROM sqlite_master WHERE type='index' AND name=?",
+        )
+        .get(index.name)!.sql
+      return {
+        ...index,
+        columns: database.query(`PRAGMA index_info('${index.name}')`).all(),
+        sql: sql === null ? null : normalizedSql(sql),
+      }
+    })
     .sort((left, right) => left.name.localeCompare(right.name))
   return {
     columns: database.query(`PRAGMA table_info('${table}')`).all(),
@@ -137,8 +149,8 @@ test('question reference migration preserves rows and constraints without local 
           `INSERT INTO run_carried_ruling(record_id,run_record_id,question_record_id)
            VALUES (?,?,?)`,
         )
-        .run(newRecordId(), newRecordId(), unknownQuestion),
-    ).toThrow('FOREIGN KEY constraint failed')
+        .run(newRecordId(), runRecordId, unknownQuestion),
+    ).not.toThrow()
   } finally {
     database.close()
   }
