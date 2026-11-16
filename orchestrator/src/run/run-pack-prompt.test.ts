@@ -22,7 +22,7 @@ describe('operator knowledge prompt section', () => {
   })
 
   test.each([true, false])(
-    'places task rulings and task text before the spec when writesJob is %s',
+    'places task rulings, task text, and carried attachments before the spec when writesJob is %s',
     (writesJob) => {
       const prompt = initialDispatchPrompt({
         writesJob,
@@ -31,11 +31,31 @@ describe('operator knowledge prompt section', () => {
         operatorKnowledge: 'WHAT THE OPERATOR WANTS YOU TO KNOW\n\nCANON',
         taskRulings: 'RULINGS ALREADY MADE ON THIS TASK\n\nRULING',
         taskText: 'TASK TEXT: DEV-1 — Carry text\n\nTask body',
+        carriedAttachments: 'CARRIED ATTACHMENTS\n\nATTACHMENT BODY',
         spec: 'WORK',
       })
       expect(prompt.indexOf('CANON')).toBeLessThan(prompt.indexOf('RULINGS ALREADY'))
       expect(prompt.indexOf('RULINGS ALREADY')).toBeLessThan(prompt.indexOf('TASK TEXT: DEV-1'))
-      expect(prompt.indexOf('TASK TEXT: DEV-1')).toBeLessThan(prompt.indexOf('THE SPEC'))
+      expect(prompt.indexOf('TASK TEXT: DEV-1')).toBeLessThan(prompt.indexOf('CARRIED ATTACHMENTS'))
+      expect(prompt.indexOf('CARRIED ATTACHMENTS')).toBeLessThan(prompt.indexOf('THE SPEC'))
+    },
+  )
+
+  test.each([true, false])(
+    'an absent carried section leaves the prompt unchanged for %s',
+    (writesJob) => {
+      const input = {
+        writesJob,
+        preamble: 'PREAMBLE',
+        infrastructure: 'INFRASTRUCTURE',
+        operatorKnowledge: 'KNOWLEDGE',
+        taskRulings: 'RULINGS',
+        taskText: 'TASK TEXT',
+        spec: 'SPEC',
+      }
+      expect(initialDispatchPrompt({ ...input, carriedAttachments: '' })).toBe(
+        initialDispatchPrompt(input),
+      )
     },
   )
 })

@@ -230,10 +230,21 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-wall-deadline.ts', []),
   module('orchestrator/src/run/run-dispatch-rulings.ts', [
     './run-claim-inheritance.ts',
+    './run-carried-attachments.ts',
     './run-task-reference.ts',
     './run-task-text.ts',
     './task-rulings-store.ts',
     './task-rulings.ts',
+  ]),
+  module('orchestrator/src/run/run-carried-attachments.ts', [
+    '../../../shared/brand.ts',
+    '../workflow/workflow-text-copy.ts',
+    '../workflow/workflow-text.ts',
+    './run-pack-prompt.ts',
+  ]),
+  module('orchestrator/src/run/run-dispatch-prompt.ts', [
+    './run-pack-prompt.ts',
+    './run-resume-prompt.ts',
   ]),
   module('orchestrator/src/run/run-task-text.ts', [
     '../../../shared/tracker-actions.ts',

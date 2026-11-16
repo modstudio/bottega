@@ -5,6 +5,8 @@ import { resolveLens } from '../lens/lenses.ts'
 import { type ResolvedReviewTarget, reviewArtifactBlock } from '../review/review-target.ts'
 
 export const TASK_TEXT_MAX_BYTES = 16 * 1024
+export const CARRIED_ATTACHMENT_MAX_BYTES = TASK_TEXT_MAX_BYTES
+export const CARRIED_ATTACHMENTS_MAX_BYTES = TASK_TEXT_MAX_BYTES * 2
 
 function fitUtf8(value: string, bytes: number): string {
   const encoded = Buffer.from(value)
@@ -63,6 +65,7 @@ export function initialDispatchPrompt(input: {
   operatorKnowledge: string
   taskRulings: string
   taskText: string
+  carriedAttachments?: string
   spec: string
 }): string {
   if (input.writesJob) {
@@ -72,6 +75,7 @@ export function initialDispatchPrompt(input: {
       input.operatorKnowledge ? `\n${input.operatorKnowledge}` : '',
       input.taskRulings ? `\n${input.taskRulings}` : '',
       input.taskText ? `\n${input.taskText}` : '',
+      input.carriedAttachments ? `\n${input.carriedAttachments}` : '',
       `\n---\n\nTHE SPEC\n\n${input.spec}`,
     ]
       .filter(Boolean)
@@ -83,6 +87,7 @@ export function initialDispatchPrompt(input: {
     input.operatorKnowledge,
     input.taskRulings,
     input.taskText,
+    input.carriedAttachments,
     `---\n\nTHE SPEC\n\n${input.spec}`,
   ]
     .filter(Boolean)
