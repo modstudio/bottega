@@ -1,6 +1,8 @@
 CREATE TABLE question_delivery_without_question_fk_snapshot AS SELECT * FROM question_delivery;
 CREATE TABLE run_carried_ruling_without_question_fk_snapshot AS SELECT * FROM run_carried_ruling;
 CREATE TABLE operator_notification_without_question_fk_snapshot AS SELECT * FROM operator_notification;
+CREATE TEMP TABLE question_delivery_sequence_without_question_fk_snapshot AS
+SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name='question_delivery'),0) seq;
 --> statement-breakpoint
 DROP TABLE question_delivery;
 DROP TABLE run_carried_ruling;
@@ -17,6 +19,10 @@ CREATE TABLE question_delivery (
 INSERT INTO question_delivery
 SELECT id,question_record_id,run_record_id,mode,outcome,at,error,record_id
 FROM question_delivery_without_question_fk_snapshot;
+DELETE FROM sqlite_sequence WHERE name='question_delivery';
+INSERT INTO sqlite_sequence(name,seq)
+SELECT 'question_delivery',MAX(saved.seq,COALESCE((SELECT MAX(id) FROM question_delivery),0))
+FROM question_delivery_sequence_without_question_fk_snapshot saved;
 CREATE TABLE run_carried_ruling (
   record_id TEXT NOT NULL PRIMARY KEY,
   run_record_id TEXT NOT NULL REFERENCES run(record_id) ON DELETE CASCADE,
@@ -39,6 +45,7 @@ FROM operator_notification_without_question_fk_snapshot;
 DROP TABLE question_delivery_without_question_fk_snapshot;
 DROP TABLE run_carried_ruling_without_question_fk_snapshot;
 DROP TABLE operator_notification_without_question_fk_snapshot;
+DROP TABLE question_delivery_sequence_without_question_fk_snapshot;
 CREATE INDEX question_delivery_run_record_id_idx ON question_delivery(run_record_id);
 CREATE INDEX question_delivery_question ON question_delivery(question_record_id,id);
 CREATE INDEX run_carried_ruling_question_record_id_idx ON run_carried_ruling(question_record_id);

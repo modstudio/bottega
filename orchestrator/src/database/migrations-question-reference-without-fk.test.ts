@@ -6,18 +6,47 @@ import { fixtureProjectRecordId, migrationBoundaryTestDatabase } from './test-da
 
 const MIGRATION = '0228_question_reference_without_fk'
 const TABLES = ['question_delivery', 'run_carried_ruling', 'operator_notification'] as const
-const INDEXES = [
-  'sqlite_autoindex_question_delivery_1',
-  'question_delivery_run_record_id_idx',
-  'question_delivery_question',
-  'sqlite_autoindex_run_carried_ruling_1',
-  'sqlite_autoindex_run_carried_ruling_2',
-  'run_carried_ruling_question_record_id_idx',
-  'sqlite_autoindex_operator_notification_1',
-  'operator_notification_question_record_id_idx',
-  'operator_notification_question_episode',
-  'operator_notification_workflow_episode',
-] as const
+
+type Table = (typeof TABLES)[number]
+type ForeignKey = { id: number; table: string } & Record<string, unknown>
+
+function normalizedTableSql(database: Database, table: Table): string {
+  const { sql } = database
+    .query<{ sql: string }, [string]>("SELECT sql FROM sqlite_master WHERE type='table' AND name=?")
+    .get(table)!
+  return sql
+    .replace(
+      /\breferences\s+question\s*\(\s*record_id\s*\)(?:\s+on\s+(?:update|delete)\s+cascade)*/gi,
+      '',
+    )
+    .replace(/[\"`]/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/\s*([(),])\s*/g, '$1')
+    .trim()
+    .toLowerCase()
+}
+
+function tableSchema(database: Database, table: Table) {
+  const indexes = database
+    .query<{ name: string; unique: number; partial: number }, []>(
+      `SELECT name,"unique",partial FROM pragma_index_list('${table}')`,
+    )
+    .all()
+    .map((index) => ({
+      ...index,
+      columns: database.query(`PRAGMA index_info('${index.name}')`).all(),
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name))
+  return {
+    columns: database.query(`PRAGMA table_info('${table}')`).all(),
+    indexes,
+    foreignKeys: database
+      .query<ForeignKey, []>(`PRAGMA foreign_key_list('${table}')`)
+      .all()
+      .map(({ id: _id, ...foreignKey }) => foreignKey),
+    sql: normalizedTableSql(database, table),
+  }
+}
 
 function rows(database: Database, table: (typeof TABLES)[number]): unknown[] {
   return database.query(`SELECT * FROM ${table} ORDER BY record_id`).all()
@@ -51,6 +80,19 @@ test('question reference migration preserves rows and constraints without local 
          VALUES (7,?,?,'resume','failed','2026-11-15','offline',?)`,
       )
       .run(questionRecordId, runRecordId, deliveryRecordId)
+    for (let index = 0; index < 2; index += 1) {
+      database
+        .query(
+          `INSERT INTO question_delivery
+             (question_record_id,run_record_id,mode,outcome,at,record_id)
+           VALUES (?,?,'resume','delivered','2026-11-15',?)`,
+        )
+        .run(questionRecordId, runRecordId, newRecordId())
+    }
+    const deliveryHighWater = database
+      .query<{ id: number }, []>('SELECT MAX(id) id FROM question_delivery')
+      .get()!.id
+    database.query('DELETE FROM question_delivery WHERE id > 7').run()
     database
       .query(
         `INSERT INTO run_carried_ruling(record_id,run_record_id,question_record_id)
@@ -65,39 +107,30 @@ test('question reference migration preserves rows and constraints without local 
       )
       .run(notificationRecordId, questionRecordId)
 
-    const before = new Map(TABLES.map((table) => [table, rows(database, table)]))
+    const beforeRows = new Map(TABLES.map((table) => [table, rows(database, table)]))
+    const beforeSchema = new Map(TABLES.map((table) => [table, tableSchema(database, table)]))
     expect(applyMigrations(database)).toContain(MIGRATION)
 
     for (const table of TABLES) {
-      expect(rows(database, table), table).toEqual(before.get(table)!)
-      expect(
-        database
-          .query<{ table: string }, []>(`PRAGMA foreign_key_list('${table}')`)
-          .all()
-          .map((foreignKey) => foreignKey.table),
-        table,
-      ).not.toContain('question')
+      expect(rows(database, table), table).toEqual(beforeRows.get(table)!)
+      const expectedSchema = beforeSchema.get(table)!
+      expect(tableSchema(database, table), table).toEqual({
+        ...expectedSchema,
+        foreignKeys: expectedSchema.foreignKeys.filter(
+          (foreignKey) => foreignKey.table !== 'question',
+        ),
+      })
     }
-    const indexNames = new Set(
-      database
-        .query<{ name: string }, [string, string, string]>(
-          `SELECT name FROM sqlite_master WHERE type='index' AND tbl_name IN (${TABLES.map(() => '?').join(',')})`,
-        )
-        .all(...TABLES)
-        .map((index) => index.name),
-    )
-    for (const index of INDEXES) expect(indexNames.has(index), index).toBe(true)
 
     const unknownQuestion = newRecordId()
-    expect(() =>
-      database
-        .query(
-          `INSERT INTO question_delivery
-             (record_id,question_record_id,mode,outcome,at)
-           VALUES (?,?,'record-only','retired','2026-11-15')`,
-        )
-        .run(newRecordId(), unknownQuestion),
-    ).not.toThrow()
+    const orphanDelivery = database
+      .query(
+        `INSERT INTO question_delivery
+           (record_id,question_record_id,mode,outcome,at)
+         VALUES (?,?,'record-only','retired','2026-11-15')`,
+      )
+      .run(newRecordId(), unknownQuestion)
+    expect(Number(orphanDelivery.lastInsertRowid)).toBeGreaterThan(deliveryHighWater)
     expect(() =>
       database
         .query(
