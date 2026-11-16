@@ -87,7 +87,9 @@ export function register(program: Command): void {
   registerReport(session)
   session
     .command('start')
-    .description('open explore for a session that holds no open explore, or name the one it holds')
+    .description(
+      'open explore for a session that holds no open cursor, name the explore it holds, or name its open task cursor and open none',
+    )
     .allowExcessArguments(false)
     .action(async () => {
       log((await safeStartSession()).line)

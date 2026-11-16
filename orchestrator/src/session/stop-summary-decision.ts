@@ -4,16 +4,20 @@
 import { createHash } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { QuestionInboxCounts } from '../run/question-inbox-counts.ts'
+import { keylessCursorIdle } from './keyless-cursor-idle.ts'
 import { formatStopTime } from './stop-summary-time.ts'
 
 export const OWED_ITEM_OVERDUE_MS = 60 * 60 * 1000
+export const KEYLESS_CURSOR_IDLE_MS = 60 * 60 * 1000
 
 type StopSummaryCursor = {
+  number: number
   key: string | null
   workflow: string
   step: string
   ordinal: number
   total: number
+  updatedAt: string
 }
 
 export type StopSummaryOwedItem = {
@@ -96,6 +100,13 @@ function cursorLine(cursor: StopSummaryCursor): string {
   return `${owner} · step ${cursor.step} (${cursor.ordinal} of ${cursor.total})`
 }
 
+function idleCursorLine(cursor: StopSummaryCursor, now: number): string | null {
+  if (cursor.key) return null
+  const idle = keylessCursorIdle(cursor.updatedAt, now)
+  if (!idle || idle.ms < KEYLESS_CURSOR_IDLE_MS) return null
+  return `Explore cursor ${cursor.number} ${idle.label} → ${PLATFORM_SLUG} workflow abandon --cursor ${cursor.number}`
+}
+
 function movingLine(facts: StopSummaryFacts): string | null {
   const parts = [
     facts.liveRuns ? count(facts.liveRuns, 'run') : null,
@@ -121,6 +132,9 @@ export function decideStopSummary(facts: StopSummaryFacts): StopSummaryDecision 
     `Stop says: ${formatStopTime(facts.now, facts.displayTimezone)}`,
     ...questionLines,
     ...facts.cursors.map(cursorLine),
+    ...facts.cursors
+      .map((cursor) => idleCursorLine(cursor, Date.parse(facts.now)))
+      .filter((line): line is string => line !== null),
     ...facts.reviewVerdictLines,
   ]
   const moving = movingLine(facts)

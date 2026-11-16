@@ -28,6 +28,22 @@ function refusedContextProcess(
   }
 }
 
+function remainingContextProcess(
+  session: string,
+  items: ReturnType<typeof sessionContextItems>,
+): SessionProcessLine | null {
+  const remaining = items.filter(
+    (item) => classifySessionContextItem(item.kind, false) !== 'refuse',
+  )
+  if (!remaining.length) return null
+  return {
+    item: `context session:${session}`,
+    reason: `session close-out left ${remaining.length} context ${remaining.length === 1 ? 'item' : 'items'} on the session holder`,
+    evidence: remaining.map((item) => `${item.id} (${item.kind})`).join(', '),
+    remedy: `${PLATFORM_SLUG} agent context show --session ${session}`,
+  }
+}
+
 export async function closeOutSessionContext(input: {
   session: string
   dryRun: boolean
@@ -66,6 +82,13 @@ export async function closeOutSessionContext(input: {
         detail: drop.error,
         retry: `${PLATFORM_SLUG} session close-out --session ${input.session}`,
       })
+  }
+  if (!input.dryRun && !input.resume) {
+    const process = remainingContextProcess(
+      input.session,
+      sessionContextItems(input.session, input.database),
+    )
+    if (process) report.process.push(process)
   }
   return report
 }

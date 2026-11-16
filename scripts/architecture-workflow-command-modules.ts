@@ -12,6 +12,7 @@ const module = (file: string, allowed: string[]): WorkflowCommandModule => ({
 })
 
 export const workflowCommandModules: WorkflowCommandModule[] = [
+  module('orchestrator/src/workflow/explore-graduation.ts', []),
   module('orchestrator/src/workflow/task-flow-store-methods.ts', []),
   module('orchestrator/src/workflow/task-flow-store-types.ts', [
     './workflow-cursor-transition.ts',
@@ -147,6 +148,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     '../record/record-task-flow-write-client.ts',
     '../record/record-task-flow-write-contract.ts',
     './autonomy.ts',
+    './explore-graduation.ts',
     './task-flow.ts',
     './task-flow-decision.ts',
     './task-flow-store.ts',
@@ -157,6 +159,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     './workflow-cursor-autonomy.ts',
     './workflow-cursor-selection.ts',
     './workflow-cursor-task-reference.ts',
+    './workflow-explore-lifecycle-close.ts',
     './workflows.ts',
   ]),
   module('orchestrator/src/workflow/workflow-cursor-serve.ts', [

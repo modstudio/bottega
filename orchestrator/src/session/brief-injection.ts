@@ -10,6 +10,7 @@ import { machineId } from '../record/machine-identity.ts'
 import { insertOutboxRow } from '../record/outbox-enqueue.ts'
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 import { type TaskFlowOpenSessionStageRow, taskFlowReadStore } from '../workflow/task-flow-store.ts'
+import { keylessCursorIdle } from './keyless-cursor-idle.ts'
 import { SESSION_START_CONTEXT_MAX_CHARS } from './session-start-context-limit.ts'
 
 export { SESSION_START_SOURCES }
@@ -44,8 +45,8 @@ export function briefInjectionCursorFacts(
 ): Pick<BriefInjection, 'cursors' | 'keylessCursors' | 'keylessIdleMaxMs'> {
   const keyless = rows.filter((row) => row.workflow_key === '')
   const idle = keyless
-    .map((row) => Math.max(0, atMs - Date.parse(row.updated_at)))
-    .filter(Number.isFinite)
+    .map((row) => keylessCursorIdle(row.updated_at, atMs)?.ms)
+    .filter((value): value is number => value !== undefined)
   return {
     cursors: rows.length,
     keylessCursors: keyless.length,
