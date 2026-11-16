@@ -70,11 +70,16 @@ def open_board_requests(
         ):
             continue
         task_keys = root.get("task_keys")
+        keys = (
+            [key for key in task_keys if isinstance(key, str)]
+            if isinstance(task_keys, list)
+            else []
+        )
         if (
             isinstance(task_keys, list)
             and task_keys
-            and all(task_done(key) is True for key in task_keys if isinstance(key, str))
-            and all(isinstance(key, str) for key in task_keys)
+            and len(keys) == len(task_keys)
+            and all(task_done(key) is True for key in keys)
         ):
             continue
         open_roots.append(root)

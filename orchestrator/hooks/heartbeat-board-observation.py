@@ -29,21 +29,21 @@ def observe_board_requests(path: str, session_id: str, redact_secret_shaped) -> 
         }
         local_task_keys: dict[str, set[str]] = {}
         for message_id, value in connection.execute(
-            "SELECT message_record_id,value FROM board_message_tag WHERE kind='task'"
+            "SELECT message_record_id,value FROM board_message_tag "
+            "WHERE kind='task' AND origin='sender'"
         ):
             local_task_keys.setdefault(message_id, set()).add(value)
         roots, replies = [], []
         for row in connection.execute(
-            "SELECT record_id,number,kind,purpose,author_session,title,expires_at,withdrawn_at,"
+            "SELECT record_id,kind,purpose,author_session,title,expires_at,withdrawn_at,"
             "thread_root_record_id,created_at "
             "FROM board_message"
         ):
-            record_id, number, kind, purpose, author, title, expires, withdrawn, root_id, created = row
+            record_id, kind, purpose, author, title, expires, withdrawn, root_id, created = row
             if root_id is None:
                 roots.append(
                     {
                         "id": record_id,
-                        "label": f"board:{number} {_safe_title(title, redact_secret_shaped)}",
                         "kind": kind,
                         "purpose": purpose,
                         "author_session": author,
@@ -72,7 +72,8 @@ def observe_board_requests(path: str, session_id: str, redact_secret_shaped) -> 
         }
         hosted_task_keys: dict[str, set[str]] = {}
         for message_id, value in connection.execute(
-            "SELECT message_id,value FROM hosted_board_message_tag_cache WHERE kind='task'"
+            "SELECT message_id,value FROM hosted_board_message_tag_cache "
+            "WHERE kind='task' AND origin='sender'"
         ):
             hosted_task_keys.setdefault(message_id, set()).add(value)
         for message_id, kind, root_id, payload in connection.execute(
@@ -86,7 +87,6 @@ def observe_board_requests(path: str, session_id: str, redact_secret_shaped) -> 
                 roots.append(
                     {
                         "id": message_id,
-                        "label": f"board:{message_id} {_safe_title(message.get('title'), redact_secret_shaped)}",
                         "kind": kind,
                         "purpose": message.get("purpose"),
                         "author_session": author,

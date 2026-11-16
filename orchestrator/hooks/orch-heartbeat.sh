@@ -420,7 +420,7 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   request_state=${requests_observed%%$'\n'*}
   request_state=${request_state#*$'\t'}
   request_n=${request_state%%$'\t'*}; request_rest=${request_state#*$'\t'}
-  request_detail=${request_rest%%$'\t'*}; request_ids=${request_rest#*$'\t'}
+  request_ids=${request_rest#*$'\t'}
   request_n=${request_n:-0}
   hold_state=${holds_observed%%$'\n'*}
   hold_state=${hold_state#*$'\t'}

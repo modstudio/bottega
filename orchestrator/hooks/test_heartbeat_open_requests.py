@@ -77,6 +77,18 @@ class OpenBoardRequestsTest(unittest.TestCase):
             [root(task_keys=["DEV-1"])],
         )
 
+    def test_non_string_task_key_keeps_watch_without_calling_resolver(self):
+        calls = []
+        tagged_root = root(task_keys=["DEV-1", 42])
+        self.assertEqual(
+            self.decide(
+                [tagged_root],
+                task_done=lambda key: calls.append(key) or True,
+            ),
+            [tagged_root],
+        )
+        self.assertEqual(calls, [])
+
 
 if __name__ == "__main__":
     unittest.main()

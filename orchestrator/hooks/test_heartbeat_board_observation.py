@@ -94,7 +94,7 @@ class HeartbeatBoardObservationTest(unittest.TestCase):
 
     def test_projection_and_policy_release_only_for_delivered_external_reply(self):
         projected = self.observe()
-        self.assertEqual(projected["roots"][0]["label"], "board:12 Need a ruling")
+        self.assertEqual(projected["roots"][0]["title"], "Need a ruling")
         self.assertEqual([row["id"] for row in self.open()], ["root-1"])
 
         self.reply("self-reply", "asking-session", "2027-01-15T08:00:00.000Z")
@@ -118,7 +118,26 @@ class HeartbeatBoardObservationTest(unittest.TestCase):
         )
         connection.commit()
         connection.close()
-        self.assertEqual(self.observe()["roots"][0]["task_keys"], ["DEV-1", "DEV-2"])
+        self.assertEqual(self.observe()["roots"][0]["task_keys"], ["DEV-2"])
+
+    def test_inferred_task_tag_does_not_suppress_open_request(self):
+        connection = sqlite3.connect(self.store.name)
+        connection.execute(
+            "INSERT INTO board_message_tag VALUES (?,?,?,?)",
+            ("root-1", "task", "DEV-1", "inferred"),
+        )
+        connection.commit()
+        connection.close()
+
+        projected = self.observe()
+        self.assertEqual(projected["roots"][0]["task_keys"], [])
+        self.assertEqual(
+            heartbeat_decision.open_board_requests(
+                projected["roots"], projected["replies"], "asking-session",
+                1_800_000_000, lambda _key: True,
+            ),
+            projected["roots"],
+        )
 
     def test_withdrawn_held_notice_projects_and_releases(self):
         connection = sqlite3.connect(self.store.name)
@@ -168,8 +187,8 @@ class HeartbeatBoardObservationTest(unittest.TestCase):
         connection.commit()
         connection.close()
         self.assertEqual(
-            self.observe()["roots"][0]["label"],
-            "board:12 [withheld: assignment]",
+            self.observe()["roots"][0]["title"],
+            "[withheld: assignment]",
         )
 
     def test_hosted_projection_and_delivered_reply_release(self):
@@ -213,7 +232,6 @@ class HeartbeatBoardObservationTest(unittest.TestCase):
         projected = self.observe()
         hosted_root = next(row for row in projected["roots"] if row["id"] == "hosted-root")
         fallback_root = next(row for row in projected["roots"] if row["id"] == "fallback-root")
-        self.assertEqual(hosted_root["label"], "board:hosted-root Hosted ruling")
         self.assertEqual(hosted_root["author_session"], "asking-session")
         self.assertEqual(hosted_root["task_keys"], ["DEV-9"])
         self.assertEqual(fallback_root["author_session"], "origin-session")
@@ -242,8 +260,8 @@ class HeartbeatBoardObservationTest(unittest.TestCase):
                 connection.commit()
                 connection.close()
                 self.assertEqual(
-                    self.observe()["roots"][0]["label"],
-                    f"board:12 {expected}",
+                    self.observe()["roots"][0]["title"],
+                    expected,
                 )
 
         connection = sqlite3.connect(self.store.name)
@@ -253,8 +271,8 @@ class HeartbeatBoardObservationTest(unittest.TestCase):
         connection.commit()
         connection.close()
         self.assertEqual(
-            self.observe()["roots"][0]["label"],
-            "board:12 [withheld: assignment]",
+            self.observe()["roots"][0]["title"],
+            "[withheld: assignment]",
         )
 
         connection = sqlite3.connect(self.store.name)
@@ -263,7 +281,7 @@ class HeartbeatBoardObservationTest(unittest.TestCase):
         )
         connection.commit()
         connection.close()
-        self.assertEqual(self.observe()["roots"][0]["label"], "board:12 keyboard layout")
+        self.assertEqual(self.observe()["roots"][0]["title"], "keyboard layout")
 
 
 if __name__ == "__main__":
