@@ -38,6 +38,29 @@ test('sync reports each row held by destination routing', async () => {
   expect(output).toContain('held orch:17\trun\tproject example has no declared record space')
 })
 
+test('sync reports retired question outbox rows', async () => {
+  const output: string[] = []
+  await syncCommand(
+    { backfill: false },
+    { log: (line) => output.push(line) },
+    {
+      sync: async () =>
+        ({
+          configured: true,
+          pushed: 0,
+          failed: 0,
+          pending: 0,
+          retired: 2,
+          quarantined: [],
+          blocked: [],
+        }) as never,
+      boardAdoption: { database: db(), hostedConfigured: () => false, signedIn: () => false },
+    },
+  )
+
+  expect(output).toContain('retired 2 question outbox rows')
+})
+
 test('sync reports each row deferred by a pending parent', async () => {
   const output: string[] = []
   await syncCommand(

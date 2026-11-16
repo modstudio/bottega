@@ -39,7 +39,11 @@ import {
   recordQuarantinedParentsHoldingRow,
   refreshParentDeferredOutboxRows,
 } from './outbox-dependency.ts'
-import { quarantinedOutboxRows, quarantineOutboxRow } from './outbox-quarantine.ts'
+import {
+  quarantinedOutboxRows,
+  quarantineOutboxRow,
+  retirePendingOutboxKinds,
+} from './outbox-quarantine.ts'
 import {
   type RecordApiClient,
   RecordApiRequestError,
@@ -58,7 +62,7 @@ import {
 } from './record-sync-contract.ts'
 import type { RecordSyncBatchDependency } from './record-sync-result-decision.ts'
 import { applyRecordSyncBatchResults } from './record-sync-results.ts'
-import { RETIRED_OUTBOX_KINDS } from './record-sync-service.ts'
+import { RETIRED_OUTBOX_KINDS, RETIRED_OUTBOX_REASON } from './record-sync-service.ts'
 import type {
   BlockedOutboxRow,
   HeldRecordSyncRows,
@@ -598,6 +602,7 @@ async function ensureBatchBuiltIns(
 function completedSyncResult(input: {
   pushed: number
   failed: number
+  retired: number
   local: Database
   blocked: BlockedOutboxRow[]
   held: Map<string, HeldRecordSyncRows>
@@ -623,6 +628,7 @@ function completedSyncResult(input: {
     pushed: input.pushed,
     failed: input.failed,
     pending: pendingCount(input.local),
+    ...(input.retired ? { retired: input.retired } : {}),
     configured: true,
     ...(input.cachePull?.routingPool ? { routingPool: input.cachePull.routingPool } : {}),
     ...(input.cachePull?.projectRegister
@@ -772,6 +778,13 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   const writableLocal = local!
   const client = options.client ?? recordApiClient()
   if (!client.sync) throw new Error('record API client does not provide evidence sync')
+  const now = options.now ?? nowIso
+  const retired = retirePendingOutboxKinds(
+    writableLocal,
+    RETIRED_OUTBOX_KINDS,
+    RETIRED_OUTBOX_REASON,
+    now(),
+  )
   const session = await client.whoami()
   const memberships = parseRecordSpaceMemberships(session.memberships)
   const taskFlowBackfill = await requestedTaskFlowBackfill({
@@ -802,7 +815,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
       candidates,
       attempted,
       identity,
-      now: options.now ?? nowIso,
+      now,
       memberships,
       blocked,
       quarantinedParentHolds,
@@ -820,7 +833,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
       attempted,
       readOnlyDeferred,
       held,
-      now: options.now ?? nowIso,
+      now,
     })
     sentBatch = true
     pushed += applied.pushed
@@ -835,6 +848,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   return completedSyncResult({
     pushed,
     failed,
+    retired,
     local: writableLocal,
     blocked,
     held,
