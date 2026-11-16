@@ -9,6 +9,13 @@ const id = z.string().uuid()
 const stamp = z.string().datetime()
 const nullableText = z.string().nullable()
 const nullableId = id.nullable()
+export const QUESTION_JSON_FIELDS = [
+  'options',
+  'typedOptions',
+  'criteria',
+  'levels',
+  'jevProbabilities',
+] as const
 const nullableJsonValue = (field: string) =>
   z
     .unknown()
@@ -16,6 +23,22 @@ const nullableJsonValue = (field: string) =>
     .refine((value) => typeof value !== 'string', {
       message: `${field} must be a structured JSON value, not a string`,
     })
+const questionJsonFieldSchemas = {
+  options: nullableJsonValue('options'),
+  typedOptions: nullableJsonValue('typedOptions'),
+  criteria: nullableJsonValue('criteria'),
+  levels: nullableJsonValue('levels'),
+  jevProbabilities: nullableJsonValue('jevProbabilities'),
+} satisfies Record<(typeof QUESTION_JSON_FIELDS)[number], z.ZodType>
+
+export function assertQuestionJsonFieldsStructured(
+  question: Record<(typeof QUESTION_JSON_FIELDS)[number], unknown>,
+): void {
+  for (const field of QUESTION_JSON_FIELDS) {
+    if (typeof question[field] === 'string')
+      throw new Error(`${field} must be a structured JSON value, not a string`)
+  }
+}
 
 export const questionIntentSchema = z.enum([
   'ask',
@@ -48,14 +71,14 @@ const questionSnapshotSchema = z.object({
   revision: z.number().int().positive(),
   askedAt: stamp,
   question: z.string(),
-  options: nullableJsonValue('options'),
+  options: questionJsonFieldSchemas.options,
   recommendation: nullableText,
   why: nullableText,
   askedVia: nullableText,
   kind: nullableText,
-  typedOptions: nullableJsonValue('typedOptions'),
-  criteria: nullableJsonValue('criteria'),
-  levels: nullableJsonValue('levels'),
+  typedOptions: questionJsonFieldSchemas.typedOptions,
+  criteria: questionJsonFieldSchemas.criteria,
+  levels: questionJsonFieldSchemas.levels,
   answer: nullableText,
   answerValue: nullableText,
   answerBasis: nullableText,
@@ -67,7 +90,7 @@ const questionSnapshotSchema = z.object({
   answerChannel: nullableText,
   jevPick: nullableText,
   jevConfidence: z.number().nullable(),
-  jevProbabilities: nullableJsonValue('jevProbabilities'),
+  jevProbabilities: questionJsonFieldSchemas.jevProbabilities,
   jevModel: nullableText,
   jevInputTokens: z.number().int().nullable(),
   jevError: nullableText,

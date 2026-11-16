@@ -10,8 +10,8 @@ import type {
   QuestionWriteResult,
 } from '../record/record-question-contract.ts'
 import {
+  assertQuestionJsonFieldsStructured,
   questionChangedAfterRefusal,
-  questionWriteSchema,
 } from '../record/record-question-contract.ts'
 import {
   localQuestionProjects,
@@ -91,8 +91,8 @@ export class SqliteQuestionStore implements QuestionStore {
   }
 
   async write(intent: QuestionIntent, input: QuestionWriteBody): Promise<QuestionWriteResult> {
-    const validated = questionWriteSchema.parse(input)
-    const q = validated.question
+    const q = input.question
+    assertQuestionJsonFieldsStructured(q)
     const workflowStep = q.workflowCursorRecordId
       ? this.database
           .query<{ ordinal: number; step_slug: string }, [string]>(
@@ -195,7 +195,7 @@ export class SqliteQuestionStore implements QuestionStore {
         workflowStep?.step_slug ?? null,
       )
     const applied = write.changes === 1
-    if (applied) recordAppliedMutation(this.database, validated)
+    if (applied) recordAppliedMutation(this.database, input)
     return { id: q.id, number, revision: Math.max(existing?.revision ?? 0, q.revision), applied }
   }
 
