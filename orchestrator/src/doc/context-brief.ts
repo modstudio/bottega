@@ -3,11 +3,13 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ContextItemKind } from '../../../shared/context-item-vocabulary.ts'
+import { gitAt } from '../../../shared/git.ts'
 import { type ClaimView, liveClaimsOfSession } from '../board/board-claim-service.ts'
 import { claimNotices } from '../board/board-service.ts'
+import { pullRequestNumberForBranch } from '../branch/task-key-pull-request.ts'
 import { db } from '../database/db.ts'
 import { filedIssueQueueState } from '../issue/issue-dispatch.ts'
-import { projectAt } from '../project/projects.ts'
+import { projectAt, projectByName } from '../project/projects.ts'
 import {
   type QuestionInboxCounts,
   questionInboxCountsForSession,
@@ -22,7 +24,10 @@ import {
   openKeylessCursorsForSession,
   type WorkflowCursorListRow,
 } from '../workflow/workflow-cursor-list.ts'
-import { workflowCursorClaimHandles } from '../workflow/workflow-cursor-worktrees.ts'
+import {
+  workflowCursorBranchAndWorktree,
+  workflowCursorClaimHandles,
+} from '../workflow/workflow-cursor-worktrees.ts'
 import {
   type HubTaskReference,
   projectTaskKey,
@@ -30,6 +35,12 @@ import {
   taskKeyMap,
   taskReferenceForProjectKey,
 } from '../workflow/workflow-task-reference.ts'
+import {
+  type ContextBriefCursorLine,
+  contextBriefWorktreePath,
+  formatContextBriefCursorLine,
+  formatContextBriefRunLine,
+} from './context-brief-format.ts'
 import { storedItems, taskProfile } from './context-write-adapter.ts'
 import type { ContextItem } from './doc-context-write.ts'
 import { cursorContextHolder, taskContextHolder } from './doc-subjects.ts'
@@ -47,19 +58,13 @@ export type ContextBrief = {
   session: string
   fullCommand: string
   holders: ContextBriefHolder[]
-  runs: Array<{ number: number; job: string; status: string }>
-  cursors: Array<{
-    recordId: string
-    number: number
-    workflow: string
-    mode: string
-    step: number
-    totalSteps: number
-    stepSlug: string
-    questionNumber: number | null
-    runs: number[]
-    keylessIdle?: string | null
-  }>
+  runs: Array<{ number: number; job: string; status: string; label: string | null }>
+  cursors: Array<
+    ContextBriefCursorLine & {
+      recordId: string
+      keylessIdle?: string | null
+    }
+  >
   claims: Array<{ kind: string; value: string }>
   reviewVerdictLines?: string[]
   waiting: {
@@ -127,11 +132,9 @@ export function renderContextBrief(brief: ContextBrief): string {
     ...brief.cursors.map((cursor) => {
       if (cursor.keylessIdle !== undefined)
         return `cursor ${cursor.number} ${cursor.workflow} · ${cursor.keylessIdle ?? 'idle unknown'}${cursor.questionNumber === null ? ` → ${PLATFORM_SLUG} workflow abandon --cursor ${cursor.number}` : `, awaiting q${cursor.questionNumber}`}`
-      const question = cursor.questionNumber === null ? '' : `, awaiting q${cursor.questionNumber}`
-      const runs = cursor.runs.length ? `, runs ${cursor.runs.join(', ')}` : ''
-      return `cursor ${cursor.number} ${cursor.workflow} ${cursor.mode} step ${cursor.step}/${cursor.totalSteps} ${cursor.stepSlug}${question}${runs}`
+      return formatContextBriefCursorLine(cursor)
     }),
-    ...brief.runs.map((run) => `unbound run ${run.number} ${run.job} ${run.status}`),
+    ...brief.runs.map(formatContextBriefRunLine),
     ...brief.claims.map((claim) => `unbound claim ${claim.kind}:${claim.value}`),
   ]
   if (inFlight.length) lines.push('In flight:', ...inFlight.map((line) => `  ${line}`))
@@ -278,6 +281,23 @@ function claimBoundToCursor(
 
 type BriefLiveRun = ContextBrief['runs'][number] & { cursor_record_id: string | null }
 
+/** Gather one cursor's display handles without storing facts that can go stale. */
+export function contextBriefCursorHandles(
+  cursor: Pick<WorkflowCursorListRow, 'workflow_key' | 'project' | 'args'>,
+  database: Database = db(),
+): Pick<ContextBrief['cursors'][number], 'key' | 'branch' | 'worktree' | 'tip' | 'pr'> {
+  const { branch, worktree } = workflowCursorBranchAndWorktree(cursor.args)
+  const tipResult = worktree ? gitAt(worktree, ['rev-parse', '--short', 'HEAD']) : null
+  const mainCheckout = projectByName(cursor.project, database)?.path ?? null
+  return {
+    key: cursor.workflow_key.trim() || null,
+    branch,
+    worktree: worktree ? contextBriefWorktreePath(worktree, mainCheckout) : null,
+    tip: tipResult?.code === 0 && tipResult.stdout.trim() ? tipResult.stdout.trim() : null,
+    pr: branch ? pullRequestNumberForBranch(cursor.project, branch, database) : null,
+  }
+}
+
 /** Assign live runs and claims to their cursor or unbound brief bucket. */
 export function selectBriefInFlight(
   liveRuns: readonly BriefLiveRun[],
@@ -337,7 +357,7 @@ export async function contextBrief(
   ])
   const liveRuns = database
     .query(
-      `SELECT number,job,status,cursor_record_id FROM run
+      `SELECT number,job,status,COALESCE(label,prompt_head) AS label,cursor_record_id FROM run
        WHERE session_id=? AND status IN ${LIVE_RUN_STATUS_SQL} ORDER BY number`,
     )
     .all(session) as Array<ContextBrief['runs'][number] & { cursor_record_id: string | null }>
@@ -360,6 +380,7 @@ export async function contextBrief(
     cursors: cursors.map((cursor) => ({
       recordId: cursor.record_id,
       number: cursor.id,
+      ...contextBriefCursorHandles(cursor, database),
       workflow: cursor.workflow_slug,
       mode: cursor.mode_slug,
       step: cursor.ordinal + 1,

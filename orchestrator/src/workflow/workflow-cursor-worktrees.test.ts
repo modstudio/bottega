@@ -3,7 +3,11 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { openKeylessCursorsForSession } from './workflow-cursor-list.ts'
 import { database } from './workflow-cursor-test.fixture.ts'
-import { openCursorWorktrees, workflowCursorClaimHandles } from './workflow-cursor-worktrees.ts'
+import {
+  openCursorWorktrees,
+  workflowCursorBranchAndWorktree,
+  workflowCursorClaimHandles,
+} from './workflow-cursor-worktrees.ts'
 
 let priorRunId: string | undefined
 let priorDepth: string | undefined
@@ -56,6 +60,18 @@ test('cursor claim handles include worktree and branch and ignore malformed argu
     ),
   ).toEqual(['/trees/work', 'DEV-2293-work'])
   expect(workflowCursorClaimHandles('{malformed')).toEqual([])
+})
+
+test('cursor branch and worktree handles are trimmed and nullable', () => {
+  expect(
+    workflowCursorBranchAndWorktree(
+      JSON.stringify({ worktree: ' /trees/work ', branch: ' DEV-2293-work ' }),
+    ),
+  ).toEqual({ worktree: '/trees/work', branch: 'DEV-2293-work' })
+  expect(workflowCursorBranchAndWorktree(JSON.stringify({ worktree: ' ', branch: 42 }))).toEqual({
+    worktree: null,
+    branch: null,
+  })
 })
 
 test('open keyless cursor reader excludes a done cursor and task-bound cursor', async () => {

@@ -8,6 +8,7 @@ import { db } from '../database/db.ts'
 import {
   type ContextBrief,
   contextBrief,
+  contextBriefCursorHandles,
   holderSequence,
   renderContextBrief,
   selectBriefInFlight,
@@ -57,16 +58,21 @@ test('renders the compact context layout line by line and keeps only item first 
         ],
       },
     ],
-    runs: [{ number: 31111, job: 'review', status: 'asking' }],
+    runs: [{ number: 31111, job: 'review', status: 'asking', label: 'Check the brief' }],
     cursors: [
       {
         recordId: 'cursor-record',
         number: 1369,
+        key: 'DEV-1844/2',
         workflow: 'plan-task',
         mode: 'design',
         step: 3,
         totalSteps: 7,
         stepSlug: 'design',
+        branch: null,
+        worktree: null,
+        tip: null,
+        pr: null,
         questionNumber: 5277,
         runs: [31110],
       },
@@ -96,8 +102,8 @@ test('renders the compact context layout line by line and keeps only item first 
     '  ruling q5282: "Approved as proposed"',
     '  open: none',
     'In flight:',
-    '  cursor 1369 plan-task design step 3/7 design, awaiting q5277, runs 31110',
-    '  unbound run 31111 review asking',
+    '  cursor 1369 DEV-1844/2 plan-task design step 3/7 design, awaiting q5277, runs 31110',
+    '  unbound run 31111 review asking · Check the brief',
     '  unbound claim task:DEV-1844/2',
     `DEV-1844 review: lens correctness owed → ${PLATFORM_SLUG} review tier DEV-1844-work`,
     `Waiting: 2 board requests (${PLATFORM_SLUG} board read) · 0 questions · 3 filed issues (${PLATFORM_SLUG} workflow fix-defect --waiting) · 1 resume brief (${PLATFORM_SLUG} doc resumes)`,
@@ -115,11 +121,16 @@ test('renders a keyless cursor with its idle age and close command', () => {
       {
         recordId: 'explore-record',
         number: 845,
+        key: null,
         workflow: 'explore',
         mode: 'default',
         step: 1,
         totalSteps: 4,
         stepSlug: 'orient',
+        branch: null,
+        worktree: null,
+        tip: null,
+        pr: null,
         questionNumber: null,
         runs: [],
         keylessIdle: 'idle 2h 10m',
@@ -150,11 +161,16 @@ test('keeps an awaiting question on a keyless cursor and omits its abandon remed
       {
         recordId: 'explore-record',
         number: 845,
+        key: null,
         workflow: 'explore',
         mode: 'default',
         step: 1,
         totalSteps: 4,
         stepSlug: 'orient',
+        branch: null,
+        worktree: null,
+        tip: null,
+        pr: null,
         questionNumber: 6600,
         runs: [],
         keylessIdle: null,
@@ -286,6 +302,7 @@ test('contextBrief carries question groups into the waiting segment', async () =
   })
   expect(migration.exitCode, migration.stderr.toString()).toBe(0)
   const run = addRun({ agent: 'codex', job: 'implement', status: 'asking', session })
+  db().query('UPDATE run SET label=? WHERE record_id=?').run('Read the brief', run)
   db()
     .query(
       `INSERT INTO question (number,record_id,run_record_id,asked_at,question)
@@ -303,6 +320,10 @@ test('contextBrief carries question groups into the waiting segment', async () =
   expect(renderContextBrief(brief)).toContain(
     `1 worker question (${PLATFORM_SLUG} question inbox --all --active)`,
   )
+  expect(brief.runs).toEqual([
+    expect.objectContaining({ job: 'implement', status: 'asking', label: 'Read the brief' }),
+  ])
+  expect(renderContextBrief(brief)).toContain('implement asking · Read the brief')
 })
 
 test('orders the session, each project-scoped working task, and its epic by task profile', () => {
@@ -490,8 +511,14 @@ test('assigns cursor-bound runs and claims while retaining only unbound work', (
   }
   const selected = selectBriefInFlight(
     [
-      { number: 101, job: 'implement', status: 'running', cursor_record_id: cursor.record_id },
-      { number: 102, job: 'review', status: 'asking', cursor_record_id: null },
+      {
+        number: 101,
+        job: 'implement',
+        status: 'running',
+        label: 'Build it',
+        cursor_record_id: cursor.record_id,
+      },
+      { number: 102, job: 'review', status: 'asking', label: null, cursor_record_id: null },
     ],
     [cursor],
     [
@@ -503,8 +530,55 @@ test('assigns cursor-bound runs and claims while retaining only unbound work', (
   )
 
   expect(selected).toEqual({
-    runs: [{ number: 102, job: 'review', status: 'asking' }],
+    runs: [{ number: 102, job: 'review', status: 'asking', label: null }],
     cursorRuns: [{ recordId: cursor.record_id, runs: [101] }],
     claims: [{ kind: 'task', value: 'DEV-9999' }],
   })
+})
+
+test('gathers normalized cursor handles and degrades absent tip and pull request to null', () => {
+  expect(
+    contextBriefCursorHandles(
+      {
+        workflow_key: ' DEV-2324 ',
+        project: 'unregistered-project',
+        args: JSON.stringify({
+          branch: ' DEV-2324-work ',
+          worktree: '/path/that/does/not/exist',
+        }),
+      },
+      db(),
+    ),
+  ).toEqual({
+    key: 'DEV-2324',
+    branch: 'DEV-2324-work',
+    worktree: '/path/that/does/not/exist',
+    tip: null,
+    pr: null,
+  })
+})
+
+test('renders a run label when present and preserves the old line when absent', () => {
+  const base: ContextBrief = {
+    session: 'session-a',
+    fullCommand: 'full',
+    holders: [],
+    cursors: [],
+    claims: [],
+    runs: [
+      { number: 1, job: 'implement', status: 'running', label: 'Prompt head fallback' },
+      { number: 2, job: 'review', status: 'asking', label: null },
+    ],
+    waiting: {
+      boardRequests: 0,
+      questions: { worker: 0, user: 0, foreign: 0, unowned: 0 },
+      filedIssues: 0,
+      resumeBriefs: 0,
+    },
+    autonomy: 'unknown',
+  }
+  expect(renderContextBrief(base)).toContain(
+    'unbound run 1 implement running · Prompt head fallback',
+  )
+  expect(renderContextBrief(base)).toContain('unbound run 2 review asking\n')
 })
