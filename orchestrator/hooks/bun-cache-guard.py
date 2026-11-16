@@ -41,7 +41,7 @@ def main() -> int:
             BUN_CACHE_COMMAND.search(command) or RECURSIVE_CACHE_REMOVAL.search(command)
         ):
             return 0
-        record_emission(payload, "bun-cache-guard", "denyReason", REASON)
+        record_emission(payload, "denyReason", REASON)
         json.dump(
             {
                 "hookSpecificOutput": {

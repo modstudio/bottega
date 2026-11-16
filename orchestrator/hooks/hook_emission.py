@@ -19,6 +19,15 @@ NORMALIZATIONS = [
     (re.compile(r"\b\d+(?:\.\d+)?\s*(?:bytes?|KiB|MiB|GiB|KB|MB|GB)\b", re.I), "<bytes>"),
 ]
 
+HOOK_EMISSION_KINDS = (
+    "additionalContext",
+    "systemMessage",
+    "blockReason",
+    "denyReason",
+    "allowReason",
+    "askReason",
+)
+
 
 def normalized_text(text):
     normalized = text
@@ -31,6 +40,10 @@ def text_hash(text):
     return hashlib.sha256(normalized_text(text).encode("utf-8")).hexdigest()
 
 
+def text_stats(text):
+    return len(text.encode("utf-8")), 0 if not text else text.count("\n") + 1, len(text)
+
+
 def launch_detached(executable, args, env, cwd, *, launch=None, stderr=subprocess.DEVNULL):
     launcher = launch or subprocess.Popen
     return launcher(
@@ -40,13 +53,18 @@ def launch_detached(executable, args, env, cwd, *, launch=None, stderr=subproces
     )
 
 
-def record_emission(payload, hook, kind, text, *, launch=None):
+def record_emission(payload, kind, text, *, launch=None, hook=None):
     """Launch detached recording; never raise into the hook output path."""
+    hook = hook or os.path.splitext(os.path.basename(sys.argv[0]))[0]
+    if kind not in HOOK_EMISSION_KINDS:
+        print(f"{hook}: invalid hook emission kind: {kind}", file=sys.stderr)
+        return
     try:
         session = payload.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID")
         event = payload.get("hook_event_name")
         if not isinstance(session, str) or not session or not isinstance(event, str) or not event:
             return
+        _bytes, lines, chars = text_stats(text)
         environment = os.environ.copy()
         log_path = os.path.join(state_root(environment), "orchestrator", "hook-emission.log")
         os.makedirs(os.path.dirname(log_path), mode=0o700, exist_ok=True)
@@ -57,7 +75,7 @@ def record_emission(payload, hook, kind, text, *, launch=None):
             launch_detached(
                 bottega_bin(), ["agent", "context", "record-emission",
                  "--session", session, "--event", event, "--hook", hook, "--kind", kind,
-                 "--chars", str(len(text)), "--lines", str(0 if not text else text.count("\n") + 1),
+                 "--chars", str(chars), "--lines", str(lines),
                  "--hash", text_hash(text)], environment, payload.get("cwd") or None,
                 launch=launch, stderr=log,
             )

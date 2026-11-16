@@ -244,7 +244,7 @@ def main() -> int:
                 f"{work} for this session have no heartbeat. "
                 f"Arm under Monitor from the main checkout: {arm}"
             )
-            record_emission(payload, "heartbeat-guard", "blockReason", reason)
+            record_emission(payload, "blockReason", reason)
             sys.stdout.write(json.dumps({"decision": "block", "reason": reason}) + "\n")
         else:
             prefix = (
@@ -256,7 +256,7 @@ def main() -> int:
                 f"{prefix}{work} remain unarmed. "
                 f"Arm under Monitor: {arm}"
             )
-            record_emission(payload, "heartbeat-guard", "systemMessage", warning)
+            record_emission(payload, "systemMessage", warning)
             sys.stdout.write(json.dumps({"systemMessage": warning}) + "\n")
     except Exception:
         pass

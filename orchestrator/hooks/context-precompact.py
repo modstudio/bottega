@@ -22,7 +22,7 @@ def main():
     try:
         payload = json.load(sys.stdin)
         if should_hook_act(payload):
-            record_emission(payload, "context-precompact", "additionalContext", CAPTURE_INSTRUCTION)
+            record_emission(payload, "additionalContext", CAPTURE_INSTRUCTION)
             print(CAPTURE_INSTRUCTION)
     except Exception:
         pass

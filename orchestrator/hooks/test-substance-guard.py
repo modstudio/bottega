@@ -56,7 +56,7 @@ def deny(payload, findings):
         ]
     )
     reason = "\n".join(lines)
-    record_emission(payload, "test-substance-guard", "denyReason", reason)
+    record_emission(payload, "denyReason", reason)
     print(
         json.dumps(
             {

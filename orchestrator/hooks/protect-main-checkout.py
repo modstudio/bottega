@@ -370,7 +370,7 @@ def deny(payload, project, path):
         f"invariant: {INVARIANT}\n"
         f"cleared by: bottega run start --cwd {shell_quote(hint + '/<tree>')}"
     )
-    record_emission(payload, "protect-main-checkout", "denyReason", reason)
+    record_emission(payload, "denyReason", reason)
     print(json.dumps({
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
@@ -392,7 +392,7 @@ def deny_git_mutation(payload, decision):
         f"invariant: {INVARIANT}\n"
         f"cleared by: bottega run start --cwd {shell_quote(hint + '/<tree>')}"
     )
-    record_emission(payload, "protect-main-checkout", "denyReason", reason)
+    record_emission(payload, "denyReason", reason)
     print(json.dumps({
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",

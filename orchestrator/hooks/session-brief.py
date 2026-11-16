@@ -21,7 +21,7 @@ from notice_transport import (
     transportable_notice_id,
 )
 from registered_scope import should_hook_act
-from hook_emission import launch_detached, record_emission
+from hook_emission import launch_detached, record_emission, text_stats
 from hook_paths import state_root as _state_root
 
 with open(
@@ -208,7 +208,7 @@ def _with_compact_first_act(text, source):
 
 
 def _context_size(text):
-    return len(text.encode("utf-8")), 0 if not text else text.count("\n") + 1, len(text)
+    return text_stats(text)
 
 
 def _record_injection(bottega, cwd, env, session, source, text):
@@ -1002,10 +1002,10 @@ def main() -> int:
             specific = output.get("hookSpecificOutput", {})
             context = specific.get("additionalContext")
             if isinstance(context, str):
-                record_emission(payload, "session-brief", "additionalContext", context)
+                record_emission(payload, "additionalContext", context)
             message = output.get("systemMessage")
             if isinstance(message, str):
-                record_emission(payload, "session-brief", "systemMessage", message)
+                record_emission(payload, "systemMessage", message)
             sys.stdout.write(json.dumps(output) + "\n")
             sys.stdout.flush()
         emitted_board_ids = (

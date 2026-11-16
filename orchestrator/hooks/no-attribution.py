@@ -28,7 +28,7 @@ FILE_FLAG = re.compile(r"(?:-F|--file|--body-file|--notes-file|--message-file)[=
 
 
 def deny(payload, reason: str) -> None:
-    record_emission(payload, "no-attribution", "denyReason", reason)
+    record_emission(payload, "denyReason", reason)
     print(json.dumps({
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
@@ -93,7 +93,7 @@ def main() -> int:
             "Allowing command, but the text in these message files was not checked for attribution: "
             + "; ".join(unreadable_paths)
         )
-        record_emission(payload, "no-attribution", "systemMessage", warning)
+        record_emission(payload, "systemMessage", warning)
         print(json.dumps({"systemMessage": warning}))
     return 0
 

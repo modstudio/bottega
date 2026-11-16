@@ -400,7 +400,7 @@ def main() -> int:
                     "additionalContext": context,
                 }
             }
-            record_emission(payload, "board-interrupt", "additionalContext", context)
+            record_emission(payload, "additionalContext", context)
             sys.stdout.write(json.dumps(output) + "\n")
             sys.stdout.flush()
             mark_delivered(

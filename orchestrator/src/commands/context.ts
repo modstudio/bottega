@@ -14,6 +14,15 @@ import { HOOK_EMISSION_KINDS, recordHookEmission } from '../session/hook-emissio
 import { sessionContextCommand } from '../workflow/session-context.ts'
 import { log } from './support.ts'
 
+const required = (value: string, name: string) => {
+  if (!value) throw new Error(`${name} is required`)
+}
+
+const wholeNonnegative = (value: number, name: string) => {
+  if (!Number.isSafeInteger(value) || value < 0)
+    throw new Error(`${name} must be a nonnegative integer`)
+}
+
 function registerClear(context: Command): void {
   context
     .command('clear')
@@ -65,8 +74,14 @@ function registerEmission(context: Command): void {
     .requiredOption('--hash <sha256>', 'normalized output sha256')
     .allowExcessArguments(false)
     .action((options) => {
+      required(options.session, 'session id')
+      required(options.event, 'event')
+      required(options.hook, 'hook')
       if (!HOOK_EMISSION_KINDS.includes(options.kind))
         throw new Error(`--kind must be one of ${HOOK_EMISSION_KINDS.join(', ')}`)
+      wholeNonnegative(options.chars, 'chars')
+      wholeNonnegative(options.lines, 'lines')
+      if (!/^[0-9a-f]{64}$/.test(options.hash)) throw new Error('--hash must be a lowercase sha256')
       log(
         JSON.stringify(
           recordHookEmission({

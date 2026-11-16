@@ -16,7 +16,7 @@ from hook_emission import record_emission
 CLI_TIMEOUT_SECONDS = 5
 
 def emit(hook_payload, output, text):
-    record_emission(hook_payload, "workflow-cursor-reminder", "additionalContext", text)
+    record_emission(hook_payload, "additionalContext", text)
     sys.stdout.write(json.dumps(output) + "\n")
     sys.stdout.flush()
 

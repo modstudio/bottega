@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from hook_emission import record_emission, text_hash
+from hook_emission import record_emission, text_hash, text_stats
 
 
 class HookEmissionTest(unittest.TestCase):
@@ -21,7 +21,10 @@ class HookEmissionTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as state, mock.patch.dict(
             os.environ, {"BOTTEGA_STATE_HOME": state}, clear=False
         ), contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-            record_emission({"session_id":"s", "hook_event_name":"Stop"}, "stop-summary", "systemMessage", "same", launch=fail)
+            record_emission(
+                {"session_id":"s", "hook_event_name":"Stop"},
+                "systemMessage", "same", launch=fail, hook="stop-summary",
+            )
         self.assertEqual(stdout.getvalue(), "")
         self.assertEqual(stderr.getvalue().count("\n"), 1)
 
@@ -36,13 +39,27 @@ class HookEmissionTest(unittest.TestCase):
         ):
             record_emission(
                 {"session_id": "s", "hook_event_name": "Stop"},
-                "stop-summary", "systemMessage", "same", launch=capture,
+                "systemMessage", "same", launch=capture, hook="stop-summary",
             )
             self.assertIsNot(launched["stderr"], subprocess.DEVNULL)
             self.assertTrue(hasattr(launched["stderr"], "write"))
             self.assertTrue(
                 os.path.isfile(os.path.join(state, "orchestrator", "hook-emission.log"))
             )
+
+    def test_invalid_kind_writes_one_stderr_line_and_does_not_launch(self):
+        launch = mock.Mock()
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            record_emission(
+                {"session_id": "s", "hook_event_name": "Stop"},
+                "unknown", "same", launch=launch, hook="stop-summary",
+            )
+        launch.assert_not_called()
+        self.assertEqual(stderr.getvalue(), "stop-summary: invalid hook emission kind: unknown\n")
+
+    def test_text_stats_counts_utf8_bytes_lines_and_characters(self):
+        self.assertEqual(text_stats("é\nnext"), (7, 2, 6))
 
 
 if __name__ == "__main__":

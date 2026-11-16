@@ -115,7 +115,7 @@ WORKFLOW_EXEC_PREFIXES = (("bottega", "workflow", "exec"), ("orch", "workflow", 
 
 
 def decide(payload, decision, reason):
-    record_emission(payload, "git-guard", f"{decision}Reason", reason)
+    record_emission(payload, f"{decision}Reason", reason)
     json.dump(
         {
             "hookSpecificOutput": {

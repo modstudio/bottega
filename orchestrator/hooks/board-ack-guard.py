@@ -75,12 +75,12 @@ def main() -> int:
         if acknowledgement_block:
             reason = notice_summary(notices)
             value = {"decision": "block", "reason": reason}
-            record_emission(payload, "board-ack-guard", "blockReason", reason)
+            record_emission(payload, "blockReason", reason)
             sys.stdout.write(json.dumps(value) + "\n")
         elif notices:
             warning = notice_summary(notices, True)
             value = {"systemMessage": warning}
-            record_emission(payload, "board-ack-guard", "systemMessage", warning)
+            record_emission(payload, "systemMessage", warning)
             sys.stdout.write(json.dumps(value) + "\n")
     except Exception:
         pass

@@ -133,7 +133,7 @@ def main() -> int:
             return 0
         arm = f"{heartbeat_path()} {sid}"
         context = f"Arm under Monitor from the main checkout: {arm}"
-        record_emission(payload, "heartbeat-remind", "additionalContext", context)
+        record_emission(payload, "additionalContext", context)
         sys.stdout.write(json.dumps({
             "hookSpecificOutput": {
                 "hookEventName": "PostToolUse",

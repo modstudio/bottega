@@ -292,7 +292,7 @@ def main() -> int:
         }
     }
     reason = output["hookSpecificOutput"]["permissionDecisionReason"]
-    record_emission(payload, "block-agent", "denyReason", reason)
+    record_emission(payload, "denyReason", reason)
     print(json.dumps(output))
     return 0
 

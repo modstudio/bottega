@@ -17,7 +17,7 @@ PLATFORM_SLUG = os.path.basename(bottega_bin())
 
 def emit(payload, text):
     text = " ".join(text.split())
-    record_emission(payload, "session-start", "additionalContext", text)
+    record_emission(payload, "additionalContext", text)
     sys.stdout.write(
         json.dumps(
             {

@@ -60,7 +60,7 @@ def deny(payload, findings):
         for finding in findings
     ]
     reason = "refusing hub edit because it violates an import boundary:\n" + "\n".join(details)
-    record_emission(payload, "hub-import-guard", "denyReason", reason)
+    record_emission(payload, "denyReason", reason)
     print(
         json.dumps(
             {

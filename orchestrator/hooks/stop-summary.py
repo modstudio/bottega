@@ -117,9 +117,9 @@ def main():
     except Exception as error:
         output = {"systemMessage": f"Session status unavailable; Stop proceeded ({error.__class__.__name__})."}
     if "reason" in output:
-        record_emission(payload, "stop-summary", "blockReason", output["reason"])
+        record_emission(payload, "blockReason", output["reason"])
     elif "systemMessage" in output:
-        record_emission(payload, "stop-summary", "systemMessage", output["systemMessage"])
+        record_emission(payload, "systemMessage", output["systemMessage"])
     print(json.dumps(output))
     return 0
 

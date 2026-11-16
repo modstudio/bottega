@@ -25,25 +25,10 @@ export type HookEmissionInput = {
 }
 export type HookEmission = HookEmissionInput & { id: string; at: string }
 
-const required = (value: string, name: string) => {
-  if (!value) throw new Error(`${name} is required`)
-}
-const wholeNonnegative = (value: number, name: string) => {
-  if (!Number.isSafeInteger(value) || value < 0)
-    throw new Error(`${name} must be a nonnegative integer`)
-}
-
 export function recordHookEmission(
   input: HookEmissionInput,
   dependencies: { database?: Database; now?: () => string; machine?: () => string } = {},
 ): HookEmission {
-  required(input.sessionId, 'session id')
-  required(input.event, 'event')
-  required(input.hook, 'hook')
-  if (!HOOK_EMISSION_KINDS.includes(input.kind)) throw new Error('invalid hook emission kind')
-  wholeNonnegative(input.chars, 'chars')
-  wholeNonnegative(input.lines, 'lines')
-  if (!/^[0-9a-f]{64}$/.test(input.textHash)) throw new Error('hash must be lowercase sha256')
   const database = dependencies.database ?? db(true)
   const row = { ...input, id: newRecordId(), at: (dependencies.now ?? nowIso)() }
   writeTransaction(() => {

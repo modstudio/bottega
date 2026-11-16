@@ -1,6 +1,8 @@
 import { expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
-import { recordHookEmission } from './hook-emission.ts'
+import { HOOK_EMISSION_KINDS, recordHookEmission } from './hook-emission.ts'
 
 const valid = {
   sessionId: 'session-a',
@@ -55,20 +57,10 @@ test('recording persists a local row and matching outbox payload', () => {
   database.close()
 })
 
-test.each([
-  ['unknown kind', { kind: 'unknown' }],
-  ['negative chars', { chars: -1 }],
-  ['malformed hash', { textHash: 'not-a-hash' }],
-] as const)('%s is refused without writing', (_label, override) => {
-  const database = migratedTestDatabase()
-  expect(() =>
-    recordHookEmission({ ...valid, ...override } as typeof valid, { database }),
-  ).toThrow()
-  expect(
-    database.query<{ count: number }, []>('SELECT count(*) count FROM hook_emission').get()!.count,
-  ).toBe(0)
-  expect(
-    database.query<{ count: number }, []>('SELECT count(*) count FROM outbox').get()!.count,
-  ).toBe(0)
-  database.close()
+test('Python helper uses the shared hook emission kind vocabulary', () => {
+  const source = readFileSync(resolve(import.meta.dir, '../../hooks/hook_emission.py'), 'utf8')
+  const tuple = source.match(/HOOK_EMISSION_KINDS = \((.*?)\)/s)?.[1]
+  expect(tuple).toBeDefined()
+  const kinds = [...tuple!.matchAll(/["']([^"']+)["']/g)].map((match) => match[1])
+  expect(kinds).toEqual([...HOOK_EMISSION_KINDS])
 })
