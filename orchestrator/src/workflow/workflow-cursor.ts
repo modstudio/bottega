@@ -24,7 +24,7 @@ import {
 } from './workflow-compose-branch.ts'
 import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
 import { workflowKeyOf as keyOf, resolveCursorArguments } from './workflow-cursor-arguments.ts'
-import { insertWorkflowCursor } from './workflow-cursor-compose.ts'
+import { graduateExploreAfterCompose, insertWorkflowCursor } from './workflow-cursor-compose.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import { abandonWorkflowCursor, closeOpenWorkflowQuestion } from './workflow-cursor-mutation.ts'
 import {
@@ -48,6 +48,7 @@ import {
   decideCursorStart,
   decideStepOutcome,
 } from './workflow-cursor-transition.ts'
+import { closeExploreForLifecycle } from './workflow-explore-lifecycle-close.ts'
 import {
   allowedCloseFloor,
   DEFAULT_EXPECTED_EXIT_CODE,
@@ -173,9 +174,9 @@ export async function composeWorkflowWithCursor(
   live: LiveCursorAutonomy,
   commitCount: CommitCountPort = readCommitsPastLanding,
 ) {
-  const autonomy = live.resolution
-  const composition = composeWorkflow(slug, project, mode, args, d, selection, autonomy)
-  if (!composition.mode || composition.needs.arguments) return { ...composition, cursor: null }
+  const composition = composeWorkflow(slug, project, mode, args, d, selection, live.resolution)
+  if (!composition.mode || composition.needs.arguments)
+    return { ...composition, cursor: null, graduated: undefined }
   await refuseLocalComposeBranch(
     {
       project: composition.project,
@@ -241,17 +242,33 @@ export async function composeWorkflowWithCursor(
         },
         context.taskFlowClient,
       )) as CursorRow
-  } else row = await insertWorkflowCursor(composition, context, d, autonomy, commitCount)
+  } else row = await insertWorkflowCursor(composition, context, d, live.resolution, commitCount)
+  const cursor = {
+    id: row.id,
+    n: row.ordinal + 1,
+    slug: row.step_slug,
+    state: row.state,
+    opened: start !== 'reuse',
+    previousSession: start === 'reuse' ? takenOverFrom(existing, context) : null,
+  } satisfies CursorSummary
+  const graduated = await graduateExploreAfterCompose(
+    {
+      project: composition.project,
+      session: context.session,
+      taskBound: Boolean(keyOf(composition.arguments)),
+      replacingCursor: cursor.id,
+      database: d,
+      taskFlowClient: context.taskFlowClient,
+    },
+    {
+      finishExplore: writeFinishingWorkflowAdvance,
+      closeExplore: closeExploreForLifecycle,
+    },
+  )
   return {
     ...cursorComposition(row, d, live),
-    cursor: {
-      id: row.id,
-      n: row.ordinal + 1,
-      slug: row.step_slug,
-      state: row.state,
-      opened: start !== 'reuse',
-      previousSession: start === 'reuse' ? takenOverFrom(existing, context) : null,
-    } satisfies CursorSummary,
+    cursor,
+    ...(graduated ? { graduated } : {}),
   }
 }
 

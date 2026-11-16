@@ -137,7 +137,7 @@ Unanswered questions use the durable open-question predicate: neither answered n
 
 **Synopsis:** `bottega session start`
 
-open explore for a session that holds no open explore, or name the one it holds
+open explore for a session that holds no open cursor, name the explore it holds, or name its open task cursor and open none
 
 ### Related
 

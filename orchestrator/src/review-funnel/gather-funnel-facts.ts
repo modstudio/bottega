@@ -16,7 +16,7 @@ import {
   type TriageReviewRow,
 } from '../review/review-group.ts'
 import { reviewLineage } from '../review/review-lineage-store.ts'
-import { measureChangeIdentity } from '../review/review-pins.ts'
+import { requireChangeIdentity } from '../review/review-pins.ts'
 import { gatherPostFixReviewFacts } from '../review/review-post-fix.ts'
 import { hasExactArchitectRead } from '../review/review-read.ts'
 import {
@@ -282,8 +282,9 @@ function gatheredTriage(change: ReviewFunnelChange, group: ChangeGroup) {
 
 /** Resolve one change once, including lineage evidence and completed-landing exclusions. */
 export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts {
-  const identity = measureChangeIdentity(change.cwd, change.base, change.head)
-  if (!identity) throw new Error(`could not measure review-funnel change ${change.branch}`)
+  const identity = requireFunnelChangeIdentity(change.branch, () =>
+    requireChangeIdentity(change.cwd, change.base, change.head),
+  )
   const pathSet = serializePathSet(identity.paths)
   const group = {
     project: change.project.name,
@@ -360,5 +361,14 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
       architectReadRequired: admissionGap.architectReadRequired,
       nonLensGaps: [...admissionGap.nonLensGaps],
     },
+  }
+}
+
+export function requireFunnelChangeIdentity<T>(branch: string, measure: () => T): T {
+  try {
+    return measure()
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause)
+    throw new Error(`could not measure review-funnel change ${branch}: ${detail}`)
   }
 }

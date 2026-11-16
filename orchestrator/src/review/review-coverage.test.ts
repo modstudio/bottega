@@ -64,7 +64,7 @@ describe('review coverage', () => {
 
   test('carries an unchanged patch when trunk touched the same path', () => {
     const runner: CoverageGitRunner = (args) => {
-      const command = args.join(' ')
+      const command = args.filter((arg) => !arg.startsWith('--output=')).join(' ')
       if (command === 'rev-parse tip^{tree}') return result(true, 'tip-tree')
       if (command === 'cat-file -e reviewed-commit^{commit}') return result(true)
       if (command === 'rev-parse reviewed-commit^{tree}') return result(true, 'reviewed-tree')
@@ -111,7 +111,7 @@ describe('review coverage', () => {
   const unreachableReviewedRunner = (): CoverageGitRunner => {
     let reviewedReachabilityChecks = 0
     return (args) => {
-      const command = args.join(' ')
+      const command = args.filter((arg) => !arg.startsWith('--output=')).join(' ')
       if (command === 'rev-parse tip^{tree}') return result(true, 'tip-tree')
       if (command === 'cat-file -e reviewed-commit^{commit}') {
         reviewedReachabilityChecks += 1

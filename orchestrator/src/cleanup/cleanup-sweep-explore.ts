@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { db, writableDb } from '../database/db.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
+import { writeFinishingWorkflowAdvance } from '../workflow/workflow-cursor.ts'
 import { closeExploreForLifecycle } from '../workflow/workflow-explore-lifecycle-close.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import { UNJUDGED_OWNER_WINDOW_MS } from './cleanup-sweep-decisions.ts'
@@ -43,7 +44,12 @@ export async function sweepSessionCursors(input: {
       continue
     }
     try {
-      await closeExploreForLifecycle(cursor.record_id, 'expired', database)
+      await closeExploreForLifecycle(
+        cursor.record_id,
+        'expired',
+        database,
+        writeFinishingWorkflowAdvance,
+      )
       input.presentation.log(`expired workflow cursor ${cursor.number} (explore)`)
     } catch (cause) {
       failed = true

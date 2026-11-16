@@ -14,6 +14,7 @@ import {
 } from '../run/question-inbox-counts.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { LIVE_RUN_STATUS_SQL } from '../run/run-status.ts'
+import { keylessCursorIdle } from '../session/keyless-cursor-idle.ts'
 import { sessionReviewVerdictLines } from '../session/session-review-verdicts.ts'
 import { architectSessionContext } from '../workflow/session-context.ts'
 import {
@@ -57,6 +58,7 @@ export type ContextBrief = {
     stepSlug: string
     questionNumber: number | null
     runs: number[]
+    keylessIdle?: string | null
   }>
   claims: Array<{ kind: string; value: string }>
   reviewVerdictLines?: string[]
@@ -123,6 +125,8 @@ export function renderContextBrief(brief: ContextBrief): string {
   }
   const inFlight = [
     ...brief.cursors.map((cursor) => {
+      if (cursor.keylessIdle !== undefined)
+        return `cursor ${cursor.number} ${cursor.workflow} · ${cursor.keylessIdle ?? 'idle unknown'}${cursor.questionNumber === null ? ` → ${PLATFORM_SLUG} workflow abandon --cursor ${cursor.number}` : `, awaiting q${cursor.questionNumber}`}`
       const question = cursor.questionNumber === null ? '' : `, awaiting q${cursor.questionNumber}`
       const runs = cursor.runs.length ? `, runs ${cursor.runs.join(', ')}` : ''
       return `cursor ${cursor.number} ${cursor.workflow} ${cursor.mode} step ${cursor.step}/${cursor.totalSteps} ${cursor.stepSlug}${question}${runs}`
@@ -363,6 +367,9 @@ export async function contextBrief(
       stepSlug: cursor.step_slug,
       questionNumber: cursor.question_number,
       runs: inFlight.cursorRuns.find((item) => item.recordId === cursor.record_id)?.runs ?? [],
+      ...(cursor.workflow_key
+        ? {}
+        : { keylessIdle: keylessCursorIdle(cursor.updated_at)?.label ?? null }),
     })),
     claims: inFlight.claims,
     reviewVerdictLines: sessionReviewVerdictLines(session, cursors, database),
