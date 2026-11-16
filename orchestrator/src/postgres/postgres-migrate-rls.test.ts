@@ -972,7 +972,6 @@ realPostgres('RLS proof against real Postgres', () => {
     asSpace,
     admin: (statement) => succeeds('postgres', 'postgres', statement),
   }))
-
   registerTaskFlowReadThroughTakeoverProof({
     urls: () => ({ actor: actorUrl!, auth: authUrl! }),
     spaceId: () => authSpaceA,

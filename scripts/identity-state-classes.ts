@@ -26,6 +26,8 @@ const PORTABLE_RULING =
 const LABEL_RULING = 'Shmuel Barkin, DEV-1214/15 option (a): machine-scoped labels'
 const DEV_2234_MACHINE_RULING =
   'Shmuel Barkin, DEV-2234 ruling 6: planned tables split by who acts; machine resources are machine'
+const QUESTION_REFERENCE_MACHINE_RULING =
+  'Shmuel Barkin, q6436: local question references are machine state'
 
 const synced = (
   store: StateClassStore,
@@ -225,11 +227,11 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
     "This machine's filed monitor issue keys",
     PORTABLE_RULING,
   ),
-  planned(
+  machine(
     'orchestrator',
     'operator_notification',
-    'DEV-2234',
     'Notifications waiting for operator delivery',
+    QUESTION_REFERENCE_MACHINE_RULING,
   ),
   machine('orchestrator', 'orch_migrations', 'Local migration bookkeeping', PORTABLE_RULING),
   machine('orchestrator', 'orch_schema_lock', 'Local schema lock bookkeeping', PORTABLE_RULING),
@@ -274,7 +276,12 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
   ),
   synced('orchestrator', 'pull_request_ci', 'Outbox source for pull request checks'),
   hosted('orchestrator', 'question', 'question', 'Questions awaiting or carrying rulings'),
-  planned('orchestrator', 'question_delivery', 'DEV-2234', 'Question delivery state'),
+  machine(
+    'orchestrator',
+    'question_delivery',
+    "This machine's question delivery state",
+    QUESTION_REFERENCE_MACHINE_RULING,
+  ),
   hosted(
     'orchestrator',
     'question_mutation_audit',
@@ -407,7 +414,12 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
     'Local waiting-email write source',
   ),
   cache('hub', 'question', 'question', 'Local mirror of hosted questions'),
-  planned('hub', 'question_delivery', 'DEV-2234', 'Question delivery state'),
+  machine(
+    'hub',
+    'question_delivery',
+    "Local copy of this machine's question delivery state",
+    QUESTION_REFERENCE_MACHINE_RULING,
+  ),
   cache('hub', 'send', 'hub_send', 'Local mirror of hosted report sends'),
   machine('hub', 'seq', 'Local sequence bookkeeping', PORTABLE_RULING),
   machine('hub', 'setting', 'Local cursors and hosted-cache cursors', PORTABLE_RULING),

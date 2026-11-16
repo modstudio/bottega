@@ -41,6 +41,7 @@ import {
 import { assertRecordPayloadColumns } from './record-payload-columns.ts'
 import { recordPool } from './record-pool.ts'
 import { pushQuestionAudits } from './record-question-audit.ts'
+import { allocateQuestionNumber } from './record-question-number.ts'
 import { typedQuestionRecordValues } from './record-question-values.ts'
 import { pushReleaseRecord } from './record-release-sync.ts'
 import { nullableReviewLensValues } from './record-review-lens-values.ts'
@@ -547,15 +548,33 @@ const recordKinds = {
           key: nullableString(row.workflowKey),
         })
         const projectId = await projectRecordId(tx, row, principal, projectIds)
-        const values = questionValues(row, projectId, workflowTaskId)
+        const incomingValues = questionValues(row, projectId, workflowTaskId)
         const existingOwned = await existingEvidenceOwned(
           tx,
           'question',
-          values.id,
-          values.machineId,
+          incomingValues.id,
+          incomingValues.machineId,
           principal,
           { scope: 'machine' },
         )
+        const existing = existingOwned
+          ? (
+              (await tx`
+              SELECT number FROM question WHERE id=${incomingValues.id}::uuid FOR UPDATE
+            `) as Array<{ number: number | string | null }>
+            )[0]
+          : undefined
+        const number =
+          !existingOwned || existing?.number == null
+            ? await allocateQuestionNumber(tx, principal.spaceId)
+            : Number(existing.number)
+        if (existingOwned && existing?.number == null) {
+          await tx`
+            UPDATE question SET number=${number}
+            WHERE id=${incomingValues.id}::uuid AND number IS NULL
+          `
+        }
+        const values = { ...incomingValues, number }
         const {
           id: _id,
           createdAt: _createdAt,
@@ -572,21 +591,13 @@ const recordKinds = {
           drizzleSql`excluded.revision`,
           questionRecord.revision,
         )
-        const incomingQuestionFillsNumber = and(
-          drizzleSql`${questionRecord.number} IS NULL`,
-          drizzleSql`excluded.number IS NOT NULL`,
-          drizzleSql`excluded.revision = ${questionRecord.revision}`,
-        )
         const written = await drizzle({ client: tx })
           .insert(questionRecord)
           .values(values)
           .onConflictDoUpdate({
             target: questionRecord.id,
             set: updates,
-            setWhere: and(
-              eq(questionRecord.machineId, values.machineId),
-              drizzleSql`(${incomingQuestionWins} OR ${incomingQuestionFillsNumber})`,
-            ),
+            setWhere: and(eq(questionRecord.machineId, values.machineId), incomingQuestionWins),
           })
           .returning({ id: questionRecord.id })
         requireOwnedUpsert(written, 'question', values.id, existingOwned)

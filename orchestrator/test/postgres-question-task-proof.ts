@@ -26,7 +26,7 @@ export function registerQuestionTaskRecordSyncProof(
     admin: (statement: string) => string
   },
 ): void {
-  test('question sync resolves one live workflow key and preserves the link on a null re-push', async () => {
+  test('question sync mints record numbers and preserves the link and number on re-push', async () => {
     const fixture = input()
     const local = new Database(':memory:')
     applyMigrations(local)
@@ -50,6 +50,7 @@ export function registerQuestionTaskRecordSyncProof(
       projectId: fixture.projectId,
       projectName: fixture.projectName,
       machineId: QUESTION_TASK_PROOF_MACHINE,
+      number: -1,
       localId: 1772,
       revision: 1,
       askedAt: '2026-10-26T00:00:00.000Z',
@@ -74,6 +75,51 @@ export function registerQuestionTaskRecordSyncProof(
         projectSpaces: { [fixture.projectName]: fixture.spaceId },
       })
     expect(await sync()).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
+    const readNumber = (id: string) =>
+      Number(
+        fixture.asSpace(
+          fixture.actorRole,
+          'actor-password',
+          fixture.spaceId,
+          `SELECT number FROM question WHERE id='${id}';`,
+        ).stdout,
+      )
+    const firstRecordNumber = readNumber(questionId)
+    expect(firstRecordNumber).toBeGreaterThan(0)
+    expect(firstRecordNumber).not.toBe(question.number)
+
+    const secondLocal = new Database(':memory:')
+    applyMigrations(secondLocal)
+    const secondMachine = newRecordId()
+    const secondQuestionId = newRecordId()
+    const secondQuestion = {
+      ...question,
+      id: secondQuestionId,
+      machineId: secondMachine,
+      question: 'Does a second machine receive a distinct hosted number?',
+    }
+    secondLocal
+      .query(
+        "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,1,'question',?,?,?)",
+      )
+      .run(
+        newRecordId(),
+        secondQuestionId,
+        JSON.stringify(secondQuestion),
+        String(question.createdAt),
+      )
+    expect(
+      await syncRecord({
+        local: secondLocal,
+        identity: { id: secondMachine, name: 'question-task-proof-second' },
+        projectSpaces: { [fixture.projectName]: fixture.spaceId },
+      }),
+    ).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
+    const secondRecordNumber = readNumber(secondQuestionId)
+    expect(secondRecordNumber).toBeGreaterThan(0)
+    expect(secondRecordNumber).not.toBe(question.number)
+    expect(secondRecordNumber).not.toBe(firstRecordNumber)
+    secondLocal.close()
     const readLink = () =>
       fixture.asSpace(
         fixture.actorRole,
@@ -89,9 +135,10 @@ export function registerQuestionTaskRecordSyncProof(
       .run(JSON.stringify(question))
     expect(await sync()).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
     expect(readLink().stdout).toBe(taskId)
+    expect(readNumber(questionId)).toBe(firstRecordNumber)
     local.close()
   })
-  test('direct question asks allocate atomically, seed above the maximum, and retry once', async () => {
+  test('concurrent direct question asks allocate distinct numbers above the maximum', async () => {
     const fixture = input()
     const machineId = newRecordId()
     const at = '2026-11-15T12:00:00.000Z'
@@ -210,6 +257,18 @@ export function registerQuestionTaskRecordSyncProof(
     const questions = Array.from({ length: 4 }, () => snapshot(newRecordId()))
     const written = await Promise.all(questions.map((question) => ask(question)))
     expect(written.map(({ number }) => number).sort((a, b) => a - b)).toEqual([41, 42, 43, 44])
+    const duplicate = fixture.asSpace(
+      fixture.actorRole,
+      'actor-password',
+      directSpaceId,
+      `INSERT INTO question
+        (id,number,space_id,project_id,machine_id,revision,asked_at,question,asked_via,
+         withheld_fields,created_at,updated_at)
+       VALUES ('${newRecordId()}',${written[0]!.number},'${directSpaceId}','${directProjectId}',
+         '${machineId}',1,'${at}','duplicate question number','workflow','[]'::jsonb,'${at}','${at}');`,
+    )
+    expect(duplicate.code).not.toBe(0)
+    expect(duplicate.stderr).toContain('question_space_number_unique')
     expect(
       fixture.admin(`SELECT workflow_task_id FROM question WHERE id='${questions[0]!.id}';`),
     ).toBe(directTaskId)

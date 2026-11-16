@@ -850,6 +850,7 @@ export async function drainHostedOutbox(
     holder,
     durationMs: HOSTED_OUTBOX_LEASE_MS,
     renewEveryMs: HOSTED_OUTBOX_LEASE_RENEW_MS,
+    onError: (error) => console.error(`hub: ${error.message}`),
     lostMessage: () => 'hosted outbox lease was lost during the drain',
     work: (guard) => drainHostedOutboxHeld({ ...dependencies, assertLock: guard.assertHeld }),
   })
