@@ -123,7 +123,7 @@ test('resolves an attachment token carried only by task text', async () => {
   const prepared = await prepareRunDispatchRulings(
     {
       firstTurn: true,
-      workspaceSource: 'none',
+      workspaceSource: 'new',
       parentRunRecordId: null,
       projectName: 'task-text-attachment',
       projectRecordId,

@@ -49,10 +49,9 @@ import {
   reauthorizeRunMutation,
 } from './run-authority.ts'
 import { detach } from './run-dispatch.ts'
-import { resolveCarriedAttachments } from './run-carried-attachments.ts'
 import { closeStaleChainQuestions, RUN_FOLLOW_TIMEOUT_MS, reapStale } from './run-liveness.ts'
 import { continuationResumeKind } from './run-resume-kind.ts'
-import { packedResumePrompt } from './run-resume-prompt.ts'
+import { packedResumePromptWithCarriedAttachments } from './run-resume-prompt.ts'
 import { type ContinuationInstruction, renderCheckpointContinuationPrompt } from './run-retry.ts'
 import { terminalSharedGitConfigForRecordedRun } from './shared-git-config-run.ts'
 
@@ -668,9 +667,8 @@ async function refuseOversizedResumePrompt(input: {
 }): Promise<void> {
   const assembledLimit = input.checkpointContext ? undefined : input.argvResumeLimit(input.agent)
   if (assembledLimit === undefined) return
-  const carriedAttachments = await resolveCarriedAttachments([input.prompt])
   const assembled = Buffer.byteLength(
-    packedResumePrompt(input.job, input.prompt, input.rootId, carriedAttachments),
+    await packedResumePromptWithCarriedAttachments(input.job, input.prompt, input.rootId),
     'utf8',
   )
   if (assembled <= assembledLimit) return

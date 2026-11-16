@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { WorkflowTextNotHeldError } from '../workflow/workflow-text-copy.ts'
 import {
   CARRIED_ATTACHMENT_MAX_BYTES,
   CARRIED_ATTACHMENTS_MAX_BYTES,
@@ -7,7 +8,6 @@ import {
   carriedAttachmentTokens,
   resolveCarriedAttachments,
 } from './run-carried-attachments.ts'
-import { WorkflowTextNotHeldError } from '../workflow/workflow-text-copy.ts'
 
 const FIRST = 'attached-text:11111111-1111-4111-8111-111111111111'
 const SECOND = 'attached-text:22222222-2222-4222-8222-222222222222'

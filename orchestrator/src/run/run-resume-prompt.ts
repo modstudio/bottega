@@ -2,6 +2,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { packResumePrompt } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
+import { resolveCarriedAttachments } from './run-carried-attachments.ts'
 
 /** Assemble the exact prompt a resumed turn puts on argv. */
 export function packedResumePrompt(
@@ -19,4 +20,13 @@ export function packedResumePrompt(
     return packResumePrompt(job, carriedTurnPrompt, null)
   }
   return packResumePrompt(job, carriedTurnPrompt, readFileSync(root.prompt_path, 'utf8'))
+}
+
+export async function packedResumePromptWithCarriedAttachments(
+  job: string,
+  turnPrompt: string,
+  parentId: string,
+): Promise<string> {
+  const carriedAttachments = await resolveCarriedAttachments([turnPrompt])
+  return packedResumePrompt(job, turnPrompt, parentId, carriedAttachments)
 }

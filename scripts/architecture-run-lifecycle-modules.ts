@@ -449,6 +449,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     'node:fs',
     '../contract/contract.ts',
     '../database/db.ts',
+    './run-carried-attachments.ts',
   ]),
   module('orchestrator/src/run/run-project-context.ts', ['../project/projects.ts']),
   module('orchestrator/src/run/run-mcp-main-stack.ts', [

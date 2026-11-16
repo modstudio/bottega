@@ -72,8 +72,7 @@ import {
   resumeLaunchForRoot,
 } from './run-control.ts'
 import { detach } from './run-dispatch.ts'
-import { resolveCarriedAttachments } from './run-carried-attachments.ts'
-import { packedResumePrompt } from './run-resume-prompt.ts'
+import { packedResumePromptWithCarriedAttachments } from './run-resume-prompt.ts'
 
 import {
   previousAttemptTaskPointer,
@@ -913,8 +912,7 @@ export async function answerRun(
     const assembledLimit = helpers.argvResumeLimit(resumeAgent)
     if (assembledLimit !== undefined) {
       const turnPrompt = rulingPrompt(answers)
-      const carriedAttachments = await resolveCarriedAttachments([turnPrompt])
-      const packed = packedResumePrompt(row.job, turnPrompt, id, carriedAttachments)
+      const packed = await packedResumePromptWithCarriedAttachments(row.job, turnPrompt, id)
       const assembled = Buffer.byteLength(packed, 'utf8')
       if (assembled > assembledLimit) {
         const shrink = [...answers]
