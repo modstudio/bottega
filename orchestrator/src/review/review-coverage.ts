@@ -16,12 +16,13 @@ import type {
 import { gatherSameChange } from './same-change-git.ts'
 
 function coverageGit(repoRoot: string): CoverageGitRunner {
-  return (args, stdin) => {
+  return (args, stdin, stdinFile) => {
     const p = startBoundedSyncBytes(['git', ...args], {
       budget: 'git-plumbing',
       cwd: repoRoot,
       env: targetGitEnvironment(repoRoot),
       stdin,
+      stdinFile,
     })
     return {
       ok: p.exitCode === 0,
@@ -265,7 +266,10 @@ export function currentCoverage(
   if (knownBranches && branches.some((branch) => !knownBranches.has(branch))) return null
   const baseRunner = reviewGit(registered.path)
   const runner: CoverageGitRunner = commandCache
-    ? (args, stdin) => {
+    ? (args, stdin, stdinFile) => {
+        if (stdinFile || args.some((arg) => arg.startsWith('--output='))) {
+          return baseRunner(args, stdin, stdinFile)
+        }
         const key = `${JSON.stringify(args)}\0${stdin ? Buffer.from(stdin).toString('base64') : ''}`
         const cached = commandCache.get(key)
         if (cached) return cached

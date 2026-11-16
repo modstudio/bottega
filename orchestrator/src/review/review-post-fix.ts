@@ -18,7 +18,7 @@ import { filesCoveredIncludesPath } from './review-coverage-match.ts'
 import { completedReviewEvidenceSql } from './review-evidence-sql.ts'
 import { serializePathSet } from './review-group.ts'
 import { reviewLineage } from './review-lineage-store.ts'
-import { git, measureChangeIdentity, pinRef } from './review-pins.ts'
+import { git, mapGitDiffSections, measureChangeIdentity, pinRef } from './review-pins.ts'
 import { type ReviewRole, reviewCountsAsRound } from './review-role.ts'
 import { reviewRoundIdentity } from './review-round-identity.ts'
 import { diffNumstat } from './review-tier.ts'
@@ -317,10 +317,6 @@ export function pathNeutralContentIdentity(section: string): string {
   return new Bun.CryptoHasher('sha256').update(normalized).digest('hex')
 }
 
-function diffSections(diff: string): string[] {
-  return diff ? diff.split(/(?=^diff --git )/m).filter(Boolean) : []
-}
-
 function changePatches(
   repo: string,
   tip: string,
@@ -333,26 +329,25 @@ function changePatches(
 
 function patchesForRange(repo: string, base: string, tip: string): PerPathPatch[] {
   const files = diffNumstat(repo, base, tip)
-  const diff = git(repo, [
-    'diff',
-    '--binary',
-    '--no-ext-diff',
-    '--no-color',
-    '--no-renames',
-    '--unified=0',
-    `${base}..${tip}`,
-  ])
-  if (!diff.ok) throw new Error(diff.err)
-  const sections = diffSections(new TextDecoder().decode(diff.stdout))
-  if (sections.length !== files.length) {
+  const identities = mapGitDiffSections(
+    repo,
+    [
+      'diff',
+      '--binary',
+      '--no-ext-diff',
+      '--no-color',
+      '--no-renames',
+      '--unified=0',
+      `${base}..${tip}`,
+    ],
+    pathNeutralContentIdentity,
+  )
+  if (identities.length !== files.length) {
     throw new Error(
-      `git diff section count ${sections.length} did not match numstat count ${files.length}`,
+      `git diff section count ${identities.length} did not match numstat count ${files.length}`,
     )
   }
-  return files.map((file, index) => ({
-    ...file,
-    patchId: pathNeutralContentIdentity(sections[index]!),
-  }))
+  return files.map((file, index) => ({ ...file, patchId: identities[index]! }))
 }
 
 function mergeTreeReplay(input: {
