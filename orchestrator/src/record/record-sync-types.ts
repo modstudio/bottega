@@ -63,7 +63,6 @@ export type RecordSyncResult = {
     briefInjections: number
     contextReviews: number
     hookEmissions: number
-    questions: { enqueued: number }
     releases: ReturnType<typeof backfillReleaseRecords>
   }
 }

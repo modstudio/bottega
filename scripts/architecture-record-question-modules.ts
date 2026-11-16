@@ -56,6 +56,10 @@ export const recordQuestionModules: RecordModule[] = [
     './question-store-sqlite.ts',
     './question-store-types.ts',
   ]),
+  module('orchestrator/src/question-store/question-run-pusher.ts', [
+    'bun:sqlite',
+    '../../../shared/brand.ts',
+  ]),
   module('orchestrator/src/question-store/question-store-record-factory.ts', [
     'bun:sqlite',
     '../record/record-api-client-question.ts',
@@ -72,7 +76,6 @@ export const recordQuestionModules: RecordModule[] = [
   ]),
   module('orchestrator/src/question-store/question-store-record.ts', [
     'bun:sqlite',
-    '../../../shared/brand.ts',
     '../../../shared/record-space-membership.ts',
     '../../../shared/session-liveness.ts',
     '../project/project-read.ts',
@@ -82,6 +85,7 @@ export const recordQuestionModules: RecordModule[] = [
     '../record/record-project-destination-client.ts',
     '../record/record-space-cardinality.ts',
     '../record/record-question-contract.ts',
+    './question-run-pusher.ts',
     './question-store-types.ts',
   ]),
   module('orchestrator/src/question-store/question-store-types.ts', [

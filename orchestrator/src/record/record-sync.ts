@@ -268,12 +268,6 @@ function planBatchRow(
 }
 
 function preparePendingRows(local: Database): Set<PreparedOutboxRow> {
-  local
-    .query(
-      `UPDATE outbox SET retired_at=?,retirement_reason='question outbox kind retired; questions write directly to the record'
-       WHERE kind='question' AND synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL`,
-    )
-    .run(nowIso())
   const rows = local
     .query<OutboxRow, []>(
       `SELECT id, kind, row_id, payload FROM outbox
@@ -716,7 +710,6 @@ function syncBackfill(
     briefInjections: backfillBriefInjections(local),
     contextReviews: backfillContextReviews(local),
     hookEmissions: backfillHookEmissions(local),
-    questions: { enqueued: 0 },
     releases: backfillReleaseRecords(local),
   }
 }

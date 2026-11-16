@@ -1,10 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { COLLECT_CHANGE_CURSOR_PROBE } from '../../../shared/orch-contract.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { installRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { runJson } from '../../test/fixtures/replies.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
+import type { RecordApiClient } from '../record/record-api-client.ts'
 import type { ProcessSample } from '../process-resource-sampler.ts'
 import { runDetail } from '../state/serve.ts'
 import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from './run-host-capacity.ts'
@@ -12,7 +15,8 @@ import { runIdentityMap, runListingCommand } from './run-listing.ts'
 import type { SubscriptionCostContext } from './run-subscription-cost.ts'
 import { subscriptionCostFacts } from './run-subscription-cost-store.ts'
 
-function command(
+function commandWithListingOptions(
+  listingOptions: Parameters<typeof runListingCommand>[0],
   args: Record<string, string[] | boolean> = {},
   thinOutputWarning: Parameters<typeof runListingCommand>[2]['thinOutputWarning'] = () => null,
   observation: Parameters<typeof runListingCommand>[2]['processObservation'] = {
@@ -26,7 +30,7 @@ function command(
   const values = (name: string) => (Array.isArray(args[name]) ? (args[name] as string[]) : [])
   const flag = (name: string) => values(name)[0]
   return runListingCommand(
-    { jsonV1: false, changedAfter: null },
+    listingOptions,
     {
       has: (name) => args[name] === true || values(name).length > 0,
       flag,
@@ -53,6 +57,26 @@ function command(
   ).then(() => lines)
 }
 
+function command(
+  args: Record<string, string[] | boolean> = {},
+  thinOutputWarning: Parameters<typeof runListingCommand>[2]['thinOutputWarning'] = () => null,
+  observation: Parameters<typeof runListingCommand>[2]['processObservation'] = {
+    sampleProcesses: () => [],
+    processStartTime: () => null,
+  },
+  clock: () => number = Date.now,
+  subscriptionCost?: SubscriptionCostContext,
+) {
+  return commandWithListingOptions(
+    { jsonV1: false, changedAfter: null },
+    args,
+    thinOutputWarning,
+    observation,
+    clock,
+    subscriptionCost,
+  )
+}
+
 function insert(status: string, job = 'implement') {
   return addRun({ agent: 'codex', job, status })
 }
@@ -64,6 +88,41 @@ function runNumber(recordId: string): number {
 }
 
 describe('run listing', () => {
+  test('hosted collection probe returns an advancing record question cursor without rows', async () => {
+    const previous = process.env.BOTTEGA_RECORD_API_URL
+    process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+    installRecordApiClient({
+      whoami: async () => ({
+        user: { id: newRecordId() },
+        activeSpaceId: newRecordId(),
+        personalSpaceId: newRecordId(),
+        memberships: [],
+      }),
+      readQuestions: async () => ({ items: [], cursor: 'record-position' }),
+    } as RecordApiClient)
+    try {
+      const lines = await commandWithListingOptions(
+        { jsonV1: false, changedAfter: COLLECT_CHANGE_CURSOR_PROBE },
+        { json: true },
+      )
+      expect(lines.slice(0, -1).map(runJson)).toEqual([])
+      expect(lines.at(-1)).toContain('"kind":"cursor"')
+    } finally {
+      installRecordApiClient(null)
+      if (previous === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+      else process.env.BOTTEGA_RECORD_API_URL = previous
+    }
+  })
+
+  test('local collection probe returns an advancing question cursor without rows', async () => {
+    const lines = await commandWithListingOptions(
+      { jsonV1: false, changedAfter: COLLECT_CHANGE_CURSOR_PROBE },
+      { json: true },
+    )
+    expect(lines.slice(0, -1).map(runJson)).toEqual([])
+    expect(lines.at(-1)).toContain('"kind":"cursor"')
+  })
+
   test('run identity mapping includes roots and turns', () => {
     const root = insert('asking')
     const turn = insert('running')

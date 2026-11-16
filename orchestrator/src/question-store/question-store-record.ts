@@ -2,7 +2,6 @@
 /** Adapts hosted question routes, with only machine-owned inbox liveness enriched locally. */
 
 import type { Database } from 'bun:sqlite'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { projectByRecordId } from '../project/project-read.ts'
@@ -17,6 +16,7 @@ import type {
 } from '../record/record-question-contract.ts'
 import { questionChangedAfterRefusal } from '../record/record-question-contract.ts'
 import { decideSingleRecordSpace } from '../record/record-space-cardinality.ts'
+import { resolveQuestionRunPusher } from './question-run-pusher.ts'
 import type { QuestionReadResult, QuestionReadRow, QuestionStore } from './question-store-types.ts'
 
 function localQuestionRow(
@@ -128,18 +128,7 @@ export class RecordQuestionStore implements QuestionStore {
 
   private async pushRun(runId: string): Promise<void> {
     if (this.input.pushRun) return this.input.pushRun(runId)
-    const syncModule = '../record/record-sync.ts'
-    const { syncRecord } = await import(syncModule)
-    await syncRecord({ local: this.input.database })
-    const synced = this.input.database
-      .query<{ synced_at: string | null }, [string]>(
-        `SELECT synced_at FROM outbox WHERE kind='run' AND row_id=? ORDER BY id DESC LIMIT 1`,
-      )
-      .get(runId)
-    if (!synced?.synced_at)
-      throw new Error(
-        `run ${runId} did not reach the hosted record; run \`${PLATFORM_SLUG} record sync\`, inspect the outbox refusal, then retry`,
-      )
+    await resolveQuestionRunPusher()(this.input.database, runId)
   }
 
   private allDestinations(): Promise<RecordWriteDestination[]> {

@@ -197,7 +197,6 @@ test('sync presentation reports released run payloads skipped by backfill', asyn
             refreshedRoots: 0,
             skippedReleased: 2,
             skippedLive: 1,
-            questions: { enqueued: 0 },
             scores: 0,
             reviews: { enqueuedReviews: 0, enqueuedReads: 0 },
             landingEvidence: {

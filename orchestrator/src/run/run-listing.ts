@@ -406,9 +406,9 @@ function rootIdsForQuestionRows(rows: Record<string, unknown>[]): string[] {
   ]
 }
 
-type RunChangeCursor = { run: number; questions: string }
+type RunChangeCursor = { run: number; questions: string | null }
 function decodeRunChangeCursor(value: string): RunChangeCursor {
-  if (/^\d+$/.test(value)) return { run: Number(value), questions: value }
+  if (/^\d+$/.test(value)) return { run: Number(value), questions: null }
   try {
     const parsed = JSON.parse(Buffer.from(value, 'base64url').toString()) as RunChangeCursor
     if (!Number.isSafeInteger(parsed.run) || parsed.run < 0 || !parsed.questions) throw null
@@ -446,13 +446,15 @@ async function applyChangedAfterFilter(
 ): Promise<string | null> {
   if (after === null) return null
   const position = decodeRunChangeCursor(after)
-  const changedQuestions = await questionRulings(db(), {
-    kind: 'run',
-    changedAfter: position.questions,
-  })
+  const changedQuestions = position.questions
+    ? await questionRulings(db(), {
+        kind: 'run',
+        changedAfter: position.questions,
+      })
+    : null
   const snapshot =
     db().query<{ value: number }, []>('SELECT value FROM collect_change_counter').get()?.value ?? 0
-  const questionRootIds = rootIdsForQuestionRows(changedQuestions.items)
+  const questionRootIds = rootIdsForQuestionRows(changedQuestions?.items ?? [])
   where.push(`(
     EXISTS (
       SELECT 1 FROM run changed_run
@@ -463,7 +465,7 @@ async function applyChangedAfterFilter(
   args.push(position.run, snapshot, ...questionRootIds)
   return encodeRunChangeCursor({
     run: snapshot,
-    questions: changedQuestions.cursor ?? position.questions,
+    questions: changedQuestions?.cursor ?? position.questions ?? '0',
   })
 }
 

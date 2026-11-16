@@ -592,8 +592,14 @@ const declaredModules: ArchitectureModule[] = [
   ...reviewModules,
   module('orchestrator/src/runtime/runtime-registration.ts', [
     './standard-calibration.ts',
+    './standard-question-run-pusher.ts',
     './store-hooks.ts',
     './standard-transports.ts',
+  ]),
+  module('orchestrator/src/runtime/standard-question-run-pusher.ts', [
+    '../../../shared/brand.ts',
+    '../question-store/question-run-pusher.ts',
+    '../record/record-sync.ts',
   ]),
   module('orchestrator/src/transport/ajv-validator.ts', []),
   module('orchestrator/src/transport/ajv-validator-loader.ts', ['./ajv-validator.ts']),
