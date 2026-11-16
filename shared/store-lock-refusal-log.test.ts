@@ -6,6 +6,7 @@ import { STATE_HOME_ENV } from './state-directory.ts'
 import { appendStoreLockRefusal, readStoreLockRefusalsSince } from './store-lock-refusal-log.ts'
 
 const originalStateHome = process.env[STATE_HOME_ENV]
+const hubStoreAdapterFile = resolve(import.meta.dir, '../hub/src/db.ts')
 let stateHome = ''
 
 beforeEach(() => {
@@ -36,10 +37,10 @@ test('store lock refusals append, filter by time, and rotate to one previous fil
     `SQLiteError: database is locked\n` +
     `    at write (${resolve(import.meta.dir, '../hub/src/db.ts')}:100:2)\n` +
     `    at apply (${resolve(import.meta.dir, '../hub/src/tasks.ts')}:200:4)`
-  appendStoreLockRefusal(facts, ['task', 'set', 'DEV-1'], snapshotError, {
+  appendStoreLockRefusal(facts, ['task', 'set', 'DEV-1'], snapshotError, hubStoreAdapterFile, {
     now: new Date('2026-10-28T10:00:00.000Z'),
   })
-  appendStoreLockRefusal(facts, ['note', 'new', 'words'], snapshotError, {
+  appendStoreLockRefusal(facts, ['note', 'new', 'words'], snapshotError, hubStoreAdapterFile, {
     now: new Date('2026-10-28T10:01:00.000Z'),
   })
 
@@ -57,7 +58,7 @@ test('store lock refusals append, filter by time, and rotate to one previous fil
     },
   ])
 
-  appendStoreLockRefusal(facts, ['task', 'close'], snapshotError, {
+  appendStoreLockRefusal(facts, ['task', 'close'], snapshotError, hubStoreAdapterFile, {
     maxBytes: 1,
     now: new Date('2026-10-28T10:02:00.000Z'),
   })
@@ -73,6 +74,7 @@ test('an unavailable holder round-trips its reason and an older row defaults it 
     { store: '/state/hub/hub.db', holder: { unavailable: 'process inspection denied' } },
     ['task', 'set'],
     { code: 'SQLITE_LOCKED', errno: 6 },
+    hubStoreAdapterFile,
     { now: new Date('2026-10-28T10:00:00.000Z') },
   )
   appendFileSync(
@@ -119,6 +121,7 @@ test('an append failure in an unwritable state directory does not throw', () => 
       { store: '/state/orchestrator/orchestrator.db', holder: { unavailable: 'not sampled' } },
       ['run', 'start'],
       { code: 'SQLITE_BUSY' },
+      resolve(import.meta.dir, '../orchestrator/src/database/db.ts'),
     ),
   ).not.toThrow()
 })

@@ -1,21 +1,27 @@
 /** Pure stack parsing that names the first repository frame outside the supplied sources. */
 
-import { isAbsolute, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 type WriteCallerOptions = {
-  repositoryRoot: string
+  repositoryRoot?: string
   excludedFiles?: readonly string[]
   excludedDirectories?: readonly string[]
 }
+
+const writeCallerSourcePath = fileURLToPath(import.meta.url)
+const repositoryRootFromShared = resolve(dirname(writeCallerSourcePath), '..')
 
 function isWithin(directory: string, path: string): boolean {
   const fromDirectory = relative(directory, path)
   return fromDirectory === '' || (!fromDirectory.startsWith('..') && !isAbsolute(fromDirectory))
 }
 
-export function writeCallerFromStack(stack: string, options: WriteCallerOptions): string | null {
-  const repositoryRoot = resolve(options.repositoryRoot)
+export function writeCallerFromStack(
+  stack: string,
+  options: WriteCallerOptions = {},
+): string | null {
+  const repositoryRoot = resolve(options.repositoryRoot ?? repositoryRootFromShared)
   const excludedFiles = new Set((options.excludedFiles ?? []).map((path) => resolve(path)))
   const excludedDirectories = (options.excludedDirectories ?? []).map((path) => resolve(path))
   for (const line of stack.split('\n').slice(1)) {

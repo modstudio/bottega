@@ -1,6 +1,6 @@
 /** Best-effort file adapter for store lock refusals that cannot be written to either store. */
 
-import { dirname, join, resolve } from 'node:path'
+import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { appendBoundedJsonLine, readBoundedJsonLinesSince } from './bounded-json-lines-log.ts'
 import {
@@ -15,15 +15,7 @@ import { writeCallerFromStack } from './write-caller-from-stack.ts'
 const STORE_LOCK_REFUSAL_LOG_MAX_BYTES = 1_048_576
 const LOG_NAME = 'store-lock-refusals'
 const refusalLogSourcePath = fileURLToPath(import.meta.url)
-const repositoryRoot = resolve(dirname(refusalLogSourcePath), '..')
-const refusalCallerOptions = {
-  repositoryRoot,
-  excludedFiles: [
-    join(repositoryRoot, 'hub/src/db.ts'),
-    join(repositoryRoot, 'orchestrator/src/database/db.ts'),
-  ],
-  excludedDirectories: [join(repositoryRoot, 'shared')],
-}
+const refusalLogDirectory = dirname(refusalLogSourcePath)
 
 export type StoreLockRefusalEntry = {
   at: string
@@ -46,6 +38,7 @@ function refusalEntry(
   facts: DatabaseLockRefusalFacts,
   argv: readonly string[],
   error: unknown,
+  storeAdapterFile: string,
   now: Date,
 ): StoreLockRefusalEntry {
   const identity = sqliteErrorIdentity(error)
@@ -55,8 +48,15 @@ function refusalEntry(
       : null
   return {
     at: now.toISOString(),
-    caller: typeof stack === 'string' ? writeCallerFromStack(stack, refusalCallerOptions) : null,
-    ...identity,
+    caller:
+      typeof stack === 'string'
+        ? writeCallerFromStack(stack, {
+            excludedFiles: [storeAdapterFile],
+            excludedDirectories: [refusalLogDirectory],
+          })
+        : null,
+    code: identity.code,
+    errno: identity.errno,
     store: facts.store,
     holderCommand:
       'pid' in facts.holder && facts.holder.command
@@ -73,13 +73,17 @@ export function appendStoreLockRefusal(
   facts: DatabaseLockRefusalFacts,
   argv: readonly string[],
   error: unknown,
+  storeAdapterFile: string,
   options: AppendOptions = {},
 ): void {
   try {
-    appendBoundedJsonLine(refusalEntry(facts, argv, error, options.now ?? new Date()), {
-      maxBytes: options.maxBytes ?? STORE_LOCK_REFUSAL_LOG_MAX_BYTES,
-      name: LOG_NAME,
-    })
+    appendBoundedJsonLine(
+      refusalEntry(facts, argv, error, storeAdapterFile, options.now ?? new Date()),
+      {
+        maxBytes: options.maxBytes ?? STORE_LOCK_REFUSAL_LOG_MAX_BYTES,
+        name: LOG_NAME,
+      },
+    )
   } catch {
     // Measurement must never change the refusal's result or message.
   }
@@ -90,8 +94,9 @@ export function recordDatabaseLockRefusal(
   facts: DatabaseLockRefusalFacts,
   argv: readonly string[],
   error: unknown,
+  storeAdapterFile: string,
 ): string {
-  appendStoreLockRefusal(facts, argv, error)
+  appendStoreLockRefusal(facts, argv, error, storeAdapterFile)
   return formatDatabaseLockRefusal(facts)
 }
 

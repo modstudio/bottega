@@ -47,7 +47,7 @@ import { register as registerSubjects } from '../commands/subjects.ts'
 import { drainStdout, setRawArgv, write } from '../commands/support.ts'
 import { register as registerSync } from '../commands/sync.ts'
 import { register as registerTestSubstance } from '../commands/test-substance.ts'
-import { DB_PATH, withReadOnlyDatabaseAccess } from '../database/db.ts'
+import { DB_PATH, dbSourcePath, withReadOnlyDatabaseAccess } from '../database/db.ts'
 import { recordSessionHostPressure } from '../host-pressure/host-pressure-service.ts'
 import { classifyRunIdentifier } from '../run/run-identifier.ts'
 
@@ -184,13 +184,13 @@ export async function lockedStoreMessage(
           sampled.supported && sampled.holderPid !== null ? commandOf(sampled.holderPid) : null,
       }),
     }
-    return recordDatabaseLockRefusal(facts, argv, error)
+    return recordDatabaseLockRefusal(facts, argv, error, dbSourcePath)
   } catch (inspectionError) {
     const facts = {
       store: DB_PATH,
       holder: databaseLockHolder({ failed: inspectionError }),
     }
-    return recordDatabaseLockRefusal(facts, argv, error)
+    return recordDatabaseLockRefusal(facts, argv, error, dbSourcePath)
   }
 }
 

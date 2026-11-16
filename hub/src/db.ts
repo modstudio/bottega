@@ -210,7 +210,7 @@ let openedUserVersion: number | null = null
 let schemaReload: ((from: number, to: number) => void) | null = null
 const writeDepth = new WeakMap<Database, number>()
 const writeHoldWindows = new WeakMap<Database, WriteHoldWindow>()
-const dbSourcePath = fileURLToPath(import.meta.url)
+export const dbSourcePath = fileURLToPath(import.meta.url)
 
 /** Ensure an ordinary store-needing command has a current, authorized store. */
 export function requireDatabase(): void {
@@ -232,7 +232,6 @@ export function closeDatabaseForFixture(): void {
 
 function writeCaller(): string | null {
   return writeCallerFromStack(new Error().stack ?? '', {
-    repositoryRoot: resolve(dirname(dbSourcePath), '../..'),
     excludedFiles: [dbSourcePath],
   })
 }

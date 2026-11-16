@@ -13,7 +13,7 @@ import {
   rmSync,
 } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { createReadOnlyDatabaseAccess } from '../../../shared/read-only-database-access.ts'
@@ -87,6 +87,8 @@ import {
   WRITE_PROBE_TABLE_PREFIX,
   writeProbeOwnerPid,
 } from './write-probe.ts'
+
+export const dbSourcePath = fileURLToPath(import.meta.url)
 
 export { DATABASE_RESOLUTION, DB_PATH, ROOT } from './database-location.ts'
 export { callerIdentity, sessionId }

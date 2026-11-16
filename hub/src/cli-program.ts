@@ -13,7 +13,13 @@ import { installationVersionText } from '../../shared/install-root.ts'
 import { recordDatabaseLockRefusal } from '../../shared/store-lock-refusal-log.ts'
 import { HubCommand } from './cli-command.ts'
 import { registerCoreCommands } from './core-cli.ts'
-import { DB_PATH, hubDatabaseLockHolder, nowIso, withReadOnlyDatabaseAccess } from './db.ts'
+import {
+  DB_PATH,
+  dbSourcePath,
+  hubDatabaseLockHolder,
+  nowIso,
+  withReadOnlyDatabaseAccess,
+} from './db.ts'
 import { registerNoteCommands } from './note-cli.ts'
 import { registerOutboxCommands } from './outbox-cli.ts'
 import { registerReportCommands } from './report-cli.ts'
@@ -78,7 +84,7 @@ function literalHelp(argv: string[]): string[] {
 async function cliErrorMessage(error: unknown, argv: readonly string[]): Promise<string> {
   if (!isDatabaseLocked(error)) return error instanceof Error ? error.message : String(error)
   const facts = { store: DB_PATH, holder: await hubDatabaseLockHolder() }
-  return recordDatabaseLockRefusal(facts, argv, error)
+  return recordDatabaseLockRefusal(facts, argv, error, dbSourcePath)
 }
 
 export async function run(

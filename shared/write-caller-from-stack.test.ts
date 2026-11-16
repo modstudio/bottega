@@ -24,6 +24,8 @@ test('caller frames skip supplied files and directories and reject paths outside
   expect(
     writeCallerFromStack(
       'Error\n' +
+        '    at run (unknown)\n' +
+        '    at run (bun:sqlite:318:19)\n' +
         '    at write (/repo/hub/src/db.ts:10:2)\n' +
         '    at record (/repo/shared/store-lock-refusal-log.ts:20:3)\n' +
         '    at apply (/repo/hub/src/tasks.ts:30:4)',

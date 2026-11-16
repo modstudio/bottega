@@ -28,7 +28,12 @@ export function sqliteErrorIdentity(error: unknown): { code: string | null; errn
 
 export function isDatabaseLocked(error: unknown): boolean {
   const { code, errno } = sqliteErrorIdentity(error)
-  if (errno !== null && [5, 6].includes(errno & 0xff)) return true
+  if (
+    errno !== null &&
+    (code === null || code.startsWith('SQLITE_')) &&
+    [5, 6].includes(errno & 0xff)
+  )
+    return true
   if (
     code === 'SQLITE_BUSY' ||
     code?.startsWith('SQLITE_BUSY_') ||
@@ -37,7 +42,7 @@ export function isDatabaseLocked(error: unknown): boolean {
   ) {
     return true
   }
-  if (code !== null || errno !== null) return false
+  if (code?.startsWith('SQLITE_') || (code === null && errno !== null)) return false
   return /database (?:table )?is locked/i.test(
     String((error as { message?: unknown } | null)?.message),
   )
