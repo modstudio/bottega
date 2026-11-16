@@ -5,7 +5,7 @@ import { contextItemRevision, setContextItem } from './context-service.ts'
 import { ContextWriteRefusalError } from './doc-context-write.ts'
 
 export type ContextMomentPorts = {
-  set: typeof setContextItem
+  set(input: Parameters<typeof setContextItem>[0]): Promise<object | { warning: string | null }>
   revision: typeof contextItemRevision
 }
 
@@ -14,6 +14,8 @@ const productionPorts: ContextMomentPorts = {
   revision: contextItemRevision,
 }
 const detail = (error: unknown) => (error instanceof Error ? error.message : String(error))
+const resultWarning = (result: object) =>
+  'warning' in result && typeof result.warning === 'string' ? result.warning : null
 const writeLine = (line: string, json: boolean, output: ContextMomentOutput) =>
   json ? output.error(line) : output.log(line)
 
@@ -31,8 +33,10 @@ export async function applyContextMomentEffect(
     const target = item.holder.kind === 'task' ? item.holder.value : `cursor ${item.holder.value}`
     try {
       const expectedRevision = await ports.revision({ ...selection, id: item.id })
-      await ports.set({ ...selection, ...item, expectedRevision })
+      const result = await ports.set({ ...selection, ...item, expectedRevision })
       writeLine(`context: wrote ${item.kind} ${item.id} on ${target}`, json, output)
+      const warning = resultWarning(result)
+      if (warning) writeLine(warning, json, output)
     } catch (error) {
       const retry =
         error instanceof ContextWriteRefusalError || !item.retry ? '' : `; retry: ${item.retry}`

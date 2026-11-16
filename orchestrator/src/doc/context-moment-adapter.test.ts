@@ -51,6 +51,24 @@ test('a context policy refusal has no retry command', async () => {
   expect(lines[0]).not.toContain('retry:')
 })
 
+test('a successful answer write reports its cursor warning after the write', async () => {
+  const lines: string[] = []
+  const warning = 'warning: no open workflow cursor carries DEV-2267 or its descendants'
+  const ports = {
+    revision: async () => undefined,
+    set: async () => ({ warning }) as Awaited<ReturnType<ContextMomentPorts['set']>>,
+  } as ContextMomentPorts
+
+  await applyContextMomentEffect(
+    answered,
+    false,
+    { log: (line) => lines.push(line), error: () => {} },
+    ports,
+  )
+
+  expect(lines).toEqual(['context: wrote position position-q12 on DEV-2267', warning])
+})
+
 test('a keyless cursor ruling writes exactly once to its cursor holder', async () => {
   const selections: unknown[] = []
   const ports = {

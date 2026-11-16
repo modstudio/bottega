@@ -6,6 +6,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { splitContextHolder } from '../../../shared/context-item-vocabulary.ts'
 import { db } from '../database/db.ts'
 import { contextBrief } from '../doc/context-brief.ts'
+import { taskHoldersCarriedByOpenCursors } from '../doc/context-cursor-warning-decision.ts'
 import type { StoredContextItem } from '../doc/context-item-store.ts'
 import { cursorContextHolder, taskContextHolder } from '../doc/doc-subjects.ts'
 import { listWorkflowCursors } from '../workflow/workflow-cursor-list.ts'
@@ -175,6 +176,13 @@ export async function reviewContext(
     compactionGaps: compactionGaps(database, now),
     items,
     openCursors,
+    carriedTaskHolders: taskHoldersCarriedByOpenCursors(
+      cursors.map((cursor) => ({
+        project: cursor.project,
+        taskKey: cursor.workflow_key || null,
+      })),
+      tasks,
+    ),
     doneTaskKeys: tasks.filter((task) => task.status_category === 'done').map((task) => task.key),
   }
   const decision = decideContextReview(facts)

@@ -19,6 +19,7 @@ function facts(overrides: Partial<ContextReviewFacts> = {}): ContextReviewFacts 
     compactionGaps: [],
     items: [],
     openCursors: [],
+    carriedTaskHolders: [],
     doneTaskKeys: [],
     ...overrides,
   }
@@ -116,6 +117,7 @@ test('flags only stale facts and pointers and orders flagged items first', () =>
     facts({
       items,
       openCursors: [{ holder: 'task:open', stepStartedAt: now - 1_000 }],
+      carriedTaskHolders: ['task:open'],
       doneTaskKeys: ['DEV-1'],
     }),
   )
@@ -138,4 +140,26 @@ test('flags only stale facts and pointers and orders flagged items first', () =>
     ['ruling', false, null],
     ['position', false, null],
   ])
+})
+
+test('an epic carried through a child cursor is not stale or older than the child step', () => {
+  const epicHolder = 'task:epic'
+  const decision = decideContextReview({
+    ...facts({
+      items: [
+        {
+          recordId: 'record-epic',
+          id: 'epic-fact',
+          kind: 'fact',
+          holder: epicHolder,
+          updatedAt: now - 10_000,
+          body: 'still current',
+        },
+      ],
+      openCursors: [{ holder: 'task:child', stepStartedAt: now - 1_000 }],
+    }),
+    carriedTaskHolders: [epicHolder, 'task:child'],
+  })
+
+  expect(decision.items[0]).toEqual(expect.objectContaining({ flagged: false, reason: null }))
 })

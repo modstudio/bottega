@@ -5,9 +5,13 @@ import {
   type ContextItemKind,
   splitContextHolder,
 } from '../../../shared/context-item-vocabulary.ts'
+import { withholdSecretShapedDetail } from '../../../shared/secret-shaped.ts'
 import { db, sessionId, writableDb } from '../database/db.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
+import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { openKeylessCursorsForSession } from '../workflow/workflow-cursor-list.ts'
+import type { HubTaskReference } from '../workflow/workflow-task-reference.ts'
+import { contextCursorWarning } from './context-cursor-warning-decision.ts'
 import { hostedContextItemClient } from './context-item-hosted-client.ts'
 import {
   getContextItem,
@@ -22,7 +26,7 @@ import {
   assertContextSetAllowed,
   contextCursorOwner,
   contextProfileForHolder,
-  resolveContextTask,
+  resolveContextTaskWithProjectTasks,
   resolvedPointerTarget,
 } from './context-write-adapter.ts'
 import {
@@ -36,7 +40,11 @@ import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
 
 export type ContextHolderSelection = { task?: string; session?: string; cursor?: string }
 
-type ResolvedContextHolder = { holder: string; task: ContextTaskIdentity | null }
+type ResolvedContextHolder = {
+  holder: string
+  task: ContextTaskIdentity | null
+  projectTasks: HubTaskReference[]
+}
 
 async function resolveContextHolder(
   selection: ContextHolderSelection,
@@ -44,14 +52,39 @@ async function resolveContextHolder(
   if (selection.task && selection.session) throw new Error('use --task or --session, not both')
   if (selection.cursor && (selection.task || selection.session))
     throw new Error('select exactly one context holder')
-  if (selection.cursor) return { holder: cursorContextHolder(selection.cursor), task: null }
+  if (selection.cursor)
+    return { holder: cursorContextHolder(selection.cursor), task: null, projectTasks: [] }
   if (selection.task) {
-    const task = await resolveContextTask(selection.task)
-    return { holder: taskContextHolder(task.record_id), task }
+    const resolved = await resolveContextTaskWithProjectTasks(selection.task)
+    return {
+      holder: taskContextHolder(resolved.task.record_id),
+      task: resolved.task,
+      projectTasks: resolved.tasks,
+    }
   }
   const owner = selection.session ?? sessionId()
   if (!owner) throw new Error('no caller session; pass --task KEY or --session ID')
-  return { holder: `session:${owner}`, task: null }
+  return { holder: `session:${owner}`, task: null, projectTasks: [] }
+}
+
+async function taskCursorWarning(
+  task: ContextTaskIdentity,
+  tasks: readonly HubTaskReference[],
+): Promise<string | null> {
+  try {
+    const cursors = await taskFlowReadStore(db()).listOpenStages({ project: task.project })
+    return contextCursorWarning({
+      task,
+      tasks,
+      openCursors: cursors.map((cursor) => ({
+        project: cursor.project,
+        taskKey: cursor.workflow_key || null,
+      })),
+    })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    return `warning: cursor check unavailable: ${withholdSecretShapedDetail(detail)}; the item was written, and rerunning the same context set once the store answers repeats the check`
+  }
 }
 
 export async function getContext(selection: ContextHolderSelection) {
@@ -231,7 +264,7 @@ export async function setContextItem(
   },
 ) {
   assertWorkerDocStoreWriteAllowed('setContextItem')
-  const { holder, task } = await resolveContextHolder(input)
+  const { holder, task, projectTasks } = await resolveContextHolder(input)
   writableDb()
   const questionNumber = /^(?:q)(\d+)$/.exec(input.source.trim())
   const item = {
@@ -292,6 +325,7 @@ export async function setContextItem(
       })
     },
   })
+  const warning = task ? await taskCursorWarning(task, projectTasks) : null
   return {
     task: task?.key ?? null,
     holder: written.holder,
@@ -300,6 +334,7 @@ export async function setContextItem(
     source: written.source,
     body: written.body,
     revision: written.revision,
+    warning,
   }
 }
 

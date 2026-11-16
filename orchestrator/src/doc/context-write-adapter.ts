@@ -146,17 +146,32 @@ export function contextCursorOwner(holder: string, database: Database = db()) {
   )
 }
 
-/** Resolve a person-facing task key once into the stable identity context stores. */
-export async function resolveContextTask(
+/** Resolve a task while retaining the project task-list read used to resolve it. */
+export async function resolveContextTaskWithProjectTasks(
   value: string,
   database: Database = db(),
   ports: ContextFactsPorts = defaultContextFactsPorts(),
-): Promise<ContextTask> {
+): Promise<{ task: ContextTask; tasks: ContextTask[] }> {
   const key = value.trim().toUpperCase()
   const prefix = taskKeyPrefix(key) ?? key.split('-', 1)[0] ?? key
   const project = projectForTaskKey(key, projects(undefined, database))
   if (!project) throw new ContextTaskPrefixError(key, prefix)
-  return resolveOrPullHubTaskReference(project.name, key, ports.tasks, ports.task)
+  let projectTasks: ContextTask[] = []
+  const task = await resolveOrPullHubTaskReference(
+    project.name,
+    key,
+    async (name) => {
+      projectTasks = await ports.tasks(name)
+      return projectTasks
+    },
+    ports.task,
+  )
+  return {
+    task,
+    tasks: projectTasks.some((candidate) => candidate.record_id === task.record_id)
+      ? projectTasks
+      : [...projectTasks, task],
+  }
 }
 
 type ContextTaskByRecordId = { task: ContextTask | null; unreadable: string[] }

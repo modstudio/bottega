@@ -29,6 +29,7 @@ export type ContextReviewFacts = {
   compactionGaps: readonly { at: number; gapMs: number }[]
   items: readonly ContextReviewItem[]
   openCursors: readonly ContextReviewCursor[]
+  carriedTaskHolders: readonly string[]
   doneTaskKeys: readonly string[]
 }
 
@@ -73,14 +74,14 @@ function namedDoneTask(body: string, doneTaskKeys: readonly string[]): string | 
 
 function staleReason(
   item: ContextReviewItem,
-  facts: Pick<ContextReviewFacts, 'openCursors' | 'doneTaskKeys'>,
+  facts: Pick<ContextReviewFacts, 'openCursors' | 'carriedTaskHolders' | 'doneTaskKeys'>,
 ): string | null {
   if (item.kind === 'ruling' || item.kind === 'position') return null
   const cursor = facts.openCursors.find((candidate) => candidate.holder === item.holder)
   if (cursor && item.updatedAt < cursor.stepStartedAt) return 'older than the current step'
   const doneTask = namedDoneTask(item.body, facts.doneTaskKeys)
   if (doneTask) return `names done task ${doneTask}`
-  const holdersWithOpenCursor = new Set(facts.openCursors.map((openCursor) => openCursor.holder))
+  const holdersWithOpenCursor = new Set(facts.carriedTaskHolders)
   if (item.holder.startsWith('task:') && !holdersWithOpenCursor.has(item.holder))
     return 'holder has no open cursor'
   return null

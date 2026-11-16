@@ -59,7 +59,7 @@ export type ContextMomentOutput = {
   error(line: string): void
 }
 
-const shellWord = (value: string) => `'${value.replace(/'/g, "'\\''")}'`
+export const shellWord = (value: string) => `'${value.replace(/'/g, "'\\''")}'`
 
 function contextSetCommand(
   taskKey: string,

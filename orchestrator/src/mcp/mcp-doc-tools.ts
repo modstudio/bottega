@@ -471,8 +471,10 @@ function registerContextTools(server: McpServer): void {
         expected_revision: z.string().optional(),
       }),
     },
-    async ({ expected_revision, ...input }) =>
-      text(await setContextItem({ ...input, expectedRevision: expected_revision })),
+    async ({ expected_revision, ...input }) => {
+      const result = await setContextItem({ ...input, expectedRevision: expected_revision })
+      return text(JSON.stringify(result))
+    },
   )
   server.registerTool(
     'drop_context_item',
