@@ -95,9 +95,12 @@ export function registerRecordQuestionRoutes(
     if (!intent.success || !body.success)
       return context.json(
         {
-          error: body.success
-            ? 'invalid direct question write request'
-            : directWriteRefusal(body.error.issues),
+          error: directWriteRefusal([
+            ...(intent.success
+              ? []
+              : intent.error.issues.map((issue) => ({ ...issue, path: ['(intent)'] }))),
+            ...(body.success ? [] : body.error.issues),
+          ]),
         },
         400,
       )

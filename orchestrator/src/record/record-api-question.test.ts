@@ -148,3 +148,12 @@ test('invalid direct question writes name the failing body path', async () => {
     error: expect.stringContaining('question.askedAt:'),
   })
 })
+
+test('an unknown direct question write intent is named in the refusal', async () => {
+  const response = await app({ writeQuestion: async () => ({ applied: true }) }).request(
+    '/v1/questions/answerr',
+    { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' },
+  )
+  expect(response.status).toBe(400)
+  expect(await response.json()).toMatchObject({ error: expect.stringContaining('(intent):') })
+})
