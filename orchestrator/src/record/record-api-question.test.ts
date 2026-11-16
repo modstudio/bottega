@@ -70,3 +70,81 @@ test('hosted question reads other than rulings still refuse changedAfter', async
   expect(response.status).toBe(422)
   expect(await response.json()).toMatchObject({ remedy: expect.stringContaining('rulings read') })
 })
+
+test('invalid direct question writes name the failing body path', async () => {
+  const response = await app({ writeQuestion: async () => ({ applied: true }) }).request(
+    '/v1/questions/answer',
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        requestId: '00000000-0000-4000-8000-000000000001',
+        question: {
+          id: '00000000-0000-4000-8000-000000000002',
+          runId: null,
+          workflowKey: null,
+          workflowTaskId: null,
+          workflowCursorRecordId: null,
+          projectId: null,
+          machineId: '00000000-0000-4000-8000-000000000003',
+          revision: 1,
+          askedAt: 'not-a-timestamp',
+          question: 'Proceed?',
+          options: null,
+          recommendation: null,
+          why: null,
+          askedVia: null,
+          kind: null,
+          typedOptions: null,
+          criteria: null,
+          levels: null,
+          answer: null,
+          answerValue: null,
+          answerBasis: null,
+          answeredAt: null,
+          answeredBy: null,
+          answeredByName: null,
+          answeredByKind: null,
+          answererKind: null,
+          answerChannel: null,
+          jevPick: null,
+          jevConfidence: null,
+          jevProbabilities: null,
+          jevModel: null,
+          jevInputTokens: null,
+          jevError: null,
+          jevAgreed: null,
+          jevQuestionVersion: null,
+          jevFits: null,
+          jevOrderFlipped: null,
+          awaitingOperatorAt: null,
+          relayedBy: null,
+          overturnedAt: null,
+          overturnedBy: null,
+          overturnedByName: null,
+          overturnReason: null,
+          replacement: null,
+          filedAs: null,
+          filedRef: null,
+          filedRecordId: null,
+          filedLabel: null,
+          filedAt: null,
+          closedAt: null,
+          closeReason: null,
+          createdAt: '2026-11-16T20:09:29.002Z',
+          updatedAt: '2026-11-16T20:09:29.002Z',
+        },
+        audit: {
+          action: 'answer',
+          actorSession: null,
+          at: '2026-11-16T20:09:29.002Z',
+          reason: null,
+        },
+      }),
+    },
+  )
+  expect(response.status).toBe(400)
+  expect(await response.json()).toMatchObject({
+    error: expect.stringContaining('question.askedAt:'),
+  })
+})

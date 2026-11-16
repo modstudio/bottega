@@ -714,7 +714,7 @@ describe('run task linking service', () => {
         .query(
           `INSERT INTO question
           (record_id,number,workflow_cursor_record_id,workflow_key,asked_at,question,asked_via)
-         VALUES ('question-related',991,'cursor-related','REL-1','t','question','live')`,
+         VALUES ('question-related',991,'cursor-related','REL-1','2026-11-10T00:00:00.000Z','question','live')`,
         )
         .run()
       db()

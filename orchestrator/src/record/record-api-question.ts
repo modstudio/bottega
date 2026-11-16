@@ -27,6 +27,15 @@ type Ports = {
   scope(context: Context<Environment>): Tenant | null
   noSpace(context: Context<Environment>): Response
 }
+const DIRECT_WRITE_ISSUE_LIMIT = 3
+
+function directWriteRefusal(issues: readonly { path: PropertyKey[]; message: string }[]): string {
+  const details = issues
+    .slice(0, DIRECT_WRITE_ISSUE_LIMIT)
+    .map((issue) => `${issue.path.map(String).join('.') || '(root)'}: ${issue.message}`)
+    .join('; ')
+  return `invalid direct question write request: ${details}`
+}
 
 export function registerRecordQuestionRoutes(
   app: Hono<Environment>,
@@ -84,7 +93,14 @@ export function registerRecordQuestionRoutes(
     const intent = questionIntentSchema.safeParse(context.req.param('intent'))
     const body = questionWriteSchema.safeParse(await context.req.json().catch(() => null))
     if (!intent.success || !body.success)
-      return context.json({ error: 'invalid direct question write request' }, 400)
+      return context.json(
+        {
+          error: body.success
+            ? 'invalid direct question write request'
+            : directWriteRefusal(body.error.issues),
+        },
+        400,
+      )
     return context.json(await deps.writeQuestion(intent.data, { ...tenant, ...body.data }))
   })
 }

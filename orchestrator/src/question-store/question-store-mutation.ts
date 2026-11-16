@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { nullableRecordIso, recordIso } from '../../../shared/record-timestamp.ts'
 import { machineId } from '../record/machine-identity.ts'
 import type { QuestionIntent, QuestionWriteBody } from '../record/record-question-contract.ts'
 import { questionStore } from './question-store.ts'
@@ -10,6 +11,20 @@ import { questionById } from './question-store-read.ts'
 
 type Snapshot = QuestionWriteBody['question']
 const nullable = (value: unknown): string | null => (typeof value === 'string' ? value : null)
+const timestamp = (field: string, value: unknown): string => {
+  try {
+    return recordIso(value)
+  } catch (error) {
+    throw new Error(`invalid question timestamp ${field}: ${String(error)}`, { cause: error })
+  }
+}
+const nullableTimestamp = (field: string, value: unknown): string | null => {
+  try {
+    return nullableRecordIso(value)
+  } catch (error) {
+    throw new Error(`invalid question timestamp ${field}: ${String(error)}`, { cause: error })
+  }
+}
 const json = (value: unknown): unknown => {
   if (typeof value !== 'string') return value ?? null
   try {
@@ -19,8 +34,8 @@ const json = (value: unknown): unknown => {
   }
 }
 
-function questionSnapshotFromRow(row: Record<string, unknown>): Snapshot {
-  const askedAt = String(row.asked_at)
+export function questionSnapshotFromRow(row: Record<string, unknown>): Snapshot {
+  const askedAt = timestamp('askedAt', row.asked_at)
   return {
     id: String(row.record_id),
     number: row.number == null ? null : Number(row.number),
@@ -44,7 +59,7 @@ function questionSnapshotFromRow(row: Record<string, unknown>): Snapshot {
     answer: nullable(row.answer),
     answerValue: nullable(row.answer_value),
     answerBasis: nullable(row.answer_basis),
-    answeredAt: nullable(row.answered_at),
+    answeredAt: nullableTimestamp('answeredAt', row.answered_at),
     answeredBy: nullable(row.answered_by),
     answeredByName: nullable(row.answered_by_name),
     answeredByKind: nullable(row.answered_by_kind),
@@ -60,9 +75,9 @@ function questionSnapshotFromRow(row: Record<string, unknown>): Snapshot {
     jevQuestionVersion: row.jev_question_version == null ? null : Number(row.jev_question_version),
     jevFits: row.jev_fits == null ? null : Number(row.jev_fits),
     jevOrderFlipped: row.jev_order_flipped == null ? null : Number(row.jev_order_flipped),
-    awaitingOperatorAt: nullable(row.awaiting_operator_at),
+    awaitingOperatorAt: nullableTimestamp('awaitingOperatorAt', row.awaiting_operator_at),
     relayedBy: nullable(row.relayed_by),
-    overturnedAt: nullable(row.overturned_at),
+    overturnedAt: nullableTimestamp('overturnedAt', row.overturned_at),
     overturnedBy: nullable(row.overturned_by),
     overturnedByName: nullable(row.overturned_by_name),
     overturnReason: nullable(row.overturn_reason),
@@ -71,12 +86,12 @@ function questionSnapshotFromRow(row: Record<string, unknown>): Snapshot {
     filedRef: nullable(row.filed_ref),
     filedRecordId: nullable(row.filed_record_id),
     filedLabel: nullable(row.filed_label),
-    filedAt: nullable(row.filed_at),
-    closedAt: nullable(row.closed_at),
+    filedAt: nullableTimestamp('filedAt', row.filed_at),
+    closedAt: nullableTimestamp('closedAt', row.closed_at),
     closeReason: nullable(row.close_reason),
     withheldFields: Array.isArray(row.withheld_fields) ? row.withheld_fields.map(String) : [],
-    createdAt: nullable(row.created_at) ?? askedAt,
-    updatedAt: nullable(row.updated_at) ?? askedAt,
+    createdAt: nullableTimestamp('createdAt', row.created_at) ?? askedAt,
+    updatedAt: nullableTimestamp('updatedAt', row.updated_at) ?? askedAt,
   }
 }
 

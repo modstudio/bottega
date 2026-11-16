@@ -98,6 +98,7 @@ export const recordQuestionModules: RecordModule[] = [
   module('orchestrator/src/question-store/question-store-mutation.ts', [
     'bun:sqlite',
     '../../../shared/record-id.ts',
+    '../../../shared/record-timestamp.ts',
     '../record/machine-identity.ts',
     '../record/record-question-contract.ts',
     './question-store.ts',
