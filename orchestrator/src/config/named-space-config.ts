@@ -2,7 +2,7 @@
 /** Registers and trusts machine keys in one hosted space without changing the active space. */
 import { hostname } from 'node:os'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { ConfigClient, ConfigDestination } from '../../../shared/config-client.ts'
+import type { ConfigClient, ConfigWriteDestination } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { readHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
@@ -30,7 +30,7 @@ import {
 } from './machine-trust-refusal.ts'
 
 type NamedSpace = {
-  destination: ConfigDestination
+  destination: ConfigWriteDestination
   slug: string
   spaceId: string
 }
