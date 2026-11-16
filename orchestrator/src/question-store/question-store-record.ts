@@ -249,12 +249,7 @@ export class RecordQuestionStore implements QuestionStore {
       throw new Error(
         'question numbers are unique only within a record space; read the question by id or by cursor, then retry',
       )
-    if (
-      input.changedAfter !== undefined &&
-      input.read !== 'rulings' &&
-      input.read !== 'inbox' &&
-      input.read !== 'for-cursor'
-    )
+    if (input.changedAfter !== undefined && input.read !== 'rulings' && input.read !== 'inbox')
       throw new Error(
         `${questionChangedAfterRefusal.message}; ${questionChangedAfterRefusal.remedy}`,
       )

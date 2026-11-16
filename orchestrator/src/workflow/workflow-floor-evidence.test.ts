@@ -27,8 +27,25 @@ test(
   stepQuestionRow(database, gather, CURSOR_RECORD_ID, identity),
 )
 
-test('refuses a ruling number that is absent from the cursor questions', async () => {
-  expect(gatherRuling(99, CURSOR_RECORD_ID, 1, 'rebase', database())).rejects.toThrow(
+test('refuses a ruling number that belongs to another cursor', async () => {
+  const d = database()
+  const otherCursor = newRecordId()
+  d.query(
+    `INSERT INTO workflow_cursor
+      (record_id,number,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+       workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,question,
+       total_steps,created_at,updated_at,enforcement)
+     SELECT '${otherCursor}',number+1,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+       workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,question,
+       total_steps,created_at,updated_at,enforcement
+     FROM workflow_cursor WHERE record_id='${CURSOR_RECORD_ID}'`,
+  ).run()
+  d.query(
+    `INSERT INTO question
+      (number,record_id,workflow_cursor_record_id,asked_at,question,asked_via,answered_at,answer,answerer_kind,workflow_step_ordinal,workflow_step_slug)
+     VALUES (99,'${newRecordId()}','${otherCursor}','2026-09-01','Q?','workflow','2026-09-01','yes','operator',1,'rebase')`,
+  ).run()
+  await expect(gatherRuling(99, CURSOR_RECORD_ID, 1, 'rebase', d)).rejects.toThrow(
     `--ruling 99 is not a question on this workflow cursor; pass the number that \`${PLATFORM_SLUG} workflow rule\` or \`${PLATFORM_SLUG} workflow await\` printed for this cursor, then retry`,
   )
 })

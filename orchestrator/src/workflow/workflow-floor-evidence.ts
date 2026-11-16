@@ -138,7 +138,6 @@ export async function gatherRuling(
     overturned_at: question.overturned_at as string | null,
     replacement: question.replacement as string | null,
     is_open: question.answered_at === null && question.closed_at === null ? 1 : 0,
-    workflow_cursor_record_id: question.workflow_cursor_record_id as string | null,
     workflow_step_ordinal: question.workflow_step_ordinal as number | null,
     workflow_step_slug: question.workflow_step_slug as string | null,
   }
