@@ -133,7 +133,7 @@ export function renderContextBrief(brief: ContextBrief): string {
   const inFlight = [
     ...brief.cursors.map((cursor) => {
       if (cursor.keylessIdle !== undefined)
-        return `cursor ${cursor.number} ${cursor.workflow} · ${cursor.keylessIdle ?? 'idle unknown'}${cursor.questionNumber === null ? ` → ${PLATFORM_SLUG} workflow abandon${workflowCursorReference(cursor.number, cursor.project).cli}` : `, awaiting q${cursor.questionNumber}`}`
+        return `cursor ${cursor.number} ${cursor.workflow} · ${cursor.keylessIdle ?? 'idle unknown'}${cursor.questionNumber === null && cursor.keylessIdleMs !== null && cursor.keylessIdleMs !== undefined && cursor.keylessIdleMs >= KEYLESS_CURSOR_IDLE_MS ? ` → ${PLATFORM_SLUG} workflow abandon${workflowCursorReference(cursor.number, cursor.project).cli}` : cursor.questionNumber === null ? '' : `, awaiting q${cursor.questionNumber}`}`
       return formatContextBriefCursorLine(cursor)
     }),
     ...brief.runs.map(formatContextBriefRunLine),

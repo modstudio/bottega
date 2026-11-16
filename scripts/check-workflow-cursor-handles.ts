@@ -19,7 +19,6 @@ function exemptBareHandle(path: string, line: string): boolean {
 }
 
 export function bareWorkflowCursorHandles(root = ROOT): string[] {
-  return []
   return sourceFiles(
     root,
     ['orchestrator/src'],
