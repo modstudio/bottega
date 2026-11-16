@@ -102,6 +102,7 @@ export function fakePostgres(
   let scoreWritten = false
   let runWrites = 0
   let runReferenceAvailable = true
+  let questionNumbers = 0
   const transactionSpaceIds: string[] = []
   const boundSpaceIds: string[] = []
   const tx = (async (parts: TemplateStringsArray, ...values: unknown[]) => {
@@ -148,6 +149,10 @@ export function fakePostgres(
     if (source.includes('SELECT reason FROM run_exclusion')) return []
     if (source.includes('INSERT INTO machine')) return [{ user_id: values[1] }]
     if (source.includes('SELECT user_id FROM machine')) return [{ user_id: values[0] }]
+    if (source.includes('INSERT INTO question_number_counter')) {
+      questionNumbers++
+      return [{ number: questionNumbers }]
+    }
     const hostedTask = hostedTaskResult(source, values, hostedTasks)
     if (hostedTask) return hostedTask
     return source.includes('FROM project')
