@@ -12,12 +12,39 @@ export type LockHolderInspection =
   | { failed: unknown }
   | { sampled: WalWriteLockSampleResult; command: string | null }
 
+export function sqliteErrorIdentity(error: unknown): { code: string | null; errno: number | null } {
+  if (!error || (typeof error !== 'object' && typeof error !== 'function')) {
+    return { code: null, errno: null }
+  }
+  const candidate = error as { code?: unknown; errno?: unknown }
+  const code =
+    Object.hasOwn(error, 'code') && typeof candidate.code === 'string' ? candidate.code : null
+  const errno =
+    Object.hasOwn(error, 'errno') && Number.isInteger(candidate.errno)
+      ? (candidate.errno as number)
+      : null
+  return { code, errno }
+}
+
 export function isDatabaseLocked(error: unknown): boolean {
-  const candidate = error as { code?: unknown; message?: unknown }
-  return (
-    candidate?.code === 'SQLITE_BUSY' ||
-    candidate?.code === 'SQLITE_LOCKED' ||
-    /database (?:table )?is locked/i.test(String(candidate?.message))
+  const { code, errno } = sqliteErrorIdentity(error)
+  if (
+    errno !== null &&
+    (code === null || code.startsWith('SQLITE_')) &&
+    [5, 6].includes(errno & 0xff)
+  )
+    return true
+  if (
+    code === 'SQLITE_BUSY' ||
+    code?.startsWith('SQLITE_BUSY_') ||
+    code === 'SQLITE_LOCKED' ||
+    code?.startsWith('SQLITE_LOCKED_')
+  ) {
+    return true
+  }
+  if (code?.startsWith('SQLITE_') || (code === null && errno !== null)) return false
+  return /database (?:table )?is locked/i.test(
+    String((error as { message?: unknown } | null)?.message),
   )
 }
 

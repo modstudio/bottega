@@ -257,6 +257,9 @@ describe('harness health', () => {
       () => [
         {
           at: '2026-09-07T10:00:00.000Z',
+          caller: 'hub/src/task.ts:100',
+          code: 'SQLITE_BUSY_SNAPSHOT',
+          errno: 517,
           store: '/state/hub/hub.db',
           holderCommand: `${PLATFORM_SLUG} record`,
           holderUnavailable: null,
@@ -265,6 +268,9 @@ describe('harness health', () => {
         },
         {
           at: '2026-09-07T10:01:00.000Z',
+          caller: 'hub/src/note.ts:200',
+          code: 'SQLITE_BUSY_SNAPSHOT',
+          errno: 517,
           store: '/state/hub/hub.db',
           holderCommand: `${PLATFORM_SLUG} record`,
           holderUnavailable: null,
@@ -273,6 +279,9 @@ describe('harness health', () => {
         },
         {
           at: '2026-09-07T10:02:00.000Z',
+          caller: null,
+          code: null,
+          errno: null,
           store: '/state/hub/hub.db',
           holderCommand: `${PLATFORM_SLUG} serve`,
           holderUnavailable: null,
@@ -281,6 +290,9 @@ describe('harness health', () => {
         },
         {
           at: '2026-09-07T10:03:00.000Z',
+          caller: null,
+          code: null,
+          errno: null,
           store: '/state/orchestrator/orchestrator.db',
           holderCommand: null,
           holderUnavailable: 'process inspection denied',
@@ -289,6 +301,9 @@ describe('harness health', () => {
         },
         {
           at: '2026-09-07T10:03:10.000Z',
+          caller: null,
+          code: null,
+          errno: null,
           store: '/state/orchestrator/orchestrator.db',
           holderCommand: null,
           holderUnavailable: 'process inspection denied',
@@ -297,6 +312,9 @@ describe('harness health', () => {
         },
         {
           at: '2026-09-07T10:03:20.000Z',
+          caller: null,
+          code: null,
+          errno: null,
           store: '/state/orchestrator/orchestrator.db',
           holderCommand: null,
           holderUnavailable: 'sampler unavailable',
@@ -391,7 +409,10 @@ describe('harness health', () => {
         meanDurationMs: 0,
         topKeys: [
           { key: 'orchestrator.db held by unknown', count: 3 },
-          { key: `hub.db held by ${PLATFORM_SLUG} record`, count: 2 },
+          {
+            key: `hub.db held by ${PLATFORM_SLUG} record (SQLITE_BUSY_SNAPSHOT)`,
+            count: 2,
+          },
           { key: 'collect lease held by collect:11', count: 1 },
         ],
       },

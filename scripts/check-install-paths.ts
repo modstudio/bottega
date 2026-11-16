@@ -32,6 +32,18 @@ const INSTALL_AWARE_RESOLVERS = new Set([
 /** Module identity used for stack-frame attribution, never opened as a filesystem path. */
 const INSTALL_PATH_ALLOWANCES = new Map([
   ['hub/src/db.ts\0fileURLToPath(import.meta.url)', 'stack-frame-module-identity'],
+  [
+    'orchestrator/src/database/db.ts\0fileURLToPath(import.meta.url)',
+    'stack-frame-module-identity',
+  ],
+  [
+    'shared/store-lock-refusal-log.ts\0fileURLToPath(import.meta.url)',
+    'stack-frame-module-identity',
+  ],
+  [
+    'shared/write-caller-from-stack.ts\0fileURLToPath(import.meta.url)',
+    'stack-frame-module-identity',
+  ],
 ])
 
 export type InstallPathFinding = { path: string; line: number }

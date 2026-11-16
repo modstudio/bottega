@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { CommanderError } from 'commander'
 import { FROZEN_ENV_NAMES } from '../../../shared/brand.ts'
 import type { PublicCommandInvocation } from '../../../shared/commander-public-path.ts'
@@ -234,10 +234,56 @@ test("a locked orchestrator store refusal names the sampled holder's pid and sum
   ).toEqual([
     {
       at: expect.any(String),
+      caller: null,
+      code: 'SQLITE_BUSY',
+      errno: null,
       store: expect.any(String),
       holderCommand: 'bun orch.ts',
       holderUnavailable: null,
       holderPid: 4242,
+      verb: 'run start',
+    },
+  ])
+})
+
+test('an orchestrator store refusal skips database instrumentation to name the writing caller', async () => {
+  const error = Object.assign(new Error('database is locked'), {
+    code: 'SQLITE_BUSY',
+    errno: 5,
+  })
+  error.stack =
+    'SQLiteError: database is locked\n' +
+    '    at run (unknown)\n' +
+    '    at #runNoArgs (bun:sqlite:163:25)\n' +
+    `    at <anonymous> (${resolve(import.meta.dir, '../database/slow-statements.ts')}:78:28)\n` +
+    `    at businessWrite (${resolve(import.meta.dir, '../run/run.ts')}:25:53)`
+
+  await lockedStoreMessage(error, {
+    argv: ['run', 'start'],
+    inspect: async () => ({
+      supported: true,
+      classification: 'held',
+      holderPid: 4343,
+      sampleCount: 5,
+      samples: [4343, 4343, 4343, 4343, 4343],
+    }),
+    commandOf: () => '/opt/bun /opt/orchestrator/src/cli/orch.ts run start',
+  })
+
+  expect(
+    readStoreLockRefusalsSince('1970-01-01T00:00:00.000Z').filter(
+      (entry) => entry.holderPid === 4343,
+    ),
+  ).toEqual([
+    {
+      at: expect.any(String),
+      caller: 'orchestrator/src/run/run.ts:25',
+      code: 'SQLITE_BUSY',
+      errno: 5,
+      store: expect.any(String),
+      holderCommand: 'bun orch.ts',
+      holderUnavailable: null,
+      holderPid: 4343,
       verb: 'run start',
     },
   ])

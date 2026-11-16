@@ -22,6 +22,10 @@ test('a database lock refusal names the store, holder, and remedy', () => {
   )
   expect(isDatabaseLocked({ code: 'SQLITE_BUSY' })).toBeTrue()
   expect(isDatabaseLocked({ code: 'SQLITE_LOCKED' })).toBeTrue()
+  expect(isDatabaseLocked({ code: 'SQLITE_BUSY_SNAPSHOT', errno: 517, message: 'x' })).toBeTrue()
+  expect(isDatabaseLocked({ code: 'SQLITE_CONSTRAINT', errno: 19 })).toBeFalse()
+  expect(isDatabaseLocked({ code: 'EIO', errno: 5 })).toBeFalse()
+  expect(isDatabaseLocked({ code: 'EIO', message: 'database is locked' })).toBeTrue()
   expect(isDatabaseLocked({ message: 'database table is locked' })).toBeTrue()
   expect(
     formatDatabaseLockRefusal({

@@ -5,13 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { STATE_HOME_ENV } from '../../shared/state-directory.ts'
 import { readStoreWriteHoldsSince } from '../../shared/store-write-hold-log.ts'
-import {
-  closeDatabaseForFixture,
-  DB_PATH,
-  db,
-  writeCallerFromStack,
-  writeTransaction,
-} from './db.ts'
+import { closeDatabaseForFixture, DB_PATH, db, writeTransaction } from './db.ts'
 
 const originalStateHome = process.env[STATE_HOME_ENV]
 let stateHome = ''
@@ -59,7 +53,6 @@ test('a depth-zero write records a closed long-hold window without changing its 
     measured.close()
   }
 })
-
 test('a write that cannot acquire the lock is not recorded as a hold', () => {
   const readings = [100, 1_200, 2_000, 2_010]
   const realNow = performance.now.bind(performance)
@@ -80,23 +73,4 @@ test('a write that cannot acquire the lock is not recorded as a hold', () => {
     if (holder.inTransaction) holder.exec('ROLLBACK')
     holder.close()
   }
-})
-
-test('caller frames are labeled from plain, URL, parenthesized, and embedded paths', () => {
-  const source = '/repo/hub/src/db.ts'
-  expect(writeCallerFromStack('Error\n    at run (/repo/hub/src/outbox.ts:452:3)', source)).toBe(
-    'hub/src/outbox.ts:452',
-  )
-  expect(writeCallerFromStack('Error\n    at file:///repo/hub/src/tasks.ts:9:1', source)).toBe(
-    'hub/src/tasks.ts:9',
-  )
-  expect(writeCallerFromStack('Error\n    at run (/repo/hub/src/a (copy):17:4)', source)).toBe(
-    'hub/src/a (copy):17',
-  )
-  expect(
-    writeCallerFromStack(
-      'Error\n    at run (/$bunfs/root/hub/src/outbox.ts:31:2)',
-      '/$bunfs/root/hub/src/db.ts',
-    ),
-  ).toBe('hub/src/outbox.ts:31')
 })

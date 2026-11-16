@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { STATE_HOME_ENV } from './state-directory.ts'
 import { appendStoreLockRefusal, readStoreLockRefusalsSince } from './store-lock-refusal-log.ts'
 
 const originalStateHome = process.env[STATE_HOME_ENV]
+const hubStoreAdapterFile = resolve(import.meta.dir, '../hub/src/db.ts')
 let stateHome = ''
 
 beforeEach(() => {
@@ -28,16 +29,35 @@ test('store lock refusals append, filter by time, and rotate to one previous fil
       command: '/opt/bun /opt/hub/src/cli.ts record pull --watch --token secret',
     },
   }
-  appendStoreLockRefusal(facts, ['task', 'set', 'DEV-1'], {
-    now: new Date('2026-10-28T10:00:00.000Z'),
+  const snapshotError = Object.assign(new Error('database is locked'), {
+    code: 'SQLITE_BUSY_SNAPSHOT',
+    errno: 517,
   })
-  appendStoreLockRefusal(facts, ['note', 'new', 'words'], {
-    now: new Date('2026-10-28T10:01:00.000Z'),
-  })
+  snapshotError.stack =
+    `SQLiteError: database is locked\n` +
+    `    at write (${resolve(import.meta.dir, '../hub/src/db.ts')}:100:2)\n` +
+    `    at apply (${resolve(import.meta.dir, '../hub/src/tasks.ts')}:200:4)`
+  appendStoreLockRefusal(
+    facts,
+    ['task', 'set', 'DEV-1'],
+    snapshotError,
+    { files: [hubStoreAdapterFile] },
+    { now: new Date('2026-10-28T10:00:00.000Z') },
+  )
+  appendStoreLockRefusal(
+    facts,
+    ['note', 'new', 'words'],
+    snapshotError,
+    { files: [hubStoreAdapterFile] },
+    { now: new Date('2026-10-28T10:01:00.000Z') },
+  )
 
   expect(readStoreLockRefusalsSince('2026-10-28T10:00:30.000Z')).toEqual([
     {
       at: '2026-10-28T10:01:00.000Z',
+      caller: 'hub/src/tasks.ts:200',
+      code: 'SQLITE_BUSY_SNAPSHOT',
+      errno: 517,
       store: '/state/hub/hub.db',
       holderCommand: 'bun cli.ts',
       holderUnavailable: null,
@@ -46,10 +66,13 @@ test('store lock refusals append, filter by time, and rotate to one previous fil
     },
   ])
 
-  appendStoreLockRefusal(facts, ['task', 'close'], {
-    maxBytes: 1,
-    now: new Date('2026-10-28T10:02:00.000Z'),
-  })
+  appendStoreLockRefusal(
+    facts,
+    ['task', 'close'],
+    snapshotError,
+    { files: [hubStoreAdapterFile] },
+    { maxBytes: 1, now: new Date('2026-10-28T10:02:00.000Z') },
+  )
   expect(readdirSync(stateHome).sort()).toEqual([
     'store-lock-refusals.jsonl',
     'store-lock-refusals.previous.jsonl',
@@ -61,6 +84,8 @@ test('an unavailable holder round-trips its reason and an older row defaults it 
   appendStoreLockRefusal(
     { store: '/state/hub/hub.db', holder: { unavailable: 'process inspection denied' } },
     ['task', 'set'],
+    { code: 'SQLITE_LOCKED', errno: 6 },
+    { files: [hubStoreAdapterFile] },
     { now: new Date('2026-10-28T10:00:00.000Z') },
   )
   appendFileSync(
@@ -77,6 +102,9 @@ test('an unavailable holder round-trips its reason and an older row defaults it 
   expect(readStoreLockRefusalsSince('2026-10-28T00:00:00.000Z')).toEqual([
     {
       at: '2026-10-28T10:00:00.000Z',
+      caller: null,
+      code: 'SQLITE_LOCKED',
+      errno: 6,
       store: '/state/hub/hub.db',
       holderCommand: null,
       holderUnavailable: 'process inspection denied',
@@ -85,6 +113,9 @@ test('an unavailable holder round-trips its reason and an older row defaults it 
     },
     {
       at: '2026-10-28T10:01:00.000Z',
+      caller: null,
+      code: null,
+      errno: null,
       store: '/state/orchestrator/orchestrator.db',
       holderCommand: null,
       holderUnavailable: null,
@@ -100,6 +131,8 @@ test('an append failure in an unwritable state directory does not throw', () => 
     appendStoreLockRefusal(
       { store: '/state/orchestrator/orchestrator.db', holder: { unavailable: 'not sampled' } },
       ['run', 'start'],
+      { code: 'SQLITE_BUSY' },
+      { files: [resolve(import.meta.dir, '../orchestrator/src/database/db.ts')] },
     ),
   ).not.toThrow()
 })
