@@ -118,12 +118,10 @@ test('reply questions store and enqueue structured typed values', async () => {
     { name: 'First', criteria: 'Use the first path.' },
     { name: 'Second', criteria: 'Use the second path.' },
   ])
-  expect(Array.isArray(payloads[0]!.typedOptions)).toBe(true)
   expect(payloads[1]!.criteria).toEqual({
     yes: 'Proceed with the change.',
     no: 'Stop the change.',
   })
-  expect(typeof payloads[1]!.criteria).toBe('object')
 })
 
 describe('the live ask channel always answers', () => {

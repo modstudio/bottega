@@ -16,12 +16,16 @@ export const QUESTION_JSON_FIELDS = [
   'levels',
   'jevProbabilities',
 ] as const
-const nullableJsonValue = (field: string) =>
+type QuestionJsonField = (typeof QUESTION_JSON_FIELDS)[number]
+export function questionJsonFieldStructuredMessage(field: QuestionJsonField): string {
+  return `${field} must be a structured JSON value, not a string; pass the array or object itself, not its JSON encoding`
+}
+const nullableJsonValue = (field: QuestionJsonField) =>
   z
     .unknown()
     .nullable()
     .refine((value) => typeof value !== 'string', {
-      message: `${field} must be a structured JSON value, not a string`,
+      message: questionJsonFieldStructuredMessage(field),
     })
 const questionJsonFieldSchemas = {
   options: nullableJsonValue('options'),
@@ -36,7 +40,7 @@ export function assertQuestionJsonFieldsStructured(
 ): void {
   for (const field of QUESTION_JSON_FIELDS) {
     if (typeof question[field] === 'string')
-      throw new Error(`${field} must be a structured JSON value, not a string`)
+      throw new Error(questionJsonFieldStructuredMessage(field))
   }
 }
 

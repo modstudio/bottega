@@ -12,6 +12,7 @@ test('repairs only double-encoded question JSON values and pending question payl
   const runId = newRecordId()
   const brokenQuestionId = newRecordId()
   const correctQuestionId = newRecordId()
+  const malformedQuestionId = newRecordId()
   const brokenPayloadId = newRecordId()
   const malformedPayloadId = newRecordId()
   const syncedPayloadId = newRecordId()
@@ -56,6 +57,14 @@ test('repairs only double-encoded question JSON values and pending question payl
       JSON.stringify(['one', 'two']),
       JSON.stringify({ one: 0.8, two: 0.2 }),
     )
+  const malformedTypedOptions = JSON.stringify('[object Object]')
+  database
+    .query(
+      `INSERT INTO question
+       (record_id,number,run_record_id,asked_at,question,kind,typed_options)
+       VALUES (?,93,?,?,?,'choice',?)`,
+    )
+    .run(malformedQuestionId, runId, STAMP, 'Malformed?', malformedTypedOptions)
   const brokenPayload = {
     typedOptions: JSON.stringify([{ name: 'one' }, { name: 'two' }]),
     criteria: JSON.stringify({ yes: 'go', no: 'stop' }),
@@ -111,6 +120,13 @@ test('repairs only double-encoded question JSON values and pending question payl
   expect(JSON.parse(repaired.levels)).toEqual(['low', 'high'])
   expect(JSON.parse(repaired.options)).toEqual(['one', 'two'])
   expect(JSON.parse(repaired.jev_probabilities)).toEqual({ one: 0.8, two: 0.2 })
+  expect(
+    database
+      .query<{ typed_options: string }, [string]>(
+        'SELECT typed_options FROM question WHERE record_id=?',
+      )
+      .get(malformedQuestionId)!.typed_options,
+  ).toBe(malformedTypedOptions)
 
   const pending = database
     .query<
@@ -150,11 +166,18 @@ test('repairs only double-encoded question JSON values and pending question payl
       'SELECT typed_options,criteria,levels,options FROM question WHERE record_id=?',
     )
     .get(correctQuestionId)!
-  applyMigrations(database)
+  expect(() => applyMigrations(database)).not.toThrow()
   expect(
     database
       .query('SELECT typed_options,criteria,levels,options FROM question WHERE record_id=?')
       .get(correctQuestionId),
   ).toEqual(correctBefore)
+  expect(
+    database
+      .query<{ typed_options: string }, [string]>(
+        'SELECT typed_options FROM question WHERE record_id=?',
+      )
+      .get(malformedQuestionId)!.typed_options,
+  ).toBe(malformedTypedOptions)
   database.close()
 })
