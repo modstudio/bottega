@@ -20,7 +20,6 @@ test('no kind is sent in an earlier phase than a kind it can refer to', () => {
 
 test('outbox ordering sends run rows before run-dependent rows', () => {
   const rows = [
-    { kind: 'question', id: 21647 },
     { kind: 'score', id: 21649 },
     { kind: 'run', id: 21650 },
     { kind: 'landing', id: 21648 },
@@ -46,7 +45,6 @@ test('outbox ordering sends run rows before run-dependent rows', () => {
     { kind: 'run', id: 21652 },
     { kind: 'landing', id: 21648 },
     { kind: 'test_flake', id: 21656 },
-    { kind: 'question', id: 21647 },
     { kind: 'score', id: 21649 },
     { kind: 'review', id: 21651 },
     { kind: 'review_lens', id: 21653 },

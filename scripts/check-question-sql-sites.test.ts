@@ -9,6 +9,17 @@ test('question SQL is refused in callers and allowed in adapters', () => {
     ),
   ).toEqual(['orchestrator/src/run/caller.ts:1: use the question-store port'])
   expect(
-    questionSqlViolations('SELECT * FROM question', 'orchestrator/src/question-store/adapter.ts'),
+    questionSqlViolations(
+      'SELECT * FROM question',
+      'orchestrator/src/question-store/question-store-sqlite.ts',
+    ),
   ).toEqual([])
+  expect(
+    questionSqlViolations(
+      'SELECT * FROM question',
+      'orchestrator/src/question-store/question-store-record-task-flow-compat.ts',
+    ),
+  ).toEqual([
+    'orchestrator/src/question-store/question-store-record-task-flow-compat.ts:1: use the question-store port',
+  ])
 })
