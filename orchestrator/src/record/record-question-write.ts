@@ -1,7 +1,6 @@
 // concern: hosted-question-write
 /** Applies direct question snapshots and their audit atomically. */
 
-import type { SQL } from 'bun'
 import { and, sql as drizzleSql, eq, or } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { hostedTaskIdForReference } from '../../../shared/record/hosted-task-id.ts'
@@ -18,26 +17,11 @@ import type {
   QuestionWriteResult,
 } from './record-question-contract.ts'
 import { RecordQuestionError } from './record-question-contract.ts'
+import { allocateQuestionNumber } from './record-question-number.ts'
 import { projectRecordId } from './record-sync-project-identity.ts'
 import { questionValues } from './record-sync-service.ts'
 
 type Tenant = { url: string } & TenantPrincipal
-
-async function allocateQuestionNumber(tx: SQL, spaceId: string): Promise<number> {
-  const rows = (await tx`
-    INSERT INTO question_number_counter (space_id,next)
-    VALUES (
-      ${spaceId}::uuid,
-      COALESCE((SELECT MAX(number)::bigint + 2 FROM question WHERE space_id=${spaceId}::uuid),2)
-    )
-    ON CONFLICT (space_id) DO UPDATE SET next=GREATEST(
-      question_number_counter.next,
-      COALESCE((SELECT MAX(number)::bigint + 1 FROM question WHERE space_id=${spaceId}::uuid),1)
-    ) + 1
-    RETURNING next - 1 AS number
-  `) as Array<{ number: bigint | number | string }>
-  return Number(rows[0]!.number)
-}
 
 export async function writeRecordQuestion(
   intent: QuestionIntent,

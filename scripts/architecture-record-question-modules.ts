@@ -27,8 +27,8 @@ export const recordQuestionModules: RecordModule[] = [
     './record-pool.ts',
     './record-question-contract.ts',
   ]),
+  module('orchestrator/src/record/record-question-number.ts', ['bun']),
   module('orchestrator/src/record/record-question-write.ts', [
-    'bun',
     'drizzle-orm',
     'drizzle-orm/bun-sql',
     '../../../shared/record/hosted-task-id.ts',
@@ -37,6 +37,7 @@ export const recordQuestionModules: RecordModule[] = [
     './record-pool.ts',
     './record-question-audit.ts',
     './record-question-contract.ts',
+    './record-question-number.ts',
     './record-sync-project-identity.ts',
     './record-sync-service.ts',
   ]),

@@ -34,7 +34,6 @@ import { registerLandingEvidenceRlsProof } from '../../test/postgres-landing-evi
 import { registerMachineJoinProof } from '../../test/postgres-machine-join-proof.ts'
 import { registerProjectSpaceProofs } from '../../test/postgres-project-space-proof.ts'
 import { registerPublicDocProofs } from '../../test/postgres-public-doc-proof.ts'
-import { registerQuestionNumberMigrationProof } from '../../test/postgres-question-number-proof.ts'
 import { registerQuestionTaskRecordSyncProof } from '../../test/postgres-question-task-proof.ts'
 import { registerRecordRetentionProof } from '../../test/postgres-record-retention-proof.ts'
 import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-proof.ts'
@@ -973,10 +972,6 @@ realPostgres('RLS proof against real Postgres', () => {
     asSpace,
     admin: (statement) => succeeds('postgres', 'postgres', statement),
   }))
-  registerQuestionNumberMigrationProof({
-    admin: (statement) => succeeds('postgres', 'postgres', statement),
-  })
-
   registerTaskFlowReadThroughTakeoverProof({
     urls: () => ({ actor: actorUrl!, auth: authUrl! }),
     spaceId: () => authSpaceA,

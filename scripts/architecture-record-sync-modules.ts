@@ -143,6 +143,7 @@ export const recordSyncModules: RecordSyncModule[] = [
     './outbox-payload-contracts.ts',
     './record-payload-columns.ts',
     './record-question-audit.ts',
+    './record-question-number.ts',
     './record-question-values.ts',
     './record-auth.ts',
     './record-evidence-references.ts',
