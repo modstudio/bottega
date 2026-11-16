@@ -68,7 +68,14 @@ export function hasExactArchitectRead(
   patchId: string,
   zeroContextPatchId: string,
   pathSet: string,
-  replay?: { repo: string; base: string; tip: string; tree: string; trunk: string },
+  replay?: {
+    repo: string
+    base: string
+    tip: string
+    tree: string
+    trunk: string
+    witnesses: Map<string, boolean>
+  },
 ): boolean {
   const lineage = reviewLineage(database, project, branch)
   const reads = database
@@ -89,6 +96,7 @@ export function hasExactArchitectRead(
         rows: reads,
         current: { patchId, zeroContextPatchId, pathSet, ...replay },
         trunk: replay.trunk,
+        witnesses: replay.witnesses,
       })
     : reads
   return witnessed.some((read) =>

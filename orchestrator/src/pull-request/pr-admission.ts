@@ -167,14 +167,23 @@ function exactChangeReplayContext(change: PullRequestChange): ExactChangeReplayC
       reviewRemoteTrunkRefExists(trunk, spawnGitProbe(change.project.path)),
       trunk,
     ),
+    witnesses: new Map(),
   }
 }
 
-function triageDecision(change: PullRequestChange, database: Database): TriageDecision {
-  return gatherAdmissionEvidenceDecision(change, database, exactChangeReplayContext(change))
+function triageDecision(
+  change: PullRequestChange,
+  database: Database,
+  replay: ExactChangeReplayContext,
+): TriageDecision {
+  return gatherAdmissionEvidenceDecision(change, database, replay)
 }
 
-function overridesForChange(change: PullRequestChange, database: Database): AdmissionOverride[] {
+function overridesForChange(
+  change: PullRequestChange,
+  database: Database,
+  replay: ExactChangeReplayContext,
+): AdmissionOverride[] {
   return landingOverridesWithReplay(
     database,
     {
@@ -184,7 +193,7 @@ function overridesForChange(change: PullRequestChange, database: Database): Admi
       zeroContextPatchId: change.group.zeroContextPatchId,
       pathSet: serializePathSet(change.group.pathSet),
     },
-    exactChangeReplayContext(change),
+    replay,
   )
 }
 
@@ -243,9 +252,10 @@ export function admissionDecision(
 ): PullRequestAdmission {
   const funnel = funnelVerdict(change, database)
   if (funnel.kind === 'empty') return emptyAdmission(change, funnel)
-  const triage = triageDecision(change, database)
+  const replay = exactChangeReplayContext(change)
+  const triage = triageDecision(change, database, replay)
   const { facts, verdict } = funnel
-  const decision = decideAdmission(verdict, overridesForChange(change, database))
+  const decision = decideAdmission(verdict, overridesForChange(change, database, replay))
   recordReviewFunnelDecision({
     database,
     surface,
@@ -656,7 +666,7 @@ export function createPullRequest(
   if (existing) finalizeTriageIntent(change.project.name, change.branch, existing.number)
   const database = writableDb()
   const checked = writeTransaction(() => {
-    const triage = triageDecision(change, database)
+    const triage = triageDecision(change, database, exactChangeReplayContext(change))
     const beforeOverride = funnelVerdict(change, database)
     if (beforeOverride.kind === 'empty') {
       throw new Error(emptyCreateRefusal(change, emptyAdmission(change, beforeOverride)))

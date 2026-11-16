@@ -43,6 +43,12 @@ type CurrentReplayChange = {
   tree: string
 }
 
+type ReplayWitnessInput = {
+  runner: CoverageGitRunner
+  current: CurrentReplayChange
+  trunk: string
+}
+
 const parsedPaths = (pathSet: string): string[] => {
   const paths = JSON.parse(pathSet) as unknown
   if (!Array.isArray(paths) || paths.some((path) => typeof path !== 'string')) {
@@ -51,47 +57,52 @@ const parsedPaths = (pathSet: string): string[] => {
   return paths
 }
 
+function replayWitnessForCurrent(input: ReplayWitnessInput, row: ReplayWitnessRow): boolean {
+  const tipTree = input.runner(['rev-parse', '--verify', `${row.tip}^{tree}`])
+  if (tipTree.ok && tipTree.out === input.current.tree) return true
+  if (input.runner(['merge-base', '--is-ancestor', row.tip, input.current.tip]).ok) return false
+  const oldBase = input.runner(['merge-base', row.tip, input.trunk])
+  if (!oldBase.ok) return false
+  try {
+    return gatherSameChange({
+      runner: input.runner,
+      reviewed: {
+        patchId: row.patchId,
+        zeroContextPatchId: row.zeroContextPatchId ?? null,
+        paths: row.pathSet === null ? [] : parsedPaths(row.pathSet),
+        message: null,
+      },
+      reviewedCommit: row.tip,
+      oldBase: oldBase.out,
+      current: { paths: parsedPaths(input.current.pathSet), message: null },
+      tip: input.current.tip,
+      tipTree: input.current.tree,
+      newBase: input.current.base,
+    }).decision.same
+  } catch {
+    return false
+  }
+}
+
 /** Add a clean-replay witness only to rows whose stored identity does not match. */
 export function replayWitnessesForCurrent<T extends ReplayWitnessRow>(input: {
   runner: CoverageGitRunner
   rows: readonly T[]
   current: CurrentReplayChange
   trunk: string
+  witnesses?: Map<string, boolean>
 }): (T & { replayMatchesCurrent?: boolean })[] {
   const currentStored = {
     patchId: input.current.patchId,
     zeroContextPatchId: input.current.zeroContextPatchId,
     pathSet: input.current.pathSet,
   }
-  const byTip = new Map<string, boolean>()
+  const byTip = input.witnesses ?? new Map<string, boolean>()
   return input.rows.map((row) => {
     if (sameStoredChange(row, currentStored)) return row
     let replayMatchesCurrent = byTip.get(row.tip)
     if (replayMatchesCurrent === undefined) {
-      const oldBase = input.runner(['merge-base', row.tip, input.trunk])
-      if (!oldBase.ok) {
-        replayMatchesCurrent = false
-      } else {
-        try {
-          replayMatchesCurrent = gatherSameChange({
-            runner: input.runner,
-            reviewed: {
-              patchId: row.patchId,
-              zeroContextPatchId: row.zeroContextPatchId ?? null,
-              paths: row.pathSet === null ? [] : parsedPaths(row.pathSet),
-              message: null,
-            },
-            reviewedCommit: row.tip,
-            oldBase: oldBase.out,
-            current: { paths: parsedPaths(input.current.pathSet), message: null },
-            tip: input.current.tip,
-            tipTree: input.current.tree,
-            newBase: input.current.base,
-          }).decision.same
-        } catch {
-          replayMatchesCurrent = false
-        }
-      }
+      replayMatchesCurrent = replayWitnessForCurrent(input, row)
       byTip.set(row.tip, replayMatchesCurrent)
     }
     return { ...row, replayMatchesCurrent }

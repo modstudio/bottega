@@ -56,6 +56,7 @@ export type ExactChangeReplayContext = {
   tip: string
   tree: string
   trunk: string
+  witnesses: Map<string, boolean>
 }
 
 const replayRunner =
@@ -178,6 +179,7 @@ export function landingOverridesWithReplay(
       tree: replay.tree,
     },
     trunk: replay.trunk,
+    witnesses: replay.witnesses,
   })
 }
 
@@ -296,6 +298,7 @@ export function gatherAdmissionEvidenceDecision(
           tree: replay.tree,
         },
         trunk: replay.trunk,
+        witnesses: replay.witnesses,
       })
     : readRows
   return decideTriage({
@@ -312,7 +315,11 @@ export function gatherAdmissionEvidenceDecision(
   })
 }
 
-function gatheredTriage(change: ReviewFunnelChange, group: ChangeGroup) {
+function gatheredTriage(
+  change: ReviewFunnelChange,
+  group: ChangeGroup,
+  replay: ExactChangeReplayContext,
+) {
   const resolved =
     change.resolved ??
     (() => {
@@ -331,7 +338,6 @@ function gatheredTriage(change: ReviewFunnelChange, group: ChangeGroup) {
         group,
       }
     })()
-  const replay = exactChangeReplayContext(change)
   return gatherAdmissionEvidenceDecision(
     { ...resolved, project: change.project, branch: change.branch },
     change.database,
@@ -348,7 +354,14 @@ function exactChangeReplayContext(change: ReviewFunnelChange): ExactChangeReplay
   )
   const tree = git(change.cwd, ['rev-parse', '--verify', `${change.head}^{tree}`])
   if (!tree.ok) throw new Error(`could not resolve tree for ${change.head}: ${tree.err}`)
-  return { repo: change.cwd, base: change.base, tip: change.head, tree: tree.out, trunk: trunkRef }
+  return {
+    repo: change.cwd,
+    base: change.base,
+    tip: change.head,
+    tree: tree.out,
+    trunk: trunkRef,
+    witnesses: new Map(),
+  }
 }
 
 /** Resolve one change once, including lineage evidence and completed-landing exclusions. */
@@ -396,7 +409,7 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
     },
     replay,
   )
-  const admission = gatheredTriage(change, group)
+  const admission = gatheredTriage(change, group, replay)
   const admissionGap = ceilingTriageFacts(admission)
   return {
     change: {
