@@ -174,11 +174,13 @@ export function register(program: Command): void {
       requireHolder(options)
       if (!CONTEXT_ITEM_KINDS.includes(options.kind))
         throw new Error(`--kind must be one of ${CONTEXT_ITEM_KINDS.join(', ')}`)
-      log(
-        JSON.stringify(
-          await setContextItem({ ...options, expectedRevision: options.expectedRevision, body }),
-        ),
-      )
+      const result = await setContextItem({
+        ...options,
+        expectedRevision: options.expectedRevision,
+        body,
+      })
+      log(JSON.stringify(result))
+      if (result.warning) console.error(result.warning)
     })
   holderOptions(context.command('drop').description('remove one context item'))
     .requiredOption('--id <id>', 'stable item id')

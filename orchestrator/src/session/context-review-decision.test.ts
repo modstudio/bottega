@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   CONTEXT_REVIEW_MAX_MS,
   CONTEXT_REVIEW_MIN_MS,
@@ -6,6 +7,7 @@ import {
   type ContextReviewFacts,
   contextReviewInterval,
   decideContextReview,
+  taskHoldersCarriedByOpenCursors,
 } from './context-review-decision.ts'
 
 const now = Date.parse('2026-11-16T12:00:00.000Z')
@@ -19,6 +21,7 @@ function facts(overrides: Partial<ContextReviewFacts> = {}): ContextReviewFacts 
     compactionGaps: [],
     items: [],
     openCursors: [],
+    carriedTaskHolders: [],
     doneTaskKeys: [],
     ...overrides,
   }
@@ -116,6 +119,7 @@ test('flags only stale facts and pointers and orders flagged items first', () =>
     facts({
       items,
       openCursors: [{ holder: 'task:open', stepStartedAt: now - 1_000 }],
+      carriedTaskHolders: ['task:open'],
       doneTaskKeys: ['DEV-1'],
     }),
   )
@@ -138,4 +142,47 @@ test('flags only stale facts and pointers and orders flagged items first', () =>
     ['ruling', false, null],
     ['position', false, null],
   ])
+})
+
+test('carried task holders include the cursor task and every ancestor in its project', () => {
+  expect(
+    taskHoldersCarriedByOpenCursors(
+      [
+        { project: PLATFORM_SLUG, taskKey: 'DEV-3' },
+        { project: 'other', taskKey: 'DEV-3' },
+      ],
+      [
+        { key: 'DEV-1', record_id: 'epic', project: PLATFORM_SLUG, parent_key: null },
+        { key: 'DEV-2', record_id: 'child', project: PLATFORM_SLUG, parent_key: 'DEV-1' },
+        {
+          key: 'DEV-3',
+          record_id: 'grandchild',
+          project: PLATFORM_SLUG,
+          parent_key: 'DEV-2',
+        },
+      ],
+    ),
+  ).toEqual(['task:grandchild', 'task:child', 'task:epic'])
+})
+
+test('an epic carried through a child cursor is not stale or older than the child step', () => {
+  const epicHolder = 'task:epic'
+  const decision = decideContextReview({
+    ...facts({
+      items: [
+        {
+          recordId: 'record-epic',
+          id: 'epic-fact',
+          kind: 'fact',
+          holder: epicHolder,
+          updatedAt: now - 10_000,
+          body: 'still current',
+        },
+      ],
+      openCursors: [{ holder: 'task:child', stepStartedAt: now - 1_000 }],
+    }),
+    carriedTaskHolders: [epicHolder, 'task:child'],
+  })
+
+  expect(decision.items[0]).toEqual(expect.objectContaining({ flagged: false, reason: null }))
 })

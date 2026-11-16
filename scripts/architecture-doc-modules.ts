@@ -20,6 +20,7 @@ export const privateDocImports = [
 ] as const
 
 export const docModules: DocModule[] = [
+  module('orchestrator/src/doc/context-cursor-warning-decision.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/doc/doc-revision-conflict.ts', ['zod', './doc-write-allowed.ts']),
   module('orchestrator/src/doc/doc-context-write.ts', [
     '../../../shared/brand.ts',
@@ -74,6 +75,9 @@ export const docModules: DocModule[] = [
     '../database/db.ts',
     '../record/record-write-authority.ts',
     '../workflow/workflow-cursor-list.ts',
+    '../workflow/task-flow-store.ts',
+    '../workflow/workflow-task-reference.ts',
+    './context-cursor-warning-decision.ts',
     './context-item-hosted-client.ts',
     './context-item-store.ts',
     './context-write-adapter.ts',

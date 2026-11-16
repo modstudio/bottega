@@ -15,6 +15,7 @@ import {
   type ContextReviewFacts,
   type ContextReviewOrderedItem,
   decideContextReview,
+  taskHoldersCarriedByOpenCursors,
 } from './context-review-decision.ts'
 import { recordContextReview } from './context-review-store.ts'
 
@@ -175,6 +176,13 @@ export async function reviewContext(
     compactionGaps: compactionGaps(database, now),
     items,
     openCursors,
+    carriedTaskHolders: taskHoldersCarriedByOpenCursors(
+      cursors.map((cursor) => ({
+        project: cursor.project,
+        taskKey: cursor.workflow_key || null,
+      })),
+      tasks,
+    ),
     doneTaskKeys: tasks.filter((task) => task.status_category === 'done').map((task) => task.key),
   }
   const decision = decideContextReview(facts)

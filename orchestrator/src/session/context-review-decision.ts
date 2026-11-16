@@ -29,6 +29,7 @@ export type ContextReviewFacts = {
   compactionGaps: readonly { at: number; gapMs: number }[]
   items: readonly ContextReviewItem[]
   openCursors: readonly ContextReviewCursor[]
+  carriedTaskHolders: readonly string[]
   doneTaskKeys: readonly string[]
 }
 
@@ -73,17 +74,45 @@ function namedDoneTask(body: string, doneTaskKeys: readonly string[]): string | 
 
 function staleReason(
   item: ContextReviewItem,
-  facts: Pick<ContextReviewFacts, 'openCursors' | 'doneTaskKeys'>,
+  facts: Pick<ContextReviewFacts, 'openCursors' | 'carriedTaskHolders' | 'doneTaskKeys'>,
 ): string | null {
   if (item.kind === 'ruling' || item.kind === 'position') return null
   const cursor = facts.openCursors.find((candidate) => candidate.holder === item.holder)
   if (cursor && item.updatedAt < cursor.stepStartedAt) return 'older than the current step'
   const doneTask = namedDoneTask(item.body, facts.doneTaskKeys)
   if (doneTask) return `names done task ${doneTask}`
-  const holdersWithOpenCursor = new Set(facts.openCursors.map((openCursor) => openCursor.holder))
+  const holdersWithOpenCursor = new Set(facts.carriedTaskHolders)
   if (item.holder.startsWith('task:') && !holdersWithOpenCursor.has(item.holder))
     return 'holder has no open cursor'
   return null
+}
+
+type CarriedTask = {
+  key: string
+  record_id: string
+  project: string
+  parent_key?: string | null
+}
+
+/** Names direct and ancestor task holders carried by the open cursors. */
+export function taskHoldersCarriedByOpenCursors(
+  cursors: readonly { project: string; taskKey: string | null }[],
+  tasks: readonly CarriedTask[],
+): string[] {
+  const taskByKey = new Map(tasks.map((task) => [`${task.project}\0${task.key}`, task]))
+  const holders = new Set<string>()
+  for (const cursor of cursors) {
+    let key = cursor.taskKey
+    const visited = new Set<string>()
+    while (key && !visited.has(key)) {
+      visited.add(key)
+      const task = taskByKey.get(`${cursor.project}\0${key}`)
+      if (!task) break
+      holders.add(`task:${task.record_id}`)
+      key = task.parent_key ?? null
+    }
+  }
+  return [...holders]
 }
 
 export function decideContextReview(facts: ContextReviewFacts): ContextReviewDecision {

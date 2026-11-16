@@ -55,7 +55,14 @@ test('context service stores structured columns and compare-and-set revisions', 
     body: 'Keep the approved shape.',
   })
   expect(first).toEqual(
-    expect.objectContaining({ id: 'decision', kind: 'position', source: 'q6056' }),
+    expect.objectContaining({
+      id: 'decision',
+      kind: 'position',
+      source: 'q6056',
+      warning: expect.stringContaining(
+        `${PLATFORM_SLUG} workflow compose <workflow> --project ${PLATFORM_SLUG} --arg key=${task.key}`,
+      ),
+    }),
   )
   expect((await getContext({ task: task.key })).items).toEqual([
     expect.objectContaining({
@@ -151,7 +158,9 @@ test('cursor context accepts its owning session and refuses a foreign session', 
         source: 'q42',
         body: 'Continue.',
       }),
-    ).resolves.toEqual(expect.objectContaining({ holder: expect.stringContaining(recordId) }))
+    ).resolves.toEqual(
+      expect.objectContaining({ holder: expect.stringContaining(recordId), warning: null }),
+    )
 
     process.env.CLAUDE_CODE_SESSION_ID = 'foreign-session'
     await expect(

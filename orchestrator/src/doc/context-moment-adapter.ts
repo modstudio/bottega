@@ -5,7 +5,7 @@ import { contextItemRevision, setContextItem } from './context-service.ts'
 import { ContextWriteRefusalError } from './doc-context-write.ts'
 
 export type ContextMomentPorts = {
-  set: typeof setContextItem
+  set(input: Parameters<typeof setContextItem>[0]): Promise<unknown>
   revision: typeof contextItemRevision
 }
 
