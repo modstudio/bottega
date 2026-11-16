@@ -12,7 +12,12 @@ import { candidates } from '../route/route.ts'
 import { PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
 import { recordCoordinatorCause, runCoordinatorLogPath } from './run-coordinator-log.ts'
 import { runInboxCommand } from './run-inbox.ts'
-import { closeStaleChainQuestions, reapStale } from './run-liveness.ts'
+import {
+  closeStaleChainQuestions,
+  reapStale,
+  STALE_QUESTION_SWEEP_INTERVAL_MS,
+  staleQuestionSweepDue,
+} from './run-liveness.ts'
 import { STALE_AFTER_MS } from './run-liveness-policy.ts'
 import { sharedGitConfigCheckSkipReason } from './shared-git-config-check.ts'
 
@@ -405,6 +410,14 @@ describe('reapStale', () => {
     await closeStaleChainQuestions(db(), { throttled: true })
     await closeStaleChainQuestions(db(), { throttled: true })
     expect(reads).toHaveBeenCalledTimes(1)
+  })
+
+  test('a throttled sweep runs first in a process and again only after the interval', () => {
+    const interval = STALE_QUESTION_SWEEP_INTERVAL_MS
+    expect(staleQuestionSweepDue(undefined, 0, true)).toBe(true)
+    expect(staleQuestionSweepDue(0, interval - 1, true)).toBe(false)
+    expect(staleQuestionSweepDue(0, interval, true)).toBe(true)
+    expect(staleQuestionSweepDue(0, 1, false)).toBe(true)
   })
 
   test('a pid-less (pending) row older than the bootstrap bound is failed/harness', () => {

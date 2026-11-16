@@ -493,11 +493,23 @@ export function reapStale(
 /**
  * How often one process repeats the question-side sweep. Wait, follow and hub
  * loops call it on every tick, and each sweep reads the whole question inbox
- * from the record; a stale chain's questions may close one interval late.
+ * from the record; a stale chain's questions may close one interval late. A
+ * failed sweep also waits the interval, so an unavailable record is not
+ * retried on every tick.
  */
-const STALE_QUESTION_SWEEP_INTERVAL_MS = 5 * 60_000
+export const STALE_QUESTION_SWEEP_INTERVAL_MS = 5 * 60_000
 
 const lastStaleQuestionSweep = new WeakMap<Database, number>()
+
+/** Whether a sweep runs now: always unthrottled, else first in process or past the interval. */
+export function staleQuestionSweepDue(
+  lastSweptAt: number | undefined,
+  now: number,
+  throttled: boolean,
+): boolean {
+  if (!throttled || lastSweptAt === undefined) return true
+  return now - lastSweptAt >= STALE_QUESTION_SWEEP_INTERVAL_MS
+}
 
 /**
  * Completes the question-side half of synchronous stale-run reaping. A polling
@@ -508,8 +520,7 @@ export async function closeStaleChainQuestions(
   options: { throttled?: boolean } = {},
 ): Promise<number> {
   const now = Date.now()
-  const last = lastStaleQuestionSweep.get(database)
-  if (options.throttled && last !== undefined && now - last < STALE_QUESTION_SWEEP_INTERVAL_MS)
+  if (!staleQuestionSweepDue(lastStaleQuestionSweep.get(database), now, options.throttled === true))
     return 0
   lastStaleQuestionSweep.set(database, now)
   const terminal = new Set(['ok', 'failed', 'stale', 'stopped'])
@@ -527,7 +538,7 @@ export async function closeStaleChainQuestions(
     QUESTION_CLOSE_CHAIN_STALE,
   )
   const roots = new Set(terminalQuestions.map((question) => String(question.root_id)))
-  for (const rootId of await rootsWithPendingDelivery(database))
+  for (const rootId of rootsWithPendingDelivery(database))
     if (roots.has(rootId))
       await retireRunChainQuestionDeliveries(database, rootId, QUESTION_CLOSE_CHAIN_STALE)
   return closed

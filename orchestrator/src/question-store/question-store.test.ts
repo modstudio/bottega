@@ -401,6 +401,26 @@ test('record inbox paging advances independently across every reachable space', 
   database.close()
 })
 
+test('a reused record store retries identity after a failed read', async () => {
+  const database = migratedTestDatabase()
+  let identityReads = 0
+  const store = new RecordQuestionStore({
+    database,
+    client: {
+      whoami: async () => {
+        identityReads += 1
+        if (identityReads === 1) throw new Error('record API unavailable')
+        return whoami()
+      },
+      readQuestions: async () => ({ items: [], more: false }),
+    },
+  })
+  await expect(store.read({ read: 'inbox' })).rejects.toThrow('record API unavailable')
+  expect((await store.read({ read: 'inbox' })).items).toEqual([])
+  expect(identityReads).toBe(2)
+  database.close()
+})
+
 test('record mutations write back to the space holding the question', async () => {
   const database = migratedTestDatabase()
   seedOwners(database)
