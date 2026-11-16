@@ -27,18 +27,23 @@ def observe_board_requests(path: str, session_id: str, redact_secret_shaped) -> 
                 (session_id,),
             )
         }
+        local_task_keys: dict[str, set[str]] = {}
+        for message_id, value in connection.execute(
+            "SELECT message_record_id,value FROM board_message_tag "
+            "WHERE kind='task' AND origin='sender'"
+        ):
+            local_task_keys.setdefault(message_id, set()).add(value)
         roots, replies = [], []
         for row in connection.execute(
-            "SELECT record_id,number,kind,purpose,author_session,title,expires_at,withdrawn_at,"
+            "SELECT record_id,kind,purpose,author_session,title,expires_at,withdrawn_at,"
             "thread_root_record_id,created_at "
             "FROM board_message"
         ):
-            record_id, number, kind, purpose, author, title, expires, withdrawn, root_id, created = row
+            record_id, kind, purpose, author, title, expires, withdrawn, root_id, created = row
             if root_id is None:
                 roots.append(
                     {
                         "id": record_id,
-                        "label": f"board:{number} {_safe_title(title, redact_secret_shaped)}",
                         "kind": kind,
                         "purpose": purpose,
                         "author_session": author,
@@ -46,6 +51,7 @@ def observe_board_requests(path: str, session_id: str, redact_secret_shaped) -> 
                         "expires_at": expires,
                         "withdrawn_at": withdrawn,
                         "created_at": created,
+                        "task_keys": sorted(local_task_keys.get(record_id, set())),
                     }
                 )
             else:
@@ -64,6 +70,12 @@ def observe_board_requests(path: str, session_id: str, redact_secret_shaped) -> 
                 (session_id,),
             )
         }
+        hosted_task_keys: dict[str, set[str]] = {}
+        for message_id, value in connection.execute(
+            "SELECT message_id,value FROM hosted_board_message_tag_cache "
+            "WHERE kind='task' AND origin='sender'"
+        ):
+            hosted_task_keys.setdefault(message_id, set()).add(value)
         for message_id, kind, root_id, payload in connection.execute(
             "SELECT id,kind,thread_root_id,payload FROM hosted_board_message_cache"
         ):
@@ -75,7 +87,6 @@ def observe_board_requests(path: str, session_id: str, redact_secret_shaped) -> 
                 roots.append(
                     {
                         "id": message_id,
-                        "label": f"board:{message_id} {_safe_title(message.get('title'), redact_secret_shaped)}",
                         "kind": kind,
                         "purpose": message.get("purpose"),
                         "author_session": author,
@@ -83,6 +94,7 @@ def observe_board_requests(path: str, session_id: str, redact_secret_shaped) -> 
                         "expires_at": message.get("expiresAt"),
                         "withdrawn_at": message.get("withdrawnAt"),
                         "created_at": message.get("createdAt"),
+                        "task_keys": sorted(hosted_task_keys.get(message_id, set())),
                     }
                 )
             else:

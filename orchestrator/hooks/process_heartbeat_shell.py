@@ -232,11 +232,17 @@ esac
                 CREATE TABLE board_receipt (
                   message_record_id TEXT, reader_session TEXT, delivered_at TEXT
                 );
+                CREATE TABLE board_message_tag (
+                  message_record_id TEXT, kind TEXT, value TEXT, origin TEXT
+                );
                 CREATE TABLE hosted_board_message_cache (
                   id TEXT PRIMARY KEY, kind TEXT, thread_root_id TEXT, payload TEXT
                 );
                 CREATE TABLE hosted_board_receipt_cache (
                   message_id TEXT, reader_session TEXT, delivered_at TEXT
+                );
+                CREATE TABLE hosted_board_message_tag_cache (
+                  message_id TEXT, kind TEXT, value TEXT, origin TEXT
                 );
                 """
             )
@@ -283,7 +289,8 @@ esac
 
             waiting = heartbeat()
             self.assertIn("WAITING", waiting.stdout)
-            self.assertIn("board:12 Need a ruling", waiting.stdout)
+            self.assertIn("1 open request(s)", waiting.stdout)
+            self.assertNotIn("Need a ruling", waiting.stdout)
 
             connection = sqlite3.connect(store)
             connection.execute(
@@ -301,7 +308,8 @@ esac
             connection.close()
 
             released = heartbeat()
-            self.assertNotIn("board:12 Need a ruling", released.stdout)
+            self.assertNotIn("open request(s)", released.stdout)
+            self.assertNotIn("Need a ruling", released.stdout)
     def test_live_operational_status_uses_the_row_wording(self):
         base = {
             "record_id": "01990000-0000-7000-8000-000000000001",

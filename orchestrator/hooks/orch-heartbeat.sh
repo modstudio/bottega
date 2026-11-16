@@ -376,7 +376,7 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     request_rows=$(python3 "$ROOT/hooks/heartbeat-board-observation.py" \
       "$DB_PATH" "$SID" 2>/dev/null); requests_rc=$?
     requests_observed=$(printf '%s' "$request_rows" | \
-      python3 "$ROOT/hooks/heartbeat-decision.py" requests "$SID" 2>/dev/null); requests_parse_rc=$?
+      python3 "$ROOT/hooks/heartbeat-decision.py" requests "$SID" "$BOTTEGA" 2>/dev/null); requests_parse_rc=$?
     holds_observed=$(printf '%s' "$request_rows" | \
       python3 "$ROOT/hooks/heartbeat-decision.py" holds 2>/dev/null); holds_parse_rc=$?
   fi
@@ -420,7 +420,7 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   request_state=${requests_observed%%$'\n'*}
   request_state=${request_state#*$'\t'}
   request_n=${request_state%%$'\t'*}; request_rest=${request_state#*$'\t'}
-  request_detail=${request_rest%%$'\t'*}; request_ids=${request_rest#*$'\t'}
+  request_ids=${request_rest#*$'\t'}
   request_n=${request_n:-0}
   hold_state=${holds_observed%%$'\n'*}
   hold_state=${hold_state#*$'\t'}
@@ -485,7 +485,7 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     HEARTBEAT_RUNS="$n" HEARTBEAT_LANDINGS="$landing_n" \
     HEARTBEAT_STALLED="$stalled_n" HEARTBEAT_STALLED_DETAIL="$stalled_detail" \
     HEARTBEAT_WAITING_DETAIL="$combined_detail" \
-    HEARTBEAT_OPEN_REQUESTS="$request_n" HEARTBEAT_OPEN_REQUEST_DETAIL="$request_detail" \
+    HEARTBEAT_OPEN_REQUESTS="$request_n" \
     HEARTBEAT_OPEN_HOLDS="$hold_n" HEARTBEAT_OPEN_HOLD_DETAIL="$hold_detail" \
       python3 "$ROOT/hooks/heartbeat-decision.py" tick 2>"$decision_err")
   decision_rc=$?

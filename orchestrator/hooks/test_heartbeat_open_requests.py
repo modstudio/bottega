@@ -23,13 +23,16 @@ def root(**changes):
         "author_session": SESSION,
         "expires_at": "2027-01-15T09:00:00.000Z",
         "withdrawn_at": None,
+        "task_keys": [],
         **changes,
     }
 
 
 class OpenBoardRequestsTest(unittest.TestCase):
-    def decide(self, roots, replies=()):
-        return heartbeat_decision.open_board_requests(roots, list(replies), SESSION, NOW)
+    def decide(self, roots, replies=(), task_done=lambda _key: None):
+        return heartbeat_decision.open_board_requests(
+            roots, list(replies), SESSION, NOW, task_done
+        )
 
     def test_open_request_without_reply_holds_the_watch(self):
         self.assertEqual(self.decide([root()]), [root()])
@@ -52,6 +55,39 @@ class OpenBoardRequestsTest(unittest.TestCase):
         self.assertEqual(
             self.decide([root(withdrawn_at="2027-01-15T08:00:00.000Z")]), []
         )
+
+    def test_root_with_all_tagged_tasks_done_releases_the_watch(self):
+        self.assertEqual(
+            self.decide([root(task_keys=["DEV-1", "DEV-2"])], task_done=lambda _key: True),
+            [],
+        )
+
+    def test_one_done_and_one_open_task_keeps_the_watch(self):
+        self.assertEqual(
+            self.decide(
+                [root(task_keys=["DEV-1", "DEV-2"])],
+                task_done=lambda key: key == "DEV-1",
+            ),
+            [root(task_keys=["DEV-1", "DEV-2"])],
+        )
+
+    def test_unknown_task_status_keeps_the_watch(self):
+        self.assertEqual(
+            self.decide([root(task_keys=["DEV-1"])], task_done=lambda _key: None),
+            [root(task_keys=["DEV-1"])],
+        )
+
+    def test_non_string_task_key_keeps_watch_without_calling_resolver(self):
+        calls = []
+        tagged_root = root(task_keys=["DEV-1", 42])
+        self.assertEqual(
+            self.decide(
+                [tagged_root],
+                task_done=lambda key: calls.append(key) or True,
+            ),
+            [tagged_root],
+        )
+        self.assertEqual(calls, [])
 
 
 if __name__ == "__main__":
