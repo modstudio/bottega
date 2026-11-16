@@ -13,6 +13,7 @@ test('repairs only double-encoded question JSON values and pending question payl
   const brokenQuestionId = newRecordId()
   const correctQuestionId = newRecordId()
   const brokenPayloadId = newRecordId()
+  const malformedPayloadId = newRecordId()
   const syncedPayloadId = newRecordId()
   database
     .query(
@@ -75,6 +76,20 @@ test('repairs only double-encoded question JSON values and pending question payl
        VALUES (?,'question',?,?,?,?)`,
     )
     .run(syncedPayloadId, correctQuestionId, JSON.stringify(brokenPayload), STAMP, STAMP)
+  database
+    .query(
+      `INSERT INTO outbox (record_id,kind,row_id,payload,created_at)
+       VALUES (?,'question',?,?,?)`,
+    )
+    .run(
+      malformedPayloadId,
+      brokenQuestionId,
+      JSON.stringify({
+        typedOptions: '[object Object]',
+        criteria: JSON.stringify({ yes: 'go', no: 'stop' }),
+      }),
+      STAMP,
+    )
 
   expect(applyMigrations(database)).toContain(MIGRATION)
   const repaired = database
@@ -113,6 +128,16 @@ test('repairs only double-encoded question JSON values and pending question payl
   expect(pending).toMatchObject({
     quarantined_at: STAMP,
     quarantine_reason: 'invalid typed values',
+  })
+  expect(
+    JSON.parse(
+      database
+        .query<{ payload: string }, [string]>('SELECT payload FROM outbox WHERE record_id=?')
+        .get(malformedPayloadId)!.payload,
+    ),
+  ).toEqual({
+    typedOptions: '[object Object]',
+    criteria: { yes: 'go', no: 'stop' },
   })
   expect(
     database

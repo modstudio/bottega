@@ -22,25 +22,30 @@ WHERE json_type(jev_probabilities,'$')='text';
 UPDATE outbox
 SET payload=json_set(payload,'$.typedOptions',json(json_extract(payload,'$.typedOptions')))
 WHERE kind='question' AND synced_at IS NULL
-  AND json_type(payload,'$.typedOptions')='text';
+  AND json_type(payload,'$.typedOptions')='text'
+  AND json_valid(json_extract(payload,'$.typedOptions'));
 
 UPDATE outbox
 SET payload=json_set(payload,'$.criteria',json(json_extract(payload,'$.criteria')))
 WHERE kind='question' AND synced_at IS NULL
-  AND json_type(payload,'$.criteria')='text';
+  AND json_type(payload,'$.criteria')='text'
+  AND json_valid(json_extract(payload,'$.criteria'));
 
 UPDATE outbox
 SET payload=json_set(payload,'$.levels',json(json_extract(payload,'$.levels')))
 WHERE kind='question' AND synced_at IS NULL
-  AND json_type(payload,'$.levels')='text';
+  AND json_type(payload,'$.levels')='text'
+  AND json_valid(json_extract(payload,'$.levels'));
 
 UPDATE outbox
 SET payload=json_set(payload,'$.options',json(json_extract(payload,'$.options')))
 WHERE kind='question' AND synced_at IS NULL
-  AND json_type(payload,'$.options')='text';
+  AND json_type(payload,'$.options')='text'
+  AND json_valid(json_extract(payload,'$.options'));
 
 UPDATE outbox
 SET payload=json_set(payload,'$.jevProbabilities',json(json_extract(payload,'$.jevProbabilities')))
 WHERE kind='question' AND synced_at IS NULL
-  AND json_type(payload,'$.jevProbabilities')='text';
+  AND json_type(payload,'$.jevProbabilities')='text'
+  AND json_valid(json_extract(payload,'$.jevProbabilities'));
 -- /BACKFILL
