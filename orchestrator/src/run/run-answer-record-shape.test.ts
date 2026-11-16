@@ -65,12 +65,7 @@ test('multi-question self-ruling refusal leaves every answer unstored', async ()
     answerRun(
       id,
       {
-        argv: [
-          `--q${questions[0]!.number}`,
-          'first answer',
-          `--q${questions[1]!.number}`,
-          answer,
-        ],
+        argv: [`--q${questions[0]!.number}`, 'first answer', `--q${questions[1]!.number}`, answer],
         recordOnly: true,
         flags,
       },

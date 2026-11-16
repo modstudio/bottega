@@ -8,7 +8,7 @@ import {
   splitContextHolder,
 } from '../../../shared/context-item-vocabulary.ts'
 import {
-  answerRecordShape,
+  type answerRecordShape,
   type ContextRecordName,
   RECORD_SHAPES,
   recordShapeRefusal,
@@ -27,7 +27,7 @@ export const CONTEXT_ITEM_MAX_CHARS = {
   pointer: 400,
 } as const satisfies Record<ContextItemKind, number>
 
-export const CONTEXT_ITEM_RECORD_NAMES = {
+const CONTEXT_ITEM_RECORD_NAMES = {
   ruling: 'ruling',
   position: 'self-ruling',
 } as const satisfies Partial<Record<ContextItemKind, ContextRecordName>>
@@ -46,8 +46,9 @@ function invertAnswerContextKinds<
       ? unknown
       : never),
 ): InvertedRecordNames<Mapping> {
-  return Object.fromEntries(Object.entries(mapping).map(([kind, record]) => [record, kind])) as
-    InvertedRecordNames<Mapping>
+  return Object.fromEntries(
+    Object.entries(mapping).map(([kind, record]) => [record, kind]),
+  ) as InvertedRecordNames<Mapping>
 }
 
 /** The context kind written for each answer shape, derived from the store's shape policy. */
