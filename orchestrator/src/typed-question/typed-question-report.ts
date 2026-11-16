@@ -8,7 +8,7 @@ import {
 } from '../../../shared/typed-question/typed-question-blocks.ts'
 import type { TypedQuestionReportBlock } from '../../../shared/typed-question/typed-question-render.ts'
 import { db } from '../database/db.ts'
-import { questionsForChain } from '../question-store/question-store-read.ts'
+import { questionsForRunChain } from '../run/question-open.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { FINDING_DUPLICATE_QUESTION } from './finding-duplicate-question.ts'
 import {
@@ -60,9 +60,9 @@ export async function specUnsettledLabel(
     )
     .all(job, subjectRef)
   if (
-    (await Promise.all(roots.map(({ record_id }) => questionsForChain(database, record_id)))).some(
-      (questions) => questions.length > 0,
-    )
+    (
+      await Promise.all(roots.map(({ record_id }) => questionsForRunChain(database, record_id)))
+    ).some((questions) => questions.length > 0)
   )
     return true
   if (result.roots > 0 && result.terminal) return false

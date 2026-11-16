@@ -66,7 +66,7 @@ export function registerRecordQuestionRoutes(
       }
       return context.json(await deps.readQuestions({ ...tenant, ...read, changedAfter }))
     }
-    if (query.data.changedAfter !== undefined)
+    if (query.data.changedAfter !== undefined && query.data.read !== 'inbox')
       return context.json(
         {
           error: questionChangedAfterRefusal.message,

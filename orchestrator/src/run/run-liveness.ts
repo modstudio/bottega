@@ -7,7 +7,7 @@ import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import type { Database } from 'bun:sqlite'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { storeWritesRefused, writeTransaction } from '../database/db.ts'
-import { inboxRunQuestions } from '../question-store/question-store-read.ts'
+import { inboxRunQuestionPage } from '../question-store/question-store-read.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   liveWorktreeSharers,
@@ -492,9 +492,16 @@ export function reapStale(
 /** Completes the question-side half of synchronous stale-run reaping. */
 export async function closeStaleChainQuestions(database: Database): Promise<number> {
   const terminal = new Set(['ok', 'failed', 'stale', 'stopped'])
-  const terminalQuestions = (await inboxRunQuestions(database)).filter((question) =>
-    terminal.has(String(question.root_status)),
-  )
+  const terminalQuestions: Record<string, unknown>[] = []
+  let changedAfter: string | undefined
+  while (true) {
+    const page = await inboxRunQuestionPage(database, { limit: 100, changedAfter })
+    terminalQuestions.push(
+      ...page.items.filter((question) => terminal.has(String(question.root_status))),
+    )
+    if (!page.more) break
+    changedAfter = page.cursor
+  }
   const open = terminalQuestions.filter(
     (question) => question.answered_at === null && question.closed_at === null,
   )

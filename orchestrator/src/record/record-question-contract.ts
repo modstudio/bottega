@@ -126,6 +126,10 @@ const questionIds = z.preprocess(
   (value) => (typeof value === 'string' ? value.split(',').filter(Boolean) : value),
   z.array(id).min(1).max(100),
 )
+const workflowCursorRecordIds = z.preprocess(
+  (value) => (typeof value === 'string' ? value.split(',').filter(Boolean) : value),
+  z.array(id).min(1).max(100),
+)
 export const questionReadSchema = z.discriminatedUnion('read', [
   z.object({ read: z.literal('inbox'), limit: readLimit, changedAfter }),
   z.object({ read: z.literal('waiting'), limit: readLimit, changedAfter }),
@@ -157,6 +161,19 @@ export const questionReadSchema = z.discriminatedUnion('read', [
     changedAfter,
   }),
   z.object({ read: z.literal('for-run'), runId: id, limit: readLimit, changedAfter }),
+  z.object({ read: z.literal('max-number'), limit: readLimit, changedAfter }),
+  z.object({
+    read: z.literal('by-number'),
+    number: z.coerce.number().int().positive(),
+    limit: readLimit,
+    changedAfter,
+  }),
+  z.object({
+    read: z.literal('open-for-cursors'),
+    workflowCursorRecordIds,
+    limit: readLimit,
+    changedAfter,
+  }),
   z.object({
     read: z.literal('for-cursor'),
     workflowCursorRecordId: id,

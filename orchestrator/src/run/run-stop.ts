@@ -19,7 +19,7 @@ import {
 } from '../close/close-out-stop-release.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { mutateQuestion } from '../question-store/question-store-mutation.ts'
-import { questionsForChain } from '../question-store/question-store-read.ts'
+import { openChainQuestions } from './question-open.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   type TerminalDockerTeardown,
@@ -411,9 +411,7 @@ export async function abandonRun(
       .map((turn) => `${turn.record_id} turn ${turn.turn} ${turn.status}`)
       .join('; ')
 
-  const openQuestions = (await questionsForChain(db(), authority.rootId)).filter(
-    ({ answered_at, closed_at }) => answered_at === null && closed_at === null,
-  )
+  const openQuestions = await openChainQuestions<Record<string, unknown>>(db(), authority.rootId)
 
   const abandoned = writeTransaction(() => {
     const chain = readChain()

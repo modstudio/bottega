@@ -16,11 +16,8 @@ import type {
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { mutateQuestion } from '../question-store/question-store-mutation.ts'
-import {
-  inboxRunQuestions,
-  questionsForRun,
-  waitingQuestions,
-} from '../question-store/question-store-read.ts'
+import { inboxRunQuestions, waitingQuestions } from '../question-store/question-store-read.ts'
+import { questionsForRunChain } from '../run/question-open.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from '../run/run-authority.ts'
 import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
 import type { TaskFlowWaitingQuestionRow as WorkflowWaitingRow } from '../workflow/task-flow-store.ts'
@@ -115,13 +112,7 @@ export async function notifyWaitingItem(
 
 async function openQuestions(runId: string, d: Database) {
   const authority = authorizeRunMutation(runId, 'relay')
-  const runIds = d
-    .query<{ record_id: string }, [string, string]>(
-      'SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=? ORDER BY number',
-    )
-    .all(authority.rootId, authority.rootId)
-    .map(({ record_id }) => record_id)
-  const rows = (await Promise.all(runIds.map((id) => questionsForRun(d, id)))).flat() as {
+  const rows = (await questionsForRunChain(d, authority.rootId)) as {
     record_id: string
     number: number
     answered_at: string | null

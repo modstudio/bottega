@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { nextQuestionNumber } from '../run/question-number.ts'
+import { nextEntityNumber } from './entity-number.ts'
 import { applyMigrations } from './migrations.ts'
 import { migrationBoundaryTestDatabase } from './test-database.fixture.ts'
 
@@ -82,9 +82,9 @@ test('question UUID-key migration preserves every local relationship and seeds t
         .query('SELECT last_number FROM entity_number_counter WHERE entity=?')
         .get('question'),
     ).toEqual({ last_number: 80 })
-    expect(nextQuestionNumber(database)).toBe(81)
+    expect(nextEntityNumber(database, 'question')).toBe(81)
     database.query('DELETE FROM question WHERE record_id=?').run(questionRecordId)
-    expect(nextQuestionNumber(database)).toBe(82)
+    expect(nextEntityNumber(database, 'question')).toBe(82)
   } finally {
     database.close()
   }

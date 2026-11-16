@@ -5,11 +5,21 @@ import type { Database } from 'bun:sqlite'
 import type {
   TaskFlowInboxQuestionRow,
   TaskFlowOpenSessionStageRow,
-  TaskFlowRulingFileRow,
   TaskFlowTaskRulingRow,
   TaskFlowWaitingQuestionRow,
 } from '../workflow/task-flow-store-types.ts'
 import { questionStore } from './question-store.ts'
+
+export async function questionById(
+  database: Database,
+  id: string,
+): Promise<Record<string, unknown> | null> {
+  return (
+    ((await questionStore(database).read({ read: 'by-id', ids: [id] })).items[0] as
+      | Record<string, unknown>
+      | undefined) ?? null
+  )
+}
 
 export async function waitingQuestions(database: Database): Promise<TaskFlowWaitingQuestionRow[]> {
   return (await questionStore(database).read({ read: 'waiting' }))
@@ -36,6 +46,17 @@ export async function inboxRunQuestions(database: Database): Promise<Record<stri
   return items.filter((row) => 'run_record_id' in row) as Record<string, unknown>[]
 }
 
+export async function inboxRunQuestionPage(
+  database: Database,
+  input: { limit: number; changedAfter?: string },
+) {
+  const result = await questionStore(database).read({ read: 'inbox', ...input })
+  return {
+    ...result,
+    items: result.items.filter((row) => 'run_record_id' in row) as Record<string, unknown>[],
+  }
+}
+
 export async function questionsForRun(
   database: Database,
   runId: string,
@@ -46,32 +67,11 @@ export async function questionsForRun(
   >[]
 }
 
-export async function questionsForChain(
+export async function questionsForRuns(
   database: Database,
-  rootId: string,
+  runIds: readonly string[],
 ): Promise<Record<string, unknown>[]> {
-  const runIds = database
-    .query<{ record_id: string }, [string, string]>(
-      'SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=? ORDER BY number',
-    )
-    .all(rootId, rootId)
-    .map(({ record_id }) => record_id)
   return (await Promise.all(runIds.map((runId) => questionsForRun(database, runId)))).flat()
-}
-
-export async function openQuestionsForChain(
-  database: Database,
-  rootId: string,
-): Promise<Record<string, unknown>[]> {
-  return (await questionsForChain(database, rootId)).filter(
-    (row) => row.answered_at === null && row.closed_at === null,
-  )
-}
-
-export async function allQuestions(database: Database): Promise<Record<string, unknown>[]> {
-  const rulings = await questionRulings(database, { kind: 'all' })
-  const ids = rulings.items.map((row) => String(row.record_id))
-  return questionsById(database, ids)
 }
 
 export async function questionsForWorkflowCursor(
@@ -103,10 +103,36 @@ export async function questionByNumber(
   database: Database,
   number: number,
 ): Promise<Record<string, unknown> | null> {
-  const rulings = await questionRulings(database, { kind: 'all' })
-  const ruling = rulings.items.find((row) => Number(row.number) === number)
-  if (!ruling) return null
-  return (await questionsById(database, [String(ruling.record_id)]))[0] ?? null
+  return (
+    ((await questionStore(database).read({ read: 'by-number', number })).items[0] as
+      | Record<string, unknown>
+      | undefined) ?? null
+  )
+}
+
+export async function maximumQuestionNumber(database: Database): Promise<number> {
+  const row = (await questionStore(database).read({ read: 'max-number' })).items[0]
+  return row && 'number' in row ? Number(row.number) : 0
+}
+
+export async function openQuestionsForCursors(
+  database: Database,
+  workflowCursorRecordIds: string[],
+): Promise<Array<{ workflow_cursor_record_id: string; number: number }>> {
+  const rows: Array<{ workflow_cursor_record_id: string; number: number }> = []
+  for (let offset = 0; offset < workflowCursorRecordIds.length; offset += 100) {
+    const ids = workflowCursorRecordIds.slice(offset, offset + 100)
+    if (!ids.length) continue
+    rows.push(
+      ...((
+        await questionStore(database).read({
+          read: 'open-for-cursors',
+          workflowCursorRecordIds: ids,
+        })
+      ).items as Array<{ workflow_cursor_record_id: string; number: number }>),
+    )
+  }
+  return rows
 }
 
 export async function questionsById(
@@ -149,15 +175,4 @@ export async function questionProjects(
   return (await questionStore(database).read({ read: 'projects' })).items as Array<{
     project: string | null
   }>
-}
-
-export async function questionForFiling(
-  database: Database,
-  questionId: string,
-): Promise<TaskFlowRulingFileRow | null> {
-  return (
-    ((await questionStore(database).read({ read: 'by-id', ids: [questionId] })).items[0] as
-      | TaskFlowRulingFileRow
-      | undefined) ?? null
-  )
 }

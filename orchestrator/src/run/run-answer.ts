@@ -18,8 +18,7 @@ import { successorReviewLensInputStatusesFromPrompt } from '../database/review-l
 import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
-import { questionsById, questionsForChain } from '../question-store/question-store-read.ts'
-import { questionTaskHolderSql } from '../question-store/question-store-sql.ts'
+import { questionsById } from '../question-store/question-store-read.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import { chainTransport, retryModelForAgent, transportTurns } from '../route/failover.ts'
 import { answerRulingRefusal } from '../workflow/autonomy.ts'
@@ -34,7 +33,7 @@ import { applyArchitectQuestionAnswers } from './question-answer.ts'
 import { restoreOpenQuestionsAfterResumeFailure } from './question-answer-resume-failure.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
 import { pendingQuestionIds } from './question-delivery-pending.ts'
-import { openChainQuestions } from './question-open.ts'
+import { openChainQuestions, questionsForRunChain } from './question-open.ts'
 import {
   type AnswerChannel,
   QUESTION_DELIVERY_MODE_RESUME,
@@ -333,15 +332,9 @@ function requireAnswerAuthority(
 }
 
 async function readOpenQuestions(id: string, status: string): Promise<OpenQuestion[]> {
-  const open = await openChainQuestions<OpenQuestion>(
-    db(),
-    id,
-    `q.record_id,q.number,q.question,q.awaiting_operator_at,q.why,q.kind,q.options,q.typed_options,q.criteria,q.levels,
-     r.record_id owner_id,r.status owner_status,r.pid owner_pid,
-     ${questionTaskHolderSql('q', 'r')} taskHolder`,
-  )
+  const open = await openChainQuestions<OpenQuestion>(db(), id)
   if (open.length) return open
-  const asked = (await questionsForChain(db(), id)).length
+  const asked = (await questionsForRunChain(db(), id)).length
   throw new Error(
     asked
       ? `run ${id} has already been ruled on; its current status is ${status}`
@@ -442,7 +435,7 @@ async function latestRetryTurn(
     )
     .get(rootId, rootId) as { record_id: string; status: string }
   if (latest.status !== 'asking' || hasRecordedRulings) return latest
-  const questions = (await questionsForChain(db(), rootId)).filter(
+  const questions = (await questionsForRunChain(db(), rootId)).filter(
     ({ answered_at, closed_at }) => answered_at === null && closed_at === null,
   ) as { number: number; question: string }[]
   throw new Error(
@@ -578,7 +571,7 @@ export async function retryRun(
   // A writing job already has a worktree and a vendor session. Retry would
   // wrap the prompt again and cut a fresh tree beside the one holding the
   // partial edit. Continue the same conversation in the same tree instead.
-  const chainQuestions = await questionsForChain(db(), row.root_record_id)
+  const chainQuestions = await questionsForRunChain(db(), row.root_record_id)
   const pendingIds = new Set(
     pendingQuestionIds(db(), {
       questionIds: chainQuestions.map(({ record_id }) => String(record_id)),

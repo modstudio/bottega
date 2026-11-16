@@ -45,7 +45,6 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     '../caller-classification.ts',
     '../database/db.ts',
     '../workflow/task-flow-store.ts',
-    './question-number.ts',
     './question-open.ts',
     './question-outbox.ts',
     './question-vocabulary.ts',

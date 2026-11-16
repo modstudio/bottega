@@ -24,7 +24,7 @@ import { hookTreeNotice } from '../hook-tree/hook-tree.ts'
 import { runHasLiveDescendants } from '../idle-kill.ts'
 import { sampleProcesses } from '../process-resource-sampler.ts'
 import { isProjectRepository, projects } from '../project/projects.ts'
-import { openQuestionsForChain } from '../question-store/question-store-read.ts'
+import { openChainQuestions } from '../run/question-open.ts'
 import {
   refGuardInventory,
   retainedRefInventory,
@@ -98,7 +98,7 @@ export async function askingRuns(database = db()): Promise<AddressedRun[]> {
     .query(`SELECT record_id, started_at, session_id FROM run WHERE ${ASKING_RUN_WHERE}`)
     .all() as AddressedRun[]
   const open = await Promise.all(
-    candidates.map((run) => openQuestionsForChain(database, run.record_id)),
+    candidates.map((run) => openChainQuestions(database, run.record_id)),
   )
   return candidates.filter((_, index) => open[index]!.length === 0)
 }

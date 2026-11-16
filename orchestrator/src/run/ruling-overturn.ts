@@ -5,9 +5,9 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import {
   mutateQuestion,
-  questionById,
   requireQuestionMutationApplied,
 } from '../question-store/question-store-mutation.ts'
+import { questionById } from '../question-store/question-store-read.ts'
 import type { TaskFlowOverturnRulingRow as OverturnRow } from '../workflow/task-flow-store.ts'
 import { authorizeWorkflowQuestionMutation } from './question-mutation.ts'
 import { rulingActor } from './question-vocabulary.ts'

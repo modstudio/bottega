@@ -157,8 +157,7 @@ async function resolveAsking(database: Database, runId: string): Promise<AskingR
   } | null
   if (!member) throw new Error(`no run ${runId}`)
   const rootId = member.parent_run_record_id ?? member.record_id
-  if ((await openChainQuestions(database, rootId, 'record_id')).length)
-    return { state: 'open', rootId }
+  if ((await openChainQuestions(database, rootId)).length) return { state: 'open', rootId }
 
   const running = database
     .query(

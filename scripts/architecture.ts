@@ -126,7 +126,7 @@ const declaredModules: ArchitectureModule[] = [
     '../database/db.ts',
     '../record/record-task-flow-write-contract.ts',
     '../run/question-open.ts',
-    './task-flow-store-sqlite-questions.ts',
+    '../question-store/question-store-sqlite-reads.ts',
     './task-flow-store-sqlite-write.ts',
     './task-flow-store-methods.ts',
     './task-flow-store-types.ts',

@@ -4,6 +4,15 @@
 import type { Database } from 'bun:sqlite'
 import { TERMINAL_RUN_STATUS_SET } from './run-status.ts'
 
+export function runChainIds(database: Database, rootId: string): string[] {
+  return database
+    .query<{ record_id: string }, [string, string]>(
+      'SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=? ORDER BY number',
+    )
+    .all(rootId, rootId)
+    .map(({ record_id }) => record_id)
+}
+
 export function chainTerminationAtForRoot(database: Database, rootId: string): string | null {
   const terminal = database
     .query(

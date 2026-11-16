@@ -8,7 +8,7 @@ import type { RecordPayload } from '../record/record-sync-contract.ts'
 import type { HostedTaskFlowStageById } from '../record/record-task-flow-contract.ts'
 import { backfillTaskFlowRecords } from './task-flow-backfill.ts'
 import { recordTaskFlowReadStore } from './task-flow-store-record.ts'
-import { STAGE_BY_ID_READ_LIMIT } from './task-flow-store-record-questions.ts'
+import { STAGE_BY_ID_READ_LIMIT } from '../question-store/question-store-record-task-flow-compat.ts'
 import { sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
 
 const PROJECT_ID = '00000000-0000-4000-8000-000000000001'

@@ -18,7 +18,7 @@ import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { outcomeOf } from '../outcome.ts'
 import { type Project, resolvedWorktreeTool } from '../project/projects.ts'
-import { openQuestionsForChain } from '../question-store/question-store-read.ts'
+import { openChainQuestions } from './question-open.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import { chainTransport } from '../route/failover.ts'
 import { requireContinuationCheckout } from './continuation-checkout-service.ts'
@@ -241,7 +241,7 @@ export async function follow(
        * the file this was looking at.
        */
       if (row.status === 'asking') {
-        const open = (await openQuestionsForChain(
+        const open = (await openChainQuestions(
           db(),
           row.parent_run_record_id ?? chain.finalId,
         )) as unknown as {
@@ -736,7 +736,7 @@ export async function continueRun(
     )
     .get(id, id) as { record_id: string; turn: number } | null
   if (running) throw new Error(runningTurnRefusal(id, running))
-  const open = await openQuestionsForChain(db(), id)
+  const open = await openChainQuestions(db(), id)
   // A worker waiting on a ruling must be RULED ON, not talked past. Continuing
   // one would resume it with its question unanswered, and a worker resumed
   // with an open question guesses — the single thing this design exists to

@@ -4,9 +4,9 @@
 import { db, writeTransaction } from '../database/db.ts'
 import {
   mutateQuestion,
-  questionById,
   requireQuestionMutationApplied,
 } from '../question-store/question-store-mutation.ts'
+import { questionById } from '../question-store/question-store-read.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
 import { clearQuestionDeliveryPending } from './question-delivery-pending.ts'
 import {

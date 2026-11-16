@@ -12,9 +12,9 @@ import type { TypedQuestion } from '../../../shared/typed-question/registry.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import {
   mutateQuestion,
-  questionById,
   requireQuestionMutationApplied,
 } from '../question-store/question-store-mutation.ts'
+import { questionById } from '../question-store/question-store-read.ts'
 import { applyQuestionAnswer } from '../run/question-answer.ts'
 import {
   type AnswerChannel,

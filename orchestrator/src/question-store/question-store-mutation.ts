@@ -6,6 +6,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { machineId } from '../record/machine-identity.ts'
 import type { QuestionIntent, QuestionWriteBody } from '../record/record-question-contract.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
+import { questionById } from './question-store-read.ts'
 import { questionStore } from './question-store.ts'
 
 type Snapshot = QuestionWriteBody['question']
@@ -78,17 +79,6 @@ function questionSnapshotFromRow(row: Record<string, unknown>): Snapshot {
     createdAt: nullable(row.created_at) ?? askedAt,
     updatedAt: nullable(row.updated_at) ?? askedAt,
   }
-}
-
-export async function questionById(
-  database: Database,
-  id: string,
-): Promise<Record<string, unknown> | null> {
-  return (
-    ((await questionStore(database).read({ read: 'by-id', ids: [id] })).items[0] as
-      | Record<string, unknown>
-      | undefined) ?? null
-  )
 }
 
 export async function mutateQuestion(

@@ -3,7 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { writeTransaction } from '../database/db.ts'
-import { allQuestions } from '../question-store/question-store-read.ts'
+import { openQuestionsForCursors } from '../question-store/question-store-read.ts'
 import type {
   TaskFlowIntent,
   TaskFlowIntentInput,
@@ -14,7 +14,7 @@ import type {
   TaskFlowLocalReadMethod,
   TaskFlowWriteMethod,
 } from './task-flow-store-methods.ts'
-import * as questions from './task-flow-store-sqlite-questions.ts'
+import * as questions from '../question-store/question-store-sqlite-reads.ts'
 import {
   type TaskFlowSqliteWriteResult,
   writeSqliteTaskFlow,
@@ -771,11 +771,12 @@ export function sqliteTaskFlowReadStore(database: Database): SqliteTaskFlowReadS
     listOpenStages: async (input) => {
       const rows = local.listOpenStages(input)
       const openByCursor = new Map<string, number>()
-      for (const row of (await allQuestions(database)).filter(
-        (question) => question.answered_at === null && question.closed_at === null,
+      for (const row of await openQuestionsForCursors(
+        database,
+        rows.map(({ record_id }) => record_id),
       )) {
-        const cursorId = String(row.workflow_cursor_record_id)
-        if (!openByCursor.has(cursorId)) openByCursor.set(cursorId, Number(row.number))
+        const cursorId = row.workflow_cursor_record_id
+        if (!openByCursor.has(cursorId)) openByCursor.set(cursorId, row.number)
       }
       return rows.map((row) => ({
         ...row,

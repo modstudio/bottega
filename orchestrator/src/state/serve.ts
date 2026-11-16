@@ -23,7 +23,8 @@ import { JOBS } from '../jobs/jobs.ts'
 import { messagesForRun, receiptMessagesForArchitect } from '../mailbox/mailbox.ts'
 import { summary as metricSummary } from '../metric/metric.ts'
 import { projectAt } from '../project/projects.ts'
-import { questionsForChain, questionsForRun } from '../question-store/question-store-read.ts'
+import { questionsForRun } from '../question-store/question-store-read.ts'
+import { questionsForRunChain } from '../run/question-open.ts'
 import { reviewCalibration } from '../review/review-calibration.ts'
 import { evidenceModel } from '../route/evidence-model.ts'
 import { candidates, scoreboard } from '../route/route.ts'
@@ -198,7 +199,7 @@ export async function runDetail(
        WHERE audit.root_run_record_id=? ORDER BY at, audit.rowid`,
     )
     .all(rootId)
-  const questions = (await questionsForChain(db(), rootId)).map((question) => {
+  const questions = (await questionsForRunChain(db(), rootId)).map((question) => {
     const { number, run_number, ...row } = question as Record<string, unknown> & {
       number: number
       run_number: number

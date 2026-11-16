@@ -5,14 +5,6 @@ export const questionPortPublicModules = [
 
 export const questionCallerModules = [
   {
-    file: 'orchestrator/src/workflow/task-flow-store-sqlite-questions.ts',
-    allowed: [
-      'bun:sqlite',
-      'orchestrator/src/question-store/question-store-sqlite-reads.ts',
-      'orchestrator/src/workflow/task-flow-store-types.ts',
-    ],
-  },
-  {
     file: 'orchestrator/src/run/question-close.ts',
     allowed: [
       'shared/brand.ts',

@@ -6,13 +6,13 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, nowIso, sessionId } from '../database/db.ts'
 import {
   mutateQuestion,
-  questionById,
   requireQuestionMutationApplied,
 } from '../question-store/question-store-mutation.ts'
-import { questionsForRun } from '../question-store/question-store-read.ts'
+import { questionById } from '../question-store/question-store-read.ts'
 import type { TaskFlowQuestionCloseRow } from '../workflow/task-flow-store-types.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
 import { clearQuestionDeliveryPending, pendingQuestionIds } from './question-delivery-pending.ts'
+import { openChainQuestions, questionsForRunChain } from './question-open.ts'
 export const QUESTION_CLOSE_CHAIN_STOPPED = 'chain-stopped'
 export const QUESTION_CLOSE_CHAIN_VOIDED = 'chain-voided'
 export const QUESTION_CLOSE_CHAIN_STALE = 'chain-stale'
@@ -31,15 +31,7 @@ export type QuestionCloseReason =
   | 'abandoned'
 
 async function questionIdsForRunChain(database: Database, rootId: string): Promise<string[]> {
-  const runIds = database
-    .query<{ record_id: string }, [string, string]>(
-      'SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=? ORDER BY number',
-    )
-    .all(rootId, rootId)
-    .map(({ record_id }) => record_id)
-  const rows = (await Promise.all(runIds.map((id) => questionsForRun(database, id)))).flat()
-  return rows
-    .filter((row) => row.answered_at === null && row.closed_at === null)
+  return (await openChainQuestions<Record<string, unknown>>(database, rootId))
     .sort((a, b) => Number(a.number) - Number(b.number))
     .map((row) => String(row.record_id))
 }
@@ -98,13 +90,7 @@ export async function retireRunChainQuestionDeliveries(
     )
     .get(rootId, rootId)
   if (live) return 0
-  const runIds = database
-    .query<{ record_id: string }, [string, string]>(
-      'SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=? ORDER BY number',
-    )
-    .all(rootId, rootId)
-    .map(({ record_id }) => record_id)
-  const rows = (await Promise.all(runIds.map((id) => questionsForRun(database, id)))).flat()
+  const rows = await questionsForRunChain(database, rootId)
   const answeredIds = rows
     .filter((row) => row.answered_at !== null)
     .map((row) => String(row.record_id))

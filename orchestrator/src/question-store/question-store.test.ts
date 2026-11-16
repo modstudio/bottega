@@ -146,6 +146,13 @@ async function questionStoreContract(store: QuestionStore, database: Database) {
   })
   const open = (await store.read({ read: 'open-for-session', sessionId: 'owner-session' })).items
   expect(open[0]).toMatchObject({ record_id: CURSOR_ID, open_question_record_id: workflow.id })
+  expect((await store.read({ read: 'max-number' })).items).toEqual([{ number: 1 }])
+  expect((await store.read({ read: 'by-number', number: 1 })).items[0]).toMatchObject({
+    record_id: workflow.id,
+  })
+  expect(
+    (await store.read({ read: 'open-for-cursors', workflowCursorRecordIds: [CURSOR_ID] })).items,
+  ).toEqual([{ workflow_cursor_record_id: CURSOR_ID, number: 1 }])
 
   const run = snapshot({
     id: RUN_QUESTION_ID,
@@ -155,6 +162,7 @@ async function questionStoreContract(store: QuestionStore, database: Database) {
     askedVia: 'live',
   })
   await store.write('ask', body(run))
+  expect((await store.read({ read: 'max-number' })).items).toEqual([{ number: 2 }])
   expect((await store.read({ read: 'by-id', ids: [run.id] })).items).toHaveLength(1)
   expect((await store.read({ read: 'for-run', runId: RUN_ID })).items).toHaveLength(1)
   expect(

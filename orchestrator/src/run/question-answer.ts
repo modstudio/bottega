@@ -2,7 +2,8 @@
 /** The single stored-question answer transition used by every answer channel. */
 
 import type { Database } from 'bun:sqlite'
-import { mutateQuestion, questionById } from '../question-store/question-store-mutation.ts'
+import { mutateQuestion } from '../question-store/question-store-mutation.ts'
+import { questionById } from '../question-store/question-store-read.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
 import {
   clearQuestionDeliveryPending,

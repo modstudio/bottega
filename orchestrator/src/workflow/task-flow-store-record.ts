@@ -23,7 +23,7 @@ import {
   currentRecordWriteDecision,
   throwIfRecordRefused,
 } from '../record/record-write-authority.ts'
-import { recordQuestionReads } from './task-flow-store-record-questions.ts'
+import { recordQuestionReads } from '../question-store/question-store-record-task-flow-compat.ts'
 import {
   type ListedItem,
   required,

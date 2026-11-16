@@ -2,6 +2,7 @@
 /** Adapts the existing SQLite question rows to the question port. */
 
 import type { Database } from 'bun:sqlite'
+import { nextEntityNumber } from '../database/entity-number.ts'
 import type {
   QuestionIntent,
   QuestionReadInput,
@@ -11,8 +12,11 @@ import type {
 import { questionChangedAfterRefusal } from '../record/record-question-contract.ts'
 import {
   localQuestionProjects,
+  maxQuestionNumber,
   openStagesForSession,
-  questionsById,
+  openQuestionsForCursors,
+  questionByNumberRow,
+  questionsByIdRows,
   questionsForCursor,
   questionsForRun,
   ruleAuditReasons,
@@ -31,7 +35,7 @@ const limited = <Row>(rows: Row[], limit?: number): Row[] =>
 function assertLocalChangedAfter(input: QuestionReadInput): void {
   if (
     input.changedAfter !== undefined &&
-    (input.read !== 'rulings' || !/^\d+$/.test(input.changedAfter))
+    ((input.read !== 'rulings' && input.read !== 'inbox') || !/^\d+$/.test(input.changedAfter))
   )
     throw new Error(
       `${questionChangedAfterRefusal.local.message}; ${questionChangedAfterRefusal.local.remedy}`,
@@ -77,11 +81,7 @@ export class SqliteQuestionStore implements QuestionStore {
       )
       .get(q.id)
     if (intent !== 'ask' && !existing) throw new Error(`question ${q.id} not found`)
-    const number =
-      existing?.number ??
-      this.database
-        .query<{ number: number }, []>('SELECT COALESCE(MAX(number),0)+1 number FROM question')
-        .get()!.number
+    const number = existing?.number ?? nextEntityNumber(this.database, 'question')
     const write = this.database
       .query(
         `INSERT INTO question
@@ -187,13 +187,19 @@ export class SqliteQuestionStore implements QuestionStore {
 
   async read(input: QuestionReadInput): Promise<QuestionReadResult> {
     assertLocalChangedAfter(input)
-    if (input.read === 'inbox')
+    if (input.read === 'inbox') {
+      const rows = [
+        ...runInboxQuestionRows(this.database),
+        ...workflowInboxQuestions(this.database),
+      ]
+      const offset = input.changedAfter === undefined ? 0 : Number(input.changedAfter)
+      const end = input.limit === undefined ? rows.length : offset + input.limit
       return {
-        items: limited(
-          [...runInboxQuestionRows(this.database), ...workflowInboxQuestions(this.database)],
-          input.limit,
-        ),
+        items: rows.slice(offset, end),
+        cursor: String(end),
+        more: end < rows.length,
       }
+    }
     if (input.read === 'waiting')
       return { items: limited(waitingWorkflowQuestions(this.database), input.limit) }
     if (input.read === 'open-for-session')
@@ -212,9 +218,20 @@ export class SqliteQuestionStore implements QuestionStore {
       }
     }
     if (input.read === 'by-id')
-      return { items: limited(questionsById(this.database, input.ids), input.limit) }
+      return { items: limited(questionsByIdRows(this.database, input.ids), input.limit) }
     if (input.read === 'for-run')
       return { items: limited(questionsForRun(this.database, input.runId), input.limit) }
+    if (input.read === 'max-number')
+      return { items: limited(maxQuestionNumber(this.database), input.limit) }
+    if (input.read === 'by-number')
+      return { items: limited(questionByNumberRow(this.database, input.number), input.limit) }
+    if (input.read === 'open-for-cursors')
+      return {
+        items: limited(
+          openQuestionsForCursors(this.database, input.workflowCursorRecordIds),
+          input.limit,
+        ),
+      }
     if (input.read === 'for-cursor')
       return {
         items: limited(

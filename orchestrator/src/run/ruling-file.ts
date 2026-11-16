@@ -18,7 +18,7 @@ import {
   mutateQuestion,
   requireQuestionMutationApplied,
 } from '../question-store/question-store-mutation.ts'
-import { questionForFiling } from '../question-store/question-store-read.ts'
+import { questionById } from '../question-store/question-store-read.ts'
 import type { TaskFlowRulingFileRow as QuestionRow } from '../workflow/task-flow-store.ts'
 import { authorizeWorkflowQuestionMutation } from './question-mutation.ts'
 import { questionRulingRemedy } from './question-ruling-remedy.ts'
@@ -178,7 +178,7 @@ function ownerRefusal(
 }
 
 async function loadQuestion(questionId: string): Promise<QuestionRow> {
-  const row = await questionForFiling(db(), questionId)
+  const row = (await questionById(db(), questionId)) as QuestionRow | null
   if (!row)
     throw new Error(
       `no question ${questionId}; inspect question ids with ${PLATFORM_SLUG} question inbox --all`,

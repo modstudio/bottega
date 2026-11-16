@@ -56,7 +56,7 @@ export class RecordQuestionStore implements QuestionStore {
   }
 
   async read(input: QuestionReadInput): Promise<QuestionReadResult> {
-    if (input.changedAfter !== undefined && input.read !== 'rulings')
+    if (input.changedAfter !== undefined && input.read !== 'rulings' && input.read !== 'inbox')
       throw new Error(
         `${questionChangedAfterRefusal.message}; ${questionChangedAfterRefusal.remedy}`,
       )

@@ -158,7 +158,6 @@ export const workflowInboxQuestions = (database: Database): TaskFlowInboxQuestio
 export function runInboxQuestionRows(
   database: Database,
   cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString(),
-  rootVoidedSql = voidedSql('root'),
 ): QueriedInboxQuestion[] {
   return database
     .query(
@@ -170,7 +169,7 @@ export function runInboxQuestionRows(
             r.agent,r.job,r.repo,COALESCE(r.launch_key,root.launch_key) task_key,
             root.project_record_id,r.status,r.session_id,q.awaiting_operator_at,
             root.status root_status,root.record_id root_record_id,root.number root_number,
-            ${rootVoidedSql} root_voided,
+            ${voidedSql('root')} root_voided,
             COALESCE(r.parent_run_record_id,r.record_id) root_id,
             CASE WHEN r.session_id IS NOT NULL AND seen.last_seen>=? THEN 1 ELSE 0 END session_recent
        FROM question q JOIN run r ON r.record_id=q.run_record_id
@@ -434,7 +433,7 @@ const QUESTION_PORT_COLUMNS = `q.*,owner.number run_number,owner.record_id owner
   COALESCE(run_project.name,cursor.project) project_name,
   COALESCE(run_project.record_id,project.record_id) project_record_id`
 
-export const questionsById = (
+export const questionsByIdRows = (
   database: Database,
   ids: readonly string[],
 ): Record<string, unknown>[] => {
@@ -449,6 +448,42 @@ export const questionsById = (
        WHERE q.record_id IN (${ids.map(() => '?').join(',')}) ORDER BY q.number`,
     )
     .all(...ids) as Record<string, unknown>[]
+}
+
+export const maxQuestionNumber = (database: Database): Array<{ number: number }> => [
+  database
+    .query<{ number: number }, []>('SELECT COALESCE(MAX(number),0) number FROM question')
+    .get()!,
+]
+
+export const questionByNumberRow = (
+  database: Database,
+  number: number,
+): Record<string, unknown>[] =>
+  database
+    .query(
+      `SELECT ${QUESTION_PORT_COLUMNS} FROM question q
+       LEFT JOIN run owner ON owner.record_id=q.run_record_id
+       LEFT JOIN project run_project ON run_project.record_id=owner.project_record_id
+       LEFT JOIN workflow_cursor cursor ON cursor.record_id=q.workflow_cursor_record_id
+       LEFT JOIN project ON project.record_id=cursor.project_record_id
+       WHERE q.number=?`,
+    )
+    .all(number) as Record<string, unknown>[]
+
+export const openQuestionsForCursors = (
+  database: Database,
+  cursorIds: readonly string[],
+): Array<{ workflow_cursor_record_id: string; number: number }> => {
+  if (!cursorIds.length) return []
+  return database
+    .query<{ workflow_cursor_record_id: string; number: number }, string[]>(
+      `SELECT workflow_cursor_record_id,MIN(number) number FROM question
+       WHERE workflow_cursor_record_id IN (${cursorIds.map(() => '?').join(',')})
+         AND answered_at IS NULL AND closed_at IS NULL
+       GROUP BY workflow_cursor_record_id ORDER BY number`,
+    )
+    .all(...cursorIds)
 }
 
 export const questionsForCursor = (

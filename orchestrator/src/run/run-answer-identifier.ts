@@ -3,13 +3,10 @@
 
 import type { Database } from 'bun:sqlite'
 import { storedMachineNames } from '../../../shared/machine-config.ts'
-import {
-  questionRulings,
-  questionsById,
-  questionsForChain,
-} from '../question-store/question-store-read.ts'
+import { questionRulings, questionsById } from '../question-store/question-store-read.ts'
 import { type MachineIdentifierNames, stripMachineLabel } from '../record/machine-name.ts'
 import { classifyBareRunIdentifier } from './run-identifier-grammar.ts'
+import { questionsForRunChain } from './question-open.ts'
 
 export type ParsedAnswerIdentifier =
   | { kind: 'question-number'; number: number }
@@ -157,7 +154,7 @@ export function answerIdentifierDecision(facts: AnswerIdentifierFacts): AnswerId
 }
 
 async function openQuestionNumbers(database: Database, rootRecordId: string): Promise<number[]> {
-  return (await questionsForChain(database, rootRecordId))
+  return (await questionsForRunChain(database, rootRecordId))
     .filter(({ answered_at, closed_at }) => answered_at === null && closed_at === null)
     .map(({ number }) => Number(number))
     .sort((a, b) => a - b)

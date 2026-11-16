@@ -72,6 +72,7 @@ const QUESTION_DETAIL_COLUMNS = `q.id::text record_id,q.number,q.run_id::text ru
   q.jev_agreed,q.jev_question_version,q.jev_fits,q.jev_order_flipped,q.awaiting_operator_at::text,
   q.relayed_by,q.overturned_at::text,q.overturned_by,q.overturned_by_name,q.overturn_reason,q.replacement,
   q.filed_as,q.filed_ref,q.filed_record_id::text,q.filed_label,q.filed_at::text,q.closed_at::text,q.close_reason,
+  q.withheld_fields,q.created_at::text,q.updated_at::text,
   owner.number run_number,owner.id::text owner_id,owner.status owner_status,owner.pid owner_pid,
   COALESCE(owner.parent_run_id,owner.id)::text root_id,
   stage.number workflow_cursor_number,stage.workflow workflow_slug,stage.mode mode_slug,
@@ -113,6 +114,32 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
   if (input.read === 'by-id') return limited(await recordQuestionDetails(tx, input), input.limit)
   if (input.read === 'for-run')
     return limited(await recordQuestionDetails(tx, { runId: input.runId }), input.limit)
+  if (input.read === 'max-number')
+    return (await tx.unsafe('SELECT COALESCE(MAX(number),0) number FROM question', [])) as Row[]
+  if (input.read === 'by-number')
+    return limited(
+      (await tx.unsafe(
+        `SELECT ${QUESTION_DETAIL_COLUMNS} FROM question q
+         LEFT JOIN run owner ON owner.id=q.run_id
+         LEFT JOIN project run_project ON run_project.id=owner.project_id
+         LEFT JOIN task_flow_stage stage ON stage.id=q.workflow_cursor_record_id
+         LEFT JOIN project stage_project ON stage_project.id=stage.project_id
+         WHERE q.number=$1`,
+        [input.number],
+      )) as Row[],
+      input.limit,
+    )
+  if (input.read === 'open-for-cursors')
+    return limited(
+      (await tx.unsafe(
+        `SELECT workflow_cursor_record_id::text,MIN(number) number FROM question
+         WHERE workflow_cursor_record_id IN (${input.workflowCursorRecordIds.map((_, index) => `$${index + 1}::uuid`).join(',')})
+           AND answered_at IS NULL AND closed_at IS NULL
+         GROUP BY workflow_cursor_record_id ORDER BY number`,
+        input.workflowCursorRecordIds,
+      )) as Row[],
+      input.limit,
+    )
   if (input.read === 'for-cursor')
     return limited(
       await recordQuestionDetails(tx, {
@@ -159,7 +186,12 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
        ORDER BY q.asked_at,q.number`,
       [],
     )) as Row[]
-    return limited([...runs, ...workflows], input.limit)
+    const combined = [...runs, ...workflows]
+    const offset = input.changedAfter === undefined ? 0 : Number(input.changedAfter)
+    return combined.slice(
+      offset,
+      input.limit === undefined ? combined.length : offset + input.limit + 1,
+    )
   }
   if (input.read === 'waiting')
     return limited(
@@ -300,6 +332,10 @@ export async function readRecordQuestions(
   }
   return client.begin(async (tx) => {
     await bindTenant(tx, input)
-    return { items: await rows(tx, input) }
+    const items = await rows(tx, input)
+    if (input.read !== 'inbox' || input.limit === undefined) return { items }
+    const offset = input.changedAfter === undefined ? 0 : Number(input.changedAfter)
+    const page = items.slice(0, input.limit)
+    return { items: page, cursor: String(offset + page.length), more: items.length > input.limit }
   })
 }

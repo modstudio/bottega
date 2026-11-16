@@ -7,10 +7,13 @@ import { callerIdentity, db, sessionId } from '../database/db.ts'
 import {
   askQuestion,
   mutateQuestion,
-  questionById,
   requireQuestionMutationApplied,
 } from '../question-store/question-store-mutation.ts'
-import { questionRulings, waitingQuestions } from '../question-store/question-store-read.ts'
+import {
+  questionById,
+  questionRulings,
+  waitingQuestions,
+} from '../question-store/question-store-read.ts'
 import { rulingActor } from './question-vocabulary.ts'
 import { adoptedMutationReason } from './run-authority.ts'
 import {

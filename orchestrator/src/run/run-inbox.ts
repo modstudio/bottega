@@ -4,13 +4,9 @@ import type { Database } from 'bun:sqlite'
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, sessionId } from '../database/db.ts'
-import { voidedSql } from '../evidence/evidence-query.ts'
 import { projectAt } from '../project/projects.ts'
 import { inboxRunQuestions, inboxWorkflowQuestions } from '../question-store/question-store-read.ts'
-import {
-  type QueriedInboxQuestion,
-  runInboxQuestionRows as sqliteRunInboxQuestionRows,
-} from '../question-store/question-store-sqlite-reads.ts'
+import type { QueriedInboxQuestion } from '../question-store/question-store-types.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 import { runQuestionGroupFooter } from './question-display.ts'
@@ -80,14 +76,7 @@ type WorkflowInboxQuestion = {
   ownership_notice: string | null
 }
 
-export type { QueriedInboxQuestion } from '../question-store/question-store-sqlite-reads.ts'
-
-export function runInboxQuestionRows(
-  database: ReturnType<typeof db>,
-  cutoff?: string,
-): QueriedInboxQuestion[] {
-  return sqliteRunInboxQuestionRows(database, cutoff, voidedSql('root'))
-}
+export type { QueriedInboxQuestion } from '../question-store/question-store-types.ts'
 
 type RecoverableInboxRow = {
   record_id: string
@@ -186,7 +175,7 @@ export async function queryInbox(
   const scopedFilter = scopedProjectFilter(scoped, scopedProject)
   const defaultProject =
     input.scope === 'cli-default' && !scoped && mine ? projectAt(process.cwd()) : null
-  const queriedRows = runInboxQuestionRows(database)
+  const queriedRows = (await inboxRunQuestions(database)) as QueriedInboxQuestion[]
   const isLive = (question: (typeof queriedRows)[number]) =>
     answerRunLivenessRefusal(
       { status: question.root_status, voided: Boolean(question.root_voided) },

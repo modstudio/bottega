@@ -14,7 +14,8 @@ import { liveOperationalStatusFromEvents, readEventLog, runEventsPath } from '..
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { failureReason, type OutcomeRow, outcomeOf } from '../outcome.ts'
 import type { ProcessSample } from '../process-resource-sampler.ts'
-import { questionRulings, questionsForChain } from '../question-store/question-store-read.ts'
+import { questionRulings } from '../question-store/question-store-read.ts'
+import { questionsForRunChain } from './question-open.ts'
 import { publishChangeCursor } from './collect-change.ts'
 import { currentRunMemberJoin, liveMemberStall } from './live-run-member.ts'
 import type {
@@ -141,7 +142,7 @@ function reportRouteAndExecutor(row: Record<string, unknown>, log: (...values: u
 async function listingQuestions(recordId: string, json: boolean) {
   if (!json) return undefined
   return (
-    (await questionsForChain(db(), recordId)) as unknown as {
+    (await questionsForRunChain(db(), recordId)) as unknown as {
       number: number
       record_id: string
       run_record_id: string

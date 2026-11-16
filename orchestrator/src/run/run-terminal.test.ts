@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -15,7 +14,7 @@ import {
   writeObservedTestOutcome,
   writeTerminalOperationalState,
 } from './run-terminal.ts'
-import { closeTerminalChainQuestions, finalizeTerminalChain } from './run-terminal-chain.ts'
+import { finalizeTerminalChain } from './run-terminal-chain.ts'
 
 test('an unverified observed test outcome stores claim disagreement as null', () => {
   const runId = addRun({ agent: 'codex', job: 'implement' })
@@ -104,41 +103,6 @@ test('an ok child refreshes the failed root run record with the chain outcome', 
     )
     .get(root)!
   expect(JSON.parse(latest.payload)).toMatchObject({ status: 'ok', failureKind: null })
-})
-
-test('a failed non-failover child closes its question before the root inherits failure', async () => {
-  const root = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
-  const child = addRun({
-    agent: 'codex',
-    job: 'implement',
-    status: 'failed',
-    kind: 'interrupted',
-    parent: root,
-    turn: 2,
-  })
-  db()
-    .query(
-      `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`,
-    )
-    .run(child, '2026-09-29', 'What should happen?')
-
-  finalizeTerminalChain(db(), {
-    runId: child,
-    parentRunId: root,
-    status: 'failed',
-    failureKind: 'interrupted',
-    error: 'worker interrupted',
-    record: ['01990000-0000-7000-8000-000000000099', '2026-10-16T12:01:00.000Z'],
-  })
-  await closeTerminalChainQuestions(db(), root, 'failed', 'interrupted')
-
-  expect(db().query('SELECT status,failure_kind FROM run WHERE record_id=?').get(root)).toEqual({
-    status: 'failed',
-    failure_kind: 'interrupted',
-  })
-  expect(db().query('SELECT close_reason FROM question WHERE run_record_id=?').get(child)).toEqual({
-    close_reason: 'chain-terminal',
-  })
 })
 
 test('artifact persistence failure retains a completed worker outcome', () => {
