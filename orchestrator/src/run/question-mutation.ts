@@ -218,6 +218,7 @@ export async function answerWorkflowQuestion(
     at: input.at,
     actorSession: input.actor,
     reason: joinMutationReason(input.ruling, input.adoptionReason ?? null),
+    auditAction: 'rule',
     changes: {
       answer: input.ruling,
       answerBasis: input.basis ?? null,

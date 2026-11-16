@@ -770,11 +770,13 @@ export function sqliteTaskFlowReadStore(database: Database): SqliteTaskFlowReadS
     activeStageModes: async (input) => local.activeStageModes(input),
     listOpenStages: async (input) => {
       const rows = local.listOpenStages(input)
-      const openByCursor = new Map(
-        (await allQuestions(database))
-          .filter((row) => row.answered_at === null && row.closed_at === null)
-          .map((row) => [row.workflow_cursor_record_id, Number(row.number)]),
-      )
+      const openByCursor = new Map<string, number>()
+      for (const row of (await allQuestions(database)).filter(
+        (question) => question.answered_at === null && question.closed_at === null,
+      )) {
+        const cursorId = String(row.workflow_cursor_record_id)
+        if (!openByCursor.has(cursorId)) openByCursor.set(cursorId, Number(row.number))
+      }
       return rows.map((row) => ({
         ...row,
         question_number: openByCursor.get(row.record_id) ?? null,

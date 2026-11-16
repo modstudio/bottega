@@ -99,6 +99,7 @@ export async function mutateQuestion(
     at: string
     actorSession: string | null
     reason: string | null
+    auditAction?: string
     changes: Partial<Snapshot>
     expectedRevision?: number
   },
@@ -117,7 +118,7 @@ export async function mutateQuestion(
       updatedAt: input.at,
     },
     audit: {
-      action: input.intent,
+      action: input.auditAction ?? input.intent,
       actorSession: input.actorSession,
       at: input.at,
       reason: input.reason,

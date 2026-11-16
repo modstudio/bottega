@@ -139,7 +139,7 @@ export class SqliteQuestionStore implements QuestionStore {
         q.jevQuestionVersion,
         q.jevFits,
         q.jevOrderFlipped,
-        workflowStep?.ordinal ?? null,
+        workflowStep === null ? null : workflowStep.ordinal + 1,
         workflowStep?.step_slug ?? null,
       )
     this.database

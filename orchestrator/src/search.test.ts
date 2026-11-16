@@ -20,12 +20,22 @@ function fixture(): Database {
   d.exec(`
     CREATE TABLE run (
       record_id TEXT PRIMARY KEY, number INTEGER NOT NULL UNIQUE, parent_run_record_id TEXT, launch_key TEXT,
-      started_at TEXT NOT NULL, output_path TEXT
+      started_at TEXT NOT NULL, output_path TEXT, repo TEXT, session_id TEXT
     );
     CREATE TABLE score (number INTEGER UNIQUE, run_record_id TEXT, note TEXT);
     CREATE TABLE question (
       record_id TEXT PRIMARY KEY, number INTEGER NOT NULL UNIQUE, run_record_id TEXT, question TEXT, options TEXT,
-      recommendation TEXT, why TEXT, answer TEXT
+      recommendation TEXT, why TEXT, answer TEXT, workflow_cursor_record_id TEXT, workflow_key TEXT,
+      workflow_task_record_id TEXT, asked_at TEXT, answer_basis TEXT, answered_at TEXT, kind TEXT,
+      jev_model TEXT, jev_pick TEXT, jev_probabilities TEXT, jev_agreed INTEGER,
+      jev_question_version INTEGER, jev_fits REAL, jev_order_flipped INTEGER, answered_by TEXT,
+      answered_by_name TEXT, asked_via TEXT, answerer_kind TEXT, answer_channel TEXT, closed_at TEXT,
+      close_reason TEXT, overturned_at TEXT, overturned_by TEXT, overturned_by_name TEXT,
+      overturn_reason TEXT, replacement TEXT, filed_as TEXT, filed_ref TEXT, filed_record_id TEXT,
+      filed_label TEXT, filed_at TEXT, change_seq INTEGER DEFAULT 0
+    );
+    CREATE TABLE workflow_cursor (
+      record_id TEXT PRIMARY KEY, project TEXT, workflow_slug TEXT, mode_slug TEXT, session_id TEXT
     );
     CREATE TABLE review_lens (record_id TEXT PRIMARY KEY, run_record_id TEXT);
     CREATE TABLE review (record_id TEXT PRIMARY KEY, number INTEGER NOT NULL UNIQUE);
@@ -46,9 +56,11 @@ describe('record search', () => {
     writeFileSync(output, `worker established ${'long '.repeat(80)}result`)
     const d = fixture()
     d.exec(`
-      INSERT INTO run VALUES ('01990000-0000-7000-8000-000000000001', 1, NULL, 'DEV-203', '2026-09-01T00:00:00Z', '${output}');
+      INSERT INTO run (record_id,number,parent_run_record_id,launch_key,started_at,output_path)
+      VALUES ('01990000-0000-7000-8000-000000000001', 1, NULL, 'DEV-203', '2026-09-01T00:00:00Z', '${output}');
       INSERT INTO score VALUES (1, '01990000-0000-7000-8000-000000000001', 'A substantial scoring note that does not repeat its task key.');
-      INSERT INTO question VALUES ('01990000-0000-7000-8000-000000000101', 1, '01990000-0000-7000-8000-000000000001', 'Which primitive?', NULL, NULL, NULL, 'Use read-tree.');
+      INSERT INTO question (record_id,number,run_record_id,question,options,recommendation,why,answer,asked_at)
+      VALUES ('01990000-0000-7000-8000-000000000101', 1, '01990000-0000-7000-8000-000000000001', 'Which primitive?', NULL, NULL, NULL, 'Use read-tree.','2026-09-01T00:00:00Z');
       INSERT INTO review_lens VALUES ('01990000-0000-7000-8000-000000000201', '01990000-0000-7000-8000-000000000001');
       INSERT INTO review VALUES ('01990000-0000-7000-8000-000000000401', 1);
       INSERT INTO review_finding VALUES ('01990000-0000-7000-8000-000000000301', '01990000-0000-7000-8000-000000000201', '01990000-0000-7000-8000-000000000401', 1, 'major', 'file.ts:4', 'The guard is process-local.', 'Move it to the repository hook.', 'accepted', NULL);
@@ -71,7 +83,8 @@ describe('record search', () => {
   test('file and function searches are literal and honestly marked weak', async () => {
     const d = fixture()
     d.exec(`
-      INSERT INTO run VALUES ('01990000-0000-7000-8000-000000000001', 1, NULL, 'DEV-1', '2026-09-01T00:00:00Z', NULL);
+      INSERT INTO run (record_id,number,parent_run_record_id,launch_key,started_at,output_path)
+      VALUES ('01990000-0000-7000-8000-000000000001', 1, NULL, 'DEV-1', '2026-09-01T00:00:00Z', NULL);
       INSERT INTO score VALUES (1, '01990000-0000-7000-8000-000000000001', 'Checked resolveBase() in orchestrator/src/worktree/worktree.ts:44; it preserves HEAD.');
     `)
 
@@ -84,7 +97,8 @@ describe('record search', () => {
   test('missing output files are reported instead of silently treated as searchable', async () => {
     const d = fixture()
     d.exec(
-      `INSERT INTO run VALUES ('01990000-0000-7000-8000-000000000001', 1, NULL, 'DEV-1', '2026-09-01T00:00:00Z', '/definitely/missing/output')`,
+      `INSERT INTO run (record_id,number,parent_run_record_id,launch_key,started_at,output_path)
+       VALUES ('01990000-0000-7000-8000-000000000001', 1, NULL, 'DEV-1', '2026-09-01T00:00:00Z', '/definitely/missing/output')`,
     )
     const found = await searchRecords(d, 'anything')
     expect(found.results).toEqual([])
@@ -94,7 +108,8 @@ describe('record search', () => {
   test('full records are opt-in', async () => {
     const d = fixture()
     d.exec(`
-      INSERT INTO run VALUES ('01990000-0000-7000-8000-000000000001', 1, NULL, 'DEV-1', '2026-09-01T00:00:00Z', NULL);
+      INSERT INTO run (record_id,number,parent_run_record_id,launch_key,started_at,output_path)
+      VALUES ('01990000-0000-7000-8000-000000000001', 1, NULL, 'DEV-1', '2026-09-01T00:00:00Z', NULL);
       INSERT INTO score VALUES (1, '01990000-0000-7000-8000-000000000001', 'the complete note');
     `)
     expect((await searchRecords(d, 'complete')).results[0]).not.toHaveProperty('content')

@@ -3,7 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { nowIso } from '../database/db.ts'
-import { waitingQuestions } from '../question-store/question-store-read.ts'
+import { questionsForWorkflowCursor } from '../question-store/question-store-read.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
 import { isKeylessExplore, type TaskFlowStageCursorRow } from './task-flow-store-types.ts'
 import type { CursorTrailEntry } from './workflow-cursor-trail.ts'
@@ -32,12 +32,12 @@ export async function closeExploreForLifecycle(
   if (!row) return 'absent'
   if (row.state === 'done' || row.state === 'abandoned') return 'terminal'
   if (!isKeylessExplore(row)) throw new Error(`workflow cursor ${row.id} is not a keyless explore`)
-  const openQuestion = (await waitingQuestions(database)).find(
-    ({ workflow_cursor_record_id }) => workflow_cursor_record_id === row.record_id,
+  const openQuestion = (await questionsForWorkflowCursor(database, row.record_id)).find(
+    (question) => question.answered_at === null && question.closed_at === null,
   )
   if (openQuestion)
     throw new Error(
-      `workflow question ${openQuestion.question_record_id} is still open; answer or abandon it`,
+      `workflow question ${openQuestion.record_id} is still open; answer or abandon it`,
     )
 
   const at = nowIso()

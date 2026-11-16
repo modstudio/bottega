@@ -664,7 +664,16 @@ async function applyWorkflowAdvanceLocally(input: {
   const { row, database: d, at, selfRulingPlan, payload, hosted } = input
   if (row.state === 'awaiting-ruling')
     await closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, d)
-  if (selfRulingPlan) await recordWorkflowSelfRuling(selfRulingPlan, d)
+  if (selfRulingPlan) {
+    d.exec('SAVEPOINT self_ruling_advance_preflight')
+    try {
+      taskFlowLocalStore(d).write('advance', payload, hosted)
+    } finally {
+      d.exec('ROLLBACK TO self_ruling_advance_preflight')
+      d.exec('RELEASE self_ruling_advance_preflight')
+    }
+    await recordWorkflowSelfRuling(selfRulingPlan, d)
+  }
   const mirror = writeTransaction(() => {
     return taskFlowLocalStore(d).write('advance', payload, hosted).mirror[row.record_id]
   }, d)
