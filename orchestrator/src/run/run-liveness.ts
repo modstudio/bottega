@@ -7,7 +7,7 @@ import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import type { Database } from 'bun:sqlite'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { storeWritesRefused, writeTransaction } from '../database/db.ts'
-import { inboxRunQuestionPage } from '../question-store/question-store-read.ts'
+import { inboxRunQuestions } from '../question-store/question-store-read.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   liveWorktreeSharers,
@@ -17,6 +17,7 @@ import {
   closeQuestions,
   QUESTION_CLOSE_CHAIN_STALE,
   retireRunChainQuestionDeliveries,
+  rootsWithPendingDelivery,
 } from './question-close.ts'
 import { recordedRunLivenessFacts, runAlive } from './run-alive.ts'
 import { auditRunMutation, runMutationAuthority } from './run-authority.ts'
@@ -489,19 +490,45 @@ export function reapStale(
   return dead.length + abandonedBootstraps.length + setupDeaths.length + recordedCauseDeaths.length
 }
 
-/** Completes the question-side half of synchronous stale-run reaping. */
-export async function closeStaleChainQuestions(database: Database): Promise<number> {
+/**
+ * How often one process repeats the question-side sweep. Wait, follow and hub
+ * loops call it on every tick, and each sweep reads the whole question inbox
+ * from the record; a stale chain's questions may close one interval late. A
+ * failed sweep also waits the interval, so an unavailable record is not
+ * retried on every tick.
+ */
+export const STALE_QUESTION_SWEEP_INTERVAL_MS = 5 * 60_000
+
+const lastStaleQuestionSweep = new WeakMap<Database, number>()
+
+/** Whether a sweep runs now: always unthrottled, else first in process or past the interval. */
+export function staleQuestionSweepDue(
+  lastSweptAt: number | undefined,
+  now: number,
+  throttled: boolean,
+): boolean {
+  if (!throttled || lastSweptAt === undefined) return true
+  return now - lastSweptAt >= STALE_QUESTION_SWEEP_INTERVAL_MS
+}
+
+/**
+ * Completes the question-side half of synchronous stale-run reaping. A polling
+ * caller passes `throttled` so one process sweeps at most once per interval.
+ */
+export async function closeStaleChainQuestions(
+  database: Database,
+  options: { throttled?: boolean } = {},
+): Promise<number> {
+  const now = Date.now()
+  if (!staleQuestionSweepDue(lastStaleQuestionSweep.get(database), now, options.throttled === true))
+    return 0
+  lastStaleQuestionSweep.set(database, now)
   const terminal = new Set(['ok', 'failed', 'stale', 'stopped'])
-  const terminalQuestions: Record<string, unknown>[] = []
-  let changedAfter: string | undefined
-  while (true) {
-    const page = await inboxRunQuestionPage(database, { limit: 100, changedAfter })
-    terminalQuestions.push(
-      ...page.items.filter((question) => terminal.has(String(question.root_status))),
-    )
-    if (!page.more) break
-    changedAfter = page.cursor
-  }
+  // One unpaged read: the hosted inbox selects every unclosed question for each
+  // page it serves, so paging here multiplied that scan by the page count.
+  const terminalQuestions = (await inboxRunQuestions(database)).filter((question) =>
+    terminal.has(String(question.root_status)),
+  )
   const open = terminalQuestions.filter(
     (question) => question.answered_at === null && question.closed_at === null,
   )
@@ -510,9 +537,10 @@ export async function closeStaleChainQuestions(database: Database): Promise<numb
     open.map((question) => String(question.record_id)),
     QUESTION_CLOSE_CHAIN_STALE,
   )
-  const roots = [...new Set(terminalQuestions.map((question) => String(question.root_id)))]
-  for (const rootId of roots)
-    await retireRunChainQuestionDeliveries(database, rootId, QUESTION_CLOSE_CHAIN_STALE)
+  const roots = new Set(terminalQuestions.map((question) => String(question.root_id)))
+  for (const rootId of rootsWithPendingDelivery(database))
+    if (roots.has(rootId))
+      await retireRunChainQuestionDeliveries(database, rootId, QUESTION_CLOSE_CHAIN_STALE)
   return closed
 }
 

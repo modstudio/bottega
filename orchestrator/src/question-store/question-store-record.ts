@@ -97,12 +97,19 @@ export class RecordQuestionStore implements QuestionStore {
     this.input = input
   }
 
+  // A store is reused across calls, so a rejected read is forgotten rather than
+  // replayed: the next call retries once the record answers again.
   private identity(): Promise<RecordIdentity> {
-    this.identityRead ??= this.input.client.whoami
-      ? this.input.client.whoami()
-      : Promise.reject(
-          new Error('record API predates identity reads; release hosted-api, then retry'),
-        )
+    this.identityRead ??= (
+      this.input.client.whoami
+        ? this.input.client.whoami()
+        : Promise.reject(
+            new Error('record API predates identity reads; release hosted-api, then retry'),
+          )
+    ).catch((error: unknown) => {
+      this.identityRead = undefined
+      throw error
+    })
     return this.identityRead
   }
 
@@ -113,7 +120,12 @@ export class RecordQuestionStore implements QuestionStore {
     if (!project) throw new Error(`project ${projectId} is not registered; register it, then retry`)
     const result = requireProjectRecordDestination(project.name, project.settings, {
       whoami: () => this.identity(),
-    }).then((destinationSpaceId) => ({ destinationSpaceId }))
+    })
+      .then((destinationSpaceId) => ({ destinationSpaceId }))
+      .catch((error: unknown) => {
+        this.destinations.delete(projectId)
+        throw error
+      })
     this.destinations.set(projectId, result)
     return result
   }
@@ -129,13 +141,18 @@ export class RecordQuestionStore implements QuestionStore {
   }
 
   private allDestinations(): Promise<RecordWriteDestination[]> {
-    this.everyDestination ??= this.identity().then((identity) => {
-      const ids = new Set(
-        parseRecordSpaceMemberships(identity.memberships).map(({ spaceId }) => spaceId),
-      )
-      if (identity.personalSpaceId) ids.add(identity.personalSpaceId)
-      return [...ids].map((destinationSpaceId) => ({ destinationSpaceId }))
-    })
+    this.everyDestination ??= this.identity()
+      .then((identity) => {
+        const ids = new Set(
+          parseRecordSpaceMemberships(identity.memberships).map(({ spaceId }) => spaceId),
+        )
+        if (identity.personalSpaceId) ids.add(identity.personalSpaceId)
+        return [...ids].map((destinationSpaceId) => ({ destinationSpaceId }))
+      })
+      .catch((error: unknown) => {
+        this.everyDestination = undefined
+        throw error
+      })
     return this.everyDestination
   }
 

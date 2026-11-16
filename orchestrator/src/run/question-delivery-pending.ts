@@ -68,3 +68,14 @@ export function pendingQuestionIds(
     .all(...values)
     .map(({ question_record_id }) => question_record_id)
 }
+
+/** Names the runs that hold a pending ruling delivery on this machine. */
+export function pendingDeliveryRunIds(database: Database): string[] {
+  return database
+    .query<{ run_record_id: string }, []>(
+      `SELECT DISTINCT run_record_id FROM question_delivery_pending
+       WHERE run_record_id IS NOT NULL ORDER BY run_record_id`,
+    )
+    .all()
+    .map(({ run_record_id }) => run_record_id)
+}
