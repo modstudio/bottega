@@ -9,7 +9,10 @@ import type {
   QuestionWriteBody,
   QuestionWriteResult,
 } from '../record/record-question-contract.ts'
-import { questionChangedAfterRefusal } from '../record/record-question-contract.ts'
+import {
+  assertQuestionJsonFieldsStructured,
+  questionChangedAfterRefusal,
+} from '../record/record-question-contract.ts'
 import {
   localQuestionProjects,
   maxQuestionNumber,
@@ -89,6 +92,7 @@ export class SqliteQuestionStore implements QuestionStore {
 
   async write(intent: QuestionIntent, input: QuestionWriteBody): Promise<QuestionWriteResult> {
     const q = input.question
+    assertQuestionJsonFieldsStructured(q)
     const workflowStep = q.workflowCursorRecordId
       ? this.database
           .query<{ ordinal: number; step_slug: string }, [string]>(

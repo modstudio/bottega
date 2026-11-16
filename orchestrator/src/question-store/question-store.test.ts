@@ -7,6 +7,7 @@ import { guardHostedTables } from '../database/hosted-table-guard.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import type { RecordApiClient } from '../record/record-api-client.ts'
 import type { QuestionWriteBody } from '../record/record-question-contract.ts'
+import { QUESTION_JSON_FIELDS } from '../record/record-question-contract.ts'
 import {
   clearQuestionDeliveryPending,
   markQuestionDeliveryPending,
@@ -326,6 +327,15 @@ test('SQLite and record question adapters satisfy every shared read and write co
   )
   local.close()
   hosted.close()
+})
+
+test.each(QUESTION_JSON_FIELDS)('SQLite question writes refuse string-valued %s', async (field) => {
+  const database = migratedTestDatabase()
+  seedOwners(database)
+  const question = snapshot()
+  ;(question as unknown as Record<string, unknown>)[field] = '[]'
+  await expect(questionStore(database).write('ask', body(question))).rejects.toThrow(field)
+  database.close()
 })
 
 test('only the record adapter passes a rulings feed cursor through', async () => {
