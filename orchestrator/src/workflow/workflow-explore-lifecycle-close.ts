@@ -31,8 +31,7 @@ export async function closeExploreForLifecycle(
   const row = await taskFlowReadStore(database).stageByRecordId(cursorRecordId)
   if (!row) return 'absent'
   if (row.state === 'done' || row.state === 'abandoned') return 'terminal'
-  if (!isKeylessExplore(row))
-    throw new Error(`workflow cursor ${row.id} is not a keyless explore`)
+  if (!isKeylessExplore(row)) throw new Error(`workflow cursor ${row.id} is not a keyless explore`)
   const openQuestion = database
     .query<{ record_id: string }, [string]>(
       `SELECT record_id FROM question WHERE workflow_cursor_record_id=?
@@ -48,7 +47,8 @@ export async function closeExploreForLifecycle(
   const closed = JSON.parse(row.closed) as CursorTrailEntry[]
   if (
     options.requireUntouched &&
-    (closed.length > 0 || (await taskFlowReadStore(database).textsForStage(row.record_id)).length > 0)
+    (closed.length > 0 ||
+      (await taskFlowReadStore(database).textsForStage(row.record_id)).length > 0)
   )
     return 'touched'
   closed.push({

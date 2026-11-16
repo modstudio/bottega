@@ -261,9 +261,7 @@ export function idleAge(
   const ms = Math.max(0, now - since)
   const minutes = Math.floor(ms / 60_000)
   const label =
-    minutes < 60
-      ? `idle ${minutes}m`
-      : `idle ${Math.floor(minutes / 60)}h ${minutes % 60}m`
+    minutes < 60 ? `idle ${minutes}m` : `idle ${Math.floor(minutes / 60)}h ${minutes % 60}m`
   return { ms, label }
 }
 

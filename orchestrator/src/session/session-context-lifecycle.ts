@@ -32,7 +32,9 @@ function remainingContextProcess(
   session: string,
   items: ReturnType<typeof sessionContextItems>,
 ): SessionProcessLine | null {
-  const remaining = items.filter((item) => classifySessionContextItem(item.kind, false) !== 'refuse')
+  const remaining = items.filter(
+    (item) => classifySessionContextItem(item.kind, false) !== 'refuse',
+  )
   if (!remaining.length) return null
   return {
     item: `context session:${session}`,

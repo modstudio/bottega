@@ -289,11 +289,7 @@ export const cleanupBoundarySpecs = [
       './session-close-out-decision.ts',
       './session-close-out-report.ts',
     ],
-    typeOnlyAllowed: [
-      'bun:sqlite',
-      '../workflow/task-flow-store.ts',
-      './session-close-out-report.ts',
-    ],
+    typeOnlyAllowed: ['bun:sqlite', './session-close-out-report.ts'],
     reason:
       'Keep session cursor release and remaining-work reporting outside close-out orchestration.',
   },

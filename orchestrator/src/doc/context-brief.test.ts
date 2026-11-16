@@ -170,7 +170,9 @@ test('keeps an awaiting question on a keyless cursor and omits its abandon remed
     autonomy: 'unknown',
   }
 
-  const line = renderContextBrief(brief).split('\n').find((entry) => entry.includes('cursor 845'))
+  const line = renderContextBrief(brief)
+    .split('\n')
+    .find((entry) => entry.includes('cursor 845'))
   expect(line).toBe('  cursor 845 explore · idle unknown, awaiting q6600')
   expect(line).not.toContain('workflow abandon')
 })
