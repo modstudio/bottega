@@ -28,6 +28,8 @@ export function registerQuestionChangeFeedProof(
     const priorAnsweredAt = '2026-11-15T12:01:00.000Z'
     const askedAt = '2026-11-15T13:00:00.000Z'
     const answeredAt = '2026-11-15T13:01:00.000Z'
+    const priorAnsweredText = '2026-11-15 12:01:00+00'
+    const answeredText = '2026-11-15 13:01:00+00'
     fixture.signIn()
     const client = recordApiClient()
     const destination = { destinationSpaceId: fixture.spaceId }
@@ -63,7 +65,7 @@ export function registerQuestionChangeFeedProof(
       expect.objectContaining({
         record_id: priorQuestionId,
         answer: 'Yes',
-        answered_at: priorAnsweredAt,
+        answered_at: priorAnsweredText,
       }),
     )
     expect(bootstrap.cursor).toBeString()
@@ -116,7 +118,7 @@ export function registerQuestionChangeFeedProof(
       destination,
     )
     expect(changed.items).toEqual([
-      expect.objectContaining({ record_id: questionId, answer: 'Yes', answered_at: answeredAt }),
+      expect.objectContaining({ record_id: questionId, answer: 'Yes', answered_at: answeredText }),
     ])
     expect(changed.cursor).toBeString()
     expect(changed.cursor).not.toBe(bootstrap.cursor)
