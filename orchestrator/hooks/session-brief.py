@@ -563,6 +563,7 @@ def main() -> int:
     notice_timeout = 1.0
     acknowledgement_timeout = 1.0
     notice_deadline = None
+    stage = "initialize"
     try:
         cwd = payload.get("cwd")
         if not cwd:
@@ -580,15 +581,19 @@ def main() -> int:
                 "systemMessage": message,
             }
             return 0
+        stage = "start command batch"
         resumes_p = _start(bottega, "doc", "resumes", "--cwd", cwd, "--json")
         inbox_env = os.environ.copy()
         if sid:
             inbox_env["CLAUDE_CODE_SESSION_ID"] = sid
-            subprocess.run(
-                [bottega, "board", "presence", "--started-at", session_started_at],
-                env=inbox_env, stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL, timeout=1, check=False, cwd=cwd
-            )
+            try:
+                subprocess.run(
+                    [bottega, "board", "presence", "--started-at", session_started_at],
+                    env=inbox_env, stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL, timeout=1, check=False, cwd=cwd
+                )
+            except Exception:
+                pass
             board_p = _start(bottega, "board", "read", "--claim", env=inbox_env, cwd=cwd)
         inbox_p = _start(
             bottega, "question", "inbox", "--all", "--active", "--cwd", cwd, "--json", env=inbox_env
@@ -620,6 +625,7 @@ def main() -> int:
                 notice_deadline = time.monotonic() + notice_timeout
             except Exception:
                 monitor_failure = "Monitor notice delivery failed; addressed condition state is unknown."
+        stage = "collect command results"
         deadline = time.monotonic() + 10
         resumes = _wait(resumes_p, deadline)
         inbox = _wait(inbox_p, deadline)
@@ -641,6 +647,7 @@ def main() -> int:
                     settings_log_path, error
                 )
 
+        stage = "parse command results"
         resume_table = ""
         resume_offer = ""
         extra_section = ""
@@ -872,6 +879,7 @@ def main() -> int:
         # Health is complete and retained before notice work begins. Notice delivery is
         # supplemental: no failure in minting, fetching, parsing, or acknowledging may
         # cost the SessionStart object that carries brief and question state.
+        stage = "assemble health context"
         health_sections = {
             "autonomy": autonomy_section,
             "resume_offer": resume_offer,
@@ -902,6 +910,7 @@ def main() -> int:
             }
             if health_notices:
                 output["systemMessage"] = " ".join(health_notices)
+        stage = "deliver monitor notices"
         if monitor_p is not None:
             try:
                 monitor = _wait(monitor_p, notice_deadline)
@@ -967,8 +976,25 @@ def main() -> int:
             }
             if notices:
                 output["systemMessage"] = " ".join(notices)
-    except Exception:
-        pass
+    except Exception as error:
+        command = "bottega agent context show"
+        if sid:
+            command += f" --session {sid}"
+        failure = (
+            f"brief failed: {type(error).__name__} at {stage}; "
+            f"re-read with {command}."
+        )
+        context = ""
+        if output is not None:
+            existing = output.get("hookSpecificOutput", {}).get("additionalContext")
+            if isinstance(existing, str):
+                context = existing
+        output = {
+            "hookSpecificOutput": {
+                "hookEventName": "SessionStart",
+                "additionalContext": _join_sections(context, failure),
+            }
+        }
     finally:
         # Emission is deliberately outside the catch-all above. Once health has been
         # assembled, no exception in supplemental notice work can swallow it.
