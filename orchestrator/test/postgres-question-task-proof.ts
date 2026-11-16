@@ -106,7 +106,7 @@ export function registerQuestionTaskRecordSyncProof(
         newRecordId(),
         secondQuestionId,
         JSON.stringify(secondQuestion),
-        String(secondQuestion.createdAt),
+        String(question.createdAt),
       )
     expect(
       await syncRecord({
@@ -117,7 +117,7 @@ export function registerQuestionTaskRecordSyncProof(
     ).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
     const secondRecordNumber = readNumber(secondQuestionId)
     expect(secondRecordNumber).toBeGreaterThan(0)
-    expect(secondRecordNumber).not.toBe(secondQuestion.number)
+    expect(secondRecordNumber).not.toBe(question.number)
     expect(secondRecordNumber).not.toBe(firstRecordNumber)
     secondLocal.close()
     const readLink = () =>
