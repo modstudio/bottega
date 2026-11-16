@@ -26,6 +26,11 @@ def iso_seconds(value):
     return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
 
 
+def write_backoff(path, now):
+    minimum_seconds = float(os.environ["CONTEXT_REVIEW_MIN_MS"]) / 1000
+    write_marker(path, {"next_due_at": now + minimum_seconds})
+
+
 def main():
     try:
         payload = json.load(sys.stdin)
@@ -39,18 +44,22 @@ def main():
         next_due = parsed_next_due(read_marker(path))
         if next_due is not None and now < next_due:
             return 0
-        result = subprocess.run(
-            [bottega_bin(), "agent", "context", "review", "--session", session, "--json"],
-            capture_output=True,
-            text=True,
-            timeout=float(os.environ["CONTEXT_REVIEW_HOOK_TIMEOUT_SECONDS"]),
-            check=True,
-        )
-        review = json.loads(result.stdout)
-        next_due_at = review.get("next_due_at")
-        if not isinstance(next_due_at, str):
+        try:
+            result = subprocess.run(
+                [bottega_bin(), "agent", "context", "review", "--session", session, "--json"],
+                capture_output=True,
+                text=True,
+                timeout=float(os.environ["CONTEXT_REVIEW_HOOK_TIMEOUT_SECONDS"]),
+                check=True,
+            )
+            review = json.loads(result.stdout)
+            next_due_at = review.get("next_due_at")
+            if not isinstance(next_due_at, str):
+                raise ValueError("context review response has no next_due_at")
+            write_marker(path, {"next_due_at": iso_seconds(next_due_at)})
+        except Exception:
+            write_backoff(path, now)
             return 0
-        write_marker(path, {"next_due_at": iso_seconds(next_due_at)})
         context = review.get("review")
         if review.get("due") is not True or not isinstance(context, str) or not context:
             return 0

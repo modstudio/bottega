@@ -8,6 +8,10 @@ import {
   BOARD_PUSH_RETRY_SECONDS,
   BOARD_PUSH_SLOW_TIMEOUT_SECONDS,
 } from '../board/board-delivery.ts'
+import {
+  CONTEXT_REVIEW_HOOK_TIMEOUT_SECONDS,
+  CONTEXT_REVIEW_MIN_MS,
+} from '../session/context-review-decision.ts'
 import { withMachineProductHooks } from './settings-machine-hooks.ts'
 
 const ASSET_ROOT = '/installed/product'
@@ -197,8 +201,11 @@ test('board hook commands preserve their environment and timeout', () => {
     if (hook.command.includes('board-interrupt.py') || hook.command.includes('board-ack-guard.py'))
       expect(hook.timeout).toBe(Math.ceil(BOARD_PUSH_SLOW_TIMEOUT_SECONDS + 1))
     if (hook.command.includes('context-review.py')) {
-      expect(hook.timeout).toBe(6)
-      expect(hook.command).toContain('CONTEXT_REVIEW_HOOK_TIMEOUT_SECONDS=5')
+      expect(hook.timeout).toBe(CONTEXT_REVIEW_HOOK_TIMEOUT_SECONDS + 1)
+      expect(hook.command).toContain(
+        `CONTEXT_REVIEW_HOOK_TIMEOUT_SECONDS=${CONTEXT_REVIEW_HOOK_TIMEOUT_SECONDS}`,
+      )
+      expect(hook.command).toContain(`CONTEXT_REVIEW_MIN_MS=${CONTEXT_REVIEW_MIN_MS}`)
     }
   }
   const stopSummary = boardHooks.find((hook) => hook.command.includes('stop-summary.py'))

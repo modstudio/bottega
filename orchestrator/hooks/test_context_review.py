@@ -5,7 +5,9 @@ import importlib.util
 import io
 import json
 import os
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -23,6 +25,7 @@ class ContextReviewHook(unittest.TestCase):
         stdout = io.StringIO()
         env = {
             "CONTEXT_REVIEW_HOOK_TIMEOUT_SECONDS": "5",
+            "CONTEXT_REVIEW_MIN_MS": "600000",
             "BOTTEGA_GLOBAL_USE": "on",
         }
         env.update(environment or {})
@@ -65,6 +68,27 @@ class ContextReviewHook(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(output)["hookSpecificOutput"]["additionalContext"], "Context review")
         write.assert_called_once()
+
+    def test_timeout_writes_backoff_and_next_invocation_stays_on_fast_path(self):
+        with tempfile.TemporaryDirectory() as state, mock.patch.object(
+            context_review.time, "time", side_effect=[1000, 1001]
+        ), mock.patch.object(
+            context_review.subprocess,
+            "run",
+            side_effect=subprocess.TimeoutExpired("context review", 5),
+        ) as run:
+            environment = {"BOTTEGA_BOARD_HOOK_STATE": state}
+            first_code, first_output = self.run_hook(environment)
+            second_code, second_output = self.run_hook(environment)
+            with mock.patch.dict(os.environ, environment, clear=True):
+                marker = context_review.read_marker(
+                    context_review.marker_path("context-review", "session")
+                )
+
+        self.assertEqual((first_code, first_output), (0, ""))
+        self.assertEqual((second_code, second_output), (0, ""))
+        self.assertEqual(marker, {"next_due_at": 1600})
+        self.assertEqual(run.call_count, 1)
 
 
 def subprocess_result(stdout):
