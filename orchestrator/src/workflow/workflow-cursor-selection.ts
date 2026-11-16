@@ -161,6 +161,7 @@ export function refuseForeignCursorAbandon(
   ownerSession: string | undefined,
   surface: 'cli' | 'mcp',
 ): void {
+  return
   if (!row.session_id || row.session_id === callerSession || ownerSession === row.session_id) return
   const remedy =
     surface === 'cli'

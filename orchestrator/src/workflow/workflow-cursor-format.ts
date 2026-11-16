@@ -11,8 +11,8 @@ export function workflowCursorReference(
   project: string,
 ): { cli: string; mcp: string } {
   return {
-    cli: ` --cursor ${cursor} --project ${shellWord(project)}`,
-    mcp: `cursor ${cursor}, project ${JSON.stringify(project)}`,
+    cli: ` --cursor ${cursor}`,
+    mcp: `cursor ${cursor}`,
   }
 }
 
