@@ -155,7 +155,11 @@ async function mutate(
   return next
 }
 
-async function questionStoreContract(store: QuestionStore, database: Database) {
+async function questionStoreContract(
+  store: QuestionStore,
+  database: Database,
+  options: { supportsByNumber: boolean },
+) {
   const unknown = snapshot({ id: newRecordId() })
   await expect(store.write('answer', body(unknown, 'answer'))).rejects.toThrow('not found')
   expect(
@@ -179,9 +183,10 @@ async function questionStoreContract(store: QuestionStore, database: Database) {
   const open = (await store.read({ read: 'open-for-session', sessionId: 'owner-session' })).items
   expect(open[0]).toMatchObject({ record_id: CURSOR_ID, open_question_record_id: workflow.id })
   expect((await store.read({ read: 'max-number' })).items).toEqual([{ number: 1 }])
-  expect((await store.read({ read: 'by-number', number: 1 })).items[0]).toMatchObject({
-    record_id: workflow.id,
-  })
+  if (options.supportsByNumber)
+    expect((await store.read({ read: 'by-number', number: 1 })).items[0]).toMatchObject({
+      record_id: workflow.id,
+    })
   expect(
     (await store.read({ read: 'open-for-cursors', workflowCursorRecordIds: [CURSOR_ID] })).items,
   ).toEqual([{ workflow_cursor_record_id: CURSOR_ID, number: 1 }])
@@ -306,13 +311,13 @@ async function questionStoreContract(store: QuestionStore, database: Database) {
   })
 }
 
-test('SQLite and record question adapters satisfy every shared read and write contract', async () => {
+test('SQLite and record question adapters satisfy their shared read and write contract', async () => {
   const local = migratedTestDatabase()
   const hosted = migratedTestDatabase()
   seedOwners(local)
   seedOwners(hosted)
   const hostedStore = questionStore(hosted)
-  await questionStoreContract(questionStore(local), local)
+  await questionStoreContract(questionStore(local), local, { supportsByNumber: true })
   await questionStoreContract(
     new RecordQuestionStore({
       database: local,
@@ -324,6 +329,7 @@ test('SQLite and record question adapters satisfy every shared read and write co
       },
     }),
     hosted,
+    { supportsByNumber: false },
   )
   local.close()
   hosted.close()
@@ -366,6 +372,30 @@ test('only the record adapter passes a rulings feed cursor through', async () =>
   await expect(store.read({ read: 'waiting', changedAfter: 'cursor-7' })).rejects.toThrow(
     'use the rulings read',
   )
+  database.close()
+})
+
+test('record question reads refuse a bare number before making a client request', async () => {
+  const database = migratedTestDatabase()
+  let requests = 0
+  const store = new RecordQuestionStore({
+    database,
+    client: {
+      whoami: async () => {
+        requests += 1
+        return whoami()
+      },
+      readQuestions: async () => {
+        requests += 1
+        return { items: [] }
+      },
+    },
+  })
+
+  await expect(store.read({ read: 'by-number', number: 7 })).rejects.toThrow(
+    'question numbers are unique only within a record space; read the question by id or by cursor, then retry',
+  )
+  expect(requests).toBe(0)
   database.close()
 })
 

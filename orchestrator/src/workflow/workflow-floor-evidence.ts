@@ -16,10 +16,9 @@ import { db } from '../database/db.ts'
 import { resolveDocReference } from '../doc/doc-reference-read.ts'
 import { landingGatePurposeRefusal, resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { projectByName } from '../project/projects.ts'
-import {
-  questionByNumber,
-  questionRuleAuditReasons,
-} from '../question-store/question-store-read.ts'
+import { questionRuleAuditReasons } from '../question-store/question-store-read.ts'
+import { questionStore } from '../question-store/question-store.ts'
+import type { QuestionStore } from '../question-store/question-store-types.ts'
 import {
   reviewRoundTriageComplete,
   reviewsForTriage,
@@ -119,15 +118,34 @@ function runHasRecordedArtifacts(
   return existsSync(artifacts) && readdirSync(artifacts).length > 0
 }
 
-async function gatherRuling(
+export async function gatherRuling(
   id: number,
   cursorId: string,
   stepOrdinal: number,
   stepSlug: string,
   d: Database,
+  store: QuestionStore = questionStore(d),
 ): Promise<ValidatedEvidence['ruling']> {
-  const question = await questionByNumber(d, id)
-  if (!question) throw new Error(`--ruling ${id} does not exist`)
+  let question: Record<string, unknown> | undefined
+  let changedAfter: string | undefined
+  do {
+    const page = await store.read({
+      read: 'for-cursor',
+      workflowCursorRecordId: cursorId,
+      ...(changedAfter === undefined ? {} : { changedAfter }),
+    })
+    question = page.items.find((row) => row.number === id)
+    if (question || page.more !== true) break
+    if (!page.cursor)
+      throw new Error(
+        'question store reported more workflow cursor questions without a cursor; retry the command',
+      )
+    changedAfter = page.cursor
+  } while (true)
+  if (!question)
+    throw new Error(
+      `--ruling ${id} is not a question on this workflow cursor; pass the number that \`bottega workflow rule\` or \`bottega workflow await\` printed for this cursor, then retry`,
+    )
   const row = {
     id,
     answered_at: question.answered_at as string | null,
@@ -144,7 +162,7 @@ async function gatherRuling(
     id,
     answered: facts.answered,
     answeredByOperator: facts.answeredByOperator,
-    boundToCursor: row.workflow_cursor_record_id === cursorId,
+    boundToCursor: true,
     boundToStep: row.workflow_step_ordinal === stepOrdinal && row.workflow_step_slug === stepSlug,
     answeredAt: row.answered_at,
   }

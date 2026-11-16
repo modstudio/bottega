@@ -88,17 +88,6 @@ export async function questionRuleAuditReasons(
   return result.items.map((row) => ('reason' in row ? (row.reason as string | null) : null))
 }
 
-export async function questionByNumber(
-  database: Database,
-  number: number,
-): Promise<Record<string, unknown> | null> {
-  return (
-    ((await questionStore(database).read({ read: 'by-number', number })).items[0] as
-      | Record<string, unknown>
-      | undefined) ?? null
-  )
-}
-
 export async function maximumQuestionNumber(database: Database): Promise<number> {
   const row = (await questionStore(database).read({ read: 'max-number' })).items[0]
   return row && 'number' in row ? Number(row.number) : 0
