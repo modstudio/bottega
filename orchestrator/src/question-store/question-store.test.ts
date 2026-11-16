@@ -222,9 +222,6 @@ async function questionStoreContract(store: QuestionStore, database: Database) {
   expect(projects).toContainEqual({
     project: 'question-fixture',
   })
-  await expect(store.read({ read: 'rulings', kind: 'all', changedAfter: 1 })).rejects.toThrow(
-    'DEV-2328',
-  )
 }
 
 test('SQLite and record question adapters satisfy every shared read and write contract', async () => {
@@ -249,6 +246,37 @@ test('SQLite and record question adapters satisfy every shared read and write co
   )
   local.close()
   hosted.close()
+})
+
+test('only the record adapter passes a rulings feed cursor through', async () => {
+  const database = migratedTestDatabase()
+  await expect(
+    questionStore(database).read({ read: 'rulings', kind: 'all', changedAfter: 'cursor-7' }),
+  ).rejects.toThrow('changedAfter is served only on a hosted install')
+  const store = recordQuestionStore({
+    database,
+    destinationSpaceId: newRecordId(),
+    client: {
+      readQuestions: async (input) => ({
+        items: [{ number: 1, record_id: WORKFLOW_QUESTION_ID }],
+        cursor: input.changedAfter === 'cursor-7' ? 'cursor-11' : undefined,
+        more: false,
+        reset: false,
+      }),
+    },
+  })
+  const changed = await store.read({
+    read: 'rulings',
+    kind: 'all',
+    changedAfter: 'cursor-7',
+  })
+  expect(changed).toMatchObject({ cursor: 'cursor-11', more: false, reset: false })
+  expect(changed.items).toHaveLength(1)
+  expect(field(changed.items[0]!, 'record_id')).toBe(WORKFLOW_QUESTION_ID)
+  await expect(store.read({ read: 'waiting', changedAfter: 'cursor-7' })).rejects.toThrow(
+    'use the rulings read',
+  )
+  database.close()
 })
 
 test('record ask pushes its run first and enriches live, stale, and absent sessions', async () => {

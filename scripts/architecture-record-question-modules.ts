@@ -11,18 +11,24 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 })
 
 export const recordQuestionModules: RecordModule[] = [
-  module('orchestrator/src/record/record-question-contract.ts', ['zod']),
+  module('orchestrator/src/record/record-question-contract.ts', [
+    'zod',
+    '../../../shared/brand.ts',
+    '../../../shared/record/record-changes.ts',
+  ]),
   module('orchestrator/src/record/record-api-client-question.ts', [
     './record-api-client-paths.ts',
     './record-question-contract.ts',
   ]),
   module('orchestrator/src/record/record-api-question.ts', [
     'hono',
+    '../../../shared/record/record-changes.ts',
     './record-auth.ts',
     './record-question-contract.ts',
   ]),
   module('orchestrator/src/record/record-question-read.ts', [
     'bun',
+    '../../../shared/record/record-changes.ts',
     '../../../shared/record/tenant.ts',
     './record-pool.ts',
     './record-question-contract.ts',

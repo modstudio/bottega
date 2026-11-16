@@ -2,6 +2,8 @@
 /** Declares validated direct question commands and reads. */
 
 import { z } from 'zod'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { RecordChangeCursor } from '../../../shared/record/record-changes.ts'
 
 const id = z.string().uuid()
 const stamp = z.string().datetime()
@@ -105,13 +107,18 @@ export class RecordQuestionError extends Error {
   }
 }
 
+const questionChangedAfterLocalRefusal = {
+  message: 'changedAfter is served only on a hosted install',
+  remedy: `retry without changedAfter; local rulings polling uses \`${PLATFORM_SLUG} ruling list --changed-after\``,
+} as const
 export const questionChangedAfterRefusal = {
-  message: 'hosted question changed-after reads are not served yet',
-  remedy: 'retry without changedAfter; DEV-2328 decides the hosted change cursor',
+  message: 'changedAfter is served only for hosted rulings reads',
+  remedy: 'retry this read without changedAfter, or use the rulings read for change-feed polling',
+  local: questionChangedAfterLocalRefusal,
 } as const
 
 const readLimit = z.coerce.number().int().positive().max(100).optional()
-const changedAfter = z.coerce.number().int().nonnegative().optional()
+const changedAfter = z.string().min(1).optional()
 export const questionReadSchema = z.discriminatedUnion('read', [
   z.object({ read: z.literal('inbox'), limit: readLimit, changedAfter }),
   z.object({ read: z.literal('waiting'), limit: readLimit, changedAfter }),
@@ -138,3 +145,7 @@ export const questionReadSchema = z.discriminatedUnion('read', [
   z.object({ read: z.literal('projects'), limit: readLimit, changedAfter }),
 ])
 export type QuestionReadInput = z.infer<typeof questionReadSchema>
+type RulingReadInput = Extract<QuestionReadInput, { read: 'rulings' }>
+export type RecordQuestionReadInput =
+  | Exclude<QuestionReadInput, RulingReadInput>
+  | (Omit<RulingReadInput, 'changedAfter'> & { changedAfter?: RecordChangeCursor })

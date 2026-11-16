@@ -1,14 +1,64 @@
 // concern: hosted-question-read
 /** Reads question-owned facts in the same row shapes as the local question reads. */
 import type { SQL } from 'bun'
+import {
+  encodeRecordChangeCursor,
+  MAX_RECORD_CHANGE_PAGE_SIZE,
+  type RecordChangeReadPage,
+  readRecordChanges,
+} from '../../../shared/record/record-changes.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { recordPool } from './record-pool.ts'
-import type { QuestionReadInput } from './record-question-contract.ts'
+import type { QuestionReadInput, RecordQuestionReadInput } from './record-question-contract.ts'
 
 type Tenant = { url: string } & TenantPrincipal
 type Row = Record<string, unknown>
+export const RECORD_QUESTION_CHANGE_TABLES = ['question'] as const
 const limited = (rows: Row[], limit?: number): Row[] =>
   limit === undefined ? rows : rows.slice(0, limit)
+
+type RulingRead = Extract<RecordQuestionReadInput, { read: 'rulings' }>
+
+async function recordQuestionRulingRows(
+  tx: SQL,
+  input: Pick<RulingRead, 'kind' | 'since'> & { ids?: readonly string[] },
+): Promise<Row[]> {
+  const clauses: string[] = []
+  const values: unknown[] = []
+  if (input.kind === 'workflow') clauses.push('q.workflow_cursor_record_id IS NOT NULL')
+  else if (input.kind === 'run') clauses.push('q.run_id IS NOT NULL')
+  if (input.since) {
+    values.push(input.since)
+    const at = `$${values.length}::timestamptz`
+    clauses.push(
+      `(q.answered_at IS NULL AND q.closed_at IS NULL OR q.asked_at>=${at} OR q.answered_at>=${at} OR q.closed_at>=${at} OR q.overturned_at>=${at} OR q.filed_at>=${at})`,
+    )
+  }
+  if (input.ids) {
+    if (!input.ids.length) return []
+    const first = values.length
+    values.push(...input.ids)
+    clauses.push(
+      `q.id IN (${input.ids.map((_, index) => `$${first + index + 1}::uuid`).join(',')})`,
+    )
+  }
+  return (await tx.unsafe(
+    `SELECT q.number,q.id::text record_id,q.run_id::text run_record_id,owner.number run_number,
+      q.workflow_cursor_record_id::text workflow_cursor_id,q.workflow_key,
+      COALESCE(run_project.name,stage_project.name) project,stage.workflow workflow_slug,stage.mode mode_slug,
+      COALESCE(owner.session_id,stage.session_id) session_id,q.asked_at::text,q.question,q.answer,q.answer_basis,
+      q.answered_at::text,q.answered_by,q.answered_by_name,q.asked_via,q.answerer_kind,q.answer_channel,
+      q.closed_at::text,q.close_reason,q.overturned_at::text,q.overturned_by,q.overturned_by_name,
+      q.overturn_reason,q.replacement,q.filed_as,q.filed_ref,q.filed_record_id::text,q.filed_label,q.filed_at::text
+     FROM question q LEFT JOIN run owner ON owner.id=q.run_id
+     LEFT JOIN project run_project ON run_project.id=owner.project_id
+     LEFT JOIN task_flow_stage stage ON stage.id=q.workflow_cursor_record_id
+     LEFT JOIN project stage_project ON stage_project.id=stage.project_id
+     ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
+     ORDER BY q.number`,
+    values,
+  )) as Row[]
+}
 
 async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
   if (input.read === 'inbox') {
@@ -70,36 +120,7 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
       input.limit,
     )
   if (input.read === 'rulings') {
-    const clauses: string[] = []
-    const values: unknown[] = []
-    if (input.kind === 'workflow') clauses.push('q.workflow_cursor_record_id IS NOT NULL')
-    else if (input.kind === 'run') clauses.push('q.run_id IS NOT NULL')
-    if (input.since) {
-      values.push(input.since)
-      const at = `$${values.length}::timestamptz`
-      clauses.push(
-        `(q.answered_at IS NULL AND q.closed_at IS NULL OR q.asked_at>=${at} OR q.answered_at>=${at} OR q.closed_at>=${at} OR q.overturned_at>=${at} OR q.filed_at>=${at})`,
-      )
-    }
-    return limited(
-      (await tx.unsafe(
-        `SELECT q.number,q.id::text record_id,q.run_id::text run_record_id,owner.number run_number,
-        q.workflow_cursor_record_id::text workflow_cursor_id,q.workflow_key,
-        COALESCE(run_project.name,stage_project.name) project,stage.workflow workflow_slug,stage.mode mode_slug,
-        COALESCE(owner.session_id,stage.session_id) session_id,q.asked_at::text,q.question,q.answer,q.answer_basis,
-        q.answered_at::text,q.answered_by,q.answered_by_name,q.asked_via,q.answerer_kind,q.answer_channel,
-        q.closed_at::text,q.close_reason,q.overturned_at::text,q.overturned_by,q.overturned_by_name,
-        q.overturn_reason,q.replacement,q.filed_as,q.filed_ref,q.filed_record_id::text,q.filed_label,q.filed_at::text
-       FROM question q LEFT JOIN run owner ON owner.id=q.run_id
-       LEFT JOIN project run_project ON run_project.id=owner.project_id
-       LEFT JOIN task_flow_stage stage ON stage.id=q.workflow_cursor_record_id
-       LEFT JOIN project stage_project ON stage_project.id=stage.project_id
-       ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
-       ORDER BY q.number`,
-        values,
-      )) as Row[],
-      input.limit,
-    )
+    return limited(await recordQuestionRulingRows(tx, input), input.limit)
   }
   if (input.read === 'task-rulings')
     return limited(
@@ -141,9 +162,73 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
 }
 
 export async function readRecordQuestions(
-  input: Tenant & QuestionReadInput,
-): Promise<{ items: Row[] }> {
-  return recordPool(input.url).begin(async (tx) => {
+  input: Tenant & RecordQuestionReadInput,
+): Promise<{ items: Row[]; cursor?: string; more?: boolean; reset?: boolean }> {
+  const client = recordPool(input.url)
+  if (input.read === 'rulings') {
+    const materialize = async (tx: SQL, page: RecordChangeReadPage) => {
+      const items = page.resetRequired
+        ? limited(await recordQuestionRulingRows(tx, input), input.limit)
+        : await recordQuestionRulingRows(tx, {
+            kind: input.kind,
+            since: input.since,
+            ids: [...new Set(page.changes.map(({ id }) => id))],
+          })
+      return {
+        items,
+        cursor: encodeRecordChangeCursor(page.cursor),
+        more: page.resetRequired ? false : page.more,
+        reset: page.resetRequired,
+      }
+    }
+    if (input.changedAfter !== undefined)
+      return readRecordChanges(
+        client,
+        input,
+        input.changedAfter,
+        MAX_RECORD_CHANGE_PAGE_SIZE,
+        RECORD_QUESTION_CHANGE_TABLES,
+        materialize,
+      )
+
+    let after = (
+      await readRecordChanges(
+        client,
+        input,
+        null,
+        MAX_RECORD_CHANGE_PAGE_SIZE,
+        RECORD_QUESTION_CHANGE_TABLES,
+      )
+    ).cursor
+    while (true) {
+      const page = await readRecordChanges(
+        client,
+        input,
+        after,
+        MAX_RECORD_CHANGE_PAGE_SIZE,
+        RECORD_QUESTION_CHANGE_TABLES,
+        async (tx, current) => {
+          if (current.resetRequired || current.more)
+            return { done: false as const, cursor: current.cursor }
+          const allItems = await recordQuestionRulingRows(tx, input)
+          const items = limited(allItems, input.limit)
+          if (items.length < allItems.length) return { done: true as const, result: { items } }
+          return {
+            done: true as const,
+            result: {
+              items,
+              cursor: encodeRecordChangeCursor(current.cursor),
+              more: false,
+              reset: false,
+            },
+          }
+        },
+      )
+      if (page.done) return page.result
+      after = page.cursor
+    }
+  }
+  return client.begin(async (tx) => {
     await bindTenant(tx, input)
     return { items: await rows(tx, input) }
   })
