@@ -7,7 +7,7 @@ import type {
   QuestionWriteBody,
   QuestionWriteResult,
 } from '../record/record-question-contract.ts'
-import type { QueriedInboxQuestion } from '../run/run-inbox.ts'
+import type { QueriedInboxQuestion } from './question-store-sqlite-reads.ts'
 import type {
   TaskFlowInboxQuestionRow,
   TaskFlowOpenSessionStageRow,

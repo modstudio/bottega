@@ -477,6 +477,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../mcp/mcp-preflight.ts',
       '../run/resume-tree.ts',
       '../run/question-open.ts',
+      '../question-store/question-store-read.ts',
     ],
     'Keep failover independent of execution transports, contracts, and worktrees.',
     [

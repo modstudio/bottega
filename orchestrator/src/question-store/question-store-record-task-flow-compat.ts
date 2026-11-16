@@ -5,7 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import type { HostedTaskFlowStageById } from '../record/record-task-flow-contract.ts'
 import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
-import { questionOpenSql, questionTaskHolderSql } from '../run/question-open.ts'
+import { questionOpenSql, questionTaskHolderSql } from './question-store-sql.ts'
 import { type ListedItem, stageRow } from '../workflow/task-flow-store-record-stage-row.ts'
 import type {
   TaskFlowInboxQuestionRow,

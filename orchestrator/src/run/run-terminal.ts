@@ -82,10 +82,7 @@ import {
 const TERMINAL_STATUS_SQL = 'SELECT status, failure_kind FROM run WHERE record_id=?'
 
 import { type BlockerRow, blockersToRecord } from './run-terminal-blockers.ts'
-import {
-  closeTerminalChainQuestions,
-  finalizeTerminalChain,
-} from './run-terminal-chain.ts'
+import { closeTerminalChainQuestions, finalizeTerminalChain } from './run-terminal-chain.ts'
 import { terminalTurnChanged } from './run-terminal-change.ts'
 import { applyConfinementPrecedence, applyVendorTermination } from './run-terminal-precedence.ts'
 import {

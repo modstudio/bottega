@@ -28,6 +28,16 @@ const json = (value: unknown) => (value == null ? null : JSON.stringify(value))
 const limited = <Row>(rows: Row[], limit?: number): Row[] =>
   limit === undefined ? rows : rows.slice(0, limit)
 
+function assertLocalChangedAfter(input: QuestionReadInput): void {
+  if (
+    input.changedAfter !== undefined &&
+    (input.read !== 'rulings' || !/^\d+$/.test(input.changedAfter))
+  )
+    throw new Error(
+      `${questionChangedAfterRefusal.local.message}; ${questionChangedAfterRefusal.local.remedy}`,
+    )
+}
+
 export class SqliteQuestionStore implements QuestionStore {
   private readonly database: Database
 
@@ -157,13 +167,7 @@ export class SqliteQuestionStore implements QuestionStore {
   }
 
   async read(input: QuestionReadInput): Promise<QuestionReadResult> {
-    if (
-      input.changedAfter !== undefined &&
-      (input.read !== 'rulings' || !/^\d+$/.test(input.changedAfter))
-    )
-      throw new Error(
-        `${questionChangedAfterRefusal.local.message}; ${questionChangedAfterRefusal.local.remedy}`,
-      )
+    assertLocalChangedAfter(input)
     if (input.read === 'inbox')
       return {
         items: limited(

@@ -2,6 +2,7 @@
 /** Reads the root facts a retained turn inherits while it is claimed. */
 
 import { db } from '../database/db.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 
 export type RunWorkflowBinding = { cursorRecordId: string; stepSlug: string }
 
@@ -17,6 +18,13 @@ export function inheritedRunBinding(
 export const bindingValues = (
   binding: { cursorRecordId: string | null; stepSlug: string | null } | null,
 ) => [binding?.cursorRecordId ?? null, binding?.stepSlug ?? null] as const
+
+export function recordCarriedRulings(runId: string, questionIds: readonly string[]): void {
+  const insert = db().query(
+    'INSERT INTO run_carried_ruling (record_id,run_record_id,question_record_id) VALUES (?,?,?)',
+  )
+  for (const id of questionIds) insert.run(newRecordId(), runId, id)
+}
 
 export function inheritedRunFacts(parent: string): {
   launch_cwd: string | null

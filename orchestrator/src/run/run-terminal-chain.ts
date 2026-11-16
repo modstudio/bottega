@@ -2,10 +2,7 @@
 /** Closes suspension state and rolls a terminal turn outcome into its chain root. */
 import type { Database } from 'bun:sqlite'
 import { type classify, FAILS_OVER } from '../failure/failure.ts'
-import {
-  closeRunChainQuestions,
-  QUESTION_CLOSE_CHAIN_TERMINAL,
-} from './question-close.ts'
+import { closeRunChainQuestions, QUESTION_CLOSE_CHAIN_TERMINAL } from './question-close.ts'
 import { rollUpRootAndEnqueue } from './run-liveness.ts'
 
 export async function closeTerminalChainQuestions(

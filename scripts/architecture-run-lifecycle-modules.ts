@@ -132,7 +132,10 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../worktree/worktree-types.ts',
     './resume-tree.ts',
   ]),
-  module('orchestrator/src/run/run-claim-inheritance.ts', ['../database/db.ts']),
+  module('orchestrator/src/run/run-claim-inheritance.ts', [
+    '../../../shared/record-id.ts',
+    '../database/db.ts',
+  ]),
   module('orchestrator/src/run/reader-tree-sharing-claim.ts', [
     '../synchronous-result.ts',
     '../database/db.ts',

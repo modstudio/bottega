@@ -2,7 +2,6 @@
 /** Owns authority and audit for workflow-question mutations. Run questions keep run authority. */
 
 import type { Database } from 'bun:sqlite'
-import { newRecordId } from '../../../shared/record-id.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { callerIdentity, db, sessionId } from '../database/db.ts'
 import {
@@ -79,32 +78,6 @@ export function authorizeWorkflowQuestionMutation(input: {
       candidates: current.ownerProcesses,
     })
   return refusal()
-}
-
-export function auditQuestionMutation(
-  input: {
-    questionId: string
-    action: QuestionMutationAction
-    actor: string | null
-    at: string
-    reason: string | null
-    adoptionReason?: string | null
-  },
-  database: Database = db(),
-): void {
-  database
-    .query(
-      `INSERT INTO question_mutation_audit (record_id,question_record_id,action,actor_session,at,reason)
-       VALUES (?,?,?,?,?,?)`,
-    )
-    .run(
-      newRecordId(),
-      input.questionId,
-      input.action,
-      input.actor,
-      input.at,
-      joinMutationReason(input.reason, input.adoptionReason ?? null),
-    )
 }
 
 export async function upsertWorkflowQuestion(

@@ -325,8 +325,7 @@ async function recordEvidenceExclusion(
       .get(id, id)
     return !blocked && !hasLiveTurn
   })
-  if (shouldCloseQuestions)
-    await closeRunChainQuestions(db(), id, QUESTION_CLOSE_CHAIN_VOIDED)
+  if (shouldCloseQuestions) await closeRunChainQuestions(db(), id, QUESTION_CLOSE_CHAIN_VOIDED)
   if (blocked) {
     presentation.log(
       `blocked-by-tree run ${id}: retained run and output; excluded from routing evidence; no verdict recorded`,

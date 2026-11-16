@@ -4,8 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { voidedSql } from '../evidence/evidence-query.ts'
-import { questionOpenSql, questionTaskHolderSql } from '../run/question-open.ts'
-import type { QueriedInboxQuestion } from '../run/run-inbox.ts'
+import { questionOpenSql, questionTaskHolderSql } from './question-store-sql.ts'
 import type {
   TaskFlowCloseOutStageRow,
   TaskFlowCursorLifecycleRow,
@@ -23,6 +22,47 @@ import type {
   TaskFlowTaskRulingRow,
   TaskFlowWaitingQuestionRow,
 } from '../workflow/task-flow-store-types.ts'
+
+export type QueriedInboxQuestion = {
+  number: number
+  record_id: string
+  run_record_id: string
+  run_number: number
+  asked_at: string
+  question: string
+  answered_at: string | null
+  overturned_at: string | null
+  overturned_by: string | null
+  overturn_reason: string | null
+  replacement: string | null
+  filed_as: 'doc' | 'canon-proposal' | null
+  filed_ref: string | null
+  filed_record_id: string | null
+  filed_label: string | null
+  filed_at: string | null
+  options: string | null
+  recommendation: string | null
+  why: string | null
+  kind: 'choice' | 'yesno' | 'score' | 'text'
+  jev_pick: string | null
+  jev_confidence: number | null
+  jev_probabilities: string | null
+  jev_error: string | null
+  agent: string
+  job: string
+  repo: string | null
+  task_key: string | null
+  project_record_id: string | null
+  status: string
+  session_id: string | null
+  awaiting_operator_at: string | null
+  root_status: string
+  root_voided: number
+  root_id: string
+  root_number: number
+  root_record_id: string
+  session_recent: number
+}
 
 export const closeOutShipTaskStage = (
   database: Database,

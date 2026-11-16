@@ -73,6 +73,7 @@ import {
 import { admitFreshRepositoryRun, type HostCapacityWaitDeps } from './run-claim-host-capacity.ts'
 import type { RunWorkflowBinding } from './run-claim-inheritance.ts'
 import { bindingValues, inheritedRunBinding, inheritedRunFacts } from './run-claim-inheritance.ts'
+import { recordCarriedRulings } from './run-claim-inheritance.ts'
 import { executeClaimedMcpPlan } from './run-claim-mcp.ts'
 import {
   claimedRunBranch,
@@ -125,24 +126,6 @@ type ClaimOptions = {
   resolvedTaskBranch?: TaskBranchCandidate | null
   carry?: boolean
   resume?: RunResumeOptions
-}
-
-function shouldResolveClaimTaskBranch(
-  opts: ClaimOptions,
-  repoJob: boolean,
-  writesJob: boolean,
-  taskKey: string | null,
-  isResume: boolean,
-): boolean {
-  return shouldResolveTaskBranch({
-    repoJob,
-    writesJob,
-    hasWorktree: Boolean(opts.resume?.worktree),
-    taskKey,
-    isResume,
-    hasExplicitBase: opts.base !== undefined,
-    taskBranchSupplied: opts.resolvedTaskBranch !== undefined,
-  })
 }
 
 const explicitRunFlags = (opts: ClaimOptions) =>
@@ -358,13 +341,15 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   let resolvedTaskBranch: TaskBranchCandidate | null = null
   const attachableTaskKey = taskBranchKey(launchKey, Boolean(resumePlan))
   if (
-    shouldResolveClaimTaskBranch(
-      opts,
+    shouldResolveTaskBranch({
       repoJob,
       writesJob,
-      attachableTaskKey,
-      resume.workspaceSource === 'retained',
-    )
+      hasWorktree: Boolean(opts.resume?.worktree),
+      taskKey: attachableTaskKey,
+      isResume: resume.workspaceSource === 'retained',
+      hasExplicitBase: opts.base !== undefined,
+      taskBranchSupplied: opts.resolvedTaskBranch !== undefined,
+    })
   ) {
     resolvedTaskBranch = taskBranchResolution(
       opts.resolvedTaskBranch,
@@ -499,6 +484,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const supersededQuestionState = identity.resolveSupersededTurn
     ? await supersededTurnQuestionState(db(), opts.resume!.parent, opts.resume!.turn - 1)
     : null
+  if (opts.automaticFailover && opts.retryOf !== undefined)
+    await closeRunChainQuestions(db(), opts.retryOf, QUESTION_CLOSE_ATTEMPT_FAILED_OVER)
   const claim = claimWithMigrationAdmission(input, () => {
     const claimedRow = claimableRow(opts.reserveId, updateReservedRun, insertClaimedRun)
     const claimed = { id: claimedRow.record_id, number: claimedRow.number }
@@ -527,13 +514,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         supersededQuestionState!,
       )
     }
-    if (opts.automaticFailover && opts.retryOf !== undefined) {
-      closeRunChainQuestions(db(), opts.retryOf, QUESTION_CLOSE_ATTEMPT_FAILED_OVER)
-    }
-    const recordCarry = db().query(
-      'INSERT INTO run_carried_ruling (record_id,run_record_id,question_record_id) VALUES (?,?,?)',
-    )
-    for (const id of carriedQuestionIds) recordCarry.run(newRecordId(), claimed.id, id)
+    recordCarriedRulings(claimed.id, carriedQuestionIds)
     return claimed
   })
   const runToken = randomUUID()

@@ -7,7 +7,10 @@ import { db, sessionId } from '../database/db.ts'
 import { voidedSql } from '../evidence/evidence-query.ts'
 import { projectAt } from '../project/projects.ts'
 import { inboxRunQuestions, inboxWorkflowQuestions } from '../question-store/question-store-read.ts'
-import { runInboxQuestionRows as sqliteRunInboxQuestionRows } from '../question-store/question-store-sqlite-reads.ts'
+import {
+  type QueriedInboxQuestion,
+  runInboxQuestionRows as sqliteRunInboxQuestionRows,
+} from '../question-store/question-store-sqlite-reads.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 import { runQuestionGroupFooter } from './question-display.ts'
@@ -77,46 +80,7 @@ type WorkflowInboxQuestion = {
   ownership_notice: string | null
 }
 
-export type QueriedInboxQuestion = {
-  number: number
-  record_id: string
-  run_record_id: string
-  run_number: number
-  asked_at: string
-  question: string
-  answered_at: string | null
-  overturned_at: string | null
-  overturned_by: string | null
-  overturn_reason: string | null
-  replacement: string | null
-  filed_as: 'doc' | 'canon-proposal' | null
-  filed_ref: string | null
-  filed_record_id: string | null
-  filed_label: string | null
-  filed_at: string | null
-  options: string | null
-  recommendation: string | null
-  why: string | null
-  kind: 'choice' | 'yesno' | 'score' | 'text'
-  jev_pick: string | null
-  jev_confidence: number | null
-  jev_probabilities: string | null
-  jev_error: string | null
-  agent: string
-  job: string
-  repo: string | null
-  task_key: string | null
-  project_record_id: string | null
-  status: string
-  session_id: string | null
-  awaiting_operator_at: string | null
-  root_status: string
-  root_voided: number
-  root_id: string
-  root_number: number
-  root_record_id: string
-  session_recent: number
-}
+export type { QueriedInboxQuestion } from '../question-store/question-store-sqlite-reads.ts'
 
 export function runInboxQuestionRows(
   database: ReturnType<typeof db>,

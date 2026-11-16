@@ -496,8 +496,7 @@ export async function closeStaleChainQuestions(database: Database): Promise<numb
     terminal.has(String(question.root_status)),
   )
   const open = terminalQuestions.filter(
-    (question) =>
-      question.answered_at === null && question.closed_at === null,
+    (question) => question.answered_at === null && question.closed_at === null,
   )
   const closed = await closeQuestions(
     database,
