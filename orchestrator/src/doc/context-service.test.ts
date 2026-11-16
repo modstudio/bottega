@@ -60,7 +60,7 @@ test('context service stores structured columns and compare-and-set revisions', 
       kind: 'position',
       source: 'q6056',
       warning: expect.stringContaining(
-        `${PLATFORM_SLUG} workflow compose <workflow> --project ${PLATFORM_SLUG} --arg key=${task.key}`,
+        `${PLATFORM_SLUG} workflow compose <workflow> --project '${PLATFORM_SLUG}' --arg 'key=${task.key}'`,
       ),
     }),
   )

@@ -5,6 +5,7 @@ import {
   type ContextItemKind,
   splitContextHolder,
 } from '../../../shared/context-item-vocabulary.ts'
+import { withholdSecretShapedDetail } from '../../../shared/secret-shaped.ts'
 import { db, sessionId, writableDb } from '../database/db.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
@@ -82,7 +83,7 @@ async function taskCursorWarning(
     })
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
-    return `warning: context item was written, but the open workflow cursor check for ${task.key} could not run: ${detail}`
+    return `warning: cursor check unavailable: ${withholdSecretShapedDetail(detail)}; the item was written, and rerunning the same context set once the store answers repeats the check`
   }
 }
 

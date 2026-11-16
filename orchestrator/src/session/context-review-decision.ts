@@ -87,34 +87,6 @@ function staleReason(
   return null
 }
 
-type CarriedTask = {
-  key: string
-  record_id: string
-  project: string
-  parent_key?: string | null
-}
-
-/** Names direct and ancestor task holders carried by the open cursors. */
-export function taskHoldersCarriedByOpenCursors(
-  cursors: readonly { project: string; taskKey: string | null }[],
-  tasks: readonly CarriedTask[],
-): string[] {
-  const taskByKey = new Map(tasks.map((task) => [`${task.project}\0${task.key}`, task]))
-  const holders = new Set<string>()
-  for (const cursor of cursors) {
-    let key = cursor.taskKey
-    const visited = new Set<string>()
-    while (key && !visited.has(key)) {
-      visited.add(key)
-      const task = taskByKey.get(`${cursor.project}\0${key}`)
-      if (!task) break
-      holders.add(`task:${task.record_id}`)
-      key = task.parent_key ?? null
-    }
-  }
-  return [...holders]
-}
-
 export function decideContextReview(facts: ContextReviewFacts): ContextReviewDecision {
   const intervalMs = contextReviewInterval(facts.now, facts.compactionGaps)
   const baseline = Math.max(

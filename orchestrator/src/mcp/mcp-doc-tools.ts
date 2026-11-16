@@ -473,8 +473,7 @@ function registerContextTools(server: McpServer): void {
     },
     async ({ expected_revision, ...input }) => {
       const result = await setContextItem({ ...input, expectedRevision: expected_revision })
-      const rendered = JSON.stringify(result)
-      return text(result.warning ? `${rendered}\n${result.warning}` : rendered)
+      return text(JSON.stringify(result))
     },
   )
   server.registerTool(
