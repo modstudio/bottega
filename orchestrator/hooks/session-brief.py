@@ -564,6 +564,7 @@ def main() -> int:
     acknowledgement_timeout = 1.0
     notice_deadline = None
     stage = "initialize"
+    failed = False
     try:
         cwd = payload.get("cwd")
         if not cwd:
@@ -977,6 +978,7 @@ def main() -> int:
             if notices:
                 output["systemMessage"] = " ".join(notices)
     except Exception as error:
+        failed = True
         command = "bottega agent context show"
         if sid:
             command += f" --session {sid}"
@@ -1006,7 +1008,12 @@ def main() -> int:
                     _with_compact_first_act(context, payload.get("source")), sid
                 )
                 output["hookSpecificOutput"]["additionalContext"] = context
-                if bottega is not None and cwd is not None and inbox_env is not None:
+                if (
+                    not failed
+                    and bottega is not None
+                    and cwd is not None
+                    and inbox_env is not None
+                ):
                     try:
                         _record_injection(
                             bottega,

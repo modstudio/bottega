@@ -185,7 +185,7 @@ class AssembleAdditionalContext(unittest.TestCase):
         self.assertIn("compact context brief", context)
         self.assertNotIn("brief failed:", context)
 
-    def test_later_assembly_failure_is_emitted_and_recorded(self):
+    def test_later_assembly_failure_is_emitted_without_injection_recording(self):
         stdin = io.StringIO(json.dumps({
             "cwd": "/tmp",
             "session_id": "session-a",
@@ -218,7 +218,7 @@ class AssembleAdditionalContext(unittest.TestCase):
         ]
         self.assertIn("brief failed: RuntimeError at collect command results", context)
         self.assertIn("bottega agent context show --session session-a", context)
-        record_injection.assert_called_once()
+        record_injection.assert_not_called()
 
     def test_injection_recording_detaches_with_final_utf8_size(self):
         with mock.patch.object(session_brief.subprocess, "Popen") as popen:
