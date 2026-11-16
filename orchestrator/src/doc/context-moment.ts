@@ -29,6 +29,10 @@ export type ContextMomentInput = {
 
 const emptyEffect = (): ContextMomentEffect => ({ writes: [], reports: [] })
 const questionSource = (questionId: number) => `q${questionId}`
+const ANSWER_CONTEXT_KINDS = {
+  ruling: 'ruling',
+  'self-ruling': 'position',
+} as const satisfies Record<ReturnType<typeof answerRecordShape>, ContextMomentItemKind>
 
 /** Maps the plain values held by a successful verb to its context mutations. */
 export function contextMomentEffect(input: ContextMomentInput): ContextMomentEffect {
@@ -39,8 +43,7 @@ export function contextMomentEffect(input: ContextMomentInput): ContextMomentEff
       writes: [],
       reports: [`context: did not write ${source}: no task or cursor context holder`],
     }
-  const kind: ContextMomentItemKind =
-    answerRecordShape(Boolean(input.operatorRuled)) === 'ruling' ? 'ruling' : 'position'
+  const kind = ANSWER_CONTEXT_KINDS[answerRecordShape(Boolean(input.operatorRuled))]
   const item = { kind, id: `${kind}-${source}`, source, body: input.text }
   return {
     writes: [

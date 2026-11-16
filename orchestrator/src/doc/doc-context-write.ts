@@ -9,9 +9,8 @@ import {
 } from '../../../shared/context-item-vocabulary.ts'
 import {
   type ContextRecordName,
-  RULING_MAX_CHARS,
+  RECORD_SHAPES,
   recordShapeRefusal,
-  SELF_RULING_MAX_CHARS,
 } from '../../../shared/record-shape.ts'
 import type { HubTaskReference } from '../workflow/workflow-task-reference.ts'
 
@@ -21,14 +20,15 @@ export type ContextTaskIdentity = Pick<
 >
 
 export const CONTEXT_ITEM_MAX_CHARS = {
-  ruling: RULING_MAX_CHARS,
-  position: SELF_RULING_MAX_CHARS,
+  ruling: RECORD_SHAPES.ruling.maxChars,
+  position: RECORD_SHAPES['self-ruling'].maxChars,
   fact: 800,
   pointer: 400,
 } as const satisfies Record<ContextItemKind, number>
 
 const CONTEXT_ITEM_RECORD_NAMES = {
   ruling: 'ruling',
+  position: 'self-ruling',
 } as const satisfies Partial<Record<ContextItemKind, ContextRecordName>>
 
 /** A ruling names where Shmuel Barkin gave it: a question, a board message, or the chat on a date. */

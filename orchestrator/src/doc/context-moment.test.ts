@@ -1,21 +1,31 @@
 import { describe, expect, test } from 'bun:test'
-import { answerRecordShape, RECORD_SHAPES } from '../../../shared/record-shape.ts'
+import { SELF_RULING_MAX_CHARS } from '../../../shared/record-shape.ts'
 import { contextMomentEffect } from './context-moment.ts'
-import { CONTEXT_ITEM_MAX_CHARS } from './doc-context-write.ts'
+import { contextItemShapeRefusal } from './doc-context-write.ts'
 
 describe('context moment effect', () => {
-  test('accepted answer shapes match the context kinds they write', () => {
-    for (const operatorRuled of [false, true]) {
-      const record = answerRecordShape(operatorRuled)
-      const effect = contextMomentEffect({
-        holder: { kind: 'task', value: 'DEV-2345' },
-        questionId: 12,
-        operatorRuled,
-        text: 'Use the approved shape.',
-      })
-      const kind = effect.writes[0]!.kind
-      expect(RECORD_SHAPES[record].maxChars).toBe(CONTEXT_ITEM_MAX_CHARS[kind])
-    }
+  test('a position obeys the self-ruling record shape', () => {
+    expect(
+      contextItemShapeRefusal({
+        holder: 'task:DEV-2345',
+        id: 'position-q12',
+        kind: 'position',
+        source: 'q12',
+        body: 'first paragraph\n\nsecond paragraph',
+      }),
+    ).toBe(
+      'context item position-q12 refused: self-ruling must be one paragraph with no blank line. Shorten it and put detail in a task document.',
+    )
+
+    expect(
+      contextItemShapeRefusal({
+        holder: 'task:DEV-2345',
+        id: 'position-q12',
+        kind: 'position',
+        source: 'q12',
+        body: 'x'.repeat(SELF_RULING_MAX_CHARS),
+      }),
+    ).toBeNull()
   })
 
   test('an operator-ruled answer writes a ruling', () => {

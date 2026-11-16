@@ -61,7 +61,7 @@ describe('context write refusal', () => {
         facts(),
       )
       expect(refusal).toContain(`${limit}`)
-      if (kind === 'ruling') {
+      if (kind === 'ruling' || kind === 'position') {
         expect(refusal).toContain('Shorten it and put detail in a task document.')
       } else {
         expect(refusal).toContain(`${kind} limit is ${limit} characters`)
