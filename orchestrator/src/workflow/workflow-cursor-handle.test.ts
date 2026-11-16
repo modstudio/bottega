@@ -546,13 +546,7 @@ test('closing with task adopts a key once and rekeys cursor questions', async ()
     workflow_key: 'DEV-1082',
     workflow_task_record_id: 'task-DEV-1082',
   })
-  const outbox = d
-    .query<{ payload: string }, []>("SELECT payload FROM outbox WHERE kind='question'")
-    .get()!
-  expect(JSON.parse(outbox.payload)).toMatchObject({
-    workflowKey: 'DEV-1082',
-    revision: 3,
-  })
+  expect(d.query("SELECT payload FROM outbox WHERE kind='question'").all()).toEqual([])
   const keyedArgs = { key: 'DEV-1082' }
   const adoptedContext = { ...context, taskRecordId: 'task-DEV-1082' }
   expect(

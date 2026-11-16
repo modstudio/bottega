@@ -229,11 +229,18 @@ test('abandon retires an older answered pending delivery through the chain servi
       new Date().toISOString(),
       new Date().toISOString(),
     )
+  db()
+    .query(
+      `INSERT INTO question_delivery_pending(question_record_id,run_record_id,pending_at)
+       SELECT record_id,run_record_id,delivery_pending_at FROM question WHERE run_record_id=?`,
+    )
+    .run(id)
 
   expect((await invoke('abandon', id)).code).toBe(0)
-  expect(
-    db().query('SELECT answer,delivery_pending_at FROM question WHERE run_record_id=?').get(id),
-  ).toEqual({ answer: 'earlier ruling', delivery_pending_at: null })
+  expect(db().query('SELECT answer FROM question WHERE run_record_id=?').get(id)).toEqual({
+    answer: 'earlier ruling',
+  })
+  expect(db().query('SELECT * FROM question_delivery_pending').all()).toEqual([])
   expect(
     db()
       .query(

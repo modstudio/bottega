@@ -29,9 +29,15 @@ function localQuestionRow(
     mapped.record_id = mapped.id
     delete mapped.id
   }
-  if (mapped.run_record_id === undefined && typeof mapped.run_id === 'string')
+  if (
+    mapped.run_record_id === undefined &&
+    (typeof mapped.run_id === 'string' || mapped.run_id === null)
+  )
     mapped.run_record_id = mapped.run_id
-  if (mapped.workflow_task_record_id === undefined && typeof mapped.workflow_task_id === 'string')
+  if (
+    mapped.workflow_task_record_id === undefined &&
+    (typeof mapped.workflow_task_id === 'string' || mapped.workflow_task_id === null)
+  )
     mapped.workflow_task_record_id = mapped.workflow_task_id
   delete mapped.run_id
   delete mapped.workflow_task_id

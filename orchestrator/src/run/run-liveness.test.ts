@@ -366,6 +366,12 @@ describe('reapStale', () => {
          VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?,?,?)`,
       )
       .run(root, nowIso(), 'answered', 'the ruling', nowIso(), nowIso())
+    db()
+      .query(
+        `INSERT INTO question_delivery_pending(question_record_id,run_record_id,pending_at)
+         SELECT record_id,run_record_id,delivery_pending_at FROM question WHERE run_record_id=?`,
+      )
+      .run(root)
     const child = addRun({
       agent: 'grok',
       job: 'implement',
@@ -380,9 +386,7 @@ describe('reapStale', () => {
     expect(db().query('SELECT status FROM run WHERE record_id=?').get(root)).toEqual({
       status: 'stale',
     })
-    expect(
-      db().query('SELECT delivery_pending_at FROM question WHERE run_record_id=?').get(root),
-    ).toEqual({ delivery_pending_at: null })
+    expect(db().query('SELECT * FROM question_delivery_pending').all()).toEqual([])
     expect(
       db()
         .query(

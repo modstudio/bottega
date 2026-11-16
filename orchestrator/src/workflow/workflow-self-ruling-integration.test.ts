@@ -170,7 +170,7 @@ test('self-ruling records the answered question and closes the step atomically',
   }
   expect(times.answered_at).toBe(times.asked_at)
   expect(d.query("SELECT count(*) count FROM outbox WHERE kind='question'").get()).toEqual({
-    count: 1,
+    count: 0,
   })
 })
 

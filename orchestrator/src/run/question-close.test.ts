@@ -42,7 +42,7 @@ function fixture(status = 'ok'): { database: Database; questionId: string } {
   return { database, questionId: question.record_id }
 }
 
-test('close service closes, audits and enqueues once', async () => {
+test('close service closes and audits once without a question outbox row', async () => {
   const { database, questionId } = fixture()
   expect(
     await closeQuestions(
@@ -70,9 +70,7 @@ test('close service closes, audits and enqueues once', async () => {
     database.query<{ record_id: string }, []>('SELECT record_id FROM question_mutation_audit').get()
       ?.record_id,
   ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
-  expect(database.query("SELECT kind FROM outbox WHERE kind='question'").all()).toEqual([
-    { kind: 'question' },
-  ])
+  expect(database.query("SELECT kind FROM outbox WHERE kind='question'").all()).toEqual([])
 })
 
 test('operator close accepts a terminal question and records the supplied reason', async () => {
@@ -104,7 +102,7 @@ test('operator close refuses live, answered and blank questions', async () => {
   ).rejects.toThrow('--reason must not be empty')
 })
 
-test('terminal delivery retirement clears only pending state, records history and enqueues', async () => {
+test('terminal delivery retirement clears only pending state and records history', async () => {
   const { database, questionId } = fixture('stale')
   database
     .query(
@@ -113,6 +111,11 @@ test('terminal delivery retirement clears only pending state, records history an
        WHERE record_id=?`,
     )
     .run(questionId)
+  database
+    .query(
+      'INSERT INTO question_delivery_pending(question_record_id,run_record_id,pending_at) VALUES (?,?,?)',
+    )
+    .run(questionId, '01990000-0000-7000-8000-000000000042', '2026-09-29T10:02:00.000Z')
 
   expect(
     await retireRunChainQuestionDeliveries(
@@ -124,15 +127,12 @@ test('terminal delivery retirement clears only pending state, records history an
   ).toBe(1)
   expect(
     database
-      .query(
-        'SELECT answer,answered_at,answered_by,delivery_pending_at,revision FROM question WHERE record_id=?',
-      )
+      .query('SELECT answer,answered_at,answered_by,revision FROM question WHERE record_id=?')
       .get(questionId),
   ).toEqual({
     answer: 'yes',
     answered_at: '2026-09-29T10:02:00.000Z',
     answered_by: 'architect',
-    delivery_pending_at: null,
     revision: 2,
   })
   expect(
@@ -148,9 +148,8 @@ test('terminal delivery retirement clears only pending state, records history an
     at: '2026-09-29T10:03:00.000Z',
     error: 'chain-terminal',
   })
-  expect(database.query("SELECT kind FROM outbox WHERE kind='question'").all()).toEqual([
-    { kind: 'question' },
-  ])
+  expect(database.query('SELECT * FROM question_delivery_pending').all()).toEqual([])
+  expect(database.query("SELECT kind FROM outbox WHERE kind='question'").all()).toEqual([])
 })
 
 test('delivery retirement leaves an asking chain untouched', async () => {
@@ -161,6 +160,11 @@ test('delivery retirement leaves an asking chain untouched', async () => {
         delivery_pending_at='2026-09-29T10:02:00.000Z' WHERE record_id=?`,
     )
     .run(questionId)
+  database
+    .query(
+      'INSERT INTO question_delivery_pending(question_record_id,run_record_id,pending_at) VALUES (?,?,?)',
+    )
+    .run(questionId, '01990000-0000-7000-8000-000000000042', '2026-09-29T10:02:00.000Z')
 
   expect(
     await retireRunChainQuestionDeliveries(
@@ -178,4 +182,7 @@ test('delivery retirement leaves an asking chain untouched', async () => {
     revision: 1,
   })
   expect(database.query('SELECT * FROM question_delivery').all()).toEqual([])
+  expect(database.query('SELECT question_record_id FROM question_delivery_pending').all()).toEqual([
+    { question_record_id: questionId },
+  ])
 })

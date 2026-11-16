@@ -64,7 +64,7 @@ async function recordQuestionRulingRows(
 
 const QUESTION_DETAIL_COLUMNS = `q.id::text record_id,q.number,q.run_id::text run_record_id,
   q.workflow_key,q.workflow_task_id::text workflow_task_record_id,
-  q.workflow_cursor_record_id::text,q.project_id::text,q.machine_id::text machine_id,q.revision,
+  q.workflow_cursor_record_id::text,q.project_id::text project_record_id,q.machine_id::text machine_id,q.revision,
   q.asked_at::text,q.question,q.options::text,q.recommendation,q.why,q.asked_via,q.kind,
   q.typed_options::text,q.criteria::text,q.levels::text,q.answer,q.answer_value,q.answer_basis,
   q.answered_at::text,q.answered_by,q.answered_by_name,q.answered_by_kind,q.answerer_kind,q.answer_channel,

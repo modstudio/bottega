@@ -556,8 +556,6 @@ test('question-joined reads match SQLite joins and ordering', async () => {
     [hosted.rulingFileQuestion(q4), local.rulingFileQuestion(q4)],
     [hosted.questionCloseFacts(q1), local.questionCloseFacts(q1)],
     [hosted.overturnRulingRow(q3), local.overturnRulingRow(q3)],
-    [hosted.pendingTaskLinks('question'), local.pendingTaskLinks('question')],
-    [hosted.linkedTaskReferences('question'), local.linkedTaskReferences('question')],
     [hosted.taskRulingRows('fixture', TASK_ID, 1), local.taskRulingRows('fixture', TASK_ID, 1)],
     [hosted.localQuestionProjects(), local.localQuestionProjects()],
   ]

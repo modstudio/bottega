@@ -59,7 +59,7 @@ describe('run answers', () => {
     expect(
       db()
         .query(
-          `SELECT answer,answerer_kind,answer_channel,delivery_pending_at,awaiting_operator_at
+          `SELECT answer,answerer_kind,answer_channel,awaiting_operator_at
              FROM question WHERE run_record_id=?`,
         )
         .get(id),
@@ -67,9 +67,15 @@ describe('run answers', () => {
       answer: 'use the existing shape',
       answerer_kind: 'agent',
       answer_channel: 'mcp',
-      delivery_pending_at: expect.any(String),
       awaiting_operator_at: null,
     })
+    expect(
+      db()
+        .query(
+          'SELECT run_record_id FROM question_delivery_pending WHERE question_record_id=(SELECT record_id FROM question WHERE run_record_id=?)',
+        )
+        .get(id),
+    ).toEqual({ run_record_id: id })
     expect(
       db()
         .query(
@@ -146,14 +152,8 @@ describe('run answers', () => {
       delivery_pending_at: null,
       revision: 3,
     })
-    const pending = db()
-      .query<{ payload: string }, []>("SELECT payload FROM outbox WHERE kind='question'")
-      .get()!
-    expect(JSON.parse(pending.payload)).toMatchObject({
-      answer: null,
-      answeredAt: null,
-      revision: 3,
-    })
+    expect(db().query("SELECT payload FROM outbox WHERE kind='question'").all()).toEqual([])
+    expect(db().query('SELECT * FROM question_delivery_pending').all()).toEqual([])
     expect(
       db()
         .query(
@@ -168,16 +168,13 @@ describe('run answers', () => {
     })
   })
 
-  test('failed resume emits a newer withdrawal after an answer already synced', async () => {
+  test('failed resume writes no retired question outbox rows', async () => {
     const id = insert('asking', 'file-question', '01990000-0000-7000-8000-000000000043')
     db()
       .query('UPDATE run SET session_id=?,vendor_session=? WHERE record_id=?')
       .run('orch-test-session', 'vendor', id)
     db().query(newQuestionSql()).run(id, new Date().toISOString(), 'which shape?')
     const dispatch: typeof detach = async () => {
-      db()
-        .query("UPDATE outbox SET synced_at='2026-09-25T12:00:00.000Z' WHERE kind='question'")
-        .run()
       throw new Error('fixture dispatch failed after sync')
     }
 
@@ -189,16 +186,7 @@ describe('run answers', () => {
       ),
     ).rejects.toThrow('Resume failed: fixture dispatch failed after sync')
 
-    const payloads = db()
-      .query<{ payload: string }, []>(
-        "SELECT payload FROM outbox WHERE kind='question' ORDER BY id",
-      )
-      .all()
-      .map((row) => JSON.parse(row.payload) as { answer: string | null; revision: number })
-    expect(payloads).toEqual([
-      expect.objectContaining({ answer: 'use the existing shape', revision: 2 }),
-      expect.objectContaining({ answer: null, revision: 3 }),
-    ])
+    expect(db().query("SELECT payload FROM outbox WHERE kind='question'").all()).toEqual([])
   })
   test('answer refuses questions split between live and stopped owners', async () => {
     const root = addRun({
@@ -985,6 +973,12 @@ describe('retry command', () => {
           new Date().toISOString(),
         ) as { number: number }
     ).number
+    db()
+      .query(
+        `INSERT INTO question_delivery_pending(question_record_id,run_record_id,pending_at)
+         SELECT record_id,run_record_id,delivery_pending_at FROM question WHERE number=?`,
+      )
+      .run(questionId)
     const dispatch: typeof detach = async () => {
       throw new Error('fixture retry dispatch failed')
     }
