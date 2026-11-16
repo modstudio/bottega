@@ -222,9 +222,12 @@ class HeartbeatBoardObservationTest(unittest.TestCase):
             "INSERT INTO hosted_board_message_cache VALUES (?,?,?,?)",
             ("hosted-reply", "reply", "hosted-root", reply_payload),
         )
-        connection.execute(
+        connection.executemany(
             "INSERT INTO hosted_board_message_tag_cache VALUES (?,?,?,?)",
-            ("hosted-root", "task", "DEV-9", "sender"),
+            [
+                ("hosted-root", "task", "DEV-9", "sender"),
+                ("hosted-root", "task", "DEV-8", "inferred"),
+            ],
         )
         connection.commit()
         connection.close()
