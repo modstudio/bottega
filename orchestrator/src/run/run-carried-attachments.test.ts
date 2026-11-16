@@ -89,6 +89,6 @@ test('an unknown token refuses with its condition and remedy', async () => {
     }),
   ).rejects.toThrow(
     `carried attachments could not be resolved before dispatch:\n- ${FIRST}: not held on this machine\n` +
-      `remedy: re-attach the text with ${PLATFORM_SLUG} workflow text or paste the body into the spec`,
+      `remedy: re-attach the text with ${PLATFORM_SLUG} workflow attach or paste the body into the spec`,
   )
 })

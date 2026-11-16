@@ -86,7 +86,7 @@ function attachmentRefusal(failures: Array<{ token: string; condition: string }>
   const details = failures.map(({ token, condition }) => `- ${token}: ${condition}`).join('\n')
   return new Error(
     `carried attachments could not be resolved before dispatch:\n${details}\n` +
-      `remedy: re-attach the text with ${PLATFORM_SLUG} workflow text or paste the body into the spec`,
+      `remedy: re-attach the text with ${PLATFORM_SLUG} workflow attach or paste the body into the spec`,
   )
 }
 
