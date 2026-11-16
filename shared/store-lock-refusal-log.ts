@@ -1,7 +1,6 @@
 /** Best-effort file adapter for store lock refusals that cannot be written to either store. */
 
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { appendBoundedJsonLine, readBoundedJsonLinesSince } from './bounded-json-lines-log.ts'
 import {
   type DatabaseLockRefusalFacts,
@@ -9,12 +8,13 @@ import {
   formatDatabaseLockRefusal,
   sqliteErrorIdentity,
 } from './database-lock-refusal.ts'
+import { installRoot } from './install-root.ts'
 import type { StateEnvironment } from './state-directory.ts'
 import { writeCallerFromStack } from './write-caller-from-stack.ts'
 
 const STORE_LOCK_REFUSAL_LOG_MAX_BYTES = 1_048_576
 const LOG_NAME = 'store-lock-refusals'
-const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const repositoryRoot = installRoot()
 const refusalCallerOptions = {
   repositoryRoot,
   excludedFiles: [
