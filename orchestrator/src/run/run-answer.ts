@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { AnswerWaitingResult } from '../../../shared/orch-contract.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
-import { assertRecordShape } from '../../../shared/record-shape.ts'
+import { answerRecordShape, assertRecordShape } from '../../../shared/record-shape.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { ANSWER_WORKING_FORMS } from '../cli/args.ts'
@@ -219,7 +219,7 @@ function collectAnswers(input: {
           `Rule with: ${PLATFORM_SLUG} question answer ${input.runId} --q${input.open[0]!.number} "<ruling>", ` +
           'or pass a ruling via --file or stdin.',
       )
-    const answer = validatedRuling(rulings, input.argvLimit)
+    const answer = validatedRuling(rulings, input.answer.fromOperator, input.argvLimit)
     if (input.answer.typedValue !== undefined && input.open.length > 1)
       throw new Error('--value requires --q<id> when more than one question is open')
     return [
@@ -242,13 +242,17 @@ function collectAnswers(input: {
   return input.open.flatMap((question) => {
     const ruling = rulings.find((item) => item.questionId === question.record_id)
     if (!ruling) return []
-    const answer = validatedRuling(ruling.text, input.argvLimit)
+    const answer = validatedRuling(ruling.text, ruling.fromOperator, input.argvLimit)
     return [answeredQuestion(question, answer, ruling.fromOperator, ruling.typedValue)]
   })
 }
 
-function validatedRuling(text: string, argvLimit: number | undefined): string {
-  assertRecordShape('ruling', text)
+function validatedRuling(
+  text: string,
+  fromOperator: boolean,
+  argvLimit: number | undefined,
+): string {
+  assertRecordShape(answerRecordShape(fromOperator), text)
   const nul = text.indexOf('\0')
   if (nul >= 0)
     throw new Error(

@@ -41,6 +41,30 @@ afterEach(() => {
 })
 
 describe('run answers', () => {
+  test('answer shape is checked before storage using its operator attribution', async () => {
+    const answer = 'x'.repeat(801)
+    const selfRuled = insert('asking')
+    db().query(newQuestionSql()).run(selfRuled, new Date().toISOString(), 'which shape?')
+
+    await expect(
+      answerRun(selfRuled, { argv: [answer], recordOnly: true, flags }, helpers),
+    ).rejects.toThrow('self-ruling is 801 characters; the limit is 800')
+    expect(db().query('SELECT answer FROM question WHERE run_record_id=?').get(selfRuled)).toEqual({
+      answer: null,
+    })
+
+    const operatorRuled = insert('asking')
+    db().query(newQuestionSql()).run(operatorRuled, new Date().toISOString(), 'which shape?')
+    await answerRun(
+      operatorRuled,
+      { argv: ['--from-operator', answer], recordOnly: true, flags },
+      helpers,
+    )
+    expect(
+      db().query('SELECT answer FROM question WHERE run_record_id=?').get(operatorRuled),
+    ).toEqual({ answer })
+  })
+
   test('record-only closes the question, marks the chain stranded, and retry restates the ruling', async () => {
     const id = insert('asking')
     const prompt = trackResidue(join(dir, `record-only-${id}.txt`))
@@ -215,7 +239,7 @@ describe('run answers', () => {
     for (const question of questions) {
       const path = trackResidue(join(dir, `answer-large-${question.number}.txt`))
       writeFileSync(path, body)
-      argv.push(`--q${question.number}`, '--file', path)
+      argv.push(`--from-operator-q${question.number}`, `--q${question.number}`, '--file', path)
     }
     await expect(answerRun(id, { argv, recordOnly: false, flags }, helpers)).rejects.toThrow(
       'ruling is 190000 characters; the limit is 1500 (RULING_MAX_CHARS)',
@@ -237,7 +261,11 @@ describe('run answers', () => {
       .run('parent-session', spec, 'orch-test-session', id)
     const body = 'x'.repeat(1500)
     const questions = addOpenQuestions(id, 134)
-    const argv = questions.flatMap((question) => [`--q${question.number}`, body])
+    const argv = questions.flatMap((question) => [
+      `--from-operator-q${question.number}`,
+      `--q${question.number}`,
+      body,
+    ])
     const assembled = packedRulingResumeBytes(id, 'implement', questions, body)
     await expect(answerRun(id, { argv, recordOnly: false, flags }, helpers)).rejects.toThrow(
       `assembled resume prompt is ${assembled} bytes`,

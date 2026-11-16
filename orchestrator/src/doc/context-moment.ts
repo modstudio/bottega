@@ -1,6 +1,7 @@
 // concern: context-service
 /** Pure context-item effects for workflow and lifecycle verbs. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { answerRecordShape } from '../../../shared/record-shape.ts'
 
 type ContextMomentItemKind = 'ruling' | 'position'
 export type ContextMomentHolder =
@@ -38,7 +39,8 @@ export function contextMomentEffect(input: ContextMomentInput): ContextMomentEff
       writes: [],
       reports: [`context: did not write ${source}: no task or cursor context holder`],
     }
-  const kind: ContextMomentItemKind = input.operatorRuled ? 'ruling' : 'position'
+  const kind: ContextMomentItemKind =
+    answerRecordShape(Boolean(input.operatorRuled)) === 'ruling' ? 'ruling' : 'position'
   const item = { kind, id: `${kind}-${source}`, source, body: input.text }
   return {
     writes: [

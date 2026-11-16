@@ -1,7 +1,23 @@
 import { describe, expect, test } from 'bun:test'
+import { RECORD_SHAPES, answerRecordShape } from '../../../shared/record-shape.ts'
 import { contextMomentEffect } from './context-moment.ts'
+import { CONTEXT_ITEM_MAX_CHARS } from './doc-context-write.ts'
 
 describe('context moment effect', () => {
+  test('accepted answer shapes match the context kinds they write', () => {
+    for (const operatorRuled of [false, true]) {
+      const record = answerRecordShape(operatorRuled)
+      const effect = contextMomentEffect({
+        holder: { kind: 'task', value: 'DEV-2345' },
+        questionId: 12,
+        operatorRuled,
+        text: 'Use the approved shape.',
+      })
+      const kind = effect.writes[0]!.kind
+      expect(RECORD_SHAPES[record].maxChars).toBe(CONTEXT_ITEM_MAX_CHARS[kind])
+    }
+  })
+
   test('an operator-ruled answer writes a ruling', () => {
     expect(
       contextMomentEffect({

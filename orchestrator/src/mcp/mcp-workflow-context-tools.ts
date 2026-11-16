@@ -2,7 +2,7 @@
 /** Registers workflow ruling tools and applies their task context effects. */
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
-import { assertRecordShape } from '../../../shared/record-shape.ts'
+import { answerRecordShape, assertRecordShape } from '../../../shared/record-shape.ts'
 import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { workflowQuestionContextMoment } from '../workflow/workflow-context-moment.ts'
 import { awaitWorkflowRuling } from '../workflow/workflow-cursor.ts'
@@ -74,7 +74,8 @@ function registerRuleWorkflowTool(server: McpServer, ports: McpWorkflowContextPo
       }),
     },
     async ({ slug, project, mode, args, ruling, from_operator, cursor }) => {
-      const shapedRuling = assertRecordShape('ruling', ruling)
+      const operatorRuled = Boolean(from_operator)
+      const shapedRuling = assertRecordShape(answerRecordShape(operatorRuled), ruling)
       const { context, effectiveMode } = await resolveMcpLinkedWorkflowCursor(
         slug,
         project,
@@ -91,7 +92,7 @@ function registerRuleWorkflowTool(server: McpServer, ports: McpWorkflowContextPo
         effectiveMode,
         args ?? {},
         shapedRuling,
-        Boolean(from_operator),
+        operatorRuled,
         'mcp',
         context,
         undefined,
@@ -104,7 +105,7 @@ function registerRuleWorkflowTool(server: McpServer, ports: McpWorkflowContextPo
             taskKey: context.workflowKey,
             cursorRecordId: result.cursorRecordId,
             questionId: result.questionId,
-            operatorRuled: Boolean(from_operator),
+            operatorRuled,
             text: shapedRuling,
           }),
           ports.contextMomentPorts,

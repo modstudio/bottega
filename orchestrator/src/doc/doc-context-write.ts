@@ -10,6 +10,7 @@ import {
 import {
   type ContextRecordName,
   RULING_MAX_CHARS,
+  SELF_RULING_MAX_CHARS,
   recordShapeRefusal,
 } from '../../../shared/record-shape.ts'
 import type { HubTaskReference } from '../workflow/workflow-task-reference.ts'
@@ -21,7 +22,7 @@ export type ContextTaskIdentity = Pick<
 
 export const CONTEXT_ITEM_MAX_CHARS = {
   ruling: RULING_MAX_CHARS,
-  position: 800,
+  position: SELF_RULING_MAX_CHARS,
   fact: 800,
   pointer: 400,
 } as const satisfies Record<ContextItemKind, number>
