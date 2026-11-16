@@ -84,7 +84,7 @@ export function packedRulingResumeBytes(
   const prompt = rulingPrompt(
     questions.map((question) => ({ question: question.question, answer })),
   )
-  return Buffer.byteLength(packedResumePrompt(job, prompt, id))
+  return Buffer.byteLength(packedResumePrompt(job, prompt, id, ''))
 }
 
 export function returningQuestionSql(): string {
