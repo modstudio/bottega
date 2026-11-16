@@ -6,9 +6,10 @@ import { z } from 'zod'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel } from '../../../shared/git.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { AGENTS, requireAgent } from '../agent/agent-registry.ts'
 import { DB_PATH, db } from '../database/db.ts'
-import { targetGitEnvironment } from '../git/git-environment.ts'
+import { resolveBase, targetGitEnvironment } from '../git/git-environment.ts'
 import { job } from '../jobs/jobs.ts'
 import { formatLensProfileSource, resolveLens } from '../lens/lenses.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
@@ -23,7 +24,7 @@ import { coverageAudit } from './review-coverage.ts'
 import { REVIEW_WINDOW } from './review-evidence-sql.ts'
 import { resolveReviewIdentifier } from './review-identifier.ts'
 import { reviewPins } from './review-pins.ts'
-import { resolveReviewBase } from './review-target.ts'
+import { emptyReviewCondition, resolveReviewBase } from './review-target.ts'
 import { parseTierRange, resolveTierRange, type TierRangeEndpoint } from './review-tier.ts'
 import { completeReview, MIN_REVIEW_TRIAGED, triageFinding } from './review-triage.ts'
 import { DISPOSITIONS, type Disposition, REVIEW_SEVERITY } from './review-vocabulary.ts'
@@ -91,16 +92,23 @@ function resolveTierRangeInRepo(repo: string, from: string, to: string, fromLabe
   return resolution
 }
 
-function resolveTierTarget(
-  value: string,
-  cwd: string,
-): {
+type ResolvedTierTarget = {
   repo: string
   from: string
   to: string
   branch: string
   project: NonNullable<ReturnType<typeof projectAt>>
-} {
+}
+
+function resolveTierTargetCommit(repo: string, ref: string): string {
+  try {
+    return resolveBase(repo, ref)
+  } catch {
+    throw new Error(`cannot resolve review target ${ref} to a commit`)
+  }
+}
+
+function resolveTierTarget(value: string, cwd: string): ResolvedTierTarget {
   if (classifyRunIdentifier(value)) {
     return (() => {
       const runId = resolveRunIdentifier(db(), value)
@@ -115,9 +123,7 @@ function resolveTierTarget(
       if (!row) throw new Error(`no run ${runId}`)
       const project = row.repo ? projectByName(row.repo) : null
       if (!project) throw new Error(`run ${runId} has no registered project`)
-      // Measure a live writer at its current branch tip. Otherwise retain the
-      // recorded input tree as the classified artifact while resolving its
-      // landing merge-base from the recorded head commit.
+      // Measure a live writer at its tip; otherwise classify the recorded input tree.
       const writer = (() => {
         try {
           return job(row.job).needs.writesRepo
@@ -137,7 +143,9 @@ function resolveTierTarget(
       if (!reviewed) throw new Error(`run ${runId} has no recorded input tree or head commit`)
       const trunk = project.settings.trunk?.trim()
       if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
-      const reviewedTip = branchLive ? reviewed : (row.head_commit ?? reviewed)
+      const reviewedTip = branchLive
+        ? resolveTierTargetCommit(project.path, reviewed)
+        : (row.head_commit ?? reviewed)
       const from = (() => {
         try {
           return resolveReviewBase(project.path, reviewedTip, trunk)
@@ -150,7 +158,13 @@ function resolveTierTarget(
           `cannot find merge-base between reviewed tip ${reviewedTip} and trunk ${trunk}`,
         )
       }
-      return { repo: project.path, from, to: reviewed, branch: row.branch ?? reviewedTip, project }
+      return {
+        repo: project.path,
+        from,
+        to: branchLive ? reviewedTip : reviewed,
+        branch: row.branch ?? reviewedTip,
+        project,
+      }
     })()
   }
   const project = projectAt(cwd)
@@ -183,10 +197,11 @@ function resolveTierTarget(
   if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
   const from = resolveReviewBase(repo, value, trunk)
   if (!from) throw new Error(`cannot find merge-base between branch ${value} and trunk ${trunk}`)
+  const to = resolveTierTargetCommit(repo, value)
   return {
     repo,
     from,
-    to: value,
+    to,
     branch: value,
     project,
   }
@@ -199,6 +214,27 @@ function reviewTierOutputForTarget({
   branch,
   project,
 }: ReturnType<typeof resolveTierTarget>) {
+  const funnelResult = reviewFunnelVerdictForChange({
+    database: db(),
+    cwd: repo,
+    base: from,
+    head: to,
+    branch,
+    project,
+  })
+  if (funnelResult.kind === 'empty') {
+    const trunk = project.settings.trunk!.trim()
+    const condition = emptyReviewCondition(funnelResult.commit, funnelResult.base, branch, trunk)
+    throw new Error(
+      renderRefusal(
+        refusal(`refused: ${condition}`, {
+          kind: 'edit',
+          text: `commit the change to ${branch}, then ${PLATFORM_SLUG} review tier ${branch}`,
+        }),
+      ),
+    )
+  }
+  const { facts: funnelFacts, verdict: funnelVerdict } = funnelResult
   const { output, postFix, reviewPlan, reviewBudget, creditedByArchitectRead } =
     budgetedReviewPlanForResolvedChange({
       database: db(),
@@ -209,14 +245,6 @@ function reviewTierOutputForTarget({
       branch,
     })
   const round = reviewPlan.round
-  const { facts: funnelFacts, verdict: funnelVerdict } = reviewFunnelVerdictForChange({
-    database: db(),
-    cwd: repo,
-    base: from,
-    head: to,
-    branch,
-    project,
-  })
   try {
     recordReviewFunnelDecision({
       database: db(),

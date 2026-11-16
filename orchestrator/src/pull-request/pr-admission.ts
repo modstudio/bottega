@@ -15,7 +15,11 @@ import type { ApplicableReview, ReviewFunnelPlan } from '../review/review-applic
 import { type ChangeGroup, measureChangeGroup, serializePathSet } from '../review/review-group.ts'
 import { gatherPostFixReviewFacts, postFixReviewDecision } from '../review/review-post-fix.ts'
 import type { ReviewRoundBudgetDecision } from '../review/review-round-budget.ts'
-import { reviewRemoteTrunkRefExists, reviewTrunkRef } from '../review/review-target.ts'
+import {
+  emptyReviewCondition,
+  reviewRemoteTrunkRefExists,
+  reviewTrunkRef,
+} from '../review/review-target.ts'
 import type { ReviewFunnelVerdict } from '../review-funnel/decide-review-funnel.ts'
 import {
   gatherAdmissionEvidenceDecision,
@@ -55,7 +59,7 @@ export type PullRequestChange = {
   branch: string
   tip: string
   tree: string
-  base?: string
+  base: string
   group: ChangeGroup
   tier: 0 | 1 | 2 | 3
   applicability: ApplicableReview
@@ -163,14 +167,18 @@ export type AdmissionWithTriage = AdmissionDecision & {
 }
 
 export type EvaluatedAdmission = AdmissionWithTriage & {
+  kind: 'measured'
   verdict: ReviewFunnelVerdict
 }
+
+export type EmptyAdmission = { kind: 'empty'; condition: string }
+export type PullRequestAdmission = EmptyAdmission | EvaluatedAdmission
 
 function funnelChange(change: PullRequestChange, database: Database) {
   return {
     database,
     cwd: change.project.path,
-    base: change.base ?? change.tip,
+    base: change.base,
     head: change.tip,
     branch: change.branch,
     project: change.project,
@@ -182,6 +190,21 @@ function funnelVerdict(change: PullRequestChange, database: Database) {
   return reviewFunnelVerdictForChange(funnelChange(change, database))
 }
 
+function emptyAdmission(
+  change: PullRequestChange,
+  result: Extract<ReturnType<typeof funnelVerdict>, { kind: 'empty' }>,
+): EmptyAdmission {
+  return {
+    kind: 'empty',
+    condition: emptyReviewCondition(
+      result.commit,
+      result.base,
+      change.branch,
+      change.project.settings.trunk!.trim(),
+    )!,
+  }
+}
+
 function funnelRefusal(condition: string, verdict: ReviewFunnelVerdict): string {
   return renderRefusal(refusal(condition, { kind: 'edit', text: verdict.remedy }))
 }
@@ -191,9 +214,11 @@ export function admissionDecision(
   change: PullRequestChange,
   database: Database,
   surface: Extract<ReviewFunnelDecisionSurface, 'admission' | 'pre-push'> = 'admission',
-): EvaluatedAdmission {
+): PullRequestAdmission {
+  const funnel = funnelVerdict(change, database)
+  if (funnel.kind === 'empty') return emptyAdmission(change, funnel)
   const triage = triageDecision(change, database)
-  const { facts, verdict } = funnelVerdict(change, database)
+  const { facts, verdict } = funnel
   const decision = decideAdmission(verdict, overridesForChange(change, database))
   recordReviewFunnelDecision({
     database,
@@ -202,7 +227,16 @@ export function admissionDecision(
     facts,
     verdict,
   })
-  return { ...decision, verdict, triage }
+  return { kind: 'measured', ...decision, verdict, triage }
+}
+
+export function emptyCreateRefusal(change: PullRequestChange, admission: EmptyAdmission): string {
+  return renderRefusal(
+    refusal(`refusing pull request for ${change.branch} at ${change.tip}: ${admission.condition}`, {
+      kind: 'edit',
+      text: `commit the change to ${change.branch}, then ${PLATFORM_SLUG} pr create`,
+    }),
+  ).replace('\n', '; ')
 }
 
 /** The line refusing one applicable lens, naming the path a fix used to bring it into scope. */
@@ -598,6 +632,9 @@ export function createPullRequest(
   const checked = writeTransaction(() => {
     const triage = triageDecision(change, database)
     const beforeOverride = funnelVerdict(change, database)
+    if (beforeOverride.kind === 'empty') {
+      throw new Error(emptyCreateRefusal(change, emptyAdmission(change, beforeOverride)))
+    }
     recordTriageOverrideForChange(
       change,
       {
@@ -610,6 +647,9 @@ export function createPullRequest(
       database,
     )
     const checkedAdmission = admissionDecision(change, database)
+    if (checkedAdmission.kind === 'empty') {
+      throw new Error(emptyCreateRefusal(change, checkedAdmission))
+    }
     if (!checkedAdmission.complete) {
       throw new Error(
         checkedAdmission.triage.complete
@@ -687,6 +727,25 @@ export type PushedTipCheck = {
   overrideId: string | null
 }
 
+export function emptyPrePushRefusal(
+  change: PullRequestChange,
+  admission: EmptyAdmission,
+): PushedTipCheck {
+  return {
+    known: true,
+    complete: false,
+    infrastructureError: null,
+    refusal: renderRefusal(
+      refusal(`refusing push of ${change.branch} at ${change.tip}: ${admission.condition}`, {
+        kind: 'edit',
+        text: `commit the change to ${change.branch} before pushing it`,
+      }),
+    ).replace('\n', '; '),
+    pendingIntent: false,
+    overrideId: null,
+  }
+}
+
 export function checkPushedTip(cwd: string, sha: string, remoteRef: string): PushedTipCheck {
   try {
     const database = db()
@@ -712,6 +771,7 @@ export function checkPushedTip(cwd: string, sha: string, remoteRef: string): Pus
     const tip = git(cwd, ['rev-parse', '--verify', `${sha}^{commit}`])
     const change = resolvePullRequestChange(cwd, tip, database, git, branch)
     const checked = admissionDecision(change, database, 'pre-push')
+    if (checked.kind === 'empty') return emptyPrePushRefusal(change, checked)
     const decision = checked
     const policy = decidePrePush({
       remoteRef,

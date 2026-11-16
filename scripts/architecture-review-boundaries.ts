@@ -626,6 +626,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       './review-vocabulary.ts',
       './review-yield.ts',
       '../../../shared/bounded-process.ts',
+      '../../../shared/refusal.ts',
     ],
     reason:
       'Keep review commands independent of runs, transports, routing by value, the CLI, and worktrees by value.',

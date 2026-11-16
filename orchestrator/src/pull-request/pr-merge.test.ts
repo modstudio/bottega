@@ -192,6 +192,7 @@ test.each([
         ({
           project: projectByName('merge-fixture')!,
           branch: pullRequest.headBranch,
+          base: 'base',
         }) as PullRequestChange,
       promoteMergedWorkflowDrafts: () => ({
         ok: false,
@@ -568,10 +569,13 @@ test('an incomplete admission refuses with its review remedy without merging', a
             change: {
               branch: pullRequest.headBranch,
               tip: pullRequest.headCommit,
+              base: 'base',
               group: { patchId: 'patch' },
               tier: 2,
             } as PullRequestChange,
             decision: {
+              kind: 'measured',
+              verdict: null as never,
               complete: false,
               overrideId: null,
               overrideReason: null,
@@ -608,6 +612,43 @@ test('an incomplete admission refuses with its review remedy without merging', a
       ),
   ).toThrow('missing review for patch patch; cleared by: run and record the tier 2 review')
   expect(merged).toBe(false)
+})
+
+test('an empty admission refuses merge with the pull-request remedy', async () => {
+  registerProject([])
+  recordPassingGate()
+  let merged = false
+  let failure = ''
+  try {
+    await mergePullRequest(
+      '42',
+      cwd,
+      adapter({
+        admission: () => ({
+          change: {
+            branch: pullRequest.headBranch,
+            tip: pullRequest.headCommit,
+            base: pullRequest.headCommit,
+          } as PullRequestChange,
+          decision: {
+            kind: 'empty',
+            condition: `${pullRequest.headBranch} resolves to head-com, which is already on main, so there is no change to review`,
+          },
+        }),
+        merge: () => {
+          merged = true
+          return 'unexpected'
+        },
+      }),
+    )
+  } catch (cause) {
+    failure = cause instanceof Error ? cause.message : String(cause)
+  }
+  expect(failure).toStartWith('refusing merge:')
+  expect(failure).toBe(
+    `refusing merge: ${pullRequest.headBranch} resolves to head-com, which is already on main, so there is no change to review; cleared by: close pull request 42, because its head is already on main`,
+  )
+  expect(merged).toBeFalse()
 })
 
 test('a dirty pull request refuses with the rebase remedy without merging', async () => {
@@ -728,6 +769,7 @@ test('an admitted head records a snapshot with the pull request number before me
             },
             branch: headBranch,
             tip: headCommit,
+            base: 'base',
             tree: 'head-tree',
             group: {
               project: 'merge-fixture',
@@ -739,7 +781,7 @@ test('an admitted head records a snapshot with the pull request number before me
             tier: 2 as const,
             applicability: { lenses: ['correctness', 'craft'] },
           },
-          decision,
+          decision: { kind: 'measured', ...decision, verdict: null as never },
         }
       },
       recordAdmission: (admittedChange, admittedDecision, number, admittedDatabase) =>

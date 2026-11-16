@@ -581,6 +581,7 @@ test('admission follows the exhausted round budget and requires an architect rea
     })
 
     const withoutRead = admissionDecision(change, db())
+    if (withoutRead.kind === 'empty') throw new Error('expected a measured admission')
     expect(withoutRead.complete).toBeFalse()
     if (withoutRead.complete) throw new Error('expected admission to require an architect read')
     const triage = withoutRead.triage
@@ -606,7 +607,7 @@ test('admission follows the exhausted round budget and requires an architect rea
         serializePathSet(change.group.pathSet),
       )
 
-    expect(admissionDecision(change, db())).toMatchObject({ complete: true })
+    expect(admissionDecision(change, db())).toMatchObject({ kind: 'measured', complete: true })
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }
@@ -626,6 +627,7 @@ test('the architect read credits a never-reviewed tier-three path lens at the ce
       completedLensesOnBranch: ['correctness'],
     })
     const withoutRead = admissionDecision(change, db())
+    if (withoutRead.kind === 'empty') throw new Error('expected a measured admission')
     expect(withoutRead.complete).toBeFalse()
     if (withoutRead.complete) throw new Error('expected admission to require an architect read')
     expect(withoutRead.triage).toMatchObject({
@@ -649,7 +651,7 @@ test('the architect read credits a never-reviewed tier-three path lens at the ce
         change.group.patchId,
         serializePathSet(change.group.pathSet),
       )
-    expect(admissionDecision(change, db())).toMatchObject({ complete: true })
+    expect(admissionDecision(change, db())).toMatchObject({ kind: 'measured', complete: true })
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }
@@ -670,6 +672,7 @@ test('the architect read credits an owed second opinion at the ceiling', () => {
       completedLensesOnBranch: ['correctness'],
     })
     const withoutRead = admissionDecision(change, db())
+    if (withoutRead.kind === 'empty') throw new Error('expected a measured admission')
     expect(withoutRead.complete).toBeFalse()
     if (withoutRead.complete) throw new Error('expected admission to require an architect read')
     expect(withoutRead.triage).toMatchObject({
@@ -693,7 +696,7 @@ test('the architect read credits an owed second opinion at the ceiling', () => {
         change.group.patchId,
         serializePathSet(change.group.pathSet),
       )
-    expect(admissionDecision(change, db())).toMatchObject({ complete: true })
+    expect(admissionDecision(change, db())).toMatchObject({ kind: 'measured', complete: true })
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }

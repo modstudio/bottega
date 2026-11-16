@@ -45,6 +45,8 @@ import { decideMergeability, type MergeabilityFacts } from './mergeability-decis
 import {
   type AdmissionWithTriage,
   admissionDecision,
+  type EvaluatedAdmission,
+  type PullRequestAdmission,
   type PullRequestChange,
   recordMergeAdmission,
   resolvePullRequestChange,
@@ -85,7 +87,7 @@ export type PullRequestMergeAdapter = {
     headCommit: string,
     headBranch: string,
     database: Database,
-  ): { change: PullRequestChange; decision: AdmissionWithTriage }
+  ): { change: PullRequestChange; decision: PullRequestAdmission }
   recordAdmission(
     change: PullRequestChange,
     decision: AdmissionWithTriage,
@@ -623,7 +625,7 @@ function enqueueForMergeQueue(
   }
 }
 
-type CheckedMergeAdmission = ReturnType<PullRequestMergeAdapter['admission']>
+type CheckedMergeAdmission = { change: PullRequestChange; decision: EvaluatedAdmission }
 
 function collectMergeAdmission(
   pullRequest: PullRequestMergeFacts,
@@ -643,9 +645,22 @@ function collectMergeAdmission(
     }
   }
   const checked = adapter.admission(cwd, pullRequest.headCommit, pullRequest.headBranch, database)
-  if (checked.decision.complete) {
+  if (checked.decision.kind === 'empty') {
+    throw new Error(
+      renderRefusal(
+        refusal(`refusing merge: ${checked.decision.condition}`, {
+          kind: 'edit',
+          text:
+            `close pull request ${pullRequest.number}, because its head is already on ` +
+            pullRequest.baseBranch,
+        }),
+      ).replace('\n', '; '),
+    )
+  }
+  const measured = { change: checked.change, decision: checked.decision }
+  if (measured.decision.complete) {
     return {
-      checked,
+      checked: measured,
       decision: decideMergeAdmission({
         checked: true,
         number: pullRequest.number,
@@ -653,9 +668,9 @@ function collectMergeAdmission(
       }),
     }
   }
-  const triage = checked.decision.triage
+  const triage = measured.decision.triage
   return {
-    checked,
+    checked: measured,
     decision: decideMergeAdmission({
       checked: true,
       number: pullRequest.number,
