@@ -42,7 +42,7 @@ export function finalizeTerminalChain(
   }
   closeTerminalQuestions(database, rootId, input.status, input.failureKind)
   if (input.parentRunId !== null) {
-    rollUpRootAndEnqueue(database, input.parentRunId, null, ...input.record)
+    rollUpRootAndEnqueue(database, input.parentRunId, null, ...input.record, false)
   }
   if (
     input.status !== 'asking' &&

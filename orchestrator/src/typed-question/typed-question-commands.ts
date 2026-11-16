@@ -49,7 +49,7 @@ export async function typedQuestionCommand(
   presentation: Presentation,
 ): Promise<void> {
   const days = typedQuestionDays(options.days)
-  const report = typedQuestionReport({ question: options.question, days, job: options.job })
+  const report = await typedQuestionReport({ question: options.question, days, job: options.job })
   const jevWorkerQuestions =
     options.question || options.job ? null : await jevWorkerQuestionReport({ days })
   if (options.json) {

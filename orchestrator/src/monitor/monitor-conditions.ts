@@ -24,6 +24,7 @@ import { hookTreeNotice } from '../hook-tree/hook-tree.ts'
 import { runHasLiveDescendants } from '../idle-kill.ts'
 import { sampleProcesses } from '../process-resource-sampler.ts'
 import { isProjectRepository, projects } from '../project/projects.ts'
+import { openQuestionsForChain } from '../question-store/question-store-read.ts'
 import {
   refGuardInventory,
   retainedRefInventory,
@@ -36,7 +37,6 @@ export { sandboxDirectoryInventory } from '../resources/resource-inventory.ts'
 
 import type { ReclaimKind } from '../reclaim/reclaim-kind.ts'
 import { liveMemberStall, liveRunMembers } from '../run/live-run-member.ts'
-import { questionOpenSql } from '../run/question-open.ts'
 import { recordedRunLivenessFacts, runAlive } from '../run/run-alive.ts'
 import { abandonedBootstrap, PENDING_BOOTSTRAP_MS } from '../run/run-bootstrap.ts'
 import { isFreshRunHostWait } from '../run/run-host-capacity.ts'
@@ -62,12 +62,7 @@ const ASKING_RUN_WHERE = `parent_run_record_id IS NULL
       WHERE member.record_id = run.record_id OR member.parent_run_record_id = run.record_id
       ORDER BY member.turn DESC, member.number DESC
       LIMIT 1
-   ) = 'asking'
-   AND NOT EXISTS (
-     SELECT 1 FROM question q JOIN run owner ON owner.record_id = q.run_record_id
-      WHERE (owner.record_id = run.record_id OR owner.parent_run_record_id = run.record_id)
-        AND ${questionOpenSql('q')}
-   )`
+   ) = 'asking'`
 
 type AddressedRun = { record_id: string; started_at: string; session_id: string | null }
 
@@ -98,10 +93,14 @@ export function orphanRecipeDatabaseConditions(
     }))
 }
 
-export function askingRuns(database = db()): AddressedRun[] {
-  return database
+export async function askingRuns(database = db()): Promise<AddressedRun[]> {
+  const candidates = database
     .query(`SELECT record_id, started_at, session_id FROM run WHERE ${ASKING_RUN_WHERE}`)
     .all() as AddressedRun[]
+  const open = await Promise.all(
+    candidates.map((run) => openQuestionsForChain(database, run.record_id)),
+  )
+  return candidates.filter((_, index) => open[index]!.length === 0)
 }
 
 type TerminalCloseOutRun = AddressedRun & {

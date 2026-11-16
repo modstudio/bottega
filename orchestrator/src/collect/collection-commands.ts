@@ -47,7 +47,7 @@ export async function resultCommand(
   scoreSuffix: (jobName: string) => string,
   presentation: Presentation,
 ): Promise<void> {
-  collectResult(
+  await collectResult(
     database,
     argv,
     scoreSuffix,

@@ -688,7 +688,7 @@ export async function monitor(
   conditions.push(...strayWorktrees.conditions)
   errors.push(...strayWorktrees.errors)
 
-  const asking = askingRuns(database)
+  const asking = await askingRuns(database)
   for (const run of asking)
     add({
       kind: 'asking-run',

@@ -18,7 +18,7 @@ import {
 } from '../gate/worker-check-omissions.ts'
 import { parseMcpProbe } from '../mcp/mcp-probe.ts'
 import { failureReason, outcomeOf } from '../outcome.ts'
-import { questionOpenSql } from '../run/question-open.ts'
+import { openQuestionsForChain } from '../question-store/question-store-read.ts'
 import { HARNESS_EXECUTOR } from '../run/run-executor.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import type { ObservedDeadRun } from '../run/run-liveness.ts'
@@ -148,7 +148,7 @@ function presentLastWorkerCheckOmissions(
 }
 
 /** Resolve what an `asking` status means across the whole conversation. */
-function resolveAsking(database: Database, runId: string): AskingResolution {
+async function resolveAsking(database: Database, runId: string): Promise<AskingResolution> {
   const member = database
     .query('SELECT record_id, parent_run_record_id FROM run WHERE record_id=?')
     .get(runId) as {
@@ -157,13 +157,7 @@ function resolveAsking(database: Database, runId: string): AskingResolution {
   } | null
   if (!member) throw new Error(`no run ${runId}`)
   const rootId = member.parent_run_record_id ?? member.record_id
-  const open = database
-    .query(
-      `SELECT COUNT(*) n FROM question q JOIN run r ON r.record_id = q.run_record_id
-      WHERE (r.record_id = ? OR r.parent_run_record_id = ?) AND ${questionOpenSql('q')}`,
-    )
-    .get(rootId, rootId) as { n: number }
-  if (open.n) return { state: 'open', rootId }
+  if ((await openQuestionsForChain(database, rootId)).length) return { state: 'open', rootId }
 
   const running = database
     .query(
@@ -707,7 +701,7 @@ function presentCollectedOutput(
   )
 }
 
-export function collectResult(
+export async function collectResult(
   database: Database,
   argv: string[],
   scoreSuffix: (job: string) => string = () => '',
@@ -715,7 +709,7 @@ export function collectResult(
   writingJob: (job: string, branch: string | null, mintedBranch: string | null) => boolean = () =>
     false,
   declaredProbes: (runRecordId: string) => readonly FocusedTestExecutionObservation[] = () => [],
-): void {
+): Promise<void> {
   const unknown = argv.slice(2).find((arg) => arg !== '--quiet' && arg !== '--artifacts')
   if (unknown) {
     throw new Error(
@@ -738,7 +732,7 @@ export function collectResult(
     .get(chain.finalId) as CollectedRunRow | null
   if (!row) throw new Error(`no run ${id}`)
   if (argv.includes('--artifacts')) listResultArtifacts(database, chain.finalId, presentation)
-  const asking = row.status === 'asking' ? resolveAsking(database, row.record_id) : null
+  const asking = row.status === 'asking' ? await resolveAsking(database, row.record_id) : null
   const outcome = outcomeOf(row)
   const baseNote = `${row.base_commit ? `\n  base:      ${row.base_commit}` : ''}${row.executor === HARNESS_EXECUTOR ? `\n  executor:  ${row.executor}` : ''}\n  record_id: ${row.record_id}`
   if (!outcome.terminal || chain.settling) {
@@ -873,7 +867,7 @@ export async function collectWaitForRuns(
   const observedTerminal = new Set<string>()
   for (;;) {
     const observation = beforePoll()
-    const outcomes = ids.map((requestedId) => {
+    const outcomes = await Promise.all(ids.map(async (requestedId) => {
       const chain = resolveFailover(database, requestedId)
       const row = database
         .query(
@@ -887,7 +881,7 @@ export async function collectWaitForRuns(
         failure_kind: string | null
         exit_code: number | null
       }
-      const asking = row.status === 'asking' ? resolveAsking(database, row.record_id) : null
+      const asking = row.status === 'asking' ? await resolveAsking(database, row.record_id) : null
       const outcome =
         asking?.state === 'running'
           ? { terminal: false, ok: false, line: 'running' }
@@ -905,7 +899,7 @@ export async function collectWaitForRuns(
                 }
               : outcomeOf(row)
       return { requestedId, row, chain, outcome }
-    })
+    }))
     if (Array.isArray(observation)) {
       const requestedRows = new Set(outcomes.map(({ row }) => row.record_id))
       for (const dead of observation) {
@@ -1015,7 +1009,7 @@ export async function collect(
   argv: string[],
   beforePoll?: () => void,
 ): Promise<void> {
-  if (argv[0] === 'result') collectResult(database, argv)
+  if (argv[0] === 'result') await collectResult(database, argv)
   else if (argv[0] === 'wait') await collectWait(database, argv, beforePoll)
   else throw new Error(`not a collection command: ${argv[0] ?? ''}`)
 }

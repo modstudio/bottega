@@ -14,9 +14,12 @@ import { liveOperationalStatusFromEvents, readEventLog, runEventsPath } from '..
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { failureReason, type OutcomeRow, outcomeOf } from '../outcome.ts'
 import type { ProcessSample } from '../process-resource-sampler.ts'
-import { collectChangeCursor, publishChangeCursor } from './collect-change.ts'
+import {
+  questionRulings,
+  questionsForChain,
+} from '../question-store/question-store-read.ts'
+import { publishChangeCursor } from './collect-change.ts'
 import { currentRunMemberJoin, liveMemberStall } from './live-run-member.ts'
-import { questionOpenSql } from './question-open.ts'
 import type {
   AnswerChannel,
   AnswererKind,
@@ -37,28 +40,28 @@ export function runIdentityMap(): RunIdentity[] {
   return db().query<RunIdentity, []>('SELECT number, record_id FROM run ORDER BY number').all()
 }
 
-function questionDeliveries(questionRecordId: string) {
-  return db()
-    .query(
-      `SELECT delivery.id,question.number question_id,delivery.question_record_id,
+function questionDeliveries(questionRecordId: string, questionId: number) {
+  return (
+    db()
+      .query(
+        `SELECT delivery.id,delivery.question_record_id,
               delivery_run.number AS run_number, delivery.run_record_id,
               delivery.mode, delivery.outcome, delivery.at, delivery.error
          FROM question_delivery delivery
-         JOIN question ON question.record_id=delivery.question_record_id
          LEFT JOIN run delivery_run ON delivery_run.record_id=delivery.run_record_id
         WHERE delivery.question_record_id=? ORDER BY delivery.id`,
-    )
-    .all(questionRecordId) as {
-    id: number
-    question_id: number
-    question_record_id: string
-    run_number: number | null
-    run_record_id: string | null
-    mode: QuestionDeliveryMode
-    outcome: QuestionDeliveryOutcome
-    at: string
-    error: string | null
-  }[]
+      )
+      .all(questionRecordId) as {
+      id: number
+      question_record_id: string
+      run_number: number | null
+      run_record_id: string | null
+      mode: QuestionDeliveryMode
+      outcome: QuestionDeliveryOutcome
+      at: string
+      error: string | null
+    }[]
+  ).map((delivery) => ({ ...delivery, question_id: questionId }))
 }
 
 type RunListingFlags = {
@@ -138,20 +141,9 @@ function reportRouteAndExecutor(row: Record<string, unknown>, log: (...values: u
   if (row.executor === 'harness') log('      executor: harness')
 }
 
-function listingQuestions(recordId: string, json: boolean) {
+async function listingQuestions(recordId: string, json: boolean) {
   if (!json) return undefined
-  return (
-    db()
-      .query(
-        `SELECT q.number,q.record_id,q.run_record_id,owner.number AS run_number,
-                      q.asked_at, q.answered_at, q.asked_via,
-                      q.answerer_kind, q.answer_channel, q.overturned_at,
-                      q.closed_at, q.close_reason
-         FROM question q JOIN run owner ON owner.record_id = q.run_record_id
-        WHERE owner.record_id = ? OR owner.parent_run_record_id = ?
-        ORDER BY q.number`,
-      )
-      .all(recordId, recordId) as {
+  return ((await questionsForChain(db(), recordId)) as unknown as {
       number: number
       record_id: string
       run_record_id: string
@@ -164,8 +156,7 @@ function listingQuestions(recordId: string, json: boolean) {
       overturned_at: string | null
       closed_at: string | null
       close_reason: string | null
-    }[]
-  ).map((q) => ({
+  }[]).map((q) => ({
     id: q.number,
     record_id: q.record_id,
     run_record_id: q.run_record_id,
@@ -178,7 +169,7 @@ function listingQuestions(recordId: string, json: boolean) {
     overturned_at: q.overturned_at ?? null,
     closed_at: q.closed_at ?? null,
     close_reason: q.close_reason ?? null,
-    deliveries: questionDeliveries(q.record_id),
+    deliveries: questionDeliveries(q.record_id, q.number),
   }))
 }
 
@@ -190,17 +181,17 @@ function listingCostContext(
   return subscriptionCost ?? { facts: subscriptionCostFacts(), prices: {} }
 }
 
-function listingConversation(
+async function listingConversation(
   r: Record<string, unknown>,
   json: boolean,
   subscriptionCost: SubscriptionCostContext | undefined,
   chainIsStranded: (id: string) => boolean,
   strandedRecovery: (id: string) => string,
-): Record<string, unknown>[] {
+): Promise<Record<string, unknown>[]> {
   const chain = resolveFailover(db(), r.record_id as string)
   const final = chain.attempts.at(-1)!
   const recordId = String(r.record_id)
-  const questions = listingQuestions(recordId, json)
+  const questions = await listingQuestions(recordId, json)
   const listed = {
     ...r,
     ...listingHumanCurrent(final.record_id, json),
@@ -390,46 +381,68 @@ function applyRequestedRunFilter(
   args.push(...requested.ids, ...requested.ids)
 }
 
-function applySinceListingFilter(
+function rootIdsForQuestionRows(rows: Record<string, unknown>[]): string[] {
+  const runIds = [
+    ...new Set(
+      rows.flatMap((row) =>
+        typeof row.run_record_id === 'string' ? [row.run_record_id] : [],
+      ),
+    ),
+  ]
+  if (!runIds.length) return []
+  return [
+    ...new Set(
+      (
+        db()
+          .query<{ root_id: string }, string[]>(
+            `SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run
+             WHERE record_id IN (${runIds.map(() => '?').join(',')})`,
+          )
+          .all(...runIds)
+      ).map(({ root_id }) => root_id),
+    ),
+  ]
+}
+
+async function applySinceListingFilter(
   since: string | undefined,
   where: string[],
   args: Array<string | number>,
-): void {
+): Promise<void> {
   if (!since) return
+  const questionRootIds = rootIdsForQuestionRows(
+    (await questionRulings(db(), { kind: 'run', since })).items,
+  )
   where.push(`(
     EXISTS (
       SELECT 1 FROM run turn
        WHERE (turn.record_id = r.record_id OR turn.parent_run_record_id = r.record_id)
          AND turn.started_at >= ?
-    ) OR EXISTS (
-      SELECT 1 FROM question q JOIN run owner ON owner.record_id = q.run_record_id
-       WHERE (owner.record_id = r.record_id OR owner.parent_run_record_id = r.record_id)
-         AND (${questionOpenSql('q')} OR q.asked_at >= ? OR q.answered_at >= ? OR q.closed_at >= ?)
-    )
+    )${questionRootIds.length ? ` OR r.record_id IN (${questionRootIds.map(() => '?').join(',')})` : ''}
   )`)
-  args.push(since, since, since, since)
+  args.push(since, ...questionRootIds)
 }
 
-export function applyChangedAfterFilter(
+export async function applyChangedAfterFilter(
   after: number | null,
   where: string[],
   args: Array<string | number>,
-): number | null {
+): Promise<number | null> {
   if (after === null) return null
-  const snapshot = collectChangeCursor()
+  const changedQuestions = await questionRulings(db(), {
+    kind: 'run',
+    changedAfter: String(after),
+  })
+  const snapshot = Number(changedQuestions.cursor ?? after)
+  const questionRootIds = rootIdsForQuestionRows(changedQuestions.items)
   where.push(`(
     EXISTS (
       SELECT 1 FROM run changed_run
        WHERE (changed_run.record_id=r.record_id OR changed_run.parent_run_record_id=r.record_id)
          AND changed_run.change_seq>? AND changed_run.change_seq<=?
-    ) OR EXISTS (
-      SELECT 1 FROM question changed_question
-      JOIN run changed_owner ON changed_owner.record_id=changed_question.run_record_id
-      WHERE (changed_owner.record_id=r.record_id OR changed_owner.parent_run_record_id=r.record_id)
-        AND changed_question.change_seq>? AND changed_question.change_seq<=?
-    )
+    )${questionRootIds.length ? ` OR r.record_id IN (${questionRootIds.map(() => '?').join(',')})` : ''}
   )`)
-  args.push(after, snapshot, after, snapshot)
+  args.push(after, snapshot, ...questionRootIds)
   return snapshot
 }
 
@@ -594,8 +607,8 @@ export async function runListingCommand(
   // Runs normally presents one canonical row per resumed conversation. If a caller names a child
   // turn, return that conversation rather than falsely reporting an existing run id as unknown.
   applyRequestedRunFilter(requested, sinceFlag, where, args)
-  applySinceListingFilter(sinceFlag, where, args)
-  const changeSnapshot = applyChangedAfterFilter(options.changedAfter, where, args)
+  await applySinceListingFilter(sinceFlag, where, args)
+  const changeSnapshot = await applyChangedAfterFilter(options.changedAfter, where, args)
   where.push(...liveListingClauses(has('live')))
   const limit = listingLimit(flag('limit'), json, has('live'), options.changedAfter)
   let rows = db()
@@ -630,9 +643,13 @@ export async function runListingCommand(
       ORDER BY r.number DESC${listingLimitSql(limit)}`,
     )
     .all(...args, ...listingLimitBindings(limit)) as Record<string, unknown>[]
-  rows = rows
-    .map(withRetryRecordId)
-    .flatMap((r) => listingConversation(r, json, costContext, chainIsStranded, strandedRecovery))
+  rows = (
+    await Promise.all(
+      rows
+        .map(withRetryRecordId)
+        .map((r) => listingConversation(r, json, costContext, chainIsStranded, strandedRecovery)),
+    )
+  ).flat()
   // Unknown means absent from orch, not merely absent from this presentation
   // (for example because an id names a child turn or another filter excludes
   // it). Omission and non-existence are different facts for machine callers.

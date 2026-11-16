@@ -156,6 +156,14 @@ async function questionStoreContract(store: QuestionStore, database: Database) {
   await store.write('ask', body(run))
   expect((await store.read({ read: 'by-id', ids: [run.id] })).items).toHaveLength(1)
   expect((await store.read({ read: 'for-run', runId: RUN_ID })).items).toHaveLength(1)
+  expect(
+    (
+      await store.read({
+        read: 'for-cursor',
+        workflowCursorRecordId: CURSOR_ID,
+      })
+    ).items,
+  ).toHaveLength(1)
   expect((await store.read({ read: 'waiting' })).items).toHaveLength(1)
   const inbox = (await store.read({ read: 'inbox' })).items
   expect(inbox.some((row) => field(row, 'record_id') === run.id)).toBe(true)
@@ -180,12 +188,25 @@ async function questionStoreContract(store: QuestionStore, database: Database) {
     answerChannel: 'mcp',
     updatedAt: answeredAt,
   })
+  const ruled = { ...answered, revision: answered.revision + 1 }
+  const rule = body(ruled, 'rule')
+  rule.audit.reason = 'adopted cursor'
+  await store.write('link', rule)
+  expect(
+    (
+      await store.read({
+        read: 'rule-audit-reasons',
+        workflowCursorRecordId: CURSOR_ID,
+        actorSession: 'session-a',
+      })
+    ).items,
+  ).toEqual([{ reason: 'adopted cursor' }])
   const relayed = { ...run, revision: run.revision + 1, awaitingOperatorAt: answeredAt }
   await store.write('relay', body(relayed, 'relay'))
   expect((await store.read({ read: 'by-id', ids: [run.id] })).items[0]).toMatchObject({
     awaiting_operator_at: answeredAt,
   })
-  const replacement = await mutate(store, 'overturn', answered, {
+  const replacement = await mutate(store, 'overturn', ruled, {
     overturnedAt: '2026-11-15T12:02:00.000Z',
     replacement: 'No',
     updatedAt: '2026-11-15T12:02:00.000Z',

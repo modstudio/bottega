@@ -40,6 +40,7 @@ import type { Agent } from '../agent/agents.ts'
 import { db } from '../database/db.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { questionProjects } from '../question-store/question-store-read.ts'
+import { recordQuestionStore } from '../question-store/question-store.ts'
 import { inspectRunRecordBackfill, type RunRecordBackfillInspection } from '../run/run-outbox.ts'
 import {
   inspectTaskFlowBackfill,
@@ -49,7 +50,12 @@ import {
 import { activeSpaceInvariant } from './active-space-invariant.ts'
 import { machineId } from './machine-identity.ts'
 import { quarantinedOutboxRows } from './outbox-quarantine.ts'
-import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
+import {
+  RecordApiRequestError,
+  recordApiClient,
+  recordApiRequest,
+} from './record-api-client.ts'
+import { recordQuestionClient } from './record-api-client-question.ts'
 import { recordAttributionFailure } from './record-attribution.ts'
 import { bearerHeaders, type RecordIdentity } from './record-auth.ts'
 import { recordPool } from './record-pool.ts'
@@ -692,6 +698,27 @@ async function operatorRecordChecks(input: {
   } else {
     const identity = input.identity
     try {
+      const questionStore = recordQuestionStore({
+        database: input.database,
+        client: recordQuestionClient(recordApiRequest),
+        destinationSpaceId: identity.activeSpaceId,
+      })
+      const questionIds = (await questionStore.read({ read: 'rulings', kind: 'all' })).items.map(
+        (row) => String(row.record_id),
+      )
+      const hostedQuestions = (
+        await Promise.all(
+          Array.from({ length: Math.ceil(questionIds.length / 100) }, (_, index) =>
+            questionStore.read({
+              read: 'by-id',
+              ids: questionIds.slice(index * 100, index * 100 + 100),
+            }),
+          ),
+        )
+      ).flatMap(({ items }) => items)
+      const machineQuestions = hostedQuestions.filter(
+        (question) => question.machine_id === machineId(),
+      ).length
       const attribution = await actor.begin(async (tx) => {
         await tx`SELECT set_config('app.user_id', ${identity.userId}, true)`
         await tx`SELECT set_config('app.space_id', ${identity.activeSpaceId}, true)`
@@ -699,12 +726,10 @@ async function operatorRecordChecks(input: {
           await tx`SELECT count(*)::int AS total, count(*) FILTER (WHERE started_by_user_id IS NULL)::int AS missing FROM run WHERE space_id=${identity.activeSpaceId}::uuid`
         const intervals =
           await tx`SELECT count(*)::int AS total, count(*) FILTER (WHERE session_id IS NULL)::int AS missing FROM hub_interval WHERE space_id=${identity.activeSpaceId}::uuid AND source='claude'`
-        const questions =
-          await tx`SELECT count(*)::int AS total FROM question WHERE space_id=${identity.activeSpaceId}::uuid AND machine_id=${machineId()}::uuid`
         return {
           runs: runs[0]!,
           intervals: intervals[0]!,
-          questions: questions[0]!,
+          questions: { total: machineQuestions },
         }
       })
       checks.push({

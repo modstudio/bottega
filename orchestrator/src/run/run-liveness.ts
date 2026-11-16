@@ -17,7 +17,6 @@ import {
   QUESTION_CLOSE_CHAIN_STALE,
   retireRunChainQuestionDeliveries,
 } from './question-close.ts'
-import { questionOpenSql } from './question-open.ts'
 import { recordedRunLivenessFacts, runAlive } from './run-alive.ts'
 import { auditRunMutation, runMutationAuthority } from './run-authority.ts'
 import { abandonedBootstrap, coordinatorSetupDeath, PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
@@ -88,7 +87,9 @@ function resolveRootFromLastTurnPreserving(
   database: Database,
   rootId: string,
   preserveFailureKindForTurnId: string | null,
+  hasOpenQuestions: boolean,
 ): number {
+  if (hasOpenQuestions) return 0
   return database
     .query(
       `UPDATE run AS root
@@ -148,11 +149,6 @@ function resolveRootFromLastTurnPreserving(
       WHERE root.record_id = ?
         AND root.parent_run_record_id IS NULL
         AND root.status IN ('asking', 'ok', 'failed')
-        AND NOT EXISTS (
-          SELECT 1 FROM question q JOIN run owner ON owner.record_id = q.run_record_id
-           WHERE (owner.record_id = root.record_id OR owner.parent_run_record_id = root.record_id)
-             AND ${questionOpenSql('q')}
-        )
         AND (
           SELECT last.status FROM run last
            WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
@@ -169,8 +165,14 @@ export function rollUpRootAndEnqueue(
   preserveFailureKindForTurnId: string | null,
   machine: string,
   finishedAt: string,
+  hasOpenQuestions: boolean,
 ): number {
-  const changes = resolveRootFromLastTurnPreserving(database, rootId, preserveFailureKindForTurnId)
+  const changes = resolveRootFromLastTurnPreserving(
+    database,
+    rootId,
+    preserveFailureKindForTurnId,
+    hasOpenQuestions,
+  )
   enqueueRunRecord(database, rootId, machine, finishedAt)
   return changes
 }
@@ -214,6 +216,7 @@ function rollUpReapedRoots(
         preservedFailureKindTurnId(setupDeathIds, last_record_id),
         machine,
         finishedAt,
+        false,
       )
       retireRunChainQuestionDeliveries(database, root_record_id, QUESTION_CLOSE_CHAIN_STALE)
     }, database)
@@ -360,13 +363,13 @@ function groupReapedRuns(database: Database, rows: RunningRow[], now: number): R
   return groups
 }
 
-function terminalizeHarnessFailures(
+async function terminalizeHarnessFailures(
   database: Database,
   ids: string[],
   errorFor: (id: string) => string,
   localMachineId: string,
   finishedAt: string,
-): void {
+): Promise<void> {
   if (!ids.length) return
   const update = database.query(
     `UPDATE run SET status='failed', failure_kind='harness', error=?, host_wait_since=NULL
@@ -374,13 +377,14 @@ function terminalizeHarnessFailures(
   )
   for (const id of ids) {
     const error = errorFor(id)
-    writeTransaction(() => {
+    const rootId = writeTransaction(() => {
       if (update.run(error, id).changes !== 1) return
       const authority = runMutationAuthority(database, id)
       auditRunMutation(authority, 'reap', error, database)
-      closeRunChainQuestions(database, authority.rootId, QUESTION_CLOSE_CHAIN_STALE)
       enqueueRunRecord(database, id, localMachineId, finishedAt)
+      return authority.rootId
     }, database)
+    if (rootId) await closeRunChainQuestions(database, rootId, QUESTION_CLOSE_CHAIN_STALE)
   }
 }
 
@@ -396,10 +400,10 @@ function finalizeReapedRuns(
   for (const id of ended) teardownTerminalRunResources(database, id)
 }
 
-export function reapStale(
+export async function reapStale(
   d: Database,
   checkSharedGitConfig: (input: RecordedRunSharedGitConfigInput) => string | null,
-): number | ObservedDeadRun[] {
+): Promise<number | ObservedDeadRun[]> {
   const now = Date.now()
   const rows = d
     .query(
@@ -445,23 +449,24 @@ export function reapStale(
     )
     for (const id of abandonedBootstraps) {
       const error = coordinatorSetupDeathError(rows, id)
-      writeTransaction(() => {
+      const rootId = writeTransaction(() => {
         if (update.run(error, id).changes !== 1) return
         const authority = runMutationAuthority(d, id)
         auditRunMutation(authority, 'reap', error, d)
-        closeRunChainQuestions(d, authority.rootId, QUESTION_CLOSE_CHAIN_STALE)
         enqueueRunRecord(d, id, localMachineId, finishedAt)
+        return authority.rootId
       }, d)
+      if (rootId) await closeRunChainQuestions(d, rootId, QUESTION_CLOSE_CHAIN_STALE)
     }
   }
-  terminalizeHarnessFailures(
+  await terminalizeHarnessFailures(
     d,
     setupDeaths,
     (id) => coordinatorSetupDeathError(rows, id),
     localMachineId,
     finishedAt,
   )
-  terminalizeHarnessFailures(
+  await terminalizeHarnessFailures(
     d,
     recordedCauseDeaths,
     (id) => recordedCoordinatorCause(id)!,
@@ -481,20 +486,20 @@ export function reapStale(
     // caller, charged until now to qwen36-goose.
     for (const id of dead) {
       const row = rows.find((candidate) => candidate.record_id === id)!
-      reapDeadRun(d, row, checkSharedGitConfig, localMachineId, finishedAt)
+      await reapDeadRun(d, row, checkSharedGitConfig, localMachineId, finishedAt)
     }
   }
   finalizeReapedRuns(d, ended, [...setupDeaths, ...recordedCauseDeaths], localMachineId, finishedAt)
   return dead.length + abandonedBootstraps.length + setupDeaths.length + recordedCauseDeaths.length
 }
 
-function reapDeadRun(
+async function reapDeadRun(
   d: Database,
   row: RunningRow,
   checkSharedGitConfig: (input: RecordedRunSharedGitConfigInput) => string | null,
   localMachineId: string,
   finishedAt: string,
-): void {
+): Promise<void> {
   const id = row.record_id
   const vendorAlive = row.agent_pid && pidAlive(row.agent_pid)
   const surviving = vendorAlive ? `; vendor pid ${row.agent_pid} still alive` : ''
@@ -508,11 +513,11 @@ function reapDeadRun(
     if (update.run(baseError, id).changes !== 1) return false
     const authority = runMutationAuthority(d, id)
     auditRunMutation(authority, 'reap', reason, d)
-    closeRunChainQuestions(d, authority.rootId, QUESTION_CLOSE_CHAIN_STALE)
     enqueueRunRecord(d, id, localMachineId, finishedAt)
-    return true
+    return authority.rootId
   }, d)
   if (!claimed) return
+  await closeRunChainQuestions(d, claimed, QUESTION_CLOSE_CHAIN_STALE)
   const sharerCount =
     !vendorAlive && row.worktree
       ? liveWorktreeSharers(d, { record_id: id, worktree: row.worktree }).length

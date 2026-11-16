@@ -32,7 +32,7 @@ function enqueueClearedConfinementRecords(
   const at = nowIso()
   const localMachineId = machineId()
   for (const row of rows) enqueueRunRecord(database, row.record_id, localMachineId, at)
-  rollUpRootAndEnqueue(database, rootId, null, localMachineId, at)
+  rollUpRootAndEnqueue(database, rootId, null, localMachineId, at, false)
 }
 
 export function clearConfinement(

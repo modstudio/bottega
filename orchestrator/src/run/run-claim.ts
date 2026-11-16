@@ -41,7 +41,10 @@ import {
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import { attributedLaunchKey, type ResolvedReviewTarget } from '../review/review-target.ts'
-import { resolveSupersededTurn } from '../route/failover.ts'
+import {
+  resolveSupersededTurn,
+  supersededTurnQuestionState,
+} from '../route/failover.ts'
 import { runOwnedPaths } from '../run-owned-paths.ts'
 import { type KeepTreeExemption, recordedKeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { writerTreeBaseRef } from '../worktree/trunk-base-choice.ts'
@@ -496,6 +499,9 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         ),
         ...bindingValues(binding),
       ) as { record_id: string; number: number }
+  const supersededQuestionState = identity.resolveSupersededTurn
+    ? await supersededTurnQuestionState(db(), opts.resume!.parent, opts.resume!.turn - 1)
+    : null
   const claim = claimWithMigrationAdmission(input, () => {
     const claimedRow = claimableRow(opts.reserveId, updateReservedRun, insertClaimedRun)
     const claimed = { id: claimedRow.record_id, number: claimedRow.number }
@@ -517,7 +523,12 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
      * run() is called directly.
      */
     if (identity.resolveSupersededTurn) {
-      resolveSupersededTurn(db(), opts.resume!.parent, opts.resume!.turn - 1)
+      resolveSupersededTurn(
+        db(),
+        opts.resume!.parent,
+        opts.resume!.turn - 1,
+        supersededQuestionState!,
+      )
     }
     if (opts.automaticFailover && opts.retryOf !== undefined) {
       closeRunChainQuestions(db(), opts.retryOf, QUESTION_CLOSE_ATTEMPT_FAILED_OVER)

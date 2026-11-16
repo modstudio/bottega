@@ -162,7 +162,14 @@ export function recordArtifactPersistenceFailure(
       .run(input.error, input.runId)
     enqueueRunRecord(database, input.runId, input.machineId, input.finishedAt)
     if (input.parentRunId !== null) {
-      rollUpRootAndEnqueue(database, input.parentRunId, null, input.machineId, input.finishedAt)
+      rollUpRootAndEnqueue(
+        database,
+        input.parentRunId,
+        null,
+        input.machineId,
+        input.finishedAt,
+        false,
+      )
     }
   }, database)
 }
