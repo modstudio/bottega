@@ -96,6 +96,7 @@ function openStageFromCursor(
   return cursor
     ? {
         cursor: cursor.id,
+        project: cursor.project,
         workflow: cursor.workflow_slug,
         mode: cursor.mode_slug,
         recordId: cursor.record_id,
@@ -111,7 +112,6 @@ function openStage(
 }
 
 type TaskFlowStageConflictInput = {
-  project: string
   taskRecordId: string
   taskKey: string
   cursor?: number
@@ -123,7 +123,7 @@ function taskFlowStageConflictRefusal(
   input: TaskFlowStageConflictInput,
   stage: OpenTaskStage,
 ): string {
-  const reference = workflowCursorReference(stage.cursor, input.project).cli
+  const reference = workflowCursorReference(stage.cursor, stage.project).cli
   return `task ${input.taskKey} already has open stage cursor ${stage.cursor} ${stage.workflow} ${stage.mode}; finish it with ${PLATFORM_SLUG} workflow next ${stage.workflow}${reference}, or drop it with ${PLATFORM_SLUG} workflow abandon ${stage.workflow}${reference}`
 }
 

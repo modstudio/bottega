@@ -470,6 +470,8 @@ class RecordTaskFlowReadStore {
       )
     const result = await this.readEveryDestination((destination) => read(recordId, destination))
     if (!result) return null
+    const stage = await this.byId(result.stage.id)
+    if (!stage) throw new Error(`workflow stage ${result.stage.id} does not exist`)
     const {
       stepOrdinal: _stepOrdinal,
       stepSlug: _stepSlug,
@@ -477,7 +479,7 @@ class RecordTaskFlowReadStore {
     } = openObligationRow(
       result.obligation,
       result.stage.number,
-      this.projectName(result.stage.projectId),
+      this.projectName(stage.stage.projectId),
     )
     return {
       ...row,

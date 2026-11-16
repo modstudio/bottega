@@ -172,7 +172,7 @@ export function holderSequence(
   tasks: readonly HubTaskReference[],
   keylessCursors: readonly {
     record_id: string
-    number: number
+    id: number
     workflow_slug: string
     mode_slug: string
     project: string
@@ -182,7 +182,7 @@ export function holderSequence(
     { key: session, title: '', kind: 'session' },
     ...keylessCursors.map((cursor) => ({
       key: cursorContextHolder(cursor.record_id),
-      title: `Cursor ${cursor.number} ${cursor.workflow_slug} ${cursor.mode_slug} (${cursor.project})`,
+      title: `Cursor ${cursor.id} ${cursor.workflow_slug} ${cursor.mode_slug} (${cursor.project})`,
       kind: 'cursor' as const,
       recordId: cursor.record_id,
     })),

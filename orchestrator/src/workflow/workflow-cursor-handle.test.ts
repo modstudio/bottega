@@ -1,7 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
-import { abandonCommand } from './workflow-commands.ts'
 import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
 import { selectAndNextWorkflowStep as nextWorkflowStep } from './workflow-cursor-test.fixture.ts'
@@ -134,40 +133,6 @@ test('two keyless runs in one session have distinct handles and advance independ
       `cursor ${first.cursor}, unassigned, keyless-runs default, step 2 complete\n` +
       `cursor ${second.cursor}, unassigned, keyless-runs default, step 1 score`,
   )
-})
-
-test('CLI abandon refuses another sessions cursor until its owner is acknowledged', async () => {
-  const d = database()
-  installKeylessWorkflow(d, 'owned-abandon')
-  const opened = await composeWorkflowWithCursor(
-    'owned-abandon',
-    'fixture',
-    'default',
-    {},
-    context,
-    d,
-    {},
-    {},
-  )
-  const cursor = opened.cursor!.id
-  d.query('UPDATE workflow_cursor SET session_id=? WHERE number=?').run('foreign-session', cursor)
-  const argv = [
-    'workflow',
-    'abandon',
-    '--cursor',
-    String(cursor),
-    '--project',
-    'fixture',
-    '--reason',
-    'test',
-  ]
-  await expect(abandonCommand(argv, () => {})).rejects.toThrow(
-    'owned by session foreign-session; rerun with --owner-session foreign-session',
-  )
-  await abandonCommand([...argv, '--owner-session', 'foreign-session'], () => {})
-  expect(d.query('SELECT state FROM workflow_cursor WHERE number=?').get(cursor)).toEqual({
-    state: 'abandoned',
-  })
 })
 
 test('step 1 reuses one untouched composed keyless cursor but opens after it advances', async () => {

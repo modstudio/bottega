@@ -90,7 +90,7 @@ test('a keyless cursor with uncopied text refuses copy without --task and names 
       documentFake().ports,
     ),
   ).rejects.toThrow(
-    `cursor ${cursor} is not linked to a task; copy it with ${PLATFORM_SLUG} workflow text copy --cursor ${cursor} --task <KEY>`,
+    `cursor ${cursor} is not linked to a task; copy it with ${PLATFORM_SLUG} workflow text copy --cursor ${cursor} --project fixture --task <KEY>`,
   )
 })
 
@@ -111,7 +111,7 @@ test('a failed explicit-task copy retains --task in its retry command', async ()
   )
 
   expect(workflowTextCopyReport(result)).toContain(
-    `${PLATFORM_SLUG} workflow text copy --cursor ${cursor} --task ${task.key}`,
+    `${PLATFORM_SLUG} workflow text copy --cursor ${cursor} --project fixture --task ${task.key}`,
   )
 })
 

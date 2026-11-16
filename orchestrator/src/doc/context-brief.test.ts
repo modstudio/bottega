@@ -64,6 +64,7 @@ test('renders the compact context layout line by line and keeps only item first 
       {
         recordId: 'cursor-record',
         number: 1369,
+        project: PLATFORM_SLUG,
         key: 'DEV-1844/2',
         workflow: 'plan-task',
         mode: 'design',
@@ -431,7 +432,7 @@ test('renders an open keyless cursor item under its cursor header without an ope
       [
         {
           record_id: recordId,
-          number: 42,
+          id: 42,
           workflow_slug: 'explore',
           mode_slug: 'default',
           project: PLATFORM_SLUG,

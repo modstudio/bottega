@@ -172,7 +172,7 @@ export function refuseForeignCursorAbandon(
 }
 
 const mismatch = (
-  row: Pick<SelectableCursorRow, 'id' | 'workflow_slug'>,
+  row: Pick<SelectableCursorRow, 'id' | 'workflow_slug' | 'project'>,
   name: string,
   supplied: string,
   stored: string,

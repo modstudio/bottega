@@ -14,6 +14,7 @@ function facts(
     now,
     windowMs: UNJUDGED_OWNER_WINDOW_MS,
     cursor: 7,
+    project: 'fixture',
     workflowSlug: 'explore',
     stepSlug: 'investigate',
     openQuestionRecordId: null,

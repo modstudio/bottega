@@ -153,7 +153,7 @@ test('a workflow without a key argument adopts --task and renders and closes its
       testPorts,
       cursor,
     ),
-  ).rejects.toThrow(`--cursor ${cursor} --task <KEY>`)
+  ).rejects.toThrow(`--cursor ${cursor} --project fixture --task <KEY>`)
   expect(
     d.query('SELECT ordinal,workflow_key FROM workflow_cursor WHERE number=?').get(cursor),
   ).toEqual({ ordinal: 0, workflow_key: '' })
@@ -537,7 +537,9 @@ test('a key argument cannot stand in for task adoption on a keyless cursor', asy
       {},
       opened.cursor!.id,
     ),
-  ).rejects.toThrow(`workflow next plan-task --cursor ${opened.cursor!.id} --task <KEY>`)
+  ).rejects.toThrow(
+    `workflow next plan-task --cursor ${opened.cursor!.id} --project fixture --task <KEY>`,
+  )
 })
 
 test('compose refuses an undeclared argument and lists the declared arguments', async () => {
