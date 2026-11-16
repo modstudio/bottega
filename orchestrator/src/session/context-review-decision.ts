@@ -5,7 +5,10 @@ export const CONTEXT_REVIEW_WINDOW_MS = 7 * 24 * 60 * 60_000
 export const CONTEXT_REVIEW_MIN_MS = 10 * 60_000
 export const CONTEXT_REVIEW_MAX_MS = 60 * 60_000
 export const CONTEXT_REVIEW_MIN_SAMPLES = 5
-export const CONTEXT_REVIEW_HOOK_TIMEOUT_SECONDS = 5
+const CONTEXT_REVIEW_HOOK_TIMEOUT_SECONDS = 5
+
+if (CONTEXT_REVIEW_HOOK_TIMEOUT_SECONDS <= 0)
+  throw new Error('CONTEXT_REVIEW_HOOK_TIMEOUT_SECONDS must be positive')
 
 type ContextReviewItem = {
   recordId: string

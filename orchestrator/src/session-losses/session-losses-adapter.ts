@@ -358,7 +358,7 @@ async function outputBoundary(
   directory: string,
   schemaPath: string,
   rubric: JudgeRubric | null,
-): Promise<SessionLossOutput['boundaries'][number]> {
+): Promise<Omit<SessionLossOutput['boundaries'][number], 'captured'>> {
   const candidateFile = join(directory, `${sessionId}-${Date.parse(boundary.at)}.json`)
   writeFileSync(candidateFile, `${JSON.stringify(boundary.candidates, null, 2)}\n`, { mode: 0o600 })
   const sidecar = `${candidateFile}.judge.json`

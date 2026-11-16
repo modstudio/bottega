@@ -133,7 +133,7 @@ test('flags only stale facts and pointers and orders flagged items first', () =>
   expect(decision.items.find(({ id }) => id === 'done')?.reason).toBe('names done task DEV-1')
   expect(decision.items.find(({ id }) => id === 'closed')?.reason).toBe('holder has no open cursor')
   expect(decision.items.filter(({ id }) => id === 'ruling' || id === 'position')).toEqual([
-    { ...items[1], flagged: false, reason: null },
-    { ...items[5], flagged: false, reason: null },
+    { ...items[1]!, flagged: false, reason: null },
+    { ...items[5]!, flagged: false, reason: null },
   ])
 })
