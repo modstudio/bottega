@@ -13,7 +13,11 @@ import type {
 import { questionChangedAfterRefusal } from '../record/record-question-contract.ts'
 import type { QuestionReadResult, QuestionReadRow, QuestionStore } from './question-store-types.ts'
 
-function localQuestionRow(row: Record<string, unknown>): QuestionReadRow {
+function localQuestionRow(
+  database: Database,
+  row: Record<string, unknown>,
+  enrichMachineFields: boolean,
+): QuestionReadRow {
   const mapped = { ...row }
   if (mapped.record_id === undefined && typeof mapped.id === 'string') {
     mapped.record_id = mapped.id
@@ -25,6 +29,22 @@ function localQuestionRow(row: Record<string, unknown>): QuestionReadRow {
     mapped.workflow_task_record_id = mapped.workflow_task_id
   delete mapped.run_id
   delete mapped.workflow_task_id
+  if (!enrichMachineFields) return mapped as QuestionReadRow
+  const ownerId = typeof mapped.owner_id === 'string' ? mapped.owner_id : null
+  const owner = ownerId
+    ? database
+        .query<{ pid: number | null; cwd: string | null }, [string]>(
+          'SELECT pid,cwd FROM run WHERE record_id=?',
+        )
+        .get(ownerId)
+    : null
+  mapped.owner_pid = owner?.pid ?? null
+  mapped.cwd = owner?.cwd ?? null
+  const repo = typeof mapped.repo === 'string' ? mapped.repo : null
+  mapped.project_path = repo
+    ? (database.query<{ path: string }, [string]>('SELECT path FROM project WHERE name=?').get(repo)
+        ?.path ?? null)
+    : null
   return mapped as QuestionReadRow
 }
 
@@ -65,7 +85,10 @@ export class RecordQuestionStore implements QuestionStore {
     const result = await this.input.client.readQuestions(input, {
       destinationSpaceId: this.input.destinationSpaceId,
     })
-    const items = result.items.map(localQuestionRow)
+    const enrichMachineFields = ['by-id', 'for-run', 'for-cursor', 'by-number'].includes(input.read)
+    const items = result.items.map((row) =>
+      localQuestionRow(this.input.database, row, enrichMachineFields),
+    )
     if (input.read !== 'inbox')
       return {
         items,

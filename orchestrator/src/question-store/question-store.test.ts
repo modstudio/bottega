@@ -387,3 +387,26 @@ test('record ask pushes its run first and enriches live, stale, and absent sessi
   ).toEqual([1, 0, 0])
   database.close()
 })
+
+test('record detail reads enrich machine-owned run and project fields locally', async () => {
+  const database = migratedTestDatabase()
+  seedOwners(database)
+  database.query('UPDATE run SET pid=?,cwd=? WHERE record_id=?').run(4321, '/local-run', RUN_ID)
+  const absentOwnerId = newRecordId()
+  const store = recordQuestionStore({
+    database,
+    destinationSpaceId: newRecordId(),
+    client: {
+      readQuestions: async () => ({
+        items: [
+          { record_id: RUN_QUESTION_ID, owner_id: RUN_ID, repo: 'question-fixture' },
+          { record_id: newRecordId(), owner_id: absentOwnerId, repo: 'question-fixture' },
+        ],
+      }),
+    },
+  })
+  const rows = (await store.read({ read: 'by-id', ids: [RUN_QUESTION_ID, newRecordId()] })).items
+  expect(rows[0]).toMatchObject({ owner_pid: 4321, cwd: '/local-run', project_path: '/fixture' })
+  expect(rows[1]).toMatchObject({ owner_pid: null, cwd: null, project_path: '/fixture' })
+  database.close()
+})
