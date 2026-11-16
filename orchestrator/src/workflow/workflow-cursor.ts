@@ -24,10 +24,7 @@ import {
 } from './workflow-compose-branch.ts'
 import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
 import { workflowKeyOf as keyOf, resolveCursorArguments } from './workflow-cursor-arguments.ts'
-import {
-  graduateExploreAfterCompose,
-  insertWorkflowCursor,
-} from './workflow-cursor-compose.ts'
+import { graduateExploreAfterCompose, insertWorkflowCursor } from './workflow-cursor-compose.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import { abandonWorkflowCursor, closeOpenWorkflowQuestion } from './workflow-cursor-mutation.ts'
 import {
@@ -51,6 +48,7 @@ import {
   decideCursorStart,
   decideStepOutcome,
 } from './workflow-cursor-transition.ts'
+import { closeExploreForLifecycle } from './workflow-explore-lifecycle-close.ts'
 import {
   allowedCloseFloor,
   DEFAULT_EXPECTED_EXIT_CODE,
@@ -261,6 +259,10 @@ export async function composeWorkflowWithCursor(
       replacingCursor: cursor.id,
       database: d,
       taskFlowClient: context.taskFlowClient,
+    },
+    {
+      finishExplore: writeFinishingWorkflowAdvance,
+      closeExplore: closeExploreForLifecycle,
     },
   )
   return {

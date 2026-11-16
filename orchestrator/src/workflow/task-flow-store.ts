@@ -53,6 +53,7 @@ export type {
   TaskFlowRulingFileRow,
   TaskFlowWaitingQuestionRow,
 } from './task-flow-store-types.ts'
+export { isKeylessExplore } from './task-flow-store-types.ts'
 
 /**
  * Names the task-flow questions and write intents used by the workflow engine.

@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { encodeContextItem } from '../../test/fixtures/context-item.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
@@ -89,7 +90,7 @@ test('a ruling item produces only its exact refusal process line', async () => {
       item: `context session:${session}/ruling (ruling)`,
       reason: 'session close-out refused because ruling must move to a task or epic',
       evidence: 'Keep the refusal distinct.',
-      remedy: `bottega agent context set --task <KEY> --kind ruling --id ruling --source "q6600" "Keep the refusal distinct." && bottega agent context drop --session ${session} --id ruling`,
+      remedy: `${PLATFORM_SLUG} agent context set --task <KEY> --kind ruling --id ruling --source "q6600" "Keep the refusal distinct." && ${PLATFORM_SLUG} agent context drop --session ${session} --id ruling`,
     },
   ])
 })
@@ -104,11 +105,13 @@ test('reports the exact ordinary item inserted after the drop loop', async () =>
     resume: false,
     database: db(),
   })
-  db().query(
-    `INSERT INTO context_item
+  db()
+    .query(
+      `INSERT INTO context_item
       (record_id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
      VALUES (?,'session',?,'late','fact','arrived after drops','test','2026-11-15','2026-11-15')`,
-  ).run(crypto.randomUUID(), session)
+    )
+    .run(crypto.randomUUID(), session)
   const report = await closing
 
   expect(report.process).toEqual([
@@ -116,7 +119,7 @@ test('reports the exact ordinary item inserted after the drop loop', async () =>
       item: `context session:${session}`,
       reason: 'session close-out left 1 context item on the session holder',
       evidence: 'late (fact)',
-      remedy: `bottega agent context show --session ${session}`,
+      remedy: `${PLATFORM_SLUG} agent context show --session ${session}`,
     },
   ])
 })

@@ -51,12 +51,7 @@ export type GraduatedExplore =
   | { cursor: number; closed: false; reason: string }
 export type ExploreGraduationDependencies = {
   closeExplore?: typeof closeExploreForLifecycle
-  finishExplore?: FinishExploreLifecycle
-}
-
-const finishExploreDefault: FinishExploreLifecycle = async (input) => {
-  const { writeFinishingWorkflowAdvance } = await import('./workflow-cursor.ts')
-  return writeFinishingWorkflowAdvance(input)
+  finishExplore: FinishExploreLifecycle
 }
 type ComposeFacts = {
   rowInput: WorkflowCursorInsert
@@ -98,7 +93,7 @@ export async function graduateExploreAfterCompose(
     database: Database
     taskFlowClient?: WorkflowCursorContext['taskFlowClient']
   },
-  dependencies: ExploreGraduationDependencies = {},
+  dependencies: ExploreGraduationDependencies,
 ): Promise<GraduatedExplore | undefined> {
   if (!input.session || !input.taskBound) return undefined
   const rows = await taskFlowReadStore(input.database, input.taskFlowClient).listOpenStages({
@@ -124,7 +119,7 @@ export async function graduateExploreAfterCompose(
       decision.recordId,
       'answered',
       input.database,
-      dependencies.finishExplore ?? finishExploreDefault,
+      dependencies.finishExplore,
       `replaced by cursor ${input.replacingCursor}`,
       { requireUntouched: true },
     )

@@ -3,10 +3,10 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
-import { graduateExploreAfterCompose } from './workflow-cursor-compose.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
-import { closeExploreForLifecycle } from './workflow-explore-lifecycle-close.ts'
+import { graduateExploreAfterCompose } from './workflow-cursor-compose.ts'
 import { database } from './workflow-cursor-test.fixture.ts'
+import { closeExploreForLifecycle } from './workflow-explore-lifecycle-close.ts'
 
 const live = {}
 const taskArgs = {
@@ -72,6 +72,7 @@ test('a close failure leaves the task-bound composition succeeded with its reaso
       database: d,
     },
     {
+      finishExplore: async () => {},
       closeExplore: async () => {
         throw new Error('injected explore close failure')
       },
@@ -113,8 +114,9 @@ test('task-bound composition keeps an explore cursor with attached text intact',
   expect(await taskFlowReadStore(d).stageByRecordId(row.record_id)).toMatchObject({
     state: 'running',
   })
-  expect(d.query('SELECT body FROM workflow_step_text WHERE cursor_record_id=?').all(row.record_id))
-    .toEqual([{ body: 'attached finding' }])
+  expect(
+    d.query('SELECT body FROM workflow_step_text WHERE cursor_record_id=?').all(row.record_id),
+  ).toEqual([{ body: 'attached finding' }])
 })
 
 test('text attached after the graduation snapshot keeps the explore open', async () => {
@@ -134,6 +136,7 @@ test('text attached after the graduation snapshot keeps the explore open', async
       database: d,
     },
     {
+      finishExplore: async () => {},
       closeExplore: async (...args) => {
         d.query(
           `INSERT INTO workflow_step_text
@@ -153,8 +156,9 @@ test('text attached after the graduation snapshot keeps the explore open', async
   expect(await taskFlowReadStore(d).stageByRecordId(row.record_id)).toMatchObject({
     state: 'running',
   })
-  expect(d.query('SELECT body FROM workflow_step_text WHERE cursor_record_id=?').all(row.record_id))
-    .toEqual([{ body: 'late finding' }])
+  expect(
+    d.query('SELECT body FROM workflow_step_text WHERE cursor_record_id=?').all(row.record_id),
+  ).toEqual([{ body: 'late finding' }])
 })
 
 test('graduation reports a terminal close outcome as kept', async () => {
@@ -170,7 +174,7 @@ test('graduation reports a terminal close outcome as kept', async () => {
       replacingCursor: 99,
       database: d,
     },
-    { closeExplore: async () => 'terminal' },
+    { finishExplore: async () => {}, closeExplore: async () => 'terminal' },
   )
 
   expect(graduated).toEqual({

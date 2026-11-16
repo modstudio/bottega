@@ -402,6 +402,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-keyless-close.ts',
     './workflow-cursor-selection.ts',
     './workflow-cursor-task-reference.ts',
+    './workflow-explore-lifecycle-close.ts',
     './workflow-step-reference.ts',
     './workflow-task-linking.ts',
     './workflow-text.ts',
