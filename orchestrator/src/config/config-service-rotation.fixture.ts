@@ -27,6 +27,7 @@ export async function rotationFixture(
   sameKeyBindings = false,
   userScope = false,
   withTrustLog = false,
+  withoutSelfWrap = false,
 ) {
   const root = mkdtempSync(join(tmpdir(), 'config-rotation-'))
   roots.push(root)
@@ -58,8 +59,8 @@ export async function rotationFixture(
   const wrapped = await wrapDataKey({
     dek: oldDek,
     wrapContext: { spaceId, dekId: oldId, dekVersion: 1 },
-    senderPrivateKey: pair.privateKey,
-    senderPublicKey: pair.publicKey,
+    senderPrivateKey: withoutSelfWrap ? other.privateKey : pair.privateKey,
+    senderPublicKey: withoutSelfWrap ? other.publicKey : pair.publicKey,
     recipientPublicKey: pair.publicKey,
   })
   const encode = (value: Uint8Array) => Buffer.from(value).toString('base64url')
@@ -71,7 +72,7 @@ export async function rotationFixture(
     wraps: [
       {
         recipientKeyId: keyId,
-        senderKeyId: keyId,
+        senderKeyId: withoutSelfWrap ? otherKeyId : keyId,
         enc: encode(wrapped.enc),
         ciphertext: encode(wrapped.ciphertext),
       },
@@ -128,6 +129,7 @@ export async function rotationFixture(
   }
   const projectId = '01990000-0000-7000-8000-000000000005'
   let secrets = sameKeyBindings ? [baseSecret, { ...baseSecret, projectId }] : [baseSecret]
+  const putSecretDestinations: Array<{ destinationSpaceId: string; projectId?: string | null }> = []
   const machines = [
     { keyId, publicKey: encode(pair.publicKey), label: 'current', createdAt: '', revokedAt: null },
     {
@@ -146,6 +148,8 @@ export async function rotationFixture(
     },
   ]
   const [created, retired] = [[], []] as [string[], string[]]
+  const addWrapDestinations: string[] = []
+  const revokeDestinations: string[] = []
   const trustLogClient = trackedTrustLogClient(trustLog)
   let oldRetiredAt: string | null = null
   const client = {
@@ -185,7 +189,9 @@ export async function rotationFixture(
     putSecret: async (
       _key: string,
       input: { dekId: string; envelope: string; projectId?: string | null },
+      destination: { destinationSpaceId: string; projectId?: string | null },
     ) => {
+      putSecretDestinations.push(destination)
       const index = secrets.findIndex((row) => row.projectId === (input.projectId ?? null))
       const secret = secrets[index]!
       const updated = {
@@ -197,7 +203,12 @@ export async function rotationFixture(
       secrets = secrets.with(index, updated)
       return updated
     },
-    addWraps: async (dekId: string, wraps: typeof current.wraps) => {
+    addWraps: async (
+      dekId: string,
+      wraps: typeof current.wraps,
+      destination: { destinationSpaceId?: string },
+    ) => {
+      addWrapDestinations.push(destination.destinationSpaceId ?? '')
       if (dekId !== current.id) throw new Error('unknown data key')
       for (const wrap of wraps) {
         if (
@@ -210,7 +221,8 @@ export async function rotationFixture(
       }
       current.wraps.push(...wraps)
     },
-    revokeMachineKey: async (id: string) => {
+    revokeMachineKey: async (id: string, destination: { destinationSpaceId?: string }) => {
+      revokeDestinations.push(destination.destinationSpaceId ?? '')
       trustLogClient.recordCallOrder.push('revokeMachineKey')
       const found = machines.find((item) => item.keyId === id)!
       found.revokedAt = '2026-06-01T00:00:00.000Z'
@@ -227,6 +239,9 @@ export async function rotationFixture(
     recipientPublicKey: encode(recipient.publicKey),
     current: () => current,
     secrets: () => secrets,
+    putSecretDestinations,
+    addWrapDestinations,
+    revokeDestinations,
     trustLog,
     appendedTrustLogEntry: trustLogClient.appendedTrustLogEntry,
     recordCallOrder: trustLogClient.recordCallOrder,

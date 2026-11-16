@@ -70,6 +70,7 @@ export const settingsModules: SettingsModule[] = [
     './hosted-config-call-outcome.ts',
     './data-key-access.ts',
     './machine-trust-refusal.ts',
+    './personal-config-write-destination.ts',
     '../../../shared/hosted-secret-row.ts',
     '../record/machine-name-command.ts',
     '../record/machine-name.ts',
@@ -80,6 +81,11 @@ export const settingsModules: SettingsModule[] = [
   module('orchestrator/src/config/config-entry-policy.ts', [
     '../../../shared/brand.ts',
     '../../../shared/machine-config.ts',
+  ]),
+  module('orchestrator/src/config/personal-config-write-destination.ts', [
+    '../../../shared/config-client.ts',
+    '../../../shared/record-write-space.ts',
+    './hosted-config-call-outcome.ts',
   ]),
   module('orchestrator/src/config/atomic-cache-file.ts', ['node:crypto', 'node:fs', 'node:path']),
   module('orchestrator/src/config/display-timezone-cache.ts', [

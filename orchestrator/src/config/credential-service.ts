@@ -4,7 +4,7 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   ConfigClientError,
-  type ConfigDestination,
+  type ConfigWriteDestination,
   configClient,
 } from '../../../shared/config-client.ts'
 import {
@@ -40,7 +40,7 @@ import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { sealedValueIsEmpty, stripTrailingNewline } from '../../../shared/sealed-value.ts'
 import type { Project } from '../project/projects.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
-import { deleteSecret, setSecret } from './config-service.ts'
+import { deleteSecret, personalConfigWriteDestination, setSecret } from './config-service.ts'
 import { credentialHint } from './credential-presentation.ts'
 
 export type CredentialAddress = CredentialResolutionAddress & {
@@ -101,18 +101,18 @@ export async function projectCredentialBinding(
 export async function accountCredentialBinding(
   client = configClient(),
 ): Promise<ProjectCredentialBinding> {
+  const { destinationSpaceId } = await personalConfigWriteDestination(client)
   const who = await client.whoami()
-  if (!who.personalSpaceId) throw new Error('personal space is not provisioned')
   const membership = recordSpaceMembership(
-    who.personalSpaceId,
+    destinationSpaceId,
     parseRecordSpaceMemberships(who.memberships),
   )
-  if (!membership) throw new Error(recordSpaceMembershipRefusal(who.personalSpaceId))
+  if (!membership) throw new Error(recordSpaceMembershipRefusal(destinationSpaceId))
   return {
     projectId: null,
     projectName: undefined,
     spaceName: membership.slug,
-    destinationSpaceId: who.personalSpaceId,
+    destinationSpaceId,
   }
 }
 
@@ -141,7 +141,7 @@ export function operatorProjectCredentialAddress(
   return { ...address, ...identity }
 }
 
-const destination = (address: CredentialAddress): ConfigDestination => ({
+const destination = (address: CredentialAddress): ConfigWriteDestination => ({
   destinationSpaceId: address.destinationSpaceId,
   projectId: address.projectId,
 })

@@ -9,6 +9,7 @@ import {
   type ConfigScope,
   type ConfigSecret,
   type DataKey,
+  type ConfigWriteDestination as WriteDestination,
 } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import type { CredentialMetadataFields, CredentialMode } from '../../../shared/credential.ts'
@@ -87,11 +88,14 @@ import {
 import { refreshDisplayTimezoneCache } from './display-timezone-cache.ts'
 import { hostedConfigClient } from './hosted-config-call-outcome.ts'
 import * as trustRefusal from './machine-trust-refusal.ts'
+import { personalConfigWriteDestination } from './personal-config-write-destination.ts'
 import { appendTrustLogRevoke } from './trust-log-revoke.ts'
 
 async function identity(client: ConfigClient, env: ConfigEnvironment = process.env) {
   return hostedIdentity(client, readHostedConfigIdentity(env))
 }
+
+export { personalConfigWriteDestination }
 
 async function unpinServerRevoked(client: ConfigClient, destination: ConfigDestination = {}) {
   const remote = await client.listMachineKeys(destination)
@@ -138,43 +142,48 @@ async function wrapsFor(
 
 async function currentOrCreate(
   client: ConfigClient,
-  destination: ConfigDestination = {},
+  destination: WriteDestination,
   createDataKey = true,
   missingDestinationAccessRefusal?: () => Error,
 ) {
   const machine = await localMachine()
   try {
     const key = await client.currentDataKey(machine.keyId, destination)
-    if (destination.destinationSpaceId) {
-      try {
-        return {
-          key,
-          dek: await unwrap(client, key, machine, undefined, destination.destinationSpaceId),
-        }
-      } catch (error) {
-        if (error instanceof DataKeyWrapAccessError && missingDestinationAccessRefusal)
-          throw missingDestinationAccessRefusal()
-        throw error
-      }
+    try {
+      await unwrap(client, key, machine, undefined, destination.destinationSpaceId)
+    } catch (error) {
+      if (error instanceof DataKeyWrapAccessError && missingDestinationAccessRefusal)
+        throw missingDestinationAccessRefusal()
+      throw error
     }
-    const remote = await unpinServerRevoked(client)
-    const rotated = await rotateAfterLatestRevocation(client, machine, key, remote)
+    const remote = await unpinServerRevoked(client, destination)
+    const rotated = await rotateAfterLatestRevocation(
+      client,
+      machine,
+      key,
+      remote,
+      destination.destinationSpaceId,
+      destination,
+    )
     return { key: rotated.key, dek: rotated.dek }
   } catch (error) {
     if (!isNotFound(error)) throw error
     if (!createDataKey) throw error
-    await unpinServerRevoked(client)
-    const spaceId = (await identity(client)).spaceId
+    await unpinServerRevoked(client, destination)
+    const spaceId = destination.destinationSpaceId
     const trust = await trustedKeysForSpace(client, spaceId)
     const dek = generateDataKey()
     const dekId = crypto.randomUUID()
     const version = 1
-    await client.createDataKey({
-      dekId,
-      version,
-      wraps: await wrapsFor(dek, dekId, version, trust, client),
-    })
-    return { key: await client.getDataKey(dekId, machine.keyId), dek }
+    await client.createDataKey(
+      {
+        dekId,
+        version,
+        wraps: await wrapsFor(dek, dekId, version, trust, client, spaceId),
+      },
+      destination,
+    )
+    return { key: await client.getDataKey(dekId, machine.keyId, destination), dek }
   }
 }
 
@@ -242,7 +251,9 @@ export async function claimCurrentMachineKey(
   if (!registered || registered.userId !== null) return
   const current = await client.whoami()
   if (!current.activeSpaceId) throw new Error(RECORD_ACTIVE_SPACE_REMEDY)
-  await claimMachineKey(pair, keyId, current.activeSpaceId, client)
+  await claimMachineKey(pair, keyId, current.activeSpaceId, client, {
+    destinationSpaceId: current.activeSpaceId,
+  })
 }
 
 export async function machineShow() {
@@ -327,6 +338,10 @@ async function rotateDataKey(
   destination: ConfigDestination = {},
   env: ConfigEnvironment = process.env,
 ): Promise<{ key: DataKey; dek: Uint8Array; completed: string[]; rotated: boolean }> {
+  const rotationDestination: WriteDestination = {
+    ...destination,
+    destinationSpaceId: selectedSpaceId ?? (await identity(client, env)).spaceId,
+  }
   let current = currentBefore
   let dek: Uint8Array
   if (rotate) {
@@ -339,14 +354,14 @@ async function rotateDataKey(
         version,
         wraps: await wrapsFor(dek, dekId, version, trust, client, selectedSpaceId, env),
       },
-      destination,
+      rotationDestination,
     )
-    current = await client.getDataKey(dekId, machine.keyId, destination)
+    current = await client.getDataKey(dekId, machine.keyId, rotationDestination)
   } else {
     dek = await unwrap(client, current, machine, trust, selectedSpaceId)
   }
-  const rows = await client.listSecrets(null, destination)
-  const plan = planRotation(rows, current, await client.listDataKeys(destination))
+  const rows = await client.listSecrets(null, rotationDestination)
+  const plan = planRotation(rows, current, await client.listDataKeys(rotationDestination))
   const completed: string[] = []
   try {
     const who = await identity(client, env)
@@ -354,14 +369,14 @@ async function rotateDataKey(
       const plaintext = await openHostedSecretRow(
         client,
         row,
-        { ...destination, projectId: row.projectId ?? null },
+        { ...rotationDestination, projectId: row.projectId ?? null },
         machine,
       )
       const envelope = sealValue({
         dek,
         plaintext,
         valueContext: {
-          spaceId: selectedSpaceId ?? who.spaceId,
+          spaceId: rotationDestination.destinationSpaceId,
           userId: row.scope === 'user' ? who.userId : null,
           keyName: row.key,
           environment: row.environment,
@@ -369,23 +384,26 @@ async function rotateDataKey(
           rowVersion: row.rowVersion + 1,
         },
       })
-      await client.putSecret(row.key, {
-        ...destination,
-        scope: row.scope,
-        environment: row.environment,
-        projectId: row.projectId ?? null,
-        provider: row.provider ?? null,
-        name: row.name ?? null,
-        type: row.type ?? null,
-        hint: row.hint ?? null,
-        mode: row.mode ?? null,
-        dekId: current.id,
-        envelope: encoded(envelope),
-        expectedRowVersion: row.rowVersion,
-      })
+      await client.putSecret(
+        row.key,
+        {
+          scope: row.scope,
+          environment: row.environment,
+          projectId: row.projectId ?? null,
+          provider: row.provider ?? null,
+          name: row.name ?? null,
+          type: row.type ?? null,
+          hint: row.hint ?? null,
+          mode: row.mode ?? null,
+          dekId: current.id,
+          envelope: encoded(envelope),
+          expectedRowVersion: row.rowVersion,
+        },
+        { ...rotationDestination, projectId: row.projectId ?? null },
+      )
       completed.push(`${row.scope}:${row.environment}:${row.key}`)
     }
-    for (const oldId of plan.retireDekIds) await client.retireDataKey(oldId, destination)
+    for (const oldId of plan.retireDekIds) await client.retireDataKey(oldId, rotationDestination)
     return { key: current, dek, completed, rotated: rotate }
   } catch (error) {
     throw new Error(
@@ -432,6 +450,7 @@ async function revokeIfNeeded(
     return revokedAt
   }
   const who = await identity(client)
+  const destination = { destinationSpaceId: who.spaceId }
   const trustBefore = await trustedKeysForSpace(client, who.spaceId)
   const currentBefore = await client.currentDataKey(machine.keyId)
   const oldDek = await unwrap(client, currentBefore, machine, trustBefore)
@@ -449,17 +468,21 @@ async function revokeIfNeeded(
       senderPublicKey: bytes(self.public_key),
       recipientPublicKey: bytes(self.public_key),
     })
-    await client.addWraps(currentBefore.id, [
-      {
-        recipientKeyId: machine.keyId,
-        senderKeyId: machine.keyId,
-        enc: encoded(wrapped.enc),
-        ciphertext: encoded(wrapped.ciphertext),
-      },
-    ])
+    await client.addWraps(
+      currentBefore.id,
+      [
+        {
+          recipientKeyId: machine.keyId,
+          senderKeyId: machine.keyId,
+          enc: encoded(wrapped.enc),
+          ciphertext: encoded(wrapped.ciphertext),
+        },
+      ],
+      destination,
+    )
   }
-  await appendTrustLogRevoke(client, machine.keyId, keyId, (await identity(client)).spaceId)
-  await client.revokeMachineKey(keyId)
+  await appendTrustLogRevoke(client, machine.keyId, keyId, who.spaceId)
+  await client.revokeMachineKey(keyId, destination)
   await unpinTrustedMachine(keyId)
   return (await client.listMachineKeys()).find((item) => item.keyId === keyId)?.revokedAt
 }
@@ -537,7 +560,7 @@ export async function setSecret(
   scope: ConfigScope,
   client = hostedConfigClient(),
   options: {
-    destination?: ConfigDestination
+    destination: WriteDestination
     environment?: string
     metadata?: CredentialMetadataFields & {
       projectId: string | null
@@ -547,10 +570,10 @@ export async function setSecret(
     createDataKey?: boolean
     expectedRowVersion?: number
     missingDestinationAccessRefusal?: () => Error
-  } = {},
+  },
 ) {
   if (sealedValueIsEmpty(value)) throw new Error(sealedEmptyRefusal(key, scope))
-  const destination = options.destination ?? {}
+  const destination = options.destination
   const environment = options.environment ?? HOSTED_CONFIG_ENVIRONMENT
   const { key: dataKey, dek } = await currentOrCreate(
     client,
@@ -572,7 +595,7 @@ export async function setSecret(
       `config secret row version conflict: expected ${options.expectedRowVersion}, current ${existing?.rowVersion ?? 'missing'}; read it again and retry`,
     )
   const who = await identity(client)
-  const spaceId = destination.destinationSpaceId ?? who.spaceId
+  const spaceId = destination.destinationSpaceId
   const rowVersion = (existing?.rowVersion ?? 0) + 1
   const envelope = sealValue({
     dek,
@@ -586,32 +609,34 @@ export async function setSecret(
       rowVersion,
     },
   })
-  return client.putSecret(key, {
-    ...destination,
-    scope,
-    environment,
-    dekId: dataKey.id,
-    envelope: encoded(envelope),
-    expectedRowVersion: existing?.rowVersion ?? null,
-    ...(options.metadata ?? {}),
-  })
+  return client.putSecret(
+    key,
+    {
+      scope,
+      environment,
+      dekId: dataKey.id,
+      envelope: encoded(envelope),
+      expectedRowVersion: existing?.rowVersion ?? null,
+      ...(options.metadata ?? {}),
+    },
+    destination,
+  )
 }
 
 export async function deleteSecret(
   key: string,
   scope: ConfigScope,
   client = hostedConfigClient(),
-  options: { destination?: ConfigDestination; environment?: string } = {},
+  options: { destination: WriteDestination; environment?: string },
 ) {
-  const destination = options.destination ?? {}
+  const destination = options.destination
   const environment = options.environment ?? HOSTED_CONFIG_ENVIRONMENT
   const row = await client.getSecret(key, scope, environment, destination)
-  return client.deleteSecret(key, {
-    ...destination,
-    scope,
-    environment,
-    expectedRowVersion: row.rowVersion,
-  })
+  return client.deleteSecret(
+    key,
+    { scope, environment, expectedRowVersion: row.rowVersion },
+    destination,
+  )
 }
 
 export type SecretEnvironmentMigration = {
@@ -625,6 +650,19 @@ export type SecretEnvironmentDecision =
   | { kind: 'write-verify-delete'; value: string }
   | { kind: 'delete-old' }
   | { kind: 'refuse' }
+
+function legacySecretNamedSpaceRefusal(name: string, scope: ConfigScope): Error {
+  return new Error(
+    `refusing setup sealed-secret migration for ${name} in ${scope} scope: setup only writes user-scope secrets to the personal space; write the secret into a named space with \`${PLATFORM_SLUG} machine config secret set ${name} --space <slug>\``,
+  )
+}
+
+type AdapterContext = [ConfigScope, ConfigClient, WriteDestination]
+type LegacySecretMigrationAdapters = {
+  plaintext?: (client: ConfigClient, row: ConfigSecret) => Promise<Uint8Array>
+  write?: (name: string, value: string, ...context: AdapterContext) => Promise<unknown>
+  delete?: (name: string, ...context: AdapterContext) => Promise<unknown>
+}
 
 /** Decide one scope without config, crypto, or network access. */
 export function secretEnvironmentDecision(
@@ -690,19 +728,20 @@ export async function applyLegacyEnvironmentSecretMigration(
 /** The config service has no rename verb, so setup opens, sets, and deletes in one operation. */
 export async function migrateLegacyEnvironmentSecrets(
   client = hostedConfigClient(),
-  adapters: {
-    plaintext?: (client: ConfigClient, row: ConfigSecret) => Promise<Uint8Array>
-    write?: (
-      name: string,
-      value: string,
-      scope: ConfigScope,
-      client: ConfigClient,
-    ) => Promise<unknown>
-    delete?: (name: string, scope: ConfigScope, client: ConfigClient) => Promise<unknown>
+  adapters: LegacySecretMigrationAdapters & {
     migrated?: (migration: SecretEnvironmentMigration) => Promise<void>
   } = {},
 ): Promise<SecretEnvironmentMigration[]> {
   const initial = await client.listSecrets(HOSTED_CONFIG_ENVIRONMENT)
+  const nonUser = initial.find(
+    (row) =>
+      row.scope !== 'user' &&
+      LEGACY_ENVIRONMENT_SECRET_NAMES.some(
+        ([oldName, newName]) => row.key === oldName || row.key === newName,
+      ),
+  )
+  if (nonUser) throw legacySecretNamedSpaceRefusal(nonUser.key, nonUser.scope)
+  const destination = await personalConfigWriteDestination(client)
   const read = async (name: string, scope: ConfigScope): Promise<string | null> => {
     let row: ConfigSecret
     try {
@@ -725,10 +764,14 @@ export async function migrateLegacyEnvironmentSecrets(
       ],
       read,
       write: async (name, value, scope) => {
-        await (adapters.write ?? setSecret)(name, value, scope, client)
+        if (scope !== 'user') throw legacySecretNamedSpaceRefusal(name, scope)
+        if (adapters.write) await adapters.write(name, value, scope, client, destination)
+        else await setSecret(name, value, scope, client, { destination })
       },
       delete: async (name, scope) => {
-        await (adapters.delete ?? deleteSecret)(name, scope, client)
+        if (scope !== 'user') throw legacySecretNamedSpaceRefusal(name, scope)
+        if (adapters.delete) await adapters.delete(name, scope, client, destination)
+        else await deleteSecret(name, scope, client, { destination })
       },
     },
     adapters.migrated,
@@ -739,17 +782,10 @@ export async function migrateLegacyEnvironmentSecrets(
 export async function restoreLegacyEnvironmentSecrets(
   migrations: ReadonlyArray<SecretEnvironmentMigration>,
   client = hostedConfigClient(),
-  adapters: {
-    plaintext?: (client: ConfigClient, row: ConfigSecret) => Promise<Uint8Array>
-    write?: (
-      name: string,
-      value: string,
-      scope: ConfigScope,
-      client: ConfigClient,
-    ) => Promise<unknown>
-    delete?: (name: string, scope: ConfigScope, client: ConfigClient) => Promise<unknown>
-  } = {},
+  adapters: LegacySecretMigrationAdapters = {},
 ): Promise<void> {
+  const unsupported = migrations.find((migration) => migration.scope !== 'user')
+  if (unsupported) throw legacySecretNamedSpaceRefusal(unsupported.newName, unsupported.scope)
   const plaintext = adapters.plaintext ?? openHostedSecretRow
   const read = async (name: string, scope: ConfigScope): Promise<string | null> => {
     try {
@@ -776,14 +812,17 @@ export async function restoreLegacyEnvironmentSecrets(
     }
     planned.push({ oldName, newName, scope, value: newValue })
   }
+  const destination = await personalConfigWriteDestination(client)
   for (const { oldName, newName, scope, value } of planned) {
-    await (adapters.write ?? setSecret)(oldName, value, scope, client)
+    if (adapters.write) await adapters.write(oldName, value, scope, client, destination)
+    else await setSecret(oldName, value, scope, client, { destination })
     if ((await read(oldName, scope)) !== value) {
       throw new Error(
         `refusing setup restore: sealed secret ${oldName} did not verify after write in ${scope} scope; re-run ${PLATFORM_SLUG} machine setup restore`,
       )
     }
-    await (adapters.delete ?? deleteSecret)(newName, scope, client)
+    if (adapters.delete) await adapters.delete(newName, scope, client, destination)
+    else await deleteSecret(newName, scope, client, { destination })
   }
 }
 
@@ -816,7 +855,7 @@ export async function setConfigEntry(
   client: ConfigClient | undefined = undefined,
   env: ConfigEnvironment = process.env,
   clientFactory: () => ConfigClient = () => hostedConfigClient(env),
-  destination: ConfigDestination = {},
+  destination?: WriteDestination,
 ) {
   const home = configHome(key, requested)
   if (home === 'machine') {
@@ -828,13 +867,14 @@ export async function setConfigEntry(
     return { key: row.key, value: String(row.value), home, row }
   }
   validateHostedValue(key, value)
+  const hostedClient = client ?? clientFactory()
   const row = await setEntry(
     key,
     value,
     home,
     expectedRowVersion,
-    client ?? clientFactory(),
-    destination,
+    hostedClient,
+    destination ?? (await personalConfigWriteDestination(hostedClient)),
   )
   if (key === DISPLAY_TIMEZONE_KEY) refreshDisplayTimezoneCache(value, env)
   return { key: row.key, value: row.value, home, row }
@@ -937,9 +977,9 @@ export async function setEntry(
   key: string,
   value: string,
   scope: ConfigScope,
-  expectedRowVersion?: number | null,
-  client = hostedConfigClient(),
-  destination: ConfigDestination = {},
+  expectedRowVersion: number | null | undefined,
+  client: ConfigClient,
+  destination: WriteDestination,
 ) {
   const shipTo = isShipToConfigKey(key)
   const storedKey = shipTo ? SHIP_TO_CONFIG_KEY : key
@@ -953,13 +993,16 @@ export async function setEntry(
       if (!isNotFound(error)) throw error
     }
   }
-  const written = await client.putEntry(storedKey, {
-    ...destination,
-    scope,
-    environment: HOSTED_CONFIG_ENVIRONMENT,
-    value: storedValue,
-    expectedRowVersion: version,
-  })
+  const written = await client.putEntry(
+    storedKey,
+    {
+      scope,
+      environment: HOSTED_CONFIG_ENVIRONMENT,
+      value: storedValue,
+      expectedRowVersion: version,
+    },
+    destination,
+  )
   if (shipTo) {
     try {
       const alias = await getEntry(STORED_SHIP_TO_CONFIG_ALIAS, scope, client, destination)
@@ -981,17 +1024,20 @@ export async function listEntries(
 export async function deleteEntry(
   key: string,
   scope: ConfigScope,
-  expectedRowVersion?: number,
-  client = hostedConfigClient(),
-  destination: ConfigDestination = {},
+  expectedRowVersion: number | undefined,
+  client: ConfigClient,
+  destination: WriteDestination,
 ) {
   const version = expectedRowVersion ?? (await getEntry(key, scope, client, destination)).rowVersion
-  return client.deleteEntry(key, {
-    ...destination,
-    scope,
-    environment: HOSTED_CONFIG_ENVIRONMENT,
-    expectedRowVersion: version,
-  })
+  return client.deleteEntry(
+    key,
+    {
+      scope,
+      environment: HOSTED_CONFIG_ENVIRONMENT,
+      expectedRowVersion: version,
+    },
+    destination,
+  )
 }
 
 function setMachineEntry(key: string, value: string, env: ConfigEnvironment = process.env) {

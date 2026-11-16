@@ -9,7 +9,6 @@ import { KEYSTORE_ENV } from '../../../shared/key-store-constants.ts'
 import { DISPLAY_TIMEZONE_KEY, listMachineEntries } from '../../../shared/machine-config.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { resolveRecordSpaceOwnerDestination } from '../../../shared/record-space-owner-destination.ts'
-import { recordWriteSpace } from '../../../shared/record-write-space.ts'
 import {
   isShipToConfigKey,
   SHIP_TO_CONFIG_KEY,
@@ -27,6 +26,7 @@ import {
   machineInit,
   machineRevoke,
   machineShow,
+  personalConfigWriteDestination,
   sealSecretDecision,
   setConfigEntry,
   setSecret,
@@ -124,14 +124,7 @@ export async function configWriteTarget(
       destination: { destinationSpaceId: destination.spaceId },
     }
   }
-  const who = await client.whoami()
-  const memberships = parseRecordSpaceMemberships(who.memberships)
-  const decision = recordWriteSpace(
-    { kind: 'personal' },
-    { declaredSpaces: {}, personalSpaceId: who.personalSpaceId, memberships },
-  )
-  if ('refused' in decision) throw new Error(decision.remedy)
-  return { scope: 'user', destination: { destinationSpaceId: decision.spaceId } }
+  return { scope: 'user', destination: await personalConfigWriteDestination(client) }
 }
 function expectedRowVersion(value: string | undefined): number | null | undefined {
   if (value === undefined) return undefined

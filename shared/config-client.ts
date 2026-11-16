@@ -45,6 +45,7 @@ export class ConfigClientError extends Error {
 
 export type ConfigScope = 'user' | 'space'
 export type ConfigDestination = { destinationSpaceId?: string; projectId?: string | null }
+export type ConfigWriteDestination = ConfigDestination & { destinationSpaceId: string }
 export type ConfigEntry = {
   key: string
   environment: string
@@ -249,7 +250,7 @@ function configValueClient(request: Request, query: Query) {
         value: string
         expectedRowVersion: number | null
       },
-      destination: ConfigDestination = {},
+      destination: ConfigWriteDestination,
     ) =>
       request<ConfigEntry>(`/v1/config/entries/${encodeURIComponent(key)}`, {
         ...destination,
@@ -259,7 +260,7 @@ function configValueClient(request: Request, query: Query) {
     deleteEntry: (
       key: string,
       input: { scope: ConfigScope; environment: string; expectedRowVersion: number },
-      destination: ConfigDestination = {},
+      destination: ConfigWriteDestination,
     ) =>
       request<{ deleted: true }>(`/v1/config/entries/${encodeURIComponent(key)}`, {
         ...destination,
@@ -296,11 +297,12 @@ function configValueClient(request: Request, query: Query) {
         type?: CredentialMetadataFields['type'] | null
         hint?: CredentialMetadataFields['hint'] | null
         reachSpaceIds?: string[] | null
-      } & ConfigDestination,
+      },
+      destination: ConfigWriteDestination,
     ) =>
       request<ConfigSecret>(`/v1/config/secrets/${encodeURIComponent(key)}`, {
+        ...destination,
         method: 'PUT',
-        destinationSpaceId: input.destinationSpaceId,
         body: JSON.stringify(input),
       }),
   }
@@ -314,13 +316,14 @@ function configSecretDeleteClient(request: Request) {
         scope: ConfigScope
         environment: string
         expectedRowVersion: number
-      } & ConfigDestination,
+      },
+      destination: ConfigWriteDestination,
     ) =>
       request<{ deleted: true }>(
-        `/v1/config/secrets/${encodeURIComponent(key)}${input.projectId ? `?projectId=${encodeURIComponent(input.projectId)}` : ''}`,
+        `/v1/config/secrets/${encodeURIComponent(key)}${destination.projectId ? `?projectId=${encodeURIComponent(destination.projectId)}` : ''}`,
         {
+          ...destination,
           method: 'DELETE',
-          destinationSpaceId: input.destinationSpaceId,
           body: JSON.stringify({
             scope: input.scope,
             environment: input.environment,
@@ -338,22 +341,25 @@ function credentialPreferenceClient(request: Request) {
         '/v1/config/credential-preferences',
         destination,
       ).then((x) => x.items),
-    putCredentialPreference: (input: Omit<CredentialPreference, 'updatedAt'> & ConfigDestination) =>
+    putCredentialPreference: (
+      input: Omit<CredentialPreference, 'updatedAt'>,
+      destination: ConfigWriteDestination,
+    ) =>
       request<CredentialPreference>('/v1/config/credential-preferences', {
+        ...destination,
         method: 'PUT',
-        destinationSpaceId: input.destinationSpaceId,
         body: JSON.stringify(input),
       }),
     deleteCredentialPreference: (
       input: Pick<
         CredentialPreference,
         'projectId' | 'provider' | 'name' | 'type' | 'mode' | 'environment'
-      > &
-        ConfigDestination,
+      >,
+      destination: ConfigWriteDestination,
     ) =>
       request<{ deleted: true }>('/v1/config/credential-preferences', {
+        ...destination,
         method: 'DELETE',
-        destinationSpaceId: input.destinationSpaceId,
         body: JSON.stringify(input),
       }),
   }
@@ -372,7 +378,7 @@ function configKeyClient(request: Request, query: Query) {
       ),
     createDataKey: (
       input: { dekId: string; version: number; wraps: DataKeyWrap[] },
-      destination: ConfigDestination = {},
+      destination: ConfigWriteDestination,
     ) =>
       request<{ id: string; version: number }>('/v1/config/data-keys', {
         ...destination,

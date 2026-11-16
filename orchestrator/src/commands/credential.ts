@@ -320,18 +320,15 @@ export function registerCredentialCommands(program: Command): void {
         type: target.type,
         mode: target.mode,
         environment: target.environment,
-        destinationSpaceId: target.destinationSpaceId,
       }
+      const destination = { destinationSpaceId: target.destinationSpaceId }
       if (options.clear) {
-        await client.deleteCredentialPreference(input)
+        await client.deleteCredentialPreference(input, destination)
         return
       }
       const slot = parseCredentialSlot(options.use!)
       if (!slot) throw new Error(`--use must be ${CREDENTIAL_SLOTS.join(', ')}`)
-      await client.putCredentialPreference({
-        ...input,
-        ...slot,
-      })
+      await client.putCredentialPreference({ ...input, ...slot }, destination)
     })
   registerReachCommand(credential)
   credential

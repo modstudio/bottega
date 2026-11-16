@@ -223,6 +223,7 @@ test('display timezone validates before writing and a successful set refreshes t
   const env = { HOME: root, BOTTEGA_STATE_HOME: join(root, 'state') }
   const calls: string[] = []
   const client = {
+    whoami: async () => ({ personalSpaceId: 'space-personal', memberships: [] }),
     putEntry: async (key: string, input: { value: string }) => {
       calls.push(`${key}=${input.value}`)
       return {
@@ -286,6 +287,7 @@ test('display timezone cache failures warn without failing successful hosted set
     updatedAt: '2026-11-15T12:00:00.000Z',
   }
   const client = {
+    whoami: async () => ({ personalSpaceId: 'space-personal', memberships: [] }),
     putEntry: async () => row,
     getEntry: async () => row,
   } as unknown as ConfigClient
@@ -377,9 +379,11 @@ test('the service refuses a blank value before touching the store', async () => 
     },
   } as unknown as ConfigClient
 
-  await expect(setSecret('EMPTY_KEY', '   \n', 'user', client)).rejects.toThrow(
-    sealedEmptyRefusal('EMPTY_KEY', 'user'),
-  )
+  await expect(
+    setSecret('EMPTY_KEY', '   \n', 'user', client, {
+      destination: { destinationSpaceId: 'space-1' },
+    }),
+  ).rejects.toThrow(sealedEmptyRefusal('EMPTY_KEY', 'user'))
   expect(calls).toEqual([])
 })
 
@@ -396,13 +400,19 @@ test('secret set seals the value without one trailing newline and keeps its othe
 
 test('the next secret operation rotates once only when a machine revocation is newer', async () => {
   const newer = await rotationFixture(roots, '2026-06-01T00:00:00.000Z')
-  await setSecret('TOKEN', 'first', 'space', newer.client)
-  await setSecret('TOKEN', 'second', 'space', newer.client)
+  await setSecret('TOKEN', 'first', 'space', newer.client, {
+    destination: { destinationSpaceId: newer.spaceId },
+  })
+  await setSecret('TOKEN', 'second', 'space', newer.client, {
+    destination: { destinationSpaceId: newer.spaceId },
+  })
   expect(newer.created).toHaveLength(1)
   expect(newer.retired).toEqual(['01990000-0000-7000-8000-000000000003'])
 
   const older = await rotationFixture(roots, '2025-06-01T00:00:00.000Z')
-  await setSecret('TOKEN', 'unchanged', 'space', older.client)
+  await setSecret('TOKEN', 'unchanged', 'space', older.client, {
+    destination: { destinationSpaceId: older.spaceId },
+  })
   expect(older.created).toEqual([])
   expect(older.retired).toEqual([])
 })
@@ -416,7 +426,9 @@ test('rotation excludes a record-revoked key that remains in the machine trust l
     false,
     true,
   )
-  await setSecret('TOKEN', 'rotated', 'space', fixture.client)
+  await setSecret('TOKEN', 'rotated', 'space', fixture.client, {
+    destination: { destinationSpaceId: fixture.spaceId },
+  })
 
   expect(fixture.current().wraps.map((wrap) => wrap.recipientKeyId)).not.toContain(
     fixture.otherKeyId,
@@ -467,6 +479,9 @@ test('machine revoke resumes re-sealing older rows without creating another data
   ])
   expect(fixture.created).toEqual([])
   expect(fixture.retired).toEqual(['01990000-0000-7000-8000-000000000003'])
+  expect(fixture.putSecretDestinations).toEqual([
+    { destinationSpaceId: fixture.spaceId, projectId: null },
+  ])
 })
 
 test('rotation reads and writes space and project-bound rows in their own slots', async () => {
@@ -660,6 +675,10 @@ test('production sealed migration wires listed scopes, not-found reads, decoding
   })
   const client = {
     listSecrets: async () => [row('ORCH_RECORD_URL')],
+    whoami: async () => ({
+      personalSpaceId: 'space-personal',
+      memberships: [],
+    }),
     getSecret: async (name: string, scope: string) => {
       if (!values.has(`${scope}:${name}`)) {
         throw new (await import('../../../shared/config-client.ts')).ConfigClientError(
@@ -674,12 +693,14 @@ test('production sealed migration wires listed scopes, not-found reads, decoding
 
   const migrated = await migrateLegacyEnvironmentSecrets(client, {
     plaintext: async (_client, secret) => values.get(`${secret.scope}:${secret.key}`)!,
-    write: async (name, value, scope) => {
+    write: async (name, value, scope, _client, destination) => {
       calls.push(`write ${scope}:${name}=${value}`)
+      calls.push(`write destination=${destination.destinationSpaceId}`)
       values.set(`${scope}:${name}`, new TextEncoder().encode(value))
     },
-    delete: async (name, scope) => {
+    delete: async (name, scope, _client, destination) => {
       calls.push(`delete ${scope}:${name}`)
+      calls.push(`delete destination=${destination.destinationSpaceId}`)
       values.delete(`${scope}:${name}`)
     },
   })
@@ -689,8 +710,40 @@ test('production sealed migration wires listed scopes, not-found reads, decoding
   ])
   expect(calls).toEqual([
     'write user:BOTTEGA_RECORD_URL=decoded-value',
+    'write destination=space-personal',
     'delete user:ORCH_RECORD_URL',
+    'delete destination=space-personal',
   ])
+})
+
+test('sealed environment migration refuses a non-user scope before any write', async () => {
+  const calls: string[] = []
+  const client = {
+    listSecrets: async () => [
+      {
+        key: 'ORCH_RECORD_URL',
+        environment: 'default',
+        scope: 'space' as const,
+        dekId: 'dek',
+        rowVersion: 1,
+        updatedAt: '2026-10-23T00:00:00.000Z',
+      },
+    ],
+  } as unknown as ConfigClient
+
+  const refusal = await migrateLegacyEnvironmentSecrets(client, {
+    write: async () => calls.push('write'),
+    delete: async () => calls.push('delete'),
+  }).then(
+    () => '',
+    (error: Error) => error.message,
+  )
+
+  expect(refusal).toContain('ORCH_RECORD_URL in space scope')
+  expect(refusal).toContain(
+    `${PLATFORM_SLUG} machine config secret set ORCH_RECORD_URL --space <slug>`,
+  )
+  expect(calls).toEqual([])
 })
 
 test('sealed-secret restore renames only recorded names back without persisting plaintext', async () => {
@@ -705,6 +758,10 @@ test('sealed-secret restore renames only recorded names back without persisting 
     updatedAt: '2026-10-23T00:00:00.000Z',
   })
   const client = {
+    whoami: async () => ({
+      personalSpaceId: 'space-personal',
+      memberships: [],
+    }),
     getSecret: async (name: string, scope: string) => {
       if (!values.has(`${scope}:${name}`)) {
         throw new (await import('../../../shared/config-client.ts')).ConfigClientError(
@@ -761,17 +818,17 @@ test('entry writes and deletes name their destination space and pass explicit ro
     getEntry: async () => {
       throw new Error('unexpected read')
     },
-    putEntry: async (key: string, input: unknown) => {
-      writes.push(['put', key, input])
+    putEntry: async (key: string, input: unknown, destination: unknown) => {
+      writes.push(['put', key, input, destination])
       return { key }
     },
-    deleteEntry: async (key: string, input: unknown) => {
-      writes.push(['delete', key, input])
+    deleteEntry: async (key: string, input: unknown, destination: unknown) => {
+      writes.push(['delete', key, input, destination])
       return { deleted: true }
     },
   } as unknown as ConfigClient
 
-  const destination = { destinationSpaceId: 'personal-space' }
+  const destination = { destinationSpaceId: 'space-1' }
   await setEntry('autonomy.preset', 'guided', 'user', 4, client, destination)
   await deleteEntry('autonomy.stage.review', 'user', 7, client, destination)
 
@@ -780,22 +837,22 @@ test('entry writes and deletes name their destination space and pass explicit ro
       'put',
       'autonomy.preset',
       {
-        destinationSpaceId: 'personal-space',
         scope: 'user',
         environment: 'default',
         value: 'guided',
         expectedRowVersion: 4,
       },
+      { destinationSpaceId: 'space-1' },
     ],
     [
       'delete',
       'autonomy.stage.review',
       {
-        destinationSpaceId: 'personal-space',
         scope: 'user',
         environment: 'default',
         expectedRowVersion: 7,
       },
+      { destinationSpaceId: 'space-1' },
     ],
   ])
 })
@@ -804,22 +861,24 @@ test('a hosted ship-to write removes the stored alias with its own row version',
   const writes: unknown[] = []
   const client = {
     getEntry: async (key: string) => ({ key, rowVersion: 9 }),
-    putEntry: async (key: string, input: unknown) => {
-      writes.push(['put', key, input])
+    putEntry: async (key: string, input: unknown, destination: unknown) => {
+      writes.push(['put', key, input, destination])
       return { key }
     },
-    deleteEntry: async (key: string, input: unknown) => {
-      writes.push(['delete', key, input])
+    deleteEntry: async (key: string, input: unknown, destination: unknown) => {
+      writes.push(['delete', key, input, destination])
       return { deleted: true }
     },
   } as unknown as ConfigClient
 
-  await setEntry('autonomy.ship-to', 'production', 'user', null, client)
+  const destination = { destinationSpaceId: 'space-1' }
+  await setEntry('autonomy.ship-to', 'production', 'user', null, client, destination)
 
   expect(writes.at(-1)).toEqual([
     'delete',
     'autonomy.release',
     { scope: 'user', environment: 'default', expectedRowVersion: 9 },
+    destination,
   ])
 })
 
