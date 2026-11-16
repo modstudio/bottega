@@ -75,6 +75,30 @@ export async function questionsForWorkflowCursor(
   ).items as Record<string, unknown>[]
 }
 
+export async function questionForWorkflowCursorByNumber(
+  database: Database,
+  cursorId: string,
+  number: number,
+  store: ReturnType<typeof questionStore> = questionStore(database),
+): Promise<Record<string, unknown> | null> {
+  let changedAfter: string | undefined
+  for (;;) {
+    const page = await store.read({
+      read: 'for-cursor',
+      workflowCursorRecordId: cursorId,
+      ...(changedAfter === undefined ? {} : { changedAfter }),
+    })
+    const question = page.items.find((row) => 'number' in row && row.number === number)
+    if (question) return question as Record<string, unknown>
+    if (page.more !== true) return null
+    if (!page.cursor)
+      throw new Error(
+        'question store reported more workflow cursor questions without a cursor; retry the command',
+      )
+    changedAfter = page.cursor
+  }
+}
+
 export async function questionRuleAuditReasons(
   database: Database,
   workflowCursorRecordId: string,

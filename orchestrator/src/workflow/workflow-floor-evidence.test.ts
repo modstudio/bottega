@@ -1,7 +1,6 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import type { QuestionStore } from '../question-store/question-store-types.ts'
 import {
   CURSOR_RECORD_ID,
   database,
@@ -14,8 +13,8 @@ import {
   setTrackerStates,
   unlinkedIdentity,
 } from './workflow-floor-evidence.fixture.ts'
-import { boundRulingAndGateRow, stepQuestionRow } from './workflow-floor-evidence-ruling.fixture.ts'
 import { gatherRuling } from './workflow-floor-evidence.ts'
+import { boundRulingAndGateRow, stepQuestionRow } from './workflow-floor-evidence-ruling.fixture.ts'
 import { hubTaskReadFromJson } from './workflow-floor-task-read.ts'
 
 test(
@@ -28,60 +27,9 @@ test(
   stepQuestionRow(database, gather, CURSOR_RECORD_ID, identity),
 )
 
-test('gathers a ruling from the cursor questions across pages without reading by number', async () => {
-  const reads: string[] = []
-  const store: QuestionStore = {
-    write: async () => {
-      throw new Error('unused')
-    },
-    read: async (input) => {
-      reads.push(input.read)
-      if (input.read === 'by-number') throw new Error('duplicate-space by-number read')
-      if (input.read !== 'for-cursor') throw new Error(`unexpected ${input.read} read`)
-      if (!input.changedAfter)
-        return { items: [{ number: 3 }], more: true, cursor: 'next-page' }
-      return {
-        items: [
-          {
-            number: 4,
-            answered_at: '2026-09-01',
-            answerer_kind: 'operator',
-            overturned_at: null,
-            replacement: null,
-            closed_at: null,
-            workflow_cursor_record_id: CURSOR_RECORD_ID,
-            workflow_step_ordinal: 1,
-            workflow_step_slug: 'rebase',
-          },
-        ],
-      }
-    },
-  }
-
-  expect(await gatherRuling(4, CURSOR_RECORD_ID, 1, 'rebase', database(), store)).toEqual({
-    id: 4,
-    answered: true,
-    answeredByOperator: true,
-    boundToCursor: true,
-    boundToStep: true,
-    answeredAt: '2026-09-01',
-  })
-  expect(reads).toEqual(['for-cursor', 'for-cursor'])
-})
-
 test('refuses a ruling number that is absent from the cursor questions', async () => {
-  const store: QuestionStore = {
-    write: async () => {
-      throw new Error('unused')
-    },
-    read: async (input) => {
-      if (input.read === 'by-number') throw new Error('duplicate-space by-number read')
-      return { items: [] }
-    },
-  }
-
-  expect(gatherRuling(99, CURSOR_RECORD_ID, 1, 'rebase', database(), store)).rejects.toThrow(
-    '--ruling 99 is not a question on this workflow cursor; pass the number that `bottega workflow rule` or `bottega workflow await` printed for this cursor, then retry',
+  expect(gatherRuling(99, CURSOR_RECORD_ID, 1, 'rebase', database())).rejects.toThrow(
+    `--ruling 99 is not a question on this workflow cursor; pass the number that \`${PLATFORM_SLUG} workflow rule\` or \`${PLATFORM_SLUG} workflow await\` printed for this cursor, then retry`,
   )
 })
 

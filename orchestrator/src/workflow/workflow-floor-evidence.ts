@@ -16,9 +16,10 @@ import { db } from '../database/db.ts'
 import { resolveDocReference } from '../doc/doc-reference-read.ts'
 import { landingGatePurposeRefusal, resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { projectByName } from '../project/projects.ts'
-import { questionRuleAuditReasons } from '../question-store/question-store-read.ts'
-import { questionStore } from '../question-store/question-store.ts'
-import type { QuestionStore } from '../question-store/question-store-types.ts'
+import {
+  questionForWorkflowCursorByNumber,
+  questionRuleAuditReasons,
+} from '../question-store/question-store-read.ts'
 import {
   reviewRoundTriageComplete,
   reviewsForTriage,
@@ -124,27 +125,11 @@ export async function gatherRuling(
   stepOrdinal: number,
   stepSlug: string,
   d: Database,
-  store: QuestionStore = questionStore(d),
 ): Promise<ValidatedEvidence['ruling']> {
-  let question: Record<string, unknown> | undefined
-  let changedAfter: string | undefined
-  do {
-    const page = await store.read({
-      read: 'for-cursor',
-      workflowCursorRecordId: cursorId,
-      ...(changedAfter === undefined ? {} : { changedAfter }),
-    })
-    question = page.items.find((row) => row.number === id)
-    if (question || page.more !== true) break
-    if (!page.cursor)
-      throw new Error(
-        'question store reported more workflow cursor questions without a cursor; retry the command',
-      )
-    changedAfter = page.cursor
-  } while (true)
+  const question = await questionForWorkflowCursorByNumber(d, cursorId, id)
   if (!question)
     throw new Error(
-      `--ruling ${id} is not a question on this workflow cursor; pass the number that \`bottega workflow rule\` or \`bottega workflow await\` printed for this cursor, then retry`,
+      `--ruling ${id} is not a question on this workflow cursor; pass the number that \`${PLATFORM_SLUG} workflow rule\` or \`${PLATFORM_SLUG} workflow await\` printed for this cursor, then retry`,
     )
   const row = {
     id,

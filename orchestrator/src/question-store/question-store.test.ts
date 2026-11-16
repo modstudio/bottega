@@ -15,6 +15,7 @@ import {
 } from '../run/question-delivery-pending.ts'
 import { registerQuestionRunPusher } from './question-run-pusher.ts'
 import { questionStore } from './question-store.ts'
+import { questionForWorkflowCursorByNumber } from './question-store-read.ts'
 import { RecordQuestionStore } from './question-store-record.ts'
 import type { QuestionStore } from './question-store-types.ts'
 
@@ -396,6 +397,30 @@ test('record question reads refuse a bare number before making a client request'
     'question numbers are unique only within a record space; read the question by id or by cursor, then retry',
   )
   expect(requests).toBe(0)
+  database.close()
+})
+
+test('cursor question selection pages without reading by number', async () => {
+  const database = migratedTestDatabase()
+  const reads: string[] = []
+  const store: QuestionStore = {
+    write: async () => {
+      throw new Error('unused')
+    },
+    read: async (input) => {
+      reads.push(input.read)
+      if (input.read === 'by-number') throw new Error('duplicate-space by-number read')
+      if (input.read !== 'for-cursor') throw new Error(`unexpected ${input.read} read`)
+      if (!input.changedAfter) return { items: [{ number: 3 }], more: true, cursor: 'next-page' }
+      return { items: [{ number: 4, record_id: WORKFLOW_QUESTION_ID }] }
+    },
+  }
+
+  expect(await questionForWorkflowCursorByNumber(database, CURSOR_ID, 4, store)).toMatchObject({
+    number: 4,
+    record_id: WORKFLOW_QUESTION_ID,
+  })
+  expect(reads).toEqual(['for-cursor', 'for-cursor'])
   database.close()
 })
 
