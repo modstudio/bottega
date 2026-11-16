@@ -15,7 +15,7 @@ import {
   writeObservedTestOutcome,
   writeTerminalOperationalState,
 } from './run-terminal.ts'
-import { finalizeTerminalChain } from './run-terminal-chain.ts'
+import { closeTerminalChainQuestions, finalizeTerminalChain } from './run-terminal-chain.ts'
 
 test('an unverified observed test outcome stores claim disagreement as null', () => {
   const runId = addRun({ agent: 'codex', job: 'implement' })
@@ -106,7 +106,7 @@ test('an ok child refreshes the failed root run record with the chain outcome', 
   expect(JSON.parse(latest.payload)).toMatchObject({ status: 'ok', failureKind: null })
 })
 
-test('a failed non-failover child closes its question before the root inherits failure', () => {
+test('a failed non-failover child closes its question before the root inherits failure', async () => {
   const root = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
   const child = addRun({
     agent: 'codex',
@@ -130,6 +130,7 @@ test('a failed non-failover child closes its question before the root inherits f
     error: 'worker interrupted',
     record: ['01990000-0000-7000-8000-000000000099', '2026-10-16T12:01:00.000Z'],
   })
+  await closeTerminalChainQuestions(db(), root, 'failed', 'interrupted')
 
   expect(db().query('SELECT status,failure_kind FROM run WHERE record_id=?').get(root)).toEqual({
     status: 'failed',

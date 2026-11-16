@@ -220,17 +220,6 @@ function finishAbandonedRun(
   if (header) options.presentation.log(header)
 }
 
-function enqueueAbandonedChain(
-  rowId: string,
-  rootId: string,
-  at: string,
-  hasOpenQuestions: boolean,
-): void {
-  const localMachineId = machineId()
-  enqueueRunRecord(db(), rowId, localMachineId, at)
-  rollUpRootAndEnqueue(db(), rootId, null, localMachineId, at, hasOpenQuestions)
-}
-
 type StopRow = {
   record_id: string
   status: string
@@ -463,7 +452,7 @@ export async function abandonRun(
         `run ${id}'s chain changed before it could be abandoned: ${describe(current)}`,
       )
     }
-    enqueueAbandonedChain(row.record_id, authority.rootId, at, openQuestions.length > 0)
+    enqueueRunRecord(db(), row.record_id, machineId(), at)
     auditRunMutation(authority, 'abandon', note ?? null)
     return { row, cleanupRow }
   })
@@ -489,6 +478,7 @@ export async function abandonRun(
     })
   }
   await retireRunChainQuestionDeliveries(db(), authority.rootId, 'abandoned', at)
+  rollUpRootAndEnqueue(db(), authority.rootId, null, machineId(), at, false)
   const { cleanupRow } = abandoned
   finishAbandonedRun(abandoned, helpers, options)
 

@@ -5,6 +5,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import {
   type ContextBrief,
   contextBrief,
@@ -194,36 +195,15 @@ test('keeps an awaiting question on a keyless cursor and omits its abandon remed
 })
 
 test('renders one open question for its task holder', async () => {
-  const database = new Database(':memory:')
-  database.exec(
-    `CREATE TABLE context_item (
-      record_id TEXT NOT NULL,
-      holder_kind TEXT NOT NULL,
-      holder_id TEXT NOT NULL,
-      slug TEXT NOT NULL,
-      kind TEXT NOT NULL,
-      body TEXT NOT NULL,
-      source TEXT NOT NULL,
-      question_number INTEGER,
-      target TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-    CREATE TABLE question (
-      number INTEGER NOT NULL,
-      workflow_task_record_id TEXT,
-      question TEXT NOT NULL,
-      answered_at TEXT,
-      closed_at TEXT
-    )`,
-  )
+  const database = migratedTestDatabase()
+  database.exec('PRAGMA foreign_keys=OFF')
   database
     .query(
       `INSERT INTO question
-       (number,workflow_task_record_id,question,answered_at,closed_at)
-       VALUES (5277,'task-record','Which shape should the brief use?',NULL,NULL),
-              (5278,'task-record','Already answered.','2026-11-13',NULL),
-              (5279,'task-record','Closed without an answer.',NULL,'2026-11-13')`,
+       (record_id,number,workflow_cursor_record_id,workflow_task_record_id,asked_at,question,answered_at,closed_at)
+       VALUES ('question-5277',5277,'cursor-record','task-record','2026-11-13','Which shape should the brief use?',NULL,NULL),
+              ('question-5278',5278,'cursor-record','task-record','2026-11-13','Already answered.','2026-11-13',NULL),
+              ('question-5279',5279,'cursor-record','task-record','2026-11-13','Closed without an answer.',NULL,'2026-11-13')`,
     )
     .run()
   const holders = await storedBriefHolders(

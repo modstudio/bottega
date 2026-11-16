@@ -4,7 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
-import { waitingQuestions } from '../question-store/question-store-read.ts'
+import { questionsForWorkflowCursor } from '../question-store/question-store-read.ts'
 import {
   taskFlowWriteTarget,
   writeHostedTaskFlow,
@@ -35,10 +35,10 @@ async function selectOpenWorkflowQuestion(
   cursorRecordId: string,
   database: Database,
 ): Promise<{ record_id: string; number: number } | null> {
-  const row = (await waitingQuestions(database)).find(
-    ({ workflow_cursor_record_id }) => workflow_cursor_record_id === cursorRecordId,
+  const row = (await questionsForWorkflowCursor(database, cursorRecordId)).find(
+    (question) => question.answered_at === null && question.closed_at === null,
   )
-  return row ? { record_id: row.question_record_id, number: row.id } : null
+  return row ? { record_id: String(row.record_id), number: Number(row.number) } : null
 }
 
 export async function ruleWorkflow(

@@ -118,6 +118,7 @@ export const workflowInboxQuestions = (database: Database): TaskFlowInboxQuestio
 export function runInboxQuestionRows(
   database: Database,
   cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString(),
+  rootVoidedSql = voidedSql('root'),
 ): QueriedInboxQuestion[] {
   return database
     .query(
@@ -129,7 +130,7 @@ export function runInboxQuestionRows(
             r.agent,r.job,r.repo,COALESCE(r.launch_key,root.launch_key) task_key,
             root.project_record_id,r.status,r.session_id,q.awaiting_operator_at,
             root.status root_status,root.record_id root_record_id,root.number root_number,
-            ${voidedSql('root')} root_voided,
+            ${rootVoidedSql} root_voided,
             COALESCE(r.parent_run_record_id,r.record_id) root_id,
             CASE WHEN r.session_id IS NOT NULL AND seen.last_seen>=? THEN 1 ELSE 0 END session_recent
        FROM question q JOIN run r ON r.record_id=q.run_record_id

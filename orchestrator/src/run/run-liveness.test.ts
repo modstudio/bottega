@@ -11,7 +11,7 @@ import { candidates } from '../route/route.ts'
 import { PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
 import { recordCoordinatorCause, runCoordinatorLogPath } from './run-coordinator-log.ts'
 import { runInboxCommand } from './run-inbox.ts'
-import { reapStale } from './run-liveness.ts'
+import { closeStaleChainQuestions, reapStale } from './run-liveness.ts'
 import { STALE_AFTER_MS } from './run-liveness-policy.ts'
 import { sharedGitConfigCheckSkipReason } from './shared-git-config-check.ts'
 
@@ -376,6 +376,7 @@ describe('reapStale', () => {
     db().query('UPDATE run SET pid=?, agent_pid=? WHERE record_id=?').run(4194304, 4194304, child)
 
     expect(reapStale(db(), noSharedGitConfigCheck)).toBe(1)
+    await closeStaleChainQuestions(db())
     expect(db().query('SELECT status FROM run WHERE record_id=?').get(root)).toEqual({
       status: 'stale',
     })

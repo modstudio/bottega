@@ -492,18 +492,19 @@ export function reapStale(
 /** Completes the question-side half of synchronous stale-run reaping. */
 export async function closeStaleChainQuestions(database: Database): Promise<number> {
   const terminal = new Set(['ok', 'failed', 'stale', 'stopped'])
-  const open = (await inboxRunQuestions(database)).filter(
+  const terminalQuestions = (await inboxRunQuestions(database)).filter((question) =>
+    terminal.has(String(question.root_status)),
+  )
+  const open = terminalQuestions.filter(
     (question) =>
-      question.answered_at === null &&
-      question.closed_at === null &&
-      terminal.has(String(question.root_status)),
+      question.answered_at === null && question.closed_at === null,
   )
   const closed = await closeQuestions(
     database,
     open.map((question) => String(question.record_id)),
     QUESTION_CLOSE_CHAIN_STALE,
   )
-  const roots = [...new Set(open.map((question) => String(question.root_id)))]
+  const roots = [...new Set(terminalQuestions.map((question) => String(question.root_id)))]
   for (const rootId of roots)
     await retireRunChainQuestionDeliveries(database, rootId, QUESTION_CLOSE_CHAIN_STALE)
   return closed

@@ -4,6 +4,7 @@ import type { Database } from 'bun:sqlite'
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, sessionId } from '../database/db.ts'
+import { voidedSql } from '../evidence/evidence-query.ts'
 import { projectAt } from '../project/projects.ts'
 import { inboxRunQuestions, inboxWorkflowQuestions } from '../question-store/question-store-read.ts'
 import { runInboxQuestionRows as sqliteRunInboxQuestionRows } from '../question-store/question-store-sqlite-reads.ts'
@@ -32,7 +33,6 @@ type InboxQuestion = {
   job: string
   agent: string
   repo: string | null
-  task_key: string | null
   asked_at: string
   session_live: true | null
   session_liveness: 'live' | 'unknown'
@@ -122,7 +122,7 @@ export function runInboxQuestionRows(
   database: ReturnType<typeof db>,
   cutoff?: string,
 ): QueriedInboxQuestion[] {
-  return sqliteRunInboxQuestionRows(database, cutoff)
+  return sqliteRunInboxQuestionRows(database, cutoff, voidedSql('root'))
 }
 
 type RecoverableInboxRow = {
@@ -252,7 +252,6 @@ export async function queryInbox(
           job: q.job,
           agent: q.agent,
           repo: q.repo,
-          task_key: q.task_key,
           asked_at: q.asked_at,
           session_live: q.session_recent ? true : null,
           session_liveness: q.session_recent ? 'live' : 'unknown',

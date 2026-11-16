@@ -250,7 +250,7 @@ async function questionStoreContract(store: QuestionStore, database: Database) {
   expect(taskRows.some((row) => field(row, 'question_record_id') === replacement.id)).toBe(true)
   expect(taskRows.some((row) => field(row, 'question_record_id') === excludedBase.id)).toBe(false)
 
-  const closed = await mutate(store, 'close', run, {
+  const closed = await mutate(store, 'close', relayed, {
     closedAt: '2026-11-15T12:06:00.000Z',
     closeReason: 'done',
     updatedAt: '2026-11-15T12:06:00.000Z',

@@ -272,14 +272,14 @@ function refuseScoredBlockedByTree(id: string, exclusion: EvidenceExclusion): vo
   )
 }
 
-function recordEvidenceExclusion(
+async function recordEvidenceExclusion(
   id: string,
   row: { failure_kind: string | null; job: string; agent?: string },
   exclusion: EvidenceExclusion,
   flags: JudgmentFlags,
   options: ScoreOptions,
   presentation: JudgmentPresentation,
-): void {
+): Promise<void> {
   let authority = authorizeRunMutation(id, 'void')
   const blocked = exclusion === 'blocked-by-tree'
   const delivery = options.words[0] as Delivery | undefined
@@ -298,7 +298,7 @@ function recordEvidenceExclusion(
     : VOID_EXCLUSION_REASON
   const scoredAt = nowIso()
   const recordedBy = flags.flag('scorer') ?? process.env.BOTTEGA_SCORER ?? 'claude'
-  writeTransaction(() => {
+  const shouldCloseQuestions = writeTransaction(() => {
     authority = reauthorizeRunMutation(authority, 'void')
     authority = adoptRunMutation(authority, 'void')
     db().query('UPDATE run SET evidence_excluded=? WHERE record_id=?').run(excludedReason, id)
@@ -323,10 +323,10 @@ function recordEvidenceExclusion(
           LIMIT 1`,
       )
       .get(id, id)
-    if (!blocked && !hasLiveTurn) {
-      closeRunChainQuestions(db(), id, QUESTION_CLOSE_CHAIN_VOIDED)
-    }
+    return !blocked && !hasLiveTurn
   })
+  if (shouldCloseQuestions)
+    await closeRunChainQuestions(db(), id, QUESTION_CLOSE_CHAIN_VOIDED)
   if (blocked) {
     presentation.log(
       `blocked-by-tree run ${id}: retained run and output; excluded from routing evidence; no verdict recorded`,
@@ -938,7 +938,7 @@ export async function scoreRun(
   const exclusion = requestedEvidenceExclusion(flags, options)
   if (exclusion) {
     refuseScoredBlockedByTree(id, exclusion)
-    recordEvidenceExclusion(id, row, exclusion, flags, options, presentation)
+    await recordEvidenceExclusion(id, row, exclusion, flags, options, presentation)
     return
   }
   assertAgentWorkRun(id, row.job, 'scored')

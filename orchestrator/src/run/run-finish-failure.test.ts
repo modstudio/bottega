@@ -16,10 +16,10 @@ test('a finish failure replaces only a non-terminal run status', () => {
   expect(shouldWriteFinishFailure('stopped', false)).toBe(false)
 })
 
-test('a finish failure terminalises and publishes a non-terminal run', () => {
+test('a finish failure terminalises and publishes a non-terminal run', async () => {
   const id = addRun({ agent: 'codex', job: 'review-lens', status: 'asking' })
 
-  recordRunFinishFailure({
+  await recordRunFinishFailure({
     runId: id,
     error: new Error('machine identity lookup broke'),
     started: Date.now() - 25,
@@ -67,7 +67,7 @@ test('a finish input builder failure terminalises and publishes the run', async 
   })
 })
 
-test('a finish failure closes a child question and rolls failure up to the root', () => {
+test('a finish failure closes a child question and rolls failure up to the root', async () => {
   const root = addRun({ agent: 'codex', job: 'review-lens', status: 'asking' })
   const turn = addRun({
     agent: 'codex',
@@ -84,7 +84,7 @@ test('a finish failure closes a child question and rolls failure up to the root'
     )
     .run(questionId, turn)
 
-  recordRunFinishFailure({
+  await recordRunFinishFailure({
     runId: turn,
     error: new Error('terminal persistence broke'),
     started: Date.now() - 25,
@@ -138,10 +138,10 @@ test('a terminal-recorded finish error leaves an asking row and question open', 
   })
 })
 
-test.each(['ok', 'stopped'])('a finish failure leaves a %s run unchanged', (status) => {
+test.each(['ok', 'stopped'])('a finish failure leaves a %s run unchanged', async (status) => {
   const id = addRun({ agent: 'codex', job: 'review-lens', status })
 
-  recordRunFinishFailure({
+  await recordRunFinishFailure({
     runId: id,
     error: 'late finish failure',
     started: Date.now(),
