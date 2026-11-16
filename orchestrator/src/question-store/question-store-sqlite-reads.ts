@@ -15,7 +15,6 @@ import type {
   TaskFlowOverturnRulingRow,
   TaskFlowPendingTaskLinkRow,
   TaskFlowQuestionCloseRow,
-  TaskFlowQuestionOutboxRow,
   TaskFlowRulingFileRow,
   TaskFlowRulingRow,
   TaskFlowTaskRulingRow,
@@ -242,24 +241,6 @@ export const rulingFileQuestion = (
          LEFT JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
          LEFT JOIN project p ON p.record_id=c.project_record_id AND p.retired_at IS NULL
          WHERE q.record_id=?`,
-    )
-    .get(questionId)
-
-export const questionOutboxRow = (
-  database: Database,
-  questionId: string,
-): TaskFlowQuestionOutboxRow | null =>
-  database
-    .query<TaskFlowQuestionOutboxRow, [string]>(
-      `SELECT q.*, r.record_id AS run_record_id,
-              COALESCE(run_project.name, cursor.project) AS project_name,
-              COALESCE(run_project.record_id, cursor_project.record_id) AS project_record_id
-         FROM question q
-         LEFT JOIN run r ON r.record_id=q.run_record_id
-         LEFT JOIN project run_project ON run_project.record_id=r.project_record_id
-         LEFT JOIN workflow_cursor cursor ON cursor.record_id=q.workflow_cursor_record_id
-         LEFT JOIN project cursor_project ON cursor_project.record_id=cursor.project_record_id
-        WHERE q.record_id=?`,
     )
     .get(questionId)
 

@@ -21,6 +21,7 @@ import {
 import { BOARD_PRESENCE_WRITE_INTERVAL_MS } from '../../src/record/record-board-presence.ts'
 import { createBoardStreamRegistry } from '../../src/record/record-board-stream.ts'
 import { assertRevisionWrite } from '../../src/record/record-doc-errors.ts'
+import { memoryQuestionClient } from './record-api-question.ts'
 import { type MemoryTaskFlowInput, memoryTaskFlowClient } from './record-api-task-flow.ts'
 
 const idleIdentityAndSpaceDeps = () => ({ listInvitations: async () => [] })
@@ -379,6 +380,7 @@ export function createMemoryRecordApiClient(
   input: MemoryTaskFlowInput & {
     boardChanges?: HostedBoardChange[]
     boardProjectIds?: Record<string, string>
+    questions?: Record<string, unknown>[]
   } = {},
 ): RecordApiClient {
   const docs = new Map<string, StoredDoc>()
@@ -411,6 +413,7 @@ export function createMemoryRecordApiClient(
     ...unusedBoardClientMethods(),
     ...unusedContextItemClientMethods(),
     ...memoryTaskFlowClient(input),
+    ...memoryQuestionClient(input),
     async listChanges() {
       return { reset: { cursor: 'fixture-change-cursor', tables: [] } }
     },

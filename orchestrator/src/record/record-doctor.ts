@@ -40,7 +40,7 @@ import type { Agent } from '../agent/agents.ts'
 import { db } from '../database/db.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { questionProjects } from '../question-store/question-store-read.ts'
-import { recordQuestionStore } from '../question-store/question-store-record-factory.ts'
+import { RecordQuestionStore } from '../question-store/question-store-record.ts'
 import { inspectRunRecordBackfill, type RunRecordBackfillInspection } from '../run/run-outbox.ts'
 import {
   inspectTaskFlowBackfill,
@@ -497,6 +497,7 @@ function pendingOutboxCount(database: Database): number {
 
 type CustomerFacts = Omit<RecordDoctorFacts, 'operatorConnectionPresent' | 'operatorChecks'> & {
   userId: string | null
+  recordIdentity: RecordIdentity | null
 }
 
 async function destinationlessWriteFacts(client: ReturnType<typeof recordApiClient>): Promise<{
@@ -612,6 +613,7 @@ async function customerFacts(
     sessionFailure,
     attributionFailure: recordAttributionFailure(database),
     userId: identity?.user.id ?? null,
+    recordIdentity: identity,
     activeSpaceId: identity?.activeSpaceId ?? null,
     memberships: parseRecordSpaceMemberships(identity?.memberships),
     projects,
@@ -708,12 +710,18 @@ async function recordOwnerChecks(migrateUrl: string, urls: string[]): Promise<Re
   return checks
 }
 
+function questionClientWithIdentity(identity: RecordIdentity) {
+  return {
+    ...recordQuestionClient(recordApiRequest),
+    whoami: async () => identity,
+  }
+}
+
 async function operatorRecordChecks(input: {
   recordUrl: string
   migrateUrl?: string
   identity: {
-    userId: string
-    activeSpaceId: string
+    record: RecordIdentity
     activeSpaceSlug: string
   } | null
   projects: Array<{ name: string; space: string | null }>
@@ -749,10 +757,9 @@ async function operatorRecordChecks(input: {
   } else {
     const identity = input.identity
     try {
-      const questionStore = recordQuestionStore({
+      const questionStore = new RecordQuestionStore({
         database: input.database,
-        client: recordQuestionClient(recordApiRequest),
-        destinationSpaceId: identity.activeSpaceId,
+        client: questionClientWithIdentity(identity.record),
       })
       const questionIds = (await questionStore.read({ read: 'rulings', kind: 'all' })).items.map(
         (row) => String((row as Record<string, unknown>).record_id),
@@ -771,12 +778,12 @@ async function operatorRecordChecks(input: {
         (question) => (question as Record<string, unknown>).machine_id === machineId(),
       ).length
       const attribution = await actor.begin(async (tx) => {
-        await tx`SELECT set_config('app.user_id', ${identity.userId}, true)`
-        await tx`SELECT set_config('app.space_id', ${identity.activeSpaceId}, true)`
+        await tx`SELECT set_config('app.user_id', ${identity.record.user.id}, true)`
+        await tx`SELECT set_config('app.space_id', ${identity.record.activeSpaceId}, true)`
         const runs =
-          await tx`SELECT count(*)::int AS total, count(*) FILTER (WHERE started_by_user_id IS NULL)::int AS missing FROM run WHERE space_id=${identity.activeSpaceId}::uuid`
+          await tx`SELECT count(*)::int AS total, count(*) FILTER (WHERE started_by_user_id IS NULL)::int AS missing FROM run WHERE space_id=${identity.record.activeSpaceId}::uuid`
         const intervals =
-          await tx`SELECT count(*)::int AS total, count(*) FILTER (WHERE session_id IS NULL)::int AS missing FROM hub_interval WHERE space_id=${identity.activeSpaceId}::uuid AND source='claude'`
+          await tx`SELECT count(*)::int AS total, count(*) FILTER (WHERE session_id IS NULL)::int AS missing FROM hub_interval WHERE space_id=${identity.record.activeSpaceId}::uuid AND source='claude'`
         return {
           runs: runs[0]!,
           intervals: intervals[0]!,
@@ -792,7 +799,7 @@ async function operatorRecordChecks(input: {
         questionCountCheck(
           identityNames[1],
           await localQuestionCountForSpace(input.database, input.projects, {
-            id: identity.activeSpaceId,
+            id: identity.record.activeSpaceId!,
             slug: identity.activeSpaceSlug,
           }),
           Number(attribution.questions.total),
@@ -851,8 +858,7 @@ export async function diagnoseRecord(
     const identity =
       customer.sessionAccepted && customer.userId && customer.activeSpaceId && active
         ? {
-            userId: customer.userId,
-            activeSpaceId: customer.activeSpaceId,
+            record: customer.recordIdentity!,
             activeSpaceSlug: active.slug,
           }
         : null
@@ -865,7 +871,7 @@ export async function diagnoseRecord(
       database,
     })
   }
-  const { userId: _userId, ...customerDecisionFacts } = customer
+  const { userId: _userId, recordIdentity: _recordIdentity, ...customerDecisionFacts } = customer
   return decideRecordDoctorChecks({
     ...customerDecisionFacts,
     operatorConnectionPresent: Boolean(recordUrl),

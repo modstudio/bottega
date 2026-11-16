@@ -382,24 +382,43 @@ function applyRequestedRunFilter(
 }
 
 function rootIdsForQuestionRows(rows: Record<string, unknown>[]): string[] {
+  const suppliedRoots = rows.flatMap((row) =>
+    typeof row.root_id === 'string' ? [row.root_id] : [],
+  )
   const runIds = [
     ...new Set(
       rows.flatMap((row) => (typeof row.run_record_id === 'string' ? [row.run_record_id] : [])),
     ),
   ]
-  if (!runIds.length) return []
+  if (!runIds.length) return [...new Set(suppliedRoots)]
   return [
     ...new Set(
-      db()
-        .query<{ root_id: string }, string[]>(
-          `SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run
+      suppliedRoots.concat(
+        db()
+          .query<{ root_id: string }, string[]>(
+            `SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run
              WHERE record_id IN (${runIds.map(() => '?').join(',')})`,
-        )
-        .all(...runIds)
-        .map(({ root_id }) => root_id),
+          )
+          .all(...runIds)
+          .map(({ root_id }) => root_id),
+      ),
     ),
   ]
 }
+
+type RunChangeCursor = { run: number; questions: string | null }
+function decodeRunChangeCursor(value: string): RunChangeCursor {
+  if (/^\d+$/.test(value)) return { run: Number(value), questions: null }
+  try {
+    const parsed = JSON.parse(Buffer.from(value, 'base64url').toString()) as RunChangeCursor
+    if (!Number.isSafeInteger(parsed.run) || parsed.run < 0 || !parsed.questions) throw null
+    return parsed
+  } catch {
+    throw new Error('--changed-after cursor is malformed; retry without it for a fresh cursor')
+  }
+}
+const encodeRunChangeCursor = (cursor: RunChangeCursor) =>
+  Buffer.from(JSON.stringify(cursor)).toString('base64url')
 
 async function applySinceListingFilter(
   since: string | undefined,
@@ -421,17 +440,21 @@ async function applySinceListingFilter(
 }
 
 async function applyChangedAfterFilter(
-  after: number | null,
+  after: string | null,
   where: string[],
   args: Array<string | number>,
-): Promise<number | null> {
+): Promise<string | null> {
   if (after === null) return null
-  const changedQuestions = await questionRulings(db(), {
-    kind: 'run',
-    changedAfter: String(after),
-  })
-  const snapshot = Number(changedQuestions.cursor ?? after)
-  const questionRootIds = rootIdsForQuestionRows(changedQuestions.items)
+  const position = decodeRunChangeCursor(after)
+  const changedQuestions = position.questions
+    ? await questionRulings(db(), {
+        kind: 'run',
+        changedAfter: position.questions,
+      })
+    : null
+  const snapshot =
+    db().query<{ value: number }, []>('SELECT value FROM collect_change_counter').get()?.value ?? 0
+  const questionRootIds = rootIdsForQuestionRows(changedQuestions?.items ?? [])
   where.push(`(
     EXISTS (
       SELECT 1 FROM run changed_run
@@ -439,8 +462,11 @@ async function applyChangedAfterFilter(
          AND changed_run.change_seq>? AND changed_run.change_seq<=?
     )${questionRootIds.length ? ` OR r.record_id IN (${questionRootIds.map(() => '?').join(',')})` : ''}
   )`)
-  args.push(after, snapshot, ...questionRootIds)
-  return snapshot
+  args.push(position.run, snapshot, ...questionRootIds)
+  return encodeRunChangeCursor({
+    run: snapshot,
+    questions: changedQuestions?.cursor ?? position.questions ?? '0',
+  })
 }
 
 function liveListingClauses(enabled: boolean): string[] {
@@ -469,7 +495,7 @@ function listingLimit(
   value: string | undefined,
   json: boolean,
   live: boolean,
-  changedAfter: number | null,
+  changedAfter: string | null,
 ): number | null {
   if (changedAfter !== null) return null
   if (value === undefined && live) return null
@@ -552,7 +578,7 @@ function publishJson(
   rows: Array<Record<string, unknown>>,
   unknownIds: string[],
   unknownRecordIds: string[],
-  changeSnapshot: number | null,
+  changeSnapshot: string | null,
   log: (...values: unknown[]) => void,
 ): boolean {
   if (!json) return false
@@ -607,7 +633,7 @@ function publishHumanListing(
       )
     if (row.failure_kind === 'idle') {
       const reclaimed = row.reclaimed_ms as number | null
-      log(`      idle-killed` + (reclaimed != null ? `; reclaimed ${dur(reclaimed)} of wall` : ''))
+      log(`      idle-killed${reclaimed != null ? `; reclaimed ${dur(reclaimed)} of wall` : ''}`)
     }
     reportRouteAndExecutor(row, log)
     const warning = agentWorkValue(String(row.job), () =>
@@ -620,7 +646,7 @@ function publishHumanListing(
 }
 
 export async function runListingCommand(
-  options: { jsonV1: boolean; changedAfter: number | null },
+  options: { jsonV1: boolean; changedAfter: string | null },
   flags: RunListingFlags,
   presentation: RunListingPresentation,
 ): Promise<void> {

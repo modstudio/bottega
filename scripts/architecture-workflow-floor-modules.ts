@@ -47,7 +47,6 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../record/record-api-client-task-flow.ts',
     '../record/record-task-flow-write-client.ts',
     '../record/record-task-flow-write-contract.ts',
-    '../run/question-outbox.ts',
     './task-flow.ts',
     './task-flow-store.ts',
     './task-flow-mirror-refresh.ts',

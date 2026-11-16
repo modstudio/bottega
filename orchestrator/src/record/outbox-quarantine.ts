@@ -86,6 +86,36 @@ function audit(
     )
 }
 
+/** Retire pending rows for outbox kinds whose delivery path has been removed. */
+export function retirePendingOutboxKinds(
+  database: Database,
+  kinds: ReadonlySet<string>,
+  reason: string,
+  at = nowIso(),
+): number {
+  if (kinds.size === 0) return 0
+  return writeTransaction(() => {
+    const rows = database
+      .query<OutboxIdentity, string[]>(
+        `SELECT id,kind,row_id,attempts,last_error,quarantine_reason,quarantined_at,retired_at
+           FROM outbox
+          WHERE kind IN (${[...kinds].map(() => '?').join(',')})
+            AND synced_at IS NULL
+            AND quarantined_at IS NULL
+            AND retired_at IS NULL
+          ORDER BY id`,
+      )
+      .all(...kinds)
+    for (const row of rows) {
+      audit(database, row, 'retire', row.last_error, reason, null, at)
+      database
+        .query('UPDATE outbox SET retired_at=?,retirement_reason=? WHERE id=?')
+        .run(at, reason, row.id)
+    }
+    return rows.length
+  }, database)
+}
+
 export function quarantineOutboxRow(
   database: Database,
   rowId: number,

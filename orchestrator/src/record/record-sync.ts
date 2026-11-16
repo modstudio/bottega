@@ -15,7 +15,6 @@ import { db, nowIso } from '../database/db.ts'
 import { declaredProjectRecordSpace } from '../project/declared-record-space.ts'
 import { backfillReleaseRecords } from '../release/release-outbox.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
-import { backfillQuestionRecords } from '../run/question-outbox.ts'
 import { backfillRunRecords } from '../run/run-outbox.ts'
 import { backfillScoreRecords } from '../score/score-outbox.ts'
 import {
@@ -40,7 +39,11 @@ import {
   recordQuarantinedParentsHoldingRow,
   refreshParentDeferredOutboxRows,
 } from './outbox-dependency.ts'
-import { quarantinedOutboxRows, quarantineOutboxRow } from './outbox-quarantine.ts'
+import {
+  quarantinedOutboxRows,
+  quarantineOutboxRow,
+  retirePendingOutboxKinds,
+} from './outbox-quarantine.ts'
 import {
   type RecordApiClient,
   RecordApiRequestError,
@@ -59,6 +62,7 @@ import {
 } from './record-sync-contract.ts'
 import type { RecordSyncBatchDependency } from './record-sync-result-decision.ts'
 import { applyRecordSyncBatchResults } from './record-sync-results.ts'
+import { RETIRED_OUTBOX_KINDS, RETIRED_OUTBOX_REASON } from './record-sync-service.ts'
 import type {
   BlockedOutboxRow,
   HeldRecordSyncRows,
@@ -87,7 +91,6 @@ export function outboxOrder(kind: string, id: number): readonly [phase: number, 
   if (kind === 'landing_review_carry' || kind === 'landing_triage_snapshot') return [3, id]
   switch (kind) {
     case 'score':
-    case 'question':
     case 'review':
     case 'review_lens':
     case 'review_finding':
@@ -270,11 +273,13 @@ function planBatchRow(
 
 function preparePendingRows(local: Database): Set<PreparedOutboxRow> {
   const rows = local
-    .query<OutboxRow, []>(
+    .query<OutboxRow, string[]>(
       `SELECT id, kind, row_id, payload FROM outbox
-       WHERE synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL ORDER BY id`,
+       WHERE synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL
+         AND kind NOT IN (${[...RETIRED_OUTBOX_KINDS].map(() => '?').join(',')})
+       ORDER BY id`,
     )
-    .all()
+    .all(...RETIRED_OUTBOX_KINDS)
     .sort((left, right) => {
       const [leftPhase, leftId] = outboxOrder(left.kind, left.id)
       const [rightPhase, rightId] = outboxOrder(right.kind, right.id)
@@ -299,9 +304,6 @@ function sourceProjectRecordId(local: Database, row: OutboxRow): string | null |
       LEFT JOIN project ON project.record_id=run.project_record_id WHERE run.record_id=?`,
     score: `SELECT project.record_id FROM run
       LEFT JOIN project ON project.record_id=run.project_record_id WHERE run.record_id=?`,
-    question: `SELECT project.record_id FROM question
-      LEFT JOIN run ON run.record_id=question.run_record_id
-      LEFT JOIN project ON project.record_id=run.project_record_id WHERE question.record_id=?`,
     review: `SELECT project.record_id FROM review
       LEFT JOIN project ON project.record_id=review.project_record_id WHERE review.record_id=?`,
     review_lens: `SELECT project.record_id FROM review_lens
@@ -600,6 +602,7 @@ async function ensureBatchBuiltIns(
 function completedSyncResult(input: {
   pushed: number
   failed: number
+  retired: number
   local: Database
   blocked: BlockedOutboxRow[]
   held: Map<string, HeldRecordSyncRows>
@@ -625,6 +628,7 @@ function completedSyncResult(input: {
     pushed: input.pushed,
     failed: input.failed,
     pending: pendingCount(input.local),
+    ...(input.retired ? { retired: input.retired } : {}),
     configured: true,
     ...(input.cachePull?.routingPool ? { routingPool: input.cachePull.routingPool } : {}),
     ...(input.cachePull?.projectRegister
@@ -711,7 +715,6 @@ function syncBackfill(
     briefInjections: backfillBriefInjections(local),
     contextReviews: backfillContextReviews(local),
     hookEmissions: backfillHookEmissions(local),
-    questions: backfillQuestionRecords(local),
     releases: backfillReleaseRecords(local),
   }
 }
@@ -736,6 +739,19 @@ function unconfiguredSyncResult(
     quarantined: [],
     blocked: [],
     ...(backfill ? { backfill } : {}),
+  }
+}
+
+function syncIdentity(options: RecordSyncOptions) {
+  const requested = options.identity ?? { id: machineId(), ...machineNames() }
+  return { ...requested, name: requested.name ?? defaultShortName(hostname()) }
+}
+
+function beginSyncPass(local: Database, requestedNow?: () => string) {
+  const now = requestedNow ?? nowIso
+  return {
+    now,
+    retired: retirePendingOutboxKinds(local, RETIRED_OUTBOX_KINDS, RETIRED_OUTBOX_REASON, now()),
   }
 }
 
@@ -765,16 +781,13 @@ async function requestedTaskFlowBackfill(input: {
 
 export async function syncRecord(options: RecordSyncOptions = {}): Promise<RecordSyncResult> {
   const configured = recordSyncConfigured(process.env) || Boolean(options.client)
-  const requestedIdentity = options.identity ?? { id: machineId(), ...machineNames() }
-  const identity = {
-    ...requestedIdentity,
-    name: requestedIdentity.name ?? defaultShortName(hostname()),
-  }
+  const identity = syncIdentity(options)
   const local = options.local ?? (configured || options.backfill ? db() : undefined)
   if (!configured) return unconfiguredSyncResult(local, identity.id, options.backfill)
   const writableLocal = local!
   const client = options.client ?? recordApiClient()
   if (!client.sync) throw new Error('record API client does not provide evidence sync')
+  const { now, retired } = beginSyncPass(writableLocal, options.now)
   const session = await client.whoami()
   const memberships = parseRecordSpaceMemberships(session.memberships)
   const taskFlowBackfill = await requestedTaskFlowBackfill({
@@ -805,7 +818,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
       candidates,
       attempted,
       identity,
-      now: options.now ?? nowIso,
+      now,
       memberships,
       blocked,
       quarantinedParentHolds,
@@ -823,7 +836,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
       attempted,
       readOnlyDeferred,
       held,
-      now: options.now ?? nowIso,
+      now,
     })
     sentBatch = true
     pushed += applied.pushed
@@ -838,6 +851,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   return completedSyncResult({
     pushed,
     failed,
+    retired,
     local: writableLocal,
     blocked,
     held,

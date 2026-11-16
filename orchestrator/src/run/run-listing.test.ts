@@ -12,7 +12,8 @@ import { runIdentityMap, runListingCommand } from './run-listing.ts'
 import type { SubscriptionCostContext } from './run-subscription-cost.ts'
 import { subscriptionCostFacts } from './run-subscription-cost-store.ts'
 
-function command(
+function commandWithListingOptions(
+  listingOptions: Parameters<typeof runListingCommand>[0],
   args: Record<string, string[] | boolean> = {},
   thinOutputWarning: Parameters<typeof runListingCommand>[2]['thinOutputWarning'] = () => null,
   observation: Parameters<typeof runListingCommand>[2]['processObservation'] = {
@@ -26,7 +27,7 @@ function command(
   const values = (name: string) => (Array.isArray(args[name]) ? (args[name] as string[]) : [])
   const flag = (name: string) => values(name)[0]
   return runListingCommand(
-    { jsonV1: false, changedAfter: null },
+    listingOptions,
     {
       has: (name) => args[name] === true || values(name).length > 0,
       flag,
@@ -51,6 +52,26 @@ function command(
       subscriptionCost,
     },
   ).then(() => lines)
+}
+
+function command(
+  args: Record<string, string[] | boolean> = {},
+  thinOutputWarning: Parameters<typeof runListingCommand>[2]['thinOutputWarning'] = () => null,
+  observation: Parameters<typeof runListingCommand>[2]['processObservation'] = {
+    sampleProcesses: () => [],
+    processStartTime: () => null,
+  },
+  clock: () => number = Date.now,
+  subscriptionCost?: SubscriptionCostContext,
+) {
+  return commandWithListingOptions(
+    { jsonV1: false, changedAfter: null },
+    args,
+    thinOutputWarning,
+    observation,
+    clock,
+    subscriptionCost,
+  )
 }
 
 function insert(status: string, job = 'implement') {

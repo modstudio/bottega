@@ -9,7 +9,6 @@ import {
   clearQuestionDeliveryPending,
   markQuestionDeliveryPending,
 } from './question-delivery-pending.ts'
-import { enqueueQuestionRecord } from './question-outbox.ts'
 import type {
   AnswerChannel,
   QuestionDeliveryMode,
@@ -76,7 +75,12 @@ export async function applyQuestionAnswer(input: {
   })
   if (!mutation.applied) return false
   if (input.deliveryPendingAt)
-    markQuestionDeliveryPending(input.database, input.questionId, input.deliveryPendingAt)
+    markQuestionDeliveryPending(
+      input.database,
+      input.questionId,
+      mutation.question.runId,
+      input.deliveryPendingAt,
+    )
   else clearQuestionDeliveryPending(input.database, [input.questionId])
   if (input.delivery)
     appendQuestionDeliveries(
@@ -84,7 +88,6 @@ export async function applyQuestionAnswer(input: {
       { ...input.delivery, at: input.answeredAt },
       input.database,
     )
-  enqueueQuestionRecord(input.database, input.questionId)
   return true
 }
 

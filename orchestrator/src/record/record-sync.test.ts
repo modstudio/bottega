@@ -17,7 +17,6 @@ import {
 import { fakePostgres, serverError } from '../../test/fixtures/record-sync-postgres.ts'
 import { fixtureProjectRecordId, migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
-import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
 import { enqueueScoreRecord } from '../score/score-outbox.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
@@ -25,11 +24,65 @@ import { enqueueContention } from './landing-outbox.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { retireOutboxRow, retryOutboxRow } from './outbox-quarantine.ts'
 import { syncRecord } from './record-sync.ts'
+import { RETIRED_OUTBOX_REASON } from './record-sync-service.ts'
 
 const LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.landing_override.columns
 const LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS =
   OUTBOX_PAYLOAD_CONTRACTS.landing_triage_snapshot.columns
 const PULL_REQUEST_CI_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.pull_request_ci.columns
+
+test('sync retires and audits leftover question outbox rows once', async () => {
+  const local = migratedTestDatabase()
+  local
+    .query(
+      "INSERT INTO outbox(record_id,kind,row_id,payload,created_at) VALUES (?,'question',?,?,?)",
+    )
+    .run(newRecordId(), newRecordId(), '{}', STAMP)
+  const result = await syncRecord(options(local, fakePostgres()))
+  expect(result).toMatchObject({
+    pushed: 0,
+    failed: 0,
+    pending: 0,
+    retired: 1,
+    quarantined: [],
+  })
+  expect(
+    local
+      .query('SELECT synced_at,quarantined_at,retired_at,retirement_reason,attempts FROM outbox')
+      .get(),
+  ).toEqual({
+    synced_at: null,
+    quarantined_at: null,
+    retired_at: STAMP,
+    retirement_reason: RETIRED_OUTBOX_REASON,
+    attempts: 0,
+  })
+  expect(
+    local
+      .query('SELECT kind,disposition,actor_session,at,reason FROM outbox_quarantine_audit')
+      .all(),
+  ).toEqual([
+    {
+      kind: 'question',
+      disposition: 'retire',
+      actor_session: null,
+      at: STAMP,
+      reason: RETIRED_OUTBOX_REASON,
+    },
+  ])
+  const second = await syncRecord(options(local, fakePostgres()))
+  expect(second).toMatchObject({
+    pushed: 0,
+    failed: 0,
+    pending: 0,
+    quarantined: [],
+  })
+  expect(second).not.toHaveProperty('retired')
+  expect(local.query('SELECT count(*) AS count FROM outbox_quarantine_audit').get()).toEqual({
+    count: 1,
+  })
+  local.close()
+})
 
 function localPullRequestCiOutbox(): Database {
   const local = new Database(':memory:')
@@ -326,50 +379,6 @@ test('a quarantined newer row blocks redaction and becomes final after retry and
   await exerciseQuarantinedRedactionSync(local, sync)
   expect(remote.parameters.flat()).toContain('newer operator-approved value')
   expect(remote.parameters.flat()).not.toContain(WITHHELD_SECRET_SHAPED)
-  local.close()
-})
-
-test('ordinary sync pushes an asking run before its live question', async () => {
-  const local = migratedTestDatabase()
-  local
-    .query(
-      `INSERT INTO run
-       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
-       VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','asking',?)`,
-    )
-    .run(RECORD_ID, fixtureProjectRecordId(local))
-  local
-    .query(
-      `INSERT INTO question (number,record_id,run_record_id,asked_at,question,asked_via)
-       VALUES (1,'${newRecordId()}',?,?,'Which?','live')`,
-    )
-    .run(RECORD_ID, STAMP)
-  local
-    .query("INSERT OR REPLACE INTO schema_meta (key,value) VALUES ('machine_id',?)")
-    .run(MACHINE_ID)
-  enqueueRunRecord(local, RECORD_ID, MACHINE_ID, STAMP)
-  enqueueQuestionRecord(
-    local,
-    (local.query('SELECT record_id FROM question').get() as { record_id: string }).record_id,
-  )
-
-  const remote = fakePostgres()
-  const result = await syncRecord(options(local, remote))
-  if (result.failed) {
-    const failed = local
-      .query<{ last_error: string }, []>(
-        'SELECT last_error FROM outbox WHERE last_error IS NOT NULL',
-      )
-      .get()
-    throw new Error(failed?.last_error ?? 'question sync failed without an outbox error')
-  }
-  expect(result).toMatchObject({ pushed: 2, failed: 0, pending: 0 })
-  const writes = remote.statements.filter((statement) =>
-    statement.toLowerCase().includes('insert into'),
-  )
-  expect(writes.findIndex((statement) => statement.includes('"run"'))).toBeLessThan(
-    writes.findIndex((statement) => statement.includes('"question"')),
-  )
   local.close()
 })
 
@@ -779,10 +788,6 @@ test('a quarantined parent defers its graph until retry delivers the parent', as
     .query("INSERT OR REPLACE INTO schema_meta (key,value) VALUES ('machine_id',?)")
     .run(MACHINE_ID)
   enqueueRunRecord(local, RECORD_ID, MACHINE_ID, STAMP)
-  enqueueQuestionRecord(
-    local,
-    (local.query('SELECT record_id FROM question').get() as { record_id: string }).record_id,
-  )
   local
     .query(
       `INSERT INTO score
@@ -826,16 +831,16 @@ test('a quarantined parent defers its graph until retry delivers the parent', as
   expect(await syncRecord(options(local, remote))).toMatchObject({
     pushed: 0,
     failed: 1,
-    pending: 6,
+    pending: 5,
     quarantined: [{ id: 1, kind: 'run' }],
   })
   expect(local.query('SELECT attempts,quarantined_at FROM outbox WHERE id>1').all()).toEqual(
-    Array.from({ length: 6 }, () => ({ attempts: 0, quarantined_at: null })),
+    Array.from({ length: 5 }, () => ({ attempts: 0, quarantined_at: null })),
   )
 
   retryOutboxRow(1, local, STAMP, 'architect')
   expect(await syncRecord(options(local, remote))).toMatchObject({
-    pushed: 7,
+    pushed: 6,
     failed: 0,
     pending: 0,
     quarantined: [],
@@ -908,51 +913,6 @@ test('retiring a row after its batch is sent does not mark its local snapshot sy
     synced_at: null,
     retired_at: STAMP,
   })
-  local.close()
-})
-
-test('a dependent reports a retired parent without attempting delivery', async () => {
-  const local = migratedTestDatabase()
-  local
-    .query(
-      `INSERT INTO run
-       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
-       VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','asking',?)`,
-    )
-    .run(RECORD_ID, fixtureProjectRecordId(local))
-  local
-    .query(
-      `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES (1,'${newRecordId()}',?,?,'Which?')`,
-    )
-    .run(RECORD_ID, STAMP)
-  local
-    .query("INSERT OR REPLACE INTO schema_meta (key,value) VALUES ('machine_id',?)")
-    .run(MACHINE_ID)
-  enqueueRunRecord(local, RECORD_ID, MACHINE_ID, STAMP)
-  enqueueQuestionRecord(
-    local,
-    (local.query('SELECT record_id FROM question').get() as { record_id: string }).record_id,
-  )
-  local
-    .query(
-      `UPDATE outbox SET quarantined_at=?,quarantine_reason='operator review'
-       WHERE kind='run'`,
-    )
-    .run(STAMP)
-  retireOutboxRow(1, 'not deliverable', local, STAMP, 'architect')
-  const remote = fakePostgres()
-
-  expect(await syncRecord(options(local, remote))).toMatchObject({
-    pushed: 0,
-    failed: 0,
-    pending: 1,
-    blocked: [{ id: 2, kind: 'question', parentRecordId: RECORD_ID }],
-  })
-  expect(
-    remote.statements.some((statement) =>
-      statement.toLowerCase().includes('insert into "question"'),
-    ),
-  ).toBe(false)
   local.close()
 })
 

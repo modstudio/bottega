@@ -1,5 +1,5 @@
-// concern: hosted task-flow reads joined to local questions
-/** Joins record-owned stages to the local question, run, project, and outbox rows. */
+// concern: hosted task-flow reads joined through the question port
+/** Decorates record-owned stages with question facts from the selected question store. */
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
@@ -9,13 +9,16 @@ import { type ListedItem, stageRow } from '../workflow/task-flow-store-record-st
 import type {
   TaskFlowInboxQuestionRow,
   TaskFlowListedStageRow,
+  TaskFlowOpenSessionStageRow,
   TaskFlowOverturnRulingRow,
   TaskFlowQuestionCloseRow,
   TaskFlowRulingFileRow,
   TaskFlowRulingRow,
   TaskFlowTaskRulingRow,
+  TaskFlowWaitingQuestionRow,
 } from '../workflow/task-flow-store-types.ts'
-import { questionOpenSql, questionTaskHolderSql } from './question-store-sql.ts'
+import { questionStore } from './question-store.ts'
+import type { QuestionReadRow, QuestionStore } from './question-store-types.ts'
 
 type StageSelector = Record<string, unknown>
 type StageRead = {
@@ -25,68 +28,56 @@ type StageRead = {
   projectId: (project: string) => string
 }
 
-type LocalQuestion = Record<string, unknown> & {
-  number: number
-  record_id: string
-  workflow_cursor_record_id: string | null
-}
+const field = (row: QuestionReadRow, name: string): unknown =>
+  (row as Record<string, unknown>)[name]
+const openQuestionMap = (rows: QuestionReadRow[]) =>
+  new Map(
+    rows.flatMap((row) => {
+      const cursor = field(row, 'workflow_cursor_record_id')
+      return typeof cursor === 'string' ? [[cursor, row] as const] : []
+    }),
+  )
 
-const openQuestionRows = (database: Database) =>
-  database.query<LocalQuestion, []>(`SELECT * FROM question q WHERE ${questionOpenSql('q')}`).all()
-
-const stageMap = (items: ListedItem[]) => new Map(items.map((item) => [item.stage.id, item]))
-
-function openQuestionByStage(database: Database) {
-  const result = new Map<string, LocalQuestion>()
-  for (const row of openQuestionRows(database).sort((a, b) => a.number - b.number)) {
-    if (row.workflow_cursor_record_id && !result.has(row.workflow_cursor_record_id))
-      result.set(row.workflow_cursor_record_id, row)
+function checkedDetail(row: QuestionReadRow | undefined): QuestionReadRow | null {
+  if (!row) return null
+  const cursor = field(row, 'workflow_cursor_record_id')
+  if (typeof cursor === 'string' && field(row, 'workflow_cursor_number') == null) {
+    throw new Error(
+      `question ${String(field(row, 'number'))} names workflow stage ${cursor}, which the hosted record does not return; run ${PLATFORM_NAME} record push, then retry`,
+    )
   }
-  return result
+  return row
 }
 
-function missingQuestionStage(row: LocalQuestion): never {
-  throw new Error(
-    `question ${row.number} names workflow stage ${row.workflow_cursor_record_id}, which the hosted record does not return; run ${PLATFORM_NAME} record push, then retry`,
+function fields<T>(row: QuestionReadRow, names: readonly string[]): T {
+  return Object.fromEntries(names.map((name) => [name, field(row, name)])) as T
+}
+
+async function openForStages(questions: QuestionStore, ids: string[]) {
+  if (ids.length === 0) return new Map<string, QuestionReadRow>()
+  return openQuestionMap(
+    (await questions.read({ read: 'open-for-cursors', workflowCursorRecordIds: ids })).items,
   )
 }
 
-export const STAGE_BY_ID_READ_LIMIT = 20
-
-async function readQuestionStages(read: StageRead, ids: string[]) {
-  const stages = new Map<string, HostedTaskFlowStageById['stage']>()
-  if (ids.length <= STAGE_BY_ID_READ_LIMIT) {
-    for (const item of await Promise.all(ids.map((id) => read.byId(id))))
-      if (item) stages.set(item.stage.id, item.stage)
-    return stages
-  }
-  const wanted = new Set(ids)
-  for (const { stage } of await read.listEvery({ states: TASK_FLOW_STAGE_STATES }))
-    if (wanted.has(stage.id)) stages.set(stage.id, stage)
-  return stages
+async function openDetailsForStages(questions: QuestionStore, ids: string[]) {
+  return new Map(
+    (
+      await Promise.all(
+        ids.map(async (id) => {
+          const rows = (
+            await questions.read({ read: 'for-cursor', workflowCursorRecordId: id })
+          ).items
+            .filter((row) => field(row, 'answered_at') == null && field(row, 'closed_at') == null)
+            .sort((a, b) => Number(field(a, 'number')) - Number(field(b, 'number')))
+          return rows[0] ? ([id, rows[0]] as const) : null
+        }),
+      )
+    ).filter((entry) => entry !== null),
+  )
 }
 
-async function stagesForQuestionRows(read: StageRead, rows: LocalQuestion[]) {
-  const ids = [
-    ...new Set(
-      rows.flatMap((row) => (row.workflow_cursor_record_id ? [row.workflow_cursor_record_id] : [])),
-    ),
-  ]
-  if (ids.length === 0) return new Map<string, HostedTaskFlowStageById['stage']>()
-  const stages = await readQuestionStages(read, ids)
-  for (const row of rows)
-    if (row.workflow_cursor_record_id && !stages.has(row.workflow_cursor_record_id))
-      missingQuestionStage(row)
-  return stages
-}
-
-const questionStage = async (read: StageRead, row: LocalQuestion) => {
-  if (!row.workflow_cursor_record_id) return null
-  const stage = await read.byId(row.workflow_cursor_record_id)
-  return stage ?? missingQuestionStage(row)
-}
-
-function listedStageReads(database: Database, read: StageRead) {
+function stageReads(questions: QuestionStore, read: StageRead) {
   return {
     async listOpenStages(input: {
       project?: string
@@ -100,14 +91,19 @@ function listedStageReads(database: Database, read: StageRead) {
       const items = input.project
         ? await read.list(selector, input.project)
         : await read.listEvery(selector)
-      const questionByStage = openQuestionByStage(database)
+      const open = await openForStages(
+        questions,
+        items.map(({ stage }) => stage.id),
+      )
       return items
         .map((item) => {
           const row = stageRow(item)
+          const question = open.get(item.stage.id)
+          const questionNumber = field(question ?? {}, 'number')
           return {
             ...row,
             open_stage_count: row.open_stage_count!,
-            question_number: questionByStage.get(item.stage.id)?.number ?? null,
+            question_number: typeof questionNumber === 'number' ? questionNumber : null,
           }
         })
         .sort((a, b) => a.updated_at.localeCompare(b.updated_at) || a.id - b.id)
@@ -118,36 +114,9 @@ function listedStageReads(database: Database, read: StageRead) {
         .map(({ stage }) => ({ number: stage.number, record_id: stage.id }))
         .sort((a, b) => a.number - b.number)
     },
-  }
-}
 
-function waitingStageReads(database: Database, read: StageRead) {
-  return {
-    async waitingWorkflowQuestions() {
-      const items = await read.listEvery({ states: ['awaiting-ruling'] })
-      const stages = stageMap(items)
-      return openQuestionRows(database).flatMap((q) => {
-        const item = q.workflow_cursor_record_id
-          ? stages.get(q.workflow_cursor_record_id)
-          : undefined
-        if (!item) return []
-        const { stage } = item
-        return [
-          {
-            id: stage.number,
-            workflow_cursor_record_id: stage.id,
-            project: stage.projectName!,
-            question_record_id: q.record_id,
-            task_key: (q.workflow_key as string | null) ?? null,
-            question: q.question as string,
-            waiting_since: q.asked_at as string,
-            workflow_slug: stage.workflow,
-            mode_slug: stage.mode,
-            args: JSON.stringify(stage.arguments),
-            session_id: stage.sessionId ?? null,
-          },
-        ]
-      })
+    async waitingWorkflowQuestions(): Promise<TaskFlowWaitingQuestionRow[]> {
+      return (await questions.read({ read: 'waiting' })).items as TaskFlowWaitingQuestionRow[]
     },
 
     async closeOutShipTaskStage(sessionId: string, project: string, branch: string) {
@@ -175,7 +144,7 @@ function waitingStageReads(database: Database, read: StageRead) {
   }
 }
 
-function sessionStageReads(database: Database, read: StageRead) {
+function sessionReads(questions: QuestionStore, read: StageRead) {
   return {
     async cursorWorkForSession(sessionId: string) {
       return (await read.listEvery({ sessionId }))
@@ -197,25 +166,9 @@ function sessionStageReads(database: Database, read: StageRead) {
       }))
     },
 
-    async openStagesForSession(sessionId: string) {
-      const items = await read.listEvery({
-        sessionId,
-        states: ['running', 'awaiting-ruling'],
-      })
-      const openByStage = openQuestionByStage(database)
-      return items
-        .map(({ stage }) => ({
-          record_id: stage.id,
-          number: stage.number,
-          project: stage.projectName!,
-          workflow_slug: stage.workflow,
-          mode_slug: stage.mode,
-          workflow_key: stage.workflowKey ?? '',
-          state: stage.state,
-          updated_at: stage.updatedAt,
-          open_question_record_id: openByStage.get(stage.id)?.record_id ?? null,
-        }))
-        .sort((a, b) => a.number - b.number)
+    async openStagesForSession(sessionId: string): Promise<TaskFlowOpenSessionStageRow[]> {
+      return (await questions.read({ read: 'open-for-session', sessionId }))
+        .items as TaskFlowOpenSessionStageRow[]
     },
 
     async keylessSessionCursors(project: string | null) {
@@ -225,7 +178,10 @@ function sessionStageReads(database: Database, read: StageRead) {
         ...(project ? { projectId: read.projectId(project) } : {}),
       }
       const items = project ? await read.list(selector, project) : await read.listEvery(selector)
-      const openByStage = openQuestionByStage(database)
+      const open = await openDetailsForStages(
+        questions,
+        items.map(({ stage }) => stage.id),
+      )
       return items
         .filter(({ stage }) => stage.sessionId !== null)
         .map(({ stage }) => ({
@@ -236,49 +192,22 @@ function sessionStageReads(database: Database, read: StageRead) {
           step_slug: stage.activeSlug,
           session_id: stage.sessionId!,
           updated_at: stage.updatedAt,
-          open_question_record_id: openByStage.get(stage.id)?.record_id ?? null,
+          open_question_record_id:
+            (field(open.get(stage.id) ?? {}, 'record_id') as string | undefined) ?? null,
         }))
         .sort((a, b) => a.number - b.number)
     },
-  }
-}
 
-function inboxStageReads(database: Database, read: StageRead) {
-  return {
     async workflowInboxQuestions(): Promise<TaskFlowInboxQuestionRow[]> {
-      const items = await read.listEvery({ states: ['awaiting-ruling'] })
-      const stages = stageMap(items)
-      return openQuestionRows(database)
-        .flatMap((q) => {
-          const stage = q.workflow_cursor_record_id
-            ? stages.get(q.workflow_cursor_record_id)?.stage
-            : undefined
-          return stage
-            ? [
-                {
-                  number: q.number,
-                  record_id: q.record_id,
-                  asked_at: q.asked_at as string,
-                  question: q.question as string,
-                  cursor_record_id: stage.number,
-                  project: stage.projectName!,
-                  project_record_id: stage.projectId,
-                  workflow_slug: stage.workflow,
-                  mode_slug: stage.mode,
-                  args: JSON.stringify(stage.arguments),
-                  ordinal: stage.activeOrdinal,
-                  step_slug: stage.activeSlug,
-                  session_id: stage.sessionId ?? null,
-                },
-              ]
-            : []
-        })
-        .sort((a, b) => a.asked_at.localeCompare(b.asked_at) || a.number - b.number)
+      return (await questions.read({ read: 'inbox' })).items.filter(
+        (row): row is TaskFlowInboxQuestionRow =>
+          typeof field(row, 'cursor_record_id') === 'number',
+      )
     },
   }
 }
 
-function rulingListReads(database: Database, read: StageRead) {
+function rulingListReads(questions: QuestionStore) {
   return {
     async rulingRows(input: {
       kind: 'workflow' | 'run' | 'all'
@@ -286,273 +215,142 @@ function rulingListReads(database: Database, read: StageRead) {
       after: number | null
       cursor: number | null
     }): Promise<TaskFlowRulingRow[]> {
-      const clauses: string[] = []
-      const values: string[] = []
-      if (input.kind === 'workflow') clauses.push('q.workflow_cursor_record_id IS NOT NULL')
-      else if (input.kind === 'run') clauses.push('q.run_record_id IS NOT NULL')
-      if (input.since) {
-        clauses.push(
-          `(${questionOpenSql('q')} OR q.asked_at>=? OR q.answered_at>=? OR q.closed_at>=? OR q.overturned_at>=? OR q.filed_at>=?)`,
-        )
-        values.push(input.since, input.since, input.since, input.since, input.since)
+      const rows = (
+        await questions.read({
+          read: 'rulings',
+          kind: input.kind,
+          ...(input.since ? { since: input.since } : {}),
+        })
+      ).items
+      for (const row of rows) {
+        const cursor = field(row, 'workflow_cursor_id')
+        if (typeof cursor === 'string' && field(row, 'workflow_slug') == null)
+          throw new Error(
+            `question ${String(field(row, 'number'))} names workflow stage ${cursor}, which the hosted record does not return; run ${PLATFORM_NAME} record push, then retry`,
+          )
       }
-      if (input.after !== null) {
-        clauses.push('q.change_seq>? AND q.change_seq<=?')
-        values.push(String(input.after), String(input.cursor))
-      }
-      const rows = database
-        .query<LocalQuestion, string[]>(
-          `SELECT q.number,q.record_id,q.run_record_id,r.number AS run_number,
-                  q.workflow_cursor_record_id,q.workflow_key,q.workflow_task_record_id,
-                  r.repo run_project,r.session_id run_session,
-                  q.asked_at,q.question,q.answer,q.answer_basis,q.answered_at,
-                  q.kind,q.jev_model,q.jev_pick,q.jev_probabilities,q.jev_agreed,
-                  q.jev_question_version,q.jev_fits,q.jev_order_flipped,
-                  q.answered_by,q.answered_by_name,q.asked_via,q.answerer_kind,q.answer_channel,
-                  q.closed_at,q.close_reason,q.overturned_at,q.overturned_by,q.overturned_by_name,
-                  q.overturn_reason,q.replacement,q.filed_as,q.filed_ref,q.filed_record_id,
-                  q.filed_label,q.filed_at
-           FROM question q LEFT JOIN run r ON r.record_id=q.run_record_id
-          ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''} ORDER BY q.number`,
-        )
-        .all(...values)
-      const stages = await stagesForQuestionRows(read, rows)
-      return rows.map((q) => {
-        const stage = q.workflow_cursor_record_id
-          ? stages.get(q.workflow_cursor_record_id)
-          : undefined
-        const {
-          run_project: _runProject,
-          run_session: _runSession,
-          workflow_cursor_record_id: _workflowCursorRecordId,
-          ...row
-        } = q
-        return {
-          ...row,
-          workflow_cursor_id: q.workflow_cursor_record_id,
-          project: (q.run_project as string | null) ?? stage?.projectName ?? null,
-          workflow_slug: stage?.workflow ?? null,
-          mode_slug: stage?.mode ?? null,
-          session_id: (q.run_session as string | null) ?? stage?.sessionId ?? null,
-        }
-      })
+      return rows as TaskFlowRulingRow[]
     },
   }
 }
 
-function rulingFileReads(database: Database, read: StageRead) {
+const RULING_FILE_FIELDS = [
+  'record_id',
+  'number',
+  'run_record_id',
+  'root_id',
+  'workflow_cursor_record_id',
+  'workflow_cursor_number',
+  'workflow_slug',
+  'mode_slug',
+  'workflow_owner',
+  'workflow_updated_at',
+  'question',
+  'answer',
+  'answer_basis',
+  'answered_at',
+  'answered_by',
+  'answered_by_name',
+  'answerer_kind',
+  'overturned_at',
+  'overturned_by',
+  'overturned_by_name',
+  'replacement',
+  'filed_as',
+  'filed_ref',
+  'filed_record_id',
+  'filed_label',
+  'filed_at',
+  'repo',
+  'cwd',
+  'launch_key',
+  'project_path',
+  'args',
+] as const
+
+function detailReads(questions: QuestionStore) {
   return {
     async rulingFileQuestion(questionId: string): Promise<TaskFlowRulingFileRow | null> {
-      const q = database
-        .query<LocalQuestion & Record<string, unknown>, [string]>(
-          `SELECT q.number,q.record_id,q.run_record_id,COALESCE(r.parent_run_record_id,r.record_id) root_id,
-                  q.workflow_cursor_record_id,q.question,q.answer,q.answer_basis,q.answered_at,
-                  q.answered_by,q.answered_by_name,q.answerer_kind,q.overturned_at,q.overturned_by,
-                  q.overturned_by_name,q.replacement,q.filed_as,q.filed_ref,q.filed_record_id,
-                  q.filed_label,q.filed_at,
-                  q.workflow_key,
-                r.repo run_repo,r.cwd run_cwd,${questionTaskHolderSql('q', 'r')} launch_key
-           FROM question q LEFT JOIN run r ON r.record_id=q.run_record_id WHERE q.record_id=?`,
-        )
-        .get(questionId)
-      if (!q) return null
-      const stage = (await questionStage(read, q))?.stage
-      const project = stage
-        ? database
-            .query<{ path: string }, [string]>(
-              'SELECT path FROM project WHERE record_id=? AND retired_at IS NULL',
-            )
-            .get(stage.projectId)
-        : null
-      const { run_repo: _runRepo, run_cwd: _runCwd, workflow_key: _workflowKey, ...row } = q
-      return {
-        ...(row as unknown as TaskFlowRulingFileRow),
-        workflow_cursor_number: stage?.number ?? null,
-        workflow_slug: stage?.workflow ?? null,
-        mode_slug: stage?.mode ?? null,
-        workflow_owner: stage?.sessionId ?? null,
-        workflow_updated_at: stage?.updatedAt ?? null,
-        repo: (q.run_repo as string | null) ?? stage?.projectName ?? null,
-        cwd: (q.run_cwd as string | null) ?? project?.path ?? null,
-        project_path: project?.path ?? null,
-        args: stage ? JSON.stringify(stage.arguments) : null,
-      }
+      const row = checkedDetail(
+        (await questions.read({ read: 'by-id', ids: [questionId] })).items[0],
+      )
+      return row ? fields<TaskFlowRulingFileRow>(row, RULING_FILE_FIELDS) : null
     },
-  }
-}
 
-function rulingMutationReads(database: Database, read: StageRead) {
-  return {
     async questionCloseFacts(questionId: string): Promise<TaskFlowQuestionCloseRow | null> {
-      const q = database
-        .query<LocalQuestion & TaskFlowQuestionCloseRow, [string]>(
-          `SELECT q.answered_at,q.closed_at,q.run_record_id,q.workflow_cursor_record_id,
-                COALESCE(owner.parent_run_record_id,owner.record_id) root_id,
-                (SELECT latest.status FROM run latest
-                  WHERE latest.record_id=COALESCE(owner.parent_run_record_id,owner.record_id)
-                     OR latest.parent_run_record_id=COALESCE(owner.parent_run_record_id,owner.record_id)
-                  ORDER BY latest.turn DESC,latest.number DESC LIMIT 1) latest_status,
-                q.number,q.record_id
-           FROM question q LEFT JOIN run owner ON owner.record_id=q.run_record_id WHERE q.record_id=?`,
-        )
-        .get(questionId)
-      if (!q) return null
-      const { number: _number, record_id: _recordId, ...row } = q
-      return { ...row, cursor_state: (await questionStage(read, q))?.stage.state ?? null }
+      const row = checkedDetail(
+        (await questions.read({ read: 'by-id', ids: [questionId] })).items[0],
+      )
+      return row
+        ? fields<TaskFlowQuestionCloseRow>(row, [
+            'answered_at',
+            'closed_at',
+            'run_record_id',
+            'workflow_cursor_record_id',
+            'cursor_state',
+            'root_id',
+            'latest_status',
+          ])
+        : null
     },
 
     async overturnRulingRow(questionId: string): Promise<TaskFlowOverturnRulingRow | null> {
-      const q = database
-        .query<LocalQuestion & TaskFlowOverturnRulingRow, [string]>(
-          `SELECT q.number,q.record_id,q.run_record_id,COALESCE(owner.parent_run_record_id,owner.record_id) root_id,
-                q.workflow_cursor_record_id,q.answered_at,q.overturned_at,q.overturned_by,q.overturned_by_name,
-                q.overturn_reason,q.replacement
-           FROM question q LEFT JOIN run owner ON owner.record_id=q.run_record_id WHERE q.record_id=?`,
-        )
-        .get(questionId)
-      if (!q) return null
-      const stage = (await questionStage(read, q))?.stage
-      return {
-        ...q,
-        workflow_owner: stage?.sessionId ?? null,
-        workflow_updated_at: stage?.updatedAt ?? null,
-      }
+      const row = checkedDetail(
+        (await questions.read({ read: 'by-id', ids: [questionId] })).items[0],
+      )
+      return row
+        ? fields<TaskFlowOverturnRulingRow>(row, [
+            'record_id',
+            'number',
+            'run_record_id',
+            'root_id',
+            'workflow_cursor_record_id',
+            'workflow_owner',
+            'workflow_updated_at',
+            'answered_at',
+            'overturned_at',
+            'overturned_by',
+            'overturned_by_name',
+            'overturn_reason',
+            'replacement',
+          ])
+        : null
     },
   }
 }
 
-function questionLinkReads(database: Database, read: StageRead) {
-  return {
-    async pendingQuestionTaskLinks() {
-      const rows = database
-        .query<LocalQuestion, []>(
-          `SELECT * FROM question q
-          WHERE q.workflow_task_record_id IS NULL AND q.workflow_key IS NOT NULL`,
-        )
-        .all()
-      const stages = await stagesForQuestionRows(read, rows)
-      return rows
-        .map((q) => {
-          const stage = q.workflow_cursor_record_id
-            ? stages.get(q.workflow_cursor_record_id)
-            : undefined
-          return stage
-            ? { id: q.record_id, task_key: q.workflow_key as string, project: stage.projectName! }
-            : null
-        })
-        .filter((row) => row !== null)
-    },
-
-    async linkedQuestionTaskReferences() {
-      const rows = database
-        .query<LocalQuestion, []>(
-          'SELECT * FROM question q WHERE q.workflow_task_record_id IS NOT NULL',
-        )
-        .all()
-      const stages = await stagesForQuestionRows(read, rows)
-      return rows
-        .map((q) => {
-          const stage = q.workflow_cursor_record_id
-            ? stages.get(q.workflow_cursor_record_id)
-            : undefined
-          return stage
-            ? { task_record_id: q.workflow_task_record_id as string, project: stage.projectName! }
-            : null
-        })
-        .filter((row) => row !== null)
-    },
-  }
-}
-
-function taskRulingReads(database: Database, read: StageRead) {
+function aggregateReads(questions: QuestionStore, read: StageRead) {
   return {
     async taskRulingRows(
       project: string,
       taskRecordId: string,
       limit: number,
     ): Promise<TaskFlowTaskRulingRow[]> {
-      const runRows = database
-        .query<TaskFlowTaskRulingRow & { effective_at: string }, [string, string]>(
-          `SELECT q.number question_id,q.record_id question_record_id,root.record_id run_record_id,NULL workflow_cursor_record_id,
-                q.question,q.answer,q.answer_basis,q.answered_at,q.answerer_kind,q.answered_by_name,
-                q.overturned_at,q.overturned_by_name,q.replacement,COALESCE(q.overturned_at,q.answered_at) effective_at,0 candidate_count
-           FROM question q JOIN run owner ON owner.record_id=q.run_record_id
-           JOIN run root ON root.record_id=COALESCE(owner.parent_run_record_id,owner.record_id)
-          WHERE root.project_record_id=(SELECT record_id FROM project WHERE name=?) AND root.task_record_id=?
-            AND q.answered_at IS NOT NULL AND NOT (q.overturned_at IS NOT NULL AND q.replacement IS NULL)`,
-        )
-        .all(project, taskRecordId)
-      const workflowRows = database
-        .query<LocalQuestion & TaskFlowTaskRulingRow & { effective_at: string }, [string]>(
-          `SELECT q.number question_id,q.record_id question_record_id,NULL run_record_id,q.workflow_cursor_record_id,
-                q.question,q.answer,q.answer_basis,q.answered_at,q.answerer_kind,q.answered_by_name,
-                q.overturned_at,q.overturned_by_name,q.replacement,COALESCE(q.overturned_at,q.answered_at) effective_at,
-                0 candidate_count
-           FROM question q WHERE q.workflow_task_record_id=? AND q.answered_at IS NOT NULL
-            AND NOT (q.overturned_at IS NOT NULL AND q.replacement IS NULL)`,
-        )
-        .all(taskRecordId)
-      const projectId = read.projectId(project)
-      const stages = await stagesForQuestionRows(read, workflowRows)
-      const matchingWorkflow = [] as Array<TaskFlowTaskRulingRow & { effective_at: string }>
-      for (const row of workflowRows) {
-        const stage = row.workflow_cursor_record_id
-          ? stages.get(row.workflow_cursor_record_id)
-          : null
-        if (stage?.projectId === projectId) matchingWorkflow.push(row)
-      }
-      const rows = [...runRows, ...matchingWorkflow]
-      const candidateCount = rows.length
-      return rows
-        .sort(
-          (a, b) => b.effective_at.localeCompare(a.effective_at) || b.question_id - a.question_id,
-        )
-        .slice(0, limit)
-        .map(({ effective_at: _effectiveAt, ...row }) => ({
-          ...row,
-          candidate_count: candidateCount,
-        }))
+      return (
+        await questions.read({
+          read: 'task-rulings',
+          projectId: read.projectId(project),
+          taskId: taskRecordId,
+          limit,
+        })
+      ).items as TaskFlowTaskRulingRow[]
     },
-  }
-}
 
-function questionProjectReads(database: Database, read: StageRead) {
-  return {
     async localQuestionProjects() {
-      const rows = database
-        .query<LocalQuestion & { run_project: string | null }, []>(
-          `SELECT q.*,run_project.name run_project FROM question q
-         LEFT JOIN run r ON r.record_id=q.run_record_id
-         LEFT JOIN project run_project ON run_project.record_id=r.project_record_id
-        WHERE q.run_record_id IS NULL OR EXISTS (
-          SELECT 1 FROM outbox o WHERE o.kind='run' AND o.row_id=r.record_id AND o.synced_at IS NOT NULL
-        )`,
-        )
-        .all()
-      const stages = await stagesForQuestionRows(read, rows)
-      return rows.map((q) => ({
-        project:
-          q.run_project ??
-          (q.workflow_cursor_record_id
-            ? stages.get(q.workflow_cursor_record_id)?.projectName
-            : null) ??
-          null,
-      }))
+      return (await questions.read({ read: 'projects' })).items as Array<{
+        project: string | null
+      }>
     },
   }
 }
 
 export function recordQuestionReads(database: Database, read: StageRead) {
+  const questions = questionStore(database)
   return {
-    ...listedStageReads(database, read),
-    ...waitingStageReads(database, read),
-    ...sessionStageReads(database, read),
-    ...inboxStageReads(database, read),
-    ...rulingListReads(database, read),
-    ...rulingFileReads(database, read),
-    ...rulingMutationReads(database, read),
-    ...questionLinkReads(database, read),
-    ...taskRulingReads(database, read),
-    ...questionProjectReads(database, read),
+    ...stageReads(questions, read),
+    ...sessionReads(questions, read),
+    ...rulingListReads(questions),
+    ...detailReads(questions),
+    ...aggregateReads(questions, read),
   }
 }

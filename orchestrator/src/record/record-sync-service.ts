@@ -15,10 +15,6 @@ import {
   testFlake as testFlakeRecord,
 } from '../../../shared/record/schema-landing.ts'
 import {
-  hostedQuestionWins,
-  question as questionRecord,
-} from '../../../shared/record/schema-question.ts'
-import {
   reviewFinding as reviewFindingRecord,
   reviewLens as reviewLensRecord,
   reviewRead as reviewReadRecord,
@@ -40,8 +36,6 @@ import {
 } from './record-evidence-references.ts'
 import { assertRecordPayloadColumns } from './record-payload-columns.ts'
 import { recordPool } from './record-pool.ts'
-import { pushQuestionAudits } from './record-question-audit.ts'
-import { allocateQuestionNumber } from './record-question-number.ts'
 import { typedQuestionRecordValues } from './record-question-values.ts'
 import { pushReleaseRecord } from './record-release-sync.ts'
 import { nullableReviewLensValues } from './record-review-lens-values.ts'
@@ -521,6 +515,10 @@ export function testFlakeValues(row: Payload) {
   }
 }
 
+export const RETIRED_OUTBOX_KINDS = new Set(['question'] as const)
+export const RETIRED_OUTBOX_REASON =
+  'this outbox kind no longer syncs by outbox; question rows are written to the record directly'
+
 const recordKinds = {
   run: {
     ...OUTBOX_PAYLOAD_CONTRACTS.run,
@@ -532,77 +530,6 @@ const recordKinds = {
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
         await pushScore(tx, row)
-      }),
-  },
-  question: {
-    ...OUTBOX_PAYLOAD_CONTRACTS.question,
-    push: async (
-      postgres: SQL,
-      row: Payload,
-      principal: RecordPrincipal,
-      projectIds?: ProjectResolutionCache,
-    ) =>
-      postgres.begin(async (tx) => {
-        await bindPrincipal(tx, principal)
-        const workflowTaskId = await hostedTaskIdForReference(tx, principal.spaceId, {
-          id: nullableUuid(row.workflowTaskId, 'question.workflowTaskId'),
-          key: nullableString(row.workflowKey),
-        })
-        const projectId = await projectRecordId(tx, row, principal, projectIds)
-        const incomingValues = questionValues(row, projectId, workflowTaskId)
-        const existingOwned = await existingEvidenceOwned(
-          tx,
-          'question',
-          incomingValues.id,
-          incomingValues.machineId,
-          principal,
-          { scope: 'machine' },
-        )
-        const existing = existingOwned
-          ? (
-              (await tx`
-              SELECT number FROM question WHERE id=${incomingValues.id}::uuid FOR UPDATE
-            `) as Array<{ number: number | string | null }>
-            )[0]
-          : undefined
-        const number =
-          !existingOwned || existing?.number == null
-            ? await allocateQuestionNumber(tx, principal.spaceId)
-            : Number(existing.number)
-        if (existingOwned && existing?.number == null) {
-          await tx`
-            UPDATE question SET number=${number}
-            WHERE id=${incomingValues.id}::uuid AND number IS NULL
-          `
-        }
-        const values = { ...incomingValues, number }
-        const {
-          id: _id,
-          createdAt: _createdAt,
-          number: _number,
-          workflowTaskId: _workflowTaskId,
-          ...existingUpdates
-        } = values
-        const updates = {
-          ...existingUpdates,
-          number: drizzleSql`COALESCE(excluded.number, ${questionRecord.number})`,
-          workflowTaskId: drizzleSql`COALESCE(excluded.workflow_task_id, ${questionRecord.workflowTaskId})`,
-        }
-        const incomingQuestionWins = hostedQuestionWins(
-          drizzleSql`excluded.revision`,
-          questionRecord.revision,
-        )
-        const written = await drizzle({ client: tx })
-          .insert(questionRecord)
-          .values(values)
-          .onConflictDoUpdate({
-            target: questionRecord.id,
-            set: updates,
-            setWhere: and(eq(questionRecord.machineId, values.machineId), incomingQuestionWins),
-          })
-          .returning({ id: questionRecord.id })
-        requireOwnedUpsert(written, 'question', values.id, existingOwned)
-        await pushQuestionAudits(tx, row, values.id, values.spaceId)
       }),
   },
   ...taskFlowRecordKinds(existingEvidenceOwned, requireOwnedUpsert),

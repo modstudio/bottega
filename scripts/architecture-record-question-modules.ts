@@ -11,6 +11,17 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 })
 
 export const recordQuestionModules: RecordModule[] = [
+  module('orchestrator/src/runtime/runtime-registration.ts', [
+    './standard-calibration.ts',
+    './standard-question-run-pusher.ts',
+    './store-hooks.ts',
+    './standard-transports.ts',
+  ]),
+  module('orchestrator/src/runtime/standard-question-run-pusher.ts', [
+    '../../../shared/brand.ts',
+    '../question-store/question-run-pusher.ts',
+    '../record/record-sync.ts',
+  ]),
   module('orchestrator/src/record/record-question-contract.ts', [
     'zod',
     '../../../shared/brand.ts',
@@ -18,6 +29,7 @@ export const recordQuestionModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-api-client-question.ts', [
     './record-api-client-paths.ts',
+    './record-auth.ts',
     './record-question-contract.ts',
   ]),
   module('orchestrator/src/record/record-api-question.ts', [
@@ -49,32 +61,33 @@ export const recordQuestionModules: RecordModule[] = [
   ]),
   module('orchestrator/src/question-store/question-store.ts', [
     'bun:sqlite',
+    '../record/record-api-client.ts',
+    '../record/record-write-authority.ts',
+    './question-store-record.ts',
     './question-store-sqlite.ts',
     './question-store-types.ts',
   ]),
-  module('orchestrator/src/question-store/question-store-record-factory.ts', [
-    'bun:sqlite',
-    '../../../shared/brand.ts',
-    '../record/record-api-client-question.ts',
-    '../record/record-sync.ts',
-    './question-store-record.ts',
-    './question-store-types.ts',
-  ]),
+  module('orchestrator/src/question-store/question-run-pusher.ts', ['bun:sqlite']),
   module('orchestrator/src/question-store/question-store-sql.ts', []),
   module('orchestrator/src/question-store/question-store-sqlite.ts', [
     'bun:sqlite',
     '../database/entity-number.ts',
     '../record/record-question-contract.ts',
-    '../run/question-outbox.ts',
     './question-store-sqlite-reads.ts',
     './question-store-types.ts',
   ]),
   module('orchestrator/src/question-store/question-store-record.ts', [
     'bun:sqlite',
-    '../../../shared/brand.ts',
+    '../../../shared/record-space-membership.ts',
     '../../../shared/session-liveness.ts',
+    '../project/project-read.ts',
     '../record/record-api-client-question.ts',
+    '../record/record-api-client-paths.ts',
+    '../record/record-auth.ts',
+    '../record/record-project-destination-client.ts',
+    '../record/record-space-cardinality.ts',
     '../record/record-question-contract.ts',
+    './question-run-pusher.ts',
     './question-store-types.ts',
   ]),
   module('orchestrator/src/question-store/question-store-types.ts', [
@@ -87,7 +100,6 @@ export const recordQuestionModules: RecordModule[] = [
     '../../../shared/record-id.ts',
     '../record/machine-identity.ts',
     '../record/record-question-contract.ts',
-    '../run/question-outbox.ts',
     './question-store.ts',
   ]),
   module('orchestrator/src/question-store/question-store-read.ts', [
@@ -108,6 +120,7 @@ export const recordQuestionModules: RecordModule[] = [
     '../record/record-task-flow-contract.ts',
     '../workflow/task-flow-store-record-stage-row.ts',
     '../workflow/task-flow-store-types.ts',
-    './question-store-sql.ts',
+    './question-store.ts',
+    './question-store-types.ts',
   ]),
 ]

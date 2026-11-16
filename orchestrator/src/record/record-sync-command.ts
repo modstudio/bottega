@@ -140,7 +140,6 @@ export async function syncCommand(
     presentation.log(
       `backfill enqueued ${result.backfill.enqueued}, refreshed-links ${result.backfill.refreshedLinks}, refreshed-numbers ${result.backfill.refreshedNumbers}, refreshed-roots ${result.backfill.refreshedRoots}, skipped-released ${result.backfill.skippedReleased}, skipped-live ${result.backfill.skippedLive}`,
     )
-    presentation.log(`question backfill enqueued ${result.backfill.questions.enqueued}`)
     presentation.log(`brief injection backfill enqueued ${result.backfill.briefInjections}`)
     presentation.log(`context review backfill enqueued ${result.backfill.contextReviews}`)
     presentation.log(`hook emission backfill enqueued ${result.backfill.hookEmissions}`)
@@ -159,6 +158,7 @@ export async function syncCommand(
     return
   }
   presentation.log(`pushed ${result.pushed}, failed ${result.failed}, pending ${result.pending}`)
+  if (result.retired) presentation.log(`retired ${result.retired} question outbox rows`)
   if (result.routingPool) presentation.log(routingPoolLine(result.routingPool))
   logProjectRegister(result.projectRegister, presentation)
   logRecordCacheCounts(result, presentation)

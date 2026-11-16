@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { projectByName, projectByRecordId, projects } from '../project/project-read.ts'
+import { questionRulings } from '../question-store/question-store-read.ts'
 import { recordQuestionReads } from '../question-store/question-store-record-task-flow-compat.ts'
 import { RecordApiRequestError, recordApiClient } from '../record/record-api-client.ts'
 import type {
@@ -573,7 +574,18 @@ class RecordTaskFlowReadStore {
     return this.questions.overturnRulingRow(questionId)
   }
   async pendingTaskLinks(table: 'workflow_cursor' | 'question') {
-    if (table === 'question') return this.questions.pendingQuestionTaskLinks()
+    if (table === 'question')
+      return (await questionRulings(this.database, { kind: 'workflow' })).items.flatMap((row) =>
+        row.workflow_task_record_id == null && row.workflow_key && row.project
+          ? [
+              {
+                id: String(row.record_id),
+                task_key: String(row.workflow_key),
+                project: String(row.project),
+              },
+            ]
+          : [],
+      )
     return (await this.listEveryDestination({ unlinked: true }))
       .filter(({ stage }) => Boolean(stage.workflowKey && stage.projectName))
       .map(({ stage }) => ({
@@ -583,7 +595,17 @@ class RecordTaskFlowReadStore {
       }))
   }
   async linkedTaskReferences(table: 'workflow_cursor' | 'question') {
-    if (table === 'question') return this.questions.linkedQuestionTaskReferences()
+    if (table === 'question')
+      return (await questionRulings(this.database, { kind: 'workflow' })).items.flatMap((row) =>
+        row.workflow_task_record_id && row.project
+          ? [
+              {
+                task_record_id: String(row.workflow_task_record_id),
+                project: String(row.project),
+              },
+            ]
+          : [],
+      )
     return (await this.listEveryDestination({ linked: true })).map(({ stage, flow }) => ({
       task_record_id: required(flow.taskId, 'task reference'),
       project: required(stage.projectName, 'project name'),

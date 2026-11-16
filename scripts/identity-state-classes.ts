@@ -28,6 +28,8 @@ const DEV_2234_MACHINE_RULING =
   'Shmuel Barkin, DEV-2234 ruling 6: planned tables split by who acts; machine resources are machine'
 const QUESTION_REFERENCE_MACHINE_RULING =
   'Shmuel Barkin, q6436: local question references are machine state'
+const QUESTION_DELIVERY_PENDING_MACHINE_RULING =
+  'Shmuel Barkin, chat 2026-11-16: pending question delivery is machine state'
 
 const synced = (
   store: StateClassStore,
@@ -282,6 +284,12 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
     'question_delivery',
     "This machine's question delivery state",
     QUESTION_REFERENCE_MACHINE_RULING,
+  ),
+  machine(
+    'orchestrator',
+    'question_delivery_pending',
+    "This machine's pending question delivery state",
+    QUESTION_DELIVERY_PENDING_MACHINE_RULING,
   ),
   hosted(
     'orchestrator',

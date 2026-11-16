@@ -641,6 +641,10 @@ realPostgres('RLS proof against real Postgres', () => {
     recordSession.setToken(tokenB)
     const healthy = await diagnoseRecord({ recordUrl: actorUrl!, migrateUrl: ownerUrl! })
     expect(recordDoctorExitCode(healthy), JSON.stringify(healthy)).toBe(0)
+    // The active space holds a seeded run, so a zero total means the space filter bound nothing.
+    expect(healthy.find((check) => check.name === 'runs with no started_by')?.detail).toMatch(
+      /^\d+\/[1-9]\d* /,
+    )
     succeeds('postgres', 'postgres', 'ALTER SCHEMA public OWNER TO postgres;')
     try {
       const unhealthy = await diagnoseRecord({ recordUrl: actorUrl!, migrateUrl: ownerUrl! })

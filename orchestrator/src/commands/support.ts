@@ -61,12 +61,10 @@ export function parseChangedAfter(input: {
   agent?: string
   live?: boolean
   unscored?: boolean
-}): number | null {
+}): string | null {
   const { value } = input
   if (value === undefined) return null
-  const parsed = Number(value)
-  if (!Number.isSafeInteger(parsed) || parsed < 0)
-    throw new Error('--changed-after must be a non-negative integer')
+  if (!value) throw new Error('--changed-after must be a non-empty cursor')
   if (input.since) throw new Error('--since and --changed-after cannot be combined')
   if (input.hasRequestedRuns)
     throw new Error(`${PLATFORM_SLUG} run list --id and --changed-after cannot be combined`)
@@ -78,7 +76,7 @@ export function parseChangedAfter(input: {
   if (input.agent !== undefined) throw new Error('--agent and --changed-after cannot be combined')
   if (input.live) throw new Error('--live and --changed-after cannot be combined')
   if (input.unscored) throw new Error('--unscored and --changed-after cannot be combined')
-  return parsed
+  return value
 }
 
 /** Extracts positional values from Commander's variadic action callback. */

@@ -12,11 +12,6 @@ export const OUTBOX_KIND_SOURCES: Readonly<
 > = {
   run: { source: 'run' },
   score: { source: 'score' },
-  question: {
-    source: 'question',
-    carries: ['question_mutation_audit'],
-    reason: 'question payloads fold in mutation audit rows that are not enqueued themselves',
-  },
   task_flow: { source: 'task_flow' },
   task_flow_stage: { source: 'workflow_cursor' },
   review: { source: 'review' },

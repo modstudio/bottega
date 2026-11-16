@@ -30,7 +30,6 @@ import type {
   TaskFlowPendingTaskLinkRow,
   TaskFlowProjectionRow,
   TaskFlowQuestionCloseRow,
-  TaskFlowQuestionOutboxRow,
   TaskFlowRulingFileRow,
   TaskFlowRulingRow,
   TaskFlowStageCursorRow,
@@ -49,7 +48,6 @@ export type {
   TaskFlowOpenSessionStageRow,
   TaskFlowOverturnRulingRow,
   TaskFlowPendingTaskLinkRow,
-  TaskFlowQuestionOutboxRow,
   TaskFlowRulingFileRow,
   TaskFlowWaitingQuestionRow,
 } from './task-flow-store-types.ts'
@@ -191,7 +189,6 @@ interface TaskFlowQueries {
     cursor: number | null
   }): TaskFlowRulingRow[]
   rulingFileQuestion(questionId: string): TaskFlowRulingFileRow | null
-  questionOutboxRow(questionId: string): TaskFlowQuestionOutboxRow | null
   questionCloseFacts(questionId: string): TaskFlowQuestionCloseRow | null
   overturnRulingRow(questionId: string): TaskFlowOverturnRulingRow | null
   unlinkedWorkflowQuestionIds(project: string, workflowKey: string): string[]

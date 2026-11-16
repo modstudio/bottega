@@ -2,6 +2,7 @@ import { BOARD_READER_EXTERNAL_IDENTIFIERS } from './identity-board-reader-manif
 import { INFRASTRUCTURE_IDENTITIES } from './identity-infrastructure-manifest.ts'
 import type { DisplayLabel, KeyManifests, KeyStore, ManifestColumn } from './identity-inventory.ts'
 import { PATCH_IDENTIFIERS } from './identity-patch-manifest.ts'
+import { QUESTION_UUID_COLUMNS } from './identity-question-manifest.ts'
 import { RECORD_CACHE_IDENTITIES } from './identity-record-cache-manifest.ts'
 import { ROUTING_POOL_IDENTITY } from './identity-routing-pool-manifest.ts'
 import { RULED_REFERENCES } from './identity-ruled-reference-manifest.ts'
@@ -15,7 +16,6 @@ import { UNDECLARED_REFERENCES } from './identity-undeclared-reference-manifest.
 
 const manifest = (store: KeyStore, reason: string, columns: readonly string[]): ManifestColumn[] =>
   columns.map((column) => ({ store, column, reason }))
-
 const INTEGER_VALUES: readonly ManifestColumn[] = [
   ...manifest('hosted', 'source question display number', ['context_item.question_number']),
   ...manifest('orchestrator', 'source question display number', ['context_item.question_number']),
@@ -825,16 +825,8 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'project_lens_profile_revision.prior_selected_version_id',
     'project_lens_profile_revision.selection_record_id',
     'project_lens_profile_revision.space_id',
-    'question.record_id',
     'pull_request_ci.record_id',
     'pull_request_ci.project_record_id',
-    'question.run_record_id',
-    'question.filed_record_id',
-    'question_delivery.record_id',
-    'question_delivery.question_record_id',
-    'question_delivery.run_record_id',
-    'question_mutation_audit.record_id',
-    'question_mutation_audit.question_record_id',
     'release_ledger.record_id',
     'session_board_hold.message_record_id',
     'session_board_hold.record_id',
@@ -919,6 +911,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'workflow_version.workflow_record_id',
     'workflow_version.space_id',
   ]),
+  ...QUESTION_UUID_COLUMNS,
   ...TYPED_QUESTION_IDENTITY.uuids,
   ...ROUTING_POOL_IDENTITY.uuids,
   ...manifest('hub', 'owned or referenced UUID', [
@@ -978,9 +971,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'landing_triage_snapshot.review_ids',
   ]),
 ]
-
 const SYNCED_SOURCES = SYNCED_SOURCE_DECLARATIONS
-
 export const KEY_MANIFESTS: KeyManifests = {
   values: INTEGER_VALUES,
   displayLabels: DISPLAY_LABELS,

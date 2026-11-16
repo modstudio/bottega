@@ -38,6 +38,7 @@ export type RecordSyncResult = {
   pushed: number
   failed: number
   pending: number
+  retired?: number
   configured: boolean
   routingPool?: RoutingPoolPullResult
   projectRegister?: ProjectRegisterPullResult
@@ -63,7 +64,6 @@ export type RecordSyncResult = {
     briefInjections: number
     contextReviews: number
     hookEmissions: number
-    questions: { enqueued: number }
     releases: ReturnType<typeof backfillReleaseRecords>
   }
 }

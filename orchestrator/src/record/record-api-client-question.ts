@@ -2,6 +2,7 @@
 /** Calls the hosted question routes and validates write results. */
 
 import type { RecordRequestDestination, RecordWriteDestination } from './record-api-client-paths.ts'
+import type { RecordIdentity } from './record-auth.ts'
 import {
   type QuestionIntent,
   type QuestionReadInput,
@@ -16,6 +17,7 @@ type Request = <T>(
 ) => Promise<T>
 
 export type RecordQuestionClient = {
+  whoami?(): Promise<RecordIdentity>
   readQuestions?(
     input: QuestionReadInput,
     destination?: RecordRequestDestination,

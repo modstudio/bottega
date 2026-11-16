@@ -17,7 +17,6 @@ export const runStopBoundarySpecs = [
       './stop-close-out-decision.ts',
       './stopped-worktree-decision.ts',
       './question-vocabulary.ts',
-      './question-outbox.ts',
       './question-close.ts',
       './question-open.ts',
       './question-delivery-pending.ts',

@@ -86,7 +86,7 @@ describe('Jev worker-question apply path', () => {
       delivery_pending_at: null,
     })
     expect(db().query('SELECT count(*) count FROM outbox WHERE row_id=?').get(recordId)).toEqual({
-      count: 1,
+      count: 0,
     })
     expect(
       db().query("SELECT count(*) count FROM run_mutation_audit WHERE action='answer'").get(),
@@ -410,7 +410,7 @@ describe('Jev worker-question apply path', () => {
       jev_error: 'Error: rulings unavailable',
     })
     expect(db().query('SELECT count(*) count FROM outbox WHERE row_id=?').get(recordId)).toEqual({
-      count: 1,
+      count: 0,
     })
   })
 })

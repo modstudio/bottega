@@ -69,7 +69,6 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       './question-delivery.ts',
       './question-delivery-pending.ts',
       './question-open.ts',
-      './question-outbox.ts',
       './question-vocabulary.ts',
       './ruling-attribution.ts',
       '../git/git-environment.ts',

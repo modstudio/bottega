@@ -1,11 +1,20 @@
 import type { Database } from 'bun:sqlite'
-import { expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
+import { installRecordApiClient } from '../../test/fixtures/record-api.ts'
+import { guardHostedTables } from '../database/hosted-table-guard.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import type { RecordApiClient } from '../record/record-api-client.ts'
 import type { QuestionWriteBody } from '../record/record-question-contract.ts'
+import {
+  clearQuestionDeliveryPending,
+  markQuestionDeliveryPending,
+  pendingQuestionIds,
+} from '../run/question-delivery-pending.ts'
+import { registerQuestionRunPusher } from './question-run-pusher.ts'
 import { questionStore } from './question-store.ts'
-import { recordQuestionStore } from './question-store-record-factory.ts'
+import { RecordQuestionStore } from './question-store-record.ts'
 import type { QuestionStore } from './question-store-types.ts'
 
 const STAMP = '2026-11-15T12:00:00.000Z'
@@ -16,8 +25,30 @@ const RUN_ID = '00000000-0000-4000-8000-000000000104'
 const WORKFLOW_QUESTION_ID = '00000000-0000-4000-8000-000000000105'
 const RUN_QUESTION_ID = '00000000-0000-4000-8000-000000000106'
 const EXCLUDED_QUESTION_ID = '00000000-0000-4000-8000-000000000108'
+const SPACE_ID = '00000000-0000-4000-8000-000000000109'
+const OTHER_SPACE_ID = '00000000-0000-4000-8000-000000000110'
+let pushedRuns: string[]
+
+beforeEach(() => {
+  pushedRuns = []
+  registerQuestionRunPusher(async (_database, runId) => {
+    pushedRuns.push(runId)
+  })
+})
+
+afterEach(() => {
+  registerQuestionRunPusher(async () => {
+    throw new Error('question run pusher test stub used outside a test')
+  })
+})
 type QuestionSnapshot = QuestionWriteBody['question']
 const field = (row: object, key: string): unknown => (row as Record<string, unknown>)[key]
+const whoami = async () => ({
+  user: { id: newRecordId() },
+  activeSpaceId: SPACE_ID,
+  personalSpaceId: SPACE_ID,
+  memberships: [{ space_id: SPACE_ID, name: 'Fixture', slug: 'fixture', permission: 'write' }],
+})
 
 function snapshot(overrides: Partial<QuestionSnapshot> = {}): QuestionSnapshot {
   return {
@@ -84,7 +115,7 @@ function seedOwners(database: Database): void {
   database.exec('PRAGMA foreign_keys=OFF')
   database
     .query('INSERT INTO project(record_id,name,path,stack,settings) VALUES (?,?,?,?,?)')
-    .run(PROJECT_ID, 'question-fixture', '/fixture', 'bun', '{}')
+    .run(PROJECT_ID, 'question-fixture', '/fixture', 'bun', '{"space":"fixture"}')
   database
     .query(`INSERT INTO workflow_cursor
     (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,
@@ -282,11 +313,10 @@ test('SQLite and record question adapters satisfy every shared read and write co
   const hostedStore = questionStore(hosted)
   await questionStoreContract(questionStore(local), local)
   await questionStoreContract(
-    recordQuestionStore({
+    new RecordQuestionStore({
       database: local,
-      destinationSpaceId: newRecordId(),
-      pushRun: async () => {},
       client: {
+        whoami,
         readQuestions: async (input) =>
           (await hostedStore.read(input)) as { items: Record<string, unknown>[] },
         writeQuestion: (intent, input) => hostedStore.write(intent, input),
@@ -303,13 +333,13 @@ test('only the record adapter passes a rulings feed cursor through', async () =>
   await expect(
     questionStore(database).read({ read: 'rulings', kind: 'all', changedAfter: 'cursor-7' }),
   ).rejects.toThrow('changedAfter is served only on a hosted install')
-  const store = recordQuestionStore({
+  const store = new RecordQuestionStore({
     database,
-    destinationSpaceId: newRecordId(),
     client: {
-      readQuestions: async (input) => ({
+      whoami,
+      readQuestions: async (_input) => ({
         items: [{ number: 1, record_id: WORKFLOW_QUESTION_ID }],
-        cursor: input.changedAfter === 'cursor-7' ? 'cursor-11' : undefined,
+        cursor: 'cursor-11',
         more: false,
         reset: false,
       }),
@@ -318,14 +348,88 @@ test('only the record adapter passes a rulings feed cursor through', async () =>
   const changed = await store.read({
     read: 'rulings',
     kind: 'all',
-    changedAfter: 'cursor-7',
+    changedAfter: '0',
   })
-  expect(changed).toMatchObject({ cursor: 'cursor-11', more: false, reset: false })
+  expect(changed.cursor).toBeString()
   expect(changed.items).toHaveLength(1)
   expect(field(changed.items[0]!, 'record_id')).toBe(WORKFLOW_QUESTION_ID)
   await expect(store.read({ read: 'waiting', changedAfter: 'cursor-7' })).rejects.toThrow(
     'use the rulings read',
   )
+  database.close()
+})
+
+test('record inbox paging advances independently across every reachable space', async () => {
+  const database = migratedTestDatabase()
+  const rows = {
+    [SPACE_ID]: [newRecordId(), newRecordId(), newRecordId()],
+    [OTHER_SPACE_ID]: [newRecordId(), newRecordId()],
+  }
+  const store = new RecordQuestionStore({
+    database,
+    client: {
+      whoami: async () => ({
+        ...(await whoami()),
+        memberships: [
+          { space_id: SPACE_ID, name: 'Fixture', slug: 'fixture', permission: 'write' },
+          { space_id: OTHER_SPACE_ID, name: 'Other', slug: 'other', permission: 'write' },
+        ],
+      }),
+      readQuestions: async (input, destination) => {
+        const values = rows[destination!.destinationSpaceId as keyof typeof rows] ?? []
+        const offset = Number(input.changedAfter ?? 0)
+        const page = values.slice(offset, offset + (input.limit ?? values.length))
+        return {
+          items: page.map((id) => ({ record_id: id })),
+          cursor: String(offset + page.length),
+          more: offset + page.length < values.length,
+        }
+      },
+    },
+  })
+  const seen: string[] = []
+  let changedAfter: string | undefined
+  let more = true
+  while (more) {
+    const page = await store.read({ read: 'inbox', limit: 1, changedAfter })
+    seen.push(...page.items.map((row) => String(field(row, 'record_id'))))
+    changedAfter = page.cursor
+    more = page.more === true
+  }
+  expect(seen.sort()).toEqual([...rows[SPACE_ID], ...rows[OTHER_SPACE_ID]].sort())
+  expect(new Set(seen).size).toBe(seen.length)
+  database.close()
+})
+
+test('record mutations write back to the space holding the question', async () => {
+  const database = migratedTestDatabase()
+  seedOwners(database)
+  const question = snapshot()
+  let writtenSpace: string | undefined
+  const store = new RecordQuestionStore({
+    database,
+    client: {
+      whoami: async () => ({
+        ...(await whoami()),
+        memberships: [
+          { space_id: SPACE_ID, name: 'Fixture', slug: 'fixture', permission: 'write' },
+          { space_id: OTHER_SPACE_ID, name: 'Other', slug: 'other', permission: 'write' },
+        ],
+      }),
+      readQuestions: async (input, destination) => ({
+        items:
+          input.read === 'by-id' && destination!.destinationSpaceId === OTHER_SPACE_ID
+            ? [{ record_id: question.id }]
+            : [],
+      }),
+      writeQuestion: async (_intent, input, destination) => {
+        writtenSpace = destination.destinationSpaceId
+        return { id: input.question.id, number: 1, revision: 2, applied: true }
+      },
+    },
+  })
+  await store.write('answer', body({ ...question, revision: 2, answer: 'Yes' }, 'answer'))
+  expect(writtenSpace).toBe(OTHER_SPACE_ID)
   database.close()
 })
 
@@ -348,6 +452,7 @@ test('SQLite question writes report a lost revision race without replacing the w
 
 test('record ask pushes its run first and enriches live, stale, and absent sessions', async () => {
   const database = migratedTestDatabase()
+  seedOwners(database)
   database.exec('PRAGMA foreign_keys=OFF')
   const events: string[] = []
   const runId = newRecordId()
@@ -360,13 +465,10 @@ test('record ask pushes its run first and enriches live, stale, and absent sessi
       'stale-session',
       new Date(Date.now() - SESSION_LIVE_MS - 1_000).toISOString(),
     )
-  const store = recordQuestionStore({
+  const store = new RecordQuestionStore({
     database,
-    destinationSpaceId: newRecordId(),
-    pushRun: async (id) => {
-      events.push(`push:${id}`)
-    },
     client: {
+      whoami,
       writeQuestion: async () => {
         events.push('write')
         return { id: question.id, number: 1, revision: 1, applied: true }
@@ -381,7 +483,8 @@ test('record ask pushes its run first and enriches live, stale, and absent sessi
     },
   })
   await store.write('ask', body(question))
-  expect(events).toEqual([`push:${runId}`, 'write'])
+  expect(pushedRuns).toEqual([runId])
+  expect(events).toEqual(['write'])
   expect(
     (await store.read({ read: 'inbox' })).items.map((row) => field(row, 'session_recent')),
   ).toEqual([1, 0, 0])
@@ -394,10 +497,10 @@ test('record detail reads enrich machine-owned run and project fields locally', 
   database.query('UPDATE run SET pid=?,cwd=? WHERE record_id=?').run(4321, '/local-run', RUN_ID)
   const absentOwnerId = newRecordId()
   const unregisteredRepoOwnerId = newRecordId()
-  const store = recordQuestionStore({
+  const store = new RecordQuestionStore({
     database,
-    destinationSpaceId: newRecordId(),
     client: {
+      whoami,
       readQuestions: async () => ({
         items: [
           { record_id: RUN_QUESTION_ID, owner_id: RUN_ID, repo: 'question-fixture' },
@@ -412,4 +515,45 @@ test('record detail reads enrich machine-owned run and project fields locally', 
   expect(rows[1]).toMatchObject({ owner_pid: null, cwd: '/fixture', project_path: '/fixture' })
   expect(rows[2]).toMatchObject({ owner_pid: null, cwd: null, project_path: null })
   database.close()
+})
+
+test('hosted question selection and pending delivery never touch the local question table', async () => {
+  const database = migratedTestDatabase()
+  seedOwners(database)
+  const guarded = guardHostedTables(database, ['question'])
+  const rows = new Map<string, QuestionSnapshot>()
+  const client = {
+    whoami,
+    writeQuestion: async (_intent: string, input: QuestionWriteBody) => {
+      rows.set(input.question.id, input.question)
+      return { id: input.question.id, number: 1, revision: input.question.revision, applied: true }
+    },
+    readQuestions: async (input: { read: string; ids?: string[] }) => ({
+      items:
+        input.read === 'by-id'
+          ? (input.ids ?? []).flatMap((id) => (rows.has(id) ? [rows.get(id)!] : []))
+          : [...rows.values()],
+      cursor: input.read === 'rulings' ? 'record-cursor' : undefined,
+    }),
+  } as unknown as RecordApiClient
+  const previous = process.env.BOTTEGA_RECORD_API_URL
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  installRecordApiClient(client)
+  try {
+    const store = questionStore(guarded)
+    const asked = snapshot({ id: newRecordId(), runId: null })
+    await store.write('ask', body(asked))
+    await store.write('answer', body({ ...asked, revision: 2, answer: 'Yes' }, 'answer'))
+    expect((await store.read({ read: 'inbox' })).items).toHaveLength(1)
+    expect((await store.read({ read: 'waiting' })).items).toHaveLength(1)
+    expect((await store.read({ read: 'rulings', kind: 'all' })).items).toHaveLength(1)
+    markQuestionDeliveryPending(guarded, asked.id, RUN_ID, STAMP)
+    expect(pendingQuestionIds(guarded, { runIds: [RUN_ID] })).toEqual([asked.id])
+    expect(clearQuestionDeliveryPending(guarded, [asked.id])).toBe(1)
+  } finally {
+    installRecordApiClient(null)
+    if (previous === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = previous
+    database.close()
+  }
 })

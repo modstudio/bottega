@@ -332,7 +332,7 @@ export async function readRuns(since: string): Promise<OrchRun[]> {
   return rows.filter((row): row is OrchRun => !('unknown' in row))
 }
 
-function decodeRunChangesJson(text: string): { rows: OrchRun[]; cursor: number } {
+function decodeRunChangesJson(text: string): { rows: OrchRun[]; cursor: string } {
   const lines = text.split('\n').filter((line) => line.trim())
   const cursorLine = lines.find((line) => {
     try {
@@ -349,7 +349,7 @@ function decodeRunChangesJson(text: string): { rows: OrchRun[]; cursor: number }
   return { rows, cursor }
 }
 
-export const readRunChangesArgv = (after: number): string[] => [
+export const readRunChangesArgv = (after: string): string[] => [
   'run',
   'list',
   '--json',
@@ -357,7 +357,7 @@ export const readRunChangesArgv = (after: number): string[] => [
   String(after),
 ]
 
-export async function readRunChanges(after: number): Promise<{ rows: OrchRun[]; cursor: number }> {
+export async function readRunChanges(after: string): Promise<{ rows: OrchRun[]; cursor: string }> {
   return decodeRunChangesJson(await orchProcess(readRunChangesArgv(after), RUNS_DEADLINE_MS))
 }
 
@@ -382,8 +382,8 @@ export const readWorkflowRulings = (since: string): Promise<RulingListRow[]> =>
   )
 
 export const readWorkflowRulingChanges = (
-  after: number,
-): Promise<{ rows: RulingListRow[]; cursor: number }> =>
+  after: string,
+): Promise<{ rows: RulingListRow[]; cursor: string }> =>
   json(
     [
       'question',

@@ -4,7 +4,10 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolvedRecordOrigin } from '../../../shared/record-api-url.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addProject } from '../../test/fixtures/offline-branch-landing.ts'
-import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
@@ -180,20 +183,26 @@ describe('hosted run task linking', () => {
     database
       .query('INSERT INTO record_install_binding (id,bound_at,record_origin) VALUES (1,?,?)')
       .run('2026-11-10T00:00:00.000Z', resolvedRecordOrigin())
-    database.exec('PRAGMA foreign_keys=OFF')
-    try {
-      database
-        .query(
-          `INSERT INTO question
-           (record_id,number,workflow_cursor_record_id,workflow_key,asked_at,question,asked_via)
-           VALUES (?,991,?,'HOSTED-1','t','question','live')`,
-        )
-        .run(questionId, stageId)
-    } finally {
-      database.exec('PRAGMA foreign_keys=ON')
-    }
     rememberProjectSpace(database, 'hosted-question-link', 'hosted-question-space')
+    const questions: Record<string, unknown>[] = [
+      {
+        id: questionId,
+        number: 991,
+        workflowCursorRecordId: stageId,
+        workflowKey: 'HOSTED-1',
+        workflowTaskId: null,
+        projectId,
+        machineId: newRecordId(),
+        revision: 1,
+        askedAt: '2026-11-10T00:00:00.000Z',
+        question: 'question',
+        askedVia: 'live',
+        createdAt: '2026-11-10T00:00:00.000Z',
+        updatedAt: '2026-11-10T00:00:00.000Z',
+      },
+    ]
     const memory = createMemoryRecordApiClient({
+      questions,
       taskFlowStages: [
         {
           flow: {
@@ -245,7 +254,7 @@ describe('hosted run task linking', () => {
       ],
       taskFlowProjectSpaces: { [projectId]: 'hosted-question-space' },
     })
-    const taskFlowClient: RecordTaskFlowClient = {
+    const taskFlowClient = {
       ...memory,
       whoami: async () => ({
         user: { id: 'hosted-question-user' },
@@ -256,6 +265,7 @@ describe('hosted run task linking', () => {
         ],
       }),
     }
+    installRecordApiClient(taskFlowClient)
 
     const report = await linkRunTasks(
       { dryRun: false },
@@ -270,14 +280,12 @@ describe('hosted run task linking', () => {
 
     expect(report.local_task_links.question).toEqual({ linked: 1, unmatched_keys: {} })
     expect(
-      database
-        .query(
-          `SELECT workflow_task_record_id task_id,revision,
-                  (SELECT COUNT(*) FROM outbox WHERE kind='question' AND row_id=question.record_id) outbox_count
-           FROM question WHERE record_id=?`,
-        )
-        .get(questionId),
-    ).toEqual({ task_id: 'hosted-task-id', revision: 2, outbox_count: 1 })
+      (await memory.readQuestions!({ read: 'by-id', ids: [questionId] })).items,
+    ).toContainEqual(
+      expect.objectContaining({ workflow_task_record_id: 'hosted-task-id', revision: 2 }),
+    )
+    expect(database.query('SELECT * FROM question').all()).toEqual([])
+    installRecordApiClient(null)
     database.close()
   })
 
@@ -752,7 +760,7 @@ describe('run task linking service', () => {
       cursor_task: 'related-task-id',
       question_task: 'related-task-id',
       question_revision: 2,
-      question_outbox: 1,
+      question_outbox: 0,
       presence_task: 'related-task-id',
     })
 

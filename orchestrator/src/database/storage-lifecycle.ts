@@ -152,6 +152,14 @@ export const orchestratorTableLifecycles: readonly TableLifecycle[] = [
   ...entries(['canon_pack', 'main_stack_activity', 'presence'], 'machine', null, 'working-set'),
   {
     store: 'orchestrator',
+    table: 'question_delivery_pending',
+    class: 'machine',
+    keep: 'A row stays while delivery of its question is pending on this machine.',
+    remover: 'orchestrator/src/run/question-delivery-pending.ts#clearQuestionDeliveryPending',
+    slice: 'working-set',
+  },
+  {
+    store: 'orchestrator',
     table: 'session_seen',
     class: 'machine',
     keep: "A row is deleted through expireSessionSeen when the session's newest clean close-out is swept; a session that never closes out keeps its row.",

@@ -484,6 +484,12 @@ test('inbox marks an answered-but-undelivered chain stranded', async () => {
       new Date().toISOString(),
       new Date().toISOString(),
     )
+  db()
+    .query(
+      `INSERT INTO question_delivery_pending(question_record_id,run_record_id,pending_at)
+       SELECT record_id,run_record_id,delivery_pending_at FROM question WHERE run_record_id=?`,
+    )
+    .run(id)
   expect(await inbox()).toContain(`stranded — ${PLATFORM_SLUG} run retry ${id} --agent`)
 })
 test('close-out retires a stale chain pending delivery from the inbox', async () => {
@@ -505,6 +511,12 @@ test('close-out retires a stale chain pending delivery from the inbox', async ()
       new Date().toISOString(),
       new Date().toISOString(),
     )
+  db()
+    .query(
+      `INSERT INTO question_delivery_pending(question_record_id,run_record_id,pending_at)
+       SELECT record_id,run_record_id,delivery_pending_at FROM question WHERE run_record_id=?`,
+    )
+    .run(id)
   expect(await inbox()).toContain(`stranded — ${PLATFORM_SLUG} run retry ${id} --agent`)
 
   await closeTerminalChainQuestions(id, false)

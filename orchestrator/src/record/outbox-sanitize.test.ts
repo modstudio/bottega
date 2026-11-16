@@ -4,7 +4,6 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { enqueueReview, enqueueReviewFinding, enqueueReviewRead } from '../review/review-outbox.ts'
-import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
 import { enqueueScoreRecord } from '../score/score-outbox.ts'
 import { enqueueContention, enqueueLandingOverride } from './landing-outbox.ts'
@@ -253,7 +252,7 @@ test('a sanitized run row stays eligible for the send-time payload re-check', ()
   database.close()
 })
 
-test('enqueue withholds a planted leaf for score, question, review, override, and contention', () => {
+test('enqueue withholds a planted leaf for score, review, override, and contention', () => {
   const database = new Database(':memory:')
   applyMigrations(database)
   fixtureProjectRecordId(database)
@@ -280,12 +279,6 @@ test('enqueue withholds a planted leaf for score, question, review, override, an
     '01990000-0000-7000-8000-000000000010',
     '01990000-0000-7000-8000-000000000099',
   )
-  const question = database
-    .query(
-      `INSERT INTO question (number,record_id,run_record_id,asked_at,question,answer) VALUES (1,'${newRecordId()}','01990000-0000-7000-8000-000000000010','2026-09-15T00:01:00Z','Which?',?) RETURNING record_id`,
-    )
-    .get(SECRET) as { record_id: string }
-  enqueueQuestionRecord(database, question.record_id)
   database
     .query(
       "INSERT INTO review (number,record_id,recorded_at,commit_message) VALUES (1,'review-record','2026-09-15T00:02:00Z',?)",
@@ -315,7 +308,6 @@ test('enqueue withholds a planted leaf for score, question, review, override, an
   )
   expect(byKind.score?.note).toBe(MASKED_SECRET)
   expect(byKind.score?.withheldFields).toEqual(['note'])
-  expect(byKind.question?.answer).toBe(MASKED_SECRET)
   expect(byKind.review?.commitMessage).toBe(MASKED_SECRET)
   expect(byKind.landing_override?.reason).toBe(MASKED_SECRET)
   expect(byKind.contention?.cause).toBe(MASKED_SECRET)

@@ -34,7 +34,6 @@ import type {
   TaskFlowPendingTaskLinkRow,
   TaskFlowProjectionRow,
   TaskFlowQuestionCloseRow,
-  TaskFlowQuestionOutboxRow,
   TaskFlowRulingFileRow,
   TaskFlowRulingRow,
   TaskFlowStageCursorRow,
@@ -668,11 +667,6 @@ class SqliteTaskFlowStore {
 
   rulingFileQuestion(questionId: string): TaskFlowRulingFileRow | null {
     return questions.rulingFileQuestion(this.database, questionId)
-  }
-
-  questionOutboxRow(questionId: string): TaskFlowQuestionOutboxRow | null {
-    this.assertLocalRead('questionOutboxRow')
-    return questions.questionOutboxRow(this.database, questionId)
   }
 
   questionCloseFacts(questionId: string): TaskFlowQuestionCloseRow | null {

@@ -5,11 +5,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { storedMachineId } from '../../../shared/machine-config.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
 import { backfillLandingEvidenceRecords } from '../record/landing-outbox.ts'
 import { startReleaseLedgerEntry } from '../release/release-ledger.ts'
 import { enqueueReview } from '../review/review-outbox.ts'
-import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { carryMachineIdentity, machineIdStored } from './machine-identity-store.ts'
 import { applyMigrations } from './migrations.ts'
 import { fixtureProjectRecordId } from './test-database.fixture.ts'
@@ -79,8 +77,6 @@ test('all evidence enqueue paths use the shared id and preserve its legacy key',
         (1,'01990000-0000-7000-8000-000000001251','2026-10-12T10:00:00Z',
          'codex','implementation','sha',1,'prompt','asking',
          (SELECT record_id FROM project ORDER BY name LIMIT 1));
-      INSERT INTO question (number,record_id,run_record_id,asked_at,question)
-      VALUES (1,'${newRecordId()}','01990000-0000-7000-8000-000000001251','2026-10-12T10:01:00Z','Which?');
       INSERT INTO review (number,record_id,recorded_at)
       VALUES (1,'01990000-0000-7000-8000-000000001252','2026-10-12T10:02:00Z');
       INSERT INTO landing (record_id,project,branch,status,started_at)
@@ -99,21 +95,16 @@ test('all evidence enqueue paths use the shared id and preserve its legacy key',
       commitsBehindTrunk: 0,
       behindTrunkReason: null,
     })
-    const questionRecordId = (
-      database.query('SELECT record_id FROM question').get() as { record_id: string }
-    ).record_id
-    enqueueQuestionRecord(database, questionRecordId)
     enqueueReview(database, '01990000-0000-7000-8000-000000001252')
     backfillLandingEvidenceRecords(database)
 
     const payloads = database
       .query<{ kind: string; payload: string }, []>(
-        "SELECT kind,payload FROM outbox WHERE kind IN ('release','question','review','landing') ORDER BY kind",
+        "SELECT kind,payload FROM outbox WHERE kind IN ('release','review','landing') ORDER BY kind",
       )
       .all()
-    expect(payloads.map((row) => row.kind)).toEqual(['landing', 'question', 'release', 'review'])
+    expect(payloads.map((row) => row.kind)).toEqual(['landing', 'release', 'review'])
     expect(payloads.map((row) => JSON.parse(row.payload).machineId)).toEqual([
-      shared,
       shared,
       shared,
       shared,
