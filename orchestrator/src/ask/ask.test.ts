@@ -17,6 +17,8 @@ import { postNotice } from '../board/board-service.ts'
 import { db } from '../database/db.ts'
 import { readEventLog, runEventsPath } from '../events.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
+import { identity } from '../record/record-api-identity.fixture.ts'
+import type { QuestionWriteBody } from '../record/record-question-contract.ts'
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { ask, createAskHttpHandler, createAskMcpServer, recordReplyQuestions } from './ask.ts'
 import { observeAskTransport } from './ask-lifecycle.ts'
@@ -54,29 +56,31 @@ afterEach(() => {
   delete process.env.BOTTEGA_RECORD_API_URL
 })
 
-test('reply questions store and enqueue structured typed values', async () => {
+test('reply questions store and send structured typed values', async () => {
   const runId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+  const questions = [
+    {
+      kind: 'choice' as const,
+      question: 'Which implementation?',
+      why: 'The implementation depends on the choice.',
+      options: [
+        { name: 'First', criteria: 'Use the first path.' },
+        { name: 'Second', criteria: 'Use the second path.' },
+      ],
+    },
+    {
+      kind: 'yesno' as const,
+      question: 'Proceed?',
+      why: 'The next step depends on the ruling.',
+      criteria: { yes: 'Proceed with the change.', no: 'Stop the change.' },
+    },
+  ]
+  const askedAt = '2026-11-16T12:00:00.000Z'
   const recorded = await recordReplyQuestions({
     runId,
-    askedAt: '2026-11-16T12:00:00.000Z',
-    awaitingOperatorAt: '2026-11-16T12:00:00.000Z',
-    questions: [
-      {
-        kind: 'choice',
-        question: 'Which implementation?',
-        why: 'The implementation depends on the choice.',
-        options: [
-          { name: 'First', criteria: 'Use the first path.' },
-          { name: 'Second', criteria: 'Use the second path.' },
-        ],
-      },
-      {
-        kind: 'yesno',
-        question: 'Proceed?',
-        why: 'The next step depends on the ruling.',
-        criteria: { yes: 'Proceed with the change.', no: 'Stop the change.' },
-      },
-    ],
+    askedAt,
+    awaitingOperatorAt: askedAt,
+    questions,
   })
 
   const rows = db()
@@ -108,17 +112,39 @@ test('reply questions store and enqueue structured typed values', async () => {
     criteria: { yes: 'Proceed with the change.', no: 'Stop the change.' },
   })
 
-  const payloads = db()
-    .query<{ payload: string }, [string, string]>(
-      "SELECT payload FROM outbox WHERE kind='question' AND row_id IN (?,?) ORDER BY id",
-    )
-    .all(recorded[0]!.recordId, recorded[1]!.recordId)
-    .map(({ payload }) => JSON.parse(payload) as Record<string, unknown>)
-  expect(payloads[0]!.typedOptions).toEqual([
+  const hostedWrites: QuestionWriteBody[] = []
+  const client = createMemoryRecordApiClient()
+  db().query("UPDATE project SET settings=json_set(settings,'$.space','space-a')").run()
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
+  installRecordApiClient({
+    ...client,
+    whoami: async () => identity,
+    writeQuestion: async (_intent, body) => {
+      hostedWrites.push(body)
+      return {
+        id: body.question.id,
+        number: hostedWrites.length,
+        revision: body.question.revision,
+        applied: true,
+      }
+    },
+  })
+  const hostedRunId = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'running',
+  })
+  await recordReplyQuestions({
+    runId: hostedRunId,
+    askedAt,
+    awaitingOperatorAt: askedAt,
+    questions,
+  })
+  expect(hostedWrites[0]!.question.typedOptions).toEqual([
     { name: 'First', criteria: 'Use the first path.' },
     { name: 'Second', criteria: 'Use the second path.' },
   ])
-  expect(payloads[1]!.criteria).toEqual({
+  expect(hostedWrites[1]!.question.criteria).toEqual({
     yes: 'Proceed with the change.',
     no: 'Stop the change.',
   })

@@ -3,7 +3,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from './migrations.ts'
 import { fixtureProjectRecordId, migrationBoundaryTestDatabase } from './test-database.fixture.ts'
 
-const MIGRATION = '0231_worker_question_json_values'
+const MIGRATION = '0232_worker_question_json_values'
 const STAMP = '2026-11-16T12:00:00.000Z'
 
 test('repairs only double-encoded question JSON values and pending question payloads', () => {
