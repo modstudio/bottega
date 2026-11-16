@@ -8,6 +8,7 @@ import {
   postFixReviewDecision,
   type RebaseFileComparison,
   rebaseCarryDecision,
+  trunkChangedPathSet,
 } from './review-post-fix.ts'
 import { applicableRoundLensPlan } from './review-round-lens-plan.ts'
 
@@ -104,6 +105,17 @@ test('a one-to-one rename with identical content is unchanged', () => {
       pathsByLens: { 'migration-safety': ['migrations/old/migration.sql'] },
     }),
   ).toEqual({ fixFiles: [], reOwedPathsByLens: {} })
+})
+
+test('trunk-changed paths include modifications, additions, and both rename names', () => {
+  expect(
+    [...
+      trunkChangedPathSet({
+        changedPaths: ['src/modified.ts', 'src/renamed.ts', 'src/added.ts'],
+        renames: new Map([['src/original.ts', 'src/renamed.ts']]),
+      }),
+    ].sort(),
+  ).toEqual(['src/added.ts', 'src/modified.ts', 'src/original.ts', 'src/renamed.ts'])
 })
 
 test('a changed author file outside every recorded lens path re-owes no lens', () => {

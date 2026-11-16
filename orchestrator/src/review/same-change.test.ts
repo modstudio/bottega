@@ -3,6 +3,7 @@ import {
   type SameChangeDecision,
   type SameChangeFacts,
   sameChange,
+  sameStoredChangeOrWitness,
   storedChangeFacts,
 } from './same-change.ts'
 
@@ -11,6 +12,14 @@ const change = (zero: string | null, paths: string[] | null = ['src/a.ts'], patc
   zeroContextPatchId: zero,
   paths,
   message: 'message',
+})
+
+test('a stored change matches by exact identity or a positive replay witness', () => {
+  const current = { patchId: 'current', zeroContextPatchId: 'current', pathSet: '["src/a.ts"]' }
+  const other = { patchId: 'other', zeroContextPatchId: 'other', pathSet: '["src/a.ts"]' }
+  expect(sameStoredChangeOrWitness(current, current)).toBe(true)
+  expect(sameStoredChangeOrWitness({ ...other, replayMatchesCurrent: true }, current)).toBe(true)
+  expect(sameStoredChangeOrWitness({ ...other, replayMatchesCurrent: false }, current)).toBe(false)
 })
 
 const cases: Array<{

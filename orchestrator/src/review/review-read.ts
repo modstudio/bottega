@@ -15,9 +15,12 @@ import { resolveReviewCommandCwd } from './review-command-cwd.ts'
 import { branchRunOwnerSession, measureChangeGroup, serializePathSet } from './review-group.ts'
 import { reviewLineage } from './review-lineage-store.ts'
 import { enqueueReviewRead } from './review-outbox.ts'
-import { git as reviewGit } from './review-pins.ts'
-import { sameStoredChange } from './same-change.ts'
-import { replayWitnessesForCurrent } from './same-change-git.ts'
+import { sameStoredChangeOrWitness } from './same-change.ts'
+import {
+  type ExactChangeReplayContext,
+  exactChangeReplayRunner,
+  replayWitnessesForCurrent,
+} from './same-change-git.ts'
 
 type Flags = { flag(name: string): string | undefined }
 type Presentation = { log(...values: unknown[]): void }
@@ -68,14 +71,7 @@ export function hasExactArchitectRead(
   patchId: string,
   zeroContextPatchId: string,
   pathSet: string,
-  replay?: {
-    repo: string
-    base: string
-    tip: string
-    tree: string
-    trunk: string
-    witnesses: Map<string, boolean>
-  },
+  replay?: ExactChangeReplayContext,
 ): boolean {
   const lineage = reviewLineage(database, project, branch)
   const reads = database
@@ -92,7 +88,7 @@ export function hasExactArchitectRead(
     .all(project, ...lineage)
   const witnessed = replay
     ? replayWitnessesForCurrent({
-        runner: (args, stdin, stdinFile) => reviewGit(replay.repo, args, true, stdin, stdinFile),
+        runner: exactChangeReplayRunner(replay),
         rows: reads,
         current: { patchId, zeroContextPatchId, pathSet, ...replay },
         trunk: replay.trunk,
@@ -114,7 +110,7 @@ export function architectReadMatches(
   },
   current: { patchId: string; zeroContextPatchId: string; pathSet: string },
 ): boolean {
-  return sameStoredChange(read, current) || read.replayMatchesCurrent === true
+  return sameStoredChangeOrWitness(read, current)
 }
 
 export function requireBranchRunOwner(

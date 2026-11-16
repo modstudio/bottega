@@ -24,6 +24,9 @@ import {
 import type { ReviewFunnelVerdict } from '../review-funnel/decide-review-funnel.ts'
 import {
   type ExactChangeReplayContext,
+  exactChangeReplayContext,
+} from '../review/same-change-git.ts'
+import {
   gatherAdmissionEvidenceDecision,
   landingOverridesWithReplay,
 } from '../review-funnel/gather-funnel-facts.ts'
@@ -156,19 +159,14 @@ function resolvePullRequestChangeForProject(
   }
 }
 
-function exactChangeReplayContext(change: PullRequestChange): ExactChangeReplayContext {
-  const trunk = change.project.settings.trunk!.trim()
-  return {
-    repo: change.project.path,
+function replayContext(change: PullRequestChange): ExactChangeReplayContext {
+  return exactChangeReplayContext(change.project.path, {
+    project: change.project.name,
+    trunk: change.project.settings.trunk,
     base: change.base,
     tip: change.tip,
     tree: change.tree,
-    trunk: reviewTrunkRef(
-      reviewRemoteTrunkRefExists(trunk, spawnGitProbe(change.project.path)),
-      trunk,
-    ),
-    witnesses: new Map(),
-  }
+  })
 }
 
 function triageDecision(
@@ -252,7 +250,7 @@ export function admissionDecision(
 ): PullRequestAdmission {
   const funnel = funnelVerdict(change, database)
   if (funnel.kind === 'empty') return emptyAdmission(change, funnel)
-  const replay = exactChangeReplayContext(change)
+  const replay = replayContext(change)
   const triage = triageDecision(change, database, replay)
   const { facts, verdict } = funnel
   const decision = decideAdmission(verdict, overridesForChange(change, database, replay))
@@ -666,7 +664,7 @@ export function createPullRequest(
   if (existing) finalizeTriageIntent(change.project.name, change.branch, existing.number)
   const database = writableDb()
   const checked = writeTransaction(() => {
-    const triage = triageDecision(change, database, exactChangeReplayContext(change))
+    const triage = triageDecision(change, database, replayContext(change))
     const beforeOverride = funnelVerdict(change, database)
     if (beforeOverride.kind === 'empty') {
       throw new Error(emptyCreateRefusal(change, emptyAdmission(change, beforeOverride)))

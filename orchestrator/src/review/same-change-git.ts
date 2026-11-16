@@ -2,6 +2,12 @@
 /** Gathers Git facts for the pure same-change decision. */
 
 import { changeIdentity, zeroContextChangeIdentity } from './change-identity.ts'
+import { git } from './review-pins.ts'
+import {
+  reviewRemoteTrunkRefExists,
+  reviewTrunkRef,
+  spawnGitProbe,
+} from './review-target.ts'
 import type { CoverageGitRunner } from './review-types.ts'
 import {
   type ChangeFacts,
@@ -49,6 +55,53 @@ type ReplayWitnessInput = {
   trunk: string
 }
 
+export type ExactChangeReplayContext = {
+  repo: string
+  base: string
+  tip: string
+  tree: string
+  trunk: string
+  witnesses: Map<string, boolean>
+}
+
+/** Build the shared replay context for one exact-change evaluation. */
+export function exactChangeReplayContext(
+  repo: string,
+  change: {
+    project: string
+    trunk: string | null | undefined
+    base: string
+    tip: string
+    tree?: string
+  },
+): ExactChangeReplayContext {
+  const trunk = change.trunk?.trim()
+  if (!trunk) {
+    throw new Error(
+      `project ${change.project} has no trunk configured\nset settings.trunk in the project register, then retry`,
+    )
+  }
+  const resolvedTree = change.tree
+    ? null
+    : git(repo, ['rev-parse', '--verify', `${change.tip}^{tree}`])
+  if (resolvedTree && !resolvedTree.ok) {
+    throw new Error(`could not resolve tree for ${change.tip}: ${resolvedTree.err}`)
+  }
+  const tree = change.tree ?? resolvedTree!.out
+  return {
+    repo,
+    base: change.base,
+    tip: change.tip,
+    tree,
+    trunk: reviewTrunkRef(reviewRemoteTrunkRefExists(trunk, spawnGitProbe(repo)), trunk),
+    witnesses: new Map(),
+  }
+}
+
+/** Adapt the review Git probe to a shared exact-change replay context. */
+export const exactChangeReplayRunner = (context: ExactChangeReplayContext): CoverageGitRunner =>
+  (args, stdin, stdinFile) => git(context.repo, args, true, stdin, stdinFile)
+
 const parsedPaths = (pathSet: string): string[] => {
   const paths = JSON.parse(pathSet) as unknown
   if (!Array.isArray(paths) || paths.some((path) => typeof path !== 'string')) {
@@ -57,12 +110,17 @@ const parsedPaths = (pathSet: string): string[] => {
   return paths
 }
 
-function replayWitnessForCurrent(input: ReplayWitnessInput, row: ReplayWitnessRow): boolean {
-  const tipTree = input.runner(['rev-parse', '--verify', `${row.tip}^{tree}`])
-  if (tipTree.ok && tipTree.out === input.current.tree) return true
-  if (input.runner(['merge-base', '--is-ancestor', row.tip, input.current.tip]).ok) return false
+/**
+ * Witness a clean replay. When the old and current bases are equal, a differing stored
+ * identity cannot replay to the current change; every moved-base case uses sameChange.
+ */
+export function replayWitnessForCurrent(
+  input: ReplayWitnessInput,
+  row: ReplayWitnessRow,
+): boolean {
   const oldBase = input.runner(['merge-base', row.tip, input.trunk])
   if (!oldBase.ok) return false
+  if (oldBase.out === input.current.base) return false
   try {
     return gatherSameChange({
       runner: input.runner,

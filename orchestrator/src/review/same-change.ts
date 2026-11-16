@@ -60,7 +60,10 @@ export function storedChangeFacts(row: {
   }
 }
 
-/** The only in-memory decision for comparing persisted and current change identities. */
+/**
+ * The only in-memory decision for comparing persisted and current change identities.
+ * `replayWitnessForCurrent` is the only adapter-side shortcut around this decision.
+ */
 export function sameChange(facts: SameChangeFacts): SameChangeDecision {
   const messageChanged = facts.reviewed.message !== facts.current.message
   if (facts.reviewed.paths === null || facts.current.paths === null) {
@@ -109,4 +112,12 @@ export function sameStoredChange(reviewed: StoredChangeRow, current: StoredChang
     current: storedChangeFacts(current),
     replay: null,
   }).same
+}
+
+/** Match a stored identity, including an adapter-gathered clean-replay witness. */
+export function sameStoredChangeOrWitness(
+  reviewed: StoredChangeRow & { replayMatchesCurrent?: boolean },
+  current: StoredChangeRow,
+): boolean {
+  return sameStoredChange(reviewed, current) || reviewed.replayMatchesCurrent === true
 }

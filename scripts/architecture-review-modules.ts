@@ -43,6 +43,8 @@ export const reviewModules: ReviewModule[] = [
   module('orchestrator/src/review/same-change.ts', []),
   module('orchestrator/src/review/same-change-git.ts', [
     './change-identity.ts',
+    './review-pins.ts',
+    './review-target.ts',
     './review-types.ts',
     './same-change.ts',
   ]),

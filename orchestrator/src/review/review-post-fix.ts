@@ -416,11 +416,7 @@ function compareReplayedReview(
   const currentByPath = new Map(current.map((file) => [file.path, file]))
   const paths = [...new Set([...replayedByPath.keys(), ...currentByPath.keys()])].sort()
   const conflicts = new Set(replay.conflictedPaths)
-  const trunkChangedPaths = new Set([
-    ...trunk.changedPaths,
-    ...trunk.renames.keys(),
-    ...trunk.renames.values(),
-  ])
+  const trunkChangedPaths = trunkChangedPathSet(trunk)
   return rebaseCarryDecision({
     files: paths.map((path) => ({
       path,
@@ -431,6 +427,14 @@ function compareReplayedReview(
     })),
     pathsByLens,
   })
+}
+
+/** Every path trunk could have changed, including both names of a rename. */
+export function trunkChangedPathSet(change: {
+  changedPaths: readonly string[]
+  renames: ReadonlyMap<string, string>
+}): Set<string> {
+  return new Set([...change.changedPaths, ...change.renames.keys(), ...change.renames.values()])
 }
 
 function trunkChange(

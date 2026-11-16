@@ -24,14 +24,14 @@ import {
   eligibleReviewRoundRows,
 } from '../review/review-round-budget.ts'
 import { reviewRoundIdentity } from '../review/review-round-identity.ts'
-import {
-  reviewRemoteTrunkRefExists,
-  reviewTrunkRef,
-  spawnGitProbe,
-} from '../review/review-target.ts'
 import { diffNumstat } from '../review/review-tier.ts'
-import { sameStoredChange } from '../review/same-change.ts'
-import { replayWitnessesForCurrent } from '../review/same-change-git.ts'
+import { sameStoredChangeOrWitness } from '../review/same-change.ts'
+import {
+  type ExactChangeReplayContext,
+  exactChangeReplayContext,
+  exactChangeReplayRunner,
+  replayWitnessesForCurrent,
+} from '../review/same-change-git.ts'
 import type {
   ReviewFunnelFacts,
   ReviewFunnelLensState,
@@ -49,19 +49,6 @@ import { reviewFunnelYieldCells } from './review-funnel-yield.ts'
 
 const RUNNING_LENS_STATUS = 'running' satisfies ReviewFunnelLensStatus
 const UNTRIAGED_LENS_STATUS = 'untriaged' satisfies ReviewFunnelLensStatus
-
-export type ExactChangeReplayContext = {
-  repo: string
-  base: string
-  tip: string
-  tree: string
-  trunk: string
-  witnesses: Map<string, boolean>
-}
-
-const replayRunner =
-  (context: ExactChangeReplayContext) => (args: string[], stdin?: Uint8Array, stdinFile?: string) =>
-    git(context.repo, args, true, stdin, stdinFile)
 
 export type ReviewFunnelChange = {
   database: Database
@@ -151,7 +138,7 @@ export function landingOverrideMatches(
   candidate: LandingOverrideRow,
   current: { patchId: string; zeroContextPatchId: string | null; pathSet: string },
 ): boolean {
-  return sameStoredChange(candidate, current) || candidate.replayMatchesCurrent === true
+  return sameStoredChangeOrWitness(candidate, current)
 }
 
 export function landingOverridesWithReplay(
@@ -168,7 +155,7 @@ export function landingOverridesWithReplay(
   const rows = readLandingOverridesForBranch(database, change.project, change.branch)
   if (!replay) return rows
   return replayWitnessesForCurrent({
-    runner: replayRunner(replay),
+    runner: exactChangeReplayRunner(replay),
     rows,
     current: {
       patchId: change.patchId,
@@ -287,7 +274,7 @@ export function gatherAdmissionEvidenceDecision(
     }))
   const witnessedReads = replay
     ? replayWitnessesForCurrent({
-        runner: replayRunner(replay),
+        runner: exactChangeReplayRunner(replay),
         rows: readRows,
         current: {
           patchId: change.group.patchId,
@@ -345,25 +332,6 @@ function gatheredTriage(
   )
 }
 
-function exactChangeReplayContext(change: ReviewFunnelChange): ExactChangeReplayContext {
-  const trunk = change.project.settings.trunk?.trim()
-  if (!trunk) throw new Error(`project ${change.project.name} has no trunk configured`)
-  const trunkRef = reviewTrunkRef(
-    reviewRemoteTrunkRefExists(trunk, spawnGitProbe(change.cwd)),
-    trunk,
-  )
-  const tree = git(change.cwd, ['rev-parse', '--verify', `${change.head}^{tree}`])
-  if (!tree.ok) throw new Error(`could not resolve tree for ${change.head}: ${tree.err}`)
-  return {
-    repo: change.cwd,
-    base: change.base,
-    tip: change.head,
-    tree: tree.out,
-    trunk: trunkRef,
-    witnesses: new Map(),
-  }
-}
-
 /** Resolve one change once, including lineage evidence and completed-landing exclusions. */
 export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts {
   const identity = requireFunnelChangeIdentity(change.branch, () =>
@@ -379,7 +347,12 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
   }
   const reviews = reviewsForTriage(change.database, group)
   const files = diffNumstat(change.cwd, change.base, change.head)
-  const replay = exactChangeReplayContext(change)
+  const replay = exactChangeReplayContext(change.cwd, {
+    project: change.project.name,
+    trunk: change.project.settings.trunk,
+    base: change.base,
+    tip: change.head,
+  })
   const postFix = gatherPostFixReviewFacts({
     database: change.database,
     repo: change.cwd,
