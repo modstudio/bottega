@@ -17,3 +17,21 @@ test('rejects a production template with a bare workflow cursor handle', () => {
     'orchestrator/src/example/bare.ts:1: route cursor handles through workflowCursorReference',
   ])
 })
+
+test('admits only the exact context holder cursor exemption', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cursor-handle-guard-'))
+  const source = join(root, 'orchestrator/src/session')
+  mkdirSync(source, { recursive: true })
+  writeFileSync(
+    join(source, 'context-review.ts'),
+    [
+      "  if (reference.kind === 'cursor') return `--cursor ${shellQuote(reference.key)}`",
+      'const command = `workflow abandon --cursor ${cursor}`',
+      '',
+    ].join('\n'),
+  )
+
+  expect(bareWorkflowCursorHandles(root)).toEqual([
+    'orchestrator/src/session/context-review.ts:2: route cursor handles through workflowCursorReference',
+  ])
+})

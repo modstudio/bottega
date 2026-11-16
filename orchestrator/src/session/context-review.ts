@@ -83,7 +83,7 @@ function selector(holder: string, holders: readonly ReviewHolder[]): string {
   const reference = holders.find((candidate) => candidate.holder === holder)
   if (!reference) throw new Error(`context review holder ${holder} is not in the brief`)
   if (reference.kind === 'session') return `--session ${shellQuote(reference.key)}`
-  if (reference.kind === 'cursor') return ['--cursor', shellQuote(reference.key)].join(' ')
+  if (reference.kind === 'cursor') return `--cursor ${shellQuote(reference.key)}`
   return `--task ${shellQuote(reference.key)}`
 }
 

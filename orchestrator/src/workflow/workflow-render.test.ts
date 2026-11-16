@@ -68,6 +68,7 @@ describe('workflow rendering', () => {
     const step = getWorkflowStep('flow', 'fixture', 'rebase', args, d, { mode: 'default' })
     const rendered = renderWorkflowStep({
       ...step,
+      cursor: 17,
       autonomyCursor: 17,
       autonomyProject: 'fixture',
       autonomyComposeCommand: `${PLATFORM_SLUG} workflow compose flow`,
@@ -80,6 +81,9 @@ describe('workflow rendering', () => {
     )
     expect(rendered).toContain(
       'Current autonomy settings could not be resolved; using pinned settings: hosted settings timed out',
+    )
+    expect(rendered).toContain(
+      `Next: when this step's floor is met, close it with \`next_workflow_step\` (MCP) with cursor 17, project "fixture" or \`${PLATFORM_SLUG} workflow next flow --cursor 17 --project fixture\``,
     )
   })
 
