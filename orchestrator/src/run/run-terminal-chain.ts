@@ -5,7 +5,7 @@ import { type classify, FAILS_OVER } from '../failure/failure.ts'
 import { closeRunChainQuestions, QUESTION_CLOSE_CHAIN_TERMINAL } from './question-close.ts'
 import { rollUpRootAndEnqueue } from './run-liveness.ts'
 
-export async function closeTerminalChainQuestions(
+export async function closeRunTerminalChainQuestions(
   database: Database,
   rootId: string,
   status: string,
@@ -14,6 +14,28 @@ export async function closeTerminalChainQuestions(
   if (status === 'asking' || status === 'running') return
   if (failureKind && FAILS_OVER.includes(failureKind)) return
   await closeRunChainQuestions(database, rootId, QUESTION_CLOSE_CHAIN_TERMINAL)
+}
+
+export async function settleTerminalQuestionState(input: {
+  database: Database
+  runId: string
+  rootId: string
+  status: string
+  failureKind: ReturnType<typeof classify> | null
+  preAnswer(): Promise<void>
+}): Promise<{ status: string; failure_kind: string | null }> {
+  await closeRunTerminalChainQuestions(
+    input.database,
+    input.rootId,
+    input.status,
+    input.failureKind,
+  )
+  await input.preAnswer()
+  const recorded = input.database
+    .query('SELECT status, failure_kind FROM run WHERE record_id=?')
+    .get(input.runId) as { status: string; failure_kind: string | null } | null
+  if (!recorded) throw new Error(`run ${input.runId} disappeared before terminalisation`)
+  return recorded
 }
 
 export function finalizeTerminalChain(

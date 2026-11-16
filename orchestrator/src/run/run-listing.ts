@@ -569,6 +569,47 @@ function publishJson(
   return true
 }
 
+function publishHumanListing(
+  rows: Array<Record<string, unknown>>,
+  unknownIds: string[],
+  unknownRecordIds: string[],
+  presentation: Pick<RunListingPresentation, 'dur' | 'log' | 'thinOutputWarning'>,
+): void {
+  const { dur, log, thinOutputWarning } = presentation
+  if (!rows.length && !unknownIds.length && !unknownRecordIds.length) {
+    log('no runs')
+    return
+  }
+  for (const row of rows) {
+    const outcome = outcomeOf(row as OutcomeRow)
+    const lifecycle = lifecyclePresentation(row, outcome)
+    const identity =
+      row.resolved_from === 'turn'
+        ? `${row.number} (asked as turn ${row.requested_number})`
+        : String(row.number)
+    log(
+      `${identity.padStart(4)}  ${String((row.failover_chain as string[]).join('→')).padEnd(6)} ${String(row.job).padEnd(14)}` +
+        ` ${String(row.status === 'failed' ? lifecycle.status.toUpperCase() : lifecycle.status).padEnd(10)}` +
+        ` ${dur(row.latency_ms as number | null).padStart(8)}  ${String(row.prompt_head).slice(0, 60)}` +
+        (row.idle ? `  ${row.idle}` : ''),
+    )
+    if (lifecycle.detail) log(`      ${lifecycle.detail}`)
+    if (FAILURE_KINDS_WITH_LISTED_ERROR.has(String(row.failure_kind)))
+      log(`      ${failureReason(row as OutcomeRow)}`)
+    if (row.failure_kind === 'idle') {
+      const reclaimed = row.reclaimed_ms as number | null
+      log(`      idle-killed` + (reclaimed != null ? `; reclaimed ${dur(reclaimed)} of wall` : ''))
+    }
+    reportRouteAndExecutor(row, log)
+    const warning = agentWorkValue(String(row.job), () =>
+      thinOutputWarning(runListingWarningRow(row)),
+    )
+    if (warning) log(`      ${warning}`)
+  }
+  for (const id of [...unknownIds, ...unknownRecordIds])
+    log(`${String(id).padStart(4)}  unknown run id`)
+}
+
 export async function runListingCommand(
   options: { jsonV1: boolean; changedAfter: number | null },
   flags: RunListingFlags,
@@ -576,16 +617,8 @@ export async function runListingCommand(
 ): Promise<void> {
   const { has, flag, values } = flags,
     { jsonV1 } = options
-  const {
-    log,
-    dur,
-    chainIsStranded,
-    strandedRecovery,
-    thinOutputWarning,
-    processObservation,
-    clock,
-    subscriptionCost,
-  } = presentation
+  const { log, chainIsStranded, strandedRecovery, processObservation, clock, subscriptionCost } =
+    presentation
   const { idleLabel, idleMsSince } = await import('../events.ts')
   const { parseIdleReclaimedMs } = await import('../idle-kill.ts')
   const json = has('json') || options.jsonV1
@@ -754,46 +787,5 @@ export async function runListingCommand(
 
   if (publishJson(json, jsonV1, rows, unknownIds, unknownRecordIds, changeSnapshot, log)) return
 
-  if (!rows.length && !unknownIds.length && !unknownRecordIds.length) {
-    log('no runs')
-    return
-  }
-  for (const r of rows) {
-    const outcome = outcomeOf(r as OutcomeRow)
-    const lifecycle = lifecyclePresentation(r, outcome)
-    const identity =
-      r.resolved_from === 'turn'
-        ? `${r.number} (asked as turn ${r.requested_number})`
-        : String(r.number)
-    log(
-      `${identity.padStart(4)}  ${String((r.failover_chain as string[]).join('→')).padEnd(6)} ${String(r.job).padEnd(14)}` +
-        // 'running' is not a failure, and a null latency is not zero seconds.
-        ` ${String(r.status === 'failed' ? lifecycle.status.toUpperCase() : lifecycle.status).padEnd(10)}` +
-        ` ${dur(r.latency_ms as number | null).padStart(8)}  ${String(r.prompt_head).slice(0, 60)}` +
-        (r.idle ? `  ${r.idle}` : ''),
-    )
-    if (lifecycle.detail) log(`      ${lifecycle.detail}`)
-    if (FAILURE_KINDS_WITH_LISTED_ERROR.has(String(r.failure_kind))) {
-      log(
-        `      ${failureReason(
-          r as {
-            status: string
-            error: string | null
-            failure_kind: string | null
-            exit_code: number | null
-          },
-        )}`,
-      )
-    }
-    if (r.failure_kind === 'idle') {
-      const reclaimed = r.reclaimed_ms as number | null
-      log(`      idle-killed` + (reclaimed != null ? `; reclaimed ${dur(reclaimed)} of wall` : ''))
-    }
-    // Keep the reason where a fan-out says its exclusions ran out so the command stays honest.
-    reportRouteAndExecutor(r, log)
-    const warning = agentWorkValue(String(r.job), () => thinOutputWarning(runListingWarningRow(r)))
-    if (warning) log(`      ${warning}`)
-  }
-  for (const id of [...unknownIds, ...unknownRecordIds])
-    log(`${String(id).padStart(4)}  unknown run id`)
+  publishHumanListing(rows, unknownIds, unknownRecordIds, presentation)
 }

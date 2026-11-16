@@ -1,5 +1,5 @@
 // concern: machine-local pending question delivery
-/** Keeps the local delivery marker behind one seam until DEV-2349 S5d2 moves it off question. */
+/** Keeps the machine-local pending delivery marker behind one persistence seam. */
 
 import type { Database } from 'bun:sqlite'
 

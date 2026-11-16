@@ -61,6 +61,36 @@ export function stoppedRunLine(id: string): string {
   return `stopped run ${id}`
 }
 
+async function answerAbandonedQuestions(
+  questions: Record<string, unknown>[],
+  at: string,
+  callerSession: string | null,
+): Promise<void> {
+  clearQuestionDeliveryPending(
+    db(),
+    questions.map(({ record_id }) => String(record_id)),
+  )
+  for (const question of questions) {
+    const mutation = await mutateQuestion(db(), {
+      id: String(question.record_id),
+      intent: 'answer',
+      at,
+      actorSession: callerSession,
+      reason: 'abandoned',
+      requireOpen: true,
+      changes: {
+        answeredBy: callerSession ?? 'anonymous (no session id)',
+        answeredAt: at,
+        answer: '(abandoned)',
+        answererKind: ANSWERER_KIND_AGENT,
+        answerChannel: ANSWER_CHANNEL_CLI,
+        awaitingOperatorAt: null,
+      },
+    })
+    if (!mutation.applied) continue
+  }
+}
+
 export function stopTerminationRefusal(
   row: { record_id: string },
   termination: TerminateRunProcessesResult,
@@ -454,29 +484,7 @@ export async function abandonRun(
     auditRunMutation(authority, 'abandon', note ?? null)
     return { row, cleanupRow }
   })
-  clearQuestionDeliveryPending(
-    db(),
-    openQuestions.map(({ record_id }) => String(record_id)),
-  )
-  for (const question of openQuestions) {
-    const mutation = await mutateQuestion(db(), {
-      id: String(question.record_id),
-      intent: 'answer',
-      at,
-      actorSession: callerSession,
-      reason: 'abandoned',
-      requireOpen: true,
-      changes: {
-        answeredBy: callerSession ?? 'anonymous (no session id)',
-        answeredAt: at,
-        answer: '(abandoned)',
-        answererKind: ANSWERER_KIND_AGENT,
-        answerChannel: ANSWER_CHANNEL_CLI,
-        awaitingOperatorAt: null,
-      },
-    })
-    if (!mutation.applied) continue
-  }
+  await answerAbandonedQuestions(openQuestions, at, callerSession)
   await retireRunChainQuestionDeliveries(db(), authority.rootId, 'abandoned', at)
   rollUpRootAndEnqueue(db(), authority.rootId, null, machineId(), at, false)
   const { cleanupRow } = abandoned

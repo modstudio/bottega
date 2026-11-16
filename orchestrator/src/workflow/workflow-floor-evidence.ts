@@ -925,6 +925,71 @@ type GatherValidatedEvidenceInput = {
   d?: Database
 }
 
+async function gatherArtifactEvidence(
+  input: GatherValidatedEvidenceInput,
+  gathered: ValidatedEvidence,
+  d: Database,
+  ports: FloorEvidencePorts,
+  resolveCheckout: NonNullable<FloorEvidencePorts['resolveCheckout']>,
+): Promise<void> {
+  if (!input.evidence.artifact?.trim()) return
+  const offeredArtifact = resolvedOfferedArtifact(d, input.evidence.artifact)
+  const parsed = parseArtifactRef(offeredArtifact)
+  if ('error' in parsed) throw new Error(parsed.error)
+  gathered.artifact = await resolveArtifact(
+    parsed,
+    offeredArtifact,
+    input.identity,
+    {
+      cursorId: input.cursorId,
+      stepOrdinal: input.stepOrdinal,
+      stepSlug: input.stepSlug,
+    },
+    d,
+    ports,
+    resolveCheckout,
+    gathered.tree.commit,
+  )
+  Object.assign(gathered, offeredArtifactRunEvidence(parsed, d))
+  if (parsed.kind === 'pull-request')
+    gathered.pullRequest = pullRequestEvidence(parsed.url, input.identity, d, ports)
+  if (parsed.kind !== 'probe' && parsed.kind !== 'exec') return
+  const row = d
+    .query<
+      {
+        number: number
+        command: string
+        cwd: string
+        head_commit: string | null
+        exit_code: number
+        session_id: string | null
+        created_at: string
+        output_tail: string
+        withheld: number
+        command_withheld: number
+      },
+      [string]
+    >(
+      'SELECT number,command,cwd,head_commit,exit_code,session_id,created_at,output_tail,withheld,command_withheld FROM probe WHERE record_id=?',
+    )
+    .get(parsed.recordId)!
+  const checkout = resolveCheckout(row.cwd, row.head_commit, input.identity.branch)
+  Object.assign(
+    gathered,
+    await gatheredCommandEvidence(
+      parsed.kind,
+      row.number,
+      parsed.recordId,
+      row,
+      input.identity,
+      input.cursorId,
+      d,
+      checkout,
+      ports,
+    ),
+  )
+}
+
 export async function gatherValidatedEvidenceBase(
   input: GatherValidatedEvidenceInput,
 ): Promise<ValidatedEvidence> {
@@ -959,64 +1024,7 @@ export async function gatherValidatedEvidenceBase(
     gathered.runOffered = run
     gathered.run = await gatherRun(run, input.identity, input.cursorId, d)
   }
-  if (input.evidence.artifact?.trim()) {
-    const offeredArtifact = resolvedOfferedArtifact(d, input.evidence.artifact)
-    const parsed = parseArtifactRef(offeredArtifact)
-    if ('error' in parsed) throw new Error(parsed.error)
-    gathered.artifact = await resolveArtifact(
-      parsed,
-      offeredArtifact,
-      input.identity,
-      {
-        cursorId: input.cursorId,
-        stepOrdinal: input.stepOrdinal,
-        stepSlug: input.stepSlug,
-      },
-      d,
-      ports,
-      resolveCheckout,
-      gathered.tree.commit,
-    )
-    Object.assign(gathered, offeredArtifactRunEvidence(parsed, d))
-    if (parsed.kind === 'pull-request')
-      gathered.pullRequest = pullRequestEvidence(parsed.url, input.identity, d, ports)
-    if (parsed.kind === 'probe' || parsed.kind === 'exec') {
-      const row = d
-        .query<
-          {
-            number: number
-            command: string
-            cwd: string
-            head_commit: string | null
-            exit_code: number
-            session_id: string | null
-            created_at: string
-            output_tail: string
-            withheld: number
-            command_withheld: number
-          },
-          [string]
-        >(
-          'SELECT number,command,cwd,head_commit,exit_code,session_id,created_at,output_tail,withheld,command_withheld FROM probe WHERE record_id=?',
-        )
-        .get(parsed.recordId)!
-      const checkout = resolveCheckout(row.cwd, row.head_commit, input.identity.branch)
-      Object.assign(
-        gathered,
-        await gatheredCommandEvidence(
-          parsed.kind,
-          row.number,
-          parsed.recordId,
-          row,
-          input.identity,
-          input.cursorId,
-          d,
-          checkout,
-          ports,
-        ),
-      )
-    }
-  }
+  await gatherArtifactEvidence(input, gathered, d, ports, resolveCheckout)
   if (input.evidence.task?.trim())
     gathered.task = gatherTask(input.evidence.task.trim(), input.identity, d, ports)
   if (input.evidence.defer?.trim()) gathered.deferReason = input.evidence.defer.trim()

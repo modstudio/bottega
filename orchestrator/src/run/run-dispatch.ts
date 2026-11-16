@@ -283,6 +283,31 @@ function detachedSeed(
   )
 }
 
+function clearResumedQuestionDelivery(
+  inserted: { record_id: string; number: number } | null,
+  spec: ResolvedDetachSpec,
+): void {
+  const deliveryRoot =
+    spec.resume?.parent ??
+    (spec.retryOf
+      ? (
+          db()
+            .query(
+              'SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run WHERE record_id=?',
+            )
+            .get(spec.retryOf) as { root_id: string } | null
+        )?.root_id
+      : undefined)
+  if (!inserted || !deliveryRoot) return
+  const runIds = db()
+    .query<{ record_id: string }, [string, string]>(
+      'SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=?',
+    )
+    .all(deliveryRoot, deliveryRoot)
+    .map(({ record_id }) => record_id)
+  clearQuestionDeliveryPendingForRuns(db(), runIds)
+}
+
 /**
  * The depth check happens HERE TOO, before a row exists.
  *
@@ -369,26 +394,7 @@ async function detachResolved(
         identity.parent_run_record_id,
         identity.parent_run_record_id,
       ) as { record_id: string; number: number } | null
-    const deliveryRoot =
-      spec.resume?.parent ??
-      (spec.retryOf
-        ? (
-            db()
-              .query(
-                'SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run WHERE record_id=?',
-              )
-              .get(spec.retryOf) as { root_id: string } | null
-          )?.root_id
-        : undefined)
-    if (inserted && deliveryRoot) {
-      const runIds = db()
-        .query<{ record_id: string }, [string, string]>(
-          'SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=?',
-        )
-        .all(deliveryRoot, deliveryRoot)
-        .map(({ record_id }) => record_id)
-      clearQuestionDeliveryPendingForRuns(db(), runIds)
-    }
+    clearResumedQuestionDelivery(inserted, spec)
     if (inserted && spec.resume?.kind === 'retry-root' && spec.resume.retireAsking) {
       db()
         .query(

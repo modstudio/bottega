@@ -42,6 +42,20 @@ function assertLocalChangedAfter(input: QuestionReadInput): void {
     )
 }
 
+function recordAppliedMutation(database: Database, input: QuestionWriteBody): void {
+  database
+    .query(`INSERT OR IGNORE INTO question_mutation_audit
+      (record_id,question_record_id,action,actor_session,at,reason) VALUES (?,?,?,?,?,?)`)
+    .run(
+      input.requestId,
+      input.question.id,
+      input.audit.action,
+      input.audit.actorSession,
+      input.audit.at,
+      input.audit.reason,
+    )
+}
+
 export class SqliteQuestionStore implements QuestionStore {
   private readonly database: Database
 
@@ -177,18 +191,7 @@ export class SqliteQuestionStore implements QuestionStore {
         workflowStep?.step_slug ?? null,
       )
     const applied = write.changes === 1
-    if (applied)
-      this.database
-        .query(`INSERT OR IGNORE INTO question_mutation_audit
-          (record_id,question_record_id,action,actor_session,at,reason) VALUES (?,?,?,?,?,?)`)
-        .run(
-          input.requestId,
-          q.id,
-          input.audit.action,
-          input.audit.actorSession,
-          input.audit.at,
-          input.audit.reason,
-        )
+    if (applied) recordAppliedMutation(this.database, input)
     return { id: q.id, number, revision: Math.max(existing?.revision ?? 0, q.revision), applied }
   }
 

@@ -234,10 +234,10 @@ async function applyServeTransition(
     taskFlowWriteTarget(row.project, database),
     context.taskFlowClient,
   )
+  if ((decision.move || decision.resume) && row.state === 'awaiting-ruling')
+    await closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, database)
   const mirror = writeTransaction(() => {
     const store = taskFlowLocalStore(database)
-    if ((decision.move || decision.resume) && row.state === 'awaiting-ruling')
-      closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, database)
     const result = store.write('stage-update', payload, hosted)
     const revision = result.revisions[row.record_id]!
     row.revision = revision

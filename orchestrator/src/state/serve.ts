@@ -251,6 +251,40 @@ export async function runDetail(
   }
 }
 
+async function liveRunState(database: ReturnType<typeof db>) {
+  const rows = database
+    .query(
+      `SELECT run.number id, run.record_id,
+            root.number root_id,
+            root.record_id root_record_id,
+            run.agent, run.job, run.repo, run.cwd, run.started_at,
+            COALESCE(run.label, run.prompt_head) AS prompt_head, run.status
+       FROM run JOIN run root ON root.record_id=COALESCE(run.parent_run_record_id,run.record_id)
+       WHERE run.status IN ('running','asking') ORDER BY run.number DESC`,
+    )
+    .all() as Array<
+    Record<string, unknown> & {
+      id: number
+      root_id: number
+      record_id: string
+      status: string
+    }
+  >
+  const live = await Promise.all(
+    rows.map(async (run) => {
+      const openQuestions = (await questionsForRun(database, run.record_id)).filter(
+        ({ answered_at, closed_at }) => answered_at === null && closed_at === null,
+      ).length
+      return {
+        ...run,
+        open_questions: openQuestions,
+        waiting: run.status === 'asking' && openQuestions > 0,
+      }
+    }),
+  )
+  return live.sort((a, b) => Number(b.waiting) - Number(a.waiting) || Number(b.id) - Number(a.id))
+}
+
 /**
  * How far back the activity counters look. Null means all of it.
  *
@@ -297,38 +331,7 @@ export async function state(sinceDays: number | null = null) {
    * So a row waits only while something is genuinely unanswered, and the count
    * is carried beside it so the page can say how many.
    */
-  const liveRows = d
-    .query(
-      `SELECT run.number id, run.record_id,
-            root.number root_id,
-            root.record_id root_record_id,
-            run.agent, run.job, run.repo, run.cwd, run.started_at,
-            COALESCE(run.label, run.prompt_head) AS prompt_head, run.status
-       FROM run JOIN run root ON root.record_id=COALESCE(run.parent_run_record_id,run.record_id)
-       WHERE run.status IN ('running','asking') ORDER BY run.number DESC`,
-    )
-    .all() as Array<
-    Record<string, unknown> & {
-      id: number
-      root_id: number
-      record_id: string
-      status: string
-    }
-  >
-  const live = (
-    await Promise.all(
-      liveRows.map(async (run) => {
-        const openQuestions = (await questionsForRun(d, run.record_id)).filter(
-          ({ answered_at, closed_at }) => answered_at === null && closed_at === null,
-        ).length
-        return {
-          ...run,
-          open_questions: openQuestions,
-          waiting: run.status === 'asking' && openQuestions > 0,
-        }
-      }),
-    )
-  ).sort((a, b) => Number(b.waiting) - Number(a.waiting) || Number(b.id) - Number(a.id))
+  const live = await liveRunState(d)
 
   const stale = (d.query(`SELECT COUNT(*) n FROM run WHERE status='stale'`).get() as { n: number })
     .n

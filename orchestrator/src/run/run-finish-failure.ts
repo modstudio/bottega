@@ -3,7 +3,7 @@
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { TERMINAL_RUN_STATUS_SET } from './run-status.ts'
-import { closeTerminalChainQuestions, finalizeTerminalChain } from './run-terminal-chain.ts'
+import { closeRunTerminalChainQuestions, finalizeTerminalChain } from './run-terminal-chain.ts'
 
 export function shouldWriteFinishFailure(
   currentStatus: string,
@@ -49,5 +49,5 @@ export async function recordRunFinishFailure(input: {
     enqueueRunRecord(database, input.runId, input.machineId, finishedAt)
     return { rootId: row.parent_run_record_id ?? input.runId, failureKind: 'harness' as const }
   })
-  if (chain) await closeTerminalChainQuestions(db(), chain.rootId, 'failed', chain.failureKind)
+  if (chain) await closeRunTerminalChainQuestions(db(), chain.rootId, 'failed', chain.failureKind)
 }

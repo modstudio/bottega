@@ -653,6 +653,61 @@ async function customerTaskFlowParity(
   }
 }
 
+async function recordOwnerChecks(migrateUrl: string, urls: string[]): Promise<RecordDoctorCheck[]> {
+  const checks: RecordDoctorCheck[] = []
+  const run = async (name: string, action: () => Promise<unknown>): Promise<void> => {
+    try {
+      await action()
+      checks.push({ name, status: 'pass' })
+    } catch (error) {
+      checks.push({ name, status: 'fail', detail: failureDetail(error, urls) })
+    }
+  }
+  const names = [
+    'record roles exist',
+    'schema public owned by record_owner',
+    'applied migrations equal shipped migrations',
+    'record_actor representative grants',
+  ]
+  const owner = recordPool(migrateUrl)
+  await run(names[0]!, async () => {
+    const rows =
+      await owner`SELECT rolname FROM pg_roles WHERE rolname IN (${RECORD_OWNER_ROLE},${RECORD_ACTOR_ROLE},${RECORD_READER_ROLE})`
+    if (rows.length !== 3) throw new Error('one or more record roles are absent')
+  })
+  await run(names[1]!, async () => {
+    const rows =
+      await owner`SELECT pg_get_userbyid(nspowner) AS owner FROM pg_namespace WHERE nspname='public'`
+    if (rows[0]?.owner !== RECORD_OWNER_ROLE)
+      throw new Error(`schema public is not owned by ${RECORD_OWNER_ROLE}`)
+  })
+  await run(names[2]!, async () => {
+    const applied = await appliedRecordMigrationCount(migrateUrl)
+    const shipped = recordMigrationCount()
+    if (applied !== shipped) throw new Error(`applied ${applied}; shipped ${shipped}`)
+  })
+  await run(names[3]!, async () => {
+    const rows = await owner`
+        SELECT CASE table_name WHEN '"user"' THEN 'user' ELSE table_name END AS table_name, privilege
+        FROM (VALUES
+          ('project', 'SELECT'), ('project', 'INSERT'), ('project', 'UPDATE'), ('project', 'DELETE'),
+          ('invitation', 'SELECT'), ('invitation', 'INSERT'), ('invitation', 'UPDATE'), ('invitation', 'DELETE'),
+          ('"user"', 'SELECT'), ('"user"', 'INSERT'), ('"user"', 'UPDATE')
+        ) AS required(table_name, privilege)
+        WHERE NOT has_table_privilege(${RECORD_ACTOR_ROLE}, table_name, privilege)
+        ORDER BY table_name, privilege`
+    if (rows.length)
+      throw new Error(
+        rows
+          .map(
+            (row: Record<string, unknown>) => `${String(row.table_name)} ${String(row.privilege)}`,
+          )
+          .join(', '),
+      )
+  })
+  return checks
+}
+
 async function operatorRecordChecks(input: {
   recordUrl: string
   migrateUrl?: string
@@ -772,42 +827,7 @@ async function operatorRecordChecks(input: {
       })
     return checks
   }
-  const owner = recordPool(input.migrateUrl)
-  await run(ownerNames[0]!, async () => {
-    const rows =
-      await owner`SELECT rolname FROM pg_roles WHERE rolname IN (${RECORD_OWNER_ROLE},${RECORD_ACTOR_ROLE},${RECORD_READER_ROLE})`
-    if (rows.length !== 3) throw new Error('one or more record roles are absent')
-  })
-  await run(ownerNames[1]!, async () => {
-    const rows =
-      await owner`SELECT pg_get_userbyid(nspowner) AS owner FROM pg_namespace WHERE nspname='public'`
-    if (rows[0]?.owner !== RECORD_OWNER_ROLE)
-      throw new Error(`schema public is not owned by ${RECORD_OWNER_ROLE}`)
-  })
-  await run(ownerNames[2]!, async () => {
-    const applied = await appliedRecordMigrationCount(input.migrateUrl!)
-    const shipped = recordMigrationCount()
-    if (applied !== shipped) throw new Error(`applied ${applied}; shipped ${shipped}`)
-  })
-  await run(ownerNames[3]!, async () => {
-    const rows = await owner`
-        SELECT CASE table_name WHEN '"user"' THEN 'user' ELSE table_name END AS table_name, privilege
-        FROM (VALUES
-          ('project', 'SELECT'), ('project', 'INSERT'), ('project', 'UPDATE'), ('project', 'DELETE'),
-          ('invitation', 'SELECT'), ('invitation', 'INSERT'), ('invitation', 'UPDATE'), ('invitation', 'DELETE'),
-          ('"user"', 'SELECT'), ('"user"', 'INSERT'), ('"user"', 'UPDATE')
-        ) AS required(table_name, privilege)
-        WHERE NOT has_table_privilege(${RECORD_ACTOR_ROLE}, table_name, privilege)
-        ORDER BY table_name, privilege`
-    if (rows.length)
-      throw new Error(
-        rows
-          .map(
-            (row: Record<string, unknown>) => `${String(row.table_name)} ${String(row.privilege)}`,
-          )
-          .join(', '),
-      )
-  })
+  checks.push(...(await recordOwnerChecks(input.migrateUrl, urls)))
   return checks
 }
 

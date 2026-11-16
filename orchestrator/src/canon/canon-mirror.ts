@@ -14,8 +14,9 @@ import {
   assertBranchRefMayBeCreated,
   assertBranchRefMayBeDeleted,
 } from '../branch/branch-ref-guard.ts'
-import { closeOutRunPrepared, closeTerminalChainQuestions } from '../close/close-out.ts'
+import { closeOutRunPrepared } from '../close/close-out.ts'
 import { type CloseOutPreparation, prepareCloseOut } from '../close/close-out-preparation.ts'
+import { closeTerminalChainQuestions } from '../close/close-out-questions.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { fileNote, listHubNotes } from '../mcp/hub-notes.ts'

@@ -64,6 +64,14 @@ import { rollUpRootAndEnqueue } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
 import { checkpointRoot, claimIdentity } from './run-resume-kind.ts'
+import { type BlockerRow, blockersToRecord } from './run-terminal-blockers.ts'
+import { finalizeTerminalChain, settleTerminalQuestionState } from './run-terminal-chain.ts'
+import { terminalTurnChanged } from './run-terminal-change.ts'
+import { applyConfinementPrecedence, applyVendorTermination } from './run-terminal-precedence.ts'
+import {
+  applyPrematureFinalFailure,
+  terminalPrematureFinalRefusal,
+} from './run-terminal-premature.ts'
 import {
   type ObservedTestOutcome,
   observedTestOutcome,
@@ -78,17 +86,6 @@ import {
   shouldSnapshotSharedGitConfig,
   terminalSharedGitConfigHeader,
 } from './shared-git-config.ts'
-
-const TERMINAL_STATUS_SQL = 'SELECT status, failure_kind FROM run WHERE record_id=?'
-
-import { type BlockerRow, blockersToRecord } from './run-terminal-blockers.ts'
-import { closeTerminalChainQuestions, finalizeTerminalChain } from './run-terminal-chain.ts'
-import { terminalTurnChanged } from './run-terminal-change.ts'
-import { applyConfinementPrecedence, applyVendorTermination } from './run-terminal-precedence.ts'
-import {
-  applyPrematureFinalFailure,
-  terminalPrematureFinalRefusal,
-} from './run-terminal-premature.ts'
 
 type TerminalOptions = {
   job: string
@@ -694,6 +691,12 @@ async function recordTerminalQuestions(
   })
 }
 
+function forgetTerminalProcess(proc: TerminalInput['proc']): void {
+  if (!proc) return
+  live.delete(proc)
+  liveCheckpoints.delete(proc)
+}
+
 export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   let {
     timer,
@@ -743,10 +746,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   } = input
   clearRunTimers(timer, checkpointTimer)
   const resourceUsage = resourceObserver?.stop() ?? null
-  if (proc) {
-    live.delete(proc)
-    liveCheckpoints.delete(proc)
-  }
+  forgetTerminalProcess(proc)
   if (proc?.pid && proc.pid !== process.pid) await terminateProcessGroup(proc.pid, { direct: proc })
   if (askLoopback) await askLoopback.close()
   await resetSandbox()
@@ -1075,20 +1075,14 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       console.error(`orch: run ${claim.id} left unreconciled: ${detail}`)
     }
   }
-  await closeTerminalChainQuestions(
-    db(),
-    claimIdentity(opts.resume).parent_run_record_id ?? claim.id,
+  const recorded = await settleTerminalQuestionState({
+    database: db(),
+    runId: claim.id,
+    rootId: claimIdentity(opts.resume).parent_run_record_id ?? claim.id,
     status,
     failureKind,
-  )
-  await preAnswerReplyQuestions(claim.id, recordedQuestions)
-  const recorded = db().query(TERMINAL_STATUS_SQL).get(claim.id) as {
-    status: string
-    failure_kind: string | null
-  } | null
-  if (!recorded) {
-    throw new Error(`run ${claim.id} disappeared before terminalisation`)
-  }
+    preAnswer: () => preAnswerReplyQuestions(claim.id, recordedQuestions),
+  })
   return completeRecordedRun({
     runId: claim.id,
     recordedFailureKind: recorded.failure_kind,

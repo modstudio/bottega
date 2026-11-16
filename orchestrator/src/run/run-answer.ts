@@ -547,6 +547,18 @@ function retryKeepTree(row: RetryRunRow) {
   )
 }
 
+async function recordedRulingsForRetry(rootId: string): Promise<RecordedRuling[]> {
+  const chainQuestions = await questionsForRunChain(db(), rootId)
+  const pendingIds = new Set(
+    pendingQuestionIds(db(), {
+      questionIds: chainQuestions.map(({ record_id }) => String(record_id)),
+    }),
+  )
+  return chainQuestions
+    .filter(({ record_id, answer }) => pendingIds.has(String(record_id)) && answer !== null)
+    .sort((a, b) => Number(a.number) - Number(b.number)) as RecordedRuling[]
+}
+
 export async function retryRun(
   id: string,
   options: { agent?: string; model?: string; flags: RunFlags },
@@ -571,15 +583,7 @@ export async function retryRun(
   // A writing job already has a worktree and a vendor session. Retry would
   // wrap the prompt again and cut a fresh tree beside the one holding the
   // partial edit. Continue the same conversation in the same tree instead.
-  const chainQuestions = await questionsForRunChain(db(), row.root_record_id)
-  const pendingIds = new Set(
-    pendingQuestionIds(db(), {
-      questionIds: chainQuestions.map(({ record_id }) => String(record_id)),
-    }),
-  )
-  const recordedRulings = chainQuestions
-    .filter(({ record_id, answer }) => pendingIds.has(String(record_id)) && answer !== null)
-    .sort((a, b) => Number(a.number) - Number(b.number)) as RecordedRuling[]
+  const recordedRulings = await recordedRulingsForRetry(row.root_record_id)
   const writesRepo = Boolean(job(row.job).needs.writesRepo)
   const readsRepo = Boolean(job(row.job).needs.readsRepo)
   const bindings = retryAgentBindings(row, options)
