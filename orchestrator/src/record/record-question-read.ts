@@ -60,7 +60,52 @@ async function recordQuestionRulingRows(
   )) as Row[]
 }
 
+const QUESTION_DETAIL_COLUMNS = `q.id::text record_id,q.number,q.run_id::text run_record_id,
+  q.workflow_key,q.workflow_task_id::text workflow_task_record_id,
+  q.workflow_cursor_record_id::text,q.project_id::text,q.machine_id::text machine_id,q.revision,
+  q.asked_at::text,q.question,q.options::text,q.recommendation,q.why,q.asked_via,q.kind,
+  q.typed_options::text,q.criteria::text,q.levels::text,q.answer,q.answer_value,q.answer_basis,
+  q.answered_at::text,q.answered_by,q.answered_by_name,q.answered_by_kind,q.answerer_kind,q.answer_channel,
+  q.jev_pick,q.jev_confidence,q.jev_probabilities::text,q.jev_model,q.jev_input_tokens,q.jev_error,
+  q.jev_agreed,q.jev_question_version,q.jev_fits,q.jev_order_flipped,q.awaiting_operator_at::text,
+  q.relayed_by,q.overturned_at::text,q.overturned_by,q.overturned_by_name,q.overturn_reason,q.replacement,
+  q.filed_as,q.filed_ref,q.filed_record_id::text,q.filed_label,q.filed_at::text,q.closed_at::text,q.close_reason,
+  owner.number run_number,COALESCE(owner.parent_run_id,owner.id)::text root_id,
+  stage.number workflow_cursor_number,stage.workflow workflow_slug,stage.mode mode_slug,
+  stage.session_id workflow_owner,stage.updated_at::text workflow_updated_at,stage.state cursor_state,
+  stage.arguments::text args,COALESCE(owner.repo,stage_project.name) repo,
+  COALESCE(owner.cwd,stage_project.path) cwd,COALESCE(run_project.name,stage_project.name) project_name,
+  stage_project.path project_path,COALESCE(owner.launch_key,q.workflow_key) launch_key,
+  (SELECT latest.status FROM run latest
+    WHERE latest.id=COALESCE(owner.parent_run_id,owner.id)
+       OR latest.parent_run_id=COALESCE(owner.parent_run_id,owner.id)
+    ORDER BY latest.turn DESC,latest.number DESC LIMIT 1) latest_status,
+  COALESCE(owner.project_id,stage.project_id)::text project_record_id`
+
+async function recordQuestionDetails(
+  tx: SQL,
+  input: { ids?: readonly string[]; runId?: string },
+): Promise<Row[]> {
+  if (input.ids?.length === 0) return []
+  const values = input.ids ? [...input.ids] : [input.runId]
+  const predicate = input.ids
+    ? `q.id IN (${input.ids.map((_, index) => `$${index + 1}::uuid`).join(',')})`
+    : 'q.run_id=$1::uuid'
+  return (await tx.unsafe(
+    `SELECT ${QUESTION_DETAIL_COLUMNS} FROM question q
+     LEFT JOIN run owner ON owner.id=q.run_id
+     LEFT JOIN project run_project ON run_project.id=owner.project_id
+     LEFT JOIN task_flow_stage stage ON stage.id=q.workflow_cursor_record_id
+     LEFT JOIN project stage_project ON stage_project.id=stage.project_id
+     WHERE ${predicate} ORDER BY q.number`,
+    values,
+  )) as Row[]
+}
+
 async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
+  if (input.read === 'by-id') return limited(await recordQuestionDetails(tx, input), input.limit)
+  if (input.read === 'for-run')
+    return limited(await recordQuestionDetails(tx, { runId: input.runId }), input.limit)
   if (input.read === 'inbox') {
     const runs = (await tx.unsafe(
       `SELECT q.number,q.id::text record_id,q.run_id::text run_record_id,owner.number run_number,

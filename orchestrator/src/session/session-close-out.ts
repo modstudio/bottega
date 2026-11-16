@@ -2,6 +2,7 @@
 /** Gathers one session's lifecycle inventory and delegates release to each existing owner. */
 
 import type { Database } from 'bun:sqlite'
+import { openQuestionStages } from '../question-store/question-store-read.ts'
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -222,7 +223,7 @@ function incompleteReviews(database: Database, session: string): IncompleteRevie
 }
 
 async function openCursors(database: Database, session: string): Promise<OpenCursor[]> {
-  return await taskFlowReadStore(database).openStagesForSession(session)
+  return await openQuestionStages(database, session)
 }
 
 function observeOwnedBranch(

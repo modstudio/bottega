@@ -93,6 +93,7 @@ import {
 import { dispatchCommand, reviewMemoryBranch } from './dispatch-commands.ts'
 import { callerCheckoutFacts, installLevelDispatchDecision } from './dispatch-preflight.ts'
 import type { ReviewLensPackInputs } from './review-lens-prompt.ts'
+import { openQuestionStages } from '../question-store/question-store-read.ts'
 import type { ReviewFindingMemory } from './review-memory.ts'
 import { lookupProjectTaskKey, readTaskText, type TaskTextRead } from './task-key-lookup.ts'
 
@@ -108,7 +109,7 @@ function keyedRunCursorAdmission() {
   return {
     harnessSession: identity?.kind === 'identity' ? identity.session : null,
     readOpenCursors: async (session: string) => {
-      const cursors = await taskFlowReadStore(db()).openStagesForSession(session)
+      const cursors = await openQuestionStages(db(), session)
       return cursors.map((cursor) => ({
         project: cursor.project,
         workflowKey: cursor.workflow_key,

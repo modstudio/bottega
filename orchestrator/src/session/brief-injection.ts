@@ -2,6 +2,7 @@
 /** Records one SessionStart context delivery and its open-cursor facts. */
 
 import type { Database } from 'bun:sqlite'
+import { openQuestionStages } from '../question-store/question-store-read.ts'
 import { SESSION_START_SOURCES } from '../../../shared/record/schema-session.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
@@ -65,7 +66,7 @@ export async function recordBriefInjection(
   wholeNonnegative(input.chars, 'chars')
   const database = dependencies.database ?? db(true)
   const at = (dependencies.now ?? nowIso)()
-  const cursors = await taskFlowReadStore(database).openStagesForSession(input.sessionId)
+  const cursors = await openQuestionStages(database, input.sessionId)
   const facts = briefInjectionCursorFacts(cursors, Date.parse(at))
   const row: BriefInjection = {
     ...input,

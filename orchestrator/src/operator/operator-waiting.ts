@@ -15,6 +15,7 @@ import type {
 } from '../../../shared/orch-contract.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
+import { waitingQuestions } from '../question-store/question-store-read.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from '../run/run-authority.ts'
@@ -64,12 +65,12 @@ function notificationDetails(item: OperatorWaitingItem): OperatorNotification {
 }
 
 /** Atomically claim each currently waiting episode once, optionally narrowed for direct delivery. */
-export function claimOperatorNotifications(
+export async function claimOperatorNotifications(
   d: Database = db(),
   only?: { kind: OperatorInboxKind; id: string | number },
-): ClaimedOperatorNotification[] {
+): Promise<ClaimedOperatorNotification[]> {
+  const workflows = await waitingQuestions(d)
   return writeTransaction(() => {
-    const workflows = taskFlowLocalStore(d).waitingWorkflowQuestions()
     const items = operatorWaitingWithEpisodes(d, workflows).filter(({ item }) => {
       if (!only || item.kind !== only.kind) return !only
       return item.kind === 'question'
@@ -100,14 +101,14 @@ export function claimOperatorNotifications(
 }
 
 /** Claim and send from trusted in-process paths; delivery failure cannot fail the mutation. */
-export function notifyWaitingItem(
+export async function notifyWaitingItem(
   kind: OperatorInboxKind,
   id: string | number,
   d: Database,
   send: typeof sendOperatorNotification = sendOperatorNotification,
-): void {
+): Promise<void> {
   try {
-    for (const item of claimOperatorNotifications(d, { kind, id })) send(item.notification)
+    for (const item of await claimOperatorNotifications(d, { kind, id })) send(item.notification)
   } catch (error) {
     console.error(`orch: desktop notification failed: ${String(error)}`)
   }
@@ -258,6 +259,6 @@ function operatorWaitingWithEpisodes(
 }
 
 export async function operatorWaiting(d: Database = db()): Promise<OperatorWaitingItem[]> {
-  const workflows = await taskFlowReadStore(d).waitingWorkflowQuestions()
+  const workflows = await waitingQuestions(d)
   return operatorWaitingWithEpisodes(d, workflows).map(({ item }) => item)
 }

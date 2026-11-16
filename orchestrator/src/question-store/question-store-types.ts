@@ -61,6 +61,7 @@ export type QuestionReadRow =
   | QuestionRulingRow
   | QuestionTaskRulingRow
   | QuestionProjectRow
+  | Record<string, unknown>
 export type QuestionReadResult = {
   items: QuestionReadRow[]
   cursor?: string

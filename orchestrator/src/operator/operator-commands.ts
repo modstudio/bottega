@@ -38,7 +38,7 @@ export async function waitingCommand(
   options: { json: boolean; claimNotifications: boolean },
   presentation: Presentation,
 ): Promise<void> {
-  const rows = options.claimNotifications ? claimOperatorNotifications() : await operatorWaiting()
+  const rows = options.claimNotifications ? await claimOperatorNotifications() : await operatorWaiting()
   if (options.json) {
     presentation.log(JSON.stringify(rows))
     return

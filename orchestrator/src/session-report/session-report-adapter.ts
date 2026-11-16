@@ -2,6 +2,7 @@
 /** Gathers session report facts from the canonical lifecycle queries. */
 
 import type { Database } from 'bun:sqlite'
+import { openQuestionStages } from '../question-store/question-store-read.ts'
 import { db } from '../database/db.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
@@ -103,7 +104,7 @@ export async function factsForSession(
     .all(sessionId)
     .map((row) => row.record_id)
   const openCursorIds = new Set(
-    (await taskFlowReadStore(database).openStagesForSession(sessionId)).map((row) => row.record_id),
+    (await openQuestionStages(database, sessionId)).map((row) => row.record_id),
   )
   const cursors = database
     .query<CursorRow, [string, string]>(

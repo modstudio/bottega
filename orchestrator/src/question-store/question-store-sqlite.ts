@@ -17,8 +17,11 @@ import {
   taskRulingRows,
   waitingWorkflowQuestions,
   workflowInboxQuestions,
-} from '../workflow/task-flow-store-sqlite-questions.ts'
+  questionsById,
+  questionsForRun,
+} from './question-store-sqlite-reads.ts'
 import type { QuestionReadResult, QuestionStore } from './question-store-types.ts'
+import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 
 const json = (value: unknown) => (value == null ? null : JSON.stringify(value))
 const limited = <Row>(rows: Row[], limit?: number): Row[] =>
@@ -138,11 +141,12 @@ export class SqliteQuestionStore implements QuestionStore {
         input.audit.at,
         input.audit.reason,
       )
+    enqueueQuestionRecord(this.database, q.id)
     return { id: q.id, number, revision: Math.max(existing?.revision ?? 0, q.revision) }
   }
 
   async read(input: QuestionReadInput): Promise<QuestionReadResult> {
-    if (input.changedAfter !== undefined)
+    if (input.changedAfter !== undefined && input.read !== 'rulings')
       throw new Error(
         `${questionChangedAfterRefusal.local.message}; ${questionChangedAfterRefusal.local.remedy}`,
       )
@@ -160,16 +164,26 @@ export class SqliteQuestionStore implements QuestionStore {
         items: limited(openStagesForSession(this.database, input.sessionId), input.limit),
       }
     if (input.read === 'rulings')
-      return {
+      {
+        const after = input.changedAfter === undefined ? null : Number(input.changedAfter)
+        const cursor =
+          after === null
+            ? null
+            : (this.database
+                .query<{ value: number }, []>('SELECT value FROM collect_change_counter')
+                .get()?.value ?? 0)
+        return {
         items: limited(
           rulingRows(this.database, {
             kind: input.kind,
             since: input.since,
-            after: null,
-            cursor: null,
+            after,
+            cursor,
           }) as QuestionReadResult['items'],
           input.limit,
         ),
+          ...(cursor === null ? {} : { cursor: String(cursor) }),
+        }
       }
     if (input.read === 'task-rulings') {
       const project = this.database
@@ -181,6 +195,10 @@ export class SqliteQuestionStore implements QuestionStore {
           : [],
       }
     }
+    if (input.read === 'by-id')
+      return { items: limited(questionsById(this.database, input.ids), input.limit) }
+    if (input.read === 'for-run')
+      return { items: limited(questionsForRun(this.database, input.runId), input.limit) }
     return { items: limited(localQuestionProjects(this.database), input.limit) }
   }
 }

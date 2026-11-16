@@ -9,6 +9,7 @@ import { voidedSql } from '../evidence/evidence-query.ts'
 import { projectAt } from '../project/projects.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
+import { inboxWorkflowQuestions } from '../question-store/question-store-read.ts'
 import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 import { runQuestionGroupFooter } from './question-display.ts'
 import { displayRunQuestion } from './question-display-probe.ts'
@@ -174,7 +175,7 @@ async function workflowInboxQuestions(
   const scoped = input.requestedCwd !== undefined
   const scopedProject = scoped ? projectAt(input.requestedCwd!) : null
   const defaultProject = !scoped && !input.all ? projectAt(process.cwd()) : null
-  const rows = await taskFlowReadStore(database).workflowInboxQuestions()
+  const rows = await inboxWorkflowQuestions(database)
   const visible = rows.filter((row) => {
     if (scoped) return scopedProject !== null && row.project_record_id === scopedProject.recordId
     if (input.all) return true

@@ -7,8 +7,7 @@ import {
   RulingListSchema,
 } from '../../../shared/orch-contract.ts'
 import { db } from '../database/db.ts'
-import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
-import { collectChangeCursor } from './collect-change.ts'
+import { questionRulings } from '../question-store/question-store-read.ts'
 
 type RulingListOptions = {
   since?: string
@@ -37,13 +36,13 @@ async function queryRulings(options: RulingListOptions): Promise<{
     if (!Number.isFinite(Date.parse(options.since))) throw new Error('--since must be an ISO date')
   }
   const after = options.changedAfter ?? null
-  const cursor = after === null ? null : collectChangeCursor()
-  const rows = await taskFlowReadStore(db()).rulingRows({
+  const result = await questionRulings(db(), {
     kind: options.kind,
     ...(options.since ? { since: options.since } : {}),
-    after,
-    cursor,
+    ...(after === null ? {} : { changedAfter: String(after) }),
   })
+  const rows = result.items
+  const cursor = result.cursor === undefined ? null : Number(result.cursor)
   const parsed = RulingListSchema.parse(
     rows.map(({ number, ...row }) => ({
       id: number,

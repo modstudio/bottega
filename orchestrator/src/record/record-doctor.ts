@@ -2,6 +2,7 @@
 /** Diagnoses customer record access, agent credentials, and optional operator connections. */
 
 import type { Database } from 'bun:sqlite'
+import { questionProjects } from '../question-store/question-store-read.ts'
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readEnvValues, resolveEnvValuesWithHosted } from '../../../shared/env-source.ts'
@@ -476,7 +477,7 @@ export async function localQuestionCountForSpace(
   activeSpace: { id: string; slug: string },
 ): Promise<number> {
   const projectSpaces = new Map(projects.map((project) => [project.name, project.space]))
-  const rows = await taskFlowReadStore(database).localQuestionProjects()
+  const rows = await questionProjects(database)
   return rows.filter((row) => {
     const space = row.project ? projectSpaces.get(row.project) : null
     const effectiveSpace = space ?? activeSpace.id
