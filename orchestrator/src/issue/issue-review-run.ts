@@ -1,7 +1,6 @@
 // concern: filed-issue review adapter
 /** Resolves review tier, dispatches its lenses, and gathers results without judging them. */
 
-import { AGENTS } from '../agent/agent-registry.ts'
 import { type CollectedWaitRun, collectWaitForRuns } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
 import type { Project } from '../project/projects.ts'
@@ -9,7 +8,7 @@ import { parseReviewOutput } from '../review/review.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import { resolveReviewBase } from '../review/review-target.ts'
 import { reviewTierForRange } from '../review/review-tier-service.ts'
-import { evidenceModel } from '../route/evidence-model.ts'
+import { evidenceModelForRun } from '../route/evidence-model.ts'
 import { detach } from '../run/run-dispatch.ts'
 import { RUN_FOLLOW_TIMEOUT_MS } from '../run/run-liveness.ts'
 import type { RunResult } from '../run/run-types.ts'
@@ -203,7 +202,7 @@ export function modelForRun(runId: string): string {
     model: string | null
   } | null
   if (!row?.model) throw new Error(`run ${runId} recorded no model for second opinion to exclude`)
-  return evidenceModel(row.model, AGENTS[row.agent]?.baseUrl)
+  return evidenceModelForRun(row.agent, row.model)
 }
 
 function reviewPrompt(issue: FiledIssue, lens: string, tier: 0 | 1 | 2 | 3): string {

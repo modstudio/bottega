@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
-import { refreshAgents } from '../agent/agent-registry.ts'
+import { addAgent, refreshAgents } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import {
   callerCheckoutDecision,
@@ -8,10 +8,46 @@ import {
   detachSpecWithRoutedSelection,
   dispatchLaunchCwdDecision,
   resolveCallerCheckoutDecision,
+  routeConstraints,
   selectBeforeDetach,
   taskBranchLandingBypassWarning,
   transportSelection,
 } from './dispatch-cli-service.ts'
+
+test('--distinct-from excludes a prior run by its canonical provider-scoped model', async () => {
+  const openRouterAgent = 'distinct-openrouter-fixture'
+  const directAgent = 'distinct-direct-fixture'
+  addAgent(openRouterAgent, {
+    harness: 'codex',
+    backend: 'vendor',
+    model: 'x/y:floor',
+    baseUrl: 'https://openrouter.ai/api/v1',
+  })
+  addAgent(directAgent, {
+    harness: 'codex',
+    backend: 'vendor',
+    model: 'x/y:floor',
+  })
+  const openRouterRun = addRun({
+    agent: openRouterAgent,
+    job: 'craft',
+    model: 'x/y:floor',
+  })
+  const directRun = addRun({ agent: directAgent, job: 'craft', model: 'x/y:floor' })
+
+  try {
+    await expect(
+      routeConstraints(['--distinct-from', `${openRouterRun},${directRun}`]),
+    ).resolves.toEqual({
+      avoid: [],
+      distinctModels: ['x/y', 'x/y:floor'],
+    })
+  } finally {
+    db().query('DELETE FROM run WHERE record_id IN (?,?)').run(openRouterRun, directRun)
+    db().query('DELETE FROM agent WHERE name IN (?,?)').run(openRouterAgent, directAgent)
+    refreshAgents()
+  }
+})
 
 test('detached selection waits only after a capacity-only foreground result', () => {
   expect(decidePreDetachSelection({ selection: 'capacity-wait', noWaitCapacity: false })).toBe(

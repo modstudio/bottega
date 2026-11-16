@@ -8,7 +8,7 @@ export type SecondOpinionRun = {
   runId: string
   lens: string
   model: string | null
-  baseUrl?: string | null
+  baseUrl: string | null
   graded: boolean
   completed: boolean
 }

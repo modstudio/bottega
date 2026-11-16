@@ -55,7 +55,7 @@ import {
   REVIEW_OVERLAP,
   REVIEW_REPRODUCED,
 } from '../review/review-vocabulary.ts'
-import { evidenceModel } from '../route/evidence-model.ts'
+import { evidenceModelForRun } from '../route/evidence-model.ts'
 import type { DetachSpec } from '../route/failover.ts'
 import { pick, type RoutedSelection } from '../route/route.ts'
 import { pickCommand } from '../route/routing-commands.ts'
@@ -324,14 +324,14 @@ async function modelForDistinct(id: string): Promise<string> {
       status: string
     } | null
     if (!row) throw new Error(`no run ${id} named by --distinct-from`)
-    if (row.model) return evidenceModel(row.model, AGENTS[row.agent]?.baseUrl)
+    if (row.model) return evidenceModelForRun(row.agent, row.model)
     if (row.status !== 'running' || Date.now() >= until)
       throw new Error(`run ${id} recorded no model for --distinct-from to exclude`)
     await new Promise((resolve) => setTimeout(resolve, 25))
   }
 }
 
-async function routeConstraints(
+export async function routeConstraints(
   argv: string[],
   agent?: string,
 ): Promise<{ avoid: string[]; distinctModels: string[] }> {

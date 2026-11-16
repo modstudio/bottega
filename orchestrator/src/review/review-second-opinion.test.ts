@@ -13,6 +13,7 @@ const opinion = (
   runId,
   lens: 'correctness',
   model,
+  baseUrl: null,
   graded: true,
   completed: true,
   ...overrides,
