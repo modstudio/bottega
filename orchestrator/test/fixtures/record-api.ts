@@ -21,6 +21,7 @@ import {
 import { BOARD_PRESENCE_WRITE_INTERVAL_MS } from '../../src/record/record-board-presence.ts'
 import { createBoardStreamRegistry } from '../../src/record/record-board-stream.ts'
 import { assertRevisionWrite } from '../../src/record/record-doc-errors.ts'
+import { memoryQuestionClient } from './record-api-question.ts'
 import { type MemoryTaskFlowInput, memoryTaskFlowClient } from './record-api-task-flow.ts'
 
 const idleIdentityAndSpaceDeps = () => ({ listInvitations: async () => [] })
@@ -387,21 +388,6 @@ export function createMemoryRecordApiClient(
   const boardChanges = input.boardChanges ?? []
   const boardPresence = new Map<string, HostedBoardPresenceInput>()
   const boardReceipts = new Map<string, HostedBoardReceipt>()
-  const questions = input.questions ?? []
-  const hostedQuestionRow = (row: Record<string, unknown>) =>
-    Object.fromEntries(
-      Object.entries(row).map(([key, value]) => {
-        const recordKey =
-          key === 'runId'
-            ? 'run_record_id'
-            : key === 'workflowTaskId'
-              ? 'workflow_task_record_id'
-              : key === 'projectId'
-                ? 'project_record_id'
-                : key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
-        return [recordKey, value]
-      }),
-    )
   let boardRevision = BigInt(
     boardChanges.reduce(
       (highest, change) =>
@@ -427,52 +413,7 @@ export function createMemoryRecordApiClient(
     ...unusedBoardClientMethods(),
     ...unusedContextItemClientMethods(),
     ...memoryTaskFlowClient(input),
-    async sync(request) {
-      return {
-        results: request.rows.map((row) => ({ id: row.id, status: 'synced' as const })),
-      }
-    },
-    async readQuestions(selector) {
-      const items = questions
-        .filter((row) => {
-          if (selector.read === 'by-id')
-            return selector.ids.includes(String(row.id ?? row.record_id))
-          if (selector.read === 'by-number') return Number(row.number) === selector.number
-          if (selector.read === 'for-run') return (row.run_id ?? row.runId) === selector.runId
-          if (selector.read === 'for-cursor')
-            return (
-              (row.workflow_cursor_record_id ?? row.workflowCursorRecordId) ===
-              selector.workflowCursorRecordId
-            )
-          return true
-        })
-        .map((row) => {
-          const hosted = hostedQuestionRow(row)
-          const stage = input.taskFlowStages?.find(
-            ({ stage }) =>
-              stage.id === (row.workflowCursorRecordId ?? row.workflow_cursor_record_id),
-          )?.stage
-          return stage && hosted.project === undefined
-            ? { ...hosted, project: stage.projectName }
-            : hosted
-        })
-      return { items }
-    },
-    async writeQuestion(_intent, body) {
-      const index = questions.findIndex((row) => (row.id ?? row.record_id) === body.question.id)
-      const number =
-        body.question.number ??
-        questions.reduce((highest, row) => Math.max(highest, Number(row.number ?? 0)), 0) + 1
-      const stored = { ...body.question, number }
-      if (index === -1) questions.push(stored)
-      else questions[index] = stored
-      return {
-        id: body.question.id,
-        number,
-        revision: body.question.revision,
-        applied: true,
-      }
-    },
+    ...memoryQuestionClient(input),
     async listChanges() {
       return { reset: { cursor: 'fixture-change-cursor', tables: [] } }
     },
