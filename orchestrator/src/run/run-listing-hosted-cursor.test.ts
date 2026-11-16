@@ -106,4 +106,3 @@ describe('run listing hosted change cursor', () => {
     })
   })
 })
-

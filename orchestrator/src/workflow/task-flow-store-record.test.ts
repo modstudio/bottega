@@ -4,8 +4,8 @@ import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
-import { guardHostedTables } from '../database/hosted-table-guard.ts'
 import { ensureMachineIdentity } from '../database/db.ts'
+import { guardHostedTables } from '../database/hosted-table-guard.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
 import type { RecordPayload } from '../record/record-sync-contract.ts'

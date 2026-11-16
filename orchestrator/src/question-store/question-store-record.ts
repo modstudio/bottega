@@ -224,11 +224,7 @@ export class RecordQuestionStore implements QuestionStore {
         )
       destination = found
     }
-    return await this.input.client.writeQuestion(
-      intent,
-      input,
-      destination,
-    )
+    return await this.input.client.writeQuestion(intent, input, destination)
   }
 
   async read(input: QuestionReadInput): Promise<QuestionReadResult> {

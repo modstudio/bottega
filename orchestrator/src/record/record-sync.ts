@@ -269,7 +269,7 @@ function planBatchRow(
 
 function preparePendingRows(local: Database): Set<PreparedOutboxRow> {
   const rows = local
-    .query<OutboxRow, []>(
+    .query<OutboxRow, string[]>(
       `SELECT id, kind, row_id, payload FROM outbox
        WHERE synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL
          AND kind NOT IN (${[...RETIRED_OUTBOX_KINDS].map(() => '?').join(',')})

@@ -9,14 +9,16 @@ import { type ListedItem, stageRow } from '../workflow/task-flow-store-record-st
 import type {
   TaskFlowInboxQuestionRow,
   TaskFlowListedStageRow,
+  TaskFlowOpenSessionStageRow,
   TaskFlowOverturnRulingRow,
   TaskFlowQuestionCloseRow,
   TaskFlowRulingFileRow,
   TaskFlowRulingRow,
   TaskFlowTaskRulingRow,
+  TaskFlowWaitingQuestionRow,
 } from '../workflow/task-flow-store-types.ts'
 import { questionStore } from './question-store.ts'
-import type { QuestionReadRow } from './question-store-types.ts'
+import type { QuestionReadRow, QuestionStore } from './question-store-types.ts'
 
 type StageSelector = Record<string, unknown>
 type StageRead = {
@@ -51,36 +53,31 @@ function fields<T>(row: QuestionReadRow, names: readonly string[]): T {
   return Object.fromEntries(names.map((name) => [name, field(row, name)])) as T
 }
 
-export function recordQuestionReads(database: Database, read: StageRead) {
-  const questions = questionStore(database)
-  const openForStages = async (ids: string[]) =>
-    ids.length === 0
-      ? new Map<string, QuestionReadRow>()
-      : openQuestionMap(
-          (
-            await questions.read({
-              read: 'open-for-cursors',
-              workflowCursorRecordIds: ids,
-            })
-          ).items,
-        )
-  const openDetailsForStages = async (ids: string[]) =>
-    new Map(
-      (
-        await Promise.all(
-          ids.map(async (id) => {
-            const rows = (await questions.read({ read: 'for-cursor', workflowCursorRecordId: id }))
-              .items
-              .filter(
-                (row) => field(row, 'answered_at') == null && field(row, 'closed_at') == null,
-              )
-              .sort((a, b) => Number(field(a, 'number')) - Number(field(b, 'number')))
-            return rows[0] ? ([id, rows[0]] as const) : null
-          }),
-        )
-      ).filter((entry) => entry !== null),
-    )
+async function openForStages(questions: QuestionStore, ids: string[]) {
+  if (ids.length === 0) return new Map<string, QuestionReadRow>()
+  return openQuestionMap(
+    (await questions.read({ read: 'open-for-cursors', workflowCursorRecordIds: ids })).items,
+  )
+}
 
+async function openDetailsForStages(questions: QuestionStore, ids: string[]) {
+  return new Map(
+    (
+      await Promise.all(
+        ids.map(async (id) => {
+          const rows = (
+            await questions.read({ read: 'for-cursor', workflowCursorRecordId: id })
+          ).items
+            .filter((row) => field(row, 'answered_at') == null && field(row, 'closed_at') == null)
+            .sort((a, b) => Number(field(a, 'number')) - Number(field(b, 'number')))
+          return rows[0] ? ([id, rows[0]] as const) : null
+        }),
+      )
+    ).filter((entry) => entry !== null),
+  )
+}
+
+function stageReads(questions: QuestionStore, read: StageRead) {
   return {
     async listOpenStages(input: {
       project?: string
@@ -94,7 +91,10 @@ export function recordQuestionReads(database: Database, read: StageRead) {
       const items = input.project
         ? await read.list(selector, input.project)
         : await read.listEvery(selector)
-      const open = await openForStages(items.map(({ stage }) => stage.id))
+      const open = await openForStages(
+        questions,
+        items.map(({ stage }) => stage.id),
+      )
       return items
         .map((item) => {
           const row = stageRow(item)
@@ -115,8 +115,8 @@ export function recordQuestionReads(database: Database, read: StageRead) {
         .sort((a, b) => a.number - b.number)
     },
 
-    async waitingWorkflowQuestions() {
-      return (await questions.read({ read: 'waiting' })).items
+    async waitingWorkflowQuestions(): Promise<TaskFlowWaitingQuestionRow[]> {
+      return (await questions.read({ read: 'waiting' })).items as TaskFlowWaitingQuestionRow[]
     },
 
     async closeOutShipTaskStage(sessionId: string, project: string, branch: string) {
@@ -141,11 +141,18 @@ export function recordQuestionReads(database: Database, read: StageRead) {
         }))
         .sort((a, b) => a.id - b.id)
     },
+  }
+}
 
+function sessionReads(questions: QuestionStore, read: StageRead) {
+  return {
     async cursorWorkForSession(sessionId: string) {
       return (await read.listEvery({ sessionId }))
         .filter(({ stage }) => Boolean(stage.workflowKey))
-        .map(({ stage }) => ({ key: stage.workflowKey!, closed: JSON.stringify(stage.closedStepNotes) }))
+        .map(({ stage }) => ({
+          key: stage.workflowKey!,
+          closed: JSON.stringify(stage.closedStepNotes),
+        }))
     },
 
     async cursorLifecycleForSession(sessionId: string) {
@@ -159,8 +166,9 @@ export function recordQuestionReads(database: Database, read: StageRead) {
       }))
     },
 
-    async openStagesForSession(sessionId: string) {
-      return (await questions.read({ read: 'open-for-session', sessionId })).items
+    async openStagesForSession(sessionId: string): Promise<TaskFlowOpenSessionStageRow[]> {
+      return (await questions.read({ read: 'open-for-session', sessionId }))
+        .items as TaskFlowOpenSessionStageRow[]
     },
 
     async keylessSessionCursors(project: string | null) {
@@ -170,7 +178,10 @@ export function recordQuestionReads(database: Database, read: StageRead) {
         ...(project ? { projectId: read.projectId(project) } : {}),
       }
       const items = project ? await read.list(selector, project) : await read.listEvery(selector)
-      const open = await openDetailsForStages(items.map(({ stage }) => stage.id))
+      const open = await openDetailsForStages(
+        questions,
+        items.map(({ stage }) => stage.id),
+      )
       return items
         .filter(({ stage }) => stage.sessionId !== null)
         .map(({ stage }) => ({
@@ -189,10 +200,15 @@ export function recordQuestionReads(database: Database, read: StageRead) {
 
     async workflowInboxQuestions(): Promise<TaskFlowInboxQuestionRow[]> {
       return (await questions.read({ read: 'inbox' })).items.filter(
-        (row): row is TaskFlowInboxQuestionRow => typeof field(row, 'cursor_record_id') === 'number',
+        (row): row is TaskFlowInboxQuestionRow =>
+          typeof field(row, 'cursor_record_id') === 'number',
       )
     },
+  }
+}
 
+function rulingListReads(questions: QuestionStore) {
+  return {
     async rulingRows(input: {
       kind: 'workflow' | 'run' | 'all'
       since?: string
@@ -215,46 +231,50 @@ export function recordQuestionReads(database: Database, read: StageRead) {
       }
       return rows as TaskFlowRulingRow[]
     },
+  }
+}
 
+const RULING_FILE_FIELDS = [
+  'record_id',
+  'number',
+  'run_record_id',
+  'root_id',
+  'workflow_cursor_record_id',
+  'workflow_cursor_number',
+  'workflow_slug',
+  'mode_slug',
+  'workflow_owner',
+  'workflow_updated_at',
+  'question',
+  'answer',
+  'answer_basis',
+  'answered_at',
+  'answered_by',
+  'answered_by_name',
+  'answerer_kind',
+  'overturned_at',
+  'overturned_by',
+  'overturned_by_name',
+  'replacement',
+  'filed_as',
+  'filed_ref',
+  'filed_record_id',
+  'filed_label',
+  'filed_at',
+  'repo',
+  'cwd',
+  'launch_key',
+  'project_path',
+  'args',
+] as const
+
+function detailReads(questions: QuestionStore) {
+  return {
     async rulingFileQuestion(questionId: string): Promise<TaskFlowRulingFileRow | null> {
       const row = checkedDetail(
         (await questions.read({ read: 'by-id', ids: [questionId] })).items[0],
       )
-      return row
-        ? fields<TaskFlowRulingFileRow>(row, [
-            'record_id',
-            'number',
-            'run_record_id',
-            'root_id',
-            'workflow_cursor_record_id',
-            'workflow_cursor_number',
-            'workflow_slug',
-            'mode_slug',
-            'workflow_owner',
-            'workflow_updated_at',
-            'question',
-            'answer',
-            'answer_basis',
-            'answered_at',
-            'answered_by',
-            'answered_by_name',
-            'answerer_kind',
-            'overturned_at',
-            'overturned_by',
-            'overturned_by_name',
-            'replacement',
-            'filed_as',
-            'filed_ref',
-            'filed_record_id',
-            'filed_label',
-            'filed_at',
-            'repo',
-            'cwd',
-            'launch_key',
-            'project_path',
-            'args',
-          ])
-        : null
+      return row ? fields<TaskFlowRulingFileRow>(row, RULING_FILE_FIELDS) : null
     },
 
     async questionCloseFacts(questionId: string): Promise<TaskFlowQuestionCloseRow | null> {
@@ -296,7 +316,11 @@ export function recordQuestionReads(database: Database, read: StageRead) {
           ])
         : null
     },
+  }
+}
 
+function aggregateReads(questions: QuestionStore, read: StageRead) {
+  return {
     async taskRulingRows(
       project: string,
       taskRecordId: string,
@@ -317,5 +341,16 @@ export function recordQuestionReads(database: Database, read: StageRead) {
         project: string | null
       }>
     },
+  }
+}
+
+export function recordQuestionReads(database: Database, read: StageRead) {
+  const questions = questionStore(database)
+  return {
+    ...stageReads(questions, read),
+    ...sessionReads(questions, read),
+    ...rulingListReads(questions),
+    ...detailReads(questions),
+    ...aggregateReads(questions, read),
   }
 }

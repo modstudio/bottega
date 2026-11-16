@@ -12,8 +12,8 @@ import {
   markQuestionDeliveryPending,
   pendingQuestionIds,
 } from '../run/question-delivery-pending.ts'
-import { questionStore } from './question-store.ts'
 import { registerQuestionRunPusher } from './question-run-pusher.ts'
+import { questionStore } from './question-store.ts'
 import { RecordQuestionStore } from './question-store-record.ts'
 import type { QuestionStore } from './question-store-types.ts'
 
@@ -376,11 +376,11 @@ test('record inbox paging advances independently across every reachable space', 
         ],
       }),
       readQuestions: async (input, destination) => {
-        const values = rows[destination.destinationSpaceId as keyof typeof rows] ?? []
+        const values = rows[destination!.destinationSpaceId as keyof typeof rows] ?? []
         const offset = Number(input.changedAfter ?? 0)
         const page = values.slice(offset, offset + (input.limit ?? values.length))
         return {
-          items: page.map((record_id) => ({ record_id })),
+          items: page.map((id) => ({ record_id: id })),
           cursor: String(offset + page.length),
           more: offset + page.length < values.length,
         }
@@ -389,12 +389,13 @@ test('record inbox paging advances independently across every reachable space', 
   })
   const seen: string[] = []
   let changedAfter: string | undefined
-  do {
+  let more = true
+  while (more) {
     const page = await store.read({ read: 'inbox', limit: 1, changedAfter })
     seen.push(...page.items.map((row) => String(field(row, 'record_id'))))
     changedAfter = page.cursor
-    if (!page.more) break
-  } while (true)
+    more = page.more === true
+  }
   expect(seen.sort()).toEqual([...rows[SPACE_ID], ...rows[OTHER_SPACE_ID]].sort())
   expect(new Set(seen).size).toBe(seen.length)
   database.close()
@@ -417,7 +418,7 @@ test('record mutations write back to the space holding the question', async () =
       }),
       readQuestions: async (input, destination) => ({
         items:
-          input.read === 'by-id' && destination.destinationSpaceId === OTHER_SPACE_ID
+          input.read === 'by-id' && destination!.destinationSpaceId === OTHER_SPACE_ID
             ? [{ record_id: question.id }]
             : [],
       }),

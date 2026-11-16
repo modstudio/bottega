@@ -40,9 +40,7 @@ test('retired question outbox rows remain pending and untouched by sync', async 
   const result = await syncRecord(options(local, fakePostgres()))
   expect(result).toMatchObject({ pushed: 0, failed: 0, pending: 1, quarantined: [] })
   expect(
-    local
-      .query('SELECT synced_at,quarantined_at,retired_at,attempts FROM outbox')
-      .get(),
+    local.query('SELECT synced_at,quarantined_at,retired_at,attempts FROM outbox').get(),
   ).toEqual({ synced_at: null, quarantined_at: null, retired_at: null, attempts: 0 })
   local.close()
 })
