@@ -48,7 +48,6 @@ import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues, reviewValues } from './record-review-values.ts'
 import { pushBranchDisposal } from './record-sync-branch-disposal.ts'
 import { briefInjectionRecordKind } from './record-sync-brief-injection.ts'
-import { hookEmissionRecordKind } from './record-sync-hook-emission.ts'
 import type {
   RecordPayload as Payload,
   RecordPrincipal,
@@ -64,6 +63,7 @@ import {
   recordSyncReferenceRefusal as referenceRefusal,
 } from './record-sync-decision.ts'
 import * as evidenceLookup from './record-sync-evidence-lookup.ts'
+import { hookEmissionRecordKind } from './record-sync-hook-emission.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
 import { type ProjectResolutionCache, projectRecordId } from './record-sync-project-identity.ts'
 import { pullRequestCiRecordKind } from './record-sync-pull-request-ci.ts'

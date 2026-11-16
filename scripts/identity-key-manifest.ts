@@ -621,6 +621,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
   ]),
   ...manifest('hosted', 'identifier issued by the harness session system', [
     'brief_injection.session_id',
+    'hook_emission.session_id',
     'board_claim.holder_session',
     'board_message.author_session',
     'contention.session_id',
@@ -645,6 +646,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'workflow_obligation.session_id',
     'workflow_event.session_id',
   ]),
+  ...manifest('hosted', 'content fingerprint, not a row reference', ['hook_emission.text_hash']),
   ...manifest('hosted', 'identifier issued by the orchestrator run system', [
     'hub_task_comment.run_id',
     'hub_task_status_event.run_id',

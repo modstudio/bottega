@@ -17,7 +17,7 @@ export const HOOK_EMISSION_KINDS = [
   'allowReason',
   'askReason',
 ] as const
-export type HookEmissionKind = (typeof HOOK_EMISSION_KINDS)[number]
+type HookEmissionKind = (typeof HOOK_EMISSION_KINDS)[number]
 
 export type HookEmissionInput = {
   sessionId: string

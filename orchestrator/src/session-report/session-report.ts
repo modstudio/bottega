@@ -147,6 +147,41 @@ const admittedByTaskCursor = (
       (cursor.openToday || Date.parse(cursor.updatedAt) >= Date.parse(run.startedAt)),
   )
 
+const aggregateHookOutput = (
+  emissions: SessionReportFacts['hookEmissions'],
+  since: number,
+  until: number,
+): SessionWindowReport['hookOutput'] => {
+  const seenHashes = new Map<string, Set<string>>()
+  const inWindow = [...emissions]
+    .sort((left, right) => Date.parse(left.at) - Date.parse(right.at))
+    .flatMap((row) => {
+      const key = `${row.event}\0${row.kind}`
+      const seen = seenHashes.get(key) ?? new Set<string>()
+      const repeated = seen.has(row.textHash)
+      seen.add(row.textHash)
+      seenHashes.set(key, seen)
+      const at = Date.parse(row.at)
+      return at >= since && at <= until ? [{ ...row, repeated }] : []
+    })
+  return [...Map.groupBy(inWindow, (row) => `${row.event}\0${row.kind}`)]
+    .map(([key, rows]) => {
+      const [event, kind] = key.split('\0')
+      const characters = rows.reduce((sum, row) => sum + row.chars, 0)
+      return {
+        event,
+        kind,
+        count: rows.length,
+        characters,
+        meanSize: characters / rows.length,
+        repeatedShare: rows.filter((row) => row.repeated).length / rows.length,
+      }
+    })
+    .sort(
+      (left, right) => left.event.localeCompare(right.event) || left.kind.localeCompare(right.kind),
+    )
+}
+
 export function buildSessionWindowReport(
   facts: SessionReportFacts,
   window: SessionReportWindow,
@@ -202,35 +237,7 @@ export function buildSessionWindowReport(
     ...(until < Date.parse(generatedAt) ? ({ asOf: 'now' } as const) : {}),
   }
   const historical = until < Date.parse(generatedAt)
-  const seenHookHashes = new Map<string, Set<string>>()
-  const emissionsInWindow = [...facts.hookEmissions]
-    .sort((left, right) => Date.parse(left.at) - Date.parse(right.at))
-    .flatMap((row) => {
-      const key = `${row.event}\0${row.kind}`
-      const seen = seenHookHashes.get(key) ?? new Set<string>()
-      const repeated = seen.has(row.textHash)
-      seen.add(row.textHash)
-      seenHookHashes.set(key, seen)
-      const at = Date.parse(row.at)
-      return at >= since && at <= until ? [{ ...row, repeated }] : []
-    })
-  const hookOutput = [...Map.groupBy(emissionsInWindow, (row) => `${row.event}\0${row.kind}`)]
-    .map(([key, rows]) => {
-      const [event, kind] = key.split('\0')
-      const repeated = rows.filter((row) => row.repeated).length
-      const characters = rows.reduce((sum, row) => sum + row.chars, 0)
-      return {
-        event,
-        kind,
-        count: rows.length,
-        characters,
-        meanSize: characters / rows.length,
-        repeatedShare: repeated / rows.length,
-      }
-    })
-    .sort(
-      (left, right) => left.event.localeCompare(right.event) || left.kind.localeCompare(right.kind),
-    )
+  const hookOutput = aggregateHookOutput(facts.hookEmissions, since, until)
   return {
     sessionId: facts.sessionId,
     window,

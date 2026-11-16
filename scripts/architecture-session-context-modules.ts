@@ -17,6 +17,7 @@ export const sessionContextModules: SessionContextModule[] = [
     '../doc/context-brief.ts',
     '../doc/context-service.ts',
     '../session/brief-injection.ts',
+    '../session/hook-emission.ts',
     '../workflow/session-context.ts',
     './support.ts',
   ]),
@@ -31,6 +32,15 @@ export const sessionContextModules: SessionContextModule[] = [
     '../record/outbox-sanitize.ts',
     '../workflow/task-flow-store.ts',
     './session-start-context-limit.ts',
+  ]),
+  module('orchestrator/src/session/hook-emission.ts', [
+    'bun:sqlite',
+    '../../../shared/record-id.ts',
+    '../database/db.ts',
+    '../record/hook-emission-outbox.ts',
+    '../record/machine-identity.ts',
+    '../record/outbox-enqueue.ts',
+    '../record/outbox-sanitize.ts',
   ]),
   module('orchestrator/src/session/session-start-context-limit.ts', [
     '../../hooks/session-start-context.json',
