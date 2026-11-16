@@ -1,6 +1,7 @@
 // concern: workflows
 /** Owns cursor-local text attachments and the pure decisions governing their lifetime. */
 import type { Database } from 'bun:sqlite'
+import { RECORD_ID_PATTERN_SOURCE } from '../../../shared/record-id.ts'
 import { writableDb, writeTransaction } from '../database/db.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
 import {
@@ -20,6 +21,15 @@ const WORKFLOW_TEXT_ATTACHMENT_PREFIX = 'attached-text:'
 
 export const workflowTextAttachmentToken = (id: string): string =>
   `${WORKFLOW_TEXT_ATTACHMENT_PREFIX}${id}`
+
+const WORKFLOW_TEXT_ATTACHMENT_PATTERN = new RegExp(
+  `${WORKFLOW_TEXT_ATTACHMENT_PREFIX}${RECORD_ID_PATTERN_SOURCE}`,
+  'gi',
+)
+
+export function workflowTextAttachmentTokens(text: string): string[] {
+  return [...text.matchAll(WORKFLOW_TEXT_ATTACHMENT_PATTERN)].map((match) => match[0].toLowerCase())
+}
 
 export const workflowTextAttachmentId = (reference: string): string =>
   reference.startsWith(WORKFLOW_TEXT_ATTACHMENT_PREFIX)

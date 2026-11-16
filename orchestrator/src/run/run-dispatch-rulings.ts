@@ -1,6 +1,7 @@
 // concern: run dispatch rulings
 /** Resolves and renders the task rulings inherited by a dispatched run. */
 
+import { resolveCarriedAttachments } from './run-carried-attachments.ts'
 import { inheritedRunLinks } from './run-claim-inheritance.ts'
 import { admitNewRunReference } from './run-task-reference.ts'
 import { initialRunTaskText } from './run-task-text.ts'
@@ -9,6 +10,9 @@ import { taskRulingsForDispatch } from './task-rulings-store.ts'
 
 type DispatchLinks = { taskRecordId: string | null; projectRecordId: string | null }
 type TaskTextReader = NonNullable<Parameters<typeof initialRunTaskText>[1]>['readTaskText']
+type AttachmentReader = NonNullable<
+  Parameters<typeof resolveCarriedAttachments>[1]
+>['readAttachment']
 
 async function runDispatchRulingsSection(input: {
   resume: boolean
@@ -39,15 +43,18 @@ export async function prepareRunDispatchRulings(
     launchCwd?: string
     probe: boolean
     writesJob?: boolean
+    spec: string
   },
   dependencies: {
     taskTextReader?: TaskTextReader
+    attachmentReader?: AttachmentReader
   } = {},
 ): Promise<{
   section: string
   questionIds: string[]
   links: DispatchLinks | null
   taskText: string
+  carriedAttachments: string
 }> {
   const key = input.key
   const inherited =
@@ -64,21 +71,26 @@ export async function prepareRunDispatchRulings(
           probe: input.probe,
         })
       : null
+  const rulings = await runDispatchRulingsSection({
+    resume: !input.firstTurn,
+    project: input.projectName ?? inherited?.projectName ?? null,
+    taskRecordId: links?.taskRecordId ?? null,
+  })
+  const taskText = await initialRunTaskText(
+    {
+      firstTurn: input.firstTurn,
+      writesJob: Boolean(input.writesJob),
+      key: key ?? undefined,
+      projectName: input.projectName,
+    },
+    { readTaskText: dependencies.taskTextReader },
+  )
   return {
-    ...(await runDispatchRulingsSection({
-      resume: !input.firstTurn,
-      project: input.projectName ?? inherited?.projectName ?? null,
-      taskRecordId: links?.taskRecordId ?? null,
-    })),
+    ...rulings,
     links,
-    taskText: await initialRunTaskText(
-      {
-        firstTurn: input.firstTurn,
-        writesJob: Boolean(input.writesJob),
-        key: key ?? undefined,
-        projectName: input.projectName,
-      },
-      { readTaskText: dependencies.taskTextReader },
-    ),
+    taskText,
+    carriedAttachments: await resolveCarriedAttachments([input.spec, rulings.section, taskText], {
+      readAttachment: dependencies.attachmentReader,
+    }),
   }
 }

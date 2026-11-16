@@ -51,7 +51,7 @@ import {
 import { detach } from './run-dispatch.ts'
 import { closeStaleChainQuestions, RUN_FOLLOW_TIMEOUT_MS, reapStale } from './run-liveness.ts'
 import { continuationResumeKind } from './run-resume-kind.ts'
-import { packedResumePrompt } from './run-resume-prompt.ts'
+import { packedResumePromptWithCarriedAttachments } from './run-resume-prompt.ts'
 import { type ContinuationInstruction, renderCheckpointContinuationPrompt } from './run-retry.ts'
 import { terminalSharedGitConfigForRecordedRun } from './shared-git-config-run.ts'
 
@@ -657,18 +657,18 @@ function producedContinuationMessage(
   return produceMessage ? produceMessage() : message
 }
 
-function refuseOversizedResumePrompt(input: {
+async function refuseOversizedResumePrompt(input: {
   checkpointContext: string | null
   agent: string
   job: string
   prompt: string
   rootId: string
   argvResumeLimit: RunControlPresentation['argvResumeLimit']
-}): void {
+}): Promise<void> {
   const assembledLimit = input.checkpointContext ? undefined : input.argvResumeLimit(input.agent)
   if (assembledLimit === undefined) return
   const assembled = Buffer.byteLength(
-    packedResumePrompt(input.job, input.prompt, input.rootId),
+    await packedResumePromptWithCarriedAttachments(input.job, input.prompt, input.rootId),
     'utf8',
   )
   if (assembled <= assembledLimit) return
@@ -799,7 +799,7 @@ export async function continueRun(
     project,
   )
   const prompt = continuationPrompt(id, row.job, checkpoint, continuationMessage)
-  refuseOversizedResumePrompt({
+  await refuseOversizedResumePrompt({
     checkpointContext: checkpoint.context,
     agent: continuation.agent,
     job: row.job,

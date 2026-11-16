@@ -27,6 +27,7 @@ test('retry-root carries rulings and claim links from the retained parent task',
     repoJob: true,
     callerCwd: '/work/retry-rulings',
     probe: false,
+    spec: 'retry spec',
   })
 
   expect(prepared.links).toEqual({
@@ -59,6 +60,7 @@ test('a retained non-first turn keeps parent links without carrying rulings', as
     repoJob: true,
     callerCwd: '/work/retained-rulings',
     probe: false,
+    spec: 'retained spec',
   })
 
   expect(prepared.links).toEqual({
@@ -93,6 +95,7 @@ test('task text is carried only on the first turn of a keyed writing job', async
     repoJob: true,
     callerCwd: `/work/${projectName}`,
     probe: false,
+    spec: 'task text spec',
   }
 
   const first = await prepareRunDispatchRulings(
@@ -112,4 +115,43 @@ test('task text is carried only on the first turn of a keyed writing job', async
     expect(prepared.taskText).toBe('')
   }
   expect(reads).toEqual(['DEV-2222'])
+})
+
+test('resolves an attachment token carried only by task text', async () => {
+  const token = `attached-text:${newRecordId()}`
+  const projectRecordId = addProject('task-text-attachment', '/work/task-text-attachment')
+  const prepared = await prepareRunDispatchRulings(
+    {
+      firstTurn: true,
+      workspaceSource: 'new',
+      parentRunRecordId: null,
+      projectName: 'task-text-attachment',
+      projectRecordId,
+      key: 'DEV-2357',
+      repoJob: true,
+      callerCwd: '/work/task-text-attachment',
+      probe: false,
+      writesJob: true,
+      spec: 'spec without an attachment token',
+    },
+    {
+      taskTextReader: async (_project, key) => ({
+        available: true,
+        recordId: null,
+        key,
+        title: 'Attached design',
+        body: `Read ${token}`,
+        comments: [],
+      }),
+      attachmentReader: async () => ({
+        kind: 'live',
+        id: token.slice('attached-text:'.length),
+        cursor: 7,
+        stepSlug: 'design',
+        body: 'Design body from the task text attachment.',
+      }),
+    },
+  )
+
+  expect(prepared.carriedAttachments).toContain('Design body from the task text attachment.')
 })

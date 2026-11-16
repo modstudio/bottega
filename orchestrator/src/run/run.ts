@@ -83,6 +83,7 @@ import { inheritedRunBinding } from './run-claim-inheritance.ts'
 import { closeRun } from './run-close.ts'
 import { acquireRunCloseOutLeaseHandle } from './run-close-out-lease-handle.ts'
 import * as runConfinement from './run-confinement.ts'
+import { runDispatchPrompt } from './run-dispatch-prompt.ts'
 import { prepareRunDispatchRulings } from './run-dispatch-rulings.ts'
 import { runEvidence } from './run-evidence-context.ts'
 import { HARNESS_AGENT, intendedExecutor } from './run-executor.ts'
@@ -104,7 +105,6 @@ import type { RunOptions } from './run-options.ts'
 import {
   bindReviewInstructions,
   checksReviewedCommit,
-  initialDispatchPrompt,
   operatorKnowledgeSection,
 } from './run-pack-prompt.ts'
 import { carriedRefusalFailure, refuseUnstartedRun } from './run-prelaunch-refusal.ts'
@@ -122,7 +122,6 @@ import {
   requiredRecordedRunLease,
 } from './run-resource-step-recording.ts'
 import { resumeFacts } from './run-resume-kind.ts'
-import { packedResumePrompt } from './run-resume-prompt.ts'
 import { rootRunRecordId } from './run-root-record.ts'
 import { routedPromptBytes, routedPromptText } from './run-routing-input.ts'
 import * as runMigration from './run-schema-reload-cause.ts'
@@ -332,23 +331,24 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     launchCwd: opts.launchCwd,
     probe: Boolean(opts.probe),
     writesJob,
+    spec: originalPrompt,
   })
-  let prompt =
-    opts.resume?.kind === 'continue'
-      ? packedResumePrompt(opts.job, originalPrompt, opts.resume.parent)
-      : initialDispatchPrompt({
-          writesJob,
-          preamble: writesJob
-            ? workerPreamble(opts.job, harnessDelegation)
-            : repoJob
-              ? repositoryReaderPreamble(readerFindings)
-              : NO_REPO_PREAMBLE,
-          infrastructure: infra,
-          operatorKnowledge: operatorKnowledgeSection(pack ?? null),
-          taskRulings: dispatchRulings.section,
-          taskText: dispatchRulings.taskText,
-          spec: originalPrompt,
-        })
+  let prompt = runDispatchPrompt({
+    job: opts.job,
+    originalPrompt,
+    resumeParent: opts.resume?.kind === 'continue' ? opts.resume.parent : null,
+    writesJob,
+    preamble: writesJob
+      ? workerPreamble(opts.job, harnessDelegation)
+      : repoJob
+        ? repositoryReaderPreamble(readerFindings)
+        : NO_REPO_PREAMBLE,
+    infrastructure: infra,
+    operatorKnowledge: operatorKnowledgeSection(pack ?? null),
+    taskRulings: dispatchRulings.section,
+    taskText: dispatchRulings.taskText,
+    carriedAttachments: dispatchRulings.carriedAttachments,
+  })
   prompt = bindReviewInstructions({
     prompt,
     findings: Boolean(requestedJob.findings),

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { reviewLensPrompt } from '../dispatch/review-lens-prompt.ts'
 import { setLens, setProfile } from '../lens/lenses.ts'
+import { runDispatchPrompt } from './run-dispatch-prompt.ts'
 import {
   bindReviewInstructions,
   checksReviewedCommit,
@@ -22,7 +23,7 @@ describe('operator knowledge prompt section', () => {
   })
 
   test.each([true, false])(
-    'places task rulings and task text before the spec when writesJob is %s',
+    'places task rulings, task text, and carried attachments before the spec when writesJob is %s',
     (writesJob) => {
       const prompt = initialDispatchPrompt({
         writesJob,
@@ -31,13 +32,34 @@ describe('operator knowledge prompt section', () => {
         operatorKnowledge: 'WHAT THE OPERATOR WANTS YOU TO KNOW\n\nCANON',
         taskRulings: 'RULINGS ALREADY MADE ON THIS TASK\n\nRULING',
         taskText: 'TASK TEXT: DEV-1 — Carry text\n\nTask body',
+        carriedAttachments: 'CARRIED ATTACHMENTS\n\nATTACHMENT BODY',
         spec: 'WORK',
       })
       expect(prompt.indexOf('CANON')).toBeLessThan(prompt.indexOf('RULINGS ALREADY'))
       expect(prompt.indexOf('RULINGS ALREADY')).toBeLessThan(prompt.indexOf('TASK TEXT: DEV-1'))
-      expect(prompt.indexOf('TASK TEXT: DEV-1')).toBeLessThan(prompt.indexOf('THE SPEC'))
+      expect(prompt.indexOf('TASK TEXT: DEV-1')).toBeLessThan(prompt.indexOf('CARRIED ATTACHMENTS'))
+      expect(prompt.indexOf('CARRIED ATTACHMENTS')).toBeLessThan(prompt.indexOf('THE SPEC'))
     },
   )
+
+  test('a resumed prompt carries attachments before the turn message', () => {
+    const prompt = runDispatchPrompt({
+      job: 'implement',
+      originalPrompt: 'CONTINUATION MESSAGE',
+      resumeParent: 'missing-root',
+      writesJob: true,
+      preamble: '',
+      infrastructure: '',
+      operatorKnowledge: '',
+      taskRulings: '',
+      taskText: '',
+      carriedAttachments: 'CARRIED ATTACHMENTS\n\nATTACHMENT BODY',
+    })
+    expect(prompt).toContain('ATTACHMENT BODY')
+    expect(prompt.indexOf('CARRIED ATTACHMENTS')).toBeLessThan(
+      prompt.indexOf('CONTINUATION MESSAGE'),
+    )
+  })
 })
 
 describe('task text prompt section', () => {

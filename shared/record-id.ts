@@ -1,4 +1,6 @@
-const RECORD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+export const RECORD_ID_PATTERN_SOURCE =
+  '[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}'
+const RECORD_ID = new RegExp(`^${RECORD_ID_PATTERN_SOURCE}$`, 'i')
 
 /**
  * IDs are minted by the application before a database connection exists; no id column has a

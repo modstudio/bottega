@@ -426,6 +426,15 @@ export function workflowTextUncopiedReport(
   return result.uncopied.map((row) => uncopiedLine(row, cursor, result.requestedTaskKey)).join('\n')
 }
 
+export class WorkflowTextNotHeldError extends Error {
+  constructor(token: string) {
+    super(
+      `${token} is not held on this machine; attachments of a cursor not linked to a task are removed when the cursor closes, and an id from another machine is readable only through its task document`,
+    )
+    this.name = 'WorkflowTextNotHeldError'
+  }
+}
+
 export async function showWorkflowText(
   idInput: string,
   database: Database = db(),
@@ -440,9 +449,7 @@ export async function showWorkflowText(
     return { kind: 'live', id, cursor: live.cursor, stepSlug: live.step_slug, body: live.body }
   const copied = await store.copiedTextReference(id)
   if (copied) return { kind: 'redirect', id, documentReference: copied }
-  throw new Error(
-    `${workflowTextAttachmentToken(id)} is not held on this machine; attachments of a cursor not linked to a task are removed when the cursor closes, and an id from another machine is readable only through its task document`,
-  )
+  throw new WorkflowTextNotHeldError(workflowTextAttachmentToken(id))
 }
 
 export async function cursorForWorkflowTextCopy(
