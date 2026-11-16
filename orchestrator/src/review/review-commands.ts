@@ -99,6 +99,14 @@ type ResolvedTierTarget = {
   project: NonNullable<ReturnType<typeof projectAt>>
 }
 
+function resolveTierTargetCommit(repo: string, ref: string): string {
+  try {
+    return resolveBase(repo, ref)
+  } catch {
+    throw new Error(`cannot resolve review target ${ref} to a commit`)
+  }
+}
+
 function resolveTierTarget(value: string, cwd: string): ResolvedTierTarget {
   if (classifyRunIdentifier(value)) {
     return (() => {
@@ -114,9 +122,7 @@ function resolveTierTarget(value: string, cwd: string): ResolvedTierTarget {
       if (!row) throw new Error(`no run ${runId}`)
       const project = row.repo ? projectByName(row.repo) : null
       if (!project) throw new Error(`run ${runId} has no registered project`)
-      // Measure a live writer at its current branch tip. Otherwise retain the
-      // recorded input tree as the classified artifact while resolving its
-      // landing merge-base from the recorded head commit.
+      // Measure a live writer at its tip; otherwise classify the recorded input tree.
       const writer = (() => {
         try {
           return job(row.job).needs.writesRepo
@@ -137,13 +143,7 @@ function resolveTierTarget(value: string, cwd: string): ResolvedTierTarget {
       const trunk = project.settings.trunk?.trim()
       if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
       const reviewedTip = branchLive
-        ? (() => {
-            try {
-              return resolveBase(project.path, reviewed)
-            } catch {
-              throw new Error(`cannot resolve review target ${reviewed} to a commit`)
-            }
-          })()
+        ? resolveTierTargetCommit(project.path, reviewed)
         : (row.head_commit ?? reviewed)
       const from = (() => {
         try {
@@ -196,13 +196,7 @@ function resolveTierTarget(value: string, cwd: string): ResolvedTierTarget {
   if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
   const from = resolveReviewBase(repo, value, trunk)
   if (!from) throw new Error(`cannot find merge-base between branch ${value} and trunk ${trunk}`)
-  const to = (() => {
-    try {
-      return resolveBase(repo, value)
-    } catch {
-      throw new Error(`cannot resolve review target ${value} to a commit`)
-    }
-  })()
+  const to = resolveTierTargetCommit(repo, value)
   return {
     repo,
     from,
