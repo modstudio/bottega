@@ -31,7 +31,7 @@ const whoami = async () => ({
   user: { id: newRecordId() },
   activeSpaceId: SPACE_ID,
   personalSpaceId: SPACE_ID,
-  memberships: [{ space_id: SPACE_ID, name: 'Fixture', slug: 'fixture' }],
+  memberships: [{ space_id: SPACE_ID, name: 'Fixture', slug: 'fixture', permission: 'write' }],
 })
 
 function snapshot(overrides: Partial<QuestionSnapshot> = {}): QuestionSnapshot {
@@ -454,7 +454,7 @@ test('hosted question selection and pending delivery never touch the local quest
   installRecordApiClient(client)
   try {
     const store = questionStore(guarded)
-    const asked = snapshot({ id: newRecordId(), runId: RUN_ID })
+    const asked = snapshot({ id: newRecordId(), runId: null })
     await store.write('ask', body(asked))
     await store.write('answer', body({ ...asked, revision: 2, answer: 'Yes' }, 'answer'))
     expect((await store.read({ read: 'inbox' })).items).toHaveLength(1)

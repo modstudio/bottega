@@ -81,7 +81,6 @@ export const recordQuestionModules: RecordModule[] = [
     '../record/record-auth.ts',
     '../record/record-project-destination-client.ts',
     '../record/record-space-cardinality.ts',
-    '../record/record-sync.ts',
     '../record/record-question-contract.ts',
     './question-store-types.ts',
   ]),

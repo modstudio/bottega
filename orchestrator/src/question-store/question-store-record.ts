@@ -122,7 +122,8 @@ export class RecordQuestionStore implements QuestionStore {
 
   private async pushRun(runId: string): Promise<void> {
     if (this.input.pushRun) return this.input.pushRun(runId)
-    const { syncRecord } = await import('../record/record-sync.ts')
+    const syncModule = '../record/record-sync.ts'
+    const { syncRecord } = await import(syncModule)
     await syncRecord({ local: this.input.database })
     const synced = this.input.database
       .query<{ synced_at: string | null }, [string]>(

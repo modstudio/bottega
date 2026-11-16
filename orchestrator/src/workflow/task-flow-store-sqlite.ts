@@ -669,7 +669,6 @@ class SqliteTaskFlowStore {
     return questions.rulingFileQuestion(this.database, questionId)
   }
 
-
   questionCloseFacts(questionId: string): TaskFlowQuestionCloseRow | null {
     return questions.questionCloseFacts(this.database, questionId)
   }

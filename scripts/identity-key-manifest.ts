@@ -12,10 +12,8 @@ import * as taskIdentity from './identity-task-identity-manifest.ts'
 import { TELEMETRY_IDENTITY } from './identity-telemetry-manifest.ts'
 import { TYPED_QUESTION_IDENTITY } from './identity-typed-question-manifest.ts'
 import { UNDECLARED_REFERENCES } from './identity-undeclared-reference-manifest.ts'
-
 const manifest = (store: KeyStore, reason: string, columns: readonly string[]): ManifestColumn[] =>
   columns.map((column) => ({ store, column, reason }))
-
 const INTEGER_VALUES: readonly ManifestColumn[] = [
   ...manifest('hosted', 'source question display number', ['context_item.question_number']),
   ...manifest('orchestrator', 'source question display number', ['context_item.question_number']),
@@ -833,6 +831,8 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'question_delivery.record_id',
     'question_delivery.question_record_id',
     'question_delivery.run_record_id',
+    'question_delivery_pending.question_record_id',
+    'question_delivery_pending.run_record_id',
     'question_mutation_audit.record_id',
     'question_mutation_audit.question_record_id',
     'release_ledger.record_id',
@@ -978,9 +978,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'landing_triage_snapshot.review_ids',
   ]),
 ]
-
 const SYNCED_SOURCES = SYNCED_SOURCE_DECLARATIONS
-
 export const KEY_MANIFESTS: KeyManifests = {
   values: INTEGER_VALUES,
   displayLabels: DISPLAY_LABELS,
