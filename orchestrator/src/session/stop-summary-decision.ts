@@ -118,7 +118,7 @@ export function decideStopSummary(facts: StopSummaryFacts): StopSummaryDecision 
     : [`Could not read question inbox → ${PLATFORM_SLUG} question inbox --all --active`]
   if (facts.questionCounts && !questionLines.length) questionLines.push('Nothing waiting on you')
   const lines = [
-    `Stop says: ${formatStopTime(facts.now, facts.displayTimezone)}`,
+    `${formatStopTime(facts.now, facts.displayTimezone)}`,
     ...questionLines,
     ...facts.cursors.map(cursorLine),
     ...facts.reviewVerdictLines,

@@ -168,7 +168,7 @@ test('session summary renders line one in the cached display time zone', async (
       db(),
     )
 
-    expect(result.lines[0]).toMatch(/^Stop says: .+ (?:EST|EDT)$/)
+    expect(result.lines[0]).toMatch(/^\d{1,2}:\d{2} [AP]M (?:EST|EDT)$/)
   } finally {
     rmSync(state, { recursive: true, force: true })
   }
