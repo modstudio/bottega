@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { reviewLensPrompt } from '../dispatch/review-lens-prompt.ts'
 import { setLens, setProfile } from '../lens/lenses.ts'
+import { runDispatchPrompt } from './run-dispatch-prompt.ts'
 import {
   bindReviewInstructions,
   checksReviewedCommit,
@@ -58,6 +59,24 @@ describe('operator knowledge prompt section', () => {
       )
     },
   )
+
+  test('a resumed prompt carries attachments before the turn message', () => {
+    const prompt = runDispatchPrompt({
+      job: 'implement',
+      originalPrompt: 'CONTINUATION MESSAGE',
+      resumeParent: 'missing-root',
+      writesJob: true,
+      preamble: '',
+      infrastructure: '',
+      operatorKnowledge: '',
+      taskRulings: '',
+      taskText: '',
+      carriedAttachments: 'CARRIED ATTACHMENTS\n\nATTACHMENT BODY',
+    })
+    expect(prompt.indexOf('CARRIED ATTACHMENTS')).toBeLessThan(
+      prompt.indexOf('CONTINUATION MESSAGE'),
+    )
+  })
 })
 
 describe('task text prompt section', () => {

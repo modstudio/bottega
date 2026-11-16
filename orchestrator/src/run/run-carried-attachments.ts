@@ -77,11 +77,7 @@ export function carriedAttachmentsSection(attachments: readonly CarriedAttachmen
     }
     const token = workflowTextAttachmentToken(attachments[index]!.id)
     const marker = truncationMarker(token, 'section')
-    return `${section}${separator}${bound(
-      entries[index]!,
-      CARRIED_ATTACHMENTS_MAX_BYTES - Buffer.byteLength(section) - Buffer.byteLength(separator),
-      marker,
-    )}`
+    return bound(candidate, CARRIED_ATTACHMENTS_MAX_BYTES, marker)
   }
   return section
 }
