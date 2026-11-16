@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record-id.ts'
 import { applyMigrations } from '../src/database/migrations.ts'
+import { writeProjectRegisterRow } from '../src/database/project-register-store.ts'
 import { questionStore } from '../src/question-store/question-store.ts'
 import { recordQuestionStore } from '../src/question-store/question-store-record-factory.ts'
 import { recordApiClient } from '../src/record/record-api-client.ts'
@@ -153,6 +154,19 @@ export function registerQuestionTaskRecordSyncProof(
     )
     expect(duplicate.code).not.toBe(0)
     expect(duplicate.stderr).toContain('question_space_number_unique')
+    const typed = {
+      ...snapshot(newRecordId()),
+      kind: 'choice',
+      options: ['a', 'b'],
+      typedOptions: [{ value: 'a', label: 'A' }],
+      criteria: [{ name: 'c' }],
+    } as QuestionSnapshot
+    await ask(typed)
+    expect(
+      fixture.admin(
+        `SELECT jsonb_typeof(typed_options)||','||jsonb_typeof(options)||','||jsonb_typeof(criteria)||','||jsonb_typeof(withheld_fields) FROM question WHERE id='${typed.id}';`,
+      ),
+    ).toBe('array,array,array,array')
     expect(
       fixture.admin(`SELECT workflow_task_id FROM question WHERE id='${questions[0]!.id}';`),
     ).toBe(directTaskId)
@@ -437,9 +451,13 @@ export function registerQuestionTaskRecordSyncProof(
     const parityLocal = new Database(':memory:')
     applyMigrations(parityLocal)
     parityLocal.exec('PRAGMA foreign_keys=OFF')
-    parityLocal
-      .query('INSERT INTO project(record_id,name,path,stack,settings) VALUES (?,?,?,?,?)')
-      .run(directProjectId, directProjectName, '/fixture', 'bun', '{}')
+    writeProjectRegisterRow(parityLocal, {
+      recordId: directProjectId,
+      name: directProjectName,
+      path: '/fixture',
+      stack: 'bun',
+      settings: { space: directSpaceId },
+    })
     parityLocal
       .query(`INSERT INTO workflow_cursor
         (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,

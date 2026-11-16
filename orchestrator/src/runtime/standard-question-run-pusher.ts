@@ -3,8 +3,8 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
-  registerQuestionRunPusher,
   type QuestionRunPusher,
+  registerQuestionRunPusher,
 } from '../question-store/question-run-pusher.ts'
 import { syncRecord } from '../record/record-sync.ts'
 

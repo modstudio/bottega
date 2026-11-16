@@ -497,6 +497,7 @@ function pendingOutboxCount(database: Database): number {
 
 type CustomerFacts = Omit<RecordDoctorFacts, 'operatorConnectionPresent' | 'operatorChecks'> & {
   userId: string | null
+  recordIdentity: RecordIdentity | null
 }
 
 async function destinationlessWriteFacts(client: ReturnType<typeof recordApiClient>): Promise<{
@@ -612,6 +613,7 @@ async function customerFacts(
     sessionFailure,
     attributionFailure: recordAttributionFailure(database),
     userId: identity?.user.id ?? null,
+    recordIdentity: identity,
     activeSpaceId: identity?.activeSpaceId ?? null,
     memberships: parseRecordSpaceMemberships(identity?.memberships),
     projects,
@@ -712,8 +714,7 @@ async function operatorRecordChecks(input: {
   recordUrl: string
   migrateUrl?: string
   identity: {
-    userId: string
-    activeSpaceId: string
+    record: RecordIdentity
     activeSpaceSlug: string
   } | null
   projects: Array<{ name: string; space: string | null }>
@@ -751,7 +752,10 @@ async function operatorRecordChecks(input: {
     try {
       const questionStore = recordQuestionStore({
         database: input.database,
-        client: recordQuestionClient(recordApiRequest),
+        client: {
+          ...recordQuestionClient(recordApiRequest),
+          whoami: async () => identity.record,
+        },
       })
       const questionIds = (await questionStore.read({ read: 'rulings', kind: 'all' })).items.map(
         (row) => String((row as Record<string, unknown>).record_id),
@@ -770,8 +774,8 @@ async function operatorRecordChecks(input: {
         (question) => (question as Record<string, unknown>).machine_id === machineId(),
       ).length
       const attribution = await actor.begin(async (tx) => {
-        await tx`SELECT set_config('app.user_id', ${identity.userId}, true)`
-        await tx`SELECT set_config('app.space_id', ${identity.activeSpaceId}, true)`
+        await tx`SELECT set_config('app.user_id', ${identity.record.user.id}, true)`
+        await tx`SELECT set_config('app.space_id', ${identity.record.activeSpaceId}, true)`
         const runs =
           await tx`SELECT count(*)::int AS total, count(*) FILTER (WHERE started_by_user_id IS NULL)::int AS missing FROM run WHERE space_id=${identity.activeSpaceId}::uuid`
         const intervals =
@@ -791,7 +795,7 @@ async function operatorRecordChecks(input: {
         questionCountCheck(
           identityNames[1],
           await localQuestionCountForSpace(input.database, input.projects, {
-            id: identity.activeSpaceId,
+            id: identity.record.activeSpaceId!,
             slug: identity.activeSpaceSlug,
           }),
           Number(attribution.questions.total),
@@ -850,8 +854,7 @@ export async function diagnoseRecord(
     const identity =
       customer.sessionAccepted && customer.userId && customer.activeSpaceId && active
         ? {
-            userId: customer.userId,
-            activeSpaceId: customer.activeSpaceId,
+            record: customer.recordIdentity!,
             activeSpaceSlug: active.slug,
           }
         : null
@@ -864,7 +867,7 @@ export async function diagnoseRecord(
       database,
     })
   }
-  const { userId: _userId, ...customerDecisionFacts } = customer
+  const { userId: _userId, recordIdentity: _recordIdentity, ...customerDecisionFacts } = customer
   return decideRecordDoctorChecks({
     ...customerDecisionFacts,
     operatorConnectionPresent: Boolean(recordUrl),

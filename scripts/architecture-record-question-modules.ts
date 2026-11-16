@@ -11,6 +11,11 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 })
 
 export const recordQuestionModules: RecordModule[] = [
+  module('orchestrator/src/runtime/standard-question-run-pusher.ts', [
+    '../../../shared/brand.ts',
+    '../question-store/question-run-pusher.ts',
+    '../record/record-sync.ts',
+  ]),
   module('orchestrator/src/record/record-question-contract.ts', [
     'zod',
     '../../../shared/brand.ts',
