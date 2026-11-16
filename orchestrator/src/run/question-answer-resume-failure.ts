@@ -2,7 +2,11 @@
 /** Restores answered questions when their continuation cannot be launched. */
 
 import { db, writeTransaction } from '../database/db.ts'
-import { mutateQuestion } from '../question-store/question-store-mutation.ts'
+import {
+  mutateQuestion,
+  questionById,
+  requireQuestionMutationApplied,
+} from '../question-store/question-store-mutation.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
 import { clearQuestionDeliveryPending } from './question-delivery-pending.ts'
 import {
@@ -29,12 +33,10 @@ export async function restoreOpenQuestionsAfterResumeFailure(
       },
     )
   })
-  clearQuestionDeliveryPending(
-    db(),
-    open.map(({ record_id }) => record_id),
-  )
-  for (const q of open)
-    await mutateQuestion(db(), {
+  for (const q of open) {
+    const question = await questionById(db(), q.record_id)
+    if (!question) throw new Error(`question ${q.record_id} not found`)
+    const mutation = await mutateQuestion(db(), {
       id: q.record_id,
       intent: 'answer',
       at: new Date(Date.now()).toISOString(),
@@ -53,4 +55,7 @@ export async function restoreOpenQuestionsAfterResumeFailure(
         awaitingOperatorAt: q.awaiting_operator_at,
       },
     })
+    requireQuestionMutationApplied(mutation, question)
+    clearQuestionDeliveryPending(db(), [q.record_id])
+  }
 }

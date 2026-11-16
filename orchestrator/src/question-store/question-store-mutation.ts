@@ -102,10 +102,13 @@ export async function mutateQuestion(
     auditAction?: string
     changes: Partial<Snapshot>
     expectedRevision?: number
+    requireOpen?: boolean
   },
 ) {
   const row = await questionById(database, input.id)
   if (!row) throw new Error(`question ${input.id} not found`)
+  if (input.requireOpen && (row.answered_at != null || row.closed_at != null))
+    return { applied: false as const }
   const current = questionSnapshotFromRow(row)
   if (input.expectedRevision !== undefined && current.revision !== input.expectedRevision)
     throw new Error(`question ${input.id} changed before the mutation was stored`)
@@ -126,6 +129,14 @@ export async function mutateQuestion(
   })
   enqueueQuestionRecord(database, input.id)
   return result
+}
+
+export function requireQuestionMutationApplied(
+  result: { applied: boolean },
+  question: Record<string, unknown>,
+): void {
+  if (result.applied) return
+  throw new Error(`question ${String(question.number)} changed; rerun the command`)
 }
 
 export async function askQuestion(

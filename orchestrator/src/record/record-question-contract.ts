@@ -97,6 +97,7 @@ export const questionWriteResultSchema = z.object({
   id,
   number: z.number().int().positive(),
   revision: z.number().int().positive(),
+  applied: z.boolean(),
 })
 export type QuestionWriteResult = z.infer<typeof questionWriteResultSchema>
 

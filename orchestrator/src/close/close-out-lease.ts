@@ -2,8 +2,7 @@
 /** Adapts non-blocking close-out lease refusal to the close-out result vocabulary. */
 
 import { db } from '../database/db.ts'
-import { withRunCloseOutLease } from '../run/run-lease.ts'
-import type { SynchronousResult } from '../synchronous-result.ts'
+import { releaseRunCloseOutLease, requiredRunCloseOutLease } from '../run/run-lease.ts'
 
 type CloseOutLeaseRefusal = {
   runId: string
@@ -15,21 +14,22 @@ type CloseOutLeaseRefusal = {
 }
 
 /** Run an action under its close-out lease, or name the owner that kept it out. */
-export function withCloseOutLease<T extends SynchronousResult>(
+export async function withCloseOutLease<T>(
   runId: string,
   alreadyHeld: boolean,
-  action: () => T,
-): T | CloseOutLeaseRefusal {
-  if (alreadyHeld) return action()
+  action: () => Promise<T>,
+): Promise<T | CloseOutLeaseRefusal> {
+  if (alreadyHeld) return await action()
   let acquisitionFailure: unknown
   try {
-    return withRunCloseOutLease(
-      runId,
-      (cause) => {
-        acquisitionFailure = cause
-      },
-      action,
-    )
+    const lease = requiredRunCloseOutLease(runId, (cause) => {
+      acquisitionFailure = cause
+    })
+    try {
+      return await action()
+    } finally {
+      releaseRunCloseOutLease(runId, lease)
+    }
   } catch (cause) {
     if (cause !== acquisitionFailure) throw cause
     const row = db()

@@ -921,9 +921,12 @@ function appendTreeNamingDetail(
 }
 
 /** Run one close-out attempt and retain its outcome for observation and retry. */
-function closeOutRunHoldingLease(runId: string, options: CloseOutPreparedOptions): CloseOutResult {
+async function closeOutRunHoldingLease(
+  runId: string,
+  options: CloseOutPreparedOptions,
+): Promise<CloseOutResult> {
   const root = conversationRootAndWorktree(runId)
-  closeTerminalChainQuestions(root.rootRecordId, Boolean(options.dryRun))
+  await closeTerminalChainQuestions(root.rootRecordId, Boolean(options.dryRun))
   const keepTree = closeOutKeepTreeDecision(
     root.rootRecordId,
     root.worktree,
@@ -1021,20 +1024,20 @@ export async function closeOutRun(
   runId: string,
   options: CloseOutOptions,
 ): Promise<CloseOutResult> {
-  return closeOutRunPrepared(runId, options, await prepareCloseOut())
+  return await closeOutRunPrepared(runId, options, await prepareCloseOut())
 }
 
 /** Closes with an open-cursor snapshot taken immediately before a caller's synchronous lock. */
-export function closeOutRunPrepared(
+export async function closeOutRunPrepared(
   runId: string,
   options: CloseOutOptions,
   preparation: CloseOutPreparation,
-): CloseOutResult {
+): Promise<CloseOutResult> {
   const preparedOptions: CloseOutPreparedOptions = {
     ...options,
     cursorWorktrees: preparation.cursorWorktrees,
   }
-  return withCloseOutLease(runId, Boolean(options.closeOutLeaseHeld), () =>
+  return await withCloseOutLease(runId, Boolean(options.closeOutLeaseHeld), () =>
     closeOutRunHoldingLease(runId, preparedOptions),
   )
 }

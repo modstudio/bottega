@@ -134,8 +134,8 @@ async function questionStoreContract(store: QuestionStore, database: Database) {
   const workflow = snapshot({ id: WORKFLOW_QUESTION_ID, workflowTaskId: TASK_ID })
   const ask = body(workflow, 'ask')
   const first = await store.write('ask', ask)
-  expect(first).toMatchObject({ id: workflow.id, revision: 1 })
-  expect(await store.write('ask', ask)).toEqual(first)
+  expect(first).toMatchObject({ id: workflow.id, revision: 1, applied: true })
+  expect(await store.write('ask', ask)).toEqual({ ...first, applied: false })
 
   const waiting = (await store.read({ read: 'waiting' })).items
   expect(waiting).toHaveLength(1)
@@ -321,6 +321,23 @@ test('only the record adapter passes a rulings feed cursor through', async () =>
   database.close()
 })
 
+test('SQLite question writes report a lost revision race without replacing the winner', async () => {
+  const database = migratedTestDatabase()
+  seedOwners(database)
+  const store = questionStore(database)
+  const original = snapshot({ id: WORKFLOW_QUESTION_ID })
+  await store.write('ask', body(original))
+  const first = { ...original, revision: 2, question: 'First mutation wins' }
+  const second = { ...original, revision: 2, question: 'Second mutation loses' }
+  expect(await store.write('link', body(first, 'link'))).toMatchObject({ applied: true })
+  expect(await store.write('link', body(second, 'link'))).toMatchObject({ applied: false })
+  expect((await store.read({ read: 'by-id', ids: [original.id] })).items[0]).toMatchObject({
+    question: 'First mutation wins',
+    revision: 2,
+  })
+  database.close()
+})
+
 test('record ask pushes its run first and enriches live, stale, and absent sessions', async () => {
   const database = migratedTestDatabase()
   database.exec('PRAGMA foreign_keys=OFF')
@@ -344,7 +361,7 @@ test('record ask pushes its run first and enriches live, stale, and absent sessi
     client: {
       writeQuestion: async () => {
         events.push('write')
-        return { id: question.id, number: 1, revision: 1 }
+        return { id: question.id, number: 1, revision: 1, applied: true }
       },
       readQuestions: async () => ({
         items: [

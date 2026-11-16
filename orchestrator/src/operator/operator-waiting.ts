@@ -162,17 +162,19 @@ export async function relayQuestion(
     authority = adoptRunMutation(authority, 'relay', d)
   }, d)
   const at = nowIso()
-  await mutateQuestion(d, {
+  const mutation = await mutateQuestion(d, {
     id: selected.record_id,
     intent: 'relay',
     at,
     actorSession: authority.actor,
     reason: note,
+    requireOpen: true,
     changes: {
       awaitingOperatorAt: selected.awaiting_operator_at ?? at,
       relayedBy: authority.actor,
     },
   })
+  if (!mutation.applied) return { id: selected.number, recordId: selected.record_id }
   writeTransaction(() => {
     auditRunMutation(authority, 'relay', note, d)
   }, d)

@@ -22,7 +22,10 @@ import {
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
-import { mutateQuestion } from '../question-store/question-store-mutation.ts'
+import {
+  mutateQuestion,
+  requireQuestionMutationApplied,
+} from '../question-store/question-store-mutation.ts'
 import { questionsForRun } from '../question-store/question-store-read.ts'
 import { parseReviewOutput, parseReviewReply } from '../review/review.ts'
 import { ANSWER_CHANNEL_CLI, ANSWERER_KIND_EVAL } from '../run/question-vocabulary.ts'
@@ -529,8 +532,8 @@ async function terminaliseJudgedProbe(runId: string): Promise<void> {
   const questions = (await questionsForRun(db(), runId)).filter(
     ({ answered_at, closed_at }) => answered_at === null && closed_at === null,
   )
-  for (const question of questions)
-    await mutateQuestion(db(), {
+  for (const question of questions) {
+    const mutation = await mutateQuestion(db(), {
       id: String(question.record_id),
       intent: 'answer',
       at: answeredAt,
@@ -545,6 +548,8 @@ async function terminaliseJudgedProbe(runId: string): Promise<void> {
         awaitingOperatorAt: null,
       },
     })
+    requireQuestionMutationApplied(mutation, question)
+  }
   const terminalised = db()
     .query(
       `UPDATE run SET status='ok', error=NULL, failure_kind=NULL

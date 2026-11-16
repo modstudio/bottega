@@ -14,7 +14,10 @@ import {
   writableDb,
   writeTransaction,
 } from '../database/db.ts'
-import { mutateQuestion } from '../question-store/question-store-mutation.ts'
+import {
+  mutateQuestion,
+  requireQuestionMutationApplied,
+} from '../question-store/question-store-mutation.ts'
 import { questionForFiling } from '../question-store/question-store-read.ts'
 import type { TaskFlowRulingFileRow as QuestionRow } from '../workflow/task-flow-store.ts'
 import { authorizeWorkflowQuestionMutation } from './question-mutation.ts'
@@ -287,7 +290,7 @@ async function recordFiling(
         `inspect that filing rather than filing again`,
     )
   }
-  await mutateQuestion(db(), {
+  const mutation = await mutateQuestion(db(), {
     id: row.record_id,
     intent: 'file',
     at,
@@ -302,6 +305,7 @@ async function recordFiling(
       filedAt: at,
     },
   })
+  requireQuestionMutationApplied(mutation, row as unknown as Record<string, unknown>)
 }
 
 export async function fileRuling(input: FileRulingInput, stores: RulingFileStores) {

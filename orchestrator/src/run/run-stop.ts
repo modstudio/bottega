@@ -461,12 +461,13 @@ export async function abandonRun(
     openQuestions.map(({ record_id }) => String(record_id)),
   )
   for (const question of openQuestions) {
-    await mutateQuestion(db(), {
+    const mutation = await mutateQuestion(db(), {
       id: String(question.record_id),
       intent: 'answer',
       at,
       actorSession: callerSession,
       reason: 'abandoned',
+      requireOpen: true,
       changes: {
         answeredBy: callerSession ?? 'anonymous (no session id)',
         answeredAt: at,
@@ -476,6 +477,7 @@ export async function abandonRun(
         awaitingOperatorAt: null,
       },
     })
+    if (!mutation.applied) continue
   }
   await retireRunChainQuestionDeliveries(db(), authority.rootId, 'abandoned', at)
   rollUpRootAndEnqueue(db(), authority.rootId, null, machineId(), at, false)

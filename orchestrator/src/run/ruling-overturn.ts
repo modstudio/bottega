@@ -3,7 +3,11 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
-import { mutateQuestion, questionById } from '../question-store/question-store-mutation.ts'
+import {
+  mutateQuestion,
+  questionById,
+  requireQuestionMutationApplied,
+} from '../question-store/question-store-mutation.ts'
 import type { TaskFlowOverturnRulingRow as OverturnRow } from '../workflow/task-flow-store.ts'
 import { authorizeWorkflowQuestionMutation } from './question-mutation.ts'
 import { rulingActor } from './question-vocabulary.ts'
@@ -64,7 +68,7 @@ export async function overturnRuling(input: {
     if (row.run_record_id !== null) authority = adoptRunMutation(authority!, 'overturn')
     overturnedBy = rulingActor(input.fromOperator, actor)
   })
-  await mutateQuestion(db(), {
+  const mutation = await mutateQuestion(db(), {
     id: row.record_id,
     intent: 'overturn',
     at,
@@ -78,6 +82,7 @@ export async function overturnRuling(input: {
       replacement: input.replacement,
     },
   })
+  requireQuestionMutationApplied(mutation, row as unknown as Record<string, unknown>)
   writeTransaction(() => {
     if (row.run_record_id !== null) auditRunMutation(authority!, 'overturn', input.reason)
   })

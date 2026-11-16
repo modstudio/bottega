@@ -4,7 +4,11 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, nowIso, sessionId } from '../database/db.ts'
-import { mutateQuestion, questionById } from '../question-store/question-store-mutation.ts'
+import {
+  mutateQuestion,
+  questionById,
+  requireQuestionMutationApplied,
+} from '../question-store/question-store-mutation.ts'
 import { questionsForRun } from '../question-store/question-store-read.ts'
 import type { TaskFlowQuestionCloseRow } from '../workflow/task-flow-store-types.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
@@ -51,15 +55,16 @@ export async function closeQuestions(
   for (const questionId of questionIds) {
     const row = await questionById(database, questionId)
     if (!row || row.answered_at !== null || row.closed_at !== null) continue
-    await mutateQuestion(database, {
+    const mutation = await mutateQuestion(database, {
       id: questionId,
       intent: 'close',
       at,
       actorSession: actor,
       reason,
+      requireOpen: true,
       changes: { closedAt: at, closeReason: reason },
     })
-    closed += 1
+    if (mutation.applied) closed += 1
   }
   return closed
 }
@@ -107,7 +112,9 @@ export async function retireRunChainQuestionDeliveries(
   let retired = 0
   for (const questionId of questionIds) {
     if (clearQuestionDeliveryPending(database, [questionId]) !== 1) continue
-    await mutateQuestion(database, {
+    const row = await questionById(database, questionId)
+    if (!row) throw new Error(`question ${questionId} not found`)
+    const mutation = await mutateQuestion(database, {
       id: questionId,
       intent: 'link',
       at,
@@ -115,6 +122,7 @@ export async function retireRunChainQuestionDeliveries(
       reason,
       changes: {},
     })
+    requireQuestionMutationApplied(mutation, row)
     appendQuestionDeliveries(
       [questionId],
       {

@@ -53,12 +53,13 @@ export async function applyQuestionAnswer(input: {
         : encodedValue === null
           ? null
           : Number(jevPick === encodedValue)
-  await mutateQuestion(input.database, {
+  const mutation = await mutateQuestion(input.database, {
     id: input.questionId,
     intent: 'answer',
     at: input.answeredAt,
     actorSession: input.answeredBy,
     reason: input.answer,
+    requireOpen: true,
     changes: {
       answer: input.answer,
       answerValue: encodedValue,
@@ -72,6 +73,7 @@ export async function applyQuestionAnswer(input: {
       awaitingOperatorAt: null,
     },
   })
+  if (!mutation.applied) return false
   if (input.deliveryPendingAt)
     markQuestionDeliveryPending(input.database, input.questionId, input.deliveryPendingAt)
   else clearQuestionDeliveryPending(input.database, [input.questionId])

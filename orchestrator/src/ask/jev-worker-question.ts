@@ -10,7 +10,11 @@ import {
 } from '../../../shared/typed-question/client.ts'
 import type { TypedQuestion } from '../../../shared/typed-question/registry.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
-import { mutateQuestion, questionById } from '../question-store/question-store-mutation.ts'
+import {
+  mutateQuestion,
+  questionById,
+  requireQuestionMutationApplied,
+} from '../question-store/question-store-mutation.ts'
 import { applyQuestionAnswer } from '../run/question-answer.ts'
 import {
   type AnswerChannel,
@@ -71,7 +75,9 @@ function cappedFile(path: string | null): string | undefined {
 }
 async function storeJevError(database: Database, recordId: string, error: string): Promise<void> {
   const at = nowIso()
-  await mutateQuestion(database, {
+  const question = await questionById(database, recordId)
+  if (!question) throw new Error(`question ${recordId} not found`)
+  const mutation = await mutateQuestion(database, {
     id: recordId,
     intent: 'link',
     at,
@@ -79,6 +85,7 @@ async function storeJevError(database: Database, recordId: string, error: string
     reason: error,
     changes: { jevQuestionVersion: JEV_WORKER_QUESTION_VERSION, jevError: error },
   })
+  requireQuestionMutationApplied(mutation, question)
 }
 function choiceAnswerIds(recordId: string) {
   return {
@@ -170,7 +177,9 @@ async function storeAdvice(
   error: string | null,
 ): Promise<void> {
   const at = nowIso()
-  await mutateQuestion(database, {
+  const question = await questionById(database, input.recordId)
+  if (!question) throw new Error(`question ${input.recordId} not found`)
+  const mutation = await mutateQuestion(database, {
     id: input.recordId,
     intent: 'link',
     at,
@@ -188,6 +197,7 @@ async function storeAdvice(
       jevError: error,
     },
   })
+  requireQuestionMutationApplied(mutation, question)
 }
 async function resolvedRulings(
   input: PreAnswerInput,

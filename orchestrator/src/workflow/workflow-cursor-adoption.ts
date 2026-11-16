@@ -2,7 +2,10 @@
 /** Atomically adopts a task key and republishes every cursor-bound question. */
 import type { Database } from 'bun:sqlite'
 import { nowIso, writeTransaction } from '../database/db.ts'
-import { mutateQuestion } from '../question-store/question-store-mutation.ts'
+import {
+  mutateQuestion,
+  requireQuestionMutationApplied,
+} from '../question-store/question-store-mutation.ts'
 import { questionsForWorkflowCursor } from '../question-store/question-store-read.ts'
 import { machineId } from '../record/machine-identity.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
@@ -47,8 +50,8 @@ async function linkCursorQuestions(
   workflowTaskId: string | null,
   at: string,
 ): Promise<void> {
-  for (const question of await questionsForWorkflowCursor(d, cursorId))
-    await mutateQuestion(d, {
+  for (const question of await questionsForWorkflowCursor(d, cursorId)) {
+    const mutation = await mutateQuestion(d, {
       id: String(question.record_id),
       intent: 'link',
       at,
@@ -57,6 +60,8 @@ async function linkCursorQuestions(
       expectedRevision: Number(question.revision),
       changes: { workflowKey, workflowTaskId },
     })
+    requireQuestionMutationApplied(mutation, question)
+  }
 }
 
 export async function adoptWorkflowTask(

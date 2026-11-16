@@ -82,7 +82,7 @@ export class SqliteQuestionStore implements QuestionStore {
       this.database
         .query<{ number: number }, []>('SELECT COALESCE(MAX(number),0)+1 number FROM question')
         .get()!.number
-    this.database
+    const write = this.database
       .query(
         `INSERT INTO question
           (record_id,number,run_record_id,workflow_cursor_record_id,workflow_key,workflow_task_record_id,
@@ -169,18 +169,20 @@ export class SqliteQuestionStore implements QuestionStore {
         workflowStep === null ? null : workflowStep.ordinal + 1,
         workflowStep?.step_slug ?? null,
       )
-    this.database
-      .query(`INSERT OR IGNORE INTO question_mutation_audit
-        (record_id,question_record_id,action,actor_session,at,reason) VALUES (?,?,?,?,?,?)`)
-      .run(
-        input.requestId,
-        q.id,
-        input.audit.action,
-        input.audit.actorSession,
-        input.audit.at,
-        input.audit.reason,
-      )
-    return { id: q.id, number, revision: Math.max(existing?.revision ?? 0, q.revision) }
+    const applied = write.changes === 1
+    if (applied)
+      this.database
+        .query(`INSERT OR IGNORE INTO question_mutation_audit
+          (record_id,question_record_id,action,actor_session,at,reason) VALUES (?,?,?,?,?,?)`)
+        .run(
+          input.requestId,
+          q.id,
+          input.audit.action,
+          input.audit.actorSession,
+          input.audit.at,
+          input.audit.reason,
+        )
+    return { id: q.id, number, revision: Math.max(existing?.revision ?? 0, q.revision), applied }
   }
 
   async read(input: QuestionReadInput): Promise<QuestionReadResult> {

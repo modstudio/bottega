@@ -394,6 +394,31 @@ function withKernelProjectLock<T>(
   let waitedMs = 0
   let lockFd: number | null = null
 
+  const release = () => {
+    heldProjectLocks.delete(paths.lock)
+    const ours = projectLockParticipant(paths.owner)
+    if (lockFd !== null) {
+      flock(lockFd, LOCK_UN)
+      closeSync(lockFd)
+      lockFd = null
+    }
+    if (ours?.incarnation === incarnation) rmSync(paths.owner, { force: true })
+    if (waitedMs > 0) {
+      tryWriteContention(
+        {
+          sessionId: lockSession,
+          resourceKind: 'lock',
+          resourceKey: name,
+          eventKind: 'wait',
+          durationMs: waitedMs,
+          cause: `waited for ${lockLabel(name)}`,
+        },
+        lockContention,
+      )
+      waitedMs = 0
+    }
+  }
+
   try {
     while (true) {
       const first = firstWaiterForAcquisition(paths.waiters)
@@ -434,30 +459,13 @@ function withKernelProjectLock<T>(
       }
     }
 
-    try {
-      return action()
-    } finally {
-      heldProjectLocks.delete(paths.lock)
-      const ours = projectLockParticipant(paths.owner)
-      if (lockFd !== null) {
-        flock(lockFd, LOCK_UN)
-        closeSync(lockFd)
-      }
-      if (ours?.incarnation === incarnation) rmSync(paths.owner, { force: true })
-      if (waitedMs > 0) {
-        tryWriteContention(
-          {
-            sessionId: lockSession,
-            resourceKind: 'lock',
-            resourceKey: name,
-            eventKind: 'wait',
-            durationMs: waitedMs,
-            cause: `waited for ${lockLabel(name)}`,
-          },
-          lockContention,
-        )
-      }
-    }
+    const result = action()
+    if (result instanceof Promise) return result.finally(release) as T
+    release()
+    return result
+  } catch (cause) {
+    release()
+    throw cause
   } finally {
     rmSync(waiter, { force: true })
   }
@@ -471,7 +479,7 @@ function withKernelProjectLock<T>(
  * from overlapping one loaded after it. The legacy gate can be removed once no
  * process predating the migration commit can still be running.
  */
-function withProjectLock<T extends SynchronousResult>(
+function withProjectLock<T>(
   repoRoot: string,
   name: string,
   identity: ProjectLockIdentity,
@@ -506,6 +514,13 @@ function withProjectLock<T extends SynchronousResult>(
   writeFileSync(waiter, `${JSON.stringify(participant)}\n`)
   const lockSession = identity.session ?? process.env.CLAUDE_CODE_SESSION_ID ?? null
   const recordLegacyContention = legacyContentionRecorder(name, lockSession, waitStarted)
+  let releaseDeferred = false
+  const releaseLegacy = () => {
+    heldProjectLocks.delete(legacy)
+    const ours = projectLockParticipant(join(legacy, 'owner'))
+    if (ours?.incarnation === incarnation) rmSync(legacy, { recursive: true, force: true })
+    rmSync(waiter, { force: true })
+  }
   try {
     for (;;) {
       const first = firstWaiterForAcquisition(legacyWaiters)
@@ -546,7 +561,7 @@ function withProjectLock<T extends SynchronousResult>(
     heldProjectLocks.add(legacy)
     rmSync(waiter, { force: true })
     try {
-      return withKernelProjectLock(
+      const result = withKernelProjectLock(
         repoRoot,
         name,
         identity,
@@ -555,14 +570,16 @@ function withProjectLock<T extends SynchronousResult>(
         exposeWaiters,
         onWait,
       )
+      if (result instanceof Promise) {
+        releaseDeferred = true
+        return result.finally(releaseLegacy) as T
+      }
+      return result
     } finally {
       if (waitedForLegacy) recordLegacyContention('wait', null)
     }
   } finally {
-    heldProjectLocks.delete(legacy)
-    const ours = projectLockParticipant(join(legacy, 'owner'))
-    if (ours?.incarnation === incarnation) rmSync(legacy, { recursive: true, force: true })
-    rmSync(waiter, { force: true })
+    if (!releaseDeferred) releaseLegacy()
   }
 }
 
@@ -705,6 +722,20 @@ export function withWorktreeCreateLock<T extends SynchronousResult>(
   create: () => T,
   timeoutMs = WORKTREE_CREATE_LOCK_TIMEOUT_MS,
 ): T {
+  return withProjectLock(
+    repoRoot,
+    'create',
+    { session: null, what: 'worktree creation' },
+    create,
+    timeoutMs,
+  )
+}
+
+export function withWorktreeCreateLockAsync<T>(
+  repoRoot: string,
+  create: () => Promise<T>,
+  timeoutMs = WORKTREE_CREATE_LOCK_TIMEOUT_MS,
+): Promise<T> {
   return withProjectLock(
     repoRoot,
     'create',

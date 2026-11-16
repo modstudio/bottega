@@ -8,6 +8,7 @@ import {
   askQuestion,
   mutateQuestion,
   questionById,
+  requireQuestionMutationApplied,
 } from '../question-store/question-store-mutation.ts'
 import { questionRulings, waitingQuestions } from '../question-store/question-store-read.ts'
 import { rulingActor } from './question-vocabulary.ts'
@@ -96,7 +97,7 @@ export async function upsertWorkflowQuestion(
     ({ workflow_cursor_record_id }) => workflow_cursor_record_id === input.cursorId,
   )
   if (open) {
-    await mutateQuestion(database, {
+    const mutation = await mutateQuestion(database, {
       id: open.question_record_id,
       intent: 'link',
       at: input.at,
@@ -109,6 +110,7 @@ export async function upsertWorkflowQuestion(
       },
     })
     const row = await questionById(database, open.question_record_id)
+    requireQuestionMutationApplied(mutation, row!)
     return { recordId: open.question_record_id, number: Number(row!.number) }
   }
   const inserted = await askQuestion(database, {
@@ -131,7 +133,7 @@ export async function linkWorkflowQuestionTaskReference(
 ): Promise<boolean> {
   const row = await questionById(database, questionId)
   if (!row || row.workflow_task_record_id !== null) return false
-  await mutateQuestion(database, {
+  const mutation = await mutateQuestion(database, {
     id: questionId,
     intent: 'link',
     at: new Date().toISOString(),
@@ -139,6 +141,7 @@ export async function linkWorkflowQuestionTaskReference(
     reason: null,
     changes: { workflowTaskId: taskRecordId },
   })
+  requireQuestionMutationApplied(mutation, row)
   return true
 }
 
@@ -185,13 +188,14 @@ export async function answerWorkflowQuestion(
     row.closed_at !== null
   )
     throw new Error(`question ${input.questionId} is not open`)
-  await mutateQuestion(database, {
+  const mutation = await mutateQuestion(database, {
     id: input.questionId,
     intent: 'answer',
     at: input.at,
     actorSession: input.actor,
     reason: joinMutationReason(input.ruling, input.adoptionReason ?? null),
     auditAction: 'rule',
+    requireOpen: true,
     changes: {
       answer: input.ruling,
       answerBasis: input.basis ?? null,
@@ -202,4 +206,5 @@ export async function answerWorkflowQuestion(
       answerChannel: input.channel,
     },
   })
+  requireQuestionMutationApplied(mutation, row)
 }
