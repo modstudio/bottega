@@ -35,7 +35,12 @@ import {
   taskKeyMap,
   taskReferenceForProjectKey,
 } from '../workflow/workflow-task-reference.ts'
-import { contextBriefWorktreePath, formatContextBriefCursorLine } from './context-brief-format.ts'
+import {
+  type ContextBriefCursorLine,
+  contextBriefWorktreePath,
+  formatContextBriefCursorLine,
+  formatContextBriefRunLine,
+} from './context-brief-format.ts'
 import { storedItems, taskProfile } from './context-write-adapter.ts'
 import type { ContextItem } from './doc-context-write.ts'
 import { cursorContextHolder, taskContextHolder } from './doc-subjects.ts'
@@ -54,23 +59,12 @@ export type ContextBrief = {
   fullCommand: string
   holders: ContextBriefHolder[]
   runs: Array<{ number: number; job: string; status: string; label: string | null }>
-  cursors: Array<{
-    recordId: string
-    number: number
-    key: string | null
-    workflow: string
-    mode: string
-    step: number
-    totalSteps: number
-    stepSlug: string
-    branch: string | null
-    worktree: string | null
-    tip: string | null
-    pr: number | null
-    questionNumber: number | null
-    runs: number[]
-    keylessIdle?: string | null
-  }>
+  cursors: Array<
+    ContextBriefCursorLine & {
+      recordId: string
+      keylessIdle?: string | null
+    }
+  >
   claims: Array<{ kind: string; value: string }>
   reviewVerdictLines?: string[]
   waiting: {
@@ -140,10 +134,7 @@ export function renderContextBrief(brief: ContextBrief): string {
         return `cursor ${cursor.number} ${cursor.workflow} · ${cursor.keylessIdle ?? 'idle unknown'}${cursor.questionNumber === null ? ` → ${PLATFORM_SLUG} workflow abandon --cursor ${cursor.number}` : `, awaiting q${cursor.questionNumber}`}`
       return formatContextBriefCursorLine(cursor)
     }),
-    ...brief.runs.map(
-      (run) =>
-        `unbound run ${run.number} ${run.job} ${run.status}${run.label ? ` · ${run.label}` : ''}`,
-    ),
+    ...brief.runs.map(formatContextBriefRunLine),
     ...brief.claims.map((claim) => `unbound claim ${claim.kind}:${claim.value}`),
   ]
   if (inFlight.length) lines.push('In flight:', ...inFlight.map((line) => `  ${line}`))

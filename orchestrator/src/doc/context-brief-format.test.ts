@@ -3,6 +3,7 @@ import {
   type ContextBriefCursorLine,
   contextBriefWorktreePath,
   formatContextBriefCursorLine,
+  formatContextBriefRunLine,
 } from './context-brief-format.ts'
 
 const cursor = (overrides: Partial<ContextBriefCursorLine> = {}): ContextBriefCursorLine => ({
@@ -58,4 +59,15 @@ test('shortens only worktrees beneath the registered main checkout', () => {
   expect(contextBriefWorktreePath('/x/project-other/run', '/x/project')).toBe(
     '/x/project-other/run',
   )
+})
+
+test('renders a run label with whitespace collapsed onto one line', () => {
+  expect(
+    formatContextBriefRunLine({
+      number: 31111,
+      job: 'review',
+      status: 'asking',
+      label: '  Read\n\n  the\tbrief  ',
+    }),
+  ).toBe('unbound run 31111 review asking · Read the brief')
 })

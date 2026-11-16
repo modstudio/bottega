@@ -302,6 +302,7 @@ test('contextBrief carries question groups into the waiting segment', async () =
   })
   expect(migration.exitCode, migration.stderr.toString()).toBe(0)
   const run = addRun({ agent: 'codex', job: 'implement', status: 'asking', session })
+  db().query('UPDATE run SET label=? WHERE record_id=?').run('Read the brief', run)
   db()
     .query(
       `INSERT INTO question (number,record_id,run_record_id,asked_at,question)
@@ -320,9 +321,9 @@ test('contextBrief carries question groups into the waiting segment', async () =
     `1 worker question (${PLATFORM_SLUG} question inbox --all --active)`,
   )
   expect(brief.runs).toEqual([
-    expect.objectContaining({ job: 'implement', status: 'asking', label: 'head' }),
+    expect.objectContaining({ job: 'implement', status: 'asking', label: 'Read the brief' }),
   ])
-  expect(renderContextBrief(brief)).toContain('implement asking · head')
+  expect(renderContextBrief(brief)).toContain('implement asking · Read the brief')
 })
 
 test('orders the session, each project-scoped working task, and its epic by task profile', () => {
