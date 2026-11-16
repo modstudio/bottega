@@ -435,6 +435,7 @@ export const cleanupBoundarySpecs = [
       './cleanup.ts',
       './cleanup-sweep-decisions.ts',
       './cleanup-sweep-archive.ts',
+      './cleanup-sweep-hub-tasks.ts',
       './cleanup-sweep-context.ts',
       './cleanup-sweep-session.ts',
       './cleanup-sweep-reclaim.ts',
@@ -495,6 +496,26 @@ export const cleanupBoundarySpecs = [
     typeOnlyAllowed: [],
     reason:
       'Keep cleanup-sweep independent of transports, routing, reviews, contracts, and the CLI; maintenance stays behind the database command and run-outbox owners.',
+  },
+  {
+    name: 'cleanup-sweep-hub-tasks-boundary',
+    file: 'orchestrator/src/cleanup/cleanup-sweep-hub-tasks.ts',
+    allowed: [
+      '../doc/context-item-store.ts',
+      '../doc/context-service.ts',
+      '../project/projects.ts',
+      '../run/run-task-linking.ts',
+      './task-context-reap-decision.ts',
+    ],
+    typeOnlyAllowed: ['../workflow/workflow-task-reference.ts', './cleanup.ts'],
+    reason: 'Keep shared hub reads and done-task context cleanup behind one machine-sweep phase.',
+  },
+  {
+    name: 'task-context-reap-decision-boundary',
+    file: 'orchestrator/src/cleanup/task-context-reap-decision.ts',
+    allowed: [],
+    typeOnlyAllowed: ['../workflow/workflow-task-reference.ts'],
+    reason: 'Keep done-task context reaping as a pure decision over supplied facts.',
   },
   {
     name: 'cleanup-sweep-archive-boundary',

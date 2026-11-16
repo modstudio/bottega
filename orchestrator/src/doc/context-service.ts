@@ -107,12 +107,32 @@ export async function clearTaskContext(input: { task: string }) {
   assertWorkerDocStoreWriteAllowed('clearTaskContext')
   const { holder, task } = await resolveContextHolder(input)
   if (!task) throw new Error('task context clear requires --task')
-  writableDb()
+  const result = await clearTaskHolderForLifecycle({
+    holderId: task.record_id,
+    project: task.project,
+    dryRun: false,
+  })
+  return { holder, task: task.key, removed: result.removed }
+}
+
+/** Clears one task holder by durable identity for lifecycle cleanup. */
+export async function clearTaskHolderForLifecycle(input: {
+  holderId: string
+  project: string
+  dryRun: boolean
+}) {
+  assertWorkerDocStoreWriteAllowed('clearTaskHolderForLifecycle')
+  const holder = taskContextHolder(input.holderId)
   const items = listContextItems(holder)
+  if (input.dryRun) return { holder, removed: items.length }
+  writableDb()
   const removed = await applyRecordWriteAuthority({
     local: () => removeLocalContextHolder(holder),
     hosted: async () => {
-      const client = await hostedContextItemClient(holder, contextTaskOwner(task))
+      const client = await hostedContextItemClient(
+        holder,
+        contextTaskOwner({ project: input.project }),
+      )
       let count = 0
       for (const item of items) {
         const result = await client.remove(item.recordId, { expectedRevision: item.revision })
@@ -121,7 +141,7 @@ export async function clearTaskContext(input: { task: string }) {
       return count
     },
   })
-  return { holder, task: task.key, removed }
+  return { holder, removed }
 }
 
 export function sessionContextHolders(database: Database) {

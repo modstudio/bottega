@@ -118,7 +118,8 @@ export function register(program: Command): void {
       'after',
       '\nWrite context at these moments:\n' +
         '  workflow rule, question answer               write ruling or position\n' +
-        '  task close                                  clears the task holder\n\n' +
+        '  task close                                  clears the task holder at once\n' +
+        '  machine sweep                               clears tasks that reached done another way\n\n' +
         'Place each item once on the narrowest holder it binds in full: task for task-only points, epic for points binding every child, and session only when no single task or epic owns it.\n',
     )
     .option('--cwd <path>', 'resolve context for this checkout path')

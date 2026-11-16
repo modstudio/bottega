@@ -46,7 +46,6 @@ import {
 } from '../run/run-lease.ts'
 import { backfillRunRecordsForSweep } from '../run/run-outbox.ts'
 import { TERMINAL_RUN_STATUS_SET, TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
-import { sweepRunTaskLinks } from '../run/run-task-linking.ts'
 import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import type { GrokTrustObservation } from '../sandbox/grok-trust.ts'
 import { openCursorWorktrees } from '../workflow/workflow-cursor-worktrees.ts'
@@ -77,6 +76,7 @@ import {
   UNJUDGED_OWNER_WINDOW_MS,
 } from './cleanup-sweep-decisions.ts'
 import { reclaimSweptDockerResources } from './cleanup-sweep-docker.ts'
+import { sweepHubTasks } from './cleanup-sweep-hub-tasks.ts'
 import { holdNamedFilesystemOrphans } from './cleanup-sweep-named-tree.ts'
 import {
   observeNamedRunForSweep,
@@ -450,15 +450,14 @@ function printSweepKept(
   }
 }
 
-/** Links run tasks after the sweep's own steps, and fails the sweep when either part failed. */
+/** Finishes task maintenance and fails the sweep when any part failed. */
 async function finishSweep(
   dry: boolean,
   cleanupFailed: boolean,
   hubTaskReader: HubTaskReader,
   presentation: CleanupPresentation,
 ): Promise<void> {
-  const runLinks = await sweepRunTaskLinks(dry, hubTaskReader)
-  presentation[runLinks.kind](runLinks.line)
+  const taskMaintenanceFailed = await sweepHubTasks(dry, hubTaskReader, presentation)
   if (!dry) {
     const repaired = backfillRunRecordsForSweep()
     const total =
@@ -472,7 +471,7 @@ async function finishSweep(
       )
     }
   }
-  if (cleanupFailed || runLinks.kind === 'error') presentation.setExitCode(1)
+  if (cleanupFailed || taskMaintenanceFailed) presentation.setExitCode(1)
 }
 
 function reportClosedSweepRow(
