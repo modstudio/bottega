@@ -64,6 +64,7 @@ import {
   recordSyncReferenceRefusal as referenceRefusal,
 } from './record-sync-decision.ts'
 import * as evidenceLookup from './record-sync-evidence-lookup.ts'
+import { hookEmissionRecordKind } from './record-sync-hook-emission.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
 import { type ProjectResolutionCache, projectRecordId } from './record-sync-project-identity.ts'
 import { pullRequestCiRecordKind } from './record-sync-pull-request-ci.ts'
@@ -914,6 +915,7 @@ const recordKinds = {
       pushBranchDisposal(postgres, row, principal, projectIds, existingEvidenceOwned),
   },
   brief_injection: briefInjectionRecordKind(existingEvidenceOwned, requireOwnedUpsert),
+  hook_emission: hookEmissionRecordKind(existingEvidenceOwned, requireOwnedUpsert),
 } as const satisfies Record<
   keyof typeof OUTBOX_PAYLOAD_CONTRACTS,
   {

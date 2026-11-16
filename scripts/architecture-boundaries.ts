@@ -858,6 +858,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../database/db.ts',
       '../project/declared-record-space.ts',
       './brief-injection-outbox.ts',
+      './hook-emission-outbox.ts',
       './install-binding-write.ts',
       './landing-outbox.ts',
       './machine-identity.ts',

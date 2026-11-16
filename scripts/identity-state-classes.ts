@@ -100,6 +100,7 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
   ),
   synced('orchestrator', 'blocker', 'Blockers observed during runs', 'DEV-2234'),
   synced('orchestrator', 'brief_injection', 'SessionStart context delivery events', 'DEV-2293'),
+  synced('orchestrator', 'hook_emission', 'Product-hook output measurements', 'DEV-2343'),
   hosted('orchestrator', 'board_claim', 'board_claim', 'Local board claim mirror'),
   machine(
     'orchestrator',

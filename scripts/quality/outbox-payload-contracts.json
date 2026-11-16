@@ -435,6 +435,22 @@
     "createdAt",
     "updatedAt"
   ],
+  "hook_emission": [
+    "id",
+    "spaceId",
+    "machineId",
+    "localId",
+    "sessionId",
+    "at",
+    "event",
+    "hook",
+    "kind",
+    "chars",
+    "lines",
+    "textHash",
+    "createdAt",
+    "updatedAt"
+  ],
   "test_flake": [
     "id",
     "spaceId",

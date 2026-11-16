@@ -13,6 +13,8 @@ import { join, resolve } from 'node:path'
 import { dir } from '../../test/preload.ts'
 
 const sourceHook = resolve(import.meta.dir, '../../hooks/no-attribution.py')
+const sourceHookEmission = resolve(import.meta.dir, '../../hooks/hook_emission.py')
+const sourceHookPaths = resolve(import.meta.dir, '../../hooks/hook_paths.py')
 const sourceRegisteredScope = resolve(import.meta.dir, '../../hooks/registered_scope.py')
 const sourceRegisteredScopeDecision = resolve(
   import.meta.dir,
@@ -45,6 +47,8 @@ function layout(marker: 'valid' | 'absent' | 'unreadable' | 'malformed' = 'valid
   mkdirSync(join(hook, '..'), { recursive: true })
   mkdirSync(join(markerFile, '..'), { recursive: true })
   copyFileSync(sourceHook, hook)
+  copyFileSync(sourceHookEmission, join(hook, '..', 'hook_emission.py'))
+  copyFileSync(sourceHookPaths, join(hook, '..', 'hook_paths.py'))
   copyFileSync(sourceRegisteredScope, join(hook, '..', 'registered_scope.py'))
   copyFileSync(sourceRegisteredScopeDecision, join(hook, '..', 'registered_scope_decision.py'))
   chmodSync(hook, 0o755)

@@ -10,6 +10,7 @@ agents, jobs, and routing
 - [bottega agent context brief](#bottega-agent-context-brief)
 - [bottega agent context clear](#bottega-agent-context-clear)
 - [bottega agent context drop](#bottega-agent-context-drop)
+- [bottega agent context record-emission](#bottega-agent-context-record-emission)
 - [bottega agent context record-injection](#bottega-agent-context-record-injection)
 - [bottega agent context set](#bottega-agent-context-set)
 - [bottega agent context show](#bottega-agent-context-show)
@@ -85,6 +86,7 @@ manage stored architect context or resolve checkout context
 - [bottega agent context brief](./agent.md#bottega-agent-context-brief)
 - [bottega agent context clear](./agent.md#bottega-agent-context-clear)
 - [bottega agent context drop](./agent.md#bottega-agent-context-drop)
+- [bottega agent context record-emission](./agent.md#bottega-agent-context-record-emission)
 - [bottega agent context record-injection](./agent.md#bottega-agent-context-record-injection)
 - [bottega agent context set](./agent.md#bottega-agent-context-set)
 - [bottega agent context show](./agent.md#bottega-agent-context-show)
@@ -130,6 +132,26 @@ remove one context item
 - `--session <id>`: select session holder
 - `--id <id>`: stable item id
 - `--expected-revision <revision>`: compare-and-set revision
+
+### Related
+
+- [bottega agent context](./agent.md#bottega-agent-context)
+
+## bottega agent context record-emission
+
+**Synopsis:** `bottega agent context record-emission [--session <id>] [--event <event>] [--hook <hook>] [--kind <kind>] [--chars <count>] [--lines <count>] [--hash <sha256>]`
+
+record one product-hook output
+
+### Options
+
+- `--session <id>`: select architect session
+- `--event <event>`: hook event name
+- `--hook <hook>`: product hook name
+- `--kind <kind>`: one of additionalContext, systemMessage, blockReason, denyReason, allowReason, askReason
+- `--chars <count>`: characters in the output
+- `--lines <count>`: lines in the output
+- `--hash <sha256>`: normalized output sha256
 
 ### Related
 

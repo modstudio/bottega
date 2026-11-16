@@ -95,6 +95,8 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'brief_injection.cursors',
     'brief_injection.keyless_cursors',
     'brief_injection.keyless_idle_max_ms',
+    'hook_emission.chars',
+    'hook_emission.lines',
     'collect_change_counter.value',
     'agent.max_concurrent',
     'board_claim.duration_ms',
@@ -242,6 +244,10 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'workflow_version.n',
     ...taskIdentity.TASK_IDENTITY_INTEGER_COLUMNS,
     'workflow_event.version_n',
+  ]),
+  ...manifest('hosted', 'count or size measurement', [
+    'hook_emission.chars',
+    'hook_emission.lines',
   ]),
   ...TYPED_QUESTION_IDENTITY.integerValues,
   ...ROUTING_POOL_IDENTITY.integerValues,
@@ -540,6 +546,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
   ]),
   ...manifest('orchestrator', 'identifier issued by the harness session system', [
     'brief_injection.session_id',
+    'hook_emission.session_id',
     'board_claim.holder_session',
     'board_message.author_session',
     'board_reach_delivery.reader_session',
@@ -582,6 +589,9 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'run_message.sender_session',
     'run_mutation_audit.actor_session',
   ]),
+  ...manifest('orchestrator', 'content fingerprint, not a row reference', [
+    'hook_emission.text_hash',
+  ]),
   ...manifest('orchestrator', 'identifier issued by an external subsystem', [
     'monitor_condition.issue_key',
     'pull_request_ci.workflow_run_id',
@@ -615,6 +625,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
   ]),
   ...manifest('hosted', 'identifier issued by the harness session system', [
     'brief_injection.session_id',
+    'hook_emission.session_id',
     'board_claim.holder_session',
     'board_message.author_session',
     'contention.session_id',
@@ -639,6 +650,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'workflow_obligation.session_id',
     'workflow_event.session_id',
   ]),
+  ...manifest('hosted', 'content fingerprint, not a row reference', ['hook_emission.text_hash']),
   ...manifest('hosted', 'identifier issued by the orchestrator run system', [
     'hub_task_comment.run_id',
     'hub_task_status_event.run_id',
@@ -682,6 +694,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
   ...RECORD_CACHE_IDENTITIES,
   ...manifest('orchestrator', 'owned or referenced UUID', [
     'brief_injection.record_id',
+    'hook_emission.record_id',
     'collect_change_counter.record_id',
     'agent.record_id',
     'blocker.record_id',

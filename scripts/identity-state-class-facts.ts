@@ -37,6 +37,7 @@ export const OUTBOX_KIND_SOURCES: Readonly<
   test_flake: { source: 'test_flake' },
   branch_disposal: { source: 'branch_disposal' },
   brief_injection: { source: 'brief_injection' },
+  hook_emission: { source: 'hook_emission' },
 }
 
 export const PUSHABLE_HUB_TABLES = PUSHABLE_HUB_CHANGE_TABLES.map((hosted) => ({
