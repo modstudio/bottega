@@ -20,7 +20,7 @@ function patchIdentity(
   diffArgs: string[],
   patchIdArgs: string[],
 ): string {
-  const directory = mkdtempSync(join(tmpdir(), 'bottega-change-identity-'))
+  const directory = mkdtempSync(join(tmpdir(), 'review-change-identity-'))
   const diffPath = join(directory, 'change.diff')
   try {
     const diff = runner([...diffArgs, `--output=${diffPath}`])
@@ -58,4 +58,3 @@ export function zeroContextChangeIdentity(
   ]
   return patchIdentity(runner, diffArgs, ['patch-id', '--verbatim'])
 }
-

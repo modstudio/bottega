@@ -131,22 +131,23 @@ export function startBoundedSyncBytes(
     throw new TypeError('startBoundedSync accepts either stdin or stdinFile, not both')
   }
   const stdinFd = options.stdinFile === undefined ? undefined : openSync(options.stdinFile, 'r')
-  let result: ReturnType<typeof Bun.spawnSync>
-  try {
-    result = Bun.spawnSync([...argv], {
-      cwd: options.cwd,
-      env: options.env,
-      stdin: stdinFd ?? stdinInput(options.stdin),
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: budget.deadlineMs,
-      maxBuffer: budget.outputBytes,
-      killSignal: 'SIGKILL',
-      detached: true,
-    })
-  } finally {
-    if (stdinFd !== undefined) closeSync(stdinFd)
-  }
+  const result = (() => {
+    try {
+      return Bun.spawnSync([...argv], {
+        cwd: options.cwd,
+        env: options.env,
+        stdin: stdinFd ?? stdinInput(options.stdin),
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: budget.deadlineMs,
+        maxBuffer: budget.outputBytes,
+        killSignal: 'SIGKILL',
+        detached: true,
+      })
+    } finally {
+      if (stdinFd !== undefined) closeSync(stdinFd)
+    }
+  })()
   if (result.exitedDueToTimeout) {
     killProcessGroup(result.pid)
     throw new BoundExceededError(commandText(argv), options.budget, 'deadline', budget.deadlineMs)

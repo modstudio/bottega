@@ -35,6 +35,40 @@ const hashBytes = (bytes: Uint8Array): string => {
   return (hash >>> 0).toString(16).padStart(8, '0')
 }
 
+function cachedFixtureResult(input: {
+  args: string[]
+  stdin?: Uint8Array
+  output?: string
+  cache: Map<string, CoverageGitResult>
+  repo: string
+  spawned: () => void
+  mergeTreeCalls: string[][]
+}): CoverageGitResult {
+  const cacheArgs = input.args.filter((arg) => !arg.startsWith('--output='))
+  const key = `${JSON.stringify(cacheArgs)}\0${hashBytes(input.stdin ?? new Uint8Array())}`
+  const existing = input.cache.get(key)
+  if (existing) {
+    if (input.output) writeFileSync(input.output, existing.stdout)
+    return existing
+  }
+  if (input.args[0] === 'merge-tree') input.mergeTreeCalls.push(input.args)
+  const result = spawnFixtureGitSync(input.args, { cwd: input.repo, stdin: input.stdin })
+  input.spawned()
+  const ok = result.exitCode === 0
+  let out = result.stdout.toString().trim()
+  if (ok && input.args[0] === 'merge-tree') out += '\nfixture diagnostic'
+  const stdout =
+    input.output && ok ? new Uint8Array(readFileSync(input.output)) : new Uint8Array(result.stdout)
+  const value = {
+    ok,
+    out,
+    stdout,
+    err: result.stderr.toString().trim() || `exit ${result.exitCode}`,
+  }
+  input.cache.set(key, value)
+  return value
+}
+
 test('gatherSameChange recomputes old identities and falls back to a real trivial replay', () => {
   const repo = mkdtempSync(join(tmpdir(), 'orch-same-change-'))
   let spawns = 0
@@ -135,28 +169,17 @@ test('gatherSameChange recomputes old identities and falls back to a real trivia
         }
       }
       const output = args.find((arg) => arg.startsWith('--output='))?.slice('--output='.length)
-      const cacheArgs = args.filter((arg) => !arg.startsWith('--output='))
-      const key = `${JSON.stringify(cacheArgs)}\0${hashBytes(stdin ?? new Uint8Array())}`
-      const existing = cache.get(key)
-      if (existing) {
-        if (output) writeFileSync(output, existing.stdout)
-        return existing
-      }
-      if (args[0] === 'merge-tree') mergeTreeCalls.push(args)
-      const result = spawnFixtureGitSync(args, { cwd: repo, stdin })
-      spawns += 1
-      const ok = result.exitCode === 0
-      let out = result.stdout.toString().trim()
-      if (ok && args[0] === 'merge-tree') out += '\nfixture diagnostic'
-      const stdout = output && ok ? new Uint8Array(readFileSync(output)) : new Uint8Array(result.stdout)
-      const value = {
-        ok,
-        out,
-        stdout,
-        err: result.stderr.toString().trim() || `exit ${result.exitCode}`,
-      }
-      cache.set(key, value)
-      return value
+      return cachedFixtureResult({
+        args,
+        stdin,
+        output,
+        cache,
+        repo,
+        spawned: () => {
+          spawns += 1
+        },
+        mergeTreeCalls,
+      })
     }
     const identity = (from: string, to: string) => ({
       patchId: changeIdentity(runner, from, to),

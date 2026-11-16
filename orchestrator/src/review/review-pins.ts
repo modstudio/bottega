@@ -1,5 +1,8 @@
 // concern: review-pins
 import type { Database } from 'bun:sqlite'
+import { closeSync, mkdtempSync, openSync, readSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { startBoundedSyncBytes } from '../../../shared/bounded-process.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { db, writableDb } from '../database/db.ts'
@@ -108,6 +111,53 @@ export function git(
     out: new TextDecoder().decode(p.stdout).trim(),
     err: p.stderr.trim() || `exit ${p.exitCode}`,
     stdout: p.stdout,
+  }
+}
+
+export function mapGitDiffSections<T>(
+  repo: string,
+  args: string[],
+  map: (section: string) => T,
+): T[] {
+  const directory = mkdtempSync(join(tmpdir(), 'review-diff-'))
+  const diffPath = join(directory, 'change.diff')
+  try {
+    const diff = git(repo, [...args, `--output=${diffPath}`])
+    if (!diff.ok) throw new Error(`git ${args.join(' ')} failed: ${diff.err}`)
+    const mapped: T[] = []
+    const decoder = new TextDecoder()
+    const bytes = new Uint8Array(64 * 1024)
+    const fd = openSync(diffPath, 'r')
+    let pending = ''
+    let section = ''
+    const accept = (line: string) => {
+      if (section && line.startsWith('diff --git ')) {
+        mapped.push(map(section))
+        section = ''
+      }
+      section += line
+    }
+    try {
+      while (true) {
+        const count = readSync(fd, bytes)
+        if (count === 0) break
+        pending += decoder.decode(bytes.subarray(0, count), { stream: true })
+        let newline = pending.indexOf('\n')
+        while (newline >= 0) {
+          accept(pending.slice(0, newline + 1))
+          pending = pending.slice(newline + 1)
+          newline = pending.indexOf('\n')
+        }
+      }
+      pending += decoder.decode()
+      if (pending) accept(pending)
+      if (section) mapped.push(map(section))
+      return mapped
+    } finally {
+      closeSync(fd)
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
   }
 }
 
