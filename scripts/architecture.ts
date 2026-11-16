@@ -110,7 +110,7 @@ const concerns: ConcernManifest = {
   ],
 }
 
-export const modules: ArchitectureModule[] = [
+const declaredModules: ArchitectureModule[] = [
   ...questionCallerModules,
   module('orchestrator/src/workflow/task-flow-store.ts', [
     'bun:sqlite',
@@ -686,6 +686,11 @@ export const modules: ArchitectureModule[] = [
   ...worktreeModules,
 ]
 
+export const modules: ArchitectureModule[] = declaredModules.map((entry) => ({
+  ...entry,
+  allowed: [...entry.allowed, ...questionPortPublicModules],
+}))
+
 export const inversions: { from: string; to: string }[] = [
   { from: 'orchestrator/src/jobs/jobs.ts', to: 'orchestrator/src/agent/agents.ts' },
   { from: 'orchestrator/src/route/route.ts', to: 'orchestrator/src/review/review.ts' },
@@ -858,9 +863,7 @@ const declaredModuleRules: ArchitectureRule[] = modules.map((entry) => ({
   from: { path: exactArchitecturePath(entry.file) },
   to: {
     dependencyTypes: ['local'],
-    pathNot: [...entry.allowed, ...(entry.typeOnlyAllowed ?? []), ...questionPortPublicModules].map(
-      exactArchitecturePath,
-    ),
+    pathNot: [...entry.allowed, ...(entry.typeOnlyAllowed ?? [])].map(exactArchitecturePath),
   },
 }))
 
