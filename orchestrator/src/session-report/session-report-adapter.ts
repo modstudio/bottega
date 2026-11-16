@@ -54,7 +54,7 @@ function knownSessions(database: Database): string[] {
     .map((row) => row.session_id)
 }
 
-async function factsForSession(
+export async function factsForSession(
   database: Database,
   sessionId: string,
   end: string,
