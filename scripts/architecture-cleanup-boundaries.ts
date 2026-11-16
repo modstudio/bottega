@@ -505,9 +505,10 @@ export const cleanupBoundarySpecs = [
       '../doc/context-service.ts',
       '../project/projects.ts',
       '../run/run-task-linking.ts',
+      '../workflow/workflow-task-reference.ts',
       './task-context-reap-decision.ts',
     ],
-    typeOnlyAllowed: ['../workflow/workflow-task-reference.ts', './cleanup.ts'],
+    typeOnlyAllowed: ['./cleanup.ts'],
     reason: 'Keep shared hub reads and done-task context cleanup behind one machine-sweep phase.',
   },
   {

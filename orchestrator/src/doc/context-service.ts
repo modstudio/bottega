@@ -135,8 +135,8 @@ export async function clearTaskHolderForLifecycle(input: {
       )
       let count = 0
       for (const item of items) {
-        const result = await client.remove(item.recordId, { expectedRevision: item.revision })
-        if (result.removed && removeLocalContextItem(holder, item.id, item.revision)) count++
+        await client.remove(item.recordId, { expectedRevision: item.revision })
+        if (removeLocalContextItem(holder, item.id, item.revision)) count++
       }
       return count
     },

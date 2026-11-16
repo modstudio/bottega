@@ -452,12 +452,12 @@ function printSweepKept(
 
 /** Finishes task maintenance and fails the sweep when any part failed. */
 async function finishSweep(
-  dry: boolean,
   cleanupFailed: boolean,
   hubTaskReader: HubTaskReader,
-  presentation: CleanupPresentation,
+  options: SweepOptions,
 ): Promise<void> {
-  const taskMaintenanceFailed = await sweepHubTasks(dry, hubTaskReader, presentation)
+  const { dryRun: dry, project = null, presentation } = options
+  const taskMaintenanceFailed = await sweepHubTasks(dry, hubTaskReader, project, presentation)
   if (!dry) {
     const repaired = backfillRunRecordsForSweep()
     const total =
@@ -1071,5 +1071,5 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     options.force,
     options.presentation,
   )
-  await finishSweep(dry, cleanupFailed, helpers.hubTaskReader, options.presentation)
+  await finishSweep(cleanupFailed, helpers.hubTaskReader, options)
 }

@@ -5,7 +5,11 @@ import { listContextHolders } from '../doc/context-item-store.ts'
 import { clearTaskHolderForLifecycle } from '../doc/context-service.ts'
 import { projects } from '../project/projects.ts'
 import { sweepRunTaskLinks } from '../run/run-task-linking.ts'
-import type { HubTaskReader, HubTaskReference } from '../workflow/workflow-task-reference.ts'
+import {
+  type HubTaskReader,
+  type HubTaskReference,
+  taskReadRefusal,
+} from '../workflow/workflow-task-reference.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import { decideTaskContextReap } from './task-context-reap-decision.ts'
 
@@ -24,14 +28,29 @@ function sharedTaskReader(reader: HubTaskReader): HubTaskReader {
 export async function sweepHubTasks(
   dryRun: boolean,
   hubTaskReader: HubTaskReader,
+  selectedProject: string | null,
   presentation: CleanupPresentation,
 ): Promise<boolean> {
   const reader = sharedTaskReader(hubTaskReader)
   const runLinks = await sweepRunTaskLinks(dryRun, reader)
   presentation[runLinks.kind](runLinks.line)
+  if (selectedProject !== null) return runLinks.kind === 'error'
   let tasks: HubTaskReference[]
   try {
-    tasks = (await Promise.all(projects().map((project) => reader(project.name)))).flat()
+    tasks = (
+      await Promise.all(
+        projects().map(async (project) => {
+          try {
+            return await reader(project.name)
+          } catch (error) {
+            throw taskReadRefusal(
+              project.name,
+              error instanceof Error ? error.message : String(error),
+            )
+          }
+        }),
+      )
+    ).flat()
   } catch (error) {
     presentation.error(
       `task context unavailable: ${error instanceof Error ? error.message : String(error)}`,
