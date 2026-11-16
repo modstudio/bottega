@@ -4,7 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
-import { openQuestionStages } from '../question-store/question-store-read.ts'
+import { openQuestionStages, questionRulings } from '../question-store/question-store-read.ts'
 import {
   buildSessionWindowReport,
   comparisonWindow,
@@ -122,28 +122,14 @@ export async function factsForSession(
       updatedAt: row.updated_at,
       openToday: openCursorIds.has(row.record_id),
     }))
-  const questions = database
-    .query<
-      {
-        record_id: string
-        asked_at: string
-        answered_at: string | null
-        closed_at: string | null
-      },
-      [string, string]
-    >(
-      `SELECT q.record_id,q.asked_at,q.answered_at,q.closed_at FROM question q
-       LEFT JOIN run r ON r.record_id=q.run_record_id
-       LEFT JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
-       WHERE COALESCE(r.session_id,c.session_id)=? AND q.asked_at<=?
-       ORDER BY q.asked_at,q.number`,
-    )
-    .all(sessionId, end)
+  const questions = (await questionRulings(database, { kind: 'all' })).items
+    .filter((row) => row.session_id === sessionId && String(row.asked_at) <= end)
+    .sort((a, b) => Number(a.number) - Number(b.number))
     .map((row) => ({
-      id: row.record_id,
-      askedAt: row.asked_at,
-      answeredAt: row.answered_at,
-      closedAt: row.closed_at,
+      id: String(row.record_id),
+      askedAt: String(row.asked_at),
+      answeredAt: row.answered_at === null ? null : String(row.answered_at),
+      closedAt: row.closed_at === null ? null : String(row.closed_at),
     }))
   const hookEmissions = database
     .query<

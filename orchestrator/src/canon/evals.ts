@@ -625,8 +625,8 @@ export async function runCanonEvals(opts: {
           model: string | null
           canon_sha: string | null
         }
+        await terminaliseJudgedProbe(result.record_id)
         writeTransaction(() => {
-          await terminaliseJudgedProbe(result.record_id)
           insertEval({
             slug: ev.slug,
             runId: result.record_id,

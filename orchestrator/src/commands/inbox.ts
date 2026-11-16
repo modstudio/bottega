@@ -11,19 +11,18 @@ import { latestArchitectRead } from '../review/review-read.ts'
 import { commitAt, commitsBetween, isAncestor, runDiffCommand } from '../run/run-diff.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { runInboxCommand } from '../run/run-inbox.ts'
+import { pendingQuestionIds } from '../run/question-delivery-pending.ts'
 import { observedChangesIn } from '../worktree/worktree-remove.ts'
 import { duration, log, optionFlags, write } from './support.ts'
 
 function chainHasPendingDelivery(rootId: string): boolean {
-  return Boolean(
-    db()
-      .query(
-        `SELECT 1 FROM question q JOIN run owner ON owner.record_id=q.run_record_id
-      WHERE (owner.record_id=? OR owner.parent_run_record_id=?)
-        AND q.answered_at IS NOT NULL AND q.delivery_pending_at IS NOT NULL LIMIT 1`,
-      )
-      .get(rootId, rootId),
-  )
+  const runIds = db()
+    .query<{ record_id: string }, [string, string]>(
+      'SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=?',
+    )
+    .all(rootId, rootId)
+    .map(({ record_id }) => record_id)
+  return pendingQuestionIds(db(), { runIds }).length > 0
 }
 
 const strandedRecovery = (id: string) => {

@@ -39,7 +39,7 @@ function fixture(): Database {
 }
 
 describe('record search', () => {
-  test('task keys directly link every kind of existing record without returning whole notes', () => {
+  test('task keys directly link every kind of existing record without returning whole notes', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'orch-search-'))
     dirs.push(dir)
     const output = join(dir, 'output.txt')
@@ -54,7 +54,7 @@ describe('record search', () => {
       INSERT INTO review_finding VALUES ('01990000-0000-7000-8000-000000000301', '01990000-0000-7000-8000-000000000201', '01990000-0000-7000-8000-000000000401', 1, 'major', 'file.ts:4', 'The guard is process-local.', 'Move it to the repository hook.', 'accepted', NULL);
     `)
 
-    const found = searchRecords(d, 'dev-203')
+    const found = await searchRecords(d, 'dev-203')
     expect(found.results.map((result) => result.source)).toEqual([
       'score',
       'ruling',
@@ -68,37 +68,39 @@ describe('record search', () => {
     ).toBeLessThanOrEqual(242)
   })
 
-  test('file and function searches are literal and honestly marked weak', () => {
+  test('file and function searches are literal and honestly marked weak', async () => {
     const d = fixture()
     d.exec(`
       INSERT INTO run VALUES ('01990000-0000-7000-8000-000000000001', 1, NULL, 'DEV-1', '2026-09-01T00:00:00Z', NULL);
       INSERT INTO score VALUES (1, '01990000-0000-7000-8000-000000000001', 'Checked resolveBase() in orchestrator/src/worktree/worktree.ts:44; it preserves HEAD.');
     `)
 
-    const file = searchRecords(d, 'orchestrator/src/worktree/worktree.ts')
-    const fn = searchRecords(d, 'resolveBase()')
+    const file = await searchRecords(d, 'orchestrator/src/worktree/worktree.ts')
+    const fn = await searchRecords(d, 'resolveBase()')
     expect(file.results[0]?.match).toBe('literal text match (weak relevance)')
     expect(fn.results[0]?.snippet).toContain('resolveBase()')
   })
 
-  test('missing output files are reported instead of silently treated as searchable', () => {
+  test('missing output files are reported instead of silently treated as searchable', async () => {
     const d = fixture()
     d.exec(
       `INSERT INTO run VALUES ('01990000-0000-7000-8000-000000000001', 1, NULL, 'DEV-1', '2026-09-01T00:00:00Z', '/definitely/missing/output')`,
     )
-    const found = searchRecords(d, 'anything')
+    const found = await searchRecords(d, 'anything')
     expect(found.results).toEqual([])
     expect(found.unavailable_outputs).toBe(1)
   })
 
-  test('full records are opt-in', () => {
+  test('full records are opt-in', async () => {
     const d = fixture()
     d.exec(`
       INSERT INTO run VALUES ('01990000-0000-7000-8000-000000000001', 1, NULL, 'DEV-1', '2026-09-01T00:00:00Z', NULL);
       INSERT INTO score VALUES (1, '01990000-0000-7000-8000-000000000001', 'the complete note');
     `)
-    expect(searchRecords(d, 'complete').results[0]).not.toHaveProperty('content')
-    expect(searchRecords(d, 'complete', 20, true).results[0]?.content).toBe('the complete note')
+    expect((await searchRecords(d, 'complete')).results[0]).not.toHaveProperty('content')
+    expect((await searchRecords(d, 'complete', 20, true)).results[0]?.content).toBe(
+      'the complete note',
+    )
   })
 
   test('snippets put a late match in view', () => {
@@ -107,7 +109,7 @@ describe('record search', () => {
     expect(snippet).toContain('needle')
   })
 
-  test('search command JSON keeps numeric record_id and hides the internal id name', () => {
+  test('search command JSON keeps numeric record_id and hides the internal id name', async () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
     db()
       .query(
@@ -116,7 +118,7 @@ describe('record search', () => {
       )
       .run(run, 'unique search json note')
     const lines: string[] = []
-    searchCommand(
+    await searchCommand(
       'unique search json note',
       { limit: 20, full: false, json: true },
       {

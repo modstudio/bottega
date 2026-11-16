@@ -229,7 +229,7 @@ describe('review discipline', () => {
       triaged: 1,
     })
   })
-  test('OpenRouter routing variants share one model-specific calibration cell', () => {
+  test('OpenRouter routing variants share one model-specific calibration cell', async () => {
     const baseUrl = 'https://openrouter.ai/api/v1'
     addAgent('openrouter-cal', {
       harness: 'codex',
@@ -278,7 +278,7 @@ describe('review discipline', () => {
         last_graded_at: '2026-11-02T00:00:00.000Z',
       },
     ])
-    const stateCells = state().reviewCalibration.filter(
+    const stateCells = (await state()).reviewCalibration.filter(
       (cell) => cell.lens === 'variant' && cell.agent === 'openrouter-cal',
     )
     expect(stateCells).toHaveLength(1)
@@ -394,7 +394,7 @@ describe('review discipline', () => {
     expect(tiers['2'].rounds).toEqual({ min: 1, median: 2, max: 3 })
     expect(tiers['0'].rounds).toEqual({ min: null, median: null, max: null })
   })
-  test('calibration and state count graded values and preserve historical null grades', () => {
+  test('calibration and state count graded values and preserve historical null grades', async () => {
     const gradedRun = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'graded' })
     const gradedReview = recordReview(gradedRun, reviewReply(MIN_REVIEW_TRIAGED), db())
     gradeReviewLens(gradedRun, null, {
@@ -426,7 +426,7 @@ describe('review discipline', () => {
       counts: { agreed: 0, changed: 0, not_comparable: 0, not_assessed: MIN_REVIEW_TRIAGED + 1 },
       shares: { agreed: 0, changed: 0, not_comparable: 0, not_assessed: 1 },
     })
-    const cells = state(null).reviewCalibration as (typeof c)[]
+    const cells = (await state(null)).reviewCalibration as (typeof c)[]
     expect(cells.find((cell) => cell.lens === 'graded' && cell.model === 'm')).toMatchObject({
       reproduced: c.reproduced,
       overlap: c.overlap,

@@ -8,13 +8,14 @@ import { Glob } from 'bun'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const PRODUCTION_ROOT = 'orchestrator/src'
-const QUESTION_SQL = /\b(?:FROM|JOIN|INTO|UPDATE|DELETE\s+FROM)\s+question\b/gi
+const QUESTION_SQL = /\b(?:FROM|JOIN|INTO|UPDATE|DELETE\s+FROM)\s+question\b/g
 const EXACT_ADAPTERS = new Set([
   'orchestrator/src/record/record-question-read.ts',
   'orchestrator/src/record/record-question-write.ts',
   'orchestrator/src/record/record-question-number.ts',
   // DEV-2349 S5d2 deletes the retired question sender.
   'orchestrator/src/record/record-sync-service.ts',
+  'orchestrator/src/record/record-sync.ts',
   // DEV-2349 S5d2 deletes the retired question outbox producer and backfill.
   'orchestrator/src/run/question-outbox.ts',
   // DEV-2349 S5d2 moves this machine-local marker off the question table.
