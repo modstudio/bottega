@@ -15,22 +15,32 @@ export type ChangeIdentityGitRunner = (
   stdinFile?: string,
 ) => ChangeIdentityGitResult
 
-function patchIdentity(
+export function withGitDiffFile<T>(
   runner: ChangeIdentityGitRunner,
   diffArgs: string[],
-  patchIdArgs: string[],
-): string {
+  consume: (diffPath: string) => T,
+): T {
   const directory = mkdtempSync(join(tmpdir(), 'review-change-identity-'))
   const diffPath = join(directory, 'change.diff')
   try {
     const diff = runner([...diffArgs, `--output=${diffPath}`])
     if (!diff.ok) throw new Error(`git ${diffArgs.join(' ')} failed: ${diff.err}`)
-    const id = runner(patchIdArgs, undefined, diffPath)
-    if (!id.ok) throw new Error(`git ${patchIdArgs.join(' ')} failed: ${id.err}`)
-    return id.out.split(/\s+/)[0] ?? ''
+    return consume(diffPath)
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }
+}
+
+function patchIdentity(
+  runner: ChangeIdentityGitRunner,
+  diffArgs: string[],
+  patchIdArgs: string[],
+): string {
+  return withGitDiffFile(runner, diffArgs, (diffPath) => {
+    const id = runner(patchIdArgs, undefined, diffPath)
+    if (!id.ok) throw new Error(`git ${patchIdArgs.join(' ')} failed: ${id.err}`)
+    return id.out.split(/\s+/)[0] ?? ''
+  })
 }
 
 /** Stable content identity for a change, including literal binary payloads. */

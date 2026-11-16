@@ -1,12 +1,10 @@
 // concern: review-pins
 import type { Database } from 'bun:sqlite'
-import { closeSync, mkdtempSync, openSync, readSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { closeSync, openSync, readSync } from 'node:fs'
 import { startBoundedSyncBytes } from '../../../shared/bounded-process.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { db, writableDb } from '../database/db.ts'
-import { changeIdentity, zeroContextChangeIdentity } from './change-identity.ts'
+import { changeIdentity, withGitDiffFile, zeroContextChangeIdentity } from './change-identity.ts'
 import type { CoverageGitRunner, ReviewChangeRange, RunRow } from './review-types.ts'
 
 export const targetGitEnvironment = (repo: string) =>
@@ -53,42 +51,41 @@ export function storedChangePathSet(runId: string, database: Database): string[]
   return parsed
 }
 
-export function measureChangeIdentity(
+export function requireChangeIdentity(
   repo: string,
   from: string,
   to: string,
-  options: { throwOnFailure?: boolean } = {},
-): { patchId: string; zeroContextPatchId: string; paths: string[]; message: string } | null {
+): { patchId: string; zeroContextPatchId: string; paths: string[]; message: string } {
   const paths = git(repo, nulPathListArgs(['diff', '--name-only', `${from}..${to}`]))
   const message = git(repo, ['log', '--format=%B', `${from}..${to}`])
-  if (!paths.ok) {
-    if (options.throwOnFailure) {
-      throw new Error(`git diff --name-only ${from}..${to} failed: ${paths.err}`)
-    }
-    return null
-  }
-  let patchId: string
-  let zeroContextPatchId: string
-  try {
-    patchId = changeIdentity(
-      (args, stdin, stdinFile) => git(repo, args, true, stdin, stdinFile),
-      from,
-      to,
-    )
-    zeroContextPatchId = zeroContextChangeIdentity(
-      (args, stdin, stdinFile) => git(repo, args, true, stdin, stdinFile),
-      from,
-      to,
-    )
-  } catch (cause) {
-    if (options.throwOnFailure) throw cause
-    return null
-  }
+  if (!paths.ok) throw new Error(`git diff --name-only ${from}..${to} failed: ${paths.err}`)
+  const patchId = changeIdentity(
+    (args, stdin, stdinFile) => git(repo, args, true, stdin, stdinFile),
+    from,
+    to,
+  )
+  const zeroContextPatchId = zeroContextChangeIdentity(
+    (args, stdin, stdinFile) => git(repo, args, true, stdin, stdinFile),
+    from,
+    to,
+  )
   return {
     patchId,
     zeroContextPatchId,
     paths: splitNulPaths(paths.out).sort(),
     message: message.ok ? message.out : '',
+  }
+}
+
+export function measureChangeIdentity(
+  repo: string,
+  from: string,
+  to: string,
+): { patchId: string; zeroContextPatchId: string; paths: string[]; message: string } | null {
+  try {
+    return requireChangeIdentity(repo, from, to)
+  } catch {
+    return null
   }
 }
 
@@ -119,46 +116,44 @@ export function mapGitDiffSections<T>(
   args: string[],
   map: (section: string) => T,
 ): T[] {
-  const directory = mkdtempSync(join(tmpdir(), 'review-diff-'))
-  const diffPath = join(directory, 'change.diff')
-  try {
-    const diff = git(repo, [...args, `--output=${diffPath}`])
-    if (!diff.ok) throw new Error(`git ${args.join(' ')} failed: ${diff.err}`)
-    const mapped: T[] = []
-    const decoder = new TextDecoder()
-    const bytes = new Uint8Array(64 * 1024)
-    const fd = openSync(diffPath, 'r')
-    let pending = ''
-    let section = ''
-    const accept = (line: string) => {
-      if (section && line.startsWith('diff --git ')) {
-        mapped.push(map(section))
-        section = ''
-      }
-      section += line
-    }
-    try {
-      while (true) {
-        const count = readSync(fd, bytes)
-        if (count === 0) break
-        pending += decoder.decode(bytes.subarray(0, count), { stream: true })
-        let newline = pending.indexOf('\n')
-        while (newline >= 0) {
-          accept(pending.slice(0, newline + 1))
-          pending = pending.slice(newline + 1)
-          newline = pending.indexOf('\n')
+  return withGitDiffFile(
+    (diffArgs) => git(repo, diffArgs),
+    args,
+    (diffPath) => {
+      const mapped: T[] = []
+      const decoder = new TextDecoder()
+      const bytes = new Uint8Array(64 * 1024)
+      const fd = openSync(diffPath, 'r')
+      let pending = ''
+      let section = ''
+      const accept = (line: string) => {
+        if (section && line.startsWith('diff --git ')) {
+          mapped.push(map(section))
+          section = ''
         }
+        section += line
       }
-      pending += decoder.decode()
-      if (pending) accept(pending)
-      if (section) mapped.push(map(section))
-      return mapped
-    } finally {
-      closeSync(fd)
-    }
-  } finally {
-    rmSync(directory, { recursive: true, force: true })
-  }
+      try {
+        while (true) {
+          const count = readSync(fd, bytes)
+          if (count === 0) break
+          pending += decoder.decode(bytes.subarray(0, count), { stream: true })
+          let newline = pending.indexOf('\n')
+          while (newline >= 0) {
+            accept(pending.slice(0, newline + 1))
+            pending = pending.slice(newline + 1)
+            newline = pending.indexOf('\n')
+          }
+        }
+        pending += decoder.decode()
+        if (pending) accept(pending)
+        if (section) mapped.push(map(section))
+        return mapped
+      } finally {
+        closeSync(fd)
+      }
+    },
+  )
 }
 
 export const reviewGit =
