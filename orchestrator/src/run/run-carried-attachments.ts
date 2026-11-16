@@ -94,8 +94,10 @@ export async function resolveCarriedAttachments(
       if (cause instanceof WorkflowTextNotHeldError) {
         failures.push({
           token,
-          condition: 'not held on this machine',
-          remedy: `re-attach the text with ${PLATFORM_SLUG} workflow attach or paste the body into the spec`,
+          condition: cause.message,
+          remedy:
+            `re-attach the text with ${PLATFORM_SLUG} workflow attach, read another machine's ` +
+            'attachment through its task document, or paste the body into the spec',
         })
       } else {
         const message = cause instanceof Error ? cause.message : String(cause)

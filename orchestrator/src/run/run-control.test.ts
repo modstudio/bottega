@@ -264,7 +264,7 @@ describe('run continuation', () => {
     db()
       .query('UPDATE run SET vendor_session=?,agent=?,prompt_path=?,session_id=? WHERE record_id=?')
       .run('parent-session', 'codex', spec, 'orch-test-session', root)
-    const assembled = Buffer.byteLength(packedResumePrompt('file-question', body, root))
+    const assembled = Buffer.byteLength(packedResumePrompt('file-question', body, root, ''))
     await expect(continueRun(root, body, limit)).rejects.toThrow(
       `assembled resume prompt is ${assembled} bytes`,
     )

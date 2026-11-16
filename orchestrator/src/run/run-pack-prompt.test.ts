@@ -55,6 +55,7 @@ describe('operator knowledge prompt section', () => {
       taskText: '',
       carriedAttachments: 'CARRIED ATTACHMENTS\n\nATTACHMENT BODY',
     })
+    expect(prompt).toContain('ATTACHMENT BODY')
     expect(prompt.indexOf('CARRIED ATTACHMENTS')).toBeLessThan(
       prompt.indexOf('CONTINUATION MESSAGE'),
     )

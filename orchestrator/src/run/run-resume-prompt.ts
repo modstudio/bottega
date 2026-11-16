@@ -4,12 +4,12 @@ import { packResumePrompt } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
 import { resolveCarriedAttachments } from './run-carried-attachments.ts'
 
-/** Assemble the exact prompt a resumed turn puts on argv. */
+/** Pack a resumed turn with a carried-attachments section that has already been resolved. */
 export function packedResumePrompt(
   job: string,
   turnPrompt: string,
   parentId: string,
-  carriedAttachments = '',
+  carriedAttachments: string,
 ): string {
   const carriedTurnPrompt = [carriedAttachments, turnPrompt].filter(Boolean).join('\n\n')
   const root = db().query('SELECT prompt_path FROM run WHERE record_id=?').get(parentId) as {
@@ -22,11 +22,13 @@ export function packedResumePrompt(
   return packResumePrompt(job, carriedTurnPrompt, readFileSync(root.prompt_path, 'utf8'))
 }
 
+/** Resolve attachment tokens in a resumed turn before packing its exact argv prompt. */
 export async function packedResumePromptWithCarriedAttachments(
   job: string,
   turnPrompt: string,
   parentId: string,
+  dependencies: Parameters<typeof resolveCarriedAttachments>[1] = {},
 ): Promise<string> {
-  const carriedAttachments = await resolveCarriedAttachments([turnPrompt])
+  const carriedAttachments = await resolveCarriedAttachments([turnPrompt], dependencies)
   return packedResumePrompt(job, turnPrompt, parentId, carriedAttachments)
 }
