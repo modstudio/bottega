@@ -18,7 +18,7 @@ import {
 } from '../gate/worker-check-omissions.ts'
 import { parseMcpProbe } from '../mcp/mcp-probe.ts'
 import { failureReason, outcomeOf } from '../outcome.ts'
-import { openQuestionsForChain } from '../question-store/question-store-read.ts'
+import { openChainQuestions } from '../run/question-open.ts'
 import { HARNESS_EXECUTOR } from '../run/run-executor.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import type { ObservedDeadRun } from '../run/run-liveness.ts'
@@ -157,7 +157,8 @@ async function resolveAsking(database: Database, runId: string): Promise<AskingR
   } | null
   if (!member) throw new Error(`no run ${runId}`)
   const rootId = member.parent_run_record_id ?? member.record_id
-  if ((await openQuestionsForChain(database, rootId)).length) return { state: 'open', rootId }
+  if ((await openChainQuestions(database, rootId, 'record_id')).length)
+    return { state: 'open', rootId }
 
   const running = database
     .query(
