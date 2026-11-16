@@ -852,6 +852,44 @@ const architectureCycleFiles = [
   ...new Set(allowedCycles.flatMap(({ cycle }) => cycle.slice(0, -1))),
 ]
 
+const declaredModuleRules: ArchitectureRule[] = modules.map((entry) => ({
+  name: `module-${entry.file.replace(/[^a-z0-9]+/gi, '-')}`,
+  severity: 'error' as const,
+  from: { path: exactArchitecturePath(entry.file) },
+  to: {
+    dependencyTypes: ['local'],
+    pathNot: [...entry.allowed, ...(entry.typeOnlyAllowed ?? []), ...questionPortPublicModules].map(
+      exactArchitecturePath,
+    ),
+  },
+}))
+
+const declaredImportBoundaryRules: ArchitectureRule[] = [
+  ...importBoundaries.map((entry) => ({
+    name: `import-${entry.name}`,
+    severity: 'error' as const,
+    comment: entry.reason,
+    from: { path: exactArchitecturePath(entry.file) },
+    to: {
+      pathNot: [...entry.allowed, ...entry.typeOnlyAllowed, ...questionPortPublicModules].map(
+        architectureDependencyPath,
+      ),
+    },
+  })),
+  ...importBoundaries.flatMap((entry) =>
+    entry.typeOnlyAllowed.map((target) => ({
+      name: `import-${entry.name}-${target.replace(/[^a-z0-9]+/gi, '-')}-is-type-only`,
+      severity: 'error' as const,
+      comment: entry.reason,
+      from: { path: exactArchitecturePath(entry.file) },
+      to: {
+        path: architectureDependencyPath(target),
+        dependencyTypesNot: ['type-only'],
+      },
+    })),
+  ),
+]
+
 export function architectureRules() {
   const forbidden: ArchitectureRule[] = [
     concernIsolationRule(concerns.roots),
@@ -884,42 +922,8 @@ export function architectureRules() {
         dependencyTypesNot: hubWebRouterException.dependencyTypes,
       },
     },
-    ...modules.map((entry) => ({
-      name: `module-${entry.file.replace(/[^a-z0-9]+/gi, '-')}`,
-      severity: 'error' as const,
-      from: { path: exactArchitecturePath(entry.file) },
-      to: {
-        dependencyTypes: ['local'],
-        pathNot: [
-          ...entry.allowed,
-          ...(entry.typeOnlyAllowed ?? []),
-          ...questionPortPublicModules,
-        ].map(exactArchitecturePath),
-      },
-    })),
-    ...importBoundaries.map((entry) => ({
-      name: `import-${entry.name}`,
-      severity: 'error' as const,
-      comment: entry.reason,
-      from: { path: exactArchitecturePath(entry.file) },
-      to: {
-        pathNot: [...entry.allowed, ...entry.typeOnlyAllowed, ...questionPortPublicModules].map(
-          architectureDependencyPath,
-        ),
-      },
-    })),
-    ...importBoundaries.flatMap((entry) =>
-      entry.typeOnlyAllowed.map((target) => ({
-        name: `import-${entry.name}-${target.replace(/[^a-z0-9]+/gi, '-')}-is-type-only`,
-        severity: 'error' as const,
-        comment: entry.reason,
-        from: { path: exactArchitecturePath(entry.file) },
-        to: {
-          path: architectureDependencyPath(target),
-          dependencyTypesNot: ['type-only'],
-        },
-      })),
-    ),
+    ...declaredModuleRules,
+    ...declaredImportBoundaryRules,
     ...writeTimeArchitectureRules(),
     {
       name: 'import-cli-boundary',
