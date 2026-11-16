@@ -166,7 +166,9 @@ const aggregateHookOutput = (
     })
   return [...Map.groupBy(inWindow, (row) => `${row.event}\0${row.kind}`)]
     .map(([key, rows]) => {
-      const [event, kind] = key.split('\0')
+      const separator = key.indexOf('\0')
+      const event = key.slice(0, separator)
+      const kind = key.slice(separator + 1)
       const characters = rows.reduce((sum, row) => sum + row.chars, 0)
       return {
         event,

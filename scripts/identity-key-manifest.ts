@@ -245,6 +245,10 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     ...taskIdentity.TASK_IDENTITY_INTEGER_COLUMNS,
     'workflow_event.version_n',
   ]),
+  ...manifest('hosted', 'count or size measurement', [
+    'hook_emission.chars',
+    'hook_emission.lines',
+  ]),
   ...TYPED_QUESTION_IDENTITY.integerValues,
   ...ROUTING_POOL_IDENTITY.integerValues,
   ...manifest('hub', 'boolean flag', ['install_binding.bound', 'interval.open', 'send.test']),

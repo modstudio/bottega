@@ -38,7 +38,7 @@ def deny(payload, reason: str) -> None:
     }))
 
 
-def load_markers(payload):
+def load_markers(payload=None):
     try:
         with MARKER_FILE.open(encoding="utf-8") as marker_file:
             patterns = json.load(marker_file)
