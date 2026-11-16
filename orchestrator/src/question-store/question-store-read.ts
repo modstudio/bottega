@@ -59,6 +59,56 @@ export async function questionsForChain(
   return (await Promise.all(runIds.map((runId) => questionsForRun(database, runId)))).flat()
 }
 
+export async function openQuestionsForChain(
+  database: Database,
+  rootId: string,
+): Promise<Record<string, unknown>[]> {
+  return (await questionsForChain(database, rootId)).filter(
+    (row) => row.answered_at === null && row.closed_at === null,
+  )
+}
+
+export async function allQuestions(database: Database): Promise<Record<string, unknown>[]> {
+  const rulings = await questionRulings(database, { kind: 'all' })
+  const ids = rulings.items.map((row) => String(row.record_id))
+  return questionsById(database, ids)
+}
+
+export async function questionsForWorkflowCursor(
+  database: Database,
+  cursorId: string,
+): Promise<Record<string, unknown>[]> {
+  return (
+    await questionStore(database).read({
+      read: 'for-cursor',
+      workflowCursorRecordId: cursorId,
+    })
+  ).items as Record<string, unknown>[]
+}
+
+export async function questionRuleAuditReasons(
+  database: Database,
+  workflowCursorRecordId: string,
+  actorSession: string,
+): Promise<Array<string | null>> {
+  const result = await questionStore(database).read({
+    read: 'rule-audit-reasons',
+    workflowCursorRecordId,
+    actorSession,
+  })
+  return result.items.map((row) => ('reason' in row ? (row.reason as string | null) : null))
+}
+
+export async function questionByNumber(
+  database: Database,
+  number: number,
+): Promise<Record<string, unknown> | null> {
+  const rulings = await questionRulings(database, { kind: 'all' })
+  const ruling = rulings.items.find((row) => Number(row.number) === number)
+  if (!ruling) return null
+  return (await questionsById(database, [String(ruling.record_id)]))[0] ?? null
+}
+
 export async function questionsById(
   database: Database,
   ids: string[],

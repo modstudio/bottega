@@ -4,13 +4,17 @@
 import type { Database } from 'bun:sqlite'
 import { questionsForChain } from '../question-store/question-store-read.ts'
 
-export const questionOpenSql = (alias: string): string =>
-  `${alias}.answered_at IS NULL AND ${alias}.closed_at IS NULL`
+export function questionOpenSql(alias: string): string {
+  return `${alias}.answered_at IS NULL AND ${alias}.closed_at IS NULL`
+}
 
 /** Resolves a question's task holder without changing the established run/workflow precedence. */
-export const questionTaskHolderSql = (questionAlias: string, runAlias: string): string =>
-  `COALESCE(${runAlias}.launch_key,${questionAlias}.workflow_key,` +
-  `(SELECT root.launch_key FROM run root WHERE root.record_id=${runAlias}.parent_run_record_id))`
+export function questionTaskHolderSql(questionAlias: string, runAlias: string): string {
+  return (
+    `COALESCE(${runAlias}.launch_key,${questionAlias}.workflow_key,` +
+    `(SELECT root.launch_key FROM run root WHERE root.record_id=${runAlias}.parent_run_record_id))`
+  )
+}
 
 export async function openChainQuestions<T>(
   database: Database,

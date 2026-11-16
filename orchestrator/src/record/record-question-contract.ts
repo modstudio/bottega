@@ -156,6 +156,19 @@ export const questionReadSchema = z.discriminatedUnion('read', [
     changedAfter,
   }),
   z.object({ read: z.literal('for-run'), runId: id, limit: readLimit, changedAfter }),
+  z.object({
+    read: z.literal('for-cursor'),
+    workflowCursorRecordId: id,
+    limit: readLimit,
+    changedAfter,
+  }),
+  z.object({
+    read: z.literal('rule-audit-reasons'),
+    workflowCursorRecordId: id,
+    actorSession: z.string().min(1),
+    limit: readLimit,
+    changedAfter,
+  }),
 ])
 export type QuestionReadInput = z.infer<typeof questionReadSchema>
 type RulingReadInput = Extract<QuestionReadInput, { read: 'rulings' }>

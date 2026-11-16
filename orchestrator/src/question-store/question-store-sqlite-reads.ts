@@ -410,6 +410,35 @@ export const questionsById = (
     .all(...ids) as Record<string, unknown>[]
 }
 
+export const questionsForCursor = (
+  database: Database,
+  workflowCursorRecordId: string,
+): Record<string, unknown>[] =>
+  database
+    .query(
+      `SELECT ${QUESTION_PORT_COLUMNS} FROM question q
+       LEFT JOIN run owner ON owner.record_id=q.run_record_id
+       LEFT JOIN project run_project ON run_project.record_id=owner.project_record_id
+       LEFT JOIN workflow_cursor cursor ON cursor.record_id=q.workflow_cursor_record_id
+       LEFT JOIN project ON project.record_id=cursor.project_record_id
+       WHERE q.workflow_cursor_record_id=? ORDER BY q.number`,
+    )
+    .all(workflowCursorRecordId) as Record<string, unknown>[]
+
+export const ruleAuditReasons = (
+  database: Database,
+  workflowCursorRecordId: string,
+  actorSession: string,
+): Array<{ reason: string | null }> =>
+  database
+    .query<{ reason: string | null }, [string, string]>(
+      `SELECT audit.reason FROM question_mutation_audit audit
+       JOIN question q ON q.record_id=audit.question_record_id
+       WHERE q.workflow_cursor_record_id=? AND audit.action='rule' AND audit.actor_session=?
+       ORDER BY audit.at,audit.record_id`,
+    )
+    .all(workflowCursorRecordId, actorSession)
+
 export const questionsForRun = (database: Database, runId: string): Record<string, unknown>[] =>
   database
     .query(

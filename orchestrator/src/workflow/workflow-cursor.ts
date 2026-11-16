@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { notifyWaitingItem } from '../operator/operator-waiting.ts'
+import { allQuestions } from '../question-store/question-store-read.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   taskFlowWriteTarget,
@@ -402,9 +403,8 @@ async function closeFloorsForStep(
       row.step_slug,
     )
     if (refusal) throw new Error(refusal)
-    selfRulingQuestionNumber = d
-      .query<{ n: number }, []>('SELECT COALESCE(MAX(number),0)+1 n FROM question')
-      .get()!.n
+    selfRulingQuestionNumber =
+      Math.max(0, ...(await allQuestions(d)).map((question) => Number(question.number))) + 1
     floorEvidence = evidence
     selfRulingPlan = {
       cursorId: row.record_id,

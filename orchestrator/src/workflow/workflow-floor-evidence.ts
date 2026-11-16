@@ -16,6 +16,7 @@ import { db } from '../database/db.ts'
 import { resolveDocReference } from '../doc/doc-reference-read.ts'
 import { landingGatePurposeRefusal, resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { projectByName } from '../project/projects.ts'
+import { questionByNumber } from '../question-store/question-store-read.ts'
 import {
   reviewRoundTriageComplete,
   reviewsForTriage,
@@ -23,7 +24,6 @@ import {
 } from '../review/review-group.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { reviewLineage } from '../review/review-lineage-store.ts'
-import { questionOpenSql } from '../run/question-open.ts'
 import { rulingStatus } from '../run/question-vocabulary.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
@@ -116,27 +116,26 @@ function runHasRecordedArtifacts(
   return existsSync(artifacts) && readdirSync(artifacts).length > 0
 }
 
-function gatherRuling(
+async function gatherRuling(
   id: number,
   cursorId: string,
   stepOrdinal: number,
   stepSlug: string,
   d: Database,
-): ValidatedEvidence['ruling'] {
-  const row = d
-    .query<
-      QuestionEvidenceRow & {
-        workflow_cursor_record_id: string | null
-        workflow_step_ordinal: number | null
-        workflow_step_slug: string | null
-      },
-      [number]
-    >(
-      `SELECT number id,answered_at,answerer_kind,overturned_at,replacement,${questionOpenSql('question')} is_open,workflow_cursor_record_id,workflow_step_ordinal,workflow_step_slug
-         FROM question WHERE number=?`,
-    )
-    .get(id)
-  if (!row) throw new Error(`--ruling ${id} does not exist`)
+): Promise<ValidatedEvidence['ruling']> {
+  const question = await questionByNumber(d, id)
+  if (!question) throw new Error(`--ruling ${id} does not exist`)
+  const row = {
+    id,
+    answered_at: question.answered_at as string | null,
+    answerer_kind: question.answerer_kind as string | null,
+    overturned_at: question.overturned_at as string | null,
+    replacement: question.replacement as string | null,
+    is_open: question.answered_at === null && question.closed_at === null ? 1 : 0,
+    workflow_cursor_record_id: question.workflow_cursor_record_id as string | null,
+    workflow_step_ordinal: question.workflow_step_ordinal as number | null,
+    workflow_step_slug: question.workflow_step_slug as string | null,
+  }
   const facts = questionRowToFacts(row)
   return {
     id,
@@ -944,7 +943,13 @@ export async function gatherValidatedEvidenceBase(
   const run = input.evidence.run
   const satisfies = input.evidence.satisfies
   if (ruling)
-    gathered.ruling = gatherRuling(ruling, input.cursorId, input.stepOrdinal, input.stepSlug, d)
+    gathered.ruling = await gatherRuling(
+      ruling,
+      input.cursorId,
+      input.stepOrdinal,
+      input.stepSlug,
+      d,
+    )
   if (review) gathered.review = gatherReview(resolveReviewIdentifier(d, review), input.identity, d)
   if (gateRecordId)
     gathered.gate = gatherGate(gateRecordId, input.identity, input.cursorId, resolveCheckout, d)

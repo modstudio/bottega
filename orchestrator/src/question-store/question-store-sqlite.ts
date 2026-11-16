@@ -9,12 +9,13 @@ import type {
   QuestionWriteResult,
 } from '../record/record-question-contract.ts'
 import { questionChangedAfterRefusal } from '../record/record-question-contract.ts'
-import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import {
   localQuestionProjects,
   openStagesForSession,
   questionsById,
+  questionsForCursor,
   questionsForRun,
+  ruleAuditReasons,
   rulingRows,
   runInboxQuestionRows,
   taskRulingRows,
@@ -152,7 +153,6 @@ export class SqliteQuestionStore implements QuestionStore {
         input.audit.at,
         input.audit.reason,
       )
-    enqueueQuestionRecord(this.database, q.id)
     return { id: q.id, number, revision: Math.max(existing?.revision ?? 0, q.revision) }
   }
 
@@ -212,6 +212,24 @@ export class SqliteQuestionStore implements QuestionStore {
       return { items: limited(questionsById(this.database, input.ids), input.limit) }
     if (input.read === 'for-run')
       return { items: limited(questionsForRun(this.database, input.runId), input.limit) }
+    if (input.read === 'for-cursor')
+      return {
+        items: limited(
+          questionsForCursor(this.database, input.workflowCursorRecordId),
+          input.limit,
+        ),
+      }
+    if (input.read === 'rule-audit-reasons')
+      return {
+        items: limited(
+          ruleAuditReasons(
+            this.database,
+            input.workflowCursorRecordId,
+            input.actorSession,
+          ),
+          input.limit,
+        ),
+      }
     return { items: limited(localQuestionProjects(this.database), input.limit) }
   }
 }

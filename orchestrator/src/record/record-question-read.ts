@@ -75,6 +75,7 @@ const QUESTION_DETAIL_COLUMNS = `q.id::text record_id,q.number,q.run_id::text ru
   owner.number run_number,owner.id::text owner_id,owner.status owner_status,owner.pid owner_pid,
   COALESCE(owner.parent_run_id,owner.id)::text root_id,
   stage.number workflow_cursor_number,stage.workflow workflow_slug,stage.mode mode_slug,
+  stage.active_ordinal workflow_step_ordinal,stage.active_slug workflow_step_slug,
   stage.session_id workflow_owner,stage.updated_at::text workflow_updated_at,stage.state cursor_state,
   stage.arguments::text args,COALESCE(owner.repo,stage_project.name) repo,
   COALESCE(owner.cwd,stage_project.path) cwd,COALESCE(run_project.name,stage_project.name) project_name,
@@ -88,13 +89,17 @@ const QUESTION_DETAIL_COLUMNS = `q.id::text record_id,q.number,q.run_id::text ru
 
 async function recordQuestionDetails(
   tx: SQL,
-  input: { ids?: readonly string[]; runId?: string },
+  input: { ids?: readonly string[]; runId?: string; workflowCursorRecordId?: string },
 ): Promise<Row[]> {
   if (input.ids?.length === 0) return []
-  const values = input.ids ? [...input.ids] : [input.runId]
+  const values = input.ids
+    ? [...input.ids]
+    : [input.runId ?? input.workflowCursorRecordId]
   const predicate = input.ids
     ? `q.id IN (${input.ids.map((_, index) => `$${index + 1}::uuid`).join(',')})`
-    : 'q.run_id=$1::uuid'
+    : input.runId
+      ? 'q.run_id=$1::uuid'
+      : 'q.workflow_cursor_record_id=$1::uuid'
   return (await tx.unsafe(
     `SELECT ${QUESTION_DETAIL_COLUMNS} FROM question q
      LEFT JOIN run owner ON owner.id=q.run_id
@@ -110,6 +115,24 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
   if (input.read === 'by-id') return limited(await recordQuestionDetails(tx, input), input.limit)
   if (input.read === 'for-run')
     return limited(await recordQuestionDetails(tx, { runId: input.runId }), input.limit)
+  if (input.read === 'for-cursor')
+    return limited(
+      await recordQuestionDetails(tx, {
+        workflowCursorRecordId: input.workflowCursorRecordId,
+      }),
+      input.limit,
+    )
+  if (input.read === 'rule-audit-reasons')
+    return limited(
+      (await tx.unsafe(
+        `SELECT audit.reason FROM question_mutation_audit audit
+         JOIN question q ON q.id=audit.question_id
+         WHERE q.workflow_cursor_record_id=$1::uuid AND audit.action='rule' AND audit.actor_session=$2
+         ORDER BY audit.at,audit.id`,
+        [input.workflowCursorRecordId, input.actorSession],
+      )) as Row[],
+      input.limit,
+    )
   if (input.read === 'inbox') {
     const runs = (await tx.unsafe(
       `SELECT q.number,q.id::text record_id,q.run_id::text run_record_id,owner.number run_number,

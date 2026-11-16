@@ -5,6 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { machineId } from '../record/machine-identity.ts'
 import type { QuestionIntent, QuestionWriteBody } from '../record/record-question-contract.ts'
+import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { questionStore } from './question-store.ts'
 
 type Snapshot = QuestionWriteBody['question']
@@ -107,7 +108,7 @@ export async function mutateQuestion(
   const current = questionSnapshotFromRow(row)
   if (input.expectedRevision !== undefined && current.revision !== input.expectedRevision)
     throw new Error(`question ${input.id} changed before the mutation was stored`)
-  return questionStore(database).write(input.intent, {
+  const result = await questionStore(database).write(input.intent, {
     requestId: newRecordId(),
     question: {
       ...current,
@@ -122,6 +123,8 @@ export async function mutateQuestion(
       reason: input.reason,
     },
   })
+  enqueueQuestionRecord(database, input.id)
+  return result
 }
 
 export async function askQuestion(
@@ -204,9 +207,11 @@ export async function askQuestion(
     createdAt: input.askedAt,
     updatedAt: input.askedAt,
   }
-  return questionStore(database).write('ask', {
+  const result = await questionStore(database).write('ask', {
     requestId: newRecordId(),
     question,
     audit: { action: 'ask', actorSession: null, at: input.askedAt, reason: null },
   })
+  enqueueQuestionRecord(database, id)
+  return result
 }
