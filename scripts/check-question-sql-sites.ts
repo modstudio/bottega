@@ -15,9 +15,6 @@ const EXACT_ADAPTERS = new Set([
   'orchestrator/src/record/record-question-read.ts',
   'orchestrator/src/record/record-question-write.ts',
   'orchestrator/src/record/record-question-number.ts',
-  // Retired record-sync question sender exemptions.
-  'orchestrator/src/record/record-sync-service.ts',
-  'orchestrator/src/record/record-sync.ts',
   // Machine-local pending delivery marker exemption.
   'orchestrator/src/run/question-delivery-pending.ts',
   // Migration validation and the generic local number allocator are persistence adapters.
