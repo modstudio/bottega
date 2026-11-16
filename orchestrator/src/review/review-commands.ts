@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel } from '../../../shared/git.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { AGENTS, requireAgent } from '../agent/agent-registry.ts'
 import { DB_PATH, db } from '../database/db.ts'
 import { resolveBase, targetGitEnvironment } from '../git/git-environment.ts'
@@ -225,7 +226,12 @@ function reviewTierOutputForTarget({
     const trunk = project.settings.trunk!.trim()
     const condition = emptyReviewCondition(funnelResult.commit, funnelResult.base, branch, trunk)
     throw new Error(
-      `refused: ${condition}; cleared by: commit the change to ${branch}, then ${PLATFORM_SLUG} review tier ${branch}`,
+      renderRefusal(
+        refusal(`refused: ${condition}`, {
+          kind: 'edit',
+          text: `commit the change to ${branch}, then ${PLATFORM_SLUG} review tier ${branch}`,
+        }),
+      ),
     )
   }
   const { facts: funnelFacts, verdict: funnelVerdict } = funnelResult
