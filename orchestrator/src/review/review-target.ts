@@ -123,16 +123,26 @@ export function resolveReviewBase(cwd: string, tip: string, trunk: string): stri
   return gitContext(cwd, 'merge-base', tip, trunkCommit)
 }
 
-export function emptyReviewRefusal(
+export function emptyReviewCondition(
   commit: string,
   base: string,
   ref: string,
   trunk: string,
 ): string | null {
   if (commit !== base) return null
+  return `${ref} resolves to ${commit.slice(0, 8)}, which is already on ${trunk}, so there is no change to review`
+}
+
+export function emptyReviewRefusal(
+  commit: string,
+  base: string,
+  ref: string,
+  trunk: string,
+): string | null {
+  const condition = emptyReviewCondition(commit, base, ref, trunk)
+  if (!condition) return null
   return (
-    `refused: --review ${ref} resolves to ${commit.slice(0, 8)}, which is already on ${trunk}, ` +
-    `so there is no change to review. Pass the branch under review (the ref whose commits are not ` +
+    `refused: --review ${condition}. Pass the branch under review (the ref whose commits are not ` +
     `on ${trunk}), not its base.`
   )
 }

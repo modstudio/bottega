@@ -5,7 +5,12 @@ import type { RequiredReleaseReport } from '../release/release-required.ts'
 import type { TriageDecision } from '../review-funnel/review-funnel-admission-evidence.ts'
 import type { ShipCleanupReport } from '../ship-cleanup/ship-cleanup.ts'
 import type { PullRequestCheck } from './merge-decision.ts'
-import type { AdmissionWithTriage, PullRequestChange } from './pr-admission.ts'
+import type {
+  AdmissionWithTriage,
+  EvaluatedAdmission,
+  PullRequestAdmission,
+  PullRequestChange,
+} from './pr-admission.ts'
 import type { PullRequestMergeAdapter, PullRequestMergeFacts } from './pr-merge.ts'
 import {
   mergeCleanupReport,
@@ -51,7 +56,7 @@ export function adapter(
       headCommit: string,
       headBranch: string,
       database: ReturnType<typeof db>,
-    ) => { change: PullRequestChange; decision: AdmissionWithTriage }
+    ) => { change: PullRequestChange; decision: PullRequestAdmission }
     recordAdmission?: (
       change: PullRequestChange,
       decision: AdmissionWithTriage,
@@ -84,14 +89,16 @@ export function adapter(
       (() => ({
         change: {
           branch: pullRequest.headBranch,
+          base: 'base',
           group: { pathSet },
         } as PullRequestChange,
         decision: {
+          kind: 'measured',
           complete: true,
           overrideId: null,
           overrideReason: null,
           triage: { complete: true, snapshot: {} } as TriageDecision,
-        },
+        } as EvaluatedAdmission,
       })),
     recordAdmission: (change, decision, prNumber, database) =>
       input.recordAdmission?.(change, decision, prNumber, database) ?? null,
@@ -101,6 +108,7 @@ export function adapter(
         ({
           project: { name: 'merge-fixture', path: cwd },
           branch: pullRequest.headBranch,
+          base: 'base',
           group: { pathSet },
         }) as PullRequestChange),
     ...(input.recordLandings ? { recordLandings: input.recordLandings } : {}),

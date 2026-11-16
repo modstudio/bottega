@@ -8,7 +8,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel } from '../../../shared/git.ts'
 import { AGENTS, requireAgent } from '../agent/agent-registry.ts'
 import { DB_PATH, db } from '../database/db.ts'
-import { targetGitEnvironment } from '../git/git-environment.ts'
+import { resolveBase, targetGitEnvironment } from '../git/git-environment.ts'
 import { job } from '../jobs/jobs.ts'
 import { formatLensProfileSource, resolveLens } from '../lens/lenses.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
@@ -91,26 +91,15 @@ function resolveTierRangeInRepo(repo: string, from: string, to: string, fromLabe
   return resolution
 }
 
-function resolveTierCommit(repo: string, ref: string): string {
-  const result = startBoundedSync(['git', 'rev-parse', '--verify', `${ref}^{commit}`], {
-    budget: 'git-plumbing',
-    cwd: repo,
-    env: targetGitEnvironment(repo),
-  })
-  if (result.exitCode !== 0) throw new Error(`cannot resolve review target ${ref} to a commit`)
-  return result.stdout.toString().trim()
-}
-
-function resolveTierTarget(
-  value: string,
-  cwd: string,
-): {
+type ResolvedTierTarget = {
   repo: string
   from: string
   to: string
   branch: string
   project: NonNullable<ReturnType<typeof projectAt>>
-} {
+}
+
+function resolveTierTarget(value: string, cwd: string): ResolvedTierTarget {
   if (classifyRunIdentifier(value)) {
     return (() => {
       const runId = resolveRunIdentifier(db(), value)
@@ -148,7 +137,13 @@ function resolveTierTarget(
       const trunk = project.settings.trunk?.trim()
       if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
       const reviewedTip = branchLive
-        ? resolveTierCommit(project.path, reviewed)
+        ? (() => {
+            try {
+              return resolveBase(project.path, reviewed)
+            } catch {
+              throw new Error(`cannot resolve review target ${reviewed} to a commit`)
+            }
+          })()
         : (row.head_commit ?? reviewed)
       const from = (() => {
         try {
@@ -201,7 +196,13 @@ function resolveTierTarget(
   if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
   const from = resolveReviewBase(repo, value, trunk)
   if (!from) throw new Error(`cannot find merge-base between branch ${value} and trunk ${trunk}`)
-  const to = resolveTierCommit(repo, value)
+  const to = (() => {
+    try {
+      return resolveBase(repo, value)
+    } catch {
+      throw new Error(`cannot resolve review target ${value} to a commit`)
+    }
+  })()
   return {
     repo,
     from,

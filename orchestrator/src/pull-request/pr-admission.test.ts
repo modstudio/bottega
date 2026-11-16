@@ -24,6 +24,7 @@ const ceilingChange = {
   project: { name: 'ceiling-fixture' },
   branch: 'DEV-1641-ceiling',
   tip: 'tip',
+  base: 'base',
   tree: 'tree',
   group: { patchId: 'patch', pathSet: ['a.ts'] },
   tier: 3,
@@ -84,6 +85,7 @@ test('an undisposed finding at the ceiling refuses without recording a ruling', 
     },
     branch: 'DEV-1641-ceiling',
     tip: 'tip',
+    base: 'base',
     tree: 'tree',
     group: {
       project: 'ceiling-fixture',
@@ -156,6 +158,7 @@ test('a ceiling ruling records an emptied-round architect-read posture', () => {
     },
     branch: 'DEV-1641-ceiling-read',
     tip: 'tip',
+    base: 'base',
     tree: 'tree',
     group: {
       project: 'ceiling-read-fixture',
@@ -295,6 +298,7 @@ test('records the exact triage snapshot and outboxes it', () => {
     },
     branch: 'DEV-977-fixture',
     tip: 'tip',
+    base: 'base',
     tree: 'tree',
     group: {
       project: 'snapshot-fixture',
@@ -391,6 +395,7 @@ test('merge admission leaves an existing snapshot unchanged', () => {
     },
     branch: 'DEV-1255-existing',
     tip: 'tip',
+    base: 'base',
     tree: 'tree',
     group: {
       project: 'existing-snapshot',

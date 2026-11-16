@@ -89,6 +89,7 @@ function changeAt(tip: string): PullRequestChange {
     project,
     branch: headBranch,
     tip,
+    base: 'base',
     tree: 'head-tree',
     group: {
       project: project.name,
@@ -149,7 +150,12 @@ function adapterFor(
       const overrides = readLandingOverridesForBranch(database, change.project.name, change.branch)
       return {
         change,
-        decision: { ...decideAdmission(verdict, overrides), verdict, triage: incompleteTriage },
+        decision: {
+          kind: 'measured',
+          ...decideAdmission(verdict, overrides),
+          verdict,
+          triage: incompleteTriage,
+        },
       }
     },
     recordAdmission: () => null,

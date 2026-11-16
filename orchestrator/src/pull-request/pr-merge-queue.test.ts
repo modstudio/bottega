@@ -11,7 +11,7 @@ import {
   MERGE_QUEUE_WAIT_MS,
   type MergeQueueObservation,
 } from './merge-queue-decision.ts'
-import type { PullRequestChange } from './pr-admission.ts'
+import type { EvaluatedAdmission, PullRequestChange } from './pr-admission.ts'
 import {
   mergePullRequest,
   type PullRequestMergeAdapter,
@@ -77,16 +77,17 @@ function adapter(input: {
     landingState: input.landingState ?? (() => ({ remoteLandingTip: 'base', mergeBase: 'base' })),
     hasCommit: () => true,
     admission: () => ({
-      change: { branch: pullRequest.headBranch } as PullRequestChange,
+      change: { branch: pullRequest.headBranch, base: 'base' } as PullRequestChange,
       decision: {
+        kind: 'measured',
         complete: true,
         overrideId: null,
         overrideReason: null,
         triage: { complete: true, snapshot: {} } as TriageDecision,
-      },
+      } as EvaluatedAdmission,
     }),
     recordAdmission: () => null,
-    postMergeChange: () => ({ branch: pullRequest.headBranch }) as PullRequestChange,
+    postMergeChange: () => ({ branch: pullRequest.headBranch, base: 'base' }) as PullRequestChange,
     merge: () => 'unexpected-direct-merge',
     mergeCommit: () => 'unexpected-direct-merge-commit',
     queueState: () => {
