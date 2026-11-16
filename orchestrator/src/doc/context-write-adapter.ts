@@ -146,7 +146,6 @@ export function contextCursorOwner(holder: string, database: Database = db()) {
   )
 }
 
-/** Resolve a person-facing task key once into the stable identity context stores. */
 /** Resolve a task while retaining the project task-list read used to resolve it. */
 export async function resolveContextTaskWithProjectTasks(
   value: string,
