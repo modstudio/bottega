@@ -58,6 +58,35 @@ export const briefInjection = pgTable.withRLS(
   ],
 )
 
+export const contextReview = pgTable.withRLS(
+  'context_review',
+  {
+    id: uuid().primaryKey(),
+    spaceId: spaceIdentity(),
+    machineId: uuid('machine_id')
+      .notNull()
+      .references(() => machine.id),
+    sessionId: text('session_id').notNull(),
+    at: timestamp({ withTimezone: true }).notNull(),
+    intervalMs: bigint('interval_ms', { mode: 'bigint' }).notNull(),
+    items: integer().notNull(),
+    flagged: integer().notNull(),
+    itemIds: text('item_ids').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    ...tenantPolicies('context_review', table.spaceId),
+    index('context_review_session_at_idx').on(table.sessionId, table.at),
+    check('context_review_interval_ms_check', sql`${table.intervalMs} >= 0`),
+    check('context_review_items_check', sql`${table.items} >= 0`),
+    check(
+      'context_review_flagged_check',
+      sql`${table.flagged} >= 0 AND ${table.flagged} <= ${table.items}`,
+    ),
+  ],
+)
+
 export const HOOK_EMISSION_KINDS = [
   'additionalContext',
   'systemMessage',

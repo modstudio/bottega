@@ -18,12 +18,22 @@ session_brief = load_hook("session_brief_contract", "session-brief.py")
 
 
 class ContextCaptureContract(unittest.TestCase):
+    def test_first_act_names_the_session_compaction_source(self):
+        self.assertEqual(
+            re.search(
+                r'--source "([^"]+)"',
+                session_brief.COMPACT_FIRST_ACT.format(session="session-a"),
+            ).group(1),
+            "compaction session-a",
+        )
+
     def test_capture_and_first_act_quote_the_same_section_heading(self):
         capture_heading = re.search(
             r"section headed '([^']+)'", context_precompact.CAPTURE_INSTRUCTION
         )
         first_act_heading = re.search(
-            r"summary's '([^']+)' section", session_brief.COMPACT_FIRST_ACT
+            r"summary's '([^']+)' section",
+            session_brief.COMPACT_FIRST_ACT.format(session="session-a"),
         )
 
         self.assertIsNotNone(capture_heading)

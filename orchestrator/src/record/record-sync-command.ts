@@ -142,6 +142,7 @@ export async function syncCommand(
     )
     presentation.log(`question backfill enqueued ${result.backfill.questions.enqueued}`)
     presentation.log(`brief injection backfill enqueued ${result.backfill.briefInjections}`)
+    presentation.log(`context review backfill enqueued ${result.backfill.contextReviews}`)
     presentation.log(`hook emission backfill enqueued ${result.backfill.hookEmissions}`)
     presentation.log(`score backfill enqueued ${result.backfill.scores}`)
     presentation.log(

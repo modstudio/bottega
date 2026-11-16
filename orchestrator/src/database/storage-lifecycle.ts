@@ -84,6 +84,7 @@ export const orchestratorTableLifecycles: readonly TableLifecycle[] = [
       'workflow_obligation',
       'workflow_text_copy',
       'brief_injection',
+      'context_review',
       'hook_emission',
     ],
     'record',

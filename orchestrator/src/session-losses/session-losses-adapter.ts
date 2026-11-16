@@ -21,9 +21,13 @@ import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import {
   type ClaimLifecycle,
+  type ContextReviewLoss,
+  type ContextReviewLossRow,
   type CursorLifecycle,
+  compactionCaptureSource,
   hasTranscriptRowTime,
   type LifecycleFacts,
+  measureContextReviewLosses,
   measureSessionLosses,
   type RunLifecycle,
   type SessionLossReport,
@@ -44,14 +48,53 @@ type JudgeState = {
   error?: string
 }
 type SessionLossOutput = Omit<SessionLossReport, 'boundaries'> & {
+  reviews: ContextReviewLoss[]
   boundaries: Array<
     Omit<SessionLossReport['boundaries'][number], 'candidates'> & {
       brief: BriefInjectionSummary | null
       candidateFile: string
       candidateCount: number
       judge: JudgeState | null
+      captured: number
     }
   >
+}
+
+function contextReviewMeasurements(sessionId: string, boundaries: SessionLossReport['boundaries']) {
+  const reviews = db()
+    .query<{ at: string; items: number; flagged: number; item_ids: string }, [string]>(
+      `SELECT at,items,flagged,item_ids FROM context_review
+       WHERE session_id=? ORDER BY at,record_id`,
+    )
+    .all(sessionId)
+    .map(
+      (row): ContextReviewLossRow => ({
+        at: row.at,
+        items: row.items,
+        flagged: row.flagged,
+        itemIds: JSON.parse(row.item_ids) as string[],
+      }),
+    )
+  const reviewedIds = new Set(reviews.flatMap((review) => review.itemIds))
+  const captureSource = compactionCaptureSource(sessionId)
+  const items = db()
+    .query<{ record_id: string; created_at: string; updated_at: string; source: string }, []>(
+      'SELECT record_id,created_at,updated_at,source FROM context_item',
+    )
+    .all()
+    .map((item) => ({
+      id: item.record_id,
+      createdAt: item.created_at,
+      updatedAt: item.updated_at,
+      source: item.source,
+    }))
+    .filter((item) => reviewedIds.has(item.id) || item.source === captureSource)
+  return measureContextReviewLosses(
+    reviews,
+    items,
+    boundaries.map((boundary) => boundary.at),
+    captureSource,
+  )
 }
 export type BriefInjectionSummary = {
   bytes: number
@@ -318,7 +361,7 @@ async function outputBoundary(
   directory: string,
   schemaPath: string,
   rubric: JudgeRubric | null,
-): Promise<SessionLossOutput['boundaries'][number]> {
+): Promise<Omit<SessionLossOutput['boundaries'][number], 'captured'>> {
   const candidateFile = join(directory, `${sessionId}-${Date.parse(boundary.at)}.json`)
   writeFileSync(candidateFile, `${JSON.stringify(boundary.candidates, null, 2)}\n`, { mode: 0o600 })
   const sidecar = `${candidateFile}.judge.json`
@@ -420,12 +463,14 @@ async function outputSession(
   )
   if (!report) return { sessionId, error: 'no timestamped rows' }
   const briefs = briefsForBoundaries(sessionId, report.boundaries)
+  const reviewMeasurements = contextReviewMeasurements(sessionId, report.boundaries)
   const boundaries: SessionLossOutput['boundaries'] = []
   for (const [index, boundary] of report.boundaries.entries())
-    boundaries.push(
-      await outputBoundary(boundary, briefs[index]!, sessionId, directory, schemaPath, rubric),
-    )
-  return { ...report, boundaries }
+    boundaries.push({
+      ...(await outputBoundary(boundary, briefs[index]!, sessionId, directory, schemaPath, rubric)),
+      captured: reviewMeasurements.captured[index]!,
+    })
+  return { ...report, reviews: reviewMeasurements.reviews, boundaries }
 }
 
 export async function sessionLosses(input: LossInput): Promise<SessionLossResult[]> {

@@ -83,6 +83,75 @@ export type SessionLossReport = {
   boundaries: BoundaryLoss[]
 }
 
+export type ContextReviewLossRow = {
+  at: string
+  items: number
+  flagged: number
+  itemIds: string[]
+}
+export type ContextItemLossRow = {
+  id: string
+  createdAt: string
+  updatedAt: string
+  source: string
+}
+export type ContextReviewLoss = {
+  at: string
+  listed: number
+  flagged: number
+  revised: number
+  dropped: number
+}
+
+export const compactionCaptureSource = (sessionId: string): string => `compaction ${sessionId}`
+
+/** Measure review effects from event snapshots and the current context-item rows. */
+export function measureContextReviewLosses(
+  reviews: readonly ContextReviewLossRow[],
+  items: readonly ContextItemLossRow[],
+  boundaryAts: readonly string[],
+  captureSource: string,
+): { reviews: ContextReviewLoss[]; captured: number[] } {
+  const orderedReviews = [...reviews].sort(
+    (left, right) => Date.parse(left.at) - Date.parse(right.at),
+  )
+  const boundaryTimes = boundaryAts.map(Date.parse)
+  const nextBoundaryAfter = (from: number) =>
+    boundaryTimes.filter((at) => at > from).sort((left, right) => left - right)[0] ??
+    Number.POSITIVE_INFINITY
+  const current = new Map(items.map((item) => [item.id, item]))
+  return {
+    reviews: orderedReviews.map((review, index) => {
+      const start = Date.parse(review.at)
+      const nextReview = orderedReviews[index + 1]?.at
+      const end = Math.min(
+        nextReview ? Date.parse(nextReview) : Number.POSITIVE_INFINITY,
+        nextBoundaryAfter(start),
+      )
+      const present = review.itemIds.flatMap((id) => (current.has(id) ? [current.get(id)!] : []))
+      return {
+        at: review.at,
+        listed: review.items,
+        flagged: review.flagged,
+        revised: present.filter((item) => {
+          const updated = Date.parse(item.updatedAt)
+          return updated > start && updated < end
+        }).length,
+        dropped: review.itemIds.filter((id) => !current.has(id)).length,
+      }
+    }),
+    captured: boundaryTimes.map((start) => {
+      const end = nextBoundaryAfter(start)
+      return items.filter(
+        (item) =>
+          item.source === captureSource &&
+          Date.parse(item.createdAt) >= start &&
+          Date.parse(item.createdAt) < end,
+      ).length
+    }),
+  }
+}
+
 export const transcriptRowTime = (row: TranscriptRow) => Date.parse(row.timestamp ?? '')
 export const hasTranscriptRowTime = (
   row: TranscriptRow,

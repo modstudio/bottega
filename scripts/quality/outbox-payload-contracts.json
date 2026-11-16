@@ -435,6 +435,20 @@
     "createdAt",
     "updatedAt"
   ],
+  "context_review": [
+    "id",
+    "spaceId",
+    "machineId",
+    "localId",
+    "sessionId",
+    "at",
+    "intervalMs",
+    "items",
+    "flagged",
+    "itemIds",
+    "createdAt",
+    "updatedAt"
+  ],
   "hook_emission": [
     "id",
     "spaceId",

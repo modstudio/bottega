@@ -1,6 +1,7 @@
 import { expect, spyOn, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { run } from '../cli/program.ts'
+import { db } from '../database/db.ts'
 import { getContextItem } from '../doc/context-item-store.ts'
 
 test('agent context set refuses matching record shapes without writing', async () => {
@@ -41,5 +42,50 @@ test('agent context set refuses matching record shapes without writing', async (
     if (previous === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
     else process.env.CLAUDE_CODE_SESSION_ID = previous
     error.mockRestore()
+  }
+})
+
+test('agent context set and drop expose cursor holders', async () => {
+  const session = newRecordId()
+  const cursor = newRecordId()
+  const previous = process.env.CLAUDE_CODE_SESSION_ID
+  process.env.CLAUDE_CODE_SESSION_ID = session
+  db().exec('PRAGMA foreign_keys=OFF')
+  db()
+    .query(`INSERT INTO workflow_cursor
+    (record_id,number,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+     workflow_version_record_id,catalogue_version_record_id,args,total_steps,created_at,updated_at)
+    VALUES (?,999,'fixture','explore','default','','instance',?,?,?,'{}',3,?,?)`)
+    .run(
+      cursor,
+      session,
+      newRecordId(),
+      newRecordId(),
+      new Date().toISOString(),
+      new Date().toISOString(),
+    )
+  try {
+    expect(
+      await run([
+        'context',
+        'set',
+        '--cursor',
+        cursor,
+        '--kind',
+        'fact',
+        '--source',
+        'test',
+        '--id',
+        'cursor-item',
+        'cursor fact',
+      ]),
+    ).toBe(0)
+    expect(getContextItem(`cursor:${cursor}`, 'cursor-item')?.body).toBe('cursor fact')
+    expect(await run(['context', 'drop', '--cursor', cursor, '--id', 'cursor-item'])).toBe(0)
+    expect(getContextItem(`cursor:${cursor}`, 'cursor-item')).toBeNull()
+  } finally {
+    db().exec('PRAGMA foreign_keys=ON')
+    if (previous === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = previous
   }
 })

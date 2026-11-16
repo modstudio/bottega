@@ -39,7 +39,8 @@ FULL_CONTEXT_POINTER = "Full context: " + CONTEXT_SHOW_COMMAND.format(
 )
 COMPACT_FIRST_ACT = (
     "First act: store each line of the summary's 'Unstored facts and pointers' section "
-    "with `bottega agent context set --kind fact|pointer` on the narrowest task, before "
+    "with `bottega agent context set --kind fact|pointer --source \"compaction {session}\"` "
+    "on the narrowest task, before "
     "any other work."
 )
 
@@ -202,12 +203,13 @@ def _with_full_context_pointer(text, session):
     return _join_sections(text, FULL_CONTEXT_POINTER.format(session=session))
 
 
-def _with_compact_first_act(text, source):
+def _with_compact_first_act(text, source, session):
     if source != "compact":
         return text
-    joined = _join_sections(text, COMPACT_FIRST_ACT)
+    first_act = COMPACT_FIRST_ACT.format(session=session)
+    joined = _join_sections(text, first_act)
     if len(joined) > SESSION_START_CONTEXT_MAX_CHARS:
-        return _join_sections(COMPACT_FIRST_ACT, text)
+        return _join_sections(first_act, text)
     return joined
 
 
@@ -1010,7 +1012,7 @@ def main() -> int:
             context = output.get("hookSpecificOutput", {}).get("additionalContext")
             if isinstance(context, str):
                 context = _with_full_context_pointer(
-                    _with_compact_first_act(context, payload.get("source")), sid
+                    _with_compact_first_act(context, payload.get("source"), sid), sid
                 )
                 output["hookSpecificOutput"]["additionalContext"] = context
                 if (

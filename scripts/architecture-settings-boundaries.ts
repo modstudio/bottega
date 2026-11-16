@@ -223,6 +223,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
       'shared/brand.ts',
       'node:path',
       'orchestrator/src/board/board-delivery.ts',
+      'orchestrator/src/session/context-review-decision.ts',
       `${source}settings.ts`,
     ],
     typeOnlyAllowed: [],

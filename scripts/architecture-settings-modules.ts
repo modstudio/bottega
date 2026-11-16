@@ -363,6 +363,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/brand.ts',
     'node:path',
     '../board/board-delivery.ts',
+    '../session/context-review-decision.ts',
     './settings.ts',
   ]),
 ]

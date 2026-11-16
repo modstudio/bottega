@@ -10,6 +10,7 @@ import {
   setContextItem,
 } from '../doc/context-service.ts'
 import { recordBriefInjection, SESSION_START_SOURCES } from '../session/brief-injection.ts'
+import { reviewContext } from '../session/context-review.ts'
 import { HOOK_EMISSION_KINDS, recordHookEmission } from '../session/hook-emission.ts'
 import { sessionContextCommand } from '../workflow/session-context.ts'
 import { log } from './support.ts'
@@ -102,6 +103,12 @@ const holderOptions = (command: Command) =>
   command
     .option('--task <key>', 'select task holder')
     .option('--session <id>', 'select session holder')
+    .option('--cursor <record-id>', 'select cursor holder')
+
+const requireHolder = (options: { task?: string; session?: string; cursor?: string }) => {
+  if ([options.task, options.session, options.cursor].filter(Boolean).length !== 1)
+    throw new Error('select exactly one of --task, --session or --cursor')
+}
 
 export function register(program: Command): void {
   const context = program
@@ -123,6 +130,7 @@ export function register(program: Command): void {
   holderOptions(context.command('show').description('show stored context items'))
     .option('--json', 'write JSON')
     .action(async (options) => {
+      requireHolder(options)
       const result = await getContext(options)
       if (options.json) return log(JSON.stringify(result))
       for (const item of result.items) log(`${item.id}  ${item.kind}  ${item.revision}`)
@@ -140,6 +148,16 @@ export function register(program: Command): void {
       const result = await contextBrief(options.session)
       log(options.json ? JSON.stringify(result) : renderContextBrief(result))
     })
+  context
+    .command('review')
+    .description('review stored context items when the measured interval is due')
+    .requiredOption('--session <id>', 'select architect session')
+    .option('--json', 'write JSON')
+    .action(async (options) => {
+      const result = await reviewContext(options.session)
+      if (options.json) return log(JSON.stringify(result))
+      if ('review' in result) log(result.review)
+    })
   registerInjection(context)
   registerEmission(context)
   holderOptions(context.command('set').description('create or revise one context item'))
@@ -152,6 +170,7 @@ export function register(program: Command): void {
     .option('--expected-revision <revision>', 'compare-and-set revision')
     .argument('<body>', 'item text')
     .action(async (body, options) => {
+      requireHolder(options)
       if (!CONTEXT_ITEM_KINDS.includes(options.kind))
         throw new Error(`--kind must be one of ${CONTEXT_ITEM_KINDS.join(', ')}`)
       log(
@@ -164,6 +183,7 @@ export function register(program: Command): void {
     .requiredOption('--id <id>', 'stable item id')
     .option('--expected-revision <revision>', 'compare-and-set revision')
     .action(async (options) => {
+      requireHolder(options)
       const result = await dropContextItem({
         ...options,
         expectedRevision: options.expectedRevision,

@@ -219,6 +219,9 @@ const BRANCH_DISPOSAL_RECORD_PAYLOAD_CONTRACT = contract(
 const BRIEF_INJECTION_RECORD_PAYLOAD_CONTRACT = contract(
   'id spaceId machineId localId sessionId at source bytes lines cursors keylessCursors keylessIdleMaxMs overCap createdAt updatedAt',
 )
+const CONTEXT_REVIEW_RECORD_PAYLOAD_CONTRACT = contract(
+  'id spaceId machineId localId sessionId at intervalMs items flagged itemIds createdAt updatedAt',
+)
 const HOOK_EMISSION_RECORD_PAYLOAD_CONTRACT = contract(
   'id spaceId machineId localId sessionId at event hook kind chars lines textHash createdAt updatedAt',
 )
@@ -255,5 +258,6 @@ export const OUTBOX_PAYLOAD_CONTRACTS = {
   test_flake: TEST_FLAKE_RECORD_PAYLOAD_CONTRACT,
   branch_disposal: BRANCH_DISPOSAL_RECORD_PAYLOAD_CONTRACT,
   brief_injection: BRIEF_INJECTION_RECORD_PAYLOAD_CONTRACT,
+  context_review: CONTEXT_REVIEW_RECORD_PAYLOAD_CONTRACT,
   hook_emission: HOOK_EMISSION_RECORD_PAYLOAD_CONTRACT,
 } as const

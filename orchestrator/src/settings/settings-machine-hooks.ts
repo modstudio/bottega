@@ -11,6 +11,10 @@ import {
   BOARD_PUSH_RETRY_SECONDS,
   BOARD_PUSH_SLOW_TIMEOUT_SECONDS,
 } from '../board/board-delivery.ts'
+import {
+  CONTEXT_REVIEW_HOOK_TIMEOUT_SECONDS,
+  CONTEXT_REVIEW_MIN_MS,
+} from '../session/context-review-decision.ts'
 import { isPlainObject, type OwnedSettings } from './settings.ts'
 
 const SCRIPT_FILES = [
@@ -28,6 +32,7 @@ const SCRIPT_FILES = [
   'session-brief.py',
   'session-start.py',
   'context-precompact.py',
+  'context-review.py',
   'test-substance-guard.py',
   'hub-import-guard.py',
 ] as const
@@ -146,6 +151,13 @@ const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
     timeout: Math.ceil(BOARD_PUSH_SLOW_TIMEOUT_SECONDS + 1),
     boardEnvironment: true,
   },
+  {
+    event: 'PostToolUse',
+    matcher: 'Bash',
+    script: 'context-review.py',
+    timeout: CONTEXT_REVIEW_HOOK_TIMEOUT_SECONDS + 1,
+    boardEnvironment: true,
+  },
   { event: 'Stop', script: 'stop-summary.py', boardEnvironment: true },
   { event: 'Stop', script: 'heartbeat-guard.py' },
   {
@@ -202,6 +214,8 @@ function boardCommand(
     `BOARD_ACK_STOP_BLOCKS=${BOARD_ACK_STOP_BLOCKS}`,
     `BOARD_PUSH_SLOW_TIMEOUT_SECONDS=${BOARD_PUSH_SLOW_TIMEOUT_SECONDS}`,
     `BOTTEGA_BOARD_HOOK_STATE=${shellQuote(join(dirname(databasePath), 'board-hook-state'))}`,
+    `CONTEXT_REVIEW_HOOK_TIMEOUT_SECONDS=${CONTEXT_REVIEW_HOOK_TIMEOUT_SECONDS}`,
+    `CONTEXT_REVIEW_MIN_MS=${CONTEXT_REVIEW_MIN_MS}`,
   ])
 }
 
