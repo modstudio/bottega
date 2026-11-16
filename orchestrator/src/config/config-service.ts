@@ -953,13 +953,16 @@ export async function setEntry(
       if (!isNotFound(error)) throw error
     }
   }
-  const written = await client.putEntry(storedKey, {
-    ...destination,
-    scope,
-    environment: HOSTED_CONFIG_ENVIRONMENT,
-    value: storedValue,
-    expectedRowVersion: version,
-  })
+  const written = await client.putEntry(
+    storedKey,
+    {
+      scope,
+      environment: HOSTED_CONFIG_ENVIRONMENT,
+      value: storedValue,
+      expectedRowVersion: version,
+    },
+    destination,
+  )
   if (shipTo) {
     try {
       const alias = await getEntry(STORED_SHIP_TO_CONFIG_ALIAS, scope, client, destination)
@@ -986,12 +989,15 @@ export async function deleteEntry(
   destination: ConfigDestination = {},
 ) {
   const version = expectedRowVersion ?? (await getEntry(key, scope, client, destination)).rowVersion
-  return client.deleteEntry(key, {
-    ...destination,
-    scope,
-    environment: HOSTED_CONFIG_ENVIRONMENT,
-    expectedRowVersion: version,
-  })
+  return client.deleteEntry(
+    key,
+    {
+      scope,
+      environment: HOSTED_CONFIG_ENVIRONMENT,
+      expectedRowVersion: version,
+    },
+    destination,
+  )
 }
 
 function setMachineEntry(key: string, value: string, env: ConfigEnvironment = process.env) {

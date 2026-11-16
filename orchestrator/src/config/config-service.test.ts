@@ -761,17 +761,17 @@ test('entry writes and deletes name their destination space and pass explicit ro
     getEntry: async () => {
       throw new Error('unexpected read')
     },
-    putEntry: async (key: string, input: unknown) => {
-      writes.push(['put', key, input])
+    putEntry: async (key: string, input: unknown, destination: unknown) => {
+      writes.push(['put', key, input, destination])
       return { key }
     },
-    deleteEntry: async (key: string, input: unknown) => {
-      writes.push(['delete', key, input])
+    deleteEntry: async (key: string, input: unknown, destination: unknown) => {
+      writes.push(['delete', key, input, destination])
       return { deleted: true }
     },
   } as unknown as ConfigClient
 
-  const destination = { destinationSpaceId: 'personal-space' }
+  const destination = { destinationSpaceId: 'space-1' }
   await setEntry('autonomy.preset', 'guided', 'user', 4, client, destination)
   await deleteEntry('autonomy.stage.review', 'user', 7, client, destination)
 
@@ -780,22 +780,22 @@ test('entry writes and deletes name their destination space and pass explicit ro
       'put',
       'autonomy.preset',
       {
-        destinationSpaceId: 'personal-space',
         scope: 'user',
         environment: 'default',
         value: 'guided',
         expectedRowVersion: 4,
       },
+      { destinationSpaceId: 'space-1' },
     ],
     [
       'delete',
       'autonomy.stage.review',
       {
-        destinationSpaceId: 'personal-space',
         scope: 'user',
         environment: 'default',
         expectedRowVersion: 7,
       },
+      { destinationSpaceId: 'space-1' },
     ],
   ])
 })
