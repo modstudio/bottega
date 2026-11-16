@@ -70,7 +70,11 @@ export async function startSession(
   }
   if (decision.kind === 'reuse')
     return { cursor: decision.cursor, line: cursorLine(decision.cursor, decision.workflow) }
-  if (decision.kind === 'none') return { cursor: null, line: '' }
+  if (decision.kind === 'none')
+    return {
+      cursor: null,
+      line: `${cursorLine(decision.cursor, decision.workflow)} ${decision.key} is open; session start composed no explore cursor`,
+    }
 
   const context = { session }
   const live = await resolveWorkflowLiveAutonomy(

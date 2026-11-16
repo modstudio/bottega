@@ -246,13 +246,25 @@ export function idleLabel(
   now = Date.now(),
   thresholdMs = idleWarnMs(),
 ): string | null {
+  const idle = idleAge(lastEventAt, startedAt, now)
+  if (!idle || idle.ms < thresholdMs) return null
+  return idle.label
+}
+
+export function idleAge(
+  lastEventAt: string | null | undefined,
+  startedAt: string,
+  now = Date.now(),
+): { ms: number; label: string } | null {
   const since = Date.parse(lastEventAt || startedAt)
   if (!Number.isFinite(since)) return null
-  const idleMs = Math.max(0, now - since)
-  if (idleMs < thresholdMs) return null
-  const minutes = Math.floor(idleMs / 60_000)
-  if (minutes < 60) return `idle ${minutes}m`
-  return `idle ${Math.floor(minutes / 60)}h ${minutes % 60}m`
+  const ms = Math.max(0, now - since)
+  const minutes = Math.floor(ms / 60_000)
+  const label =
+    minutes < 60
+      ? `idle ${minutes}m`
+      : `idle ${Math.floor(minutes / 60)}h ${minutes % 60}m`
+  return { ms, label }
 }
 
 export function idleMsSince(
@@ -260,9 +272,7 @@ export function idleMsSince(
   startedAt: string,
   now = Date.now(),
 ): number | null {
-  const since = Date.parse(lastEventAt || startedAt)
-  if (!Number.isFinite(since)) return null
-  return Math.max(0, now - since)
+  return idleAge(lastEventAt, startedAt, now)?.ms ?? null
 }
 
 function touchLastEventAt(runId: string, ts: string): void {

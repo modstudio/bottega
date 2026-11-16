@@ -45,3 +45,19 @@ test('two starts for one session reuse one keyless explore cursor', async () => 
     session_id: otherSession,
   })
 })
+
+test('names the open task-bound cursor when composing no explore cursor', async () => {
+  const session = newRecordId()
+  seedCurrentWorkflowTreeFixture(db(), ['explore'], 'session start task-bound fixture', repositoryRoot)
+  const opened = await startSession({ database: db(), cwd: repositoryRoot, session })
+  db()
+    .query(
+      "UPDATE workflow_cursor SET workflow_slug='plan-task',workflow_key='DEV-2323' WHERE number=?",
+    )
+    .run(opened.cursor)
+
+  expect(await startSession({ database: db(), cwd: repositoryRoot, session })).toEqual({
+    cursor: null,
+    line: `cursor ${opened.cursor} plan-task DEV-2323 is open; session start composed no explore cursor`,
+  })
+})

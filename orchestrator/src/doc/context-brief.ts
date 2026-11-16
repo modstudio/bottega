@@ -58,8 +58,7 @@ export type ContextBrief = {
     stepSlug: string
     questionNumber: number | null
     runs: number[]
-    key?: string | null
-    idle?: string | null
+    keylessIdle?: string | null
   }>
   claims: Array<{ kind: string; value: string }>
   reviewVerdictLines?: string[]
@@ -126,8 +125,8 @@ export function renderContextBrief(brief: ContextBrief): string {
   }
   const inFlight = [
     ...brief.cursors.map((cursor) => {
-      if (cursor.key === null)
-        return `cursor ${cursor.number} ${cursor.workflow} · ${cursor.idle ?? 'idle unknown'} → ${PLATFORM_SLUG} workflow abandon --cursor ${cursor.number}`
+      if (cursor.keylessIdle !== undefined)
+        return `cursor ${cursor.number} ${cursor.workflow} · ${cursor.keylessIdle ?? 'idle unknown'}${cursor.questionNumber === null ? ` → ${PLATFORM_SLUG} workflow abandon --cursor ${cursor.number}` : `, awaiting q${cursor.questionNumber}`}`
       const question = cursor.questionNumber === null ? '' : `, awaiting q${cursor.questionNumber}`
       const runs = cursor.runs.length ? `, runs ${cursor.runs.join(', ')}` : ''
       return `cursor ${cursor.number} ${cursor.workflow} ${cursor.mode} step ${cursor.step}/${cursor.totalSteps} ${cursor.stepSlug}${question}${runs}`
@@ -368,10 +367,9 @@ export async function contextBrief(
       stepSlug: cursor.step_slug,
       questionNumber: cursor.question_number,
       runs: inFlight.cursorRuns.find((item) => item.recordId === cursor.record_id)?.runs ?? [],
-      key: cursor.workflow_key || null,
-      idle: cursor.workflow_key
-        ? null
-        : (keylessCursorIdle(cursor.updated_at)?.label ?? 'idle unknown'),
+      ...(cursor.workflow_key
+        ? {}
+        : { keylessIdle: keylessCursorIdle(cursor.updated_at)?.label ?? null }),
     })),
     claims: inFlight.claims,
     reviewVerdictLines: sessionReviewVerdictLines(session, cursors, database),

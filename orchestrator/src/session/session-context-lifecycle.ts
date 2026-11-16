@@ -32,11 +32,12 @@ function remainingContextProcess(
   session: string,
   items: ReturnType<typeof sessionContextItems>,
 ): SessionProcessLine | null {
-  if (!items.length) return null
+  const remaining = items.filter((item) => classifySessionContextItem(item.kind, false) !== 'refuse')
+  if (!remaining.length) return null
   return {
     item: `context session:${session}`,
-    reason: `session close-out left ${items.length} context ${items.length === 1 ? 'item' : 'items'} on the session holder`,
-    evidence: items.map((item) => `${item.id} (${item.kind})`).join(', '),
+    reason: `session close-out left ${remaining.length} context ${remaining.length === 1 ? 'item' : 'items'} on the session holder`,
+    evidence: remaining.map((item) => `${item.id} (${item.kind})`).join(', '),
     remedy: `${PLATFORM_SLUG} agent context show --session ${session}`,
   }
 }

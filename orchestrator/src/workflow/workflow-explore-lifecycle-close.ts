@@ -5,11 +5,12 @@ import type { Database } from 'bun:sqlite'
 import { nowIso } from '../database/db.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
-import type { TaskFlowStageCursorRow } from './task-flow-store-types.ts'
+import { isKeylessExplore, type TaskFlowStageCursorRow } from './task-flow-store-types.ts'
 import type { CursorTrailEntry } from './workflow-cursor-trail.ts'
 import { workflowTextDeletionIds } from './workflow-text.ts'
 
 export type ExploreLifecycleOutcome = 'answered' | 'expired'
+export type ExploreLifecycleCloseOutcome = 'closed' | 'absent' | 'terminal' | 'touched'
 export type FinishExploreLifecycle = (input: {
   row: TaskFlowStageCursorRow
   closed: CursorTrailEntry[]
@@ -25,10 +26,12 @@ export async function closeExploreForLifecycle(
   database: Database,
   finish: FinishExploreLifecycle,
   noteSuffix?: string,
-): Promise<void> {
+  options: { requireUntouched?: boolean } = {},
+): Promise<ExploreLifecycleCloseOutcome> {
   const row = await taskFlowReadStore(database).stageByRecordId(cursorRecordId)
-  if (!row || row.state === 'done' || row.state === 'abandoned') return
-  if (row.workflow_slug !== 'explore' || row.workflow_key)
+  if (!row) return 'absent'
+  if (row.state === 'done' || row.state === 'abandoned') return 'terminal'
+  if (!isKeylessExplore(row))
     throw new Error(`workflow cursor ${row.id} is not a keyless explore`)
   const openQuestion = database
     .query<{ record_id: string }, [string]>(
@@ -43,6 +46,11 @@ export async function closeExploreForLifecycle(
 
   const at = nowIso()
   const closed = JSON.parse(row.closed) as CursorTrailEntry[]
+  if (
+    options.requireUntouched &&
+    (closed.length > 0 || (await taskFlowReadStore(database).textsForStage(row.record_id)).length > 0)
+  )
+    return 'touched'
   closed.push({
     n: row.ordinal + 1,
     slug: row.step_slug,
@@ -62,4 +70,5 @@ export async function closeExploreForLifecycle(
     database,
     at,
   })
+  return 'closed'
 }

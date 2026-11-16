@@ -122,8 +122,7 @@ test('renders a keyless cursor with its idle age and close command', () => {
         stepSlug: 'orient',
         questionNumber: null,
         runs: [],
-        key: null,
-        idle: 'idle 2h 10m',
+        keylessIdle: 'idle 2h 10m',
       },
     ],
     claims: [],
@@ -139,6 +138,41 @@ test('renders a keyless cursor with its idle age and close command', () => {
   expect(renderContextBrief(brief)).toContain(
     `cursor 845 explore · idle 2h 10m → ${PLATFORM_SLUG} workflow abandon --cursor 845`,
   )
+})
+
+test('keeps an awaiting question on a keyless cursor and omits its abandon remedy', () => {
+  const brief: ContextBrief = {
+    session: 'session-a',
+    fullCommand: `${PLATFORM_SLUG} agent context show --session session-a`,
+    holders: [],
+    runs: [],
+    cursors: [
+      {
+        recordId: 'explore-record',
+        number: 845,
+        workflow: 'explore',
+        mode: 'default',
+        step: 1,
+        totalSteps: 4,
+        stepSlug: 'orient',
+        questionNumber: 6600,
+        runs: [],
+        keylessIdle: null,
+      },
+    ],
+    claims: [],
+    waiting: {
+      boardRequests: 0,
+      questions: { worker: 0, user: 0, foreign: 0, unowned: 0 },
+      filedIssues: 0,
+      resumeBriefs: 0,
+    },
+    autonomy: 'unknown',
+  }
+
+  const line = renderContextBrief(brief).split('\n').find((entry) => entry.includes('cursor 845'))
+  expect(line).toBe('  cursor 845 explore · idle unknown, awaiting q6600')
+  expect(line).not.toContain('workflow abandon')
 })
 
 test('renders one open question for its task holder', () => {

@@ -18,18 +18,15 @@ describe('session start decision', () => {
     ).toEqual({ kind: 'reuse', cursor: 17, workflow: 'explore' })
   })
 
-  test.each(['startup', 'resume', 'compact'])(
-    'does nothing for %s while a task-bound cursor is open',
-    () => {
-      expect(
-        decideSessionStart({
-          session: 'session',
-          project: 'fixture',
-          openCursors: [{ id: 18, workflow: 'plan-task', workflowKey: 'DEV-2323' }],
-        }),
-      ).toEqual({ kind: 'none' })
-    },
-  )
+  test('does nothing while a task-bound cursor is open', () => {
+    expect(
+      decideSessionStart({
+        session: 'session',
+        project: 'fixture',
+        openCursors: [{ id: 18, workflow: 'plan-task', workflowKey: 'DEV-2323' }],
+      }),
+    ).toEqual({ kind: 'none', cursor: 18, workflow: 'plan-task', key: 'DEV-2323' })
+  })
 
   test('refuses softly without a session identity', () => {
     expect(decideSessionStart({ session: null, project: 'fixture', openCursors: [] })).toEqual({

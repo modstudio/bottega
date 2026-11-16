@@ -36,6 +36,13 @@ export type TaskFlowStageCursorRow = {
   updated_at: string
 }
 
+export function isKeylessExplore(row: {
+  workflow_slug: string
+  workflow_key?: string | null
+}): boolean {
+  return row.workflow_slug === 'explore' && !row.workflow_key
+}
+
 export type WorkflowCursorInsert = {
   recordId: string
   projectRecordId: string

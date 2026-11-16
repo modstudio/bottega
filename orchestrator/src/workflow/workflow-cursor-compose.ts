@@ -28,7 +28,7 @@ import {
 import { reconcileKeylessInstanceSlot, taskFlowState } from './task-flow-decision.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 import { sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
-import type { WorkflowCursorInsert } from './task-flow-store-types.ts'
+import { isKeylessExplore, type WorkflowCursorInsert } from './task-flow-store-types.ts'
 import {
   type CommitCountPort,
   readCommitsPastLanding,
@@ -51,6 +51,12 @@ export type GraduatedExplore =
   | { cursor: number; closed: false; reason: string }
 export type ExploreGraduationDependencies = {
   closeExplore?: typeof closeExploreForLifecycle
+  finishExplore?: FinishExploreLifecycle
+}
+
+const finishExploreDefault: FinishExploreLifecycle = async (input) => {
+  const { writeFinishingWorkflowAdvance } = await import('./workflow-cursor.ts')
+  return writeFinishingWorkflowAdvance(input)
 }
 type ComposeFacts = {
   rowInput: WorkflowCursorInsert
@@ -90,7 +96,6 @@ export async function graduateExploreAfterCompose(
     taskBound: boolean
     replacingCursor: number
     database: Database
-    finishExplore: FinishExploreLifecycle
     taskFlowClient?: WorkflowCursorContext['taskFlowClient']
   },
   dependencies: ExploreGraduationDependencies = {},
@@ -100,7 +105,7 @@ export async function graduateExploreAfterCompose(
     project: input.project,
     sessionId: input.session,
   })
-  const row = rows.find((cursor) => cursor.workflow_slug === 'explore' && !cursor.workflow_key)
+  const row = rows.find(isKeylessExplore)
   const explore = row
     ? {
         cursor: row.id,
@@ -115,14 +120,17 @@ export async function graduateExploreAfterCompose(
   const decision = exploreGraduation({ taskBound: input.taskBound, explore })
   if (decision.action === 'keep') return undefined
   try {
-    await (dependencies.closeExplore ?? closeExploreForLifecycle)(
+    const outcome = await (dependencies.closeExplore ?? closeExploreForLifecycle)(
       decision.recordId,
       'answered',
       input.database,
-      input.finishExplore,
+      dependencies.finishExplore ?? finishExploreDefault,
       `replaced by cursor ${input.replacingCursor}`,
+      { requireUntouched: true },
     )
-    return { cursor: decision.cursor, closed: true }
+    return outcome === 'closed'
+      ? { cursor: decision.cursor, closed: true }
+      : { cursor: decision.cursor, closed: false, reason: `explore close outcome was ${outcome}` }
   } catch (error) {
     return {
       cursor: decision.cursor,

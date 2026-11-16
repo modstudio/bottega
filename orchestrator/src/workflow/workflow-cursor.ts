@@ -25,7 +25,6 @@ import {
 import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
 import { workflowKeyOf as keyOf, resolveCursorArguments } from './workflow-cursor-arguments.ts'
 import {
-  type ExploreGraduationDependencies,
   graduateExploreAfterCompose,
   insertWorkflowCursor,
 } from './workflow-cursor-compose.ts'
@@ -176,7 +175,6 @@ export async function composeWorkflowWithCursor(
   selection: { version?: number; catalogueVersion?: number } = {},
   live: LiveCursorAutonomy,
   commitCount: CommitCountPort = readCommitsPastLanding,
-  graduationDependencies: ExploreGraduationDependencies = {},
 ) {
   const composition = composeWorkflow(slug, project, mode, args, d, selection, live.resolution)
   if (!composition.mode || composition.needs.arguments)
@@ -262,10 +260,8 @@ export async function composeWorkflowWithCursor(
       taskBound: Boolean(keyOf(composition.arguments)),
       replacingCursor: cursor.id,
       database: d,
-      finishExplore: writeFinishingWorkflowAdvance,
       taskFlowClient: context.taskFlowClient,
     },
-    graduationDependencies,
   )
   return {
     ...cursorComposition(row, d, live),
