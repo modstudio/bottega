@@ -42,11 +42,20 @@ test('config list --json presents the structured rows', () => {
 })
 
 test('config set JSON for hosted and machine homes parses with the hub consumer contracts', async () => {
+  const destinations: Array<{ destinationSpaceId: string }> = []
   const client = {
     whoami: async () => ({ personalSpaceId: 'space-personal', memberships: [] }),
-    putEntry: async () => ({ ...row, rowVersion: 4 }),
+    putEntry: async (
+      _key: string,
+      _input: unknown,
+      destination: { destinationSpaceId: string },
+    ) => {
+      destinations.push(destination)
+      return { ...row, rowVersion: 4 }
+    },
   } as unknown as ConfigClient
   const hosted = await setConfigEntry('autonomy.stage.review', 'review', 'user', null, client)
+  expect(destinations).toEqual([{ destinationSpaceId: 'space-personal' }])
   expect(ConfigEntrySchema.parse(JSON.parse(configSetPresentation(hosted)))).toEqual({
     ...row,
     rowVersion: 4,

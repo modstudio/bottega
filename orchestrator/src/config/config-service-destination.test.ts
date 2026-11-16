@@ -9,10 +9,13 @@ import { writeMachineKey } from '../../../shared/machine-key-store.ts'
 import {
   generateDataKey,
   generateMachineKeyPair,
+  KEY_SIZE,
+  sealClaimChallenge,
   wrapDataKey,
 } from '../../../shared/secret-envelope.ts'
 import { pinTrustedMachine } from '../../../shared/trust-list.ts'
-import { setSecret } from './config-service.ts'
+import { claimCurrentMachineKey, machineRevoke, setSecret } from './config-service.ts'
+import { rotationFixture } from './config-service-rotation.fixture.ts'
 
 const roots: string[] = []
 const previousConfigHome = process.env.BOTTEGA_CONFIG_HOME
@@ -138,4 +141,64 @@ test('a write to space B reads machine-key revocations from B', async () => {
   })
 
   expect(fixture.calls.machineKeys).toEqual([fixture.destinationSpaceId])
+})
+
+test('machine revoke sends wrap and revoke writes to the same active space', async () => {
+  const fixture = await rotationFixture(roots, null, false, false, false, false, true)
+
+  await machineRevoke(fixture.otherKeyId, fixture.client)
+
+  expect(fixture.addWrapDestinations).toEqual([fixture.spaceId])
+  expect(fixture.revokeDestinations).toEqual([fixture.spaceId])
+})
+
+test('claim current machine key sends its challenge and claim to the active space', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'config-claim-destination-'))
+  roots.push(root)
+  const env = { BOTTEGA_CONFIG_HOME: root, BOTTEGA_KEYSTORE: 'file' }
+  const activeSpaceId = '01990000-0000-7000-8000-000000000021'
+  const pair = await generateMachineKeyPair()
+  writeMachineKey(pair, env)
+  const keyId = await machineKeyId(pair.publicKey)
+  const sender = await generateMachineKeyPair()
+  const nonce = crypto.getRandomValues(new Uint8Array(KEY_SIZE))
+  const destinations = { challenge: [] as string[], claim: [] as string[] }
+  const client = {
+    listMachineKeys: async () => [{ keyId, userId: null }],
+    whoami: async () => ({ user: { id: 'user-a' }, activeSpaceId }),
+    createMachineKeyClaimChallenge: async (
+      recipientKeyId: string,
+      destination: { destinationSpaceId?: string },
+    ) => {
+      destinations.challenge.push(destination.destinationSpaceId ?? '')
+      const sealed = await sealClaimChallenge({
+        nonce,
+        spaceId: activeSpaceId,
+        keyId: recipientKeyId,
+        senderPrivateKey: sender.privateKey,
+        senderPublicKey: sender.publicKey,
+        recipientPublicKey: pair.publicKey,
+      })
+      return {
+        challengeId: 'claim-destination',
+        enc: Buffer.from(sealed.enc).toString('base64url'),
+        ciphertext: Buffer.from(sealed.ciphertext).toString('base64url'),
+        senderPublicKey: Buffer.from(sender.publicKey).toString('base64url'),
+      }
+    },
+    claimMachineKey: async (
+      _keyId: string,
+      _challengeId: string,
+      _opened: string,
+      destination: { destinationSpaceId?: string },
+    ) => {
+      destinations.claim.push(destination.destinationSpaceId ?? '')
+      return { claimed: true as const }
+    },
+  } as unknown as ConfigClient
+
+  await claimCurrentMachineKey(client, env)
+
+  expect(destinations.challenge).toEqual([activeSpaceId])
+  expect(destinations.claim).toEqual([activeSpaceId])
 })

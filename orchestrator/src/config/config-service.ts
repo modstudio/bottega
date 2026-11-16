@@ -50,8 +50,9 @@ import {
   pinnedSpaceMismatchRemedy,
   pinnedUserMismatchRemedy,
   RECORD_ACTIVE_SPACE_REMEDY,
-  RECORD_PERSONAL_SPACE_REMEDY,
 } from '../../../shared/record-remedies.ts'
+import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
+import { recordWriteSpace } from '../../../shared/record-write-space.ts'
 import { sealedValueIsEmpty, stripTrailingNewline } from '../../../shared/sealed-value.ts'
 import {
   generateDataKey,
@@ -99,8 +100,16 @@ export async function personalConfigWriteDestination(
   client = hostedConfigClient(),
 ): Promise<WriteDestination> {
   const who = await client.whoami()
-  if (!who.personalSpaceId) throw new Error(RECORD_PERSONAL_SPACE_REMEDY)
-  return { destinationSpaceId: who.personalSpaceId }
+  const decision = recordWriteSpace(
+    { kind: 'personal' },
+    {
+      declaredSpaces: {},
+      personalSpaceId: who.personalSpaceId,
+      memberships: parseRecordSpaceMemberships(who.memberships),
+    },
+  )
+  if ('refused' in decision) throw new Error(decision.remedy)
+  return { destinationSpaceId: decision.spaceId }
 }
 
 async function unpinServerRevoked(client: ConfigClient, destination: ConfigDestination = {}) {
@@ -257,7 +266,9 @@ export async function claimCurrentMachineKey(
   if (!registered || registered.userId !== null) return
   const current = await client.whoami()
   if (!current.activeSpaceId) throw new Error(RECORD_ACTIVE_SPACE_REMEDY)
-  await claimMachineKey(pair, keyId, current.activeSpaceId, client)
+  await claimMachineKey(pair, keyId, current.activeSpaceId, client, {
+    destinationSpaceId: current.activeSpaceId,
+  })
 }
 
 export async function machineShow() {
@@ -454,6 +465,7 @@ async function revokeIfNeeded(
     return revokedAt
   }
   const who = await identity(client)
+  const destination = { destinationSpaceId: who.spaceId }
   const trustBefore = await trustedKeysForSpace(client, who.spaceId)
   const currentBefore = await client.currentDataKey(machine.keyId)
   const oldDek = await unwrap(client, currentBefore, machine, trustBefore)
@@ -471,17 +483,21 @@ async function revokeIfNeeded(
       senderPublicKey: bytes(self.public_key),
       recipientPublicKey: bytes(self.public_key),
     })
-    await client.addWraps(currentBefore.id, [
-      {
-        recipientKeyId: machine.keyId,
-        senderKeyId: machine.keyId,
-        enc: encoded(wrapped.enc),
-        ciphertext: encoded(wrapped.ciphertext),
-      },
-    ])
+    await client.addWraps(
+      currentBefore.id,
+      [
+        {
+          recipientKeyId: machine.keyId,
+          senderKeyId: machine.keyId,
+          enc: encoded(wrapped.enc),
+          ciphertext: encoded(wrapped.ciphertext),
+        },
+      ],
+      destination,
+    )
   }
-  await appendTrustLogRevoke(client, machine.keyId, keyId, (await identity(client)).spaceId)
-  await client.revokeMachineKey(keyId)
+  await appendTrustLogRevoke(client, machine.keyId, keyId, who.spaceId)
+  await client.revokeMachineKey(keyId, destination)
   await unpinTrustedMachine(keyId)
   return (await client.listMachineKeys()).find((item) => item.keyId === keyId)?.revokedAt
 }
@@ -594,7 +610,7 @@ export async function setSecret(
       `config secret row version conflict: expected ${options.expectedRowVersion}, current ${existing?.rowVersion ?? 'missing'}; read it again and retry`,
     )
   const who = await identity(client)
-  const spaceId = destination.destinationSpaceId ?? who.spaceId
+  const spaceId = destination.destinationSpaceId
   const rowVersion = (existing?.rowVersion ?? 0) + 1
   const envelope = sealValue({
     dek,
