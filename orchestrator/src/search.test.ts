@@ -44,6 +44,9 @@ function fixture(): Database {
       severity TEXT, location TEXT, evidence TEXT,
       proposed_correction TEXT, disposition TEXT, rejection_category TEXT
     );
+    CREATE TABLE record_install_binding (
+      id INTEGER PRIMARY KEY CHECK (id = 1), bound_at TEXT NOT NULL, record_origin TEXT
+    );
   `)
   return d
 }

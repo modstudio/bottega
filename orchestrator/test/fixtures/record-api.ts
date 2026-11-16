@@ -427,6 +427,11 @@ export function createMemoryRecordApiClient(
     ...unusedBoardClientMethods(),
     ...unusedContextItemClientMethods(),
     ...memoryTaskFlowClient(input),
+    async sync(request) {
+      return {
+        results: request.rows.map((row) => ({ id: row.id, status: 'synced' as const })),
+      }
+    },
     async readQuestions(selector) {
       const items = questions
         .filter((row) => {

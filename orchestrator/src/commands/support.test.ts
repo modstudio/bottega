@@ -2,8 +2,8 @@ import { expect, test } from 'bun:test'
 import { parseChangedAfter } from './support.ts'
 
 test('changed-after validation owns incompatible flags at the command edge', () => {
-  expect(() => parseChangedAfter({ value: '-1' })).toThrow(
-    '--changed-after must be a non-negative integer',
+  expect(() => parseChangedAfter({ value: '' })).toThrow(
+    '--changed-after must be a non-empty cursor',
   )
   expect(() => parseChangedAfter({ value: '1', since: '2026-11-03', json: true })).toThrow(
     '--since and --changed-after cannot be combined',
