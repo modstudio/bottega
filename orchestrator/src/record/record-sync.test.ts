@@ -23,8 +23,8 @@ import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { enqueueContention } from './landing-outbox.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { retireOutboxRow, retryOutboxRow } from './outbox-quarantine.ts'
-import { RETIRED_OUTBOX_REASON } from './record-sync-service.ts'
 import { syncRecord } from './record-sync.ts'
+import { RETIRED_OUTBOX_REASON } from './record-sync-service.ts'
 
 const LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.landing_override.columns
 const LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS =
@@ -48,9 +48,7 @@ test('sync retires and audits leftover question outbox rows once', async () => {
   })
   expect(
     local
-      .query(
-        'SELECT synced_at,quarantined_at,retired_at,retirement_reason,attempts FROM outbox',
-      )
+      .query('SELECT synced_at,quarantined_at,retired_at,retirement_reason,attempts FROM outbox')
       .get(),
   ).toEqual({
     synced_at: null,
@@ -61,9 +59,7 @@ test('sync retires and audits leftover question outbox rows once', async () => {
   })
   expect(
     local
-      .query(
-        'SELECT kind,disposition,actor_session,at,reason FROM outbox_quarantine_audit',
-      )
+      .query('SELECT kind,disposition,actor_session,at,reason FROM outbox_quarantine_audit')
       .all(),
   ).toEqual([
     {

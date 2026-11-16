@@ -742,6 +742,19 @@ function unconfiguredSyncResult(
   }
 }
 
+function syncIdentity(options: RecordSyncOptions) {
+  const requested = options.identity ?? { id: machineId(), ...machineNames() }
+  return { ...requested, name: requested.name ?? defaultShortName(hostname()) }
+}
+
+function beginSyncPass(local: Database, requestedNow?: () => string) {
+  const now = requestedNow ?? nowIso
+  return {
+    now,
+    retired: retirePendingOutboxKinds(local, RETIRED_OUTBOX_KINDS, RETIRED_OUTBOX_REASON, now()),
+  }
+}
+
 async function requestedTaskFlowBackfill(input: {
   requested: boolean | undefined
   local: Database
@@ -768,23 +781,13 @@ async function requestedTaskFlowBackfill(input: {
 
 export async function syncRecord(options: RecordSyncOptions = {}): Promise<RecordSyncResult> {
   const configured = recordSyncConfigured(process.env) || Boolean(options.client)
-  const requestedIdentity = options.identity ?? { id: machineId(), ...machineNames() }
-  const identity = {
-    ...requestedIdentity,
-    name: requestedIdentity.name ?? defaultShortName(hostname()),
-  }
+  const identity = syncIdentity(options)
   const local = options.local ?? (configured || options.backfill ? db() : undefined)
   if (!configured) return unconfiguredSyncResult(local, identity.id, options.backfill)
   const writableLocal = local!
   const client = options.client ?? recordApiClient()
   if (!client.sync) throw new Error('record API client does not provide evidence sync')
-  const now = options.now ?? nowIso
-  const retired = retirePendingOutboxKinds(
-    writableLocal,
-    RETIRED_OUTBOX_KINDS,
-    RETIRED_OUTBOX_REASON,
-    now(),
-  )
+  const { now, retired } = beginSyncPass(writableLocal, options.now)
   const session = await client.whoami()
   const memberships = parseRecordSpaceMemberships(session.memberships)
   const taskFlowBackfill = await requestedTaskFlowBackfill({
