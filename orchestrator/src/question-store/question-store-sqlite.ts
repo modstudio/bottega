@@ -144,7 +144,7 @@ export class SqliteQuestionStore implements QuestionStore {
   async read(input: QuestionReadInput): Promise<QuestionReadResult> {
     if (input.changedAfter !== undefined)
       throw new Error(
-        `${questionChangedAfterRefusal.message}; ${questionChangedAfterRefusal.remedy}`,
+        `${questionChangedAfterRefusal.local.message}; ${questionChangedAfterRefusal.local.remedy}`,
       )
     if (input.read === 'inbox')
       return {

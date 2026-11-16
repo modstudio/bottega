@@ -34,6 +34,7 @@ import { registerLandingEvidenceRlsProof } from '../../test/postgres-landing-evi
 import { registerMachineJoinProof } from '../../test/postgres-machine-join-proof.ts'
 import { registerProjectSpaceProofs } from '../../test/postgres-project-space-proof.ts'
 import { registerPublicDocProofs } from '../../test/postgres-public-doc-proof.ts'
+import { registerQuestionChangeFeedProof } from '../../test/postgres-question-change-proof.ts'
 import { registerQuestionTaskRecordSyncProof } from '../../test/postgres-question-task-proof.ts'
 import { registerRecordRetentionProof } from '../../test/postgres-record-retention-proof.ts'
 import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-proof.ts'
@@ -968,6 +969,15 @@ realPostgres('RLS proof against real Postgres', () => {
     otherSpaceId: ids.SPACE_B,
     projectName: 'auth-a-project',
     projectId: authProjectA,
+    signIn: () => recordSession.setToken(tokenA),
+    asSpace,
+    admin: (statement) => succeeds('postgres', 'postgres', statement),
+  }))
+  registerQuestionChangeFeedProof(() => ({
+    actorRole: RECORD_ACTOR_ROLE,
+    spaceId: authSpaceA,
+    projectId: authProjectA,
+    machineId: ids.MACHINE_A,
     signIn: () => recordSession.setToken(tokenA),
     asSpace,
     admin: (statement) => succeeds('postgres', 'postgres', statement),

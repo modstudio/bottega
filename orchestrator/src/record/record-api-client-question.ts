@@ -19,7 +19,12 @@ export type RecordQuestionClient = {
   readQuestions?(
     input: QuestionReadInput,
     destination?: RecordRequestDestination,
-  ): Promise<{ items: Record<string, unknown>[] }>
+  ): Promise<{
+    items: Record<string, unknown>[]
+    cursor?: string
+    more?: boolean
+    reset?: boolean
+  }>
   writeQuestion?(
     intent: QuestionIntent,
     input: QuestionWriteBody,
@@ -35,7 +40,13 @@ export const recordQuestionClient = (request: Request): RecordQuestionClient => 
         if (value !== undefined) query.set(key, String(value))
       return request(`/v1/questions?${query}`, {
         ...destination,
-        schema: (body) => body as { items: Record<string, unknown>[] },
+        schema: (body) =>
+          body as {
+            items: Record<string, unknown>[]
+            cursor?: string
+            more?: boolean
+            reset?: boolean
+          },
       })
     },
     writeQuestion: (

@@ -68,6 +68,7 @@ export const RECORD_CHANGE_TRIGGER_TABLES = [
   'step_catalogue_version',
   'step_catalogue_event',
   'run',
+  'question',
   'review_lens',
   'run_exclusion',
   'run_score',

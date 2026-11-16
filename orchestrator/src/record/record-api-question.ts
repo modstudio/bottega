@@ -2,21 +2,25 @@
 /** Exposes validated tenant-bound question reads and writes. */
 
 import type { Context, Hono } from 'hono'
+import {
+  decodeRecordChangeCursor,
+  type RecordChangeCursor,
+} from '../../../shared/record/record-changes.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
   type QuestionIntent,
-  type QuestionReadInput,
   type QuestionWriteBody,
   questionChangedAfterRefusal,
   questionIntentSchema,
   questionReadSchema,
   questionWriteSchema,
+  type RecordQuestionReadInput,
 } from './record-question-contract.ts'
 
 type Environment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
 export type RecordQuestionRouteDeps = {
-  readQuestions?(input: Tenant & QuestionReadInput): Promise<unknown>
+  readQuestions?(input: Tenant & RecordQuestionReadInput): Promise<unknown>
   writeQuestion?(intent: QuestionIntent, input: Tenant & QuestionWriteBody): Promise<unknown>
 }
 type Ports = {
@@ -36,6 +40,32 @@ export function registerRecordQuestionRoutes(
       return context.json({ error: 'hosted question reads are unavailable' }, 503)
     const query = questionReadSchema.safeParse(context.req.query())
     if (!query.success) return context.json({ error: 'invalid question read query' }, 400)
+    if (query.data.read === 'rulings') {
+      const { changedAfter: encodedChangedAfter, ...read } = query.data
+      if (encodedChangedAfter === undefined)
+        return context.json(await deps.readQuestions({ ...tenant, ...read }))
+      if (read.limit !== undefined)
+        return context.json(
+          {
+            error: 'limit cannot be combined with changedAfter',
+            remedy: 'drop limit; follow more to page',
+          },
+          422,
+        )
+      let changedAfter: RecordChangeCursor
+      try {
+        changedAfter = decodeRecordChangeCursor(encodedChangedAfter)
+      } catch {
+        return context.json(
+          {
+            error: 'record change cursor is malformed',
+            remedy: 'retry without changedAfter to get a fresh cursor',
+          },
+          422,
+        )
+      }
+      return context.json(await deps.readQuestions({ ...tenant, ...read, changedAfter }))
+    }
     if (query.data.changedAfter !== undefined)
       return context.json(
         {

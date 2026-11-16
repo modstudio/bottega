@@ -61,7 +61,12 @@ export type QuestionReadRow =
   | QuestionRulingRow
   | QuestionTaskRulingRow
   | QuestionProjectRow
-export type QuestionReadResult = { items: QuestionReadRow[] }
+export type QuestionReadResult = {
+  items: QuestionReadRow[]
+  cursor?: string
+  more?: boolean
+  reset?: boolean
+}
 export interface QuestionStore {
   write(intent: QuestionIntent, input: QuestionWriteBody): Promise<QuestionWriteResult>
   read(input: QuestionReadInput): Promise<QuestionReadResult>

@@ -56,7 +56,7 @@ export class RecordQuestionStore implements QuestionStore {
   }
 
   async read(input: QuestionReadInput): Promise<QuestionReadResult> {
-    if (input.changedAfter !== undefined)
+    if (input.changedAfter !== undefined && input.read !== 'rulings')
       throw new Error(
         `${questionChangedAfterRefusal.message}; ${questionChangedAfterRefusal.remedy}`,
       )
@@ -66,7 +66,13 @@ export class RecordQuestionStore implements QuestionStore {
       destinationSpaceId: this.input.destinationSpaceId,
     })
     const items = result.items.map(localQuestionRow)
-    if (input.read !== 'inbox') return { items } as QuestionReadResult
+    if (input.read !== 'inbox')
+      return {
+        items,
+        ...(result.cursor === undefined ? {} : { cursor: result.cursor }),
+        ...(result.more === undefined ? {} : { more: result.more }),
+        ...(result.reset === undefined ? {} : { reset: result.reset }),
+      }
     const cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString()
     return {
       items: items.map((row) => {
