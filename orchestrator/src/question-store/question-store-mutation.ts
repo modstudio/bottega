@@ -98,11 +98,14 @@ export async function mutateQuestion(
     actorSession: string | null
     reason: string | null
     changes: Partial<Snapshot>
+    expectedRevision?: number
   },
 ) {
   const row = await questionById(database, input.id)
   if (!row) throw new Error(`question ${input.id} not found`)
   const current = questionSnapshotFromRow(row)
+  if (input.expectedRevision !== undefined && current.revision !== input.expectedRevision)
+    throw new Error(`question ${input.id} changed before the mutation was stored`)
   return questionStore(database).write(input.intent, {
     requestId: newRecordId(),
     question: {
@@ -117,5 +120,92 @@ export async function mutateQuestion(
       at: input.at,
       reason: input.reason,
     },
+  })
+}
+
+export async function askQuestion(
+  database: Database,
+  input: {
+    id?: string
+    runId?: string | null
+    workflowCursorRecordId?: string | null
+    workflowKey?: string | null
+    workflowTaskId?: string | null
+    projectId?: string | null
+    askedAt: string
+    question: string
+    options?: unknown
+    recommendation?: string | null
+    why?: string | null
+    askedVia?: string | null
+    awaitingOperatorAt?: string | null
+    kind?: string | null
+    typedOptions?: unknown
+    criteria?: unknown
+    levels?: unknown
+  },
+) {
+  const id = input.id ?? newRecordId()
+  const question: Snapshot = {
+    id,
+    number: null,
+    runId: input.runId ?? null,
+    workflowKey: input.workflowKey ?? null,
+    workflowTaskId: input.workflowTaskId ?? null,
+    workflowCursorRecordId: input.workflowCursorRecordId ?? null,
+    projectId: input.projectId ?? null,
+    machineId: machineId(),
+    revision: 1,
+    askedAt: input.askedAt,
+    question: input.question,
+    options: input.options ?? null,
+    recommendation: input.recommendation ?? null,
+    why: input.why ?? null,
+    askedVia: input.askedVia ?? null,
+    kind: input.kind ?? null,
+    typedOptions: input.typedOptions ?? null,
+    criteria: input.criteria ?? null,
+    levels: input.levels ?? null,
+    answer: null,
+    answerValue: null,
+    answerBasis: null,
+    answeredAt: null,
+    answeredBy: null,
+    answeredByName: null,
+    answeredByKind: null,
+    answererKind: null,
+    answerChannel: null,
+    jevPick: null,
+    jevConfidence: null,
+    jevProbabilities: null,
+    jevModel: null,
+    jevInputTokens: null,
+    jevError: null,
+    jevAgreed: null,
+    jevQuestionVersion: null,
+    jevFits: null,
+    jevOrderFlipped: null,
+    awaitingOperatorAt: input.awaitingOperatorAt ?? null,
+    relayedBy: null,
+    overturnedAt: null,
+    overturnedBy: null,
+    overturnedByName: null,
+    overturnReason: null,
+    replacement: null,
+    filedAs: null,
+    filedRef: null,
+    filedRecordId: null,
+    filedLabel: null,
+    filedAt: null,
+    closedAt: null,
+    closeReason: null,
+    withheldFields: [],
+    createdAt: input.askedAt,
+    updatedAt: input.askedAt,
+  }
+  return questionStore(database).write('ask', {
+    requestId: newRecordId(),
+    question,
+    audit: { action: 'ask', actorSession: null, at: input.askedAt, reason: null },
   })
 }

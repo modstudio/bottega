@@ -2,6 +2,8 @@
 /** The single stored-question answer transition used by every answer channel. */
 
 import type { Database } from 'bun:sqlite'
+import { mutateQuestion, questionById } from '../question-store/question-store-mutation.ts'
+import { clearQuestionDeliveryPending, markQuestionDeliveryPending } from './question-delivery-pending.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
 import { questionOpenSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
@@ -18,7 +20,7 @@ import {
 import type { answerAttributions } from './ruling-attribution.ts'
 import type { AnsweredQuestion } from './run-answer-typed-value.ts'
 
-export function applyQuestionAnswer(input: {
+export async function applyQuestionAnswer(input: {
   database: Database
   questionId: string
   answer: string
@@ -36,38 +38,41 @@ export function applyQuestionAnswer(input: {
     mode: QuestionDeliveryMode
     outcome: QuestionDeliveryOutcome
   }
-}): boolean {
+}): Promise<boolean> {
   const encodedValue = input.value === undefined ? null : JSON.stringify(input.value)
-  const changed = input.database
-    .query(
-      `UPDATE question
-       SET answer=?,answer_value=?,answered_by_kind=?,
-           jev_agreed=CASE
-             WHEN ?='jev' OR jev_pick IS NULL THEN NULL
-             WHEN ? THEN 0
-             WHEN ? IS NULL THEN NULL
-             WHEN jev_pick=? THEN 1 ELSE 0 END,
-           answered_at=?,answered_by=?,answered_by_name=?,answerer_kind=?,answer_channel=?,revision=revision+1,
-           delivery_pending_at=?,awaiting_operator_at=NULL
-       WHERE record_id=? AND ${questionOpenSql('question')}`,
-    )
-    .run(
-      input.answer,
-      encodedValue,
-      input.answeredByKind,
-      input.answeredByKind,
-      input.noOptionFits ? 1 : 0,
-      encodedValue,
-      encodedValue,
-      input.answeredAt,
-      input.answeredBy,
-      input.answeredByName,
-      input.answererKind,
-      input.channel,
-      input.deliveryPendingAt,
-      input.questionId,
-    )
-  if (changed.changes !== 1) return false
+  const row = await questionById(input.database, input.questionId)
+  if (!row || row.answered_at !== null || row.closed_at !== null) return false
+  const jevPick = typeof row.jev_pick === 'string' ? row.jev_pick : null
+  const jevAgreed =
+    input.answeredByKind === 'jev' || jevPick === null
+      ? null
+      : input.noOptionFits
+        ? 0
+        : encodedValue === null
+          ? null
+          : Number(jevPick === encodedValue)
+  await mutateQuestion(input.database, {
+    id: input.questionId,
+    intent: 'answer',
+    at: input.answeredAt,
+    actorSession: input.answeredBy,
+    reason: input.answer,
+    changes: {
+      answer: input.answer,
+      answerValue: encodedValue,
+      answeredByKind: input.answeredByKind,
+      jevAgreed,
+      answeredAt: input.answeredAt,
+      answeredBy: input.answeredBy,
+      answeredByName: input.answeredByName,
+      answererKind: input.answererKind,
+      answerChannel: input.channel,
+      awaitingOperatorAt: null,
+    },
+  })
+  if (input.deliveryPendingAt)
+    markQuestionDeliveryPending(input.database, input.questionId, input.deliveryPendingAt)
+  else clearQuestionDeliveryPending(input.database, [input.questionId])
   if (input.delivery)
     appendQuestionDeliveries(
       [input.questionId],
@@ -78,7 +83,7 @@ export function applyQuestionAnswer(input: {
   return true
 }
 
-export function applyArchitectQuestionAnswers(input: {
+export async function applyArchitectQuestionAnswers(input: {
   database: Database
   answers: AnsweredQuestion[]
   attributions: ReturnType<typeof answerAttributions>
@@ -88,8 +93,8 @@ export function applyArchitectQuestionAnswers(input: {
   skipResume: boolean
   open: Array<{ record_id: string; owner_id: string }>
   refusal: (questionId: string) => string
-}): void {
-  input.answers.forEach((answer, index) => {
+}): Promise<void> {
+  for (const [index, answer] of input.answers.entries()) {
     const [answeredBy, answeredByName, answererKind] = input.attributions[index]!
     const delivery: Parameters<typeof applyQuestionAnswer>[0]['delivery'] =
       input.skipResume || input.ownersLive
@@ -103,7 +108,7 @@ export function applyArchitectQuestionAnswers(input: {
             outcome: QUESTION_DELIVERY_OUTCOME_DELIVERED,
           }
         : undefined
-    const changed = applyQuestionAnswer({
+    const changed = await applyQuestionAnswer({
       database: input.database,
       questionId: answer.record_id,
       answer: answer.answer,
@@ -119,5 +124,5 @@ export function applyArchitectQuestionAnswers(input: {
       ...(delivery ? { delivery } : {}),
     })
     if (!changed) throw new Error(input.refusal(answer.record_id))
-  })
+  }
 }

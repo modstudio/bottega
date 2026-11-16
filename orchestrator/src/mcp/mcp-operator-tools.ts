@@ -42,14 +42,14 @@ const identifier = z.union([z.number().int().positive(), z.string().min(1)])
 const localRunId = (input: string | number) => resolveRunIdentifier(db(), input)
 const localQuestionId = (input: string | number) => resolveQuestionIdentifier(db(), input)
 
-function relayByIdentifier(
+async function relayByIdentifier(
   run: string | number,
   question: string | number | undefined,
   note: string,
 ) {
-  const relayed = relayQuestion(
+  const relayed = await relayQuestion(
     localRunId(run),
-    question === undefined ? undefined : localQuestionId(question),
+    question === undefined ? undefined : await localQuestionId(question),
     note,
   )
   return text({ question_id: relayed.id, record_id: relayed.recordId })

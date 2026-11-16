@@ -4,6 +4,8 @@
 import type { Database } from 'bun:sqlite'
 import type { QuestionIdentity } from '../../../shared/orch-contract.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
+import { questionById } from '../question-store/question-store-mutation.ts'
+import { questionRulings } from '../question-store/question-store-read.ts'
 
 export type ParsedQuestionIdentifier =
   | { kind: 'number'; id: number }
@@ -11,10 +13,9 @@ export type ParsedQuestionIdentifier =
 
 const ACCEPTED_QUESTION_IDENTIFIERS = 'a positive decimal question number or a full question UUID'
 
-export function questionIdentityMap(database: Database): QuestionIdentity[] {
-  return database
-    .query<QuestionIdentity, []>('SELECT number,record_id FROM question ORDER BY number')
-    .all()
+export async function questionIdentityMap(database: Database): Promise<QuestionIdentity[]> {
+  const { items } = await questionRulings(database, { kind: 'all' })
+  return items.map((row) => ({ number: Number(row.number), record_id: String(row.record_id) }))
 }
 
 export function parseQuestionIdentifier(input: string | number): ParsedQuestionIdentifier {
@@ -29,19 +30,15 @@ export function parseQuestionIdentifier(input: string | number): ParsedQuestionI
   )
 }
 
-export function resolveQuestionIdentifier(database: Database, input: string | number): string {
+export async function resolveQuestionIdentifier(database: Database, input: string | number): Promise<string> {
   const parsed = parseQuestionIdentifier(input)
   if (parsed.kind === 'number') {
-    const row = database
-      .query<{ record_id: string }, [number]>('SELECT record_id FROM question WHERE number=?')
-      .get(parsed.id)
+    const row = (await questionIdentityMap(database)).find(({ number }) => number === parsed.id)
     if (row) return row.record_id
     throw new Error(`no question has number ${parsed.id}; pass ${ACCEPTED_QUESTION_IDENTIFIERS}`)
   }
-  const row = database
-    .query<{ record_id: string }, [string]>('SELECT record_id FROM question WHERE record_id=?')
-    .get(parsed.recordId)
-  if (row) return row.record_id
+  const row = await questionById(database, parsed.recordId)
+  if (row) return parsed.recordId
   throw new Error(
     `no question has UUID ${JSON.stringify(String(input))}; pass ${ACCEPTED_QUESTION_IDENTIFIERS}`,
   )

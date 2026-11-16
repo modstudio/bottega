@@ -112,7 +112,7 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
         q.asked_at::text,q.question,q.options::text,q.recommendation,q.why,q.kind,q.jev_pick,q.jev_confidence,
         q.jev_probabilities::text,q.jev_error,q.answered_at::text,q.overturned_at::text,q.overturned_by,
         q.overturn_reason,q.replacement,q.filed_as,q.filed_ref,q.filed_record_id::text,q.filed_label,q.filed_at::text,
-        owner.agent,owner.job,root_project.name repo,root.project_id::text project_record_id,owner.status,owner.session_id,
+        owner.agent,owner.job,root_project.name repo,COALESCE(owner.launch_key,root.launch_key) task_key,root.project_id::text project_record_id,owner.status,owner.session_id,
         q.awaiting_operator_at::text,
         root.status root_status,root.id::text root_record_id,root.number root_number,
         CASE WHEN root.evidence_excluded IS NULL THEN 0 ELSE 1 END root_voided,

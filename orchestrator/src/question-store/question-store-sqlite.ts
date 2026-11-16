@@ -36,6 +36,13 @@ export class SqliteQuestionStore implements QuestionStore {
 
   async write(intent: QuestionIntent, input: QuestionWriteBody): Promise<QuestionWriteResult> {
     const q = input.question
+    const workflowStep = q.workflowCursorRecordId
+      ? this.database
+          .query<{ ordinal: number; step_slug: string }, [string]>(
+            'SELECT ordinal,step_slug FROM workflow_cursor WHERE record_id=?',
+          )
+          .get(q.workflowCursorRecordId)
+      : null
     const existing = this.database
       .query<{ number: number; revision: number }, [string]>(
         'SELECT number,revision FROM question WHERE record_id=?',
@@ -56,8 +63,8 @@ export class SqliteQuestionStore implements QuestionStore {
            replacement,filed_as,filed_ref,filed_at,closed_at,close_reason,revision,filed_record_id,filed_label,
            answer_basis,answered_by_name,overturned_by_name,kind,typed_options,criteria,levels,answer_value,
            answered_by_kind,jev_pick,jev_confidence,jev_probabilities,jev_model,jev_input_tokens,jev_error,
-           jev_agreed,jev_question_version,jev_fits,jev_order_flipped)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+           jev_agreed,jev_question_version,jev_fits,jev_order_flipped,workflow_step_ordinal,workflow_step_slug)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(record_id) DO UPDATE SET
            workflow_key=excluded.workflow_key,workflow_task_record_id=excluded.workflow_task_record_id,
            question=excluded.question,options=excluded.options,recommendation=excluded.recommendation,why=excluded.why,
@@ -75,7 +82,9 @@ export class SqliteQuestionStore implements QuestionStore {
            jev_confidence=excluded.jev_confidence,jev_probabilities=excluded.jev_probabilities,
            jev_model=excluded.jev_model,jev_input_tokens=excluded.jev_input_tokens,jev_error=excluded.jev_error,
            jev_agreed=excluded.jev_agreed,jev_question_version=excluded.jev_question_version,
-           jev_fits=excluded.jev_fits,jev_order_flipped=excluded.jev_order_flipped
+           jev_fits=excluded.jev_fits,jev_order_flipped=excluded.jev_order_flipped,
+           workflow_step_ordinal=COALESCE(excluded.workflow_step_ordinal,question.workflow_step_ordinal),
+           workflow_step_slug=COALESCE(excluded.workflow_step_slug,question.workflow_step_slug)
          WHERE excluded.revision > question.revision`,
       )
       .run(
@@ -129,6 +138,8 @@ export class SqliteQuestionStore implements QuestionStore {
         q.jevQuestionVersion,
         q.jevFits,
         q.jevOrderFlipped,
+        workflowStep?.ordinal ?? null,
+        workflowStep?.step_slug ?? null,
       )
     this.database
       .query(`INSERT OR IGNORE INTO question_mutation_audit
@@ -146,7 +157,10 @@ export class SqliteQuestionStore implements QuestionStore {
   }
 
   async read(input: QuestionReadInput): Promise<QuestionReadResult> {
-    if (input.changedAfter !== undefined && input.read !== 'rulings')
+    if (
+      input.changedAfter !== undefined &&
+      (input.read !== 'rulings' || !/^\d+$/.test(input.changedAfter))
+    )
       throw new Error(
         `${questionChangedAfterRefusal.local.message}; ${questionChangedAfterRefusal.local.remedy}`,
       )

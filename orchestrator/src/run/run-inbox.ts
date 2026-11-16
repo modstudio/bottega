@@ -35,6 +35,7 @@ type InboxQuestion = {
   job: string
   agent: string
   repo: string | null
+  task_key: string | null
   asked_at: string
   session_live: true | null
   session_liveness: 'live' | 'unknown'
@@ -133,7 +134,7 @@ export function runInboxQuestionRows(
             q.jev_pick,q.jev_confidence,q.jev_probabilities,q.jev_error,
             q.answered_at, q.overturned_at, q.overturned_by, q.overturn_reason, q.replacement,
             q.filed_as, q.filed_ref, q.filed_record_id, q.filed_label, q.filed_at,
-            r.agent, r.job, r.repo, root.project_record_id, r.status, r.session_id,q.awaiting_operator_at,
+            r.agent, r.job, r.repo,COALESCE(r.launch_key,root.launch_key) task_key, root.project_record_id, r.status, r.session_id,q.awaiting_operator_at,
             root.status root_status, root.record_id root_record_id, root.number root_number,
             ${voidedSql('root')} root_voided,
             COALESCE(r.parent_run_record_id, r.record_id) root_id, ${sessionRecent} session_recent

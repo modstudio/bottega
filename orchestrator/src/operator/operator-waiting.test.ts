@@ -63,7 +63,7 @@ describe('operator waiting decision', () => {
 })
 
 describe('relay', () => {
-  test('refuses an answered question', () => {
+  test('refuses an answered question', async () => {
     const owner = run()
     const question = db()
       .query(
@@ -71,12 +71,12 @@ describe('relay', () => {
          VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'2026-09-25','Which?','This.','2026-09-25') RETURNING record_id`,
       )
       .get(owner.id) as { record_id: string }
-    expect(() => relayQuestion(owner.id, question.record_id, 'operator must decide')).toThrow(
+    await expect(relayQuestion(owner.id, question.record_id, 'operator must decide')).rejects.toThrow(
       `question ${question.record_id} is already answered`,
     )
   })
 
-  test('is idempotent and audits the caller session', () => {
+  test('is idempotent and audits the caller session', async () => {
     const owner = run()
     const question = db()
       .query(
@@ -85,11 +85,11 @@ describe('relay', () => {
       )
       .get(owner.id) as { record_id: string }
     const noNotification = () => {}
-    relayQuestion(owner.id, question.record_id, 'operator must decide', db(), noNotification)
+    await relayQuestion(owner.id, question.record_id, 'operator must decide', db(), noNotification)
     const first = db()
       .query('SELECT awaiting_operator_at,relayed_by FROM question WHERE record_id=?')
       .get(question.record_id)
-    relayQuestion(owner.id, question.record_id, 'still needs operator', db(), noNotification)
+    await relayQuestion(owner.id, question.record_id, 'still needs operator', db(), noNotification)
     expect(
       db()
         .query('SELECT awaiting_operator_at,relayed_by FROM question WHERE record_id=?')
@@ -181,7 +181,7 @@ test('waiting JSON model includes run questions and workflow rulings', async () 
   )
 })
 
-test('notification claims return each waiting episode once', () => {
+test('notification claims return each waiting episode once', async () => {
   const owner = run()
   const question = db()
     .query(

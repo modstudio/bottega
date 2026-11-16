@@ -3,6 +3,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { mutateQuestion, questionById } from '../question-store/question-store-mutation.ts'
 import {
   type TaskFlowOverturnRulingRow as OverturnRow,
   taskFlowReadStore,
@@ -13,6 +14,7 @@ import { rulingActor } from './question-vocabulary.ts'
 import { resolvedRulingPersonName } from './ruling-attribution.ts'
 import { overturnRulingDecision } from './ruling-overturn-authority.ts'
 import { adoptRunMutation, auditRunMutation, runMutationActor } from './run-authority.ts'
+import { joinMutationReason } from './run-mutation-owner.ts'
 
 function refusal(row: OverturnRow): string | null {
   const decision = overturnRulingDecision({
@@ -40,7 +42,7 @@ export async function overturnRuling(input: {
   fromOperator: boolean
 }) {
   writableDb()
-  const row = await taskFlowReadStore(db()).overturnRulingRow(input.questionId)
+  const row = (await questionById(db(), input.questionId)) as OverturnRow | null
   if (!row)
     throw new Error(
       `no question ${input.questionId}; inspect question ids with ${PLATFORM_SLUG} question inbox --all`,
@@ -65,26 +67,23 @@ export async function overturnRuling(input: {
   writeTransaction(() => {
     if (row.run_record_id !== null) authority = adoptRunMutation(authority!, 'overturn')
     overturnedBy = rulingActor(input.fromOperator, actor)
-    const changed = db()
-      .query(
-        `UPDATE question
-            SET overturned_at=?,overturned_by=?,overturned_by_name=?,overturn_reason=?,replacement=?,revision=revision+1
-          WHERE record_id=? AND answered_at IS NOT NULL AND overturned_at IS NULL`,
-      )
-      .run(at, overturnedBy, personName, input.reason, input.replacement, row.record_id)
-    if (changed.changes !== 1)
-      throw new Error(`question ${row.number} changed before it was overturned`)
+  })
+  await mutateQuestion(db(), {
+    id: row.record_id,
+    intent: 'overturn',
+    at,
+    actorSession: actor,
+    reason: joinMutationReason(input.reason, adoptionReason),
+    changes: {
+      overturnedAt: at,
+      overturnedBy,
+      overturnedByName: personName,
+      overturnReason: input.reason,
+      replacement: input.replacement,
+    },
+  })
+  writeTransaction(() => {
     if (row.run_record_id !== null) auditRunMutation(authority!, 'overturn', input.reason)
-    else
-      auditQuestionMutation({
-        questionId: row.record_id,
-        action: 'overturn',
-        actor,
-        at,
-        reason: input.reason,
-        adoptionReason,
-      })
-    enqueueQuestionRecord(db(), row.record_id)
   })
   return {
     question_id: row.number,

@@ -966,7 +966,8 @@ export async function answerRun(
       answerAuthority = reauthorizeRunMutation(answerAuthority, 'answer')
       answerAuthority = adoptRunMutation(answerAuthority, 'answer')
     }
-    applyArchitectQuestionAnswers({
+  })
+  await applyArchitectQuestionAnswers({
       database: db(),
       answers,
       attributions,
@@ -976,7 +977,8 @@ export async function answerRun(
       skipResume,
       open,
       refusal: (questionId) => namedQuestionRefusal(questionId, id),
-    })
+  })
+  writeTransaction(() => {
     if (skipResume) db().query("UPDATE run SET status='asking' WHERE record_id=?").run(id)
     if (skipResume || ownersLive) auditRunMutation(answerAuthority, 'answer')
   })

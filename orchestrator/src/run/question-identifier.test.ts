@@ -5,7 +5,7 @@ import { db } from '../database/db.ts'
 import { parseQuestionIdentifier, resolveQuestionIdentifier } from './question-identifier.ts'
 
 describe('question identifier', () => {
-  test('parses numbers and UUIDs and resolves either form to one row', () => {
+  test('parses numbers and UUIDs and resolves either form to one row', async () => {
     const runId = addRun({ agent: 'codex', job: 'file-question', status: 'asking' })
     const recordId = newRecordId()
     const { number } = db()
@@ -18,7 +18,7 @@ describe('question identifier', () => {
       kind: 'record-id',
       recordId,
     })
-    expect(resolveQuestionIdentifier(db(), number)).toBe(recordId)
-    expect(resolveQuestionIdentifier(db(), recordId)).toBe(recordId)
+    expect(await resolveQuestionIdentifier(db(), number)).toBe(recordId)
+    expect(await resolveQuestionIdentifier(db(), recordId)).toBe(recordId)
   })
 })

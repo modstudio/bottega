@@ -27,6 +27,18 @@ export async function inboxWorkflowQuestions(database: Database): Promise<TaskFl
   return items.filter((row) => 'cursor_record_id' in row) as TaskFlowInboxQuestionRow[]
 }
 
+export async function inboxRunQuestions(database: Database): Promise<Record<string, unknown>[]> {
+  const items = (await questionStore(database).read({ read: 'inbox' })).items
+  return items.filter((row) => 'run_record_id' in row) as Record<string, unknown>[]
+}
+
+export async function questionsForRun(
+  database: Database,
+  runId: string,
+): Promise<Record<string, unknown>[]> {
+  return (await questionStore(database).read({ read: 'for-run', runId })).items as Record<string, unknown>[]
+}
+
 export async function questionRulings(
   database: Database,
   input: { kind: 'workflow' | 'run' | 'all'; since?: string; limit?: number; changedAfter?: string },

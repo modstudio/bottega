@@ -154,6 +154,8 @@ async function questionStoreContract(store: QuestionStore, database: Database) {
     askedVia: 'live',
   })
   await store.write('ask', body(run))
+  expect((await store.read({ read: 'by-id', ids: [run.id] })).items).toHaveLength(1)
+  expect((await store.read({ read: 'for-run', runId: RUN_ID })).items).toHaveLength(1)
   expect((await store.read({ read: 'waiting' })).items).toHaveLength(1)
   const inbox = (await store.read({ read: 'inbox' })).items
   expect(inbox.some((row) => field(row, 'record_id') === run.id)).toBe(true)
@@ -178,11 +180,29 @@ async function questionStoreContract(store: QuestionStore, database: Database) {
     answerChannel: 'mcp',
     updatedAt: answeredAt,
   })
+  const relayed = { ...run, revision: run.revision + 1, awaitingOperatorAt: answeredAt }
+  await store.write('relay', body(relayed, 'relay'))
+  expect((await store.read({ read: 'by-id', ids: [run.id] })).items[0]).toMatchObject({
+    awaiting_operator_at: answeredAt,
+  })
   const replacement = await mutate(store, 'overturn', answered, {
     overturnedAt: '2026-11-15T12:02:00.000Z',
     replacement: 'No',
     updatedAt: '2026-11-15T12:02:00.000Z',
   })
+  await store.write(
+    'file',
+    body(
+      {
+        ...replacement,
+        revision: replacement.revision + 1,
+        filedAs: 'doc',
+        filedRef: 'ruling-doc',
+        filedAt: '2026-11-15T12:02:30.000Z',
+      },
+      'file',
+    ),
+  )
   const excludedBase = snapshot({
     id: EXCLUDED_QUESTION_ID,
     workflowTaskId: TASK_ID,

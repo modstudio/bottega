@@ -126,7 +126,7 @@ const answerByIdentifier = async (id: string, command: Command, options: OptionV
     { output: { log, error: console.error } },
   )
 }
-const relayByIdentifier = (id: string, command: Command, note: string) =>
+const relayByIdentifier = async (id: string, command: Command, note: string) =>
   relayCommand(localRunId(id), rawArgv(command).slice(2), note, presentation, (question) =>
     resolveQuestionIdentifier(db(), question),
   )
