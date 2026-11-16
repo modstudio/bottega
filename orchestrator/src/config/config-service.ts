@@ -8,7 +8,7 @@ import {
   type ConfigDestination,
   type ConfigScope,
   type ConfigSecret,
-  type ConfigWriteDestination,
+  type ConfigWriteDestination as WriteDestination,
   type DataKey,
 } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
@@ -50,9 +50,8 @@ import {
   pinnedSpaceMismatchRemedy,
   pinnedUserMismatchRemedy,
   RECORD_ACTIVE_SPACE_REMEDY,
+  RECORD_PERSONAL_SPACE_REMEDY,
 } from '../../../shared/record-remedies.ts'
-import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
-import { recordWriteSpace } from '../../../shared/record-write-space.ts'
 import { sealedValueIsEmpty, stripTrailingNewline } from '../../../shared/sealed-value.ts'
 import {
   generateDataKey,
@@ -98,18 +97,10 @@ async function identity(client: ConfigClient, env: ConfigEnvironment = process.e
 
 export async function personalConfigWriteDestination(
   client = hostedConfigClient(),
-): Promise<ConfigWriteDestination> {
+): Promise<WriteDestination> {
   const who = await client.whoami()
-  const decision = recordWriteSpace(
-    { kind: 'personal' },
-    {
-      declaredSpaces: {},
-      personalSpaceId: who.personalSpaceId,
-      memberships: parseRecordSpaceMemberships(who.memberships),
-    },
-  )
-  if ('refused' in decision) throw new Error(decision.remedy)
-  return { destinationSpaceId: decision.spaceId }
+  if (!who.personalSpaceId) throw new Error(RECORD_PERSONAL_SPACE_REMEDY)
+  return { destinationSpaceId: who.personalSpaceId }
 }
 
 async function unpinServerRevoked(client: ConfigClient, destination: ConfigDestination = {}) {
@@ -157,7 +148,7 @@ async function wrapsFor(
 
 async function currentOrCreate(
   client: ConfigClient,
-  destination: ConfigWriteDestination,
+  destination: WriteDestination,
   createDataKey = true,
   missingDestinationAccessRefusal?: () => Error,
 ) {
@@ -348,7 +339,7 @@ async function rotateDataKey(
   destination: ConfigDestination = {},
   env: ConfigEnvironment = process.env,
 ): Promise<{ key: DataKey; dek: Uint8Array; completed: string[]; rotated: boolean }> {
-  const rotationDestination: ConfigWriteDestination = {
+  const rotationDestination: WriteDestination = {
     ...destination,
     destinationSpaceId: selectedSpaceId ?? (await identity(client, env)).spaceId,
   }
@@ -413,8 +404,7 @@ async function rotateDataKey(
       )
       completed.push(`${row.scope}:${row.environment}:${row.key}`)
     }
-    for (const oldId of plan.retireDekIds)
-      await client.retireDataKey(oldId, rotationDestination)
+    for (const oldId of plan.retireDekIds) await client.retireDataKey(oldId, rotationDestination)
     return { key: current, dek, completed, rotated: rotate }
   } catch (error) {
     throw new Error(
@@ -566,7 +556,7 @@ export async function setSecret(
   scope: ConfigScope,
   client = hostedConfigClient(),
   options: {
-    destination: ConfigWriteDestination
+    destination: WriteDestination
     environment?: string
     metadata?: CredentialMetadataFields & {
       projectId: string | null
@@ -633,7 +623,7 @@ export async function deleteSecret(
   key: string,
   scope: ConfigScope,
   client = hostedConfigClient(),
-  options: { destination: ConfigWriteDestination; environment?: string },
+  options: { destination: WriteDestination; environment?: string },
 ) {
   const destination = options.destination
   const environment = options.environment ?? HOSTED_CONFIG_ENVIRONMENT
@@ -661,6 +651,13 @@ function legacySecretNamedSpaceRefusal(name: string, scope: ConfigScope): Error 
   return new Error(
     `refusing setup sealed-secret migration for ${name} in ${scope} scope: setup only writes user-scope secrets to the personal space; write the secret into a named space with \`${PLATFORM_SLUG} machine config secret set ${name} --space <slug>\``,
   )
+}
+
+type AdapterContext = [ConfigScope, ConfigClient, WriteDestination]
+type LegacySecretMigrationAdapters = {
+  plaintext?: (client: ConfigClient, row: ConfigSecret) => Promise<Uint8Array>
+  write?: (name: string, value: string, ...context: AdapterContext) => Promise<unknown>
+  delete?: (name: string, ...context: AdapterContext) => Promise<unknown>
 }
 
 /** Decide one scope without config, crypto, or network access. */
@@ -727,21 +724,7 @@ export async function applyLegacyEnvironmentSecretMigration(
 /** The config service has no rename verb, so setup opens, sets, and deletes in one operation. */
 export async function migrateLegacyEnvironmentSecrets(
   client = hostedConfigClient(),
-  adapters: {
-    plaintext?: (client: ConfigClient, row: ConfigSecret) => Promise<Uint8Array>
-    write?: (
-      name: string,
-      value: string,
-      scope: ConfigScope,
-      client: ConfigClient,
-      destination: ConfigWriteDestination,
-    ) => Promise<unknown>
-    delete?: (
-      name: string,
-      scope: ConfigScope,
-      client: ConfigClient,
-      destination: ConfigWriteDestination,
-    ) => Promise<unknown>
+  adapters: LegacySecretMigrationAdapters & {
     migrated?: (migration: SecretEnvironmentMigration) => Promise<void>
   } = {},
 ): Promise<SecretEnvironmentMigration[]> {
@@ -795,22 +778,7 @@ export async function migrateLegacyEnvironmentSecrets(
 export async function restoreLegacyEnvironmentSecrets(
   migrations: ReadonlyArray<SecretEnvironmentMigration>,
   client = hostedConfigClient(),
-  adapters: {
-    plaintext?: (client: ConfigClient, row: ConfigSecret) => Promise<Uint8Array>
-    write?: (
-      name: string,
-      value: string,
-      scope: ConfigScope,
-      client: ConfigClient,
-      destination: ConfigWriteDestination,
-    ) => Promise<unknown>
-    delete?: (
-      name: string,
-      scope: ConfigScope,
-      client: ConfigClient,
-      destination: ConfigWriteDestination,
-    ) => Promise<unknown>
-  } = {},
+  adapters: LegacySecretMigrationAdapters = {},
 ): Promise<void> {
   const unsupported = migrations.find((migration) => migration.scope !== 'user')
   if (unsupported) throw legacySecretNamedSpaceRefusal(unsupported.newName, unsupported.scope)
@@ -883,7 +851,7 @@ export async function setConfigEntry(
   client: ConfigClient | undefined = undefined,
   env: ConfigEnvironment = process.env,
   clientFactory: () => ConfigClient = () => hostedConfigClient(env),
-  destination?: ConfigWriteDestination,
+  destination?: WriteDestination,
 ) {
   const home = configHome(key, requested)
   if (home === 'machine') {
@@ -1007,7 +975,7 @@ export async function setEntry(
   scope: ConfigScope,
   expectedRowVersion?: number | null,
   client = hostedConfigClient(),
-  destination: ConfigWriteDestination,
+  destination: WriteDestination,
 ) {
   const shipTo = isShipToConfigKey(key)
   const storedKey = shipTo ? SHIP_TO_CONFIG_KEY : key
@@ -1054,7 +1022,7 @@ export async function deleteEntry(
   scope: ConfigScope,
   expectedRowVersion?: number,
   client = hostedConfigClient(),
-  destination: ConfigWriteDestination,
+  destination: WriteDestination,
 ) {
   const version = expectedRowVersion ?? (await getEntry(key, scope, client, destination)).rowVersion
   return client.deleteEntry(

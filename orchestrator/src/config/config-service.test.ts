@@ -383,9 +383,7 @@ test('the service refuses a blank value before touching the store', async () => 
     setSecret('EMPTY_KEY', '   \n', 'user', client, {
       destination: { destinationSpaceId: 'space-1' },
     }),
-  ).rejects.toThrow(
-    sealedEmptyRefusal('EMPTY_KEY', 'user'),
-  )
+  ).rejects.toThrow(sealedEmptyRefusal('EMPTY_KEY', 'user'))
   expect(calls).toEqual([])
 })
 

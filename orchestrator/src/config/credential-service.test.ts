@@ -245,23 +245,27 @@ test('set credential writes a project-bound row with its metadata and hint', asy
     recipientPublicKey: pair.publicKey,
   })
   const encode = (value: Uint8Array) => Buffer.from(value).toString('base64url')
-  const putSecret = mock(async (_key: string, input: object) => input)
+  const putSecret = mock(async (_key: string, input: object, _destination: object) => input)
+  const dataKey = {
+    id: dekId,
+    version: 1,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    retiredAt: null,
+    wraps: [
+      {
+        recipientKeyId: keyId,
+        senderKeyId: keyId,
+        enc: encode(wrapped.enc),
+        ciphertext: encode(wrapped.ciphertext),
+      },
+    ],
+  }
   const client = {
     readTrustLog: async () => [],
-    currentDataKey: async () => ({
-      id: dekId,
-      version: 1,
-      createdAt: '2026-01-01T00:00:00.000Z',
-      retiredAt: null,
-      wraps: [
-        {
-          recipientKeyId: keyId,
-          senderKeyId: keyId,
-          enc: encode(wrapped.enc),
-          ciphertext: encode(wrapped.ciphertext),
-        },
-      ],
-    }),
+    currentDataKey: async () => dataKey,
+    listDataKeys: async () => [dataKey],
+    listMachineKeys: async () => [],
+    listSecrets: async () => [],
     getSecret: async () => {
       throw new ConfigClientError('response', '/v1/config/secrets/OPENROUTER_API_KEY', 404)
     },
@@ -288,7 +292,6 @@ test('set credential writes a project-bound row with its metadata and hint', asy
   expect(putSecret).toHaveBeenCalledTimes(2)
   expect(putSecret.mock.calls[0]?.[0]).toBe('openrouter/api-key#default@local')
   expect(putSecret.mock.calls[0]?.[1]).toMatchObject({
-    destinationSpaceId: address.destinationSpaceId,
     projectId: address.projectId,
     provider: address.provider,
     name: address.name,
@@ -297,10 +300,18 @@ test('set credential writes a project-bound row with its metadata and hint', asy
     environment: address.environment,
     hint: 'abcd…wxyz',
   })
+  expect(putSecret.mock.calls[0]?.[2]).toEqual({
+    destinationSpaceId: address.destinationSpaceId,
+    projectId: address.projectId,
+  })
   expect(putSecret.mock.calls[1]?.[1]).toMatchObject({
     projectId: null,
     reachSpaceIds: ['01990000-0000-7000-8000-000000000005'],
     hint: 'abcd…wxyz',
+  })
+  expect(putSecret.mock.calls[1]?.[2]).toEqual({
+    destinationSpaceId: address.destinationSpaceId,
+    projectId: null,
   })
 })
 
