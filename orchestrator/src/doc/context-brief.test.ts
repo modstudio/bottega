@@ -158,6 +158,33 @@ test('renders a keyless cursor with its idle age and close command', () => {
   )
 })
 
+test('renders unresolved task project question reads as unavailable', () => {
+  const brief: ContextBrief = {
+    session: 'session',
+    fullCommand: 'full',
+    holders: [
+      {
+        key: 'DEV-1',
+        title: 'Unresolved task',
+        kind: 'task',
+        items: [],
+        openQuestionsUnavailable:
+          'questions unread for unresolved project missing-project; register or refresh the project, then retry',
+      },
+    ],
+    runs: [],
+    cursors: [],
+    claims: [],
+    waiting: { boardRequests: 0, questions: null, filedIssues: 0, resumeBriefs: 0 },
+    autonomy: 'manual',
+  }
+
+  expect(renderContextBrief(brief)).toContain(
+    'open: questions unread for unresolved project missing-project; register or refresh the project, then retry',
+  )
+  expect(renderContextBrief(brief)).not.toContain('open: none')
+})
+
 test('keeps a fresh keyless cursor visible without an abandon remedy', () => {
   const brief: ContextBrief = {
     session: 'session-a',
@@ -482,6 +509,8 @@ test('reads a working task brief from its record-id holder while retaining the t
       key: 'STAR-1',
       title: 'Stable holder',
       kind: 'task',
+      openQuestionsUnavailable:
+        'questions unread for unresolved project starship; register or refresh the project, then retry',
       items: [
         expect.objectContaining(
           item(`task:${recordId}`, 'position', 'position', 'Continue.', 'test'),

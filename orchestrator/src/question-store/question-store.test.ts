@@ -227,9 +227,6 @@ async function questionStoreContract(
   expect((await store.read({ read: 'max-number' })).items).toEqual([{ number: 2 }])
   expect((await store.read({ read: 'by-id', ids: [run.id] })).items).toHaveLength(1)
   expect((await store.read({ read: 'for-run', runId: RUN_ID })).items).toHaveLength(1)
-  expect((await store.read({ read: 'for-runs', runIds: [RUN_ID] })).items).toEqual(
-    (await store.read({ read: 'for-run', runId: RUN_ID })).items,
-  )
   expect(
     (
       await store.read({

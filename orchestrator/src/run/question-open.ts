@@ -27,6 +27,20 @@ export async function questionsForRunChains(
   )
 }
 
+export async function openRunChainRoots(
+  database: Database,
+  rootIds: readonly string[],
+): Promise<Set<string>> {
+  const questions = await questionsForRunChains(database, rootIds)
+  return new Set(
+    [...questions]
+      .filter(([, rows]) =>
+        rows.some((row) => row.answered_at === null && row.closed_at === null),
+      )
+      .map(([rootId]) => rootId),
+  )
+}
+
 export async function openChainQuestions<T>(database: Database, runId: string): Promise<T[]> {
   // Keep the degraded `collect` command's startup graph thin while still crossing
   // the question port when the asking-state branch is actually evaluated.

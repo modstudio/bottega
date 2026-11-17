@@ -39,7 +39,10 @@ import { AGENTS } from '../agent/agent-registry.ts'
 import type { Agent } from '../agent/agents.ts'
 import { db } from '../database/db.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
-import { questionProjects } from '../question-store/question-store-read.ts'
+import {
+  questionProjects,
+  questionRulingsPaged,
+} from '../question-store/question-store-read.ts'
 import { RecordQuestionStore } from '../question-store/question-store-record.ts'
 import { inspectRunRecordBackfill, type RunRecordBackfillInspection } from '../run/run-outbox.ts'
 import {
@@ -722,21 +725,9 @@ async function hostedMachineQuestionCount(database: Database, identity: RecordId
     database,
     client: questionClientWithIdentity(identity),
   })
-  const questionIds: string[] = []
-  let changedAfter: string | undefined
-  let more = true
-  while (more) {
-    const page = await questionStore.read({
-      read: 'rulings',
-      kind: 'all',
-      ...(changedAfter === undefined ? { limit: 100 } : { changedAfter }),
-    })
-    questionIds.push(...page.items.map((row) => String((row as Record<string, unknown>).record_id)))
-    more = page.more === true
-    if (!more) break
-    if (!page.cursor) throw new Error('question page has no continuation cursor')
-    changedAfter = page.cursor
-  }
+  const questionIds = (await questionRulingsPaged(questionStore, 'all')).map((row) =>
+    String(row.record_id),
+  )
   const pages = Array.from({ length: Math.ceil(questionIds.length / 100) }, (_, index) =>
     questionStore.read({
       read: 'by-id',

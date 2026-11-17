@@ -52,6 +52,7 @@ type ContextBriefHolder = {
   kind: 'session' | 'cursor' | 'task' | 'epic'
   items: ContextItem[]
   openQuestions?: Array<{ number: number; question: string }>
+  openQuestionsUnavailable?: string
 }
 
 export type ContextBrief = {
@@ -105,6 +106,7 @@ function renderItem(item: ContextItem): string {
 
 function renderOpenQuestions(holder: ContextBriefHolder): string[] {
   if (holder.kind === 'cursor') return []
+  if (holder.openQuestionsUnavailable) return [`  open: ${holder.openQuestionsUnavailable}`]
   const questions = (holder.openQuestions ?? []).map(
     (question) => `  open: ${firstLine(question.question)}`,
   )
@@ -227,9 +229,13 @@ export async function storedBriefHolders(
       reference.kind === 'task' || reference.kind === 'epic',
   )
   const openByTask = new Map<string, Array<{ number: number; question: string }>>()
+  const unresolvedProjects = new Set<string>()
   for (const projectName of new Set(taskReferences.map(({ project }) => project))) {
     const project = projectByName(projectName, database)
-    if (!project) continue
+    if (!project) {
+      unresolvedProjects.add(projectName)
+      continue
+    }
     const projectTasks = taskReferences.filter((reference) => reference.project === projectName)
     const rows = await openQuestionsForTasks(
       database,
@@ -261,6 +267,11 @@ export async function storedBriefHolders(
         return {
           ...holder,
           items: storedItems(taskContextHolder(recordId), database),
+          ...(unresolvedProjects.has(_project)
+            ? {
+                openQuestionsUnavailable: `questions unread for unresolved project ${_project}; register or refresh the project, then retry`,
+              }
+            : {}),
           ...(openQuestions.length ? { openQuestions } : {}),
         }
       }),

@@ -106,7 +106,8 @@ function decodeSpaceCursors(value: string): SpaceCursors {
   }
 }
 
-const SINGLE_SPACE_READ_KINDS = ['by-id', 'for-run', 'for-runs', 'for-cursor'] as const
+const SINGLE_SPACE_READ_KINDS = ['by-id', 'for-run', 'for-cursor'] as const
+const MACHINE_ENRICHED_READ_KINDS = [...SINGLE_SPACE_READ_KINDS, 'for-runs'] as const
 
 export class RecordQuestionStore implements QuestionStore {
   private readonly input: {
@@ -326,7 +327,9 @@ export class RecordQuestionStore implements QuestionStore {
         : (SINGLE_SPACE_READ_KINDS as readonly string[]).includes(input.read)
           ? await this.singleSpaceRead(input)
           : await this.listRead(input)
-    const enrichMachineFields = (SINGLE_SPACE_READ_KINDS as readonly string[]).includes(input.read)
+    const enrichMachineFields = (MACHINE_ENRICHED_READ_KINDS as readonly string[]).includes(
+      input.read,
+    )
     const items = result.items.map((row) =>
       localQuestionRow(this.input.database, row, enrichMachineFields),
     )

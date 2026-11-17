@@ -367,13 +367,15 @@ export async function readQuestionIdentityMap(
   if (!numbers.length) return []
   return QuestionIdentityListSchema.parse(
     JSON.parse(
-      await orchProcess(
-        ['question', 'identity-map', ...numbers.map(String)],
-        RUN_IDENTITY_MAP_DEADLINE_MS,
-      ),
+      await orchProcess(questionIdentityMapArgv(numbers), RUN_IDENTITY_MAP_DEADLINE_MS),
     ),
   )
 }
+
+export const questionIdentityMapArgv = (numbers: readonly number[]): string[] => [
+  'question-identities',
+  ...numbers.map(String),
+]
 
 export async function readWorkflowCursorIdentityMap(): Promise<WorkflowCursorIdentityRow[]> {
   return WorkflowCursorIdentityRowListSchema.parse(

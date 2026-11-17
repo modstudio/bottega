@@ -9,6 +9,8 @@ import {
   registerRecordQuestionRoutes,
 } from './record-api-question.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { UnboundedQuestionRulingsError } from './record-question-contract.ts'
+import { readRecordQuestions } from './record-question-read.ts'
 
 const tenant = {
   url: 'postgres://record.test',
@@ -82,6 +84,13 @@ test('hosted rulings refuse an unbounded history read and serve every bounded fo
                 ? 'changedAfter'
                 : 'unbounded',
         )
+      if (
+        input.read === 'rulings' &&
+        input.since === undefined &&
+        input.limit === undefined &&
+        input.changedAfter === undefined
+      )
+        throw new UnboundedQuestionRulingsError()
       return { items: [], cursor: encodeRecordChangeCursor({ xid: 1n, seq: 1n }), more: false }
     },
   })
@@ -98,7 +107,13 @@ test('hosted rulings refuse an unbounded history read and serve every bounded fo
   expect((await api.request('/v1/questions?read=rulings&limit=1')).status).toBe(200)
   const cursor = encodeRecordChangeCursor({ xid: 1n, seq: 1n })
   expect((await api.request(`/v1/questions?read=rulings&changedAfter=${cursor}`)).status).toBe(200)
-  expect(reads).toEqual(['since', 'limit', 'changedAfter'])
+  expect(reads).toEqual(['unbounded', 'since', 'limit', 'changedAfter'])
+})
+
+test('hosted read service refuses unbounded ruling materialization', async () => {
+  expect(
+    readRecordQuestions({ ...tenant, read: 'rulings', kind: 'all' }),
+  ).rejects.toBeInstanceOf(UnboundedQuestionRulingsError)
 })
 
 test('hosted question reads other than rulings still refuse changedAfter', async () => {

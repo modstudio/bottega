@@ -135,7 +135,7 @@ test('inbox does not list a closed question', async () => {
   expect(JSON.parse(await inbox({ all: true, json: true }))).toEqual([])
 })
 
-test('inbox excludes an answered overturned ruling', async () => {
+test('inbox excludes answered rulings regardless of later ruling metadata', async () => {
   const run = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   db()
     .query(
@@ -144,10 +144,6 @@ test('inbox excludes an answered overturned ruling', async () => {
        VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'2026-09-20','Which?','Old','2026-09-21','2026-09-22','owner','Wrong evidence')`,
     )
     .run(run)
-  expect(await inbox({ all: true })).toBe('no open questions')
-})
-test('inbox excludes an answered filed ruling', async () => {
-  const run = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   db()
     .query(
       `INSERT INTO question
@@ -155,11 +151,6 @@ test('inbox excludes an answered filed ruling', async () => {
        VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'2026-09-20','Which?','Keep it.','2026-09-21','doc','12@rev-1','2026-09-22')`,
     )
     .run(run)
-  expect(await inbox({ all: true })).toBe('no open questions')
-  expect(JSON.parse(await inbox({ all: true, json: true }))).toEqual([])
-})
-test('inbox excludes an answered canon filing', async () => {
-  const run = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   db()
     .query(
       `INSERT INTO question

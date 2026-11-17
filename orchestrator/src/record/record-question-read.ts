@@ -9,7 +9,11 @@ import {
 } from '../../../shared/record/record-changes.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { recordPool } from './record-pool.ts'
-import type { QuestionReadInput, RecordQuestionReadInput } from './record-question-contract.ts'
+import {
+  type QuestionReadInput,
+  type RecordQuestionReadInput,
+  UnboundedQuestionRulingsError,
+} from './record-question-contract.ts'
 
 type Tenant = { url: string } & TenantPrincipal
 type Row = Record<string, unknown>
@@ -380,6 +384,17 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
   )
 }
 
+export async function readRecordQuestionRows(
+  tx: SQL,
+  input: Exclude<QuestionReadInput, { read: 'rulings' }>,
+): Promise<{ items: Row[]; cursor?: string; more?: boolean }> {
+  const items = await rows(tx, input)
+  if (input.read !== 'inbox' || input.limit === undefined) return { items }
+  const offset = input.changedAfter === undefined ? 0 : Number(input.changedAfter)
+  const page = items.slice(0, input.limit)
+  return { items: page, cursor: String(offset + page.length), more: items.length > input.limit }
+}
+
 type RulingsInput = Tenant & Extract<RecordQuestionReadInput, { read: 'rulings' }>
 type RecordPool = ReturnType<typeof recordPool>
 
@@ -476,18 +491,17 @@ async function readRulingChanges(client: RecordPool, input: RulingsInput) {
 export async function readRecordQuestions(
   input: Tenant & RecordQuestionReadInput,
 ): Promise<{ items: Row[]; cursor?: string; more?: boolean; reset?: boolean }> {
-  const client = recordPool(input.url)
   if (input.read === 'rulings') {
+    if (input.since === undefined && input.limit === undefined && input.changedAfter === undefined)
+      throw new UnboundedQuestionRulingsError()
+    const client = recordPool(input.url)
     if (input.limit !== undefined || (input.changedAfter && 'questionNumber' in input.changedAfter))
       return readRulingPage(client, input)
     return readRulingChanges(client, input)
   }
+  const client = recordPool(input.url)
   return client.begin(async (tx) => {
     await bindTenant(tx, input)
-    const items = await rows(tx, input)
-    if (input.read !== 'inbox' || input.limit === undefined) return { items }
-    const offset = input.changedAfter === undefined ? 0 : Number(input.changedAfter)
-    const page = items.slice(0, input.limit)
-    return { items: page, cursor: String(offset + page.length), more: items.length > input.limit }
+    return readRecordQuestionRows(tx, input)
   })
 }

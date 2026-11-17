@@ -38,6 +38,7 @@ import {
   machinePermissionArgv,
   machinePermissionListArgv,
   projectArgv,
+  questionIdentityMapArgv,
   projectListProcessError,
   readRunChangesArgv,
   readRunsArgv,
@@ -64,6 +65,10 @@ test('readRunsById builds one id option per id and no since option', () => {
 
 test('readRunChanges builds the changed-after cursor option', () => {
   expect(readRunChangesArgv('73')).toEqual(['run', 'list', '--json', '--changed-after', '73'])
+})
+
+test('question identity map invokes the registered top-level command', () => {
+  expect(questionIdentityMapArgv([7, 11])).toEqual(['question-identities', '7', '11'])
 })
 
 test('readRuns builds the since option', () => {

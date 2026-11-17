@@ -22,8 +22,8 @@ import type {
 } from '../workflow/task-flow-store-types.ts'
 import { questionOpenSql, questionTaskHolderSql } from './question-store-sql.ts'
 
-export function questionNumberProjectId(database: Database, number: number): string | null {
-  const projectIds = database
+export function questionNumberProjectIds(database: Database, number: number): string[] {
+  return database
     .query<{ project_record_id: string | null }, [number]>(
       `SELECT DISTINCT COALESCE(owner.project_record_id,cursor.project_record_id) project_record_id
        FROM question q LEFT JOIN run owner ON owner.record_id=q.run_record_id
@@ -32,11 +32,6 @@ export function questionNumberProjectId(database: Database, number: number): str
     )
     .all(number)
     .flatMap((row) => (row.project_record_id ? [row.project_record_id] : []))
-  if (projectIds.length > 1)
-    throw new Error(
-      `question number ${number} exists in more than one project; pass the question UUID, then retry`,
-    )
-  return projectIds[0] ?? null
 }
 
 export type QueriedInboxQuestion = {
@@ -197,7 +192,7 @@ export function runInboxQuestionRows(
        FROM question q JOIN run r ON r.record_id=q.run_record_id
        JOIN run root ON root.record_id=COALESCE(r.parent_run_record_id,r.record_id)
        LEFT JOIN session_seen seen ON seen.session_id=r.session_id
-      WHERE q.answered_at IS NULL AND q.closed_at IS NULL
+      WHERE ${questionOpenSql('q')}
       ORDER BY q.run_record_id,q.number LIMIT ? OFFSET ?`,
     )
     .all(cutoff, limit ?? -1, offset) as QueriedInboxQuestion[]
@@ -585,14 +580,9 @@ export const questionsForRuns = (
   runIds: readonly string[],
 ): Record<string, unknown>[] => {
   if (!runIds.length) return []
-  return database
-    .query(
-      `SELECT ${QUESTION_PORT_COLUMNS} FROM question q
-       LEFT JOIN run owner ON owner.record_id=q.run_record_id
-       LEFT JOIN project run_project ON run_project.record_id=owner.project_record_id
-       LEFT JOIN workflow_cursor cursor ON cursor.record_id=q.workflow_cursor_record_id
-       LEFT JOIN project ON project.record_id=cursor.project_record_id
-       WHERE q.run_record_id IN (${runIds.map(() => '?').join(',')}) ORDER BY q.number`,
-    )
-    .all(...runIds) as Record<string, unknown>[]
+  return filteredQuestionRows(
+    database,
+    `q.run_record_id IN (${runIds.map(() => '?').join(',')})`,
+    [...runIds],
+  )
 }

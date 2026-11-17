@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { questionNumberProjectId } from './question-store-sqlite-reads.ts'
+import { questionNumberProjectId } from './question-store-read.ts'
 
 test('question number project lookup refuses numbers shared by projects', () => {
   const database = new Database(':memory:')

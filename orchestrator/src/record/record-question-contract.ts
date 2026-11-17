@@ -152,19 +152,7 @@ export const questionChangedAfterRefusal = {
 
 const readLimit = z.coerce.number().int().positive().max(100).optional()
 const changedAfter = z.string().min(1).optional()
-const questionIds = z.preprocess(
-  (value) => (typeof value === 'string' ? value.split(',').filter(Boolean) : value),
-  z.array(id).min(1).max(100),
-)
-const workflowCursorRecordIds = z.preprocess(
-  (value) => (typeof value === 'string' ? value.split(',').filter(Boolean) : value),
-  z.array(id).min(1).max(100),
-)
-const taskRecordIds = z.preprocess(
-  (value) => (typeof value === 'string' ? value.split(',').filter(Boolean) : value),
-  z.array(id).min(1).max(100),
-)
-const runIds = z.preprocess(
+const questionIdList = z.preprocess(
   (value) => (typeof value === 'string' ? value.split(',').filter(Boolean) : value),
   z.array(id).min(1).max(100),
 )
@@ -173,6 +161,14 @@ export const unboundedQuestionRulingsRefusal = {
   remedy:
     'use by-id, by-number, for-run, for-runs, for-session, open-for-cursors, open-for-tasks, or unlinked-workflow for a targeted read; otherwise page rulings with limit and changedAfter',
 } as const
+export class UnboundedQuestionRulingsError extends Error {
+  readonly remedy = unboundedQuestionRulingsRefusal.remedy
+
+  constructor() {
+    super(unboundedQuestionRulingsRefusal.message)
+    this.name = 'UnboundedQuestionRulingsError'
+  }
+}
 export const questionReadSchema = z.discriminatedUnion('read', [
   z.object({ read: z.literal('inbox'), limit: readLimit, changedAfter }),
   z.object({ read: z.literal('waiting'), limit: readLimit, changedAfter }),
@@ -199,12 +195,12 @@ export const questionReadSchema = z.discriminatedUnion('read', [
   z.object({ read: z.literal('projects'), limit: readLimit, changedAfter }),
   z.object({
     read: z.literal('by-id'),
-    ids: questionIds,
+    ids: questionIdList,
     limit: readLimit,
     changedAfter,
   }),
   z.object({ read: z.literal('for-run'), runId: id, limit: readLimit, changedAfter }),
-  z.object({ read: z.literal('for-runs'), runIds, limit: readLimit, changedAfter }),
+  z.object({ read: z.literal('for-runs'), runIds: questionIdList, limit: readLimit, changedAfter }),
   z.object({
     read: z.literal('for-session'),
     sessionId: z.string().min(1, 'sessionId is required'),
@@ -220,11 +216,16 @@ export const questionReadSchema = z.discriminatedUnion('read', [
   }),
   z.object({
     read: z.literal('open-for-cursors'),
-    workflowCursorRecordIds,
+    workflowCursorRecordIds: questionIdList,
     limit: readLimit,
     changedAfter,
   }),
-  z.object({ read: z.literal('open-for-tasks'), taskRecordIds, limit: readLimit, changedAfter }),
+  z.object({
+    read: z.literal('open-for-tasks'),
+    taskRecordIds: questionIdList,
+    limit: readLimit,
+    changedAfter,
+  }),
   z.object({
     read: z.literal('unlinked-workflow'),
     project: z.string().min(1).optional(),

@@ -18,6 +18,7 @@ import type {
   TaskFlowWaitingQuestionRow,
 } from '../workflow/task-flow-store-types.ts'
 import { questionStore } from './question-store.ts'
+import { questionRulingsPaged } from './question-store-read.ts'
 import type { QuestionReadRow, QuestionStore } from './question-store-types.ts'
 
 type StageSelector = Record<string, unknown>
@@ -215,26 +216,9 @@ function rulingListReads(questions: QuestionStore) {
       after: number | null
       cursor: number | null
     }): Promise<TaskFlowRulingRow[]> {
-      const rows: QuestionReadRow[] = []
-      let changedAfter: string | undefined
-      let more = true
-      while (more) {
-        const page = await questions.read({
-          read: 'rulings',
-          kind: input.kind,
-          ...(input.since
-            ? { since: input.since }
-            : changedAfter === undefined
-              ? { limit: 100 }
-              : { changedAfter }),
-        })
-        rows.push(...page.items)
-        more = input.since === undefined && page.more === true
-        if (!more) break
-        if (!page.cursor)
-          throw new Error('question rulings page says more without a continuation cursor')
-        changedAfter = page.cursor
-      }
+      const rows: QuestionReadRow[] = input.since
+        ? (await questions.read({ read: 'rulings', kind: input.kind, since: input.since })).items
+        : ((await questionRulingsPaged(questions, input.kind)) as QuestionReadRow[])
       for (const row of rows) {
         const cursor = field(row, 'workflow_cursor_id')
         if (typeof cursor === 'string' && field(row, 'workflow_slug') == null)

@@ -16,7 +16,7 @@ import {
   questionReadSchema,
   questionWriteSchema,
   type RecordQuestionReadInput,
-  unboundedQuestionRulingsRefusal,
+  UnboundedQuestionRulingsError,
 } from './record-question-contract.ts'
 
 type Environment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
@@ -32,17 +32,17 @@ async function rulingReadResponse(
   tenant: Tenant,
   input: Extract<QuestionReadInput, { read: 'rulings' }>,
 ): Promise<Response> {
-  if (input.since === undefined && input.limit === undefined && input.changedAfter === undefined)
-    return context.json(
-      {
-        error: unboundedQuestionRulingsRefusal.message,
-        remedy: unboundedQuestionRulingsRefusal.remedy,
-      },
-      422,
-    )
+  const serve = async (read: Tenant & RecordQuestionReadInput): Promise<Response> => {
+    try {
+      return context.json(await readQuestions(read))
+    } catch (error) {
+      if (error instanceof UnboundedQuestionRulingsError)
+        return context.json({ error: error.message, remedy: error.remedy }, 422)
+      throw error
+    }
+  }
   const { changedAfter: encodedChangedAfter, ...read } = input
-  if (encodedChangedAfter === undefined)
-    return context.json(await readQuestions({ ...tenant, ...read }))
+  if (encodedChangedAfter === undefined) return serve({ ...tenant, ...read })
   if (read.limit !== undefined)
     return context.json(
       {
@@ -67,7 +67,7 @@ async function rulingReadResponse(
       422,
     )
   }
-  return context.json(await readQuestions({ ...tenant, ...read, changedAfter }))
+  return serve({ ...tenant, ...read, changedAfter })
 }
 type Ports = {
   scope(context: Context<Environment>): Tenant | null

@@ -18,8 +18,7 @@ import {
 } from '../gate/worker-check-omissions.ts'
 import { parseMcpProbe } from '../mcp/mcp-probe.ts'
 import { failureReason, outcomeOf } from '../outcome.ts'
-import { questionsForRuns } from '../question-store/question-store-read.ts'
-import { runChainIds } from '../run/run-chain.ts'
+import { openRunChainRoots } from '../run/question-open.ts'
 import { HARNESS_EXECUTOR } from '../run/run-executor.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import type { ObservedDeadRun } from '../run/run-liveness.ts'
@@ -165,20 +164,7 @@ async function resolveAskings(
   )
   for (const runId of runIds) if (!rootsByRun.has(runId)) throw new Error(`no run ${runId}`)
   const roots = [...new Set(rootsByRun.values())]
-  const chainIdsByRoot = new Map(roots.map((rootId) => [rootId, runChainIds(database, rootId)]))
-  const questions = await questionsForRuns(database, [
-    ...new Set([...chainIdsByRoot.values()].flat()),
-  ])
-  const openRunIds = new Set(
-    questions
-      .filter((row) => row.answered_at === null && row.closed_at === null)
-      .map((row) => String(row.run_record_id)),
-  )
-  const openRoots = new Set(
-    [...chainIdsByRoot]
-      .filter(([, chainIds]) => chainIds.some((runId) => openRunIds.has(runId)))
-      .map(([rootId]) => rootId),
-  )
+  const openRoots = await openRunChainRoots(database, roots)
   const runningByRoot = new Map<string, string>()
   const running = database
     .query<{ record_id: string; root_id: string }, string[]>(

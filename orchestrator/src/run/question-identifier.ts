@@ -4,23 +4,17 @@
 import type { Database } from 'bun:sqlite'
 import type { QuestionIdentity } from '../../../shared/orch-contract.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
-import { questionById, questionByNumber } from '../question-store/question-store-read.ts'
-import { questionNumberProjectId } from '../question-store/question-store-sqlite-reads.ts'
+import {
+  questionById,
+  questionByNumber,
+  questionNumberProjectId,
+} from '../question-store/question-store-read.ts'
 
 export type ParsedQuestionIdentifier =
   | { kind: 'number'; id: number }
   | { kind: 'record-id'; recordId: string }
 
 const ACCEPTED_QUESTION_IDENTIFIERS = 'a positive decimal question number or a full question UUID'
-
-function questionNumberProject(database: Database, number: number): string {
-  const projectId = questionNumberProjectId(database, number)
-  if (!projectId)
-    throw new Error(
-      `question ${number} has no locally resolved record space; pass the question UUID`,
-    )
-  return projectId
-}
 
 export async function questionIdentityMap(
   database: Database,
@@ -31,7 +25,7 @@ export async function questionIdentityMap(
       const parsed = parseQuestionIdentifier(identifier)
       const row =
         parsed.kind === 'number'
-          ? await questionByNumber(database, parsed.id, questionNumberProject(database, parsed.id))
+          ? await questionByNumber(database, parsed.id, questionNumberProjectId(database, parsed.id))
           : await questionById(database, parsed.recordId)
       if (!row) throw new Error(`no question has identifier ${JSON.stringify(String(identifier))}`)
       return { number: Number(row.number), record_id: String(row.record_id) }
@@ -60,7 +54,7 @@ export async function resolveQuestionIdentifier(
     const row = await questionByNumber(
       database,
       parsed.id,
-      questionNumberProject(database, parsed.id),
+      questionNumberProjectId(database, parsed.id),
     )
     if (row) return String(row.record_id)
     throw new Error(`no question has number ${parsed.id}; pass ${ACCEPTED_QUESTION_IDENTIFIERS}`)
