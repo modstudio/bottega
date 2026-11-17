@@ -1,5 +1,18 @@
 // concern: run-liveness-policy
-/** Dependency-free time bounds shared by run liveness and admission. */
+/** Dependency-free time bounds and pure policy shared by run liveness and admission. */
+
+export const RUN_HOST_WAIT_MAX_MS = 15 * 60_000
+export const RUN_HOST_WAIT_POLL_MS = 1_000
+
+export function isFreshRunHostWait(
+  status: string,
+  since: string | null | undefined,
+  now = Date.now(),
+): boolean {
+  if (status !== 'running' || !since) return false
+  const started = Date.parse(since)
+  return Number.isFinite(started) && now - started <= RUN_HOST_WAIT_MAX_MS + RUN_HOST_WAIT_POLL_MS
+}
 
 /**
  * The outer ceiling for a run and for callers waiting on one. Liveness itself
@@ -11,3 +24,27 @@ const DETACHED_AGENT_CAPACITY_STALE_MARGIN_MS = 5 * 60_000
 // Agent selection must finish before liveness can classify its reserved run as stale.
 export const DETACHED_AGENT_CAPACITY_WAIT_MAX_MS =
   STALE_AFTER_MS - DETACHED_AGENT_CAPACITY_STALE_MARGIN_MS
+
+/** Whether an unlaunched agent is still within its capacity queue's live bound. */
+export function isFreshAgentCapacityWait(
+  status: string,
+  since: string | null | undefined,
+  agentPid: number | null | undefined,
+  clock = Date.now(),
+): boolean {
+  if (status !== 'running' || agentPid != null || !since) return false
+  const started = Date.parse(since)
+  return Number.isFinite(started) && clock - started <= DETACHED_AGENT_CAPACITY_WAIT_MAX_MS
+}
+
+/** Whether a running run is still within either capacity queue's live bound. */
+export function isRunQueuedForCapacity(
+  status: string,
+  hostWaitSince: string | null | undefined,
+  agentCapacityWaitSince: string | null | undefined,
+  agentPid: number | null | undefined,
+  clock = Date.now(),
+): boolean {
+  if (isFreshRunHostWait(status, hostWaitSince, clock)) return true
+  return isFreshAgentCapacityWait(status, agentCapacityWaitSince, agentPid, clock)
+}

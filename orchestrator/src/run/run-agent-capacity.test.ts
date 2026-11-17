@@ -12,8 +12,11 @@ import {
   decideCapacityWait,
   waitForAgentSelection,
 } from './run-agent-capacity.ts'
-import { RUN_HOST_WAIT_MAX_MS } from './run-host-capacity.ts'
-import { DETACHED_AGENT_CAPACITY_WAIT_MAX_MS, STALE_AFTER_MS } from './run-liveness-policy.ts'
+import {
+  DETACHED_AGENT_CAPACITY_WAIT_MAX_MS,
+  RUN_HOST_WAIT_MAX_MS,
+  STALE_AFTER_MS,
+} from './run-liveness-policy.ts'
 
 test('capacity wait decision picks the detached or foreground bound', () => {
   expect(agentCapacityWaitMaxMs(false)).toBe(RUN_HOST_WAIT_MAX_MS)

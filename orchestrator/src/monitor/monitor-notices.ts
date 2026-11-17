@@ -21,13 +21,12 @@ import {
   abandonedBootstrapConditions,
   askingRuns,
   deadRunningProcessConditions,
-  idleRunConditions,
   rulingConditions,
-  stalledRunConditions,
   terminalCloseOutRuns,
   unscoredRuns,
 } from './monitor-conditions.ts'
 import { checkHostedPressureCached } from './monitor-hosted-pressure.ts'
+import { idleRunConditions, stalledRunConditions } from './monitor-run-idle-conditions.ts'
 import {
   MONITOR_NOTICE_DELIVERY_POLICY,
   type MonitorNotice,

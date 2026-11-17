@@ -438,6 +438,7 @@ esac
                 "waiting_for_capacity": True,
                 "throttled": None,
                 "live_status_detail": "waiting for capacity since 2026-10-21T12:00:00.000Z",
+                "idle": "idle 6m",
             },
             {
                 "waiting_for_capacity": False,
@@ -461,6 +462,8 @@ esac
                     check=True,
                 )
                 self.assertIn(operational["live_status_detail"], completed.stdout)
+                if operational["waiting_for_capacity"]:
+                    self.assertIn(base["live_member_id"] + "i", completed.stdout)
     def test_completion_keeps_a_failed_root_watched_only_inside_its_window(self):
         root = "01990000-0000-7000-8000-000000000001"
         member = "01990000-0000-7000-8000-000000000002"
