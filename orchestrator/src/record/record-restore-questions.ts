@@ -155,6 +155,39 @@ function retiredQuestionRows(database: Database): RetiredQuestionOutboxRow[] {
     .all()
 }
 
+type RestoreCounts = { restored: number; unchanged: number; refused: number; failed: number }
+type RestoreAttempt = { disposition: keyof RestoreCounts; reason?: string }
+
+async function restoreCandidate(
+  candidate: RestoreQuestionCandidate,
+  client: RecordQuestionClient,
+): Promise<RestoreAttempt> {
+  try {
+    const result = await client.writeQuestion!('restore', candidate.body, {
+      destinationSpaceId: candidate.spaceId,
+    })
+    return { disposition: restoreQuestionDisposition(result) }
+  } catch (error) {
+    const refused = restoreQuestionRefusalReason(error)
+    return {
+      disposition: refused ? 'refused' : 'failed',
+      reason: refused ?? (error instanceof Error ? error.message : String(error)),
+    }
+  }
+}
+
+function reportDryRun(
+  selection: ReturnType<typeof newestRetiredQuestionPayloads>,
+  ports: { log: (line: string) => void; setExitCode: (code: number) => void },
+): void {
+  for (const candidate of selection.candidates)
+    ports.log(`${candidate.number ?? '?'}\t${candidate.id}\twould restore`)
+  ports.log(
+    `${selection.candidates.length} would restore, ${selection.rejected.length} refused, 0 failed`,
+  )
+  if (selection.rejected.length) ports.setExitCode(1)
+}
+
 export async function restoreQuestionsCommand(
   options: { dryRun: boolean },
   ports: {
@@ -170,12 +203,7 @@ export async function restoreQuestionsCommand(
     ports.log(`${rejected.number ?? '?'}\t${rejected.id}\trefused: ${rejected.reason}`)
 
   if (options.dryRun) {
-    for (const candidate of selection.candidates)
-      ports.log(`${candidate.number ?? '?'}\t${candidate.id}\twould restore`)
-    ports.log(
-      `${selection.candidates.length} would restore, ${selection.rejected.length} refused, 0 failed`,
-    )
-    if (selection.rejected.length) ports.setExitCode(1)
+    reportDryRun(selection, ports)
     return
   }
 
@@ -183,21 +211,11 @@ export async function restoreQuestionsCommand(
   if (!client.writeQuestion)
     throw new Error('record API predates direct question writes; release hosted-api, then retry')
   for (const candidate of selection.candidates) {
-    try {
-      const result = await client.writeQuestion('restore', candidate.body, {
-        destinationSpaceId: candidate.spaceId,
-      })
-      const disposition = restoreQuestionDisposition(result)
-      counts[disposition] += 1
-      ports.log(`${candidate.number ?? '?'}\t${candidate.id}\t${disposition}`)
-    } catch (error) {
-      const reason = restoreQuestionRefusalReason(error)
-      const disposition = reason ? 'refused' : 'failed'
-      counts[disposition] += 1
-      ports.log(
-        `${candidate.number ?? '?'}\t${candidate.id}\t${disposition}: ${reason ?? (error instanceof Error ? error.message : String(error))}`,
-      )
-    }
+    const attempt = await restoreCandidate(candidate, client)
+    counts[attempt.disposition] += 1
+    ports.log(
+      `${candidate.number ?? '?'}\t${candidate.id}\t${attempt.disposition}${attempt.reason ? `: ${attempt.reason}` : ''}`,
+    )
   }
   ports.log(
     `${counts.restored} restored, ${counts.unchanged} unchanged, ${counts.refused} refused, ${counts.failed} failed`,

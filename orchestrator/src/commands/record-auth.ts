@@ -527,38 +527,7 @@ function retryOutboxCommand(rowId: string | undefined, matching: string | undefi
   log(`${count} orchestrator outbox rows will retry on the next sync`)
 }
 
-export function register(program: Command): void {
-  const record = program.command('record').description('manage the hosted record and its outbox')
-  registerUseCommand(record)
-  registerIdentityCommands(record)
-  registerPublicDocCommands(record)
-  registerPushCommands(record)
-  registerSpaceCommands(record)
-  record
-    .command('audit-secrets')
-    .description('scan local outbox payloads for secret material')
-    .option('--json', 'write the audit findings as JSON')
-    .option('--ids', 'include row identifiers in text output')
-    .action((options) =>
-      recordAuditSecretsCommand(
-        { json: Boolean(options.json), ids: Boolean(options.ids) },
-        presentation,
-      ),
-    )
-  record
-    .command('redact-synced')
-    .description('redact secret material from synchronized record payloads')
-    .option('--rules <comma-list>', 'comma-separated redaction rules to apply')
-    .option('--dry-run', 'report redactions without writing them')
-    .action((options) =>
-      recordRedactSyncedCommand(
-        {
-          ...(options.rules === undefined ? {} : { rules: String(options.rules) }),
-          dryRun: Boolean(options.dryRun),
-        },
-        presentation,
-      ),
-    )
+function registerOutboxCommands(record: Command): void {
   const outbox = record.command('outbox').description('operate on orchestrator outbox rows')
   outbox
     .command('retry')
@@ -600,6 +569,41 @@ export function register(program: Command): void {
         ),
       ),
     )
+}
+
+export function register(program: Command): void {
+  const record = program.command('record').description('manage the hosted record and its outbox')
+  registerUseCommand(record)
+  registerIdentityCommands(record)
+  registerPublicDocCommands(record)
+  registerPushCommands(record)
+  registerSpaceCommands(record)
+  record
+    .command('audit-secrets')
+    .description('scan local outbox payloads for secret material')
+    .option('--json', 'write the audit findings as JSON')
+    .option('--ids', 'include row identifiers in text output')
+    .action((options) =>
+      recordAuditSecretsCommand(
+        { json: Boolean(options.json), ids: Boolean(options.ids) },
+        presentation,
+      ),
+    )
+  record
+    .command('redact-synced')
+    .description('redact secret material from synchronized record payloads')
+    .option('--rules <comma-list>', 'comma-separated redaction rules to apply')
+    .option('--dry-run', 'report redactions without writing them')
+    .action((options) =>
+      recordRedactSyncedCommand(
+        {
+          ...(options.rules === undefined ? {} : { rules: String(options.rules) }),
+          dryRun: Boolean(options.dryRun),
+        },
+        presentation,
+      ),
+    )
+  registerOutboxCommands(record)
   record
     .command('publish')
     .description('publish hosted record snapshots')

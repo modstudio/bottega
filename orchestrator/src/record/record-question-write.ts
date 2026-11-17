@@ -23,6 +23,45 @@ import { QUESTION_STEP_CONFLICT_SET, questionValuesForWrite } from './record-que
 import { projectRecordId } from './record-sync-project-identity.ts'
 
 type Tenant = { url: string } & TenantPrincipal
+type ExistingQuestion = {
+  number: number | string | null
+  revision: number | string
+  last_request_id: string | null
+}
+
+function requireRestoreNumber(intent: QuestionIntent, input: Tenant & QuestionWriteBody): void {
+  if (intent !== 'restore' || input.question.number !== null) return
+  throw new RecordQuestionError(
+    `question ${input.question.id} cannot be restored without its original number; pass the number from the retired outbox payload, then retry`,
+    422,
+  )
+}
+
+async function questionNumberForWrite(
+  intent: QuestionIntent,
+  input: Tenant & QuestionWriteBody,
+  existing: ExistingQuestion | undefined,
+  tx: SQL,
+): Promise<number> {
+  if (intent !== 'ask' && intent !== 'restore' && !existing)
+    throw new RecordQuestionError(`question ${input.question.id} not found`, 404)
+  if (intent === 'restore' && !existing) {
+    const holder = (await tx`
+      SELECT id::text FROM question
+      WHERE space_id=${input.spaceId}::uuid AND number=${input.question.number}
+        AND id<>${input.question.id}::uuid
+      FOR UPDATE
+    `) as Array<{ id: string }>
+    if (holder[0])
+      throw new RecordQuestionError(
+        `question number ${input.question.number} in space ${input.spaceId} is already held by question ${holder[0].id}; restore under its original number is refused`,
+        409,
+      )
+  }
+  if (existing?.number != null) return Number(existing.number)
+  if (intent === 'restore') return input.question.number!
+  return allocateQuestionNumber(tx, input.spaceId)
+}
 
 export async function writeRecordQuestion(
   intent: QuestionIntent,
@@ -39,19 +78,11 @@ export async function writeRecordQuestionTransaction(
   input: Tenant & QuestionWriteBody,
   tx: SQL,
 ): Promise<QuestionWriteResult> {
-  if (intent === 'restore' && input.question.number === null)
-    throw new RecordQuestionError(
-      `question ${input.question.id} cannot be restored without its original number; pass the number from the retired outbox payload, then retry`,
-      422,
-    )
+  requireRestoreNumber(intent, input)
   const existing = (await tx`
       SELECT number,revision,last_request_id::text
         FROM question WHERE id=${input.question.id}::uuid FOR UPDATE
-    `) as Array<{
-    number: number | string | null
-    revision: number | string
-    last_request_id: string | null
-  }>
+    `) as ExistingQuestion[]
   if (existing[0]?.last_request_id === input.requestId)
     return {
       id: input.question.id,
@@ -59,27 +90,7 @@ export async function writeRecordQuestionTransaction(
       revision: Number(existing[0].revision),
       applied: true,
     }
-  if (intent !== 'ask' && intent !== 'restore' && !existing[0])
-    throw new RecordQuestionError(`question ${input.question.id} not found`, 404)
-  if (intent === 'restore' && !existing[0]) {
-    const holder = (await tx`
-      SELECT id::text FROM question
-      WHERE space_id=${input.spaceId}::uuid AND number=${input.question.number}
-        AND id<>${input.question.id}::uuid
-      FOR UPDATE
-    `) as Array<{ id: string }>
-    if (holder[0])
-      throw new RecordQuestionError(
-        `question number ${input.question.number} in space ${input.spaceId} is already held by question ${holder[0].id}; restore under its original number is refused`,
-        409,
-      )
-  }
-  const number =
-    existing[0]?.number == null
-      ? intent === 'restore'
-        ? input.question.number!
-        : await allocateQuestionNumber(tx, input.spaceId)
-      : Number(existing[0].number)
+  const number = await questionNumberForWrite(intent, input, existing[0], tx)
   const payload = {
     ...input.question,
     number,
