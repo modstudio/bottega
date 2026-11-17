@@ -650,6 +650,66 @@ test('machine-wide hosted reads merge every registered project space', async () 
   expect(whoamiCalls).toBe(1)
 })
 
+test('each hosted task-flow keyed read uses one destination-free request', async () => {
+  const d = database()
+  const stage = hostedStage()
+  const counts = {
+    flowsById: 0,
+    stageLists: 0,
+    stagesById: 0,
+    textsById: 0,
+    obligationsById: 0,
+  }
+  const memory = createMemoryRecordApiClient({
+    taskFlowStages: [stage],
+    taskFlowProjectSpaces: { [PROJECT_ID]: '01990000-0000-7000-8000-000000000002' },
+    taskFlowReadCounts: counts,
+  })
+  const destinations: unknown[] = []
+  const client = {
+    ...memory,
+    readTaskFlow: async (
+      selector: Parameters<NonNullable<typeof memory.readTaskFlow>>[0],
+      destination: Parameters<NonNullable<typeof memory.readTaskFlow>>[1],
+    ) => {
+      destinations.push(destination)
+      return memory.readTaskFlow!(selector, destination)
+    },
+    readTaskFlowStage: async (
+      id: string,
+      destination: Parameters<NonNullable<typeof memory.readTaskFlowStage>>[1],
+    ) => {
+      destinations.push(destination)
+      return memory.readTaskFlowStage!(id, destination)
+    },
+    readTaskFlowText: async (
+      id: string,
+      destination: Parameters<NonNullable<typeof memory.readTaskFlowText>>[1],
+    ) => {
+      destinations.push(destination)
+      return memory.readTaskFlowText!(id, destination)
+    },
+    readTaskFlowObligation: async (
+      id: string,
+      destination: Parameters<NonNullable<typeof memory.readTaskFlowObligation>>[1],
+    ) => {
+      destinations.push(destination)
+      return memory.readTaskFlowObligation!(id, destination)
+    },
+  }
+  const store = recordTaskFlowReadStore(d, client)
+  await store.flowState(stage.flow.id)
+  expect(counts.flowsById).toBe(1)
+  await store.stageByRecordId(stage.stage.id)
+  expect(counts.stagesById).toBe(1)
+  await store.textByRecordId(stage.stage.stepTexts![0]!.id)
+  expect(counts.textsById).toBe(1)
+  await store.obligationByRecordId(stage.stage.obligations![0]!.id)
+  expect(counts.obligationsById).toBe(1)
+  expect(counts.stagesById).toBe(2)
+  expect(destinations).toEqual([undefined, undefined, undefined, undefined, undefined])
+})
+
 describe('hosted task-flow question decorations', () => {
   let previousRecordApiUrl: string | undefined
 
@@ -690,5 +750,95 @@ describe('hosted task-flow question decorations', () => {
     await hosted.keylessSessionCursors(null)
     await hosted.rulingRows({ kind: 'all', after: null, cursor: null })
     await hosted.taskRulingRows('fixture', TASK_ID, 10)
+  })
+
+  test('open details for several stages use one batched keyed question request', async () => {
+    const d = guardHostedTables(database(), ['question'])
+    const first = hostedStage({ taskless: true })
+    first.stage.workflowKey = null
+    const second = hostedStage({
+      taskless: true,
+      number: 2,
+      stageId: '00000000-0000-4000-8000-000000000098',
+      flowId: '00000000-0000-4000-8000-000000000099',
+    })
+    second.stage.workflowKey = null
+    const memory = createMemoryRecordApiClient({
+      taskFlowStages: [first, second],
+      questions: [
+        {
+          id: '00000000-0000-4000-8000-000000000096',
+          number: 96,
+          workflowCursorRecordId: first.stage.id,
+        },
+        {
+          id: '00000000-0000-4000-8000-000000000097',
+          number: 97,
+          workflowCursorRecordId: second.stage.id,
+        },
+      ],
+    })
+    let requests = 0
+    const client = {
+      ...memory,
+      readQuestions: async (...args: Parameters<NonNullable<typeof memory.readQuestions>>) => {
+        requests++
+        expect(args[0]).toMatchObject({
+          read: 'open-for-cursors',
+          workflowCursorRecordIds: [first.stage.id, second.stage.id],
+        })
+        return memory.readQuestions!(...args)
+      },
+    }
+    installRecordApiClient(client)
+    const rows = await recordTaskFlowReadStore(d, client).keylessSessionCursors(null)
+    expect(rows.map((row) => row.open_question_record_id)).toEqual([
+      '00000000-0000-4000-8000-000000000096',
+      '00000000-0000-4000-8000-000000000097',
+    ])
+    expect(requests).toBe(1)
+  })
+
+  test('open details for 101 stages use two capped keyed question requests', async () => {
+    const d = guardHostedTables(database(), ['question'])
+    const stages = Array.from({ length: 101 }, (_, index) => {
+      const suffix = (index + 200).toString(16).padStart(12, '0')
+      const stage = hostedStage({
+        taskless: true,
+        number: index + 1,
+        stageId: `00000000-0000-4000-8000-${suffix}`,
+        flowId: `00000000-0000-4001-8000-${suffix}`,
+      })
+      stage.stage.workflowKey = null
+      return stage
+    })
+    const questions = [stages[0]!, stages[100]!].map((stage, index) => ({
+      id: `00000000-0000-4002-8000-${(index + 1).toString(16).padStart(12, '0')}`,
+      number: index + 1,
+      workflowCursorRecordId: stage.stage.id,
+    }))
+    const memory = createMemoryRecordApiClient({ taskFlowStages: stages, questions })
+    const chunkSizes: number[] = []
+    const client = {
+      ...memory,
+      readQuestions: async (...args: Parameters<NonNullable<typeof memory.readQuestions>>) => {
+        if (args[0].read === 'open-for-cursors')
+          chunkSizes.push(args[0].workflowCursorRecordIds.length)
+        return memory.readQuestions!(...args)
+      },
+    }
+    installRecordApiClient(client)
+    const rows = await recordTaskFlowReadStore(d, client).keylessSessionCursors(null)
+    expect(chunkSizes).toEqual([100, 1])
+    expect(rows.filter((row) => row.open_question_record_id !== null)).toEqual([
+      expect.objectContaining({
+        record_id: stages[0]!.stage.id,
+        open_question_record_id: questions[0]!.id,
+      }),
+      expect.objectContaining({
+        record_id: stages[100]!.stage.id,
+        open_question_record_id: questions[1]!.id,
+      }),
+    ])
   })
 })

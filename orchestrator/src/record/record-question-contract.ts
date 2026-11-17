@@ -156,9 +156,10 @@ export const questionChangedAfterRefusal = {
 
 const readLimit = z.coerce.number().int().positive().max(100).optional()
 const changedAfter = z.string().min(1).optional()
+export const QUESTION_ID_LIST_LIMIT = 100
 const questionIdList = z.preprocess(
   (value) => (typeof value === 'string' ? value.split(',').filter(Boolean) : value),
-  z.array(id).min(1).max(100),
+  z.array(id).min(1).max(QUESTION_ID_LIST_LIMIT),
 )
 export const unboundedQuestionRulingsRefusal = {
   message: 'unbounded question ruling history reads are refused',

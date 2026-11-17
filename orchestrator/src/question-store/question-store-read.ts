@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { projectByName } from '../project/project-read.ts'
+import { QUESTION_ID_LIST_LIMIT } from '../record/record-question-contract.ts'
 import type {
   TaskFlowInboxQuestionRow,
   TaskFlowOpenSessionStageRow,
@@ -246,8 +247,8 @@ export async function openQuestionsForCursors(
   workflowCursorRecordIds: string[],
 ): Promise<Array<{ workflow_cursor_record_id: string; number: number }>> {
   const rows: Array<{ workflow_cursor_record_id: string; number: number }> = []
-  for (let offset = 0; offset < workflowCursorRecordIds.length; offset += 100) {
-    const ids = workflowCursorRecordIds.slice(offset, offset + 100)
+  for (let offset = 0; offset < workflowCursorRecordIds.length; offset += QUESTION_ID_LIST_LIMIT) {
+    const ids = workflowCursorRecordIds.slice(offset, offset + QUESTION_ID_LIST_LIMIT)
     if (!ids.length) continue
     rows.push(
       ...((

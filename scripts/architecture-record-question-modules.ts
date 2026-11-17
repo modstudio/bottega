@@ -116,7 +116,6 @@ export const recordQuestionModules: RecordModule[] = [
     '../record/record-api-client-paths.ts',
     '../record/record-auth.ts',
     '../record/record-question-destination.ts',
-    '../record/record-space-cardinality.ts',
     '../record/record-question-contract.ts',
     './question-order.ts',
     './question-run-pusher.ts',
@@ -140,6 +139,7 @@ export const recordQuestionModules: RecordModule[] = [
     'bun:sqlite',
     '../../../shared/brand.ts',
     '../project/project-read.ts',
+    '../record/record-question-contract.ts',
     './question-order.ts',
     '../workflow/task-flow-store-types.ts',
     './question-store.ts',
@@ -156,6 +156,7 @@ export const recordQuestionModules: RecordModule[] = [
   module('orchestrator/src/question-store/question-store-record-task-flow-compat.ts', [
     'bun:sqlite',
     '../../../shared/brand.ts',
+    '../record/record-question-contract.ts',
     '../record/record-task-flow-contract.ts',
     '../workflow/task-flow-store-record-stage-row.ts',
     '../workflow/task-flow-store-types.ts',

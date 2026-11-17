@@ -460,14 +460,17 @@ export const questionByNumberRow = (
 export const openQuestionsForCursors = (
   database: Database,
   cursorIds: readonly string[],
-): Array<{ workflow_cursor_record_id: string; number: number }> => {
+): Array<{ record_id: string; workflow_cursor_record_id: string; number: number }> => {
   if (!cursorIds.length) return []
   return database
-    .query<{ workflow_cursor_record_id: string; number: number }, string[]>(
-      `SELECT workflow_cursor_record_id,MIN(number) number FROM question
-       WHERE workflow_cursor_record_id IN (${cursorIds.map(() => '?').join(',')})
-         AND answered_at IS NULL AND closed_at IS NULL
-       GROUP BY workflow_cursor_record_id ORDER BY number`,
+    .query<{ record_id: string; workflow_cursor_record_id: string; number: number }, string[]>(
+      `SELECT q.record_id,q.workflow_cursor_record_id,q.number FROM question q
+       WHERE q.workflow_cursor_record_id IN (${cursorIds.map(() => '?').join(',')})
+         AND q.answered_at IS NULL AND q.closed_at IS NULL
+         AND q.number=(SELECT MIN(open.number) FROM question open
+           WHERE open.workflow_cursor_record_id=q.workflow_cursor_record_id
+             AND open.answered_at IS NULL AND open.closed_at IS NULL)
+       ORDER BY q.number`,
     )
     .all(...cursorIds)
 }

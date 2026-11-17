@@ -53,7 +53,6 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     '../record/record-api-client.ts',
     '../record/record-auth.ts',
     '../record/record-project-destination-client.ts',
-    '../record/record-space-cardinality.ts',
     '../record/record-task-flow-contract.ts',
     '../record/record-task-flow-write-client.ts',
     '../record/record-write-authority.ts',

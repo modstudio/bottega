@@ -70,10 +70,17 @@ function recordClient(
         },
       ],
     }),
-    readQuestions: async (input, destination) =>
-      options.questions && destination?.destinationSpaceId === PERSONAL_SPACE_ID
-        ? client.readQuestions!(input, destination)
-        : { items: [] },
+    readQuestions: async (input, destination) => {
+      if (!options.questions || destination) return { items: [] }
+      const result = await client.readQuestions!(input)
+      return {
+        ...result,
+        items: result.items.map((question) => ({
+          ...question,
+          space_id: PERSONAL_SPACE_ID,
+        })),
+      }
+    },
     writeQuestion: async (intent, input, destination) => {
       options.intents?.push(intent)
       options.closedAts?.push(input.question.closedAt)
