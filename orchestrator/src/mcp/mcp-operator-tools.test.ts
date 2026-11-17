@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { writeMachineNames } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -189,6 +190,39 @@ describe('operator MCP tools', () => {
       jev_agreed: 1,
       answer_channel: 'mcp',
     })
+  })
+
+  test('answer_questions refuses a foreign machine run label without writing an answer', async () => {
+    writeMachineNames({ shortName: 'mine', displayName: 'Mine' })
+    const runId = addRun({
+      agent: 'codex',
+      job: 'file-question',
+      status: 'asking',
+      session: SESSION,
+    })
+    const questionId = addQuestion(runId, 'Which machine?')
+    const runNumber = db()
+      .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
+      .get(runId)!.number
+
+    const result = await withClient((client) =>
+      client.callTool({
+        name: 'answer_questions',
+        arguments: {
+          run_record_id: `other/r${runNumber}`,
+          rulings: [{ question_id: questionId, ruling: 'Wrong machine.' }],
+          record_only: true,
+        },
+      }),
+    )
+
+    expect(result.isError).toBe(true)
+    expect((result.content as { text: string }[])[0]!.text).toContain(
+      "acts only on this machine's (`mine`) rows",
+    )
+    expect(
+      db().query('SELECT answer,answered_at FROM question WHERE number=?').get(questionId),
+    ).toEqual({ answer: null, answered_at: null })
   })
 
   test('answer_questions stores flag-shaped rulings verbatim and attributes only explicit operators', async () => {

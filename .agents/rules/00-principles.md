@@ -34,7 +34,7 @@ home names the task that builds it.
 Every table declares a lifecycle: what it is, where its authoritative copy
 lives, how long each copy is kept, and what removes it. Each local table also
 declares `hosted`, `synced` or `machine` in
-`shared/identity-state-classes.ts`, a machine one naming Shmuel Barkin's ruling;
+`scripts/identity-state-classes.ts`, a machine one naming Shmuel Barkin's ruling;
 `scripts/check-identity-inventory.ts` enforces both. Doc-store records
 `design-machine-hosted-seam` and `design-data-lifecycle` hold the detail.
 

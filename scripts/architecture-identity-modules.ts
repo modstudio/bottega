@@ -16,9 +16,11 @@ export const identityModules = [
     '../project/project-read.ts',
     '../project-space-cache.ts',
     '../question-store/question-store-read.ts',
+    '../record/machine-name.ts',
   ]),
   module('orchestrator/src/identity/identity-context.ts', [
     'bun:sqlite',
+    '../../../shared/machine-config.ts',
     '../database/session-identity.ts',
     '../project/projects.ts',
     './identity.ts',

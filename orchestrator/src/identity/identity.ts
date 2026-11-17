@@ -13,6 +13,10 @@ import {
 } from '../../../shared/reference.ts'
 import { projectByName, projectByRecordId } from '../project/project-read.ts'
 import { cachedProjectSpaces } from '../project-space-cache.ts'
+import {
+  decideMachineLabel,
+  type MachineIdentifierNames,
+} from '../record/machine-name.ts'
 import { questionById, questionByProjectNumber } from '../question-store/question-store-read.ts'
 
 type ResolvableKind = Exclude<ReferenceKind, 'task'>
@@ -47,6 +51,7 @@ export type IdentityContext = {
   sessionId: string | null
   projectId: string | null
   projectName: string | null
+  machineNames: MachineIdentifierNames | null
   identityMap: Map<string, ResolvedIdentity>
 }
 
@@ -195,6 +200,16 @@ export async function resolve(
     throw new Error(
       `reference ${JSON.stringify(String(reference))} names a ${kind}, expected ${expectedKind}`,
     )
+  if (kind === 'run' && parsed.qualifier?.kind === 'project')
+    throw new Error(
+      'run references cannot use a project qualifier because run numbers are per machine',
+    )
+  if (kind === 'run' && parsed.qualifier?.kind === 'machine') {
+    const decision = decideMachineLabel(String(reference), context.machineNames)
+    if (decision.kind === 'refused') throw new Error(decision.reason)
+    if (decision.kind !== 'bare')
+      throw new Error(`invalid run reference ${JSON.stringify(String(reference))}`)
+  }
 
   const result = !kind
     ? await resolveUuid(parsed.value.recordId, context)

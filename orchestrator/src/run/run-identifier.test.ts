@@ -31,6 +31,7 @@ describe('run identifier', () => {
     expect(
       classifyGrammar('release/1.2', { shortName: 'mine', formerShortNames: ['old-mine'] }),
     ).toBeNull()
+    expect(classifyGrammar('X/r42', { shortName: 'mine', formerShortNames: [] })).toBeNull()
   })
 
   test('a foreign label refuses in the resolver before any database query', () => {

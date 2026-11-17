@@ -20,7 +20,11 @@ export function classifyBareRunIdentifier(input: string | number): ParsedRunIden
   const given = String(input)
   try {
     const reference = parseReference(given, 'run')
-    if (reference.value.kind === 'label' && reference.value.prefix === 'r')
+    if (
+      reference.qualifier === null &&
+      reference.value.kind === 'label' &&
+      reference.value.prefix === 'r'
+    )
       return { kind: 'number', number: reference.value.number }
   } catch {
     return null

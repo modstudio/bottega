@@ -2,6 +2,7 @@
 /** Adapts the existing session and caller project sources into one request identity context. */
 
 import type { Database } from 'bun:sqlite'
+import { storedMachineNames } from '../../../shared/machine-config.ts'
 import { sessionId } from '../database/session-identity.ts'
 import { projectAt } from '../project/projects.ts'
 import type { IdentityContext } from './identity.ts'
@@ -26,6 +27,7 @@ export function identityContext(
     sessionId: session,
     projectId: project?.recordId ?? null,
     projectName: project?.name ?? null,
+    machineNames: storedMachineNames(),
     identityMap: new Map(),
   }
 }

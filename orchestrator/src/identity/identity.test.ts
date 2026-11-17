@@ -37,6 +37,7 @@ test('resolver scopes labels to the caller project, crosses with a qualifier, an
     sessionId: 'caller',
     projectId: alpha,
     projectName: alphaName,
+    machineNames: { shortName: 'mine', formerShortNames: ['old-mine'] },
     identityMap: new Map(),
   }
 
@@ -47,4 +48,33 @@ test('resolver scopes labels to the caller project, crosses with a qualifier, an
     `not visible in project ${alphaName}`,
   )
   await expect(resolve('q71002', context, 'question')).rejects.not.toThrow('not found')
+})
+
+test('resolver applies the existing machine-label decision before resolving runs', async () => {
+  const runRecordId = addRun({ agent: 'codex', job: 'implement' })
+  const { number } = db()
+    .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
+    .get(runRecordId)!
+  const context: IdentityContext = {
+    database: db(),
+    sessionId: 'caller',
+    projectId: null,
+    projectName: null,
+    machineNames: { shortName: 'mine', formerShortNames: ['old-mine'] },
+    identityMap: new Map(),
+  }
+
+  await expect(resolve(`mine/r${number}`, context, 'run')).resolves.toMatchObject({
+    kind: 'run',
+    recordId: runRecordId,
+  })
+  await expect(resolve(`old-mine/r${number}`, context, 'run')).resolves.toMatchObject({
+    recordId: runRecordId,
+  })
+  await expect(resolve(`other/r${number}`, context, 'run')).rejects.toThrow(
+    "acts only on this machine's (`mine`) rows",
+  )
+  await expect(resolve(`project#r${number}`, context, 'run')).rejects.toThrow(
+    'run references cannot use a project qualifier because run numbers are per machine',
+  )
 })
