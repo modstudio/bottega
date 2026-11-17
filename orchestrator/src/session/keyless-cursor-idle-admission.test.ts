@@ -4,7 +4,9 @@ import { KEYLESS_CURSOR_IDLE_MS } from './keyless-cursor-idle.ts'
 import { decideKeylessCursorIdleAdmission } from './keyless-cursor-idle-admission.ts'
 
 const now = Date.parse('2026-11-17T12:00:00.000Z')
-const cursor = (change: Partial<Parameters<typeof decideKeylessCursorIdleAdmission>[0]['cursors'][number]> = {}) => ({
+const cursor = (
+  change: Partial<Parameters<typeof decideKeylessCursorIdleAdmission>[0]['cursors'][number]> = {},
+) => ({
   number: 970,
   project: PLATFORM_SLUG,
   workflow: 'intake',

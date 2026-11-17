@@ -34,8 +34,7 @@ export function decideKeylessCursorIdleAdmission(input: {
         item.idle !== null && item.idle.ms >= KEYLESS_CURSOR_IDLE_MS,
     )
     .sort(
-      (left, right) =>
-        right.idle.ms - left.idle.ms || left.cursor.number - right.cursor.number,
+      (left, right) => right.idle.ms - left.idle.ms || left.cursor.number - right.cursor.number,
     )[0]
   if (!idle) return { kind: 'allow' }
   const reference = workflowCursorReference(idle.cursor.number, idle.cursor.project).cli

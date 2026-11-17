@@ -34,7 +34,9 @@ test('task new refuses before reaching hub when the session has an idle keyless 
   const originalError = console.error
   console.error = (value) => errors.push(String(value))
   try {
-    expect(await dispatchBinary(['task', 'new', '--project', 'fixture'], dispatch, () => '')).toBe(1)
+    expect(await dispatchBinary(['task', 'new', '--project', 'fixture'], dispatch, () => '')).toBe(
+      1,
+    )
   } finally {
     console.error = originalError
   }

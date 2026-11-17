@@ -71,12 +71,12 @@ import { follow as followRun, harnessHandoff, printHarnessHandoff } from '../run
 import { detach as dispatchDetached } from '../run/run-dispatch.ts'
 import { runEvidence } from '../run/run-evidence-context.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
-import { assertKeylessCursorIdleAdmission } from '../session/keyless-cursor-idle-admission.ts'
 import { boundTaskText, taskTextReadRemedy } from '../run/run-pack-prompt.ts'
 import { routedPromptBytes, routedPromptText } from '../run/run-routing-input.ts'
 import { renderTaskRulings } from '../run/task-rulings.ts'
 import { taskRulingsForDispatch } from '../run/task-rulings-store.ts'
 import { refusalScoreGuidanceFromPath } from '../score/refusal-guidance.ts'
+import { assertKeylessCursorIdleAdmission } from '../session/keyless-cursor-idle-admission.ts'
 import {
   assertAcpReady,
   classifyTransportPin,

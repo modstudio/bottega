@@ -31,8 +31,8 @@ import {
 import { cursorOwnerAfter } from './workflow-cursor-transition.ts'
 import { decideWorkflowRuleAnswer, pinnedWorkflowRuleStep } from './workflow-rule-answer.ts'
 import { strandedWorkflowQuestionRemedy } from './workflow-stranded-question.ts'
-import { linkResolvedWorkflowTask } from './workflow-task-linking.ts'
 import { followTaskCursorClaim } from './workflow-task-claim.ts'
+import { linkResolvedWorkflowTask } from './workflow-task-linking.ts'
 
 function selectOpenWorkflowQuestion(
   cursor: Pick<SelectableCursorRow, 'record_id' | 'ordinal' | 'step_slug'>,

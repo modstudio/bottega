@@ -1,13 +1,13 @@
 // concern: workflow-task-claim
 /** Keeps a task claim aligned with the task cursor that owns it. */
 
+import type { Database } from 'bun:sqlite'
 import { BOARD_CLAIM_DEFAULT_MS } from '../board/board-claim-policy.ts'
 import {
+  type BoardClaimResult,
   boardClaimReleaseTask,
   boardClaimTake,
-  type BoardClaimResult,
 } from '../board/board-operations.ts'
-import type { Database } from 'bun:sqlite'
 import { projectByName } from '../project/projects.ts'
 
 export type TaskCursorClaimVerb = 'compose' | 'advance' | 'await' | 'rule' | 'finish' | 'abandon'

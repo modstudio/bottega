@@ -17,8 +17,8 @@ import { refuseTerminalCursor } from './workflow-cursor-result.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import type { CursorTrailEntry } from './workflow-cursor-trail.ts'
 import { cursorOwnerAfter } from './workflow-cursor-transition.ts'
-import { workflowTextDeletionIds } from './workflow-text.ts'
 import { followTaskCursorClaim, taskClaimReleaseWarning } from './workflow-task-claim.ts'
+import { workflowTextDeletionIds } from './workflow-text.ts'
 
 export async function closeOpenWorkflowQuestion(
   cursorId: string,

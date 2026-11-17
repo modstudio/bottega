@@ -41,7 +41,6 @@ import {
   workflowVersionsCommand,
 } from '../workflow/workflow-commands.ts'
 import { workflowNextContextMoment } from '../workflow/workflow-context-moment.ts'
-import { workflowUncoveredCommand } from '../workflow/workflow-uncovered.ts'
 import { workflowCursorIdentityMap } from '../workflow/workflow-cursor-identity.ts'
 import { RECORD_EVIDENCE_FLAG } from '../workflow/workflow-evidence-payload.ts'
 import { registerWorkflowStepActionCommands } from '../workflow/workflow-step-action-commands.ts'
@@ -49,6 +48,7 @@ import {
   copyWorkflowTextCommand,
   showWorkflowTextCommand,
 } from '../workflow/workflow-text-commands.ts'
+import { workflowUncoveredCommand } from '../workflow/workflow-uncovered.ts'
 import { collect, log, productArgv, rawArgv } from './support.ts'
 
 const collectedOption = (flags: string, description: string) =>

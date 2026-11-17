@@ -4,9 +4,9 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
+import { taskKeyToken } from '../branch/other-branch-state.ts'
 import { classifyCaller, resolveCallerIdentity } from '../caller-classification.ts'
 import { db } from '../database/db.ts'
-import { taskKeyToken } from '../branch/other-branch-state.ts'
 import type { Project } from '../project/projects.ts'
 import { openQuestionStages } from '../question-store/question-store-read.ts'
 

@@ -1,5 +1,5 @@
-import { expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
+import { expect, test } from 'bun:test'
 import { decideWorkflowUncovered, workflowUncoveredReport } from './workflow-uncovered.ts'
 
 const evidence = [

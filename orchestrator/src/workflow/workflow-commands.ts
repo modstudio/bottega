@@ -984,7 +984,9 @@ export async function composeCommand(
   presentation: WorkflowPresentation,
   options: WorkflowCommandOptions = {},
 ): Promise<void> {
-  await (options.idleCursorAdmission ?? (() => assertKeylessCursorIdleAdmission('workflow compose')))()
+  await (
+    options.idleCursorAdmission ?? (() => assertKeylessCursorIdleAdmission('workflow compose'))
+  )()
   const project = flagValue(argv, 'project')
   if (!project) throw new Error('--project is required')
   const mode = flagValue(argv, 'mode')
