@@ -12,7 +12,7 @@ test('an absent project refusal names how to find its destination space', async 
   const error = await projectRecordId(
     tx,
     { projectId: PROJECT, projectName: 'alpha' },
-    { userId: '01990000-0000-7000-8000-000000002399', spaceId: SPACE, spaceIds: [SPACE] },
+    { userId: '01990000-0000-7000-8000-000000002399', spaceId: SPACE },
   ).catch((caught: unknown) => caught)
 
   expect(error).toBeInstanceOf(OutboxRowError)
