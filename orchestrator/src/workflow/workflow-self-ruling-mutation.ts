@@ -33,6 +33,7 @@ export async function assertWorkflowSelfRulingProse(
 export async function recordWorkflowSelfRuling(
   input: {
     cursorId: string
+    projectId: string | null
     workflowKey: string
     workflowTaskRecordId: string | null
     stepOrdinal: number
@@ -59,6 +60,7 @@ export async function recordWorkflowSelfRuling(
   const question = await upsertWorkflowQuestion(
     {
       cursorId: input.cursorId,
+      projectId: input.projectId,
       workflowKey: input.workflowKey,
       workflowTaskRecordId: input.workflowTaskRecordId,
       stepOrdinal: input.stepOrdinal,

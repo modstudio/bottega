@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { notifyWaitingItem } from '../operator/operator-waiting.ts'
+import { projectByName } from '../project/projects.ts'
 import { maximumQuestionNumber } from '../question-store/question-store-read.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
@@ -407,6 +408,7 @@ async function closeFloorsForStep(
     floorEvidence = evidence
     selfRulingPlan = {
       cursorId: row.record_id,
+      projectId: projectByName(row.project, d)?.recordId ?? null,
       workflowKey: row.workflow_key,
       workflowTaskRecordId: row.task_record_id,
       stepOrdinal: row.ordinal + 1,
@@ -928,6 +930,7 @@ async function awaitWorkflowRulingImpl(
   const recordedQuestion = await upsertWorkflowQuestion(
     {
       cursorId: row.record_id,
+      projectId: projectByName(row.project, d)?.recordId ?? null,
       workflowKey: row.workflow_key,
       workflowTaskRecordId: row.task_record_id,
       stepOrdinal: row.ordinal + 1,

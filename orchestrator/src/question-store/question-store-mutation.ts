@@ -165,6 +165,15 @@ export async function askQuestion(
   },
 ) {
   const id = input.id ?? newRecordId()
+  const projectId =
+    input.projectId ??
+    (input.runId
+      ? (database
+          .query<{ project_record_id: string | null }, [string]>(
+            'SELECT project_record_id FROM run WHERE record_id=?',
+          )
+          .get(input.runId)?.project_record_id ?? null)
+      : null)
   const question: Snapshot = {
     id,
     number: null,
@@ -172,7 +181,7 @@ export async function askQuestion(
     workflowKey: input.workflowKey ?? null,
     workflowTaskId: input.workflowTaskId ?? null,
     workflowCursorRecordId: input.workflowCursorRecordId ?? null,
-    projectId: input.projectId ?? null,
+    projectId,
     machineId: machineId(),
     revision: 1,
     askedAt: input.askedAt,

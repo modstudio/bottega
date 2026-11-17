@@ -87,6 +87,7 @@ export function authorizeWorkflowQuestionMutation(input: {
 export async function upsertWorkflowQuestion(
   input: {
     cursorId: string
+    projectId: string | null
     workflowKey: string
     workflowTaskRecordId: string | null
     stepOrdinal: number
@@ -118,6 +119,7 @@ export async function upsertWorkflowQuestion(
   }
   const inserted = await askQuestion(database, {
     workflowCursorRecordId: input.cursorId,
+    projectId: input.projectId,
     workflowKey: input.workflowKey || null,
     workflowTaskId: input.workflowTaskRecordId,
     askedAt: input.at,
