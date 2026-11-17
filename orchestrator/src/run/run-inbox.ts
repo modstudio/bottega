@@ -419,9 +419,7 @@ export async function runInboxCommand(
       },
       [{ owner_status: question.status }],
     ) === null
-  const allRows = queriedRows.filter((question) =>
-    mine || activeOnly ? isLive(question) : true,
-  )
+  const allRows = queriedRows.filter((question) => (mine || activeOnly ? isLive(question) : true))
   // Inside a registered project, the default view is the union of questions in
   // that project and questions owned by this session. Visibility does not make
   // a question owned by another session answerable.

@@ -170,7 +170,8 @@ export class SqliteQuestionStore implements QuestionStore {
       .get()!.count
     const runRows = runInboxQuestionRows(this.database, undefined, requested, offset)
     const workflowOffset = Math.max(0, offset - runCount)
-    const workflowLimit = requested === undefined ? undefined : Math.max(0, requested - runRows.length)
+    const workflowLimit =
+      requested === undefined ? undefined : Math.max(0, requested - runRows.length)
     const rows = [
       ...runRows,
       ...(workflowLimit === 0

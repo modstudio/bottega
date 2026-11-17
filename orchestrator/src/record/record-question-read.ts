@@ -227,62 +227,64 @@ async function unlinkedWorkflowRows(
   )
 }
 
+function offsetClause(limit: number | undefined, offset: number): string {
+  if (limit !== undefined) return ` LIMIT ${limit} OFFSET ${offset}`
+  return offset === 0 ? '' : ` OFFSET ${offset}`
+}
+
+async function inboxRows(
+  tx: SQL,
+  input: Extract<QuestionReadInput, { read: 'inbox' }>,
+): Promise<Row[]> {
+  const offset = input.changedAfter === undefined ? 0 : Number(input.changedAfter)
+  const requested = input.limit === undefined ? undefined : input.limit + 1
+  const runCount = Number(
+    (
+      (await tx.unsafe(
+        `SELECT COUNT(*) count FROM question q
+         WHERE q.run_id IS NOT NULL AND q.answered_at IS NULL AND q.closed_at IS NULL`,
+        [],
+      )) as Array<{ count: number | string }>
+    )[0]?.count ?? 0,
+  )
+  const runs = (await tx.unsafe(
+    `SELECT q.number,q.id::text record_id,q.run_id::text run_record_id,owner.number run_number,
+      q.asked_at::text,q.question,q.options::text,q.recommendation,q.why,q.kind,q.jev_pick,q.jev_confidence,
+      q.jev_probabilities::text,q.jev_error,q.answered_at::text,q.overturned_at::text,q.overturned_by,
+      q.overturn_reason,q.replacement,q.filed_as,q.filed_ref,q.filed_record_id::text,q.filed_label,q.filed_at::text,
+      owner.agent,owner.job,root_project.name repo,COALESCE(owner.task_key,root.task_key) task_key,root.project_id::text project_record_id,owner.status,owner.session_id,
+      q.awaiting_operator_at::text,
+      root.status root_status,root.id::text root_record_id,root.number root_number,
+      CASE WHEN root.evidence_excluded IS NULL THEN 0 ELSE 1 END root_voided,
+      COALESCE(owner.parent_run_id,owner.id)::text root_id
+     FROM question q JOIN run owner ON owner.id=q.run_id
+     JOIN run root ON root.id=COALESCE(owner.parent_run_id,owner.id)
+     LEFT JOIN project root_project ON root_project.id=root.project_id
+     WHERE q.answered_at IS NULL AND q.closed_at IS NULL
+     ORDER BY q.run_id,q.number${offsetClause(requested, offset)}`,
+    [],
+  )) as Row[]
+  const workflowOffset = Math.max(0, offset - runCount)
+  const workflowLimit = requested === undefined ? undefined : Math.max(0, requested - runs.length)
+  const workflows = (await tx.unsafe(
+    `SELECT q.number,q.id::text record_id,q.asked_at::text,q.question,stage.number cursor_record_id,
+      project.name project,stage.project_id::text project_record_id,stage.workflow workflow_slug,
+      stage.mode mode_slug,stage.arguments::text args,stage.active_ordinal ordinal,
+      stage.active_slug step_slug,stage.session_id
+     FROM question q JOIN task_flow_stage stage ON stage.id=q.workflow_cursor_record_id
+     JOIN project ON project.id=stage.project_id
+     WHERE stage.state='awaiting-ruling' AND q.answered_at IS NULL AND q.closed_at IS NULL
+     ORDER BY q.asked_at,q.number${offsetClause(workflowLimit, workflowOffset)}`,
+    [],
+  )) as Row[]
+  const combined = [...runs, ...workflows]
+  return input.limit === undefined ? combined : combined.slice(0, input.limit + 1)
+}
+
 async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
   const targeted = await targetedRows(tx, input)
   if (targeted !== null) return targeted
-  if (input.read === 'inbox') {
-    const offset = input.changedAfter === undefined ? 0 : Number(input.changedAfter)
-    const requested = input.limit === undefined ? undefined : input.limit + 1
-    const runCount = Number(
-      (
-        (await tx.unsafe(
-          `SELECT COUNT(*) count FROM question q
-           WHERE q.run_id IS NOT NULL AND q.answered_at IS NULL AND q.closed_at IS NULL`,
-          [],
-        )) as Array<{ count: number | string }>
-      )[0]?.count ?? 0,
-    )
-    const runLimit =
-      requested === undefined ? (offset === 0 ? '' : ` OFFSET ${offset}`) : ` LIMIT ${requested} OFFSET ${offset}`
-    const runs = (await tx.unsafe(
-      `SELECT q.number,q.id::text record_id,q.run_id::text run_record_id,owner.number run_number,
-        q.asked_at::text,q.question,q.options::text,q.recommendation,q.why,q.kind,q.jev_pick,q.jev_confidence,
-        q.jev_probabilities::text,q.jev_error,q.answered_at::text,q.overturned_at::text,q.overturned_by,
-        q.overturn_reason,q.replacement,q.filed_as,q.filed_ref,q.filed_record_id::text,q.filed_label,q.filed_at::text,
-        owner.agent,owner.job,root_project.name repo,COALESCE(owner.task_key,root.task_key) task_key,root.project_id::text project_record_id,owner.status,owner.session_id,
-        q.awaiting_operator_at::text,
-        root.status root_status,root.id::text root_record_id,root.number root_number,
-        CASE WHEN root.evidence_excluded IS NULL THEN 0 ELSE 1 END root_voided,
-        COALESCE(owner.parent_run_id,owner.id)::text root_id
-       FROM question q JOIN run owner ON owner.id=q.run_id
-       JOIN run root ON root.id=COALESCE(owner.parent_run_id,owner.id)
-       LEFT JOIN project root_project ON root_project.id=root.project_id
-       WHERE q.answered_at IS NULL AND q.closed_at IS NULL
-       ORDER BY q.run_id,q.number${runLimit}`,
-      [],
-    )) as Row[]
-    const workflowOffset = Math.max(0, offset - runCount)
-    const workflowLimit = requested === undefined ? undefined : Math.max(0, requested - runs.length)
-    const workflows = (await tx.unsafe(
-      `SELECT q.number,q.id::text record_id,q.asked_at::text,q.question,stage.number cursor_record_id,
-        project.name project,stage.project_id::text project_record_id,stage.workflow workflow_slug,
-        stage.mode mode_slug,stage.arguments::text args,stage.active_ordinal ordinal,
-        stage.active_slug step_slug,stage.session_id
-       FROM question q JOIN task_flow_stage stage ON stage.id=q.workflow_cursor_record_id
-       JOIN project ON project.id=stage.project_id
-       WHERE stage.state='awaiting-ruling' AND q.answered_at IS NULL AND q.closed_at IS NULL
-       ORDER BY q.asked_at,q.number${
-         workflowLimit === undefined
-           ? workflowOffset === 0
-             ? ''
-             : ` OFFSET ${workflowOffset}`
-           : ` LIMIT ${workflowLimit} OFFSET ${workflowOffset}`
-       }`,
-      [],
-    )) as Row[]
-    const combined = [...runs, ...workflows]
-    return input.limit === undefined ? combined : combined.slice(0, input.limit + 1)
-  }
+  if (input.read === 'inbox') return inboxRows(tx, input)
   if (input.read === 'waiting')
     return limited(
       (await tx.unsafe(
