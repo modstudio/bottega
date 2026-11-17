@@ -246,10 +246,7 @@ test('CLI keyed abandon refuses another sessions cursor until its owner is ackno
   await expect(workflowCommand(argv, presentation([]))).rejects.toThrow(
     'owned by session foreign-keyed-session; rerun with --owner-session foreign-keyed-session',
   )
-  await workflowCommand(
-    [...argv, '--owner-session', 'foreign-keyed-session'],
-    presentation([]),
-  )
+  await workflowCommand([...argv, '--owner-session', 'foreign-keyed-session'], presentation([]))
   expect(
     db()
       .query('SELECT state FROM workflow_cursor WHERE number=? AND project=?')

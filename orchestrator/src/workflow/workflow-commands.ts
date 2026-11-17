@@ -495,12 +495,11 @@ export async function abandonCommand(
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
   const args = workflowArgs(argv)
   let context = cliWorkflowCursorContext()
-  const { project, workflow: slug, selectedRow } = await cursorCommandTarget(
-    argv,
-    cursor,
-    context,
-    `${PLATFORM_SLUG} workflow abandon`,
-  )
+  const {
+    project,
+    workflow: slug,
+    selectedRow,
+  } = await cursorCommandTarget(argv, cursor, context, `${PLATFORM_SLUG} workflow abandon`)
   context = await resolveWorkflowCursorContext(
     project,
     args,
