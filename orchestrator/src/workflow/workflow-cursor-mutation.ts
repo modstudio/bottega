@@ -18,6 +18,7 @@ import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-curs
 import type { CursorTrailEntry } from './workflow-cursor-trail.ts'
 import { cursorOwnerAfter } from './workflow-cursor-transition.ts'
 import { workflowTextDeletionIds } from './workflow-text.ts'
+import { followTaskCursorClaim, taskClaimReleaseWarning } from './workflow-task-claim.ts'
 
 export async function closeOpenWorkflowQuestion(
   cursorId: string,
@@ -99,7 +100,19 @@ export async function abandonWorkflowCursor(
       text: `${cursorName(row.workflow_slug, row.mode_slug, row.workflow_key, true)} was abandoned at step ${row.ordinal + 1} ${row.step_slug}.`,
     }
   }, d)
-  return result.text
+  try {
+    await followTaskCursorClaim({
+      project: row.project,
+      taskKey: row.workflow_key || null,
+      session: context.session,
+      verb: 'abandon',
+    })
+    return result.text
+  } catch (error) {
+    return row.workflow_key
+      ? `${result.text}\n${taskClaimReleaseWarning(row.project, row.workflow_key, error)}`
+      : result.text
+  }
 }
 
 function abandonedCursorTrail(

@@ -486,8 +486,8 @@ async function takeClaimInTx(
     sameHolderSameSubject: exactHeld !== undefined,
     conflictingClaim: conflicts.length > 0,
     foreignLiveConflict: foreignLive.length > 0,
-    force: false,
-    actorKind: 'architect',
+    force: Boolean(input.force),
+    actorKind: input.force ? 'operator' : 'architect',
   })
   if (decision === 'renew' && exactHeld)
     return renewOpenClaim(tx, input, exactHeld, duration, note, clock)
@@ -548,6 +548,11 @@ export async function releaseHostedBoardClaim(
   return withBoardTenant(input, false, async (tx) => {
     const row = await loadClaim(tx, input.id)
     if (!row) throw new RecordBoardError(`no board claim ${input.id}`, 404)
+    if (row.subject_kind === 'task')
+      throw new RecordBoardError(
+        `task claims follow task cursors; run workflow next to the end or workflow abandon for ${row.subject_value}`,
+        400,
+      )
     if (!hostedLive(row, clock))
       throw new RecordBoardError(`claim ${input.id} is no longer live`, 400)
     if (!sameHostedClaimHolder(row, input.userId, session)) {

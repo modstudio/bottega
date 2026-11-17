@@ -18,7 +18,7 @@ export type FinishExploreLifecycle = (input: {
   callerSession: string | null | undefined
   database: Database
   at: string
-}) => Promise<void>
+}) => Promise<unknown>
 
 export async function closeExploreForLifecycle(
   cursorRecordId: string,

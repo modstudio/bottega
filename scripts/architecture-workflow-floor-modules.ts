@@ -414,6 +414,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-explore-lifecycle-close.ts',
     './workflow-step-reference.ts',
     './workflow-task-linking.ts',
+    './workflow-task-claim.ts',
     './workflow-text.ts',
     './task-flow.ts',
     './task-flow-store.ts',
@@ -438,6 +439,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-cursor-trail.ts',
     './workflow-cursor-transition.ts',
     './workflow-text.ts',
+    './workflow-task-claim.ts',
   ]),
   module('orchestrator/src/workflow/workflow-cursor-worktrees.ts', [
     'bun:sqlite',

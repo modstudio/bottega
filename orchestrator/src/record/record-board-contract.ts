@@ -280,4 +280,5 @@ export type HostedBoardTakeClaimInput = {
   runId?: string | null
   note?: string
   holderSession?: string | null
+  force?: boolean
 }

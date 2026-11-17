@@ -144,6 +144,7 @@ const takeClaimSchema = z
     runId: idSchema.nullable().optional(),
     note: headerValueSchema.optional(),
     holderSession: sessionSchema,
+    force: z.boolean().optional(),
   })
   .strict()
 const holderBody = z.object({ holderSession: sessionSchema }).strict()

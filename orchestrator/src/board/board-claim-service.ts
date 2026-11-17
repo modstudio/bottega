@@ -195,6 +195,7 @@ type TakeTransaction = {
   clock: number
   cwd: string
   database: ReturnType<typeof writableDb>
+  allowArchitectTakeover: boolean
 }
 
 type TakeTransactionResult = {
@@ -344,7 +345,7 @@ function takeClaimInTransaction(context: TakeTransaction): TakeTransactionResult
     conflictingClaim: conflicts.length > 0,
     foreignLiveConflict: foreignLive.length > 0,
     force: Boolean(context.input.force),
-    actorKind: context.actor.kind,
+    actorKind: context.allowArchitectTakeover ? 'operator' : context.actor.kind,
   })
   if (decision === 'renew') return renewTakenClaim(exactHeld!, context)
   if (decision === 'refuse') return refusedTake(foreignLive, context)
@@ -356,9 +357,11 @@ export function takeClaim(
   env: Environment = process.env,
   clock = Date.now(),
   cwd = process.cwd(),
+  allowArchitectTakeover = false,
 ): TakeClaimResult {
   const actor = claimActor(env)
-  if (input.force && !mayForceClaim(actor)) throw new Error('only the operator may use --force')
+  if (input.force && !mayForceClaim(actor) && !allowArchitectTakeover)
+    throw new Error('only the operator may use --force')
   const subject = parseClaimSubject(input.subject)
   const note = claimNote(input.note)
   const duration = input.durationMs ?? BOARD_CLAIM_DEFAULT_MS
@@ -380,6 +383,7 @@ export function takeClaim(
         clock,
         cwd,
         database,
+        allowArchitectTakeover,
       }),
     database,
   )

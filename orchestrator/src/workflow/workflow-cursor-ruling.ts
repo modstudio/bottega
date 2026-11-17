@@ -32,6 +32,7 @@ import { cursorOwnerAfter } from './workflow-cursor-transition.ts'
 import { decideWorkflowRuleAnswer, pinnedWorkflowRuleStep } from './workflow-rule-answer.ts'
 import { strandedWorkflowQuestionRemedy } from './workflow-stranded-question.ts'
 import { linkResolvedWorkflowTask } from './workflow-task-linking.ts'
+import { followTaskCursorClaim } from './workflow-task-claim.ts'
 
 function selectOpenWorkflowQuestion(
   cursor: Pick<SelectableCursorRow, 'record_id' | 'ordinal' | 'step_slug'>,
@@ -93,6 +94,12 @@ export async function ruleWorkflow(
     throw new Error(
       `${cursorName(slug, mode, row.workflow_key)} has no open question to rule on${strandedQuestion ? `; ${strandedQuestion}` : ''}`,
     )
+  await followTaskCursorClaim({
+    project: row.project,
+    taskKey: row.workflow_key || null,
+    session: context.session,
+    verb: 'rule',
+  })
   const payload: TaskFlowIntentInput<'stage-update'> = {
     requestId: taskFlowRequestId('stage-update', [row.record_id, String(row.revision)]),
     stages: [

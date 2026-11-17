@@ -73,6 +73,10 @@ import {
   type WorkflowSelfRulingInput,
 } from './workflow-self-ruling-mutation.ts'
 import { linkResolvedWorkflowTask, withLinkedWorkflowTask } from './workflow-task-linking.ts'
+import {
+  followTaskCursorClaim,
+  taskClaimReleaseWarning,
+} from './workflow-task-claim.ts'
 import { workflowTextDeletionIds } from './workflow-text.ts'
 import { composeWorkflow } from './workflows.ts'
 
@@ -203,8 +207,15 @@ export async function composeWorkflowWithCursor(
       )
     : null
   const start = decideCursorStart(existing?.state ?? null)
+  await followTaskCursorClaim({
+    project: composition.project,
+    taskKey: keyOf(composition.arguments) || null,
+    session: context.session,
+    verb: 'compose',
+  })
   let row!: CursorRow
-  if (existing && start === 'reuse') {
+  try {
+    if (existing && start === 'reuse') {
     const resolved = resolveCursorArguments(existing, args, d, true)
     const payload: TaskFlowIntentInput<'stage-update'> = {
       requestId: taskFlowRequestId('stage-update', [existing.record_id, String(existing.revision)]),
@@ -239,7 +250,17 @@ export async function composeWorkflowWithCursor(
         revision: result.revisions[existing.record_id]!,
       }
     }, d)
-  } else row = await insertWorkflowCursor(composition, context, d, live.resolution, commitCount)
+    } else row = await insertWorkflowCursor(composition, context, d, live.resolution, commitCount)
+  } catch (error) {
+    if (start !== 'reuse')
+      await followTaskCursorClaim({
+        project: composition.project,
+        taskKey: keyOf(composition.arguments) || null,
+        session: context.session,
+        verb: 'abandon',
+      })
+    throw error
+  }
   const cursor = {
     id: row.id,
     n: row.ordinal + 1,
@@ -447,7 +468,7 @@ async function persistWorkflowAdvance(
   d: Database,
   takeoverFromMachineId: string | null,
   selfRulingPlan?: Parameters<typeof recordWorkflowSelfRuling>[0],
-): Promise<void> {
+): Promise<string | null> {
   const at = nowIso()
   const obligationPlan = appendWorkflowClose(
     row,
@@ -471,7 +492,7 @@ async function persistWorkflowAdvance(
     context.taskFlowClient,
   )
   if (finishing) {
-    await writeFinishingWorkflowAdvance({
+    return await writeFinishingWorkflowAdvance({
       row,
       closed,
       deleteTextIds,
@@ -483,7 +504,6 @@ async function persistWorkflowAdvance(
       selfRulingPlan,
       at,
     })
-    return
   }
   const { parts, obligationInserts, obligationUpdates } = advanceRecordRows(
     row,
@@ -526,6 +546,7 @@ async function persistWorkflowAdvance(
     payload,
     hosted,
   })
+  return null
 }
 
 export async function writeFinishingWorkflowAdvance(input: {
@@ -539,7 +560,7 @@ export async function writeFinishingWorkflowAdvance(input: {
   taskFlowClient?: WorkflowCursorContext['taskFlowClient']
   selfRulingPlan?: Parameters<typeof recordWorkflowSelfRuling>[0]
   at?: string
-}): Promise<void> {
+}): Promise<string | null> {
   const { row, database, closed, deleteTextIds } = input
   const at = input.at ?? nowIso()
   const flow = await selectClosingTaskFlow(row, database, input.taskFlowClient)
@@ -598,6 +619,17 @@ export async function writeFinishingWorkflowAdvance(input: {
     payload,
     hosted,
   })
+  try {
+    await followTaskCursorClaim({
+      project: row.project,
+      taskKey: row.workflow_key || null,
+      session: input.callerSession,
+      verb: 'finish',
+    })
+    return null
+  } catch (error) {
+    return row.workflow_key ? taskClaimReleaseWarning(row.project, row.workflow_key, error) : null
+  }
 }
 
 async function selectClosingTaskFlow(
@@ -752,7 +784,13 @@ async function nextWorkflowStepImpl(
     context.taskFlowClient,
     context.session,
   )
-  await persistWorkflowAdvance(
+  await followTaskCursorClaim({
+    project: row.project,
+    taskKey: row.workflow_key || null,
+    session: context.session,
+    verb: 'advance',
+  })
+  const claimWarning = await persistWorkflowAdvance(
     row,
     composition,
     close.closed,
@@ -780,7 +818,7 @@ async function nextWorkflowStepImpl(
     live,
   })
   return {
-    text: takeoverNotice ? `${takeoverNotice}\n${rendered}` : rendered,
+    text: [takeoverNotice, rendered, claimWarning].filter(Boolean).join('\n'),
     selfRulingQuestionNumber: close.selfRulingQuestionNumber,
     cursorNumber: row.id,
     cursorRecordId: row.record_id,
@@ -884,6 +922,12 @@ async function awaitWorkflowRulingImpl(
       `${cursorName(slug, mode, keyOf(args))} has no cursor; compose the workflow first`,
     )
   refuseTerminalCursor(row)
+  await followTaskCursorClaim({
+    project: row.project,
+    taskKey: row.workflow_key || null,
+    session: context.session,
+    verb: 'await',
+  })
   const resolved = resolveCursorArguments(row, args, d)
   const at = resolved.updatedAt
   const payload: TaskFlowIntentInput<'await-ruling'> = {

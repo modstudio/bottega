@@ -594,7 +594,12 @@ test('release-task normalizes a task subject before releasing a local claim', as
   const clock = Date.parse('2026-10-05T12:00:00Z')
   const claim = await boardClaimTake(
     { subject: 'task:DEV-1', project: 'board-route-project' },
-    { env: noRecordEnv, clock },
+    {
+      env: noRecordEnv,
+      clock,
+      taskCursorSession: 'cursor-session',
+      cwd: '/tmp/board-route-project',
+    },
   )
   await expect(
     boardClaimReleaseTask('task:DEV-1', 'board-route-project', {
