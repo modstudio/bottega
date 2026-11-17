@@ -10,6 +10,7 @@ import {
 } from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
+import { sqliteTaskFlowLocalStore } from './task-flow-store-sqlite.ts'
 import type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { selectWorkflowCursor } from './workflow-cursor-selection.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
@@ -238,9 +239,13 @@ async function attachWorkflowTextByHandleUnchecked(
     context.taskFlowClient,
   )
   return writeTransaction(() => {
-    const revision = taskFlowLocalStore(d).stageRevision(row.record_id)
-    if (revision === null || revision !== row.revision)
-      throw new Error(`cursor ${cursor} changed while text was attached; rerun the attach command`)
+    if (!hosted) {
+      const revision = sqliteTaskFlowLocalStore(d).stageRevision(row.record_id)
+      if (revision === null || revision !== row.revision)
+        throw new Error(
+          `cursor ${cursor} changed while text was attached; rerun the attach command`,
+        )
+    }
     taskFlowLocalStore(d).write('attach-text', input, hosted)
     return token
   }, d)
@@ -282,9 +287,11 @@ async function attachWorkflowTextUnchecked(
     context.taskFlowClient,
   )
   return writeTransaction(() => {
-    const revision = taskFlowLocalStore(d).stageRevision(row.record_id)
-    if (revision === null || revision !== row.revision)
-      throw new Error(`workflow cursor changed while text was attached; rerun the attach command`)
+    if (!hosted) {
+      const revision = sqliteTaskFlowLocalStore(d).stageRevision(row.record_id)
+      if (revision === null || revision !== row.revision)
+        throw new Error(`workflow cursor changed while text was attached; rerun the attach command`)
+    }
     taskFlowLocalStore(d).write('attach-text', input, hosted)
     return token
   }, d)

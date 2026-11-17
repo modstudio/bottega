@@ -26,7 +26,7 @@ export async function contextItemOwner(holder: string): Promise<RecordWriteOwner
     )
   }
   if (address.holderKind === 'cursor') {
-    const cursor = contextCursorOwner(holder)
+    const cursor = await contextCursorOwner(holder)
     if (cursor) return { kind: 'project', name: cursor.project }
     throw new RecordApiRequestError(
       `cursor context owner could not be resolved; write from the cursor's owning session, or on the task`,

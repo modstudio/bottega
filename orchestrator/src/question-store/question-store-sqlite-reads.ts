@@ -278,21 +278,6 @@ export const overturnRulingRow = (
     )
     .get(questionId)
 
-export const unlinkedWorkflowQuestionIds = (
-  database: Database,
-  project: string,
-  workflowKey: string,
-): string[] =>
-  database
-    .query<{ record_id: string }, [string, string]>(
-      `SELECT q.record_id FROM question q
-       JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
-       WHERE c.project_record_id=(SELECT record_id FROM project WHERE name=?)
-         AND q.workflow_key=? AND q.workflow_task_record_id IS NULL`,
-    )
-    .all(project, workflowKey)
-    .map((row) => row.record_id)
-
 export const pendingTaskLinks = (
   database: Database,
   table: 'workflow_cursor' | 'question',

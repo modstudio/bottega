@@ -307,6 +307,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-cache-workflow.ts', [
     ...cacheDeleteImports,
+    './install-binding.ts',
     './record-api-client.ts',
     './record-cache-cursor.ts',
     './record-cursor.ts',

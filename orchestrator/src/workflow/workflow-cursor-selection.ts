@@ -2,13 +2,21 @@
 /** Selects one open workflow cursor by public handle or declared identity. */
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
+import { recordApiConfigured } from '../../../shared/record-api-url.ts'
+import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { db, sessionId } from '../database/db.ts'
+import { RecordApiRequestError, recordApiClient } from '../record/record-api-client.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
+import { RECORD_TASK_FLOW_NOT_FOUND_MESSAGE } from '../record/record-task-flow-contract.ts'
 import {
-  readThroughTaskFlow,
-  type TaskFlowReadStatus,
-  taskFlowReadThroughEnabled,
-} from './task-flow-read-through.ts'
+  resolveTaskFlowDestination,
+  taskFlowWriteTarget,
+} from '../record/record-task-flow-write-client.ts'
+import {
+  currentRecordWriteDecision,
+  throwIfRecordRefused,
+} from '../record/record-write-authority.ts'
+import { decideTaskFlowReadStatus, type TaskFlowReadStatus } from './task-flow-decision.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
 import type { TaskFlowStageCursorRow } from './task-flow-store-types.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
@@ -100,17 +108,33 @@ export async function readThroughWorkflowCursorContext(
   database: Database = db(),
 ): Promise<WorkflowCursorContext> {
   if (!context.workflowKey || !context.taskRecordId) return context
-  if (!taskFlowReadThroughEnabled(database)) return context
-  const taskFlowRead = await readThroughTaskFlow(
-    database,
-    {
-      project,
-      taskKey: context.workflowKey,
-      taskRecordId: context.taskRecordId,
-    },
-    context.taskFlowClient,
-  )
-  context.taskFlowRead = taskFlowRead
+  const decision = currentRecordWriteDecision(database)
+  throwIfRecordRefused(decision)
+  if (decision.verdict !== 'hosted') return context
+  const configured = recordApiConfigured(process.env)
+  try {
+    const client = context.taskFlowClient ?? recordApiClient()
+    const destination = await resolveTaskFlowDestination(
+      taskFlowWriteTarget(project, database),
+      client,
+    )
+    const hosted = await client.readTaskFlow!({ taskKey: context.workflowKey }, destination)
+    context.taskFlowRead = {
+      status: 'reachable',
+      ...(hosted.stage ? { holder: hosted.stage.holder } : {}),
+    }
+  } catch (error) {
+    if (!(error instanceof RecordApiRequestError)) throw error
+    context.taskFlowRead = decideTaskFlowReadStatus({
+      status: error.status,
+      recognizedNotFound:
+        error.status === 404 && error.message === RECORD_TASK_FLOW_NOT_FOUND_MESSAGE,
+      configured,
+      errorRemedy: configured
+        ? error.message
+        : `hosted record is not configured; ${RECORD_SIGN_IN_REMEDY}`,
+    })
+  }
   return context
 }
 

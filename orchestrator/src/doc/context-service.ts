@@ -324,7 +324,7 @@ export async function setContextItem(
     holder,
     sessionId(),
     input.id,
-    contextCursorOwner(holder)?.session_id,
+    (await contextCursorOwner(holder))?.session_id,
   )
   if (ownership) throw new ContextWriteRefusalError(ownership)
   if (input.kind === 'pointer') item.target = await resolvedPointerTarget(input.body)
@@ -396,7 +396,7 @@ export async function dropContextItem(
       removed: false,
       alreadyAbsent: true,
     }
-  assertContextDropAllowed({ item })
+  await assertContextDropAllowed({ item })
   const result = await applyRecordWriteAuthority({
     local: () => ({
       removed: removeLocalContextItem(holder, input.id, input.expectedRevision),

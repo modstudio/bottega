@@ -7,6 +7,7 @@ import { liveClaimsOfSession } from '../board/board-claim-service.ts'
 import { db, sessionId } from '../database/db.ts'
 import { resolveCommitArgument } from '../git/commit-resolution.ts'
 import { projectForTaskKey, projects, taskKeyPrefix } from '../project/projects.ts'
+import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import {
   type HubTaskPuller,
   type HubTaskReader,
@@ -134,16 +135,11 @@ export function storedItems(holder: string, database: Database): ContextItem[] {
   return listContextItems(holder, database)
 }
 
-export function contextCursorOwner(holder: string, database: Database = db()) {
+export async function contextCursorOwner(holder: string, database: Database = db()) {
   const address = splitContextHolder(holder)
   if (address.holderKind !== 'cursor') return null
-  return (
-    database
-      .query<{ session_id: string | null; project: string }, [string]>(
-        'SELECT session_id,project FROM workflow_cursor WHERE record_id=?',
-      )
-      .get(address.holderId) ?? null
-  )
+  const row = await taskFlowReadStore(database).stageByRecordId(address.holderId)
+  return row ? { session_id: row.session_id, project: row.project } : null
 }
 
 /** Resolve a task while retaining the project task-list read used to resolve it. */
@@ -267,7 +263,7 @@ async function contextSetRefusal(
     input.holder,
     sessionId(database),
     item.id,
-    contextCursorOwner(input.holder, database)?.session_id,
+    (await contextCursorOwner(input.holder, database))?.session_id,
   )
   if (ownership) return ownership
   const claims = owner
@@ -307,18 +303,18 @@ export async function assertContextSetAllowed(input: {
 }
 
 /** A context item leaves only through its owner. */
-export function assertContextDropAllowed({
+export async function assertContextDropAllowed({
   item,
   database = db(),
 }: {
   item: ContextItem
   database?: Database
-}): void {
+}): Promise<void> {
   const refusal = holderOwnershipRefusal(
     item.holder,
     sessionId(database),
     item.id,
-    contextCursorOwner(item.holder, database)?.session_id,
+    (await contextCursorOwner(item.holder, database))?.session_id,
   )
   if (refusal) throw new ContextWriteRefusalError(refusal)
 }

@@ -15,7 +15,6 @@ import {
 } from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { refuseTaskFlowStageConflictLocal, vacateRetiredWorkflowKeySlot } from './task-flow.ts'
-import { refreshStaleMirror } from './task-flow-mirror-refresh.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 
 type AdoptionCursor = {
@@ -93,60 +92,33 @@ export async function adoptWorkflowTask(
     const adoptPayload = {
       requestId: taskFlowRequestId('adopt', [row.record_id, String(row.revision)]),
       stage: { id: row.record_id, expectedRevision: row.revision },
+      stageValues: {
+        workflowKey: key,
+        arguments: { ...(JSON.parse(row.args) as Record<string, string>), key },
+      },
       taskId: adoptedTaskId,
       updatedMachineId: machineId(),
       updatedAt: at,
     }
     const adopted = await writeHostedTaskFlow('adopt', adoptPayload, target, client)
-    let stageRevision = adopted?.revisions[row.record_id] ?? row.revision + 1
-    const adoptedArgs = { ...(JSON.parse(row.args) as Record<string, string>), key }
-    const updatePayload = {
-      requestId: taskFlowRequestId('stage-update', [row.record_id, String(stageRevision)]),
-      stages: [
-        {
-          id: row.record_id,
-          expectedRevision: stageRevision,
-          values: { workflowKey: key, arguments: adoptedArgs, updatedAt: at },
-        },
-      ],
-    }
-    const updated = await writeHostedTaskFlow('stage-update', updatePayload, target, client)
-    const mirror = writeTransaction(() => {
-      refuseTaskFlowStageConflictLocal(
-        {
-          taskRecordId: adoptedTaskId,
-          taskKey: key,
-          cursor: row.id,
-          workflow: row.workflow_slug,
-          mode: row.mode_slug,
-        },
-        d,
-      )
-      const store = taskFlowLocalStore(d)
-      store.write('adopt', adoptPayload, adopted)
-      const result = store.write('stage-update', updatePayload, updated)
-      stageRevision = result.revisions[row.record_id]!
-      const outcome = result.mirror[row.record_id]
-      if (outcome !== 'refresh') assignWorkflowTaskKey(row, key, adoptedTaskId, d)
-      return outcome
-    }, d)
-    if (mirror === 'refresh') {
-      Object.assign(
-        row,
-        await refreshStaleMirror(
-          d,
+    writeTransaction(() => {
+      if (!adopted)
+        refuseTaskFlowStageConflictLocal(
           {
-            recordId: row.record_id,
-            project: row.project,
-            taskKey: key,
             taskRecordId: adoptedTaskId,
+            taskKey: key,
+            cursor: row.id,
+            workflow: row.workflow_slug,
+            mode: row.mode_slug,
           },
-          client,
-        ),
-      )
-    } else {
-      await linkCursorQuestions(d, row.record_id, key, adoptedTaskId, at)
-    }
+          d,
+        )
+      const store = taskFlowLocalStore(d)
+      const result = store.write('adopt', adoptPayload, adopted)
+      row.revision = result.revisions[row.record_id]!
+      assignWorkflowTaskKey(row, key, adoptedTaskId, d)
+    }, d)
+    await linkCursorQuestions(d, row.record_id, key, adoptedTaskId, at)
     return
   }
   const at = nowIso()
@@ -164,8 +136,15 @@ export async function adoptWorkflowTask(
       },
     ],
   }
+  const updated = await writeHostedTaskFlow(
+    'stage-update',
+    payload,
+    taskFlowWriteTarget(row.project, d),
+    client,
+  )
   writeTransaction(() => {
-    taskFlowLocalStore(d).write('stage-update', payload)
+    const result = taskFlowLocalStore(d).write('stage-update', payload, updated)
+    row.revision = result.revisions[row.record_id]!
     assignWorkflowTaskKey(row, key, null, d)
   }, d)
   await linkCursorQuestions(d, row.record_id, key, null, at)

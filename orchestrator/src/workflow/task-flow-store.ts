@@ -6,11 +6,12 @@ import type {
   TaskFlowIntent,
   TaskFlowIntentResult,
 } from '../record/record-task-flow-write-contract.ts'
-import type {
-  TaskFlowLocalOnlyReadMethod,
-  TaskFlowLocalReadMethod,
-  TaskFlowWriteMethod,
-} from './task-flow-store-methods.ts'
+import {
+  currentRecordWriteDecision,
+  throwIfRecordRefused,
+} from '../record/record-write-authority.ts'
+import { hostedTaskFlowLocalStore } from './task-flow-store-hosted.ts'
+import type { TaskFlowWriteMethod } from './task-flow-store-methods.ts'
 import { resolveTaskFlowReadStore } from './task-flow-store-record.ts'
 import { sqliteTaskFlowLocalStore } from './task-flow-store-sqlite.ts'
 import type { TaskFlowSqliteWriteResult } from './task-flow-store-sqlite-write.ts'
@@ -55,8 +56,7 @@ export { isKeylessExplore } from './task-flow-store-types.ts'
 
 /**
  * Names the task-flow questions and write intents used by the workflow engine.
- * Migrations and their preflights write the local tables directly by design, as do the hosted-cache
- * writer in record/record-cache-workflow.ts and refresh in workflow/task-flow-read-through.ts.
+ * Migrations and their preflights write the local tables directly by design.
  */
 interface TaskFlowQueries {
   write<K extends TaskFlowIntent>(
@@ -71,16 +71,8 @@ interface TaskFlowQueries {
     key: string
     exceptRecordId: string | null
   }): void
-  conflictingHostedStage(input: {
-    projectRecordId: string
-    workflow: string
-    mode: string
-    key: string
-    recordId: string
-  }): { number: number; record_id: string } | null
   insertStage(row: WorkflowCursorInsert, conflict: 'local-identity' | 'hosted-record'): string
   openStageForTask(taskRecordId: string): TaskFlowStageCursorRow | null
-  flowRecordIdForTask(taskRecordId: string): string | null
   cacheAdoptedFlow(input: {
     project: string
     taskRecordId: string
@@ -130,7 +122,6 @@ interface TaskFlowQueries {
     mode: string
     key: string
   }): { id: number } | null
-  stageRevision(recordId: string): number | null
   flowState(recordId: string): {
     record_id: string
     revision: number
@@ -191,7 +182,6 @@ interface TaskFlowQueries {
   rulingFileQuestion(questionId: string): TaskFlowRulingFileRow | null
   questionCloseFacts(questionId: string): TaskFlowQuestionCloseRow | null
   overturnRulingRow(questionId: string): TaskFlowOverturnRulingRow | null
-  unlinkedWorkflowQuestionIds(project: string, workflowKey: string): string[]
   pendingTaskLinks(table: 'workflow_cursor' | 'question'): TaskFlowPendingTaskLinkRow[]
   linkedTaskReferences(table: 'workflow_cursor' | 'question'): TaskFlowLinkedTaskReferenceRow[]
   projectReferenceCounts(projectRecordId: string): {
@@ -207,10 +197,7 @@ interface TaskFlowQueries {
   localQuestionProjects(): Array<{ project: string | null }>
 }
 
-type TaskFlowReadMethod = Exclude<
-  keyof TaskFlowQueries,
-  TaskFlowWriteMethod | TaskFlowLocalOnlyReadMethod
->
+type TaskFlowReadMethod = Exclude<keyof TaskFlowQueries, TaskFlowWriteMethod>
 
 type AsyncTaskFlowReads = {
   [K in TaskFlowReadMethod]: TaskFlowQueries[K] extends (...args: infer A) => infer R
@@ -219,15 +206,18 @@ type AsyncTaskFlowReads = {
 }
 
 /** Synchronous writes and reads that must remain atomic inside a local transaction. */
-export interface TaskFlowLocalStore
-  extends Pick<TaskFlowQueries, TaskFlowWriteMethod | TaskFlowLocalReadMethod> {}
+export interface TaskFlowLocalStore extends Pick<TaskFlowQueries, TaskFlowWriteMethod> {}
 
 /** Async task-flow reads, implemented locally now and by the hosted record in the next slice. */
 export interface TaskFlowReadStore extends AsyncTaskFlowReads {}
 
 /** Resolves task-flow writes and transaction-bound reads to local SQLite. */
 export function taskFlowLocalStore(database: Database): TaskFlowLocalStore {
-  return sqliteTaskFlowLocalStore(database)
+  const decision = currentRecordWriteDecision(database)
+  throwIfRecordRefused(decision)
+  return decision.verdict === 'hosted'
+    ? hostedTaskFlowLocalStore(database)
+    : sqliteTaskFlowLocalStore(database)
 }
 
 /** Resolves task-flow reads to the authoritative store for this install. */
