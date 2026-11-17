@@ -296,7 +296,7 @@ export function writeSupersededAskingTurn(database: Database, recordId: string):
   return (
     database
       .query(
-        "UPDATE run SET status='stale', host_wait_since=NULL WHERE record_id=? AND status='asking'",
+        "UPDATE run SET status='ok', host_wait_since=NULL WHERE record_id=? AND status='asking'",
       )
       .run(recordId).changes === 1
   )

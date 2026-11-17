@@ -274,17 +274,14 @@ describe('run continuation', () => {
       .query('UPDATE run SET vendor_session=?,cwd=?,worktree=? WHERE record_id IN (?,?)')
       .run('vendor-session', dir, dir, root, asking)
 
-    const resumed = await continueRun(root, 'continue after the closed question', limit)
-    const successor = db()
-      .query('SELECT number FROM run WHERE record_id=?')
-      .get(resumed.childId) as { number: number }
+    await continueRun(root, 'continue after the closed question', limit)
 
     expect(
       db().query('SELECT status,failure_kind,error FROM run WHERE record_id=?').get(asking),
     ).toEqual({
-      status: 'stale',
-      failure_kind: 'abandoned',
-      error: `superseded by run ${successor.number}`,
+      status: 'ok',
+      failure_kind: null,
+      error: null,
     })
   })
 

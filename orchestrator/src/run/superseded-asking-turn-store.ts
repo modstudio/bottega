@@ -1,5 +1,5 @@
 // concern: superseded asking turn store
-/** Reads asking-turn repair facts. Audit is the only evidence for verdicts overwritten before the write guard existed. */
+/** Reads and applies asking-turn repairs. Audit is the only evidence for verdicts overwritten before the write guard existed. */
 
 import type { Database } from 'bun:sqlite'
 import { machineId } from '../record/machine-identity.ts'
