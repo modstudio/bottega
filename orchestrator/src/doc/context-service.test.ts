@@ -15,6 +15,7 @@ import {
   dropContextItem,
   dropSessionContextItemsForLifecycle,
   getContext,
+  sessionContextItems,
   setContextItem,
 } from './context-service.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from './context-write-adapter.ts'
@@ -434,7 +435,10 @@ test('lifecycle drop ignores a divergent hosted revision and drops both copies',
       source: 'test',
       body: 'Drop this even when the hosted revision differs.',
     })
-    const item = (await getContext({ session })).items[0]!
+    const items = sessionContextItems(session, db())
+    const item = items[0]!
+    const hostedRevision = '2026-11-16T00:00:00.000Z'
+    expect(item.revision).not.toBe(hostedRevision)
     upsertProject({
       recordId: newRecordId(),
       name: ownerProject,
@@ -462,7 +466,7 @@ test('lifecycle drop ignores a divergent hosted revision and drops both copies',
         ],
       }),
       deleteContextItem: async (_id, input) => {
-        assertRecordContextItemRevision(input.expectedRevision, '2026-11-16T00:00:00.000Z')
+        assertRecordContextItemRevision(input.expectedRevision, hostedRevision)
         return { removed: true }
       },
     })
@@ -471,7 +475,7 @@ test('lifecycle drop ignores a divergent hosted revision and drops both copies',
       await dropSessionContextItemsForLifecycle({
         session,
         reason: 'test divergent hosted revision',
-        items: [item],
+        items,
       }),
     ).toEqual([expect.objectContaining({ outcome: 'dropped', error: null })])
     expect((await getContext({ session })).items).toEqual([])
