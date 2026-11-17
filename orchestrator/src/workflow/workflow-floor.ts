@@ -768,7 +768,8 @@ function missingOperatorQuestionRemedy(
   suppliedRuling?: number,
   strandedQuestionRemedy?: string,
 ): string {
-  if (strandedQuestionRemedy) return `floor ruling is unmet: ${strandedQuestionRemedy}`
+  if (strandedQuestionRemedy)
+    return `floor ruling is unmet: ${suppliedRuling ? `the supplied ruling ${suppliedRuling} cannot close the step; ` : ''}${strandedQuestionRemedy}`
   return `floor ruling is unmet: no operator answer on this step; ${suppliedRuling ? 'the supplied ruling cannot close it; ' : ''}record the question with \`${PLATFORM_SLUG} workflow await\`; the operator answers it`
 }
 

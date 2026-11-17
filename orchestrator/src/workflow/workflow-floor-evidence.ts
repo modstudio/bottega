@@ -48,6 +48,7 @@ import {
   pullRequestCreateArgv,
   type ValidatedEvidence,
 } from './workflow-floor.ts'
+import type { CursorState } from './workflow-cursor-transition.ts'
 import { gitText, productionResolveCheckout } from './workflow-floor-evidence-checkout.ts'
 import { positiveEvidenceId } from './workflow-floor-evidence-input.ts'
 import {
@@ -918,6 +919,7 @@ function evidenceCheckoutResolver(
 
 type GatherValidatedEvidenceInput = {
   cursorId: string
+  cursorState: CursorState
   identity: CursorIdentity
   stepOrdinal: number
   stepSlug: string

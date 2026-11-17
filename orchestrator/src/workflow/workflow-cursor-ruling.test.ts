@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { askQuestion } from '../question-store/question-store-mutation.ts'
 import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { ruleWorkflow } from './workflow-cursor-ruling.ts'
@@ -21,16 +22,18 @@ describe('workflow cursor ruling question selection', () => {
     const question = d.query<{ record_id: string }, []>('SELECT record_id FROM question').get()!
     d.run('UPDATE question SET workflow_step_ordinal=NULL,workflow_step_slug=NULL')
     d.run("UPDATE workflow_cursor SET state='running'")
-    const remedy = `question ${awaited.questionId} (record ${question.record_id}) is open on this cursor but carries no step, so no workflow verb can rule on it`
+    const prefix = `question ${awaited.questionId} (record ${question.record_id}) is open on this cursor but carries no step, so no workflow verb can rule on it`
+    const runningRemedy = `${prefix}; close it with \`${PLATFORM_SLUG} question close ${question.record_id} --reason <why>\`, then record the question again with \`${PLATFORM_SLUG} workflow await\``
 
     await expect(
       ruleWorkflow('flow', 'fixture', 'default', args, 'Proceed.', true, 'cli', context, d),
-    ).rejects.toThrow(`is not awaiting a ruling; ${remedy}`)
+    ).rejects.toThrow(`is not awaiting a ruling; ${runningRemedy}`)
 
     d.run("UPDATE workflow_cursor SET state='awaiting-ruling'")
+    const awaitingRemedy = `${prefix}; record the question again with \`${PLATFORM_SLUG} workflow await\`, which records a new question bound to this step. Question ${awaited.questionId} can be closed with \`${PLATFORM_SLUG} question close ${question.record_id} --reason <why>\` once the cursor is no longer awaiting a ruling`
     await expect(
       ruleWorkflow('flow', 'fixture', 'default', args, 'Proceed.', true, 'cli', context, d),
-    ).rejects.toThrow(`has no open question to rule on; ${remedy}`)
+    ).rejects.toThrow(`has no open question to rule on; ${awaitingRemedy}`)
   })
 
   test('await reuses the open question on the current step when the cursor is running', async () => {

@@ -5,7 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
 import {
-  latestQuestionOnStep,
+  openQuestionOnStep,
   questionsForWorkflowCursor,
 } from '../question-store/question-store-read.ts'
 import {
@@ -37,10 +37,10 @@ function selectOpenWorkflowQuestion(
   cursor: Pick<SelectableCursorRow, 'record_id' | 'ordinal' | 'step_slug'>,
   questions: Record<string, unknown>[],
 ): { record_id: string; number: number } | null {
-  const row = latestQuestionOnStep(
-    questions.filter((question) => question.answered_at === null && question.closed_at === null),
-    { ordinal: cursor.ordinal + 1, slug: cursor.step_slug },
-  )
+  const row = openQuestionOnStep(questions, {
+    ordinal: cursor.ordinal + 1,
+    slug: cursor.step_slug,
+  })
   return row ? { record_id: String(row.record_id), number: Number(row.number) } : null
 }
 
@@ -66,7 +66,7 @@ export async function ruleWorkflow(
       `${cursorName(slug, mode, workflowKeyOf(args))} has no cursor; compose the workflow first`,
     )
   const questions = await questionsForWorkflowCursor(database, row.record_id)
-  const strandedQuestion = strandedWorkflowQuestionRemedy(questions)
+  const strandedQuestion = strandedWorkflowQuestionRemedy(questions, row.state)
   if (row.state !== 'awaiting-ruling')
     throw new Error(
       `${cursorName(slug, mode, row.workflow_key)} is not awaiting a ruling${strandedQuestion ? `; ${strandedQuestion}` : ''}`,

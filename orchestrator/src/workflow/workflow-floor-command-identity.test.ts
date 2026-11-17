@@ -152,6 +152,7 @@ test(`a recorded pr-create exec accepts the registered ${PLATFORM_SLUG} path onl
         floors: [floor],
         evidence: await gatherValidatedEvidence({
           cursorId: '00000000-0000-4000-8000-000000000001',
+          cursorState: 'running',
           identity,
           stepOrdinal: 1,
           stepSlug: 'rebase',

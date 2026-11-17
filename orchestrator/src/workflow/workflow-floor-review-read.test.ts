@@ -41,6 +41,7 @@ test('a missing review read is refused with the recording remedy', async () => {
     async () =>
       await gatherValidatedEvidence({
         cursorId: newRecordId(),
+        cursorState: 'running',
         identity,
         stepOrdinal: 1,
         stepSlug: 'review-lenses',
@@ -71,6 +72,7 @@ test.each([
     const readEvidence = async () =>
       await gatherValidatedEvidence({
         cursorId: newRecordId(),
+        cursorState: 'running',
         identity,
         stepOrdinal: 1,
         stepSlug: 'review-lenses',

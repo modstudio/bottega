@@ -257,9 +257,13 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../run/question-open.ts',
     './workflow-floor.ts',
     './workflow-floor-evidence.ts',
+    './workflow-cursor-transition.ts',
     './workflow-stranded-question.ts',
   ]),
-  module('orchestrator/src/workflow/workflow-stranded-question.ts', ['../../../shared/brand.ts']),
+  module('orchestrator/src/workflow/workflow-stranded-question.ts', [
+    '../../../shared/brand.ts',
+    './workflow-cursor-transition.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-floor-evidence-gather.ts', [
     '../database/db.ts',
     './workflow-floor-evidence.ts',
@@ -310,6 +314,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../run/run-status.ts',
     './probe-identifier.ts',
     './workflow-floor.ts',
+    './workflow-cursor-transition.ts',
     './workflow-checkout-landing.ts',
     './workflow-checkout-refusal.ts',
     './workflow-floor-evidence-checkout.ts',

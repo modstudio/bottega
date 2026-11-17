@@ -33,6 +33,26 @@ test('next floor names the full stranded-question recovery', () => {
   })
 })
 
+test('a supplied ruling keeps its refusal before the stranded-question recovery', () => {
+  const remedy = 'stranded question recovery'
+  const decision = decide({
+    evidence: {
+      ruling: {
+        id: 99,
+        answered: true,
+        answeredByOperator: false,
+        boundToCursor: true,
+        boundToStep: false,
+      },
+      strandedQuestionRemedy: remedy,
+    },
+  })
+  expect(decision).toEqual({
+    action: 'refuse',
+    message: `floor ruling is unmet: the supplied ruling 99 cannot close the step; ${remedy}`,
+  })
+})
+
 const states: {
   name: string
   question?: NonNullable<ValidatedEvidence['stepQuestion']>

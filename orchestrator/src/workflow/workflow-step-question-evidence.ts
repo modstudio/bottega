@@ -8,10 +8,17 @@ import {
 } from '../question-store/question-store-read.ts'
 import { type Floor, isOperatorRulingFloor, type ValidatedEvidence } from './workflow-floor.ts'
 import type { QuestionEvidenceRow } from './workflow-floor-evidence.ts'
+import type { CursorState } from './workflow-cursor-transition.ts'
 import { strandedWorkflowQuestionRemedy } from './workflow-stranded-question.ts'
 
 export async function gatherStepQuestionEvidence(
-  input: { floors: Floor[]; cursorId: string; stepOrdinal: number; stepSlug: string },
+  input: {
+    floors: Floor[]
+    cursorId: string
+    cursorState: CursorState
+    stepOrdinal: number
+    stepSlug: string
+  },
   d: Database,
   factsOf: (
     row: QuestionEvidenceRow,
@@ -19,7 +26,7 @@ export async function gatherStepQuestionEvidence(
 ): Promise<Pick<ValidatedEvidence, 'stepQuestion' | 'strandedQuestionRemedy'>> {
   if (!input.floors.some(isOperatorRulingFloor)) return {}
   const questions = await questionsForWorkflowCursor(d, input.cursorId)
-  const strandedQuestion = strandedWorkflowQuestionRemedy(questions)
+  const strandedQuestion = strandedWorkflowQuestionRemedy(questions, input.cursorState)
   return {
     ...gatherStepQuestionEvidenceFromRows(questions, input, factsOf),
     ...(strandedQuestion ? { strandedQuestionRemedy: strandedQuestion } : {}),
