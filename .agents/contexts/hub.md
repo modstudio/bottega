@@ -156,8 +156,11 @@ whose journal is behind or ahead, and write transactions refuse a schema version
 from the one the process opened. `SCHEMA_INVARIANT`, `CONNECTION_SCHEMA_INVARIANT`, and
 `JOURNAL_WHEN_ORDER` name the enforced rules.
 
-Migration backfills are idempotent, migration hashing covers DDL rather than backfill
-content, and columns read by running processes expand before they contract. The baseline
+A migration backfill changes no row once applied: each SET column is guarded with
+`IS NULL`, or the statement waits on a setting marker, because a rerun rewrite holds the
+store's write lock on every migrate. `hub/src/migrations-backfill-rerun.test.ts` enforces
+it. Migration hashing covers DDL rather than backfill content, and columns read by
+running processes expand before they contract. The baseline
 is the canonical SQLite DDL; later migrations are explicit SQL.
 
 # Collection
