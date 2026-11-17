@@ -525,7 +525,7 @@ test('record for-runs reads once per owning project', async () => {
         ],
       }),
       readQuestions: async (_input, destination) => {
-        reads.push(destination!.destinationSpaceId)
+        reads.push(destination!.destinationSpaceId!)
         return { items: [] }
       },
     },
