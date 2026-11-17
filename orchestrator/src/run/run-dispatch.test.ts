@@ -10,6 +10,7 @@ import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { clearMigrationDrain, setMigrationDrain } from '../database/migration-drain.ts'
 import { upsertProject } from '../project/projects.ts'
+import { liveLensStates } from '../review-funnel/gather-funnel-facts.ts'
 import { writeDispatchState } from './run-artifacts.ts'
 import { detach, spawnCwd } from './run-dispatch.ts'
 import { RUN_REFERENCE_REFUSAL } from './run-task-reference.ts'
@@ -140,6 +141,42 @@ test('a findings dispatch carries its resolved round role to the coordinator', a
   expect(
     db().query('SELECT cursor_record_id,step_slug FROM run WHERE record_id=?').get(runId),
   ).toEqual({ cursor_record_id: cursorRecordId, step_slug: 'review' })
+})
+
+test('a detached review placeholder is credited as running when it is claimed', async () => {
+  process.env.BOTTEGA_DEPTH = '0'
+  const branch = 'DEV-2403-reviewed'
+  const spawnCoordinator = (() => {
+    const child = new EventEmitter() as EventEmitter & { pid: number; unref(): void }
+    child.pid = process.pid
+    child.unref = () => {}
+    queueMicrotask(() => child.emit('spawn'))
+    return child
+  }) as never
+
+  const runId = await detach(
+    'review-lens',
+    'credited detached review fixture',
+    {
+      cwd: import.meta.dir,
+      repo: 'dispatch-repo-fixture',
+      key: 'DEV-2403',
+      lens: 'correctness',
+      review: branch,
+      resolvedReviewTarget: { branch, commit: 'head', base: 'base' },
+    },
+    'codex',
+    spawnCoordinator,
+  )
+
+  expect(db().query('SELECT lens,branch FROM run WHERE record_id=?').get(runId)).toEqual({
+    lens: 'correctness',
+    branch,
+  })
+  expect(liveLensStates(db(), 'dispatch-repo-fixture', branch)).toEqual([
+    { lens: 'correctness', runId, state: 'running' },
+  ])
+  db().query("UPDATE run SET status='stopped' WHERE record_id=?").run(runId)
 })
 
 test('a harness continuation placeholder carries its executor and parent binding before claim', async () => {

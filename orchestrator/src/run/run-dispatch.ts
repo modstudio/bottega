@@ -41,6 +41,7 @@ import {
 import { job, resolveJobTimeoutMs } from '../jobs/jobs.ts'
 import { effectiveMcpRequest, type McpRequest, storedMcpRequest } from '../mcp/mcp-preflight.ts'
 import { projectByName } from '../project/projects.ts'
+import { claimedRunBranch } from './run-claim-plan.ts'
 import { signedInRecordUserId } from '../record/record-attribution.ts'
 import type { DetachSpec } from '../route/failover.ts'
 import type { SynchronousResult } from '../synchronous-result.ts'
@@ -354,6 +355,12 @@ async function detachResolved(
   const dispatchMcpPreflightedAgent = preflightDetachMcp(jobName, spec, mcpDispatch)
   const startedByUserId = await signedInRecordUserId()
   const { identity, pendingRecordId, detached, links, binding } = detachedLinks
+  const placeholderBranch = claimedRunBranch(
+    spec.resolvedReviewTarget?.branch ?? null,
+    null,
+    spec.resume?.treePlan?.branch ?? spec.resume?.worktree?.branch ?? null,
+    null,
+  )
   mkdirSync(RUNS_DIR, { recursive: true })
   // Named by the clock alone, this collided: concurrent `bottega run start` calls for the
   // same job inside one millisecond wrote the SAME prompt file, and every one of
@@ -371,9 +378,9 @@ async function detachResolved(
     refuseLiveRetryOwner(spec)
     const inserted = db()
       .query(
-        `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, task_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, agent_explicit, parent_run_record_id, turn, mcp, cursor_record_id, step_slug,
+        `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, task_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, agent_explicit, branch, lens, parent_run_record_id, turn, mcp, cursor_record_id, step_slug,
                       vendor_session, started_by_user_id, continuation_message_sha, review_role, selection_reason, executor, evidence_excluded, harness_wall_bound_ms)
-       SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+       SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         WHERE ? IS NULL OR (
           EXISTS (SELECT 1 FROM run root WHERE root.record_id = ? AND root.status <> 'stale')
           AND NOT EXISTS (
@@ -400,6 +407,8 @@ async function detachResolved(
         sessionId(),
         spec.probe ? 1 : 0,
         spec.agentExplicit ? 1 : 0,
+        placeholderBranch,
+        spec.lens ?? null,
         identity.parent_run_record_id,
         identity.turn,
         storedMcpRequest(mcpRequest),

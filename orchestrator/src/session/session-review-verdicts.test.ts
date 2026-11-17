@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import type { WorkflowCursorListRow } from '../workflow/workflow-cursor-list.ts'
@@ -72,7 +73,6 @@ test('cursor-claimed branches skip merged heads but gather commits made after th
       [cursor],
       database,
       gather,
-      () => true,
       () => identity,
     )
 
@@ -93,7 +93,41 @@ test('cursor-claimed branches skip merged heads but gather commits made after th
   database.close()
 })
 
-test('run-derived branches with a merged landing do not gather a review verdict', () => {
+test('a fix-defect cursor contributes its explicit branch', () => {
+  const database = migratedTestDatabase()
+  const projectId = newRecordId()
+  database
+    .query(
+      `INSERT INTO project (record_id,name,path,stack,canon,settings)
+       VALUES (?,'fixture','/fixture','typescript',0,'{"trunk":"main"}')`,
+    )
+    .run(projectId)
+  const cursor = {
+    workflow_slug: 'fix-defect',
+    workflow_key: 'DEV-2403',
+    project: 'fixture',
+    args: JSON.stringify({ branch: 'DEV-2403-work' }),
+  } as WorkflowCursorListRow
+  const gathered: string[] = []
+
+  expect(
+    sessionReviewVerdictLines(
+      'session',
+      [cursor],
+      database,
+      (branch) => {
+        gathered.push(branch.branch)
+        return { branch: branch.branch, taskKey: branch.taskKey, failure: 'gathered' }
+      },
+    ),
+  ).toEqual([
+    `DEV-2403: review verdict unavailable (gathered) → ${PLATFORM_SLUG} review tier DEV-2403`,
+  ])
+  expect(gathered).toEqual(['DEV-2403-work'])
+  database.close()
+})
+
+test('a root writing run without this session cursor contributes no branch', () => {
   const database = migratedTestDatabase()
   const projectId = newRecordId()
   database
@@ -108,30 +142,48 @@ test('run-derived branches with a merged landing do not gather a review verdict'
        (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn,
         project_record_id,branch,launch_key,session_id)
        VALUES (?,1,'2026-11-15','codex','implement','sha',1,'head','ok',1,?,
-               'DEV-2336-merged','DEV-2336','session')`,
-    )
-    .run(newRecordId(), projectId)
-  database
-    .query(
-      `INSERT INTO branch_landing_record
-       (record_id,project,project_record_id,branch,tip,pr_number,merge_commit,merged_at,recorded_at)
-       VALUES (?,'fixture',?,'DEV-2336-merged','landed-tip',1,'merge','2026-11-15T12:00:00Z','2026-11-15T12:00:00Z')`,
+               'DEV-2403-work','DEV-2403','session')`,
     )
     .run(newRecordId(), projectId)
   let gathered = false
 
   expect(
-    sessionReviewVerdictLines(
-      'session',
-      [],
-      database,
-      () => {
-        gathered = true
-        return { branch: 'DEV-2336-merged', taskKey: 'DEV-2336', failure: 'gathered' }
-      },
-      () => true,
-    ),
+    sessionReviewVerdictLines('session', [], database, () => {
+      gathered = true
+      return { branch: 'DEV-2403-work', taskKey: 'DEV-2403', failure: 'unexpected' }
+    }),
   ).toEqual([])
   expect(gathered).toBeFalse()
+  database.close()
+})
+
+test('a keyed cursor without a branch resolves its task branch', () => {
+  const database = migratedTestDatabase()
+  const projectId = newRecordId()
+  database
+    .query(
+      `INSERT INTO project (record_id,name,path,stack,canon,settings)
+       VALUES (?,'fixture','/fixture','typescript',0,'{"trunk":"main"}')`,
+    )
+    .run(projectId)
+  const cursor = {
+    workflow_slug: 'fix-defect',
+    workflow_key: 'DEV-2403',
+    project: 'fixture',
+    args: '{}',
+  } as WorkflowCursorListRow
+
+  expect(
+    sessionReviewVerdictLines(
+      'session',
+      [cursor],
+      database,
+      (branch) => ({ branch: branch.branch, taskKey: branch.taskKey, failure: 'gathered' }),
+      undefined,
+      () => ({ branch: 'DEV-2403-resolved' }),
+    ),
+  ).toEqual([
+    `DEV-2403: review verdict unavailable (gathered) → ${PLATFORM_SLUG} review tier DEV-2403`,
+  ])
   database.close()
 })

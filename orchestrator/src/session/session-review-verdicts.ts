@@ -5,8 +5,8 @@ import type { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { readMergedBranchLandingTip } from '../branch/branch-landing-records.ts'
+import { resolveTaskBranch } from '../branch/task-branch.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
-import { job } from '../jobs/jobs.ts'
 import { projectByName } from '../project/projects.ts'
 import { resolveReviewBase } from '../review/review-target.ts'
 import { reviewFunnelVerdictForChange } from '../review-funnel/review-funnel-verdict-service.ts'
@@ -21,17 +21,13 @@ type InFlightBranch = {
   branch: string
   taskKey: string | null
   worktree: string | null
-  claimedByCursor: boolean
+  resolutionFailure?: string
 }
-
-type RootRunBranchRow = Omit<InFlightBranch, 'claimedByCursor'> & { job: string }
 
 export type SessionReviewVerdictGatherer = (
   branch: InFlightBranch,
   database: Database,
 ) => StopSummaryReviewVerdictFact | null
-
-export type SessionReviewBranchRefExists = (branch: InFlightBranch, database: Database) => boolean
 
 type LandedBranchIdentity = {
   head: string | null
@@ -52,60 +48,52 @@ export function landedBranchOwesNoReviewLine(identity: {
   return identity.head === null || identity.head === identity.tip || identity.headIsAncestorOfTip
 }
 
-function cursorBranch(cursor: WorkflowCursorListRow): InFlightBranch | null {
-  if (cursor.workflow_slug !== 'ship-task') return null
+export type SessionReviewTaskBranchResolver = (
+  cwd: string,
+  key: string,
+) => { branch: string } | null
+
+function cursorBranch(
+  cursor: WorkflowCursorListRow,
+  database: Database,
+  resolve: SessionReviewTaskBranchResolver,
+): InFlightBranch | null {
+  const taskKey = cursor.workflow_key?.trim()
+  if (!taskKey) return null
   const args = JSON.parse(cursor.args) as Record<string, unknown>
-  const branch = typeof args.branch === 'string' ? args.branch.trim() : ''
-  if (!branch) return null
+  let branch = typeof args.branch === 'string' ? args.branch.trim() : ''
   const worktree = typeof args.worktree === 'string' ? args.worktree.trim() : ''
+  let resolutionFailure: string | undefined
+  if (!branch) {
+    try {
+      const project = projectByName(cursor.project, database)
+      if (!project) throw new Error(`project ${cursor.project} is not registered`)
+      branch = resolve(project.path, taskKey)?.branch ?? ''
+    } catch (cause) {
+      branch = taskKey
+      resolutionFailure = String(cause)
+    }
+  }
+  if (!branch) return null
   return {
     project: cursor.project,
     branch,
-    taskKey: cursor.workflow_key?.trim() || null,
+    taskKey,
     worktree: worktree || null,
-    claimedByCursor: true,
+    resolutionFailure,
   }
 }
 
-/**
- * Open ship cursors always claim their branch. A root writing-run branch counts only while its
- * main-checkout ref exists; a missing ref means that branch was landed or disposed and gets no line.
- */
+/** Open keyed workflow cursors claim the branch whose review verdict belongs to this session. */
 function sessionInFlightReviewBranches(
-  session: string,
   cursors: readonly WorkflowCursorListRow[],
   database: Database,
+  resolve: SessionReviewTaskBranchResolver,
 ): InFlightBranch[] {
-  const runs = database
-    .query<RootRunBranchRow, [string]>(
-      `SELECT project.name project,run.branch,run.launch_key taskKey,run.worktree,run.job
-         FROM run JOIN project ON project.record_id=run.project_record_id
-        WHERE run.session_id=? AND run.parent_run_record_id IS NULL AND run.branch IS NOT NULL
-          AND NOT EXISTS (
-            SELECT 1 FROM run chain_turn
-             WHERE (chain_turn.record_id=run.record_id OR chain_turn.parent_run_record_id=run.record_id)
-               AND chain_turn.failure_kind='abandoned'
-          )
-          AND NOT EXISTS (
-            SELECT 1 FROM branch_landing_record landed
-             WHERE landed.project_record_id=run.project_record_id AND landed.branch=run.branch
-               AND landed.merged_at IS NOT NULL
-          )
-        ORDER BY run.number`,
-    )
-    .all(session)
-    .filter((run) => {
-      try {
-        return job(run.job).needs.writesRepo
-      } catch {
-        return false
-      }
-    })
   const branches = new Map<string, InFlightBranch>()
-  for (const branch of [
-    ...cursors.map(cursorBranch).filter((item): item is InFlightBranch => item !== null),
-    ...runs.map((run) => ({ ...run, claimedByCursor: false })),
-  ]) {
+  for (const branch of cursors
+    .map((cursor) => cursorBranch(cursor, database, resolve))
+    .filter((item): item is InFlightBranch => item !== null)) {
     const identity = `${branch.project}\0${branch.branch}`
     const existing = branches.get(identity)
     if (!existing) branches.set(identity, branch)
@@ -113,7 +101,7 @@ function sessionInFlightReviewBranches(
       branches.set(identity, {
         ...existing,
         taskKey: existing.taskKey ?? branch.taskKey,
-        claimedByCursor: existing.claimedByCursor || branch.claimedByCursor,
+        resolutionFailure: existing.resolutionFailure ?? branch.resolutionFailure,
       })
   }
   return [...branches.values()]
@@ -123,23 +111,6 @@ function registeredBranchProject(branch: InFlightBranch, database: Database) {
   const project = projectByName(branch.project, database)
   if (!project) throw new Error(`project ${branch.project} is not registered`)
   return project
-}
-
-function branchRefExistsInMainCheckout(branch: InFlightBranch, database: Database): boolean {
-  const project = registeredBranchProject(branch, database)
-  const result = startBoundedSync(
-    ['git', 'rev-parse', '--verify', '--quiet', `refs/heads/${branch.branch}`],
-    {
-      budget: 'git-plumbing',
-      cwd: project.path,
-      env: targetGitEnvironment(project.path),
-    },
-  )
-  if (result.exitCode === 0) return true
-  if (result.exitCode === 1) return false
-  throw new Error(
-    result.stderr.trim() || `git could not check branch ${branch.branch} in ${project.path}`,
-  )
 }
 
 function branchLandingIdentity(
@@ -213,27 +184,23 @@ function gatherBranchReviewVerdict(
 }
 
 export function sessionReviewVerdictLines(
-  session: string,
+  _session: string,
   cursors: readonly WorkflowCursorListRow[],
   database: Database,
   gather: SessionReviewVerdictGatherer = gatherBranchReviewVerdict,
-  refExists: SessionReviewBranchRefExists = branchRefExistsInMainCheckout,
   landingIdentity: SessionReviewBranchLandingIdentity = branchLandingIdentity,
+  resolve: SessionReviewTaskBranchResolver = resolveTaskBranch,
 ): string[] {
   return stopSummaryReviewVerdictLines(
-    sessionInFlightReviewBranches(session, cursors, database).flatMap((branch) => {
-      if (!branch.claimedByCursor) {
-        try {
-          if (!refExists(branch, database)) return []
-        } catch (cause) {
-          return [
-            {
-              branch: branch.branch,
-              taskKey: branch.taskKey,
-              failure: String(cause),
-            },
-          ]
-        }
+    sessionInFlightReviewBranches(cursors, database, resolve).flatMap((branch) => {
+      if (branch.resolutionFailure) {
+        return [
+          {
+            branch: branch.branch,
+            taskKey: branch.taskKey,
+            failure: branch.resolutionFailure,
+          },
+        ]
       }
       const landedTip = readMergedBranchLandingTip(database, branch.project, branch.branch)
       if (landedTip !== null) {

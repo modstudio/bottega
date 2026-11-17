@@ -379,6 +379,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   })
   const claimedCwd = repoJob ? null : callerCwd
   const claimedBranch = repoJob ? null : branchOf(callerCwd)
+  const initiallyRecordedBranch = recordedBranch(claimedBranch)
   const identity = claimIdentity(opts.resume)
   const ownerSession = requiredOwnerSession(name, opts, resume.workspaceSource)
   const execution = executorClaimFacts(name, mcpRequest, transportName, timeoutMs)
@@ -437,12 +438,12 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const insertClaimedRun = () =>
     db()
       .query(
-        `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of_record_id, route_reason, branch, parent_run_record_id, turn, vendor_session, docs_injected, doc_revisions, canon_sha,
+        `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of_record_id, route_reason, branch, lens, parent_run_record_id, turn, vendor_session, docs_injected, doc_revisions, canon_sha,
                           launch_cwd, launch_seed, launch_key, task_record_id, launch_base, no_failover,
                           automatic_failover, agent_explicit, transport_explicit, review_ref, review_role, pid, mcp, transport, started_by_user_id,
                           executor, evidence_excluded, harness_wall_bound_ms, endpoint_key_source,
                           credential_id, credential_payer, credential_binding, cursor_record_id, step_slug)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id, number`,
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id, number`,
       )
       .get(
         recordId,
@@ -463,7 +464,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         opts.probe ? 1 : 0,
         opts.retryOf ?? null,
         reason,
-        claimedBranch,
+        initiallyRecordedBranch,
+        opts.lens ?? null,
         identity.parent_run_record_id,
         identity.turn,
         vendorSession,

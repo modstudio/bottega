@@ -8,6 +8,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel } from '../../../shared/git.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { AGENTS, requireAgent } from '../agent/agent-registry.ts'
+import { resolveTaskBranch } from '../branch/task-branch.ts'
 import { DB_PATH, db } from '../database/db.ts'
 import { resolveBase, targetGitEnvironment } from '../git/git-environment.ts'
 import { job } from '../jobs/jobs.ts'
@@ -186,23 +187,27 @@ function resolveTierTarget(value: string, cwd: string): ResolvedTierTarget {
     }
   }
 
-  const branch = startBoundedSync(
+  const branchRef = startBoundedSync(
     ['git', 'show-ref', '--verify', '--quiet', `refs/heads/${value}`],
     { budget: 'git-plumbing', cwd: repo, env: targetGitEnvironment(repo) },
   )
-  if (branch.exitCode !== 0) {
-    throw new Error('review tier accepts a branch, run id, or explicit <from>..<to> range')
+  const branch =
+    branchRef.exitCode === 0 ? value : (resolveTaskBranch(cwd, value)?.branch ?? null)
+  if (!branch) {
+    throw new Error(
+      'review tier accepts a branch, task key, run id, or explicit <from>..<to> range',
+    )
   }
   const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
   if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
-  const from = resolveReviewBase(repo, value, trunk)
-  if (!from) throw new Error(`cannot find merge-base between branch ${value} and trunk ${trunk}`)
-  const to = resolveTierTargetCommit(repo, value)
+  const from = resolveReviewBase(repo, branch, trunk)
+  if (!from) throw new Error(`cannot find merge-base between branch ${branch} and trunk ${trunk}`)
+  const to = resolveTierTargetCommit(repo, branch)
   return {
     repo,
     from,
     to,
-    branch: value,
+    branch,
     project,
   }
 }

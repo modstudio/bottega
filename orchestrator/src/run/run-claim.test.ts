@@ -161,16 +161,21 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
       ...claimInput,
       opts: {
         job: 'review-lens',
+        lens: 'correctness',
         binding: { cursorRecordId, stepSlug: 'write' },
       },
       stamp: 'bound-fresh-claim',
       carriedQuestionIds: [],
+      reviewTarget: { branch: 'DEV-2403-reviewed', commit: 'head', base: 'base' },
     })
     expect(
       db()
         .query('SELECT cursor_record_id,step_slug FROM run WHERE record_id=?')
         .get(boundFresh.claim.id),
     ).toEqual({ cursor_record_id: cursorRecordId, step_slug: 'write' })
+    expect(
+      db().query('SELECT lens,branch FROM run WHERE record_id=?').get(boundFresh.claim.id),
+    ).toEqual({ lens: 'correctness', branch: 'DEV-2403-reviewed' })
 
     const harness = await claimRun({
       ...claimInput,
