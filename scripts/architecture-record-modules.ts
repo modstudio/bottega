@@ -631,7 +631,6 @@ export const recordModules: RecordModule[] = [
     './record-session.ts',
     './record-pool.ts',
     './active-space-invariant.ts',
-    '../workflow/task-flow-backfill.ts',
   ]),
   module('orchestrator/src/record/outbox-failure.ts', [
     '../../../shared/record/postgres-error.ts',

@@ -38,7 +38,7 @@ test('sync reports each row held by destination routing', async () => {
   expect(output).toContain('held orch:17\trun\tproject example has no declared record space')
 })
 
-test('sync reports retired question outbox rows', async () => {
+test('sync reports retired direct-write outbox rows', async () => {
   const output: string[] = []
   await syncCommand(
     { backfill: false },
@@ -58,7 +58,7 @@ test('sync reports retired question outbox rows', async () => {
     },
   )
 
-  expect(output).toContain('retired 2 question outbox rows')
+  expect(output).toContain('retired 2 direct-write outbox rows')
 })
 
 test('sync reports each row deferred by a pending parent', async () => {
@@ -213,7 +213,6 @@ test('sync presentation reports released run payloads skipped by backfill', asyn
           quarantined: [],
           blocked: [],
           backfill: {
-            taskFlows: { enqueuedFlows: 0, enqueuedStages: 0, held: [] },
             enqueued: 0,
             refreshedLinks: 0,
             refreshedNumbers: 0,
@@ -241,7 +240,6 @@ test('sync presentation reports released run payloads skipped by backfill', asyn
     },
   )
 
-  expect(output).toContain('task-flow backfill enqueued 0 flows and 0 stages')
   expect(output.find((line) => line.startsWith('backfill enqueued'))).toContain(
     'skipped-released 2, skipped-live 1',
   )

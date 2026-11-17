@@ -1,12 +1,20 @@
 // concern: hosted-table-guard
-/** Refuses local SQL access to hosted-only tables while preserving an explicit maintenance bypass. */
+/** Refuses local SQL access to hosted-only tables; maintenance uses the migration-step handle. */
 import type { Database } from 'bun:sqlite'
 
 /**
  * A table joins this list only when identity-state-classes declares it hosted and production code
  * no longer reads or writes its local copy.
  */
-export const HOSTED_TABLES_WITHOUT_LOCAL_ACCESS = [] as const
+export const HOSTED_TABLES_WITHOUT_LOCAL_ACCESS = [
+  'question',
+  'question_mutation_audit',
+  'task_flow',
+  'workflow_cursor',
+  'workflow_obligation',
+  'workflow_step_text',
+  'workflow_text_copy',
+] as const
 
 const guardedMethods = new Set(['query', 'prepare', 'run', 'exec'])
 
@@ -21,7 +29,12 @@ export function guardHostedTables(
     if (cached !== undefined || checks.has(sql)) return cached ?? null
     const found =
       tables.find((table) =>
-        new RegExp(`(^|[^A-Za-z0-9_])${escapeRegExp(table)}([^A-Za-z0-9_]|$)`, 'i').test(sql),
+        new RegExp(
+          '\\b(?:FROM|JOIN|INTO|UPDATE|TABLE|DELETE\\s+FROM)\\s+["`\\[]?' +
+            escapeRegExp(table) +
+            '(?:["`\\]]|\\b)',
+          'i',
+        ).test(sql),
       ) ?? null
     checks.set(sql, found)
     return found

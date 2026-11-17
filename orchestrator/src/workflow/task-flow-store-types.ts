@@ -163,6 +163,8 @@ export type TaskFlowCursorWorkRow = { key: string; closed: string }
 export type TaskFlowCursorLifecycleRow = {
   record_id: string
   number: number
+  workflow_slug: string
+  workflow_key: string | null
   created_at: string
   updated_at: string
   state: string

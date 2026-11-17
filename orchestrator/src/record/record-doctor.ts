@@ -42,11 +42,6 @@ import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/p
 import { questionProjects, questionRulingsPaged } from '../question-store/question-store-read.ts'
 import { RecordQuestionStore } from '../question-store/question-store-record.ts'
 import { inspectRunRecordBackfill, type RunRecordBackfillInspection } from '../run/run-outbox.ts'
-import {
-  inspectTaskFlowBackfill,
-  type TaskFlowBackfillInspection,
-  taskFlowBackfillUnavailable,
-} from '../workflow/task-flow-backfill.ts'
 import { activeSpaceInvariant } from './active-space-invariant.ts'
 import { machineId } from './machine-identity.ts'
 import { quarantinedOutboxRows } from './outbox-quarantine.ts'
@@ -85,7 +80,6 @@ export type RecordDoctorFacts = {
   projects: ReadonlyArray<{ name: string; space: string | null }>
   pendingOutboxRows: number
   runRecordBackfill: RunRecordBackfillInspection
-  taskFlowBackfill: TaskFlowBackfillInspection
   quarantinedOutboxRows: readonly QuarantinedDoctorRow[]
   operatorConnectionPresent: boolean
   operatorChecks?: readonly RecordDoctorCheck[]
@@ -264,31 +258,6 @@ function runRecordBackfillCheck(facts: RunRecordBackfillInspection): RecordDocto
       }
 }
 
-function taskFlowBackfillCheck(facts: TaskFlowBackfillInspection): RecordDoctorCheck {
-  if (facts.failure)
-    return {
-      name: 'local task-flow parity with the record',
-      status: 'fail',
-      detail: facts.failure,
-      section: 'customer',
-    }
-  const missing = facts.flows + facts.stages
-  const held = facts.held.reduce((sum, row) => sum + row.rows, 0)
-  return missing === 0 && held === 0
-    ? {
-        name: 'local task-flow parity with the record',
-        status: 'pass',
-        detail: '0',
-        section: 'customer',
-      }
-    : {
-        name: 'local task-flow parity with the record',
-        status: 'fail',
-        detail: `${missing}: flows ${facts.flows}, stages ${facts.stages}${held ? `; held ${held}: ${facts.held.map((row) => `${row.project} ${row.rows} (${row.reason})`).join(', ')}` : ''}; run \`${PLATFORM_SLUG} record push --backfill\``,
-        section: 'customer',
-      }
-}
-
 /** Turns already gathered facts into the complete, ordered doctor presentation. */
 export function decideRecordDoctorChecks(facts: RecordDoctorFacts): RecordDoctorCheck[] {
   const checks: RecordDoctorCheck[] = [
@@ -349,7 +318,6 @@ export function decideRecordDoctorChecks(facts: RecordDoctorFacts): RecordDoctor
     section: 'customer',
   })
   checks.push(runRecordBackfillCheck(facts.runRecordBackfill))
-  checks.push(taskFlowBackfillCheck(facts.taskFlowBackfill))
   checks.push(
     facts.quarantinedOutboxRows.length
       ? {
@@ -596,15 +564,6 @@ async function customerFacts(
       }
     }
   }
-  const taskFlowBackfill = await customerTaskFlowParity(
-    database,
-    client,
-    identity,
-    Object.fromEntries(
-      projects.flatMap((project) => (project.space ? [[project.name, project.space]] : [])),
-    ),
-    apiFailure ?? sessionFailure,
-  )
   return {
     apiConfigured,
     apiReachable,
@@ -621,37 +580,11 @@ async function customerFacts(
     ...hubMeasurement,
     pendingOutboxRows: pendingOutboxCount(database),
     runRecordBackfill: inspectRunRecordBackfill(database),
-    taskFlowBackfill,
     quarantinedOutboxRows: quarantinedOutboxRows(database).map((row) => ({
       id: row.id,
       kind: row.kind,
       reason: row.error,
     })),
-  }
-}
-
-async function customerTaskFlowParity(
-  database: Database,
-  client: ReturnType<typeof recordApiClient> | null,
-  identity: RecordIdentity | null,
-  projectSpaces: Record<string, string>,
-  priorFailure?: string,
-): Promise<TaskFlowBackfillInspection> {
-  if (!identity || !client)
-    return taskFlowBackfillUnavailable(
-      priorFailure ?? 'hosted record task-flow parity could not be measured',
-    )
-  try {
-    return await inspectTaskFlowBackfill(database, {
-      client,
-      memberships: parseRecordSpaceMemberships(identity.memberships),
-      personalSpaceId: identity.personalSpaceId,
-      projectSpaces,
-    })
-  } catch (error) {
-    return taskFlowBackfillUnavailable(
-      `hosted task-flow parity could not be measured: ${error instanceof Error ? error.message : String(error)}; ${API_REACHABILITY_REMEDY}`,
-    )
   }
 }
 

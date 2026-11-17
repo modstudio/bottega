@@ -5,9 +5,7 @@
     "hub.task",
     "hub.task_comment",
     "hub.task_document",
-    "hub.task_status_event",
-    "orchestrator.task_flow",
-    "orchestrator.workflow_cursor"
+    "hub.task_status_event"
   ],
   "hostedCaches": [
     "hub.question",

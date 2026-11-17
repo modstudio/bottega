@@ -89,18 +89,6 @@ function logHeldRows(
     presentation.log(line)
 }
 
-function logTaskFlowBackfill(
-  taskFlows: NonNullable<Awaited<ReturnType<typeof syncRecord>>['backfill']>['taskFlows'],
-  presentation: { log(value: string): void },
-): void {
-  presentation.log(
-    `task-flow backfill enqueued ${taskFlows.enqueuedFlows} flows and ${taskFlows.enqueuedStages} stages`,
-  )
-  for (const hold of taskFlows.held)
-    presentation.log(`task-flow backfill held ${hold.rows}\t${hold.project}\t${hold.reason}`)
-  if (taskFlows.failure) presentation.log(`task-flow backfill unavailable: ${taskFlows.failure}`)
-}
-
 export function quarantinedParentHeldLines(
   rows: NonNullable<Awaited<ReturnType<typeof syncRecord>>['quarantinedParentHolds']>,
 ): string[] {
@@ -136,7 +124,6 @@ export async function syncCommand(
   }
   await automaticallyAdoptHostedBoard(presentation, dependencies.boardAdoption)
   if (result.backfill) {
-    logTaskFlowBackfill(result.backfill.taskFlows, presentation)
     presentation.log(
       `backfill enqueued ${result.backfill.enqueued}, refreshed-links ${result.backfill.refreshedLinks}, refreshed-numbers ${result.backfill.refreshedNumbers}, refreshed-roots ${result.backfill.refreshedRoots}, skipped-released ${result.backfill.skippedReleased}, skipped-live ${result.backfill.skippedLive}`,
     )
@@ -158,7 +145,7 @@ export async function syncCommand(
     return
   }
   presentation.log(`pushed ${result.pushed}, failed ${result.failed}, pending ${result.pending}`)
-  if (result.retired) presentation.log(`retired ${result.retired} question outbox rows`)
+  if (result.retired) presentation.log(`retired ${result.retired} direct-write outbox rows`)
   if (result.routingPool) presentation.log(routingPoolLine(result.routingPool))
   logProjectRegister(result.projectRegister, presentation)
   logRecordCacheCounts(result, presentation)

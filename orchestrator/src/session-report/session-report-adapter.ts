@@ -5,6 +5,8 @@ import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { openQuestionStages, questionsForSession } from '../question-store/question-store-read.ts'
+import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
+import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import {
   buildSessionWindowReport,
   comparisonWindow,
@@ -22,15 +24,6 @@ type RunRow = {
   cursor_record_id: string | null
 }
 
-type CursorRow = {
-  record_id: string
-  number: number
-  workflow_slug: string
-  workflow_key: string
-  created_at: string
-  updated_at: string
-}
-
 export type SessionReport = {
   generatedAt: string
   sessions: Array<{
@@ -42,11 +35,15 @@ export type SessionReport = {
 }
 
 function knownSessions(database: Database): string[] {
+  const cursorSessions =
+    currentRecordWriteDecision(database).verdict === 'hosted'
+      ? ''
+      : 'UNION SELECT session_id FROM workflow_cursor WHERE session_id IS NOT NULL'
   return database
     .query<{ session_id: string }, []>(
       `SELECT session_id FROM session_seen
        UNION SELECT session_id FROM run WHERE session_id IS NOT NULL
-       UNION SELECT session_id FROM workflow_cursor WHERE session_id IS NOT NULL
+       ${cursorSessions}
        UNION SELECT session_id FROM hook_emission
        ORDER BY session_id`,
     )
@@ -105,14 +102,9 @@ export async function factsForSession(
   const openCursorIds = new Set(
     (await openQuestionStages(database, sessionId)).map((row) => row.record_id),
   )
-  const cursors = database
-    .query<CursorRow, [string, string]>(
-      `SELECT record_id,number,workflow_slug,workflow_key,created_at,updated_at
-       FROM workflow_cursor
-       WHERE session_id=? AND created_at<=?
-       ORDER BY number`,
-    )
-    .all(sessionId, end)
+  const cursors = (await taskFlowReadStore(database).cursorLifecycleForSession(sessionId))
+    .filter((row) => row.created_at <= end)
+    .sort((left, right) => left.number - right.number)
     .map((row) => ({
       id: row.record_id,
       number: row.number,
