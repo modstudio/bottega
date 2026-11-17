@@ -168,6 +168,30 @@ export function answerIdentifierDecision(facts: AnswerIdentifierFacts): AnswerId
     : explicitQuestionDecision(identifier, run, question)
 }
 
+function isResolutionMiss(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.message.includes('reference is not visible') ||
+      error.message.includes('reference is not found'))
+  )
+}
+
+async function readResolvedRunNumberFacts(
+  database: Database,
+  number: number,
+  context: ReturnType<typeof identityContext>,
+  callerSessionId: string | null,
+): Promise<AnswerRunFacts | null> {
+  let run: Awaited<ReturnType<typeof resolve>> | null = null
+  try {
+    run = await resolve(number, context, 'run')
+  } catch (error) {
+    if (!isResolutionMiss(error)) throw error
+  }
+  if (!run) return null
+  return readRunFacts(database, { kind: 'record-id', recordId: run.recordId }, callerSessionId)
+}
+
 async function openQuestionNumbers(database: Database, rootRecordId: string): Promise<number[]> {
   return (await questionsForRunChain(database, rootRecordId))
     .filter(({ answered_at, closed_at }) => answered_at === null && closed_at === null)
@@ -263,11 +287,9 @@ export async function resolveAnswerIdentifier(
     return decision.runRecordId
   }
   if (identifier.kind === 'run-number') {
-    const run = await resolve(identifier.number, context, 'run')
-    const normalized = { kind: 'record-id' as const, recordId: run.recordId }
     const decision = answerIdentifierDecision({
       identifier,
-      run: await readRunFacts(database, normalized, callerSessionId),
+      run: await readResolvedRunNumberFacts(database, identifier.number, context, callerSessionId),
       question: await readQuestionFacts(database, identifier),
     })
     if (decision.kind === 'refuse') throw new Error(decision.reason)

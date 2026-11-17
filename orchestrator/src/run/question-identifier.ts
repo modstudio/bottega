@@ -6,7 +6,11 @@ import type { QuestionIdentity } from '../../../shared/orch-contract.ts'
 import { parseReference } from '../../../shared/reference.ts'
 import { resolve } from '../identity/identity.ts'
 import { identityContext } from '../identity/identity-context.ts'
-import { questionById } from '../question-store/question-store-read.ts'
+import {
+  questionById,
+  questionByProjectNumber,
+  questionNumberProjectId,
+} from '../question-store/question-store-read.ts'
 
 export type ParsedQuestionIdentifier =
   | { kind: 'number'; id: number }
@@ -16,13 +20,19 @@ export async function questionIdentityMap(
   database: Database,
   identifiers: Array<string | number>,
 ): Promise<QuestionIdentity[]> {
-  const context = identityContext(database)
   return Promise.all(
     identifiers.map(async (identifier) => {
-      const resolved = await resolve(identifier, context, 'question')
-      const row = await questionById(database, resolved.recordId)
-      if (!row) throw new Error(`question ${resolved.recordId} is not cached locally`)
-      return { number: Number(row.number), record_id: resolved.recordId }
+      const parsed = parseQuestionIdentifier(identifier)
+      const row =
+        parsed.kind === 'number'
+          ? await questionByProjectNumber(
+              database,
+              parsed.id,
+              questionNumberProjectId(database, parsed.id),
+            )
+          : await questionById(database, parsed.recordId)
+      if (!row) throw new Error(`no question has identifier ${JSON.stringify(String(identifier))}`)
+      return { number: Number(row.number), record_id: String(row.record_id) }
     }),
   )
 }

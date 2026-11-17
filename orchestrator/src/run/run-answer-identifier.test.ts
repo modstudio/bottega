@@ -188,3 +188,13 @@ test('bare-number resolution uses real run, question, ownership, and chain facts
   )
   expect(await resolveAnswerIdentifier(db(), asking, session)).toBe(asking)
 })
+
+test('a bare number with no run keeps the explicit question hint', async () => {
+  const owner = addRun({ agent: 'codex', job: 'file-question', status: 'asking' })
+  const number = 900_001
+  addQuestion(owner, number)
+
+  await expect(resolveAnswerIdentifier(db(), number, null)).rejects.toThrow(
+    `run ${number} does not exist; to answer question q${number}, pass q${number}`,
+  )
+})

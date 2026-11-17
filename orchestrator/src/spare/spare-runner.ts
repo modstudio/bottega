@@ -15,6 +15,7 @@ import { listDocMetadata } from '../doc/doc-list.ts'
 import { setDocCheckedAgainst } from '../doc/docs.ts'
 import { fileNote, type HubNote, listHubNotes } from '../mcp/hub-notes.ts'
 import { currentProjectRepository, projectByName } from '../project/projects.ts'
+import { parseRunIdentifier } from '../run/run-identifier-grammar.ts'
 import {
   classifyDispatch,
   classifyWaitedRow,
@@ -255,6 +256,15 @@ const quiet = (lastFailureKind: string | null): ItemResult => ({
   report: null,
 })
 
+export function isUsableSpareRunIdentifier(identifier: string): boolean {
+  try {
+    parseRunIdentifier(identifier, null)
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** Dispatch one document's run, wait for it, and record what it licensed. */
 async function workOneItem(item: DriftDocFacts, ctx: NightContext): Promise<ItemResult> {
   // The commit the run audits is the one checked out when it is dispatched.
@@ -278,7 +288,7 @@ async function workOneItem(item: DriftDocFacts, ctx: NightContext): Promise<Item
   const classification = classifyDispatch({
     exitCode: dispatch.exitCode,
     rowAppeared: run !== null,
-    identifierUsable: /^[0-9]+$/.test(runIdentifier),
+    identifierUsable: isUsableSpareRunIdentifier(runIdentifier),
   })
 
   if (classification === 'capacity') {
