@@ -226,7 +226,7 @@ test('a run-bound ask without a registered project is refused without writing', 
   await expect(
     askQuestion(database, { runId: RUN_ID, askedAt: STAMP, question: 'Proceed?' }),
   ).rejects.toThrow(
-    `ask for run ${RUN_ID} must carry its project; register the run's project, then retry`,
+    `ask for run ${RUN_ID} must carry its project; register that project, then retry`,
   )
   expect(writtenSpaces).toEqual([])
   database.close()

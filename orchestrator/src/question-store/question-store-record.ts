@@ -233,7 +233,7 @@ export class RecordQuestionStore implements QuestionStore {
         ? `run ${input.question.runId}`
         : `workflow cursor ${input.question.workflowCursorRecordId}`
       throw new Error(
-        `ask for ${owner} must carry its project; register the run's project, then retry`,
+        `ask for ${owner} must carry its project; register that project, then retry`,
       )
     }
     if (intent === 'ask' && input.question.runId) {
