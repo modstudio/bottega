@@ -9,15 +9,12 @@ import { runCliEntryForTest } from './orch.ts'
 const FRONT_DOOR_RUNTIME_HELPER_CALL = 'await registerFrontDoorRuntime()'
 
 function asyncFrontDoorEntryBodies(source: string): { name: string; body: string }[] {
-  return [...source.matchAll(/^export async function (\w+)[\s\S]*?^}/gm)]
-    .map((match) => ({ name: match[1] ?? '', body: match[0] }))
-    .filter(
-      ({ name }) =>
-        name !== 'main' &&
-        name !== 'runCliEntryForTest' &&
-        !name.startsWith('is') &&
-        !name.endsWith('Argv'),
-    )
+  return (
+    [...source.matchAll(/^export async function (\w+)[\s\S]*?^}/gm)]
+      .map((match) => ({ name: match[1] ?? '', body: match[0] }))
+      // main delegates to fullCli, which registers the front-door runtime.
+      .filter(({ name }) => name !== 'main')
+  )
 }
 
 /** A CLI load that fails before any command action runs — a store this process may not open. */
@@ -51,10 +48,10 @@ test('every async front-door store entry registers the standard runtime first', 
   expect(entries.map(({ name }) => name)).not.toEqual([])
   for (const { name, body } of entries) {
     const firstImport = body.indexOf('await import(')
-    expect(firstImport, `${name} has a dynamic store import`).not.toBe(-1)
+    expect(firstImport, `${name} has a first dynamic import`).not.toBe(-1)
     expect(
       body.slice(0, firstImport),
-      `${name} registers the standard runtime before its first store import`,
+      `${name} calls registerFrontDoorRuntime() before its first dynamic import`,
     ).toContain(FRONT_DOOR_RUNTIME_HELPER_CALL)
   }
 })

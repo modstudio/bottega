@@ -20,8 +20,7 @@ async function initDatabaseCommand(argv: string[]): Promise<number> {
     return 1
   }
   try {
-    const { registerStandardRuntime } = await import('../runtime/runtime-registration.ts')
-    registerStandardRuntime()
+    await registerFrontDoorRuntime()
     const { initializeDatabase } = await import('../database/db.ts')
     console.log(initializeDatabase())
     return 0
@@ -38,8 +37,7 @@ async function fullCli(
 ): Promise<number> {
   const { recoverMissingWorkingDirectory } = await import('../database/database-location.ts')
   recoverMissingWorkingDirectory()
-  const { registerStandardRuntime } = await import('../runtime/runtime-registration.ts')
-  registerStandardRuntime()
+  await registerFrontDoorRuntime()
   if (!storeFree && argv[0] !== 'migrate' && argv[0] !== 'update') {
     const { ensureDatabase } = await import('../database/db.ts')
     ensureDatabase()
@@ -149,7 +147,9 @@ export async function keylessCursorIdleAdmission(
     return {
       kind: 'failed',
       reason,
-      remedy: `retry ${PLATFORM_SLUG} ${action}`,
+      remedy: /^cleared by:/m.test(reason)
+        ? 'follow the remedy in the failure reason above'
+        : `retry ${PLATFORM_SLUG} ${action}`,
     }
   }
 }
