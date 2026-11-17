@@ -45,6 +45,9 @@ export type AnswerIdentifierDecision =
   | { kind: 'target'; runRecordId: string }
   | { kind: 'refuse'; reason: string }
 
+const ANSWER_IDENTIFIER_FORMS =
+  'q<n>, <project>#q<n>, a positive decimal run number, r<n>, <machine>/<n>, <machine>/r<n>, or a full UUID'
+
 function questionReference(
   identifier: Exclude<ParsedAnswerIdentifier, { kind: 'run-number' }>,
 ): string {
@@ -85,7 +88,7 @@ export function parseAnswerIdentifier(
     reference = parseReference(original, 'run')
   } catch {
     throw new Error(
-      `invalid answer identifier ${JSON.stringify(original)}: expected q<n>, <project>#q<n>, a positive decimal run number, r<n>, <machine>/<n>, <machine>/r<n>, or a full UUID`,
+      `invalid answer identifier ${JSON.stringify(original)}: expected ${ANSWER_IDENTIFIER_FORMS}`,
     )
   }
   if (reference.value.kind === 'label' && reference.value.prefix === REFERENCE_PREFIXES.question) {
@@ -114,7 +117,7 @@ export function parseAnswerIdentifier(
       reference.qualifier,
     )
   throw new Error(
-    `invalid answer identifier ${JSON.stringify(original)}: expected q<n>, <project>#q<n>, a positive decimal run number, r<n>, <machine>/<n>, <machine>/r<n>, or a full UUID`,
+    `invalid answer identifier ${JSON.stringify(original)}: expected ${ANSWER_IDENTIFIER_FORMS}`,
   )
 }
 
@@ -139,7 +142,7 @@ function explicitQuestionDecision(
     reason:
       identifier.kind === 'question-number'
         ? `no question has number ${identifier.number}`
-        : `no run or question matches ${JSON.stringify(identifier.recordId)}; pass qN, a full question UUID, a positive decimal run number, or a full run UUID`,
+        : `no run or question matches ${JSON.stringify(identifier.recordId)}; pass ${ANSWER_IDENTIFIER_FORMS}`,
   }
 }
 
