@@ -39,7 +39,7 @@ A write transaction or lock ordering is the smallest unit that may move. The mod
 
 ## Errors carry the remedy
 
-A refusal names the condition it could not establish and the command or edit that clears it. It never reports emptiness for data it could not see. This rule is enforced by review.
+A refusal names the condition it could not establish and the command or edit that clears it. It never reports emptiness for data it could not see. `scripts/check-remedy-text.ts` checks that a cited command exists; review checks the rest.
 
 ## Respect the file ceiling
 
@@ -67,6 +67,6 @@ A checkout holds source only. Databases, run artifacts, backups, locks and logs 
 
 ## Group a concern's source by module
 
-A module's files, its tests among them, live together in a folder named for the module under the concern's `src/`. A folder earns its place by grouping, so a module whose implementation is a single source file stays flat, where its name already groups it and its test sits beside it. Module folders sit directly under `src/` rather than inside a further grouping, so finding a module is a scan of a single list rather than a guess about which group owns it.
+A module's files, its tests among them, live together in a folder named for the module under the concern's `src/`. A folder earns its place by grouping, so a module whose implementation is a single source file stays flat, where its name already groups it and its test sits beside it. Module folders sit directly under `src/`, never in a further grouping, so finding one means scanning a single list.
 
 Never add a file beside an existing folder to share a filename prefix with it. Import each file directly by path, because a barrel hides the dependency the manifest exists to declare.
