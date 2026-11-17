@@ -7,6 +7,7 @@ import {
 import type { RecordRequestDestination, RecordWriteDestination } from './record-api-client-paths.ts'
 import { RecordApiRequestError } from './record-api-client-response.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { isAbsentRecordKeyedRead } from './record-keyed-read.ts'
 import {
   type HostedTaskFlow,
   type HostedTaskFlowObligationById,
@@ -20,7 +21,6 @@ import {
   hostedTaskFlowStageByIdSchema,
   hostedTaskFlowStageListSchema,
   hostedTaskFlowTextByIdSchema,
-  RECORD_TASK_FLOW_NOT_FOUND_CODE,
   type TaskFlowPresence,
   type TaskFlowPresenceInput,
   type TaskFlowReadQueryInput,
@@ -129,12 +129,7 @@ async function readById<T>(
   try {
     return await request(path, { ...destination, schema })
   } catch (error) {
-    if (
-      error instanceof RecordApiRequestError &&
-      error.status === 404 &&
-      error.code === RECORD_TASK_FLOW_NOT_FOUND_CODE
-    )
-      return null
+    if (isAbsentRecordKeyedRead(error)) return null
     throw error
   }
 }

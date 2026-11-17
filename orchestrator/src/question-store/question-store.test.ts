@@ -6,6 +6,8 @@ import { installRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { guardHostedTables } from '../database/hosted-table-guard.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import type { RecordApiClient } from '../record/record-api-client.ts'
+import { recordApiError } from '../record/record-api-client-error.ts'
+import { recordKeyedNotVisibleRefusal } from '../record/record-keyed-read.ts'
 import type { QuestionReadInput, QuestionWriteBody } from '../record/record-question-contract.ts'
 import { QUESTION_JSON_FIELDS } from '../record/record-question-contract.ts'
 import {
@@ -560,16 +562,21 @@ test.each([
   },
 )
 
-test('a keyed not-visible refusal reaches the question caller unchanged', async () => {
+test('a missing hosted question reads no items only for an absent-row refusal', async () => {
   const database = migratedTestDatabase()
-  const refusal = new Error(
-    'not visible in your record spaces (2 memberships); the row is in a space you are not a member of, or it does not exist; join its space or check the id',
-  )
-  const store = new RecordQuestionStore({
-    database,
-    client: { readQuestions: async () => Promise.reject(refusal) },
-  })
-  await expect(store.read({ read: 'by-id', ids: [WORKFLOW_QUESTION_ID] })).rejects.toBe(refusal)
+  const storeFor = (body: unknown) =>
+    new RecordQuestionStore({
+      database,
+      client: {
+        readQuestions: async () => Promise.reject(recordApiError(body, 404)),
+      },
+    })
+  const input = { read: 'by-id', ids: [WORKFLOW_QUESTION_ID] } as const
+
+  await expect(storeFor(recordKeyedNotVisibleRefusal(5)).read(input)).resolves.toEqual({ items: [] })
+  await expect(
+    storeFor({ error: 'route not found', code: 'route_not_found' }).read(input),
+  ).rejects.toThrow('route not found')
   database.close()
 })
 

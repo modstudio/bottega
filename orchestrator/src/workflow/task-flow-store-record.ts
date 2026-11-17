@@ -8,19 +8,19 @@ import {
   unlinkedWorkflowQuestions,
 } from '../question-store/question-store-read.ts'
 import { recordQuestionReads } from '../question-store/question-store-record-task-flow-compat.ts'
-import { RecordApiRequestError, recordApiClient } from '../record/record-api-client.ts'
+import { recordApiClient } from '../record/record-api-client.ts'
 import type {
   RecordRequestDestination,
   RecordWriteDestination,
 } from '../record/record-api-client-paths.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import type { RecordIdentity } from '../record/record-auth.ts'
+import { isAbsentRecordKeyedRead } from '../record/record-keyed-read.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import {
   type HostedTaskFlow,
   type HostedTaskFlowStageById,
   type HostedTaskFlowStageList,
-  RECORD_TASK_FLOW_NOT_FOUND_CODE,
   TASK_FLOW_STAGE_LIST_LIMIT_MAX,
 } from '../record/record-task-flow-contract.ts'
 import {
@@ -218,12 +218,7 @@ class RecordTaskFlowReadStore {
     try {
       return await read(selector)
     } catch (error) {
-      if (
-        error instanceof RecordApiRequestError &&
-        error.status === 404 &&
-        error.code === RECORD_TASK_FLOW_NOT_FOUND_CODE
-      )
-        return null
+      if (isAbsentRecordKeyedRead(error)) return null
       throw error
     }
   }

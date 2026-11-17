@@ -1,7 +1,9 @@
 import { expect, test } from 'bun:test'
-import { RecordApiRequestError } from './record-api-client-response.ts'
+import { recordApiError } from './record-api-client-error.ts'
 import { recordTaskFlowClient } from './record-api-client-task-flow.ts'
 import { recordWorkflowClient } from './record-api-client-workflow.ts'
+import { recordKeyedNotVisibleRefusal } from './record-keyed-read.ts'
+import { RECORD_TASK_FLOW_NOT_FOUND_CODE } from './record-task-flow-contract.ts'
 import type { RecordWorkflowImportInput } from './record-workflow-contract.ts'
 
 const input: RecordWorkflowImportInput = {
@@ -111,16 +113,17 @@ test('task-flow presence posts both id batches to the destination space', async 
 })
 
 const ID = '00000000-0000-4000-8000-000000000010'
-test('task-flow by-id clients return null for the record ordinary not-found response', async () => {
+test.each([
+  ['keyed not-visible', recordKeyedNotVisibleRefusal(5)],
+  [
+    'ordinary not-found',
+    { error: 'hosted task flow was not found', code: RECORD_TASK_FLOW_NOT_FOUND_CODE },
+  ],
+])('task-flow by-id clients return null for the %s response', async (_name, body) => {
   const paths: string[] = []
   const client = recordTaskFlowClient(async (path) => {
     paths.push(path)
-    throw new RecordApiRequestError(
-      'hosted task flow was not found',
-      'refused',
-      404,
-      'task_flow_not_found',
-    )
+    throw recordApiError(body, 404)
   })
   for (const method of [
     'readTaskFlowStage',
@@ -138,7 +141,7 @@ test('task-flow by-id clients return null for the record ordinary not-found resp
 
 test('task-flow by-id clients do not hide an unrelated not-found response', async () => {
   const client = recordTaskFlowClient(async () => {
-    throw new RecordApiRequestError('route not found', 'refused', 404)
+    throw recordApiError({ error: 'route not found', code: 'route_not_found' }, 404)
   })
   await expect(client.readTaskFlowStage!(ID)).rejects.toThrow('route not found')
 })
