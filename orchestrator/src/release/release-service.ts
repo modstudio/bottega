@@ -170,7 +170,6 @@ function checkoutFacts(path: string, branch: string, trunk: string) {
     .split(/\s+/)
     .map(Number)
   return {
-    path,
     returnToTrunkCommand: returnMainCheckoutToTrunkCommand(path, trunk),
     branch: git(['branch', '--show-current'], path),
     requiredBranch: branch,
@@ -185,7 +184,7 @@ function checkoutFacts(path: string, branch: string, trunk: string) {
 
 function releaseCheckoutRestoreWarning(path: string, trunk: string, cause: unknown): string {
   const condition = cause instanceof Error ? cause.message : String(cause)
-  return `registered main checkout could not be restored to landing branch ${trunk}: ${condition}; run git -C ${path} switch ${trunk}`
+  return `registered main checkout could not be restored to landing branch ${trunk}: ${condition}; run ${returnMainCheckoutToTrunkCommand(path, trunk)}`
 }
 
 export function verifiedReleaseCheckoutRestore(

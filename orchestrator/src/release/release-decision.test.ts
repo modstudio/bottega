@@ -193,7 +193,6 @@ test('maps git ancestry exit codes to three-valued release ancestry', () => {
 })
 
 const level = {
-  path: '/projects/example',
   returnToTrunkCommand: 'git -C /projects/example switch main',
   branch: 'main',
   requiredBranch: 'main',

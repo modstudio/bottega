@@ -46,6 +46,7 @@ import { loadTrackedRecipe, recipePointerErrors } from '../recipe/recipe-loader.
 import { recordApiClient } from '../record/record-api-client.ts'
 import { RecordProjectSpaceConflictError } from '../record/record-project-space-contract.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
+import { shellQuote } from '../resources/git-locks.ts'
 import { autonomySettingsForStorage } from '../workflow/autonomy.ts'
 import {
   DEFAULT_PROJECT_CONFIG_PATH,
@@ -59,7 +60,7 @@ import {
   validateCreate,
 } from '../worktree/worktree-template.ts'
 import { isCommitShapedBranch } from './branch-name.ts'
-import { returnMainCheckoutToTrunkCommand, shellQuote } from './main-checkout-invariant.ts'
+import { returnMainCheckoutToTrunkCommand } from './main-checkout-invariant.ts'
 import { projectAgentKeyProblems } from './project-agent-keys.ts'
 import { focusedTestsProblems } from './project-focused-tests.ts'
 import {

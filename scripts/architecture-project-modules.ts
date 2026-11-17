@@ -16,6 +16,7 @@ export const projectModules: ProjectModule[] = [
   module('orchestrator/src/project/main-checkout-invariant.ts', [
     '../../../shared/brand.ts',
     '../git/git-environment.ts',
+    '../resources/git-locks.ts',
   ]),
   module('orchestrator/src/project/project-worktree-resolution.ts', [
     'node:fs',

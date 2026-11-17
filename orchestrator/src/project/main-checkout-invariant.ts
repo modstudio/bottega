@@ -3,15 +3,12 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { git } from '../git/git-environment.ts'
+import { shellQuote } from '../resources/git-locks.ts'
 
 export type MainCheckoutFacts = {
   branch: string | null
   trunk: string
   trackedModified: boolean
-}
-
-export function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`
 }
 
 /** Render the one sanctioned command that returns a registered main checkout to trunk. */
@@ -32,10 +29,10 @@ export function mainCheckoutInvariant(
   if (facts.trackedModified) failures.push('checkout has tracked modifications')
   if (failures.length === 0) return { holds: true }
   const remedies = []
+  if (facts.trackedModified) remedies.push('restore the tracked checkout')
   if (facts.branch !== facts.trunk) {
     remedies.push(`run ${returnMainCheckoutToTrunkCommand(path, facts.trunk)}`)
   }
-  if (facts.trackedModified) remedies.push('restore the tracked checkout')
   remedies.push(`run ${PLATFORM_SLUG} machine doctor`)
   return { holds: false, message: `${failures.join('; ')}; ${remedies.join(', then ')}` }
 }

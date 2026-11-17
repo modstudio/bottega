@@ -62,7 +62,6 @@ export function releaseReasonDecision(
 }
 
 export type CheckoutFacts = {
-  path: string
   returnToTrunkCommand: string
   branch: string
   requiredBranch: string

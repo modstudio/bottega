@@ -1,17 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import {
-  mainCheckoutInvariant,
-  returnMainCheckoutToTrunkCommand,
-} from './main-checkout-invariant.ts'
-
-test('renders the sanctioned return-to-trunk command', () => {
-  expect(returnMainCheckoutToTrunkCommand('/projects/example', 'main')).toBe(
-    "git -C '/projects/example' switch 'main'",
-  )
-  expect(returnMainCheckoutToTrunkCommand("/projects/it's here", 'main;touch x')).toBe(
-    "git -C '/projects/it'\\''s here' switch 'main;touch x'",
-  )
-})
+import { mainCheckoutInvariant } from './main-checkout-invariant.ts'
 
 describe('main checkout invariant', () => {
   test('holds only on trunk without tracked modifications', () => {
@@ -39,5 +27,16 @@ describe('main checkout invariant', () => {
         trackedModified: true,
       }),
     ).toMatchObject({ holds: false })
+    expect(
+      mainCheckoutInvariant('/projects/example', {
+        branch: 'release',
+        trunk: 'main',
+        trackedModified: true,
+      }),
+    ).toEqual({
+      holds: false,
+      message:
+        "checkout branch is release, not landing branch main; checkout has tracked modifications; restore the tracked checkout, then run git -C '/projects/example' switch 'main', then run bottega machine doctor",
+    })
   })
 })
