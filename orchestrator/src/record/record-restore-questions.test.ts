@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { RecordApiRequestError } from './record-api-client-response.ts'
 import type { QuestionWriteBody } from './record-question-contract.ts'
 import {
@@ -253,12 +254,8 @@ test('restore refuses unregistered and undeclared projects without sending', asy
 
 test('restore refuses a retired project with the un-retire remedy', async () => {
   using database = outboxDatabase()
-  database
-    .query('UPDATE project SET retired_at=? WHERE record_id=?')
-    .run(STAMP, PROJECT)
-  database
-    .query('UPDATE outbox SET payload=? WHERE id=77')
-    .run(payload(2, QUESTION, 6713, PROJECT))
+  database.query('UPDATE project SET retired_at=? WHERE record_id=?').run(STAMP, PROJECT)
+  database.query('UPDATE outbox SET payload=? WHERE id=77').run(payload(2, QUESTION, 6713, PROJECT))
   const lines: string[] = []
   const writes: string[] = []
   await restoreQuestionsCommand(
@@ -278,7 +275,7 @@ test('restore refuses a retired project with the un-retire remedy', async () => 
   )
   expect(writes).toEqual([])
   expect(lines).toContain(
-    `6713\t${QUESTION}\trefused: project registered is retired; un-retire it with \`bottega project retire registered --undo\`, then retry`,
+    `6713\t${QUESTION}\trefused: project registered is retired; un-retire it with \`${PLATFORM_SLUG} project retire registered --undo\`, then retry`,
   )
   expect(lines.at(-1)).toBe('0 restored, 0 unchanged, 1 refused, 0 failed')
 })

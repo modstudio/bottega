@@ -1,5 +1,6 @@
-import type { SQL } from 'bun'
 import { expect, test } from 'bun:test'
+import type { SQL } from 'bun'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { OutboxRowError } from './outbox-failure.ts'
 import { projectRecordId } from './record-sync-project-identity.ts'
 
@@ -18,7 +19,6 @@ test('an absent project refusal names how to find its destination space', async 
   expect(error).toMatchObject({
     message: `record project ${PROJECT} is absent from request space ${SPACE}`,
     errorClass: 'row-validation',
-    remedy:
-      'send it to the space that holds the project (`bottega project show alpha` names it), then retry',
+    remedy: `send it to the space that holds the project (\`${PLATFORM_SLUG} project show alpha\` names it), then retry`,
   })
 })

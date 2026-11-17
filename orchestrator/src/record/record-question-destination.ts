@@ -2,6 +2,7 @@
 /** Resolves a question write to its registered project space or the user's personal space. */
 
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { recordWriteSpace } from '../../../shared/record-write-space.ts'
 import { projectByRecordId, projectRowByRecordId } from '../project/project-read.ts'
@@ -38,7 +39,7 @@ export async function resolveQuestionWriteDestination(
     const row = projectRowByRecordId(projectId, input.database)
     if (row?.retiredAt)
       throw new Error(
-        `project ${row.name} is retired; un-retire it with \`bottega project retire ${row.name} --undo\`, then retry`,
+        `project ${row.name} is retired; un-retire it with \`${PLATFORM_SLUG} project retire ${row.name} --undo\`, then retry`,
       )
     throw new Error(`project ${projectId} is not registered; register it, then retry`)
   }
