@@ -12,8 +12,6 @@ export const OUTBOX_KIND_SOURCES: Readonly<
 > = {
   run: { source: 'run' },
   score: { source: 'score' },
-  task_flow: { source: 'task_flow' },
-  task_flow_stage: { source: 'workflow_cursor' },
   review: { source: 'review' },
   review_lens: { source: 'review_lens' },
   review_funnel_decision: { source: 'review_funnel_decision' },

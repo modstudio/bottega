@@ -31,45 +31,47 @@ const LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS =
   OUTBOX_PAYLOAD_CONTRACTS.landing_triage_snapshot.columns
 const PULL_REQUEST_CI_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.pull_request_ci.columns
 
-test('sync retires and audits leftover question outbox rows once', async () => {
+test('sync retires and audits leftover direct-write outbox rows once', async () => {
   const local = migratedTestDatabase()
-  local
-    .query(
-      "INSERT INTO outbox(record_id,kind,row_id,payload,created_at) VALUES (?,'question',?,?,?)",
-    )
-    .run(newRecordId(), newRecordId(), '{}', STAMP)
+  const insert = local.query(
+    'INSERT INTO outbox(record_id,kind,row_id,payload,created_at) VALUES (?,?,?,?,?)',
+  )
+  for (const kind of ['question', 'task_flow', 'task_flow_stage'])
+    insert.run(newRecordId(), kind, newRecordId(), '{}', STAMP)
   const result = await syncRecord(options(local, fakePostgres()))
   expect(result).toMatchObject({
     pushed: 0,
     failed: 0,
     pending: 0,
-    retired: 1,
+    retired: 3,
     quarantined: [],
   })
   expect(
     local
       .query('SELECT synced_at,quarantined_at,retired_at,retirement_reason,attempts FROM outbox')
-      .get(),
-  ).toEqual({
-    synced_at: null,
-    quarantined_at: null,
-    retired_at: STAMP,
-    retirement_reason: RETIRED_OUTBOX_REASON,
-    attempts: 0,
-  })
+      .all(),
+  ).toEqual(
+    Array.from({ length: 3 }, () => ({
+      synced_at: null,
+      quarantined_at: null,
+      retired_at: STAMP,
+      retirement_reason: RETIRED_OUTBOX_REASON,
+      attempts: 0,
+    })),
+  )
   expect(
     local
       .query('SELECT kind,disposition,actor_session,at,reason FROM outbox_quarantine_audit')
       .all(),
-  ).toEqual([
-    {
-      kind: 'question',
+  ).toEqual(
+    ['question', 'task_flow', 'task_flow_stage'].map((kind) => ({
+      kind,
       disposition: 'retire',
       actor_session: null,
       at: STAMP,
       reason: RETIRED_OUTBOX_REASON,
-    },
-  ])
+    })),
+  )
   const second = await syncRecord(options(local, fakePostgres()))
   expect(second).toMatchObject({
     pushed: 0,
@@ -79,7 +81,7 @@ test('sync retires and audits leftover question outbox rows once', async () => {
   })
   expect(second).not.toHaveProperty('retired')
   expect(local.query('SELECT count(*) AS count FROM outbox_quarantine_audit').get()).toEqual({
-    count: 1,
+    count: 3,
   })
   local.close()
 })

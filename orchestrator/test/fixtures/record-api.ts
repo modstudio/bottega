@@ -383,7 +383,7 @@ export function createMemoryRecordApiClient(
     questions?: Record<string, unknown>[]
   } = {},
 ): RecordApiClient {
-  const hostsTaskFlow = Boolean(input.taskFlowStages || input.taskFlowSyncedRows)
+  const hostsTaskFlow = Boolean(input.taskFlowStages)
   const docs = new Map<string, StoredDoc>()
   const revisions = new Map<string, StoredRevision[]>()
   const boardChanges = input.boardChanges ?? []

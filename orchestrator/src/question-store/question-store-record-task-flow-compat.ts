@@ -161,6 +161,8 @@ function sessionReads(questions: QuestionStore, read: StageRead) {
       return (await read.listEvery({ sessionId })).map(({ stage }) => ({
         record_id: stage.id,
         number: stage.number,
+        workflow_slug: stage.workflow,
+        workflow_key: stage.workflowKey ?? null,
         created_at: stage.createdAt,
         updated_at: stage.updatedAt,
         state: stage.state,

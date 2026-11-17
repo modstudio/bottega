@@ -69,7 +69,6 @@ import {
   runTaskIdentityDecision,
 } from './record-sync-run-task-identity.ts'
 import { runRecordValues } from './record-sync-run-values.ts'
-import { taskFlowRecordKinds } from './record-sync-task-flow.ts'
 import { nullableNumber, nullableRoundedBigint, nullableUuid } from './record-value-conversions.ts'
 import { pushScore } from './score-sync.ts'
 
@@ -518,7 +517,7 @@ export function testFlakeValues(row: Payload) {
   }
 }
 
-export const RETIRED_OUTBOX_KINDS = new Set(['question'] as const)
+export const RETIRED_OUTBOX_KINDS = new Set(['question', 'task_flow', 'task_flow_stage'] as const)
 export const RETIRED_OUTBOX_REASON =
   'this outbox kind no longer syncs by outbox; its rows are written to the record directly'
 
@@ -535,7 +534,6 @@ const recordKinds = {
         await pushScore(tx, row)
       }),
   },
-  ...taskFlowRecordKinds(existingEvidenceOwned, requireOwnedUpsert),
   review: {
     ...OUTBOX_PAYLOAD_CONTRACTS.review,
     push: async (

@@ -16,6 +16,7 @@ export const sessionReportModules: SessionReportModule[] = [
     'bun:sqlite',
     '../database/db.ts',
     '../evidence/evidence-query.ts',
+    '../record/record-write-authority.ts',
     '../run/question-open.ts',
     '../workflow/task-flow-store.ts',
     './session-report.ts',

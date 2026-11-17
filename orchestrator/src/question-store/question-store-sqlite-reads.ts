@@ -120,7 +120,7 @@ export const cursorLifecycleForSession = (
 ): TaskFlowCursorLifecycleRow[] =>
   database
     .query<TaskFlowCursorLifecycleRow, [string]>(
-      'SELECT record_id,number,created_at,updated_at,state,closed FROM workflow_cursor WHERE session_id=?',
+      'SELECT record_id,number,workflow_slug,workflow_key,created_at,updated_at,state,closed FROM workflow_cursor WHERE session_id=?',
     )
     .all(sessionId)
 

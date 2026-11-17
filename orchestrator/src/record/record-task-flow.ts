@@ -317,9 +317,9 @@ export async function readRecordTaskFlowProjectReferenceCounts(
 }
 
 /**
- * Answers which stages and flows the record already holds complete, so a backfill
- * re-sends the rest. A stage counts only when it carries enforcement: one written
- * before stages carried enforcement is incomplete and must be re-sent to fill it.
+ * Answers which stages and flows the record already holds complete. The release in machine
+ * update verifies this presence before deleting local rows. A stage counts only when it carries
+ * enforcement: one written before stages carried enforcement is incomplete.
  */
 export async function readRecordTaskFlowPresence(
   input: TenantPrincipal & { url: string } & TaskFlowPresenceInput,

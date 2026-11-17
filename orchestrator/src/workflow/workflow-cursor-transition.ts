@@ -23,10 +23,10 @@ declare const cursorOwnerBrand: unique symbol
 export type CursorOwner = string & { readonly [cursorOwnerBrand]: true }
 
 /** Mark an owner copied unchanged from a stored cursor or hosted stage. */
-export function storedCursorOwner(value: string): CursorOwner
-export function storedCursorOwner(value: null): null
-export function storedCursorOwner(value: string | null): CursorOwner | null
-export function storedCursorOwner(value: string | null): CursorOwner | null {
+function storedCursorOwner(value: string): CursorOwner
+function storedCursorOwner(value: null): null
+function storedCursorOwner(value: string | null): CursorOwner | null
+function storedCursorOwner(value: string | null): CursorOwner | null {
   return value as CursorOwner | null
 }
 

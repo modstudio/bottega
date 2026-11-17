@@ -1,9 +1,10 @@
 import { Database } from 'bun:sqlite'
-import { expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { HOSTED_TABLES_WITHOUT_LOCAL_ACCESS } from '../database/hosted-table-guard.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import {
   localProjectPurgeRefusals,
@@ -62,6 +63,38 @@ test('the live orchestrator schema has no uncovered project-bearing table', () =
   ])
     expect(tables).toContain(table)
   database.close()
+})
+
+describe('hosted install purge', () => {
+  let priorRecordApiUrl: string | undefined
+  beforeEach(() => {
+    priorRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+    process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  })
+  afterEach(() => {
+    if (priorRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = priorRecordApiUrl
+  })
+
+  test('the orchestrator purge plan does not reach hosted tables', () => {
+    const database = new Database(':memory:')
+    applyMigrations(database)
+    database
+      .query(
+        "INSERT INTO record_install_binding(id,bound_at,record_origin) VALUES (1,'at','https://record.example.test')",
+      )
+      .run()
+    try {
+      const plan = orchestratorProjectPurgePlan(database)
+      const tables = new Set(plan.map((step) => step.table))
+      for (const hostedTable of HOSTED_TABLES_WITHOUT_LOCAL_ACCESS) {
+        expect(tables).not.toContain(hostedTable)
+        expect(plan.some((step) => step.predicate.includes(`"${hostedTable}"`))).toBeFalse()
+      }
+    } finally {
+      database.close()
+    }
+  })
 })
 
 test('orchestrator purge removes a populated project without touching its sibling or hosted cache', () => {

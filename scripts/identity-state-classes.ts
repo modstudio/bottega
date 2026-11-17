@@ -376,24 +376,34 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
     DEV_2234_MACHINE_RULING,
   ),
   hosted('orchestrator', 'workflow', 'workflow', 'Local workflow catalogue write source'),
-  planned('orchestrator', 'task_flow', 'DEV-2234', 'Workflow instances for tasks'),
+  hosted('orchestrator', 'task_flow', 'task_flow', 'Hosted workflow instances for tasks'),
   planned('orchestrator', 'typed_question_answer', 'DEV-2234', 'Typed-question answers'),
   planned('hub', 'typed_question_answer', 'DEV-2234', 'Typed-question answers'),
   planned('hub', 'typed_question_outcome', 'DEV-2234', 'Typed-question outcomes'),
-  planned('orchestrator', 'workflow_cursor', 'DEV-2234', 'Current stages of workflow instances'),
+  hosted(
+    'orchestrator',
+    'workflow_cursor',
+    'task_flow_stage',
+    'Hosted stages of workflow instances',
+  ),
   hosted('orchestrator', 'workflow_event', 'workflow_event', 'Local workflow event write source'),
-  planned(
+  hosted(
     'orchestrator',
     'workflow_obligation',
-    'DEV-2234',
-    'Obligations attached to workflow instances',
+    'workflow_obligation',
+    'Hosted obligations attached to workflow instances',
   ),
-  planned('orchestrator', 'workflow_step_text', 'DEV-2234', 'Text attached to workflow steps'),
-  planned(
+  hosted(
+    'orchestrator',
+    'workflow_step_text',
+    'workflow_step_text',
+    'Hosted text attached to workflow steps',
+  ),
+  hosted(
     'orchestrator',
     'workflow_text_copy',
-    'DEV-2234',
-    'Copies of text attached to workflow instances',
+    'workflow_text_copy',
+    'Hosted copies of text attached to workflow instances',
   ),
   hosted(
     'orchestrator',

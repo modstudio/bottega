@@ -17,10 +17,6 @@ import { backfillReleaseRecords } from '../release/release-outbox.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { backfillRunRecords } from '../run/run-outbox.ts'
 import { backfillScoreRecords } from '../score/score-outbox.ts'
-import {
-  backfillTaskFlowRecords,
-  taskFlowBackfillUnavailable,
-} from '../workflow/task-flow-backfill.ts'
 import { backfillBriefInjections } from './brief-injection-outbox.ts'
 import { backfillContextReviews } from './context-review-outbox.ts'
 import { backfillHookEmissions } from './hook-emission-outbox.ts'
@@ -44,11 +40,7 @@ import {
   quarantineOutboxRow,
   retirePendingOutboxKinds,
 } from './outbox-quarantine.ts'
-import {
-  type RecordApiClient,
-  RecordApiRequestError,
-  recordApiClient,
-} from './record-api-client.ts'
+import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
 import { builtInsEnsured, recordBuiltInsEnsured } from './record-built-ins-identity.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { type OversizedRecordSyncRow, planRecordSyncBatch } from './record-sync-batch.ts'
@@ -704,11 +696,9 @@ async function pullAfterSync(
 function syncBackfill(
   local: Database,
   identityId: string,
-  taskFlows: NonNullable<RecordSyncResult['backfill']>['taskFlows'],
 ): NonNullable<RecordSyncResult['backfill']> {
   return {
     ...backfillRunRecords(local, identityId),
-    taskFlows,
     scores: backfillScoreRecords(local, identityId),
     reviews: backfillReviewRecords(local),
     landingEvidence: backfillLandingEvidenceRecords(local),
@@ -724,13 +714,7 @@ function unconfiguredSyncResult(
   identityId: string,
   backfillRequested: boolean | undefined,
 ): RecordSyncResult {
-  const backfill = backfillRequested
-    ? syncBackfill(
-        local!,
-        identityId,
-        taskFlowBackfillUnavailable('hosted record API is not configured', 'backfill'),
-      )
-    : undefined
+  const backfill = backfillRequested ? syncBackfill(local!, identityId) : undefined
   return {
     pushed: 0,
     failed: 0,
@@ -755,30 +739,6 @@ function beginSyncPass(local: Database, requestedNow?: () => string) {
   }
 }
 
-async function requestedTaskFlowBackfill(input: {
-  requested: boolean | undefined
-  local: Database
-  client: Pick<RecordApiClient, 'readTaskFlowPresence'>
-  memberships: ReturnType<typeof parseRecordSpaceMemberships>
-  personalSpaceId: string | null
-  projectSpaces?: Record<string, string>
-}) {
-  if (!input.requested) return undefined
-  try {
-    return await backfillTaskFlowRecords(input.local, {
-      client: input.client,
-      memberships: input.memberships,
-      personalSpaceId: input.personalSpaceId,
-      projectSpaces: input.projectSpaces,
-    })
-  } catch (error) {
-    return taskFlowBackfillUnavailable(
-      error instanceof Error ? error.message : String(error),
-      'backfill',
-    )
-  }
-}
-
 export async function syncRecord(options: RecordSyncOptions = {}): Promise<RecordSyncResult> {
   const configured = recordSyncConfigured(process.env) || Boolean(options.client)
   const identity = syncIdentity(options)
@@ -790,17 +750,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   const { now, retired } = beginSyncPass(writableLocal, options.now)
   const session = await client.whoami()
   const memberships = parseRecordSpaceMemberships(session.memberships)
-  const taskFlowBackfill = await requestedTaskFlowBackfill({
-    requested: options.backfill,
-    local: writableLocal,
-    client,
-    memberships,
-    personalSpaceId: session.personalSpaceId,
-    projectSpaces: options.projectSpaces,
-  })
-  const backfill = taskFlowBackfill
-    ? syncBackfill(writableLocal, identity.id, taskFlowBackfill)
-    : undefined
+  const backfill = options.backfill ? syncBackfill(writableLocal, identity.id) : undefined
   const blocked: BlockedOutboxRow[] = []
   let pushed = 0
   let failed = 0
