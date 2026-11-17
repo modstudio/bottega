@@ -461,7 +461,9 @@ function twoSpaceStore(
         ],
       }),
       readQuestions: async (_input, destination) => ({
-        items: (rows[destination?.destinationSpaceId ?? ''] ?? []).map((id: string) => ({ record_id: id })),
+        items: (rows[destination?.destinationSpaceId ?? ''] ?? []).map((id: string) => ({
+          record_id: id,
+        })),
       }),
       writeQuestion: async (_intent, input, destination) => {
         written.push(destination.destinationSpaceId)
