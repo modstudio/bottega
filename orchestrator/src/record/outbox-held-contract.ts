@@ -8,6 +8,10 @@ export const HOSTED_API_RELEASE_COMMAND = `${PLATFORM_SLUG} release run ${PLATFO
 const UNKNOWN_COLUMNS_LABEL = ' outbox payload has unknown columns: '
 const RETIRE_COMMAND = `${PLATFORM_SLUG} record outbox retire orch:<row-id> --reason <text>`
 
+function heldRemedies(): string {
+  return `the hosted record API predates this client; run \`${HOSTED_API_RELEASE_COMMAND}\` to clear it, or retire the row with \`${RETIRE_COMMAND}\``
+}
+
 export function outboxHeldForUpgradeLikePattern(): string {
   return `${OUTBOX_HELD_FOR_UPGRADE_MARKER}%`
 }
@@ -24,13 +28,16 @@ export class HostedApiUpgradeRequiredError extends Error {
   readonly kind: string
   readonly columns: readonly string[]
 
-  constructor(kind: string, columns: readonly string[]) {
+  constructor(kind: string, columns: readonly string[], heldSubject?: string) {
     const sorted = [...columns].sort()
-    super(
-      `${OUTBOX_HELD_FOR_UPGRADE_MARKER} ${kind}${UNKNOWN_COLUMNS_LABEL}${sorted.join(', ')}; the hosted record API predates this client; run \`${HOSTED_API_RELEASE_COMMAND}\` to clear it, or retire the row with \`${RETIRE_COMMAND}\``,
-    )
+    const subject = heldSubject ?? `${kind}${UNKNOWN_COLUMNS_LABEL}${sorted.join(', ')}`
+    super(`${OUTBOX_HELD_FOR_UPGRADE_MARKER} ${subject}; ${heldRemedies()}`)
     this.name = 'HostedApiUpgradeRequiredError'
     this.kind = kind
     this.columns = sorted
+  }
+
+  static unknownKind(kind: string): HostedApiUpgradeRequiredError {
+    return new HostedApiUpgradeRequiredError(kind, [], `unknown outbox kind: ${kind}`)
   }
 }

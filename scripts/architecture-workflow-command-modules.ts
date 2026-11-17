@@ -194,6 +194,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     './task-flow-store.ts',
     './task-flow-store-types.ts',
     './workflow-rule-answer.ts',
+    './workflow-stranded-question.ts',
     './workflow-task-linking.ts',
   ]),
   module('orchestrator/src/workflow/workflow-exec-checkout.ts', ['../../../shared/brand.ts']),

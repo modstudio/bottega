@@ -4,6 +4,8 @@ import { BoundExceededError, budgetForArgv } from './call-budgets.ts'
 describe('call budgets', () => {
   test.each([
     { argv: ['gh'], budget: 'gh' },
+    { argv: ['git', 'pull'], budget: 'git-ref-move' },
+    { argv: ['git', '-C', 'x', 'merge', '--ff-only', 'y'], budget: 'git-ref-move' },
     { argv: ['git', 'fetch'], budget: 'git-network' },
     { argv: ['git', '-C', '/x', 'ls-remote'], budget: 'git-network' },
     { argv: ['git', 'rev-parse'], budget: 'git-plumbing' },

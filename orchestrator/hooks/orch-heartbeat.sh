@@ -97,6 +97,13 @@ heartbeat_timestamp() {
   date '+%I:%M:%S %p'
 }
 
+screened_reason() {
+  local reason
+  reason=$(python3 "$ROOT/hooks/heartbeat-decision.py" <"$1" 2>/dev/null)
+  [ -n "$reason" ] || reason="stderr screening failed"
+  printf '%s\n' "$reason"
+}
+
 SID="${1:?session id required (Claude session_id; bottega records it on every run)}"
 INTERVAL="${2:-60}"
 MAX="${3:-60}"
@@ -258,10 +265,11 @@ for ((i = 1; i <= MAX; i++)); do
   # "bottega said nothing" from "bottega did not answer".
   inbox_err=$(mktemp)
   runs_err=$(mktemp)
+  completion_err=$(mktemp)
   inbox_raw=$(CLAUDE_CODE_SESSION_ID="$SID" "$BOTTEGA" question inbox --all --active --json 2>"$inbox_err"); inbox_rc=$?
   runs_raw=$("$BOTTEGA" run list --live --json 2>"$runs_err"); runs_rc=$?
-  rm -f "$inbox_err" "$runs_err"
   if [ ! -d "$ROOT" ]; then
+    rm -f "$inbox_err" "$runs_err" "$completion_err"
     echo "DEGRADED: launch directory removed; re-arm from the main checkout"
     exit 2
   fi
@@ -313,7 +321,7 @@ for ((i = 1; i <= MAX; i++)); do
       for root_id in "${completion_roots[@]}"; do
         completion_args+=(--id "$root_id")
       done
-      completion_raw=$("$BOTTEGA" "${completion_args[@]}" 2>/dev/null); completion_rc=$?
+      completion_raw=$("$BOTTEGA" "${completion_args[@]}" 2>"$completion_err"); completion_rc=$?
       completion_observed=$(printf '%s' "$completion_raw" | \
         python3 "$ROOT/hooks/heartbeat-run-observation.py" completion \
           "$missing_live_roots" "$watched_failover_roots" "$live_statuses_csv" 2>/dev/null)
@@ -381,6 +389,19 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
       python3 "$ROOT/hooks/heartbeat-decision.py" holds 2>/dev/null); holds_parse_rc=$?
   fi
 
+  inbox_reason=""
+  runs_reason=""
+  completion_reason=""
+  if [ -s "$inbox_err" ]; then
+    inbox_reason=$(screened_reason "$inbox_err")
+  fi
+  if [ -s "$runs_err" ]; then
+    runs_reason=$(screened_reason "$runs_err")
+  fi
+  if [ -s "$completion_err" ]; then
+    completion_reason=$(screened_reason "$completion_err")
+  fi
+
   if [ "$inbox_rc" -ne 0 ] || [ "$runs_rc" -ne 0 ] || \
      [ "$inbox_parse_rc" -ne 0 ] || [ "$runs_parse_rc" -ne 0 ] || \
      [ "$completion_rc" -ne 0 ] || [ "$completion_parse_rc" -ne 0 ] || \
@@ -394,11 +415,27 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
       if [ "$inbox_rc" -ne 0 ] || [ "$inbox_parse_rc" -ne 0 ]; then
         observation_failure="could not read question inbox; $observation_failure"
       fi
-      echo "[$(heartbeat_timestamp)] DEGRADED - $observation_failure (inbox rc=$inbox_rc parse=$inbox_parse_rc, runs rc=$runs_rc parse=$runs_parse_rc, completion rc=$completion_rc parse=$completion_parse_rc, landings parse=$landings_parse_rc, requests rc=$requests_rc parse=$requests_parse_rc, holds parse=$holds_parse_rc). State unknown; NOT concluding clear. Inspect bottega diagnostics directly."
+      observation_reasons=""
+      if [ "$inbox_rc" -ne 0 ] && [ -n "$inbox_reason" ]; then
+        observation_reasons="inbox=$inbox_reason"
+      fi
+      if [ "$runs_rc" -ne 0 ] && [ -n "$runs_reason" ]; then
+        observation_reasons="${observation_reasons}${observation_reasons:+; }runs=$runs_reason"
+      fi
+      if [ "$completion_rc" -ne 0 ] && [ -n "$completion_reason" ]; then
+        observation_reasons="${observation_reasons}${observation_reasons:+; }completion=$completion_reason"
+      fi
+      observation_reason_suffix=""
+      if [ -n "$observation_reasons" ]; then
+        observation_reason_suffix=" reason: $observation_reasons"
+      fi
+      echo "[$(heartbeat_timestamp)] DEGRADED - $observation_failure (inbox rc=$inbox_rc parse=$inbox_parse_rc, runs rc=$runs_rc parse=$runs_parse_rc, completion rc=$completion_rc parse=$completion_parse_rc, landings parse=$landings_parse_rc, requests rc=$requests_rc parse=$requests_parse_rc, holds parse=$holds_parse_rc).$observation_reason_suffix State unknown; NOT concluding clear. Inspect bottega diagnostics directly."
       report_store_write_lock
     fi
+    rm -f "$inbox_err" "$runs_err" "$completion_err"
     sleep "$INTERVAL"; continue
   fi
+  rm -f "$inbox_err" "$runs_err" "$completion_err"
 
   state=${observed%%$'\n'*}
   state=${state#*$'\t'}
@@ -495,8 +532,7 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     should_exit=0
   else
     should_exit=0
-    decision_reason=$(python3 "$ROOT/hooks/heartbeat-decision.py" <"$decision_err" 2>/dev/null)
-    [ -n "$decision_reason" ] || decision_reason="stderr screening failed"
+    decision_reason=$(screened_reason "$decision_err")
     echo "[$(heartbeat_timestamp)] DEGRADED - heartbeat decision step failed with status $decision_rc: $decision_reason; continuing to watch."
   fi
   rm -f "$decision_err"
@@ -537,7 +573,7 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   ACTIVE_WATCHDOG_PID=""
   monitor_raw=$(<"$monitor_out")
   if [ -s "$monitor_timed_out" ]; then monitor_rc=124; fi
-  monitor_reason=$(python3 "$ROOT/hooks/heartbeat-decision.py" <"$monitor_err")
+  monitor_reason=$(screened_reason "$monitor_err")
   rm -f "$monitor_err" "$monitor_out" "$monitor_timed_out"
 
   monitor_observed=$(printf '%s' "$monitor_raw" | SID="$SID" STALLED_SUBJECTS="$direct_stalled_subjects" \
@@ -716,6 +752,10 @@ print(token)
           if [ "$ack_rc" -eq 0 ]; then
             ack_report=$(python3 "$ROOT/hooks/notice_transport.py" refusals <"$ack_out" 2>/dev/null)
           fi
+          ack_reason=""
+          if [ -s "$ack_err" ]; then
+            ack_reason=$(screened_reason "$ack_err")
+          fi
           rm -f "$ack_out" "$ack_err"
           rm -rf "$CAP_DIR"
           unset BOTTEGA_MONITOR_CAPABILITY_PATH BOTTEGA_MONITOR_CAPABILITY_TOKEN
@@ -728,7 +768,9 @@ print(token)
                [ "$ack_failure_ticks" -ge "$KEEPALIVE_TICKS" ]; then
               prev_ack_failure_state="$ack_failure_state"
               ack_failure_ticks=0
-              echo "[$(heartbeat_timestamp)] DEGRADED - monitor notice acknowledgement failed; delivered notices may repeat. Health state still follows inbox and runs."
+              ack_reason_suffix=""
+              if [ -n "$ack_reason" ]; then ack_reason_suffix=" reason=$ack_reason"; fi
+              echo "[$(heartbeat_timestamp)] DEGRADED - monitor notice acknowledgement failed; delivered notices may repeat. Health state still follows inbox and runs.$ack_reason_suffix"
             fi
           else
             prev_ack_failure_state=""

@@ -520,7 +520,7 @@ export function testFlakeValues(row: Payload) {
 
 export const RETIRED_OUTBOX_KINDS = new Set(['question'] as const)
 export const RETIRED_OUTBOX_REASON =
-  'this outbox kind no longer syncs by outbox; question rows are written to the record directly'
+  'this outbox kind no longer syncs by outbox; its rows are written to the record directly'
 
 const recordKinds = {
   run: {
@@ -862,6 +862,15 @@ const recordKinds = {
   }
 >
 
+export function recordKindDisposition(
+  kind: string,
+  knownKinds: object,
+  retiredKinds: ReadonlySet<string>,
+): 'known' | 'retired' | 'unknown' {
+  if (retiredKinds.has(kind)) return 'retired'
+  return Object.hasOwn(knownKinds, kind) ? 'known' : 'unknown'
+}
+
 async function pushHostedRow(input: {
   postgres: SQL
   row: RecordSyncRequest['rows'][number]
@@ -871,8 +880,11 @@ async function pushHostedRow(input: {
 }): Promise<RecordSyncRowResult> {
   const { postgres, row, identity } = input
   try {
-    if (!(row.kind in recordKinds))
-      throw new OutboxRowError(`unknown outbox kind: ${row.kind}`, 'payload')
+    const disposition = recordKindDisposition(row.kind, recordKinds, RETIRED_OUTBOX_KINDS)
+    if (disposition === 'retired') throw new OutboxRowError(RETIRED_OUTBOX_REASON, 'payload')
+    if (disposition === 'unknown') {
+      throw HostedApiUpgradeRequiredError.unknownKind(row.kind)
+    }
     const kind = row.kind as keyof typeof recordKinds
     const parsed = payload(row.payload, kind)
     const authorization = recordSyncAuthorizationDecision(identity, row.spaceHint)

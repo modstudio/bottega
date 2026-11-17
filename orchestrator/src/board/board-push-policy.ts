@@ -191,6 +191,11 @@ export function boardPushDecision(input: {
   return 'ordinary'
 }
 
+/** Only a held successor is deferred and named; a candidate-only reply is dropped. */
+export type ReplySuccessorNoticeState =
+  | { reportReplySuccessor: true; successorHeld: boolean }
+  | { reportReplySuccessor?: false; successorHeld?: never }
+
 export function selectPushNotices<
   T extends {
     ackRequired: boolean
@@ -198,9 +203,8 @@ export function selectPushNotices<
     createdAt: string
     expiresAt: string | null
     purpose?: BoardPurpose
-    reportReplySuccessor?: boolean
     threadTitle?: string
-  },
+  } & ReplySuccessorNoticeState,
 >(
   readerBeganAt: BoardReaderStart,
   candidates: T[],
@@ -213,6 +217,7 @@ export function selectPushNotices<
   deferredReplySuccessors: T[]
 } {
   const deferredReplySuccessors: T[] = []
+  let withheldOlderCount = 0
   const notices = candidates.flatMap((notice) => {
     const decision = boardPushDecision({
       acknowledgementRequired: notice.ackRequired,
@@ -224,16 +229,19 @@ export function selectPushNotices<
       clock,
       reportReplySuccessor: notice.reportReplySuccessor,
     })
-    if (decision === 'withheld') return []
+    if (decision === 'withheld') {
+      withheldOlderCount += 1
+      return []
+    }
     if (notice.reportReplySuccessor && !claimReplySuccessors) {
-      deferredReplySuccessors.push(notice)
+      if (notice.successorHeld) deferredReplySuccessors.push(notice)
       return []
     }
     return [notice]
   })
   return {
     notices,
-    withheldOlderCount: candidates.length - notices.length - deferredReplySuccessors.length,
+    withheldOlderCount,
     deferredReplySuccessorCount: deferredReplySuccessors.length,
     deferredReplySuccessors,
   }

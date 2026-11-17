@@ -107,6 +107,22 @@ test('record outbox retry --matching reaches the orchestrator without a row id',
   ])
 })
 
+test('record outbox restore-questions reaches the orchestrator without a row id', async () => {
+  const calls: string[] = []
+  for (const form of [[], ['--dry-run']])
+    expect(
+      await dispatchBinary(
+        ['record', 'outbox', 'restore-questions', ...form],
+        entries(calls),
+        () => '',
+      ),
+    ).toBe(0)
+  expect(calls).toEqual([
+    'orchestrator: record outbox restore-questions',
+    'orchestrator: record outbox restore-questions --dry-run',
+  ])
+})
+
 test.each([
   { label: '-h', rest: ['-h'] },
   { label: 'help', rest: ['help'] },

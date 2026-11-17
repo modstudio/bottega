@@ -278,6 +278,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'record outbox',
   'record outbox discard',
   'record outbox help',
+  'record outbox restore-questions',
   'record outbox retire',
   'record outbox retry',
   'record outbox show',

@@ -62,6 +62,7 @@ import {
 import { publishSnapshotsCommand } from '../record/record-publish.ts'
 import { pushCataloguesCommand } from '../record/record-push-catalogues.ts'
 import { pushDocsCommand } from '../record/record-push-docs.ts'
+import { restoreQuestionsCommand } from '../record/record-restore-questions.ts'
 import { useHostedRecord } from '../record/record-use.ts'
 import { recordPublishAvailability, requireHostedRecord } from '../record/record-write-authority.ts'
 import { promptHidden } from './hidden-prompt.ts'
@@ -526,6 +527,50 @@ function retryOutboxCommand(rowId: string | undefined, matching: string | undefi
   log(`${count} orchestrator outbox rows will retry on the next sync`)
 }
 
+function registerOutboxCommands(record: Command): void {
+  const outbox = record.command('outbox').description('operate on orchestrator outbox rows')
+  outbox
+    .command('retry')
+    .description('queue an outbox row for another delivery attempt')
+    .argument('[row-id]')
+    .option(
+      '--matching <text>',
+      'retry quarantined orchestrator rows whose reason contains the text',
+    )
+    .action((rowId, options) =>
+      retryOutboxCommand(
+        rowId,
+        options.matching === undefined ? undefined : String(options.matching),
+      ),
+    )
+  outbox
+    .command('retire')
+    .description('retire an outbox row after proving its dependencies')
+    .argument('<row-id>')
+    .requiredOption('--reason <text>', 'reason the outbox row is retired')
+    .action((rowId, options) => {
+      retireOutboxRowWithDependencyProof(Number(rowId), String(options.reason))
+      log(`outbox row ${String(rowId)} retired`)
+    })
+  outbox
+    .command('restore-questions')
+    .description('restore retired question snapshots to their hosted record spaces')
+    .option('--dry-run', 'list the question snapshots without sending them')
+    .action((options) =>
+      hostedCommand(`${PLATFORM_SLUG} record outbox restore-questions`, () =>
+        restoreQuestionsCommand(
+          { dryRun: Boolean(options.dryRun) },
+          {
+            log,
+            setExitCode: (code) => {
+              process.exitCode = code
+            },
+          },
+        ),
+      ),
+    )
+}
+
 export function register(program: Command): void {
   const record = program.command('record').description('manage the hosted record and its outbox')
   registerUseCommand(record)
@@ -558,30 +603,7 @@ export function register(program: Command): void {
         presentation,
       ),
     )
-  const outbox = record.command('outbox').description('operate on orchestrator outbox rows')
-  outbox
-    .command('retry')
-    .description('queue an outbox row for another delivery attempt')
-    .argument('[row-id]')
-    .option(
-      '--matching <text>',
-      'retry quarantined orchestrator rows whose reason contains the text',
-    )
-    .action((rowId, options) =>
-      retryOutboxCommand(
-        rowId,
-        options.matching === undefined ? undefined : String(options.matching),
-      ),
-    )
-  outbox
-    .command('retire')
-    .description('retire an outbox row after proving its dependencies')
-    .argument('<row-id>')
-    .requiredOption('--reason <text>', 'reason the outbox row is retired')
-    .action((rowId, options) => {
-      retireOutboxRowWithDependencyProof(Number(rowId), String(options.reason))
-      log(`outbox row ${String(rowId)} retired`)
-    })
+  registerOutboxCommands(record)
   record
     .command('publish')
     .description('publish hosted record snapshots')

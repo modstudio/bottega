@@ -91,6 +91,8 @@ export const question = pgTable.withRLS(
   },
   (table) => [
     uniqueIndex('question_space_number_unique').on(table.spaceId, table.number),
+    index('question_run_id_idx').on(table.runId),
+    index('question_workflow_cursor_record_id_idx').on(table.workflowCursorRecordId),
     index('question_workflow_task_id_idx').on(table.workflowTaskId),
     index('question_unlinked_workflow_key_idx')
       .on(table.spaceId, table.workflowKey)

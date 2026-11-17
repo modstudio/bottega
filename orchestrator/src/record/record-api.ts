@@ -90,6 +90,7 @@ import type {
   RecordDocOrderInput,
   RecordDocRevision,
 } from './record-docs.ts'
+import { recordRequestReadKind } from './record-keyed-read.ts'
 import type { RecordProjectPurgeResult } from './record-project-purge-contract.ts'
 import type { RecordProjectUpsertInput } from './record-projects.ts'
 import type {
@@ -111,7 +112,7 @@ import type { RecordScore } from './record-verdicts.ts'
 export const SNAPSHOT_MAX_BYTES = 1024 * 1024
 
 type ApiEnvironment = RecordWriteTelemetryEnvironment
-type Tenant = Omit<ConfigTenant, 'spaceIds'> & { spaceIds: string[] }
+type Tenant = Omit<ConfigTenant, 'spaceIds'> & { spaceIds: string[]; uuidKeyedRead?: true }
 type Deps = RecordSubjectRouteDeps &
   RecordReleaseRouteDeps &
   RecordLensRouteDeps &
@@ -316,11 +317,15 @@ function writeTelemetryDeps(deps: Deps) {
 
 function refusingRequestTenant(context: Context<ApiEnvironment>, recordUrl: string): Tenant | null {
   recordDestinationlessWrite(context)
+  const route = context.req.path
+  const readKind = recordRequestReadKind(route, (name) => context.req.query(name))
   const tenant = requestTenant(
     context.get('identity'),
     context.get('destinationSpaceId'),
     recordRequestNature(context.req.method),
     recordUrl,
+    route,
+    readKind,
   )
   if (tenant && 'refused' in tenant) {
     const refusal = recordWriteSpaceRefusal()

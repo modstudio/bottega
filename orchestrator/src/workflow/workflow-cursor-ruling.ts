@@ -4,7 +4,10 @@
 import type { Database } from 'bun:sqlite'
 import { nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
-import { openQuestionForWorkflowStep } from '../question-store/question-store-read.ts'
+import {
+  openQuestionOnStep,
+  questionsForWorkflowCursor,
+} from '../question-store/question-store-read.ts'
 import {
   taskFlowWriteTarget,
   writeHostedTaskFlow,
@@ -27,16 +30,16 @@ import {
 } from './workflow-cursor-selection.ts'
 import { cursorOwnerAfter } from './workflow-cursor-transition.ts'
 import { decideWorkflowRuleAnswer, pinnedWorkflowRuleStep } from './workflow-rule-answer.ts'
+import { strandedWorkflowQuestionRemedy } from './workflow-stranded-question.ts'
 import { linkResolvedWorkflowTask } from './workflow-task-linking.ts'
 
-async function selectOpenWorkflowQuestion(
+function selectOpenWorkflowQuestion(
   cursor: Pick<SelectableCursorRow, 'record_id' | 'ordinal' | 'step_slug'>,
-  database: Database,
-): Promise<{ record_id: string; number: number } | null> {
-  const row = await openQuestionForWorkflowStep(database, {
-    cursorId: cursor.record_id,
-    cursorOrdinal: cursor.ordinal,
-    stepSlug: cursor.step_slug,
+  questions: Record<string, unknown>[],
+): { record_id: string; number: number } | null {
+  const row = openQuestionOnStep(questions, {
+    ordinal: cursor.ordinal + 1,
+    slug: cursor.step_slug,
   })
   return row ? { record_id: String(row.record_id), number: Number(row.number) } : null
 }
@@ -62,8 +65,12 @@ export async function ruleWorkflow(
     throw new Error(
       `${cursorName(slug, mode, workflowKeyOf(args))} has no cursor; compose the workflow first`,
     )
+  const questions = await questionsForWorkflowCursor(database, row.record_id)
+  const strandedQuestion = strandedWorkflowQuestionRemedy(questions, row.state)
   if (row.state !== 'awaiting-ruling')
-    throw new Error(`${cursorName(slug, mode, row.workflow_key)} is not awaiting a ruling`)
+    throw new Error(
+      `${cursorName(slug, mode, row.workflow_key)} is not awaiting a ruling${strandedQuestion ? `; ${strandedQuestion}` : ''}`,
+    )
   const step = pinnedWorkflowRuleStep(row, cursorName(slug, mode, row.workflow_key), database)
   const refusal = decideWorkflowRuleAnswer({
     fromOperator,
@@ -81,9 +88,11 @@ export async function ruleWorkflow(
     database,
   })
   const at = nowIso()
-  const question = await selectOpenWorkflowQuestion(row, database)
+  const question = selectOpenWorkflowQuestion(row, questions)
   if (!question)
-    throw new Error(`${cursorName(slug, mode, row.workflow_key)} has no open question to rule on`)
+    throw new Error(
+      `${cursorName(slug, mode, row.workflow_key)} has no open question to rule on${strandedQuestion ? `; ${strandedQuestion}` : ''}`,
+    )
   const payload: TaskFlowIntentInput<'stage-update'> = {
     requestId: taskFlowRequestId('stage-update', [row.record_id, String(row.revision)]),
     stages: [

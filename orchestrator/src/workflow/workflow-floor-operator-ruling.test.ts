@@ -25,6 +25,34 @@ const decide = (input: Partial<FloorSatisfactionInput>) =>
     ...input,
   })
 
+test('next floor names the full stranded-question recovery', () => {
+  const remedy = `question 6452 (record 01990000-0000-7000-8000-000000002391) is open on this cursor but carries no step, so no workflow verb can rule on it; close it with \`${PLATFORM_SLUG} question close 01990000-0000-7000-8000-000000002391 --reason <why>\`, then record the question again with \`${PLATFORM_SLUG} workflow await\``
+  expect(decide({ evidence: { strandedQuestionRemedy: remedy } })).toEqual({
+    action: 'refuse',
+    message: `floor ruling is unmet: ${remedy}`,
+  })
+})
+
+test('a supplied ruling keeps its refusal before the stranded-question recovery', () => {
+  const remedy = 'stranded question recovery'
+  const decision = decide({
+    evidence: {
+      ruling: {
+        id: 99,
+        answered: true,
+        answeredByOperator: false,
+        boundToCursor: true,
+        boundToStep: false,
+      },
+      strandedQuestionRemedy: remedy,
+    },
+  })
+  expect(decision).toEqual({
+    action: 'refuse',
+    message: `floor ruling is unmet: the supplied ruling 99 cannot close the step; ${remedy}`,
+  })
+})
+
 const states: {
   name: string
   question?: NonNullable<ValidatedEvidence['stepQuestion']>

@@ -7,6 +7,7 @@ import {
   type RecordChangeCursor,
 } from '../../../shared/record/record-changes.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { recordKeyedNotVisibleRefusal } from './record-keyed-read.ts'
 import {
   type QuestionIntent,
   type QuestionReadInput,
@@ -20,7 +21,13 @@ import {
 } from './record-question-contract.ts'
 
 type Environment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
-type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
+type Tenant = {
+  url: string
+  userId: string
+  spaceId: string
+  spaceIds: string[]
+  uuidKeyedRead?: true
+}
 export type RecordQuestionRouteDeps = {
   readQuestions?(input: Tenant & RecordQuestionReadInput): Promise<unknown>
   writeQuestion?(intent: QuestionIntent, input: Tenant & QuestionWriteBody): Promise<unknown>
@@ -73,6 +80,10 @@ type Ports = {
   scope(context: Context<Environment>): Tenant | null
   noSpace(context: Context<Environment>): Response
 }
+function isEmptyQuestionRead(result: unknown): boolean {
+  if (typeof result !== 'object' || result === null || !('items' in result)) return false
+  return Array.isArray(result.items) && result.items.length === 0
+}
 const DIRECT_WRITE_ISSUE_LIMIT = 3
 
 function directWriteRefusal(issues: readonly { path: PropertyKey[]; message: string }[]): string {
@@ -105,7 +116,10 @@ export function registerRecordQuestionRoutes(
         },
         422,
       )
-    return context.json(await deps.readQuestions({ ...tenant, ...query.data }))
+    const result = await deps.readQuestions({ ...tenant, ...query.data })
+    if (tenant.uuidKeyedRead && query.data.read === 'by-id' && isEmptyQuestionRead(result))
+      return context.json(recordKeyedNotVisibleRefusal(tenant.spaceIds.length), 404)
+    return context.json(result)
   })
   app.post('/v1/questions/:intent', async (context) => {
     const tenant = ports.scope(context)

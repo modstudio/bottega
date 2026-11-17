@@ -12,6 +12,7 @@ import {
   type RecordListCursorRow,
   recordCursorOf,
 } from './record-cursor.ts'
+import { recordKeyedNotVisibleRefusal } from './record-keyed-read.ts'
 import { RecordTaskFlowError } from './record-task-flow.ts'
 import {
   TASK_FLOW_STAGE_LIST_REMEDY,
@@ -38,7 +39,13 @@ import {
 } from './record-workflow-contract.ts'
 
 type Environment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
-type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
+type Tenant = {
+  url: string
+  userId: string
+  spaceId: string
+  spaceIds: string[]
+  uuidKeyedRead?: true
+}
 export type RecordWorkflowRouteDeps = {
   readTaskFlow?(input: Tenant & TaskFlowReadQueryInput): Promise<unknown>
   readTaskFlowStage?(input: Tenant & { id: string }): Promise<unknown>
@@ -198,6 +205,8 @@ function registerTaskFlowByIdRoutes(
       try {
         return context.json(await read({ ...active, id: id.data }))
       } catch (error) {
+        if (error instanceof RecordTaskFlowError && active.uuidKeyedRead)
+          return context.json(recordKeyedNotVisibleRefusal(active.spaceIds.length), 404)
         if (error instanceof RecordTaskFlowError)
           return context.json({ error: error.message, code: error.code }, 404)
         throw error
@@ -221,6 +230,8 @@ function registerTaskFlowReadRoutes(
     try {
       return context.json(await deps.readTaskFlow({ ...active, ...query.data }))
     } catch (error) {
+      if (error instanceof RecordTaskFlowError && active.uuidKeyedRead)
+        return context.json(recordKeyedNotVisibleRefusal(active.spaceIds.length), 404)
       if (error instanceof RecordTaskFlowError)
         return context.json({ error: error.message, code: error.code }, 404)
       throw error
