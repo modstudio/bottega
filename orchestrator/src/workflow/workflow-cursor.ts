@@ -3,8 +3,10 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { notifyWaitingItem } from '../operator/operator-waiting.ts'
 import { projectByName } from '../project/projects.ts'
-import { maximumQuestionNumber } from '../question-store/question-store-read.ts'
-import { openQuestionForWorkflowStep } from '../question-store/question-store-read.ts'
+import {
+  maximumQuestionNumber,
+  openQuestionForWorkflowStep,
+} from '../question-store/question-store-read.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   taskFlowWriteTarget,

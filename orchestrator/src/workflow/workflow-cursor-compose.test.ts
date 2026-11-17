@@ -467,7 +467,7 @@ test('advance, await, rule, and abandon call the record before caching returned 
     flowRevision: 4,
     enforcement: 'note-only',
   })
-  const taskFlowClient: RecordTaskFlowClient = {
+  const taskFlowClient = {
     ...memory,
     ...projectIdentityClient,
     advanceTaskFlow: async (input, destination) => {
@@ -504,6 +504,7 @@ test('advance, await, rule, and abandon call the record before caching returned 
       return memory.abandonTaskFlow!(input, destination)
     },
   }
+  installRecordApiClient(taskFlowClient)
   const hostedContext = { ...context, taskRecordId: TASK_IDS.lifecycle, taskFlowClient }
   const args = { key: 'DEV-LIFECYCLE', branch: 'DEV-LIFECYCLE-work', worktree: '/tmp/lifecycle' }
   const opened = await composeWorkflowWithCursor(
@@ -552,6 +553,14 @@ test('advance, await, rule, and abandon call the record before caching returned 
   )
   expect(d.query('SELECT revision FROM workflow_cursor WHERE record_id=?').get(stageId)).toEqual({
     revision: 9,
+  })
+  expect(
+    await taskFlowClient.readQuestions!({
+      read: 'for-cursor',
+      workflowCursorRecordId: stageId,
+    }),
+  ).toMatchObject({
+    items: [{ workflow_step_ordinal: 2, workflow_step_slug: 'lens' }],
   })
   await ruleWorkflow('flow', 'fixture', 'default', args, 'Proceed.', true, 'mcp', hostedContext, d)
   expect(d.query('SELECT revision FROM workflow_cursor WHERE record_id=?').get(stageId)).toEqual({

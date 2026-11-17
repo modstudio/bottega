@@ -142,7 +142,7 @@ async function boundedIdentityRows(tx: SQL, input: QuestionReadInput): Promise<R
   )
 }
 
-export async function readRecordQuestionRows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
+async function readRecordQuestionRows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
   if (input.read === 'by-id') return limited(await recordQuestionDetails(tx, input), input.limit)
   if (input.read === 'for-run')
     return limited(await recordQuestionDetails(tx, { runId: input.runId }), input.limit)

@@ -35,7 +35,7 @@ const payload = {
   updatedAt: STAMP,
 }
 
-test('hosted workflow questions keep the step where they were asked', async () => {
+test('hosted workflow question writes keep the step where they were asked', async () => {
   const postgres = new PGlite()
   try {
     await postgres.exec(`

@@ -383,6 +383,7 @@ export function createMemoryRecordApiClient(
     questions?: Record<string, unknown>[]
   } = {},
 ): RecordApiClient {
+  input.taskFlowStages ??= []
   const docs = new Map<string, StoredDoc>()
   const revisions = new Map<string, StoredRevision[]>()
   const boardChanges = input.boardChanges ?? []

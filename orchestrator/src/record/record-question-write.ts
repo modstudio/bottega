@@ -56,7 +56,7 @@ export async function writeRecordQuestion(
   })
 }
 
-export async function writeRecordQuestionTransaction(
+async function writeRecordQuestionTransaction(
   intent: QuestionIntent,
   input: Tenant & QuestionWriteBody,
   tx: SQL,

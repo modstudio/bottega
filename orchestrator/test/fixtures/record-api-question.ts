@@ -51,9 +51,13 @@ export function memoryQuestionClient(
             ({ stage }) =>
               stage.id === (row.workflowCursorRecordId ?? row.workflow_cursor_record_id),
           )?.stage
-          return stage && hosted.project === undefined
-            ? { ...hosted, project: stage.projectName }
-            : hosted
+          return {
+            ...hosted,
+            ...(stage && hosted.project === undefined ? { project: stage.projectName } : {}),
+            workflow_step_ordinal:
+              hosted.workflow_step_ordinal ?? (stage ? stage.activeOrdinal + 1 : null),
+            workflow_step_slug: hosted.workflow_step_slug ?? stage?.activeSlug ?? null,
+          }
         })
       return { items }
     },
@@ -62,7 +66,20 @@ export function memoryQuestionClient(
       const number =
         body.question.number ??
         questions.reduce((highest, row) => Math.max(highest, Number(row.number ?? 0)), 0) + 1
-      const stored = { ...body.question, number }
+      const existing = index === -1 ? undefined : questions[index]
+      const stage = input.taskFlowStages?.find(
+        ({ stage }) => stage.id === body.question.workflowCursorRecordId,
+      )?.stage
+      const stored = {
+        ...body.question,
+        number,
+        workflowStepOrdinal:
+          existing?.workflowStepOrdinal ??
+          existing?.workflow_step_ordinal ??
+          (stage ? stage.activeOrdinal + 1 : null),
+        workflowStepSlug:
+          existing?.workflowStepSlug ?? existing?.workflow_step_slug ?? stage?.activeSlug ?? null,
+      }
       if (index === -1) questions.push(stored)
       else questions[index] = stored
       return {
