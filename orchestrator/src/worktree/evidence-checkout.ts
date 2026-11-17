@@ -33,6 +33,6 @@ export function assertEvidenceCheckoutIdentity(input: {
   const commit = (input.resolveCommit ?? shortHeadCommit)(resolvedTopLevel) ?? 'unknown commit'
   throw new Error(
     `${PLATFORM_SLUG} ${input.verb}: ${input.cwd} is not a worktree; git resolves it to ${resolvedTopLevel} at ${commit}, so evidence recorded here would prove that checkout, not a branch tip.\n` +
-      `cleared by: pass --cwd <the branch's worktree root> (${PLATFORM_SLUG} tree list --json), or reopen the run's tree with ${PLATFORM_SLUG} tree open <run>; remove the stranded directory if its tree is gone.`,
+      `cleared by: pass --cwd <the branch's worktree root> (\`git worktree list\` names it), or reopen the run's tree with ${PLATFORM_SLUG} tree open <run>; remove the stranded directory if its tree is gone.`,
   )
 }

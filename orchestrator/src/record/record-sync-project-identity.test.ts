@@ -19,6 +19,6 @@ test('an absent project refusal names how to find its destination space', async 
   expect(error).toMatchObject({
     message: `record project ${PROJECT} is absent from request space ${SPACE}`,
     errorClass: 'row-validation',
-    remedy: `send it to the space that holds the project (\`${PLATFORM_SLUG} project show alpha\` names it), then retry`,
+    remedy: `send it to the space that holds the project (\`${PLATFORM_SLUG} project list --json\` names it), then retry`,
   })
 })
