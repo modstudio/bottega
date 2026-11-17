@@ -43,6 +43,8 @@ export const reviewModules: ReviewModule[] = [
   module('orchestrator/src/review/same-change.ts', []),
   module('orchestrator/src/review/same-change-git.ts', [
     './change-identity.ts',
+    './review-pins.ts',
+    './review-target.ts',
     './review-types.ts',
     './same-change.ts',
   ]),
@@ -75,6 +77,8 @@ export const reviewModules: ReviewModule[] = [
     './review-group.ts',
     './review-lineage-store.ts',
     './review-outbox.ts',
+    './review-pins.ts',
+    './same-change-git.ts',
     './same-change.ts',
     '../../../shared/bounded-process.ts',
   ]),

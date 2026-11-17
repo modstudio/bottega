@@ -8,6 +8,7 @@ import {
   postFixReviewDecision,
   type RebaseFileComparison,
   rebaseCarryDecision,
+  trunkChangedPathSet,
 } from './review-post-fix.ts'
 import { applicableRoundLensPlan } from './review-round-lens-plan.ts'
 
@@ -22,11 +23,13 @@ const comparison = (
   replayed: string,
   current: string,
   conflicted = false,
+  trunkChanged = false,
 ): RebaseFileComparison => ({
   path,
   replayed: patch(path, replayed),
   current: patch(path, current),
   conflicted,
+  trunkChanged,
 })
 
 test('a clean replay carrying the reviewed content carries every lens', () => {
@@ -56,7 +59,66 @@ test('a conflict-resolved file re-owes only lenses that recorded that file', () 
   })
 })
 
-test('a changed file outside every recorded lens path re-owes no lens', () => {
+test('an author fix after the reviewed round is a fix file without re-owing a lens', () => {
+  expect(
+    rebaseCarryDecision({
+      files: [comparison('src/fixed.ts', 'reviewed', 'fixed')],
+      pathsByLens: { correctness: ['src/fixed.ts'] },
+    }),
+  ).toEqual({
+    fixFiles: [{ path: 'src/fixed.ts', insertions: 1, deletions: 0 }],
+    reOwedPathsByLens: {},
+  })
+})
+
+test('a trunk-changed file re-owes its covering lens', () => {
+  expect(
+    rebaseCarryDecision({
+      files: [comparison('src/shared.ts', 'reviewed', 'rebased', false, true)],
+      pathsByLens: { correctness: ['src/shared.ts'] },
+    }),
+  ).toEqual({
+    fixFiles: [{ path: 'src/shared.ts', insertions: 1, deletions: 0 }],
+    reOwedPathsByLens: { correctness: ['src/shared.ts'] },
+  })
+})
+
+test('a one-to-one rename with identical content is unchanged', () => {
+  expect(
+    rebaseCarryDecision({
+      files: [
+        {
+          path: 'migrations/old/migration.sql',
+          replayed: patch('migrations/old/migration.sql', 'sql-content'),
+          current: null,
+          conflicted: false,
+          trunkChanged: false,
+        },
+        {
+          path: 'migrations/new/migration.sql',
+          replayed: null,
+          current: patch('migrations/new/migration.sql', 'sql-content'),
+          conflicted: false,
+          trunkChanged: false,
+        },
+      ],
+      pathsByLens: { 'migration-safety': ['migrations/old/migration.sql'] },
+    }),
+  ).toEqual({ fixFiles: [], reOwedPathsByLens: {} })
+})
+
+test('trunk-changed paths include modifications, additions, and both rename names', () => {
+  expect(
+    [
+      ...trunkChangedPathSet({
+        changedPaths: ['src/modified.ts', 'src/renamed.ts', 'src/added.ts'],
+        renames: new Map([['src/original.ts', 'src/renamed.ts']]),
+      }),
+    ].sort(),
+  ).toEqual(['src/added.ts', 'src/modified.ts', 'src/original.ts', 'src/renamed.ts'])
+})
+
+test('a changed author file outside every recorded lens path re-owes no lens', () => {
   expect(
     rebaseCarryDecision({
       files: [comparison('generated/baseline.json', 'old', 'new')],
@@ -71,10 +133,10 @@ test('a changed file outside every recorded lens path re-owes no lens', () => {
   })
 })
 
-test('an annotated coverage claim names a differing file', () => {
+test('an annotated coverage claim names a trunk-changed differing file', () => {
   expect(
     rebaseCarryDecision({
-      files: [comparison('critical/shared.ts', 'old', 'new')],
+      files: [comparison('critical/shared.ts', 'old', 'new', false, true)],
       pathsByLens: {
         correctness: ['1 of 1 changed files inspected in full: "critical/shared.ts"'],
       },
@@ -134,6 +196,43 @@ test('a rebase that re-owes one lens off a tier-3 path re-lenses only that lens'
     tierThreePaths: [],
     applicability: { lenses: ['correctness'] },
   })
+})
+
+test('six post-round author fixes after a clean replay need only an architect read', () => {
+  const files = [
+    'backfill-owner-party.ts',
+    'business-account.ts',
+    'billing.service.ts',
+    'payer.ts',
+    'seed-scenarios.service.ts',
+    'seed-shared.ts',
+  ].map((path) => comparison(`src/${path}`, `reviewed-${path}`, `fixed-${path}`))
+  const carry = rebaseCarryDecision({
+    files,
+    pathsByLens: Object.fromEntries(
+      ['correctness', 'craft', 'test-quality'].map((lens) => [lens, files.map(({ path }) => path)]),
+    ),
+  })
+  expect(carry.fixFiles).toHaveLength(6)
+  expect(carry.reOwedPathsByLens).toEqual({})
+  expect(
+    postFixReviewDecision({
+      facts: {
+        completed: {
+          number: 1,
+          identity: 'review',
+          launchKey: 'STO-1346',
+          runIds: [],
+          pathsByLens: {},
+        },
+        reviewedTip: 'reviewed',
+        fixFiles: carry.fixFiles,
+        reOwedPathsByLens: carry.reOwedPathsByLens,
+      },
+      tier: 3,
+      review: undefined,
+    }),
+  ).toMatchObject({ kind: 'no-round-needed', tierThreePaths: [] })
 })
 
 const completedReview: TriageEvidence['reviews'][number] = {

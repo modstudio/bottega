@@ -11,7 +11,7 @@ import {
 import { reviewCountsAsRound } from '../review/review-role.ts'
 import { identifySecondOpinionRun } from '../review/review-second-opinion.ts'
 import type { ReviewLensOwedReason } from '../review/review-vocabulary.ts'
-import { sameStoredChange } from '../review/same-change.ts'
+import { sameStoredChangeOrWitness } from '../review/same-change.ts'
 
 export type TriageReviewGroup = {
   reviews: readonly TriageReviewRow[]
@@ -34,6 +34,7 @@ export type TriageEvidence = {
     pathSet: string
     recordedAt: string
     sessionId: string | null
+    replayMatchesCurrent?: boolean
   }[]
 }
 
@@ -414,7 +415,7 @@ function architectReadSnapshot(
  * owner's, or any identified caller's on a branch no run owns. A read crediting an earlier
  * round at a higher tier matches the branch owner exactly, as it did before tier `0` reads.
  */
-function matchingOwnerRead(evidence: TriageEvidence, recordedAfter?: string) {
+export function matchingOwnerRead(evidence: TriageEvidence, recordedAfter?: string) {
   const reader =
     recordedAfter === undefined
       ? (session: string | null) =>
@@ -424,12 +425,8 @@ function matchingOwnerRead(evidence: TriageEvidence, recordedAfter?: string) {
   return evidence.reads.find(
     (read) =>
       reader(read.sessionId) &&
-      sameStoredChange(
-        {
-          patchId: read.patchId,
-          zeroContextPatchId: read.zeroContextPatchId ?? null,
-          pathSet: read.pathSet,
-        },
+      sameStoredChangeOrWitness(
+        { ...read, zeroContextPatchId: read.zeroContextPatchId ?? null },
         {
           patchId: evidence.patchId,
           zeroContextPatchId: evidence.zeroContextPatchId ?? null,

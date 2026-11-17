@@ -20,10 +20,14 @@ import {
   reviewRemoteTrunkRefExists,
   reviewTrunkRef,
 } from '../review/review-target.ts'
+import {
+  type ExactChangeReplayContext,
+  exactChangeReplayContext,
+} from '../review/same-change-git.ts'
 import type { ReviewFunnelVerdict } from '../review-funnel/decide-review-funnel.ts'
 import {
   gatherAdmissionEvidenceDecision,
-  readLandingOverridesForBranch as readFunnelLandingOverridesForBranch,
+  landingOverridesWithReplay,
 } from '../review-funnel/gather-funnel-facts.ts'
 import {
   ceilingTriageFacts,
@@ -154,12 +158,40 @@ function resolvePullRequestChangeForProject(
   }
 }
 
-function triageDecision(change: PullRequestChange, database: Database): TriageDecision {
-  return gatherAdmissionEvidenceDecision(change, database)
+function replayContext(change: PullRequestChange): ExactChangeReplayContext {
+  return exactChangeReplayContext(change.project.path, {
+    project: change.project.name,
+    trunk: change.project.settings.trunk,
+    base: change.base,
+    tip: change.tip,
+    tree: change.tree,
+  })
 }
 
-function overridesForChange(change: PullRequestChange, database: Database): AdmissionOverride[] {
-  return readFunnelLandingOverridesForBranch(database, change.project.name, change.branch)
+function triageDecision(
+  change: PullRequestChange,
+  database: Database,
+  replay: ExactChangeReplayContext,
+): TriageDecision {
+  return gatherAdmissionEvidenceDecision(change, database, replay)
+}
+
+function overridesForChange(
+  change: PullRequestChange,
+  database: Database,
+  replay: ExactChangeReplayContext,
+): AdmissionOverride[] {
+  return landingOverridesWithReplay(
+    database,
+    {
+      project: change.project.name,
+      branch: change.branch,
+      patchId: change.group.patchId,
+      zeroContextPatchId: change.group.zeroContextPatchId,
+      pathSet: serializePathSet(change.group.pathSet),
+    },
+    replay,
+  )
 }
 
 export type AdmissionWithTriage = AdmissionDecision & {
@@ -217,9 +249,10 @@ export function admissionDecision(
 ): PullRequestAdmission {
   const funnel = funnelVerdict(change, database)
   if (funnel.kind === 'empty') return emptyAdmission(change, funnel)
-  const triage = triageDecision(change, database)
+  const replay = replayContext(change)
+  const triage = triageDecision(change, database, replay)
   const { facts, verdict } = funnel
-  const decision = decideAdmission(verdict, overridesForChange(change, database))
+  const decision = decideAdmission(verdict, overridesForChange(change, database, replay))
   recordReviewFunnelDecision({
     database,
     surface,
@@ -630,7 +663,7 @@ export function createPullRequest(
   if (existing) finalizeTriageIntent(change.project.name, change.branch, existing.number)
   const database = writableDb()
   const checked = writeTransaction(() => {
-    const triage = triageDecision(change, database)
+    const triage = triageDecision(change, database, replayContext(change))
     const beforeOverride = funnelVerdict(change, database)
     if (beforeOverride.kind === 'empty') {
       throw new Error(emptyCreateRefusal(change, emptyAdmission(change, beforeOverride)))

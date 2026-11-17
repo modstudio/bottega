@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { decideTriage, type TriageEvidence } from './review-funnel-admission-evidence.ts'
+import {
+  decideTriage,
+  matchingOwnerRead,
+  type TriageEvidence,
+} from './review-funnel-admission-evidence.ts'
 
 const review = (
   overrides: Partial<TriageEvidence['reviews'][number]> & { reviewId?: number } = {},
@@ -96,6 +100,16 @@ describe('pull-request triage decision at tier zero', () => {
         }),
       ),
     ).toMatchObject({ complete: false, architectReadRequired: true })
+  })
+
+  test('the owner-read matcher accepts only a matching replay witness for another identity', () => {
+    const other = ownerRead({ patchId: 'other', zeroContextPatchId: 'other-zero' })
+    expect(
+      matchingOwnerRead(evidence({ reads: [{ ...other, replayMatchesCurrent: true }] }))?.recordId,
+    ).toBe('record-9')
+    expect(
+      matchingOwnerRead(evidence({ reads: [{ ...other, replayMatchesCurrent: false }] })),
+    ).toBeUndefined()
   })
 
   test('tier zero refuses a read not recorded by the branch run owner', () => {

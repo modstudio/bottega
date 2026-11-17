@@ -15,7 +15,8 @@ import { resolveReviewCommandCwd } from './review-command-cwd.ts'
 import { branchRunOwnerSession, measureChangeGroup, serializePathSet } from './review-group.ts'
 import { reviewLineage } from './review-lineage-store.ts'
 import { enqueueReviewRead } from './review-outbox.ts'
-import { sameStoredChange } from './same-change.ts'
+import { sameStoredChangeOrWitness } from './same-change.ts'
+import { type ExactChangeReplayContext, replayWitnessesForCurrent } from './same-change-git.ts'
 
 type Flags = { flag(name: string): string | undefined }
 type Presentation = { log(...values: unknown[]): void }
@@ -66,30 +67,31 @@ export function hasExactArchitectRead(
   patchId: string,
   zeroContextPatchId: string,
   pathSet: string,
+  replay?: ExactChangeReplayContext,
 ): boolean {
   const lineage = reviewLineage(database, project, branch)
-  return database
-    .query<{ patch_id: string; zero_context_patch_id: string | null; path_set: string }, string[]>(
-      `SELECT patch_id,zero_context_patch_id,path_set FROM review_read
+  const reads = database
+    .query<
+      { tip: string; patchId: string; zeroContextPatchId: string | null; pathSet: string },
+      string[]
+    >(
+      `SELECT tip,patch_id AS patchId,zero_context_patch_id AS zeroContextPatchId,
+              path_set AS pathSet FROM review_read
           WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
             AND branch IN (${lineage.map(() => '?').join(',')})
           ORDER BY recorded_at DESC,record_id DESC`,
     )
     .all(project, ...lineage)
-    .some((read) =>
-      sameStoredChange(
-        {
-          patchId: read.patch_id,
-          zeroContextPatchId: read.zero_context_patch_id,
-          pathSet: read.path_set,
-        },
-        {
-          patchId,
-          zeroContextPatchId,
-          pathSet,
-        },
-      ),
-    )
+  const witnessed = replay
+    ? replayWitnessesForCurrent({
+        context: replay,
+        rows: reads,
+        current: { patchId, zeroContextPatchId, pathSet },
+      })
+    : reads
+  return witnessed.some((read) =>
+    sameStoredChangeOrWitness(read, { patchId, zeroContextPatchId, pathSet }),
+  )
 }
 
 export function requireBranchRunOwner(

@@ -134,6 +134,7 @@ export const pullRequestModuleSpecs = [
       '../review/review-lineage-store.ts',
       '../review/review-post-fix.ts',
       '../review/review-round-budget.ts',
+      '../review/same-change-git.ts',
       '../review-funnel/review-funnel-plan-service.ts',
       '../review/review-target.ts',
       './admission-decision.ts',

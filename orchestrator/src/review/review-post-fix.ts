@@ -86,6 +86,7 @@ export type RebaseFileComparison = {
   replayed: PerPathPatch | null
   current: PerPathPatch | null
   conflicted: boolean
+  trunkChanged: boolean
 }
 
 export type RebaseCarryDecision = {
@@ -120,9 +121,24 @@ export function rebaseCarryDecision(input: {
   files: readonly RebaseFileComparison[]
   pathsByLens: Readonly<Record<string, readonly string[]>>
 }): RebaseCarryDecision {
+  const replayOnlyByIdentity = new Map<string, RebaseFileComparison[]>()
+  const currentOnlyByIdentity = new Map<string, RebaseFileComparison[]>()
+  for (const file of input.files) {
+    const target = file.replayed && !file.current ? replayOnlyByIdentity : currentOnlyByIdentity
+    const identity = file.replayed && !file.current ? file.replayed.patchId : file.current?.patchId
+    if (!identity || (file.replayed === null) === (file.current === null)) continue
+    target.set(identity, [...(target.get(identity) ?? []), file])
+  }
+  const pairedRenamePaths = new Set<string>()
+  for (const [identity, replayOnly] of replayOnlyByIdentity) {
+    const currentOnly = currentOnlyByIdentity.get(identity)
+    if (replayOnly.length !== 1 || currentOnly?.length !== 1) continue
+    pairedRenamePaths.add(replayOnly[0]!.path)
+    pairedRenamePaths.add(currentOnly[0]!.path)
+  }
   const changed = input.files.filter(
     ({ path, replayed, current, conflicted }) =>
-      conflicted || !samePerPathPatch(path, replayed, current),
+      !pairedRenamePaths.has(path) && (conflicted || !samePerPathPatch(path, replayed, current)),
   )
   const fixFiles = changed.map(({ path, replayed, current }) => {
     const source = current ?? replayed
@@ -132,10 +148,12 @@ export function rebaseCarryDecision(input: {
       deletions: source?.deletions ?? 0,
     }
   })
-  const changedPaths = fixFiles.map(({ path }) => path)
+  const reOwedPaths = changed
+    .filter(({ conflicted, trunkChanged }) => conflicted || trunkChanged)
+    .map(({ path }) => path)
   const reOwedPathsByLens = Object.fromEntries(
     Object.entries(input.pathsByLens).flatMap(([lens, covered]) => {
-      const paths = changedPaths.filter((path) => filesCoveredIncludesPath(path, covered))
+      const paths = reOwedPaths.filter((path) => filesCoveredIncludesPath(path, covered))
       return paths.length ? [[lens, paths] as const] : []
     }),
   )
@@ -393,19 +411,30 @@ function compareReplayedReview(
   })
   const replayed = patchesForRange(repo, currentBase.out, replay.tree)
   const current = patchesForRange(repo, currentBase.out, currentTip)
+  const trunk = trunkChange(repo, reviewedBase.out, currentBase.out)
   const replayedByPath = new Map(replayed.map((file) => [file.path, file]))
   const currentByPath = new Map(current.map((file) => [file.path, file]))
   const paths = [...new Set([...replayedByPath.keys(), ...currentByPath.keys()])].sort()
   const conflicts = new Set(replay.conflictedPaths)
+  const trunkChangedPaths = trunkChangedPathSet(trunk)
   return rebaseCarryDecision({
     files: paths.map((path) => ({
       path,
       replayed: replayedByPath.get(path) ?? null,
       current: currentByPath.get(path) ?? null,
       conflicted: conflicts.has(path),
+      trunkChanged: trunkChangedPaths.has(path),
     })),
     pathsByLens,
   })
+}
+
+/** Every path trunk could have changed, including both names of a rename. */
+export function trunkChangedPathSet(change: {
+  changedPaths: readonly string[]
+  renames: ReadonlyMap<string, string>
+}): Set<string> {
+  return new Set([...change.changedPaths, ...change.renames.keys(), ...change.renames.values()])
 }
 
 function trunkChange(
