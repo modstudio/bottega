@@ -282,7 +282,11 @@ def monitor_failure_reason(data: bytes) -> str:
     printable = "".join(
         chr(value) for value in data[:NOTICE_REASON_MAX_BYTES] if value == 10 or 32 <= value <= 126
     )
-    reason = next((line[:NOTICE_REASON_MAX_CHARS] for line in printable.splitlines() if line.split()), "")
+    lines = [line for line in printable.splitlines() if line.split()]
+    reason = next(
+        (line for line in lines if line.lstrip().startswith("error:")),
+        lines[0] if lines else "",
+    )[:NOTICE_REASON_MAX_CHARS]
     if reason:
         return redact_secret_shaped(reason)[0]
     return "stderr not printable" if had_bytes else "stderr empty"

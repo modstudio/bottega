@@ -97,6 +97,14 @@ heartbeat_timestamp() {
   date '+%I:%M:%S %p'
 }
 
+screened_reason() {
+  [ -s "$1" ] || return 0
+  local reason
+  reason=$(python3 "$ROOT/hooks/heartbeat-decision.py" <"$1" 2>/dev/null)
+  [ -n "$reason" ] || reason="stderr screening failed"
+  printf '%s\n' "$reason"
+}
+
 SID="${1:?session id required (Claude session_id; bottega records it on every run)}"
 INTERVAL="${2:-60}"
 MAX="${3:-60}"
@@ -386,13 +394,13 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   runs_reason=""
   completion_reason=""
   if [ -s "$inbox_err" ]; then
-    inbox_reason=$(python3 "$ROOT/hooks/heartbeat-decision.py" <"$inbox_err" 2>/dev/null)
+    inbox_reason=$(screened_reason "$inbox_err")
   fi
   if [ -s "$runs_err" ]; then
-    runs_reason=$(python3 "$ROOT/hooks/heartbeat-decision.py" <"$runs_err" 2>/dev/null)
+    runs_reason=$(screened_reason "$runs_err")
   fi
   if [ -s "$completion_err" ]; then
-    completion_reason=$(python3 "$ROOT/hooks/heartbeat-decision.py" <"$completion_err" 2>/dev/null)
+    completion_reason=$(screened_reason "$completion_err")
   fi
 
   if [ "$inbox_rc" -ne 0 ] || [ "$runs_rc" -ne 0 ] || \
@@ -525,8 +533,7 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     should_exit=0
   else
     should_exit=0
-    decision_reason=$(python3 "$ROOT/hooks/heartbeat-decision.py" <"$decision_err" 2>/dev/null)
-    [ -n "$decision_reason" ] || decision_reason="stderr screening failed"
+    decision_reason=$(screened_reason "$decision_err")
     echo "[$(heartbeat_timestamp)] DEGRADED - heartbeat decision step failed with status $decision_rc: $decision_reason; continuing to watch."
   fi
   rm -f "$decision_err"
@@ -567,7 +574,7 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   ACTIVE_WATCHDOG_PID=""
   monitor_raw=$(<"$monitor_out")
   if [ -s "$monitor_timed_out" ]; then monitor_rc=124; fi
-  monitor_reason=$(python3 "$ROOT/hooks/heartbeat-decision.py" <"$monitor_err")
+  monitor_reason=$(screened_reason "$monitor_err")
   rm -f "$monitor_err" "$monitor_out" "$monitor_timed_out"
 
   monitor_observed=$(printf '%s' "$monitor_raw" | SID="$SID" STALLED_SUBJECTS="$direct_stalled_subjects" \
@@ -748,7 +755,7 @@ print(token)
           fi
           ack_reason=""
           if [ -s "$ack_err" ]; then
-            ack_reason=$(python3 "$ROOT/hooks/heartbeat-decision.py" <"$ack_err" 2>/dev/null)
+            ack_reason=$(screened_reason "$ack_err")
           fi
           rm -f "$ack_out" "$ack_err"
           rm -rf "$CAP_DIR"

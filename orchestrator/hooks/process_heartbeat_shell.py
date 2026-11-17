@@ -182,6 +182,53 @@ esac
         self.assertIn("reason: inbox=request [withheld: assignment] State unknown", completed)
         self.assertNotIn("example-credential", completed)
 
+    def test_observation_failure_names_stderr_screening_failure(self):
+        with tempfile.TemporaryDirectory() as root:
+            checkout = Path(root)
+            hooks = checkout / "orchestrator" / "hooks"
+            binary = checkout / "bin"
+            hooks.mkdir(parents=True)
+            binary.mkdir()
+            stage_heartbeat_sources(hooks)
+            (hooks / PATH.name).write_text(
+                "#!/usr/bin/env python3\nraise SystemExit(1)\n",
+                encoding="utf-8",
+            )
+            fake = binary / "bottega"
+            fake.write_text(
+                '''#!/bin/sh
+case "$*" in
+  "board presence") exit 0 ;;
+  "question inbox --all --active --json")
+    printf '%s\\n' 'invalid question read query' >&2
+    exit 1 ;;
+  "run list --live --json") exit 0 ;;
+  *) exit 0 ;;
+esac
+''',
+                encoding="utf-8",
+            )
+            fake.chmod(0o755)
+
+            completed = self.run_shell(
+                "the failed stderr screener tick",
+                ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "1"],
+                cwd=checkout,
+                env={
+                    **os.environ,
+                    "BOTTEGA_MAIN_CHECKOUT": str(checkout),
+                    "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db"),
+                },
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            self.assertIn(
+                "reason: inbox=stderr screening failed State unknown",
+                completed.stdout,
+            )
+
     def test_linked_worktree_heartbeat_uses_main_checkout_binary_without_override(self):
         with tempfile.TemporaryDirectory() as root:
             fixture = Path(root)

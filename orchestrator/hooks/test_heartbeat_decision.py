@@ -249,6 +249,13 @@ class HeartbeatDecisionTest(unittest.TestCase):
             len(heartbeat_decision.monitor_failure_reason((b"ab-" * 100) + b"\n")),
             heartbeat_decision.NOTICE_REASON_MAX_CHARS,
         )
+    def test_failure_reason_prefers_bun_error_line(self):
+        reason = heartbeat_decision.monitor_failure_reason(
+            b"123 | await openDatabase()\n"
+            b"      ^\n"
+            b"error: orchestrator database does not exist: /x\n"
+        )
+        self.assertEqual(reason, "error: orchestrator database does not exist: /x")
     def test_failure_reason_distinguishes_empty_and_nonprintable_stderr(self):
         self.assertEqual(heartbeat_decision.monitor_failure_reason(b""), "stderr empty")
         self.assertEqual(
